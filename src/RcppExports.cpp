@@ -516,6 +516,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_mclmc_test
+Rcpp::List cpp_mclmc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, Rcpp::NumericVector init, int n_iter, int n_warmup, int seed, bool adjusted);
+RcppExport SEXP _tulpa_cpp_mclmc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP adjustedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mu_target(mu_targetSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type sigma_target(sigma_targetSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type init(initSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< bool >::type adjusted(adjustedSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_mclmc_test(mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_nested_laplace_icar
 Rcpp::List cpp_nested_laplace_icar(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable);
 RcppExport SEXP _tulpa_cpp_nested_laplace_icar(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP) {
@@ -2128,6 +2145,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_multiscale_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_multiscale_gp, 26},
     {"_tulpa_cpp_laplace_fit_multiscale_temporal", (DL_FUNC) &_tulpa_cpp_laplace_fit_multiscale_temporal, 20},
     {"_tulpa_cpp_laplace_fit_rsr", (DL_FUNC) &_tulpa_cpp_laplace_fit_rsr, 19},
+    {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 18},
     {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 20},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},

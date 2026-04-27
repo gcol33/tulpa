@@ -93,6 +93,10 @@ cpp_laplace_fit_rsr <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_
     .Call(`_tulpa_cpp_laplace_fit_rsr`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rsr_projection, rsr_n, family, phi, max_iter, tol, n_threads)
 }
 
+cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warmup = 1000L, seed = 42L, adjusted = FALSE) {
+    .Call(`_tulpa_cpp_mclmc_test`, mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted)
+}
+
 cpp_nested_laplace_icar <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
     .Call(`_tulpa_cpp_nested_laplace_icar`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable)
 }
