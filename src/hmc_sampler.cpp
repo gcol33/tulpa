@@ -14,6 +14,7 @@
 #include "hmc_temporal_autodiff.h"
 #include "hmc_tvc_grad.h"
 #include "hmc_multiscale_temporal_grad.h"
+#include "lkj_chol_helpers.h"
 #include <Rcpp.h>
 
 // Include log_post_impl.h AFTER hmc_sampler.h so types are defined
@@ -931,60 +932,21 @@ double compute_log_post(
         log_post += log_sigma;  // Jacobian
       }
 
-      // For correlated slopes: LKJ prior on correlation matrix via Cholesky
-      // Parameterization: Sigma = diag(sigma) * L * L' * diag(sigma)
-      // where L is lower-triangular with unit diagonal
-      std::vector<double> L_flat;  // Lower triangular Cholesky factor (full, including diagonal)
+      // For correlated slopes: LKJ prior on correlation matrix via Cholesky.
+      // Parameterization: Sigma = diag(sigma) * L * L' * diag(sigma).
+      // Tanh-parameterized L plus LKJ(eta=2) prior — see lkj_chol_helpers.h.
+      std::vector<double> L_flat;
       if (is_correlated && n_coefs > 1) {
         int chol_start = layout.chol_re_start_multi[t];
-        int n_chol = n_coefs * (n_coefs - 1) / 2;
-
-        // Build L matrix: tanh parameterization for unconstrained HMC
-        // Raw parameters are unconstrained; tanh maps them to (-1, 1)
-        // L[i,j] = tanh(raw[idx]) for off-diagonal, L[i,i] = sqrt(1 - sum_j L[i,j]^2)
-        // This eliminates hard boundaries that cause gradient explosions
         L_flat.resize(n_coefs * n_coefs, 0.0);
 
-        double log_jac_tanh = 0.0;  // Jacobian for raw -> L transformation
-        int chol_idx = 0;
-        for (int i = 0; i < n_coefs; i++) {
-          double row_sum_sq = 0.0;
-          for (int j = 0; j < i; j++) {
-            double raw_ij = params[chol_start + chol_idx];
-            double l_ij = std::tanh(raw_ij);
-            L_flat[i * n_coefs + j] = l_ij;
-            row_sum_sq += l_ij * l_ij;
-            // Jacobian: log|d(tanh)/d(raw)| = log(1 - tanh^2) = log(sech^2)
-            double sech2 = 1.0 - l_ij * l_ij;
-            log_jac_tanh += std::log(std::max(1e-300, sech2));
-            chol_idx++;
-          }
-          // Diagonal: guaranteed positive since tanh^2 < 1
-          double diag_sq = 1.0 - row_sum_sq;
-          if (diag_sq < 1e-10) {
-            // Safety guard (shouldn't trigger with tanh)
-            return -std::numeric_limits<double>::infinity();
-          }
-          L_flat[i * n_coefs + i] = std::sqrt(diag_sq);
+        double log_jac_tanh = 0.0;
+        if (!tulpa::build_L_from_raw(&params[chol_start], n_coefs,
+                                     L_flat.data(), &log_jac_tanh)) {
+          return -std::numeric_limits<double>::infinity();
         }
-
-        // Tanh Jacobian: maps unconstrained raw to bounded L elements
         log_post += log_jac_tanh;
-
-        // LKJ(eta) prior: p(L) propto det(L*L')^(eta-1)
-        // For eta=1 (uniform): log_prior = 0
-        // For eta=2 (weakly informative): log_prior = sum_k (n_coefs - k) * log(L[k,k])
-        double eta = 2.0;  // LKJ concentration parameter (2 = weakly informative)
-        for (int k = 0; k < n_coefs; k++) {
-          double L_kk = L_flat[k * n_coefs + k];
-          log_post += (eta - 1.0 + (n_coefs - k - 1) / 2.0) * 2.0 * std::log(L_kk);
-        }
-
-        // Jacobian for the transformation from Cholesky to correlation
-        for (int k = 1; k < n_coefs; k++) {
-          double L_kk = L_flat[k * n_coefs + k];
-          log_post += (n_coefs - k) * std::log(L_kk);
-        }
+        log_post += tulpa::lkj_log_prior_density(L_flat.data(), n_coefs, /*eta=*/2.0);
       }
 
       // Get RE parameters for this term
@@ -998,15 +960,9 @@ double compute_log_post(
         // Pre-compute re from z for all groups: re[g] = diag(sigma) * L * z[g]
         // Store in re_nc_flat for use in likelihood loop only
         if (!skip_obs_loop) {
-          for (int g = 0; g < n_groups; g++) {
-            for (int c = 0; c < n_coefs; c++) {
-              double Lz_c = 0.0;
-              for (int k = 0; k <= c; k++) {
-                Lz_c += L_flat[c * n_coefs + k] * params[re_start + g * n_coefs + k];
-              }
-              re_nc_flat[re_start + g * n_coefs + c] = sigmas[c] * Lz_c;
-            }
-          }
+          tulpa::compute_u_eff(L_flat.data(), n_coefs, sigmas.data(),
+                                &params[re_start], n_groups,
+                                &re_nc_flat[re_start]);
         }
 
         // N(0, I) prior on z (trivial in non-centered)
@@ -2549,70 +2505,26 @@ void compute_gradient_analytical(
       }
 
       if (is_correlated && n_coefs > 1) {
-        // Build Cholesky factor L with tanh parameterization
-        // Must match compute_log_post: L[i,j] = tanh(raw[idx])
+        // Build Cholesky factor L with tanh parameterization (must match
+        // compute_log_post). LKJ(eta=2) prior + L -> R + tanh-Jacobian
+        // gradient is written directly into grad[chol_start..] — slots are
+        // zero-initialised at function entry.
         int chol_start = layout.chol_re_start_multi[t];
         std::vector<double> L_flat(n_coefs * n_coefs, 0.0);
-
-        int chol_idx = 0;
-        for (int i = 0; i < n_coefs; i++) {
-          double row_sum_sq = 0.0;
-          for (int j = 0; j < i; j++) {
-            double raw_ij = params[chol_start + chol_idx];
-            L_flat[i * n_coefs + j] = std::tanh(raw_ij);
-            row_sum_sq += L_flat[i * n_coefs + j] * L_flat[i * n_coefs + j];
-            chol_idx++;
-          }
-          double diag_sq = 1.0 - row_sum_sq;
-          if (diag_sq < 1e-10) {
-            // Safety guard (shouldn't trigger with tanh)
-            return;
-          }
-          L_flat[i * n_coefs + i] = std::sqrt(diag_sq);
+        if (!tulpa::build_L_from_raw(&params[chol_start], n_coefs, L_flat.data())) {
+          return;  // Safety guard (shouldn't trigger with tanh)
         }
-
-        // LKJ(eta=2) prior gradient w.r.t. Cholesky elements
-        // LKJ contribution: sum_k (eta - 1 + (n-k-1)/2) * 2 * log(L[k,k])
-        // Jacobian contribution: sum_{k>0} (n - k) * log(L[k,k])
-        double eta = 2.0;
-        int n_chol = n_coefs * (n_coefs - 1) / 2;
-        std::vector<double> grad_chol(n_chol, 0.0);
-
-        // Gradient of LKJ + Jacobian w.r.t. L[i,j] (off-diagonal)
-        // d(log L[k,k])/d(L[i,j]) = -L[i,j] / L[i,i]^2 if i = k
-        for (int k = 1; k < n_coefs; k++) {
-          double L_kk = L_flat[k * n_coefs + k];
-          double coef_lkj = (eta - 1.0 + (n_coefs - k - 1) / 2.0) * 2.0;
-          double coef_jac = (n_coefs - k);
-          double coef_total = coef_lkj + coef_jac;
-
-          // d/d(L[k,j]) for j < k
-          int chol_base = k * (k - 1) / 2;
-          for (int j = 0; j < k; j++) {
-            double L_kj = L_flat[k * n_coefs + j];
-            // d(log L[k,k])/d(L[k,j]) = -L[k,j] / (L[k,k]^2)
-            grad_chol[chol_base + j] += coef_total * (-L_kj / (L_kk * L_kk));
-          }
-        }
+        tulpa::lkj_log_prior_grad_add(&params[chol_start], L_flat.data(), n_coefs,
+                                      /*eta=*/2.0, &grad[chol_start]);
 
         // ---- Non-centered parameterization ----
-        // Params store z ~ N(0,1). Compute re = diag(sigma) * L * z for observation loop.
-
-        // Allocate re_nc_flat if needed
+        // Params store z ~ N(0,1). Compute re = diag(sigma) * L * z.
         if (re_nc_flat.empty()) {
           re_nc_flat.assign(params.size(), 0.0);
         }
-
-        // Pre-compute re from z for all groups
-        for (int g = 0; g < n_groups; g++) {
-          for (int c = 0; c < n_coefs; c++) {
-            double Lz_c = 0.0;
-            for (int k = 0; k <= c; k++) {
-              Lz_c += L_flat[c * n_coefs + k] * params[re_start_t + g * n_coefs + k];
-            }
-            re_nc_flat[re_start_t + g * n_coefs + c] = sigmas[c] * Lz_c;
-          }
-        }
+        tulpa::compute_u_eff(L_flat.data(), n_coefs, sigmas.data(),
+                              &params[re_start_t], n_groups,
+                              &re_nc_flat[re_start_t]);
 
         // Save term data for write-back chain rule
         nc_L_flats.resize(n_re_terms_slopes);
@@ -2626,25 +2538,9 @@ void compute_gradient_analytical(
             grad[re_start_t + g * n_coefs + c] = -params[re_start_t + g * n_coefs + c];
           }
         }
-
         // Sigma: Half-Cauchy prior already written above. No centered contribution.
         // In non-centered, the log-det of Jacobian (re = diag(sigma)*L*z)
         // cancels with the |Sigma|^{-1/2} normalization, so no -n_groups term.
-
-        // Cholesky: write LKJ prior gradient only (with tanh chain rule)
-        // No centered prior contribution in non-centered parameterization
-        {
-          int cidx = 0;
-          for (int i = 1; i < n_coefs; i++) {
-            for (int j = 0; j < i; j++) {
-              double raw_val = params[chol_start + cidx];
-              double l_val = std::tanh(raw_val);
-              double sech2 = 1.0 - l_val * l_val;
-              grad[chol_start + cidx] = grad_chol[cidx] * sech2 - 2.0 * l_val;
-              cidx++;
-            }
-          }
-        }
       } else {
         // Uncorrelated term within a mixed model (e.g., intercept-only term
         // alongside correlated slopes terms in crossed+slopes)
@@ -3916,64 +3812,25 @@ void compute_gradient_analytical(
       bool is_nc = (t < (int)nc_L_flats.size() && !nc_L_flats[t].empty());
 
       if (is_nc) {
-        // Non-centered correlated slopes: chain rule transformation
-        // grad_re_slopes_lik[t] contains dLL/d(re), but params store z.
-        // Need to transform to dLL/d(z) and add sigma/chol gradients.
+        // Non-centered correlated slopes: chain rule from dLL/d(re_nc) back
+        // to (z, log_sigma, raw_chol). Single helper covers all three pieces;
+        // grad_z and grad_raw slots are contiguous, log_sigma is scattered.
         const auto& L_flat = nc_L_flats[t];
         const auto& sigmas = nc_sigmas_vec[t];
-
-        // 1. Transform grad_re_lik to grad_z via chain rule:
-        //    dLL/dz[g,k] = sum_{c>=k} dLL/dre[g,c] * sigma[c] * L[c,k]
-        for (int g = 0; g < n_groups; g++) {
-          for (int k = 0; k < n_coefs; k++) {
-            double grad_z_lik = 0.0;
-            for (int c = k; c < n_coefs; c++) {
-              grad_z_lik += grad_re_slopes_lik[t][g * n_coefs + c] *
-                            sigmas[c] * L_flat[c * n_coefs + k];
-            }
-            grad[re_start_t + g * n_coefs + k] += grad_z_lik;
-          }
-        }
-
-        // 2. Sigma gradient from likelihood:
-        //    dLL/d(log_sigma[c]) = sum_g dLL/dre[g,c] * re_nc[g,c]
-        for (int c = 0; c < n_coefs; c++) {
-          double sigma_lik_grad = 0.0;
-          for (int g = 0; g < n_groups; g++) {
-            sigma_lik_grad += grad_re_slopes_lik[t][g * n_coefs + c] *
-                              re_nc_flat[re_start_t + g * n_coefs + c];
-          }
-          int log_sigma_idx = layout.log_sigma_re_slopes[t][c];
-          grad[log_sigma_idx] += sigma_lik_grad;
-        }
-
-        // 3. Cholesky gradient from likelihood:
-        //    dLL/dL[i,j] = sigma[i] * (S_ij - S_ii * L[i,j] / L[i,i])
-        //    where S_ik = sum_g dLL/dre[g,i] * z[g,k]
-        //    Then apply tanh chain rule: grad_raw += grad_L * sech^2
         int chol_start = layout.chol_re_start_multi[t];
-        for (int ii = 1; ii < n_coefs; ii++) {
-          double L_ii = L_flat[ii * n_coefs + ii];
-          // Compute S_i_k for k = 0..ii
-          std::vector<double> S_i(ii + 1, 0.0);
-          for (int k = 0; k <= ii; k++) {
-            for (int g = 0; g < n_groups; g++) {
-              S_i[k] += grad_re_slopes_lik[t][g * n_coefs + ii] *
-                        params[re_start_t + g * n_coefs + k];  // z[g,k]
-            }
-          }
+        std::vector<double> g_log_sigma(n_coefs, 0.0);
 
-          int chol_base = ii * (ii - 1) / 2;
-          for (int j = 0; j < ii; j++) {
-            double L_ij = L_flat[ii * n_coefs + j];
-            double grad_L_ij = sigmas[ii] * (S_i[j] - S_i[ii] * L_ij / L_ii);
+        tulpa::chol_nc_chain_rule_add(
+            L_flat.data(), n_coefs, sigmas.data(),
+            &params[re_start_t], &params[chol_start],
+            &re_nc_flat[re_start_t], n_groups,
+            grad_re_slopes_lik[t].data(),
+            &grad[re_start_t],         // grad_z (contiguous)
+            g_log_sigma.data(),         // grad_log_sigma (scattered — temp)
+            &grad[chol_start]);         // grad_raw (contiguous)
 
-            // Apply tanh chain rule and ADD to existing chol gradient
-            double raw_val = params[chol_start + chol_base + j];
-            double l_val = std::tanh(raw_val);
-            double sech2 = 1.0 - l_val * l_val;
-            grad[chol_start + chol_base + j] += grad_L_ij * sech2;
-          }
+        for (int c = 0; c < n_coefs; c++) {
+          grad[layout.log_sigma_re_slopes[t][c]] += g_log_sigma[c];
         }
 
       } else if (data.re_parameterization == 1) {
@@ -9974,64 +9831,26 @@ void compute_gradient_composite(
             }
 
             if (is_correlated && n_coefs > 1) {
-                // Build Cholesky factor L with tanh parameterization
+                // Tanh-parameterized L + LKJ(eta=2) prior gradient (raw-space,
+                // includes tanh + L->R Jacobians) via lkj_chol_helpers.
                 int chol_start = layout.chol_re_start_multi[t];
                 std::vector<double> L_flat(n_coefs * n_coefs, 0.0);
-                int chol_idx = 0;
-                for (int ii = 0; ii < n_coefs; ii++) {
-                    double row_sum_sq = 0.0;
-                    for (int jj = 0; jj < ii; jj++) {
-                        L_flat[ii * n_coefs + jj] = std::tanh(params[chol_start + chol_idx]);
-                        row_sum_sq += L_flat[ii * n_coefs + jj] * L_flat[ii * n_coefs + jj];
-                        chol_idx++;
-                    }
-                    double diag_sq = 1.0 - row_sum_sq;
-                    if (diag_sq < 1e-10) return;
-                    L_flat[ii * n_coefs + ii] = std::sqrt(diag_sq);
+                if (!tulpa::build_L_from_raw(&params[chol_start], n_coefs, L_flat.data())) {
+                    return;
                 }
-
-                // LKJ(eta=2) + Jacobian prior gradient on Cholesky elements
-                double eta_lkj = 2.0;
-                int n_chol = n_coefs * (n_coefs - 1) / 2;
-                std::vector<double> grad_chol(n_chol, 0.0);
-                for (int k = 1; k < n_coefs; k++) {
-                    double L_kk = L_flat[k * n_coefs + k];
-                    double coef = (eta_lkj - 1.0 + (n_coefs - k - 1) / 2.0) * 2.0 + (n_coefs - k);
-                    int chol_base = k * (k - 1) / 2;
-                    for (int jj = 0; jj < k; jj++) {
-                        grad_chol[chol_base + jj] += coef * (-L_flat[k * n_coefs + jj] / (L_kk * L_kk));
-                    }
-                }
+                tulpa::lkj_log_prior_grad_add(&params[chol_start], L_flat.data(), n_coefs,
+                                              /*eta=*/2.0, &grad[chol_start]);
 
                 // Pre-compute re = diag(sigma) * L * z for observation loop
                 if (re_nc_flat_c.empty()) re_nc_flat_c.assign(params.size(), 0.0);
-                for (int g = 0; g < n_groups; g++) {
-                    for (int c = 0; c < n_coefs; c++) {
-                        double Lz_c = 0.0;
-                        for (int k = 0; k <= c; k++)
-                            Lz_c += L_flat[c * n_coefs + k] * params[re_start_t + g * n_coefs + k];
-                        re_nc_flat_c[re_start_t + g * n_coefs + c] = sigmas[c] * Lz_c;
-                    }
-                }
+                tulpa::compute_u_eff(L_flat.data(), n_coefs, sigmas.data(),
+                                      &params[re_start_t], n_groups,
+                                      &re_nc_flat_c[re_start_t]);
 
                 // z prior: N(0,I) -> grad = -z
                 for (int g = 0; g < n_groups; g++)
                     for (int c = 0; c < n_coefs; c++)
                         grad[re_start_t + g * n_coefs + c] = -params[re_start_t + g * n_coefs + c];
-
-                // Cholesky: LKJ prior gradient with tanh chain rule
-                {
-                    int cidx = 0;
-                    for (int ii = 1; ii < n_coefs; ii++) {
-                        for (int jj = 0; jj < ii; jj++) {
-                            double raw_val = params[chol_start + cidx];
-                            double l_val = std::tanh(raw_val);
-                            double sech2 = 1.0 - l_val * l_val;
-                            grad[chol_start + cidx] = grad_chol[cidx] * sech2 - 2.0 * l_val;
-                            cidx++;
-                        }
-                    }
-                }
 
                 nc_L_flats[t] = std::move(L_flat);
                 nc_sigmas_vec[t] = std::move(sigmas);
@@ -10991,45 +10810,25 @@ void compute_gradient_composite(
             bool is_corr_nc = !nc_L_flats.empty() && t_re < (int)nc_L_flats.size() && !nc_L_flats[t_re].empty();
 
             if (is_corr_nc) {
-                // Correlated NC: chain rule through diag(sigma) * L * z
+                // Correlated NC: chain rule from dLL/d(re_nc) back to
+                // (z, log_sigma, raw_chol). grad_z and grad_raw slots are
+                // contiguous in grad; log_sigma is scattered, so use temp.
                 const auto& L_flat = nc_L_flats[t_re];
                 const auto& sigmas = nc_sigmas_vec[t_re];
-
-                // 1. grad_z: dLL/dz[g,k] = sum_{c>=k} dLL/dre[g,c] * sigma[c] * L[c,k]
-                for (int g = 0; g < n_groups; g++) {
-                    for (int k = 0; k < n_coefs; k++) {
-                        double grad_z_lik = 0.0;
-                        for (int c = k; c < n_coefs; c++)
-                            grad_z_lik += grad_re_slopes_lik[t_re][g * n_coefs + c] * sigmas[c] * L_flat[c * n_coefs + k];
-                        grad[re_start_t + g * n_coefs + k] += grad_z_lik;
-                    }
-                }
-
-                // 2. Sigma gradient from likelihood: dLL/d(log_sigma[c]) = sum_g dLL/dre[g,c] * re_nc[g,c]
-                for (int c = 0; c < n_coefs; c++) {
-                    double sigma_lik_grad = 0.0;
-                    for (int g = 0; g < n_groups; g++)
-                        sigma_lik_grad += grad_re_slopes_lik[t_re][g * n_coefs + c] * re_nc_flat_c[re_start_t + g * n_coefs + c];
-                    grad[layout.log_sigma_re_slopes[t_re][c]] += sigma_lik_grad;
-                }
-
-                // 3. Cholesky gradient from likelihood (tanh chain rule)
                 int chol_start = layout.chol_re_start_multi[t_re];
-                for (int ii = 1; ii < n_coefs; ii++) {
-                    double L_ii = L_flat[ii * n_coefs + ii];
-                    std::vector<double> S_i(ii + 1, 0.0);
-                    for (int k = 0; k <= ii; k++)
-                        for (int g = 0; g < n_groups; g++)
-                            S_i[k] += grad_re_slopes_lik[t_re][g * n_coefs + ii] * params[re_start_t + g * n_coefs + k];
-                    int chol_base = ii * (ii - 1) / 2;
-                    for (int jj = 0; jj < ii; jj++) {
-                        double L_ij = L_flat[ii * n_coefs + jj];
-                        double grad_L_ij = sigmas[ii] * (S_i[jj] - S_i[ii] * L_ij / L_ii);
-                        double raw_val = params[chol_start + chol_base + jj];
-                        double l_val = std::tanh(raw_val);
-                        double sech2 = 1.0 - l_val * l_val;
-                        grad[chol_start + chol_base + jj] += grad_L_ij * sech2;
-                    }
+                std::vector<double> g_log_sigma(n_coefs, 0.0);
+
+                tulpa::chol_nc_chain_rule_add(
+                    L_flat.data(), n_coefs, sigmas.data(),
+                    &params[re_start_t], &params[chol_start],
+                    &re_nc_flat_c[re_start_t], n_groups,
+                    grad_re_slopes_lik[t_re].data(),
+                    &grad[re_start_t],
+                    g_log_sigma.data(),
+                    &grad[chol_start]);
+
+                for (int c = 0; c < n_coefs; c++) {
+                    grad[layout.log_sigma_re_slopes[t_re][c]] += g_log_sigma[c];
                 }
             } else if (slopes_nc) {
                 // Uncorrelated NC: chain rule re = sigma * z
