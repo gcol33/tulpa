@@ -976,6 +976,21 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_smc_test
+Rcpp::List cpp_smc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, int n_particles, int n_mcmc_steps, int seed);
+RcppExport SEXP _tulpa_cpp_smc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP n_particlesSEXP, SEXP n_mcmc_stepsSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mu_target(mu_targetSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type sigma_target(sigma_targetSEXP);
+    Rcpp::traits::input_parameter< int >::type n_particles(n_particlesSEXP);
+    Rcpp::traits::input_parameter< int >::type n_mcmc_steps(n_mcmc_stepsSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_smc_test(mu_target, sigma_target, n_particles, n_mcmc_steps, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_selected_inversion_diagonal
 Rcpp::NumericVector cpp_selected_inversion_diagonal(Rcpp::NumericVector Q_x, Rcpp::IntegerVector Q_i, Rcpp::IntegerVector Q_p, int n);
 RcppExport SEXP _tulpa_cpp_selected_inversion_diagonal(SEXP Q_xSEXP, SEXP Q_iSEXP, SEXP Q_pSEXP, SEXP nSEXP) {
@@ -2129,6 +2144,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_rpg", (DL_FUNC) &_tulpa_cpp_rpg, 2},
     {"_tulpa_cpp_sghmc_fit", (DL_FUNC) &_tulpa_cpp_sghmc_fit, 22},
     {"_tulpa_cpp_sgld_fit", (DL_FUNC) &_tulpa_cpp_sgld_fit, 24},
+    {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
     {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 23},
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 23},

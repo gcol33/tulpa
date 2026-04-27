@@ -157,6 +157,10 @@ cpp_sgld_fit <- function(q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, m
     .Call(`_tulpa_cpp_sgld_fit`, q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, n_iter, n_warmup, batch_size, epsilon, schedule_a, schedule_b, schedule_gamma, use_schedule, seed, verbose)
 }
 
+cpp_smc_test <- function(mu_target, sigma_target, n_particles = 500L, n_mcmc_steps = 5L, seed = 42L) {
+    .Call(`_tulpa_cpp_smc_test`, mu_target, sigma_target, n_particles, n_mcmc_steps, seed)
+}
+
 cpp_selected_inversion_diagonal <- function(Q_x, Q_i, Q_p, n) {
     .Call(`_tulpa_cpp_selected_inversion_diagonal`, Q_x, Q_i, Q_p, n)
 }
