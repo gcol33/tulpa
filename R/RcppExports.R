@@ -61,8 +61,8 @@ cpp_laplace_fit <- function(y, n, X, re_idx, n_re_groups, sigma_re, family, phi 
     .Call(`_tulpa_cpp_laplace_fit`, y, n, X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, n_threads)
 }
 
-cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset)
+cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init)
 }
 
 cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
@@ -447,6 +447,30 @@ cpp_test_parallel_likelihood <- function(y, mu, n_threads) {
 
 cpp_test_parallel_independent <- function(n, n_threads) {
     .Call(`_tulpa_cpp_test_parallel_independent`, n, n_threads)
+}
+
+cpp_test_lkj_build_L <- function(raw, n) {
+    .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
+}
+
+cpp_test_lkj_density <- function(L, eta) {
+    .Call(`_tulpa_cpp_test_lkj_density`, L, eta)
+}
+
+cpp_test_lkj_grad <- function(raw, n, eta) {
+    .Call(`_tulpa_cpp_test_lkj_grad`, raw, n, eta)
+}
+
+cpp_test_compute_u_eff <- function(L, sigma, z) {
+    .Call(`_tulpa_cpp_test_compute_u_eff`, L, sigma, z)
+}
+
+cpp_test_chol_nc_chain_rule <- function(L, sigma, z, raw, u_eff, glik) {
+    .Call(`_tulpa_cpp_test_chol_nc_chain_rule`, L, sigma, z, raw, u_eff, glik)
+}
+
+cpp_test_correlation_from_L <- function(L) {
+    .Call(`_tulpa_cpp_test_correlation_from_L`, L)
 }
 
 cpp_tulpa_fit_gaussian <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, step_size = 0.05, n_leapfrog = 10L, seed = 42L) {
