@@ -4,3 +4,4 @@ src/*.so
 src/*.exe
 src/symbols.rds
 *.Rcheck/
+dev_notes/
