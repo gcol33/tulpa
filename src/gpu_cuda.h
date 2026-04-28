@@ -360,8 +360,11 @@ public:
     return status == CUSOLVER_STATUS_SUCCESS;
   }
 
-  // Batched triangular solve: L * X = B
-  bool batched_trsm(double** d_L, double** d_B, int n, int nrhs, int batch_size) {
+  // Batched triangular solve: op(L) * X = B
+  // op = CUBLAS_OP_N for forward solve (L * X = B)
+  // op = CUBLAS_OP_T for backward solve (L^T * X = B)
+  bool batched_trsm(double** d_L, double** d_B, int n, int nrhs, int batch_size,
+                    cublasOperation_t op = CUBLAS_OP_N) {
     if (!has_cublas() || !cublasDtrsmBatched_) {
       return false;
     }
@@ -371,7 +374,7 @@ public:
       cublas_handle_,
       CUBLAS_SIDE_LEFT,
       CUBLAS_FILL_MODE_LOWER,
-      CUBLAS_OP_N,
+      op,
       CUBLAS_DIAG_NON_UNIT,
       n, nrhs,
       &alpha,
@@ -566,6 +569,92 @@ inline bool cuda_batched_trsv(
 
   // Run batched trsm (treating vectors as n x 1 matrices)
   bool success = ctx.batched_trsm((double**)d_L_ptr_array, (double**)d_b_ptr_array, k, 1, batch_size);
+
+  if (success) {
+    // Copy results back
+    for (int i = 0; i < batch_size; i++) {
+      ctx.copy_to_host(b_vectors[i].data(), d_b[i], vector_bytes);
+    }
+  }
+
+  // Cleanup
+  ctx.free(d_L_ptr_array);
+  ctx.free(d_b_ptr_array);
+  for (int i = 0; i < batch_size; i++) {
+    ctx.free(d_L[i]);
+    ctx.free(d_b[i]);
+  }
+
+  return success;
+}
+
+// Batched transposed triangular solve for NNGP: L^T * x = b
+// L is lower triangular k x k (factor from Cholesky), b/x are vectors of length k
+// Uses cublasDtrsmBatched with CUBLAS_OP_T to perform back-substitution
+inline bool cuda_batched_trsv_transpose(
+    const std::vector<std::vector<double>>& L_matrices,  // batch_size x (k*k)
+    std::vector<std::vector<double>>& b_vectors,         // batch_size x k (modified in place)
+    int k
+) {
+  // Try to get CUDA context - return false on any failure
+  CudaContext* ctx_ptr = nullptr;
+  try {
+    ctx_ptr = &CudaContext::instance();
+  } catch (...) {
+    return false;
+  }
+  if (!ctx_ptr) return false;
+
+  CudaContext& ctx = *ctx_ptr;
+
+  try {
+    if (!ctx.initialize() || !ctx.has_cublas()) {
+      return false;
+    }
+  } catch (...) {
+    return false;
+  }
+
+  int batch_size = (int)L_matrices.size();
+  if (batch_size == 0 || k <= 0 || b_vectors.size() != L_matrices.size()) {
+    return false;
+  }
+
+  size_t matrix_bytes = k * k * sizeof(double);
+  size_t vector_bytes = k * sizeof(double);
+
+  // Allocate device memory
+  std::vector<CUdeviceptr> d_L(batch_size), d_b(batch_size);
+  std::vector<double*> d_L_ptrs(batch_size), d_b_ptrs(batch_size);
+
+  for (int i = 0; i < batch_size; i++) {
+    d_L[i] = ctx.alloc(matrix_bytes);
+    d_b[i] = ctx.alloc(vector_bytes);
+    if (!d_L[i] || !d_b[i]) {
+      for (int j = 0; j <= i; j++) {
+        if (d_L[j]) ctx.free(d_L[j]);
+        if (d_b[j]) ctx.free(d_b[j]);
+      }
+      return false;
+    }
+    d_L_ptrs[i] = (double*)d_L[i];
+    d_b_ptrs[i] = (double*)d_b[i];
+
+    ctx.copy_to_device(d_L[i], L_matrices[i].data(), matrix_bytes);
+    ctx.copy_to_device(d_b[i], b_vectors[i].data(), vector_bytes);
+  }
+
+  // Allocate pointer arrays
+  CUdeviceptr d_L_ptr_array = ctx.alloc(batch_size * sizeof(double*));
+  CUdeviceptr d_b_ptr_array = ctx.alloc(batch_size * sizeof(double*));
+  ctx.copy_to_device(d_L_ptr_array, d_L_ptrs.data(), batch_size * sizeof(double*));
+  ctx.copy_to_device(d_b_ptr_array, d_b_ptrs.data(), batch_size * sizeof(double*));
+
+  // Run batched trsm with CUBLAS_OP_T (treating vectors as n x 1 matrices)
+  bool success = ctx.batched_trsm(
+    (double**)d_L_ptr_array, (double**)d_b_ptr_array,
+    k, 1, batch_size, CUBLAS_OP_T
+  );
 
   if (success) {
     // Copy results back

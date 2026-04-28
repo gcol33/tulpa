@@ -162,6 +162,14 @@ inline bool cuda_batched_trsv(
   (void)L_matrices; (void)b_vectors; (void)k;
   return false;  // CUDA not compiled in
 }
+inline bool cuda_batched_trsv_transpose(
+    const std::vector<std::vector<double>>& L_matrices,
+    std::vector<std::vector<double>>& b_vectors,
+    int k
+) {
+  (void)L_matrices; (void)b_vectors; (void)k;
+  return false;  // CUDA not compiled in
+}
 }  // namespace tulpa_gpu
 #endif
 
@@ -221,10 +229,35 @@ inline bool gpu_batched_trsv(
   return false;
 }
 
+// Batched transposed triangular solve: L^T * x = b
+// Used for back-substitution after a forward solve with the same L factor
+// Solves for x in-place (b_batch becomes x_batch)
+inline bool gpu_batched_trsv_transpose(
+    const std::vector<std::vector<double>>& L_batch,
+    std::vector<std::vector<double>>& b_batch,  // Modified in place to hold x
+    int k
+) {
+  if (!gpu_available()) {
+    return false;
+  }
+
+  // Try CUDA implementation
+  if (try_load_cuda()) {
+    return cuda_batched_trsv_transpose(L_batch, b_batch, k);
+  }
+
+  // OpenCL not yet implemented
+  return false;
+}
+
 // Combined Cholesky + solve for NNGP: solve C * alpha = c
-// C_batch: k x k covariance matrices (neighbor covariances)
+// Returns the full inverse-times-vector product alpha = C^{-1} c via the
+// three-step factorisation C = L L^T, forward solve L y = c, backward
+// solve L^T alpha = y. Both triangular solves run on the GPU.
+//
+// C_batch: k x k SPD covariance matrices (neighbor covariances)
 // c_batch: k vectors (covariances to current point)
-// alpha_batch: output k vectors (kriging weights)
+// alpha_batch: output k vectors (kriging weights = C^{-1} c)
 inline bool gpu_batched_cholesky_solve(
     const std::vector<std::vector<double>>& C_batch,
     const std::vector<std::vector<double>>& c_batch,
@@ -240,25 +273,22 @@ inline bool gpu_batched_cholesky_solve(
     return false;
   }
 
-  // Step 1: Batched Cholesky
+  // Step 1: Batched Cholesky C = L L^T
   std::vector<std::vector<double>> L_batch;
   if (!gpu_batched_cholesky(C_batch, L_batch, k)) {
     return false;
   }
 
-  // Step 2: Batched forward solve (L * y = c)
+  // Step 2: Batched forward solve L y = c (y stored in alpha_batch)
   alpha_batch = c_batch;  // Copy c to alpha (solve in place)
   if (!gpu_batched_trsv(L_batch, alpha_batch, k)) {
     return false;
   }
 
-  // Step 3: Batched backward solve (L' * alpha = y)
-  // For now, we only do forward solve. Full solve would need L' * x = y.
-  // cuBLAS trsm can handle this with CUBLAS_OP_T, but we'd need another call.
-  // For NNGP, we typically need C^{-1} * c = (L L')^{-1} c = L'^{-1} L^{-1} c
-
-  // TODO: Add backward solve for complete C^{-1} c computation
-  // For now, this gives L^{-1} c which is useful for some computations
+  // Step 3: Batched backward solve L^T alpha = y (overwrites y with C^{-1} c)
+  if (!gpu_batched_trsv_transpose(L_batch, alpha_batch, k)) {
+    return false;
+  }
 
   return true;
 }
