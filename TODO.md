@@ -154,7 +154,16 @@ Original audit: 2026-03-24. Status pass: 2026-04-28.
 
 ## P2 — Scaling Friction
 
-### P2.1 Precompute eta = X * beta before observation loop
+### P2.1 Precompute eta = X * beta before observation loop ✅ DONE (2026-04-29)
+
+> Hoisted into `eta_fixed[k]` per process before the observation loop in
+> `compute_log_post_generic`. T=double dispatches to the OpenMP-parallel
+> `tulpa_linalg::matvec`; autodiff types use a templated fallback with the
+> same FLOP count but better X_flat cache locality than the original
+> i-major path. Original problem framing exaggerated complexity ("cubic"
+> — actually same total FLOPs); the real wins are vectorization on the
+> double path and the cleaner separation of "fixed-effects assembly" from
+> "effect routing" in the observation loop.
 
 **Problem:** `compute_log_post_generic` (`log_post_impl.h:1928-1932`) computes `X[i,:] * beta` element-by-element inside the N-observation loop. For numerical gradients, this entire loop runs p+1 times, giving O(p * N * p_k) — cubic in dimensions.
 

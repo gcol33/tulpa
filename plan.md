@@ -115,7 +115,11 @@ without breaking ratio models. The rest can start now.
    - 5 new test cases in `tests/testthat/test-laplace-gp-dispatch.R`
      using a hand-built synthetic NNGP neighbor structure (no fmesher,
      no full validation chain).
-9. Laplace + SPDE backend.
+9. **Laplace + SPDE backend** ✅ DONE — subsumed by item 11's wire-up
+   (`57b606e`). Single-point SPDE Laplace works through `laplace_spde_at()`;
+   `fit_spde()` and `dispatch_laplace_spatial` agree to 1e-10. The
+   nested-grid SPDE Laplace path (already exposed via `cpp_nested_laplace_spde`)
+   belongs to Round 4 item 13–18.
 10. BYM2 H-mode analytical gradient (`src/hmc_sampler.cpp:5570`). Derive
     math first, then implement.
 11. **`spatial_spde()` user-facing R API** ✅ DONE (audit + dispatch wire-up
@@ -156,7 +160,10 @@ acceleration. Math is in `nested_laplace_proposal.md`; engineering plan in
 
 From `TODO.md`. P2.4 is already done; the rest are still open:
 
-- **P2.1** Precompute `eta = X * beta` before the observation loop.
+- **P2.1** Precompute `eta = X * beta` before the observation loop ✅ DONE.
+  Hoisted into `eta_fixed[k]` per process. T=double dispatches to the
+  OpenMP-parallel `tulpa_linalg::matvec`; autodiff types use a templated
+  fallback. 201/201 targeted tests pass.
 - **P2.2** Replace hardcoded dispatch in priors and inference modes with a
   registry / dispatch table.
 - **P2.3** Unify namespace fragmentation (`tulpa_hmc`, `tulpa_zi`) into

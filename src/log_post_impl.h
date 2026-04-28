@@ -16,6 +16,8 @@
 #include "hmc_latent_autodiff.h"  // Templated latent factor functions
 #include "hmc_temporal_multiscale_autodiff.h"  // Templated multiscale temporal functions
 #include "tulpa_priors.h"  // Shared prior computation helpers
+#include "linalg_fast.h"  // tulpa_linalg::matvec for the double fast path
+#include <type_traits>     // std::is_same_v for the constexpr dispatch
 
 // Expects these to be defined by including hmc_sampler.h first:
 // - tulpa_hmc::ModelData
@@ -1979,20 +1981,41 @@ T compute_log_post_generic(
         params, data, layout, beta_zi, beta_oi);
 
     // ====================================================================
+    // Precompute fixed-effects contribution per process: eta_fixed[k] = X_k * beta_k
+    //
+    // Hoisted out of the observation loop so the matvec runs once per process
+    // instead of being interleaved with effect routing. For T = double, this
+    // dispatches to the OpenMP-parallel tulpa_linalg::matvec; for autodiff
+    // types we fall back to a templated nested loop with the same FLOP count
+    // but better cache locality on X_flat than the original i-major path.
+    // ====================================================================
+    std::vector<std::vector<T>> eta_fixed(np);
+    for (int k = 0; k < np; k++) {
+        const auto& proc = data.processes[k];
+        eta_fixed[k].assign(data.N, T(0.0));
+        if (proc.p == 0) continue;
+        if constexpr (std::is_same_v<T, double>) {
+            tulpa_linalg::matvec(proc.X_flat.data(), beta[k],
+                                 eta_fixed[k].data(), data.N, proc.p);
+        } else {
+            for (int i = 0; i < data.N; i++) {
+                T s = T(0.0);
+                const double* row = &proc.X_flat[i * proc.p];
+                for (int j = 0; j < proc.p; j++) {
+                    s = s + T(row[j]) * beta[k][j];
+                }
+                eta_fixed[k][i] = s;
+            }
+        }
+    }
+
+    // ====================================================================
     // Observation loop: build linear predictors, route effects, call likelihood
     // ====================================================================
     for (int i = 0; i < data.N; i++) {
         T eta[MAX_PROCESSES];
         for (int k = 0; k < np; k++) {
-            eta[k] = T(0.0);
-        }
-
-        // Fixed effects per process (X * beta)
-        for (int k = 0; k < np; k++) {
-            const auto& proc = data.processes[k];
-            for (int j = 0; j < proc.p; j++) {
-                eta[k] = eta[k] + T(proc.X_flat[i * proc.p + j]) * beta[k][j];
-            }
+            eta[k] = eta_fixed[k][i];
         }
 
         // ---- RE contribution (routed by sharing.re) ----
