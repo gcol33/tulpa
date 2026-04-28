@@ -1,12 +1,26 @@
 # tulpa — Scaling & Architecture TODO
 
-Audit date: 2026-03-24. All issues found by scanning new tulpa code for scaling anti-patterns.
+Original audit: 2026-03-24. Status pass: 2026-04-28.
 
-## P0 — Architecture Blockers
+> **2026-04-28 status pass.** P0.1 / P0.2 / P1.1 / P1.2 / P2.4 are all
+> resolved. The "P0 architecture blockers" section is retained below as
+> historical context but no longer blocks model-package work — Agent E
+> (`tulpaRatio` refactor) is unblocked. Still open: P2.1 (eta precompute),
+> P2.2 (dispatch table), P2.3 (namespace cosmetic), P2.5 (likelihood
+> forward-decl audit). See `plan.md` for the live roadmap.
 
-These must be fixed before any model package (tulpaGlmm, tulpaOcc, numdenom) can link against tulpa.
+## P0 — Architecture Blockers ✅ RESOLVED
 
-### P0.1 Unify the dual type system
+> Resolved 2026-04-28. The unified `tulpa::ModelData` / `ParamLayout` /
+> enums live in `inst/include/tulpa/`. `src/hmc_sampler.h` lines 36-61
+> alias them via `using tulpa::*;` inside `namespace tulpa_hmc`, so every
+> `tulpa_hmc::ModelData` reference resolves to the unified type. Legacy
+> ratio fields are nested under `ModelData::legacy` with no direct leaks.
+> `compute_log_post_generic` (`log_post_impl.h:1852`) routes RE / spatial /
+> temporal / SVC / TVC / latent / ST / ZI / OI through `priors::*` helpers
+> in `src/tulpa_priors.h`.
+
+### P0.1 Unify the dual type system ✅ DONE
 
 **Problem:** Two incompatible `ModelData` structs exist — `tulpa::ModelData` (exported in `inst/include/tulpa/model_data.h`) and `tulpa_hmc::ModelData` (internal in `src/hmc_sampler.h`). Same for `ParamLayout`, `ZIType`, `SpatialType`, etc. Model packages would link against the exported types, but the engine operates on the internal types. They can never connect.
 
@@ -38,7 +52,7 @@ These must be fixed before any model package (tulpaGlmm, tulpaOcc, numdenom) can
 
 **Risk:** High. Touches every C++ file. Do in a single focused session with compilation after each step.
 
-### P0.2 Complete `compute_log_post_generic` — spatial/temporal/RE routing
+### P0.2 Complete `compute_log_post_generic` — spatial/temporal/RE routing ✅ DONE
 
 **Problem:** The generic log-posterior (`log_post_impl.h:1851-1962`) only handles fixed effects + ZI/OI. Spatial, temporal, RE, SVC, TVC, ST, and latent factor contributions are missing (line 1936 TODO). This means the generic interface can only fit intercept + covariate models — no mixed models, no spatial, no temporal.
 
@@ -86,7 +100,14 @@ These must be fixed before any model package (tulpaGlmm, tulpaOcc, numdenom) can
 
 ## P1 — Will Break on Real Data
 
-### P1.1 Fix formula parser deparse-reparse round-trips
+### P1.1 Fix formula parser deparse-reparse round-trips ✅ DONE (2026-04-28)
+
+> Done in commit `f1ca844`. AST-based parser end-to-end:
+> response carried as language object (`parsed$response_expr`), nested
+> groups expose structured `group_vars`, `||` expanded lme4-style,
+> `offset()` extracted via `model.offset()`, slope formulas carry the
+> formula's environment. Vestigial `terms = deparse(lhs)` removed.
+> 12 new test cases pin the new behavior (60 → 98 expectations).
 
 **Problem:** `R/formula.R` claims to be AST-based but 5 locations fall back to `deparse()` + regex. This will break on complex terms: `poly(x,2)`, backtick-quoted names, multi-line deparse output.
 
@@ -123,7 +144,7 @@ These must be fixed before any model package (tulpaGlmm, tulpaOcc, numdenom) can
 - `R/formula.R` — rewrite `has_implicit_intercept`, `parse_bar_term`, slope handling in `tulpa_build_model_data`
 - `tests/testthat/test-formula.R` — add tests for `poly(x,2)`, backtick-quoted names, `I(x^2)` terms
 
-### P1.2 Fix `beta_zi_start` / `zi_beta_offset` field name mismatch
+### P1.2 Fix `beta_zi_start` / `zi_beta_offset` field name mismatch ✅ DONE
 
 **Problem:** `compute_log_post_generic` (`log_post_impl.h:1900`) uses `layout.beta_zi_start` and `layout.beta_oi_start` — field names from `tulpa_hmc::ParamLayout`. The exported `tulpa::ParamLayout` uses `zi_beta_offset` and `oi_beta_offset`.
 
@@ -177,7 +198,7 @@ for (int k = 0; k < np; k++) {
 
 **Depends on:** P0.1
 
-### P2.4 Add `MAX_PROCESSES` runtime guard
+### P2.4 Add `MAX_PROCESSES` runtime guard ✅ DONE
 
 **Problem:** `compute_log_post_generic` uses `T eta[MAX_PROCESSES]` (stack array, MAX_PROCESSES=8) but never validates that `data.n_processes <= MAX_PROCESSES`.
 
