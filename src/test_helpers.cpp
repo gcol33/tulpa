@@ -8,6 +8,7 @@
 #include "autodiff.h"
 #include "laplace_core.h"
 #include "pg_binomial.h"
+#include "hmc_gp.h"
 
 using namespace Rcpp;
 
@@ -1091,4 +1092,77 @@ NumericVector cpp_test_parallel_independent(int n, int n_threads) {
   }
 
   return results;
+}
+
+// ---------------------------------------------------------------------------
+// NNGP solver dispatch test wrapper
+// ---------------------------------------------------------------------------
+//
+// Computes the centered NNGP log-likelihood and full hyperparameter gradients
+// at a given (w, sigma2, phi) using a chosen solver ("cholesky", "cg", "pcg").
+// Used by tests/testthat/test-gp-cg.R to verify the CG path agrees with the
+// Cholesky reference within numerical tolerance.
+//
+// Inputs use 1-based nn_idx / nn_order matching the rest of the package.
+//
+// [[Rcpp::export]]
+List cpp_test_gp_solver_dispatch(
+    NumericVector w,
+    double sigma2,
+    double phi,
+    NumericMatrix coords,
+    IntegerMatrix nn_idx,
+    NumericMatrix nn_dist,
+    NumericVector nn_neighbor_dist,  // length N*nn*nn, row-major
+    IntegerVector nn_order,
+    IntegerVector nn_order_inv,
+    int cov_type,
+    std::string solver,
+    double cg_tol,
+    int cg_maxiter
+) {
+  int N = coords.nrow();
+  int nn = nn_idx.ncol();
+
+  tulpa::GPData gp;
+  gp.n_obs = N;
+  gp.nn = nn;
+  gp.coords.resize(N * 2);
+  for (int i = 0; i < N; i++) {
+    gp.coords[i * 2 + 0] = coords(i, 0);
+    gp.coords[i * 2 + 1] = coords(i, 1);
+  }
+  gp.nn_idx.resize(N * nn);
+  gp.nn_dist.resize(N * nn);
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < nn; j++) {
+      gp.nn_idx[i * nn + j] = nn_idx(i, j);
+      gp.nn_dist[i * nn + j] = nn_dist(i, j);
+    }
+  }
+  gp.nn_neighbor_dist.assign(nn_neighbor_dist.begin(), nn_neighbor_dist.end());
+  gp.nn_order.assign(nn_order.begin(), nn_order.end());
+  gp.nn_order_inv.assign(nn_order_inv.begin(), nn_order_inv.end());
+  gp.cov_type = static_cast<tulpa::CovType>(cov_type);
+
+  gp.solver_config.solver = tulpa_gp::parse_gp_solver(solver);
+  gp.solver_config.cg_tol = cg_tol;
+  gp.solver_config.cg_maxiter = cg_maxiter;
+  gp.solver_config.n_obs = N;
+
+  std::vector<double> w_vec(w.begin(), w.end());
+  double ll = tulpa_gp::gp_nngp_log_lik(w_vec, sigma2, phi, gp);
+
+  tulpa_gp::NNGPGradients grads;
+  tulpa_gp::gp_nngp_gradients(w_vec, sigma2, phi, gp, grads);
+
+  NumericVector grad_w_out(grads.grad_w.begin(), grads.grad_w.end());
+
+  return List::create(
+    _["log_lik"] = ll,
+    _["grad_w"] = grad_w_out,
+    _["grad_log_sigma2"] = grads.grad_log_sigma2,
+    _["grad_log_phi"] = grads.grad_log_phi,
+    _["solver"] = solver
+  );
 }

@@ -10,6 +10,7 @@
 #include <random>
 #include <RcppEigen.h>
 #include "hmc_svc.h"  // Reuse covariance functions and NNGP infrastructure
+#include "hmc_gp_cg.h"  // Iterative CG/PCG solvers (dense_cg_solve, dense_pcg_solve)
 #include "tulpa/gp_data.h"
 #include "tulpa/types.h"
 
@@ -205,6 +206,106 @@ inline GPSolver parse_gp_solver(const std::string& s) {
 }
 
 // -----------------------------------------------------------------------------
+// Neighbor-system solver dispatch
+// -----------------------------------------------------------------------------
+//
+// Single source of truth for "solve C * alpha = c" inside the per-observation
+// NNGP loop. Branches on `cfg.effective_solver()` and either
+//   (a) does an Eigen LLT factorization in-place (Cholesky path), or
+//   (b) calls dense_cg_solve / dense_pcg_solve from hmc_gp_cg.h.
+//
+// `llt` is reused as workspace by the Cholesky branch and ignored by CG.
+// Returns true on success, false on failure (non-PSD or CG non-convergence).
+//
+// CG is an explicit user choice (`spatial_gp(solver = "cg")`); we do NOT
+// silently fall back to Cholesky on CG failure — the caller treats failure
+// the same way as a Cholesky non-PSD failure (typically: -INFINITY for
+// log-lik, or zero contribution for gradients), so HMC will reject the step.
+inline bool solve_neighbor_system(
+    Eigen::MatrixXd& C_eigen, int n_nb,
+    const Eigen::VectorXd& c_eigen,
+    Eigen::VectorXd& alpha_out,
+    Eigen::LLT<Eigen::MatrixXd>& llt,
+    const GPSolverConfig& cfg
+) {
+  GPSolver effective = cfg.effective_solver();
+
+  if (effective == GPSolver::CG || effective == GPSolver::PCG) {
+    // CG path: copy the (top-left n_nb x n_nb) block of C into a row-major
+    // scratch buffer for the solver.
+    static thread_local std::vector<double> C_buf;
+    static thread_local std::vector<double> b_buf;
+    static thread_local std::vector<double> x_buf;
+    C_buf.resize(n_nb * n_nb);
+    b_buf.resize(n_nb);
+    x_buf.resize(n_nb);
+    for (int j1 = 0; j1 < n_nb; j1++) {
+      for (int j2 = 0; j2 < n_nb; j2++) {
+        C_buf[j1 * n_nb + j2] = C_eigen(j1, j2);
+      }
+      b_buf[j1] = c_eigen(j1);
+    }
+    int it = (effective == GPSolver::PCG)
+      ? dense_pcg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
+                        cfg.cg_tol, cfg.cg_maxiter)
+      : dense_cg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
+                       cfg.cg_tol, cfg.cg_maxiter);
+    if (it < 0) return false;
+    if (alpha_out.size() < n_nb) alpha_out.resize(n_nb);
+    for (int j = 0; j < n_nb; j++) alpha_out(j) = x_buf[j];
+    return true;
+  }
+
+  // Default / Cholesky path
+  llt.compute(C_eigen.topLeftCorner(n_nb, n_nb));
+  if (llt.info() != Eigen::Success) return false;
+  if (alpha_out.size() < n_nb) alpha_out.resize(n_nb);
+  alpha_out.head(n_nb) = llt.solve(c_eigen.head(n_nb));
+  return true;
+}
+
+// Same as above but solves a SECOND system reusing the already-factored
+// matrix when possible. For Cholesky, that's `llt.solve(rhs)`. For CG, we
+// just call the iterative solver again — there is no factor to reuse.
+inline bool solve_neighbor_system_second(
+    const Eigen::MatrixXd& C_eigen, int n_nb,
+    const Eigen::VectorXd& rhs,
+    Eigen::VectorXd& out,
+    const Eigen::LLT<Eigen::MatrixXd>& llt,
+    const GPSolverConfig& cfg
+) {
+  GPSolver effective = cfg.effective_solver();
+
+  if (effective == GPSolver::CG || effective == GPSolver::PCG) {
+    static thread_local std::vector<double> C_buf;
+    static thread_local std::vector<double> b_buf;
+    static thread_local std::vector<double> x_buf;
+    C_buf.resize(n_nb * n_nb);
+    b_buf.resize(n_nb);
+    x_buf.resize(n_nb);
+    for (int j1 = 0; j1 < n_nb; j1++) {
+      for (int j2 = 0; j2 < n_nb; j2++) {
+        C_buf[j1 * n_nb + j2] = C_eigen(j1, j2);
+      }
+      b_buf[j1] = rhs(j1);
+    }
+    int it = (effective == GPSolver::PCG)
+      ? dense_pcg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
+                        cfg.cg_tol, cfg.cg_maxiter)
+      : dense_cg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
+                       cfg.cg_tol, cfg.cg_maxiter);
+    if (it < 0) return false;
+    if (out.size() < n_nb) out.resize(n_nb);
+    for (int j = 0; j < n_nb; j++) out(j) = x_buf[j];
+    return true;
+  }
+
+  if (out.size() < n_nb) out.resize(n_nb);
+  out.head(n_nb) = llt.solve(rhs.head(n_nb));
+  return true;
+}
+
+// -----------------------------------------------------------------------------
 // Single-scale GP NNGP likelihood
 // -----------------------------------------------------------------------------
 
@@ -275,11 +376,12 @@ inline double gp_nngp_log_lik(
   Rcpp::Rcout << "[GP_DEBUG] First obs log_lik done, now processing remaining " << (N-1) << " observations\n";
 #endif
 
-  // Pre-allocate Eigen matrices/vectors for Cholesky solve
+  // Pre-allocate Eigen matrices/vectors for Cholesky/CG solve
   // Using Eigen avoids hand-rolled linear algebra bugs and leverages SIMD
   Eigen::VectorXd c_vec(nn);
   Eigen::MatrixXd C_mat(nn, nn);
   Eigen::VectorXd alpha(nn);
+  Eigen::LLT<Eigen::MatrixXd> llt(nn);
 
   // Remaining observations: conditional on neighbors
   for (int i = 1; i < N; i++) {
@@ -393,28 +495,19 @@ inline double gp_nngp_log_lik(
       }
     }
 
-    // Solve C_mat * alpha = c_vec using Eigen's Cholesky (LLT) decomposition
-    // This replaces hand-rolled Cholesky which had optimizer-related bugs on Windows
-    Eigen::MatrixXd C_sub = C_mat.topLeftCorner(n_neighbors, n_neighbors);
-    Eigen::VectorXd c_sub = c_vec.head(n_neighbors);
-
-    // Add small jitter to diagonal for numerical stability
-    // This prevents ill-conditioning when phi is very small or sigma2 is near zero
+    // Solve C_mat * alpha = c_vec via the configured solver (Cholesky default,
+    // CG/PCG opt-in via spatial_gp(solver = "cg"|"pcg")).
+    // Add small jitter to diagonal for numerical stability — prevents
+    // ill-conditioning when phi is very small or sigma2 is near zero.
     for (int j = 0; j < n_neighbors; j++) {
-      C_sub(j, j) += 1e-8;
+      C_mat(j, j) += 1e-8;
     }
 
-    Eigen::LLT<Eigen::MatrixXd> llt(C_sub);
-
-    // Check if decomposition succeeded - this is the heisenbug fix!
-    // Without this check, LLT silently returns garbage/NaN for ill-conditioned matrices,
-    // causing unpredictable crashes that depend on parameter values during HMC exploration
-    if (llt.info() != Eigen::Success) {
-      // Matrix not positive definite - return -INFINITY to reject this parameter state
+    if (!solve_neighbor_system(C_mat, n_neighbors, c_vec, alpha, llt,
+                               gp_data.solver_config)) {
+      // Solver failed (non-PSD or CG non-convergence) — reject step.
       return -INFINITY;
     }
-
-    alpha.head(n_neighbors) = llt.solve(c_sub);
 
     // Conditional mean and variance
     double cond_mean = 0.0;
@@ -663,19 +756,18 @@ inline void gp_nngp_gradient_w_analytical(
         }
       }
 
-      // Eigen Cholesky + solve
-      llt.compute(C_eigen.topLeftCorner(n_nb, n_nb));
-      if (llt.info() != Eigen::Success) {
+      // Configurable solver: Cholesky (default) or CG/PCG (opt-in).
+      Eigen::VectorXd alpha_vec(n_nb);
+      if (!solve_neighbor_system(C_eigen, n_nb, c_eigen, alpha_vec, llt,
+                                 gp_data.solver_config)) {
         my_grad_w[obs_idx] += -w[obs_idx] / sigma2;
         continue;
       }
 
-      Eigen::VectorXd alpha_vec = llt.solve(c_eigen.head(n_nb));
-
       // Conditional mean and variance
       for (int j = 0; j < n_nb; j++) w_nb_eigen(j) = w[nb_idx[j]];
-      double cond_mean = alpha_vec.dot(w_nb_eigen.head(n_nb));
-      double c_Cinv_c = c_eigen.head(n_nb).dot(alpha_vec);
+      double cond_mean = alpha_vec.head(n_nb).dot(w_nb_eigen.head(n_nb));
+      double c_Cinv_c = c_eigen.head(n_nb).dot(alpha_vec.head(n_nb));
       double cond_var = std::max(sigma2 - c_Cinv_c, 1e-10);
       double resid = w[obs_idx] - cond_mean;
 
@@ -834,24 +926,30 @@ inline void gp_nngp_gradients(
         }
       }
 
-      // Eigen Cholesky: C = LL' and solve alpha = C^{-1}c, beta = C^{-1}w_nb
-      auto C_sub = C_eigen.topLeftCorner(n_nb, n_nb);
-      llt.compute(C_sub);
-      if (llt.info() != Eigen::Success) {
+      // Configurable solver: factorize once (Cholesky) or run CG twice
+      // (alpha = C^{-1}c, beta = C^{-1}w_nb).
+      Eigen::VectorXd alpha_vec(n_nb);
+      if (!solve_neighbor_system(C_eigen, n_nb, c_eigen, alpha_vec, llt,
+                                 gp_data.solver_config)) {
         double wi = w[obs_idx];
         my_grad_w[obs_idx] += -wi / sigma2;
         tl_sigma2[tid] += 0.5 * (wi * wi / sigma2 - 1.0);
         continue;
       }
 
-      Eigen::VectorXd alpha_vec = llt.solve(c_eigen.head(n_nb));
-
       for (int j = 0; j < n_nb; j++) w_nb_eigen(j) = w[nb_idx[j]];
-      Eigen::VectorXd beta_vec = llt.solve(w_nb_eigen.head(n_nb));
+      Eigen::VectorXd beta_vec(n_nb);
+      if (!solve_neighbor_system_second(C_eigen, n_nb, w_nb_eigen, beta_vec,
+                                        llt, gp_data.solver_config)) {
+        double wi = w[obs_idx];
+        my_grad_w[obs_idx] += -wi / sigma2;
+        tl_sigma2[tid] += 0.5 * (wi * wi / sigma2 - 1.0);
+        continue;
+      }
 
       // Conditional mean and variance
-      double mu = alpha_vec.dot(w_nb_eigen.head(n_nb));
-      double c_alpha = c_eigen.head(n_nb).dot(alpha_vec);
+      double mu = alpha_vec.head(n_nb).dot(w_nb_eigen.head(n_nb));
+      double c_alpha = c_eigen.head(n_nb).dot(alpha_vec.head(n_nb));
       double v = std::max(sigma2 - c_alpha, 1e-10);
       double r = w[obs_idx] - mu;
 

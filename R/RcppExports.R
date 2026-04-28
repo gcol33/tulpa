@@ -457,6 +457,10 @@ cpp_test_parallel_independent <- function(n, n_threads) {
     .Call(`_tulpa_cpp_test_parallel_independent`, n, n_threads)
 }
 
+cpp_test_gp_solver_dispatch <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, solver, cg_tol, cg_maxiter) {
+    .Call(`_tulpa_cpp_test_gp_solver_dispatch`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, solver, cg_tol, cg_maxiter)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

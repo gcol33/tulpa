@@ -1952,6 +1952,29 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_gp_solver_dispatch
+List cpp_test_gp_solver_dispatch(NumericVector w, double sigma2, double phi, NumericMatrix coords, IntegerMatrix nn_idx, NumericMatrix nn_dist, NumericVector nn_neighbor_dist, IntegerVector nn_order, IntegerVector nn_order_inv, int cov_type, std::string solver, double cg_tol, int cg_maxiter);
+RcppExport SEXP _tulpa_cpp_test_gp_solver_dispatch(SEXP wSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_neighbor_distSEXP, SEXP nn_orderSEXP, SEXP nn_order_invSEXP, SEXP cov_typeSEXP, SEXP solverSEXP, SEXP cg_tolSEXP, SEXP cg_maxiterSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type nn_neighbor_dist(nn_neighbor_distSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nn_order_inv(nn_order_invSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    Rcpp::traits::input_parameter< std::string >::type solver(solverSEXP);
+    Rcpp::traits::input_parameter< double >::type cg_tol(cg_tolSEXP);
+    Rcpp::traits::input_parameter< int >::type cg_maxiter(cg_maxiterSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_gp_solver_dispatch(w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, solver, cg_tol, cg_maxiter));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -2236,6 +2259,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_parallel_dot_products", (DL_FUNC) &_tulpa_cpp_test_parallel_dot_products, 3},
     {"_tulpa_cpp_test_parallel_likelihood", (DL_FUNC) &_tulpa_cpp_test_parallel_likelihood, 3},
     {"_tulpa_cpp_test_parallel_independent", (DL_FUNC) &_tulpa_cpp_test_parallel_independent, 2},
+    {"_tulpa_cpp_test_gp_solver_dispatch", (DL_FUNC) &_tulpa_cpp_test_gp_solver_dispatch, 13},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},
