@@ -5,9 +5,6 @@
 #' R formulas are already parse trees — we do structural recursion to find
 #' random effect terms (`|` nodes) and separate them from fixed effects.
 #'
-#' This is the "reduction tree" approach: pattern-match on bar terms,
-#' collect them, and rewrite the tree without them.
-#'
 #' @name tulpa_formula
 NULL
 
@@ -31,31 +28,24 @@ NULL
 #' @keywords internal
 #' @export
 findbars <- function(term) {
-  # Leaf: symbol or literal — no bars here
+  if (is.name(term) || !is.language(term)) return(NULL)
 
-if (is.name(term) || !is.language(term)) return(NULL)
-
-  # Parenthesized expression: check if it wraps a bar term
   if (term[[1]] == as.name("(")) {
     inner <- term[[2]]
     if (is.call(inner) && (inner[[1]] == as.name("|") || inner[[1]] == as.name("||"))) {
       return(list(inner))
     }
-    # Not a bar term — recurse into the parenthesized content
     return(findbars(inner))
   }
 
-  # Bar term found directly (shouldn't happen at top level, but handle it)
   if (term[[1]] == as.name("|") || term[[1]] == as.name("||")) {
     return(list(term))
   }
 
-  # Unary operator (e.g., `-x`): recurse into operand
   if (length(term) == 2) {
     return(findbars(term[[2]]))
   }
 
-  # Binary operator (e.g., `+`, `*`, `~`): recurse both sides
   c(findbars(term[[2]]), findbars(term[[3]]))
 }
 
@@ -64,36 +54,29 @@ if (is.name(term) || !is.language(term)) return(NULL)
 #' Recursively rewrites the formula AST, removing any `|` or `||` nodes
 #' found inside parentheses. Returns the fixed-effects-only formula.
 #'
-#' This is structural term rewriting: we pattern-match on bar terms
-#' and replace them with NULL, then clean up the tree.
-#'
 #' @param term A language object (formula term)
 #' @return A language object with all bar terms removed, or NULL if nothing remains
 #' @keywords internal
 #' @export
 nobars <- function(term) {
-  # Leaf: unchanged
   if (is.name(term) || !is.language(term)) return(term)
 
-  # Parenthesized expression: drop if it wraps a bar term
   if (term[[1]] == as.name("(")) {
     inner <- term[[2]]
     if (is.call(inner) && (inner[[1]] == as.name("|") || inner[[1]] == as.name("||"))) {
-      return(NULL)  # Remove this entire term
+      return(NULL)
     }
     nb <- nobars(inner)
     if (is.null(nb)) return(NULL)
     return(call("(", nb))
   }
 
-  # Unary operator: recurse
   if (length(term) == 2) {
     nb <- nobars(term[[2]])
     if (is.null(nb)) return(NULL)
     return(call(deparse(term[[1]]), nb))
   }
 
-  # Binary operator: recurse both sides, handle NULL removal
   nb_left  <- nobars(term[[2]])
   nb_right <- nobars(term[[3]])
 
@@ -105,21 +88,29 @@ nobars <- function(term) {
 }
 
 # ============================================================================
-# Parse a single bar term into a structured RE specification
+# Bar term parsing: structured RE specification with || expansion
 # ============================================================================
 
 #' Parse a single random effect bar term
 #'
-#' Takes a `|` or `||` language object and extracts the grouping variable,
+#' Takes a `|` or `||` language object and extracts the grouping variable(s),
 #' effect terms (intercept, slopes), and correlation structure.
 #'
+#' Nested grouping `(1 | a/b)` is expanded into one spec per level
+#' (a, then a:b). Uncorrelated `||` is expanded lme4-style: `(1 + x || g)`
+#' becomes `(1 | g) + (0 + x | g)`, so the sampler sees a diagonal
+#' covariance as a set of independent bars rather than a single bar
+#' with `correlated = FALSE`.
+#'
 #' @param bar_term A language object: `|`(lhs, rhs) or `||`(lhs, rhs)
-#' @return A list with:
-#'   - `group_var`: character, the grouping variable name
-#'   - `terms`: character vector of effect term expressions
+#' @return A list of RE specs. Each spec has:
+#'   - `group_var`: character, display label (colon-joined for nested)
+#'   - `group_vars`: character vector, each element a column name
+#'   - `group_expr`: language or NULL (set when grouping is a non-name expr)
+#'   - `slope_terms`: list of language objects (slope LHS terms)
 #'   - `has_intercept`: logical
-#'   - `correlated`: logical (TRUE for `|`, FALSE for `||`)
-#'   - `original`: the original language object
+#'   - `correlated`: logical (TRUE for `|`, FALSE only for unexpanded `||`)
+#'   - `original`: the original bar language object
 #' @keywords internal
 #' @export
 parse_bar_term <- function(bar_term) {
@@ -128,40 +119,111 @@ parse_bar_term <- function(bar_term) {
   op <- bar_term[[1]]
   correlated <- identical(op, as.name("|"))
 
-  lhs <- bar_term[[2]]  # Effect specification (e.g., 1 + x)
-  rhs <- bar_term[[3]]  # Grouping variable (e.g., group)
+  lhs <- bar_term[[2]]
+  rhs <- bar_term[[3]]
 
-  # Decompose LHS into intercept + slope language objects
   lhs_decomp <- decompose_bar_lhs(lhs)
 
-  # Handle nested grouping: (1 | a/b) → AST check for `/` call
-  if (is.call(rhs) && identical(rhs[[1]], as.name("/"))) {
-    parent_name <- as.character(rhs[[2]])
-    child_name <- as.character(rhs[[3]])
-    nested_group <- paste0(parent_name, ":", child_name)
-    make_re <- function(gvar) {
-      list(
-        group_var = gvar,
-        terms = deparse(lhs),
-        slope_terms = lhs_decomp$slope_terms,
-        has_intercept = lhs_decomp$has_intercept,
-        correlated = correlated,
-        original = bar_term
+  group_specs <- resolve_group_rhs(rhs)
+
+  # || expansion: split a single uncorrelated bar into independent bars
+  # so each gets a proper diagonal covariance downstream.
+  if (correlated) {
+    slope_sets <- list(list(
+      has_intercept = lhs_decomp$has_intercept,
+      slope_terms   = lhs_decomp$slope_terms,
+      correlated    = TRUE
+    ))
+  } else {
+    slope_sets <- list()
+    if (lhs_decomp$has_intercept) {
+      slope_sets[[length(slope_sets) + 1L]] <- list(
+        has_intercept = TRUE,
+        slope_terms   = list(),
+        correlated    = TRUE
       )
     }
-    return(list(make_re(parent_name), make_re(nested_group)))
+    for (s in lhs_decomp$slope_terms) {
+      slope_sets[[length(slope_sets) + 1L]] <- list(
+        has_intercept = FALSE,
+        slope_terms   = list(s),
+        correlated    = TRUE
+      )
+    }
+    if (length(slope_sets) == 0L) {
+      # Defensive: empty LHS shouldn't happen; preserve the original bar.
+      slope_sets[[1L]] <- list(
+        has_intercept = lhs_decomp$has_intercept,
+        slope_terms   = lhs_decomp$slope_terms,
+        correlated    = FALSE
+      )
+    }
   }
 
-  # Simple grouping variable
-  group_var <- if (is.name(rhs)) as.character(rhs) else deparse(rhs)
+  out <- list()
+  for (gs in group_specs) {
+    for (ss in slope_sets) {
+      out[[length(out) + 1L]] <- list(
+        group_var     = gs$group_var,
+        group_vars    = gs$group_vars,
+        group_expr    = gs$group_expr,
+        slope_terms   = ss$slope_terms,
+        has_intercept = ss$has_intercept,
+        correlated    = ss$correlated,
+        original      = bar_term
+      )
+    }
+  }
+  out
+}
 
+#' Resolve the RHS of a bar term into one or more group specs
+#'
+#' Three cases:
+#'   - simple name: `g` → one spec with `group_vars = "g"`.
+#'   - nested `/` :   `a/b` → two specs (`"a"`, `c("a","b")`).
+#'   - other call:    `factor(g)` or `g1:g2` → one spec carrying the
+#'     language object in `group_expr` so we evaluate it at build time
+#'     instead of guessing column names.
+#'
+#' @param rhs A language object (RHS of `|` or `||`).
+#' @return List of group specs.
+#' @keywords internal
+resolve_group_rhs <- function(rhs) {
+  # Nested grouping a/b
+  if (is.call(rhs) && identical(rhs[[1]], as.name("/")) && is.name(rhs[[2]]) && is.name(rhs[[3]])) {
+    parent_name <- as.character(rhs[[2]])
+    child_name  <- as.character(rhs[[3]])
+    return(list(
+      list(
+        group_var  = parent_name,
+        group_vars = parent_name,
+        group_expr = NULL
+      ),
+      list(
+        group_var  = paste0(parent_name, ":", child_name),
+        group_vars = c(parent_name, child_name),
+        group_expr = NULL
+      )
+    ))
+  }
+
+  # Simple name
+  if (is.name(rhs)) {
+    nm <- as.character(rhs)
+    return(list(list(
+      group_var  = nm,
+      group_vars = nm,
+      group_expr = NULL
+    )))
+  }
+
+  # General expression: evaluate at build time
+  label <- paste(deparse(rhs, width.cutoff = 500L), collapse = "")
   list(list(
-    group_var = group_var,
-    terms = deparse(lhs),
-    slope_terms = lhs_decomp$slope_terms,
-    has_intercept = lhs_decomp$has_intercept,
-    correlated = correlated,
-    original = bar_term
+    group_var  = label,
+    group_vars = character(0),
+    group_expr = rhs
   ))
 }
 
@@ -173,14 +235,11 @@ parse_bar_term <- function(bar_term) {
 #' @return logical
 #' @keywords internal
 has_implicit_intercept <- function(term) {
-  # bare 0 → no intercept
   if (is.numeric(term) && term == 0) return(FALSE)
   if (!is.call(term) || length(term) != 3) return(TRUE)
   op <- term[[1]]
-  # 0 + x → call("+", 0, x) → no intercept
 
   if (identical(op, as.name("+")) && is.numeric(term[[2]]) && term[[2]] == 0) return(FALSE)
-  # -1 + x → call("+", call("-", 1), x) → no intercept
   if (identical(op, as.name("+"))) {
     lhs <- term[[2]]
     if (is.call(lhs) && identical(lhs[[1]], as.name("-")) &&
@@ -233,6 +292,21 @@ collect_additive_terms <- function(expr) {
   }
 }
 
+#' Render a slope spec as a display string
+#'
+#' Used by the print method. Derives the textual form on demand from
+#' the stored language objects so we never store deparsed slope text.
+#'
+#' @keywords internal
+format_re_lhs <- function(re) {
+  pieces <- character(0)
+  if (re$has_intercept) pieces <- c(pieces, "1") else pieces <- c(pieces, "0")
+  for (s in re$slope_terms) {
+    pieces <- c(pieces, paste(deparse(s, width.cutoff = 500L), collapse = ""))
+  }
+  paste(pieces, collapse = " + ")
+}
+
 # ============================================================================
 # Main formula parser
 # ============================================================================
@@ -245,7 +319,8 @@ collect_additive_terms <- function(expr) {
 #'
 #' @param formula A formula object (e.g., `y ~ x + (1 | group)`)
 #' @return A list with:
-#'   - `response`: character, the response variable name
+#'   - `response`: character, the response variable label (`NULL` if none)
+#'   - `response_expr`: language object, the LHS of `~` (`NULL` if none)
 #'   - `fixed_formula`: formula, the fixed-effects-only formula
 #'   - `random_effects`: list of parsed RE specifications
 #'   - `n_re_terms`: integer, number of RE terms
@@ -255,64 +330,48 @@ collect_additive_terms <- function(expr) {
 #' pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 | group) + (x1 || site))
 #' pf$response        # "y"
 #' pf$fixed_formula   # y ~ x1 + x2
-#' pf$n_re_terms      # 2
 #'
 #' @export
 tulpa_parse_formula <- function(formula) {
   stopifnot(inherits(formula, "formula"))
 
-  # Extract response (LHS of ~)
+  formula_env <- environment(formula)
+
   if (length(formula) == 3) {
-    response <- deparse(formula[[2]])
+    response_expr <- formula[[2]]
     rhs <- formula[[3]]
   } else {
-    response <- NULL
+    response_expr <- NULL
     rhs <- formula[[2]]
   }
+  response <- if (is.null(response_expr)) NULL else paste(deparse(response_expr, width.cutoff = 500L), collapse = "")
 
-  # Find all bar terms (random effects) via AST recursion
   bars <- findbars(rhs)
 
-  # Parse each bar term into structured RE spec
   random_effects <- list()
   if (length(bars) > 0) {
     for (bar in bars) {
-      parsed <- parse_bar_term(bar)
-      random_effects <- c(random_effects, parsed)
+      random_effects <- c(random_effects, parse_bar_term(bar))
     }
   }
 
-  # Remove bar terms to get fixed-effects formula
   rhs_clean <- nobars(rhs)
 
-  # Reconstruct fixed-effects formula
-  if (is.null(rhs_clean)) {
-    # All terms were random effects — intercept-only fixed effects
-    if (!is.null(response)) {
-      response_expr <- parse(text = response)[[1]]
-      fixed_formula <- call("~", response_expr, 1)
-      fixed_formula <- as.formula(fixed_formula, env = environment(formula))
-    } else {
-      fixed_formula <- ~ 1
-    }
+  fixed_rhs <- if (is.null(rhs_clean)) 1 else rhs_clean
+  fixed_formula <- if (is.null(response_expr)) {
+    as.formula(call("~", fixed_rhs), env = formula_env)
   } else {
-    if (!is.null(response)) {
-      response_expr <- parse(text = response)[[1]]
-      fixed_formula <- call("~", response_expr, rhs_clean)
-      fixed_formula <- as.formula(fixed_formula, env = environment(formula))
-    } else {
-      fixed_formula <- call("~", rhs_clean)
-      fixed_formula <- as.formula(fixed_formula, env = environment(formula))
-    }
+    as.formula(call("~", response_expr, fixed_rhs), env = formula_env)
   }
 
   structure(
     list(
-      response = response,
-      fixed_formula = fixed_formula,
+      response       = response,
+      response_expr  = response_expr,
+      fixed_formula  = fixed_formula,
       random_effects = random_effects,
-      n_re_terms = length(random_effects),
-      original = formula
+      n_re_terms     = length(random_effects),
+      original       = formula
     ),
     class = "tulpa_parsed_formula"
   )
@@ -322,75 +381,66 @@ tulpa_parse_formula <- function(formula) {
 #'
 #' Takes a parsed formula and data frame, and constructs:
 #' - The fixed-effects design matrix X
+#' - An offset vector (or NULL) extracted from `offset(...)` terms
 #' - RE group index vectors
 #' - RE slope matrices (if applicable)
 #'
 #' @param parsed A `tulpa_parsed_formula` object
 #' @param data A data frame
 #' @return A list with:
-#'   - `y`: response vector
+#'   - `y`: response vector (or NULL)
 #'   - `X`: fixed-effects design matrix
+#'   - `offset`: numeric vector or NULL
 #'   - `re_terms`: list of RE data structures (group indices, slope matrices)
 #'
 #' @export
 tulpa_build_model_data <- function(parsed, data) {
   stopifnot(inherits(parsed, "tulpa_parsed_formula"))
 
-  # Response — evaluate the LHS expression in the data environment.
-  # This handles both simple names (y) and calls (cbind(succ, fail), c(...)).
+  formula_env <- environment(parsed$original) %||% parent.frame()
+
+  # Response: evaluate the language object directly. Handles bare names,
+  # cbind(succ, fail), backtick-quoted identifiers, all in one path.
   y <- NULL
-  if (!is.null(parsed$response)) {
+  if (!is.null(parsed$response_expr)) {
     y <- tryCatch(
-      eval(parse(text = parsed$response)[[1]], envir = data, enclos = parent.frame()),
+      eval(parsed$response_expr, envir = data, enclos = formula_env),
       error = function(e) NULL
     )
     if (is.null(y)) {
-      stop("Response variable '", parsed$response, "' not found in data", call. = FALSE)
+      stop("Response '", parsed$response, "' not found in data", call. = FALSE)
     }
   }
 
-  # Fixed-effects design matrix
+  # Fixed-effects design matrix + offset extraction.
+  # model.frame parses offset() terms and exposes them via model.offset();
+  # model.matrix excludes them from the design.
   mf <- model.frame(parsed$fixed_formula, data, na.action = na.pass)
   X <- model.matrix(parsed$fixed_formula, mf)
+  off <- stats::model.offset(mf)
 
   # Random effects
   re_terms <- list()
   for (i in seq_along(parsed$random_effects)) {
     re_spec <- parsed$random_effects[[i]]
-    gvar <- re_spec$group_var
 
-    # Handle interaction grouping (a:b)
-    if (grepl(":", gvar)) {
-      parts <- strsplit(gvar, ":")[[1]]
-      group_factor <- interaction(data[parts], drop = TRUE)
-    } else {
-      if (!gvar %in% names(data)) {
-        stop("Grouping variable '", gvar, "' not found in data", call. = FALSE)
-      }
-      group_factor <- as.factor(data[[gvar]])
-    }
-
+    group_factor <- resolve_group_factor(re_spec, data, formula_env)
     group_idx <- as.integer(group_factor)
     n_groups <- nlevels(group_factor)
 
-    # Parse slope terms from language objects (no deparse/regex)
     n_coefs <- if (re_spec$has_intercept) 1L else 0L
     slope_matrix <- NULL
     slope_names <- character(0)
 
-    slope_lang <- re_spec$slope_terms  # list of language objects from decompose_bar_lhs
+    slope_lang <- re_spec$slope_terms
     if (length(slope_lang) > 0) {
-      # Build slope formula from language objects: ~ term1 + term2 + ...
       slope_rhs <- slope_lang[[1]]
       if (length(slope_lang) > 1) {
-        for (s in 2:length(slope_lang)) {
-          slope_rhs <- call("+", slope_rhs, slope_lang[[s]])
-        }
+        for (s in slope_lang[-1]) slope_rhs <- call("+", slope_rhs, s)
       }
-      slope_formula <- as.formula(call("~", slope_rhs), env = parent.frame())
+      slope_formula <- as.formula(call("~", slope_rhs), env = formula_env)
       slope_mf <- model.frame(slope_formula, data, na.action = na.pass)
       slope_mat <- model.matrix(slope_formula, slope_mf)
-      # Remove intercept column from slope matrix (already counted)
       intercept_col <- which(colnames(slope_mat) == "(Intercept)")
       if (length(intercept_col) > 0) {
         slope_mat <- slope_mat[, -intercept_col, drop = FALSE]
@@ -403,39 +453,68 @@ tulpa_build_model_data <- function(parsed, data) {
     }
 
     re_terms[[i]] <- list(
-      group_var = gvar,
-      group_idx = group_idx,
-      n_groups = n_groups,
-      n_coefs = n_coefs,
+      group_var     = re_spec$group_var,
+      group_vars    = re_spec$group_vars,
+      group_idx     = group_idx,
+      n_groups      = n_groups,
+      n_coefs       = n_coefs,
       has_intercept = re_spec$has_intercept,
-      slope_matrix = slope_matrix,
-      slope_names = slope_names,
-      correlated = re_spec$correlated,
-      levels = levels(group_factor)
+      slope_matrix  = slope_matrix,
+      slope_names   = slope_names,
+      correlated    = re_spec$correlated,
+      levels        = levels(group_factor)
     )
   }
 
   list(
-    y = y,
-    X = X,
-    re_terms = re_terms,
-    n_obs = nrow(X),
-    n_fixed = ncol(X),
-    n_re_terms = length(re_terms),
+    y           = y,
+    X           = X,
+    offset      = off,
+    re_terms    = re_terms,
+    n_obs       = nrow(X),
+    n_fixed     = ncol(X),
+    n_re_terms  = length(re_terms),
     fixed_names = colnames(X)
   )
+}
+
+#' Resolve a parsed RE spec to a grouping factor
+#'
+#' Three paths, mirroring `resolve_group_rhs`:
+#'   - single column name: take `data[[name]]`.
+#'   - multiple column names (nested `a/b`): `interaction(data[names])`.
+#'   - language expression: evaluate against `data` (e.g., `factor(g)`).
+#'
+#' @keywords internal
+resolve_group_factor <- function(re_spec, data, env) {
+  if (!is.null(re_spec$group_expr)) {
+    val <- eval(re_spec$group_expr, envir = data, enclos = env)
+    return(as.factor(val))
+  }
+  gvars <- re_spec$group_vars
+  if (length(gvars) > 1L) {
+    missing <- setdiff(gvars, names(data))
+    if (length(missing)) {
+      stop("Grouping variable(s) ", paste(shQuote(missing), collapse = ", "),
+           " not found in data", call. = FALSE)
+    }
+    return(interaction(data[gvars], drop = TRUE))
+  }
+  if (!gvars %in% names(data)) {
+    stop("Grouping variable '", gvars, "' not found in data", call. = FALSE)
+  }
+  as.factor(data[[gvars]])
 }
 
 #' @export
 print.tulpa_parsed_formula <- function(x, ...) {
   cat("tulpa parsed formula\n")
   cat("  Response:", x$response %||% "(none)", "\n")
-  cat("  Fixed:", deparse(x$fixed_formula), "\n")
+  cat("  Fixed:", paste(deparse(x$fixed_formula), collapse = ""), "\n")
   cat("  Random effects:", x$n_re_terms, "term(s)\n")
-  for (i in seq_along(x$random_effects)) {
-    re <- x$random_effects[[i]]
+  for (re in x$random_effects) {
     bar <- if (re$correlated) "|" else "||"
-    cat("    (", re$terms, bar, re$group_var, ")\n")
+    cat("    (", format_re_lhs(re), bar, re$group_var, ")\n")
   }
   invisible(x)
 }
