@@ -2,15 +2,73 @@
 % Please edit documentation in R/simulate.R
 \name{tulpa_simulate}
 \alias{tulpa_simulate}
-\title{Simulate data from tulpa models}
+\title{Simulate data from a tulpa model}
+\usage{
+tulpa_simulate(
+  formula,
+  family,
+  data,
+  theta = NULL,
+  n_sims = 1L,
+  priors = NULL,
+  seed = NULL,
+  ...
+)
+}
+\arguments{
+\item{formula}{A model formula, or list of formulas keyed by process name.}
+
+\item{family}{A \code{tulpa_family} object (see \code{\link[=tulpa_family]{tulpa_family()}}).}
+
+\item{data}{Data frame with covariates and grouping factors.}
+
+\item{theta}{One of:
+\itemize{
+\item A named list with \code{beta} (numeric or list per process), \code{u} (list of RE
+coefficient vectors, one per RE term per process), \code{extras} (named list
+of family-specific extras like \code{phi}, \code{sigma_y}).
+\item A \code{tulpa_fit} object: posterior draws are sampled from \verb{$draws}.
+\item \code{NULL}: equivalent to a single prior draw (shortcut).
+}}
+
+\item{n_sims}{Number of simulated datasets. When \code{theta} is a fit, draws are
+subsampled (or recycled) to \code{n_sims}. Default 1.}
+
+\item{priors}{Used only if \code{theta = NULL}; default \code{tulpa_priors()}.}
+
+\item{seed}{Optional integer seed.}
+
+\item{...}{Passed to \code{family$simulate_fn}.}
+}
+\value{
+A \code{tulpa_simulate} object: list with \code{y} (length-\code{n_sims} list of
+simulated responses), \code{theta} (parameters used per sim), \code{linpred},
+\code{family}, \code{n_sims}, \code{n_obs}.
+}
 \description{
-Generate simulated datasets from prior or posterior predictive distributions.
-Useful for prior predictive checks, simulation-based calibration, and
-understanding model behavior.
+Generic simulator that dispatches through a \code{tulpa_family}'s \code{simulate_fn}.
+Given a model spec (formula + family + data) and a parameter vector or a
+fitted model, generate one or more synthetic response datasets.
+
+Used internally by \code{\link[=prior_predict]{prior_predict()}} and exposed for posterior predictive
+checks, simulation-based calibration, and what-if analyses with fixed
+parameters.
 }
-\details{
-This is a placeholder for the generic simulation infrastructure.
-Model-specific simulation functions (e.g., for ratio models) are provided
-by the model packages (numdenom, tulpaOcc, etc.).
+\examples{
+fam <- tulpa_family(
+  name = "gaussian",
+  simulate_fn = function(eta, params, n_obs, ...) {
+    rnorm(n_obs, eta[[1]], params$sigma_y)
+  },
+  extra_params = list(sigma_y = prior_half_normal(1))
+)
+df <- data.frame(y = rep(0, 20), x = rnorm(20))
+theta <- list(
+  beta = list(p1 = c(0.5, 1.0)),
+  u = list(p1 = list()),
+  extras = list(sigma_y = 0.5)
+)
+sim <- tulpa_simulate(y ~ x, fam, df, theta = theta, n_sims = 3, seed = 1)
+length(sim$y)  # 3
+
 }
-\keyword{internal}

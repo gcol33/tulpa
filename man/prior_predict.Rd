@@ -4,28 +4,66 @@
 \alias{prior_predict}
 \title{Prior predictive simulation}
 \usage{
-prior_predict(formula, family, data, priors = NULL, n = 100)
+prior_predict(
+  formula,
+  family,
+  data,
+  priors = NULL,
+  n_draws = 100,
+  seed = NULL,
+  ...
+)
 }
 \arguments{
-\item{formula}{A tulpa_formula object or formula components}
+\item{formula}{A model formula (e.g., \code{y ~ x + (1 | g)}). For multi-process
+families, a list of formulas keyed by process name.}
 
-\item{family}{A tulpa_family object}
+\item{family}{A \code{tulpa_family} object exposing a \code{simulate_fn} (see
+\code{\link[=tulpa_family]{tulpa_family()}}). Model packages (numdenom, tulpaOcc) provide families;
+tests can build a minimal one with \code{\link[=tulpa_family]{tulpa_family()}}.}
 
-\item{data}{Data frame (structure used for dimensions)}
+\item{data}{Data frame containing covariates and grouping factors. Used for
+dimensions and design matrices; the response column may be absent or NA.}
 
-\item{priors}{Prior specification}
+\item{priors}{Prior specification (\code{\link[=tulpa_priors]{tulpa_priors()}}). If \code{NULL}, uses defaults.}
 
-\item{n}{Number of prior predictive datasets to simulate}
+\item{n_draws}{Number of prior parameter draws. Default 100.}
+
+\item{seed}{Optional integer seed for reproducibility.}
+
+\item{...}{Passed to \code{family$simulate_fn}.}
 }
 \value{
-A list with simulated datasets
+A \code{tulpa_prior_predict} object: a list with
+\itemize{
+\item \code{y}: list of length \code{n_draws}, each element the simulated response for
+that draw (matching whatever shape \code{family$simulate_fn} returns).
+\item \code{theta}: list of length \code{n_draws} of parameter draws (\code{beta}, \code{sigma},
+RE coefficients \code{u}, family-specific extras).
+\item \code{linpred}: list of length \code{n_draws}, each a list of linear predictor
+vectors per process.
+\item \code{family}: the family used.
+\item \code{n_draws}, \code{n_obs}.
+}
 }
 \description{
-Simulate data from the prior predictive distribution to check
-whether priors are reasonable.
+Draw datasets from the prior predictive distribution: parameters are sampled
+from their priors (no data conditioning) and pushed through the model's
+linear predictor and the family's simulator.
+
+Useful for checking whether priors imply plausible data ranges before fitting.
 }
 \examples{
-# prior_predict is not yet implemented
-# See sim_tulpa() for data simulation
+# Toy Gaussian family for illustration
+fam <- tulpa_family(
+  name = "gaussian",
+  simulate_fn = function(eta, params, n_obs, ...) {
+    rnorm(n_obs, eta[[1]], params$sigma_y)
+  },
+  extra_params = list(sigma_y = prior_half_normal(1))
+)
+df <- data.frame(y = rep(0, 20), x = rnorm(20))
+pp <- prior_predict(y ~ x, fam, df, n_draws = 50, seed = 1)
+length(pp$y)  # 50
 
 }

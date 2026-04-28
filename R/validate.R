@@ -112,24 +112,175 @@ pp_check_single <- function(y, yrep, type, stat, ndraws, title_suffix, ...) {
 #' Prior predictive simulation
 #'
 #' @description
-#' Simulate data from the prior predictive distribution to check
-#' whether priors are reasonable.
+#' Draw datasets from the prior predictive distribution: parameters are sampled
+#' from their priors (no data conditioning) and pushed through the model's
+#' linear predictor and the family's simulator.
 #'
-#' @param formula A tulpa_formula object or formula components
-#' @param family A tulpa_family object
-#' @param data Data frame (structure used for dimensions)
-#' @param priors Prior specification
-#' @param n Number of prior predictive datasets to simulate
+#' Useful for checking whether priors imply plausible data ranges before fitting.
 #'
-#' @return A list with simulated datasets
+#' @param formula A model formula (e.g., `y ~ x + (1 | g)`). For multi-process
+#'   families, a list of formulas keyed by process name.
+#' @param family A `tulpa_family` object exposing a `simulate_fn` (see
+#'   [tulpa_family()]). Model packages (numdenom, tulpaOcc) provide families;
+#'   tests can build a minimal one with [tulpa_family()].
+#' @param data Data frame containing covariates and grouping factors. Used for
+#'   dimensions and design matrices; the response column may be absent or NA.
+#' @param priors Prior specification ([tulpa_priors()]). If `NULL`, uses defaults.
+#' @param n_draws Number of prior parameter draws. Default 100.
+#' @param seed Optional integer seed for reproducibility.
+#' @param ... Passed to `family$simulate_fn`.
+#'
+#' @return A `tulpa_prior_predict` object: a list with
+#'   - `y`: list of length `n_draws`, each element the simulated response for
+#'     that draw (matching whatever shape `family$simulate_fn` returns).
+#'   - `theta`: list of length `n_draws` of parameter draws (`beta`, `sigma`,
+#'     RE coefficients `u`, family-specific extras).
+#'   - `linpred`: list of length `n_draws`, each a list of linear predictor
+#'     vectors per process.
+#'   - `family`: the family used.
+#'   - `n_draws`, `n_obs`.
 #'
 #' @examples
-#' # prior_predict is not yet implemented
-#' # See sim_tulpa() for data simulation
+#' # Toy Gaussian family for illustration
+#' fam <- tulpa_family(
+#'   name = "gaussian",
+#'   simulate_fn = function(eta, params, n_obs, ...) {
+#'     rnorm(n_obs, eta[[1]], params$sigma_y)
+#'   },
+#'   extra_params = list(sigma_y = prior_half_normal(1))
+#' )
+#' df <- data.frame(y = rep(0, 20), x = rnorm(20))
+#' pp <- prior_predict(y ~ x, fam, df, n_draws = 50, seed = 1)
+#' length(pp$y)  # 50
 #'
 #' @export
-prior_predict <- function(formula, family, data, priors = NULL, n = 100) {
-  stop("prior_predict not yet implemented", call. = FALSE)
+prior_predict <- function(formula, family, data,
+                          priors = NULL, n_draws = 100,
+                          seed = NULL, ...) {
+
+  if (!is.null(seed)) {
+    old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) {
+      get(".Random.seed", envir = .GlobalEnv)
+    } else NULL
+    set.seed(seed)
+    on.exit({
+      if (is.null(old_seed)) {
+        rm(".Random.seed", envir = .GlobalEnv)
+      } else {
+        assign(".Random.seed", old_seed, envir = .GlobalEnv)
+      }
+    }, add = TRUE)
+  }
+
+  validate_family(family)
+  if (is.null(priors)) priors <- tulpa_priors()
+  if (!inherits(priors, "tulpa_priors")) {
+    stop("`priors` must be a tulpa_priors object", call. = FALSE)
+  }
+  n_draws <- as.integer(n_draws)
+  if (length(n_draws) != 1L || is.na(n_draws) || n_draws < 1L) {
+    stop("`n_draws` must be a positive integer", call. = FALSE)
+  }
+
+  process_names <- family$process_names
+  n_processes <- length(process_names)
+  formulas <- normalize_formulas(formula, process_names)
+
+  parsed <- lapply(formulas, tulpa_parse_formula)
+  built  <- lapply(parsed, tulpa_build_model_data, data = data)
+  n_obs <- built[[1]]$n_obs
+
+  y_list      <- vector("list", n_draws)
+  theta_list  <- vector("list", n_draws)
+  linpred_list <- vector("list", n_draws)
+
+  for (d in seq_len(n_draws)) {
+    theta <- draw_theta_from_priors(built, priors, family)
+    eta <- build_eta(built, theta, family$link_inv, apply_link = FALSE)
+    sim_args <- c(list(eta = eta, params = theta$extras, n_obs = n_obs), list(...))
+    y_list[[d]] <- do.call(family$simulate_fn, sim_args)
+    theta_list[[d]] <- theta
+    linpred_list[[d]] <- eta
+  }
+
+  structure(
+    list(
+      y = y_list,
+      theta = theta_list,
+      linpred = linpred_list,
+      family = family,
+      n_draws = n_draws,
+      n_obs = n_obs,
+      process_names = process_names
+    ),
+    class = "tulpa_prior_predict"
+  )
+}
+
+
+#' Print method for tulpa_prior_predict
+#'
+#' @param x A tulpa_prior_predict object
+#' @param ... Ignored
+#' @export
+print.tulpa_prior_predict <- function(x, ...) {
+  cat("tulpa prior predictive draws\n")
+  cat("============================\n")
+  cat("Family:    ", x$family$name, "\n")
+  cat("Processes: ", paste(x$process_names, collapse = ", "), "\n")
+  cat("Draws:     ", x$n_draws, "\n")
+  cat("Obs:       ", x$n_obs, "\n")
+  invisible(x)
+}
+
+
+#' Plot method for tulpa_prior_predict
+#'
+#' @description
+#' Density overlay of prior predictive draws. Requires bayesplot; falls back to
+#' base graphics matplot of a subset of draws otherwise.
+#'
+#' @param x A tulpa_prior_predict object
+#' @param process Process index or name (multi-process families)
+#' @param max_draws Maximum draws to overlay. Default 50.
+#' @param ... Passed through.
+#' @export
+plot.tulpa_prior_predict <- function(x, process = 1L, max_draws = 50L, ...) {
+
+  if (is.character(process)) {
+    pname <- process
+    process <- match(process, x$process_names)
+    if (is.na(process)) stop("Unknown process: ", pname, call. = FALSE)
+  }
+
+  draws <- if (length(x$process_names) > 1L) {
+    lapply(x$y, function(yi) yi[[process]])
+  } else {
+    x$y
+  }
+
+  # Coerce to draws x N matrix when possible
+  lengths <- vapply(draws, length, integer(1))
+  if (length(unique(lengths)) != 1L) {
+    stop("Cannot plot: simulated draws have inconsistent lengths", call. = FALSE)
+  }
+  m <- do.call(rbind, lapply(draws, function(d) {
+    if (is.numeric(d)) as.numeric(d) else as.numeric(unclass(d))
+  }))
+
+  n_keep <- min(max_draws, nrow(m))
+  idx <- seq_len(n_keep)
+  if (nrow(m) > n_keep) idx <- sample.int(nrow(m), n_keep)
+
+  if (requireNamespace("bayesplot", quietly = TRUE)) {
+    bayesplot::ppd_dens_overlay(m[idx, , drop = FALSE], ...)
+  } else {
+    graphics::matplot(t(m[idx, , drop = FALSE]), type = "l",
+                      col = grDevices::adjustcolor("steelblue", alpha.f = 0.3),
+                      lty = 1, xlab = "Observation", ylab = "y_rep",
+                      main = sprintf("Prior predictive draws (%s)",
+                                     x$process_names[process]))
+  }
 }
 
 #' LOO cross-validation
