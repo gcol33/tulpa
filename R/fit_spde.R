@@ -104,27 +104,13 @@ fit_spde <- function(y, X, spatial,
     )
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---
-    if (is.null(range)) range <- sp$prior_range[1]
-    if (is.null(sigma)) sigma <- sp$prior_sigma[1]
-
-    kappa <- sqrt(8 * sp$nu) / range
-    tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
-
-    # Compute rational approximation coefficients for fractional nu
-    alpha <- as.integer(round(sp$nu)) + 1L
-    rat <- rational_spde_coefficients(sp$nu)
-
-    result <- cpp_laplace_fit_spde(
-      y = y, n_trials = n_trials, X = X,
-      A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,
-      n_obs = n_obs, n_mesh = sp$n_mesh,
-      C0_diag = sp$C0_diag,
-      G1_x = sp$G1_x, G1_i = sp$G1_i, G1_p = sp$G1_p,
-      kappa = kappa, tau_spde = tau_spde,
-      family = family, phi = phi, alpha = alpha,
-      max_iter = max_iter, tol = tol, n_threads = n_threads,
-      rational_poles = if (!rat$is_integer) rat$poles else NULL,
-      rational_weights = if (!rat$is_integer) rat$weights else NULL
+    # Delegate to the shared helper used by dispatch_laplace_spatial so the
+    # SPDE Laplace call site stays singular.
+    result <- laplace_spde_at(
+      y = y, n_trials = n_trials, X = X, spatial = sp,
+      family = family, phi = phi,
+      range = range, sigma = sigma,
+      max_iter = max_iter, tol = tol, n_threads = n_threads
     )
 
     p <- ncol(X)
@@ -137,8 +123,8 @@ fit_spde <- function(y, X, spatial,
       n_iter = result$n_iter,
       converged = result$converged,
       spatial = spatial,
-      range = range,
-      sigma = sigma,
+      range = result$range,
+      sigma = result$sigma,
       nested = NULL
     )
   }

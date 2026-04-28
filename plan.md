@@ -102,11 +102,21 @@ without breaking ratio models. The rest can start now.
 9. Laplace + SPDE backend.
 10. BYM2 H-mode analytical gradient (`src/hmc_sampler.cpp:5570`). Derive
     math first, then implement.
-11. **`spatial_spde()` user-facing R API** (from `TODO_next.md`). Hard
-    dependency on tulpaMesh. `spatial_spde(coords, boundary, max_edge,
-    cutoff)` builds mesh + FEM matrices, stores them in a `tulpa_spatial`
-    object. `spatial_spde_custom(C, G, A)` for fmesher/rSPDE users. Wire
-    both into `cpp_laplace_fit_spde` / `cpp_nested_laplace_spde`.
+11. **`spatial_spde()` user-facing R API** ✅ DONE (audit + dispatch wire-up
+    on this branch). The constructor (`spatial_spde()` / `spatial_spde_custom()`)
+    and the standalone `fit_spde()` were already in place; what was missing
+    was the routing through the unified `tulpa_laplace()` API.
+    - `dispatch_laplace_spatial` now accepts `spatial$type == "spde"` and
+      delegates to a new shared helper `laplace_spde_at()` that both
+      `fit_spde`'s single-point branch and the dispatcher call (single
+      source of truth, per the engineering principles).
+    - `tulpa_laplace()` skips the fixed-effect Hessian post-step for SPDE
+      because eta = X*beta + A*w (mesh-projected), not X*beta + Z*u —
+      proper SPDE Hessian / uncertainty propagation is a separate item.
+    - SPDE + iid RE block in the same fit raises a clear error (use HMC).
+    - Dispatch contract pinned by 4 new test cases in `tests/testthat/test-spde.R`
+      using a tiny synthetic mesh via `spatial_spde_custom` (no fmesher dep
+      for the dispatch tests).
 12. **Wire SPDE into tulpaOcc** (from `TODO_next.md`).
 
 ## Round 4 — Nested Laplace (the strategic piece)

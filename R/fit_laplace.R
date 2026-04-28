@@ -123,8 +123,15 @@ tulpa_laplace <- function(y, n_trials, X,
     )
   }
 
+  # SPDE Laplace returns mode = c(beta, spatial_effects) where the spatial
+  # contribution to eta is A * spatial_effects (mesh-projected), not Z * u.
+  # The fixed-effect Hessian below assumes eta = X*beta + Z*u and would
+  # under-weight observations by ignoring the spatial term, so we skip it
+  # for SPDE. Hessian / uncertainty propagation for SPDE is a separate item.
+  is_spde <- !is.null(spatial) && identical(spatial$type, "spde")
+
   # Compute Hessian for fixed-effect block if requested
-  if (return_hessian && !is.null(result$mode)) {
+  if (return_hessian && !is.null(result$mode) && !is_spde) {
     mode_vec <- result$mode
     beta <- mode_vec[seq_len(n_fixed)]
     re_vals <- mode_vec[-seq_len(n_fixed)]
@@ -263,10 +270,80 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       max_iter = as.integer(max_iter), tol = tol,
       n_threads = as.integer(n_threads)
     )
+  } else if (spatial_type == "spde") {
+    # SPDE Laplace at fixed hyperparameters (uses spec's prior modes).
+    # Nested integration over (range, sigma) is opt-in via fit_spde().
+    if (!is.null(re_idx) && length(re_idx) > 0 && n_re_groups > 1L) {
+      stop("SPDE Laplace does not yet support an additional iid RE block. ",
+           "Drop the RE list or use HMC.", call. = FALSE)
+    }
+    laplace_spde_at(
+      y = y, n_trials = n_trials, X = X, spatial = spatial,
+      family = family, phi = phi,
+      range = NULL, sigma = NULL,
+      max_iter = max_iter, tol = tol, n_threads = n_threads
+    )
   } else {
     stop(sprintf("Spatial type '%s' not yet supported in Laplace", spatial_type),
          call. = FALSE)
   }
+}
+
+
+#' SPDE Laplace at given hyperparameters
+#'
+#' Single-point Laplace approximation for an SPDE spatial field at a fixed
+#' (range, sigma). Used by both `dispatch_laplace_spatial` (single-point
+#' path) and `fit_spde` (single-point branch) so the call site stays a
+#' single source of truth.
+#'
+#' @param y Response vector.
+#' @param n_trials Trial sizes (binomial).
+#' @param X Fixed-effects design matrix.
+#' @param spatial A `tulpa_spatial` object of type `"spde"`.
+#' @param family Distribution family.
+#' @param phi Dispersion parameter (negbin / gamma only).
+#' @param range Spatial range (NULL → use `spatial$prior_range[1]`).
+#' @param sigma Marginal SD (NULL → use `spatial$prior_sigma[1]`).
+#' @param max_iter Newton iterations.
+#' @param tol Newton tolerance.
+#' @param n_threads OpenMP threads.
+#' @return The raw `cpp_laplace_fit_spde` result list (mode, log_det_Q,
+#'   log_marginal, n_iter, converged), augmented with `range`, `sigma`,
+#'   and the spatial spec for downstream prediction.
+#' @keywords internal
+laplace_spde_at <- function(y, n_trials, X, spatial,
+                             family = "binomial", phi = 1.0,
+                             range = NULL, sigma = NULL,
+                             max_iter = 100L, tol = 1e-6, n_threads = 1L) {
+  if (is.null(range)) range <- spatial$prior_range[1]
+  if (is.null(sigma)) sigma <- spatial$prior_sigma[1]
+
+  kappa <- sqrt(8 * spatial$nu) / range
+  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
+  alpha <- as.integer(round(spatial$nu)) + 1L
+  rat <- rational_spde_coefficients(spatial$nu)
+
+  result <- cpp_laplace_fit_spde(
+    y = as.numeric(y),
+    n_trials = as.integer(n_trials %||% rep(1L, length(y))),
+    X = as.matrix(X),
+    A_x = spatial$A_x, A_i = spatial$A_i, A_p = spatial$A_p,
+    n_obs = length(y), n_mesh = spatial$n_mesh,
+    C0_diag = spatial$C0_diag,
+    G1_x = spatial$G1_x, G1_i = spatial$G1_i, G1_p = spatial$G1_p,
+    kappa = kappa, tau_spde = tau_spde,
+    family = family, phi = phi, alpha = alpha,
+    max_iter = as.integer(max_iter), tol = tol,
+    n_threads = as.integer(n_threads),
+    rational_poles = if (!rat$is_integer) rat$poles else NULL,
+    rational_weights = if (!rat$is_integer) rat$weights else NULL
+  )
+
+  result$range <- range
+  result$sigma <- sigma
+  result$spatial <- spatial
+  result
 }
 
 

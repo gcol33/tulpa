@@ -278,3 +278,126 @@ test_that("nested Laplace SPDE warm-start reduces iterations", {
   # Later grid points should converge faster due to warm-start
   expect_true(any(result$n_iter[2:5] <= result$n_iter[1]))
 })
+
+# ============================================================================
+# Dispatch tests: tulpa_laplace(spatial = spatial_spde(...)) wires through
+# ============================================================================
+
+# Build a minimal SPDE spec without needing fmesher: a tiny synthetic mesh
+# (4 nodes on a unit square) is enough to exercise the dispatch path.
+make_synthetic_spde_spec <- function(n_obs = 30, seed = 7) {
+  set.seed(seed)
+  # 4 mesh nodes at the unit square corners
+  n_mesh <- 4L
+  C <- Matrix::Diagonal(n_mesh, x = 0.25)
+  # Stiffness for two right triangles spanning the unit square
+  G <- Matrix::Matrix(0, n_mesh, n_mesh, sparse = TRUE)
+  G[1, 1] <- 2; G[2, 2] <- 1; G[3, 3] <- 1; G[4, 4] <- 2
+  G[1, 2] <- G[2, 1] <- -1
+  G[1, 3] <- G[3, 1] <- -1
+  G[2, 4] <- G[4, 2] <- -0.5
+  G[3, 4] <- G[4, 3] <- -0.5
+  G <- as(G, "CsparseMatrix")
+  # Bilinear interpolation A: each obs to a single mesh node (nearest corner).
+  obs_xy <- matrix(runif(2 * n_obs), n_obs, 2)
+  corners <- rbind(c(0, 0), c(1, 0), c(0, 1), c(1, 1))
+  nearest <- apply(obs_xy, 1, function(p) which.min(rowSums((corners - p)^2)))
+  A <- Matrix::sparseMatrix(
+    i = seq_len(n_obs), j = nearest, x = 1.0,
+    dims = c(n_obs, n_mesh)
+  )
+  list(
+    spec = spatial_spde_custom(C = C, G = G, A = A,
+                               nu = 1, prior_range = c(0.3, 0.5),
+                               prior_sigma = c(1, 0.5)),
+    n_obs = n_obs
+  )
+}
+
+test_that("dispatch_laplace_spatial routes SPDE specs (no longer errors)", {
+  ss <- make_synthetic_spde_spec()
+  X <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
+  y <- rbinom(ss$n_obs, 1, 0.5)
+
+  # Dispatcher previously threw "Spatial type 'spde' not yet supported in
+  # Laplace". The new branch should reach the C++ kernel and either return
+  # a result or surface a kernel error — but never the legacy dispatch gap.
+  msg <- tryCatch(
+    {
+      dispatch_laplace_spatial(
+        y = y, n_trials = rep(1L, ss$n_obs), X = X,
+        re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+        spatial = ss$spec, family = "binomial", phi = 1.0,
+        max_iter = 5L, tol = 1e-3, n_threads = 1L
+      )
+      NA_character_
+    },
+    error = function(e) conditionMessage(e)
+  )
+  if (!is.na(msg)) {
+    expect_false(grepl("not yet supported", msg, fixed = TRUE))
+  }
+})
+
+test_that("SPDE Laplace rejects an additional iid RE block with a clear error", {
+  ss <- make_synthetic_spde_spec()
+  X <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
+  y <- rbinom(ss$n_obs, 1, 0.5)
+
+  expect_error(
+    dispatch_laplace_spatial(
+      y = y, n_trials = rep(1L, ss$n_obs), X = X,
+      re_idx = sample.int(3, ss$n_obs, replace = TRUE),
+      n_re_groups = 3L, sigma_re = 1.0,
+      spatial = ss$spec, family = "binomial", phi = 1.0,
+      max_iter = 5L, tol = 1e-3, n_threads = 1L
+    ),
+    "does not yet support an additional iid RE block"
+  )
+})
+
+test_that("tulpa_laplace(spatial = spatial_spde_custom(...)) runs end-to-end", {
+  ss <- make_synthetic_spde_spec(n_obs = 50)
+  X <- cbind(1, rnorm(ss$n_obs))
+  y <- rbinom(ss$n_obs, 1, 0.5)
+
+  fit <- tulpa_laplace(
+    y = y, n_trials = rep(1L, ss$n_obs), X = X,
+    re_list = list(),
+    family = "binomial",
+    spatial = ss$spec,
+    max_iter = 50L, tol = 1e-6, n_threads = 1L,
+    return_hessian = TRUE
+  )
+
+  # mode = c(beta, spatial_effects)
+  expect_length(fit$mode, ncol(X) + ss$spec$n_mesh)
+  expect_true(is.finite(fit$log_marginal))
+  # Hessian was skipped for SPDE because eta = X*beta + A*w, not X*beta + Z*u.
+  expect_null(fit$H_beta)
+})
+
+test_that("fit_spde and dispatch_laplace_spatial agree on the same problem", {
+  ss <- make_synthetic_spde_spec(n_obs = 40)
+  X <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
+  y <- rbinom(ss$n_obs, 1, 0.5)
+
+  via_dispatch <- dispatch_laplace_spatial(
+    y = y, n_trials = rep(1L, ss$n_obs), X = X,
+    re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+    spatial = ss$spec, family = "binomial", phi = 1.0,
+    max_iter = 50L, tol = 1e-6, n_threads = 1L
+  )
+  via_fit_spde <- fit_spde(
+    y = y, X = X, spatial = ss$spec,
+    family = "binomial", n_trials = rep(1L, ss$n_obs),
+    range = ss$spec$prior_range[1], sigma = ss$spec$prior_sigma[1],
+    nested_laplace = FALSE,
+    max_iter = 50L, tol = 1e-6, n_threads = 1L
+  )
+
+  # Same kernel, same hyperparameters → identical mode and log_marginal.
+  expect_equal(via_dispatch$mode, via_fit_spde$mode, tolerance = 1e-10)
+  expect_equal(via_dispatch$log_marginal, via_fit_spde$log_marginal,
+               tolerance = 1e-10)
+})
