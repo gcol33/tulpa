@@ -27,7 +27,7 @@ namespace tulpa {
 //   - Adding new exported headers
 //   - Adding new enum values (append-only)
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 1;
+constexpr int TULPA_ABI_VERSION = 2;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -160,11 +160,16 @@ struct ModelData {
     std::vector<int> spatial_group;     // Maps obs to spatial unit (1-based)
     int n_spatial_units = 0;
 
-    // ICAR / BYM2 adjacency (CSR format)
+    // ICAR / BYM2 / CAR_PROPER adjacency (CSR format)
     std::vector<int> adj_row_ptr;
     std::vector<int> adj_col_idx;
     std::vector<int> n_neighbors;
     double bym2_scale_factor = 1.0;
+
+    // Proper CAR rho bounds (eigenvalue-derived, default to (0, 1))
+    // Only used when spatial_type == CAR_PROPER.
+    double car_rho_lower = 0.0;
+    double car_rho_upper = 1.0;
 
     // Precision mass matrix data (precomputed from Q)
     std::vector<double> spatial_Q_inv;  // (Q + lambda*I)^{-1}, column-major [S x S]

@@ -90,12 +90,20 @@ inline void populate_model_data_simple(
 
     // Spatial structure
     std::string spatial_type_str = Rcpp::as<std::string>(spatial_params["type"]);
-    if (spatial_type_str == "icar" || spatial_type_str == "bym2") {
+    if (spatial_type_str == "icar" || spatial_type_str == "bym2" ||
+        spatial_type_str == "car_proper") {
         if (spatial_type_str == "icar") {
             data.spatial_type = tulpa::SpatialType::ICAR;
-        } else {
+        } else if (spatial_type_str == "bym2") {
             data.spatial_type = tulpa::SpatialType::BYM2;
             data.bym2_scale_factor = Rcpp::as<double>(spatial_params["bym2_scale"]);
+        } else {
+            data.spatial_type = tulpa::SpatialType::CAR_PROPER;
+            if (spatial_params.containsElementNamed("rho_lower") &&
+                spatial_params.containsElementNamed("rho_upper")) {
+                data.car_rho_lower = Rcpp::as<double>(spatial_params["rho_lower"]);
+                data.car_rho_upper = Rcpp::as<double>(spatial_params["rho_upper"]);
+            }
         }
         data.spatial_group = Rcpp::as<std::vector<int>>(spatial_params["group"]);
         data.n_spatial_units = Rcpp::as<int>(spatial_params["n_units"]);

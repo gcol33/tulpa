@@ -11,6 +11,7 @@
 #include "hmc_gp_autodiff.h"
 #include "hmc_gp_collapsed.h"
 #include "hmc_icar_collapsed.h"
+#include "hmc_car_proper.h"
 #include "hmc_temporal_autodiff.h"
 #include "hmc_tvc_grad.h"
 #include "hmc_multiscale_temporal_grad.h"
@@ -285,10 +286,12 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.legacy.log_phi_denom_idx = -1;
   }
 
-  // Spatial effects (ICAR/BYM2 only - GP handled separately below)
+  // Spatial effects (ICAR/BYM2/CAR_PROPER only - GP handled separately below)
   layout.has_spatial = (data.spatial_type == SpatialType::ICAR ||
-                        data.spatial_type == SpatialType::BYM2);
+                        data.spatial_type == SpatialType::BYM2 ||
+                        data.spatial_type == SpatialType::CAR_PROPER);
   layout.is_bym2 = (data.spatial_type == SpatialType::BYM2);
+  layout.is_car_proper = (data.spatial_type == SpatialType::CAR_PROPER);
   layout.is_icar_collapsed = (data.spatial_type == SpatialType::ICAR && data.icar_collapsed);
   layout.is_bym2_collapsed = (data.spatial_type == SpatialType::BYM2 && data.bym2_collapsed);
 
@@ -310,6 +313,18 @@ ParamLayout compute_param_layout(const ModelData& data) {
         layout.theta_bym2_end = idx;
       }
       layout.log_tau_spatial_idx = -1;
+      layout.logit_rho_car_idx = -1;
+    } else if (layout.is_car_proper) {
+      // Proper CAR: log_tau, logit_rho_car, phi
+      // Q = D - rho*W (proper precision matrix; rho estimated from data)
+      layout.log_tau_spatial_idx = idx++;
+      layout.logit_rho_car_idx = idx++;
+      layout.spatial_start = idx;
+      idx += data.n_spatial_units;
+      layout.spatial_end = idx;
+      layout.log_sigma_bym2_idx = -1;
+      layout.logit_rho_bym2_idx = -1;
+      layout.theta_bym2_start = layout.theta_bym2_end = -1;
     } else {
       // ICAR: log_tau, [phi if not collapsed]
       layout.log_tau_spatial_idx = idx++;
@@ -324,6 +339,7 @@ ParamLayout compute_param_layout(const ModelData& data) {
       layout.log_sigma_bym2_idx = -1;
       layout.logit_rho_bym2_idx = -1;
       layout.theta_bym2_start = layout.theta_bym2_end = -1;
+      layout.logit_rho_car_idx = -1;
     }
   } else {
     layout.log_tau_spatial_idx = -1;
@@ -331,6 +347,7 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.log_sigma_bym2_idx = -1;
     layout.logit_rho_bym2_idx = -1;
     layout.theta_bym2_start = layout.theta_bym2_end = -1;
+    layout.logit_rho_car_idx = -1;
   }
 
   // Temporal effects
@@ -829,6 +846,7 @@ double compute_log_post(
   double tau_spatial = 1.0, log_tau_spatial = 0.0;
   double sigma_s_bym2 = 1.0, sigma_u_bym2 = 1.0;
   double rho_bym2 = 0.5;  // Riebler mixing parameter
+  double rho_car = 0.5;   // Proper-CAR spatial autocorrelation parameter
   const double* phi_spatial = nullptr;
   const double* theta_bym2 = nullptr;
 
@@ -845,6 +863,15 @@ double compute_log_post(
         theta_bym2 = &params[layout.theta_bym2_start];
       }
       // For collapsed BYM2: phi_spatial remains nullptr, obs loop won't add spatial
+    } else if (layout.is_car_proper) {
+      log_tau_spatial = params[layout.log_tau_spatial_idx];
+      tau_spatial = std::exp(log_tau_spatial);
+      // logit-transform rho so HMC sees an unconstrained parameter:
+      // rho = lower + (upper - lower) / (1 + exp(-logit_rho))
+      double logit_rho = params[layout.logit_rho_car_idx];
+      double u = 1.0 / (1.0 + std::exp(-logit_rho));
+      rho_car = data.car_rho_lower + (data.car_rho_upper - data.car_rho_lower) * u;
+      phi_spatial = &params[layout.spatial_start];
     } else {
       log_tau_spatial = params[layout.log_tau_spatial_idx];
       tau_spatial = std::exp(log_tau_spatial);
@@ -1053,6 +1080,50 @@ double compute_log_post(
         }
       }
       // Collapsed: phi/theta priors already included in collapsed_lp above
+    } else if (layout.is_car_proper) {
+      // Proper CAR: Q(rho) = D - rho*W is full-rank for rho ∈ (rho_lower, rho_upper).
+      // Prior: phi | tau, rho ~ N(0, (tau*Q)^{-1})
+      //   log p = 0.5*log|tau*Q| - 0.5*tau*phi'Q*phi
+      //         = 0.5*J*log(tau) + 0.5*log|Q(rho)| - 0.5*tau*phi'Q(rho)*phi
+      // tau ~ Gamma(shape, rate) (with log-Jacobian).
+      // rho via logit transform with uniform prior on (rho_lower, rho_upper):
+      //   p(logit_rho) ∝ u*(1-u) where u = (rho-lower)/(upper-lower).
+
+      // tau prior (Gamma + log-Jacobian)
+      log_post += (data.tau_spatial_shape - 1.0) * log_tau_spatial
+                - data.tau_spatial_rate * tau_spatial + log_tau_spatial;
+
+      // Logit-rho Jacobian: log(u) + log(1-u), where u ∈ (0,1)
+      double u_logit = (rho_car - data.car_rho_lower) /
+                       (data.car_rho_upper - data.car_rho_lower);
+      // Guard against numerical edges
+      double u_clip = std::min(std::max(u_logit, 1e-12), 1.0 - 1e-12);
+      log_post += std::log(u_clip) + std::log(1.0 - u_clip);
+
+      // phi quadratic form: phi' Q(rho) phi
+      double quad = 0.0;
+      for (int i = 0; i < J; i++) {
+        quad += data.n_neighbors[i] * phi_spatial[i] * phi_spatial[i];
+        int row_start = data.adj_row_ptr[i];
+        int row_end = data.adj_row_ptr[i + 1];
+        for (int k = row_start; k < row_end; k++) {
+          int j = data.adj_col_idx[k];
+          if (j > i) {
+            quad -= 2.0 * rho_car * phi_spatial[i] * phi_spatial[j];
+          }
+        }
+      }
+
+      // Log-determinant of Q(rho) — recompute each call (rho changes Q).
+      // Dense O(J^3) Cholesky is fine for small J; switch to sparse for large J.
+      std::vector<double> Q = tulpa_car_proper::compute_car_precision(
+          J, data.adj_row_ptr, data.adj_col_idx, data.n_neighbors, rho_car);
+      double log_det_Q = tulpa_car_proper::car_log_det(J, Q);
+      if (std::isinf(log_det_Q)) {
+        return -std::numeric_limits<double>::infinity();
+      }
+
+      log_post += 0.5 * log_det_Q + 0.5 * J * log_tau_spatial - 0.5 * tau_spatial * quad;
     } else {
       // ICAR
       // tau ~ Gamma(shape, rate) (always needed, even collapsed)
@@ -2280,9 +2351,13 @@ bool can_use_analytical_gradient(const ModelData& data, const ParamLayout& layou
                           data.legacy.model_type == ModelType::BETA_BINOMIAL ||
                           data.legacy.model_type == ModelType::LOGNORMAL);
 
-  // Check if spatial type is one we have hand-coded gradients for
+  // Check if spatial type is one we have hand-coded gradients for.
+  // CAR_PROPER uses the same handcoded path as ICAR (with rho-aware Q),
+  // so it qualifies. The CAR_PROPER-specific log|Q(ρ)|/tr(Q^{-1}W) work
+  // happens in the CAR_PROPER branch of the spatial-prior gradient block.
   bool spatial_is_icar_bym2 = (data.spatial_type == SpatialType::ICAR ||
-                               data.spatial_type == SpatialType::BYM2);
+                               data.spatial_type == SpatialType::BYM2 ||
+                               data.spatial_type == SpatialType::CAR_PROPER);
 
   // Temporal is OK alone or combined with ICAR/BYM2 spatial (no spatiotemporal interaction)
   // Note: Temporal GP is excluded - use autodiff for that
@@ -2632,10 +2707,11 @@ void compute_gradient_analytical(
     }
   }
 
-  // ============ Spatial prior gradients (ICAR and BYM2) ============
+  // ============ Spatial prior gradients (ICAR / BYM2 / CAR_PROPER) ============
   double log_tau_spatial = 0.0, tau_spatial = 1.0;
   double sigma_s_bym2 = 1.0, sigma_u_bym2 = 1.0;
   double rho_bym2 = 0.5;  // Riebler mixing parameter
+  double rho_car = 0.5;   // Proper-CAR spatial autocorrelation
   int n_spatial = 0;
   const double* phi_spatial = nullptr;
   const double* theta_bym2 = nullptr;
@@ -2668,6 +2744,21 @@ void compute_gradient_analytical(
       for (int s = 0; s < n_spatial; s++) {
         grad[layout.theta_bym2_start + s] = -theta_bym2[s];
       }
+    } else if (data.spatial_type == SpatialType::CAR_PROPER) {
+      // Proper CAR: extract tau and rho
+      log_tau_spatial = params[layout.log_tau_spatial_idx];
+      tau_spatial = std::exp(log_tau_spatial);
+      double logit_rho = params[layout.logit_rho_car_idx];
+      double u_inv = 1.0 / (1.0 + std::exp(-logit_rho));
+      rho_car = data.car_rho_lower + (data.car_rho_upper - data.car_rho_lower) * u_inv;
+
+      // Gamma prior on tau via log transform (same as ICAR)
+      grad[layout.log_tau_spatial_idx] = (data.tau_spatial_shape - 1.0)
+                                         - data.tau_spatial_rate * tau_spatial + 1.0;
+
+      // Logit-rho Jacobian gradient: d/d(logit_rho) [log(u) + log(1-u)] = 1 - 2u
+      // (uniform Beta(1,1) prior on u in (0,1)).
+      grad[layout.logit_rho_car_idx] = 1.0 - 2.0 * u_inv;
     } else {
       // ICAR: extract tau
       log_tau_spatial = params[layout.log_tau_spatial_idx];
@@ -3894,40 +3985,49 @@ void compute_gradient_analytical(
                              phi_temporal, T_len, grad_temporal_lik.data(), grad.data());
   }
 
-  // ============ Spatial GMRF prior gradients (ICAR and BYM2) ============
+  // ============ Spatial GMRF prior gradients (ICAR / BYM2 / CAR_PROPER) ============
   if (layout.has_spatial && n_spatial > 0) {
     // Add likelihood contribution to phi_spatial gradients
     for (int s = 0; s < n_spatial; s++) {
       grad[layout.spatial_start + s] = grad_spatial_lik[s];
     }
 
-    // ICAR prior: -0.5 * tau * phi' * Q * phi where Q_ij = n_neighbors[i] if i=j, -1 if i~j
-    // d/d(phi[i]) = -tau * (n_neighbors[i]*phi[i] - sum_{j~i} phi[j])
-    double icar_quad = 0.0;
+    // Generic prior:  -0.5 * tau * phi' Q(rho) phi  (rho=1 for ICAR/BYM2)
+    // d/d(phi[i]) = -tau * (Q*phi)[i] = -tau * (D[i]*phi[i] - rho*sum_{j~i} phi[j])
+    double icar_quad = 0.0;       // ICAR-style quadratic form (rho=1)
+    double car_quad = 0.0;        // CAR_PROPER quadratic form: phi' Q(rho) phi
+    double car_phi_W_phi = 0.0;   // φ' W φ = sum_{i~j} phi[i]*phi[j] (over directed edges)
+    double current_rho = (data.spatial_type == SpatialType::CAR_PROPER) ? rho_car : 1.0;
     // BYM2 soft sum-to-zero: -0.01 * sum(phi)
     double bym2_phi_sum = 0.0;
     if (data.spatial_type == SpatialType::BYM2) {
       for (int i = 0; i < n_spatial; i++) bym2_phi_sum += phi_spatial[i];
     }
     for (int i = 0; i < n_spatial; i++) {
-      double Qphi_i = data.n_neighbors[i] * phi_spatial[i];
+      double Di_phi = data.n_neighbors[i] * phi_spatial[i];
+      double Wphi_i = 0.0;        // sum_{j~i} phi[j]
       int row_start = data.adj_row_ptr[i];
       int row_end = data.adj_row_ptr[i + 1];
       for (int k = row_start; k < row_end; k++) {
         int j = data.adj_col_idx[k];
-        Qphi_i -= phi_spatial[j];
+        Wphi_i += phi_spatial[j];
         if (j > i) {
           double diff = phi_spatial[i] - phi_spatial[j];
           icar_quad += diff * diff;
         }
       }
+      double Qphi_i = Di_phi - current_rho * Wphi_i;
+      // CAR_PROPER quadratic form: phi' Q phi = sum_i phi_i * (Q*phi)_i
+      car_quad += phi_spatial[i] * Qphi_i;
+      // φ' W φ contribution: phi[i] * sum_{j~i} phi[j]
+      car_phi_W_phi += phi_spatial[i] * Wphi_i;
 
       if (data.spatial_type == SpatialType::BYM2) {
-        // For BYM2, ICAR prior has no tau scaling (it's absorbed into sigma/rho)
-        // + soft sum-to-zero gradient
-        grad[layout.spatial_start + i] += -Qphi_i - 0.01 * bym2_phi_sum;
+        // For BYM2, ICAR prior has no tau scaling (absorbed into sigma/rho).
+        // BYM2 always has rho=1 in the structured part. Use Di_phi - Wphi_i.
+        grad[layout.spatial_start + i] += -(Di_phi - Wphi_i) - 0.01 * bym2_phi_sum;
       } else {
-        // For plain ICAR
+        // ICAR (rho=1) or CAR_PROPER: same form, just different rho.
         grad[layout.spatial_start + i] += -tau_spatial * Qphi_i;
       }
     }
@@ -3952,6 +4052,30 @@ void compute_gradient_analytical(
       grad[layout.logit_rho_bym2_idx] += 0.5 * ((1.0 - rho_bym2) * grad_sigma_s_lik
                                                   - rho_bym2 * grad_sigma_u_lik);
 
+    } else if (data.spatial_type == SpatialType::CAR_PROPER) {
+      // Proper CAR tau gradient:
+      //   log_post += 0.5 * J * log(tau) + 0.5 * log|Q(rho)| - 0.5 * tau * phi'Q*phi
+      //   d/d(log_tau) = 0.5 * J - 0.5 * tau * phi'Q*phi
+      grad[layout.log_tau_spatial_idx] += 0.5 * n_spatial - 0.5 * tau_spatial * car_quad;
+
+      // Proper CAR rho gradient:
+      //   d/dρ [0.5 log|Q(ρ)| - 0.5 τ φ'Q(ρ)φ]
+      //     = -0.5 * tr(Q^{-1} W)  +  0.5 * τ * φ'Wφ
+      // Chain rule from rho = lower + (upper-lower)*u, u = 1/(1+exp(-logit_rho)):
+      //   dρ/d(logit_rho) = (upper-lower) * u * (1-u)
+      double log_det_unused;
+      double trace_QinvW;
+      bool ok = tulpa_car_proper::car_proper_log_det_and_grad_rho(
+          n_spatial, data.adj_row_ptr, data.adj_col_idx, data.n_neighbors,
+          rho_car, &log_det_unused, &trace_QinvW);
+      if (ok) {
+        double d_logp_d_rho = -0.5 * trace_QinvW + 0.5 * tau_spatial * car_phi_W_phi;
+        double rho_span = data.car_rho_upper - data.car_rho_lower;
+        // Recover u from rho_car
+        double u = (rho_car - data.car_rho_lower) / rho_span;
+        double drho_dlogit = rho_span * u * (1.0 - u);
+        grad[layout.logit_rho_car_idx] += d_logp_d_rho * drho_dlogit;
+      }
     } else {
       // Plain ICAR: tau gradient
       // log_post = 0.5*(n-1)*log(tau) - 0.5*tau*quad + const
@@ -14074,6 +14198,8 @@ Rcpp::List cpp_hmc_fit(
     data.spatial_type = SpatialType::ICAR;
   } else if (spatial_type_str == "bym2") {
     data.spatial_type = SpatialType::BYM2;
+  } else if (spatial_type_str == "car_proper") {
+    data.spatial_type = SpatialType::CAR_PROPER;
   } else {
     data.spatial_type = SpatialType::NONE;
   }
@@ -14086,6 +14212,17 @@ Rcpp::List cpp_hmc_fit(
   data.bym2_scale_factor = bym2_scale_factor;
   data.spatial_Q_inv = std::move(spatial_Q_inv);
   data.spatial_L_Q = std::move(spatial_L_Q);
+
+  // Proper-CAR rho bounds (eigenvalue-derived in R; defaults to (0, 1))
+  if (data.spatial_type == SpatialType::CAR_PROPER &&
+      spatial_params.containsElementNamed("rho_lower") &&
+      spatial_params.containsElementNamed("rho_upper")) {
+    data.car_rho_lower = Rcpp::as<double>(spatial_params["rho_lower"]);
+    data.car_rho_upper = Rcpp::as<double>(spatial_params["rho_upper"]);
+  } else {
+    data.car_rho_lower = 0.0;
+    data.car_rho_upper = 1.0;
+  }
 
   // Collapsed ICAR/BYM2 parameterization
   data.icar_collapsed = false;

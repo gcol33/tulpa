@@ -77,6 +77,7 @@ struct ParamLayout {
     bool is_gp_collapsed = false;
     bool is_multiscale_gp = false;
     bool is_hsgp = false;
+    bool is_car_proper = false;          // Proper CAR (rho estimated)
 
     int log_tau_spatial_idx = -1;
     int spatial_start = -1, spatial_end = -1;
@@ -85,6 +86,9 @@ struct ParamLayout {
     int log_sigma_bym2_idx = -1;
     int logit_rho_bym2_idx = -1;
     int theta_bym2_start = -1, theta_bym2_end = -1;
+
+    // Proper CAR extra: logit-transformed rho (rho ∈ (rho_lower, rho_upper))
+    int logit_rho_car_idx = -1;
 
     // GP spatial parameters
     int log_sigma2_gp_idx = -1;

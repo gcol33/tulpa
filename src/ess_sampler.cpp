@@ -166,6 +166,8 @@ int cpp_ess_get_n_params(
         if (spatial_type == "bym2") {
             n_params += 2;  // log_sigma_bym2, logit_rho_bym2
             n_params += n_units;  // theta_bym2
+        } else if (spatial_type == "car_proper") {
+            n_params += 1;  // logit_rho_car
         }
     }
 

@@ -203,6 +203,46 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
 }
 
 
+#' Proper CAR spatial structure
+#'
+#' @description
+#' Convenience wrapper for `spatial_car(..., proper = TRUE)`. Creates a
+#' proper conditional autoregressive (CAR) spatial random effect with the
+#' autocorrelation parameter ρ estimated from the data.
+#'
+#' Use this when you want spatial autocorrelation to be a parameter of the
+#' model rather than fixed at 1 (as in ICAR). ρ ≈ 0 collapses to IID,
+#' ρ ≈ 1 approaches ICAR.
+#'
+#' @inheritParams spatial_car
+#'
+#' @return A `tulpa_spatial` object with `type = "car_proper"`.
+#'
+#' @seealso [spatial_car()] for ICAR (ρ fixed at 1),
+#'   [spatial_bym2()] for the BYM2 decomposition.
+#'
+#' @examples
+#' adj <- matrix(0, 10, 10)
+#' for (i in 1:9) adj[i, i+1] <- adj[i+1, i] <- 1
+#' spec <- spatial_car_proper(adj, level = "group", group_var = "site")
+#' print(spec)
+#'
+#' @export
+spatial_car_proper <- function(adjacency,
+                               level = c("group", "obs"),
+                               group_var = NULL,
+                               shared = NULL) {
+  spatial_car(
+    adjacency = adjacency,
+    level = match.arg(level),
+    group_var = group_var,
+    proper = TRUE,
+    shared = shared,
+    parameterization = "standard"
+  )
+}
+
+
 #' Compute valid bounds for rho in proper CAR
 #'
 #' @description

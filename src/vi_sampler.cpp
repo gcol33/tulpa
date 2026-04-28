@@ -180,6 +180,8 @@ Rcpp::List cpp_vi_fit(
     data.spatial_type = SpatialType::ICAR;
   } else if (spatial_type == "bym2") {
     data.spatial_type = SpatialType::BYM2;
+  } else if (spatial_type == "car_proper") {
+    data.spatial_type = SpatialType::CAR_PROPER;
   } else {
     data.spatial_type = SpatialType::NONE;
   }
@@ -191,7 +193,9 @@ Rcpp::List cpp_vi_fit(
     data.spatial_group[i] = spatial_group[i];
   }
 
-  if (data.spatial_type == SpatialType::ICAR || data.spatial_type == SpatialType::BYM2) {
+  if (data.spatial_type == SpatialType::ICAR ||
+      data.spatial_type == SpatialType::BYM2 ||
+      data.spatial_type == SpatialType::CAR_PROPER) {
     Rcpp::IntegerVector adj_row_ptr = spatial_params["adj_row_ptr"];
     Rcpp::IntegerVector adj_col_idx = spatial_params["adj_col_idx"];
     Rcpp::IntegerVector n_neighbors = spatial_params["n_neighbors"];
@@ -204,7 +208,16 @@ Rcpp::List cpp_vi_fit(
     for (int i = 0; i < adj_col_idx.size(); i++) data.adj_col_idx[i] = adj_col_idx[i];
     for (int i = 0; i < n_neighbors.size(); i++) data.n_neighbors[i] = n_neighbors[i];
 
-    data.bym2_scale_factor = Rcpp::as<double>(spatial_params["bym2_scale"]);
+    if (spatial_params.containsElementNamed("bym2_scale")) {
+      data.bym2_scale_factor = Rcpp::as<double>(spatial_params["bym2_scale"]);
+    }
+
+    if (data.spatial_type == SpatialType::CAR_PROPER &&
+        spatial_params.containsElementNamed("rho_lower") &&
+        spatial_params.containsElementNamed("rho_upper")) {
+      data.car_rho_lower = Rcpp::as<double>(spatial_params["rho_lower"]);
+      data.car_rho_upper = Rcpp::as<double>(spatial_params["rho_upper"]);
+    }
   }
 
   // Temporal structure
@@ -371,6 +384,9 @@ int cpp_vi_get_n_params(
   } else if (spatial_type == "bym2") {
     n_params += 2;  // log_sigma, logit_rho
     n_params += 2 * n_spatial;  // phi + theta
+  } else if (spatial_type == "car_proper") {
+    n_params += 2;  // log_tau, logit_rho_car
+    n_params += n_spatial;
   }
 
   // Temporal

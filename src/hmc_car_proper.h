@@ -1,8 +1,16 @@
 // hmc_car_proper.h
 // Proper CAR (Conditional Autoregressive) spatial effects
-// Unlike ICAR (rho=1 fixed), proper CAR estimates rho from data
+// Unlike ICAR (rho=1 fixed), proper CAR estimates rho from data.
 //
-// TODO: Wire into tulpa sampler (ported from numdenom, not yet integrated)
+// Wired into hmc_sampler.cpp: SpatialType::CAR_PROPER allocates a logit-rho
+// parameter alongside log_tau and phi_spatial. The log-prior term and
+// gradient are computed via the helpers below.
+//
+// Performance note: car_log_det() runs a dense O(n^3) Cholesky each call
+// because rho (and therefore Q) changes every gradient evaluation. For
+// large adjacency graphs swap in tulpa::SparseCholeskySolver — Q has the
+// same sparsity as the adjacency, so analyze() is one-shot and only the
+// numeric factorization runs per gradient call.
 
 #ifndef TULPA_HMC_CAR_PROPER_H
 #define TULPA_HMC_CAR_PROPER_H
@@ -11,6 +19,28 @@
 #include <cmath>
 
 namespace tulpa_car_proper {
+
+// CSR matvec for proper-CAR precision: result = (D - rho*W) * v
+// Reduces to icar_precision_matvec() when rho == 1.
+inline void car_precision_matvec(
+    const double* v,
+    double* result,
+    int n,
+    const std::vector<int>& adj_row_ptr,
+    const std::vector<int>& adj_col_idx,
+    const std::vector<int>& n_neighbors,
+    double rho
+) {
+  for (int i = 0; i < n; i++) {
+    double r = static_cast<double>(n_neighbors[i]) * v[i];
+    int start = adj_row_ptr[i];
+    int end = adj_row_ptr[i + 1];
+    for (int k = start; k < end; k++) {
+      r -= rho * v[adj_col_idx[k]];
+    }
+    result[i] = r;
+  }
+}
 
 // Proper CAR data structure
 struct ProperCARData {
@@ -231,7 +261,9 @@ inline void car_proper_gradient_phi(
   }
 }
 
-// Numerical gradient of log-prior w.r.t. rho (for HMC)
+// Numerical gradient of log-prior w.r.t. rho (for HMC).
+// Kept for reference / sanity-check tests; the production HMC path uses
+// car_proper_log_det_and_grad_rho() below for an analytical derivative.
 inline double car_proper_gradient_rho(
     const double* phi,
     int n,
@@ -259,6 +291,101 @@ inline double car_proper_gradient_rho(
                     log_prior_rho(rho_minus, lower, upper, a, b);
 
   return (ll_plus - ll_minus) / (rho_plus - rho_minus);
+}
+
+// Compute log|Q(rho)| AND tr(Q^{-1} W) in a single dense factorization.
+//
+// Both quantities are needed by the HMC gradient w.r.t. rho:
+//   d/dρ [0.5 log|Q(ρ)| - 0.5 τ φ'Q(ρ)φ]
+//     = -0.5 tr(Q^{-1} W) + 0.5 τ φ' W φ
+// (since dQ/dρ = -W, so d log|Q|/dρ = tr(Q^{-1} dQ/dρ) = -tr(Q^{-1} W).)
+//
+// Sets log_det_out = log|Q|, trace_QinvW_out = tr(Q^{-1} W).
+// Returns true on success, false if Q is not positive definite.
+//
+// Complexity: O(n^3) dense Cholesky + O(n * nnz(W)) trace accumulation.
+// For large graphs prefer a sparse Cholesky + selected inversion.
+inline bool car_proper_log_det_and_grad_rho(
+    int n,
+    const std::vector<int>& adj_row_ptr,
+    const std::vector<int>& adj_col_idx,
+    const std::vector<int>& n_neighbors,
+    double rho,
+    double* log_det_out,
+    double* trace_QinvW_out
+) {
+  // Build Q = D - rho*W (column-major dense for Cholesky)
+  std::vector<double> Q = compute_car_precision(n, adj_row_ptr, adj_col_idx,
+                                                 n_neighbors, rho);
+
+  // In-place Cholesky: Q = L * L^T, lower triangle stored in Q (row-major).
+  // Use a fresh L matrix to avoid clobbering Q (we still need W structure
+  // but W lives in adj_*, not Q).
+  std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
+  for (int j = 0; j < n; j++) {
+    for (int k = 0; k <= j; k++) {
+      double sum = Q[j * n + k];
+      for (int m = 0; m < k; m++) {
+        sum -= L[j * n + m] * L[k * n + m];
+      }
+      if (j == k) {
+        if (sum <= 0.0) return false;  // not PD
+        L[j * n + j] = std::sqrt(sum);
+      } else {
+        L[j * n + k] = sum / L[k * n + k];
+      }
+    }
+  }
+
+  // log|Q| = 2 * sum(log(L_ii))
+  double log_det = 0.0;
+  for (int i = 0; i < n; i++) {
+    log_det += std::log(L[i * n + i]);
+  }
+  log_det *= 2.0;
+
+  // tr(Q^{-1} W) = sum_{i~j} (Q^{-1})_{ij}.
+  // Compute the full inverse via L * L^T = Q  =>  Q^{-1} = L^{-T} L^{-1}.
+  // For each column k: solve L y = e_k (forward), then L^T x = y (back).
+  // Accumulate the W-weighted trace using the adjacency CSR.
+  //
+  // Memory: O(n) per column, total O(n^2) work for the inverse, then
+  // O(nnz(W)) accumulation. For n in the hundreds this is still cheap.
+  std::vector<double> col(n);
+  std::vector<double> Qinv(static_cast<size_t>(n) * n, 0.0);
+  for (int k = 0; k < n; k++) {
+    // forward solve L y = e_k
+    for (int i = 0; i < n; i++) col[i] = (i == k) ? 1.0 : 0.0;
+    for (int i = 0; i < n; i++) {
+      double s = col[i];
+      for (int j = 0; j < i; j++) s -= L[i * n + j] * col[j];
+      col[i] = s / L[i * n + i];
+    }
+    // back solve L^T x = y (in place)
+    for (int i = n - 1; i >= 0; i--) {
+      double s = col[i];
+      for (int j = i + 1; j < n; j++) s -= L[j * n + i] * col[j];
+      col[i] = s / L[i * n + i];
+    }
+    // Store column k of Q^{-1}
+    for (int i = 0; i < n; i++) Qinv[i * n + k] = col[i];
+  }
+
+  // Trace of Q^{-1} W: W has 1 at (i,j) for i~j (off-diagonal only since
+  // adjacency excludes self-loops). tr(Q^{-1} W) = sum_i sum_{j~i} (Q^{-1})_{ij}.
+  double trace = 0.0;
+  for (int i = 0; i < n; i++) {
+    int start = adj_row_ptr[i];
+    int end = adj_row_ptr[i + 1];
+    for (int idx = start; idx < end; idx++) {
+      int j = adj_col_idx[idx];
+      trace += Qinv[i * n + j];
+    }
+  }
+
+  *log_det_out = log_det;
+  *trace_QinvW_out = trace;
+  return true;
 }
 
 } // namespace tulpa_car_proper
