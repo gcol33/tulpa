@@ -123,15 +123,17 @@ tulpa_laplace <- function(y, n_trials, X,
     )
   }
 
-  # SPDE Laplace returns mode = c(beta, spatial_effects) where the spatial
-  # contribution to eta is A * spatial_effects (mesh-projected), not Z * u.
-  # The fixed-effect Hessian below assumes eta = X*beta + Z*u and would
-  # under-weight observations by ignoring the spatial term, so we skip it
-  # for SPDE. Hessian / uncertainty propagation for SPDE is a separate item.
-  is_spde <- !is.null(spatial) && identical(spatial$type, "spde")
+  # SPDE / NNGP Laplace return mode = c(beta, spatial_effects) where the
+  # spatial contribution to eta is A * spatial_effects (mesh-projected) or
+  # w_at_obs (NNGP), not Z * u. The fixed-effect Hessian below assumes
+  # eta = X*beta + Z*u and would under-weight observations by ignoring the
+  # spatial term, so skip it for these spatial types. Proper Hessian /
+  # uncertainty propagation for spatial fields is a separate item.
+  is_spatial_field <- !is.null(spatial) &&
+    (identical(spatial$type, "spde") || identical(spatial$type, "gp"))
 
   # Compute Hessian for fixed-effect block if requested
-  if (return_hessian && !is.null(result$mode) && !is_spde) {
+  if (return_hessian && !is.null(result$mode) && !is_spatial_field) {
     mode_vec <- result$mode
     beta <- mode_vec[seq_len(n_fixed)]
     re_vals <- mode_vec[-seq_len(n_fixed)]
@@ -283,6 +285,21 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       range = NULL, sigma = NULL,
       max_iter = max_iter, tol = tol, n_threads = n_threads
     )
+  } else if (spatial_type == "gp") {
+    # NNGP Laplace at fixed hyperparameters. Like SPDE: an additional iid RE
+    # block is not currently supported in this branch — cpp_laplace_fit_gp's
+    # n_re_groups > 0 path is exercised by HMC, but here we route only the
+    # spatial-only case.
+    if (!is.null(re_idx) && length(re_idx) > 0 && n_re_groups > 1L) {
+      stop("NNGP Laplace does not yet support an additional iid RE block. ",
+           "Drop the RE list or use HMC.", call. = FALSE)
+    }
+    laplace_gp_at(
+      y = y, n_trials = n_trials, X = X, spatial = spatial,
+      family = family, phi = phi,
+      sigma2_gp = NULL, phi_gp = NULL,
+      max_iter = max_iter, tol = tol, n_threads = n_threads
+    )
   } else {
     stop(sprintf("Spatial type '%s' not yet supported in Laplace", spatial_type),
          call. = FALSE)
@@ -342,6 +359,109 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
 
   result$range <- range
   result$sigma <- sigma
+  result$spatial <- spatial
+  result
+}
+
+
+#' Map a spatial_gp covariance spec to the Laplace cov_type integer
+#'
+#' The Laplace NNGP kernel (`laplace_core.cpp`) supports three covariance
+#' functions: 0 = exponential, 1 = Matern(nu=1.5), 2 = Matern(nu=2.5).
+#' Anything else is rejected with a clear error rather than silently
+#' falling back to a different covariance.
+#'
+#' @keywords internal
+gp_cov_type_for_laplace <- function(spatial) {
+  cov <- spatial$cov %||% "exponential"
+  if (cov == "exponential") return(0L)
+  if (cov == "matern") {
+    nu <- spatial$nu %||% 1.5
+    if (isTRUE(all.equal(nu, 1.5))) return(1L)
+    if (isTRUE(all.equal(nu, 2.5))) return(2L)
+    stop("NNGP Laplace supports Matern with nu in {1.5, 2.5}; ",
+         "got nu = ", format(nu),
+         ". Use HMC (which supports general nu) or set nu = 1.5 / 2.5.",
+         call. = FALSE)
+  }
+  stop(sprintf(
+    "NNGP Laplace supports cov in {'exponential','matern'}; got '%s'. ",
+    cov),
+    "Use HMC for gaussian / spherical covariances.",
+    call. = FALSE)
+}
+
+#' NNGP Laplace at given hyperparameters
+#'
+#' Single-point Laplace approximation for a Matern/exponential GP spatial
+#' field at fixed (sigma2_gp, phi_gp). Used by `dispatch_laplace_spatial`
+#' when `spatial$type == "gp"`. The neighbor structure is read straight
+#' off the validated spec — call `validate_gp(spatial, data)` first if
+#' constructing manually.
+#'
+#' @param y Response vector.
+#' @param n_trials Trial sizes (binomial).
+#' @param X Fixed-effects design matrix.
+#' @param spatial A `tulpa_gp` spec, validated (i.e., `neighbor_info` populated).
+#' @param family Distribution family.
+#' @param phi Dispersion parameter (negbin / gamma only).
+#' @param sigma2_gp Marginal variance (NULL → 1.0).
+#' @param phi_gp Range / decay parameter (NULL → 1.0).
+#' @param max_iter Newton iterations.
+#' @param tol Newton tolerance.
+#' @param n_threads OpenMP threads.
+#' @return The raw `cpp_laplace_fit_gp` result list, augmented with
+#'   `sigma2_gp`, `phi_gp`, and the spatial spec.
+#' @keywords internal
+laplace_gp_at <- function(y, n_trials, X, spatial,
+                           family = "binomial", phi = 1.0,
+                           sigma2_gp = NULL, phi_gp = NULL,
+                           max_iter = 100L, tol = 1e-6, n_threads = 1L) {
+  if (is.null(spatial$neighbor_info)) {
+    stop("spatial_gp() spec is unvalidated (neighbor_info is NULL). ",
+         "Call validate_gp(spatial, data) first, or fit through tulpa() ",
+         "which validates automatically.", call. = FALSE)
+  }
+  if (is.null(sigma2_gp)) sigma2_gp <- spatial$sigma2_gp %||% 1.0
+  if (is.null(phi_gp))    phi_gp    <- spatial$phi_gp    %||% 1.0
+
+  cov_type <- gp_cov_type_for_laplace(spatial)
+  ni <- spatial$neighbor_info
+  n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
+  nn <- spatial$nn %||% ncol(ni$nn_idx)
+
+  # nn_order in cpp_laplace_fit_gp expects 0-based indexing, matching the
+  # convention in test-gpu-nngp.R. spatial_gp() stores order_idx as 1-based.
+  nn_order_0 <- as.integer((ni$nn_order %||% seq_len(n_spatial)) - 1L)
+
+  # The spatial-only case has no separate iid RE block; pass dummy re_idx.
+  re_idx <- rep(0.0, length(y))
+
+  result <- cpp_laplace_fit_gp(
+    y = as.numeric(y),
+    n = as.integer(n_trials %||% rep(1L, length(y))),
+    X = as.matrix(X),
+    re_idx = re_idx,
+    n_re_groups = 0L,
+    sigma_re = 1.0,
+    coords = as.matrix(spatial$unique_coords),
+    nn_idx = as.matrix(ni$nn_idx),
+    nn_dist = as.matrix(ni$nn_dist),
+    nn_order = nn_order_0,
+    n_spatial = as.integer(n_spatial),
+    nn = as.integer(nn),
+    sigma2_gp = sigma2_gp,
+    phi_gp = phi_gp,
+    cov_type = cov_type,
+    family = family,
+    phi = phi,
+    max_iter = as.integer(max_iter),
+    tol = tol,
+    n_threads = as.integer(n_threads)
+  )
+
+  result$sigma2_gp <- sigma2_gp
+  result$phi_gp <- phi_gp
   result$spatial <- spatial
   result
 }

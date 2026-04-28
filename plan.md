@@ -97,8 +97,24 @@ without breaking ratio models. The rest can start now.
 7. Strip `ModelData::legacy` (`LegacyRatioData`) and remove
    `n_processes == 0` branches throughout `hmc_sampler.cpp` (~413 references).
    Bump `TULPA_ABI_VERSION`.
-8. Laplace + NNGP backend in `dispatch_laplace_spatial` (`R/fit_laplace.R`,
-   `src/laplace_core.cpp`).
+8. **Laplace + NNGP backend** ✅ DONE (audit + dispatch wire-up).
+   `cpp_laplace_fit_gp` already existed in `src/laplace_core.cpp`; what was
+   missing was the route through the unified Laplace API.
+   - `dispatch_laplace_spatial` now accepts `spatial$type == "gp"` and
+     delegates to a new shared helper `laplace_gp_at()` (single source of
+     truth — no duplication with `cpp_laplace_fit_gp` call site).
+   - `gp_cov_type_for_laplace()` maps the spec's covariance to the
+     Laplace kernel's integer convention (0 = exponential, 1 = Matern 1.5,
+     2 = Matern 2.5). Gaussian / spherical / general-nu Matern raise a
+     clear "use HMC instead" error rather than falling back silently.
+   - The Hessian post-step is skipped for GP for the same reason as SPDE
+     (eta = X*beta + w, not X*beta + Z*u).
+   - GP + iid RE block in the same fit raises a clear error.
+   - Unvalidated `spatial_gp()` spec (no `neighbor_info`) raises a clear
+     error pointing at `validate_gp(spatial, data)`.
+   - 5 new test cases in `tests/testthat/test-laplace-gp-dispatch.R`
+     using a hand-built synthetic NNGP neighbor structure (no fmesher,
+     no full validation chain).
 9. Laplace + SPDE backend.
 10. BYM2 H-mode analytical gradient (`src/hmc_sampler.cpp:5570`). Derive
     math first, then implement.
