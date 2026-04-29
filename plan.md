@@ -29,7 +29,7 @@
   _rw1 / _rw2 / _ar1 / _nngp / _hsgp / _spde; pg_binomial / _negbin /
   _negbin_spatial; fit_vi; run_ess_sampler with `joint_sigma_re`;
   sparse_chol (create / analyze / factorize / solve / log_det / sel_inv_diag)
-  + stochastic_log_det.
+  + stochastic_log_det; sghmc_fit + sgld_fit.
 
 ### Working-tree state at session start
 
@@ -66,8 +66,13 @@ to start.
    - **gcol33/tulpa#4** — optional `m_step_extra(fits, weights, ...) -> fits` callback
      fired between M-step and next E-step, for non-η parameters (NB φ, Gamma shape,
      Beta φ, etc.). Pure plumbing.
-2. **Stretch shim APIs:** `mclmc_api.h`, `smc_api.h`, `sghmc_api.h`. Same pattern as the
-   already-landed Laplace shims.
+2. **Stretch shim APIs.** `sghmc_api.h` (covers SGHMC + SGLD) is shipped,
+   following the NUTS-style `ModelData` + `ParamLayout` pattern. `mclmc_api.h`
+   and `smc_api.h` are deferred — both samplers internally take
+   `std::function` callbacks (no current `ModelData` entry point) and need
+   refactor work first. Tracked as gcol33/tulpa#5 (MCLMC) and gcol33/tulpa#6
+   (SMC, harder — also needs a separable prior / likelihood split on
+   `ModelData`).
 
 ### Pre-flight before starting
 
@@ -325,9 +330,11 @@ From `TODO.md`. P2.4 is already done; the rest are still open:
 - Round 3: items 8-12 can start in parallel with Round 2; only item 7
   (legacy strip) waits on Agent E.
 - Round 4 (nested Laplace): ✅ shipped. Generic infra + 8 backends + CCD.
-- **Active focus:** cross-DLL ABI shim surface (`fix.md`). Laplace surface
-  (dense / spatial / dense_multi_re / bym2 / gp / multiscale_gp /
-  multiscale_temporal / rsr) and nested-Laplace surface (icar / bym2 /
-  car_proper / rw1 / rw2 / ar1 / nngp / hsgp / spde) are now complete.
-  Remaining work is the EM+Laplace follow-ups (gcol33/tulpa#3, #4) and the
-  stretch MCLMC / SMC / SGHMC shim layer. Tracked as item 2b in `TODO.md`.
+- **Active focus:** cross-DLL ABI shim surface (`fix.md`). Complete for
+  Laplace (dense / spatial / dense_multi_re / bym2 / gp / multiscale_gp /
+  multiscale_temporal / rsr), nested-Laplace (icar / bym2 / car_proper /
+  rw1 / rw2 / ar1 / nngp / hsgp / spde), PG / VI / ESS / sparse-solver,
+  and SGHMC + SGLD. Open follow-ups: gcol33/tulpa#3 + #4 (EM+Laplace
+  callback shapes) and gcol33/tulpa#5 + #6 (MCLMC / SMC `ModelData`
+  entry points — both deferred behind a sampler-side refactor).
+  Tracked as item 2b in `TODO.md`.

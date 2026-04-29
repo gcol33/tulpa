@@ -30,6 +30,8 @@
 #include "tulpa/sparse_solver_api.h"
 #include "tulpa/nested_laplace_api.h"
 #include "tulpa/spde_api.h"
+#include "tulpa/sghmc_api.h"
+#include "sghmc_sampler.h"
 
 // ============================================================================
 // Forward declarations: these definitions live in their .cpp files but are
@@ -1612,6 +1614,131 @@ extern "C" double tulpa_stochastic_log_det_impl(
 }
 
 // ============================================================================
+// SGHMC / SGLD shims
+// ============================================================================
+//
+// Both samplers run on the same NUTS-style ModelData + ParamLayout interface
+// (see nuts_api.h). The shim forwards raw scalar config, builds the sampler
+// config struct, calls the underlying tulpa::run_sghmc_sampler /
+// run_sgld_sampler, and copies the result into a flat
+// SGSamplerShimResult buffer.
+
+namespace {
+
+inline void copy_sg_sampler_result(
+    const Eigen::MatrixXd& samples,
+    const std::vector<double>& log_lik,
+    const std::vector<double>& epsilon_history,
+    bool success,
+    const std::string& error_msg,
+    tulpa::SGSamplerShimResult* out
+) {
+    int n_save   = (int)samples.rows();
+    int n_params = (int)samples.cols();
+    out->n_sample = n_save;
+    out->n_params = n_params;
+    out->success  = success ? 1 : 0;
+    std::strncpy(out->error_msg, error_msg.c_str(), sizeof(out->error_msg) - 1);
+    out->error_msg[sizeof(out->error_msg) - 1] = '\0';
+
+    out->samples = new double[(size_t)n_save * (size_t)n_params];
+    for (int i = 0; i < n_save; i++) {
+        for (int j = 0; j < n_params; j++) {
+            out->samples[(size_t)i * n_params + j] = samples(i, j);
+        }
+    }
+
+    out->log_lik = new double[n_save];
+    for (int i = 0; i < n_save; i++) out->log_lik[i] = log_lik[i];
+
+    int n_eps = (int)epsilon_history.size();
+    out->n_eps_history  = n_eps;
+    out->epsilon_history = new double[n_eps > 0 ? n_eps : 1];
+    for (int i = 0; i < n_eps; i++) out->epsilon_history[i] = epsilon_history[i];
+    out->final_epsilon = (n_eps > 0) ? epsilon_history[n_eps - 1] : 0.0;
+}
+
+} // namespace
+
+extern "C" void tulpa_sghmc_fit_impl(
+    const tulpa::ModelData* data,
+    const tulpa::ParamLayout* layout,
+    const double* init,
+    int n_params,
+    int n_iter,
+    int n_warmup,
+    int batch_size,
+    double epsilon,
+    double alpha,
+    int L,
+    unsigned int seed,
+    int adapt_eps,
+    double grad_clip,
+    int verbose,
+    tulpa::SGSamplerShimResult* result_out
+) {
+    std::vector<double> q_init(init, init + n_params);
+
+    tulpa_sghmc::SGHMCConfig cfg;
+    cfg.n_iter        = n_iter;
+    cfg.n_warmup      = n_warmup;
+    cfg.batch_size    = batch_size;
+    cfg.epsilon       = epsilon;
+    cfg.alpha         = alpha;
+    cfg.L             = L;
+    cfg.seed          = seed;
+    cfg.adapt_epsilon = (adapt_eps != 0);
+    cfg.grad_clip     = grad_clip;
+    cfg.verbose       = (verbose != 0);
+
+    tulpa_sghmc::SGHMCResult res =
+        tulpa_sghmc::run_sghmc_sampler(q_init, *data, *layout, cfg);
+
+    copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
+                           res.success, res.error_msg, result_out);
+}
+
+extern "C" void tulpa_sgld_fit_impl(
+    const tulpa::ModelData* data,
+    const tulpa::ParamLayout* layout,
+    const double* init,
+    int n_params,
+    int n_iter,
+    int n_warmup,
+    int batch_size,
+    double epsilon,
+    double schedule_a,
+    double schedule_b,
+    double schedule_gamma,
+    int use_schedule,
+    double grad_clip,
+    unsigned int seed,
+    int verbose,
+    tulpa::SGSamplerShimResult* result_out
+) {
+    std::vector<double> q_init(init, init + n_params);
+
+    tulpa_sghmc::SGLDConfig cfg;
+    cfg.n_iter         = n_iter;
+    cfg.n_warmup       = n_warmup;
+    cfg.batch_size     = batch_size;
+    cfg.epsilon        = epsilon;
+    cfg.schedule_a     = schedule_a;
+    cfg.schedule_b     = schedule_b;
+    cfg.schedule_gamma = schedule_gamma;
+    cfg.use_schedule   = (use_schedule != 0);
+    cfg.grad_clip      = grad_clip;
+    cfg.seed           = seed;
+    cfg.verbose        = (verbose != 0);
+
+    tulpa_sghmc::SGLDResult res =
+        tulpa_sghmc::run_sgld_sampler(q_init, *data, *layout, cfg);
+
+    copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
+                           res.success, res.error_msg, result_out);
+}
+
+// ============================================================================
 // Registration: called from tulpa_init.cpp::tulpa_register_callables.
 // ============================================================================
 
@@ -1681,4 +1808,9 @@ void tulpa_register_shims(DllInfo* dll) {
         (DL_FUNC)&tulpa_sparse_chol_sel_inv_diag_impl);
     R_RegisterCCallable("tulpa", "tulpa_stochastic_log_det",
         (DL_FUNC)&tulpa_stochastic_log_det_impl);
+
+    R_RegisterCCallable("tulpa", "tulpa_sghmc_fit",
+        (DL_FUNC)&tulpa_sghmc_fit_impl);
+    R_RegisterCCallable("tulpa", "tulpa_sgld_fit",
+        (DL_FUNC)&tulpa_sgld_fit_impl);
 }
