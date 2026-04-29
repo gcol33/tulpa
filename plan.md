@@ -37,10 +37,14 @@ Done in this branch (still uncommitted):
   `grepl(":", gvar)` + `strsplit`. Display label `"a:b"` retained.
 - Vestigial `terms = deparse(lhs)` field dropped; `print` derives a display
   string from the stored `slope_terms` language objects on demand.
-- `||` is expanded lme4-style: `(1 + x || g)` becomes `(1 | g) + (0 + x | g)`,
-  one bar per coefficient, each correlated=TRUE. The sampler now sees a
-  diagonal covariance as independent bars instead of a single bar with
-  `correlated = FALSE` that nothing downstream actually honored.
+- `||` is preserved lme4-style as a single RE term carrying
+  `correlated = FALSE`. `(1 + x || g)` parses to one spec with intercept +
+  slope and `correlated = FALSE`; `(x || a/b)` to one spec per nesting
+  level, each `correlated = FALSE`. Downstream packages branch on
+  `correlated` to choose between independent-σ and Cholesky
+  parameterizations (gcol33/tulpa#1, fixed 2026-04-29). Earlier drafts
+  expanded `||` into independent `|` bars and lost the `correlated` flag —
+  reverted.
 - Slope formula is constructed with the original formula's environment, so
   user-scope helpers in slope expressions resolve correctly.
 - `offset(...)` terms in the fixed RHS are extracted via `model.offset(mf)`
@@ -120,8 +124,18 @@ without breaking ratio models. The rest can start now.
    `fit_spde()` and `dispatch_laplace_spatial` agree to 1e-10. The
    nested-grid SPDE Laplace path (already exposed via `cpp_nested_laplace_spde`)
    belongs to Round 4 item 13–18.
-10. BYM2 H-mode analytical gradient (`src/hmc_sampler.cpp:5570`). Derive
-    math first, then implement.
+10. **BYM2 H-mode analytical gradient** ✅ DONE (audited 2026-04-29).
+    `compute_laplace_gradient_bym2_H` (`src/hmc_icar_collapsed.h:1606`)
+    implements direct 2S traces + IFT cross-Hessians for both `log_sigma`
+    and `logit_rho`; the dispatch in `compute_gradient_icar_collapsed`
+    (`hmc_sampler.cpp:5892+`) calls it with envelope-theorem residual
+    scattering and a numerical fallback. Previous "BYM2: numerical fallback"
+    comments were stale and have been corrected. Standard BYM2 + HMC
+    gradient verified at `h_vs_n = 1.31e-08` via
+    `tools/bym2_gradient_check.R`. Verification on the *collapsed* path is
+    blocked by an unrelated segfault in the setup harness that hits both
+    ICAR and BYM2 collapsed; reopened only if the collapsed + HMC path
+    (deprecated in `R/spatial.R:391`) is revived.
 11. **`spatial_spde()` user-facing R API** ✅ DONE (audit + dispatch wire-up
     on this branch). The constructor (`spatial_spde()` / `spatial_spde_custom()`)
     and the standalone `fit_spde()` were already in place; what was missing

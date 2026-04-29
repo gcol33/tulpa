@@ -94,22 +94,26 @@ nobars <- function(term) {
 #' Parse a single random effect bar term
 #'
 #' Takes a `|` or `||` language object and extracts the grouping variable(s),
-#' effect terms (intercept, slopes), and correlation structure.
+#' effect terms (intercept, slopes), and correlation structure. The bar
+#' operator drives the `correlated` flag: `|` → `TRUE` (LKJ-Cholesky on the
+#' joint slope vector), `||` → `FALSE` (diagonal covariance, one σ per
+#' coefficient). This matches lme4 / glmmTMB and lets downstream packages
+#' branch on `correlated` to choose between independent-σ and Cholesky
+#' parameterizations.
 #'
 #' Nested grouping `(1 | a/b)` is expanded into one spec per level
-#' (a, then a:b). Uncorrelated `||` is expanded lme4-style: `(1 + x || g)`
-#' becomes `(1 | g) + (0 + x | g)`, so the sampler sees a diagonal
-#' covariance as a set of independent bars rather than a single bar
-#' with `correlated = FALSE`.
+#' (a, then a:b). `||` is preserved as a single spec rather than split into
+#' multiple `|` bars, so the original user intent (one logical RE term with
+#' diagonal covariance) round-trips through the parsed object.
 #'
 #' @param bar_term A language object: `|`(lhs, rhs) or `||`(lhs, rhs)
-#' @return A list of RE specs. Each spec has:
+#' @return A list of RE specs (one per grouping level). Each spec has:
 #'   - `group_var`: character, display label (colon-joined for nested)
 #'   - `group_vars`: character vector, each element a column name
 #'   - `group_expr`: language or NULL (set when grouping is a non-name expr)
 #'   - `slope_terms`: list of language objects (slope LHS terms)
 #'   - `has_intercept`: logical
-#'   - `correlated`: logical (TRUE for `|`, FALSE only for unexpanded `||`)
+#'   - `correlated`: logical (TRUE for `|`, FALSE for `||`)
 #'   - `original`: the original bar language object
 #' @keywords internal
 #' @export
@@ -123,56 +127,19 @@ parse_bar_term <- function(bar_term) {
   rhs <- bar_term[[3]]
 
   lhs_decomp <- decompose_bar_lhs(lhs)
-
   group_specs <- resolve_group_rhs(rhs)
-
-  # || expansion: split a single uncorrelated bar into independent bars
-  # so each gets a proper diagonal covariance downstream.
-  if (correlated) {
-    slope_sets <- list(list(
-      has_intercept = lhs_decomp$has_intercept,
-      slope_terms   = lhs_decomp$slope_terms,
-      correlated    = TRUE
-    ))
-  } else {
-    slope_sets <- list()
-    if (lhs_decomp$has_intercept) {
-      slope_sets[[length(slope_sets) + 1L]] <- list(
-        has_intercept = TRUE,
-        slope_terms   = list(),
-        correlated    = TRUE
-      )
-    }
-    for (s in lhs_decomp$slope_terms) {
-      slope_sets[[length(slope_sets) + 1L]] <- list(
-        has_intercept = FALSE,
-        slope_terms   = list(s),
-        correlated    = TRUE
-      )
-    }
-    if (length(slope_sets) == 0L) {
-      # Defensive: empty LHS shouldn't happen; preserve the original bar.
-      slope_sets[[1L]] <- list(
-        has_intercept = lhs_decomp$has_intercept,
-        slope_terms   = lhs_decomp$slope_terms,
-        correlated    = FALSE
-      )
-    }
-  }
 
   out <- list()
   for (gs in group_specs) {
-    for (ss in slope_sets) {
-      out[[length(out) + 1L]] <- list(
-        group_var     = gs$group_var,
-        group_vars    = gs$group_vars,
-        group_expr    = gs$group_expr,
-        slope_terms   = ss$slope_terms,
-        has_intercept = ss$has_intercept,
-        correlated    = ss$correlated,
-        original      = bar_term
-      )
-    }
+    out[[length(out) + 1L]] <- list(
+      group_var     = gs$group_var,
+      group_vars    = gs$group_vars,
+      group_expr    = gs$group_expr,
+      slope_terms   = lhs_decomp$slope_terms,
+      has_intercept = lhs_decomp$has_intercept,
+      correlated    = correlated,
+      original      = bar_term
+    )
   }
   out
 }

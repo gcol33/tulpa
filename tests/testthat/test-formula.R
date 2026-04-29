@@ -40,44 +40,56 @@ test_that("tulpa_parse_formula separates fixed and random", {
   expect_true(pf$random_effects[[1]]$correlated)
 })
 
-test_that("|| expands (1 + x || group) into independent bars (lme4-equivalent)", {
+test_that("|| keeps (1 + x || group) as one term with correlated=FALSE (lme4 parity)", {
+  # gcol33/tulpa#1: (x || g) is one logical RE term with diagonal covariance,
+  # not two separate single-coefficient bars. Downstream packages branch on
+  # `correlated` to choose between Cholesky (TRUE) and independent-sigma
+  # (FALSE) parameterizations, so the flag must reflect user intent.
   pf <- tulpa_parse_formula(y ~ x + (1 + x || group))
-  # (1 + x || g) -> (1 | g) + (0 + x | g): two bars on the same group,
-  # each correlated=TRUE because each has at most one coefficient.
-  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$n_re_terms, 1)
   expect_equal(pf$random_effects[[1]]$group_var, "group")
-  expect_equal(pf$random_effects[[2]]$group_var, "group")
-
-  # First bar: intercept-only
   expect_true(pf$random_effects[[1]]$has_intercept)
-  expect_length(pf$random_effects[[1]]$slope_terms, 0)
-
-  # Second bar: slope-only, no intercept
-  expect_false(pf$random_effects[[2]]$has_intercept)
-  expect_length(pf$random_effects[[2]]$slope_terms, 1)
-
-  # Both individual bars carry correlated=TRUE (a single coef can't be
-  # uncorrelated with itself); the diagonal structure comes from being
-  # split across separate bars.
-  expect_true(pf$random_effects[[1]]$correlated)
-  expect_true(pf$random_effects[[2]]$correlated)
+  expect_length(pf$random_effects[[1]]$slope_terms, 1)
+  expect_false(pf$random_effects[[1]]$correlated)
 })
 
-test_that("|| with bare slope expands as (x || g) -> (1 | g) + (0 + x | g)", {
+test_that("|| keeps (x || g) as one term with intercept + slope, correlated=FALSE", {
   pf <- tulpa_parse_formula(y ~ (x || g))
-  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$n_re_terms, 1)
   expect_true(pf$random_effects[[1]]$has_intercept)
-  expect_length(pf$random_effects[[1]]$slope_terms, 0)
-  expect_false(pf$random_effects[[2]]$has_intercept)
-  expect_length(pf$random_effects[[2]]$slope_terms, 1)
+  expect_length(pf$random_effects[[1]]$slope_terms, 1)
+  expect_false(pf$random_effects[[1]]$correlated)
 })
 
-test_that("|| with no intercept does not invent one", {
+test_that("|| with no intercept keeps slopes together in one uncorrelated term", {
   pf <- tulpa_parse_formula(y ~ (0 + x1 + x2 || g))
-  # No intercept; each slope on its own bar.
-  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$n_re_terms, 1)
   expect_false(pf$random_effects[[1]]$has_intercept)
-  expect_false(pf$random_effects[[2]]$has_intercept)
+  expect_length(pf$random_effects[[1]]$slope_terms, 2)
+  expect_false(pf$random_effects[[1]]$correlated)
+})
+
+test_that("|| with nested grouping (1 + x || a/b) yields one spec per level, correlated=FALSE", {
+  pf <- tulpa_parse_formula(y ~ (1 + x || a/b))
+  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$random_effects[[1]]$group_var, "a")
+  expect_equal(pf$random_effects[[2]]$group_var, "a:b")
+  for (re in pf$random_effects) {
+    expect_true(re$has_intercept)
+    expect_length(re$slope_terms, 1)
+    expect_false(re$correlated)
+  }
+})
+
+test_that("crossed (1 + x || g1) + (1 + z | g2) preserves per-bar correlated flag", {
+  pf <- tulpa_parse_formula(y ~ (1 + x || g1) + (1 + z | g2))
+  expect_equal(pf$n_re_terms, 2)
+  expect_equal(pf$random_effects[[1]]$group_var, "g1")
+  expect_false(pf$random_effects[[1]]$correlated)
+  expect_length(pf$random_effects[[1]]$slope_terms, 1)
+  expect_equal(pf$random_effects[[2]]$group_var, "g2")
+  expect_true(pf$random_effects[[2]]$correlated)
+  expect_length(pf$random_effects[[2]]$slope_terms, 1)
 })
 
 test_that("tulpa_parse_formula handles crossed RE", {
@@ -136,7 +148,6 @@ test_that("tulpa_build_model_data handles random slopes", {
 })
 
 test_that("print.tulpa_parsed_formula works", {
-  # Use only correlated bars so the count is unambiguous post-|| expansion.
   pf <- tulpa_parse_formula(y ~ x + (1 | g) + (1 + x | site))
   expect_output(print(pf), "tulpa parsed formula")
   expect_output(print(pf), "Random effects: 2")
