@@ -68,44 +68,11 @@ tests/testthat/     — Unit and integration tests
 - Data formatting and simulation functions
 - Print methods referencing model-specific parameter names
 
-### TODO: EM+Laplace Engine for tulpa
+### EM+Laplace Engine
 
-tulpa needs a generic EM+Laplace engine that model packages can plug into.
-Currently the Laplace M-step exists (`tulpa_laplace`, `cpp_laplace_fit_*`),
-but the EM loop, MI correction, and Gibbs correction are missing.
-
-**Proposed API:**
-
-```r
-# Generic EM engine: model package provides callbacks
-tulpa_em_laplace(
-  e_step,           # function(psi_hat, p_hat, ...) → list(weights, ...)
-  m_step_encode,    # function(weights, ...) → list of (y, n_trials, X, ...) per submodel
-  spatial = NULL,
-  re_list = list(),
-  max_iter = 50L,
-  tol = 1e-4,
-  damping = 0.3,
-  correction = c("auto", "mi", "gibbs", "none"),
-  n_imputations = 20L,    # MI: draws per round
-  n_gibbs = 10L,           # Gibbs: total iterations
-  verbose = TRUE
-)
-```
-
-**E-step callback** (model-specific): Takes current parameter estimates,
-returns posterior weights for latent variables. For occupancy:
-`P(z_i=1 | y_i, psi_i, p_i)`.
-
-**M-step encode callback** (model-specific): Takes weights, returns
-submodel data (y, n_trials, X) ready for `tulpa_laplace()`. For occupancy:
-builds binomial pseudo-data for psi and detection submodels.
-
-**MI correction** (generic in tulpa): Draws hard z from weights,
-refits submodels unweighted, pools via Rubin's rules. K=20 default.
-
-**Gibbs correction** (generic in tulpa): Markov chain z|params → fit|z,
-warm-started. ~10 iterations with burn-in.
+`tulpa_em_laplace()` lands the generic EM driver with per-submodel `family`
++ `offset` on the `m_step_encode` return blocks (gcol33/tulpa#3). MI /
+Gibbs corrections are stubbed pending separate work. See `?tulpa_em_laplace`.
 
 ### TODO: Generic S3 Methods
 
