@@ -112,6 +112,45 @@ test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", 
   expect_gt(res$theta_mean[["rho"]], 0.5)
 })
 
+test_that("nested_laplace accepts tulpa_temporal spec via spec= + data=", {
+  d <- simulate_temporal_binomial(T = 25L, ar1_rho = 0.7)
+  df <- data.frame(year = d$time)
+  spec <- temporal_ar1("year")
+
+  res_spec <- nested_laplace(
+    d$y, d$n_trials, d$X,
+    spec = spec, data = df,
+    family = "binomial"
+  )
+
+  # Equivalent manual prior
+  res_manual <- nested_laplace(
+    d$y, d$n_trials, d$X,
+    prior = list(type = "ar1",
+                 temporal_idx = d$time,
+                 n_times = d$T),
+    family = "binomial"
+  )
+
+  expect_equal(res_spec$log_marginal, res_manual$log_marginal,
+               tolerance = 1e-10)
+  expect_equal(res_spec$theta_mean, res_manual$theta_mean,
+               tolerance = 1e-10)
+})
+
+test_that("nested_laplace rejects spec + prior together", {
+  d <- simulate_temporal_binomial(T = 10L, n_per_t = 2L)
+  expect_error(
+    nested_laplace(
+      d$y, d$n_trials, d$X,
+      spec = temporal_rw1("year"),
+      prior = list(type = "rw1", temporal_idx = d$time, n_times = d$T),
+      data = data.frame(year = d$time)
+    ),
+    "Pass either"
+  )
+})
+
 test_that("nested_laplace AR1 fills default grid when missing", {
   d <- simulate_temporal_binomial(T = 20L, n_per_t = 4L)
   prior <- list(type = "ar1",

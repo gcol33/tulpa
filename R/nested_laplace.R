@@ -43,16 +43,35 @@
 #'   * `modes`: matrix `[n_grid x n_x]` of inner modes, when stored.
 #'   * `prior`: echoed input.
 #'
+#' @param spec Optional `tulpa_temporal` or `tulpa_spatial` spec object
+#'   (output of [temporal_rw1()], [temporal_rw2()], [temporal_ar1()],
+#'   [spatial_car()], [spatial_bym2()], etc.). When supplied alongside
+#'   `data`, the `prior` list is built automatically via
+#'   [prior_from_spec()] — pass either `prior` or `spec`, not both.
+#' @param data Data frame used to validate `spec` and resolve
+#'   time/group/site indices. Required when `spec` is supplied.
+#'
 #' @keywords internal
 #' @export
-nested_laplace <- function(y, n_trials, X, prior,
+nested_laplace <- function(y, n_trials, X, prior = NULL,
+                            spec = NULL, data = NULL,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                             family = "binomial", phi = 1.0,
                             max_iter = 50L, tol = 1e-6, n_threads = 1L,
                             x_init = NULL, verbose = FALSE) {
 
+  if (!is.null(spec)) {
+    if (!is.null(prior)) {
+      stop("Pass either `spec` or `prior`, not both.", call. = FALSE)
+    }
+    if (is.null(data)) {
+      stop("`data` is required when `spec` is supplied.", call. = FALSE)
+    }
+    prior <- prior_from_spec(spec, data)
+  }
   if (!is.list(prior) || is.null(prior$type)) {
-    stop("`prior` must be a list with a `type` field", call. = FALSE)
+    stop("`prior` must be a list with a `type` field, or supply `spec` + `data`.",
+         call. = FALSE)
   }
   type <- tolower(prior$type)
   N <- length(y)
@@ -208,3 +227,102 @@ nested_laplace <- function(y, n_trials, X, prior,
 }
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
+
+#' Build a `prior` list for [nested_laplace()] from a tulpa spec object
+#'
+#' @description
+#' Validates a `tulpa_temporal` or `tulpa_spatial` specification against
+#' `data`, then converts it to the prior list shape consumed by
+#' [nested_laplace()]. Mainly an internal helper for callers that already
+#' have a fitted spec; users typically pass `spec` + `data` directly to
+#' `nested_laplace()` instead.
+#'
+#' Supported spec types:
+#'  * `tulpa_temporal` with `type ∈ {"rw1", "rw2", "ar1"}`
+#'  * `tulpa_spatial` with `type ∈ {"car", "icar", "car_proper", "bym2"}`
+#'    (continuous-spatial GP / SPDE specs need their own entry — see
+#'    [cpp_nested_laplace_spde()])
+#'
+#' @param spec A `tulpa_temporal` or `tulpa_spatial` object.
+#' @param data Data frame the spec resolves time/group/site indices against.
+#' @return A `prior` list ready for [nested_laplace()].
+#' @export
+prior_from_spec <- function(spec, data) {
+  if (inherits(spec, "tulpa_temporal")) {
+    return(.prior_from_temporal_spec(spec, data))
+  }
+  if (inherits(spec, "tulpa_spatial")) {
+    return(.prior_from_spatial_spec(spec, data))
+  }
+  stop("`spec` must inherit from 'tulpa_temporal' or 'tulpa_spatial'.",
+       call. = FALSE)
+}
+
+.prior_from_temporal_spec <- function(spec, data) {
+  spec <- validate_temporal(spec, data)
+  type <- tolower(spec$type)
+  if (!type %in% c("rw1", "rw2", "ar1")) {
+    stop("nested_laplace() supports temporal types rw1, rw2, ar1; got '",
+         type, "'.", call. = FALSE)
+  }
+  out <- list(
+    type = type,
+    temporal_idx = as.integer(spec$time_index),
+    n_times = as.integer(spec$n_times)
+  )
+  if (type == "rw1") out$cyclic <- isTRUE(spec$cyclic)
+  out
+}
+
+.prior_from_spatial_spec <- function(spec, data) {
+  validate_spatial(spec, data)
+  type <- tolower(spec$type)
+  # Map "car" / "icar" → ICAR backend; "car_proper" not yet wired into
+  # nested Laplace (it estimates ρ and would need its own grid).
+  if (type %in% c("car", "icar")) {
+    backend <- "icar"
+  } else if (type == "bym2") {
+    backend <- "bym2"
+  } else if (type == "car_proper") {
+    stop("Proper CAR (rho estimated) is not yet supported by ",
+         "nested_laplace(); use BYM2 instead.", call. = FALSE)
+  } else {
+    stop("nested_laplace() does not yet support spatial type '", type,
+         "'. Use BYM2/ICAR for areal models or cpp_nested_laplace_spde ",
+         "for SPDE.", call. = FALSE)
+  }
+
+  adj <- spec$adjacency
+  csr <- adjacency_to_csr_tulpa(adj)
+  n_spatial_units <- nrow(adj)
+
+  # spatial_idx per obs
+  if (!is.null(spec$level) && spec$level == "group" &&
+      !is.null(spec$group_var)) {
+    if (!(spec$group_var %in% names(data))) {
+      stop("Spatial group variable '", spec$group_var,
+           "' not found in data.", call. = FALSE)
+    }
+    g <- as.factor(data[[spec$group_var]])
+    spatial_idx <- as.integer(g)
+  } else {
+    if (nrow(data) != n_spatial_units) {
+      stop("Observation-level spatial spec requires nrow(data) == ",
+           "nrow(adjacency).", call. = FALSE)
+    }
+    spatial_idx <- seq_len(n_spatial_units)
+  }
+
+  out <- list(
+    type = backend,
+    spatial_idx = spatial_idx,
+    n_spatial_units = as.integer(n_spatial_units),
+    adj_row_ptr = as.integer(csr$row_ptr),
+    adj_col_idx = as.integer(csr$col_idx),
+    n_neighbors = as.integer(csr$n_neighbors)
+  )
+  if (backend == "bym2") {
+    out$scale_factor <- as.numeric(spec$scale_factor %||% 1.0)
+  }
+  out
+}

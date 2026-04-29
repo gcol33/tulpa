@@ -8,7 +8,9 @@ nested_laplace(
   y,
   n_trials,
   X,
-  prior,
+  prior = NULL,
+  spec = NULL,
+  data = NULL,
   re_idx = NULL,
   n_re_groups = 0L,
   sigma_re = 1,
@@ -39,6 +41,15 @@ fields:
 \code{cyclic} (rw1 only, default FALSE).
 \item ar1:   \code{temporal_idx}, \code{n_times}; optional \code{tau_grid}, \code{rho_grid}.
 }}
+
+\item{spec}{Optional \code{tulpa_temporal} or \code{tulpa_spatial} spec object
+(output of \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}},
+\code{\link[=spatial_car]{spatial_car()}}, \code{\link[=spatial_bym2]{spatial_bym2()}}, etc.). When supplied alongside
+\code{data}, the \code{prior} list is built automatically via
+\code{\link[=prior_from_spec]{prior_from_spec()}} — pass either \code{prior} or \code{spec}, not both.}
+
+\item{data}{Data frame used to validate \code{spec} and resolve
+time/group/site indices. Required when \code{spec} is supplied.}
 
 \item{re_idx}{Optional 1-based RE group index per obs (defaults to no RE).}
 
