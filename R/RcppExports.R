@@ -509,6 +509,22 @@ cpp_test_correlation_from_L <- function(L) {
     .Call(`_tulpa_cpp_test_correlation_from_L`, L)
 }
 
+cpp_compute_log_post_test <- function(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
+    .Call(`_tulpa_cpp_compute_log_post_test`, params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
+}
+
+cpp_compute_log_prior_test <- function(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
+    .Call(`_tulpa_cpp_compute_log_prior_test`, params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
+}
+
+cpp_compute_log_lik_only_test <- function(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
+    .Call(`_tulpa_cpp_compute_log_lik_only_test`, params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
+}
+
+cpp_log_post_split_n_params <- function(y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
+    .Call(`_tulpa_cpp_log_post_split_n_params`, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
+}
+
 cpp_tulpa_fit_gaussian <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, step_size = 0.05, n_leapfrog = 10L, seed = 42L) {
     .Call(`_tulpa_cpp_tulpa_fit_gaussian`, y_r, X_r, sigma_beta, n_iter, n_warmup, step_size, n_leapfrog, seed)
 }

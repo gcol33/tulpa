@@ -2215,6 +2215,93 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_compute_log_post_test
+double cpp_compute_log_post_test(Rcpp::NumericVector params, Rcpp::IntegerVector y_num, Rcpp::IntegerVector y_denom, Rcpp::NumericVector y_denom_cont, Rcpp::NumericMatrix X_num, Rcpp::NumericMatrix X_denom, std::string model_type_str, Rcpp::List re_params, Rcpp::List spatial_params, Rcpp::List temporal_params, Rcpp::List prior_params, Rcpp::List zi_params);
+RcppExport SEXP _tulpa_cpp_compute_log_post_test(SEXP paramsSEXP, SEXP y_numSEXP, SEXP y_denomSEXP, SEXP y_denom_contSEXP, SEXP X_numSEXP, SEXP X_denomSEXP, SEXP model_type_strSEXP, SEXP re_paramsSEXP, SEXP spatial_paramsSEXP, SEXP temporal_paramsSEXP, SEXP prior_paramsSEXP, SEXP zi_paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type params(paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_num(y_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_denom(y_denomSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_denom_cont(y_denom_contSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_num(X_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_denom(X_denomSEXP);
+    Rcpp::traits::input_parameter< std::string >::type model_type_str(model_type_strSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type re_params(re_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type spatial_params(spatial_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type temporal_params(temporal_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type prior_params(prior_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type zi_params(zi_paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_compute_log_post_test(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_compute_log_prior_test
+double cpp_compute_log_prior_test(Rcpp::NumericVector params, Rcpp::IntegerVector y_num, Rcpp::IntegerVector y_denom, Rcpp::NumericVector y_denom_cont, Rcpp::NumericMatrix X_num, Rcpp::NumericMatrix X_denom, std::string model_type_str, Rcpp::List re_params, Rcpp::List spatial_params, Rcpp::List temporal_params, Rcpp::List prior_params, Rcpp::List zi_params);
+RcppExport SEXP _tulpa_cpp_compute_log_prior_test(SEXP paramsSEXP, SEXP y_numSEXP, SEXP y_denomSEXP, SEXP y_denom_contSEXP, SEXP X_numSEXP, SEXP X_denomSEXP, SEXP model_type_strSEXP, SEXP re_paramsSEXP, SEXP spatial_paramsSEXP, SEXP temporal_paramsSEXP, SEXP prior_paramsSEXP, SEXP zi_paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type params(paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_num(y_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_denom(y_denomSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_denom_cont(y_denom_contSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_num(X_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_denom(X_denomSEXP);
+    Rcpp::traits::input_parameter< std::string >::type model_type_str(model_type_strSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type re_params(re_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type spatial_params(spatial_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type temporal_params(temporal_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type prior_params(prior_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type zi_params(zi_paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_compute_log_prior_test(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_compute_log_lik_only_test
+double cpp_compute_log_lik_only_test(Rcpp::NumericVector params, Rcpp::IntegerVector y_num, Rcpp::IntegerVector y_denom, Rcpp::NumericVector y_denom_cont, Rcpp::NumericMatrix X_num, Rcpp::NumericMatrix X_denom, std::string model_type_str, Rcpp::List re_params, Rcpp::List spatial_params, Rcpp::List temporal_params, Rcpp::List prior_params, Rcpp::List zi_params);
+RcppExport SEXP _tulpa_cpp_compute_log_lik_only_test(SEXP paramsSEXP, SEXP y_numSEXP, SEXP y_denomSEXP, SEXP y_denom_contSEXP, SEXP X_numSEXP, SEXP X_denomSEXP, SEXP model_type_strSEXP, SEXP re_paramsSEXP, SEXP spatial_paramsSEXP, SEXP temporal_paramsSEXP, SEXP prior_paramsSEXP, SEXP zi_paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type params(paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_num(y_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_denom(y_denomSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_denom_cont(y_denom_contSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_num(X_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_denom(X_denomSEXP);
+    Rcpp::traits::input_parameter< std::string >::type model_type_str(model_type_strSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type re_params(re_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type spatial_params(spatial_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type temporal_params(temporal_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type prior_params(prior_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type zi_params(zi_paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_compute_log_lik_only_test(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_log_post_split_n_params
+int cpp_log_post_split_n_params(Rcpp::IntegerVector y_num, Rcpp::IntegerVector y_denom, Rcpp::NumericVector y_denom_cont, Rcpp::NumericMatrix X_num, Rcpp::NumericMatrix X_denom, std::string model_type_str, Rcpp::List re_params, Rcpp::List spatial_params, Rcpp::List temporal_params, Rcpp::List prior_params, Rcpp::List zi_params);
+RcppExport SEXP _tulpa_cpp_log_post_split_n_params(SEXP y_numSEXP, SEXP y_denomSEXP, SEXP y_denom_contSEXP, SEXP X_numSEXP, SEXP X_denomSEXP, SEXP model_type_strSEXP, SEXP re_paramsSEXP, SEXP spatial_paramsSEXP, SEXP temporal_paramsSEXP, SEXP prior_paramsSEXP, SEXP zi_paramsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_num(y_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y_denom(y_denomSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_denom_cont(y_denom_contSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_num(X_numSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_denom(X_denomSEXP);
+    Rcpp::traits::input_parameter< std::string >::type model_type_str(model_type_strSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type re_params(re_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type spatial_params(spatial_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type temporal_params(temporal_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type prior_params(prior_paramsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type zi_params(zi_paramsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_log_post_split_n_params(y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_gaussian
 Rcpp::List cpp_tulpa_fit_gaussian(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, int n_iter, int n_warmup, double step_size, int n_leapfrog, int seed);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_gaussian(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP step_sizeSEXP, SEXP n_leapfrogSEXP, SEXP seedSEXP) {
@@ -2435,6 +2522,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_compute_u_eff", (DL_FUNC) &_tulpa_cpp_test_compute_u_eff, 3},
     {"_tulpa_cpp_test_chol_nc_chain_rule", (DL_FUNC) &_tulpa_cpp_test_chol_nc_chain_rule, 6},
     {"_tulpa_cpp_test_correlation_from_L", (DL_FUNC) &_tulpa_cpp_test_correlation_from_L, 1},
+    {"_tulpa_cpp_compute_log_post_test", (DL_FUNC) &_tulpa_cpp_compute_log_post_test, 12},
+    {"_tulpa_cpp_compute_log_prior_test", (DL_FUNC) &_tulpa_cpp_compute_log_prior_test, 12},
+    {"_tulpa_cpp_compute_log_lik_only_test", (DL_FUNC) &_tulpa_cpp_compute_log_lik_only_test, 12},
+    {"_tulpa_cpp_log_post_split_n_params", (DL_FUNC) &_tulpa_cpp_log_post_split_n_params, 11},
     {"_tulpa_cpp_tulpa_fit_gaussian", (DL_FUNC) &_tulpa_cpp_tulpa_fit_gaussian, 8},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 9},
     {"_tulpa_tulpa_version", (DL_FUNC) &_tulpa_tulpa_version, 0},
