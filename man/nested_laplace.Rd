@@ -91,12 +91,15 @@ integrates over the grid to give proper hyperparameter marginals.
 
 Supported priors:
 \itemize{
-\item Spatial: \code{"icar"} (1D grid on tau), \code{"bym2"} (2D on (sigma, rho)),
-\code{"car_proper"} (2D on (tau, rho); rho lives in the eigenvalue
-interval (1/lambda_min, 1/lambda_max) of D^{-1}W).
+\item Spatial (areal): \code{"icar"} (1D grid on tau), \code{"bym2"}
+(2D on (sigma, rho)), \code{"car_proper"} (2D on (tau, rho); rho lives
+in the eigenvalue interval (1/lambda_min, 1/lambda_max) of
+D^{-1}W).
+\item Spatial (continuous): \code{"nngp"} (2D on (sigma2, phi_gp)),
+\code{"hsgp"} (2D on (sigma2, lengthscale)).
 \item Temporal: \code{"rw1"}, \code{"rw2"} (1D grid on tau), \code{"ar1"} (2D on (tau, rho))
-\item Continuous spatial: see \code{\link[=cpp_nested_laplace_spde]{cpp_nested_laplace_spde()}} (separate entry,
-rebuilds Q via SPDE Q-builder).
+\item SPDE continuous spatial: see \code{\link[=cpp_nested_laplace_spde]{cpp_nested_laplace_spde()}} (separate
+entry, rebuilds Q via SPDE Q-builder).
 }
 }
 \keyword{internal}

@@ -1,8 +1,29 @@
 # tulpa Features Plan — Nested Laplace & Solver Infrastructure
 
-**Date:** 2026-03-25
-**Status:** Draft
-**Depends on:** TODO.md P0.1 (type unification) should be done first or in parallel.
+**Date:** 2026-03-25 (drafted), updated 2026-04-29.
+**Status:** Phase 0 + Phase 1 + most of Phase 2 shipped. Remaining work is
+selected inversion polish, k≥3 implicit-diff for hyperparameter NUTS
+(`Feature 7`), and large-N stochastic log-det (`Feature 8`). This document
+remains the engineering reference; current punch-list lives in `TODO.md`.
+
+## Status as of 2026-04-29
+
+| Feature | Status | Where it lives |
+|---|---|---|
+| F1 CHOLMOD sparse solver | ✅ shipped | `src/sparse_cholesky.{h,cpp}` |
+| F2 Q-builder abstraction | ✅ shipped (SPDE) | `src/spde_qbuilder.h` |
+| F3 Nested Laplace (a/b/c) | ✅ shipped | generic driver `src/nested_laplace_grid.h`; eight prior backends in `src/nested_laplace.cpp` (icar, bym2, car_proper, rw1, rw2, ar1, nngp, hsgp) + SPDE in `src/spde_laplace.cpp`; CCD grid in `R/ccd_grid.R` |
+| F4 Selected inversion | ✅ shipped | `SparseCholeskySolver::selected_inversion_diagonal` (Takahashi via simplicial LL') |
+| F5 Amortized Laplace warm-start | ✅ shipped | `tulpa::run_nested_laplace_grid` warm-starts each grid point from the previous mode; `SparseCholeskySolver` keeps the symbolic factor across calls |
+| F6 GPU-batched NNGP | ✅ CPU + cuSOLVER path; live CUDA test pending (TODO.md #7) | `src/gpu_nngp_laplace.h`, `src/gpu_cuda.h` |
+| F7 Implicit differentiation | ✅ shipped (k=1, k=2) | `src/implicit_diff.{h,cpp}`; full k≥3 NUTS-over-hyperparams still scaffolded |
+| F8 Stochastic log-det | ✅ shipped | `src/stochastic_logdet.cpp` (Lanczos) + cross-DLL shim `tulpa_stochastic_log_det` |
+| F9 Consolidate Laplace code | ✅ shipped | `laplace_helpers.h::laplace_newton_solve` template; eight model-specific entries in `laplace_core.cpp` all dispatch through it |
+
+Cross-DLL ABI surface added on top of all of the above (see `fix.md` for the
+shim plan): `laplace_api.h`, `pg_api.h`, `vi_api.h`, `ess_api.h`,
+`sparse_solver_api.h`, `priors_capped.h` are in working tree and compile;
+`nested_laplace_api.h` and `spde_api.h` are next.
 
 ---
 

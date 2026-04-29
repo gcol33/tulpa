@@ -1,5 +1,101 @@
 # tulpa Implementation Plan
 
+## Next-session pickup (read this first)
+
+**Branch:** `feature/lkj-chol-helpers` (ahead of `origin/feature/lkj-chol-helpers` by 2 commits).
+**Last engine commit:** `9cd5a89 feat(nested-laplace): NNGP and HSGP continuous-spatial backends` (2026-04-29).
+
+### What just landed
+
+- Round 4 nested-Laplace surface, all driven by `tulpa::run_nested_laplace_grid`:
+  - Areal: `icar`, `bym2`, `car_proper` (2D grid over (τ, ρ) using eigenvalue bounds of D⁻¹W).
+  - Continuous-spatial: `nngp` (2D over (σ², φ_gp)), `hsgp` (2D over (σ², ℓ)).
+    HSGP is split into `src/hmc_hsgp_kernels.h` (Eigen-free spectral density + 1D
+    eigenfunctions) and `src/hmc_hsgp.h` (Eigen-using matvec helpers); nested entries
+    only include the kernels header to keep translation units lightweight.
+  - Temporal: `rw1`, `rw2`, `ar1`.
+  - SPDE: `cpp_nested_laplace_spde` (separate entry, rebuilds Q via `SpdeQBuilder`).
+- `R/ccd_grid.R`: `ccd_grid(k, f_0)` and `ccd_to_theta(z, theta_hat, L, log_scale)` for
+  k≥3 hyperparameter integration. Full factorial up to k=6, Resolution-V half-fraction
+  for k≥7. 37 tests pass.
+- `inst/include/tulpa/param_layout.h`: explicit half-open `[start, end)` convention
+  documented after audit closing gcol33/tulpa#2 (the issue's premise that
+  `re_end_multi` was inclusive was wrong; tulpa is uniformly exclusive everywhere).
+- Cross-DLL ABI surface (uncommitted, see `fix.md`): `R_RegisterCCallable` shims so
+  downstream packages (tulpaGlmm, tulpaOcc, tulpaMesh) can reach inference drivers
+  without going through `Rcpp::List`. Already shipped: laplace_mode_dense /
+  _spatial / _dense_multi_re, pg_binomial / pg_negbin / pg_negbin_spatial,
+  fit_vi, run_ess_sampler with `joint_sigma_re`, sparse_chol (create / analyze /
+  factorize / solve / log_det / sel_inv_diag) + stochastic_log_det.
+
+### Working-tree state at session start
+
+```
+M  R/nested_laplace.R          (NNGP/HSGP dispatch, in commit 9cd5a89)
+M  src/nested_laplace.cpp      (NNGP/HSGP entries, in commit 9cd5a89)
+M  src/hmc_hsgp.h              (kernels split-out, in commit 9cd5a89)
+A  src/hmc_hsgp_kernels.h      (in commit 9cd5a89)
+
+ M inst/include/tulpa/model_data.h   (uncommitted, ABI surface)
+ M src/autodiff_utils.h               ( "    capped half-cauchy)
+ M src/ess_sampler.h                  ( "    joint_sigma_re toggle)
+ M src/tulpa_init.cpp                 ( "    register_shims hook)
+?? src/tulpa_shims.cpp                (uncommitted, 835 LOC of shim impls)
+?? inst/include/tulpa/laplace_api.h
+?? inst/include/tulpa/pg_api.h
+?? inst/include/tulpa/vi_api.h
+?? inst/include/tulpa/ess_api.h
+?? inst/include/tulpa/sparse_solver_api.h
+?? inst/include/tulpa/priors_capped.h
+?? fix.md                              (the change notes — read this)
+```
+
+The uncommitted block compiles and is the active work; commit it before starting new
+shims.
+
+### Open work, ordered (highest tulpaGlmm value first)
+
+1. **Land remaining Laplace shims** in `src/tulpa_shims.cpp` + `inst/include/tulpa/laplace_api.h`:
+   `_bym2`, `_gp`, `_multiscale_gp`, `_multiscale_temporal`, `_rsr`,
+   `laplace_newton_solve`, `laplace_newton_solve_sparse`. Pattern is in the three
+   already-shipped entries — same POD struct + raw pointers + `free_buffers()`. ~150 LOC.
+2. **Add `nested_laplace_api.h` + `spde_api.h` shims** wrapping the eight nested-Laplace
+   backends (icar / bym2 / car_proper / rw1 / rw2 / ar1 / nngp / hsgp / spde) and the
+   CCD grid generator. Unlocks `spatial = tulpa_mesh(...)` in tulpaGlmm. ~200 LOC.
+3. **EM+Laplace engine additions** for tulpaGlmm callbacks. File two follow-ups
+   _against the future `em_laplace_api.h`_:
+   - **gcol33/tulpa#3** — per-submodel family + offset on the `m_step_encode` callback's
+     return shape; thread through existing `tulpa_laplace()` dispatch (already handles
+     family per-call, just not per-submodel).
+   - **gcol33/tulpa#4** — optional `m_step_extra(fits, weights, ...) -> fits` callback
+     fired between M-step and next E-step, for non-η parameters (NB φ, Gamma shape,
+     Beta φ, etc.). Pure plumbing.
+4. **Stretch shim APIs:** `mclmc_api.h`, `smc_api.h`, `sghmc_api.h`. Same pattern as (1).
+
+### Pre-flight before starting
+
+```bash
+cd "C:/GillesC/Documents/dev/tulpa"
+git status
+# Inspect uncommitted shim block; commit if intent matches.
+
+# Clean rebuild + full nested-Laplace + CCD regression (254 pass / 1 skip / 0 fail expected):
+"/c/Program Files/R/R-4.6.0/bin/R.exe" CMD INSTALL --no-test-load --no-multiarch . > /tmp/install.log 2>&1
+"/c/Program Files/R/R-4.6.0/bin/Rscript.exe" dev_notes/run_nl_regression.R
+cat dev_notes/nl_regression.log
+```
+
+### Reference docs
+
+- `fix.md` — full shim-surface plan with implementation order and salvaged-log notes.
+- `CLAUDE.md` — the "Surface Bugs" rule, the EM+Laplace TODO at the bottom, and the
+  generic-S3 / generic-diagnostics moves still to come.
+- `dev_notes/run_nl_regression.R` — minimal regression runner; mirrors
+  `dev_notes/run_gp_tests.R` + `nngp_smoke.R` + `hsgp_smoke.R`.
+- `nested_laplace_proposal.md`, `features_plan.md`, `TODO.md` — historical context.
+
+---
+
 Ecosystem layout (`~/Documents/dev/`):
 
 | Package | Role | State |
@@ -14,9 +110,11 @@ Model packages register likelihoods via `LikelihoodSpec` (`inst/include/tulpa/li
 tulpa stays model-agnostic.
 
 This plan supersedes the standalone roadmaps that grew alongside it. See `TODO.md`
-(architecture blockers), `TODO_next.md` (post-CHOLMOD features), `features_plan.md`
-(nested Laplace + solver infra), and `nested_laplace_proposal.md` (math) for full
-context — the items below pull every still-open thread into one ordered list.
+(punch list, `TODO_next.md` was rolled in and deleted 2026-04-29),
+`features_plan.md` (nested Laplace + solver infra, annotated with shipped
+status), `nested_laplace_proposal.md` (math), and `fix.md` (cross-DLL ABI shim
+surface, the current active work) for full context — the items below pull
+every still-open thread into one ordered list.
 
 ## Round 1 — tulpa core (parallel, no file overlap) ✅ DONE
 
@@ -151,24 +249,43 @@ without breaking ratio models. The rest can start now.
     - Dispatch contract pinned by 4 new test cases in `tests/testthat/test-spde.R`
       using a tiny synthetic mesh via `spatial_spde_custom` (no fmesher dep
       for the dispatch tests).
-12. **Wire SPDE into tulpaOcc** (from `TODO_next.md`).
+12. **Wire SPDE into tulpaOcc** — `occu_spde` ships in tulpaOcc; end-to-end
+    verification at higher N pending. (Tracked as TODO.md #5.)
 
-## Round 4 — Nested Laplace (the strategic piece)
+## Round 4 — Nested Laplace (the strategic piece) ✅ DONE
 
 This is the differentiator: a CRAN-compatible INLA alternative with GPU
 acceleration. Math is in `nested_laplace_proposal.md`; engineering plan in
-`features_plan.md`.
+`features_plan.md` (now annotated with shipped status).
 
-13. Outer hyperparameter grid + numerical integration over θ.
-14. Inner Laplace at each grid point, warm-started from the previous point.
-15. Posterior marginal extraction (latent field + hyperparameters).
-16. **Takahashi selected inversion** for partial inverse of sparse Cholesky
-    factors — needed to get marginal variances out of the inner Laplace
-    cheaply (from `TODO_next.md`).
-17. **Rational SPDE** for fractional Matérn smoothness ν ∉ {0.5, 1.5, 2.5}
-    (from `TODO_next.md`).
-18. **BYM2 nested Laplace** (from `TODO_next.md`).
-19. **GPU-batched NNGP** for the inner Laplace at scale (from `TODO_next.md`).
+13. ✅ Outer hyperparameter grid + numerical integration over θ —
+    `tulpa::run_nested_laplace_grid` in `src/nested_laplace_grid.h`.
+14. ✅ Inner Laplace at each grid point, warm-started — every `cpp_nested_laplace_*`
+    threads `prev_mode` through the driver, and `SparseCholeskySolver` reuses
+    its symbolic factor across the grid.
+15. ✅ Posterior marginal extraction — `R/nested_laplace.R` returns
+    `theta_grid` + `weights` + `theta_mean` + `theta_sd` + per-grid-point modes.
+16. ✅ Takahashi selected inversion — `SparseCholeskySolver::selected_inversion_diagonal`
+    + cross-DLL shim `tulpa_sparse_chol_sel_inv_diag`.
+17. ✅ Rational SPDE — `SpdeQBuilder::rebuild_rational(kappa, tau, poles, weights)`
+    in `src/spde_qbuilder.h`.
+18. ✅ BYM2 nested Laplace — `cpp_nested_laplace_bym2`.
+19. ✅ GPU-batched NNGP at scale — `tulpa::batch_nngp_scatter` in
+    `src/gpu_nngp_laplace.h`. CPU path tested; live CUDA test still pending
+    (TODO.md #7).
+
+**Plus shipped beyond the original list:**
+
+- `cpp_nested_laplace_car_proper` (proper CAR, 2D over (τ, ρ) using the
+  D⁻¹W eigenvalue interval).
+- `cpp_nested_laplace_nngp` (continuous-spatial GP, 2D over (σ², φ_gp)).
+- `cpp_nested_laplace_hsgp` (Hilbert-space GP, 2D over (σ², ℓ); kernels
+  split out into `src/hmc_hsgp_kernels.h` for Eigen-free use).
+- `cpp_nested_laplace_rw1` / `_rw2` / `_ar1`.
+- `R/ccd_grid.R` — k≥3 hyperparameter integration via central composite design.
+
+Regression: 254 pass / 1 skip / 0 fail across the full nested-Laplace + CCD
+test surface (`dev_notes/run_nl_regression.R`).
 
 ## P2 — Scaling friction (interleaved with Round 3 / 4)
 
@@ -202,13 +319,16 @@ From `TODO.md`. P2.4 is already done; the rest are still open:
 - `tests/testthat/test-inference-modes.R` placeholder.
 - Formula parser duplicate-bar coalescing (low priority).
 
-## Status
+## Status (2026-04-29)
 
 - Round 1 + Round 1.5: pushed to `origin/feature/lkj-chol-helpers`.
-- Round 2 prerequisites: already resolved (audit 2026-04-28). See section above.
+- Round 2 prerequisites: resolved (2026-04-28 audit).
 - Round 2 (Agent E + F): unblocked, parallelizable. Agent E is the long
   pole because it lives in a sibling repo and reproduces a benchmark.
 - Round 3: items 8-12 can start in parallel with Round 2; only item 7
   (legacy strip) waits on Agent E.
-- Round 4 (nested Laplace): the strategic differentiator. Can begin in
-  parallel with later Round 3 items once SPDE backends are stable.
+- Round 4 (nested Laplace): ✅ shipped. Generic infra + 8 backends + CCD.
+- **Active focus:** cross-DLL ABI shim surface (`fix.md`). Six API headers
+  + `tulpa_shims.cpp` already compile (uncommitted in working tree);
+  remaining work is the missing Laplace shims (`_bym2`/`_gp`/etc.) plus
+  `nested_laplace_api.h` and `spde_api.h`. Tracked as item 2b in `TODO.md`.
