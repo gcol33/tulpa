@@ -200,8 +200,17 @@
 #'   resolves to `"none"`.
 #' @param n_imputations Reserved for MI correction.
 #' @param n_gibbs Reserved for Gibbs correction.
+#' @param m_step_extra Optional `function(fits, weights, ...) -> fits`. Fired
+#'   once per EM iteration, between the M-step and the next E-step. Receives
+#'   the freshly assembled list of [tulpa_laplace()] results (`fits`), the
+#'   current E-step weights, and any extra arguments forwarded through `...`.
+#'   Returns a list with the same length and names as the input, possibly
+#'   with mutated dispersion / shape / precision fields (e.g. `fits[[k]]$phi`).
+#'   Use this to update non-eta parameters that fall out of the Laplace
+#'   M-step (NB overdispersion, Gamma shape, Beta precision, Gaussian sigma).
+#'   When `NULL` (default), behavior is unchanged. See `gcol33/tulpa#4`.
 #' @param verbose Print per-iteration progress.
-#' @param ... Forwarded to `e_step` and `m_step_encode`.
+#' @param ... Forwarded to `e_step`, `m_step_encode`, and `m_step_extra`.
 #'
 #' @return A list with:
 #' \itemize{
@@ -219,9 +228,15 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
                               max_iter = 50L, tol = 1e-4, damping = 0.3,
                               correction = c("auto", "mi", "gibbs", "none"),
                               n_imputations = 20L, n_gibbs = 10L,
+                              m_step_extra = NULL,
                               verbose = TRUE, ...) {
   correction <- match.arg(correction)
   if (correction == "auto") correction <- "none"
+
+  if (!is.null(m_step_extra) && !is.function(m_step_extra)) {
+    stop("`m_step_extra` must be NULL or a function(fits, weights, ...).",
+         call. = FALSE)
+  }
 
   # TODO(gcol33/tulpa): implement MI and Gibbs corrections.
   # MI: draw hard z from weights, refit blocks unweighted, pool via
@@ -298,6 +313,12 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
 
     fits <- new_fits
 
+    # ---- Optional non-eta parameter update (NB phi, Gamma shape, ...) ----
+    # Fired between the M-step and the next E-step; engine is model-agnostic.
+    if (!is.null(m_step_extra)) {
+      fits <- apply_m_step_extra(m_step_extra, fits, weights, ...)
+    }
+
     # ---- Convergence ----
     curr_params <- .fits_to_param_vec(fits)
     delta <- .max_rel_change(prev_params, curr_params)
@@ -326,6 +347,39 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     converged = converged,
     history   = history
   )
+}
+
+
+# ============================================================================
+# Optional non-eta parameter update hook (gcol33/tulpa#4).
+#
+# The callback receives the freshly assembled M-step fits, the current E-step
+# weights, and any extra arguments forwarded through `...`. It must return a
+# list with the same length and per-element names as the input. Per-element
+# shape is otherwise opaque to the engine — the callback owns the update rule.
+# ============================================================================
+apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
+  updated <- m_step_extra(fits = fits, weights = weights, ...)
+
+  if (!is.list(updated)) {
+    stop("`m_step_extra` must return a list, not ",
+         paste(class(updated), collapse = "/"), ".", call. = FALSE)
+  }
+  if (length(updated) != length(fits)) {
+    stop(sprintf(
+      "`m_step_extra` returned %d submodel(s); expected %d (one per M-step fit).",
+      length(updated), length(fits)
+    ), call. = FALSE)
+  }
+  if (!is.null(names(fits))) {
+    if (is.null(names(updated)) || !identical(names(updated), names(fits))) {
+      got <- if (is.null(names(updated))) "<unnamed>" else paste(names(updated), collapse = ", ")
+      stop("`m_step_extra` must preserve submodel names. Expected: ",
+           paste(names(fits), collapse = ", "),
+           "; got: ", got, ".", call. = FALSE)
+    }
+  }
+  updated
 }
 
 
