@@ -2337,6 +2337,38 @@ double compute_log_post(
 }
 
 // =====================================================================
+// Separable prior + likelihood (gcol33/tulpa#6 prereq)
+//
+// SMC and other tempered samplers need log_prior and log_lik as
+// independently callable terms (target = log_prior + beta * log_lik).
+// Contract: compute_log_post == compute_log_prior + compute_log_lik_only
+// up to numerical tolerance. Verified by tests/testthat/test-log-post-split.R.
+// =====================================================================
+
+double compute_log_prior(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout
+) {
+  // Prior + structural terms only (skip the O(N) observation loop).
+  return compute_log_post(params, data, layout, /*skip_obs_loop=*/true);
+}
+
+double compute_log_lik_only(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout
+) {
+  // TODO(#6 follow-up): factor the observation loop in compute_log_post into
+  // its own helper so log_lik can be computed in a single O(N) pass instead
+  // of two compute_log_post calls. Until then, derive it by subtraction so
+  // the prior + lik sum matches compute_log_post exactly by construction.
+  const double log_post = compute_log_post(params, data, layout, /*skip_obs_loop=*/false);
+  const double log_prior = compute_log_post(params, data, layout, /*skip_obs_loop=*/true);
+  return log_post - log_prior;
+}
+
+// =====================================================================
 // Analytical gradient for simple Poisson-Gamma models
 // O(n) instead of O(n*p) - huge speedup for typical models
 // =====================================================================

@@ -136,6 +136,22 @@ double compute_log_post(
     const double* precomputed_tgp_log_prior = nullptr
 );
 
+// Separable prior + likelihood (gcol33/tulpa#6 prereq).
+// Contract: compute_log_post == compute_log_prior + compute_log_lik_only
+// to within numerical tolerance for any well-defined params.
+// SMC and other tempered samplers consume these as independent callables
+// (target = log_prior + beta * log_lik).
+double compute_log_prior(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout
+);
+double compute_log_lik_only(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout
+);
+
 // Gradient computation (with optional fused log-posterior)
 // When log_post_out is non-null, the log-posterior is computed alongside
 // the gradient in a single pass, avoiding redundant O(N) computation.
