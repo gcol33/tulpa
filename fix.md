@@ -97,7 +97,19 @@ then, rebuild downstream packages against the current tulpa source.
      (2026-04-29). Cross-DLL round-trip verified: dense reference matches to
      1e-15 on n=5 tridiagonal SPD; SLQ matches dense logdet to 6 sig figs at
      n_probes=60, n_lanczos=5.
-5. `spde_api.h` + `nested_laplace_api.h` — unlocks `spatial = tulpa_mesh(...)`.
+5. `spde_api.h` + `nested_laplace_api.h` — unlocks `spatial = tulpa_mesh(...)`. DONE
+   (2026-04-29). `nested_laplace_api.h` exposes the eight backends
+   (icar / bym2 / car_proper / rw1 / rw2 / ar1 / nngp / hsgp) behind a shared
+   `NestedLaplaceShimResult` (universal `log_marginal[n_grid] + n_iter[n_grid]`
+   block, optional `modes[n_grid * n_x]` row-major). `spde_api.h` exposes the
+   SPDE driver behind `SpdeNestedLaplaceShimResult`, which adds `Q_nnz` and
+   omits modes (the SPDE backend never stored them).
+   Hyperparameter posterior weights / `theta_mean` / `theta_sd` are computed
+   R-side from `log_marginal` + the input grid (see `R/nested_laplace.R`).
+   Shim impls in `tulpa_shims.cpp` go through the existing Rcpp wrappers
+   (`cpp_nested_laplace_*`, `cpp_nested_laplace_spde`) and unpack the
+   returned `Rcpp::List` into the POD result struct — same shape as the
+   already-landed Laplace shims that go through `tulpa::laplace_mode_*`.
 6. `ess_api.h` — correlated slopes via LKJ-Cholesky / ASIS. DONE.
    - DONE: `joint_sigma_re` toggle now wired through `tulpa_ess::ESSConfig`
      and run_ess_sampler. When set, performs a joint Metropolis move

@@ -25,9 +25,11 @@
   downstream packages (tulpaGlmm, tulpaOcc, tulpaMesh) can reach inference drivers
   without going through `Rcpp::List`. Already shipped: laplace_mode_dense /
   _spatial / _dense_multi_re / _bym2 / _gp / _multiscale_gp /
-  _multiscale_temporal / _rsr, pg_binomial / pg_negbin / pg_negbin_spatial,
-  fit_vi, run_ess_sampler with `joint_sigma_re`, sparse_chol (create / analyze /
-  factorize / solve / log_det / sel_inv_diag) + stochastic_log_det.
+  _multiscale_temporal / _rsr; nested_laplace_icar / _bym2 / _car_proper /
+  _rw1 / _rw2 / _ar1 / _nngp / _hsgp / _spde; pg_binomial / _negbin /
+  _negbin_spatial; fit_vi; run_ess_sampler with `joint_sigma_re`;
+  sparse_chol (create / analyze / factorize / solve / log_det / sel_inv_diag)
+  + stochastic_log_det.
 
 ### Working-tree state at session start
 
@@ -51,15 +53,12 @@ A  src/hmc_hsgp_kernels.h      (in commit 9cd5a89)
 ?? fix.md                              (the change notes — read this)
 ```
 
-The uncommitted block compiles and is the active work; commit it before starting new
-shims.
+Working tree is clean as of the nested-Laplace shim landing — pull and rebuild
+to start.
 
 ### Open work, ordered (highest tulpaGlmm value first)
 
-1. **Add `nested_laplace_api.h` + `spde_api.h` shims** wrapping the eight nested-Laplace
-   backends (icar / bym2 / car_proper / rw1 / rw2 / ar1 / nngp / hsgp / spde) and the
-   CCD grid generator. Unlocks `spatial = tulpa_mesh(...)` in tulpaGlmm. ~200 LOC.
-2. **EM+Laplace engine additions** for tulpaGlmm callbacks. File two follow-ups
+1. **EM+Laplace engine additions** for tulpaGlmm callbacks. File two follow-ups
    _against the future `em_laplace_api.h`_:
    - **gcol33/tulpa#3** — per-submodel family + offset on the `m_step_encode` callback's
      return shape; thread through existing `tulpa_laplace()` dispatch (already handles
@@ -67,7 +66,7 @@ shims.
    - **gcol33/tulpa#4** — optional `m_step_extra(fits, weights, ...) -> fits` callback
      fired between M-step and next E-step, for non-η parameters (NB φ, Gamma shape,
      Beta φ, etc.). Pure plumbing.
-3. **Stretch shim APIs:** `mclmc_api.h`, `smc_api.h`, `sghmc_api.h`. Same pattern as the
+2. **Stretch shim APIs:** `mclmc_api.h`, `smc_api.h`, `sghmc_api.h`. Same pattern as the
    already-landed Laplace shims.
 
 ### Pre-flight before starting
@@ -327,7 +326,8 @@ From `TODO.md`. P2.4 is already done; the rest are still open:
   (legacy strip) waits on Agent E.
 - Round 4 (nested Laplace): ✅ shipped. Generic infra + 8 backends + CCD.
 - **Active focus:** cross-DLL ABI shim surface (`fix.md`). Laplace surface
-  is now complete (dense / spatial / dense_multi_re / bym2 / gp /
-  multiscale_gp / multiscale_temporal / rsr); remaining work is
-  `nested_laplace_api.h` + `spde_api.h` (item 1 in the open-work list above)
-  and the EM+Laplace follow-ups. Tracked as item 2b in `TODO.md`.
+  (dense / spatial / dense_multi_re / bym2 / gp / multiscale_gp /
+  multiscale_temporal / rsr) and nested-Laplace surface (icar / bym2 /
+  car_proper / rw1 / rw2 / ar1 / nngp / hsgp / spde) are now complete.
+  Remaining work is the EM+Laplace follow-ups (gcol33/tulpa#3, #4) and the
+  stretch MCLMC / SMC / SGHMC shim layer. Tracked as item 2b in `TODO.md`.
