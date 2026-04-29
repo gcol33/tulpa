@@ -479,6 +479,71 @@ double log_prior_icar(
     const Rcpp::IntegerVector& n_neighbors
 );
 
+// =====================================================================
+// Temporal log-priors (intrinsic RW1, RW2; proper AR1)
+// =====================================================================
+//
+// RW1 (rank n_times - 1, or rank n_times if cyclic):
+//   log p(x | tau) = 0.5 * rank * log(tau / 2pi)
+//                  - 0.5 * tau * sum_t (x_t - x_{t-1})^2
+// RW2 (rank n_times - 2, non-cyclic only here):
+//   log p(x | tau) = 0.5 * rank * log(tau / 2pi)
+//                  - 0.5 * tau * sum_t (x_{t-1} - 2 x_t + x_{t+1})^2
+// AR1 (full rank, marginal var 1/tau):
+//   log p(x | tau, rho) = 0.5 * n_times * log(tau / 2pi)
+//                       + 0.5 * log(1 - rho^2)
+//                       - 0.5 * tau * [ (1-rho^2) x_0^2
+//                                     + sum_{t>=1} (x_t - rho x_{t-1})^2 ]
+
+inline double log_prior_rw1(
+    const Rcpp::NumericVector& x, int start_idx, int n_times,
+    double tau, bool cyclic
+) {
+    if (n_times < 2) return 0.0;
+    double quad = 0.0;
+    for (int t = 1; t < n_times; t++) {
+        double d = x[start_idx + t] - x[start_idx + t - 1];
+        quad += d * d;
+    }
+    int rank = n_times - 1;
+    if (cyclic) {
+        double d = x[start_idx] - x[start_idx + n_times - 1];
+        quad += d * d;
+        rank = n_times;
+    }
+    return 0.5 * rank * std::log(tau / (2.0 * M_PI)) - 0.5 * tau * quad;
+}
+
+inline double log_prior_rw2(
+    const Rcpp::NumericVector& x, int start_idx, int n_times,
+    double tau, bool /*cyclic*/
+) {
+    if (n_times < 3) return 0.0;
+    double quad = 0.0;
+    for (int t = 1; t < n_times - 1; t++) {
+        double d = x[start_idx + t - 1] - 2.0 * x[start_idx + t] + x[start_idx + t + 1];
+        quad += d * d;
+    }
+    int rank = n_times - 2;
+    return 0.5 * rank * std::log(tau / (2.0 * M_PI)) - 0.5 * tau * quad;
+}
+
+inline double log_prior_ar1(
+    const Rcpp::NumericVector& x, int start_idx, int n_times,
+    double tau, double rho
+) {
+    if (n_times < 1) return 0.0;
+    double rho2 = rho * rho;
+    double quad = (1.0 - rho2) * x[start_idx] * x[start_idx];
+    for (int t = 1; t < n_times; t++) {
+        double r = x[start_idx + t] - rho * x[start_idx + t - 1];
+        quad += r * r;
+    }
+    return 0.5 * n_times * std::log(tau / (2.0 * M_PI))
+           + 0.5 * std::log(std::max(1.0 - rho2, 1e-15))
+           - 0.5 * tau * quad;
+}
+
 void add_rw1_precision(
     DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
     int start_idx, int n_times, double tau, bool cyclic

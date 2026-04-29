@@ -10,26 +10,30 @@ parse_bar_term(bar_term)
 \item{bar_term}{A language object: \code{|}(lhs, rhs) or \code{||}(lhs, rhs)}
 }
 \value{
-A list of RE specs. Each spec has:
+A list of RE specs (one per grouping level). Each spec has:
 \itemize{
 \item \code{group_var}: character, display label (colon-joined for nested)
 \item \code{group_vars}: character vector, each element a column name
 \item \code{group_expr}: language or NULL (set when grouping is a non-name expr)
 \item \code{slope_terms}: list of language objects (slope LHS terms)
 \item \code{has_intercept}: logical
-\item \code{correlated}: logical (TRUE for \code{|}, FALSE only for unexpanded \code{||})
+\item \code{correlated}: logical (TRUE for \code{|}, FALSE for \code{||})
 \item \code{original}: the original bar language object
 }
 }
 \description{
 Takes a \code{|} or \code{||} language object and extracts the grouping variable(s),
-effect terms (intercept, slopes), and correlation structure.
+effect terms (intercept, slopes), and correlation structure. The bar
+operator drives the \code{correlated} flag: \code{|} → \code{TRUE} (LKJ-Cholesky on the
+joint slope vector), \code{||} → \code{FALSE} (diagonal covariance, one σ per
+coefficient). This matches lme4 / glmmTMB and lets downstream packages
+branch on \code{correlated} to choose between independent-σ and Cholesky
+parameterizations.
 }
 \details{
 Nested grouping \code{(1 | a/b)} is expanded into one spec per level
-(a, then a:b). Uncorrelated \code{||} is expanded lme4-style: \code{(1 + x || g)}
-becomes \code{(1 | g) + (0 + x | g)}, so the sampler sees a diagonal
-covariance as a set of independent bars rather than a single bar
-with \code{correlated = FALSE}.
+(a, then a:b). \code{||} is preserved as a single spec rather than split into
+multiple \code{|} bars, so the original user intent (one logical RE term with
+diagonal covariance) round-trips through the parsed object.
 }
 \keyword{internal}

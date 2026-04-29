@@ -105,6 +105,18 @@ cpp_nested_laplace_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spat
     .Call(`_tulpa_cpp_nested_laplace_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable)
 }
 
+cpp_nested_laplace_rw1 <- function(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, cyclic, tau_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_rw1`, y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, cyclic, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable)
+}
+
+cpp_nested_laplace_rw2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, tau_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_rw2`, y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable)
+}
+
+cpp_nested_laplace_ar1 <- function(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, tau_grid, rho_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_ar1`, y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable)
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }

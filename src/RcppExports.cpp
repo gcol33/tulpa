@@ -591,6 +591,83 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_nested_laplace_rw1
+Rcpp::List cpp_nested_laplace_rw1(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic, Rcpp::NumericVector tau_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable);
+RcppExport SEXP _tulpa_cpp_nested_laplace_rw1(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP cyclicSEXP, SEXP tau_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type temporal_idx(temporal_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
+    Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type tau_grid(tau_gridSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_rw1(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, cyclic, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_nested_laplace_rw2
+Rcpp::List cpp_nested_laplace_rw2(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector tau_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable);
+RcppExport SEXP _tulpa_cpp_nested_laplace_rw2(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP tau_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type temporal_idx(temporal_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type tau_grid(tau_gridSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_rw2(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_nested_laplace_ar1
+Rcpp::List cpp_nested_laplace_ar1(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable);
+RcppExport SEXP _tulpa_cpp_nested_laplace_ar1(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type temporal_idx(temporal_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type tau_grid(tau_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type rho_grid(rho_gridSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_ar1(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_pg_binomial_gibbs
 Rcpp::List cpp_pg_binomial_gibbs(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector group, int n_groups, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_scale, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP groupSEXP, SEXP n_groupsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_scaleSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
@@ -2171,6 +2248,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 18},
     {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 20},
+    {"_tulpa_cpp_nested_laplace_rw1", (DL_FUNC) &_tulpa_cpp_nested_laplace_rw1, 16},
+    {"_tulpa_cpp_nested_laplace_rw2", (DL_FUNC) &_tulpa_cpp_nested_laplace_rw2, 15},
+    {"_tulpa_cpp_nested_laplace_ar1", (DL_FUNC) &_tulpa_cpp_nested_laplace_ar1, 16},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 21},

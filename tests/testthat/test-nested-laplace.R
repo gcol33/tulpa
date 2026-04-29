@@ -78,79 +78,81 @@ test_that("hot-start works across nearby tau values", {
 # Test: Nested Laplace runs and produces reasonable output
 # =====================================================================
 
-test_that("nested_laplace_icar runs on small problem", {
-  adj <- make_grid_adjacency(5, 5)  # 25 sites
+# R-level dispatcher (post-refactor): nested_laplace(prior = list(type=...))
+
+icar_prior <- function(adj, n_sites, tau_grid = NULL) {
+  list(
+    type = "icar",
+    spatial_idx = NULL,  # filled per call
+    n_spatial_units = n_sites,
+    adj_row_ptr = adj$adj_row_ptr,
+    adj_col_idx = adj$adj_col_idx,
+    n_neighbors = adj$n_neighbors,
+    tau_grid = tau_grid
+  )
+}
+
+test_that("nested_laplace dispatches ICAR with explicit grid", {
+  adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
     beta0 = -0.5, tau_spatial = 3.0, adj = adj
   )
+  prior <- icar_prior(adj, 25L,
+                      tau_grid = exp(seq(log(0.5), log(20), length.out = 5)))
+  prior$spatial_idx <- dat$spatial_idx
 
-  result <- nested_laplace_icar(
+  result <- nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    family = "binomial", tau_mode = 3.0,
-    n_grid = 5L, grid_width = 3.0, verbose = FALSE
+    prior = prior, family = "binomial"
   )
 
-  expect_true(is.list(result))
-  expect_equal(length(result$tau_grid), 5L)
+  expect_s3_class(result, "tulpa_nested_laplace")
+  expect_equal(length(result$theta_grid), 5L)
   expect_equal(length(result$log_marginal), 5L)
   expect_true(all(is.finite(result$log_marginal)))
-  expect_true(result$tau_mean > 0)
-  expect_true(result$tau_sd > 0)
-  expect_true(is.finite(result$tau_mean))
-  expect_true(is.finite(result$tau_sd))
-
-  # Weights should sum to ~1
+  expect_true(result$theta_mean > 0)
+  expect_true(result$theta_sd > 0)
   expect_equal(sum(result$weights), 1.0, tolerance = 1e-6)
-
-  # Mode vector should have correct length
-  expect_equal(length(result$mode_at_tau_mode), 1L + 25L)
+  # modes matrix: n_grid x (p + n_spatial_units)
+  expect_equal(nrow(result$modes), 5L)
+  expect_equal(ncol(result$modes), 1L + 25L)
 })
 
-test_that("nested Laplace with auto tau_mode search", {
+test_that("nested_laplace ICAR uses default grid when none supplied", {
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
     beta0 = 0.0, tau_spatial = 5.0, adj = adj
   )
+  prior <- icar_prior(adj, 25L)        # tau_grid = NULL
+  prior$spatial_idx <- dat$spatial_idx
 
-  result <- nested_laplace_icar(
+  result <- nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    family = "binomial", tau_mode = NULL,
-    n_grid = 7L, verbose = FALSE
+    prior = prior, family = "binomial"
   )
 
-  expect_true(result$tau_mode > 0)
-  expect_true(result$tau_mean > 0)
+  expect_true(result$theta_mean > 0)
   expect_true(all(is.finite(result$log_marginal)))
+  expect_true(length(result$theta_grid) >= 5L)
 })
 
-test_that("hot-start reduces iterations in nested Laplace grid", {
+test_that("warm-start chain reduces inner iterations across grid", {
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
     beta0 = -0.5, tau_spatial = 3.0, adj = adj
   )
+  prior <- icar_prior(adj, 25L,
+                      tau_grid = exp(seq(log(1), log(10), length.out = 9)))
+  prior$spatial_idx <- dat$spatial_idx
 
-  result <- nested_laplace_icar(
+  result <- nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
-    spatial_idx = dat$spatial_idx, n_spatial_units = 25L,
-    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-    n_neighbors = adj$n_neighbors,
-    family = "binomial", tau_mode = 3.0,
-    n_grid = 9L, grid_width = 3.0, verbose = FALSE
+    prior = prior, family = "binomial"
   )
 
-  # The first grid point starts cold (or close to mode),
-  # subsequent points should need fewer iterations due to warm-starting
-  # Check that later grid points typically converge faster
-  mid <- ceiling(length(result$n_iter) / 2)
-  # At least some warm-started points should need fewer iterations than the first
+  # Subsequent points should typically need <= as many iters as the first
   expect_true(any(result$n_iter[2:length(result$n_iter)] <= result$n_iter[1]))
 })

@@ -1,210 +1,210 @@
-#' Nested Laplace Approximation for ICAR Spatial Models
+#' Nested Laplace approximation for latent Gaussian models
 #'
-#' Phase 3a proof of concept: R-level outer loop over a 1D grid of
-#' tau_spatial values, with inner Laplace at each grid point via
-#' cpp_laplace_fit_spatial. Uses warm-starting (hot start) from the
-#' previous grid point's mode for 5-10x fewer Newton iterations.
+#' @description
+#' Generic outer-grid nested Laplace driver. Builds a grid over the
+#' hyperparameters of a single latent prior block (spatial or temporal),
+#' runs an inner Laplace at each grid point with warm-starting, and
+#' integrates over the grid to give proper hyperparameter marginals.
 #'
-#' @param y Integer response vector
-#' @param n_trials Integer vector of trial sizes (binomial)
-#' @param X Design matrix
-#' @param spatial_idx Integer vector of site assignments (1-based)
-#' @param n_spatial_units Number of spatial units
-#' @param adj_row_ptr CSR row pointers for adjacency (0-based)
-#' @param adj_col_idx CSR column indices (0-based)
-#' @param n_neighbors Integer vector of neighbor counts
-#' @param family Distribution family ("binomial", "poisson", "neg_binomial_2")
-#' @param phi Dispersion parameter (negbin only)
-#' @param tau_mode Initial mode for tau_spatial (positive)
-#' @param n_grid Number of grid points (odd; default 9)
-#' @param grid_width Width of grid in log-tau scale (default 4 SD)
-#' @param max_iter Max Newton iterations per grid point
-#' @param tol Newton convergence tolerance
-#' @param n_threads OpenMP threads
-#' @param verbose Print progress
+#' Supported priors:
+#'  * Spatial: `"icar"` (1D grid on tau), `"bym2"` (2D on (sigma, rho))
+#'  * Temporal: `"rw1"`, `"rw2"` (1D grid on tau), `"ar1"` (2D on (tau, rho))
+#'  * Continuous spatial: see [cpp_nested_laplace_spde()] (separate entry,
+#'    rebuilds Q via SPDE Q-builder).
 #'
-#' @return List with:
-#'   - tau_grid: grid of tau values
-#'   - log_tau_grid: grid on log scale
-#'   - log_marginal: log p(y | tau) at each grid point
-#'   - weights: normalized integration weights
-#'   - n_iter: Newton iterations at each grid point
-#'   - tau_mean: posterior mean of tau
-#'   - tau_sd: posterior SD of tau
-#'   - mode_at_tau_mode: mode vector at the modal tau
+#' @param y Response vector.
+#' @param n_trials Trial sizes (binomial). Pass `1L`-vector otherwise.
+#' @param X Fixed-effects design matrix.
+#' @param prior A list describing the latent prior block. Required field
+#'   `type` ∈ \{"icar", "bym2", "rw1", "rw2", "ar1"\}. Type-specific
+#'   fields:
+#'   * icar:  `spatial_idx`, `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
+#'           `n_neighbors` (CSR adjacency, 0-based); optional `tau_grid`.
+#'   * bym2:  same adjacency; `scale_factor`; optional `sigma_grid`, `rho_grid`.
+#'   * rw1/rw2: `temporal_idx` (1-based), `n_times`; optional `tau_grid`,
+#'             `cyclic` (rw1 only, default FALSE).
+#'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`.
+#' @param re_idx Optional 1-based RE group index per obs (defaults to no RE).
+#' @param n_re_groups RE group count (default 0).
+#' @param sigma_re RE standard deviation (default 1).
+#' @param family `"binomial"`, `"poisson"`, `"neg_binomial_2"`, etc.
+#' @param phi Dispersion (negbin/gamma).
+#' @param max_iter,tol Inner Newton iteration budget and tolerance.
+#' @param n_threads OpenMP threads.
+#' @param x_init Optional warm-start for the first grid point's inner solve.
+#' @param verbose Print grid-point progress.
+#'
+#' @return A list with:
+#'   * `theta_grid`: matrix or vector of grid hyperparameter values.
+#'   * `log_marginal`: log p(y, mode | theta_k) at each grid point.
+#'   * `weights`: integration weights normalising to sum 1.
+#'   * `theta_mean`, `theta_sd`: posterior moments per hyperparameter.
+#'   * `n_iter`: inner Newton iterations per grid point.
+#'   * `modes`: matrix `[n_grid x n_x]` of inner modes, when stored.
+#'   * `prior`: echoed input.
 #'
 #' @keywords internal
-nested_laplace_icar <- function(
-    y, n_trials, X, spatial_idx, n_spatial_units,
-    adj_row_ptr, adj_col_idx, n_neighbors,
-    family = "binomial", phi = 1.0,
-    tau_mode = NULL, n_grid = 9L, grid_width = 4.0,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L,
-    verbose = FALSE
-) {
+#' @export
+nested_laplace <- function(y, n_trials, X, prior,
+                            re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+                            family = "binomial", phi = 1.0,
+                            max_iter = 50L, tol = 1e-6, n_threads = 1L,
+                            x_init = NULL, verbose = FALSE) {
+
+  if (!is.list(prior) || is.null(prior$type)) {
+    stop("`prior` must be a list with a `type` field", call. = FALSE)
+  }
+  type <- tolower(prior$type)
   N <- length(y)
-  re_idx <- rep(0L, N)
-  n_re_groups <- 0L
-  sigma_re <- 1.0
+  if (is.null(re_idx)) re_idx <- rep(0L, N)
 
-  # --- Step 1: Find modal tau via grid search if not provided ---
-  if (is.null(tau_mode)) {
-    # Coarse search over log(tau) in [log(0.1), log(100)]
-    log_tau_search <- seq(log(0.1), log(100), length.out = 15)
-    lml_search <- numeric(length(log_tau_search))
-
-    for (i in seq_along(log_tau_search)) {
-      tau_i <- exp(log_tau_search[i])
-      res <- cpp_laplace_fit_spatial(
-        y = y, n = n_trials, X = X, re_idx = re_idx,
-        n_re_groups = n_re_groups, sigma_re = sigma_re,
-        spatial_idx = spatial_idx, n_spatial_units = n_spatial_units,
-        adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
-        n_neighbors = n_neighbors, tau_spatial = tau_i,
-        family = family, phi = phi,
-        max_iter = max_iter, tol = tol, n_threads = n_threads
-      )
-      # Add log-prior for tau: Gamma(1, 0.01) => log_prior = -0.01 * tau
-      lml_search[i] <- res$log_marginal - 0.01 * tau_i
-    }
-
-    best <- which.max(lml_search)
-    tau_mode <- exp(log_tau_search[best])
-    if (verbose) message("Modal tau found: ", round(tau_mode, 3))
-  }
-
-  log_tau_mode <- log(tau_mode)
-
-  # --- Step 2: Build grid around mode ---
-  # Approximate curvature from 3 points around the mode
-  delta <- 0.2
-  lml_center <- {
-    res <- cpp_laplace_fit_spatial(
-      y = y, n = n_trials, X = X, re_idx = re_idx,
-      n_re_groups = n_re_groups, sigma_re = sigma_re,
-      spatial_idx = spatial_idx, n_spatial_units = n_spatial_units,
-      adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
-      n_neighbors = n_neighbors, tau_spatial = tau_mode,
-      family = family, phi = phi,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
-    )
-    res$log_marginal - 0.01 * tau_mode
-  }
-  lml_left <- {
-    res <- cpp_laplace_fit_spatial(
-      y = y, n = n_trials, X = X, re_idx = re_idx,
-      n_re_groups = n_re_groups, sigma_re = sigma_re,
-      spatial_idx = spatial_idx, n_spatial_units = n_spatial_units,
-      adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
-      n_neighbors = n_neighbors, tau_spatial = exp(log_tau_mode - delta),
-      family = family, phi = phi,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
-    )
-    res$log_marginal - 0.01 * exp(log_tau_mode - delta)
-  }
-  lml_right <- {
-    res <- cpp_laplace_fit_spatial(
-      y = y, n = n_trials, X = X, re_idx = re_idx,
-      n_re_groups = n_re_groups, sigma_re = sigma_re,
-      spatial_idx = spatial_idx, n_spatial_units = n_spatial_units,
-      adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
-      n_neighbors = n_neighbors, tau_spatial = exp(log_tau_mode + delta),
-      family = family, phi = phi,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
-    )
-    res$log_marginal - 0.01 * exp(log_tau_mode + delta)
-  }
-
-  # Approximate second derivative (curvature) on log scale
-  d2 <- (lml_left - 2 * lml_center + lml_right) / (delta^2)
-  log_tau_sd <- if (d2 < -1e-6) 1 / sqrt(-d2) else 1.0
-
-  # Grid: n_grid points spanning grid_width SDs
-  half_width <- grid_width / 2 * log_tau_sd
-  log_tau_grid <- seq(log_tau_mode - half_width, log_tau_mode + half_width,
-                      length.out = n_grid)
-  tau_grid <- exp(log_tau_grid)
-
-  if (verbose) {
-    message("Grid: log(tau) in [", round(min(log_tau_grid), 2), ", ",
-            round(max(log_tau_grid), 2), "], SD = ", round(log_tau_sd, 3))
-  }
-
-  # --- Step 3: Inner Laplace at each grid point with warm-starting ---
-  log_marginals <- numeric(n_grid)
-  n_iters <- integer(n_grid)
-  prev_mode <- NULL  # warm-start chain
-
-  for (k in seq_len(n_grid)) {
-    res <- cpp_laplace_fit_spatial(
-      y = y, n = n_trials, X = X, re_idx = re_idx,
-      n_re_groups = n_re_groups, sigma_re = sigma_re,
-      spatial_idx = spatial_idx, n_spatial_units = n_spatial_units,
-      adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
-      n_neighbors = n_neighbors, tau_spatial = tau_grid[k],
-      family = family, phi = phi,
-      max_iter = max_iter, tol = tol, n_threads = n_threads,
-      x_init = if (!is.null(prev_mode)) prev_mode else NULL
-    )
-
-    # Log marginal + log prior for tau (Gamma(1, 0.01))
-    log_marginals[k] <- res$log_marginal - 0.01 * tau_grid[k]
-    n_iters[k] <- res$n_iter
-    prev_mode <- res$mode  # warm-start next grid point
-
-    if (verbose) {
-      message("  Grid point ", k, "/", n_grid,
-              ": tau=", round(tau_grid[k], 3),
-              " log_marg=", round(log_marginals[k], 2),
-              " iters=", n_iters[k])
-    }
-  }
-
-  # Save mode at the modal tau (closest grid point to mode)
-  mode_idx <- which.min(abs(log_tau_grid - log_tau_mode))
-
-  # --- Step 4: Numerical integration (trapezoidal on log scale) ---
-  # Normalize log-marginals for numerical stability
-  log_max <- max(log_marginals)
-  log_weights <- log_marginals - log_max
-
-  # Trapezoidal rule on log-tau scale
-  d_log_tau <- diff(log_tau_grid)
-  # Trapezoidal weights: (f[i] + f[i+1]) / 2 * h
-  unnorm_weights <- exp(log_weights)
-  trap_integral <- sum((unnorm_weights[-n_grid] + unnorm_weights[-1]) / 2 * d_log_tau)
-
-  # Normalized weights
-  weights <- unnorm_weights / trap_integral
-  # Adjust for non-uniform spacing if needed
-  weights <- weights / sum(weights)
-
-  # Posterior moments for tau
-  tau_mean <- sum(weights * tau_grid)
-  tau_var <- sum(weights * (tau_grid - tau_mean)^2)
-  tau_sd <- sqrt(max(0, tau_var))
-
-  # Re-fit at modal tau to get the mode vector
-  res_mode <- cpp_laplace_fit_spatial(
-    y = y, n = n_trials, X = X, re_idx = re_idx,
-    n_re_groups = n_re_groups, sigma_re = sigma_re,
-    spatial_idx = spatial_idx, n_spatial_units = n_spatial_units,
-    adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
-    n_neighbors = n_neighbors, tau_spatial = tau_mode,
-    family = family, phi = phi,
-    max_iter = max_iter, tol = tol, n_threads = n_threads
+  cargs <- list(
+    y = as.numeric(y),
+    n = as.integer(n_trials),
+    X = X,
+    re_idx = as.numeric(re_idx),
+    n_re_groups = as.integer(n_re_groups),
+    sigma_re = as.numeric(sigma_re),
+    family = family,
+    phi = as.numeric(phi),
+    max_iter = as.integer(max_iter),
+    tol = as.numeric(tol),
+    n_threads = as.integer(n_threads),
+    x_init_nullable = x_init
   )
 
-  list(
-    tau_grid = tau_grid,
-    log_tau_grid = log_tau_grid,
-    log_marginal = log_marginals,
-    weights = weights,
-    n_iter = n_iters,
-    tau_mean = tau_mean,
-    tau_sd = tau_sd,
-    tau_mode = tau_mode,
-    log_tau_sd = log_tau_sd,
-    mode_at_tau_mode = res_mode$mode
+  res <- switch(
+    type,
+    icar = .nl_icar(cargs, prior, verbose),
+    bym2 = .nl_bym2(cargs, prior, verbose),
+    rw1  = .nl_rw1(cargs, prior, verbose),
+    rw2  = .nl_rw2(cargs, prior, verbose),
+    ar1  = .nl_ar1(cargs, prior, verbose),
+    stop("Unknown prior type: ", type,
+         ". Supported: icar, bym2, rw1, rw2, ar1.", call. = FALSE)
   )
+
+  # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
+  res$weights <- .nl_normalise_weights(res$log_marginal)
+  res <- .nl_posterior_moments(res, type)
+  res$prior <- prior
+  class(res) <- c("tulpa_nested_laplace", "list")
+  res
 }
+
+# --- Per-prior dispatch helpers ---
+
+.nl_icar <- function(a, p, verbose) {
+  if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "icar")
+  out <- do.call(cpp_nested_laplace_icar, c(list(
+    spatial_idx = as.integer(p$spatial_idx),
+    n_spatial_units = as.integer(p$n_spatial_units),
+    adj_row_ptr = as.integer(p$adj_row_ptr),
+    adj_col_idx = as.integer(p$adj_col_idx),
+    n_neighbors = as.integer(p$n_neighbors),
+    tau_grid = as.numeric(p$tau_grid)
+  ), a))
+  out$theta_grid <- as.numeric(p$tau_grid)
+  out$theta_names <- "tau"
+  out
+}
+
+.nl_bym2 <- function(a, p, verbose) {
+  if (is.null(p$sigma_grid) || is.null(p$rho_grid)) {
+    sg <- exp(seq(log(0.1), log(3), length.out = 5))
+    rg <- c(0.2, 0.5, 0.8, 0.95)
+    gr <- expand.grid(sigma = sg, rho = rg)
+    p$sigma_grid <- gr$sigma; p$rho_grid <- gr$rho
+  }
+  out <- do.call(cpp_nested_laplace_bym2, c(list(
+    spatial_idx = as.integer(p$spatial_idx),
+    n_spatial_units = as.integer(p$n_spatial_units),
+    adj_row_ptr = as.integer(p$adj_row_ptr),
+    adj_col_idx = as.integer(p$adj_col_idx),
+    n_neighbors = as.integer(p$n_neighbors),
+    scale_factor = as.numeric(p$scale_factor %||% 1.0),
+    sigma_spatial_grid = as.numeric(p$sigma_grid),
+    rho_grid = as.numeric(p$rho_grid)
+  ), a))
+  out$theta_grid <- cbind(sigma = p$sigma_grid, rho = p$rho_grid)
+  out$theta_names <- c("sigma", "rho")
+  out
+}
+
+.nl_rw1 <- function(a, p, verbose) {
+  if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw1")
+  cyclic <- isTRUE(p$cyclic)
+  out <- do.call(cpp_nested_laplace_rw1, c(list(
+    temporal_idx = as.integer(p$temporal_idx),
+    n_times = as.integer(p$n_times),
+    cyclic = cyclic,
+    tau_grid = as.numeric(p$tau_grid)
+  ), a))
+  out$theta_grid <- as.numeric(p$tau_grid)
+  out$theta_names <- "tau"
+  out
+}
+
+.nl_rw2 <- function(a, p, verbose) {
+  if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw2")
+  out <- do.call(cpp_nested_laplace_rw2, c(list(
+    temporal_idx = as.integer(p$temporal_idx),
+    n_times = as.integer(p$n_times),
+    tau_grid = as.numeric(p$tau_grid)
+  ), a))
+  out$theta_grid <- as.numeric(p$tau_grid)
+  out$theta_names <- "tau"
+  out
+}
+
+.nl_ar1 <- function(a, p, verbose) {
+  if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
+    g_tau <- exp(seq(log(0.5), log(20), length.out = 5))
+    g_rho <- c(0.0, 0.4, 0.7, 0.9, 0.97)
+    gr <- expand.grid(tau = g_tau, rho = g_rho)
+    p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
+  }
+  out <- do.call(cpp_nested_laplace_ar1, c(list(
+    temporal_idx = as.integer(p$temporal_idx),
+    n_times = as.integer(p$n_times),
+    tau_grid = as.numeric(p$tau_grid),
+    rho_grid = as.numeric(p$rho_grid)
+  ), a))
+  out$theta_grid <- cbind(tau = p$tau_grid, rho = p$rho_grid)
+  out$theta_names <- c("tau", "rho")
+  out
+}
+
+# Default 1D log-spaced tau grid, anchored on a 9-point search around an
+# educated centre. Coarse but unbiased across reasonable problems.
+.default_tau_grid <- function(prior, a, type) {
+  exp(seq(log(0.3), log(30), length.out = 9))
+}
+
+# Normalise log-marginals to integration weights summing to 1.
+# 1D regular grids: trapezoidal on the log-x axis (preserves shape).
+# 2D / irregular: just exp-and-normalise (good enough for moments).
+.nl_normalise_weights <- function(lm) {
+  m <- max(lm)
+  w <- exp(lm - m)
+  w / sum(w)
+}
+
+# Compute weighted theta_mean / theta_sd from grid + weights.
+.nl_posterior_moments <- function(res, type) {
+  w <- res$weights
+  tg <- res$theta_grid
+  if (is.matrix(tg)) {
+    res$theta_mean <- as.numeric(crossprod(w, tg))
+    names(res$theta_mean) <- colnames(tg)
+    res$theta_sd <- sqrt(pmax(0, as.numeric(crossprod(w, tg^2)) -
+                                  res$theta_mean^2))
+    names(res$theta_sd) <- colnames(tg)
+  } else {
+    res$theta_mean <- sum(w * tg)
+    res$theta_sd <- sqrt(max(0, sum(w * tg^2) - res$theta_mean^2))
+  }
+  res
+}
+
+`%||%` <- function(x, y) if (is.null(x)) y else x
