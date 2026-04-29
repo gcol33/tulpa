@@ -14,20 +14,12 @@
 namespace tulpa {
 
 // ============================================================================
-// ABI version — bumped when struct layouts change.
-// Model packages (tulpaOcc, numdenom) check this at load time to prevent
-// silent segfaults from struct mismatch after tulpa updates.
-//
-// Bump rules:
-//   - Adding fields to ModelData, ParamLayout, LikelihoodSpec, or NUTSResult
-//   - Removing or reordering existing fields
-//   - Changing types of existing fields
-// No bump needed for:
-//   - Internal tulpa changes (src/ files not in inst/include/)
-//   - Adding new exported headers
-//   - Adding new enum values (append-only)
+// ABI version — pre-release, not yet maintained.
+// Will start tracking layout / shim-family changes here once the package
+// has its first tagged release. Until then this stays at 1; downstream
+// packages should be rebuilt against the current tulpa source.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 2;
+constexpr int TULPA_ABI_VERSION = 1;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

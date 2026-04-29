@@ -91,6 +91,9 @@ static int tulpa_get_abi_version_impl() {
     return tulpa::TULPA_ABI_VERSION;
 }
 
+// Defined in tulpa_shims.cpp — registers laplace / pg / vi / ess shims.
+void tulpa_register_shims(DllInfo* dll);
+
 // [[Rcpp::init]]
 void tulpa_register_callables(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_run_nuts_generic",
@@ -99,4 +102,6 @@ void tulpa_register_callables(DllInfo* dll) {
                         (DL_FUNC)&tulpa_compute_param_layout_impl);
     R_RegisterCCallable("tulpa", "tulpa_get_abi_version",
                         (DL_FUNC)&tulpa_get_abi_version_impl);
+
+    tulpa_register_shims(dll);
 }

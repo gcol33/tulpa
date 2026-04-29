@@ -652,12 +652,33 @@ inline T log_prior_half_cauchy(const T& log_sigma, double scale) {
     return -safe_log(T(1.0) + ratio * ratio) + log_sigma;
 }
 
+// Capped half-Cauchy on sigma. Same as log_prior_half_cauchy but rejects
+// any sigma above sigma_max by returning -INFINITY. Pre-release salvage
+// logs flagged the capped version as materially more stable on
+// high-variance seeds for binomial GLMM RE σ; identical to half-Cauchy
+// on the supported region. Pass sigma_max <= 0 to disable the cap.
+template<typename T>
+inline T log_prior_capped_half_cauchy(const T& log_sigma,
+                                      double scale,
+                                      double sigma_max) {
+    if (sigma_max > 0.0 && get_value(safe_exp(log_sigma)) > sigma_max) {
+        return T(-INFINITY);
+    }
+    return log_prior_half_cauchy(log_sigma, scale);
+}
+
 // Gamma prior on phi (log scale): (shape-1)*log(phi) - rate*phi + log(phi)
 template<typename T>
 inline T log_prior_gamma(const T& log_phi, double shape, double rate) {
     T phi = safe_exp(log_phi);
     return (shape - 1.0) * log_phi - rate * phi + log_phi;
 }
+
+// Capped Normal log-prior — single source of truth lives in
+// inst/include/tulpa/priors_capped.h so downstream packages
+// (tulpaGlmm) and tulpa share one implementation. Include via
+// `#include <tulpa/priors_capped.h>` and call
+// `tulpa::priors::log_prior_capped_normal(...)` instead.
 
 }  // namespace math
 }  // namespace tulpa

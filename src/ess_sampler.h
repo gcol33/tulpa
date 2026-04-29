@@ -43,10 +43,19 @@ struct ESSConfig {
     bool adapt_during_warmup;   // Adapt covariance during warmup
     int adapt_interval;         // How often to update covariance estimate
 
+    // Joint (log_sigma_re, re) move. Required for Poisson + RE where
+    // alternating ESS-on-re / RWMH-on-log_sigma_re mixes poorly because the
+    // two are strongly anti-correlated under the centered parameterization.
+    // Proposal: log_sigma_re' = log_sigma_re + delta, re' = re * exp(delta).
+    // Jacobian = exp(n_re * delta) (one factor per element of re).
+    bool joint_sigma_re;
+    double joint_sigma_proposal_sd;
+
     ESSConfig()
         : n_iter(2000), n_warmup(1000), n_thin(1), verbose(true),
           print_every(100), seed(12345), use_cholesky(true),
-          adapt_during_warmup(true), adapt_interval(100) {}
+          adapt_during_warmup(true), adapt_interval(100),
+          joint_sigma_re(false), joint_sigma_proposal_sd(0.1) {}
 };
 
 // ============================================================================
@@ -491,6 +500,28 @@ inline ESSResult run_ess_sampler(
     // Adaptive proposals for RWMH parameters
     AdaptiveProposal adaptive(non_gaussian.size());
 
+    // Joint-move blocks: (log_sigma_re_idx, re_start, re_end) tuples that
+    // can be jointly rescaled. Built once up-front. Diagonal RE only —
+    // correlated slopes need ASIS, which is a separate code path.
+    struct JointReBlock { int log_sigma_idx; int re_start; int re_end; };
+    std::vector<JointReBlock> joint_blocks;
+    if (config.joint_sigma_re && layout.has_re && !layout.has_re_slopes) {
+        if (!layout.log_sigma_re_multi.empty()) {
+            for (size_t t = 0; t < layout.log_sigma_re_multi.size(); t++) {
+                int s = layout.re_start_multi[t];
+                int e = layout.re_end_multi[t];
+                int li = layout.log_sigma_re_multi[t];
+                if (li >= 0 && e > s) joint_blocks.push_back({li, s, e});
+            }
+        } else if (layout.log_sigma_re_idx >= 0 &&
+                   layout.re_end > layout.re_start) {
+            joint_blocks.push_back({
+                layout.log_sigma_re_idx,
+                layout.re_start, layout.re_end
+            });
+        }
+    }
+
     // Current state
     std::vector<double> params = init_params;
 
@@ -574,6 +605,51 @@ inline ESSResult run_ess_sampler(
                 current_log_post, rng, accepted
             );
             adaptive.record(i, accepted);
+        }
+
+        // ----------------------------------------------------------------
+        // Joint (log_sigma_re, re) Metropolis move.
+        // Proposal: delta ~ N(0, joint_sd^2),
+        //           log_sigma_re' = log_sigma_re + delta,
+        //           re_i' = re_i * exp(delta) for i in [re_start, re_end).
+        // Acceptance: log alpha = log_post' - log_post + n_re * delta
+        // (Jacobian exp(n_re * delta) for the re-rescaling).
+        // ----------------------------------------------------------------
+        if (!joint_blocks.empty()) {
+            std::normal_distribution<double> joint_normal(
+                0.0, config.joint_sigma_proposal_sd);
+            std::uniform_real_distribution<double> joint_unif(0.0, 1.0);
+
+            for (const auto& blk : joint_blocks) {
+                double delta = joint_normal(rng);
+                double scl = std::exp(delta);
+                double saved_log_sigma = params[blk.log_sigma_idx];
+                std::vector<double> saved_re(blk.re_end - blk.re_start);
+                for (int j = blk.re_start; j < blk.re_end; j++) {
+                    saved_re[j - blk.re_start] = params[j];
+                }
+
+                params[blk.log_sigma_idx] = saved_log_sigma + delta;
+                for (int j = blk.re_start; j < blk.re_end; j++) {
+                    params[j] = saved_re[j - blk.re_start] * scl;
+                }
+
+                double proposed_log_post =
+                    compute_log_post_double(params, data, layout);
+                int n_re = blk.re_end - blk.re_start;
+                double log_alpha = (proposed_log_post - current_log_post)
+                                 + double(n_re) * delta;
+
+                if (std::isfinite(proposed_log_post) &&
+                    std::log(joint_unif(rng)) < log_alpha) {
+                    current_log_post = proposed_log_post;
+                } else {
+                    params[blk.log_sigma_idx] = saved_log_sigma;
+                    for (int j = blk.re_start; j < blk.re_end; j++) {
+                        params[j] = saved_re[j - blk.re_start];
+                    }
+                }
+            }
         }
 
         // Adapt RWMH proposals during warmup
