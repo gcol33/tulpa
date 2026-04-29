@@ -12,6 +12,7 @@
 #include <cmath>
 #include <RcppEigen.h>
 #include "tulpa/hsgp_data.h"
+#include "hmc_hsgp_kernels.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -21,42 +22,8 @@ namespace tulpa_hsgp {
 
 using tulpa::HSGPData;
 
-// Spectral density for squared exponential kernel
-// S(omega) = sigma^2 * sqrt(2*pi) * ell * exp(-0.5 * ell^2 * omega^2)
-inline double spectral_density_se(double omega_sq, double sigma2, double lengthscale) {
-    double ell = lengthscale;
-    double ell2 = ell * ell;
-    return sigma2 * std::sqrt(2.0 * M_PI) * ell * std::exp(-0.5 * ell2 * omega_sq);
-}
-
-// Derivative of spectral density w.r.t. sigma2
-// dS/d(sigma2) = sqrt(2*pi) * ell * exp(-0.5 * ell^2 * omega^2) = S / sigma2
-inline double dS_dsigma2(double omega_sq, double sigma2, double lengthscale) {
-    return spectral_density_se(omega_sq, sigma2, lengthscale) / sigma2;
-}
-
-// Derivative of spectral density w.r.t. lengthscale
-// S = sigma2 * sqrt(2*pi) * ell * exp(-0.5 * ell^2 * omega^2)
-// dS/d(ell) = sigma2 * sqrt(2*pi) * [exp(...) + ell * (-ell * omega^2) * exp(...)]
-//           = S * (1/ell - ell * omega^2)
-inline double dS_dlengthscale(double omega_sq, double sigma2, double lengthscale) {
-    double S = spectral_density_se(omega_sq, sigma2, lengthscale);
-    double ell = lengthscale;
-    return S * (1.0 / ell - ell * omega_sq);
-}
-
-// 1D Laplacian eigenfunction: phi_j(x) = 1/sqrt(L) * sin(pi*j*(x+L)/(2L))
-// For x in [-L, L], j = 1, 2, ...
-inline double phi_1d(double x, int j, double L) {
-    double norm = 1.0 / std::sqrt(L);
-    return norm * std::sin(M_PI * j * (x + L) / (2.0 * L));
-}
-
-// 1D eigenvalue: lambda_j = (pi*j / (2*L))^2
-inline double lambda_1d(int j, double L) {
-    double tmp = M_PI * j / (2.0 * L);
-    return tmp * tmp;
-}
+// spectral_density_se, dS_dsigma2, dS_dlengthscale, phi_1d, lambda_1d are
+// declared in hmc_hsgp_kernels.h (Eigen-free).
 
 // Setup HSGP for 2D coordinates
 // coords: flattened [x1, y1, x2, y2, ...] (length 2*n_obs)
