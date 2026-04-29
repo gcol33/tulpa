@@ -10,6 +10,7 @@ tulpa_em_laplace(
   init,
   z_draw = NULL,
   hard_encode = NULL,
+  m_step_extra = NULL,
   family = "binomial",
   max_iter = 50L,
   tol = 1e-04,
@@ -41,6 +42,20 @@ Draws hard latent variable values from weights. Used by MI/Gibbs correction.}
 
 \item{hard_encode}{Function: \verb{function(z, ...) -> list of submodel specs}.
 Like \code{m_step_encode} but uses hard z draws (unweighted). Used by MI/Gibbs.}
+
+\item{m_step_extra}{Optional \verb{function(fits, weights, ...) -> fits}.
+Fired once per EM iteration, between the M-step and the next E-step.
+Receives the freshly assembled list of \code{tulpa_laplace()} results
+(\code{fits}), the current E-step weights, and any extra arguments that
+the caller routes through \code{...} (e.g. a \code{data} bundle). Returns a
+list with the same length and names as the input, possibly with
+mutated dispersion / shape / precision fields
+(e.g. \code{fits[[k]]$phi}). Use this to update non-\code{eta} parameters that
+fall out of the Laplace M-step (NB overdispersion, Gamma shape, Beta
+precision, Gaussian residual SD, ...). When \code{NULL} (default),
+behaviour is unchanged from the no-callback case. The engine
+validates that the returned object has the same shape as the input
+and raises a clear error otherwise.}
 
 \item{family}{Character: \code{"binomial"} (default), \code{"poisson"}, etc.}
 

@@ -21,6 +21,19 @@
 #' @param m_step_encode Function: `function(weights, ...) -> list of submodel specs`.
 #'   Each spec is a list with `y`, `n_trials`, `X`, and optional `re_list`, `spatial`,
 #'   `obs_weights`. Returns one spec per submodel.
+#' @param m_step_extra Optional `function(fits, weights, ...) -> fits`.
+#'   Fired once per EM iteration, between the M-step and the next E-step.
+#'   Receives the freshly assembled list of `tulpa_laplace()` results
+#'   (`fits`), the current E-step weights, and any extra arguments that
+#'   the caller routes through `...` (e.g. a `data` bundle). Returns a
+#'   list with the same length and names as the input, possibly with
+#'   mutated dispersion / shape / precision fields
+#'   (e.g. `fits[[k]]$phi`). Use this to update non-`eta` parameters that
+#'   fall out of the Laplace M-step (NB overdispersion, Gamma shape, Beta
+#'   precision, Gaussian residual SD, ...). When `NULL` (default),
+#'   behaviour is unchanged from the no-callback case. The engine
+#'   validates that the returned object has the same shape as the input
+#'   and raises a clear error otherwise.
 #' @param init List with initial parameter estimates for the E-step.
 #'   Model-specific; passed as `fits` to the first E-step call.
 #' @param z_draw Function: `function(weights, ...) -> integer vector`.
@@ -51,6 +64,7 @@
 #' @export
 tulpa_em_laplace <- function(e_step, m_step_encode, init,
                               z_draw = NULL, hard_encode = NULL,
+                              m_step_extra = NULL,
                               family = "binomial",
                               max_iter = 50L, tol = 1e-4, damping = 0.3,
                               correction = c("auto", "mi", "gibbs", "none"),
@@ -59,6 +73,10 @@ tulpa_em_laplace <- function(e_step, m_step_encode, init,
                               n_threads = 1L, verbose = TRUE, ...) {
   correction <- match.arg(correction)
   if (is.null(n_burn)) n_burn <- max(3L, n_gibbs %/% 3L)
+  if (!is.null(m_step_extra) && !is.function(m_step_extra)) {
+    stop("`m_step_extra` must be NULL or a function(fits, weights, data, ...).",
+         call. = FALSE)
+  }
 
   # ---- Phase 1: EM iteration ----
   fits <- init
@@ -99,6 +117,14 @@ tulpa_em_laplace <- function(e_step, m_step_encode, init,
         n_threads = n_threads,
         return_hessian = TRUE
       )
+    }
+
+    # Optional non-eta parameter update (NB phi, Gamma shape, Beta precision,
+    # Gaussian sigma, ...). Fired once per EM iteration, between the M-step
+    # and the next E-step. Engine is model-agnostic; the callback owns the
+    # update rule and returns a list of the same shape as `fits_new`.
+    if (!is.null(m_step_extra)) {
+      fits_new <- apply_m_step_extra(m_step_extra, fits_new, weights, ...)
     }
 
     # Convergence: max change in weights
@@ -286,6 +312,45 @@ gibbs_correct <- function(weights, z_draw, hard_encode, e_step, family,
   }
 
   rubins_pool(post_burn)
+}
+
+
+# ============================================================================
+# m_step_extra plumbing: invoke the callback and validate its return shape
+#
+# The callback receives the freshly assembled M-step fits, the current E-step
+# weights, and the user data bundle (forwarded through `...` as `data`,
+# matching the callback contract documented on `tulpa_em_laplace`). It must
+# return a list with the same length and per-element names as the input.
+# Per-element shape is otherwise opaque to the engine — the callback owns
+# the update rule.
+# ============================================================================
+apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
+  # Forward `...` verbatim. If the caller routes a `data` bundle through
+  # `...`, the callback receives it as a named argument; otherwise `data`
+  # is simply absent. This keeps the engine model-agnostic.
+  updated <- m_step_extra(fits = fits, weights = weights, ...)
+
+  if (!is.list(updated)) {
+    stop("`m_step_extra` must return a list, not ",
+         paste(class(updated), collapse = "/"), ".", call. = FALSE)
+  }
+  if (length(updated) != length(fits)) {
+    stop(sprintf(
+      "`m_step_extra` returned %d submodel(s); expected %d (one per M-step fit).",
+      length(updated), length(fits)
+    ), call. = FALSE)
+  }
+  if (!is.null(names(fits))) {
+    if (is.null(names(updated)) || !identical(names(updated), names(fits))) {
+      stop("`m_step_extra` must preserve submodel names. Expected: ",
+           paste(names(fits), collapse = ", "),
+           "; got: ",
+           paste(names(updated) %||% "<unnamed>", collapse = ", "),
+           ".", call. = FALSE)
+    }
+  }
+  updated
 }
 
 
