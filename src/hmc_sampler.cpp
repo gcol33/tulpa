@@ -5617,8 +5617,11 @@ void compute_gradient_gp_collapsed(
 
 // =====================================================================
 // Collapsed ICAR/BYM2 gradient
-// ICAR: H-mode (analytical envelope + analytical Laplace via implicit fn thm)
-// BYM2: numerical fallback (H-mode planned)
+// ICAR: H-mode — analytical envelope + analytical Laplace via implicit fn
+//       thm (Woodbury for sum-to-zero rank-1, sparse Cholesky on A = W+tau*Q).
+// BYM2: H-mode — same structure with 2S inner state [phi; theta]; direct
+//       sigma/rho traces via dense 2S Hinv plus indirect IFT corrections
+//       via cross-Hessians (compute_laplace_gradient_bym2_H).
 // =====================================================================
 
 void compute_gradient_icar_collapsed(
@@ -5690,8 +5693,10 @@ void compute_gradient_icar_collapsed(
     re_gradient_prior(data, layout, re, grad.data(), sigma_re);
     phi_gradient_prior(data, layout, phi_num, phi_denom, grad.data());
 
-    // ---- ICAR H-mode: analytical envelope + analytical Laplace ----
-    // BYM2: numerical fallback (TODO: implement BYM2 H-mode)
+    // ---- H-mode: analytical envelope + analytical Laplace ----
+    // ICAR: 1 spatial hyperparameter (log_tau).
+    // BYM2: 2 spatial hyperparameters (log_sigma, logit_rho); same structure
+    //       with 2S inner state and IFT cross-Hessians for both sigma and rho.
     if (!is_bym2) {
         // === Part A: Envelope theorem gradient ===
         // At mode, ∂f/∂φ = 0, so d/dθ[f(φ*,θ)] = ∂f/∂θ|_{φ*}
@@ -11089,6 +11094,19 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
             return &compute_gradient_generic_arena;
         }
         return &compute_gradient_generic_numerical;
+    }
+
+    // Collapsed ICAR/BYM2: spatial inner state (phi*, theta*) is marginalized
+    // and not in the param vector. compute_log_post_impl<T> can't autodiff
+    // through the inner Newton solve, so AUTODIFF modes would either return
+    // wrong gradients or crash on params[spatial_start=-1]. Redirect
+    // explicit AUTODIFF requests to the numerical reference; the H-mode
+    // analytical handler below remains the canonical fast path.
+    bool is_collapsed = layout.is_icar_collapsed || layout.is_bym2_collapsed;
+    if (is_collapsed && (mode == GradientMode::AUTODIFF_TAPE ||
+                          mode == GradientMode::AUTODIFF_ARENA ||
+                          mode == GradientMode::AUTODIFF_FWD)) {
+        return &compute_gradient_numerical;
     }
 
     // Explicit mode overrides

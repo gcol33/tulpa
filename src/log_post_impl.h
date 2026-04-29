@@ -47,6 +47,23 @@ T compute_log_post_impl(
     const ModelData& data,
     const ParamLayout& layout
 ) {
+    // Collapsed ICAR/BYM2 spatial inner state (phi*, theta*) is marginalized
+    // via Newton + Laplace inside compute_log_post — not differentiable
+    // through autodiff. The layout omits spatial_start/theta_bym2_start
+    // (both = -1), so the dereferences below would read params[-1].
+    // For T = double, defer to the canonical evaluator; this is the path
+    // taken by compute_gradient_numerical_impl during gradient_check_only.
+    // For autodiff T, resolve_gradient_fn redirects collapsed requests to
+    // numerical/H, so this branch should never execute — return T(0) as
+    // a defensive no-op rather than crashing.
+    if (data.icar_collapsed || data.bym2_collapsed) {
+        if constexpr (std::is_same_v<T, double>) {
+            return tulpa_hmc::compute_log_post(params, data, layout);
+        } else {
+            return T(0.0);
+        }
+    }
+
     T log_post = T(0.0);
 
     // ========================================================================
