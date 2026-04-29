@@ -24,8 +24,10 @@ have a fitted spec; users typically pass \code{spec} + \code{data} directly to
 Supported spec types:
 \itemize{
 \item \code{tulpa_temporal} with \verb{type ∈ \{"rw1", "rw2", "ar1"\}}
-\item \code{tulpa_spatial} with \verb{type ∈ \{"car", "icar", "car_proper", "bym2"\}}
-(continuous-spatial GP / SPDE specs need their own entry — see
-\code{\link[=cpp_nested_laplace_spde]{cpp_nested_laplace_spde()}})
+\item \code{tulpa_spatial} with \verb{type ∈ \{"car", "icar", "car_proper", "bym2"\}}.
+Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
+using the spec's eigenvalue-derived \code{rho_bounds}.
+Continuous-spatial GP / SPDE specs need their own entry — see
+\code{\link[=cpp_nested_laplace_spde]{cpp_nested_laplace_spde()}}.
 }
 }

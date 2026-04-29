@@ -31,12 +31,14 @@ nested_laplace(
 \item{X}{Fixed-effects design matrix.}
 
 \item{prior}{A list describing the latent prior block. Required field
-\code{type} ∈ \{"icar", "bym2", "rw1", "rw2", "ar1"\}. Type-specific
-fields:
+\code{type} ∈ \{"icar", "bym2", "car_proper", "rw1", "rw2", "ar1"\}.
+Type-specific fields:
 \itemize{
 \item icar:  \code{spatial_idx}, \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
 \code{n_neighbors} (CSR adjacency, 0-based); optional \code{tau_grid}.
 \item bym2:  same adjacency; \code{scale_factor}; optional \code{sigma_grid}, \code{rho_grid}.
+\item car_proper: same adjacency; optional \code{tau_grid}, \code{rho_grid},
+\code{rho_bounds = c(lower, upper)} (defaults to (0, 1)).
 \item rw1/rw2: \code{temporal_idx} (1-based), \code{n_times}; optional \code{tau_grid},
 \code{cyclic} (rw1 only, default FALSE).
 \item ar1:   \code{temporal_idx}, \code{n_times}; optional \code{tau_grid}, \code{rho_grid}.
@@ -89,7 +91,9 @@ integrates over the grid to give proper hyperparameter marginals.
 
 Supported priors:
 \itemize{
-\item Spatial: \code{"icar"} (1D grid on tau), \code{"bym2"} (2D on (sigma, rho))
+\item Spatial: \code{"icar"} (1D grid on tau), \code{"bym2"} (2D on (sigma, rho)),
+\code{"car_proper"} (2D on (tau, rho); rho lives in the eigenvalue
+interval (1/lambda_min, 1/lambda_max) of D^{-1}W).
 \item Temporal: \code{"rw1"}, \code{"rw2"} (1D grid on tau), \code{"ar1"} (2D on (tau, rho))
 \item Continuous spatial: see \code{\link[=cpp_nested_laplace_spde]{cpp_nested_laplace_spde()}} (separate entry,
 rebuilds Q via SPDE Q-builder).

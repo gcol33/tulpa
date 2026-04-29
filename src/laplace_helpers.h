@@ -479,6 +479,27 @@ double log_prior_icar(
     const Rcpp::IntegerVector& n_neighbors
 );
 
+// Proper CAR Q(rho) = D - rho*W. ICAR is the rho == 1 limit (with rank
+// deficiency 1). For rho in the valid eigenvalue range Q is full rank, so
+// the log-prior carries the full log|Q(rho)| determinant term in addition
+// to the quadratic.
+void add_car_proper_prior(
+    DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
+    int spatial_start, int n_spatial_units, double tau, double rho,
+    const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors
+);
+
+// Caller pre-computes log|Q(rho)| once per grid point (e.g. via dense
+// Cholesky on D - rho*W) and passes it in here — keeps this hot helper
+// free of factorisations.
+double log_prior_car_proper(
+    const Rcpp::NumericVector& x, int spatial_start, int n_spatial_units,
+    double tau, double rho, double log_det_Q_rho,
+    const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors
+);
+
 // =====================================================================
 // Temporal log-priors (intrinsic RW1, RW2; proper AR1)
 // =====================================================================

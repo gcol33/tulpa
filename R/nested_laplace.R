@@ -7,20 +7,27 @@
 #' integrates over the grid to give proper hyperparameter marginals.
 #'
 #' Supported priors:
-#'  * Spatial: `"icar"` (1D grid on tau), `"bym2"` (2D on (sigma, rho))
+#'  * Spatial (areal): `"icar"` (1D grid on tau), `"bym2"`
+#'    (2D on (sigma, rho)), `"car_proper"` (2D on (tau, rho); rho lives
+#'    in the eigenvalue interval (1/lambda_min, 1/lambda_max) of
+#'    D^{-1}W).
+#'  * Spatial (continuous): `"nngp"` (2D on (sigma2, phi_gp)),
+#'    `"hsgp"` (2D on (sigma2, lengthscale)).
 #'  * Temporal: `"rw1"`, `"rw2"` (1D grid on tau), `"ar1"` (2D on (tau, rho))
-#'  * Continuous spatial: see [cpp_nested_laplace_spde()] (separate entry,
-#'    rebuilds Q via SPDE Q-builder).
+#'  * SPDE continuous spatial: see [cpp_nested_laplace_spde()] (separate
+#'    entry, rebuilds Q via SPDE Q-builder).
 #'
 #' @param y Response vector.
 #' @param n_trials Trial sizes (binomial). Pass `1L`-vector otherwise.
 #' @param X Fixed-effects design matrix.
 #' @param prior A list describing the latent prior block. Required field
-#'   `type` ∈ \{"icar", "bym2", "rw1", "rw2", "ar1"\}. Type-specific
-#'   fields:
+#'   `type` ∈ \{"icar", "bym2", "car_proper", "rw1", "rw2", "ar1"\}.
+#'   Type-specific fields:
 #'   * icar:  `spatial_idx`, `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
 #'           `n_neighbors` (CSR adjacency, 0-based); optional `tau_grid`.
 #'   * bym2:  same adjacency; `scale_factor`; optional `sigma_grid`, `rho_grid`.
+#'   * car_proper: same adjacency; optional `tau_grid`, `rho_grid`,
+#'           `rho_bounds = c(lower, upper)` (defaults to (0, 1)).
 #'   * rw1/rw2: `temporal_idx` (1-based), `n_times`; optional `tau_grid`,
 #'             `cyclic` (rw1 only, default FALSE).
 #'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`.
@@ -94,13 +101,17 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   res <- switch(
     type,
-    icar = .nl_icar(cargs, prior, verbose),
-    bym2 = .nl_bym2(cargs, prior, verbose),
-    rw1  = .nl_rw1(cargs, prior, verbose),
-    rw2  = .nl_rw2(cargs, prior, verbose),
-    ar1  = .nl_ar1(cargs, prior, verbose),
+    icar       = .nl_icar(cargs, prior, verbose),
+    bym2       = .nl_bym2(cargs, prior, verbose),
+    car_proper = .nl_car_proper(cargs, prior, verbose),
+    nngp       = .nl_nngp(cargs, prior, verbose),
+    hsgp       = .nl_hsgp(cargs, prior, verbose),
+    rw1        = .nl_rw1(cargs, prior, verbose),
+    rw2        = .nl_rw2(cargs, prior, verbose),
+    ar1        = .nl_ar1(cargs, prior, verbose),
     stop("Unknown prior type: ", type,
-         ". Supported: icar, bym2, rw1, rw2, ar1.", call. = FALSE)
+         ". Supported: icar, bym2, car_proper, nngp, hsgp, rw1, rw2, ar1.",
+         call. = FALSE)
   )
 
   # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
@@ -147,6 +158,79 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
   ), a))
   out$theta_grid <- cbind(sigma = p$sigma_grid, rho = p$rho_grid)
   out$theta_names <- c("sigma", "rho")
+  out
+}
+
+.nl_car_proper <- function(a, p, verbose) {
+  if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
+    rb <- p$rho_bounds %||% c(0, 1)
+    # Margin in from the eigenvalue endpoints — Q goes singular at the
+    # boundary, so anchoring the grid in (lower + eps, upper - eps) avoids
+    # NaN log-determinants from the per-grid-point Cholesky.
+    eps <- 0.05 * (rb[2] - rb[1])
+    lo <- rb[1] + eps
+    hi <- rb[2] - eps
+    g_tau <- exp(seq(log(0.3), log(30), length.out = 5))
+    g_rho <- seq(lo, hi, length.out = 5)
+    gr <- expand.grid(tau = g_tau, rho = g_rho)
+    p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
+  }
+  out <- do.call(cpp_nested_laplace_car_proper, c(list(
+    spatial_idx = as.integer(p$spatial_idx),
+    n_spatial_units = as.integer(p$n_spatial_units),
+    adj_row_ptr = as.integer(p$adj_row_ptr),
+    adj_col_idx = as.integer(p$adj_col_idx),
+    n_neighbors = as.integer(p$n_neighbors),
+    tau_grid = as.numeric(p$tau_grid),
+    rho_grid = as.numeric(p$rho_grid)
+  ), a))
+  out$theta_grid <- cbind(tau = p$tau_grid, rho = p$rho_grid)
+  out$theta_names <- c("tau", "rho")
+  out
+}
+
+.nl_nngp <- function(a, p, verbose) {
+  if (is.null(p$sigma2_grid) || is.null(p$phi_gp_grid)) {
+    s2 <- exp(seq(log(0.05), log(2), length.out = 5))
+    pg <- exp(seq(log(0.05), log(1.5), length.out = 5))
+    gr <- expand.grid(sigma2 = s2, phi_gp = pg)
+    p$sigma2_grid <- gr$sigma2
+    p$phi_gp_grid <- gr$phi_gp
+  }
+  cov_type <- as.integer(p$cov_type %||% 2L)  # default Matern-5/2
+  out <- do.call(cpp_nested_laplace_nngp, c(list(
+    coords      = as.matrix(p$coords),
+    nn_idx      = as.matrix(p$nn_idx),
+    nn_dist     = as.matrix(p$nn_dist),
+    nn_order    = as.integer(p$nn_order),
+    n_spatial   = as.integer(p$n_spatial),
+    nn          = as.integer(p$nn),
+    sigma2_grid = as.numeric(p$sigma2_grid),
+    phi_gp_grid = as.numeric(p$phi_gp_grid),
+    cov_type    = cov_type
+  ), a))
+  out$theta_grid <- cbind(sigma2 = p$sigma2_grid, phi_gp = p$phi_gp_grid)
+  out$theta_names <- c("sigma2", "phi_gp")
+  out
+}
+
+.nl_hsgp <- function(a, p, verbose) {
+  if (is.null(p$sigma2_grid) || is.null(p$lengthscale_grid)) {
+    s2 <- exp(seq(log(0.05), log(2), length.out = 5))
+    ls <- exp(seq(log(0.05), log(1.5), length.out = 5))
+    gr <- expand.grid(sigma2 = s2, ell = ls)
+    p$sigma2_grid <- gr$sigma2
+    p$lengthscale_grid <- gr$ell
+  }
+  out <- do.call(cpp_nested_laplace_hsgp, c(list(
+    phi_basis        = as.matrix(p$phi_basis),
+    lambda_eig       = as.numeric(p$lambda_eig),
+    sigma2_grid      = as.numeric(p$sigma2_grid),
+    lengthscale_grid = as.numeric(p$lengthscale_grid)
+  ), a))
+  out$theta_grid <- cbind(sigma2 = p$sigma2_grid,
+                          lengthscale = p$lengthscale_grid)
+  out$theta_names <- c("sigma2", "lengthscale")
   out
 }
 
@@ -239,9 +323,11 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
 #'
 #' Supported spec types:
 #'  * `tulpa_temporal` with `type ∈ {"rw1", "rw2", "ar1"}`
-#'  * `tulpa_spatial` with `type ∈ {"car", "icar", "car_proper", "bym2"}`
-#'    (continuous-spatial GP / SPDE specs need their own entry — see
-#'    [cpp_nested_laplace_spde()])
+#'  * `tulpa_spatial` with `type ∈ {"car", "icar", "car_proper", "bym2"}`.
+#'    Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
+#'    using the spec's eigenvalue-derived `rho_bounds`.
+#'    Continuous-spatial GP / SPDE specs need their own entry — see
+#'    [cpp_nested_laplace_spde()].
 #'
 #' @param spec A `tulpa_temporal` or `tulpa_spatial` object.
 #' @param data Data frame the spec resolves time/group/site indices against.
@@ -277,19 +363,16 @@ prior_from_spec <- function(spec, data) {
 .prior_from_spatial_spec <- function(spec, data) {
   validate_spatial(spec, data)
   type <- tolower(spec$type)
-  # Map "car" / "icar" → ICAR backend; "car_proper" not yet wired into
-  # nested Laplace (it estimates ρ and would need its own grid).
   if (type %in% c("car", "icar")) {
     backend <- "icar"
   } else if (type == "bym2") {
     backend <- "bym2"
   } else if (type == "car_proper") {
-    stop("Proper CAR (rho estimated) is not yet supported by ",
-         "nested_laplace(); use BYM2 instead.", call. = FALSE)
+    backend <- "car_proper"
   } else {
     stop("nested_laplace() does not yet support spatial type '", type,
-         "'. Use BYM2/ICAR for areal models or cpp_nested_laplace_spde ",
-         "for SPDE.", call. = FALSE)
+         "'. Use BYM2/ICAR/proper CAR for areal models or ",
+         "cpp_nested_laplace_spde for SPDE.", call. = FALSE)
   }
 
   adj <- spec$adjacency
@@ -323,6 +406,11 @@ prior_from_spec <- function(spec, data) {
   )
   if (backend == "bym2") {
     out$scale_factor <- as.numeric(spec$scale_factor %||% 1.0)
+  }
+  if (backend == "car_proper") {
+    rb <- spec$rho_bounds
+    if (is.null(rb)) rb <- c(0, 1)
+    out$rho_bounds <- as.numeric(rb)
   }
   out
 }
