@@ -241,7 +241,7 @@ inline double temporal_gp_log_lik(
 // -----------------------------------------------------------------------------
 
 // Log prior for temporal variance (PC prior style)
-inline double log_prior_temporal_sigma2_pc(double sigma2, double U, double alpha) {
+inline double log_prior_sigma2_temporal_pc(double sigma2, double U, double alpha) {
   double rate = -std::log(alpha) / U;
   double sigma = std::sqrt(sigma2);
   return std::log(rate) - rate * sigma - std::log(2.0 * sigma);

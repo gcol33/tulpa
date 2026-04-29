@@ -1191,7 +1191,7 @@ double compute_log_post(
         phi_temporal_gp = phi_lower + phi_range * sigmoid_val;
 
         // PC prior on sigma2 (favor smaller variance)
-        log_post += tulpa_temporal_gp::log_prior_temporal_sigma2_pc(
+        log_post += tulpa_temporal_gp::log_prior_sigma2_temporal_pc(
             sigma2_temporal_gp, data.temporal_gp_sigma2_prior_U,
             data.temporal_gp_sigma2_prior_alpha);
         log_post += log_sigma2;  // Jacobian for log transform

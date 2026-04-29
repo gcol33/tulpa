@@ -25,6 +25,61 @@
 #include <omp.h>
 #endif
 
+namespace {
+
+// Standard linear predictor: X*beta + optional RE + x[latent_start + latent_idx[i]-1].
+// Used by ICAR, CAR_proper, RW1, RW2, AR1.
+inline void nl_compute_eta(
+    const Rcpp::NumericVector& x,
+    Rcpp::NumericVector& eta,
+    int N, int p, int n_re_groups,
+    const Rcpp::NumericMatrix& X,
+    const Rcpp::NumericVector& re_idx,
+    int latent_start, int n_latent,
+    const Rcpp::IntegerVector& latent_idx,
+    int n_threads
+) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
+#endif
+    for (int i = 0; i < N; i++) {
+        eta[i] = 0.0;
+        for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
+        if (n_re_groups > 0) {
+            int g = (int)re_idx[i] - 1;
+            if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
+        }
+        int l = latent_idx[i] - 1;
+        if (l >= 0 && l < n_latent) eta[i] += x[latent_start + l];
+    }
+}
+
+// Scatter (eff_idx build + scatter_obs_with_latent) for simple index-based backends.
+// The prior call and add_re_beta_priors remain in the caller.
+inline void nl_scatter_obs_indexed(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int N, int p, int n_re_groups,
+    const Rcpp::NumericVector& eta,
+    const std::string& family, double phi,
+    int latent_start, int n_latent,
+    const Rcpp::IntegerVector& latent_idx,
+    tulpa::DenseVec& grad, tulpa::DenseMat& H,
+    int n_threads
+) {
+    std::vector<int> eff_idx(N, -1);
+    std::vector<double> d_fac(N, 1.0);
+    for (int i = 0; i < N; i++) {
+        int l = latent_idx[i] - 1;
+        if (l >= 0 && l < n_latent) eff_idx[i] = latent_start + l;
+    }
+    tulpa::scatter_obs_with_latent(y, n_trials, X, re_idx, N, p, n_re_groups,
+                                    eta, family, phi, eff_idx, d_fac,
+                                    grad, H, n_threads);
+}
+
+} // namespace
+
 // =====================================================================
 // Nested Laplace: ICAR (1D grid over tau_spatial)
 // =====================================================================
@@ -57,36 +112,16 @@ Rcpp::List cpp_nested_laplace_icar(
         double tau_k = tau_grid[k];
 
         auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                if (n_spatial_units > 0) {
-                    int s = spatial_idx[i] - 1;
-                    if (s >= 0 && s < n_spatial_units) eta[i] += x[spatial_start + s];
-                }
-            }
+            nl_compute_eta(x, eta, N, p, n_re_groups, X, re_idx,
+                           spatial_start, n_spatial_units, spatial_idx, n_threads);
         };
 
         auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
                            tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            std::vector<int> eff_idx(N, -1);
-            std::vector<double> d_fac(N, 1.0);
-            for (int i = 0; i < N; i++) {
-                if (n_spatial_units > 0) {
-                    int s = spatial_idx[i] - 1;
-                    if (s >= 0 && s < n_spatial_units) eff_idx[i] = spatial_start + s;
-                }
-            }
-            tulpa::scatter_obs_with_latent(y, n, X, re_idx, N, p, n_re_groups,
-                                            eta, family, phi, eff_idx, d_fac,
-                                            grad, H, n_threads);
+            nl_scatter_obs_indexed(y, n, X, re_idx, N, p, n_re_groups,
+                                    eta, family, phi,
+                                    spatial_start, n_spatial_units, spatial_idx,
+                                    grad, H, n_threads);
             tulpa::add_icar_prior(grad, H, x, spatial_start, n_spatial_units, tau_k,
                                    adj_row_ptr, adj_col_idx, n_neighbors);
             tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
@@ -344,36 +379,16 @@ Rcpp::List cpp_nested_laplace_car_proper(
         }
 
         auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                if (n_spatial_units > 0) {
-                    int s = spatial_idx[i] - 1;
-                    if (s >= 0 && s < n_spatial_units) eta[i] += x[spatial_start + s];
-                }
-            }
+            nl_compute_eta(x, eta, N, p, n_re_groups, X, re_idx,
+                           spatial_start, n_spatial_units, spatial_idx, n_threads);
         };
 
         auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
                            tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            std::vector<int> eff_idx(N, -1);
-            std::vector<double> d_fac(N, 1.0);
-            for (int i = 0; i < N; i++) {
-                if (n_spatial_units > 0) {
-                    int s = spatial_idx[i] - 1;
-                    if (s >= 0 && s < n_spatial_units) eff_idx[i] = spatial_start + s;
-                }
-            }
-            tulpa::scatter_obs_with_latent(y, n, X, re_idx, N, p, n_re_groups,
-                                            eta, family, phi, eff_idx, d_fac,
-                                            grad, H, n_threads);
+            nl_scatter_obs_indexed(y, n, X, re_idx, N, p, n_re_groups,
+                                    eta, family, phi,
+                                    spatial_start, n_spatial_units, spatial_idx,
+                                    grad, H, n_threads);
             tulpa::add_car_proper_prior(grad, H, x, spatial_start, n_spatial_units,
                                          tau_k, rho_k,
                                          adj_row_ptr, adj_col_idx, n_neighbors);
@@ -444,32 +459,16 @@ Rcpp::List cpp_nested_laplace_rw1(
         double tau_k = tau_grid[k];
 
         auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                int t = temporal_idx[i] - 1;
-                if (t >= 0 && t < n_times) eta[i] += x[temporal_start + t];
-            }
+            nl_compute_eta(x, eta, N, p, n_re_groups, X, re_idx,
+                           temporal_start, n_times, temporal_idx, n_threads);
         };
 
         auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
                            tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            std::vector<int> eff_idx(N, -1);
-            std::vector<double> d_fac(N, 1.0);
-            for (int i = 0; i < N; i++) {
-                int t = temporal_idx[i] - 1;
-                if (t >= 0 && t < n_times) eff_idx[i] = temporal_start + t;
-            }
-            tulpa::scatter_obs_with_latent(y, n, X, re_idx, N, p, n_re_groups,
-                                            eta, family, phi, eff_idx, d_fac,
-                                            grad, H, n_threads);
+            nl_scatter_obs_indexed(y, n, X, re_idx, N, p, n_re_groups,
+                                    eta, family, phi,
+                                    temporal_start, n_times, temporal_idx,
+                                    grad, H, n_threads);
             tulpa::add_rw1_precision(grad, H, x, temporal_start, n_times, tau_k, cyclic);
             tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
         };
@@ -532,32 +531,16 @@ Rcpp::List cpp_nested_laplace_rw2(
         double tau_k = tau_grid[k];
 
         auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                int t = temporal_idx[i] - 1;
-                if (t >= 0 && t < n_times) eta[i] += x[temporal_start + t];
-            }
+            nl_compute_eta(x, eta, N, p, n_re_groups, X, re_idx,
+                           temporal_start, n_times, temporal_idx, n_threads);
         };
 
         auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
                            tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            std::vector<int> eff_idx(N, -1);
-            std::vector<double> d_fac(N, 1.0);
-            for (int i = 0; i < N; i++) {
-                int t = temporal_idx[i] - 1;
-                if (t >= 0 && t < n_times) eff_idx[i] = temporal_start + t;
-            }
-            tulpa::scatter_obs_with_latent(y, n, X, re_idx, N, p, n_re_groups,
-                                            eta, family, phi, eff_idx, d_fac,
-                                            grad, H, n_threads);
+            nl_scatter_obs_indexed(y, n, X, re_idx, N, p, n_re_groups,
+                                    eta, family, phi,
+                                    temporal_start, n_times, temporal_idx,
+                                    grad, H, n_threads);
             tulpa::add_rw2_precision(grad, H, x, temporal_start, n_times, tau_k, false);
             tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
         };
@@ -621,32 +604,16 @@ Rcpp::List cpp_nested_laplace_ar1(
         double rho_k = rho_grid[k];
 
         auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                int t = temporal_idx[i] - 1;
-                if (t >= 0 && t < n_times) eta[i] += x[temporal_start + t];
-            }
+            nl_compute_eta(x, eta, N, p, n_re_groups, X, re_idx,
+                           temporal_start, n_times, temporal_idx, n_threads);
         };
 
         auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
                            tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            std::vector<int> eff_idx(N, -1);
-            std::vector<double> d_fac(N, 1.0);
-            for (int i = 0; i < N; i++) {
-                int t = temporal_idx[i] - 1;
-                if (t >= 0 && t < n_times) eff_idx[i] = temporal_start + t;
-            }
-            tulpa::scatter_obs_with_latent(y, n, X, re_idx, N, p, n_re_groups,
-                                            eta, family, phi, eff_idx, d_fac,
-                                            grad, H, n_threads);
+            nl_scatter_obs_indexed(y, n, X, re_idx, N, p, n_re_groups,
+                                    eta, family, phi,
+                                    temporal_start, n_times, temporal_idx,
+                                    grad, H, n_threads);
             tulpa::add_ar1_precision(grad, H, x, temporal_start, n_times, tau_k, rho_k);
             tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
         };

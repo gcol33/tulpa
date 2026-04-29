@@ -339,7 +339,7 @@ inline double full_log_lik(const double* phi, const double* beta_num,
 // ICAR prior log-density (up to normalization constant)
 // =========================================================================
 
-inline double icar_log_prior(const double* phi, double tau, int S,
+inline double log_prior_icar(const double* phi, double tau, int S,
                              const int* adj_row_ptr, const int* adj_col_idx,
                              const int* n_neighbors) {
     // -tau/2 * phi' Q phi + (S-1)/2 * log(tau)

@@ -342,6 +342,21 @@ inline double* vector_to_buf(const Rcpp::NumericVector& v) {
     return buf;
 }
 
+// Marshal the four adjacency CSR vectors shared by all spatial shims.
+inline void marshal_adj(
+    const int* spatial_idx, int N,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    int n_spatial_units,
+    Rcpp::IntegerVector& sidx, Rcpp::IntegerVector& arp,
+    Rcpp::IntegerVector& aci,  Rcpp::IntegerVector& nn
+) {
+    sidx = Rcpp::IntegerVector(spatial_idx, spatial_idx + N);
+    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
+    arp  = Rcpp::IntegerVector(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
+    aci  = Rcpp::IntegerVector(adj_col_idx, adj_col_idx + nadj);
+    nn   = Rcpp::IntegerVector(n_neighbors, n_neighbors + n_spatial_units);
+}
+
 } // namespace
 
 // ============================================================================
@@ -407,11 +422,9 @@ extern "C" void tulpa_laplace_mode_spatial_impl(
     Rcpp::IntegerVector  nv(n_trials, n_trials + N);
     Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
     Rcpp::NumericVector  rv(re_idx, re_idx + N);
-    Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
-    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
-    Rcpp::IntegerVector  arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
-    Rcpp::IntegerVector  aci(adj_col_idx, adj_col_idx + nadj);
-    Rcpp::IntegerVector  nn (n_neighbors, n_neighbors + n_spatial_units);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
     Rcpp::NumericVector  xinit;
     if (x_init && n_x_init > 0) xinit = Rcpp::NumericVector(x_init, x_init + n_x_init);
 
@@ -554,11 +567,9 @@ extern "C" void tulpa_laplace_mode_bym2_impl(
     Rcpp::IntegerVector  nv(n_trials, n_trials + N);
     Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
     Rcpp::NumericVector  rv(re_idx, re_idx + N);
-    Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
-    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
-    Rcpp::IntegerVector  arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
-    Rcpp::IntegerVector  aci(adj_col_idx, adj_col_idx + nadj);
-    Rcpp::IntegerVector  nn (n_neighbors, n_neighbors + n_spatial_units);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
 
     std::string fam = family ? std::string(family) : std::string("binomial");
 
@@ -737,11 +748,9 @@ extern "C" void tulpa_laplace_mode_rsr_impl(
     Rcpp::IntegerVector  nv(n_trials, n_trials + N);
     Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
     Rcpp::NumericVector  rv(re_idx, re_idx + N);
-    Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
-    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
-    Rcpp::IntegerVector  arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
-    Rcpp::IntegerVector  aci(adj_col_idx, adj_col_idx + nadj);
-    Rcpp::IntegerVector  nn (n_neighbors, n_neighbors + n_spatial_units);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
     Rcpp::NumericVector  proj(rsr_projection_flat,
                               rsr_projection_flat + (size_t)rsr_n * (size_t)rsr_n);
 
@@ -833,11 +842,9 @@ extern "C" void tulpa_nested_laplace_icar_impl(
     Rcpp::IntegerVector  nv(n_trials, n_trials + N);
     Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
     Rcpp::NumericVector  rv(re_idx, re_idx + N);
-    Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
-    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
-    Rcpp::IntegerVector  arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
-    Rcpp::IntegerVector  aci(adj_col_idx, adj_col_idx + nadj);
-    Rcpp::IntegerVector  nn (n_neighbors, n_neighbors + n_spatial_units);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
     Rcpp::NumericVector  tg (tau_grid,    tau_grid + n_grid);
 
     std::string fam = family ? std::string(family) : std::string("binomial");
@@ -868,11 +875,9 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
     Rcpp::IntegerVector  nv(n_trials, n_trials + N);
     Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
     Rcpp::NumericVector  rv(re_idx, re_idx + N);
-    Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
-    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
-    Rcpp::IntegerVector  arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
-    Rcpp::IntegerVector  aci(adj_col_idx, adj_col_idx + nadj);
-    Rcpp::IntegerVector  nn (n_neighbors, n_neighbors + n_spatial_units);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
     Rcpp::NumericVector  sg (sigma_spatial_grid, sigma_spatial_grid + n_grid);
     Rcpp::NumericVector  rg (rho_grid,           rho_grid           + n_grid);
 
@@ -904,11 +909,9 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
     Rcpp::IntegerVector  nv(n_trials, n_trials + N);
     Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
     Rcpp::NumericVector  rv(re_idx, re_idx + N);
-    Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
-    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
-    Rcpp::IntegerVector  arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
-    Rcpp::IntegerVector  aci(adj_col_idx, adj_col_idx + nadj);
-    Rcpp::IntegerVector  nn (n_neighbors, n_neighbors + n_spatial_units);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
     Rcpp::NumericVector  tg (tau_grid, tau_grid + n_grid);
     Rcpp::NumericVector  rg (rho_grid, rho_grid + n_grid);
 
