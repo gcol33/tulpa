@@ -5,13 +5,16 @@
 // (see nuts_api.h). The model package builds a populated ModelData and
 // passes it through; tulpa drives the sampler internally.
 //
-// MCLMC / SMC are not exposed here. Both take std::function callbacks
-// (log_prob_grad / log_prior / log_lik / prior_sample / mutation) that
-// are constructed per-call from R-side closures. They have no current
-// entry point that takes ModelData + ParamLayout, so a cross-DLL shim
-// would either need a sampler refactor (MCLMC) or domain-specific
-// kernels that cannot be auto-derived from a ModelData (SMC). Filed
-// for follow-up rather than shimmed half-way.
+// MCLMC / MAMCLMC have a separate cross-DLL entry — see tulpa/mclmc_api.h
+// (tulpa_mclmc_fit). Internally MCLMC takes a std::function callback that
+// cannot cross the DLL boundary, so the shim reconstructs the closure from
+// compute_log_post + compute_gradient inside tulpa.
+//
+// SMC is not exposed here. smc_sample takes std::function callbacks
+// (log_prior / log_lik / prior_sample / mutation) constructed per-call from
+// R-side closures, and there is no current entry point that takes
+// ModelData + ParamLayout — domain-specific mutation kernels cannot be
+// auto-derived. Filed for follow-up rather than shimmed half-way.
 
 #ifndef TULPA_SGHMC_API_H
 #define TULPA_SGHMC_API_H

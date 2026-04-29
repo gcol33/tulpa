@@ -31,7 +31,9 @@
 #include "tulpa/nested_laplace_api.h"
 #include "tulpa/spde_api.h"
 #include "tulpa/sghmc_api.h"
+#include "tulpa/mclmc_api.h"
 #include "sghmc_sampler.h"
+#include "mclmc_modeldata.h"
 
 // ============================================================================
 // Forward declarations: these definitions live in their .cpp files but are
@@ -1739,6 +1741,50 @@ extern "C" void tulpa_sgld_fit_impl(
 }
 
 // ============================================================================
+// MCLMC / MAMCLMC shim
+// ============================================================================
+//
+// Both samplers internally take a std::function log_prob_grad callback that
+// cannot cross a DLL boundary. The shim builds it inside tulpa from the
+// existing compute_log_post + compute_gradient (see mclmc_modeldata.h),
+// then dispatches to mclmc_sample / mamclmc_sample based on the `adjusted`
+// flag. Result reuses SGSamplerShimResult — the flat shape fits.
+
+extern "C" void tulpa_mclmc_fit_impl(
+    const tulpa::ModelData* data,
+    const tulpa::ParamLayout* layout,
+    const double* init,
+    int n_params,
+    int n_iter,
+    int n_warmup,
+    double step_size,
+    int L,
+    unsigned int seed,
+    int adjusted,
+    int verbose,
+    tulpa::SGSamplerShimResult* result_out
+) {
+    std::vector<double> q_init(init, init + n_params);
+
+    tulpa_mclmc::MCLMCConfig cfg;
+    cfg.n_iter   = n_iter;
+    cfg.n_warmup = n_warmup;
+    cfg.step_size = step_size;
+    cfg.L        = L;
+    cfg.adjusted = adjusted;
+    cfg.seed     = seed;
+    cfg.verbose  = (verbose != 0);
+    // mass_diag stays empty (identity); extending the shim signature would
+    // require an ABI bump.
+
+    tulpa_mclmc::MCLMCFitResult res =
+        tulpa_mclmc::run_mclmc_sampler(q_init, *data, *layout, cfg);
+
+    copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
+                           res.success, res.error_msg, result_out);
+}
+
+// ============================================================================
 // Registration: called from tulpa_init.cpp::tulpa_register_callables.
 // ============================================================================
 
@@ -1813,4 +1859,7 @@ void tulpa_register_shims(DllInfo* dll) {
         (DL_FUNC)&tulpa_sghmc_fit_impl);
     R_RegisterCCallable("tulpa", "tulpa_sgld_fit",
         (DL_FUNC)&tulpa_sgld_fit_impl);
+
+    R_RegisterCCallable("tulpa", "tulpa_mclmc_fit",
+        (DL_FUNC)&tulpa_mclmc_fit_impl);
 }
