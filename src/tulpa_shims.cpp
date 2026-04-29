@@ -32,8 +32,10 @@
 #include "tulpa/spde_api.h"
 #include "tulpa/sghmc_api.h"
 #include "tulpa/mclmc_api.h"
+#include "tulpa/smc_api.h"
 #include "sghmc_sampler.h"
 #include "mclmc_modeldata.h"
+#include "smc_modeldata.h"
 
 // ============================================================================
 // Forward declarations: these definitions live in their .cpp files but are
@@ -1785,6 +1787,73 @@ extern "C" void tulpa_mclmc_fit_impl(
 }
 
 // ============================================================================
+// SMC shim
+// ============================================================================
+//
+// Drives tulpa::run_smc_sampler. The mutation kernel is pluggable: if
+// the model package passes nullptr, tulpa uses its built-in random-walk
+// Metropolis kernel scaled by 1 / sqrt(beta) targeting
+// log_prior + beta * log_lik.
+
+extern "C" void tulpa_smc_fit_impl(
+    const tulpa::ModelData* data,
+    const tulpa::ParamLayout* layout,
+    const double* init,
+    int n_params,
+    int n_particles,
+    int n_mcmc_steps,
+    double ess_threshold,
+    double prior_sigma,
+    tulpa::SmcMutationFn mutation,
+    void* user_data,
+    unsigned int seed,
+    int verbose,
+    tulpa::SMCShimResult* result_out
+) {
+    std::vector<double> init_vec(init, init + n_params);
+
+    tulpa::SMCConfig cfg;
+    cfg.n_particles    = n_particles;
+    cfg.n_mcmc_steps   = n_mcmc_steps;
+    cfg.ess_threshold  = ess_threshold;
+    cfg.prior_sigma    = prior_sigma;
+    cfg.seed           = seed;
+    cfg.verbose        = (verbose != 0);
+
+    tulpa::SMCDriverResult res = tulpa::run_smc_sampler(
+        init_vec, *data, *layout, cfg, mutation, user_data);
+
+    int N = (int)res.particles.size();
+    int P = (N > 0) ? (int)res.particles[0].size() : n_params;
+
+    result_out->n_particles  = N;
+    result_out->n_params     = P;
+    result_out->log_evidence = res.log_evidence;
+    result_out->success      = res.success ? 1 : 0;
+
+    std::strncpy(result_out->error_msg, res.error_msg.c_str(),
+                 sizeof(result_out->error_msg) - 1);
+    result_out->error_msg[sizeof(result_out->error_msg) - 1] = '\0';
+
+    if (N > 0 && P > 0) {
+        result_out->particles = new double[(size_t)N * (size_t)P];
+        for (int i = 0; i < N; i++) {
+            for (int j = 0; j < P; j++) {
+                result_out->particles[(size_t)i * P + j] = res.particles[i][j];
+            }
+        }
+    } else {
+        result_out->particles = new double[1];
+    }
+
+    {
+        int W = (int)res.log_weights.size();
+        result_out->log_weights = new double[W > 0 ? W : 1];
+        for (int i = 0; i < W; i++) result_out->log_weights[i] = res.log_weights[i];
+    }
+}
+
+// ============================================================================
 // Registration: called from tulpa_init.cpp::tulpa_register_callables.
 // ============================================================================
 
@@ -1862,4 +1931,6 @@ void tulpa_register_shims(DllInfo* dll) {
 
     R_RegisterCCallable("tulpa", "tulpa_mclmc_fit",
         (DL_FUNC)&tulpa_mclmc_fit_impl);
+    R_RegisterCCallable("tulpa", "tulpa_smc_fit",
+        (DL_FUNC)&tulpa_smc_fit_impl);
 }
