@@ -7,15 +7,12 @@
 #' integrates over the grid to give proper hyperparameter marginals.
 #'
 #' Supported priors:
-#'  * Spatial (areal): `"icar"` (1D grid on tau), `"bym2"`
-#'    (2D on (sigma, rho)), `"car_proper"` (2D on (tau, rho); rho lives
-#'    in the eigenvalue interval (1/lambda_min, 1/lambda_max) of
-#'    D^{-1}W).
-#'  * Spatial (continuous): `"nngp"` (2D on (sigma2, phi_gp)),
-#'    `"hsgp"` (2D on (sigma2, lengthscale)).
+#'  * Spatial: `"icar"` (1D grid on tau), `"bym2"` (2D on (sigma, rho)),
+#'    `"car_proper"` (2D on (tau, rho); rho lives in the eigenvalue
+#'    interval (1/lambda_min, 1/lambda_max) of D^{-1}W).
 #'  * Temporal: `"rw1"`, `"rw2"` (1D grid on tau), `"ar1"` (2D on (tau, rho))
-#'  * SPDE continuous spatial: see [cpp_nested_laplace_spde()] (separate
-#'    entry, rebuilds Q via SPDE Q-builder).
+#'  * Continuous spatial: see [cpp_nested_laplace_spde()] (separate entry,
+#'    rebuilds Q via SPDE Q-builder).
 #'
 #' @param y Response vector.
 #' @param n_trials Trial sizes (binomial). Pass `1L`-vector otherwise.
@@ -104,13 +101,11 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
     icar       = .nl_icar(cargs, prior, verbose),
     bym2       = .nl_bym2(cargs, prior, verbose),
     car_proper = .nl_car_proper(cargs, prior, verbose),
-    nngp       = .nl_nngp(cargs, prior, verbose),
-    hsgp       = .nl_hsgp(cargs, prior, verbose),
     rw1        = .nl_rw1(cargs, prior, verbose),
     rw2        = .nl_rw2(cargs, prior, verbose),
     ar1        = .nl_ar1(cargs, prior, verbose),
     stop("Unknown prior type: ", type,
-         ". Supported: icar, bym2, car_proper, nngp, hsgp, rw1, rw2, ar1.",
+         ". Supported: icar, bym2, car_proper, rw1, rw2, ar1.",
          call. = FALSE)
   )
 
@@ -186,51 +181,6 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
   ), a))
   out$theta_grid <- cbind(tau = p$tau_grid, rho = p$rho_grid)
   out$theta_names <- c("tau", "rho")
-  out
-}
-
-.nl_nngp <- function(a, p, verbose) {
-  if (is.null(p$sigma2_grid) || is.null(p$phi_gp_grid)) {
-    s2 <- exp(seq(log(0.05), log(2), length.out = 5))
-    pg <- exp(seq(log(0.05), log(1.5), length.out = 5))
-    gr <- expand.grid(sigma2 = s2, phi_gp = pg)
-    p$sigma2_grid <- gr$sigma2
-    p$phi_gp_grid <- gr$phi_gp
-  }
-  cov_type <- as.integer(p$cov_type %||% 2L)  # default Matern-5/2
-  out <- do.call(cpp_nested_laplace_nngp, c(list(
-    coords      = as.matrix(p$coords),
-    nn_idx      = as.matrix(p$nn_idx),
-    nn_dist     = as.matrix(p$nn_dist),
-    nn_order    = as.integer(p$nn_order),
-    n_spatial   = as.integer(p$n_spatial),
-    nn          = as.integer(p$nn),
-    sigma2_grid = as.numeric(p$sigma2_grid),
-    phi_gp_grid = as.numeric(p$phi_gp_grid),
-    cov_type    = cov_type
-  ), a))
-  out$theta_grid <- cbind(sigma2 = p$sigma2_grid, phi_gp = p$phi_gp_grid)
-  out$theta_names <- c("sigma2", "phi_gp")
-  out
-}
-
-.nl_hsgp <- function(a, p, verbose) {
-  if (is.null(p$sigma2_grid) || is.null(p$lengthscale_grid)) {
-    s2 <- exp(seq(log(0.05), log(2), length.out = 5))
-    ls <- exp(seq(log(0.05), log(1.5), length.out = 5))
-    gr <- expand.grid(sigma2 = s2, ell = ls)
-    p$sigma2_grid <- gr$sigma2
-    p$lengthscale_grid <- gr$ell
-  }
-  out <- do.call(cpp_nested_laplace_hsgp, c(list(
-    phi_basis        = as.matrix(p$phi_basis),
-    lambda_eig       = as.numeric(p$lambda_eig),
-    sigma2_grid      = as.numeric(p$sigma2_grid),
-    lengthscale_grid = as.numeric(p$lengthscale_grid)
-  ), a))
-  out$theta_grid <- cbind(sigma2 = p$sigma2_grid,
-                          lengthscale = p$lengthscale_grid)
-  out$theta_names <- c("sigma2", "lengthscale")
   out
 }
 

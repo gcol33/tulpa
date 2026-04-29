@@ -10,6 +10,20 @@ namespace tulpa {
 // ParamLayout: maps named parameter blocks to positions in the flat
 // parameter vector used by samplers.
 //
+// === Index convention ===
+// All `*_start` / `*_end` pairs use a HALF-OPEN [start, end) interval.
+// `*_end` is EXCLUSIVE: it is the index of the first slot AFTER the
+// block, equivalent to start + size. Iterate as
+//     for (int j = block_start; j < block_end; ++j) { ... }
+// and read the block size as `block_end - block_start`. Adjacent blocks
+// satisfy `block_A.end == block_B.start`, e.g. `beta_zi_end ==
+// extra_offset` when ZI is followed directly by model-specific extras.
+// This is by design — it does NOT mean the two blocks alias the same
+// slot. Downstream packages that consume tulpa's layout MUST treat
+// every `*_end` field as exclusive (see gcol33/tulpa#2).
+//
+// Sentinel: a block that is absent has `start == end == -1`.
+//
 // Legacy ratio layout:
 //   [beta_num | beta_denom | log_sigma_re? | re? | phi_num? | phi_denom? |
 //    spatial? | temporal? | zi? | oi? | svc? | gp? | hsgp? | latent? | st? | tvc?]
