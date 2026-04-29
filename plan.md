@@ -21,10 +21,11 @@
 - `inst/include/tulpa/param_layout.h`: explicit half-open `[start, end)` convention
   documented after audit closing gcol33/tulpa#2 (the issue's premise that
   `re_end_multi` was inclusive was wrong; tulpa is uniformly exclusive everywhere).
-- Cross-DLL ABI surface (uncommitted, see `fix.md`): `R_RegisterCCallable` shims so
+- Cross-DLL ABI surface (see `fix.md`): `R_RegisterCCallable` shims so
   downstream packages (tulpaGlmm, tulpaOcc, tulpaMesh) can reach inference drivers
   without going through `Rcpp::List`. Already shipped: laplace_mode_dense /
-  _spatial / _dense_multi_re, pg_binomial / pg_negbin / pg_negbin_spatial,
+  _spatial / _dense_multi_re / _bym2 / _gp / _multiscale_gp /
+  _multiscale_temporal / _rsr, pg_binomial / pg_negbin / pg_negbin_spatial,
   fit_vi, run_ess_sampler with `joint_sigma_re`, sparse_chol (create / analyze /
   factorize / solve / log_det / sel_inv_diag) + stochastic_log_det.
 
@@ -55,14 +56,10 @@ shims.
 
 ### Open work, ordered (highest tulpaGlmm value first)
 
-1. **Land remaining Laplace shims** in `src/tulpa_shims.cpp` + `inst/include/tulpa/laplace_api.h`:
-   `_bym2`, `_gp`, `_multiscale_gp`, `_multiscale_temporal`, `_rsr`,
-   `laplace_newton_solve`, `laplace_newton_solve_sparse`. Pattern is in the three
-   already-shipped entries — same POD struct + raw pointers + `free_buffers()`. ~150 LOC.
-2. **Add `nested_laplace_api.h` + `spde_api.h` shims** wrapping the eight nested-Laplace
+1. **Add `nested_laplace_api.h` + `spde_api.h` shims** wrapping the eight nested-Laplace
    backends (icar / bym2 / car_proper / rw1 / rw2 / ar1 / nngp / hsgp / spde) and the
    CCD grid generator. Unlocks `spatial = tulpa_mesh(...)` in tulpaGlmm. ~200 LOC.
-3. **EM+Laplace engine additions** for tulpaGlmm callbacks. File two follow-ups
+2. **EM+Laplace engine additions** for tulpaGlmm callbacks. File two follow-ups
    _against the future `em_laplace_api.h`_:
    - **gcol33/tulpa#3** — per-submodel family + offset on the `m_step_encode` callback's
      return shape; thread through existing `tulpa_laplace()` dispatch (already handles
@@ -70,7 +67,8 @@ shims.
    - **gcol33/tulpa#4** — optional `m_step_extra(fits, weights, ...) -> fits` callback
      fired between M-step and next E-step, for non-η parameters (NB φ, Gamma shape,
      Beta φ, etc.). Pure plumbing.
-4. **Stretch shim APIs:** `mclmc_api.h`, `smc_api.h`, `sghmc_api.h`. Same pattern as (1).
+3. **Stretch shim APIs:** `mclmc_api.h`, `smc_api.h`, `sghmc_api.h`. Same pattern as the
+   already-landed Laplace shims.
 
 ### Pre-flight before starting
 
@@ -328,7 +326,8 @@ From `TODO.md`. P2.4 is already done; the rest are still open:
 - Round 3: items 8-12 can start in parallel with Round 2; only item 7
   (legacy strip) waits on Agent E.
 - Round 4 (nested Laplace): ✅ shipped. Generic infra + 8 backends + CCD.
-- **Active focus:** cross-DLL ABI shim surface (`fix.md`). Six API headers
-  + `tulpa_shims.cpp` already compile (uncommitted in working tree);
-  remaining work is the missing Laplace shims (`_bym2`/`_gp`/etc.) plus
-  `nested_laplace_api.h` and `spde_api.h`. Tracked as item 2b in `TODO.md`.
+- **Active focus:** cross-DLL ABI shim surface (`fix.md`). Laplace surface
+  is now complete (dense / spatial / dense_multi_re / bym2 / gp /
+  multiscale_gp / multiscale_temporal / rsr); remaining work is
+  `nested_laplace_api.h` + `spde_api.h` (item 1 in the open-work list above)
+  and the EM+Laplace follow-ups. Tracked as item 2b in `TODO.md`.

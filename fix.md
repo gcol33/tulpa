@@ -78,8 +78,17 @@ then, rebuild downstream packages against the current tulpa source.
    - DONE: `laplace_mode_dense_multi_re` (2026-04-29 follow-up). Round-trip
      against `cpp_laplace_fit_multi_re` matches mode bit-for-bit on a 200-obs
      binomial GLMM with two intercept-only RE blocks.
-   - TODO: `_bym2`, `_gp`, `_multiscale_gp`, `_multiscale_temporal`, `_rsr`,
-     `laplace_newton_solve`, `laplace_newton_solve_sparse`.
+   - DONE: `_bym2`, `_gp`, `_multiscale_gp`, `_multiscale_temporal`, `_rsr`
+     (2026-04-29). Header pattern documented in `laplace_api.h`; impls in
+     `tulpa_shims.cpp` follow the same pack-into-Rcpp-then-delegate shape
+     as the dense / spatial entries. Coords for `_gp` / `_multiscale_gp`
+     are passed flat with an explicit `coord_dim` (currently must be 2 —
+     the underlying NNGP kernel only consumes the first two columns).
+   - DROPPED: `laplace_newton_solve`, `laplace_newton_solve_sparse` — both
+     are templated on the lambdas (compute_eta, scatter, center, log_prior)
+     and so cannot pass through `R_RegisterCCallable`. Downstream packages
+     should call the high-level `laplace_mode_*` shims instead, or build a
+     dedicated entry that hides the lambdas.
 2. `pg_api.h` — proven 1.9–3.7× faster than HMC on binomial / negbin in salvaged logs. DONE.
 3. `vi_api.h` — single shim, three variants behind it. DONE.
 4. `sparse_solver_api.h` — required by SPDE work.

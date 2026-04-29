@@ -82,6 +82,58 @@ LaplaceResult laplace_mode_bym2(
     int max_iter, double tol, int n_threads
 );
 
+LaplaceResult laplace_mode_gp(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int n_re_groups, double sigma_re,
+    const Rcpp::NumericMatrix& coords,
+    const Rcpp::IntegerMatrix& nn_idx, const Rcpp::NumericMatrix& nn_dist,
+    const Rcpp::IntegerVector& nn_order,
+    int n_spatial, int nn,
+    double sigma2_gp, double phi_gp, int cov_type,
+    const std::string& family, double phi,
+    int max_iter, double tol, int n_threads
+);
+
+LaplaceResult laplace_mode_multiscale_gp(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int n_re_groups, double sigma_re,
+    const Rcpp::NumericMatrix& coords,
+    const Rcpp::IntegerMatrix& nn_idx_local, const Rcpp::NumericMatrix& nn_dist_local,
+    const Rcpp::IntegerVector& nn_order_local, int nn_local,
+    const Rcpp::IntegerMatrix& nn_idx_regional, const Rcpp::NumericMatrix& nn_dist_regional,
+    const Rcpp::IntegerVector& nn_order_regional, int nn_regional,
+    int n_spatial,
+    double sigma2_local, double phi_local,
+    double sigma2_regional, double phi_regional,
+    int cov_type, const std::string& family, double phi,
+    int max_iter, double tol, int n_threads
+);
+
+LaplaceResult laplace_mode_multiscale_temporal(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int n_re_groups, double sigma_re,
+    const Rcpp::IntegerVector& time_idx, int n_times,
+    int seasonal_period, int trend_type, int short_type,
+    double sigma2_trend, double sigma2_seasonal, double sigma2_short, double rho_short,
+    const std::string& family, double phi,
+    int max_iter, double tol, int n_threads
+);
+
+LaplaceResult laplace_mode_rsr(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int n_re_groups, double sigma_re,
+    const Rcpp::IntegerVector& spatial_idx, int n_spatial_units,
+    const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors, double tau_spatial,
+    const Rcpp::NumericVector& rsr_projection, int rsr_n,
+    const std::string& family, double phi,
+    int max_iter, double tol, int n_threads
+);
+
 namespace vi {
 VIResult fit_vi(
     const tulpa::ModelData& data,
@@ -125,6 +177,17 @@ inline Rcpp::NumericMatrix build_matrix_colmajor(
         std::memcpy(&X[0], X_flat, sizeof(double) * (size_t)N * (size_t)p);
     }
     return X;
+}
+
+// Build a column-major Rcpp::IntegerMatrix from a flat caller buffer.
+inline Rcpp::IntegerMatrix build_int_matrix_colmajor(
+    const int* M_flat, int N, int p
+) {
+    Rcpp::IntegerMatrix M(N, p);
+    if (N > 0 && p > 0 && M_flat) {
+        std::memcpy(&M[0], M_flat, sizeof(int) * (size_t)N * (size_t)p);
+    }
+    return M;
 }
 
 // Copy an Rcpp::NumericMatrix (column-major) into a row-major raw buffer.
@@ -374,6 +437,191 @@ extern "C" void tulpa_laplace_mode_bym2_impl(
         yv, nv, Xm, rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
         sigma_spatial, rho, scale_factor,
+        fam, phi, max_iter, tol, n_threads
+    );
+    copy_mode_result(result, result_out);
+}
+
+extern "C" void tulpa_laplace_mode_gp_impl(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const double* coords_flat,
+    int coord_dim,
+    const int* nn_idx_flat,
+    const double* nn_dist_flat,
+    const int* nn_order,
+    int n_spatial, int nn,
+    double sigma2_gp, double phi_gp, int cov_type,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    tulpa::LaplaceShimResult* result_out
+) {
+    Rcpp::NumericVector  yv(y, y + N);
+    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
+    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
+    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    Rcpp::NumericMatrix  cm = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
+    Rcpp::IntegerMatrix  nim = build_int_matrix_colmajor(nn_idx_flat, n_spatial, nn);
+    Rcpp::NumericMatrix  ndm = build_matrix_colmajor(nn_dist_flat, n_spatial, nn);
+    Rcpp::IntegerVector  nord(nn_order, nn_order + n_spatial);
+
+    std::string fam = family ? std::string(family) : std::string("binomial");
+
+    tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
+        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        cm, nim, ndm, nord, n_spatial, nn,
+        sigma2_gp, phi_gp, cov_type,
+        fam, phi, max_iter, tol, n_threads
+    );
+    copy_mode_result(result, result_out);
+}
+
+extern "C" void tulpa_laplace_mode_multiscale_gp_impl(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const double* coords_flat,
+    int coord_dim,
+    const int* nn_idx_local_flat,
+    const double* nn_dist_local_flat,
+    const int* nn_order_local,
+    int nn_local,
+    const int* nn_idx_regional_flat,
+    const double* nn_dist_regional_flat,
+    const int* nn_order_regional,
+    int nn_regional,
+    int n_spatial,
+    double sigma2_local, double phi_local,
+    double sigma2_regional, double phi_regional,
+    int cov_type,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    tulpa::LaplaceShimResult* result_out
+) {
+    Rcpp::NumericVector  yv(y, y + N);
+    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
+    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
+    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    Rcpp::NumericMatrix  cm = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
+
+    Rcpp::IntegerMatrix  nim_l = build_int_matrix_colmajor(nn_idx_local_flat,    n_spatial, nn_local);
+    Rcpp::NumericMatrix  ndm_l = build_matrix_colmajor    (nn_dist_local_flat,   n_spatial, nn_local);
+    Rcpp::IntegerVector  nord_l(nn_order_local,    nn_order_local    + n_spatial);
+    Rcpp::IntegerMatrix  nim_r = build_int_matrix_colmajor(nn_idx_regional_flat, n_spatial, nn_regional);
+    Rcpp::NumericMatrix  ndm_r = build_matrix_colmajor    (nn_dist_regional_flat, n_spatial, nn_regional);
+    Rcpp::IntegerVector  nord_r(nn_order_regional, nn_order_regional + n_spatial);
+
+    std::string fam = family ? std::string(family) : std::string("binomial");
+
+    tulpa::LaplaceResult result = tulpa::laplace_mode_multiscale_gp(
+        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        cm,
+        nim_l, ndm_l, nord_l, nn_local,
+        nim_r, ndm_r, nord_r, nn_regional,
+        n_spatial,
+        sigma2_local, phi_local, sigma2_regional, phi_regional,
+        cov_type, fam, phi, max_iter, tol, n_threads
+    );
+    copy_mode_result(result, result_out);
+}
+
+extern "C" void tulpa_laplace_mode_multiscale_temporal_impl(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const int* time_idx,
+    int n_times,
+    int seasonal_period,
+    int trend_type,
+    int short_type,
+    double sigma2_trend,
+    double sigma2_seasonal,
+    double sigma2_short,
+    double rho_short,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    tulpa::LaplaceShimResult* result_out
+) {
+    Rcpp::NumericVector  yv(y, y + N);
+    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
+    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
+    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    Rcpp::IntegerVector  tv(time_idx, time_idx + N);
+
+    std::string fam = family ? std::string(family) : std::string("binomial");
+
+    tulpa::LaplaceResult result = tulpa::laplace_mode_multiscale_temporal(
+        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        tv, n_times, seasonal_period, trend_type, short_type,
+        sigma2_trend, sigma2_seasonal, sigma2_short, rho_short,
+        fam, phi, max_iter, tol, n_threads
+    );
+    copy_mode_result(result, result_out);
+}
+
+extern "C" void tulpa_laplace_mode_rsr_impl(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const int* spatial_idx,
+    int n_spatial_units,
+    const int* adj_row_ptr,
+    const int* adj_col_idx,
+    const int* n_neighbors,
+    double tau_spatial,
+    const double* rsr_projection_flat,
+    int rsr_n,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    tulpa::LaplaceShimResult* result_out
+) {
+    Rcpp::NumericVector  yv(y, y + N);
+    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
+    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
+    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
+    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
+    Rcpp::IntegerVector  arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
+    Rcpp::IntegerVector  aci(adj_col_idx, adj_col_idx + nadj);
+    Rcpp::IntegerVector  nn (n_neighbors, n_neighbors + n_spatial_units);
+    Rcpp::NumericVector  proj(rsr_projection_flat,
+                              rsr_projection_flat + (size_t)rsr_n * (size_t)rsr_n);
+
+    std::string fam = family ? std::string(family) : std::string("binomial");
+
+    tulpa::LaplaceResult result = tulpa::laplace_mode_rsr(
+        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        sidx, n_spatial_units, arp, aci, nn,
+        tau_spatial, proj, rsr_n,
         fam, phi, max_iter, tol, n_threads
     );
     copy_mode_result(result, result_out);
@@ -860,6 +1108,14 @@ void tulpa_register_shims(DllInfo* dll) {
         (DL_FUNC)&tulpa_laplace_mode_dense_multi_re_impl);
     R_RegisterCCallable("tulpa", "tulpa_laplace_mode_bym2",
         (DL_FUNC)&tulpa_laplace_mode_bym2_impl);
+    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_gp",
+        (DL_FUNC)&tulpa_laplace_mode_gp_impl);
+    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_multiscale_gp",
+        (DL_FUNC)&tulpa_laplace_mode_multiscale_gp_impl);
+    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_multiscale_temporal",
+        (DL_FUNC)&tulpa_laplace_mode_multiscale_temporal_impl);
+    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_rsr",
+        (DL_FUNC)&tulpa_laplace_mode_rsr_impl);
 
     R_RegisterCCallable("tulpa", "tulpa_pg_binomial_gibbs",
         (DL_FUNC)&tulpa_pg_binomial_gibbs_impl);

@@ -244,8 +244,201 @@ inline LaplaceModeBym2Fn get_laplace_mode_bym2_fn() {
 }
 
 // ----------------------------------------------------------------------------
-// TODO (follow-up): _gp, _multiscale_gp, _multiscale_temporal, _rsr,
-// plus laplace_newton_solve / _sparse. Extend this header as those land.
+// laplace_mode_gp: continuous-spatial GP (NNGP) Laplace.
+//
+// Latent layout: [beta (p)] [re (n_re_groups)] [w (n_spatial)]
+// The first n_spatial observations carry the GP effect (eta_i += w_i for
+// i < n_spatial); subsequent obs do not. This mirrors the underlying
+// tulpa::laplace_mode_gp convention.
+//
+//   coords_flat   : [n_spatial * coord_dim] column-major (R convention).
+//                   Currently only the first 2 columns are used; pass
+//                   coord_dim = 2 unless / until the underlying NNGP kernel
+//                   is generalised.
+//   coord_dim     : columns in coords (≥ 2).
+//   nn_idx_flat   : [n_spatial * nn] column-major; 1-based neighbour indices
+//                   (0 = "no neighbour"). Element (loc i, slot j) =
+//                   nn_idx_flat[j*n_spatial + i].
+//   nn_dist_flat  : [n_spatial * nn] column-major; same layout as nn_idx_flat.
+//   nn_order      : [n_spatial] permutation mapping NNGP order → original
+//                   location index.
+//   sigma2_gp, phi_gp : NNGP marginal variance and range parameter.
+//   cov_type      : 0 = exponential, 1 = Matern 3/2, 2 = Matern 5/2.
+// ----------------------------------------------------------------------------
+typedef void (*LaplaceModeGpFn)(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const double* coords_flat,
+    int coord_dim,
+    const int* nn_idx_flat,
+    const double* nn_dist_flat,
+    const int* nn_order,
+    int n_spatial, int nn,
+    double sigma2_gp, double phi_gp, int cov_type,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    LaplaceShimResult* result_out
+);
+
+inline LaplaceModeGpFn get_laplace_mode_gp_fn() {
+    static LaplaceModeGpFn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (LaplaceModeGpFn)R_GetCCallable("tulpa", "tulpa_laplace_mode_gp");
+    }
+    return fn;
+}
+
+// ----------------------------------------------------------------------------
+// laplace_mode_multiscale_gp: two NNGP scales (local + regional) added to η.
+//
+// Latent layout: [beta (p)] [re (n_re_groups)] [w_local (n_spatial)]
+//                [w_regional (n_spatial)]. eta_i += w_local_i + w_regional_i
+// for i < n_spatial.
+//
+// Both nn_idx_*/nn_dist_* matrices share `coords_flat` and follow the same
+// column-major convention as in laplace_mode_gp.
+// ----------------------------------------------------------------------------
+typedef void (*LaplaceModeMultiscaleGpFn)(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const double* coords_flat,
+    int coord_dim,
+    const int* nn_idx_local_flat,
+    const double* nn_dist_local_flat,
+    const int* nn_order_local,
+    int nn_local,
+    const int* nn_idx_regional_flat,
+    const double* nn_dist_regional_flat,
+    const int* nn_order_regional,
+    int nn_regional,
+    int n_spatial,
+    double sigma2_local, double phi_local,
+    double sigma2_regional, double phi_regional,
+    int cov_type,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    LaplaceShimResult* result_out
+);
+
+inline LaplaceModeMultiscaleGpFn get_laplace_mode_multiscale_gp_fn() {
+    static LaplaceModeMultiscaleGpFn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (LaplaceModeMultiscaleGpFn)R_GetCCallable(
+            "tulpa", "tulpa_laplace_mode_multiscale_gp");
+    }
+    return fn;
+}
+
+// ----------------------------------------------------------------------------
+// laplace_mode_multiscale_temporal: trend (RW1/RW2) + seasonal (RW1) +
+// short-range (AR1 / iid) latent temporal blocks.
+//
+//   time_idx [N]     : 1-based time index per obs.
+//   trend_type       : 0 = none, 1 = RW1, 2 = RW2.
+//   seasonal_period  : 0 = none, otherwise length of the seasonal block.
+//   short_type       : 0 = none, 1 = AR1, 2 = iid.
+// ----------------------------------------------------------------------------
+typedef void (*LaplaceModeMultiscaleTemporalFn)(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const int* time_idx,
+    int n_times,
+    int seasonal_period,
+    int trend_type,
+    int short_type,
+    double sigma2_trend,
+    double sigma2_seasonal,
+    double sigma2_short,
+    double rho_short,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    LaplaceShimResult* result_out
+);
+
+inline LaplaceModeMultiscaleTemporalFn get_laplace_mode_multiscale_temporal_fn() {
+    static LaplaceModeMultiscaleTemporalFn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (LaplaceModeMultiscaleTemporalFn)R_GetCCallable(
+            "tulpa", "tulpa_laplace_mode_multiscale_temporal");
+    }
+    return fn;
+}
+
+// ----------------------------------------------------------------------------
+// laplace_mode_rsr: Restricted Spatial Regression. Adds a P_perp-projected
+// spatial random effect to η, with ICAR-style adjacency precision tau_spatial.
+//
+//   spatial_idx [N]                : 1-based spatial-unit index per obs.
+//   adj_row_ptr / adj_col_idx      : ICAR adjacency in CSR form.
+//   rsr_projection_flat            : [rsr_n * rsr_n] orthogonal projection
+//                                     P_perp (column-major). rsr_n must
+//                                     equal n_spatial_units.
+// ----------------------------------------------------------------------------
+typedef void (*LaplaceModeRsrFn)(
+    const double* y,
+    const int* n_trials,
+    const double* X_flat,
+    const double* re_idx,
+    int N, int p,
+    int n_re_groups,
+    double sigma_re,
+    const int* spatial_idx,
+    int n_spatial_units,
+    const int* adj_row_ptr,
+    const int* adj_col_idx,
+    const int* n_neighbors,
+    double tau_spatial,
+    const double* rsr_projection_flat,
+    int rsr_n,
+    const char* family,
+    double phi,
+    int max_iter,
+    double tol,
+    int n_threads,
+    LaplaceShimResult* result_out
+);
+
+inline LaplaceModeRsrFn get_laplace_mode_rsr_fn() {
+    static LaplaceModeRsrFn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (LaplaceModeRsrFn)R_GetCCallable("tulpa", "tulpa_laplace_mode_rsr");
+    }
+    return fn;
+}
+
+// ----------------------------------------------------------------------------
+// laplace_newton_solve / _sparse are not exposed here: both are templated on
+// lambdas (compute_eta / scatter / center / log_prior) and cannot pass through
+// R_RegisterCCallable. Downstream packages should call the high-level
+// laplace_mode_* shims instead, or build a fresh entry that hides the lambdas.
 // ----------------------------------------------------------------------------
 
 } // namespace tulpa
