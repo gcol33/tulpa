@@ -15,6 +15,7 @@ tulpa_em_laplace(
   correction = c("auto", "mi", "gibbs", "none"),
   n_imputations = 20L,
   n_gibbs = 10L,
+  m_step_extra = NULL,
   verbose = TRUE,
   ...
 )
@@ -64,9 +65,19 @@ resolves to \code{"none"}.}
 
 \item{n_gibbs}{Reserved for Gibbs correction.}
 
+\item{m_step_extra}{Optional \verb{function(fits, weights, ...) -> fits}. Fired
+once per EM iteration, between the M-step and the next E-step. Receives
+the freshly assembled list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results (\code{fits}), the
+current E-step weights, and any extra arguments forwarded through \code{...}.
+Returns a list with the same length and names as the input, possibly
+with mutated dispersion / shape / precision fields (e.g. \code{fits[[k]]$phi}).
+Use this to update non-eta parameters that fall out of the Laplace
+M-step (NB overdispersion, Gamma shape, Beta precision, Gaussian sigma).
+When \code{NULL} (default), behavior is unchanged. See \code{gcol33/tulpa#4}.}
+
 \item{verbose}{Print per-iteration progress.}
 
-\item{...}{Forwarded to \code{e_step} and \code{m_step_encode}.}
+\item{...}{Forwarded to \code{e_step}, \code{m_step_encode}, and \code{m_step_extra}.}
 }
 \value{
 A list with:

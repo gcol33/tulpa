@@ -1,5 +1,6 @@
 # ============================================================================
 # tulpa_em_laplace: m_step_extra callback for non-eta parameters
+# (gcol33/tulpa#4)
 #
 # Pure plumbing test: stubs tulpa_laplace so the focus is the callback
 # contract (fired between M-step and next E-step; receives the assembled
@@ -7,10 +8,7 @@
 # iteration). No C++ Laplace call is exercised here.
 # ============================================================================
 
-# Tiny synthetic Poisson-like fixture. The "M-step" stub returns a fits list
-# whose `mode` slot encodes a deterministic mapping from weights, so the test
-# can verify (a) m_step_extra sees the M-step output and (b) its mutation
-# survives into the next iteration.
+# Tiny synthetic Poisson-like fixture.
 make_fixture <- function(n = 30L, n_submodels = 2L, seed = 1L) {
   set.seed(seed)
   X <- cbind(1, rnorm(n))
@@ -25,8 +23,7 @@ make_fixture <- function(n = 30L, n_submodels = 2L, seed = 1L) {
 }
 
 # Stub Laplace fit: returns a minimal object with the fields tulpa_em_laplace
-# touches downstream (mode, H_beta). The actual values don't matter for the
-# m_step_extra plumbing test — they just need to be present and stable.
+# touches. .fits_to_param_vec uses `mode` from each block, so include it.
 make_fake_laplace <- function() {
   function(y, n_trials, X, re_list = list(), family = "binomial",
            spatial = NULL, max_iter = 100L, tol = 1e-6,
@@ -37,18 +34,30 @@ make_fake_laplace <- function() {
       H_beta = diag(p),
       family = family,
       n_obs = length(y),
-      phi = NA_real_  # placeholder; m_step_extra is the one that fills this
+      phi = NA_real_  # placeholder; m_step_extra fills this
     )
   }
 }
 
+# Helper: pull phi from a fits object, returning NA if absent.
+phi_or_na <- function(f) {
+  v <- f$phi
+  if (is.null(v)) NA_real_ else v
+}
+
 # 1D Newton step on f(phi) = (phi - target)^2 / 2 -> phi := target after one step.
-# Used to verify that m_step_extra mutations land in the fits object that the
-# engine carries to the next iteration.
-newton_phi <- function(phi_old, target) {
-  grad <- phi_old - target
-  hess <- 1.0
-  phi_old - grad / hess  # = target
+newton_phi <- function(phi_old, target) phi_old - (phi_old - target)
+
+# Build an m_step_encode that returns blocks with the fields #3's validator
+# requires: y, X, family. n_trials/offset/phi optional.
+make_m_step_encode <- function(fx, family = "poisson") {
+  function(weights, ...) {
+    specs <- lapply(fx$sub_names, function(nm) {
+      list(y = fx$y, n_trials = fx$n_trials, X = fx$X, family = family)
+    })
+    names(specs) <- fx$sub_names
+    specs
+  }
 }
 
 test_that("m_step_extra fires once per iteration and mutations persist", {
@@ -61,28 +70,17 @@ test_that("m_step_extra fires once per iteration and mutations persist", {
   call_log$e_step_phis <- list()
 
   e_step <- function(fits, ...) {
-    # The engine carries the m_step_extra-mutated fits into the next E-step.
-    # Capture phi to confirm the mutation reached us.
     call_log$e_step_phis[[length(call_log$e_step_phis) + 1L]] <-
-      vapply(fits, function(f) f$phi %||% NA_real_, numeric(1))
+      vapply(fits, phi_or_na, numeric(1))
     list(weights = rep(0.5, fx$n), delta = 1e-8)
   }
 
-  m_step_encode <- function(weights, ...) {
-    specs <- lapply(fx$sub_names, function(nm) {
-      list(y = fx$y, n_trials = fx$n_trials, X = fx$X)
-    })
-    names(specs) <- fx$sub_names
-    specs
-  }
+  m_step_encode <- make_m_step_encode(fx)
 
-  # phi targets: each iteration nudges phi toward 2.5 from whatever the
-  # previous iteration left behind. Newton on a quadratic converges in one
-  # step, so phi should equal 2.5 after the first call.
   m_step_extra <- function(fits, weights, ...) {
     call_log$n_calls <- call_log$n_calls + 1L
     call_log$phis_seen[[call_log$n_calls]] <-
-      vapply(fits, function(f) f$phi %||% NA_real_, numeric(1))
+      vapply(fits, phi_or_na, numeric(1))
     for (k in seq_along(fits)) {
       old <- fits[[k]]$phi
       if (is.null(old) || is.na(old)) old <- 1.0
@@ -96,30 +94,23 @@ test_that("m_step_extra fires once per iteration and mutations persist", {
   res <- tulpa_em_laplace(
     e_step = e_step,
     m_step_encode = m_step_encode,
-    init = list(),
     m_step_extra = m_step_extra,
-    family = "poisson",
     max_iter = 3L, tol = 1e-12, damping = 0,
-    correction = "none",
-    verbose = FALSE
+    correction = "none", verbose = FALSE
   )
 
-  # Callback fired once per EM iteration that ran.
-  expect_equal(call_log$n_calls, res$convergence$n_iter)
+  # Callback fired once per EM iteration.
+  expect_equal(call_log$n_calls, res$n_iter)
 
   # Mutated phi survives into the final fits object.
   expect_equal(res$fits$m1$phi, 2.5)
   expect_equal(res$fits$m2$phi, 2.5)
 
-  # Each m_step_extra call sees a freshly rebuilt fits list (M-step
-  # re-runs tulpa_laplace), so the stub phi is NA at entry every time.
+  # Each m_step_extra call sees a freshly rebuilt fits list, so phi is NA on entry.
   expect_true(all(vapply(call_log$phis_seen, function(p) all(is.na(p)),
                          logical(1))))
 
-  # The E-steps that run *after* the first iteration receive the
-  # mutated fits — phi reaches them as 2.5. The very first E-step (init)
-  # runs before any M-step or m_step_extra, so it sees `init` (an empty
-  # list) and we don't constrain that one.
+  # E-steps that run *after* the first iteration receive the mutated fits.
   if (length(call_log$e_step_phis) >= 2L) {
     expect_equal(call_log$e_step_phis[[2]], c(m1 = 2.5, m2 = 2.5))
   }
@@ -130,33 +121,26 @@ test_that("m_step_extra = NULL is identical to omitting the argument", {
   fake_laplace <- make_fake_laplace()
 
   e_step <- function(fits, ...) list(weights = rep(0.5, fx$n), delta = 1e-8)
-  m_step_encode <- function(weights, ...) {
-    specs <- lapply(fx$sub_names, function(nm) {
-      list(y = fx$y, n_trials = fx$n_trials, X = fx$X)
-    })
-    names(specs) <- fx$sub_names
-    specs
-  }
+  m_step_encode <- make_m_step_encode(fx)
 
   testthat::local_mocked_bindings(tulpa_laplace = fake_laplace, .package = "tulpa")
 
   res_default <- tulpa_em_laplace(
-    e_step = e_step, m_step_encode = m_step_encode, init = list(),
-    family = "poisson", max_iter = 2L, tol = 1e-12, damping = 0,
+    e_step = e_step, m_step_encode = m_step_encode,
+    max_iter = 2L, tol = 1e-12, damping = 0,
     correction = "none", verbose = FALSE
   )
   res_null <- tulpa_em_laplace(
-    e_step = e_step, m_step_encode = m_step_encode, init = list(),
+    e_step = e_step, m_step_encode = m_step_encode,
     m_step_extra = NULL,
-    family = "poisson", max_iter = 2L, tol = 1e-12, damping = 0,
+    max_iter = 2L, tol = 1e-12, damping = 0,
     correction = "none", verbose = FALSE
   )
 
-  # Drop history df (has identical content but env-tagged); compare the rest.
   expect_equal(res_default$fits, res_null$fits)
   expect_equal(res_default$weights, res_null$weights)
-  expect_equal(res_default$convergence$n_iter, res_null$convergence$n_iter)
-  expect_equal(res_default$convergence$converged, res_null$convergence$converged)
+  expect_equal(res_default$n_iter, res_null$n_iter)
+  expect_equal(res_default$converged, res_null$converged)
 })
 
 test_that("m_step_extra rejects bad shapes with clear errors", {
@@ -164,13 +148,7 @@ test_that("m_step_extra rejects bad shapes with clear errors", {
   fake_laplace <- make_fake_laplace()
 
   e_step <- function(fits, ...) list(weights = rep(0.5, fx$n), delta = 1e-8)
-  m_step_encode <- function(weights, ...) {
-    specs <- lapply(fx$sub_names, function(nm) {
-      list(y = fx$y, n_trials = fx$n_trials, X = fx$X)
-    })
-    names(specs) <- fx$sub_names
-    specs
-  }
+  m_step_encode <- make_m_step_encode(fx)
 
   testthat::local_mocked_bindings(tulpa_laplace = fake_laplace, .package = "tulpa")
 
@@ -178,7 +156,7 @@ test_that("m_step_extra rejects bad shapes with clear errors", {
   bad_len <- function(fits, weights, ...) fits[1]
   expect_error(
     tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode, init = list(),
+      e_step = e_step, m_step_encode = m_step_encode,
       m_step_extra = bad_len, max_iter = 1L, correction = "none", verbose = FALSE
     ),
     "expected 2"
@@ -192,7 +170,7 @@ test_that("m_step_extra rejects bad shapes with clear errors", {
   }
   expect_error(
     tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode, init = list(),
+      e_step = e_step, m_step_encode = m_step_encode,
       m_step_extra = bad_names, max_iter = 1L, correction = "none", verbose = FALSE
     ),
     "preserve submodel names"
@@ -202,7 +180,7 @@ test_that("m_step_extra rejects bad shapes with clear errors", {
   bad_type <- function(fits, weights, ...) "oops"
   expect_error(
     tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode, init = list(),
+      e_step = e_step, m_step_encode = m_step_encode,
       m_step_extra = bad_type, max_iter = 1L, correction = "none", verbose = FALSE
     ),
     "must return a list"
@@ -211,7 +189,7 @@ test_that("m_step_extra rejects bad shapes with clear errors", {
   # Non-function value.
   expect_error(
     tulpa_em_laplace(
-      e_step = e_step, m_step_encode = m_step_encode, init = list(),
+      e_step = e_step, m_step_encode = m_step_encode,
       m_step_extra = 42, max_iter = 1L, correction = "none", verbose = FALSE
     ),
     "must be NULL or a function"
