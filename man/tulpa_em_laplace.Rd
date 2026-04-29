@@ -7,83 +7,84 @@
 tulpa_em_laplace(
   e_step,
   m_step_encode,
-  init,
-  z_draw = NULL,
-  hard_encode = NULL,
-  family = "binomial",
+  spatial = NULL,
+  re_list = list(),
   max_iter = 50L,
   tol = 1e-04,
   damping = 0.3,
   correction = c("auto", "mi", "gibbs", "none"),
   n_imputations = 20L,
-  n_rounds = 3L,
-  K_early = 5L,
   n_gibbs = 10L,
-  n_burn = NULL,
-  n_threads = 1L,
   verbose = TRUE,
   ...
 )
 }
 \arguments{
-\item{e_step}{Function: \verb{function(fits, ...) -> list(weights = numeric, ...)}.
-Takes current submodel fits, returns posterior weights for latent variables.}
+\item{e_step}{Callback: \verb{function(fits, ...) -> list(weights = numeric, ...)}.
+Called once per EM iteration with the current per-submodel
+\code{\link[=tulpa_laplace]{tulpa_laplace()}} fits. Must return a list whose \code{weights} element
+is the latent-variable posterior used by the next M-step.}
 
-\item{m_step_encode}{Function: \verb{function(weights, ...) -> list of submodel specs}.
-Each spec is a list with \code{y}, \code{n_trials}, \code{X}, and optional \code{re_list}, \code{spatial},
-\code{obs_weights}. Returns one spec per submodel.}
+\item{m_step_encode}{Callback: \verb{function(weights, ...) -> list of blocks}.
+Each block is itself a list with the following fields:
+\itemize{
+\item \code{y} (numeric, required) — response.
+\item \code{X} (matrix, required) — fixed-effects design with \code{nrow(X) == length(y)}.
+\item \code{family} (character scalar, required) — one of \code{"binomial"},
+\code{"poisson"}, \code{"gaussian"}, \code{"negbin"} / \code{"neg_binomial_2"}, \code{"gamma"},
+\code{"beta"}. Forwarded to \code{\link[=tulpa_laplace]{tulpa_laplace()}} for that block.
+\item \code{n_trials} (numeric or \code{NULL}, optional; absent or \code{NULL} defaults to 1) —
+binomial trial counts.
+\item \code{offset} (numeric or \code{NULL}, optional) — observation-level offset,
+length-matched to \code{y} when non-\code{NULL}.
+\item \code{phi} (numeric scalar, optional) — dispersion forwarded to
+\code{\link[=tulpa_laplace]{tulpa_laplace()}} (used by \code{negbin}, \code{gamma}).
+\item \code{re_list}, \code{spatial}, \code{weights} (optional) — forwarded as-is.
+}}
 
-\item{init}{List with initial parameter estimates for the E-step.
-Model-specific; passed as \code{fits} to the first E-step call.}
+\item{spatial}{Optional default spatial spec. Currently unused by the
+engine; pass a \code{spatial} field on each block instead. Reserved so the
+API matches the published contract in CLAUDE.md.}
 
-\item{z_draw}{Function: \verb{function(weights, ...) -> integer vector}.
-Draws hard latent variable values from weights. Used by MI/Gibbs correction.}
+\item{re_list}{Optional default RE list. Same status as \code{spatial}.}
 
-\item{hard_encode}{Function: \verb{function(z, ...) -> list of submodel specs}.
-Like \code{m_step_encode} but uses hard z draws (unweighted). Used by MI/Gibbs.}
+\item{max_iter}{Maximum EM iterations.}
 
-\item{family}{Character: \code{"binomial"} (default), \code{"poisson"}, etc.}
+\item{tol}{Convergence tolerance on max relative parameter change.}
 
-\item{max_iter}{Maximum EM iterations (default 50).}
+\item{damping}{EM damping factor in \verb{[0, 1)}. With \code{damping = d}, the
+parameter update is \code{(1 - d) * new + d * prev}, so \code{d = 0} is no
+damping. The same factor is applied to weights between iterations.}
 
-\item{tol}{Convergence tolerance (default 1e-4).}
+\item{correction}{Post-EM correction. Only \code{"none"} is implemented today;
+\code{"mi"} and \code{"gibbs"} raise an error pointing at this issue. \code{"auto"}
+resolves to \code{"none"}.}
 
-\item{damping}{Initial EM damping factor 0-1 (default 0.3).}
+\item{n_imputations}{Reserved for MI correction.}
 
-\item{correction}{Post-EM correction: \code{"auto"}, \code{"mi"}, \code{"gibbs"}, or \code{"none"}.}
+\item{n_gibbs}{Reserved for Gibbs correction.}
 
-\item{n_imputations}{Number of MI imputations per round (default 20).}
+\item{verbose}{Print per-iteration progress.}
 
-\item{n_rounds}{Number of MI rounds (default 3). Early rounds use K_early draws
-to update z_hat; final round uses full n_imputations.}
-
-\item{K_early}{Imputations per early MI round (default 5).}
-
-\item{n_gibbs}{Total Gibbs iterations (default 10).}
-
-\item{n_burn}{Gibbs burn-in (default n_gibbs/3).}
-
-\item{n_threads}{Number of threads for Laplace (default 1).}
-
-\item{verbose}{Print progress (default TRUE).}
-
-\item{...}{Passed to e_step, m_step_encode, z_draw, hard_encode.}
+\item{...}{Forwarded to \code{e_step} and \code{m_step_encode}.}
 }
 \value{
 A list with:
 \itemize{
-\item \code{fits}: list of submodel Laplace fits (modes, SEs)
-\item \code{weights}: final E-step weights
-\item \code{convergence}: list with \code{converged}, \code{n_iter}, \code{history}
-\item \code{correction}: MI/Gibbs pooled results (if correction != "none")
+\item \code{fits} — named list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results, one per block.
+\item \code{weights} — final E-step weights.
+\item \code{n_iter} — number of EM iterations actually run.
+\item \code{converged} — logical.
+\item \code{history} — \code{data.frame(iter, delta)} of max relative parameter
+change per iteration.
 }
 }
 \description{
 Generic EM engine. Model packages provide callbacks for the E-step
-(latent variable posterior) and M-step encoding (how to build submodel
-data from weights). Each M-step submodel is fit via \code{\link[=tulpa_laplace]{tulpa_laplace()}}.
-}
-\details{
-After EM convergence, optional MI or Gibbs correction removes attenuation
-bias from the soft E-step encoding.
+(latent variable posterior) and the M-step encoding (how to assemble
+submodel data from weights). Each M-step submodel block is fit
+independently via \code{\link[=tulpa_laplace]{tulpa_laplace()}}; the engine reads \code{family} and
+\code{offset} per block so heterogeneous-family mixtures (e.g. a binomial
+zero submodel + poisson positive submodel for a hurdle model) work
+without engine changes. See \code{gcol33/tulpa#3}.
 }

@@ -7,12 +7,13 @@
 rubins_pool(draws)
 }
 \arguments{
-\item{draws}{List of K draws. Each draw is a list of submodel results,
-each with \code{beta} (numeric vector) and \code{se} (numeric vector).}
+\item{draws}{List of K draws. Each draw is a named list of submodel
+results, each with \code{beta} (numeric vector) and \code{se} (numeric vector).}
 }
 \value{
-A list of pooled submodel summaries, each with \code{mean}, \code{se},
-\code{V_within}, \code{V_between}, \code{V_total}.
+A named list of pooled submodel summaries, each with \code{mean},
+\code{se}, \code{V_within}, \code{V_between}, \code{V_total}, and \code{K} (number of draws
+that contributed).
 }
 \description{
 Pool multiple imputation draws via Rubin's rules
