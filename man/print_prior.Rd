@@ -12,6 +12,9 @@ print_prior(prior, indent = "")
 \item{indent}{Indentation string}
 }
 \description{
-Format a single prior for printing
+Thin wrapper around \code{format()} for \code{tulpa_prior} objects. Each
+\verb{prior_*()} constructor attaches a subclass (e.g. \code{tulpa_prior_normal})
+so adding a new distribution is one new \verb{format.tulpa_prior_<dist>()}
+method — no central if/else to extend.
 }
 \keyword{internal}

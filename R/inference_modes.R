@@ -88,6 +88,47 @@ INFERENCE_TIERS <- list(
 )
 
 
+#' Backend → supported families registry
+#'
+#' @description
+#' Single source of truth for backend-vs-family compatibility. Adding a new
+#' Gibbs-supported family means appending one string here. Backends not
+#' listed are assumed to support all families (HMC, Laplace, VI, etc.).
+#'
+#' Family identity is checked against three slots in priority order:
+#' `family$name`, `family$distribution`, `family$numerator$distribution`
+#' (numdenom-style ratio families nest a per-process distribution).
+#'
+#' @keywords internal
+BACKEND_FAMILY_SUPPORT <- list(
+  gibbs = c(
+    "poisson_gamma", "negbin_negbin", "binomial",
+    "negbin_gamma", "gamma_gamma", "lognormal",
+    "beta_binomial", "lognormal_lognormal",
+    "beta_binomial_fixed",
+    "poisson", "neg_binomial_2", "negative_binomial"
+  )
+)
+
+
+#' All registered backends across every tier (derived from INFERENCE_TIERS).
+#' @keywords internal
+ALL_BACKENDS <- unlist(lapply(INFERENCE_TIERS, "[[", "backends"),
+                       use.names = FALSE)
+
+
+#' Test whether a backend supports the given family.
+#' @keywords internal
+backend_supports_family <- function(backend, family) {
+  supported <- BACKEND_FAMILY_SUPPORT[[backend]]
+  if (is.null(supported)) return(TRUE)  # unrestricted backend
+
+  fam_name <- family$name %||% ""
+  fam_dist <- family$distribution %||% (family$numerator$distribution %||% "")
+  fam_name %in% supported || fam_dist %in% supported || fam_dist == "binomial"
+}
+
+
 #' Get tier for a backend
 #' @param backend Character string naming the backend
 #' @return List with tier information
@@ -172,9 +213,8 @@ select_inference_mode <- function(mode,
 
   mode <- tolower(mode)
 
-  # Check if mode is actually a backend name
-  all_backends <- c("hmc", "ess", "pg", "gibbs", "sghmc", "sgld", "laplace", "vi")
-  if (mode %in% all_backends) {
+  # Check if mode is actually a backend name (derived from INFERENCE_TIERS)
+  if (mode %in% ALL_BACKENDS) {
     # User specified a backend directly
     backend <- mode
     tier_info <- get_backend_tier(backend)
@@ -189,14 +229,13 @@ select_inference_mode <- function(mode,
   }
 
   # Validate tier name
-
-  valid_modes <- c("auto", "exact", "structured", "optimized")
+  valid_modes <- c("auto", names(INFERENCE_TIERS))
   if (!mode %in% valid_modes) {
     stop(sprintf(
       "Invalid mode: '%s'. Use one of: %s, or a backend: %s",
       mode,
       paste(valid_modes, collapse = ", "),
-      paste(all_backends, collapse = ", ")
+      paste(ALL_BACKENDS, collapse = ", ")
     ), call. = FALSE)
   }
 
@@ -274,17 +313,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
                        !is.null(temporal$type) && temporal$type %in% c("rw1", "ar1")
   gibbs_temporal_ok <- !has_temporal || has_tvc_only || has_gmrf_temporal
   if (is_gibbs_spatial && gibbs_temporal_ok && !has_latent) {
-    # Check family is supported by Gibbs
-    gibbs_families <- c("poisson_gamma", "negbin_negbin", "binomial",
-                        "negbin_gamma", "gamma_gamma", "lognormal",
-                        "beta_binomial", "lognormal_lognormal",
-                        "beta_binomial_fixed",
-                        "poisson", "neg_binomial_2",
-                        "negative_binomial")
-    fam_name <- family$name %||% ""
-    fam_dist <- family$distribution %||% (family$numerator$distribution %||% "")
-    if (fam_name %in% gibbs_families || fam_dist %in% gibbs_families ||
-        fam_dist == "binomial") {
+    if (backend_supports_family("gibbs", family)) {
       return(list(
         mode = "exact",
         backend = "gibbs",

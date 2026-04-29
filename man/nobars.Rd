@@ -16,8 +16,4 @@ A language object with all bar terms removed, or NULL if nothing remains
 Recursively rewrites the formula AST, removing any \code{|} or \code{||} nodes
 found inside parentheses. Returns the fixed-effects-only formula.
 }
-\details{
-This is structural term rewriting: we pattern-match on bar terms
-and replace them with NULL, then clean up the tree.
-}
 \keyword{internal}

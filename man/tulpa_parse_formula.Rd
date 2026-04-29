@@ -12,7 +12,8 @@ tulpa_parse_formula(formula)
 \value{
 A list with:
 \itemize{
-\item \code{response}: character, the response variable name
+\item \code{response}: character, the response variable label (\code{NULL} if none)
+\item \code{response_expr}: language object, the LHS of \code{~} (\code{NULL} if none)
 \item \code{fixed_formula}: formula, the fixed-effects-only formula
 \item \code{random_effects}: list of parsed RE specifications
 \item \code{n_re_terms}: integer, number of RE terms
@@ -28,6 +29,5 @@ pattern matching on bar terms — no string manipulation.
 pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 | group) + (x1 || site))
 pf$response        # "y"
 pf$fixed_formula   # y ~ x1 + x2
-pf$n_re_terms      # 2
 
 }

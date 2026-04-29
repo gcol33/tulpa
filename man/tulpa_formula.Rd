@@ -7,7 +7,4 @@
 Parses mixed-model formulas by walking the formula's abstract syntax tree.
 R formulas are already parse trees — we do structural recursion to find
 random effect terms (\code{|} nodes) and separate them from fixed effects.
-
-This is the "reduction tree" approach: pattern-match on bar terms,
-collect them, and rewrite the tree without them.
 }

@@ -14,8 +14,9 @@ tulpa_build_model_data(parsed, data)
 \value{
 A list with:
 \itemize{
-\item \code{y}: response vector
+\item \code{y}: response vector (or NULL)
 \item \code{X}: fixed-effects design matrix
+\item \code{offset}: numeric vector or NULL
 \item \code{re_terms}: list of RE data structures (group indices, slope matrices)
 }
 }
@@ -23,6 +24,7 @@ A list with:
 Takes a parsed formula and data frame, and constructs:
 \itemize{
 \item The fixed-effects design matrix X
+\item An offset vector (or NULL) extracted from \code{offset(...)} terms
 \item RE group index vectors
 \item RE slope matrices (if applicable)
 }

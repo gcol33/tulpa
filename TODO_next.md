@@ -1,11 +1,34 @@
 # tulpa — Next Features TODO
 
 **Date:** 2026-03-25
-**Current state:** 247 tests passing, CHOLMOD + nested Laplace + SPDE working
+**Status pass:** 2026-04-29 — items #1–#6 all landed and tested.
+**Current state:** 247+ tests passing, CHOLMOD + nested Laplace + SPDE working
+
+> **2026-04-29 audit.** Every item in this file is already implemented and
+> covered by tests. Verification run on 2026-04-29:
+>
+> | # | Item | Status | Tests passed |
+> |---|------|--------|---|
+> | 1 | `spatial_spde()` R API | ✅ done | 23 (test-spatial-spde-api) + 29 (test-spde) |
+> | 2 | Selected inversion (Takahashi) | ✅ done | 34 (test-selected-inversion) |
+> | 3 | Rational SPDE (fractional ν) | ✅ done | 17 (test-rational-spde) |
+> | 4 | BYM2 nested Laplace | ✅ done | 36 (test-nested-laplace-bym2) |
+> | 5 | SPDE in tulpaOcc (`occu_spde`) | ✅ done | 10 (test-spde-occ in tulpaOcc) |
+> | 6 | GPU-batched NNGP (CPU fallback path) | ✅ done | 3 (test-gpu-nngp) |
+>
+> See `R/spatial.R:2388` (`spatial_spde`), `R/rational_spde.R`,
+> `src/sparse_cholesky.cpp:91` (`selected_inversion_diagonal`),
+> `src/nested_laplace.cpp:130` (`cpp_nested_laplace_bym2`),
+> `src/gpu_nngp_laplace.h` + `src/gpu_cuda.h` (cuSOLVER batched Cholesky
+> with CPU fallback), tulpaOcc `R/spatial.R:197` (`occu_spde`).
+>
+> Live CUDA-kernel testing for #6 still requires a GPU build of the package
+> (`launch_build.ps1` from RESOLVE) — the CPU-fallback path is what tests
+> currently exercise. That's the only remaining loose end across the six.
 
 ---
 
-## 1. R-level `spatial_spde()` API
+## 1. R-level `spatial_spde()` API ✅ DONE
 
 **Priority:** P0 — makes SPDE usable
 **Effort:** Low
@@ -42,11 +65,12 @@ fit <- tulpa_fit(y ~ x1, data = df, family = "binomial",
 
 ---
 
-## 2. Selected Inversion (Takahashi Equations)
+## 2. Selected Inversion (Takahashi Equations) ✅ DONE
 
 **Priority:** P1 — needed for posterior summaries
 **Effort:** Medium (~150 lines C++)
 **Depends on:** CHOLMOD (done)
+**Landed at:** `src/sparse_cholesky.cpp:91` (`SparseCholeskySolver::selected_inversion_diagonal`), exported via `cpp_selected_inversion_diagonal`. 34 tests pass.
 
 ### What
 Compute diagonal of Q⁻¹ (marginal variances per latent field element) without full matrix inversion. Uses the elimination tree from CHOLMOD's Cholesky factorization.
@@ -71,11 +95,12 @@ Complexity: O(nnz(L)) — linear in Cholesky factor sparsity.
 
 ---
 
-## 3. Rational SPDE (Fractional Matérn Smoothness)
+## 3. Rational SPDE (Fractional Matérn Smoothness) ✅ DONE
 
 **Priority:** P1 — the differentiator vs INLA
 **Effort:** Medium
 **Depends on:** SPDE Laplace (done), SpdeQBuilder (done)
+**Landed at:** `R/rational_spde.R` (`rational_spde_coefficients`), C++ side wired through `src/spde_qbuilder.h` and `src/spde_laplace.cpp`. 17 tests pass.
 
 ### What
 Extend SPDE from integer smoothness (ν = 1) to fractional smoothness (any ν > 0) using rational polynomial approximation of (κ² - Δ)^(α/2). Following Bolin, Simas & Xiong (2023, JRSS-B).
@@ -105,11 +130,12 @@ Same sparsity pattern → CHOLMOD symbolic reuse. Same SpdeQBuilder pattern — 
 
 ---
 
-## 4. BYM2 Nested Laplace
+## 4. BYM2 Nested Laplace ✅ DONE
 
 **Priority:** P1 — quick win
 **Effort:** Low
 **Depends on:** Nested Laplace ICAR (done)
+**Landed at:** `src/nested_laplace.cpp:130` (`cpp_nested_laplace_bym2`), exported via `R/RcppExports.R`. 36 tests pass.
 
 ### What
 2D grid over (tau, rho) for BYM2 spatial models. CCD with k=2 → 9 grid points.
@@ -127,11 +153,12 @@ Nearly identical to `cpp_nested_laplace_icar` but:
 
 ---
 
-## 5. Wire SPDE into tulpaOcc
+## 5. Wire SPDE into tulpaOcc ✅ DONE
 
 **Priority:** P1 — end-to-end occupancy + continuous spatial
 **Effort:** Medium
 **Depends on:** spatial_spde() API (#1)
+**Landed at:** tulpaOcc `R/spatial.R:197` (`occu_spde`) wraps `tulpa::spatial_spde`. 10 tests pass.
 
 ### What
 Enable `occ(..., spatial = spatial_spde(...))` in tulpaOcc. The occupancy likelihood plugs into tulpa's SPDE Laplace via the cross-package callback interface.
@@ -163,11 +190,12 @@ summary(fit)
 
 ---
 
-## 6. GPU-Batched NNGP
+## 6. GPU-Batched NNGP ✅ DONE (CPU fallback path; live CUDA test pending)
 
 **Priority:** P2 — scaling to 600K locations
 **Effort:** High
 **Depends on:** CUDA build infrastructure (RESOLVE project)
+**Landed at:** `src/gpu_cuda.h` dlopen-loads cuSOLVER and exposes `cusolverDnDpotrfBatched`; `src/gpu_nngp_laplace.h` (`batch_nngp_scatter`) builds m×m C matrices and dispatches to GPU when available, with transparent CPU fallback; `src/gpu_backend.h::gpu_batched_cholesky_solve` completes the forward + backward solve. CPU-fallback path tested (3 tests in test-gpu-nngp). Live CUDA-kernel testing requires building tulpa with CUDA on; see `~/.claude/skills/cuda-build/SKILL.md`.
 
 ### What
 For NNGP with m neighbors and N locations, the bottleneck is N independent m×m dense Cholesky factorizations. Batch these on GPU via `cusolverDnDpotrfBatched`.

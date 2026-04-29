@@ -1,13 +1,25 @@
 # tulpa — Scaling & Architecture TODO
 
-Original audit: 2026-03-24. Status pass: 2026-04-28.
+Original audit: 2026-03-24. Status pass: 2026-04-28. Final pass: 2026-04-29.
 
-> **2026-04-28 status pass.** P0.1 / P0.2 / P1.1 / P1.2 / P2.4 are all
-> resolved. The "P0 architecture blockers" section is retained below as
-> historical context but no longer blocks model-package work — Agent E
-> (`tulpaRatio` refactor) is unblocked. Still open: P2.1 (eta precompute),
-> P2.2 (dispatch table), P2.3 (namespace cosmetic), P2.5 (likelihood
-> forward-decl audit). See `plan.md` for the live roadmap.
+> **2026-04-29 status pass.** Every item P0–P2 is now resolved; this file
+> is kept as historical context. P2.1 (eta precompute) landed in
+> `e484f1b`. P2.2 (priors & inference dispatch table) was refactored on
+> 2026-04-29: per-distribution `format.tulpa_prior_<dist>()` methods
+> replace the 7-branch if/else, `BACKEND_FAMILY_SUPPORT` registry replaces
+> the hardcoded `gibbs_families` vector, and `ALL_BACKENDS` is derived
+> from `INFERENCE_TIERS` instead of being typed out. P2.3 and P2.5 were
+> already resolved as a side-effect of P0.1: `src/hmc_sampler.h:36-55`
+> (and the equivalent header for `tulpa_zi`, `tulpa_temporal`, `tulpa_gp`,
+> etc.) carries `using tulpa::*` aliases so every `tulpa_hmc::ModelData`
+> reference resolves to the unified `tulpa::ModelData`, and
+> `inst/include/tulpa/likelihood.h:9-10` uses `#include` of the actual
+> autodiff headers instead of forward declarations. See `plan.md` for the
+> live roadmap.
+>
+> **2026-04-28 status pass.** P0.1 / P0.2 / P1.1 / P1.2 / P2.4 all
+> resolved. Section "P0 architecture blockers" retained below as
+> historical context.
 
 ## P0 — Architecture Blockers ✅ RESOLVED
 
@@ -183,7 +195,24 @@ for (int k = 0; k < np; k++) {
 **Files to touch:**
 - `src/log_post_impl.h` — `compute_log_post_generic`
 
-### P2.2 Replace hardcoded dispatch in priors and inference modes
+### P2.2 Replace hardcoded dispatch in priors and inference modes ✅ DONE (2026-04-29)
+
+> Three sub-fixes landed in one pass:
+> 1. `print_prior()` now dispatches via `format.tulpa_prior_<dist>()` S3
+>    methods. Each `prior_*()` constructor adds a `tulpa_prior_<dist>`
+>    subclass; adding a new distribution = one new `format.*` method.
+>    Single source of truth: the constructor and its format method.
+> 2. `gibbs_families` moved to `BACKEND_FAMILY_SUPPORT$gibbs` registry
+>    near `INFERENCE_TIERS`. New helper `backend_supports_family(backend,
+>    family)` handles the three family slots (`name`, `distribution`,
+>    `numerator$distribution`). `auto_select_mode()` now calls the helper.
+> 3. `all_backends` removed; `ALL_BACKENDS <- unlist(lapply(INFERENCE_TIERS,
+>    "[[", "backends"), use.names = FALSE)` derives from the tier registry
+>    at package load.
+>
+> Files: `R/priors.R`, `R/inference_modes.R`. test-priors (7) and
+> test-inference-modes (2) still pass.
+
 
 **Problem:**
 - `R/priors.R` `print_prior()`: 7-branch if/else on distribution string. New distributions require new branches.
@@ -199,7 +228,18 @@ for (int k = 0; k < np; k++) {
 - `R/priors.R` — refactor `print_prior()` to method dispatch or registry
 - `R/inference_modes.R` — derive `all_backends` from tiers; move family compatibility to family objects
 
-### P2.3 Unify namespace fragmentation
+### P2.3 Unify namespace fragmentation ✅ DONE (resolved by P0.1)
+
+> The first-line fix the TODO required is in place: every internal
+> namespace (`tulpa_hmc`, `tulpa_zi`, `tulpa_temporal`, `tulpa_gp`, ...)
+> opens with `using tulpa::TYPE;` declarations, so qualified names like
+> `tulpa_hmc::ModelData` and `tulpa_temporal::TemporalType` resolve to
+> the unified types in `inst/include/tulpa/`. Verified at
+> `src/hmc_sampler.h:36-55`, `src/hmc_zi.h:16`, `src/hmc_temporal.h:24-26`,
+> `src/hmc_gp.h:26-31`. The "long-term migration of internal code to
+> drop the `tulpa_*` namespace prefixes everywhere" is a cosmetic style
+> refactor explicitly outside this TODO's scope.
+
 
 **Problem:** Three namespaces for the same concepts: `tulpa::` (exported), `tulpa_hmc::` (sampler), `tulpa_zi::` (zero-inflation), `tulpa_temporal::`, `tulpa_gp::`, etc. Model packages see `tulpa::ZIType` but internal code uses `tulpa_zi::ZIType`.
 
@@ -221,7 +261,14 @@ if (data.n_processes > MAX_PROCESSES) {
 **Files to touch:**
 - `src/log_post_impl.h`
 
-### P2.5 Forward declarations in likelihood.h may not match real autodiff types
+### P2.5 Forward declarations in likelihood.h may not match real autodiff types ✅ DONE
+
+> No longer applicable. `inst/include/tulpa/likelihood.h:9-10` includes
+> the actual headers (`tulpa/autodiff_arena.h`, `tulpa/autodiff_fwd.h`)
+> rather than forward-declaring the types, and the spec uses fully
+> qualified `arena::Var` and `::fwd::Dual`. There is no fwd-decl drift
+> to audit.
+
 
 **Problem:** `inst/include/tulpa/likelihood.h` lines 12-13 forward-declare `namespace arena { struct Var; }` and `namespace fwd { struct Dual; }`. The actual types in the engine may live under different namespaces (e.g., `tulpa::arena::Var`).
 

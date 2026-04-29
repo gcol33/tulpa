@@ -119,7 +119,7 @@ prior_normal <- function(mean = 0, sd = 2.5) {
       mean = mean,
       sd = sd
     ),
-    class = "tulpa_prior"
+    class = c("tulpa_prior_normal", "tulpa_prior")
   )
 }
 
@@ -144,7 +144,7 @@ prior_half_normal <- function(sd = 1) {
       distribution = "half_normal",
       sd = sd
     ),
-    class = "tulpa_prior"
+    class = c("tulpa_prior_half_normal", "tulpa_prior")
   )
 }
 
@@ -170,7 +170,7 @@ prior_half_cauchy <- function(scale = 2.5) {
       distribution = "half_cauchy",
       scale = scale
     ),
-    class = "tulpa_prior"
+    class = c("tulpa_prior_half_cauchy", "tulpa_prior")
   )
 }
 
@@ -202,7 +202,7 @@ prior_gamma <- function(shape = 2, rate = 0.1) {
       shape = shape,
       rate = rate
     ),
-    class = "tulpa_prior"
+    class = c("tulpa_prior_gamma", "tulpa_prior")
   )
 }
 
@@ -227,7 +227,7 @@ prior_exponential <- function(rate = 1) {
       distribution = "exponential",
       rate = rate
     ),
-    class = "tulpa_prior"
+    class = c("tulpa_prior_exponential", "tulpa_prior")
   )
 }
 
@@ -263,7 +263,7 @@ prior_beta <- function(alpha = 1, beta = 1) {
       alpha = alpha,
       beta = beta
     ),
-    class = "tulpa_prior"
+    class = c("tulpa_prior_beta", "tulpa_prior")
   )
 }
 
@@ -309,7 +309,7 @@ prior_pc <- function(U = 1, alpha = 0.01) {
       alpha = alpha,
       rate = rate
     ),
-    class = "tulpa_prior"
+    class = c("tulpa_prior_pc", "tulpa_prior")
   )
 }
 
@@ -403,35 +403,64 @@ print.tulpa_prior <- function(x, ...) {
 
 #' Format a single prior for printing
 #'
+#' @description
+#' Thin wrapper around `format()` for `tulpa_prior` objects. Each
+#' `prior_*()` constructor attaches a subclass (e.g. `tulpa_prior_normal`)
+#' so adding a new distribution is one new `format.tulpa_prior_<dist>()`
+#' method — no central if/else to extend.
+#'
 #' @param prior A tulpa_prior object
 #' @param indent Indentation string
 #' @keywords internal
 print_prior <- function(prior, indent = "") {
+  cat(format(prior, indent = indent), "\n", sep = "")
+}
 
-  dist <- prior$distribution
+#' @export
+format.tulpa_prior_normal <- function(x, indent = "", ...) {
+  sprintf("%sNormal(%.2f, %.2f)", indent, x$mean, x$sd)
+}
 
-  if (dist == "normal") {
-    cat(sprintf("%sNormal(%.2f, %.2f)\n", indent, prior$mean, prior$sd))
-  } else if (dist == "half_normal") {
-    cat(sprintf("%sHalf-Normal(%.2f)\n", indent, prior$sd))
-  } else if (dist == "half_cauchy") {
-    cat(sprintf("%sHalf-Cauchy(%.2f)\n", indent, prior$scale))
-  } else if (dist == "gamma") {
-    cat(sprintf("%sGamma(%.2f, %.2f)  [mean = %.2f]\n",
-                indent, prior$shape, prior$rate, prior$shape / prior$rate))
-  } else if (dist == "exponential") {
-    cat(sprintf("%sExponential(%.2f)  [mean = %.2f]\n",
-                indent, prior$rate, 1 / prior$rate))
-  } else if (dist == "beta") {
-    cat(sprintf("%sBeta(%.2f, %.2f)  [mean = %.2f]\n",
-                indent, prior$alpha, prior$beta,
-                prior$alpha / (prior$alpha + prior$beta)))
-  } else if (dist == "pc") {
-    cat(sprintf("%sPC prior: P(x > %.2f) = %.3f\n", indent, prior$U, prior$alpha))
-    cat(sprintf("%s  => Exponential(%.3f)\n", indent, prior$rate))
-  } else {
-    cat(sprintf("%s%s\n", indent, dist))
-  }
+#' @export
+format.tulpa_prior_half_normal <- function(x, indent = "", ...) {
+  sprintf("%sHalf-Normal(%.2f)", indent, x$sd)
+}
+
+#' @export
+format.tulpa_prior_half_cauchy <- function(x, indent = "", ...) {
+  sprintf("%sHalf-Cauchy(%.2f)", indent, x$scale)
+}
+
+#' @export
+format.tulpa_prior_gamma <- function(x, indent = "", ...) {
+  sprintf("%sGamma(%.2f, %.2f)  [mean = %.2f]",
+          indent, x$shape, x$rate, x$shape / x$rate)
+}
+
+#' @export
+format.tulpa_prior_exponential <- function(x, indent = "", ...) {
+  sprintf("%sExponential(%.2f)  [mean = %.2f]",
+          indent, x$rate, 1 / x$rate)
+}
+
+#' @export
+format.tulpa_prior_beta <- function(x, indent = "", ...) {
+  sprintf("%sBeta(%.2f, %.2f)  [mean = %.2f]",
+          indent, x$alpha, x$beta, x$alpha / (x$alpha + x$beta))
+}
+
+#' @export
+format.tulpa_prior_pc <- function(x, indent = "", ...) {
+  paste0(
+    sprintf("%sPC prior: P(x > %.2f) = %.3f", indent, x$U, x$alpha),
+    "\n",
+    sprintf("%s  => Exponential(%.3f)", indent, x$rate)
+  )
+}
+
+#' @export
+format.tulpa_prior <- function(x, indent = "", ...) {
+  sprintf("%s%s", indent, x$distribution %||% "<unknown>")
 }
 
 
