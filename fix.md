@@ -117,24 +117,19 @@ then, rebuild downstream packages against the current tulpa source.
      after the per-iteration ESS + RWMH passes, with Jacobian
      n_re * delta. Diagonal RE only (legacy single-term + multi-term);
      correlated slopes still need ASIS.
-7. `mclmc_api.h` / `smc_api.h` / `sghmc_api.h` — stretch.
+7. `mclmc_api.h` / `smc_api.h` / `sghmc_api.h` — stretch. DONE (2026-04-30).
    - DONE: `sghmc_api.h` exposes both `tulpa_sghmc_fit` and `tulpa_sgld_fit`
      behind the NUTS-style `ModelData` + `ParamLayout` interface (2026-04-29).
-     Shared `SGSamplerShimResult` (samples row-major + log-lik + epsilon
-     history). Both samplers already took ModelData internally, so the shim
-     is the same shape as the NUTS shim.
-   - DEFERRED: `mclmc_api.h`, `smc_api.h`. Both `mclmc_sample` and
-     `smc_sample` take `std::function` callbacks (log_prob_grad / log_prior /
-     log_lik / prior_sample / mutation) constructed per-call from R-side
-     closures. They have no current entry that takes ModelData + ParamLayout.
-     Filed for follow-up:
-       - **gcol33/tulpa#5** — wire MCLMC/MAMCLMC to a ModelData entry point
-         (single new wrapper that builds the log_prob_grad std::function from
-         compute_log_post_double + autodiff, mirroring how NUTS reaches it).
-       - **gcol33/tulpa#6** — generic SMC over ModelData. Harder than MCLMC
-         because SMC also needs `prior_sample` and `mutation` kernels that
-         cannot be auto-derived from a ModelData; needs domain-specific
-         configuration.
+   - DONE: `mclmc_api.h` — MCLMC + MAMCLMC wired to a ModelData entry point;
+     `log_prob_grad` built from `compute_log_post_double` + autodiff, mirroring
+     NUTS (gcol33/tulpa#5, committed c9d38a7).
+   - DONE: `smc_api.h` — SMC over ModelData with pluggable mutation kernel;
+     `compute_log_post` factored into `log_prior` + `log_lik_only` as prereq
+     so SMC particle weights use the likelihood alone (gcol33/tulpa#6,
+     committed 8da9b76 + 21c5c06 + 590817e/148645f).
+   - Remaining: `compute_log_lik_only` currently derives by subtraction
+     (2× `compute_log_post`). A single O(N) pass would halve the cost per
+     SMC weight evaluation. See `src/hmc_sampler.cpp:2362`.
 
 Estimated total: ~600 LOC of shims in `src/tulpa_init.cpp` + ~600 LOC across nine new
 public headers + ABI version bumps.

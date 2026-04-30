@@ -2,8 +2,8 @@
 
 ## Next-session pickup (read this first)
 
-**Branch:** `feature/lkj-chol-helpers` (ahead of `origin/feature/lkj-chol-helpers` by 2 commits).
-**Last engine commit:** `9cd5a89 feat(nested-laplace): NNGP and HSGP continuous-spatial backends` (2026-04-29).
+**Branch:** `master`.
+**Last engine commit:** `6c759b2 refactor: extract shared helpers in nested_laplace + shims, fix naming` (2026-04-30).
 
 ### What just landed
 
@@ -33,46 +33,28 @@
 
 ### Working-tree state at session start
 
-```
-M  R/nested_laplace.R          (NNGP/HSGP dispatch, in commit 9cd5a89)
-M  src/nested_laplace.cpp      (NNGP/HSGP entries, in commit 9cd5a89)
-M  src/hmc_hsgp.h              (kernels split-out, in commit 9cd5a89)
-A  src/hmc_hsgp_kernels.h      (in commit 9cd5a89)
+Working tree is clean. All shim headers and impls are committed.
+Rebuild to start:
 
- M inst/include/tulpa/model_data.h   (uncommitted, ABI surface)
- M src/autodiff_utils.h               ( "    capped half-cauchy)
- M src/ess_sampler.h                  ( "    joint_sigma_re toggle)
- M src/tulpa_init.cpp                 ( "    register_shims hook)
-?? src/tulpa_shims.cpp                (uncommitted, 835 LOC of shim impls)
-?? inst/include/tulpa/laplace_api.h
-?? inst/include/tulpa/pg_api.h
-?? inst/include/tulpa/vi_api.h
-?? inst/include/tulpa/ess_api.h
-?? inst/include/tulpa/sparse_solver_api.h
-?? inst/include/tulpa/priors_capped.h
-?? fix.md                              (the change notes — read this)
+```bash
+"/c/Program Files/R/R-4.6.0/bin/R.exe" CMD INSTALL --no-test-load --no-multiarch . > /tmp/install.log 2>&1
+"/c/Program Files/R/R-4.6.0/bin/Rscript.exe" dev_notes/run_nl_regression.R
 ```
-
-Working tree is clean as of the nested-Laplace shim landing — pull and rebuild
-to start.
 
 ### Open work, ordered (highest tulpaGlmm value first)
 
-1. **EM+Laplace engine additions** for tulpaGlmm callbacks. File two follow-ups
-   _against the future `em_laplace_api.h`_:
-   - **gcol33/tulpa#3** — per-submodel family + offset on the `m_step_encode` callback's
-     return shape; thread through existing `tulpa_laplace()` dispatch (already handles
-     family per-call, just not per-submodel).
-   - **gcol33/tulpa#4** — optional `m_step_extra(fits, weights, ...) -> fits` callback
-     fired between M-step and next E-step, for non-η parameters (NB φ, Gamma shape,
-     Beta φ, etc.). Pure plumbing.
-2. **Stretch shim APIs.** `sghmc_api.h` (covers SGHMC + SGLD) is shipped,
-   following the NUTS-style `ModelData` + `ParamLayout` pattern. `mclmc_api.h`
-   and `smc_api.h` are deferred — both samplers internally take
-   `std::function` callbacks (no current `ModelData` entry point) and need
-   refactor work first. Tracked as gcol33/tulpa#5 (MCLMC) and gcol33/tulpa#6
-   (SMC, harder — also needs a separable prior / likelihood split on
-   `ModelData`).
+1. ~~**EM+Laplace engine additions**~~ ✅ DONE (2026-04-30).
+   - **gcol33/tulpa#3** — per-submodel family + offset on `m_step_encode`. Done (ba3b476).
+   - **gcol33/tulpa#4** — `m_step_extra` callback for non-η parameters. Done (e0ee3b0).
+   - Remaining: MI and Gibbs corrections are stubs (`R/em_laplace.R:241`).
+2. ~~**Stretch shim APIs**~~ ✅ DONE (2026-04-30).
+   - `sghmc_api.h` (SGHMC + SGLD): done (2026-04-29).
+   - `mclmc_api.h` (MCLMC + MAMCLMC via ModelData): done, gcol33/tulpa#5 (c9d38a7).
+   - `smc_api.h` (SMC over ModelData with pluggable mutation): done, gcol33/tulpa#6
+     (8da9b76 + 21c5c06); `compute_log_post` factored into `log_prior` + `log_lik_only`
+     as prereq (590817e).
+   - Remaining: `compute_log_lik_only` uses 2× `compute_log_post` by subtraction
+     (see `src/hmc_sampler.cpp:2362`). Correct; single-pass optimisation deferred.
 
 ### Pre-flight before starting
 
@@ -330,11 +312,11 @@ From `TODO.md`. P2.4 is already done; the rest are still open:
 - Round 3: items 8-12 can start in parallel with Round 2; only item 7
   (legacy strip) waits on Agent E.
 - Round 4 (nested Laplace): ✅ shipped. Generic infra + 8 backends + CCD.
-- **Active focus:** cross-DLL ABI shim surface (`fix.md`). Complete for
-  Laplace (dense / spatial / dense_multi_re / bym2 / gp / multiscale_gp /
-  multiscale_temporal / rsr), nested-Laplace (icar / bym2 / car_proper /
-  rw1 / rw2 / ar1 / nngp / hsgp / spde), PG / VI / ESS / sparse-solver,
-  and SGHMC + SGLD. Open follow-ups: gcol33/tulpa#3 + #4 (EM+Laplace
-  callback shapes) and gcol33/tulpa#5 + #6 (MCLMC / SMC `ModelData`
-  entry points — both deferred behind a sampler-side refactor).
-  Tracked as item 2b in `TODO.md`.
+- **Cross-DLL ABI shim surface:** ✅ complete as of 2026-04-30. All shims
+  committed — Laplace (8 variants), nested-Laplace (8 backends), SPDE,
+  PG / VI / ESS / sparse-solver, SGHMC + SGLD, MCLMC + MAMCLMC (#5),
+  SMC (#6). EM+Laplace callbacks #3 + #4 done; only MI/Gibbs corrections
+  remain stubbed. One open efficiency item: `compute_log_lik_only` via
+  subtraction (`src/hmc_sampler.cpp:2362`). See `TODO.md` item 2b.
+- **Current priority:** item 3 (Agent E — `tulpaRatio` refactor in
+  `~/Documents/dev/numdenom`) or item 10 (MI/Gibbs corrections).

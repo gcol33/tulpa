@@ -70,28 +70,19 @@ tests/testthat/     — Unit and integration tests
 
 ### EM+Laplace Engine
 
-`tulpa_em_laplace()` lands the generic EM driver with per-submodel `family`
-+ `offset` on the `m_step_encode` return blocks (gcol33/tulpa#3). MI /
-Gibbs corrections are stubbed pending separate work. See `?tulpa_em_laplace`.
+`tulpa_em_laplace()` is the generic EM driver: per-submodel `family` +
+`offset` on the `m_step_encode` return blocks (gcol33/tulpa#3) and the
+optional `m_step_extra(fits, weights, ...) -> fits` callback for non-η
+parameters fired between M-step and E-step (gcol33/tulpa#4). MI / Gibbs
+corrections are stubbed (`correction = "mi"/"gibbs"` raises a clear error).
+See `?tulpa_em_laplace`.
 
-### TODO: Generic S3 Methods
+### Generic S3 Methods and Diagnostics
 
-Move from tulpaOcc to tulpa (operating on `tulpa_fit` base class):
-- `coef.tulpa_fit`, `confint.tulpa_fit`, `vcov.tulpa_fit`
-- `logLik.tulpa_fit`, `summary.tulpa_fit`
-- `plot.tulpa_fit` (trace/density/pairs)
-- `tidy.tulpa_fit`, `glance.tulpa_fit`, `ranef.tulpa_fit`
-
-Model packages inherit these via `class = c("tulpaOcc_fit", "tulpa_fit")`.
-
-### TODO: Generic Diagnostics
-
-Move from tulpaOcc to tulpa:
-- `moranI(residuals, coords, k)` — spatial autocorrelation
-- `durbinWatson(residuals)` — temporal autocorrelation
-- `variogram(residuals, coords, n_bins)` — empirical semivariogram
-- `compare_models(..., criterion)` — WAIC/AIC/BIC comparison with weights
-- `modelAverage(..., criterion)` — Burnham & Anderson model averaging
+Implemented in `R/methods_generic.R` (`coef`, `confint`, `vcov`, `logLik`,
+`summary`, `plot`, `tidy`, `glance`, `ranef`) and `R/diagnostics_generic.R`
+(`moranI`, `durbinWatson`, `variogram`, `compare_models`, `modelAverage`).
+Model packages inherit via `class = c("model_fit", "tulpa_fit")`.
 
 ### Matrix CHOLMOD Fix
 

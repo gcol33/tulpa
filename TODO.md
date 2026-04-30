@@ -59,34 +59,34 @@ runner: `dev_notes/run_nl_regression.R`.
 **Math reference:** `nested_laplace_proposal.md`. **Engineering:**
 `features_plan.md`.
 
-### 2b. Cross-DLL ABI surface (`*_api.h` shims) — active
-**State:** uncommitted in working tree; full plan in `fix.md`. Internal
-inference drivers were unreachable from sibling packages because the existing
-entry points return `Rcpp::List`, which is not ABI-stable across separately
-compiled DLLs. The new pattern is `R_RegisterCCallable` shims with raw POD
-inputs / caller-allocated POD result structs, mirroring the existing
-`tulpa::nuts_api`.
+### 2b. Cross-DLL ABI surface (`*_api.h` shims) ✅ DONE (2026-04-30)
+**State:** all shims committed. Full `R_RegisterCCallable` surface in
+`src/tulpa_shims.cpp` + `src/tulpa_init.cpp`; public headers in
+`inst/include/tulpa/`. Plan in `fix.md`.
 
-**Shipped (uncommitted):**
-- `laplace_api.h` — `laplace_mode_dense`, `_spatial`, `_dense_multi_re`.
+**Shipped:**
+- `laplace_api.h` — all 8 variants: `_dense`, `_spatial`, `_dense_multi_re`,
+  `_bym2`, `_gp`, `_multiscale_gp`, `_multiscale_temporal`, `_rsr`.
+  (`laplace_newton_solve` / `_sparse` dropped — templated on lambdas,
+  cannot cross DLL boundary; callers use high-level shims instead.)
+- `nested_laplace_api.h` — all 8 backends: icar / bym2 / car_proper /
+  rw1 / rw2 / ar1 / nngp / hsgp.
+- `spde_api.h` — SPDE Laplace + nested SPDE Laplace.
 - `pg_api.h` — `pg_binomial_gibbs`, `pg_negbin_gibbs`, `pg_negbin_spatial_gibbs`.
-- `vi_api.h` — `fit_vi` (auto-dispatches mean-field / low-rank / full-rank by D).
+- `vi_api.h` — `fit_vi` (mean-field / low-rank / full-rank by D).
 - `ess_api.h` — `run_ess_sampler` with `joint_sigma_re` toggle.
-- `sparse_solver_api.h` — opaque CHOLMOD handle (create/analyze/factorize/solve/
-  log_det/sel_inv_diag) + stochastic-Lanczos log-det one-shot. Cross-DLL
-  round-trip verified (1e-15 vs dense at n=5; SLQ matches dense to 6 sig figs at
-  n_probes=60, n_lanczos=5).
-- `priors_capped.h` — quartic-cap helper consolidated; tulpaGlmm's
-  `glmm_extra_prior.h` now delegates here.
+- `sparse_solver_api.h` — opaque CHOLMOD handle + stochastic-Lanczos log-det.
+- `sghmc_api.h` — `tulpa_sghmc_fit` + `tulpa_sgld_fit`.
+- `mclmc_api.h` — MCLMC + MAMCLMC via ModelData entry (gcol33/tulpa#5).
+- `smc_api.h` — SMC over ModelData with pluggable mutation (gcol33/tulpa#6);
+  `compute_log_post` factored into `log_prior` + `log_lik_only` as prereq.
+- `priors_capped.h` — capped-normal / capped-half-Cauchy; tulpaGlmm delegates here.
 
-**Open:**
-- Remaining `laplace_api.h` entries: `_bym2`, `_gp`, `_multiscale_gp`,
-  `_multiscale_temporal`, `_rsr`, `laplace_newton_solve`,
-  `laplace_newton_solve_sparse`. Pattern is in the three already-shipped entries.
-- New header `nested_laplace_api.h` wrapping all eight nested-Laplace backends
-  + CCD grid generator.
-- New header `spde_api.h` wrapping `cpp_laplace_fit_spde` + `cpp_nested_laplace_spde`.
-- Stretch: `mclmc_api.h`, `smc_api.h`, `sghmc_api.h`.
+**Remaining open:**
+- `compute_log_lik_only` currently derives by subtraction (2× `compute_log_post`)
+  instead of a single O(N) observation-loop pass (`src/hmc_sampler.cpp:2362`,
+  `TODO(#6 follow-up)`). Correct but ~2× slower than necessary for SMC weight
+  evaluation.
 
 **ABI policy:** `TULPA_ABI_VERSION` stays at 1 pre-release; downstream packages
 rebuild against current source until first tagged release.
@@ -141,20 +141,14 @@ the actual autodiff headers, no forward decls). Audit step is just to
 confirm no fwd-decl drift creeps back in during future edits.
 
 ### 10. EM+Laplace generic engine
-**Where:** `R/em_laplace.R` (scaffolded).
-**Missing:** the EM loop, MI correction, Gibbs correction. Proposed API
-documented in `CLAUDE.md` (`tulpa_em_laplace(e_step, m_step_encode, ...)`).
-
-When this lands, two follow-ups already triaged from tulpaGlmm Day-7:
-- **gcol33/tulpa#3** — per-submodel `family` and `offset` on the `m_step_encode`
-  callback's return shape; thread through existing `tulpa_laplace()` dispatch
-  (which already handles family per-call, just not per-submodel).
-- **gcol33/tulpa#4** — optional `m_step_extra(fits, weights, ...) -> fits`
-  callback fired between M-step and next E-step, for non-η parameters
-  (NB φ, Gamma shape, Beta φ, etc.). Pure plumbing.
-
-These should be shipped through the future `em_laplace_api.h` shim, not as
-freestanding refactors.
+**Where:** `R/em_laplace.R`.
+**State:** EM loop ships and runs. Per-submodel `family` + `offset`
+(gcol33/tulpa#3) and `m_step_extra` callback (gcol33/tulpa#4) are both
+implemented. Only MI and Gibbs corrections remain stubbed —
+`correction = "mi"/"gibbs"` raises a clear error today.
+**Missing:** MI correction (draw hard z from weights, refit, Rubin's pool)
+and Gibbs correction (warm-started z|θ → θ|z chain). See the TODO comment
+at `R/em_laplace.R:241`.
 
 ### 11. ~~Generic S3 methods / diagnostics — move from tulpaOcc into tulpa~~
 **State (2026-04-29 audit):** done.
