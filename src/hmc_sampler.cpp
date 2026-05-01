@@ -16,6 +16,7 @@
 #include "hmc_tvc_grad.h"
 #include "hmc_multiscale_temporal_grad.h"
 #include "lkj_chol_helpers.h"
+#include "hmc_likelihood.h"
 #include <Rcpp.h>
 
 // Include log_post_impl.h AFTER hmc_sampler.h so types are defined
@@ -34,99 +35,12 @@ using namespace Rcpp;
 
 namespace tulpa_hmc {
 
-// =====================================================================
-// Likelihood functions
-// =====================================================================
-
-inline double log_lik_binomial(int y, int n, double eta) {
-  // Numerically stable binomial log-likelihood
-  if (eta > 0) {
-    return y * eta - n * eta - n * std::log(1.0 + std::exp(-eta));
-  } else {
-    return y * eta - n * std::log(1.0 + std::exp(eta));
-  }
-}
-
-inline double log_lik_negbin(int y, double mu, double phi) {
-  if (mu <= 0 || phi <= 0) return -1e10;
-  return std::lgamma(y + phi) - std::lgamma(phi) - std::lgamma(y + 1.0)
-       + phi * std::log(phi / (mu + phi))
-       + y * std::log(mu / (mu + phi));
-}
-
-inline double log_lik_poisson(int y, double mu) {
-  if (mu <= 0) return -1e10;
-  return y * std::log(mu) - mu - std::lgamma(y + 1.0);
-}
-
-inline double log_lik_gamma(double y, double shape, double mu) {
-  if (y <= 0 || shape <= 0 || mu <= 0) return -1e10;
-  double rate = shape / mu;
-  return shape * std::log(rate) + (shape - 1.0) * std::log(y)
-       - rate * y - std::lgamma(shape);
-}
-
-// Include vectorized gradient header AFTER log_lik_* functions and hmc_sampler.h
-// so all types and helpers are defined.
-
-
+// Include vectorized gradient header after hmc_likelihood.h so legacy
+// log_lik_* helpers are available to template definitions.
 #include "hmc_gradient_vectorized.h"
 
 // Thread-local vectorized gradient workspace (avoids per-call allocation)
 static thread_local vectorized::VecGradWorkspace vec_grad_ws;
-
-// =====================================================================
-// Observation log-likelihood helper (fused with gradient computation)
-// Matches compute_log_post observation loop exactly. Used by specialized
-// H gradient functions to avoid a separate O(N) pass.
-// =====================================================================
-
-inline double compute_obs_ll(
-    const ModelData& data, int i,
-    double eta_num, double eta_denom,
-    double phi_num, double phi_denom
-) {
-  if (data.legacy.model_type == ModelType::BINOMIAL) {
-    return log_lik_binomial(data.legacy.y_num[i], data.legacy.y_denom[i], eta_num);
-  } else if (data.legacy.model_type == ModelType::NEGBIN_NEGBIN) {
-    double mu_num = std::exp(eta_num);
-    double mu_denom = std::exp(eta_denom);
-    return log_lik_negbin(data.legacy.y_num[i], mu_num, phi_num)
-         + log_lik_negbin(data.legacy.y_denom[i], mu_denom, phi_denom);
-  } else if (data.legacy.model_type == ModelType::POISSON_GAMMA) {
-    double mu_num = std::exp(eta_num);
-    double mu_denom = std::exp(eta_denom);
-    return log_lik_poisson(data.legacy.y_num[i], mu_num)
-         + log_lik_gamma(data.legacy.y_denom_cont[i], phi_denom, mu_denom);
-  } else if (data.legacy.model_type == ModelType::NEGBIN_GAMMA) {
-    double mu_num = std::exp(eta_num);
-    double mu_denom = std::exp(eta_denom);
-    return log_lik_negbin(data.legacy.y_num[i], mu_num, phi_num)
-         + log_lik_gamma(data.legacy.y_denom_cont[i], phi_denom, mu_denom);
-  } else if (data.legacy.model_type == ModelType::GAMMA_GAMMA) {
-    double mu_num = std::exp(eta_num);
-    double mu_denom = std::exp(eta_denom);
-    return log_lik_gamma(data.legacy.y_num_cont[i], phi_num, mu_num)
-         + log_lik_gamma(data.legacy.y_denom_cont[i], phi_denom, mu_denom);
-  } else if (data.legacy.model_type == ModelType::LOGNORMAL) {
-    double log_y_num = std::log(data.legacy.y_num_cont[i]);
-    double log_y_denom = std::log(data.legacy.y_denom_cont[i]);
-    double z_num = (log_y_num - eta_num) / phi_num;
-    double z_denom = (log_y_denom - eta_denom) / phi_denom;
-    return -log_y_num - std::log(phi_num) - 0.5 * z_num * z_num
-           -log_y_denom - std::log(phi_denom) - 0.5 * z_denom * z_denom;
-  } else if (data.legacy.model_type == ModelType::BETA_BINOMIAL) {
-    double p = 1.0 / (1.0 + std::exp(-eta_num));
-    int y = data.legacy.y_num[i];
-    int n = data.legacy.y_denom[i];
-    double alpha = p * phi_num;
-    double beta_param = (1.0 - p) * phi_num;
-    return std::lgamma(y + alpha) + std::lgamma(n - y + beta_param) - std::lgamma(n + phi_num)
-         - std::lgamma(alpha) - std::lgamma(beta_param) + std::lgamma(phi_num)
-         + tulpa::math::portable_lchoose(n, y);
-  }
-  return 0.0;
-}
 
 // =====================================================================
 // ICAR quadratic form: phi' Q phi
@@ -10469,162 +10383,7 @@ static void compute_gradient_generic_arena(
     grad = get_adjoints(params_ar);
 }
 
-// =====================================================================
-// Resolve gradient function pointer ? SINGLE SOURCE OF TRUTH for dispatch.
-// Called once at sampling start, returns a function pointer to eliminate
-// per-call branching during leapfrog steps. compute_gradient() delegates here.
-// =====================================================================
-
-GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
-    // Generic multi-process models: route through generic gradient
-    if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
-        const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
-        // Use arena AD if model provides it, otherwise fall back to numerical
-        if (spec->ll_arena != nullptr) {
-            return &compute_gradient_generic_arena;
-        }
-        return &compute_gradient_generic_numerical;
-    }
-
-    // Collapsed ICAR/BYM2: spatial inner state (phi*, theta*) is marginalized
-    // and not in the param vector. compute_log_post_impl<T> can't autodiff
-    // through the inner Newton solve, so AUTODIFF modes would either return
-    // wrong gradients or crash on params[spatial_start=-1]. Redirect
-    // explicit AUTODIFF requests to the numerical reference; the H-mode
-    // analytical handler below remains the canonical fast path.
-    bool is_collapsed = layout.is_icar_collapsed || layout.is_bym2_collapsed;
-    if (is_collapsed && (mode == GradientMode::AUTODIFF_TAPE ||
-                          mode == GradientMode::AUTODIFF_ARENA ||
-                          mode == GradientMode::AUTODIFF_FWD)) {
-        return &compute_gradient_numerical;
-    }
-
-    // Explicit mode overrides
-    if (mode == GradientMode::NUMERICAL)
-        return &compute_gradient_numerical;
-    if (mode == GradientMode::AUTODIFF_TAPE)
-        return &compute_gradient_autodiff;
-    if (mode == GradientMode::AUTODIFF_ARENA)
-        return &compute_gradient_arena;
-    if (mode == GradientMode::AUTODIFF_FWD)
-        return &compute_gradient_forward;
-
-    // AUTO or HANDCODED: use fastest available (H > A_r > A > N)
-    if (can_use_analytical_gradient(data, layout)) {
-        return &compute_gradient_analytical;
-    }
-
-    // ZI/OI supported in analytical (all non-exotic configs) and composite (exotic combos).
-    // Specialized H-mode functions do NOT handle ZI ? skip them entirely for ZI/OI models.
-    // Simple ZI/OI already went to analytical above; exotic combos go to composite.
-    // ZOIB has a pre-existing gradient bug in the H-mode ZOIB residual code (param 0
-    // mismatch even in analytical). Route to A_r until fixed.
-    if (data.zi_type == tulpa_zi::ZIType::ZOIB)
-        return &compute_gradient_arena;
-    if (layout.has_zi || layout.has_oi)
-        return &compute_gradient_composite;
-
-    // Early bail: crossed RE (without slopes) + exotic ? composite doesn't handle
-    // crossed intercept-only RE (multiple sigma_re terms with separate param blocks).
-    // Slopes ARE handled (correlated + uncorrelated, NC + centered).
-    bool has_exotic = layout.is_temporal_gp || layout.has_tvc ||
-        layout.has_multiscale_temporal || layout.is_gp || layout.is_multiscale_gp ||
-        layout.has_svc || layout.has_latent;
-    if (has_exotic && !layout.has_re_slopes && data.n_re_terms > 1)
-        return &compute_gradient_arena;
-
-    // Early bail: TVC + latent ? neither specialized function handles both.
-    if (layout.has_tvc && layout.has_latent)
-        return &compute_gradient_arena;
-
-    // Early bail: ST interaction + AR1 temporal type ? H and composite both use IID
-    // fallback (tau*I) for AR1 but compute_log_post/log_post_impl return 0 prior
-    // (type_ii_log_prior has no AR1 branch). Route to A_r for correctness.
-    if (layout.has_spatiotemporal &&
-        data.spatiotemporal_data.temporal_type == TemporalType::AR1)
-        return &compute_gradient_arena;
-
-    // Specialized H-mode functions: only dispatch if model has NO features
-    // beyond what the function can handle. Otherwise fall through to composite.
-    if (layout.is_hsgp && data.has_hsgp &&
-        !layout.has_spatiotemporal &&
-        !layout.has_latent && !layout.has_svc && !layout.has_re_slopes &&
-        !layout.has_multiscale_temporal &&
-        !layout.is_temporal_gp && !layout.has_tvc)
-        return &compute_gradient_hsgp;
-    // Collapsed GP: analytical gradient + numerical Laplace correction
-    if (layout.is_gp_collapsed && data.has_gp && data.gp_collapsed)
-        return &compute_gradient_gp_collapsed;
-    // Collapsed ICAR/BYM2: analytical gradient + numerical Laplace correction
-    if (layout.is_icar_collapsed || layout.is_bym2_collapsed)
-        return &compute_gradient_icar_collapsed;
-    if (layout.is_gp && data.has_gp && !layout.has_temporal && !layout.has_re_slopes
-        && !layout.is_temporal_gp && !layout.has_tvc && !layout.has_multiscale_temporal
-        && !layout.has_latent && !layout.has_svc && !layout.has_spatiotemporal)
-        return &compute_gradient_gp_handcoded;
-    if (layout.is_multiscale_gp && data.has_multiscale_gp && data.msgp_is_hsgp && !layout.has_re_slopes
-        && !layout.has_latent && !layout.has_spatiotemporal && !layout.has_svc
-        && !layout.is_temporal_gp && !layout.has_tvc && !layout.has_multiscale_temporal
-        && !layout.has_temporal)
-        return &compute_gradient_msgp_hsgp;
-    if (layout.is_multiscale_gp && data.has_multiscale_gp && layout.has_temporal && !layout.has_re_slopes
-        && !layout.is_temporal_gp && !layout.has_multiscale_temporal && !layout.has_tvc)
-        return &compute_gradient_msgp_plus_temporal_handcoded;
-    if (layout.is_multiscale_gp && data.has_multiscale_gp && !layout.has_re_slopes
-        && !layout.is_temporal_gp && !layout.has_multiscale_temporal && !layout.has_tvc)
-        return &compute_gradient_msgp_handcoded;
-    if (layout.is_gp && layout.has_temporal && !layout.is_temporal_gp && !layout.has_re_slopes
-        && !layout.has_tvc && !layout.has_multiscale_temporal
-        && !layout.has_latent && !layout.has_svc && !layout.has_spatiotemporal)
-        return &compute_gradient_gp_plus_temporal_handcoded;
-    if (layout.has_svc && data.has_svc && data.svc_is_hsgp &&
-        !layout.has_spatiotemporal &&
-        !layout.has_latent && !layout.has_tvc &&
-        !layout.is_temporal_gp && !layout.has_multiscale_temporal &&
-        !layout.has_temporal && !layout.has_re_slopes)
-        return &compute_gradient_svc_hsgp_handcoded;
-    if (layout.has_svc && data.has_svc &&
-        !layout.has_temporal && !layout.has_spatiotemporal &&
-        !layout.has_latent && !layout.has_tvc && !layout.has_re_slopes &&
-        !layout.is_temporal_gp && !layout.has_multiscale_temporal)
-        return &compute_gradient_svc_handcoded;
-    if (layout.has_tvc && data.has_tvc &&
-        !layout.has_spatial && !layout.has_latent &&
-        !layout.is_hsgp && !layout.is_gp && !layout.is_multiscale_gp &&
-        !layout.has_svc && !layout.has_re_slopes)
-        return &compute_gradient_tvc_handcoded;
-    // ST interaction: route AR1 temporal type to A_r (H uses IID fallback which is wrong;
-    // type_ii_log_prior and log_post_impl both return 0 prior for AR1, H adds -tau*delta)
-    if (layout.has_spatiotemporal && !layout.is_st_gp &&
-        !layout.is_gp && !layout.is_multiscale_gp && !layout.is_hsgp &&
-        !layout.has_latent &&
-        data.spatiotemporal_data.type != STType::NONE &&
-        layout.st_delta_start >= 0 && layout.log_tau_st_idx >= 0 &&
-        data.spatiotemporal_data.temporal_type != TemporalType::AR1)
-        return &compute_gradient_spatiotemporal_handcoded;
-    if (layout.is_temporal_gp && layout.has_temporal &&
-        !layout.is_gp && !layout.is_multiscale_gp && !layout.is_hsgp &&
-        !layout.has_spatial && !layout.has_latent && !layout.has_svc &&
-        !layout.has_re_slopes &&
-        data.temporal_gp_data.cov_type == tulpa_temporal_gp::TemporalCovType::EXPONENTIAL)
-        return &compute_gradient_temporal_gp_handcoded;
-    if (layout.has_multiscale_temporal && !layout.is_gp && !layout.is_multiscale_gp &&
-        !layout.is_hsgp && !layout.has_svc && !layout.has_tvc &&
-        !layout.has_latent && !layout.has_spatiotemporal &&
-        !layout.has_spatial && !layout.has_re_slopes)
-        return &compute_gradient_ms_temporal_handcoded;
-    if (layout.has_latent && data.latent_n_factors > 0 &&
-        !layout.has_spatial && !layout.has_temporal && !layout.has_svc &&
-        !layout.is_hsgp && !layout.is_gp && !layout.is_multiscale_gp &&
-        !layout.has_re_slopes)
-        return &compute_gradient_latent_handcoded;
-
-    // Composite H-mode: catch-all for exotic multi-feature combinations
-    // that no specialized function above handles (e.g., HSGP+TVC, SVC+RW1,
-    // latent+spatial, crossed+slopes). Slower than specialized but faster than A_r.
-    // ST+AR1 also falls through here and routes to A_r below (via !NONE + AR1 guard above).
-    return &compute_gradient_composite;
-}
+#include "hmc_gradient_dispatch.h"
 
 // =====================================================================
 // Dual averaging for step size adaptation

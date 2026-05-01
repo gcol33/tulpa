@@ -223,8 +223,6 @@ inline double temporal_gp_log_lik(
     double sigma2,
     double phi
 ) {
-  int N = gp_data.n_obs;
-
   // Try state-space first (exponential covariance)
   if (gp_data.cov_type == TemporalCovType::EXPONENTIAL) {
     return temporal_gp_log_lik_statespace(f, gp_data.time_values,
@@ -396,8 +394,6 @@ static inline void temporal_gp_nc_backward(
         // --- Backward adjoint recursion ---
         // adj[t] accumulates the total derivative of L w.r.t. f[t] including
         // indirect effects through f[t+1], f[t+2], ...
-        double adj_prev;  // adj[t+1] from the previous (later) time step
-
         // Build adjoint from T-1 down to 0
         // We process from t = T-1 backward. Store in a local buffer.
         // Since we need adj for computing grad_z and hyperparameter grads,

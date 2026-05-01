@@ -2,8 +2,9 @@
 // Rcpp-facing HMC fit entry points and ModelData construction.
 
 #include "hmc_sampler.h"
+#include "hmc_gradient_check.h"
+#include "hmc_modeldata_builders.h"
 #include <Rcpp.h>
-#include <algorithm>
 #include <atomic>
 
 // =====================================================================
@@ -71,27 +72,8 @@ Rcpp::List cpp_hmc_fit(
   int n_re_groups = Rcpp::as<int>(re_params["n_groups"]);
   int n_re_terms = Rcpp::as<int>(re_params["n_terms"]);
 
-  // Handle group_matrix which may be numeric or integer
-  Rcpp::IntegerMatrix re_group_matrix;
-  SEXP group_mat_sexp = re_params["group_matrix"];
-  if (Rf_isMatrix(group_mat_sexp)) {
-    if (TYPEOF(group_mat_sexp) == INTSXP) {
-      re_group_matrix = Rcpp::as<Rcpp::IntegerMatrix>(group_mat_sexp);
-    } else {
-      // Convert numeric to integer
-      Rcpp::NumericMatrix nm(group_mat_sexp);
-      re_group_matrix = Rcpp::IntegerMatrix(nm.nrow(), nm.ncol());
-      for (int i = 0; i < nm.nrow(); i++) {
-        for (int j = 0; j < nm.ncol(); j++) {
-          re_group_matrix(i, j) = static_cast<int>(nm(i, j));
-        }
-      }
-    }
-  } else {
-    // Create dummy matrix
-    re_group_matrix = Rcpp::IntegerMatrix(1, 1);
-    re_group_matrix(0, 0) = 0;
-  }
+  Rcpp::IntegerMatrix re_group_matrix =
+      integer_matrix_or_dummy(re_params["group_matrix"]);
 
   std::vector<int> re_n_groups_vec = Rcpp::as<std::vector<int>>(re_params["n_groups_vec"]);
   bool has_re_slopes = Rcpp::as<bool>(re_params["has_slopes"]);
@@ -146,28 +128,11 @@ Rcpp::List cpp_hmc_fit(
   // Zero-inflation parameters
   std::string zi_type_str = Rcpp::as<std::string>(zi_params["type"]);
 
-  // Handle X_zi which may be numeric matrix or NULL
-  Rcpp::NumericMatrix X_zi;
-  SEXP xzi_sexp = zi_params["X"];
-  if (!Rf_isNull(xzi_sexp) && Rf_isMatrix(xzi_sexp)) {
-    X_zi = Rcpp::as<Rcpp::NumericMatrix>(xzi_sexp);
-  } else {
-    // Create empty dummy matrix
-    X_zi = Rcpp::NumericMatrix(1, 1);
-    X_zi(0, 0) = 1.0;
-  }
+  Rcpp::NumericMatrix X_zi = numeric_matrix_or_dummy(zi_params["X"]);
   double zi_prior_sd = Rcpp::as<double>(zi_params["prior_sd"]);
 
   // One-inflation parameters (for OI-binomial and ZOIB)
-  Rcpp::NumericMatrix X_oi;
-  SEXP xoi_sexp = zi_params["X_oi"];
-  if (!Rf_isNull(xoi_sexp) && Rf_isMatrix(xoi_sexp)) {
-    X_oi = Rcpp::as<Rcpp::NumericMatrix>(xoi_sexp);
-  } else {
-    // Create empty dummy matrix
-    X_oi = Rcpp::NumericMatrix(1, 1);
-    X_oi(0, 0) = 1.0;
-  }
+  Rcpp::NumericMatrix X_oi = numeric_matrix_or_dummy(zi_params["X_oi"]);
   int p_oi = 0;
   SEXP p_oi_sexp = zi_params["p_oi"];
   if (!Rf_isNull(p_oi_sexp)) {
@@ -192,30 +157,9 @@ Rcpp::List cpp_hmc_fit(
   // =========================================================================
   ModelData data;
 
-  // Copy response data
-  data.legacy.y_num = std::vector<int>(y_num.begin(), y_num.end());
-  data.legacy.y_denom = std::vector<int>(y_denom.begin(), y_denom.end());
-  data.legacy.y_num_cont = std::vector<double>(y_num_cont.begin(), y_num_cont.end());
-  data.legacy.y_denom_cont = std::vector<double>(y_denom_cont.begin(), y_denom_cont.end());
-
-  // Flatten design matrices for cache efficiency
-  data.legacy.p_num = X_num.ncol();
-  data.legacy.p_denom = X_denom.ncol();
-  data.N = y_num.size();
-
-  data.legacy.X_num_flat.resize(data.N * data.legacy.p_num);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_num; j++) {
-      data.legacy.X_num_flat[i * data.legacy.p_num + j] = X_num(i, j);
-    }
-  }
-
-  data.legacy.X_denom_flat.resize(data.N * data.legacy.p_denom);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_denom; j++) {
-      data.legacy.X_denom_flat[i * data.legacy.p_denom + j] = X_denom(i, j);
-    }
-  }
+  populate_legacy_ratio_data(
+      data, y_num, y_denom, y_num_cont, y_denom_cont,
+      X_num, X_denom, model_type_str);
 
   // Random effects (already deep copied above)
   data.re_group = re_group;
@@ -305,35 +249,8 @@ Rcpp::List cpp_hmc_fit(
     data.total_chol_params = 0;
   }
 
-  // Model type
-  if (model_type_str == "binomial") {
-    data.legacy.model_type = ModelType::BINOMIAL;
-  } else if (model_type_str == "negbin_negbin") {
-    data.legacy.model_type = ModelType::NEGBIN_NEGBIN;
-  } else if (model_type_str == "poisson_gamma") {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;
-  } else if (model_type_str == "negbin_gamma") {
-    data.legacy.model_type = ModelType::NEGBIN_GAMMA;
-  } else if (model_type_str == "gamma_gamma") {
-    data.legacy.model_type = ModelType::GAMMA_GAMMA;
-  } else if (model_type_str == "lognormal") {
-    data.legacy.model_type = ModelType::LOGNORMAL;
-  } else if (model_type_str == "beta_binomial") {
-    data.legacy.model_type = ModelType::BETA_BINOMIAL;
-  } else {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;  // fallback
-  }
-
   // Spatial structure
-  if (spatial_type_str == "icar") {
-    data.spatial_type = SpatialType::ICAR;
-  } else if (spatial_type_str == "bym2") {
-    data.spatial_type = SpatialType::BYM2;
-  } else if (spatial_type_str == "car_proper") {
-    data.spatial_type = SpatialType::CAR_PROPER;
-  } else {
-    data.spatial_type = SpatialType::NONE;
-  }
+  data.spatial_type = parse_lattice_spatial_type(spatial_type_str);
 
   data.spatial_group = spatial_group;  // Already deep copied above
   data.n_spatial_units = n_spatial_units;
@@ -370,14 +287,8 @@ Rcpp::List cpp_hmc_fit(
   }
 
   // Temporal structure
-  if (temporal_type_str == "rw1") {
-    data.temporal_type = TemporalType::RW1;
-  } else if (temporal_type_str == "rw2") {
-    data.temporal_type = TemporalType::RW2;
-  } else if (temporal_type_str == "ar1") {
-    data.temporal_type = TemporalType::AR1;
-  } else if (temporal_type_str == "gp") {
-    data.temporal_type = TemporalType::GP;
+  data.temporal_type = parse_hmc_temporal_type(temporal_type_str);
+  if (data.temporal_type == TemporalType::GP) {
 
     // GP-specific parameters
     data.has_temporal_gp = true;
@@ -448,7 +359,6 @@ Rcpp::List cpp_hmc_fit(
     if (temporal_params.containsElementNamed("sigma2_short_prior_alpha"))
       data.ms_sigma2_short_prior_alpha = Rcpp::as<double>(temporal_params["sigma2_short_prior_alpha"]);
   } else {
-    data.temporal_type = TemporalType::NONE;
     data.has_temporal_gp = false;
   }
 
@@ -463,32 +373,14 @@ Rcpp::List cpp_hmc_fit(
   data.tau_temporal_rate = tau_temporal_rate;
 
   // Zero-inflation structure
-  data.zi_type = tulpa_zi::parse_zi_type(zi_type_str);
   // Use explicit p_zi from R (not X_zi.ncol()) because OI-only models
   // pass a 1-column placeholder X_zi but p_zi=0
-  {
-    SEXP p_zi_sexp = zi_params["p_zi"];
-    data.p_zi = (!Rf_isNull(p_zi_sexp)) ? Rcpp::as<int>(p_zi_sexp) : X_zi.ncol();
-  }
-  data.zi_prior_sd = zi_prior_sd;
-  data.X_zi_flat.resize(data.N * data.p_zi);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.p_zi; j++) {
-      data.X_zi_flat[i * data.p_zi + j] = X_zi(i, j);
-    }
-  }
+  SEXP p_zi_sexp = zi_params["p_zi"];
+  int p_zi = (!Rf_isNull(p_zi_sexp)) ? Rcpp::as<int>(p_zi_sexp) : X_zi.ncol();
+  populate_zi_data(data, zi_type_str, X_zi, zi_prior_sd, p_zi);
 
   // One-inflation structure (for OI-binomial and ZOIB)
-  data.p_oi = p_oi;
-  data.oi_prior_sd = oi_prior_sd;
-  if (p_oi > 0) {
-    data.X_oi_flat.resize(data.N * data.p_oi);
-    for (int i = 0; i < data.N; i++) {
-      for (int j = 0; j < data.p_oi; j++) {
-        data.X_oi_flat[i * data.p_oi + j] = X_oi(i, j);
-      }
-    }
-  }
+  populate_oi_data(data, X_oi, p_oi, oi_prior_sd);
 
   // Priors
   data.sigma_beta = sigma_beta;
@@ -669,17 +561,7 @@ Rcpp::List cpp_hmc_fit(
     data.tvc_data.X_tvc = tvc_X_tvc;
 
     // Parse TVC temporal structure
-    if (tvc_structure_str == "rw1") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;
-    } else if (tvc_structure_str == "rw2") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::RW2;
-    } else if (tvc_structure_str == "ar1") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::AR1;
-    } else if (tvc_structure_str == "iid") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::IID;
-    } else {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;  // Default
-    }
+    data.tvc_data.structure = parse_tvc_temporal_type(tvc_structure_str);
 
     // Prior parameters
     data.tvc_tau_shape = tvc_tau_shape;
@@ -688,9 +570,7 @@ Rcpp::List cpp_hmc_fit(
     // Pre-allocate gradient workspace buffers (avoids per-call heap allocation)
     data.tvc_data.init_workspace();
   } else {
-    data.tvc_data.n_tvc = 0;
-    data.tvc_data.n_times = 0;
-    data.tvc_data.n_groups = 1;
+    clear_tvc_data(data);
   }
 
   // SVC (Spatially-Varying Coefficients) parameters
@@ -784,141 +664,7 @@ Rcpp::List cpp_hmc_fit(
   // Gradient check only mode: compare N, A, A_r, H without sampling
   // =========================================================================
   if (gradient_check_only) {
-    ParamLayout layout = compute_param_layout(data);
-    double tol = 1e-4;
-
-    // Compute numerical gradient (reference)
-    std::vector<double> grad_N;
-    compute_gradient_numerical(q0, data, layout, grad_N);
-
-    // Also compute numerical gradient for impl-based log_post (used by A/A_r)
-    std::vector<double> grad_N_impl;
-    compute_gradient_numerical_impl(q0, data, layout, grad_N_impl);
-
-    // Helper: compute max relative difference
-    auto max_rel_diff = [](const std::vector<double>& a, const std::vector<double>& b) -> double {
-      double mx = 0.0;
-      for (size_t i = 0; i < a.size() && i < b.size(); i++) {
-        double diff = std::abs(a[i] - b[i]);
-        double scale = std::max(1.0, std::max(std::abs(a[i]), std::abs(b[i])));
-        mx = std::max(mx, diff / scale);
-      }
-      return mx;
-    };
-
-    // Helper: check if a function is autodiff-based (differentiates log_post_impl<T>)
-    auto is_autodiff_fn = [](GradientFn fn) -> bool {
-      return fn == &compute_gradient_arena ||
-             fn == &compute_gradient_forward ||
-             fn == &compute_gradient_autodiff;
-    };
-
-    // Try H mode
-    double h_vs_n = -1.0;  // -1 means not available
-    GradientFn h_fn = resolve_gradient_fn(GradientMode::HANDCODED, data, layout);
-    if (h_fn != &compute_gradient_numerical && h_fn != &compute_gradient_numerical_impl) {
-      // If H resolved to an autodiff function (fallback), compare against N_impl
-      // since autodiff differentiates log_post_impl, not compute_log_post
-      const auto& ref = is_autodiff_fn(h_fn) ? grad_N_impl : grad_N;
-      std::vector<double> grad_H;
-      h_fn(q0, data, layout, grad_H, nullptr);
-      h_vs_n = max_rel_diff(grad_H, ref);
-
-      // Print top-5 worst parameters when H fails
-      if (h_vs_n > 1e-4) {
-        std::vector<std::pair<double,int>> diffs;
-        for (size_t i = 0; i < grad_H.size() && i < ref.size(); i++) {
-          double diff = std::abs(grad_H[i] - ref[i]);
-          double scale = std::max(1.0, std::max(std::abs(grad_H[i]), std::abs(ref[i])));
-          diffs.push_back({diff/scale, (int)i});
-        }
-        std::sort(diffs.begin(), diffs.end(), [](auto&a,auto&b){return a.first>b.first;});
-        Rprintf("  H gradient mismatch (top 5 of %d params):\n", (int)grad_H.size());
-        for (int k = 0; k < std::min(5,(int)diffs.size()); k++) {
-          int idx = diffs[k].second;
-          Rprintf("    param[%d]: H=%.6e N=%.6e  rel_diff=%.2e\n",
-                  idx, grad_H[idx], ref[idx], diffs[k].first);
-        }
-        // Print layout info for worst param
-        int worst = diffs[0].second;
-        Rprintf("  Layout: beta_num[%d-%d] beta_denom[%d-%d] re[%d+]\n",
-                layout.legacy.beta_num_start, layout.legacy.beta_num_start+data.legacy.p_num-1,
-                layout.legacy.beta_denom_start, layout.legacy.beta_denom_start+data.legacy.p_denom-1,
-                layout.re_start);
-        if (layout.has_spatial) Rprintf("  spatial[%d-%d]\n", layout.spatial_start, layout.spatial_end-1);
-        if (layout.has_temporal) Rprintf("  temporal[%d-%d]\n", layout.temporal_start, layout.temporal_end-1);
-        if (layout.has_spatiotemporal) Rprintf("  ST delta[%d+] tau_st[%d]\n",
-                                               layout.st_delta_start, layout.log_tau_st_idx);
-        if (layout.has_tvc) Rprintf("  TVC w[%d+] tau[%d+]\n", layout.tvc_w_start, layout.log_tau_tvc_start);
-        if (layout.has_svc) Rprintf("  SVC w[%d+] sigma2[%d+] phi[%d+]\n",
-                                    layout.svc_w_start, layout.log_sigma2_svc_start, layout.log_phi_svc_start);
-        if (layout.has_re_slopes) Rprintf("  has_re_slopes=true n_re_terms=%d\n", data.n_re_terms);
-        if (layout.is_temporal_gp) Rprintf("  temporal_gp: sigma2[%d] phi[%d]\n",
-                                           layout.log_sigma2_temporal_gp_idx, layout.logit_phi_temporal_gp_idx);
-        if (layout.has_multiscale_temporal) Rprintf("  ms_temporal\n");
-        if (layout.has_latent) Rprintf("  latent\n");
-      }
-    }
-
-    // Try A_r mode (arena autodiff)
-    double ar_vs_n = -1.0;
-    GradientFn ar_fn = resolve_gradient_fn(GradientMode::AUTODIFF_ARENA, data, layout);
-    if (ar_fn != &compute_gradient_numerical && ar_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_Ar;
-      ar_fn(q0, data, layout, grad_Ar, nullptr);
-      ar_vs_n = max_rel_diff(grad_Ar, grad_N_impl);
-    }
-
-    // Try A mode (forward autodiff)
-    double a_vs_n = -1.0;
-    GradientFn a_fn = resolve_gradient_fn(GradientMode::AUTODIFF_FWD, data, layout);
-    if (a_fn != &compute_gradient_numerical && a_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_A;
-      a_fn(q0, data, layout, grad_A, nullptr);
-      a_vs_n = max_rel_diff(grad_A, grad_N_impl);
-    }
-
-    // H vs A_r cross-check
-    double h_vs_ar = -1.0;
-    if (h_vs_n >= 0 && ar_vs_n >= 0) {
-      std::vector<double> grad_H2, grad_Ar2;
-      h_fn(q0, data, layout, grad_H2, nullptr);
-      ar_fn(q0, data, layout, grad_Ar2, nullptr);
-      h_vs_ar = max_rel_diff(grad_H2, grad_Ar2);
-
-      // Print top-3 worst parameters when cross-check fails
-      if (h_vs_ar > 1e-4) {
-        std::vector<std::pair<double,int>> diffs;
-        for (size_t i = 0; i < grad_H2.size() && i < grad_Ar2.size(); i++) {
-          double diff = std::abs(grad_H2[i] - grad_Ar2[i]);
-          double scale = std::max(1.0, std::max(std::abs(grad_H2[i]), std::abs(grad_Ar2[i])));
-          diffs.push_back({diff/scale, (int)i});
-        }
-        std::sort(diffs.begin(), diffs.end(), [](auto&a,auto&b){return a.first>b.first;});
-        Rprintf("  H vs A_r cross-check DIVERGE (top 3 of %d params):\n", (int)grad_H2.size());
-        for (int k = 0; k < std::min(3,(int)diffs.size()); k++) {
-          int idx = diffs[k].second;
-          Rprintf("    param[%d]: H=%.8e A_r=%.8e  rel_diff=%.2e\n",
-                  idx, grad_H2[idx], grad_Ar2[idx], diffs[k].first);
-        }
-      }
-    }
-
-    return Rcpp::List::create(
-      Rcpp::Named("h_vs_n") = h_vs_n,
-      Rcpp::Named("ar_vs_n") = ar_vs_n,
-      Rcpp::Named("a_vs_n") = a_vs_n,
-      Rcpp::Named("h_vs_ar") = h_vs_ar,
-      Rcpp::Named("tol") = tol,
-      // h_ok: check h_vs_n first; if it fails but h_vs_ar passes, H is still
-      // correct (compute_log_post vs log_post_impl diverge for some ZI models)
-      Rcpp::Named("h_ok") = (h_vs_n >= 0)
-        ? ((h_vs_n < tol) ? true : (h_vs_ar >= 0 && h_vs_ar < tol))
-        : NA_LOGICAL,
-      Rcpp::Named("ar_ok") = (ar_vs_n >= 0) ? (ar_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("a_ok") = (a_vs_n >= 0) ? (a_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("n_params") = (int)q0.size()
-    );
+    return run_gradient_check_only(q0, data);
   }
 
   // Run sampler
@@ -1043,10 +789,13 @@ Rcpp::List cpp_hmc_fit_gp(
     double adapt_delta = -1.0,
     std::string metric_str = "auto",
     std::string gradient_mode_str = "auto",
-    Rcpp::List tvc_params = Rcpp::List(),
+    Rcpp::Nullable<Rcpp::List> tvc_params = R_NilValue,
     bool gradient_check_only = false
 ) {
   using namespace tulpa_hmc;
+  Rcpp::List tvc_params_list = tvc_params.isNotNull()
+      ? Rcpp::List(tvc_params)
+      : Rcpp::List::create();
 
   // Parse metric and gradient mode from string parameters
   GradientMode grad_mode = parse_gradient_mode(gradient_mode_str);
@@ -1141,30 +890,9 @@ Rcpp::List cpp_hmc_fit_gp(
   // Set up model data
   ModelData data;
 
-  // Copy response data
-  data.legacy.y_num = std::vector<int>(y_num.begin(), y_num.end());
-  data.legacy.y_denom = std::vector<int>(y_denom.begin(), y_denom.end());
-  data.legacy.y_num_cont = std::vector<double>(y_num_cont.begin(), y_num_cont.end());
-  data.legacy.y_denom_cont = std::vector<double>(y_denom_cont.begin(), y_denom_cont.end());
-  data.N = y_num.size();
-
-  // Flatten design matrices
-  data.legacy.p_num = X_num.ncol();
-  data.legacy.p_denom = X_denom.ncol();
-
-  data.legacy.X_num_flat.resize(data.N * data.legacy.p_num);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_num; j++) {
-      data.legacy.X_num_flat[i * data.legacy.p_num + j] = X_num(i, j);
-    }
-  }
-
-  data.legacy.X_denom_flat.resize(data.N * data.legacy.p_denom);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_denom; j++) {
-      data.legacy.X_denom_flat[i * data.legacy.p_denom + j] = X_denom(i, j);
-    }
-  }
+  populate_legacy_ratio_data(
+      data, y_num, y_denom, y_num_cont, y_denom_cont,
+      X_num, X_denom, model_type_str);
 
   // Random effects (single-term legacy path)
   data.re_group = std::vector<int>(re_group.begin(), re_group.end());
@@ -1175,25 +903,6 @@ Rcpp::List cpp_hmc_fit_gp(
   data.total_re_groups = n_re_groups;
   data.has_re_slopes = false;  // GP interface doesn't support random slopes
   data.has_re_correlated_slopes = false;
-
-  // Model type
-  if (model_type_str == "binomial") {
-    data.legacy.model_type = ModelType::BINOMIAL;
-  } else if (model_type_str == "negbin_negbin") {
-    data.legacy.model_type = ModelType::NEGBIN_NEGBIN;
-  } else if (model_type_str == "poisson_gamma") {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;
-  } else if (model_type_str == "negbin_gamma") {
-    data.legacy.model_type = ModelType::NEGBIN_GAMMA;
-  } else if (model_type_str == "gamma_gamma") {
-    data.legacy.model_type = ModelType::GAMMA_GAMMA;
-  } else if (model_type_str == "lognormal") {
-    data.legacy.model_type = ModelType::LOGNORMAL;
-  } else if (model_type_str == "beta_binomial") {
-    data.legacy.model_type = ModelType::BETA_BINOMIAL;
-  } else {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;  // fallback
-  }
 
   // Covariance type
   tulpa_gp::CovType cov_type;
@@ -1423,14 +1132,8 @@ Rcpp::List cpp_hmc_fit_gp(
     int n_temporal_groups = Rcpp::as<int>(temporal_params["n_groups"]);
     bool temporal_shared = Rcpp::as<bool>(temporal_params["shared"]);
 
-    if (temporal_type_str == "rw1") {
-      data.temporal_type = TemporalType::RW1;
-    } else if (temporal_type_str == "rw2") {
-      data.temporal_type = TemporalType::RW2;
-    } else if (temporal_type_str == "ar1") {
-      data.temporal_type = TemporalType::AR1;
-    } else if (temporal_type_str == "gp") {
-      data.temporal_type = TemporalType::GP;
+    data.temporal_type = parse_hmc_temporal_type(temporal_type_str);
+    if (data.temporal_type == TemporalType::GP) {
 
       // GP-specific parameters (same parsing as cpp_hmc_fit)
       data.has_temporal_gp = true;
@@ -1455,8 +1158,6 @@ Rcpp::List cpp_hmc_fit_gp(
         gp_param_str = Rcpp::as<std::string>(temporal_params["gp_parameterization"]);
       }
       data.temporal_gp_parameterization = (gp_param_str == "centered") ? 0 : 1;
-    } else {
-      data.temporal_type = TemporalType::NONE;
     }
     data.temporal_time_idx = Rcpp::as<std::vector<int>>(temporal_params["time_idx"]);
     data.temporal_group_idx = Rcpp::as<std::vector<int>>(temporal_params["group_idx"]);
@@ -1484,15 +1185,7 @@ Rcpp::List cpp_hmc_fit_gp(
   }
 
   // Zero-inflation structure (GP interface: no OI support, use matrix directly)
-  data.zi_type = tulpa_zi::parse_zi_type(zi_type_str);
-  data.p_zi = X_zi.ncol();
-  data.zi_prior_sd = zi_prior_sd;
-  data.X_zi_flat.resize(data.N * data.p_zi);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.p_zi; j++) {
-      data.X_zi_flat[i * data.p_zi + j] = X_zi(i, j);
-    }
-  }
+  populate_zi_data(data, zi_type_str, X_zi, zi_prior_sd, X_zi.ncol());
 
   // Standard priors
   data.sigma_beta = sigma_beta;
@@ -1519,22 +1212,23 @@ Rcpp::List cpp_hmc_fit_gp(
 
   // TVC (Temporally-Varying Coefficients) — now supported in GP interface
   {
-    bool has_tvc = tvc_params.size() > 0 && tvc_params.containsElementNamed("has_tvc") &&
-                   Rcpp::as<bool>(tvc_params["has_tvc"]);
+    bool has_tvc = tvc_params_list.size() > 0 &&
+                   tvc_params_list.containsElementNamed("has_tvc") &&
+                   Rcpp::as<bool>(tvc_params_list["has_tvc"]);
     data.has_tvc = has_tvc;
     if (has_tvc) {
-      int tvc_n_tvc = Rcpp::as<int>(tvc_params["n_tvc"]);
-      int tvc_n_times = Rcpp::as<int>(tvc_params["n_times"]);
-      int tvc_n_groups = Rcpp::as<int>(tvc_params["n_groups"]);
-      std::string tvc_structure_str = Rcpp::as<std::string>(tvc_params["structure"]);
-      bool tvc_shared = Rcpp::as<bool>(tvc_params["shared"]);
-      bool tvc_cyclic = Rcpp::as<bool>(tvc_params["cyclic"]);
-      std::vector<int> tvc_indices = Rcpp::as<std::vector<int>>(tvc_params["tvc_indices"]);
-      std::vector<int> tvc_time_index = Rcpp::as<std::vector<int>>(tvc_params["time_index"]);
-      std::vector<int> tvc_group_index = Rcpp::as<std::vector<int>>(tvc_params["group_index"]);
-      std::vector<double> tvc_X_tvc = Rcpp::as<std::vector<double>>(tvc_params["X_tvc"]);
-      double tvc_tau_shape = Rcpp::as<double>(tvc_params["tau_shape"]);
-      double tvc_tau_rate = Rcpp::as<double>(tvc_params["tau_rate"]);
+      int tvc_n_tvc = Rcpp::as<int>(tvc_params_list["n_tvc"]);
+      int tvc_n_times = Rcpp::as<int>(tvc_params_list["n_times"]);
+      int tvc_n_groups = Rcpp::as<int>(tvc_params_list["n_groups"]);
+      std::string tvc_structure_str = Rcpp::as<std::string>(tvc_params_list["structure"]);
+      bool tvc_shared = Rcpp::as<bool>(tvc_params_list["shared"]);
+      bool tvc_cyclic = Rcpp::as<bool>(tvc_params_list["cyclic"]);
+      std::vector<int> tvc_indices = Rcpp::as<std::vector<int>>(tvc_params_list["tvc_indices"]);
+      std::vector<int> tvc_time_index = Rcpp::as<std::vector<int>>(tvc_params_list["time_index"]);
+      std::vector<int> tvc_group_index = Rcpp::as<std::vector<int>>(tvc_params_list["group_index"]);
+      std::vector<double> tvc_X_tvc = Rcpp::as<std::vector<double>>(tvc_params_list["X_tvc"]);
+      double tvc_tau_shape = Rcpp::as<double>(tvc_params_list["tau_shape"]);
+      double tvc_tau_rate = Rcpp::as<double>(tvc_params_list["tau_rate"]);
 
       data.tvc_data.n_obs = data.N;
       data.tvc_data.n_tvc = tvc_n_tvc;
@@ -1547,25 +1241,13 @@ Rcpp::List cpp_hmc_fit_gp(
       data.tvc_data.group_index = tvc_group_index;
       data.tvc_data.X_tvc = tvc_X_tvc;
 
-      if (tvc_structure_str == "rw1") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;
-      } else if (tvc_structure_str == "rw2") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::RW2;
-      } else if (tvc_structure_str == "ar1") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::AR1;
-      } else if (tvc_structure_str == "iid") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::IID;
-      } else {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;
-      }
+      data.tvc_data.structure = parse_tvc_temporal_type(tvc_structure_str);
 
       data.tvc_tau_shape = tvc_tau_shape;
       data.tvc_tau_rate = tvc_tau_rate;
       data.tvc_data.init_workspace();
     } else {
-      data.tvc_data.n_tvc = 0;
-      data.tvc_data.n_times = 0;
-      data.tvc_data.n_groups = 1;
+      clear_tvc_data(data);
     }
   }
 
@@ -1582,107 +1264,7 @@ Rcpp::List cpp_hmc_fit_gp(
   // Gradient check only mode: compare N, A, A_r, H without sampling
   // =========================================================================
   if (gradient_check_only) {
-    ParamLayout layout = compute_param_layout(data);
-
-    std::vector<double> grad_N;
-    compute_gradient_numerical(q0, data, layout, grad_N);
-
-    std::vector<double> grad_N_impl;
-    compute_gradient_numerical_impl(q0, data, layout, grad_N_impl);
-
-    auto max_rel_diff = [](const std::vector<double>& a, const std::vector<double>& b) -> double {
-      double mx = 0.0;
-      for (size_t i = 0; i < a.size() && i < b.size(); i++) {
-        double diff = std::abs(a[i] - b[i]);
-        double scale = std::max(1.0, std::max(std::abs(a[i]), std::abs(b[i])));
-        mx = std::max(mx, diff / scale);
-      }
-      return mx;
-    };
-
-    auto is_autodiff_fn = [](GradientFn fn) -> bool {
-      return fn == &compute_gradient_arena ||
-             fn == &compute_gradient_forward ||
-             fn == &compute_gradient_autodiff;
-    };
-
-    double h_vs_n = -1.0;
-    GradientFn h_fn = resolve_gradient_fn(GradientMode::HANDCODED, data, layout);
-    if (h_fn != &compute_gradient_numerical && h_fn != &compute_gradient_numerical_impl) {
-      const auto& ref = is_autodiff_fn(h_fn) ? grad_N_impl : grad_N;
-      std::vector<double> grad_H;
-      h_fn(q0, data, layout, grad_H, nullptr);
-      h_vs_n = max_rel_diff(grad_H, ref);
-    }
-
-    double ar_vs_n = -1.0;
-    GradientFn ar_fn = resolve_gradient_fn(GradientMode::AUTODIFF_ARENA, data, layout);
-    if (ar_fn != &compute_gradient_numerical && ar_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_Ar;
-      ar_fn(q0, data, layout, grad_Ar, nullptr);
-      ar_vs_n = max_rel_diff(grad_Ar, grad_N_impl);
-    }
-
-    double a_vs_n = -1.0;
-    GradientFn a_fn = resolve_gradient_fn(GradientMode::AUTODIFF_FWD, data, layout);
-    if (a_fn != &compute_gradient_numerical && a_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_A;
-      a_fn(q0, data, layout, grad_A, nullptr);
-      a_vs_n = max_rel_diff(grad_A, grad_N_impl);
-    }
-
-    double h_vs_ar = -1.0;
-    if (h_vs_n >= 0 && ar_vs_n >= 0) {
-      std::vector<double> grad_H2, grad_Ar2;
-      h_fn(q0, data, layout, grad_H2, nullptr);
-      ar_fn(q0, data, layout, grad_Ar2, nullptr);
-      h_vs_ar = max_rel_diff(grad_H2, grad_Ar2);
-
-      if (h_vs_ar > 1e-4) {
-        std::vector<std::pair<double,int>> diffs;
-        for (size_t i = 0; i < grad_H2.size() && i < grad_Ar2.size(); i++) {
-          double diff = std::abs(grad_H2[i] - grad_Ar2[i]);
-          double scale = std::max(1.0, std::max(std::abs(grad_H2[i]), std::abs(grad_Ar2[i])));
-          diffs.push_back({diff/scale, (int)i});
-        }
-        std::sort(diffs.begin(), diffs.end(), [](auto&a,auto&b){return a.first>b.first;});
-        Rprintf("  H vs A_r cross-check DIVERGE (top 3 of %d params):\n", (int)grad_H2.size());
-        for (int k = 0; k < std::min(3,(int)diffs.size()); k++) {
-          int idx = diffs[k].second;
-          Rprintf("    param[%d]: H=%.8e A_r=%.8e  rel_diff=%.2e\n",
-                  idx, grad_H2[idx], grad_Ar2[idx], diffs[k].first);
-        }
-        // Print MSGP layout info
-        if (layout.is_multiscale_gp) {
-          Rprintf("  MSGP: sigma2_local[%d] phi_local[%d] sigma2_reg[%d] phi_reg[%d]\n",
-                  layout.log_sigma2_gp_local_idx, layout.log_phi_gp_local_idx,
-                  layout.log_sigma2_gp_regional_idx, layout.log_phi_gp_regional_idx);
-          Rprintf("  MSGP: beta_local[%d-%d] beta_reg[%d-%d]\n",
-                  layout.gp_local_start, layout.gp_local_end-1,
-                  layout.gp_regional_start, layout.gp_regional_end-1);
-        }
-        if (layout.has_temporal)
-          Rprintf("  temporal[%d-%d] log_tau[%d]\n",
-                  layout.temporal_start, layout.temporal_end-1, layout.log_tau_temporal_idx);
-      }
-    }
-
-    double tol = 1e-4;
-    return Rcpp::List::create(
-      Rcpp::Named("h_vs_n") = h_vs_n,
-      Rcpp::Named("ar_vs_n") = ar_vs_n,
-      Rcpp::Named("a_vs_n") = a_vs_n,
-      Rcpp::Named("h_vs_ar") = h_vs_ar,
-      Rcpp::Named("tol") = tol,
-      // h_ok: check h_vs_n first; if it fails but h_vs_ar passes, H is still
-      // correct (compute_log_post vs log_post_impl diverge for some ZI models)
-      Rcpp::Named("h_ok") = (h_vs_n >= 0)
-        ? ((h_vs_n < tol) ? true : (h_vs_ar >= 0 && h_vs_ar < tol))
-        : NA_LOGICAL,
-      Rcpp::Named("ar_ok") = (ar_vs_n >= 0) ? (ar_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("a_ok") = (a_vs_n >= 0) ? (a_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("n_params") = (int)q0.size()
-    );
+    return run_gradient_check_only(q0, data);
   }
 
   // Run sampler

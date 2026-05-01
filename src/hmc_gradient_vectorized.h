@@ -13,7 +13,7 @@
 // instruction cache pressure from ~30-50KB to ~5KB per instantiation.
 //
 // IMPORTANT: This header must be included from hmc_sampler.cpp AFTER
-// hmc_sampler.h and the log_lik_* inline functions are defined.
+// hmc_sampler.h and hmc_likelihood.h.
 
 #ifndef TULPA_HMC_GRADIENT_VECTORIZED_H
 #define TULPA_HMC_GRADIENT_VECTORIZED_H
@@ -23,7 +23,7 @@
 #include <cstring>
 
 // Assumes hmc_sampler.h and RcppEigen.h are already included by the .cpp file.
-// Assumes log_lik_binomial/negbin/poisson/gamma are defined above in the .cpp.
+// Assumes log_lik_binomial/negbin/poisson/gamma are available from hmc_likelihood.h.
 // IMPORTANT: This file is included from within namespace tulpa_hmc {} in hmc_sampler.cpp.
 // Do NOT wrap contents in namespace tulpa_hmc — it would be doubly nested.
 

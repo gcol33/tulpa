@@ -3,7 +3,7 @@ Title: Template Unified Latent Process Architecture for Bayesian Hierarchical Mo
 Version: 0.1.0
 Authors@R:
     person("Gilles", "Colling", , "gilles.colling@univie.ac.at", role = c("aut", "cre"),
-           comment = c(ORCID = "0000-0003-1641-7024"))
+           comment = c(ORCID = "0000-0003-3070-6066"))
 Description: A general-purpose engine for fitting Bayesian hierarchical models with
     spatial fields, temporal effects, spatially varying coefficients, and multiple
     inference backends. Provides scalable spatial approximations (HSGP, NNGP, ICAR,

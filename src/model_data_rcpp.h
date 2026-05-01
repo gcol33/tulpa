@@ -13,6 +13,7 @@
 #include <vector>
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
+#include "hmc_modeldata_builders.h"
 #include "hmc_zi.h"
 
 namespace tulpa_hmc {
@@ -49,16 +50,8 @@ inline void populate_model_data_simple(
     data.legacy.y_denom_cont = Rcpp::as<std::vector<double>>(y_denom_cont);
 
     // Copy design matrices (row-major for cache efficiency)
-    data.legacy.X_num_flat.resize(N * p_num);
-    data.legacy.X_denom_flat.resize(N * p_denom);
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < p_num; j++) {
-            data.legacy.X_num_flat[i * p_num + j] = X_num(i, j);
-        }
-        for (int j = 0; j < p_denom; j++) {
-            data.legacy.X_denom_flat[i * p_denom + j] = X_denom(i, j);
-        }
-    }
+    flatten_numeric_matrix(X_num, N, p_num, data.legacy.X_num_flat);
+    flatten_numeric_matrix(X_denom, N, p_denom, data.legacy.X_denom_flat);
 
     // Model type
     if (model_type_str == "binomial") {
