@@ -36,6 +36,50 @@ namespace tulpa {
 
 using namespace math;
 
+template<typename T>
+static inline T car_proper_log_det_t(
+    int n,
+    const std::vector<int>& adj_row_ptr,
+    const std::vector<int>& adj_col_idx,
+    const std::vector<int>& n_neighbors,
+    T rho
+) {
+    std::vector<T> Q(static_cast<size_t>(n) * n, T(0.0));
+    for (int i = 0; i < n; i++) {
+        Q[static_cast<size_t>(i) * n + i] = T(n_neighbors[i]);
+        for (int k = adj_row_ptr[i]; k < adj_row_ptr[i + 1]; k++) {
+            int j = adj_col_idx[k];
+            Q[static_cast<size_t>(i) * n + j] = -rho;
+        }
+    }
+
+    std::vector<T> L(static_cast<size_t>(n) * n, T(0.0));
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j <= i; j++) {
+            T sum = Q[static_cast<size_t>(i) * n + j];
+            for (int k = 0; k < j; k++) {
+                sum = sum - L[static_cast<size_t>(i) * n + k] *
+                            L[static_cast<size_t>(j) * n + k];
+            }
+            if (i == j) {
+                if (get_value(sum) <= 0.0) {
+                    return T(-INFINITY);
+                }
+                L[static_cast<size_t>(i) * n + j] = safe_sqrt(sum);
+            } else {
+                L[static_cast<size_t>(i) * n + j] =
+                    sum / L[static_cast<size_t>(j) * n + j];
+            }
+        }
+    }
+
+    T log_det = T(0.0);
+    for (int i = 0; i < n; i++) {
+        log_det = log_det + T(2.0) * safe_log(L[static_cast<size_t>(i) * n + i]);
+    }
+    return log_det;
+}
+
 // ============================================================================
 // Templated log-posterior computation
 // T = double for evaluation, T = ad::Var for autodiff gradients
@@ -353,6 +397,46 @@ T compute_log_post_impl(
             for (int s = 0; s < data.n_spatial_units; s++) {
                 log_post = log_post - T(0.5) * theta_bym2[s] * theta_bym2[s];
             }
+        } else if (layout.is_car_proper) {
+            // Proper CAR: Q(rho) = D - rho*W is full-rank inside rho bounds.
+            T log_tau = params[layout.log_tau_spatial_idx];
+            log_post = log_post + log_prior_gamma(
+                log_tau, data.tau_spatial_shape, data.tau_spatial_rate);
+
+            T logit_rho_val = params[layout.logit_rho_car_idx];
+            T u = T(1.0) / (T(1.0) + safe_exp(-logit_rho_val));
+            T rho_car = T(data.car_rho_lower) +
+                T(data.car_rho_upper - data.car_rho_lower) * u;
+
+            // Uniform prior on rho bounds plus logit Jacobian.
+            log_post = log_post + safe_log(u) + safe_log(T(1.0) - u);
+
+            T quad_form = T(0.0);
+            for (int i = 0; i < data.n_spatial_units; i++) {
+                quad_form = quad_form + T(data.n_neighbors[i]) *
+                    phi_spatial[i] * phi_spatial[i];
+                int row_start = data.adj_row_ptr[i];
+                int row_end = data.adj_row_ptr[i + 1];
+                for (int k = row_start; k < row_end; k++) {
+                    int j = data.adj_col_idx[k];
+                    if (j > i) {
+                        quad_form = quad_form - T(2.0) * rho_car *
+                            phi_spatial[i] * phi_spatial[j];
+                    }
+                }
+            }
+
+            T log_det_Q = car_proper_log_det_t(
+                data.n_spatial_units, data.adj_row_ptr, data.adj_col_idx,
+                data.n_neighbors, rho_car);
+            if (std::isinf(get_value(log_det_Q)) && get_value(log_det_Q) < 0.0) {
+                return T(-INFINITY);
+            }
+
+            int J = data.n_spatial_units;
+            log_post = log_post + T(0.5) * log_det_Q
+                     + T(0.5 * J) * log_tau
+                     - T(0.5) * tau_spatial * quad_form;
         } else {
             // ICAR: Gamma prior on tau
             T log_tau = params[layout.log_tau_spatial_idx];

@@ -8,10 +8,10 @@
 // All are static inline — zero overhead, compiler inlines them.
 //
 // IMPORTANT: This header is included from within namespace tulpa_hmc {}
-// in hmc_sampler.cpp. Do NOT wrap contents in namespace tulpa_hmc.
+// in hmc_gradients.cpp. Do NOT wrap contents in namespace tulpa_hmc.
 // Depends on: hmc_sampler.h, RcppEigen.h, hmc_gradient_vectorized.h,
 //             and the static inline helpers (extract_common_params, etc.)
-//             defined earlier in hmc_sampler.cpp.
+//             defined earlier in hmc_gradients.cpp.
 
 #ifndef TULPA_HMC_GRADIENT_SHARED_H
 #define TULPA_HMC_GRADIENT_SHARED_H
