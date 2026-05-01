@@ -163,6 +163,46 @@ void compute_gradient(
     double* log_post_out = nullptr
 );
 
+void compute_gradient_numerical(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out = nullptr
+);
+
+void compute_gradient_numerical_impl(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out = nullptr
+);
+
+void compute_gradient_autodiff(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out = nullptr
+);
+
+void compute_gradient_arena(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out = nullptr
+);
+
+void compute_gradient_forward(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out = nullptr
+);
+
 // Compute ICAR quadratic form: phi' Q phi
 double icar_quadratic_form(
     const std::vector<double>& phi,

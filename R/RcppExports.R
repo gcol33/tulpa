@@ -41,16 +41,16 @@ cpp_hmc_fit <- function(q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num,
     .Call(`_tulpa_cpp_hmc_fit`, q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, tvc_params, svc_params, n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, gradient_mode_str, max_treedepth, metric_str, adapt_delta, riemannian, gradient_check_only)
 }
 
-cpp_get_max_threads <- function() {
-    .Call(`_tulpa_cpp_get_max_threads`)
-}
-
 cpp_hmc_fit_gp <- function(q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num, X_denom, re_group, n_re_groups, model_type_str, gp_params, ms_gp_params, ms_temporal_params, rsr_params, temporal_params, sigma_beta, sigma_re_scale, phi_prior_shape, phi_prior_rate, zi_type_str, X_zi, zi_prior_sd, n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, max_treedepth = 10L, adapt_delta = -1.0, metric_str = "auto", gradient_mode_str = "auto", tvc_params, gradient_check_only = FALSE) {
     .Call(`_tulpa_cpp_hmc_fit_gp`, q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num, X_denom, re_group, n_re_groups, model_type_str, gp_params, ms_gp_params, ms_temporal_params, rsr_params, temporal_params, sigma_beta, sigma_re_scale, phi_prior_shape, phi_prior_rate, zi_type_str, X_zi, zi_prior_sd, n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, max_treedepth, adapt_delta, metric_str, gradient_mode_str, tvc_params, gradient_check_only)
 }
 
 cpp_hmc_fit_gp_v2 <- function(args) {
     .Call(`_tulpa_cpp_hmc_fit_gp_v2`, args)
+}
+
+cpp_get_max_threads <- function() {
+    .Call(`_tulpa_cpp_get_max_threads`)
 }
 
 cpp_spde_laplace_gradient <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu = 1.0, family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {

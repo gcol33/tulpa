@@ -35,650 +35,6 @@ using namespace Rcpp;
 namespace tulpa_hmc {
 
 // =====================================================================
-// Dense mass matrix: Cholesky decomposition via Eigen
-// =====================================================================
-
-bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
-  // Map the covariance data into an Eigen matrix (column-major)
-  Eigen::Map<const Eigen::MatrixXd> C(cov, n, n);
-
-  // Eigendecomposition for condition number control.
-  // Without conditioning, ill-conditioned mass matrices force epsilon to be
-  // tiny (driven by the stiffest direction), making sampling extremely slow.
-  // E.g., HSGP+RW1 gets epsilon=3.2e-5 unconditioned vs ~0.01 conditioned.
-  //
-  // Clip eigenvalue ratio to MAX_COND so the step size ratio between the
-  // loosest and stiffest directions is at most sqrt(MAX_COND) ≈ 100:1.
-  constexpr double MAX_COND = 1e4;
-
-  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(C);
-  if (eig.info() != Eigen::Success) {
-    // Eigendecomposition failed — degrade to diagonal
-    type = MassMatrixType::DIAG;
-    adapted = true;
-    for (int i = 0; i < n; i++) {
-      double var_i = cov[static_cast<size_t>(i) * n + i];
-      inv_mass_diag[i] = std::max(1e-3, std::min(var_i, 1e3));
-      sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
-    }
-    return false;
-  }
-
-  Eigen::VectorXd evals = eig.eigenvalues();
-  double lambda_max = evals.maxCoeff();
-  double lambda_floor = std::max(lambda_max / MAX_COND, 1e-8);
-  bool clipped = false;
-  for (int i = 0; i < n; i++) {
-    if (evals[i] < lambda_floor) {
-      evals[i] = lambda_floor;
-      clipped = true;
-    }
-  }
-
-  // Reconstruct conditioned covariance: V * diag(λ_clipped) * V^T
-  Eigen::MatrixXd C_cond;
-  if (clipped) {
-    const Eigen::MatrixXd& V = eig.eigenvectors();
-    C_cond = V * evals.asDiagonal() * V.transpose();
-  } else {
-    C_cond = C;
-  }
-
-  // Cholesky of (conditioned) covariance — guaranteed to succeed after clipping
-  Eigen::LLT<Eigen::MatrixXd> llt(C_cond);
-  if (llt.info() != Eigen::Success) {
-    // Should not happen after eigenvalue clipping, but handle gracefully
-    type = MassMatrixType::DIAG;
-    adapted = true;
-    for (int i = 0; i < n; i++) {
-      double var_i = cov[static_cast<size_t>(i) * n + i];
-      inv_mass_diag[i] = std::max(1e-3, std::min(var_i, 1e3));
-      sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
-    }
-    return false;
-  }
-
-  // Store conditioned covariance as inv_mass_dense
-  std::memcpy(inv_mass_dense.data(), C_cond.data(),
-              static_cast<size_t>(n) * n * sizeof(double));
-
-  // Store Cholesky factor L
-  Eigen::MatrixXd L_mat = llt.matrixL();
-  std::memcpy(L_inv_mass.data(), L_mat.data(),
-              static_cast<size_t>(n) * n * sizeof(double));
-
-  // Also update diagonal for fallback and find_reasonable_epsilon compatibility
-  for (int i = 0; i < n; i++) {
-    double var_i = C_cond(i, i);
-    inv_mass_diag[i] = std::max(1e-3, std::min(var_i, 1e3));
-    sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
-  }
-
-  adapted = true;
-  return true;
-}
-
-// =====================================================================
-// Parameter layout computation
-// =====================================================================
-
-ParamLayout compute_param_layout(const ModelData& data) {
-  ParamLayout layout;
-  int idx = 0;
-
-  // ================================================================
-  // GENERIC MULTI-PROCESS LAYOUT
-  // ================================================================
-  if (data.n_processes > 0) {
-    layout.process_beta_start.resize(data.n_processes);
-    layout.process_beta_count.resize(data.n_processes);
-    for (int k = 0; k < data.n_processes; k++) {
-      layout.process_beta_start[k] = idx;
-      layout.process_beta_count[k] = data.processes[k].p;
-      idx += data.processes[k].p;
-    }
-    // Legacy fields unused but set to safe values
-    layout.legacy.beta_num_start = layout.legacy.beta_num_end = 0;
-    layout.legacy.beta_denom_start = layout.legacy.beta_denom_end = 0;
-  } else {
-    // Legacy ratio layout
-    layout.legacy.beta_num_start = idx;
-    idx += data.legacy.p_num;
-    layout.legacy.beta_num_end = idx;
-
-    layout.legacy.beta_denom_start = idx;
-    idx += data.legacy.p_denom;
-    layout.legacy.beta_denom_end = idx;
-  }
-
-  // Random effects (supports multiple crossed RE terms with slopes)
-  layout.has_re = (data.n_re_groups > 0 || data.total_re_groups > 0);
-  layout.has_re_slopes = data.has_re_slopes;
-  layout.has_re_correlated_slopes = data.has_re_correlated_slopes;
-
-  if (data.has_re_slopes && data.n_re_terms > 0) {
-    // Random slopes case: need sigma per coefficient type + Cholesky params + RE effects
-    int n_terms = data.n_re_terms;
-
-    layout.log_sigma_re_multi.resize(n_terms);
-    layout.log_sigma_re_slopes.resize(n_terms);
-    layout.re_start_multi.resize(n_terms);
-    layout.re_end_multi.resize(n_terms);
-    layout.re_n_coefs_multi.resize(n_terms);
-    layout.re_correlated_multi.resize(n_terms);
-    layout.chol_re_start_multi.resize(n_terms);
-    layout.chol_re_end_multi.resize(n_terms);
-
-    // First pass: allocate sigma parameters for each term
-    for (int t = 0; t < n_terms; t++) {
-      int n_coefs = data.re_n_coefs[t];
-      layout.re_n_coefs_multi[t] = n_coefs;
-      layout.re_correlated_multi[t] = data.re_correlated[t];
-
-      // Allocate log_sigma for each coefficient type (intercept, slopes)
-      layout.log_sigma_re_slopes[t].resize(n_coefs);
-      for (int c = 0; c < n_coefs; c++) {
-        layout.log_sigma_re_slopes[t][c] = idx++;
-      }
-      // Legacy: point to first sigma for backwards compat
-      layout.log_sigma_re_multi[t] = layout.log_sigma_re_slopes[t][0];
-    }
-
-    // Second pass: allocate Cholesky parameters for correlated terms
-    for (int t = 0; t < n_terms; t++) {
-      int n_chol = data.re_n_chol[t];  // k*(k-1)/2 for correlated, 0 otherwise
-      if (n_chol > 0) {
-        layout.chol_re_start_multi[t] = idx;
-        idx += n_chol;
-        layout.chol_re_end_multi[t] = idx;
-      } else {
-        layout.chol_re_start_multi[t] = -1;
-        layout.chol_re_end_multi[t] = -1;
-      }
-    }
-
-    // Third pass: allocate RE effects for each term
-    for (int t = 0; t < n_terms; t++) {
-      int n_groups = data.re_n_groups_multi[t];
-      int n_coefs = data.re_n_coefs[t];
-
-      layout.re_start_multi[t] = idx;
-      idx += n_groups * n_coefs;  // Each group has n_coefs parameters
-      layout.re_end_multi[t] = idx;
-    }
-
-    // Legacy fields: point to first term
-    layout.log_sigma_re_idx = layout.log_sigma_re_multi[0];
-    layout.re_start = layout.re_start_multi[0];
-    layout.re_end = layout.re_end_multi[0];
-
-  } else if (data.n_re_terms > 1) {
-    // Multiple RE terms (intercept only): allocate sigma and RE for each term
-    layout.log_sigma_re_multi.resize(data.n_re_terms);
-    layout.re_start_multi.resize(data.n_re_terms);
-    layout.re_end_multi.resize(data.n_re_terms);
-    layout.re_n_coefs_multi.resize(data.n_re_terms, 1);  // All intercept-only
-    layout.re_correlated_multi.resize(data.n_re_terms, false);
-    layout.chol_re_start_multi.resize(data.n_re_terms, -1);
-    layout.chol_re_end_multi.resize(data.n_re_terms, -1);
-
-    for (int t = 0; t < data.n_re_terms; t++) {
-      layout.log_sigma_re_multi[t] = idx++;
-    }
-    for (int t = 0; t < data.n_re_terms; t++) {
-      layout.re_start_multi[t] = idx;
-      idx += data.re_n_groups_multi[t];
-      layout.re_end_multi[t] = idx;
-    }
-
-    // Set legacy fields to first term for backwards compatibility
-    layout.log_sigma_re_idx = layout.log_sigma_re_multi[0];
-    layout.re_start = layout.re_start_multi[0];
-    layout.re_end = layout.re_end_multi[0];
-  } else if (layout.has_re) {
-    // Single RE term (intercept only)
-    layout.log_sigma_re_idx = idx++;
-    layout.re_start = idx;
-    idx += data.n_re_groups;
-    layout.re_end = idx;
-
-    // Also set multi arrays for consistency
-    layout.log_sigma_re_multi.resize(1);
-    layout.log_sigma_re_multi[0] = layout.log_sigma_re_idx;
-    layout.re_start_multi.resize(1);
-    layout.re_start_multi[0] = layout.re_start;
-    layout.re_end_multi.resize(1);
-    layout.re_end_multi[0] = layout.re_end;
-    layout.re_n_coefs_multi.resize(1, 1);
-    layout.re_correlated_multi.resize(1, false);
-    layout.chol_re_start_multi.resize(1, -1);
-    layout.chol_re_end_multi.resize(1, -1);
-  } else {
-    layout.log_sigma_re_idx = -1;
-    layout.re_start = layout.re_end = -1;
-  }
-
-  // Overdispersion / shape / sigma parameters
-  // NEGBIN_NEGBIN: phi_num (overdispersion for num), phi_denom (overdispersion for denom)
-  // POISSON_GAMMA: phi_denom (shape for gamma denom)
-  // GAMMA_GAMMA: phi_num (shape for num), phi_denom (shape for denom)
-  // LOGNORMAL: phi_num (sigma for num), phi_denom (sigma for denom)
-  // BETA_BINOMIAL: phi_num (precision parameter)
-  layout.legacy.has_phi_num = (data.legacy.model_type == ModelType::NEGBIN_NEGBIN ||
-                        data.legacy.model_type == ModelType::NEGBIN_GAMMA ||
-                        data.legacy.model_type == ModelType::GAMMA_GAMMA ||
-                        data.legacy.model_type == ModelType::LOGNORMAL ||
-                        data.legacy.model_type == ModelType::BETA_BINOMIAL);
-  layout.legacy.has_phi_denom = (data.legacy.model_type == ModelType::NEGBIN_NEGBIN ||
-                          data.legacy.model_type == ModelType::POISSON_GAMMA ||
-                          data.legacy.model_type == ModelType::NEGBIN_GAMMA ||
-                          data.legacy.model_type == ModelType::GAMMA_GAMMA ||
-                          data.legacy.model_type == ModelType::LOGNORMAL);
-
-  if (layout.legacy.has_phi_num) {
-    layout.legacy.log_phi_num_idx = idx++;
-  } else {
-    layout.legacy.log_phi_num_idx = -1;
-  }
-  if (layout.legacy.has_phi_denom) {
-    layout.legacy.log_phi_denom_idx = idx++;
-  } else {
-    layout.legacy.log_phi_denom_idx = -1;
-  }
-
-  // Spatial effects (ICAR/BYM2/CAR_PROPER only - GP handled separately below)
-  layout.has_spatial = (data.spatial_type == SpatialType::ICAR ||
-                        data.spatial_type == SpatialType::BYM2 ||
-                        data.spatial_type == SpatialType::CAR_PROPER);
-  layout.is_bym2 = (data.spatial_type == SpatialType::BYM2);
-  layout.is_car_proper = (data.spatial_type == SpatialType::CAR_PROPER);
-  layout.is_icar_collapsed = (data.spatial_type == SpatialType::ICAR && data.icar_collapsed);
-  layout.is_bym2_collapsed = (data.spatial_type == SpatialType::BYM2 && data.bym2_collapsed);
-
-  if (layout.has_spatial) {
-    if (layout.is_bym2) {
-      // BYM2 Riebler: log_sigma_total, logit_rho, [phi_scaled, theta if not collapsed]
-      layout.log_sigma_bym2_idx = idx++;
-      layout.logit_rho_bym2_idx = idx++;
-      if (data.bym2_collapsed) {
-        // Collapsed: phi and theta marginalized out, not in param vector
-        layout.spatial_start = layout.spatial_end = -1;
-        layout.theta_bym2_start = layout.theta_bym2_end = -1;
-      } else {
-        layout.spatial_start = idx;
-        idx += data.n_spatial_units;  // phi_scaled (structured)
-        layout.spatial_end = idx;
-        layout.theta_bym2_start = idx;
-        idx += data.n_spatial_units;  // theta (unstructured)
-        layout.theta_bym2_end = idx;
-      }
-      layout.log_tau_spatial_idx = -1;
-      layout.logit_rho_car_idx = -1;
-    } else if (layout.is_car_proper) {
-      // Proper CAR: log_tau, logit_rho_car, phi
-      // Q = D - rho*W (proper precision matrix; rho estimated from data)
-      layout.log_tau_spatial_idx = idx++;
-      layout.logit_rho_car_idx = idx++;
-      layout.spatial_start = idx;
-      idx += data.n_spatial_units;
-      layout.spatial_end = idx;
-      layout.log_sigma_bym2_idx = -1;
-      layout.logit_rho_bym2_idx = -1;
-      layout.theta_bym2_start = layout.theta_bym2_end = -1;
-    } else {
-      // ICAR: log_tau, [phi if not collapsed]
-      layout.log_tau_spatial_idx = idx++;
-      if (data.icar_collapsed) {
-        // Collapsed: phi marginalized out, not in param vector
-        layout.spatial_start = layout.spatial_end = -1;
-      } else {
-        layout.spatial_start = idx;
-        idx += data.n_spatial_units;
-        layout.spatial_end = idx;
-      }
-      layout.log_sigma_bym2_idx = -1;
-      layout.logit_rho_bym2_idx = -1;
-      layout.theta_bym2_start = layout.theta_bym2_end = -1;
-      layout.logit_rho_car_idx = -1;
-    }
-  } else {
-    layout.log_tau_spatial_idx = -1;
-    layout.spatial_start = layout.spatial_end = -1;
-    layout.log_sigma_bym2_idx = -1;
-    layout.logit_rho_bym2_idx = -1;
-    layout.theta_bym2_start = layout.theta_bym2_end = -1;
-    layout.logit_rho_car_idx = -1;
-  }
-
-  // Temporal effects
-  layout.has_temporal = (data.temporal_type != TemporalType::NONE);
-  layout.is_ar1 = (data.temporal_type == TemporalType::AR1);
-  layout.is_temporal_gp = (data.temporal_type == TemporalType::GP);
-
-  if (layout.has_temporal) {
-    if (layout.is_temporal_gp) {
-      // Temporal GP: log_sigma2 + log_phi + effects
-      layout.log_sigma2_temporal_gp_idx = idx++;
-      layout.logit_phi_temporal_gp_idx = idx++;
-      layout.log_tau_temporal_idx = -1;  // Not used for GP
-      layout.logit_rho_ar1_idx = -1;
-    } else {
-      // RW1/RW2/AR1: log_tau + effects (+ rho for AR1)
-      layout.log_tau_temporal_idx = idx++;
-      layout.log_sigma2_temporal_gp_idx = -1;
-      layout.logit_phi_temporal_gp_idx = -1;
-
-      // AR1 also has rho parameter
-      if (layout.is_ar1) {
-        layout.logit_rho_ar1_idx = idx++;
-      } else {
-        layout.logit_rho_ar1_idx = -1;
-      }
-    }
-
-    // Temporal effects: n_times * n_groups parameters
-    layout.temporal_start = idx;
-    idx += data.n_temporal_params;
-    layout.temporal_end = idx;
-  } else {
-    layout.log_tau_temporal_idx = -1;
-    layout.logit_rho_ar1_idx = -1;
-    layout.log_sigma2_temporal_gp_idx = -1;
-    layout.logit_phi_temporal_gp_idx = -1;
-    layout.temporal_start = layout.temporal_end = -1;
-  }
-
-  // Zero-inflation parameters
-  layout.has_zi = (data.zi_type != ZIType::NONE);
-
-  if (layout.has_zi) {
-    layout.beta_zi_start = idx;
-    idx += data.p_zi;
-    layout.beta_zi_end = idx;
-  } else {
-    layout.beta_zi_start = layout.beta_zi_end = -1;
-  }
-
-  // One-inflation parameters (for OI-binomial and ZOIB)
-  layout.has_oi = (data.zi_type == ZIType::OI_BINOMIAL || data.zi_type == ZIType::ZOIB);
-
-  if (layout.has_oi && data.p_oi > 0) {
-    layout.beta_oi_start = idx;
-    idx += data.p_oi;
-    layout.beta_oi_end = idx;
-  } else {
-    layout.beta_oi_start = layout.beta_oi_end = -1;
-  }
-
-  // GP spatial parameters
-  layout.is_gp = (data.spatial_type == SpatialType::GP);
-  layout.is_multiscale_gp = (data.spatial_type == SpatialType::MULTISCALE_GP);
-
-  layout.is_gp_collapsed = layout.is_gp && data.has_gp && data.gp_collapsed;
-
-  if (layout.is_gp && data.has_gp) {
-    layout.log_sigma2_gp_idx = idx++;
-    layout.log_phi_gp_idx = idx++;
-    if (!data.gp_collapsed) {
-      // Standard: allocate slots for GP effects
-      layout.gp_w_start = idx;
-      idx += data.gp_data.n_obs;
-      layout.gp_w_end = idx;
-    } else {
-      // Collapsed: GP effects marginalized out, not in param vector
-      layout.gp_w_start = layout.gp_w_end = -1;
-    }
-  } else {
-    layout.log_sigma2_gp_idx = -1;
-    layout.log_phi_gp_idx = -1;
-    layout.gp_w_start = layout.gp_w_end = -1;
-  }
-
-  // Multi-scale GP parameters
-  if (layout.is_multiscale_gp && data.has_multiscale_gp) {
-    // Number of spatial effects per scale: m^2 for HSGP, n_obs for NNGP
-    int n_per_scale = data.msgp_is_hsgp ? data.msgp_hsgp_data.m_total
-                                        : data.multiscale_gp_data.n_obs;
-    // Local scale
-    layout.log_sigma2_gp_local_idx = idx++;
-    layout.log_phi_gp_local_idx = idx++;  // log_lengthscale for HSGP
-    layout.gp_local_start = idx;
-    idx += n_per_scale;
-    layout.gp_local_end = idx;
-
-    // Regional scale
-    layout.log_sigma2_gp_regional_idx = idx++;
-    layout.log_phi_gp_regional_idx = idx++;
-    layout.gp_regional_start = idx;
-    idx += n_per_scale;
-    layout.gp_regional_end = idx;
-  } else {
-    layout.log_sigma2_gp_local_idx = -1;
-    layout.log_phi_gp_local_idx = -1;
-    layout.gp_local_start = layout.gp_local_end = -1;
-    layout.log_sigma2_gp_regional_idx = -1;
-    layout.log_phi_gp_regional_idx = -1;
-    layout.gp_regional_start = layout.gp_regional_end = -1;
-  }
-
-  // Multi-scale temporal parameters
-  layout.has_multiscale_temporal = data.has_multiscale_temporal;
-
-  if (layout.has_multiscale_temporal) {
-    // Trend component
-    if (data.multiscale_temporal_data.trend_type != tulpa_temporal::TemporalType::NONE) {
-      layout.log_sigma2_trend_idx = idx++;
-      layout.trend_start = idx;
-      idx += data.multiscale_temporal_data.n_times;
-      layout.trend_end = idx;
-    } else {
-      layout.log_sigma2_trend_idx = -1;
-      layout.trend_start = layout.trend_end = -1;
-    }
-
-    // Seasonal component
-    if (data.multiscale_temporal_data.seasonal_period > 0) {
-      layout.log_sigma2_seasonal_idx = idx++;
-      layout.seasonal_start = idx;
-      idx += data.multiscale_temporal_data.seasonal_period;
-      layout.seasonal_end = idx;
-    } else {
-      layout.log_sigma2_seasonal_idx = -1;
-      layout.seasonal_start = layout.seasonal_end = -1;
-    }
-
-    // Short-term component
-    if (data.multiscale_temporal_data.short_term_type != tulpa_temporal::TemporalType::NONE) {
-      layout.log_sigma2_short_idx = idx++;
-      if (data.multiscale_temporal_data.short_term_type == tulpa_temporal::TemporalType::AR1) {
-        layout.logit_rho_short_idx = idx++;
-      } else {
-        layout.logit_rho_short_idx = -1;
-      }
-      layout.short_term_start = idx;
-      idx += data.multiscale_temporal_data.n_times;
-      layout.short_term_end = idx;
-    } else {
-      layout.log_sigma2_short_idx = -1;
-      layout.logit_rho_short_idx = -1;
-      layout.short_term_start = layout.short_term_end = -1;
-    }
-  } else {
-    layout.log_sigma2_trend_idx = -1;
-    layout.trend_start = layout.trend_end = -1;
-    layout.log_sigma2_seasonal_idx = -1;
-    layout.seasonal_start = layout.seasonal_end = -1;
-    layout.log_sigma2_short_idx = -1;
-    layout.logit_rho_short_idx = -1;
-    layout.short_term_start = layout.short_term_end = -1;
-  }
-
-  // SVC (Spatially-Varying Coefficients) parameters
-  layout.has_svc = data.has_svc;
-  if (layout.has_svc && data.svc_data.n_svc > 0) {
-    // Log sigma2 per SVC term (spatial variance)
-    layout.log_sigma2_svc_start = idx;
-    idx += data.svc_data.n_svc;
-    layout.log_sigma2_svc_end = idx;
-
-    // Log phi/lengthscale per SVC term (spatial range)
-    layout.log_phi_svc_start = idx;
-    idx += data.svc_data.n_svc;
-    layout.log_phi_svc_end = idx;
-
-    // SVC spatial parameters:
-    //   NNGP: w_flat[j * n_obs + i] for j in 0..n_svc-1, i in 0..n_obs-1
-    //   HSGP: beta[j * m_total + k] for j in 0..n_svc-1, k in 0..m^2-1
-    layout.svc_w_start = idx;
-    if (data.svc_is_hsgp) {
-      idx += data.svc_data.n_svc * data.svc_hsgp_data.m_total;
-    } else {
-      idx += data.svc_data.n_svc * data.svc_data.n_obs;
-    }
-    layout.svc_w_end = idx;
-  } else {
-    layout.log_sigma2_svc_start = layout.log_sigma2_svc_end = -1;
-    layout.log_phi_svc_start = layout.log_phi_svc_end = -1;
-    layout.svc_w_start = layout.svc_w_end = -1;
-  }
-
-  // Latent factors for unmeasured confounders
-  layout.has_latent = data.has_latent;
-  if (layout.has_latent && data.latent_n_factors > 0) {
-    // Log sigma for each factor
-    layout.log_sigma_latent_start = idx;
-    idx += data.latent_n_factors;
-    layout.log_sigma_latent_end = idx;
-
-    // Factor scores (N x K)
-    layout.latent_factor_start = idx;
-    idx += data.N * data.latent_n_factors;
-    layout.latent_factor_end = idx;
-  } else {
-    layout.log_sigma_latent_start = layout.log_sigma_latent_end = -1;
-    layout.latent_factor_start = layout.latent_factor_end = -1;
-  }
-
-  // Spatiotemporal interaction
-  layout.has_spatiotemporal = data.has_spatiotemporal;
-  layout.is_st_gp = (data.has_spatiotemporal &&
-                     (data.spatiotemporal_data.type == STType::SEPARABLE ||
-                      data.spatiotemporal_data.type == STType::NONSEP_GP));
-
-  if (layout.has_spatiotemporal && data.spatiotemporal_data.type != STType::NONE) {
-    // log_tau for interaction precision
-    layout.log_tau_st_idx = idx++;
-
-    // Second precision removed for Type IV (single tau suffices)
-    layout.log_tau_st2_idx = -1;
-
-    // AR1 rho if temporal uses AR1
-    if (data.spatiotemporal_data.temporal_type == TemporalType::AR1) {
-      layout.logit_rho_st_idx = idx++;
-    } else {
-      layout.logit_rho_st_idx = -1;
-    }
-
-    // GP range parameters (for separable/non-separable GP)
-    if (layout.is_st_gp) {
-      layout.log_phi_st_space_idx = idx++;
-      layout.log_phi_st_time_idx = idx++;
-    } else {
-      layout.log_phi_st_space_idx = -1;
-      layout.log_phi_st_time_idx = -1;
-    }
-
-    // HSGP-ST: separate sigma2 and lengthscale for spectral basis interaction
-    layout.is_st_hsgp = data.st_is_hsgp;
-    if (data.st_is_hsgp) {
-      layout.log_sigma2_st_hsgp_idx = idx++;
-      layout.log_lengthscale_st_hsgp_idx = idx++;
-    } else {
-      layout.log_sigma2_st_hsgp_idx = -1;
-      layout.log_lengthscale_st_hsgp_idx = -1;
-    }
-
-    // Spatiotemporal interaction effects
-    layout.st_delta_start = idx;
-    idx += data.spatiotemporal_data.n_params;
-    layout.st_delta_end = idx;
-  } else {
-    layout.log_tau_st_idx = -1;
-    layout.log_tau_st2_idx = -1;
-    layout.logit_rho_st_idx = -1;
-    layout.log_phi_st_space_idx = -1;
-    layout.log_phi_st_time_idx = -1;
-    layout.log_sigma2_st_hsgp_idx = -1;
-    layout.log_lengthscale_st_hsgp_idx = -1;
-    layout.is_st_hsgp = false;
-    layout.st_delta_start = layout.st_delta_end = -1;
-  }
-
-  // HSGP (Hilbert Space GP) parameters
-  layout.is_hsgp = (data.spatial_type == SpatialType::HSGP);
-  if (layout.is_hsgp && data.has_hsgp) {
-    layout.log_sigma2_hsgp_idx = idx++;
-    layout.log_lengthscale_hsgp_idx = idx++;
-    layout.hsgp_beta_start = idx;
-    idx += data.hsgp_data.m_total;  // m^2 basis coefficients
-    layout.hsgp_beta_end = idx;
-  } else {
-    layout.log_sigma2_hsgp_idx = -1;
-    layout.log_lengthscale_hsgp_idx = -1;
-    layout.hsgp_beta_start = layout.hsgp_beta_end = -1;
-  }
-
-  // TVC (Temporally-Varying Coefficients) parameters
-  layout.has_tvc = data.has_tvc;
-  if (layout.has_tvc && data.tvc_data.n_tvc > 0) {
-    // Log precision per TVC term
-    layout.log_tau_tvc_start = idx;
-    idx += data.tvc_data.n_tvc;
-    layout.log_tau_tvc_end = idx;
-
-    // AR1 rho parameters (only if structure is AR1)
-    if (data.tvc_data.structure == tulpa_temporal::TemporalType::AR1) {
-      layout.logit_rho_tvc_start = idx;
-      idx += data.tvc_data.n_tvc;
-      layout.logit_rho_tvc_end = idx;
-    } else {
-      layout.logit_rho_tvc_start = layout.logit_rho_tvc_end = -1;
-    }
-
-    // TVC values: w[g, j, t] for g in groups, j in tvc terms, t in times
-    // Layout: w_flat[g * n_tvc * n_times + j * n_times + t]
-    layout.tvc_w_start = idx;
-    idx += data.tvc_data.n_groups * data.tvc_data.n_tvc * data.tvc_data.n_times;
-    layout.tvc_w_end = idx;
-  } else {
-    layout.log_tau_tvc_start = layout.log_tau_tvc_end = -1;
-    layout.logit_rho_tvc_start = layout.logit_rho_tvc_end = -1;
-    layout.tvc_w_start = layout.tvc_w_end = -1;
-  }
-
-  // Generic multi-process: extra parameters from LikelihoodSpec
-  if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
-    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
-    if (spec->n_extra_params > 0) {
-      layout.extra_offset = idx;
-      layout.n_extra_params = spec->n_extra_params;
-      idx += spec->n_extra_params;
-    }
-    if (spec->extend_layout) {
-      spec->extend_layout(data, layout, data.model_response_data);
-    }
-  }
-
-  layout.total_params = idx;
-  return layout;
-}
-
-int get_n_params(const ModelData& data) {
-  ParamLayout layout = compute_param_layout(data);
-  return layout.total_params;
-}
-
-// =====================================================================
 // Likelihood functions
 // =====================================================================
 
@@ -712,6 +68,8 @@ inline double log_lik_gamma(double y, double shape, double mu) {
 
 // Include vectorized gradient header AFTER log_lik_* functions and hmc_sampler.h
 // so all types and helpers are defined.
+
+
 #include "hmc_gradient_vectorized.h"
 
 // Thread-local vectorized gradient workspace (avoids per-call allocation)
@@ -926,7 +284,7 @@ double compute_log_post(
   // Non-centered parameterization: params store z ~ N(0,1), re = sigma * (L * z)
   // Pre-compute actual RE values from z for use in the likelihood loop.
   // Only allocate when the observation loop will run (skip_obs_loop=true avoids
-  // this heap allocation on every gradient call — saves ~100ns per call).
+  // this heap allocation on every gradient call ? saves ~100ns per call).
   std::vector<double> re_nc_flat;
   if (!skip_obs_loop) {
     re_nc_flat.assign(params.size(), 0.0);
@@ -961,7 +319,7 @@ double compute_log_post(
 
       // For correlated slopes: LKJ prior on correlation matrix via Cholesky.
       // Parameterization: Sigma = diag(sigma) * L * L' * diag(sigma).
-      // Tanh-parameterized L plus LKJ(eta=2) prior — see lkj_chol_helpers.h.
+      // Tanh-parameterized L plus LKJ(eta=2) prior ? see lkj_chol_helpers.h.
       std::vector<double> L_flat;
       if (is_correlated && n_coefs > 1) {
         int chol_start = layout.chol_re_start_multi[t];
@@ -1081,19 +439,19 @@ double compute_log_post(
       }
       // Collapsed: phi/theta priors already included in collapsed_lp above
     } else if (layout.is_car_proper) {
-      // Proper CAR: Q(rho) = D - rho*W is full-rank for rho ∈ (rho_lower, rho_upper).
+      // Proper CAR: Q(rho) = D - rho*W is full-rank for rho ? (rho_lower, rho_upper).
       // Prior: phi | tau, rho ~ N(0, (tau*Q)^{-1})
       //   log p = 0.5*log|tau*Q| - 0.5*tau*phi'Q*phi
       //         = 0.5*J*log(tau) + 0.5*log|Q(rho)| - 0.5*tau*phi'Q(rho)*phi
       // tau ~ Gamma(shape, rate) (with log-Jacobian).
       // rho via logit transform with uniform prior on (rho_lower, rho_upper):
-      //   p(logit_rho) ∝ u*(1-u) where u = (rho-lower)/(upper-lower).
+      //   p(logit_rho) ? u*(1-u) where u = (rho-lower)/(upper-lower).
 
       // tau prior (Gamma + log-Jacobian)
       log_post += (data.tau_spatial_shape - 1.0) * log_tau_spatial
                 - data.tau_spatial_rate * tau_spatial + log_tau_spatial;
 
-      // Logit-rho Jacobian: log(u) + log(1-u), where u ∈ (0,1)
+      // Logit-rho Jacobian: log(u) + log(1-u), where u ? (0,1)
       double u_logit = (rho_car - data.car_rho_lower) /
                        (data.car_rho_upper - data.car_rho_lower);
       // Guard against numerical edges
@@ -1114,7 +472,7 @@ double compute_log_post(
         }
       }
 
-      // Log-determinant of Q(rho) — recompute each call (rho changes Q).
+      // Log-determinant of Q(rho) ? recompute each call (rho changes Q).
       // Dense O(J^3) Cholesky is fine for small J; switch to sparse for large J.
       std::vector<double> Q = tulpa_car_proper::compute_car_precision(
           J, data.adj_row_ptr, data.adj_col_idx, data.n_neighbors, rho_car);
@@ -1669,7 +1027,7 @@ double compute_log_post(
     log_post += log_tau_st;  // Jacobian for log transform
 
     // Single precision for all ST types (including Type IV)
-    // tau_st2 always 1.0 — removed non-identifiable second precision
+    // tau_st2 always 1.0 ? removed non-identifiable second precision
 
     // AR1 rho parameter
     if (layout.logit_rho_st_idx >= 0) {
@@ -1730,7 +1088,7 @@ double compute_log_post(
         }
         st_delta = st_delta_nc.data();
 
-        // NC prior: -0.5 * z^T (Q_s ⊗ Q_t) z  (tau-free GMRF)
+        // NC prior: -0.5 * z^T (Q_s ? Q_t) z  (tau-free GMRF)
         log_post += tulpa_spatiotemporal::spatiotemporal_log_prior(
           z_or_delta, 1.0, 1.0, rho_st, phi_st_space, phi_st_time,
           data.spatiotemporal_data
@@ -2385,7 +1743,7 @@ bool can_use_analytical_gradient(const ModelData& data, const ParamLayout& layou
 
   // Check if spatial type is one we have hand-coded gradients for.
   // CAR_PROPER uses the same handcoded path as ICAR (with rho-aware Q),
-  // so it qualifies. The CAR_PROPER-specific log|Q(ρ)|/tr(Q^{-1}W) work
+  // so it qualifies. The CAR_PROPER-specific log|Q(?)|/tr(Q^{-1}W) work
   // happens in the CAR_PROPER branch of the spatial-prior gradient block.
   bool spatial_is_icar_bym2 = (data.spatial_type == SpatialType::ICAR ||
                                data.spatial_type == SpatialType::BYM2 ||
@@ -2614,7 +1972,7 @@ void compute_gradient_analytical(
       if (is_correlated && n_coefs > 1) {
         // Build Cholesky factor L with tanh parameterization (must match
         // compute_log_post). LKJ(eta=2) prior + L -> R + tanh-Jacobian
-        // gradient is written directly into grad[chol_start..] — slots are
+        // gradient is written directly into grad[chol_start..] ? slots are
         // zero-initialised at function entry.
         int chol_start = layout.chol_re_start_multi[t];
         std::vector<double> L_flat(n_coefs * n_coefs, 0.0);
@@ -2900,7 +2258,7 @@ void compute_gradient_analytical(
     std::vector<int> obs_s_idx(N, -1);       // spatial group index
     std::vector<int> obs_t_idx(N, -1);       // temporal flat index
     for (int i = 0; i < N; i++) {
-      // Slopes RE contribution (all terms — supports crossed+slopes)
+      // Slopes RE contribution (all terms ? supports crossed+slopes)
       if (layout.has_re_slopes && n_re_terms_slopes > 0) {
         for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
           int re_group_idx_i = data.re_group_multi_flat[i * data.n_re_terms + t_re];
@@ -2947,7 +2305,7 @@ void compute_gradient_analytical(
         }
       }
 
-      // Spatial effect (ICAR or BYM2 only — GP/HSGP/MSGP excluded above)
+      // Spatial effect (ICAR or BYM2 only ? GP/HSGP/MSGP excluded above)
       if (layout.has_spatial && !data.spatial_group.empty() && data.spatial_group[i] > 0) {
         int s = data.spatial_group[i] - 1;
         obs_s_idx[i] = s;
@@ -2989,7 +2347,7 @@ void compute_gradient_analytical(
       double dLL_denom = vec_grad_ws.resid_denom[i];
       double dLL_shared = dLL_num + dLL_denom;
 
-      // Slopes RE gradient scatter (all terms — supports crossed+slopes)
+      // Slopes RE gradient scatter (all terms ? supports crossed+slopes)
       if (layout.has_re_slopes && n_re_terms_slopes > 0) {
         for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
           int re_group_idx_i = data.re_group_multi_flat[i * data.n_re_terms + t_re];
@@ -3423,7 +2781,7 @@ void compute_gradient_analytical(
         double mu_denom = std::exp(eta_denom);
         int y_num_i = data.legacy.y_num[i];
 
-        // Denominator: Gamma (always standard) — skip if y <= 0
+        // Denominator: Gamma (always standard) ? skip if y <= 0
         double y_denom_i = data.legacy.y_denom_cont[i];
         double grad_phi_gamma = 0.0;
         if (y_denom_i > 0.0) {
@@ -3478,7 +2836,7 @@ void compute_gradient_analytical(
         double mu_denom = std::exp(eta_denom);
         int y_num_i = data.legacy.y_num[i];
 
-        // Denominator: Gamma (always standard) — skip if y <= 0
+        // Denominator: Gamma (always standard) ? skip if y <= 0
         double y_denom_i = data.legacy.y_denom_cont[i];
         double grad_phi_gamma = 0.0;
         if (y_denom_i > 0.0) {
@@ -3926,7 +3284,7 @@ void compute_gradient_analytical(
 
   // Random slopes likelihood gradients (MUST be outside used_vectorized check:
   // the hybrid slopes path sets used_vectorized=true but populates grad_re_slopes_lik
-  // via its own scatter pass — the write-back chain rule runs for all paths)
+  // via its own scatter pass ? the write-back chain rule runs for all paths)
   if (layout.has_re_slopes && n_re_terms_slopes > 0) {
     for (int t = 0; t < n_re_terms_slopes; t++) {
       int n_groups = data.re_n_groups_multi[t];
@@ -3949,7 +3307,7 @@ void compute_gradient_analytical(
             &re_nc_flat[re_start_t], n_groups,
             grad_re_slopes_lik[t].data(),
             &grad[re_start_t],         // grad_z (contiguous)
-            g_log_sigma.data(),         // grad_log_sigma (scattered — temp)
+            g_log_sigma.data(),         // grad_log_sigma (scattered ? temp)
             &grad[chol_start]);         // grad_raw (contiguous)
 
         for (int c = 0; c < n_coefs; c++) {
@@ -4028,7 +3386,7 @@ void compute_gradient_analytical(
     // d/d(phi[i]) = -tau * (Q*phi)[i] = -tau * (D[i]*phi[i] - rho*sum_{j~i} phi[j])
     double icar_quad = 0.0;       // ICAR-style quadratic form (rho=1)
     double car_quad = 0.0;        // CAR_PROPER quadratic form: phi' Q(rho) phi
-    double car_phi_W_phi = 0.0;   // φ' W φ = sum_{i~j} phi[i]*phi[j] (over directed edges)
+    double car_phi_W_phi = 0.0;   // ?' W ? = sum_{i~j} phi[i]*phi[j] (over directed edges)
     double current_rho = (data.spatial_type == SpatialType::CAR_PROPER) ? rho_car : 1.0;
     // BYM2 soft sum-to-zero: -0.01 * sum(phi)
     double bym2_phi_sum = 0.0;
@@ -4051,7 +3409,7 @@ void compute_gradient_analytical(
       double Qphi_i = Di_phi - current_rho * Wphi_i;
       // CAR_PROPER quadratic form: phi' Q phi = sum_i phi_i * (Q*phi)_i
       car_quad += phi_spatial[i] * Qphi_i;
-      // φ' W φ contribution: phi[i] * sum_{j~i} phi[j]
+      // ?' W ? contribution: phi[i] * sum_{j~i} phi[j]
       car_phi_W_phi += phi_spatial[i] * Wphi_i;
 
       if (data.spatial_type == SpatialType::BYM2) {
@@ -4091,10 +3449,10 @@ void compute_gradient_analytical(
       grad[layout.log_tau_spatial_idx] += 0.5 * n_spatial - 0.5 * tau_spatial * car_quad;
 
       // Proper CAR rho gradient:
-      //   d/dρ [0.5 log|Q(ρ)| - 0.5 τ φ'Q(ρ)φ]
-      //     = -0.5 * tr(Q^{-1} W)  +  0.5 * τ * φ'Wφ
+      //   d/d? [0.5 log|Q(?)| - 0.5 ? ?'Q(?)?]
+      //     = -0.5 * tr(Q^{-1} W)  +  0.5 * ? * ?'W?
       // Chain rule from rho = lower + (upper-lower)*u, u = 1/(1+exp(-logit_rho)):
-      //   dρ/d(logit_rho) = (upper-lower) * u * (1-u)
+      //   d?/d(logit_rho) = (upper-lower) * u * (1-u)
       double log_det_unused;
       double trace_QinvW;
       bool ok = tulpa_car_proper::car_proper_log_det_and_grad_rho(
@@ -4148,7 +3506,7 @@ void compute_gradient_numerical(
     const ModelData& data,
     const ParamLayout& layout,
     std::vector<double>& grad,
-    double* log_post_out = nullptr
+    double* log_post_out
 ) {
   int n = params.size();
   grad.resize(n);
@@ -4187,7 +3545,7 @@ void compute_gradient_numerical_impl(
     const ModelData& data,
     const ParamLayout& layout,
     std::vector<double>& grad,
-    double* log_post_out = nullptr
+    double* log_post_out
 ) {
   int n = params.size();
   grad.resize(n);
@@ -4316,7 +3674,7 @@ void compute_gradient_autodiff(
     const ModelData& data,
     const ParamLayout& layout,
     std::vector<double>& grad,
-    double* log_post_out = nullptr
+    double* log_post_out
 ) {
     using namespace tulpa::ad;
 
@@ -4353,7 +3711,7 @@ void compute_gradient_arena(
     const ModelData& data,
     const ParamLayout& layout,
     std::vector<double>& grad,
-    double* log_post_out = nullptr
+    double* log_post_out
 ) {
     using namespace tulpa::arena;
 
@@ -4386,7 +3744,7 @@ void compute_gradient_arena(
 }
 
 // =====================================================================
-// Forward-mode autodiff gradient (O(n×p) - but ~10x faster than tape)
+// Forward-mode autodiff gradient (O(n?p) - but ~10x faster than tape)
 // Uses dual numbers for efficient gradient computation without heap allocation
 // =====================================================================
 
@@ -4395,7 +3753,7 @@ void compute_gradient_forward(
     const ModelData& data,
     const ParamLayout& layout,
     std::vector<double>& grad,
-    double* log_post_out = nullptr
+    double* log_post_out
 ) {
     int n_params = static_cast<int>(params.size());
     grad.assign(n_params, 0.0);
@@ -4499,7 +3857,7 @@ static inline void re_gradient_nc_transform(
 // Shared gradient building blocks for specialized H-mode functions
 // These helpers extract the duplicated code from 11 specialized gradient
 // functions into single-source-of-truth implementations.
-// All are static inline — zero overhead, compiler inlines them.
+// All are static inline ? zero overhead, compiler inlines them.
 // =====================================================================
 
 // Common parameters extracted from the parameter vector
@@ -4801,7 +4159,7 @@ static inline void compute_obs_residuals_zi(
         double mu_denom = std::exp(eta_denom);
         int y_num_i = data.legacy.y_num[i];
 
-        // Denominator: Gamma (always standard) — skip if y <= 0
+        // Denominator: Gamma (always standard) ? skip if y <= 0
         double y_denom_i = data.legacy.y_denom_cont[i];
         double grad_phi_gamma = 0.0;
         if (y_denom_i > 0.0) {
@@ -4846,7 +4204,7 @@ static inline void compute_obs_residuals_zi(
         double mu_denom = std::exp(eta_denom);
         int y_num_i = data.legacy.y_num[i];
 
-        // Denominator: Gamma (always standard) — skip if y <= 0
+        // Denominator: Gamma (always standard) ? skip if y <= 0
         double y_denom_i = data.legacy.y_denom_cont[i];
         double grad_phi_gamma = 0.0;
         if (y_denom_i > 0.0) {
@@ -5429,7 +4787,7 @@ void compute_gradient_gp_handcoded(
 
 // =====================================================================
 // Collapsed GP gradient (hand-coded)
-// GP effects marginalized via inner Laplace — only hyperparams in HMC
+// GP effects marginalized via inner Laplace ? only hyperparams in HMC
 // =====================================================================
 
 // collapsed_gp_ws declared earlier (shared with compute_log_post)
@@ -5541,7 +4899,7 @@ void compute_gradient_gp_collapsed(
 
     // ---- Laplace correction gradient via numerical differentiation ----
     // The Laplace log-det depends on w* which depends on ALL params implicitly.
-    // We compute d/dθ [-0.5 log det(W+Q)] numerically for each outer param,
+    // We compute d/d? [-0.5 log det(W+Q)] numerically for each outer param,
     // using warm-started Newton solves (1-2 iters each from current w*).
     // For non-GP params (beta, phi, RE), we reuse the NNGP structure from
     // collapsed_gp_ws (Q doesn't change), skipping NNGP rebuild.
@@ -5649,9 +5007,9 @@ void compute_gradient_gp_collapsed(
 
 // =====================================================================
 // Collapsed ICAR/BYM2 gradient
-// ICAR: H-mode — analytical envelope + analytical Laplace via implicit fn
+// ICAR: H-mode ? analytical envelope + analytical Laplace via implicit fn
 //       thm (Woodbury for sum-to-zero rank-1, sparse Cholesky on A = W+tau*Q).
-// BYM2: H-mode — same structure with 2S inner state [phi; theta]; direct
+// BYM2: H-mode ? same structure with 2S inner state [phi; theta]; direct
 //       sigma/rho traces via dense 2S Hinv plus indirect IFT corrections
 //       via cross-Hessians (compute_laplace_gradient_bym2_H).
 // =====================================================================
@@ -5680,7 +5038,7 @@ void compute_gradient_icar_collapsed(
     int N = data.N;
     int S = data.n_spatial_units;
 
-    // Pre-compute actual RE values (NC → actual)
+    // Pre-compute actual RE values (NC ? actual)
     std::vector<double> re_vals;
     if (layout.has_re) {
         int n_re = layout.re_end - layout.re_start;
@@ -5731,7 +5089,7 @@ void compute_gradient_icar_collapsed(
     //       with 2S inner state and IFT cross-Hessians for both sigma and rho.
     if (!is_bym2) {
         // === Part A: Envelope theorem gradient ===
-        // At mode, ∂f/∂φ = 0, so d/dθ[f(φ*,θ)] = ∂f/∂θ|_{φ*}
+        // At mode, ?f/?? = 0, so d/d?[f(?*,?)] = ?f/??|_{?*}
 
         // A1: Data LL gradient via residual scattering
         std::vector<double> resid_num(N), resid_denom(N);
@@ -5772,7 +5130,7 @@ void compute_gradient_icar_collapsed(
         }
 
         // A2: Dispersion parameter gradients from data LL at mode
-        // (envelope theorem: ∂LL/∂log_phi evaluated at φ*)
+        // (envelope theorem: ?LL/?log_phi evaluated at ?*)
         if (layout.legacy.has_phi_num || layout.legacy.has_phi_denom) {
             for (int i = 0; i < N; i++) {
                 int s = data.spatial_group[i] - 1;
@@ -5854,7 +5212,7 @@ void compute_gradient_icar_collapsed(
             }
         }
 
-        // A3: ICAR prior gradient w.r.t. log_tau (envelope: holding φ* fixed)
+        // A3: ICAR prior gradient w.r.t. log_tau (envelope: holding ?* fixed)
         // d/d(log_tau)[-0.5*tau*phi*'Q*phi* + 0.5*(S-1)*log(tau)]
         //   = -0.5*tau*phi*'Q*phi* + 0.5*(S-1)
         {
@@ -7077,7 +6435,7 @@ void compute_gradient_latent_handcoded(
 
     // =========================================================================
     // Likelihood loop - compute dLL/deta and chain-rule to all parameters
-    // (Latent uses scalar per-obs loop — latent factor chain rule requires it)
+    // (Latent uses scalar per-obs loop ? latent factor chain rule requires it)
     // =========================================================================
     std::vector<double> grad_factors_constrained(n_factor_params, 0.0);
 
@@ -7456,7 +6814,7 @@ void compute_gradient_msgp_handcoded(
     grad[layout.log_phi_gp_regional_idx] += nngp_grads_regional.grad_log_phi;
 
     // =========================================================================
-    // Data likelihood loop (scalar per-obs — MSGP scatter requires it)
+    // Data likelihood loop (scalar per-obs ? MSGP scatter requires it)
     // =========================================================================
     for (int i = 0; i < pre.N; i++) {
         // Linear predictors
@@ -8007,7 +7365,7 @@ void compute_gradient_hsgp(
     grad[layout.hsgp_beta_start + j] = -hsgp_beta_ptr[j];
   }
 
-  // Temporal prior on tau (Gamma) and rho (Beta) — GMRF only
+  // Temporal prior on tau (Gamma) and rho (Beta) ? GMRF only
   if (has_gmrf_temporal) {
     tau_temporal_prior_grad(data, layout, tau_temporal, grad.data());
     if (data.temporal_type == TemporalType::AR1 && layout.logit_rho_ar1_idx >= 0) {
@@ -8161,7 +7519,7 @@ void compute_gradient_hsgp(
     }
   }
 
-  // Temporal likelihood gradients (scatter to temporal buffer — GMRF or GP)
+  // Temporal likelihood gradients (scatter to temporal buffer ? GMRF or GP)
   if ((has_gmrf_temporal || has_temporal_gp) && !data.temporal_time_idx.empty()) {
     for (int i = 0; i < N; i++) {
       if (i < (int)data.temporal_time_idx.size() && data.temporal_time_idx[i] > 0) {
@@ -9031,7 +8389,7 @@ void compute_gradient_spatiotemporal_handcoded(
     int T = st.n_times;
     int ST = st.n_params;
     double tau_st = std::exp(params[layout.log_tau_st_idx]);
-    double tau_st2 = 1.0;  // Always 1.0 — single tau for all ST types
+    double tau_st2 = 1.0;  // Always 1.0 ? single tau for all ST types
 
     // NC reparameterization: params store z, reconstruct delta
     const bool st_use_nc = (data.st_parameterization == 1 &&
@@ -9259,7 +8617,7 @@ void compute_gradient_spatiotemporal_handcoded(
         st_lp_accum = 0.5 * T * rank_spatial * std::log(tau_st) - 0.5 * tau_st * total_qf;
 
     } else if (st.type == STType::TYPE_IV) {
-        // Kronecker: Q_delta = Q_s ⊗ Q_t
+        // Kronecker: Q_delta = Q_s ? Q_t
         // For NC: apply stencil to z (not delta), without tau factor
         const double* stencil_input = st_use_nc ? z_or_delta : delta;
 
@@ -9322,7 +8680,7 @@ void compute_gradient_spatiotemporal_handcoded(
             }
         }
 
-        // Step 2: Apply spatial ICAR stencil to v: (Q_s ⊗ Q_t) * input
+        // Step 2: Apply spatial ICAR stencil to v: (Q_s ? Q_t) * input
         double total_qf = 0.0;
         for (int s = 0; s < S; s++) {
             for (int t = 0; t < T; t++) {
@@ -9962,7 +9320,7 @@ void compute_gradient_composite(
         grad[layout.log_tau_st_idx] = 0.5 * lambda * sigma_st + 0.5 + 1.0;
     }
 
-    // Slopes priors — mirrors compute_gradient_analytical (correlated + uncorrelated)
+    // Slopes priors ? mirrors compute_gradient_analytical (correlated + uncorrelated)
     nc_L_flats.clear();
     nc_sigmas_vec.clear();
     re_nc_flat_c.clear();
@@ -10096,7 +9454,7 @@ void compute_gradient_composite(
         }
     }
 
-    // RE (slopes — multi-term)
+    // RE (slopes ? multi-term)
     // For correlated NC: use pre-computed re_nc_flat_c (= diag(sigma) * L * z)
     // For uncorrelated NC: use sigma * z inline
     // For centered: use raw params
@@ -10350,7 +9708,7 @@ void compute_gradient_composite(
         if (layout.legacy.has_phi_num) grad[layout.legacy.log_phi_num_idx] += grad_phi_num_acc;
         if (layout.legacy.has_phi_denom) grad[layout.legacy.log_phi_denom_idx] += grad_phi_denom_acc;
     } else {
-        // Fallback: GAMMA_GAMMA, LOGNORMAL, BETA_BINOMIAL — use per-obs helpers
+        // Fallback: GAMMA_GAMMA, LOGNORMAL, BETA_BINOMIAL ? use per-obs helpers
         for (int i = 0; i < N; i++) {
             compute_obs_residuals(data, i, eta_num_v[i], eta_denom_v[i], phi_num, phi_denom,
                                   dLL_num_v[i], dLL_denom_v[i]);
@@ -10770,7 +10128,7 @@ void compute_gradient_composite(
                     grad[layout.st_delta_start + j * T_st_h + t] = grad_delta_lik[j * T_st_h + t] + g;
                 }
             } else {
-                // RW2 or other — use generic stencil
+                // RW2 or other ? use generic stencil
                 for (int t = 0; t < T_st_h; t++)
                     grad[layout.st_delta_start + j * T_st_h + t] = grad_delta_lik[j * T_st_h + t];
             }
@@ -10829,7 +10187,7 @@ void compute_gradient_composite(
                     total_qf += qf;
                 } else if (st.temporal_type == TemporalType::AR1) {
                     // AR1: precision Q = tau * tridiag(-rho, 1+rho^2, -rho), first/last diagonal = 1
-                    // ST interaction doesn't have its own rho — use IID (rho=0) as fallback
+                    // ST interaction doesn't have its own rho ? use IID (rho=0) as fallback
                     // This is equivalent to tau * I for the ST delta prior
                     double qf = 0.0;
                     for (int t = 0; t < T_st; t++) {
@@ -10866,7 +10224,7 @@ void compute_gradient_composite(
             }
             grad[layout.log_tau_st_idx] += 0.5 * T_st * (S_st - 1) - 0.5 * tau_st * total_qf;
         } else if (st.type == STType::TYPE_IV) {
-            // Kronecker: Q_delta = Q_s ⊗ Q_t (analytical gradient, same as specialized ST function)
+            // Kronecker: Q_delta = Q_s ? Q_t (analytical gradient, same as specialized ST function)
             const double* stencil_input = st_use_nc ? z_or_delta_st : st_delta;
             double inv_scale_nc = st_use_nc ? (1.0 / std::sqrt(tau_st)) : 1.0;
 
@@ -10905,7 +10263,7 @@ void compute_gradient_composite(
                 }
             }
 
-            // Step 2: Apply spatial ICAR stencil to v: (Q_s ⊗ Q_t) * input
+            // Step 2: Apply spatial ICAR stencil to v: (Q_s ? Q_t) * input
             double total_qf = 0.0;
             for (int s = 0; s < S_st; s++) {
                 for (int t = 0; t < T_st; t++) {
@@ -10962,7 +10320,7 @@ void compute_gradient_composite(
     // NC RE chain rule (simple intercepts)
     if (!has_slopes) re_gradient_nc_transform(data, layout, params.data(), grad.data(), sigma_re);
 
-    // NC slopes chain rule — mirrors compute_gradient_analytical write-back
+    // NC slopes chain rule ? mirrors compute_gradient_analytical write-back
     if (has_slopes) {
         for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
             int n_groups = data.re_n_groups_multi[t_re];
@@ -11040,7 +10398,7 @@ void compute_gradient(
     std::vector<double>& grad,
     double* log_post_out
 ) {
-    // Delegate to resolve_gradient_fn() — single source of truth for dispatch logic.
+    // Delegate to resolve_gradient_fn() ? single source of truth for dispatch logic.
     // For hot paths (NUTS leapfrog), callers should resolve once via resolve_gradient_fn()
     // and reuse the pointer. This convenience wrapper is for cold-path callers.
     GradientFn fn = resolve_gradient_fn(g_gradient_mode, data, layout);
@@ -11112,7 +10470,7 @@ static void compute_gradient_generic_arena(
 }
 
 // =====================================================================
-// Resolve gradient function pointer — SINGLE SOURCE OF TRUTH for dispatch.
+// Resolve gradient function pointer ? SINGLE SOURCE OF TRUTH for dispatch.
 // Called once at sampling start, returns a function pointer to eliminate
 // per-call branching during leapfrog steps. compute_gradient() delegates here.
 // =====================================================================
@@ -11157,7 +10515,7 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
     }
 
     // ZI/OI supported in analytical (all non-exotic configs) and composite (exotic combos).
-    // Specialized H-mode functions do NOT handle ZI — skip them entirely for ZI/OI models.
+    // Specialized H-mode functions do NOT handle ZI ? skip them entirely for ZI/OI models.
     // Simple ZI/OI already went to analytical above; exotic combos go to composite.
     // ZOIB has a pre-existing gradient bug in the H-mode ZOIB residual code (param 0
     // mismatch even in analytical). Route to A_r until fixed.
@@ -11166,7 +10524,7 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
     if (layout.has_zi || layout.has_oi)
         return &compute_gradient_composite;
 
-    // Early bail: crossed RE (without slopes) + exotic — composite doesn't handle
+    // Early bail: crossed RE (without slopes) + exotic ? composite doesn't handle
     // crossed intercept-only RE (multiple sigma_re terms with separate param blocks).
     // Slopes ARE handled (correlated + uncorrelated, NC + centered).
     bool has_exotic = layout.is_temporal_gp || layout.has_tvc ||
@@ -11175,11 +10533,11 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
     if (has_exotic && !layout.has_re_slopes && data.n_re_terms > 1)
         return &compute_gradient_arena;
 
-    // Early bail: TVC + latent — neither specialized function handles both.
+    // Early bail: TVC + latent ? neither specialized function handles both.
     if (layout.has_tvc && layout.has_latent)
         return &compute_gradient_arena;
 
-    // Early bail: ST interaction + AR1 temporal type — H and composite both use IID
+    // Early bail: ST interaction + AR1 temporal type ? H and composite both use IID
     // fallback (tau*I) for AR1 but compute_log_post/log_post_impl return 0 prior
     // (type_ii_log_prior has no AR1 branch). Route to A_r for correctness.
     if (layout.has_spatiotemporal &&
@@ -11283,7 +10641,7 @@ double DualAveraging::update(double alpha) {
   H_bar = (1.0 - w) * H_bar + w * (target_accept - alpha);
   double log_epsilon = mu - std::sqrt((double)m) / gamma * H_bar;
   // Clamp log_epsilon to reasonable range
-  // Lower bound: exp(-14) ≈ 8e-7, Upper bound: exp(2) ≈ 7.4
+  // Lower bound: exp(-14) ? 8e-7, Upper bound: exp(2) ? 7.4
   log_epsilon = std::max(-14.0, std::min(log_epsilon, 2.0));
   double epsilon = std::exp(log_epsilon);
   double m_w = std::pow((double)m, -kappa);
@@ -11295,7 +10653,7 @@ double DualAveraging::final_epsilon() const {
   return std::exp(log_epsilon_bar);
 }
 
-// WelfordStats defined in hmc_sampler.h — not duplicated here
+// WelfordStats defined in hmc_sampler.h ? not duplicated here
 
 // =====================================================================
 // Leapfrog integrator
@@ -11682,7 +11040,7 @@ bool nuts_check_uturn_fast(const double* q_minus, const double* q_plus,
 }
 
 // In-place leapfrog step operating on a workspace slot
-// Mutates q, p, grad in the slot directly — zero heap allocation
+// Mutates q, p, grad in the slot directly ? zero heap allocation
 LeapfrogInPlaceResult leapfrog_step_inplace(
     NUTSWorkspace& ws, int slot, double epsilon,
     const DenseMassMatrix& mass,
@@ -11831,7 +11189,7 @@ TreeStats build_tree_fast(
     std::memcpy(stats.p_beg.data(), p_ptr, n * sizeof(double));
     std::memcpy(stats.p_end.data(), p_ptr, n * sizeof(double));
 
-    // p_sharp = M^{-1} * p  — use full mass matrix for U-turn criterion.
+    // p_sharp = M^{-1} * p  ? use full mass matrix for U-turn criterion.
     // Dense mass captures correlation structure; using diagonal p_sharp would
     // make NUTS unable to detect turns in correlated directions, causing
     // trees to grow to max depth on correlated posteriors (slopes, BYM2, HSGP).
@@ -11924,7 +11282,7 @@ TreeStats build_tree_fast(
   }
 
   // === GENERALIZED U-TURN CRITERION (Stan-style, 3 juncture checks) ===
-  // Check 1: Full merged trajectory — merged endpoints vs merged rho
+  // Check 1: Full merged trajectory ? merged endpoints vs merged rho
   bool persist = compute_criterion(stats.p_sharp_beg.data(), stats.p_sharp_end.data(),
                                    stats.rho.data(), n);
 
@@ -12008,8 +11366,8 @@ bool compute_softabs_metric(
   const auto& lambdas = eigen.eigenvalues();
   const auto& Q = eigen.eigenvectors();
 
-  // Apply SoftAbs: f(λ) = λ * coth(α * λ)
-  // Properties: always positive, f(|λ|>>0) ≈ |λ|, f(0) → 1/α
+  // Apply SoftAbs: f(?) = ? * coth(? * ?)
+  // Properties: always positive, f(|?|>>0) ? |?|, f(0) ? 1/?
   Eigen::VectorXd softabs_inv_eig(p);
   for (int i = 0; i < p; i++) {
     double lam = lambdas(i);
@@ -12026,7 +11384,7 @@ bool compute_softabs_metric(
     softabs_inv_eig(i) = 1.0 / f;
   }
 
-  // Reconstruct G^{-1} = Q diag(1/f(λ)) Q^T
+  // Reconstruct G^{-1} = Q diag(1/f(?)) Q^T
   Eigen::MatrixXd G_inv_mat = Q * softabs_inv_eig.asDiagonal() * Q.transpose();
 
   // Cholesky of G^{-1}
@@ -12060,11 +11418,11 @@ MassMatrixConfig select_and_init_mass_matrix(
     bool verbose
 ) {
   // Mass matrix adaptation
-  // Resolve AUTO metric: DIAG default with DIAG→DENSE identity recovery.
+  // Resolve AUTO metric: DIAG default with DIAG?DENSE identity recovery.
   //
-  // Key insight: adapted DENSE mass (where adapted=true) incurs O(n²) per leapfrog
+  // Key insight: adapted DENSE mass (where adapted=true) incurs O(n?) per leapfrog
   // step for matvec/kinetic/p_sharp operations. For n=54 (RE models), this is 22x
-  // slower per step than identity mass (adapted=false). DIAG→identity recovery gives
+  // slower per step than identity mass (adapted=false). DIAG?identity recovery gives
   // fast per-step execution while still finding correct epsilon via dual averaging.
   //
   // Strategy: Start with DIAG for most models. If DIAG fails catastrophically
@@ -12076,14 +11434,14 @@ MassMatrixConfig select_and_init_mass_matrix(
   //
   // Only genuinely complex posteriors (correlated slopes, BYM2, GP, SVC) start
   // with DENSE, where the adapted covariance actually helps sampling efficiency
-  // enough to justify the O(n²) per-step cost.
+  // enough to justify the O(n?) per-step cost.
   //
   // HISTORY:
-  // 2026-02-27: has_re/has_temporal in needs_dense → 1.25s PG+RE (adapted dense)
-  // 2026-02-28: TVC gradient fix → removed TVC
-  // 2026-03-03: Removed has_re/has_temporal → DIAG + recovery. PG+RE: 0.8s
+  // 2026-02-27: has_re/has_temporal in needs_dense ? 1.25s PG+RE (adapted dense)
+  // 2026-02-28: TVC gradient fix ? removed TVC
+  // 2026-03-03: Removed has_re/has_temporal ? DIAG + recovery. PG+RE: 0.8s
   //   (identity dense, 22x faster per step). Adapted dense measured at 17.7s
-  //   due to O(n²) per-step cost for n=54.
+  //   due to O(n?) per-step cost for n=54.
   MassMatrixType effective_metric = metric_type;
   bool auto_selected_diag = false;
   // Block specs for BLOCK_DIAG: (start_index, block_size) pairs
@@ -12091,10 +11449,10 @@ MassMatrixConfig select_and_init_mass_matrix(
 
   if (effective_metric == MassMatrixType::AUTO) {
     // Build block_specs from param layout: detect pairs of correlated hyperparameters.
-    // Each block captures a small dense correlation (2-4 params) at O(block²) cost,
-    // avoiding full O(n²) DENSE while handling the key correlations DIAG misses.
-    // NOTE: temporal_gp excluded — DIAG is faster (2.11s vs 2.39s, 5 seeds Bin+GP_t).
-    // NOTE: HSGP excluded from AUTO blocks — DIAG is faster for HSGP-only (29k LF
+    // Each block captures a small dense correlation (2-4 params) at O(block?) cost,
+    // avoiding full O(n?) DENSE while handling the key correlations DIAG misses.
+    // NOTE: temporal_gp excluded ? DIAG is faster (2.11s vs 2.39s, 5 seeds Bin+GP_t).
+    // NOTE: HSGP excluded from AUTO blocks ? DIAG is faster for HSGP-only (29k LF
     // vs 39k LF), and HSGP+temporal uses full DENSE (tested BLOCK_DIAG 2026-03-10:
     // worse performance and more divergences than DENSE).
     if (layout.is_bym2 && layout.log_sigma_bym2_idx >= 0 &&
@@ -12141,7 +11499,7 @@ MassMatrixConfig select_and_init_mass_matrix(
       // Multiscale temporal hyperparams form a natural block (3-4 params):
       // log_sigma2_trend, log_sigma2_seasonal, log_sigma2_short [, logit_rho_short]
       // These are correlated but the temporal effects themselves (phi) are not
-      // strongly correlated with the hyperparams → BLOCK_DIAG, not full DENSE.
+      // strongly correlated with the hyperparams ? BLOCK_DIAG, not full DENSE.
       int ms_block_start = -1;
       int ms_block_size = 0;
       if (layout.log_sigma2_trend_idx >= 0) {
@@ -12179,7 +11537,7 @@ MassMatrixConfig select_and_init_mass_matrix(
     }
 
     // NB phi params: overdispersion params are often correlated
-    // A 2×2 block captures their joint curvature cheaply (4 extra multiplies/step)
+    // A 2?2 block captures their joint curvature cheaply (4 extra multiplies/step)
     if (layout.legacy.has_phi_num && layout.legacy.has_phi_denom &&
         layout.legacy.log_phi_denom_idx == layout.legacy.log_phi_num_idx + 1) {
       block_specs.push_back({layout.legacy.log_phi_num_idx, 2});
@@ -12189,9 +11547,9 @@ MassMatrixConfig select_and_init_mass_matrix(
     // NB+ICAR: NegBin's digamma curvature creates strong correlations between
     // spatial phi params and overdispersion that BLOCK_DIAG's small blocks can't
     // capture. DENSE mass doubles the step size, cutting treedepth from 8-9 to 5-6,
-    // which more than pays for the O(n²) per-step cost at p~108.
+    // which more than pays for the O(n?) per-step cost at p~108.
     // GP_t: NC z-sigma2-phi funnel creates erratic treedepth (2-10) with DIAG.
-    // At p≤50, DENSE overhead is negligible.
+    // At p?50, DENSE overhead is negligible.
     bool is_nb_family = (data.legacy.model_type == ModelType::NEGBIN_NEGBIN ||
                          data.legacy.model_type == ModelType::NEGBIN_GAMMA);
     bool is_icar = (data.spatial_type == SpatialType::ICAR);
@@ -12201,13 +11559,13 @@ MassMatrixConfig select_and_init_mass_matrix(
     // cross-correlations that DIAG can't handle (106 div) and BLOCK_DIAG misses
     // (16 div, eps~0.006). DENSE with eigenvalue conditioning captures the geometry
     // correctly (0-1 div). Tested BLOCK_DIAG (2026-03-10): 303s/0div PG, 214s/16div NB,
-    // 133s/3div Bin — worse than DENSE (211s/3div, 176s/1div, 142s/0div).
+    // 133s/3div Bin ? worse than DENSE (211s/3div, 176s/1div, 142s/0div).
     // Also applies to HSGP+TVC and HSGP+MS_t (same cross-correlation issue).
-    // Only use DENSE when p <= 200 to avoid O(n²) per-step overhead dominating.
+    // Only use DENSE when p <= 200 to avoid O(n?) per-step overhead dominating.
     bool hsgp_temporal = layout.is_hsgp && data.has_hsgp && n_params <= DENSE_MAX_PARAMS &&
                          (layout.has_temporal || layout.has_tvc || layout.has_multiscale_temporal);
 
-    bool needs_full_dense = layout.has_latent ||  // N×K latent factors
+    bool needs_full_dense = layout.has_latent ||  // N?K latent factors
                             hsgp_temporal ||  // HSGP+temporal cross-correlations
                             (is_nb_family && is_icar && n_params <= DENSE_MAX_PARAMS) ||  // NB+ICAR
                             (is_binomial_family && is_icar && n_params <= DENSE_MAX_PARAMS);  // Bin+ICAR
@@ -12224,11 +11582,11 @@ MassMatrixConfig select_and_init_mass_matrix(
       block_specs.clear();
       auto_selected_diag = false;
     } else if (!block_specs.empty() && !prefer_diag) {
-      // BLOCK_DIAG: captures key correlations without full O(n²)
+      // BLOCK_DIAG: captures key correlations without full O(n?)
       effective_metric = MassMatrixType::BLOCK_DIAG;
       auto_selected_diag = false;
     } else {
-      // No blocks detected, no DENSE needed — fall back to DIAG
+      // No blocks detected, no DENSE needed ? fall back to DIAG
       effective_metric = MassMatrixType::DIAG;
       auto_selected_diag = true;
     }
@@ -12259,7 +11617,7 @@ MassMatrixConfig select_and_init_mass_matrix(
   }
   // Also build block_specs when user explicitly requests BLOCK_DIAG
   if (effective_metric == MassMatrixType::BLOCK_DIAG && block_specs.empty()) {
-    // User forced block_diag but AUTO didn't run — detect blocks from layout
+    // User forced block_diag but AUTO didn't run ? detect blocks from layout
     if (layout.is_temporal_gp && layout.log_sigma2_temporal_gp_idx >= 0 &&
         layout.logit_phi_temporal_gp_idx == layout.log_sigma2_temporal_gp_idx + 1) {
       block_specs.push_back({layout.log_sigma2_temporal_gp_idx, 2});
@@ -12332,7 +11690,7 @@ MassMatrixConfig select_and_init_mass_matrix(
   }
 
   // Initialize sparse GMRF block for ST_IV spatiotemporal interaction.
-  // Uses sparse Cholesky of posterior precision Q = tau*(Q_s⊗Q_t) + diag(H_lik).
+  // Uses sparse Cholesky of posterior precision Q = tau*(Q_s?Q_t) + diag(H_lik).
   // At warmup end, extracts diag(Q^{-1}) to set precision-informed diagonal mass.
   // NOTE: Factorization happens later (after warmup discovers tau and H_lik).
   bool use_sparse_gmrf_mass = true;
@@ -12366,25 +11724,25 @@ void warm_start_mass_matrix(
   std::vector<double> sqrt_m(n_params, 1.0);
   bool any_informed = false;
 
-  // HSGP basis coefficients: beta_j ~ N(0, 1) → posterior variance ≈ 1
+  // HSGP basis coefficients: beta_j ~ N(0, 1) ? posterior variance ? 1
   // Hyperparameters: log_sigma2 ~ prior with moderate variance,
-  //                  log_lengthscale ~ LogNormal(0,1) → variance ≈ 1
+  //                  log_lengthscale ~ LogNormal(0,1) ? variance ? 1
   if (layout.is_hsgp) {
     for (int j = layout.hsgp_beta_start; j < layout.hsgp_beta_end; j++) {
-      inv_m[j] = 1.0;  // N(0,1) prior → unit scale
+      inv_m[j] = 1.0;  // N(0,1) prior ? unit scale
     }
     inv_m[layout.log_sigma2_hsgp_idx] = 1.0;
     inv_m[layout.log_lengthscale_hsgp_idx] = 1.0;
     any_informed = true;
   }
 
-  // ICAR: phi[s] precision ≈ degree (number of neighbors)
-  // Higher degree → smaller variance → tighter mass
+  // ICAR: phi[s] precision ? degree (number of neighbors)
+  // Higher degree ? smaller variance ? tighter mass
   if (layout.has_spatial && !layout.is_bym2 &&
       data.spatial_type == SpatialType::ICAR && !data.adj_row_ptr.empty()) {
     for (int s = 0; s < (layout.spatial_end - layout.spatial_start); s++) {
       int degree = data.adj_row_ptr[s + 1] - data.adj_row_ptr[s];
-      // ICAR precision diagonal ≈ degree; variance ≈ 1/degree
+      // ICAR precision diagonal ? degree; variance ? 1/degree
       double var_est = 1.0 / std::max(1.0, (double)degree);
       inv_m[layout.spatial_start + s] = var_est;
     }
@@ -12392,7 +11750,7 @@ void warm_start_mass_matrix(
   }
 
   // BYM2: spatial phi ~ ICAR (eigenvalue-scaled), theta ~ N(0, I)
-  // Riebler parameterization: phi[s] ≈ scale_factor variance
+  // Riebler parameterization: phi[s] ? scale_factor variance
   if (layout.is_bym2) {
     double sf = std::max(data.bym2_scale_factor, 0.1);
     for (int s = layout.spatial_start; s < layout.spatial_end; s++) {
@@ -12421,14 +11779,14 @@ void warm_start_mass_matrix(
     for (int j = layout.temporal_start; j < layout.temporal_end; j++) {
       inv_m[j] = 1.0;
     }
-    // AR1 rho: logit scale variance ≈ 4
+    // AR1 rho: logit scale variance ? 4
     if (layout.logit_rho_ar1_idx >= 0) {
       inv_m[layout.logit_rho_ar1_idx] = 4.0;
     }
     any_informed = true;
   }
 
-  // Non-centered RE: z ~ N(0, 1) → unit scale
+  // Non-centered RE: z ~ N(0, 1) ? unit scale
   if (layout.has_re && data.re_parameterization == 1) {  // 1 = non-centered
     for (int j = layout.re_start; j < layout.re_end; j++) {
       inv_m[j] = 1.0;
@@ -12659,14 +12017,14 @@ HMCResultCpp run_hmc_chain_cpp(
 
   // Dense mass models: balance final step size tuning vs warmup budget.
   // Models with p>100 need sufficient mass adaptation windows (warmup is fixed),
-  // so keep term_buffer moderate. Previous 75 was too aggressive — used 30%
+  // so keep term_buffer moderate. Previous 75 was too aggressive ? used 30%
   // of warmup for final tuning, leaving fewer samples for mass adaptation.
   if (effective_metric == MassMatrixType::DENSE && n_params > 100) {
-    term_buffer = 60;  // Reduced from 75 — saves 15 iterations for mass adaptation
+    term_buffer = 60;  // Reduced from 75 ? saves 15 iterations for mass adaptation
   }
 
   // Note: For p~24, first mass window (25 samples < 29 needed) fails,
-  // but this is fine — better to wait for more samples than set a poor
+  // but this is fine ? better to wait for more samples than set a poor
   // mass estimate early. The second window (100+ samples) gives good mass.
 
   // Adjust for short warmup
@@ -12720,7 +12078,7 @@ HMCResultCpp run_hmc_chain_cpp(
   int sample_idx = 0;
   int n_accept = 0;
   int n_divergent = 0;
-  // Adaptive NUTS→fixed-L switching: monitor early sampling for max treedepth
+  // Adaptive NUTS?fixed-L switching: monitor early sampling for max treedepth
   int nuts_probe_window = std::min(20, n_sample);  // Check first 20 sampling iterations
   int nuts_probe_maxd = 0;  // Count of maxd hits in probe window
   bool nuts_probing = use_nuts && (L == 0);  // Only probe when using NUTS by default
@@ -12744,7 +12102,7 @@ HMCResultCpp run_hmc_chain_cpp(
   constexpr int SOFTABS_MAX_RETRIES = 3;  // Up to 3 retry attempts per divergence
 
   // Persistent SoftAbs metric (improvement #2): once computed, reuse for
-  // all subsequent trajectories. Initialized at warmup→sampling transition
+  // all subsequent trajectories. Initialized at warmup?sampling transition
   // (improvement #4) or on first divergence, whichever comes first.
   bool softabs_metric_active = false;
   DenseMassMatrix softabs_persistent_mass;
@@ -12755,7 +12113,7 @@ HMCResultCpp run_hmc_chain_cpp(
 
   int warmup_total_leapfrog = 0;  // TEMP: diagnostic counter
   // Note: warmup divergences are normal for DIAG models and resolve via dual
-  // averaging — only final epsilon matters (checked at warmup end).
+  // averaging ? only final epsilon matters (checked at warmup end).
 
   if (verbose && layout.is_temporal_gp) {
     REprintf("  [MASS-WINDOWS] n_warmup=%d, windows=[", n_warmup);
@@ -12774,7 +12132,7 @@ HMCResultCpp run_hmc_chain_cpp(
       // OAS shrinkage guarantees PD even when n < p, so we can lower the
       // threshold from n_params+5.  For large p the original threshold is
       // unreachable during warmup (e.g. p=159, need 164 but only get 125).
-      // New threshold: min(p+5, max(50, p/2))  — for p=159 this is 79.
+      // New threshold: min(p+5, max(50, p/2))  ? for p=159 this is 79.
       int dense_threshold = std::min(n_params + 5,
                                      std::max(50, n_params / 2));
       if (mass.type == MassMatrixType::DENSE && cov_stats.n >= dense_threshold) {
@@ -12788,7 +12146,7 @@ HMCResultCpp run_hmc_chain_cpp(
                      cov_stats.shrinkage_intensity);
           }
         } else {
-          // Cholesky failed — mass auto-degraded to DIAG, use diagonal stats
+          // Cholesky failed ? mass auto-degraded to DIAG, use diagonal stats
           if (verbose) {
             REprintf("  [DENSE] Window %d (iter %d): Cholesky FAILED (cov_stats.n=%d, p=%d)\n",
                      next_window_idx, iter, cov_stats.n, n_params);
@@ -12799,7 +12157,7 @@ HMCResultCpp run_hmc_chain_cpp(
           }
         }
       } else if (mass.type == MassMatrixType::DENSE) {
-        // Not enough samples for dense yet — use diagonal as interim
+        // Not enough samples for dense yet ? use diagonal as interim
         if (verbose) {
           REprintf("  [DENSE] Window %d (iter %d): not enough samples (cov_stats.n=%d, need=%d)\n",
                    next_window_idx, iter, cov_stats.n, dense_threshold);
@@ -12834,9 +12192,9 @@ HMCResultCpp run_hmc_chain_cpp(
         use_mass_matrix = true;
       }
 
-      // Temporal GP NC: z ~ N(0,1) by construction → optimal diag mass ≈ 1.0.
+      // Temporal GP NC: z ~ N(0,1) by construction ? optimal diag mass ? 1.0.
       // With limited warmup samples, noisy variance estimates for 20 z params
-      // create unbalanced mass → small epsilon. Fix z entries to 1.0 so the
+      // create unbalanced mass ? small epsilon. Fix z entries to 1.0 so the
       // step size is driven by the hyperparameters (beta, sigma2, phi) only.
       if (verbose && layout.is_temporal_gp) {
         REprintf("  [Z-DEBUG] Window %d (iter %d): use_mass=%d, tgp=%d, nc=%d, ts=%d, te=%d, mass_n=%d\n",
@@ -12925,9 +12283,9 @@ HMCResultCpp run_hmc_chain_cpp(
 
       auto& p = _nuts_p;
 
-      // Step size jitter (improvement #5): ±20% random noise per trajectory
+      // Step size jitter (improvement #5): ?20% random noise per trajectory
       // Prevents systematic step-size resonances that cause divergences.
-      // Only during post-warmup sampling — warmup needs stable epsilon for adaptation.
+      // Only during post-warmup sampling ? warmup needs stable epsilon for adaptation.
       double eps_iter = epsilon;
       if (!is_warmup) {
         double jitter = 1.0 + 0.2 * (2.0 * unif(rng) - 1.0);  // U[0.8, 1.2]
@@ -12973,7 +12331,7 @@ HMCResultCpp run_hmc_chain_cpp(
       std::fill(rho_bck.begin(), rho_bck.end(), 0.0);
       std::fill(rho_fwd.begin(), rho_fwd.end(), 0.0);
 
-      // p_sharp = M^{-1} * p at initial point — full mass for correct U-turn geometry
+      // p_sharp = M^{-1} * p at initial point ? full mass for correct U-turn geometry
       auto& p_sharp_init = nuts_ws.iter_p_sharp_init;
       mass.inv_mass_times_p(p.data(), p_sharp_init.data());
 
@@ -13014,12 +12372,12 @@ HMCResultCpp run_hmc_chain_cpp(
         // Stan: relabel halves before building subtree
         // Entire old trajectory becomes one half; new subtree is the other
         if (direction == 1) {
-          // Extending forward: old trajectory → backward half
+          // Extending forward: old trajectory ? backward half
           std::memcpy(rho_bck.data(), rho.data(), n_params * sizeof(double));
           std::memcpy(p_bck_beg.data(), p_fwd_end.data(), n_params * sizeof(double));
           std::memcpy(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(), n_params * sizeof(double));
         } else {
-          // Extending backward: old trajectory → forward half
+          // Extending backward: old trajectory ? forward half
           std::memcpy(rho_fwd.data(), rho.data(), n_params * sizeof(double));
           std::memcpy(p_fwd_beg.data(), p_bck_end.data(), n_params * sizeof(double));
           std::memcpy(p_sharp_fwd_beg.data(), p_sharp_bck_end.data(), n_params * sizeof(double));
@@ -13091,7 +12449,7 @@ HMCResultCpp run_hmc_chain_cpp(
         // Generalized U-turn check at top level (3 junctures)
         if (subtree.stop) break;
 
-        // Check 1: Full trajectory — far endpoints vs total rho
+        // Check 1: Full trajectory ? far endpoints vs total rho
         bool persist = compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_end.data(),
                                          rho.data(), n_params);
 
@@ -13132,7 +12490,7 @@ HMCResultCpp run_hmc_chain_cpp(
 
         if (metric_ok) {
           // Update persistent SoftAbs metric for retry use only (improvement #2).
-          // Do NOT override main mass/epsilon — warmup-adapted values work better
+          // Do NOT override main mass/epsilon ? warmup-adapted values work better
           // for general trajectories. SoftAbs is rescue-only.
           softabs_persistent_mass.set_from_metric(G_inv_buf, L_G_inv_buf);
           double eps_base = find_reasonable_epsilon_dense(
@@ -13281,7 +12639,7 @@ HMCResultCpp run_hmc_chain_cpp(
               softabs_successes++;
               alpha = (total_leapfrog > 0) ? (sum_accept_prob / total_leapfrog) : 0.0;
               iter_n_leapfrog = total_leapfrog;
-              break;  // Success — stop retry loop
+              break;  // Success ? stop retry loop
             }
             // Otherwise: try again with halved step size (next iteration)
           }  // end retry_attempt loop
@@ -13330,8 +12688,8 @@ HMCResultCpp run_hmc_chain_cpp(
           if (use_nuts) da.target_accept = nuts_target_accept;
         }
 
-        // DIAG→DENSE recovery is checked at warmup end (after da.final_epsilon)
-        // rather than during warmup — warmup divergences are normal for DIAG models
+        // DIAG?DENSE recovery is checked at warmup end (after da.final_epsilon)
+        // rather than during warmup ? warmup divergences are normal for DIAG models
         // and resolve via dual averaging. Only catastrophic final epsilon matters.
 
         if (iter >= init_buffer && iter < n_warmup - term_buffer) {
@@ -13348,7 +12706,7 @@ HMCResultCpp run_hmc_chain_cpp(
         if (iter == n_warmup - 1) {
           epsilon = da.final_epsilon();
 
-          // DIAG→BLOCK_DIAG→DENSE recovery at warmup end: if AUTO selected DIAG but the
+          // DIAG?BLOCK_DIAG?DENSE recovery at warmup end: if AUTO selected DIAG but the
           // final adapted epsilon is catastrophic (>2.0), DIAG can't capture the
           // posterior geometry. Try BLOCK_DIAG first if block_specs available,
           // otherwise fall back to DENSE with identity mass.
@@ -13382,7 +12740,7 @@ HMCResultCpp run_hmc_chain_cpp(
             }
           }
 
-          // BLOCK_DIAG→DIAG fallback: if epsilon still catastrophic after BLOCK_DIAG
+          // BLOCK_DIAG?DIAG fallback: if epsilon still catastrophic after BLOCK_DIAG
           if (epsilon > 2.0 && mass.type == MassMatrixType::BLOCK_DIAG) {
             if (verbose) {
               REprintf("  [BLOCK_DIAG->DIAG] WARNING: epsilon=%.4f still catastrophic. "
@@ -13412,7 +12770,7 @@ HMCResultCpp run_hmc_chain_cpp(
           }
 
           // Precision-informed diagonal mass for ST_IV at warmup end.
-          // Build Q_post = tau*(Q_s⊗Q_t) + diag(h_lik), factorize, extract diag(Q^{-1}).
+          // Build Q_post = tau*(Q_s?Q_t) + diag(h_lik), factorize, extract diag(Q^{-1}).
           if (mass.sparse_gmrf.active && !mass.sparse_gmrf.factorized) {
             int st_S = data.spatiotemporal_data.n_spatial;
             int st_T = data.spatiotemporal_data.n_times;
@@ -13481,7 +12839,7 @@ HMCResultCpp run_hmc_chain_cpp(
                   sum_var += var_k;
                 }
               }
-              // Deactivate sparse GMRF — diagonal mass is now informed
+              // Deactivate sparse GMRF ? diagonal mass is now informed
               mass.sparse_gmrf.active = false;
               // Recompute epsilon with new mass
               epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
@@ -13501,9 +12859,9 @@ HMCResultCpp run_hmc_chain_cpp(
             REprintf("  [METRIC] Warmup done: epsilon=%.6f, mass.type=%s, mass.adapted=%d\n",
                      epsilon, metric_name(mass.type), (int)mass.adapted);
           }
-          // Proactive SoftAbs at warmup→sampling transition (improvement #4):
+          // Proactive SoftAbs at warmup?sampling transition (improvement #4):
           // Pre-compute SoftAbs metric so it's ready for retry attempts.
-          // Do NOT override main mass/epsilon — warmup-adapted values are better
+          // Do NOT override main mass/epsilon ? warmup-adapted values are better
           // for general sampling. SoftAbs is only used as rescue on divergences.
           if (use_softabs_retry && !softabs_metric_active) {
             std::vector<double> hessian_warmup_end;
@@ -13534,7 +12892,7 @@ HMCResultCpp run_hmc_chain_cpp(
       }
 
       // Adaptive NUTS probe: warn if most early iterations hit max treedepth
-      // (Stan's approach: warn but keep NUTS running — truncated NUTS picks
+      // (Stan's approach: warn but keep NUTS running ? truncated NUTS picks
       // from up to 2^depth candidates, far better than HMC(L=10) with tiny epsilon)
       if (nuts_probing && !is_warmup && sample_idx < nuts_probe_window) {
         if (iter_treedepth >= max_treedepth) nuts_probe_maxd++;
@@ -13561,7 +12919,7 @@ HMCResultCpp run_hmc_chain_cpp(
       double H_current;
 
       if (use_lbfgs && lbfgs_initialized && !lbfgs_warmup_done && lbfgs_state.d == n_params) {
-        // L-BFGS: Sample p ~ N(0, B) where B ≈ 1/gamma * I (warmup only)
+        // L-BFGS: Sample p ~ N(0, B) where B ? 1/gamma * I (warmup only)
         std::vector<double> sqrt_diag = lbfgs_state.get_sqrt_B_diag();
         if ((int)sqrt_diag.size() == n_params) {
           for (int i = 0; i < n_params; i++) {
@@ -13924,1844 +13282,3 @@ std::vector<HMCResult> run_hmc_parallel_chains(
 }
 
 } // namespace tulpa_hmc
-
-// =====================================================================
-// R EXPORTS
-// =====================================================================
-
-// HMC sampler with bundled list arguments to avoid R's 65-arg limit for .Call
-// Parameters are bundled into logical groups:
-//   re_params: random effects (group, n_groups, n_terms, group_matrix, slopes, etc.)
-//   spatial_params: spatial structure (type, group, adjacency, etc.)
-//   temporal_params: temporal structure (type, time_idx, group_idx, etc.)
-//   prior_params: prior hyperparameters
-//   zi_params: zero-inflation (type, X_zi, prior_sd)
-//   latent_params: latent factors
-//   st_params: spatiotemporal interaction
-// [[Rcpp::export]]
-Rcpp::List cpp_hmc_fit(
-    Rcpp::NumericVector q_init,
-    Rcpp::IntegerVector y_num,
-    Rcpp::IntegerVector y_denom,
-    Rcpp::NumericVector y_num_cont,
-    Rcpp::NumericVector y_denom_cont,
-    Rcpp::NumericMatrix X_num,
-    Rcpp::NumericMatrix X_denom,
-    std::string model_type_str,
-    Rcpp::List re_params,
-    Rcpp::List spatial_params,
-    Rcpp::List temporal_params,
-    Rcpp::List prior_params,
-    Rcpp::List zi_params,
-    Rcpp::List latent_params,
-    Rcpp::List st_params,
-    Rcpp::List tvc_params,  // Time-varying coefficients
-    Rcpp::List svc_params,  // Spatially-varying coefficients
-    int n_iter,
-    int n_warmup,
-    int L,
-    int n_chains,
-    unsigned int seed,
-    int n_threads,
-    bool verbose,
-    std::string gradient_mode_str = "auto",
-    int max_treedepth = 10,
-    std::string metric_str = "auto",
-    double adapt_delta = -1.0,
-    int riemannian = -1,
-    bool gradient_check_only = false
-) {
-  using namespace tulpa_hmc;
-
-  // Set global gradient mode from R parameter
-  GradientMode grad_mode = parse_gradient_mode(gradient_mode_str);
-  set_gradient_mode(grad_mode);
-
-  // Parse metric type
-  MassMatrixType metric_type = parse_metric_type(metric_str);
-
-  // =========================================================================
-  // Extract bundled parameters from lists with defensive checks
-  // =========================================================================
-
-  // Random effects parameters
-  // Use eager deep copies to prevent R GC from invalidating memory during HMC
-  std::vector<int> re_group = Rcpp::as<std::vector<int>>(re_params["group"]);
-  int n_re_groups = Rcpp::as<int>(re_params["n_groups"]);
-  int n_re_terms = Rcpp::as<int>(re_params["n_terms"]);
-
-  // Handle group_matrix which may be numeric or integer
-  Rcpp::IntegerMatrix re_group_matrix;
-  SEXP group_mat_sexp = re_params["group_matrix"];
-  if (Rf_isMatrix(group_mat_sexp)) {
-    if (TYPEOF(group_mat_sexp) == INTSXP) {
-      re_group_matrix = Rcpp::as<Rcpp::IntegerMatrix>(group_mat_sexp);
-    } else {
-      // Convert numeric to integer
-      Rcpp::NumericMatrix nm(group_mat_sexp);
-      re_group_matrix = Rcpp::IntegerMatrix(nm.nrow(), nm.ncol());
-      for (int i = 0; i < nm.nrow(); i++) {
-        for (int j = 0; j < nm.ncol(); j++) {
-          re_group_matrix(i, j) = static_cast<int>(nm(i, j));
-        }
-      }
-    }
-  } else {
-    // Create dummy matrix
-    re_group_matrix = Rcpp::IntegerMatrix(1, 1);
-    re_group_matrix(0, 0) = 0;
-  }
-
-  std::vector<int> re_n_groups_vec = Rcpp::as<std::vector<int>>(re_params["n_groups_vec"]);
-  bool has_re_slopes = Rcpp::as<bool>(re_params["has_slopes"]);
-  bool has_re_correlated_slopes = Rcpp::as<bool>(re_params["has_correlated_slopes"]);
-  std::vector<int> re_n_coefs_vec = Rcpp::as<std::vector<int>>(re_params["n_coefs_vec"]);
-  std::vector<int> re_correlated_vec = Rcpp::as<std::vector<int>>(re_params["correlated_vec"]);
-  std::vector<int> re_n_chol_vec = Rcpp::as<std::vector<int>>(re_params["n_chol_vec"]);
-  Rcpp::List slope_matrices_list = re_params["slope_matrices"];
-
-  // Spatial parameters (eager deep copies)
-  std::string spatial_type_str = Rcpp::as<std::string>(spatial_params["type"]);
-  std::vector<int> spatial_group = Rcpp::as<std::vector<int>>(spatial_params["group"]);
-  int n_spatial_units = Rcpp::as<int>(spatial_params["n_units"]);
-  std::vector<int> adj_row_ptr = Rcpp::as<std::vector<int>>(spatial_params["adj_row_ptr"]);
-  std::vector<int> adj_col_idx = Rcpp::as<std::vector<int>>(spatial_params["adj_col_idx"]);
-  std::vector<int> n_neighbors = Rcpp::as<std::vector<int>>(spatial_params["n_neighbors"]);
-  double bym2_scale_factor = Rcpp::as<double>(spatial_params["bym2_scale"]);
-
-  // Precision mass matrix data (Q_inv and L_Q for ICAR/BYM2)
-  std::vector<double> spatial_Q_inv;
-  std::vector<double> spatial_L_Q;
-  if (spatial_params.containsElementNamed("Q_inv") &&
-      spatial_params.containsElementNamed("L_Q")) {
-    SEXP qi_sexp = spatial_params["Q_inv"];
-    SEXP lq_sexp = spatial_params["L_Q"];
-    if (!Rf_isNull(qi_sexp) && !Rf_isNull(lq_sexp)) {
-      spatial_Q_inv = Rcpp::as<std::vector<double>>(qi_sexp);
-      spatial_L_Q = Rcpp::as<std::vector<double>>(lq_sexp);
-    }
-  }
-
-  // Temporal parameters (eager deep copies)
-  std::string temporal_type_str = Rcpp::as<std::string>(temporal_params["type"]);
-  std::vector<int> temporal_time_idx = Rcpp::as<std::vector<int>>(temporal_params["time_idx"]);
-  std::vector<int> temporal_group_idx = Rcpp::as<std::vector<int>>(temporal_params["group_idx"]);
-  int n_times = Rcpp::as<int>(temporal_params["n_times"]);
-  int n_temporal_groups = Rcpp::as<int>(temporal_params["n_groups"]);
-  int n_temporal_params = Rcpp::as<int>(temporal_params["n_params"]);
-  bool temporal_cyclic = Rcpp::as<bool>(temporal_params["cyclic"]);
-  bool temporal_shared = Rcpp::as<bool>(temporal_params["shared"]);
-  double tau_temporal_shape = Rcpp::as<double>(temporal_params["tau_shape"]);
-  double tau_temporal_rate = Rcpp::as<double>(temporal_params["tau_rate"]);
-
-  // Prior parameters
-  double sigma_beta = Rcpp::as<double>(prior_params["sigma_beta"]);
-  double sigma_re_scale = Rcpp::as<double>(prior_params["sigma_re_scale"]);
-  double phi_prior_shape = Rcpp::as<double>(prior_params["phi_shape"]);
-  double phi_prior_rate = Rcpp::as<double>(prior_params["phi_rate"]);
-  double tau_spatial_shape = Rcpp::as<double>(prior_params["tau_spatial_shape"]);
-  double tau_spatial_rate = Rcpp::as<double>(prior_params["tau_spatial_rate"]);
-
-  // Zero-inflation parameters
-  std::string zi_type_str = Rcpp::as<std::string>(zi_params["type"]);
-
-  // Handle X_zi which may be numeric matrix or NULL
-  Rcpp::NumericMatrix X_zi;
-  SEXP xzi_sexp = zi_params["X"];
-  if (!Rf_isNull(xzi_sexp) && Rf_isMatrix(xzi_sexp)) {
-    X_zi = Rcpp::as<Rcpp::NumericMatrix>(xzi_sexp);
-  } else {
-    // Create empty dummy matrix
-    X_zi = Rcpp::NumericMatrix(1, 1);
-    X_zi(0, 0) = 1.0;
-  }
-  double zi_prior_sd = Rcpp::as<double>(zi_params["prior_sd"]);
-
-  // One-inflation parameters (for OI-binomial and ZOIB)
-  Rcpp::NumericMatrix X_oi;
-  SEXP xoi_sexp = zi_params["X_oi"];
-  if (!Rf_isNull(xoi_sexp) && Rf_isMatrix(xoi_sexp)) {
-    X_oi = Rcpp::as<Rcpp::NumericMatrix>(xoi_sexp);
-  } else {
-    // Create empty dummy matrix
-    X_oi = Rcpp::NumericMatrix(1, 1);
-    X_oi(0, 0) = 1.0;
-  }
-  int p_oi = 0;
-  SEXP p_oi_sexp = zi_params["p_oi"];
-  if (!Rf_isNull(p_oi_sexp)) {
-    p_oi = Rcpp::as<int>(p_oi_sexp);
-  }
-  double oi_prior_sd = zi_prior_sd;  // Default to same as ZI
-  SEXP oi_prior_sd_sexp = zi_params["oi_prior_sd"];
-  if (!Rf_isNull(oi_prior_sd_sexp)) {
-    oi_prior_sd = Rcpp::as<double>(oi_prior_sd_sexp);
-  }
-
-  // Latent factor parameters
-  bool has_latent = Rcpp::as<bool>(latent_params["has_latent"]);
-  int latent_n_factors = Rcpp::as<int>(latent_params["n_factors"]);
-  bool latent_shared = Rcpp::as<bool>(latent_params["shared"]);
-  bool latent_scale = Rcpp::as<bool>(latent_params["scale"]);
-  int latent_constraint = Rcpp::as<int>(latent_params["constraint"]);
-  double latent_sigma_prior_rate = Rcpp::as<double>(latent_params["sigma_prior_rate"]);
-
-  // =========================================================================
-  // Set up model data
-  // =========================================================================
-  ModelData data;
-
-  // Copy response data
-  data.legacy.y_num = std::vector<int>(y_num.begin(), y_num.end());
-  data.legacy.y_denom = std::vector<int>(y_denom.begin(), y_denom.end());
-  data.legacy.y_num_cont = std::vector<double>(y_num_cont.begin(), y_num_cont.end());
-  data.legacy.y_denom_cont = std::vector<double>(y_denom_cont.begin(), y_denom_cont.end());
-
-  // Flatten design matrices for cache efficiency
-  data.legacy.p_num = X_num.ncol();
-  data.legacy.p_denom = X_denom.ncol();
-  data.N = y_num.size();
-
-  data.legacy.X_num_flat.resize(data.N * data.legacy.p_num);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_num; j++) {
-      data.legacy.X_num_flat[i * data.legacy.p_num + j] = X_num(i, j);
-    }
-  }
-
-  data.legacy.X_denom_flat.resize(data.N * data.legacy.p_denom);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_denom; j++) {
-      data.legacy.X_denom_flat[i * data.legacy.p_denom + j] = X_denom(i, j);
-    }
-  }
-
-  // Random effects (already deep copied above)
-  data.re_group = re_group;
-  data.n_re_groups = n_re_groups;
-  data.n_re_terms = n_re_terms;
-
-  // Random slopes flags
-  data.has_re_slopes = has_re_slopes;
-  data.has_re_correlated_slopes = has_re_correlated_slopes;
-
-  // RE parameterization: 0 = centered, 1 = non-centered
-  // Non-centered uses z ~ N(0,1) prior, centered uses re ~ N(0, sigma^2)
-  data.re_parameterization = Rcpp::as<int>(re_params["parameterization"]);
-
-  if (n_re_terms > 0) {
-    // Multi-term RE structure (with or without slopes)
-    data.re_group_multi.resize(n_re_terms);
-    data.re_n_groups_multi.resize(n_re_terms);
-    data.re_offsets.resize(n_re_terms);
-    data.re_n_coefs.resize(n_re_terms);
-    data.re_correlated.resize(n_re_terms);
-    data.re_n_chol.resize(n_re_terms);
-    data.re_n_slopes.resize(n_re_terms);
-    data.re_slope_matrices.resize(n_re_terms);
-
-    int offset = 0;
-    int total_re_params = 0;
-    int total_sigma_params = 0;
-    int total_chol_params = 0;
-
-    for (int t = 0; t < n_re_terms; t++) {
-      data.re_n_groups_multi[t] = re_n_groups_vec[t];
-      data.re_offsets[t] = offset;
-
-      // Slopes metadata
-      int n_coefs = has_re_slopes ? re_n_coefs_vec[t] : 1;
-      data.re_n_coefs[t] = n_coefs;
-      data.re_correlated[t] = has_re_slopes ? (re_correlated_vec[t] != 0) : false;
-      data.re_n_chol[t] = has_re_slopes ? re_n_chol_vec[t] : 0;
-      data.re_n_slopes[t] = n_coefs - 1;  // Number of slopes (excluding intercept)
-
-      // Process slope matrix for this term
-      if (has_re_slopes && data.re_n_slopes[t] > 0 && slope_matrices_list.size() > t) {
-        SEXP mat_sexp = slope_matrices_list[t];
-        if (!Rf_isNull(mat_sexp)) {
-          Rcpp::NumericMatrix slope_mat(mat_sexp);
-          int n_rows = slope_mat.nrow();
-          int n_cols = slope_mat.ncol();
-          data.re_slope_matrices[t].resize(n_rows * n_cols);
-          for (int i = 0; i < n_rows; i++) {
-            for (int j = 0; j < n_cols; j++) {
-              data.re_slope_matrices[t][i * n_cols + j] = slope_mat(i, j);
-            }
-          }
-        }
-      }
-
-      offset += re_n_groups_vec[t];
-      total_re_params += re_n_groups_vec[t] * n_coefs;
-      total_sigma_params += n_coefs;
-      total_chol_params += data.re_n_chol[t];
-
-      // Extract column t from re_group_matrix
-      data.re_group_multi[t].resize(data.N);
-      for (int i = 0; i < data.N; i++) {
-        data.re_group_multi[t][i] = re_group_matrix(i, t);
-      }
-    }
-    data.total_re_groups = offset;
-
-    // Build contiguous flat array: obs-major layout re_group_multi_flat[i * n_re_terms + t]
-    // Obs-major is cache-friendly: inner loop over terms for each observation
-    data.re_group_multi_flat.resize(n_re_terms * data.N);
-    for (int i = 0; i < data.N; i++) {
-      for (int t = 0; t < n_re_terms; t++) {
-        data.re_group_multi_flat[i * n_re_terms + t] = data.re_group_multi[t][i];
-      }
-    }
-    data.total_re_params = total_re_params;
-    data.total_sigma_params = total_sigma_params;
-    data.total_chol_params = total_chol_params;
-  } else {
-    // No RE terms
-    data.total_re_groups = n_re_groups;
-    data.total_re_params = n_re_groups;
-    data.total_sigma_params = (n_re_groups > 0) ? 1 : 0;
-    data.total_chol_params = 0;
-  }
-
-  // Model type
-  if (model_type_str == "binomial") {
-    data.legacy.model_type = ModelType::BINOMIAL;
-  } else if (model_type_str == "negbin_negbin") {
-    data.legacy.model_type = ModelType::NEGBIN_NEGBIN;
-  } else if (model_type_str == "poisson_gamma") {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;
-  } else if (model_type_str == "negbin_gamma") {
-    data.legacy.model_type = ModelType::NEGBIN_GAMMA;
-  } else if (model_type_str == "gamma_gamma") {
-    data.legacy.model_type = ModelType::GAMMA_GAMMA;
-  } else if (model_type_str == "lognormal") {
-    data.legacy.model_type = ModelType::LOGNORMAL;
-  } else if (model_type_str == "beta_binomial") {
-    data.legacy.model_type = ModelType::BETA_BINOMIAL;
-  } else {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;  // fallback
-  }
-
-  // Spatial structure
-  if (spatial_type_str == "icar") {
-    data.spatial_type = SpatialType::ICAR;
-  } else if (spatial_type_str == "bym2") {
-    data.spatial_type = SpatialType::BYM2;
-  } else if (spatial_type_str == "car_proper") {
-    data.spatial_type = SpatialType::CAR_PROPER;
-  } else {
-    data.spatial_type = SpatialType::NONE;
-  }
-
-  data.spatial_group = spatial_group;  // Already deep copied above
-  data.n_spatial_units = n_spatial_units;
-  data.adj_row_ptr = adj_row_ptr;
-  data.adj_col_idx = adj_col_idx;
-  data.n_neighbors = n_neighbors;
-  data.bym2_scale_factor = bym2_scale_factor;
-  data.spatial_Q_inv = std::move(spatial_Q_inv);
-  data.spatial_L_Q = std::move(spatial_L_Q);
-
-  // Proper-CAR rho bounds (eigenvalue-derived in R; defaults to (0, 1))
-  if (data.spatial_type == SpatialType::CAR_PROPER &&
-      spatial_params.containsElementNamed("rho_lower") &&
-      spatial_params.containsElementNamed("rho_upper")) {
-    data.car_rho_lower = Rcpp::as<double>(spatial_params["rho_lower"]);
-    data.car_rho_upper = Rcpp::as<double>(spatial_params["rho_upper"]);
-  } else {
-    data.car_rho_lower = 0.0;
-    data.car_rho_upper = 1.0;
-  }
-
-  // Collapsed ICAR/BYM2 parameterization
-  data.icar_collapsed = false;
-  data.bym2_collapsed = false;
-  if (spatial_params.containsElementNamed("parameterization")) {
-      std::string spatial_param_str = Rcpp::as<std::string>(spatial_params["parameterization"]);
-      if (spatial_param_str == "collapsed") {
-          if (data.spatial_type == SpatialType::ICAR) {
-              data.icar_collapsed = true;
-          } else if (data.spatial_type == SpatialType::BYM2) {
-              data.bym2_collapsed = true;
-          }
-      }
-  }
-
-  // Temporal structure
-  if (temporal_type_str == "rw1") {
-    data.temporal_type = TemporalType::RW1;
-  } else if (temporal_type_str == "rw2") {
-    data.temporal_type = TemporalType::RW2;
-  } else if (temporal_type_str == "ar1") {
-    data.temporal_type = TemporalType::AR1;
-  } else if (temporal_type_str == "gp") {
-    data.temporal_type = TemporalType::GP;
-
-    // GP-specific parameters
-    data.has_temporal_gp = true;
-    data.temporal_gp_data.n_obs = data.n_times;  // Use n_times, not N (total obs)
-    data.temporal_gp_data.n_groups = n_temporal_groups;
-    data.temporal_gp_data.time_values = Rcpp::as<std::vector<double>>(temporal_params["time_values"]);
-    data.temporal_gp_data.group_index = temporal_group_idx;
-
-    // Parse covariance type
-    std::string cov_type_str = Rcpp::as<std::string>(temporal_params["cov_type"]);
-    data.temporal_gp_data.cov_type = tulpa_temporal_gp::parse_temporal_cov_type(cov_type_str);
-    data.temporal_gp_data.nu = Rcpp::as<double>(temporal_params["nu"]);
-    data.temporal_gp_data.period = Rcpp::as<double>(temporal_params["period"]);
-    data.temporal_gp_data.shared = temporal_shared;
-
-    // GP priors
-    data.temporal_gp_sigma2_prior_U = Rcpp::as<double>(temporal_params["gp_sigma2_prior_U"]);
-    data.temporal_gp_sigma2_prior_alpha = Rcpp::as<double>(temporal_params["gp_sigma2_prior_alpha"]);
-    data.temporal_gp_phi_prior_lower = Rcpp::as<double>(temporal_params["gp_phi_prior_lower"]);
-    data.temporal_gp_phi_prior_upper = Rcpp::as<double>(temporal_params["gp_phi_prior_upper"]);
-
-    // Parameterization: 0=centered, 1=non-centered (default NC)
-    std::string gp_param_str = "noncentered";
-    if (temporal_params.containsElementNamed("gp_parameterization")) {
-        gp_param_str = Rcpp::as<std::string>(temporal_params["gp_parameterization"]);
-    }
-    data.temporal_gp_parameterization = (gp_param_str == "centered") ? 0 : 1;
-  } else if (temporal_type_str == "multiscale") {
-    data.temporal_type = TemporalType::NONE;  // MS_t uses its own data path
-    data.has_temporal_gp = false;
-    data.has_multiscale_temporal = true;
-
-    // Extract MS_t data from temporal_params
-    data.multiscale_temporal_data.n_times = n_times;
-    data.multiscale_temporal_data.n_groups = n_temporal_groups;
-    data.multiscale_temporal_data.n_obs = data.N;
-    data.multiscale_temporal_data.time_index = temporal_time_idx;
-    data.multiscale_temporal_data.group_index = temporal_group_idx;
-    data.multiscale_temporal_data.shared = temporal_shared;
-
-    int ms_seasonal_period = 0;
-    if (temporal_params.containsElementNamed("seasonal_period"))
-      ms_seasonal_period = Rcpp::as<int>(temporal_params["seasonal_period"]);
-    data.multiscale_temporal_data.seasonal_period = ms_seasonal_period;
-
-    std::string ms_trend_type = "rw1";
-    if (temporal_params.containsElementNamed("trend_type"))
-      ms_trend_type = Rcpp::as<std::string>(temporal_params["trend_type"]);
-    std::string ms_short_type = "ar1";
-    if (temporal_params.containsElementNamed("short_term_type"))
-      ms_short_type = Rcpp::as<std::string>(temporal_params["short_term_type"]);
-    data.multiscale_temporal_data.trend_type = tulpa_temporal::parse_temporal_type(ms_trend_type);
-    data.multiscale_temporal_data.short_term_type = tulpa_temporal::parse_temporal_type(ms_short_type);
-
-    // MS_t priors
-    data.ms_sigma2_trend_prior_U = 1.0;
-    data.ms_sigma2_trend_prior_alpha = 0.01;
-    data.ms_sigma2_seasonal_prior_U = 1.0;
-    data.ms_sigma2_seasonal_prior_alpha = 0.01;
-    data.ms_sigma2_short_prior_U = 1.0;
-    data.ms_sigma2_short_prior_alpha = 0.01;
-    if (temporal_params.containsElementNamed("sigma2_trend_prior_U"))
-      data.ms_sigma2_trend_prior_U = Rcpp::as<double>(temporal_params["sigma2_trend_prior_U"]);
-    if (temporal_params.containsElementNamed("sigma2_trend_prior_alpha"))
-      data.ms_sigma2_trend_prior_alpha = Rcpp::as<double>(temporal_params["sigma2_trend_prior_alpha"]);
-    if (temporal_params.containsElementNamed("sigma2_short_prior_U"))
-      data.ms_sigma2_short_prior_U = Rcpp::as<double>(temporal_params["sigma2_short_prior_U"]);
-    if (temporal_params.containsElementNamed("sigma2_short_prior_alpha"))
-      data.ms_sigma2_short_prior_alpha = Rcpp::as<double>(temporal_params["sigma2_short_prior_alpha"]);
-  } else {
-    data.temporal_type = TemporalType::NONE;
-    data.has_temporal_gp = false;
-  }
-
-  data.temporal_time_idx = temporal_time_idx;  // Already deep copied above
-  data.temporal_group_idx = temporal_group_idx;
-  data.n_times = n_times;
-  data.n_temporal_groups = n_temporal_groups;
-  data.n_temporal_params = n_temporal_params;
-  data.temporal_cyclic = temporal_cyclic;
-  data.temporal_shared = temporal_shared;
-  data.tau_temporal_shape = tau_temporal_shape;
-  data.tau_temporal_rate = tau_temporal_rate;
-
-  // Zero-inflation structure
-  data.zi_type = tulpa_zi::parse_zi_type(zi_type_str);
-  // Use explicit p_zi from R (not X_zi.ncol()) because OI-only models
-  // pass a 1-column placeholder X_zi but p_zi=0
-  {
-    SEXP p_zi_sexp = zi_params["p_zi"];
-    data.p_zi = (!Rf_isNull(p_zi_sexp)) ? Rcpp::as<int>(p_zi_sexp) : X_zi.ncol();
-  }
-  data.zi_prior_sd = zi_prior_sd;
-  data.X_zi_flat.resize(data.N * data.p_zi);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.p_zi; j++) {
-      data.X_zi_flat[i * data.p_zi + j] = X_zi(i, j);
-    }
-  }
-
-  // One-inflation structure (for OI-binomial and ZOIB)
-  data.p_oi = p_oi;
-  data.oi_prior_sd = oi_prior_sd;
-  if (p_oi > 0) {
-    data.X_oi_flat.resize(data.N * data.p_oi);
-    for (int i = 0; i < data.N; i++) {
-      for (int j = 0; j < data.p_oi; j++) {
-        data.X_oi_flat[i * data.p_oi + j] = X_oi(i, j);
-      }
-    }
-  }
-
-  // Priors
-  data.sigma_beta = sigma_beta;
-  data.sigma_re_scale = sigma_re_scale;
-  data.phi_prior_shape = phi_prior_shape;
-  data.phi_prior_rate = phi_prior_rate;
-  data.tau_spatial_shape = tau_spatial_shape;
-  data.tau_spatial_rate = tau_spatial_rate;
-
-  // Parallelization
-  data.n_threads = n_threads;
-
-  // Initialize feature flags that are not used in cpp_hmc_fit (only in cpp_hmc_fit_gp)
-  data.has_gp = false;
-  data.has_multiscale_gp = false;
-  data.has_multiscale_temporal = false;
-  data.has_rsr = false;
-  data.has_svc = false;
-  data.has_hsgp = false;
-
-  // Latent factors
-  data.has_latent = has_latent;
-  data.latent_n_factors = latent_n_factors;
-  data.latent_shared = latent_shared;
-  data.latent_scale = latent_scale;
-  data.latent_constraint = latent_constraint;
-  data.latent_sigma_prior_rate = latent_sigma_prior_rate;
-
-  // Spatiotemporal interaction - extract from list
-  bool has_spatiotemporal = st_params.size() > 0 && Rcpp::as<bool>(st_params["has_spatiotemporal"]);
-  data.has_spatiotemporal = has_spatiotemporal;
-  if (has_spatiotemporal) {
-    // Extract parameters from list (eager deep copies to prevent R GC issues)
-    std::string st_type_str = Rcpp::as<std::string>(st_params["type"]);
-    bool st_shared = Rcpp::as<bool>(st_params["shared"]);
-    int st_n_spatial = Rcpp::as<int>(st_params["n_spatial"]);
-    int st_n_times = Rcpp::as<int>(st_params["n_times"]);
-    int st_n_params = Rcpp::as<int>(st_params["n_params"]);
-    std::vector<int> st_s_idx = Rcpp::as<std::vector<int>>(st_params["s_idx"]);
-    std::vector<int> st_t_idx = Rcpp::as<std::vector<int>>(st_params["t_idx"]);
-    std::vector<int> st_flat = Rcpp::as<std::vector<int>>(st_params["st_flat"]);
-    std::string st_temporal_type_str = Rcpp::as<std::string>(st_params["temporal_type"]);
-    bool st_temporal_cyclic = Rcpp::as<bool>(st_params["temporal_cyclic"]);
-    std::vector<int> st_adj_row_ptr = Rcpp::as<std::vector<int>>(st_params["adj_row_ptr"]);
-    std::vector<int> st_adj_col_idx = Rcpp::as<std::vector<int>>(st_params["adj_col_idx"]);
-    double st_sigma2_prior_U = Rcpp::as<double>(st_params["sigma2_prior_U"]);
-    double st_sigma2_prior_alpha = Rcpp::as<double>(st_params["sigma2_prior_alpha"]);
-
-    // Parse ST type (accept both R-side "I"/"IV" and legacy "type_i"/"type_iv")
-    if (st_type_str == "I" || st_type_str == "type_i") {
-      data.spatiotemporal_data.type = STType::TYPE_I;
-    } else if (st_type_str == "II" || st_type_str == "type_ii") {
-      data.spatiotemporal_data.type = STType::TYPE_II;
-    } else if (st_type_str == "III" || st_type_str == "type_iii") {
-      data.spatiotemporal_data.type = STType::TYPE_III;
-    } else if (st_type_str == "IV" || st_type_str == "type_iv") {
-      data.spatiotemporal_data.type = STType::TYPE_IV;
-    } else if (st_type_str == "separable") {
-      data.spatiotemporal_data.type = STType::SEPARABLE;
-    } else if (st_type_str == "nonsep_gp") {
-      data.spatiotemporal_data.type = STType::NONSEP_GP;
-    } else {
-      Rcpp::stop("Unknown spatiotemporal type: '%s'. Expected one of: I, II, III, IV, separable, nonsep_gp",
-                 st_type_str.c_str());
-    }
-
-    data.spatiotemporal_data.shared = st_shared;
-    data.spatiotemporal_data.n_spatial = st_n_spatial;
-    data.spatiotemporal_data.n_times = st_n_times;
-    data.spatiotemporal_data.n_params = st_n_params;
-
-    // Observation indexing (already deep copied above)
-    data.spatiotemporal_data.s_idx = st_s_idx;
-    data.spatiotemporal_data.t_idx = st_t_idx;
-    data.spatiotemporal_data.st_flat = st_flat;
-
-    // Temporal type for Type II/IV
-    if (st_temporal_type_str == "rw1") {
-      data.spatiotemporal_data.temporal_type = TemporalType::RW1;
-    } else if (st_temporal_type_str == "rw2") {
-      data.spatiotemporal_data.temporal_type = TemporalType::RW2;
-    } else if (st_temporal_type_str == "ar1") {
-      data.spatiotemporal_data.temporal_type = TemporalType::AR1;
-    } else {
-      data.spatiotemporal_data.temporal_type = TemporalType::RW1;  // Default
-    }
-    data.spatiotemporal_data.temporal_cyclic = st_temporal_cyclic;
-
-    // Spatial adjacency for Type III/IV (already deep copied above)
-    data.spatiotemporal_data.adj_row_ptr = st_adj_row_ptr;
-    data.spatiotemporal_data.adj_col_idx = st_adj_col_idx;
-
-    // Prior parameters
-    data.st_sigma2_prior_U = st_sigma2_prior_U;
-    data.st_sigma2_prior_alpha = st_sigma2_prior_alpha;
-
-    // Parameterization: centered by default. NC requires spectral decomposition
-    // (Kronecker eigenvectors of Q_s ⊗ Q_t) which is not yet implemented.
-    // Simple scaling NC (z = delta * sqrt(tau)) preserves GMRF anisotropy
-    // and makes performance worse (eps=0.003, td=11.5 vs eps=0.006, td=10).
-    data.st_parameterization = 0;  // Always centered for now
-    if (st_params.containsElementNamed("parameterization")) {
-      std::string st_param_str = Rcpp::as<std::string>(st_params["parameterization"]);
-      data.st_parameterization = (st_param_str == "centered") ? 0 : 1;
-    }
-
-    // Kronecker precision data for ST_IV (precomputed in R)
-    if (st_params.containsElementNamed("Qs_inv") &&
-        st_params.containsElementNamed("Qt_inv")) {
-      SEXP qs_sexp = st_params["Qs_inv"];
-      SEXP ls_sexp = st_params["Ls"];
-      SEXP qt_sexp = st_params["Qt_inv"];
-      SEXP lt_sexp = st_params["Lt"];
-      if (!Rf_isNull(qs_sexp) && !Rf_isNull(qt_sexp) &&
-          !Rf_isNull(ls_sexp) && !Rf_isNull(lt_sexp)) {
-        data.st_Qs_inv = Rcpp::as<std::vector<double>>(qs_sexp);
-        data.st_Ls = Rcpp::as<std::vector<double>>(ls_sexp);
-        data.st_Qt_inv = Rcpp::as<std::vector<double>>(qt_sexp);
-        data.st_Lt = Rcpp::as<std::vector<double>>(lt_sexp);
-      }
-    }
-
-    // HSGP-ST: spectral basis spatiotemporal interaction
-    data.st_is_hsgp = false;
-    if (st_params.containsElementNamed("st_is_hsgp") &&
-        Rcpp::as<bool>(st_params["st_is_hsgp"])) {
-      data.st_is_hsgp = true;
-      data.spatiotemporal_data.is_hsgp = true;
-      int st_hsgp_m = Rcpp::as<int>(st_params["hsgp_m"]);
-      double st_hsgp_c = Rcpp::as<double>(st_params["hsgp_c"]);
-      std::vector<double> st_hsgp_coords = Rcpp::as<std::vector<double>>(st_params["hsgp_coords"]);
-      bool st_hsgp_scale = true;
-      if (st_params.containsElementNamed("hsgp_scale_coords"))
-        st_hsgp_scale = Rcpp::as<bool>(st_params["hsgp_scale_coords"]);
-
-      // Setup HSGP basis (Phi matrix + eigenvalues)
-      tulpa_hsgp::setup_hsgp_2d(
-        st_hsgp_coords, data.N,
-        st_hsgp_m, st_hsgp_c, st_hsgp_scale,
-        data.st_hsgp_data);
-      data.spatiotemporal_data.hsgp_m_total = data.st_hsgp_data.m_total;
-      // Override n_spatial and n_params for HSGP-ST
-      data.spatiotemporal_data.n_spatial = data.st_hsgp_data.m_total;
-      data.spatiotemporal_data.n_params = data.st_hsgp_data.m_total * st_n_times;
-    }
-  } else {
-    data.spatiotemporal_data.type = STType::NONE;
-  }
-
-  // TVC (Temporally-Varying Coefficients) parameters
-  bool has_tvc = tvc_params.size() > 0 && Rcpp::as<bool>(tvc_params["has_tvc"]);
-  data.has_tvc = has_tvc;
-  if (has_tvc) {
-    // Extract TVC parameters (eager deep copies to prevent R GC issues)
-    int tvc_n_tvc = Rcpp::as<int>(tvc_params["n_tvc"]);
-    int tvc_n_times = Rcpp::as<int>(tvc_params["n_times"]);
-    int tvc_n_groups = Rcpp::as<int>(tvc_params["n_groups"]);
-    std::string tvc_structure_str = Rcpp::as<std::string>(tvc_params["structure"]);
-    bool tvc_shared = Rcpp::as<bool>(tvc_params["shared"]);
-    bool tvc_cyclic = Rcpp::as<bool>(tvc_params["cyclic"]);
-    std::vector<int> tvc_indices = Rcpp::as<std::vector<int>>(tvc_params["tvc_indices"]);
-    std::vector<int> tvc_time_index = Rcpp::as<std::vector<int>>(tvc_params["time_index"]);
-    std::vector<int> tvc_group_index = Rcpp::as<std::vector<int>>(tvc_params["group_index"]);
-    std::vector<double> tvc_X_tvc = Rcpp::as<std::vector<double>>(tvc_params["X_tvc"]);
-    double tvc_tau_shape = Rcpp::as<double>(tvc_params["tau_shape"]);
-    double tvc_tau_rate = Rcpp::as<double>(tvc_params["tau_rate"]);
-
-    // Populate TVC data structure
-    data.tvc_data.n_obs = data.N;
-    data.tvc_data.n_tvc = tvc_n_tvc;
-    data.tvc_data.n_times = tvc_n_times;
-    data.tvc_data.n_groups = tvc_n_groups;
-    data.tvc_data.shared = tvc_shared;
-    data.tvc_data.cyclic = tvc_cyclic;
-    data.tvc_data.tvc_indices = tvc_indices;
-    data.tvc_data.time_index = tvc_time_index;
-    data.tvc_data.group_index = tvc_group_index;
-    data.tvc_data.X_tvc = tvc_X_tvc;
-
-    // Parse TVC temporal structure
-    if (tvc_structure_str == "rw1") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;
-    } else if (tvc_structure_str == "rw2") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::RW2;
-    } else if (tvc_structure_str == "ar1") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::AR1;
-    } else if (tvc_structure_str == "iid") {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::IID;
-    } else {
-      data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;  // Default
-    }
-
-    // Prior parameters
-    data.tvc_tau_shape = tvc_tau_shape;
-    data.tvc_tau_rate = tvc_tau_rate;
-
-    // Pre-allocate gradient workspace buffers (avoids per-call heap allocation)
-    data.tvc_data.init_workspace();
-  } else {
-    data.tvc_data.n_tvc = 0;
-    data.tvc_data.n_times = 0;
-    data.tvc_data.n_groups = 1;
-  }
-
-  // SVC (Spatially-Varying Coefficients) parameters
-  bool has_svc = svc_params.size() > 0 && Rcpp::as<bool>(svc_params["has_svc"]);
-  data.has_svc = has_svc;
-  if (has_svc) {
-    // Extract SVC parameters (eager deep copies to prevent R GC issues)
-    int svc_n_svc = Rcpp::as<int>(svc_params["n_svc"]);
-    int svc_nn = Rcpp::as<int>(svc_params["nn"]);
-    bool svc_shared = Rcpp::as<bool>(svc_params["shared"]);
-    std::string svc_cov_type_str = Rcpp::as<std::string>(svc_params["cov_type"]);
-    std::vector<double> svc_coords = Rcpp::as<std::vector<double>>(svc_params["coords"]);
-    std::vector<int> svc_indices = Rcpp::as<std::vector<int>>(svc_params["svc_indices"]);
-    std::vector<double> svc_X_svc = Rcpp::as<std::vector<double>>(svc_params["X_svc"]);
-    double svc_sigma2_scale = Rcpp::as<double>(svc_params["sigma2_prior_scale"]);
-    double svc_phi_lower = Rcpp::as<double>(svc_params["phi_prior_lower"]);
-    double svc_phi_upper = Rcpp::as<double>(svc_params["phi_prior_upper"]);
-
-    // Check if this is HSGP-based SVC
-    std::string svc_approx = "nngp";
-    if (svc_params.containsElementNamed("svc_approx")) {
-      svc_approx = Rcpp::as<std::string>(svc_params["svc_approx"]);
-    }
-    data.svc_is_hsgp = (svc_approx == "hsgp");
-
-    // Populate SVC data structure (shared fields)
-    data.svc_data.n_obs = data.N;
-    data.svc_data.n_svc = svc_n_svc;
-    data.svc_data.shared = svc_shared;
-    data.svc_data.coords = svc_coords;
-    data.svc_data.svc_indices = svc_indices;
-    data.svc_data.X_svc = svc_X_svc;
-
-    if (data.svc_is_hsgp) {
-      // HSGP-based SVC: set up basis functions
-      int hsgp_m = Rcpp::as<int>(svc_params["hsgp_m"]);
-      double hsgp_c = Rcpp::as<double>(svc_params["hsgp_c"]);
-      data.svc_hsgp_m_per_dim = hsgp_m;
-      data.svc_hsgp_boundary_factor = hsgp_c;
-
-      // Set up HSGP basis (shared across all SVC terms)
-      tulpa_hsgp::setup_hsgp_2d(svc_coords, data.N, hsgp_m, hsgp_c,
-                                  svc_shared, data.svc_hsgp_data);
-
-      // No NNGP data needed
-      data.svc_data.nn = 0;
-    } else {
-      // NNGP-based SVC: set up neighbor structure
-      data.svc_data.nn = svc_nn;
-      data.svc_data.nn_idx = Rcpp::as<std::vector<int>>(svc_params["nn_idx"]);
-      data.svc_data.nn_dist = Rcpp::as<std::vector<double>>(svc_params["nn_dist"]);
-      data.svc_data.nn_order = Rcpp::as<std::vector<int>>(svc_params["nn_order"]);
-      data.svc_data.nn_order_inv = Rcpp::as<std::vector<int>>(svc_params["nn_order_inv"]);
-
-      // Parse SVC covariance type
-      if (svc_cov_type_str == "exponential") {
-        data.svc_data.cov_type = tulpa_svc::CovType::EXPONENTIAL;
-      } else if (svc_cov_type_str == "matern") {
-        data.svc_data.cov_type = tulpa_svc::CovType::MATERN;
-      } else if (svc_cov_type_str == "gaussian") {
-        data.svc_data.cov_type = tulpa_svc::CovType::GAUSSIAN;
-      } else if (svc_cov_type_str == "spherical") {
-        data.svc_data.cov_type = tulpa_svc::CovType::SPHERICAL;
-      } else {
-        data.svc_data.cov_type = tulpa_svc::CovType::EXPONENTIAL;
-      }
-    }
-
-    // Prior parameters
-    data.svc_sigma2_prior_scale = svc_sigma2_scale;
-    data.svc_phi_prior_lower = svc_phi_lower;
-    data.svc_phi_prior_upper = svc_phi_upper;
-
-    // Pre-allocate SVC workspace buffers
-    data.svc_data.init_workspace();
-  } else {
-    data.svc_data.n_svc = 0;
-    data.svc_data.n_obs = data.N;
-    data.svc_data.nn = 0;
-    data.svc_is_hsgp = false;
-  }
-
-  // Initialize parameters
-  std::vector<double> q0(q_init.begin(), q_init.end());
-
-  // Memory barrier to ensure all copies complete before HMC execution
-  // This prevents R GC from invalidating memory during sampling
-  std::atomic_thread_fence(std::memory_order_seq_cst);
-
-  // =========================================================================
-  // Gradient check only mode: compare N, A, A_r, H without sampling
-  // =========================================================================
-  if (gradient_check_only) {
-    ParamLayout layout = compute_param_layout(data);
-    double tol = 1e-4;
-
-    // Compute numerical gradient (reference)
-    std::vector<double> grad_N;
-    compute_gradient_numerical(q0, data, layout, grad_N);
-
-    // Also compute numerical gradient for impl-based log_post (used by A/A_r)
-    std::vector<double> grad_N_impl;
-    compute_gradient_numerical_impl(q0, data, layout, grad_N_impl);
-
-    // Helper: compute max relative difference
-    auto max_rel_diff = [](const std::vector<double>& a, const std::vector<double>& b) -> double {
-      double mx = 0.0;
-      for (size_t i = 0; i < a.size() && i < b.size(); i++) {
-        double diff = std::abs(a[i] - b[i]);
-        double scale = std::max(1.0, std::max(std::abs(a[i]), std::abs(b[i])));
-        mx = std::max(mx, diff / scale);
-      }
-      return mx;
-    };
-
-    // Helper: check if a function is autodiff-based (differentiates log_post_impl<T>)
-    auto is_autodiff_fn = [](GradientFn fn) -> bool {
-      return fn == &compute_gradient_arena ||
-             fn == &compute_gradient_forward ||
-             fn == &compute_gradient_autodiff;
-    };
-
-    // Try H mode
-    double h_vs_n = -1.0;  // -1 means not available
-    GradientFn h_fn = resolve_gradient_fn(GradientMode::HANDCODED, data, layout);
-    if (h_fn != &compute_gradient_numerical && h_fn != &compute_gradient_numerical_impl) {
-      // If H resolved to an autodiff function (fallback), compare against N_impl
-      // since autodiff differentiates log_post_impl, not compute_log_post
-      const auto& ref = is_autodiff_fn(h_fn) ? grad_N_impl : grad_N;
-      std::vector<double> grad_H;
-      h_fn(q0, data, layout, grad_H, nullptr);
-      h_vs_n = max_rel_diff(grad_H, ref);
-
-      // Print top-5 worst parameters when H fails
-      if (h_vs_n > 1e-4) {
-        std::vector<std::pair<double,int>> diffs;
-        for (size_t i = 0; i < grad_H.size() && i < ref.size(); i++) {
-          double diff = std::abs(grad_H[i] - ref[i]);
-          double scale = std::max(1.0, std::max(std::abs(grad_H[i]), std::abs(ref[i])));
-          diffs.push_back({diff/scale, (int)i});
-        }
-        std::sort(diffs.begin(), diffs.end(), [](auto&a,auto&b){return a.first>b.first;});
-        Rprintf("  H gradient mismatch (top 5 of %d params):\n", (int)grad_H.size());
-        for (int k = 0; k < std::min(5,(int)diffs.size()); k++) {
-          int idx = diffs[k].second;
-          Rprintf("    param[%d]: H=%.6e N=%.6e  rel_diff=%.2e\n",
-                  idx, grad_H[idx], ref[idx], diffs[k].first);
-        }
-        // Print layout info for worst param
-        int worst = diffs[0].second;
-        Rprintf("  Layout: beta_num[%d-%d] beta_denom[%d-%d] re[%d+]\n",
-                layout.legacy.beta_num_start, layout.legacy.beta_num_start+data.legacy.p_num-1,
-                layout.legacy.beta_denom_start, layout.legacy.beta_denom_start+data.legacy.p_denom-1,
-                layout.re_start);
-        if (layout.has_spatial) Rprintf("  spatial[%d-%d]\n", layout.spatial_start, layout.spatial_end-1);
-        if (layout.has_temporal) Rprintf("  temporal[%d-%d]\n", layout.temporal_start, layout.temporal_end-1);
-        if (layout.has_spatiotemporal) Rprintf("  ST delta[%d+] tau_st[%d]\n",
-                                               layout.st_delta_start, layout.log_tau_st_idx);
-        if (layout.has_tvc) Rprintf("  TVC w[%d+] tau[%d+]\n", layout.tvc_w_start, layout.log_tau_tvc_start);
-        if (layout.has_svc) Rprintf("  SVC w[%d+] sigma2[%d+] phi[%d+]\n",
-                                    layout.svc_w_start, layout.log_sigma2_svc_start, layout.log_phi_svc_start);
-        if (layout.has_re_slopes) Rprintf("  has_re_slopes=true n_re_terms=%d\n", data.n_re_terms);
-        if (layout.is_temporal_gp) Rprintf("  temporal_gp: sigma2[%d] phi[%d]\n",
-                                           layout.log_sigma2_temporal_gp_idx, layout.logit_phi_temporal_gp_idx);
-        if (layout.has_multiscale_temporal) Rprintf("  ms_temporal\n");
-        if (layout.has_latent) Rprintf("  latent\n");
-      }
-    }
-
-    // Try A_r mode (arena autodiff)
-    double ar_vs_n = -1.0;
-    GradientFn ar_fn = resolve_gradient_fn(GradientMode::AUTODIFF_ARENA, data, layout);
-    if (ar_fn != &compute_gradient_numerical && ar_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_Ar;
-      ar_fn(q0, data, layout, grad_Ar, nullptr);
-      ar_vs_n = max_rel_diff(grad_Ar, grad_N_impl);
-    }
-
-    // Try A mode (forward autodiff)
-    double a_vs_n = -1.0;
-    GradientFn a_fn = resolve_gradient_fn(GradientMode::AUTODIFF_FWD, data, layout);
-    if (a_fn != &compute_gradient_numerical && a_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_A;
-      a_fn(q0, data, layout, grad_A, nullptr);
-      a_vs_n = max_rel_diff(grad_A, grad_N_impl);
-    }
-
-    // H vs A_r cross-check
-    double h_vs_ar = -1.0;
-    if (h_vs_n >= 0 && ar_vs_n >= 0) {
-      std::vector<double> grad_H2, grad_Ar2;
-      h_fn(q0, data, layout, grad_H2, nullptr);
-      ar_fn(q0, data, layout, grad_Ar2, nullptr);
-      h_vs_ar = max_rel_diff(grad_H2, grad_Ar2);
-
-      // Print top-3 worst parameters when cross-check fails
-      if (h_vs_ar > 1e-4) {
-        std::vector<std::pair<double,int>> diffs;
-        for (size_t i = 0; i < grad_H2.size() && i < grad_Ar2.size(); i++) {
-          double diff = std::abs(grad_H2[i] - grad_Ar2[i]);
-          double scale = std::max(1.0, std::max(std::abs(grad_H2[i]), std::abs(grad_Ar2[i])));
-          diffs.push_back({diff/scale, (int)i});
-        }
-        std::sort(diffs.begin(), diffs.end(), [](auto&a,auto&b){return a.first>b.first;});
-        Rprintf("  H vs A_r cross-check DIVERGE (top 3 of %d params):\n", (int)grad_H2.size());
-        for (int k = 0; k < std::min(3,(int)diffs.size()); k++) {
-          int idx = diffs[k].second;
-          Rprintf("    param[%d]: H=%.8e A_r=%.8e  rel_diff=%.2e\n",
-                  idx, grad_H2[idx], grad_Ar2[idx], diffs[k].first);
-        }
-      }
-    }
-
-    return Rcpp::List::create(
-      Rcpp::Named("h_vs_n") = h_vs_n,
-      Rcpp::Named("ar_vs_n") = ar_vs_n,
-      Rcpp::Named("a_vs_n") = a_vs_n,
-      Rcpp::Named("h_vs_ar") = h_vs_ar,
-      Rcpp::Named("tol") = tol,
-      // h_ok: check h_vs_n first; if it fails but h_vs_ar passes, H is still
-      // correct (compute_log_post vs log_post_impl diverge for some ZI models)
-      Rcpp::Named("h_ok") = (h_vs_n >= 0)
-        ? ((h_vs_n < tol) ? true : (h_vs_ar >= 0 && h_vs_ar < tol))
-        : NA_LOGICAL,
-      Rcpp::Named("ar_ok") = (ar_vs_n >= 0) ? (ar_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("a_ok") = (a_vs_n >= 0) ? (a_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("n_params") = (int)q0.size()
-    );
-  }
-
-  // Run sampler
-  if (n_chains == 1) {
-    ParamLayout layout = compute_param_layout(data);
-    HMCResult result = run_hmc_chain(
-      q0, data, layout, n_iter, n_warmup, L, 0, seed, verbose, max_treedepth, metric_type, adapt_delta, riemannian
-    );
-
-    Rcpp::List ret = Rcpp::List::create(
-      Rcpp::Named("samples") = result.samples,
-      Rcpp::Named("log_prob") = result.log_prob,
-      Rcpp::Named("accept_prob") = result.accept_prob,
-      Rcpp::Named("n_leapfrog") = result.n_leapfrog,
-      Rcpp::Named("treedepth") = result.treedepth,
-      Rcpp::Named("divergent") = result.divergent,
-      Rcpp::Named("epsilon") = result.epsilon,
-      Rcpp::Named("n_warmup") = result.n_warmup,
-      Rcpp::Named("n_sample") = result.n_sample,
-      Rcpp::Named("n_chains") = 1,
-      Rcpp::Named("sampler") = result.sampler.empty()
-        ? ((L == 0) ? std::string("NUTS") : std::string("HMC"))
-        : result.sampler
-    );
-    if (result.n_gp_collapsed > 0) {
-      ret["gp_w_star"] = result.gp_w_star;
-    }
-    if (result.n_icar_collapsed > 0) {
-      ret["icar_phi_star"] = result.icar_phi_star;
-      if (result.bym2_theta_star.nrow() > 0) {
-        ret["bym2_theta_star"] = result.bym2_theta_star;
-      }
-    }
-    return ret;
-  } else {
-    // Multiple chains
-    std::vector<HMCResult> results = run_hmc_parallel_chains(
-      q0, data, n_iter, n_warmup, L, n_chains, seed, verbose, max_treedepth, metric_type, adapt_delta, riemannian
-    );
-
-    // Combine results
-    int n_sample = results[0].n_sample;
-    int n_params = results[0].samples.ncol();
-
-    Rcpp::List samples_list(n_chains);
-    Rcpp::List log_prob_list(n_chains);
-    Rcpp::List accept_prob_list(n_chains);
-    Rcpp::List n_leapfrog_list(n_chains);
-    Rcpp::List treedepth_list(n_chains);
-    Rcpp::List divergent_list(n_chains);
-    Rcpp::NumericVector epsilon_vec(n_chains);
-
-    // Determine sampler name: if any chain switched, report it
-    std::string sampler_name = (L == 0) ? "NUTS" : "HMC";
-    for (int c = 0; c < n_chains; c++) {
-      samples_list[c] = results[c].samples;
-      log_prob_list[c] = results[c].log_prob;
-      accept_prob_list[c] = results[c].accept_prob;
-      n_leapfrog_list[c] = results[c].n_leapfrog;
-      treedepth_list[c] = results[c].treedepth;
-      divergent_list[c] = results[c].divergent;
-      epsilon_vec[c] = results[c].epsilon;
-      if (!results[c].sampler.empty()) {
-        sampler_name = results[c].sampler;
-      }
-    }
-
-    return Rcpp::List::create(
-      Rcpp::Named("samples") = samples_list,
-      Rcpp::Named("log_prob") = log_prob_list,
-      Rcpp::Named("accept_prob") = accept_prob_list,
-      Rcpp::Named("n_leapfrog") = n_leapfrog_list,
-      Rcpp::Named("treedepth") = treedepth_list,
-      Rcpp::Named("divergent") = divergent_list,
-      Rcpp::Named("epsilon") = epsilon_vec,
-      Rcpp::Named("n_warmup") = n_warmup,
-      Rcpp::Named("n_sample") = n_sample,
-      Rcpp::Named("n_chains") = n_chains,
-      Rcpp::Named("sampler") = sampler_name
-    );
-  }
-}
-
-// [[Rcpp::export]]
-int cpp_get_max_threads() {
-  #ifdef _OPENMP
-  return omp_get_max_threads();
-  #else
-  return 1;
-  #endif
-}
-
-// HMC sampler for GP-based spatial models
-// Parameters are bundled into lists to avoid R's .Call argument limit:
-//   gp_params: GP spatial parameters
-//   ms_gp_params: multiscale GP parameters
-//   ms_temporal_params: multiscale temporal parameters
-//   rsr_params: RSR parameters
-// [[Rcpp::export]]
-Rcpp::List cpp_hmc_fit_gp(
-    Rcpp::NumericVector q_init,
-    Rcpp::IntegerVector y_num,
-    Rcpp::IntegerVector y_denom,
-    Rcpp::NumericVector y_num_cont,
-    Rcpp::NumericVector y_denom_cont,
-    Rcpp::NumericMatrix X_num,
-    Rcpp::NumericMatrix X_denom,
-    Rcpp::IntegerVector re_group,
-    int n_re_groups,
-    std::string model_type_str,
-    Rcpp::List gp_params,
-    Rcpp::List ms_gp_params,
-    Rcpp::List ms_temporal_params,
-    Rcpp::List rsr_params,
-    Rcpp::List temporal_params,  // Regular temporal (RW1/RW2/AR1/GP) — was missing, caused silent drop
-    double sigma_beta,
-    double sigma_re_scale,
-    double phi_prior_shape,
-    double phi_prior_rate,
-    std::string zi_type_str,
-    Rcpp::NumericMatrix X_zi,
-    double zi_prior_sd,
-    int n_iter,
-    int n_warmup,
-    int L,
-    int n_chains,
-    unsigned int seed,
-    int n_threads,
-    bool verbose,
-    int max_treedepth = 10,
-    double adapt_delta = -1.0,
-    std::string metric_str = "auto",
-    std::string gradient_mode_str = "auto",
-    Rcpp::List tvc_params = Rcpp::List(),
-    bool gradient_check_only = false
-) {
-  using namespace tulpa_hmc;
-
-  // Parse metric and gradient mode from string parameters
-  GradientMode grad_mode = parse_gradient_mode(gradient_mode_str);
-  set_gradient_mode(grad_mode);
-  MassMatrixType metric_type = parse_metric_type(metric_str);
-  // Force all Rcpp parameter extractions into eagerly-copied std::vectors FIRST
-  // This prevents R garbage collection from invalidating lazy Rcpp views during C++ execution
-  // The original debug output workaround worked because I/O forced R to sync; this achieves
-  // the same effect through explicit eager copying without visible output.
-
-  // Extract GP parameters - convert to native C++ types immediately
-  std::string gp_type_str = Rcpp::as<std::string>(gp_params["gp_type"]);
-
-  // Force eager copy into std::vectors (not Rcpp views that could be GC'd)
-  std::vector<double> coords_vec = Rcpp::as<std::vector<double>>(gp_params["coords"]);
-  std::vector<int> nn_idx_vec = Rcpp::as<std::vector<int>>(gp_params["nn_idx"]);
-  std::vector<double> nn_dist_vec = Rcpp::as<std::vector<double>>(gp_params["nn_dist"]);
-  std::vector<int> nn_order_vec = Rcpp::as<std::vector<int>>(gp_params["nn_order"]);
-  std::vector<int> nn_order_inv_vec = Rcpp::as<std::vector<int>>(gp_params["nn_order_inv"]);
-  std::vector<double> nn_neighbor_dist_vec = Rcpp::as<std::vector<double>>(gp_params["nn_neighbor_dist"]);  // Phase 1.3
-
-  int nn = Rcpp::as<int>(gp_params["nn"]);
-  std::string cov_type_str = Rcpp::as<std::string>(gp_params["cov_type"]);
-  double nu = Rcpp::as<double>(gp_params["nu"]);
-  bool gp_shared = Rcpp::as<bool>(gp_params["shared"]);
-  double gp_sigma2_prior_U = Rcpp::as<double>(gp_params["sigma2_prior_U"]);
-  double gp_sigma2_prior_alpha = Rcpp::as<double>(gp_params["sigma2_prior_alpha"]);
-  double gp_phi_prior_lower = Rcpp::as<double>(gp_params["phi_prior_lower"]);
-  double gp_phi_prior_upper = Rcpp::as<double>(gp_params["phi_prior_upper"]);
-
-  // GP solver configuration
-  std::string gp_solver_str = Rcpp::as<std::string>(gp_params["solver"]);
-  double gp_cg_tol = Rcpp::as<double>(gp_params["cg_tol"]);
-  int gp_cg_maxiter = Rcpp::as<int>(gp_params["cg_maxiter"]);
-
-  // Observation-to-location mapping (1-based from R, convert to 0-based)
-  std::vector<int> gp_obs_to_loc_r = Rcpp::as<std::vector<int>>(gp_params["gp_obs_to_loc"]);
-  int gp_n_unique = Rcpp::as<int>(gp_params["n_unique"]);
-
-  // Memory barrier to ensure all extractions complete before proceeding
-  std::atomic_thread_fence(std::memory_order_seq_cst);
-
-  // Extract multiscale GP parameters - eager copy to std::vectors
-  std::vector<int> nn_idx_local_vec = Rcpp::as<std::vector<int>>(ms_gp_params["nn_idx_local"]);
-  std::vector<double> nn_dist_local_vec = Rcpp::as<std::vector<double>>(ms_gp_params["nn_dist_local"]);
-  std::vector<int> nn_order_local_vec = Rcpp::as<std::vector<int>>(ms_gp_params["nn_order_local"]);
-  std::vector<int> nn_order_inv_local_vec = Rcpp::as<std::vector<int>>(ms_gp_params["nn_order_inv_local"]);
-  int nn_local = Rcpp::as<int>(ms_gp_params["nn_local"]);
-  std::vector<int> nn_idx_regional_vec = Rcpp::as<std::vector<int>>(ms_gp_params["nn_idx_regional"]);
-  std::vector<double> nn_dist_regional_vec = Rcpp::as<std::vector<double>>(ms_gp_params["nn_dist_regional"]);
-  std::vector<int> nn_order_regional_vec = Rcpp::as<std::vector<int>>(ms_gp_params["nn_order_regional"]);
-  std::vector<int> nn_order_inv_regional_vec = Rcpp::as<std::vector<int>>(ms_gp_params["nn_order_inv_regional"]);
-  int nn_regional = Rcpp::as<int>(ms_gp_params["nn_regional"]);
-  std::vector<double> nn_neighbor_dist_local_vec = Rcpp::as<std::vector<double>>(ms_gp_params["nn_neighbor_dist_local"]);  // Phase 1.3
-  std::vector<double> nn_neighbor_dist_regional_vec = Rcpp::as<std::vector<double>>(ms_gp_params["nn_neighbor_dist_regional"]);  // Phase 1.3
-  double range_local_lower = Rcpp::as<double>(ms_gp_params["range_local_lower"]);
-  double range_local_upper = Rcpp::as<double>(ms_gp_params["range_local_upper"]);
-  double range_regional_lower = Rcpp::as<double>(ms_gp_params["range_regional_lower"]);
-  double range_regional_upper = Rcpp::as<double>(ms_gp_params["range_regional_upper"]);
-  double ms_sigma2_local_prior_U = Rcpp::as<double>(ms_gp_params["sigma2_local_prior_U"]);
-  double ms_sigma2_local_prior_alpha = Rcpp::as<double>(ms_gp_params["sigma2_local_prior_alpha"]);
-  double ms_sigma2_regional_prior_U = Rcpp::as<double>(ms_gp_params["sigma2_regional_prior_U"]);
-  double ms_sigma2_regional_prior_alpha = Rcpp::as<double>(ms_gp_params["sigma2_regional_prior_alpha"]);
-  std::string msgp_sampler_str = Rcpp::as<std::string>(ms_gp_params["sampler"]);
-
-  // Extract multiscale temporal parameters - eager copy
-  std::string ms_temporal_type_str = Rcpp::as<std::string>(ms_temporal_params["type"]);
-  std::vector<int> ms_time_index_vec = Rcpp::as<std::vector<int>>(ms_temporal_params["time_index"]);
-  std::vector<int> ms_group_index_vec = Rcpp::as<std::vector<int>>(ms_temporal_params["group_index"]);
-  int ms_n_times = Rcpp::as<int>(ms_temporal_params["n_times"]);
-  int ms_n_groups = Rcpp::as<int>(ms_temporal_params["n_groups"]);
-  std::string trend_type_str = Rcpp::as<std::string>(ms_temporal_params["trend_type"]);
-  int seasonal_period = Rcpp::as<int>(ms_temporal_params["seasonal_period"]);
-  std::string short_term_type_str = Rcpp::as<std::string>(ms_temporal_params["short_term_type"]);
-  bool ms_temporal_shared = Rcpp::as<bool>(ms_temporal_params["shared"]);
-  double ms_sigma2_trend_prior_U = Rcpp::as<double>(ms_temporal_params["sigma2_trend_prior_U"]);
-  double ms_sigma2_trend_prior_alpha = Rcpp::as<double>(ms_temporal_params["sigma2_trend_prior_alpha"]);
-  double ms_sigma2_seasonal_prior_U = Rcpp::as<double>(ms_temporal_params["sigma2_seasonal_prior_U"]);
-  double ms_sigma2_seasonal_prior_alpha = Rcpp::as<double>(ms_temporal_params["sigma2_seasonal_prior_alpha"]);
-  double ms_sigma2_short_prior_U = Rcpp::as<double>(ms_temporal_params["sigma2_short_prior_U"]);
-  double ms_sigma2_short_prior_alpha = Rcpp::as<double>(ms_temporal_params["sigma2_short_prior_alpha"]);
-
-  // Extract RSR parameters - eager copy
-  bool has_rsr = Rcpp::as<bool>(rsr_params["has_rsr"]);
-  std::vector<double> rsr_projection_vec = Rcpp::as<std::vector<double>>(rsr_params["projection"]);
-  int rsr_n = Rcpp::as<int>(rsr_params["n"]);
-
-  // Second memory barrier after all Rcpp extractions
-  std::atomic_thread_fence(std::memory_order_seq_cst);
-  using namespace tulpa_hmc;
-
-  // Set up model data
-  ModelData data;
-
-  // Copy response data
-  data.legacy.y_num = std::vector<int>(y_num.begin(), y_num.end());
-  data.legacy.y_denom = std::vector<int>(y_denom.begin(), y_denom.end());
-  data.legacy.y_num_cont = std::vector<double>(y_num_cont.begin(), y_num_cont.end());
-  data.legacy.y_denom_cont = std::vector<double>(y_denom_cont.begin(), y_denom_cont.end());
-  data.N = y_num.size();
-
-  // Flatten design matrices
-  data.legacy.p_num = X_num.ncol();
-  data.legacy.p_denom = X_denom.ncol();
-
-  data.legacy.X_num_flat.resize(data.N * data.legacy.p_num);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_num; j++) {
-      data.legacy.X_num_flat[i * data.legacy.p_num + j] = X_num(i, j);
-    }
-  }
-
-  data.legacy.X_denom_flat.resize(data.N * data.legacy.p_denom);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.legacy.p_denom; j++) {
-      data.legacy.X_denom_flat[i * data.legacy.p_denom + j] = X_denom(i, j);
-    }
-  }
-
-  // Random effects (single-term legacy path)
-  data.re_group = std::vector<int>(re_group.begin(), re_group.end());
-  data.n_re_groups = n_re_groups;
-
-  // Initialize multi-term RE fields to indicate single-term mode
-  data.n_re_terms = 0;  // 0 means use legacy single-term path
-  data.total_re_groups = n_re_groups;
-  data.has_re_slopes = false;  // GP interface doesn't support random slopes
-  data.has_re_correlated_slopes = false;
-
-  // Model type
-  if (model_type_str == "binomial") {
-    data.legacy.model_type = ModelType::BINOMIAL;
-  } else if (model_type_str == "negbin_negbin") {
-    data.legacy.model_type = ModelType::NEGBIN_NEGBIN;
-  } else if (model_type_str == "poisson_gamma") {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;
-  } else if (model_type_str == "negbin_gamma") {
-    data.legacy.model_type = ModelType::NEGBIN_GAMMA;
-  } else if (model_type_str == "gamma_gamma") {
-    data.legacy.model_type = ModelType::GAMMA_GAMMA;
-  } else if (model_type_str == "lognormal") {
-    data.legacy.model_type = ModelType::LOGNORMAL;
-  } else if (model_type_str == "beta_binomial") {
-    data.legacy.model_type = ModelType::BETA_BINOMIAL;
-  } else {
-    data.legacy.model_type = ModelType::POISSON_GAMMA;  // fallback
-  }
-
-  // Covariance type
-  tulpa_gp::CovType cov_type;
-  if (cov_type_str == "exponential") {
-    cov_type = tulpa_gp::CovType::EXPONENTIAL;
-  } else if (cov_type_str == "matern") {
-    cov_type = tulpa_gp::CovType::MATERN;
-  } else if (cov_type_str == "gaussian") {
-    cov_type = tulpa_gp::CovType::GAUSSIAN;
-  } else {
-    cov_type = tulpa_gp::CovType::SPHERICAL;
-  }
-
-  // GP spatial structure
-  if (gp_type_str == "gp") {
-    data.spatial_type = SpatialType::GP;
-    data.has_gp = true;
-    data.has_multiscale_gp = false;
-    data.has_hsgp = false;
-
-    data.gp_data.n_obs = gp_n_unique;  // Unique locations, not total observations
-    data.gp_data.nn = nn;
-    data.gp_data.coords = coords_vec;  // Already std::vector from eager copy
-    data.gp_data.nn_idx = nn_idx_vec;
-    data.gp_data.nn_dist = nn_dist_vec;
-    data.gp_data.nn_neighbor_dist = nn_neighbor_dist_vec;  // Phase 1.3: cached pairwise distances
-    // Convert obs_to_loc from R's 1-based to C++'s 0-based indexing
-    data.gp_data.obs_to_loc.resize(gp_obs_to_loc_r.size());
-    for (size_t i = 0; i < gp_obs_to_loc_r.size(); i++) {
-      data.gp_data.obs_to_loc[i] = gp_obs_to_loc_r[i] - 1;
-    }
-    // Convert from R's 1-based to C++'s 0-based indexing
-    data.gp_data.nn_order.resize(nn_order_vec.size());
-    for (size_t i = 0; i < nn_order_vec.size(); i++) {
-      data.gp_data.nn_order[i] = nn_order_vec[i] - 1;
-    }
-    data.gp_data.nn_order_inv.resize(nn_order_inv_vec.size());
-    for (size_t i = 0; i < nn_order_inv_vec.size(); i++) {
-      data.gp_data.nn_order_inv[i] = nn_order_inv_vec[i] - 1;
-    }
-    data.gp_data.cov_type = cov_type;
-    data.gp_data.nu = nu;
-    data.gp_data.shared = gp_shared;
-
-    // Set solver configuration
-    data.gp_data.solver_config.solver = tulpa_gp::parse_gp_solver(gp_solver_str);
-    data.gp_data.solver_config.cg_tol = gp_cg_tol;
-    data.gp_data.solver_config.cg_maxiter = gp_cg_maxiter;
-    data.gp_data.solver_config.n_obs = gp_n_unique;  // Unique locations
-
-    data.gp_sigma2_prior_U = gp_sigma2_prior_U;
-    data.gp_sigma2_prior_alpha = gp_sigma2_prior_alpha;
-    data.gp_phi_prior_lower = gp_phi_prior_lower;
-    data.gp_phi_prior_upper = gp_phi_prior_upper;
-
-    // GP parameterization: centered (default), noncentered, or collapsed
-    if (gp_params.containsElementNamed("parameterization")) {
-        std::string gp_param_str = Rcpp::as<std::string>(gp_params["parameterization"]);
-        if (gp_param_str == "collapsed") {
-            data.gp_parameterization = 0;  // Not relevant for collapsed
-            data.gp_collapsed = true;
-        } else {
-            data.gp_parameterization = (gp_param_str == "centered") ? 0 : 1;
-            data.gp_collapsed = false;
-        }
-    } else {
-        data.gp_parameterization = 0;  // Default: centered
-        data.gp_collapsed = false;
-    }
-
-  } else if (gp_type_str == "multiscale_gp") {
-    data.spatial_type = SpatialType::MULTISCALE_GP;
-    data.has_gp = false;
-    data.has_multiscale_gp = true;
-    data.has_hsgp = false;
-
-    // Check if using HSGP approximation
-    std::string msgp_approx = "nngp";
-    if (gp_params.containsElementNamed("msgp_approx")) {
-      msgp_approx = Rcpp::as<std::string>(gp_params["msgp_approx"]);
-    }
-    data.msgp_is_hsgp = (msgp_approx == "hsgp");
-
-    if (data.msgp_is_hsgp) {
-      // HSGP-MSGP: set up shared basis functions, no NNGP neighbor computation
-      int hsgp_m = Rcpp::as<int>(gp_params["hsgp_m"]);
-      double hsgp_c = Rcpp::as<double>(gp_params["hsgp_c"]);
-      tulpa_hsgp::setup_hsgp_2d(coords_vec, data.N, hsgp_m, hsgp_c,
-                                  gp_shared, data.msgp_hsgp_data);
-      data.multiscale_gp_data.shared = gp_shared;
-      // Set n_obs for consistency (used by param layout check)
-      data.multiscale_gp_data.n_obs = data.N;
-
-      // Lengthscale prior means from range bounds (geometric mean on log scale)
-      data.ms_log_ls_local_mean = 0.5 * (std::log(range_local_lower) + std::log(range_local_upper));
-      data.ms_log_ls_local_sd = 0.5;
-      data.ms_log_ls_regional_mean = 0.5 * (std::log(range_regional_lower) + std::log(range_regional_upper));
-      data.ms_log_ls_regional_sd = 0.5;
-
-      if (verbose) {
-        Rcpp::Rcout << "  HSGP-MSGP: m=" << hsgp_m << ", c=" << hsgp_c
-                    << ", m_total=" << data.msgp_hsgp_data.m_total
-                    << " (local+regional: " << 2 * data.msgp_hsgp_data.m_total << " basis coefficients)\n";
-        Rcpp::Rcout << "  Lengthscale priors: local LogN(" << data.ms_log_ls_local_mean
-                    << ", " << data.ms_log_ls_local_sd << "), regional LogN("
-                    << data.ms_log_ls_regional_mean << ", " << data.ms_log_ls_regional_sd << ")\n";
-      }
-    } else {
-      // NNGP-MSGP: standard neighbor-based computation
-      data.multiscale_gp_data.n_obs = gp_n_unique;  // Unique locations, not total observations
-      data.multiscale_gp_data.coords = coords_vec;  // Already std::vector from eager copy
-      // Convert obs_to_loc from R's 1-based to C++'s 0-based indexing
-      data.multiscale_gp_data.obs_to_loc.resize(gp_obs_to_loc_r.size());
-      for (size_t i = 0; i < gp_obs_to_loc_r.size(); i++) {
-        data.multiscale_gp_data.obs_to_loc[i] = gp_obs_to_loc_r[i] - 1;
-      }
-
-      // Local scale - use pre-copied std::vectors
-      data.multiscale_gp_data.nn_local = nn_local;
-      data.multiscale_gp_data.nn_idx_local = nn_idx_local_vec;
-      data.multiscale_gp_data.nn_dist_local = nn_dist_local_vec;
-      // Convert from R's 1-based to C++'s 0-based indexing
-      data.multiscale_gp_data.nn_order_local.resize(nn_order_local_vec.size());
-      for (size_t i = 0; i < nn_order_local_vec.size(); i++) {
-        data.multiscale_gp_data.nn_order_local[i] = nn_order_local_vec[i] - 1;
-      }
-      data.multiscale_gp_data.nn_order_inv_local.resize(nn_order_inv_local_vec.size());
-      for (size_t i = 0; i < nn_order_inv_local_vec.size(); i++) {
-        data.multiscale_gp_data.nn_order_inv_local[i] = nn_order_inv_local_vec[i] - 1;
-      }
-      data.multiscale_gp_data.nn_neighbor_dist_local = nn_neighbor_dist_local_vec;  // Phase 1.3
-
-      // Regional scale - use pre-copied std::vectors
-      data.multiscale_gp_data.nn_regional = nn_regional;
-      data.multiscale_gp_data.nn_idx_regional = nn_idx_regional_vec;
-      data.multiscale_gp_data.nn_dist_regional = nn_dist_regional_vec;
-      // Convert from R's 1-based to C++'s 0-based indexing
-      data.multiscale_gp_data.nn_order_regional.resize(nn_order_regional_vec.size());
-      for (size_t i = 0; i < nn_order_regional_vec.size(); i++) {
-        data.multiscale_gp_data.nn_order_regional[i] = nn_order_regional_vec[i] - 1;
-      }
-      data.multiscale_gp_data.nn_order_inv_regional.resize(nn_order_inv_regional_vec.size());
-      for (size_t i = 0; i < nn_order_inv_regional_vec.size(); i++) {
-        data.multiscale_gp_data.nn_order_inv_regional[i] = nn_order_inv_regional_vec[i] - 1;
-      }
-      data.multiscale_gp_data.nn_neighbor_dist_regional = nn_neighbor_dist_regional_vec;  // Phase 1.3
-
-      // Range constraints
-      data.multiscale_gp_data.range_local_lower = range_local_lower;
-      data.multiscale_gp_data.range_local_upper = range_local_upper;
-      data.multiscale_gp_data.range_regional_lower = range_regional_lower;
-      data.multiscale_gp_data.range_regional_upper = range_regional_upper;
-
-      data.multiscale_gp_data.cov_type = cov_type;
-      data.multiscale_gp_data.nu = nu;
-      data.multiscale_gp_data.sampler = tulpa_gp::parse_msgp_sampler(msgp_sampler_str);
-    }
-
-    data.multiscale_gp_data.shared = gp_shared;
-    data.ms_sigma2_local_prior_U = ms_sigma2_local_prior_U;
-    data.ms_sigma2_local_prior_alpha = ms_sigma2_local_prior_alpha;
-    data.ms_sigma2_regional_prior_U = ms_sigma2_regional_prior_U;
-    data.ms_sigma2_regional_prior_alpha = ms_sigma2_regional_prior_alpha;
-
-  } else if (gp_type_str == "hsgp") {
-    data.spatial_type = SpatialType::HSGP;
-    data.has_gp = false;
-    data.has_multiscale_gp = false;
-    data.has_hsgp = true;
-
-    // HSGP parameters from gp_params
-    int hsgp_m = Rcpp::as<int>(gp_params["hsgp_m"]);
-    double hsgp_c = Rcpp::as<double>(gp_params["hsgp_c"]);
-    bool hsgp_shared = gp_shared;
-
-    // Setup HSGP data structure with precomputed basis functions
-    tulpa_hsgp::setup_hsgp_2d(coords_vec, data.N, hsgp_m, hsgp_c,
-                                hsgp_shared, data.hsgp_data);
-
-    data.hsgp_m_per_dim = hsgp_m;
-    data.hsgp_boundary_factor = hsgp_c;
-
-  } else {
-    data.spatial_type = SpatialType::NONE;
-    data.has_gp = false;
-    data.has_multiscale_gp = false;
-    data.has_hsgp = false;
-  }
-
-  // Initialize adjacency for ICAR/BYM2 (not used with GP)
-  data.n_spatial_units = 0;
-  data.bym2_scale_factor = 1.0;
-
-  // Multi-scale temporal structure
-  if (ms_temporal_type_str == "multiscale") {
-    data.has_multiscale_temporal = true;
-
-    data.multiscale_temporal_data.n_times = ms_n_times;
-    data.multiscale_temporal_data.n_groups = ms_n_groups;
-    data.multiscale_temporal_data.n_obs = data.N;
-    data.multiscale_temporal_data.time_index = ms_time_index_vec;  // Already std::vector from eager copy
-    data.multiscale_temporal_data.group_index = ms_group_index_vec;
-    data.multiscale_temporal_data.shared = ms_temporal_shared;
-    data.multiscale_temporal_data.seasonal_period = seasonal_period;
-
-    // Parse temporal component types
-    data.multiscale_temporal_data.trend_type = tulpa_temporal::parse_temporal_type(trend_type_str);
-    data.multiscale_temporal_data.short_term_type = tulpa_temporal::parse_temporal_type(short_term_type_str);
-
-    data.ms_sigma2_trend_prior_U = ms_sigma2_trend_prior_U;
-    data.ms_sigma2_trend_prior_alpha = ms_sigma2_trend_prior_alpha;
-    data.ms_sigma2_seasonal_prior_U = ms_sigma2_seasonal_prior_U;
-    data.ms_sigma2_seasonal_prior_alpha = ms_sigma2_seasonal_prior_alpha;
-    data.ms_sigma2_short_prior_U = ms_sigma2_short_prior_U;
-    data.ms_sigma2_short_prior_alpha = ms_sigma2_short_prior_alpha;
-
-  } else {
-    data.has_multiscale_temporal = false;
-    data.multiscale_temporal_data.trend_type = tulpa_temporal::TemporalType::NONE;
-    data.multiscale_temporal_data.short_term_type = tulpa_temporal::TemporalType::NONE;
-    data.multiscale_temporal_data.seasonal_period = 0;
-  }
-
-  // Regular temporal (RW1/RW2/AR1/GP) — now supported in GP interface
-  {
-    std::string temporal_type_str = Rcpp::as<std::string>(temporal_params["type"]);
-    int n_temporal_groups = Rcpp::as<int>(temporal_params["n_groups"]);
-    bool temporal_shared = Rcpp::as<bool>(temporal_params["shared"]);
-
-    if (temporal_type_str == "rw1") {
-      data.temporal_type = TemporalType::RW1;
-    } else if (temporal_type_str == "rw2") {
-      data.temporal_type = TemporalType::RW2;
-    } else if (temporal_type_str == "ar1") {
-      data.temporal_type = TemporalType::AR1;
-    } else if (temporal_type_str == "gp") {
-      data.temporal_type = TemporalType::GP;
-
-      // GP-specific parameters (same parsing as cpp_hmc_fit)
-      data.has_temporal_gp = true;
-      data.temporal_gp_data.n_obs = Rcpp::as<int>(temporal_params["n_times"]);
-      data.temporal_gp_data.n_groups = n_temporal_groups;
-      data.temporal_gp_data.time_values = Rcpp::as<std::vector<double>>(temporal_params["time_values"]);
-      data.temporal_gp_data.group_index = Rcpp::as<std::vector<int>>(temporal_params["group_idx"]);
-
-      std::string cov_type_str = Rcpp::as<std::string>(temporal_params["cov_type"]);
-      data.temporal_gp_data.cov_type = tulpa_temporal_gp::parse_temporal_cov_type(cov_type_str);
-      data.temporal_gp_data.nu = Rcpp::as<double>(temporal_params["nu"]);
-      data.temporal_gp_data.period = Rcpp::as<double>(temporal_params["period"]);
-      data.temporal_gp_data.shared = temporal_shared;
-
-      data.temporal_gp_sigma2_prior_U = Rcpp::as<double>(temporal_params["gp_sigma2_prior_U"]);
-      data.temporal_gp_sigma2_prior_alpha = Rcpp::as<double>(temporal_params["gp_sigma2_prior_alpha"]);
-      data.temporal_gp_phi_prior_lower = Rcpp::as<double>(temporal_params["gp_phi_prior_lower"]);
-      data.temporal_gp_phi_prior_upper = Rcpp::as<double>(temporal_params["gp_phi_prior_upper"]);
-
-      std::string gp_param_str = "noncentered";
-      if (temporal_params.containsElementNamed("gp_parameterization")) {
-        gp_param_str = Rcpp::as<std::string>(temporal_params["gp_parameterization"]);
-      }
-      data.temporal_gp_parameterization = (gp_param_str == "centered") ? 0 : 1;
-    } else {
-      data.temporal_type = TemporalType::NONE;
-    }
-    data.temporal_time_idx = Rcpp::as<std::vector<int>>(temporal_params["time_idx"]);
-    data.temporal_group_idx = Rcpp::as<std::vector<int>>(temporal_params["group_idx"]);
-    data.n_times = Rcpp::as<int>(temporal_params["n_times"]);
-    data.n_temporal_groups = n_temporal_groups;
-    data.n_temporal_params = Rcpp::as<int>(temporal_params["n_params"]);
-    data.temporal_cyclic = Rcpp::as<bool>(temporal_params["cyclic"]);
-    data.temporal_shared = temporal_shared;
-    data.tau_temporal_shape = Rcpp::as<double>(temporal_params["tau_shape"]);
-    data.tau_temporal_rate = Rcpp::as<double>(temporal_params["tau_rate"]);
-  }
-
-  // Multi-term RE structure (not used in GP interface - single term only)
-  data.total_re_params = 0;
-  data.total_sigma_params = 0;
-  data.total_chol_params = 0;
-
-  // RSR structure - use pre-copied std::vector
-  data.has_rsr = has_rsr;
-  if (has_rsr && !rsr_projection_vec.empty()) {
-    data.rsr_projection = rsr_projection_vec;
-    data.rsr_n = rsr_n;
-  } else {
-    data.rsr_n = 0;
-  }
-
-  // Zero-inflation structure (GP interface: no OI support, use matrix directly)
-  data.zi_type = tulpa_zi::parse_zi_type(zi_type_str);
-  data.p_zi = X_zi.ncol();
-  data.zi_prior_sd = zi_prior_sd;
-  data.X_zi_flat.resize(data.N * data.p_zi);
-  for (int i = 0; i < data.N; i++) {
-    for (int j = 0; j < data.p_zi; j++) {
-      data.X_zi_flat[i * data.p_zi + j] = X_zi(i, j);
-    }
-  }
-
-  // Standard priors
-  data.sigma_beta = sigma_beta;
-  data.sigma_re_scale = sigma_re_scale;
-  data.phi_prior_shape = phi_prior_shape;
-  data.phi_prior_rate = phi_prior_rate;
-  data.tau_spatial_shape = 1.0;
-  data.tau_spatial_rate = 0.01;
-
-  // SVC not used in GP interface
-  data.has_svc = false;
-
-  // Latent factors not used in GP interface
-  data.has_latent = false;
-  data.latent_n_factors = 0;
-  data.latent_shared = false;
-  data.latent_scale = false;
-  data.latent_constraint = 0;
-  data.latent_sigma_prior_rate = 1.0;
-
-  // Spatiotemporal not used in GP interface
-  data.has_spatiotemporal = false;
-  data.spatiotemporal_data.type = STType::NONE;
-
-  // TVC (Temporally-Varying Coefficients) — now supported in GP interface
-  {
-    bool has_tvc = tvc_params.size() > 0 && tvc_params.containsElementNamed("has_tvc") &&
-                   Rcpp::as<bool>(tvc_params["has_tvc"]);
-    data.has_tvc = has_tvc;
-    if (has_tvc) {
-      int tvc_n_tvc = Rcpp::as<int>(tvc_params["n_tvc"]);
-      int tvc_n_times = Rcpp::as<int>(tvc_params["n_times"]);
-      int tvc_n_groups = Rcpp::as<int>(tvc_params["n_groups"]);
-      std::string tvc_structure_str = Rcpp::as<std::string>(tvc_params["structure"]);
-      bool tvc_shared = Rcpp::as<bool>(tvc_params["shared"]);
-      bool tvc_cyclic = Rcpp::as<bool>(tvc_params["cyclic"]);
-      std::vector<int> tvc_indices = Rcpp::as<std::vector<int>>(tvc_params["tvc_indices"]);
-      std::vector<int> tvc_time_index = Rcpp::as<std::vector<int>>(tvc_params["time_index"]);
-      std::vector<int> tvc_group_index = Rcpp::as<std::vector<int>>(tvc_params["group_index"]);
-      std::vector<double> tvc_X_tvc = Rcpp::as<std::vector<double>>(tvc_params["X_tvc"]);
-      double tvc_tau_shape = Rcpp::as<double>(tvc_params["tau_shape"]);
-      double tvc_tau_rate = Rcpp::as<double>(tvc_params["tau_rate"]);
-
-      data.tvc_data.n_obs = data.N;
-      data.tvc_data.n_tvc = tvc_n_tvc;
-      data.tvc_data.n_times = tvc_n_times;
-      data.tvc_data.n_groups = tvc_n_groups;
-      data.tvc_data.shared = tvc_shared;
-      data.tvc_data.cyclic = tvc_cyclic;
-      data.tvc_data.tvc_indices = tvc_indices;
-      data.tvc_data.time_index = tvc_time_index;
-      data.tvc_data.group_index = tvc_group_index;
-      data.tvc_data.X_tvc = tvc_X_tvc;
-
-      if (tvc_structure_str == "rw1") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;
-      } else if (tvc_structure_str == "rw2") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::RW2;
-      } else if (tvc_structure_str == "ar1") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::AR1;
-      } else if (tvc_structure_str == "iid") {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::IID;
-      } else {
-        data.tvc_data.structure = tulpa_temporal::TemporalType::RW1;
-      }
-
-      data.tvc_tau_shape = tvc_tau_shape;
-      data.tvc_tau_rate = tvc_tau_rate;
-      data.tvc_data.init_workspace();
-    } else {
-      data.tvc_data.n_tvc = 0;
-      data.tvc_data.n_times = 0;
-      data.tvc_data.n_groups = 1;
-    }
-  }
-
-  // Parallelization
-  data.n_threads = n_threads;
-
-  // Final memory barrier before HMC execution
-  std::atomic_thread_fence(std::memory_order_seq_cst);
-
-  // Initialize parameters - use explicit std::vector copy from Rcpp
-  std::vector<double> q0(q_init.begin(), q_init.end());
-
-  // =========================================================================
-  // Gradient check only mode: compare N, A, A_r, H without sampling
-  // =========================================================================
-  if (gradient_check_only) {
-    ParamLayout layout = compute_param_layout(data);
-
-    std::vector<double> grad_N;
-    compute_gradient_numerical(q0, data, layout, grad_N);
-
-    std::vector<double> grad_N_impl;
-    compute_gradient_numerical_impl(q0, data, layout, grad_N_impl);
-
-    auto max_rel_diff = [](const std::vector<double>& a, const std::vector<double>& b) -> double {
-      double mx = 0.0;
-      for (size_t i = 0; i < a.size() && i < b.size(); i++) {
-        double diff = std::abs(a[i] - b[i]);
-        double scale = std::max(1.0, std::max(std::abs(a[i]), std::abs(b[i])));
-        mx = std::max(mx, diff / scale);
-      }
-      return mx;
-    };
-
-    auto is_autodiff_fn = [](GradientFn fn) -> bool {
-      return fn == &compute_gradient_arena ||
-             fn == &compute_gradient_forward ||
-             fn == &compute_gradient_autodiff;
-    };
-
-    double h_vs_n = -1.0;
-    GradientFn h_fn = resolve_gradient_fn(GradientMode::HANDCODED, data, layout);
-    if (h_fn != &compute_gradient_numerical && h_fn != &compute_gradient_numerical_impl) {
-      const auto& ref = is_autodiff_fn(h_fn) ? grad_N_impl : grad_N;
-      std::vector<double> grad_H;
-      h_fn(q0, data, layout, grad_H, nullptr);
-      h_vs_n = max_rel_diff(grad_H, ref);
-    }
-
-    double ar_vs_n = -1.0;
-    GradientFn ar_fn = resolve_gradient_fn(GradientMode::AUTODIFF_ARENA, data, layout);
-    if (ar_fn != &compute_gradient_numerical && ar_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_Ar;
-      ar_fn(q0, data, layout, grad_Ar, nullptr);
-      ar_vs_n = max_rel_diff(grad_Ar, grad_N_impl);
-    }
-
-    double a_vs_n = -1.0;
-    GradientFn a_fn = resolve_gradient_fn(GradientMode::AUTODIFF_FWD, data, layout);
-    if (a_fn != &compute_gradient_numerical && a_fn != &compute_gradient_numerical_impl) {
-      std::vector<double> grad_A;
-      a_fn(q0, data, layout, grad_A, nullptr);
-      a_vs_n = max_rel_diff(grad_A, grad_N_impl);
-    }
-
-    double h_vs_ar = -1.0;
-    if (h_vs_n >= 0 && ar_vs_n >= 0) {
-      std::vector<double> grad_H2, grad_Ar2;
-      h_fn(q0, data, layout, grad_H2, nullptr);
-      ar_fn(q0, data, layout, grad_Ar2, nullptr);
-      h_vs_ar = max_rel_diff(grad_H2, grad_Ar2);
-
-      if (h_vs_ar > 1e-4) {
-        std::vector<std::pair<double,int>> diffs;
-        for (size_t i = 0; i < grad_H2.size() && i < grad_Ar2.size(); i++) {
-          double diff = std::abs(grad_H2[i] - grad_Ar2[i]);
-          double scale = std::max(1.0, std::max(std::abs(grad_H2[i]), std::abs(grad_Ar2[i])));
-          diffs.push_back({diff/scale, (int)i});
-        }
-        std::sort(diffs.begin(), diffs.end(), [](auto&a,auto&b){return a.first>b.first;});
-        Rprintf("  H vs A_r cross-check DIVERGE (top 3 of %d params):\n", (int)grad_H2.size());
-        for (int k = 0; k < std::min(3,(int)diffs.size()); k++) {
-          int idx = diffs[k].second;
-          Rprintf("    param[%d]: H=%.8e A_r=%.8e  rel_diff=%.2e\n",
-                  idx, grad_H2[idx], grad_Ar2[idx], diffs[k].first);
-        }
-        // Print MSGP layout info
-        if (layout.is_multiscale_gp) {
-          Rprintf("  MSGP: sigma2_local[%d] phi_local[%d] sigma2_reg[%d] phi_reg[%d]\n",
-                  layout.log_sigma2_gp_local_idx, layout.log_phi_gp_local_idx,
-                  layout.log_sigma2_gp_regional_idx, layout.log_phi_gp_regional_idx);
-          Rprintf("  MSGP: beta_local[%d-%d] beta_reg[%d-%d]\n",
-                  layout.gp_local_start, layout.gp_local_end-1,
-                  layout.gp_regional_start, layout.gp_regional_end-1);
-        }
-        if (layout.has_temporal)
-          Rprintf("  temporal[%d-%d] log_tau[%d]\n",
-                  layout.temporal_start, layout.temporal_end-1, layout.log_tau_temporal_idx);
-      }
-    }
-
-    double tol = 1e-4;
-    return Rcpp::List::create(
-      Rcpp::Named("h_vs_n") = h_vs_n,
-      Rcpp::Named("ar_vs_n") = ar_vs_n,
-      Rcpp::Named("a_vs_n") = a_vs_n,
-      Rcpp::Named("h_vs_ar") = h_vs_ar,
-      Rcpp::Named("tol") = tol,
-      // h_ok: check h_vs_n first; if it fails but h_vs_ar passes, H is still
-      // correct (compute_log_post vs log_post_impl diverge for some ZI models)
-      Rcpp::Named("h_ok") = (h_vs_n >= 0)
-        ? ((h_vs_n < tol) ? true : (h_vs_ar >= 0 && h_vs_ar < tol))
-        : NA_LOGICAL,
-      Rcpp::Named("ar_ok") = (ar_vs_n >= 0) ? (ar_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("a_ok") = (a_vs_n >= 0) ? (a_vs_n < tol) : NA_LOGICAL,
-      Rcpp::Named("n_params") = (int)q0.size()
-    );
-  }
-
-  // Run sampler
-  if (n_chains == 1) {
-    ParamLayout layout = compute_param_layout(data);
-    HMCResult result = run_hmc_chain(
-      q0, data, layout, n_iter, n_warmup, L, 0, seed, verbose, max_treedepth,
-      metric_type, adapt_delta, -1
-    );
-
-    return Rcpp::List::create(
-      Rcpp::Named("samples") = result.samples,
-      Rcpp::Named("log_prob") = result.log_prob,
-      Rcpp::Named("accept_prob") = result.accept_prob,
-      Rcpp::Named("n_leapfrog") = result.n_leapfrog,
-      Rcpp::Named("treedepth") = result.treedepth,
-      Rcpp::Named("divergent") = result.divergent,
-      Rcpp::Named("epsilon") = result.epsilon,
-      Rcpp::Named("n_warmup") = result.n_warmup,
-      Rcpp::Named("n_sample") = result.n_sample,
-      Rcpp::Named("n_chains") = 1,
-      Rcpp::Named("sampler") = result.sampler.empty()
-        ? ((L == 0) ? std::string("NUTS") : std::string("HMC"))
-        : result.sampler
-    );
-  } else {
-    // Multiple chains
-    std::vector<HMCResult> results = run_hmc_parallel_chains(
-      q0, data, n_iter, n_warmup, L, n_chains, seed, verbose, max_treedepth,
-      metric_type, adapt_delta, -1
-    );
-
-    // Combine results
-    int n_sample = results[0].n_sample;
-    int n_params = results[0].samples.ncol();
-
-    Rcpp::List samples_list(n_chains);
-    Rcpp::List log_prob_list(n_chains);
-    Rcpp::List accept_prob_list(n_chains);
-    Rcpp::List n_leapfrog_list(n_chains);
-    Rcpp::List treedepth_list(n_chains);
-    Rcpp::List divergent_list(n_chains);
-    Rcpp::NumericVector epsilon_vec(n_chains);
-
-    std::string sampler_name = (L == 0) ? "NUTS" : "HMC";
-    for (int c = 0; c < n_chains; c++) {
-      samples_list[c] = results[c].samples;
-      log_prob_list[c] = results[c].log_prob;
-      accept_prob_list[c] = results[c].accept_prob;
-      n_leapfrog_list[c] = results[c].n_leapfrog;
-      treedepth_list[c] = results[c].treedepth;
-      divergent_list[c] = results[c].divergent;
-      epsilon_vec[c] = results[c].epsilon;
-      if (!results[c].sampler.empty()) {
-        sampler_name = results[c].sampler;
-      }
-    }
-
-    return Rcpp::List::create(
-      Rcpp::Named("samples") = samples_list,
-      Rcpp::Named("log_prob") = log_prob_list,
-      Rcpp::Named("accept_prob") = accept_prob_list,
-      Rcpp::Named("n_leapfrog") = n_leapfrog_list,
-      Rcpp::Named("treedepth") = treedepth_list,
-      Rcpp::Named("divergent") = divergent_list,
-      Rcpp::Named("epsilon") = epsilon_vec,
-      Rcpp::Named("n_warmup") = n_warmup,
-      Rcpp::Named("n_sample") = n_sample,
-      Rcpp::Named("n_chains") = n_chains,
-      Rcpp::Named("sampler") = sampler_name
-    );
-  }
-}
-
-// [[Rcpp::export]]
-Rcpp::List cpp_hmc_fit_gp_v2(Rcpp::List args) {
-  // O2-safe interface: single List parameter to minimize Rcpp template instantiation
-  // at ABI boundary. All parameter extraction happens inside function body where
-  // compiler has full visibility.
-
-  // Extract all parameters from the list - matching cpp_hmc_fit_gp signature
-  Rcpp::NumericVector q_init = Rcpp::as<Rcpp::NumericVector>(args["q_init"]);
-  Rcpp::IntegerVector y_num = Rcpp::as<Rcpp::IntegerVector>(args["y_num"]);
-  Rcpp::IntegerVector y_denom = Rcpp::as<Rcpp::IntegerVector>(args["y_denom"]);
-  Rcpp::NumericVector y_num_cont = args.containsElementNamed("y_num_cont")
-    ? Rcpp::as<Rcpp::NumericVector>(args["y_num_cont"])
-    : Rcpp::NumericVector(y_num.size(), 0.0);
-  Rcpp::NumericVector y_denom_cont = Rcpp::as<Rcpp::NumericVector>(args["y_denom_cont"]);
-  Rcpp::NumericMatrix X_num = Rcpp::as<Rcpp::NumericMatrix>(args["X_num"]);
-  Rcpp::NumericMatrix X_denom = Rcpp::as<Rcpp::NumericMatrix>(args["X_denom"]);
-  Rcpp::IntegerVector re_group = Rcpp::as<Rcpp::IntegerVector>(args["re_group"]);
-  int n_re_groups = Rcpp::as<int>(args["n_re_groups"]);
-  std::string model_type_str = Rcpp::as<std::string>(args["model_type_str"]);
-  Rcpp::List gp_params = Rcpp::as<Rcpp::List>(args["gp_params"]);
-  Rcpp::List ms_gp_params = Rcpp::as<Rcpp::List>(args["ms_gp_params"]);
-  Rcpp::List ms_temporal_params = Rcpp::as<Rcpp::List>(args["ms_temporal_params"]);
-  Rcpp::List rsr_params = Rcpp::as<Rcpp::List>(args["rsr_params"]);
-  Rcpp::List temporal_params = Rcpp::as<Rcpp::List>(args["temporal_params"]);
-  double sigma_beta = Rcpp::as<double>(args["sigma_beta"]);
-  double sigma_re_scale = Rcpp::as<double>(args["sigma_re_scale"]);
-  double phi_prior_shape = Rcpp::as<double>(args["phi_prior_shape"]);
-  double phi_prior_rate = Rcpp::as<double>(args["phi_prior_rate"]);
-  std::string zi_type_str = Rcpp::as<std::string>(args["zi_type_str"]);
-  Rcpp::NumericMatrix X_zi = Rcpp::as<Rcpp::NumericMatrix>(args["X_zi"]);
-  double zi_prior_sd = Rcpp::as<double>(args["zi_prior_sd"]);
-  int n_iter = Rcpp::as<int>(args["n_iter"]);
-  int n_warmup = Rcpp::as<int>(args["n_warmup"]);
-  int L = Rcpp::as<int>(args["L"]);
-  int n_chains = Rcpp::as<int>(args["n_chains"]);
-  unsigned int seed = Rcpp::as<unsigned int>(args["seed"]);
-  int n_threads = Rcpp::as<int>(args["n_threads"]);
-  bool verbose = Rcpp::as<bool>(args["verbose"]);
-  int max_treedepth = 10;
-  if (args.containsElementNamed("max_treedepth")) {
-    max_treedepth = Rcpp::as<int>(args["max_treedepth"]);
-  }
-  double adapt_delta = -1.0;
-  if (args.containsElementNamed("adapt_delta")) {
-    adapt_delta = Rcpp::as<double>(args["adapt_delta"]);
-  }
-  std::string metric_str = "auto";
-  if (args.containsElementNamed("metric_str")) {
-    metric_str = Rcpp::as<std::string>(args["metric_str"]);
-  }
-  std::string gradient_mode_str = "auto";
-  if (args.containsElementNamed("gradient_mode_str")) {
-    gradient_mode_str = Rcpp::as<std::string>(args["gradient_mode_str"]);
-  }
-
-  // Extract TVC params if present
-  Rcpp::List tvc_params_extracted;
-  if (args.containsElementNamed("tvc_params")) {
-    tvc_params_extracted = Rcpp::as<Rcpp::List>(args["tvc_params"]);
-  }
-
-  bool gradient_check_only = false;
-  if (args.containsElementNamed("gradient_check_only")) {
-    gradient_check_only = Rcpp::as<bool>(args["gradient_check_only"]);
-  }
-
-  // Delegate to the original implementation (metric/gradient parsed inside)
-  return cpp_hmc_fit_gp(
-    q_init, y_num, y_denom, y_num_cont, y_denom_cont,
-    X_num, X_denom, re_group, n_re_groups,
-    model_type_str, gp_params, ms_gp_params, ms_temporal_params, rsr_params,
-    temporal_params,
-    sigma_beta, sigma_re_scale, phi_prior_shape, phi_prior_rate,
-    zi_type_str, X_zi, zi_prior_sd,
-    n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, max_treedepth, adapt_delta,
-    metric_str, gradient_mode_str,
-    tvc_params_extracted,
-    gradient_check_only
-  );
-}

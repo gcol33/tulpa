@@ -1,0 +1,630 @@
+temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
+                         shared = NULL) {
+
+  # Accept either formula (~ time) or character string ("time")
+  if (inherits(time_var, "formula")) {
+    time_var <- all.vars(time_var)
+    if (length(time_var) != 1) {
+      stop("`time_var` formula must specify exactly 1 variable", call. = FALSE)
+    }
+  } else if (!is.character(time_var) || length(time_var) != 1) {
+    stop("`time_var` must be a formula (~ time) or single character string",
+         call. = FALSE)
+  }
+
+  # Accept either formula or character for group_var
+  if (!is.null(group_var)) {
+    if (inherits(group_var, "formula")) {
+      group_var <- all.vars(group_var)
+      if (length(group_var) != 1) {
+        stop("`group_var` formula must specify exactly 1 variable", call. = FALSE)
+      }
+    } else if (!is.character(group_var) || length(group_var) != 1) {
+      stop("`group_var` must be a formula or single character string",
+           call. = FALSE)
+    }
+  }
+
+ # Warning for non-shared temporal effects
+ if (isFALSE(shared)) {
+   warning(
+     "Non-shared temporal effects (shared = FALSE) means effects are not shared across processes.\n",
+     "Consider whether temporal effects should be shared between\n",
+     "processes if shared confounding structure is expected.",
+     call. = FALSE
+   )
+ }
+
+ structure(
+   list(
+     type = "rw1",
+     time_var = time_var,
+     group_var = group_var,
+     cyclic = cyclic,
+     shared = shared,
+     # These will be filled in when validated against data
+     n_times = NULL,
+     n_groups = NULL,
+     time_index = NULL,
+     group_index = NULL,
+     precision_structure = NULL
+   ),
+   class = c("tulpa_temporal", "list")
+ )
+}
+
+
+#' RW2 temporal structure (Second-order Random Walk)
+#'
+#' @description
+#' Specify a second-order random walk temporal random effect.
+#' RW2 penalizes deviations from linearity, resulting in smoother trends
+#' than RW1: `phi[t] - 2*phi[t-1] + phi[t-2] ~ N(0, sigma^2)`.
+#'
+#' @inheritParams temporal_rw1
+#'
+#' @return A `tulpa_temporal` object
+#'
+#' @details
+#' RW2 produces smoother curves than RW1 because it penalizes the second
+#' derivative (curvature) rather than the first derivative (slope).
+#' It requires at least 3 time points.
+#'
+#' The precision matrix is rank T-2 (two constraints needed).
+#'
+#' @examples
+#' # Create temporal RW2 specification
+#' temporal_rw2("year")
+#'
+#' \donttest{
+#' # Smooth temporal trend
+#' set.seed(126)
+#' df <- data.frame(
+#'   year = rep(2008:2027, each = 2),
+#'   x = rnorm(40),
+#'   count = rpois(40, lambda = 25),
+#'   effort = rgamma(40, shape = 4, rate = 1)
+#' )
+#'
+#' fit <- tulpa(
+#'   count | effort ~ x,
+#'   data = df,
+#'   family = tulpa_poisson_gamma(),
+#'   temporal = temporal_rw2("year"),
+#'   backend = "hmc",
+#'   iter = 200,
+#'   warmup = 100,
+#'   chains = 1
+#' )
+#' }
+#'
+#' @export
+temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
+                         shared = NULL) {
+
+  # Accept either formula (~ time) or character string ("time")
+  if (inherits(time_var, "formula")) {
+    time_var <- all.vars(time_var)
+    if (length(time_var) != 1) {
+      stop("`time_var` formula must specify exactly 1 variable", call. = FALSE)
+    }
+  } else if (!is.character(time_var) || length(time_var) != 1) {
+    stop("`time_var` must be a formula (~ time) or single character string",
+         call. = FALSE)
+  }
+
+  # Accept either formula or character for group_var
+  if (!is.null(group_var)) {
+    if (inherits(group_var, "formula")) {
+      group_var <- all.vars(group_var)
+      if (length(group_var) != 1) {
+        stop("`group_var` formula must specify exactly 1 variable", call. = FALSE)
+      }
+    } else if (!is.character(group_var) || length(group_var) != 1) {
+      stop("`group_var` must be a formula or single character string",
+           call. = FALSE)
+    }
+  }
+
+  # Warning for non-shared temporal effects
+ if (isFALSE(shared)) {
+   warning(
+     "Non-shared temporal effects (shared = FALSE) means effects are not shared across processes.\n",
+     "Consider whether temporal effects should be shared between\n",
+     "processes if shared confounding structure is expected.",
+     call. = FALSE
+   )
+ }
+
+ structure(
+   list(
+     type = "rw2",
+     time_var = time_var,
+     group_var = group_var,
+     cyclic = cyclic,
+     shared = shared,
+     n_times = NULL,
+     n_groups = NULL,
+     time_index = NULL,
+     group_index = NULL,
+     precision_structure = NULL
+   ),
+   class = c("tulpa_temporal", "list")
+ )
+}
+
+
+#' AR1 temporal structure (First-order Autoregressive)
+#'
+#' @description
+#' Specify a first-order autoregressive temporal random effect.
+#' AR1 models temporal correlation where each time point depends on
+#' the previous one: `phi[t] = rho * phi[t-1] + epsilon[t]`.
+#'
+#' Unlike RW1/RW2, AR1 is a proper (stationary) model with an estimated
+#' autocorrelation parameter rho.
+#'
+#' @inheritParams temporal_rw1
+#' @param rho_prior Prior for the autocorrelation parameter. Default is
+#'   `NULL` which uses a Uniform(-1, 1) prior. Can specify a Beta prior
+#'   on (rho+1)/2 for more informative priors.
+#'
+#' @return A `tulpa_temporal` object
+#'
+#' @details
+#' The AR1 process has marginal variance sigma^2 / (1 - rho^2) and
+#' correlation between time points t and s of rho^|t-s|.
+#'
+#' The precision matrix is tridiagonal and full rank, so no constraints
+#' are needed.
+#'
+#' @examples
+#' # Create temporal AR1 specification
+#' temporal_ar1("year")
+#' temporal_ar1("year", group = "site")
+#'
+#' \donttest{
+#' # AR1 temporal correlation
+#' set.seed(127)
+#' df <- data.frame(
+#'   year = rep(2005:2024, each = 3),
+#'   x = rnorm(60),
+#'   count = rpois(60, lambda = 18),
+#'   effort = rgamma(60, shape = 3.5, rate = 1)
+#' )
+#'
+#' fit <- tulpa(
+#'   count | effort ~ x,
+#'   data = df,
+#'   family = tulpa_poisson_gamma(),
+#'   temporal = temporal_ar1("year"),
+#'   backend = "hmc",
+#'   iter = 200,
+#'   warmup = 100,
+#'   chains = 1
+#' )
+#'
+#' # Panel data with group-specific AR1
+#' set.seed(128)
+#' df_panel <- data.frame(
+#'   year = rep(2012:2027, each = 3),
+#'   site = rep(paste0("site", 1:3), times = 16),
+#'   x = rnorm(48),
+#'   count = rpois(48, lambda = 12),
+#'   effort = rgamma(48, shape = 2.5, rate = 1)
+#' )
+#'
+#' fit2 <- tulpa(
+#'   count | effort ~ x,
+#'   data = df_panel,
+#'   family = tulpa_poisson_gamma(),
+#'   temporal = temporal_ar1("year", group_var = "site"),
+#'   backend = "hmc",
+#'   iter = 200,
+#'   warmup = 100,
+#'   chains = 1
+#' )
+#' }
+#'
+#' @export
+temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
+                         rho_prior = NULL) {
+
+  # Accept either formula (~ time) or character string ("time")
+  if (inherits(time_var, "formula")) {
+    time_var <- all.vars(time_var)
+    if (length(time_var) != 1) {
+      stop("`time_var` formula must specify exactly 1 variable", call. = FALSE)
+    }
+  } else if (!is.character(time_var) || length(time_var) != 1) {
+    stop("`time_var` must be a formula (~ time) or single character string",
+         call. = FALSE)
+  }
+
+  # Accept either formula or character for group_var
+  if (!is.null(group_var)) {
+    if (inherits(group_var, "formula")) {
+      group_var <- all.vars(group_var)
+      if (length(group_var) != 1) {
+        stop("`group_var` formula must specify exactly 1 variable", call. = FALSE)
+      }
+    } else if (!is.character(group_var) || length(group_var) != 1) {
+      stop("`group_var` must be a formula or single character string",
+           call. = FALSE)
+    }
+  }
+
+  structure(
+   list(
+     type = "ar1",
+     time_var = time_var,
+     group_var = group_var,
+     cyclic = FALSE,  # AR1 is not cyclic
+     shared = shared,
+     rho_prior = rho_prior,
+     n_times = NULL,
+     n_groups = NULL,
+     time_index = NULL,
+     group_index = NULL,
+     precision_structure = NULL
+   ),
+   class = c("tulpa_temporal", "list")
+ )
+}
+
+
+#' Print method for tulpa_temporal
+#'
+#' @param x A tulpa_temporal object
+#' @param ... Ignored
+#'
+#' @export
+print.tulpa_temporal <- function(x, ...) {
+ cat("tulpa temporal specification\n")
+ cat("============================\n\n")
+
+ type_name <- switch(x$type,
+   rw1 = "RW1 (First-order Random Walk)",
+   rw2 = "RW2 (Second-order Random Walk)",
+   ar1 = "AR1 (First-order Autoregressive)",
+   x$type
+ )
+
+ cat("Type:", type_name, "\n")
+ cat("Time variable:", x$time_var, "\n")
+
+ if (!is.null(x$group_var)) {
+   cat("Group variable:", x$group_var, "\n")
+ }
+
+ if (x$type %in% c("rw1", "rw2") && x$cyclic) {
+   cat("Cyclic: Yes\n")
+ }
+
+ cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+
+ if (!is.null(x$n_times)) {
+   cat("Time points:", x$n_times, "\n")
+ }
+ if (!is.null(x$n_groups) && x$n_groups > 1) {
+   cat("Groups:", x$n_groups, "\n")
+ }
+
+ invisible(x)
+}
+
+
+#' Validate temporal specification against data
+#'
+#' @param temporal tulpa_temporal object
+#' @param data Data frame
+#'
+#' @return Updated tulpa_temporal object with indices computed
+#' @keywords internal
+validate_temporal <- function(temporal, data) {
+ if (is.null(temporal)) return(NULL)
+
+ # Check time variable exists
+ if (!(temporal$time_var %in% names(data))) {
+   stop(sprintf("Temporal variable '%s' not found in data",
+                temporal$time_var), call. = FALSE)
+ }
+
+ # Check group variable exists if specified
+ if (!is.null(temporal$group_var)) {
+   if (!(temporal$group_var %in% names(data))) {
+     stop(sprintf("Temporal group variable '%s' not found in data",
+                  temporal$group_var), call. = FALSE)
+   }
+ }
+
+ # Get time values and create indices
+ time_vals <- data[[temporal$time_var]]
+
+ # Convert to factor to get consistent indexing
+ if (is.factor(time_vals)) {
+   time_factor <- time_vals
+ } else {
+   # Sort unique values to ensure temporal ordering
+   unique_times <- sort(unique(time_vals))
+   time_factor <- factor(time_vals, levels = unique_times)
+ }
+
+ temporal$n_times <- nlevels(time_factor)
+ temporal$time_index <- as.integer(time_factor)
+ temporal$time_levels <- levels(time_factor)
+
+ # Check minimum time points for RW2
+ if (temporal$type == "rw2" && temporal$n_times < 3) {
+   stop("RW2 requires at least 3 time points", call. = FALSE)
+ }
+
+ # Handle grouping
+ if (!is.null(temporal$group_var)) {
+   group_vals <- data[[temporal$group_var]]
+   group_factor <- as.factor(group_vals)
+   temporal$n_groups <- nlevels(group_factor)
+   temporal$group_index <- as.integer(group_factor)
+   temporal$group_levels <- levels(group_factor)
+
+   # Total temporal parameters = n_times * n_groups
+   temporal$n_temporal_params <- temporal$n_times * temporal$n_groups
+ } else {
+   temporal$n_groups <- 1L
+   temporal$group_index <- rep(1L, nrow(data))
+   temporal$n_temporal_params <- temporal$n_times
+ }
+
+ # Build precision structure
+ temporal$precision_structure <- build_temporal_precision_structure(temporal)
+
+ temporal
+}
+
+
+#' Build temporal precision matrix structure
+#'
+#' @param temporal Validated tulpa_temporal object
+#'
+#' @return List with precision matrix information
+#' @keywords internal
+build_temporal_precision_structure <- function(temporal) {
+ T <- temporal$n_times
+ cyclic <- temporal$cyclic
+
+ if (temporal$type == "rw1") {
+   # RW1 precision matrix (tridiagonal)
+   # Q[t,t] = 2 (interior), 1 (boundary)
+   # Q[t,t-1] = Q[t,t+1] = -1
+
+   if (cyclic) {
+     # Cyclic: all diagonal = 2, wrap around
+     diag_vals <- rep(2, T)
+     off_diag <- rep(-1, T)  # Including wrap-around
+   } else {
+     # Non-cyclic: boundary diagonal = 1
+     diag_vals <- c(1, rep(2, T - 2), 1)
+     off_diag <- rep(-1, T - 1)
+   }
+
+   list(
+     type = "rw1",
+     T = T,
+     cyclic = cyclic,
+     diag = diag_vals,
+     off_diag = off_diag,
+     rank_deficiency = if (cyclic) 1 else 1  # Always rank T-1
+   )
+
+ } else if (temporal$type == "rw2") {
+   # RW2 precision matrix (pentadiagonal)
+   # Second differences
+
+   if (cyclic) {
+     diag_vals <- rep(6, T)
+     off_diag_1 <- rep(-4, T)  # First off-diagonal
+     off_diag_2 <- rep(1, T)   # Second off-diagonal
+   } else {
+     # Non-cyclic boundary handling
+     diag_vals <- c(1, 5, rep(6, T - 4), 5, 1)
+     if (T == 3) diag_vals <- c(1, 2, 1)
+     if (T == 4) diag_vals <- c(1, 5, 5, 1)
+     off_diag_1 <- c(-2, rep(-4, T - 3), -2)
+     if (T == 3) off_diag_1 <- c(-2, -2)
+     off_diag_2 <- rep(1, T - 2)
+   }
+
+   list(
+     type = "rw2",
+     T = T,
+     cyclic = cyclic,
+     diag = diag_vals,
+     off_diag_1 = off_diag_1,
+     off_diag_2 = off_diag_2,
+     rank_deficiency = if (cyclic) 2 else 2  # Rank T-2
+   )
+
+ } else if (temporal$type == "ar1") {
+   # AR1 precision matrix (tridiagonal, full rank)
+   # Depends on rho, so just store structure
+
+   list(
+     type = "ar1",
+     T = T,
+     # Full precision matrix constructed at runtime with rho
+     rank_deficiency = 0  # Full rank
+   )
+ }
+}
+
+
+#' Build RW1 precision matrix
+#'
+#' @param T Number of time points
+#' @param tau Precision parameter (1/sigma^2)
+#' @param cyclic Whether to use cyclic boundary
+#'
+#' @return Sparse precision matrix
+#' @keywords internal
+build_rw1_precision <- function(T, tau = 1, cyclic = FALSE) {
+ if (T < 2) {
+   stop("RW1 requires at least 2 time points", call. = FALSE)
+ }
+
+ # Build as dense then convert (small matrices anyway)
+ Q <- matrix(0, T, T)
+
+ if (cyclic) {
+   for (t in 1:T) {
+     Q[t, t] <- 2
+     next_t <- if (t == T) 1 else t + 1
+     prev_t <- if (t == 1) T else t - 1
+     Q[t, next_t] <- -1
+     Q[t, prev_t] <- -1
+   }
+ } else {
+   # Non-cyclic
+   Q[1, 1] <- 1
+   Q[1, 2] <- -1
+   Q[T, T] <- 1
+   Q[T, T - 1] <- -1
+
+   if (T > 2) {
+     for (t in 2:(T - 1)) {
+       Q[t, t] <- 2
+       Q[t, t - 1] <- -1
+       Q[t, t + 1] <- -1
+     }
+   }
+ }
+
+ Q * tau
+}
+
+
+#' Build AR1 precision matrix
+#'
+#' @param T Number of time points
+#' @param rho Autocorrelation parameter (-1 < rho < 1)
+#' @param tau Marginal precision (1/sigma^2)
+#'
+#' @return Precision matrix
+#' @keywords internal
+build_ar1_precision <- function(T, rho, tau = 1) {
+ if (T < 2) {
+   stop("AR1 requires at least 2 time points", call. = FALSE)
+ }
+
+ if (abs(rho) >= 1) {
+   stop("rho must be in (-1, 1) for stationarity", call. = FALSE)
+ }
+
+ # AR1 precision matrix
+ # Q = tau * (1 - rho^2)^(-1) * tridiag structure
+ # Diagonal: 1 + rho^2 (interior), 1 (boundary)
+ # Off-diagonal: -rho
+
+ Q <- matrix(0, T, T)
+
+ # Boundary
+ Q[1, 1] <- 1
+ Q[T, T] <- 1
+
+ # Interior
+ if (T > 2) {
+   for (t in 2:(T - 1)) {
+     Q[t, t] <- 1 + rho^2
+   }
+ }
+
+ # Off-diagonal
+ for (t in 1:(T - 1)) {
+   Q[t, t + 1] <- -rho
+   Q[t + 1, t] <- -rho
+ }
+
+ # Scale by precision / (1 - rho^2)
+ # The conditional variance is sigma^2 * (1 - rho^2) for interior
+ # So precision matrix should give marginal precision tau
+ Q * tau / (1 - rho^2)
+}
+
+
+#' Multi-Scale temporal structure
+#'
+#' @description
+#' Specify a multi-scale temporal random effect that decomposes temporal
+#' variation into trend, seasonal, and short-term components. Each component
+#' has its own variance parameter and structure.
+#'
+#' This is particularly useful for long time series where patterns exist at
+#' multiple temporal scales (e.g., annual cycles, decadal trends).
+#'
+#' @param time_var Name of the time variable in data. Can be a formula
+#'   (e.g., `~ year`) or a character string (e.g., `"year"`).
+#' @param trend Type of trend component: `"rw2"` (default, smooth),
+#'   `"rw1"` (less smooth), or `"none"`.
+#' @param seasonal Period for seasonal component (integer). Set to `NULL`
+#'   or `0` for no seasonal component. Common values: 12 (monthly), 52 (weekly).
+#' @param short_term Type of short-term residual component: `"ar1"` (default,
+#'   correlated), `"iid"` (independent), or `"none"`.
+#' @param group_var Optional name of grouping variable for panel data.
+#' @param shared Logical; if TRUE (default), temporal effects enter both
+#'   all processes.
+#'
+#' @return A `tulpa_temporal_multiscale` object
+#'
+#' @details
+#' The multi-scale temporal model decomposes variation additively:
+#'
+#' \deqn{\eta(t) = trend(t) + seasonal(t) + short(t)}
+#'
+#' where:
+#' - **trend(t)**: Long-term smooth change via RW1 or RW2
+#' - **seasonal(t)**: Repeating pattern with period P via cyclic RW1
+#' - **short(t)**: Residual temporal correlation via AR(1) or IID
+#'
+#' Each component has a separate variance parameter with PC priors to
+#' favor simpler models (fewer active components).
+#'
+#' **Sum-to-zero constraints** are applied to trend and seasonal components
+#' for identifiability with the intercept.
+#'
+#' @examples
+#' # Create multi-scale temporal specification
+#' temporal_multiscale("month_id", trend = "rw2", seasonal = 12, short_term = "ar1")
+#' temporal_multiscale("year", trend = "rw2", seasonal = NULL, short_term = "none")
+#'
+#' \dontrun{
+#' # Decompose into trend + seasonal + short-term (not run - experimental)
+#' set.seed(129)
+#' df <- data.frame(
+#'   month_id = 1:48,
+#'   x = rnorm(48),
+#'   count = rpois(48, lambda = 20),
+#'   effort = rgamma(48, shape = 4, rate = 1)
+#' )
+#'
+#' fit <- tulpa(
+#'   count | effort ~ x,
+#'   data = df,
+#'   family = tulpa_poisson_gamma(),
+#'   temporal = temporal_multiscale(
+#'     time_var = "month_id",
+#'     trend = "rw2",
+#'     seasonal = 12,
+#'     short_term = "ar1"
+#'   ),
+#'   iter = 200, warmup = 100, chains = 1
+#' )
+#'
+#' # Extract and plot components
+#' temporal_effects <- temporal(fit)
+#' plot(temporal_effects, component = "trend")
+#' }
+#'
+#' @seealso [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] for
+#'   single-component temporal effects, [spatial_multiscale()] for multi-scale
+#'   spatial effects
+#'
+#' @export
