@@ -199,6 +199,24 @@ Three dedups and two splits landed on 2026-05-02:
   `log_post`, all the aliased buffers in `state`) and are NOT
   standalone-compilable. `pkgbuild::compile_dll(force = TRUE)`
   clean; testthat 825 PASS / 0 FAIL / 2 SKIP.
+- hmc_gp.h split into umbrella + 5 namespace-scope fragments. The
+  umbrella keeps the header guard, includes, the
+  `namespace tulpa_gp { ... }` open with its `using` aliases and the
+  `parse_msgp_sampler` enum helper, then `#include`s 5 fragments in
+  order: `hmc_gp_lbfgs.h` (LBFGSState struct + add_pair / two-loop
+  recursion / direction methods + parse_gp_solver), `hmc_gp_solvers.h`
+  (parse_gp_solver + solve_neighbor_system / second variant —
+  Cholesky-based linear solves used by NNGP precision construction),
+  `hmc_gp_log_lik.h` (gp_nngp_log_lik + multiscale_gp_log_lik +
+  log_prior_sigma2_pc / log_prior_phi_uniform / log_prior_phi_pc),
+  `hmc_gp_gradients.h` (NNGPGradients struct + gp_nngp_gradient_w_analytical
+  + dcov_dphi + gp_nngp_gradients full hyper+w gradient + gp_gradient_w
+  AD entry), `hmc_gp_nc.h` (NNGPNCWorkspace + nngp_nc_forward /
+  nngp_nc_backward for the non-centered z↔w transform), then closes
+  the namespace + endif. Fragments are namespace-less and rely on the
+  surrounding `namespace tulpa_gp` lexical scope; each is included
+  exactly once. `pkgbuild::compile_dll(force = TRUE)` clean; testthat
+  825 PASS / 0 FAIL / 2 SKIP.
 
 **Still open from the 2026-05-02 punch list:**
 
