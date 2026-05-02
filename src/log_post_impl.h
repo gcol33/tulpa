@@ -17,6 +17,7 @@
 #include "hmc_temporal_multiscale_autodiff.h"  // Templated multiscale temporal functions
 #include "tulpa_priors.h"  // Shared prior computation helpers
 #include "linalg_fast.h"  // tulpa_linalg::matvec for the double fast path
+#include "tulpa/likelihood.h"  // LikelihoodSpec for generic dispatch helpers
 #include <type_traits>     // std::is_same_v for the constexpr dispatch
 
 // Expects these to be defined by including hmc_sampler.h first:
@@ -2301,6 +2302,29 @@ T compute_log_post_generic(
         log_post = log_post + ll_i;
     }
 
+    return log_post;
+}
+
+inline double compute_log_post_generic_spec_double(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    bool skip_obs_loop = false
+) {
+    if (data.n_processes <= 0 || data.likelihood_spec == nullptr) {
+        return -INFINITY;
+    }
+
+    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+    if (spec->ll_double == nullptr) {
+        return -INFINITY;
+    }
+
+    double log_post = compute_log_post_generic<double>(
+        params, data, layout, spec->ll_double, data.model_response_data, skip_obs_loop);
+    if (spec->extra_prior != nullptr) {
+        log_post += spec->extra_prior(params, layout, data.model_response_data);
+    }
     return log_post;
 }
 

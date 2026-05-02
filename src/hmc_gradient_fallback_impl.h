@@ -307,17 +307,8 @@ static void compute_gradient_generic_numerical(
     std::vector<double>& grad,
     double* log_post_out
 ) {
-    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
-    auto ll_fn = spec->ll_double;
-    const void* resp = data.model_response_data;
-
     auto log_post_fn = [&](const std::vector<double>& p) -> double {
-        double log_post = tulpa::compute_log_post_generic<double>(
-            p, data, layout, ll_fn, resp);
-        if (spec->extra_prior != nullptr) {
-            log_post += spec->extra_prior(p, layout, resp);
-        }
-        return log_post;
+        return tulpa::compute_log_post_generic_spec_double(p, data, layout);
     };
 
     double f0 = log_post_fn(params);
