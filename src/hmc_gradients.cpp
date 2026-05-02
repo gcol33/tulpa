@@ -38,7 +38,8 @@ using namespace Rcpp;
 namespace tulpa_hmc {
 
 // Thread-local vectorized gradient workspace (avoids per-call allocation).
-// External linkage so the definition is shared across gradient translation units.
+// Declared extern in hmc_gradient_shared.h so out-of-TU gradient .cpp files
+// can refer to the same workspace.
 thread_local vectorized::VecGradWorkspace vec_grad_ws;
 
 extern thread_local CollapsedGPWorkspace collapsed_gp_ws;

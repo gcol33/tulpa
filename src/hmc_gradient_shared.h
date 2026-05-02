@@ -24,7 +24,8 @@
 
 namespace tulpa_hmc {
 
-// Shared thread-local workspace (definition in hmc_gradients.cpp).
+// Shared per-thread vectorized gradient workspace. Defined in hmc_gradients.cpp,
+// referenced from every handcoded gradient .cpp via this extern declaration.
 extern thread_local vectorized::VecGradWorkspace vec_grad_ws;
 
 // ---------------------------------------------------------------------------
