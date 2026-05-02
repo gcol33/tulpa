@@ -12,8 +12,12 @@ Working tree is clean. Rebuild to start:
 "/c/Program Files/R/R-4.6.0/bin/Rscript.exe" dev_notes/run_nl_regression.R
 ```
 
-**Current priority:** Agent E (`tulpaRatio` refactor, `~/Documents/dev/numdenom`)
-or EM MI/Gibbs corrections (`R/em_laplace.R:241`).
+**Current priority:** clean core design before more downstream refactors.
+Do not continue incremental `tulpaRatio` bridge work. The right boundary is:
+model packages provide `LikelihoodSpec` + model-specific response data, and
+all inference runs through `tulpa::ModelData` with `n_processes > 0`. The
+legacy ratio path (`ModelData::legacy`, `n_processes == 0`) should be removed
+from core once one clean downstream prototype proves the generic path.
 
 ### Reference docs
 
@@ -29,7 +33,7 @@ or EM MI/Gibbs corrections (`R/em_laplace.R:241`).
 | Package | Role | State |
 |---|---|---|
 | `tulpa` | Generic Bayesian engine | Active |
-| `tulpaRatio` | Ratio/rate/proportion models | Still vendored numdenom; refactor pending |
+| `tulpaRatio` | Ratio/rate/proportion models | Defer; do not drive core design from its vendored engine |
 | `tulpaOcc` | Occupancy models | Plug-in |
 | `tulpaGlmm` | GLMM via lme4/glmmTMB-style API | Scaffolded |
 | `tulpaMesh` | CDT meshes for SPDE | Mature |
@@ -42,10 +46,14 @@ Model packages register likelihoods via `LikelihoodSpec` (`inst/include/tulpa/li
 
 ### Model packages (parallel)
 
-**Agent E — `tulpaRatio` refactor** (`~/Documents/dev/numdenom`)
-- Rename `Package: numdenom` → `tulpaRatio` in DESCRIPTION.
-- Strip vendored `src/` engine; depend on tulpa via `LinkingTo: tulpa`.
-- Register ratio likelihood through `LikelihoodSpec`. Verify one benchmark.
+**Clean downstream prototype**
+- Pick the smallest downstream model package / example that can use the
+  generic interface without carrying an old engine.
+- Implement only the package-owned pieces: response struct, `LikelihoodSpec`
+  callbacks, layout extension for extra likelihood parameters, and R-side data
+  builder.
+- No adapter layer that forwards old package-native C++ entry points into tulpa
+  shims. That keeps two engines alive and hardens the wrong boundary.
 - Unblocks: strip `ModelData::legacy` (item below).
 
 **Agent F — `tulpaGlmm` gap audit** (`~/Documents/dev/tulpaGlmm/REIMPLEMENTATION_PLAN.md`)
@@ -54,7 +62,8 @@ Model packages register likelihoods via `LikelihoodSpec` (`inst/include/tulpa/li
 
 ### Tulpa core
 
-**Strip `ModelData::legacy` (`LegacyRatioData`)** — blocked on Agent E.
+**Strip `ModelData::legacy` (`LegacyRatioData`)** — blocked on one clean
+generic downstream prototype.
 - Delete `LegacyRatioData`; drop `n_processes == 0` branches throughout
   `hmc_sampler.cpp` (~413 references). Bump `TULPA_ABI_VERSION`.
 
@@ -87,3 +96,20 @@ batched-Cholesky path compiles but needs a GPU build (`launch_build.ps1`).
 - **`tests/testthat/test-inference-modes.R` placeholder** — fill once P2.2 lands.
 - **Formula parser duplicate-bar coalescing** — `(1|g) + (x|g)` produces two
   RE specs; lme4 merges them. Not incorrect for diagonal cov; low priority.
+
+## Design Note
+
+The clean architecture is not "make `tulpaRatio` call exported tulpa shims".
+That preserves `tulpaRatio`'s old API surface and keeps the ratio-specific
+engine shape in play. The clean architecture is:
+
+1. `tulpa` owns samplers, shared latent structures, parameter layout, mass
+   matrices, diagnostics, and backend dispatch.
+2. Model packages own likelihood semantics only: response data, per-observation
+   log likelihoods, residuals / extra gradients, priors for extra parameters,
+   and R builders that populate generic `ModelData`.
+3. Every downstream model enters tulpa through `n_processes > 0` and
+   `LikelihoodSpec`; no downstream package depends on `ModelData::legacy`, and
+   no core sampler branches on ratio-specific fields.
+4. Once a prototype runs end-to-end this way, remove `ModelData::legacy` in one
+   core cleanup rather than continuing compatibility shims.

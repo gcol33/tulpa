@@ -4,11 +4,14 @@ Punch list. Completed items removed; see git history for what shipped.
 
 ## P1 — Sibling-package work
 
-### 1. Agent E — `tulpaRatio` refactor
-**Where:** `~/Documents/dev/numdenom` (sibling repo).
-**What:** rename `Package: numdenom` → `tulpaRatio` in DESCRIPTION; strip the
-vendored `src/` engine; depend on tulpa via `LinkingTo: tulpa`; register the
-ratio likelihood through `LikelihoodSpec`. Verify one benchmark reproduces.
+### 1. Clean downstream generic prototype
+**Where:** start from the smallest downstream package / example that can avoid
+the old ratio engine entirely.
+**What:** implement a true `LikelihoodSpec` integration: package-owned response
+struct, likelihood callbacks, optional residual / extra-gradient callbacks, and
+an R-side builder for generic `ModelData` with `n_processes > 0`.
+**Do not:** continue incremental `tulpaRatio` bridge wrappers around its
+vendored C++ entry points. That preserves the wrong boundary.
 **Unblocks:** item 2 (strip `ModelData::legacy`).
 
 ### 2. Agent F — `tulpaGlmm` gap audit
@@ -28,7 +31,7 @@ the in-package vignette.
 
 ### 4. Strip `ModelData::legacy` (`LegacyRatioData`)
 **Where:** `src/hmc_sampler.cpp` (~413 references) and adjacent headers.
-**Blocked on:** item 1 (Agent E) — once `tulpaRatio` registers via
+**Blocked on:** item 1 — once one downstream model runs through
 `LikelihoodSpec`, the `n_processes == 0` branch can be removed.
 **Action:** delete `LegacyRatioData`, drop the `n_processes == 0` branches
 throughout, bump `TULPA_ABI_VERSION`.
@@ -77,7 +80,7 @@ and Gibbs correction (warm-started z|θ → θ|z chain).
 
 ## Recommended order
 
-1. **#1 Agent E (tulpaRatio)** in sibling repo, then **#4 strip legacy**.
+1. **#1 clean generic prototype**, then **#4 strip legacy**.
 2. **#2 Agent F (tulpaGlmm gap audit)** — parallelizable with #1, report-only.
 3. **#8 EM MI/Gibbs** when tulpaGlmm needs it.
 4. **#5 CUDA live test** — schedulable anytime; needs a GPU build.
