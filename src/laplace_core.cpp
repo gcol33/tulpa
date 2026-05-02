@@ -3,11 +3,15 @@
 // Implements Laplace approximation for latent Gaussian models
 //
 // Feature 9 refactor: all model-specific Laplace functions consolidated
-// via laplace_newton_solve() template in laplace_helpers.h.
+// via laplace_newton_solve() template in laplace_newton.h.
 
 #include "laplace_core.h"
-#include "laplace_likelihoods.h"
-#include "laplace_helpers.h"
+#include "laplace_cholesky.h"
+#include "laplace_newton.h"
+#include "laplace_re_priors.h"
+#include "laplace_scatter.h"
+#include "laplace_spatial_priors.h"
+#include "laplace_temporal_priors.h"
 #include "linalg_fast.h"
 #include "gpu_nngp_laplace.h"
 #include "sparse_hessian.h"

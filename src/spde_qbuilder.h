@@ -7,7 +7,9 @@
 #define TULPA_SPDE_QBUILDER_H
 
 #include "laplace_core.h"
-#include "laplace_helpers.h"
+#include "laplace_family_link.h"
+#include "laplace_newton.h"
+#include "laplace_re_priors.h"
 #include <Rcpp.h>
 #include <vector>
 #include <map>

@@ -13,7 +13,11 @@
 // own pattern (rebuilds Q via SpdeQBuilder) and lives in spde_laplace.cpp.
 
 #include "laplace_core.h"
-#include "laplace_helpers.h"
+#include "laplace_newton.h"
+#include "laplace_re_priors.h"
+#include "laplace_scatter.h"
+#include "laplace_spatial_priors.h"
+#include "laplace_temporal_priors.h"
 #include "nested_laplace_grid.h"
 #include "hmc_car_proper.h"
 #include "gpu_nngp_laplace.h"

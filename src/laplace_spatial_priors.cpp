@@ -1,7 +1,7 @@
 // laplace_spatial_priors.cpp
 // Spatial prior gradient/Hessian and log-prior helpers for Laplace engines.
 
-#include "laplace_helpers.h"
+#include "laplace_spatial_priors.h"
 #include <cmath>
 
 using namespace Rcpp;

@@ -1,7 +1,7 @@
 // laplace_temporal_priors.cpp
 // Temporal precision helpers for Laplace engines.
 
-#include "laplace_helpers.h"
+#include "laplace_temporal_priors.h"
 
 using namespace Rcpp;
 

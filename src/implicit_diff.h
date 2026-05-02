@@ -18,7 +18,6 @@
 
 #include "sparse_cholesky.h"
 #include "spde_qbuilder.h"
-#include "laplace_helpers.h"
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>

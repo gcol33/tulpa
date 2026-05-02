@@ -1,7 +1,8 @@
 // laplace_scatter.cpp
 // Observation likelihood gradient/Hessian scatter helpers for Laplace engines.
 
-#include "laplace_helpers.h"
+#include "laplace_scatter.h"
+#include "laplace_family_link.h"
 
 #ifdef _OPENMP
 #include <omp.h>
