@@ -42,13 +42,19 @@ Three dedups and two splits landed on 2026-05-02:
   standalone-compilable; each is included exactly once per umbrella so
   no header guards. pkgbuild::compile_dll(force = TRUE) clean; full
   testthat suite passes.
+- hmc_nuts_sampler.cpp split into 9 namespace-scope fragments
+  (dual_avg, leapfrog, find_epsilon, helpers, optimized, softabs,
+  mass_init, chain, parallel). Umbrella `.cpp` retains all includes
+  + `using namespace Rcpp` + opens `namespace tulpa_hmc`, then
+  includes fragments in original definition order, then closes the
+  namespace. Fragments are header-guarded and namespace-less; they are
+  NOT standalone translation units (Makevars-style globbing already
+  picks up only `.cpp` files in `src/`, so the fragment `.h` files are
+  not compiled standalone). pkgbuild::compile_dll(force = TRUE) clean;
+  full testthat suite passes.
 
 **Still open from the 2026-05-02 punch list:**
 
-- **Split hmc_nuts_sampler.cpp** (~2696 lines). Single sampler file;
-  natural splits would be tree-building / U-turn / leapfrog wrapper /
-  adaptation / R interface. Highest-risk split because it's the
-  hot-path NUTS driver.
 - **Modularization milestones** (items #1, #2, #4, #5, #8 below) —
   multi-session work each.
 
