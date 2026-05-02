@@ -63,6 +63,13 @@ Three dedups and two splits landed on 2026-05-02:
   on the umbrella's using-decls — they are NOT standalone-compilable.
   pkgbuild::compile_dll(force = TRUE) clean; full testthat suite
   passes (825 PASS, 0 FAIL, 2 SKIP — same as pre-split).
+- hmc_rcpp_fit.cpp split into 2 translation units (multi-`.cpp`).
+  `hmc_rcpp_fit.cpp` keeps the main `cpp_hmc_fit` export (~733 lines);
+  the new `hmc_rcpp_fit_gp.cpp` owns `cpp_hmc_fit_gp` and
+  `cpp_hmc_fit_gp_v2` (~682 lines). Each new TU re-includes
+  `hmc_sampler.h`, `hmc_gradient_check.h`, `hmc_modeldata_builders.h`,
+  `Rcpp.h`, `<atomic>`. `pkgbuild::compile_dll(force = TRUE)` clean;
+  testthat 825 PASS / 0 FAIL / 2 SKIP.
 - laplace_core.cpp split into 3 translation units (multi-`.cpp`).
   `laplace_core.cpp` now keeps the NNGP/Matérn helpers, the dense and
   dense-multi-RE mode finders, and their R exports. `laplace_core_spatial.cpp`
