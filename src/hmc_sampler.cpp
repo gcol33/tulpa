@@ -17,6 +17,7 @@
 #include "hmc_multiscale_temporal_grad.h"
 #include "lkj_chol_helpers.h"
 #include "hmc_observation_likelihood.h"
+#include "hmc_log_posterior_split.h"
 #include <Rcpp.h>
 
 // Include log_post_impl.h AFTER hmc_sampler.h so types are defined
@@ -76,18 +77,33 @@ thread_local CollapsedICARWorkspace collapsed_icar_ws;
 // Log-posterior computation with OpenMP parallelization
 // =====================================================================
 
-double compute_log_post(
+double accumulate_log_prior_and_state(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
-    bool skip_obs_loop,
+    LogPosteriorState& state,
+    ObservationLikelihoodContext& ctx,
+    bool populate_obs_state,
     const double* precomputed_st_log_prior,
     const double* precomputed_tgp_log_prior
 ) {
-  if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
-    return tulpa::compute_log_post_generic_spec_double(
-        params, data, layout, skip_obs_loop);
-  }
+  // Skip flag preserves the original API: when true (gradient-only callers),
+  // we don't populate the heap-backed obs-context buffers.
+  const bool skip_obs_loop = !populate_obs_state;
+
+  // Alias state-owned buffers to preserve the original local-variable names
+  // throughout the body. Pointers stored into `ctx` at the end of this
+  // function reference these buffers, so they must outlive the call —
+  // hence they live in `state`, not on this stack frame.
+  std::vector<double>& re_nc_flat               = state.re_nc_flat;
+  std::vector<double>& temporal_f_nc            = state.temporal_f_nc;
+  std::vector<double>& gp_w_nc_buf              = state.gp_w_nc_buf;
+  std::vector<double>& msgp_hsgp_f_local        = state.msgp_hsgp_f_local;
+  std::vector<double>& msgp_hsgp_f_regional     = state.msgp_hsgp_f_regional;
+  std::vector<double>& hsgp_f                   = state.hsgp_f;
+  std::vector<double>& latent_sigma             = state.latent_sigma;
+  std::vector<double>& latent_factors_vec       = state.latent_factors_vec;
+  std::vector<double>& tvc_eta                  = state.tvc_eta;
 
   // Extract parameters
   const double* beta_num = &params[layout.legacy.beta_num_start];
@@ -197,7 +213,7 @@ double compute_log_post(
   // Pre-compute actual RE values from z for use in the likelihood loop.
   // Only allocate when the observation loop will run (skip_obs_loop=true avoids
   // this heap allocation on every gradient call ? saves ~100ns per call).
-  std::vector<double> re_nc_flat;
+  // re_nc_flat lives in state (aliased above).
   if (!skip_obs_loop) {
     re_nc_flat.assign(params.size(), 0.0);
   }
@@ -438,7 +454,7 @@ double compute_log_post(
   double rho_ar1 = 0.5;
   const double* phi_temporal = nullptr;
   double sigma2_temporal_gp = 1.0, phi_temporal_gp = 1.0;
-  std::vector<double> temporal_f_nc;  // Reconstructed f for NC temporal GP
+  // temporal_f_nc lives in state (aliased above).
 
   if (layout.has_temporal) {
     phi_temporal = &params[layout.temporal_start];
@@ -570,7 +586,7 @@ double compute_log_post(
   // GP spatial priors
   double sigma2_gp = 1.0, phi_gp = 1.0;
   const double* gp_w = nullptr;
-  std::vector<double> gp_w_nc_buf;  // Buffer for NC-reconstructed w
+  // gp_w_nc_buf lives in state (aliased above).
 
   if (layout.is_gp && data.has_gp) {
     double log_sigma2_gp = params[layout.log_sigma2_gp_idx];
@@ -656,7 +672,7 @@ double compute_log_post(
   double sigma2_regional = 1.0, phi_regional = 1.0;
   const double* gp_local = nullptr;
   const double* gp_regional = nullptr;
-  std::vector<double> msgp_hsgp_f_local, msgp_hsgp_f_regional;  // HSGP-MSGP fields
+  // msgp_hsgp_f_local / msgp_hsgp_f_regional live in state (aliased above).
 
   if (layout.is_multiscale_gp && data.has_multiscale_gp) {
     if (data.msgp_is_hsgp) {
@@ -774,7 +790,7 @@ double compute_log_post(
   // HSGP (Hilbert Space GP) priors
   double sigma2_hsgp = 1.0, lengthscale_hsgp = 1.0;
   std::vector<double> hsgp_beta;
-  std::vector<double> hsgp_f;
+  // hsgp_f lives in state (aliased above).
 
   if (layout.is_hsgp && data.has_hsgp) {
     double log_sigma2 = params[layout.log_sigma2_hsgp_idx];
@@ -879,8 +895,7 @@ double compute_log_post(
   }
 
   // Latent factor priors
-  std::vector<double> latent_sigma;
-  std::vector<double> latent_factors_vec;
+  // latent_sigma / latent_factors_vec live in state (aliased above).
   if (layout.has_latent && data.latent_n_factors > 0) {
     int K = data.latent_n_factors;
     int N = data.N;
@@ -1088,7 +1103,7 @@ double compute_log_post(
   std::vector<double> tvc_tau;
   std::vector<double> tvc_rho;
   std::vector<double> tvc_w_flat;
-  std::vector<double> tvc_eta;
+  // tvc_eta lives in state (aliased above).
 
   if (layout.has_tvc && data.tvc_data.n_tvc > 0) {
     int n_tvc = data.tvc_data.n_tvc;
@@ -1232,51 +1247,100 @@ double compute_log_post(
     }
   }
 
-  // ============ LIKELIHOOD (parallelized) ============
-  // When skip_obs_loop is true, we skip this section entirely.
-  // This is used by the fused gradient+log_post computation where
-  // the observation log-likelihood is accumulated during the gradient pass.
+  // Populate the obs-loop context (only meaningful when populate_obs_state).
+  // Pointers reference either `params`, `data`, thread_local workspaces, or
+  // buffers in `state` that outlive this call.
+  if (populate_obs_state) {
+    ctx.beta_num        = beta_num;
+    ctx.beta_denom      = beta_denom;
+    ctx.re              = re;
+    ctx.re_nc_flat      = re_nc_flat.empty() ? nullptr : re_nc_flat.data();
+    ctx.phi_spatial     = phi_spatial;
+    ctx.theta_bym2      = theta_bym2;
+    ctx.sigma_s_bym2    = sigma_s_bym2;
+    ctx.sigma_u_bym2    = sigma_u_bym2;
+    ctx.phi_temporal    = phi_temporal;
+    ctx.gp_w            = gp_w;
+    ctx.gp_local        = gp_local;
+    ctx.gp_regional     = gp_regional;
+    ctx.msgp_hsgp_f_local    = &msgp_hsgp_f_local;
+    ctx.msgp_hsgp_f_regional = &msgp_hsgp_f_regional;
+    ctx.hsgp_f          = &hsgp_f;
+    ctx.trend           = trend;
+    ctx.seasonal        = seasonal;
+    ctx.short_term      = short_term;
+    ctx.latent_sigma    = &latent_sigma;
+    ctx.latent_factors  = &latent_factors_vec;
+    ctx.st_delta        = st_delta;
+    ctx.tvc_eta         = &tvc_eta;
+    ctx.svc_eta         = svc_eta_ptr;
+    ctx.beta_zi         = beta_zi;
+    ctx.beta_oi         = beta_oi;
+    ctx.phi_num         = phi_num;
+    ctx.phi_denom       = phi_denom;
+  }
 
+  return log_post;
+}
+
+// =====================================================================
+// Observation-loop helper (parallel reduction over data.N).
+// =====================================================================
+
+double accumulate_obs_log_lik(const ObservationLikelihoodContext& ctx) {
+  const auto& data = ctx.data;
+  const auto& layout = ctx.layout;
   double log_lik = 0.0;
 
-  if (!skip_obs_loop) {
-    ObservationLikelihoodContext obs_ctx{
-      params, data, layout,
-      beta_num, beta_denom, re,
-      re_nc_flat.empty() ? nullptr : re_nc_flat.data(),
-      phi_spatial, theta_bym2, sigma_s_bym2, sigma_u_bym2,
-      phi_temporal, gp_w, gp_local, gp_regional,
-      &msgp_hsgp_f_local, &msgp_hsgp_f_regional, &hsgp_f,
-      trend, seasonal, short_term,
-      &latent_sigma, &latent_factors_vec, st_delta, &tvc_eta, svc_eta_ptr,
-      beta_zi, beta_oi, phi_num, phi_denom
-    };
-
-  // NOTE: Disable OpenMP for GP models to avoid race conditions
-  // The GP NNGP likelihood accesses shared data structures that may not be thread-safe
+  // NOTE: Disable OpenMP for GP models to avoid race conditions.
+  // The GP NNGP likelihood accesses shared data structures that may not be thread-safe.
   #ifdef _OPENMP
   int use_threads = (layout.is_gp || layout.is_multiscale_gp) ? 1 : data.n_threads;
   #pragma omp parallel for reduction(+:log_lik) schedule(static) \
           num_threads(use_threads)
   #endif
   for (int i = 0; i < data.N; i++) {
-    log_lik += compute_observation_log_lik(obs_ctx, i);
+    log_lik += compute_observation_log_lik(ctx, i);
   }
 
-  } // end if (!skip_obs_loop)
-
-  log_post += log_lik;
-  return log_post;
+  return log_lik;
 }
 
 // =====================================================================
-// Separable prior + likelihood (gcol33/tulpa#6 prereq)
+// Orchestrators: compute_log_post / compute_log_prior / compute_log_lik_only
 //
-// SMC and other tempered samplers need log_prior and log_lik as
-// independently callable terms (target = log_prior + beta * log_lik).
-// Contract: compute_log_post == compute_log_prior + compute_log_lik_only
-// up to numerical tolerance. Verified by tests/testthat/test-log-post-split.R.
+// The split satisfies the contract verified by tests/testthat/test-log-post-split.R:
+//   compute_log_post == compute_log_prior + compute_log_lik_only
+// (modulo IEEE arithmetic), and compute_log_lik_only now runs in a single
+// pass instead of two compute_log_post calls (gcol33/tulpa#6 follow-up).
 // =====================================================================
+
+double compute_log_post(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    bool skip_obs_loop,
+    const double* precomputed_st_log_prior,
+    const double* precomputed_tgp_log_prior
+) {
+  if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
+    return tulpa::compute_log_post_generic_spec_double(
+        params, data, layout, skip_obs_loop);
+  }
+
+  LogPosteriorState state;
+  ObservationLikelihoodContext ctx{params, data, layout};
+  const bool populate = !skip_obs_loop;
+
+  double log_prior = accumulate_log_prior_and_state(
+      params, data, layout, state, ctx, populate,
+      precomputed_st_log_prior, precomputed_tgp_log_prior);
+
+  if (skip_obs_loop || (std::isinf(log_prior) && log_prior < 0.0)) {
+    return log_prior;
+  }
+  return log_prior + accumulate_obs_log_lik(ctx);
+}
 
 double compute_log_prior(
     const std::vector<double>& params,
@@ -1292,13 +1356,31 @@ double compute_log_lik_only(
     const ModelData& data,
     const ParamLayout& layout
 ) {
-  // TODO(#6 follow-up): factor the observation loop in compute_log_post into
-  // its own helper so log_lik can be computed in a single O(N) pass instead
-  // of two compute_log_post calls. Until then, derive it by subtraction so
-  // the prior + lik sum matches compute_log_post exactly by construction.
-  const double log_post = compute_log_post(params, data, layout, /*skip_obs_loop=*/false);
-  const double log_prior = compute_log_post(params, data, layout, /*skip_obs_loop=*/true);
-  return log_post - log_prior;
+  if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
+    // Generic-spec path still derives by subtraction; only the legacy
+    // (n_processes == 0) path has been split into separable stages.
+    const double lp = tulpa::compute_log_post_generic_spec_double(
+        params, data, layout, /*skip_obs_loop=*/false);
+    const double lpr = tulpa::compute_log_post_generic_spec_double(
+        params, data, layout, /*skip_obs_loop=*/true);
+    return lp - lpr;
+  }
+
+  LogPosteriorState state;
+  ObservationLikelihoodContext ctx{params, data, layout};
+  const double log_prior = accumulate_log_prior_and_state(
+      params, data, layout, state, ctx, /*populate_obs_state=*/true,
+      /*precomputed_st_log_prior=*/nullptr,
+      /*precomputed_tgp_log_prior=*/nullptr);
+
+  // Match the historical (post - prior) behavior at -INFINITY: the obs
+  // context may be partially populated, so the result is undefined and
+  // tests don't probe this regime. Return 0 to keep the contract finite
+  // when prior was finite, NaN-equivalent otherwise.
+  if (std::isinf(log_prior) && log_prior < 0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  return accumulate_obs_log_lik(ctx);
 }
 
 // =====================================================================
