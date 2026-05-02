@@ -63,6 +63,19 @@ Three dedups and two splits landed on 2026-05-02:
   on the umbrella's using-decls — they are NOT standalone-compilable.
   pkgbuild::compile_dll(force = TRUE) clean; full testthat suite
   passes (825 PASS, 0 FAIL, 2 SKIP — same as pre-split).
+- hmc_gradient_composite_impl.h split into umbrella + 4 function-body
+  fragments along the existing `Phase 1`–`Phase 4` markers
+  (phase1 extract params, phase2_priors, phase3_loop, phase4_post).
+  Same pattern as the analytical / log_post_impl splits — fragments rely on
+  lexical scope (`params`, `data`, `layout`, `grad`, `cp`, `beta_num`,
+  `beta_denom`, `sigma_re`, `re`, `phi_num`, `phi_denom`, `obs_log_lik`,
+  `fuse_lp`, `is_binomial`, `N`, ...) declared inside
+  `compute_gradient_composite`. Fragments are NOT standalone-compilable;
+  each is `#include`d exactly once by the umbrella so no header guards.
+  Phase 4 ends with the fused log-posterior output block; the umbrella
+  adds nothing after the last include but the closing `}`.
+  pkgbuild::compile_dll(force = TRUE) clean; testthat 825 PASS / 0 FAIL
+  / 2 SKIP.
 - hmc_gradient_analytical_impl.h split into umbrella + 5 function-body
   fragments (priors_basic, priors_misc, lik_vec, lik_scalar, post).
   Same pattern as the prior log_post_impl.h split — fragments rely on
