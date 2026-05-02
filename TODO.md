@@ -217,6 +217,26 @@ Three dedups and two splits landed on 2026-05-02:
   surrounding `namespace tulpa_gp` lexical scope; each is included
   exactly once. `pkgbuild::compile_dll(force = TRUE)` clean; testthat
   825 PASS / 0 FAIL / 2 SKIP.
+- hmc_gp_collapsed.h split into umbrella + 5 file-scope fragments.
+  Unlike `hmc_gp.h`, this header has no surrounding namespace — it
+  brings symbols into file scope via `using tulpa_gp::GPData`,
+  `using tulpa_hmc::ModelData`, etc. The umbrella keeps the header
+  guard, comment header, includes, and the four `using` declarations,
+  then `#include`s 5 fragments in dependency order:
+  `hmc_gp_collapsed_ops.h` (CollapsedGPWorkspace struct +
+  build_loc_obs_map + build_nngp_B_D + nngp_precision_matvec +
+  wplusq_matvec + cg_solve), `hmc_gp_collapsed_logdet.h`
+  (compute_laplace_log_det + LocLikResult + compute_loc_lik +
+  laplace_log_det_full), `hmc_gp_collapsed_mode.h`
+  (collapsed_gp_find_mode Newton+CG + collapsed_gp_compute_residuals
+  + laplace_log_det_fixed_w), `hmc_gp_collapsed_grad.h`
+  (collapsed_gp_laplace_grad_nonGP + compute_laplace_grad_gp_hypers),
+  `hmc_gp_collapsed_post.h` (CollapsedGPLogPostResult struct +
+  collapsed_gp_log_post_contribution wrapper +
+  collapsed_gp_store_sample). Fragments rely on the umbrella's
+  `using` declarations and are included exactly once.
+  `pkgbuild::compile_dll(force = TRUE)` clean; testthat 825 PASS /
+  0 FAIL / 2 SKIP.
 
 **Still open from the 2026-05-02 punch list:**
 
