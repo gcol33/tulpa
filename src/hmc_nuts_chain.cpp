@@ -24,7 +24,7 @@
 
 namespace tulpa_hmc {
 
-extern GradientMode g_gradient_mode;
+// g_gradient_mode is declared in hmc_sampler_decls.h.
 extern thread_local CollapsedGPWorkspace collapsed_gp_ws;
 extern thread_local CollapsedICARWorkspace collapsed_icar_ws;
 

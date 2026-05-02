@@ -1,15 +1,26 @@
-// Gradient mode: controls which gradient function is used.
-// Moved here (before verify_gradient_runtime) so mode-aware functions
-// can reference it. Previously defined later in the file.
-GradientMode g_gradient_mode = GradientMode::AUTO;
+// hmc_gradient_fallback.cpp
+// Fallback gradient implementations: numerical (central differences),
+// autodiff (tape, arena, forward), generic multi-process gradients,
+// runtime gradient verification, and the global gradient mode.
 
-// Forward declarations for autodiff gradient functions (needed by verify_gradient_runtime)
-void compute_gradient_arena(const std::vector<double>&, const ModelData&, const ParamLayout&,
-                            std::vector<double>&, double*);
-void compute_gradient_forward(const std::vector<double>&, const ModelData&, const ParamLayout&,
-                              std::vector<double>&, double*);
-void compute_gradient_autodiff(const std::vector<double>&, const ModelData&, const ParamLayout&,
-                               std::vector<double>&, double*);
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
+#include <Rcpp.h>
+
+#include "autodiff.h"
+#include "autodiff_arena.h"
+#include "autodiff_fwd.h"
+#include "hmc_sampler.h"
+#include "log_post_impl.h"
+#include "tulpa/likelihood.h"
+
+namespace tulpa_hmc {
+
+// Gradient mode: controls which gradient function the dispatcher picks.
+// Defined here so fallback verify_gradient_runtime can read/write it.
+GradientMode g_gradient_mode = GradientMode::AUTO;
 
 // =====================================================================
 // Numerical gradient (fallback for complex models)
@@ -25,7 +36,6 @@ void compute_gradient_numerical(
   int n = params.size();
   grad.resize(n);
 
-  // Compute log_post at central point if requested (cheap: one extra eval)
   if (log_post_out) {
     *log_post_out = compute_log_post(params, data, layout);
   }
@@ -85,47 +95,12 @@ void compute_gradient_numerical_impl(
 }
 
 // =====================================================================
-// Unified gradient interface
-// =====================================================================
-
-// Debug: compare analytical vs numerical gradients
-bool verify_gradient(
-    const std::vector<double>& params,
-    const ModelData& data,
-    const ParamLayout& layout,
-    double tol = 1e-4
-) {
-  std::vector<double> grad_analytical, grad_numerical;
-  compute_gradient_analytical(params, data, layout, grad_analytical);
-  compute_gradient_numerical(params, data, layout, grad_numerical);
-
-  double max_diff = 0.0;
-  int worst_idx = -1;
-  for (size_t i = 0; i < grad_analytical.size(); i++) {
-    double diff = std::abs(grad_analytical[i] - grad_numerical[i]);
-    double scale = std::max(1.0, std::max(std::abs(grad_analytical[i]), std::abs(grad_numerical[i])));
-    double rel_diff = diff / scale;
-    if (rel_diff > max_diff) {
-      max_diff = rel_diff;
-      worst_idx = i;
-    }
-  }
-
-  if (max_diff > tol) {
-    Rcpp::Rcerr << "Gradient mismatch! Max rel diff: " << max_diff
-                << " at param " << worst_idx
-                << " (analytical: " << grad_analytical[worst_idx]
-                << ", numerical: " << grad_numerical[worst_idx] << ")\n";
-    return false;
-  }
-  return true;
-}
-
 // Runtime gradient check: compare compute_gradient() dispatcher output
 // against numerical gradients at the first warmup iteration.
 // Catches log-post/gradient mismatches in ALL specialized gradient functions
 // (GP, HSGP, SVC, TVC, MSGP, spatiotemporal, etc.), not just the main
 // compute_gradient_analytical().
+// =====================================================================
 bool verify_gradient_runtime(
     const std::vector<double>& params,
     const ModelData& data,
@@ -133,7 +108,6 @@ bool verify_gradient_runtime(
     double tol
 ) {
   std::vector<double> grad_active, grad_numerical;
-  // Resolve the actual gradient function that will be used
   GradientFn active_fn = resolve_gradient_fn(g_gradient_mode, data, layout);
   active_fn(params, data, layout, grad_active, nullptr);
 
@@ -141,7 +115,6 @@ bool verify_gradient_runtime(
   // Autodiff functions differentiate compute_log_post_impl<T>, so the reference
   // must finite-diff the same template. H-mode functions use compute_log_post,
   // so the reference must finite-diff that.
-  // This matters when AUTO resolves to autodiff for models like HSGP+ZI.
   bool active_is_autodiff = (active_fn == &compute_gradient_arena ||
                              active_fn == &compute_gradient_forward ||
                              active_fn == &compute_gradient_autodiff);
@@ -165,7 +138,6 @@ bool verify_gradient_runtime(
   }
 
   if (max_diff > tol) {
-    // Use REprintf for immediate output, then Rcpp::warning for R-level notice
     REprintf("[numdenom] WARNING: gradient mismatch detected at param %d!\n"
              "  max |active - numerical| / scale = %.6e (tol = %.1e)\n"
              "  active[%d] = %.8e, numerical[%d] = %.8e\n"
@@ -192,26 +164,18 @@ void compute_gradient_autodiff(
 ) {
     using namespace tulpa::ad;
 
-    // Thread-safe: each call gets its own tape via RAII
     TapeScope tape_scope;
     Tape* tape = tape_scope.tape;
 
-    // Create autodiff variables from parameters
     std::vector<Var> params_ad = make_vars(tape, params);
 
-    // Compute log posterior using templated implementation
     Var log_post = tulpa::compute_log_post_impl(params_ad, data, layout);
 
-    // Extract log_post value before backward pass (free: already computed)
     if (log_post_out) *log_post_out = log_post.val();
 
-    // Backward pass to compute gradients
     log_post.backward();
 
-    // Extract gradients
     grad = get_adjoints(params_ad);
-
-    // TapeScope destructor handles cleanup
 }
 
 // =====================================================================
@@ -231,30 +195,23 @@ void compute_gradient_arena(
 
     int n_nodes_used = 0;
     {
-        // Thread-safe: each call gets its own arena via RAII
         ArenaScope scope;
         Arena* arena = scope.arena();
 
-        // Create autodiff variables from parameters
         std::vector<Var> params_ar = make_vars(arena, params);
 
-        // Compute log posterior using templated implementation
         Var log_post = tulpa::compute_log_post_impl(params_ar, data, layout);
 
-        // Extract log_post value before backward pass
         if (log_post_out) *log_post_out = log_post.val();
 
-        // Backward pass to compute gradients
         log_post.backward();
 
-        // Extract gradients
         grad = get_adjoints(params_ar);
 
         n_nodes_used = arena->size();
-        // ArenaScope destructor handles cleanup
     }
 
-    (void)n_nodes_used;  // suppress unused warning
+    (void)n_nodes_used;
 }
 
 // =====================================================================
@@ -272,25 +229,18 @@ void compute_gradient_forward(
     int n_params = static_cast<int>(params.size());
     grad.assign(n_params, 0.0);
 
-    // Forward-mode: compute one gradient component per forward pass
-    // Seed each parameter in turn and evaluate
     std::vector<fwd::Dual> params_dual(n_params);
 
     for (int i = 0; i < n_params; i++) {
-        // Seed parameter i: value=params[i], gradient=1.0
-        // All others: value=params[j], gradient=0.0
         for (int j = 0; j < n_params; j++) {
             params_dual[j].val = params[j];
             params_dual[j].grad = (j == i) ? 1.0 : 0.0;
         }
 
-        // Compute log posterior with dual numbers
         fwd::Dual log_post = tulpa::compute_log_post_impl(params_dual, data, layout);
 
-        // Extract gradient component
         grad[i] = log_post.grad;
 
-        // Extract log_post value on first pass (free: already computed)
         if (i == 0 && log_post_out) *log_post_out = log_post.val;
     }
 }
@@ -300,7 +250,7 @@ void compute_gradient_forward(
 // Used by model packages (tulpaOcc, etc.) that plug in via LikelihoodSpec.
 // =====================================================================
 
-static void compute_gradient_generic_numerical(
+void compute_gradient_generic_numerical(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
@@ -316,6 +266,7 @@ static void compute_gradient_generic_numerical(
 
     const double eps = 1e-6;
     const int n = static_cast<int>(params.size());
+    grad.assign(n, 0.0);
     std::vector<double> pw = params;
 
     for (int j = 0; j < n; j++) {
@@ -332,7 +283,7 @@ static void compute_gradient_generic_numerical(
 // Generic multi-process gradient via arena reverse-mode AD
 // =====================================================================
 
-static void compute_gradient_generic_arena(
+void compute_gradient_generic_arena(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
@@ -354,3 +305,5 @@ static void compute_gradient_generic_arena(
     log_post.backward();
     grad = get_adjoints(params_ar);
 }
+
+}  // namespace tulpa_hmc

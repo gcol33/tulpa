@@ -80,7 +80,10 @@ inline const char* metric_name(MassMatrixType t) {
     return "UNKNOWN";
 }
 
-// Set/get global gradient mode (defined in hmc_sampler.cpp)
+// Global gradient mode + accessors. Defined in hmc_gradient_fallback.cpp.
+// Direct access is reserved for the dispatcher and the per-chain warmup
+// fallback path; everywhere else should go through set/get.
+extern GradientMode g_gradient_mode;
 void set_gradient_mode(GradientMode mode);
 GradientMode get_gradient_mode();
 
@@ -179,6 +182,24 @@ void compute_gradient_arena(
 );
 
 void compute_gradient_forward(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out = nullptr
+);
+
+// Generic (multi-process) gradient drivers used by tulpa_hmc dispatch when
+// the model plugs a LikelihoodSpec. Defined in hmc_gradient_fallback.cpp.
+void compute_gradient_generic_numerical(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out = nullptr
+);
+
+void compute_gradient_generic_arena(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,

@@ -16,7 +16,7 @@
 
 namespace tulpa_hmc {
 
-extern GradientMode g_gradient_mode;
+// g_gradient_mode is declared in hmc_sampler_decls.h.
 
 // =====================================================================
 // Run multiple chains in parallel using OpenMP
