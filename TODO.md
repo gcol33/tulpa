@@ -21,22 +21,29 @@ Three dedups and two splits landed on 2026-05-02:
   preserves the `#include "tulpa_priors.h"` API.
 - gibbs_spatial.h split into data + icar + bym2 + hsgp. GibbsResult
   hoisted from mid-ICAR-section into the shared data header.
+- hmc_gradient_vectorized.h split into 5 fragments (workspace, passes,
+  fused, main, shared). Umbrella header opens `namespace vectorized {`,
+  includes the 5 fragments in dependency order, closes the namespace.
+  Fragments are header-guarded but namespace-less so they expand inside
+  the surrounding `namespace tulpa_hmc {` opened in hmc_gradients.cpp.
+  pkgbuild::compile_dll(force = TRUE) clean.
+- hmc_sampler.h split into 7 fragments (decls, nuts_infra, mass_blocks,
+  adapt, chain_state, funcs, config). Umbrella opens
+  `namespace tulpa_hmc {`, includes fragments in dependency order
+  (mass-block hierarchy precedes DenseMassMatrix; DualAveraging precedes
+  ChainState), closes the namespace. Fragments are header-guarded and
+  namespace-less. pkgbuild::compile_dll(force = TRUE) clean.
 
 **Still open from the 2026-05-02 punch list:**
 
 - **Split log_post_impl.h** (~1932 lines). Top-level structure is one
   massive `compute_log_post_impl` template (lines 89-1926). Splitting
   requires extracting interior helper functions, not just file slicing.
-  Recent commit cecbffa already extracted prior + obs-loop stages — more
-  of the same is needed.
-- **Split hmc_gradient_vectorized.h** (~1790 lines). Structurally
-  splittable (~5 sections) but the file is included from inside an
-  existing `namespace tulpa_hmc { }` block in hmc_sampler.cpp, so any
-  sub-headers would have to honour that contract (no header guards
-  around namespace, fragment-style includes). Doable but fragile.
-- **Split hmc_sampler.h** (~1822 lines). Holds type definitions used
-  everywhere; cannot just umbrella — needs careful separation of types
-  from inlines, then forward-declarations across the sub-headers.
+  Note: commit cecbffa extracted prior + obs-loop stages from
+  `compute_log_post` in hmc_sampler.cpp (the `double` evaluator), not
+  from `compute_log_post_impl<T>` in this header. The templated version
+  shares state across 1800 lines and needs a `LogPosteriorState`-style
+  struct to break apart cleanly.
 - **Split hmc_nuts_sampler.cpp** (~2696 lines). Single sampler file;
   natural splits would be tree-building / U-turn / leapfrog wrapper /
   adaptation / R interface. Highest-risk split because it's the
