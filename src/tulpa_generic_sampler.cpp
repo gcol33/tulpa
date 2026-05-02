@@ -449,7 +449,7 @@ Rcpp::List cpp_tulpa_fit_generic(
         Rcpp::Named("accept_prob") = Rcpp::wrap(result.accept_prob),
         Rcpp::Named("divergent") = Rcpp::wrap(result.divergent),
         Rcpp::Named("treedepth") = Rcpp::wrap(result.treedepth),
-        Rcpp::Named("sampler") = result.sampler,
+        Rcpp::Named("sampler") = result.sampler.empty() ? "nuts" : result.sampler,
         Rcpp::Named("epsilon") = result.epsilon
     );
 }

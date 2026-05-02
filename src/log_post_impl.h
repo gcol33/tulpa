@@ -1957,7 +1957,8 @@ T compute_log_post_generic(
     const ModelData& data,
     const ParamLayout& layout,
     LikelihoodFnT<T> likelihood_fn,
-    const void* model_response_data
+    const void* model_response_data,
+    bool skip_obs_loop = false
 ) {
     T log_post = T(0.0);
     const int np = data.n_processes;
@@ -2108,6 +2109,10 @@ T compute_log_post_generic(
                 eta_fixed[k][i] = s;
             }
         }
+    }
+
+    if (skip_obs_loop) {
+        return log_post;
     }
 
     // ====================================================================

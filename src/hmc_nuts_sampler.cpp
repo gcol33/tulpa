@@ -1303,9 +1303,11 @@ HMCResultCpp run_hmc_chain_cpp(
     compute_gradient(q, data, layout, current_grad, &log_prob_current);
   } else {
     // Use same log-post function as the active gradient mode
-    if (g_gradient_mode == GradientMode::AUTODIFF_ARENA ||
+    const bool is_generic = data.n_processes > 0 && data.likelihood_spec != nullptr;
+    if (!is_generic &&
+        (g_gradient_mode == GradientMode::AUTODIFF_ARENA ||
         g_gradient_mode == GradientMode::AUTODIFF_FWD ||
-        g_gradient_mode == GradientMode::AUTODIFF_TAPE) {
+        g_gradient_mode == GradientMode::AUTODIFF_TAPE)) {
       log_prob_current = tulpa::compute_log_post_impl(q, data, layout);
     } else {
       log_prob_current = compute_log_post(q, data, layout);
@@ -2408,9 +2410,11 @@ HMCResultCpp run_hmc_chain_cpp(
 
       // Compute proposed Hamiltonian (use same log-post as gradient mode)
       double log_prob_prop;
-      if (g_gradient_mode == GradientMode::AUTODIFF_ARENA ||
+      const bool is_generic = data.n_processes > 0 && data.likelihood_spec != nullptr;
+      if (!is_generic &&
+          (g_gradient_mode == GradientMode::AUTODIFF_ARENA ||
           g_gradient_mode == GradientMode::AUTODIFF_FWD ||
-          g_gradient_mode == GradientMode::AUTODIFF_TAPE) {
+          g_gradient_mode == GradientMode::AUTODIFF_TAPE)) {
         log_prob_prop = tulpa::compute_log_post_impl(q_prop, data, layout);
       } else {
         log_prob_prop = compute_log_post(q_prop, data, layout);

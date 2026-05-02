@@ -19,8 +19,10 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
     // Generic multi-process models: route through generic gradient
     if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
         const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
-        // Use arena AD if model provides it, otherwise fall back to numerical
-        if (spec->ll_arena != nullptr) {
+        // Use arena AD if model provides it. A double-only extra_prior cannot
+        // be differentiated by arena AD, so keep that case on the numerical
+        // path until model-specific extra priors get templated callbacks.
+        if (spec->ll_arena != nullptr && spec->extra_prior == nullptr) {
             return &compute_gradient_generic_arena;
         }
         return &compute_gradient_generic_numerical;

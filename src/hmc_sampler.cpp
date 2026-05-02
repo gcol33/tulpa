@@ -84,6 +84,19 @@ double compute_log_post(
     const double* precomputed_st_log_prior,
     const double* precomputed_tgp_log_prior
 ) {
+  if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
+    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+    if (spec->ll_double == nullptr) {
+      return -std::numeric_limits<double>::infinity();
+    }
+    double log_post = tulpa::compute_log_post_generic<double>(
+        params, data, layout, spec->ll_double, data.model_response_data, skip_obs_loop);
+    if (spec->extra_prior != nullptr) {
+      log_post += spec->extra_prior(params, layout, data.model_response_data);
+    }
+    return log_post;
+  }
+
   // Extract parameters
   const double* beta_num = &params[layout.legacy.beta_num_start];
   const double* beta_denom = &params[layout.legacy.beta_denom_start];

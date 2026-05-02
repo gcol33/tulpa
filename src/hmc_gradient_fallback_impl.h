@@ -312,7 +312,12 @@ static void compute_gradient_generic_numerical(
     const void* resp = data.model_response_data;
 
     auto log_post_fn = [&](const std::vector<double>& p) -> double {
-        return tulpa::compute_log_post_generic<double>(p, data, layout, ll_fn, resp);
+        double log_post = tulpa::compute_log_post_generic<double>(
+            p, data, layout, ll_fn, resp);
+        if (spec->extra_prior != nullptr) {
+            log_post += spec->extra_prior(p, layout, resp);
+        }
+        return log_post;
     };
 
     double f0 = log_post_fn(params);
