@@ -157,6 +157,24 @@ Three dedups and two splits landed on 2026-05-02:
   `using namespace Rcpp`, and the shared anonymous-namespace
   helpers); each is included exactly once. `pkgbuild::compile_dll(
   force = TRUE)` clean; testthat 825 PASS / 0 FAIL / 2 SKIP.
+- hmc_nuts_chain.h split into umbrella + 5 function-body fragments.
+  The umbrella keeps `run_hmc_chain_cpp`'s signature, the post-loop
+  diagnostic block, and the `run_hmc_chain` Rcpp wrapper. Inside
+  the function body, fragments are included in order:
+  `hmc_nuts_chain_setup.h` (chain state init: result alloc, RNG,
+  initial gradient + log_post fuse, target_boost, mass matrix
+  selection + warm-start, L-BFGS init, warmup mass-window
+  endpoints, NUTS workspace, divergence/SoftAbs setup), then for
+  each iter: `hmc_nuts_chain_iter_window.h` (mass-window adapt +
+  L-BFGS→HMC transition), `hmc_nuts_chain_iter_nuts.h` (the
+  `if (use_nuts && ...) { ... }` branch), `hmc_nuts_chain_iter_hmc.h`
+  (the `} else { ... }` branch — opens with `} else {` and closes
+  the if/else, so the two iter step fragments combine into one
+  C++ if/else statement), `hmc_nuts_chain_iter_store.h` (sample
+  storage). Fragments rely on the function's lexical scope (q,
+  data, layout, mass, da, _nuts_p, mass_stats, cov_stats, ...)
+  and have no header guards. `pkgbuild::compile_dll(force = TRUE)`
+  clean; testthat 825 PASS / 0 FAIL / 2 SKIP.
 
 **Still open from the 2026-05-02 punch list:**
 
