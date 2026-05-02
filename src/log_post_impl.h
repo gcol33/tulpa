@@ -25,6 +25,7 @@
 #include "tulpa_priors.h"  // Shared prior computation helpers
 #include "linalg_fast.h"  // tulpa_linalg::matvec for the double fast path
 #include "tulpa/likelihood.h"  // LikelihoodSpec for generic dispatch helpers
+#include "log_post_car_proper_det.h"  // self-contained: tulpa::car_proper_log_det_t<T>
 #include <type_traits>     // std::is_same_v for the constexpr dispatch
 
 // Expects these to be defined by including hmc_sampler.h first:
@@ -43,9 +44,6 @@ using tulpa_spatiotemporal::STType;
 namespace tulpa {
 
 using namespace math;
-
-// Templated CAR-proper log-determinant helper (namespace-scope).
-#include "log_post_car_proper_det.h"
 
 // ============================================================================
 // Templated log-posterior computation
