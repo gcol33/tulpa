@@ -1,3 +1,30 @@
+// hmc_gradient_helpers_impl.h
+// Static-inline helpers shared by handcoded gradient functions:
+// CommonGradParams + extractor, beta/RE/phi prior gradients, per-obs residuals,
+// scatter helpers, ZI/OI helpers, temporal/spatial GMRF prior gradients,
+// GP PC prior gradient, MS-GP view splitter.
+//
+// Self-contained: opens namespace tulpa_hmc, includes its own dependencies.
+// Each helper is `static inline` so multiple TUs can include this header
+// safely (each TU keeps its own private copy with internal linkage).
+
+#ifndef TULPA_HMC_GRADIENT_HELPERS_IMPL_H
+#define TULPA_HMC_GRADIENT_HELPERS_IMPL_H
+
+#include <algorithm>
+#include <cmath>
+#include <utility>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_sampler.h"     // ModelData, ParamLayout, ModelType, GPData, MultiscaleGPData, ZIType
+#include "icar_kernel.h"     // tulpa::car_apply_row, tulpa::car_quad_form
+#include "linalg_fast.h"     // tulpa_linalg::dot_product
+#include "portable_math.h"   // tulpa::math::portable_digamma
+
+namespace tulpa_hmc {
+
 // =====================================================================
 // RE gradient helpers for specialized gradient functions
 // Handles both centered and non-centered parameterizations correctly
@@ -865,3 +892,7 @@ static inline void spatial_gmrf_prior_grad(
         grad[layout.log_tau_spatial_idx] += 0.5 * (S - 1) - 0.5 * tau_spatial * icar_qf;
     }
 }
+
+}  // namespace tulpa_hmc
+
+#endif  // TULPA_HMC_GRADIENT_HELPERS_IMPL_H

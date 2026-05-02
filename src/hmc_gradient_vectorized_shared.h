@@ -1,11 +1,21 @@
 ﻿// hmc_gradient_vectorized_shared.h
 // Fragment of hmc_gradient_vectorized.h.
-// Included from the hmc_gradient_vectorized.h umbrella header inside
-// namespace tulpa_hmc { namespace vectorized { ... } } in hmc_gradients.cpp.
-// Do NOT wrap contents in any namespace — already inside namespace vectorized.
+// Self-contained: opens namespace tulpa_hmc::vectorized.
 // Shared vectorized residual + beta-grad kernel for specialized gradient fns.
 #ifndef TULPA_HMC_GRADIENT_VECTORIZED_SHARED_H
 #define TULPA_HMC_GRADIENT_VECTORIZED_SHARED_H
+
+#include <cstring>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_gradient_vectorized_passes.h"     // dispatch_residuals_and_beta_grads
+#include "hmc_gradient_vectorized_workspace.h"  // VecGradWorkspace
+#include "hmc_sampler.h"                        // ModelData, ParamLayout, ModelType
+
+namespace tulpa_hmc {
+namespace vectorized {
 
 // ============================================================================
 // Shared vectorized residual + beta-grad kernel for specialized gradient fns
@@ -157,5 +167,8 @@ inline bool dispatch_residuals_and_beta_grads(
     #undef DISPATCH_CASE
     return false;
 }
+
+}  // namespace vectorized
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_GRADIENT_VECTORIZED_SHARED_H

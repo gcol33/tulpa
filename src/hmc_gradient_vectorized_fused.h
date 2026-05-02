@@ -1,11 +1,24 @@
 ﻿// hmc_gradient_vectorized_fused.h
 // Fragment of hmc_gradient_vectorized.h.
-// Included from the hmc_gradient_vectorized.h umbrella header inside
-// namespace tulpa_hmc { namespace vectorized { ... } } in hmc_gradients.cpp.
-// Do NOT wrap contents in any namespace — already inside namespace vectorized.
+// Self-contained: opens namespace tulpa_hmc::vectorized.
 // Fused single-pass gradient: eta + residuals + accumulation in one obs loop.
 #ifndef TULPA_HMC_GRADIENT_VECTORIZED_FUSED_H
 #define TULPA_HMC_GRADIENT_VECTORIZED_FUSED_H
+
+#include <cmath>
+#include <cstring>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_gradient_vectorized_passes.h"     // dispatch_residuals_*
+#include "hmc_gradient_vectorized_workspace.h"  // VecGradWorkspace
+#include "hmc_likelihood.h"                     // log_lik_*
+#include "hmc_sampler.h"                        // ModelData, ParamLayout
+#include "portable_math.h"                      // tulpa::math::portable_digamma*
+
+namespace tulpa_hmc {
+namespace vectorized {
 
 // ============================================================================
 // FUSED SINGLE-PASS GRADIENT
@@ -597,5 +610,8 @@ inline bool dispatch_fused_gradient(
   }
   return false;
 }
+
+}  // namespace vectorized
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_GRADIENT_VECTORIZED_FUSED_H

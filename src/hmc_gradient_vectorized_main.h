@@ -1,11 +1,22 @@
 ﻿// hmc_gradient_vectorized_main.h
 // Fragment of hmc_gradient_vectorized.h.
-// Included from the hmc_gradient_vectorized.h umbrella header inside
-// namespace tulpa_hmc { namespace vectorized { ... } } in hmc_gradients.cpp.
-// Do NOT wrap contents in any namespace — already inside namespace vectorized.
+// Self-contained: opens namespace tulpa_hmc::vectorized.
 // can_use_vectorized check + main vectorized gradient + top-level dispatcher.
 #ifndef TULPA_HMC_GRADIENT_VECTORIZED_MAIN_H
 #define TULPA_HMC_GRADIENT_VECTORIZED_MAIN_H
+
+#include <cstring>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_gradient_vectorized_fused.h"      // can_use_fused, fused gradient
+#include "hmc_gradient_vectorized_passes.h"     // expand_re_*, dispatch_residuals_*
+#include "hmc_gradient_vectorized_workspace.h"  // VecGradWorkspace
+#include "hmc_sampler.h"                        // ModelData, ParamLayout, SpatialType
+
+namespace tulpa_hmc {
+namespace vectorized {
 
 // ============================================================================
 // Check whether a model configuration can use the vectorized path
@@ -288,5 +299,8 @@ inline bool dispatch_vectorized_gradient(
   }
   return false;
 }
+
+}  // namespace vectorized
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_GRADIENT_VECTORIZED_MAIN_H

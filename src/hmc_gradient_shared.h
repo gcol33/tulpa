@@ -7,18 +7,22 @@
 //
 // All are static inline — zero overhead, compiler inlines them.
 //
-// IMPORTANT: This header is included from within namespace tulpa_hmc {}
-// in hmc_gradients.cpp. Do NOT wrap contents in namespace tulpa_hmc.
-// Depends on: hmc_sampler.h, RcppEigen.h, hmc_gradient_vectorized.h,
-//             and the static inline helpers (extract_common_params, etc.)
-//             defined earlier in hmc_gradients.cpp.
+// Self-contained: opens namespace tulpa_hmc, includes its own dependencies.
 
 #ifndef TULPA_HMC_GRADIENT_SHARED_H
 #define TULPA_HMC_GRADIENT_SHARED_H
 
-#include <vector>
 #include <cmath>
 #include <cstring>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_gradient_helpers_impl.h"     // CommonGradParams, extract_common_params, ...
+#include "hmc_gradient_vectorized.h"       // tulpa_hmc::vectorized::VecGradWorkspace, ...
+#include "hmc_sampler.h"                   // ModelData, ParamLayout, ModelType
+
+namespace tulpa_hmc {
 
 // Shared thread-local workspace (definition in hmc_gradients.cpp).
 extern thread_local vectorized::VecGradWorkspace vec_grad_ws;
@@ -182,5 +186,7 @@ static inline void gradient_epilogue(
         *log_post_out = compute_log_post(params, data, layout, /*skip_obs_loop=*/true) + obs_log_lik;
     }
 }
+
+}  // namespace tulpa_hmc
 
 #endif // TULPA_HMC_GRADIENT_SHARED_H

@@ -27,13 +27,15 @@
 #include <omp.h>
 #endif
 
+// Self-contained headers (each opens its own namespace). Include before
+// the namespace block so they don't end up nested inside tulpa_hmc::tulpa_hmc::.
+#include "hmc_gradient_helpers_impl.h"
+#include "hmc_gradient_shared.h"
+#include "hmc_gradient_vectorized.h"
+
 using namespace Rcpp;
 
 namespace tulpa_hmc {
-
-// Include vectorized gradient header after hmc_likelihood.h so legacy
-// log_lik_* helpers are available to template definitions.
-#include "hmc_gradient_vectorized.h"
 
 // Thread-local vectorized gradient workspace (avoids per-call allocation).
 // External linkage so the definition is shared across gradient translation units.
@@ -56,13 +58,6 @@ static inline double icar_quadratic_form_ptr(
 
 #include "hmc_gradient_analytical_impl.h"
 #include "hmc_gradient_fallback_impl.h"
-#include "hmc_gradient_helpers_impl.h"
-
-// =====================================================================
-// Shared gradient building blocks (preamble, vectorized eta, dispatch,
-// RE scatter, epilogue). Used by all handcoded gradient functions below.
-// =====================================================================
-#include "hmc_gradient_shared.h"
 
 #include "hmc_gradient_gp_impl.h"
 #include "hmc_gradient_autodiff_impl.h"

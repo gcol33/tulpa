@@ -1,12 +1,24 @@
 ﻿// hmc_gradient_vectorized_passes.h
 // Fragment of hmc_gradient_vectorized.h.
-// Included from the hmc_gradient_vectorized.h umbrella header inside
-// namespace tulpa_hmc { namespace vectorized { ... } } in hmc_gradients.cpp.
-// Do NOT wrap contents in any namespace — already inside namespace vectorized.
+// Self-contained: opens namespace tulpa_hmc::vectorized.
 // Pass 1 (expand grouped effects), Pass 2 (templated residual kernels +
 // dispatcher), Pass 3 (scatter-add residuals to grouped-effect gradients).
 #ifndef TULPA_HMC_GRADIENT_VECTORIZED_PASSES_H
 #define TULPA_HMC_GRADIENT_VECTORIZED_PASSES_H
+
+#include <cmath>
+#include <cstring>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_gradient_vectorized_workspace.h"  // VecGradWorkspace
+#include "hmc_likelihood.h"                     // log_lik_*
+#include "hmc_sampler.h"                        // ModelData, ParamLayout, ModelType
+#include "portable_math.h"                      // tulpa::math::portable_digamma*
+
+namespace tulpa_hmc {
+namespace vectorized {
 
 // ============================================================================
 // Pass 1: Expand grouped effects to dense N-vectors
@@ -630,5 +642,8 @@ inline void accumulate_spatial_gradient_bym2(
     }
   }
 }
+
+}  // namespace vectorized
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_GRADIENT_VECTORIZED_PASSES_H

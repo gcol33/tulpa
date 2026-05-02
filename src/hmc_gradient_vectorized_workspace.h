@@ -1,11 +1,19 @@
 ﻿// hmc_gradient_vectorized_workspace.h
 // Fragment of hmc_gradient_vectorized.h.
-// Included from the hmc_gradient_vectorized.h umbrella header inside
-// namespace tulpa_hmc { namespace vectorized { ... } } in hmc_gradients.cpp.
-// Do NOT wrap contents in any namespace — already inside namespace vectorized.
+// Self-contained: opens namespace tulpa_hmc::vectorized.
 // VecGradWorkspace: pre-allocated buffers + caches reused across gradient calls.
 #ifndef TULPA_HMC_GRADIENT_VECTORIZED_WORKSPACE_H
 #define TULPA_HMC_GRADIENT_VECTORIZED_WORKSPACE_H
+
+#include <cmath>
+#include <cstdint>
+#include <vector>
+
+#include "hmc_sampler.h"      // ModelData
+#include "portable_math.h"    // tulpa::math::portable_digamma_lgamma
+
+namespace tulpa_hmc {
+namespace vectorized {
 
 // ============================================================================
 // Pre-allocated workspace for vectorized gradient (avoids per-call allocation)
@@ -114,5 +122,8 @@ struct VecGradWorkspace {
     }
   }
 };
+
+}  // namespace vectorized
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_GRADIENT_VECTORIZED_WORKSPACE_H
