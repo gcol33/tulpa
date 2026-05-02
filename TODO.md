@@ -63,6 +63,24 @@ Three dedups and two splits landed on 2026-05-02:
   on the umbrella's using-decls — they are NOT standalone-compilable.
   pkgbuild::compile_dll(force = TRUE) clean; full testthat suite
   passes (825 PASS, 0 FAIL, 2 SKIP — same as pre-split).
+- hmc_gradient_analytical_impl.h split into umbrella + 5 function-body
+  fragments (priors_basic, priors_misc, lik_vec, lik_scalar, post).
+  Same pattern as the prior log_post_impl.h split — fragments rely on
+  lexical scope (`params`, `data`, `layout`, `grad`, `beta_num`,
+  `beta_denom`, `sigma_re`, `tau_re`, `re_prior_grad_sigma`,
+  `grad_re_slopes_lik`, `n_re_terms_slopes`, `slopes_nc`,
+  `re_nc_flat`, `nc_L_flats`, `nc_sigmas_vec`, `phi_num`,
+  `phi_denom`, `obs_log_lik`, `compute_lp`, ...) declared inside
+  `compute_gradient_analytical`. The fragments are NOT
+  standalone-compilable; each is `#include`d exactly once by the
+  umbrella so no header guards. Umbrella keeps
+  `can_use_analytical_gradient`, the helper forward decls,
+  `compute_gradient_analytical`'s signature + parameter extraction,
+  the five fragment includes (priors_basic → priors_misc → lik_vec
+  → lik_scalar → post; the post fragment ends with the fused
+  log-posterior output block), and the closing brace.
+  pkgbuild::compile_dll(force = TRUE) clean; testthat 825 PASS / 0
+  FAIL / 2 SKIP.
 - hmc_rcpp_fit.cpp split into 2 translation units (multi-`.cpp`).
   `hmc_rcpp_fit.cpp` keeps the main `cpp_hmc_fit` export (~733 lines);
   the new `hmc_rcpp_fit_gp.cpp` owns `cpp_hmc_fit_gp` and
