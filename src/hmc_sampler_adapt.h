@@ -1,9 +1,16 @@
 ﻿// hmc_sampler_adapt.h
-// Fragment of hmc_sampler.h. Included from the umbrella header inside
-// namespace tulpa_hmc { ... }; do NOT add a namespace wrapper here.
+// Fragment of hmc_sampler.h. Self-contained: defines symbols inside
+// namespace tulpa_hmc.
 // WelfordCovStats, WelfordStats, DualAveraging.
 #ifndef TULPA_HMC_SAMPLER_ADAPT_H
 #define TULPA_HMC_SAMPLER_ADAPT_H
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <vector>
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Online full covariance estimator (Welford's algorithm for outer products)
@@ -256,5 +263,7 @@ struct DualAveraging {
     return std::min(0.99, base_target + target_boost);
   }
 };
+
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_ADAPT_H

@@ -1,11 +1,23 @@
 ﻿// hmc_sampler_chain_state.h
-// Fragment of hmc_sampler.h. Included from the umbrella header inside
-// namespace tulpa_hmc { ... }; do NOT add a namespace wrapper here.
+// Fragment of hmc_sampler.h. Self-contained: defines symbols inside
+// namespace tulpa_hmc.
 // ChainState, HMCResultCpp, HMCResult, cpp_to_r_result,
 // NUTS helper function declarations.
 #ifndef TULPA_HMC_SAMPLER_CHAIN_STATE_H
 #define TULPA_HMC_SAMPLER_CHAIN_STATE_H
 
+#include <random>
+#include <string>
+#include <vector>
+
+#include <Rcpp.h>
+
+#include "hmc_sampler_adapt.h"        // DualAveraging
+#include "hmc_sampler_decls.h"        // ModelData, ParamLayout
+#include "hmc_sampler_mass_blocks.h"  // DenseMassMatrix
+#include "hmc_sampler_nuts_infra.h"   // LeapfrogResultWithGrad, NUTSWorkspace, etc.
+
+namespace tulpa_hmc {
 
 struct ChainState {
   std::vector<double> q;
@@ -161,5 +173,7 @@ TreeStats build_tree_fast(
     double H0, double delta_max,
     const ModelData& data, const ParamLayout& layout,
     std::mt19937& rng);
+
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_CHAIN_STATE_H

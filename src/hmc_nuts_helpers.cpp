@@ -1,12 +1,13 @@
-﻿// hmc_nuts_helpers.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
-// NUTS helpers: log-sum-exp, leapfrog_step_with_grad, U-turn check, etc.
-#ifndef TULPA_HMC_NUTS_HELPERS_H
-#define TULPA_HMC_NUTS_HELPERS_H
+﻿// hmc_nuts_helpers.cpp
+// NUTS helpers: log-sum-exp, leapfrog_step_with_grad, U-turn check.
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // NUTS (No-U-Turn Sampler) helper functions
@@ -92,4 +93,4 @@ LeapfrogResultWithGrad leapfrog_step_with_grad(
   return result;
 }
 
-#endif  // TULPA_HMC_NUTS_HELPERS_H
+}  // namespace tulpa_hmc

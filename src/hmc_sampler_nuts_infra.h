@@ -1,10 +1,17 @@
 ﻿// hmc_sampler_nuts_infra.h
-// Fragment of hmc_sampler.h. Included from the umbrella header inside
-// namespace tulpa_hmc { ... }; do NOT add a namespace wrapper here.
+// Fragment of hmc_sampler.h. Self-contained: defines symbols inside
+// namespace tulpa_hmc.
 // LeapfrogResult variants, TreeStats, U-turn criterion helpers,
 // NUTSWorkspace (zero-allocation tree-building buffer pool).
 #ifndef TULPA_HMC_SAMPLER_NUTS_INFRA_H
 #define TULPA_HMC_SAMPLER_NUTS_INFRA_H
+
+#include <cstring>
+#include <vector>
+
+#include "hmc_sampler_decls.h"  // GradientFn
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // HMC/NUTS sampler structures
@@ -232,5 +239,6 @@ struct NUTSWorkspace {
   }
 };
 
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_NUTS_INFRA_H

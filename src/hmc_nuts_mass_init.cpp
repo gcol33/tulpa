@@ -1,12 +1,16 @@
-﻿// hmc_nuts_mass_init.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
+﻿// hmc_nuts_mass_init.cpp
 // Mass-matrix selection (AUTO / DIAG / DENSE), warm-start helpers.
-#ifndef TULPA_HMC_NUTS_MASS_INIT_H
-#define TULPA_HMC_NUTS_MASS_INIT_H
 
+#include <algorithm>
+#include <cmath>
+#include <utility>
+#include <vector>
+
+#include <Rcpp.h>
+
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Mass matrix selection and initialization helpers
@@ -433,4 +437,4 @@ void warm_start_mass_matrix(
   }
 }
 
-#endif  // TULPA_HMC_NUTS_MASS_INIT_H
+}  // namespace tulpa_hmc

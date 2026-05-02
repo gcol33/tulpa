@@ -1,26 +1,18 @@
-﻿// hmc_nuts_dual_avg.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
-// extern decls, re_value_for_eta helper, DualAveraging method definitions.
-#ifndef TULPA_HMC_NUTS_DUAL_AVG_H
-#define TULPA_HMC_NUTS_DUAL_AVG_H
+﻿// hmc_nuts_dual_avg.cpp
+// DualAveraging method definitions for the HMC/NUTS step-size adaptation.
+
+#include <algorithm>
+#include <cmath>
+
+#include "hmc_gp_collapsed.h"
+#include "hmc_icar_collapsed.h"
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
 
 extern GradientMode g_gradient_mode;
 extern thread_local CollapsedGPWorkspace collapsed_gp_ws;
 extern thread_local CollapsedICARWorkspace collapsed_icar_ws;
-
-static inline double re_value_for_eta(
-    const double* re,
-    int g,
-    double sigma_re,
-    int re_parameterization
-) {
-    double val = re[g];
-    if (re_parameterization == 1) val *= sigma_re;
-    return val;
-}
 
 // Dual averaging for step size adaptation
 // =====================================================================
@@ -48,7 +40,4 @@ double DualAveraging::final_epsilon() const {
   return std::exp(log_epsilon_bar);
 }
 
-// WelfordStats defined in hmc_sampler.h ? not duplicated here
-
-
-#endif  // TULPA_HMC_NUTS_DUAL_AVG_H
+}  // namespace tulpa_hmc

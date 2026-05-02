@@ -1,13 +1,16 @@
-﻿// hmc_nuts_optimized.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
+﻿// hmc_nuts_optimized.cpp
 // Zero-allocation NUTS: in-place leapfrog, build_tree_fast,
 // pre-allocated workspace integration.
-#ifndef TULPA_HMC_NUTS_OPTIMIZED_H
-#define TULPA_HMC_NUTS_OPTIMIZED_H
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <random>
+#include <vector>
+
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Optimized NUTS: zero-allocation infrastructure
@@ -346,4 +349,4 @@ TreeStats build_tree_fast(
   return stats;
 }
 
-#endif  // TULPA_HMC_NUTS_OPTIMIZED_H
+}  // namespace tulpa_hmc

@@ -1,11 +1,11 @@
-﻿// hmc_nuts_leapfrog.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
-// Leapfrog integrator + initial-step-size helper.
-#ifndef TULPA_HMC_NUTS_LEAPFROG_H
-#define TULPA_HMC_NUTS_LEAPFROG_H
+﻿// hmc_nuts_leapfrog.cpp
+// Leapfrog integrator for HMC/NUTS.
+
+#include <vector>
+
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Leapfrog integrator
@@ -88,4 +88,4 @@ std::vector<double> compute_diagonal_mass(
   return mass;
 }
 
-#endif  // TULPA_HMC_NUTS_LEAPFROG_H
+}  // namespace tulpa_hmc

@@ -1,12 +1,22 @@
-﻿// hmc_nuts_parallel.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
+﻿// hmc_nuts_parallel.cpp
 // run_hmc_parallel_chains: OpenMP across-chain parallel runner.
-#ifndef TULPA_HMC_NUTS_PARALLEL_H
-#define TULPA_HMC_NUTS_PARALLEL_H
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
+#include <Rcpp.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include "hmc_progress.h"
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
+
+extern GradientMode g_gradient_mode;
 
 // =====================================================================
 // Run multiple chains in parallel using OpenMP
@@ -93,4 +103,4 @@ std::vector<HMCResult> run_hmc_parallel_chains(
   return results;
 }
 
-#endif  // TULPA_HMC_NUTS_PARALLEL_H
+}  // namespace tulpa_hmc

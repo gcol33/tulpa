@@ -1,12 +1,32 @@
-// hmc_nuts_chain.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
+// hmc_nuts_chain.cpp
 // Single-chain NUTS driver: run_hmc_chain_cpp + run_hmc_chain wrapper.
-#ifndef TULPA_HMC_NUTS_CHAIN_H
-#define TULPA_HMC_NUTS_CHAIN_H
+//
+// The body of run_hmc_chain_cpp is assembled from function-body fragment
+// headers (hmc_nuts_chain_setup.h, hmc_nuts_chain_iter_*.h). Those
+// fragments are intentionally non-standalone: they reference locals
+// declared in run_hmc_chain_cpp's body. They will move into proper
+// helper functions in a follow-up refactor.
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <random>
+#include <string>
+#include <vector>
+
+#include <Rcpp.h>
+
+#include "hmc_gp_collapsed.h"
+#include "hmc_icar_collapsed.h"
+#include "hmc_progress.h"
+#include "hmc_sampler.h"
+#include "log_post_impl.h"
+
+namespace tulpa_hmc {
+
+extern GradientMode g_gradient_mode;
+extern thread_local CollapsedGPWorkspace collapsed_gp_ws;
+extern thread_local CollapsedICARWorkspace collapsed_icar_ws;
 
 // =====================================================================
 // Run single HMC chain
@@ -118,4 +138,4 @@ HMCResult run_hmc_chain(
   return result;
 }
 
-#endif  // TULPA_HMC_NUTS_CHAIN_H
+}  // namespace tulpa_hmc

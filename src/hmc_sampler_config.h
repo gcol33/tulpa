@@ -1,10 +1,18 @@
 ﻿// hmc_sampler_config.h
-// Fragment of hmc_sampler.h. Included from the umbrella header inside
-// namespace tulpa_hmc { ... }; do NOT add a namespace wrapper here.
+// Fragment of hmc_sampler.h. Self-contained: defines symbols inside
+// namespace tulpa_hmc.
 // MassMatrixConfig + select/init/warm-start helpers (used by
 // hmc_chain.cpp), runtime gradient verification.
 #ifndef TULPA_HMC_SAMPLER_CONFIG_H
 #define TULPA_HMC_SAMPLER_CONFIG_H
+
+#include <utility>
+#include <vector>
+
+#include "hmc_sampler_decls.h"        // ModelData, ParamLayout
+#include "hmc_sampler_mass_blocks.h"  // DenseMassMatrix, MassMatrixType
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Mass matrix configuration and helpers (used by hmc_chain.cpp)
@@ -46,5 +54,6 @@ bool verify_gradient_runtime(
     double tol = 1e-4
 );
 
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_CONFIG_H

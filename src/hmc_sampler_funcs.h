@@ -1,11 +1,20 @@
 ﻿// hmc_sampler_funcs.h
-// Fragment of hmc_sampler.h. Included from the umbrella header inside
-// namespace tulpa_hmc { ... }; do NOT add a namespace wrapper here.
+// Fragment of hmc_sampler.h. Self-contained: defines symbols inside
+// namespace tulpa_hmc.
 // Sampler function declarations (leapfrog, find_reasonable_epsilon,
 // run_hmc_*) and SoftAbs metric helpers.
 #ifndef TULPA_HMC_SAMPLER_FUNCS_H
 #define TULPA_HMC_SAMPLER_FUNCS_H
 
+#include <random>
+#include <vector>
+
+#include "hmc_sampler_chain_state.h"  // HMCResultCpp, HMCResult
+#include "hmc_sampler_decls.h"        // ModelData, ParamLayout
+#include "hmc_sampler_mass_blocks.h"  // DenseMassMatrix, MassMatrixType
+#include "hmc_sampler_nuts_infra.h"   // LeapfrogResult
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Sampler functions
@@ -125,5 +134,6 @@ bool compute_softabs_metric(
     std::vector<double>& L_G_inv
 );
 
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_FUNCS_H

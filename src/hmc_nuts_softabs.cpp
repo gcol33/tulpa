@@ -1,12 +1,16 @@
-﻿// hmc_nuts_softabs.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
+﻿// hmc_nuts_softabs.cpp
 // SoftAbs per-trajectory metric (Riemannian-like divergence retry).
-#ifndef TULPA_HMC_NUTS_SOFTABS_H
-#define TULPA_HMC_NUTS_SOFTABS_H
 
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
+#include <Eigen/Dense>
+#include <RcppEigen.h>
+
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // SoftAbs per-trajectory metric (Riemannian-like divergence retry)
@@ -103,4 +107,4 @@ bool compute_softabs_metric(
   return true;
 }
 
-#endif  // TULPA_HMC_NUTS_SOFTABS_H
+}  // namespace tulpa_hmc

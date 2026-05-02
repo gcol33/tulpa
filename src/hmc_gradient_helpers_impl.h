@@ -33,17 +33,7 @@ static inline void re_gradient_prior(
     }
 }
 
-// Get RE value for observation (handles NC -> sigma*z transformation)
-static inline double re_value_for_eta(
-    const double* re,
-    int g,
-    double sigma_re,
-    int re_parameterization
-) {
-    double val = re[g];
-    if (re_parameterization == 1) val *= sigma_re;
-    return val;
-}
+// re_value_for_eta hoisted to hmc_sampler_decls.h (single source of truth).
 
 // Apply NC chain rule transformation after observation loop
 // Must be called AFTER observation loop has accumulated likelihood gradients in grad[re+g]

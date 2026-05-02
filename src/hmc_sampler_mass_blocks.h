@@ -1,10 +1,28 @@
 ﻿// hmc_sampler_mass_blocks.h
-// Fragment of hmc_sampler.h. Included from the umbrella header inside
-// namespace tulpa_hmc { ... }; do NOT add a namespace wrapper here.
+// Fragment of hmc_sampler.h. Self-contained: defines symbols inside
+// namespace tulpa_hmc.
 // MassBlock (<=4x4), PrecisionBlock, KroneckerBlock,
 // SparseGMRFBlock, DenseMassMatrix container.
 #ifndef TULPA_HMC_SAMPLER_MASS_BLOCKS_H
 #define TULPA_HMC_SAMPLER_MASS_BLOCKS_H
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstring>
+#include <random>
+#include <vector>
+
+#include <Eigen/Dense>
+#include <Eigen/Sparse>
+#include <Eigen/SparseCholesky>
+#include <RcppEigen.h>
+
+#include "hmc_sampler_decls.h"  // MassMatrixType (alias of tulpa::MassMatrixType)
+#include "hmc_temporal.h"       // tulpa_temporal::TemporalType
+#include "linalg_fast.h"        // tulpa_linalg::tri_solve_upper_transpose, etc.
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Block-diagonal mass block (max 4×4, stack-allocated)
@@ -823,5 +841,6 @@ struct DenseMassMatrix {
   }
 };
 
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_MASS_BLOCKS_H

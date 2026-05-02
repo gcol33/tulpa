@@ -1,12 +1,14 @@
-﻿// hmc_nuts_find_epsilon.h
-// Fragment of hmc_nuts_sampler.cpp. Included from the umbrella
-// translation unit inside namespace tulpa_hmc; do NOT add a
-// namespace wrapper here; do not list this file in the package SRCS —
-// it is not a standalone translation unit.
+﻿// hmc_nuts_find_epsilon.cpp
 // Stan-style find_reasonable_epsilon (identity / diagonal / dense mass).
-#ifndef TULPA_HMC_NUTS_FIND_EPSILON_H
-#define TULPA_HMC_NUTS_FIND_EPSILON_H
 
+#include <cmath>
+#include <random>
+#include <vector>
+
+#include "hmc_sampler.h"
+#include "linalg_fast.h"
+
+namespace tulpa_hmc {
 
 // =====================================================================
 // Unified find_reasonable_epsilon: handles identity, diagonal, and dense mass
@@ -157,4 +159,4 @@ double find_reasonable_epsilon_dense(
     return find_reasonable_epsilon_impl(q, data, layout, rng, nullptr, &mass);
 }
 
-#endif  // TULPA_HMC_NUTS_FIND_EPSILON_H
+}  // namespace tulpa_hmc

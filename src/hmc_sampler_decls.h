@@ -1,11 +1,19 @@
 ﻿// hmc_sampler_decls.h
-// Fragment of hmc_sampler.h. Included from the umbrella header inside
-// namespace tulpa_hmc { ... }; do NOT add a namespace wrapper here.
+// Fragment of hmc_sampler.h. Self-contained: defines symbols inside
+// namespace tulpa_hmc and aliases tulpa:: types into that namespace.
 // using-decls for tulpa:: types, enum parsers, ParamLayout / log-post /
 // gradient function declarations.
 #ifndef TULPA_HMC_SAMPLER_DECLS_H
 #define TULPA_HMC_SAMPLER_DECLS_H
 
+#include <string>
+#include <vector>
+
+#include "tulpa/model_data.h"
+#include "tulpa/param_layout.h"
+#include "tulpa/types.h"
+
+namespace tulpa_hmc {
 
 // Import all canonical types from exported tulpa:: headers
 using tulpa::ModelData;
@@ -199,5 +207,19 @@ void compute_gradient_tvc_handcoded(
 void compute_gradient_latent_handcoded(
     const std::vector<double>&, const ModelData&, const ParamLayout&,
     std::vector<double>&, double*);
+
+// Get RE value for observation (handles non-centered re_param=1 -> sigma*z transform).
+inline double re_value_for_eta(
+    const double* re,
+    int g,
+    double sigma_re,
+    int re_parameterization
+) {
+    double val = re[g];
+    if (re_parameterization == 1) val *= sigma_re;
+    return val;
+}
+
+}  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_SAMPLER_DECLS_H
