@@ -63,6 +63,17 @@ Three dedups and two splits landed on 2026-05-02:
   on the umbrella's using-decls — they are NOT standalone-compilable.
   pkgbuild::compile_dll(force = TRUE) clean; full testthat suite
   passes (825 PASS, 0 FAIL, 2 SKIP — same as pre-split).
+- laplace_core.cpp split into 3 translation units (multi-`.cpp`).
+  `laplace_core.cpp` now keeps the NNGP/Matérn helpers, the dense and
+  dense-multi-RE mode finders, and their R exports. `laplace_core_spatial.cpp`
+  owns `laplace_mode_spatial` / `_bym2` / `_rsr` plus the matching
+  `cpp_laplace_fit_spatial` / `_bym2` / `_rsr` exports;
+  `laplace_core_gp.cpp` owns `laplace_mode_gp` / `_multiscale_gp` /
+  `_multiscale_temporal` plus their exports. The `laplace_result_to_list`
+  helper was promoted from a per-TU `static` to an `inline` in
+  `laplace_core.h` (under `namespace tulpa`) so every TU shares one
+  definition. `pkgbuild::compile_dll(force = TRUE)` clean; testthat
+  825 PASS / 0 FAIL / 2 SKIP.
 - pg_binomial.cpp split into 6 translation units (multi-`.cpp` split,
   not umbrella-+-fragments — `Rcpp::compileAttributes()` only scans
   `.cpp` files for `// [[Rcpp::export]]`, so each export must live in

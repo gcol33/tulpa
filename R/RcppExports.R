@@ -65,16 +65,8 @@ cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_
     .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init)
 }
 
-cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_spatial`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi, max_iter, tol, n_threads, x_init_nullable)
-}
-
 cpp_laplace_sample <- function(mode, H, n_samples) {
     .Call(`_tulpa_cpp_laplace_sample`, mode, H, n_samples)
-}
-
-cpp_laplace_fit_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L) {
-    .Call(`_tulpa_cpp_laplace_fit_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads)
 }
 
 cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L) {
@@ -87,6 +79,14 @@ cpp_laplace_fit_multiscale_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re
 
 cpp_laplace_fit_multiscale_temporal <- function(y, n, X, re_idx, n_re_groups, sigma_re, time_idx, n_times, seasonal_period, trend_type, short_type, sigma2_trend, sigma2_seasonal, sigma2_short, rho_short, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L) {
     .Call(`_tulpa_cpp_laplace_fit_multiscale_temporal`, y, n, X, re_idx, n_re_groups, sigma_re, time_idx, n_times, seasonal_period, trend_type, short_type, sigma2_trend, sigma2_seasonal, sigma2_short, rho_short, family, phi, max_iter, tol, n_threads)
+}
+
+cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_spatial`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi, max_iter, tol, n_threads, x_init_nullable)
+}
+
+cpp_laplace_fit_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L) {
+    .Call(`_tulpa_cpp_laplace_fit_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads)
 }
 
 cpp_laplace_fit_rsr <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rsr_projection, rsr_n, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L) {

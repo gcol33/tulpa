@@ -24,6 +24,18 @@ struct LaplaceResult {
   bool converged;               // Convergence flag
 };
 
+// Convert LaplaceResult to Rcpp::List. Single source of truth used by every
+// laplace_core* R export.
+inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
+  return Rcpp::List::create(
+    Rcpp::Named("mode") = result.mode,
+    Rcpp::Named("log_det_Q") = result.log_det_Q,
+    Rcpp::Named("log_marginal") = result.log_marginal,
+    Rcpp::Named("n_iter") = result.n_iter,
+    Rcpp::Named("converged") = result.converged
+  );
+}
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_CORE_H
