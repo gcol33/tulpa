@@ -63,6 +63,19 @@ Three dedups and two splits landed on 2026-05-02:
   on the umbrella's using-decls — they are NOT standalone-compilable.
   pkgbuild::compile_dll(force = TRUE) clean; full testthat suite
   passes (825 PASS, 0 FAIL, 2 SKIP — same as pre-split).
+- hmc_gradient_gp_impl.h split into umbrella + 4 fragments at function
+  boundaries: `hmc_gradient_gp_handcoded.h` (gp NNGP),
+  `hmc_gradient_gp_collapsed.h` (collapsed GP via inner Laplace),
+  `hmc_gradient_icar_collapsed_grad.h` (ICAR/BYM2 collapsed — 540 lines,
+  the largest fragment), and `hmc_gradient_temporal_gp.h` (the three
+  GP+temporal / temporal-GP / multiscale-GP+temporal combos). Different
+  from the analytical/composite splits: these fragments contain
+  *complete* function definitions, not function-body slices, so each
+  fragment is self-contained (relies only on the namespace tulpa_hmc
+  and helper includes already opened in `hmc_gradients.cpp`). Each is
+  `#include`d exactly once by the umbrella so no header guards.
+  pkgbuild::compile_dll(force = TRUE) clean; testthat 825 PASS / 0
+  FAIL / 2 SKIP.
 - hmc_gradient_composite_impl.h split into umbrella + 4 function-body
   fragments along the existing `Phase 1`–`Phase 4` markers
   (phase1 extract params, phase2_priors, phase3_loop, phase4_post).
