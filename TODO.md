@@ -141,6 +141,22 @@ Three dedups and two splits landed on 2026-05-02:
   same export entries (only their order changed) and
   `pkgbuild::compile_dll(force = TRUE)` was clean; full testthat
   suite still 825 PASS / 0 FAIL / 2 SKIP.
+- tulpa_shims.cpp split into umbrella + 7 whole-function fragments
+  (laplace, nested_laplace, pg, vi_ess, sparse, stochastic,
+  laplace_spec). Each shim is `extern "C"` with manual registration
+  via `tulpa_register_shims`, so no Rcpp attribute scanning is
+  involved — single TU split via `#include` works cleanly. The
+  umbrella keeps the includes, the upstream forward declarations
+  (`namespace tulpa { ... }`, `namespace vi { ... }`, global
+  `cpp_nested_laplace_*`), the shared helpers in the anonymous
+  namespace (`copy_mode_result`, `build_matrix_colmajor`,
+  `build_int_matrix_colmajor`, `matrix_to_row_major`, `vector_to_buf`,
+  `marshal_adj`), then `#include`s the 7 fragments in original order,
+  then closes with `tulpa_register_shims`. Fragments are NOT
+  standalone-compilable (they rely on the umbrella's includes,
+  `using namespace Rcpp`, and the shared anonymous-namespace
+  helpers); each is included exactly once. `pkgbuild::compile_dll(
+  force = TRUE)` clean; testthat 825 PASS / 0 FAIL / 2 SKIP.
 
 **Still open from the 2026-05-02 punch list:**
 
