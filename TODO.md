@@ -2,6 +2,48 @@
 
 Punch list. Completed items removed; see git history for what shipped.
 
+## P0.5 — Refactor follow-ups (in flight)
+
+Three dedups and two splits landed on 2026-05-02:
+
+- ICAR/CAR neighbor-loop kernel (src/icar_kernel.h) — replaces four
+  near-identical copies of phi'Q phi and Q*phi across hmc_sampler.cpp,
+  hmc_gradients.cpp, hmc_icar_collapsed.h, and the inline neighbor-loop
+  in spatial_gmrf_prior_grad.
+- Newton-loop helpers (src/laplace_newton_loop.h) — eval_penalized_log_lik,
+  step_halving_update, max_abs_step, finalize_log_marginal. Used by both
+  the dense (laplace_newton.h) and sparse (sparse_hessian.h) PIRLS solvers.
+- Cholesky dispatch (src/laplace_cholesky_dispatch.h) — dispatch_factor_solve
+  + dispatch_factor_log_det collapse the two near-identical sparse-then-
+  dense fallback blocks in laplace_newton.h into one.
+- tulpa_priors.h split into 12 per-family headers (re, icar, gp, msgp,
+  hsgp, temporal, mstemporal, svc, tvc, latent, st, zioi). Umbrella
+  preserves the `#include "tulpa_priors.h"` API.
+- gibbs_spatial.h split into data + icar + bym2 + hsgp. GibbsResult
+  hoisted from mid-ICAR-section into the shared data header.
+
+**Still open from the 2026-05-02 punch list:**
+
+- **Split log_post_impl.h** (~1932 lines). Top-level structure is one
+  massive `compute_log_post_impl` template (lines 89-1926). Splitting
+  requires extracting interior helper functions, not just file slicing.
+  Recent commit cecbffa already extracted prior + obs-loop stages — more
+  of the same is needed.
+- **Split hmc_gradient_vectorized.h** (~1790 lines). Structurally
+  splittable (~5 sections) but the file is included from inside an
+  existing `namespace tulpa_hmc { }` block in hmc_sampler.cpp, so any
+  sub-headers would have to honour that contract (no header guards
+  around namespace, fragment-style includes). Doable but fragile.
+- **Split hmc_sampler.h** (~1822 lines). Holds type definitions used
+  everywhere; cannot just umbrella — needs careful separation of types
+  from inlines, then forward-declarations across the sub-headers.
+- **Split hmc_nuts_sampler.cpp** (~2696 lines). Single sampler file;
+  natural splits would be tree-building / U-turn / leapfrog wrapper /
+  adaptation / R interface. Highest-risk split because it's the
+  hot-path NUTS driver.
+- **Modularization milestones** (items #1, #2, #4, #5, #8 below) —
+  multi-session work each.
+
 ## P1 — Sibling-package work
 
 ### 1. Clean downstream generic prototype
