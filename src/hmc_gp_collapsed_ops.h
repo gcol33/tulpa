@@ -1,3 +1,26 @@
+// hmc_gp_collapsed_ops.h
+// NNGP workspace + precision-matrix matvecs for collapsed GP.
+// Self-contained: defines symbols inside namespace tulpa_hmc.
+
+#ifndef TULPA_HMC_GP_COLLAPSED_OPS_H
+#define TULPA_HMC_GP_COLLAPSED_OPS_H
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_gp.h"        // tulpa_gp::GPData
+#include "hmc_sampler.h"   // tulpa_hmc::ModelData / ModelType
+#include "hmc_svc.h"       // tulpa_svc::compute_cov
+
+namespace tulpa_hmc {
+
+using tulpa_gp::GPData;
+using tulpa_svc::compute_cov;
+
 // =========================================================================
 // NNGP precision matrix operations (Q = (I-B)^T D^{-1} (I-B))
 // =========================================================================
@@ -337,3 +360,7 @@ inline int cg_solve(
     }
     return max_iter;
 }
+
+}  // namespace tulpa_hmc
+
+#endif  // TULPA_HMC_GP_COLLAPSED_OPS_H

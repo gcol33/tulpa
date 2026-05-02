@@ -1,3 +1,23 @@
+// hmc_gp_collapsed_grad.h
+// Analytical Laplace gradient for non-GP parameters in collapsed GP.
+// Self-contained: defines symbols inside namespace tulpa_hmc.
+
+#ifndef TULPA_HMC_GP_COLLAPSED_GRAD_H
+#define TULPA_HMC_GP_COLLAPSED_GRAD_H
+
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
+#include <RcppEigen.h>
+
+#include "hmc_gp_collapsed_logdet.h"
+#include "hmc_gp_collapsed_mode.h"
+#include "hmc_gp_collapsed_ops.h"
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
+
 // =========================================================================
 // Analytical Laplace gradient for non-GP parameters (beta, phi, RE)
 // =========================================================================
@@ -7,8 +27,6 @@
 //
 // For parameter theta that affects eta via deta/dtheta:
 //   dW_i/dtheta = (dW_i/deta) * (deta/dtheta)
-
-using tulpa_hmc::ParamLayout;
 
 inline void collapsed_gp_laplace_grad_nonGP(
     const double* w_star,
@@ -200,4 +218,8 @@ inline void compute_laplace_grad_gp_hypers(
 
     grad_log_phi += (ld_plus - ld_minus) / (2.0 * eps);
 }
+
+}  // namespace tulpa_hmc
+
+#endif  // TULPA_HMC_GP_COLLAPSED_GRAD_H
 

@@ -1,3 +1,20 @@
+// hmc_gp_collapsed_mode.h
+// Newton mode-finder + per-location likelihood for collapsed GP.
+// Self-contained: defines symbols inside namespace tulpa_hmc.
+
+#ifndef TULPA_HMC_GP_COLLAPSED_MODE_H
+#define TULPA_HMC_GP_COLLAPSED_MODE_H
+
+#include <algorithm>
+#include <cmath>
+#include <vector>
+
+#include "hmc_gp_collapsed_logdet.h"
+#include "hmc_gp_collapsed_ops.h"
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
+
 // =========================================================================
 // Newton-Raphson for finding w* (inner Laplace optimization)
 // =========================================================================
@@ -271,3 +288,7 @@ inline double laplace_log_det_fixed_w(
 
     return compute_laplace_log_det(temp_ws);
 }
+
+}  // namespace tulpa_hmc
+
+#endif  // TULPA_HMC_GP_COLLAPSED_MODE_H

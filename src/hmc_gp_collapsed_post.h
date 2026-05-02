@@ -1,3 +1,18 @@
+// hmc_gp_collapsed_post.h
+// High-level log-post integration wrappers for collapsed GP.
+// Self-contained: defines symbols inside namespace tulpa_hmc.
+
+#ifndef TULPA_HMC_GP_COLLAPSED_POST_H
+#define TULPA_HMC_GP_COLLAPSED_POST_H
+
+#include <cstring>
+#include <vector>
+
+#include "hmc_gp_collapsed_mode.h"
+#include "hmc_gp_collapsed_ops.h"
+#include "hmc_sampler.h"
+
+namespace tulpa_hmc {
 
 // =========================================================================
 // High-level wrappers for compute_log_post integration
@@ -56,3 +71,7 @@ inline void collapsed_gp_store_sample(
     std::memcpy(&gp_w_star_flat[sample_idx * N_gp],
                 ws.w_star.data(), N_gp * sizeof(double));
 }
+
+}  // namespace tulpa_hmc
+
+#endif  // TULPA_HMC_GP_COLLAPSED_POST_H

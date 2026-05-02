@@ -15,31 +15,17 @@
 // The gradient dL/dtheta uses the implicit function theorem:
 // at the mode w*, dL/dw = 0, so dw*/dtheta terms vanish and
 // dL/dtheta = partial_L/partial_theta |_{w=w*}
+//
+// Thin re-export: each fragment is self-contained and defines its
+// symbols inside namespace tulpa_hmc.
 
 #ifndef TULPA_HMC_GP_COLLAPSED_H
 #define TULPA_HMC_GP_COLLAPSED_H
 
-#include <vector>
-#include <cmath>
-#include <algorithm>
-#include <RcppEigen.h>
-// NOTE: This header must be included AFTER hmc_sampler.h (which defines ModelData/ModelType)
-// and hmc_gp.h (which defines GPData in namespace tulpa_gp).
-// It is included from hmc_sampler.cpp in the correct order.
-
-using tulpa_gp::GPData;
-using tulpa_svc::compute_cov;
-using tulpa_hmc::ModelData;
-using tulpa_hmc::ModelType;
-
 #include "hmc_gp_collapsed_ops.h"
-
 #include "hmc_gp_collapsed_logdet.h"
-
 #include "hmc_gp_collapsed_mode.h"
-
 #include "hmc_gp_collapsed_grad.h"
-
 #include "hmc_gp_collapsed_post.h"
 
 #endif // TULPA_HMC_GP_COLLAPSED_H
