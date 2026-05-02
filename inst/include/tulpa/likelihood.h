@@ -71,6 +71,36 @@ using ExtraGradFn = void(*)(
 );
 
 // ============================================================================
+// EtaWeightsFn: per-observation eta-space gradient + negative-Hessian for
+// Laplace IRLS / Fisher scoring.
+//
+// For obs i, fills:
+//   grad_eta[k]                          = d log_lik_i / d eta_i_k
+//   neg_hess_eta[k * n_processes + l]    = -d^2 log_lik_i / (d eta_i_k d eta_i_l)
+//
+// Returning weights in eta-space (rather than mu-space) is the natural IRLS
+// contract: the eta-space negative-Hessian assembles directly into X' W X for
+// the latent-field Hessian. n_processes == 1 → grad_eta and neg_hess_eta are
+// scalars; for general n_processes, neg_hess_eta is row-major n x n.
+//
+// Optional. If null, the LikelihoodSpec is not usable from the spec-driven
+// Laplace path (a clear error is raised). NUTS / VI / ESS / MCLMC / SMC do
+// not require this callback.
+// ============================================================================
+using EtaWeightsFn = void(*)(
+    int i,                           // Observation index
+    const double* eta,               // Linear predictor values [n_processes]
+    double logit_zi,                 // ZI LP
+    double logit_oi,                 // OI LP
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const void* model_data,
+    double* grad_eta,                // [n_processes] out
+    double* neg_hess_eta             // [n_processes * n_processes] out
+);
+
+// ============================================================================
 // LikelihoodSpec: registration structure for model-specific likelihoods
 //
 // Model packages create one of these and pass it to tulpa's fitting functions.
@@ -92,6 +122,10 @@ struct LikelihoodSpec {
 
     // H-mode: extra parameter gradients (optional)
     ExtraGradFn extra_grad_fn = nullptr;
+
+    // Spec-driven Laplace IRLS weights (optional). Required to use this spec
+    // through tulpa_laplace_spec_*; ignored by NUTS / VI / ESS / MCLMC / SMC.
+    EtaWeightsFn eta_weights_fn = nullptr;
 
     // Number of extra parameters this likelihood adds to the parameter vector
     int n_extra_params = 0;

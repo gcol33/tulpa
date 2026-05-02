@@ -18,7 +18,7 @@ remains the engineering reference; current punch-list lives in `TODO.md`.
 | F6 GPU-batched NNGP | ✅ CPU + cuSOLVER path; live CUDA test pending (TODO.md #7) | `src/gpu_nngp_laplace.h`, `src/gpu_cuda.h` |
 | F7 Implicit differentiation | ✅ shipped (k=1, k=2) | `src/implicit_diff.{h,cpp}`; full k≥3 NUTS-over-hyperparams still scaffolded |
 | F8 Stochastic log-det | ✅ shipped | `src/stochastic_logdet.cpp` (Lanczos) + cross-DLL shim `tulpa_stochastic_log_det` |
-| F9 Consolidate Laplace code | ✅ shipped | `laplace_helpers.h::laplace_newton_solve` template; eight model-specific entries in `laplace_core.cpp` all dispatch through it |
+| F9 Consolidate Laplace code | ✅ shipped | `laplace_newton.h::laplace_newton_solve` template; eight model-specific entries in `laplace_core.cpp` all dispatch through it |
 
 Cross-DLL ABI surface added on top of all of the above (see `fix.md` for the
 shim plan): `laplace_api.h`, `pg_api.h`, `vi_api.h`, `ess_api.h`,

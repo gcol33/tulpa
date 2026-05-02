@@ -22,7 +22,7 @@ downstream packages, because the existing entry points return `Rcpp::List` /
 
 | Driver | Source | Used by old tulpaGlmm? |
 |---|---|---|
-| Laplace (8 variants) | `src/laplace_core.cpp`, `src/laplace_helpers.h`, `src/sparse_hessian.h` | yes (warm-start path) |
+| Laplace (8 variants) | `src/laplace_core.cpp`, `src/laplace_newton.h`, `src/sparse_hessian.h` | yes (warm-start path) |
 | Nested Laplace | `src/nested_laplace.cpp` + `src/implicit_diff.cpp` | yes (Tier 2) |
 | SPDE Laplace | `src/spde_laplace.cpp` + `src/spde_qbuilder.h` | yes (spatial) |
 | VI (mean-field / low-rank / full-rank) | `src/vi_sampler.cpp` (`fit_vi`) + `src/vi_*.h` | scaffolding present |
