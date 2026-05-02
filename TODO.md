@@ -52,11 +52,65 @@ Three dedups and two splits landed on 2026-05-02:
   picks up only `.cpp` files in `src/`, so the fragment `.h` files are
   not compiled standalone). pkgbuild::compile_dll(force = TRUE) clean;
   full testthat suite passes.
+- hmc_icar_collapsed.h split into 9 fragments (workspace, kernels,
+  logdet, grad, unit_lik, mode, full, grad_H, log_post). Umbrella
+  retains the original comment header + includes + the
+  `using tulpa_hmc::ModelData/ModelType/SpatialType` declarations,
+  then includes the 9 fragments in dependency order (workspace before
+  matvecs/CG; kernels before logdet/grad; both before unit_lik/mode;
+  full + grad_H build on the prior helpers; log_post is the top-level
+  wrapper). Fragments are header-guarded but namespace-less and rely
+  on the umbrella's using-decls — they are NOT standalone-compilable.
+  pkgbuild::compile_dll(force = TRUE) clean; full testthat suite
+  passes (825 PASS, 0 FAIL, 2 SKIP — same as pre-split).
+- pg_binomial.cpp split into 6 translation units (multi-`.cpp` split,
+  not umbrella-+-fragments — `Rcpp::compileAttributes()` only scans
+  `.cpp` files for `// [[Rcpp::export]]`, so each export must live in
+  its own `.cpp`). Pattern: `pg_binomial.cpp` keeps namespace tulpa
+  helpers/updates + `pg_binomial_gibbs_impl` + the basic exports
+  (`cpp_pg_binomial_gibbs`, `cpp_pg_binomial_gibbs_spatial`); five
+  new siblings own one variant each — `pg_binomial_bym2.cpp`,
+  `pg_binomial_gp.cpp` (carries the file-local
+  `pg_nngp_conditional` helper), `pg_binomial_temporal.cpp`,
+  `pg_binomial_multiscale_gp.cpp`, `pg_binomial_rsr.cpp`. Each new
+  `.cpp` re-includes `pg_shared.h`, `pg_rng.h`, `linalg_fast.h`,
+  `Rcpp.h`, and forward-declares the `tulpa::update_*` helpers it
+  needs. After the split, `Rcpp::compileAttributes()` re-emitted the
+  same export entries (only their order changed) and
+  `pkgbuild::compile_dll(force = TRUE)` was clean; full testthat
+  suite still 825 PASS / 0 FAIL / 2 SKIP.
 
 **Still open from the 2026-05-02 punch list:**
 
 - **Modularization milestones** (items #1, #2, #4, #5, #8 below) —
   multi-session work each.
+
+**Audit + first response shipped 2026-05-02:**
+
+- tulpaGlmm gap audit appended to
+  `~/Documents/dev/tulpaGlmm/REIMPLEMENTATION_PLAN.md` as
+  *Phase 0.5 — tulpa gap audit*. Headline finding: the original
+  Phase-0 claim that "only NUTS is exported via R_RegisterCCallable"
+  is stale — all nine ABI shim headers already exist plus extras.
+- Audit's Gap 1 (Laplace shims are family-enum-coupled, not
+  LikelihoodSpec-driven) has a first-cut fix landed:
+  - New `EtaWeightsFn` callback on `LikelihoodSpec`
+    (`inst/include/tulpa/likelihood.h`) — optional per-obs
+    `(grad_eta, neg_hess_eta)` for IRLS.
+  - `tulpa::laplace_mode_spec_dense_impl` in `src/laplace_spec.cpp` —
+    routes per-obs log-lik + IRLS weights through the spec instead of
+    the `family` C-string. Reuses `dispatch_factor_solve` /
+    `finalize_log_marginal` so it stays in lockstep with the
+    family-enum solver.
+  - `inst/include/tulpa/laplace_spec_api.h` exposes the C-shim;
+    `tulpa_laplace_spec_dense` registered in `src/tulpa_shims.cpp`.
+  - `TULPA_ABI_VERSION` bumped 2 → 3 (LikelihoodSpec layout change).
+  - `tests/testthat/test-laplace-spec.R` cross-checks the spec path
+    against the family-enum reference for Gaussian + iid RE and
+    Gaussian no-RE — modes match within 1e-5.
+  - **First-cut scope:** `n_processes == 1`, at most one iid RE term.
+    Multi-process / random-slope / spatial / temporal variants are
+    follow-on work; the shim rejects them with a clear error today.
 
 ## P1 — Sibling-package work
 

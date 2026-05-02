@@ -516,6 +516,26 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_laplace_spec_test_gaussian
+Rcpp::List cpp_laplace_spec_test_gaussian(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_idx, int n_re_groups, double sigma_re, double sigma_beta, double phi, int max_iter, double tol, int n_threads);
+RcppExport SEXP _tulpa_cpp_laplace_spec_test_gaussian(SEXP ySEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP sigma_betaSEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_spec_test_gaussian(y, X, re_idx, n_re_groups, sigma_re, sigma_beta, phi, max_iter, tol, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_mclmc_test
 Rcpp::List cpp_mclmc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, Rcpp::NumericVector init, int n_iter, int n_warmup, int seed, bool adjusted);
 RcppExport SEXP _tulpa_cpp_mclmc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP adjustedSEXP) {
@@ -873,38 +893,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_pg_binomial_gibbs_temporal
-Rcpp::List cpp_pg_binomial_gibbs_temporal(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector time_idx, int n_times, int seasonal_period, int trend_type, int short_type, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_trend_scale, double prior_sigma_seasonal_scale, double prior_sigma_short_scale, double rho_short_init, bool store_eta, bool verbose, int n_threads);
-RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP time_idxSEXP, SEXP n_timesSEXP, SEXP seasonal_periodSEXP, SEXP trend_typeSEXP, SEXP short_typeSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_trend_scaleSEXP, SEXP prior_sigma_seasonal_scaleSEXP, SEXP prior_sigma_short_scaleSEXP, SEXP rho_short_initSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type re_group(re_groupSEXP);
-    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type time_idx(time_idxSEXP);
-    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
-    Rcpp::traits::input_parameter< int >::type seasonal_period(seasonal_periodSEXP);
-    Rcpp::traits::input_parameter< int >::type trend_type(trend_typeSEXP);
-    Rcpp::traits::input_parameter< int >::type short_type(short_typeSEXP);
-    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
-    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
-    Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_sigma_trend_scale(prior_sigma_trend_scaleSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_sigma_seasonal_scale(prior_sigma_seasonal_scaleSEXP);
-    Rcpp::traits::input_parameter< double >::type prior_sigma_short_scale(prior_sigma_short_scaleSEXP);
-    Rcpp::traits::input_parameter< double >::type rho_short_init(rho_short_initSEXP);
-    Rcpp::traits::input_parameter< bool >::type store_eta(store_etaSEXP);
-    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_pg_binomial_gibbs_temporal(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_scale, prior_sigma_seasonal_scale, prior_sigma_short_scale, rho_short_init, store_eta, verbose, n_threads));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_pg_binomial_gibbs_multiscale_gp
 Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx_local, Rcpp::NumericMatrix nn_dist_local, Rcpp::IntegerVector nn_order_local, int nn_local, Rcpp::IntegerMatrix nn_idx_regional, Rcpp::NumericMatrix nn_dist_regional, Rcpp::IntegerVector nn_order_regional, int nn_regional, int n_spatial, double sigma2_local_init, double phi_local_init, double sigma2_regional_init, double phi_regional_init, int cov_type, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_local_U, double prior_sigma_local_alpha, double prior_phi_local_lower, double prior_phi_local_upper, double prior_sigma_regional_U, double prior_sigma_regional_alpha, double prior_phi_regional_lower, double prior_phi_regional_upper, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_multiscale_gp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP coordsSEXP, SEXP nn_idx_localSEXP, SEXP nn_dist_localSEXP, SEXP nn_order_localSEXP, SEXP nn_localSEXP, SEXP nn_idx_regionalSEXP, SEXP nn_dist_regionalSEXP, SEXP nn_order_regionalSEXP, SEXP nn_regionalSEXP, SEXP n_spatialSEXP, SEXP sigma2_local_initSEXP, SEXP phi_local_initSEXP, SEXP sigma2_regional_initSEXP, SEXP phi_regional_initSEXP, SEXP cov_typeSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_local_USEXP, SEXP prior_sigma_local_alphaSEXP, SEXP prior_phi_local_lowerSEXP, SEXP prior_phi_local_upperSEXP, SEXP prior_sigma_regional_USEXP, SEXP prior_sigma_regional_alphaSEXP, SEXP prior_phi_regional_lowerSEXP, SEXP prior_phi_regional_upperSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
@@ -979,6 +967,38 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_pg_binomial_gibbs_rsr(y, n, X, re_group, n_re_groups, spatial_group, n_spatial_units, adj_list, n_neighbors, rsr_projection, rsr_n, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_tau_shape, prior_tau_rate, store_eta, verbose, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_pg_binomial_gibbs_temporal
+Rcpp::List cpp_pg_binomial_gibbs_temporal(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_group, int n_re_groups, Rcpp::IntegerVector time_idx, int n_times, int seasonal_period, int trend_type, int short_type, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_re_scale, double prior_sigma_trend_scale, double prior_sigma_seasonal_scale, double prior_sigma_short_scale, double rho_short_init, bool store_eta, bool verbose, int n_threads);
+RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_groupSEXP, SEXP n_re_groupsSEXP, SEXP time_idxSEXP, SEXP n_timesSEXP, SEXP seasonal_periodSEXP, SEXP trend_typeSEXP, SEXP short_typeSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_re_scaleSEXP, SEXP prior_sigma_trend_scaleSEXP, SEXP prior_sigma_seasonal_scaleSEXP, SEXP prior_sigma_short_scaleSEXP, SEXP rho_short_initSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type re_group(re_groupSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type time_idx(time_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
+    Rcpp::traits::input_parameter< int >::type seasonal_period(seasonal_periodSEXP);
+    Rcpp::traits::input_parameter< int >::type trend_type(trend_typeSEXP);
+    Rcpp::traits::input_parameter< int >::type short_type(short_typeSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
+    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    Rcpp::traits::input_parameter< double >::type prior_sigma_re_scale(prior_sigma_re_scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type prior_sigma_trend_scale(prior_sigma_trend_scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type prior_sigma_seasonal_scale(prior_sigma_seasonal_scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type prior_sigma_short_scale(prior_sigma_short_scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type rho_short_init(rho_short_initSEXP);
+    Rcpp::traits::input_parameter< bool >::type store_eta(store_etaSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_pg_binomial_gibbs_temporal(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_scale, prior_sigma_seasonal_scale, prior_sigma_short_scale, rho_short_init, store_eta, verbose, n_threads));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2418,6 +2438,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_multiscale_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_multiscale_gp, 26},
     {"_tulpa_cpp_laplace_fit_multiscale_temporal", (DL_FUNC) &_tulpa_cpp_laplace_fit_multiscale_temporal, 20},
     {"_tulpa_cpp_laplace_fit_rsr", (DL_FUNC) &_tulpa_cpp_laplace_fit_rsr, 19},
+    {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 18},
     {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 20},
@@ -2431,9 +2452,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 21},
     {"_tulpa_cpp_pg_binomial_gibbs_gp", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_gp, 26},
-    {"_tulpa_cpp_pg_binomial_gibbs_temporal", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_temporal, 22},
     {"_tulpa_cpp_pg_binomial_gibbs_multiscale_gp", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_multiscale_gp, 36},
     {"_tulpa_cpp_pg_binomial_gibbs_rsr", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_rsr, 21},
+    {"_tulpa_cpp_pg_binomial_gibbs_temporal", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_temporal, 22},
     {"_tulpa_cpp_pg_negbin_gibbs", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs, 15},
     {"_tulpa_cpp_pg_negbin_negbin_gibbs", (DL_FUNC) &_tulpa_cpp_pg_negbin_negbin_gibbs, 19},
     {"_tulpa_cpp_pg_negbin_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs_spatial, 21},
