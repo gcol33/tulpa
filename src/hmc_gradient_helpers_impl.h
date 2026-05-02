@@ -844,16 +844,17 @@ static inline void spatial_gmrf_prior_grad(
     double* grad
 ) {
     int S = data.n_spatial_units;
+    const int* adj_rp = data.adj_row_ptr.data();
+    const int* adj_ci = data.adj_col_idx.data();
+    const int* nnb    = data.n_neighbors.data();
+
+    // ICAR/CAR neighbor loop = -(Q phi)[s] (since sum_{j~s} phi_j - n_nb*phi_s = -(Q phi)[s]).
     if (layout.is_bym2) {
         // Soft sum-to-zero gradient: -0.01 * sum(phi) for each phi[s]
         double phi_sum = 0.0;
         for (int s = 0; s < S; s++) phi_sum += spatial_phi[s];
         for (int s = 0; s < S; s++) {
-            double icar_grad = 0.0;
-            for (int idx = data.adj_row_ptr[s]; idx < data.adj_row_ptr[s + 1]; idx++) {
-                int j = data.adj_col_idx[idx];
-                icar_grad += (spatial_phi[j] - spatial_phi[s]);
-            }
+            double icar_grad = -tulpa::car_apply_row(s, spatial_phi, adj_rp, adj_ci, nnb);
             grad[layout.spatial_start + s] = grad_spatial_lik[s] * sigma_s_bym2 * data.bym2_scale_factor + icar_grad - 0.01 * phi_sum;
             grad[layout.theta_bym2_start + s] = grad_theta_lik[s] * sigma_u_bym2 - theta_bym2[s];
         }
@@ -867,14 +868,10 @@ static inline void spatial_gmrf_prior_grad(
                                                     - rho_bym2 * grad_sigma_u_lik);
     } else {
         for (int s = 0; s < S; s++) {
-            double icar_grad = 0.0;
-            for (int idx = data.adj_row_ptr[s]; idx < data.adj_row_ptr[s + 1]; idx++) {
-                int j = data.adj_col_idx[idx];
-                icar_grad += tau_spatial * (spatial_phi[j] - spatial_phi[s]);
-            }
+            double icar_grad = -tau_spatial * tulpa::car_apply_row(s, spatial_phi, adj_rp, adj_ci, nnb);
             grad[layout.spatial_start + s] = grad_spatial_lik[s] + icar_grad;
         }
-        double icar_qf = icar_quadratic_form_ptr(spatial_phi, S, data);
+        double icar_qf = tulpa::car_quad_form(spatial_phi, S, adj_rp, adj_ci, nnb);
         grad[layout.log_tau_spatial_idx] += 0.5 * (S - 1) - 0.5 * tau_spatial * icar_qf;
     }
 }

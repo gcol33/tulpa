@@ -42,23 +42,15 @@ extern thread_local CollapsedGPWorkspace collapsed_gp_ws;
 extern thread_local CollapsedICARWorkspace collapsed_icar_ws;
 
 // Pointer-based ICAR quadratic form for hot gradient paths.
+// Delegates to the shared CAR/ICAR kernel (rho = 1).
 static inline double icar_quadratic_form_ptr(
     const double* phi, int J,
     const ModelData& data
 ) {
-  double quad_form = 0.0;
-  for (int i = 0; i < J; i++) {
-    quad_form += data.n_neighbors[i] * phi[i] * phi[i];
-    int row_start = data.adj_row_ptr[i];
-    int row_end = data.adj_row_ptr[i + 1];
-    for (int k = row_start; k < row_end; k++) {
-      int j = data.adj_col_idx[k];
-      if (j > i) {
-        quad_form -= 2.0 * phi[i] * phi[j];
-      }
-    }
-  }
-  return quad_form;
+  return tulpa::car_quad_form(
+      phi, J,
+      data.adj_row_ptr.data(), data.adj_col_idx.data(), data.n_neighbors.data(),
+      /*rho=*/1.0);
 }
 
 #include "hmc_gradient_analytical_impl.h"

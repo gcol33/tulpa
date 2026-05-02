@@ -11,6 +11,7 @@
 #ifndef TULPA_SPARSE_HESSIAN_H
 #define TULPA_SPARSE_HESSIAN_H
 
+#include "laplace_newton_loop.h"   // shared eval_*, step_halving_update, finalize_log_marginal
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <vector>
@@ -197,34 +198,18 @@ LaplaceResult laplace_newton_solve_sparse(
             continue;
         }
 
-        // Step halving on penalized deviance
+        // Step halving on penalized deviance (shared helper).
         auto eval_obj = [&](const Rcpp::NumericVector& xv) -> double {
-            Rcpp::NumericVector eta_tmp(N, 0.0);
-            compute_eta(xv, eta_tmp);
-            return compute_total_log_lik(y, n_trials, eta_tmp, N, family, phi, n_threads)
-                   + compute_log_prior(xv, eta_tmp);
+            return eval_penalized_log_lik(xv, y, n_trials, N, family, phi, n_threads,
+                                           compute_eta, compute_log_prior);
         };
 
         double obj_old = eval_obj(x);
-        double step_scale = 1.0;
-        for (int half = 0; half <= MAX_HALVING; half++) {
-            Rcpp::NumericVector x_try(n_x);
-            for (int j = 0; j < n_x; j++) x_try[j] = x[j] + step_scale * delta[j];
-            double obj_try = eval_obj(x_try);
-            if (obj_try >= obj_old - 1e-8 || half == MAX_HALVING) {
-                for (int j = 0; j < n_x; j++) x[j] = x_try[j];
-                break;
-            }
-            step_scale *= 0.5;
-        }
-
-        double max_delta = 0.0;
-        for (int j = 0; j < n_x; j++) {
-            max_delta = std::max(max_delta, std::abs(step_scale * delta[j]));
-        }
+        double obj_unused = 0.0;
+        double step_scale = step_halving_update(x, delta, n_x, obj_old, eval_obj, obj_unused);
 
         result.n_iter = iter + 1;
-        if (max_delta < tol) {
+        if (max_abs_step(delta, step_scale, n_x) < tol) {
             result.converged = true;
             break;
         }
@@ -250,9 +235,7 @@ LaplaceResult laplace_newton_solve_sparse(
     double log_lik = compute_total_log_lik(y, n_trials, eta_final, N, family, phi, n_threads);
     double log_prior = compute_log_prior(x, eta_final);
 
-    result.log_marginal = log_lik + log_prior
-                          - 0.5 * result.log_det_Q
-                          + 0.5 * n_x * std::log(2.0 * M_PI);
+    result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
 
     return result;
 }

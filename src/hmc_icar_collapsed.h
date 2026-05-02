@@ -22,6 +22,7 @@
 #include <cmath>
 #include <algorithm>
 #include <RcppEigen.h>
+#include "icar_kernel.h"
 
 // NOTE: Must be included AFTER hmc_sampler.h (which defines ModelData/ModelType).
 using tulpa_hmc::ModelData;
@@ -115,8 +116,8 @@ inline void build_unit_obs_map(CollapsedICARWorkspace& ws, const ModelData& data
 // ICAR precision matrix operations (Q = D - W, adjacency-based)
 // =========================================================================
 
-// Compute Q*v where Q[i,i] = n_neighbors[i], Q[i,j] = -1 if j~i
-// Uses CSR adjacency from ModelData
+// Compute Q*v where Q[i,i] = n_neighbors[i], Q[i,j] = -1 if j~i.
+// Thin wrapper over the shared CAR kernel (rho = 1 special case).
 inline void icar_precision_matvec(
     const double* v,
     double* result,
@@ -125,12 +126,9 @@ inline void icar_precision_matvec(
     const std::vector<int>& adj_col_idx,
     const std::vector<int>& n_neighbors
 ) {
-    for (int i = 0; i < S; i++) {
-        result[i] = n_neighbors[i] * v[i];
-        for (int k = adj_row_ptr[i]; k < adj_row_ptr[i + 1]; k++) {
-            result[i] -= v[adj_col_idx[k]];
-        }
-    }
+    tulpa::car_apply(v, result, S,
+                     adj_row_ptr.data(), adj_col_idx.data(), n_neighbors.data(),
+                     /*rho=*/1.0);
 }
 
 // =========================================================================

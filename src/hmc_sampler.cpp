@@ -12,6 +12,7 @@
 #include "hmc_gp_collapsed.h"
 #include "hmc_icar_collapsed.h"
 #include "hmc_car_proper.h"
+#include "icar_kernel.h"
 #include "hmc_temporal_autodiff.h"
 #include "hmc_tvc_grad.h"
 #include "hmc_multiscale_temporal_grad.h"
@@ -37,27 +38,18 @@ using namespace Rcpp;
 namespace tulpa_hmc {
 
 // =====================================================================
-// ICAR quadratic form: phi' Q phi
+// ICAR quadratic form: phi' Q phi  (rho = 1 special case of CAR)
+// Delegates to the shared kernel in icar_kernel.h.
 // =====================================================================
 
-// Pointer-based version (zero allocation, used in hot gradient path)
 static inline double icar_quadratic_form_ptr(
     const double* phi, int J,
     const ModelData& data
 ) {
-  double quad_form = 0.0;
-  for (int i = 0; i < J; i++) {
-    quad_form += data.n_neighbors[i] * phi[i] * phi[i];
-    int row_start = data.adj_row_ptr[i];
-    int row_end = data.adj_row_ptr[i + 1];
-    for (int k = row_start; k < row_end; k++) {
-      int j = data.adj_col_idx[k];
-      if (j > i) {
-        quad_form -= 2.0 * phi[i] * phi[j];
-      }
-    }
-  }
-  return quad_form;
+  return tulpa::car_quad_form(
+      phi, J,
+      data.adj_row_ptr.data(), data.adj_col_idx.data(), data.n_neighbors.data(),
+      /*rho=*/1.0);
 }
 
 double icar_quadratic_form(
@@ -386,19 +378,11 @@ double accumulate_log_prior_and_state(
       double u_clip = std::min(std::max(u_logit, 1e-12), 1.0 - 1e-12);
       log_post += std::log(u_clip) + std::log(1.0 - u_clip);
 
-      // phi quadratic form: phi' Q(rho) phi
-      double quad = 0.0;
-      for (int i = 0; i < J; i++) {
-        quad += data.n_neighbors[i] * phi_spatial[i] * phi_spatial[i];
-        int row_start = data.adj_row_ptr[i];
-        int row_end = data.adj_row_ptr[i + 1];
-        for (int k = row_start; k < row_end; k++) {
-          int j = data.adj_col_idx[k];
-          if (j > i) {
-            quad -= 2.0 * rho_car * phi_spatial[i] * phi_spatial[j];
-          }
-        }
-      }
+      // phi quadratic form: phi' Q(rho) phi  (shared CAR/ICAR kernel)
+      double quad = tulpa::car_quad_form(
+          phi_spatial, J,
+          data.adj_row_ptr.data(), data.adj_col_idx.data(), data.n_neighbors.data(),
+          rho_car);
 
       // Log-determinant of Q(rho) ? recompute each call (rho changes Q).
       // Dense O(J^3) Cholesky is fine for small J; switch to sparse for large J.
