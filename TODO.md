@@ -175,6 +175,30 @@ Three dedups and two splits landed on 2026-05-02:
   data, layout, mass, da, _nuts_p, mass_stats, cov_stats, ...)
   and have no header guards. `pkgbuild::compile_dll(force = TRUE)`
   clean; testthat 825 PASS / 0 FAIL / 2 SKIP.
+- hmc_sampler.cpp split into umbrella + 5 function-body fragments
+  for the giant `accumulate_log_prior_and_state` function. The
+  umbrella (`hmc_sampler.cpp`, 197 lines) keeps all `#include`s,
+  `using namespace Rcpp`, the `namespace tulpa_hmc` open, the
+  ICAR quadratic-form helpers (`icar_quadratic_form_ptr`,
+  `icar_quadratic_form`), the thread_local collapsed workspaces,
+  the `accumulate_obs_log_lik` reduction, and the
+  `compute_log_post` / `compute_log_prior` / `compute_log_lik_only`
+  orchestrators, then closes the namespace. Inside
+  `accumulate_log_prior_and_state`, fragments are included in
+  order: `hmc_sampler_log_prior_setup.h` (parameter extraction +
+  collapsed ICAR/BYM2 inner-Laplace mode finder),
+  `hmc_sampler_log_prior_basic.h` (beta + RE non-centered priors +
+  overdispersion + spatial GMRF + ZI + OI),
+  `hmc_sampler_log_prior_temporal_gp.h` (temporal RW1/RW2/AR1 + GP
+  NNGP + multiscale GP + HSGP + multiscale temporal),
+  `hmc_sampler_log_prior_complex.h` (latent factors + spatiotemporal
+  Type-I/II/III/IV interactions + TVC + SVC),
+  `hmc_sampler_log_prior_finalize.h` (obs-context pointer
+  population + `return log_post`). Fragments rely on the function's
+  lexical scope (`params`, `data`, `layout`, `state`, `ctx`,
+  `log_post`, all the aliased buffers in `state`) and are NOT
+  standalone-compilable. `pkgbuild::compile_dll(force = TRUE)`
+  clean; testthat 825 PASS / 0 FAIL / 2 SKIP.
 
 **Still open from the 2026-05-02 punch list:**
 
