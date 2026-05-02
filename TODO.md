@@ -33,17 +33,18 @@ Three dedups and two splits landed on 2026-05-02:
   (mass-block hierarchy precedes DenseMassMatrix; DualAveraging precedes
   ChainState), closes the namespace. Fragments are header-guarded and
   namespace-less. pkgbuild::compile_dll(force = TRUE) clean.
+- log_post_impl.h split into 8 fragments: 1 namespace-scope helper
+  (`log_post_car_proper_det.h`) + 7 function-body fragments included
+  inside `compute_log_post_impl<T>` (priors_basic, priors_disp_spatial,
+  priors_gp, priors_temporal, priors_svc_tvc_latent, priors_st_zi,
+  likelihood). Function-body fragments rely on lexical scope (params,
+  data, layout, log_post, beta_*, phi_*, re_vals, ...) and are NOT
+  standalone-compilable; each is included exactly once per umbrella so
+  no header guards. pkgbuild::compile_dll(force = TRUE) clean; full
+  testthat suite passes.
 
 **Still open from the 2026-05-02 punch list:**
 
-- **Split log_post_impl.h** (~1932 lines). Top-level structure is one
-  massive `compute_log_post_impl` template (lines 89-1926). Splitting
-  requires extracting interior helper functions, not just file slicing.
-  Note: commit cecbffa extracted prior + obs-loop stages from
-  `compute_log_post` in hmc_sampler.cpp (the `double` evaluator), not
-  from `compute_log_post_impl<T>` in this header. The templated version
-  shares state across 1800 lines and needs a `LogPosteriorState`-style
-  struct to break apart cleanly.
 - **Split hmc_nuts_sampler.cpp** (~2696 lines). Single sampler file;
   natural splits would be tree-building / U-turn / leapfrog wrapper /
   adaptation / R interface. Highest-risk split because it's the
