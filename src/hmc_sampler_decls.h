@@ -184,5 +184,67 @@ double icar_quadratic_form(
     const ModelData& data
 );
 
+// Specialized handcoded gradient functions and dispatch helpers.
+// Declared here so hmc_gradient_dispatch.h (compiled in a separate TU)
+// can reference them by address without seeing their definitions.
+bool can_use_analytical_gradient(const ModelData& data, const ParamLayout& layout);
+void compute_gradient_analytical(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_composite(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_hsgp(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_msgp_hsgp(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_gp_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_gp_collapsed(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_icar_collapsed(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_gp_plus_temporal_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_msgp_plus_temporal_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_msgp_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_temporal_gp_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_ms_temporal_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_spatiotemporal_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_svc_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_svc_hsgp_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_tvc_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_latent_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+// Generic multi-process gradients (external linkage so dispatch.cpp can address them).
+void compute_gradient_generic_numerical(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
+void compute_gradient_generic_arena(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
 
 #endif  // TULPA_HMC_SAMPLER_DECLS_H

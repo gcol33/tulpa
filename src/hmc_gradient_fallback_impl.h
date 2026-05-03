@@ -300,7 +300,7 @@ void compute_gradient_forward(
 // Used by model packages (tulpaOcc, etc.) that plug in via LikelihoodSpec.
 // =====================================================================
 
-static void compute_gradient_generic_numerical(
+void compute_gradient_generic_numerical(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
@@ -332,7 +332,7 @@ static void compute_gradient_generic_numerical(
 // Generic multi-process gradient via arena reverse-mode AD
 // =====================================================================
 
-static void compute_gradient_generic_arena(
+void compute_gradient_generic_arena(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,

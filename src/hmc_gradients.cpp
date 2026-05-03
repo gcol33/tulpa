@@ -36,7 +36,8 @@ namespace tulpa_hmc {
 #include "hmc_gradient_vectorized.h"
 
 // Thread-local vectorized gradient workspace (avoids per-call allocation).
-static thread_local vectorized::VecGradWorkspace vec_grad_ws;
+// External linkage so the definition is shared across gradient translation units.
+thread_local vectorized::VecGradWorkspace vec_grad_ws;
 
 extern thread_local CollapsedGPWorkspace collapsed_gp_ws;
 extern thread_local CollapsedICARWorkspace collapsed_icar_ws;
@@ -98,8 +99,6 @@ void compute_gradient(
     GradientFn fn = resolve_gradient_fn(g_gradient_mode, data, layout);
     fn(params, data, layout, grad, log_post_out);
 }
-
-#include "hmc_gradient_dispatch.h"
 
 // =====================================================================
 
