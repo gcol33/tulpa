@@ -250,129 +250,42 @@ List pg_binomial_gibbs_impl(
     bool verbose,
     int n_threads
 ) {
-  int N = y.size();
-  int p = X.ncol();
   int n_save = (n_iter - n_warmup) / thin;
+  PgGibbsCommon C(y, n, X.ncol(), n_groups, n_save, n_threads, store_eta);
+  const int N = C.N;
+  const int p = C.p;
 
-  // Set number of threads
-  #ifdef _OPENMP
-  if (n_threads > 0) {
-    omp_set_num_threads(n_threads);
-  }
-  #endif
+  // No spatial / temporal prior: zero contribution into pg_gibbs_core_step.
+  NumericVector zero_contrib(N, 0.0);
 
-  // Storage
-  NumericMatrix beta_draws(n_save, p);
-  NumericMatrix re_draws(n_save, n_groups);
-  NumericVector sigma_draws(n_save);
-  NumericMatrix eta_draws;
-  if (store_eta) {
-    eta_draws = NumericMatrix(n_save, N);
-  }
-
-  // Initialize
-  NumericVector beta(p, 0.0);
-  NumericVector re(n_groups, 0.0);
-  double sigma_re = 1.0;
-  NumericVector omega(N, 1.0);  // PG draws
-  NumericVector kappa(N);       // y - n/2
-  NumericVector eta(N);         // Linear predictor
-  NumericVector X_beta(N);      // X * beta
-  NumericVector re_contrib(N);  // Random effects contribution
-
-  // Compute kappa = y - n/2
-  for (int i = 0; i < N; i++) {
-    kappa[i] = y[i] - n[i] / 2.0;
-  }
-
-  // Gibbs iterations
   int save_idx = 0;
   for (int iter = 0; iter < n_iter; iter++) {
-    // 1. Compute linear predictor (parallelized)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
-    #endif
-    for (int i = 0; i < N; i++) {
-      X_beta[i] = 0.0;
-      for (int j = 0; j < p; j++) {
-        X_beta[i] += X(i, j) * beta[j];
-      }
-      // Only access re if we have random effects
-      if (n_groups > 0) {
-        re_contrib[i] = re[group[i] - 1];  // group is 1-based
-      } else {
-        re_contrib[i] = 0.0;
-      }
-      eta[i] = X_beta[i] + re_contrib[i];
-    }
+    pg_gibbs_core_step(
+        N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
+        zero_contrib, C.offset, C.kappa, n, X, group, n_groups,
+        prior_beta_sd, prior_sigma_scale);
 
-    // 2. Sample omega ~ PG(n, eta)
-    // Note: NOT parallelized - R's RNG is not thread-safe
-    for (int i = 0; i < N; i++) {
-      omega[i] = rpg_int(n[i], eta[i]);
-    }
-
-    // 3. Update beta | omega, re, y
-    beta = update_beta(kappa, omega, X, re_contrib, prior_beta_sd);
-
-    // 4. Recompute X_beta after beta update (parallelized)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
-    #endif
-    for (int i = 0; i < N; i++) {
-      X_beta[i] = 0.0;
-      for (int j = 0; j < p; j++) {
-        X_beta[i] += X(i, j) * beta[j];
-      }
-    }
-
-    // 5. Update random effects | omega, beta, sigma_re
-    if (n_groups > 0) {
-      re = update_re(kappa, omega, X_beta, group, n_groups, sigma_re);
-
-      // 6. Update sigma_re | re
-      sigma_re = update_sigma_re(re, prior_sigma_scale);
-    }
-
-    // Save draws (after warmup, respecting thinning)
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      for (int j = 0; j < p; j++) {
-        beta_draws(save_idx, j) = beta[j];
-      }
-      for (int g = 0; g < n_groups; g++) {
-        re_draws(save_idx, g) = re[g];
-      }
-      sigma_draws[save_idx] = sigma_re;
-
-      if (store_eta) {
-        for (int i = 0; i < N; i++) {
-          eta_draws(save_idx, i) = eta[i];
-        }
-      }
+      C.save(save_idx);
       save_idx++;
     }
 
-    // Progress
     if (verbose && (iter + 1) % 500 == 0) {
       Rcpp::Rcout << "Iteration " << (iter + 1) << "/" << n_iter << std::endl;
     }
-
-    // Check for user interrupt
     if ((iter + 1) % 100 == 0) {
       Rcpp::checkUserInterrupt();
     }
   }
 
   List result = List::create(
-    Named("beta") = beta_draws,
-    Named("re") = re_draws,
-    Named("sigma_re") = sigma_draws
+    Named("beta") = C.beta_draws,
+    Named("re") = C.re_draws,
+    Named("sigma_re") = C.sigma_re_draws
   );
-
   if (store_eta) {
-    result["eta"] = eta_draws;
+    result["eta"] = C.eta_draws;
   }
-
   return result;
 }
 
@@ -459,48 +372,20 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
   // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
   GetRNGstate();
 
-  int N = y.size();
-  int p = X.ncol();
   int n_save = (n_iter - n_warmup) / thin;
+  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int N = C.N;
+  const int p = C.p;
 
-  // Set number of threads
-  #ifdef _OPENMP
-  if (n_threads > 0) {
-    omp_set_num_threads(n_threads);
-  }
-  #endif
-
-  // Storage
-  Rcpp::NumericMatrix beta_draws(n_save, p);
-  Rcpp::NumericMatrix re_draws(n_save, n_re_groups);
-  Rcpp::NumericVector sigma_re_draws(n_save);
+  // Per-variant storage
   Rcpp::NumericMatrix spatial_draws(n_save, n_spatial_units);
   Rcpp::NumericVector tau_draws(n_save);
-  Rcpp::NumericMatrix eta_draws;
-  if (store_eta) {
-    eta_draws = Rcpp::NumericMatrix(n_save, N);
-  }
 
-  // Initialize
-  Rcpp::NumericVector beta(p, 0.0);
-  Rcpp::NumericVector re(n_re_groups, 0.0);
-  double sigma_re = 1.0;
-  Rcpp::NumericVector phi(n_spatial_units, 0.0);  // Spatial effects
-  double tau = 1.0;  // Spatial precision
-  Rcpp::NumericVector omega(N, 1.0);
-  Rcpp::NumericVector kappa(N);
-  Rcpp::NumericVector eta(N);
-  Rcpp::NumericVector X_beta(N);
-  Rcpp::NumericVector re_contrib(N);
+  // Per-variant state
+  Rcpp::NumericVector phi(n_spatial_units, 0.0);
+  double tau = 1.0;
   Rcpp::NumericVector spatial_contrib(N);
-  Rcpp::NumericVector offset(N);
 
-  // Compute kappa = y - n/2
-  for (int i = 0; i < N; i++) {
-    kappa[i] = y[i] - n[i] / 2.0;
-  }
-
-  // Gibbs iterations
   int save_idx = 0;
   for (int iter = 0; iter < n_iter; iter++) {
     // Steps 1-5: shared core (compute eta, sample omega, update beta/RE)
@@ -511,8 +396,8 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
       spatial_contrib[i] = phi[spatial_group[i] - 1];
     }
     tulpa::pg_gibbs_core_step(
-        N, p, beta, re, sigma_re, omega, eta, X_beta, re_contrib,
-        spatial_contrib, offset, kappa, n, X, re_group, n_re_groups,
+        N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
+        spatial_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd, prior_sigma_re_scale);
 
     // 6. Update spatial effects | omega, beta, re, tau
@@ -521,32 +406,20 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     #pragma omp parallel for schedule(static)
     #endif
     for (int i = 0; i < N; i++) {
-      offset[i] = X_beta[i] + re_contrib[i];
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
-    phi = tulpa::update_spatial_icar(kappa, omega, offset, spatial_group, adj_list, n_neighbors, tau);
+    phi = tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors, tau);
 
     // 7. Update tau (spatial precision)
     tau = tulpa::update_tau_icar(phi, adj_list, n_neighbors, prior_tau_shape, prior_tau_rate);
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      for (int j = 0; j < p; j++) {
-        beta_draws(save_idx, j) = beta[j];
-      }
-      for (int g = 0; g < n_re_groups; g++) {
-        re_draws(save_idx, g) = re[g];
-      }
-      sigma_re_draws[save_idx] = sigma_re;
+      C.save(save_idx);
       for (int s = 0; s < n_spatial_units; s++) {
         spatial_draws(save_idx, s) = phi[s];
       }
       tau_draws[save_idx] = tau;
-
-      if (store_eta) {
-        for (int i = 0; i < N; i++) {
-          eta_draws(save_idx, i) = eta[i];
-        }
-      }
       save_idx++;
     }
 
@@ -562,15 +435,15 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
   }
 
   Rcpp::List result = Rcpp::List::create(
-    Rcpp::Named("beta") = beta_draws,
-    Rcpp::Named("re") = re_draws,
-    Rcpp::Named("sigma_re") = sigma_re_draws,
+    Rcpp::Named("beta") = C.beta_draws,
+    Rcpp::Named("re") = C.re_draws,
+    Rcpp::Named("sigma_re") = C.sigma_re_draws,
     Rcpp::Named("spatial") = spatial_draws,
     Rcpp::Named("tau") = tau_draws
   );
 
   if (store_eta) {
-    result["eta"] = eta_draws;
+    result["eta"] = C.eta_draws;
   }
 
   PutRNGstate();

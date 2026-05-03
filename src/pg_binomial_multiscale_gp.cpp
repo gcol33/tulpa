@@ -62,8 +62,10 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
   // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
   GetRNGstate();
 
-  int N = y.size();
-  int p = X.ncol();
+  int n_save = (n_iter - n_warmup) / thin;
+  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int N = C.N;
+  const int p = C.p;
 
   if (verbose) {
     Rcpp::Rcout << "PG Binomial Gibbs sampler with multiscale GP spatial\n";
@@ -71,11 +73,6 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     Rcpp::Rcout << "  n_spatial = " << n_spatial << "\n";
     Rcpp::Rcout << "  nn_local = " << nn_local << ", nn_regional = " << nn_regional << "\n";
   }
-
-  // Initialize parameters
-  Rcpp::NumericVector beta(p, 0.0);
-  Rcpp::NumericVector re(n_re_groups, 0.0);
-  double sigma_re = 1.0;
 
   // Local GP effects
   std::vector<double> w_local(n_spatial, 0.0);
@@ -87,36 +84,17 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
   double sigma2_regional = sigma2_regional_init;
   double phi_regional = phi_regional_init;
 
-  // Working vectors (use Rcpp types for compatibility with update functions)
-  Rcpp::NumericVector omega(N, 0.0);
-  Rcpp::NumericVector kappa(N, 0.0);
-  Rcpp::NumericVector eta_vec(N, 0.0);
-  Rcpp::NumericVector X_beta(N, 0.0);
-  Rcpp::NumericVector re_contrib(N, 0.0);
+  // Per-variant working vectors
   Rcpp::NumericVector local_contrib(N, 0.0);
   Rcpp::NumericVector regional_contrib(N, 0.0);
-  Rcpp::NumericVector offset(N, 0.0);
 
-  // Compute kappa
-  for (int i = 0; i < N; i++) {
-    kappa[i] = (double)y[i] - 0.5 * (double)n[i];
-  }
-
-  // Storage for draws
-  int n_save = (n_iter - n_warmup) / thin;
-  Rcpp::NumericMatrix beta_draws(n_save, p);
-  Rcpp::NumericMatrix re_draws(n_save, n_re_groups);
-  Rcpp::NumericVector sigma_re_draws(n_save);
+  // Per-variant draw storage
   Rcpp::NumericMatrix w_local_draws(n_save, n_spatial);
   Rcpp::NumericMatrix w_regional_draws(n_save, n_spatial);
   Rcpp::NumericVector sigma2_local_draws(n_save);
   Rcpp::NumericVector phi_local_draws(n_save);
   Rcpp::NumericVector sigma2_regional_draws(n_save);
   Rcpp::NumericVector phi_regional_draws(n_save);
-  Rcpp::NumericMatrix eta_draws_temp;
-  if (store_eta) {
-    eta_draws_temp = Rcpp::NumericMatrix(n_save, N);
-  }
 
   int save_idx = 0;
 
@@ -133,13 +111,13 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
 
     // 2-4. Core Gibbs step (eta, omega, beta, RE) — shared with all variants
     tulpa::pg_gibbs_core_step(
-        N, p, beta, re, sigma_re, omega, eta_vec, X_beta, re_contrib,
-        combined_contrib, offset, kappa, n, X, re_group, n_re_groups,
+        N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
+        combined_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd, prior_sigma_re_scale);
 
     // 5. Update local GP effects
     for (int i = 0; i < N; i++) {
-      offset[i] = X_beta[i] + re_contrib[i] + regional_contrib[i];
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i] + regional_contrib[i];
     }
 
     // Aggregate likelihood info per spatial location
@@ -147,8 +125,8 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     std::vector<double> sum_resid_local(n_spatial, 0.0);
     for (int i = 0; i < N; i++) {
       if (i < n_spatial) {
-        sum_omega_local[i] += omega[i];
-        sum_resid_local[i] += kappa[i] - omega[i] * offset[i];
+        sum_omega_local[i] += C.omega[i];
+        sum_resid_local[i] += C.kappa[i] - C.omega[i] * C.offset[i];
       }
     }
 
@@ -184,15 +162,15 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
 
     // 6. Update regional GP effects
     for (int i = 0; i < N; i++) {
-      offset[i] = X_beta[i] + re_contrib[i] + local_contrib[i];
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i] + local_contrib[i];
     }
 
     std::vector<double> sum_omega_regional(n_spatial, 0.0);
     std::vector<double> sum_resid_regional(n_spatial, 0.0);
     for (int i = 0; i < N; i++) {
       if (i < n_spatial) {
-        sum_omega_regional[i] += omega[i];
-        sum_resid_regional[i] += kappa[i] - omega[i] * offset[i];
+        sum_omega_regional[i] += C.omega[i];
+        sum_resid_regional[i] += C.kappa[i] - C.omega[i] * C.offset[i];
       }
     }
 
@@ -290,15 +268,8 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     }
 
     // Store draws after warmup
-    if (iter >= n_warmup && (iter - n_warmup + 1) % thin == 0) {
-      for (int j = 0; j < p; j++) {
-        beta_draws(save_idx, j) = beta[j];
-      }
-      for (int g = 0; g < n_re_groups; g++) {
-        re_draws(save_idx, g) = re[g];
-      }
-      sigma_re_draws[save_idx] = sigma_re;
-
+    if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
+      C.save(save_idx);
       for (int s = 0; s < n_spatial; s++) {
         w_local_draws(save_idx, s) = w_local[s];
         w_regional_draws(save_idx, s) = w_regional[s];
@@ -307,12 +278,6 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
       phi_local_draws[save_idx] = phi_local;
       sigma2_regional_draws[save_idx] = sigma2_regional;
       phi_regional_draws[save_idx] = phi_regional;
-
-      if (store_eta) {
-        for (int i = 0; i < N; i++) {
-          eta_draws_temp(save_idx, i) = eta_vec[i];
-        }
-      }
       save_idx++;
     }
 
@@ -320,9 +285,9 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
   }
 
   Rcpp::List result = Rcpp::List::create(
-    Rcpp::Named("beta") = beta_draws,
-    Rcpp::Named("re") = re_draws,
-    Rcpp::Named("sigma_re") = sigma_re_draws,
+    Rcpp::Named("beta") = C.beta_draws,
+    Rcpp::Named("re") = C.re_draws,
+    Rcpp::Named("sigma_re") = C.sigma_re_draws,
     Rcpp::Named("w_local") = w_local_draws,
     Rcpp::Named("w_regional") = w_regional_draws,
     Rcpp::Named("sigma2_local") = sigma2_local_draws,
@@ -332,7 +297,7 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
   );
 
   if (store_eta) {
-    result["eta"] = eta_draws_temp;
+    result["eta"] = C.eta_draws;
   }
 
   PutRNGstate();

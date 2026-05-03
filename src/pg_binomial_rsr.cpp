@@ -70,54 +70,21 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
   // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
   GetRNGstate();
 
-  int N = y.size();
-  int p = X.ncol();
   int n_save = (n_iter - n_warmup) / thin;
+  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int N = C.N;
+  const int p = C.p;
 
-  #ifdef _OPENMP
-  if (n_threads > 0) {
-    omp_set_num_threads(n_threads);
-  }
-  #endif
-
-  // Storage for draws
-  Rcpp::NumericMatrix beta_draws(n_save, p);
-  Rcpp::NumericMatrix re_draws(n_save, n_re_groups);
-  Rcpp::NumericVector sigma_re_draws(n_save);
+  // Per-variant storage
   Rcpp::NumericMatrix spatial_raw_draws(n_save, n_spatial_units);
   Rcpp::NumericMatrix spatial_proj_draws(n_save, n_spatial_units);
   Rcpp::NumericVector tau_draws(n_save);
-  Rcpp::NumericMatrix eta_draws(n_save, N);
 
-  // Current values
-  Rcpp::NumericVector beta(p, 0.0);
-  Rcpp::NumericVector re(n_re_groups, 0.0);
-  double sigma_re = 1.0;
-  Rcpp::NumericVector phi(n_spatial_units, 0.0);  // Raw (unprojected) spatial effects
-  Rcpp::NumericVector phi_proj(n_spatial_units, 0.0);  // Projected spatial effects
+  // Per-variant state
+  Rcpp::NumericVector phi(n_spatial_units, 0.0);       // Raw (unprojected)
+  Rcpp::NumericVector phi_proj(n_spatial_units, 0.0);  // Projected
   double tau = 1.0;
-
-  // Compute kappa once
-  Rcpp::NumericVector kappa(N);
-  for (int i = 0; i < N; i++) {
-    kappa[i] = y[i] - n[i] / 2.0;
-  }
-
-  // Working vectors
-  Rcpp::NumericVector omega(N, 0.1);
-  Rcpp::NumericVector offset(N);
-  Rcpp::NumericVector eta(N);
-  Rcpp::NumericVector X_beta(N);
-  Rcpp::NumericVector re_contrib(N, 0.0);
   Rcpp::NumericVector spatial_contrib(N, 0.0);
-
-  // Initialize X_beta
-  for (int i = 0; i < N; i++) {
-    X_beta[i] = 0.0;
-    for (int j = 0; j < p; j++) {
-      X_beta[i] += X(i, j) * beta[j];
-    }
-  }
 
   int save_idx = 0;
 
@@ -141,8 +108,8 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
 
     // Steps 3-7: shared core (compute eta, sample omega, update beta/RE)
     tulpa::pg_gibbs_core_step(
-        N, p, beta, re, sigma_re, omega, eta, X_beta, re_contrib,
-        spatial_contrib, offset, kappa, n, X, re_group, n_re_groups,
+        N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
+        spatial_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd, prior_sigma_re_scale);
 
     // 8. Update spatial effects (raw, unprojected)
@@ -162,37 +129,24 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
     #pragma omp parallel for schedule(static)
     #endif
     for (int i = 0; i < N; i++) {
-      offset[i] = X_beta[i] + re_contrib[i];
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
 
     // Update spatial effects using ICAR
-    phi = tulpa::update_spatial_icar(kappa, omega, offset, spatial_group, adj_list, n_neighbors, tau);
+    phi = tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors, tau);
 
     // 9. Update tau (spatial precision)
     tau = tulpa::update_tau_icar(phi, adj_list, n_neighbors, prior_tau_shape, prior_tau_rate);
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      for (int j = 0; j < p; j++) {
-        beta_draws(save_idx, j) = beta[j];
-      }
-      for (int g = 0; g < n_re_groups; g++) {
-        re_draws(save_idx, g) = re[g];
-      }
-      sigma_re_draws[save_idx] = sigma_re;
-
+      C.save(save_idx);
       // Store both raw and projected spatial effects
       for (int s = 0; s < n_spatial_units; s++) {
         spatial_raw_draws(save_idx, s) = phi[s];
         spatial_proj_draws(save_idx, s) = phi_proj[s];
       }
       tau_draws[save_idx] = tau;
-
-      if (store_eta) {
-        for (int i = 0; i < N; i++) {
-          eta_draws(save_idx, i) = eta[i];
-        }
-      }
       save_idx++;
     }
 
@@ -208,16 +162,16 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
   }
 
   Rcpp::List result = Rcpp::List::create(
-    Rcpp::Named("beta") = beta_draws,
-    Rcpp::Named("re") = re_draws,
-    Rcpp::Named("sigma_re") = sigma_re_draws,
+    Rcpp::Named("beta") = C.beta_draws,
+    Rcpp::Named("re") = C.re_draws,
+    Rcpp::Named("sigma_re") = C.sigma_re_draws,
     Rcpp::Named("spatial_raw") = spatial_raw_draws,
     Rcpp::Named("spatial") = spatial_proj_draws,
     Rcpp::Named("tau") = tau_draws
   );
 
   if (store_eta) {
-    result["eta"] = eta_draws;
+    result["eta"] = C.eta_draws;
   }
 
   PutRNGstate();

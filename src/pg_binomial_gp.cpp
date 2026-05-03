@@ -165,48 +165,21 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
   // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
   GetRNGstate();
 
-  int N = y.size();
-  int p = X.ncol();
   int n_save = (n_iter - n_warmup) / thin;
+  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int N = C.N;
+  const int p = C.p;
 
-  #ifdef _OPENMP
-  if (n_threads > 0) omp_set_num_threads(n_threads);
-  #endif
-
-  // Storage
-  Rcpp::NumericMatrix beta_draws(n_save, p);
-  Rcpp::NumericMatrix re_draws(n_save, n_re_groups);
-  Rcpp::NumericVector sigma_re_draws(n_save);
+  // Per-variant storage
   Rcpp::NumericMatrix gp_draws(n_save, n_spatial);
   Rcpp::NumericVector sigma2_gp_draws(n_save);
   Rcpp::NumericVector phi_gp_draws(n_save);
-  Rcpp::NumericMatrix eta_draws_gp;
-  if (store_eta) eta_draws_gp = Rcpp::NumericMatrix(n_save, N);
 
-  // Initialize
-  Rcpp::NumericVector beta(p, 0.0);
-  Rcpp::NumericVector re(n_re_groups, 0.0);
-  double sigma_re = 1.0;
+  // Per-variant state
   std::vector<double> w(n_spatial, 0.0);
   double sigma2_gp = sigma2_gp_init;
   double phi_gp = phi_gp_init;
-
-  // Working vectors
-  Rcpp::NumericVector omega(N);
-  Rcpp::NumericVector kappa(N);
-  Rcpp::NumericVector eta(N);
-  Rcpp::NumericVector X_beta(N);
-  Rcpp::NumericVector re_contrib(N);
-  Rcpp::NumericVector gp_contrib(N);
-  Rcpp::NumericVector offset(N);
-
-  for (int i = 0; i < N; i++) {
-    omega[i] = 0.5;
-    kappa[i] = y[i] - 0.5 * n[i];
-    X_beta[i] = 0.0;
-    re_contrib[i] = 0.0;
-    gp_contrib[i] = 0.0;
-  }
+  Rcpp::NumericVector gp_contrib(N, 0.0);
 
   int save_idx = 0;
 
@@ -217,13 +190,13 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
 
     // 1-4. Core Gibbs step (eta, omega, beta, RE) — shared with all variants
     tulpa::pg_gibbs_core_step(
-        N, p, beta, re, sigma_re, omega, eta, X_beta, re_contrib,
-        gp_contrib, offset, kappa, n, X, re_group, n_re_groups,
+        N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
+        gp_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd, prior_sigma_re_scale);
 
     // 5. Update GP effects (sequential NNGP Gibbs)
     for (int i = 0; i < N; i++) {
-      offset[i] = X_beta[i] + re_contrib[i];
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
 
     // Aggregate likelihood info per spatial location
@@ -231,8 +204,8 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     std::vector<double> sum_resid_gp(n_spatial, 0.0);
     for (int i = 0; i < N; i++) {
       if (i < n_spatial) {
-        sum_omega_gp[i] += omega[i];
-        sum_resid_gp[i] += kappa[i] - omega[i] * offset[i];
+        sum_omega_gp[i] += C.omega[i];
+        sum_resid_gp[i] += C.kappa[i] - C.omega[i] * C.offset[i];
       }
     }
 
@@ -288,24 +261,12 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      for (int j = 0; j < p; j++) {
-        beta_draws(save_idx, j) = beta[j];
-      }
-      for (int g = 0; g < n_re_groups; g++) {
-        re_draws(save_idx, g) = re[g];
-      }
-      sigma_re_draws[save_idx] = sigma_re;
+      C.save(save_idx);
       for (int s = 0; s < n_spatial; s++) {
         gp_draws(save_idx, s) = w[s];
       }
       sigma2_gp_draws[save_idx] = sigma2_gp;
       phi_gp_draws[save_idx] = phi_gp;
-
-      if (store_eta) {
-        for (int i = 0; i < N; i++) {
-          eta_draws_gp(save_idx, i) = eta[i];
-        }
-      }
       save_idx++;
     }
 
@@ -313,16 +274,16 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
   }
 
   Rcpp::List result = Rcpp::List::create(
-    Rcpp::Named("beta") = beta_draws,
-    Rcpp::Named("re") = re_draws,
-    Rcpp::Named("sigma_re") = sigma_re_draws,
+    Rcpp::Named("beta") = C.beta_draws,
+    Rcpp::Named("re") = C.re_draws,
+    Rcpp::Named("sigma_re") = C.sigma_re_draws,
     Rcpp::Named("gp") = gp_draws,
     Rcpp::Named("sigma2_gp") = sigma2_gp_draws,
     Rcpp::Named("phi_gp") = phi_gp_draws
   );
 
   if (store_eta) {
-    result["eta"] = eta_draws_gp;
+    result["eta"] = C.eta_draws;
   }
 
   PutRNGstate();

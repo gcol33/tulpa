@@ -9,6 +9,10 @@
 #include <cmath>
 #include <algorithm>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace tulpa {
 
 // Cholesky decomposition (lower triangular) for small dense matrices
@@ -163,6 +167,74 @@ inline void pg_gibbs_core_step(
         }
     }
 }
+
+// ============================================================================
+// Common scaffolding for PG binomial Gibbs samplers
+//
+// Bundles state shared by every variant (no-spatial, ICAR, BYM2, RSR, GP,
+// multiscale GP, temporal): working vectors, draw matrices for beta/re/sigma_re
+// (+ optional eta), and the per-iteration save of those common fields. Per-
+// variant storage (spatial, GP hypers, temporal components, etc.) stays in the
+// caller.
+// ============================================================================
+struct PgGibbsCommon {
+  int N, p, n_re_groups, n_save;
+  bool store_eta;
+
+  // Current chain state
+  Rcpp::NumericVector beta, re;
+  double sigma_re;
+
+  // Per-observation working vectors (passed to pg_gibbs_core_step)
+  Rcpp::NumericVector omega, kappa, eta, X_beta, re_contrib, offset;
+
+  // Draws for the always-present fields
+  Rcpp::NumericMatrix beta_draws, re_draws;
+  Rcpp::NumericVector sigma_re_draws;
+  Rcpp::NumericMatrix eta_draws;
+
+  PgGibbsCommon(const Rcpp::IntegerVector& y,
+                const Rcpp::IntegerVector& n_trials,
+                int p_,
+                int n_re_groups_,
+                int n_save_,
+                int n_threads,
+                bool store_eta_)
+    : N(y.size()), p(p_), n_re_groups(n_re_groups_), n_save(n_save_),
+      store_eta(store_eta_),
+      beta(p_, 0.0),
+      re(n_re_groups_, 0.0),
+      sigma_re(1.0),
+      omega(N, 0.5),
+      kappa(N),
+      eta(N),
+      X_beta(N),
+      re_contrib(N),
+      offset(N),
+      beta_draws(n_save_, p_),
+      re_draws(n_save_, n_re_groups_),
+      sigma_re_draws(n_save_),
+      eta_draws(store_eta_ ? n_save_ : 0, store_eta_ ? N : 0)
+  {
+    #ifdef _OPENMP
+    if (n_threads > 0) omp_set_num_threads(n_threads);
+    #endif
+    for (int i = 0; i < N; i++) {
+      kappa[i] = static_cast<double>(y[i]) - 0.5 * static_cast<double>(n_trials[i]);
+    }
+  }
+
+  // Save common per-iteration draws. Caller is responsible for invoking this
+  // (and per-variant save logic) only when (iter >= n_warmup && (iter - n_warmup) % thin == 0).
+  void save(int save_idx) {
+    for (int j = 0; j < p; j++) beta_draws(save_idx, j) = beta[j];
+    for (int g = 0; g < n_re_groups; g++) re_draws(save_idx, g) = re[g];
+    sigma_re_draws[save_idx] = sigma_re;
+    if (store_eta) {
+      for (int i = 0; i < N; i++) eta_draws(save_idx, i) = eta[i];
+    }
+  }
+};
 
 } // namespace tulpa
 
