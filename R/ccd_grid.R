@@ -20,7 +20,7 @@
 #' defining word \eqn{x_1 \cdots x_k} keeps the point count reasonable
 #' while preserving Resolution V.
 #'
-#' Used by [nested_laplace()] for higher-dimensional hyperparameter
+#' Used by [tulpa_nested_laplace()] for higher-dimensional hyperparameter
 #' blocks. The standardised z-coordinates are mapped to physical
 #' hyperparameters \eqn{\theta} via [ccd_to_theta()].
 #'

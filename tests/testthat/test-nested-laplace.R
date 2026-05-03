@@ -78,7 +78,7 @@ test_that("hot-start works across nearby tau values", {
 # Test: Nested Laplace runs and produces reasonable output
 # =====================================================================
 
-# R-level dispatcher (post-refactor): nested_laplace(prior = list(type=...))
+# R-level dispatcher (post-refactor): tulpa_nested_laplace(prior = list(type=...))
 
 icar_prior <- function(adj, n_sites, tau_grid = NULL) {
   list(
@@ -102,7 +102,7 @@ test_that("nested_laplace dispatches ICAR with explicit grid", {
                       tau_grid = exp(seq(log(0.5), log(20), length.out = 5)))
   prior$spatial_idx <- dat$spatial_idx
 
-  result <- nested_laplace(
+  result <- tulpa_nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
     prior = prior, family = "binomial"
   )
@@ -128,7 +128,7 @@ test_that("nested_laplace ICAR uses default grid when none supplied", {
   prior <- icar_prior(adj, 25L)        # tau_grid = NULL
   prior$spatial_idx <- dat$spatial_idx
 
-  result <- nested_laplace(
+  result <- tulpa_nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
     prior = prior, family = "binomial"
   )
@@ -148,7 +148,7 @@ test_that("warm-start chain reduces inner iterations across grid", {
                       tau_grid = exp(seq(log(1), log(10), length.out = 9)))
   prior$spatial_idx <- dat$spatial_idx
 
-  result <- nested_laplace(
+  result <- tulpa_nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
     prior = prior, family = "binomial"
   )

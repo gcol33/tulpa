@@ -2,7 +2,7 @@
 % Please edit documentation in R/nested_laplace.R
 \name{prior_from_spec}
 \alias{prior_from_spec}
-\title{Build a \code{prior} list for \code{\link[=nested_laplace]{nested_laplace()}} from a tulpa spec object}
+\title{Build a \code{prior} list for \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} from a tulpa spec object}
 \usage{
 prior_from_spec(spec, data)
 }
@@ -12,14 +12,14 @@ prior_from_spec(spec, data)
 \item{data}{Data frame the spec resolves time/group/site indices against.}
 }
 \value{
-A \code{prior} list ready for \code{\link[=nested_laplace]{nested_laplace()}}.
+A \code{prior} list ready for \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.
 }
 \description{
 Validates a \code{tulpa_temporal} or \code{tulpa_spatial} specification against
 \code{data}, then converts it to the prior list shape consumed by
-\code{\link[=nested_laplace]{nested_laplace()}}. Mainly an internal helper for callers that already
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}. Mainly an internal helper for callers that already
 have a fitted spec; users typically pass \code{spec} + \code{data} directly to
-\code{nested_laplace()} instead.
+\code{tulpa_nested_laplace()} instead.
 
 Supported spec types:
 \itemize{

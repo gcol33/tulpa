@@ -60,7 +60,7 @@
 #'
 #' @keywords internal
 #' @export
-nested_laplace <- function(y, n_trials, X, prior = NULL,
+tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             spec = NULL, data = NULL,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                             family = "binomial", phi = 1.0,
@@ -120,6 +120,16 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
   res$prior <- prior
   class(res) <- c("tulpa_nested_laplace", "list")
   res
+}
+
+#' @rdname tulpa_nested_laplace
+#' @description
+#' `nested_laplace()` is a deprecated alias retained for backward compatibility.
+#' Use [tulpa_nested_laplace()] instead. Will be removed in a future release.
+#' @export
+nested_laplace <- function(...) {
+  .Deprecated("tulpa_nested_laplace", package = "tulpa")
+  tulpa_nested_laplace(...)
 }
 
 # --- Per-prior dispatch helpers ---
@@ -316,14 +326,14 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-#' Build a `prior` list for [nested_laplace()] from a tulpa spec object
+#' Build a `prior` list for [tulpa_nested_laplace()] from a tulpa spec object
 #'
 #' @description
 #' Validates a `tulpa_temporal` or `tulpa_spatial` specification against
 #' `data`, then converts it to the prior list shape consumed by
-#' [nested_laplace()]. Mainly an internal helper for callers that already
+#' [tulpa_nested_laplace()]. Mainly an internal helper for callers that already
 #' have a fitted spec; users typically pass `spec` + `data` directly to
-#' `nested_laplace()` instead.
+#' `tulpa_nested_laplace()` instead.
 #'
 #' Supported spec types:
 #'  * `tulpa_temporal` with `type ∈ {"rw1", "rw2", "ar1"}`
@@ -335,7 +345,7 @@ nested_laplace <- function(y, n_trials, X, prior = NULL,
 #'
 #' @param spec A `tulpa_temporal` or `tulpa_spatial` object.
 #' @param data Data frame the spec resolves time/group/site indices against.
-#' @return A `prior` list ready for [nested_laplace()].
+#' @return A `prior` list ready for [tulpa_nested_laplace()].
 #' @export
 prior_from_spec <- function(spec, data) {
   if (inherits(spec, "tulpa_temporal")) {
@@ -352,7 +362,7 @@ prior_from_spec <- function(spec, data) {
   spec <- validate_temporal(spec, data)
   type <- tolower(spec$type)
   if (!type %in% c("rw1", "rw2", "ar1")) {
-    stop("nested_laplace() supports temporal types rw1, rw2, ar1; got '",
+    stop("tulpa_nested_laplace() supports temporal types rw1, rw2, ar1; got '",
          type, "'.", call. = FALSE)
   }
   out <- list(
@@ -374,7 +384,7 @@ prior_from_spec <- function(spec, data) {
   } else if (type == "car_proper") {
     backend <- "car_proper"
   } else {
-    stop("nested_laplace() does not yet support spatial type '", type,
+    stop("tulpa_nested_laplace() does not yet support spatial type '", type,
          "'. Use BYM2/ICAR/proper CAR for areal models or ",
          "cpp_nested_laplace_spde for SPDE.", call. = FALSE)
   }

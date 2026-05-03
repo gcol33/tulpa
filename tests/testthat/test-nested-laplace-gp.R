@@ -99,7 +99,7 @@ test_that("nested_laplace NNGP runs on a 2D (sigma2, phi_gp) grid", {
   expect_gt(max(res$log_marginal) - min(res$log_marginal), 0.01)
 })
 
-test_that("nested_laplace() routes a nngp prior through the dispatch", {
+test_that("tulpa_nested_laplace() routes a nngp prior through the dispatch", {
   d <- make_nngp_dataset(n_spatial = 50L)
   nb <- make_nngp_neighbors(d$coords, n_neighbors = 6L)
 
@@ -116,7 +116,7 @@ test_that("nested_laplace() routes a nngp prior through the dispatch", {
     phi_gp_grid = c(0.2, 0.5, 0.9)
   )
 
-  res <- nested_laplace(d$y, d$n_trials, d$X, prior = prior,
+  res <- tulpa_nested_laplace(d$y, d$n_trials, d$X, prior = prior,
                          family = "binomial")
   expect_s3_class(res, "tulpa_nested_laplace")
   expect_named(res$theta_mean, c("sigma2", "phi_gp"))
@@ -183,7 +183,7 @@ test_that("nested_laplace HSGP runs on a 2D (sigma2, lengthscale) grid", {
   expect_gt(max(res$log_marginal) - min(res$log_marginal), 0.01)
 })
 
-test_that("nested_laplace() routes a hsgp prior through the dispatch", {
+test_that("tulpa_nested_laplace() routes a hsgp prior through the dispatch", {
   set.seed(11)
   N <- 60
   obs_coords <- cbind(runif(N), runif(N))
@@ -197,7 +197,7 @@ test_that("nested_laplace() routes a hsgp prior through the dispatch", {
     sigma2_grid      = c(0.3, 0.8),
     lengthscale_grid = c(0.2, 0.6)
   )
-  res <- nested_laplace(as.integer(y), rep(1L, N),
+  res <- tulpa_nested_laplace(as.integer(y), rep(1L, N),
                          matrix(1, N, 1), prior = prior,
                          family = "binomial")
   expect_s3_class(res, "tulpa_nested_laplace")

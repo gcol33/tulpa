@@ -73,7 +73,7 @@ test_that("proper-CAR collapses to ICAR as rho -> 1", {
   expect_gt(stats::cor(mode_proper, mode_icar), 0.999)
 })
 
-test_that("nested_laplace() routes a car_proper prior to the new backend", {
+test_that("tulpa_nested_laplace() routes a car_proper prior to the new backend", {
   adj <- make_grid_adjacency(4, 5)
   dat <- simulate_spatial_data(
     n_sites = 20, n_obs_per_site = 8,
@@ -90,7 +90,7 @@ test_that("nested_laplace() routes a car_proper prior to the new backend", {
     rho_bounds = c(0, 1)
   )
 
-  res <- nested_laplace(dat$y, dat$n_trials, dat$X,
+  res <- tulpa_nested_laplace(dat$y, dat$n_trials, dat$X,
                         prior = prior, family = "binomial")
 
   expect_s3_class(res, "tulpa_nested_laplace")
@@ -101,7 +101,7 @@ test_that("nested_laplace() routes a car_proper prior to the new backend", {
   expect_lt(res$theta_mean[["rho"]], 1)
 })
 
-test_that("nested_laplace() accepts spatial_car_proper spec", {
+test_that("tulpa_nested_laplace() accepts spatial_car_proper spec", {
   adj <- make_grid_adjacency(4, 4)
   W <- matrix(0, 16, 16)
   # Reconstruct dense adjacency from CSR to feed spatial_car_proper
@@ -121,7 +121,7 @@ test_that("nested_laplace() accepts spatial_car_proper spec", {
   df <- data.frame(site = factor(dat$spatial_idx, levels = seq_len(16)))
 
   spec <- spatial_car_proper(W, level = "group", group_var = "site")
-  res <- nested_laplace(dat$y, dat$n_trials, dat$X,
+  res <- tulpa_nested_laplace(dat$y, dat$n_trials, dat$X,
                         spec = spec, data = df, family = "binomial")
 
   expect_s3_class(res, "tulpa_nested_laplace")

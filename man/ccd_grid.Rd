@@ -46,7 +46,7 @@ design. For \eqn{k \ge 7} a half-fraction (\eqn{q = 1}) using the
 defining word \eqn{x_1 \cdots x_k} keeps the point count reasonable
 while preserving Resolution V.
 
-Used by \code{\link[=nested_laplace]{nested_laplace()}} for higher-dimensional hyperparameter
+Used by \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for higher-dimensional hyperparameter
 blocks. The standardised z-coordinates are mapped to physical
 hyperparameters \eqn{\theta} via \code{\link[=ccd_to_theta]{ccd_to_theta()}}.
 }
