@@ -260,6 +260,26 @@ NumericVector cpp_test_matvec(NumericMatrix A, NumericVector x) {
 
 using namespace tulpa::ad;
 
+namespace {
+// Shared scaffolding for unary autodiff tests:
+// build a single-input Var, apply f, run backward, collect val/adj.
+template <class F>
+inline List unary_autodiff_test(double x_val, F&& f, double expected_grad) {
+  init_tape();
+  Var x(x_val);
+  Var result = f(x);
+  result.backward();
+  double value = result.val();
+  double grad = x.adj();
+  clear_tape();
+  return List::create(
+    Named("value") = value,
+    Named("gradient") = grad,
+    Named("expected_gradient") = expected_grad
+  );
+}
+}  // namespace
+
 // [[Rcpp::export]]
 List cpp_test_autodiff_gradient(NumericVector x_vals) {
   // Test gradient computation for f(x) = sum(x^2)
@@ -300,27 +320,10 @@ List cpp_test_autodiff_gradient(NumericVector x_vals) {
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_exp_chain(double x_val) {
-  // Test chain rule: f(x) = exp(x^2)
-  // f'(x) = 2x * exp(x^2)
-  init_tape();
-
-  Var x(x_val);
-  Var x_sq = x * x;
-  Var result = tulpa::ad::exp(x_sq);
-
-  result.backward();
-
-  double expected_grad = 2.0 * x_val * std::exp(x_val * x_val);
-  double grad = x.adj();
-  double value = result.val();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = expected_grad
-  );
+  // Test chain rule: f(x) = exp(x^2), f'(x) = 2x * exp(x^2)
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::exp(x * x); },
+    2.0 * x_val * std::exp(x_val * x_val));
 }
 
 // [[Rcpp::export]]
@@ -391,76 +394,27 @@ List cpp_test_autodiff_division(double a_val, double b_val) {
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_lgamma(double x_val) {
-  // Test lgamma gradient: d/dx lgamma(x) = digamma(x)
-  init_tape();
-
-  Var x(x_val);
-
-  Var result = tulpa::ad::lgamma(x);
-
-  result.backward();
-
-  // R's digamma function for comparison
-  double expected_grad = R::digamma(x_val);
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = expected_grad
-  );
+  // d/dx lgamma(x) = digamma(x)
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::lgamma(x); },
+    R::digamma(x_val));
 }
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_softplus(double x_val) {
-  // Test softplus: f(x) = log(1 + exp(x))
-  // f'(x) = sigmoid(x) = 1 / (1 + exp(-x))
-  init_tape();
-
-  Var x(x_val);
-  Var result = tulpa::ad::softplus(x);
-
-  result.backward();
-
-  double expected_grad = 1.0 / (1.0 + std::exp(-x_val));
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = expected_grad
-  );
+  // f(x) = log(1+exp(x)), f'(x) = sigmoid(x)
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::softplus(x); },
+    1.0 / (1.0 + std::exp(-x_val)));
 }
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_inv_logit(double x_val) {
-  // Test inv_logit (sigmoid): f(x) = 1 / (1 + exp(-x))
-  // f'(x) = f(x) * (1 - f(x))
-  init_tape();
-
-  Var x(x_val);
-  Var result = tulpa::ad::inv_logit(x);
-
-  result.backward();
-
-  double sigmoid_val = 1.0 / (1.0 + std::exp(-x_val));
-  double expected_grad = sigmoid_val * (1.0 - sigmoid_val);
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = expected_grad
-  );
+  // f(x) = 1/(1+exp(-x)), f'(x) = f(x)*(1-f(x))
+  double s = 1.0 / (1.0 + std::exp(-x_val));
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::inv_logit(x); },
+    s * (1.0 - s));
 }
 
 // ---------------------------------------------------------------------------
@@ -469,90 +423,34 @@ List cpp_test_autodiff_inv_logit(double x_val) {
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_log(double x_val) {
-  // Test log: f(x) = log(x), f'(x) = 1/x
-  init_tape();
-
-  Var x(x_val);
-  Var result = tulpa::ad::log(x);
-
-  result.backward();
-
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = 1.0 / x_val
-  );
+  // f(x) = log(x), f'(x) = 1/x
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::log(x); },
+    1.0 / x_val);
 }
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_sqrt(double x_val) {
-  // Test sqrt: f(x) = sqrt(x), f'(x) = 1/(2*sqrt(x))
-  init_tape();
-
-  Var x(x_val);
-  Var result = tulpa::ad::sqrt(x);
-
-  result.backward();
-
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = 1.0 / (2.0 * std::sqrt(x_val))
-  );
+  // f(x) = sqrt(x), f'(x) = 1/(2*sqrt(x))
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::sqrt(x); },
+    1.0 / (2.0 * std::sqrt(x_val)));
 }
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_pow(double x_val, double p) {
-  // Test pow: f(x) = x^p, f'(x) = p * x^(p-1)
-  init_tape();
-
-  Var x(x_val);
-  Var result = tulpa::ad::pow(x, p);
-
-  result.backward();
-
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = p * std::pow(x_val, p - 1.0)
-  );
+  // f(x) = x^p, f'(x) = p * x^(p-1)
+  return unary_autodiff_test(x_val,
+    [p](Var x) { return tulpa::ad::pow(x, p); },
+    p * std::pow(x_val, p - 1.0));
 }
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_log1p(double x_val) {
-  // Test log1p: f(x) = log(1+x), f'(x) = 1/(1+x)
-  init_tape();
-
-  Var x(x_val);
-  Var result = tulpa::ad::log1p(x);
-
-  result.backward();
-
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = 1.0 / (1.0 + x_val)
-  );
+  // f(x) = log(1+x), f'(x) = 1/(1+x)
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::log1p(x); },
+    1.0 / (1.0 + x_val));
 }
 
 // [[Rcpp::export]]
@@ -591,24 +489,10 @@ List cpp_test_autodiff_log_sum_exp(double a_val, double b_val) {
 
 // [[Rcpp::export]]
 List cpp_test_autodiff_logit(double x_val) {
-  // Test logit: f(x) = log(x/(1-x)), f'(x) = 1/(x*(1-x))
-  init_tape();
-
-  Var x(x_val);
-  Var result = tulpa::ad::logit(x);
-
-  result.backward();
-
-  double value = result.val();
-  double grad = x.adj();
-
-  clear_tape();
-
-  return List::create(
-    Named("value") = value,
-    Named("gradient") = grad,
-    Named("expected_gradient") = 1.0 / (x_val * (1.0 - x_val))
-  );
+  // f(x) = log(x/(1-x)), f'(x) = 1/(x*(1-x))
+  return unary_autodiff_test(x_val,
+    [](Var x) { return tulpa::ad::logit(x); },
+    1.0 / (x_val * (1.0 - x_val)));
 }
 
 // ---------------------------------------------------------------------------
