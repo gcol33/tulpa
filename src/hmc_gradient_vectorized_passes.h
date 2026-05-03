@@ -12,6 +12,7 @@
 
 #include <RcppEigen.h>
 
+#include "hmc_gradient_helpers_impl.h"          // re/temporal/spatial _contribution kernels
 #include "hmc_gradient_vectorized_workspace.h"  // VecGradWorkspace
 #include "hmc_likelihood.h"                     // log_lik_*
 #include "hmc_sampler.h"                        // ModelData, ParamLayout, ModelType
@@ -24,6 +25,11 @@ namespace vectorized {
 // Pass 1: Expand grouped effects to dense N-vectors
 // ============================================================================
 
+// Each expand_* helper is a thin wrapper that calls the per-i contribution
+// kernel from hmc_gradient_helpers_impl.h in a tight loop. The same per-i
+// kernels are used by the scalar fallback path, so the per-feature linear
+// algebra has a single source of truth.
+
 inline void expand_re_single(
     const ModelData& data,
     const ParamLayout& layout,
@@ -32,18 +38,8 @@ inline void expand_re_single(
     int N,
     double sigma_re = 0.0  // >0 means non-centered: multiply z by sigma
 ) {
-  const double* re = &params[layout.re_start];
-  const auto& group = data.re_group;
-  if (sigma_re > 0.0) {
-    // Non-centered: dense[i] = sigma * z[g]
-    for (int i = 0; i < N; i++) {
-      dense[i] = (group[i] > 0) ? sigma_re * re[group[i] - 1] : 0.0;
-    }
-  } else {
-    // Centered: dense[i] = re[g]
-    for (int i = 0; i < N; i++) {
-      dense[i] = (group[i] > 0) ? re[group[i] - 1] : 0.0;
-    }
+  for (int i = 0; i < N; i++) {
+    dense[i] = re_single_contribution(i, data, layout, params, sigma_re);
   }
 }
 
@@ -55,16 +51,9 @@ inline void expand_re_crossed(
     int N,
     const double* sigma_re_terms = nullptr  // non-null means non-centered: multiply z by sigma per term
 ) {
-  std::memset(dense, 0, N * sizeof(double));
-  const int n_terms = data.n_re_terms;
   for (int i = 0; i < N; i++) {
-    for (int t = 0; t < n_terms; t++) {
-      int gidx = data.re_group_multi_flat[i * n_terms + t];
-      if (gidx > 0) {
-        double scale = (sigma_re_terms != nullptr) ? sigma_re_terms[t] : 1.0;
-        dense[i] += scale * params[layout.re_start_multi[t] + gidx - 1];
-      }
-    }
+    dense[i] = re_crossed_contribution(i, data, layout, params,
+                                       sigma_re_terms, /*re_idx_out=*/nullptr);
   }
 }
 
@@ -74,9 +63,8 @@ inline void expand_spatial_icar(
     double* dense,
     int N
 ) {
-  const auto& group = data.spatial_group;
   for (int i = 0; i < N; i++) {
-    dense[i] = (group[i] > 0) ? phi_spatial[group[i] - 1] : 0.0;
+    dense[i] = spatial_icar_contribution(i, data, phi_spatial, /*s_idx_out=*/nullptr);
   }
 }
 
@@ -88,15 +76,12 @@ inline void expand_spatial_bym2(
     double* dense,
     int N
 ) {
-  double scale = data.bym2_scale_factor;
-  const auto& group = data.spatial_group;
   for (int i = 0; i < N; i++) {
-    if (group[i] > 0) {
-      int s = group[i] - 1;
-      dense[i] = sigma_s * phi_spatial[s] * scale + sigma_u * theta_bym2[s];
-    } else {
-      dense[i] = 0.0;
-    }
+    dense[i] = spatial_bym2_contribution(i, data, phi_spatial, theta_bym2,
+                                         sigma_s, sigma_u,
+                                         /*s_idx_out=*/nullptr,
+                                         /*d_phi_out=*/nullptr,
+                                         /*d_theta_out=*/nullptr);
   }
 }
 
@@ -106,17 +91,8 @@ inline void expand_temporal(
     double* dense,
     int N
 ) {
-  const auto& tidx = data.temporal_time_idx;
-  const auto& gidx = data.temporal_group_idx;
-  int T = data.n_times;
   for (int i = 0; i < N; i++) {
-    if (tidx[i] > 0) {
-      int t = tidx[i] - 1;
-      int g = gidx[i] - 1;
-      dense[i] = phi_temporal[g * T + t];  // Panel temporal: flat index
-    } else {
-      dense[i] = 0.0;
-    }
+    dense[i] = temporal_contribution(i, data, phi_temporal, /*t_idx_out=*/nullptr);
   }
 }
 

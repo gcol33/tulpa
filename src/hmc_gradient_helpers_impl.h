@@ -893,6 +893,114 @@ static inline void spatial_gmrf_prior_grad(
     }
 }
 
+// =====================================================================
+// Per-observation linear-predictor (eta) contribution kernels.
+// Single source of truth for the per-feature contributions added on top
+// of X*beta. The vectorized path wraps these in tight loops via the
+// expand_* helpers in hmc_gradient_vectorized_passes.h; the scalar
+// fallback path inlines a single call into its main observation loop.
+// =====================================================================
+
+// RE contribution at i for the single-term, intercept-only case.
+// sigma_re_nc > 0 selects the non-centered parameterization (re = sigma * z);
+// sigma_re_nc == 0 returns the raw value (centered).
+// Slopes/correlated cases live in the scalar path itself — vectorized
+// path doesn't support them (see can_use_vectorized).
+static inline double re_single_contribution(
+    int i, const ModelData& data, const ParamLayout& layout,
+    const double* params, double sigma_re_nc
+) {
+    const auto& group = data.re_group;
+    if (group.empty() || group[i] <= 0) return 0.0;
+    const double* re = &params[layout.re_start];
+    int g = group[i] - 1;
+    return (sigma_re_nc > 0.0) ? sigma_re_nc * re[g] : re[g];
+}
+
+// RE contribution at i for the crossed (multi-term, intercept-only) case.
+// `sigma_re_terms_or_null != nullptr` selects the non-centered parameterization
+// (per-term sigma scaling). Optional out-buffer `re_idx_out_or_null` (length
+// data.n_re_terms) records each term's group index for downstream gradient
+// scatter; pass nullptr if not needed.
+static inline double re_crossed_contribution(
+    int i, const ModelData& data, const ParamLayout& layout,
+    const double* params, const double* sigma_re_terms_or_null,
+    int* re_idx_out_or_null
+) {
+    const int n_terms = data.n_re_terms;
+    double sum = 0.0;
+    for (int t = 0; t < n_terms; t++) {
+        int gidx = data.re_group_multi_flat[i * n_terms + t];
+        if (gidx > 0) {
+            int g = gidx - 1;
+            if (re_idx_out_or_null != nullptr) re_idx_out_or_null[t] = g;
+            double scale = (sigma_re_terms_or_null != nullptr) ? sigma_re_terms_or_null[t] : 1.0;
+            sum += scale * params[layout.re_start_multi[t] + g];
+        } else if (re_idx_out_or_null != nullptr) {
+            re_idx_out_or_null[t] = -1;
+        }
+    }
+    return sum;
+}
+
+// Temporal contribution at i (panel temporal: flat index g * n_times + t).
+// Optional out-pointer records the flat index for downstream gradient scatter.
+static inline double temporal_contribution(
+    int i, const ModelData& data, const double* phi_temporal,
+    int* t_idx_out_or_null
+) {
+    if (data.temporal_time_idx.empty() || data.temporal_time_idx[i] <= 0) {
+        if (t_idx_out_or_null != nullptr) *t_idx_out_or_null = -1;
+        return 0.0;
+    }
+    int t = data.temporal_time_idx[i] - 1;
+    int g = data.temporal_group_idx[i] - 1;
+    int t_idx = g * data.n_times + t;
+    if (t_idx_out_or_null != nullptr) *t_idx_out_or_null = t_idx;
+    return phi_temporal[t_idx];
+}
+
+// Spatial-ICAR contribution at i (linear in phi_spatial).
+static inline double spatial_icar_contribution(
+    int i, const ModelData& data, const double* phi_spatial,
+    int* s_idx_out_or_null
+) {
+    if (data.spatial_group.empty() || data.spatial_group[i] <= 0) {
+        if (s_idx_out_or_null != nullptr) *s_idx_out_or_null = -1;
+        return 0.0;
+    }
+    int s = data.spatial_group[i] - 1;
+    if (s_idx_out_or_null != nullptr) *s_idx_out_or_null = s;
+    return phi_spatial[s];
+}
+
+// Spatial-BYM2 contribution at i.
+//   spatial_effect = sigma_s * scale * phi[s] + sigma_u * theta[s]
+// Out-pointers, all optional, record the s-index and the partial derivatives
+// d(spatial_effect)/d(phi[s]) and d(spatial_effect)/d(theta[s]) used by the
+// scalar path's chain-rule gradient accumulation.
+static inline double spatial_bym2_contribution(
+    int i, const ModelData& data,
+    const double* phi_spatial, const double* theta_bym2,
+    double sigma_s, double sigma_u,
+    int* s_idx_out_or_null,
+    double* d_spatial_d_phi_out_or_null,
+    double* d_spatial_d_theta_out_or_null
+) {
+    if (data.spatial_group.empty() || data.spatial_group[i] <= 0) {
+        if (s_idx_out_or_null != nullptr) *s_idx_out_or_null = -1;
+        if (d_spatial_d_phi_out_or_null != nullptr) *d_spatial_d_phi_out_or_null = 0.0;
+        if (d_spatial_d_theta_out_or_null != nullptr) *d_spatial_d_theta_out_or_null = 0.0;
+        return 0.0;
+    }
+    int s = data.spatial_group[i] - 1;
+    double scale = data.bym2_scale_factor;
+    if (s_idx_out_or_null != nullptr) *s_idx_out_or_null = s;
+    if (d_spatial_d_phi_out_or_null != nullptr) *d_spatial_d_phi_out_or_null = sigma_s * scale;
+    if (d_spatial_d_theta_out_or_null != nullptr) *d_spatial_d_theta_out_or_null = sigma_u;
+    return sigma_s * phi_spatial[s] * scale + sigma_u * theta_bym2[s];
+}
+
 }  // namespace tulpa_hmc
 
 #endif  // TULPA_HMC_GRADIENT_HELPERS_IMPL_H

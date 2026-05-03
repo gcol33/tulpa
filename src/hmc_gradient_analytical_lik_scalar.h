@@ -11,6 +11,18 @@
   double grad_phi_num_lik = 0.0;
   double grad_phi_denom_lik = 0.0;
 
+  // Pre-compute per-term sigmas once (constant across i) for crossed
+  // non-centered RE; const-shared across OpenMP threads.
+  std::vector<double> sigma_re_terms_buf;
+  const double* sigma_re_terms_ptr = nullptr;
+  if (layout.has_re && data.n_re_terms > 1 && data.re_parameterization == 1) {
+    sigma_re_terms_buf.resize(data.n_re_terms);
+    for (int t = 0; t < data.n_re_terms; t++) {
+      sigma_re_terms_buf[t] = std::exp(params[layout.log_sigma_re_multi[t]]);
+    }
+    sigma_re_terms_ptr = sigma_re_terms_buf.data();
+  }
+
   #ifdef _OPENMP
   #pragma omp parallel
   {
@@ -98,36 +110,21 @@
             }
           }
         } else if (data.n_re_terms > 1) {
-          // Crossed RE (multiple intercept-only terms)
-          // Non-centered: re_val = sigma * z; centered: re_val = params directly
+          // Crossed RE: shared per-i kernel (also used by expand_re_crossed).
+          // Per-term sigmas were pre-computed once at function scope.
           n_crossed_terms = data.n_re_terms;
-          for (int t = 0; t < n_crossed_terms; t++) {
-            int group_idx = data.re_group_multi_flat[i * n_crossed_terms + t];
-            if (group_idx > 0) {
-              int g = group_idx - 1;
-              re_idx_multi_buf[t] = g;
-              double z_or_re = params[layout.re_start_multi[t] + g];
-              double re_val = z_or_re;
-              if (data.re_parameterization == 1) {
-                double sigma_t = std::exp(params[layout.log_sigma_re_multi[t]]);
-                re_val = sigma_t * z_or_re;
-              }
-              eta_num += re_val;
-              if (data.legacy.model_type != ModelType::BINOMIAL) {
-                eta_denom += re_val;
-              }
-            } else {
-              re_idx_multi_buf[t] = -1;
-            }
+          double re_total = re_crossed_contribution(
+              i, data, layout, params.data(),
+              sigma_re_terms_ptr, re_idx_multi_buf.data());
+          eta_num += re_total;
+          if (data.legacy.model_type != ModelType::BINOMIAL) {
+            eta_denom += re_total;
           }
         } else if (data.re_group[i] > 0) {
-          // Simple intercept-only RE (single term)
-          // Non-centered: re = sigma * z; centered: re = params directly
+          // Single intercept-only RE: shared per-i kernel.
           re_idx = data.re_group[i] - 1;
-          double re_val = re[re_idx];
-          if (data.re_parameterization == 1) {
-            re_val = sigma_re * re_val;  // re_val was z, now sigma*z
-          }
+          double sigma_re_nc = (data.re_parameterization == 1) ? sigma_re : 0.0;
+          double re_val = re_single_contribution(i, data, layout, params.data(), sigma_re_nc);
           eta_num += re_val;
           if (data.legacy.model_type != ModelType::BINOMIAL) {
             eta_denom += re_val;
@@ -137,10 +134,7 @@
       // Add temporal effect if present
       int t_idx = -1;
       if (layout.has_temporal && !data.temporal_time_idx.empty() && data.temporal_time_idx[i] > 0) {
-        int t = data.temporal_time_idx[i] - 1;
-        int g = data.temporal_group_idx[i] - 1;
-        t_idx = g * data.n_times + t;  // Panel temporal: flat index
-        double temporal_effect = phi_temporal[t_idx];
+        double temporal_effect = temporal_contribution(i, data, phi_temporal, &t_idx);
         eta_num += temporal_effect;
         if (data.legacy.model_type != ModelType::BINOMIAL) {
           eta_denom += temporal_effect;
@@ -152,17 +146,14 @@
       double d_spatial_d_phi = 0.0;  // Derivative of spatial_effect wrt phi_spatial
       double d_spatial_d_theta = 0.0;  // Derivative of spatial_effect wrt theta_bym2
       if (layout.has_spatial && !data.spatial_group.empty() && data.spatial_group[i] > 0) {
-        s_idx = data.spatial_group[i] - 1;
         double spatial_effect;
         if (data.spatial_type == SpatialType::BYM2) {
-          // BYM2: spatial_effect = sigma_s * scale * phi + sigma_u * theta
-          double scaled_phi = phi_spatial[s_idx] * data.bym2_scale_factor;
-          spatial_effect = sigma_s_bym2 * scaled_phi + sigma_u_bym2 * theta_bym2[s_idx];
-          d_spatial_d_phi = sigma_s_bym2 * data.bym2_scale_factor;
-          d_spatial_d_theta = sigma_u_bym2;
+          spatial_effect = spatial_bym2_contribution(
+              i, data, phi_spatial, theta_bym2,
+              sigma_s_bym2, sigma_u_bym2,
+              &s_idx, &d_spatial_d_phi, &d_spatial_d_theta);
         } else {
-          // ICAR: spatial_effect = phi_spatial
-          spatial_effect = phi_spatial[s_idx];
+          spatial_effect = spatial_icar_contribution(i, data, phi_spatial, &s_idx);
           d_spatial_d_phi = 1.0;
         }
         eta_num += spatial_effect;
