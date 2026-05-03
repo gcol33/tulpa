@@ -62,48 +62,29 @@
 
     // RE (slopes - multi-term)
     // For correlated NC: use pre-computed re_nc_flat_c (= diag(sigma) * L * z)
-    // For uncorrelated NC: use sigma * z inline
+    // For uncorrelated NC: use sigma * z inline (recomputed per call here)
     // For centered: use raw params
+    // Per-(i, t_re) assembly shared with the analytical scalar/vec paths
+    // (see re_slopes_term_contribution).
     if (has_slopes) {
+        std::vector<char> term_is_corr_buf;
+        const char* term_is_corr_ptr = nullptr;
+        if (n_re_terms_slopes > 0 && !nc_L_flats.empty()) {
+            term_is_corr_buf.assign(n_re_terms_slopes, 0);
+            for (int t = 0; t < n_re_terms_slopes; t++) {
+                term_is_corr_buf[t] = (t < (int)nc_L_flats.size() && !nc_L_flats[t].empty()) ? 1 : 0;
+            }
+            term_is_corr_ptr = term_is_corr_buf.data();
+        }
+        const double* corr_buf = re_nc_flat_c.empty() ? nullptr : re_nc_flat_c.data();
         for (int i = 0; i < N; i++) {
             for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
-                int n_coefs = layout.re_n_coefs_multi[t_re];
-                int re_start_t = layout.re_start_multi[t_re];
-                bool is_corr_nc = !nc_L_flats.empty() && t_re < (int)nc_L_flats.size() && !nc_L_flats[t_re].empty();
-                int g = -1;
-                if (!data.re_group_multi_flat.empty())
-                    g = data.re_group_multi_flat[i * data.n_re_terms + t_re] - 1;
-                else if (data.re_group[i] > 0)
-                    g = data.re_group[i] - 1;
-                if (g < 0) continue;
-
-                // Intercept (coef 0)
-                double re_val_0;
-                if (is_corr_nc) {
-                    re_val_0 = re_nc_flat_c[re_start_t + g * n_coefs + 0];
-                } else {
-                    re_val_0 = params[re_start_t + g * n_coefs + 0];
-                    if (slopes_nc) re_val_0 *= std::exp(params[layout.log_sigma_re_slopes[t_re][0]]);
-                }
-                eta_num_v[i] += re_val_0;
-                if (!is_binomial) eta_denom_v[i] += re_val_0;
-
-                // Slopes (coef 1+)
-                int n_slopes = n_coefs - 1;
-                if (n_slopes > 0 && t_re < (int)data.re_slope_matrices.size() && !data.re_slope_matrices[t_re].empty()) {
-                    for (int s = 0; s < n_slopes; s++) {
-                        double re_val_s;
-                        if (is_corr_nc) {
-                            re_val_s = re_nc_flat_c[re_start_t + g * n_coefs + 1 + s];
-                        } else {
-                            re_val_s = params[re_start_t + g * n_coefs + 1 + s];
-                            if (slopes_nc) re_val_s *= std::exp(params[layout.log_sigma_re_slopes[t_re][1 + s]]);
-                        }
-                        double eff = re_val_s * data.re_slope_matrices[t_re][i * n_slopes + s];
-                        eta_num_v[i] += eff;
-                        if (!is_binomial) eta_denom_v[i] += eff;
-                    }
-                }
+                double re_eff = re_slopes_term_contribution(
+                    i, t_re, data, layout, params.data(),
+                    corr_buf, term_is_corr_ptr,
+                    /*precomp_sigma=*/nullptr, slopes_nc);
+                eta_num_v[i] += re_eff;
+                if (!is_binomial) eta_denom_v[i] += re_eff;
             }
         }
     }
@@ -357,23 +338,15 @@
             grad[layout.re_start + data.re_group[i] - 1] += dLL_num_v[i] + dLL_denom_v[i];
     }
 
-    // RE (slopes)
+    // RE (slopes) — per-(i, t_re) scatter shared with the analytical
+    // scalar/vec paths via re_slopes_term_scatter_impl.
     if (has_slopes) {
         for (int i = 0; i < N; i++) {
-            double dLL_shared_i = dLL_num_v[i] + dLL_denom_v[i];
+            const double dLL_shared_i = dLL_num_v[i] + dLL_denom_v[i];
             for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
-                int n_coefs = layout.re_n_coefs_multi[t_re];
-                int g = -1;
-                if (!data.re_group_multi_flat.empty())
-                    g = data.re_group_multi_flat[i * data.n_re_terms + t_re] - 1;
-                else if (data.re_group[i] > 0)
-                    g = data.re_group[i] - 1;
-                if (g < 0) continue;
-                grad_re_slopes_lik[t_re][g * n_coefs + 0] += dLL_shared_i;
-                int n_slopes_sc = n_coefs - 1;
-                if (n_slopes_sc > 0 && t_re < (int)data.re_slope_matrices.size() && !data.re_slope_matrices[t_re].empty())
-                    for (int s = 0; s < n_slopes_sc; s++)
-                        grad_re_slopes_lik[t_re][g * n_coefs + 1 + s] += dLL_shared_i * data.re_slope_matrices[t_re][i * n_slopes_sc + s];
+                re_slopes_term_scatter_impl(
+                    i, t_re, dLL_shared_i, data, layout, grad_re_slopes_lik,
+                    [](double* arr, int idx, double val) { arr[idx] += val; });
             }
         }
     }

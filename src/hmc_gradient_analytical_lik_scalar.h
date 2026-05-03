@@ -23,6 +23,21 @@
     sigma_re_terms_ptr = sigma_re_terms_buf.data();
   }
 
+  // Pre-compute per-term correlated-NC flags for slopes path; one byte per term,
+  // const-shared across OpenMP threads. re_nc_flat is the pre-multiplied
+  // (diag(sigma)*L*z) buffer; if empty, no terms are correlated.
+  std::vector<char> term_is_corr_buf;
+  const char* term_is_corr_ptr = nullptr;
+  if (layout.has_re_slopes && n_re_terms_slopes > 0 && !re_nc_flat.empty()) {
+    term_is_corr_buf.assign(n_re_terms_slopes, 0);
+    for (int t = 0; t < n_re_terms_slopes; t++) {
+      term_is_corr_buf[t] = (t < (int)layout.re_correlated_multi.size() &&
+                             layout.re_correlated_multi[t] &&
+                             layout.re_n_coefs_multi[t] > 1) ? 1 : 0;
+    }
+    term_is_corr_ptr = term_is_corr_buf.data();
+  }
+
   #ifdef _OPENMP
   #pragma omp parallel
   {
@@ -60,50 +75,14 @@
       int n_crossed_terms = 0;
       if (layout.has_re) {
         if (layout.has_re_slopes && n_re_terms_slopes > 0) {
-          // Random slopes case: loop over ALL terms (supports crossed+slopes)
-          // Each term can have intercept-only (n_coefs=1) or intercept+slopes (n_coefs>1)
+          // Random slopes case: loop over ALL terms (supports crossed+slopes).
+          // Per-(i, t_re) intercept+slopes assembly is shared with the vec and
+          // composite phase-3 paths (see re_slopes_term_contribution).
           for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
-            int group_idx = data.re_group_multi_flat[i * data.n_re_terms + t_re];
-            if (group_idx <= 0) continue;
-            int g = group_idx - 1;
-            int n_coefs = layout.re_n_coefs_multi[t_re];
-            int re_base = layout.re_start_multi[t_re] + g * n_coefs;
-
-            bool is_corr_t = !re_nc_flat.empty() &&
-                             t_re < (int)layout.re_correlated_multi.size() &&
-                             layout.re_correlated_multi[t_re] && n_coefs > 1;
-            bool is_uncorr_nc = !is_corr_t && slopes_nc;
-
-            // Intercept contribution
-            double re_contrib;
-            if (is_corr_t) {
-              re_contrib = re_nc_flat[re_base];
-            } else if (is_uncorr_nc) {
-              double sigma_int = std::exp(params[layout.log_sigma_re_slopes[t_re][0]]);
-              re_contrib = sigma_int * params[re_base];
-            } else {
-              re_contrib = params[re_base];
-            }
-
-            // Slope contributions (only for terms with slopes)
-            int n_slopes = n_coefs - 1;
-            if (n_slopes > 0 && t_re < (int)data.re_slope_matrices.size() &&
-                !data.re_slope_matrices[t_re].empty()) {
-              for (int s = 0; s < n_slopes; s++) {
-                double x_slope = data.re_slope_matrices[t_re][i * n_slopes + s];
-                double re_slope;
-                if (is_corr_t) {
-                  re_slope = re_nc_flat[re_base + 1 + s];
-                } else if (is_uncorr_nc) {
-                  double sigma_s = std::exp(params[layout.log_sigma_re_slopes[t_re][1 + s]]);
-                  re_slope = sigma_s * params[re_base + 1 + s];
-                } else {
-                  re_slope = params[re_base + 1 + s];
-                }
-                re_contrib += re_slope * x_slope;
-              }
-            }
-
+            double re_contrib = re_slopes_term_contribution(
+                i, t_re, data, layout, params.data(),
+                re_nc_flat.empty() ? nullptr : re_nc_flat.data(),
+                term_is_corr_ptr, /*precomp_sigma=*/nullptr, slopes_nc);
             eta_num += re_contrib;
             if (data.legacy.model_type != ModelType::BINOMIAL) {
               eta_denom += re_contrib;
@@ -632,40 +611,23 @@
 
       // Accumulate RE gradient
       if (layout.has_re_slopes && n_re_terms_slopes > 0) {
-        // Random slopes case: scatter to ALL terms (supports crossed+slopes)
+        // Random slopes case: scatter to ALL terms (supports crossed+slopes).
+        // Per-(i, t_re) intercept+slope scatter shared with vec and composite
+        // phase-3 paths via re_slopes_term_scatter_impl. OpenMP atomicity is
+        // applied at the increment point so it survives lambda inlining.
         double re_grad_base = resid_num;
         if (data.legacy.model_type != ModelType::BINOMIAL) {
           re_grad_base += resid_denom;
         }
         for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
-          int group_idx = data.re_group_multi_flat[i * data.n_re_terms + t_re];
-          if (group_idx <= 0) continue;
-          int g = group_idx - 1;
-          int n_coefs = layout.re_n_coefs_multi[t_re];
-
-          // Intercept gradient
-          #ifdef _OPENMP
-          #pragma omp atomic
-          grad_re_slopes_lik[t_re][g * n_coefs] += re_grad_base;
-          #else
-          grad_re_slopes_lik[t_re][g * n_coefs] += re_grad_base;
-          #endif
-
-          // Slope gradients: multiply by slope design value
-          int n_slopes = n_coefs - 1;
-          if (n_slopes > 0 && t_re < (int)data.re_slope_matrices.size() &&
-              !data.re_slope_matrices[t_re].empty()) {
-            for (int s = 0; s < n_slopes; s++) {
-              double x_slope = data.re_slope_matrices[t_re][i * n_slopes + s];
-              double slope_grad = re_grad_base * x_slope;
-              #ifdef _OPENMP
-              #pragma omp atomic
-              grad_re_slopes_lik[t_re][g * n_coefs + 1 + s] += slope_grad;
-              #else
-              grad_re_slopes_lik[t_re][g * n_coefs + 1 + s] += slope_grad;
-              #endif
-            }
-          }
+          re_slopes_term_scatter_impl(
+              i, t_re, re_grad_base, data, layout, grad_re_slopes_lik,
+              [](double* arr, int idx, double val) {
+                #ifdef _OPENMP
+                #pragma omp atomic
+                #endif
+                arr[idx] += val;
+              });
         }
       } else if (n_crossed_terms > 0) {
         // Crossed RE (multiple intercept-only terms)
@@ -887,60 +849,24 @@
   } // end if (!used_vectorized)
 
   // Random slopes likelihood gradients (MUST be outside used_vectorized check:
-  // the hybrid slopes path sets used_vectorized=true but populates grad_re_slopes_lik
-  // via its own scatter pass - the write-back chain rule runs for all paths)
+  // the hybrid slopes path sets used_vectorized=true but populates
+  // grad_re_slopes_lik via its own scatter pass — the write-back chain rule
+  // runs for all paths). Per-term writeback shared with the composite phase-4
+  // path via re_slopes_chain_rule_writeback. nc_sigmas_vec is empty for terms
+  // that aren't correlated NC; an empty placeholder is passed in that case.
   if (layout.has_re_slopes && n_re_terms_slopes > 0) {
+    static const std::vector<double> empty_sigmas;
+    const double* nc_buf = re_nc_flat.empty() ? nullptr : re_nc_flat.data();
     for (int t = 0; t < n_re_terms_slopes; t++) {
-      int n_groups = data.re_n_groups_multi[t];
-      int n_coefs = layout.re_n_coefs_multi[t];
-      int re_start_t = layout.re_start_multi[t];
-      bool is_nc = (t < (int)nc_L_flats.size() && !nc_L_flats[t].empty());
-
-      if (is_nc) {
-        // Non-centered correlated slopes: chain rule from dLL/d(re_nc) back
-        // to (z, log_sigma, raw_chol). Single helper covers all three pieces;
-        // grad_z and grad_raw slots are contiguous, log_sigma is scattered.
-        const auto& L_flat = nc_L_flats[t];
-        const auto& sigmas = nc_sigmas_vec[t];
-        int chol_start = layout.chol_re_start_multi[t];
-        std::vector<double> g_log_sigma(n_coefs, 0.0);
-
-        tulpa::chol_nc_chain_rule_add(
-            L_flat.data(), n_coefs, sigmas.data(),
-            &params[re_start_t], &params[chol_start],
-            &re_nc_flat[re_start_t], n_groups,
-            grad_re_slopes_lik[t].data(),
-            &grad[re_start_t],         // grad_z (contiguous)
-            g_log_sigma.data(),         // grad_log_sigma (scattered into temp)
-            &grad[chol_start]);         // grad_raw (contiguous)
-
-        for (int c = 0; c < n_coefs; c++) {
-          grad[layout.log_sigma_re_slopes[t][c]] += g_log_sigma[c];
-        }
-
-      } else if (data.re_parameterization == 1) {
-        // Uncorrelated non-centered: apply chain rule re = sigma * z
-        // grad_re_slopes_lik[t][g*nc+c] = dLL/d(re[g,c])
-        // grad[z_gc] += dLL/d(re_gc) * sigma_c
-        // grad[log_sigma_c] += dLL/d(re_gc) * z_gc * sigma_c
-        for (int c = 0; c < n_coefs; c++) {
-          double sigma_c = std::exp(params[layout.log_sigma_re_slopes[t][c]]);
-          double sigma_lik_grad = 0.0;
-          for (int g = 0; g < n_groups; g++) {
-            double lik_gc = grad_re_slopes_lik[t][g * n_coefs + c];
-            double z_gc = params[re_start_t + g * n_coefs + c];
-            grad[re_start_t + g * n_coefs + c] += lik_gc * sigma_c;
-            sigma_lik_grad += lik_gc * z_gc * sigma_c;
-          }
-          grad[layout.log_sigma_re_slopes[t][c]] += sigma_lik_grad;
-        }
-      } else {
-        // Uncorrelated centered: add grad_re_slopes_lik directly
-        for (int g = 0; g < n_groups; g++) {
-          for (int c = 0; c < n_coefs; c++) {
-            grad[re_start_t + g * n_coefs + c] += grad_re_slopes_lik[t][g * n_coefs + c];
-          }
-        }
-      }
+      const bool is_nc = (t < (int)nc_L_flats.size() && !nc_L_flats[t].empty());
+      const std::vector<double>& sigmas_t =
+          (is_nc && t < (int)nc_sigmas_vec.size()) ? nc_sigmas_vec[t] : empty_sigmas;
+      re_slopes_chain_rule_writeback(
+          t, data, layout, params.data(), grad.data(),
+          grad_re_slopes_lik[t],
+          is_nc ? nc_L_flats[t] : empty_sigmas,
+          sigmas_t,
+          nc_buf,
+          /*slopes_nc=*/(data.re_parameterization == 1));
     }
   }

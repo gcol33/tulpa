@@ -436,53 +436,26 @@
     // NC RE chain rule (simple intercepts)
     if (!has_slopes) re_gradient_nc_transform(data, layout, params.data(), grad.data(), sigma_re);
 
-    // NC slopes chain rule - mirrors compute_gradient_analytical write-back
+    // NC slopes chain rule — shared with the analytical scalar path via
+    // re_slopes_chain_rule_writeback. nc_sigmas_vec entries are populated
+    // only for correlated NC terms; pass an empty placeholder otherwise.
     if (has_slopes) {
+        static const std::vector<double> empty_sigmas;
+        const double* nc_buf = re_nc_flat_c.empty() ? nullptr : re_nc_flat_c.data();
         for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
-            int n_groups = data.re_n_groups_multi[t_re];
-            int n_coefs = layout.re_n_coefs_multi[t_re];
-            int re_start_t = layout.re_start_multi[t_re];
-            bool is_corr_nc = !nc_L_flats.empty() && t_re < (int)nc_L_flats.size() && !nc_L_flats[t_re].empty();
-
-            if (is_corr_nc) {
-                // Correlated NC: chain rule from dLL/d(re_nc) back to
-                // (z, log_sigma, raw_chol). grad_z and grad_raw slots are
-                // contiguous in grad; log_sigma is scattered, so use temp.
-                const auto& L_flat = nc_L_flats[t_re];
-                const auto& sigmas = nc_sigmas_vec[t_re];
-                int chol_start = layout.chol_re_start_multi[t_re];
-                std::vector<double> g_log_sigma(n_coefs, 0.0);
-
-                tulpa::chol_nc_chain_rule_add(
-                    L_flat.data(), n_coefs, sigmas.data(),
-                    &params[re_start_t], &params[chol_start],
-                    &re_nc_flat_c[re_start_t], n_groups,
-                    grad_re_slopes_lik[t_re].data(),
-                    &grad[re_start_t],
-                    g_log_sigma.data(),
-                    &grad[chol_start]);
-
-                for (int c = 0; c < n_coefs; c++) {
-                    grad[layout.log_sigma_re_slopes[t_re][c]] += g_log_sigma[c];
-                }
-            } else if (slopes_nc) {
-                // Uncorrelated NC: chain rule re = sigma * z
-                for (int g = 0; g < n_groups; g++) {
-                    for (int c = 0; c < n_coefs; c++) {
-                        int idx = re_start_t + g * n_coefs + c;
-                        double z_gc = params[idx];
-                        double sigma_c = std::exp(params[layout.log_sigma_re_slopes[t_re][c]]);
-                        double lik_grad = grad_re_slopes_lik[t_re][g * n_coefs + c];
-                        grad[idx] += sigma_c * lik_grad;
-                        grad[layout.log_sigma_re_slopes[t_re][c]] += z_gc * lik_grad * sigma_c;
-                    }
-                }
-            } else {
-                // Centered: direct
-                for (int g = 0; g < n_groups; g++)
-                    for (int c = 0; c < n_coefs; c++)
-                        grad[re_start_t + g * n_coefs + c] += grad_re_slopes_lik[t_re][g * n_coefs + c];
-            }
+            const bool is_corr_nc = !nc_L_flats.empty() &&
+                                    t_re < (int)nc_L_flats.size() &&
+                                    !nc_L_flats[t_re].empty();
+            const std::vector<double>& sigmas_t =
+                (is_corr_nc && t_re < (int)nc_sigmas_vec.size())
+                    ? nc_sigmas_vec[t_re] : empty_sigmas;
+            re_slopes_chain_rule_writeback(
+                t_re, data, layout, params.data(), grad.data(),
+                grad_re_slopes_lik[t_re],
+                is_corr_nc ? nc_L_flats[t_re] : empty_sigmas,
+                sigmas_t,
+                nc_buf,
+                slopes_nc);
         }
     }
 

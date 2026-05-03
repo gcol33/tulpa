@@ -64,53 +64,34 @@
       }
     }
 
+    // Pre-compute per-term correlated-NC flags (constant across i).
+    std::vector<char> term_is_corr_buf;
+    const char* term_is_corr_ptr = nullptr;
+    if (n_re_terms_slopes > 0 && !re_nc_flat.empty()) {
+      term_is_corr_buf.assign(n_re_terms_slopes, 0);
+      for (int t = 0; t < n_re_terms_slopes; t++) {
+        term_is_corr_buf[t] = (t < (int)layout.re_correlated_multi.size() &&
+                               layout.re_correlated_multi[t] &&
+                               layout.re_n_coefs_multi[t] > 1) ? 1 : 0;
+      }
+      term_is_corr_ptr = term_is_corr_buf.data();
+    }
+
     // Scalar loop: add slopes RE + spatial + temporal to eta
     // Track per-obs indices for scatter pass
     std::vector<int> obs_s_idx(N, -1);       // spatial group index
     std::vector<int> obs_t_idx(N, -1);       // temporal flat index
     for (int i = 0; i < N; i++) {
-      // Slopes RE contribution (all terms - supports crossed+slopes)
+      // Slopes RE contribution (all terms - supports crossed+slopes).
+      // Per-(i, t_re) assembly shared with scalar and composite phase-3 paths.
       if (layout.has_re_slopes && n_re_terms_slopes > 0) {
         for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
-          int re_group_idx_i = data.re_group_multi_flat[i * data.n_re_terms + t_re];
-          if (re_group_idx_i <= 0) continue;
-          int g = re_group_idx_i - 1;
-          int n_coefs = layout.re_n_coefs_multi[t_re];
-          int re_base = layout.re_start_multi[t_re] + g * n_coefs;
-
-          bool is_corr_t = !re_nc_flat.empty() &&
-                           t_re < (int)layout.re_correlated_multi.size() &&
-                           layout.re_correlated_multi[t_re] && n_coefs > 1;
-          bool is_uncorr_nc = !is_corr_t && slopes_nc;
-
-          // Intercept
-          double re_contrib;
-          if (is_corr_t) {
-            re_contrib = re_nc_flat[re_base];
-          } else if (is_uncorr_nc) {
-            re_contrib = precomp_sigma[t_re][0] * params[re_base];
-          } else {
-            re_contrib = params[re_base];
-          }
-
-          // Slope contributions (only for terms with slopes)
-          int n_slopes = n_coefs - 1;
-          if (n_slopes > 0 && t_re < (int)data.re_slope_matrices.size() &&
-              !data.re_slope_matrices[t_re].empty()) {
-            for (int s = 0; s < n_slopes; s++) {
-              double x_slope = data.re_slope_matrices[t_re][i * n_slopes + s];
-              double re_slope;
-              if (is_corr_t) {
-                re_slope = re_nc_flat[re_base + 1 + s];
-              } else if (is_uncorr_nc) {
-                re_slope = precomp_sigma[t_re][1 + s] * params[re_base + 1 + s];
-              } else {
-                re_slope = params[re_base + 1 + s];
-              }
-              re_contrib += re_slope * x_slope;
-            }
-          }
-
+          double re_contrib = re_slopes_term_contribution(
+              i, t_re, data, layout, params.data(),
+              re_nc_flat.empty() ? nullptr : re_nc_flat.data(),
+              term_is_corr_ptr,
+              slopes_nc ? &precomp_sigma : nullptr,
+              slopes_nc);
           vec_grad_ws.eta_num[i] += re_contrib;
           if (!is_binomial) vec_grad_ws.eta_denom[i] += re_contrib;
         }
@@ -158,26 +139,13 @@
       double dLL_denom = vec_grad_ws.resid_denom[i];
       double dLL_shared = dLL_num + dLL_denom;
 
-      // Slopes RE gradient scatter (all terms - supports crossed+slopes)
+      // Slopes RE gradient scatter (all terms - supports crossed+slopes).
+      // Per-(i, t_re) scatter shared with scalar and composite phase-3 paths.
       if (layout.has_re_slopes && n_re_terms_slopes > 0) {
         for (int t_re = 0; t_re < n_re_terms_slopes; t_re++) {
-          int re_group_idx_i = data.re_group_multi_flat[i * data.n_re_terms + t_re];
-          if (re_group_idx_i <= 0) continue;
-          int g = re_group_idx_i - 1;
-          int n_coefs = layout.re_n_coefs_multi[t_re];
-
-          // Intercept gradient
-          grad_re_slopes_lik[t_re][g * n_coefs] += dLL_shared;
-
-          // Slope gradients (chain rule: d(LL)/d(re_slope) = d(LL)/d(eta) * x_slope)
-          int n_slopes = n_coefs - 1;
-          if (n_slopes > 0 && t_re < (int)data.re_slope_matrices.size() &&
-              !data.re_slope_matrices[t_re].empty()) {
-            for (int s = 0; s < n_slopes; s++) {
-              double x_slope = data.re_slope_matrices[t_re][i * n_slopes + s];
-              grad_re_slopes_lik[t_re][g * n_coefs + 1 + s] += dLL_shared * x_slope;
-            }
-          }
+          re_slopes_term_scatter_impl(
+              i, t_re, dLL_shared, data, layout, grad_re_slopes_lik,
+              [](double* arr, int idx, double val) { arr[idx] += val; });
         }
       }
 

@@ -21,6 +21,7 @@
 #include "hmc_sampler.h"     // ModelData, ParamLayout, ModelType, GPData, MultiscaleGPData, ZIType
 #include "icar_kernel.h"     // tulpa::car_apply_row, tulpa::car_quad_form
 #include "linalg_fast.h"     // tulpa_linalg::dot_product
+#include "lkj_chol_helpers.h" // tulpa::chol_nc_chain_rule_add (used by re_slopes_chain_rule_writeback)
 #include "portable_math.h"   // tulpa::math::portable_digamma
 
 namespace tulpa_hmc {
@@ -943,6 +944,83 @@ static inline double re_crossed_contribution(
     return sum;
 }
 
+// RE contribution at observation i from a single slopes-capable term t_re.
+// Sums intercept + slope-term effects, branching on parameterization:
+//
+//   correlated NC : pre-multiplied values from `correlated_nc_buf`
+//                   (= diag(sigma) * L * z), addressed as
+//                   correlated_nc_buf[layout.re_start_multi[t_re] + g*n_coefs + k]
+//   uncorrelated NC : sigma * z, where sigma is taken from
+//                   (*precomp_sigma)[t_re][k] when precomp_sigma != nullptr,
+//                   else recomputed inline as exp(params[log_sigma_re_slopes[t_re][k]])
+//   centered : raw params
+//
+// Per-term parameterization is selected by `term_is_corr` (length >=
+// n_re_terms_slopes, byte-per-term, treated as bool). When that buffer is null
+// or the entry is zero, the term is treated as uncorrelated (NC if slopes_nc,
+// else centered). Group lookup falls back to data.re_group when
+// re_group_multi_flat is empty (matches composite phase-3 semantics; harmless
+// elsewhere because re_group_multi_flat is filled in slopes mode).
+//
+// Returns 0 if observation i has no group at term t_re.
+static inline double re_slopes_term_contribution(
+    int i, int t_re,
+    const ModelData& data, const ParamLayout& layout,
+    const double* params,
+    const double* correlated_nc_buf,
+    const char* term_is_corr,
+    const std::vector<std::vector<double>>* precomp_sigma,
+    bool slopes_nc
+) {
+    int g;
+    if (!data.re_group_multi_flat.empty()) {
+        g = data.re_group_multi_flat[i * data.n_re_terms + t_re] - 1;
+    } else if (!data.re_group.empty() && data.re_group[i] > 0) {
+        g = data.re_group[i] - 1;
+    } else {
+        return 0.0;
+    }
+    if (g < 0) return 0.0;
+
+    const int n_coefs = layout.re_n_coefs_multi[t_re];
+    const int re_base = layout.re_start_multi[t_re] + g * n_coefs;
+    const bool is_corr = (term_is_corr != nullptr) && (term_is_corr[t_re] != 0);
+    const bool is_uncorr_nc = !is_corr && slopes_nc;
+
+    auto sigma_at = [&](int k) -> double {
+        return (precomp_sigma != nullptr)
+            ? (*precomp_sigma)[t_re][k]
+            : std::exp(params[layout.log_sigma_re_slopes[t_re][k]]);
+    };
+
+    double contrib;
+    if (is_corr) {
+        contrib = correlated_nc_buf[re_base];
+    } else if (is_uncorr_nc) {
+        contrib = sigma_at(0) * params[re_base];
+    } else {
+        contrib = params[re_base];
+    }
+
+    const int n_slopes = n_coefs - 1;
+    if (n_slopes > 0 && t_re < (int)data.re_slope_matrices.size() &&
+        !data.re_slope_matrices[t_re].empty()) {
+        const double* x_slopes = &data.re_slope_matrices[t_re][i * n_slopes];
+        for (int s = 0; s < n_slopes; s++) {
+            double re_slope;
+            if (is_corr) {
+                re_slope = correlated_nc_buf[re_base + 1 + s];
+            } else if (is_uncorr_nc) {
+                re_slope = sigma_at(1 + s) * params[re_base + 1 + s];
+            } else {
+                re_slope = params[re_base + 1 + s];
+            }
+            contrib += re_slope * x_slopes[s];
+        }
+    }
+    return contrib;
+}
+
 // Temporal contribution at i (panel temporal: flat index g * n_times + t).
 // Optional out-pointer records the flat index for downstream gradient scatter.
 static inline double temporal_contribution(
@@ -999,6 +1077,125 @@ static inline double spatial_bym2_contribution(
     if (d_spatial_d_phi_out_or_null != nullptr) *d_spatial_d_phi_out_or_null = sigma_s * scale;
     if (d_spatial_d_theta_out_or_null != nullptr) *d_spatial_d_theta_out_or_null = sigma_u;
     return sigma_s * phi_spatial[s] * scale + sigma_u * theta_bym2[s];
+}
+
+// =====================================================================
+// RE slopes scatter / chain-rule writeback kernels.
+// Single source of truth for the per-(i, t_re) gradient scatter into
+// grad_re_slopes_lik and the post-pass NC chain-rule conversion to the
+// raw (z, log_sigma, raw_chol) parameter gradient. Used by all three
+// observation-loop paths (scalar / vec / composite phase-3) and both
+// post-pass writeback sites (analytical scalar / composite phase-4).
+// =====================================================================
+
+// Per-(i, t_re) gradient scatter: adds dLL_shared at the intercept slot and
+// dLL_shared * x_slope[s] at each slope slot of grad_re_slopes_lik[t_re].
+//
+// `add_fn` is a callable of signature void(double* arr, int idx, double val)
+// that performs the actual `arr[idx] += val`. Callers in OpenMP-parallel
+// regions pass an atomic-add lambda; serial callers pass plain add. The
+// pragma travels with the inlined call body; OpenMP atomicity is honored
+// regardless of inlining.
+//
+// Group lookup falls back to data.re_group when re_group_multi_flat is
+// empty (matches composite phase-3 semantics; harmless elsewhere because
+// re_group_multi_flat is filled in slopes mode).
+template <typename AddFn>
+static inline void re_slopes_term_scatter_impl(
+    int i, int t_re, double dLL_shared,
+    const ModelData& data, const ParamLayout& layout,
+    std::vector<std::vector<double>>& grad_re_slopes_lik,
+    AddFn add_fn
+) {
+    int g;
+    if (!data.re_group_multi_flat.empty()) {
+        g = data.re_group_multi_flat[i * data.n_re_terms + t_re] - 1;
+    } else if (!data.re_group.empty() && data.re_group[i] > 0) {
+        g = data.re_group[i] - 1;
+    } else {
+        return;
+    }
+    if (g < 0) return;
+
+    const int n_coefs = layout.re_n_coefs_multi[t_re];
+    double* slot = grad_re_slopes_lik[t_re].data();
+    add_fn(slot, g * n_coefs, dLL_shared);
+
+    const int n_slopes = n_coefs - 1;
+    if (n_slopes > 0 && t_re < (int)data.re_slope_matrices.size() &&
+        !data.re_slope_matrices[t_re].empty()) {
+        const double* x_slopes = &data.re_slope_matrices[t_re][i * n_slopes];
+        for (int s = 0; s < n_slopes; s++) {
+            add_fn(slot, g * n_coefs + 1 + s, dLL_shared * x_slopes[s]);
+        }
+    }
+}
+
+// NC chain-rule writeback for one slopes term, converting d(LL)/d(re_value)
+// (already accumulated in grad_re_slopes_lik_t) into d(LL)/d(z),
+// d(LL)/d(log_sigma), and d(LL)/d(raw_chol) entries of the full grad vector.
+//
+// Branches on parameterization, mirroring the per-i eta path:
+//   correlated NC : tulpa::chol_nc_chain_rule_add gives grad_z, grad_log_sigma,
+//                   grad_raw simultaneously; uses pre-multiplied re_nc buffer
+//   uncorrelated NC : grad[z] += sigma * lik_grad ; grad[log_sigma] +=
+//                   z * lik_grad * sigma (sigma_c hoisted out of the g loop)
+//   centered : direct add into grad[z]
+//
+// `nc_L_flat_t` empty => not correlated NC for this term (caller's existing
+// `is_corr_nc = !nc_L_flats[t].empty()` test is honored). `slopes_nc` flag
+// distinguishes uncorrelated NC from centered when the term isn't correlated.
+// `nc_re_flat_buf` is the pre-multiplied (diag(sigma)*L*z) buffer, only
+// dereferenced when nc_L_flat_t is non-empty.
+static inline void re_slopes_chain_rule_writeback(
+    int t_re,
+    const ModelData& data, const ParamLayout& layout,
+    const double* params, double* grad,
+    const std::vector<double>& grad_re_slopes_lik_t,
+    const std::vector<double>& nc_L_flat_t,
+    const std::vector<double>& nc_sigmas_t,
+    const double* nc_re_flat_buf,
+    bool slopes_nc
+) {
+    const int n_groups = data.re_n_groups_multi[t_re];
+    const int n_coefs = layout.re_n_coefs_multi[t_re];
+    const int re_start_t = layout.re_start_multi[t_re];
+    const bool is_corr_nc = !nc_L_flat_t.empty();
+
+    if (is_corr_nc) {
+        const int chol_start = layout.chol_re_start_multi[t_re];
+        std::vector<double> g_log_sigma(n_coefs, 0.0);
+        tulpa::chol_nc_chain_rule_add(
+            nc_L_flat_t.data(), n_coefs, nc_sigmas_t.data(),
+            &params[re_start_t], &params[chol_start],
+            &nc_re_flat_buf[re_start_t], n_groups,
+            grad_re_slopes_lik_t.data(),
+            &grad[re_start_t],
+            g_log_sigma.data(),
+            &grad[chol_start]);
+        for (int c = 0; c < n_coefs; c++) {
+            grad[layout.log_sigma_re_slopes[t_re][c]] += g_log_sigma[c];
+        }
+    } else if (slopes_nc) {
+        for (int c = 0; c < n_coefs; c++) {
+            const double sigma_c = std::exp(params[layout.log_sigma_re_slopes[t_re][c]]);
+            double sigma_lik_grad = 0.0;
+            for (int g = 0; g < n_groups; g++) {
+                const double lik_gc = grad_re_slopes_lik_t[g * n_coefs + c];
+                const double z_gc = params[re_start_t + g * n_coefs + c];
+                grad[re_start_t + g * n_coefs + c] += lik_gc * sigma_c;
+                sigma_lik_grad += lik_gc * z_gc * sigma_c;
+            }
+            grad[layout.log_sigma_re_slopes[t_re][c]] += sigma_lik_grad;
+        }
+    } else {
+        for (int g = 0; g < n_groups; g++) {
+            for (int c = 0; c < n_coefs; c++) {
+                grad[re_start_t + g * n_coefs + c] +=
+                    grad_re_slopes_lik_t[g * n_coefs + c];
+            }
+        }
+    }
 }
 
 }  // namespace tulpa_hmc
