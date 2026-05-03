@@ -57,7 +57,7 @@ static inline double icar_quadratic_form_ptr(
       /*rho=*/1.0);
 }
 
-#include "hmc_gradient_analytical_impl.h"
+// hmc_gradient_analytical_impl.h migrated to hmc_gradient_analytical.cpp.
 // hmc_gradient_fallback_impl.h migrated to hmc_gradient_fallback.cpp.
 
 #include "hmc_gradient_gp_impl.h"

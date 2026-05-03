@@ -243,6 +243,10 @@ void compute_gradient_hsgp(
 void compute_gradient_msgp_hsgp(
     const std::vector<double>&, const ModelData&, const ParamLayout&,
     std::vector<double>&, double*);
+bool can_use_analytical_gradient(const ModelData& data, const ParamLayout& layout);
+void compute_gradient_analytical(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
 
 // Get RE value for observation (handles non-centered re_param=1 -> sigma*z transform).
 inline double re_value_for_eta(
