@@ -81,6 +81,133 @@ static inline AutodiffCommonResult add_common_priors_ad(
     return {log_post, sigma_re, phi_num, phi_denom};
 }
 
+// =====================================================================
+// Common autodiff per-observation helpers
+// Extract betas, accumulate eta from beta·X + RE, dispatch likelihood by family.
+// Used by gp_autodiff, msgp_autodiff, gp_plus_temporal_autodiff.
+// =====================================================================
+
+static inline void extract_betas_ad(
+    const std::vector<tulpa::ad::Var>& params_ad,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<tulpa::ad::Var>& beta_num_ad,
+    std::vector<tulpa::ad::Var>& beta_denom_ad
+) {
+    beta_num_ad.resize(data.legacy.p_num);
+    beta_denom_ad.resize(data.legacy.p_denom);
+    for (int j = 0; j < data.legacy.p_num; j++) {
+        beta_num_ad[j] = params_ad[layout.legacy.beta_num_start + j];
+    }
+    for (int j = 0; j < data.legacy.p_denom; j++) {
+        beta_denom_ad[j] = params_ad[layout.legacy.beta_denom_start + j];
+    }
+}
+
+static inline void accumulate_beta_re_eta_ad(
+    tulpa::ad::Tape* tape,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const std::vector<tulpa::ad::Var>& beta_num_ad,
+    const std::vector<tulpa::ad::Var>& beta_denom_ad,
+    const std::vector<tulpa::ad::Var>& params_ad,
+    const tulpa::ad::Var& sigma_re,
+    int i,
+    tulpa::ad::Var& eta_num,
+    tulpa::ad::Var& eta_denom
+) {
+    using namespace tulpa::ad;
+
+    eta_num = Var(tape, 0.0);
+    eta_denom = Var(tape, 0.0);
+
+    for (int j = 0; j < data.legacy.p_num; j++) {
+        eta_num = eta_num + data.legacy.X_num_flat[i * data.legacy.p_num + j] * beta_num_ad[j];
+    }
+    for (int j = 0; j < data.legacy.p_denom; j++) {
+        eta_denom = eta_denom + data.legacy.X_denom_flat[i * data.legacy.p_denom + j] * beta_denom_ad[j];
+    }
+
+    if (layout.has_re && data.re_group[i] > 0) {
+        int g = data.re_group[i] - 1;
+        Var re_g = params_ad[layout.re_start + g];
+        Var re_eff = (data.re_parameterization == 1) ? sigma_re * re_g : re_g;
+        eta_num = eta_num + re_eff;
+        eta_denom = eta_denom + re_eff;
+    }
+}
+
+static inline tulpa::ad::Var obs_log_lik_ad(
+    tulpa::ad::Tape* /*tape*/,
+    const ModelData& data,
+    int i,
+    const tulpa::ad::Var& eta_num,
+    const tulpa::ad::Var& eta_denom,
+    const tulpa::ad::Var& phi_num,
+    const tulpa::ad::Var& phi_denom
+) {
+    using tulpa::ad::Var;
+    using tulpa::math::safe_exp;
+    using tulpa::math::inv_logit;
+
+    if (data.legacy.model_type == ModelType::BINOMIAL) {
+        Var p = inv_logit(eta_num);
+        return tulpa::math::log_lik_binomial(data.legacy.y_num[i], data.legacy.y_denom[i], p);
+    } else if (data.legacy.model_type == ModelType::NEGBIN_NEGBIN) {
+        Var mu_num = safe_exp(eta_num);
+        Var mu_denom = safe_exp(eta_denom);
+        return tulpa::math::log_lik_negbin(data.legacy.y_num[i], mu_num, phi_num) +
+               tulpa::math::log_lik_negbin(data.legacy.y_denom[i], mu_denom, phi_denom);
+    } else {  // POISSON_GAMMA
+        Var mu_num = safe_exp(eta_num);
+        Var mu_denom = safe_exp(eta_denom);
+        return tulpa::math::log_lik_poisson(data.legacy.y_num[i], mu_num) +
+               tulpa::math::log_lik_gamma(data.legacy.y_denom_cont[i], phi_denom, mu_denom);
+    }
+}
+
+// Add single-scale GP priors + NNGP log-likelihood to log_post.
+// gp_w_ad is filled with the GP spatial effect Vars (empty if no GP).
+static inline void add_gp_priors_and_ll_ad(
+    tulpa::ad::Tape* tape,
+    const std::vector<tulpa::ad::Var>& params_ad,
+    const ModelData& data,
+    const ParamLayout& layout,
+    tulpa::ad::Var& log_post,
+    std::vector<tulpa::ad::Var>& gp_w_ad
+) {
+    using namespace tulpa::ad;
+    using namespace tulpa::math;
+
+    if (!(layout.is_gp && data.has_gp)) {
+        return;
+    }
+
+    Var log_sigma2_gp = params_ad[layout.log_sigma2_gp_idx];
+    Var log_phi_gp = params_ad[layout.log_phi_gp_idx];
+    Var sigma2_gp = safe_exp(log_sigma2_gp);
+    Var phi_gp = safe_exp(log_phi_gp);
+
+    // PC prior on sigma2 (penalizes large variance)
+    log_post = log_post + tulpa_gp::log_prior_sigma2_pc_t(
+        sigma2_gp, data.gp_sigma2_prior_U, data.gp_sigma2_prior_alpha);
+    log_post = log_post + log_sigma2_gp;  // Jacobian
+
+    // Uniform prior on phi within bounds
+    log_post = log_post + tulpa_gp::log_prior_phi_uniform_t(
+        phi_gp, data.gp_phi_prior_lower, data.gp_phi_prior_upper);
+    log_post = log_post + log_phi_gp;  // Jacobian
+
+    int N_gp = data.gp_data.n_obs;
+    gp_w_ad.resize(N_gp);
+    for (int i = 0; i < N_gp; i++) {
+        gp_w_ad[i] = params_ad[layout.gp_w_start + i];
+    }
+
+    Var gp_ll = tulpa_gp::gp_nngp_log_lik_t(gp_w_ad, sigma2_gp, phi_gp, data.gp_data);
+    log_post = log_post + gp_ll;
+}
+
 void compute_gradient_gp_autodiff(
     const std::vector<double>& params,
     const ModelData& data,
@@ -100,114 +227,37 @@ void compute_gradient_gp_autodiff(
 
     auto [log_post, sigma_re, phi_num, phi_denom] = add_common_priors_ad(tape, params_ad, data, layout);
 
-    // =========================================================================
     // GP priors and NNGP likelihood
-    // =========================================================================
     std::vector<Var> gp_w_ad;
-    Var sigma2_gp(tape, 1.0);
-    Var phi_gp(tape, 0.1);
+    add_gp_priors_and_ll_ad(tape, params_ad, data, layout, log_post, gp_w_ad);
 
-    if (layout.is_gp && data.has_gp) {
-        Var log_sigma2_gp = params_ad[layout.log_sigma2_gp_idx];
-        Var log_phi_gp = params_ad[layout.log_phi_gp_idx];
-        sigma2_gp = safe_exp(log_sigma2_gp);
-        phi_gp = safe_exp(log_phi_gp);
-
-        // PC prior on sigma2 (penalizes large variance)
-        log_post = log_post + tulpa_gp::log_prior_sigma2_pc_t(
-            sigma2_gp, data.gp_sigma2_prior_U, data.gp_sigma2_prior_alpha);
-        log_post = log_post + log_sigma2_gp;  // Jacobian
-
-        // Uniform prior on phi within bounds
-        log_post = log_post + tulpa_gp::log_prior_phi_uniform_t(
-            phi_gp, data.gp_phi_prior_lower, data.gp_phi_prior_upper);
-        log_post = log_post + log_phi_gp;  // Jacobian
-
-        // Extract GP spatial effects
-        int N_gp = data.gp_data.n_obs;
-        gp_w_ad.resize(N_gp);
-        for (int i = 0; i < N_gp; i++) {
-            gp_w_ad[i] = params_ad[layout.gp_w_start + i];
-        }
-
-        // NNGP log-likelihood using templated function
-        Var gp_ll = tulpa_gp::gp_nngp_log_lik_t(gp_w_ad, sigma2_gp, phi_gp, data.gp_data);
-        log_post = log_post + gp_ll;
-    }
-
-    // =========================================================================
     // Data likelihood
-    // =========================================================================
-    std::vector<Var> beta_num_ad(data.legacy.p_num);
-    std::vector<Var> beta_denom_ad(data.legacy.p_denom);
-    for (int j = 0; j < data.legacy.p_num; j++) {
-        beta_num_ad[j] = params_ad[layout.legacy.beta_num_start + j];
-    }
-    for (int j = 0; j < data.legacy.p_denom; j++) {
-        beta_denom_ad[j] = params_ad[layout.legacy.beta_denom_start + j];
-    }
+    std::vector<Var> beta_num_ad, beta_denom_ad;
+    extract_betas_ad(params_ad, data, layout, beta_num_ad, beta_denom_ad);
 
     for (int i = 0; i < data.N; i++) {
-        // Linear predictors
         Var eta_num(tape, 0.0);
         Var eta_denom(tape, 0.0);
-
-        for (int j = 0; j < data.legacy.p_num; j++) {
-            eta_num = eta_num + data.legacy.X_num_flat[i * data.legacy.p_num + j] * beta_num_ad[j];
-        }
-        for (int j = 0; j < data.legacy.p_denom; j++) {
-            eta_denom = eta_denom + data.legacy.X_denom_flat[i * data.legacy.p_denom + j] * beta_denom_ad[j];
-        }
-
-        // Add random effects (shared)
-        if (layout.has_re && data.re_group[i] > 0) {
-            int g = data.re_group[i] - 1;
-            Var re_g = params_ad[layout.re_start + g];
-            Var re_eff = (data.re_parameterization == 1) ? sigma_re * re_g : re_g;
-            eta_num = eta_num + re_eff;
-            eta_denom = eta_denom + re_eff;
-        }
+        accumulate_beta_re_eta_ad(tape, data, layout,
+                                  beta_num_ad, beta_denom_ad, params_ad,
+                                  sigma_re, i, eta_num, eta_denom);
 
         // Add GP spatial effect (map observation to unique location)
         if (layout.is_gp && data.has_gp && !gp_w_ad.empty()) {
             int loc_i = data.gp_data.obs_to_loc[i];
             Var gp_effect = gp_w_ad[loc_i];
+            eta_num = eta_num + gp_effect;
             if (data.gp_data.shared) {
-                eta_num = eta_num + gp_effect;
                 eta_denom = eta_denom + gp_effect;
-            } else {
-                eta_num = eta_num + gp_effect;
             }
         }
 
-        // Compute likelihood based on model type
-        Var ll_i(tape, 0.0);
-
-        if (data.legacy.model_type == ModelType::BINOMIAL) {
-            Var p = inv_logit(eta_num);
-            ll_i = tulpa::math::log_lik_binomial(data.legacy.y_num[i], data.legacy.y_denom[i], p);
-        } else if (data.legacy.model_type == ModelType::NEGBIN_NEGBIN) {
-            Var mu_num = safe_exp(eta_num);
-            Var mu_denom = safe_exp(eta_denom);
-            ll_i = tulpa::math::log_lik_negbin(data.legacy.y_num[i], mu_num, phi_num) +
-                   tulpa::math::log_lik_negbin(data.legacy.y_denom[i], mu_denom, phi_denom);
-        } else {  // POISSON_GAMMA
-            Var mu_num = safe_exp(eta_num);
-            Var mu_denom = safe_exp(eta_denom);
-            ll_i = tulpa::math::log_lik_poisson(data.legacy.y_num[i], mu_num) +
-                   tulpa::math::log_lik_gamma(data.legacy.y_denom_cont[i], phi_denom, mu_denom);
-        }
-
-        log_post = log_post + ll_i;
+        log_post = log_post + obs_log_lik_ad(tape, data, i,
+                                             eta_num, eta_denom, phi_num, phi_denom);
     }
 
-    // Backward pass
     log_post.backward();
-
-    // Extract gradients
     grad = get_adjoints(params_ad);
-
-    // TapeScope destructor handles cleanup
 }
 
 // =====================================================================
@@ -414,77 +464,31 @@ void compute_gradient_msgp_autodiff(
         data.multiscale_gp_data);
     log_post = log_post + msgp_ll;
 
-    // =========================================================================
     // Data likelihood
-    // =========================================================================
-    std::vector<Var> beta_num_ad(data.legacy.p_num);
-    std::vector<Var> beta_denom_ad(data.legacy.p_denom);
-    for (int j = 0; j < data.legacy.p_num; j++) {
-        beta_num_ad[j] = params_ad[layout.legacy.beta_num_start + j];
-    }
-    for (int j = 0; j < data.legacy.p_denom; j++) {
-        beta_denom_ad[j] = params_ad[layout.legacy.beta_denom_start + j];
-    }
+    std::vector<Var> beta_num_ad, beta_denom_ad;
+    extract_betas_ad(params_ad, data, layout, beta_num_ad, beta_denom_ad);
 
     for (int i = 0; i < data.N; i++) {
-        // Linear predictors
         Var eta_num(tape, 0.0);
         Var eta_denom(tape, 0.0);
-
-        for (int j = 0; j < data.legacy.p_num; j++) {
-            eta_num = eta_num + data.legacy.X_num_flat[i * data.legacy.p_num + j] * beta_num_ad[j];
-        }
-        for (int j = 0; j < data.legacy.p_denom; j++) {
-            eta_denom = eta_denom + data.legacy.X_denom_flat[i * data.legacy.p_denom + j] * beta_denom_ad[j];
-        }
-
-        // Add random effects (shared)
-        if (layout.has_re && data.re_group[i] > 0) {
-            int g = data.re_group[i] - 1;
-            Var re_g = params_ad[layout.re_start + g];
-            Var re_eff = (data.re_parameterization == 1) ? sigma_re * re_g : re_g;
-            eta_num = eta_num + re_eff;
-            eta_denom = eta_denom + re_eff;
-        }
+        accumulate_beta_re_eta_ad(tape, data, layout,
+                                  beta_num_ad, beta_denom_ad, params_ad,
+                                  sigma_re, i, eta_num, eta_denom);
 
         // Add multi-scale GP spatial effect (map observation to unique location)
         int loc_i = data.multiscale_gp_data.obs_to_loc[i];
         Var ms_spatial = w_local_ad[loc_i] + w_regional_ad[loc_i];
+        eta_num = eta_num + ms_spatial;
         if (data.multiscale_gp_data.shared) {
-            eta_num = eta_num + ms_spatial;
             eta_denom = eta_denom + ms_spatial;
-        } else {
-            eta_num = eta_num + ms_spatial;
         }
 
-        // Compute likelihood based on model type
-        Var ll_i(tape, 0.0);
-
-        if (data.legacy.model_type == ModelType::BINOMIAL) {
-            Var p = inv_logit(eta_num);
-            ll_i = tulpa::math::log_lik_binomial(data.legacy.y_num[i], data.legacy.y_denom[i], p);
-        } else if (data.legacy.model_type == ModelType::NEGBIN_NEGBIN) {
-            Var mu_num = safe_exp(eta_num);
-            Var mu_denom = safe_exp(eta_denom);
-            ll_i = tulpa::math::log_lik_negbin(data.legacy.y_num[i], mu_num, phi_num) +
-                   tulpa::math::log_lik_negbin(data.legacy.y_denom[i], mu_denom, phi_denom);
-        } else {  // POISSON_GAMMA
-            Var mu_num = safe_exp(eta_num);
-            Var mu_denom = safe_exp(eta_denom);
-            ll_i = tulpa::math::log_lik_poisson(data.legacy.y_num[i], mu_num) +
-                   tulpa::math::log_lik_gamma(data.legacy.y_denom_cont[i], phi_denom, mu_denom);
-        }
-
-        log_post = log_post + ll_i;
+        log_post = log_post + obs_log_lik_ad(tape, data, i,
+                                             eta_num, eta_denom, phi_num, phi_denom);
     }
 
-    // Backward pass
     log_post.backward();
-
-    // Extract gradients
     grad = get_adjoints(params_ad);
-
-    // TapeScope destructor handles cleanup
 }
 
 // =====================================================================
@@ -551,75 +555,20 @@ void compute_gradient_gp_plus_temporal_autodiff(
         }
     }
 
-    // =========================================================================
     // GP priors and NNGP likelihood
-    // =========================================================================
     std::vector<Var> gp_w_ad;
-    Var sigma2_gp(tape, 1.0);
-    Var phi_gp(tape, 0.1);
+    add_gp_priors_and_ll_ad(tape, params_ad, data, layout, log_post, gp_w_ad);
 
-    if (layout.is_gp && data.has_gp) {
-        Var log_sigma2_gp = params_ad[layout.log_sigma2_gp_idx];
-        Var log_phi_gp = params_ad[layout.log_phi_gp_idx];
-        sigma2_gp = safe_exp(log_sigma2_gp);
-        phi_gp = safe_exp(log_phi_gp);
-
-        // PC prior on sigma2 (penalizes large variance)
-        log_post = log_post + tulpa_gp::log_prior_sigma2_pc_t(
-            sigma2_gp, data.gp_sigma2_prior_U, data.gp_sigma2_prior_alpha);
-        log_post = log_post + log_sigma2_gp;  // Jacobian
-
-        // Uniform prior on phi within bounds
-        log_post = log_post + tulpa_gp::log_prior_phi_uniform_t(
-            phi_gp, data.gp_phi_prior_lower, data.gp_phi_prior_upper);
-        log_post = log_post + log_phi_gp;  // Jacobian
-
-        // Extract GP spatial effects
-        int N_gp = data.gp_data.n_obs;
-        gp_w_ad.resize(N_gp);
-        for (int i = 0; i < N_gp; i++) {
-            gp_w_ad[i] = params_ad[layout.gp_w_start + i];
-        }
-
-        // NNGP log-likelihood using templated function
-        Var gp_ll = tulpa_gp::gp_nngp_log_lik_t(gp_w_ad, sigma2_gp, phi_gp, data.gp_data);
-        log_post = log_post + gp_ll;
-    }
-
-    // =========================================================================
     // Data likelihood
-    // =========================================================================
-    std::vector<Var> beta_num_ad(data.legacy.p_num);
-    std::vector<Var> beta_denom_ad(data.legacy.p_denom);
-    for (int j = 0; j < data.legacy.p_num; j++) {
-        beta_num_ad[j] = params_ad[layout.legacy.beta_num_start + j];
-    }
-    for (int j = 0; j < data.legacy.p_denom; j++) {
-        beta_denom_ad[j] = params_ad[layout.legacy.beta_denom_start + j];
-    }
-
-    int T = data.n_times;
+    std::vector<Var> beta_num_ad, beta_denom_ad;
+    extract_betas_ad(params_ad, data, layout, beta_num_ad, beta_denom_ad);
 
     for (int i = 0; i < data.N; i++) {
-        // Linear predictors
         Var eta_num(tape, 0.0);
         Var eta_denom(tape, 0.0);
-
-        for (int j = 0; j < data.legacy.p_num; j++) {
-            eta_num = eta_num + data.legacy.X_num_flat[i * data.legacy.p_num + j] * beta_num_ad[j];
-        }
-        for (int j = 0; j < data.legacy.p_denom; j++) {
-            eta_denom = eta_denom + data.legacy.X_denom_flat[i * data.legacy.p_denom + j] * beta_denom_ad[j];
-        }
-
-        // Add random effects (shared)
-        if (layout.has_re && data.re_group[i] > 0) {
-            int g = data.re_group[i] - 1;
-            Var re_g = params_ad[layout.re_start + g];
-            Var re_eff = (data.re_parameterization == 1) ? sigma_re * re_g : re_g;
-            eta_num = eta_num + re_eff;
-            eta_denom = eta_denom + re_eff;
-        }
+        accumulate_beta_re_eta_ad(tape, data, layout,
+                                  beta_num_ad, beta_denom_ad, params_ad,
+                                  sigma_re, i, eta_num, eta_denom);
 
         // Add temporal effect
         if (layout.has_temporal && !data.temporal_time_idx.empty() &&
@@ -629,11 +578,9 @@ void compute_gradient_gp_plus_temporal_autodiff(
             if (g >= 0 && g < (int)phi_temporal_ad.size() &&
                 t >= 0 && t < (int)phi_temporal_ad[g].size()) {
                 Var temporal_effect = phi_temporal_ad[g][t];
+                eta_num = eta_num + temporal_effect;
                 if (data.temporal_shared) {
-                    eta_num = eta_num + temporal_effect;
                     eta_denom = eta_denom + temporal_effect;
-                } else {
-                    eta_num = eta_num + temporal_effect;
                 }
             }
         }
@@ -642,40 +589,16 @@ void compute_gradient_gp_plus_temporal_autodiff(
         if (layout.is_gp && data.has_gp && !gp_w_ad.empty()) {
             int loc_i = data.gp_data.obs_to_loc[i];
             Var gp_effect = gp_w_ad[loc_i];
+            eta_num = eta_num + gp_effect;
             if (data.gp_data.shared) {
-                eta_num = eta_num + gp_effect;
                 eta_denom = eta_denom + gp_effect;
-            } else {
-                eta_num = eta_num + gp_effect;
             }
         }
 
-        // Compute likelihood based on model type
-        Var ll_i(tape, 0.0);
-
-        if (data.legacy.model_type == ModelType::BINOMIAL) {
-            Var p = inv_logit(eta_num);
-            ll_i = tulpa::math::log_lik_binomial(data.legacy.y_num[i], data.legacy.y_denom[i], p);
-        } else if (data.legacy.model_type == ModelType::NEGBIN_NEGBIN) {
-            Var mu_num = safe_exp(eta_num);
-            Var mu_denom = safe_exp(eta_denom);
-            ll_i = tulpa::math::log_lik_negbin(data.legacy.y_num[i], mu_num, phi_num) +
-                   tulpa::math::log_lik_negbin(data.legacy.y_denom[i], mu_denom, phi_denom);
-        } else {  // POISSON_GAMMA
-            Var mu_num = safe_exp(eta_num);
-            Var mu_denom = safe_exp(eta_denom);
-            ll_i = tulpa::math::log_lik_poisson(data.legacy.y_num[i], mu_num) +
-                   tulpa::math::log_lik_gamma(data.legacy.y_denom_cont[i], phi_denom, mu_denom);
-        }
-
-        log_post = log_post + ll_i;
+        log_post = log_post + obs_log_lik_ad(tape, data, i,
+                                             eta_num, eta_denom, phi_num, phi_denom);
     }
 
-    // Backward pass
     log_post.backward();
-
-    // Extract gradients
     grad = get_adjoints(params_ad);
-
-    // TapeScope destructor handles cleanup
 }
