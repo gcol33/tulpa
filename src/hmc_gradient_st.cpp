@@ -11,13 +11,16 @@
 #include <algorithm>
 #include <cmath>
 
+// Self-contained headers (each opens its own namespace). Include before
+// the namespace block so they don't end up nested inside tulpa_hmc::tulpa_hmc::.
+#include "hmc_gradient_vectorized.h"
+#include "hmc_gradient_helpers_impl.h"
+#include "hmc_gradient_shared.h"
+
 using namespace Rcpp;
 
 namespace tulpa_hmc {
 
-#include "hmc_gradient_vectorized.h"
-#include "hmc_gradient_helpers_impl.h"
-#include "hmc_gradient_shared.h"
 #include "hmc_gradient_st_impl.h"
 
 } // namespace tulpa_hmc

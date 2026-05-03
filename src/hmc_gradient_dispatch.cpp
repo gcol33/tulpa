@@ -3,6 +3,7 @@
 // Migrated from hmc_gradient_dispatch.h.
 
 #include "hmc_sampler.h"
+#include "tulpa/likelihood.h"
 #include <Rcpp.h>
 
 using namespace Rcpp;

@@ -14,13 +14,15 @@
 #include <algorithm>
 #include <cmath>
 
-using namespace Rcpp;
-
-namespace tulpa_hmc {
-
+// Self-contained headers (each opens its own namespace). Include before
+// the namespace block so they don't end up nested inside tulpa_hmc::tulpa_hmc::.
 #include "hmc_gradient_vectorized.h"
 #include "hmc_gradient_helpers_impl.h"
 #include "hmc_gradient_shared.h"
+
+using namespace Rcpp;
+
+namespace tulpa_hmc {
 
 // Collapsed workspaces defined in hmc_sampler.cpp.
 extern thread_local CollapsedGPWorkspace collapsed_gp_ws;

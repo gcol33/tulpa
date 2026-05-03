@@ -13,20 +13,15 @@
 #include <algorithm>
 #include <cmath>
 
+// Self-contained headers (each opens its own namespace). Include before
+// the namespace block so they don't end up nested inside tulpa_hmc::tulpa_hmc::.
+#include "hmc_gradient_vectorized.h"
+#include "hmc_gradient_helpers_impl.h"
+#include "hmc_gradient_shared.h"
+
 using namespace Rcpp;
 
 namespace tulpa_hmc {
-
-// Pull in VecGradWorkspace type and vectorized helpers.
-// hmc_likelihood.h must be included before this (already done above).
-#include "hmc_gradient_vectorized.h"
-
-// Static-inline helpers (gradient priors, residuals, scatter, phi).
-#include "hmc_gradient_helpers_impl.h"
-
-// Shared preamble / eta / dispatch / epilogue building blocks.
-// Provides extern thread_local vec_grad_ws declaration.
-#include "hmc_gradient_shared.h"
 
 // Function definitions.
 #include "hmc_gradient_feature_impl.h"
