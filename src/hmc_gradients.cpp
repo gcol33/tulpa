@@ -63,7 +63,6 @@ static inline double icar_quadratic_form_ptr(
 #include "hmc_gradient_gp_impl.h"
 #include "hmc_gradient_autodiff_impl.h"
 #include "hmc_gradient_hsgp_impl.h"
-#include "hmc_gradient_st_impl.h"
 #include "hmc_gradient_composite_impl.h"
 
 // g_gradient_mode defined earlier in file (before verify_gradient_runtime)
