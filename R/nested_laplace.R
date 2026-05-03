@@ -99,20 +99,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     x_init_nullable = x_init
   )
 
-  res <- switch(
-    type,
-    icar       = .nl_icar(cargs, prior, verbose),
-    bym2       = .nl_bym2(cargs, prior, verbose),
-    car_proper = .nl_car_proper(cargs, prior, verbose),
-    nngp       = .nl_nngp(cargs, prior, verbose),
-    hsgp       = .nl_hsgp(cargs, prior, verbose),
-    rw1        = .nl_rw1(cargs, prior, verbose),
-    rw2        = .nl_rw2(cargs, prior, verbose),
-    ar1        = .nl_ar1(cargs, prior, verbose),
-    stop("Unknown prior type: ", type,
-         ". Supported: icar, bym2, car_proper, nngp, hsgp, rw1, rw2, ar1.",
-         call. = FALSE)
-  )
+  res <- .nl_dispatch(type, cargs, prior)
 
   # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
   res$weights <- .nl_normalise_weights(res$log_marginal)
@@ -132,163 +119,208 @@ nested_laplace <- function(...) {
   tulpa_nested_laplace(...)
 }
 
-# --- Per-prior dispatch helpers ---
+# --- Per-prior registry & dispatcher ---
+#
+# Each entry describes one supported prior `type`. To add a new prior:
+#   1. Add a row here with cpp_fn, defaults, pack, theta.
+#   2. Make sure cpp_nested_laplace_<variant> exists in RcppExports.
+# No changes needed to .nl_dispatch() or the public driver.
 
-.nl_icar <- function(a, p, verbose) {
-  if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "icar")
-  out <- do.call(cpp_nested_laplace_icar, c(list(
-    spatial_idx = as.integer(p$spatial_idx),
-    n_spatial_units = as.integer(p$n_spatial_units),
-    adj_row_ptr = as.integer(p$adj_row_ptr),
-    adj_col_idx = as.integer(p$adj_col_idx),
-    n_neighbors = as.integer(p$n_neighbors),
-    tau_grid = as.numeric(p$tau_grid)
-  ), a))
-  out$theta_grid <- as.numeric(p$tau_grid)
-  out$theta_names <- "tau"
-  out
-}
+# Areal CSR adjacency block — shared by icar/bym2/car_proper.
+.nl_adj_args <- function(p) list(
+  spatial_idx     = as.integer(p$spatial_idx),
+  n_spatial_units = as.integer(p$n_spatial_units),
+  adj_row_ptr     = as.integer(p$adj_row_ptr),
+  adj_col_idx     = as.integer(p$adj_col_idx),
+  n_neighbors     = as.integer(p$n_neighbors)
+)
 
-.nl_bym2 <- function(a, p, verbose) {
-  if (is.null(p$sigma_grid) || is.null(p$rho_grid)) {
-    sg <- exp(seq(log(0.1), log(3), length.out = 5))
-    rg <- c(0.2, 0.5, 0.8, 0.95)
-    gr <- expand.grid(sigma = sg, rho = rg)
-    p$sigma_grid <- gr$sigma; p$rho_grid <- gr$rho
+.NL_REGISTRY <- list(
+  icar = list(
+    cpp_fn = "cpp_nested_laplace_icar",
+    defaults = function(p, a) {
+      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "icar")
+      p
+    },
+    pack = function(p) c(.nl_adj_args(p), list(
+      tau_grid = as.numeric(p$tau_grid)
+    )),
+    theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
+  ),
+
+  bym2 = list(
+    cpp_fn = "cpp_nested_laplace_bym2",
+    defaults = function(p, a) {
+      if (is.null(p$sigma_grid) || is.null(p$rho_grid)) {
+        sg <- exp(seq(log(0.1), log(3), length.out = 5))
+        rg <- c(0.2, 0.5, 0.8, 0.95)
+        gr <- expand.grid(sigma = sg, rho = rg)
+        p$sigma_grid <- gr$sigma; p$rho_grid <- gr$rho
+      }
+      p
+    },
+    pack = function(p) c(.nl_adj_args(p), list(
+      scale_factor       = as.numeric(p$scale_factor %||% 1.0),
+      sigma_spatial_grid = as.numeric(p$sigma_grid),
+      rho_grid           = as.numeric(p$rho_grid)
+    )),
+    theta = function(p) list(
+      grid  = cbind(sigma = p$sigma_grid, rho = p$rho_grid),
+      names = c("sigma", "rho")
+    )
+  ),
+
+  car_proper = list(
+    cpp_fn = "cpp_nested_laplace_car_proper",
+    defaults = function(p, a) {
+      if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
+        rb <- p$rho_bounds %||% c(0, 1)
+        # Margin in from the eigenvalue endpoints — Q goes singular at the
+        # boundary, so anchoring the grid in (lower + eps, upper - eps) avoids
+        # NaN log-determinants from the per-grid-point Cholesky.
+        eps <- 0.05 * (rb[2] - rb[1])
+        lo <- rb[1] + eps
+        hi <- rb[2] - eps
+        g_tau <- exp(seq(log(0.3), log(30), length.out = 5))
+        g_rho <- seq(lo, hi, length.out = 5)
+        gr <- expand.grid(tau = g_tau, rho = g_rho)
+        p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
+      }
+      p
+    },
+    pack = function(p) c(.nl_adj_args(p), list(
+      tau_grid = as.numeric(p$tau_grid),
+      rho_grid = as.numeric(p$rho_grid)
+    )),
+    theta = function(p) list(
+      grid  = cbind(tau = p$tau_grid, rho = p$rho_grid),
+      names = c("tau", "rho")
+    )
+  ),
+
+  nngp = list(
+    cpp_fn = "cpp_nested_laplace_nngp",
+    defaults = function(p, a) {
+      if (is.null(p$sigma2_grid) || is.null(p$phi_gp_grid)) {
+        s2 <- exp(seq(log(0.05), log(2), length.out = 5))
+        pg <- exp(seq(log(0.05), log(1.5), length.out = 5))
+        gr <- expand.grid(sigma2 = s2, phi_gp = pg)
+        p$sigma2_grid <- gr$sigma2
+        p$phi_gp_grid <- gr$phi_gp
+      }
+      p
+    },
+    pack = function(p) {
+      # nn_order in cpp_nested_laplace_nngp expects 0-based indices, matching
+      # the convention in cpp_laplace_fit_gp (see R/fit_laplace.R:433).
+      n_spatial <- as.integer(p$n_spatial)
+      list(
+        coords      = as.matrix(p$coords),
+        nn_idx      = as.matrix(p$nn_idx),
+        nn_dist     = as.matrix(p$nn_dist),
+        nn_order    = as.integer((p$nn_order %||% seq_len(n_spatial)) - 1L),
+        n_spatial   = n_spatial,
+        nn          = as.integer(p$nn),
+        sigma2_grid = as.numeric(p$sigma2_grid),
+        phi_gp_grid = as.numeric(p$phi_gp_grid),
+        cov_type    = as.integer(p$cov_type %||% 2L)  # default Matern-5/2
+      )
+    },
+    theta = function(p) list(
+      grid  = cbind(sigma2 = p$sigma2_grid, phi_gp = p$phi_gp_grid),
+      names = c("sigma2", "phi_gp")
+    )
+  ),
+
+  hsgp = list(
+    cpp_fn = "cpp_nested_laplace_hsgp",
+    defaults = function(p, a) {
+      if (is.null(p$sigma2_grid) || is.null(p$lengthscale_grid)) {
+        s2 <- exp(seq(log(0.05), log(2), length.out = 5))
+        ls <- exp(seq(log(0.05), log(1.5), length.out = 5))
+        gr <- expand.grid(sigma2 = s2, ell = ls)
+        p$sigma2_grid <- gr$sigma2
+        p$lengthscale_grid <- gr$ell
+      }
+      p
+    },
+    pack = function(p) list(
+      phi_basis        = as.matrix(p$phi_basis),
+      lambda_eig       = as.numeric(p$lambda_eig),
+      sigma2_grid      = as.numeric(p$sigma2_grid),
+      lengthscale_grid = as.numeric(p$lengthscale_grid)
+    ),
+    theta = function(p) list(
+      grid  = cbind(sigma2 = p$sigma2_grid, lengthscale = p$lengthscale_grid),
+      names = c("sigma2", "lengthscale")
+    )
+  ),
+
+  rw1 = list(
+    cpp_fn = "cpp_nested_laplace_rw1",
+    defaults = function(p, a) {
+      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw1")
+      p
+    },
+    pack = function(p) list(
+      temporal_idx = as.integer(p$temporal_idx),
+      n_times      = as.integer(p$n_times),
+      cyclic       = isTRUE(p$cyclic),
+      tau_grid     = as.numeric(p$tau_grid)
+    ),
+    theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
+  ),
+
+  rw2 = list(
+    cpp_fn = "cpp_nested_laplace_rw2",
+    defaults = function(p, a) {
+      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw2")
+      p
+    },
+    pack = function(p) list(
+      temporal_idx = as.integer(p$temporal_idx),
+      n_times      = as.integer(p$n_times),
+      tau_grid     = as.numeric(p$tau_grid)
+    ),
+    theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
+  ),
+
+  ar1 = list(
+    cpp_fn = "cpp_nested_laplace_ar1",
+    defaults = function(p, a) {
+      if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
+        g_tau <- exp(seq(log(0.5), log(20), length.out = 5))
+        g_rho <- c(0.0, 0.4, 0.7, 0.9, 0.97)
+        gr <- expand.grid(tau = g_tau, rho = g_rho)
+        p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
+      }
+      p
+    },
+    pack = function(p) list(
+      temporal_idx = as.integer(p$temporal_idx),
+      n_times      = as.integer(p$n_times),
+      tau_grid     = as.numeric(p$tau_grid),
+      rho_grid     = as.numeric(p$rho_grid)
+    ),
+    theta = function(p) list(
+      grid  = cbind(tau = p$tau_grid, rho = p$rho_grid),
+      names = c("tau", "rho")
+    )
+  )
+)
+
+.nl_dispatch <- function(type, a, p) {
+  spec <- .NL_REGISTRY[[type]]
+  if (is.null(spec)) {
+    stop("Unknown prior type: ", type,
+         ". Supported: ", paste(names(.NL_REGISTRY), collapse = ", "), ".",
+         call. = FALSE)
   }
-  out <- do.call(cpp_nested_laplace_bym2, c(list(
-    spatial_idx = as.integer(p$spatial_idx),
-    n_spatial_units = as.integer(p$n_spatial_units),
-    adj_row_ptr = as.integer(p$adj_row_ptr),
-    adj_col_idx = as.integer(p$adj_col_idx),
-    n_neighbors = as.integer(p$n_neighbors),
-    scale_factor = as.numeric(p$scale_factor %||% 1.0),
-    sigma_spatial_grid = as.numeric(p$sigma_grid),
-    rho_grid = as.numeric(p$rho_grid)
-  ), a))
-  out$theta_grid <- cbind(sigma = p$sigma_grid, rho = p$rho_grid)
-  out$theta_names <- c("sigma", "rho")
-  out
-}
-
-.nl_car_proper <- function(a, p, verbose) {
-  if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
-    rb <- p$rho_bounds %||% c(0, 1)
-    # Margin in from the eigenvalue endpoints — Q goes singular at the
-    # boundary, so anchoring the grid in (lower + eps, upper - eps) avoids
-    # NaN log-determinants from the per-grid-point Cholesky.
-    eps <- 0.05 * (rb[2] - rb[1])
-    lo <- rb[1] + eps
-    hi <- rb[2] - eps
-    g_tau <- exp(seq(log(0.3), log(30), length.out = 5))
-    g_rho <- seq(lo, hi, length.out = 5)
-    gr <- expand.grid(tau = g_tau, rho = g_rho)
-    p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
-  }
-  out <- do.call(cpp_nested_laplace_car_proper, c(list(
-    spatial_idx = as.integer(p$spatial_idx),
-    n_spatial_units = as.integer(p$n_spatial_units),
-    adj_row_ptr = as.integer(p$adj_row_ptr),
-    adj_col_idx = as.integer(p$adj_col_idx),
-    n_neighbors = as.integer(p$n_neighbors),
-    tau_grid = as.numeric(p$tau_grid),
-    rho_grid = as.numeric(p$rho_grid)
-  ), a))
-  out$theta_grid <- cbind(tau = p$tau_grid, rho = p$rho_grid)
-  out$theta_names <- c("tau", "rho")
-  out
-}
-
-.nl_nngp <- function(a, p, verbose) {
-  if (is.null(p$sigma2_grid) || is.null(p$phi_gp_grid)) {
-    s2 <- exp(seq(log(0.05), log(2), length.out = 5))
-    pg <- exp(seq(log(0.05), log(1.5), length.out = 5))
-    gr <- expand.grid(sigma2 = s2, phi_gp = pg)
-    p$sigma2_grid <- gr$sigma2
-    p$phi_gp_grid <- gr$phi_gp
-  }
-  cov_type <- as.integer(p$cov_type %||% 2L)  # default Matern-5/2
-  # nn_order in cpp_nested_laplace_nngp expects 0-based indices, matching
-  # the convention in cpp_laplace_fit_gp (see R/fit_laplace.R:433).
-  n_spatial <- as.integer(p$n_spatial)
-  nn_order_0 <- as.integer((p$nn_order %||% seq_len(n_spatial)) - 1L)
-  out <- do.call(cpp_nested_laplace_nngp, c(list(
-    coords      = as.matrix(p$coords),
-    nn_idx      = as.matrix(p$nn_idx),
-    nn_dist     = as.matrix(p$nn_dist),
-    nn_order    = nn_order_0,
-    n_spatial   = n_spatial,
-    nn          = as.integer(p$nn),
-    sigma2_grid = as.numeric(p$sigma2_grid),
-    phi_gp_grid = as.numeric(p$phi_gp_grid),
-    cov_type    = cov_type
-  ), a))
-  out$theta_grid <- cbind(sigma2 = p$sigma2_grid, phi_gp = p$phi_gp_grid)
-  out$theta_names <- c("sigma2", "phi_gp")
-  out
-}
-
-.nl_hsgp <- function(a, p, verbose) {
-  if (is.null(p$sigma2_grid) || is.null(p$lengthscale_grid)) {
-    s2 <- exp(seq(log(0.05), log(2), length.out = 5))
-    ls <- exp(seq(log(0.05), log(1.5), length.out = 5))
-    gr <- expand.grid(sigma2 = s2, ell = ls)
-    p$sigma2_grid <- gr$sigma2
-    p$lengthscale_grid <- gr$ell
-  }
-  out <- do.call(cpp_nested_laplace_hsgp, c(list(
-    phi_basis        = as.matrix(p$phi_basis),
-    lambda_eig       = as.numeric(p$lambda_eig),
-    sigma2_grid      = as.numeric(p$sigma2_grid),
-    lengthscale_grid = as.numeric(p$lengthscale_grid)
-  ), a))
-  out$theta_grid <- cbind(sigma2 = p$sigma2_grid,
-                          lengthscale = p$lengthscale_grid)
-  out$theta_names <- c("sigma2", "lengthscale")
-  out
-}
-
-.nl_rw1 <- function(a, p, verbose) {
-  if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw1")
-  cyclic <- isTRUE(p$cyclic)
-  out <- do.call(cpp_nested_laplace_rw1, c(list(
-    temporal_idx = as.integer(p$temporal_idx),
-    n_times = as.integer(p$n_times),
-    cyclic = cyclic,
-    tau_grid = as.numeric(p$tau_grid)
-  ), a))
-  out$theta_grid <- as.numeric(p$tau_grid)
-  out$theta_names <- "tau"
-  out
-}
-
-.nl_rw2 <- function(a, p, verbose) {
-  if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw2")
-  out <- do.call(cpp_nested_laplace_rw2, c(list(
-    temporal_idx = as.integer(p$temporal_idx),
-    n_times = as.integer(p$n_times),
-    tau_grid = as.numeric(p$tau_grid)
-  ), a))
-  out$theta_grid <- as.numeric(p$tau_grid)
-  out$theta_names <- "tau"
-  out
-}
-
-.nl_ar1 <- function(a, p, verbose) {
-  if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
-    g_tau <- exp(seq(log(0.5), log(20), length.out = 5))
-    g_rho <- c(0.0, 0.4, 0.7, 0.9, 0.97)
-    gr <- expand.grid(tau = g_tau, rho = g_rho)
-    p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
-  }
-  out <- do.call(cpp_nested_laplace_ar1, c(list(
-    temporal_idx = as.integer(p$temporal_idx),
-    n_times = as.integer(p$n_times),
-    tau_grid = as.numeric(p$tau_grid),
-    rho_grid = as.numeric(p$rho_grid)
-  ), a))
-  out$theta_grid <- cbind(tau = p$tau_grid, rho = p$rho_grid)
-  out$theta_names <- c("tau", "rho")
+  p   <- spec$defaults(p, a)
+  out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
+  th  <- spec$theta(p)
+  out$theta_grid  <- th$grid
+  out$theta_names <- th$names
   out
 }
 
