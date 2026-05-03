@@ -54,7 +54,7 @@ tests/testthat/     — Unit and integration tests
 - Autodiff: arena, forward, tape
 - Latent structure: spatial, temporal, RE, SVC, TVC, ST, latent factors
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary
-- Generic diagnostics: moranI, durbinWatson, variogram, compare_models, modelAverage
+- Generic diagnostics: moran_i, durbin_watson, tulpa_variogram, compare_models, modelAverage
 - Generic plotting: trace, density, pairs plots of posterior draws
 - Rubin's rules pooling
 - Parameter back-transformation (logit → probability)
@@ -80,8 +80,11 @@ See `?tulpa_em_laplace`.
 ### Generic S3 Methods and Diagnostics
 
 Implemented in `R/methods_generic.R` (`coef`, `confint`, `vcov`, `logLik`,
-`summary`, `plot`, `tidy`, `glance`, `ranef`) and `R/diagnostics_generic.R`
-(`moranI`, `durbinWatson`, `variogram`, `compare_models`, `modelAverage`).
+`summary`, `plot`, `tidy`, `glance`, `ranef`), `R/diagnostics_generic.R`
+(`compare_models`, `modelAverage`, `spatialRange`, `temporalCorr`), and
+`R/diagnostics_sim.R` (`moran_i`, `durbin_watson`, `tulpa_variogram`,
+`pit_residuals`, `test_uniformity`, `test_dispersion`, `test_outliers`,
+`test_zero_inflation`, `check_model`).
 Model packages inherit via `class = c("model_fit", "tulpa_fit")`.
 
 ### Matrix CHOLMOD Fix
