@@ -7,6 +7,10 @@
 
 #include <cmath>
 #include <algorithm>
+#include <array>
+#include <string>
+#include <string_view>
+#include <utility>
 
 // Use canonical type definitions from exported headers
 #include "tulpa/types.h"
@@ -15,29 +19,26 @@ namespace tulpa_zi {
 
 using tulpa::ZIType;
 
-// Parse ZI type from string
+// String -> ZIType lookup. Aliases ("none"/"", "zoib"/"zoibinomial") sit on
+// their own rows so adding a new type or alias is a one-row change.
 inline ZIType parse_zi_type(const std::string& zi_type_str) {
-  if (zi_type_str == "none" || zi_type_str == "") {
-    return ZIType::NONE;
-  } else if (zi_type_str == "zi_poisson") {
-    return ZIType::ZI_POISSON;
-  } else if (zi_type_str == "zi_negbin") {
-    return ZIType::ZI_NEGBIN;
-  } else if (zi_type_str == "hurdle_poisson") {
-    return ZIType::HURDLE_POISSON;
-  } else if (zi_type_str == "hurdle_negbin") {
-    return ZIType::HURDLE_NEGBIN;
-  } else if (zi_type_str == "zi_binomial") {
-    return ZIType::ZI_BINOMIAL;
-  } else if (zi_type_str == "hurdle_binomial") {
-    return ZIType::HURDLE_BINOMIAL;
-  } else if (zi_type_str == "oi_binomial") {
-    return ZIType::OI_BINOMIAL;
-  } else if (zi_type_str == "zoib" || zi_type_str == "zoibinomial") {
-    return ZIType::ZOIB;
-  } else {
-    return ZIType::NONE;
+  static constexpr std::array<std::pair<std::string_view, ZIType>, 11> kZITypeTable{{
+    {"none",            ZIType::NONE},
+    {"",                ZIType::NONE},
+    {"zi_poisson",      ZIType::ZI_POISSON},
+    {"zi_negbin",       ZIType::ZI_NEGBIN},
+    {"hurdle_poisson",  ZIType::HURDLE_POISSON},
+    {"hurdle_negbin",   ZIType::HURDLE_NEGBIN},
+    {"zi_binomial",     ZIType::ZI_BINOMIAL},
+    {"hurdle_binomial", ZIType::HURDLE_BINOMIAL},
+    {"oi_binomial",     ZIType::OI_BINOMIAL},
+    {"zoib",            ZIType::ZOIB},
+    {"zoibinomial",     ZIType::ZOIB},
+  }};
+  for (const auto& entry : kZITypeTable) {
+    if (entry.first == zi_type_str) return entry.second;
   }
+  return ZIType::NONE;
 }
 
 // Log of 1 + exp(x), numerically stable
