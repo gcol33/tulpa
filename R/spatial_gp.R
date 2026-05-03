@@ -322,30 +322,9 @@ print.tulpa_hsgp <- function(x, ...) {
 #'
 #' @keywords internal
 validate_hsgp <- function(spatial, data) {
-  # Check coordinate columns exist
-  missing_cols <- setdiff(spatial$coord_vars, names(data))
-  if (length(missing_cols) > 0) {
-    stop("Coordinate columns not found in data: ",
-         paste(missing_cols, collapse = ", "), call. = FALSE)
-  }
-
-  # Extract coordinates
-  coords <- as.matrix(data[, spatial$coord_vars, drop = FALSE])
-
-  # Check for missing values
-  if (any(is.na(coords))) {
-    stop("Coordinate columns contain missing values", call. = FALSE)
-  }
-
-  # Scale if requested
-  if (spatial$scale_coords) {
-    coords <- scale(coords)
-  }
-
-  # Store validated data
+  coords <- prepare_coords(spatial$coord_vars, data, spatial$scale_coords)
   spatial$n_obs <- nrow(coords)
   spatial$coords_matrix <- coords
-
   spatial
 }
 
@@ -353,26 +332,7 @@ validate_hsgp <- function(spatial, data) {
 #' Validate HSGP-MSGP (multi-scale GP with HSGP approximation)
 #' @noRd
 validate_hsgp_multiscale <- function(spatial, data) {
-  # Check coordinate columns exist
-  missing_cols <- setdiff(spatial$coord_vars, names(data))
-  if (length(missing_cols) > 0) {
-    stop("Coordinate columns not found in data: ",
-         paste(missing_cols, collapse = ", "), call. = FALSE)
-  }
-
-  # Extract coordinates
-  coords <- as.matrix(data[, spatial$coord_vars, drop = FALSE])
-
-  # Check for missing values
-  if (any(is.na(coords))) {
-    stop("Coordinate columns contain missing values", call. = FALSE)
-  }
-
-  # Scale if requested
-  if (isTRUE(spatial$scale_coords)) {
-    coords <- scale(coords)
-  }
-
+  coords <- prepare_coords(spatial$coord_vars, data, spatial$scale_coords)
   list(
     coords_matrix = coords,
     n_obs = nrow(coords)

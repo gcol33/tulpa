@@ -124,18 +124,9 @@ validate_temporal_multiscale <- function(temporal, data) {
     return(validate_temporal(temporal, data))
   }
 
-  # Check time variable exists
-  if (!(temporal$time_var %in% names(data))) {
-    stop(sprintf("Temporal variable '%s' not found in data",
-                 temporal$time_var), call. = FALSE)
-  }
-
-  # Check group variable exists if specified
+  assert_columns_exist(temporal$time_var, data, role = "Temporal")
   if (!is.null(temporal$group_var)) {
-    if (!(temporal$group_var %in% names(data))) {
-      stop(sprintf("Temporal group variable '%s' not found in data",
-                   temporal$group_var), call. = FALSE)
-    }
+    assert_columns_exist(temporal$group_var, data, role = "Temporal group")
   }
 
   # Get time values and create indices
