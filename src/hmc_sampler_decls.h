@@ -184,5 +184,11 @@ double icar_quadratic_form(
     const ModelData& data
 );
 
+// Specialized handcoded gradient functions (defined in dedicated .cpp TUs).
+// Required so hmc_gradient_dispatch.h can take their addresses after each
+// function is moved out of hmc_gradients.cpp.
+void compute_gradient_composite(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
 
 #endif  // TULPA_HMC_SAMPLER_DECLS_H
