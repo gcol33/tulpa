@@ -343,6 +343,32 @@ inline double* vector_to_buf(const Rcpp::NumericVector& v) {
     return buf;
 }
 
+// Common preamble shared by all (Nested-)Laplace shims that take the
+// canonical (y, n_trials, X_flat, re_idx, family) input bundle. Two outlier
+// shims do not use this: laplace_mode_dense_multi_re_impl (uses re_idx_list
+// rather than re_idx) and nested_laplace_spde_impl (no re_idx).
+struct LaplaceShimInputs {
+    Rcpp::NumericVector  yv;
+    Rcpp::IntegerVector  nv;
+    Rcpp::NumericMatrix  Xm;
+    Rcpp::NumericVector  rv;
+    std::string          fam;
+};
+
+inline LaplaceShimInputs pack_laplace_shim_inputs(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, const char* family
+) {
+    LaplaceShimInputs in;
+    in.yv  = Rcpp::NumericVector(y, y + N);
+    in.nv  = Rcpp::IntegerVector(n_trials, n_trials + N);
+    in.Xm  = build_matrix_colmajor(X_flat, N, p);
+    in.rv  = Rcpp::NumericVector(re_idx, re_idx + N);
+    in.fam = family ? std::string(family) : std::string("binomial");
+    return in;
+}
+
 // Marshal the four adjacency CSR vectors shared by all spatial shims.
 inline void marshal_adj(
     const int* spatial_idx, int N,

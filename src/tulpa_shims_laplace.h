@@ -19,16 +19,12 @@ extern "C" void tulpa_laplace_mode_dense_impl(
     int /*n_x_init*/,
     tulpa::LaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
-    std::string fam = family ? std::string(family) : std::string("binomial");
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
 
     // laplace_mode_dense does not accept x_init — kept in the shim signature
     // for API symmetry with the spatial variant.
     tulpa::LaplaceResult result = tulpa::laplace_mode_dense(
-        yv, nv, Xm, rv, n_re_groups, sigma_re, fam, phi,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re, in.fam, phi,
         max_iter, tol, n_threads
     );
     copy_mode_result(result, result_out);
@@ -57,22 +53,17 @@ extern "C" void tulpa_laplace_mode_spatial_impl(
     int n_x_init,
     tulpa::LaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
     Rcpp::NumericVector  xinit;
     if (x_init && n_x_init > 0) xinit = Rcpp::NumericVector(x_init, x_init + n_x_init);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     tulpa::LaplaceResult result = tulpa::laplace_mode_spatial(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn, tau_spatial,
-        fam, phi, max_iter, tol, n_threads, xinit
+        in.fam, phi, max_iter, tol, n_threads, xinit
     );
     copy_mode_result(result, result_out);
 }
@@ -202,21 +193,16 @@ extern "C" void tulpa_laplace_mode_bym2_impl(
     int n_threads,
     tulpa::LaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     tulpa::LaplaceResult result = tulpa::laplace_mode_bym2(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
         sigma_spatial, rho, scale_factor,
-        fam, phi, max_iter, tol, n_threads
+        in.fam, phi, max_iter, tol, n_threads
     );
     copy_mode_result(result, result_out);
 }
@@ -243,22 +229,17 @@ extern "C" void tulpa_laplace_mode_gp_impl(
     int n_threads,
     tulpa::LaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::NumericMatrix  cm = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
     Rcpp::IntegerMatrix  nim = build_int_matrix_colmajor(nn_idx_flat, n_spatial, nn);
     Rcpp::NumericMatrix  ndm = build_matrix_colmajor(nn_dist_flat, n_spatial, nn);
     Rcpp::IntegerVector  nord(nn_order, nn_order + n_spatial);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         cm, nim, ndm, nord, n_spatial, nn,
         sigma2_gp, phi_gp, cov_type,
-        fam, phi, max_iter, tol, n_threads
+        in.fam, phi, max_iter, tol, n_threads
     );
     copy_mode_result(result, result_out);
 }
@@ -292,10 +273,7 @@ extern "C" void tulpa_laplace_mode_multiscale_gp_impl(
     int n_threads,
     tulpa::LaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::NumericMatrix  cm = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
 
     Rcpp::IntegerMatrix  nim_l = build_int_matrix_colmajor(nn_idx_local_flat,    n_spatial, nn_local);
@@ -305,16 +283,14 @@ extern "C" void tulpa_laplace_mode_multiscale_gp_impl(
     Rcpp::NumericMatrix  ndm_r = build_matrix_colmajor    (nn_dist_regional_flat, n_spatial, nn_regional);
     Rcpp::IntegerVector  nord_r(nn_order_regional, nn_order_regional + n_spatial);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     tulpa::LaplaceResult result = tulpa::laplace_mode_multiscale_gp(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         cm,
         nim_l, ndm_l, nord_l, nn_local,
         nim_r, ndm_r, nord_r, nn_regional,
         n_spatial,
         sigma2_local, phi_local, sigma2_regional, phi_regional,
-        cov_type, fam, phi, max_iter, tol, n_threads
+        cov_type, in.fam, phi, max_iter, tol, n_threads
     );
     copy_mode_result(result, result_out);
 }
@@ -343,19 +319,14 @@ extern "C" void tulpa_laplace_mode_multiscale_temporal_impl(
     int n_threads,
     tulpa::LaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  tv(time_idx, time_idx + N);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     tulpa::LaplaceResult result = tulpa::laplace_mode_multiscale_temporal(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         tv, n_times, seasonal_period, trend_type, short_type,
         sigma2_trend, sigma2_seasonal, sigma2_short, rho_short,
-        fam, phi, max_iter, tol, n_threads
+        in.fam, phi, max_iter, tol, n_threads
     );
     copy_mode_result(result, result_out);
 }
@@ -383,23 +354,18 @@ extern "C" void tulpa_laplace_mode_rsr_impl(
     int n_threads,
     tulpa::LaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
     Rcpp::NumericVector  proj(rsr_projection_flat,
                               rsr_projection_flat + (size_t)rsr_n * (size_t)rsr_n);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     tulpa::LaplaceResult result = tulpa::laplace_mode_rsr(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
         tau_spatial, proj, rsr_n,
-        fam, phi, max_iter, tol, n_threads
+        in.fam, phi, max_iter, tol, n_threads
     );
     copy_mode_result(result, result_out);
 }

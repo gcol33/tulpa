@@ -71,21 +71,16 @@ extern "C" void tulpa_nested_laplace_icar_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
     Rcpp::NumericVector  tg (tau_grid,    tau_grid + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_icar(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
-        tg, fam, phi, max_iter, tol, n_threads,
+        tg, in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
@@ -104,23 +99,18 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
     Rcpp::NumericVector  sg (sigma_spatial_grid, sigma_spatial_grid + n_grid);
     Rcpp::NumericVector  rg (rho_grid,           rho_grid           + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_bym2(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
         scale_factor, sg, rg,
-        fam, phi, max_iter, tol, n_threads,
+        in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
@@ -138,22 +128,17 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
     Rcpp::NumericVector  tg (tau_grid, tau_grid + n_grid);
     Rcpp::NumericVector  rg (rho_grid, rho_grid + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_car_proper(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
-        tg, rg, fam, phi, max_iter, tol, n_threads,
+        tg, rg, in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
@@ -170,19 +155,14 @@ extern "C" void tulpa_nested_laplace_rw1_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  tv(temporal_idx, temporal_idx + N);
     Rcpp::NumericVector  tg(tau_grid, tau_grid + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_rw1(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         tv, n_times, (cyclic != 0),
-        tg, fam, phi, max_iter, tol, n_threads,
+        tg, in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
@@ -199,19 +179,14 @@ extern "C" void tulpa_nested_laplace_rw2_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  tv(temporal_idx, temporal_idx + N);
     Rcpp::NumericVector  tg(tau_grid, tau_grid + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_rw2(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         tv, n_times,
-        tg, fam, phi, max_iter, tol, n_threads,
+        tg, in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
@@ -228,20 +203,15 @@ extern "C" void tulpa_nested_laplace_ar1_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::IntegerVector  tv(temporal_idx, temporal_idx + N);
     Rcpp::NumericVector  tg(tau_grid, tau_grid + n_grid);
     Rcpp::NumericVector  rg(rho_grid, rho_grid + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_ar1(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         tv, n_times, tg, rg,
-        fam, phi, max_iter, tol, n_threads,
+        in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
@@ -262,10 +232,7 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::NumericMatrix  cm = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
     Rcpp::IntegerMatrix  nim = build_int_matrix_colmajor(nn_idx_flat, n_spatial, nn);
     Rcpp::NumericMatrix  ndm = build_matrix_colmajor(nn_dist_flat, n_spatial, nn);
@@ -273,13 +240,11 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
     Rcpp::NumericVector  s2g(sigma2_grid,  sigma2_grid  + n_grid);
     Rcpp::NumericVector  phg(phi_gp_grid,  phi_gp_grid  + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_nngp(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         cm, nim, ndm, nord, n_spatial, nn,
         s2g, phg, cov_type,
-        fam, phi, max_iter, tol, n_threads,
+        in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
@@ -297,21 +262,16 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
     const double* x_init, int n_x_init,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + N);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + N);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, N, p);
-    Rcpp::NumericVector  rv(re_idx, re_idx + N);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
     Rcpp::NumericMatrix  pb = build_matrix_colmajor(phi_basis_flat, N, n_basis);
     Rcpp::NumericVector  le(lambda_eig, lambda_eig + n_basis);
     Rcpp::NumericVector  s2g(sigma2_grid,      sigma2_grid      + n_grid);
     Rcpp::NumericVector  lsg(lengthscale_grid, lengthscale_grid + n_grid);
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_hsgp(
-        yv, nv, Xm, rv, n_re_groups, sigma_re,
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         pb, le, s2g, lsg,
-        fam, phi, max_iter, tol, n_threads,
+        in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init)
     );
     copy_nested_laplace_result(out, result_out);
