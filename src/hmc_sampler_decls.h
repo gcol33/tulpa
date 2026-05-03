@@ -234,6 +234,9 @@ void compute_gradient_ms_temporal_handcoded(
 void compute_gradient_spatiotemporal_handcoded(
     const std::vector<double>&, const ModelData&, const ParamLayout&,
     std::vector<double>&, double*);
+void compute_gradient_msgp_handcoded(
+    const std::vector<double>&, const ModelData&, const ParamLayout&,
+    std::vector<double>&, double*);
 
 // Get RE value for observation (handles non-centered re_param=1 -> sigma*z transform).
 inline double re_value_for_eta(
