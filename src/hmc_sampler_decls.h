@@ -213,9 +213,9 @@ double icar_quadratic_form(
     const ModelData& data
 );
 
-// Specialized handcoded gradient functions (defined in dedicated .cpp TUs).
-// Required so hmc_gradient_dispatch.h can take their addresses after each
-// function is moved out of hmc_gradients.cpp.
+// Specialized handcoded gradient functions and dispatch helpers.
+// Declared here so hmc_gradient_dispatch.h (compiled in a separate TU)
+// can reference them by address without seeing their definitions.
 void compute_gradient_svc_handcoded(
     const std::vector<double>&, const ModelData&, const ParamLayout&,
     std::vector<double>&, double*);

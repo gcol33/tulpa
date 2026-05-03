@@ -92,8 +92,6 @@ void compute_gradient(
     fn(params, data, layout, grad, log_post_out);
 }
 
-#include "hmc_gradient_dispatch.h"
-
 // =====================================================================
 
 } // namespace tulpa_hmc
