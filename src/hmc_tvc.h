@@ -188,29 +188,11 @@ inline double log_prior_rho_beta(double rho, double a, double b) {
 // -----------------------------------------------------------------------------
 // Gradient helpers (for HMC)
 // -----------------------------------------------------------------------------
-
-// Gradient of RW1 log-prior w.r.t. w
-inline void rw1_gradient(
-    const double* w,
-    int n_times,
-    double tau,
-    double* grad_w
-) {
-  // d/dw_t [0.5 * tau * sum((w_{t+1} - w_t)^2)]
-  // = tau * (2*w_t - w_{t-1} - w_{t+1}) for interior
-  // = tau * (w_t - w_{t+1}) for t=0
-  // = tau * (w_t - w_{t-1}) for t=T-1
-
-  for (int t = 0; t < n_times; t++) {
-    if (t == 0) {
-      grad_w[t] = -tau * (w[1] - w[0]);
-    } else if (t == n_times - 1) {
-      grad_w[t] = -tau * (w[t] - w[t-1]);
-    } else {
-      grad_w[t] = -tau * (2.0 * w[t] - w[t-1] - w[t+1]);
-    }
-  }
-}
+//
+// The RW1 log-prior gradient lives in hmc_tvc_grad.h as
+// tulpa_tvc::rw1_grad_w. A previous duplicate in this file used the
+// opposite sign convention (gradient of -log_prior) and was never
+// actually called — removed to avoid divergence.
 
 // Gradient of RW2 log-prior w.r.t. w
 inline void rw2_gradient(

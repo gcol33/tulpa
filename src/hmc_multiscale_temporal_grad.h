@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include "hmc_temporal_multiscale.h"
+#include "hmc_tvc_grad.h"  // canonical rw1_grad_w used here in sigma2 form
 
 namespace tulpa_temporal_grad {
 
@@ -39,18 +40,11 @@ struct MultiscaleTemporalGradients {
 
 // RW1: log p(phi|sigma2) = -0.5 * (T-1) * log(2*pi*sigma2)
 //                        - 0.5 / sigma2 * sum((phi[t] - phi[t-1])^2)
+//
+// Same gradient as tulpa_tvc::rw1_grad_w with tau = 1/sigma2; this
+// wrapper exists so multiscale temporal callers can pass sigma2 directly.
 inline void rw1_grad_phi(const double* phi, int n, double sigma2, double* grad_phi) {
-    double inv_sigma2 = 1.0 / (sigma2 + 1e-10);
-
-    for (int t = 0; t < n; t++) {
-        if (t == 0) {
-            grad_phi[t] = -inv_sigma2 * (phi[0] - phi[1]);
-        } else if (t == n - 1) {
-            grad_phi[t] = -inv_sigma2 * (phi[t] - phi[t-1]);
-        } else {
-            grad_phi[t] = -inv_sigma2 * (2.0 * phi[t] - phi[t-1] - phi[t+1]);
-        }
-    }
+    tulpa_tvc::rw1_grad_w(phi, n, 1.0 / (sigma2 + 1e-10), grad_phi);
 }
 
 inline double rw1_grad_log_sigma2(const double* phi, int n, double sigma2) {
