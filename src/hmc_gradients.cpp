@@ -60,7 +60,7 @@ static inline double icar_quadratic_form_ptr(
 // hmc_gradient_analytical_impl.h migrated to hmc_gradient_analytical.cpp.
 // hmc_gradient_fallback_impl.h migrated to hmc_gradient_fallback.cpp.
 
-#include "hmc_gradient_gp_impl.h"
+// hmc_gradient_gp_impl.h migrated to hmc_gradient_gp.cpp.
 #include "hmc_gradient_composite_impl.h"
 
 // g_gradient_mode defined earlier in file (before verify_gradient_runtime)
