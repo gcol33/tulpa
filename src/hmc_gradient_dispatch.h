@@ -1,15 +1,15 @@
 // hmc_gradient_dispatch.h
 // Gradient-mode dispatch policy for the HMC backend.
 //
-// Included from hmc_sampler.cpp after all gradient implementations and generic
-// fallback helpers have been declared. This file intentionally contains only
-// the resolver so the dispatch policy has a single reviewable home.
+// Included from hmc_gradient_dispatch.cpp inside namespace tulpa_hmc, which
+// is the single reviewable home for the dispatch policy. Per-kernel support
+// contracts live in hmc_gradient_dispatch_predicates.h.
 
 #ifndef TULPA_HMC_GRADIENT_DISPATCH_H
 #define TULPA_HMC_GRADIENT_DISPATCH_H
 
-// This header is included inside namespace tulpa_hmc.
-//
+#include "hmc_gradient_dispatch_predicates.h"
+
 // Dispatch order is part of the HMC performance contract: honor explicit user
 // modes first, use the fastest safe hand-coded path for AUTO/H, and fall back
 // to arena autodiff or numerical gradients for model combinations whose
@@ -65,10 +65,7 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
         return &compute_gradient_composite;
 
     // Crossed intercept-only RE is not handled by composite for exotic configs.
-    const bool has_exotic = layout.is_temporal_gp || layout.has_tvc ||
-        layout.has_multiscale_temporal || layout.is_gp || layout.is_multiscale_gp ||
-        layout.has_svc || layout.has_latent;
-    if (has_exotic && !layout.has_re_slopes && data.n_re_terms > 1)
+    if (has_exotic_feature(layout) && !layout.has_re_slopes && data.n_re_terms > 1)
         return &compute_gradient_arena;
 
     // TVC + latent is not covered by either specialized function.
@@ -81,76 +78,23 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
         data.spatiotemporal_data.temporal_type == TemporalType::AR1)
         return &compute_gradient_arena;
 
-    // Specialized H-mode functions: only dispatch if the model has no features
-    // beyond what the function can handle. Otherwise fall through to composite.
-    if (layout.is_hsgp && data.has_hsgp &&
-        !layout.has_spatiotemporal &&
-        !layout.has_latent && !layout.has_svc && !layout.has_re_slopes &&
-        !layout.has_multiscale_temporal &&
-        !layout.is_temporal_gp && !layout.has_tvc)
-        return &compute_gradient_hsgp;
-    if (layout.is_gp_collapsed && data.has_gp && data.gp_collapsed)
-        return &compute_gradient_gp_collapsed;
-    if (layout.is_icar_collapsed || layout.is_bym2_collapsed)
-        return &compute_gradient_icar_collapsed;
-    if (layout.is_gp && data.has_gp && !layout.has_temporal && !layout.has_re_slopes
-        && !layout.is_temporal_gp && !layout.has_tvc && !layout.has_multiscale_temporal
-        && !layout.has_latent && !layout.has_svc && !layout.has_spatiotemporal)
-        return &compute_gradient_gp_handcoded;
-    if (layout.is_multiscale_gp && data.has_multiscale_gp && data.msgp_is_hsgp && !layout.has_re_slopes
-        && !layout.has_latent && !layout.has_spatiotemporal && !layout.has_svc
-        && !layout.is_temporal_gp && !layout.has_tvc && !layout.has_multiscale_temporal
-        && !layout.has_temporal)
-        return &compute_gradient_msgp_hsgp;
-    if (layout.is_multiscale_gp && data.has_multiscale_gp && layout.has_temporal && !layout.has_re_slopes
-        && !layout.is_temporal_gp && !layout.has_multiscale_temporal && !layout.has_tvc)
-        return &compute_gradient_msgp_plus_temporal_handcoded;
-    if (layout.is_multiscale_gp && data.has_multiscale_gp && !layout.has_re_slopes
-        && !layout.is_temporal_gp && !layout.has_multiscale_temporal && !layout.has_tvc)
-        return &compute_gradient_msgp_handcoded;
-    if (layout.is_gp && layout.has_temporal && !layout.is_temporal_gp && !layout.has_re_slopes
-        && !layout.has_tvc && !layout.has_multiscale_temporal
-        && !layout.has_latent && !layout.has_svc && !layout.has_spatiotemporal)
-        return &compute_gradient_gp_plus_temporal_handcoded;
-    if (layout.has_svc && data.has_svc && data.svc_is_hsgp &&
-        !layout.has_spatiotemporal &&
-        !layout.has_latent && !layout.has_tvc &&
-        !layout.is_temporal_gp && !layout.has_multiscale_temporal &&
-        !layout.has_temporal && !layout.has_re_slopes)
-        return &compute_gradient_svc_hsgp_handcoded;
-    if (layout.has_svc && data.has_svc &&
-        !layout.has_temporal && !layout.has_spatiotemporal &&
-        !layout.has_latent && !layout.has_tvc && !layout.has_re_slopes &&
-        !layout.is_temporal_gp && !layout.has_multiscale_temporal)
-        return &compute_gradient_svc_handcoded;
-    if (layout.has_tvc && data.has_tvc &&
-        !layout.has_spatial && !layout.has_latent &&
-        !layout.is_hsgp && !layout.is_gp && !layout.is_multiscale_gp &&
-        !layout.has_svc && !layout.has_re_slopes)
-        return &compute_gradient_tvc_handcoded;
-    if (layout.has_spatiotemporal && !layout.is_st_gp &&
-        !layout.is_gp && !layout.is_multiscale_gp && !layout.is_hsgp &&
-        !layout.has_latent &&
-        data.spatiotemporal_data.type != STType::NONE &&
-        layout.st_delta_start >= 0 && layout.log_tau_st_idx >= 0 &&
-        data.spatiotemporal_data.temporal_type != TemporalType::AR1)
-        return &compute_gradient_spatiotemporal_handcoded;
-    if (layout.is_temporal_gp && layout.has_temporal &&
-        !layout.is_gp && !layout.is_multiscale_gp && !layout.is_hsgp &&
-        !layout.has_spatial && !layout.has_latent && !layout.has_svc &&
-        !layout.has_re_slopes &&
-        data.temporal_gp_data.cov_type == tulpa_temporal_gp::TemporalCovType::EXPONENTIAL)
-        return &compute_gradient_temporal_gp_handcoded;
-    if (layout.has_multiscale_temporal && !layout.is_gp && !layout.is_multiscale_gp &&
-        !layout.is_hsgp && !layout.has_svc && !layout.has_tvc &&
-        !layout.has_latent && !layout.has_spatiotemporal &&
-        !layout.has_spatial && !layout.has_re_slopes)
-        return &compute_gradient_ms_temporal_handcoded;
-    if (layout.has_latent && data.latent_n_factors > 0 &&
-        !layout.has_spatial && !layout.has_temporal && !layout.has_svc &&
-        !layout.is_hsgp && !layout.is_gp && !layout.is_multiscale_gp &&
-        !layout.has_re_slopes)
-        return &compute_gradient_latent_handcoded;
+    // Specialized H-mode kernels (each predicate documents its support contract;
+    // see hmc_gradient_dispatch_predicates.h).
+    if (can_use_hsgp_handcoded(data, layout))           return &compute_gradient_hsgp;
+    if (can_use_gp_collapsed(data, layout))             return &compute_gradient_gp_collapsed;
+    if (can_use_icar_collapsed(layout))                 return &compute_gradient_icar_collapsed;
+    if (can_use_gp_handcoded(data, layout))             return &compute_gradient_gp_handcoded;
+    if (can_use_msgp_hsgp(data, layout))                return &compute_gradient_msgp_hsgp;
+    if (can_use_msgp_plus_temporal(data, layout))       return &compute_gradient_msgp_plus_temporal_handcoded;
+    if (can_use_msgp_handcoded(data, layout))           return &compute_gradient_msgp_handcoded;
+    if (can_use_gp_plus_temporal(layout))               return &compute_gradient_gp_plus_temporal_handcoded;
+    if (can_use_svc_hsgp_handcoded(data, layout))       return &compute_gradient_svc_hsgp_handcoded;
+    if (can_use_svc_handcoded(data, layout))            return &compute_gradient_svc_handcoded;
+    if (can_use_tvc_handcoded(data, layout))            return &compute_gradient_tvc_handcoded;
+    if (can_use_spatiotemporal_handcoded(data, layout)) return &compute_gradient_spatiotemporal_handcoded;
+    if (can_use_temporal_gp_handcoded(data, layout))    return &compute_gradient_temporal_gp_handcoded;
+    if (can_use_ms_temporal_handcoded(layout))          return &compute_gradient_ms_temporal_handcoded;
+    if (can_use_latent_handcoded(data, layout))         return &compute_gradient_latent_handcoded;
 
     // Composite H-mode: catch-all for exotic multi-feature combinations.
     return &compute_gradient_composite;
