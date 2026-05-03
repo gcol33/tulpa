@@ -20,6 +20,9 @@
 #include <cmath>
 #include <cstring>
 
+// Shared thread-local workspace (definition in hmc_gradients.cpp).
+extern thread_local vectorized::VecGradWorkspace vec_grad_ws;
+
 // ---------------------------------------------------------------------------
 // Gradient preamble: init grad, extract common params, set up fuse_lp
 // ---------------------------------------------------------------------------
