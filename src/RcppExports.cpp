@@ -536,6 +536,33 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_laplace_spec_test_gaussian2p
+Rcpp::List cpp_laplace_spec_test_gaussian2p(Rcpp::NumericVector y1, Rcpp::NumericVector y2, Rcpp::NumericMatrix X1, Rcpp::NumericMatrix X2, Rcpp::NumericVector offset1, Rcpp::NumericVector offset2, Rcpp::IntegerVector re_idx, int n_re_groups, double sigma_re, double sigma_beta, double phi1, double phi2, bool re_into_proc0, bool re_into_proc1, int max_iter, double tol, int n_threads);
+RcppExport SEXP _tulpa_cpp_laplace_spec_test_gaussian2p(SEXP y1SEXP, SEXP y2SEXP, SEXP X1SEXP, SEXP X2SEXP, SEXP offset1SEXP, SEXP offset2SEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP sigma_betaSEXP, SEXP phi1SEXP, SEXP phi2SEXP, SEXP re_into_proc0SEXP, SEXP re_into_proc1SEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y1(y1SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y2(y2SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X1(X1SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X2(X2SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type offset1(offset1SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type offset2(offset2SEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< double >::type phi1(phi1SEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    Rcpp::traits::input_parameter< bool >::type re_into_proc0(re_into_proc0SEXP);
+    Rcpp::traits::input_parameter< bool >::type re_into_proc1(re_into_proc1SEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_spec_test_gaussian2p(y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0, re_into_proc1, max_iter, tol, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_mclmc_test
 Rcpp::List cpp_mclmc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, Rcpp::NumericVector init, int n_iter, int n_warmup, int seed, bool adjusted);
 RcppExport SEXP _tulpa_cpp_mclmc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP adjustedSEXP) {
@@ -2439,6 +2466,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 19},
     {"_tulpa_cpp_laplace_fit_rsr", (DL_FUNC) &_tulpa_cpp_laplace_fit_rsr, 19},
     {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
+    {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 17},
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 18},
     {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 20},

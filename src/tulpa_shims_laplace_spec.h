@@ -64,23 +64,33 @@ extern "C" void tulpa_laplace_spec_dense_impl(
     // warm-start round-trip works without a separate scratch allocation.
     for (int j = 0; j < n_params; j++) params_inout[j] = params[j];
 
-    int beta_start = layout->process_beta_start.empty()
-                     ? 0 : layout->process_beta_start[0];
-    int p          = layout->process_beta_count.empty()
-                     ? 0 : layout->process_beta_count[0];
+    // Concatenate every process's beta block in order, then the RE block.
+    // Caller's view of the result mode mirrors SpecLatentLayout (see
+    // src/laplace_spec.cpp): [beta_0 | beta_1 | ... | beta_{np-1} | re].
+    const int np = (int)layout->process_beta_start.size();
+    int p_total = 0;
+    for (int k = 0; k < np; k++) {
+        if (k < (int)layout->process_beta_count.size()) {
+            p_total += layout->process_beta_count[k];
+        }
+    }
     int n_re       = (layout->has_re && layout->re_start >= 0)
                      ? (layout->re_end - layout->re_start) : 0;
-    int n_x        = p + n_re;
+    int n_x        = p_total + n_re;
 
     result_out->n_x = n_x;
     result_out->mode = (n_x > 0) ? new double[n_x] : new double[1];
-    for (int j = 0; j < p; j++) {
-        result_out->mode[j] = params[beta_start + j];
-    }
-    if (n_re > 0) {
-        for (int g = 0; g < n_re; g++) {
-            result_out->mode[p + g] = params[layout->re_start + g];
+    int out_idx = 0;
+    for (int k = 0; k < np; k++) {
+        int beta_start = layout->process_beta_start[k];
+        int p_k = (k < (int)layout->process_beta_count.size())
+                  ? layout->process_beta_count[k] : 0;
+        for (int j = 0; j < p_k; j++) {
+            result_out->mode[out_idx++] = params[beta_start + j];
         }
+    }
+    for (int g = 0; g < n_re; g++) {
+        result_out->mode[out_idx++] = params[layout->re_start + g];
     }
     result_out->log_det_Q    = log_det_Q;
     result_out->log_marginal = log_marginal;

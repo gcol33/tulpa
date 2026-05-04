@@ -6,18 +6,25 @@
 // exposes a complementary path that reads the per-observation log-lik
 // and IRLS weights from data->likelihood_spec instead, so a model
 // package can route arbitrary families (beta, tweedie, ordered_beta,
-// truncated/hurdle, ...) through Laplace without touching tulpa.
+// truncated/hurdle, ratio, ...) through Laplace without touching tulpa.
 //
-// Contract (first cut):
-//   - data->n_processes == 1
-//   - layout->process_beta_start[0] / .process_beta_count[0] populated
-//   - At most one iid RE term (layout->has_re + .re_start / .re_end)
+// Contract:
+//   - data->n_processes >= 1 (multi-process supported; ratio likelihoods
+//     use n_processes == 2, integrated occupancy uses 1 + n_sources, etc.)
+//   - layout->process_beta_start[k] / .process_beta_count[k] populated
+//     for every k in [0, n_processes).
+//   - Per-process additive offsets are picked up automatically from
+//     data->processes[k].offset when non-empty (length must equal N).
+//   - At most one iid RE term (layout->has_re + .re_start / .re_end).
+//     The RE shares into process k iff data->sharing.re[k] is true.
 //   - data->likelihood_spec points to a tulpa::LikelihoodSpec whose
-//     ll_double and eta_weights_fn are non-null
+//     ll_double and eta_weights_fn are non-null. eta_weights_fn must
+//     fill grad_eta[k] = d log_lik_i / d eta_i_k and neg_hess_eta as a
+//     row-major n_processes x n_processes block.
 //
-// Multi-process / random-slope / spatial / temporal variants are
-// follow-on work; this entry will reject them with a clear error so
-// callers get a deterministic signal instead of silent miscomputation.
+// Random-slope / spatial / temporal variants are follow-on work; this
+// entry will reject them with a clear error so callers get a deterministic
+// signal instead of silent miscomputation.
 
 #ifndef TULPA_LAPLACE_SPEC_API_H
 #define TULPA_LAPLACE_SPEC_API_H
@@ -31,7 +38,7 @@
 namespace tulpa {
 
 // Function signature for tulpa_laplace_spec_dense.
-//   data, layout    : same shape as the NUTS shim (n_processes == 1).
+//   data, layout    : same shape as the NUTS shim (n_processes >= 1).
 //   params_inout    : full parameter vector. Hyperparameter slots
 //                     (sigma_re, dispersion, ...) supply their fixed values
 //                     on entry; latent slots may carry a warm start. On exit
@@ -41,8 +48,9 @@ namespace tulpa {
 //                     layout->has_re, otherwise pass nullptr / len 0.
 //   max_iter, tol, n_threads : Newton controls.
 //   result_out      : caller-allocated. Filled with mode (== params_inout
-//                     latent slice), log_det_Q, log_marginal, n_iter,
-//                     converged. result_out->n_x = layout latent count.
+//                     latent slice in [beta_0..beta_{np-1}, re] order),
+//                     log_det_Q, log_marginal, n_iter, converged.
+//                     result_out->n_x = sum(beta_count) + n_re_groups.
 typedef void (*LaplaceSpecDenseFn)(
     const ModelData* data,
     const ParamLayout* layout,
