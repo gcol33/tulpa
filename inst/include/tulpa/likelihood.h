@@ -180,6 +180,16 @@ struct LikelihoodSpec {
     // package port a pre-existing hand-tuned gradient verbatim without
     // routing through tulpa's per-kernel handcoded predicates.
     FullGradFn gradient_fn = nullptr;
+
+    // Arena-AD variant of extra_prior. When non-null AND ll_arena is set,
+    // the gradient dispatcher routes through arena reverse-mode AD instead
+    // of finite differences over the full parameter vector. The signature
+    // mirrors `extra_prior` but takes an arena::Var-vector view of params
+    // and returns an arena::Var so the prior contribution flows into the
+    // backward pass. Append-only on LikelihoodSpec — no ABI bump.
+    arena::Var (*extra_prior_arena)(const std::vector<arena::Var>& params,
+                                    const ParamLayout& layout,
+                                    const void* model_data) = nullptr;
 };
 
 } // namespace tulpa

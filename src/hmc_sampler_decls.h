@@ -243,10 +243,8 @@ void compute_gradient_hsgp(
 void compute_gradient_msgp_hsgp(
     const std::vector<double>&, const ModelData&, const ParamLayout&,
     std::vector<double>&, double*);
-bool can_use_analytical_gradient(const ModelData& data, const ParamLayout& layout);
-void compute_gradient_analytical(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
+// compute_gradient_analytical / can_use_analytical_gradient removed in B2
+// (gcol33/tulpa#15): legacy ratio H-kernel ported to tulpaRatio FullGradFn.
 void compute_gradient_gp_handcoded(
     const std::vector<double>&, const ModelData&, const ParamLayout&,
     std::vector<double>&, double*);

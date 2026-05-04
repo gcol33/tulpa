@@ -30,10 +30,14 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
             return reinterpret_cast<GradientFn>(spec->gradient_fn);
         }
 
-        // Use arena AD if model provides it. A double-only extra_prior cannot
-        // be differentiated by arena AD, so keep that case on the numerical
-        // path until model-specific extra priors get templated callbacks.
-        if (spec->ll_arena != nullptr && spec->extra_prior == nullptr) {
+        // Use arena AD if model provides it. extra_prior is double-only, so
+        // routing through arena AD requires the model package to also ship
+        // an arena-AD variant (extra_prior_arena). When extra_prior is set
+        // without an arena variant, fall back to numerical so the prior
+        // gradient is correct (see tulpaGlmm regression on Day-5 family fits
+        // that drove this guard).
+        if (spec->ll_arena != nullptr &&
+            (spec->extra_prior == nullptr || spec->extra_prior_arena != nullptr)) {
             return &compute_gradient_generic_arena;
         }
         return &compute_gradient_generic_numerical;
@@ -62,12 +66,13 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
     if (mode == GradientMode::AUTODIFF_FWD)
         return &compute_gradient_forward;
 
-    // AUTO or HANDCODED: use fastest available (H > A_r > A > N)
-    if (can_use_analytical_gradient(data, layout)) {
-        return &compute_gradient_analytical;
-    }
+    // AUTO or HANDCODED: use fastest available (H > A_r > A > N).
+    // The legacy ratio analytical kernel (compute_gradient_analytical) was
+    // removed in B2 of the staged migration (see gcol33/tulpa#15); the ratio
+    // FullGradFn lives in tulpaRatio. Remaining n_processes == 0 fits fall
+    // through to the composite catch-all (or specialized H-kernels below).
 
-    // ZI/OI supported in analytical (all non-exotic configs) and composite (exotic combos).
+    // ZI/OI handled by composite for legacy ratio combos.
     // Specialized H-mode functions do not handle ZI; skip them for ZI/OI models.
     // ZOIB has a pre-existing gradient bug in the H-mode ZOIB residual code.
     if (data.zi_type == tulpa_zi::ZIType::ZOIB)

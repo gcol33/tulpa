@@ -1,7 +1,7 @@
 // hmc_gradient_vectorized.h
 // Vectorized gradient computation with template specialization per model type.
-// Replaces scalar per-observation loop in compute_gradient_analytical() for
-// non-ZI, non-slopes model configurations.
+// Used by composite/HSGP H-kernel paths for non-ZI, non-slopes model
+// configurations on the legacy ratio path.
 //
 // Architecture (three-pass):
 //   Pass 1: Vectorized eta = X * beta  (Eigen matvec)

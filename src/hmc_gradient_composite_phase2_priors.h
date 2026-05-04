@@ -191,7 +191,8 @@
         grad[layout.log_tau_st_idx] = 0.5 * lambda * sigma_st + 0.5 + 1.0;
     }
 
-    // Slopes priors - mirrors compute_gradient_analytical (correlated + uncorrelated)
+    // Slopes priors (correlated + uncorrelated). Same shape as the deleted
+    // compute_gradient_analytical priors_basic fragment (gcol33/tulpa#15).
     nc_L_flats.clear();
     nc_sigmas_vec.clear();
     re_nc_flat_c.clear();

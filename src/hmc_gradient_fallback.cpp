@@ -98,8 +98,7 @@ void compute_gradient_numerical_impl(
 // Runtime gradient check: compare compute_gradient() dispatcher output
 // against numerical gradients at the first warmup iteration.
 // Catches log-post/gradient mismatches in ALL specialized gradient functions
-// (GP, HSGP, SVC, TVC, MSGP, spatiotemporal, etc.), not just the main
-// compute_gradient_analytical().
+// (GP, HSGP, SVC, TVC, MSGP, spatiotemporal, composite, FullGradFn, etc.).
 // =====================================================================
 bool verify_gradient_runtime(
     const std::vector<double>& params,
@@ -300,6 +299,16 @@ void compute_gradient_generic_arena(
     Var log_post = tulpa::compute_log_post_generic<Var>(
         params_ar, data, layout,
         spec->ll_arena, data.model_response_data);
+
+    // Add the model-specific extra-parameter prior contribution. When
+    // extra_prior_arena is non-null the gradient dispatcher already routed
+    // here precisely because the prior can be folded into the backward
+    // pass; when it is null we have nothing extra to add (dispatch ensures
+    // arena AD is only used when this path is correct).
+    if (spec->extra_prior_arena != nullptr) {
+        log_post = log_post + spec->extra_prior_arena(
+            params_ar, layout, data.model_response_data);
+    }
 
     if (log_post_out) *log_post_out = log_post.val();
     log_post.backward();

@@ -39,7 +39,7 @@ inline bool can_use_vectorized(const ModelData& data, const ParamLayout& layout)
 // Main vectorized gradient function (templated on ModelType)
 // Computes observation-loop gradients for beta, RE, spatial, temporal, phi.
 // Prior gradients and post-loop structural gradients (ICAR, BYM2, RW, AR1)
-// are NOT computed here — they remain in compute_gradient_analytical().
+// are NOT computed here — they are handled by the caller (composite/HSGP).
 //
 // Temporal likelihood grads are written into grad_temporal_lik_out (caller
 // handles the GMRF prior combination). Spatial likelihood grads are written
@@ -197,7 +197,7 @@ void compute_obs_gradients_vectorized(
 
   // RE gradients (scatter from dense residuals to grouped params)
   // accumulate_re_* writes centered likelihood gradient to grad[re+g]
-  // Non-centered post-processing (chain rule) happens in compute_gradient_analytical
+  // Non-centered post-processing (chain rule) is applied by the caller (composite/HSGP)
   if (layout.has_re) {
     if (data.n_re_terms > 1) {
       accumulate_re_gradient_crossed(data, layout,

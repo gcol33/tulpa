@@ -66,6 +66,7 @@ test_that("spatial_car(adj, proper = TRUE) is equivalent to spatial_car_proper",
 })
 
 test_that("CAR_PROPER handcoded gradient agrees with numerical reference", {
+  skip("blocked on gcol33/tulpa#15: legacy ratio H-kernel deleted in B2; cpp_hmc_fit entry point and CAR_PROPER analytical-grad path die together in Phase D")
   # Small chain adjacency (10 sites) keeps the dense O(n^3) Cholesky
   # in the proper-CAR log-prior cheap.
   set.seed(2026)
