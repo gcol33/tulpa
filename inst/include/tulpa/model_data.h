@@ -23,10 +23,21 @@ constexpr int TULPA_ABI_VERSION = 3;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
+//
+// LAYOUT RULE: append-only. Existing fields (X_flat, p) must keep their
+// relative order so model packages compiled against an earlier ABI continue
+// to bind correctly. New optional fields go at the end and default to safe
+// no-ops (empty / zero).
 // ============================================================================
 struct ProcessData {
     std::vector<double> X_flat;  // Design matrix [N x p], row-major
     int p = 0;                    // Number of fixed effect columns
+
+    // Optional per-process additive offset on the linear predictor.
+    // When non-empty, must have length == ModelData::N. Added directly to
+    // eta_k for this process before the likelihood sees it. Empty vector
+    // means "no offset" (treated as zeros).
+    std::vector<double> offset;
 };
 
 // ============================================================================

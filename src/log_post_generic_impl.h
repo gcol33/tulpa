@@ -7,6 +7,8 @@
 #ifndef TULPA_LOG_POST_GENERIC_IMPL_H
 #define TULPA_LOG_POST_GENERIC_IMPL_H
 
+#include <Rcpp.h>  // Rcpp::stop for offset-length validation
+
 constexpr int MAX_PROCESSES = 8;
 
 template<typename T>
@@ -158,19 +160,35 @@ static void precompute_generic_fixed_eta(
     for (int k = 0; k < np; k++) {
         const auto& proc = data.processes[k];
         state.eta_fixed[k].assign(data.N, T(0.0));
-        if (proc.p == 0) continue;
 
-        if constexpr (std::is_same_v<T, double>) {
-            tulpa_linalg::matvec(proc.X_flat.data(), state.beta[k],
-                                 state.eta_fixed[k].data(), data.N, proc.p);
-        } else {
-            for (int i = 0; i < data.N; i++) {
-                T eta_i = T(0.0);
-                const double* row = &proc.X_flat[i * proc.p];
-                for (int j = 0; j < proc.p; j++) {
-                    eta_i = eta_i + T(row[j]) * state.beta[k][j];
+        if (proc.p > 0) {
+            if constexpr (std::is_same_v<T, double>) {
+                tulpa_linalg::matvec(proc.X_flat.data(), state.beta[k],
+                                     state.eta_fixed[k].data(), data.N, proc.p);
+            } else {
+                for (int i = 0; i < data.N; i++) {
+                    T eta_i = T(0.0);
+                    const double* row = &proc.X_flat[i * proc.p];
+                    for (int j = 0; j < proc.p; j++) {
+                        eta_i = eta_i + T(row[j]) * state.beta[k][j];
+                    }
+                    state.eta_fixed[k][i] = eta_i;
                 }
-                state.eta_fixed[k][i] = eta_i;
+            }
+        }
+
+        // Optional per-process offset on the linear predictor. Empty means
+        // "no offset" (treated as zero for every observation). When present
+        // it must have length data.N — checked here so a malformed length
+        // raises a deterministic error instead of overrunning eta_fixed.
+        if (!proc.offset.empty()) {
+            if ((int)proc.offset.size() != data.N) {
+                Rcpp::stop("ProcessData[%d]: offset length (%d) must equal "
+                           "ModelData::N (%d)",
+                           k, (int)proc.offset.size(), data.N);
+            }
+            for (int i = 0; i < data.N; i++) {
+                state.eta_fixed[k][i] = state.eta_fixed[k][i] + T(proc.offset[i]);
             }
         }
     }
