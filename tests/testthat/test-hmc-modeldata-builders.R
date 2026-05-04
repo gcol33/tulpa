@@ -88,7 +88,7 @@ run_hmc_builder_gradient_check <- function(q_init, y_num, y_denom, X_num,
 }
 
 test_that("cpp_hmc_fit builds baseline legacy ModelData after split", {
-  skip("blocked on gcol33/tulpa#15: legacy ratio H-kernel deleted in B2; cpp_hmc_fit entry point removed in Phase D")
+  skip("legacy ratio H-kernel deleted in B2; cpp_hmc_fit entry point removed in Phase D")
   N <- 5L
   X_num <- cbind(1, seq_len(N) / N)
   res <- run_hmc_builder_gradient_check(
@@ -108,7 +108,7 @@ test_that("cpp_hmc_fit builds baseline legacy ModelData after split", {
 })
 
 test_that("cpp_hmc_fit preserves OI-only p_zi and X_oi boundaries", {
-  skip("blocked on gcol33/tulpa#15: legacy ratio H-kernel deleted in B2; cpp_hmc_fit entry point removed in Phase D")
+  skip("legacy ratio H-kernel deleted in B2; cpp_hmc_fit entry point removed in Phase D")
   N <- 5L
   X_num <- cbind(1, seq_len(N) / N)
   X_oi <- matrix(c(1, 0, 1, 0, 1), ncol = 1)

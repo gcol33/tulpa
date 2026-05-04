@@ -286,7 +286,7 @@ make_init_binomial_icar <- function(n_sites, seed = 33) {
 # ---------------------------------------------------------------------------
 
 test_that("binomial-only: log_post = log_prior + log_lik (multiple draws)", {
-  skip("blocked on gcol33/tulpa#15: cpp_compute_log_post_test legacy ratio entry point removed in Phase D")
+  skip("cpp_compute_log_post_test legacy ratio entry point removed in Phase D")
   fix <- make_fixture_binomial_only(seed = 101)
   resids <- replicate(5, {
     init <- make_init_binomial_only(seed = sample.int(.Machine$integer.max, 1))
@@ -296,7 +296,7 @@ test_that("binomial-only: log_post = log_prior + log_lik (multiple draws)", {
 })
 
 test_that("poisson_gamma + RE: log_post = log_prior + log_lik (multiple draws)", {
-  skip("blocked on gcol33/tulpa#15: cpp_compute_log_post_test legacy ratio entry point removed in Phase D")
+  skip("cpp_compute_log_post_test legacy ratio entry point removed in Phase D")
   fix <- make_fixture_poisson_re(seed = 202)
   n_groups <- fix$re_params$n_groups
   resids <- replicate(5, {
@@ -308,7 +308,7 @@ test_that("poisson_gamma + RE: log_post = log_prior + log_lik (multiple draws)",
 })
 
 test_that("binomial + ICAR: log_post = log_prior + log_lik (multiple draws)", {
-  skip("blocked on gcol33/tulpa#15: cpp_compute_log_post_test legacy ratio entry point removed in Phase D")
+  skip("cpp_compute_log_post_test legacy ratio entry point removed in Phase D")
   bundle <- make_fixture_binomial_icar(seed = 303)
   fix <- bundle$fixture
   n_sites <- bundle$n_sites
@@ -321,7 +321,7 @@ test_that("binomial + ICAR: log_post = log_prior + log_lik (multiple draws)", {
 })
 
 test_that("layout total_params matches manual init lengths", {
-  skip("blocked on gcol33/tulpa#15: cpp_log_post_split_n_params legacy ratio entry point removed in Phase D")
+  skip("cpp_log_post_split_n_params legacy ratio entry point removed in Phase D")
   # Sanity: the test wrappers report the same param count as the fixtures use.
   fix1 <- make_fixture_binomial_only(seed = 1)
   expect_equal(
