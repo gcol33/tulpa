@@ -89,6 +89,41 @@ inline NUTSFn get_nuts_fn() {
     return fn;
 }
 
+// ============================================================================
+// Set the global gradient mode used by the next NUTS run.
+//
+// Accepted strings (case-sensitive, matching parse_gradient_mode in tulpa):
+//   "auto", "AUTO"                          — let the dispatcher pick
+//   "N", "numerical"                        — finite differences
+//   "A", "autodiff", "forward"              — forward-mode AD
+//   "A_r", "arena", "autodiff_arena"        — arena reverse-mode AD
+//   "A_t", "autodiff_tape"                  — tape reverse-mode AD
+//   "H", "handcoded", "analytical"          — hand-coded gradient
+//
+// Returns 0 on success, non-zero on unrecognised mode (default "auto" stays).
+//
+// Downstream packages call this immediately before tulpa_run_nuts_generic
+// when they need to pin the gradient mode (e.g. for benchmarks, for routing
+// through a registered FullGradFn, or for verifying their hand-coded
+// gradient against numerical). The setting is process-global; tulpa's
+// own callers reset it on every fit.
+// ============================================================================
+typedef int (*SetGradientModeFn)(const char* mode_str);
+
+inline SetGradientModeFn get_set_gradient_mode_fn() {
+    static SetGradientModeFn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (SetGradientModeFn)R_GetCCallable(
+            "tulpa", "tulpa_set_gradient_mode_str");
+    }
+    return fn;
+}
+
+inline int set_gradient_mode_str(const char* mode_str) {
+    return get_set_gradient_mode_fn()(mode_str);
+}
+
 // Function signature for compute_param_layout
 typedef void (*ComputeLayoutFn)(const ModelData* data, ParamLayout* layout_out);
 

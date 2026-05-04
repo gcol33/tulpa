@@ -91,6 +91,30 @@ static int tulpa_get_abi_version_impl() {
     return tulpa::TULPA_ABI_VERSION;
 }
 
+// Set the global gradient mode from a string. Single source of truth: parses
+// via tulpa_hmc::parse_gradient_mode (the same function R-level entry points
+// hmc_rcpp_fit / vi_sampler use), then forwards to set_gradient_mode. Returns
+// 0 on a recognised mode, 1 if the string falls through to the AUTO default
+// (so a downstream caller can detect a typo and retry).
+static int tulpa_set_gradient_mode_str_impl(const char* mode_str) {
+    if (mode_str == nullptr) {
+        tulpa_hmc::set_gradient_mode(tulpa::GradientMode::AUTO);
+        return 1;
+    }
+    std::string s(mode_str);
+    tulpa::GradientMode mode = tulpa_hmc::parse_gradient_mode(s);
+    tulpa_hmc::set_gradient_mode(mode);
+
+    // parse_gradient_mode returns AUTO both for "auto" and for unrecognised
+    // input. Distinguish them so a typo does not silently revert the user's
+    // request to AUTO.
+    if (mode == tulpa::GradientMode::AUTO &&
+        s != "auto" && s != "AUTO") {
+        return 1;
+    }
+    return 0;
+}
+
 // Defined in tulpa_shims.cpp — registers laplace / pg / vi / ess shims.
 void tulpa_register_shims(DllInfo* dll);
 
@@ -102,6 +126,8 @@ void tulpa_register_callables(DllInfo* dll) {
                         (DL_FUNC)&tulpa_compute_param_layout_impl);
     R_RegisterCCallable("tulpa", "tulpa_get_abi_version",
                         (DL_FUNC)&tulpa_get_abi_version_impl);
+    R_RegisterCCallable("tulpa", "tulpa_set_gradient_mode_str",
+                        (DL_FUNC)&tulpa_set_gradient_mode_str_impl);
 
     tulpa_register_shims(dll);
 }
