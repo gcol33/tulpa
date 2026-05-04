@@ -101,9 +101,43 @@ using EtaWeightsFn = void(*)(
 );
 
 // ============================================================================
+// FullGradFn: fully hand-coded gradient + log-posterior for the entire
+// parameter vector. Optional override for the auto N→A→A_r→H progression
+// when a model package ships a tuned hand-coded gradient (e.g. ratio
+// likelihoods porting their pre-tulpa H-kernel verbatim).
+//
+// Signature matches every other gradient driver in tulpa
+// (src/hmc_gradient_*.cpp): no separate model_data argument because
+// model-specific response data is reachable via data.model_response_data.
+//
+// Contract:
+//   * grad is sized to params.size() and overwritten (not accumulated).
+//   * If log_post_out is non-null, the log-posterior is written there in
+//     the same pass (fused log-post + gradient, the standard tulpa contract).
+//   * The function must compute d(log_posterior)/d(params) — that is,
+//     log-likelihood + log-prior contributions, including all latent
+//     structure (spatial, temporal, RE) that lives in `params`.
+//
+// When set on a LikelihoodSpec, the dispatcher prefers this callback over
+// AD even in AUTO mode. Set to nullptr (the default) to keep the existing
+// AD progression.
+// ============================================================================
+using FullGradFn = void(*)(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,       // Output: overwritten, length == params.size()
+    double* log_post_out             // Optional: fused log-posterior (may be null)
+);
+
+// ============================================================================
 // LikelihoodSpec: registration structure for model-specific likelihoods
 //
 // Model packages create one of these and pass it to tulpa's fitting functions.
+//
+// LAYOUT RULE: append-only. Existing fields keep their relative order so
+// model packages compiled against an earlier ABI continue to bind. New
+// optional fields go at the end and default to nullptr / safe values.
 // ============================================================================
 struct LikelihoodSpec {
     // ABI version this spec was compiled against (set automatically)
@@ -139,6 +173,13 @@ struct LikelihoodSpec {
     double (*extra_prior)(const std::vector<double>& params,
                           const ParamLayout& layout,
                           const void* model_data) = nullptr;
+
+    // Optional fully hand-coded gradient over the entire parameter vector.
+    // When non-null, the gradient dispatcher uses this callback instead of
+    // the templated AD path. See FullGradFn for the contract. Lets a model
+    // package port a pre-existing hand-tuned gradient verbatim without
+    // routing through tulpa's per-kernel handcoded predicates.
+    FullGradFn gradient_fn = nullptr;
 };
 
 } // namespace tulpa

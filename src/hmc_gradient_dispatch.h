@@ -19,6 +19,17 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
     // Generic multi-process models: route through generic gradient
     if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
         const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+
+        // Hand-coded full gradient hook (FullGradFn): the model package ships
+        // a tuned gradient that subsumes log-prior + log-likelihood. When set,
+        // it wins regardless of the requested mode unless the user explicitly
+        // asks for NUMERICAL (used for runtime gradient verification). The
+        // signature matches GradientFn exactly, so it plugs straight into the
+        // dispatcher with no wrapper.
+        if (spec->gradient_fn != nullptr && mode != GradientMode::NUMERICAL) {
+            return reinterpret_cast<GradientFn>(spec->gradient_fn);
+        }
+
         // Use arena AD if model provides it. A double-only extra_prior cannot
         // be differentiated by arena AD, so keep that case on the numerical
         // path until model-specific extra priors get templated callbacks.
