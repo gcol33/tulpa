@@ -101,6 +101,10 @@ cpp_laplace_spec_test_gaussian2p <- function(y1, y2, X1, X2, offset1, offset2, r
     .Call(`_tulpa_cpp_laplace_spec_test_gaussian2p`, y1, y2, X1, X2, offset1, offset2, re_idx, n_re_groups, sigma_re, sigma_beta, phi1, phi2, re_into_proc0, re_into_proc1, max_iter, tol, n_threads)
 }
 
+cpp_laplace_spec_test_multi_re <- function(y, X, re_terms, sigma_beta, phi, max_iter = 200L, tol = 1e-12, n_threads = 1L) {
+    .Call(`_tulpa_cpp_laplace_spec_test_multi_re`, y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads)
+}
+
 cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warmup = 1000L, seed = 42L, adjusted = FALSE) {
     .Call(`_tulpa_cpp_mclmc_test`, mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted)
 }

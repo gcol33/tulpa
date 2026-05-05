@@ -8,14 +8,25 @@
 // tulpaOcc, tulpaRatio, ...) pin its own log-likelihood through Laplace
 // without adding a family enum to tulpa for every new family it ships.
 //
-// Covers n_processes >= 1 with at most one iid RE term. The shared iid RE
-// is added (as +u_g) into every process whose data.sharing.re[k] is true;
-// when sharing.re[k] is false the RE does not contribute to that process's
-// linear predictor. Single-process is a special case of the general path
-// (np == 1), not a separate branch.
+// Covers n_processes >= 1 with multi-term, multi-coefficient (random
+// slope) RE structure. Each term t has q_t = re_n_coefs[t] coefficients
+// per group (q_t == 1 for `(1|g)`, q_t > 1 for slopes). Per-obs RE
+// contribution at observation i, into process k whose
+// data.sharing.re[k] is true:
 //
-// Random-slope / spatial / temporal variants remain follow-on work and
-// raise a clear error.
+//     eta_k_i += sum_t  z_{t,i}^T b_{t, g_t(i)}
+//
+// where z_{t,i,0} = 1 (intercept) and z_{t,i,c} for c >= 1 is read from
+// data.re_slope_matrices[t][i*(q_t-1) + (c-1)]. Prior:
+//   uncorrelated (`(x||g)`):  Σ_t = diag(σ_{t,0}², ..., σ_{t,q_t-1}²)
+//   correlated   (`(x|g)`) :  Σ_t = D_t L_t L_t^T D_t with D_t = diag(σ_t)
+//                             and L_t parameterized via tanh of
+//                             chol_re_start_multi[t] : chol_re_end_multi[t]
+//                             (matches tulpa_priors_re.h conventions).
+//
+// Single-process / single-term / intercept-only is the trivial reduction
+// (n_processes == 1, n_re_terms == 1, q_0 == 1) and stays bit-identical
+// to the previous single-term code path.
 
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
@@ -28,6 +39,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
@@ -41,29 +53,40 @@ namespace {
 
 // Layout helper: sub-vector that Newton actually moves on. For n_processes
 // >= 1 the latent slice is the concatenation of every process's beta block
-// followed by the (re_start .. re_end) span when has_re is true. Extra
-// parameters (sigma_re, dispersion, ZI betas, ...) are held fixed at their
+// followed by every RE term's block in term order. Extra parameters
+// (log_sigma_re_*, dispersion, ZI betas, ...) are held fixed at their
 // input value — Laplace integrates over the latent field, not the
 // hyperparameters.
 //
 // `latent_offset[k]` gives the offset in the n_x-long latent vector where
-// process k's beta block lives. `latent_offset[np]` is where the RE block
-// starts (or n_x when has_re is false). This single index lets the scatter
-// step write straight into the (latent_x, latent_x) Hessian without a per-
-// process branch.
+// process k's beta block lives. `latent_offset[np]` is where the first RE
+// term block starts (or n_x when no RE). Each RE term t occupies a
+// q_t * G_t span at `re_terms[t].latent_offset` in the latent vector
+// and at `re_terms[t].param_start` in the parameter vector.
+struct ReTermSlot {
+    int n_coefs = 1;            // q_t (1 for intercept-only)
+    int n_groups = 0;           // G_t
+    int param_start = -1;       // absolute idx into params (== layout.re_start_multi[t])
+    int latent_offset = 0;      // offset into the n_x-long latent vec
+    bool correlated = false;    // (x|g) when true and n_coefs > 1
+    int chol_start = -1;        // absolute idx into params for tanh-Cholesky raw values
+    std::vector<int> sigma_slots; // length n_coefs; absolute idxs
+};
+
 struct SpecLatentLayout {
     int np = 1;
     std::vector<int> beta_start;        // [np] absolute index into params
     std::vector<int> beta_count;        // [np] block size
-    std::vector<int> latent_offset;     // [np + 1] prefix into n_x
-    int re_start = -1;
-    int re_end = -1;                    // exclusive (-1 if no RE)
-    int re_offset = 0;                  // offset of RE block in latent vec
+    std::vector<int> latent_offset;     // [np + 1] prefix into n_x for beta blocks
+
     bool has_re = false;
-    int n_re_groups = 0;
-    int n_x = 0;                        // sum of beta_counts + n_re_groups
+    std::vector<ReTermSlot> re_terms;   // empty when no RE; size = K otherwise
+    int n_x = 0;
 };
 
+// Build the per-Laplace SpecLatentLayout from the (already-populated)
+// ParamLayout + ModelData. Reads multi-term RE fields when present and
+// falls back to the legacy single-term fields when n_re_terms == 0.
 inline SpecLatentLayout build_latent_layout(
     const ModelData& data,
     const ParamLayout& layout
@@ -95,35 +118,259 @@ inline SpecLatentLayout build_latent_layout(
     }
     L.latent_offset[L.np] = running;
 
-    L.has_re = layout.has_re && layout.re_start >= 0;
+    L.has_re = layout.has_re;
     if (L.has_re) {
-        L.re_start = layout.re_start;
-        L.re_end = layout.re_end;
-        L.n_re_groups = L.re_end - L.re_start;
-        L.re_offset = running;
-        running += L.n_re_groups;
+        // n_terms unification. data.n_re_terms is the canonical count when
+        // populated by the modern populate_re; legacy single-term callers
+        // leave it at 0 but set data.n_re_groups + layout.re_start.
+        const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
+        L.re_terms.resize(n_terms_unified);
+
+        for (int t = 0; t < n_terms_unified; t++) {
+            ReTermSlot& s = L.re_terms[t];
+
+            // n_coefs: prefer multi-term layout, else fall back to 1.
+            if ((int)layout.re_n_coefs_multi.size() > t) {
+                s.n_coefs = layout.re_n_coefs_multi[t];
+            } else {
+                s.n_coefs = 1;
+            }
+            if (s.n_coefs <= 0) s.n_coefs = 1;
+
+            // n_groups: prefer multi-term data, else legacy n_re_groups.
+            if ((int)data.re_n_groups_multi.size() > t) {
+                s.n_groups = data.re_n_groups_multi[t];
+            } else {
+                s.n_groups = data.n_re_groups;
+            }
+
+            // param_start: prefer multi-term layout, else legacy re_start.
+            if ((int)layout.re_start_multi.size() > t) {
+                s.param_start = layout.re_start_multi[t];
+            } else {
+                s.param_start = layout.re_start;
+            }
+
+            // correlated: only meaningful when q_t > 1.
+            s.correlated = (s.n_coefs > 1
+                            && (int)layout.re_correlated_multi.size() > t
+                            && layout.re_correlated_multi[t]);
+
+            // chol_start: only when correlated.
+            if (s.correlated && (int)layout.chol_re_start_multi.size() > t) {
+                s.chol_start = layout.chol_re_start_multi[t];
+            } else {
+                s.chol_start = -1;
+            }
+
+            // sigma_slots: prefer the per-coef slopes layout, else fall back
+            // to the multi-term scalar (q_t == 1) or legacy log_sigma_re_idx.
+            s.sigma_slots.assign(s.n_coefs, -1);
+            if ((int)layout.log_sigma_re_slopes.size() > t
+                && (int)layout.log_sigma_re_slopes[t].size() == s.n_coefs) {
+                for (int c = 0; c < s.n_coefs; c++) {
+                    s.sigma_slots[c] = layout.log_sigma_re_slopes[t][c];
+                }
+            } else if ((int)layout.log_sigma_re_multi.size() > t) {
+                s.sigma_slots[0] = layout.log_sigma_re_multi[t];
+            } else {
+                s.sigma_slots[0] = layout.log_sigma_re_idx;
+            }
+
+            s.latent_offset = running;
+            running += s.n_groups * s.n_coefs;
+        }
     }
     L.n_x = running;
     return L;
 }
 
-// True iff the iid RE contributes to process k's linear predictor. Falls back
+// Pull the per-coefficient sigma values for term t out of the params
+// vector. Returns a length-q_t vector of standard deviations.
+inline std::vector<double> term_sigmas(
+    const std::vector<double>& params,
+    const ReTermSlot& s
+) {
+    std::vector<double> sig(s.n_coefs, 1.0);
+    for (int c = 0; c < s.n_coefs; c++) {
+        int slot = s.sigma_slots[c];
+        sig[c] = (slot < 0) ? 1.0 : std::exp(params[slot]);
+    }
+    return sig;
+}
+
+// Build the q_t x q_t lower-triangular Cholesky factor L_t from the
+// tanh-Cholesky raw parameters in `params[chol_start .. chol_start +
+// q_t*(q_t-1)/2)`. Mirrors tulpa_priors_re.h::compute_re_prior. Diagonal
+// entries are derived as sqrt(1 - sum_off-diag^2) per row, guaranteed
+// positive because tanh^2 < 1.
+inline void build_chol_L(
+    const std::vector<double>& params,
+    const ReTermSlot& s,
+    std::vector<double>& L_flat   // q x q row-major, lower triangular; resized here
+) {
+    const int q = s.n_coefs;
+    L_flat.assign((size_t)q * q, 0.0);
+    int idx = s.chol_start;
+    for (int row = 0; row < q; row++) {
+        double row_sum_sq = 0.0;
+        for (int col = 0; col < row; col++) {
+            double l_ij = std::tanh(params[idx++]);
+            L_flat[(size_t)row * q + col] = l_ij;
+            row_sum_sq += l_ij * l_ij;
+        }
+        double diag_sq = 1.0 - row_sum_sq;
+        if (diag_sq < 1e-12) diag_sq = 1e-12;
+        L_flat[(size_t)row * q + row] = std::sqrt(diag_sq);
+    }
+}
+
+// Build the q_t x q_t precision matrix Q_t = Σ_t^{-1} for term t and its
+// log-determinant log|Q_t|. Σ_t = D L L^T D with D = diag(σ_t):
+//   uncorrelated: L = I; Q_t = diag(1/σ_{t,c}²); log|Q_t| = -2 sum_c log σ_{t,c}.
+//   correlated  : Q_t = D^{-1} L^{-T} L^{-1} D^{-1};
+//                 log|Q_t| = -2 sum_c log σ_{t,c} - 2 sum_c log L_{cc}.
+// Q is dense q x q (small, q == 2 or 3 in typical use).
+inline void build_term_precision(
+    const std::vector<double>& sigmas,    // length q
+    const std::vector<double>& L_flat,    // empty when uncorrelated; else q*q row-major
+    int q,
+    bool correlated,
+    std::vector<double>& Q_flat,          // out: q*q row-major (resized)
+    double& log_det_Q                     // out
+) {
+    Q_flat.assign((size_t)q * q, 0.0);
+    log_det_Q = 0.0;
+    if (!correlated || q == 1) {
+        for (int c = 0; c < q; c++) {
+            double tau_c = 1.0 / (sigmas[c] * sigmas[c] + 1e-300);
+            Q_flat[(size_t)c * q + c] = tau_c;
+            log_det_Q += std::log(tau_c);
+        }
+        return;
+    }
+    // Compute Linv (lower triangular) by forward substitution on the columns
+    // of the identity. Linv is q x q row-major (lower triangular).
+    std::vector<double> Linv((size_t)q * q, 0.0);
+    for (int j = 0; j < q; j++) {
+        // Solve L * x = e_j for x, store in Linv column j (i.e. Linv[i,j]).
+        std::vector<double> x(q, 0.0);
+        x[j] = 1.0 / L_flat[(size_t)j * q + j];
+        for (int i = j + 1; i < q; i++) {
+            double s = 0.0;
+            for (int k = j; k < i; k++) {
+                s += L_flat[(size_t)i * q + k] * x[k];
+            }
+            x[i] = -s / L_flat[(size_t)i * q + i];
+        }
+        for (int i = 0; i < q; i++) Linv[(size_t)i * q + j] = x[i];
+    }
+    // Σ^{-1} = (D L L^T D)^{-1} = D^{-1} L^{-T} L^{-1} D^{-1}.
+    // Form M = L^{-T} L^{-1} = Linv^T * Linv.
+    std::vector<double> M((size_t)q * q, 0.0);
+    for (int i = 0; i < q; i++) {
+        for (int j = 0; j < q; j++) {
+            double s = 0.0;
+            for (int k = 0; k < q; k++) {
+                s += Linv[(size_t)k * q + i] * Linv[(size_t)k * q + j];
+            }
+            M[(size_t)i * q + j] = s;
+        }
+    }
+    // Q = D^{-1} M D^{-1}.
+    for (int i = 0; i < q; i++) {
+        for (int j = 0; j < q; j++) {
+            Q_flat[(size_t)i * q + j] = M[(size_t)i * q + j]
+                / (sigmas[i] * sigmas[j]);
+        }
+    }
+    // log|Q| = -2 sum_c log σ_c - 2 sum_c log L_{cc}.
+    double s = 0.0;
+    for (int c = 0; c < q; c++) {
+        s += std::log(sigmas[c]);
+        s += std::log(L_flat[(size_t)c * q + c]);
+    }
+    log_det_Q = -2.0 * s;
+}
+
+// Resolve the 1-based group index at obs i for term t. Reads the
+// multi-term flat layout when populated, else the legacy single-term
+// re_group field. Returns -1 if the obs has no group for this term.
+inline int re_group_at(
+    const ModelData& data,
+    int i,
+    int t,
+    int n_terms_unified
+) {
+    if (!data.re_group_multi_flat.empty()) {
+        int g1 = data.re_group_multi_flat[(size_t)i * n_terms_unified + t];
+        return (g1 >= 1) ? (g1 - 1) : -1;
+    }
+    if (t == 0 && !data.re_group.empty()) {
+        int g1 = data.re_group[i];
+        return (g1 >= 1) ? (g1 - 1) : -1;
+    }
+    return -1;
+}
+
+// Read the slope row z_{t,i,c} for c in 1..q_t-1 from
+// data.re_slope_matrices[t]. Intercept (c == 0) is implicit (= 1) and not
+// stored. Returns 0 when the term is intercept-only.
+inline double slope_at(
+    const ModelData& data,
+    int t,
+    int i,
+    int c        // 1-based slope coefficient: c >= 1 means slope (c-1)
+) {
+    if (c <= 0) return 1.0; // intercept
+    if ((int)data.re_slope_matrices.size() <= t) return 0.0;
+    const auto& M = data.re_slope_matrices[t];
+    if (M.empty()) return 0.0;
+    if ((int)data.re_n_slopes.size() <= t) return 0.0;
+    const int n_slopes = data.re_n_slopes[t];
+    if (n_slopes <= 0) return 0.0;
+    return M[(size_t)i * n_slopes + (c - 1)];
+}
+
+// True iff the RE contributes to process k's linear predictor. Falls back
 // to "share into every process" when SharingSpec.re hasn't been initialised
-// (e.g. legacy callers building ModelData without sharing.init()).
+// (e.g. legacy callers building ModelData without sharing.init()). Sharing
+// is per-process and applied uniformly to all RE terms (matches HMC).
 inline bool re_shared_into(const ModelData& data, int k) {
     if ((int)data.sharing.re.size() != data.n_processes) return true;
     return data.sharing.re[k];
 }
 
-// Pull the sigma_re hyperparameter out of the params vector when the layout
-// records its log-precision slot. Mirrors the convention used by the legacy
-// Laplace path (sigma_re is the standard deviation of the iid RE prior).
-inline double current_sigma_re(
+// Compute the per-obs RE contribution sum_t z_{t,i}^T b_{t, g_t(i)} once,
+// and return whether any RE term contributed at this obs (so the caller
+// can skip the sharing step entirely when not).
+inline double obs_re_contrib(
+    const ModelData& data,
     const std::vector<double>& params,
-    const ParamLayout& layout
+    const SpecLatentLayout& L,
+    int i,
+    int n_terms_unified,
+    bool& used_out
 ) {
-    if (layout.log_sigma_re_idx < 0) return 1.0;
-    return std::exp(params[layout.log_sigma_re_idx]);
+    used_out = false;
+    if (!L.has_re) return 0.0;
+    double re_eff = 0.0;
+    for (int t = 0; t < (int)L.re_terms.size(); t++) {
+        int g = re_group_at(data, i, t, n_terms_unified);
+        if (g < 0) continue;
+        const ReTermSlot& s = L.re_terms[t];
+        if (g >= s.n_groups) continue;
+        const int q = s.n_coefs;
+        const int base = s.param_start + g * q;
+        // Intercept (c = 0) z = 1, slopes z = re_slope_matrices[t][i, c-1].
+        double contrib = params[base];
+        for (int c = 1; c < q; c++) {
+            contrib += params[base + c] * slope_at(data, t, i, c);
+        }
+        re_eff += contrib;
+        used_out = true;
+    }
+    return re_eff;
 }
 
 // Build eta_flat for all processes. eta_flat is laid out as [N x np] in
@@ -136,27 +383,20 @@ inline void compute_eta_spec(
     const ModelData& data,
     const std::vector<double>& params,
     const SpecLatentLayout& L,
-    const std::vector<int>& re_group_1based,
+    const std::vector<int>& /*re_group_1based*/,
     int N,
     std::vector<double>& eta_flat,
     int n_threads
 ) {
     const int np = L.np;
+    const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
 
     #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
     #endif
     for (int i = 0; i < N; i++) {
-        // Optional shared iid RE contribution at observation i.
-        double re_eff = 0.0;
         bool re_used = false;
-        if (L.has_re && !re_group_1based.empty()) {
-            int g = re_group_1based[i] - 1;
-            if (g >= 0 && g < L.n_re_groups) {
-                re_eff = params[L.re_start + g];
-                re_used = true;
-            }
-        }
+        double re_eff = obs_re_contrib(data, params, L, i, n_terms_unified, re_used);
 
         for (int k = 0; k < np; k++) {
             const ProcessData& proc = data.processes[k];
@@ -174,22 +414,23 @@ inline void compute_eta_spec(
 }
 
 // Per-observation gradient + neg-Hessian assembled into the latent gradient
-// and Hessian in (beta_0..beta_{np-1}, re) space. eta_weights_fn writes
+// and Hessian in (beta_0..beta_{np-1}, re_term_0..re_term_{K-1}) space.
+// eta_weights_fn writes
 //   grad_eta[k]                       = d log_lik_i / d eta_i_k
 //   neg_hess_eta[k * np + l]          = -d^2 log_lik_i / (d eta_i_k d eta_i_l)
-// Adds the iid RE prior contribution at the end (-tau_re * u for grad,
-// +tau_re on the diagonal of H).
+// At the end the prior contribution is added: beta ridge + per-term RE
+// precision Q_t (computed once from σ_t and L_t).
 inline void scatter_spec(
     const std::vector<double>& params,
     const std::vector<double>& eta_flat,
-    const std::vector<int>& re_group_1based,
+    const std::vector<int>& /*re_group_1based*/,
     const SpecLatentLayout& L,
     const ModelData& data,
     const ParamLayout& layout,
     const LikelihoodSpec& spec,
     const void* response_data,
     int N,
-    double tau_re,
+    double /*tau_re_legacy*/,
     DenseVec& grad,
     DenseMat& H,
     int /*n_threads*/
@@ -200,6 +441,15 @@ inline void scatter_spec(
     const int np = L.np;
     std::vector<double> grad_eta(np, 0.0);
     std::vector<double> neg_hess_eta((size_t)np * np, 0.0);
+    const int K = (int)L.re_terms.size();
+    const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
+
+    // Per-obs caches reused across the obs loop.
+    std::vector<int>     g_term(K, -1);    // 0-based group at obs i for each term
+    std::vector<int>     q_term(K, 0);     // q_t cached
+    // Slope-row z_{t,i,c} for c = 0..q_t-1 packed contiguously per term.
+    std::vector<std::vector<double>> z_term(K);
+    for (int t = 0; t < K; t++) z_term[t].assign(L.re_terms[t].n_coefs, 0.0);
 
     for (int i = 0; i < N; i++) {
         std::fill(grad_eta.begin(), grad_eta.end(), 0.0);
@@ -211,17 +461,25 @@ inline void scatter_spec(
             grad_eta.data(), neg_hess_eta.data()
         );
 
-        // Resolve the RE group at observation i once.
-        int g_re = -1;
-        if (L.has_re && !re_group_1based.empty()) {
-            int g = re_group_1based[i] - 1;
-            if (g >= 0 && g < L.n_re_groups) g_re = g;
+        // Resolve per-term groups + slope rows once.
+        for (int t = 0; t < K; t++) {
+            const ReTermSlot& s = L.re_terms[t];
+            int g = re_group_at(data, i, t, n_terms_unified);
+            if (g >= s.n_groups) g = -1;
+            g_term[t] = g;
+            q_term[t] = s.n_coefs;
+            if (g < 0) continue;
+            z_term[t][0] = 1.0;
+            for (int c = 1; c < s.n_coefs; c++) {
+                z_term[t][c] = slope_at(data, t, i, c);
+            }
         }
 
         // ============= GRADIENT scatter =============
         // Per-process beta gradient: g_{beta_k_j} += X_k(i, j) * grad_eta[k]
-        // Shared RE gradient: g_{u_g} += sum_{k in shared} grad_eta[k]
-        double re_grad_acc = 0.0;
+        // Per-term RE gradient at coef c, group g_t(i):
+        //   g_{b_{t,g,c}} += z_{t,i,c} · sum_{k: shared} grad_eta[k]
+        double s_grad = 0.0;
         for (int k = 0; k < np; k++) {
             const ProcessData& proc = data.processes[k];
             const double gk = grad_eta[k];
@@ -230,19 +488,20 @@ inline void scatter_spec(
                 double* gbeta = &grad[L.latent_offset[k]];
                 for (int j = 0; j < proc.p; j++) gbeta[j] += row[j] * gk;
             }
-            if (g_re >= 0 && re_shared_into(data, k)) re_grad_acc += gk;
+            if (re_shared_into(data, k)) s_grad += gk;
         }
-        if (g_re >= 0) grad[L.re_offset + g_re] += re_grad_acc;
+        for (int t = 0; t < K; t++) {
+            int g = g_term[t]; if (g < 0) continue;
+            const ReTermSlot& s = L.re_terms[t];
+            const int q = q_term[t];
+            const int row_base = s.latent_offset + g * q;
+            for (int c = 0; c < q; c++) {
+                grad[row_base + c] += z_term[t][c] * s_grad;
+            }
+        }
 
         // ============= HESSIAN scatter (lower triangle) =============
-        // Block layout: H[(beta_k_j, beta_l_m)] += X_k(i,j) * X_l(i,m) * w_{kl}
-        // RE blocks: shared RE acts as a "design column" of 1s into each shared
-        // process. So for shared processes k, l:
-        //   H[(beta_k_j, u_g)]  += X_k(i, j) * w_{kl}  (sum over l shared)
-        //   H[(u_g, u_g)]       += sum_{k,l shared} w_{kl}
-        // (lower-triangle: only writes to entries with row >= col)
-
-        // Helper: weight w_{kl} = neg_hess_eta[k*np + l]
+        // beta × beta block: unchanged.
         for (int k = 0; k < np; k++) {
             const ProcessData& pk = data.processes[k];
             const double* xk = (pk.p > 0)
@@ -260,7 +519,6 @@ inline void scatter_spec(
 
                 if (xk && xl) {
                     if (k == l) {
-                        // diagonal block: only j >= m
                         for (int j = 0; j < pk.p; j++) {
                             const double w_xj = w_kl * xk[j];
                             double* row_j = H[off_k + j].data();
@@ -269,7 +527,6 @@ inline void scatter_spec(
                             }
                         }
                     } else {
-                        // off-diagonal block (k > l): write H[off_k + j, off_l + m]
                         for (int j = 0; j < pk.p; j++) {
                             const double w_xj = w_kl * xk[j];
                             double* row_j = H[off_k + j].data();
@@ -282,37 +539,103 @@ inline void scatter_spec(
             }
         }
 
-        // RE × beta and RE × RE blocks. The RE row index is L.re_offset + g_re,
-        // which is the largest index in the latent vector by construction
-        // (re_offset == sum of all beta_counts), so it is always a "row >= col"
-        // write relative to any beta block.
-        if (g_re >= 0) {
-            // Sum of weights into the shared-into set, used for the (RE, RE)
-            // diagonal: H[u_g, u_g] += sum_{k,l shared} w_{kl}.
-            double w_re_re = 0.0;
+        // RE × beta cross block. For each term t with active group g,
+        // for each process l shared into k via the RE: weight w_l =
+        // sum_{k: shared} neg_hess_eta[k*np + l]. Then for coef c:
+        //   H[re_row(t,g,c), beta_l_m] += z_{t,i,c} · w_l · X_l(i, m)
+        // The RE row is always larger than any beta column (latent_offset
+        // for RE blocks sits after all beta blocks), so this is lower-tri.
+        // Precompute w_l once per obs.
+        std::vector<double> w_l_vec(np, 0.0);
+        for (int l = 0; l < np; l++) {
+            double w_l = 0.0;
             for (int k = 0; k < np; k++) {
                 if (!re_shared_into(data, k)) continue;
+                w_l += neg_hess_eta[(size_t)k * np + l];
+            }
+            w_l_vec[l] = w_l;
+        }
+        for (int t = 0; t < K; t++) {
+            int g = g_term[t]; if (g < 0) continue;
+            const ReTermSlot& s = L.re_terms[t];
+            const int q = q_term[t];
+            const int re_row_base = s.latent_offset + g * q;
+            for (int c = 0; c < q; c++) {
+                const double zc = z_term[t][c];
+                if (zc == 0.0) continue;
+                double* row = H[re_row_base + c].data();
                 for (int l = 0; l < np; l++) {
-                    if (!re_shared_into(data, l)) continue;
-                    w_re_re += neg_hess_eta[(size_t)k * np + l];
+                    const ProcessData& pl = data.processes[l];
+                    if (pl.p == 0) continue;
+                    const double w_l = w_l_vec[l];
+                    if (w_l == 0.0) continue;
+                    const double* xl =
+                        pl.X_flat.data() + (std::ptrdiff_t)i * pl.p;
+                    const double zc_w = zc * w_l;
+                    const int off_l = L.latent_offset[l];
+                    for (int m = 0; m < pl.p; m++) {
+                        row[off_l + m] += zc_w * xl[m];
+                    }
                 }
             }
-            const int re_row = L.re_offset + g_re;
-            // (RE, beta_l_m) for each l: weight = sum_{k shared} w_{kl}
+        }
+
+        // RE × RE block (term × term). For terms t, t' both with active
+        // groups, the contribution to H[re_row(t,g,c), re_row(t',g',c')] is
+        //   z_{t,i,c} · z_{t',i,c'} · sum_{k,l: shared,shared} w_{i,kl}
+        // Compute s_hess once per obs.
+        double s_hess = 0.0;
+        for (int k = 0; k < np; k++) {
+            if (!re_shared_into(data, k)) continue;
             for (int l = 0; l < np; l++) {
-                const ProcessData& pl = data.processes[l];
-                if (pl.p == 0) continue;
-                const double* xl = pl.X_flat.data() + (std::ptrdiff_t)i * pl.p;
-                double w_l = 0.0;
-                for (int k = 0; k < np; k++) {
-                    if (!re_shared_into(data, k)) continue;
-                    w_l += neg_hess_eta[(size_t)k * np + l];
-                }
-                double* row = H[re_row].data();
-                const int off_l = L.latent_offset[l];
-                for (int m = 0; m < pl.p; m++) row[off_l + m] += w_l * xl[m];
+                if (!re_shared_into(data, l)) continue;
+                s_hess += neg_hess_eta[(size_t)k * np + l];
             }
-            H[re_row][re_row] += w_re_re;
+        }
+        if (s_hess != 0.0) {
+            for (int t = 0; t < K; t++) {
+                int g = g_term[t]; if (g < 0) continue;
+                const ReTermSlot& st = L.re_terms[t];
+                const int qt = q_term[t];
+                const int row_base_t = st.latent_offset + g * qt;
+                for (int tp = 0; tp <= t; tp++) {
+                    int gp = g_term[tp]; if (gp < 0) continue;
+                    const ReTermSlot& stp = L.re_terms[tp];
+                    const int qtp = q_term[tp];
+                    const int row_base_tp = stp.latent_offset + gp * qtp;
+                    for (int c = 0; c < qt; c++) {
+                        const double zc = z_term[t][c];
+                        if (zc == 0.0) continue;
+                        double* row = H[row_base_t + c].data();
+                        if (t == tp) {
+                            // Same term, same group? Block is on the
+                            // diagonal of the H lower triangle and we
+                            // need cp <= c.
+                            if (g == gp) {
+                                for (int cp = 0; cp <= c; cp++) {
+                                    row[row_base_tp + cp] +=
+                                        zc * z_term[tp][cp] * s_hess;
+                                }
+                            } else if (gp < g) {
+                                // Same term, gp < g: full q_tp row.
+                                for (int cp = 0; cp < qtp; cp++) {
+                                    row[row_base_tp + cp] +=
+                                        zc * z_term[tp][cp] * s_hess;
+                                }
+                            }
+                            // gp > g: would be upper triangle for same
+                            // term; symmetrise pass handles it.
+                        } else {
+                            // Different term, tp < t: we are below the
+                            // diagonal block by construction.
+                            for (int cp = 0; cp < qtp; cp++) {
+                                row[row_base_tp + cp] +=
+                                    zc * z_term[tp][cp] * s_hess;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -333,11 +656,42 @@ inline void scatter_spec(
         }
     }
 
-    // iid RE prior: N(0, sigma_re^2 I)
-    if (L.has_re) {
-        for (int g = 0; g < L.n_re_groups; g++) {
-            grad[L.re_offset + g] += -tau_re * params[L.re_start + g];
-            H[L.re_offset + g][L.re_offset + g] += tau_re;
+    // RE prior: per term build Q_t (q_t × q_t) and apply to each group.
+    if (!L.re_terms.empty()) {
+        std::vector<double> L_flat;
+        std::vector<double> Q_flat;
+        double log_det_Q_unused = 0.0;
+        for (int t = 0; t < K; t++) {
+            const ReTermSlot& s = L.re_terms[t];
+            const int q = s.n_coefs;
+            std::vector<double> sigmas = term_sigmas(params, s);
+            if (s.correlated && q > 1) {
+                build_chol_L(params, s, L_flat);
+            } else {
+                L_flat.clear();
+            }
+            build_term_precision(sigmas, L_flat, q, s.correlated && q > 1,
+                                 Q_flat, log_det_Q_unused);
+            for (int g = 0; g < s.n_groups; g++) {
+                const int base_lat   = s.latent_offset + g * q;
+                const int base_param = s.param_start  + g * q;
+                // grad += -Q b
+                for (int c = 0; c < q; c++) {
+                    double acc = 0.0;
+                    for (int cp = 0; cp < q; cp++) {
+                        acc += Q_flat[(size_t)c * q + cp]
+                               * params[base_param + cp];
+                    }
+                    grad[base_lat + c] += -acc;
+                }
+                // H += Q on the q×q sub-block
+                for (int c = 0; c < q; c++) {
+                    for (int cp = 0; cp < q; cp++) {
+                        H[base_lat + c][base_lat + cp]
+                            += Q_flat[(size_t)c * q + cp];
+                    }
+                }
+            }
         }
     }
 }
@@ -366,7 +720,7 @@ inline double log_prior_latent(
     const std::vector<double>& params,
     const SpecLatentLayout& L,
     double sigma_beta,
-    double tau_re
+    double /*tau_re_legacy*/
 ) {
     double lp = 0.0;
     double tau_beta = 1.0 / (sigma_beta * sigma_beta + 1e-300);
@@ -379,12 +733,38 @@ inline double log_prior_latent(
         p_total += L.beta_count[k];
     }
     lp += 0.5 * p_total * std::log(tau_beta / (2.0 * M_PI));
-    if (L.has_re) {
-        for (int g = 0; g < L.n_re_groups; g++) {
-            double u = params[L.re_start + g];
-            lp += -0.5 * tau_re * u * u;
+
+    if (!L.re_terms.empty()) {
+        std::vector<double> L_flat, Q_flat;
+        double log_det_Q = 0.0;
+        for (int t = 0; t < (int)L.re_terms.size(); t++) {
+            const ReTermSlot& s = L.re_terms[t];
+            const int q = s.n_coefs;
+            std::vector<double> sigmas = term_sigmas(params, s);
+            if (s.correlated && q > 1) {
+                build_chol_L(params, s, L_flat);
+            } else {
+                L_flat.clear();
+            }
+            build_term_precision(sigmas, L_flat, q, s.correlated && q > 1,
+                                 Q_flat, log_det_Q);
+            for (int g = 0; g < s.n_groups; g++) {
+                const int base = s.param_start + g * q;
+                // -0.5 b^T Q b
+                double quad = 0.0;
+                for (int c = 0; c < q; c++) {
+                    double acc = 0.0;
+                    for (int cp = 0; cp < q; cp++) {
+                        acc += Q_flat[(size_t)c * q + cp] * params[base + cp];
+                    }
+                    quad += params[base + c] * acc;
+                }
+                lp += -0.5 * quad;
+            }
+            // log normalisation: 0.5 G_t log|Q_t| - 0.5 G_t q log(2π)
+            lp += 0.5 * (double)s.n_groups * log_det_Q;
+            lp += -0.5 * (double)s.n_groups * (double)q * std::log(2.0 * M_PI);
         }
-        lp += 0.5 * L.n_re_groups * std::log(tau_re / (2.0 * M_PI));
     }
     return lp;
 }
@@ -425,10 +805,12 @@ inline void apply_latent_step(
                                        + scale * step[off_k + j];
         }
     }
-    if (L.has_re) {
-        for (int g = 0; g < L.n_re_groups; g++) {
-            out[L.re_start + g] = base[L.re_start + g]
-                                  + scale * step[L.re_offset + g];
+    for (int t = 0; t < (int)L.re_terms.size(); t++) {
+        const ReTermSlot& s = L.re_terms[t];
+        const int n = s.n_groups * s.n_coefs;
+        for (int j = 0; j < n; j++) {
+            out[s.param_start + j] = base[s.param_start + j]
+                                     + scale * step[s.latent_offset + j];
         }
     }
 }
@@ -480,15 +862,54 @@ void laplace_mode_spec_dense_impl(
                        k, (int)proc.X_flat.size(), data.N, proc.p);
         }
     }
-    if (L.has_re && (int)re_group_1based.size() != data.N) {
-        Rcpp::stop("laplace_spec_dense: re_group has length %d but N = %d",
-                   (int)re_group_1based.size(), data.N);
+    // Multi-term path resolution. Three legitimate input shapes:
+    //   (a) Modern: data.re_group_multi_flat populated (shape N * n_terms).
+    //       This drives the per-term group lookup directly.
+    //   (b) Legacy single-term: data.re_group populated. Used when
+    //       n_re_terms <= 1 and the caller did not set
+    //       re_group_multi_flat.
+    //   (c) Shim-only: caller passes a length-N re_group_1based but
+    //       neither data.re_group nor data.re_group_multi_flat was
+    //       written (tulpaGlmm:glmm_laplace.cpp does both, but we keep
+    //       the fallback to be defensive).
+    // We synthesize (a) on a local data copy when only (c) is present so
+    // the multi-term scatter path always reads from the same place.
+    std::unique_ptr<ModelData> data_owned;
+    const ModelData* data_ptr = &data;
+    if (L.has_re && data.re_group_multi_flat.empty()) {
+        const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
+        if (n_terms_unified == 1
+            && (int)data.re_group.size() != data.N
+            && (int)re_group_1based.size() == data.N) {
+            data_owned.reset(new ModelData(data));
+            data_owned->re_group.assign(re_group_1based.begin(),
+                                        re_group_1based.end());
+            if (data_owned->n_re_groups <= 0) {
+                int max_g = 0;
+                for (int v : re_group_1based) if (v > max_g) max_g = v;
+                data_owned->n_re_groups = max_g;
+            }
+            data_ptr = data_owned.get();
+        } else if (n_terms_unified > 1) {
+            Rcpp::stop(
+                "laplace_spec_dense: data.n_re_terms == %d but "
+                "data.re_group_multi_flat is empty. "
+                "Set data.re_group_multi_flat (length N * n_terms).",
+                data.n_re_terms);
+        } else if ((int)data.re_group.size() != data.N
+                   && (int)re_group_1based.size() != data.N) {
+            Rcpp::stop(
+                "laplace_spec_dense: layout.has_re but neither "
+                "data.re_group_multi_flat, data.re_group, nor the shim "
+                "re_group argument has length N (= %d). Got "
+                "re_group_1based size %d.",
+                data.N, (int)re_group_1based.size());
+        }
     }
+    const ModelData& data_use = *data_ptr;
 
-    int N = data.N;
+    int N = data_use.N;
     int n_x = L.n_x;
-    double sigma_re = current_sigma_re(params_inout, layout);
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-300);
 
     bool use_sparse = (n_x >= 200);
     SparseCholeskySolver sparse_solver;
@@ -501,11 +922,11 @@ void laplace_mode_spec_dense_impl(
     std::vector<double> eta_flat((size_t)N * np, 0.0);
 
     auto eval_objective = [&](const std::vector<double>& trial_params) -> double {
-        compute_eta_spec(data, trial_params, L, re_group_1based, N, eta_flat, n_threads);
+        compute_eta_spec(data_use, trial_params, L, re_group_1based, N, eta_flat, n_threads);
         double ll = total_log_lik_spec(
-            trial_params, eta_flat, data, layout, *spec, response_data, N
+            trial_params, eta_flat, data_use, layout, *spec, response_data, N
         );
-        double lp = log_prior_latent(trial_params, L, data.sigma_beta, tau_re);
+        double lp = log_prior_latent(trial_params, L, data_use.sigma_beta, 1.0);
         return ll + lp;
     };
 
@@ -518,9 +939,9 @@ void laplace_mode_spec_dense_impl(
     std::vector<double> delta(n_x, 0.0);
 
     for (int iter = 0; iter < max_iter; iter++) {
-        compute_eta_spec(data, params_inout, L, re_group_1based, N, eta_flat, n_threads);
+        compute_eta_spec(data_use, params_inout, L, re_group_1based, N, eta_flat, n_threads);
         scatter_spec(params_inout, eta_flat, re_group_1based, L,
-                     data, layout, *spec, response_data, N, tau_re,
+                     data_use, layout, *spec, response_data, N, 1.0,
                      grad, H, n_threads);
 
         std::fill(delta.begin(), delta.end(), 0.0);
@@ -567,17 +988,17 @@ void laplace_mode_spec_dense_impl(
     }
 
     // Final Hessian + log-marginal at the mode.
-    compute_eta_spec(data, params_inout, L, re_group_1based, N, eta_flat, n_threads);
+    compute_eta_spec(data_use, params_inout, L, re_group_1based, N, eta_flat, n_threads);
     scatter_spec(params_inout, eta_flat, re_group_1based, L,
-                 data, layout, *spec, response_data, N, tau_re,
+                 data_use, layout, *spec, response_data, N, 1.0,
                  grad, H, n_threads);
     double log_det_Q = 0.0;
     dispatch_factor_log_det(H, n_x, sparse_solver, use_sparse, log_det_Q);
 
     double ll = total_log_lik_spec(
-        params_inout, eta_flat, data, layout, *spec, response_data, N
+        params_inout, eta_flat, data_use, layout, *spec, response_data, N
     );
-    double lp = log_prior_latent(params_inout, L, data.sigma_beta, tau_re);
+    double lp = log_prior_latent(params_inout, L, data_use.sigma_beta, 1.0);
     double log_marginal = finalize_log_marginal(ll, lp, log_det_Q, n_x);
 
     if (n_iter_out)      *n_iter_out      = n_iter;
@@ -914,6 +1335,246 @@ Rcpp::List cpp_laplace_spec_test_gaussian2p(
     if (has_re) {
         for (int g = 0; g < n_re_groups; g++) {
             mode[p1 + p2 + g] = params[layout.re_start + g];
+        }
+    }
+    return Rcpp::List::create(
+        Rcpp::Named("mode")         = mode,
+        Rcpp::Named("log_det_Q")    = log_det_Q,
+        Rcpp::Named("log_marginal") = log_marginal,
+        Rcpp::Named("n_iter")       = n_iter,
+        Rcpp::Named("converged")    = (converged != 0)
+    );
+}
+
+// ============================================================================
+// Multi-term + slope RE test fixture. Accepts a list of RE terms
+// (group_idx, n_groups, n_coefs, sigma vector, correlated, optional slope
+// matrix, optional chol_raw vector) and runs the spec-Laplace path on a
+// Gaussian likelihood. Returns the mode in the canonical concatenation
+// order [beta | term_0 | term_1 | ...].
+// ============================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_laplace_spec_test_multi_re(
+    Rcpp::NumericVector y,
+    Rcpp::NumericMatrix X,
+    Rcpp::List re_terms,         // list of lists per term (see below)
+    double sigma_beta,
+    double phi,
+    int max_iter = 200,
+    double tol = 1e-12,
+    int n_threads = 1
+) {
+    // Each element of re_terms is a list with fields:
+    //   group_idx   IntegerVector length N, 1-based
+    //   n_groups    int
+    //   n_coefs     int (1 = intercept-only, >1 = intercept + slopes)
+    //   sigma       NumericVector length n_coefs (positive sds)
+    //   correlated  logical scalar
+    //   slope_mat   NumericMatrix N x (n_coefs - 1) (or NULL if n_coefs == 1)
+    //   chol_raw    NumericVector length n_coefs*(n_coefs-1)/2 (only when correlated)
+    int N = y.size();
+    int p = X.ncol();
+    int K = re_terms.size();
+
+    // ---- ProcessData ----
+    tulpa::ProcessData proc;
+    proc.p = p;
+    proc.X_flat.resize((size_t)N * p);
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < p; j++) {
+            proc.X_flat[(size_t)i * p + j] = X(i, j);
+        }
+    }
+
+    tulpa::LikelihoodSpec spec;
+    spec.n_processes    = 1;
+    spec.name           = "gaussian_multire_test";
+    spec.ll_double      = &gaussian_ll_T<double>;
+    spec.eta_weights_fn = &gaussian_eta_weights;
+
+    GaussianResponse resp{y.begin(), N, phi};
+
+    tulpa::ModelData data;
+    data.n_processes         = 1;
+    data.processes.push_back(proc);
+    data.N                   = N;
+    data.sigma_beta          = sigma_beta;
+    data.likelihood_spec     = &spec;
+    data.model_response_data = &resp;
+    data.sharing.init(1);
+
+    // ---- Multi-term RE structure ----
+    data.n_re_terms = K;
+    data.re_parameterization = 1; // unused on the Laplace path (centered)
+    data.re_n_groups_multi.assign(K, 0);
+    data.re_n_coefs.assign(K, 1);
+    data.re_n_slopes.assign(K, 0);
+    data.re_correlated.assign(K, false);
+    data.re_n_chol.assign(K, 0);
+    data.re_offsets.assign(K, 0);
+    data.re_slope_matrices.assign(K, std::vector<double>());
+    data.re_group_multi_flat.assign((size_t)N * K, 0);
+
+    // Precompute total RE shape for asserts; also build manual ParamLayout.
+    int total_re_groups = 0;
+    int total_sigma_params = 0;
+    int total_chol_params = 0;
+    bool any_slopes = false;
+    bool any_correlated = false;
+
+    // First pass: pull static term shape from each list element.
+    std::vector<Rcpp::NumericVector> sigma_per_term(K);
+    std::vector<Rcpp::NumericVector> chol_per_term(K);
+    for (int t = 0; t < K; t++) {
+        Rcpp::List term = Rcpp::as<Rcpp::List>(re_terms[t]);
+        Rcpp::IntegerVector gi = Rcpp::as<Rcpp::IntegerVector>(term["group_idx"]);
+        int n_g = Rcpp::as<int>(term["n_groups"]);
+        int n_c = Rcpp::as<int>(term["n_coefs"]);
+        bool corr = Rcpp::as<bool>(term["correlated"]);
+        if ((int)gi.size() != N) {
+            Rcpp::stop("term %d: group_idx length %d != N (%d)", t + 1,
+                       (int)gi.size(), N);
+        }
+        data.re_n_groups_multi[t] = n_g;
+        data.re_n_coefs[t]        = n_c;
+        data.re_n_slopes[t]       = std::max(0, n_c - 1);
+        data.re_correlated[t]     = (n_c > 1) && corr;
+        data.re_n_chol[t]         = data.re_correlated[t] ? n_c * (n_c - 1) / 2 : 0;
+        data.re_offsets[t]        = total_re_groups;
+        for (int i = 0; i < N; i++) {
+            data.re_group_multi_flat[(size_t)i * K + t] = gi[i];
+        }
+        if (data.re_n_slopes[t] > 0) {
+            any_slopes = true;
+            Rcpp::NumericMatrix sm = Rcpp::as<Rcpp::NumericMatrix>(term["slope_mat"]);
+            if (sm.nrow() != N || sm.ncol() != data.re_n_slopes[t]) {
+                Rcpp::stop("term %d: slope_mat is %dx%d, expected %dx%d",
+                           t + 1, sm.nrow(), sm.ncol(), N, data.re_n_slopes[t]);
+            }
+            data.re_slope_matrices[t].assign(
+                (size_t)N * data.re_n_slopes[t], 0.0);
+            for (int i = 0; i < N; i++) {
+                for (int s = 0; s < data.re_n_slopes[t]; s++) {
+                    data.re_slope_matrices[t][(size_t)i * data.re_n_slopes[t] + s]
+                        = sm(i, s);
+                }
+            }
+        }
+        if (data.re_correlated[t]) any_correlated = true;
+        sigma_per_term[t] = Rcpp::as<Rcpp::NumericVector>(term["sigma"]);
+        if ((int)sigma_per_term[t].size() != n_c) {
+            Rcpp::stop("term %d: sigma length %d != n_coefs (%d)", t + 1,
+                       (int)sigma_per_term[t].size(), n_c);
+        }
+        if (data.re_correlated[t]) {
+            chol_per_term[t] = Rcpp::as<Rcpp::NumericVector>(term["chol_raw"]);
+            if ((int)chol_per_term[t].size() != data.re_n_chol[t]) {
+                Rcpp::stop("term %d: chol_raw length %d != n_coefs*(n_coefs-1)/2 (%d)",
+                           t + 1, (int)chol_per_term[t].size(), data.re_n_chol[t]);
+            }
+        }
+        total_re_groups    += n_g;
+        total_sigma_params += n_c;
+        total_chol_params  += data.re_n_chol[t];
+    }
+    data.total_re_groups    = total_re_groups;
+    data.total_re_params    = 0;
+    for (int t = 0; t < K; t++) {
+        data.total_re_params += data.re_n_groups_multi[t] * data.re_n_coefs[t];
+    }
+    data.total_sigma_params = total_sigma_params;
+    data.total_chol_params  = total_chol_params;
+    data.has_re_slopes              = any_slopes;
+    data.has_re_correlated_slopes   = any_correlated;
+
+    // ---- Build ParamLayout manually to mirror hmc_param_layout's
+    // multi-term branches. We use the slopes-or-not branch because that's
+    // the schema the new spec-Laplace path consumes.
+    tulpa::ParamLayout layout;
+    layout.process_beta_start.push_back(0);
+    layout.process_beta_count.push_back(p);
+    int next = p;
+    layout.has_re                 = true;
+    layout.has_re_slopes          = any_slopes;
+    layout.has_re_correlated_slopes = any_correlated;
+    layout.log_sigma_re_multi.resize(K);
+    layout.log_sigma_re_slopes.resize(K);
+    layout.re_start_multi.resize(K);
+    layout.re_end_multi.resize(K);
+    layout.re_n_coefs_multi.resize(K);
+    layout.re_correlated_multi.resize(K);
+    layout.chol_re_start_multi.assign(K, -1);
+    layout.chol_re_end_multi.assign(K, -1);
+
+    // 1. sigma slots (q_t per term)
+    for (int t = 0; t < K; t++) {
+        int q = data.re_n_coefs[t];
+        layout.re_n_coefs_multi[t] = q;
+        layout.re_correlated_multi[t] = data.re_correlated[t];
+        layout.log_sigma_re_slopes[t].resize(q);
+        for (int c = 0; c < q; c++) {
+            layout.log_sigma_re_slopes[t][c] = next++;
+        }
+        layout.log_sigma_re_multi[t] = layout.log_sigma_re_slopes[t][0];
+    }
+    // 2. chol slots (only for correlated terms)
+    for (int t = 0; t < K; t++) {
+        if (data.re_n_chol[t] > 0) {
+            layout.chol_re_start_multi[t] = next;
+            next += data.re_n_chol[t];
+            layout.chol_re_end_multi[t] = next;
+        }
+    }
+    // 3. RE effects (group * coef per term)
+    for (int t = 0; t < K; t++) {
+        layout.re_start_multi[t] = next;
+        next += data.re_n_groups_multi[t] * data.re_n_coefs[t];
+        layout.re_end_multi[t] = next;
+    }
+    // legacy mirrors
+    layout.log_sigma_re_idx = layout.log_sigma_re_multi[0];
+    layout.re_start = layout.re_start_multi[0];
+    layout.re_end   = layout.re_end_multi[0];
+    layout.total_params = next;
+
+    // ---- params: hyperparams from term spec, latent zero-init ----
+    std::vector<double> params(layout.total_params, 0.0);
+    for (int t = 0; t < K; t++) {
+        int q = data.re_n_coefs[t];
+        for (int c = 0; c < q; c++) {
+            params[layout.log_sigma_re_slopes[t][c]] =
+                std::log(sigma_per_term[t][c]);
+        }
+        if (data.re_correlated[t]) {
+            for (int j = 0; j < data.re_n_chol[t]; j++) {
+                params[layout.chol_re_start_multi[t] + j] = chol_per_term[t][j];
+            }
+        }
+    }
+
+    int n_iter = 0;
+    int converged = 0;
+    double log_det_Q = 0.0;
+    double log_marginal = 0.0;
+    std::vector<int> empty_group;
+    tulpa::laplace_mode_spec_dense_impl(
+        data, layout, params, empty_group,
+        max_iter, tol, n_threads,
+        &n_iter, &converged, &log_det_Q, &log_marginal
+    );
+
+    // Build mode = [beta | term_0_block | term_1_block | ...]
+    int n_x = p;
+    for (int t = 0; t < K; t++) n_x += data.re_n_groups_multi[t] * data.re_n_coefs[t];
+    Rcpp::NumericVector mode(n_x);
+    int off = 0;
+    for (int j = 0; j < p; j++) mode[off++] = params[j];
+    for (int t = 0; t < K; t++) {
+        int q = data.re_n_coefs[t];
+        int n_g = data.re_n_groups_multi[t];
+        for (int j = 0; j < n_g * q; j++) {
+            mode[off++] = params[layout.re_start_multi[t] + j];
         }
     }
     return Rcpp::List::create(

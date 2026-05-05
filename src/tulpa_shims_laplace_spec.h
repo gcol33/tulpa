@@ -64,9 +64,12 @@ extern "C" void tulpa_laplace_spec_dense_impl(
     // warm-start round-trip works without a separate scratch allocation.
     for (int j = 0; j < n_params; j++) params_inout[j] = params[j];
 
-    // Concatenate every process's beta block in order, then the RE block.
-    // Caller's view of the result mode mirrors SpecLatentLayout (see
-    // src/laplace_spec.cpp): [beta_0 | beta_1 | ... | beta_{np-1} | re].
+    // Concatenate every process's beta block in order, then every RE term
+    // in term order. Caller's view of the result mode mirrors
+    // SpecLatentLayout in src/laplace_spec.cpp:
+    //   [beta_0 | beta_1 | ... | beta_{np-1} | re_term_0 | re_term_1 | ...]
+    // Single-term case is bit-identical to the previous concatenation
+    // because re_start_multi[0] / re_end_multi[0] alias re_start / re_end.
     const int np = (int)layout->process_beta_start.size();
     int p_total = 0;
     for (int k = 0; k < np; k++) {
@@ -74,9 +77,19 @@ extern "C" void tulpa_laplace_spec_dense_impl(
             p_total += layout->process_beta_count[k];
         }
     }
-    int n_re       = (layout->has_re && layout->re_start >= 0)
-                     ? (layout->re_end - layout->re_start) : 0;
-    int n_x        = p_total + n_re;
+    int n_re_total = 0;
+    if (layout->has_re) {
+        if (!layout->re_start_multi.empty()) {
+            for (size_t t = 0; t < layout->re_start_multi.size(); t++) {
+                int rs = layout->re_start_multi[t];
+                int re = layout->re_end_multi[t];
+                if (rs >= 0 && re >= rs) n_re_total += (re - rs);
+            }
+        } else if (layout->re_start >= 0) {
+            n_re_total = layout->re_end - layout->re_start;
+        }
+    }
+    int n_x = p_total + n_re_total;
 
     result_out->n_x = n_x;
     result_out->mode = (n_x > 0) ? new double[n_x] : new double[1];
@@ -89,8 +102,21 @@ extern "C" void tulpa_laplace_spec_dense_impl(
             result_out->mode[out_idx++] = params[beta_start + j];
         }
     }
-    for (int g = 0; g < n_re; g++) {
-        result_out->mode[out_idx++] = params[layout->re_start + g];
+    if (layout->has_re) {
+        if (!layout->re_start_multi.empty()) {
+            for (size_t t = 0; t < layout->re_start_multi.size(); t++) {
+                int rs = layout->re_start_multi[t];
+                int re = layout->re_end_multi[t];
+                if (rs < 0 || re < rs) continue;
+                for (int j = rs; j < re; j++) {
+                    result_out->mode[out_idx++] = params[j];
+                }
+            }
+        } else if (layout->re_start >= 0) {
+            for (int g = layout->re_start; g < layout->re_end; g++) {
+                result_out->mode[out_idx++] = params[g];
+            }
+        }
     }
     result_out->log_det_Q    = log_det_Q;
     result_out->log_marginal = log_marginal;

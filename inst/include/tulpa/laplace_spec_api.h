@@ -15,16 +15,26 @@
 //     for every k in [0, n_processes).
 //   - Per-process additive offsets are picked up automatically from
 //     data->processes[k].offset when non-empty (length must equal N).
-//   - At most one iid RE term (layout->has_re + .re_start / .re_end).
-//     The RE shares into process k iff data->sharing.re[k] is true.
+//   - Random effects: K = data->n_re_terms terms, q_t = re_n_coefs[t]
+//     coefficients per group per term (q_t == 1 for `(1|g)`, q_t > 1
+//     for slopes). The latent contribution at obs i is
+//         sum_t  z_{t,i}^T b_{t, g_t(i)}
+//     where z_{t,i,0} = 1 and slopes z_{t,i,c} (c = 1..q_t-1) are read
+//     from data->re_slope_matrices[t][i*(q_t-1) + (c-1)]. Per-term
+//     prior covariance Σ_t is uncorrelated (`(x||g)` -> diagonal) or
+//     correlated (`(x|g)` -> tanh-Cholesky-parameterized in
+//     params[chol_re_start_multi[t]..chol_re_end_multi[t])).
+//     The legacy single-term layout (layout->re_start / re_end /
+//     log_sigma_re_idx) is honoured as the K == 1, q_0 == 1 case.
+//     Per-process sharing is uniform across terms via data->sharing.re.
 //   - data->likelihood_spec points to a tulpa::LikelihoodSpec whose
 //     ll_double and eta_weights_fn are non-null. eta_weights_fn must
 //     fill grad_eta[k] = d log_lik_i / d eta_i_k and neg_hess_eta as a
 //     row-major n_processes x n_processes block.
 //
-// Random-slope / spatial / temporal variants are follow-on work; this
-// entry will reject them with a clear error so callers get a deterministic
-// signal instead of silent miscomputation.
+// Spatial / temporal latent fields are still follow-on work; this entry
+// integrates only over fixed effects + RE blocks and treats every other
+// hyperparameter slot as pinned at its input value.
 
 #ifndef TULPA_LAPLACE_SPEC_API_H
 #define TULPA_LAPLACE_SPEC_API_H
@@ -44,8 +54,13 @@ namespace tulpa {
 //                     on entry; latent slots may carry a warm start. On exit
 //                     the latent slots are overwritten with the mode;
 //                     hyperparameter slots are untouched. Length = n_params.
-//   re_group        : per-obs 1-based RE group index. Length = data->N if
-//                     layout->has_re, otherwise pass nullptr / len 0.
+//   re_group        : per-obs 1-based RE group index for the LEGACY
+//                     single-term path (length data->N when layout->has_re
+//                     and the caller has not populated
+//                     data->re_group_multi_flat). Multi-term callers must
+//                     populate data->re_group_multi_flat themselves
+//                     (length data->N * data->n_re_terms) and may pass
+//                     nullptr / 0 here.
 //   max_iter, tol, n_threads : Newton controls.
 //   result_out      : caller-allocated. Filled with mode (== params_inout
 //                     latent slice in [beta_0..beta_{np-1}, re] order),

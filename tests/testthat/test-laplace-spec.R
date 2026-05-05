@@ -174,6 +174,239 @@ test_that("spec-driven Laplace handles n_processes == 2 with shared iid RE", {
   expect_equal(spec$mode, ref_mode, tolerance = 1e-5)
 })
 
+# ============================================================================
+# Multi-term + slope RE tests. These exercise the lifted single-term
+# contract on the spec-Laplace path. Each test builds a tiny linear-Gaussian
+# problem, runs Laplace, and compares the mode against a closed-form
+# (X'X + Λ) x = X'y solve in pure R.
+# ============================================================================
+
+# Build the full block-diagonal RE precision (sum_t Q_t ⊗ I_{G_t}) given
+# a list of (sigma vector, optional L matrix) per term and a per-term
+# group count. Needed to construct the closed-form reference Hessian.
+make_re_precision_block <- function(re_terms_R, n_groups_per_term) {
+  blocks <- lapply(seq_along(re_terms_R), function(t) {
+    sig <- re_terms_R[[t]]$sigma
+    L_t <- re_terms_R[[t]]$L
+    q   <- length(sig)
+    if (is.null(L_t) || q == 1) {
+      Q_t <- diag(1 / sig^2, q)
+    } else {
+      Sigma_t <- diag(sig) %*% L_t %*% t(L_t) %*% diag(sig)
+      Q_t <- solve(Sigma_t)
+    }
+    n_g <- n_groups_per_term[t]
+    # block-diag (Q_t reused n_g times)
+    full <- matrix(0, n_g * q, n_g * q)
+    for (g in seq_len(n_g)) {
+      idx <- ((g - 1) * q + 1):(g * q)
+      full[idx, idx] <- Q_t
+    }
+    full
+  })
+  Reduce(function(A, B) {
+    nA <- nrow(A); nB <- nrow(B)
+    out <- matrix(0, nA + nB, nA + nB)
+    out[seq_len(nA), seq_len(nA)] <- A
+    out[(nA + 1):(nA + nB), (nA + 1):(nA + nB)] <- B
+    out
+  }, blocks)
+}
+
+# Stack the per-obs Z = [Z_1 | Z_2 | ... | Z_K] design where Z_t is N x
+# (G_t * q_t) (intercept + slope columns interleaved per group).
+make_re_design <- function(re_terms_R, N) {
+  Zs <- lapply(re_terms_R, function(tm) {
+    n_g <- tm$n_groups
+    q   <- tm$n_coefs
+    Zt  <- matrix(0, N, n_g * q)
+    for (i in seq_len(N)) {
+      g <- tm$group_idx[i]
+      base <- (g - 1) * q
+      Zt[i, base + 1] <- 1               # intercept
+      if (q > 1) {
+        for (s in seq_len(q - 1)) {
+          Zt[i, base + 1 + s] <- tm$slope_mat[i, s]
+        }
+      }
+    }
+    Zt
+  })
+  do.call(cbind, Zs)
+}
+
+test_that("spec-driven Laplace handles two crossed intercept-only terms (1|g1)+(1|g2)", {
+  set.seed(202605L)
+  N <- 200L
+  p <- 3L
+  G1 <- 5L
+  G2 <- 7L
+  sigma1 <- 0.4
+  sigma2 <- 0.7
+  sigma_beta <- 100
+  phi <- 0.6
+
+  X <- cbind(1, matrix(rnorm(N * (p - 1L)), nrow = N))
+  g1 <- sample.int(G1, N, replace = TRUE)
+  g2 <- sample.int(G2, N, replace = TRUE)
+  beta_true <- c(0.5, -0.3, 0.8)
+  u1 <- rnorm(G1, sd = sigma1)
+  u2 <- rnorm(G2, sd = sigma2)
+  y <- as.numeric(X %*% beta_true) + u1[g1] + u2[g2] + rnorm(N, sd = phi)
+
+  re_terms <- list(
+    list(group_idx = g1, n_groups = G1, n_coefs = 1L,
+         sigma = sigma1, correlated = FALSE),
+    list(group_idx = g2, n_groups = G2, n_coefs = 1L,
+         sigma = sigma2, correlated = FALSE)
+  )
+  spec <- tulpa:::cpp_laplace_spec_test_multi_re(
+    y = y, X = X, re_terms = re_terms,
+    sigma_beta = sigma_beta, phi = phi,
+    max_iter = 200L, tol = 1e-12, n_threads = 1L
+  )
+  expect_true(spec$converged)
+
+  # Closed form: Hessian on (beta, b1, b2) with prior precision Λ
+  # Λ_beta = tau_beta I_p; Λ_b1 = (1/sigma1^2) I_{G1}; Λ_b2 = (1/sigma2^2) I_{G2}
+  inv_phi2 <- 1 / phi^2
+  tau_beta <- 1 / sigma_beta^2
+  re_terms_R <- list(
+    list(sigma = sigma1, n_groups = G1, n_coefs = 1L, group_idx = g1),
+    list(sigma = sigma2, n_groups = G2, n_coefs = 1L, group_idx = g2)
+  )
+  Z <- make_re_design(re_terms_R, N)
+  Lambda_re <- make_re_precision_block(re_terms_R, c(G1, G2))
+  H_beta_beta <- inv_phi2 * crossprod(X) + tau_beta * diag(p)
+  H_beta_b    <- inv_phi2 * crossprod(X, Z)
+  H_b_b       <- inv_phi2 * crossprod(Z) + Lambda_re
+  H_full <- rbind(
+    cbind(H_beta_beta, H_beta_b),
+    cbind(t(H_beta_b), H_b_b)
+  )
+  rhs <- c(inv_phi2 * crossprod(X, y), inv_phi2 * crossprod(Z, y))
+  ref <- as.numeric(solve(H_full, rhs))
+  expect_equal(spec$mode, ref, tolerance = 1e-7)
+})
+
+test_that("spec-driven Laplace handles uncorrelated random slope (x||g)", {
+  set.seed(202606L)
+  N <- 200L
+  p <- 2L
+  G <- 6L
+  sigma_int   <- 0.4
+  sigma_slope <- 0.25
+  sigma_beta  <- 100
+  phi <- 0.5
+
+  X <- cbind(1, rnorm(N))
+  g <- sample.int(G, N, replace = TRUE)
+  x_slope <- rnorm(N)
+  beta_true <- c(0.5, -0.2)
+  b_int   <- rnorm(G, sd = sigma_int)
+  b_slope <- rnorm(G, sd = sigma_slope)
+  y <- as.numeric(X %*% beta_true) +
+       b_int[g] + b_slope[g] * x_slope +
+       rnorm(N, sd = phi)
+
+  re_terms <- list(
+    list(group_idx = g, n_groups = G, n_coefs = 2L,
+         sigma = c(sigma_int, sigma_slope), correlated = FALSE,
+         slope_mat = matrix(x_slope, ncol = 1L))
+  )
+  spec <- tulpa:::cpp_laplace_spec_test_multi_re(
+    y = y, X = X, re_terms = re_terms,
+    sigma_beta = sigma_beta, phi = phi,
+    max_iter = 200L, tol = 1e-12, n_threads = 1L
+  )
+  expect_true(spec$converged)
+
+  # Closed-form reference: Z_t has columns [intercept (1 if i in g), slope (x_i if i in g)]
+  # interleaved per group as (b_{g, intercept}, b_{g, slope}, ...) for g = 1..G.
+  inv_phi2 <- 1 / phi^2
+  tau_beta <- 1 / sigma_beta^2
+  re_terms_R <- list(
+    list(sigma = c(sigma_int, sigma_slope), n_groups = G, n_coefs = 2L,
+         group_idx = g, slope_mat = matrix(x_slope, ncol = 1L))
+  )
+  Z <- make_re_design(re_terms_R, N)
+  Lambda_re <- make_re_precision_block(re_terms_R, G)
+  H_beta_beta <- inv_phi2 * crossprod(X) + tau_beta * diag(p)
+  H_beta_b    <- inv_phi2 * crossprod(X, Z)
+  H_b_b       <- inv_phi2 * crossprod(Z) + Lambda_re
+  H_full <- rbind(
+    cbind(H_beta_beta, H_beta_b),
+    cbind(t(H_beta_b), H_b_b)
+  )
+  rhs <- c(inv_phi2 * crossprod(X, y), inv_phi2 * crossprod(Z, y))
+  ref <- as.numeric(solve(H_full, rhs))
+  expect_equal(spec$mode, ref, tolerance = 1e-7)
+})
+
+test_that("spec-driven Laplace handles correlated random slope (x|g)", {
+  set.seed(202607L)
+  N <- 200L
+  p <- 2L
+  G <- 5L
+  sigma_int   <- 0.5
+  sigma_slope <- 0.4
+  sigma_beta  <- 100
+  phi <- 0.5
+
+  # tanh-Cholesky parameterization: for q = 2 there is one raw value
+  # (the off-diagonal correlation). raw = atanh(rho) so tanh(raw) = rho.
+  rho <- 0.5
+  raw <- atanh(rho)
+  # L = [[1, 0], [rho, sqrt(1 - rho^2)]] (matches build_chol_L in C++)
+  L_mat <- matrix(c(1, rho, 0, sqrt(1 - rho^2)), nrow = 2, byrow = FALSE)
+  # Use rbind to emphasise the lower-tri layout match with C++ build_chol_L.
+
+  X <- cbind(1, rnorm(N))
+  g <- sample.int(G, N, replace = TRUE)
+  x_slope <- rnorm(N)
+  beta_true <- c(0.5, -0.2)
+  # Σ = D L L^T D
+  Sigma_b <- diag(c(sigma_int, sigma_slope)) %*% L_mat %*% t(L_mat) %*%
+             diag(c(sigma_int, sigma_slope))
+  Lc <- chol(Sigma_b)  # only used to simulate; reference uses tanh-Chol
+  b_mat <- matrix(rnorm(G * 2), nrow = G) %*% Lc
+  y <- as.numeric(X %*% beta_true) +
+       b_mat[g, 1] + b_mat[g, 2] * x_slope +
+       rnorm(N, sd = phi)
+
+  re_terms <- list(
+    list(group_idx = g, n_groups = G, n_coefs = 2L,
+         sigma = c(sigma_int, sigma_slope), correlated = TRUE,
+         slope_mat = matrix(x_slope, ncol = 1L),
+         chol_raw = raw)
+  )
+  spec <- tulpa:::cpp_laplace_spec_test_multi_re(
+    y = y, X = X, re_terms = re_terms,
+    sigma_beta = sigma_beta, phi = phi,
+    max_iter = 200L, tol = 1e-12, n_threads = 1L
+  )
+  expect_true(spec$converged)
+
+  inv_phi2 <- 1 / phi^2
+  tau_beta <- 1 / sigma_beta^2
+  re_terms_R <- list(
+    list(sigma = c(sigma_int, sigma_slope), n_groups = G, n_coefs = 2L,
+         group_idx = g, slope_mat = matrix(x_slope, ncol = 1L), L = L_mat)
+  )
+  Z <- make_re_design(re_terms_R, N)
+  Lambda_re <- make_re_precision_block(re_terms_R, G)
+  H_beta_beta <- inv_phi2 * crossprod(X) + tau_beta * diag(p)
+  H_beta_b    <- inv_phi2 * crossprod(X, Z)
+  H_b_b       <- inv_phi2 * crossprod(Z) + Lambda_re
+  H_full <- rbind(
+    cbind(H_beta_beta, H_beta_b),
+    cbind(t(H_beta_b), H_b_b)
+  )
+  rhs <- c(inv_phi2 * crossprod(X, y), inv_phi2 * crossprod(Z, y))
+  ref <- as.numeric(solve(H_full, rhs))
+  expect_equal(spec$mode, ref, tolerance = 1e-7)
+})
+
 test_that("spec-driven Laplace honours per-process offsets", {
   # Adding a constant offset c to one process's eta should shift its beta_0
   # mode by -c (when intercept is the only spanned term that can absorb it).

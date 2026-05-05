@@ -563,6 +563,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_laplace_spec_test_multi_re
+Rcpp::List cpp_laplace_spec_test_multi_re(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::List re_terms, double sigma_beta, double phi, int max_iter, double tol, int n_threads);
+RcppExport SEXP _tulpa_cpp_laplace_spec_test_multi_re(SEXP ySEXP, SEXP XSEXP, SEXP re_termsSEXP, SEXP sigma_betaSEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type re_terms(re_termsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_spec_test_multi_re(y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_mclmc_test
 Rcpp::List cpp_mclmc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, Rcpp::NumericVector init, int n_iter, int n_warmup, int seed, bool adjusted);
 RcppExport SEXP _tulpa_cpp_mclmc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP adjustedSEXP) {
@@ -2467,6 +2485,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_rsr", (DL_FUNC) &_tulpa_cpp_laplace_fit_rsr, 19},
     {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
     {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 17},
+    {"_tulpa_cpp_laplace_spec_test_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_multi_re, 8},
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 18},
     {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 20},
