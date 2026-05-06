@@ -5,7 +5,7 @@
 \alias{ALL_BACKENDS}
 \title{All registered backends across every tier (derived from INFERENCE_TIERS).}
 \format{
-An object of class \code{character} of length 8.
+An object of class \code{character} of length 12.
 }
 \usage{
 ALL_BACKENDS

@@ -66,7 +66,8 @@ INFERENCE_TIERS <- list(
     name = "Exact",
     description = "Asymptotically correct posterior inference",
     guarantee = "Credible intervals interpretable as posterior uncertainty",
-    backends = c("hmc", "ess", "pg", "gibbs", "sghmc", "sgld"),
+    backends = c("hmc", "ess", "pg", "gibbs", "sghmc", "sgld",
+                 "imh_laplace", "mala"),
     note = "Reference standard"
   ),
   structured = list(
@@ -74,7 +75,7 @@ INFERENCE_TIERS <- list(
     name = "Structured",
     description = "Accurate inference conditional on structural assumptions",
     guarantee = "Correct if model meets structural assumptions",
-    backends = c("laplace"),
+    backends = c("laplace", "pathfinder", "agq"),
     note = "Controlled approximation, not heuristics"
   ),
   optimized = list(
