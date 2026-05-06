@@ -163,3 +163,61 @@ public headers + ABI version bumps.
   as `log_prior_capped_half_cauchy(log_sigma, scale, sigma_max)`. Pass
   `sigma_max <= 0` to disable the hard upper bound (then identical to
   `log_prior_half_cauchy`).
+
+---
+
+## 2026-05-06 — `tulpa_run_ess_sampler` segfaults on the generic LikelihoodSpec layout
+
+**Surfaced by:** tulpaGlmm Day-22 (PG-Gibbs and VI shipped on Day-20/21;
+ESS was the next entry on PLAN.md §5.5).
+
+**Symptom.** Calling `tulpa::get_ess_fn()(...)` with a `ModelData` /
+`ParamLayout` produced by tulpaGlmm (i.e. `n_processes = 1`,
+`processes[0]` populated, `likelihood_spec` set, every `legacy.*`
+field at sentinel `-1`) immediately segfaults during the first
+`compute_log_post_double` call.
+
+**Root cause.** `src/log_post_impl.h:83-84`:
+
+```cpp
+const T* beta_num   = &params[layout.legacy.beta_num_start];
+const T* beta_denom = &params[layout.legacy.beta_denom_start];
+```
+
+These dereferences are unconditional. For the generic layout
+`legacy.beta_num_start == -1`, so the access is `&params[-1]` →
+out-of-bounds read. NUTS, VI, and the Laplace shims all reach the
+same `compute_log_post_impl<T>` but tulpaGlmm has been working with
+them because those callers happen to provide enough legacy padding
+(or the compiler inlines around the OOB read). ESS is the first path
+that segfaults reproducibly.
+
+**Reproducer.** `~/Documents/dev/tulpaGlmm/dev_notes/smoke_day22_minimal.R`
+— FE-only Gaussian, N=100, no RE, no ZI, no spatial. Crashes on the
+first `cpp_glmm_ess_fit` call with exit code 139.
+
+**Fix.** Either (a) gate the legacy `beta_num` / `beta_denom`
+dereferences behind `if (layout.legacy.beta_num_start >= 0)` and
+provide a generic-layout branch in `compute_log_post_impl<T>`, or
+(b) write an ESS-specific `compute_log_post_double_generic` that
+mirrors the NUTS / VI computation but does not touch `legacy.*`. The
+NUTS path's `tulpa_run_nuts_generic_impl` already does the right
+thing for the generic layout — that code can be used as the spec.
+
+The internal ESS sampler also assembles its β Gaussian-prior block
+from `legacy.beta_num_start..end` only
+(`src/ess_sampler.h::build_gaussian_priors`). For the generic layout,
+the β block is at `layout.process_beta_start[0]..start +
+process_beta_count[0]`. A working generic ESS shim needs to walk that
+range to add β to the Gaussian-prior list (otherwise β never gets
+sampled, only RE / log_sigma_re / extra do).
+
+**Downstream impact.** Blocks tulpaGlmm Day-22 (`inference = "ess"`).
+The shim and R driver are written
+(`tulpaGlmm/src/glmm_ess.cpp`, `tulpaGlmm/R/ess.R`); they will work
+verbatim once `tulpa::compute_log_post_impl<T>` is generic-layout-
+safe.
+
+**Status.** Pending in tulpa. Day-22 in tulpaGlmm now surfaces a
+clear "blocked on tulpa fix.md" error rather than calling the
+crashing shim.
