@@ -159,6 +159,36 @@ inline SparseCholSelInvDiagFn get_sparse_chol_sel_inv_diag_fn() {
 }
 
 // ----------------------------------------------------------------------------
+// Pure-function Takahashi partial inverse (no factorization required, no
+// handle). Caller supplies L = lower-triangular CSC of an LL^T factorisation
+// of Q. Z_out is filled column-major as a dense n*n with Q^{-1} on
+// pattern(L + L^T) and zeros elsewhere. Returns 1 on success, 0 on bad args.
+// ----------------------------------------------------------------------------
+typedef int (*TakahashiPartialInverseDenseFn)(
+    int n,
+    const int* L_col_ptr,
+    const int* L_row_idx,
+    const double* L_values,
+    int L_nnz,
+    double* Z_out
+);
+
+inline TakahashiPartialInverseDenseFn get_takahashi_partial_inverse_dense_fn() {
+    static TakahashiPartialInverseDenseFn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (TakahashiPartialInverseDenseFn)R_GetCCallable(
+            "tulpa", "tulpa_takahashi_partial_inverse_dense");
+        if (!fn) {
+            Rf_error(
+                "tulpa lacks tulpa_takahashi_partial_inverse_dense — "
+                "rebuild tulpa from current source.");
+        }
+    }
+    return fn;
+}
+
+// ----------------------------------------------------------------------------
 // Stochastic Lanczos Quadrature for log|A| (no factorization required).
 // Cost is O(n_probes * n_lanczos * nnz). Use when n is too large for
 // Cholesky (e.g. > 1e5). seed = 42 for reproducibility.

@@ -1,5 +1,25 @@
 # tulpa NEWS
 
+## 2026-05-06 — Takahashi partial inverse as a registered C-callable
+
+* New free function `tulpa::takahashi_partial_inverse_dense(n, Lp, Li, Lx,
+  Z_out)` in `sparse_cholesky.{h,cpp}` runs the Takahashi recursion on a
+  caller-supplied lower-triangular `L` (CSC) and writes a dense column-major
+  `n*n` `Z` with `Q^{-1}` on `pattern(L + L^T)` and zeros elsewhere. A
+  matching `takahashi_partial_inverse_csc` returns just the `Zx` values on
+  pattern(L). The existing `SparseCholeskySolver::selected_inversion_diagonal`
+  now routes through the new helper so there is one source of truth for the
+  recursion (no copy-paste).
+* Registered C-callable `tulpa_takahashi_partial_inverse_dense` exposes the
+  pure-function variant to downstream packages. Resolved via
+  `tulpa::get_takahashi_partial_inverse_dense_fn()` in
+  `inst/include/tulpa/sparse_solver_api.h`; the getter `Rf_error`s if the
+  symbol is missing (i.e. caller built against newer headers than the loaded
+  tulpa).
+* No struct layout changes; `TULPA_ABI_VERSION` stays at 4. Downstream
+  packages that want the new shim need only rebuild against the updated
+  `sparse_solver_api.h`.
+
 ## 2026-05-05 — multi-term + slope REs on the spec-Laplace path
 
 * `tulpa_laplace_spec_dense` (and its public C ABI shim) now accepts the

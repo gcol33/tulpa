@@ -110,6 +110,21 @@ extern "C" int tulpa_sparse_chol_sel_inv_diag_impl(
     return 1;
 }
 
+// Pure free-function Takahashi: caller supplies L (lower-tri CSC) directly.
+// No CHOLMOD factor / solver state. Z_out is column-major n*n, fully overwritten.
+extern "C" int tulpa_takahashi_partial_inverse_dense_impl(
+    int n,
+    const int* L_col_ptr,
+    const int* L_row_idx,
+    const double* L_values,
+    int /* L_nnz */,
+    double* Z_out
+) {
+    if (n <= 0 || !L_col_ptr || !L_row_idx || !L_values || !Z_out) return 0;
+    tulpa::takahashi_partial_inverse_dense(n, L_col_ptr, L_row_idx, L_values, Z_out);
+    return 1;
+}
+
 extern "C" double tulpa_stochastic_log_det_impl(
     int n,
     const int* col_ptr,

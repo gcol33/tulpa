@@ -88,6 +88,41 @@ private:
 };
 
 // =====================================================================
+// Free functions: Takahashi recursion on a caller-provided L (CSC, lower-tri)
+//
+// These do not require a SparseCholeskySolver / CHOLMOD factorization — the
+// caller supplies L directly. Used by downstream packages that own their own
+// Cholesky (e.g. via Matrix::Cholesky in R) but want the partial-inverse
+// recursion in C++.
+//
+// L is lower-triangular CSC: column j stores rows j..n-1 with L[j,j] in
+// position Lp[j] (first slot of the column). The recursion produces Z =
+// Q^{-1} on pattern(L); off-pattern entries of the true Q^{-1} are not
+// computed.
+// =====================================================================
+
+// Fill Zx_out (size = Lp[n]) with the Takahashi partial inverse on pattern(L).
+// Indexing matches L: Zx_out[idx] holds Z[Li[idx], j] for idx in [Lp[j], Lp[j+1]).
+void takahashi_partial_inverse_csc(
+    int n,
+    const int* Lp,
+    const int* Li,
+    const double* Lx,
+    double* Zx_out
+);
+
+// Fill Z_out (size = n*n, column-major) with Z = Q^{-1} on pattern(L + L^T).
+// Off-pattern entries are zero. Symmetrises the lower triangle to upper.
+// Caller is responsible for allocating Z_out; it is fully overwritten.
+void takahashi_partial_inverse_dense(
+    int n,
+    const int* Lp,
+    const int* Li,
+    const double* Lx,
+    double* Z_out
+);
+
+// =====================================================================
 // CSC conversion: DenseMat -> cholmod_sparse
 // =====================================================================
 

@@ -88,6 +88,102 @@ double SparseCholeskySolver::log_determinant() const {
     return M_cholmod_factor_ldetA(factor_);
 }
 
+// =====================================================================
+// Free functions: Takahashi recursion on caller-provided L
+// =====================================================================
+//
+// Selected inversion via Takahashi equations for LL' factorization.
+// Reference: Rue & Held (2005), Appendix B; Erisman & Tinney (1975).
+//
+// For Q = LL', compute Z = Q^{-1} at the sparsity positions of L.
+// Process columns j from n-1 down to 0:
+//
+//   Z[i,j] = -1/L[j,j] * Σ_{k: L[k,j]≠0, k>j} L[k,j] * Z[i,k]   for i > j
+//   Z[j,j] =  1/L[j,j] * (1/L[j,j] - Σ_{k: L[k,j]≠0, k>j} L[k,j] * Z[k,j])
+//
+// Z is symmetric, so Z[i,k] = Z[k,i] when needed.
+
+void takahashi_partial_inverse_csc(
+    int n,
+    const int* Lp,
+    const int* Li,
+    const double* Lx,
+    double* Zx_out
+) {
+    int nnz = Lp[n];
+    for (int idx = 0; idx < nnz; idx++) Zx_out[idx] = 0.0;
+
+    for (int j = n - 1; j >= 0; j--) {
+        int col_start = Lp[j];
+        int col_end = Lp[j + 1];
+        if (col_start >= col_end) continue;
+
+        double Ljj = Lx[col_start];
+        if (std::abs(Ljj) < 1e-15) continue;
+        double Ljj_inv = 1.0 / Ljj;
+
+        // Off-diagonal entries Z[i,j] for i > j (bottom-up within column j).
+        for (int idx_i = col_end - 1; idx_i > col_start; idx_i--) {
+            int i = Li[idx_i];
+
+            // Z[i,j] = -1/L[j,j] * Σ_{k>j, L[k,j]≠0} L[k,j] * Z[i,k].
+            // Z is stored in lower triangle: Z[hi, lo] in column lo at row hi.
+            double sum = 0.0;
+            for (int idx_k = col_start + 1; idx_k < col_end; idx_k++) {
+                int k = Li[idx_k];
+
+                int lo = std::min(i, k);
+                int hi = std::max(i, k);
+
+                double z_ik = 0.0;
+                if (lo == hi) {
+                    z_ik = Zx_out[Lp[lo]];  // diagonal
+                } else {
+                    for (int s = Lp[lo]; s < Lp[lo + 1]; s++) {
+                        if (Li[s] == hi) { z_ik = Zx_out[s]; break; }
+                        if (Li[s] > hi) break;
+                    }
+                }
+
+                sum += Lx[idx_k] * z_ik;
+            }
+            Zx_out[idx_i] = -Ljj_inv * sum;
+        }
+
+        // Diagonal: Z[j,j] = 1/L[j,j] * (1/L[j,j] - Σ_{k>j} L[k,j] * Z[k,j]).
+        double sum_diag = 0.0;
+        for (int idx = col_start + 1; idx < col_end; idx++) {
+            sum_diag += Lx[idx] * Zx_out[idx];
+        }
+        Zx_out[col_start] = Ljj_inv * (Ljj_inv - sum_diag);
+    }
+}
+
+void takahashi_partial_inverse_dense(
+    int n,
+    const int* Lp,
+    const int* Li,
+    const double* Lx,
+    double* Z_out
+) {
+    int nnz = Lp[n];
+    std::vector<double> Zx(nnz, 0.0);
+    takahashi_partial_inverse_csc(n, Lp, Li, Lx, Zx.data());
+
+    // Zero the dense buffer.
+    for (int idx = 0; idx < n * n; idx++) Z_out[idx] = 0.0;
+
+    // Scatter Zx onto the dense layout (column-major) and mirror to upper.
+    for (int j = 0; j < n; j++) {
+        for (int idx = Lp[j]; idx < Lp[j + 1]; idx++) {
+            int i = Li[idx];
+            double z = Zx[idx];
+            Z_out[i + (size_t)j * n] = z;     // [i, j]
+            Z_out[j + (size_t)i * n] = z;     // [j, i] (symmetric)
+        }
+    }
+}
+
 std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
     if (!factored_ || !factor_) return {};
 
@@ -113,97 +209,23 @@ std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
         );
     }
 
-    // Extract L in CSC: L->p (col pointers), L->i (row indices), L->x (values)
     int* Lp = static_cast<int*>(factor_->p);
     int* Li = static_cast<int*>(factor_->i);
     double* Lx = static_cast<double*>(factor_->x);
     int* Perm = static_cast<int*>(factor_->Perm);
 
-    // Selected inversion via Takahashi equations for LL' factorization.
-    // Reference: Rue & Held (2005), Appendix B.
-    //
-    // For Q = LL', we compute Z = Q⁻¹ at the sparsity positions of L.
-    // Process columns j from n-1 down to 0:
-    //
-    //   Z[i,j] = -1/L[j,j] * Σ_{k: L[k,j]≠0, k>j} L[k,j] * Z[i,k]   for i > j
-    //   Z[j,j] =  1/L[j,j] * (1/L[j,j] - Σ_{k: L[k,j]≠0, k>j} L[k,j] * Z[k,j])
-    //
-    // Z is symmetric, so Z[i,k] = Z[k,i] when needed.
-
     int nnz = Lp[n];
     std::vector<double> Zx(nnz, 0.0);
+    takahashi_partial_inverse_csc(n, Lp, Li, Lx, Zx.data());
 
-    // For off-diagonal lookups: given (row, col) find the index in L/Z arrays
-    // Build a row-to-index map per column for fast lookup
-    // Lp[j]..Lp[j+1]-1 are sorted by row within column j
-
-    for (int j = n - 1; j >= 0; j--) {
-        int col_start = Lp[j];
-        int col_end = Lp[j + 1];
-        if (col_start >= col_end) continue;
-
-        double Ljj = Lx[col_start];
-        if (std::abs(Ljj) < 1e-15) continue;
-        double Ljj_inv = 1.0 / Ljj;
-
-        // Off-diagonal entries Z[i,j] for i > j (bottom-up within column j)
-        for (int idx_i = col_end - 1; idx_i > col_start; idx_i--) {
-            int i = Li[idx_i];
-
-            // Z[i,j] = -1/L[j,j] * Σ_{k>j, L[k,j]≠0} L[k,j] * Z[i,k]
-            // Z[i,k] is found in column min(i,k): if k > i, Z[i,k] = Z[k,i] in col i
-            // Since k > j and we need Z[i,k]:
-            //   if k == i: Z[i,i] = Zx[Lp[i]] (diagonal of column i)
-            //   if k > i: Z[i,k] is in column i at row k
-            //   if k < i: Z[i,k] is in column k at row i
-
-            double sum = 0.0;
-            for (int idx_k = col_start + 1; idx_k < col_end; idx_k++) {
-                int k = Li[idx_k];
-
-                // Find Z[i,k] (or equivalently Z[k,i] since Z is symmetric)
-                // Z values are stored in the lower triangle (column min(i,k), row max(i,k))
-                int lo = std::min(i, k);
-                int hi = std::max(i, k);
-
-                // Look up Z[hi, lo] in column lo
-                double z_ik = 0.0;
-                if (lo == hi) {
-                    z_ik = Zx[Lp[lo]];  // diagonal
-                } else {
-                    // Search column lo for row hi
-                    for (int s = Lp[lo]; s < Lp[lo + 1]; s++) {
-                        if (Li[s] == hi) { z_ik = Zx[s]; break; }
-                        if (Li[s] > hi) break;
-                    }
-                }
-
-                sum += Lx[idx_k] * z_ik;
-            }
-            Zx[idx_i] = -Ljj_inv * sum;
-        }
-
-        // Diagonal: Z[j,j] = 1/L[j,j] * (1/L[j,j] - Σ_{k>j} L[k,j] * Z[k,j])
-        double sum_diag = 0.0;
-        for (int idx = col_start + 1; idx < col_end; idx++) {
-            sum_diag += Lx[idx] * Zx[idx];
-        }
-        Zx[col_start] = Ljj_inv * (Ljj_inv - sum_diag);
-    }
-
-    // Extract diagonal of Z in permuted space, then unpermute
+    // Extract diagonal of Z in permuted space, then unpermute.
     std::vector<double> diag_inv(n, 0.0);
     for (int j = 0; j < n; j++) {
         int col_start = Lp[j];
-        double z_jj = Zx[col_start];  // Z[j,j] in permuted space
+        double z_jj = Zx[col_start];
         int orig_j = Perm ? Perm[j] : j;
         diag_inv[orig_j] = z_jj;
     }
-
-    // The factor was modified (converted from supernodal to simplicial).
-    // For subsequent factorize() calls, CHOLMOD will need re-analysis.
-    // Mark as needing re-analysis if it was supernodal.
-    // (This is acceptable — selected inversion is a terminal operation.)
 
     return diag_inv;
 }

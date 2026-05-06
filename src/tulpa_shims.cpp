@@ -471,6 +471,8 @@ void tulpa_register_shims(DllInfo* dll) {
         (DL_FUNC)&tulpa_sparse_chol_log_det_impl);
     R_RegisterCCallable("tulpa", "tulpa_sparse_chol_sel_inv_diag",
         (DL_FUNC)&tulpa_sparse_chol_sel_inv_diag_impl);
+    R_RegisterCCallable("tulpa", "tulpa_takahashi_partial_inverse_dense",
+        (DL_FUNC)&tulpa_takahashi_partial_inverse_dense_impl);
     R_RegisterCCallable("tulpa", "tulpa_stochastic_log_det",
         (DL_FUNC)&tulpa_stochastic_log_det_impl);
 
