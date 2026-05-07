@@ -38,7 +38,8 @@ LaplaceResult laplace_newton_solve(
     CenterEffects center_effects_fn,
     ComputeLogPrior compute_log_prior,
     const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
-    SparseCholeskySolver* shared_solver = nullptr
+    SparseCholeskySolver* shared_solver = nullptr,
+    bool store_Q = false
 ) {
     LaplaceResult result;
     result.mode = Rcpp::NumericVector(n_x, 0.0);
@@ -124,6 +125,17 @@ LaplaceResult laplace_newton_solve(
     double log_prior = compute_log_prior(x, eta_final);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+
+    if (store_Q) {
+        // Drop tolerance matches the sparse-Cholesky dispatch path so the
+        // exported CSC pattern is consistent with the in-loop solve when
+        // n_x >= SPARSE_THRESHOLD.
+        dense_to_csc_lower_drop_raw(
+            H_final, n_x, SPARSE_DROP_TOL_DISPATCH,
+            result.Q_csc_p, result.Q_csc_i, result.Q_csc_x
+        );
+        result.Q_csc_n = n_x;
+    }
 
     return result;
 }

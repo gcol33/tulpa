@@ -55,6 +55,65 @@ inline void copy_nested_laplace_result(
         result_out->n_x = 0;
         result_out->modes = nullptr;
     }
+
+    // Per-grid Q (Tulpa ABI v5+). Present only when the underlying
+    // cpp_nested_laplace_<backend> returned with store_Q = true.
+    bool has_Q = out.containsElementNamed("Q_csc_p_per_grid")
+              && out.containsElementNamed("Q_csc_i_per_grid")
+              && out.containsElementNamed("Q_csc_x_per_grid");
+    if (has_Q) {
+        Rcpp::List Qp_list = out["Q_csc_p_per_grid"];
+        Rcpp::List Qi_list = out["Q_csc_i_per_grid"];
+        Rcpp::List Qx_list = out["Q_csc_x_per_grid"];
+        int Q_n = Rcpp::as<int>(out["Q_csc_n"]);
+
+        result_out->store_Q = 1;
+        result_out->Q_n     = Q_n;
+        result_out->Q_grid_nnz  = new int[n_grid];
+        result_out->Q_p_offsets = new int[n_grid + 1];
+        result_out->Q_x_offsets = new int[n_grid + 1];
+
+        // First pass: collect per-grid nnz and build offset tables.
+        result_out->Q_p_offsets[0] = 0;
+        result_out->Q_x_offsets[0] = 0;
+        for (int k = 0; k < n_grid; k++) {
+            Rcpp::NumericVector xv = Qx_list[k];
+            int nnz_k = (int)xv.size();
+            result_out->Q_grid_nnz[k]      = nnz_k;
+            result_out->Q_p_offsets[k + 1] = (k + 1) * (Q_n + 1);
+            result_out->Q_x_offsets[k + 1] = result_out->Q_x_offsets[k] + nnz_k;
+        }
+
+        int p_total = result_out->Q_p_offsets[n_grid];
+        int x_total = result_out->Q_x_offsets[n_grid];
+        result_out->Q_p_flat = new int[p_total];
+        result_out->Q_i_flat = new int[x_total];
+        result_out->Q_x_flat = new double[x_total];
+
+        // Second pass: copy each per-grid CSC block into the flat buffers.
+        for (int k = 0; k < n_grid; k++) {
+            Rcpp::IntegerVector pv = Qp_list[k];
+            Rcpp::IntegerVector iv = Qi_list[k];
+            Rcpp::NumericVector xv = Qx_list[k];
+
+            int p_off = result_out->Q_p_offsets[k];
+            int x_off = result_out->Q_x_offsets[k];
+            for (int j = 0; j <= Q_n; j++) result_out->Q_p_flat[p_off + j] = pv[j];
+            for (int e = 0; e < (int)iv.size(); e++) {
+                result_out->Q_i_flat[x_off + e] = iv[e];
+                result_out->Q_x_flat[x_off + e] = xv[e];
+            }
+        }
+    } else {
+        result_out->store_Q     = 0;
+        result_out->Q_n         = 0;
+        result_out->Q_grid_nnz  = nullptr;
+        result_out->Q_p_offsets = nullptr;
+        result_out->Q_x_offsets = nullptr;
+        result_out->Q_p_flat    = nullptr;
+        result_out->Q_i_flat    = nullptr;
+        result_out->Q_x_flat    = nullptr;
+    }
 }
 
 } // namespace
@@ -69,6 +128,7 @@ extern "C" void tulpa_nested_laplace_icar_impl(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
     auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
@@ -81,7 +141,8 @@ extern "C" void tulpa_nested_laplace_icar_impl(
         in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
         tg, in.fam, phi, max_iter, tol, n_threads,
-        wrap_x_init(x_init, n_x_init)
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
     );
     copy_nested_laplace_result(out, result_out);
 }

@@ -104,6 +104,35 @@ inline void dense_cholesky_factorize(
     detail::cholesky_factorize_impl(H, n, L, log_det);
 }
 
+// Extract a symmetric DenseMat into raw CSC lower-triangle arrays
+// (stype = -1, dgCMatrix-compatible). Entries with |value| <= drop_tol are
+// dropped; the diagonal is always retained even when zero so downstream
+// CHOLMOD analyzes a structurally complete pattern.
+inline void dense_to_csc_lower_drop_raw(
+    const DenseMat& H, int n, double drop_tol,
+    std::vector<int>& csc_p,
+    std::vector<int>& csc_i,
+    std::vector<double>& csc_x
+) {
+    csc_p.assign(n + 1, 0);
+    csc_i.clear();
+    csc_x.clear();
+    for (int c = 0; c < n; ++c) {
+        csc_p[c] = static_cast<int>(csc_i.size());
+        // Diagonal first, always retained.
+        csc_i.push_back(c);
+        csc_x.push_back(H[c][c]);
+        for (int r = c + 1; r < n; ++r) {
+            double v = H[r][c];
+            if (std::fabs(v) > drop_tol) {
+                csc_i.push_back(r);
+                csc_x.push_back(v);
+            }
+        }
+    }
+    csc_p[n] = static_cast<int>(csc_i.size());
+}
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_CHOLESKY_H

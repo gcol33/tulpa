@@ -140,7 +140,8 @@ LaplaceResult laplace_newton_solve_sparse(
     ComputeLogPrior compute_log_prior,
     SparseHessianBuilder& H_builder,
     const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
-    SparseCholeskySolver* shared_solver = nullptr
+    SparseCholeskySolver* shared_solver = nullptr,
+    bool store_Q = false
 ) {
     LaplaceResult result;
     result.mode = Rcpp::NumericVector(n_x, 0.0);
@@ -236,6 +237,16 @@ LaplaceResult laplace_newton_solve_sparse(
     double log_prior = compute_log_prior(x, eta_final);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+
+    if (store_Q) {
+        // H_builder already holds Q in CSC lower-triangle form (stype = -1).
+        // Copy out the arrays so the caller doesn't need to keep the builder
+        // alive past Newton convergence.
+        result.Q_csc_p = H_builder.col_ptr;
+        result.Q_csc_i = H_builder.row_idx;
+        result.Q_csc_x = H_builder.values;
+        result.Q_csc_n = n_x;
+    }
 
     return result;
 }

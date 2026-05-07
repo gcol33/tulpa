@@ -123,7 +123,8 @@ inline Rcpp::List run_indexed_nested_laplace(
     const Rcpp::NumericVector& x_init,
     PrepFn prep_at_grid,
     AddPriorFn add_prior_at_k,
-    LogPriorFn log_prior_at_k
+    LogPriorFn log_prior_at_k,
+    bool store_Q = false
 ) {
     int n_x = p + n_re_groups + n_latent;
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
@@ -174,7 +175,7 @@ inline Rcpp::List run_indexed_nested_laplace(
             y, n_trials, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver
+            prev_mode, &shared_solver, store_Q
         );
     };
 
@@ -211,7 +212,8 @@ Rcpp::List cpp_nested_laplace_icar(
     Rcpp::NumericVector tau_grid,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -233,7 +235,8 @@ Rcpp::List cpp_nested_laplace_icar(
         spatial_start, n_spatial_units, spatial_idx,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior
+        [](int) { return true; }, add_prior, log_prior,
+        store_Q
     );
     out["tau_grid"] = tau_grid;
     return out;
