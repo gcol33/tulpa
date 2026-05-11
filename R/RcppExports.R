@@ -133,8 +133,8 @@ cpp_nested_laplace_ar1 <- function(y, n, X, re_idx, n_re_groups, sigma_re, tempo
     .Call(`_tulpa_cpp_nested_laplace_ar1`, y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
 }
 
-cpp_nested_laplace_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi, max_iter, tol, n_threads, x_init_nullable)
+cpp_nested_laplace_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
 }
 
 cpp_nested_laplace_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
@@ -187,6 +187,18 @@ cpp_nested_laplace_st_hsgp_rw2 <- function(y, n, X, re_idx, n_re_groups, sigma_r
 
 cpp_nested_laplace_st_hsgp_ar1 <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid, rho_temporal_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
     .Call(`_tulpa_cpp_nested_laplace_st_hsgp_ar1`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid, rho_temporal_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
+}
+
+cpp_nested_laplace_st_nngp_rw1 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, cyclic, sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_st_nngp_rw1`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, cyclic, sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
+}
+
+cpp_nested_laplace_st_nngp_rw2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_st_nngp_rw2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
+}
+
+cpp_nested_laplace_st_nngp_ar1 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, rho_temporal_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_st_nngp_ar1`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, rho_temporal_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
 }
 
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {

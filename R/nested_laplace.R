@@ -214,7 +214,15 @@ nested_laplace <- function(...) {
       # nn_order in cpp_nested_laplace_nngp expects 0-based indices, matching
       # the convention in cpp_laplace_fit_gp (see R/fit_laplace.R:433).
       n_spatial <- as.integer(p$n_spatial)
+      # spatial_idx (1-based, length N) maps obs -> spatial unit. Default to
+      # 1..n_spatial when N == n_spatial (the legacy one-obs-per-location case).
+      spatial_idx <- if (!is.null(p$spatial_idx)) {
+        as.integer(p$spatial_idx)
+      } else {
+        seq_len(n_spatial)
+      }
       list(
+        spatial_idx = spatial_idx,
         coords      = as.matrix(p$coords),
         nn_idx      = as.matrix(p$nn_idx),
         nn_dist     = as.matrix(p$nn_dist),

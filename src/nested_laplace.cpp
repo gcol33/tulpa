@@ -610,12 +610,17 @@ Rcpp::List cpp_nested_laplace_ar1(
 // Inner Newton matches laplace_mode_gp() in laplace_core.cpp; warm-start
 // across grid points via run_nested_laplace_grid. cov_type: 0
 // exponential, 1 Matern-3/2, 2 Matern-5/2 (matches nngp_cov_gpu).
+//
+// ABI v10+: spatial_idx (1-based, length N) maps observation -> spatial unit.
+// store_modes = true; pass store_Q = true to retain Q at each grid point so
+// the caller can build mixture-of-MVN posterior draws.
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx,
     Rcpp::NumericMatrix coords,
     Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
     Rcpp::IntegerVector nn_order,
@@ -624,13 +629,18 @@ Rcpp::List cpp_nested_laplace_nngp(
     int cov_type,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
 ) {
     int n_grid = sigma2_grid.size();
     if (phi_gp_grid.size() != n_grid)
         Rcpp::stop("sigma2_grid and phi_gp_grid must have the same length");
     int N = y.size();
     int p = X.ncol();
+    if (spatial_idx.size() != N)
+        Rcpp::stop("length(spatial_idx) must equal length(y)");
+    if (coords.nrow() != n_spatial)
+        Rcpp::stop("nrow(coords) must equal n_spatial");
     int n_x = p + n_re_groups + n_spatial;
     int gp_start = p + n_re_groups;
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
@@ -654,7 +664,8 @@ Rcpp::List cpp_nested_laplace_nngp(
                     int g = (int)re_idx[i] - 1;
                     if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
                 }
-                if (i < n_spatial) eta[i] += x[gp_start + i];
+                int s = spatial_idx[i] - 1;
+                if (s >= 0 && s < n_spatial) eta[i] += x[gp_start + s];
             }
         };
 
@@ -663,9 +674,10 @@ Rcpp::List cpp_nested_laplace_nngp(
             tulpa::scatter_obs_grad_hess_base(y, n, X, re_idx, N, p, n_re_groups,
                                                 eta, family, phi, grad, H, n_threads);
             for (int i = 0; i < N; i++) {
-                if (i >= n_spatial) continue;
+                int s = spatial_idx[i] - 1;
+                if (s < 0 || s >= n_spatial) continue;
                 auto gh = tulpa::grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-                int gp_idx = gp_start + i;
+                int gp_idx = gp_start + s;
                 grad[gp_idx] += gh.grad;
                 H[gp_idx][gp_idx] += gh.neg_hess;
                 for (int j = 0; j < p; j++) {
@@ -680,20 +692,19 @@ Rcpp::List cpp_nested_laplace_nngp(
                     }
                 }
             }
-            // NNGP prior: diagonal-on-w approximation, matching laplace_mode_gp().
+            // NNGP prior: full precision Λ = (I-A)' D⁻¹ (I-A) — not diagonal.
+            // Diagonal-on-w gives wrong w-mode + wrong field covariance on
+            // smooth latent fields; full scatter restores pointwise recovery.
             std::vector<double> w(n_spatial);
             for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-            std::vector<double> cm, cv;
+            std::vector<double> cm, cv, nngp_alpha;
             bool gpu_used;
             tulpa::batch_nngp_scatter(w, n_spatial, nn, sigma2_k, phi_gp_k, cov_type,
                                         coords, nn_idx, nn_dist, nn_order,
-                                        cm, cv, gpu_used);
-            for (int s = 0; s < n_spatial; s++) {
-                int gp_idx = gp_start + s;
-                double tau_cond = 1.0 / cv[s];
-                grad[gp_idx] -= tau_cond * (w[s] - cm[s]);
-                H[gp_idx][gp_idx] += tau_cond;
-            }
+                                        cm, cv, gpu_used, &nngp_alpha);
+            tulpa::apply_nngp_full_prior_dense(grad, H, w, nngp_alpha, cv,
+                                                 nn_idx, nn_order,
+                                                 n_spatial, nn, gp_start);
             tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
         };
 
@@ -720,7 +731,8 @@ Rcpp::List cpp_nested_laplace_nngp(
             y, n, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver
+            prev_mode, &shared_solver,
+            store_Q
         );
     };
 
@@ -728,7 +740,7 @@ Rcpp::List cpp_nested_laplace_nngp(
     if (x_init_nullable.isNotNull()) x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
     Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/false
+        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
     );
     out["sigma2_grid"] = sigma2_grid;
     out["phi_gp_grid"] = phi_gp_grid;
@@ -1578,6 +1590,112 @@ inline SpatialBlockOps make_hsgp_spatial_ops(
     return ops;
 }
 
+// NNGP — single-DOF design per obs (∂η_i/∂x[start + s_idx[i]-1] = 1), like ICAR.
+// prep_at_k captures (σ²_k, φ_gp_k); the NNGP prior contribution to the
+// scatter is recomputed inside add_prior_at_k (batch_nngp_scatter depends on
+// the current latent w, so it must be re-run every Newton iteration).
+//
+// The prior contribution is the full NNGP precision Λ = (I-A)' D⁻¹ (I-A):
+// each row's q_i = w_i - sum_k a_{i,k} w_{N(i)_k} pushes into the focal
+// point, every neighbor, and every (neighbor_k, neighbor_kp) pair, so the
+// scatter is off-diagonal in the spatial block. Matches the spatial-only
+// nngp entry's full-prior scatter (laplace_mode_gp pattern, post-upgrade).
+inline SpatialBlockOps make_nngp_spatial_ops(
+    int start, int n_s, int N,
+    const Rcpp::IntegerVector& spatial_idx,
+    const Rcpp::NumericMatrix& coords,
+    const Rcpp::IntegerMatrix& nn_idx,
+    const Rcpp::NumericMatrix& nn_dist,
+    const Rcpp::IntegerVector& nn_order,
+    int nn,
+    const Rcpp::NumericVector& sigma2_grid,
+    const Rcpp::NumericVector& phi_gp_grid,
+    int cov_type
+) {
+    SpatialBlockOps ops;
+    ops.start = start;
+    ops.block_len = n_s;
+
+    auto obs_p_v  = std::make_shared<std::vector<int>>(N + 1, 0);
+    auto obs_li_v = std::make_shared<std::vector<int>>();
+    auto obs_w_v  = std::make_shared<std::vector<double>>();
+    obs_li_v->reserve(N);
+    obs_w_v->reserve(N);
+    int cur = 0;
+    for (int i = 0; i < N; i++) {
+        (*obs_p_v)[i] = cur;
+        int s = spatial_idx[i] - 1;
+        if (s >= 0 && s < n_s) {
+            obs_li_v->push_back(s);
+            obs_w_v->push_back(1.0);
+            cur++;
+        }
+    }
+    (*obs_p_v)[N] = cur;
+    ops.obs_p = obs_p_v;
+    ops.obs_local_idx = obs_li_v;
+    ops.obs_weight = obs_w_v;
+
+    auto sigma2_k_p = std::make_shared<double>(0.0);
+    auto phi_gp_k_p = std::make_shared<double>(0.0);
+
+    ops.prep_at_k = [sigma2_k_p, phi_gp_k_p, &sigma2_grid, &phi_gp_grid]
+                    (int k) -> bool {
+        *sigma2_k_p = sigma2_grid[k];
+        *phi_gp_k_p = phi_gp_grid[k];
+        return std::isfinite(*sigma2_k_p) && std::isfinite(*phi_gp_k_p) &&
+               *sigma2_k_p > 0.0 && *phi_gp_k_p > 0.0;
+    };
+    ops.add_eta = [start, n_s, &spatial_idx]
+                  (const Rcpp::NumericVector& x, Rcpp::NumericVector& eta,
+                   int Nn, int nt) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(nt > 0 ? nt : 1)
+#endif
+        for (int i = 0; i < Nn; i++) {
+            int s = spatial_idx[i] - 1;
+            if (s >= 0 && s < n_s) eta[i] += x[start + s];
+        }
+    };
+    ops.add_prior_at_k = [start, n_s, nn, cov_type,
+                          &coords, &nn_idx, &nn_dist, &nn_order,
+                          sigma2_k_p, phi_gp_k_p]
+                         (tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                          const Rcpp::NumericVector& x, int /*k*/) {
+        std::vector<double> w(n_s);
+        for (int s = 0; s < n_s; s++) w[s] = x[start + s];
+        std::vector<double> cm, cv, nngp_alpha;
+        bool gpu_used;
+        tulpa::batch_nngp_scatter(w, n_s, nn, *sigma2_k_p, *phi_gp_k_p, cov_type,
+                                    coords, nn_idx, nn_dist, nn_order,
+                                    cm, cv, gpu_used, &nngp_alpha);
+        tulpa::apply_nngp_full_prior_dense(grad, H, w, nngp_alpha, cv,
+                                             nn_idx, nn_order,
+                                             n_s, nn, start);
+    };
+    ops.log_prior_at_k = [start, n_s, nn, cov_type,
+                          &coords, &nn_idx, &nn_dist, &nn_order,
+                          sigma2_k_p, phi_gp_k_p]
+                         (const Rcpp::NumericVector& x, int /*k*/) {
+        std::vector<double> w(n_s);
+        for (int s = 0; s < n_s; s++) w[s] = x[start + s];
+        std::vector<double> cm, cv;
+        bool gpu_used;
+        tulpa::batch_nngp_scatter(w, n_s, nn, *sigma2_k_p, *phi_gp_k_p, cov_type,
+                                    coords, nn_idx, nn_dist, nn_order,
+                                    cm, cv, gpu_used);
+        double lp = 0.0;
+        for (int s = 0; s < n_s; s++) {
+            double resid = w[s] - cm[s];
+            lp += -0.5 * std::log(2.0 * M_PI * cv[s]) -
+                   0.5 * resid * resid / cv[s];
+        }
+        return lp;
+    };
+    ops.center = [](Rcpp::NumericVector&) {};
+    return ops;
+}
+
 } // namespace
 
 // =====================================================================
@@ -2238,6 +2356,189 @@ Rcpp::List cpp_nested_laplace_st_hsgp_ar1(
     out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
     out["tau_temporal_grid"]        = tau_temporal_grid;
     out["rho_temporal_grid"]        = rho_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: NNGP (spatial) × RW1 (temporal)
+//   2D (σ²_s, φ_gp_s) × 1D τ_t grid. cyclic flag closes the temporal chain.
+//   Latent: [beta] [re] [w_spatial (n_spatial)] [w_temporal (n_t)].
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_nngp_rw1(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial,
+    Rcpp::NumericMatrix coords,
+    Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
+    Rcpp::IntegerVector nn_order, int nn, int cov_type,
+    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
+    Rcpp::NumericVector sigma2_spatial_grid,
+    Rcpp::NumericVector phi_gp_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = sigma2_spatial_grid.size();
+    if (phi_gp_spatial_grid.size() != n_grid ||
+        tau_temporal_grid.size() != n_grid) {
+        Rcpp::stop("sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    if (spatial_idx.size() != N)
+        Rcpp::stop("length(spatial_idx) must equal length(y)");
+    if (coords.nrow() != n_spatial)
+        Rcpp::stop("nrow(coords) must equal n_spatial");
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial;
+
+    auto ops_s = make_nngp_spatial_ops(s_start, n_spatial, N, spatial_idx,
+                                        coords, nn_idx, nn_dist, nn_order, nn,
+                                        sigma2_spatial_grid, phi_gp_spatial_grid,
+                                        cov_type);
+    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+
+    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        ops_s,
+        t_start, n_times, temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["sigma2_spatial_grid"] = sigma2_spatial_grid;
+    out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
+    out["tau_temporal_grid"]   = tau_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: NNGP (spatial) × RW2 (temporal)
+//   2D (σ²_s, φ_gp_s) × 1D τ_t grid.
+//   Latent: [beta] [re] [w_spatial (n_spatial)] [w_temporal (n_t)].
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_nngp_rw2(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial,
+    Rcpp::NumericMatrix coords,
+    Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
+    Rcpp::IntegerVector nn_order, int nn, int cov_type,
+    Rcpp::IntegerVector temporal_idx, int n_times,
+    Rcpp::NumericVector sigma2_spatial_grid,
+    Rcpp::NumericVector phi_gp_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = sigma2_spatial_grid.size();
+    if (phi_gp_spatial_grid.size() != n_grid ||
+        tau_temporal_grid.size() != n_grid) {
+        Rcpp::stop("sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    if (spatial_idx.size() != N)
+        Rcpp::stop("length(spatial_idx) must equal length(y)");
+    if (coords.nrow() != n_spatial)
+        Rcpp::stop("nrow(coords) must equal n_spatial");
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial;
+
+    auto ops_s = make_nngp_spatial_ops(s_start, n_spatial, N, spatial_idx,
+                                        coords, nn_idx, nn_dist, nn_order, nn,
+                                        sigma2_spatial_grid, phi_gp_spatial_grid,
+                                        cov_type);
+    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
+
+    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        ops_s,
+        t_start, n_times, temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["sigma2_spatial_grid"] = sigma2_spatial_grid;
+    out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
+    out["tau_temporal_grid"]   = tau_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: NNGP (spatial) × AR1 (temporal)
+//   2D (σ²_s, φ_gp_s) × 2D (τ_t, ρ_t) grid (full 4-axis product).
+//   Latent: [beta] [re] [w_spatial (n_spatial)] [w_temporal (n_t)].
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_nngp_ar1(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial,
+    Rcpp::NumericMatrix coords,
+    Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
+    Rcpp::IntegerVector nn_order, int nn, int cov_type,
+    Rcpp::IntegerVector temporal_idx, int n_times,
+    Rcpp::NumericVector sigma2_spatial_grid,
+    Rcpp::NumericVector phi_gp_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::NumericVector rho_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = sigma2_spatial_grid.size();
+    if (phi_gp_spatial_grid.size() != n_grid ||
+        tau_temporal_grid.size() != n_grid ||
+        rho_temporal_grid.size() != n_grid) {
+        Rcpp::stop("All four paired NNGP x AR1 grids must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    if (spatial_idx.size() != N)
+        Rcpp::stop("length(spatial_idx) must equal length(y)");
+    if (coords.nrow() != n_spatial)
+        Rcpp::stop("nrow(coords) must equal n_spatial");
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial;
+
+    auto ops_s = make_nngp_spatial_ops(s_start, n_spatial, N, spatial_idx,
+                                        coords, nn_idx, nn_dist, nn_order, nn,
+                                        sigma2_spatial_grid, phi_gp_spatial_grid,
+                                        cov_type);
+    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
+
+    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        ops_s,
+        t_start, n_times, temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["sigma2_spatial_grid"] = sigma2_spatial_grid;
+    out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
+    out["tau_temporal_grid"]   = tau_temporal_grid;
+    out["rho_temporal_grid"]   = rho_temporal_grid;
     return out;
 }
 

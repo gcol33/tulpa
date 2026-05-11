@@ -278,12 +278,15 @@ inline NestedLaplaceAr1Fn get_nested_laplace_ar1_fn() {
 // ----------------------------------------------------------------------------
 // NNGP: 2D grid over (σ², φ_gp). Continuous-spatial GP via nearest-neighbor
 // conditional decomposition.
-// Latent: [beta] [re] [w (n_spatial)]. store_modes = 0.
+// Latent: [beta] [re] [w (n_spatial)]. ABI v10+ sets store_modes = 1 and
+// accepts a store_Q flag so callers can build mixture-of-MVN posterior
+// draws over the spatial latent.
 //
+// spatial_idx   : [N] 1-based mapping observation -> spatial unit.
 // coords_flat   : [n_spatial * coord_dim] column-major. Currently only the
 //                 first 2 columns are read; pass coord_dim = 2.
 // nn_idx_flat   : [n_spatial * nn] column-major; 1-based neighbor indices
-//                 (0 sentinels for "no neighbor").
+//                 in NNGP order (0 sentinels for "no neighbor").
 // nn_dist_flat  : [n_spatial * nn] column-major; same layout as nn_idx_flat.
 // nn_order      : [n_spatial] permutation NNGP order → original index.
 // cov_type      : 0 = exponential, 1 = Matern 3/2, 2 = Matern 5/2.
@@ -292,6 +295,7 @@ typedef void (*NestedLaplaceNngpFn)(
     const double* y, const int* n_trials,
     const double* X_flat, const double* re_idx,
     int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx,
     const double* coords_flat, int coord_dim,
     const int* nn_idx_flat, const double* nn_dist_flat,
     const int* nn_order,
@@ -301,6 +305,7 @@ typedef void (*NestedLaplaceNngpFn)(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     NestedLaplaceShimResult* result_out
 );
 
@@ -717,6 +722,100 @@ inline NestedLaplaceStHsgpAr1Fn get_nested_laplace_st_hsgp_ar1_fn() {
         check_abi_version();
         fn = (NestedLaplaceStHsgpAr1Fn)R_GetCCallable(
             "tulpa", "tulpa_nested_laplace_st_hsgp_ar1");
+    }
+    return fn;
+}
+
+// ---- NNGP × RW1 ------------------------------------------------------------
+// Grid axes: (σ²_spatial, φ_gp_spatial) × τ_temporal. Three paired vectors of
+// length n_grid. cyclic = 1 closes the temporal chain (RW1 only).
+typedef void (*NestedLaplaceStNngpRw1Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial,
+    const double* coords_flat, int coord_dim,
+    const int* nn_idx_flat, const double* nn_dist_flat,
+    const int* nn_order, int nn, int cov_type,
+    const int* temporal_idx, int n_times, int cyclic,
+    const double* sigma2_spatial_grid, const double* phi_gp_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStNngpRw1Fn get_nested_laplace_st_nngp_rw1_fn() {
+    static NestedLaplaceStNngpRw1Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStNngpRw1Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_nngp_rw1");
+    }
+    return fn;
+}
+
+// ---- NNGP × RW2 ------------------------------------------------------------
+typedef void (*NestedLaplaceStNngpRw2Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial,
+    const double* coords_flat, int coord_dim,
+    const int* nn_idx_flat, const double* nn_dist_flat,
+    const int* nn_order, int nn, int cov_type,
+    const int* temporal_idx, int n_times,
+    const double* sigma2_spatial_grid, const double* phi_gp_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStNngpRw2Fn get_nested_laplace_st_nngp_rw2_fn() {
+    static NestedLaplaceStNngpRw2Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStNngpRw2Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_nngp_rw2");
+    }
+    return fn;
+}
+
+// ---- NNGP × AR1 ------------------------------------------------------------
+// Grid axes: (σ²_spatial, φ_gp_spatial) × (τ_temporal, ρ_temporal). Full
+// 4-axis Cartesian product, all paired across the four input vectors.
+typedef void (*NestedLaplaceStNngpAr1Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial,
+    const double* coords_flat, int coord_dim,
+    const int* nn_idx_flat, const double* nn_dist_flat,
+    const int* nn_order, int nn, int cov_type,
+    const int* temporal_idx, int n_times,
+    const double* sigma2_spatial_grid, const double* phi_gp_spatial_grid,
+    const double* tau_temporal_grid, const double* rho_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStNngpAr1Fn get_nested_laplace_st_nngp_ar1_fn() {
+    static NestedLaplaceStNngpAr1Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStNngpAr1Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_nngp_ar1");
     }
     return fn;
 }

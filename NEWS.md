@@ -1,5 +1,43 @@
 # tulpa NEWS
 
+## 2026-05-11 — NNGP Laplace: full off-diagonal precision scatter
+
+* `laplace_mode_gp` (and the spatial-only / ST-combo NNGP entries in
+  `nested_laplace.cpp`) now assemble the **full NNGP precision matrix**
+  `Λ = (I - A)' D⁻¹ (I - A)` in every Newton iteration, replacing the
+  diagonal-on-w approximation that only kept `1/v_i` on the focal
+  diagonal of each row.
+* What was missed before: the gradient contribution to neighbours
+  (`+a_{i,k}·q_i/v_i`), the off-diagonal Hessian entries
+  (focal, neighbour_k) and (neighbour_k, neighbour_kp), and the
+  pairwise precision between members of every conditioning set. The
+  Newton mode for `w` was therefore shrunk toward zero and pointwise
+  field recovery on smooth latent fields collapsed (cor ≈ 0).
+* New helpers in `gpu_nngp_laplace.h`:
+    - `batch_nngp_scatter(..., alpha_out = nullptr)` — backward-compatible
+      extra optional output capturing the per-row conditional regression
+      weights (already computed internally; just exposed).
+    - `apply_nngp_full_prior_dense` — scatters the full precision
+      contribution into a dense `(grad, H)` pair via the alpha + cv
+      bundle.
+    - `apply_nngp_full_prior_sparse` — same, into a `SparseHessianBuilder`.
+    - `make_nngp_prior_sparsity_pattern` — emits the `(row, col)` pairs
+      required to back the sparse path.
+* Wired into the four scatter call sites: `laplace_mode_gp` dense Newton,
+  `laplace_mode_gp` sparse Newton (with pattern expansion), the
+  spatial-only `cpp_nested_laplace_nngp` scatter lambda, and
+  `make_nngp_spatial_ops::add_prior_at_k` (the ST-combo NNGP block).
+  Log-prior calls (`log_prior` lambdas) are unchanged — they only need
+  `cm` and `cv`, and the existing `batch_nngp_scatter` signature still
+  supports that without `alpha_out`.
+* Effect (downstream measurement from tulpaGlmm Day-31 smoke):
+  `cor(w_mean, f_true)` jumps from near zero to **≈ 0.81 Pearson** on
+  a 120-location Poisson + smooth-GP simulation. β recovery unchanged.
+* Additive: no `TULPA_ABI_VERSION` bump (still v10). Public shim
+  signatures are unchanged; only the inner Laplace scatter is upgraded.
+  Downstream packages must rebuild against this commit to pick up the
+  new behaviour (no source changes required).
+
 ## 2026-05-11 — nested-Laplace ST family: 5 more indexed × indexed combos
 
 * Adds five additional joint spatial × temporal nested-Laplace shims,

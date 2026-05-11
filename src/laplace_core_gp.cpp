@@ -102,11 +102,13 @@ LaplaceResult laplace_mode_gp(
         for (int s = 0; s < n_spatial; s++)
             pattern.push_back({gp_start + s, gp_start + s});
 
-        // NNGP neighbor pairs (from the conditional prior — these are the
-        // off-diagonal entries that make H sparse rather than diagonal in the GP block)
-        // Note: NNGP conditional prior only contributes to the diagonal, not off-diagonal.
-        // The Hessian is diagonal in the GP block for NNGP (each w_i's Hessian
-        // contribution is independent). So no additional off-diagonal needed.
+        // NNGP neighbor + neighbor-of-neighbor pairs: the precision matrix
+        // Λ = (I-A)' D⁻¹ (I-A) has off-diagonal entries at (focal, neighbor_k)
+        // and at (neighbor_k, neighbor_kp) for every conditioning-set pair.
+        // Without these, the Newton solve collapses to the diagonal-on-w
+        // approximation and pointwise field recovery degrades.
+        make_nngp_prior_sparsity_pattern(pattern, nn_idx, nn_order,
+                                          n_spatial, nn, gp_start);
 
         SparseHessianBuilder H_builder;
         H_builder.init(n_x, pattern);
@@ -142,20 +144,17 @@ LaplaceResult laplace_mode_gp(
                 }
             }
 
-            // NNGP prior (diagonal contribution only)
+            // NNGP prior — full precision Λ = (I-A)' D⁻¹ (I-A).
             std::vector<double> w(n_spatial);
             for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-            std::vector<double> cond_means, cond_vars;
+            std::vector<double> cond_means, cond_vars, nngp_alpha;
             bool gpu_used;
             batch_nngp_scatter(w, n_spatial, nn, sigma2_gp, phi_gp, cov_type,
                                coords, nn_idx, nn_dist, nn_order,
-                               cond_means, cond_vars, gpu_used);
-            for (int s = 0; s < n_spatial; s++) {
-                int gp_idx = gp_start + s;
-                double tau_cond = 1.0 / cond_vars[s];
-                grad[gp_idx] -= tau_cond * (w[s] - cond_means[s]);
-                H.add(gp_idx, gp_idx, tau_cond);
-            }
+                               cond_means, cond_vars, gpu_used, &nngp_alpha);
+            apply_nngp_full_prior_sparse(grad, H, w, nngp_alpha, cond_vars,
+                                           nn_idx, nn_order,
+                                           n_spatial, nn, gp_start);
 
             // Beta + RE regularization
             double tau_beta = 1e-4;
@@ -186,17 +185,14 @@ LaplaceResult laplace_mode_gp(
         }
         std::vector<double> w(n_spatial);
         for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-        std::vector<double> cond_means, cond_vars;
+        std::vector<double> cond_means, cond_vars, nngp_alpha;
         bool gpu_used;
         batch_nngp_scatter(w, n_spatial, nn, sigma2_gp, phi_gp, cov_type,
                            coords, nn_idx, nn_dist, nn_order,
-                           cond_means, cond_vars, gpu_used);
-        for (int s = 0; s < n_spatial; s++) {
-            int gp_idx = gp_start + s;
-            double tau_cond = 1.0 / cond_vars[s];
-            grad[gp_idx] -= tau_cond * (w[s] - cond_means[s]);
-            H[gp_idx][gp_idx] += tau_cond;
-        }
+                           cond_means, cond_vars, gpu_used, &nngp_alpha);
+        apply_nngp_full_prior_dense(grad, H, w, nngp_alpha, cond_vars,
+                                      nn_idx, nn_order,
+                                      n_spatial, nn, gp_start);
         add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
     };
 
