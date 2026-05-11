@@ -19,7 +19,7 @@ namespace tulpa {
 // has its first tagged release. Until then this stays at 1; downstream
 // packages should be rebuilt against the current tulpa source.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 7;
+constexpr int TULPA_ABI_VERSION = 8;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

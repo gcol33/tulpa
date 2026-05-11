@@ -315,12 +315,21 @@ inline NestedLaplaceNngpFn get_nested_laplace_nngp_fn() {
 
 // ----------------------------------------------------------------------------
 // HSGP: 2D grid over (σ², ℓ). Hilbert-space GP with M precomputed basis
-// functions and eigenvalues.
-// Latent: [beta] [re] [beta_M (n_basis)]. store_modes = 0.
+// functions and eigenvalues. ABI v8+ sets store_modes = 1 and accepts a
+// store_Q flag so callers can build mixture-of-MVN posteriors over the
+// basis coefficients.
+// Latent: [beta] [re] [beta_M (n_basis)].
 //
-// phi_basis_flat : [N * n_basis] column-major basis matrix Φ.
+// phi_basis_flat : [N * n_basis] column-major basis matrix Φ (evaluated at
+//                  the observation locations).
 // lambda_eig     : [n_basis] eigenvalues λ_j (used to evaluate the
 //                  spectral density per grid point).
+//
+// The structured-effect block is the basis coefficient vector β_M; the
+// observation-level spatial effect per draw is
+//   f_i = Σ_j Φ_ij · √S(λ_j; σ²_k, ℓ_k) · β_M_j
+// and is reconstructed caller-side from the modes / draws plus the
+// per-draw grid index (σ²_k, ℓ_k).
 // ----------------------------------------------------------------------------
 typedef void (*NestedLaplaceHsgpFn)(
     const double* y, const int* n_trials,
@@ -332,6 +341,7 @@ typedef void (*NestedLaplaceHsgpFn)(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     NestedLaplaceShimResult* result_out
 );
 

@@ -1,5 +1,25 @@
 # tulpa NEWS
 
+## 2026-05-11 — nested-Laplace HSGP returns modes + store_Q
+
+* `tulpa_nested_laplace_hsgp` now sets `store_modes = 1` (was 0) and
+  gained a `store_Q` flag matching the rest of the nested-Laplace family.
+  The basis-coefficient latent `[beta] [re] [beta_M (n_basis)]` is
+  returned per `(σ², ℓ)` grid point, and with `store_Q = 1` the joint Q
+  at the mode is retained in the standard `NestedLaplaceShimResult::Q_*_flat`
+  slots.
+* `cpp_nested_laplace_hsgp` gained a trailing `bool store_Q = false`
+  argument and now passes `store_modes = true` to the grid driver. The
+  C-callable `tulpa_nested_laplace_hsgp_impl` signature picks up the
+  matching `int store_Q` parameter; the public typedef
+  `NestedLaplaceHsgpFn` in `nested_laplace_api.h` is updated to match.
+* This unblocks HSGP mixture-of-MVN sampling in tulpaGlmm — the
+  observation-level spatial effect `f_i = Σ_j Φ_ij · √S(λ_j; σ²_k, ℓ_k) · β_M_j`
+  can be reconstructed caller-side from modes + posterior draws over the
+  basis coefficients plus the per-draw grid index.
+* `TULPA_ABI_VERSION` bumped 7 → 8. Downstream packages (tulpaGlmm,
+  tulpaOcc) must be rebuilt against the updated headers.
+
 ## 2026-05-11 — nested-Laplace BYM2 returns modes + store_Q
 
 * `tulpa_nested_laplace_bym2` now sets `store_modes = 1` (was 0) and
