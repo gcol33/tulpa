@@ -183,7 +183,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::NumericVector rho_grid,
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
+    bool store_Q
 );
 
 Rcpp::List cpp_nested_laplace_car_proper(

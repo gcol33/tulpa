@@ -135,8 +135,13 @@ inline NestedLaplaceIcarFn get_nested_laplace_icar_fn() {
 // ----------------------------------------------------------------------------
 // BYM2: 2D grid over (σ_spatial, ρ).
 // Latent: [beta] [re] [phi (n_spatial)] [theta (n_spatial)] (length 2*n_spatial).
-// store_modes = 0.
+// store_modes = 1 (ABI v7+). Pass store_Q = 1 to retain Q at each grid point.
 // scale_factor is the Riebler et al. (2016) ICAR scaling constant.
+//
+// The structured-effect block is the *reparameterised* phi/theta pair; the
+// total spatial effect per unit is
+//   w_s = σ · (√ρ · scale_factor · φ_s + √(1−ρ) · θ_s).
+// Reconstruct it caller-side from the modes / draws.
 // ----------------------------------------------------------------------------
 typedef void (*NestedLaplaceBym2Fn)(
     const double* y, const int* n_trials,
@@ -149,6 +154,7 @@ typedef void (*NestedLaplaceBym2Fn)(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     NestedLaplaceShimResult* result_out
 );
 

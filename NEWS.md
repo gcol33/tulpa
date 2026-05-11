@@ -1,5 +1,25 @@
 # tulpa NEWS
 
+## 2026-05-11 — nested-Laplace BYM2 returns modes + store_Q
+
+* `tulpa_nested_laplace_bym2` now sets `store_modes = 1` (was 0) and
+  gained a `store_Q` flag matching the rest of the nested-Laplace family.
+  The reparameterised latent `[beta] [re] [phi (n_spatial)] [theta
+  (n_spatial)]` is returned per grid point, and with `store_Q = 1` the
+  joint Q at the mode is retained in the standard
+  `NestedLaplaceShimResult::Q_*_flat` slots.
+* `cpp_nested_laplace_bym2` gained a trailing `bool store_Q = false`
+  argument and now passes `store_modes = true` to the grid driver. The
+  C-callable `tulpa_nested_laplace_bym2_impl` signature picks up the
+  matching `int store_Q` parameter; the public typedef
+  `NestedLaplaceBym2Fn` in `nested_laplace_api.h` is updated to match.
+* This unblocks BYM2 mixture-of-MVN sampling in tulpaGlmm — the total
+  spatial effect `w_s = σ·(√ρ · scale · φ_s + √(1−ρ) · θ_s)` can be
+  reconstructed caller-side from modes + posterior draws over the
+  (σ, ρ) grid.
+* `TULPA_ABI_VERSION` bumped 6 → 7. Downstream packages (tulpaGlmm,
+  tulpaOcc) must be rebuilt against the updated headers.
+
 ## 2026-05-11 — nested-Laplace store_Q on RW1/RW2/AR1/CAR_proper
 
 * `tulpa_nested_laplace_rw1`, `tulpa_nested_laplace_rw2`,

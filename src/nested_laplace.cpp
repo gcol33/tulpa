@@ -261,7 +261,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::NumericVector rho_grid,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
 ) {
     int n_grid = sigma_spatial_grid.size();
     int N = y.size();
@@ -385,7 +386,8 @@ Rcpp::List cpp_nested_laplace_bym2(
             y, n, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver
+            prev_mode, &shared_solver,
+            store_Q
         );
     };
 
@@ -393,7 +395,7 @@ Rcpp::List cpp_nested_laplace_bym2(
     if (x_init_nullable.isNotNull()) x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
     Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/false
+        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
     );
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_grid"] = rho_grid;
