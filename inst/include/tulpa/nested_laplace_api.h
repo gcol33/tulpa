@@ -354,6 +354,43 @@ inline NestedLaplaceHsgpFn get_nested_laplace_hsgp_fn() {
     return fn;
 }
 
+// ----------------------------------------------------------------------------
+// Spatial × temporal (joint) nested-Laplace shims (ABI v9+).
+// Latent: [beta] [re] [w_spatial (n_s)] [w_temporal (n_t)]. store_modes = 1.
+// The joint hyperparameter grid is supplied as paired vectors of length
+// n_grid; entry k corresponds to one (θ_s_k, θ_t_k) tuple. The caller
+// builds the Cartesian product of the per-axis grids before invoking.
+//
+// Day-27 ships the first combination only: ICAR (spatial) × AR1 (temporal).
+// Grid axes: τ_spatial (1D) × (τ_temporal, ρ_temporal) (paired 2D).
+// ----------------------------------------------------------------------------
+typedef void (*NestedLaplaceStIcarAr1Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    const int* temporal_idx, int n_times,
+    const double* tau_spatial_grid,
+    const double* tau_temporal_grid, const double* rho_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStIcarAr1Fn get_nested_laplace_st_icar_ar1_fn() {
+    static NestedLaplaceStIcarAr1Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStIcarAr1Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_icar_ar1");
+    }
+    return fn;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_NESTED_LAPLACE_API_H

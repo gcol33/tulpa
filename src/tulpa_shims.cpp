@@ -266,6 +266,23 @@ Rcpp::List cpp_nested_laplace_hsgp(
     bool store_Q
 );
 
+Rcpp::List cpp_nested_laplace_st_icar_ar1(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    Rcpp::IntegerVector temporal_idx, int n_times,
+    Rcpp::NumericVector tau_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::NumericVector rho_temporal_grid,
+    std::string family, double phi,
+    int max_iter, double tol, int n_threads,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
+    bool store_Q
+);
+
 Rcpp::List cpp_nested_laplace_spde(
     Rcpp::NumericVector y, Rcpp::IntegerVector n_trials,
     Rcpp::NumericMatrix X,
@@ -448,6 +465,8 @@ void tulpa_register_shims(DllInfo* dll) {
         (DL_FUNC)&tulpa_nested_laplace_nngp_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_hsgp",
         (DL_FUNC)&tulpa_nested_laplace_hsgp_impl);
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_icar_ar1",
+        (DL_FUNC)&tulpa_nested_laplace_st_icar_ar1_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_spde",
         (DL_FUNC)&tulpa_nested_laplace_spde_impl);
 

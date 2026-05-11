@@ -1,5 +1,25 @@
 # tulpa NEWS
 
+## 2026-05-11 — nested-Laplace joint spatial × temporal (ICAR × AR1)
+
+* New shim `tulpa_nested_laplace_st_icar_ar1` for joint nested-Laplace
+  inference with an ICAR spatial field AND an AR1 temporal field in the
+  same fit. The joint inner Newton solves over the full latent vector
+  `[beta] [re] [w_spatial (n_s)] [w_temporal (n_t)]` at each grid point;
+  the cross-block `H[w_s, w_t]` is non-zero, so the two fields cannot be
+  Laplace-marginalized separately. The hyperparameter grid is supplied
+  caller-side as paired vectors of length `n_grid` (Cartesian product of
+  `τ_spatial × τ_temporal × ρ_temporal` built on the R side).
+* New C-callable typedef `NestedLaplaceStIcarAr1Fn` + getter
+  `get_nested_laplace_st_icar_ar1_fn()` in `nested_laplace_api.h`.
+* New internal building blocks in `nested_laplace.cpp`: the templated
+  `run_two_indexed_nested_laplace` driver and helpers
+  `nl_compute_eta_two_indexed` / `nl_scatter_obs_two_indexed`. These are
+  the shared substrate for the remaining 11 (spatial_kind × temporal_kind)
+  combinations.
+* `TULPA_ABI_VERSION` bumped 8 → 9. Downstream packages must be rebuilt
+  against this header set.
+
 ## 2026-05-11 — nested-Laplace HSGP returns modes + store_Q
 
 * `tulpa_nested_laplace_hsgp` now sets `store_modes = 1` (was 0) and

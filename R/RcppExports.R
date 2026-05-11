@@ -141,6 +141,10 @@ cpp_nested_laplace_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_
     .Call(`_tulpa_cpp_nested_laplace_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
 }
 
+cpp_nested_laplace_st_icar_ar1 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, tau_temporal_grid, rho_temporal_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_st_icar_ar1`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, tau_temporal_grid, rho_temporal_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }
