@@ -164,6 +164,7 @@ inline NestedLaplaceBym2Fn get_nested_laplace_bym2_fn() {
 // ----------------------------------------------------------------------------
 // Proper CAR: 2D grid over (τ, ρ).
 // Latent: [beta] [re] [w_spatial (n_spatial)]. store_modes = 1.
+// Pass store_Q = 1 to retain Q at each grid point (ABI v6+).
 // ----------------------------------------------------------------------------
 typedef void (*NestedLaplaceCarProperFn)(
     const double* y, const int* n_trials,
@@ -175,6 +176,7 @@ typedef void (*NestedLaplaceCarProperFn)(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     NestedLaplaceShimResult* result_out
 );
 
@@ -191,6 +193,7 @@ inline NestedLaplaceCarProperFn get_nested_laplace_car_proper_fn() {
 // ----------------------------------------------------------------------------
 // RW1: 1D grid over τ (precision). Latent [beta] [re] [w_temporal (n_times)].
 // cyclic = 1 closes the chain (RW1 on a circular index). store_modes = 1.
+// Pass store_Q = 1 to retain Q at each grid point (ABI v6+).
 // ----------------------------------------------------------------------------
 typedef void (*NestedLaplaceRw1Fn)(
     const double* y, const int* n_trials,
@@ -201,6 +204,7 @@ typedef void (*NestedLaplaceRw1Fn)(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     NestedLaplaceShimResult* result_out
 );
 
@@ -215,7 +219,7 @@ inline NestedLaplaceRw1Fn get_nested_laplace_rw1_fn() {
 
 // ----------------------------------------------------------------------------
 // RW2: 1D grid over τ. Same latent layout as RW1; no cyclic flag.
-// store_modes = 1.
+// store_modes = 1. Pass store_Q = 1 to retain Q (ABI v6+).
 // ----------------------------------------------------------------------------
 typedef void (*NestedLaplaceRw2Fn)(
     const double* y, const int* n_trials,
@@ -226,6 +230,7 @@ typedef void (*NestedLaplaceRw2Fn)(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     NestedLaplaceShimResult* result_out
 );
 
@@ -240,6 +245,7 @@ inline NestedLaplaceRw2Fn get_nested_laplace_rw2_fn() {
 
 // ----------------------------------------------------------------------------
 // AR1: 2D grid over (τ, ρ). store_modes = 1.
+// Pass store_Q = 1 to retain Q at each grid point (ABI v6+).
 // ----------------------------------------------------------------------------
 typedef void (*NestedLaplaceAr1Fn)(
     const double* y, const int* n_trials,
@@ -250,6 +256,7 @@ typedef void (*NestedLaplaceAr1Fn)(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     NestedLaplaceShimResult* result_out
 );
 

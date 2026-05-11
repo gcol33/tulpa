@@ -419,7 +419,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
 ) {
     int n_grid = tau_grid.size();
     if (rho_grid.size() != n_grid) {
@@ -461,7 +462,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
         spatial_start, n_spatial_units, spatial_idx,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        prep, add_prior, log_prior
+        prep, add_prior, log_prior,
+        store_Q
     );
     out["tau_grid"] = tau_grid;
     out["rho_grid"] = rho_grid;
@@ -481,7 +483,8 @@ Rcpp::List cpp_nested_laplace_rw1(
     Rcpp::NumericVector tau_grid,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -501,7 +504,8 @@ Rcpp::List cpp_nested_laplace_rw1(
         temporal_start, n_times, temporal_idx,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior
+        [](int) { return true; }, add_prior, log_prior,
+        store_Q
     );
     out["tau_grid"] = tau_grid;
     return out;
@@ -520,7 +524,8 @@ Rcpp::List cpp_nested_laplace_rw2(
     Rcpp::NumericVector tau_grid,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -540,7 +545,8 @@ Rcpp::List cpp_nested_laplace_rw2(
         temporal_start, n_times, temporal_idx,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior
+        [](int) { return true; }, add_prior, log_prior,
+        store_Q
     );
     out["tau_grid"] = tau_grid;
     return out;
@@ -559,7 +565,8 @@ Rcpp::List cpp_nested_laplace_ar1(
     Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -584,7 +591,8 @@ Rcpp::List cpp_nested_laplace_ar1(
         temporal_start, n_times, temporal_idx,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior
+        [](int) { return true; }, add_prior, log_prior,
+        store_Q
     );
     out["tau_grid"] = tau_grid;
     out["rho_grid"] = rho_grid;

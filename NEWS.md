@@ -1,5 +1,21 @@
 # tulpa NEWS
 
+## 2026-05-11 — nested-Laplace store_Q on RW1/RW2/AR1/CAR_proper
+
+* `tulpa_nested_laplace_rw1`, `tulpa_nested_laplace_rw2`,
+  `tulpa_nested_laplace_ar1`, and `tulpa_nested_laplace_car_proper` now
+  accept a `store_Q` flag (matching the ICAR shim added in v5). When set
+  the shim retains the joint negative-Hessian Q at each grid point's mode
+  in `NestedLaplaceShimResult::Q_*_flat`, so downstream packages can draw
+  mixture-of-MVN posteriors `sum_k w_k · N(mode_k, Q_k^{-1})` without
+  re-doing the Newton assembly R-side.
+* The underlying `cpp_nested_laplace_<rw1|rw2|ar1|car_proper>` entries
+  gained a trailing `bool store_Q = false` argument. Default is `false`,
+  so existing callers that don't ask for Q keep the previous behaviour
+  and footprint.
+* `TULPA_ABI_VERSION` bumped 5 → 6. Downstream packages (tulpaGlmm,
+  tulpaOcc) must be rebuilt against the updated headers.
+
 ## 2026-05-06 — Takahashi partial inverse as a registered C-callable
 
 * New free function `tulpa::takahashi_partial_inverse_dense(n, Lp, Li, Lx,

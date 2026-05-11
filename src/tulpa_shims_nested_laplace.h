@@ -187,6 +187,7 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
     auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
@@ -200,7 +201,8 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
         in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         sidx, n_spatial_units, arp, aci, nn,
         tg, rg, in.fam, phi, max_iter, tol, n_threads,
-        wrap_x_init(x_init, n_x_init)
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
     );
     copy_nested_laplace_result(out, result_out);
 }
@@ -214,6 +216,7 @@ extern "C" void tulpa_nested_laplace_rw1_impl(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
     auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
@@ -224,7 +227,8 @@ extern "C" void tulpa_nested_laplace_rw1_impl(
         in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         tv, n_times, (cyclic != 0),
         tg, in.fam, phi, max_iter, tol, n_threads,
-        wrap_x_init(x_init, n_x_init)
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
     );
     copy_nested_laplace_result(out, result_out);
 }
@@ -238,6 +242,7 @@ extern "C" void tulpa_nested_laplace_rw2_impl(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
     auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
@@ -248,7 +253,8 @@ extern "C" void tulpa_nested_laplace_rw2_impl(
         in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         tv, n_times,
         tg, in.fam, phi, max_iter, tol, n_threads,
-        wrap_x_init(x_init, n_x_init)
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
     );
     copy_nested_laplace_result(out, result_out);
 }
@@ -262,6 +268,7 @@ extern "C" void tulpa_nested_laplace_ar1_impl(
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
+    int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
     auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
@@ -273,7 +280,8 @@ extern "C" void tulpa_nested_laplace_ar1_impl(
         in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
         tv, n_times, tg, rg,
         in.fam, phi, max_iter, tol, n_threads,
-        wrap_x_init(x_init, n_x_init)
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
     );
     copy_nested_laplace_result(out, result_out);
 }
