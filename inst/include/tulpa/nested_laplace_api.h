@@ -536,6 +536,191 @@ inline NestedLaplaceStCarProperAr1Fn get_nested_laplace_st_car_proper_ar1_fn() {
     return fn;
 }
 
+// ---- BYM2 × RW1 ------------------------------------------------------------
+// Grid axes: (σ_spatial, ρ_spatial) (paired 2D) × τ_temporal (1D). cyclic = 0/1
+// closes the temporal chain. The structured spatial block is the BYM2
+// reparameterised phi/theta pair (2·n_spatial slots); the temporal block is
+// the single-DOF RW1 latent (n_times slots).
+typedef void (*NestedLaplaceStBym2Rw1Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    double scale_factor,
+    const int* temporal_idx, int n_times, int cyclic,
+    const double* sigma_spatial_grid, const double* rho_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStBym2Rw1Fn get_nested_laplace_st_bym2_rw1_fn() {
+    static NestedLaplaceStBym2Rw1Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStBym2Rw1Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_bym2_rw1");
+    }
+    return fn;
+}
+
+// ---- BYM2 × RW2 ------------------------------------------------------------
+// Grid axes: (σ_spatial, ρ_spatial) (paired 2D) × τ_temporal (1D).
+typedef void (*NestedLaplaceStBym2Rw2Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    double scale_factor,
+    const int* temporal_idx, int n_times,
+    const double* sigma_spatial_grid, const double* rho_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStBym2Rw2Fn get_nested_laplace_st_bym2_rw2_fn() {
+    static NestedLaplaceStBym2Rw2Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStBym2Rw2Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_bym2_rw2");
+    }
+    return fn;
+}
+
+// ---- BYM2 × AR1 ------------------------------------------------------------
+// Grid axes: (σ_spatial, ρ_spatial) × (τ_temporal, ρ_temporal). Full 4-axis
+// Cartesian product, all paired across the four input vectors.
+typedef void (*NestedLaplaceStBym2Ar1Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    double scale_factor,
+    const int* temporal_idx, int n_times,
+    const double* sigma_spatial_grid, const double* rho_spatial_grid,
+    const double* tau_temporal_grid, const double* rho_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStBym2Ar1Fn get_nested_laplace_st_bym2_ar1_fn() {
+    static NestedLaplaceStBym2Ar1Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStBym2Ar1Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_bym2_ar1");
+    }
+    return fn;
+}
+
+// ---- HSGP × RW1 ------------------------------------------------------------
+// Grid axes: (σ²_spatial, ℓ_spatial) (paired 2D) × τ_temporal (1D). cyclic =
+// 0/1 closes the temporal chain. The structured spatial block is the M
+// basis coefficients β_M (n_basis slots); the temporal block is the
+// single-DOF RW1 latent (n_times slots).
+typedef void (*NestedLaplaceStHsgpRw1Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const double* phi_basis_flat, int n_basis,
+    const double* lambda_eig,
+    const int* temporal_idx, int n_times, int cyclic,
+    const double* sigma2_spatial_grid, const double* lengthscale_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStHsgpRw1Fn get_nested_laplace_st_hsgp_rw1_fn() {
+    static NestedLaplaceStHsgpRw1Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStHsgpRw1Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_hsgp_rw1");
+    }
+    return fn;
+}
+
+// ---- HSGP × RW2 ------------------------------------------------------------
+// Grid axes: (σ²_spatial, ℓ_spatial) (paired 2D) × τ_temporal (1D).
+typedef void (*NestedLaplaceStHsgpRw2Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const double* phi_basis_flat, int n_basis,
+    const double* lambda_eig,
+    const int* temporal_idx, int n_times,
+    const double* sigma2_spatial_grid, const double* lengthscale_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStHsgpRw2Fn get_nested_laplace_st_hsgp_rw2_fn() {
+    static NestedLaplaceStHsgpRw2Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStHsgpRw2Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_hsgp_rw2");
+    }
+    return fn;
+}
+
+// ---- HSGP × AR1 ------------------------------------------------------------
+// Grid axes: (σ²_spatial, ℓ_spatial) × (τ_temporal, ρ_temporal). Full 4-axis
+// Cartesian product, all paired across the four input vectors.
+typedef void (*NestedLaplaceStHsgpAr1Fn)(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const double* phi_basis_flat, int n_basis,
+    const double* lambda_eig,
+    const int* temporal_idx, int n_times,
+    const double* sigma2_spatial_grid, const double* lengthscale_spatial_grid,
+    const double* tau_temporal_grid, const double* rho_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    NestedLaplaceShimResult* result_out
+);
+
+inline NestedLaplaceStHsgpAr1Fn get_nested_laplace_st_hsgp_ar1_fn() {
+    static NestedLaplaceStHsgpAr1Fn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NestedLaplaceStHsgpAr1Fn)R_GetCCallable(
+            "tulpa", "tulpa_nested_laplace_st_hsgp_ar1");
+    }
+    return fn;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_NESTED_LAPLACE_API_H
