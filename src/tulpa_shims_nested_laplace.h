@@ -394,6 +394,193 @@ extern "C" void tulpa_nested_laplace_st_icar_ar1_impl(
     copy_nested_laplace_result(out, result_out);
 }
 
+// ---- ICAR × RW1 ------------------------------------------------------------
+extern "C" void tulpa_nested_laplace_st_icar_rw1_impl(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    const int* temporal_idx, int n_times, int cyclic,
+    const double* tau_spatial_grid, const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    tulpa::NestedLaplaceShimResult* result_out
+) {
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
+    Rcpp::IntegerVector  tv (temporal_idx,     temporal_idx     + N);
+    Rcpp::NumericVector  tsg(tau_spatial_grid, tau_spatial_grid + n_grid);
+    Rcpp::NumericVector  ttg(tau_temporal_grid, tau_temporal_grid + n_grid);
+
+    Rcpp::List out = cpp_nested_laplace_st_icar_rw1(
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
+        sidx, n_spatial_units, arp, aci, nn,
+        tv, n_times, (cyclic != 0),
+        tsg, ttg,
+        in.fam, phi, max_iter, tol, n_threads,
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
+    );
+    copy_nested_laplace_result(out, result_out);
+}
+
+// ---- ICAR × RW2 ------------------------------------------------------------
+extern "C" void tulpa_nested_laplace_st_icar_rw2_impl(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    const int* temporal_idx, int n_times,
+    const double* tau_spatial_grid, const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    tulpa::NestedLaplaceShimResult* result_out
+) {
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
+    Rcpp::IntegerVector  tv (temporal_idx,     temporal_idx     + N);
+    Rcpp::NumericVector  tsg(tau_spatial_grid, tau_spatial_grid + n_grid);
+    Rcpp::NumericVector  ttg(tau_temporal_grid, tau_temporal_grid + n_grid);
+
+    Rcpp::List out = cpp_nested_laplace_st_icar_rw2(
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
+        sidx, n_spatial_units, arp, aci, nn,
+        tv, n_times,
+        tsg, ttg,
+        in.fam, phi, max_iter, tol, n_threads,
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
+    );
+    copy_nested_laplace_result(out, result_out);
+}
+
+// ---- CAR_proper × RW1 ------------------------------------------------------
+extern "C" void tulpa_nested_laplace_st_car_proper_rw1_impl(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    const int* temporal_idx, int n_times, int cyclic,
+    const double* tau_spatial_grid, const double* rho_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    tulpa::NestedLaplaceShimResult* result_out
+) {
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
+    Rcpp::IntegerVector  tv (temporal_idx,     temporal_idx     + N);
+    Rcpp::NumericVector  tsg(tau_spatial_grid, tau_spatial_grid + n_grid);
+    Rcpp::NumericVector  rsg(rho_spatial_grid, rho_spatial_grid + n_grid);
+    Rcpp::NumericVector  ttg(tau_temporal_grid, tau_temporal_grid + n_grid);
+
+    Rcpp::List out = cpp_nested_laplace_st_car_proper_rw1(
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
+        sidx, n_spatial_units, arp, aci, nn,
+        tv, n_times, (cyclic != 0),
+        tsg, rsg, ttg,
+        in.fam, phi, max_iter, tol, n_threads,
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
+    );
+    copy_nested_laplace_result(out, result_out);
+}
+
+// ---- CAR_proper × RW2 ------------------------------------------------------
+extern "C" void tulpa_nested_laplace_st_car_proper_rw2_impl(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    const int* temporal_idx, int n_times,
+    const double* tau_spatial_grid, const double* rho_spatial_grid,
+    const double* tau_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    tulpa::NestedLaplaceShimResult* result_out
+) {
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
+    Rcpp::IntegerVector  tv (temporal_idx,     temporal_idx     + N);
+    Rcpp::NumericVector  tsg(tau_spatial_grid, tau_spatial_grid + n_grid);
+    Rcpp::NumericVector  rsg(rho_spatial_grid, rho_spatial_grid + n_grid);
+    Rcpp::NumericVector  ttg(tau_temporal_grid, tau_temporal_grid + n_grid);
+
+    Rcpp::List out = cpp_nested_laplace_st_car_proper_rw2(
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
+        sidx, n_spatial_units, arp, aci, nn,
+        tv, n_times,
+        tsg, rsg, ttg,
+        in.fam, phi, max_iter, tol, n_threads,
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
+    );
+    copy_nested_laplace_result(out, result_out);
+}
+
+// ---- CAR_proper × AR1 ------------------------------------------------------
+extern "C" void tulpa_nested_laplace_st_car_proper_ar1_impl(
+    const double* y, const int* n_trials,
+    const double* X_flat, const double* re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const int* spatial_idx, int n_spatial_units,
+    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
+    const int* temporal_idx, int n_times,
+    const double* tau_spatial_grid, const double* rho_spatial_grid,
+    const double* tau_temporal_grid, const double* rho_temporal_grid,
+    int n_grid,
+    const char* family, double phi,
+    int max_iter, double tol, int n_threads,
+    const double* x_init, int n_x_init,
+    int store_Q,
+    tulpa::NestedLaplaceShimResult* result_out
+) {
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, N, p, family);
+    Rcpp::IntegerVector  sidx, arp, aci, nn;
+    marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
+                sidx, arp, aci, nn);
+    Rcpp::IntegerVector  tv (temporal_idx,     temporal_idx     + N);
+    Rcpp::NumericVector  tsg(tau_spatial_grid, tau_spatial_grid + n_grid);
+    Rcpp::NumericVector  rsg(rho_spatial_grid, rho_spatial_grid + n_grid);
+    Rcpp::NumericVector  ttg(tau_temporal_grid, tau_temporal_grid + n_grid);
+    Rcpp::NumericVector  rtg(rho_temporal_grid, rho_temporal_grid + n_grid);
+
+    Rcpp::List out = cpp_nested_laplace_st_car_proper_ar1(
+        in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
+        sidx, n_spatial_units, arp, aci, nn,
+        tv, n_times,
+        tsg, rsg, ttg, rtg,
+        in.fam, phi, max_iter, tol, n_threads,
+        wrap_x_init(x_init, n_x_init),
+        store_Q != 0
+    );
+    copy_nested_laplace_result(out, result_out);
+}
+
 // ============================================================================
 // SPDE nested-Laplace shim
 // ============================================================================

@@ -29,7 +29,9 @@
 #include "gpu_nngp_laplace.h"
 #include "hmc_hsgp_kernels.h"  // Eigen-free spectral density only
 #include <Rcpp.h>
+#include <functional>
 #include <limits>
+#include <memory>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -1078,6 +1080,159 @@ inline Rcpp::List run_two_indexed_nested_laplace(
     );
 }
 
+// ---- per-kind prior callbacks ---------------------------------------------
+// Bundle of (prep_at_k, add_prior_at_k, log_prior_at_k) for one indexed
+// latent block. Adding a new (spatial_kind × temporal_kind) ST combination
+// is now a matter of picking the matching pair of factories below — the
+// shared joint driver (run_two_indexed_nested_laplace) is parameter-free
+// in the prior shape.
+//
+// The lambdas capture the per-kind state (grids, adjacency, basis, ...)
+// by reference. The caller (the Rcpp entry function) is responsible for
+// keeping those references alive: the Rcpp::Vector / Rcpp::IntegerVector
+// arguments live on the entry's stack and outlive the ops bundle.
+
+struct IndexedPriorOps {
+    std::function<bool(int)> prep;
+    std::function<void(tulpa::DenseVec&, tulpa::DenseMat&,
+                       const Rcpp::NumericVector&, int)> add_prior;
+    std::function<double(const Rcpp::NumericVector&, int)> log_prior;
+};
+
+// ICAR — 1D τ_grid over a spatial adjacency. Stateless prep.
+inline IndexedPriorOps make_icar_ops(
+    int start, int n_units,
+    const Rcpp::NumericVector& tau_grid,
+    const Rcpp::IntegerVector& adj_row_ptr,
+    const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors
+) {
+    IndexedPriorOps ops;
+    ops.prep = [](int) { return true; };
+    ops.add_prior = [start, n_units, &tau_grid, &adj_row_ptr,
+                     &adj_col_idx, &n_neighbors]
+                    (tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                     const Rcpp::NumericVector& x, int k) {
+        tulpa::add_icar_prior(grad, H, x, start, n_units, tau_grid[k],
+                               adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    ops.log_prior = [start, n_units, &tau_grid, &adj_row_ptr,
+                     &adj_col_idx, &n_neighbors]
+                    (const Rcpp::NumericVector& x, int k) {
+        return tulpa::log_prior_icar(x, start, n_units, tau_grid[k],
+                                       adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    return ops;
+}
+
+// CAR_proper — 2D (τ, ρ) grid. Prep recomputes log|Q(ρ_k)| per grid point
+// and shares it with log_prior via shared_ptr (so the lambdas can be
+// returned out of the factory). Caller-side ownership of adj_row_ptr et
+// al. via reference capture; ρ-dependent CSR copies are owned by shared
+// ptrs.
+inline IndexedPriorOps make_car_proper_ops(
+    int start, int n_units,
+    const Rcpp::NumericVector& tau_grid,
+    const Rcpp::NumericVector& rho_grid,
+    const Rcpp::IntegerVector& adj_row_ptr,
+    const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors
+) {
+    auto adj_rp_v = std::make_shared<std::vector<int>>(
+        adj_row_ptr.begin(), adj_row_ptr.end());
+    auto adj_ci_v = std::make_shared<std::vector<int>>(
+        adj_col_idx.begin(), adj_col_idx.end());
+    auto n_nbr_v  = std::make_shared<std::vector<int>>(
+        n_neighbors.begin(),  n_neighbors.end());
+    auto log_det_Q_rho = std::make_shared<double>(0.0);
+
+    IndexedPriorOps ops;
+    ops.prep = [n_units, &rho_grid, adj_rp_v, adj_ci_v, n_nbr_v, log_det_Q_rho]
+               (int k) -> bool {
+        std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
+            n_units, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_grid[k]);
+        *log_det_Q_rho = tulpa_car_proper::car_log_det(n_units, Qmat);
+        return std::isfinite(*log_det_Q_rho);
+    };
+    ops.add_prior = [start, n_units, &tau_grid, &rho_grid,
+                     &adj_row_ptr, &adj_col_idx, &n_neighbors]
+                    (tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                     const Rcpp::NumericVector& x, int k) {
+        tulpa::add_car_proper_prior(grad, H, x, start, n_units,
+                                     tau_grid[k], rho_grid[k],
+                                     adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    ops.log_prior = [start, n_units, &tau_grid, &rho_grid,
+                     &adj_row_ptr, &adj_col_idx, &n_neighbors, log_det_Q_rho]
+                    (const Rcpp::NumericVector& x, int k) {
+        return tulpa::log_prior_car_proper(x, start, n_units,
+                                             tau_grid[k], rho_grid[k],
+                                             *log_det_Q_rho,
+                                             adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    return ops;
+}
+
+// RW1 — 1D τ grid; cyclic flag closes the chain.
+inline IndexedPriorOps make_rw1_ops(
+    int start, int n_units,
+    const Rcpp::NumericVector& tau_grid,
+    bool cyclic
+) {
+    IndexedPriorOps ops;
+    ops.prep = [](int) { return true; };
+    ops.add_prior = [start, n_units, &tau_grid, cyclic]
+                    (tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                     const Rcpp::NumericVector& x, int k) {
+        tulpa::add_rw1_precision(grad, H, x, start, n_units, tau_grid[k], cyclic);
+    };
+    ops.log_prior = [start, n_units, &tau_grid, cyclic]
+                    (const Rcpp::NumericVector& x, int k) {
+        return tulpa::log_prior_rw1(x, start, n_units, tau_grid[k], cyclic);
+    };
+    return ops;
+}
+
+// RW2 — 1D τ grid; no cyclic flag (the RW2 implementation ignores it).
+inline IndexedPriorOps make_rw2_ops(
+    int start, int n_units,
+    const Rcpp::NumericVector& tau_grid
+) {
+    IndexedPriorOps ops;
+    ops.prep = [](int) { return true; };
+    ops.add_prior = [start, n_units, &tau_grid]
+                    (tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                     const Rcpp::NumericVector& x, int k) {
+        tulpa::add_rw2_precision(grad, H, x, start, n_units, tau_grid[k], false);
+    };
+    ops.log_prior = [start, n_units, &tau_grid]
+                    (const Rcpp::NumericVector& x, int k) {
+        return tulpa::log_prior_rw2(x, start, n_units, tau_grid[k], false);
+    };
+    return ops;
+}
+
+// AR1 — 2D (τ, ρ) grid.
+inline IndexedPriorOps make_ar1_ops(
+    int start, int n_units,
+    const Rcpp::NumericVector& tau_grid,
+    const Rcpp::NumericVector& rho_grid
+) {
+    IndexedPriorOps ops;
+    ops.prep = [](int) { return true; };
+    ops.add_prior = [start, n_units, &tau_grid, &rho_grid]
+                    (tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                     const Rcpp::NumericVector& x, int k) {
+        tulpa::add_ar1_precision(grad, H, x, start, n_units,
+                                  tau_grid[k], rho_grid[k]);
+    };
+    ops.log_prior = [start, n_units, &tau_grid, &rho_grid]
+                    (const Rcpp::NumericVector& x, int k) {
+        return tulpa::log_prior_ar1(x, start, n_units, tau_grid[k], rho_grid[k]);
+    };
+    return ops;
+}
+
 } // namespace
 
 // =====================================================================
@@ -1113,26 +1268,9 @@ Rcpp::List cpp_nested_laplace_st_icar_ar1(
     int s_start = p + n_re_groups;
     int t_start = s_start + n_spatial_units;
 
-    auto prep_noop = [](int) { return true; };
-
-    auto add_prior_s = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                           const Rcpp::NumericVector& x, int k) {
-        tulpa::add_icar_prior(grad, H, x, s_start, n_spatial_units, tau_spatial_grid[k],
-                               adj_row_ptr, adj_col_idx, n_neighbors);
-    };
-    auto log_prior_s = [&](const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_icar(x, s_start, n_spatial_units, tau_spatial_grid[k],
-                                       adj_row_ptr, adj_col_idx, n_neighbors);
-    };
-    auto add_prior_t = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                           const Rcpp::NumericVector& x, int k) {
-        tulpa::add_ar1_precision(grad, H, x, t_start, n_times,
-                                  tau_temporal_grid[k], rho_temporal_grid[k]);
-    };
-    auto log_prior_t = [&](const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_ar1(x, t_start, n_times,
-                                      tau_temporal_grid[k], rho_temporal_grid[k]);
-    };
+    auto ops_s = make_icar_ops(s_start, n_spatial_units, tau_spatial_grid,
+                                adj_row_ptr, adj_col_idx, n_neighbors);
+    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
 
     Rcpp::List out = run_two_indexed_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -1141,11 +1279,275 @@ Rcpp::List cpp_nested_laplace_st_icar_ar1(
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true,
         unwrap_x_init(x_init_nullable),
-        prep_noop, add_prior_s, log_prior_s,
-        prep_noop, add_prior_t, log_prior_t,
+        ops_s.prep, ops_s.add_prior, ops_s.log_prior,
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
         store_Q
     );
     out["tau_spatial_grid"]  = tau_spatial_grid;
+    out["tau_temporal_grid"] = tau_temporal_grid;
+    out["rho_temporal_grid"] = rho_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: ICAR (spatial) × RW1 (temporal)
+//   1D τ_s × 1D τ_t grid. Caller passes paired vectors of length n_grid.
+//   Latent: [beta] [re] [w_spatial (n_s)] [w_temporal (n_t)].
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_icar_rw1(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
+    Rcpp::NumericVector tau_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = tau_spatial_grid.size();
+    if (tau_temporal_grid.size() != n_grid) {
+        Rcpp::stop("tau_spatial_grid and tau_temporal_grid must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial_units;
+
+    auto ops_s = make_icar_ops(s_start, n_spatial_units, tau_spatial_grid,
+                                adj_row_ptr, adj_col_idx, n_neighbors);
+    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+
+    Rcpp::List out = run_two_indexed_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        s_start, n_spatial_units, spatial_idx,
+        t_start, n_times,            temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_s.prep, ops_s.add_prior, ops_s.log_prior,
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["tau_spatial_grid"]  = tau_spatial_grid;
+    out["tau_temporal_grid"] = tau_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: ICAR (spatial) × RW2 (temporal)
+//   1D τ_s × 1D τ_t grid.
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_icar_rw2(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    Rcpp::IntegerVector temporal_idx, int n_times,
+    Rcpp::NumericVector tau_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = tau_spatial_grid.size();
+    if (tau_temporal_grid.size() != n_grid) {
+        Rcpp::stop("tau_spatial_grid and tau_temporal_grid must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial_units;
+
+    auto ops_s = make_icar_ops(s_start, n_spatial_units, tau_spatial_grid,
+                                adj_row_ptr, adj_col_idx, n_neighbors);
+    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
+
+    Rcpp::List out = run_two_indexed_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        s_start, n_spatial_units, spatial_idx,
+        t_start, n_times,            temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_s.prep, ops_s.add_prior, ops_s.log_prior,
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["tau_spatial_grid"]  = tau_spatial_grid;
+    out["tau_temporal_grid"] = tau_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: CAR_proper (spatial) × RW1 (temporal)
+//   2D (τ_s, ρ_s) × 1D τ_t grid.
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
+    Rcpp::NumericVector tau_spatial_grid,
+    Rcpp::NumericVector rho_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = tau_spatial_grid.size();
+    if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
+        Rcpp::stop("tau_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial_units;
+
+    auto ops_s = make_car_proper_ops(s_start, n_spatial_units,
+                                      tau_spatial_grid, rho_spatial_grid,
+                                      adj_row_ptr, adj_col_idx, n_neighbors);
+    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+
+    Rcpp::List out = run_two_indexed_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        s_start, n_spatial_units, spatial_idx,
+        t_start, n_times,            temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_s.prep, ops_s.add_prior, ops_s.log_prior,
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["tau_spatial_grid"]  = tau_spatial_grid;
+    out["rho_spatial_grid"]  = rho_spatial_grid;
+    out["tau_temporal_grid"] = tau_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: CAR_proper (spatial) × RW2 (temporal)
+//   2D (τ_s, ρ_s) × 1D τ_t grid.
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_car_proper_rw2(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    Rcpp::IntegerVector temporal_idx, int n_times,
+    Rcpp::NumericVector tau_spatial_grid,
+    Rcpp::NumericVector rho_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = tau_spatial_grid.size();
+    if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
+        Rcpp::stop("tau_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial_units;
+
+    auto ops_s = make_car_proper_ops(s_start, n_spatial_units,
+                                      tau_spatial_grid, rho_spatial_grid,
+                                      adj_row_ptr, adj_col_idx, n_neighbors);
+    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
+
+    Rcpp::List out = run_two_indexed_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        s_start, n_spatial_units, spatial_idx,
+        t_start, n_times,            temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_s.prep, ops_s.add_prior, ops_s.log_prior,
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["tau_spatial_grid"]  = tau_spatial_grid;
+    out["rho_spatial_grid"]  = rho_spatial_grid;
+    out["tau_temporal_grid"] = tau_temporal_grid;
+    return out;
+}
+
+// =====================================================================
+// Nested Laplace: CAR_proper (spatial) × AR1 (temporal)
+//   2D (τ_s, ρ_s) × 2D (τ_t, ρ_t) grid.
+// =====================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_st_car_proper_ar1(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    Rcpp::IntegerVector temporal_idx, int n_times,
+    Rcpp::NumericVector tau_spatial_grid,
+    Rcpp::NumericVector rho_spatial_grid,
+    Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::NumericVector rho_temporal_grid,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = tau_spatial_grid.size();
+    if (rho_spatial_grid.size() != n_grid ||
+        tau_temporal_grid.size() != n_grid ||
+        rho_temporal_grid.size() != n_grid) {
+        Rcpp::stop("All four paired grids must have the same length");
+    }
+    int N = y.size();
+    int p = X.ncol();
+    int s_start = p + n_re_groups;
+    int t_start = s_start + n_spatial_units;
+
+    auto ops_s = make_car_proper_ops(s_start, n_spatial_units,
+                                      tau_spatial_grid, rho_spatial_grid,
+                                      adj_row_ptr, adj_col_idx, n_neighbors);
+    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
+
+    Rcpp::List out = run_two_indexed_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        s_start, n_spatial_units, spatial_idx,
+        t_start, n_times,            temporal_idx,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true,
+        unwrap_x_init(x_init_nullable),
+        ops_s.prep, ops_s.add_prior, ops_s.log_prior,
+        ops_t.prep, ops_t.add_prior, ops_t.log_prior,
+        store_Q
+    );
+    out["tau_spatial_grid"]  = tau_spatial_grid;
+    out["rho_spatial_grid"]  = rho_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
     out["rho_temporal_grid"] = rho_temporal_grid;
     return out;

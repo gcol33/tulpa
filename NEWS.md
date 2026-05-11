@@ -1,5 +1,30 @@
 # tulpa NEWS
 
+## 2026-05-11 — nested-Laplace ST family: 5 more indexed × indexed combos
+
+* Adds five additional joint spatial × temporal nested-Laplace shims,
+  built on the same `run_two_indexed_nested_laplace` driver and joint
+  inner Newton introduced earlier today:
+    - `tulpa_nested_laplace_st_icar_rw1`
+    - `tulpa_nested_laplace_st_icar_rw2`
+    - `tulpa_nested_laplace_st_car_proper_rw1`
+    - `tulpa_nested_laplace_st_car_proper_rw2`
+    - `tulpa_nested_laplace_st_car_proper_ar1`
+  Each routes through a per-combo Rcpp entry plus a C-callable
+  `_impl` wrapper; matching typedefs + getters live in
+  `nested_laplace_api.h`.
+* New internal factory pattern `IndexedPriorOps` in `nested_laplace.cpp`
+  with per-kind builders `make_icar_ops`, `make_car_proper_ops`,
+  `make_rw1_ops`, `make_rw2_ops`, `make_ar1_ops`. The shared
+  `run_two_indexed_nested_laplace` driver now consumes
+  `std::function`-typed callbacks, so adding the next indexed × indexed
+  combination is a few lines of Rcpp glue rather than a re-derivation.
+* Refactored `cpp_nested_laplace_st_icar_ar1` to use the new factories
+  (identical behavior; just dropped the inline lambdas).
+* Additive: no `TULPA_ABI_VERSION` bump (still v9). The new shims are
+  resolved via `R_GetCCallable` at first use; downstream packages
+  rebuilt against ABI v9 pick them up automatically.
+
 ## 2026-05-11 — nested-Laplace joint spatial × temporal (ICAR × AR1)
 
 * New shim `tulpa_nested_laplace_st_icar_ar1` for joint nested-Laplace
