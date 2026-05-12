@@ -59,6 +59,8 @@ double find_reasonable_epsilon_dense(
 // Run single HMC chain (C++ version - safe for parallel)
 // riemannian: -1=auto (retry divergences with SoftAbs for BYM2/ICAR),
 //              1=force on, 0=force off
+// inv_metric_init: optional caller-supplied initial diagonal inv-mass
+//                  (length n_params). Empty -> default structural warm-start.
 HMCResultCpp run_hmc_chain_cpp(
     const std::vector<double>& q_init,
     const ModelData& data,
@@ -72,7 +74,8 @@ HMCResultCpp run_hmc_chain_cpp(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    int riemannian = -1
+    int riemannian = -1,
+    const std::vector<double>& inv_metric_init = std::vector<double>()
 );
 
 // Run single HMC chain (R wrapper)
@@ -89,7 +92,8 @@ HMCResult run_hmc_chain(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    int riemannian = -1
+    int riemannian = -1,
+    const std::vector<double>& inv_metric_init = std::vector<double>()
 );
 
 // Run multiple chains in parallel (across-chain parallelization)

@@ -1,5 +1,36 @@
 # tulpa NEWS
 
+## 2026-05-12 — ABI v11: caller-supplied inv-mass diagonal for NUTS
+
+* `TULPA_ABI_VERSION` bumped **10 → 11**. Downstream packages must
+  rebuild against the v11 headers.
+* Registered C-callable `tulpa_run_nuts_generic` (`nuts_api.h`
+  `NUTSFn`) gains a new positional parameter `const double*
+  inv_metric_diag` immediately before `NUTSResult* result_out`. Pass
+  `nullptr` to keep the v10 behaviour (default structural warm-start
+  of the mass matrix). Pass a length-`n_params` vector to seed the
+  diagonal inverse-mass — useful for warm-starting NUTS from an
+  analytical-approximation method (Laplace, VI, etc.).
+* `run_hmc_chain_cpp` / `run_hmc_chain` (`hmc_sampler_funcs.h`) take a
+  matching trailing `inv_metric_init` `std::vector<double>` (default
+  empty). Within `run_hmc_chain_cpp` (`hmc_nuts_chain_setup.h`), a
+  non-empty caller diagonal overrides the structural diagonal set by
+  `warm_start_mass_matrix`. Values are clamped to `[1e-3, 1e3]`
+  before being installed via `mass.set_diagonal`, then
+  `find_reasonable_epsilon` re-runs against the seeded metric.
+* Mass-matrix *adaptation* is unchanged: the standard dual-averaging
+  + expanding-windows path still refines the diagonal during warmup.
+  The caller's vector is the *initial* metric, not a frozen one.
+* Internal callers of `run_hmc_chain_cpp` (`hmc_nuts_parallel.cpp` ×3,
+  `tulpa_generic_sampler.cpp` ×1) continue to pass no `inv_metric_init`
+  via the default empty vector; the local forward declaration in
+  `tulpa_generic_sampler.cpp` was updated to match the canonical
+  declaration's parameter list.
+* Downstream rebuild notes: `tulpaGlmm` exercises this end-to-end via
+  Day-32's `hmc_warm_start = "laplace"` argument. `tulpaOcc` and
+  `tulpaRatio` need to be reinstalled against v11 — both already
+  updated to pass `nullptr` for the new parameter (no logic change).
+
 ## 2026-05-11 — NNGP Laplace: full off-diagonal precision scatter
 
 * `laplace_mode_gp` (and the spatial-only / ST-combo NNGP entries in

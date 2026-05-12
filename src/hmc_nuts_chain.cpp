@@ -46,7 +46,8 @@ HMCResultCpp run_hmc_chain_cpp(
     int max_treedepth,
     MassMatrixType metric_type,
     double adapt_delta,
-    int riemannian
+    int riemannian,
+    const std::vector<double>& inv_metric_init
 ) {
 #include "hmc_nuts_chain_setup.h"
 
@@ -101,7 +102,8 @@ HMCResult run_hmc_chain(
     int max_treedepth,
     MassMatrixType metric_type,
     double adapt_delta,
-    int riemannian
+    int riemannian,
+    const std::vector<double>& inv_metric_init
 ) {
   // Runtime gradient check: compare active gradient function against numerical
   if (g_gradient_mode != GradientMode::NUMERICAL) {
@@ -119,7 +121,7 @@ HMCResult run_hmc_chain(
 
   // Run C++ version - pass verbose through for debugging
   HMCResultCpp cpp_result = run_hmc_chain_cpp(
-    q_init, data, layout, n_iter, n_warmup, L, chain_id, seed, verbose, max_treedepth, metric_type, adapt_delta, riemannian
+    q_init, data, layout, n_iter, n_warmup, L, chain_id, seed, verbose, max_treedepth, metric_type, adapt_delta, riemannian, inv_metric_init
   );
 
   // Convert to R result

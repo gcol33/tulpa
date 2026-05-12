@@ -125,9 +125,34 @@
   // Warm-start mass matrix diagonal from model structure
   warm_start_mass_matrix(mass, data, layout, n_params, verbose);
 
+  // Caller-supplied inv-mass diagonal (e.g. from a Laplace approximation).
+  // Overrides any structural warm-start above. Subsequent mass adaptation
+  // still runs and refines this starting point.
+  bool caller_inv_metric = (!inv_metric_init.empty()
+                            && (int)inv_metric_init.size() == n_params);
+  if (!inv_metric_init.empty() && (int)inv_metric_init.size() != n_params) {
+    REprintf("  [WARMSTART] inv_metric_init length %d != n_params %d, ignoring\n",
+             (int)inv_metric_init.size(), n_params);
+  }
+  if (caller_inv_metric) {
+    std::vector<double> inv_m = inv_metric_init;
+    std::vector<double> sqrt_m(n_params, 1.0);
+    for (int i = 0; i < n_params; i++) {
+      // Same clamp as warm_start_mass_matrix: prevents singular/runaway metrics.
+      inv_m[i] = std::max(1e-3, std::min(inv_m[i], 1e3));
+      sqrt_m[i] = 1.0 / std::sqrt(inv_m[i]);
+    }
+    mass.set_diagonal(inv_m, sqrt_m);
+    if (verbose) {
+      REprintf("  [WARMSTART] Caller-supplied inv_metric_diag applied (n=%d)\n",
+               n_params);
+    }
+  }
+
   // Recompute epsilon with warm-start mass (if informed)
   // This gives the dual averaging a better starting point when mass is pre-set
-  if (mass.type != MassMatrixType::DIAG && !mass.inv_mass_diag.empty()) {
+  if ((mass.type != MassMatrixType::DIAG || caller_inv_metric)
+      && !mass.inv_mass_diag.empty()) {
     epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
   }
 

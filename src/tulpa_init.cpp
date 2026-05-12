@@ -27,10 +27,17 @@ static void tulpa_run_nuts_generic_impl(
     double adapt_delta,
     unsigned int seed,
     int verbose,
+    const double* inv_metric_diag,
     tulpa::NUTSResult* result_out
 ) {
     // Convert init to std::vector
     std::vector<double> q_init(init, init + n_params);
+
+    // Convert optional inv-mass diagonal to std::vector (empty -> default warm-start)
+    std::vector<double> inv_metric_init;
+    if (inv_metric_diag != nullptr) {
+        inv_metric_init.assign(inv_metric_diag, inv_metric_diag + n_params);
+    }
 
     // Run full NUTS (L=0 means NUTS mode)
     tulpa_hmc::HMCResultCpp hmc = tulpa_hmc::run_hmc_chain_cpp(
@@ -43,7 +50,8 @@ static void tulpa_run_nuts_generic_impl(
         max_treedepth,
         tulpa::MassMatrixType::DIAG,
         adapt_delta,
-        0                 // riemannian=off
+        0,                // riemannian=off
+        inv_metric_init
     );
 
     // Fill result struct

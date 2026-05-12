@@ -63,7 +63,15 @@ struct NUTSResult {
     }
 };
 
-// Function signature for the registered NUTS callable
+// Function signature for the registered NUTS callable.
+//
+// `inv_metric_diag` (ABI v11+): optional length-`n_params` vector of initial
+// inverse-mass diagonal entries. Pass nullptr to use the default structural
+// warm-start (the previous v10 behaviour). When supplied, the values seed
+// the dual-averaging / mass-adaptation path so subsequent warmup refines
+// rather than discovers the metric — e.g. for HMC warm-started from a
+// Laplace approximation, pass diag(Sigma_marg) for latent slots and
+// diag(H_theta_inv) for hyperparameter slots.
 typedef void (*NUTSFn)(
     const ModelData* data,
     const ParamLayout* layout,
@@ -75,6 +83,7 @@ typedef void (*NUTSFn)(
     double adapt_delta,
     unsigned int seed,
     int verbose,
+    const double* inv_metric_diag,
     NUTSResult* result_out
 );
 
