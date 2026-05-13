@@ -45,6 +45,12 @@ namespace tulpa {
 
 using namespace math;
 
+// Generic-LikelihoodSpec evaluator (compute_log_post_generic +
+// compute_log_post_generic_spec_double). Included here — before
+// compute_log_post_impl<T> — so the generic-layout early-return below
+// can call it without a forward declaration. The header is idempotent.
+#include "log_post_generic_impl.h"
+
 // ============================================================================
 // Templated log-posterior computation
 // T = double for evaluation, T = ad::Var for autodiff gradients
@@ -56,6 +62,23 @@ T compute_log_post_impl(
     const ModelData& data,
     const ParamLayout& layout
 ) {
+    // Generic-layout callers must not enter the legacy ratio body below.
+    // The legacy body unconditionally reads params[layout.legacy.beta_num_start]
+    // (line ~83), which is params[-1] when the caller built ModelData with
+    // n_processes > 0 (the LikelihoodSpec path) — segfault. Route every
+    // generic-layout call to the generic evaluator instead (see
+    // compute_log_post_generic in log_post_generic_impl.h). T = double goes
+    // through the LikelihoodSpec::ll_double dispatch; autodiff T should
+    // arrive via compute_gradient_generic_arena, not this template, so a
+    // generic-layout autodiff call here is a logic error — return T(0).
+    if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
+        if constexpr (std::is_same_v<T, double>) {
+            return compute_log_post_generic_spec_double(params, data, layout);
+        } else {
+            return T(0.0);
+        }
+    }
+
     // Collapsed ICAR/BYM2 spatial inner state (phi*, theta*) is marginalized
     // via Newton + Laplace inside compute_log_post — not differentiable
     // through autodiff. The layout omits spatial_start/theta_bym2_start
@@ -196,8 +219,6 @@ T compute_log_post_impl(
 
     return log_post;
 }
-
-#include "log_post_generic_impl.h"
 
 }  // namespace tulpa
 

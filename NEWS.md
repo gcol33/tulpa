@@ -1,5 +1,49 @@
 # tulpa NEWS
 
+## 2026-05-12 — ABI v12: generic-layout safety in compute_log_post_impl + ESS port
+
+* `TULPA_ABI_VERSION` bumped **11 → 12**. Downstream packages must
+  rebuild against the v12 headers.
+* **Critical fix.** `compute_log_post_impl<T>` (`src/log_post_impl.h`)
+  now early-returns to `compute_log_post_generic_spec_double` when
+  the caller built `ModelData` with `n_processes > 0` and a non-null
+  `likelihood_spec`. Previously the function reached lines 83-84 and
+  unconditionally read `params[layout.legacy.beta_num_start]`, which
+  is `params[-1]` for generic-layout callers — segfault. This was the
+  blocker for tulpaGlmm Day-22 `inference = "ess"` (see deferred
+  `fix.md` entry from 2026-05-06). The early-return makes the function
+  safe for both layouts; the legacy ratio body remains in place for
+  `n_processes == 0` callers (i.e. nobody outside this file at the
+  moment, but tulpaRatio's `hmc_sampler.cpp` keeps its own copy).
+* **ESS generic-layout port.** `tulpa_ess::build_gaussian_priors`
+  (`src/ess_sampler.h`) now walks every process's β block
+  (`layout.process_beta_start[k]` for `k` in `0..n_processes`) when
+  `data.n_processes > 0`, instead of only `layout.legacy.beta_num_start
+  / beta_denom_start`. Previously generic-layout ESS produced an
+  empty β prior block and β was never sampled.
+* **ESS RWMH coverage of model-specific extras.**
+  `tulpa_ess::get_non_gaussian_params` now appends every parameter
+  in `[layout.extra_offset, layout.extra_offset + n_extra_params)`
+  to the RWMH list. LikelihoodSpec authors pack their model-specific
+  scalars (e.g. log_phi for negative-binomial, log_sigma for Gaussian)
+  into that block; ESS now walks them. Legacy ratio `log_phi_num /
+  log_phi_denom` indices remain in the list for `n_processes == 0`.
+* `LegacyRatioData` / `LegacyRatioLayout` (`inst/include/tulpa/model_data.h`,
+  `param_layout.h`) are still exported but stay deprecated — the
+  in-engine consumers are the H-mode gradient kernels, the legacy
+  AD fallback (`hmc_gradient_fallback.cpp`), the composite gradient,
+  and `tulpa_hmc::compute_log_post` inside `hmc_sampler.cpp`. None
+  of those are reached when the dispatcher (`hmc_gradient_dispatch.h`)
+  sees `n_processes > 0`. Full removal is a follow-up cut after the
+  collapsed-spatial double-evaluator (MCLMC / SGHMC consumer) is
+  reworked.
+* Downstream rebuild notes: tulpaRatio uses the generic-LikelihoodSpec
+  path via `tulpa_bridge.cpp` + per-family payloads in
+  `lik_specs/`; it never touched `ModelData::legacy` and rebuilds
+  cleanly against v12 headers. tulpaGlmm Day-22 ESS shim can now
+  call `tulpa::get_ess_fn()(...)` end-to-end on a generic-layout
+  `ModelData` without segfaulting.
+
 ## 2026-05-12 — ABI v11: caller-supplied inv-mass diagonal for NUTS
 
 * `TULPA_ABI_VERSION` bumped **10 → 11**. Downstream packages must
