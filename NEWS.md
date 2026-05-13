@@ -1,5 +1,16 @@
 # tulpa NEWS
 
+## Unreleased
+
+* feat: ABI v14 — SPDE nested-Laplace upgraded to the v10-style universal
+  shim (store_modes, store_Q, paired range/sigma grids, formula-side iid-RE
+  block). Replaces the v0 `cpp_nested_laplace_spde` entry and folds the
+  SPDE C-callable into the shared `NestedLaplaceShimResult` block used by
+  ICAR / BYM2 / NNGP / HSGP. The dedicated `SpdeNestedLaplaceShimResult`
+  struct is removed. Latent layout:
+  `[beta (p)] [re (n_re_groups)] [w_mesh (n_mesh)]`.
+  `TULPA_ABI_VERSION` bumped **13 → 14**; downstream packages must rebuild.
+
 ## 2026-05-13 — ABI v13: Phase D — delete legacy ratio path
 
 Closes the tulpaRatio migration tracker (gcol33/tulpa#15). After v12

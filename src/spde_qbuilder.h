@@ -32,18 +32,47 @@ struct SpdeQBuilder {
     std::vector<double> c0_contrib;
     std::vector<double> g1_contrib;
     std::vector<double> gdg_contrib;
+    // Orphan ridge: per-entry contribution that is theta-independent. Equals
+    // 1.0 on the diagonal of orphan mesh nodes (nodes with C0_diag ~ 0 AND no
+    // off-diagonal G1 connectivity — i.e. vertices the mesh refiner inserted
+    // but never wired into a triangle). Adds a unit precision to those nodes
+    // so Q remains PD. Zero on every other entry.
+    std::vector<double> orphan_contrib;
     std::vector<double> Q_x;
 
     void init(int n, const Rcpp::NumericVector& C0_diag,
               const Rcpp::NumericVector& G1_x, const Rcpp::IntegerVector& G1_i,
               const Rcpp::IntegerVector& G1_p) {
         n_mesh = n;
-        std::vector<double> c0_inv(n);
+
+        // Detect orphan mesh nodes: zero (or near-zero) C0 mass AND no G1
+        // connectivity (no off-diagonal entries in column j AND zero on diag).
+        // These vertices come from upstream mesh refiners that emit Steiner
+        // points but fail to retriangulate (see tulpaMesh fix-mesh-zero-
+        // triangles for the FEM-side manifestation). Without a defensive
+        // ridge they leave all-zero rows in Q and the joint Hessian is
+        // non-PD even though the rest of the model is well-posed.
+        const double c0_eps = 1e-15;
+        std::vector<bool> is_orphan(n, false);
+        std::vector<bool> col_has_g(n, false);
+        for (int j = 0; j < n; j++) {
+            for (int idx = G1_p[j]; idx < G1_p[j + 1]; idx++) {
+                if (std::abs(G1_x[idx]) > c0_eps) {
+                    col_has_g[j] = true;
+                    break;
+                }
+            }
+        }
         for (int i = 0; i < n; i++) {
-            c0_inv[i] = (C0_diag[i] > 1e-15) ? 1.0 / C0_diag[i] : 0.0;
+            if (C0_diag[i] <= c0_eps && !col_has_g[i]) is_orphan[i] = true;
         }
 
-        struct Triple { double c0 = 0, g1 = 0, gdg = 0; };
+        std::vector<double> c0_inv(n);
+        for (int i = 0; i < n; i++) {
+            c0_inv[i] = (C0_diag[i] > c0_eps) ? 1.0 / C0_diag[i] : 0.0;
+        }
+
+        struct Triple { double c0 = 0, g1 = 0, gdg = 0, orph = 0; };
         std::map<std::pair<int,int>, Triple> entries;
 
         // C0 diagonal
@@ -62,7 +91,7 @@ struct SpdeQBuilder {
             for (int idx = G1_p[j]; idx < G1_p[j + 1]; idx++) {
                 int k = G1_i[idx];
                 double val = G1_x[idx] * c0_inv[k];
-                if (std::abs(val) > 1e-15) scaled.push_back({k, val});
+                if (std::abs(val) > c0_eps) scaled.push_back({k, val});
             }
             for (auto& [k, sc] : scaled) {
                 for (int idx2 = G1_p[k]; idx2 < G1_p[k + 1]; idx2++) {
@@ -71,13 +100,21 @@ struct SpdeQBuilder {
             }
         }
 
+        // Orphan ridge: place 1.0 on the diagonal of every orphan node.
+        // This is a theta-independent term — see rebuild() for how it's mixed
+        // into Q_x. Pinning to ~zero is fine because A never references
+        // orphan vertices, so the orphan latent has no likelihood contribution.
+        for (int i = 0; i < n; i++) {
+            if (is_orphan[i]) entries[{i, i}].orph += 1.0;
+        }
+
         // Convert to CSC
-        struct Entry { int row, col; double c0, g1, gdg; };
+        struct Entry { int row, col; double c0, g1, gdg, orph; };
         std::vector<Entry> sorted;
         sorted.reserve(entries.size());
         for (auto& [key, t] : entries) {
-            if (std::abs(t.c0) + std::abs(t.g1) + std::abs(t.gdg) > 1e-15) {
-                sorted.push_back({key.first, key.second, t.c0, t.g1, t.gdg});
+            if (std::abs(t.c0) + std::abs(t.g1) + std::abs(t.gdg) + std::abs(t.orph) > c0_eps) {
+                sorted.push_back({key.first, key.second, t.c0, t.g1, t.gdg, t.orph});
             }
         }
         std::sort(sorted.begin(), sorted.end(),
@@ -91,6 +128,7 @@ struct SpdeQBuilder {
         c0_contrib.resize(nnz);
         g1_contrib.resize(nnz);
         gdg_contrib.resize(nnz);
+        orphan_contrib.resize(nnz);
         Q_x.resize(nnz);
 
         int cur_col = 0;
@@ -100,6 +138,7 @@ struct SpdeQBuilder {
             c0_contrib[e] = sorted[e].c0;
             g1_contrib[e] = sorted[e].g1;
             gdg_contrib[e] = sorted[e].gdg;
+            orphan_contrib[e] = sorted[e].orph;
         }
         while (cur_col <= n) { Q_p[cur_col] = nnz; cur_col++; }
     }
@@ -119,13 +158,15 @@ struct SpdeQBuilder {
             // alpha=1 operator is rank-deficient; needs more regularization
             double eps_ridge = 1e-2;
             for (int e = 0; e < nnz_val; e++) {
-                Q_x[e] = tau2 * ((k2 + eps_ridge) * c0_contrib[e] + g1_contrib[e]);
+                Q_x[e] = tau2 * ((k2 + eps_ridge) * c0_contrib[e] + g1_contrib[e])
+                       + orphan_contrib[e];
             }
         } else {
             // alpha == 2 (default): Q = tau² * L·C⁻¹·L
             double k4 = k2 * k2;
             for (int e = 0; e < nnz_val; e++) {
-                Q_x[e] = tau2 * (k4 * c0_contrib[e] + 2.0 * k2 * g1_contrib[e] + gdg_contrib[e]);
+                Q_x[e] = tau2 * (k4 * c0_contrib[e] + 2.0 * k2 * g1_contrib[e] + gdg_contrib[e])
+                       + orphan_contrib[e];
             }
         }
     }
@@ -158,6 +199,8 @@ struct SpdeQBuilder {
                 );
             }
         }
+        // Theta-independent orphan ridge.
+        for (int e = 0; e < nnz_val; e++) Q_x[e] += orphan_contrib[e];
     }
 
     int nnz() const { return static_cast<int>(Q_i.size()); }

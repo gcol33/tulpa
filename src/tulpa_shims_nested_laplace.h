@@ -951,11 +951,16 @@ extern "C" void tulpa_nested_laplace_st_nngp_ar1_impl(
 // ============================================================================
 // SPDE nested-Laplace shim
 // ============================================================================
+//
+// ABI v14 alignment: SPDE now uses the universal NestedLaplaceShimResult
+// (modes + optional per-grid Q) like every other nested-Laplace backend.
+// Latent layout: [beta (p)] [re (n_re_groups)] [w_mesh (n_mesh)].
 
 extern "C" void tulpa_nested_laplace_spde_impl(
     const double* y, const int* n_trials,
-    const double* X_flat,
+    const double* X_flat, const double* re_idx,
     int n_obs, int p, int n_mesh,
+    int n_re_groups, double sigma_re,
     const double* A_x, const int* A_i, const int* A_p,
     const double* C0_diag,
     const double* G1_x, const int* G1_i, const int* G1_p,
@@ -966,11 +971,10 @@ extern "C" void tulpa_nested_laplace_spde_impl(
     const double* x_init, int n_x_init,
     const double* rational_poles, int n_rational,
     const double* rational_weights,
-    tulpa::SpdeNestedLaplaceShimResult* result_out
+    int store_Q,
+    tulpa::NestedLaplaceShimResult* result_out
 ) {
-    Rcpp::NumericVector  yv(y, y + n_obs);
-    Rcpp::IntegerVector  nv(n_trials, n_trials + n_obs);
-    Rcpp::NumericMatrix  Xm = build_matrix_colmajor(X_flat, n_obs, p);
+    auto in = pack_laplace_shim_inputs(y, n_trials, X_flat, re_idx, n_obs, p, family);
 
     int A_nnz  = A_p  ? A_p [n_mesh] : 0;
     int G1_nnz = G1_p ? G1_p[n_mesh] : 0;
@@ -991,28 +995,17 @@ extern "C" void tulpa_nested_laplace_spde_impl(
         weights_n = Rcpp::wrap(Rcpp::NumericVector(rational_weights, rational_weights + n_rational));
     }
 
-    std::string fam = family ? std::string(family) : std::string("binomial");
-
     Rcpp::List out = cpp_nested_laplace_spde(
-        yv, nv, Xm,
+        in.yv, in.nv, in.Xm,
+        in.rv, n_re_groups, sigma_re,
         axv, aiv, apv, n_obs, n_mesh,
         c0, g1xv, g1iv, g1pv,
         rng, sig, nu,
-        fam, phi, max_iter, tol, n_threads,
+        in.fam, phi, max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init),
-        poles_n, weights_n
+        poles_n, weights_n,
+        store_Q != 0
     );
-
-    Rcpp::NumericVector lm = out["log_marginal"];
-    Rcpp::IntegerVector ni = out["n_iter"];
-    int ng = (int)lm.size();
-    result_out->n_grid = ng;
-    result_out->Q_nnz  = (int)Rcpp::as<int>(out["Q_nnz"]);
-    result_out->log_marginal = new double[ng];
-    result_out->n_iter       = new int[ng];
-    for (int k = 0; k < ng; k++) {
-        result_out->log_marginal[k] = lm[k];
-        result_out->n_iter[k]       = ni[k];
-    }
+    copy_nested_laplace_result(out, result_out);
 }
 

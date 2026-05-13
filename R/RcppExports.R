@@ -241,8 +241,8 @@ cpp_laplace_fit_spde <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C
     .Call(`_tulpa_cpp_laplace_fit_spde`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable)
 }
 
-cpp_nested_laplace_spde <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu = 1.0, family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_spde`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu, family, phi, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable)
+cpp_nested_laplace_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu = 1.0, family = "gaussian", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu, family, phi, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, store_Q)
 }
 
 cpp_stochastic_log_determinant <- function(Q_x, Q_i, Q_p, n, n_probes = 30L, n_lanczos = 50L, seed = 42L) {
