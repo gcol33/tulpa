@@ -45,26 +45,26 @@ struct SpdeQBuilder {
               const Rcpp::IntegerVector& G1_p) {
         n_mesh = n;
 
-        // Detect orphan mesh nodes: zero (or near-zero) C0 mass AND no G1
-        // connectivity (no off-diagonal entries in column j AND zero on diag).
-        // These vertices come from upstream mesh refiners that emit Steiner
-        // points but fail to retriangulate (see tulpaMesh fix-mesh-zero-
-        // triangles for the FEM-side manifestation). Without a defensive
-        // ridge they leave all-zero rows in Q and the joint Hessian is
-        // non-PD even though the rest of the model is well-posed.
+        // Detect orphan mesh nodes: any vertex with zero (or near-zero) FEM
+        // mass. Two flavors land here:
+        //   1. Truly disconnected vertices (zero mass AND no G1 connectivity)
+        //      from upstream mesh refiners that emit Steiner points but fail
+        //      to retriangulate (see tulpaMesh fix-mesh-zero-triangles).
+        //   2. Zero-mass vertices that DO carry G1 connectivity (e.g. a
+        //      Steiner point on a constraint edge with degenerate incident-
+        //      triangle area). The SPDE precision Q = tau² (κ⁴C + 2κ²G + G C⁻¹G)
+        //      uses C⁻¹ in the GDG term, which is undefined where C_diag = 0:
+        //      the GDG contribution for that row silently zeros out, leaving
+        //      Q rank-deficient at the node. CHOLMOD then warns "not positive
+        //      definite" and the Newton solver makes no progress.
+        // The defensive fix in both flavors: place a unit precision ridge on
+        // the orphan diagonal so Q stays PD. A is built only from triangles
+        // with valid area, so the orphan latent has no likelihood weight and
+        // is effectively pinned at zero.
         const double c0_eps = 1e-15;
         std::vector<bool> is_orphan(n, false);
-        std::vector<bool> col_has_g(n, false);
-        for (int j = 0; j < n; j++) {
-            for (int idx = G1_p[j]; idx < G1_p[j + 1]; idx++) {
-                if (std::abs(G1_x[idx]) > c0_eps) {
-                    col_has_g[j] = true;
-                    break;
-                }
-            }
-        }
         for (int i = 0; i < n; i++) {
-            if (C0_diag[i] <= c0_eps && !col_has_g[i]) is_orphan[i] = true;
+            if (C0_diag[i] <= c0_eps) is_orphan[i] = true;
         }
 
         std::vector<double> c0_inv(n);
