@@ -166,7 +166,40 @@ public headers + ABI version bumps.
 
 ---
 
-## 2026-05-06 — `tulpa_run_ess_sampler` segfaults on the generic LikelihoodSpec layout
+## 2026-05-06 — `tulpa_run_ess_sampler` segfaults on the generic LikelihoodSpec layout — **RESOLVED 2026-05-13**
+
+**Resolution.** The two root causes named in the original entry below
+are both fixed in tulpa, verified by re-running the
+`dev_notes/smoke_day22_minimal.R` reproducer plus a direct
+`cpp_glmm_ess_fit` probe from tulpaGlmm.
+
+- `src/log_post_impl.h` was simplified to a thin generic-layout
+  dispatcher. The unconditional `&params[layout.legacy.beta_num_start]`
+  reads at the old lines 83–84 are gone. `compute_log_post_impl<T>`
+  now early-returns `T(0)` whenever
+  `data.n_processes == 0 || data.likelihood_spec == nullptr`, and
+  forwards to `compute_log_post_generic_spec_double` for `double`.
+- `src/ess_sampler.h::build_gaussian_priors` now walks
+  `layout.process_beta_start[k]..+process_beta_count[k]` for the β
+  block (lines ~223–240). Generic-layout β enters the ESS sampling
+  step correctly.
+
+**Downstream.** tulpaGlmm `R/ess.R::fit_ess` calls
+`cpp_glmm_ess_fit` directly; live regression suite in
+`tests/testthat/test-inference-ess.R` (15 assertions, all passing).
+The "blocked on upstream" stop in `R/ess.R` is removed. PLAN.md §5.5
+marked shipped.
+
+**Known follow-on (not blocking).** ESS can emit
+`"max shrinks without accepting"` warnings when the initial
+`log_sigma_*` is far from the posterior mode and the bracket
+collapses. Symptom is per-iter warnings, not divergence or wrong
+posterior. Candidate fix: a short ML-II pre-pass on `log_sigma_*`
+before handing off.
+
+---
+### Original entry (for context)
+
 
 **Surfaced by:** tulpaGlmm Day-22 (PG-Gibbs and VI shipped on Day-20/21;
 ESS was the next entry on PLAN.md §5.5).
