@@ -6,8 +6,6 @@
 #include "tulpa/likelihood.h"
 #include <Rcpp.h>
 
-using namespace Rcpp;
-
 namespace tulpa_hmc {
 
 #include "hmc_gradient_dispatch.h"

@@ -88,17 +88,10 @@
         }
       }
 
-      // Compute proposed Hamiltonian (use same log-post as gradient mode)
-      double log_prob_prop;
-      const bool is_generic = data.n_processes > 0 && data.likelihood_spec != nullptr;
-      if (!is_generic &&
-          (g_gradient_mode == GradientMode::AUTODIFF_ARENA ||
-          g_gradient_mode == GradientMode::AUTODIFF_FWD ||
-          g_gradient_mode == GradientMode::AUTODIFF_TAPE)) {
-        log_prob_prop = tulpa::compute_log_post_impl(q_prop, data, layout);
-      } else {
-        log_prob_prop = compute_log_post(q_prop, data, layout);
-      }
+      // Compute proposed Hamiltonian. After Phase D every caller is
+      // generic LikelihoodSpec, so compute_log_post forwards to the
+      // generic-spec evaluator (gcol33/tulpa#15).
+      double log_prob_prop = compute_log_post(q_prop, data, layout);
       double kinetic_prop = 0.0;
 
       if (use_lbfgs && lbfgs_initialized && !lbfgs_warmup_done && lbfgs_state.d == n_params) {

@@ -25,16 +25,10 @@
       result.divergent[sample_idx] = divergent ? 1 : 0;
       result.treedepth[sample_idx] = iter_treedepth;
 
-      // Collapsed: store mode values from the last gradient evaluation
-      if (data.gp_collapsed && data.has_gp && result.n_gp_collapsed > 0) {
-          collapsed_gp_store_sample(sample_idx, collapsed_gp_ws,
-              result.gp_w_star_flat, result.n_gp_collapsed);
-      }
-      if ((data.icar_collapsed || data.bym2_collapsed) && result.n_icar_collapsed > 0) {
-          collapsed_icar_store_sample(sample_idx, data, collapsed_icar_ws,
-              result.icar_phi_star_flat, result.bym2_theta_star_flat,
-              result.n_icar_collapsed);
-      }
+      // Collapsed-spatial mode storage was deleted in Phase D
+      // (gcol33/tulpa#15) along with the icar_collapsed / gp_collapsed
+      // kernels. Downstream packages on the generic LikelihoodSpec
+      // path never set those flags.
 
       sample_idx++;
     } else {

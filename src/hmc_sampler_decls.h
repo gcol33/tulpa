@@ -149,48 +149,15 @@ void compute_gradient(
     double* log_post_out = nullptr
 );
 
-void compute_gradient_numerical(
-    const std::vector<double>& params,
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::vector<double>& grad,
-    double* log_post_out = nullptr
-);
-
-void compute_gradient_numerical_impl(
-    const std::vector<double>& params,
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::vector<double>& grad,
-    double* log_post_out = nullptr
-);
-
-void compute_gradient_autodiff(
-    const std::vector<double>& params,
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::vector<double>& grad,
-    double* log_post_out = nullptr
-);
-
-void compute_gradient_arena(
-    const std::vector<double>& params,
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::vector<double>& grad,
-    double* log_post_out = nullptr
-);
-
-void compute_gradient_forward(
-    const std::vector<double>& params,
-    const ModelData& data,
-    const ParamLayout& layout,
-    std::vector<double>& grad,
-    double* log_post_out = nullptr
-);
-
-// Generic (multi-process) gradient drivers used by tulpa_hmc dispatch when
-// the model plugs a LikelihoodSpec. Defined in hmc_gradient_fallback.cpp.
+// Generic (multi-process) gradient drivers used by the dispatch when the
+// model plugs a LikelihoodSpec. Defined in hmc_gradient_fallback.cpp.
+//
+// Phase D simplification (gcol33/tulpa#15): the legacy ratio
+// numerical / autodiff / arena / forward fallbacks and the full set
+// of H-mode specialized kernels (composite, hsgp, gp / gp_collapsed,
+// icar_collapsed, msgp, svc, tvc, st, temporal_gp, ms_temporal,
+// latent) were removed along with the legacy entry points. Downstream
+// model packages must route through `data.likelihood_spec`.
 void compute_gradient_generic_numerical(
     const std::vector<double>& params,
     const ModelData& data,
@@ -206,66 +173,6 @@ void compute_gradient_generic_arena(
     std::vector<double>& grad,
     double* log_post_out = nullptr
 );
-
-// Compute ICAR quadratic form: phi' Q phi
-double icar_quadratic_form(
-    const std::vector<double>& phi,
-    const ModelData& data
-);
-
-// Specialized handcoded gradient functions and dispatch helpers.
-// Declared here so hmc_gradient_dispatch.h (compiled in a separate TU)
-// can reference them by address without seeing their definitions.
-void compute_gradient_svc_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_svc_hsgp_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_tvc_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_latent_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_ms_temporal_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_spatiotemporal_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_msgp_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_hsgp(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_msgp_hsgp(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-// compute_gradient_analytical / can_use_analytical_gradient removed in B2
-// (gcol33/tulpa#15): legacy ratio H-kernel ported to tulpaRatio FullGradFn.
-void compute_gradient_gp_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_gp_collapsed(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_icar_collapsed(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_gp_plus_temporal_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_temporal_gp_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_msgp_plus_temporal_handcoded(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
-void compute_gradient_composite(
-    const std::vector<double>&, const ModelData&, const ParamLayout&,
-    std::vector<double>&, double*);
 
 // Get RE value for observation (handles non-centered re_param=1 -> sigma*z transform).
 inline double re_value_for_eta(

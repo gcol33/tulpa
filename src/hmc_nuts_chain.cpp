@@ -16,8 +16,6 @@
 
 #include <Rcpp.h>
 
-#include "hmc_gp_collapsed.h"
-#include "hmc_icar_collapsed.h"
 #include "hmc_progress.h"
 #include "hmc_sampler.h"
 #include "log_post_impl.h"
@@ -25,8 +23,6 @@
 namespace tulpa_hmc {
 
 // g_gradient_mode is declared in hmc_sampler_decls.h.
-extern thread_local CollapsedGPWorkspace collapsed_gp_ws;
-extern thread_local CollapsedICARWorkspace collapsed_icar_ws;
 
 // =====================================================================
 // Run single HMC chain

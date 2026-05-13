@@ -1,119 +1,50 @@
 // hmc_gradient_dispatch.h
 // Gradient-mode dispatch policy for the HMC backend.
 //
-// Included from hmc_gradient_dispatch.cpp inside namespace tulpa_hmc, which
-// is the single reviewable home for the dispatch policy. Per-kernel support
-// contracts live in hmc_gradient_dispatch_predicates.h.
+// Phase D simplification (gcol33/tulpa#15): the only supported entry path
+// is the generic LikelihoodSpec interface (`n_processes > 0` plus a
+// non-null `data.likelihood_spec`). Legacy ratio (n_processes == 0)
+// dispatch was removed along with the entry points that produced that
+// ModelData shape; downstream packages route through `tulpa::LikelihoodSpec`.
+//
+// Included from hmc_gradient_dispatch.cpp inside namespace tulpa_hmc.
 
 #ifndef TULPA_HMC_GRADIENT_DISPATCH_H
 #define TULPA_HMC_GRADIENT_DISPATCH_H
 
-#include "hmc_gradient_dispatch_predicates.h"
-
-// Dispatch order is part of the HMC performance contract: honor explicit user
-// modes first, use the fastest safe hand-coded path for AUTO/H, and fall back
-// to arena autodiff or numerical gradients for model combinations whose
-// hand-coded implementations do not cover the full posterior.
-
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
-    // Generic multi-process models: route through generic gradient
-    if (data.n_processes > 0 && data.likelihood_spec != nullptr) {
-        const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
-
-        // Hand-coded full gradient hook (FullGradFn): the model package ships
-        // a tuned gradient that subsumes log-prior + log-likelihood. When set,
-        // it wins regardless of the requested mode unless the user explicitly
-        // asks for NUMERICAL (used for runtime gradient verification). The
-        // signature matches GradientFn exactly, so it plugs straight into the
-        // dispatcher with no wrapper.
-        if (spec->gradient_fn != nullptr && mode != GradientMode::NUMERICAL) {
-            return reinterpret_cast<GradientFn>(spec->gradient_fn);
-        }
-
-        // Use arena AD if model provides it. extra_prior is double-only, so
-        // routing through arena AD requires the model package to also ship
-        // an arena-AD variant (extra_prior_arena). When extra_prior is set
-        // without an arena variant, fall back to numerical so the prior
-        // gradient is correct (see tulpaGlmm regression on Day-5 family fits
-        // that drove this guard).
-        if (spec->ll_arena != nullptr &&
-            (spec->extra_prior == nullptr || spec->extra_prior_arena != nullptr)) {
-            return &compute_gradient_generic_arena;
-        }
-        return &compute_gradient_generic_numerical;
+    (void)layout;  // dispatcher is layout-agnostic after Phase D
+    if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
+        Rcpp::stop("tulpa: ModelData has n_processes == 0 — the legacy ratio "
+                   "dispatch path was removed in Phase D of the tulpaRatio "
+                   "migration (gcol33/tulpa#15). Downstream packages must "
+                   "populate `n_processes > 0` and `data.likelihood_spec` "
+                   "via the generic LikelihoodSpec interface.");
     }
 
-    // Collapsed ICAR/BYM2: spatial inner state (phi*, theta*) is marginalized
-    // and not in the param vector. compute_log_post_impl<T> can't autodiff
-    // through the inner Newton solve, so AUTODIFF modes would either return
-    // wrong gradients or crash on params[spatial_start=-1]. Redirect
-    // explicit AUTODIFF requests to the numerical reference; the H-mode
-    // analytical handler below remains the canonical fast path.
-    const bool is_collapsed = layout.is_icar_collapsed || layout.is_bym2_collapsed;
-    if (is_collapsed && (mode == GradientMode::AUTODIFF_TAPE ||
-                          mode == GradientMode::AUTODIFF_ARENA ||
-                          mode == GradientMode::AUTODIFF_FWD)) {
-        return &compute_gradient_numerical;
+    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+
+    // Hand-coded full gradient hook (FullGradFn): the model package ships a
+    // tuned gradient that subsumes log-prior + log-likelihood. When set, it
+    // wins regardless of the requested mode unless the user explicitly asks
+    // for NUMERICAL (used for runtime gradient verification). The signature
+    // matches GradientFn exactly, so it plugs straight into the dispatcher
+    // with no wrapper.
+    if (spec->gradient_fn != nullptr && mode != GradientMode::NUMERICAL) {
+        return reinterpret_cast<GradientFn>(spec->gradient_fn);
     }
 
-    // Explicit mode overrides
-    if (mode == GradientMode::NUMERICAL)
-        return &compute_gradient_numerical;
-    if (mode == GradientMode::AUTODIFF_TAPE)
-        return &compute_gradient_autodiff;
-    if (mode == GradientMode::AUTODIFF_ARENA)
-        return &compute_gradient_arena;
-    if (mode == GradientMode::AUTODIFF_FWD)
-        return &compute_gradient_forward;
+    // Arena AD path: requires the model package to ship an arena-AD log-lik
+    // and, if extra_prior is set, also an arena-AD prior variant. When
+    // extra_prior exists without an arena variant we cannot fold the prior
+    // gradient into the backward pass; fall back to central differences so
+    // the prior gradient is correct.
+    if (spec->ll_arena != nullptr &&
+        (spec->extra_prior == nullptr || spec->extra_prior_arena != nullptr)) {
+        return &compute_gradient_generic_arena;
+    }
 
-    // AUTO or HANDCODED: use fastest available (H > A_r > A > N).
-    // The legacy ratio analytical kernel (compute_gradient_analytical) was
-    // removed in B2 of the staged migration (see gcol33/tulpa#15); the ratio
-    // FullGradFn lives in tulpaRatio. Remaining n_processes == 0 fits fall
-    // through to the composite catch-all (or specialized H-kernels below).
-
-    // ZI/OI handled by composite for legacy ratio combos.
-    // Specialized H-mode functions do not handle ZI; skip them for ZI/OI models.
-    // ZOIB has a pre-existing gradient bug in the H-mode ZOIB residual code.
-    if (data.zi_type == tulpa_zi::ZIType::ZOIB)
-        return &compute_gradient_arena;
-    if (layout.has_zi || layout.has_oi)
-        return &compute_gradient_composite;
-
-    // Crossed intercept-only RE is not handled by composite for exotic configs.
-    if (has_exotic_feature(layout) && !layout.has_re_slopes && data.n_re_terms > 1)
-        return &compute_gradient_arena;
-
-    // TVC + latent is not covered by either specialized function.
-    if (layout.has_tvc && layout.has_latent)
-        return &compute_gradient_arena;
-
-    // ST interaction + AR1 temporal type: H and composite use IID fallback, while
-    // compute_log_post/log_post_impl return 0 prior for that case.
-    if (layout.has_spatiotemporal &&
-        data.spatiotemporal_data.temporal_type == TemporalType::AR1)
-        return &compute_gradient_arena;
-
-    // Specialized H-mode kernels (each predicate documents its support contract;
-    // see hmc_gradient_dispatch_predicates.h).
-    if (can_use_hsgp_handcoded(data, layout))           return &compute_gradient_hsgp;
-    if (can_use_gp_collapsed(data, layout))             return &compute_gradient_gp_collapsed;
-    if (can_use_icar_collapsed(layout))                 return &compute_gradient_icar_collapsed;
-    if (can_use_gp_handcoded(data, layout))             return &compute_gradient_gp_handcoded;
-    if (can_use_msgp_hsgp(data, layout))                return &compute_gradient_msgp_hsgp;
-    if (can_use_msgp_plus_temporal(data, layout))       return &compute_gradient_msgp_plus_temporal_handcoded;
-    if (can_use_msgp_handcoded(data, layout))           return &compute_gradient_msgp_handcoded;
-    if (can_use_gp_plus_temporal(layout))               return &compute_gradient_gp_plus_temporal_handcoded;
-    if (can_use_svc_hsgp_handcoded(data, layout))       return &compute_gradient_svc_hsgp_handcoded;
-    if (can_use_svc_handcoded(data, layout))            return &compute_gradient_svc_handcoded;
-    if (can_use_tvc_handcoded(data, layout))            return &compute_gradient_tvc_handcoded;
-    if (can_use_spatiotemporal_handcoded(data, layout)) return &compute_gradient_spatiotemporal_handcoded;
-    if (can_use_temporal_gp_handcoded(data, layout))    return &compute_gradient_temporal_gp_handcoded;
-    if (can_use_ms_temporal_handcoded(layout))          return &compute_gradient_ms_temporal_handcoded;
-    if (can_use_latent_handcoded(data, layout))         return &compute_gradient_latent_handcoded;
-
-    // Composite H-mode: catch-all for exotic multi-feature combinations.
-    return &compute_gradient_composite;
+    return &compute_gradient_generic_numerical;
 }
 
 #endif // TULPA_HMC_GRADIENT_DISPATCH_H

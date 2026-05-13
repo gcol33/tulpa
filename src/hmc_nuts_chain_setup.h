@@ -46,16 +46,10 @@
   if (use_nuts) {
     compute_gradient(q, data, layout, current_grad, &log_prob_current);
   } else {
-    // Use same log-post function as the active gradient mode
-    const bool is_generic = data.n_processes > 0 && data.likelihood_spec != nullptr;
-    if (!is_generic &&
-        (g_gradient_mode == GradientMode::AUTODIFF_ARENA ||
-        g_gradient_mode == GradientMode::AUTODIFF_FWD ||
-        g_gradient_mode == GradientMode::AUTODIFF_TAPE)) {
-      log_prob_current = tulpa::compute_log_post_impl(q, data, layout);
-    } else {
-      log_prob_current = compute_log_post(q, data, layout);
-    }
+    // After Phase D (gcol33/tulpa#15) every caller is generic LikelihoodSpec
+    // and compute_log_post forwards to compute_log_post_generic_spec_double,
+    // so the legacy autodiff-vs-H log-post split is no longer needed.
+    log_prob_current = compute_log_post(q, data, layout);
   }
 
   double epsilon = find_reasonable_epsilon(q, data, layout, rng);
