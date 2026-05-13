@@ -160,26 +160,10 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
             sprintf("#%d (draw %d)", k, s)
           })
         fit <- .fit_block_via_laplace(blocks[[k]], n_threads = 1L)
-        # Build the (beta, se) pair Rubin's pool consumes. tulpa_laplace
-        # returns mode = c(beta, RE_values...); pooling is over the
-        # fixed-effects block only (RE values are nuisance and aren't
-        # comparable across MC draws because the dummy RE indexing
-        # depends on the encoded block, not the latent structure).
-        n_fixed <- ncol(blocks[[k]]$X)
-        beta <- if (is.null(fit$mode) || length(fit$mode) < n_fixed) {
-          numeric(0)
-        } else {
-          fit$mode[seq_len(n_fixed)]
-        }
-        se <- if (!is.null(fit$H_beta) && length(beta) == n_fixed) {
-          tryCatch(sqrt(diag(solve(fit$H_beta)))[seq_len(n_fixed)],
-                   error = function(e) rep(NA_real_, n_fixed))
-        } else {
-          rep(NA_real_, length(beta))
-        }
-        fit$beta <- beta
-        fit$se <- se
-        fits_s[[k]] <- fit
+        # Pool over the fixed-effects block only — RE values aren't
+        # comparable across MC draws because RE indexing depends on the
+        # encoded block, not the latent structure. Shared with em_correction.R.
+        fits_s[[k]] <- .attach_beta_se(fit, n_fixed = ncol(blocks[[k]]$X))
       }
       fits_per_draw[[s]] <- fits_s
     }

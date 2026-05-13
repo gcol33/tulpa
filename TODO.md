@@ -323,12 +323,14 @@ the actual autodiff headers). Audit to confirm no fwd-decl drift creeps back
 in during future edits.
 
 ### 8. EM+Laplace — MI and Gibbs corrections
-**Where:** `R/em_laplace.R:241`.
-**State:** EM loop, per-submodel family/offset (#3), and `m_step_extra`
-callback (#4) all ship. Only the correction passes remain stubbed —
-`correction = "mi"/"gibbs"` raises a clear error today.
-**Missing:** MI correction (draw hard z from weights, refit, Rubin's pool)
-and Gibbs correction (warm-started z|θ → θ|z chain).
+**State:** SHIPPED 2026-05-13. `correction = "mi"` draws `n_imputations`
+hard z's from the converged posterior weights and pools per-block fits
+via `rubins_pool()`. `correction = "gibbs"` runs a warm-started
+`z|θ → θ|z` chain of length `n_gibbs` starting from the EM fits and
+pools the draws. Both paths share `.draw_z_default` (Bernoulli) with an
+override hook `draw_z` for multi-class latent structures, and reuse
+`.attach_beta_se` (also consumed by `tulpa_em_mc`). See
+`R/em_correction.R` and `tests/testthat/test-em-laplace.R`.
 
 ## P4 — Deferred (need decisions)
 

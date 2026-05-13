@@ -15,6 +15,7 @@ tulpa_em_laplace(
   correction = c("auto", "mi", "gibbs", "none"),
   n_imputations = 20L,
   n_gibbs = 10L,
+  draw_z = NULL,
   m_step_extra = NULL,
   verbose = TRUE,
   ...
@@ -57,13 +58,26 @@ API matches the published contract in CLAUDE.md.}
 parameter update is \code{(1 - d) * new + d * prev}, so \code{d = 0} is no
 damping. The same factor is applied to weights between iterations.}
 
-\item{correction}{Post-EM correction. Only \code{"none"} is implemented today;
-\code{"mi"} and \code{"gibbs"} raise an error pointing at this issue. \code{"auto"}
+\item{correction}{Post-EM correction. \code{"none"} returns the EM point
+estimate only. \code{"mi"} draws \code{n_imputations} independent hard \code{z} from
+the converged posterior weights P(z|y, theta_hat), refits each block
+on the hard z, and pools via \code{\link[=rubins_pool]{rubins_pool()}}. \code{"gibbs"} runs a
+warm-started \code{z|theta -> theta|z} Markov chain of length \code{n_gibbs}
+starting from the EM fits, also pooled via \code{\link[=rubins_pool]{rubins_pool()}}. \code{"auto"}
 resolves to \code{"none"}.}
 
-\item{n_imputations}{Reserved for MI correction.}
+\item{n_imputations}{Number of MI draws (default \code{20L}). Used when
+\code{correction = "mi"}.}
 
-\item{n_gibbs}{Reserved for Gibbs correction.}
+\item{n_gibbs}{Length of the Gibbs chain (default \code{10L}). Used when
+\code{correction = "gibbs"}.}
+
+\item{draw_z}{Optional function \verb{function(weights) -> hard_z} that
+turns the E-step's continuous weights into a hard latent draw. Used
+only by \code{correction \%in\% c("mi", "gibbs")}. The default treats
+\code{weights} as a numeric vector of Bernoulli probabilities and draws
+per-observation. Multi-class / matrix-valued latent structures must
+supply their own callback.}
 
 \item{m_step_extra}{Optional \verb{function(fits, weights, ...) -> fits}. Fired
 once per EM iteration, between the M-step and the next E-step. Receives
@@ -88,6 +102,12 @@ A list with:
 \item \code{converged} — logical.
 \item \code{history} — \code{data.frame(iter, delta)} of max relative parameter
 change per iteration.
+\item \code{correction} — the resolved correction mode (\code{"none"}, \code{"mi"},
+or \code{"gibbs"}).
+\item \code{pooled} — present when \code{correction \%in\% c("mi", "gibbs")}.
+Named list of pooled per-submodel summaries from \code{\link[=rubins_pool]{rubins_pool()}}.
+\item \code{draws} — present when \code{correction \%in\% c("mi", "gibbs")}.
+List of per-draw fits with \code{beta} / \code{se} attached.
 }
 }
 \description{

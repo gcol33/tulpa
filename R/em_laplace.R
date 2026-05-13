@@ -195,11 +195,23 @@
 #' @param damping EM damping factor in `[0, 1)`. With `damping = d`, the
 #'   parameter update is `(1 - d) * new + d * prev`, so `d = 0` is no
 #'   damping. The same factor is applied to weights between iterations.
-#' @param correction Post-EM correction. Only `"none"` is implemented today;
-#'   `"mi"` and `"gibbs"` raise an error pointing at this issue. `"auto"`
+#' @param correction Post-EM correction. `"none"` returns the EM point
+#'   estimate only. `"mi"` draws `n_imputations` independent hard `z` from
+#'   the converged posterior weights P(z|y, theta_hat), refits each block
+#'   on the hard z, and pools via [rubins_pool()]. `"gibbs"` runs a
+#'   warm-started `z|theta -> theta|z` Markov chain of length `n_gibbs`
+#'   starting from the EM fits, also pooled via [rubins_pool()]. `"auto"`
 #'   resolves to `"none"`.
-#' @param n_imputations Reserved for MI correction.
-#' @param n_gibbs Reserved for Gibbs correction.
+#' @param n_imputations Number of MI draws (default `20L`). Used when
+#'   `correction = "mi"`.
+#' @param n_gibbs Length of the Gibbs chain (default `10L`). Used when
+#'   `correction = "gibbs"`.
+#' @param draw_z Optional function `function(weights) -> hard_z` that
+#'   turns the E-step's continuous weights into a hard latent draw. Used
+#'   only by `correction %in% c("mi", "gibbs")`. The default treats
+#'   `weights` as a numeric vector of Bernoulli probabilities and draws
+#'   per-observation. Multi-class / matrix-valued latent structures must
+#'   supply their own callback.
 #' @param m_step_extra Optional `function(fits, weights, ...) -> fits`. Fired
 #'   once per EM iteration, between the M-step and the next E-step. Receives
 #'   the freshly assembled list of [tulpa_laplace()] results (`fits`), the
@@ -220,6 +232,12 @@
 #'   \item `converged` — logical.
 #'   \item `history` — `data.frame(iter, delta)` of max relative parameter
 #'     change per iteration.
+#'   \item `correction` — the resolved correction mode (`"none"`, `"mi"`,
+#'     or `"gibbs"`).
+#'   \item `pooled` — present when `correction %in% c("mi", "gibbs")`.
+#'     Named list of pooled per-submodel summaries from [rubins_pool()].
+#'   \item `draws` — present when `correction %in% c("mi", "gibbs")`.
+#'     List of per-draw fits with `beta` / `se` attached.
 #' }
 #'
 #' @export
@@ -228,6 +246,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
                               max_iter = 50L, tol = 1e-4, damping = 0.3,
                               correction = c("auto", "mi", "gibbs", "none"),
                               n_imputations = 20L, n_gibbs = 10L,
+                              draw_z = NULL,
                               m_step_extra = NULL,
                               verbose = TRUE, ...) {
   correction <- match.arg(correction)
@@ -237,14 +256,23 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     stop("`m_step_extra` must be NULL or a function(fits, weights, ...).",
          call. = FALSE)
   }
-
-  # TODO(gcol33/tulpa): implement MI and Gibbs corrections.
-  # MI: draw hard z from weights, refit blocks unweighted, pool via
-  # rubins_pool(). Gibbs: warm-started Markov chain z|theta -> theta|z.
-  if (correction %in% c("mi", "gibbs")) {
-    stop(sprintf("correction = '%s' is not yet implemented", correction),
-         call. = FALSE)
+  if (!is.null(draw_z) && !is.function(draw_z)) {
+    stop("`draw_z` must be NULL or a function(weights).", call. = FALSE)
   }
+  if (correction == "mi") {
+    n_imputations <- as.integer(n_imputations)
+    if (length(n_imputations) != 1L || is.na(n_imputations) ||
+        n_imputations < 1L) {
+      stop("`n_imputations` must be a positive integer.", call. = FALSE)
+    }
+  }
+  if (correction == "gibbs") {
+    n_gibbs <- as.integer(n_gibbs)
+    if (length(n_gibbs) != 1L || is.na(n_gibbs) || n_gibbs < 1L) {
+      stop("`n_gibbs` must be a positive integer.", call. = FALSE)
+    }
+  }
+  draw_z_fn <- if (is.null(draw_z)) .draw_z_default else draw_z
 
   if (!is.function(e_step)) {
     stop("`e_step` must be a function", call. = FALSE)
@@ -340,13 +368,49 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     }
   }
 
-  list(
-    fits      = fits,
-    weights   = weights,
-    n_iter    = iter,
-    converged = converged,
-    history   = history
+  result <- list(
+    fits       = fits,
+    weights    = weights,
+    n_iter     = iter,
+    converged  = converged,
+    history    = history,
+    correction = correction
   )
+
+  if (correction == "mi") {
+    if (verbose) {
+      cat(sprintf("  Running MI correction with %d imputations\n",
+                  n_imputations))
+    }
+    mi <- .mi_correction(
+      weights        = weights,
+      m_step_encode  = m_step_encode,
+      draw_z         = draw_z_fn,
+      n_imputations  = n_imputations,
+      verbose        = verbose,
+      ...
+    )
+    result$pooled <- mi$pooled
+    result$draws  <- mi$draws
+  } else if (correction == "gibbs") {
+    if (verbose) {
+      cat(sprintf("  Running Gibbs correction with %d steps\n", n_gibbs))
+    }
+    gibbs <- .gibbs_correction(
+      initial_fits   = fits,
+      e_step         = e_step,
+      m_step_encode  = m_step_encode,
+      draw_z         = draw_z_fn,
+      n_gibbs        = n_gibbs,
+      m_step_extra   = m_step_extra,
+      verbose        = verbose,
+      ...
+    )
+    result$pooled <- gibbs$pooled
+    result$draws  <- gibbs$draws
+  }
+
+  result
 }
 
 

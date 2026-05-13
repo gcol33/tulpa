@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+* feat: EM+Laplace MI and Gibbs corrections. `tulpa_em_laplace()` gains two
+  post-EM correction modes (`correction = "mi"` / `"gibbs"`) that replace
+  the previous "not yet implemented" stub. MI draws `n_imputations` hard
+  `z`'s from the converged posterior weights `P(z|y, theta_hat)`, refits
+  each block on the hard draws, and pools per-submodel coefficients via
+  `rubins_pool()`. Gibbs runs a warm-started `z|theta -> theta|z` Markov
+  chain of length `n_gibbs` starting from the EM fits — every step
+  refreshes weights via the user's `e_step`, draws hard z, refits — and
+  pools the chain via Rubin's rules. The fixed-effect `(beta, se)`
+  extraction is now a shared helper (`.attach_beta_se`) consumed by both
+  the new corrections and the existing `tulpa_em_mc()` MCEM driver, so
+  there is one source of truth for "Laplace fit -> Rubin pool input".
+  Bernoulli is the default per-observation hard-z draw; multi-class
+  latent structures supply their own via the new `draw_z` callback.
+  Return shape gains `correction`, `pooled`, and `draws` fields when a
+  correction is requested. No ABI bump (R-side only); closes
+  `TODO.md` P3.8.
+
 * feat: ABI v14 — SPDE nested-Laplace upgraded to the v10-style universal
   shim (store_modes, store_Q, paired range/sigma grids, formula-side iid-RE
   block). Replaces the v0 `cpp_nested_laplace_spde` entry and folds the
