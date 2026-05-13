@@ -216,28 +216,17 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
 ) {
     std::vector<GaussianPrior> priors;
 
-    // Fixed effects: beta ~ N(0, sigma_beta^2).
-    // Generic multi-process: walk every process's β block. Legacy ratio:
-    // walk the numerator + denominator blocks. Each process's β slice is
-    // [process_beta_start[k], process_beta_start[k] + process_beta_count[k]);
-    // the legacy slice is [legacy.beta_*_start, legacy.beta_*_end). All
-    // β's share one Gaussian-prior block because they share data.sigma_beta.
+    // Fixed effects: beta ~ N(0, sigma_beta^2). Walk every process's
+    // β block; the slice for process k is
+    // [process_beta_start[k], process_beta_start[k] + process_beta_count[k]).
+    // All β's share one Gaussian-prior block (single data.sigma_beta).
     {
         GaussianPrior prior;
-        if (data.n_processes > 0) {
-            for (int k = 0; k < data.n_processes; k++) {
-                const int start = layout.process_beta_start[k];
-                const int count = layout.process_beta_count[k];
-                for (int j = 0; j < count; j++) {
-                    prior.param_indices.push_back(start + j);
-                }
-            }
-        } else {
-            for (int j = layout.legacy.beta_num_start; j < layout.legacy.beta_num_end; j++) {
-                prior.param_indices.push_back(j);
-            }
-            for (int j = layout.legacy.beta_denom_start; j < layout.legacy.beta_denom_end; j++) {
-                prior.param_indices.push_back(j);
+        for (int k = 0; k < data.n_processes; k++) {
+            const int start = layout.process_beta_start[k];
+            const int count = layout.process_beta_count[k];
+            for (int j = 0; j < count; j++) {
+                prior.param_indices.push_back(start + j);
             }
         }
 
@@ -355,18 +344,11 @@ inline std::vector<int> get_non_gaussian_params(
         non_gaussian.push_back(layout.log_sigma_re_idx);
     }
 
-    // Overdispersion-style scalars: legacy ratio exposes log_phi_num / log_phi_denom;
-    // generic LikelihoodSpec models pack model-specific extras (e.g. log_phi for a
-    // GLMM family, log_sigma for Gaussian) into a contiguous block at extra_offset.
-    // Both populate non_gaussian here so RWMH walks them; the inner-block
-    // identity is owned by the model package (legacy ratio) or by the
-    // LikelihoodSpec author (generic), so this loop is parameterization-agnostic.
-    if (layout.legacy.has_phi_num && layout.legacy.log_phi_num_idx >= 0) {
-        non_gaussian.push_back(layout.legacy.log_phi_num_idx);
-    }
-    if (layout.legacy.has_phi_denom && layout.legacy.log_phi_denom_idx >= 0) {
-        non_gaussian.push_back(layout.legacy.log_phi_denom_idx);
-    }
+    // Overdispersion-style scalars: generic LikelihoodSpec models pack
+    // model-specific extras (e.g. log_phi for a GLMM family, log_sigma
+    // for Gaussian) into a contiguous block at layout.extra_offset.
+    // The inner-block identity is owned by the LikelihoodSpec author,
+    // so this loop is parameterization-agnostic.
     if (layout.extra_offset >= 0 && layout.n_extra_params > 0) {
         for (int j = 0; j < layout.n_extra_params; j++) {
             non_gaussian.push_back(layout.extra_offset + j);

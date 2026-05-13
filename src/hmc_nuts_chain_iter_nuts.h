@@ -499,89 +499,21 @@
             epsilon = da.final_epsilon();
           }
 
-          // Precision-informed diagonal mass for ST_IV at warmup end.
-          // Build Q_post = tau*(Q_s?Q_t) + diag(h_lik), factorize, extract diag(Q^{-1}).
-          if (mass.sparse_gmrf.active && !mass.sparse_gmrf.factorized) {
-            int st_S = data.spatiotemporal_data.n_spatial;
-            int st_T = data.spatiotemporal_data.n_times;
-            int ST = st_S * st_T;
-            double tau_st = std::exp(q[layout.log_tau_st_idx]);
-
-            // Compute likelihood Hessian diagonal for each ST cell
-            std::vector<double> h_lik(ST, 0.0);
-            for (int i = 0; i < data.N; i++) {
-              if (data.spatiotemporal_data.st_flat[i] <= 0) continue;
-              int k = data.spatiotemporal_data.st_flat[i] - 1;
-              double eta_i = 0.0;
-              for (int p2 = 0; p2 < data.legacy.p_num; p2++)
-                eta_i += data.legacy.X_num_flat[static_cast<size_t>(i) * data.legacy.p_num + p2] * q[layout.legacy.beta_num_start + p2];
-              if (layout.has_re && data.re_group[i] > 0)
-                eta_i += re_value_for_eta(&q[layout.re_start], data.re_group[i] - 1,
-                                           std::exp(q[layout.log_sigma_re_idx]), data.re_parameterization);
-              if (layout.has_spatial && data.spatial_group[i] > 0)
-                eta_i += q[layout.spatial_start + data.spatial_group[i] - 1];
-              if (layout.has_temporal && !data.temporal_time_idx.empty() &&
-                  i < (int)data.temporal_time_idx.size() && data.temporal_time_idx[i] > 0) {
-                int t_idx = data.temporal_time_idx[i] - 1;
-                int g_idx = data.temporal_group_idx[i] - 1;
-                int t_base = g_idx * data.n_times + t_idx;
-                if (t_base >= 0 && t_base < (int)q.size()) eta_i += q[layout.temporal_start + t_base];
-              }
-              eta_i += q[layout.st_delta_start + k];
-              double mu_i = std::exp(eta_i);
-              double h_i = 0.0;
-              if (data.legacy.model_type == ModelType::POISSON_GAMMA) {
-                h_i = mu_i;
-              } else if (data.legacy.model_type == ModelType::BINOMIAL) {
-                double p_i = 1.0 / (1.0 + std::exp(-eta_i));
-                h_i = data.legacy.y_denom[i] * p_i * (1.0 - p_i);
-              } else if (data.legacy.model_type == ModelType::NEGBIN_NEGBIN ||
-                         data.legacy.model_type == ModelType::NEGBIN_GAMMA) {
-                double phi = std::exp(q[layout.legacy.log_phi_num_idx]);
-                h_i = mu_i / (1.0 + mu_i / phi);
-              } else {
-                h_i = mu_i;
-              }
-              if (data.spatiotemporal_data.shared) h_i *= 2.0;
-              h_lik[k] += std::max(h_i, 1e-6);
-            }
-
-            mass.sparse_gmrf.build_and_factorize(
-                data.spatiotemporal_data.adj_row_ptr,
-                data.spatiotemporal_data.adj_col_idx,
-                data.spatiotemporal_data.temporal_type,
-                data.spatiotemporal_data.temporal_cyclic,
-                tau_st, h_lik.data(), 0.001
-            );
-
-            if (mass.sparse_gmrf.factorized) {
-              // Extract diag(Q^{-1}) and set diagonal mass for ST params
-              int n_set = 0;
-              double sum_var = 0.0;
-              for (int k = 0; k < ST; k++) {
-                Eigen::VectorXd ek = Eigen::VectorXd::Zero(ST);
-                ek[k] = 1.0;
-                Eigen::VectorXd col_k = mass.sparse_gmrf.llt.solve(ek);
-                double var_k = col_k[k];
-                if (var_k > 1e-10 && var_k < 100.0) {
-                  mass.inv_mass_diag[layout.st_delta_start + k] = var_k;
-                  n_set++;
-                  sum_var += var_k;
-                }
-              }
-              // Deactivate sparse GMRF ? diagonal mass is now informed
-              mass.sparse_gmrf.active = false;
-              // Recompute epsilon with new mass
-              epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-              da = DualAveraging(epsilon, n_params, target_boost);
-              if (use_nuts) da.target_accept = nuts_target_accept;
-              epsilon = da.final_epsilon();
-              if (verbose) {
-                REprintf("  [SPARSE_GMRF] Diagonal mass set for %d/%d ST params, avg_var=%.6f, tau=%.4f, new epsilon=%.6f\n",
-                         n_set, ST, n_set > 0 ? sum_var / n_set : 0.0, tau_st, epsilon);
-              }
-            } else if (verbose) {
-              REprintf("  [SPARSE_GMRF] WARNING: Cholesky failed, keeping adapted diagonal mass\n");
+          // Precision-informed diagonal mass for ST_IV was built from
+          // data.legacy.model_type + data.legacy.X_num_flat in the legacy
+          // ratio path. Phase D (gcol33/tulpa#15) removed those fields;
+          // re-enabling the override for the generic LikelihoodSpec path
+          // means routing per-observation likelihood Hessians through
+          // spec->eta_weights_fn (the IRLS callback already used by
+          // laplace_mode_spec_dense). Until that wiring lands, deactivate
+          // the sparse GMRF block so ST_IV chains fall back to the
+          // adapted DIAG mass matrix (one warmup-end no-op per chain).
+          if (mass.sparse_gmrf.active) {
+            mass.sparse_gmrf.active = false;
+            if (verbose) {
+              REprintf("  [SPARSE_GMRF] ST_IV precision-informed mass override "
+                       "disabled in Phase D (gcol33/tulpa#15); using adapted "
+                       "diagonal mass.\n");
             }
           }
 

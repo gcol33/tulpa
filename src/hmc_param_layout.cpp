@@ -13,26 +13,19 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // ================================================================
   // GENERIC MULTI-PROCESS LAYOUT
   // ================================================================
-  if (data.n_processes > 0) {
-    layout.process_beta_start.resize(data.n_processes);
-    layout.process_beta_count.resize(data.n_processes);
-    for (int k = 0; k < data.n_processes; k++) {
-      layout.process_beta_start[k] = idx;
-      layout.process_beta_count[k] = data.processes[k].p;
-      idx += data.processes[k].p;
-    }
-    // Legacy fields unused but set to safe values
-    layout.legacy.beta_num_start = layout.legacy.beta_num_end = 0;
-    layout.legacy.beta_denom_start = layout.legacy.beta_denom_end = 0;
-  } else {
-    // Legacy ratio layout
-    layout.legacy.beta_num_start = idx;
-    idx += data.legacy.p_num;
-    layout.legacy.beta_num_end = idx;
-
-    layout.legacy.beta_denom_start = idx;
-    idx += data.legacy.p_denom;
-    layout.legacy.beta_denom_end = idx;
+  // Phase D (gcol33/tulpa#15): the legacy ratio (n_processes == 0)
+  // branch was removed along with the cpp_hmc_fit entry point.
+  if (data.n_processes == 0) {
+    Rcpp::stop("tulpa: compute_param_layout requires n_processes > 0. "
+               "The legacy ratio path was removed in Phase D "
+               "(gcol33/tulpa#15).");
+  }
+  layout.process_beta_start.resize(data.n_processes);
+  layout.process_beta_count.resize(data.n_processes);
+  for (int k = 0; k < data.n_processes; k++) {
+    layout.process_beta_start[k] = idx;
+    layout.process_beta_count[k] = data.processes[k].p;
+    idx += data.processes[k].p;
   }
 
   // Random effects (supports multiple crossed RE terms with slopes)
@@ -142,33 +135,14 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.re_start = layout.re_end = -1;
   }
 
-  // Overdispersion / shape / sigma parameters
-  // NEGBIN_NEGBIN: phi_num (overdispersion for num), phi_denom (overdispersion for denom)
-  // POISSON_GAMMA: phi_denom (shape for gamma denom)
-  // GAMMA_GAMMA: phi_num (shape for num), phi_denom (shape for denom)
-  // LOGNORMAL: phi_num (sigma for num), phi_denom (sigma for denom)
-  // BETA_BINOMIAL: phi_num (precision parameter)
-  layout.legacy.has_phi_num = (data.legacy.model_type == ModelType::NEGBIN_NEGBIN ||
-                        data.legacy.model_type == ModelType::NEGBIN_GAMMA ||
-                        data.legacy.model_type == ModelType::GAMMA_GAMMA ||
-                        data.legacy.model_type == ModelType::LOGNORMAL ||
-                        data.legacy.model_type == ModelType::BETA_BINOMIAL);
-  layout.legacy.has_phi_denom = (data.legacy.model_type == ModelType::NEGBIN_NEGBIN ||
-                          data.legacy.model_type == ModelType::POISSON_GAMMA ||
-                          data.legacy.model_type == ModelType::NEGBIN_GAMMA ||
-                          data.legacy.model_type == ModelType::GAMMA_GAMMA ||
-                          data.legacy.model_type == ModelType::LOGNORMAL);
-
-  if (layout.legacy.has_phi_num) {
-    layout.legacy.log_phi_num_idx = idx++;
-  } else {
-    layout.legacy.log_phi_num_idx = -1;
-  }
-  if (layout.legacy.has_phi_denom) {
-    layout.legacy.log_phi_denom_idx = idx++;
-  } else {
-    layout.legacy.log_phi_denom_idx = -1;
-  }
+  // Overdispersion / shape / sigma parameters used to live here as
+  // layout.legacy.log_phi_num_idx / log_phi_denom_idx, allocated based
+  // on the legacy ratio ModelType (NEGBIN_NEGBIN / POISSON_GAMMA /
+  // GAMMA_GAMMA / LOGNORMAL / BETA_BINOMIAL). After Phase D
+  // (gcol33/tulpa#15) those scalars are owned by the model package's
+  // LikelihoodSpec: the package packs them into a contiguous block at
+  // layout.extra_offset (length spec->n_extra_params), allocated at
+  // the bottom of this function.
 
   // Spatial effects (ICAR/BYM2/CAR_PROPER only - GP handled separately below)
   layout.has_spatial = (data.spatial_type == SpatialType::ICAR ||

@@ -24,40 +24,30 @@ namespace tulpa {
 //
 // Sentinel: a block that is absent has `start == end == -1`.
 //
-// Legacy ratio layout:
-//   [beta_num | beta_denom | log_sigma_re? | re? | phi_num? | phi_denom? |
-//    spatial? | temporal? | zi? | oi? | svc? | gp? | hsgp? | latent? | st? | tvc?]
-//
 // Generic multi-process layout:
 //   [process_0_beta | process_1_beta | ... | re_params | spatial_params |
 //    temporal_params | svc_params | tvc_params | st_params | zi_params |
 //    oi_params | latent_params | model_extra_params]
+//
+// The legacy ratio sub-layout (LegacyRatioLayout: beta_num_start /
+// beta_denom_start / log_phi_num_idx / log_phi_denom_idx /
+// has_phi_num / has_phi_denom) was removed in Phase D of the tulpaRatio
+// migration (gcol33/tulpa#15) along with its consumers in tulpa. Ratio
+// models live in tulpaRatio and ride the generic LikelihoodSpec
+// interface; model-specific scalars now sit in the extra-parameter
+// block at extra_offset.
 // ============================================================================
 struct ParamLayout {
     int total_params = 0;
 
     // ================================================================
     // GENERIC MULTI-PROCESS LAYOUT
-    // Used when n_processes > 0 in ModelData.
+    // Always used (the legacy ratio branch was removed in Phase D).
     // ================================================================
     std::vector<int> process_beta_start;
     std::vector<int> process_beta_count;
     int extra_offset = -1;          // Model-specific extra parameters
     int n_extra_params = 0;
-
-    // ================================================================
-    // LEGACY RATIO-SPECIFIC LAYOUT
-    // Used only when n_processes == 0. Will move to numdenom.
-    // Access via layout.legacy.beta_num_start, etc.
-    // ================================================================
-    struct LegacyRatioLayout {
-        int beta_num_start = -1, beta_num_end = -1;
-        int beta_denom_start = -1, beta_denom_end = -1;
-        int log_phi_num_idx = -1;
-        int log_phi_denom_idx = -1;
-        bool has_phi_num = false;
-        bool has_phi_denom = false;
-    } legacy;
 
     // ================================================================
     // RANDOM EFFECTS

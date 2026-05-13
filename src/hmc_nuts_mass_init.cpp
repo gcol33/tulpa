@@ -147,25 +147,15 @@ MassMatrixConfig select_and_init_mass_matrix(
       }
     }
 
-    // NB phi params: overdispersion params are often correlated
-    // A 2?2 block captures their joint curvature cheaply (4 extra multiplies/step)
-    if (layout.legacy.has_phi_num && layout.legacy.has_phi_denom &&
-        layout.legacy.log_phi_denom_idx == layout.legacy.log_phi_num_idx + 1) {
-      block_specs.push_back({layout.legacy.log_phi_num_idx, 2});
-    }
-
-    // First check if model needs full DENSE (before block decision)
-    // NB+ICAR: NegBin's digamma curvature creates strong correlations between
-    // spatial phi params and overdispersion that BLOCK_DIAG's small blocks can't
-    // capture. DENSE mass doubles the step size, cutting treedepth from 8-9 to 5-6,
-    // which more than pays for the O(n?) per-step cost at p~108.
-    // GP_t: NC z-sigma2-phi funnel creates erratic treedepth (2-10) with DIAG.
-    // At p?50, DENSE overhead is negligible.
-    bool is_nb_family = (data.legacy.model_type == ModelType::NEGBIN_NEGBIN ||
-                         data.legacy.model_type == ModelType::NEGBIN_GAMMA);
+    // Family-specific overdispersion block-spec heuristics used to live
+    // here, driven by layout.legacy.has_phi_num/denom and
+    // data.legacy.model_type. Phase D (gcol33/tulpa#15) removed those
+    // fields; downstream LikelihoodSpec packages ship their own
+    // extra-parameter blocks via spec->n_extra_params at
+    // layout.extra_offset. A future revision can re-introduce the
+    // family-specific BLOCK_DIAG heuristic via a LikelihoodSpec callback
+    // (e.g. spec->suggest_mass_blocks).
     bool is_icar = (data.spatial_type == SpatialType::ICAR);
-    bool is_binomial_family = (data.legacy.model_type == ModelType::BINOMIAL ||
-                              data.legacy.model_type == ModelType::BETA_BINOMIAL);
     // HSGP+temporal: 36 HSGP basis coefs and 20 temporal effects have complex
     // cross-correlations that DIAG can't handle (106 div) and BLOCK_DIAG misses
     // (16 div, eps~0.006). DENSE with eigenvalue conditioning captures the geometry
@@ -176,10 +166,13 @@ MassMatrixConfig select_and_init_mass_matrix(
     bool hsgp_temporal = layout.is_hsgp && data.has_hsgp && n_params <= DENSE_MAX_PARAMS &&
                          (layout.has_temporal || layout.has_tvc || layout.has_multiscale_temporal);
 
-    bool needs_full_dense = layout.has_latent ||  // N?K latent factors
-                            hsgp_temporal ||  // HSGP+temporal cross-correlations
-                            (is_nb_family && is_icar && n_params <= DENSE_MAX_PARAMS) ||  // NB+ICAR
-                            (is_binomial_family && is_icar && n_params <= DENSE_MAX_PARAMS);  // Bin+ICAR
+    // Family + ICAR heuristics (NB+ICAR, Bin+ICAR forcing DENSE) used to
+    // live here, gated on legacy ModelType. Phase D (gcol33/tulpa#15)
+    // removed the family enum; the ICAR+family pairing would need to be
+    // re-expressed through a LikelihoodSpec hint to come back.
+    bool needs_full_dense = layout.has_latent ||  // N×K latent factors
+                            hsgp_temporal ||      // HSGP+temporal cross-correlations
+                            (is_icar && n_params <= DENSE_MAX_PARAMS);
 
     // HSGP-only (no temporal): DIAG outperforms BLOCK_DIAG (29k LF/6 div vs 39k LF/15 div).
     // HSGP-only (no temporal): DIAG outperforms BLOCK_DIAG (29k LF/6 div vs
@@ -259,10 +252,10 @@ MassMatrixConfig select_and_init_mass_matrix(
         layout.log_phi_st_time_idx == layout.log_phi_st_space_idx + 1) {
       block_specs.push_back({layout.log_phi_st_space_idx, 2});
     }
-    if (layout.legacy.has_phi_num && layout.legacy.has_phi_denom &&
-        layout.legacy.log_phi_denom_idx == layout.legacy.log_phi_num_idx + 1) {
-      block_specs.push_back({layout.legacy.log_phi_num_idx, 2});
-    }
+    // Legacy ratio overdispersion pair (log_phi_num, log_phi_denom) used
+    // to add a 2x2 block here; both indices moved into the LikelihoodSpec
+    // extra-parameter block in Phase D (gcol33/tulpa#15).
+
     // If still no blocks found, fall back to DIAG
     if (block_specs.empty()) {
       effective_metric = MassMatrixType::DIAG;

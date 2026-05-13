@@ -19,7 +19,7 @@ namespace tulpa {
 // has its first tagged release. Until then this stays at 1; downstream
 // packages should be rebuilt against the current tulpa source.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 12;
+constexpr int TULPA_ABI_VERSION = 13;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -70,20 +70,20 @@ struct SharingSpec {
 // ModelData: the core data container passed to all samplers
 //
 // STABILITY CONTRACT:
-//   - Generic multi-process fields (n_processes, processes, model_response_data,
-//     likelihood_spec, sharing) are STABLE. Model packages depend on them.
-//   - Shared infrastructure fields (spatial, temporal, RE, GP, etc.) are STABLE.
-//     They are used by both generic and legacy paths.
-//   - Legacy ratio fields (y_num, y_denom, X_num/denom_flat, p_num/p_denom,
-//     model_type) are DEPRECATED — used only when n_processes == 0.
-//     They will move to numdenom when it is rebuilt on tulpa.
+//   - Generic multi-process fields (n_processes, processes,
+//     model_response_data, likelihood_spec, sharing) are STABLE.
+//     Model packages depend on them.
+//   - Shared infrastructure fields (spatial, temporal, RE, GP, etc.)
+//     are STABLE.
+//   - n_processes > 0 is the ONLY supported configuration. The legacy
+//     ratio sub-struct (LegacyRatioData: y_num, y_denom, X_num/denom_flat,
+//     p_num/p_denom, model_type) was removed in Phase D of the
+//     tulpaRatio migration (gcol33/tulpa#15). Ratio models route through
+//     tulpaRatio's LikelihoodSpec.
 //
 // LAYOUT RULE: New fields go in the appropriate stable section.
 //   Never insert fields before existing ones — append within sections.
 //   Bump TULPA_ABI_VERSION when any field is added, removed, or reordered.
-//
-// When n_processes > 0, the generic multi-process interface is active.
-// When n_processes == 0, the legacy ratio interface is used.
 // ============================================================================
 struct ModelData {
     // Unique ID for cache invalidation (incremented per construction)
@@ -96,9 +96,8 @@ struct ModelData {
 
     // ================================================================
     // GENERIC MULTI-PROCESS INTERFACE
-    // Model packages set these instead of the legacy ratio fields.
     // ================================================================
-    int n_processes = 0;  // 0 = legacy ratio mode, >0 = generic multi-process
+    int n_processes = 0;  // Must be > 0 after Phase D (gcol33/tulpa#15).
     std::vector<ProcessData> processes;
     void* model_response_data = nullptr;  // Opaque — owned by model package
     const void* likelihood_spec = nullptr; // Points to LikelihoodSpec (owned by caller)
@@ -108,23 +107,6 @@ struct ModelData {
     // DIMENSIONS
     // ================================================================
     int N = 0;  // Number of observations
-
-    // ================================================================
-    // LEGACY RATIO-SPECIFIC FIELDS
-    // Used only when n_processes == 0. Will move to numdenom.
-    // Access via data.legacy.y_num, data.legacy.model_type, etc.
-    // ================================================================
-    struct LegacyRatioData {
-        std::vector<int> y_num;
-        std::vector<int> y_denom;
-        std::vector<double> y_num_cont;     // Continuous numerator (gamma_gamma, lognormal)
-        std::vector<double> y_denom_cont;   // Continuous denominator
-        std::vector<double> X_num_flat;     // Numerator design matrix [N x p_num], row-major
-        std::vector<double> X_denom_flat;   // Denominator design matrix [N x p_denom], row-major
-        int p_num = 0;
-        int p_denom = 0;
-        ModelType model_type = ModelType::BINOMIAL;
-    } legacy;
 
     // ================================================================
     // RANDOM EFFECTS
