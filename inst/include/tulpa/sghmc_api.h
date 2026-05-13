@@ -1,5 +1,5 @@
 // sghmc_api.h
-// Cross-package SGHMC / SGLD API for model packages (tulpaGlmm, tulpaOcc).
+// Cross-package SGHMC / SGLD API for model packages (tulpaGlmm, tulpaObs).
 //
 // Both samplers share the NUTS-style ModelData + ParamLayout interface
 // (see nuts_api.h). The model package builds a populated ModelData and

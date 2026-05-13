@@ -7,7 +7,7 @@ General-purpose Bayesian hierarchical modelling engine. Extracted from numdenom.
 Three-package ecosystem:
 - **tulpa**: Engine — samplers, autodiff, spatial, temporal, priors, formula infrastructure
 - **numdenom**: Ratio models (Depends: tulpa)
-- **tulpaOcc**: Occupancy models (Depends: tulpa)
+- **tulpaObs**: Occupancy models (Depends: tulpa)
 
 Model packages plug likelihoods into tulpa via `LikelihoodSpec` (see `inst/include/tulpa/likelihood.h`).
 
@@ -59,7 +59,7 @@ tests/testthat/     — Unit and integration tests
 - Rubin's rules pooling
 - Parameter back-transformation (logit → probability)
 
-**Model packages own** (e.g., tulpaOcc, numdenom):
+**Model packages own** (e.g., tulpaObs, numdenom):
 - Likelihood functions (LikelihoodSpec)
 - E-step weight computation (model-specific latent variable posterior)
 - Data structures and encoding (how to map model data → binomial pseudo-data for Laplace)

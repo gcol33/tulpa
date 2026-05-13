@@ -120,7 +120,7 @@ Downstream rebuild notes:
   path via `tulpa_bridge.cpp` + per-family payloads in `lik_specs/`
   (B1+B2 of the migration); rebuild against v13 headers, no logic
   changes needed.
-* `tulpaOcc` never used the legacy ratio path; rebuild against v13.
+* `tulpaObs` never used the legacy ratio path; rebuild against v13.
 * `tulpaGlmm` Day-22+ already targets the generic path; rebuild
   against v13.
 
@@ -195,7 +195,7 @@ Downstream rebuild notes:
   `tulpa_generic_sampler.cpp` was updated to match the canonical
   declaration's parameter list.
 * Downstream rebuild notes: `tulpaGlmm` exercises this end-to-end via
-  Day-32's `hmc_warm_start = "laplace"` argument. `tulpaOcc` and
+  Day-32's `hmc_warm_start = "laplace"` argument. `tulpaObs` and
   `tulpaRatio` need to be reinstalled against v11 — both already
   updated to pass `nullptr` for the new parameter (no logic change).
 
@@ -300,7 +300,7 @@ Downstream rebuild notes:
   can be reconstructed caller-side from modes + posterior draws over the
   basis coefficients plus the per-draw grid index.
 * `TULPA_ABI_VERSION` bumped 7 → 8. Downstream packages (tulpaGlmm,
-  tulpaOcc) must be rebuilt against the updated headers.
+  tulpaObs) must be rebuilt against the updated headers.
 
 ## 2026-05-11 — nested-Laplace BYM2 returns modes + store_Q
 
@@ -320,7 +320,7 @@ Downstream rebuild notes:
   reconstructed caller-side from modes + posterior draws over the
   (σ, ρ) grid.
 * `TULPA_ABI_VERSION` bumped 6 → 7. Downstream packages (tulpaGlmm,
-  tulpaOcc) must be rebuilt against the updated headers.
+  tulpaObs) must be rebuilt against the updated headers.
 
 ## 2026-05-11 — nested-Laplace store_Q on RW1/RW2/AR1/CAR_proper
 
@@ -336,7 +336,7 @@ Downstream rebuild notes:
   so existing callers that don't ask for Q keep the previous behaviour
   and footprint.
 * `TULPA_ABI_VERSION` bumped 5 → 6. Downstream packages (tulpaGlmm,
-  tulpaOcc) must be rebuilt against the updated headers.
+  tulpaObs) must be rebuilt against the updated headers.
 
 ## 2026-05-06 — Takahashi partial inverse as a registered C-callable
 

@@ -13,7 +13,7 @@ std::string tulpa_version() {
 
 // ============================================================================
 // Registered C callable: tulpa_run_nuts_generic
-// Called by model packages (tulpaOcc, etc.) via R_GetCCallable.
+// Called by model packages (tulpaObs, etc.) via R_GetCCallable.
 // Thin wrapper around tulpa_hmc::run_hmc_chain_cpp.
 // ============================================================================
 static void tulpa_run_nuts_generic_impl(

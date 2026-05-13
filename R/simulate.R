@@ -146,7 +146,7 @@ print.tulpa_simulate <- function(x, ...) {
 #' @description
 #' Lightweight constructor for a `tulpa_family` object that exposes the
 #' contract required by [prior_predict()] and [tulpa_simulate()]. Model
-#' packages (numdenom, tulpaOcc) register richer families that also link to
+#' packages (numdenom, tulpaObs) register richer families that also link to
 #' C++ likelihoods; this helper is for tests and simple custom families that
 #' only need simulation.
 #'

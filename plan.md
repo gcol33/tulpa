@@ -34,7 +34,7 @@ from core once one clean downstream prototype proves the generic path.
 |---|---|---|
 | `tulpa` | Generic Bayesian engine | Active |
 | `tulpaRatio` | Ratio/rate/proportion models | Defer; do not drive core design from its vendored engine |
-| `tulpaOcc` | Occupancy models | Plug-in |
+| `tulpaObs` | Occupancy models | Plug-in |
 | `tulpaGlmm` | GLMM via lme4/glmmTMB-style API | Scaffolded |
 | `tulpaMesh` | CDT meshes for SPDE | Mature |
 
@@ -67,7 +67,7 @@ generic downstream prototype.
 - Delete `LegacyRatioData`; drop `n_processes == 0` branches throughout
   `hmc_sampler.cpp` (~413 references). Bump `TULPA_ABI_VERSION`.
 
-**Wire SPDE into tulpaOcc** — `occu_spde` ships in tulpaOcc; end-to-end
+**Wire SPDE into tulpaObs** — `occu_spde` ships in tulpaObs; end-to-end
 verification at higher N and the in-package vignette still pending.
 
 **EM MI/Gibbs corrections** (`R/em_laplace.R:241`)

@@ -1,5 +1,5 @@
 // smc_api.h
-// Cross-package SMC API for model packages (tulpaGlmm, tulpaOcc, numdenom).
+// Cross-package SMC API for model packages (tulpaGlmm, tulpaObs, numdenom).
 //
 // SMC runs a particle population through a tempering schedule from prior
 // to posterior. The model package builds a populated ModelData and

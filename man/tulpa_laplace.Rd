@@ -65,6 +65,6 @@ General-purpose Laplace approximation for latent Gaussian models.
 Finds the mode of the latent field (beta + random effects) and
 returns the Laplace-approximated marginal likelihood.
 
-This is the public API for model packages (tulpaGlmm, tulpaOcc, etc.)
+This is the public API for model packages (tulpaGlmm, tulpaObs, etc.)
 to call tulpa's Laplace engine.
 }

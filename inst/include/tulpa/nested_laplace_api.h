@@ -1,5 +1,5 @@
 // nested_laplace_api.h
-// Cross-package nested-Laplace API for model packages (tulpaGlmm, tulpaOcc).
+// Cross-package nested-Laplace API for model packages (tulpaGlmm, tulpaObs).
 //
 // Mirrors laplace_api.h: registered C-callable shims with raw POD inputs and
 // caller-allocated POD result structs, so the ABI is stable across separately

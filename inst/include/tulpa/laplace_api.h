@@ -1,5 +1,5 @@
 // laplace_api.h
-// Cross-package Laplace API for model packages (tulpaOcc, tulpaGlmm, etc.)
+// Cross-package Laplace API for model packages (tulpaObs, tulpaGlmm, etc.)
 //
 // Mirrors nuts_api.h: registered C-callable shims with raw POD inputs and
 // caller-allocated POD result structs, so the ABI is stable across separately

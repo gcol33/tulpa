@@ -621,7 +621,7 @@ uncertainty is worth the cost.
 | Nested Laplace | Yes (full) | Yes (phased) | No (MCMC only) | No (single Laplace) |
 | Selected inversion | Yes | Yes (Feature 4) | No | No |
 | Skewness correction | Yes | Phase 3c | No | No |
-| Occupancy models | Via inlaOcc | Via tulpaOcc | Native | Manual |
+| Occupancy models | Via inlaOcc | Via tulpaObs | Native | Manual |
 | Spatial types | SPDE, ICAR, AR | NNGP, ICAR, BYM2, HSGP, SPDE, GP | NNGP | Any (manual) |
 | NUTS for hyperparams | No | Feature 7 | No | Via tmbstan |
 | Control | Binary blob | Full source | Full source | Full source |

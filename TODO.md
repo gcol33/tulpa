@@ -240,8 +240,9 @@ Three dedups and two splits landed on 2026-05-02:
 
 **Still open from the 2026-05-02 punch list:**
 
-- **Modularization milestones** (items #1, #2, #4, #5, #8 below) —
-  multi-session work each.
+- **Live CUDA test** (#5 below) — needs a GPU build. All other
+  modularization milestones from 2026-05-02 (#1 downstream consumer,
+  #2 GLMM gap audit, #4 strip legacy, #8 EM MI/Gibbs) have shipped.
 
 **Audit + first response shipped 2026-05-02:**
 
@@ -272,37 +273,16 @@ Three dedups and two splits landed on 2026-05-02:
 
 ## P1 — Sibling-package work
 
-### 1. Clean downstream generic prototype
-**Where:** start from the smallest downstream package / example that can avoid
-the old ratio engine entirely.
-**What:** implement a true `LikelihoodSpec` integration: package-owned response
-struct, likelihood callbacks, optional residual / extra-gradient callbacks, and
-an R-side builder for generic `ModelData` with `n_processes > 0`.
-**Do not:** continue incremental `tulpaRatio` bridge wrappers around its
-vendored C++ entry points. That preserves the wrong boundary.
-**Unblocks:** item 2 (strip `ModelData::legacy`).
-
-### 2. Agent F — `tulpaGlmm` gap audit
-**Where:** `~/Documents/dev/tulpaGlmm/REIMPLEMENTATION_PLAN.md`.
-**What:** report-only. List what tulpa must expose for GLMM (Gaussian /
-Poisson / binomial `LikelihoodSpec` factories, dispersion handling, link
-functions). No implementation.
-
-### 3. Wire SPDE into tulpaOcc
-**Where:** sibling `tulpaOcc`.
-**State:** `occu_spde` already lives at `tulpaOcc R/spatial.R:197` and wraps
-`tulpa::spatial_spde`. The end-to-end occupancy + continuous-spatial wiring
+### 3. Wire SPDE end-to-end in `tulpaObs`
+**Where:** sibling `tulpaObs` (renamed from `tulpaOcc` on 2026-05-13).
+**Scope:** observation-process models — occupancy, detection / non-detection,
+N-mixture, etc. all share the same two-level likelihood structure.
+**State:** `occu_spde` already lives at `tulpaObs R/spatial.R:197` and wraps
+`tulpa::spatial_spde`. End-to-end observation + continuous-spatial wiring
 through tulpa's nested SPDE Laplace still needs verification at higher N and
 the in-package vignette.
 
 ## P2 — Tulpa core
-
-### 4. Strip `ModelData::legacy` (`LegacyRatioData`)
-**Where:** `src/hmc_sampler.cpp` (~413 references) and adjacent headers.
-**Blocked on:** item 1 — once one downstream model runs through
-`LikelihoodSpec`, the `n_processes == 0` branch can be removed.
-**Action:** delete `LegacyRatioData`, drop the `n_processes == 0` branches
-throughout, bump `TULPA_ABI_VERSION`.
 
 ### 5. Live CUDA-kernel testing for GPU-batched NNGP
 **State:** CPU-fallback path tested (3 tests in `test-gpu-nngp`). The cuSOLVER
@@ -322,16 +302,6 @@ would remove the second-name confusion. Pure cosmetic.
 the actual autodiff headers). Audit to confirm no fwd-decl drift creeps back
 in during future edits.
 
-### 8. EM+Laplace — MI and Gibbs corrections
-**State:** SHIPPED 2026-05-13. `correction = "mi"` draws `n_imputations`
-hard z's from the converged posterior weights and pools per-block fits
-via `rubins_pool()`. `correction = "gibbs"` runs a warm-started
-`z|θ → θ|z` chain of length `n_gibbs` starting from the EM fits and
-pools the draws. Both paths share `.draw_z_default` (Bernoulli) with an
-override hook `draw_z` for multi-class latent structures, and reuse
-`.attach_beta_se` (also consumed by `tulpa_em_mc`). See
-`R/em_correction.R` and `tests/testthat/test-em-laplace.R`.
-
 ## P4 — Deferred (need decisions)
 
 - **Inference-mode dispatch registry** (P2.2) — replace hardcoded dispatch
@@ -350,9 +320,9 @@ override hook `draw_z` for multi-class latent structures, and reuse
 
 ## Recommended order
 
-1. **#1 clean generic prototype**, then **#4 strip legacy**.
-2. **#2 Agent F (tulpaGlmm gap audit)** — parallelizable with #1, report-only.
-3. **#8 EM MI/Gibbs** when tulpaGlmm needs it.
-4. **#5 CUDA live test** — schedulable anytime; needs a GPU build.
+1. **#3 SPDE end-to-end in `tulpaObs`** + vignette.
+2. **#5 CUDA live test** — schedulable anytime; needs a GPU build.
+3. **#6 namespace cleanup** + **#7 forward-decl audit** — cosmetic, opportunistic.
+4. **P4 deferred items** — pick up once decisions land.
 
 `plan.md` is the live narrative; this file is the punch list.

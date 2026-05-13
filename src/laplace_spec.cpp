@@ -5,7 +5,7 @@
 // the per-observation log-likelihood and IRLS weights through a
 // LikelihoodSpec rather than the family-enum dispatch in
 // laplace_family_link.h. Lets a downstream package (tulpaGlmm,
-// tulpaOcc, tulpaRatio, ...) pin its own log-likelihood through Laplace
+// tulpaObs, tulpaRatio, ...) pin its own log-likelihood through Laplace
 // without adding a family enum to tulpa for every new family it ships.
 //
 // Covers n_processes >= 1 with multi-term, multi-coefficient (random

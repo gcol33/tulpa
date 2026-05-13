@@ -105,7 +105,7 @@ The speed difference between single and nested Laplace is small (G inner evaluat
 ## Why this matters for the package ecosystem
 
 - tulpa becomes a CRAN-compatible INLA alternative
-- tulpaOcc with the `occu()` API replaces both spOccupancy (MCMC, slow) and INLAocc (INLA dependency, non-CRAN)
+- tulpaObs with the `occu()` API replaces both spOccupancy (MCMC, slow) and INLAocc (INLA dependency, non-CRAN)
 - Full stack under our control: inference engine, spatial approximations, occupancy API
 - GPU acceleration gives a further edge over both INLA and spOccupancy
 

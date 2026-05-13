@@ -1,5 +1,5 @@
 // nuts_api.h
-// Cross-package NUTS API for model packages (tulpaOcc, etc.)
+// Cross-package NUTS API for model packages (tulpaObs, etc.)
 //
 // Uses R_RegisterCCallable / R_GetCCallable for inter-package C++ calls.
 // Both tulpa and the model package see the same types via LinkingTo headers.

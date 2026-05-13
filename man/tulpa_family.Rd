@@ -38,7 +38,7 @@ A \code{tulpa_family} object.
 \description{
 Lightweight constructor for a \code{tulpa_family} object that exposes the
 contract required by \code{\link[=prior_predict]{prior_predict()}} and \code{\link[=tulpa_simulate]{tulpa_simulate()}}. Model
-packages (numdenom, tulpaOcc) register richer families that also link to
+packages (numdenom, tulpaObs) register richer families that also link to
 C++ likelihoods; this helper is for tests and simple custom families that
 only need simulation.
 }
