@@ -328,16 +328,121 @@ test_that("bad n_imputations / n_gibbs / draw_z raise clear errors", {
   expect_error(
     tulpa_em_laplace(noop_e, noop_m, correction = "mi",
                      n_imputations = 0L, max_iter = 1L, verbose = FALSE),
-    regexp = "n_imputations"
+    regexp = "n_imputations.*>= 2"
+  )
+  expect_error(
+    tulpa_em_laplace(noop_e, noop_m, correction = "mi",
+                     n_imputations = 1L, max_iter = 1L, verbose = FALSE),
+    regexp = "n_imputations.*>= 2"
   )
   expect_error(
     tulpa_em_laplace(noop_e, noop_m, correction = "gibbs",
                      n_gibbs = 0L, max_iter = 1L, verbose = FALSE),
-    regexp = "n_gibbs"
+    regexp = "n_gibbs.*>= 2"
+  )
+  expect_error(
+    tulpa_em_laplace(noop_e, noop_m, correction = "gibbs",
+                     n_gibbs = 1L, max_iter = 1L, verbose = FALSE),
+    regexp = "n_gibbs.*>= 2"
   )
   expect_error(
     tulpa_em_laplace(noop_e, noop_m, correction = "mi",
                      draw_z = 42, max_iter = 1L, verbose = FALSE),
     regexp = "draw_z"
   )
+})
+
+
+test_that("rubins_pool() errors on K < 2", {
+  one_draw <- list(only = list(beta = c(0.1, 0.2), se = c(0.5, 0.5)))
+  expect_error(rubins_pool(list(one_draw)),
+               regexp = "at least 2 draws")
+  expect_identical(rubins_pool(list()), list())
+})
+
+
+test_that("MI applies m_step_extra per draw with continuous weights", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.4, 6))
+  m_step_encode <- function(weights, ...) {
+    list(only = make_block("binomial", n = 6L, p = 2L))
+  }
+
+  extra_weights <- list()
+  m_step_extra <- function(fits, weights, ...) {
+    extra_weights[[length(extra_weights) + 1L]] <<- weights
+    fits
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  res <- tulpa_em_laplace(
+    e_step, m_step_encode,
+    correction    = "mi",
+    n_imputations = 3L,
+    m_step_extra  = m_step_extra,
+    max_iter      = 1L,
+    verbose       = FALSE
+  )
+
+  # m_step_extra fires n_iter times during EM + n_imputations times during MI.
+  expect_equal(length(extra_weights), res$n_iter + 3L)
+  # All MI calls receive the continuous converged weights (= rep(0.4, 6)
+  # damped with NULL prev -> stays at 0.4 after first iter), NOT a hard 0/1.
+  mi_extra <- tail(extra_weights, 3L)
+  for (w in mi_extra) {
+    expect_true(is.numeric(w))
+    expect_true(all(w > 0 & w < 1))
+  }
+})
+
+
+test_that("Gibbs passes continuous E-step weights to m_step_extra (not hard z)", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.3, 8))
+  m_step_encode <- function(weights, ...) {
+    list(only = make_block("binomial", n = 8L, p = 2L))
+  }
+
+  extra_weights <- list()
+  m_step_extra <- function(fits, weights, ...) {
+    extra_weights[[length(extra_weights) + 1L]] <<- weights
+    fits
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  res <- tulpa_em_laplace(
+    e_step, m_step_encode,
+    correction   = "gibbs",
+    n_gibbs      = 3L,
+    m_step_extra = m_step_extra,
+    max_iter     = 1L,
+    verbose      = FALSE
+  )
+
+  # EM calls + n_gibbs calls.
+  expect_equal(length(extra_weights), res$n_iter + 3L)
+  # All Gibbs-step calls receive continuous weights from e_step (= 0.3),
+  # not the hard 0/1 draws used to encode the block.
+  gibbs_extra <- tail(extra_weights, 3L)
+  for (w in gibbs_extra) {
+    expect_true(is.numeric(w))
+    expect_equal(w, rep(0.3, 8))
+  }
+})
+
+
+test_that(".attach_beta_se warns when H_beta is smaller than n_fixed", {
+  fit <- list(mode = c(0.1, 0.2, 0.3), H_beta = diag(1))
+  expect_warning(
+    out <- tulpa:::.attach_beta_se(fit, n_fixed = 3L),
+    regexp = "H_beta is 1x1 but n_fixed = 3"
+  )
+  expect_equal(out$beta, c(0.1, 0.2, 0.3))
+  expect_equal(out$se, rep(NA_real_, 3L))
 })

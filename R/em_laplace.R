@@ -1,7 +1,7 @@
 # ============================================================================
 # Generic EM + Laplace engine.
 #
-# Model packages (tulpaOcc, numdenom, ...) provide callbacks for:
+# Model packages (tulpaObs, numdenom, ...) provide callbacks for:
 #   - e_step:        compute latent variable posterior weights
 #   - m_step_encode: build per-submodel data blocks from weights
 #
@@ -213,14 +213,16 @@
 #'   per-observation. Multi-class / matrix-valued latent structures must
 #'   supply their own callback.
 #' @param m_step_extra Optional `function(fits, weights, ...) -> fits`. Fired
-#'   once per EM iteration, between the M-step and the next E-step. Receives
-#'   the freshly assembled list of [tulpa_laplace()] results (`fits`), the
-#'   current E-step weights, and any extra arguments forwarded through `...`.
-#'   Returns a list with the same length and names as the input, possibly
-#'   with mutated dispersion / shape / precision fields (e.g. `fits[[k]]$phi`).
-#'   Use this to update non-eta parameters that fall out of the Laplace
-#'   M-step (NB overdispersion, Gamma shape, Beta precision, Gaussian sigma).
-#'   When `NULL` (default), behavior is unchanged. See `gcol33/tulpa#4`.
+#'   once per M-step in every phase (EM iterations, MI draws, Gibbs steps).
+#'   Receives the freshly assembled list of [tulpa_laplace()] results (`fits`),
+#'   the continuous E-step weights P(z|y, theta) (NOT the hard z draw used by
+#'   MI/Gibbs to encode the block), and any extra arguments forwarded through
+#'   `...`. Returns a list with the same length and names as the input,
+#'   possibly with mutated dispersion / shape / precision fields (e.g.
+#'   `fits[[k]]$phi`). Use this to update non-eta parameters that fall out of
+#'   the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
+#'   Gaussian sigma). When `NULL` (default), behavior is unchanged. See
+#'   `gcol33/tulpa#4`.
 #' @param verbose Print per-iteration progress.
 #' @param ... Forwarded to `e_step`, `m_step_encode`, and `m_step_extra`.
 #'
@@ -262,14 +264,18 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
   if (correction == "mi") {
     n_imputations <- as.integer(n_imputations)
     if (length(n_imputations) != 1L || is.na(n_imputations) ||
-        n_imputations < 1L) {
-      stop("`n_imputations` must be a positive integer.", call. = FALSE)
+        n_imputations < 2L) {
+      stop("`n_imputations` must be an integer >= 2 ",
+           "(Rubin's rules need at least 2 draws to estimate ",
+           "between-imputation variance).", call. = FALSE)
     }
   }
   if (correction == "gibbs") {
     n_gibbs <- as.integer(n_gibbs)
-    if (length(n_gibbs) != 1L || is.na(n_gibbs) || n_gibbs < 1L) {
-      stop("`n_gibbs` must be a positive integer.", call. = FALSE)
+    if (length(n_gibbs) != 1L || is.na(n_gibbs) || n_gibbs < 2L) {
+      stop("`n_gibbs` must be an integer >= 2 ",
+           "(Rubin's rules need at least 2 draws to estimate ",
+           "between-imputation variance).", call. = FALSE)
     }
   }
   draw_z_fn <- if (is.null(draw_z)) .draw_z_default else draw_z
@@ -387,6 +393,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
       m_step_encode  = m_step_encode,
       draw_z         = draw_z_fn,
       n_imputations  = n_imputations,
+      m_step_extra   = m_step_extra,
       verbose        = verbose,
       ...
     )
@@ -465,6 +472,10 @@ apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
 rubins_pool <- function(draws) {
   K <- length(draws)
   if (K == 0L) return(list())
+  if (K < 2L) {
+    stop("rubins_pool() requires at least 2 draws to estimate ",
+         "between-imputation variance; got K = ", K, ".", call. = FALSE)
+  }
 
   submodel_names <- names(draws[[1]])
   result <- list()
@@ -475,7 +486,7 @@ rubins_pool <- function(draws) {
       d[[nm]]$beta
     })
     betas <- betas[!vapply(betas, is.null, logical(1))]
-    if (length(betas) == 0L) next
+    if (length(betas) < 2L) next
 
     ses <- lapply(draws, function(d) {
       if (is.null(d[[nm]])) return(NULL)

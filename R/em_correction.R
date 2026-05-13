@@ -49,10 +49,17 @@
   } else {
     fit$mode[seq_len(n_fixed)]
   }
-  se <- if (!is.null(fit$H_beta) && length(beta) == n_fixed) {
-    tryCatch(sqrt(diag(solve(fit$H_beta)))[seq_len(n_fixed)],
+  h_dim <- if (is.null(fit$H_beta)) 0L else nrow(fit$H_beta)
+  se <- if (length(beta) == n_fixed && n_fixed > 0L && h_dim >= n_fixed) {
+    tryCatch(sqrt(diag(solve(fit$H_beta))[seq_len(n_fixed)]),
              error = function(e) rep(NA_real_, n_fixed))
   } else {
+    if (length(beta) == n_fixed && n_fixed > 0L && h_dim > 0L && h_dim < n_fixed) {
+      warning(sprintf(
+        "H_beta is %dx%d but n_fixed = %d; returning NA SEs. Model package likely returned a wrong-sized fixed-effects Hessian.",
+        h_dim, h_dim, n_fixed),
+        call. = FALSE)
+    }
     rep(NA_real_, length(beta))
   }
   fit$beta <- beta
@@ -98,16 +105,22 @@
 # ----------------------------------------------------------------------------
 # Multiple-imputation correction. Weights are fixed at the converged EM
 # posterior; n_imputations independent hard draws yield n_imputations
-# independent block refits, pooled via rubins_pool().
+# independent block refits, pooled via rubins_pool(). m_step_extra (if
+# supplied) fires after each refit, matching the EM-loop semantics so
+# dispersion / shape / precision updates also propagate into each draw.
 # ----------------------------------------------------------------------------
 .mi_correction <- function(weights, m_step_encode, draw_z, n_imputations,
-                           verbose, ...) {
+                           m_step_extra, verbose, ...) {
   draws <- vector("list", n_imputations)
   for (m in seq_len(n_imputations)) {
     z <- draw_z(weights)
-    draws[[m]] <- .fit_one_draw(
+    fits <- .fit_one_draw(
       z, m_step_encode,
       label_prefix = sprintf("MI draw %d ", m), ...)
+    if (!is.null(m_step_extra)) {
+      fits <- apply_m_step_extra(m_step_extra, fits, weights, ...)
+    }
+    draws[[m]] <- fits
     if (verbose) {
       cat(sprintf("  MI draw %d / %d\n", m, n_imputations))
     }
@@ -118,9 +131,12 @@
 
 # ----------------------------------------------------------------------------
 # Warm-started Gibbs correction. Each step:
-#   1. E-step on the *current* fits to refresh weights.
+#   1. E-step on the *current* fits to refresh weights (continuous P(z|y,th)).
 #   2. Hard draw z from weights via draw_z.
 #   3. M-step refit on z.
+#   4. m_step_extra fires with the continuous E-step weights (NOT the hard
+#      draw), matching the EM-loop semantics so the same callback can be
+#      reused across phases.
 # n_gibbs draws are pooled via Rubin's rules. Note these draws are
 # autocorrelated; the within/between decomposition still gives a useful
 # variance summary, but downstream callers can pull `draws` to do their
@@ -142,7 +158,7 @@
       z, m_step_encode,
       label_prefix = sprintf("Gibbs step %d ", g), ...)
     if (!is.null(m_step_extra)) {
-      fits <- apply_m_step_extra(m_step_extra, fits, z, ...)
+      fits <- apply_m_step_extra(m_step_extra, fits, e_result$weights, ...)
     }
     draws[[g]] <- fits
     if (verbose) {
