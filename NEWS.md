@@ -1,5 +1,100 @@
 # tulpa NEWS
 
+## 2026-05-13 — ABI v13: Phase D — delete legacy ratio path
+
+Closes the tulpaRatio migration tracker (gcol33/tulpa#15). After v12
+gated the legacy ratio body of `compute_log_post_impl<T>` behind a
+generic-layout check, Phase D removes the body itself and every
+consumer of `LegacyRatioData` / `LegacyRatioLayout`.
+
+* `TULPA_ABI_VERSION` bumped **12 → 13**. Downstream packages must
+  rebuild against the v13 headers.
+* **Removed exported types.** `ModelData::LegacyRatioData legacy`
+  (`inst/include/tulpa/model_data.h`) and
+  `ParamLayout::LegacyRatioLayout legacy`
+  (`inst/include/tulpa/param_layout.h`) are gone. `n_processes > 0`
+  with a non-null `data.likelihood_spec` is now the only supported
+  configuration.
+* **Removed Rcpp entry points** (D-1): `cpp_hmc_fit`, `cpp_hmc_fit_gp`,
+  `cpp_hmc_fit_gp_v2`, `cpp_ess_fit`, `cpp_ess_get_n_params`,
+  `cpp_vi_fit`, `cpp_vi_get_n_params`, `cpp_sghmc_fit`, `cpp_sgld_fit`,
+  `cpp_compute_log_post_test`, `cpp_compute_log_prior_test`,
+  `cpp_compute_log_lik_only_test`, `cpp_log_post_split_n_params`.
+  Internal samplers (`run_ess_sampler`, `run_sghmc_sampler`, `fit_vi`,
+  `run_mclmc_sampler`) and their C-callable shims
+  (`tulpa_run_ess_sampler`, `tulpa_sghmc_fit`, `tulpa_fit_vi`,
+  `tulpa_mclmc_fit`) remain — downstream packages reach them via the
+  generic ModelData/ParamLayout API. Dev tools
+  `tools/icar_collapsed_check.R` and `tools/bym2_gradient_check.R`
+  also removed.
+* **Removed dispatcher branches** (D-2). `resolve_gradient_fn`
+  (`src/hmc_gradient_dispatch.h`) now only resolves the generic
+  `spec->gradient_fn` / `compute_gradient_generic_arena` /
+  `compute_gradient_generic_numerical` paths. Mode overrides
+  (`AUTODIFF_TAPE`, `AUTODIFF_ARENA`, `AUTODIFF_FWD`) and the H-mode
+  specialized fallthroughs are gone. Callers reaching the dispatcher
+  with `n_processes == 0` get `Rcpp::stop` with a pointer to this
+  entry. `hmc_gradient_dispatch_predicates.h` deleted.
+* **Removed log-posterior orchestrators' legacy body** (D-2).
+  `compute_log_post`, `compute_log_prior`, `compute_log_lik_only`
+  (`src/hmc_sampler.cpp`) now forward to
+  `compute_log_post_generic_spec_double`; the
+  `accumulate_log_prior_and_state` / `accumulate_obs_log_lik` body
+  and its 5 `hmc_sampler_log_prior_*.h` fragments are gone, along
+  with `hmc_log_posterior_split.h`. `compute_log_post_impl<T>`
+  (`src/log_post_impl.h`) reduces to the same forward for
+  `T = double` and a defensive `T(0)` no-op for autodiff `T` (arena
+  AD now routes through `compute_log_post_generic<Var>`).
+* **Removed gradient kernels** (D-3, ~30 files, ~17 KLOC). All
+  hand-coded H-mode kernels (composite + 4 phases, vectorized +
+  5 fragments, analytical, autodiff, feature, gp, hsgp, msgp, svc,
+  tvc, st, temporal_gp, ms_temporal, latent), the collapsed-spatial
+  machinery (`hmc_icar_collapsed_*` ×9, `hmc_gp_collapsed_*` ×5),
+  the legacy ratio likelihood (`hmc_likelihood.h`,
+  `hmc_observation_likelihood.h`), and the legacy fallback gradients
+  (`compute_gradient_numerical` / `_autodiff` / `_arena` / `_forward`
+  / `_numerical_impl`) are deleted. The 6 `log_post_impl_*_block.h`
+  fragments and the 2 Rcpp ModelData populators
+  (`model_data_rcpp.h`, `hmc_modeldata_builders.h`) follow.
+  `verify_gradient_runtime` now always uses
+  `compute_gradient_generic_numerical` as the reference.
+* **Simplified samplers** (D-4). `compute_param_layout`
+  (`src/hmc_param_layout.cpp`) requires `n_processes > 0`; model
+  packages place model-specific scalars (overdispersion etc.) in the
+  LikelihoodSpec extra-parameter block at `layout.extra_offset`.
+  ESS's `build_gaussian_priors` and `get_non_gaussian_params`
+  (`src/ess_sampler.h`) walk `process_beta_start` and
+  `extra_offset` only.
+  `hmc_nuts_mass_init.cpp` drops the family-specific block-spec
+  heuristics (NB+ICAR / Bin+ICAR forced DENSE, NB phi-pair 2×2
+  block) — re-introducing them would need a LikelihoodSpec hint.
+* **ST_IV mass-matrix override disabled.** The precision-informed
+  diagonal mass setup at warmup end
+  (`src/hmc_nuts_chain_iter_nuts.h`) reconstructed `eta` from
+  `data.legacy.X_num_flat` and branched on the legacy `ModelType`.
+  ST_IV chains now fall back to the adapted DIAG mass matrix until
+  the override is re-expressed through `spec->eta_weights_fn`. One
+  no-op per chain at warmup end; practical impact on sampling
+  efficiency is small.
+* **Removed skipped tests.** `tests/testthat/test-log-post-split.R`
+  and `tests/testthat/test-hmc-modeldata-builders.R` are deleted (every
+  test was a Phase-D skip). The legacy-ratio gradient-check test in
+  `test-spatial-car-proper.R` is removed; the two R-side
+  `spatial_car_proper()` construction tests stay.
+* **Cumulative numbers.** Phase D-1..D-5 deletes ~57 files and
+  ~18 000 lines of legacy ratio infrastructure across `src/`,
+  `inst/include/tulpa/`, `tests/`, and `tools/`. Net code reduction
+  before the v13 maintenance window starts.
+
+Downstream rebuild notes:
+* `tulpaRatio` already routes through the generic LikelihoodSpec
+  path via `tulpa_bridge.cpp` + per-family payloads in `lik_specs/`
+  (B1+B2 of the migration); rebuild against v13 headers, no logic
+  changes needed.
+* `tulpaOcc` never used the legacy ratio path; rebuild against v13.
+* `tulpaGlmm` Day-22+ already targets the generic path; rebuild
+  against v13.
+
 ## 2026-05-12 — ABI v12: generic-layout safety in compute_log_post_impl + ESS port
 
 * `TULPA_ABI_VERSION` bumped **11 → 12**. Downstream packages must

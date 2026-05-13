@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "autodiff_utils.h"
+#include "tulpa_priors.h"      // priors::* helpers used by log_post_generic_impl.h
 #include "tulpa/likelihood.h"
 
 // Expects hmc_sampler.h to have been included first by the umbrella TU,

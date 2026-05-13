@@ -84,6 +84,7 @@ test_that("nested_laplace NNGP runs on a 2D (sigma2, phi_gp) grid", {
   res <- cpp_nested_laplace_nngp(
     y = d$y, n = d$n_trials, X = d$X,
     re_idx = rep(0, d$n_spatial), n_re_groups = 0L, sigma_re = 1.0,
+    spatial_idx = seq_len(d$n_spatial),
     coords = nb$coords_ord, nn_idx = nb$nn_idx, nn_dist = nb$nn_dist,
     nn_order = nb$nn_order_0,
     n_spatial = d$n_spatial, nn = nb$n_neighbors,
