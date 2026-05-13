@@ -17,14 +17,6 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
-cpp_ess_fit <- function(q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, n_iter, n_warmup, seed, verbose) {
-    .Call(`_tulpa_cpp_ess_fit`, q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, n_iter, n_warmup, seed, verbose)
-}
-
-cpp_ess_get_n_params <- function(X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, zi_params) {
-    .Call(`_tulpa_cpp_ess_get_n_params`, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, zi_params)
-}
-
 cpp_gibbs_spatial <- function(data_list) {
     .Call(`_tulpa_cpp_gibbs_spatial`, data_list)
 }
@@ -35,18 +27,6 @@ cpp_gpu_available <- function() {
 
 cpp_gpu_info <- function() {
     .Call(`_tulpa_cpp_gpu_info`)
-}
-
-cpp_hmc_fit <- function(q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, tvc_params, svc_params, n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, gradient_mode_str = "auto", max_treedepth = 10L, metric_str = "auto", adapt_delta = -1.0, riemannian = -1L, gradient_check_only = FALSE) {
-    .Call(`_tulpa_cpp_hmc_fit`, q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, tvc_params, svc_params, n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, gradient_mode_str, max_treedepth, metric_str, adapt_delta, riemannian, gradient_check_only)
-}
-
-cpp_hmc_fit_gp <- function(q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num, X_denom, re_group, n_re_groups, model_type_str, gp_params, ms_gp_params, ms_temporal_params, rsr_params, temporal_params, sigma_beta, sigma_re_scale, phi_prior_shape, phi_prior_rate, zi_type_str, X_zi, zi_prior_sd, n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, max_treedepth = 10L, adapt_delta = -1.0, metric_str = "auto", gradient_mode_str = "auto", tvc_params = NULL, gradient_check_only = FALSE) {
-    .Call(`_tulpa_cpp_hmc_fit_gp`, q_init, y_num, y_denom, y_num_cont, y_denom_cont, X_num, X_denom, re_group, n_re_groups, model_type_str, gp_params, ms_gp_params, ms_temporal_params, rsr_params, temporal_params, sigma_beta, sigma_re_scale, phi_prior_shape, phi_prior_rate, zi_type_str, X_zi, zi_prior_sd, n_iter, n_warmup, L, n_chains, seed, n_threads, verbose, max_treedepth, adapt_delta, metric_str, gradient_mode_str, tvc_params, gradient_check_only)
-}
-
-cpp_hmc_fit_gp_v2 <- function(args) {
-    .Call(`_tulpa_cpp_hmc_fit_gp_v2`, args)
 }
 
 cpp_get_max_threads <- function() {
@@ -247,14 +227,6 @@ cpp_rpg1 <- function(z) {
 
 cpp_rpg <- function(b, z) {
     .Call(`_tulpa_cpp_rpg`, b, z)
-}
-
-cpp_sghmc_fit <- function(q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, n_iter, n_warmup, batch_size, epsilon, alpha, L, seed, verbose) {
-    .Call(`_tulpa_cpp_sghmc_fit`, q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, n_iter, n_warmup, batch_size, epsilon, alpha, L, seed, verbose)
-}
-
-cpp_sgld_fit <- function(q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, n_iter, n_warmup, batch_size, epsilon, schedule_a, schedule_b, schedule_gamma, use_schedule, seed, verbose) {
-    .Call(`_tulpa_cpp_sgld_fit`, q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, n_iter, n_warmup, batch_size, epsilon, schedule_a, schedule_b, schedule_gamma, use_schedule, seed, verbose)
 }
 
 cpp_smc_test <- function(mu_target, sigma_target, n_particles = 500L, n_mcmc_steps = 5L, seed = 42L) {
@@ -581,22 +553,6 @@ cpp_test_correlation_from_L <- function(L) {
     .Call(`_tulpa_cpp_test_correlation_from_L`, L)
 }
 
-cpp_compute_log_post_test <- function(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
-    .Call(`_tulpa_cpp_compute_log_post_test`, params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
-}
-
-cpp_compute_log_prior_test <- function(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
-    .Call(`_tulpa_cpp_compute_log_prior_test`, params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
-}
-
-cpp_compute_log_lik_only_test <- function(params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
-    .Call(`_tulpa_cpp_compute_log_lik_only_test`, params, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
-}
-
-cpp_log_post_split_n_params <- function(y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params) {
-    .Call(`_tulpa_cpp_log_post_split_n_params`, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params)
-}
-
 cpp_tulpa_fit_gaussian <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, step_size = 0.05, n_leapfrog = 10L, seed = 42L) {
     .Call(`_tulpa_cpp_tulpa_fit_gaussian`, y_r, X_r, sigma_beta, n_iter, n_warmup, step_size, n_leapfrog, seed)
 }
@@ -607,13 +563,5 @@ cpp_tulpa_fit_generic <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n
 
 tulpa_version <- function() {
     .Call(`_tulpa_tulpa_version`)
-}
-
-cpp_vi_fit <- function(q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, vi_options, verbose = TRUE) {
-    .Call(`_tulpa_cpp_vi_fit`, q_init, y_num, y_denom, y_denom_cont, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, prior_params, zi_params, latent_params, st_params, vi_options, verbose)
-}
-
-cpp_vi_get_n_params <- function(X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, zi_params, latent_params) {
-    .Call(`_tulpa_cpp_vi_get_n_params`, X_num, X_denom, model_type_str, re_params, spatial_params, temporal_params, zi_params, latent_params)
 }
 
