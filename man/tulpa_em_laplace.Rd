@@ -80,14 +80,16 @@ per-observation. Multi-class / matrix-valued latent structures must
 supply their own callback.}
 
 \item{m_step_extra}{Optional \verb{function(fits, weights, ...) -> fits}. Fired
-once per EM iteration, between the M-step and the next E-step. Receives
-the freshly assembled list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results (\code{fits}), the
-current E-step weights, and any extra arguments forwarded through \code{...}.
-Returns a list with the same length and names as the input, possibly
-with mutated dispersion / shape / precision fields (e.g. \code{fits[[k]]$phi}).
-Use this to update non-eta parameters that fall out of the Laplace
-M-step (NB overdispersion, Gamma shape, Beta precision, Gaussian sigma).
-When \code{NULL} (default), behavior is unchanged. See \code{gcol33/tulpa#4}.}
+once per M-step in every phase (EM iterations, MI draws, Gibbs steps).
+Receives the freshly assembled list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results (\code{fits}),
+the continuous E-step weights P(z|y, theta) (NOT the hard z draw used by
+MI/Gibbs to encode the block), and any extra arguments forwarded through
+\code{...}. Returns a list with the same length and names as the input,
+possibly with mutated dispersion / shape / precision fields (e.g.
+\code{fits[[k]]$phi}). Use this to update non-eta parameters that fall out of
+the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
+Gaussian sigma). When \code{NULL} (default), behavior is unchanged. See
+\code{gcol33/tulpa#4}.}
 
 \item{verbose}{Print per-iteration progress.}
 

@@ -52,6 +52,19 @@ tulpa_laplace <- function(y, n_trials, X,
   stopifnot(is.matrix(X))
   stopifnot(nrow(X) == n_obs)
 
+  if (identical(family, "beta")) {
+    if (!is.numeric(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0) {
+      stop("`phi` must be a positive scalar for family = 'beta'.", call. = FALSE)
+    }
+    yfin <- y[is.finite(y)]
+    if (length(yfin) && (min(yfin) <= 0 || max(yfin) >= 1)) {
+      stop("family = 'beta' requires y strictly in (0, 1); got range [",
+           min(yfin), ", ", max(yfin),
+           "]. Use cover(positive = 'beta') for hurdle handling of 0/1.",
+           call. = FALSE)
+    }
+  }
+
   if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
 
   # Route based on number of RE terms and spatial type
@@ -501,6 +514,12 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0) {
     w <- mu * phi / (mu + phi)
   } else if (family == "gaussian") {
     w <- rep(1, length(eta))
+  } else if (family == "beta") {
+    mu <- 1 / (1 + exp(-eta))
+    mu <- pmin(pmax(mu, 1e-7), 1 - 1e-7)
+    dmu <- mu * (1 - mu)
+    tg <- trigamma(mu * phi) + trigamma((1 - mu) * phi)
+    w <- phi * phi * tg * dmu * dmu
   } else {
     w <- rep(1, length(eta))
   }
