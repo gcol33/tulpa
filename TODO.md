@@ -273,6 +273,26 @@ Three dedups and two splits landed on 2026-05-02:
 
 ## P1 — Sibling-package work
 
+### 2. Joint NUTS over (log_kappa, log_tau_spde) for SpatialType::SPDE
+**State:** `(b)` Phase 1 shipped — SPDE is now a first-class
+`SpatialType` with `SpdeModelData` on `ModelData`, `spde_w_start/end` +
+reserved `log_kappa_spde_idx` / `log_tau_spde_idx` in `ParamLayout`,
+`tulpa_priors_spde.h::compute_spde_prior` wired through
+`log_post_generic_impl.h`, and `cpp_tulpa_fit_spde_nuts` refactored to
+use the structured HMC path. ABI 15 → 16.
+**Blocker:** Phase 2 (joint NUTS) needs a non-centered z = L^{-T} w
+reparameterization (user-selected design), which in turn needs
+`tulpa::arena` AD to support a sparse-Cholesky adjoint. The current
+arena has fixed 2-operand SoA nodes with no custom-backward hook —
+adding one is a multi-day arena extension, not a single-session task.
+**Action:** (i) design + implement a `custom_backward` node type for
+`tulpa::arena` that accepts a user-supplied adjoint callback; (ii) wire
+a sparse-Cholesky forward + adjoint pair (factor Q from current
+log_kappa/log_tau, back-solve L^{-T} z = w, adjoint via standard
+Cholesky derivative formula); (iii) flip `cpp_tulpa_fit_spde_nuts` to
+sample (log_kappa, log_tau, z, beta, log_phi) jointly using the
+reserved layout slots.
+
 ### 3. Wire SPDE end-to-end in `tulpaObs`
 **Where:** sibling `tulpaObs` (renamed from `tulpaOcc` on 2026-05-13).
 **Scope:** observation-process models — occupancy, detection / non-detection,

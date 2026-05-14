@@ -10,6 +10,7 @@
 #include "tulpa/svc_data.h"
 #include "tulpa/tvc_data.h"
 #include "tulpa/st_data.h"
+#include "tulpa/spde_model_data.h"
 
 namespace tulpa {
 
@@ -19,7 +20,7 @@ namespace tulpa {
 // has its first tagged release. Until then this stays at 1; downstream
 // packages should be rebuilt against the current tulpa source.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 15;
+constexpr int TULPA_ABI_VERSION = 16;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -193,6 +194,14 @@ struct ModelData {
     bool has_hsgp = false;
     int hsgp_m_per_dim = 15;
     double hsgp_boundary_factor = 1.5;
+
+    // SPDE (Stochastic PDE Matern, Lindgren–Rue 2011). Active when
+    // spatial_type == SpatialType::SPDE. Holds the FEM topology, per-obs
+    // projection A, and the Q built at fixed (kappa, tau_spde). Joint NUTS
+    // over (log_kappa, log_tau_spde) is deferred to a follow-on arc that
+    // first extends arena AD with a sparse-Cholesky adjoint.
+    SpdeModelData spde_data;
+    bool has_spde = false;
 
     // RSR (Restricted Spatial Regression)
     bool has_rsr = false;

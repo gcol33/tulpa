@@ -37,7 +37,8 @@ enum class SpatialType : int {
     GP = 3,            // NNGP
     MULTISCALE_GP = 4,
     HSGP = 5,          // Hilbert Space GP
-    CAR_PROPER = 6
+    CAR_PROPER = 6,
+    SPDE = 7           // Continuous Matern via FEM (Lindgren–Rue 2011)
 };
 
 // ============================================================================

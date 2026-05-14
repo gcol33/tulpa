@@ -486,6 +486,21 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.hsgp_beta_start = layout.hsgp_beta_end = -1;
   }
 
+  // SPDE (continuous Matern via FEM). Phase 1: w_mesh is the only SPDE
+  // block in the parameter vector; (kappa, tau_spde) are held constant on
+  // ModelData::spde_data. log_kappa / log_tau slots stay at -1 until the
+  // follow-on arc adds joint NUTS over hypers.
+  layout.is_spde = (data.spatial_type == SpatialType::SPDE);
+  if (layout.is_spde && data.has_spde) {
+    layout.spde_w_start = idx;
+    idx += data.spde_data.n_mesh;
+    layout.spde_w_end = idx;
+  } else {
+    layout.spde_w_start = layout.spde_w_end = -1;
+  }
+  layout.log_kappa_spde_idx = -1;
+  layout.log_tau_spde_idx   = -1;
+
   // TVC (Temporally-Varying Coefficients) parameters
   layout.has_tvc = data.has_tvc;
   if (layout.has_tvc && data.tvc_data.n_tvc > 0) {

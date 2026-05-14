@@ -36,6 +36,7 @@ struct GenericLogPostState {
     std::vector<T> gp_w;
     std::vector<T> ms_gp_effect;
     std::vector<T> hsgp_f;
+    std::vector<T> spde_w;
     std::vector<T> phi_temporal;
     T tau_temporal = T(1.0);
     T rho_ar1 = T(0.5);
@@ -107,6 +108,11 @@ static T initialize_generic_state(
     if (layout.is_hsgp && data.has_hsgp) {
         log_post = log_post + priors::compute_hsgp_spatial_prior(
             params, data, layout, state.hsgp_f);
+    }
+
+    if (layout.is_spde && data.has_spde) {
+        log_post = log_post + priors::compute_spde_prior(
+            params, data, layout, state.spde_w);
     }
 
     if (layout.has_temporal) {
@@ -278,6 +284,22 @@ static void add_generic_spatial_effect(
     if (layout.is_hsgp && !state.hsgp_f.empty()) {
         add_to_shared_processes(
             eta, data.sharing.spatial, data.n_processes, state.hsgp_f[i]);
+    }
+
+    if (layout.is_spde && !state.spde_w.empty()) {
+        // eta_i += sum_j A_ij * w_j. The projection A is sparse: each obs
+        // is a convex combination of ~3 triangle-vertex weights stored in
+        // a_rows[i]. Empty a_rows[i] means the observation falls outside
+        // the mesh and contributes no spatial effect.
+        const auto& row = data.spde_data.a_rows[i];
+        if (!row.empty()) {
+            T effect = T(0.0);
+            for (const auto& ae : row) {
+                effect = effect + T(ae.weight) * state.spde_w[ae.mesh_idx];
+            }
+            add_to_shared_processes(
+                eta, data.sharing.spatial, data.n_processes, effect);
+        }
     }
 }
 

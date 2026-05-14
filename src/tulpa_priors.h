@@ -15,6 +15,7 @@
 #include "tulpa_priors_gp.h"
 #include "tulpa_priors_msgp.h"
 #include "tulpa_priors_hsgp.h"
+#include "tulpa_priors_spde.h"
 #include "tulpa_priors_temporal.h"
 #include "tulpa_priors_mstemporal.h"
 #include "tulpa_priors_svc.h"

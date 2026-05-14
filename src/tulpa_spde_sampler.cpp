@@ -4,22 +4,23 @@
 // (kappa, tau_spde) and samples the (beta, w_mesh, log_phi) latent block
 // jointly via tulpa's full NUTS backend.
 //
-// Architecturally orthogonal to the existing SPDE Laplace path
-// (cpp_laplace_fit_spde / cpp_nested_laplace_spde): instead of running
-// PIRLS to a mode and Gaussian-approximating the posterior, this uses
-// the LikelihoodSpec extension point — the same mechanism downstream
-// model packages already use — to feed the SPDE prior + likelihood
-// through compute_log_post_generic and the production NUTS chain.
+// Phase 1 architecture (gcol33/tulpa#b): the SPDE field is a first-class
+// SpatialType::SPDE — w_mesh lives in ParamLayout::spde_w_start..end and
+// the Q-prior + A-projection are wired into compute_log_post_generic via
+// tulpa_priors_spde.h and add_generic_spatial_effect. The likelihood
+// callback is a plain GLM: it only sees eta (which already contains the
+// A * w contribution) and reads log_phi from the extra-params slot.
 //
-// Layout (using the LikelihoodSpec extra-params slot):
+// Layout:
 //   params[0 .. p)                  beta (process 0)
-//   params[extra_offset .. +n_mesh) w_mesh (mesh-node effects)
-//   params[extra_offset + n_mesh)   log_phi (sampled jointly)
+//   params[spde_w_start .. spde_w_end)  w_mesh (mesh-node effects)
+//   params[extra_offset]            log_phi (sampled jointly)
 //
 // Hyperparameter integration over (kappa, tau_spde) is left to an outer
 // loop (the existing nested-Laplace grid in cpp_nested_laplace_spde, or
-// a future NUTS-over-hypers variant). Within a single call, (kappa, tau)
-// are fixed.
+// a future joint-NUTS variant — gcol33/tulpa#a — that extends arena AD
+// with a sparse-Cholesky adjoint). Within a single call, (kappa, tau)
+// are fixed; Q is built once and cached on ModelData::spde_data.
 
 #include <Rcpp.h>
 #include <vector>
@@ -45,38 +46,31 @@ enum class SpdeFamily : int {
 };
 
 // =====================================================================
-// SPDEData: response + spatial structure (Q, A) at fixed hypers, plus
-// precomputed log(n_trials choose y) for the binomial path.
+// SpdeGlmData: response + per-family precomputed constants. Spatial
+// structure (Q, A, FEM matrices) now lives on ModelData::spde_data;
+// the likelihood callback no longer touches it.
 // =====================================================================
-struct SPDEData {
+struct SpdeGlmData {
     SpdeFamily family;
     std::vector<double> y;
     std::vector<int>    n_trials;     // binomial only
     std::vector<double> log_y_fact;   // log(y!) for poisson constant
     std::vector<double> log_choose;   // lchoose(n, y) for binomial constant
 
-    int p;
-    int n_mesh;
-    tulpa::ARows         a_rows;
-    std::vector<int>     Q_p;
-    std::vector<int>     Q_i;
-    std::vector<double>  Q_x;
-
-    // log_phi prior: only used by Gaussian (log_sigma). Wider default
-    // than the Beta sampler because residual SD is on the y-scale; the
-    // R wrapper picks a sensible default per-family.
-    double log_phi_prior_sd;
+    // log_phi prior: only used by Gaussian (log_sigma). For Poisson /
+    // Binomial log_phi is pinned tightly and ignored downstream.
+    double log_phi_prior_sd = 3.0;
 };
 
 // =====================================================================
 // Per-observation log-likelihood (templated for AD).
 //
-// The LikelihoodSpec contract gives us eta[0] = X_i @ beta from the
-// generic eta-precompute. We add the mesh contribution sum_j A_ij * w_j
-// here; w lives at params[extra_offset .. extra_offset + n_mesh).
+// Phase 1: eta[0] already carries beta + spatial (A*w) + offset from
+// compute_log_post_generic — we just dispatch on family. log_phi is the
+// only extra param this likelihood owns; it sits at layout.extra_offset.
 // =====================================================================
 template<typename T>
-T spde_likelihood(
+T spde_glm_likelihood(
     int i,
     const T* eta,
     const T& /*logit_zi*/,
@@ -88,34 +82,22 @@ T spde_likelihood(
 ) {
     using std::exp;
     using std::log;
-    using std::lgamma;
 
-    const auto* sd = static_cast<const SPDEData*>(model_data);
-
-    // eta_i = X_i @ beta + sum_j A_ij * w_j
-    T eta_i = eta[0];
-    for (const auto& ae : sd->a_rows[i]) {
-        eta_i = eta_i + T(ae.weight) * params[layout.extra_offset + ae.mesh_idx];
-    }
+    const auto* sd = static_cast<const SpdeGlmData*>(model_data);
+    const T eta_i = eta[0];
 
     switch (sd->family) {
         case SpdeFamily::GAUSSIAN: {
-            // log_sigma = params[extra_offset + n_mesh]
-            T log_sigma = params[layout.extra_offset + sd->n_mesh];
+            T log_sigma = params[layout.extra_offset];
             T resid     = T(sd->y[i]) - eta_i;
-            // -log(sigma) - 0.5 * (resid / sigma)^2; constant -0.5*log(2 pi) dropped.
             T inv_sigma = exp(T(0.0) - log_sigma);
             return T(0.0) - log_sigma - T(0.5) * resid * resid * inv_sigma * inv_sigma;
         }
         case SpdeFamily::POISSON: {
-            // log p(y | lambda = exp(eta)) = y*eta - exp(eta) - log(y!)
             T lambda = exp(eta_i);
             return T(sd->y[i]) * eta_i - lambda - T(sd->log_y_fact[i]);
         }
         case SpdeFamily::BINOMIAL: {
-            // log p(y | n, p = sigmoid(eta)) = lchoose(n, y) + y*eta - n*log(1+exp(eta))
-            // Numerically stable softplus: log(1+exp(eta)) = max(eta,0) + log(1+exp(-|eta|))
-            // We avoid the abs branch in AD-land by using the standard form below.
             T one_plus_exp = T(1.0) + exp(eta_i);
             return T(sd->log_choose[i]) + T(sd->y[i]) * eta_i
                  - T(static_cast<double>(sd->n_trials[i])) * log(one_plus_exp);
@@ -125,59 +107,32 @@ T spde_likelihood(
 }
 
 // =====================================================================
-// SPDE prior contribution: -0.5 * w^T Q w + Normal(0, sd) prior on log_phi
-// (gaussian only; for poisson/binomial log_phi is unused but still in
-// extra_params with a tight standard-normal pin).
+// log_phi prior: Normal(0, sd_log_phi). Returned up to additive constants.
+// The w_mesh prior moved to tulpa_priors_spde.h and is now wired through
+// the structured HMC path (compute_spde_prior in initialize_generic_state).
 // =====================================================================
-static double spde_extra_prior_double(
+static double spde_glm_log_phi_prior_double(
     const std::vector<double>& params,
     const ParamLayout& layout,
     const void* model_data
 ) {
-    const auto* sd = static_cast<const SPDEData*>(model_data);
-    int wo = layout.extra_offset;
-
-    // -0.5 * w^T Q w via CSC iteration
-    double qf = 0.0;
-    for (int col = 0; col < sd->n_mesh; col++) {
-        for (int idx = sd->Q_p[col]; idx < sd->Q_p[col + 1]; idx++) {
-            int row = sd->Q_i[idx];
-            qf += params[wo + row] * sd->Q_x[idx] * params[wo + col];
-        }
-    }
-    double lp = -0.5 * qf;
-
-    // log_phi prior (always present in the layout; for non-Gaussian it
-    // is pinned tightly so it does not float as a free parameter).
-    double log_phi = params[wo + sd->n_mesh];
+    const auto* sd = static_cast<const SpdeGlmData*>(model_data);
+    double log_phi = params[layout.extra_offset];
     double sd_lp   = sd->log_phi_prior_sd;
-    lp += -0.5 * (log_phi / sd_lp) * (log_phi / sd_lp);
-
-    return lp;
+    return -0.5 * (log_phi / sd_lp) * (log_phi / sd_lp);
 }
 
-static tulpa::arena::Var spde_extra_prior_arena(
+static tulpa::arena::Var spde_glm_log_phi_prior_arena(
     const std::vector<tulpa::arena::Var>& params,
     const ParamLayout& layout,
     const void* model_data
 ) {
     using tulpa::arena::Var;
-    const auto* sd = static_cast<const SPDEData*>(model_data);
-    int wo = layout.extra_offset;
-
-    Var lp = Var(0.0);
-    for (int col = 0; col < sd->n_mesh; col++) {
-        for (int idx = sd->Q_p[col]; idx < sd->Q_p[col + 1]; idx++) {
-            int row = sd->Q_i[idx];
-            lp = lp + params[wo + row] * Var(sd->Q_x[idx]) * params[wo + col];
-        }
-    }
-    Var minus_half_qf = Var(-0.5) * lp;
-
-    Var log_phi = params[wo + sd->n_mesh];
+    const auto* sd = static_cast<const SpdeGlmData*>(model_data);
+    Var log_phi = params[layout.extra_offset];
     double sd_lp = sd->log_phi_prior_sd;
     Var z = log_phi * Var(1.0 / sd_lp);
-    return minus_half_qf + Var(-0.5) * z * z;
+    return Var(-0.5) * z * z;
 }
 
 }  // anonymous namespace
@@ -231,7 +186,8 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     else if (family == "poisson")  fam = SpdeFamily::POISSON;
     else if (family == "binomial") fam = SpdeFamily::BINOMIAL;
     else Rcpp::stop("Unsupported family for tulpa_nuts_spde: '%s'. "
-                    "Supported: gaussian, poisson, binomial.", family.c_str());
+                    "Supported: gaussian, poisson, binomial.",
+                    family.c_str());
 
     // Family-specific input validation.
     if (fam == SpdeFamily::POISSON) {
@@ -253,22 +209,26 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         }
     }
 
-    // Build SPDE Q at the supplied (kappa, tau_spde).
+    // Build SPDE Q at the supplied (kappa, tau_spde). Q + per-row A get
+    // marshalled into ModelData::spde_data so the structured HMC path
+    // owns them; nothing SPDE-specific stays in the likelihood spec.
     tulpa::SpdeQBuilder qb;
     qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
-    if (rational_poles_nullable.isNotNull() && rational_weights_nullable.isNotNull()) {
-        std::vector<double> poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
-        std::vector<double> weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
-        qb.rebuild_rational(kappa, tau_spde, poles, weights);
+    std::vector<double> rat_poles, rat_weights;
+    const bool use_rational = rational_poles_nullable.isNotNull() &&
+                               rational_weights_nullable.isNotNull();
+    if (use_rational) {
+        rat_poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
+        rat_weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
+        qb.rebuild_rational(kappa, tau_spde, rat_poles, rat_weights);
     } else {
         qb.rebuild(kappa, tau_spde, alpha);
     }
 
-    // Per-row A storage.
     tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, A_x, A_i, A_p);
 
-    // Marshal SPDEData.
-    SPDEData sd;
+    // Per-family precomputed constants.
+    SpdeGlmData sd;
     sd.family = fam;
     sd.y.assign(y_r.begin(), y_r.end());
     if (fam == SpdeFamily::BINOMIAL) {
@@ -284,26 +244,20 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
             sd.log_y_fact[i] = R::lgammafn(sd.y[i] + 1.0);
         }
     }
-    sd.p      = p;
-    sd.n_mesh = n_mesh;
-    sd.a_rows = a_rows;
-    sd.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
-    sd.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
-    sd.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
     sd.log_phi_prior_sd = log_phi_prior_sd;
 
-    // LikelihoodSpec wiring extra params = w_mesh (n_mesh) + log_phi (1).
+    // LikelihoodSpec wiring: just log_phi as the single extra param. The
+    // w_mesh block is now a first-class layout slot (SpatialType::SPDE).
     tulpa::LikelihoodSpec spec;
     spec.name              = "spde_" + family;
     spec.n_processes       = 1;
-    spec.ll_double         = spde_likelihood<double>;
-    spec.ll_arena          = spde_likelihood<tulpa::arena::Var>;
-    spec.ll_fwd            = spde_likelihood<::fwd::Dual>;
-    spec.n_extra_params    = n_mesh + 1;
-    spec.extra_prior       = spde_extra_prior_double;
-    spec.extra_prior_arena = spde_extra_prior_arena;
+    spec.ll_double         = spde_glm_likelihood<double>;
+    spec.ll_arena          = spde_glm_likelihood<tulpa::arena::Var>;
+    spec.ll_fwd            = spde_glm_likelihood<::fwd::Dual>;
+    spec.n_extra_params    = 1;  // log_phi
+    spec.extra_prior       = spde_glm_log_phi_prior_double;
+    spec.extra_prior_arena = spde_glm_log_phi_prior_arena;
 
-    // ModelData
     ModelData data;
     data.N           = N;
     data.n_processes = 1;
@@ -328,11 +282,37 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     data.zi_prior_sd = 1.0;
     data.oi_prior_sd = 1.0;
 
+    // Wire the SPDE block onto ModelData. compute_param_layout sees
+    // spatial_type == SPDE and allocates the w_mesh slot; the structured
+    // HMC log_post adds -0.5 w' Q w + A*w eta contribution automatically.
+    data.spatial_type = tulpa::SpatialType::SPDE;
+    data.has_spde     = true;
+    auto& sm = data.spde_data;
+    sm.n_mesh   = n_mesh;
+    sm.nu       = static_cast<double>(alpha) - 1.0;  // alpha = nu + d/2, d=2.
+    sm.kappa    = kappa;
+    sm.tau_spde = tau_spde;
+    sm.alpha    = alpha;
+    sm.C0_diag.assign(C0_diag.begin(), C0_diag.end());
+    sm.G1_x.assign(G1_x.begin(), G1_x.end());
+    sm.G1_i.assign(G1_i.begin(), G1_i.end());
+    sm.G1_p.assign(G1_p.begin(), G1_p.end());
+    sm.a_rows   = std::move(a_rows);
+    sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
+    sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
+    sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
+    sm.rational_poles   = std::move(rat_poles);
+    sm.rational_weights = std::move(rat_weights);
+    // log|Q| is constant under fixed hypers and cancels in NUTS, so we
+    // leave it at 0.0 — Phase 2 will compute it for prior-comparable
+    // log-posteriors when joint hypers move.
+    sm.log_det_Q = 0.0;
+
     ParamLayout layout = tulpa_hmc::compute_param_layout(data);
     int n_params = layout.total_params;
 
     std::vector<double> init(n_params, 0.0);
-    init[layout.extra_offset + n_mesh] = log_phi_init;
+    init[layout.extra_offset] = log_phi_init;
 
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
         init, data, layout,
@@ -362,9 +342,9 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         col_names[j] = "beta[" + std::to_string(j + 1) + "]";
     }
     for (int m = 0; m < n_mesh; m++) {
-        col_names[layout.extra_offset + m] = "w[" + std::to_string(m + 1) + "]";
+        col_names[layout.spde_w_start + m] = "w[" + std::to_string(m + 1) + "]";
     }
-    col_names[layout.extra_offset + n_mesh] = "log_phi";
+    col_names[layout.extra_offset] = "log_phi";
     Rcpp::colnames(draws) = col_names;
 
     Rcpp::NumericVector means(n_params, 0.0);

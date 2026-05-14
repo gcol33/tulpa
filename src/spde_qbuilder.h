@@ -10,6 +10,7 @@
 #include "laplace_family_link.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
+#include "tulpa/spde_model_data.h"
 #include <Rcpp.h>
 #include <vector>
 #include <map>
@@ -209,9 +210,12 @@ struct SpdeQBuilder {
 // =====================================================================
 // Sparse per-row A storage for fast eta/scatter
 // =====================================================================
+// Per-row entry and container are exported in tulpa/spde_model_data.h so
+// the same struct is reused by ModelData::spde_data. Aliasing here keeps
+// internal call sites (build_A_rows, run_spde_laplace, etc.) untouched.
 
-struct ARowEntry { int mesh_idx; double weight; };
-using ARows = std::vector<std::vector<ARowEntry>>;
+using ARowEntry = SpdeARowEntry;
+using ARows     = std::vector<std::vector<ARowEntry>>;
 
 inline ARows build_A_rows(int N, int n_mesh,
                            const Rcpp::NumericVector& A_x,

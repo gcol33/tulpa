@@ -112,6 +112,15 @@ struct ParamLayout {
     int log_lengthscale_hsgp_idx = -1;
     int hsgp_beta_start = -1, hsgp_beta_end = -1;
 
+    // SPDE parameters. Phase 1: only w_mesh is sampled; (kappa, tau_spde)
+    // are constants on ModelData::spde_data. Joint NUTS over hypers is a
+    // follow-on arc, at which point log_kappa_spde_idx / log_tau_spde_idx
+    // will become valid (-1 sentinels today).
+    bool is_spde = false;
+    int spde_w_start = -1, spde_w_end = -1;
+    int log_kappa_spde_idx = -1;       // Reserved for follow-on joint NUTS.
+    int log_tau_spde_idx   = -1;       // Reserved for follow-on joint NUTS.
+
     // ================================================================
     // TEMPORAL
     // ================================================================
