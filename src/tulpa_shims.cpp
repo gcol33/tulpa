@@ -745,6 +745,9 @@ void tulpa_register_shims(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_spde",
         (DL_FUNC)&tulpa_nested_laplace_spde_impl);
 
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_joint_bym2",
+        (DL_FUNC)&tulpa_nested_laplace_joint_bym2_impl);
+
     R_RegisterCCallable("tulpa", "tulpa_pg_binomial_gibbs",
         (DL_FUNC)&tulpa_pg_binomial_gibbs_impl);
     R_RegisterCCallable("tulpa", "tulpa_pg_negbin_gibbs",
