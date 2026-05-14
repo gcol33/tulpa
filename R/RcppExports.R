@@ -553,6 +553,10 @@ cpp_test_correlation_from_L <- function(L) {
     .Call(`_tulpa_cpp_test_correlation_from_L`, L)
 }
 
+cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE) {
+    .Call(`_tulpa_cpp_tulpa_fit_beta_nuts`, y_r, X_r, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose)
+}
+
 cpp_tulpa_fit_gaussian <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, step_size = 0.05, n_leapfrog = 10L, seed = 42L) {
     .Call(`_tulpa_cpp_tulpa_fit_gaussian`, y_r, X_r, sigma_beta, n_iter, n_warmup, step_size, n_leapfrog, seed)
 }

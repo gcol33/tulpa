@@ -2591,6 +2591,27 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_tulpa_fit_beta_nuts
+Rcpp::List cpp_tulpa_fit_beta_nuts(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose);
+RcppExport SEXP _tulpa_cpp_tulpa_fit_beta_nuts(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_r(y_rSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_r(X_rSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< double >::type log_phi_prior_sd(log_phi_prior_sdSEXP);
+    Rcpp::traits::input_parameter< double >::type log_phi_init(log_phi_initSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type max_treedepth(max_treedepthSEXP);
+    Rcpp::traits::input_parameter< double >::type adapt_delta(adapt_deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_fit_beta_nuts(y_r, X_r, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_gaussian
 Rcpp::List cpp_tulpa_fit_gaussian(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, int n_iter, int n_warmup, double step_size, int n_leapfrog, int seed);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_gaussian(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP step_sizeSEXP, SEXP n_leapfrogSEXP, SEXP seedSEXP) {
@@ -2778,6 +2799,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_compute_u_eff", (DL_FUNC) &_tulpa_cpp_test_compute_u_eff, 3},
     {"_tulpa_cpp_test_chol_nc_chain_rule", (DL_FUNC) &_tulpa_cpp_test_chol_nc_chain_rule, 6},
     {"_tulpa_cpp_test_correlation_from_L", (DL_FUNC) &_tulpa_cpp_test_correlation_from_L, 1},
+    {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
     {"_tulpa_cpp_tulpa_fit_gaussian", (DL_FUNC) &_tulpa_cpp_tulpa_fit_gaussian, 8},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 9},
     {"_tulpa_tulpa_version", (DL_FUNC) &_tulpa_tulpa_version, 0},
