@@ -15,8 +15,20 @@
 #' @param sigma Marginal standard deviation. If NULL, uses nested Laplace.
 #' @param nested_laplace Logical. If TRUE (default when range/sigma are NULL),
 #'   use nested Laplace approximation over hyperparameters.
+#' @param method Hyperparameter integration backend when nested Laplace is
+#'   active. One of:
+#'   \itemize{
+#'     \item `"ccd"` (default): central composite design centered on the
+#'       joint posterior mode of (range, sigma), oriented by the local
+#'       Hessian. Uses 9 design points instead of `n_grid^2`. Folds the
+#'       PC priors from `spatial$prior_range` / `spatial$prior_sigma` into
+#'       the integrated marginal posterior. Falls back to `"grid"` if the
+#'       posterior surface is too flat for a Hessian-based design.
+#'     \item `"grid"`: rectangular grid in `log(range) x log(sigma)`
+#'       around the prior modes (`n_grid` points per axis).
+#'   }
 #' @param n_grid Number of grid points per hyperparameter dimension for
-#'   nested Laplace. Default 5.
+#'   `method = "grid"`. Ignored under `method = "ccd"`. Default 5.
 #' @param phi Dispersion parameter (negbin only).
 #' @param max_iter Maximum Newton iterations. Default 100.
 #' @param tol Newton convergence tolerance. Default 1e-6.
@@ -36,12 +48,15 @@ fit_spde <- function(y, X, spatial,
                      family = "binomial", n_trials = NULL,
                      range = NULL, sigma = NULL,
                      nested_laplace = is.null(range) || is.null(sigma),
+                     method = c("ccd", "grid"),
                      n_grid = 5L, phi = 1.0,
                      max_iter = 100L, tol = 1e-6, n_threads = 1L) {
 
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }
+
+  method <- match.arg(method)
 
   y <- as.numeric(y)
   n_obs <- length(y)
@@ -51,57 +66,46 @@ fit_spde <- function(y, X, spatial,
 
   sp <- spatial  # shorthand
 
-  if (nested_laplace && (is.null(range) || is.null(sigma))) {
-    # --- Nested Laplace: grid over (range, sigma) ---
-    # Build grid around prior modes
-    range_mode <- sp$prior_range[1]
-    sigma_mode <- sp$prior_sigma[1]
+  # v10 nested-Laplace ABI requires re_idx / n_re_groups / sigma_re even when
+  # there is no formula-side RE term. Pin them here so every nested-Laplace
+  # call inside this function is consistent.
+  no_re_idx       <- rep(0L, n_obs)
+  no_re_n_groups  <- 0L
+  no_re_sigma     <- 1.0
 
-    range_grid <- exp(seq(log(range_mode * 0.3), log(range_mode * 3),
-                          length.out = n_grid))
-    sigma_grid <- exp(seq(log(sigma_mode * 0.3), log(sigma_mode * 3),
-                          length.out = n_grid))
-
-    # Full grid (all combinations)
-    grid <- expand.grid(range = range_grid, sigma = sigma_grid)
-
-    result <- cpp_nested_laplace_spde(
+  spde_log_marginal <- function(range_vec, sigma_vec) {
+    res <- cpp_nested_laplace_spde(
       y = y, n_trials = n_trials, X = X,
+      re_idx = no_re_idx, n_re_groups = no_re_n_groups,
+      sigma_re = no_re_sigma,
       A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,
       n_obs = n_obs, n_mesh = sp$n_mesh,
       C0_diag = sp$C0_diag,
       G1_x = sp$G1_x, G1_i = sp$G1_i, G1_p = sp$G1_p,
-      range_grid = grid$range, sigma_grid = grid$sigma,
+      range_grid = range_vec, sigma_grid = sigma_vec,
       nu = sp$nu,
       family = family, phi = phi,
       max_iter = max_iter, tol = tol, n_threads = n_threads
     )
+    res
+  }
 
-    # Find best grid point
-    best <- which.max(result$log_marginal)
-
-    # Numerical integration for hyperparameter posterior
-    log_max <- max(result$log_marginal)
-    weights <- exp(result$log_marginal - log_max)
-    weights <- weights / sum(weights)
-
-    list(
-      mode = NULL,  # would need to re-fit at best point
-      log_marginal = result$log_marginal,
-      converged = all(result$n_iter > 0),
-      spatial = spatial,
-      nested = list(
-        range_grid = grid$range,
-        sigma_grid = grid$sigma,
-        weights = weights,
-        n_iter = result$n_iter,
-        best_idx = best,
-        range_mean = sum(weights * grid$range),
-        sigma_mean = sum(weights * grid$sigma),
-        range_best = grid$range[best],
-        sigma_best = grid$sigma[best]
-      )
-    )
+  if (nested_laplace && (is.null(range) || is.null(sigma))) {
+    if (method == "grid") {
+      return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial))
+    } else {
+      return(fit_spde_nested_ccd(spde_log_marginal,
+                                 fit_spde_single = function(r, s) {
+                                   laplace_spde_at(
+                                     y = y, n_trials = n_trials, X = X,
+                                     spatial = sp, family = family, phi = phi,
+                                     range = r, sigma = s,
+                                     max_iter = max_iter, tol = tol,
+                                     n_threads = n_threads
+                                   )
+                                 },
+                                 sp = sp, spatial = spatial))
+    }
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---
     # Delegate to the shared helper used by dispatch_laplace_spatial so the

@@ -13,6 +13,7 @@ fit_spde(
   range = NULL,
   sigma = NULL,
   nested_laplace = is.null(range) || is.null(sigma),
+  method = c("ccd", "grid"),
   n_grid = 5L,
   phi = 1,
   max_iter = 100L,
@@ -40,8 +41,21 @@ integrate over range and sigma.}
 \item{nested_laplace}{Logical. If TRUE (default when range/sigma are NULL),
 use nested Laplace approximation over hyperparameters.}
 
+\item{method}{Hyperparameter integration backend when nested Laplace is
+active. One of:
+\itemize{
+\item \code{"ccd"} (default): central composite design centered on the
+joint posterior mode of (range, sigma), oriented by the local
+Hessian. Uses 9 design points instead of \code{n_grid^2}. Folds the
+PC priors from \code{spatial$prior_range} / \code{spatial$prior_sigma} into
+the integrated marginal posterior. Falls back to \code{"grid"} if the
+posterior surface is too flat for a Hessian-based design.
+\item \code{"grid"}: rectangular grid in \verb{log(range) x log(sigma)}
+around the prior modes (\code{n_grid} points per axis).
+}}
+
 \item{n_grid}{Number of grid points per hyperparameter dimension for
-nested Laplace. Default 5.}
+\code{method = "grid"}. Ignored under \code{method = "ccd"}. Default 5.}
 
 \item{phi}{Dispersion parameter (negbin only).}
 

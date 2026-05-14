@@ -218,6 +218,7 @@ test_that("nested Laplace SPDE runs with 2D hyperparameter grid", {
   result <- cpp_nested_laplace_spde(
     y = as.integer(y), n_trials = as.integer(rep(1L, n_obs)),
     X = X,
+    re_idx = rep(0L, n_obs), n_re_groups = 0L, sigma_re = 1.0,
     A_x = A@x, A_i = A@i, A_p = A@p,
     n_obs = n_obs, n_mesh = mesh$n,
     C0_diag = C0_diag,
@@ -229,7 +230,7 @@ test_that("nested Laplace SPDE runs with 2D hyperparameter grid", {
     max_iter = 50L, tol = 1e-6, n_threads = 1L
   )
 
-  expect_equal(result$n_grid, 9L)
+  expect_equal(length(result$log_marginal), 9L)
   expect_true(all(is.finite(result$log_marginal)))
   expect_true(all(result$n_iter > 0))
 
@@ -264,6 +265,7 @@ test_that("nested Laplace SPDE warm-start reduces iterations", {
   result <- cpp_nested_laplace_spde(
     y = as.integer(y), n_trials = as.integer(rep(1L, n_obs)),
     X = X,
+    re_idx = rep(0L, n_obs), n_re_groups = 0L, sigma_re = 1.0,
     A_x = A@x, A_i = A@i, A_p = A@p,
     n_obs = n_obs, n_mesh = mesh$n,
     C0_diag = C0_diag,
