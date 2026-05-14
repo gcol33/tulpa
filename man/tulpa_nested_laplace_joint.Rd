@@ -35,14 +35,17 @@ precision); default \code{1}.
 }}
 
 \item{prior}{A list describing the shared latent prior block. Required
-field \code{type}. For \code{type = "bym2"}:
+field \code{type}. Backend-specific fields:
 \itemize{
-\item \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx}, \code{n_neighbors}
-(CSR adjacency, 0-based as in \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}),
-\item \code{scale_factor} (Riebler scaling constant; default \code{1}),
-\item optional \code{sigma_grid}, \code{rho_grid} (defaults: 5 log-spaced sigmas
-and \code{c(0.2, 0.5, 0.8, 0.95)} for rho; Cartesian product is built
-internally).
+\item \strong{bym2}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
+\code{n_neighbors}, \code{scale_factor} (default \code{1}); optional \code{sigma_grid}
+(default 5 log-spaced values), \code{rho_grid}
+(default \code{c(0.2, 0.5, 0.8, 0.95)}).
+\item \strong{icar}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
+\code{n_neighbors}; optional \code{tau_grid} (default 5 log-spaced values
+spanning roughly sigma in \verb{[0.1, 3]}).
+\item \strong{car_proper}: same as icar plus \code{rho_car_grid}
+(default \code{c(0.5, 0.8, 0.95, 0.99)}).
 }}
 
 \item{copy}{Optional list controlling the copy-scaling (alpha) arm:
@@ -50,8 +53,7 @@ internally).
 \item \code{arm}         — name (or 1-based index) of the arm to copy-scale.
 \item \code{alpha_grid}  — numeric grid for alpha; default
 \code{c(0, 0.5, 1, 1.5, 2)}.
-When \code{NULL} (default), no copy-scaling is applied (all arms see the
-un-scaled shared latent — equivalent to alpha = 1 fixed).
+When \code{NULL} (default), no copy-scaling is applied.
 }}
 
 \item{max_iter, tol}{Inner Newton iteration budget and tolerance.}
@@ -60,7 +62,7 @@ un-scaled shared latent — equivalent to alpha = 1 fixed).
 
 \item{x_init}{Optional warm-start for the first grid point's inner solve.}
 
-\item{verbose}{Print grid-point progress (currently a no-op; reserved).}
+\item{verbose}{Currently a no-op; reserved.}
 }
 \value{
 A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")} with:
@@ -71,8 +73,8 @@ weights (sum to 1).
 \item \code{theta_mean}, \code{theta_sd} — posterior moments per hyperparameter.
 \item \code{modes} — \verb{[n_grid x n_x]} matrix of inner modes.
 \item \code{n_iter} — inner Newton iterations per grid point.
-\item \code{arm_layout} — list with \code{beta_start}, \code{re_start}, \code{phi_start},
-\code{theta_start}, \code{n_x} for decoding modes back into per-arm components.
+\item \code{arm_layout} — list with per-arm \code{beta_start}, \code{re_start},
+spatial offset(s) and \code{n_x} for decoding modes.
 \item \code{prior}, \code{responses}, \code{copy} — echoed inputs.
 }
 }
@@ -81,14 +83,18 @@ Outer-grid nested Laplace driver for \emph{joint} models — multiple response
 arms sharing one latent prior block, with optional INLA-style copy-scaling
 (\code{f(..., copy=, fixed=FALSE)}) on a designated arm.
 
-Supported priors (Phase 1c, BYM2-only):
+Supported priors (Phase 1c):
 \itemize{
-\item \code{"bym2"} — 3D outer grid over \verb{(sigma_spatial, rho, alpha)} when a
-\code{copy} arm is set; 2D over \verb{(sigma_spatial, rho)} otherwise.
+\item \code{"bym2"}       — outer grid over \verb{(sigma_spatial, rho [, alpha])}.
+Latent: \code{phi (n_s) | theta (n_s)}.
+\item \code{"icar"}       — outer grid over \code{(tau_spatial [, alpha])}.
+Latent: \code{phi (n_s)}.
+\item \code{"car_proper"} — outer grid over \verb{(tau, rho_car [, alpha])}. Latent:
+\code{phi (n_s)} with \code{Q = tau * (D - rho_car * W)}.
 }
 
-Other backends (ICAR, CAR_proper, NNGP, HSGP, RW1/2, AR1) follow the same
-interface and land under Phase 3 / P1c-7.
+Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
+land under Phase 3.
 }
 \seealso{
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the single-arm engine.

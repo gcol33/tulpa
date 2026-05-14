@@ -14,8 +14,21 @@ spatial_bym2(
 )
 }
 \arguments{
+\item{adjacency}{Symmetric adjacency matrix (\verb{[n_units x n_units]}).}
+
+\item{level}{Either \code{"group"} (one effect per level of \code{group_var}) or
+\code{"obs"} (one effect per row of the data; \code{nrow(data)} must equal
+\code{nrow(adjacency)}).}
+
+\item{group_var}{Name of the grouping variable in the data; required
+when \code{level = "group"}.}
+
+\item{shared}{Optional shared-effect handle (see model docs).}
+
 \item{scale_factor}{Scaling factor for the ICAR component. If NULL
 (default), computed from the adjacency matrix following Riebler et al.}
+
+\item{parameterization}{\code{"standard"} (default) or \code{"collapsed"} (deprecated).}
 }
 \value{
 A \code{tulpa_spatial} object

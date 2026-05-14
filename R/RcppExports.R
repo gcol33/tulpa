@@ -185,6 +185,14 @@ cpp_nested_laplace_joint_bym2 <- function(arms_list, copy_arm, n_spatial_units, 
     .Call(`_tulpa_cpp_nested_laplace_joint_bym2`, arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q)
 }
 
+cpp_nested_laplace_joint_icar <- function(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, alpha_grid, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_joint_icar`, arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q)
+}
+
+cpp_nested_laplace_joint_car_proper <- function(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_car_grid, alpha_grid, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_joint_car_proper`, arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_car_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q)
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }
