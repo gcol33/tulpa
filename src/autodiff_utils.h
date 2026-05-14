@@ -11,7 +11,7 @@
 #include <Rcpp.h>
 #include "autodiff.h"
 #include "autodiff_fwd.h"
-#include "autodiff_arena.h"
+#include "tulpa/autodiff_arena.h"
 
 namespace tulpa {
 namespace math {

@@ -27,6 +27,7 @@
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <functional>
 #include "portable_math.h"
 
 namespace tulpa {
@@ -43,9 +44,43 @@ namespace arena {
 //   - partial_a, partial_b (double): pre-computed partial derivatives
 //
 // Node types by operand pattern:
-//   - Leaf: operand_a = -1, operand_b = -1 (input variable or constant)
-//   - Unary: operand_a >= 0, operand_b = -1 (exp, log, sqrt, etc.)
-//   - Binary: operand_a >= 0, operand_b >= 0 (+, -, *, /)
+//   - Leaf:    operand_a = -1, operand_b = -1 (input variable or constant)
+//   - Unary:   operand_a >= 0, operand_b = -1 (exp, log, sqrt, etc.)
+//   - Binary:  operand_a >= 0, operand_b >= 0 (+, -, *, /)
+//   - Custom (stash-only): operand_a = -2 (output of a custom-backward op
+//             that is not the trigger); partials_a / partials_b carry
+//             (cb_id, output_position) packed as int32 in double slots.
+//   - Custom (trigger):    operand_a = -3 (the first-added output of a
+//             custom-backward op; processed LAST in reverse, fires the
+//             user-supplied adjoint callback after all outputs of its
+//             CB have stashed their adjoints).
+
+// User-supplied adjoint callback for custom_backward nodes.
+//
+//   input_vals  : forward values of the input nodes (length n_inputs)
+//   output_vals : forward values of the output nodes (length n_outputs)
+//   output_adjs : upstream adjoints flowing into the output nodes
+//   input_adjs  : pre-zeroed scratch the callback writes into; the Arena
+//                 scatters it back into the global adjoint buffer at
+//                 input_indices after the callback returns.
+//
+// The callback is invoked exactly once per backward() call, after every
+// output of the custom-backward block has been visited in the reverse
+// sweep. Inside the callback, output_adjs is final.
+using CustomBackwardFn = std::function<void(
+    const double* input_vals,  int n_inputs,
+    const double* output_vals, int n_outputs,
+    const double* output_adjs,
+    double*       input_adjs
+)>;
+
+struct CustomBackwardRecord {
+    std::vector<int32_t> input_indices;       // global arena indices
+    std::vector<double>  output_values;       // cached at register time
+    std::vector<double>  output_adjoints;     // filled during backward sweep
+    int32_t              n_outputs = 0;
+    CustomBackwardFn     backward_fn;
+};
 
 class Arena {
 public:
@@ -63,6 +98,10 @@ private:
     int32_t size_;
     int32_t capacity_;
     char* block_;  // Owning pointer for the single allocation
+
+    // Side-table for custom-backward blocks. Rarely populated, so a
+    // std::vector here adds zero cost when no custom-backward op is used.
+    std::vector<CustomBackwardRecord> custom_backwards_;
 
     void allocate(int32_t cap) {
         size_t d_bytes = static_cast<size_t>(cap) * 4 * sizeof(double);
@@ -156,6 +195,62 @@ public:
         return idx;
     }
 
+    // ----- Custom-backward block -----
+    //
+    // Register a non-trivial forward/adjoint pair (variadic inputs +
+    // variadic outputs) that doesn't fit the 1/2-operand SoA template
+    // — sparse-Cholesky transforms, neural-network layers, scatter
+    // operations, etc.
+    //
+    //   input_indices : arena indices of all upstream nodes the block
+    //                   reads. Must be < size() at call time.
+    //   output_values : forward values of the n outputs the block
+    //                   produces. The Arena allocates n new nodes and
+    //                   returns their indices in `out_indices`.
+    //   backward_fn   : adjoint callback (see CustomBackwardFn above).
+    //
+    // After all output nodes have been visited in the reverse sweep,
+    // backward() invokes backward_fn once with the full output-adjoint
+    // vector, and scatters its input_adjs result into the global adjoint
+    // buffer at input_indices.
+    void add_custom_backward(
+        const std::vector<int32_t>& input_indices,
+        const std::vector<double>&  output_values,
+        CustomBackwardFn            backward_fn,
+        std::vector<int32_t>&       out_indices
+    ) {
+        const int32_t n_out = static_cast<int32_t>(output_values.size());
+        out_indices.resize(n_out);
+
+        // Register the CB record first so we know its id.
+        const int32_t cb_id = static_cast<int32_t>(custom_backwards_.size());
+        CustomBackwardRecord rec;
+        rec.input_indices  = input_indices;
+        rec.output_values  = output_values;
+        rec.output_adjoints.assign(n_out, 0.0);
+        rec.n_outputs      = n_out;
+        rec.backward_fn    = std::move(backward_fn);
+        custom_backwards_.push_back(std::move(rec));
+
+        // Allocate the n output nodes. Mark output 0 as the "trigger"
+        // (operand_a = -3) — it is the lowest-indexed CB output, so the
+        // reverse sweep reaches it AFTER all other CB outputs have
+        // stashed their adjoints. The remaining outputs are stash-only
+        // (operand_a = -2).
+        for (int32_t pos = 0; pos < n_out; pos++) {
+            if (size_ >= capacity_) grow();
+            const int32_t idx = size_++;
+            values_[idx]     = output_values[pos];
+            operand_a_[idx]  = (pos == 0) ? -3 : -2;
+            operand_b_[idx]  = -1;
+            // Pack (cb_id, pos) into the unused partial slots. int32
+            // values round-trip through double exactly (53-bit mantissa).
+            partials_a_[idx] = static_cast<double>(cb_id);
+            partials_b_[idx] = static_cast<double>(pos);
+            out_indices[pos] = idx;
+        }
+    }
+
     // ----- Accessors -----
 
     double value(int32_t idx) const { return values_[idx]; }
@@ -168,24 +263,67 @@ public:
         std::memset(adjoints_, 0, static_cast<size_t>(root + 1) * sizeof(double));
         adjoints_[root] = 1.0;
 
+        // Reset CB scratch — backward() can be called more than once on
+        // the same arena (e.g. via gradient checks), so output_adjoints
+        // must start at zero each time.
+        for (auto& cb : custom_backwards_) {
+            std::fill(cb.output_adjoints.begin(), cb.output_adjoints.end(), 0.0);
+        }
+
         // Tight reverse loop: ~5 memory accesses per node
         for (int32_t i = root; i >= 0; --i) {
-            double adj = adjoints_[i];
-            if (adj == 0.0) continue;  // Skip dead nodes
+            const int32_t oa = operand_a_[i];
 
-            int32_t oa = operand_a_[i];
             if (oa >= 0) {
+                // Standard unary / binary node.
+                const double adj = adjoints_[i];
+                if (adj == 0.0) continue;
                 adjoints_[oa] += adj * partials_a_[i];
-                int32_t ob = operand_b_[i];
+                const int32_t ob = operand_b_[i];
                 if (ob >= 0) {
                     adjoints_[ob] += adj * partials_b_[i];
+                }
+                continue;
+            }
+
+            if (oa == -1) continue;  // Leaf
+
+            // Custom-backward node: stash this output's adjoint into the
+            // CB record. If this is the trigger (oa == -3), every other
+            // output of the same CB has already stashed its adjoint
+            // (lower forward index = later in reverse), so we fire the
+            // user callback and scatter its result into the global
+            // adjoint buffer at the CB's input indices.
+            const int32_t cb_id = static_cast<int32_t>(partials_a_[i]);
+            const int32_t pos   = static_cast<int32_t>(partials_b_[i]);
+            CustomBackwardRecord& cb = custom_backwards_[cb_id];
+            cb.output_adjoints[pos] = adjoints_[i];
+
+            if (oa == -3) {
+                const int32_t n_in = static_cast<int32_t>(cb.input_indices.size());
+                std::vector<double> input_vals(n_in);
+                for (int32_t k = 0; k < n_in; k++) {
+                    input_vals[k] = values_[cb.input_indices[k]];
+                }
+                std::vector<double> input_adjs(n_in, 0.0);
+                cb.backward_fn(
+                    input_vals.data(),       n_in,
+                    cb.output_values.data(), cb.n_outputs,
+                    cb.output_adjoints.data(),
+                    input_adjs.data()
+                );
+                for (int32_t k = 0; k < n_in; k++) {
+                    adjoints_[cb.input_indices[k]] += input_adjs[k];
                 }
             }
         }
     }
 
     // Reset for reuse (no deallocation, ~0ns)
-    void reset() { size_ = 0; }
+    void reset() {
+        size_ = 0;
+        custom_backwards_.clear();
+    }
 
     int32_t size() const { return size_; }
     int32_t capacity() const { return capacity_; }

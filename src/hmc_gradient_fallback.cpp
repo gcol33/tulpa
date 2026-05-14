@@ -17,7 +17,7 @@
 #include <cmath>
 #include <vector>
 
-#include "autodiff_arena.h"
+#include "tulpa/autodiff_arena.h"
 #include "hmc_sampler.h"
 #include "log_post_impl.h"
 #include "tulpa/likelihood.h"

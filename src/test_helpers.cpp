@@ -6,6 +6,7 @@
 #include <vector>
 #include <random>
 #include "autodiff.h"
+#include "tulpa/autodiff_arena.h"
 #include "laplace_core.h"
 #include "pg_binomial.h"
 #include "hmc_gp.h"
@@ -1048,5 +1049,102 @@ List cpp_test_gp_solver_dispatch(
     _["grad_log_sigma2"] = grads.grad_log_sigma2,
     _["grad_log_phi"] = grads.grad_log_phi,
     _["solver"] = solver
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Arena custom_backward smoke test
+// ---------------------------------------------------------------------------
+//
+// Computes the same loss two ways on the same (x, y):
+//
+//   a = x * y
+//   b = x + y
+//   L = a^2 + b^2
+//
+// Path A ("standard"): everything via the per-op SoA nodes (multiply, add,
+// square). Path B ("custom"): wraps (x, y) -> (a, b) in a single
+// add_custom_backward block whose adjoint callback does
+//   dx += y * da + 1 * db
+//   dy += x * da + 1 * db
+// then reuses the standard path for L = a^2 + b^2 on the CB outputs.
+//
+// The two paths must agree on L and on dL/dx, dL/dy. This exercises every
+// branch of the modified Arena::backward(): standard binary, custom
+// stash-only, and custom trigger.
+// [[Rcpp::export]]
+List cpp_test_arena_custom_backward(double x_val, double y_val) {
+  using tulpa::arena::Arena;
+  using tulpa::arena::ArenaScope;
+  using tulpa::arena::Var;
+  using tulpa::arena::CustomBackwardFn;
+
+  // ----- Path A: standard arena ops only -----
+  double L_std = 0.0, dx_std = 0.0, dy_std = 0.0;
+  {
+    ArenaScope scope;
+    Arena* ar = scope.arena();
+    Var x(ar, x_val);
+    Var y(ar, y_val);
+    Var a = x * y;
+    Var b = x + y;
+    Var L = a * a + b * b;
+    L.backward();
+    L_std  = L.val();
+    dx_std = x.adj();
+    dy_std = y.adj();
+  }
+
+  // ----- Path B: (x, y) -> (a, b) via add_custom_backward -----
+  double L_cb = 0.0, dx_cb = 0.0, dy_cb = 0.0;
+  {
+    ArenaScope scope;
+    Arena* ar = scope.arena();
+    Var x(ar, x_val);
+    Var y(ar, y_val);
+
+    std::vector<int32_t> in_idx = {x.idx_, y.idx_};
+    std::vector<double>  out_vals = {x_val * y_val, x_val + y_val};
+
+    CustomBackwardFn fn = [](
+      const double* input_vals,  int /*n_in*/,
+      const double* /*output_vals*/, int /*n_out*/,
+      const double* output_adjs,
+      double* input_adjs
+    ) {
+      const double xv = input_vals[0];
+      const double yv = input_vals[1];
+      const double da = output_adjs[0];   // dL/da
+      const double db = output_adjs[1];   // dL/db
+      // a = x * y  -> da/dx = y, da/dy = x
+      // b = x + y  -> db/dx = 1, db/dy = 1
+      input_adjs[0] = yv * da + 1.0 * db;
+      input_adjs[1] = xv * da + 1.0 * db;
+    };
+
+    std::vector<int32_t> out_idx;
+    ar->add_custom_backward(in_idx, out_vals, fn, out_idx);
+
+    Var a; a.arena_ = ar; a.idx_ = out_idx[0];
+    Var b; b.arena_ = ar; b.idx_ = out_idx[1];
+    Var L = a * a + b * b;
+    L.backward();
+    L_cb  = L.val();
+    dx_cb = x.adj();
+    dy_cb = y.adj();
+  }
+
+  // Analytical reference: L(x,y) = (xy)^2 + (x+y)^2
+  // dL/dx = 2*x*y^2 + 2(x+y)
+  // dL/dy = 2*x^2*y + 2(x+y)
+  const double dx_an = 2.0 * x_val * y_val * y_val + 2.0 * (x_val + y_val);
+  const double dy_an = 2.0 * x_val * x_val * y_val + 2.0 * (x_val + y_val);
+  const double L_an  = (x_val * y_val) * (x_val * y_val) +
+                       (x_val + y_val) * (x_val + y_val);
+
+  return List::create(
+    _["L_std"]   = L_std,    _["L_cb"]   = L_cb,    _["L_analytical"]   = L_an,
+    _["dx_std"]  = dx_std,   _["dx_cb"]  = dx_cb,   _["dx_analytical"]  = dx_an,
+    _["dy_std"]  = dy_std,   _["dy_cb"]  = dy_cb,   _["dy_analytical"]  = dy_an
   );
 }

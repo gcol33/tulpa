@@ -541,6 +541,10 @@ cpp_test_gp_solver_dispatch <- function(w, sigma2, phi, coords, nn_idx, nn_dist,
     .Call(`_tulpa_cpp_test_gp_solver_dispatch`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, solver, cg_tol, cg_maxiter)
 }
 
+cpp_test_arena_custom_backward <- function(x_val, y_val) {
+    .Call(`_tulpa_cpp_test_arena_custom_backward`, x_val, y_val)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

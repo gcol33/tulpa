@@ -2586,6 +2586,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_arena_custom_backward
+List cpp_test_arena_custom_backward(double x_val, double y_val);
+RcppExport SEXP _tulpa_cpp_test_arena_custom_backward(SEXP x_valSEXP, SEXP y_valSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type x_val(x_valSEXP);
+    Rcpp::traits::input_parameter< double >::type y_val(y_valSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_arena_custom_backward(x_val, y_val));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -2905,6 +2917,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_parallel_likelihood", (DL_FUNC) &_tulpa_cpp_test_parallel_likelihood, 3},
     {"_tulpa_cpp_test_parallel_independent", (DL_FUNC) &_tulpa_cpp_test_parallel_independent, 2},
     {"_tulpa_cpp_test_gp_solver_dispatch", (DL_FUNC) &_tulpa_cpp_test_gp_solver_dispatch, 13},
+    {"_tulpa_cpp_test_arena_custom_backward", (DL_FUNC) &_tulpa_cpp_test_arena_custom_backward, 2},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},
