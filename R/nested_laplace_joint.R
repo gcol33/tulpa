@@ -54,6 +54,12 @@
 #' @param n_threads OpenMP threads.
 #' @param x_init Optional warm-start for the first grid point's inner solve.
 #' @param verbose Currently a no-op; reserved.
+#' @param store_Q If `TRUE`, also return the per-grid joint precision Q
+#'   (lower triangle, CSC) as `Q_csc_p_per_grid`, `Q_csc_i_per_grid`,
+#'   `Q_csc_x_per_grid`, `Q_csc_n`. Lets callers compute INLA-style
+#'   total-variance posterior moments (`Var-of-means + Mean-of-Var`) on
+#'   inner latent coordinates such as fixed-effect betas. Default `FALSE`
+#'   to keep the result lightweight.
 #'
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:
@@ -74,7 +80,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                        copy = NULL,
                                        max_iter = 50L, tol = 1e-6,
                                        n_threads = 1L,
-                                       x_init = NULL, verbose = FALSE) {
+                                       x_init = NULL, verbose = FALSE,
+                                       store_Q = FALSE) {
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
     }
@@ -99,7 +106,7 @@ tulpa_nested_laplace_joint <- function(responses,
     grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid)
 
     res <- backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init)
+                                n_threads, x_init, isTRUE(store_Q))
 
     res$theta_grid  <- backend$theta_grid(grids, cp$has_copy)
     res$theta_names <- colnames(res$theta_grid)
@@ -130,7 +137,7 @@ tulpa_nested_laplace_joint <- function(responses,
                               has_copy, alpha_axis)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init) {
+                                n_threads, x_init, store_Q = FALSE) {
             cpp_nested_laplace_joint_bym2(
                 arms_list       = arms,
                 copy_arm        = as.integer(cp$copy_arm_zero),
@@ -146,7 +153,7 @@ tulpa_nested_laplace_joint <- function(responses,
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
                 x_init_nullable = x_init,
-                store_Q    = FALSE
+                store_Q    = isTRUE(store_Q)
             )
         },
         theta_grid = function(grids, has_copy) {
@@ -169,7 +176,7 @@ tulpa_nested_laplace_joint <- function(responses,
             .joint_cartesian(list(tau = tau_axis), has_copy, alpha_axis)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init) {
+                                n_threads, x_init, store_Q = FALSE) {
             cpp_nested_laplace_joint_icar(
                 arms_list       = arms,
                 copy_arm        = as.integer(cp$copy_arm_zero),
@@ -183,7 +190,7 @@ tulpa_nested_laplace_joint <- function(responses,
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
                 x_init_nullable = x_init,
-                store_Q    = FALSE
+                store_Q    = isTRUE(store_Q)
             )
         },
         theta_grid = function(grids, has_copy) {
@@ -205,7 +212,7 @@ tulpa_nested_laplace_joint <- function(responses,
                               has_copy, alpha_axis)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init) {
+                                n_threads, x_init, store_Q = FALSE) {
             cpp_nested_laplace_joint_car_proper(
                 arms_list       = arms,
                 copy_arm        = as.integer(cp$copy_arm_zero),
@@ -220,7 +227,7 @@ tulpa_nested_laplace_joint <- function(responses,
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
                 x_init_nullable = x_init,
-                store_Q    = FALSE
+                store_Q    = isTRUE(store_Q)
             )
         },
         theta_grid = function(grids, has_copy) {

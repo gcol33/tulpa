@@ -12,7 +12,8 @@ tulpa_nested_laplace_joint(
   tol = 1e-06,
   n_threads = 1L,
   x_init = NULL,
-  verbose = FALSE
+  verbose = FALSE,
+  store_Q = FALSE
 )
 }
 \arguments{
@@ -63,6 +64,13 @@ When \code{NULL} (default), no copy-scaling is applied.
 \item{x_init}{Optional warm-start for the first grid point's inner solve.}
 
 \item{verbose}{Currently a no-op; reserved.}
+
+\item{store_Q}{If \code{TRUE}, also return the per-grid joint precision Q
+(lower triangle, CSC) as \code{Q_csc_p_per_grid}, \code{Q_csc_i_per_grid},
+\code{Q_csc_x_per_grid}, \code{Q_csc_n}. Lets callers compute INLA-style
+total-variance posterior moments (\code{Var-of-means + Mean-of-Var}) on
+inner latent coordinates such as fixed-effect betas. Default \code{FALSE}
+to keep the result lightweight.}
 }
 \value{
 A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")} with:
