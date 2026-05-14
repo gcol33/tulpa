@@ -38,11 +38,15 @@ namespace {
 
 // Family enum local to this TU — selects the per-obs log-likelihood and
 // the role of `log_phi`. Kept C++-local because the user-facing R wrapper
-// translates a string into this code.
+// translates a string into this code. The conventions match
+// laplace_family_link.h (neg_binomial_2 size, Gamma shape, Beta precision).
 enum class SpdeFamily : int {
-    GAUSSIAN = 0,    // log_phi = log(sigma);    y ~ N(mu, sigma^2)
-    POISSON  = 1,    // log_phi unused;          y ~ Poisson(exp(eta))
-    BINOMIAL = 2     // log_phi unused;          y ~ Binomial(n_trials, sigmoid(eta))
+    GAUSSIAN = 0,    // log_phi = log(sigma);          y ~ N(mu, sigma^2)
+    POISSON  = 1,    // log_phi unused;                y ~ Poisson(exp(eta))
+    BINOMIAL = 2,    // log_phi unused;                y ~ Binomial(n_trials, sigmoid(eta))
+    GAMMA    = 3,    // log_phi = log(shape);          y ~ Gamma(shape, shape/mu), mu = exp(eta)
+    NEGBIN   = 4,    // log_phi = log(size r);         var = mu + mu^2/r, mu = exp(eta)
+    BETA     = 5     // log_phi = log(precision phi);  mu = sigmoid(eta), a = mu*phi, b = (1-mu)*phi
 };
 
 // =====================================================================
@@ -54,11 +58,15 @@ struct SpdeGlmData {
     SpdeFamily family;
     std::vector<double> y;
     std::vector<int>    n_trials;     // binomial only
-    std::vector<double> log_y_fact;   // log(y!) for poisson constant
+    std::vector<double> log_y_fact;   // log(y!) for poisson / negbin constant
     std::vector<double> log_choose;   // lchoose(n, y) for binomial constant
+    std::vector<double> log_y;        // log(y) for gamma / beta
+    std::vector<double> log_1my;      // log(1 - y) for beta
 
-    // log_phi prior: only used by Gaussian (log_sigma). For Poisson /
-    // Binomial log_phi is pinned tightly and ignored downstream.
+    // log_phi prior: only used by Gaussian (log_sigma), Gamma (log_shape),
+    // NegBin (log_size), Beta (log_precision). The R wrapper picks a
+    // sensible default per-family; for Poisson / Binomial log_phi is
+    // pinned tightly and ignored downstream.
     double log_phi_prior_sd = 3.0;
 };
 
@@ -82,6 +90,7 @@ T spde_glm_likelihood(
 ) {
     using std::exp;
     using std::log;
+    using std::lgamma;
 
     const auto* sd = static_cast<const SpdeGlmData*>(model_data);
     const T eta_i = eta[0];
@@ -101,6 +110,36 @@ T spde_glm_likelihood(
             T one_plus_exp = T(1.0) + exp(eta_i);
             return T(sd->log_choose[i]) + T(sd->y[i]) * eta_i
                  - T(static_cast<double>(sd->n_trials[i])) * log(one_plus_exp);
+        }
+        case SpdeFamily::GAMMA: {
+            T log_phi = params[layout.extra_offset];
+            T phi     = exp(log_phi);
+            T neg_eta = T(0.0) - eta_i;
+            return phi * log_phi - lgamma(phi)
+                 + (phi - T(1.0)) * T(sd->log_y[i])
+                 - phi * eta_i
+                 - phi * T(sd->y[i]) * exp(neg_eta);
+        }
+        case SpdeFamily::NEGBIN: {
+            T log_phi = params[layout.extra_offset];
+            T phi     = exp(log_phi);
+            T mu      = exp(eta_i);
+            T y_i     = T(sd->y[i]);
+            return lgamma(y_i + phi) - lgamma(phi)
+                 - T(sd->log_y_fact[i])
+                 + phi * log_phi
+                 - (y_i + phi) * log(mu + phi)
+                 + y_i * eta_i;
+        }
+        case SpdeFamily::BETA: {
+            T log_phi = params[layout.extra_offset];
+            T phi     = exp(log_phi);
+            T mu      = T(1.0) / (T(1.0) + exp(T(0.0) - eta_i));
+            T a       = mu * phi;
+            T b       = (T(1.0) - mu) * phi;
+            return lgamma(phi) - lgamma(a) - lgamma(b)
+                 + (a - T(1.0)) * T(sd->log_y[i])
+                 + (b - T(1.0)) * T(sd->log_1my[i]);
         }
     }
     return T(0.0);
@@ -182,19 +221,23 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     if (n_mesh <= 0) Rcpp::stop("n_mesh must be positive");
 
     SpdeFamily fam;
-    if      (family == "gaussian") fam = SpdeFamily::GAUSSIAN;
-    else if (family == "poisson")  fam = SpdeFamily::POISSON;
-    else if (family == "binomial") fam = SpdeFamily::BINOMIAL;
+    if      (family == "gaussian")       fam = SpdeFamily::GAUSSIAN;
+    else if (family == "poisson")        fam = SpdeFamily::POISSON;
+    else if (family == "binomial")       fam = SpdeFamily::BINOMIAL;
+    else if (family == "gamma")          fam = SpdeFamily::GAMMA;
+    else if (family == "neg_binomial_2") fam = SpdeFamily::NEGBIN;
+    else if (family == "beta")           fam = SpdeFamily::BETA;
     else Rcpp::stop("Unsupported family for tulpa_nuts_spde: '%s'. "
-                    "Supported: gaussian, poisson, binomial.",
-                    family.c_str());
+                    "Supported: gaussian, poisson, binomial, gamma, "
+                    "neg_binomial_2, beta.", family.c_str());
 
     // Family-specific input validation.
-    if (fam == SpdeFamily::POISSON) {
+    if (fam == SpdeFamily::POISSON || fam == SpdeFamily::NEGBIN) {
         for (int i = 0; i < N; i++) {
             if (!R_finite(y_r[i]) || y_r[i] < 0.0 ||
                 std::abs(y_r[i] - std::round(y_r[i])) > 1e-9) {
-                Rcpp::stop("poisson family requires non-negative integer y");
+                Rcpp::stop("%s family requires non-negative integer y",
+                           family.c_str());
             }
         }
     } else if (fam == SpdeFamily::BINOMIAL) {
@@ -205,6 +248,18 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
             if (!R_finite(y_r[i]) || y_r[i] < 0.0 || y_r[i] > n_trials_r[i] ||
                 std::abs(y_r[i] - std::round(y_r[i])) > 1e-9) {
                 Rcpp::stop("binomial family requires y in [0, n_trials]");
+            }
+        }
+    } else if (fam == SpdeFamily::GAMMA) {
+        for (int i = 0; i < N; i++) {
+            if (!R_finite(y_r[i]) || y_r[i] <= 0.0) {
+                Rcpp::stop("gamma family requires strictly positive y");
+            }
+        }
+    } else if (fam == SpdeFamily::BETA) {
+        for (int i = 0; i < N; i++) {
+            if (!R_finite(y_r[i]) || y_r[i] <= 0.0 || y_r[i] >= 1.0) {
+                Rcpp::stop("beta family requires y strictly in (0, 1)");
             }
         }
     }
@@ -238,10 +293,22 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
             sd.log_choose[i] = R::lchoose(static_cast<double>(sd.n_trials[i]), sd.y[i]);
         }
     }
-    if (fam == SpdeFamily::POISSON) {
+    if (fam == SpdeFamily::POISSON || fam == SpdeFamily::NEGBIN) {
         sd.log_y_fact.resize(N);
         for (int i = 0; i < N; i++) {
             sd.log_y_fact[i] = R::lgammafn(sd.y[i] + 1.0);
+        }
+    }
+    if (fam == SpdeFamily::GAMMA || fam == SpdeFamily::BETA) {
+        sd.log_y.resize(N);
+        for (int i = 0; i < N; i++) {
+            sd.log_y[i] = std::log(sd.y[i]);
+        }
+    }
+    if (fam == SpdeFamily::BETA) {
+        sd.log_1my.resize(N);
+        for (int i = 0; i < N; i++) {
+            sd.log_1my[i] = std::log(1.0 - sd.y[i]);
         }
     }
     sd.log_phi_prior_sd = log_phi_prior_sd;

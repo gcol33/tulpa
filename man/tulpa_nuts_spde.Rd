@@ -8,7 +8,7 @@ tulpa_nuts_spde(
   y,
   X,
   spatial,
-  family = c("gaussian", "poisson", "binomial"),
+  family = c("gaussian", "poisson", "binomial", "gamma", "neg_binomial_2", "beta"),
   n_trials = NULL,
   range = NULL,
   sigma = NULL,
@@ -27,8 +27,10 @@ tulpa_nuts_spde(
 \item{y}{Response vector. Family-specific:
 \itemize{
 \item \code{gaussian}: any real
-\item \code{poisson}: non-negative integers
+\item \code{poisson}, \code{neg_binomial_2}: non-negative integers
 \item \code{binomial}: non-negative integers in \verb{[0, n_trials]}
+\item \code{gamma}: strictly positive reals
+\item \code{beta}: strictly in \verb{(0, 1)}
 }}
 
 \item{X}{Fixed-effects design matrix.}
@@ -37,7 +39,8 @@ tulpa_nuts_spde(
 \code{\link[=spatial_spde_custom]{spatial_spde_custom()}} — supplies the FEM matrices (C0, G1) and
 projection (A) plus the smoothness \code{nu}.}
 
-\item{family}{One of \code{"gaussian"}, \code{"poisson"}, \code{"binomial"}.}
+\item{family}{One of \code{"gaussian"}, \code{"poisson"}, \code{"binomial"},
+\code{"gamma"}, \code{"neg_binomial_2"}, \code{"beta"}.}
 
 \item{n_trials}{Integer vector for \code{family = "binomial"} (else ignored).}
 
@@ -46,9 +49,15 @@ to the SPDE prior modes (\code{spatial$prior_range[1]}, \code{spatial$prior_sigm
 
 \item{sigma_beta}{Prior SD on each fixed-effect coefficient.}
 
-\item{log_phi_prior_sd}{Prior SD on \code{log(phi)}. For Gaussian, \code{phi} is
-the residual SD (sampled jointly). For poisson / binomial, \code{log_phi}
-is held tight (default 3) and ignored downstream.}
+\item{log_phi_prior_sd}{Prior SD on \code{log(phi)}. Role of \code{phi} is
+family-specific:
+\itemize{
+\item \code{gaussian}: \code{phi} is the residual SD (sampled jointly)
+\item \code{gamma}: \code{phi} is the Gamma shape (sampled jointly)
+\item \code{neg_binomial_2}: \code{phi} is the NB size \code{r} (sampled jointly)
+\item \code{beta}: \code{phi} is the Beta precision (sampled jointly)
+\item \code{poisson}, \code{binomial}: \code{log_phi} is held tight and ignored downstream.
+}}
 
 \item{log_phi_init}{Starting value for \code{log(phi)}.}
 

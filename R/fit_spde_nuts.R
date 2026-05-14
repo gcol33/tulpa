@@ -17,20 +17,27 @@
 #'
 #' @param y Response vector. Family-specific:
 #'   * `gaussian`: any real
-#'   * `poisson`: non-negative integers
+#'   * `poisson`, `neg_binomial_2`: non-negative integers
 #'   * `binomial`: non-negative integers in `[0, n_trials]`
+#'   * `gamma`: strictly positive reals
+#'   * `beta`: strictly in `(0, 1)`
 #' @param X Fixed-effects design matrix.
 #' @param spatial A `tulpa_spatial` object from [spatial_spde()] /
 #'   [spatial_spde_custom()] — supplies the FEM matrices (C0, G1) and
 #'   projection (A) plus the smoothness `nu`.
-#' @param family One of `"gaussian"`, `"poisson"`, `"binomial"`.
+#' @param family One of `"gaussian"`, `"poisson"`, `"binomial"`,
+#'   `"gamma"`, `"neg_binomial_2"`, `"beta"`.
 #' @param n_trials Integer vector for `family = "binomial"` (else ignored).
 #' @param range,sigma Matern range and marginal SD on the field. Default
 #'   to the SPDE prior modes (`spatial$prior_range[1]`, `spatial$prior_sigma[1]`).
 #' @param sigma_beta Prior SD on each fixed-effect coefficient.
-#' @param log_phi_prior_sd Prior SD on `log(phi)`. For Gaussian, `phi` is
-#'   the residual SD (sampled jointly). For poisson / binomial, `log_phi`
-#'   is held tight (default 3) and ignored downstream.
+#' @param log_phi_prior_sd Prior SD on `log(phi)`. Role of `phi` is
+#'   family-specific:
+#'   * `gaussian`: `phi` is the residual SD (sampled jointly)
+#'   * `gamma`: `phi` is the Gamma shape (sampled jointly)
+#'   * `neg_binomial_2`: `phi` is the NB size `r` (sampled jointly)
+#'   * `beta`: `phi` is the Beta precision (sampled jointly)
+#'   * `poisson`, `binomial`: `log_phi` is held tight and ignored downstream.
 #' @param log_phi_init Starting value for `log(phi)`.
 #' @param n_iter,n_warmup,max_treedepth,adapt_delta,seed,verbose Standard
 #'   NUTS controls.
@@ -45,7 +52,8 @@
 #'
 #' @export
 tulpa_nuts_spde <- function(y, X, spatial,
-                            family           = c("gaussian", "poisson", "binomial"),
+                            family           = c("gaussian", "poisson", "binomial",
+                                                 "gamma", "neg_binomial_2", "beta"),
                             n_trials         = NULL,
                             range            = NULL,
                             sigma            = NULL,
@@ -124,14 +132,16 @@ tulpa_nuts_spde <- function(y, X, spatial,
   res$sigma   <- sigma
   res$spatial <- spatial
 
-  if (family == "gaussian") {
-    log_phi_draws <- res$draws[, "log_phi"]
-    sigma_draws   <- exp(log_phi_draws)
+  # phi summary on the natural scale, for families that sample it. The
+  # meaning of phi is family-specific: residual SD (gaussian), shape
+  # (gamma), size r (neg_binomial_2), precision (beta).
+  if (family %in% c("gaussian", "gamma", "neg_binomial_2", "beta")) {
+    phi_draws <- exp(res$draws[, "log_phi"])
     res$phi_summary <- c(
-      mean   = mean(sigma_draws),
-      median = stats::median(sigma_draws),
-      q05    = unname(stats::quantile(sigma_draws, 0.05)),
-      q95    = unname(stats::quantile(sigma_draws, 0.95))
+      mean   = mean(phi_draws),
+      median = stats::median(phi_draws),
+      q05    = unname(stats::quantile(phi_draws, 0.05)),
+      q95    = unname(stats::quantile(phi_draws, 0.95))
     )
   }
 

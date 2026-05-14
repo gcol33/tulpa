@@ -97,6 +97,121 @@ test_that("tulpa_nuts_spde poisson recovers intercept", {
   expect_true(mean(fit$accept_prob) > 0.4)
 })
 
+test_that("tulpa_nuts_spde gamma recovers intercept and shape", {
+  skip_if_not_installed("fmesher")
+
+  set.seed(11)
+  n_obs <- 200
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.25, 0.6), cutoff = 0.10)
+
+  beta0      <- 0.6
+  shape_true <- 4.0
+  w_true     <- rnorm(spec$n_mesh, 0, 0.2)
+  w_true     <- w_true - mean(w_true)
+  eta        <- beta0 + as.numeric(spec$A %*% w_true)
+  mu         <- exp(eta)
+  y          <- rgamma(n_obs, shape = shape_true, rate = shape_true / mu)
+  X          <- matrix(1.0, nrow = n_obs, ncol = 1)
+
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec,
+    family = "gamma",
+    range = 0.4, sigma = 0.3,
+    log_phi_init = log(shape_true),
+    n_iter = 600L, n_warmup = 300L, seed = 11L
+  )
+
+  beta_post  <- mean(fit$draws[, "beta[1]"])
+  shape_post <- fit$phi_summary[["mean"]]
+
+  expect_lt(abs(beta_post - beta0), 0.30)
+  expect_lt(abs(shape_post - shape_true) / shape_true, 0.40)
+  expect_true(mean(fit$accept_prob) > 0.4)
+})
+
+test_that("tulpa_nuts_spde neg_binomial_2 recovers intercept and size", {
+  skip_if_not_installed("fmesher")
+
+  set.seed(13)
+  n_obs <- 200
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.25, 0.6), cutoff = 0.10)
+
+  beta0     <- 1.2
+  size_true <- 3.0  # NegBin size r (phi in the type-2 parametrisation)
+  w_true    <- rnorm(spec$n_mesh, 0, 0.2)
+  w_true    <- w_true - mean(w_true)
+  eta       <- beta0 + as.numeric(spec$A %*% w_true)
+  mu        <- exp(eta)
+  y         <- rnbinom(n_obs, size = size_true, mu = mu)
+  X         <- matrix(1.0, nrow = n_obs, ncol = 1)
+
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec,
+    family = "neg_binomial_2",
+    range = 0.4, sigma = 0.3,
+    log_phi_init = log(size_true),
+    n_iter = 600L, n_warmup = 300L, seed = 13L
+  )
+
+  beta_post <- mean(fit$draws[, "beta[1]"])
+  size_post <- fit$phi_summary[["mean"]]
+
+  expect_lt(abs(beta_post - beta0), 0.40)
+  # NegBin size is notoriously weakly identified; tolerate a wide envelope.
+  expect_lt(abs(log(size_post) - log(size_true)), 0.8)
+  expect_true(mean(fit$accept_prob) > 0.4)
+})
+
+test_that("tulpa_nuts_spde beta recovers intercept and precision", {
+  skip_if_not_installed("fmesher")
+
+  set.seed(17)
+  n_obs <- 200
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.25, 0.6), cutoff = 0.10)
+
+  beta0    <- 0.2  # logit(mu0) ~ 0.55
+  phi_true <- 12.0
+  w_true   <- rnorm(spec$n_mesh, 0, 0.15)
+  w_true   <- w_true - mean(w_true)
+  eta      <- beta0 + as.numeric(spec$A %*% w_true)
+  mu       <- 1.0 / (1.0 + exp(-eta))
+  y        <- rbeta(n_obs, shape1 = mu * phi_true, shape2 = (1 - mu) * phi_true)
+  X        <- matrix(1.0, nrow = n_obs, ncol = 1)
+
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec,
+    family = "beta",
+    range = 0.4, sigma = 0.3,
+    log_phi_init = log(phi_true),
+    n_iter = 600L, n_warmup = 300L, seed = 17L
+  )
+
+  beta_post <- mean(fit$draws[, "beta[1]"])
+  phi_post  <- fit$phi_summary[["mean"]]
+
+  expect_lt(abs(beta_post - beta0), 0.30)
+  expect_lt(abs(log(phi_post) - log(phi_true)), 0.50)
+  expect_true(mean(fit$accept_prob) > 0.4)
+})
+
+test_that("tulpa_nuts_spde rejects unsupported family", {
+  skip_if_not_installed("fmesher")
+  set.seed(2)
+  coords <- cbind(runif(20), runif(20))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.3, 0.6), cutoff = 0.15)
+  y <- rnorm(20)
+  X <- matrix(1.0, nrow = 20, ncol = 1)
+  expect_error(
+    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "inverse_gaussian",
+                    range = 0.3, sigma = 0.3,
+                    n_iter = 50L, n_warmup = 25L),
+    "should be one of"  # match.arg() rejects before the C++ shim sees it
+  )
+})
+
 test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
   skip_if_not_installed("fmesher")
 
