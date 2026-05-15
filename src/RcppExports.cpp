@@ -2794,6 +2794,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_spde_nc_apply_probe
+Rcpp::List cpp_spde_nc_apply_probe(Rcpp::NumericVector z, double log_kappa, double log_tau, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p);
+RcppExport SEXP _tulpa_cpp_spde_nc_apply_probe(SEXP zSEXP, SEXP log_kappaSEXP, SEXP log_tauSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type z(zSEXP);
+    Rcpp::traits::input_parameter< double >::type log_kappa(log_kappaSEXP);
+    Rcpp::traits::input_parameter< double >::type log_tau(log_tauSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type C0_diag(C0_diagSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type G1_x(G1_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_i(G1_iSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_p(G1_pSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_spde_nc_apply_probe(z, log_kappa, log_tau, C0_diag, G1_x, G1_i, G1_p));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_spde_nuts
 Rcpp::List cpp_tulpa_fit_spde_nuts(Rcpp::NumericVector y_r, Rcpp::IntegerVector n_trials_r, Rcpp::NumericMatrix X_r, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, int alpha, double sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_spde_nuts(SEXP y_rSEXP, SEXP n_trials_rSEXP, SEXP X_rSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP kappaSEXP, SEXP tau_spdeSEXP, SEXP familySEXP, SEXP alphaSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP) {
@@ -2982,6 +2999,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_tulpa_version", (DL_FUNC) &_tulpa_tulpa_version, 0},
     {"_tulpa_cpp_spde_layout_probe", (DL_FUNC) &_tulpa_cpp_spde_layout_probe, 4},
     {"_tulpa_cpp_spde_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_prior_probe, 9},
+    {"_tulpa_cpp_spde_nc_apply_probe", (DL_FUNC) &_tulpa_cpp_spde_nc_apply_probe, 7},
     {"_tulpa_cpp_tulpa_fit_spde_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_spde_nuts, 27},
     {NULL, NULL, 0}
 };

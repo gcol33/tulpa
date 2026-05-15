@@ -158,6 +158,89 @@ test_that("compute_spde_prior: legacy mode is quadratic in w and fills spde_w", 
   expect_equal(res_c$prior_val, c^2 * res$prior_val, tolerance = 1e-9)
 })
 
+test_that("NC transform: z=0 yields w=0 and lazily builds the cache", {
+  skip_if_not_installed("fmesher")
+  set.seed(201)
+  coords <- cbind(runif(40), runif(40))
+  spec <- spatial_spde(coords)
+
+  z0 <- rep(0.0, spec$n_mesh)
+  res <- tulpa:::cpp_spde_nc_apply_probe(
+    z = z0, log_kappa = log(2.0), log_tau = log(1.5),
+    C0_diag = spec$C0_diag, G1_x = spec$G1_x,
+    G1_i = spec$G1_i, G1_p = spec$G1_p
+  )
+
+  expect_equal(length(res$w), spec$n_mesh)
+  expect_true(res$nc_transform_built)
+  expect_equal(max(abs(res$w)), 0.0, tolerance = 1e-12)
+})
+
+test_that("NC transform: z^T z == w^T Q(theta) w (consistency with legacy prior)", {
+  # The NC transform sets w = L^{-T}(theta) z so L^T w = z, hence
+  # z^T z = w^T L L^T w = w^T Q(theta) w. compute_spde_prior in joint
+  # mode returns -0.5 z^T z, and in legacy mode (with Q built at the
+  # same kappa, tau) returns -0.5 w^T Q w; the two must match.
+  skip_if_not_installed("fmesher")
+  set.seed(202)
+  coords <- cbind(runif(45), runif(45))
+  spec <- spatial_spde(coords)
+
+  z <- rnorm(spec$n_mesh, sd = 0.7)
+  log_kappa <- log(2.3)
+  log_tau   <- log(1.4)
+  kappa <- exp(log_kappa)
+  tau   <- exp(log_tau)
+
+  w_res <- tulpa:::cpp_spde_nc_apply_probe(
+    z = z, log_kappa = log_kappa, log_tau = log_tau,
+    C0_diag = spec$C0_diag, G1_x = spec$G1_x,
+    G1_i = spec$G1_i, G1_p = spec$G1_p
+  )
+  w <- w_res$w
+
+  joint_prior <- tulpa:::cpp_spde_prior_probe(
+    vals = z, joint_hypers = TRUE,
+    C0_diag = numeric(0), G1_x = numeric(0),
+    G1_i = integer(0), G1_p = integer(0)
+  )$prior_val
+
+  legacy_prior <- tulpa:::cpp_spde_prior_probe(
+    vals = w, joint_hypers = FALSE,
+    C0_diag = spec$C0_diag, G1_x = spec$G1_x,
+    G1_i = spec$G1_i, G1_p = spec$G1_p,
+    kappa = kappa, tau_spde = tau, alpha = 2L
+  )$prior_val
+
+  expect_equal(joint_prior, legacy_prior, tolerance = 1e-7)
+})
+
+test_that("NC transform: w is linear in z", {
+  # If w = L^{-T}(theta) z then w(c z) = c w(z) at the same theta.
+  skip_if_not_installed("fmesher")
+  set.seed(203)
+  coords <- cbind(runif(35), runif(35))
+  spec <- spatial_spde(coords)
+
+  z <- rnorm(spec$n_mesh, sd = 0.5)
+  log_kappa <- log(1.7)
+  log_tau   <- log(0.9)
+  c_scale   <- -2.4
+
+  w_z <- tulpa:::cpp_spde_nc_apply_probe(
+    z = z, log_kappa = log_kappa, log_tau = log_tau,
+    C0_diag = spec$C0_diag, G1_x = spec$G1_x,
+    G1_i = spec$G1_i, G1_p = spec$G1_p
+  )$w
+  w_cz <- tulpa:::cpp_spde_nc_apply_probe(
+    z = c_scale * z, log_kappa = log_kappa, log_tau = log_tau,
+    C0_diag = spec$C0_diag, G1_x = spec$G1_x,
+    G1_i = spec$G1_i, G1_p = spec$G1_p
+  )$w
+
+  expect_equal(w_cz, c_scale * w_z, tolerance = 1e-9)
+})
+
 test_that("ParamLayout: hyper slot ordering is mesh-size invariant", {
   for (n_mesh in c(10, 100, 500)) {
     layout <- tulpa:::cpp_spde_layout_probe(

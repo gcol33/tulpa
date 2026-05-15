@@ -16,6 +16,10 @@
 #include "autodiff_utils.h"
 #include "tulpa_priors.h"      // priors::* helpers used by log_post_generic_impl.h
 #include "tulpa/likelihood.h"
+#include "spde_nc_apply.h"     // apply_spde_nc_transform_{double,arena};
+                                // included here (outside namespace tulpa)
+                                // so log_post_generic_impl.h's nested
+                                // include is a guard-hit no-op.
 
 // Expects hmc_sampler.h to have been included first by the umbrella TU,
 // defining tulpa_hmc::ModelData / tulpa_hmc::ParamLayout.

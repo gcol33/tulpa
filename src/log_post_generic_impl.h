@@ -8,6 +8,15 @@
 #define TULPA_LOG_POST_GENERIC_IMPL_H
 
 #include <Rcpp.h>  // Rcpp::stop for offset-length validation
+#include <type_traits>
+
+// NOTE: this file is included from log_post_impl.h while
+// `namespace tulpa { ... }` is already open, so any nested
+// `#include "<header_that_opens_namespace_tulpa>"` would create
+// `tulpa::tulpa::` symbols and break qualified lookup of
+// tulpa::LikelihoodSpec. The joint-NUTS NC transform declarations live
+// in spde_nc_apply.h and are pulled in by log_post_impl.h at the top
+// (outside any namespace), so they are visible here without a re-include.
 
 constexpr int MAX_PROCESSES = 8;
 
@@ -119,6 +128,32 @@ static T initialize_generic_state(
         // block contributes a centered or non-centered prior.
         log_post = log_post + priors::compute_spde_hyper_prior<T>(
             params, data, layout);
+
+        // Joint-NUTS only: compute w = L^{-T}(theta) z from the z block
+        // sitting in params[spde_w_start..spde_w_end). compute_spde_prior
+        // wrote -0.5 sum(z^2) to log_post and left spde_w empty; the eta
+        // accumulator below multiplies w through the projection A, so we
+        // need state.spde_w populated with w (not z) before the obs loop.
+        // The Jacobian from z to w cancels exactly against log|Q(theta)|/2
+        // through the (a.ii) adjoint — no explicit log-det term is added
+        // here.
+        //
+        // Dispatch is statically resolved: compute_log_post_generic is
+        // only instantiated with T = double (numerical path) and
+        // T = arena::Var (reverse-mode AD). fwd::Dual is not used for the
+        // generic-spec path; the else branch is a defensive guard.
+        if (data.spde_data.joint_hypers) {
+            if constexpr (std::is_same_v<T, double>) {
+                apply_spde_nc_transform_double(
+                    params, data, layout, state.spde_w);
+            } else if constexpr (std::is_same_v<T, arena::Var>) {
+                apply_spde_nc_transform_arena(
+                    params, data, layout, state.spde_w);
+            } else {
+                Rcpp::stop("SPDE joint-NUTS: AD type not supported "
+                           "(only double and arena::Var; fwd::Dual deferred).");
+            }
+        }
     }
 
     if (layout.has_temporal) {

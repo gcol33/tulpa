@@ -19,9 +19,18 @@
 #ifndef TULPA_SPDE_MODEL_DATA_H
 #define TULPA_SPDE_MODEL_DATA_H
 
+#include <memory>
 #include <vector>
 
 namespace tulpa {
+
+// Forward-decl of the non-centered transform owner. Definition lives in
+// src/spde_nc_transform.h and pulls in Eigen, so we only expose the type
+// name here. The full type is needed wherever the transform is built or
+// invoked (spde_nc_apply.cpp); other translation units that just hold a
+// SpdeModelData by value only need this declaration because shared_ptr's
+// destructor uses a type-erased deleter.
+class SpdeNcTransform;
 
 // Per-observation A-row entry (column index + interpolation weight). The
 // FEM projection A is sparse: each obs is a convex combination of ~3
@@ -77,6 +86,22 @@ struct SpdeModelData {
     // alpha rebuild.
     std::vector<double> rational_poles;
     std::vector<double> rational_weights;
+
+    // ----- Joint-NUTS non-centered transform cache -----
+    // Lazily built on the first log-post evaluation when joint_hypers ==
+    // true; remains null in legacy fixed-hyper mode (which uses the
+    // Q_p/Q_i/Q_x cache above instead). Holds the Eigen-format FEM
+    // matrices, the current (kappa, tau) Cholesky factor, and the adjoint
+    // hook from (a.i). Mutable so const ModelData references can populate
+    // it during a log-post evaluation.
+    //
+    // shared_ptr (not unique_ptr) so SpdeModelData stays trivially
+    // copy-constructible — laplace_spec.cpp makes a defensive value copy
+    // of ModelData to override RE state, and that path never sets
+    // joint_hypers, so the shared cache is never exercised across copies
+    // in practice. Forward declaration above keeps Eigen out of this
+    // public header.
+    mutable std::shared_ptr<SpdeNcTransform> nc_transform;
 };
 
 } // namespace tulpa

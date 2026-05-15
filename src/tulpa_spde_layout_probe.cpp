@@ -15,6 +15,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa_priors_spde.h"
 #include "spde_qbuilder.h"
+#include "spde_nc_apply.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -145,5 +146,75 @@ Rcpp::List cpp_spde_prior_probe(Rcpp::NumericVector vals,
     return Rcpp::List::create(
         Rcpp::Named("prior_val")     = prior_val,
         Rcpp::Named("spde_w_filled") = !spde_w_out.empty()
+    );
+}
+
+// Apply the joint-NUTS NC transform z -> w = L^{-T}(theta) z and return w.
+// Builds a minimal SPDE ModelData with joint_hypers = true, fills the FEM
+// matrices, places z in the param vector at spde_w_start..end, places
+// (log_kappa, log_tau) in the hyper slots, and calls
+// apply_spde_nc_transform_double. Used by tests to verify the transform
+// (i) is consistent with the unit-Gaussian-on-z prior — i.e.
+// z^T z == w^T Q(theta) w — and (ii) is linear in z.
+// [[Rcpp::export]]
+Rcpp::List cpp_spde_nc_apply_probe(Rcpp::NumericVector z,
+                                    double log_kappa,
+                                    double log_tau,
+                                    Rcpp::NumericVector C0_diag,
+                                    Rcpp::NumericVector G1_x,
+                                    Rcpp::IntegerVector G1_i,
+                                    Rcpp::IntegerVector G1_p) {
+    const int n_mesh = z.size();
+    if (n_mesh <= 0) Rcpp::stop("z must be non-empty");
+    if (C0_diag.size() != n_mesh) {
+        Rcpp::stop("C0_diag length (%d) must equal n_mesh (%d)",
+                   (int)C0_diag.size(), n_mesh);
+    }
+
+    ModelData data;
+    data.N           = 1;
+    data.n_processes = 1;
+    data.sigma_beta  = 10.0;
+
+    tulpa::ProcessData proc;
+    proc.p = 1;
+    proc.X_flat.assign(1, 0.0);
+    data.processes.push_back(proc);
+    data.sharing.init(1);
+
+    data.spatial_type           = tulpa::SpatialType::SPDE;
+    data.has_spde               = true;
+    auto& sm = data.spde_data;
+    sm.n_mesh       = n_mesh;
+    sm.joint_hypers = true;
+    sm.C0_diag.assign(C0_diag.begin(), C0_diag.end());
+    sm.G1_x.assign(G1_x.begin(), G1_x.end());
+    sm.G1_i.assign(G1_i.begin(), G1_i.end());
+    sm.G1_p.assign(G1_p.begin(), G1_p.end());
+
+    tulpa::LikelihoodSpec spec;
+    spec.name        = "probe";
+    spec.n_processes = 1;
+    data.likelihood_spec     = &spec;
+    data.model_response_data = nullptr;
+
+    ParamLayout layout = tulpa_hmc::compute_param_layout(data);
+
+    std::vector<double> params(layout.total_params, 0.0);
+    for (int j = 0; j < n_mesh; j++) {
+        params[layout.spde_w_start + j] = z[j];
+    }
+    params[layout.log_kappa_spde_idx] = log_kappa;
+    params[layout.log_tau_spde_idx]   = log_tau;
+
+    std::vector<double> w_out;
+    tulpa::apply_spde_nc_transform_double(params, data, layout, w_out);
+
+    return Rcpp::List::create(
+        Rcpp::Named("w")                  = Rcpp::wrap(w_out),
+        Rcpp::Named("n_mesh")             = n_mesh,
+        Rcpp::Named("log_kappa_idx")      = layout.log_kappa_spde_idx,
+        Rcpp::Named("log_tau_idx")        = layout.log_tau_spde_idx,
+        Rcpp::Named("nc_transform_built") = (bool) sm.nc_transform
     );
 }
