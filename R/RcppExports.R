@@ -545,6 +545,10 @@ cpp_test_arena_custom_backward <- function(x_val, y_val) {
     .Call(`_tulpa_cpp_test_arena_custom_backward`, x_val, y_val)
 }
 
+cpp_test_spde_nc_transform_grad <- function(C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps = 1e-5) {
+    .Call(`_tulpa_cpp_test_spde_nc_transform_grad`, C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

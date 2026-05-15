@@ -2598,6 +2598,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_spde_nc_transform_grad
+List cpp_test_spde_nc_transform_grad(Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, Rcpp::NumericVector z_init, double log_kappa_val, double log_tau_val, double fd_eps);
+RcppExport SEXP _tulpa_cpp_test_spde_nc_transform_grad(SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP z_initSEXP, SEXP log_kappa_valSEXP, SEXP log_tau_valSEXP, SEXP fd_epsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type C0_diag(C0_diagSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type G1_x(G1_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_i(G1_iSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_p(G1_pSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type z_init(z_initSEXP);
+    Rcpp::traits::input_parameter< double >::type log_kappa_val(log_kappa_valSEXP);
+    Rcpp::traits::input_parameter< double >::type log_tau_val(log_tau_valSEXP);
+    Rcpp::traits::input_parameter< double >::type fd_eps(fd_epsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_spde_nc_transform_grad(C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -2918,6 +2936,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_parallel_independent", (DL_FUNC) &_tulpa_cpp_test_parallel_independent, 2},
     {"_tulpa_cpp_test_gp_solver_dispatch", (DL_FUNC) &_tulpa_cpp_test_gp_solver_dispatch, 13},
     {"_tulpa_cpp_test_arena_custom_backward", (DL_FUNC) &_tulpa_cpp_test_arena_custom_backward, 2},
+    {"_tulpa_cpp_test_spde_nc_transform_grad", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_grad, 8},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

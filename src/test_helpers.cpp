@@ -7,6 +7,7 @@
 #include <random>
 #include "autodiff.h"
 #include "tulpa/autodiff_arena.h"
+#include "spde_nc_transform.h"
 #include "laplace_core.h"
 #include "pg_binomial.h"
 #include "hmc_gp.h"
@@ -1146,5 +1147,110 @@ List cpp_test_arena_custom_backward(double x_val, double y_val) {
     _["L_std"]   = L_std,    _["L_cb"]   = L_cb,    _["L_analytical"]   = L_an,
     _["dx_std"]  = dx_std,   _["dx_cb"]  = dx_cb,   _["dx_analytical"]  = dx_an,
     _["dy_std"]  = dy_std,   _["dy_cb"]  = dy_cb,   _["dy_analytical"]  = dy_an
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SPDE non-centered transform: gradient vs central differences
+// ---------------------------------------------------------------------------
+//
+// Builds an SPDE field on the supplied (C0_diag, G1) FEM matrices, computes
+// w = L^{-T} z under Q(kappa, tau) via the new arena custom_backward block,
+// and a scalar loss L(z, log_kappa, log_tau) = sum(w^2). Reverse-mode arena
+// gradients are then compared against central differences in (z[i], log_kappa,
+// log_tau). Returns both vectors so the testthat layer can assert agreement.
+// [[Rcpp::export]]
+List cpp_test_spde_nc_transform_grad(
+    Rcpp::NumericVector C0_diag,
+    Rcpp::NumericVector G1_x,
+    Rcpp::IntegerVector G1_i,
+    Rcpp::IntegerVector G1_p,
+    Rcpp::NumericVector z_init,
+    double log_kappa_val,
+    double log_tau_val,
+    double fd_eps = 1e-5
+) {
+  using tulpa::arena::Arena;
+  using tulpa::arena::ArenaScope;
+  using tulpa::arena::Var;
+  using tulpa::SpdeNcTransform;
+
+  const int n = z_init.size();
+
+  std::vector<double> C0_d(C0_diag.begin(), C0_diag.end());
+  std::vector<double> G1_xv(G1_x.begin(), G1_x.end());
+  std::vector<int>    G1_iv(G1_i.begin(), G1_i.end());
+  std::vector<int>    G1_pv(G1_p.begin(), G1_p.end());
+
+  // Reverse-mode arena gradient.
+  std::vector<double> grad_z_arena(n, 0.0);
+  double grad_log_kappa_arena = 0.0;
+  double grad_log_tau_arena   = 0.0;
+  double L_arena = 0.0;
+  {
+    SpdeNcTransform transform;
+    transform.init(n, C0_d, G1_xv, G1_iv, G1_pv);
+
+    ArenaScope scope;
+    Arena* ar = scope.arena();
+    std::vector<Var> z_v(n);
+    for (int i = 0; i < n; i++) z_v[i] = Var(ar, z_init[i]);
+    Var log_kappa_v(ar, log_kappa_val);
+    Var log_tau_v  (ar, log_tau_val);
+
+    std::vector<Var> w_v = tulpa::spde_nc_transform_arena(
+        ar, z_v, log_kappa_v, log_tau_v, transform);
+
+    // Loss: sum(w^2).
+    Var L(ar, 0.0);
+    for (int i = 0; i < n; i++) L = L + w_v[i] * w_v[i];
+
+    L.backward();
+    L_arena = L.val();
+    for (int i = 0; i < n; i++) grad_z_arena[i] = z_v[i].adj();
+    grad_log_kappa_arena = log_kappa_v.adj();
+    grad_log_tau_arena   = log_tau_v.adj();
+  }
+
+  // Central-difference reference. Each evaluation rebuilds the transform on
+  // a fresh ArenaScope, runs the forward, and reads sum(w^2) directly.
+  auto eval_loss = [&](const std::vector<double>& z_pt,
+                       double log_k, double log_t) -> double {
+    SpdeNcTransform transform;
+    transform.init(n, C0_d, G1_xv, G1_iv, G1_pv);
+    Eigen::VectorXd z_e(n);
+    for (int i = 0; i < n; i++) z_e[i] = z_pt[i];
+    Eigen::VectorXd w = transform.forward(z_e, std::exp(log_k), std::exp(log_t));
+    return w.squaredNorm();
+  };
+
+  std::vector<double> z_pt(z_init.begin(), z_init.end());
+
+  std::vector<double> grad_z_fd(n, 0.0);
+  for (int i = 0; i < n; i++) {
+    z_pt[i] += fd_eps;
+    double fp = eval_loss(z_pt, log_kappa_val, log_tau_val);
+    z_pt[i] -= 2 * fd_eps;
+    double fm = eval_loss(z_pt, log_kappa_val, log_tau_val);
+    z_pt[i] += fd_eps;
+    grad_z_fd[i] = (fp - fm) / (2.0 * fd_eps);
+  }
+
+  double fp = eval_loss(z_pt, log_kappa_val + fd_eps, log_tau_val);
+  double fm = eval_loss(z_pt, log_kappa_val - fd_eps, log_tau_val);
+  double grad_log_kappa_fd = (fp - fm) / (2.0 * fd_eps);
+
+  fp = eval_loss(z_pt, log_kappa_val, log_tau_val + fd_eps);
+  fm = eval_loss(z_pt, log_kappa_val, log_tau_val - fd_eps);
+  double grad_log_tau_fd = (fp - fm) / (2.0 * fd_eps);
+
+  return List::create(
+    _["L"]                    = L_arena,
+    _["grad_z_arena"]         = NumericVector(grad_z_arena.begin(),  grad_z_arena.end()),
+    _["grad_z_fd"]            = NumericVector(grad_z_fd.begin(),     grad_z_fd.end()),
+    _["grad_log_kappa_arena"] = grad_log_kappa_arena,
+    _["grad_log_kappa_fd"]    = grad_log_kappa_fd,
+    _["grad_log_tau_arena"]   = grad_log_tau_arena,
+    _["grad_log_tau_fd"]      = grad_log_tau_fd
   );
 }
