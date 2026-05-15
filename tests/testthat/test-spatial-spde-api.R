@@ -241,6 +241,151 @@ test_that("NC transform: w is linear in z", {
   expect_equal(w_cz, c_scale * w_z, tolerance = 1e-9)
 })
 
+test_that("PC hyper prior: disabled when any anchor is non-positive or >= 1", {
+  # Disabled means improper flat hyper-prior — compute_spde_hyper_prior
+  # must return 0 verbatim so the joint log-post still converges in floor-
+  # check runs and the gradient-verification harness.
+  expect_equal(
+    tulpa:::cpp_spde_hyper_prior_probe(
+      log_kappa = log(2.0), log_tau = log(1.5)
+    )$prior_val, 0.0, tolerance = 1e-12
+  )
+  # range anchor present, sigma anchor missing -> still disabled
+  expect_equal(
+    tulpa:::cpp_spde_hyper_prior_probe(
+      log_kappa = 0.5, log_tau = -0.3,
+      prior_range_0 = 0.3, prior_range_alpha = 0.05
+    )$prior_val, 0.0, tolerance = 1e-12
+  )
+  # alpha == 1 is a knife-edge degeneracy: -log(1) = 0 -> lambda_r/lambda_s = 0
+  # which kills the PC density.  The guard rejects alpha >= 1 explicitly.
+  expect_equal(
+    tulpa:::cpp_spde_hyper_prior_probe(
+      log_kappa = 0.0, log_tau = 0.0,
+      prior_range_0 = 0.3, prior_range_alpha = 1.0,
+      prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
+    )$prior_val, 0.0, tolerance = 1e-12
+  )
+})
+
+test_that("PC hyper prior: matches Fuglstad et al. (2019) reference at multiple points", {
+  # Hand-coded reference of the PC density in (log_kappa, log_tau).
+  pc_ref <- function(log_kappa, log_tau, nu,
+                     range_0, alpha_r, sigma_0, alpha_s) {
+    range  <- sqrt(8 * nu) * exp(-log_kappa)
+    sigma  <- exp(-log_kappa - log_tau) / sqrt(4 * pi)
+    lambda_r <- -log(alpha_r) * sqrt(range_0)
+    lambda_s <- -log(alpha_s) / sigma_0
+
+    log_pi_range <- log(lambda_r / 2) - 1.5 * log(range) -
+                    lambda_r / sqrt(range)
+    log_pi_sigma <- log(lambda_s) - lambda_s * sigma
+
+    log_pi_range + log_pi_sigma + log(range) + log(sigma)
+  }
+
+  grid <- expand.grid(
+    log_kappa = c(-1.0, 0.0, 0.7, 1.5),
+    log_tau   = c(-1.2, 0.0, 0.4)
+  )
+  for (i in seq_len(nrow(grid))) {
+    res <- tulpa:::cpp_spde_hyper_prior_probe(
+      log_kappa = grid$log_kappa[i], log_tau = grid$log_tau[i],
+      nu = 1.0,
+      prior_range_0 = 0.2, prior_range_alpha = 0.05,
+      prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
+    )
+    expected <- pc_ref(grid$log_kappa[i], grid$log_tau[i], nu = 1.0,
+                       range_0 = 0.2, alpha_r = 0.05,
+                       sigma_0 = 1.0, alpha_s = 0.05)
+    expect_equal(res$prior_val, expected, tolerance = 1e-10,
+                 info = sprintf("log_kappa = %g, log_tau = %g",
+                                grid$log_kappa[i], grid$log_tau[i]))
+  }
+})
+
+test_that("PC hyper prior: anchor scaling moves density in the right direction", {
+  # The PC prior on range uses 'large range' as the base model and
+  # penalises deviation toward small range. The penalty strength is
+  # lambda_r = -log(alpha_r) * sqrt(range_0). Smaller range_0 (with alpha
+  # held fixed) yields smaller lambda_r, weaker penalty, and therefore
+  # *higher* log-density at a large fixed range. Verify both signs.
+  range_at <- log(2.0)   # range = sqrt(8)/2 = sqrt(2) ~ 1.41 -- a 'large' range
+  tau_at   <- log(1.0)
+
+  small_r0 <- tulpa:::cpp_spde_hyper_prior_probe(
+    log_kappa = range_at, log_tau = tau_at,
+    prior_range_0 = 0.1, prior_range_alpha = 0.05,
+    prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
+  )$prior_val
+  large_r0 <- tulpa:::cpp_spde_hyper_prior_probe(
+    log_kappa = range_at, log_tau = tau_at,
+    prior_range_0 = 0.5, prior_range_alpha = 0.05,
+    prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
+  )$prior_val
+  expect_gt(small_r0, large_r0)
+
+  # PC prior on sigma uses sigma = 0 as the base model and penalises
+  # deviation toward large sigma. lambda_s = -log(alpha_s) / sigma_0.
+  # At fixed (log_kappa, log_tau) with sigma ~ 1 / (sqrt(4 pi) * 2 * 1)
+  # ~ 0.14, smaller sigma_0 -> larger lambda_s -> stronger penalty ->
+  # lower log-density.
+  small_s0 <- tulpa:::cpp_spde_hyper_prior_probe(
+    log_kappa = range_at, log_tau = tau_at,
+    prior_range_0 = 0.3, prior_range_alpha = 0.05,
+    prior_sigma_0 = 0.5, prior_sigma_alpha = 0.05
+  )$prior_val
+  large_s0 <- tulpa:::cpp_spde_hyper_prior_probe(
+    log_kappa = range_at, log_tau = tau_at,
+    prior_range_0 = 0.3, prior_range_alpha = 0.05,
+    prior_sigma_0 = 2.0, prior_sigma_alpha = 0.05
+  )$prior_val
+  expect_gt(small_s0, large_s0)
+})
+
+test_that("PC hyper prior: dependence on log_kappa matches analytical decomposition", {
+  # At fixed log_tau and fixed PC anchors, the part of log p that varies
+  # with log_kappa is
+  #     -0.5 * log_kappa
+  #     - lambda_r * (8 nu)^{-1/4} * exp(0.5 log_kappa)
+  #     - lambda_s * exp(-log_kappa - log_tau - 0.5 log(4 pi))
+  # Sign check: log_pi_range contributes +1.5 log_kappa via
+  # (-1.5 * log_range), log_range itself contributes -log_kappa, and
+  # log_sigma contributes another -log_kappa, summing to -0.5 log_kappa.
+  # log_pi_sigma contributes the lambda_s exp term (since sigma =
+  # exp(log_sigma) and log_sigma is linear in -log_kappa). Compute the
+  # difference between two log_kappa points analytically and compare.
+  nu       <- 1.0
+  range_0  <- 0.3; alpha_r <- 0.05
+  sigma_0  <- 0.7; alpha_s <- 0.05
+  log_tau  <- 0.2
+  lambda_r <- -log(alpha_r) * sqrt(range_0)
+  lambda_s <- -log(alpha_s) / sigma_0
+
+  log_kappa_a <- 0.4
+  log_kappa_b <- 1.1
+
+  pa <- tulpa:::cpp_spde_hyper_prior_probe(
+    log_kappa = log_kappa_a, log_tau = log_tau, nu = nu,
+    prior_range_0 = range_0, prior_range_alpha = alpha_r,
+    prior_sigma_0 = sigma_0, prior_sigma_alpha = alpha_s
+  )$prior_val
+  pb <- tulpa:::cpp_spde_hyper_prior_probe(
+    log_kappa = log_kappa_b, log_tau = log_tau, nu = nu,
+    prior_range_0 = range_0, prior_range_alpha = alpha_r,
+    prior_sigma_0 = sigma_0, prior_sigma_alpha = alpha_s
+  )$prior_val
+
+  varies_in_lk <- function(lk) {
+     -0.5 * lk -
+     lambda_r * (8 * nu)^(-0.25) * exp(0.5 * lk) -
+     lambda_s * exp(-lk - log_tau - 0.5 * log(4 * pi))
+  }
+  delta_expected <- varies_in_lk(log_kappa_b) - varies_in_lk(log_kappa_a)
+
+  expect_equal(pb - pa, delta_expected, tolerance = 1e-10)
+})
+
 test_that("ParamLayout: hyper slot ordering is mesh-size invariant", {
   for (n_mesh in c(10, 100, 500)) {
     layout <- tulpa:::cpp_spde_layout_probe(

@@ -73,6 +73,21 @@ struct SpdeModelData {
     // backward-compat with the legacy fixed-hyper inner-Laplace callers.
     bool joint_hypers = false;
 
+    // ----- PC prior anchors (joint-NUTS only) -----
+    // Fuglstad et al. 2019 (JASA) PC prior on (range, sigma):
+    //   P(range < prior_range_0)  = prior_range_alpha
+    //   P(sigma > prior_sigma_0)  = prior_sigma_alpha
+    // compute_spde_hyper_prior expresses the density directly in
+    // (log_kappa, log_tau) with the change-of-variable Jacobian baked in;
+    // see tulpa_priors_spde.h for the derivation. Setting any of the four
+    // fields to a non-positive value disables the PC prior and returns an
+    // improper flat hyper-prior — useful for floor-check runs and the
+    // gradient-verification harness, NOT for production sampling.
+    double prior_range_0     = -1.0;
+    double prior_range_alpha = -1.0;
+    double prior_sigma_0     = -1.0;
+    double prior_sigma_alpha = -1.0;
+
     // ----- Cached Q at (kappa, tau_spde) -----
     // CSC sparsity pattern + numeric values. Built once during ModelData
     // setup and held constant for every log-post call this chain.

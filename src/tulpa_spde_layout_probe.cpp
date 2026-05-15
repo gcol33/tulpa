@@ -218,3 +218,73 @@ Rcpp::List cpp_spde_nc_apply_probe(Rcpp::NumericVector z,
         Rcpp::Named("nc_transform_built") = (bool) sm.nc_transform
     );
 }
+
+// Evaluate compute_spde_hyper_prior at a (log_kappa, log_tau) point. Builds
+// a minimal joint_hypers = true SpdeModelData, plants the four PC anchors,
+// places (log_kappa, log_tau) in the hyper slots, and returns the prior
+// value. Used by the Step 4 hyper-prior recovery test against an R-side
+// hand-coded reference; pulls no FEM matrices because the hyper density
+// depends only on (log_kappa, log_tau) and the anchors.
+//
+// Setting any of the four anchors to a non-positive value disables the PC
+// prior (returns 0) — useful for asserting the disabled-branch contract.
+// [[Rcpp::export]]
+Rcpp::List cpp_spde_hyper_prior_probe(double log_kappa,
+                                       double log_tau,
+                                       double nu                = 1.0,
+                                       double prior_range_0     = -1.0,
+                                       double prior_range_alpha = -1.0,
+                                       double prior_sigma_0     = -1.0,
+                                       double prior_sigma_alpha = -1.0,
+                                       int    n_mesh            = 4) {
+    if (n_mesh <= 0) Rcpp::stop("n_mesh must be positive");
+
+    ModelData data;
+    data.N           = 1;
+    data.n_processes = 1;
+    data.sigma_beta  = 10.0;
+
+    tulpa::ProcessData proc;
+    proc.p = 1;
+    proc.X_flat.assign(1, 0.0);
+    data.processes.push_back(proc);
+    data.sharing.init(1);
+
+    data.spatial_type             = tulpa::SpatialType::SPDE;
+    data.has_spde                 = true;
+    auto& sm = data.spde_data;
+    sm.n_mesh             = n_mesh;
+    sm.nu                 = nu;
+    sm.joint_hypers       = true;
+    sm.prior_range_0      = prior_range_0;
+    sm.prior_range_alpha  = prior_range_alpha;
+    sm.prior_sigma_0      = prior_sigma_0;
+    sm.prior_sigma_alpha  = prior_sigma_alpha;
+
+    tulpa::LikelihoodSpec spec;
+    spec.name        = "probe";
+    spec.n_processes = 1;
+    data.likelihood_spec     = &spec;
+    data.model_response_data = nullptr;
+
+    ParamLayout layout = tulpa_hmc::compute_param_layout(data);
+
+    std::vector<double> params(layout.total_params, 0.0);
+    params[layout.log_kappa_spde_idx] = log_kappa;
+    params[layout.log_tau_spde_idx]   = log_tau;
+
+    const double val = tulpa::priors::compute_spde_hyper_prior<double>(
+        params, data, layout);
+
+    return Rcpp::List::create(
+        Rcpp::Named("prior_val")    = val,
+        Rcpp::Named("log_kappa")    = log_kappa,
+        Rcpp::Named("log_tau")      = log_tau,
+        Rcpp::Named("pc_enabled")   = (prior_range_0    > 0.0 &&
+                                       prior_range_alpha > 0.0 &&
+                                       prior_range_alpha < 1.0 &&
+                                       prior_sigma_0    > 0.0 &&
+                                       prior_sigma_alpha > 0.0 &&
+                                       prior_sigma_alpha < 1.0)
+    );
+}
