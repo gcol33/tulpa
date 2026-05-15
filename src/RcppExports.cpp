@@ -1193,8 +1193,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_joint_bym2
-Rcpp::List cpp_nested_laplace_joint_bym2(Rcpp::List arms_list, int copy_arm, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double scale_factor, Rcpp::NumericVector sigma_spatial_grid, Rcpp::NumericVector rho_grid, Rcpp::NumericVector alpha_grid, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_bym2(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP scale_factorSEXP, SEXP sigma_spatial_gridSEXP, SEXP rho_gridSEXP, SEXP alpha_gridSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP) {
+Rcpp::List cpp_nested_laplace_joint_bym2(Rcpp::List arms_list, int copy_arm, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double scale_factor, Rcpp::NumericVector sigma_spatial_grid, Rcpp::NumericVector rho_grid, Rcpp::NumericVector alpha_grid, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_bym2(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP scale_factorSEXP, SEXP sigma_spatial_gridSEXP, SEXP rho_gridSEXP, SEXP alpha_gridSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1213,13 +1213,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
     Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_bym2(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type phi_grid_per_arm(phi_grid_per_armSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_bym2(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_joint_icar
-Rcpp::List cpp_nested_laplace_joint_icar(Rcpp::List arms_list, int copy_arm, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, Rcpp::NumericVector alpha_grid, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_icar(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP alpha_gridSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP) {
+Rcpp::List cpp_nested_laplace_joint_icar(Rcpp::List arms_list, int copy_arm, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, Rcpp::NumericVector alpha_grid, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_icar(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP alpha_gridSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1236,13 +1237,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
     Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_icar(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type phi_grid_per_arm(phi_grid_per_armSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_icar(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_joint_car_proper
-Rcpp::List cpp_nested_laplace_joint_car_proper(Rcpp::List arms_list, int copy_arm, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_car_grid, Rcpp::NumericVector alpha_grid, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_car_proper(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP rho_car_gridSEXP, SEXP alpha_gridSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP) {
+Rcpp::List cpp_nested_laplace_joint_car_proper(Rcpp::List arms_list, int copy_arm, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_car_grid, Rcpp::NumericVector alpha_grid, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_car_proper(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP rho_car_gridSEXP, SEXP alpha_gridSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1260,7 +1262,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
     Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_car_proper(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_car_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type phi_grid_per_arm(phi_grid_per_armSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_car_proper(arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_car_grid, alpha_grid, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2920,9 +2923,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_st_nngp_rw1", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_rw1, 27},
     {"_tulpa_cpp_nested_laplace_st_nngp_rw2", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_rw2, 26},
     {"_tulpa_cpp_nested_laplace_st_nngp_ar1", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_ar1, 27},
-    {"_tulpa_cpp_nested_laplace_joint_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_bym2, 15},
-    {"_tulpa_cpp_nested_laplace_joint_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_icar, 13},
-    {"_tulpa_cpp_nested_laplace_joint_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_car_proper, 14},
+    {"_tulpa_cpp_nested_laplace_joint_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_bym2, 16},
+    {"_tulpa_cpp_nested_laplace_joint_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_icar, 14},
+    {"_tulpa_cpp_nested_laplace_joint_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_car_proper, 15},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 21},

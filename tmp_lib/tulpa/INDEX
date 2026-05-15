@@ -1,0 +1,178 @@
+agq_fit                 Adaptive Gauss-Hermite quadrature for one-RE
+                        GLMMs
+bridge_sampling         Bridge sampling for marginal likelihood
+check_model             Diagnostic panel plot
+coef.tulpa_fit          Extract coefficients from posterior means
+compare_models          Compare models by information criteria
+confint.tulpa_fit       Confidence intervals from posterior quantiles
+diagnostic_summary      Comprehensive Diagnostic Summary
+durbin_watson           Durbin-Watson test for temporal autocorrelation
+fit_spde                Fit a Spatial Model using SPDE Laplace
+                        Approximation
+fitted.tulpa_average    Extract predictions from tulpa_average
+getSVCSamples           Extract SVC posterior samples (convenience
+                        wrapper)
+geweke_test             Geweke Convergence Test
+glance                  Model-level summary statistics
+                        (broom-compatible)
+imh_laplace             Independence Metropolis-Hastings with Laplace
+                        proposal
+inference_mode_info     Print inference mode information
+latent_factor           Create a latent factor specification
+latent_factors          Extract latent factor posteriors from fit
+logLik.tulpa_fit        Log-likelihood (at posterior mean)
+loo.tulpa_fit           LOO cross-validation
+mala                    Metropolis-Adjusted Langevin Algorithm (MALA)
+modelAverage            Model-averaged predictions
+moran_i                 Moran's I test for spatial autocorrelation in
+                        residuals
+pathfinder              Pathfinder: variational warm-start via L-BFGS +
+                        ELBO scoring
+pit_residuals           PIT (Probability Integral Transform) residuals
+plot.tulpa_fit          Plot posterior diagnostics
+plot.tulpa_prior_predict
+                        Plot method for tulpa_prior_predict
+plot.tulpa_st_summary   Plot method for spatiotemporal effects
+plot.tulpa_svc_posterior
+                        Plot method for tulpa_svc_posterior
+plot.tulpa_temporal_posterior
+                        Plot method for tulpa_temporal_posterior
+plot.tulpa_tvc_posterior
+                        Plot method for tulpa_tvc_posterior
+plot_acf                Plot Autocorrelation Functions
+plot_divergences        Plot Divergent Transitions
+plot_energy             Plot Energy Diagnostic (E-BFMI)
+plot_ess                Plot Effective Sample Size Diagnostic
+plot_map                Plot spatial predictions as a map
+plot_map_panel          Plot multiple maps in a grid
+plot_pairs              Plot Bivariate Parameter Posteriors (Pairs
+                        Plot)
+plot_rhat               Plot Rhat Convergence Diagnostic
+postHocLM               Fit a post-hoc linear model on estimated
+                        parameters
+pp_check                Posterior predictive check
+print.tulpa_average     Print method for tulpa_average
+print.tulpa_diagnostic_summary
+                        Print method for diagnostic summary
+print.tulpa_geweke      Print method for Geweke test
+print.tulpa_gp          Print method for tulpa_gp
+print.tulpa_hsgp        Print method for tulpa_hsgp
+print.tulpa_latent      Print method for tulpa_latent
+print.tulpa_multiscale
+                        Print method for tulpa_multiscale
+print.tulpa_prior       Print method for tulpa_prior
+print.tulpa_prior_predict
+                        Print method for tulpa_prior_predict
+print.tulpa_priors      Print method for tulpa_priors
+print.tulpa_rsr         Print method for tulpa_rsr
+print.tulpa_rtr         Print method for tulpa_rtr (temporal)
+print.tulpa_simulate    Print method for tulpa_simulate
+print.tulpa_spatial     Print method for tulpa_spatial
+print.tulpa_spatiotemporal
+                        Print method for tulpa_spatiotemporal
+print.tulpa_st_gp       Print method for tulpa_st_gp
+print.tulpa_svc         Print method for tulpa_svc
+print.tulpa_svc_posterior
+                        Print method for tulpa_svc_posterior
+print.tulpa_temporal    Print method for tulpa_temporal
+print.tulpa_temporal_gp
+                        Print method for tulpa_temporal_gp
+print.tulpa_temporal_multiscale
+                        Print method for tulpa_temporal_multiscale
+print.tulpa_temporal_posterior
+                        Print method for tulpa_temporal_posterior
+print.tulpa_tvc         Print method for tulpa_tvc
+print.tulpa_tvc_posterior
+                        Print method for tulpa_tvc_posterior
+prior_beta              Beta prior
+prior_exponential       Exponential prior
+prior_from_spec         Build a 'prior' list for
+                        'tulpa_nested_laplace()' from a tulpa spec
+                        object
+prior_gamma             Gamma prior
+prior_half_cauchy       Half-Cauchy prior
+prior_half_normal       Half-normal prior
+prior_normal            Normal prior
+prior_pc                Penalized complexity (PC) prior
+prior_predict           Prior predictive simulation
+priors_default          Show default priors for a tulpa family
+ranef                   Extract random effects
+rubins_pool             Pool multiple imputation draws via Rubin's
+                        rules
+spatialRange            Extract spatial range and variance from a
+                        fitted spatial model
+spatial_bym2            BYM2 spatial structure
+spatial_car             CAR / ICAR spatial structure
+spatial_car_proper      Proper CAR spatial structure
+spatial_hsgp            Hilbert Space Gaussian Process (HSGP) spatial
+                        structure
+spatial_multiscale      Multi-Scale Gaussian Process spatial structure
+spatial_rsr             Restricted Spatial Regression (RSR)
+spatial_spde            SPDE Spatial Field (Matérn via Triangular Mesh)
+spatial_spde_custom     SPDE Spatial Field from Custom Matrices
+spatiotemporal          Spatiotemporal interaction specifications for
+                        tulpa
+spatiotemporal_effects
+                        Extract spatiotemporal effects from fitted
+                        model
+spatiotemporal_gp       Non-separable spatiotemporal GP
+summary.tulpa_fit       Posterior summary table
+summary.tulpa_svc_posterior
+                        Summary method for tulpa_svc_posterior
+summary.tulpa_temporal_posterior
+                        Summary method for tulpa_temporal_posterior
+summary.tulpa_tvc_posterior
+                        Summary method for tulpa_tvc_posterior
+svc                     Extract spatially-varying coefficients from a
+                        fitted model
+temporal                Extract temporal effects from a fitted model
+temporalCorr            Extract temporal correlation parameters from a
+                        fitted model
+temporal_ar1            AR1 temporal structure (First-order
+                        Autoregressive)
+temporal_gp             Gaussian Process temporal structure
+temporal_rw2            RW2 temporal structure (Second-order Random
+                        Walk)
+test_dispersion         Test for over- or underdispersion
+test_outliers           Test for outliers (simulation envelope)
+test_uniformity         Test uniformity of PIT residuals
+test_zero_inflation     Test for zero inflation
+tidy                    Tidy model output (broom-compatible)
+tulpa_average           Model averaging for tulpa fits
+tulpa_build_model_data
+                        Build model matrices from a parsed formula
+tulpa_compare           Compare tulpa models
+tulpa_diagnostics       Simulation-Based Diagnostics for tulpa Models
+tulpa_em_laplace        Fit a latent-variable model via EM + Laplace
+                        approximation
+tulpa_em_mc             Generic Monte-Carlo EM driver
+tulpa_family            Construct a minimal tulpa_family for simulation
+tulpa_formula           Formula parsing for tulpa models
+tulpa_gaussian          Fit a Gaussian linear model via tulpa's generic
+                        engine
+tulpa_gibbs             Fit via Polya-Gamma Gibbs sampler
+tulpa_laplace           Fit a model via Laplace approximation
+tulpa_laplace_beta      Fit a beta-regression model via Laplace,
+                        estimating the precision
+tulpa_latent            Latent Factor Specification for Unmeasured
+                        Confounders
+tulpa_nested_laplace_joint
+                        Joint multi-likelihood nested Laplace
+                        approximation
+tulpa_nuts_beta         Fit a beta-regression model via NUTS (joint
+                        sampling of beta + log_phi)
+tulpa_nuts_spde         Sample an SPDE GLM via NUTS, optionally jointly
+                        over Matern hypers
+tulpa_parse_formula     Parse a mixed-model formula
+tulpa_priors            Prior specification for tulpa models
+tulpa_simulate          Simulate data from a tulpa model
+tulpa_spatial           Spatial structure specifications for tulpa
+tulpa_temporal          Temporal structure specifications for tulpa
+tulpa_validate          Posterior predictive checks for tulpa models
+tulpa_variogram         Empirical semivariogram of residuals
+tvc                     Extract temporally-varying coefficients from a
+                        fitted model
+validate_mode           Validate that a fit used the expected mode
+vcov.tulpa_fit          Variance-covariance matrix from posterior
+waic.tulpa_fit          WAIC computation
+weights.tulpa_average   Extract model weights from tulpa_average

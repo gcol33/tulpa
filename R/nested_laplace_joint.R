@@ -110,6 +110,7 @@
 tulpa_nested_laplace_joint <- function(responses,
                                        prior,
                                        copy = NULL,
+                                       phi_grid = NULL,
                                        max_iter = 50L, tol = 1e-6,
                                        n_threads = 1L,
                                        x_init = NULL, verbose = FALSE,
@@ -138,10 +139,13 @@ tulpa_nested_laplace_joint <- function(responses,
     })
 
     cp <- .resolve_copy(copy, responses)
-    grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid)
+    arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
+    phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
+    grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)
 
     res <- backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, isTRUE(store_Q))
+                                n_threads, x_init, isTRUE(store_Q),
+                                arm_names = arm_names)
 
     # Adaptive grid refinement. Detect heavy boundary mass on any axis
     # and append cartesian-product points covering an interior bisection
@@ -160,7 +164,8 @@ tulpa_nested_laplace_joint <- function(responses,
             max_iter = max_iter, tol = tol, n_threads = n_threads,
             x_init = x_init, store_Q = store_Q,
             edge_thresh = adaptive_grid_edge_thresh,
-            max_passes  = adaptive_grid_max_passes
+            max_passes  = adaptive_grid_max_passes,
+            arm_names   = arm_names
         )
         grids       <- refined$grids
         res         <- refined$res
@@ -189,15 +194,16 @@ tulpa_nested_laplace_joint <- function(responses,
 
 .joint_backends <- list(
     bym2 = list(
-        build_grids = function(prior, has_copy, alpha_axis) {
+        build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
             sigma_axis <- prior$sigma_grid %||%
                 exp(seq(log(0.1), log(3), length.out = 5))
             rho_axis <- prior$rho_grid %||% c(0.2, 0.5, 0.8, 0.95)
             .joint_cartesian(list(sigma = sigma_axis, rho = rho_axis),
-                              has_copy, alpha_axis)
+                              has_copy, alpha_axis, phi_axes)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, store_Q = FALSE) {
+                                n_threads, x_init, store_Q = FALSE,
+                                arm_names = NULL) {
             cpp_nested_laplace_joint_bym2(
                 arms_list       = arms,
                 copy_arm        = as.integer(cp$copy_arm_zero),
@@ -213,15 +219,18 @@ tulpa_nested_laplace_joint <- function(responses,
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
                 x_init_nullable = x_init,
-                store_Q    = isTRUE(store_Q)
+                store_Q    = isTRUE(store_Q),
+                phi_grid_per_arm = .joint_phi_grid_per_arm(grids, arm_names)
             )
         },
         theta_grid = function(grids, has_copy) {
-            if (has_copy) {
-                cbind(sigma = grids$sigma, rho = grids$rho, alpha = grids$alpha)
+            base <- if (has_copy) {
+                cbind(sigma = grids$sigma, rho = grids$rho,
+                      alpha = grids$alpha)
             } else {
                 cbind(sigma = grids$sigma, rho = grids$rho)
             }
+            .append_phi_columns(base, grids)
         },
         layout = function(arms, prior) {
             .joint_layout(arms, prior$n_spatial_units, n_spatial_blocks = 2L,
@@ -230,13 +239,15 @@ tulpa_nested_laplace_joint <- function(responses,
     ),
 
     icar = list(
-        build_grids = function(prior, has_copy, alpha_axis) {
+        build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
             tau_axis <- prior$tau_grid %||%
                 exp(seq(log(1 / 9), log(100), length.out = 5))  # sigma in [0.1, 3]
-            .joint_cartesian(list(tau = tau_axis), has_copy, alpha_axis)
+            .joint_cartesian(list(tau = tau_axis), has_copy, alpha_axis,
+                              phi_axes)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, store_Q = FALSE) {
+                                n_threads, x_init, store_Q = FALSE,
+                                arm_names = NULL) {
             cpp_nested_laplace_joint_icar(
                 arms_list       = arms,
                 copy_arm        = as.integer(cp$copy_arm_zero),
@@ -250,12 +261,14 @@ tulpa_nested_laplace_joint <- function(responses,
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
                 x_init_nullable = x_init,
-                store_Q    = isTRUE(store_Q)
+                store_Q    = isTRUE(store_Q),
+                phi_grid_per_arm = .joint_phi_grid_per_arm(grids, arm_names)
             )
         },
         theta_grid = function(grids, has_copy) {
-            if (has_copy) cbind(tau = grids$tau, alpha = grids$alpha)
-            else          cbind(tau = grids$tau)
+            base <- if (has_copy) cbind(tau = grids$tau, alpha = grids$alpha)
+                    else          cbind(tau = grids$tau)
+            .append_phi_columns(base, grids)
         },
         layout = function(arms, prior) {
             .joint_layout(arms, prior$n_spatial_units, n_spatial_blocks = 1L,
@@ -264,15 +277,16 @@ tulpa_nested_laplace_joint <- function(responses,
     ),
 
     car_proper = list(
-        build_grids = function(prior, has_copy, alpha_axis) {
+        build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
             tau_axis     <- prior$tau_grid %||%
                 exp(seq(log(1 / 9), log(100), length.out = 5))
             rho_car_axis <- prior$rho_car_grid %||% c(0.5, 0.8, 0.95, 0.99)
             .joint_cartesian(list(tau = tau_axis, rho_car = rho_car_axis),
-                              has_copy, alpha_axis)
+                              has_copy, alpha_axis, phi_axes)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, store_Q = FALSE) {
+                                n_threads, x_init, store_Q = FALSE,
+                                arm_names = NULL) {
             cpp_nested_laplace_joint_car_proper(
                 arms_list       = arms,
                 copy_arm        = as.integer(cp$copy_arm_zero),
@@ -287,16 +301,18 @@ tulpa_nested_laplace_joint <- function(responses,
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
                 x_init_nullable = x_init,
-                store_Q    = isTRUE(store_Q)
+                store_Q    = isTRUE(store_Q),
+                phi_grid_per_arm = .joint_phi_grid_per_arm(grids, arm_names)
             )
         },
         theta_grid = function(grids, has_copy) {
-            if (has_copy) {
+            base <- if (has_copy) {
                 cbind(tau = grids$tau, rho_car = grids$rho_car,
                       alpha = grids$alpha)
             } else {
                 cbind(tau = grids$tau, rho_car = grids$rho_car)
             }
+            .append_phi_columns(base, grids)
         },
         layout = function(arms, prior) {
             .joint_layout(arms, prior$n_spatial_units, n_spatial_blocks = 1L,
@@ -308,16 +324,95 @@ tulpa_nested_laplace_joint <- function(responses,
 
 # --- helpers -----------------------------------------------------------------
 
-# Cartesian product over a named list of axes plus an optional alpha axis.
-# Returns a named list of paired vectors of identical length, ready to feed
-# the C++ kernel.
-.joint_cartesian <- function(axes, has_copy, alpha_axis) {
+# Cartesian product over a named list of spatial axes plus an optional
+# alpha axis and optional per-arm phi axes. `phi_axes` is a list keyed by
+# arm name; entries are either NULL/empty (no axis for that arm) or numeric
+# vectors that become a new outer-grid axis named `phi_<arm>`. Returns a
+# named list of paired vectors of identical length, ready to feed the C++
+# kernel. Phi axes vary slowest (added last) so within-spatial-block
+# warm-starts stay good.
+.joint_cartesian <- function(axes, has_copy, alpha_axis, phi_axes = NULL) {
     full <- if (has_copy) c(axes, list(alpha = alpha_axis)) else axes
+    if (!is.null(phi_axes)) {
+        active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
+        if (length(active) > 0L) {
+            names(active) <- paste0("phi_", names(active))
+            full <- c(full, active)
+        }
+    }
     gr <- do.call(expand.grid,
                   c(full, list(KEEP.OUT.ATTRS = FALSE,
                                 stringsAsFactors = FALSE)))
     out <- as.list(gr)
     if (!has_copy) out$alpha <- numeric(0)
+    out
+}
+
+# Append any `phi_<arm>` columns from `grids` onto a backend's spatial
+# theta_grid matrix so downstream posterior-moment helpers see phi as a
+# regular hyperparameter axis.
+.append_phi_columns <- function(base, grids) {
+    phi_cols <- grep("^phi_", names(grids), value = TRUE)
+    if (length(phi_cols) == 0L) return(base)
+    extra <- do.call(cbind, lapply(phi_cols, function(c) {
+        out <- as.numeric(grids[[c]]); attr(out, "name") <- c; out
+    }))
+    colnames(extra) <- phi_cols
+    cbind(base, extra)
+}
+
+# Build the `phi_grid_per_arm` argument for the C++ kernels from a
+# Cartesian-product `grids` list and arm names. Returns a list of length
+# `n_arms`: entry k is either `NULL` (no phi axis for that arm — kernel
+# uses the parse-time scalar phi) or a NumericVector of length n_grid
+# matching the flat outer-grid size. Phi columns in `grids` follow the
+# `phi_<arm_name>` convention produced by `.joint_cartesian`.
+.joint_phi_grid_per_arm <- function(grids, arm_names) {
+    out <- vector("list", length(arm_names))
+    any_active <- FALSE
+    for (k in seq_along(arm_names)) {
+        col <- paste0("phi_", arm_names[k])
+        if (!is.null(grids[[col]])) {
+            out[[k]] <- as.numeric(grids[[col]])
+            any_active <- TRUE
+        }
+    }
+    if (!any_active) NULL else out
+}
+
+# Normalise the user-facing `phi_grid` argument into a list keyed by arm
+# name, with NULL entries for arms without a phi axis. Accepts either a
+# named list (subset of arm names) or a positional list of length n_arms.
+# Single-element entries are treated as no-axis (the parse-time scalar phi
+# already serves as that arm's dispersion).
+.normalise_phi_grid <- function(phi_grid, arm_names) {
+    if (is.null(phi_grid)) return(NULL)
+    if (!is.list(phi_grid)) {
+        stop("`phi_grid` must be a list (named by arm or positional).",
+             call. = FALSE)
+    }
+    out <- vector("list", length(arm_names))
+    names(out) <- arm_names
+    if (!is.null(names(phi_grid))) {
+        unknown <- setdiff(names(phi_grid), arm_names)
+        if (length(unknown) > 0L) {
+            stop("`phi_grid` names not in `responses`: ",
+                 paste(shQuote(unknown), collapse = ", "), ".", call. = FALSE)
+        }
+        for (nm in names(phi_grid)) {
+            v <- phi_grid[[nm]]
+            if (!is.null(v) && length(v) > 1L) out[[nm]] <- as.numeric(v)
+        }
+    } else {
+        if (length(phi_grid) != length(arm_names)) {
+            stop("positional `phi_grid` must have length n_arms (",
+                 length(arm_names), ").", call. = FALSE)
+        }
+        for (k in seq_along(phi_grid)) {
+            v <- phi_grid[[k]]
+            if (!is.null(v) && length(v) > 1L) out[[k]] <- as.numeric(v)
+        }
+    }
     out
 }
 
@@ -673,7 +768,8 @@ tulpa_nested_laplace_joint <- function(responses,
 # fixed-grid fallback. Stops early when no axis crosses the threshold.
 .adaptive_refine_pass <- function(grids, res, backend, arms, prior, cp,
                                   max_iter, tol, n_threads, x_init, store_Q,
-                                  edge_thresh, max_passes) {
+                                  edge_thresh, max_passes,
+                                  arm_names = NULL) {
     info <- list(triggered_axes = character(0),
                  n_points_added = integer(0))
     if (max_passes < 1L) {
@@ -746,7 +842,8 @@ tulpa_nested_laplace_joint <- function(responses,
 
         res_extra <- backend$call_kernel(arms, prior, cp, new_triples,
                                           max_iter, tol, n_threads,
-                                          x_init, isTRUE(store_Q))
+                                          x_init, isTRUE(store_Q),
+                                          arm_names = arm_names)
         res   <- .concat_kernel_results(res, res_extra)
         grids <- .merge_grids(grids, new_triples, cp$has_copy)
 

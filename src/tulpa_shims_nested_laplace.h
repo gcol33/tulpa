@@ -1032,7 +1032,8 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
     double tol,
     int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm
 );
 
 extern "C" void tulpa_nested_laplace_joint_bym2_impl(
@@ -1086,7 +1087,8 @@ extern "C" void tulpa_nested_laplace_joint_bym2_impl(
         scale_factor, sg, rg, ag,
         max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init),
-        store_Q != 0
+        store_Q != 0,
+        R_NilValue
     );
     copy_nested_laplace_result(out, result_out);
 }

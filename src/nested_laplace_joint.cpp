@@ -61,6 +61,50 @@ bool validate_joint_inputs(int n_arms, int copy_arm,
     return has_copy;
 }
 
+// Parse the optional `phi_grid_per_arm` Rcpp::List into a per-arm vector of
+// per-grid-point phi overrides. Empty entry => no override for that arm
+// (kernel uses arms_list[k]$phi for every grid point). Non-empty entry must
+// have length n_grid: phi_overrides[k][k_grid] is the dispersion for arm k
+// at outer-grid index k_grid.
+std::vector<Rcpp::NumericVector> parse_phi_overrides(
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_arms, int n_grid
+) {
+    std::vector<Rcpp::NumericVector> out(n_arms);
+    if (phi_grid_per_arm.isNull()) return out;
+    Rcpp::List phi_list(phi_grid_per_arm);
+    if ((int)phi_list.size() != n_arms) {
+        Rcpp::stop("phi_grid_per_arm must have length n_arms (%d).", n_arms);
+    }
+    for (int k = 0; k < n_arms; k++) {
+        if (Rf_isNull(phi_list[k])) continue;
+        Rcpp::NumericVector v = Rcpp::as<Rcpp::NumericVector>(phi_list[k]);
+        if (v.size() == 0) continue;
+        if ((int)v.size() != n_grid) {
+            Rcpp::stop("phi_grid_per_arm[[%d]] must have length 0 or %d "
+                       "(matching the flat outer-grid size).",
+                       k + 1, n_grid);
+        }
+        out[k] = v;
+    }
+    return out;
+}
+
+// Apply per-arm phi overrides for the current outer-grid point. Called at
+// the top of each backend's solve_at_theta lambda. Mutates arms[k].phi for
+// any arm with an override; arms without overrides keep their parse-time
+// value.
+inline void apply_phi_overrides(
+    std::vector<tulpa::JointArm>& arms,
+    const std::vector<Rcpp::NumericVector>& phi_overrides,
+    int k_grid
+) {
+    for (size_t k = 0; k < arms.size(); k++) {
+        if (phi_overrides[k].size() > 0) {
+            arms[k].phi = phi_overrides[k][k_grid];
+        }
+    }
+}
+
 } // namespace
 
 // =====================================================================
@@ -92,7 +136,8 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
     double tol = 1e-6,
     int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue
 ) {
     int n_arms = arms_list.size();
     int n_grid = sigma_spatial_grid.size();
@@ -105,6 +150,8 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
     std::vector<tulpa::ParsedArm> parsed;
     std::vector<tulpa::JointArm>  arms;
     int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
+    std::vector<Rcpp::NumericVector> phi_overrides =
+        parse_phi_overrides(phi_grid_per_arm, n_arms, n_grid);
 
     int phi_start   = n_x_after_re;
     int theta_start = phi_start + n_spatial_units;
@@ -117,6 +164,7 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
     auto solve_at_theta = [&](int k_grid, const Rcpp::NumericVector& prev_mode)
         -> tulpa::LaplaceResult
     {
+        apply_phi_overrides(arms, phi_overrides, k_grid);
         double sigma_k    = sigma_spatial_grid[k_grid];
         double rho_k      = rho_grid[k_grid];
         double alpha_k    = has_copy ? alpha_grid[k_grid] : 1.0;
@@ -262,7 +310,8 @@ Rcpp::List cpp_nested_laplace_joint_icar(
     double tol = 1e-6,
     int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue
 ) {
     int n_arms = arms_list.size();
     int n_grid = tau_grid.size();
@@ -272,6 +321,8 @@ Rcpp::List cpp_nested_laplace_joint_icar(
     std::vector<tulpa::ParsedArm> parsed;
     std::vector<tulpa::JointArm>  arms;
     int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
+    std::vector<Rcpp::NumericVector> phi_overrides =
+        parse_phi_overrides(phi_grid_per_arm, n_arms, n_grid);
 
     int phi_start = n_x_after_re;
     int n_x       = phi_start + n_spatial_units;
@@ -283,6 +334,7 @@ Rcpp::List cpp_nested_laplace_joint_icar(
     auto solve_at_theta = [&](int k_grid, const Rcpp::NumericVector& prev_mode)
         -> tulpa::LaplaceResult
     {
+        apply_phi_overrides(arms, phi_overrides, k_grid);
         double tau_k   = tau_grid[k_grid];
         double alpha_k = has_copy ? alpha_grid[k_grid] : 1.0;
         // ICAR latent x[s] = phi_s with prior precision tau_k * Q_struct;
@@ -398,7 +450,8 @@ Rcpp::List cpp_nested_laplace_joint_car_proper(
     double tol = 1e-6,
     int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue
 ) {
     int n_arms = arms_list.size();
     int n_grid = tau_grid.size();
@@ -411,6 +464,8 @@ Rcpp::List cpp_nested_laplace_joint_car_proper(
     std::vector<tulpa::ParsedArm> parsed;
     std::vector<tulpa::JointArm>  arms;
     int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
+    std::vector<Rcpp::NumericVector> phi_overrides =
+        parse_phi_overrides(phi_grid_per_arm, n_arms, n_grid);
 
     int phi_start = n_x_after_re;
     int n_x       = phi_start + n_spatial_units;
@@ -427,6 +482,7 @@ Rcpp::List cpp_nested_laplace_joint_car_proper(
     auto solve_at_theta = [&](int k_grid, const Rcpp::NumericVector& prev_mode)
         -> tulpa::LaplaceResult
     {
+        apply_phi_overrides(arms, phi_overrides, k_grid);
         double tau_k     = tau_grid[k_grid];
         double rho_car_k = rho_car_grid[k_grid];
         double alpha_k   = has_copy ? alpha_grid[k_grid] : 1.0;
