@@ -13,6 +13,8 @@
 #include <Rcpp.h>
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"
+#include "tulpa_priors_spde.h"
+#include "spde_qbuilder.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -62,5 +64,86 @@ Rcpp::List cpp_spde_layout_probe(int n_mesh,
         Rcpp::Named("log_tau_spde_idx")    = layout.log_tau_spde_idx,
         Rcpp::Named("extra_offset")        = layout.extra_offset,
         Rcpp::Named("n_extra_params")      = layout.n_extra_params
+    );
+}
+
+// Evaluate just the SPDE latent-block prior for a given (z or w) vector.
+// Joint-mode (joint_hypers = true): returns -0.5 * sum z^2, ignoring Q.
+// Legacy mode (joint_hypers = false): builds Q at (kappa, tau_spde) and
+// returns -0.5 * w' Q w. Used by tests to verify the two-branch dispatch.
+//
+// `vals` corresponds to z (joint) or w (legacy) for the n_mesh-long block.
+// FEM matrices C0_diag / G1 are required for the legacy path to build Q;
+// they are unused in joint mode and may be empty.
+// [[Rcpp::export]]
+Rcpp::List cpp_spde_prior_probe(Rcpp::NumericVector vals,
+                                  bool joint_hypers,
+                                  Rcpp::NumericVector C0_diag,
+                                  Rcpp::NumericVector G1_x,
+                                  Rcpp::IntegerVector G1_i,
+                                  Rcpp::IntegerVector G1_p,
+                                  double kappa    = 1.0,
+                                  double tau_spde = 1.0,
+                                  int    alpha    = 2) {
+    const int n_mesh = vals.size();
+    if (n_mesh <= 0) Rcpp::stop("vals must be non-empty");
+
+    ModelData data;
+    data.N           = 1;
+    data.n_processes = 1;
+    data.sigma_beta  = 10.0;
+
+    tulpa::ProcessData proc;
+    proc.p = 1;
+    proc.X_flat.assign(1, 0.0);
+    data.processes.push_back(proc);
+    data.sharing.init(1);
+
+    data.spatial_type           = tulpa::SpatialType::SPDE;
+    data.has_spde               = true;
+    auto& sm = data.spde_data;
+    sm.n_mesh    = n_mesh;
+    sm.joint_hypers = joint_hypers;
+    sm.kappa     = kappa;
+    sm.tau_spde  = tau_spde;
+    sm.alpha     = alpha;
+
+    if (!joint_hypers) {
+        if (C0_diag.size() != n_mesh) {
+            Rcpp::stop("legacy mode requires C0_diag of length n_mesh");
+        }
+        sm.C0_diag.assign(C0_diag.begin(), C0_diag.end());
+        sm.G1_x.assign(G1_x.begin(), G1_x.end());
+        sm.G1_i.assign(G1_i.begin(), G1_i.end());
+        sm.G1_p.assign(G1_p.begin(), G1_p.end());
+
+        tulpa::SpdeQBuilder qb;
+        qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
+        qb.rebuild(kappa, tau_spde, alpha);
+        sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
+        sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
+        sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
+    }
+
+    tulpa::LikelihoodSpec spec;
+    spec.name        = "probe";
+    spec.n_processes = 1;
+    data.likelihood_spec     = &spec;
+    data.model_response_data = nullptr;
+
+    ParamLayout layout = tulpa_hmc::compute_param_layout(data);
+
+    std::vector<double> params(layout.total_params, 0.0);
+    for (int j = 0; j < n_mesh; j++) {
+        params[layout.spde_w_start + j] = vals[j];
+    }
+
+    std::vector<double> spde_w_out;
+    double prior_val = tulpa::priors::compute_spde_prior<double>(
+        params, data, layout, spde_w_out);
+
+    return Rcpp::List::create(
+        Rcpp::Named("prior_val")     = prior_val,
+        Rcpp::Named("spde_w_filled") = !spde_w_out.empty()
     );
 }

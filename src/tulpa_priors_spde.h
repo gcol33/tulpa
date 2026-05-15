@@ -1,23 +1,35 @@
 // tulpa_priors_spde.h
-// SPDE Matern prior on the latent mesh-node block w_mesh.
+// SPDE Matern prior on the latent mesh-node block.
 //
-// Phase 1 contract: (kappa, tau_spde) are held constant on
-// data.spde_data; Q_x is precomputed once at ModelData setup and treated
-// as a double constant array, even on the autodiff AD path. The latent
-// w_mesh is sampled jointly with everything else; the prior contribution
+// Two modes, dispatched on data.spde_data.joint_hypers:
 //
-//     log p(w | theta) = -0.5 * w' Q w   (+ const log|Q|/2)
+//   joint_hypers = false (legacy fixed-hyper / inner-Laplace mode):
+//     params[spde_w_start..spde_w_end) is w directly. Q is built once at
+//     ModelData setup from the fixed (kappa, tau_spde) and reused every
+//     gradient call. Prior contribution is
+//         log p(w | theta) = -0.5 * w' Q w   (+ const log|Q|/2)
+//     The constant log|Q|/2 cancels in NUTS acceptance ratios and is
+//     dropped from the returned log-density. compute_spde_prior populates
+//     `spde_w_out` so the eta path can pull w from a contiguous buffer.
 //
-// is templated for AD so the gradient w.r.t. w flows back through the
-// quadratic form. The constant log|Q|/2 cancels in NUTS acceptance ratios
-// and is dropped from the returned log-density.
+//   joint_hypers = true (joint-NUTS mode):
+//     params[spde_w_start..spde_w_end) is z (non-centered draws). The
+//     field w = L^{-T}(theta) z is computed downstream (Step 3 of the
+//     (a.iii) arc: log_post_generic_impl.h applies SpdeNcTransform after
+//     this prior call and stashes the result on state.spde_w). The prior
+//     contribution here is just the unit Gaussian on z:
+//         log p(z) = -0.5 * sum_j z_j^2
+//     The change-of-variable Jacobian from z to w cancels exactly against
+//     log|Q(theta)|/2 in the original w-parameterization — see (a.ii) in
+//     spde_nc_transform.{h,cpp}, where the implicit-function-theorem
+//     adjoint already accounts for this. No explicit log-det term here.
+//     compute_spde_prior leaves `spde_w_out` empty in this mode; the NC
+//     transform in initialize_generic_state fills it before the eta loop.
 //
-// Phase 2 (joint NUTS over hypers, deferred) will replace the constant
-// Q_x with a per-eval rebuild from log_kappa / log_tau slots and add a
-// log|Q(theta)|/2 term using either (i) a spline interpolant of
-// log|P(kappa)|, or (ii) a non-centered z = L^{-T} w reparameterization
-// that cancels log|Q| against the Jacobian (needs arena AD with a
-// custom sparse-Cholesky adjoint).
+// PC prior on (range, sigma) per Fuglstad et al. 2019 (JASA) is applied
+// separately in compute_spde_hyper_prior and arrives populated in Step 4
+// of the (a.iii) arc; it currently returns T(0) so this header builds
+// cleanly between Step 2 and Step 4.
 //
 // Prerequisite: ModelData and ParamLayout must be defined before this
 // header (normally via hmc_sampler.h).
@@ -33,10 +45,7 @@ namespace priors {
 
 using namespace math;
 
-// Compute -0.5 * w' Q w with Q in CSC and w in the layout's spde_w block.
-// `spde_w_out` is filled with the mesh-node values pulled from `params`
-// so downstream eta accumulation can reference it without re-reading the
-// flat parameter vector. Returns T(0) when SPDE is inactive.
+// SPDE latent-block prior. Returns T(0) when SPDE is inactive.
 template<typename T>
 T compute_spde_prior(const std::vector<T>& params, const ModelData& data,
                       const ParamLayout& layout, std::vector<T>& spde_w_out)
@@ -50,16 +59,29 @@ T compute_spde_prior(const std::vector<T>& params, const ModelData& data,
     const int  n_mesh = spde.n_mesh;
     const int  w0     = layout.spde_w_start;
 
-    // Pull w_mesh into a contiguous T-vector for both the quadratic form
-    // and the downstream eta accumulator (mirrors gp_w / hsgp_f / etc.).
+    if (spde.joint_hypers) {
+        // Joint-NUTS: params[w0..) is z. Unit Gaussian prior on z; no Q
+        // involvement and no Jacobian term. spde_w_out is left empty —
+        // initialize_generic_state computes w = L^{-T}(theta) z and fills
+        // state.spde_w before the eta accumulator runs.
+        spde_w_out.clear();
+        T qf = T(0.0);
+        for (int j = 0; j < n_mesh; j++) {
+            const T z_j = params[w0 + j];
+            qf = qf + z_j * z_j;
+        }
+        return T(-0.5) * qf;
+    }
+
+    // Legacy fixed-hyper: params[w0..) is w directly. -0.5 * w' Q w via
+    // CSC iteration. Q is symmetric and stored full (both triangles) —
+    // matches the SpdeQBuilder convention in spde_qbuilder.h, so we sum
+    // every (row, col) entry once. log|Q|/2 is constant under fixed
+    // (kappa, tau_spde) and is dropped (cancels in NUTS / VI / SMC).
     spde_w_out.resize(n_mesh);
     for (int j = 0; j < n_mesh; j++) {
         spde_w_out[j] = params[w0 + j];
     }
-
-    // -0.5 * w' Q w via CSC iteration. Q is symmetric and stored full
-    // (both triangles) — matches the SpdeQBuilder convention in
-    // spde_qbuilder.h, so we sum every (row, col) entry once.
     T qf = T(0.0);
     for (int col = 0; col < n_mesh; col++) {
         const int beg = spde.Q_p[col];
@@ -70,12 +92,22 @@ T compute_spde_prior(const std::vector<T>& params, const ModelData& data,
             qf = qf + spde_w_out[row] * T(spde.Q_x[idx]) * w_col;
         }
     }
-
-    // log|Q|/2 is a constant under fixed (kappa, tau_spde); dropping it
-    // is safe in NUTS / VI / SMC where only differences matter. When the
-    // follow-on arc adds joint hypers we must reinstate this term so the
-    // gradient w.r.t. (log_kappa, log_tau_spde) is correct.
     return T(-0.5) * qf;
+}
+
+// PC prior on (range, sigma) expressed in (log_kappa, log_tau). Joint-NUTS
+// mode only. Stub returns T(0); the Fuglstad et al. (2019) form is filled
+// in Step 4 of the (a.iii) arc once SpdeModelData carries the PC anchors.
+template<typename T>
+T compute_spde_hyper_prior(const std::vector<T>& /*params*/,
+                            const ModelData& data,
+                            const ParamLayout& layout)
+{
+    if (!layout.is_spde || !data.has_spde) return T(0.0);
+    if (!data.spde_data.joint_hypers)       return T(0.0);
+    if (layout.log_kappa_spde_idx < 0)      return T(0.0);
+    // Step 4 will replace this stub with the PC density.
+    return T(0.0);
 }
 
 } // namespace priors

@@ -187,6 +187,63 @@ test_that("SPDE scales to 500+ mesh nodes with sparse Q", {
 })
 
 # =====================================================================
+# Marginal H_beta for SPDE Laplace (issue #16)
+# =====================================================================
+
+test_that("tulpa_laplace returns finite PD H_beta for SPDE (#16)", {
+  skip_if_not_installed("tulpaMesh")
+
+  set.seed(42)
+  n      <- 200
+  coords <- cbind(runif(n), runif(n))
+  X      <- cbind(1, rnorm(n), rnorm(n))
+  beta_true <- c(0.3, -0.6, 1.0)
+
+  # Smooth spatial field
+  d <- as.matrix(dist(coords))
+  Sigma_w <- exp(-d / 0.25)
+  w_true <- as.numeric(t(chol(Sigma_w + diag(1e-6, n))) %*% rnorm(n))
+  eta <- as.numeric(X %*% beta_true) + 0.7 * w_true
+  y   <- rbinom(n, 1, plogis(eta))
+
+  mesh    <- tulpaMesh::tulpa_mesh(coords, max_edge = c(0.1, 0.3), cutoff = 0.03)
+  spatial <- spatial_spde(coords, mesh = mesh, nu = 1,
+                          prior_range = c(0.25, 0.5),
+                          prior_sigma = c(1.0, 0.5))
+
+  fit <- tulpa_laplace(
+    y = y, n_trials = rep(1L, n), X = X,
+    family = "binomial", spatial = spatial,
+    max_iter = 100L, tol = 1e-6,
+    return_hessian = TRUE
+  )
+
+  expect_true(fit$converged)
+  expect_false(is.null(fit$H_beta))
+  expect_equal(dim(fit$H_beta), c(ncol(X), ncol(X)))
+  expect_true(all(is.finite(fit$H_beta)))
+  expect_true(isSymmetric(fit$H_beta, tol = 1e-8))
+
+  # Positive definite
+  ev <- eigen(fit$H_beta, symmetric = TRUE, only.values = TRUE)$values
+  expect_true(all(ev > 0))
+
+  # SEs finite and in a sensible range
+  sd <- sqrt(diag(solve(fit$H_beta)))
+  expect_true(all(is.finite(sd)))
+  expect_true(all(sd > 0 & sd < 5))
+
+  # return_hessian = FALSE should not populate H_beta
+  fit_noH <- tulpa_laplace(
+    y = y, n_trials = rep(1L, n), X = X,
+    family = "binomial", spatial = spatial,
+    max_iter = 100L, tol = 1e-6,
+    return_hessian = FALSE
+  )
+  expect_null(fit_noH$H_beta)
+})
+
+# =====================================================================
 # Nested Laplace for SPDE: 2D grid over (range, sigma)
 # =====================================================================
 
@@ -375,8 +432,10 @@ test_that("tulpa_laplace(spatial = spatial_spde_custom(...)) runs end-to-end", {
   # mode = c(beta, spatial_effects)
   expect_length(fit$mode, ncol(X) + ss$spec$n_mesh)
   expect_true(is.finite(fit$log_marginal))
-  # Hessian was skipped for SPDE because eta = X*beta + A*w, not X*beta + Z*u.
-  expect_null(fit$H_beta)
+  # Since issue #16: H_beta is the Schur'd marginal precision for SPDE.
+  expect_false(is.null(fit$H_beta))
+  expect_equal(dim(fit$H_beta), c(ncol(X), ncol(X)))
+  expect_true(all(is.finite(fit$H_beta)))
 })
 
 test_that("fit_spde and dispatch_laplace_spatial agree on the same problem", {

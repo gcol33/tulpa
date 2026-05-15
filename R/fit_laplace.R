@@ -136,12 +136,15 @@ tulpa_laplace <- function(y, n_trials, X,
     )
   }
 
-  # SPDE / NNGP Laplace return mode = c(beta, spatial_effects) where the
-  # spatial contribution to eta is A * spatial_effects (mesh-projected) or
-  # w_at_obs (NNGP), not Z * u. The fixed-effect Hessian below assumes
-  # eta = X*beta + Z*u and would under-weight observations by ignoring the
-  # spatial term, so skip it for these spatial types. Proper Hessian /
-  # uncertainty propagation for spatial fields is a separate item.
+  # SPDE / NNGP Laplace return mode = c(beta, spatial_effects). The
+  # fixed-effect block of the joint Hessian is the *conditional* precision
+  # P(beta | u^*) and under-states uncertainty. For SPDE the marginal block
+  # is obtained by Schur complement on the joint Hessian (issue #16):
+  #   H_beta^marg = X'WX - X'WA (A'WA + Q_spde)^{-1} A'WX
+  # The dense Z-Schur branch below handles every non-spatial-field path;
+  # the SPDE-specific marginal lives in .marginal_H_beta_spde() and is
+  # invoked at the bottom of this function. NNGP marginal SE is still
+  # outstanding (tracked under #16).
   is_spatial_field <- !is.null(spatial) &&
     (identical(spatial$type, "spde") || identical(spatial$type, "gp"))
 
@@ -234,6 +237,44 @@ tulpa_laplace <- function(y, n_trials, X,
     }
 
     result$H_beta <- as.matrix(P_beta)
+  }
+
+  # Marginal H_beta for spatial-field Laplace via Schur on the joint Hessian.
+  # See .marginal_H_beta_spde() / .marginal_H_beta_gp() and issue #16.
+  if (return_hessian && !is.null(result$mode) && !is.null(spatial)) {
+    if (identical(spatial$type, "spde")) {
+      range_val <- result$range %||% spatial$prior_range[1]
+      sigma_val <- result$sigma %||% spatial$prior_sigma[1]
+      result$H_beta <- tryCatch(
+        .marginal_H_beta_spde(
+          mode = result$mode, X = X, spatial = spatial,
+          family = family, phi = phi,
+          n_trials = n_trials, weights = weights,
+          range_val = range_val, sigma_val = sigma_val
+        ),
+        error = function(e) {
+          warning("Marginal H_beta (SPDE Schur) failed: ", conditionMessage(e),
+                  ". Returning H_beta = NULL.", call. = FALSE)
+          NULL
+        }
+      )
+    } else if (identical(spatial$type, "gp")) {
+      sigma2_val <- result$sigma2_gp %||% spatial$sigma2_gp %||% 1.0
+      phi_gp_val <- result$phi_gp    %||% spatial$phi_gp    %||% 1.0
+      result$H_beta <- tryCatch(
+        .marginal_H_beta_gp(
+          mode = result$mode, X = X, spatial = spatial,
+          family = family, phi = phi,
+          n_trials = n_trials, weights = weights,
+          sigma2_gp = sigma2_val, phi_gp = phi_gp_val
+        ),
+        error = function(e) {
+          warning("Marginal H_beta (NNGP Schur) failed: ", conditionMessage(e),
+                  ". Returning H_beta = NULL.", call. = FALSE)
+          NULL
+        }
+      )
+    }
   }
 
   result

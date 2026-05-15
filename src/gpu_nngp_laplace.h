@@ -328,7 +328,12 @@ inline void apply_nngp_full_prior_sparse(
             double a_k = a_row[k];
             H.add(idx_i, idx_k, -a_k * tau_i);  // builder symmetrises
             double ak_tau = a_k * tau_i;
-            for (int kp = 0; kp < n_nb; kp++) {
+            // The builder stores only the lower triangle (stype = -1) and
+            // normalises (row, col) to (max, min). Iterating all (k, kp)
+            // pairs would hit each off-diagonal slot twice — once as
+            // (k, kp) and once as (kp, k) — doubling the value. Walk only
+            // the unique pairs with kp <= k.
+            for (int kp = 0; kp <= k; kp++) {
                 int idx_kp = gp_start + nb_obs[kp];
                 H.add(idx_k, idx_kp, ak_tau * a_row[kp]);
             }

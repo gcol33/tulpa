@@ -113,6 +113,12 @@ static T initialize_generic_state(
     if (layout.is_spde && data.has_spde) {
         log_post = log_post + priors::compute_spde_prior(
             params, data, layout, state.spde_w);
+        // PC prior on (range, sigma), joint-NUTS mode only (stub returns 0
+        // when joint_hypers == false). Lives outside compute_spde_prior so
+        // the hyper density is computed regardless of whether the latent
+        // block contributes a centered or non-centered prior.
+        log_post = log_post + priors::compute_spde_hyper_prior<T>(
+            params, data, layout);
     }
 
     if (layout.has_temporal) {

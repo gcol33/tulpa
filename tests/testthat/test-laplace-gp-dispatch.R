@@ -120,6 +120,47 @@ test_that("tulpa_laplace(spatial = spatial_gp(...)) runs end-to-end", {
   # mode = c(beta, spatial_effects) — spatial_effects has length n_spatial.
   expect_length(fit$mode, ncol(X) + ss$spec$n_spatial)
   expect_true(is.finite(fit$log_marginal))
-  # Hessian skipped for GP (eta = X*beta + w, not X*beta + Z*u).
-  expect_null(fit$H_beta)
+  # Since issue #16: H_beta is the Schur'd marginal precision for NNGP via
+  # Q_nngp = (I-A)' D^{-1} (I-A). If the inner Newton converged the marginal
+  # is informative; on this fully-synthetic tiny problem we just confirm
+  # shape and finiteness — actual SE quality is exercised in
+  # dev_notes/test_issue16_nngp_se.R against tulpaObs end-to-end.
+  if (!is.null(fit$H_beta)) {
+    expect_equal(dim(fit$H_beta), c(ncol(X), ncol(X)))
+    expect_true(all(is.finite(fit$H_beta)))
+  }
+})
+
+test_that("tulpa_laplace(spatial = spatial_gp(...)) converges on the sparse path", {
+  # n_x = p + n_spatial must clear SPARSE_THRESHOLD (200) so we route through
+  # the CHOLMOD sparse Newton path. Earlier the NNGP precision scatter
+  # double-counted off-diagonals between neighbours (storage is lower-triangle
+  # only via SparseHessianBuilder, so (k, kp) and (kp, k) hit the same slot
+  # and both got added), which made every iteration's H indefinite. CHOLMOD
+  # then warned 'matrix not positive definite' on every Newton step and the
+  # mode stayed at zero. This test pins the fixed behaviour: convergence on a
+  # sparse-path problem with non-trivial β and a spatial field that moves.
+  ss <- make_synthetic_gp_spec(n_obs = 250L, k = 5L, seed = 11L)
+  set.seed(101)
+  X  <- cbind(1, rnorm(ss$n_obs))
+  beta_true <- c(-0.3, 0.5)
+  eta <- as.numeric(X %*% beta_true)
+  y  <- rbinom(ss$n_obs, 1, plogis(eta))
+
+  fit <- expect_warning(
+    tulpa_laplace(
+      y = y, n_trials = rep(1L, ss$n_obs), X = X,
+      re_list = list(),
+      family = "binomial",
+      spatial = ss$spec,
+      max_iter = 50L, tol = 1e-6, n_threads = 1L
+    ),
+    regexp = NA
+  )
+
+  expect_true(isTRUE(fit$converged))
+  expect_length(fit$mode, ncol(X) + ss$spec$n_spatial)
+  expect_true(is.finite(fit$log_marginal))
+  expect_gt(max(abs(fit$mode[-seq_len(ncol(X))])), 1e-6)
+  expect_lt(max(abs(fit$mode[seq_len(ncol(X))] - beta_true)), 0.6)
 })
