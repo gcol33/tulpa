@@ -2,7 +2,7 @@
 % Please edit documentation in R/fit_spde_nuts.R
 \name{tulpa_nuts_spde}
 \alias{tulpa_nuts_spde}
-\title{Sample an SPDE GLM via NUTS at fixed Matern hyperparameters}
+\title{Sample an SPDE GLM via NUTS, optionally jointly over Matern hypers}
 \usage{
 tulpa_nuts_spde(
   y,
@@ -10,8 +10,13 @@ tulpa_nuts_spde(
   spatial,
   family = c("gaussian", "poisson", "binomial", "gamma", "neg_binomial_2", "beta"),
   n_trials = NULL,
+  joint = FALSE,
   range = NULL,
   sigma = NULL,
+  prior_range = NULL,
+  prior_sigma = NULL,
+  log_kappa_init = NULL,
+  log_tau_init = NULL,
   sigma_beta = 10,
   log_phi_prior_sd = 3,
   log_phi_init = 0,
@@ -44,8 +49,25 @@ projection (A) plus the smoothness \code{nu}.}
 
 \item{n_trials}{Integer vector for \code{family = "binomial"} (else ignored).}
 
-\item{range, sigma}{Matern range and marginal SD on the field. Default
-to the SPDE prior modes (\code{spatial$prior_range[1]}, \code{spatial$prior_sigma[1]}).}
+\item{joint}{Logical. \code{FALSE} (default) conditions on fixed
+\verb{(range, sigma)}. \code{TRUE} activates joint sampling of
+\verb{(log_kappa, log_tau)} with the PC prior from \code{prior_range}, \code{prior_sigma}.}
+
+\item{range, sigma}{Fixed-hyper mode only. Matern range and marginal SD
+on the field. Default to the SPDE prior medians
+(\code{spatial$prior_range[1]}, \code{spatial$prior_sigma[1]}).}
+
+\item{prior_range, prior_sigma}{Joint mode only. PC prior anchors as
+\code{c(value, alpha)} pairs:
+* \code{prior_range = c(r0, a_r)} encodes \code{P(range < r0) = a_r}
+* \code{prior_sigma = c(s0, a_s)} encodes \code{P(sigma > s0) = a_s}
+Default to the spec's anchors (\code{spatial$prior_range},
+\code{spatial$prior_sigma}) when those are length-2 PC anchors.}
+
+\item{log_kappa_init, log_tau_init}{Joint mode only. Initial values for
+the hyper slots. Default to the value implied by the PC anchor's
+\verb{(r0, s0)} pair via \verb{kappa = sqrt(8 nu) / r0},
+\verb{tau = 1 / (sqrt(4 pi) * kappa * s0)}.}
 
 \item{sigma_beta}{Prior SD on each fixed-effect coefficient.}
 
@@ -65,25 +87,29 @@ family-specific:
 NUTS controls.}
 }
 \value{
-A list with \code{draws} (matrix \verb{n_samples x (p + n_mesh + 1)}),
-\code{means}, \code{phi_summary} (Gaussian only), \code{accept_prob}, \code{divergent},
-\code{treedepth}, \code{epsilon}, plus the supplied \code{range}, \code{sigma}, and
-\code{spatial} spec.
+A list with \code{draws} (matrix \verb{n_samples x n_params}), \code{means},
+\code{phi_summary} (where applicable), \code{accept_prob}, \code{divergent},
+\code{treedepth}, \code{epsilon}, \code{joint_hypers}, plus the supplied \code{spatial}
+spec. In \code{joint = TRUE} mode additionally:
+\code{w_draws} (transformed \code{z -> w} per draw), \code{range_draws},
+\code{sigma_draws}, \code{kappa_draws}, \code{tau_draws}, and \code{range_summary},
+\code{sigma_summary} (mean/median/5\%/95\% quantiles).
 }
 \description{
-Bayesian counterpart to \code{\link[=fit_spde]{fit_spde()}} / \code{\link[=laplace_spde_at]{laplace_spde_at()}}: routes the
+Bayesian counterpart to \code{\link[=fit_spde]{fit_spde()}} / \code{\link[=laplace_spde_at]{laplace_spde_at()}}. Routes the
 SPDE-augmented GLM through tulpa's full NUTS backend via the generic
-\code{LikelihoodSpec} interface. (Beta, mesh-node effects, log-phi/log-sigma)
-are sampled jointly conditional on the supplied (range, sigma) — exact
-Bayesian inference for the latent block, given the Matern hypers.
-
-Hyperparameter integration over (range, sigma) is left to an outer loop:
-use \code{\link[=fit_spde]{fit_spde()}}'s nested-Laplace grid for the standard rectangular
-integration, or call this function repeatedly across a CCD / star grid
-(see \code{\link[=ccd_grid]{ccd_grid()}}) and reweight by the posterior over hypers. Joint
-NUTS sampling of (range, sigma) in the same chain is a future slice;
-the Q matrix would have to be rebuilt with arena-AD types per gradient
-eval, which is heavy enough to deserve its own design pass.
+\code{LikelihoodSpec} interface. Two modes:
+\itemize{
+\item \strong{Legacy / fixed-hyper} (\code{joint = FALSE}, the default): conditions on
+the supplied \verb{(range, sigma)}. Samples the latent block
+\verb{(beta, w_mesh, log_phi)} jointly. Useful as the inner step of an outer
+CCD / nested-Laplace integration over hypers.
+\item \strong{Joint hypers} (\code{joint = TRUE}): samples \verb{(beta, z_mesh, log_kappa, log_tau, log_phi)} jointly via the non-centered transform
+\verb{w = L(theta)^\{-T\} z}. A PC prior (Fuglstad et al. 2019 JASA) on
+\verb{(range, sigma)} is taken from \code{prior_range}, \code{prior_sigma}. Returns
+additional \code{w_draws}, \code{range_draws}, \code{sigma_draws}, \code{kappa_draws},
+\code{tau_draws} columns/vectors on top of the raw parameter draws.
+}
 }
 \seealso{
 \code{\link[=fit_spde]{fit_spde()}} for the Laplace counterpart and the nested-Laplace
