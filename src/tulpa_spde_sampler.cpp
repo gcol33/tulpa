@@ -27,6 +27,7 @@
 #include <cmath>
 #include "hmc_sampler.h"
 #include "spde_qbuilder.h"
+#include "spde_nc_apply.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
@@ -212,7 +213,14 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     int seed = 42,
     bool verbose = false,
     Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue,
+    bool joint_hypers = false,
+    double prior_range_0     = -1.0,
+    double prior_range_alpha = -1.0,
+    double prior_sigma_0     = -1.0,
+    double prior_sigma_alpha = -1.0,
+    double log_kappa_init    = 0.0,
+    double log_tau_init      = 0.0
 ) {
     const int N = y_r.size();
     const int p = X_r.ncol();
@@ -264,20 +272,51 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         }
     }
 
+    // PC prior anchors. Joint mode requires all four anchors strictly
+    // positive (P(range < r_0) = alpha_r, P(sigma > s_0) = alpha_s). If
+    // any anchor is non-positive, the prior is improper-flat (floor-check
+    // / gradient-verification only — never production sampling).
+    if (joint_hypers) {
+        const bool pc_disabled = (prior_range_0     <= 0.0 ||
+                                   prior_range_alpha <= 0.0 ||
+                                   prior_range_alpha >= 1.0 ||
+                                   prior_sigma_0     <= 0.0 ||
+                                   prior_sigma_alpha <= 0.0 ||
+                                   prior_sigma_alpha >= 1.0);
+        if (pc_disabled) {
+            Rcpp::warning("joint_hypers=TRUE with an incomplete PC prior "
+                          "(one or more of prior_range_0, prior_range_alpha, "
+                          "prior_sigma_0, prior_sigma_alpha is non-positive "
+                          "or out of (0,1)). The hyper prior reverts to "
+                          "improper-flat; this is intended only for "
+                          "gradient-verification runs, not production.");
+        }
+    }
+
     // Build SPDE Q at the supplied (kappa, tau_spde). Q + per-row A get
     // marshalled into ModelData::spde_data so the structured HMC path
     // owns them; nothing SPDE-specific stays in the likelihood spec.
+    //
+    // Joint-NUTS mode skips this: Q is rebuilt per gradient evaluation
+    // inside SpdeNcTransform from the FEM matrices, and the cached Q on
+    // SpdeModelData is unused by compute_spde_prior(joint=true).
     tulpa::SpdeQBuilder qb;
-    qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
     std::vector<double> rat_poles, rat_weights;
     const bool use_rational = rational_poles_nullable.isNotNull() &&
                                rational_weights_nullable.isNotNull();
-    if (use_rational) {
-        rat_poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
-        rat_weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
-        qb.rebuild_rational(kappa, tau_spde, rat_poles, rat_weights);
-    } else {
-        qb.rebuild(kappa, tau_spde, alpha);
+    if (!joint_hypers) {
+        qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
+        if (use_rational) {
+            rat_poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
+            rat_weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
+            qb.rebuild_rational(kappa, tau_spde, rat_poles, rat_weights);
+        } else {
+            qb.rebuild(kappa, tau_spde, alpha);
+        }
+    } else if (use_rational) {
+        Rcpp::stop("Joint-NUTS over (log_kappa, log_tau) currently supports "
+                   "only integer alpha (alpha = 2). Drop rational_poles / "
+                   "rational_weights or set joint_hypers = FALSE.");
     }
 
     tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, A_x, A_i, A_p);
@@ -365,21 +404,41 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     sm.G1_i.assign(G1_i.begin(), G1_i.end());
     sm.G1_p.assign(G1_p.begin(), G1_p.end());
     sm.a_rows   = std::move(a_rows);
-    sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
-    sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
-    sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
-    sm.rational_poles   = std::move(rat_poles);
-    sm.rational_weights = std::move(rat_weights);
+    if (!joint_hypers) {
+        sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
+        sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
+        sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
+        sm.rational_poles   = std::move(rat_poles);
+        sm.rational_weights = std::move(rat_weights);
+    }
     // log|Q| is constant under fixed hypers and cancels in NUTS, so we
     // leave it at 0.0 — Phase 2 will compute it for prior-comparable
     // log-posteriors when joint hypers move.
     sm.log_det_Q = 0.0;
+
+    // Joint-NUTS state. Activates the non-centered z-parameterisation
+    // and the PC prior on (range, sigma); compute_param_layout will then
+    // reserve log_kappa_spde_idx / log_tau_spde_idx after the z block.
+    sm.joint_hypers      = joint_hypers;
+    sm.prior_range_0     = prior_range_0;
+    sm.prior_range_alpha = prior_range_alpha;
+    sm.prior_sigma_0     = prior_sigma_0;
+    sm.prior_sigma_alpha = prior_sigma_alpha;
 
     ParamLayout layout = tulpa_hmc::compute_param_layout(data);
     int n_params = layout.total_params;
 
     std::vector<double> init(n_params, 0.0);
     init[layout.extra_offset] = log_phi_init;
+    if (joint_hypers) {
+        if (layout.log_kappa_spde_idx < 0 || layout.log_tau_spde_idx < 0) {
+            Rcpp::stop("Internal error: joint_hypers=true but param layout "
+                       "did not reserve log_kappa / log_tau slots. This is a "
+                       "bug in compute_param_layout.");
+        }
+        init[layout.log_kappa_spde_idx] = log_kappa_init;
+        init[layout.log_tau_spde_idx]   = log_tau_init;
+    }
 
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
         init, data, layout,
@@ -404,12 +463,21 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         }
     }
 
+    // Column names. In joint mode the SPDE block is z (non-centered), in
+    // legacy mode it is w directly. The transformed w (joint mode) lives
+    // in a separate w_draws matrix below.
+    const std::string spde_block_name = joint_hypers ? "z" : "w";
     Rcpp::CharacterVector col_names(n_params);
     for (int j = 0; j < p; j++) {
         col_names[j] = "beta[" + std::to_string(j + 1) + "]";
     }
     for (int m = 0; m < n_mesh; m++) {
-        col_names[layout.spde_w_start + m] = "w[" + std::to_string(m + 1) + "]";
+        col_names[layout.spde_w_start + m] =
+            spde_block_name + "[" + std::to_string(m + 1) + "]";
+    }
+    if (joint_hypers) {
+        col_names[layout.log_kappa_spde_idx] = "log_kappa";
+        col_names[layout.log_tau_spde_idx]   = "log_tau";
     }
     col_names[layout.extra_offset] = "log_phi";
     Rcpp::colnames(draws) = col_names;
@@ -422,7 +490,14 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     }
     means.names() = col_names;
 
-    return Rcpp::List::create(
+    // Joint-mode post-processing: transform z -> w per draw via the
+    // cached SpdeNcTransform (built lazily during sampling), and derive
+    // (range, sigma) on the natural scale from (log_kappa, log_tau).
+    //
+    // Matern map (d=2, nu = alpha - 1):
+    //   range = sqrt(8 nu) / kappa
+    //   sigma = 1 / (sqrt(4 pi) * kappa * tau)
+    Rcpp::List out = Rcpp::List::create(
         Rcpp::Named("draws")       = draws,
         Rcpp::Named("means")       = means,
         Rcpp::Named("n_samples")   = n_sample,
@@ -437,6 +512,50 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         Rcpp::Named("divergent")   = Rcpp::wrap(result.divergent),
         Rcpp::Named("treedepth")   = Rcpp::wrap(result.treedepth),
         Rcpp::Named("sampler")     = result.sampler.empty() ? "nuts" : result.sampler,
-        Rcpp::Named("epsilon")     = result.epsilon
+        Rcpp::Named("epsilon")     = result.epsilon,
+        Rcpp::Named("joint_hypers") = joint_hypers
     );
+
+    if (joint_hypers) {
+        constexpr double k_pi = 3.14159265358979323846;
+        const double nu_used     = static_cast<double>(alpha) - 1.0;
+        const double sqrt_8nu    = std::sqrt(8.0 * nu_used);
+        const double sqrt_4pi    = std::sqrt(4.0 * k_pi);
+
+        Rcpp::NumericMatrix w_draws(n_sample, n_mesh);
+        Rcpp::NumericVector range_draws(n_sample);
+        Rcpp::NumericVector sigma_draws(n_sample);
+        Rcpp::NumericVector kappa_draws(n_sample);
+        Rcpp::NumericVector tau_draws(n_sample);
+
+        std::vector<double> params_row(n_params);
+        std::vector<double> w_out;
+        for (int s = 0; s < n_sample; s++) {
+            for (int j = 0; j < n_params; j++) params_row[j] = draws(s, j);
+            tulpa::apply_spde_nc_transform_double(params_row, data, layout, w_out);
+            for (int m = 0; m < n_mesh; m++) w_draws(s, m) = w_out[m];
+
+            const double lk = params_row[layout.log_kappa_spde_idx];
+            const double lt = params_row[layout.log_tau_spde_idx];
+            const double k_s = std::exp(lk);
+            const double t_s = std::exp(lt);
+            kappa_draws[s] = k_s;
+            tau_draws[s]   = t_s;
+            range_draws[s] = sqrt_8nu / k_s;
+            sigma_draws[s] = 1.0 / (sqrt_4pi * k_s * t_s);
+        }
+        Rcpp::CharacterVector w_names(n_mesh);
+        for (int m = 0; m < n_mesh; m++) {
+            w_names[m] = "w[" + std::to_string(m + 1) + "]";
+        }
+        Rcpp::colnames(w_draws) = w_names;
+
+        out["w_draws"]     = w_draws;
+        out["range_draws"] = range_draws;
+        out["sigma_draws"] = sigma_draws;
+        out["kappa_draws"] = kappa_draws;
+        out["tau_draws"]   = tau_draws;
+    }
+
+    return out;
 }

@@ -605,7 +605,7 @@ cpp_spde_hyper_prior_probe <- function(log_kappa, log_tau, nu = 1.0, prior_range
     .Call(`_tulpa_cpp_spde_hyper_prior_probe`, log_kappa, log_tau, nu, prior_range_0, prior_range_alpha, prior_sigma_0, prior_sigma_alpha, n_mesh)
 }
 
-cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha = 2L, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, rational_poles_nullable = NULL, rational_weights_nullable = NULL) {
-    .Call(`_tulpa_cpp_tulpa_fit_spde_nuts`, y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, rational_poles_nullable, rational_weights_nullable)
+cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha = 2L, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, rational_poles_nullable = NULL, rational_weights_nullable = NULL, joint_hypers = FALSE, prior_range_0 = -1.0, prior_range_alpha = -1.0, prior_sigma_0 = -1.0, prior_sigma_alpha = -1.0, log_kappa_init = 0.0, log_tau_init = 0.0) {
+    .Call(`_tulpa_cpp_tulpa_fit_spde_nuts`, y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, rational_poles_nullable, rational_weights_nullable, joint_hypers, prior_range_0, prior_range_alpha, prior_sigma_0, prior_sigma_alpha, log_kappa_init, log_tau_init)
 }
 

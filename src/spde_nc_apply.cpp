@@ -6,6 +6,8 @@
 
 #include <Eigen/Core>
 #include <cmath>
+#include <limits>
+#include <stdexcept>
 #include <utility>
 
 #include "spde_nc_transform.h"
@@ -52,10 +54,19 @@ void apply_spde_nc_transform_double(
     const double kappa     = std::exp(log_kappa);
     const double tau       = std::exp(log_tau);
 
-    Eigen::VectorXd w = tx.forward(z, kappa, tau);
-
     spde_w_out.resize(n_mesh);
-    for (int j = 0; j < n_mesh; j++) spde_w_out[j] = w[j];
+    try {
+        Eigen::VectorXd w = tx.forward(z, kappa, tau);
+        for (int j = 0; j < n_mesh; j++) spde_w_out[j] = w[j];
+    } catch (const std::runtime_error&) {
+        // Q(kappa, tau) failed to Cholesky — log_kappa / log_tau wandered
+        // somewhere numerically degenerate (e.g. extreme values during
+        // warmup adaptation). Fill w with NaN so the downstream eta
+        // accumulator propagates NaN to log_post; NUTS treats NaN as
+        // -Inf and rejects the trajectory cleanly.
+        const double nan_v = std::numeric_limits<double>::quiet_NaN();
+        for (int j = 0; j < n_mesh; j++) spde_w_out[j] = nan_v;
+    }
 }
 
 void apply_spde_nc_transform_arena(
@@ -78,11 +89,25 @@ void apply_spde_nc_transform_arena(
     // here because the SPDE block contributes at least one z slot.
     arena::Arena* ar = params[w0].arena_;
 
-    spde_w_out = spde_nc_transform_arena(
-        ar, z,
-        params[layout.log_kappa_spde_idx],
-        params[layout.log_tau_spde_idx],
-        tx);
+    try {
+        spde_w_out = spde_nc_transform_arena(
+            ar, z,
+            params[layout.log_kappa_spde_idx],
+            params[layout.log_tau_spde_idx],
+            tx);
+    } catch (const std::runtime_error&) {
+        // Cholesky failure during the forward pass inside the arena hook
+        // (same root cause as the double-path catch above). Emit NaN-
+        // valued arena Vars not tied to any backward block. The eta
+        // accumulator multiplies these into the log-post, producing NaN
+        // → NUTS rejects. The lost gradient information is moot because
+        // the trajectory will not be accepted anyway.
+        const double nan_v = std::numeric_limits<double>::quiet_NaN();
+        spde_w_out.resize(n_mesh);
+        for (int j = 0; j < n_mesh; j++) {
+            spde_w_out[j] = arena::Var(ar, nan_v);
+        }
+    }
 }
 
 } // namespace tulpa
