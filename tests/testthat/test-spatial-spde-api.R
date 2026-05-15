@@ -97,6 +97,67 @@ test_that("ParamLayout: joint-NUTS mode allocates hyper slots after z block", {
   expect_equal(layout$total_params, 55)           # 2 + 50 + 2 + 1
 })
 
+test_that("compute_spde_prior: joint mode returns -0.5 * sum(z^2) and leaves spde_w empty", {
+  set.seed(101)
+  z <- rnorm(7)
+  res <- tulpa:::cpp_spde_prior_probe(
+    vals = z, joint_hypers = TRUE,
+    C0_diag = numeric(0), G1_x = numeric(0),
+    G1_i = integer(0), G1_p = integer(0)
+  )
+  expect_equal(res$prior_val, -0.5 * sum(z^2), tolerance = 1e-12)
+  expect_false(res$spde_w_filled)             # NC transform owns w in this mode
+})
+
+test_that("compute_spde_prior: joint mode is invariant to (kappa, tau_spde)", {
+  # The unit-Gaussian-on-z prior must NOT depend on hyperparameters; the
+  # change-of-variable Jacobian is absorbed into the NC adjoint downstream.
+  set.seed(102)
+  z <- rnorm(10)
+  res_a <- tulpa:::cpp_spde_prior_probe(
+    vals = z, joint_hypers = TRUE,
+    C0_diag = numeric(0), G1_x = numeric(0),
+    G1_i = integer(0), G1_p = integer(0),
+    kappa = 1.0, tau_spde = 1.0
+  )
+  res_b <- tulpa:::cpp_spde_prior_probe(
+    vals = z, joint_hypers = TRUE,
+    C0_diag = numeric(0), G1_x = numeric(0),
+    G1_i = integer(0), G1_p = integer(0),
+    kappa = 5.7, tau_spde = 0.13
+  )
+  expect_equal(res_a$prior_val, res_b$prior_val, tolerance = 1e-12)
+})
+
+test_that("compute_spde_prior: legacy mode is quadratic in w and fills spde_w", {
+  skip_if_not_installed("fmesher")
+  set.seed(103)
+  coords <- cbind(runif(40), runif(40))
+  spec <- spatial_spde(coords)
+
+  probe <- function(w) tulpa:::cpp_spde_prior_probe(
+    vals = w, joint_hypers = FALSE,
+    C0_diag = spec$C0_diag, G1_x = spec$G1_x,
+    G1_i = spec$G1_i,       G1_p = spec$G1_p,
+    kappa = 2.0, tau_spde = 1.5, alpha = 2L
+  )
+
+  zero <- probe(rep(0.0, spec$n_mesh))
+  expect_equal(zero$prior_val, 0.0, tolerance = 1e-12)
+  expect_true(zero$spde_w_filled)
+
+  set.seed(104)
+  w <- rnorm(spec$n_mesh, sd = 0.3)
+  res <- probe(w)
+  expect_true(is.finite(res$prior_val))
+  expect_true(res$prior_val < 0)               # -0.5 w' Q w with Q SPD
+
+  # Quadratic homogeneity: prior(c * w) = c^2 * prior(w).
+  c <- 1.7
+  res_c <- probe(c * w)
+  expect_equal(res_c$prior_val, c^2 * res$prior_val, tolerance = 1e-9)
+})
+
 test_that("ParamLayout: hyper slot ordering is mesh-size invariant", {
   for (n_mesh in c(10, 100, 500)) {
     layout <- tulpa:::cpp_spde_layout_probe(
