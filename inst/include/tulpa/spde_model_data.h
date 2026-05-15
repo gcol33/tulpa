@@ -48,10 +48,21 @@ struct SpdeModelData {
     // a_rows[i] is the (mesh_idx, weight) list for observation i.
     std::vector<std::vector<SpdeARowEntry>> a_rows;
 
-    // ----- Hyperparameters (Phase 1: fixed) -----
+    // ----- Hyperparameters -----
+    // kappa / tau_spde act as init values for the joint-NUTS hyper slots when
+    // joint_hypers == true; they are the fixed values used to build Q (and
+    // reused every log-post call) when joint_hypers == false.
     double kappa    = 1.0;     // Matern range proxy: kappa = sqrt(8 nu)/range.
     double tau_spde = 1.0;     // SPDE scale: tau = 1 / (sqrt(4 pi) kappa sigma).
     int    alpha    = 2;       // Integer SPDE operator order; 2 = standard nu=1.
+
+    // Joint-NUTS over (log_kappa, log_tau_spde): when true, the param layout
+    // reserves two extra slots after the z-block and the structured HMC path
+    // (i) treats spde_w_start..spde_w_end as z (non-centered draws), (ii)
+    // computes w = L^{-T}(theta) z per evaluation, (iii) places a PC prior
+    // on (range, sigma) per Fuglstad et al. 2019. Default false keeps
+    // backward-compat with the legacy fixed-hyper inner-Laplace callers.
+    bool joint_hypers = false;
 
     // ----- Cached Q at (kappa, tau_spde) -----
     // CSC sparsity pattern + numeric values. Built once during ModelData

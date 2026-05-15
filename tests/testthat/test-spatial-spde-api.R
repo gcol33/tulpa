@@ -67,6 +67,50 @@ test_that("fit_spde works with fixed hyperparameters", {
   expect_equal(length(result$spatial_effects), spec$n_mesh)
 })
 
+test_that("ParamLayout: legacy fixed-hyper mode leaves hyper slots at -1", {
+  layout <- tulpa:::cpp_spde_layout_probe(
+    n_mesh = 50, p = 2, joint_hypers = FALSE, n_extra_params = 1L
+  )
+
+  expect_true(layout$is_spde)
+  expect_equal(layout$spde_w_start, 2)            # after 2 beta slots
+  expect_equal(layout$spde_w_end,   52)           # half-open: 2 + 50
+  expect_equal(layout$log_kappa_spde_idx, -1)     # sentinel: hypers off
+  expect_equal(layout$log_tau_spde_idx,   -1)
+  expect_equal(layout$extra_offset, 52)
+  expect_equal(layout$total_params, 53)           # 2 + 50 + 1
+})
+
+test_that("ParamLayout: joint-NUTS mode allocates hyper slots after z block", {
+  layout <- tulpa:::cpp_spde_layout_probe(
+    n_mesh = 50, p = 2, joint_hypers = TRUE, n_extra_params = 1L
+  )
+
+  expect_true(layout$is_spde)
+  expect_equal(layout$spde_w_start, 2)
+  expect_equal(layout$spde_w_end,   52)
+  expect_true(layout$log_kappa_spde_idx >= 0)
+  expect_true(layout$log_tau_spde_idx   >= 0)
+  expect_equal(layout$log_kappa_spde_idx, layout$spde_w_end)            # hyper slots immediately after z
+  expect_equal(layout$log_tau_spde_idx,   layout$log_kappa_spde_idx + 1)
+  expect_equal(layout$extra_offset, layout$log_tau_spde_idx + 1)
+  expect_equal(layout$total_params, 55)           # 2 + 50 + 2 + 1
+})
+
+test_that("ParamLayout: hyper slot ordering is mesh-size invariant", {
+  for (n_mesh in c(10, 100, 500)) {
+    layout <- tulpa:::cpp_spde_layout_probe(
+      n_mesh = n_mesh, p = 1, joint_hypers = TRUE, n_extra_params = 0L
+    )
+    expect_equal(layout$spde_w_end - layout$spde_w_start, n_mesh,
+                 info = paste("n_mesh =", n_mesh))
+    expect_equal(layout$log_kappa_spde_idx, layout$spde_w_end,
+                 info = paste("n_mesh =", n_mesh))
+    expect_equal(layout$log_tau_spde_idx,   layout$log_kappa_spde_idx + 1,
+                 info = paste("n_mesh =", n_mesh))
+  }
+})
+
 test_that("fit_spde works with nested Laplace", {
   set.seed(42)
   n_obs <- 100

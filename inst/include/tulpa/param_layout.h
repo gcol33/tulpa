@@ -112,14 +112,26 @@ struct ParamLayout {
     int log_lengthscale_hsgp_idx = -1;
     int hsgp_beta_start = -1, hsgp_beta_end = -1;
 
-    // SPDE parameters. Phase 1: only w_mesh is sampled; (kappa, tau_spde)
-    // are constants on ModelData::spde_data. Joint NUTS over hypers is a
-    // follow-on arc, at which point log_kappa_spde_idx / log_tau_spde_idx
-    // will become valid (-1 sentinels today).
+    // SPDE parameters.
+    //
+    // When data.spde_data.joint_hypers == true (joint-NUTS mode), the latent
+    // block params[spde_w_start..spde_w_end) holds the *non-centered* draws
+    // z, and log_kappa_spde_idx / log_tau_spde_idx are allocated immediately
+    // after. The field w = L^{-T}(theta) z is computed downstream from
+    // (z, log_kappa, log_tau) inside initialize_generic_state and stashed
+    // on state.spde_w for the eta path. The prior is unit Gaussian on z
+    // plus a PC prior (Fuglstad et al. 2019) on (range, sigma) expressed in
+    // (log_kappa, log_tau).
+    //
+    // When data.spde_data.joint_hypers == false (legacy fixed-hyper mode,
+    // e.g. the inner Laplace inside cpp_nested_laplace_spde), the block
+    // params[spde_w_start..spde_w_end) holds w directly and the hyper slots
+    // stay at -1; Q is built once at ModelData setup from the fixed (kappa,
+    // tau_spde) on SpdeModelData and reused every gradient call.
     bool is_spde = false;
     int spde_w_start = -1, spde_w_end = -1;
-    int log_kappa_spde_idx = -1;       // Reserved for follow-on joint NUTS.
-    int log_tau_spde_idx   = -1;       // Reserved for follow-on joint NUTS.
+    int log_kappa_spde_idx = -1;
+    int log_tau_spde_idx   = -1;
 
     // ================================================================
     // TEMPORAL
