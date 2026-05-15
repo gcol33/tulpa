@@ -141,7 +141,7 @@ test_that("joint ICAR recovers per-arm betas and locates the alpha mode", {
         y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
         X = sim$Xpos, spatial_idx = sim$spi_pos,
         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
-        family = "gaussian", phi = 1.0
+        family = "gaussian", phi = sim$truth$sd_pos
     )
     prior <- list(
         type = "icar",
@@ -167,6 +167,9 @@ test_that("joint ICAR recovers per-arm betas and locates the alpha mode", {
     expect_lt(abs(slope_occ - sim$truth$beta_occ[2]), 0.30)
     expect_lt(abs(slope_pos - sim$truth$beta_pos[2]), 0.30)
 
+    # With phi = sd_pos (true noise) the joint posterior peaks near alpha = 1.0.
+    # Over-stating phi (gcol33/tulpa#17 previously masked) makes alpha
+    # unidentifiable; pass the true noise scale here.
     alpha_mean <- fit$theta_mean[["alpha"]]
     expect_lt(abs(alpha_mean - 1.0), 0.6)
 })

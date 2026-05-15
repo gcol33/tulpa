@@ -176,3 +176,62 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
     alpha_mean <- fit$theta_mean[["alpha"]]
     expect_lt(abs(alpha_mean - 1.0), 0.6)
 })
+
+
+# --------------------------------------------------------------------------- #
+# 3. Regression: gaussian copy arm at the true noise scale (gcol33/tulpa#17)  #
+# --------------------------------------------------------------------------- #
+# Before the fix, post-Newton `center_effects` shifted the phi block to mean
+# zero without compensating each arm's intercept, which dragged eta off the
+# Newton mode and tanked log_lik for the gaussian copy arm. At phi =
+# sigma_pos_true the bug made alpha = 0 the best cell by 500+ log units.
+# The fix: shift the per-arm intercept (first beta column) by
+# arm_scale * d_phi_base * mean(phi) so eta — and hence log_marginal — is
+# invariant under the centering.
+
+test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true phi", {
+    sim <- .simulate_joint(N = 300, n_s = 25,
+                            sigma = 0.6, rho = 0.7,
+                            alpha_true = 1.0, sd_pos = 0.3, seed = 50101)
+    adj <- .chain_adj(sim$n_s)
+
+    arm_occ <- list(
+        y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
+        X = sim$Xocc, spatial_idx = sim$spatial_idx,
+        re_idx = rep(0, sim$N), n_re_groups = 0L, sigma_re = 1.0,
+        family = "binomial", phi = 1.0
+    )
+    arm_pos <- list(
+        y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
+        X = sim$Xpos, spatial_idx = sim$spi_pos,
+        re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
+        family = "gaussian", phi = sim$truth$sd_pos
+    )
+    prior <- list(
+        type = "bym2",
+        n_spatial_units = adj$n_spatial_units,
+        adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+        n_neighbors = adj$n_neighbors, scale_factor = 1.0,
+        sigma_grid = c(0.3, 0.6, 0.9),
+        rho_grid   = c(0.5, 0.7, 0.9)
+    )
+
+    alpha_grid <- c(0.0, 0.5, 1.0, 1.5)
+    fit <- tulpa_nested_laplace_joint(
+        responses = list(occ = arm_occ, pos = arm_pos),
+        prior = prior,
+        copy = list(arm = "pos", alpha_grid = alpha_grid)
+    )
+
+    df <- data.frame(alpha = fit$theta_grid[, "alpha"],
+                     log_marginal = fit$log_marginal)
+    best_alpha <- df$alpha[which.max(df$log_marginal)]
+    expect_equal(best_alpha, 1.0)
+
+    max_by_alpha <- vapply(alpha_grid,
+                           function(a) max(df$log_marginal[df$alpha == a]),
+                           numeric(1))
+    # alpha = 0 must be the worst cell at the true noise scale (this fails
+    # catastrophically before the fix; ~160-log-unit margin afterwards).
+    expect_lt(max_by_alpha[1], max_by_alpha[3] - 50)
+})

@@ -174,9 +174,15 @@ LaplaceResult laplace_newton_solve_joint(
         }
     }
 
-    center_effects_fn(x);
-    result.mode = x;
-
+    // Compute log_marginal at the Newton mode (uncentered). For BYM2/ICAR the
+    // ICAR prior is rank-deficient along the constant-shift direction in phi,
+    // and the obs Hessian is what pins that direction down, so the joint MAP
+    // is at the uncentered Newton iterate. Centering phi without compensating
+    // each arm's intercept would shift eta off the mode and corrupt log_lik
+    // (and would also shift the proper-CAR log_prior). We center post-hoc
+    // *after* log_marginal so the reported mode block has mean(phi) = 0 with
+    // the equivalent intercept shift absorbed into each arm's first beta
+    // column. Net effect: same eta, same log_marginal, centered phi block.
     compute_eta_joint(x, etas);
 
     DenseVec grad_final(n_x, 0.0);
@@ -189,6 +195,9 @@ LaplaceResult laplace_newton_solve_joint(
     double log_prior = compute_log_prior_joint(x, etas);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+
+    center_effects_fn(x);
+    result.mode = x;
 
     if (store_Q) {
         dense_to_csc_lower_drop_raw(

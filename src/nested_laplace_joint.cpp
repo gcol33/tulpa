@@ -170,7 +170,22 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
         };
 
         auto center = [&](Rcpp::NumericVector& x) {
-            tulpa::center_effects(x, phi_start, n_spatial_units);
+            // Center phi block to mean zero AND shift each arm's intercept
+            // (first beta column) so eta is preserved. Without the intercept
+            // shift, post-hoc centering would corrupt log_lik at the reported
+            // mode — see laplace_newton_joint.h note on the ordering of
+            // log_marginal vs. centering.
+            double c = 0.0;
+            for (int s = 0; s < n_spatial_units; s++) c += x[phi_start + s];
+            c /= n_spatial_units;
+            if (std::abs(c) < 1e-15) return;
+            for (int s = 0; s < n_spatial_units; s++) x[phi_start + s] -= c;
+            for (int k = 0; k < n_arms; k++) {
+                double arm_scale = (has_copy && k == copy_arm) ? alpha_k : 1.0;
+                if (parsed[k].p > 0) {
+                    x[parsed[k].beta_start] += arm_scale * d_phi_base * c;
+                }
+            }
         };
 
         auto log_prior_joint = [&](const Rcpp::NumericVector& x,
@@ -305,7 +320,19 @@ Rcpp::List cpp_nested_laplace_joint_icar(
         };
 
         auto center = [&](Rcpp::NumericVector& x) {
-            tulpa::center_effects(x, phi_start, n_spatial_units);
+            // Center phi block to mean zero AND shift each arm's intercept
+            // to preserve eta. See BYM2 center lambda for rationale.
+            double c = 0.0;
+            for (int s = 0; s < n_spatial_units; s++) c += x[phi_start + s];
+            c /= n_spatial_units;
+            if (std::abs(c) < 1e-15) return;
+            for (int s = 0; s < n_spatial_units; s++) x[phi_start + s] -= c;
+            for (int k = 0; k < n_arms; k++) {
+                double arm_scale = (has_copy && k == copy_arm) ? alpha_k : 1.0;
+                if (parsed[k].p > 0) {
+                    x[parsed[k].beta_start] += arm_scale * d_phi_base * c;
+                }
+            }
         };
 
         auto log_prior_joint = [&](const Rcpp::NumericVector& x,
@@ -452,7 +479,11 @@ Rcpp::List cpp_nested_laplace_joint_car_proper(
         };
 
         auto center = [&](Rcpp::NumericVector& x) {
-            tulpa::center_effects(x, phi_start, n_spatial_units);
+            // Proper CAR has full-rank Q so shifting phi by a constant changes
+            // the prior quadratic form. Skip post-hoc centering here: the
+            // reported mode keeps whatever mean(phi) Newton converged to,
+            // preserving log_marginal exactly.
+            (void)x;
         };
 
         auto log_prior_joint = [&](const Rcpp::NumericVector& x,
