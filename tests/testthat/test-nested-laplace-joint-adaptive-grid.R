@@ -121,6 +121,15 @@ test_that("adaptive_grid = TRUE extends sigma_pos when boundary carries mass", {
     expect_gt(max(fit_T$theta_grid[, "sigma_pos"]),
               max(fit_F$theta_grid[, "sigma_pos"]) + 1e-6)
 
+    # Mode-tracked path: new cells = new axis points (slice), not new ×
+    # other_cartesian. With sigma_grid = 3 levels (icar, no rho axis), the
+    # legacy cartesian path would have added `n_new_axis_pts * 3` cells;
+    # the slice path adds exactly `n_new_axis_pts`. Three boundary-side
+    # extension points => 3 new cells, 3 kernel solves, total 9 + 3 = 12.
+    expect_equal(length(fit_T$log_marginal) - length(fit_F$log_marginal),
+                  sum(fit_T$adaptive_grid_info$n_points_added))
+    expect_lte(sum(fit_T$adaptive_grid_info$n_points_added), 6L)
+
     # Posterior alpha mean moves outward (FALSE is truncated to
     # alpha <= sigma_pos_max / sigma_occ_min = 0.6 / 0.6 = 1.0; TRUE lets
     # mass past that ceiling). 0.4 is well above MCSE for n=600, sigma=1.

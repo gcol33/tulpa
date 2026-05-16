@@ -77,16 +77,23 @@
 #'   total-variance posterior moments (`Var-of-means + Mean-of-Var`) on
 #'   inner latent coordinates such as fixed-effect betas. Default `FALSE`
 #'   to keep the result lightweight.
-#' @param adaptive_grid Logical (default `FALSE`). When `TRUE`, a second
-#'   kernel pass is triggered on any hyperparameter axis whose marginal
-#'   posterior weight on the boundary point(s) exceeds
+#' @param adaptive_grid Logical (default `FALSE`). When `TRUE`, a mode-
+#'   tracked 1D refinement pass is triggered on any hyperparameter axis
+#'   whose marginal posterior weight on the boundary point(s) exceeds
 #'   `adaptive_grid_edge_thresh`. New points are appended on that axis
-#'   (one densification between the boundary and its neighbour, one
-#'   extension beyond the boundary on a log-spaced axis) and the cartesian
-#'   product with the other axes is evaluated and concatenated. Fixes
-#'   posterior CI under-coverage when truth sits near or at the user's
-#'   grid edge. Opt-in for now; defaults to `FALSE` to preserve legacy
-#'   fixed-grid behaviour for existing callers.
+#'   (one densification between the boundary and its neighbour, two
+#'   outward extensions beyond the boundary on a log-spaced axis) and
+#'   the kernel is evaluated at each new point paired with the modal
+#'   other-axis values from the boundary cell — *not* the full
+#'   cartesian product. Each slice cell carries a calibration term
+#'   `log S_b` so it contributes to the joint softmax on the
+#'   *marginal* scale (where `S_b` is the integrated relative weight
+#'   of the other axes at the boundary). Cost per refinement is
+#'   `O(n_new_points)` kernel solves, not
+#'   `O(n_new_points * prod(other_axis_sizes))`. Fixes posterior CI
+#'   under-coverage when truth sits near or at the user's grid edge.
+#'   Opt-in for now; defaults to `FALSE` to preserve legacy fixed-grid
+#'   behaviour for existing callers.
 #' @param adaptive_grid_edge_thresh Numeric (default `0.02`). Refinement
 #'   triggers when the per-axis edge score on the boundary of the
 #'   refinable axis (currently `sigma_pos` only) exceeds this value. The
@@ -194,6 +201,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$theta_names <- colnames(res$theta_grid)
     res$weights     <- .nl_normalise_weights(res$log_marginal)
     res             <- .nl_posterior_moments(res, paste0("joint_", type))
+    res             <- .joint_recalibrate_axis_moments(res)
     res             <- .joint_attach_alpha_moments(res, cp$has_copy)
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior
@@ -548,6 +556,40 @@ tulpa_nested_laplace_joint <- function(responses,
          sigma_pos_grid = sigma_pos)
 }
 
+# Recalibrate per-axis posterior moments after the joint pass. Slice
+# cells from mode-tracked refinement on axis Y are pinned at modal
+# (non-Y) values; including them in axis X's marginal (X != Y) collapses
+# X to a point and shrinks Sd(X). Recompute mean/Sd for each column of
+# `theta_grid` using only cells that vary that column — cartesian cells
+# (`refining_axis == ""`) plus same-axis slice cells.
+#
+# Joint theta_mean / theta_sd come from `.nl_posterior_moments` and are
+# left in place for axes with no foreign slice cells (the recompute is a
+# no-op there). The original `theta_mean` / `theta_sd` are overwritten
+# in place rather than augmented — downstream callers should read the
+# axis marginal, not the cartesian-only joint moment.
+.joint_recalibrate_axis_moments <- function(res) {
+    refining <- res$refining_axis
+    if (is.null(refining) || all(refining == "")) return(res)
+    if (is.null(res$theta_grid) || !is.matrix(res$theta_grid)) return(res)
+    cols  <- colnames(res$theta_grid)
+    lm    <- res$log_marginal
+    for (col in cols) {
+        keep <- refining == "" | refining == col
+        if (all(keep)) next
+        lm_k <- lm[keep]
+        m    <- max(lm_k)
+        w    <- exp(lm_k - m)
+        w    <- w / sum(w)
+        vals <- res$theta_grid[keep, col]
+        mu   <- sum(w * vals)
+        sd_v <- sqrt(max(0, sum(w * vals^2) - mu^2))
+        res$theta_mean[[col]] <- mu
+        res$theta_sd[[col]]   <- sd_v
+    }
+    res
+}
+
 # Compute per-grid-point alpha = sigma_pos / sigma_occ and merge its
 # posterior mean / sd into the result's theta_mean / theta_sd. Also append
 # an `alpha` column to `theta_grid` so downstream code that inspects
@@ -559,24 +601,35 @@ tulpa_nested_laplace_joint <- function(responses,
         !("sigma_pos" %in% colnames(tg))) {
         return(res)
     }
-    w <- res$weights
     so <- tg[, "sigma_occ"]
     sp <- tg[, "sigma_pos"]
     safe <- so > 0
     alpha_vec <- numeric(length(so))
     alpha_vec[safe]  <- sp[safe] / so[safe]
     alpha_vec[!safe] <- NA_real_
-    # Posterior moments over the valid grid points only — division by 0 at
-    # sigma_occ == 0 is a degenerate boundary that callers explicitly include.
-    w_safe <- w[safe]
-    a_safe <- alpha_vec[safe]
-    if (length(a_safe) == 0L || sum(w_safe) <= 0) {
+    # alpha varies on sigma_pos and sigma_occ; slice cells from refining
+    # any other axis (e.g. phi_<arm>) fix sigma_pos and sigma_occ at
+    # modal values and would collapse alpha to a point. Filter them out
+    # before computing alpha posterior moments — same logic as the
+    # per-axis recalibration step above.
+    refining <- res$refining_axis %||% rep("", length(so))
+    alpha_axes_ok <- refining == "" | refining == "sigma_pos" |
+                      refining == "sigma_occ"
+    # Recompute weights on the alpha-relevant subset directly from
+    # log_marginal (rather than reusing res$weights, which is normalised
+    # across all cells).
+    use <- safe & alpha_axes_ok
+    if (sum(use) == 0L) {
         alpha_mean <- NA_real_
         alpha_sd   <- NA_real_
     } else {
-        ws <- w_safe / sum(w_safe)
-        alpha_mean <- sum(ws * a_safe)
-        alpha_var  <- sum(ws * a_safe^2) - alpha_mean^2
+        lm_use <- res$log_marginal[use]
+        m_use  <- max(lm_use)
+        ws     <- exp(lm_use - m_use)
+        ws     <- ws / sum(ws)
+        a_use  <- alpha_vec[use]
+        alpha_mean <- sum(ws * a_use)
+        alpha_var  <- sum(ws * a_use^2) - alpha_mean^2
         alpha_sd   <- sqrt(max(0, alpha_var))
     }
     res$theta_grid <- cbind(tg, alpha = alpha_vec)
@@ -651,37 +704,74 @@ tulpa_nested_laplace_joint <- function(responses,
 # integrand. The resulting moments are biased toward the grid centre and
 # their variance is bounded by the span of the grid points carrying weight.
 #
-# Refinement strategy (two-pass).
-#   1. Normalise log_marginal -> weights, project onto each axis by summing
-#      weight over the other axes (marginal weight per axis level).
+# Refinement strategy: mode-tracked 1D slice (gcol33/tulpa#19).
+#   1. Normalise log_marginal -> weights, project onto each refinable axis
+#      by summing weight over the other axes (marginal weight per level).
 #   2. For each refinable axis, check whether the lowest or highest level
-#      carries marginal weight above `edge_thresh`. If so, add:
-#        a) one densification point at the geometric midpoint between the
-#           boundary level and its neighbour (sigma_pos is log-spaced),
-#        b) one extension point beyond the boundary, mirroring the spacing
-#           from the boundary to its neighbour.
-#      sigma_pos extends down only to ~0 (no-coupling anchor when callers
-#      explicitly include it).
-#   3. Cartesian-product the new axis levels with the other axes' original
-#      levels, drop combinations already present in `grids`, and feed the
-#      new triples through the same `backend$call_kernel`. Concatenate
-#      log_marginal, modes, n_iter, and the optional per-grid Q lists.
+#      carries marginal weight (or peak integrand density) above
+#      `edge_thresh`. If so, propose:
+#        a) one densification point at the (geometric, for log-spaced)
+#           midpoint between the boundary and its inward neighbour,
+#        b) two outward extension points past the boundary, mirroring the
+#           spacing from the boundary to its neighbour.
+#   3. Locate the boundary MAP cell: argmax of `log_marginal` over rows
+#      whose refining-axis value equals the boundary level. Read off the
+#      modal values of every *other* axis (sigma_occ, rho/rho_car/tau,
+#      phi_<arm>, ...) from that single cell.
+#   4. Evaluate the kernel at each new axis point paired with the modal
+#      other-axis values — one Newton-Laplace solve per new point, *not*
+#      one per `(new_point) x (other_cartesian)`. For an outer grid with
+#      M other-axis cells this is an M-fold cost cut vs. the legacy
+#      cartesian refinement (often M = 100-400 in production).
+#   5. Calibrate the slice cells onto the *marginal* scale before merging:
+#      add `log S_b = logsumexp_{k: axis == boundary} (L_k - L_b_modal)`
+#      to each slice cell's log_marginal. Without this, slice cells sit
+#      at the conditional-MAP density and are systematically under-weighted
+#      by a factor of S_b in the joint softmax. With it, slice cells
+#      contribute the integrated marginal mass the cartesian refinement
+#      would have produced (under the assumption that the conditional
+#      posterior in the other axes is locally stable across the refining
+#      axis — true at the tail because the other axes are anchored by the
+#      rest of the grid, not the refining axis).
+#   6. Append the slice cells to the joint grid. Modes and per-grid Q come
+#      from the real kernel evaluation, so downstream total-variance and
+#      field-decoding code reads correct values at the new cells.
 #
-# Single helper covers sigma_pos and the spatial axes via the same
-# axis-by-axis logic — no per-axis duplication.
+# Single helper handles every refinable axis (currently `sigma_pos`); the
+# legacy cartesian path is gone — one code path, no fixed-vs-refined
+# branching.
 
-# Decide which axes are eligible for refinement. Currently restricted to
-# the copy-arm sigma_pos axis, which carries the small-n_pos failure mode:
-# at small effective sample size the cover-arm likelihood barely
-# identifies sigma_pos and the posterior tail can extend past the user's
-# grid endpoint. Donor sigma_occ is the spatial prior amplitude and is
-# treated as a deliberate prior choice; extending it requires explicit
-# user opt-in (separate feature).
+# Decide which axes are eligible for refinement.
+#
+# `sigma_pos` (copy arm field amplitude): at small effective sample size
+#   the cover-arm likelihood barely identifies sigma_pos and the posterior
+#   tail can extend past the user's grid endpoint. Boundary refinement
+#   catches the truncation; interior refinement isn't relevant here.
+#
+# `phi_<arm>` (per-arm dispersion, e.g. beta concentration): the joint
+#   engine integrates dispersion over an outer log-spaced grid; coarsening
+#   that grid is the main lever on baseline wall time, but the posterior
+#   peak can sit between grid levels and a discretisation bias creeps in.
+#   Boundary + interior densification (mode-tracked) lets callers ship a
+#   smaller default grid without regressing phi-recovery.
+#
+# Donor sigma_occ is the spatial prior amplitude and is treated as a
+# deliberate prior choice; extending it requires explicit user opt-in
+# (separate feature). Spatial mixing axes (rho, rho_car, tau) are
+# similarly fixed for now — they have small grids and the integrand
+# tends to span the user range.
 .refinable_axes <- function(grids, cp_has_copy) {
-    if (!cp_has_copy) return(character(0))
-    lev <- sort(unique(as.numeric(grids$sigma_pos)))
-    if (length(lev) < 2L) return(character(0))
-    "sigma_pos"
+    out <- character(0)
+    if (cp_has_copy) {
+        lev <- sort(unique(as.numeric(grids$sigma_pos)))
+        if (length(lev) >= 2L) out <- c(out, "sigma_pos")
+    }
+    phi_cols <- grep("^phi_", names(grids), value = TRUE)
+    for (col in phi_cols) {
+        lev <- sort(unique(as.numeric(grids[[col]])))
+        if (length(lev) >= 2L) out <- c(out, col)
+    }
+    out
 }
 
 # Per-axis edge diagnostics. Marginal weight gives the integrated posterior
@@ -727,10 +817,12 @@ tulpa_nested_laplace_joint <- function(responses,
 }
 
 # Axis-aware spacing: sigma / sigma_pos / tau live on a log scale; rho and
-# rho_car live on a linear scale. Returns the scale kind for axis name.
+# rho_car live on a linear scale. Per-arm phi axes (`phi_<arm>`) follow
+# the GP-lengthscale convention — strictly positive, log-spaced.
 .axis_is_log_scale <- function(axis_name) {
     axis_name %in% c("sigma", "sigma_occ", "sigma_pos", "tau", "sigma2",
-                      "phi_gp", "lengthscale")
+                      "phi_gp", "lengthscale") ||
+        startsWith(axis_name, "phi_")
 }
 
 # Natural domain clamp for bounded axes. NULL means unbounded (so just
@@ -740,6 +832,7 @@ tulpa_nested_laplace_joint <- function(responses,
     if (axis_name == "sigma_occ") return(c(0, Inf))   # field amplitude >= 0
     if (axis_name == "rho")       return(c(0, 1))     # BYM2/AR1 mixing fraction
     if (axis_name == "rho_car")   return(c(-Inf, 1))  # proper-CAR (eigenvalue gated upstream)
+    if (startsWith(axis_name, "phi_")) return(c(0, Inf))  # dispersion > 0
     NULL
 }
 
@@ -791,38 +884,138 @@ tulpa_nested_laplace_joint <- function(responses,
     pts[keep]
 }
 
-# Build the new cartesian-product triples that need a kernel call. Existing
-# combinations are dropped via a string-key set.
-.new_cartesian_triples <- function(grids, new_per_axis, cp_has_copy) {
+# Propose midpoint(s) on one axis to densify around an interior peak.
+# `mode_idx` is the level index of the peak (1 < mode_idx < length(lev));
+# `do_left` adds the midpoint between (mode_idx - 1, mode_idx),
+# `do_right` adds the midpoint between (mode_idx, mode_idx + 1).
+# Spacing follows the axis scale (geometric mean on log-spaced axes,
+# arithmetic on linear axes). De-duplicated against the existing grid.
+.propose_interior_densification <- function(axis_name, lev, mode_idx,
+                                             do_left = FALSE, do_right = FALSE) {
+    log_scale <- .axis_is_log_scale(axis_name)
+    mid <- if (log_scale) {
+        function(a, b) exp(0.5 * (log(a) + log(b)))
+    } else {
+        function(a, b) 0.5 * (a + b)
+    }
+    pts <- numeric(0)
+    if (do_left  && mode_idx > 1L)              pts <- c(pts, mid(lev[mode_idx - 1L], lev[mode_idx]))
+    if (do_right && mode_idx < length(lev))     pts <- c(pts, mid(lev[mode_idx], lev[mode_idx + 1L]))
+    if (length(pts) == 0L) return(pts)
+    bounds <- .axis_bounds(axis_name)
+    if (!is.null(bounds)) {
+        pts <- pts[pts >= bounds[1L] & pts <= bounds[2L]]
+    }
+    keep <- vapply(pts, function(p) {
+        all(abs(lev - p) > 1e-8 * max(1, abs(p)))
+    }, logical(1))
+    pts[keep]
+}
+
+# Build mode-tracked slice triples for one (axis, anchor-level) pair plus
+# the matching marginal-scale calibration. For each new axis point we
+# produce *one* triple at (axis = p, others = modal_at_anchor), not a
+# full cartesian — this is the M-fold cost cut.
+#
+# `anchor_lev` is the existing axis level whose modal cell we use as the
+# anchor for the conditional posterior on the other axes:
+#   * boundary refinement (peak at/near edge): anchor is the boundary
+#     level (outer for max-side, inner for min-side).
+#   * interior densification (peak between grid levels): anchor is the
+#     peak level; new points sit on either side. The conditional posterior
+#     is locally stable across one grid step in either direction.
+#
+# Returns NULL when no new points were given. Otherwise:
+#   triples       : named list of equal-length vectors, kernel-input shaped
+#                   (sigma_pos is present iff `cp_has_copy`).
+#   calibration   : numeric, one entry per new point, added to that cell's
+#                   raw log_marginal before it is merged into the joint
+#                   grid. `log S_b` defined in the file-level math note.
+#   warm_start_idx: index into the joint grid of the anchor MAP cell.
+.new_mode_tracked_triples <- function(grids, log_marginal, axis_name,
+                                       new_pts, anchor_lev, cp_has_copy) {
+    if (length(new_pts) == 0L) return(NULL)
+    v <- as.numeric(grids[[axis_name]])
+    mask <- abs(v - anchor_lev) < 1e-12 * max(1, abs(anchor_lev))
+    if (!any(mask)) return(NULL)
+    anchor_lm   <- log_marginal[mask]
+    k_map_local <- which.max(anchor_lm)
+    idx_global  <- which(mask)[k_map_local]
+    L_map       <- anchor_lm[k_map_local]
+    # log S_a = log sum_{k @ anchor} exp(L_k - L_anchor_modal). >= 0.
+    # Equals 0 when the conditional posterior collapses to a single cell,
+    # log(M) at most (M = number of other-axis cells) when it is flat.
+    calibration <- log(sum(exp(anchor_lm - L_map)))
+
+    # Modal values of every *other* axis at the boundary MAP cell. Empty
+    # axes (sigma_pos when has_copy = FALSE) stay empty.
     full_axes <- if (cp_has_copy) names(grids) else setdiff(names(grids), "sigma_pos")
-    axis_levels <- list()
-    for (a in full_axes) {
-        old <- sort(unique(as.numeric(grids[[a]])))
-        new <- new_per_axis[[a]] %||% numeric(0)
-        axis_levels[[a]] <- sort(unique(c(old, new)))
+    other_axes <- setdiff(full_axes, axis_name)
+    triples <- vector("list", length(names(grids)))
+    names(triples) <- names(grids)
+    for (a in names(grids)) {
+        if (a == axis_name) {
+            triples[[a]] <- as.numeric(new_pts)
+        } else if (a %in% other_axes && length(grids[[a]]) > 0L) {
+            triples[[a]] <- rep(grids[[a]][idx_global], length(new_pts))
+        } else {
+            triples[[a]] <- numeric(0)
+        }
     }
-    cart <- do.call(expand.grid,
-                    c(axis_levels, list(KEEP.OUT.ATTRS = FALSE,
-                                         stringsAsFactors = FALSE)))
-    # Existing grid keys
-    fmt <- function(df, axes) {
-        apply(as.matrix(df[, axes, drop = FALSE]), 1L,
-              function(r) paste(sprintf("%.10g", r), collapse = ":"))
+    list(triples       = triples,
+         calibration   = rep(calibration, length(new_pts)),
+         # Index into the original joint grid of the boundary MAP cell
+         # whose modes are the best available warm-start for the slice
+         # kernel call (first slice triple reuses it; later triples
+         # chain prev_mode within the kernel).
+         warm_start_idx = idx_global)
+}
+
+# Stitch the slice triples from multiple (axis, side) pairs into a single
+# kernel-input shape, alongside one calibration vector. Drops any rows
+# whose all-axis key already appears in `grids` (numerical tolerance via
+# the same `%.10g` key format the legacy path used).
+.concat_slice_triples <- function(triple_packs, grids, cp_has_copy) {
+    if (length(triple_packs) == 0L) return(NULL)
+    axes <- names(grids)
+    combined <- vector("list", length(axes))
+    names(combined) <- axes
+    for (a in axes) {
+        parts <- lapply(triple_packs, function(p) p$triples[[a]] %||% numeric(0))
+        combined[[a]] <- as.numeric(unlist(parts, use.names = FALSE))
     }
-    cart_keys <- fmt(cart, full_axes)
-    old_df    <- as.data.frame(grids[full_axes])
-    old_keys  <- fmt(old_df, full_axes)
-    new_rows  <- cart[!cart_keys %in% old_keys, , drop = FALSE]
-    if (nrow(new_rows) == 0L) return(NULL)
-    # Re-shape to the named-list format the kernel expects, preserving the
-    # original sigma_pos-shape convention (empty when has_copy = FALSE).
-    out <- as.list(new_rows)
-    if (!cp_has_copy) out$sigma_pos <- numeric(0)
-    out
+    calib <- as.numeric(unlist(lapply(triple_packs, `[[`, "calibration"),
+                                use.names = FALSE))
+    n_new <- length(combined[[axes[1L]]])
+    if (n_new == 0L) return(NULL)
+
+    # De-duplicate against the existing grid on the active (non-empty)
+    # axes. sigma_pos when has_copy = FALSE has length 0 and is ignored.
+    active <- vapply(axes, function(a) length(grids[[a]]) > 0L, logical(1))
+    active_axes <- axes[active]
+    fmt <- function(lst) {
+        if (length(lst[[active_axes[1L]]]) == 0L) return(character(0))
+        cols <- lapply(active_axes, function(a) sprintf("%.10g", lst[[a]]))
+        do.call(paste, c(cols, sep = ":"))
+    }
+    new_keys <- fmt(combined)
+    old_keys <- fmt(grids)
+    keep <- !new_keys %in% old_keys
+    if (!any(keep)) return(NULL)
+    for (a in axes) {
+        if (length(combined[[a]]) > 0L) combined[[a]] <- combined[[a]][keep]
+    }
+    calib <- calib[keep]
+    if (!cp_has_copy) combined$sigma_pos <- numeric(0)
+    list(triples = combined, calibration = calib)
 }
 
 # Concatenate two kernel results row-wise, matching the run_nested_laplace_grid
 # output layout (log_marginal, modes, n_iter, optional Q_csc_* lists).
+# Also carries the per-cell `refining_axis` tag so per-axis moment
+# recalibration downstream can drop slice cells that don't vary the axis
+# whose marginal is being computed. Cells without an explicit tag (e.g.
+# the initial cartesian pass) default to "" (= varies on every axis).
 .concat_kernel_results <- function(a, b) {
     out <- a
     out$log_marginal <- c(a$log_marginal, b$log_marginal)
@@ -831,6 +1024,9 @@ tulpa_nested_laplace_joint <- function(responses,
     if (!is.null(a$modes) && !is.null(b$modes)) {
         out$modes <- rbind(a$modes, b$modes)
     }
+    tag_a <- a$refining_axis %||% rep("", length(a$log_marginal))
+    tag_b <- b$refining_axis %||% rep("", length(b$log_marginal))
+    out$refining_axis <- c(tag_a, tag_b)
     if (!is.null(a$Q_csc_p_per_grid) || !is.null(b$Q_csc_p_per_grid)) {
         out$Q_csc_p_per_grid <- c(a$Q_csc_p_per_grid %||% vector("list", a$n_grid),
                                   b$Q_csc_p_per_grid %||% vector("list", b$n_grid))
@@ -855,11 +1051,146 @@ tulpa_nested_laplace_joint <- function(responses,
     out
 }
 
-# Main entry: run up to `max_passes` of refinement. Each pass identifies the
-# single axis with the largest exceedance over `edge_thresh` (so we add the
-# minimal number of triples) and inflates the grid along that axis only.
-# Re-using the same backend kernel keeps this a single code path — no
-# fixed-grid fallback. Stops early when no axis crosses the threshold.
+# Detect refinement triggers on one axis and return the slice triple_pack
+# (or NULL if nothing triggers). Pulled out so the outer pass can apply
+# axes sequentially and let later axes see the updated grid/posterior.
+.detect_axis_refinement <- function(grids, res, edge_info_a, axis_name,
+                                     edge_thresh, cp_has_copy) {
+    ei  <- edge_info_a
+    lev <- ei$levels
+    v   <- as.numeric(grids[[axis_name]])
+    lm_max_at_lev <- vapply(lev, function(lv) {
+        max(res$log_marginal[v == lv])
+    }, numeric(1))
+    mode_idx <- which.max(lm_max_at_lev)
+    n_lev    <- length(lev)
+
+    # Boundary triggers (peak-at-edge or tail-mass-at-edge).
+    tr_min <- ei$min_score >= edge_thresh &&
+              (mode_idx == 1L || ei$min_dens >= edge_thresh)
+    tr_max <- ei$max_score >= edge_thresh &&
+              (mode_idx == n_lev || ei$max_dens >= edge_thresh)
+
+    # Interior densification trigger. When the posterior on the refining
+    # axis is narrower than the grid spacing, weights collapse to a
+    # single grid point and the posterior mean snaps to that grid value
+    # — no continuous interpolation. Adjacent-level density rounds to
+    # zero in that regime, so a density-based trigger cannot catch the
+    # discretisation bias. Trigger on *grid coarseness* instead: when
+    # the log-axis neighbour ratio exceeds `interior_log_step`, an
+    # interior peak is suspected of sub-grid mismatch — densify between
+    # peak and neighbour. Thresholds tuned to "always fire on a 7-point
+    # log grid over [2, 300] (ratio ~2.4), never fire on a 25-point
+    # grid (ratio ~1.25)".
+    interior_log_step <- 0.55
+    interior_lin_step <- 0.25
+    wide_left <- wide_right <- FALSE
+    if (mode_idx > 1L && mode_idx < n_lev) {
+        if (.axis_is_log_scale(axis_name)) {
+            wide_left  <- (log(lev[mode_idx])     - log(lev[mode_idx - 1L])) >= interior_log_step
+            wide_right <- (log(lev[mode_idx + 1L]) - log(lev[mode_idx]))     >= interior_log_step
+        } else {
+            span <- diff(range(lev))
+            if (span > 0) {
+                wide_left  <- (lev[mode_idx]     - lev[mode_idx - 1L]) / span >= interior_lin_step
+                wide_right <- (lev[mode_idx + 1L] - lev[mode_idx])     / span >= interior_lin_step
+            }
+        }
+    }
+
+    if (!tr_min && !tr_max && !wide_left && !wide_right) return(NULL)
+    packs <- list()
+    if (tr_max) {
+        pts <- .propose_axis_extension(axis_name, lev, "max", extend_ok = TRUE)
+        pk  <- .new_mode_tracked_triples(grids, res$log_marginal, axis_name,
+                                          pts,
+                                          anchor_lev   = lev[n_lev],
+                                          cp_has_copy  = cp_has_copy)
+        if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
+    }
+    if (tr_min) {
+        pts <- .propose_axis_extension(axis_name, lev, "min", extend_ok = TRUE)
+        pk  <- .new_mode_tracked_triples(grids, res$log_marginal, axis_name,
+                                          pts,
+                                          anchor_lev   = lev[1L],
+                                          cp_has_copy  = cp_has_copy)
+        if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
+    }
+    if (wide_left || wide_right) {
+        pts <- .propose_interior_densification(axis_name, lev, mode_idx,
+                                                wide_left, wide_right)
+        pk  <- .new_mode_tracked_triples(grids, res$log_marginal, axis_name,
+                                          pts,
+                                          anchor_lev   = lev[mode_idx],
+                                          cp_has_copy  = cp_has_copy)
+        if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
+    }
+    if (length(packs) == 0L) return(NULL)
+    packs
+}
+
+# Run the slice kernel for one axis's triple_packs and merge the result
+# into (res, grids). Warm-start from the first pack's anchor MAP cell.
+# Tags each new cell with `axis_name` so per-axis moment recalibration
+# downstream can exclude cells that fix this axis at a non-varying value
+# from OTHER axes' marginals.
+.apply_axis_refinement <- function(grids, res, triple_packs, axis_name,
+                                    backend, arms, prior, cp,
+                                    max_iter, tol, n_threads, x_init,
+                                    store_Q, arm_names) {
+    merged <- .concat_slice_triples(triple_packs, grids, cp$has_copy)
+    if (is.null(merged)) return(list(grids = grids, res = res, n_new = 0L))
+    new_triples <- merged$triples
+    calibration <- merged$calibration
+
+    # Warm-start the slice kernel call from the first pack's anchor MAP
+    # mode. The kernel chains prev_mode forward within a call, so this
+    # skips a cold Newton on triple 1; subsequent triples benefit
+    # transitively. Slice cells live close in theta-space to the
+    # anchor, so the converged anchor mode is the best initial guess.
+    slice_x_init <- x_init
+    if (!is.null(res$modes) && is.matrix(res$modes)) {
+        idx0 <- triple_packs[[1L]]$warm_start_idx
+        if (length(idx0) == 1L && idx0 >= 1L && idx0 <= nrow(res$modes)) {
+            slice_x_init <- as.numeric(res$modes[idx0, ])
+        }
+    }
+
+    res_extra <- backend$call_kernel(arms, prior, cp, new_triples,
+                                      max_iter, tol, n_threads,
+                                      slice_x_init, isTRUE(store_Q),
+                                      arm_names = arm_names)
+    # Lift slice cells onto the marginal scale before merging. Same
+    # softmax invariant the cartesian path used to give us for free.
+    res_extra$log_marginal  <- res_extra$log_marginal + calibration
+    res_extra$refining_axis <- rep(axis_name, length(res_extra$log_marginal))
+
+    res   <- .concat_kernel_results(res, res_extra)
+    grids <- .merge_grids(grids, new_triples, cp$has_copy)
+    n_new <- length(new_triples[[names(grids)[which(vapply(grids, length,
+                                                            integer(1)) > 0L)[1L]]]])
+    list(grids = grids, res = res, n_new = n_new)
+}
+
+# Priority order for refining axes. `sigma_pos` (boundary truncation —
+# distorts every derived quantity including alpha) is refined first; any
+# `phi_<arm>` axes (interior densification — sharpens marginal recovery
+# without shifting joint structure) are refined second so they read the
+# post-`sigma_pos`-extension modal. Other axes fall in declaration order.
+.axis_refinement_order <- function(axes) {
+    priority <- function(a) {
+        if (a == "sigma_pos") 1L
+        else if (startsWith(a, "phi_")) 2L
+        else 3L
+    }
+    axes[order(vapply(axes, priority, integer(1)), seq_along(axes))]
+}
+
+# Main entry: run up to `max_passes` of refinement. Each pass processes
+# refinable axes *sequentially* (one kernel call per axis), so each axis
+# sees the grid/posterior updates from any earlier axis in the same pass.
+# Re-uses the backend kernel — one code path, no fixed-grid fallback.
+# Stops early when no axis triggers.
 .adaptive_refine_pass <- function(grids, res, backend, arms, prior, cp,
                                   max_iter, tol, n_threads, x_init, store_Q,
                                   edge_thresh, max_passes,
@@ -870,79 +1201,31 @@ tulpa_nested_laplace_joint <- function(responses,
         return(list(grids = grids, res = res, info = NULL))
     }
     for (pass in seq_len(max_passes)) {
-        axes    <- .refinable_axes(grids, cp$has_copy)
+        axes <- .axis_refinement_order(.refinable_axes(grids, cp$has_copy))
         if (length(axes) == 0L) break
-        edge_info <- .axis_edge_scores(grids, res$log_marginal, axes)
-
-        # Refinement targets two failure modes:
-        #   1. Boundary IS the local mode for that axis. The integrand
-        #      peak sits at the user-supplied grid edge; we have no
-        #      evidence whether the true peak is at the boundary or
-        #      further out. Extending outward is the only way to find
-        #      out — without it we underestimate posterior variance by
-        #      truncating the tail.
-        #   2. Boundary is on the descent (a neighbour is heavier) but
-        #      the integrand density at the boundary still exceeds
-        #      `edge_thresh`. The tail beyond the boundary carries
-        #      enough mass that the truncation matters; we extend to
-        #      soak it up.
-        # When the boundary is on the descent AND density at boundary is
-        # below threshold, the integrand has already decayed by the time
-        # we hit the edge — no refinement needed.
-        new_per_axis <- list()
+        any_triggered <- FALSE
         triggered_this_pass <- character(0)
-        for (a in names(edge_info)) {
+        for (a in axes) {
+            edge_info <- .axis_edge_scores(grids, res$log_marginal, a)
             ei <- edge_info[[a]]
-            lev <- ei$levels
-            # Marginal max-log-marginal per level on this axis (max over
-            # other axes' grid points). The "local mode" for the axis
-            # lies at the level whose marginal max-log-marginal is the
-            # largest. The boundary either IS that mode, or sits on the
-            # descent from it.
-            v <- as.numeric(grids[[a]])
-            lm_max_at_lev <- vapply(lev, function(lv) {
-                max(res$log_marginal[v == lv])
-            }, numeric(1))
-            mode_idx <- which.max(lm_max_at_lev)
-            n_lev    <- length(lev)
-            tr_min <- ei$min_score >= edge_thresh &&
-                      (mode_idx == 1L || ei$min_dens >= edge_thresh)
-            tr_max <- ei$max_score >= edge_thresh &&
-                      (mode_idx == n_lev || ei$max_dens >= edge_thresh)
-            if (!tr_min && !tr_max) next
-            pts <- numeric(0)
-            if (tr_max) {
-                pts <- c(pts, .propose_axis_extension(a, lev, "max",
-                                                      extend_ok = TRUE))
-            }
-            if (tr_min) {
-                pts <- c(pts, .propose_axis_extension(a, lev, "min",
-                                                      extend_ok = TRUE))
-            }
-            pts <- sort(unique(pts))
-            if (length(pts) == 0L) next
-            new_per_axis[[a]] <- pts
+            if (is.null(ei)) next
+            packs <- .detect_axis_refinement(grids, res, ei, a,
+                                              edge_thresh, cp$has_copy)
+            if (is.null(packs)) next
+            step <- .apply_axis_refinement(grids, res, packs, a, backend,
+                                            arms, prior, cp, max_iter, tol,
+                                            n_threads, x_init, store_Q,
+                                            arm_names)
+            if (step$n_new == 0L) next
+            grids <- step$grids
+            res   <- step$res
             triggered_this_pass <- c(triggered_this_pass, a)
+            info$n_points_added <- c(info$n_points_added, step$n_new)
+            any_triggered <- TRUE
         }
-        if (length(new_per_axis) == 0L) break
-
-        new_triples <- .new_cartesian_triples(grids, new_per_axis,
-                                              cp$has_copy)
-        if (is.null(new_triples)) break
-
-        res_extra <- backend$call_kernel(arms, prior, cp, new_triples,
-                                          max_iter, tol, n_threads,
-                                          x_init, isTRUE(store_Q),
-                                          arm_names = arm_names)
-        res   <- .concat_kernel_results(res, res_extra)
-        grids <- .merge_grids(grids, new_triples, cp$has_copy)
-
-        # All paired vectors in `new_triples` have the same length (= number
-        # of new grid points). Read it off the first axis.
-        n_new <- length(new_triples[[names(grids)[1L]]])
+        if (!any_triggered) break
         info$triggered_axes <- c(info$triggered_axes,
                                   paste(triggered_this_pass, collapse = ","))
-        info$n_points_added <- c(info$n_points_added, n_new)
     }
     if (length(info$triggered_axes) == 0L) info <- NULL
     list(grids = grids, res = res, info = info)

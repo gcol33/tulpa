@@ -15,7 +15,7 @@ tulpa_nested_laplace_joint(
   x_init = NULL,
   verbose = FALSE,
   store_Q = FALSE,
-  adaptive_grid = TRUE,
+  adaptive_grid = FALSE,
   adaptive_grid_edge_thresh = 0.02,
   adaptive_grid_max_passes = 1L
 )
@@ -78,15 +78,23 @@ total-variance posterior moments (\code{Var-of-means + Mean-of-Var}) on
 inner latent coordinates such as fixed-effect betas. Default \code{FALSE}
 to keep the result lightweight.}
 
-\item{adaptive_grid}{Logical (default \code{TRUE}). When \code{TRUE}, a second
-kernel pass is triggered on any hyperparameter axis whose marginal
-posterior weight on the boundary point(s) exceeds
+\item{adaptive_grid}{Logical (default \code{FALSE}). When \code{TRUE}, a mode-
+tracked 1D refinement pass is triggered on any hyperparameter axis
+whose marginal posterior weight on the boundary point(s) exceeds
 \code{adaptive_grid_edge_thresh}. New points are appended on that axis
-(one densification between the boundary and its neighbour, one
-extension beyond the boundary on a log-spaced axis) and the cartesian
-product with the other axes is evaluated and concatenated. Fixes
-posterior CI under-coverage when truth sits near or at the user's
-grid edge. Pass \code{FALSE} to recover the legacy fixed-grid behaviour.}
+(one densification between the boundary and its neighbour, two
+outward extensions beyond the boundary on a log-spaced axis) and
+the kernel is evaluated at each new point paired with the modal
+other-axis values from the boundary cell — \emph{not} the full
+cartesian product. Each slice cell carries a calibration term
+\verb{log S_b} so it contributes to the joint softmax on the
+\emph{marginal} scale (where \code{S_b} is the integrated relative weight
+of the other axes at the boundary). Cost per refinement is
+\code{O(n_new_points)} kernel solves, not
+\code{O(n_new_points * prod(other_axis_sizes))}. Fixes posterior CI
+under-coverage when truth sits near or at the user's grid edge.
+Opt-in for now; defaults to \code{FALSE} to preserve legacy fixed-grid
+behaviour for existing callers.}
 
 \item{adaptive_grid_edge_thresh}{Numeric (default \code{0.02}). Refinement
 triggers when the per-axis edge score on the boundary of the
