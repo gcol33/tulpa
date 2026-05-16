@@ -203,6 +203,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     double kappa, double tau_spde,
     std::string family,
     int alpha = 2,
+    double nu = -1.0,
     double sigma_beta = 10.0,
     double log_phi_prior_sd = 3.0,
     double log_phi_init = 0.0,
@@ -299,24 +300,28 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     //
     // Joint-NUTS mode skips this: Q is rebuilt per gradient evaluation
     // inside SpdeNcTransform from the FEM matrices, and the cached Q on
-    // SpdeModelData is unused by compute_spde_prior(joint=true).
+    // SpdeModelData is unused by compute_spde_prior(joint=true). The
+    // rational poles/weights are still plumbed through to SpdeModelData
+    // so the lazy NC-transform builder picks them up.
     tulpa::SpdeQBuilder qb;
     std::vector<double> rat_poles, rat_weights;
     const bool use_rational = rational_poles_nullable.isNotNull() &&
                                rational_weights_nullable.isNotNull();
+    if (use_rational) {
+        rat_poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
+        rat_weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
+        if (rat_poles.size() != rat_weights.size() || rat_poles.empty()) {
+            Rcpp::stop("rational_poles / rational_weights must be non-empty "
+                       "and of equal length.");
+        }
+    }
     if (!joint_hypers) {
         qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
         if (use_rational) {
-            rat_poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
-            rat_weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
             qb.rebuild_rational(kappa, tau_spde, rat_poles, rat_weights);
         } else {
             qb.rebuild(kappa, tau_spde, alpha);
         }
-    } else if (use_rational) {
-        Rcpp::stop("Joint-NUTS over (log_kappa, log_tau) currently supports "
-                   "only integer alpha (alpha = 2). Drop rational_poles / "
-                   "rational_weights or set joint_hypers = FALSE.");
     }
 
     tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, A_x, A_i, A_p);
@@ -395,7 +400,11 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     data.has_spde     = true;
     auto& sm = data.spde_data;
     sm.n_mesh   = n_mesh;
-    sm.nu       = static_cast<double>(alpha) - 1.0;  // alpha = nu + d/2, d=2.
+    // Matern smoothness: caller passes it explicitly (e.g. nu=0.5 for the
+    // rational alpha=1.5 case). The legacy fallback nu = alpha - 1 only
+    // applies when nu is left unset by the caller (nu < 0), and is
+    // exact only for integer-alpha cases.
+    sm.nu       = (nu > 0.0) ? nu : static_cast<double>(alpha) - 1.0;
     sm.kappa    = kappa;
     sm.tau_spde = tau_spde;
     sm.alpha    = alpha;
@@ -408,9 +417,12 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
         sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
         sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
-        sm.rational_poles   = std::move(rat_poles);
-        sm.rational_weights = std::move(rat_weights);
     }
+    // Rational coefficients are needed in both modes: fixed-hyper Laplace
+    // uses them to rebuild Q at each outer-grid point, and joint-NUTS uses
+    // them inside SpdeNcTransform on every gradient call.
+    sm.rational_poles   = std::move(rat_poles);
+    sm.rational_weights = std::move(rat_weights);
     // log|Q| is constant under fixed hypers and cancels in NUTS, so we
     // leave it at 0.0 — Phase 2 will compute it for prior-comparable
     // log-posteriors when joint hypers move.
@@ -518,7 +530,10 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
 
     if (joint_hypers) {
         constexpr double k_pi = 3.14159265358979323846;
-        const double nu_used     = static_cast<double>(alpha) - 1.0;
+        // Use the caller-supplied nu when present (correct for fractional
+        // cases); fall back to alpha - 1 only when nu was left unset.
+        const double nu_used     = (nu > 0.0) ? nu
+                                              : static_cast<double>(alpha) - 1.0;
         const double sqrt_8nu    = std::sqrt(8.0 * nu_used);
         const double sqrt_4pi    = std::sqrt(4.0 * k_pi);
 

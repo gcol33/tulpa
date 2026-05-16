@@ -17,8 +17,33 @@
 //   backward:  given dw = dL_loss/dw, compute (dz, dlog_kappa, dlog_tau)
 //              via the Murray (2016) implicit Cholesky derivative.
 //
-// Phase 1 scope: alpha = 2 only. Rational fractional-alpha and the
-// (kappa, tau) <-> (range, sigma) reparameterisation land in (a.iii)'s
+// Two operator-order modes, dispatched on whether init() was called with
+// rational poles+weights:
+//
+//   Integer alpha = 2 (default; poles empty):
+//       K = kappa^2 C0 + G1
+//       Q = tau^2 K diag(1/C0) K
+//
+//   Rational alpha (fractional nu; poles/weights from Bolin et al. 2023):
+//       K_k = (kappa^2 + r_k) C0 + G1
+//       Q   = tau^2 sum_k w_k K_k diag(1/C0) K_k
+//
+//   In both cases the non-centered transform is w = L^{-T} z with
+//   L L^T = Q(kappa, tau).
+//
+// The adjoint preserves the same trace-collapsing structure (Murray 2016).
+// Only the closed forms for dQ/dlog_kappa change:
+//
+//   Integer:  dQ/dlog_kappa = 4 kappa^2 tau^2 K
+//             dQ/dlog_tau   = 2 Q
+//
+//   Rational: dQ/dlog_kappa = 4 kappa^2 tau^2 K_sum
+//             dQ/dlog_tau   = 2 Q
+//             where K_sum := sum_k w_k K_k
+//                          = (kappa^2 W + R_sum) C0 + W G1
+//             with W = sum_k w_k, R_sum = sum_k w_k r_k.
+//
+// The (kappa, tau) <-> (range, sigma) reparameterisation lives in (a.iii)'s
 // wrapper, not here.
 //
 // Implementation note. All Eigen-heavy code lives in spde_nc_transform.cpp
@@ -47,11 +72,22 @@ public:
     Eigen::VectorXd C0_inv_diag;
     SpMat           G1;
 
+    // Rational approximation coefficients (Bolin et al. 2023). Empty means
+    // integer alpha = 2 (the default fast path). Both vectors are
+    // populated by init() and immutable afterwards.
+    std::vector<double> poles_;
+    std::vector<double> weights_;
+    double              W_     = 0.0;  // sum_k w_k
+    double              R_sum_ = 0.0;  // sum_k w_k r_k
+
     // Cached forward state (filled by forward(); read by backward()).
     double  last_kappa = 0.0;
     double  last_tau   = 0.0;
-    SpMat   last_K;       // kappa^2 C0 + G1
-    SpMat   last_Q;       // tau^2 K D K
+    SpMat   last_K;       // Integer: kappa^2 C0 + G1. Rational: unused.
+    SpMat   last_K_sum;   // Rational: (kappa^2 W + R_sum) C0 + W G1.
+                          // Integer:  unused (degenerates to last_K).
+    SpMat   last_Q;       // Integer:  tau^2 K D K.
+                          // Rational: tau^2 sum_k w_k K_k D K_k.
     SolverT llt;
     bool    factored = false;
 
@@ -59,13 +95,26 @@ public:
               const std::vector<double>& C0_d,
               const std::vector<double>& G1_x,
               const std::vector<int>&    G1_i,
-              const std::vector<int>&    G1_p);
+              const std::vector<int>&    G1_p,
+              const std::vector<double>& poles   = {},
+              const std::vector<double>& weights = {});
 
-    // K(kappa) = kappa^2 C0 + G1.
+    bool is_rational() const { return !poles_.empty(); }
+
+    // K(kappa) = kappa^2 C0 + G1. Equivalent to build_K_shifted(kappa^2, 0).
     SpMat build_K(double kappa) const;
 
-    // Q(kappa, tau) = tau^2 K diag(1/C0) K.
+    // K_shifted(kappa^2 + r) = (kappa^2 + r) C0 + G1. Used per-pole in
+    // the rational forward to build K_k.
+    SpMat build_K_shifted(double k2_eff) const;
+
+    // Integer-alpha Q: tau^2 K diag(1/C0) K.
     SpMat build_Q(const SpMat& K, double tau) const;
+
+    // Rational-alpha Q: tau^2 sum_k w_k K_k diag(1/C0) K_k.
+    // Side effect: caches the (kappa^2 W + R_sum) C0 + W G1 matrix in
+    // last_K_sum so backward() can read it without rebuilding.
+    SpMat build_Q_rational(double kappa, double tau);
 
     // Forward: w = L^{-T} z. Caches K, Q, L for the matching backward call.
     Eigen::VectorXd forward(const Eigen::VectorXd& z, double kappa, double tau);

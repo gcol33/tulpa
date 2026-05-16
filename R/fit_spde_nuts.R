@@ -177,14 +177,12 @@ tulpa_nuts_spde <- function(y, X, spatial,
 
   kappa    <- sqrt(8 * spatial$nu) / range
   tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
+  # Operator order alpha = nu + d/2 (d = 2). For integer nu this is an
+  # int; for fractional nu the rational expansion handles non-integer alpha
+  # downstream, and the int passed here only labels the closest integer
+  # spde construction for the legacy fixed-hyper path.
   alpha    <- as.integer(round(spatial$nu)) + 1L
   rat      <- rational_spde_coefficients(spatial$nu)
-
-  if (joint && !rat$is_integer) {
-    stop("Joint-NUTS over (log_kappa, log_tau) currently supports only ",
-         "integer alpha (nu integer). Use joint = FALSE for fractional nu.",
-         call. = FALSE)
-  }
 
   if (is.null(n_trials)) n_trials <- rep(1L, N)
   n_trials <- as.integer(n_trials)
@@ -206,6 +204,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     tau_spde         = tau_spde,
     family           = family,
     alpha            = alpha,
+    nu               = as.numeric(spatial$nu),
     sigma_beta       = sigma_beta,
     log_phi_prior_sd = log_phi_prior_sd,
     log_phi_init     = log_phi_init,
@@ -215,8 +214,12 @@ tulpa_nuts_spde <- function(y, X, spatial,
     adapt_delta      = adapt_delta,
     seed             = as.integer(seed),
     verbose          = isTRUE(verbose),
-    rational_poles   = if (!joint && !rat$is_integer) rat$poles   else NULL,
-    rational_weights = if (!joint && !rat$is_integer) rat$weights else NULL,
+    # Rational poles/weights are passed in both modes when nu is
+    # fractional. The fixed-hyper Laplace path uses them to rebuild Q
+    # at the outer grid points; the joint-NUTS path uses them inside
+    # SpdeNcTransform on every gradient call.
+    rational_poles   = if (!rat$is_integer) rat$poles   else NULL,
+    rational_weights = if (!rat$is_integer) rat$weights else NULL,
     joint_hypers      = joint,
     prior_range_0     = prior_range_0,
     prior_range_alpha = prior_range_alpha,

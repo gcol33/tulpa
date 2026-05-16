@@ -297,10 +297,26 @@ reserved layout slots.
 **Where:** sibling `tulpaObs` (renamed from `tulpaOcc` on 2026-05-13).
 **Scope:** observation-process models — occupancy, detection / non-detection,
 N-mixture, etc. all share the same two-level likelihood structure.
-**State:** `occu_spde` already lives at `tulpaObs R/spatial.R:197` and wraps
-`tulpa::spatial_spde`. End-to-end observation + continuous-spatial wiring
-through tulpa's nested SPDE Laplace still needs verification at higher N and
-the in-package vignette.
+**State (occ family):** shipped 2026-05-16. `tobs_spde()` wraps
+`tulpa::spatial_spde` (`tulpaObs R/spatial.R:196`); the `.tobs_laplace()` EM
+path attaches the FEM precision via `.attach_spatial_spde` and returns the
+mode-recovered mesh field as `fit$spatial_field`. Verified by
+`test-spde-occ.R`: slim N=400 recovery + a higher-N tier (3 seeds, N=1500,
+finer mesh) with tightened per-seed bias bounds and aggregate calibration
+(see commit log). Vignette `vignettes/occupancy-spatial-spde.Rmd` builds
+clean and walks through sim → non-spatial fit → SPDE fit → coefficient
+table → field-recovery plot.
+**Open follow-on:**
+- Hyperparameter integration over `(range, sigma)` per EM step
+  (PLAN_tulpaObs.md Phase 3). Currently `(range, sigma)` are pinned at
+  the prior modes that build the FEM precision; the engine matrix marks
+  occ + nested-Laplace as "partial (needs hyperparam grid for spatial)".
+- Other observation families (`dynamic_occ`, `multispecies_occ`, `jsdm`,
+  `nmixture`) explicitly rejected by `.validate_spatial_laplace` today —
+  ship per family as Phases 2-4 land.
+- SPDE on the detection submodel (`shared[2] = TRUE`) — explicitly
+  rejected today; needs A-matrix row expansion for visit-indexed
+  detection covariates.
 
 ## P2 — Tulpa core
 
@@ -340,9 +356,8 @@ in during future edits.
 
 ## Recommended order
 
-1. **#3 SPDE end-to-end in `tulpaObs`** + vignette.
-2. **#5 CUDA live test** — schedulable anytime; needs a GPU build.
-3. **#6 namespace cleanup** + **#7 forward-decl audit** — cosmetic, opportunistic.
-4. **P4 deferred items** — pick up once decisions land.
+1. **#5 CUDA live test** — schedulable anytime; needs a GPU build.
+2. **#6 namespace cleanup** + **#7 forward-decl audit** — cosmetic, opportunistic.
+3. **P4 deferred items** — pick up once decisions land.
 
 `plan.md` is the live narrative; this file is the punch list.

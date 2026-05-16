@@ -27,7 +27,11 @@ inline SpdeNcTransform& ensure_transform(const ModelData& data) {
     auto& sm = data.spde_data;
     if (!sm.nc_transform) {
         auto t = std::make_shared<SpdeNcTransform>();
-        t->init(sm.n_mesh, sm.C0_diag, sm.G1_x, sm.G1_i, sm.G1_p);
+        // Pass rational poles/weights when present (fractional nu); empty
+        // vectors take the integer alpha=2 fast path. The cache lives for
+        // the chain's lifetime, so this dispatch is paid once.
+        t->init(sm.n_mesh, sm.C0_diag, sm.G1_x, sm.G1_i, sm.G1_p,
+                sm.rational_poles, sm.rational_weights);
         sm.nc_transform = std::move(t);
     }
     return *sm.nc_transform;

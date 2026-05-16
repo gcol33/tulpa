@@ -19,9 +19,17 @@
 // trajectory. (a.iii) can replace this with a sparse partial-inverse path
 // when the mesh sizes scale up.
 //
-// dQ/dtheta closed forms (alpha = 2):
-//   dQ/dlog_kappa = 4 kappa^2 tau^2 K
-//   dQ/dlog_tau   = 2 Q
+// dQ/dtheta closed forms:
+//   Integer alpha = 2:
+//     dQ/dlog_kappa = 4 kappa^2 tau^2 K
+//     dQ/dlog_tau   = 2 Q
+//   Rational alpha (Bolin et al. 2023, poles {r_k}, weights {w_k}):
+//     dQ/dlog_kappa = 4 kappa^2 tau^2 K_sum
+//     dQ/dlog_tau   = 2 Q
+//     where K_sum := sum_k w_k K_k = (kappa^2 W + R_sum) C0 + W G1,
+//     with K_k = (kappa^2 + r_k) C0 + G1, W = sum_k w_k, R_sum = sum_k w_k r_k.
+//   Both forms collapse the trace through the same code path; only the
+//   matrix used for the log_kappa branch differs.
 
 #include "spde_nc_transform.h"
 
@@ -35,7 +43,9 @@ void SpdeNcTransform::init(int n,
                            const std::vector<double>& C0_d,
                            const std::vector<double>& G1_x,
                            const std::vector<int>&    G1_i,
-                           const std::vector<int>&    G1_p)
+                           const std::vector<int>&    G1_p,
+                           const std::vector<double>& poles,
+                           const std::vector<double>& weights)
 {
     n_mesh  = n;
     C0_diag = Eigen::Map<const Eigen::VectorXd>(C0_d.data(), n);
@@ -54,13 +64,30 @@ void SpdeNcTransform::init(int n,
     }
     G1.setFromTriplets(trips.begin(), trips.end());
     G1.makeCompressed();
+
+    // Rational coefficients (Bolin et al. 2023). Empty -> integer alpha=2.
+    if (poles.size() != weights.size()) {
+        throw std::runtime_error("SpdeNcTransform::init: poles / weights "
+                                 "length mismatch");
+    }
+    poles_   = poles;
+    weights_ = weights;
+    W_     = 0.0;
+    R_sum_ = 0.0;
+    for (size_t k = 0; k < poles_.size(); k++) {
+        W_     += weights_[k];
+        R_sum_ += weights_[k] * poles_[k];
+    }
 }
 
 SpdeNcTransform::SpMat SpdeNcTransform::build_K(double kappa) const {
+    return build_K_shifted(kappa * kappa);
+}
+
+SpdeNcTransform::SpMat SpdeNcTransform::build_K_shifted(double k2_eff) const {
     SpMat K = G1;
-    const double k2 = kappa * kappa;
     for (int i = 0; i < n_mesh; i++) {
-        K.coeffRef(i, i) += k2 * C0_diag[i];
+        K.coeffRef(i, i) += k2_eff * C0_diag[i];
     }
     K.makeCompressed();
     return K;
@@ -80,14 +107,58 @@ SpdeNcTransform::SpMat SpdeNcTransform::build_Q(const SpMat& K, double tau) cons
     return Q;
 }
 
+SpdeNcTransform::SpMat SpdeNcTransform::build_Q_rational(double kappa, double tau) {
+    // Q = tau^2 sum_k w_k K_k diag(1/C0) K_k, with K_k = (kappa^2 + r_k) C0 + G1.
+    // Each per-pole term shares the alpha=2 build_Q pattern at a shifted k^2.
+    const double k2   = kappa * kappa;
+    const double tau2 = tau * tau;
+
+    SpMat Q;
+    const int m = static_cast<int>(poles_.size());
+    for (int k = 0; k < m; k++) {
+        const double k2_eff = k2 + poles_[k];
+        SpMat K_k = build_K_shifted(k2_eff);
+        // Reuse build_Q with tau = 1; we'll scale outside.
+        SpMat term = build_Q(K_k, 1.0);
+        term *= weights_[k];
+        if (Q.size() == 0) {
+            Q = term;
+        } else {
+            Q += term;
+        }
+    }
+    Q *= tau2;
+    Q.makeCompressed();
+
+    // K_sum = sum_k w_k K_k = (k2 W + R_sum) C0 + W G1. Cache here so
+    // backward() doesn't have to recompute.
+    last_K_sum = W_ * G1;
+    const double diag_coef = k2 * W_ + R_sum_;
+    for (int i = 0; i < n_mesh; i++) {
+        last_K_sum.coeffRef(i, i) += diag_coef * C0_diag[i];
+    }
+    last_K_sum.makeCompressed();
+
+    return Q;
+}
+
 Eigen::VectorXd SpdeNcTransform::forward(const Eigen::VectorXd& z,
                                          double kappa, double tau)
 {
     if (z.size() != n_mesh) throw std::runtime_error("z size mismatch");
     last_kappa = kappa;
     last_tau   = tau;
-    last_K     = build_K(kappa);
-    last_Q     = build_Q(last_K, tau);
+    if (is_rational()) {
+        // Rational path also fills last_K_sum for the adjoint.
+        last_Q = build_Q_rational(kappa, tau);
+        // last_K is unused on this path; leave empty to surface bugs early
+        // if a caller reads it.
+        last_K = SpMat();
+    } else {
+        last_K = build_K(kappa);
+        last_Q = build_Q(last_K, tau);
+        last_K_sum = SpMat();
+    }
     llt.compute(last_Q);
     if (llt.info() != Eigen::Success) {
         throw std::runtime_error("SpdeNcTransform: Cholesky failed (Q not PD)");
@@ -133,9 +204,16 @@ void SpdeNcTransform::backward(
         return -z.dot(phi_y);
     };
 
-    SpMat dQ_logkappa = (4.0 * last_kappa * last_kappa * last_tau * last_tau) * last_K;
+    // Integer alpha=2: dQ/dlog_kappa = 4 kappa^2 tau^2 K.
+    // Rational:        dQ/dlog_kappa = 4 kappa^2 tau^2 K_sum
+    //                  where K_sum was cached on last_K_sum by build_Q_rational.
+    const SpMat& K_for_logkappa = is_rational() ? last_K_sum : last_K;
+    SpMat dQ_logkappa = (4.0 * last_kappa * last_kappa * last_tau * last_tau)
+                         * K_for_logkappa;
     dlog_kappa_out = trace_term(dQ_logkappa);
 
+    // dQ/dlog_tau = 2 Q for both paths (Q is tau^2 times a tau-independent
+    // sum, so d/dlog_tau scales the whole matrix by 2).
     SpMat dQ_logtau = 2.0 * last_Q;
     dlog_tau_out = trace_term(dQ_logtau);
 }
