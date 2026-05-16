@@ -1011,8 +1011,15 @@ extern "C" void tulpa_nested_laplace_spde_impl(
 
 // ============================================================================
 // Joint multi-likelihood nested-Laplace shim (Phase 1c).
-// First backend: BYM2 over (sigma_spatial, rho, alpha).
+// First backend: BYM2 over (sigma_occ, rho [, sigma_pos]).
 // ============================================================================
+//
+// gcol33/tulpa#18: the outer grid is now (sigma_occ, sigma_pos) instead of
+// (sigma, alpha). The copy-arm field amplitude is anchored to its own
+// likelihood axis (sigma_pos) rather than to a multiplier on the donor
+// arm's sigma — this breaks the alpha-sigma identifiability ridge at
+// small n_pos. Downstream callers recover alpha = sigma_pos / sigma_occ
+// post-hoc from the joint posterior.
 
 #include "tulpa/joint_nested_laplace_api.h"
 
@@ -1025,9 +1032,9 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
     Rcpp::IntegerVector adj_col_idx,
     Rcpp::IntegerVector n_neighbors,
     double scale_factor,
-    Rcpp::NumericVector sigma_spatial_grid,
+    Rcpp::NumericVector sigma_occ_grid,
     Rcpp::NumericVector rho_grid,
-    Rcpp::NumericVector alpha_grid,
+    Rcpp::NumericVector sigma_pos_grid,
     int max_iter,
     double tol,
     int n_threads,
@@ -1042,9 +1049,9 @@ extern "C" void tulpa_nested_laplace_joint_bym2_impl(
     int n_spatial_units,
     const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
     double scale_factor,
-    const double* sigma_spatial_grid,
+    const double* sigma_occ_grid,
     const double* rho_grid,
-    const double* alpha_grid,
+    const double* sigma_pos_grid,
     int n_grid,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
@@ -1073,18 +1080,18 @@ extern "C" void tulpa_nested_laplace_joint_bym2_impl(
     Rcpp::IntegerVector aci(adj_col_idx, adj_col_idx + nadj);
     Rcpp::IntegerVector nn (n_neighbors, n_neighbors + n_spatial_units);
 
-    Rcpp::NumericVector sg(sigma_spatial_grid, sigma_spatial_grid + n_grid);
-    Rcpp::NumericVector rg(rho_grid,           rho_grid           + n_grid);
-    Rcpp::NumericVector ag;
-    if (copy_arm >= 0 && alpha_grid) {
-        ag = Rcpp::NumericVector(alpha_grid, alpha_grid + n_grid);
+    Rcpp::NumericVector soccg(sigma_occ_grid, sigma_occ_grid + n_grid);
+    Rcpp::NumericVector rg   (rho_grid,       rho_grid       + n_grid);
+    Rcpp::NumericVector sposg;
+    if (copy_arm >= 0 && sigma_pos_grid) {
+        sposg = Rcpp::NumericVector(sigma_pos_grid, sigma_pos_grid + n_grid);
     } else {
-        ag = Rcpp::NumericVector(0);
+        sposg = Rcpp::NumericVector(0);
     }
 
     Rcpp::List out = cpp_nested_laplace_joint_bym2(
         arms_list, copy_arm, n_spatial_units, arp, aci, nn,
-        scale_factor, sg, rg, ag,
+        scale_factor, soccg, rg, sposg,
         max_iter, tol, n_threads,
         wrap_x_init(x_init, n_x_init),
         store_Q != 0,

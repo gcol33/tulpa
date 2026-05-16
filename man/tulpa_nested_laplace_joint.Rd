@@ -8,12 +8,16 @@ tulpa_nested_laplace_joint(
   responses,
   prior,
   copy = NULL,
+  phi_grid = NULL,
   max_iter = 50L,
   tol = 1e-06,
   n_threads = 1L,
   x_init = NULL,
   verbose = FALSE,
-  store_Q = FALSE
+  store_Q = FALSE,
+  adaptive_grid = TRUE,
+  adaptive_grid_edge_thresh = 0.02,
+  adaptive_grid_max_passes = 1L
 )
 }
 \arguments{
@@ -40,21 +44,23 @@ field \code{type}. Backend-specific fields:
 \itemize{
 \item \strong{bym2}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
 \code{n_neighbors}, \code{scale_factor} (default \code{1}); optional \code{sigma_grid}
-(default 5 log-spaced values), \code{rho_grid}
-(default \code{c(0.2, 0.5, 0.8, 0.95)}).
+(donor-arm field amplitude, default 5 log-spaced values in
+\verb{[0.1, 3]}), \code{rho_grid} (default \code{c(0.2, 0.5, 0.8, 0.95)}).
 \item \strong{icar}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
-\code{n_neighbors}; optional \code{tau_grid} (default 5 log-spaced values
-spanning roughly sigma in \verb{[0.1, 3]}).
+\code{n_neighbors}; optional \code{sigma_grid} (default 5 log-spaced values
+in \verb{[0.1, 3]}).
 \item \strong{car_proper}: same as icar plus \code{rho_car_grid}
 (default \code{c(0.5, 0.8, 0.95, 0.99)}).
 }}
 
-\item{copy}{Optional list controlling the copy-scaling (alpha) arm:
+\item{copy}{Optional list controlling the copy arm:
 \itemize{
-\item \code{arm}         — name (or 1-based index) of the arm to copy-scale.
-\item \code{alpha_grid}  — numeric grid for alpha; default
-\code{c(0, 0.5, 1, 1.5, 2)}.
-When \code{NULL} (default), no copy-scaling is applied.
+\item \code{arm}            — name (or 1-based index) of the copy arm.
+\item \code{sigma_pos_grid} — numeric grid for that arm's field amplitude
+\eqn{\sigma_{pos}}; default mirrors the donor
+\code{sigma_grid} axis.
+When \code{NULL} (default), no copy scaling is applied — all arms share
+the donor \code{sigma_grid} axis.
 }}
 
 \item{max_iter, tol}{Inner Newton iteration budget and tolerance.}
@@ -71,39 +77,90 @@ When \code{NULL} (default), no copy-scaling is applied.
 total-variance posterior moments (\code{Var-of-means + Mean-of-Var}) on
 inner latent coordinates such as fixed-effect betas. Default \code{FALSE}
 to keep the result lightweight.}
+
+\item{adaptive_grid}{Logical (default \code{TRUE}). When \code{TRUE}, a second
+kernel pass is triggered on any hyperparameter axis whose marginal
+posterior weight on the boundary point(s) exceeds
+\code{adaptive_grid_edge_thresh}. New points are appended on that axis
+(one densification between the boundary and its neighbour, one
+extension beyond the boundary on a log-spaced axis) and the cartesian
+product with the other axes is evaluated and concatenated. Fixes
+posterior CI under-coverage when truth sits near or at the user's
+grid edge. Pass \code{FALSE} to recover the legacy fixed-grid behaviour.}
+
+\item{adaptive_grid_edge_thresh}{Numeric (default \code{0.02}). Refinement
+triggers when the per-axis edge score on the boundary of the
+refinable axis (currently \code{sigma_pos} only) exceeds this value. The
+score is
+\code{max(marginal_weight_at_boundary, exp(max_log_marginal_at_boundary - max_log_marginal_overall))},
+i.e. the larger of the integrated weight on the boundary level and
+the relative integrand density at the boundary level. Catches both
+boundary pile-up (truth lies \emph{at} a grid endpoint, weight is heavy
+there) and integrand truncation (integrand still has appreciable
+density at the boundary, but the cell width is so narrow it gets
+little integrated weight). The default \code{0.02} corresponds to ~4 log
+units of decay before refinement stops. Lower the threshold to
+refine more aggressively at the cost of extra kernel passes.}
+
+\item{adaptive_grid_max_passes}{Integer (default \code{1L}). Maximum number
+of refinement passes. One pass typically suffices; two is rarely
+useful and inflates runtime.}
 }
 \value{
 A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")} with:
 \itemize{
-\item \code{theta_grid}, \code{theta_names} — outer-grid hyperparameter values.
+\item \code{theta_grid}, \code{theta_names} — outer-grid hyperparameter values
+(includes the derived \code{alpha} column when \code{copy} is set).
 \item \code{log_marginal}, \code{weights} — per-grid-point log-marginal and integration
 weights (sum to 1).
-\item \code{theta_mean}, \code{theta_sd} — posterior moments per hyperparameter.
+\item \code{theta_mean}, \code{theta_sd} — posterior moments per hyperparameter,
+including the derived \code{alpha} moment computed from
+\code{sigma_pos / sigma_occ} over the joint grid.
 \item \code{modes} — \verb{[n_grid x n_x]} matrix of inner modes.
 \item \code{n_iter} — inner Newton iterations per grid point.
 \item \code{arm_layout} — list with per-arm \code{beta_start}, \code{re_start},
 spatial offset(s) and \code{n_x} for decoding modes.
 \item \code{prior}, \code{responses}, \code{copy} — echoed inputs.
+\item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
+\code{triggered_axes} (character) and \code{n_points_added} (integer)
+describing the refinement passes. NULL otherwise.
 }
 }
 \description{
 Outer-grid nested Laplace driver for \emph{joint} models — multiple response
-arms sharing one latent prior block, with optional INLA-style copy-scaling
-(\code{f(..., copy=, fixed=FALSE)}) on a designated arm.
+arms sharing one latent prior block, parameterized as a per-arm field
+amplitude (sigma) on a unit-precision latent.
 
 Supported priors (Phase 1c):
 \itemize{
-\item \code{"bym2"}       — outer grid over \verb{(sigma_spatial, rho [, alpha])}.
-Latent: \code{phi (n_s) | theta (n_s)}.
-\item \code{"icar"}       — outer grid over \code{(tau_spatial [, alpha])}.
-Latent: \code{phi (n_s)}.
-\item \code{"car_proper"} — outer grid over \verb{(tau, rho_car [, alpha])}. Latent:
-\code{phi (n_s)} with \code{Q = tau * (D - rho_car * W)}.
+\item \code{"bym2"}       — outer grid over \verb{(sigma_spatial, rho [, sigma_pos])}.
+Latent: \code{phi (n_s) | theta (n_s)} with unit-precision
+ICAR + iid components.
+\item \code{"icar"}       — outer grid over \code{(sigma_spatial [, sigma_pos])}.
+Latent: \code{phi (n_s)} with unit-precision ICAR.
+\item \code{"car_proper"} — outer grid over \verb{(sigma_spatial, rho_car [, sigma_pos])}.
+Latent: \code{phi (n_s)} with \code{Q = D - rho_car * W}.
 }
 
 Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
 land under Phase 3.
 }
+\section{Per-arm sigma parameterization (gcol33/tulpa#18)}{
+
+Each arm's linear predictor reads
+\deqn{\eta_{arm} = X_{arm} \beta_{arm} + \sigma_{arm} \cdot z_s,}
+where \eqn{z_s} is a unit-precision latent (ICAR(tau=1) for ICAR/BYM2,
+or the BYM2 mix; CAR_proper uses the structure of
+\eqn{D - \rho_{car} W}). Non-copy arms see \eqn{\sigma_{arm}} from the
+outer-grid \code{sigma_grid} axis (\eqn{\sigma_{occ}}). The copy arm sees
+\eqn{\sigma_{arm}} from \code{copy$sigma_pos_grid} (\eqn{\sigma_{pos}}). The
+Cartesian product is over \verb{(sigma_occ, [rho/rho_car,] sigma_pos[, phi])}.
+Anchoring each arm's field amplitude in its own likelihood breaks the
+alpha-sigma identifiability ridge at small \code{n_pos}. The classical
+copy-scale is recovered post-hoc as
+\eqn{\alpha = \sigma_{pos} / \sigma_{occ}} on the joint posterior.
+}
+
 \seealso{
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the single-arm engine.
 }

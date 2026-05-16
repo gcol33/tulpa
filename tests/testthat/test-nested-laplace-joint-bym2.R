@@ -1,10 +1,14 @@
 # Joint BYM2 nested-Laplace smoke tests (Phase 1c).
 #
-# 1. alpha = 0 reduces the joint to two independent fits — beta_occ should
+# Outer grid is (sigma_occ, rho [, sigma_pos]) after gcol33/tulpa#18.
+# alpha = sigma_pos / sigma_occ is derived post-hoc on the joint posterior.
+#
+# 1. sigma_pos = 0 reduces the joint to two independent fits — beta_occ should
 #    match the single-arm binomial fit and beta_pos should match the
 #    single-arm gaussian fit (both at the best grid point), within tolerance.
 # 2. Joint fit on simulated data with a true shared spatial field recovers
-#    the per-arm betas and locates a sensible (sigma, rho, alpha) maximum.
+#    the per-arm betas and locates a sensible (sigma_occ, rho, sigma_pos)
+#    maximum / alpha posterior mean.
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
@@ -66,7 +70,7 @@
 # 1. alpha = 0 decouples the second arm from the shared field                  #
 # --------------------------------------------------------------------------- #
 
-test_that("joint BYM2 with alpha = 0 leaves beta_occ unchanged from single-arm", {
+test_that("joint BYM2 with sigma_pos = 0 leaves beta_occ unchanged from single-arm", {
     sim <- .simulate_joint(N = 300, n_s = 30, alpha_true = 0.0, seed = 42)
     adj <- .chain_adj(sim$n_s)
 
@@ -93,7 +97,7 @@ test_that("joint BYM2 with alpha = 0 leaves beta_occ unchanged from single-arm",
     fit_joint <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", alpha_grid = 0.0)
+        copy = list(arm = "pos", sigma_pos_grid = 0.0)
     )
     expect_s3_class(fit_joint, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit_joint$log_marginal)))
@@ -156,7 +160,8 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", alpha_grid = c(0.0, 0.5, 1.0, 1.5))
+        copy = list(arm = "pos",
+                    sigma_pos_grid = c(0.0, 0.3, 0.6, 1.0))
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))
@@ -171,8 +176,9 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
     expect_lt(abs(slope_occ - sim$truth$beta_occ[2]), 0.30)
     expect_lt(abs(slope_pos - sim$truth$beta_pos[2]), 0.30)
 
-    # alpha posterior mean should land closer to the true 1.0 than to 0 or
-    # 1.5 (the boundary grid points).
+    # alpha = sigma_pos / sigma_occ posterior mean should land near the
+    # true 1.0. Computed post-hoc from the joint posterior over
+    # (sigma_occ, sigma_pos) — see gcol33/tulpa#18.
     alpha_mean <- fit$theta_mean[["alpha"]]
     expect_lt(abs(alpha_mean - 1.0), 0.6)
 })
@@ -184,10 +190,10 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
 # Before the fix, post-Newton `center_effects` shifted the phi block to mean
 # zero without compensating each arm's intercept, which dragged eta off the
 # Newton mode and tanked log_lik for the gaussian copy arm. At phi =
-# sigma_pos_true the bug made alpha = 0 the best cell by 500+ log units.
+# sigma_pos_true the bug made sigma_pos = 0 the best cell by 500+ log units.
 # The fix: shift the per-arm intercept (first beta column) by
-# arm_scale * d_phi_base * mean(phi) so eta — and hence log_marginal — is
-# invariant under the centering.
+# arm_sigma * d_phi_base_unit * mean(phi) so eta — and hence log_marginal —
+# is invariant under the centering.
 
 test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true phi", {
     sim <- .simulate_joint(N = 300, n_s = 25,
@@ -207,31 +213,36 @@ test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true 
         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
         family = "gaussian", phi = sim$truth$sd_pos
     )
+    # True donor amplitude is sigma=0.6 in this simulator. Pin sigma_occ to
+    # the truth so the test isolates the copy-arm mode along sigma_pos —
+    # the centering-bug failure mode is on sigma_pos, not on sigma_occ.
+    sigma_occ_true <- 0.6
     prior <- list(
         type = "bym2",
         n_spatial_units = adj$n_spatial_units,
         adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
         n_neighbors = adj$n_neighbors, scale_factor = 1.0,
-        sigma_grid = c(0.3, 0.6, 0.9),
+        sigma_grid = sigma_occ_true,
         rho_grid   = c(0.5, 0.7, 0.9)
     )
 
-    alpha_grid <- c(0.0, 0.5, 1.0, 1.5)
+    sigma_pos_grid <- c(0.0, 0.3, 0.6, 0.9)
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", alpha_grid = alpha_grid)
+        copy = list(arm = "pos", sigma_pos_grid = sigma_pos_grid)
     )
 
-    df <- data.frame(alpha = fit$theta_grid[, "alpha"],
+    # alpha = sigma_pos / sigma_occ; sigma_occ pinned at 0.6, alpha_true = 1.
+    df <- data.frame(sigma_pos = fit$theta_grid[, "sigma_pos"],
                      log_marginal = fit$log_marginal)
-    best_alpha <- df$alpha[which.max(df$log_marginal)]
-    expect_equal(best_alpha, 1.0)
+    best_sp <- df$sigma_pos[which.max(df$log_marginal)]
+    expect_equal(best_sp, sigma_occ_true)
 
-    max_by_alpha <- vapply(alpha_grid,
-                           function(a) max(df$log_marginal[df$alpha == a]),
-                           numeric(1))
-    # alpha = 0 must be the worst cell at the true noise scale (this fails
-    # catastrophically before the fix; ~160-log-unit margin afterwards).
-    expect_lt(max_by_alpha[1], max_by_alpha[3] - 50)
+    max_by_sp <- vapply(sigma_pos_grid,
+                        function(sp) max(df$log_marginal[df$sigma_pos == sp]),
+                        numeric(1))
+    # sigma_pos = 0 must be the worst cell at the true noise scale (this
+    # fails catastrophically before the fix).
+    expect_lt(max_by_sp[1], max_by_sp[3] - 50)
 })

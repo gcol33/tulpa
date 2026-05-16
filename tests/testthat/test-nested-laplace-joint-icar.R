@@ -1,10 +1,15 @@
 # Joint ICAR nested-Laplace smoke tests (Phase 1c-7a).
 #
-# 1. alpha = 0 reduces the joint to two independent fits — beta_occ should
-#    match the single-arm binomial fit (within numerical noise on a centred
-#    design).
+# Outer grid is (sigma_occ [, sigma_pos]) after gcol33/tulpa#18. The ICAR
+# latent phi has unit precision Q_struct; field amplitude enters via the
+# per-arm sigma multiplier on eta. alpha = sigma_pos / sigma_occ is
+# derived post-hoc on the joint posterior.
+#
+# 1. sigma_pos = 0 reduces the joint to two independent fits — beta_occ
+#    should match the single-arm binomial fit (within numerical noise on a
+#    centred design).
 # 2. Joint fit on simulated data with a known shared spatial field recovers
-#    the per-arm betas and locates a sensible alpha mode.
+#    the per-arm betas and locates a sensible alpha posterior mode.
 #
 # Mirror of test-nested-laplace-joint-bym2.R but using prior$type = "icar".
 
@@ -68,7 +73,7 @@
 # 1. alpha = 0 decouples the second arm from the shared field                  #
 # --------------------------------------------------------------------------- #
 
-test_that("joint ICAR with alpha = 0 leaves beta_occ unchanged from single-arm", {
+test_that("joint ICAR with sigma_pos = 0 leaves beta_occ unchanged from single-arm", {
     sim <- .simulate_joint_icar(N = 300, n_s = 30, alpha_true = 0.0, seed = 42)
     adj <- .chain_adj(sim$n_s)
 
@@ -89,13 +94,13 @@ test_that("joint ICAR with alpha = 0 leaves beta_occ unchanged from single-arm",
         n_spatial_units = adj$n_spatial_units,
         adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
         n_neighbors = adj$n_neighbors,
-        tau_grid = c(1.0, 4.0)
+        sigma_grid = c(0.5, 1.0)
     )
 
     fit_joint <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", alpha_grid = 0.0)
+        copy = list(arm = "pos", sigma_pos_grid = 0.0)
     )
     expect_s3_class(fit_joint, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit_joint$log_marginal)))
@@ -148,13 +153,14 @@ test_that("joint ICAR recovers per-arm betas and locates the alpha mode", {
         n_spatial_units = adj$n_spatial_units,
         adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
         n_neighbors = adj$n_neighbors,
-        tau_grid = c(0.5, 2.0, 10.0)
+        sigma_grid = c(0.3, 0.7, 1.4)
     )
 
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", alpha_grid = c(0.0, 0.5, 1.0, 1.5))
+        copy = list(arm = "pos",
+                    sigma_pos_grid = c(0.0, 0.3, 0.7, 1.4))
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))
@@ -167,9 +173,11 @@ test_that("joint ICAR recovers per-arm betas and locates the alpha mode", {
     expect_lt(abs(slope_occ - sim$truth$beta_occ[2]), 0.30)
     expect_lt(abs(slope_pos - sim$truth$beta_pos[2]), 0.30)
 
-    # With phi = sd_pos (true noise) the joint posterior peaks near alpha = 1.0.
-    # Over-stating phi (gcol33/tulpa#17 previously masked) makes alpha
-    # unidentifiable; pass the true noise scale here.
+    # With phi = sd_pos (true noise) the joint posterior peaks near
+    # alpha = sigma_pos / sigma_occ = 1.0. Over-stating phi (gcol33/tulpa#17
+    # previously masked) makes alpha unidentifiable; pass the true noise
+    # scale here. Derived post-hoc from the sigma_pos / sigma_occ ratio —
+    # see gcol33/tulpa#18.
     alpha_mean <- fit$theta_mean[["alpha"]]
     expect_lt(abs(alpha_mean - 1.0), 0.6)
 })

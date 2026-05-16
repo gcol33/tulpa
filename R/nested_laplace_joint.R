@@ -2,19 +2,34 @@
 #'
 #' @description
 #' Outer-grid nested Laplace driver for *joint* models — multiple response
-#' arms sharing one latent prior block, with optional INLA-style copy-scaling
-#' (`f(..., copy=, fixed=FALSE)`) on a designated arm.
+#' arms sharing one latent prior block, parameterized as a per-arm field
+#' amplitude (sigma) on a unit-precision latent.
 #'
 #' Supported priors (Phase 1c):
-#'  * `"bym2"`       — outer grid over `(sigma_spatial, rho [, alpha])`.
-#'                     Latent: `phi (n_s) | theta (n_s)`.
-#'  * `"icar"`       — outer grid over `(tau_spatial [, alpha])`.
-#'                     Latent: `phi (n_s)`.
-#'  * `"car_proper"` — outer grid over `(tau, rho_car [, alpha])`. Latent:
-#'                     `phi (n_s)` with `Q = tau * (D - rho_car * W)`.
+#'  * `"bym2"`       — outer grid over `(sigma_spatial, rho [, sigma_pos])`.
+#'                     Latent: `phi (n_s) | theta (n_s)` with unit-precision
+#'                     ICAR + iid components.
+#'  * `"icar"`       — outer grid over `(sigma_spatial [, sigma_pos])`.
+#'                     Latent: `phi (n_s)` with unit-precision ICAR.
+#'  * `"car_proper"` — outer grid over `(sigma_spatial, rho_car [, sigma_pos])`.
+#'                     Latent: `phi (n_s)` with `Q = D - rho_car * W`.
 #'
 #' Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
 #' land under Phase 3.
+#'
+#' @section Per-arm sigma parameterization (gcol33/tulpa#18):
+#' Each arm's linear predictor reads
+#' \deqn{\eta_{arm} = X_{arm} \beta_{arm} + \sigma_{arm} \cdot z_s,}
+#' where \eqn{z_s} is a unit-precision latent (ICAR(tau=1) for ICAR/BYM2,
+#' or the BYM2 mix; CAR_proper uses the structure of
+#' \eqn{D - \rho_{car} W}). Non-copy arms see \eqn{\sigma_{arm}} from the
+#' outer-grid `sigma_grid` axis (\eqn{\sigma_{occ}}). The copy arm sees
+#' \eqn{\sigma_{arm}} from `copy$sigma_pos_grid` (\eqn{\sigma_{pos}}). The
+#' Cartesian product is over `(sigma_occ, [rho/rho_car,] sigma_pos[, phi])`.
+#' Anchoring each arm's field amplitude in its own likelihood breaks the
+#' alpha-sigma identifiability ridge at small `n_pos`. The classical
+#' copy-scale is recovered post-hoc as
+#' \eqn{\alpha = \sigma_{pos} / \sigma_{occ}} on the joint posterior.
 #'
 #' @param responses A named list of arm specs (length >= 1). Each arm:
 #'   * `y`           — numeric `[N_arm]` response.
@@ -36,19 +51,21 @@
 #'   field `type`. Backend-specific fields:
 #'   * **bym2**: `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
 #'     `n_neighbors`, `scale_factor` (default `1`); optional `sigma_grid`
-#'     (default 5 log-spaced values), `rho_grid`
-#'     (default `c(0.2, 0.5, 0.8, 0.95)`).
+#'     (donor-arm field amplitude, default 5 log-spaced values in
+#'     `[0.1, 3]`), `rho_grid` (default `c(0.2, 0.5, 0.8, 0.95)`).
 #'   * **icar**: `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
-#'     `n_neighbors`; optional `tau_grid` (default 5 log-spaced values
-#'     spanning roughly sigma in `[0.1, 3]`).
+#'     `n_neighbors`; optional `sigma_grid` (default 5 log-spaced values
+#'     in `[0.1, 3]`).
 #'   * **car_proper**: same as icar plus `rho_car_grid`
 #'     (default `c(0.5, 0.8, 0.95, 0.99)`).
 #'
-#' @param copy Optional list controlling the copy-scaling (alpha) arm:
-#'   * `arm`         — name (or 1-based index) of the arm to copy-scale.
-#'   * `alpha_grid`  — numeric grid for alpha; default
-#'                     `c(0, 0.5, 1, 1.5, 2)`.
-#'   When `NULL` (default), no copy-scaling is applied.
+#' @param copy Optional list controlling the copy arm:
+#'   * `arm`            — name (or 1-based index) of the copy arm.
+#'   * `sigma_pos_grid` — numeric grid for that arm's field amplitude
+#'                        \eqn{\sigma_{pos}}; default mirrors the donor
+#'                        `sigma_grid` axis.
+#'   When `NULL` (default), no copy scaling is applied — all arms share
+#'   the donor `sigma_grid` axis.
 #'
 #' @param max_iter,tol Inner Newton iteration budget and tolerance.
 #' @param n_threads OpenMP threads.
@@ -68,11 +85,10 @@
 #'   extension beyond the boundary on a log-spaced axis) and the cartesian
 #'   product with the other axes is evaluated and concatenated. Fixes
 #'   posterior CI under-coverage when truth sits near or at the user's
-#'   grid edge — see gcol33/tulpaObs#7. Pass `FALSE` to recover the legacy
-#'   fixed-grid behaviour.
+#'   grid edge. Pass `FALSE` to recover the legacy fixed-grid behaviour.
 #' @param adaptive_grid_edge_thresh Numeric (default `0.02`). Refinement
 #'   triggers when the per-axis edge score on the boundary of the
-#'   refinable axis (currently `alpha` only) exceeds this value. The
+#'   refinable axis (currently `sigma_pos` only) exceeds this value. The
 #'   score is
 #'   `max(marginal_weight_at_boundary,
 #'        exp(max_log_marginal_at_boundary - max_log_marginal_overall))`,
@@ -82,20 +98,21 @@
 #'   there) and integrand truncation (integrand still has appreciable
 #'   density at the boundary, but the cell width is so narrow it gets
 #'   little integrated weight). The default `0.02` corresponds to ~4 log
-#'   units of decay before refinement stops, which catches the D3
-#'   alpha-at-boundary failure on a typical small-sample joint hurdle
-#'   while leaving cleanly-decayed boundaries alone. Lower the threshold
-#'   to refine more aggressively at the cost of extra kernel passes.
+#'   units of decay before refinement stops. Lower the threshold to
+#'   refine more aggressively at the cost of extra kernel passes.
 #' @param adaptive_grid_max_passes Integer (default `1L`). Maximum number
 #'   of refinement passes. One pass typically suffices; two is rarely
 #'   useful and inflates runtime.
 #'
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:
-#'   * `theta_grid`, `theta_names` — outer-grid hyperparameter values.
+#'   * `theta_grid`, `theta_names` — outer-grid hyperparameter values
+#'     (includes the derived `alpha` column when `copy` is set).
 #'   * `log_marginal`, `weights` — per-grid-point log-marginal and integration
 #'      weights (sum to 1).
-#'   * `theta_mean`, `theta_sd` — posterior moments per hyperparameter.
+#'   * `theta_mean`, `theta_sd` — posterior moments per hyperparameter,
+#'      including the derived `alpha` moment computed from
+#'      `sigma_pos / sigma_occ` over the joint grid.
 #'   * `modes` — `[n_grid x n_x]` matrix of inner modes.
 #'   * `n_iter` — inner Newton iterations per grid point.
 #'   * `arm_layout` — list with per-arm `beta_start`, `re_start`,
@@ -138,10 +155,10 @@ tulpa_nested_laplace_joint <- function(responses,
         .normalise_joint_arm(a, k)
     })
 
-    cp <- .resolve_copy(copy, responses)
+    cp <- .resolve_copy(copy, responses, prior, type)
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
-    grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)
+    grids <- backend$build_grids(prior, cp$has_copy, cp$sigma_pos_grid, phi_axes)
 
     res <- backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
                                 n_threads, x_init, isTRUE(store_Q),
@@ -176,6 +193,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$theta_names <- colnames(res$theta_grid)
     res$weights     <- .nl_normalise_weights(res$log_marginal)
     res             <- .nl_posterior_moments(res, paste0("joint_", type))
+    res             <- .joint_attach_alpha_moments(res, cp$has_copy)
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior
     res$responses   <- responses
@@ -194,12 +212,12 @@ tulpa_nested_laplace_joint <- function(responses,
 
 .joint_backends <- list(
     bym2 = list(
-        build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
+        build_grids = function(prior, has_copy, sigma_pos_axis, phi_axes = NULL) {
             sigma_axis <- prior$sigma_grid %||%
                 exp(seq(log(0.1), log(3), length.out = 5))
             rho_axis <- prior$rho_grid %||% c(0.2, 0.5, 0.8, 0.95)
             .joint_cartesian(list(sigma = sigma_axis, rho = rho_axis),
-                              has_copy, alpha_axis, phi_axes)
+                              has_copy, sigma_pos_axis, phi_axes)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
                                 n_threads, x_init, store_Q = FALSE,
@@ -212,9 +230,9 @@ tulpa_nested_laplace_joint <- function(responses,
                 adj_col_idx     = as.integer(prior$adj_col_idx),
                 n_neighbors     = as.integer(prior$n_neighbors),
                 scale_factor    = as.numeric(prior$scale_factor %||% 1.0),
-                sigma_spatial_grid = as.numeric(grids$sigma),
-                rho_grid           = as.numeric(grids$rho),
-                alpha_grid         = as.numeric(grids$alpha),
+                sigma_occ_grid  = as.numeric(grids$sigma),
+                rho_grid        = as.numeric(grids$rho),
+                sigma_pos_grid  = as.numeric(grids$sigma_pos),
                 max_iter   = as.integer(max_iter),
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
@@ -225,10 +243,10 @@ tulpa_nested_laplace_joint <- function(responses,
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
-                cbind(sigma = grids$sigma, rho = grids$rho,
-                      alpha = grids$alpha)
+                cbind(sigma_occ = grids$sigma, rho = grids$rho,
+                      sigma_pos = grids$sigma_pos)
             } else {
-                cbind(sigma = grids$sigma, rho = grids$rho)
+                cbind(sigma_occ = grids$sigma, rho = grids$rho)
             }
             .append_phi_columns(base, grids)
         },
@@ -239,11 +257,11 @@ tulpa_nested_laplace_joint <- function(responses,
     ),
 
     icar = list(
-        build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
-            tau_axis <- prior$tau_grid %||%
-                exp(seq(log(1 / 9), log(100), length.out = 5))  # sigma in [0.1, 3]
-            .joint_cartesian(list(tau = tau_axis), has_copy, alpha_axis,
-                              phi_axes)
+        build_grids = function(prior, has_copy, sigma_pos_axis, phi_axes = NULL) {
+            sigma_axis <- prior$sigma_grid %||%
+                exp(seq(log(0.1), log(3), length.out = 5))
+            .joint_cartesian(list(sigma = sigma_axis), has_copy,
+                              sigma_pos_axis, phi_axes)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
                                 n_threads, x_init, store_Q = FALSE,
@@ -255,8 +273,8 @@ tulpa_nested_laplace_joint <- function(responses,
                 adj_row_ptr     = as.integer(prior$adj_row_ptr),
                 adj_col_idx     = as.integer(prior$adj_col_idx),
                 n_neighbors     = as.integer(prior$n_neighbors),
-                tau_grid        = as.numeric(grids$tau),
-                alpha_grid      = as.numeric(grids$alpha),
+                sigma_occ_grid  = as.numeric(grids$sigma),
+                sigma_pos_grid  = as.numeric(grids$sigma_pos),
                 max_iter   = as.integer(max_iter),
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
@@ -266,8 +284,11 @@ tulpa_nested_laplace_joint <- function(responses,
             )
         },
         theta_grid = function(grids, has_copy) {
-            base <- if (has_copy) cbind(tau = grids$tau, alpha = grids$alpha)
-                    else          cbind(tau = grids$tau)
+            base <- if (has_copy) {
+                cbind(sigma_occ = grids$sigma, sigma_pos = grids$sigma_pos)
+            } else {
+                cbind(sigma_occ = grids$sigma)
+            }
             .append_phi_columns(base, grids)
         },
         layout = function(arms, prior) {
@@ -277,12 +298,12 @@ tulpa_nested_laplace_joint <- function(responses,
     ),
 
     car_proper = list(
-        build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
-            tau_axis     <- prior$tau_grid %||%
-                exp(seq(log(1 / 9), log(100), length.out = 5))
+        build_grids = function(prior, has_copy, sigma_pos_axis, phi_axes = NULL) {
+            sigma_axis   <- prior$sigma_grid %||%
+                exp(seq(log(0.1), log(3), length.out = 5))
             rho_car_axis <- prior$rho_car_grid %||% c(0.5, 0.8, 0.95, 0.99)
-            .joint_cartesian(list(tau = tau_axis, rho_car = rho_car_axis),
-                              has_copy, alpha_axis, phi_axes)
+            .joint_cartesian(list(sigma = sigma_axis, rho_car = rho_car_axis),
+                              has_copy, sigma_pos_axis, phi_axes)
         },
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
                                 n_threads, x_init, store_Q = FALSE,
@@ -294,9 +315,9 @@ tulpa_nested_laplace_joint <- function(responses,
                 adj_row_ptr     = as.integer(prior$adj_row_ptr),
                 adj_col_idx     = as.integer(prior$adj_col_idx),
                 n_neighbors     = as.integer(prior$n_neighbors),
-                tau_grid        = as.numeric(grids$tau),
+                sigma_occ_grid  = as.numeric(grids$sigma),
                 rho_car_grid    = as.numeric(grids$rho_car),
-                alpha_grid      = as.numeric(grids$alpha),
+                sigma_pos_grid  = as.numeric(grids$sigma_pos),
                 max_iter   = as.integer(max_iter),
                 tol        = as.numeric(tol),
                 n_threads  = as.integer(n_threads),
@@ -307,10 +328,10 @@ tulpa_nested_laplace_joint <- function(responses,
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
-                cbind(tau = grids$tau, rho_car = grids$rho_car,
-                      alpha = grids$alpha)
+                cbind(sigma_occ = grids$sigma, rho_car = grids$rho_car,
+                      sigma_pos = grids$sigma_pos)
             } else {
-                cbind(tau = grids$tau, rho_car = grids$rho_car)
+                cbind(sigma_occ = grids$sigma, rho_car = grids$rho_car)
             }
             .append_phi_columns(base, grids)
         },
@@ -325,14 +346,14 @@ tulpa_nested_laplace_joint <- function(responses,
 # --- helpers -----------------------------------------------------------------
 
 # Cartesian product over a named list of spatial axes plus an optional
-# alpha axis and optional per-arm phi axes. `phi_axes` is a list keyed by
-# arm name; entries are either NULL/empty (no axis for that arm) or numeric
-# vectors that become a new outer-grid axis named `phi_<arm>`. Returns a
-# named list of paired vectors of identical length, ready to feed the C++
-# kernel. Phi axes vary slowest (added last) so within-spatial-block
-# warm-starts stay good.
-.joint_cartesian <- function(axes, has_copy, alpha_axis, phi_axes = NULL) {
-    full <- if (has_copy) c(axes, list(alpha = alpha_axis)) else axes
+# sigma_pos axis (copy-arm field amplitude) and optional per-arm phi axes.
+# `phi_axes` is a list keyed by arm name; entries are either NULL/empty (no
+# axis for that arm) or numeric vectors that become a new outer-grid axis
+# named `phi_<arm>`. Returns a named list of paired vectors of identical
+# length, ready to feed the C++ kernel. Phi axes vary slowest (added last)
+# so within-spatial-block warm-starts stay good.
+.joint_cartesian <- function(axes, has_copy, sigma_pos_axis, phi_axes = NULL) {
+    full <- if (has_copy) c(axes, list(sigma_pos = sigma_pos_axis)) else axes
     if (!is.null(phi_axes)) {
         active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
         if (length(active) > 0L) {
@@ -344,7 +365,7 @@ tulpa_nested_laplace_joint <- function(responses,
                   c(full, list(KEEP.OUT.ATTRS = FALSE,
                                 stringsAsFactors = FALSE)))
     out <- as.list(gr)
-    if (!has_copy) out$alpha <- numeric(0)
+    if (!has_copy) out$sigma_pos <- numeric(0)
     out
 }
 
@@ -458,11 +479,14 @@ tulpa_nested_laplace_joint <- function(responses,
     a
 }
 
-# Decide which arm (if any) is copy-scaled and what the alpha grid is.
-.resolve_copy <- function(copy, responses) {
+# Decide which arm (if any) is the copy arm and what the sigma_pos grid is.
+# Accepts either the new `copy$sigma_pos_grid` or a legacy `copy$alpha_grid`
+# (translated to sigma_pos by multiplying by the median of the donor sigma
+# grid; emits a clear deprecation message).
+.resolve_copy <- function(copy, responses, prior, type) {
     if (is.null(copy)) {
         return(list(has_copy = FALSE, copy_arm_zero = -1L,
-                    alpha_grid = numeric(0)))
+                    sigma_pos_grid = numeric(0)))
     }
     arm_id <- copy$arm
     if (is.null(arm_id)) {
@@ -481,8 +505,84 @@ tulpa_nested_laplace_joint <- function(responses,
             stop("`copy$arm` index out of range.", call. = FALSE)
         }
     }
-    alpha <- copy$alpha_grid %||% c(0.0, 0.5, 1.0, 1.5, 2.0)
-    list(has_copy = TRUE, copy_arm_zero = arm_zero, alpha_grid = alpha)
+    if (!is.null(copy$sigma_pos_grid)) {
+        if (!is.null(copy$alpha_grid)) {
+            stop("`copy$alpha_grid` is deprecated and conflicts with ",
+                 "`copy$sigma_pos_grid`. Pass only one (prefer ",
+                 "`sigma_pos_grid`; see gcol33/tulpa#18).", call. = FALSE)
+        }
+        sigma_pos <- as.numeric(copy$sigma_pos_grid)
+    } else if (!is.null(copy$alpha_grid)) {
+        # Legacy alpha-grid path. Anchor sigma_pos = alpha * median(sigma_occ)
+        # so a flat alpha grid maps to a flat sigma_pos grid centred on the
+        # donor field amplitude — close to the prior behaviour while staying
+        # in the new parameterization.
+        sigma_donor <- prior$sigma_grid
+        if (is.null(sigma_donor)) {
+            sigma_donor <- exp(seq(log(0.1), log(3), length.out = 5))
+        }
+        anchor <- stats::median(as.numeric(sigma_donor))
+        sigma_pos <- as.numeric(copy$alpha_grid) * anchor
+        warning("`copy$alpha_grid` is deprecated. Translated to ",
+                "`sigma_pos_grid = alpha_grid * median(prior$sigma_grid)` (= ",
+                signif(anchor, 3), "). Pass `copy$sigma_pos_grid` directly ",
+                "in new code (see gcol33/tulpa#18).", call. = FALSE)
+    } else {
+        # Default: mirror the donor-arm sigma grid.
+        sigma_donor <- prior$sigma_grid
+        if (is.null(sigma_donor)) {
+            sigma_donor <- exp(seq(log(0.1), log(3), length.out = 5))
+        }
+        sigma_pos <- as.numeric(sigma_donor)
+    }
+    if (length(sigma_pos) == 0L) {
+        stop("`copy$sigma_pos_grid` must have at least one positive value.",
+             call. = FALSE)
+    }
+    if (any(sigma_pos < 0)) {
+        stop("`copy$sigma_pos_grid` values must be non-negative.",
+             call. = FALSE)
+    }
+    list(has_copy = TRUE, copy_arm_zero = arm_zero,
+         sigma_pos_grid = sigma_pos)
+}
+
+# Compute per-grid-point alpha = sigma_pos / sigma_occ and merge its
+# posterior mean / sd into the result's theta_mean / theta_sd. Also append
+# an `alpha` column to `theta_grid` so downstream code that inspects
+# fit$theta_grid sees alpha alongside the sigma axes.
+.joint_attach_alpha_moments <- function(res, has_copy) {
+    if (!isTRUE(has_copy)) return(res)
+    tg <- res$theta_grid
+    if (is.null(tg) || !("sigma_occ" %in% colnames(tg)) ||
+        !("sigma_pos" %in% colnames(tg))) {
+        return(res)
+    }
+    w <- res$weights
+    so <- tg[, "sigma_occ"]
+    sp <- tg[, "sigma_pos"]
+    safe <- so > 0
+    alpha_vec <- numeric(length(so))
+    alpha_vec[safe]  <- sp[safe] / so[safe]
+    alpha_vec[!safe] <- NA_real_
+    # Posterior moments over the valid grid points only — division by 0 at
+    # sigma_occ == 0 is a degenerate boundary that callers explicitly include.
+    w_safe <- w[safe]
+    a_safe <- alpha_vec[safe]
+    if (length(a_safe) == 0L || sum(w_safe) <= 0) {
+        alpha_mean <- NA_real_
+        alpha_sd   <- NA_real_
+    } else {
+        ws <- w_safe / sum(w_safe)
+        alpha_mean <- sum(ws * a_safe)
+        alpha_var  <- sum(ws * a_safe^2) - alpha_mean^2
+        alpha_sd   <- sqrt(max(0, alpha_var))
+    }
+    res$theta_grid <- cbind(tg, alpha = alpha_vec)
+    res$theta_names <- colnames(res$theta_grid)
+    res$theta_mean <- c(res$theta_mean, alpha = alpha_mean)
+    res$theta_sd   <- c(res$theta_sd,   alpha = alpha_sd)
+    res
 }
 
 # Compute per-arm latent offsets so callers can decode `modes` back into
@@ -548,44 +648,39 @@ tulpa_nested_laplace_joint <- function(responses,
 # When the user's grid for axis j is {t_1, ..., t_m} and the true posterior
 # concentrates beyond the endpoints, the discretisation truncates the
 # integrand. The resulting moments are biased toward the grid centre and
-# their variance is bounded by the span of the grid points carrying weight,
-# producing the under-coverage seen in INLAabun D3 at alpha_true = 1.5.
+# their variance is bounded by the span of the grid points carrying weight.
 #
-# Refinement strategy (matches the user's chosen Strategy B, two-pass).
+# Refinement strategy (two-pass).
 #   1. Normalise log_marginal -> weights, project onto each axis by summing
 #      weight over the other axes (marginal weight per axis level).
-#   2. For each axis, check whether the lowest or highest level carries
-#      marginal weight above `edge_thresh`. If so, add:
-#        a) one densification point at the midpoint between the boundary
-#           level and its neighbour (geometric mid on log-spaced axes such
-#           as sigma/tau, arithmetic mid on linear axes such as alpha/rho),
+#   2. For each refinable axis, check whether the lowest or highest level
+#      carries marginal weight above `edge_thresh`. If so, add:
+#        a) one densification point at the geometric midpoint between the
+#           boundary level and its neighbour (sigma_pos is log-spaced),
 #        b) one extension point beyond the boundary, mirroring the spacing
 #           from the boundary to its neighbour.
-#      Bounded axes (rho, rho_car, alpha) are clipped to their natural
-#      domain; alpha is forbidden to extend below zero (the no-coupling
-#      anchor that callers explicitly include).
+#      sigma_pos extends down only to ~0 (no-coupling anchor when callers
+#      explicitly include it).
 #   3. Cartesian-product the new axis levels with the other axes' original
 #      levels, drop combinations already present in `grids`, and feed the
 #      new triples through the same `backend$call_kernel`. Concatenate
 #      log_marginal, modes, n_iter, and the optional per-grid Q lists.
 #
-# Single helper covers alpha and the spatial axes via the same axis-by-axis
-# logic — no per-axis duplication.
+# Single helper covers sigma_pos and the spatial axes via the same
+# axis-by-axis logic — no per-axis duplication.
 
 # Decide which axes are eligible for refinement. Currently restricted to
-# the copy-scaling alpha axis, where the D3 failure mode lives: a fixed
-# alpha_grid that stops at the true alpha leaves the right tail
-# truncated, biasing posterior moments. Spatial-prior axes (sigma, rho,
-# tau, rho_car) are intentionally NOT refined here: their grids are
-# user-set and reflect deliberate prior choices, and extending them
-# pulls posterior latent variance into extreme-hyperparameter regions
-# that the user did not request. Spatial-axis refinement is a separate
-# feature scheduled when callers explicitly opt in.
+# the copy-arm sigma_pos axis, which carries the small-n_pos failure mode:
+# at small effective sample size the cover-arm likelihood barely
+# identifies sigma_pos and the posterior tail can extend past the user's
+# grid endpoint. Donor sigma_occ is the spatial prior amplitude and is
+# treated as a deliberate prior choice; extending it requires explicit
+# user opt-in (separate feature).
 .refinable_axes <- function(grids, cp_has_copy) {
     if (!cp_has_copy) return(character(0))
-    lev <- sort(unique(as.numeric(grids$alpha)))
+    lev <- sort(unique(as.numeric(grids$sigma_pos)))
     if (length(lev) < 2L) return(character(0))
-    "alpha"
+    "sigma_pos"
 }
 
 # Per-axis edge diagnostics. Marginal weight gives the integrated posterior
@@ -630,30 +725,30 @@ tulpa_nested_laplace_joint <- function(responses,
     out
 }
 
-# Axis-aware spacing: alpha and rho live on a linear scale, sigma / tau on
-# a log scale. Returns a function `mid(a, b)` for that axis.
+# Axis-aware spacing: sigma / sigma_pos / tau live on a log scale; rho and
+# rho_car live on a linear scale. Returns the scale kind for axis name.
 .axis_is_log_scale <- function(axis_name) {
-    axis_name %in% c("sigma", "tau", "sigma2", "phi_gp", "lengthscale")
+    axis_name %in% c("sigma", "sigma_occ", "sigma_pos", "tau", "sigma2",
+                      "phi_gp", "lengthscale")
 }
 
 # Natural domain clamp for bounded axes. NULL means unbounded (so just
-# log-scale-positive for sigma/tau, which the log midpoint handles).
+# log-scale-positive for sigma/tau axes, which the log midpoint handles).
 .axis_bounds <- function(axis_name) {
-    if (axis_name == "alpha")   return(c(0,  Inf))   # alpha >= 0 by convention
-    if (axis_name == "rho")     return(c(0,  1))     # BYM2/AR1 mixing fraction
-    if (axis_name == "rho_car") return(c(-Inf, 1))   # proper-CAR (eigenvalue gated upstream)
+    if (axis_name == "sigma_pos") return(c(0, Inf))   # field amplitude >= 0
+    if (axis_name == "sigma_occ") return(c(0, Inf))   # field amplitude >= 0
+    if (axis_name == "rho")       return(c(0, 1))     # BYM2/AR1 mixing fraction
+    if (axis_name == "rho_car")   return(c(-Inf, 1))  # proper-CAR (eigenvalue gated upstream)
     NULL
 }
 
 # Propose new levels on one axis. Always adds one densification point
 # between the boundary and its inward neighbour. Adds an outward extension
-# only when the boundary is genuinely in the integrand's *tail* (i.e.
-# the integrand has declined from the inward neighbour to the boundary
-# by at least `decay_factor`). When the boundary is the local mode,
-# extension is suppressed because the data has not signalled that the
-# true peak lies further out — densification alone safely tightens the
-# integration in the heavy region without expanding the prior support
-# beyond what the user requested.
+# only when the boundary is genuinely in the integrand's *tail*. When the
+# boundary is the local mode, extension is suppressed because the data has
+# not signalled that the true peak lies further out — densification alone
+# safely tightens the integration in the heavy region without expanding
+# the prior support beyond what the user requested.
 .propose_axis_extension <- function(axis_name, lev, side,
                                      extend_ok = TRUE) {
     log_scale <- .axis_is_log_scale(axis_name)
@@ -672,9 +767,7 @@ tulpa_nested_laplace_joint <- function(responses,
         # Second extension point catches seeds where the integrand is
         # still appreciable one step past the boundary; without it we
         # under-cover when the true peak sits two steps beyond the user
-        # grid (the D3 alpha_true = 1.5 against alpha_grid stopping at
-        # 1.5 case picks up ~10 extra percentage points from the second
-        # extension).
+        # grid.
         extend2   <- if (log_scale) extend1 * (edge / neighbour)
                      else            extend1 + (edge - neighbour)
     } else {
@@ -698,9 +791,9 @@ tulpa_nested_laplace_joint <- function(responses,
 }
 
 # Build the new cartesian-product triples that need a kernel call. Existing
-# (sigma_k, rho_k, alpha_k) triples are dropped via a string-key set.
+# combinations are dropped via a string-key set.
 .new_cartesian_triples <- function(grids, new_per_axis, cp_has_copy) {
-    full_axes <- if (cp_has_copy) names(grids) else setdiff(names(grids), "alpha")
+    full_axes <- if (cp_has_copy) names(grids) else setdiff(names(grids), "sigma_pos")
     axis_levels <- list()
     for (a in full_axes) {
         old <- sort(unique(as.numeric(grids[[a]])))
@@ -721,9 +814,9 @@ tulpa_nested_laplace_joint <- function(responses,
     new_rows  <- cart[!cart_keys %in% old_keys, , drop = FALSE]
     if (nrow(new_rows) == 0L) return(NULL)
     # Re-shape to the named-list format the kernel expects, preserving the
-    # original alpha-shape convention (empty when has_copy = FALSE).
+    # original sigma_pos-shape convention (empty when has_copy = FALSE).
     out <- as.list(new_rows)
-    if (!cp_has_copy) out$alpha <- numeric(0)
+    if (!cp_has_copy) out$sigma_pos <- numeric(0)
     out
 }
 
@@ -750,14 +843,14 @@ tulpa_nested_laplace_joint <- function(responses,
 }
 
 # Merge new axis triples into the kernel-input `grids` representation
-# (paired vectors, alpha empty when has_copy = FALSE).
+# (paired vectors, sigma_pos empty when has_copy = FALSE).
 .merge_grids <- function(grids, new_triples, cp_has_copy) {
-    full_axes <- if (cp_has_copy) names(grids) else setdiff(names(grids), "alpha")
+    full_axes <- if (cp_has_copy) names(grids) else setdiff(names(grids), "sigma_pos")
     out <- grids
     for (a in full_axes) {
         out[[a]] <- c(grids[[a]], new_triples[[a]])
     }
-    if (!cp_has_copy) out$alpha <- numeric(0)
+    if (!cp_has_copy) out$sigma_pos <- numeric(0)
     out
 }
 
@@ -786,8 +879,7 @@ tulpa_nested_laplace_joint <- function(responses,
         #      evidence whether the true peak is at the boundary or
         #      further out. Extending outward is the only way to find
         #      out — without it we underestimate posterior variance by
-        #      truncating the tail. This is the D3 failure
-        #      (alpha_true = 1.5 against the alpha_grid that stops at 1.5).
+        #      truncating the tail.
         #   2. Boundary is on the descent (a neighbour is heavier) but
         #      the integrand density at the boundary still exceeds
         #      `edge_thresh`. The tail beyond the boundary carries
@@ -795,10 +887,7 @@ tulpa_nested_laplace_joint <- function(responses,
         #      soak it up.
         # When the boundary is on the descent AND density at boundary is
         # below threshold, the integrand has already decayed by the time
-        # we hit the edge — no refinement needed. This protects the
-        # well-behaved interior-peak case (e.g. alpha = 0 truth, peak at
-        # alpha = 0, boundary at alpha = 0 is the mode but with low
-        # density on the high side, no extension on either side).
+        # we hit the edge — no refinement needed.
         new_per_axis <- list()
         triggered_this_pass <- character(0)
         for (a in names(edge_info)) {

@@ -14,9 +14,18 @@
 //       | structured (n_lat_struct) ]
 // Each arm carries its own fixed-effects design matrix (X_k, size N_k x p_k)
 // and its own RE block. The structured spatial block is shared across all
-// arms. One arm may be flagged as the "copy" arm — its contribution to the
-// linear predictor through the structured block is multiplied by alpha_k,
-// where alpha_k indexes an additional outer-grid axis.
+// arms (with unit precision) — the per-arm field amplitude enters as a
+// multiplier on eta: eta_arm = X beta + sigma_arm * z_s. One arm may be
+// flagged as the "copy" arm — it sees sigma_pos_k from a dedicated outer-
+// grid axis; all other arms see sigma_occ_k from the donor sigma axis.
+//
+// gcol33/tulpa#18: replaces the (sigma, alpha) parameterization where alpha
+// scaled the copy arm's contribution to a shared sigma * z field. The old
+// parameterization produced a posterior ridge along constant alpha * sigma
+// at small n_pos because both arms' likelihoods anchored only the *product*
+// alpha * sigma. The new (sigma_occ, sigma_pos) axes are anchored
+// independently by their own arm's likelihood. alpha = sigma_pos / sigma_occ
+// is recovered post-hoc on the R side.
 //
 // See dev_notes/joint_nested_laplace.md for the full math derivation.
 
@@ -51,13 +60,16 @@ struct JointArmCxx {
 };
 
 // ----------------------------------------------------------------------------
-// BYM2 joint shim. 3-axis Cartesian outer grid over (sigma_spatial, rho, alpha).
+// BYM2 joint shim. Outer grid over (sigma_occ, rho [, sigma_pos]).
 //
-// arms        : [n_arms] arm specs, see JointArmCxx.
-// copy_arm    : 0-based index of the arm that gets copy-scaled by alpha.
-//               Pass -1 for "no copy" (alpha is fixed to 1, alpha_grid ignored).
-// alpha_grid  : [n_grid] paired with sigma_spatial_grid and rho_grid; ignored
-//               when copy_arm == -1 (caller may pass nullptr).
+// arms           : [n_arms] arm specs, see JointArmCxx.
+// copy_arm       : 0-based index of the arm that uses sigma_pos. Pass -1 for
+//                  "no copy" (all arms use sigma_occ, sigma_pos_grid ignored).
+// sigma_occ_grid : [n_grid] donor-arm field amplitude (sigma on all
+//                  non-copy arms).
+// sigma_pos_grid : [n_grid] copy-arm field amplitude (paired pointwise with
+//                  sigma_occ_grid / rho_grid). Ignored when copy_arm == -1
+//                  (caller may pass nullptr).
 //
 // The outer grid is *paired*, not Cartesian: caller builds the Cartesian
 // product before calling. Length n_grid for all three vectors.
@@ -71,9 +83,9 @@ typedef void (*NestedLaplaceJointBym2Fn)(
     int n_spatial_units,
     const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
     double scale_factor,
-    const double* sigma_spatial_grid,
+    const double* sigma_occ_grid,
     const double* rho_grid,
-    const double* alpha_grid,
+    const double* sigma_pos_grid,
     int n_grid,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,

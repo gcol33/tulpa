@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+* fix: joint nested-Laplace reparam `(sigma, alpha)` → `(sigma_occ, sigma_pos)`.
+  Closes gcol33/tulpa#18. The BYM2 / ICAR / CAR_proper backends of
+  `tulpa_nested_laplace_joint()` previously parameterized the joint
+  outer grid as `(sigma, rho/rho_car, alpha)`, where `sigma` was the
+  shared field amplitude and `alpha` scaled the copy arm's contribution.
+  At small `n_pos` and low cover-arm sample fraction (e.g. d7 Cell B,
+  `n_s = 25`, `n_pos ≈ 46`), the cover-arm likelihood identified only the
+  *product* `alpha * sigma`; sigma was pulled toward its prior and alpha
+  inflated to compensate (~ −15% sigma bias, ~ +27% alpha bias on 30
+  seeds). The reparam scales each arm's contribution to a unit-precision
+  latent by its own sigma — `eta_arm = X beta + sigma_arm * z_s`, with
+  `sigma_arm = sigma_occ` on donor arms and `sigma_arm = sigma_pos` on
+  the copy arm. Each axis is now anchored by its own arm's likelihood,
+  so the posterior ridge along constant `alpha * sigma` disappears.
+  `alpha = sigma_pos / sigma_occ` is recovered post-hoc and attached to
+  `theta_grid` / `theta_mean` / `theta_sd`. **API:** `copy$alpha_grid` is
+  superseded by `copy$sigma_pos_grid`; `alpha_grid` still works with a
+  deprecation warning that translates it to
+  `alpha_grid * median(prior$sigma_grid)`. ICAR / CAR_proper joint
+  kernels now take `sigma_grid` (donor sigma in sigma-space) instead of
+  `tau_grid`; tulpaObs callers translate `tau_grid` to
+  `sigma_grid = 1/sqrt(tau_grid)` internally. **C ABI:**
+  `tulpa_nested_laplace_joint_bym2_impl` switches its grid args from
+  `sigma_spatial_grid` / `alpha_grid` to `sigma_occ_grid` /
+  `sigma_pos_grid`. `TULPA_ABI_VERSION` bumped **18 → 19**.
+
 * feat: EM+Laplace MI and Gibbs corrections. `tulpa_em_laplace()` gains two
   post-EM correction modes (`correction = "mi"` / `"gibbs"`) that replace
   the previous "not yet implemented" stub. MI draws `n_imputations` hard
