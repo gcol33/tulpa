@@ -77,7 +77,7 @@
 #'   total-variance posterior moments (`Var-of-means + Mean-of-Var`) on
 #'   inner latent coordinates such as fixed-effect betas. Default `FALSE`
 #'   to keep the result lightweight.
-#' @param adaptive_grid Logical (default `TRUE`). When `TRUE`, a second
+#' @param adaptive_grid Logical (default `FALSE`). When `TRUE`, a second
 #'   kernel pass is triggered on any hyperparameter axis whose marginal
 #'   posterior weight on the boundary point(s) exceeds
 #'   `adaptive_grid_edge_thresh`. New points are appended on that axis
@@ -85,7 +85,8 @@
 #'   extension beyond the boundary on a log-spaced axis) and the cartesian
 #'   product with the other axes is evaluated and concatenated. Fixes
 #'   posterior CI under-coverage when truth sits near or at the user's
-#'   grid edge. Pass `FALSE` to recover the legacy fixed-grid behaviour.
+#'   grid edge. Opt-in for now; defaults to `FALSE` to preserve legacy
+#'   fixed-grid behaviour for existing callers.
 #' @param adaptive_grid_edge_thresh Numeric (default `0.02`). Refinement
 #'   triggers when the per-axis edge score on the boundary of the
 #'   refinable axis (currently `sigma_pos` only) exceeds this value. The
@@ -132,7 +133,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                        n_threads = 1L,
                                        x_init = NULL, verbose = FALSE,
                                        store_Q = FALSE,
-                                       adaptive_grid = TRUE,
+                                       adaptive_grid = FALSE,
                                        adaptive_grid_edge_thresh = 0.02,
                                        adaptive_grid_max_passes = 1L) {
     if (!is.list(responses) || length(responses) < 1L) {

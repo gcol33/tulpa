@@ -6,3 +6,4 @@ src/symbols.rds
 *.Rcheck/
 *.tar.gz
 dev_notes/
+tmp_lib/
