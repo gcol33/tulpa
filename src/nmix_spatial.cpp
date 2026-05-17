@@ -49,8 +49,8 @@ using tulpa::nmix_kernel_log_lik_only_spatial;
 using tulpa::compute_eta_lambda_spatial;
 using tulpa::nmix_assemble_obs_info_spatial;
 using tulpa::nmix_assemble_complete_fisher_spatial;
-using tulpa::nmix_add_icar_to_spatial_block;
-using tulpa::nmix_add_icar_to_H_only;
+using tulpa::nmix_add_car_to_spatial_block;
+using tulpa::nmix_add_car_to_H_only;
 using tulpa::nmix_add_diagonal_ridge;
 using tulpa::nmix_icar_log_prior;
 using tulpa::nmix_center_z;
@@ -133,8 +133,8 @@ SpatialInnerResult inner_newton_spatial_icar(
             Xl, Xp, eta_p_long, obs_by_site, map_site_to_unit,
             info_eta_lam, info_eta_p, var_N, H
         );
-        nmix_add_icar_to_spatial_block(
-            p_lam, p_p, n_spatial, tau,
+        nmix_add_car_to_spatial_block(
+            p_lam, p_p, n_spatial, tau, /*rho=*/1.0,
             adj_row_ptr, adj_col_idx, n_neighbors,
             res.z, grad, H
         );
@@ -168,8 +168,8 @@ SpatialInnerResult inner_newton_spatial_icar(
                 Xl, Xp, obs_by_site, map_site_to_unit,
                 info_eta_lam, info_eta_p, H_f
             );
-            nmix_add_icar_to_H_only(
-                p_lam, p_p, n_spatial, tau,
+            nmix_add_car_to_H_only(
+                p_lam, p_p, n_spatial, tau, /*rho=*/1.0,
                 adj_row_ptr, adj_col_idx, n_neighbors, H_f
             );
             nmix_add_diagonal_ridge(H_f);
@@ -257,8 +257,8 @@ SpatialInnerResult inner_newton_spatial_icar(
     // For the log|H| term, use observed info + ICAR. If non-PSD, fall back
     // to complete-data Fisher + ICAR (will overstate curvature slightly but
     // keeps the Laplace finite).
-    nmix_add_icar_to_H_only(
-        p_lam, p_p, n_spatial, tau,
+    nmix_add_car_to_H_only(
+        p_lam, p_p, n_spatial, tau, /*rho=*/1.0,
         adj_row_ptr, adj_col_idx, n_neighbors, H_final
     );
     nmix_add_diagonal_ridge(H_final);
@@ -274,8 +274,8 @@ SpatialInnerResult inner_newton_spatial_icar(
             Xl, Xp, obs_by_site, map_site_to_unit,
             info_eta_lam, info_eta_p, H_f
         );
-        nmix_add_icar_to_H_only(
-            p_lam, p_p, n_spatial, tau,
+        nmix_add_car_to_H_only(
+            p_lam, p_p, n_spatial, tau, /*rho=*/1.0,
             adj_row_ptr, adj_col_idx, n_neighbors, H_f
         );
         nmix_add_diagonal_ridge(H_f);

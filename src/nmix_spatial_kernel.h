@@ -266,14 +266,19 @@ inline void nmix_assemble_complete_fisher_spatial(
     H_f = H_f.selfadjointView<Eigen::Lower>();
 }
 
-// Add the ICAR contribution tau * Q_ICAR to the z-block of H, and tau * (Q z)
-// to the gradient slot for z. Sign convention matches laplace_spatial_priors:
-//   H_zz += tau * Q,    grad_z -= tau * Q z
+// Add the CAR(rho) contribution tau * Q(rho) to the z-block of H, and tau * Q z
+// to the gradient slot for z. ICAR is the rho = 1 case; proper CAR uses rho in
+// the eigenvalue interval (1/lambda_min, 1/lambda_max) of D^{-1}W.
+//
+// Q(rho) = D - rho * W,   Q_ii = n_neighbors[i],   Q_ij = -rho for i ~ j.
+//
+// Sign convention matches laplace_spatial_priors:
+//   H_zz += tau * Q(rho),    grad_z -= tau * Q(rho) z
 // (grad here is the *score*; the prior contributes -tau Q z to the score and
 //  +tau Q to the negative-Hessian.)
-inline void nmix_add_icar_to_spatial_block(
+inline void nmix_add_car_to_spatial_block(
     int p_lam, int p_p, int n_spatial,
-    double tau,
+    double tau, double rho,
     const Rcpp::IntegerVector& adj_row_ptr,
     const Rcpp::IntegerVector& adj_col_idx,
     const Rcpp::IntegerVector& n_neighbors,
@@ -287,26 +292,25 @@ inline void nmix_add_icar_to_spatial_block(
         const double q_diag = static_cast<double>(n_neighbors[s]);
         // Diagonal entry of Q at s
         H(idx_zs, idx_zs) += tau * q_diag;
-        // Gradient: -tau * (Q z)[s] = -tau (n_s z_s - sum_{s' ~ s} z_{s'})
-        double Qz_s = q_diag * z(s);
+        // Gradient: -tau * (Q z)[s] = -tau (n_s z_s - rho * sum_{s' ~ s} z_{s'})
+        double neighbor_sum = 0.0;
         for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; ++kk) {
             int t = adj_col_idx[kk];
-            Qz_s -= z(t);
+            neighbor_sum += z(t);
             if (t > s) {
-                H(idx_zs, z_start + t) -= tau;
-                H(z_start + t, idx_zs) -= tau;
+                H(idx_zs, z_start + t) -= tau * rho;
+                H(z_start + t, idx_zs) -= tau * rho;
             }
         }
-        grad(idx_zs) -= tau * Qz_s;
+        grad(idx_zs) -= tau * (q_diag * z(s) - rho * neighbor_sum);
     }
 }
 
-// Hessian-only variant of nmix_add_icar_to_spatial_block. Adds tau * Q to the
-// z-block of H without touching grad. Used at the converged mode when we
-// just need log|H|.
-inline void nmix_add_icar_to_H_only(
+// Hessian-only variant. Adds tau * Q(rho) to the z-block of H without touching
+// grad. Used at the converged mode when we just need log|H|.
+inline void nmix_add_car_to_H_only(
     int p_lam, int p_p, int n_spatial,
-    double tau,
+    double tau, double rho,
     const Rcpp::IntegerVector& adj_row_ptr,
     const Rcpp::IntegerVector& adj_col_idx,
     const Rcpp::IntegerVector& n_neighbors,
@@ -319,8 +323,8 @@ inline void nmix_add_icar_to_H_only(
         for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; ++kk) {
             int t = adj_col_idx[kk];
             if (t > s) {
-                H(idx_zs, z_start + t) -= tau;
-                H(z_start + t, idx_zs) -= tau;
+                H(idx_zs, z_start + t) -= tau * rho;
+                H(z_start + t, idx_zs) -= tau * rho;
             }
         }
     }
@@ -342,12 +346,10 @@ inline void nmix_add_diagonal_ridge(Eigen::MatrixXd& H, double rel_ridge = 1e-10
     for (int i = 0; i < n; ++i) H(i, i) += ridge;
 }
 
-// log p(z | tau) under ICAR: -0.5 * tau * z^T Q z + 0.5 * (n - 1) * log(tau)
-// (the rank deficiency reduces the dimension by 1; the constant pi term is
-// absorbed into the Gaussian normalising constant by the caller).
-inline double nmix_icar_log_prior(
-    int n_spatial,
-    double tau,
+// z' Q(rho) z quadratic form. Symmetry of adjacency lets us halve the work
+// by only counting edges with t > s.
+inline double nmix_car_quadratic_form(
+    int n_spatial, double rho,
     const Rcpp::IntegerVector& adj_row_ptr,
     const Rcpp::IntegerVector& adj_col_idx,
     const Rcpp::IntegerVector& n_neighbors,
@@ -358,10 +360,43 @@ inline double nmix_icar_log_prior(
         quad += n_neighbors[s] * z(s) * z(s);
         for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; ++kk) {
             int t = adj_col_idx[kk];
-            if (t > s) quad -= 2.0 * z(s) * z(t);
+            if (t > s) quad -= 2.0 * rho * z(s) * z(t);
         }
     }
+    return quad;
+}
+
+// log p(z | tau) under ICAR: -0.5 * tau * z' Q z + 0.5 * (n - 1) * log(tau)
+// (rank-deficient by 1; the (2 pi)^{n/2} normalising constant is absorbed by
+// the caller into the Cartesian factor that is tau-independent).
+inline double nmix_icar_log_prior(
+    int n_spatial, double tau,
+    const Rcpp::IntegerVector& adj_row_ptr,
+    const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors,
+    const Eigen::VectorXd& z
+) {
+    double quad = nmix_car_quadratic_form(
+        n_spatial, /*rho=*/1.0, adj_row_ptr, adj_col_idx, n_neighbors, z);
     return -0.5 * tau * quad + 0.5 * (n_spatial - 1) * std::log(tau);
+}
+
+// log p(z | tau, rho) under proper CAR (full rank):
+//   log p = 0.5 * log_det_Q_rho + 0.5 * n * log(tau) - 0.5 * tau * z' Q(rho) z
+// log_det_Q_rho = log|Q(rho)| is independent of tau and z, so the caller
+// precomputes it once per rho grid point via a dense Cholesky.
+inline double nmix_car_proper_log_prior(
+    int n_spatial, double tau, double rho, double log_det_Q_rho,
+    const Rcpp::IntegerVector& adj_row_ptr,
+    const Rcpp::IntegerVector& adj_col_idx,
+    const Rcpp::IntegerVector& n_neighbors,
+    const Eigen::VectorXd& z
+) {
+    double quad = nmix_car_quadratic_form(
+        n_spatial, rho, adj_row_ptr, adj_col_idx, n_neighbors, z);
+    return 0.5 * log_det_Q_rho
+         + 0.5 * n_spatial * std::log(tau)
+         - 0.5 * tau * quad;
 }
 
 // Centering: subtract mean(z) from z, enforcing the sum-to-zero constraint
