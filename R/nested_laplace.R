@@ -57,6 +57,12 @@
 #'   [prior_from_spec()] — pass either `prior` or `spec`, not both.
 #' @param data Data frame used to validate `spec` and resolve
 #'   time/group/site indices. Required when `spec` is supplied.
+#' @param keep_grid_hessians If `TRUE`, retain per-grid-point fixed-effects
+#'   marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}} on the return
+#'   list as `$grid_hessians` (list of dense \eqn{p\times p} matrices) and
+#'   `$grid_modes` (list of length-\eqn{p} vectors). Default `FALSE`.
+#'   Used downstream by simplified-Laplace (SLA) callers to assemble
+#'   skew-aware marginals — see the cumulant pooling in [rubins_pool()].
 #'
 #' @keywords internal
 #' @export
@@ -65,7 +71,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                             family = "binomial", phi = 1.0,
                             max_iter = 50L, tol = 1e-6, n_threads = 1L,
-                            x_init = NULL, verbose = FALSE) {
+                            x_init = NULL, verbose = FALSE,
+                            keep_grid_hessians = FALSE) {
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {
@@ -95,11 +102,17 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     max_iter = as.integer(max_iter),
     tol = as.numeric(tol),
     n_threads = as.integer(n_threads),
-    x_init_nullable = x_init
+    x_init_nullable = x_init,
+    store_Q = isTRUE(keep_grid_hessians)
   )
+
+  p_fixed <- ncol(X)
 
   if (.is_multi_block_prior(prior)) {
     res <- .nl_dispatch_multi(cargs, prior)
+    if (isTRUE(keep_grid_hessians)) {
+      res <- .nl_attach_grid_hessians(res, p_fixed)
+    }
     res$prior <- prior
     class(res) <- c("tulpa_nested_laplace", "list")
     return(res)
@@ -115,6 +128,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
   res$weights <- .nl_normalise_weights(res$log_marginal)
   res <- .nl_posterior_moments(res, type)
+  if (isTRUE(keep_grid_hessians)) {
+    res <- .nl_attach_grid_hessians(res, p_fixed)
+  }
   res$prior <- prior
   class(res) <- c("tulpa_nested_laplace", "list")
   res
@@ -400,6 +416,75 @@ nested_laplace <- function(...) {
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
+# ----------------------------------------------------------------------------
+# Per-grid-point fixed-effects Hessian extraction.
+#
+# When tulpa_nested_laplace() is called with keep_grid_hessians = TRUE the
+# inner Laplace solves are run with store_Q = TRUE, so each grid point's full
+# posterior precision (over the joint latent vector x = (beta, RE, latent))
+# is returned in CSC lower-triangle form. Here we
+#
+#   1. Reconstruct sparse symmetric Q_k from the CSC triple at grid point k.
+#   2. Compute Sigma_{beta beta} = (Q_k^{-1})[1:p, 1:p] via a single sparse
+#      solve with the first p columns of the identity as RHS.
+#   3. Invert that small p x p block to get the marginal fixed-effects
+#      Hessian H_beta = Sigma_{beta beta}^{-1}.
+#
+# Per-grid memory cost: O(p^2). The dominant compute is the sparse solve,
+# already required for the integrated log-marginal — so adding it here is
+# essentially free.
+# ----------------------------------------------------------------------------
+.nl_attach_grid_hessians <- function(res, p_fixed) {
+  Q_p <- res$Q_csc_p_per_grid
+  Q_i <- res$Q_csc_i_per_grid
+  Q_x <- res$Q_csc_x_per_grid
+  n_x <- res$Q_csc_n
+
+  if (is.null(Q_p) || is.null(Q_i) || is.null(Q_x) || is.null(n_x)) {
+    warning("keep_grid_hessians = TRUE but the inner solve did not return Q. ",
+            "This is a tulpa bug; please report.",
+            call. = FALSE)
+    return(res)
+  }
+
+  n_grid <- length(Q_p)
+  grid_hessians <- vector("list", n_grid)
+  grid_modes    <- vector("list", n_grid)
+
+  E <- matrix(0, nrow = n_x, ncol = p_fixed)
+  for (j in seq_len(p_fixed)) E[j, j] <- 1
+
+  modes_mat <- res$modes  # n_grid x n_x
+
+  for (k in seq_len(n_grid)) {
+    L <- Matrix::sparseMatrix(
+      i = Q_i[[k]], p = Q_p[[k]], x = Q_x[[k]],
+      dims = c(n_x, n_x), index1 = FALSE
+    )
+    diag_L <- Matrix::diag(L)
+    Qk <- L + Matrix::t(L) - Matrix::Diagonal(n_x, diag_L)
+
+    V <- as.matrix(Matrix::solve(Qk, E))
+    Sigma_bb <- V[seq_len(p_fixed), , drop = FALSE]
+    grid_hessians[[k]] <- solve(Sigma_bb)
+
+    grid_modes[[k]] <- if (!is.null(modes_mat)) {
+      as.numeric(modes_mat[k, seq_len(p_fixed)])
+    } else {
+      rep(NA_real_, p_fixed)
+    }
+  }
+
+  res$grid_hessians <- grid_hessians
+  res$grid_modes    <- grid_modes
+  # Strip the verbose CSC scratch fields once Hessians are assembled.
+  res$Q_csc_p_per_grid <- NULL
+  res$Q_csc_i_per_grid <- NULL
+  res$Q_csc_x_per_grid <- NULL
+  res$Q_csc_n          <- NULL
+  res
+}
+
 # --- Multi-block dispatch ---
 #
 # A multi-block prior is `list(block1, block2, ...)` where each blockN is a
@@ -528,7 +613,8 @@ nested_laplace <- function(...) {
     max_iter    = cargs$max_iter,
     tol         = cargs$tol,
     n_threads   = cargs$n_threads,
-    x_init_nullable = cargs$x_init_nullable
+    x_init_nullable = cargs$x_init_nullable,
+    store_Q     = isTRUE(cargs$store_Q)
   )
 
   out$theta_grid   <- joint_grid

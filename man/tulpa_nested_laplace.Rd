@@ -21,7 +21,8 @@ tulpa_nested_laplace(
   tol = 1e-06,
   n_threads = 1L,
   x_init = NULL,
-  verbose = FALSE
+  verbose = FALSE,
+  keep_grid_hessians = FALSE
 )
 
 nested_laplace(...)
@@ -73,6 +74,13 @@ time/group/site indices. Required when \code{spec} is supplied.}
 \item{x_init}{Optional warm-start for the first grid point's inner solve.}
 
 \item{verbose}{Print grid-point progress.}
+
+\item{keep_grid_hessians}{If \code{TRUE}, retain per-grid-point fixed-effects
+marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}} on the return
+list as \verb{$grid_hessians} (list of dense \eqn{p\times p} matrices) and
+\verb{$grid_modes} (list of length-\eqn{p} vectors). Default \code{FALSE}.
+Used downstream by simplified-Laplace (SLA) callers to assemble
+skew-aware marginals — see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.}
 }
 \value{
 A list with:
