@@ -38,9 +38,15 @@ helper_make_spde_spec <- function(coords, max_edge = c(0.2, 0.5),
 }
 
 # Simulate a Matern SPDE field on a mesh at a target (range, sigma).
-# Builds Q = tau^2 (kappa^2 C0 + G1) diag(1/C0) (kappa^2 C0 + G1) and
-# draws w ~ N(0, Q^{-1}) via the inner sparse-Cholesky path. Returns
-# w_mesh of length spec$n_mesh.
+# Builds the precision Q from the FEM matrices and draws w ~ N(0, Q^{-1})
+# via the inner sparse-Cholesky path. For integer-alpha (`nu` integer in 2D)
+# the precision is
+#   Q = tau^2 (kappa^2 C0 + G1) diag(1/C0) (kappa^2 C0 + G1)
+# For fractional-alpha cases (e.g. nu = 0.5) it is the rational expansion
+# from Bolin et al. 2023:
+#   Q = tau^2 sum_k w_k K_k diag(1/C0) K_k,  K_k = (kappa^2 + r_k) C0 + G1
+# with (r_k, w_k) from `rational_spde_coefficients(nu)`. Returns the field
+# evaluated at every mesh node.
 simulate_spde_field <- function(spec, range_true, sigma_true, seed) {
   set.seed(seed)
   nu    <- spec$nu
@@ -51,10 +57,21 @@ simulate_spde_field <- function(spec, range_true, sigma_true, seed) {
   G1  <- Matrix::sparseMatrix(i = spec$G1_i + 1L, p = spec$G1_p,
                               x = spec$G1_x, dims = c(spec$n_mesh, spec$n_mesh),
                               index1 = TRUE)
-  K   <- (kappa^2) * C0 + G1
-  Q   <- (tau^2) * Matrix::crossprod(K, Matrix::solve(C0, K))
 
-  # Draw w ~ N(0, Q^{-1}) via L^{-T} z with L = chol(Q).
+  rat <- rational_spde_coefficients(nu)
+  if (rat$is_integer) {
+    K <- (kappa^2) * C0 + G1
+    Q <- (tau^2) * Matrix::crossprod(K, Matrix::solve(C0, K))
+  } else {
+    Q <- 0 * G1  # zero sparse with G1's pattern
+    for (k in seq_along(rat$poles)) {
+      K_k  <- (kappa^2 + rat$poles[k]) * C0 + G1
+      term <- Matrix::crossprod(K_k, Matrix::solve(C0, K_k))
+      Q    <- Q + rat$weights[k] * term
+    }
+    Q <- (tau^2) * Q
+  }
+
   L_chol <- Matrix::Cholesky(Matrix::forceSymmetric(Q), LDL = FALSE,
                              perm = FALSE)
   z      <- rnorm(spec$n_mesh)
@@ -67,11 +84,12 @@ run_one_replicate <- function(seed, range_true, sigma_true, beta0_true,
                               n_iter, n_warmup,
                               mesh_max_edge = c(0.20, 0.5),
                               mesh_cutoff   = 0.08,
-                              adapt_delta   = 0.9) {
+                              adapt_delta   = 0.9,
+                              nu            = 1) {
   set.seed(seed * 17L + 1L)
   coords <- cbind(runif(n_obs), runif(n_obs))
   spec   <- helper_make_spde_spec(
-    coords, max_edge = mesh_max_edge, cutoff = mesh_cutoff,
+    coords, max_edge = mesh_max_edge, cutoff = mesh_cutoff, nu = nu,
     prior_range = c(0.1, 0.05),   # broad: P(range < 0.1) = 0.05
     prior_sigma = c(3.0, 0.05)    # broad: P(sigma > 3)   = 0.05
   )
@@ -346,6 +364,71 @@ test_that("joint NUTS round-trip: output structure matches contract", {
   expect_true(all(fit$sigma_draws > 0))
   expect_named(fit$range_summary, c("mean", "median", "q05", "q95"))
   expect_named(fit$sigma_summary, c("mean", "median", "q05", "q95"))
+})
+
+# ---------------------------------------------------------------------------
+# Fractional-alpha smoke test. Verifies that the joint-NUTS path no longer
+# rejects rational poles+weights and runs end-to-end on a small mesh with
+# nu = 0.5 (rational alpha = 1.5). Tighter recovery on fractional cases is
+# left to a gated tier once the rational path stabilises across nu values.
+# ---------------------------------------------------------------------------
+test_that("joint NUTS runs end-to-end with rational alpha (nu = 0.5)", {
+  skip_on_cran()
+  skip_if_not_installed("fmesher")
+  skip_if_not_installed("Matrix")
+
+  set.seed(2026)
+  n_obs  <- 120
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec   <- helper_make_spde_spec(
+    coords, max_edge = c(0.30, 0.7), cutoff = 0.15, nu = 0.5,
+    prior_range = c(0.1, 0.05), prior_sigma = c(3.0, 0.05)
+  )
+
+  range_true     <- 0.4
+  sigma_true     <- 1.0
+  sigma_obs_true <- 0.3
+  beta0_true     <- 0.5
+  beta1_true     <- -0.8
+
+  w_true <- simulate_spde_field(spec, range_true, sigma_true, seed = 2026L)
+  w_true <- w_true - mean(w_true)
+  x_cov  <- runif(n_obs, -1, 1)
+  X      <- cbind(1, x_cov)
+  eta    <- beta0_true + beta1_true * x_cov + as.numeric(spec$A %*% w_true)
+  y      <- eta + rnorm(n_obs, 0, sigma_obs_true)
+
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec,
+    family = "gaussian",
+    joint  = TRUE,
+    prior_range  = c(0.1, 0.05),
+    prior_sigma  = c(3.0, 0.05),
+    log_phi_init = log(sigma_obs_true),
+    n_iter       = 300L, n_warmup = 200L,
+    adapt_delta  = 0.9,
+    seed         = 1L
+  )
+
+  # Structural sanity: chain ran, all hyper draws on the natural scale exist.
+  expect_true(fit$joint)
+  expect_true(is.matrix(fit$w_draws))
+  expect_equal(ncol(fit$w_draws), spec$n_mesh)
+  expect_true(all(fit$range_draws > 0))
+  expect_true(all(fit$sigma_draws > 0))
+  expect_true(mean(fit$accept_prob) > 0.25)
+
+  # Loose recovery: a fractional alpha is harder to sample than alpha=2 at
+  # this iter budget, so bounds are wider than the integer slim tier. The
+  # claim under test is that the rational path is statistically calibrated
+  # at the order-of-magnitude level, not that it's tight.
+  beta_post  <- colMeans(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE])
+  range_post <- mean(fit$range_draws)
+  sigma_post <- mean(fit$sigma_draws)
+  expect_lt(abs(beta_post[1] - beta0_true), 0.60)
+  expect_lt(abs(beta_post[2] - beta1_true), 0.50)
+  expect_lt(abs(log(range_post / range_true)), 1.8)
+  expect_lt(abs(log(sigma_post / sigma_true)), 1.8)
 })
 
 test_that("joint NUTS rejects PC anchors out of range", {

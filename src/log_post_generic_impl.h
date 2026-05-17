@@ -138,10 +138,13 @@ static T initialize_generic_state(
         // through the (a.ii) adjoint — no explicit log-det term is added
         // here.
         //
-        // Dispatch is statically resolved: compute_log_post_generic is
-        // only instantiated with T = double (numerical path) and
-        // T = arena::Var (reverse-mode AD). fwd::Dual is not used for the
-        // generic-spec path; the else branch is a defensive guard.
+        // Dispatch is statically resolved on the AD type. Three flavours:
+        //   double      : forward-only.
+        //   arena::Var  : reverse-mode AD via custom_backward.
+        //   fwd::Dual   : forward-mode AD via the closed-form tangent
+        //                 dw = L^{-T}(dz - Phi(M)^T z). Used as an exact
+        //                 alternative to central differences when verifying
+        //                 the reverse-mode gradient.
         if (data.spde_data.joint_hypers) {
             if constexpr (std::is_same_v<T, double>) {
                 apply_spde_nc_transform_double(
@@ -149,9 +152,11 @@ static T initialize_generic_state(
             } else if constexpr (std::is_same_v<T, arena::Var>) {
                 apply_spde_nc_transform_arena(
                     params, data, layout, state.spde_w);
+            } else if constexpr (std::is_same_v<T, ::fwd::Dual>) {
+                apply_spde_nc_transform_fwd(
+                    params, data, layout, state.spde_w);
             } else {
-                Rcpp::stop("SPDE joint-NUTS: AD type not supported "
-                           "(only double and arena::Var; fwd::Dual deferred).");
+                Rcpp::stop("SPDE joint-NUTS: AD type not supported.");
             }
         }
     }

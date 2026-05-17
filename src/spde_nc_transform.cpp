@@ -13,11 +13,23 @@
 // We never need Q_bar explicitly. Murray (2016) eq. 2.2 plus the rank-1
 // shape of L_bar collapse the trace to:
 //   dlog_theta = -<z, Phi(M_theta) y>     y = L^{-1} dw
-// where Phi(M) = lower(M) with the diagonal halved. Forming M_theta as a
-// dense n_mesh-by-n_mesh matrix is O(n_mesh^3) but with n_mesh in the
-// hundreds for typical SPDE meshes it stays cheap relative to one HMC
-// trajectory. (a.iii) can replace this with a sparse partial-inverse path
-// when the mesh sizes scale up.
+// where Phi(M) = lower(M) with the diagonal halved.
+//
+// Streaming trace. Materializing M as a dense n_mesh-by-n_mesh matrix runs
+// into O(n_mesh^2) memory (200 MB at n_mesh = 5000) and is painful above
+// ~2000. We avoid it by decomposing
+//   -<z, Phi(M) y> = -(T_lower + 0.5 D)
+// with
+//   T_lower = sum_{i>j} z[i] M[i,j] y[j]
+//           = sum_j y[j] * u_j^T (dQ v_j),   u_j := sum_{i>j} z[i] v_i,
+//   D       = sum_i z[i] M[i,i] y[i]
+//           = sum_i (z[i] y[i]) v_i^T (dQ v_i),
+//   v_j     := L^{-T} e_j.
+// The recursion u_j = u_{j-1} - z[j] v_j (with u_{-1} = L^{-T} z) folds the
+// n outer products into one dense-vector update per column. Peak memory is
+// O(n_mesh); runtime stays dominated by the per-column back-solve.
+// A further reduction (sparse RHS walking the elim tree, O(n*reach)
+// instead of O(n*nnz(L))) is left for a follow-up.
 //
 // dQ/dtheta closed forms:
 //   Integer alpha = 2:
@@ -184,38 +196,127 @@ void SpdeNcTransform::backward(
                // because future variants (e.g. partial-inverse path) will
                // use it.
 
-    SpMat L = llt.matrixL();
+    SpMat L  = llt.matrixL();
+    SpMat LT = L.transpose();
     Eigen::VectorXd y = L.template triangularView<Eigen::Lower>().solve(dw);
     dz_out = y;
 
-    auto trace_term = [&](const SpMat& dQ_theta) -> double {
-        // M = L^{-1} dQ_theta L^{-T} formed densely.
-        Eigen::MatrixXd dQ_dense(dQ_theta);
-        Eigen::MatrixXd tmp = L.template triangularView<Eigen::Lower>().solve(dQ_dense);
-        Eigen::MatrixXd MT  = L.template triangularView<Eigen::Lower>().solve(tmp.transpose());
-        Eigen::MatrixXd M   = MT.transpose();
-        // phi_y = Phi(M) y (lower tri with diagonal halved, times y).
-        Eigen::VectorXd phi_y = Eigen::VectorXd::Zero(n);
-        for (int i = 0; i < n; i++) {
-            double acc = 0.5 * M(i, i) * y[i];
-            for (int j = 0; j < i; j++) acc += M(i, j) * y[j];
-            phi_y[i] = acc;
+    // Stream -<z, Phi(M) y> with M = L^{-1} dQ_theta L^{-T} by columns of M.
+    // Trace splits as -(T_lower + 0.5 D) — see file-header derivation.
+    // dQ_theta enters only as the sparse matvec dQ_theta * v_j; the per-
+    // theta linear prefactor (e.g. 4 kappa^2 tau^2 for log_kappa) is
+    // applied to the scalar trace afterwards rather than scaling K.
+    auto trace_term = [&](const SpMat& K_theta) -> double {
+        Eigen::VectorXd u =
+            LT.template triangularView<Eigen::Upper>().solve(z);
+
+        double T_lower = 0.0;
+        double D       = 0.0;
+        Eigen::VectorXd e_j = Eigen::VectorXd::Zero(n);
+
+        for (int j = 0; j < n; ++j) {
+            e_j[j] = 1.0;
+            Eigen::VectorXd v_j =
+                LT.template triangularView<Eigen::Upper>().solve(e_j);
+            e_j[j] = 0.0;
+
+            // u_j = u_{j-1} - z[j] v_j. Initial u_{-1} = L^{-T} z above.
+            u.noalias() -= z[j] * v_j;
+
+            const Eigen::VectorXd Kv = K_theta * v_j;
+            T_lower += y[j]            * u.dot(Kv);
+            D       += z[j] * y[j]     * v_j.dot(Kv);
         }
-        return -z.dot(phi_y);
+        return -(T_lower + 0.5 * D);
     };
 
     // Integer alpha=2: dQ/dlog_kappa = 4 kappa^2 tau^2 K.
     // Rational:        dQ/dlog_kappa = 4 kappa^2 tau^2 K_sum
     //                  where K_sum was cached on last_K_sum by build_Q_rational.
+    // The trace is linear in dQ, so the (4 kappa^2 tau^2) factor multiplies
+    // the scalar result instead of the (potentially large) sparse matrix.
     const SpMat& K_for_logkappa = is_rational() ? last_K_sum : last_K;
-    SpMat dQ_logkappa = (4.0 * last_kappa * last_kappa * last_tau * last_tau)
-                         * K_for_logkappa;
-    dlog_kappa_out = trace_term(dQ_logkappa);
+    const double c_logkappa =
+        4.0 * last_kappa * last_kappa * last_tau * last_tau;
+    dlog_kappa_out = c_logkappa * trace_term(K_for_logkappa);
 
-    // dQ/dlog_tau = 2 Q for both paths (Q is tau^2 times a tau-independent
-    // sum, so d/dlog_tau scales the whole matrix by 2).
-    SpMat dQ_logtau = 2.0 * last_Q;
-    dlog_tau_out = trace_term(dQ_logtau);
+    // dQ/dlog_tau = 2 Q for both paths (Q = tau^2 × tau-independent sum, so
+    // d/dlog_tau scales the whole matrix by 2). Collapsing M_logtau:
+    //   M_logtau = L^{-1} (2Q) L^{-T} = 2 L^{-1} L L^T L^{-T} = 2 I.
+    // So Phi(M_logtau)[i,j] = M[i,j] for i>j (= 0), 0.5 × 2 = 1 for i=j.
+    // Hence -<z, Phi(2I) y> = -<z, I y> = -z · y. No matrix solve needed —
+    // a single dot product saves the entire dense O(n^2) trace work.
+    dlog_tau_out = -z.dot(y);
+}
+
+void SpdeNcTransform::forward_with_tangent(
+    const Eigen::VectorXd& z,
+    const Eigen::VectorXd& dz,
+    double                 kappa,
+    double                 dlog_kappa,
+    double                 tau,
+    double                 dlog_tau,
+    Eigen::VectorXd&       w_out,
+    Eigen::VectorXd&       dw_out)
+{
+    // Value pass. Populates llt, last_K[_sum], last_Q, last_kappa, last_tau.
+    w_out = forward(z, kappa, tau);
+    const int n = n_mesh;
+
+    SpMat L  = llt.matrixL();
+    SpMat LT = L.transpose();
+
+    // dQ = dlog_kappa * (4 kappa^2 tau^2) K_for_logkappa + dlog_tau * 2 Q.
+    // dQ is symmetric and sparse (same pattern as Q). Avoid forming it as
+    // a single matrix when the prefactors are trivial — we'll apply dQ via
+    // matvec, and matvec on (a*A + b*B) splits cleanly.
+    const SpMat& K_for_logkappa = is_rational() ? last_K_sum : last_K;
+    const double c_logkappa     = 4.0 * kappa * kappa * tau * tau * dlog_kappa;
+    const double c_logtau       = 2.0 * dlog_tau;
+
+    auto dQ_matvec = [&](const Eigen::VectorXd& v) -> Eigen::VectorXd {
+        // (c_logkappa * K + c_logtau * Q) * v, computed without
+        // materializing the linear combination.
+        Eigen::VectorXd out = c_logkappa * (K_for_logkappa * v);
+        if (c_logtau != 0.0) out.noalias() += c_logtau * (last_Q * v);
+        return out;
+    };
+
+    // Cheap: M z = L^{-1} (dQ (L^{-T} z)) = L^{-1} (dQ w).
+    Eigen::VectorXd Mz = dQ_matvec(w_out);
+    L.template triangularView<Eigen::Lower>().solveInPlace(Mz);
+
+    // Expensive but matches the adjoint trace: Phi(M) z by streaming.
+    //   (Phi(M) z)[i] = sum_{j<i} M[i,j] z[j] + 0.5 M[i,i] z[i]
+    // Per column j, M[:, j] = L^{-1} (dQ (L^{-T} e_j)) contributes
+    //   c_j[i] * z[j]   to PhiMz[i] for i > j,
+    //   0.5 * c_j[j] * z[j]  to PhiMz[j].
+    Eigen::VectorXd PhiMz = Eigen::VectorXd::Zero(n);
+    Eigen::VectorXd e_j   = Eigen::VectorXd::Zero(n);
+    for (int j = 0; j < n; ++j) {
+        e_j[j] = 1.0;
+        Eigen::VectorXd v_j =
+            LT.template triangularView<Eigen::Upper>().solve(e_j);
+        e_j[j] = 0.0;
+
+        Eigen::VectorXd c_j = dQ_matvec(v_j);
+        L.template triangularView<Eigen::Lower>().solveInPlace(c_j);
+
+        const double zj = z[j];
+        if (zj != 0.0) {
+            // Strict lower: i > j.
+            PhiMz.tail(n - j - 1).noalias() += zj * c_j.tail(n - j - 1);
+            // Halved diagonal: i = j.
+            PhiMz[j] += 0.5 * zj * c_j[j];
+        }
+    }
+
+    // Phi(M)^T z = M z - Phi(M) z (symmetric M).
+    Eigen::VectorXd rhs = dz;
+    rhs.noalias() -= (Mz - PhiMz);
+
+    // dw = L^{-T} (dz - Phi(M)^T z).
+    dw_out = LT.template triangularView<Eigen::Upper>().solve(rhs);
 }
 
 std::vector<arena::Var> spde_nc_transform_arena(

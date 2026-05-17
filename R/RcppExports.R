@@ -193,6 +193,10 @@ cpp_nested_laplace_joint_car_proper <- function(arms_list, copy_arm, n_spatial_u
     .Call(`_tulpa_cpp_nested_laplace_joint_car_proper`, arms_list, copy_arm, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_occ_grid, rho_car_grid, sigma_pos_grid, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm)
 }
 
+cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }
@@ -545,8 +549,12 @@ cpp_test_arena_custom_backward <- function(x_val, y_val) {
     .Call(`_tulpa_cpp_test_arena_custom_backward`, x_val, y_val)
 }
 
-cpp_test_spde_nc_transform_grad <- function(C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps = 1e-5) {
-    .Call(`_tulpa_cpp_test_spde_nc_transform_grad`, C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps)
+cpp_test_spde_nc_transform_grad <- function(C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps = 1e-5, poles_nullable = NULL, weights_nullable = NULL) {
+    .Call(`_tulpa_cpp_test_spde_nc_transform_grad`, C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps, poles_nullable, weights_nullable)
+}
+
+cpp_test_spde_nc_transform_fwd <- function(C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps = 1e-5, poles_nullable = NULL, weights_nullable = NULL) {
+    .Call(`_tulpa_cpp_test_spde_nc_transform_fwd`, C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps, poles_nullable, weights_nullable)
 }
 
 cpp_test_lkj_build_L <- function(raw, n) {

@@ -76,11 +76,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     }
     prior <- prior_from_spec(spec, data)
   }
-  if (!is.list(prior) || is.null(prior$type)) {
-    stop("`prior` must be a list with a `type` field, or supply `spec` + `data`.",
+  if (!is.list(prior)) {
+    stop("`prior` must be a list (single block) or list-of-lists (multi-block).",
          call. = FALSE)
   }
-  type <- tolower(prior$type)
   N <- length(y)
   if (is.null(re_idx)) re_idx <- rep(0L, N)
 
@@ -99,6 +98,18 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     x_init_nullable = x_init
   )
 
+  if (.is_multi_block_prior(prior)) {
+    res <- .nl_dispatch_multi(cargs, prior)
+    res$prior <- prior
+    class(res) <- c("tulpa_nested_laplace", "list")
+    return(res)
+  }
+
+  if (is.null(prior$type)) {
+    stop("Single-block `prior` must have a `type` field, ",
+         "or pass a list of blocks for multi-block.", call. = FALSE)
+  }
+  type <- tolower(prior$type)
   res <- .nl_dispatch(type, cargs, prior)
 
   # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
@@ -314,6 +325,29 @@ nested_laplace <- function(...) {
       grid  = cbind(tau = p$tau_grid, rho = p$rho_grid),
       names = c("tau", "rho")
     )
+  ),
+
+  iid = list(
+    # Multi-block-only entry. No standalone `cpp_fn` -- IID with no other
+    # latent structure is just a Gaussian RE, served by the `n_re_groups`
+    # path of `tulpa_nested_laplace()`. This registry entry exists so that
+    # IID can appear as a block inside a multi-block prior (e.g. BYM2 +
+    # AR1 + IID-observer).
+    cpp_fn = NULL,
+    defaults = function(p, a) {
+      if (is.null(p$sigma_grid)) {
+        p$sigma_grid <- exp(seq(log(0.1), log(3), length.out = 5))
+      }
+      p
+    },
+    pack = function(p) stop(
+      "IID is only supported inside a multi-block prior. ",
+      "For a standalone Gaussian RE, use the `re_idx`/`n_re_groups` args ",
+      "of `tulpa_nested_laplace()`.", call. = FALSE
+    ),
+    theta = function(p) list(
+      grid = as.numeric(p$sigma_grid), names = "sigma"
+    )
   )
 )
 
@@ -365,6 +399,187 @@ nested_laplace <- function(...) {
 }
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
+
+# --- Multi-block dispatch ---
+#
+# A multi-block prior is `list(block1, block2, ...)` where each blockN is a
+# list with a `type` field (same shape as a single-block prior). At each
+# outer-grid point all blocks share a Newton solve; the joint grid is the
+# Cartesian product of per-block axes.
+
+.is_multi_block_prior <- function(p) {
+  is.list(p) && is.null(p$type) && length(p) > 0 &&
+    all(vapply(p, function(x) is.list(x) && !is.null(x$type), logical(1)))
+}
+
+# Structural spec for one block sent to cpp_nested_laplace_multi. Grid values
+# go in theta_grid separately; this function returns only the type-specific
+# data needed to build a LatentBlock (idx vector, sizes, adjacency, etc.).
+.nl_block_spec_for_cpp <- function(p) {
+  type <- tolower(p$type)
+  if (type %in% c("icar", "bym2", "car_proper")) {
+    out <- list(
+      type            = type,
+      spatial_idx     = as.integer(p$spatial_idx),
+      n_spatial_units = as.integer(p$n_spatial_units),
+      adj_row_ptr     = as.integer(p$adj_row_ptr),
+      adj_col_idx     = as.integer(p$adj_col_idx),
+      n_neighbors     = as.integer(p$n_neighbors)
+    )
+    if (type == "bym2") {
+      out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
+    }
+    out
+  } else if (type %in% c("rw1", "rw2", "ar1")) {
+    out <- list(
+      type         = type,
+      temporal_idx = as.integer(p$temporal_idx),
+      n_times      = as.integer(p$n_times)
+    )
+    if (type == "rw1") out$cyclic <- isTRUE(p$cyclic)
+    out
+  } else if (type == "iid") {
+    list(
+      type    = "iid",
+      obs_idx = as.integer(p$obs_idx),
+      n_units = as.integer(p$n_units)
+    )
+  } else {
+    stop("Block type '", type, "' is not supported in multi-block priors.",
+         call. = FALSE)
+  }
+}
+
+# Per-block axis grid as a matrix `[n_block_cells x n_axes_for_block]`.
+# Single-axis types (icar / rw1 / rw2 / iid) get a 1-column matrix; 2-axis
+# types (bym2 / car_proper / ar1) get a 2-column matrix.
+.nl_block_axis_grid <- function(p) {
+  spec <- .NL_REGISTRY[[tolower(p$type)]]
+  if (is.null(spec)) {
+    stop("Unknown block type: ", p$type, call. = FALSE)
+  }
+  p <- spec$defaults(p, list())
+  th <- spec$theta(p)
+  if (is.matrix(th$grid)) {
+    grid <- th$grid
+    if (is.null(colnames(grid))) colnames(grid) <- th$names
+  } else {
+    grid <- matrix(as.numeric(th$grid), ncol = 1)
+    colnames(grid) <- th$names
+  }
+  list(grid = grid, names = colnames(grid), prepared = p)
+}
+
+# Soft cap on joint-grid cell count. CCD integration around a pilot mode is
+# the standard fix for k >= 3 blocks (see R/ccd_grid.R); plumbing the pilot
+# search into the multi-block driver is a follow-up. Until then, warn and
+# proceed -- the Cartesian outer integration is still correct, just slower.
+.NL_MULTI_GRID_WARN <- 50L
+.NL_MULTI_GRID_HARD_CAP <- 2048L
+
+.nl_dispatch_multi <- function(cargs, prior_list) {
+  per_block <- lapply(prior_list, .nl_block_axis_grid)
+  prepared  <- lapply(per_block, function(x) x$prepared)
+  block_grids <- lapply(per_block, function(x) x$grid)
+
+  # Cartesian product of per-block row indices.
+  row_counts <- vapply(block_grids, nrow, integer(1))
+  idx <- do.call(expand.grid, lapply(row_counts, seq_len))
+  n_cells <- nrow(idx)
+  if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
+    stop(sprintf(
+      "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or wait for CCD integration support.",
+      n_cells, .NL_MULTI_GRID_HARD_CAP
+    ), call. = FALSE)
+  }
+  if (n_cells > .NL_MULTI_GRID_WARN) {
+    warning(sprintf(
+      "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
+      n_cells, .NL_MULTI_GRID_WARN
+    ), call. = FALSE)
+  }
+
+  # Concatenate per-block axis grids into the joint theta_grid.
+  joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
+    block_grids[[b]][idx[[b]], , drop = FALSE]
+  }))
+  axis_counts  <- vapply(block_grids, ncol, integer(1))
+  axis_offsets <- as.integer(c(0L, cumsum(axis_counts)))
+  # Block-prefix the axis names so they're unambiguous (e.g. block1.tau).
+  axis_names <- unlist(lapply(seq_along(block_grids), function(b) {
+    paste0("b", b, ".", colnames(block_grids[[b]]))
+  }))
+  colnames(joint_grid) <- axis_names
+
+  blocks_spec <- lapply(prepared, .nl_block_spec_for_cpp)
+
+  out <- cpp_nested_laplace_multi(
+    y           = cargs$y,
+    n           = cargs$n,
+    X           = cargs$X,
+    re_idx      = cargs$re_idx,
+    n_re_groups = cargs$n_re_groups,
+    sigma_re    = cargs$sigma_re,
+    blocks_spec = blocks_spec,
+    theta_grid  = joint_grid,
+    axis_offsets = axis_offsets,
+    family      = cargs$family,
+    phi         = cargs$phi,
+    max_iter    = cargs$max_iter,
+    tol         = cargs$tol,
+    n_threads   = cargs$n_threads,
+    x_init_nullable = cargs$x_init_nullable
+  )
+
+  out$theta_grid   <- joint_grid
+  out$theta_names  <- axis_names
+  out$axis_offsets <- axis_offsets
+  out$weights      <- .nl_normalise_weights(out$log_marginal)
+  out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid)
+  out$blocks       <- prepared
+  out
+}
+
+# Posterior moments for multi-block grids. Two flavours:
+#  * joint moments: across all axes (same as single-block 2D scatter).
+#  * per-block marginal moments: integrate out the other blocks' axes.
+.nl_posterior_moments_multi <- function(out, prepared, axis_offsets, joint_grid) {
+  w  <- out$weights
+  tg <- joint_grid
+  out$theta_mean <- as.numeric(crossprod(w, tg))
+  names(out$theta_mean) <- colnames(tg)
+  out$theta_sd <- sqrt(pmax(0, as.numeric(crossprod(w, tg^2)) -
+                              out$theta_mean^2))
+  names(out$theta_sd) <- colnames(tg)
+
+  # Per-block marginals: for each block, sum weights over rows that share the
+  # same per-block axis values, then take weighted mean/sd within those rows.
+  # Because the joint grid is a Cartesian product, the "rows that share this
+  # block's values" form n_block_rows groups indexed by idx[, b]. The marginal
+  # weight for group g is sum of joint weights over its rows.
+  B <- length(prepared)
+  per_block_moments <- vector("list", B)
+  for (b in seq_len(B)) {
+    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+    sub <- joint_grid[, cols, drop = FALSE]
+    block_mean <- as.numeric(crossprod(w, sub))
+    block_sd   <- sqrt(pmax(0, as.numeric(crossprod(w, sub^2)) - block_mean^2))
+    # Use bare per-block axis names (e.g. "tau", "rho") instead of the
+    # joint-grid-prefixed "b<N>.tau" — the block index is already implicit
+    # in the list position.
+    bare_names <- .nl_block_axis_grid(prepared[[b]])$names
+    names(block_mean) <- bare_names
+    names(block_sd)   <- bare_names
+    per_block_moments[[b]] <- list(
+      type      = tolower(prepared[[b]]$type),
+      mean      = block_mean,
+      sd        = block_sd,
+      axis_cols = cols
+    )
+  }
+  out$block_moments <- per_block_moments
+  out
+}
 
 #' Build a `prior` list for [tulpa_nested_laplace()] from a tulpa spec object
 #'

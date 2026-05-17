@@ -128,6 +128,24 @@ public:
         double&                dlog_kappa_out,
         double&                dlog_tau_out
     ) const;
+
+    // Forward-mode tangent. Given a perturbation direction (dz, dlog_kappa,
+    // dlog_tau), fills w_out = L^{-T}(kappa, tau) z and
+    //   dw_out = L^{-T} (dz - Phi(M)^T z)
+    // where M = L^{-1} dQ L^{-T} and
+    //   dQ = dlog_kappa * (4 kappa^2 tau^2 K_for_logkappa)
+    //      + dlog_tau   * (2 Q).
+    // Caches K, Q, L just like forward(); a subsequent backward() call on
+    // the same transform sees the same factorization.
+    void forward_with_tangent(
+        const Eigen::VectorXd& z,
+        const Eigen::VectorXd& dz,
+        double                 kappa,
+        double                 dlog_kappa,
+        double                 tau,
+        double                 dlog_tau,
+        Eigen::VectorXd&       w_out,
+        Eigen::VectorXd&       dw_out);
 };
 
 // Arena hook. Registers a custom_backward block with inputs

@@ -11,11 +11,32 @@ Three-package ecosystem:
 
 Model packages plug likelihoods into tulpa via `LikelihoodSpec` (see `inst/include/tulpa/likelihood.h`).
 
+## Design Philosophy
+
+**2026 Bayesian engine: nested approximation + debias.**
+
+Decompose the posterior so well-behaved blocks get cheap deterministic
+approximations (Laplace, EP, VI, Pathfinder) and exact MCMC corrects only
+the residual directions where the approximation is biased.
+
+Positioning:
+- INLA: nested approximation, **no** debias — biased on non-Gaussian residuals.
+- Stan: exact MCMC, **no** nested approximation — pays full price on every block.
+- tulpa: the synthesis.
+
+Canonical compositions:
+- IMH-Laplace = Laplace body + MH bias correction
+- Pathfinder = L-BFGS mode + Gaussian fit + ELBO scoring
+- nested_laplace + CCD = inner Laplace + outer hyperparameter integration
+
+New backends are framed by which layer they add or replace (approximation,
+debias, or outer integration), not as standalone alternatives.
+
 ## Key Design Principles
 
-1. **Tier system is non-negotiable**: Tier 1 (exact MCMC), Tier 2 (Laplace), Tier 3 (VI). Auto mode never silently chooses Tier 3.
-2. **Gradient progression N→A→A_r→H**: Never skip stages. All modes remain available.
-3. **Runtime gradient verification**: Before sampling, verify active gradient against numerical.
+1. **Tier system encodes correctness, not hot path.** Tier 1 (exact MCMC), Tier 2 (Laplace), Tier 3 (VI). Hot path is consumer-dependent — for Gaussian-latent hierarchical workloads the typical path is Tier 2 with optional Tier 1 debiasing. Auto mode never silently chooses Tier 3.
+2. **Gradient progression N→A→A_r→H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
+3. **Runtime gradient verification**: Before NUTS sampling, verify active gradient against numerical.
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
 5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions.
 
@@ -42,7 +63,7 @@ devtools::check(args = "--no-manual")
 
 ```
 R/          — Spatial, temporal, priors, backends, formula, validation
-src/        — HMC/NUTS, autodiff, spatial priors, temporal priors, Laplace, VI, ESS
+src/        — Laplace, VI, ESS, HMC/NUTS, autodiff, spatial priors, temporal priors
 inst/include/tulpa/ — Exported C++ headers for model packages
 tests/testthat/     — Unit and integration tests
 ```
@@ -50,7 +71,7 @@ tests/testthat/     — Unit and integration tests
 ## Boundary: What Belongs in tulpa vs Model Packages
 
 **tulpa owns** (generic, model-agnostic):
-- Inference engines: NUTS, Laplace, VI, ESS, EM+Laplace, MI correction, Gibbs correction
+- Inference engines: Laplace, EM+Laplace, VI, ESS, NUTS, MI correction, Gibbs correction
 - Autodiff: arena, forward, tape
 - Latent structure: spatial, temporal, RE, SVC, TVC, ST, latent factors
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary
@@ -92,6 +113,54 @@ Model packages inherit via `class = c("model_fit", "tulpa_fit")`.
 tulpa's `R_init_tulpa` calls `M_cholmod_start` which requires Matrix's
 CHOLMOD stubs. Fixed by adding `@importFrom Matrix sparseMatrix` to
 `tulpa-package.R` so Matrix DLL loads before tulpa's init.
+
+## Extensibility: Custom Latent Blocks (design sketch)
+
+For latent structures not provided by the engine (custom GMRFs, novel
+spatial priors, exotic temporal kernels), users supply a templated C++
+snippet that tulpa compiles on-the-fly. Same machinery as `LikelihoodSpec`
++ `LinkingTo: tulpa`, but with an ad-hoc entry point — no full model
+package required.
+
+User writes templated C++ that compiles against tulpa's AD types:
+
+```cpp
+template <typename T>
+Eigen::SparseMatrix<T> my_Q(const Eigen::Matrix<T, Eigen::Dynamic, 1>& theta);
+
+template <typename T>
+Eigen::Matrix<T, Eigen::Dynamic, 1> my_mu(const Eigen::Matrix<T, Eigen::Dynamic, 1>& theta);
+
+template <typename T>
+T my_log_prior(const Eigen::Matrix<T, Eigen::Dynamic, 1>& theta);
+```
+
+User binds it in R:
+
+```r
+custom <- tulpa_custom_latent(
+  cpp_file   = "my_block.cpp",
+  theta_init = c(1, 1),
+  graph      = my_graph
+)
+
+fit <- tulpa_fit(y ~ x + latent(custom), data = d, tier = "laplace")
+```
+
+tulpa compiles via `Rcpp::sourceCpp` against `inst/include/tulpa/`,
+registers the block in the latent-structure registry, and inference
+layers pick it up automatically. Because the user code compiles with
+tulpa's templated AD types (`A`, `A_r`), the block works under **any
+tier including NUTS** — no R callback, no broken gradient chain.
+
+Comparison:
+- INLA `rgeneric`: R callback, no AD, Laplace tier only.
+- INLA `cgeneric`: C function, no AD, faster but no exact-MCMC support.
+- Stan: full DSL + parser + codegen for the entire model.
+- TMB: templated C++ snippet, autodiff via CppAD — closest analog.
+
+Cost: extends existing `LinkingTo: tulpa` machinery with a `sourceCpp`-
+driven entry point. No DSL, no parser, no codegen.
 
 ## Origin
 

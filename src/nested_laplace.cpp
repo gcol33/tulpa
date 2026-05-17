@@ -3,16 +3,19 @@
 //
 // Two flavours of backend live here:
 //
-// 1. Indexed-latent backends (ICAR, CAR_proper, RW1, RW2, AR1): η_i picks one
-//    entry x[latent_start + latent_idx[i] - 1] from a single latent block
-//    (length n_latent). They share compute_eta / scatter / center, and differ
-//    only in (prior_add, log_prior_eval, optional per-grid-point prep). The
-//    shared body lives in run_indexed_nested_laplace; each Rcpp entry is a
-//    thin wrapper that supplies the three callbacks.
+// 1. LatentBlock-based backends (ICAR, BYM2, CAR_proper, RW1, RW2, AR1): each
+//    latent prior block is described by a tulpa::LatentBlock (idx, d_fac,
+//    add_prior, log_prior, prep, center). The generic driver
+//    run_multi_block_nested_laplace takes a std::vector<LatentBlock> and
+//    handles compute_eta, scatter (incl. cross-block Hessian terms), center,
+//    and log_prior in one place. Single-block kernels (ICAR/RW1/RW2/AR1/
+//    CAR_proper) build one block with d_fac = 1.0; BYM2 builds two blocks
+//    (phi structured + theta IID) sharing spatial_idx with grid-dependent
+//    d_fac = sigma_k * sqrt(rho_k) * scale_factor / sigma_k * sqrt(1-rho_k).
 //
-// 2. Non-indexed backends (BYM2, NNGP, HSGP): two latent blocks, batch NNGP
-//    scatter, or basis-rescaled design — the eta/scatter shape genuinely
-//    differs, so each builds its own solve_at_theta lambda directly.
+// 2. Non-LatentBlock backends (NNGP, HSGP): batch scatter or basis-rescaled
+//    design — the eta/scatter shape doesn't fit the LatentBlock abstraction,
+//    so each builds its own solve_at_theta lambda directly.
 //
 // SPDE has its own Q-rebuild pattern and lives in spde_laplace.cpp.
 // Outer-grid loop + warm-starting + result aggregation live in
@@ -24,167 +27,24 @@
 #include "laplace_scatter.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
+#include "latent_block.h"
 #include "nested_laplace_grid.h"
+#include "nested_laplace_multi.h"  // accumulate_latent_cross_terms, run_multi_block_nested_laplace
 #include "hmc_car_proper.h"
 #include "gpu_nngp_laplace.h"
 #include "hmc_hsgp_kernels.h"  // Eigen-free spectral density only
 #include <Rcpp.h>
+#include <algorithm>
 #include <functional>
 #include <limits>
 #include <memory>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 namespace {
-
-// Standard linear predictor: X*beta + optional RE + x[latent_start + latent_idx[i]-1].
-// Used by ICAR, CAR_proper, RW1, RW2, AR1.
-inline void nl_compute_eta(
-    const Rcpp::NumericVector& x,
-    Rcpp::NumericVector& eta,
-    int N, int p, int n_re_groups,
-    const Rcpp::NumericMatrix& X,
-    const Rcpp::NumericVector& re_idx,
-    int latent_start, int n_latent,
-    const Rcpp::IntegerVector& latent_idx,
-    int n_threads
-) {
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-#endif
-    for (int i = 0; i < N; i++) {
-        eta[i] = 0.0;
-        for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-        if (n_re_groups > 0) {
-            int g = (int)re_idx[i] - 1;
-            if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-        }
-        int l = latent_idx[i] - 1;
-        if (l >= 0 && l < n_latent) eta[i] += x[latent_start + l];
-    }
-}
-
-// Scatter (eff_idx build + scatter_obs_with_latent) for simple index-based backends.
-// The prior call and add_re_beta_priors remain in the caller.
-inline void nl_scatter_obs_indexed(
-    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
-    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
-    int N, int p, int n_re_groups,
-    const Rcpp::NumericVector& eta,
-    const std::string& family, double phi,
-    int latent_start, int n_latent,
-    const Rcpp::IntegerVector& latent_idx,
-    tulpa::DenseVec& grad, tulpa::DenseMat& H,
-    int n_threads
-) {
-    std::vector<int> eff_idx(N, -1);
-    std::vector<double> d_fac(N, 1.0);
-    for (int i = 0; i < N; i++) {
-        int l = latent_idx[i] - 1;
-        if (l >= 0 && l < n_latent) eff_idx[i] = latent_start + l;
-    }
-    tulpa::scatter_obs_with_latent(y, n_trials, X, re_idx, N, p, n_re_groups,
-                                    eta, family, phi, eff_idx, d_fac,
-                                    grad, H, n_threads);
-}
-
-// Generic outer-grid driver for indexed-latent nested Laplace backends.
-//
-// Shared body for ICAR, CAR_proper, RW1, RW2, AR1: each has a single latent
-// block of length n_latent picked by latent_idx (one entry per observation),
-// the same X*beta + RE + x[latent_start + latent_idx[i] - 1] eta, and the
-// same scatter_obs_with_latent + add_re_beta_priors structure. Backends
-// differ only in:
-//
-//   prep_at_grid(k)      : optional per-grid-point precompute (e.g. log|Q(rho)|
-//                          for proper CAR). Returns false to short-circuit the
-//                          inner solve at this k with log_marginal = -inf.
-//                          Pass a no-op `[](int){ return true; }` if not needed.
-//   add_prior_at_k(...)  : adds the latent-block prior contribution to (grad, H)
-//                          at grid point k (e.g. add_icar_prior, add_ar1_precision).
-//   log_prior_at_k(x, k) : returns the latent-block log-prior at grid point k
-//                          (e.g. log_prior_icar). The shared driver adds the
-//                          RE/beta log-prior on top.
-//
-// Caller-provided x_init is passed through as the warm-start for grid point 0.
-// Backend-specific output keys (tau_grid, rho_grid, ...) are added by the
-// caller to the returned list.
-template<typename PrepFn, typename AddPriorFn, typename LogPriorFn>
-inline Rcpp::List run_indexed_nested_laplace(
-    int n_grid,
-    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
-    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
-    int N, int p, int n_re_groups, double sigma_re,
-    int latent_start, int n_latent,
-    const Rcpp::IntegerVector& latent_idx,
-    const std::string& family, double phi,
-    int max_iter, double tol, int n_threads,
-    bool store_modes,
-    const Rcpp::NumericVector& x_init,
-    PrepFn prep_at_grid,
-    AddPriorFn add_prior_at_k,
-    LogPriorFn log_prior_at_k,
-    bool store_Q = false
-) {
-    int n_x = p + n_re_groups + n_latent;
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
-    tulpa::SparseCholeskySolver shared_solver;
-
-    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
-        -> tulpa::LaplaceResult
-    {
-        if (!prep_at_grid(k)) {
-            // Short-circuit: per-grid-point precompute reported a non-PD prior.
-            // Emit -inf log-marginal; caller's weight normaliser will skip it.
-            tulpa::LaplaceResult bad;
-            bad.mode = (prev_mode.size() == n_x) ? prev_mode :
-                       Rcpp::NumericVector(n_x, 0.0);
-            bad.log_marginal = -std::numeric_limits<double>::infinity();
-            bad.n_iter = 0;
-            bad.converged = false;
-            bad.log_det_Q = 0.0;
-            return bad;
-        }
-
-        auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            nl_compute_eta(x, eta, N, p, n_re_groups, X, re_idx,
-                           latent_start, n_latent, latent_idx, n_threads);
-        };
-
-        auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
-                           tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            nl_scatter_obs_indexed(y, n_trials, X, re_idx, N, p, n_re_groups,
-                                    eta, family, phi,
-                                    latent_start, n_latent, latent_idx,
-                                    grad, H, n_threads);
-            add_prior_at_k(grad, H, x, k);
-            tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
-        };
-
-        auto center = [&](Rcpp::NumericVector& x) {
-            tulpa::center_effects(x, latent_start, n_latent);
-        };
-
-        auto log_prior = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector&) {
-            double lp = tulpa::compute_log_prior_re(x, p, n_re_groups, tau_re);
-            lp += log_prior_at_k(x, k);
-            return lp;
-        };
-
-        return tulpa::laplace_newton_solve(
-            y, n_trials, family, phi, N, n_x,
-            max_iter, tol, n_threads,
-            compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver, store_Q
-        );
-    };
-
-    return tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, store_modes
-    );
-}
 
 // Convenience: extract optional warm-start mode from an Rcpp Nullable into an
 // owning NumericVector (empty vector when null). Used by every indexed shim.
@@ -198,6 +58,10 @@ inline Rcpp::NumericVector unwrap_x_init(
 }
 
 } // namespace
+
+// Bring the multi-block driver into the anonymous-namespace caller scope so
+// the per-kernel Rcpp wrappers below can dispatch without a tulpa:: prefix.
+namespace { using tulpa::run_multi_block_nested_laplace; }
 
 // =====================================================================
 // Nested Laplace: ICAR (1D grid over tau_spatial)
@@ -222,22 +86,31 @@ Rcpp::List cpp_nested_laplace_icar(
     int p = X.ncol();
     int spatial_start = p + n_re_groups;
 
-    auto add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                         const Rcpp::NumericVector& x, int k) {
-        tulpa::add_icar_prior(grad, H, x, spatial_start, n_spatial_units, tau_grid[k],
-                               adj_row_ptr, adj_col_idx, n_neighbors);
+    tulpa::LatentBlock block;
+    block.start = spatial_start;
+    block.size  = n_spatial_units;
+    block.idx   = [&](int i) { return spatial_idx[i]; };
+    block.d_fac = [](int) { return 1.0; };
+    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                          const Rcpp::NumericVector& x, int k) {
+        tulpa::add_icar_prior(grad, H, x, spatial_start, n_spatial_units,
+                               tau_grid[k], adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    auto log_prior = [&](const Rcpp::NumericVector& x, int k) {
+    block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_icar(x, spatial_start, n_spatial_units, tau_grid[k],
                                        adj_row_ptr, adj_col_idx, n_neighbors);
     };
+    block.center = [&](Rcpp::NumericVector& x) {
+        tulpa::center_effects(x, spatial_start, n_spatial_units);
+    };
 
-    Rcpp::List out = run_indexed_nested_laplace(
+    std::vector<tulpa::LatentBlock> blocks{ block };
+
+    Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        spatial_start, n_spatial_units, spatial_idx,
+        blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior,
         store_Q
     );
     out["tau_grid"] = tau_grid;
@@ -249,6 +122,14 @@ Rcpp::List cpp_nested_laplace_icar(
 // =====================================================================
 // BYM2 reparameterization: phi structured (ICAR) + theta IID,
 //   eta_s = sigma * (sqrt(rho) * scale_factor * phi + sqrt(1 - rho) * theta)
+//
+// Port note (Phase A5, plan_multi_block.md): this kernel routes through
+// run_multi_block_nested_laplace with phi and theta as two LatentBlocks.
+// The multi-block compute_eta accumulates `d_fac_b(k) * x[idx_b]` per block,
+// which re-associates the FP multiplication relative to the original
+// `sigma_k * (sqrt_rho * x * scale_factor + sqrt_1_rho * x)` factoring.
+// Result: log_marginal differs at ~1e-8 from pre-refactor (well below the
+// 1e-6 Newton tolerance). See dev_notes/refactor_notes_bym2.md.
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_bym2(
@@ -269,135 +150,76 @@ Rcpp::List cpp_nested_laplace_bym2(
     int n_grid = sigma_spatial_grid.size();
     int N = y.size();
     int p = X.ncol();
-    int n_x = p + n_re_groups + 2 * n_spatial_units;
-
-    tulpa::SparseCholeskySolver shared_solver;
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
-    int phi_start = p + n_re_groups;
+    int phi_start   = p + n_re_groups;
     int theta_start = phi_start + n_spatial_units;
 
-    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
-        -> tulpa::LaplaceResult
-    {
-        double sigma_k = sigma_spatial_grid[k];
-        double rho_k = rho_grid[k];
-        double sqrt_rho = std::sqrt(rho_k + 1e-10);
-        double sqrt_1_rho = std::sqrt(1.0 - rho_k + 1e-10);
-
-        auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                if (n_spatial_units > 0) {
-                    int s = spatial_idx[i] - 1;
-                    if (s >= 0 && s < n_spatial_units) {
-                        eta[i] += sigma_k * (
-                            sqrt_rho * x[phi_start + s] * scale_factor +
-                            sqrt_1_rho * x[theta_start + s]
-                        );
-                    }
-                }
+    // phi block: ICAR-structured, mixed with d = sigma_k * sqrt(rho_k) * scale_factor.
+    // theta block: IID, mixed with d = sigma_k * sqrt(1 - rho_k).
+    // Both blocks share spatial_idx. Centering applies only to phi (theta is IID,
+    // identifiability is anchored by the global intercept).
+    tulpa::LatentBlock phi_block;
+    phi_block.start = phi_start;
+    phi_block.size  = n_spatial_units;
+    phi_block.idx   = [&](int i) { return spatial_idx[i]; };
+    phi_block.d_fac = [&, scale_factor](int k) {
+        return sigma_spatial_grid[k] *
+               std::sqrt(rho_grid[k] + 1e-10) * scale_factor;
+    };
+    phi_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                              const Rcpp::NumericVector& x, int /*k*/) {
+        tulpa::add_icar_prior(grad, H, x, phi_start, n_spatial_units, 1.0,
+                               adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    phi_block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
+        // Bare ICAR quadratic at tau = 1 (matches the original BYM2 log_prior).
+        double quad_form = 0.0;
+        for (int s = 0; s < n_spatial_units; s++) {
+            double phi_s = x[phi_start + s];
+            quad_form += n_neighbors[s] * phi_s * phi_s;
+            for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; kk++) {
+                int neighbor = adj_col_idx[kk];
+                if (neighbor > s) quad_form -= 2.0 * phi_s * x[phi_start + neighbor];
             }
-        };
-
-        auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
-                           tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            tulpa::scatter_obs_grad_hess_base(y, n, X, re_idx, N, p, n_re_groups,
-                                               eta, family, phi, grad, H, n_threads);
-
-            double d_phi = sigma_k * sqrt_rho * scale_factor;
-            double d_theta = sigma_k * sqrt_1_rho;
-
-            for (int i = 0; i < N; i++) {
-                if (n_spatial_units <= 0) continue;
-                int s = spatial_idx[i] - 1;
-                if (s < 0 || s >= n_spatial_units) continue;
-
-                auto gh = tulpa::grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-                int pidx = phi_start + s;
-                int tidx = theta_start + s;
-
-                grad[pidx] += gh.grad * d_phi;
-                grad[tidx] += gh.grad * d_theta;
-                H[pidx][pidx] += gh.neg_hess * d_phi * d_phi;
-                H[tidx][tidx] += gh.neg_hess * d_theta * d_theta;
-                H[pidx][tidx] += gh.neg_hess * d_phi * d_theta;
-                H[tidx][pidx] += gh.neg_hess * d_phi * d_theta;
-
-                for (int j = 0; j < p; j++) {
-                    H[j][pidx] += gh.neg_hess * X(i, j) * d_phi;
-                    H[pidx][j] += gh.neg_hess * X(i, j) * d_phi;
-                    H[j][tidx] += gh.neg_hess * X(i, j) * d_theta;
-                    H[tidx][j] += gh.neg_hess * X(i, j) * d_theta;
-                }
-
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) {
-                        H[p + g][pidx] += gh.neg_hess * d_phi;
-                        H[pidx][p + g] += gh.neg_hess * d_phi;
-                        H[p + g][tidx] += gh.neg_hess * d_theta;
-                        H[tidx][p + g] += gh.neg_hess * d_theta;
-                    }
-                }
-            }
-
-            tulpa::add_icar_prior(grad, H, x, phi_start, n_spatial_units, 1.0,
-                                   adj_row_ptr, adj_col_idx, n_neighbors);
-            for (int s = 0; s < n_spatial_units; s++) {
-                int idx = theta_start + s;
-                grad[idx] -= x[idx];
-                H[idx][idx] += 1.0;
-            }
-            tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
-        };
-
-        auto center = [&](Rcpp::NumericVector& x) {
-            tulpa::center_effects(x, phi_start, n_spatial_units);
-        };
-
-        auto log_prior = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector&) {
-            double lp = tulpa::compute_log_prior_re(x, p, n_re_groups, tau_re);
-            double lp_theta = 0.0;
-            for (int s = 0; s < n_spatial_units; s++) {
-                lp_theta -= 0.5 * x[theta_start + s] * x[theta_start + s];
-            }
-            lp_theta -= 0.5 * n_spatial_units * std::log(2.0 * M_PI);
-            lp += lp_theta;
-            double quad_form = 0.0;
-            for (int s = 0; s < n_spatial_units; s++) {
-                double phi_s = x[phi_start + s];
-                quad_form += n_neighbors[s] * phi_s * phi_s;
-                for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; kk++) {
-                    int neighbor = adj_col_idx[kk];
-                    if (neighbor > s) quad_form -= 2.0 * phi_s * x[phi_start + neighbor];
-                }
-            }
-            lp += -0.5 * quad_form;
-            return lp;
-        };
-
-        return tulpa::laplace_newton_solve(
-            y, n, family, phi, N, n_x,
-            max_iter, tol, n_threads,
-            compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver,
-            store_Q
-        );
+        }
+        return -0.5 * quad_form;
+    };
+    phi_block.center = [&](Rcpp::NumericVector& x) {
+        tulpa::center_effects(x, phi_start, n_spatial_units);
     };
 
-    Rcpp::NumericVector x_init;
-    if (x_init_nullable.isNotNull()) x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
+    tulpa::LatentBlock theta_block;
+    theta_block.start = theta_start;
+    theta_block.size  = n_spatial_units;
+    theta_block.idx   = [&](int i) { return spatial_idx[i]; };
+    theta_block.d_fac = [&](int k) {
+        return sigma_spatial_grid[k] * std::sqrt(1.0 - rho_grid[k] + 1e-10);
+    };
+    theta_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                                const Rcpp::NumericVector& x, int /*k*/) {
+        for (int s = 0; s < n_spatial_units; s++) {
+            int idx = theta_start + s;
+            grad[idx] -= x[idx];
+            H[idx][idx] += 1.0;
+        }
+    };
+    theta_block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
+        double lp = 0.0;
+        for (int s = 0; s < n_spatial_units; s++) {
+            lp -= 0.5 * x[theta_start + s] * x[theta_start + s];
+        }
+        lp -= 0.5 * n_spatial_units * std::log(2.0 * M_PI);
+        return lp;
+    };
+    // theta_block.center left empty (IID, no constraint)
 
-    Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
+    std::vector<tulpa::LatentBlock> blocks{ phi_block, theta_block };
+
+    Rcpp::List out = run_multi_block_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        blocks,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true, unwrap_x_init(x_init_nullable),
+        store_Q
     );
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_grid"] = rho_grid;
@@ -439,34 +261,45 @@ Rcpp::List cpp_nested_laplace_car_proper(
     std::vector<int> adj_ci_v(adj_col_idx.begin(), adj_col_idx.end());
     std::vector<int> n_nbr_v(n_neighbors.begin(), n_neighbors.end());
 
-    // Per-grid-point log|Q(rho_k)|, recomputed by `prep` and consumed by
-    // `log_prior`. Dense O(n^3) is fine for areal graphs (n_spatial < ~500);
-    // swap in sparse Cholesky here if it becomes the bottleneck.
-    double log_det_Q_rho = 0.0;
-    auto prep = [&](int k) -> bool {
+    // Per-grid-point log|Q(rho_k)|, refreshed by block.prep and consumed by
+    // block.log_prior. Dense O(n^3) is fine for areal graphs (n_spatial < ~500);
+    // swap in sparse Cholesky if it becomes the bottleneck.
+    auto log_det_Q_rho = std::make_shared<double>(0.0);
+
+    tulpa::LatentBlock block;
+    block.start = spatial_start;
+    block.size  = n_spatial_units;
+    block.idx   = [&](int i) { return spatial_idx[i]; };
+    block.d_fac = [](int) { return 1.0; };
+    block.prep  = [&, log_det_Q_rho](int k) -> bool {
         std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
             n_spatial_units, adj_rp_v, adj_ci_v, n_nbr_v, rho_grid[k]);
-        log_det_Q_rho = tulpa_car_proper::car_log_det(n_spatial_units, Qmat);
-        return std::isfinite(log_det_Q_rho);
+        *log_det_Q_rho = tulpa_car_proper::car_log_det(n_spatial_units, Qmat);
+        return std::isfinite(*log_det_Q_rho);
     };
-    auto add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                         const Rcpp::NumericVector& x, int k) {
+    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                          const Rcpp::NumericVector& x, int k) {
         tulpa::add_car_proper_prior(grad, H, x, spatial_start, n_spatial_units,
                                      tau_grid[k], rho_grid[k],
                                      adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    auto log_prior = [&](const Rcpp::NumericVector& x, int k) {
+    block.log_prior = [&, log_det_Q_rho](const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_car_proper(x, spatial_start, n_spatial_units,
-                                             tau_grid[k], rho_grid[k], log_det_Q_rho,
+                                             tau_grid[k], rho_grid[k],
+                                             *log_det_Q_rho,
                                              adj_row_ptr, adj_col_idx, n_neighbors);
     };
+    block.center = [&](Rcpp::NumericVector& x) {
+        tulpa::center_effects(x, spatial_start, n_spatial_units);
+    };
 
-    Rcpp::List out = run_indexed_nested_laplace(
+    std::vector<tulpa::LatentBlock> blocks{ block };
+
+    Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        spatial_start, n_spatial_units, spatial_idx,
+        blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        prep, add_prior, log_prior,
         store_Q
     );
     out["tau_grid"] = tau_grid;
@@ -495,20 +328,30 @@ Rcpp::List cpp_nested_laplace_rw1(
     int p = X.ncol();
     int temporal_start = p + n_re_groups;
 
-    auto add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                         const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw1_precision(grad, H, x, temporal_start, n_times, tau_grid[k], cyclic);
+    tulpa::LatentBlock block;
+    block.start = temporal_start;
+    block.size  = n_times;
+    block.idx   = [&](int i) { return temporal_idx[i]; };
+    block.d_fac = [](int) { return 1.0; };
+    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                          const Rcpp::NumericVector& x, int k) {
+        tulpa::add_rw1_precision(grad, H, x, temporal_start, n_times,
+                                  tau_grid[k], cyclic);
     };
-    auto log_prior = [&](const Rcpp::NumericVector& x, int k) {
+    block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_rw1(x, temporal_start, n_times, tau_grid[k], cyclic);
     };
+    block.center = [&](Rcpp::NumericVector& x) {
+        tulpa::center_effects(x, temporal_start, n_times);
+    };
 
-    Rcpp::List out = run_indexed_nested_laplace(
+    std::vector<tulpa::LatentBlock> blocks{ block };
+
+    Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        temporal_start, n_times, temporal_idx,
+        blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior,
         store_Q
     );
     out["tau_grid"] = tau_grid;
@@ -536,20 +379,30 @@ Rcpp::List cpp_nested_laplace_rw2(
     int p = X.ncol();
     int temporal_start = p + n_re_groups;
 
-    auto add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                         const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw2_precision(grad, H, x, temporal_start, n_times, tau_grid[k], false);
+    tulpa::LatentBlock block;
+    block.start = temporal_start;
+    block.size  = n_times;
+    block.idx   = [&](int i) { return temporal_idx[i]; };
+    block.d_fac = [](int) { return 1.0; };
+    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                          const Rcpp::NumericVector& x, int k) {
+        tulpa::add_rw2_precision(grad, H, x, temporal_start, n_times,
+                                  tau_grid[k], false);
     };
-    auto log_prior = [&](const Rcpp::NumericVector& x, int k) {
+    block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_rw2(x, temporal_start, n_times, tau_grid[k], false);
     };
+    block.center = [&](Rcpp::NumericVector& x) {
+        tulpa::center_effects(x, temporal_start, n_times);
+    };
 
-    Rcpp::List out = run_indexed_nested_laplace(
+    std::vector<tulpa::LatentBlock> blocks{ block };
+
+    Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        temporal_start, n_times, temporal_idx,
+        blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior,
         store_Q
     );
     out["tau_grid"] = tau_grid;
@@ -578,24 +431,33 @@ Rcpp::List cpp_nested_laplace_ar1(
     int temporal_start = p + n_re_groups;
 
     // AR1 is proper (full rank) — no sum-to-zero constraint required, but
-    // run_indexed_nested_laplace centers the latent block to stabilise
-    // identifiability against the intercept (matches RW1/RW2/ICAR).
-    auto add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                         const Rcpp::NumericVector& x, int k) {
+    // we still center the latent block to stabilise identifiability against
+    // the intercept (matches RW1/RW2/ICAR).
+    tulpa::LatentBlock block;
+    block.start = temporal_start;
+    block.size  = n_times;
+    block.idx   = [&](int i) { return temporal_idx[i]; };
+    block.d_fac = [](int) { return 1.0; };
+    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                          const Rcpp::NumericVector& x, int k) {
         tulpa::add_ar1_precision(grad, H, x, temporal_start, n_times,
                                   tau_grid[k], rho_grid[k]);
     };
-    auto log_prior = [&](const Rcpp::NumericVector& x, int k) {
+    block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_ar1(x, temporal_start, n_times,
                                       tau_grid[k], rho_grid[k]);
     };
+    block.center = [&](Rcpp::NumericVector& x) {
+        tulpa::center_effects(x, temporal_start, n_times);
+    };
 
-    Rcpp::List out = run_indexed_nested_laplace(
+    std::vector<tulpa::LatentBlock> blocks{ block };
+
+    Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        temporal_start, n_times, temporal_idx,
+        blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        [](int) { return true; }, add_prior, log_prior,
         store_Q
     );
     out["tau_grid"] = tau_grid;

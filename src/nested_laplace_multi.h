@@ -1,0 +1,231 @@
+// nested_laplace_multi.h
+// Shared helpers for the multi-block nested-Laplace driver. Used by both
+// nested_laplace.cpp (single-block kernels routing through length-1
+// LatentBlock vectors) and nested_laplace_multi.cpp (genuine multi-block
+// dispatch from R).
+//
+// The driver assembles the inner solve at each outer-grid point k as:
+//
+//   eta_i  = X_i β + RE_g(i) + Σ_b d_fac_b(k) * x[start_b + idx_b(i) - 1]
+//   grad/H from scatter_obs_grad_hess_base (β, RE)
+//          + accumulate_latent_cross_terms (latent, latent x β, latent x RE)
+//          + Σ_b add_prior_b(k)
+//          + add_re_beta_priors
+//   center : each block's centerer applied to its sub-vector
+//   log_prior = Σ_b log_prior_b(k) + compute_log_prior_re
+//
+// Per-block prep is invoked once at grid point k before the inner solve; if
+// any block reports infeasible (e.g. proper CAR with rho outside the PD
+// interval), the inner solve short-circuits with log_marginal = -inf.
+
+#ifndef TULPA_NESTED_LAPLACE_MULTI_H
+#define TULPA_NESTED_LAPLACE_MULTI_H
+
+#include "laplace_core.h"
+#include "laplace_family_link.h"
+#include "laplace_newton.h"
+#include "laplace_re_priors.h"
+#include "laplace_scatter.h"
+#include "latent_block.h"
+#include "nested_laplace_grid.h"
+#include "sparse_cholesky.h"
+#include <Rcpp.h>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+namespace tulpa {
+
+// Per-observation latent-block scatter for the multi-block driver.
+//
+// Generalizes the BYM2 hand-rolled cross-term loop to a vector of blocks. For
+// each observation i, resolves the active subset of blocks (those whose
+// idx(i) is in [1, size]), then accumulates the latent grad and the latent-
+// {self,β,RE} Hessian cross-terms with d_fac coefficients.
+//
+// β/RE x β/RE blocks are NOT touched here — those are produced by
+// scatter_obs_grad_hess_base. This helper only adds the latent-side
+// contributions.
+//
+// Serial across observations. The latent block count B is small (typically
+// 1-3), so the inner cost is dominated by the base scatter's β x β block.
+inline void accumulate_latent_cross_terms(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int N, int p, int n_re_groups,
+    const Rcpp::NumericVector& eta,
+    const std::string& family, double phi,
+    const std::vector<LatentBlock>& blocks, int k,
+    DenseVec& grad, DenseMat& H
+) {
+    const int B = static_cast<int>(blocks.size());
+    if (B == 0) return;
+
+    std::vector<double> d_fac_cache(B);
+    for (int b = 0; b < B; b++) d_fac_cache[b] = blocks[b].d_fac(k);
+
+    std::vector<int> active_idx;
+    std::vector<double> active_d;
+    active_idx.reserve(B);
+    active_d.reserve(B);
+
+    for (int i = 0; i < N; i++) {
+        active_idx.clear();
+        active_d.clear();
+        for (int b = 0; b < B; b++) {
+            int l_b = blocks[b].idx(i);
+            if (l_b > 0 && l_b <= blocks[b].size) {
+                active_idx.push_back(blocks[b].start + l_b - 1);
+                active_d.push_back(d_fac_cache[b]);
+            }
+        }
+        if (active_idx.empty()) continue;
+
+        auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi);
+
+        int re_g = -1;
+        if (n_re_groups > 0) {
+            int g = static_cast<int>(re_idx[i]) - 1;
+            if (g >= 0 && g < n_re_groups) re_g = g;
+        }
+
+        const int A = static_cast<int>(active_idx.size());
+        for (int a = 0; a < A; a++) {
+            const int idx_a = active_idx[a];
+            const double d_a = active_d[a];
+
+            grad[idx_a] += gh.grad * d_a;
+
+            for (int j = 0; j < p; j++) {
+                double v = gh.neg_hess * X(i, j) * d_a;
+                H[j][idx_a]     += v;
+                H[idx_a][j]     += v;
+            }
+            if (re_g >= 0) {
+                double v = gh.neg_hess * d_a;
+                H[p + re_g][idx_a] += v;
+                H[idx_a][p + re_g] += v;
+            }
+
+            for (int b = 0; b < A; b++) {
+                H[idx_a][active_idx[b]] += gh.neg_hess * d_a * active_d[b];
+            }
+        }
+    }
+}
+
+// Generic outer-grid driver over a vector of LatentBlocks.
+inline Rcpp::List run_multi_block_nested_laplace(
+    int n_grid,
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int N, int p, int n_re_groups, double sigma_re,
+    const std::vector<LatentBlock>& blocks,
+    const std::string& family, double phi,
+    int max_iter, double tol, int n_threads,
+    bool store_modes,
+    const Rcpp::NumericVector& x_init,
+    bool store_Q = false
+) {
+    int n_x = p + n_re_groups;
+    for (const auto& b : blocks) {
+        n_x = std::max(n_x, b.start + b.size);
+    }
+    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
+    SparseCholeskySolver shared_solver;
+
+    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
+        -> LaplaceResult
+    {
+        for (const auto& b : blocks) {
+            if (b.prep && !b.prep(k)) {
+                LaplaceResult bad;
+                bad.mode = (prev_mode.size() == n_x) ? prev_mode :
+                           Rcpp::NumericVector(n_x, 0.0);
+                bad.log_marginal = -std::numeric_limits<double>::infinity();
+                bad.n_iter = 0;
+                bad.converged = false;
+                bad.log_det_Q = 0.0;
+                return bad;
+            }
+        }
+
+        std::vector<double> d_fac_cache(blocks.size());
+        for (size_t b = 0; b < blocks.size(); b++) {
+            d_fac_cache[b] = blocks[b].d_fac(k);
+        }
+
+        auto compute_eta = [&](const Rcpp::NumericVector& x,
+                               Rcpp::NumericVector& eta) {
+            #ifdef _OPENMP
+            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
+            #endif
+            for (int i = 0; i < N; i++) {
+                eta[i] = 0.0;
+                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
+                if (n_re_groups > 0) {
+                    int g = static_cast<int>(re_idx[i]) - 1;
+                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
+                }
+                for (size_t b = 0; b < blocks.size(); b++) {
+                    int l = blocks[b].idx(i);
+                    if (l > 0 && l <= blocks[b].size) {
+                        eta[i] += d_fac_cache[b] * x[blocks[b].start + l - 1];
+                    }
+                }
+            }
+        };
+
+        auto scatter = [&](const Rcpp::NumericVector& x,
+                           const Rcpp::NumericVector& eta,
+                           DenseVec& grad, DenseMat& H) {
+            scatter_obs_grad_hess_base(y, n_trials, X, re_idx,
+                                        N, p, n_re_groups,
+                                        eta, family, phi,
+                                        grad, H, n_threads);
+            accumulate_latent_cross_terms(y, n_trials, X, re_idx,
+                                           N, p, n_re_groups,
+                                           eta, family, phi,
+                                           blocks, k, grad, H);
+            for (const auto& b : blocks) {
+                if (b.add_prior) b.add_prior(grad, H, x, k);
+            }
+            add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
+        };
+
+        auto center = [&](Rcpp::NumericVector& x) {
+            for (const auto& b : blocks) {
+                if (b.center) b.center(x);
+            }
+        };
+
+        auto log_prior = [&](const Rcpp::NumericVector& x,
+                             const Rcpp::NumericVector&) {
+            double lp = compute_log_prior_re(x, p, n_re_groups, tau_re);
+            for (const auto& b : blocks) {
+                if (b.log_prior) lp += b.log_prior(x, k);
+            }
+            return lp;
+        };
+
+        return laplace_newton_solve(
+            y, n_trials, family, phi, N, n_x,
+            max_iter, tol, n_threads,
+            compute_eta, scatter, center, log_prior,
+            prev_mode, &shared_solver, store_Q
+        );
+    };
+
+    return run_nested_laplace_grid(
+        n_grid, n_x, solve_at_theta, x_init, store_modes
+    );
+}
+
+} // namespace tulpa
+
+#endif // TULPA_NESTED_LAPLACE_MULTI_H

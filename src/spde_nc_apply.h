@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "tulpa/autodiff_arena.h"
+#include "tulpa/autodiff_fwd.h"
 
 namespace tulpa {
 
@@ -44,6 +45,21 @@ void apply_spde_nc_transform_arena(
     const ModelData&               data,
     const ParamLayout&             layout,
     std::vector<arena::Var>&       spde_w_out);
+
+// Forward-mode (single-seed): each fwd::Dual carries (.val, .grad), so the
+// .grad components of params encode one directional perturbation. We compute
+// the matching (.val, .grad) for the SPDE field w = L^{-T}(theta) z via the
+// closed-form tangent dw = L^{-T}(dz - Phi(M)^T z), with M = L^{-1} dQ L^{-T}
+// and dQ a linear combination of (dQ/dlog_kappa, dQ/dlog_tau) weighted by
+// (dlog_kappa, dlog_tau) from the params .grad slots. Wired into the
+// generic log-post for use by the fwd::Dual instantiation (gradient
+// verification fallback that needs an analytical reference free of
+// finite-difference truncation error).
+void apply_spde_nc_transform_fwd(
+    const std::vector<::fwd::Dual>& params,
+    const ModelData&                data,
+    const ParamLayout&              layout,
+    std::vector<::fwd::Dual>&       spde_w_out);
 
 } // namespace tulpa
 

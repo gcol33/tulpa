@@ -1168,7 +1168,9 @@ List cpp_test_spde_nc_transform_grad(
     Rcpp::NumericVector z_init,
     double log_kappa_val,
     double log_tau_val,
-    double fd_eps = 1e-5
+    double fd_eps = 1e-5,
+    Rcpp::Nullable<Rcpp::NumericVector> poles_nullable   = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
   using tulpa::arena::Arena;
   using tulpa::arena::ArenaScope;
@@ -1182,6 +1184,13 @@ List cpp_test_spde_nc_transform_grad(
   std::vector<int>    G1_iv(G1_i.begin(), G1_i.end());
   std::vector<int>    G1_pv(G1_p.begin(), G1_p.end());
 
+  // Rational coefficients (optional). Empty -> integer alpha=2.
+  std::vector<double> poles_v, weights_v;
+  if (poles_nullable.isNotNull() && weights_nullable.isNotNull()) {
+    poles_v   = Rcpp::as<std::vector<double>>(poles_nullable);
+    weights_v = Rcpp::as<std::vector<double>>(weights_nullable);
+  }
+
   // Reverse-mode arena gradient.
   std::vector<double> grad_z_arena(n, 0.0);
   double grad_log_kappa_arena = 0.0;
@@ -1189,7 +1198,7 @@ List cpp_test_spde_nc_transform_grad(
   double L_arena = 0.0;
   {
     SpdeNcTransform transform;
-    transform.init(n, C0_d, G1_xv, G1_iv, G1_pv);
+    transform.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
 
     ArenaScope scope;
     Arena* ar = scope.arena();
@@ -1217,7 +1226,7 @@ List cpp_test_spde_nc_transform_grad(
   auto eval_loss = [&](const std::vector<double>& z_pt,
                        double log_k, double log_t) -> double {
     SpdeNcTransform transform;
-    transform.init(n, C0_d, G1_xv, G1_iv, G1_pv);
+    transform.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
     Eigen::VectorXd z_e(n);
     for (int i = 0; i < n; i++) z_e[i] = z_pt[i];
     Eigen::VectorXd w = transform.forward(z_e, std::exp(log_k), std::exp(log_t));
@@ -1252,5 +1261,114 @@ List cpp_test_spde_nc_transform_grad(
     _["grad_log_kappa_fd"]    = grad_log_kappa_fd,
     _["grad_log_tau_arena"]   = grad_log_tau_arena,
     _["grad_log_tau_fd"]      = grad_log_tau_fd
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SPDE non-centered transform: forward-mode tangent vs central differences
+// ---------------------------------------------------------------------------
+//
+// Validates SpdeNcTransform::forward_with_tangent, the kernel powering the
+// fwd::Dual instantiation of compute_log_post_generic for joint-NUTS SPDE.
+// For each scalar input axis (z[0]..z[n-1], log_kappa, log_tau) we seed a
+// unit tangent, run forward_with_tangent, and compare the resulting dw
+// against central differences of forward() along the same axis.
+// [[Rcpp::export]]
+List cpp_test_spde_nc_transform_fwd(
+    Rcpp::NumericVector C0_diag,
+    Rcpp::NumericVector G1_x,
+    Rcpp::IntegerVector G1_i,
+    Rcpp::IntegerVector G1_p,
+    Rcpp::NumericVector z_init,
+    double log_kappa_val,
+    double log_tau_val,
+    double fd_eps = 1e-5,
+    Rcpp::Nullable<Rcpp::NumericVector> poles_nullable   = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
+) {
+  using tulpa::SpdeNcTransform;
+  const int n = z_init.size();
+
+  std::vector<double> C0_d(C0_diag.begin(), C0_diag.end());
+  std::vector<double> G1_xv(G1_x.begin(), G1_x.end());
+  std::vector<int>    G1_iv(G1_i.begin(), G1_i.end());
+  std::vector<int>    G1_pv(G1_p.begin(), G1_p.end());
+
+  std::vector<double> poles_v, weights_v;
+  if (poles_nullable.isNotNull() && weights_nullable.isNotNull()) {
+    poles_v   = Rcpp::as<std::vector<double>>(poles_nullable);
+    weights_v = Rcpp::as<std::vector<double>>(weights_nullable);
+  }
+
+  const double kappa = std::exp(log_kappa_val);
+  const double tau   = std::exp(log_tau_val);
+
+  Eigen::VectorXd z(n);
+  for (int i = 0; i < n; i++) z[i] = z_init[i];
+
+  Eigen::VectorXd w_baseline;
+  {
+    SpdeNcTransform tx;
+    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
+    w_baseline = tx.forward(z, kappa, tau);
+  }
+
+  auto forward_at = [&](const Eigen::VectorXd& z_pt,
+                        double log_k, double log_t) -> Eigen::VectorXd {
+    SpdeNcTransform tx;
+    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
+    return tx.forward(z_pt, std::exp(log_k), std::exp(log_t));
+  };
+
+  Rcpp::NumericMatrix dw_fwd(n, n + 2);
+  Rcpp::NumericMatrix dw_fd (n, n + 2);
+
+  for (int i = 0; i < n; i++) {
+    SpdeNcTransform tx;
+    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
+    Eigen::VectorXd dz = Eigen::VectorXd::Zero(n);
+    dz[i] = 1.0;
+    Eigen::VectorXd w_v, dw_v;
+    tx.forward_with_tangent(z, dz, kappa, 0.0, tau, 0.0, w_v, dw_v);
+    for (int k = 0; k < n; k++) dw_fwd(k, i) = dw_v[k];
+
+    Eigen::VectorXd z_pt = z;
+    z_pt[i] += fd_eps;
+    Eigen::VectorXd wp = forward_at(z_pt, log_kappa_val, log_tau_val);
+    z_pt[i] -= 2 * fd_eps;
+    Eigen::VectorXd wm = forward_at(z_pt, log_kappa_val, log_tau_val);
+    for (int k = 0; k < n; k++) dw_fd(k, i) = (wp[k] - wm[k]) / (2 * fd_eps);
+  }
+
+  {
+    SpdeNcTransform tx;
+    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
+    Eigen::VectorXd dz0 = Eigen::VectorXd::Zero(n);
+    Eigen::VectorXd w_v, dw_v;
+    tx.forward_with_tangent(z, dz0, kappa, 1.0, tau, 0.0, w_v, dw_v);
+    for (int k = 0; k < n; k++) dw_fwd(k, n) = dw_v[k];
+
+    Eigen::VectorXd wp = forward_at(z, log_kappa_val + fd_eps, log_tau_val);
+    Eigen::VectorXd wm = forward_at(z, log_kappa_val - fd_eps, log_tau_val);
+    for (int k = 0; k < n; k++) dw_fd(k, n) = (wp[k] - wm[k]) / (2 * fd_eps);
+  }
+
+  {
+    SpdeNcTransform tx;
+    tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
+    Eigen::VectorXd dz0 = Eigen::VectorXd::Zero(n);
+    Eigen::VectorXd w_v, dw_v;
+    tx.forward_with_tangent(z, dz0, kappa, 0.0, tau, 1.0, w_v, dw_v);
+    for (int k = 0; k < n; k++) dw_fwd(k, n + 1) = dw_v[k];
+
+    Eigen::VectorXd wp = forward_at(z, log_kappa_val, log_tau_val + fd_eps);
+    Eigen::VectorXd wm = forward_at(z, log_kappa_val, log_tau_val - fd_eps);
+    for (int k = 0; k < n; k++) dw_fd(k, n + 1) = (wp[k] - wm[k]) / (2 * fd_eps);
+  }
+
+  return List::create(
+    _["w"]      = NumericVector(w_baseline.data(), w_baseline.data() + n),
+    _["dw_fwd"] = dw_fwd,
+    _["dw_fd"]  = dw_fd
   );
 }

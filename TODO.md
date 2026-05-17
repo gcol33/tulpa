@@ -274,24 +274,50 @@ Three dedups and two splits landed on 2026-05-02:
 ## P1 — Sibling-package work
 
 ### 2. Joint NUTS over (log_kappa, log_tau_spde) for SpatialType::SPDE
-**State:** `(b)` Phase 1 shipped — SPDE is now a first-class
-`SpatialType` with `SpdeModelData` on `ModelData`, `spde_w_start/end` +
-reserved `log_kappa_spde_idx` / `log_tau_spde_idx` in `ParamLayout`,
-`tulpa_priors_spde.h::compute_spde_prior` wired through
-`log_post_generic_impl.h`, and `cpp_tulpa_fit_spde_nuts` refactored to
-use the structured HMC path. ABI 15 → 16.
-**Blocker:** Phase 2 (joint NUTS) needs a non-centered z = L^{-T} w
-reparameterization (user-selected design), which in turn needs
-`tulpa::arena` AD to support a sparse-Cholesky adjoint. The current
-arena has fixed 2-operand SoA nodes with no custom-backward hook —
-adding one is a multi-day arena extension, not a single-session task.
-**Action:** (i) design + implement a `custom_backward` node type for
-`tulpa::arena` that accepts a user-supplied adjoint callback; (ii) wire
-a sparse-Cholesky forward + adjoint pair (factor Q from current
-log_kappa/log_tau, back-solve L^{-T} z = w, adjoint via standard
-Cholesky derivative formula); (iii) flip `cpp_tulpa_fit_spde_nuts` to
-sample (log_kappa, log_tau, z, beta, log_phi) jointly using the
-reserved layout slots.
+**State:** shipped 2026-05-17. Integer alpha = 2 and rational fractional
+alpha both supported. Recovery verified:
+- Integer slim tier (3 seeds, N=150, J=8) green; full tier (10 seeds,
+  N=250) gated behind `TULPA_FULL_RECOVERY=true`.
+- Rational adjoint vs central differences (nu=0.5, m=2 poles) green —
+  see `tests/testthat/test-spde-nc-transform.R`.
+- Rational end-to-end smoke (nu=0.5, n_obs=120) shipped in
+  `tests/testthat/test-spde-nuts-joint.R` (wide tolerances; tighter
+  recovery deferred to a gated tier).
+
+Pipeline:
+- (a.i) `Arena::add_custom_backward` variadic-IO AD (`ec79cb8`).
+- (a.ii) `SpdeNcTransform` sparse-Cholesky forward + Murray 2016 adjoint
+  (`49a30ad`, `3842358`).
+- (a.iii) integration: prior on z, NC transform in eta path, PC prior on
+  (range, sigma), R wrapper + recovery test (`810b543` ... `b80c1fe`).
+- (a.iv) rational alpha (`2026-05-17`): K_sum cache on SpdeNcTransform,
+  dQ/dlog_kappa = 4 kappa^2 tau^2 K_sum where K_sum = (kappa^2 W + R_sum) C0 + W G1,
+  W = Σ w_k, R_sum = Σ w_k r_k; plumbed through cpp_tulpa_fit_spde_nuts
+  + R wrapper.
+
+**Open follow-on:** (none — A and B closed 2026-05-17.)
+
+**Shipped 2026-05-17:**
+- (A) Streamed M_θ trace, `src/spde_nc_transform.cpp`. The Murray formula
+  `-<z, Φ(M_θ) y>` decomposes as `-(T_lower + 0.5 D)` where
+  `T_lower = Σ_j y[j] · u_j^T (dQ v_j)` with `u_j = Σ_{i>j} z[i] v_i`,
+  `D = Σ_i (z[i] y[i]) v_i^T (dQ v_i)`, `v_j = L^{-T} e_j`. The recursion
+  `u_j = u_{j-1} - z[j] v_j` (starting from `u_{-1} = L^{-T} z`) folds the
+  per-column outer product into one dense-vector update; peak memory
+  drops from 4 × n_mesh^2 dense intermediates to O(n_mesh). Wall-clock
+  stays dominated by the per-column back-solve (still O(n × nnz(L)));
+  the further reduction to O(n × reach) via sparse RHS walking the elim
+  tree is left as future work.
+- (B) Forward-mode `fwd::Dual` NC transform,
+  `SpdeNcTransform::forward_with_tangent` +
+  `tulpa::apply_spde_nc_transform_fwd`. Closed-form tangent
+  `dw = L^{-T} (dz - Φ(M)^T z)` with `Φ(M)^T z = M z - Φ(M) z`
+  (uses symmetry of M); `M z` is cheap (one matvec + forward solve),
+  `Φ(M) z` is streamed column-by-column. Replaces the `Rcpp::stop` in
+  `log_post_generic_impl.h::initialize_generic_state` for the
+  `T = fwd::Dual` branch, giving an analytical reference for joint-NUTS
+  gradient verification (no FD truncation error). Verified by
+  `tests/testthat/test-spde-nc-transform.R` (integer + rational).
 
 ### 3. Wire SPDE end-to-end in `tulpaObs`
 **Where:** sibling `tulpaObs` (renamed from `tulpaOcc` on 2026-05-13).
