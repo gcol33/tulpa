@@ -410,6 +410,253 @@ tulpa_nmix_laplace_car_proper <- function(y,
   out
 }
 
+#' BYM2 Royle (2004) N-mixture model via nested Laplace
+#'
+#' @description
+#' Nested-Laplace fit of the spatial N-mixture model with a BYM2 (Riebler et al.
+#' 2016) prior on the abundance-arm spatial offset. The offset decomposes as
+#' \deqn{\phi_u = \sigma \left(\sqrt{\rho / s} \, v_u + \sqrt{1 - \rho} \, w_u\right),}
+#' with \eqn{v \sim \mathrm{ICAR}} (unscaled, sum-to-zero) and
+#' \eqn{w \sim \mathrm{N}(0, I)} iid. \eqn{s} is the geometric mean of the
+#' non-zero eigenvalues of the ICAR precision \eqn{Q} (the Riebler scaling
+#' factor); \eqn{\sigma} is then the joint marginal standard deviation of
+#' \eqn{\phi}, and \eqn{\rho \in [0, 1]} is the spatial fraction of variance.
+#'
+#' The inner Newton works in the joint state
+#' \eqn{x = (\beta_\lambda, \beta_p, v, w)} (dimension
+#' \eqn{p_\lambda + p_p + 2 n_{\mathrm{spatial}}}). At the converged mode the
+#' Laplace log-marginal is accumulated; the outer 2D grid integrates over
+#' \eqn{(\sigma, \rho)}.
+#'
+#' @inheritParams tulpa_nmix_laplace_icar
+#' @param sigma_grid Numeric vector of \eqn{\sigma} (joint sd) grid points.
+#'   Defaults to `exp(seq(log(0.2), log(3), length.out = 5L))`.
+#' @param rho_grid Numeric vector of spatial-fraction grid points in
+#'   \eqn{[0, 1]}. Defaults to `c(0.05, 0.3, 0.5, 0.7, 0.95)`.
+#' @param scale_factor Optional scalar Riebler scaling factor (geometric mean
+#'   of non-zero eigenvalues of \eqn{Q}). If `NULL`, it is computed from the
+#'   adjacency via dense eigendecomposition.
+#'
+#' @return A list of class `tulpa_nmix_spatial_fit`:
+#'   * `theta_grid` -- `[n_grid x 2]` matrix of (sigma, rho) per grid point
+#'   * `sigma_grid`, `rho_grid` -- input axes
+#'   * `scale_factor` -- the Riebler scaling factor
+#'   * `log_marginal`, `weights`, `sigma_mean`, `sigma_sd`, `rho_mean`, `rho_sd`
+#'     -- posterior summaries of the joint hyperparameters
+#'   * `modes` -- `[n_grid x (p_lambda + p_p + 2 n_spatial)]` per-grid modes;
+#'     columns `(p_lambda + p_p + 1) .. (p_lambda + p_p + n_spatial)` are `v`,
+#'     the next `n_spatial` columns are `w`
+#'   * `beta_lambda_mean`, `beta_p_mean` -- weighted-mean coefficients
+#'   * `v_mean`, `w_mean` -- weighted-mean ICAR and iid components
+#'   * `phi_mean` -- weighted-mean total offset \eqn{\phi}
+#'   * other diagnostic fields as in [tulpa_nmix_laplace_icar()]
+#'
+#' @references
+#' Riebler, A., Sorbye, S. H., Simpson, D., Rue, H. (2016). An intuitive
+#'   Bayesian spatial model for disease mapping that accounts for scaling.
+#'   *Statistical Methods in Medical Research* 25, 1145-1165.
+#' Morris, M., Wheeler-Martin, K., Simpson, D., Mooney, S. J., Gelman, A.,
+#'   DiMaggio, C. (2019). Bayesian hierarchical spatial models: Implementing
+#'   the BYM2 model in Stan. *Spatial and Spatio-temporal Epidemiology* 31.
+#'
+#' @export
+tulpa_nmix_laplace_bym2 <- function(y,
+                                    site_idx,
+                                    map_site_to_unit,
+                                    X_lambda,
+                                    X_p,
+                                    adj_row_ptr,
+                                    adj_col_idx,
+                                    n_neighbors,
+                                    n_spatial,
+                                    sigma_grid = NULL,
+                                    rho_grid = NULL,
+                                    scale_factor = NULL,
+                                    beta_lambda_init = NULL,
+                                    beta_p_init = NULL,
+                                    v_init = NULL,
+                                    w_init = NULL,
+                                    K_max = NULL,
+                                    max_iter = 100L,
+                                    tol = 1e-6,
+                                    verbose = FALSE) {
+  y                <- as.integer(y)
+  site_idx         <- as.integer(site_idx)
+  map_site_to_unit <- as.integer(map_site_to_unit)
+  if (!is.matrix(X_lambda)) stop("`X_lambda` must be a numeric matrix.", call. = FALSE)
+  if (!is.matrix(X_p))      stop("`X_p` must be a numeric matrix.", call. = FALSE)
+  n_sites <- nrow(X_lambda)
+  n_obs   <- nrow(X_p)
+  p_lam   <- ncol(X_lambda)
+  p_p     <- ncol(X_p)
+  if (length(y) != n_obs) stop("length(y) must equal nrow(X_p).", call. = FALSE)
+  if (length(site_idx) != n_obs) stop("length(site_idx) must equal nrow(X_p).", call. = FALSE)
+  if (length(map_site_to_unit) != n_sites) {
+    stop("length(map_site_to_unit) must equal nrow(X_lambda).", call. = FALSE)
+  }
+  if (any(map_site_to_unit < 1L) || any(map_site_to_unit > n_spatial)) {
+    stop("map_site_to_unit values must lie in [1, n_spatial].", call. = FALSE)
+  }
+  if (length(adj_row_ptr) != n_spatial + 1L) {
+    stop("length(adj_row_ptr) must equal n_spatial + 1.", call. = FALSE)
+  }
+  if (length(n_neighbors) != n_spatial) {
+    stop("length(n_neighbors) must equal n_spatial.", call. = FALSE)
+  }
+  if (is.null(sigma_grid)) {
+    sigma_grid <- exp(seq(log(0.2), log(3), length.out = 5L))
+  }
+  if (is.null(rho_grid)) {
+    rho_grid <- c(0.05, 0.3, 0.5, 0.7, 0.95)
+  }
+  if (any(sigma_grid <= 0)) stop("sigma_grid must be strictly positive.", call. = FALSE)
+  if (any(rho_grid < 0) || any(rho_grid > 1)) {
+    stop("rho_grid values must lie in [0, 1].", call. = FALSE)
+  }
+  if (is.null(scale_factor)) {
+    # Build dense Q = D - W from CSR, compute geometric mean of non-zero
+    # eigenvalues (Riebler scaling).
+    W <- matrix(0, n_spatial, n_spatial)
+    for (s in seq_len(n_spatial)) {
+      a <- adj_row_ptr[s] + 1L
+      b <- adj_row_ptr[s + 1L]
+      if (b >= a) for (kk in a:b) {
+        t <- adj_col_idx[kk] + 1L
+        W[s, t] <- 1
+      }
+    }
+    Q <- diag(as.numeric(n_neighbors)) - W
+    eig <- eigen(Q, symmetric = TRUE, only.values = TRUE)$values
+    nz  <- eig[abs(eig) > 1e-10]
+    scale_factor <- exp(mean(log(nz)))
+  }
+  if (!is.numeric(scale_factor) || length(scale_factor) != 1L || scale_factor <= 0) {
+    stop("scale_factor must be a positive scalar.", call. = FALSE)
+  }
+  if (is.null(beta_lambda_init)) {
+    beta_lambda_init <- c(log(mean(y) + 0.1), rep(0, p_lam - 1L))
+  }
+  if (is.null(beta_p_init)) beta_p_init <- rep(0, p_p)
+  if (length(beta_lambda_init) != p_lam) {
+    stop("length(beta_lambda_init) must equal ncol(X_lambda).", call. = FALSE)
+  }
+  if (length(beta_p_init) != p_p) {
+    stop("length(beta_p_init) must equal ncol(X_p).", call. = FALSE)
+  }
+  if (is.null(K_max)) {
+    K_max <- as.integer(max(y) + 100L)
+  } else {
+    K_max <- as.integer(K_max)
+    if (K_max < max(y)) stop("K_max must be >= max(y).", call. = FALSE)
+  }
+  if (!is.null(v_init) && length(v_init) != n_spatial) {
+    stop("length(v_init) must equal n_spatial.", call. = FALSE)
+  }
+  if (!is.null(w_init) && length(w_init) != n_spatial) {
+    stop("length(w_init) must equal n_spatial.", call. = FALSE)
+  }
+
+  fit <- cpp_nested_laplace_nmix_bym2(
+    y                  = y,
+    site_idx           = site_idx,
+    map_site_to_unit_R = map_site_to_unit,
+    X_lambda_R         = X_lambda,
+    X_p_R              = X_p,
+    adj_row_ptr        = as.integer(adj_row_ptr),
+    adj_col_idx        = as.integer(adj_col_idx),
+    n_neighbors        = as.integer(n_neighbors),
+    n_spatial          = as.integer(n_spatial),
+    sigma_grid         = as.numeric(sigma_grid),
+    rho_grid           = as.numeric(rho_grid),
+    scale_factor       = as.numeric(scale_factor),
+    beta_lambda_init   = as.numeric(beta_lambda_init),
+    beta_p_init        = as.numeric(beta_p_init),
+    v_init             = if (is.null(v_init)) NULL else as.numeric(v_init),
+    w_init             = if (is.null(w_init)) NULL else as.numeric(w_init),
+    K_max              = K_max,
+    max_iter           = as.integer(max_iter),
+    tol                = as.numeric(tol),
+    verbose            = isTRUE(verbose)
+  )
+
+  # Normalise grid weights (joint over (sigma, rho)).
+  lm <- fit$log_marginal
+  finite_lm <- lm[is.finite(lm)]
+  if (length(finite_lm) == 0L) {
+    warning("All grid points returned non-finite log_marginal -- check grids / data.",
+            call. = FALSE)
+    weights <- rep(NA_real_, length(lm))
+  } else {
+    m <- max(finite_lm)
+    w <- exp(lm - m)
+    w[!is.finite(w)] <- 0
+    if (sum(w) == 0) {
+      weights <- rep(NA_real_, length(lm))
+    } else {
+      weights <- w / sum(w)
+    }
+  }
+
+  sigma_vec <- fit$theta_grid[, 1]
+  rho_vec   <- fit$theta_grid[, 2]
+  sigma_mean <- sum(weights * sigma_vec, na.rm = TRUE)
+  sigma_sd   <- sqrt(max(0, sum(weights * sigma_vec^2, na.rm = TRUE) - sigma_mean^2))
+  rho_mean   <- sum(weights * rho_vec, na.rm = TRUE)
+  rho_sd     <- sqrt(max(0, sum(weights * rho_vec^2, na.rm = TRUE) - rho_mean^2))
+
+  modes <- fit$modes
+  beta_lambda_mean <- as.numeric(crossprod(weights, modes[, seq_len(p_lam), drop = FALSE]))
+  beta_p_mean      <- as.numeric(crossprod(
+    weights, modes[, p_lam + seq_len(p_p), drop = FALSE]
+  ))
+  v_idx <- p_lam + p_p + seq_len(n_spatial)
+  w_idx <- p_lam + p_p + n_spatial + seq_len(n_spatial)
+  v_mean <- as.numeric(crossprod(weights, modes[, v_idx, drop = FALSE]))
+  w_mean <- as.numeric(crossprod(weights, modes[, w_idx, drop = FALSE]))
+
+  # Weighted-mean total offset phi = sum_k w_k * sigma_k * (a_k v_k + b_k w_k).
+  phi_grid <- matrix(0, nrow = nrow(modes), ncol = n_spatial)
+  for (k in seq_len(nrow(modes))) {
+    sg <- sigma_vec[k]; rg <- rho_vec[k]
+    a_k <- sg * sqrt(rg / scale_factor)
+    b_k <- sg * sqrt(1 - rg)
+    phi_grid[k, ] <- a_k * modes[k, v_idx] + b_k * modes[k, w_idx]
+  }
+  phi_mean <- as.numeric(crossprod(weights, phi_grid))
+
+  nm_lam <- colnames(X_lambda)
+  nm_p   <- colnames(X_p)
+  if (is.null(nm_lam)) nm_lam <- paste0("lam_", seq_len(p_lam))
+  if (is.null(nm_p))   nm_p   <- paste0("p_", seq_len(p_p))
+  names(beta_lambda_mean) <- nm_lam
+  names(beta_p_mean)      <- nm_p
+
+  out <- c(fit, list(
+    weights          = weights,
+    sigma_mean       = sigma_mean,
+    sigma_sd         = sigma_sd,
+    rho_mean         = rho_mean,
+    rho_sd           = rho_sd,
+    beta_lambda_mean = beta_lambda_mean,
+    beta_p_mean      = beta_p_mean,
+    v_mean           = v_mean,
+    w_mean           = w_mean,
+    phi_mean         = phi_mean,
+    n_sites          = n_sites,
+    n_obs            = n_obs,
+    prior_type       = "bym2",
+    call             = match.call()
+  ))
+  if (any(out$boundary_max > 1e-4, na.rm = TRUE)) {
+    warning(sprintf(
+      "Max posterior weight on N = K_max is %.2e at one or more grid points; raise K_max.",
+      max(out$boundary_max, na.rm = TRUE)
+    ), call. = FALSE)
+  }
+  class(out) <- c("tulpa_nmix_spatial_fit", "list")
+  out
+}
+
 #' @export
 print.tulpa_nmix_spatial_fit <- function(x, ...) {
   ptype <- x$prior_type %||% "icar"
@@ -426,6 +673,15 @@ print.tulpa_nmix_spatial_fit <- function(x, ...) {
                 min(x$tau_grid), max(x$tau_grid), x$n_grid))
     cat(sprintf("  tau_mean = %.3g   tau_sd = %.3g\n",
                 x$tau_mean, x$tau_sd))
+  } else if (ptype == "bym2") {
+    cat(sprintf("  sigma grid = [%.3g, %.3g] x %d   rho grid = [%.3g, %.3g] x %d\n",
+                min(x$sigma_grid), max(x$sigma_grid), length(x$sigma_grid),
+                min(x$rho_grid), max(x$rho_grid), length(x$rho_grid)))
+    cat(sprintf("  scale_factor = %.4g\n", x$scale_factor))
+    cat(sprintf("  sigma_mean = %.3g   sigma_sd = %.3g\n",
+                x$sigma_mean, x$sigma_sd))
+    cat(sprintf("  rho_mean   = %.3g   rho_sd   = %.3g\n",
+                x$rho_mean, x$rho_sd))
   } else {
     cat(sprintf("  tau grid = [%.3g, %.3g] x %d   rho grid = [%.3g, %.3g] x %d\n",
                 min(x$tau_grid), max(x$tau_grid), length(x$tau_grid),
