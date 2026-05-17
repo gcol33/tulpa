@@ -1626,6 +1626,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$weights      <- .nl_normalise_weights(res$log_marginal)
     res <- .joint_posterior_moments_multi(res, prepared, axis_offsets,
                                            joint_grid, cp)
+    res$arm_layout  <- .joint_multi_layout(arms, prepared)
     res$blocks      <- prepared
     res$prior       <- prior_list
     res$responses   <- responses
@@ -1634,6 +1635,81 @@ tulpa_nested_laplace_joint <- function(responses,
                     "tulpa_nested_laplace_joint",
                     "tulpa_nested_laplace", "list")
     res
+}
+
+# Latent-vector layout for the multi-block joint result. Mirrors the
+# single-block `.joint_layout()` but generalised over `prepared` blocks:
+# per-arm beta, per-arm RE, then each prepared block in order. For
+# back-compat with single-block consumers (e.g. tulpaObs cover-hurdle's
+# `.joint_field_at_obs_copy_multi`), the first spatial-like block also
+# emits `phi_start` / `theta_start` aliases:
+#
+#   * BYM2  -> phi_start, theta_start (length-2 sub-block).
+#   * ICAR / CAR_proper -> phi_start (length-1).
+#
+# Non-spatial blocks expose `block_start[b]` so callers can index into
+# any block by ordinal position.
+.joint_multi_layout <- function(arms, prepared) {
+    n_arms <- length(arms)
+    p_arm  <- vapply(arms, function(a) ncol(a$X),     integer(1))
+    n_re   <- vapply(arms, function(a) a$n_re_groups, integer(1))
+
+    beta_start <- integer(n_arms)
+    cur <- 0L
+    for (k in seq_len(n_arms)) {
+        beta_start[k] <- cur
+        cur <- cur + p_arm[k]
+    }
+    re_start <- integer(n_arms)
+    for (k in seq_len(n_arms)) {
+        re_start[k] <- cur
+        cur <- cur + n_re[k]
+    }
+
+    B <- length(prepared)
+    block_start <- integer(B)
+    block_size  <- integer(B)
+    phi_start   <- NULL
+    theta_start <- NULL
+    for (b in seq_len(B)) {
+        block_start[b] <- cur
+        type <- tolower(prepared[[b]]$type %||% "")
+        # Latent size per block. BYM2 is length-2 (phi ICAR + theta IID)
+        # on n_spatial_units; all other blocks are length-1 on the
+        # block's `n_spatial_units` / `n_times` / `n_units`.
+        n_units <- prepared[[b]]$n_spatial_units %||%
+                   prepared[[b]]$n_times         %||%
+                   prepared[[b]]$n_units         %||% 0L
+        n_units <- as.integer(n_units)
+        if (type == "bym2") {
+            block_size[b] <- 2L * n_units
+            if (is.null(phi_start)) {
+                phi_start   <- cur
+                theta_start <- cur + n_units
+            }
+        } else {
+            block_size[b] <- n_units
+            if (is.null(phi_start) && type %in% c("icar", "car_proper")) {
+                phi_start <- cur
+            }
+        }
+        cur <- cur + block_size[b]
+    }
+    n_x <- cur
+
+    out <- list(
+        n_arms      = n_arms,
+        p           = p_arm,
+        n_re        = n_re,
+        beta_start  = beta_start,
+        re_start    = re_start,
+        block_start = block_start,
+        block_size  = block_size,
+        n_x         = n_x
+    )
+    if (!is.null(phi_start))   out$phi_start   <- phi_start
+    if (!is.null(theta_start)) out$theta_start <- theta_start
+    out
 }
 
 # Posterior moments for the multi-block joint grid. Mirrors the single-arm
