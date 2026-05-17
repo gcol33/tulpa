@@ -10,9 +10,8 @@
 //                 + Σ_b arm_scale_b(k_arm, k) * d_fac_b(k)
 //                       * x[start_b + idx_b(i, k_arm) - 1]
 //
-//   grad/H from per-arm beta/RE scatter (scatter_arm_obs_joint_generic
-//          inlined here with multi-block latent terms instead of the
-//          fixed n_sub <= 2 spatial sub-blocks)
+//   grad/H from per-arm scatter (β/β, β/RE, RE/RE diagonal blocks
+//          per arm, plus latent/{β, RE, latent} cross-terms per block)
 //          + Σ_b add_prior_b(k)
 //          + add_per_arm_beta_re_priors
 //
@@ -51,11 +50,12 @@ namespace tulpa {
 
 // Per-observation latent-block scatter for one arm at one grid point.
 //
-// Generalises scatter_arm_obs_joint_generic from
-// nested_laplace_joint_core.h: replaces the fixed-size {phi, theta}
-// spatial sub-block loop with a variable-length blocks vector and lets
-// each block's contribution carry an optional per-arm scaling factor
-// (arm_scale, used for INLA `copy=` semantics).
+// Variable-length analogue of the single-arm multi-block scatter
+// (accumulate_latent_cross_terms in nested_laplace_multi.h), with the
+// β/β and β/RE diagonal blocks evaluated *per arm* using ParsedArm
+// offsets so multiple likelihood arms can share the same latent vector.
+// Each block's eta contribution carries an optional per-arm scaling
+// factor (arm_scale) for INLA `copy=` semantics.
 //
 // Accumulates β/RE/RE×β diagonal blocks (per arm, unchanged from
 // joint_core), then for each obs i resolves the active subset of blocks
@@ -119,9 +119,8 @@ inline void scatter_arm_obs_joint_multi(
         }
         const int A = static_cast<int>(active_idx.size());
 
-        // β block: gradient + diagonal-block Hessian. Same as
-        // scatter_arm_obs_joint_generic, just with active_idx instead of
-        // the fixed sub_idx array.
+        // β block: gradient + diagonal-block Hessian + cross with RE and
+        // every active latent block.
         for (int j = 0; j < p_k; j++) {
             const double Xij = pa.X(i, j);
             grad[bstart + j] += gh.grad * Xij;

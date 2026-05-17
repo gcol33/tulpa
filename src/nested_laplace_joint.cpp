@@ -2,33 +2,37 @@
 // Joint multi-likelihood nested-Laplace backends. One [[Rcpp::export]] per
 // spatial prior: BYM2, ICAR, CAR_proper.
 //
-// All three share the same per-arm parsing and per-arm/spatial cross-block
-// scatter logic, factored into nested_laplace_joint_core.h. What differs:
+// All three backends share one inner Newton driver
+// (run_multi_block_nested_laplace_joint, declared in
+// nested_laplace_joint_multi.h). Each backend's body is just a length-1
+// (ICAR / CAR_proper) or length-2 (BYM2) std::vector<LatentBlock>
+// describing the spatial prior and per-arm sigma scaling:
 //
-//   backend     n_sub  outer grid axes                        spatial prior
-//   ----------- -----  ------------------------------------  ----------------------
-//   BYM2        2      (sigma_occ, rho [, sigma_pos])         ICAR(tau=1) phi + iid theta
-//   ICAR        1      (sigma_occ       [, sigma_pos])        ICAR(tau=1) phi
-//   CAR_proper  1      (sigma_occ, rho_car [, sigma_pos])     D - rho_car * W (tau=1)
+//   backend     blocks  outer-grid axes                       spatial prior
+//   ---------   ------  ----------------------------------    ----------------------
+//   BYM2        2       (sigma_occ, rho [, sigma_pos])        ICAR(tau=1) phi
+//                                                             + iid N(0,1) theta
+//   ICAR        1       (sigma_occ       [, sigma_pos])       ICAR(tau=1) phi
+//   CAR_proper  1       (sigma_occ, rho_car [, sigma_pos])    D - rho_car * W (tau=1)
 //
-// Each backend now uses a unit-precision latent block (no tau in the latent
-// prior). The per-arm field amplitude enters via `eta_arm = X beta + sigma_arm
-// * z_s`, where sigma_arm = sigma_occ for non-copy arms and sigma_pos for the
+// Each backend uses a unit-precision latent prior (no tau in the latent
+// quad form). The per-arm field amplitude enters via LatentBlock::arm_scale:
+// `eta_arm = X beta + arm_scale(k_arm, k_grid) * d_fac(k_grid) * x[idx]`,
+// where arm_scale returns sigma_occ for donor arms and sigma_pos for the
 // copy arm. This breaks the (sigma, alpha) identifiability ridge — see
-// gcol33/tulpa#18 — because each arm's likelihood now anchors its own sigma
-// directly instead of sharing one sigma scaled by alpha. alpha = sigma_pos /
-// sigma_occ is recovered post-hoc on the R side.
+// gcol33/tulpa#18 — because each arm's likelihood anchors its own sigma
+// directly instead of sharing one sigma scaled by alpha. alpha =
+// sigma_pos / sigma_occ is recovered post-hoc on the R side.
 //
 // Each kernel composes:
-//   parse_joint_arms()                  -> (parsed, arms, n_x_after_re)
-//   compute_arm_eta_joint_generic()     -> per-arm eta_k
-//   scatter_arm_obs_joint_generic()     -> per-arm beta/RE/spatial Hessian
-//   add_per_arm_beta_re_priors()        -> diagonal beta + RE priors
-//   add_<spatial>_prior() / log_prior_<spatial>()  -> backend-specific
-//   laplace_newton_solve_joint()        -> shared Newton primitive
-//   run_nested_laplace_grid()           -> outer grid orchestrator
+//   parse_joint_arms()                       -> (parsed, arms, n_x_after_re)
+//   build per-block LatentBlock(s)           -> idx / d_fac / arm_scale /
+//                                               add_prior / log_prior /
+//                                               prep / center
+//   run_multi_block_nested_laplace_joint()   -> outer grid + inner Newton
 //
-// See dev_notes/joint_nested_laplace.md for the math.
+// See dev_notes/joint_nested_laplace.md for the math,
+// dev_notes/plan_multi_block_joint.md for the refactor history.
 
 #include "laplace_core.h"
 #include "laplace_newton_joint.h"
@@ -41,9 +45,9 @@
 #include "nested_laplace_joint_multi.h"
 #include "hmc_car_proper.h"  // tulpa_car_proper::compute_car_precision, car_log_det
 #include <Rcpp.h>
-#include <array>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -115,19 +119,6 @@ inline void apply_phi_overrides(
     }
 }
 
-// Per-arm sigma at the current outer-grid point. Donor arms see sigma_occ;
-// the copy arm sees sigma_pos. Used as a multiplier on the unit-precision
-// latent field (z_s) when forming each arm's eta.
-inline double arm_sigma_at(int k_arm, int k_grid, int copy_arm,
-                           bool has_copy,
-                           const Rcpp::NumericVector& sigma_occ_grid,
-                           const Rcpp::NumericVector& sigma_pos_grid) {
-    if (has_copy && k_arm == copy_arm) {
-        return sigma_pos_grid[k_grid];
-    }
-    return sigma_occ_grid[k_grid];
-}
-
 } // namespace
 
 // =====================================================================
@@ -179,123 +170,99 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
 
     int phi_start   = n_x_after_re;
     int theta_start = phi_start + n_spatial_units;
-    int n_x         = phi_start + 2 * n_spatial_units;
-    constexpr int n_sub = 2;
-    std::array<int, 2> sub_starts = { phi_start, theta_start };
 
-    tulpa::SparseCholeskySolver shared_solver;
+    // Length-2 BYM2 block expansion:
+    //   phi    : ICAR(tau=1), d_fac = sqrt(rho_k) * scale_factor, centered
+    //   theta  : N(0, 1)      d_fac = sqrt(1 - rho_k),            uncentered
+    // Both blocks share the same spatial index map and arm_scale. The
+    // per-arm sigma is carried by arm_scale; the BYM2 phi/theta mixing
+    // is carried by d_fac. When the multi-block scatter loops over pairs
+    // (a, b) of active blocks at obs i, it produces the same intra- and
+    // inter-block Hessian contributions the legacy n_sub=2 kernel inlined.
+    auto arm_scale_fn = [has_copy, copy_arm, sigma_occ_grid, sigma_pos_grid](
+        int k_arm, int k_grid) -> double {
+        if (has_copy && k_arm == copy_arm) return sigma_pos_grid[k_grid];
+        return sigma_occ_grid[k_grid];
+    };
 
-    auto solve_at_theta = [&](int k_grid, const Rcpp::NumericVector& prev_mode)
-        -> tulpa::LaplaceResult
-    {
+    tulpa::LatentBlock phi_block;
+    phi_block.start = phi_start;
+    phi_block.size  = n_spatial_units;
+    phi_block.idx   = [&parsed](int i, int k_arm) -> int {
+        return parsed[k_arm].spatial_idx[i];
+    };
+    phi_block.d_fac = [rho_grid, scale_factor](int k_grid) -> double {
+        double rho_k = rho_grid[k_grid];
+        return std::sqrt(rho_k + 1e-10) * scale_factor;
+    };
+    phi_block.arm_scale = arm_scale_fn;
+    phi_block.add_prior = [phi_start, n_spatial_units,
+                            adj_row_ptr, adj_col_idx, n_neighbors](
+        tulpa::DenseVec& grad, tulpa::DenseMat& H,
+        const Rcpp::NumericVector& x, int /*k*/) {
+        tulpa::add_icar_prior(grad, H, x, phi_start, n_spatial_units,
+                               /*tau=*/1.0,
+                               adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    phi_block.log_prior = [phi_start, n_spatial_units,
+                            adj_row_ptr, adj_col_idx, n_neighbors](
+        const Rcpp::NumericVector& x, int /*k*/) -> double {
+        // ICAR(tau = 1) quad form, same as the legacy BYM2 kernel.
+        double quad_form = 0.0;
+        for (int s = 0; s < n_spatial_units; s++) {
+            double phi_s = x[phi_start + s];
+            quad_form += n_neighbors[s] * phi_s * phi_s;
+            for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; kk++) {
+                int neighbor = adj_col_idx[kk];
+                if (neighbor > s) {
+                    quad_form -= 2.0 * phi_s * x[phi_start + neighbor];
+                }
+            }
+        }
+        return -0.5 * quad_form;
+    };
+    phi_block.center = [phi_start, n_spatial_units](Rcpp::NumericVector& x)
+        -> double {
+        return tulpa::center_effects(x, phi_start, n_spatial_units);
+    };
+
+    tulpa::LatentBlock theta_block;
+    theta_block.start = theta_start;
+    theta_block.size  = n_spatial_units;
+    theta_block.idx   = [&parsed](int i, int k_arm) -> int {
+        return parsed[k_arm].spatial_idx[i];
+    };
+    theta_block.d_fac = [rho_grid](int k_grid) -> double {
+        double rho_k = rho_grid[k_grid];
+        return std::sqrt(1.0 - rho_k + 1e-10);
+    };
+    theta_block.arm_scale = arm_scale_fn;
+    theta_block.add_prior = [theta_start, n_spatial_units](
+        tulpa::DenseVec& grad, tulpa::DenseMat& H,
+        const Rcpp::NumericVector& x, int /*k*/) {
+        for (int s = 0; s < n_spatial_units; s++) {
+            int idx = theta_start + s;
+            grad[idx] -= x[idx];
+            H[idx][idx] += 1.0;
+        }
+    };
+    theta_block.log_prior = [theta_start, n_spatial_units](
+        const Rcpp::NumericVector& x, int /*k*/) -> double {
+        double lp = 0.0;
+        for (int s = 0; s < n_spatial_units; s++) {
+            double v = x[theta_start + s];
+            lp -= 0.5 * v * v;
+        }
+        lp -= 0.5 * n_spatial_units * std::log(2.0 * M_PI);
+        return lp;
+    };
+    // theta has no centering: prior is symmetric so any mean shift is
+    // absorbed by phi's centering + per-arm intercept compensation.
+
+    std::vector<tulpa::LatentBlock> blocks{ phi_block, theta_block };
+
+    auto prep = [&arms, &phi_overrides](int k_grid) {
         apply_phi_overrides(arms, phi_overrides, k_grid);
-        double rho_k      = rho_grid[k_grid];
-        double sqrt_rho   = std::sqrt(rho_k + 1e-10);
-        double sqrt_1_rho = std::sqrt(1.0 - rho_k + 1e-10);
-        // Unit-precision base contributions: sigma enters per arm below.
-        double d_phi_base_unit   = sqrt_rho * scale_factor;
-        double d_theta_base_unit = sqrt_1_rho;
-
-        auto compute_eta_joint = [&](const Rcpp::NumericVector& x,
-                                     std::vector<Rcpp::NumericVector>& etas) {
-            for (int k = 0; k < n_arms; k++) {
-                double s_k = arm_sigma_at(k, k_grid, copy_arm, has_copy,
-                                           sigma_occ_grid, sigma_pos_grid);
-                std::array<double, 2> d_eff = {
-                    s_k * d_phi_base_unit,
-                    s_k * d_theta_base_unit
-                };
-                tulpa::compute_arm_eta_joint_generic(
-                    x, etas[k], parsed[k], arms[k].N,
-                    n_spatial_units, n_sub, sub_starts, d_eff, n_threads
-                );
-            }
-        };
-
-        auto scatter_joint = [&](const Rcpp::NumericVector& x,
-                                 const std::vector<Rcpp::NumericVector>& etas,
-                                 tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            for (int k = 0; k < n_arms; k++) {
-                double s_k = arm_sigma_at(k, k_grid, copy_arm, has_copy,
-                                           sigma_occ_grid, sigma_pos_grid);
-                std::array<double, 2> d_eff = {
-                    s_k * d_phi_base_unit,
-                    s_k * d_theta_base_unit
-                };
-                tulpa::scatter_arm_obs_joint_generic(
-                    x, etas[k], parsed[k], arms[k],
-                    n_spatial_units, n_sub, sub_starts, d_eff, grad, H
-                );
-            }
-
-            // BYM2 spatial prior: ICAR(tau=1) on phi + iid N(0,1) on theta.
-            // The per-arm sigma multiplier on eta absorbs the field amplitude
-            // — the latent prior stays unit-scale.
-            tulpa::add_icar_prior(
-                grad, H, x, phi_start, n_spatial_units, /*tau_spatial=*/1.0,
-                adj_row_ptr, adj_col_idx, n_neighbors
-            );
-            for (int s = 0; s < n_spatial_units; s++) {
-                int idx = theta_start + s;
-                grad[idx] -= x[idx];
-                H[idx][idx] += 1.0;
-            }
-
-            tulpa::add_per_arm_beta_re_priors(grad, H, x, parsed);
-        };
-
-        auto center = [&](Rcpp::NumericVector& x) {
-            // Center phi block to mean zero AND shift each arm's intercept
-            // (first beta column) so eta is preserved. Without the intercept
-            // shift, post-hoc centering would corrupt log_lik at the reported
-            // mode — see laplace_newton_joint.h note on the ordering of
-            // log_marginal vs. centering.
-            double c = 0.0;
-            for (int s = 0; s < n_spatial_units; s++) c += x[phi_start + s];
-            c /= n_spatial_units;
-            if (std::abs(c) < 1e-15) return;
-            for (int s = 0; s < n_spatial_units; s++) x[phi_start + s] -= c;
-            for (int k = 0; k < n_arms; k++) {
-                double s_k = arm_sigma_at(k, k_grid, copy_arm, has_copy,
-                                           sigma_occ_grid, sigma_pos_grid);
-                if (parsed[k].p > 0) {
-                    x[parsed[k].beta_start] += s_k * d_phi_base_unit * c;
-                }
-            }
-        };
-
-        auto log_prior_joint = [&](const Rcpp::NumericVector& x,
-                                   const std::vector<Rcpp::NumericVector>&) -> double {
-            double lp = tulpa::log_prior_per_arm_re(x, parsed);
-            // theta iid N(0, 1)
-            for (int s = 0; s < n_spatial_units; s++) {
-                double v = x[theta_start + s];
-                lp -= 0.5 * v * v;
-            }
-            lp -= 0.5 * n_spatial_units * std::log(2.0 * M_PI);
-            // phi ICAR(tau = 1) — uses the same quadratic form as add_icar_prior.
-            double quad_form = 0.0;
-            for (int s = 0; s < n_spatial_units; s++) {
-                double phi_s = x[phi_start + s];
-                quad_form += n_neighbors[s] * phi_s * phi_s;
-                for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; kk++) {
-                    int neighbor = adj_col_idx[kk];
-                    if (neighbor > s) {
-                        quad_form -= 2.0 * phi_s * x[phi_start + neighbor];
-                    }
-                }
-            }
-            lp += -0.5 * quad_form;
-            return lp;
-        };
-
-        return tulpa::laplace_newton_solve_joint(
-            arms, n_x,
-            max_iter, tol, n_threads,
-            compute_eta_joint, scatter_joint, center, log_prior_joint,
-            prev_mode, &shared_solver,
-            store_Q
-        );
     };
 
     Rcpp::NumericVector x_init;
@@ -303,8 +270,12 @@ Rcpp::List cpp_nested_laplace_joint_bym2(
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
     }
 
-    Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
+    Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
+        n_grid, arms, parsed, blocks, n_x_after_re,
+        max_iter, tol, n_threads,
+        /*store_modes=*/true, x_init,
+        store_Q,
+        prep
     );
     out["sigma_occ_grid"] = sigma_occ_grid;
     out["rho_grid"]       = rho_grid;
@@ -472,98 +443,66 @@ Rcpp::List cpp_nested_laplace_joint_car_proper(
         parse_phi_overrides(phi_grid_per_arm, n_arms, n_grid);
 
     int phi_start = n_x_after_re;
-    int n_x       = phi_start + n_spatial_units;
-    constexpr int n_sub = 1;
-    std::array<int, 2> sub_starts = { phi_start, -1 };
 
     // Adjacency CSR copied into std::vector for the dense log|Q(rho)| helper.
-    std::vector<int> adj_rp_v(adj_row_ptr.begin(), adj_row_ptr.end());
-    std::vector<int> adj_ci_v(adj_col_idx.begin(), adj_col_idx.end());
-    std::vector<int> n_nbr_v (n_neighbors.begin(), n_neighbors.end());
+    auto adj_rp_v = std::make_shared<std::vector<int>>(adj_row_ptr.begin(), adj_row_ptr.end());
+    auto adj_ci_v = std::make_shared<std::vector<int>>(adj_col_idx.begin(), adj_col_idx.end());
+    auto n_nbr_v  = std::make_shared<std::vector<int>>(n_neighbors.begin(),  n_neighbors.end());
+    // Shared cache for log|Q(rho_car_k)| -- written by block.prep,
+    // read by block.log_prior on the same grid point.
+    auto log_det_Q_rho = std::make_shared<double>(0.0);
 
-    tulpa::SparseCholeskySolver shared_solver;
-
-    auto solve_at_theta = [&](int k_grid, const Rcpp::NumericVector& prev_mode)
-        -> tulpa::LaplaceResult
-    {
-        apply_phi_overrides(arms, phi_overrides, k_grid);
-        double rho_car_k = rho_car_grid[k_grid];
-        const double d_phi_base_unit = 1.0;
-        const double tau_unit = 1.0;
-
-        // log|Q(rho_car_k)|, used by log_prior_car_proper.
+    tulpa::LatentBlock spatial_block;
+    spatial_block.start = phi_start;
+    spatial_block.size  = n_spatial_units;
+    spatial_block.idx   = [&parsed](int i, int k_arm) -> int {
+        return parsed[k_arm].spatial_idx[i];
+    };
+    spatial_block.d_fac = [](int) -> double { return 1.0; };
+    if (has_copy) {
+        spatial_block.arm_scale = [copy_arm, sigma_occ_grid, sigma_pos_grid](
+            int k_arm, int k_grid) -> double {
+            return (k_arm == copy_arm) ? sigma_pos_grid[k_grid]
+                                       : sigma_occ_grid[k_grid];
+        };
+    } else {
+        spatial_block.arm_scale = [sigma_occ_grid](int /*k_arm*/, int k_grid)
+            -> double { return sigma_occ_grid[k_grid]; };
+    }
+    spatial_block.prep = [n_spatial_units, rho_car_grid,
+                          adj_rp_v, adj_ci_v, n_nbr_v, log_det_Q_rho](int k_grid)
+        -> bool {
+        double rho_k = rho_car_grid[k_grid];
         std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
-            n_spatial_units, adj_rp_v, adj_ci_v, n_nbr_v, rho_car_k);
-        double log_det_Q_rho =
-            tulpa_car_proper::car_log_det(n_spatial_units, Qmat);
-        if (!std::isfinite(log_det_Q_rho)) {
-            // Degenerate (D - rho W) at this rho — skip with -inf marginal.
-            tulpa::LaplaceResult bad;
-            bad.mode = Rcpp::NumericVector(n_x, 0.0);
-            bad.converged = false;
-            bad.n_iter = 0;
-            bad.log_det_Q = 0.0;
-            bad.log_marginal = -std::numeric_limits<double>::infinity();
-            return bad;
-        }
+            n_spatial_units, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_k);
+        *log_det_Q_rho = tulpa_car_proper::car_log_det(n_spatial_units, Qmat);
+        return std::isfinite(*log_det_Q_rho);
+    };
+    spatial_block.add_prior = [phi_start, n_spatial_units, rho_car_grid,
+                                adj_row_ptr, adj_col_idx, n_neighbors](
+        tulpa::DenseVec& grad, tulpa::DenseMat& H,
+        const Rcpp::NumericVector& x, int k_grid) {
+        tulpa::add_car_proper_prior(grad, H, x, phi_start, n_spatial_units,
+                                     /*tau=*/1.0, rho_car_grid[k_grid],
+                                     adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    spatial_block.log_prior = [phi_start, n_spatial_units, rho_car_grid,
+                                adj_row_ptr, adj_col_idx, n_neighbors,
+                                log_det_Q_rho](
+        const Rcpp::NumericVector& x, int k_grid) -> double {
+        return tulpa::log_prior_car_proper(x, phi_start, n_spatial_units,
+                                            /*tau=*/1.0, rho_car_grid[k_grid],
+                                            *log_det_Q_rho,
+                                            adj_row_ptr, adj_col_idx,
+                                            n_neighbors);
+    };
+    // Proper CAR has full-rank Q; centering would change the prior quadratic
+    // form. No center callback (preserves log_marginal exactly).
 
-        auto compute_eta_joint = [&](const Rcpp::NumericVector& x,
-                                     std::vector<Rcpp::NumericVector>& etas) {
-            for (int k = 0; k < n_arms; k++) {
-                double s_k = arm_sigma_at(k, k_grid, copy_arm, has_copy,
-                                           sigma_occ_grid, sigma_pos_grid);
-                std::array<double, 2> d_eff = { s_k * d_phi_base_unit, 0.0 };
-                tulpa::compute_arm_eta_joint_generic(
-                    x, etas[k], parsed[k], arms[k].N,
-                    n_spatial_units, n_sub, sub_starts, d_eff, n_threads
-                );
-            }
-        };
+    std::vector<tulpa::LatentBlock> blocks{ spatial_block };
 
-        auto scatter_joint = [&](const Rcpp::NumericVector& x,
-                                 const std::vector<Rcpp::NumericVector>& etas,
-                                 tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            for (int k = 0; k < n_arms; k++) {
-                double s_k = arm_sigma_at(k, k_grid, copy_arm, has_copy,
-                                           sigma_occ_grid, sigma_pos_grid);
-                std::array<double, 2> d_eff = { s_k * d_phi_base_unit, 0.0 };
-                tulpa::scatter_arm_obs_joint_generic(
-                    x, etas[k], parsed[k], arms[k],
-                    n_spatial_units, n_sub, sub_starts, d_eff, grad, H
-                );
-            }
-            tulpa::add_car_proper_prior(
-                grad, H, x, phi_start, n_spatial_units, tau_unit, rho_car_k,
-                adj_row_ptr, adj_col_idx, n_neighbors
-            );
-            tulpa::add_per_arm_beta_re_priors(grad, H, x, parsed);
-        };
-
-        auto center = [&](Rcpp::NumericVector& x) {
-            // Proper CAR has full-rank Q so shifting phi by a constant changes
-            // the prior quadratic form. Skip post-hoc centering here: the
-            // reported mode keeps whatever mean(phi) Newton converged to,
-            // preserving log_marginal exactly.
-            (void)x;
-        };
-
-        auto log_prior_joint = [&](const Rcpp::NumericVector& x,
-                                   const std::vector<Rcpp::NumericVector>&) -> double {
-            double lp = tulpa::log_prior_per_arm_re(x, parsed);
-            lp += tulpa::log_prior_car_proper(
-                x, phi_start, n_spatial_units, tau_unit, rho_car_k, log_det_Q_rho,
-                adj_row_ptr, adj_col_idx, n_neighbors
-            );
-            return lp;
-        };
-
-        return tulpa::laplace_newton_solve_joint(
-            arms, n_x,
-            max_iter, tol, n_threads,
-            compute_eta_joint, scatter_joint, center, log_prior_joint,
-            prev_mode, &shared_solver,
-            store_Q
-        );
+    auto prep = [&arms, &phi_overrides](int k_grid) {
+        apply_phi_overrides(arms, phi_overrides, k_grid);
     };
 
     Rcpp::NumericVector x_init;
@@ -571,8 +510,12 @@ Rcpp::List cpp_nested_laplace_joint_car_proper(
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
     }
 
-    Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
+    Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
+        n_grid, arms, parsed, blocks, n_x_after_re,
+        max_iter, tol, n_threads,
+        /*store_modes=*/true, x_init,
+        store_Q,
+        prep
     );
     out["sigma_occ_grid"] = sigma_occ_grid;
     out["rho_car_grid"]   = rho_car_grid;
