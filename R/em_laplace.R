@@ -583,11 +583,21 @@ apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
 
 #' Pool multiple imputation draws via Rubin's rules
 #'
+#' @description
+#' Pools per-imputation block fits via Rubin's rules. When every draw also
+#' carries a per-coefficient skewness vector `$gamma`, the third cumulant
+#' is pooled by the law of total cumulants
+#' \deqn{\kappa_3 = E[\kappa_3(X | k)] + 3\,\mathrm{Cov}(\mu_k, \sigma_k^2) + \kappa_3(\mu_k),}
+#' giving a pooled skewness `$gamma` alongside the usual `$mean` / `$se`.
+#' If any draw is missing `$gamma`, the third-cumulant path is skipped.
+#'
 #' @param draws List of K draws. Each draw is a named list of submodel
-#'   results, each with `beta` (numeric vector) and `se` (numeric vector).
+#'   results, each with `beta` (numeric vector), `se` (numeric vector), and
+#'   optionally `gamma` (numeric vector, same length as `beta`).
 #' @return A named list of pooled submodel summaries, each with `mean`,
-#'   `se`, `V_within`, `V_between`, `V_total`, and `K` (number of draws
-#'   that contributed).
+#'   `se`, `V_within`, `V_between`, `V_total`, `K` (number of draws that
+#'   contributed), and when applicable `gamma` (pooled skewness) and
+#'   `kappa3` (pooled third cumulant).
 #' @export
 rubins_pool <- function(draws) {
   K <- length(draws)
@@ -623,7 +633,7 @@ rubins_pool <- function(draws) {
     V_between  <- apply(beta_mat, 2, var)
     V_total    <- V_within + (1 + 1 / K_actual) * V_between
 
-    result[[nm]] <- list(
+    pooled <- list(
       mean      = pooled_mean,
       se        = sqrt(V_total),
       V_within  = V_within,
@@ -631,6 +641,30 @@ rubins_pool <- function(draws) {
       V_total   = V_total,
       K         = K_actual
     )
+
+    # Third-cumulant pooling. Engaged only when every draw supplies a
+    # per-coefficient `gamma` vector matching `beta` in length.
+    gammas <- lapply(draws, function(d) {
+      if (is.null(d[[nm]])) return(NULL)
+      d[[nm]]$gamma
+    })
+    have_gamma <- vapply(gammas, function(g) {
+      !is.null(g) && length(g) == ncol(beta_mat) && all(is.finite(g))
+    }, logical(1))
+    if (length(have_gamma) == K_actual && all(have_gamma)) {
+      gamma_mat <- do.call(rbind, gammas)    # K x p
+      sigma_mat <- se_mat                    # K x p (sd, not variance)
+      mu_centered <- sweep(beta_mat, 2L, pooled_mean, FUN = "-")
+      kappa3 <- colMeans(sigma_mat^3 * gamma_mat) +
+        3 * colMeans(mu_centered * sigma_mat^2) +
+        colMeans(mu_centered^3)
+      sigma_pooled <- sqrt(V_total)
+      # Guard against division when V_total underflows.
+      pooled$gamma  <- ifelse(sigma_pooled > 0, kappa3 / sigma_pooled^3, NA_real_)
+      pooled$kappa3 <- kappa3
+    }
+
+    result[[nm]] <- pooled
   }
 
   result

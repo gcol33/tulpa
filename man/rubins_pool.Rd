@@ -8,13 +8,20 @@ rubins_pool(draws)
 }
 \arguments{
 \item{draws}{List of K draws. Each draw is a named list of submodel
-results, each with \code{beta} (numeric vector) and \code{se} (numeric vector).}
+results, each with \code{beta} (numeric vector), \code{se} (numeric vector), and
+optionally \code{gamma} (numeric vector, same length as \code{beta}).}
 }
 \value{
 A named list of pooled submodel summaries, each with \code{mean},
-\code{se}, \code{V_within}, \code{V_between}, \code{V_total}, and \code{K} (number of draws
-that contributed).
+\code{se}, \code{V_within}, \code{V_between}, \code{V_total}, \code{K} (number of draws that
+contributed), and when applicable \code{gamma} (pooled skewness) and
+\code{kappa3} (pooled third cumulant).
 }
 \description{
-Pool multiple imputation draws via Rubin's rules
+Pools per-imputation block fits via Rubin's rules. When every draw also
+carries a per-coefficient skewness vector \verb{$gamma}, the third cumulant
+is pooled by the law of total cumulants
+\deqn{\kappa_3 = E[\kappa_3(X | k)] + 3\,\mathrm{Cov}(\mu_k, \sigma_k^2) + \kappa_3(\mu_k),}
+giving a pooled skewness \verb{$gamma} alongside the usual \verb{$mean} / \verb{$se}.
+If any draw is missing \verb{$gamma}, the third-cumulant path is skipped.
 }
