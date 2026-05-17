@@ -1,0 +1,228 @@
+#' Spatial Royle (2004) N-mixture model via nested Laplace
+#'
+#' @description
+#' Nested-Laplace fit of the spatial N-mixture model
+#' \deqn{N_i \sim \mathrm{Poisson}(\lambda_i), \qquad
+#'       y_{ij} | N_i \sim \mathrm{Binomial}(N_i, p_{ij}),}
+#' with abundance linear predictor
+#' \eqn{\log \lambda_i = X_\lambda^{(i)} \beta_\lambda + z_{u(i)}} where
+#' \eqn{z \sim \mathrm{ICAR}(\tau)} is an intrinsic conditional autoregressive
+#' field on the user-supplied adjacency graph, and detection linear predictor
+#' \eqn{\mathrm{logit}\, p_{ij} = X_p^{(ij)} \beta_p}.
+#'
+#' The hyperparameter \eqn{\tau} (ICAR precision) is integrated out by an
+#' outer grid: at each \eqn{\tau_k} the inner Newton finds the joint mode
+#' of \eqn{(\beta_\lambda, \beta_p, z)} and the Laplace log-marginal
+#' \eqn{\log p(y \mid \tau_k)} is accumulated. Posterior weights over
+#' \eqn{\tau} normalise the grid.
+#'
+#' Inner Newton uses the marginal observed Fisher information matrix for
+#' curvature (with the Var\eqn{[N \mid y_i]} rank-1 correction encoding
+#' cross-arm coupling) and falls back to the complete-data Fisher block when
+#' the observed-info matrix is not PSD. A small diagonal ridge keeps the
+#' Cholesky stable through the (intercept, constant-\eqn{z}) structural null
+#' direction; \eqn{z} is centered to sum zero after every step.
+#'
+#' @param y Integer vector of observed counts (long form, one entry per visit).
+#' @param site_idx Integer vector, 1-based site index for each visit, same
+#'   length as `y`.
+#' @param map_site_to_unit Integer vector of length `n_sites`, 1-based spatial
+#'   unit index for each site. Sites can share spatial units; the data
+#'   contribution to z[u] aggregates across all sites that map to u.
+#' @param X_lambda Numeric matrix `[n_sites x p_lambda]` of abundance covariates.
+#' @param X_p Numeric matrix `[n_obs x p_p]` of detection covariates.
+#' @param adj_row_ptr,adj_col_idx,n_neighbors CSR adjacency for the ICAR graph
+#'   on the `n_spatial` units. `adj_row_ptr` has length `n_spatial + 1`,
+#'   `adj_col_idx` lists 0-based neighbours, and `n_neighbors[s]` is the row
+#'   degree of unit s.
+#' @param n_spatial Number of spatial units.
+#' @param tau_grid Optional numeric vector of \eqn{\tau} grid points. Defaults
+#'   to `exp(seq(log(0.3), log(30), length.out = 9))`.
+#' @param beta_lambda_init Optional warm start; default `c(log(mean(y)+0.1), 0, ...)`.
+#' @param beta_p_init Optional warm start; default `rep(0, p_p)`.
+#' @param z_init Optional warm start for the spatial field; default zeros.
+#' @param K_max Truncation for the per-site marginal sum over N. Defaults to
+#'   `max(y) + 100`. Returned `boundary_max` flags any grid point whose worst
+#'   site puts non-trivial mass on `K_max` -- raise `K_max` if it exceeds 1e-4.
+#' @param max_iter,tol Inner Newton iteration budget and gradient-norm tol.
+#' @param verbose Print per-iteration and per-grid-point progress.
+#'
+#' @return A list of class `tulpa_nmix_spatial_fit`:
+#'   * `tau_grid` -- input grid
+#'   * `log_marginal` -- log marginal at each tau (up to a tau-independent constant)
+#'   * `weights` -- normalised grid weights (sum to 1)
+#'   * `tau_mean`, `tau_sd` -- posterior moments of tau
+#'   * `modes` -- `[n_grid x (p_lambda + p_p + n_spatial)]` matrix of inner modes
+#'   * `beta_lambda_mean`, `beta_p_mean` -- weighted-mean coefficient estimates
+#'   * `z_mean` -- weighted-mean spatial field
+#'   * `n_iter`, `converged`, `grad_norm`, `log_lik`, `boundary_max` -- per-grid diagnostics
+#'   * `p_lambda`, `p_p`, `n_spatial`, `K_max` -- echoed dimensions
+#'   * `call` -- matched call
+#'
+#' @references
+#' Royle, J. A. (2004). N-mixture models for estimating population size from
+#'   spatially replicated counts. *Biometrics* 60, 108-115.
+#' Besag, J., York, J., Mollie, A. (1991). Bayesian image restoration with two
+#'   applications in spatial statistics. *Ann. Inst. Statist. Math.* 43, 1-20.
+#' Rue, H., Martino, S., Chopin, N. (2009). Approximate Bayesian inference for
+#'   latent Gaussian models by using integrated nested Laplace approximations.
+#'   *JRSS-B* 71, 319-392.
+#'
+#' @export
+tulpa_nmix_laplace_icar <- function(y,
+                                    site_idx,
+                                    map_site_to_unit,
+                                    X_lambda,
+                                    X_p,
+                                    adj_row_ptr,
+                                    adj_col_idx,
+                                    n_neighbors,
+                                    n_spatial,
+                                    tau_grid = NULL,
+                                    beta_lambda_init = NULL,
+                                    beta_p_init = NULL,
+                                    z_init = NULL,
+                                    K_max = NULL,
+                                    max_iter = 100L,
+                                    tol = 1e-6,
+                                    verbose = FALSE) {
+  y                <- as.integer(y)
+  site_idx         <- as.integer(site_idx)
+  map_site_to_unit <- as.integer(map_site_to_unit)
+  if (!is.matrix(X_lambda)) stop("`X_lambda` must be a numeric matrix.", call. = FALSE)
+  if (!is.matrix(X_p))      stop("`X_p` must be a numeric matrix.", call. = FALSE)
+  n_sites <- nrow(X_lambda)
+  n_obs   <- nrow(X_p)
+  p_lam   <- ncol(X_lambda)
+  p_p     <- ncol(X_p)
+  if (length(y) != n_obs) stop("length(y) must equal nrow(X_p).", call. = FALSE)
+  if (length(site_idx) != n_obs) stop("length(site_idx) must equal nrow(X_p).", call. = FALSE)
+  if (length(map_site_to_unit) != n_sites) {
+    stop("length(map_site_to_unit) must equal nrow(X_lambda).", call. = FALSE)
+  }
+  if (any(map_site_to_unit < 1L) || any(map_site_to_unit > n_spatial)) {
+    stop("map_site_to_unit values must lie in [1, n_spatial].", call. = FALSE)
+  }
+  if (length(adj_row_ptr) != n_spatial + 1L) {
+    stop("length(adj_row_ptr) must equal n_spatial + 1.", call. = FALSE)
+  }
+  if (length(n_neighbors) != n_spatial) {
+    stop("length(n_neighbors) must equal n_spatial.", call. = FALSE)
+  }
+  if (is.null(tau_grid)) {
+    tau_grid <- exp(seq(log(0.3), log(30), length.out = 9L))
+  }
+  if (is.null(beta_lambda_init)) {
+    beta_lambda_init <- c(log(mean(y) + 0.1), rep(0, p_lam - 1L))
+  }
+  if (is.null(beta_p_init)) beta_p_init <- rep(0, p_p)
+  if (length(beta_lambda_init) != p_lam) {
+    stop("length(beta_lambda_init) must equal ncol(X_lambda).", call. = FALSE)
+  }
+  if (length(beta_p_init) != p_p) {
+    stop("length(beta_p_init) must equal ncol(X_p).", call. = FALSE)
+  }
+  if (is.null(K_max)) {
+    K_max <- as.integer(max(y) + 100L)
+  } else {
+    K_max <- as.integer(K_max)
+    if (K_max < max(y)) stop("K_max must be >= max(y).", call. = FALSE)
+  }
+  if (!is.null(z_init) && length(z_init) != n_spatial) {
+    stop("length(z_init) must equal n_spatial.", call. = FALSE)
+  }
+
+  fit <- cpp_nested_laplace_nmix_icar(
+    y                  = y,
+    site_idx           = site_idx,
+    map_site_to_unit_R = map_site_to_unit,
+    X_lambda_R         = X_lambda,
+    X_p_R              = X_p,
+    adj_row_ptr        = as.integer(adj_row_ptr),
+    adj_col_idx        = as.integer(adj_col_idx),
+    n_neighbors        = as.integer(n_neighbors),
+    n_spatial          = as.integer(n_spatial),
+    tau_grid           = as.numeric(tau_grid),
+    beta_lambda_init   = as.numeric(beta_lambda_init),
+    beta_p_init        = as.numeric(beta_p_init),
+    z_init             = if (is.null(z_init)) NULL else as.numeric(z_init),
+    K_max              = K_max,
+    max_iter           = as.integer(max_iter),
+    tol                = as.numeric(tol),
+    verbose            = isTRUE(verbose)
+  )
+
+  # Normalise grid weights.
+  lm <- fit$log_marginal
+  finite_lm <- lm[is.finite(lm)]
+  if (length(finite_lm) == 0L) {
+    warning("All grid points returned non-finite log_marginal -- check tau_grid / data.",
+            call. = FALSE)
+    weights <- rep(NA_real_, length(lm))
+  } else {
+    m <- max(finite_lm)
+    w <- exp(lm - m)
+    w[!is.finite(w)] <- 0
+    if (sum(w) == 0) {
+      weights <- rep(NA_real_, length(lm))
+    } else {
+      weights <- w / sum(w)
+    }
+  }
+
+  tau_mean <- sum(weights * tau_grid, na.rm = TRUE)
+  tau_sd   <- sqrt(max(0, sum(weights * tau_grid^2, na.rm = TRUE) - tau_mean^2))
+
+  # Posterior-mean coefficients (weighted across grid points).
+  modes <- fit$modes
+  beta_lambda_mean <- as.numeric(crossprod(weights, modes[, seq_len(p_lam), drop = FALSE]))
+  beta_p_mean      <- as.numeric(crossprod(
+    weights, modes[, p_lam + seq_len(p_p), drop = FALSE]
+  ))
+  z_mean <- as.numeric(crossprod(
+    weights, modes[, p_lam + p_p + seq_len(n_spatial), drop = FALSE]
+  ))
+
+  nm_lam <- colnames(X_lambda)
+  nm_p   <- colnames(X_p)
+  if (is.null(nm_lam)) nm_lam <- paste0("lam_", seq_len(p_lam))
+  if (is.null(nm_p))   nm_p   <- paste0("p_", seq_len(p_p))
+  names(beta_lambda_mean) <- nm_lam
+  names(beta_p_mean)      <- nm_p
+
+  out <- c(fit, list(
+    weights          = weights,
+    tau_mean         = tau_mean,
+    tau_sd           = tau_sd,
+    beta_lambda_mean = beta_lambda_mean,
+    beta_p_mean      = beta_p_mean,
+    z_mean           = z_mean,
+    n_sites          = n_sites,
+    n_obs            = n_obs,
+    call             = match.call()
+  ))
+  if (any(out$boundary_max > 1e-4, na.rm = TRUE)) {
+    warning(sprintf(
+      "Max posterior weight on N = K_max is %.2e at one or more grid points; raise K_max.",
+      max(out$boundary_max, na.rm = TRUE)
+    ), call. = FALSE)
+  }
+  class(out) <- c("tulpa_nmix_spatial_fit", "list")
+  out
+}
+
+#' @export
+print.tulpa_nmix_spatial_fit <- function(x, ...) {
+  cat("tulpa spatial N-mixture (ICAR) nested-Laplace fit\n")
+  cat(sprintf("  n_sites = %d   n_obs = %d   n_spatial = %d   K_max = %d\n",
+              x$n_sites, x$n_obs, x$n_spatial, x$K_max))
+  cat(sprintf("  tau grid = [%.3g, %.3g] over %d points\n",
+              min(x$tau_grid), max(x$tau_grid), x$n_grid))
+  cat(sprintf("  tau_mean = %.3g   tau_sd = %.3g\n",
+              x$tau_mean, x$tau_sd))
+  cat("\nabundance (log lambda):\n")
+  print(x$beta_lambda_mean)
+  cat("\ndetection (logit p):\n")
+  print(x$beta_p_mean)
+  invisible(x)
+}
