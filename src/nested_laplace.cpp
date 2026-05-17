@@ -100,8 +100,8 @@ Rcpp::List cpp_nested_laplace_icar(
         return tulpa::log_prior_icar(x, spatial_start, n_spatial_units, tau_grid[k],
                                        adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    block.center = [&](Rcpp::NumericVector& x) {
-        tulpa::center_effects(x, spatial_start, n_spatial_units);
+    block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, spatial_start, n_spatial_units);
     };
 
     std::vector<tulpa::LatentBlock> blocks{ block };
@@ -183,8 +183,8 @@ Rcpp::List cpp_nested_laplace_bym2(
         }
         return -0.5 * quad_form;
     };
-    phi_block.center = [&](Rcpp::NumericVector& x) {
-        tulpa::center_effects(x, phi_start, n_spatial_units);
+    phi_block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, phi_start, n_spatial_units);
     };
 
     tulpa::LatentBlock theta_block;
@@ -289,8 +289,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
                                              *log_det_Q_rho,
                                              adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    block.center = [&](Rcpp::NumericVector& x) {
-        tulpa::center_effects(x, spatial_start, n_spatial_units);
+    block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, spatial_start, n_spatial_units);
     };
 
     std::vector<tulpa::LatentBlock> blocks{ block };
@@ -341,8 +341,8 @@ Rcpp::List cpp_nested_laplace_rw1(
     block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_rw1(x, temporal_start, n_times, tau_grid[k], cyclic);
     };
-    block.center = [&](Rcpp::NumericVector& x) {
-        tulpa::center_effects(x, temporal_start, n_times);
+    block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, temporal_start, n_times);
     };
 
     std::vector<tulpa::LatentBlock> blocks{ block };
@@ -392,8 +392,8 @@ Rcpp::List cpp_nested_laplace_rw2(
     block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_rw2(x, temporal_start, n_times, tau_grid[k], false);
     };
-    block.center = [&](Rcpp::NumericVector& x) {
-        tulpa::center_effects(x, temporal_start, n_times);
+    block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, temporal_start, n_times);
     };
 
     std::vector<tulpa::LatentBlock> blocks{ block };
@@ -447,8 +447,8 @@ Rcpp::List cpp_nested_laplace_ar1(
         return tulpa::log_prior_ar1(x, temporal_start, n_times,
                                       tau_grid[k], rho_grid[k]);
     };
-    block.center = [&](Rcpp::NumericVector& x) {
-        tulpa::center_effects(x, temporal_start, n_times);
+    block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, temporal_start, n_times);
     };
 
     std::vector<tulpa::LatentBlock> blocks{ block };

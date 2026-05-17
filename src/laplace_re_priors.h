@@ -59,12 +59,17 @@ inline double compute_log_prior_re(
     return log_prior;
 }
 
-inline void center_effects(Rcpp::NumericVector& x, int start, int length) {
-    if (length <= 0) return;
+// Subtract the mean from x[start, start+length), returning the mean that
+// was applied. Single-arm callers ignore the return value; joint drivers
+// use it to shift per-arm intercepts so eta is preserved when a rank-
+// deficient block is re-centered after a Newton step.
+inline double center_effects(Rcpp::NumericVector& x, int start, int length) {
+    if (length <= 0) return 0.0;
     double mean = 0.0;
     for (int i = 0; i < length; i++) mean += x[start + i];
     mean /= length;
     for (int i = 0; i < length; i++) x[start + i] -= mean;
+    return mean;
 }
 
 } // namespace tulpa

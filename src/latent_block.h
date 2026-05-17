@@ -73,8 +73,11 @@ struct LatentBlock {
     std::function<bool(int)> prep;
 
     // Optional sum-to-zero / soft centering, applied after each Newton step
-    // on the block's sub-vector. May be empty (no centering, e.g. AR1).
-    std::function<void(Rcpp::NumericVector&)> center;
+    // on the block's sub-vector. Returns the mean offset that was applied
+    // (single-arm callers ignore the return value; joint drivers use it to
+    // shift per-arm intercepts so eta is preserved). Return 0 means no
+    // centering happened. May be empty (no centering at all, e.g. AR1).
+    std::function<double(Rcpp::NumericVector&)> center;
 };
 
 } // namespace tulpa
