@@ -79,7 +79,7 @@ int build_blocks_from_spec(
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = [spatial_idx](int i) { return spatial_idx[i]; };
+        block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
         block.add_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
@@ -116,7 +116,7 @@ int build_blocks_from_spec(
         tulpa::LatentBlock phi_block;
         phi_block.start = phi_start;
         phi_block.size  = size;
-        phi_block.idx   = [spatial_idx](int i) { return spatial_idx[i]; };
+        phi_block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         phi_block.d_fac = [axis0, theta_grid, scale_factor](int k) {
             double sigma_k = theta_grid(k, axis0);
             double rho_k   = theta_grid(k, axis0 + 1);
@@ -151,7 +151,7 @@ int build_blocks_from_spec(
         tulpa::LatentBlock theta_block;
         theta_block.start = theta_start;
         theta_block.size  = size;
-        theta_block.idx   = [spatial_idx](int i) { return spatial_idx[i]; };
+        theta_block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         theta_block.d_fac = [axis0, theta_grid](int k) {
             double sigma_k = theta_grid(k, axis0);
             double rho_k   = theta_grid(k, axis0 + 1);
@@ -197,7 +197,7 @@ int build_blocks_from_spec(
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = [spatial_idx](int i) { return spatial_idx[i]; };
+        block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
         block.prep  = [size, axis0, theta_grid, adj_rp_v, adj_ci_v, n_nbr_v,
                        log_det_Q_rho](int k) -> bool {
@@ -242,7 +242,7 @@ int build_blocks_from_spec(
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = [temporal_idx](int i) { return temporal_idx[i]; };
+        block.idx   = [temporal_idx](int i, int /*k_arm*/) { return temporal_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
         if (type == "rw1") {
             block.add_prior = [start, size, axis0, theta_grid, cyclic](
@@ -285,7 +285,7 @@ int build_blocks_from_spec(
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = [temporal_idx](int i) { return temporal_idx[i]; };
+        block.idx   = [temporal_idx](int i, int /*k_arm*/) { return temporal_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
         block.add_prior = [start, size, axis0, theta_grid](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
@@ -319,7 +319,7 @@ int build_blocks_from_spec(
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
-        block.idx   = [obs_idx](int i) { return obs_idx[i]; };
+        block.idx   = [obs_idx](int i, int /*k_arm*/) { return obs_idx[i]; };
         block.d_fac = [axis0, theta_grid](int k) {
             return theta_grid(k, axis0);
         };

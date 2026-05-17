@@ -89,7 +89,7 @@ Rcpp::List cpp_nested_laplace_icar(
     tulpa::LatentBlock block;
     block.start = spatial_start;
     block.size  = n_spatial_units;
-    block.idx   = [&](int i) { return spatial_idx[i]; };
+    block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
     block.d_fac = [](int) { return 1.0; };
     block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                           const Rcpp::NumericVector& x, int k) {
@@ -160,7 +160,7 @@ Rcpp::List cpp_nested_laplace_bym2(
     tulpa::LatentBlock phi_block;
     phi_block.start = phi_start;
     phi_block.size  = n_spatial_units;
-    phi_block.idx   = [&](int i) { return spatial_idx[i]; };
+    phi_block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
     phi_block.d_fac = [&, scale_factor](int k) {
         return sigma_spatial_grid[k] *
                std::sqrt(rho_grid[k] + 1e-10) * scale_factor;
@@ -190,7 +190,7 @@ Rcpp::List cpp_nested_laplace_bym2(
     tulpa::LatentBlock theta_block;
     theta_block.start = theta_start;
     theta_block.size  = n_spatial_units;
-    theta_block.idx   = [&](int i) { return spatial_idx[i]; };
+    theta_block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
     theta_block.d_fac = [&](int k) {
         return sigma_spatial_grid[k] * std::sqrt(1.0 - rho_grid[k] + 1e-10);
     };
@@ -269,7 +269,7 @@ Rcpp::List cpp_nested_laplace_car_proper(
     tulpa::LatentBlock block;
     block.start = spatial_start;
     block.size  = n_spatial_units;
-    block.idx   = [&](int i) { return spatial_idx[i]; };
+    block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
     block.d_fac = [](int) { return 1.0; };
     block.prep  = [&, log_det_Q_rho](int k) -> bool {
         std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
@@ -331,7 +331,7 @@ Rcpp::List cpp_nested_laplace_rw1(
     tulpa::LatentBlock block;
     block.start = temporal_start;
     block.size  = n_times;
-    block.idx   = [&](int i) { return temporal_idx[i]; };
+    block.idx   = [&](int i, int /*k_arm*/) { return temporal_idx[i]; };
     block.d_fac = [](int) { return 1.0; };
     block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                           const Rcpp::NumericVector& x, int k) {
@@ -382,7 +382,7 @@ Rcpp::List cpp_nested_laplace_rw2(
     tulpa::LatentBlock block;
     block.start = temporal_start;
     block.size  = n_times;
-    block.idx   = [&](int i) { return temporal_idx[i]; };
+    block.idx   = [&](int i, int /*k_arm*/) { return temporal_idx[i]; };
     block.d_fac = [](int) { return 1.0; };
     block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                           const Rcpp::NumericVector& x, int k) {
@@ -436,7 +436,7 @@ Rcpp::List cpp_nested_laplace_ar1(
     tulpa::LatentBlock block;
     block.start = temporal_start;
     block.size  = n_times;
-    block.idx   = [&](int i) { return temporal_idx[i]; };
+    block.idx   = [&](int i, int /*k_arm*/) { return temporal_idx[i]; };
     block.d_fac = [](int) { return 1.0; };
     block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                           const Rcpp::NumericVector& x, int k) {

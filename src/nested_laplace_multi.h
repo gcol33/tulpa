@@ -78,7 +78,7 @@ inline void accumulate_latent_cross_terms(
         active_idx.clear();
         active_d.clear();
         for (int b = 0; b < B; b++) {
-            int l_b = blocks[b].idx(i);
+            int l_b = blocks[b].idx(i, /*k_arm=*/0);
             if (l_b > 0 && l_b <= blocks[b].size) {
                 active_idx.push_back(blocks[b].start + l_b - 1);
                 active_d.push_back(d_fac_cache[b]);
@@ -173,7 +173,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                     if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
                 }
                 for (size_t b = 0; b < blocks.size(); b++) {
-                    int l = blocks[b].idx(i);
+                    int l = blocks[b].idx(i, /*k_arm=*/0);
                     if (l > 0 && l <= blocks[b].size) {
                         eta[i] += d_fac_cache[b] * x[blocks[b].start + l - 1];
                     }
