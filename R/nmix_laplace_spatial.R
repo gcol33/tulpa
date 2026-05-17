@@ -199,6 +199,205 @@ tulpa_nmix_laplace_icar <- function(y,
     z_mean           = z_mean,
     n_sites          = n_sites,
     n_obs            = n_obs,
+    prior_type       = "icar",
+    call             = match.call()
+  ))
+  if (any(out$boundary_max > 1e-4, na.rm = TRUE)) {
+    warning(sprintf(
+      "Max posterior weight on N = K_max is %.2e at one or more grid points; raise K_max.",
+      max(out$boundary_max, na.rm = TRUE)
+    ), call. = FALSE)
+  }
+  class(out) <- c("tulpa_nmix_spatial_fit", "list")
+  out
+}
+
+#' Proper CAR Royle (2004) N-mixture model via nested Laplace
+#'
+#' @description
+#' Nested-Laplace fit of the spatial N-mixture model with a proper conditional
+#' autoregressive prior on the abundance-arm spatial offset:
+#' \deqn{N_i \sim \mathrm{Poisson}(\lambda_i), \qquad
+#'       y_{ij} | N_i \sim \mathrm{Binomial}(N_i, p_{ij}),}
+#' \eqn{\log \lambda_i = X_\lambda^{(i)} \beta_\lambda + z_{u(i)}}, where
+#' \eqn{z \mid \tau, \rho \sim \mathrm{N}(0, [\tau (D - \rho W)]^{-1})}.
+#' Both hyperparameters are integrated over an outer 2D grid; the inner
+#' Newton step shares the kernel with [tulpa_nmix_laplace_icar()] (ICAR is
+#' the \eqn{\rho = 1} limit).
+#'
+#' Unlike the ICAR fit, no sum-to-zero centering is applied -- \eqn{Q(\rho)}
+#' is full rank for \eqn{\rho < 1}. The per-rho \eqn{\log |Q(\rho)|} is
+#' precomputed once via a dense Cholesky on the \eqn{n_{\mathrm{spatial}}
+#' \times n_{\mathrm{spatial}}} precision matrix.
+#'
+#' @inheritParams tulpa_nmix_laplace_icar
+#' @param tau_grid Optional numeric vector of \eqn{\tau} grid points
+#'   (defaults to `exp(seq(log(0.3), log(30), length.out = 7L))`).
+#' @param rho_grid Optional numeric vector of \eqn{\rho} grid points in
+#'   the valid eigenvalue interval. Defaults to a 5-point grid in
+#'   \eqn{(0, 1)} -- callers that want eigenvalue-derived bounds should
+#'   compute them via tulpa::spatial_car_proper(adjacency)`$`rho_bounds and
+#'   pass an explicit grid in that interval.
+#'
+#' @return A list of class `tulpa_nmix_spatial_fit`:
+#'   * `theta_grid` -- `[n_grid x 2]` matrix of (tau, rho) per grid point
+#'   * `tau_grid`, `rho_grid` -- input axes
+#'   * `log_det_Q_rho` -- precomputed log determinants per rho
+#'   * `log_marginal`, `weights`, `tau_mean`, `tau_sd`, `rho_mean`, `rho_sd`
+#'     -- as in [tulpa_nmix_laplace_icar()] but with the rho marginal added
+#'   * other diagnostic fields and named coefficient means as in ICAR
+#'
+#' @references
+#' Cressie, N. (1993). Statistics for Spatial Data. Wiley.
+#' Rue, H., Held, L. (2005). Gaussian Markov Random Fields. CRC.
+#'
+#' @export
+tulpa_nmix_laplace_car_proper <- function(y,
+                                          site_idx,
+                                          map_site_to_unit,
+                                          X_lambda,
+                                          X_p,
+                                          adj_row_ptr,
+                                          adj_col_idx,
+                                          n_neighbors,
+                                          n_spatial,
+                                          tau_grid = NULL,
+                                          rho_grid = NULL,
+                                          beta_lambda_init = NULL,
+                                          beta_p_init = NULL,
+                                          z_init = NULL,
+                                          K_max = NULL,
+                                          max_iter = 100L,
+                                          tol = 1e-6,
+                                          verbose = FALSE) {
+  y                <- as.integer(y)
+  site_idx         <- as.integer(site_idx)
+  map_site_to_unit <- as.integer(map_site_to_unit)
+  if (!is.matrix(X_lambda)) stop("`X_lambda` must be a numeric matrix.", call. = FALSE)
+  if (!is.matrix(X_p))      stop("`X_p` must be a numeric matrix.", call. = FALSE)
+  n_sites <- nrow(X_lambda)
+  n_obs   <- nrow(X_p)
+  p_lam   <- ncol(X_lambda)
+  p_p     <- ncol(X_p)
+  if (length(y) != n_obs) stop("length(y) must equal nrow(X_p).", call. = FALSE)
+  if (length(site_idx) != n_obs) stop("length(site_idx) must equal nrow(X_p).", call. = FALSE)
+  if (length(map_site_to_unit) != n_sites) {
+    stop("length(map_site_to_unit) must equal nrow(X_lambda).", call. = FALSE)
+  }
+  if (any(map_site_to_unit < 1L) || any(map_site_to_unit > n_spatial)) {
+    stop("map_site_to_unit values must lie in [1, n_spatial].", call. = FALSE)
+  }
+  if (length(adj_row_ptr) != n_spatial + 1L) {
+    stop("length(adj_row_ptr) must equal n_spatial + 1.", call. = FALSE)
+  }
+  if (length(n_neighbors) != n_spatial) {
+    stop("length(n_neighbors) must equal n_spatial.", call. = FALSE)
+  }
+  if (is.null(tau_grid)) {
+    tau_grid <- exp(seq(log(0.3), log(30), length.out = 7L))
+  }
+  if (is.null(rho_grid)) {
+    rho_grid <- c(0.1, 0.3, 0.5, 0.75, 0.95)
+  }
+  if (any(rho_grid <= 0) || any(rho_grid >= 1)) {
+    stop("rho_grid values must lie strictly in (0, 1) for the default ",
+         "eigenvalue interval. Pass explicit bounds via spatial_car_proper().",
+         call. = FALSE)
+  }
+  if (is.null(beta_lambda_init)) {
+    beta_lambda_init <- c(log(mean(y) + 0.1), rep(0, p_lam - 1L))
+  }
+  if (is.null(beta_p_init)) beta_p_init <- rep(0, p_p)
+  if (length(beta_lambda_init) != p_lam) {
+    stop("length(beta_lambda_init) must equal ncol(X_lambda).", call. = FALSE)
+  }
+  if (length(beta_p_init) != p_p) {
+    stop("length(beta_p_init) must equal ncol(X_p).", call. = FALSE)
+  }
+  if (is.null(K_max)) {
+    K_max <- as.integer(max(y) + 100L)
+  } else {
+    K_max <- as.integer(K_max)
+    if (K_max < max(y)) stop("K_max must be >= max(y).", call. = FALSE)
+  }
+  if (!is.null(z_init) && length(z_init) != n_spatial) {
+    stop("length(z_init) must equal n_spatial.", call. = FALSE)
+  }
+
+  fit <- cpp_nested_laplace_nmix_car_proper(
+    y                  = y,
+    site_idx           = site_idx,
+    map_site_to_unit_R = map_site_to_unit,
+    X_lambda_R         = X_lambda,
+    X_p_R              = X_p,
+    adj_row_ptr        = as.integer(adj_row_ptr),
+    adj_col_idx        = as.integer(adj_col_idx),
+    n_neighbors        = as.integer(n_neighbors),
+    n_spatial          = as.integer(n_spatial),
+    tau_grid           = as.numeric(tau_grid),
+    rho_grid           = as.numeric(rho_grid),
+    beta_lambda_init   = as.numeric(beta_lambda_init),
+    beta_p_init        = as.numeric(beta_p_init),
+    z_init             = if (is.null(z_init)) NULL else as.numeric(z_init),
+    K_max              = K_max,
+    max_iter           = as.integer(max_iter),
+    tol                = as.numeric(tol),
+    verbose            = isTRUE(verbose)
+  )
+
+  # Normalise grid weights (joint over the (tau, rho) grid).
+  lm <- fit$log_marginal
+  finite_lm <- lm[is.finite(lm)]
+  if (length(finite_lm) == 0L) {
+    warning("All grid points returned non-finite log_marginal -- check grids / data.",
+            call. = FALSE)
+    weights <- rep(NA_real_, length(lm))
+  } else {
+    m <- max(finite_lm)
+    w <- exp(lm - m)
+    w[!is.finite(w)] <- 0
+    if (sum(w) == 0) {
+      weights <- rep(NA_real_, length(lm))
+    } else {
+      weights <- w / sum(w)
+    }
+  }
+
+  tau_vec <- fit$theta_grid[, 1]
+  rho_vec <- fit$theta_grid[, 2]
+  tau_mean <- sum(weights * tau_vec, na.rm = TRUE)
+  tau_sd   <- sqrt(max(0, sum(weights * tau_vec^2, na.rm = TRUE) - tau_mean^2))
+  rho_mean <- sum(weights * rho_vec, na.rm = TRUE)
+  rho_sd   <- sqrt(max(0, sum(weights * rho_vec^2, na.rm = TRUE) - rho_mean^2))
+
+  modes <- fit$modes
+  beta_lambda_mean <- as.numeric(crossprod(weights, modes[, seq_len(p_lam), drop = FALSE]))
+  beta_p_mean      <- as.numeric(crossprod(
+    weights, modes[, p_lam + seq_len(p_p), drop = FALSE]
+  ))
+  z_mean <- as.numeric(crossprod(
+    weights, modes[, p_lam + p_p + seq_len(n_spatial), drop = FALSE]
+  ))
+
+  nm_lam <- colnames(X_lambda)
+  nm_p   <- colnames(X_p)
+  if (is.null(nm_lam)) nm_lam <- paste0("lam_", seq_len(p_lam))
+  if (is.null(nm_p))   nm_p   <- paste0("p_", seq_len(p_p))
+  names(beta_lambda_mean) <- nm_lam
+  names(beta_p_mean)      <- nm_p
+
+  out <- c(fit, list(
+    weights          = weights,
+    tau_mean         = tau_mean,
+    tau_sd           = tau_sd,
+    rho_mean         = rho_mean,
+    rho_sd           = rho_sd,
+    beta_lambda_mean = beta_lambda_mean,
+    beta_p_mean      = beta_p_mean,
+    z_mean           = z_mean,
+    n_sites          = n_sites,
+    n_obs            = n_obs,
+    prior_type       = "car_proper",
     call             = match.call()
   ))
   if (any(out$boundary_max > 1e-4, na.rm = TRUE)) {
@@ -213,13 +412,31 @@ tulpa_nmix_laplace_icar <- function(y,
 
 #' @export
 print.tulpa_nmix_spatial_fit <- function(x, ...) {
-  cat("tulpa spatial N-mixture (ICAR) nested-Laplace fit\n")
+  ptype <- x$prior_type %||% "icar"
+  label <- switch(ptype,
+                  icar       = "ICAR",
+                  car_proper = "CAR(rho)",
+                  bym2       = "BYM2",
+                  toupper(ptype))
+  cat(sprintf("tulpa spatial N-mixture (%s) nested-Laplace fit\n", label))
   cat(sprintf("  n_sites = %d   n_obs = %d   n_spatial = %d   K_max = %d\n",
               x$n_sites, x$n_obs, x$n_spatial, x$K_max))
-  cat(sprintf("  tau grid = [%.3g, %.3g] over %d points\n",
-              min(x$tau_grid), max(x$tau_grid), x$n_grid))
-  cat(sprintf("  tau_mean = %.3g   tau_sd = %.3g\n",
-              x$tau_mean, x$tau_sd))
+  if (ptype == "icar") {
+    cat(sprintf("  tau grid = [%.3g, %.3g] over %d points\n",
+                min(x$tau_grid), max(x$tau_grid), x$n_grid))
+    cat(sprintf("  tau_mean = %.3g   tau_sd = %.3g\n",
+                x$tau_mean, x$tau_sd))
+  } else {
+    cat(sprintf("  tau grid = [%.3g, %.3g] x %d   rho grid = [%.3g, %.3g] x %d\n",
+                min(x$tau_grid), max(x$tau_grid), length(x$tau_grid),
+                min(x$rho_grid), max(x$rho_grid), length(x$rho_grid)))
+    cat(sprintf("  tau_mean = %.3g   tau_sd = %.3g\n",
+                x$tau_mean, x$tau_sd))
+    if (!is.null(x$rho_mean)) {
+      cat(sprintf("  rho_mean = %.3g   rho_sd = %.3g\n",
+                  x$rho_mean, x$rho_sd))
+    }
+  }
   cat("\nabundance (log lambda):\n")
   print(x$beta_lambda_mean)
   cat("\ndetection (logit p):\n")
