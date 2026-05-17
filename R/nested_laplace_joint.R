@@ -146,8 +146,23 @@ tulpa_nested_laplace_joint <- function(responses,
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
     }
-    if (!is.list(prior) || is.null(prior$type)) {
-        stop("`prior` must be a list with a `type` field.", call. = FALSE)
+    if (!is.list(prior)) {
+        stop("`prior` must be a list with a `type` field, or a list of block specs.",
+             call. = FALSE)
+    }
+    # Detect multi-block prior (list-of-blocks). Routed to a separate
+    # dispatch path that builds vector<LatentBlock> on the joint side.
+    if (.is_multi_block_prior_joint(prior)) {
+        return(.joint_dispatch_multi(
+            responses = responses, prior_list = prior, copy = copy,
+            phi_grid = phi_grid,
+            max_iter = max_iter, tol = tol, n_threads = n_threads,
+            x_init = x_init, verbose = verbose, store_Q = store_Q
+        ))
+    }
+    if (is.null(prior$type)) {
+        stop("`prior` must be a list with a `type` field, or a list of block specs.",
+             call. = FALSE)
     }
     type <- tolower(prior$type)
     backend <- .joint_backends[[type]]
@@ -1229,4 +1244,460 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     if (length(info$triggered_axes) == 0L) info <- NULL
     list(grids = grids, res = res, info = info)
+}
+
+
+# =============================================================================
+# Multi-block joint dispatch (Phase J-B)
+# =============================================================================
+#
+# Activated when `prior` is a list-of-blocks (each element has a `type`
+# field). Routes to cpp_nested_laplace_joint_multi, which builds a
+# std::vector<LatentBlock> on the joint side. At most one block can be
+# the copy block; first ship restricts the copy block to spatial types
+# (icar / bym2 / car_proper). See dev_notes/plan_multi_block_joint.md.
+
+# Multi-block detection. Same shape as the single-arm side: a list whose
+# elements are themselves named lists carrying a `type` field, and whose
+# top-level entry does NOT carry a `type` (which would mark a single-block
+# prior).
+.is_multi_block_prior_joint <- function(p) {
+    is.list(p) && is.null(p$type) && length(p) > 0 &&
+        all(vapply(p, function(x) is.list(x) && !is.null(x$type), logical(1)))
+}
+
+# Validate one arm spec for the multi-block path. Same shape as
+# `.normalise_joint_arm` *except* `spatial_idx` is no longer required at
+# the arm level — per-arm idx vectors live inside each block spec instead.
+# A trailing `spatial_idx = integer(0)` placeholder is set so the existing
+# JointArm packaging path doesn't complain.
+.normalise_joint_arm_multi <- function(a, k) {
+    if (!is.list(a)) {
+        stop("Arm ", k, ": expected a list of arm spec fields.", call. = FALSE)
+    }
+    must_have <- c("y", "X", "family")
+    missing <- setdiff(must_have, names(a))
+    if (length(missing)) {
+        stop("Arm ", k, ": missing fields ",
+             paste(shQuote(missing), collapse = ", "), ".", call. = FALSE)
+    }
+    N <- length(a$y)
+    a$y <- as.numeric(a$y)
+    if (!is.matrix(a$X)) {
+        stop("Arm ", k, ": `X` must be a numeric matrix.", call. = FALSE)
+    }
+    if (nrow(a$X) != N) {
+        stop("Arm ", k, ": nrow(X) (", nrow(a$X), ") must equal length(y) (",
+             N, ").", call. = FALSE)
+    }
+    # spatial_idx is OPTIONAL in multi-block (per-arm idx lives on the block).
+    # The legacy joint kernels still reach into parsed[k_arm].spatial_idx, but
+    # the multi-block kernel does NOT, so a length-N placeholder of zeros is
+    # safe -- it shuts up parse_joint_arms' length check without contributing
+    # to eta.
+    a$spatial_idx <- if (is.null(a$spatial_idx)) rep(0L, N)
+                     else as.integer(a$spatial_idx)
+    if (length(a$spatial_idx) != N) {
+        stop("Arm ", k, ": length(spatial_idx) (", length(a$spatial_idx),
+             ") must equal length(y) (", N, ").", call. = FALSE)
+    }
+    a$n_trials <- if (is.null(a$n_trials)) rep(1L, N) else as.integer(a$n_trials)
+    if (length(a$n_trials) != N) {
+        stop("Arm ", k, ": length(n_trials) (", length(a$n_trials),
+             ") must equal length(y) (", N, ").", call. = FALSE)
+    }
+    a$re_idx <- if (is.null(a$re_idx)) rep(0, N) else as.numeric(a$re_idx)
+    if (length(a$re_idx) != N) {
+        stop("Arm ", k, ": length(re_idx) (", length(a$re_idx),
+             ") must equal length(y) (", N, ").", call. = FALSE)
+    }
+    a$n_re_groups <- as.integer(a$n_re_groups %||% 0L)
+    a$sigma_re    <- as.numeric(a$sigma_re %||% 1.0)
+    a$family      <- as.character(a$family)
+    a$phi         <- as.numeric(a$phi %||% 1.0)
+    a
+}
+
+# Resolve which block is the copy block (first-ship restriction: spatial
+# types only). Accepts `copy$block` as a 1-based index. Returns a list:
+#   has_copy, copy_arm_zero (0-based), copy_block_zero (0-based),
+#   sigma_pos_grid (numeric).
+.resolve_copy_multi <- function(copy, responses, prior_list) {
+    if (is.null(copy)) {
+        return(list(has_copy = FALSE, copy_arm_zero = -1L,
+                    copy_block_zero = -1L, sigma_pos_grid = numeric(0)))
+    }
+    arm_id <- copy$arm
+    if (is.null(arm_id)) {
+        stop("`copy$arm` must be a name or 1-based index.", call. = FALSE)
+    }
+    if (is.character(arm_id)) {
+        nm <- names(responses)
+        if (is.null(nm) || !arm_id %in% nm) {
+            stop("`copy$arm` = '", arm_id, "' not found in names(responses).",
+                 call. = FALSE)
+        }
+        arm_zero <- match(arm_id, nm) - 1L
+    } else {
+        arm_zero <- as.integer(arm_id) - 1L
+        if (arm_zero < 0L || arm_zero >= length(responses)) {
+            stop("`copy$arm` index out of range.", call. = FALSE)
+        }
+    }
+    block_id <- copy$block
+    if (is.null(block_id)) {
+        stop("`copy$block` must be a 1-based index into `prior` for the ",
+             "multi-block joint driver. (First ship: only spatial blocks ",
+             "can be copy blocks; see dev_notes/plan_multi_block_joint.md.)",
+             call. = FALSE)
+    }
+    block_zero <- as.integer(block_id) - 1L
+    if (block_zero < 0L || block_zero >= length(prior_list)) {
+        stop("`copy$block` index (", block_id, ") out of range for length(prior) (",
+             length(prior_list), ").", call. = FALSE)
+    }
+    block_type <- tolower(prior_list[[block_zero + 1L]]$type)
+    spatial_types <- c("icar", "bym2", "car_proper")
+    if (!block_type %in% spatial_types) {
+        stop("`copy$block` points at type '", block_type, "'. First ship ",
+             "restricts copy semantics to spatial types (",
+             paste(shQuote(spatial_types), collapse = ", "), "). ",
+             "See dev_notes/plan_multi_block_joint.md.", call. = FALSE)
+    }
+    if (!is.null(copy$sigma_pos_grid)) {
+        sigma_pos <- as.numeric(copy$sigma_pos_grid)
+    } else {
+        # Default: mirror the donor sigma_grid on the copy block.
+        donor <- prior_list[[block_zero + 1L]]$sigma_grid
+        if (is.null(donor)) {
+            donor <- exp(seq(log(0.1), log(3), length.out = 5))
+        }
+        sigma_pos <- as.numeric(donor)
+    }
+    if (length(sigma_pos) == 0L) {
+        stop("`copy$sigma_pos_grid` must have at least one positive value.",
+             call. = FALSE)
+    }
+    if (any(sigma_pos < 0)) {
+        stop("`copy$sigma_pos_grid` values must be non-negative.",
+             call. = FALSE)
+    }
+    list(has_copy = TRUE, copy_arm_zero = arm_zero,
+         copy_block_zero = block_zero, sigma_pos_grid = sigma_pos)
+}
+
+# Per-block axis grid for the multi-block joint driver. When the block is
+# the copy block (spatial only for first ship), the parameterisation
+# switches from tau to sigma_occ (+ sigma_pos as an extra axis). Non-copy
+# blocks use the standard single-arm conventions and reuse the
+# `.NL_REGISTRY` defaults.
+#
+# Returns:
+#   $grid    : matrix [n_block_cells x n_axes_for_block]
+#   $names   : axis names
+#   $prepared: block spec with defaults filled in (so downstream code can
+#              read prior$adj_row_ptr etc. without re-checking presence)
+.joint_block_axis_grid <- function(p, is_copy, sigma_pos_grid,
+                                    block_index) {
+    type <- tolower(p$type)
+    if (is_copy) {
+        sigma_occ <- p$sigma_grid
+        if (is.null(sigma_occ)) {
+            sigma_occ <- exp(seq(log(0.1), log(3), length.out = 5))
+        }
+        sigma_occ <- as.numeric(sigma_occ)
+        if (type == "icar") {
+            gr <- expand.grid(sigma_occ = sigma_occ,
+                              sigma_pos = sigma_pos_grid,
+                              KEEP.OUT.ATTRS = FALSE,
+                              stringsAsFactors = FALSE)
+        } else if (type == "bym2") {
+            rho <- p$rho_grid %||% c(0.2, 0.5, 0.8, 0.95)
+            gr <- expand.grid(sigma_occ = sigma_occ,
+                              sigma_pos = sigma_pos_grid,
+                              rho = as.numeric(rho),
+                              KEEP.OUT.ATTRS = FALSE,
+                              stringsAsFactors = FALSE)
+        } else if (type == "car_proper") {
+            rho_car <- p$rho_car_grid %||% c(0.5, 0.8, 0.95, 0.99)
+            gr <- expand.grid(sigma_occ = sigma_occ,
+                              sigma_pos = sigma_pos_grid,
+                              rho_car = as.numeric(rho_car),
+                              KEEP.OUT.ATTRS = FALSE,
+                              stringsAsFactors = FALSE)
+        } else {
+            stop("Block ", block_index, ": copy semantics not supported for ",
+                 "type '", type, "' in first ship.", call. = FALSE)
+        }
+        return(list(grid     = as.matrix(gr),
+                    names    = colnames(gr),
+                    prepared = p))
+    }
+    # Non-copy: reuse the single-arm registry's grid construction. The
+    # registry returns the standard (tau, [rho]) / (sigma, [rho]) axes.
+    .nl_block_axis_grid(p)
+}
+
+# Convert one R-side block to the C++ `cpp_nested_laplace_joint_multi`
+# format. Per-arm idx vectors live in the BLOCK spec (not the arm spec);
+# the user supplies `spatial_idx` / `temporal_idx` / `obs_idx` as a list
+# of length n_arms.
+.joint_block_spec_for_cpp <- function(p, n_arms, block_index) {
+    type <- tolower(p$type)
+    if (type %in% c("icar", "bym2", "car_proper")) {
+        if (is.null(p$spatial_idx)) {
+            stop("Block ", block_index, " (type '", type, "'): ",
+                 "`spatial_idx` is required as a list of length n_arms.",
+                 call. = FALSE)
+        }
+        spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
+                                                  block_index, "spatial_idx")
+        out <- list(
+            type            = type,
+            spatial_idx     = spatial_idx,
+            n_spatial_units = as.integer(p$n_spatial_units),
+            adj_row_ptr     = as.integer(p$adj_row_ptr),
+            adj_col_idx     = as.integer(p$adj_col_idx),
+            n_neighbors     = as.integer(p$n_neighbors)
+        )
+        if (type == "bym2") {
+            out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
+        }
+        out
+    } else if (type %in% c("rw1", "rw2", "ar1")) {
+        if (is.null(p$temporal_idx)) {
+            stop("Block ", block_index, " (type '", type, "'): ",
+                 "`temporal_idx` is required as a list of length n_arms.",
+                 call. = FALSE)
+        }
+        temporal_idx <- .multi_block_per_arm_idx(p$temporal_idx, n_arms,
+                                                   block_index, "temporal_idx")
+        out <- list(
+            type         = type,
+            temporal_idx = temporal_idx,
+            n_times      = as.integer(p$n_times)
+        )
+        if (type == "rw1") out$cyclic <- isTRUE(p$cyclic)
+        out
+    } else if (type == "iid") {
+        if (is.null(p$obs_idx)) {
+            stop("Block ", block_index, " (type 'iid'): ",
+                 "`obs_idx` is required as a list of length n_arms.",
+                 call. = FALSE)
+        }
+        obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
+                                              block_index, "obs_idx")
+        list(
+            type    = "iid",
+            obs_idx = obs_idx,
+            n_units = as.integer(p$n_units)
+        )
+    } else {
+        stop("Block type '", type, "' is not supported in multi-block joint priors.",
+             call. = FALSE)
+    }
+}
+
+# Coerce a per-arm idx field into a length-n_arms list of integer vectors.
+# Accepts either a list (already per-arm) or a single vector (replicated
+# across arms; useful when every arm shares the same indexing — e.g. years
+# 1..T mapped one-to-one).
+.multi_block_per_arm_idx <- function(idx, n_arms, block_index, field_name) {
+    if (is.list(idx)) {
+        if (length(idx) != n_arms) {
+            stop("Block ", block_index, ": `", field_name, "` is a list of ",
+                 length(idx), " entries but n_arms = ", n_arms, ".",
+                 call. = FALSE)
+        }
+        lapply(idx, as.integer)
+    } else {
+        rep(list(as.integer(idx)), n_arms)
+    }
+}
+
+# Main multi-block joint dispatch. Mirrors the structure of the
+# single-block path (build grid, call C++, post-process) but accepts a
+# list-of-blocks `prior_list` and a `copy` spec that points at a
+# specific block.
+.joint_dispatch_multi <- function(responses, prior_list, copy,
+                                  phi_grid,
+                                  max_iter, tol, n_threads,
+                                  x_init, verbose, store_Q) {
+    n_arms <- length(responses)
+    arms <- lapply(seq_along(responses), function(k) {
+        a <- responses[[k]]
+        .normalise_joint_arm_multi(a, k)
+    })
+    arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
+
+    cp <- .resolve_copy_multi(copy, responses, prior_list)
+
+    # Per-block axis grids (with copy-block parameterisation if applicable).
+    B <- length(prior_list)
+    per_block <- lapply(seq_len(B), function(b) {
+        is_copy <- cp$has_copy && (b - 1L) == cp$copy_block_zero
+        .joint_block_axis_grid(prior_list[[b]], is_copy, cp$sigma_pos_grid, b)
+    })
+    block_grids <- lapply(per_block, function(x) x$grid)
+    prepared    <- lapply(per_block, function(x) x$prepared)
+
+    # Cartesian product of per-block axis grids.
+    row_counts <- vapply(block_grids, nrow, integer(1))
+    idx <- do.call(expand.grid, lapply(row_counts, seq_len))
+    n_cells <- nrow(idx)
+    if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
+        stop(sprintf(
+            "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or wait for CCD integration support.",
+            n_cells, .NL_MULTI_GRID_HARD_CAP
+        ), call. = FALSE)
+    }
+    if (n_cells > .NL_MULTI_GRID_WARN) {
+        warning(sprintf(
+            "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
+            n_cells, .NL_MULTI_GRID_WARN
+        ), call. = FALSE)
+    }
+
+    joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
+        block_grids[[b]][idx[[b]], , drop = FALSE]
+    }))
+    axis_counts  <- vapply(block_grids, ncol, integer(1))
+    axis_offsets <- as.integer(c(0L, cumsum(axis_counts)))
+    axis_names <- unlist(lapply(seq_along(block_grids), function(b) {
+        paste0("b", b, ".", colnames(block_grids[[b]]))
+    }))
+    colnames(joint_grid) <- axis_names
+
+    blocks_spec <- lapply(seq_along(prepared), function(b) {
+        .joint_block_spec_for_cpp(prepared[[b]], n_arms, b)
+    })
+
+    # phi_grid (per-arm dispersion overrides on the outer grid): only
+    # populated when the user supplied one. Same convention as the
+    # single-block joint path.
+    phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
+    phi_grid_per_arm_list <- NULL
+    if (!is.null(phi_axes)) {
+        # Embed phi axes into the joint grid as new columns. For now we
+        # support the single-block convention: phi varies independently
+        # of the latent-block grid, so phi axes multiply n_cells.
+        active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
+        if (length(active) > 0L) {
+            phi_extra <- do.call(expand.grid,
+                                  c(active, list(KEEP.OUT.ATTRS = FALSE,
+                                                  stringsAsFactors = FALSE)))
+            joint_idx <- expand.grid(joint = seq_len(nrow(joint_grid)),
+                                       phi   = seq_len(nrow(phi_extra)),
+                                       KEEP.OUT.ATTRS = FALSE)
+            joint_grid <- cbind(joint_grid[joint_idx$joint, , drop = FALSE],
+                                  as.matrix(phi_extra[joint_idx$phi, , drop = FALSE]))
+            phi_cols <- paste0("phi_", names(active))
+            colnames(joint_grid) <- c(axis_names, phi_cols)
+            # phi columns don't belong to any latent block; the C++ entry
+            # consumes them via phi_grid_per_arm, not the block axes.
+            phi_grid_per_arm_list <- vector("list", length(arm_names))
+            for (k in seq_along(arm_names)) {
+                col <- paste0("phi_", arm_names[k])
+                if (col %in% colnames(joint_grid)) {
+                    phi_grid_per_arm_list[[k]] <- as.numeric(joint_grid[, col])
+                }
+            }
+        }
+    }
+
+    res <- cpp_nested_laplace_joint_multi(
+        arms_list    = arms,
+        copy_arm     = as.integer(cp$copy_arm_zero),
+        copy_block   = as.integer(cp$copy_block_zero),
+        blocks_spec  = blocks_spec,
+        theta_grid   = joint_grid[, seq_len(axis_offsets[B + 1L]), drop = FALSE],
+        axis_offsets = axis_offsets,
+        max_iter     = as.integer(max_iter),
+        tol          = as.numeric(tol),
+        n_threads    = as.integer(n_threads),
+        x_init_nullable = x_init,
+        store_Q      = isTRUE(store_Q),
+        phi_grid_per_arm = phi_grid_per_arm_list
+    )
+
+    res$theta_grid   <- joint_grid
+    res$theta_names  <- colnames(joint_grid)
+    res$axis_offsets <- axis_offsets
+    res$weights      <- .nl_normalise_weights(res$log_marginal)
+    res <- .joint_posterior_moments_multi(res, prepared, axis_offsets,
+                                           joint_grid, cp)
+    res$blocks      <- prepared
+    res$prior       <- prior_list
+    res$responses   <- responses
+    res$copy        <- copy
+    class(res) <- c("tulpa_nested_laplace_joint_multi",
+                    "tulpa_nested_laplace_joint",
+                    "tulpa_nested_laplace", "list")
+    res
+}
+
+# Posterior moments for the multi-block joint grid. Mirrors the single-arm
+# multi-block helper (`.nl_posterior_moments_multi`) and additionally
+# attaches alpha = sigma_pos / sigma_occ when a copy block is active.
+.joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
+                                            joint_grid, cp) {
+    w <- res$weights
+    # Joint moments across every column of joint_grid (including phi
+    # columns appended for per-arm dispersion overrides).
+    res$theta_mean <- as.numeric(crossprod(w, joint_grid))
+    names(res$theta_mean) <- colnames(joint_grid)
+    res$theta_sd <- sqrt(pmax(0, as.numeric(crossprod(w, joint_grid^2)) -
+                                  res$theta_mean^2))
+    names(res$theta_sd) <- colnames(joint_grid)
+
+    B <- length(prepared)
+    per_block_moments <- vector("list", B)
+    for (b in seq_len(B)) {
+        cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+        sub <- joint_grid[, cols, drop = FALSE]
+        block_mean <- as.numeric(crossprod(w, sub))
+        block_sd   <- sqrt(pmax(0, as.numeric(crossprod(w, sub^2)) - block_mean^2))
+        # Strip the "b<N>." prefix on per-block moment names — block index
+        # is implicit in the list position.
+        bare_names <- sub("^b[0-9]+\\.", "", colnames(sub))
+        names(block_mean) <- bare_names
+        names(block_sd)   <- bare_names
+        per_block_moments[[b]] <- list(
+            type      = tolower(prepared[[b]]$type),
+            mean      = block_mean,
+            sd        = block_sd,
+            axis_cols = cols
+        )
+    }
+    res$block_moments <- per_block_moments
+
+    # alpha = sigma_pos / sigma_occ on the copy block.
+    if (cp$has_copy) {
+        b <- cp$copy_block_zero + 1L
+        cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+        # Identify the sigma_occ and sigma_pos columns by name (after
+        # stripping the b<N>. prefix the block axis grid uses
+        # `sigma_occ` and `sigma_pos`).
+        col_names <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols])
+        i_occ <- match("sigma_occ", col_names)
+        i_pos <- match("sigma_pos", col_names)
+        if (!is.na(i_occ) && !is.na(i_pos)) {
+            so <- joint_grid[, cols[i_occ]]
+            sp <- joint_grid[, cols[i_pos]]
+            safe <- so > 0
+            alpha <- numeric(length(so))
+            alpha[safe]  <- sp[safe] / so[safe]
+            alpha[!safe] <- NA_real_
+            use <- safe & is.finite(alpha)
+            if (any(use)) {
+                w_use <- w[use] / sum(w[use])
+                a_use <- alpha[use]
+                am <- sum(w_use * a_use)
+                as <- sqrt(max(0, sum(w_use * a_use^2) - am^2))
+                res$theta_mean <- c(res$theta_mean, alpha = am)
+                res$theta_sd   <- c(res$theta_sd,   alpha = as)
+            }
+        }
+    }
+    res
 }
