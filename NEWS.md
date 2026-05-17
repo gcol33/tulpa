@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+* refactor(joint-laplace): unify single-block and multi-block joint
+  dispatch (Phase J-E). `tulpa_nested_laplace_joint()`'s single-block
+  path (`prior = list(type = "bym2"/"icar"/"car_proper", ...)`) now
+  packs the prior into a length-1 `blocks_spec` and dispatches through
+  the same `cpp_nested_laplace_joint_multi` entry that drives the
+  list-of-blocks API. The three legacy `cpp_nested_laplace_joint_bym2`
+  / `_icar` / `_car_proper` R-facing wrappers (524 lines in
+  `src/nested_laplace_joint.cpp`) are deleted; the inner Newton driver
+  (`run_multi_block_nested_laplace_joint`) was already shared, so the
+  refactor is a routing change with bit-identical log_marginal on every
+  joint test (147/147 pass). User-facing R API and result shape are
+  unchanged. **C ABI:** the `tulpa_nested_laplace_joint_bym2` shim
+  (`R_RegisterCCallable` entry in `tulpa_shims.cpp`) is removed;
+  external embedders should call `tulpa_nested_laplace_joint()` from
+  R or build a shim on top of `cpp_nested_laplace_joint_multi`.
+  `TULPA_ABI_VERSION` bumped **19 → 20**.
+
 * fix: joint nested-Laplace reparam `(sigma, alpha)` → `(sigma_occ, sigma_pos)`.
   Closes gcol33/tulpa#18. The BYM2 / ICAR / CAR_proper backends of
   `tulpa_nested_laplace_joint()` previously parameterized the joint

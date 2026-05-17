@@ -1009,94 +1009,12 @@ extern "C" void tulpa_nested_laplace_spde_impl(
     copy_nested_laplace_result(out, result_out);
 }
 
-// ============================================================================
-// Joint multi-likelihood nested-Laplace shim (Phase 1c).
-// First backend: BYM2 over (sigma_occ, rho [, sigma_pos]).
-// ============================================================================
-//
-// gcol33/tulpa#18: the outer grid is now (sigma_occ, sigma_pos) instead of
-// (sigma, alpha). The copy-arm field amplitude is anchored to its own
-// likelihood axis (sigma_pos) rather than to a multiplier on the donor
-// arm's sigma — this breaks the alpha-sigma identifiability ridge at
-// small n_pos. Downstream callers recover alpha = sigma_pos / sigma_occ
-// post-hoc from the joint posterior.
-
-#include "tulpa/joint_nested_laplace_api.h"
-
-// Forward declaration of the [[Rcpp::export]] kernel in nested_laplace_joint.cpp.
-Rcpp::List cpp_nested_laplace_joint_bym2(
-    Rcpp::List arms_list,
-    int copy_arm,
-    int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr,
-    Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    double scale_factor,
-    Rcpp::NumericVector sigma_occ_grid,
-    Rcpp::NumericVector rho_grid,
-    Rcpp::NumericVector sigma_pos_grid,
-    int max_iter,
-    double tol,
-    int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm
-);
-
-extern "C" void tulpa_nested_laplace_joint_bym2_impl(
-    const tulpa::JointArmCxx* arms, int n_arms,
-    int copy_arm,
-    int n_spatial_units,
-    const int* adj_row_ptr, const int* adj_col_idx, const int* n_neighbors,
-    double scale_factor,
-    const double* sigma_occ_grid,
-    const double* rho_grid,
-    const double* sigma_pos_grid,
-    int n_grid,
-    int max_iter, double tol, int n_threads,
-    const double* x_init, int n_x_init,
-    int store_Q,
-    tulpa::NestedLaplaceShimResult* result_out
-) {
-    Rcpp::List arms_list(n_arms);
-    for (int k = 0; k < n_arms; k++) {
-        const tulpa::JointArmCxx& a = arms[k];
-        Rcpp::List arm = Rcpp::List::create(
-            Rcpp::Named("y")           = Rcpp::NumericVector(a.y, a.y + a.N),
-            Rcpp::Named("n_trials")    = Rcpp::IntegerVector(a.n_trials, a.n_trials + a.N),
-            Rcpp::Named("X")           = build_matrix_colmajor(a.X_flat, a.N, a.p),
-            Rcpp::Named("re_idx")      = Rcpp::NumericVector(a.re_idx, a.re_idx + a.N),
-            Rcpp::Named("spatial_idx") = Rcpp::IntegerVector(a.spatial_idx, a.spatial_idx + a.N),
-            Rcpp::Named("n_re_groups") = a.n_re_groups,
-            Rcpp::Named("sigma_re")    = a.sigma_re,
-            Rcpp::Named("family")      = std::string(a.family ? a.family : "binomial"),
-            Rcpp::Named("phi")         = a.phi
-        );
-        arms_list[k] = arm;
-    }
-
-    int nadj = adj_row_ptr ? adj_row_ptr[n_spatial_units] : 0;
-    Rcpp::IntegerVector arp(adj_row_ptr, adj_row_ptr + n_spatial_units + 1);
-    Rcpp::IntegerVector aci(adj_col_idx, adj_col_idx + nadj);
-    Rcpp::IntegerVector nn (n_neighbors, n_neighbors + n_spatial_units);
-
-    Rcpp::NumericVector soccg(sigma_occ_grid, sigma_occ_grid + n_grid);
-    Rcpp::NumericVector rg   (rho_grid,       rho_grid       + n_grid);
-    Rcpp::NumericVector sposg;
-    if (copy_arm >= 0 && sigma_pos_grid) {
-        sposg = Rcpp::NumericVector(sigma_pos_grid, sigma_pos_grid + n_grid);
-    } else {
-        sposg = Rcpp::NumericVector(0);
-    }
-
-    Rcpp::List out = cpp_nested_laplace_joint_bym2(
-        arms_list, copy_arm, n_spatial_units, arp, aci, nn,
-        scale_factor, soccg, rg, sposg,
-        max_iter, tol, n_threads,
-        wrap_x_init(x_init, n_x_init),
-        store_Q != 0,
-        R_NilValue
-    );
-    copy_nested_laplace_result(out, result_out);
-}
-
+// Joint multi-likelihood nested-Laplace C-ABI shim removed in Phase J-E.
+// The legacy `cpp_nested_laplace_joint_bym2` kernel was deleted along
+// with the matching `cpp_nested_laplace_joint_{icar,car_proper}` kernels
+// when the single-block joint path was routed through
+// `cpp_nested_laplace_joint_multi` (`R/nested_laplace_joint.R`'s
+// `.joint_call_kernel_via_multi`). External callers that previously
+// embedded the BYM2 joint path via the C-ABI should invoke
+// `tulpa_nested_laplace_joint()` from R (or rebuild a shim on top of
+// `cpp_nested_laplace_joint_multi`).

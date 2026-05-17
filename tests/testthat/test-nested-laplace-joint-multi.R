@@ -1,9 +1,13 @@
 # Joint multi-block nested-Laplace tests (Phase J-B).
 #
-# (1) Parity: a length-1 ICAR block routed via the multi-block joint
-#     dispatch must reproduce log_marginal cell-by-cell against the
-#     legacy cpp_nested_laplace_joint_icar path. Bit-exact gate: 1e-10
-#     on log_marginal at every outer-grid cell.
+# (1) Parity: a length-1 ICAR block routed via the multi-block list-of-
+#     blocks API must reproduce log_marginal cell-by-cell against the
+#     single-block API (prior = list(type = "icar", ...)). Both paths
+#     dispatch through the same C++ kernel
+#     (cpp_nested_laplace_joint_multi) since Phase J-E folded the
+#     legacy per-backend wrappers into the multi-block driver via
+#     `.joint_call_kernel_via_multi`. Bit-exact gate: 1e-10 on
+#     log_marginal at every outer-grid cell.
 #
 # (2) End-to-end: two arms (binomial occupancy + gaussian positive) with
 #     BYM2 (areal habitat, copy on the gaussian arm) + AR1 (year, shared)
