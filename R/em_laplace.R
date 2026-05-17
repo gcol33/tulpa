@@ -102,6 +102,27 @@
          call. = FALSE)
   }
 
+  # Optional `prior` field. When present, the block is fit via
+  # tulpa_nested_laplace() with hyperparameter integration instead of
+  # plain tulpa_laplace(). Must be a single-block prior list (has a
+  # `type` field) or a multi-block list (list of single-block lists).
+  if (!is.null(block$prior)) {
+    if (!is.list(block$prior) || length(block$prior) == 0L) {
+      stop(sprintf("%s: `prior` must be a non-empty list", prefix),
+           call. = FALSE)
+    }
+    is_single <- !is.null(block$prior$type)
+    is_multi  <- !is_single &&
+      all(vapply(block$prior,
+                 function(p) is.list(p) && !is.null(p$type),
+                 logical(1)))
+    if (!is_single && !is_multi) {
+      stop(sprintf(
+        "%s: `prior` must be a single-block list (with `type`) or a list-of-blocks (each with `type`)",
+        prefix), call. = FALSE)
+    }
+  }
+
   invisible(TRUE)
 }
 
@@ -134,6 +155,104 @@
   if (!is.null(block$phi)) args$phi <- block$phi
 
   do.call(tulpa_laplace, args)
+}
+
+
+# ----------------------------------------------------------------------------
+# Fit one validated block via tulpa_nested_laplace(). Used when the block
+# carries a `prior` field (single-block list or list-of-blocks). The mode
+# vector returned in `$mode` is the latent vector at the grid-weighted
+# posterior mean of theta, so .fits_to_param_vec()'s convergence check works
+# unchanged.
+#
+# `weights` / `offset` / multi-term `re_list` are not currently supported by
+# tulpa_nested_laplace(); fail loudly if a block sets them. The expected
+# pattern from callers is to absorb obs-level weighting into the response
+# (e.g. pseudo-binomial encoding) before handing the block to the engine.
+# ----------------------------------------------------------------------------
+.fit_block_via_nested_laplace <- function(block, n_threads) {
+  if (!is.null(block$weights)) {
+    stop("`weights` on a nested-Laplace block is not supported. ",
+         "Encode the weights into the response (e.g. pseudo-binomial) ",
+         "or route the block through plain Laplace.", call. = FALSE)
+  }
+  if (!is.null(block$offset)) {
+    stop("`offset` on a nested-Laplace block is not supported. ",
+         "Bake the offset into a covariate column or route the block ",
+         "through plain Laplace.", call. = FALSE)
+  }
+  if (!is.null(block$spatial)) {
+    stop("Set `prior` (not `spatial`) on a nested-Laplace block. ",
+         "The latent structure is passed via the `prior` field; the ",
+         "`spatial` field is for single-Laplace blocks only.", call. = FALSE)
+  }
+
+  n_trials <- if (is.null(block$n_trials)) {
+    rep(1L, length(block$y))
+  } else {
+    block$n_trials
+  }
+
+  re_idx <- 0L
+  n_re_groups <- 0L
+  sigma_re <- 1.0
+  if (!is.null(block$re_list) && length(block$re_list) > 0L) {
+    if (length(block$re_list) > 1L) {
+      stop("Multi-term `re_list` on a nested-Laplace block is not yet ",
+           "supported. Use a single RE term or fold additional RE ",
+           "structure into the multi-block `prior`.", call. = FALSE)
+    }
+    re_idx      <- as.integer(block$re_list[[1]]$idx)
+    n_re_groups <- as.integer(block$re_list[[1]]$n_groups)
+    sigma_re    <- as.numeric(block$re_list[[1]]$sigma)
+  }
+
+  args <- list(
+    y           = block$y,
+    n_trials    = n_trials,
+    X           = block$X,
+    prior       = block$prior,
+    re_idx      = re_idx,
+    n_re_groups = n_re_groups,
+    sigma_re    = sigma_re,
+    family      = block$family,
+    n_threads   = as.integer(n_threads)
+  )
+  if (!is.null(block$phi)) args$phi <- block$phi
+
+  fit <- do.call(tulpa_nested_laplace, args)
+
+  # Project the multi-grid result onto a single mode vector so EM-side
+  # convergence + downstream `extract_beta()` callers see the same shape
+  # as a plain Laplace fit. The fixed-effects block is the first p entries
+  # of each per-grid mode; we take the weighted mean across grid points.
+  p <- ncol(block$X)
+  if (!is.null(fit$modes) && is.matrix(fit$modes)) {
+    w <- fit$weights
+    if (is.null(w)) w <- rep(1 / nrow(fit$modes), nrow(fit$modes))
+    fit$mode <- as.numeric(crossprod(fit$modes, w))
+  } else if (is.null(fit$mode)) {
+    # Fallback: no per-grid modes stored. Use theta-mean entries from
+    # whatever the driver gave us, padded to length p with zeros.
+    fit$mode <- numeric(p)
+  }
+
+  fit
+}
+
+
+# ----------------------------------------------------------------------------
+# Dispatch one block to the right engine based on whether `prior` is set.
+# Single point of truth for "block -> fit" so all EM-driven code paths
+# (main loop, MI/Gibbs correction) share the same routing.
+# ----------------------------------------------------------------------------
+.fit_em_block <- function(block, n_threads, return_hessian = TRUE) {
+  if (!is.null(block$prior)) {
+    .fit_block_via_nested_laplace(block, n_threads = n_threads)
+  } else {
+    .fit_block_via_laplace(block, n_threads = n_threads,
+                           return_hessian = return_hessian)
+  }
 }
 
 
@@ -340,9 +459,10 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
                                  sprintf("#%d", k)
                                })
       # Damped parameter update is applied via the weights; the M-step itself
-      # is a fresh Laplace fit on the damped weights, so we don't need to
-      # mix beta vectors directly.
-      new_fits[[k]] <- .fit_block_via_laplace(blocks[[k]], n_threads = 1L)
+      # is a fresh fit on the damped weights, so we don't need to mix beta
+      # vectors directly. A block with `$prior` set routes through
+      # tulpa_nested_laplace(); otherwise tulpa_laplace().
+      new_fits[[k]] <- .fit_em_block(blocks[[k]], n_threads = 1L)
     }
 
     fits <- new_fits

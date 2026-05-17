@@ -159,7 +159,7 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
           } else {
             sprintf("#%d (draw %d)", k, s)
           })
-        fit <- .fit_block_via_laplace(blocks[[k]], n_threads = 1L)
+        fit <- .fit_em_block(blocks[[k]], n_threads = 1L)
         # Pool over the fixed-effects block only — RE values aren't
         # comparable across MC draws because RE indexing depends on the
         # encoded block, not the latent structure. Shared with em_correction.R.

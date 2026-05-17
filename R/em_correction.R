@@ -95,7 +95,7 @@
       } else {
         sprintf("%s#%d", label_prefix, k)
       })
-    fit <- .fit_block_via_laplace(blocks[[k]], n_threads = n_threads)
+    fit <- .fit_em_block(blocks[[k]], n_threads = n_threads)
     fits[[k]] <- .attach_beta_se(fit, n_fixed = ncol(blocks[[k]]$X))
   }
   fits
