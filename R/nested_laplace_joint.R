@@ -819,8 +819,23 @@ tulpa_nested_laplace_joint <- function(responses,
         keep <- refining == "" | refining == col |
                 refining == paste0("consistency_", col)
         marg <- .nl_axis_marginal_logdensity(tg[, col], res$log_marginal, keep)
-        .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg,
-                                     log_axis = TRUE, return_log_sd = TRUE)
+        lap <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg,
+                                            log_axis = TRUE,
+                                            return_log_sd = TRUE)
+        if (is.finite(lap)) return(lap)
+        # Fallback: delta-method conversion of the per-axis linear SD on
+        # `res$theta_sd` (which retains var-of-means when Laplace fit fails
+        # via `.nl_refit_axis_sd_laplace`). Keeps alpha SD finite when an
+        # axis has its mode at a grid edge — common on the D3 fixture's
+        # 3-point sigma_grid c(0.3, 0.6, 0.9) where ~37% of seeds drift
+        # the modal cell to an edge level.
+        mu <- res$theta_mean[[col]]
+        sd <- res$theta_sd[[col]]
+        if (!is.null(mu) && !is.null(sd) && is.finite(mu) && is.finite(sd) &&
+            mu > 0) {
+            return(sd / mu)
+        }
+        NA_real_
     }
     sd_log_so <- sd_log_axis("sigma_occ")
     sd_log_sp <- sd_log_axis("sigma_pos")
