@@ -261,3 +261,76 @@ test_that("lognormal == gaussian(log y) at any (sigma, rho, sigma_pos, phi)", {
     # because the Newton inner solve sees the same gradient/Hessian.
     expect_equal(fit_ln$modes, fit_gn$modes, tolerance = 1e-6)
 })
+
+
+# --------------------------------------------------------------------------- #
+# 4. Laplace-at-mode SD on the phi axis (gcol33/tulpa#20).                    #
+#                                                                             #
+# Regression for the symptom: on the joint gaussian arm the marginal log-     #
+# density over phi_pos is sharply peaked relative to a 7-point log-spaced     #
+# grid spanning [sigma_hat/3, sigma_hat*3]. The across-grid var-of-means SD   #
+# collapses to ~0 when weight concentrates on a single cell, undercovering   #
+# at 0.37 across 30 seeds. The Laplace-at-mode SD reads the curvature of    #
+# the marginal log-density at the modal cell and is grid-spacing-           #
+# independent. Assert it lifts theta_sd[['phi_pos']] above the var-of-means #
+# floor whenever the marginal is sharply peaked.                            #
+# --------------------------------------------------------------------------- #
+
+test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks", {
+    sd_pos_true <- 0.3
+    sim <- .simulate_joint_pg(N = 400, n_s = 25,
+                              sigma = 0.6, rho = 0.7,
+                              alpha_true = 1.0, sd_pos = sd_pos_true,
+                              noise_kind = "gaussian", seed = 50101)
+    adj <- .chain_adj_pg(sim$n_s)
+
+    arm_occ <- list(
+        y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
+        X = sim$Xocc, spatial_idx = sim$spatial_idx,
+        re_idx = rep(0, sim$N), n_re_groups = 0L, sigma_re = 1.0,
+        family = "binomial", phi = 1.0
+    )
+    arm_pos <- list(
+        y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
+        X = sim$Xpos, spatial_idx = sim$spi_pos,
+        re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
+        family = "gaussian", phi = sd_pos_true
+    )
+    prior <- list(
+        type = "bym2",
+        n_spatial_units = adj$n_spatial_units,
+        adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+        n_neighbors = adj$n_neighbors, scale_factor = 1.0,
+        sigma_grid = c(0.3, 0.6, 0.9),
+        rho_grid   = c(0.5, 0.7, 0.9)
+    )
+
+    # 7-point grid spanning sd_pos/3 .. sd_pos*3 — the legacy default that
+    # collapsed var-of-means to 0 in tulpaObs's family_cover_hurdle.
+    phi_axis <- exp(seq(log(sd_pos_true / 3), log(sd_pos_true * 3),
+                         length.out = 7))
+    fit <- tulpa_nested_laplace_joint(
+        responses = list(occ = arm_occ, pos = arm_pos),
+        prior     = prior,
+        copy      = list(arm = "pos", sigma_pos_grid = c(0.3, 0.6, 0.9)),
+        phi_grid  = list(pos = phi_axis),
+        adaptive_grid = FALSE
+    )
+
+    # Var-of-means SD across the full joint cartesian grid.
+    phi_grid <- fit$theta_grid[, "phi_pos"]
+    w_full   <- fit$weights
+    phi_mean <- sum(w_full * phi_grid)
+    var_of_means <- sqrt(max(0, sum(w_full * phi_grid^2) - phi_mean^2))
+
+    # Asymptotic frequentist SD as a sanity reference for the lift.
+    n_pos <- length(sim$y_pos)
+    sd_asymp <- sd_pos_true / sqrt(2 * n_pos)
+
+    expect_lt(abs(phi_mean - sd_pos_true) / sd_pos_true, 0.20)
+    # Pre-fix: var_of_means ~ 0; post-fix: theta_sd within 4x of asymp SD
+    # and at least 10x larger than the collapsed var-of-means.
+    expect_gt(fit$theta_sd[["phi_pos"]], 10 * var_of_means)
+    expect_lt(fit$theta_sd[["phi_pos"]], 5 * sd_asymp)
+    expect_gt(fit$theta_sd[["phi_pos"]], 0.2 * sd_asymp)
+})
