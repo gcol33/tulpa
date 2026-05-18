@@ -172,7 +172,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                        store_Q = FALSE,
                                        adaptive_grid = FALSE,
                                        adaptive_grid_edge_thresh = 0.02,
-                                       adaptive_grid_max_passes = 1L) {
+                                       adaptive_grid_max_passes = 1L,
+                                       var_of_means_consistency = TRUE) {
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
     }
@@ -250,6 +251,34 @@ tulpa_nested_laplace_joint <- function(responses,
     # Replace per-axis var-of-means SDs with Laplace-at-mode SDs where the
     # 3-point parabolic fit at the modal cell succeeds (gcol33/tulpa#20).
     res             <- .nl_refit_axis_sd_laplace(res)
+
+    # Var-of-means consistency pass. Sharply peaked axes (gaussian
+    # noise SD, beta phi at high n_pos) collapse joint weight onto a
+    # single grid cell, so downstream `sum(w*x^2) - mean^2` underestimates
+    # SD even when `theta_sd` (Laplace-at-mode) is correct. Add slice
+    # points at `theta_mean +/- k*theta_sd` to repopulate the Laplace
+    # support; var-of-means on the merged grid converges to Laplace SD,
+    # which lets downstream packages use the legacy `weights * theta_grid`
+    # pattern without reaching into `theta_sd` directly (gcol33/tulpa#21).
+    if (isTRUE(var_of_means_consistency)) {
+        consistency <- .nl_var_of_means_consistency_pass(
+            grids = grids, res = res, backend = backend,
+            arms = arms, prior = prior, cp = cp,
+            max_iter = max_iter, tol = tol, n_threads = n_threads,
+            x_init = x_init, store_Q = store_Q, arm_names = arm_names
+        )
+        if (consistency$n_added > 0L) {
+            grids           <- consistency$grids
+            res             <- consistency$res
+            res$theta_grid  <- backend$theta_grid(grids, cp$has_copy)
+            res$theta_names <- colnames(res$theta_grid)
+            res$weights     <- .nl_normalise_weights(res$log_marginal)
+            res             <- .nl_posterior_moments(res, paste0("joint_", type))
+            res             <- .joint_recalibrate_axis_moments(res)
+            res             <- .nl_refit_axis_sd_laplace(res)
+        }
+        res$var_of_means_consistency_info <- consistency$info
+    }
     res             <- .joint_attach_alpha_moments(res, cp$has_copy)
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior
@@ -689,7 +718,12 @@ tulpa_nested_laplace_joint <- function(responses,
     cols  <- colnames(res$theta_grid)
     lm    <- res$log_marginal
     for (col in cols) {
-        keep <- refining == "" | refining == col
+        # Include `consistency_<col>` cells too: they vary on `col` only
+        # (other axes pinned at mode) and ARE part of col's own slice. The
+        # only cells we exclude are foreign-axis slices that fix `col` at
+        # a single non-varying value.
+        keep <- refining == "" | refining == col |
+                refining == paste0("consistency_", col)
         if (all(keep)) next
         lm_k <- lm[keep]
         m    <- max(lm_k)
@@ -728,7 +762,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # per-axis recalibration step above.
     refining <- res$refining_axis %||% rep("", length(so))
     alpha_axes_ok <- refining == "" | refining == "sigma_pos" |
-                      refining == "sigma_occ"
+                      refining == "sigma_occ" |
+                      refining == "consistency_alpha"
     # Recompute weights on the alpha-relevant subset directly from
     # log_marginal (rather than reusing res$weights, which is normalised
     # across all cells).
@@ -752,6 +787,149 @@ tulpa_nested_laplace_joint <- function(responses,
     res$theta_sd   <- c(res$theta_sd,   alpha = alpha_sd)
     res
 }
+
+# Consistency step for the derived `alpha = sigma_pos / sigma_occ` axis on
+# joint copy fits (gcol33/tulpa#21). Run after the per-grid-axis consistency
+# loop. The grid-axis loop refines sigma_pos / sigma_occ / phi_* when their
+# var-of-means SDs underestimate the Laplace SD, but the derived alpha
+# posterior reported by `.joint_attach_alpha_moments` can still narrow when
+# the sigma axes individually pass the threshold yet jointly sample alpha
+# too tightly (D3 at alpha_true >= 0.5: sigma var-of-means SDs are fine,
+# but cross-seed alpha SE/SD ratio is ~0.4-0.6x).
+#
+# Strategy: compute Laplace-at-mode SD on the alpha marginal density (via
+# logsumexp binning over the existing grid). If var-of-means alpha SD is
+# below `tolerance * sd_laplace`, propose new sigma_pos slice points at
+# (alpha_mode * exp(+/- k * log_sd)) * sigma_occ_mode, anchored on the
+# overall modal (sigma_occ, sigma_pos) cell. Slice cells get tagged
+# `consistency_alpha` so `.joint_attach_alpha_moments` picks them up while
+# grid-axis marginals naturally skip them (same prefix convention as
+# `consistency_sigma_*`).
+.nl_alpha_consistency_step <- function(grids, res, backend, arms, prior, cp,
+                                       max_iter, tol, n_threads, x_init,
+                                       store_Q, arm_names, tolerance = 0.7) {
+    dbg <- function(msg) {
+        if (isTRUE(getOption("tulpa.alpha_consistency_debug", FALSE))) {
+            message("[alpha-consistency] ", msg)
+        }
+    }
+    none <- list(grids = grids, res = res, n_new = 0L, info = NULL)
+    if (!isTRUE(cp$has_copy)) { dbg("no copy block"); return(none) }
+    tg <- backend$theta_grid(grids, cp$has_copy)
+    if (is.null(tg) || !is.matrix(tg)) { dbg("theta_grid null/non-matrix"); return(none) }
+    if (!all(c("sigma_occ", "sigma_pos") %in% colnames(tg))) { dbg("missing sigma_occ/pos cols"); return(none) }
+    if (nrow(tg) != length(res$log_marginal)) { dbg("theta_grid rows != log_marginal len"); return(none) }
+
+    sigma_occ <- as.numeric(tg[, "sigma_occ"])
+    sigma_pos <- as.numeric(tg[, "sigma_pos"])
+    safe <- sigma_occ > 0 & is.finite(sigma_occ) & is.finite(sigma_pos)
+    alpha_vec <- rep(NA_real_, length(sigma_occ))
+    alpha_vec[safe] <- sigma_pos[safe] / sigma_occ[safe]
+
+    refining <- res$refining_axis %||% rep("", length(alpha_vec))
+    # Engine view: filtered subset of cells that genuinely vary alpha
+    # (cartesian + sigma slice + consistency_alpha). Used for the Laplace
+    # marginal-density fit.
+    use_engine <- (refining == "" | refining == "sigma_pos" |
+                   refining == "sigma_occ" |
+                   refining == "consistency_alpha") &
+                  safe & is.finite(alpha_vec) & alpha_vec > 0
+    if (sum(use_engine) < 3L) { dbg(sprintf("only %d usable cells", sum(use_engine))); return(none) }
+
+    marg <- .nl_axis_marginal_logdensity(alpha_vec, res$log_marginal, use_engine)
+    if (length(marg$vals) < 3L) { dbg(sprintf("only %d unique alpha vals", length(marg$vals))); return(none) }
+    sd_lap <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg,
+                                           log_axis = TRUE)
+    if (!is.finite(sd_lap) || sd_lap <= 0) { dbg(sprintf("Laplace fit failed (sd=%s); modal val=%g neighbours=(%s)",
+        format(sd_lap), marg$vals[which.max(marg$log_marg)],
+        paste(format(marg$vals), collapse = ","))); return(none) }
+    ix_mode    <- which.max(marg$log_marg)
+    alpha_mode <- marg$vals[ix_mode]
+
+    # Downstream view: all alpha-bearing cells, weighted by joint posterior
+    # weights without the alpha-aware refining filter. This matches the
+    # legacy `sum(weights * theta_grid[, 'alpha'])` pattern in tulpaObs's
+    # `family_cover_hurdle.R` and INLAabun validation. Other-axis
+    # consistency cells (e.g. consistency_phi_pos) pin sigma_occ and
+    # sigma_pos at the modal cell, so they cluster at alpha_mode and
+    # shrink the downstream var-of-means without affecting the engine's
+    # filtered theta_sd[['alpha']]. Use the downstream view as the trigger.
+    use_ds <- safe & is.finite(alpha_vec) & alpha_vec > 0
+    lm_ds  <- res$log_marginal[use_ds]
+    m_ds   <- max(lm_ds)
+    ws_ds  <- exp(lm_ds - m_ds); ws_ds <- ws_ds / sum(ws_ds)
+    a_ds   <- alpha_vec[use_ds]
+    vom_mean_ds <- sum(ws_ds * a_ds)
+    vom_sd_ds   <- sqrt(max(0, sum(ws_ds * a_ds^2) - vom_mean_ds^2))
+
+    info <- list(vom_sd = vom_sd_ds, sd_laplace = sd_lap,
+                 alpha_mode = alpha_mode, triggered = FALSE, n_added = 0L)
+    dbg(sprintf("vom_sd_ds=%.4f  sd_lap=%.4f  ratio=%.3f  alpha_mode=%.3f  threshold=%.3f",
+                 vom_sd_ds, sd_lap, vom_sd_ds / sd_lap, alpha_mode, tolerance))
+    if (!is.finite(vom_sd_ds) || vom_sd_ds >= tolerance * sd_lap) {
+        dbg("no trigger (vom_sd_ds >= tolerance * sd_lap)")
+        return(list(grids = grids, res = res, n_new = 0L, info = info))
+    }
+
+    # Propose new alpha values on log scale at +/- {0.7, 1.5} * log_sd.
+    log_sd_alpha <- sd_lap / alpha_mode
+    new_alpha    <- alpha_mode * exp(c(-1.5, -0.7, 0.7, 1.5) * log_sd_alpha)
+    new_alpha    <- new_alpha[is.finite(new_alpha) & new_alpha > 0]
+    if (length(new_alpha) == 0L) {
+        return(list(grids = grids, res = res, n_new = 0L, info = info))
+    }
+
+    overall_mode_idx <- which.max(res$log_marginal)
+    # Use the locally rebuilt theta_grid `tg` (res$theta_grid is stale —
+    # the caller only rebuilds it after the consistency pass returns).
+    sigma_occ_mode   <- as.numeric(tg[overall_mode_idx, "sigma_occ"])
+    sigma_pos_anchor <- as.numeric(tg[overall_mode_idx, "sigma_pos"])
+    if (!is.finite(sigma_occ_mode) || sigma_occ_mode <= 0) {
+        return(list(grids = grids, res = res, n_new = 0L, info = info))
+    }
+
+    new_sigma_pos <- new_alpha * sigma_occ_mode
+    new_sigma_pos <- new_sigma_pos[is.finite(new_sigma_pos) & new_sigma_pos > 0]
+    if (length(new_sigma_pos) == 0L) {
+        return(list(grids = grids, res = res, n_new = 0L, info = info))
+    }
+
+    # Drop new sigma_pos values within 5% relative spacing of existing levels.
+    lev      <- sort(unique(as.numeric(grids[["sigma_pos"]])))
+    keep_new <- vapply(new_sigma_pos, function(p) {
+        all(abs(lev - p) / abs(p) > 0.05)
+    }, logical(1))
+    new_sigma_pos <- new_sigma_pos[keep_new]
+    if (length(new_sigma_pos) == 0L) {
+        return(list(grids = grids, res = res, n_new = 0L, info = info))
+    }
+
+    pack <- .new_mode_tracked_triples(grids, res$log_marginal, "sigma_pos",
+                                       new_sigma_pos, sigma_pos_anchor,
+                                       cp$has_copy)
+    if (is.null(pack)) {
+        return(list(grids = grids, res = res, n_new = 0L, info = info))
+    }
+
+    n_before <- length(res$log_marginal)
+    step <- .apply_axis_refinement(grids, res, list(pack), "sigma_pos",
+                                    backend, arms, prior, cp, max_iter, tol,
+                                    n_threads, x_init, store_Q, arm_names)
+    if (step$n_new == 0L) {
+        return(list(grids = grids, res = res, n_new = 0L, info = info))
+    }
+    grids <- step$grids
+    res   <- step$res
+    n_after <- length(res$log_marginal)
+    if (n_after > n_before && !is.null(res$refining_axis)) {
+        new_idx <- (n_before + 1L):n_after
+        res$refining_axis[new_idx] <- "consistency_alpha"
+    }
+    info$triggered <- TRUE
+    info$n_added   <- step$n_new
+    list(grids = grids, res = res, n_new = step$n_new, info = info)
+}
+
 
 # Compute per-arm latent offsets so callers can decode `modes` back into
 # per-arm (beta, re) blocks plus the shared spatial block(s). For BYM2 the
@@ -1335,6 +1513,139 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     if (length(info$triggered_axes) == 0L) info <- NULL
     list(grids = grids, res = res, info = info)
+}
+
+
+# Propose new slice points on `axis_name` covering the Laplace-implied
+# support `mu +/- k*sd` (k = 0.7, 1.5; symmetric, four points). Log-scale
+# axes get points on the log scale via delta-method (log_sd = sd / mu).
+# Points falling outside the axis's natural bounds, or within ~5% spacing
+# of an existing level, are dropped. Returns numeric() if no usable points
+# remain.
+.propose_consistency_points <- function(axis_name, mu, sd, lev) {
+    if (!is.finite(mu) || !is.finite(sd) || sd <= 0) return(numeric(0))
+    is_log <- .axis_is_log_scale(axis_name)
+    if (is_log) {
+        if (mu <= 0) return(numeric(0))
+        log_mu <- log(mu)
+        log_sd <- sd / mu
+        if (!is.finite(log_sd) || log_sd <= 0) return(numeric(0))
+        pts <- exp(log_mu + c(-1.5, -0.7, 0.7, 1.5) * log_sd)
+    } else {
+        pts <- mu + c(-1.5, -0.7, 0.7, 1.5) * sd
+    }
+    bounds <- .axis_bounds(axis_name)
+    if (!is.null(bounds)) {
+        pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
+    }
+    if (length(pts) == 0L) return(numeric(0))
+    keep <- vapply(pts, function(p) {
+        if (is_log) {
+            !any(abs(log(lev) - log(p)) < 0.05)
+        } else {
+            !any(abs(lev - p) < 0.05 * max(abs(lev), 1))
+        }
+    }, logical(1))
+    pts[keep]
+}
+
+# Var-of-means consistency pass. For each refinable axis with a finite
+# Laplace SD whose joint-grid var-of-means falls short of that SD by more
+# than `tolerance`, add four Laplace-guided slice points anchored at the
+# overall modal cell (other axes pinned). One kernel call per axis;
+# re-uses `.apply_axis_refinement` for the merge.
+#
+# Triggers ONLY when the discrepancy exceeds `tolerance` (default 0.7),
+# so axes whose default grid already resolves the marginal pay no
+# extra kernel time. See gcol33/tulpa#21.
+.nl_var_of_means_consistency_pass <- function(grids, res, backend, arms, prior,
+                                               cp, max_iter, tol, n_threads,
+                                               x_init, store_Q,
+                                               arm_names = NULL,
+                                               tolerance = 0.7) {
+    refinable <- .refinable_axes(grids, cp$has_copy)
+    info <- list(axes = character(0), n_added = integer(0),
+                 vom_before = numeric(0), sd_laplace = numeric(0))
+    n_added_total <- 0L
+    if (length(refinable) == 0L) {
+        return(list(grids = grids, res = res, info = NULL, n_added = 0L))
+    }
+    overall_mode_idx <- which.max(res$log_marginal)
+    for (axis in refinable) {
+        sd_lap <- res$theta_sd[[axis]] %||% NA_real_
+        mu     <- res$theta_mean[[axis]] %||% NA_real_
+        if (!is.finite(sd_lap) || !is.finite(mu) || sd_lap <= 0) next
+
+        axis_vals <- as.numeric(res$theta_grid[, axis])
+        vom_mean  <- sum(res$weights * axis_vals)
+        vom_sd    <- sqrt(max(0, sum(res$weights * axis_vals^2) - vom_mean^2))
+        if (vom_sd >= tolerance * sd_lap) next
+
+        lev <- sort(unique(as.numeric(grids[[axis]])))
+        new_pts <- .propose_consistency_points(axis, mu, sd_lap, lev)
+        if (length(new_pts) == 0L) next
+
+        # Anchor at the overall modal cell's value on `axis`. The slice
+        # builder pins other axes at the cells where `axis == anchor_lev`
+        # has the maximum log_marginal, which is the overall mode here.
+        anchor_lev <- as.numeric(grids[[axis]])[overall_mode_idx]
+        pack <- .new_mode_tracked_triples(grids, res$log_marginal, axis,
+                                           new_pts, anchor_lev, cp$has_copy)
+        if (is.null(pack)) next
+
+        n_before <- length(res$log_marginal)
+        step <- .apply_axis_refinement(grids, res, list(pack), axis, backend,
+                                        arms, prior, cp, max_iter, tol,
+                                        n_threads, x_init, store_Q,
+                                        arm_names)
+        if (step$n_new == 0L) next
+        grids <- step$grids
+        res   <- step$res
+        # Re-tag the appended cells with a `consistency_<axis>` prefix.
+        # `.apply_axis_refinement` tags them as `<axis>` (its standard slice
+        # tag), but the consistency pass pins other axes at the modal cell
+        # and these slices would distort posterior moments of *derived*
+        # quantities that read multiple axes (e.g. alpha = sigma_pos /
+        # sigma_occ in `.joint_attach_alpha_moments`). The prefix lets
+        # `.joint_recalibrate_axis_moments` still pick them up for the
+        # refined axis's own marginal (via the `consistency_<axis>` keep
+        # check) while derived-quantity moments naturally skip them.
+        n_after <- length(res$log_marginal)
+        if (n_after > n_before && !is.null(res$refining_axis)) {
+            new_idx <- (n_before + 1L):n_after
+            res$refining_axis[new_idx] <- paste0("consistency_", axis)
+        }
+        info$axes        <- c(info$axes, axis)
+        info$n_added     <- c(info$n_added, step$n_new)
+        info$vom_before  <- c(info$vom_before, vom_sd)
+        info$sd_laplace  <- c(info$sd_laplace, sd_lap)
+        n_added_total    <- n_added_total + step$n_new
+    }
+    # Derived alpha-axis extension (gcol33/tulpa#21). Run after the per-
+    # grid-axis loop so any grid refinements above feed into the alpha
+    # marginal-density computation. Requires the copy block (alpha is only
+    # defined when sigma_pos is integrated alongside sigma_occ).
+    if (isTRUE(cp$has_copy) && !is.null(res$theta_grid) &&
+        is.matrix(res$theta_grid) &&
+        all(c("sigma_occ", "sigma_pos") %in% colnames(res$theta_grid))) {
+        alpha_step <- .nl_alpha_consistency_step(
+            grids = grids, res = res, backend = backend,
+            arms = arms, prior = prior, cp = cp,
+            max_iter = max_iter, tol = tol, n_threads = n_threads,
+            x_init = x_init, store_Q = store_Q, arm_names = arm_names,
+            tolerance = tolerance)
+        if (alpha_step$n_new > 0L) {
+            grids            <- alpha_step$grids
+            res              <- alpha_step$res
+            info$axes        <- c(info$axes, "alpha")
+            info$n_added     <- c(info$n_added, alpha_step$n_new)
+            info$vom_before  <- c(info$vom_before, alpha_step$info$vom_sd)
+            info$sd_laplace  <- c(info$sd_laplace, alpha_step$info$sd_laplace)
+            n_added_total    <- n_added_total + alpha_step$n_new
+        }
+    }
+    if (length(info$axes) == 0L) info <- NULL
+    list(grids = grids, res = res, info = info, n_added = n_added_total)
 }
 
 

@@ -528,7 +528,8 @@ nested_laplace <- function(...) {
     for (col in col_names) {
       if (identical(col, "alpha")) next  # derived axis; not a grid column
       if (!col %in% names(res$theta_sd)) next
-      keep <- refining == "" | refining == col
+      keep <- refining == "" | refining == col |
+              refining == paste0("consistency_", col)
       marg <- .nl_axis_marginal_logdensity(tg[, col], res$log_marginal, keep)
       sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
       if (is.finite(sd_lam)) res$theta_sd[[col]] <- sd_lam
@@ -543,7 +544,8 @@ nested_laplace <- function(...) {
       for (j in seq_along(axis_cols)) {
         col_ix <- axis_cols[j]
         col_name <- if (!is.null(col_names)) col_names[col_ix] else ""
-        keep <- refining == "" | refining == col_name
+        keep <- refining == "" | refining == col_name |
+                refining == paste0("consistency_", col_name)
         marg <- .nl_axis_marginal_logdensity(tg[, col_ix], res$log_marginal,
                                               keep)
         sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
