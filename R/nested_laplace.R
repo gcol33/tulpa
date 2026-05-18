@@ -461,6 +461,99 @@ nested_laplace <- function(...) {
   res
 }
 
+# Marginal log-density along a single hyperparameter axis (logsumexp over
+# the other-axis cells at each unique value). `vals` and `log_marg` are
+# length n_cells; `keep` is an optional logical mask (cartesian + same-
+# axis slice cells). Returns sorted unique axis values and the matching
+# marginal log-density.
+.nl_axis_marginal_logdensity <- function(vals, log_marg, keep = NULL) {
+  if (is.null(keep)) keep <- rep(TRUE, length(vals))
+  v <- vals[keep]; l <- log_marg[keep]
+  uv <- sort(unique(v))
+  if (length(uv) == 0L) return(list(vals = uv, log_marg = numeric(0)))
+  lm <- vapply(uv, function(u) {
+    li <- l[v == u]
+    if (length(li) == 0L) return(-Inf)
+    m <- max(li)
+    if (!is.finite(m)) return(-Inf)
+    m + log(sum(exp(li - m)))
+  }, numeric(1))
+  list(vals = uv, log_marg = lm)
+}
+
+# Laplace-at-mode SD on a single axis. Fits a 3-point parabola to the
+# marginal log-density at the modal cell and one neighbour on each side,
+# returns sqrt(-1 / (2 a)) from the quadratic coefficient. When the
+# axis values are positive (sigma / phi / tau) the parabola is fit on
+# log(theta), and the SD is mapped back to the linear axis via the
+# delta method (sigma_theta = theta_mode * sigma_log_theta). Returns NA
+# when the mode sits at an axis edge or the parabola is concave up.
+.nl_laplace_at_mode_sd_axis <- function(vals, log_marg, log_axis = NULL) {
+  if (length(vals) < 3L) return(NA_real_)
+  ix <- which.max(log_marg)
+  if (ix == 1L || ix == length(vals)) return(NA_real_)
+  if (is.null(log_axis)) log_axis <- all(is.finite(vals)) && all(vals > 0)
+  u <- if (log_axis) log(vals) else vals
+  dm <- u[ix - 1L] - u[ix]
+  dp <- u[ix + 1L] - u[ix]
+  det <- dm * dp * (dm - dp)
+  if (!is.finite(det) || abs(det) < .Machine$double.eps) return(NA_real_)
+  lm_m <- log_marg[ix - 1L] - log_marg[ix]
+  lm_p <- log_marg[ix + 1L] - log_marg[ix]
+  a <- (lm_m * dp - lm_p * dm) / det
+  if (!is.finite(a) || a >= 0) return(NA_real_)
+  sd_u <- sqrt(-1 / (2 * a))
+  if (log_axis) vals[ix] * sd_u else sd_u
+}
+
+# Replace `theta_sd` (and `block_moments[[b]]$sd` when present) entries
+# with the Laplace-at-mode SD wherever the 3-point fit succeeds. Axes
+# with the mode at an edge or wrong-signed curvature keep their var-of-
+# means SD. Grid-spacing-independent: fixes the symptom where a sharply
+# peaked marginal log-likelihood on a coarse grid collapses var-of-
+# means to ~0 and undercovers (gcol33/tulpa#20).
+.nl_refit_axis_sd_laplace <- function(res, refining = NULL) {
+  if (is.null(res$theta_grid) || is.null(res$log_marginal)) return(res)
+  tg <- res$theta_grid
+  if (!is.matrix(tg)) {
+    marg <- .nl_axis_marginal_logdensity(as.numeric(tg), res$log_marginal)
+    sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
+    if (is.finite(sd_lam)) res$theta_sd <- sd_lam
+    return(res)
+  }
+  if (is.null(refining)) refining <- res$refining_axis
+  if (is.null(refining)) refining <- rep("", nrow(tg))
+  col_names <- colnames(tg)
+  if (!is.null(col_names) && !is.null(res$theta_sd)) {
+    for (col in col_names) {
+      if (identical(col, "alpha")) next  # derived axis; not a grid column
+      if (!col %in% names(res$theta_sd)) next
+      keep <- refining == "" | refining == col
+      marg <- .nl_axis_marginal_logdensity(tg[, col], res$log_marginal, keep)
+      sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
+      if (is.finite(sd_lam)) res$theta_sd[[col]] <- sd_lam
+    }
+  }
+  if (!is.null(res$block_moments)) {
+    for (b in seq_along(res$block_moments)) {
+      bm <- res$block_moments[[b]]
+      axis_cols <- bm$axis_cols
+      if (is.null(axis_cols) || length(axis_cols) == 0L) next
+      bare <- names(bm$sd)
+      for (j in seq_along(axis_cols)) {
+        col_ix <- axis_cols[j]
+        col_name <- if (!is.null(col_names)) col_names[col_ix] else ""
+        keep <- refining == "" | refining == col_name
+        marg <- .nl_axis_marginal_logdensity(tg[, col_ix], res$log_marginal,
+                                              keep)
+        sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
+        if (is.finite(sd_lam)) res$block_moments[[b]]$sd[[j]] <- sd_lam
+      }
+    }
+  }
+  res
+}
+
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
 # ----------------------------------------------------------------------------

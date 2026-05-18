@@ -247,6 +247,9 @@ tulpa_nested_laplace_joint <- function(responses,
     res$weights     <- .nl_normalise_weights(res$log_marginal)
     res             <- .nl_posterior_moments(res, paste0("joint_", type))
     res             <- .joint_recalibrate_axis_moments(res)
+    # Replace per-axis var-of-means SDs with Laplace-at-mode SDs where the
+    # 3-point parabolic fit at the modal cell succeeds (gcol33/tulpa#20).
+    res             <- .nl_refit_axis_sd_laplace(res)
     res             <- .joint_attach_alpha_moments(res, cp$has_copy)
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior
@@ -1714,6 +1717,9 @@ tulpa_nested_laplace_joint <- function(responses,
     res$weights      <- .nl_normalise_weights(res$log_marginal)
     res <- .joint_posterior_moments_multi(res, prepared, axis_offsets,
                                            joint_grid, cp)
+    # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
+    # modal cell (gcol33/tulpa#20).
+    res <- .nl_refit_axis_sd_laplace(res)
     res$arm_layout  <- .joint_multi_layout(arms, prepared)
     res$blocks      <- prepared
     res$prior       <- prior_list
