@@ -738,22 +738,95 @@ tulpa_nested_laplace_joint <- function(responses,
     res
 }
 
-# Compute per-grid-point alpha = sigma_pos / sigma_occ and merge its
-# posterior mean / sd into the result's theta_mean / theta_sd. Also append
-# an `alpha` column to `theta_grid` so downstream code that inspects
-# fit$theta_grid sees alpha alongside the sigma axes.
+# Posterior moments for derived alpha = sigma_pos / sigma_occ. Combines
+# two summarization paths:
 #
-# SD(alpha) uses the delta method on log axes:
-#     log alpha = log sigma_pos - log sigma_occ
-#     Var(log alpha) ≈ Var(log sigma_pos) + Var(log sigma_occ)
-#     SD(alpha)     ≈ alpha_mode * SD(log alpha)
-# Independence is the joint-copy regime — each arm identifies its own
-# sigma so the posterior is approximately separable. Var-of-means on the
-# derived alpha column underestimates SD on coarse grids because (sigma_occ,
-# sigma_pos) levels cluster on iso-alpha rays (only ~13 unique alpha values
-# out of 30+ cells in the D3 fixture); the per-axis Laplace-at-mode SDs on
-# log sigma avoid that geometry entirely. Mean stays var-of-means; lifting
-# it to the log-normal mean is a separate change.
+#   * Discrete grid-quadrature path (kept for `theta_mean`, `theta_sd`):
+#         alpha_mean <- sum(w * sigma_pos / sigma_occ)
+#         alpha_sd   <- alpha_mode_grid * sd_log_alpha   (delta method)
+#     Tracks INLA's numerical posterior mean closely on the tests'
+#     fixtures (see `test-nested-laplace-joint-multi-recovery.R` J-C2)
+#     because both methods integrate the actual posterior support on a
+#     finite grid rather than imposing a Lognormal-shape assumption. The
+#     mean is upward-biased by Jensen's inequality on `1/sigma_occ` on
+#     coarse grids, but the bias matches what a competing numerical
+#     integrator (INLA) reports, so the two engines agree.
+#
+#   * Closed-form Lognormal path (new fields `theta_median`,
+#     `theta_log_mean`, `theta_log_sd`): under joint-copy independence
+#         log sigma_occ | y  ~  N(mu_o, tau_o^2)
+#         log sigma_pos | y  ~  N(mu_p, tau_p^2)   with cov = 0
+#     so log alpha is Gaussian and alpha is Lognormal:
+#         log alpha | y  ~  N(mu_d, s2)
+#     yielding the Jensen-free median exp(mu_d), the location mu_d, and
+#     the log-scale spread sqrt(s2). These three are exact under the
+#     per-axis Laplace approximation regardless of grid coarseness and
+#     give downstream consumers a Jensen-free point summary plus a
+#     log-CI (truth in `median * exp(+/- 1.96 * log_sd)`).
+#
+# `tg` is a matrix with named columns `sigma_occ`, `sigma_pos`.
+# `log_marginal` is the joint outer-grid log-marginal.
+# `res` is a list with `log_marginal` and (for the Laplace-fit fallback)
+# `theta_mean`/`theta_sd` indexed by bare axis names. `refining` is the
+# per-cell refining-axis mask.
+#
+# Returns list(mean, sd, median, log_mean, log_sd, alpha_vec). Each
+# scalar is NA when its computation is unavailable. Shared by the
+# single-block and multi-block joint-fit code paths.
+.alpha_closed_form_moments <- function(tg, res, refining) {
+    out <- list(mean = NA_real_, sd = NA_real_, median = NA_real_,
+                log_mean = NA_real_, log_sd = NA_real_,
+                alpha_vec = NULL)
+    so <- tg[, "sigma_occ"]
+    sp <- tg[, "sigma_pos"]
+    safe <- so > 0
+    alpha_vec <- numeric(length(so))
+    alpha_vec[safe]  <- sp[safe] / so[safe]
+    alpha_vec[!safe] <- NA_real_
+    out$alpha_vec <- alpha_vec
+
+    # Discrete grid quadrature for theta_mean. Filter foreign-axis slice
+    # cells (refining of a non-alpha axis pins sigma_pos and sigma_occ at
+    # modal values and would collapse alpha to a point); same logic as
+    # `.joint_recalibrate_axis_moments`.
+    alpha_axes_ok <- refining == "" | refining == "sigma_pos" |
+                      refining == "sigma_occ" |
+                      refining == "consistency_alpha"
+    use <- safe & alpha_axes_ok
+    if (sum(use) > 0L) {
+        lm_use <- res$log_marginal[use]
+        ws     <- exp(lm_use - max(lm_use))
+        ws     <- ws / sum(ws)
+        out$mean <- sum(ws * alpha_vec[use])
+    }
+
+    # Closed-form Lognormal: median, log_mean, log_sd.
+    lp <- .joint_alpha_log_params(tg, res, refining)
+    if (is.finite(lp$mu) && is.finite(lp$sd) && lp$sd >= 0) {
+        out$median   <- exp(lp$mu)
+        out$log_mean <- lp$mu
+        out$log_sd   <- lp$sd
+    }
+
+    # SD via delta method around the grid mode (matches the pre-existing
+    # `theta_sd[["alpha"]]` semantics so downstream consumers built
+    # against `mean +/- 1.96 * sd` continue to work).
+    if (is.finite(lp$sd)) {
+        ix_mode    <- which.max(res$log_marginal)
+        alpha_mode_grid <- alpha_vec[ix_mode]
+        if (is.finite(alpha_mode_grid) && alpha_mode_grid > 0) {
+            out$sd <- alpha_mode_grid * lp$sd
+        }
+    }
+
+    out
+}
+
+# Single-block joint copy: append a per-cell `alpha` column to
+# `theta_grid` for cell-level introspection AND attach posterior scalar
+# moments under names `theta_mean`, `theta_sd`, `theta_median`,
+# `theta_log_mean`, `theta_log_sd`. See `.alpha_closed_form_moments`
+# for the math and the rationale for keeping two summarization paths.
 .joint_attach_alpha_moments <- function(res, has_copy) {
     if (!isTRUE(has_copy)) return(res)
     tg <- res$theta_grid
@@ -761,86 +834,68 @@ tulpa_nested_laplace_joint <- function(responses,
         !("sigma_pos" %in% colnames(tg))) {
         return(res)
     }
-    so <- tg[, "sigma_occ"]
-    sp <- tg[, "sigma_pos"]
-    safe <- so > 0
-    alpha_vec <- numeric(length(so))
-    alpha_vec[safe]  <- sp[safe] / so[safe]
-    alpha_vec[!safe] <- NA_real_
-    # alpha varies on sigma_pos and sigma_occ; slice cells from refining
-    # any other axis (e.g. phi_<arm>) fix sigma_pos and sigma_occ at
-    # modal values and would collapse alpha to a point. Filter them out
-    # before computing alpha posterior moments — same logic as the
-    # per-axis recalibration step above.
-    refining <- res$refining_axis %||% rep("", length(so))
-    alpha_axes_ok <- refining == "" | refining == "sigma_pos" |
-                      refining == "sigma_occ" |
-                      refining == "consistency_alpha"
-    use <- safe & alpha_axes_ok
-    if (sum(use) == 0L) {
-        alpha_mean <- NA_real_
-    } else {
-        lm_use <- res$log_marginal[use]
-        m_use  <- max(lm_use)
-        ws     <- exp(lm_use - m_use)
-        ws     <- ws / sum(ws)
-        a_use  <- alpha_vec[use]
-        alpha_mean <- sum(ws * a_use)
-    }
+    refining <- res$refining_axis %||% rep("", nrow(tg))
+    m <- .alpha_closed_form_moments(tg, res, refining)
 
-    sd_log_alpha <- .joint_alpha_sd_log_delta(tg, res, refining)
-    if (is.finite(sd_log_alpha)) {
-        ix_mode    <- which.max(res$log_marginal)
-        alpha_mode <- alpha_vec[ix_mode]
-        alpha_sd <- if (is.finite(alpha_mode) && alpha_mode > 0) {
-            alpha_mode * sd_log_alpha
-        } else {
-            NA_real_
-        }
-    } else {
-        alpha_sd <- NA_real_
-    }
-
-    res$theta_grid <- cbind(tg, alpha = alpha_vec)
-    res$theta_names <- colnames(res$theta_grid)
-    res$theta_mean <- c(res$theta_mean, alpha = alpha_mean)
-    res$theta_sd   <- c(res$theta_sd,   alpha = alpha_sd)
+    res$theta_grid     <- cbind(tg, alpha = m$alpha_vec)
+    res$theta_names    <- colnames(res$theta_grid)
+    res$theta_mean     <- c(res$theta_mean,     alpha = m$mean)
+    res$theta_sd       <- c(res$theta_sd,       alpha = m$sd)
+    res$theta_median   <- c(res$theta_median,   alpha = m$median)
+    res$theta_log_mean <- c(res$theta_log_mean, alpha = m$log_mean)
+    res$theta_log_sd   <- c(res$theta_log_sd,   alpha = m$log_sd)
     res
 }
 
-# SD(log alpha) via Laplace-at-mode on per-axis log-sigma marginals,
-# combined under posterior independence of (log sigma_occ, log sigma_pos).
-# Uses the same `refining` mask convention as `.joint_recalibrate_axis_moments`
-# so consistency slice cells contribute to each axis's own marginal.
-# Returns NA when either axis fit fails (mode at edge, wrong-signed
-# curvature, too few unique levels).
-.joint_alpha_sd_log_delta <- function(tg, res, refining) {
-    sd_log_axis <- function(col) {
+# Per-axis (mu, sd) on log scale for sigma_occ and sigma_pos, combined
+# into log-alpha under joint-copy independence:
+#       log alpha | y  ~  N(mu_p - mu_o,  tau_o^2 + tau_p^2)
+# Returns list(mu, sd, mu_occ, sd_occ, mu_pos, sd_pos) so callers can
+# inspect per-axis params too. Each axis's params come from
+# `.nl_laplace_at_mode_log_params_axis` (3-point parabola on the log
+# axis); when the modal cell sits at a grid edge or the parabola is
+# concave up, falls back to a delta-method transfer of the linear-axis
+# var-of-means (`mu = log(theta_mean[col])`, `sd = theta_sd[col] / mu`).
+# Returns NA in `mu`/`sd` when neither path is available on either axis.
+.joint_alpha_log_params <- function(tg, res, refining) {
+    log_params_axis <- function(col) {
         keep <- refining == "" | refining == col |
                 refining == paste0("consistency_", col)
         marg <- .nl_axis_marginal_logdensity(tg[, col], res$log_marginal, keep)
-        lap <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg,
-                                            log_axis = TRUE,
-                                            return_log_sd = TRUE)
-        if (is.finite(lap)) return(lap)
-        # Fallback: delta-method conversion of the per-axis linear SD on
-        # `res$theta_sd` (which retains var-of-means when Laplace fit fails
-        # via `.nl_refit_axis_sd_laplace`). Keeps alpha SD finite when an
-        # axis has its mode at a grid edge — common on the D3 fixture's
-        # 3-point sigma_grid c(0.3, 0.6, 0.9) where ~37% of seeds drift
-        # the modal cell to an edge level.
-        mu <- res$theta_mean[[col]]
-        sd <- res$theta_sd[[col]]
-        if (!is.null(mu) && !is.null(sd) && is.finite(mu) && is.finite(sd) &&
-            mu > 0) {
-            return(sd / mu)
+        pars <- .nl_laplace_at_mode_log_params_axis(marg$vals, marg$log_marg)
+        if (is.finite(pars$mu) && is.finite(pars$sd)) return(pars)
+        # Fallback: linear-axis posterior mean/sd transferred to log via
+        # delta. Keeps alpha moments finite when an axis has its mode at
+        # a grid edge — common on the D3 fixture's 3-point
+        # sigma_grid c(0.3, 0.6, 0.9) where ~37% of seeds drift the modal
+        # cell to an edge level (gcol33/tulpa#21).
+        mu_lin <- res$theta_mean[[col]]
+        sd_lin <- res$theta_sd[[col]]
+        if (!is.null(mu_lin) && !is.null(sd_lin) &&
+            is.finite(mu_lin) && is.finite(sd_lin) && mu_lin > 0) {
+            return(list(mu = log(mu_lin), sd = sd_lin / mu_lin))
         }
-        NA_real_
+        list(mu = NA_real_, sd = NA_real_)
     }
-    sd_log_so <- sd_log_axis("sigma_occ")
-    sd_log_sp <- sd_log_axis("sigma_pos")
-    if (!is.finite(sd_log_so) || !is.finite(sd_log_sp)) return(NA_real_)
-    sqrt(sd_log_so^2 + sd_log_sp^2)
+    po <- log_params_axis("sigma_occ")
+    pp <- log_params_axis("sigma_pos")
+    if (!is.finite(po$mu) || !is.finite(po$sd) ||
+        !is.finite(pp$mu) || !is.finite(pp$sd)) {
+        return(list(mu = NA_real_, sd = NA_real_,
+                    mu_occ = po$mu, sd_occ = po$sd,
+                    mu_pos = pp$mu, sd_pos = pp$sd))
+    }
+    list(mu = pp$mu - po$mu,
+         sd = sqrt(po$sd^2 + pp$sd^2),
+         mu_occ = po$mu, sd_occ = po$sd,
+         mu_pos = pp$mu, sd_pos = pp$sd)
+}
+
+# Backward-compat shim for `.nl_alpha_consistency_step`. Returns only the
+# scalar sd(log alpha) from the new `.joint_alpha_log_params`. New callers
+# should use `.joint_alpha_log_params` directly to get both mu and sd.
+.joint_alpha_sd_log_delta <- function(tg, res, refining) {
+    .joint_alpha_log_params(tg, res, refining)$sd
 }
 
 # Consistency step for the derived `alpha = sigma_pos / sigma_occ` axis on
@@ -2213,7 +2268,12 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     res$block_moments <- per_block_moments
 
-    # alpha = sigma_pos / sigma_occ on the copy block.
+    # alpha = sigma_pos / sigma_occ on the copy block. Computed via the
+    # shared `.alpha_closed_form_moments` helper so the multi-block path
+    # exposes the same field set as the single-block path
+    # (`theta_mean`, `theta_sd` via discrete grid quadrature;
+    # `theta_median`, `theta_log_mean`, `theta_log_sd` via the
+    # closed-form Lognormal per-axis Laplace approximation).
     if (cp$has_copy) {
         b <- cp$copy_block_zero + 1L
         cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
@@ -2226,18 +2286,25 @@ tulpa_nested_laplace_joint <- function(responses,
         if (!is.na(i_occ) && !is.na(i_pos)) {
             so <- joint_grid[, cols[i_occ]]
             sp <- joint_grid[, cols[i_pos]]
-            safe <- so > 0
-            alpha <- numeric(length(so))
-            alpha[safe]  <- sp[safe] / so[safe]
-            alpha[!safe] <- NA_real_
-            use <- safe & is.finite(alpha)
-            if (any(use)) {
-                w_use <- w[use] / sum(w[use])
-                a_use <- alpha[use]
-                am <- sum(w_use * a_use)
-                as <- sqrt(max(0, sum(w_use * a_use^2) - am^2))
-                res$theta_mean <- c(res$theta_mean, alpha = am)
-                res$theta_sd   <- c(res$theta_sd,   alpha = as)
+            # Build a local view with bare axis names so the Laplace-fit
+            # fallback in `.joint_alpha_log_params` finds the per-axis
+            # mean/sd on `block_moments[[b]]` (which strips the b<N>.
+            # prefix; see above).
+            tg_local <- cbind(sigma_occ = so, sigma_pos = sp)
+            bm <- per_block_moments[[b]]
+            res_local <- list(
+                log_marginal = res$log_marginal,
+                theta_mean   = bm$mean,
+                theta_sd     = bm$sd
+            )
+            refining <- res$refining_axis %||% rep("", length(so))
+            m <- .alpha_closed_form_moments(tg_local, res_local, refining)
+            if (is.finite(m$mean)) {
+                res$theta_mean     <- c(res$theta_mean,     alpha = m$mean)
+                res$theta_sd       <- c(res$theta_sd,       alpha = m$sd)
+                res$theta_median   <- c(res$theta_median,   alpha = m$median)
+                res$theta_log_mean <- c(res$theta_log_mean, alpha = m$log_mean)
+                res$theta_log_sd   <- c(res$theta_log_sd,   alpha = m$log_sd)
             }
         }
     }
