@@ -126,6 +126,11 @@ static int tulpa_set_gradient_mode_str_impl(const char* mode_str) {
 // Defined in tulpa_shims.cpp — registers laplace / pg / vi / ess shims.
 void tulpa_register_shims(DllInfo* dll);
 
+// Defined in tgmrf_registry.cpp — registers the tulpa_register_tgmrf
+// C callable that user DLLs use to insert TgmrfSpec POD into the
+// process-global registry at load time.
+void tulpa_register_tgmrf_callables(DllInfo* dll);
+
 // [[Rcpp::init]]
 void tulpa_register_callables(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_run_nuts_generic",
@@ -138,4 +143,5 @@ void tulpa_register_callables(DllInfo* dll) {
                         (DL_FUNC)&tulpa_set_gradient_mode_str_impl);
 
     tulpa_register_shims(dll);
+    tulpa_register_tgmrf_callables(dll);
 }

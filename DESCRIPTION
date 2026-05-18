@@ -37,5 +37,6 @@ LinkingTo:
     RcppEigen,
     Matrix
 Config/testthat/edition: 3
+VignetteBuilder: knitr
 URL: https://github.com/gcol33/tulpa
 BugReports: https://github.com/gcol33/tulpa/issues

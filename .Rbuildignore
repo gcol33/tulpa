@@ -9,5 +9,9 @@
 ^\.github$
 ^CLAUDE\.md$
 ^\.claude$
+^\.code-review-graph$
 ^\.vscode$
 ^\.lintr$
+^dev_notes$
+^dev_scripts$
+^.*\.tar\.gz$

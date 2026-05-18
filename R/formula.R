@@ -88,6 +88,82 @@ nobars <- function(term) {
 }
 
 # ============================================================================
+# Latent block terms: latent(<tgmrf object>) anywhere in the RHS
+#
+# Same shape as findbars / nobars but matches `latent(...)` calls. The inner
+# expression is evaluated in the formula environment at parse time to recover
+# the latent-block object (currently a tgmrf S3 object; tgeneric in future).
+# ============================================================================
+
+#' Find all latent(...) calls in a formula's parse tree
+#'
+#' Recursively walks the formula AST and collects all `latent(...)` calls.
+#' The matched calls are returned unevaluated; [tulpa_parse_formula()]
+#' resolves them in the formula's environment.
+#'
+#' @param term A language object (formula term)
+#' @return A list of language objects, each a `latent(...)` call
+#' @keywords internal
+#' @export
+find_latent_terms <- function(term) {
+  if (is.name(term) || !is.language(term)) return(NULL)
+
+  if (is.call(term) && identical(term[[1]], as.name("latent")) &&
+      length(term) == 2L) {
+    return(list(term))
+  }
+
+  if (identical(term[[1]], as.name("("))) {
+    return(find_latent_terms(term[[2]]))
+  }
+
+  if (length(term) == 2L) {
+    return(find_latent_terms(term[[2]]))
+  }
+
+  c(find_latent_terms(term[[2]]), find_latent_terms(term[[3]]))
+}
+
+#' Remove all latent(...) calls from a formula's parse tree
+#'
+#' Mirror of [nobars()] for `latent(...)` calls.
+#'
+#' @param term A language object (formula term)
+#' @return A language object with all `latent(...)` calls removed, or NULL
+#'   if nothing remains.
+#' @keywords internal
+#' @export
+no_latent_terms <- function(term) {
+  if (is.name(term) || !is.language(term)) return(term)
+
+  if (is.call(term) && identical(term[[1]], as.name("latent")) &&
+      length(term) == 2L) {
+    return(NULL)
+  }
+
+  if (identical(term[[1]], as.name("("))) {
+    inner_nb <- no_latent_terms(term[[2]])
+    if (is.null(inner_nb)) return(NULL)
+    return(call("(", inner_nb))
+  }
+
+  if (length(term) == 2L) {
+    nb <- no_latent_terms(term[[2]])
+    if (is.null(nb)) return(NULL)
+    return(call(deparse(term[[1]]), nb))
+  }
+
+  nb_left  <- no_latent_terms(term[[2]])
+  nb_right <- no_latent_terms(term[[3]])
+
+  if (is.null(nb_left) && is.null(nb_right)) return(NULL)
+  if (is.null(nb_left))  return(nb_right)
+  if (is.null(nb_right)) return(nb_left)
+
+  call(deparse(term[[1]]), nb_left, nb_right)
+}
+
+# ============================================================================
 # Bar term parsing: structured RE specification with || expansion
 # ============================================================================
 
@@ -291,6 +367,10 @@ format_re_lhs <- function(re) {
 #'   - `fixed_formula`: formula, the fixed-effects-only formula
 #'   - `random_effects`: list of parsed RE specifications
 #'   - `n_re_terms`: integer, number of RE terms
+#'   - `latent_blocks`: list of evaluated user-defined latent block objects
+#'     (typically `tgmrf` S3 objects), one per `latent(...)` term in the
+#'     original formula. Empty list when no `latent(...)` terms are present.
+#'   - `n_latent_blocks`: integer, number of `latent(...)` terms
 #'   - `original`: the original formula
 #'
 #' @examples
@@ -324,6 +404,31 @@ tulpa_parse_formula <- function(formula) {
 
   rhs_clean <- nobars(rhs)
 
+  # Latent-block terms: `latent(<tgmrf object>)` calls anywhere on the rhs.
+  # Match before stripping so the user's `latent(blk)` is detected even when
+  # it sits next to a bar term in the same formula.
+  latent_blocks <- list()
+  if (!is.null(rhs_clean)) {
+    latent_calls <- find_latent_terms(rhs_clean)
+    for (lc in latent_calls) {
+      blk <- tryCatch(
+        eval(lc, envir = formula_env),
+        error = function(e) {
+          stop("Failed to evaluate latent block term `",
+               paste(deparse(lc), collapse = ""),
+               "`: ", conditionMessage(e), call. = FALSE)
+        }
+      )
+      if (!inherits(blk, "tulpa_latent_block")) {
+        stop("latent(...) must wrap a tulpa latent-block object ",
+             "(e.g. one returned by tgmrf()); got class ",
+             paste(class(blk), collapse = "/"), ".", call. = FALSE)
+      }
+      latent_blocks[[length(latent_blocks) + 1L]] <- blk
+    }
+    rhs_clean <- no_latent_terms(rhs_clean)
+  }
+
   fixed_rhs <- if (is.null(rhs_clean)) 1 else rhs_clean
   fixed_formula <- if (is.null(response_expr)) {
     as.formula(call("~", fixed_rhs), env = formula_env)
@@ -333,12 +438,14 @@ tulpa_parse_formula <- function(formula) {
 
   structure(
     list(
-      response       = response,
-      response_expr  = response_expr,
-      fixed_formula  = fixed_formula,
-      random_effects = random_effects,
-      n_re_terms     = length(random_effects),
-      original       = formula
+      response        = response,
+      response_expr   = response_expr,
+      fixed_formula   = fixed_formula,
+      random_effects  = random_effects,
+      n_re_terms      = length(random_effects),
+      latent_blocks   = latent_blocks,
+      n_latent_blocks = length(latent_blocks),
+      original        = formula
     ),
     class = "tulpa_parsed_formula"
   )
@@ -482,6 +589,15 @@ print.tulpa_parsed_formula <- function(x, ...) {
   for (re in x$random_effects) {
     bar <- if (re$correlated) "|" else "||"
     cat("    (", format_re_lhs(re), bar, re$group_var, ")\n")
+  }
+  if (length(x$latent_blocks) > 0L) {
+    cat("  Latent blocks:", x$n_latent_blocks, "term(s)\n")
+    for (i in seq_along(x$latent_blocks)) {
+      blk <- x$latent_blocks[[i]]
+      label <- blk$name %||% paste0("(", paste(class(blk), collapse = "/"), ")")
+      cat("    [", i, "] ", label, ": n_latent=", blk$n_latent,
+          ", theta=", blk$theta_dim, "\n", sep = "")
+    }
   }
   invisible(x)
 }

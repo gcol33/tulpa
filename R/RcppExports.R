@@ -593,6 +593,26 @@ cpp_test_correlation_from_L <- function(L) {
     .Call(`_tulpa_cpp_test_correlation_from_L`, L)
 }
 
+cpp_tgmrf_nuts_joint <- function(y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check) {
+    .Call(`_tulpa_cpp_tgmrf_nuts_joint`, y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check)
+}
+
+cpp_tgmrf_registry_has <- function(id) {
+    .Call(`_tulpa_cpp_tgmrf_registry_has`, id)
+}
+
+cpp_tgmrf_registry_size <- function() {
+    .Call(`_tulpa_cpp_tgmrf_registry_size`)
+}
+
+cpp_tgmrf_eval <- function(id, theta) {
+    .Call(`_tulpa_cpp_tgmrf_eval`, id, theta)
+}
+
+cpp_tgmrf_eval_mu <- function(id, theta) {
+    .Call(`_tulpa_cpp_tgmrf_eval_mu`, id, theta)
+}
+
 cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE) {
     .Call(`_tulpa_cpp_tulpa_fit_beta_nuts`, y_r, X_r, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose)
 }

@@ -1,0 +1,232 @@
+---
+title: "User-defined GMRF latent blocks with tgmrf()"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{User-defined GMRF latent blocks with tgmrf()}
+  %\VignetteEngine{knitr::knitr}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260518)
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+library(Matrix)
+```
+
+## What `tgmrf()` is
+
+`tgmrf()` lets a *user script* define a Gaussian Markov Random Field
+(GMRF) latent block and plug it into tulpa's inference layers as a
+first-class latent term. It is the latent-side dual of `LikelihoodSpec`:
+that interface lets a downstream package own the observation model;
+`tgmrf()` lets a single R script own one latent block.
+
+The contract is two closures and an init vector:
+
+```r
+my_block <- tgmrf(
+  Q     = function(theta) { ... returns dgCMatrix ... },
+  prior = function(theta) { ... returns scalar log-density ... },
+  init  = c(...)
+)
+```
+
+The closures are called numerically — no autodiff, no DSL, no codegen.
+For a Gaussian latent block
+
+$$
+\log p(z \mid \theta) \;=\; \tfrac{1}{2}\,\log\det Q(\theta) - \tfrac{1}{2}(z-\mu)^\top Q(\theta)(z-\mu) + \text{const}
+$$
+
+the score and Hessian in $z$ are closed-form:
+
+$$
+\partial_z \log p(z \mid \theta) = -Q(\theta)(z-\mu), \qquad
+\partial_z^{\,2} \log p(z \mid \theta) = -Q(\theta).
+$$
+
+So tulpa's Laplace inner step only needs `Q(theta)` and `mu(theta)` at
+numeric `theta`. Hyperparameter gradients (`d/d theta`) come from
+finite differences — typically 2-5 extra `Q` evaluations per outer
+step, which is cheap when `Q` is sparse. The same block reaches every
+inference tier: Laplace, IMH-Laplace, NUTS, VI.
+
+## A worked example: periodic AR1
+
+The smallest non-trivial GMRF tulpa does not ship is a *periodic* AR1
+— useful for diurnal, seasonal, or phase-wrapped data. The precision
+is tridiagonal with wrap-around:
+
+$$
+Q_{ii} \;=\; \tfrac{1+\rho^2}{\sigma^2}, \qquad
+Q_{ij} \;=\; -\,\tfrac{\rho}{\sigma^2}\;\text{ for } |i-j| = 1 \;(\mathrm{mod}\,n).
+$$
+
+Reparameterise to unconstrained `theta = (log_sigma, atanh_rho)`:
+
+```{r block}
+periodic_ar1 <- function(n) {
+  tgmrf(
+    Q = function(theta) {
+      sigma <- exp(theta[1]); rho <- tanh(theta[2])
+      d <- rep((1 + rho^2) / sigma^2, n)
+      o <- rep(-rho / sigma^2, n)
+      M <- Matrix::bandSparse(n, k = c(-1, 0, 1),
+                              diagonals = list(o, d, o))
+      M[1, n] <- M[n, 1] <- -rho / sigma^2     # wrap
+      methods::as(methods::as(M, "generalMatrix"), "CsparseMatrix")
+    },
+    prior = function(theta) {
+      dnorm(theta[1], 0, 1, log = TRUE) +     # weak on log_sigma
+      dnorm(theta[2], 0, 1, log = TRUE)       # weak on atanh_rho
+    },
+    init   = c(log_sigma = 0, atanh_rho = atanh(0.3)),
+    bounds = list(lower = c(log(0.3), atanh(0.0)),
+                  upper = c(log(3.0), atanh(0.9))),
+    name   = "periodic_ar1"
+  )
+}
+```
+
+The optional `bounds` argument sets the outer grid for nested-Laplace
+and the hard-wall region for IMH and NUTS. The `prior` closure is a
+log-density on `theta`. If you don't have prior beliefs, `function(theta) 0`
+is fine — it's a flat prior on the unconstrained scale.
+
+### Simulate from the block
+
+```{r sim}
+n <- 40L
+theta_true <- c(log(0.8), atanh(0.6))
+blk        <- periodic_ar1(n)
+
+# z | theta_true ~ N(0, Q(theta_true)^{-1})
+Q_true <- blk$Q(theta_true)
+L      <- Matrix::Cholesky(Q_true)
+z_true <- as.numeric(Matrix::solve(L, rnorm(n), system = "Lt"))
+
+# y_i ~ Poisson(exp(beta_0 + z_i))
+beta0 <- 0.3
+y     <- rpois(n, exp(beta0 + z_true))
+X     <- matrix(1, n, 1L)
+```
+
+### Tier 2 (structured): nested Laplace
+
+```{r laplace}
+fit_lap <- tulpa_nested_laplace(
+  y = y, n_trials = rep(1L, n), X = X,
+  prior  = blk,
+  family = "poisson"
+)
+fit_lap$theta_mean    # posterior mean over the outer grid
+```
+
+### Tier 2 (structured): Pathfinder VI
+
+`tulpa_tgmrf_vi()` runs L-BFGS on `log_marginal(theta)` and fits a
+Gaussian at the optimum. Same tier as the nested-Laplace posterior but
+gives you a full covariance matrix rather than a discrete grid.
+
+```{r vi}
+fit_vi <- tulpa_tgmrf_vi(
+  y = y, n_trials = rep(1L, n), X = X, block = blk,
+  family  = "poisson",
+  n_draws = 800L
+)
+fit_vi$mode_theta
+fit_vi$elbo
+```
+
+### Tier 1 (exact): IMH-Laplace
+
+The Tier-1 upgrade composes the Laplace body with an
+independence-MH bias correction. The VI fit makes a near-optimal
+proposal — high acceptance, low MC error.
+
+```{r imh}
+fit_imh <- tulpa_tgmrf_imh(
+  y = y, n_trials = rep(1L, n), X = X, block = blk,
+  family = "poisson",
+  n_iter = 1200L, warmup = 400L
+)
+fit_imh$means
+fit_imh$mean_accept
+```
+
+### Tier 1 (exact): NUTS over `theta`
+
+For higher-dim `theta` (5+), the gradient-based sibling
+`tulpa_tgmrf_nuts()` mixes better than independence-MH. For
+`theta_dim = 2` IMH is generally faster; NUTS is the right call when
+the posterior is multi-modal or strongly non-Gaussian.
+
+```{r nuts, eval = FALSE}
+fit_nuts <- tulpa_tgmrf_nuts(
+  y = y, n_trials = rep(1L, n), X = X, block = blk,
+  family    = "poisson",
+  n_iter    = 200L, warmup = 100L,
+  max_depth = 4L
+)
+fit_nuts$means
+```
+
+## Comparing posteriors
+
+The three estimators target the same posterior `p(theta | y)`:
+
+```{r compare}
+data.frame(
+  parameter = blk$theta_names,
+  true      = theta_true,
+  laplace   = fit_lap$theta_mean,
+  vi_mode   = fit_vi$mode_theta,
+  imh_mean  = fit_imh$means
+)
+```
+
+Laplace and VI agree to within grid resolution / Gaussian-fit
+curvature; IMH lifts the structured-tier bias at the cost of `n_iter`
+inner Laplace solves.
+
+## Which tier when
+
+| Tier  | Function                  | Cost                            | When to reach for it |
+|-------|---------------------------|---------------------------------|----------------------|
+| 2 (structured) | `tulpa_nested_laplace()` | `n_grid` inner Laplace solves       | Quick fit, diagnostic, debias-target |
+| 2 (structured) | `tulpa_tgmrf_vi()`       | L-BFGS + `n_draws` extra evals      | Want covariance instead of grid; IMH proposal |
+| 1 (exact)      | `tulpa_tgmrf_imh()`      | `n_iter` Laplace solves             | Low theta dim, near-Gaussian posterior |
+| 1 (exact)      | `tulpa_tgmrf_nuts()`     | `n_iter * 2^depth * 2 * theta_dim` Laplace solves | High theta dim or non-Gaussian |
+
+The general rule: start with `tulpa_nested_laplace()` for a sanity
+check, run `tulpa_tgmrf_imh()` for exact-tier posterior moments, and
+reach for `tulpa_tgmrf_nuts()` only when IMH acceptance collapses.
+
+## What `tgmrf()` does not require
+
+- No gradient code. The score in `z` is closed-form from `Q`.
+- No Hessian code. The Hessian in `z` is just `-Q`.
+- No autodiff. Hyperparameter gradients are finite-difference.
+- No C++. The R closure path reaches every tier.
+
+The forthcoming `tgmrf_cpp()` constructor will offer a templated-C++
+backend with the same S3 contract for cases where the R↔C boundary on
+`Q(theta)` becomes the bottleneck (large `n_latent`, hot CCD grids).
+The user-visible API does not change — the same downstream consumers
+(formula parser, inference layers, methods) treat the two paths
+identically.
+
+## See also
+
+- `?tgmrf` — constructor reference.
+- `?tulpa_nested_laplace` — Tier-2 grid integrator.
+- `?tulpa_tgmrf_imh`, `?tulpa_tgmrf_nuts`, `?tulpa_tgmrf_vi` — adapter family.
+- `inst/examples/tgmrf_periodic_ar1.R` — runnable script form of this vignette.

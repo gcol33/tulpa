@@ -17,6 +17,10 @@ A list with:
 \item \code{fixed_formula}: formula, the fixed-effects-only formula
 \item \code{random_effects}: list of parsed RE specifications
 \item \code{n_re_terms}: integer, number of RE terms
+\item \code{latent_blocks}: list of evaluated user-defined latent block objects
+(typically \code{tgmrf} S3 objects), one per \code{latent(...)} term in the
+original formula. Empty list when no \code{latent(...)} terms are present.
+\item \code{n_latent_blocks}: integer, number of \code{latent(...)} terms
 \item \code{original}: the original formula
 }
 }

@@ -2811,6 +2811,83 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_tgmrf_nuts_joint
+Rcpp::List cpp_tgmrf_nuts_joint(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::IntegerVector obs_idx, std::string family, double phi, std::string cpp_id, int theta_dim, int n_latent, Rcpp::NumericVector beta_init, Rcpp::NumericVector z_init, Rcpp::NumericVector theta_init, Rcpp::NumericVector M_inv_diag, double epsilon0, int n_iter, int n_warmup, int max_depth, double target_accept, double fd_step, bool verbose, int seed, bool debug_gradient_check);
+RcppExport SEXP _tulpa_cpp_tgmrf_nuts_joint(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP obs_idxSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP cpp_idSEXP, SEXP theta_dimSEXP, SEXP n_latentSEXP, SEXP beta_initSEXP, SEXP z_initSEXP, SEXP theta_initSEXP, SEXP M_inv_diagSEXP, SEXP epsilon0SEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_depthSEXP, SEXP target_acceptSEXP, SEXP fd_stepSEXP, SEXP verboseSEXP, SEXP seedSEXP, SEXP debug_gradient_checkSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type obs_idx(obs_idxSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< std::string >::type cpp_id(cpp_idSEXP);
+    Rcpp::traits::input_parameter< int >::type theta_dim(theta_dimSEXP);
+    Rcpp::traits::input_parameter< int >::type n_latent(n_latentSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_init(beta_initSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type z_init(z_initSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type theta_init(theta_initSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type M_inv_diag(M_inv_diagSEXP);
+    Rcpp::traits::input_parameter< double >::type epsilon0(epsilon0SEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type max_depth(max_depthSEXP);
+    Rcpp::traits::input_parameter< double >::type target_accept(target_acceptSEXP);
+    Rcpp::traits::input_parameter< double >::type fd_step(fd_stepSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< bool >::type debug_gradient_check(debug_gradient_checkSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tgmrf_nuts_joint(y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_tgmrf_registry_has
+bool cpp_tgmrf_registry_has(std::string id);
+RcppExport SEXP _tulpa_cpp_tgmrf_registry_has(SEXP idSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type id(idSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tgmrf_registry_has(id));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_tgmrf_registry_size
+int cpp_tgmrf_registry_size();
+RcppExport SEXP _tulpa_cpp_tgmrf_registry_size() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_tgmrf_registry_size());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_tgmrf_eval
+Rcpp::List cpp_tgmrf_eval(std::string id, Rcpp::NumericVector theta);
+RcppExport SEXP _tulpa_cpp_tgmrf_eval(SEXP idSEXP, SEXP thetaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type id(idSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type theta(thetaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tgmrf_eval(id, theta));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_tgmrf_eval_mu
+SEXP cpp_tgmrf_eval_mu(std::string id, Rcpp::NumericVector theta);
+RcppExport SEXP _tulpa_cpp_tgmrf_eval_mu(SEXP idSEXP, SEXP thetaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type id(idSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type theta(thetaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tgmrf_eval_mu(id, theta));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_beta_nuts
 Rcpp::List cpp_tulpa_fit_beta_nuts(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_beta_nuts(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP) {
@@ -3142,6 +3219,11 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_compute_u_eff", (DL_FUNC) &_tulpa_cpp_test_compute_u_eff, 3},
     {"_tulpa_cpp_test_chol_nc_chain_rule", (DL_FUNC) &_tulpa_cpp_test_chol_nc_chain_rule, 6},
     {"_tulpa_cpp_test_correlation_from_L", (DL_FUNC) &_tulpa_cpp_test_correlation_from_L, 1},
+    {"_tulpa_cpp_tgmrf_nuts_joint", (DL_FUNC) &_tulpa_cpp_tgmrf_nuts_joint, 22},
+    {"_tulpa_cpp_tgmrf_registry_has", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_has, 1},
+    {"_tulpa_cpp_tgmrf_registry_size", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_size, 0},
+    {"_tulpa_cpp_tgmrf_eval", (DL_FUNC) &_tulpa_cpp_tgmrf_eval, 2},
+    {"_tulpa_cpp_tgmrf_eval_mu", (DL_FUNC) &_tulpa_cpp_tgmrf_eval_mu, 2},
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
     {"_tulpa_cpp_tulpa_fit_gaussian", (DL_FUNC) &_tulpa_cpp_tulpa_fit_gaussian, 8},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 9},

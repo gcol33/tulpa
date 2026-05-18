@@ -33,10 +33,14 @@ defaults to \code{rep(0, N_arm)} (no RE).
 \item \code{sigma_re}    — optional numeric (default \code{1}); ignored when
 \code{n_re_groups == 0}.
 \item \code{family}      — one of \code{"binomial"}, \code{"gaussian"}, \code{"poisson"},
-\code{"neg_binomial_2"}, \code{"beta"}, ... (see
-\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the full list).
-\item \code{phi}         — numeric dispersion (gaussian SD, negbin size, beta
-precision); default \code{1}.
+\code{"neg_binomial_2"}, \code{"beta"}, \code{"lognormal"},
+\code{"gamma"}, \code{"inverse_gaussian"}. For \code{"lognormal"},
+\code{y} is on the natural scale and the linear
+predictor \verb{eta = E[log y]} (identity link on the
+log scale); the \code{-log(y)} Jacobian is included in
+the kernel's \code{log_lik}.
+\item \code{phi}         — numeric dispersion (gaussian/lognormal residual
+SD, negbin size, beta precision); default \code{1}.
 }}
 
 \item{prior}{A list describing the shared latent prior block. Required
@@ -62,6 +66,36 @@ in \verb{[0.1, 3]}).
 When \code{NULL} (default), no copy scaling is applied — all arms share
 the donor \code{sigma_grid} axis.
 }}
+
+\item{phi_grid}{Optional list specifying per-arm dispersion axes on the
+outer grid. Accepts either a named list (keys = arm names) or a
+positional list of length \code{n_arms}. Each entry is one of:
+\itemize{
+\item \code{NULL} or scalar — no axis for that arm; the kernel uses the
+parse-time scalar \code{responses[[k]]$phi}.
+\item numeric vector of length > 1 — adds a new outer-grid axis
+\verb{phi_<arm>} taking those values; the kernel rewrites
+\verb{arms[k].phi} at each grid point before the inner Newton solve.
+}
+
+Family-specific interpretation of \code{arm$phi} (the parse-time scalar
+and the grid values):
+\itemize{
+\item \code{gaussian} — residual SD (variance is \code{phi^2}). Use \code{phi_grid} to
+estimate the residual SD as a hyperparameter instead of pinning
+it pre-fit.
+\item \code{lognormal} — residual SD on the log scale; identical kernel
+parameterization as \code{gaussian} plus the \code{-log(y)} Jacobian.
+\item \code{neg_binomial_2} — dispersion (variance is \code{mu + mu^2/phi}).
+\item \code{beta} — precision (variance is \code{mu(1-mu)/(1+phi)}).
+\item \code{gamma}, \code{inverse_gaussian} — shape / dispersion.
+\item \code{binomial}, \code{poisson} — ignored.
+}
+
+Each \verb{phi_<arm>} axis is appended to the Cartesian product and
+varies slowest (within-spatial warm starts hold). The axis appears
+as a regular hyperparameter in \code{theta_grid}, \code{theta_mean}, and
+\code{theta_sd}, and participates in adaptive-grid refinement.}
 
 \item{max_iter, tol}{Inner Newton iteration budget and tolerance.}
 

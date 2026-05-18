@@ -32,6 +32,7 @@ inline FamilyLink parse_family_link(const std::string& code) {
         {"gamma", "log"},
         {"inverse_gaussian", "log"},
         {"beta", "logit"},
+        {"lognormal", "identity"},
     };
     for (auto& [fam, def_link] : defaults) {
         if (code == fam) { fl.family = fam; fl.link = def_link; return fl; }
@@ -101,6 +102,7 @@ inline double mu_eta(double eta, const std::string& link) {
 
 inline double variance_fn(double mu, double phi, const std::string& family, int n_trials) {
     if (family == "gaussian") return phi * phi;
+    if (family == "lognormal") return phi * phi;
     if (family == "binomial") return n_trials * mu * (1.0 - mu);
     if (family == "poisson") return mu;
     if (family == "neg_binomial_2") return mu + mu * mu / phi;
@@ -118,6 +120,14 @@ inline double variance_fn(double mu, double phi, const std::string& family, int 
 
 inline double grad_mu(double y, double mu, double phi, const std::string& family, int n_trials) {
     if (family == "gaussian") return (y - mu) / (phi * phi);
+    if (family == "lognormal") {
+        // eta = E[log Y]; gradient wrt eta equals gradient wrt mu under
+        // identity link. log p(y|eta) = -log(y) - 0.5*log(2pi phi^2)
+        //                              - (log(y) - eta)^2 / (2 phi^2)
+        // d/d eta = (log(y) - eta) / phi^2.
+        double ly = std::log(std::max(y, 1e-300));
+        return (ly - mu) / (phi * phi);
+    }
     if (family == "binomial") return ((int)y - n_trials * mu) / (mu * (1.0 - mu));
     if (family == "poisson") return (int)y / mu - 1.0;
     if (family == "neg_binomial_2") return (int)y / mu - ((int)y + phi) / (mu + phi);
@@ -137,6 +147,12 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
     if (family == "gaussian") {
         double r = y - mu;
         return -0.5 * std::log(2.0 * M_PI * phi * phi) - r * r / (2.0 * phi * phi);
+    }
+    if (family == "lognormal") {
+        double ly = std::log(std::max(y, 1e-300));
+        double r  = ly - mu;
+        return -ly - 0.5 * std::log(2.0 * M_PI * phi * phi)
+               - r * r / (2.0 * phi * phi);
     }
     if (family == "binomial") {
         double p = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
@@ -198,7 +214,7 @@ inline GradHess grad_hess_for_family(
     double dmu = mu_eta(eta, fl.link);
     if (fl.family == "binomial" || fl.family == "beta") {
         mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-    } else if (fl.family != "gaussian") {
+    } else if (fl.family != "gaussian" && fl.family != "lognormal") {
         mu = std::max(mu, 1e-10);
     }
 
@@ -219,7 +235,7 @@ inline double log_lik_for_family(
     double mu = linkinv(eta, fl.link);
     if (fl.family == "binomial" || fl.family == "beta") {
         mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
-    } else if (fl.family != "gaussian") {
+    } else if (fl.family != "gaussian" && fl.family != "lognormal") {
         mu = std::max(mu, 1e-15);
     }
     return log_lik_mu(y, mu, phi, fl.family, n_trials);

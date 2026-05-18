@@ -42,10 +42,14 @@
 #'   * `sigma_re`    — optional numeric (default `1`); ignored when
 #'                     `n_re_groups == 0`.
 #'   * `family`      — one of `"binomial"`, `"gaussian"`, `"poisson"`,
-#'                     `"neg_binomial_2"`, `"beta"`, ... (see
-#'                     [tulpa_nested_laplace()] for the full list).
-#'   * `phi`         — numeric dispersion (gaussian SD, negbin size, beta
-#'                     precision); default `1`.
+#'                     `"neg_binomial_2"`, `"beta"`, `"lognormal"`,
+#'                     `"gamma"`, `"inverse_gaussian"`. For `"lognormal"`,
+#'                     `y` is on the natural scale and the linear
+#'                     predictor `eta = E[log y]` (identity link on the
+#'                     log scale); the `-log(y)` Jacobian is included in
+#'                     the kernel's `log_lik`.
+#'   * `phi`         — numeric dispersion (gaussian/lognormal residual
+#'                     SD, negbin size, beta precision); default `1`.
 #'
 #' @param prior A list describing the shared latent prior block. Required
 #'   field `type`. Backend-specific fields:
@@ -66,6 +70,32 @@
 #'                        `sigma_grid` axis.
 #'   When `NULL` (default), no copy scaling is applied — all arms share
 #'   the donor `sigma_grid` axis.
+#'
+#' @param phi_grid Optional list specifying per-arm dispersion axes on the
+#'   outer grid. Accepts either a named list (keys = arm names) or a
+#'   positional list of length `n_arms`. Each entry is one of:
+#'   * `NULL` or scalar — no axis for that arm; the kernel uses the
+#'     parse-time scalar `responses[[k]]$phi`.
+#'   * numeric vector of length > 1 — adds a new outer-grid axis
+#'     `phi_<arm>` taking those values; the kernel rewrites
+#'     `arms[k].phi` at each grid point before the inner Newton solve.
+#'
+#'   Family-specific interpretation of `arm$phi` (the parse-time scalar
+#'   and the grid values):
+#'   * `gaussian` — residual SD (variance is `phi^2`). Use `phi_grid` to
+#'     estimate the residual SD as a hyperparameter instead of pinning
+#'     it pre-fit.
+#'   * `lognormal` — residual SD on the log scale; identical kernel
+#'     parameterization as `gaussian` plus the `-log(y)` Jacobian.
+#'   * `neg_binomial_2` — dispersion (variance is `mu + mu^2/phi`).
+#'   * `beta` — precision (variance is `mu(1-mu)/(1+phi)`).
+#'   * `gamma`, `inverse_gaussian` — shape / dispersion.
+#'   * `binomial`, `poisson` — ignored.
+#'
+#'   Each `phi_<arm>` axis is appended to the Cartesian product and
+#'   varies slowest (within-spatial warm starts hold). The axis appears
+#'   as a regular hyperparameter in `theta_grid`, `theta_mean`, and
+#'   `theta_sd`, and participates in adaptive-grid refinement.
 #'
 #' @param max_iter,tol Inner Newton iteration budget and tolerance.
 #' @param n_threads OpenMP threads.

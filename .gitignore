@@ -5,5 +5,8 @@ src/*.exe
 src/symbols.rds
 *.Rcheck/
 *.tar.gz
+*.log
 dev_notes/
+dev_scripts/
 tmp_lib/
+.code-review-graph/

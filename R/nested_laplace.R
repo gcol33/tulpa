@@ -83,6 +83,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     }
     prior <- prior_from_spec(spec, data)
   }
+  # Allow passing a single tgmrf S3 object directly: wrap it in a length-1
+  # block list so the multi-block dispatch picks it up. This keeps the
+  # ergonomic API close to the formula sketch in generic-todo.md (one block,
+  # one call) while still routing through the validated multi-block path.
+  if (inherits(prior, "tulpa_latent_block")) {
+    prior <- list(prior)
+  }
   if (!is.list(prior)) {
     stop("`prior` must be a list (single block) or list-of-lists (multi-block).",
          call. = FALSE)
@@ -364,6 +371,46 @@ nested_laplace <- function(...) {
     theta = function(p) list(
       grid = as.numeric(p$sigma_grid), names = "sigma"
     )
+  ),
+
+  tgmrf = list(
+    # User-defined GMRF block (see ?tgmrf). Only available inside a multi-
+    # block prior. The outer theta-grid is the Cartesian product of
+    # per-axis grids; per-axis defaults are 5 equispaced points between
+    # block$bounds$lower[j] and block$bounds$upper[j], or block$init[j] +/-
+    # 2 if no bounds are supplied. Precomputed Q_k / logdet / log p(theta_k)
+    # at every grid row are packed into the C++ block spec by
+    # `.nl_block_spec_for_cpp`.
+    cpp_fn = NULL,
+    defaults = function(p, a) {
+      if (is.null(p$theta_grid_built)) {
+        d <- p$theta_dim
+        axes <- vector("list", d)
+        for (j in seq_len(d)) {
+          if (!is.null(p$bounds)) {
+            lo <- p$bounds$lower[j]
+            hi <- p$bounds$upper[j]
+          } else {
+            lo <- p$init[j] - 2
+            hi <- p$init[j] + 2
+          }
+          axes[[j]] <- seq(lo, hi, length.out = 5L)
+        }
+        names(axes) <- p$theta_names
+        gr <- do.call(expand.grid, axes)
+        p$theta_grid_built <- as.matrix(gr)
+      }
+      p
+    },
+    pack = function(p) stop(
+      "tgmrf is only supported inside a multi-block prior. ",
+      "Wrap the block in list(): tulpa_nested_laplace(prior = list(blk), ...).",
+      call. = FALSE
+    ),
+    theta = function(p) list(
+      grid  = p$theta_grid_built,
+      names = p$theta_names
+    )
   )
 )
 
@@ -500,7 +547,12 @@ nested_laplace <- function(...) {
 # Structural spec for one block sent to cpp_nested_laplace_multi. Grid values
 # go in theta_grid separately; this function returns only the type-specific
 # data needed to build a LatentBlock (idx vector, sizes, adjacency, etc.).
-.nl_block_spec_for_cpp <- function(p) {
+#
+# `block_joint_grid` is the joint-grid sub-matrix (n_joint x block$theta_dim)
+# already realised from the Cartesian product. tgmrf needs it to precompute
+# Q(theta_k) at every joint-grid row; built-in types ignore the argument
+# because they read theta values directly from theta_grid in the C++ side.
+.nl_block_spec_for_cpp <- function(p, block_joint_grid = NULL) {
   type <- tolower(p$type)
   if (type %in% c("icar", "bym2", "car_proper")) {
     out <- list(
@@ -528,6 +580,104 @@ nested_laplace <- function(...) {
       type    = "iid",
       obs_idx = as.integer(p$obs_idx),
       n_units = as.integer(p$n_units)
+    )
+  } else if (type == "tgmrf") {
+    # Precompute Q(theta_k) for every joint-grid row and pack CSC triples +
+    # logdet + log p(theta_k). The C++ side reads them directly at grid
+    # point k - no R callback during the inner Newton loop. Iterating over
+    # block_joint_grid (rather than the block's own grid) is what lets
+    # tgmrf compose with other blocks in a multi-block prior: when other
+    # blocks vary across joint rows but tgmrf does not, the duplicated Q
+    # matrices land at the right joint index.
+    #
+    # The Q / log_prior(theta) evaluation either goes through the user's R
+    # closure (`backend == "r"`, the default) or through the registered C++
+    # spec (`backend == "cpp"`). Wire format downstream is identical in both
+    # cases.
+    if (is.null(block_joint_grid)) {
+      stop("Internal error: tgmrf block_spec called without block_joint_grid.",
+           call. = FALSE)
+    }
+    tg <- as.matrix(block_joint_grid)
+    n_cells   <- nrow(tg)
+    n_latent  <- p$n_latent
+    Q_csc_p   <- vector("list", n_cells)
+    Q_csc_i   <- vector("list", n_cells)
+    Q_csc_x   <- vector("list", n_cells)
+    logdet_Q  <- numeric(n_cells)
+    log_pi_th <- numeric(n_cells)
+    use_cpp <- isTRUE(identical(p$backend, "cpp"))
+    if (use_cpp) {
+      if (is.null(p$cpp_id) || !nzchar(p$cpp_id)) {
+        stop("Internal error: tgmrf block has backend = 'cpp' ",
+             "but no cpp_id.", call. = FALSE)
+      }
+      if (!cpp_tgmrf_registry_has(p$cpp_id)) {
+        stop("tgmrf C++ spec '", p$cpp_id, "' is not registered in the ",
+             "current R session. Was the user .cpp file sourceCpp'd? ",
+             "(Re-load via tgmrf_cpp(cpp_file = ..., id = '", p$cpp_id,
+             "').)", call. = FALSE)
+      }
+    }
+    for (k in seq_len(n_cells)) {
+      th <- as.numeric(tg[k, ])
+      names(th) <- p$theta_names
+      if (use_cpp) {
+        evk <- cpp_tgmrf_eval(p$cpp_id, th)
+        if (as.integer(evk$n) != n_latent) {
+          stop("Registered tgmrf_cpp spec '", p$cpp_id,
+               "' returned Q of size ", evk$n, " at grid row ", k,
+               " but the block was registered with n_latent = ", n_latent,
+               ".", call. = FALSE)
+        }
+        Q_csc_p[[k]] <- as.integer(evk$p)
+        Q_csc_i[[k]] <- as.integer(evk$i)
+        Q_csc_x[[k]] <- as.numeric(evk$x)
+        Qk <- Matrix::sparseMatrix(
+          i = Q_csc_i[[k]], p = Q_csc_p[[k]], x = Q_csc_x[[k]],
+          dims = c(n_latent, n_latent), index1 = FALSE
+        )
+        lp <- as.numeric(evk$log_prior)
+      } else {
+        Qk <- p$Q(th)
+        Qk <- methods::as(methods::as(Qk, "generalMatrix"), "CsparseMatrix")
+        if (nrow(Qk) != n_latent || ncol(Qk) != n_latent) {
+          stop("`Q(theta)` returned ", nrow(Qk), " x ", ncol(Qk),
+               " at grid row ", k,
+               " but the block was registered with n_latent = ", n_latent, ".",
+               call. = FALSE)
+        }
+        Q_csc_p[[k]] <- as.integer(Qk@p)
+        Q_csc_i[[k]] <- as.integer(Qk@i)
+        Q_csc_x[[k]] <- as.numeric(Qk@x)
+        lp <- as.numeric(p$prior(th))
+      }
+      # sparse Cholesky log-determinant; falls back to dense det for tiny
+      # blocks where Matrix::Cholesky balks.
+      ld <- tryCatch({
+        ch <- Matrix::Cholesky(methods::as(Qk, "symmetricMatrix"), LDL = FALSE)
+        # log|Q| = 2 * sum(log(diag(L))) for the LL' factor.
+        2 * Matrix::determinant(ch, sqrt = TRUE, logarithm = TRUE)$modulus
+      }, error = function(e) {
+        as.numeric(determinant(Qk, logarithm = TRUE)$modulus)
+      })
+      logdet_Q[k] <- as.numeric(ld)
+      if (!is.finite(lp)) {
+        stop("`prior(theta)` returned a non-finite value at grid row ", k,
+             " (theta = ", paste(format(th, digits = 4), collapse = ", "),
+             ").", call. = FALSE)
+      }
+      log_pi_th[k] <- lp
+    }
+    list(
+      type                     = "tgmrf",
+      n_latent                 = as.integer(n_latent),
+      obs_idx                  = as.integer(p$obs_idx),
+      Q_csc_p_per_grid         = Q_csc_p,
+      Q_csc_i_per_grid         = Q_csc_i,
+      Q_csc_x_per_grid         = Q_csc_x,
+      logdet_Q_per_grid        = as.numeric(logdet_Q),
+      log_prior_theta_per_grid = as.numeric(log_pi_th)
     )
   } else {
     stop("Block type '", type, "' is not supported in multi-block priors.",
@@ -563,6 +713,25 @@ nested_laplace <- function(...) {
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 
 .nl_dispatch_multi <- function(cargs, prior_list) {
+  # Inject a default obs_idx for any tgmrf block that didn't supply one.
+  # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
+  # the canonical "one obs per latent slot" case has N == n_latent and the
+  # identity mapping. Heterogeneous (N != n_latent) layouts must supply
+  # obs_idx explicitly at tgmrf() construction.
+  N_obs <- length(cargs$y)
+  for (b in seq_along(prior_list)) {
+    blk <- prior_list[[b]]
+    if (identical(tolower(blk$type %||% ""), "tgmrf") && is.null(blk$obs_idx)) {
+      if (blk$n_latent != N_obs) {
+        stop("tgmrf block has n_latent = ", blk$n_latent,
+             " but data has N = ", N_obs, " observations. Provide an explicit ",
+             "`obs_idx` argument to tgmrf() mapping observations to latent slots.",
+             call. = FALSE)
+      }
+      prior_list[[b]]$obs_idx <- seq_len(N_obs)
+    }
+  }
+
   per_block <- lapply(prior_list, .nl_block_axis_grid)
   prepared  <- lapply(per_block, function(x) x$prepared)
   block_grids <- lapply(per_block, function(x) x$grid)
@@ -596,7 +765,11 @@ nested_laplace <- function(...) {
   }))
   colnames(joint_grid) <- axis_names
 
-  blocks_spec <- lapply(prepared, .nl_block_spec_for_cpp)
+  blocks_spec <- lapply(seq_along(prepared), function(b) {
+    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+    block_joint <- joint_grid[, cols, drop = FALSE]
+    .nl_block_spec_for_cpp(prepared[[b]], block_joint)
+  })
 
   out <- cpp_nested_laplace_multi(
     y           = cargs$y,

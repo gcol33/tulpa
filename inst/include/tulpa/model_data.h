@@ -19,8 +19,12 @@ namespace tulpa {
 // Will start tracking layout / shim-family changes here once the package
 // has its first tagged release. Until then this stays at 1; downstream
 // packages should be rebuilt against the current tulpa source.
+//
+// 20 -> 21: added `tulpa_register_tgmrf` registered C callable + the
+// process-global TgmrfSpec registry that backs `tgmrf_cpp()` (P7). New
+// callable; existing layouts unchanged.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 20;
+constexpr int TULPA_ABI_VERSION = 21;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
