@@ -488,7 +488,14 @@ nested_laplace <- function(...) {
 # log(theta), and the SD is mapped back to the linear axis via the
 # delta method (sigma_theta = theta_mode * sigma_log_theta). Returns NA
 # when the mode sits at an axis edge or the parabola is concave up.
-.nl_laplace_at_mode_sd_axis <- function(vals, log_marg, log_axis = NULL) {
+#
+# `return_log_sd = TRUE` skips the delta back-map and returns sd(log theta)
+# directly. Only meaningful with `log_axis = TRUE` -- returns NA otherwise.
+# Used by `.joint_attach_alpha_moments` to combine per-axis sigma SDs into
+# SD(alpha) via the delta method (Var(log alpha) = Var(log sigma_pos) +
+# Var(log sigma_occ) under independence).
+.nl_laplace_at_mode_sd_axis <- function(vals, log_marg, log_axis = NULL,
+                                        return_log_sd = FALSE) {
   if (length(vals) < 3L) return(NA_real_)
   ix <- which.max(log_marg)
   if (ix == 1L || ix == length(vals)) return(NA_real_)
@@ -503,7 +510,11 @@ nested_laplace <- function(...) {
   a <- (lm_m * dp - lm_p * dm) / det
   if (!is.finite(a) || a >= 0) return(NA_real_)
   sd_u <- sqrt(-1 / (2 * a))
-  if (log_axis) vals[ix] * sd_u else sd_u
+  if (return_log_sd) {
+    if (log_axis) sd_u else NA_real_
+  } else {
+    if (log_axis) vals[ix] * sd_u else sd_u
+  }
 }
 
 # Replace `theta_sd` (and `block_moments[[b]]$sd` when present) entries

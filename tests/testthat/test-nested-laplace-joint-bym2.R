@@ -234,9 +234,15 @@ test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true 
     )
 
     # alpha = sigma_pos / sigma_occ; sigma_occ pinned at 0.6, alpha_true = 1.
+    # The centering-bug regression is about which level of the user-supplied
+    # grid scores highest — sigma_pos = 0 was the pathological winner.
+    # Restrict to the original grid so var-of-means / alpha-consistency
+    # refinement cells (gcol33/tulpa#21) at off-grid sigma_pos values don't
+    # mask the bug being tested here.
     df <- data.frame(sigma_pos = fit$theta_grid[, "sigma_pos"],
                      log_marginal = fit$log_marginal)
-    best_sp <- df$sigma_pos[which.max(df$log_marginal)]
+    df_grid <- df[df$sigma_pos %in% sigma_pos_grid, , drop = FALSE]
+    best_sp <- df_grid$sigma_pos[which.max(df_grid$log_marginal)]
     expect_equal(best_sp, sigma_occ_true)
 
     max_by_sp <- vapply(sigma_pos_grid,

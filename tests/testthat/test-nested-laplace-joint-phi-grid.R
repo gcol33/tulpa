@@ -309,12 +309,18 @@ test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks
     # collapsed var-of-means to 0 in tulpaObs's family_cover_hurdle.
     phi_axis <- exp(seq(log(sd_pos_true / 3), log(sd_pos_true * 3),
                          length.out = 7))
+    # var_of_means_consistency adds slice cells until var-of-means
+    # converges to the Laplace-at-mode SD by design (gcol33/tulpa#21).
+    # Disable it here so the test isolates the original mechanism: the
+    # Laplace-at-mode SD lifting theta_sd above a collapsed var-of-means
+    # floor (gcol33/tulpa#20).
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior     = prior,
         copy      = list(arm = "pos", sigma_pos_grid = c(0.3, 0.6, 0.9)),
         phi_grid  = list(pos = phi_axis),
-        adaptive_grid = FALSE
+        adaptive_grid = FALSE,
+        var_of_means_consistency = FALSE
     )
 
     # Var-of-means SD across the full joint cartesian grid.

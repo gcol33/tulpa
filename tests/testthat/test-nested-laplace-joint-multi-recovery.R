@@ -198,7 +198,11 @@ test_that("joint multi-block (BYM2+AR1+IID) recovers sigma_occ/sigma_pos/alpha (
     med_pos   <- median(rel_err(sigma_pos_hat, truth$sigma_pos))
     med_alpha <- median(rel_err(alpha_hat,     truth$alpha))
 
-    # 95% CI coverage on the two arm-anchoring amplitudes.
+    # 95% CI coverage on the two arm-anchoring amplitudes and the derived
+    # alpha = sigma_pos / sigma_occ. Alpha SD is the delta-method estimate
+    # combined from the per-axis log-sigma Laplace SDs (gcol33/tulpa#21);
+    # the assertion locks that in so a regression to var-of-means on the
+    # derived grid (which under-covers at ~0.70) is caught.
     cover_occ <- mean(
         truth$sigma_occ >= sigma_occ_hat - 1.96 * sigma_occ_sd &
         truth$sigma_occ <= sigma_occ_hat + 1.96 * sigma_occ_sd
@@ -207,18 +211,23 @@ test_that("joint multi-block (BYM2+AR1+IID) recovers sigma_occ/sigma_pos/alpha (
         truth$sigma_pos >= sigma_pos_hat - 1.96 * sigma_pos_sd &
         truth$sigma_pos <= sigma_pos_hat + 1.96 * sigma_pos_sd
     )
+    cover_alpha <- mean(
+        truth$alpha >= alpha_hat - 1.96 * alpha_sd &
+        truth$alpha <= alpha_hat + 1.96 * alpha_sd
+    )
 
     # Diagnostic line on test failure -- keeps repro cheap.
     info_str <- sprintf(
-        "median |bias|/truth: sigma_occ=%.2f sigma_pos=%.2f alpha=%.2f | coverage: sigma_occ=%.2f sigma_pos=%.2f",
-        med_occ, med_pos, med_alpha, cover_occ, cover_pos
+        "median |bias|/truth: sigma_occ=%.2f sigma_pos=%.2f alpha=%.2f | coverage: sigma_occ=%.2f sigma_pos=%.2f alpha=%.2f",
+        med_occ, med_pos, med_alpha, cover_occ, cover_pos, cover_alpha
     )
 
     expect_lt(med_occ,   0.30, label = info_str)
     expect_lt(med_pos,   0.30, label = info_str)
     expect_lt(med_alpha, 0.40, label = info_str)
-    expect_gte(cover_occ, 0.80, label = info_str)
-    expect_gte(cover_pos, 0.80, label = info_str)
+    expect_gte(cover_occ,   0.80, label = info_str)
+    expect_gte(cover_pos,   0.80, label = info_str)
+    expect_gte(cover_alpha, 0.80, label = info_str)
 })
 
 # --------------------------------------------------------------------------- #

@@ -74,11 +74,15 @@
         n_neighbors = adj$n_neighbors,
         sigma_grid = c(0.6, 1.0, 1.5)
     )
+    # var_of_means_consistency adds its own slice cells (gcol33/tulpa#21);
+    # disable here so the cell-count book-keeping in test 2 reflects the
+    # adaptive_grid path alone.
     tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
         copy = list(arm = "pos", sigma_pos_grid = sigma_pos_grid),
-        adaptive_grid = adaptive_grid
+        adaptive_grid = adaptive_grid,
+        var_of_means_consistency = FALSE
     )
 }
 

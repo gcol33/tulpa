@@ -742,6 +742,18 @@ tulpa_nested_laplace_joint <- function(responses,
 # posterior mean / sd into the result's theta_mean / theta_sd. Also append
 # an `alpha` column to `theta_grid` so downstream code that inspects
 # fit$theta_grid sees alpha alongside the sigma axes.
+#
+# SD(alpha) uses the delta method on log axes:
+#     log alpha = log sigma_pos - log sigma_occ
+#     Var(log alpha) ≈ Var(log sigma_pos) + Var(log sigma_occ)
+#     SD(alpha)     ≈ alpha_mode * SD(log alpha)
+# Independence is the joint-copy regime — each arm identifies its own
+# sigma so the posterior is approximately separable. Var-of-means on the
+# derived alpha column underestimates SD on coarse grids because (sigma_occ,
+# sigma_pos) levels cluster on iso-alpha rays (only ~13 unique alpha values
+# out of 30+ cells in the D3 fixture); the per-axis Laplace-at-mode SDs on
+# log sigma avoid that geometry entirely. Mean stays var-of-means; lifting
+# it to the log-normal mean is a separate change.
 .joint_attach_alpha_moments <- function(res, has_copy) {
     if (!isTRUE(has_copy)) return(res)
     tg <- res$theta_grid
@@ -764,13 +776,9 @@ tulpa_nested_laplace_joint <- function(responses,
     alpha_axes_ok <- refining == "" | refining == "sigma_pos" |
                       refining == "sigma_occ" |
                       refining == "consistency_alpha"
-    # Recompute weights on the alpha-relevant subset directly from
-    # log_marginal (rather than reusing res$weights, which is normalised
-    # across all cells).
     use <- safe & alpha_axes_ok
     if (sum(use) == 0L) {
         alpha_mean <- NA_real_
-        alpha_sd   <- NA_real_
     } else {
         lm_use <- res$log_marginal[use]
         m_use  <- max(lm_use)
@@ -778,9 +786,21 @@ tulpa_nested_laplace_joint <- function(responses,
         ws     <- ws / sum(ws)
         a_use  <- alpha_vec[use]
         alpha_mean <- sum(ws * a_use)
-        alpha_var  <- sum(ws * a_use^2) - alpha_mean^2
-        alpha_sd   <- sqrt(max(0, alpha_var))
     }
+
+    sd_log_alpha <- .joint_alpha_sd_log_delta(tg, res, refining)
+    if (is.finite(sd_log_alpha)) {
+        ix_mode    <- which.max(res$log_marginal)
+        alpha_mode <- alpha_vec[ix_mode]
+        alpha_sd <- if (is.finite(alpha_mode) && alpha_mode > 0) {
+            alpha_mode * sd_log_alpha
+        } else {
+            NA_real_
+        }
+    } else {
+        alpha_sd <- NA_real_
+    }
+
     res$theta_grid <- cbind(tg, alpha = alpha_vec)
     res$theta_names <- colnames(res$theta_grid)
     res$theta_mean <- c(res$theta_mean, alpha = alpha_mean)
@@ -788,23 +808,52 @@ tulpa_nested_laplace_joint <- function(responses,
     res
 }
 
+# SD(log alpha) via Laplace-at-mode on per-axis log-sigma marginals,
+# combined under posterior independence of (log sigma_occ, log sigma_pos).
+# Uses the same `refining` mask convention as `.joint_recalibrate_axis_moments`
+# so consistency slice cells contribute to each axis's own marginal.
+# Returns NA when either axis fit fails (mode at edge, wrong-signed
+# curvature, too few unique levels).
+.joint_alpha_sd_log_delta <- function(tg, res, refining) {
+    sd_log_axis <- function(col) {
+        keep <- refining == "" | refining == col |
+                refining == paste0("consistency_", col)
+        marg <- .nl_axis_marginal_logdensity(tg[, col], res$log_marginal, keep)
+        .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg,
+                                     log_axis = TRUE, return_log_sd = TRUE)
+    }
+    sd_log_so <- sd_log_axis("sigma_occ")
+    sd_log_sp <- sd_log_axis("sigma_pos")
+    if (!is.finite(sd_log_so) || !is.finite(sd_log_sp)) return(NA_real_)
+    sqrt(sd_log_so^2 + sd_log_sp^2)
+}
+
 # Consistency step for the derived `alpha = sigma_pos / sigma_occ` axis on
 # joint copy fits (gcol33/tulpa#21). Run after the per-grid-axis consistency
 # loop. The grid-axis loop refines sigma_pos / sigma_occ / phi_* when their
-# var-of-means SDs underestimate the Laplace SD, but the derived alpha
-# posterior reported by `.joint_attach_alpha_moments` can still narrow when
-# the sigma axes individually pass the threshold yet jointly sample alpha
-# too tightly (D3 at alpha_true >= 0.5: sigma var-of-means SDs are fine,
-# but cross-seed alpha SE/SD ratio is ~0.4-0.6x).
+# var-of-means SDs underestimate the Laplace SD, but the downstream
+# legacy pattern `sum(w * alpha)` and `sum(w * alpha^2) - mean^2` can still
+# narrow when the sigma axes individually pass the threshold yet the
+# joint grid samples alpha too coarsely (D3 at alpha_true >= 0.5: sigma
+# var-of-means SDs are fine, but cross-seed alpha SE/SD ratio is ~0.4x).
 #
-# Strategy: compute Laplace-at-mode SD on the alpha marginal density (via
-# logsumexp binning over the existing grid). If var-of-means alpha SD is
-# below `tolerance * sd_laplace`, propose new sigma_pos slice points at
-# (alpha_mode * exp(+/- k * log_sd)) * sigma_occ_mode, anchored on the
-# overall modal (sigma_occ, sigma_pos) cell. Slice cells get tagged
-# `consistency_alpha` so `.joint_attach_alpha_moments` picks them up while
-# grid-axis marginals naturally skip them (same prefix convention as
-# `consistency_sigma_*`).
+# Strategy: compute the engine-reported alpha SD via the delta method on
+# log-sigma axes (Var(log alpha) = Var(log sigma_pos) + Var(log sigma_occ)),
+# matching what `.joint_attach_alpha_moments` reports. If downstream
+# var-of-means alpha SD is below `tolerance * sd_delta`, propose new
+# sigma_pos slice points at (alpha_mode * exp(+/- k * sd_log_alpha)) *
+# sigma_occ_mode, anchored on the overall modal cell. Slice cells get
+# tagged `consistency_alpha` so `.joint_attach_alpha_moments` picks them up
+# (via the engine's alpha-axis keep mask), while grid-axis marginals
+# naturally skip them (same prefix convention as `consistency_sigma_*`).
+#
+# Note: the prior implementation fit Laplace-at-mode directly on the
+# binned alpha marginal (via logsumexp over iso-alpha cells), which the
+# grid geometry made artificially sharp -- only ~13 unique alpha values
+# out of 30+ cells in D3, with duplicates at alpha=1 from (sigma=sigma)
+# pairs aggregating tightly. The delta-method SD on the per-axis log
+# marginals (where each axis has many cells and the parabola fit is
+# clean) avoids that geometry entirely.
 .nl_alpha_consistency_step <- function(grids, res, backend, arms, prior, cp,
                                        max_iter, tol, n_threads, x_init,
                                        store_Q, arm_names, tolerance = 0.7) {
@@ -827,24 +876,22 @@ tulpa_nested_laplace_joint <- function(responses,
     alpha_vec[safe] <- sigma_pos[safe] / sigma_occ[safe]
 
     refining <- res$refining_axis %||% rep("", length(alpha_vec))
-    # Engine view: filtered subset of cells that genuinely vary alpha
-    # (cartesian + sigma slice + consistency_alpha). Used for the Laplace
-    # marginal-density fit.
-    use_engine <- (refining == "" | refining == "sigma_pos" |
-                   refining == "sigma_occ" |
-                   refining == "consistency_alpha") &
-                  safe & is.finite(alpha_vec) & alpha_vec > 0
-    if (sum(use_engine) < 3L) { dbg(sprintf("only %d usable cells", sum(use_engine))); return(none) }
 
-    marg <- .nl_axis_marginal_logdensity(alpha_vec, res$log_marginal, use_engine)
-    if (length(marg$vals) < 3L) { dbg(sprintf("only %d unique alpha vals", length(marg$vals))); return(none) }
-    sd_lap <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg,
-                                           log_axis = TRUE)
-    if (!is.finite(sd_lap) || sd_lap <= 0) { dbg(sprintf("Laplace fit failed (sd=%s); modal val=%g neighbours=(%s)",
-        format(sd_lap), marg$vals[which.max(marg$log_marg)],
-        paste(format(marg$vals), collapse = ","))); return(none) }
-    ix_mode    <- which.max(marg$log_marg)
-    alpha_mode <- marg$vals[ix_mode]
+    # Delta-method SD on log alpha from per-axis log-sigma Laplace fits.
+    # Matches what `.joint_attach_alpha_moments` reports as theta_sd[["alpha"]].
+    sd_log_alpha <- .joint_alpha_sd_log_delta(tg, res, refining)
+    if (!is.finite(sd_log_alpha) || sd_log_alpha <= 0) {
+        dbg(sprintf("delta-method sd_log_alpha not finite (%s)", format(sd_log_alpha)))
+        return(none)
+    }
+
+    overall_mode_idx <- which.max(res$log_marginal)
+    alpha_mode       <- alpha_vec[overall_mode_idx]
+    if (!is.finite(alpha_mode) || alpha_mode <= 0) {
+        dbg(sprintf("alpha_mode not positive (%s)", format(alpha_mode)))
+        return(none)
+    }
+    sd_delta <- alpha_mode * sd_log_alpha
 
     # Downstream view: all alpha-bearing cells, weighted by joint posterior
     # weights without the alpha-aware refining filter. This matches the
@@ -862,26 +909,25 @@ tulpa_nested_laplace_joint <- function(responses,
     vom_mean_ds <- sum(ws_ds * a_ds)
     vom_sd_ds   <- sqrt(max(0, sum(ws_ds * a_ds^2) - vom_mean_ds^2))
 
-    info <- list(vom_sd = vom_sd_ds, sd_laplace = sd_lap,
+    info <- list(vom_sd = vom_sd_ds, sd_laplace = sd_delta,
                  alpha_mode = alpha_mode, triggered = FALSE, n_added = 0L)
-    dbg(sprintf("vom_sd_ds=%.4f  sd_lap=%.4f  ratio=%.3f  alpha_mode=%.3f  threshold=%.3f",
-                 vom_sd_ds, sd_lap, vom_sd_ds / sd_lap, alpha_mode, tolerance))
-    if (!is.finite(vom_sd_ds) || vom_sd_ds >= tolerance * sd_lap) {
-        dbg("no trigger (vom_sd_ds >= tolerance * sd_lap)")
+    dbg(sprintf("vom_sd_ds=%.4f  sd_delta=%.4f  ratio=%.3f  alpha_mode=%.3f  threshold=%.3f",
+                 vom_sd_ds, sd_delta, vom_sd_ds / sd_delta, alpha_mode, tolerance))
+    if (!is.finite(vom_sd_ds) || vom_sd_ds >= tolerance * sd_delta) {
+        dbg("no trigger (vom_sd_ds >= tolerance * sd_delta)")
         return(list(grids = grids, res = res, n_new = 0L, info = info))
     }
 
-    # Propose new alpha values on log scale at +/- {0.7, 1.5} * log_sd.
-    log_sd_alpha <- sd_lap / alpha_mode
-    new_alpha    <- alpha_mode * exp(c(-1.5, -0.7, 0.7, 1.5) * log_sd_alpha)
+    # Propose new alpha values on log scale at +/- {0.7, 1.5} * sd_log_alpha.
+    new_alpha    <- alpha_mode * exp(c(-1.5, -0.7, 0.7, 1.5) * sd_log_alpha)
     new_alpha    <- new_alpha[is.finite(new_alpha) & new_alpha > 0]
     if (length(new_alpha) == 0L) {
         return(list(grids = grids, res = res, n_new = 0L, info = info))
     }
 
-    overall_mode_idx <- which.max(res$log_marginal)
     # Use the locally rebuilt theta_grid `tg` (res$theta_grid is stale —
     # the caller only rebuilds it after the consistency pass returns).
+    # `overall_mode_idx` was computed above.
     sigma_occ_mode   <- as.numeric(tg[overall_mode_idx, "sigma_occ"])
     sigma_pos_anchor <- as.numeric(tg[overall_mode_idx, "sigma_pos"])
     if (!is.finite(sigma_occ_mode) || sigma_occ_mode <= 0) {
