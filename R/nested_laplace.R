@@ -466,6 +466,51 @@ nested_laplace <- function(...) {
 # length n_cells; `keep` is an optional logical mask (cartesian + same-
 # axis slice cells). Returns sorted unique axis values and the matching
 # marginal log-density.
+# Weighted quantile on a discrete (value, weight) distribution. Uses
+# midpoint-of-mass cumulative probability (Type 7-like) plus linear
+# interpolation, so quantiles vary smoothly with weights rather than
+# snapping to grid cells.
+#
+#  * Aggregates duplicate values: weights at equal `values` are summed
+#    before interpolation. Required when the joint grid clusters
+#    multiple cells on iso-value rays (e.g. derived `alpha = sigma_pos
+#    / sigma_occ` takes only ~9-15 unique values on a 3-cell sigma
+#    grid; without aggregation the cumulative-weight curve would have
+#    spurious horizontal segments).
+#  * Filters non-finite values and non-positive weights.
+#  * Returns `NA` per requested `probs` when the support is empty;
+#    returns the unique support value when only one survives.
+#
+# Used by `.alpha_grid_moments` to surface the posterior median and 95%
+# interval of derived `alpha` from the joint nested-Laplace posterior.
+# Reporting summaries *after* marginalizing the joint sigma grid (rather
+# than reconstructing them from the per-axis Laplace MAP) is the right
+# move when `sigma_pos` has a skewed/weakly-identified posterior --
+# parabola-vertex MAP is brittle there, weighted quantiles are not.
+.nl_wtd_quantile <- function(values, weights, probs) {
+  ord <- order(values)
+  v <- as.numeric(values)[ord]
+  w <- as.numeric(weights)[ord]
+  keep <- is.finite(v) & is.finite(w) & w > 0
+  if (!any(keep)) return(rep(NA_real_, length(probs)))
+  v <- v[keep]; w <- w[keep]
+  if (anyDuplicated(v)) {
+    sp <- split(w, factor(v, levels = unique(v)))
+    v  <- as.numeric(names(sp))
+    w  <- vapply(sp, sum, numeric(1L))
+  }
+  w_tot <- sum(w)
+  if (!is.finite(w_tot) || w_tot <= 0) return(rep(NA_real_, length(probs)))
+  w <- w / w_tot
+  if (length(v) == 1L) return(rep(v[1L], length(probs)))
+  p <- cumsum(w) - w / 2
+  vapply(probs, function(q) {
+    if (q <= p[1L])          return(v[1L])
+    if (q >= p[length(p)])   return(v[length(v)])
+    approx(p, v, xout = q, method = "linear")$y
+  }, numeric(1L))
+}
+
 .nl_axis_marginal_logdensity <- function(vals, log_marg, keep = NULL) {
   if (is.null(keep)) keep <- rep(TRUE, length(vals))
   v <- vals[keep]; l <- log_marg[keep]
