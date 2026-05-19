@@ -403,8 +403,13 @@ tulpa_nested_laplace_joint <- function(responses,
             }
             U <- pp[1L]; a <- pp[2L]
             lambda <- -log(a) / U
+            # PC prior density at sigma=0 is the finite limit `lambda`,
+            # not zero. The strict `s > 0` would zero the boundary grid
+            # cell (sigma_pos = 0) and bias derived quantities like
+            # alpha = sigma_pos / sigma_occ. Accept the closed half-line
+            # [0, Inf).
             function(s) {
-                ok <- is.finite(s) & s > 0
+                ok <- is.finite(s) & s >= 0
                 out <- rep(-Inf, length(s))
                 out[ok] <- log(lambda) - lambda * s[ok]
                 out
@@ -418,8 +423,11 @@ tulpa_nested_laplace_joint <- function(responses,
             }
             sc <- pp
             const <- log(2) - 0.5 * log(2 * pi) - log(sc)
+            # Half-normal density at sigma=0 is the finite peak
+            # 2/(scale*sqrt(2*pi)), not zero. Same closed-half-line
+            # rationale as the PC branch above.
             function(s) {
-                ok <- is.finite(s) & s > 0
+                ok <- is.finite(s) & s >= 0
                 out <- rep(-Inf, length(s))
                 out[ok] <- const - s[ok]^2 / (2 * sc^2)
                 out

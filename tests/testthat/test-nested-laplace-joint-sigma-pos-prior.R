@@ -184,3 +184,65 @@ test_that("pc.prec on sigma_pos cuts alpha bias at small n_pos (gcol33/tulpa#22)
     #     within ~0.10 of truth (observed offset ~0.06 on 30 seeds).
     expect_lt(abs(mean(sig_occ_pc) - 0.6), 0.10, label = info_str)
 })
+
+test_that("PC / half_normal log-density is finite at sigma = 0 boundary", {
+    # Regression for the `ok <- s > 0` -> `ok <- s >= 0` fix. The PC
+    # prior density at sigma=0 is the finite limit `lambda`, not zero;
+    # half-normal at 0 is `2 / (scale * sqrt(2 * pi))`. Earlier impl
+    # returned `-Inf` for s = 0, which zeroed the sigma_pos = 0 grid
+    # cell entirely and biased derived alpha when the truth sat on the
+    # boundary (e.g. INLAabun D3 alpha_true = 0.0).
+    f_pc <- tulpa:::.joint_parse_sigma_prior(list("pc.prec", c(1.0, 0.01)),
+                                              "prior_sigma_pos")
+    expect_true(is.finite(f_pc(0)))
+    expect_equal(f_pc(0), log(-log(0.01) / 1.0))
+
+    f_hn <- tulpa:::.joint_parse_sigma_prior(list("half_normal", 0.5),
+                                              "prior_sigma_pos")
+    expect_true(is.finite(f_hn(0)))
+    expect_equal(f_hn(0), log(2) - 0.5 * log(2 * pi) - log(0.5))
+})
+
+test_that("sigma_pos = 0 grid cell is not zeroed by the prior", {
+    # Integration-level check: with a sigma_pos grid that includes 0 and
+    # truth alpha = 0 (sigma_pos truth = 0), the posterior should
+    # concentrate near 0. Pre-fix the boundary bug pushed the posterior
+    # to the next-smallest cell, surfacing as a +500% bias on derived
+    # alpha. One seed is enough to catch a regression of the boundary.
+    skip_on_cran()
+    adj <- .chain_adj_pp(25L)
+    sim <- .simulate_d7_pp(seed = 7501L, alpha_true = 0.0)
+    arm_occ <- list(
+        y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
+        X = sim$Xocc, spatial_idx = sim$spatial_idx,
+        re_idx = rep(0, sim$N), n_re_groups = 0L, sigma_re = 1.0,
+        family = "binomial", phi = 1.0
+    )
+    arm_pos <- list(
+        y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
+        X = sim$Xpos, spatial_idx = sim$spi_pos,
+        re_idx = rep(0, length(sim$y_pos)),
+        n_re_groups = 0L, sigma_re = 1.0,
+        family = "beta", phi = 30.0
+    )
+    prior <- list(
+        type = "bym2",
+        n_spatial_units = adj$n_spatial_units,
+        adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+        n_neighbors = adj$n_neighbors, scale_factor = 1.0,
+        sigma_grid = c(0.3, 0.6, 0.9),
+        rho_grid   = c(0.5, 0.7, 0.9)
+    )
+    fit <- tulpa_nested_laplace_joint(
+        responses = list(occ = arm_occ, pos = arm_pos),
+        prior     = prior,
+        copy      = list(arm = "pos",
+                          sigma_pos_grid = c(0.0, 0.3, 0.6, 0.9, 1.2)),
+        prior_sigma_pos = list("pc.prec", c(1.0, 0.01)),
+        adaptive_grid   = FALSE
+    )
+    # With sigma_pos_truth = 0, alpha posterior median should be small
+    # (well below 0.2). Pre-fix the median jumped to ~0.5 because the
+    # zero cell was eliminated. 0.2 is generous headroom for one seed.
+    expect_lt(fit$theta_median[["alpha"]], 0.2)
+})
