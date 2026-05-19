@@ -16,6 +16,8 @@ tulpa_nested_laplace_joint(
   n_threads = 1L,
   n_threads_outer = 1L,
   tile_warm = TRUE,
+  prune = FALSE,
+  prune_tol = 0.001,
   x_init = NULL,
   verbose = FALSE,
   store_Q = FALSE,
@@ -161,6 +163,28 @@ present, the grid has a single tile, or \code{n_threads_outer <= 1L}. Set
 to \code{FALSE} to recover the Phase 1 behaviour (e.g. for regression
 testing).}
 
+\item{prune}{Logical (default \code{FALSE}). When \code{TRUE}, the driver runs a
+cheap-pass screening Laplace at the centre-cell pilot mode for every
+outer-grid cell (no inner Newton, just one \code{log_lik + log_prior}
+evaluation per cell at the pilot mode), softmax-normalises the
+screening log-marginals, and skips the full inner Newton on cells
+whose normalised weight falls below \code{prune_tol}. Pruned cells are
+marked with \code{log_marginal = -Inf}, \code{n_iter = 0}, and inherit the
+pilot mode as their \code{mode} row. The pilot cell itself is never pruned.
+Stacks with \code{n_threads_outer} (serial and parallel paths both honour
+the prune mask). Approximate: the screen uses \verb{log|H_pilot|} for every
+cell rather than recomputing the Hessian, so cells where the data
+posterior shape differs sharply from the pilot can be misranked at
+the edges. Keep \code{prune_tol} conservative (\verb{<= 1e-3}) when the cover
+posterior is data-rich; pruning is most useful when the outer grid
+has many low-mass tail cells.}
+
+\item{prune_tol}{Numeric (default \code{1e-3}). Screening weight threshold
+below which cells are pruned. Cells whose softmax-normalised cheap
+log-marginal weight is \verb{< prune_tol} skip the full inner Newton. Has
+no effect when \code{prune = FALSE}. Default keeps cells holding ~99.9\%
+of cheap-pass mass.}
+
 \item{x_init}{Optional warm-start for the first grid point's inner solve.}
 
 \item{verbose}{Currently a no-op; reserved.}
@@ -226,6 +250,12 @@ spatial offset(s) and \code{n_x} for decoding modes.
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.
+\item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
+\code{prune_tol} — present only when \code{prune = TRUE}. Cheap-pass log-
+marginals at every cell, a logical mask of pruned cells, the
+pruned-cell count, and the threshold actually applied. Pruned
+cells have \code{log_marginal = -Inf} so they get zero weight under
+\code{.nl_normalise_weights}.
 }
 }
 \description{

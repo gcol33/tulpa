@@ -472,21 +472,18 @@ nested_laplace <- function(...) {
 # snapping to grid cells.
 #
 #  * Aggregates duplicate values: weights at equal `values` are summed
-#    before interpolation. Required when the joint grid clusters
-#    multiple cells on iso-value rays (e.g. derived `alpha = sigma_pos
-#    / sigma_occ` takes only ~9-15 unique values on a 3-cell sigma
-#    grid; without aggregation the cumulative-weight curve would have
-#    spurious horizontal segments).
+#    before interpolation. Idempotent on already-unique axes; needed when
+#    the joint grid carries repeated values (e.g. slice-cell refinement
+#    re-uses the modal axis value across multiple Newton-Laplace cells).
 #  * Filters non-finite values and non-positive weights.
 #  * Returns `NA` per requested `probs` when the support is empty;
 #    returns the unique support value when only one survives.
 #
 # Used by `.alpha_grid_moments` to surface the posterior median and 95%
-# interval of derived `alpha` from the joint nested-Laplace posterior.
-# Reporting summaries *after* marginalizing the joint sigma grid (rather
-# than reconstructing them from the per-axis Laplace MAP) is the right
-# move when `sigma_pos` has a skewed/weakly-identified posterior --
-# parabola-vertex MAP is brittle there, weighted quantiles are not.
+# interval of `alpha` (a direct hyperparameter axis after the
+# (sigma, alpha) reparameterization) from the joint nested-Laplace
+# posterior. Weighted quantiles handle skewed/heavy-tailed marginals that
+# `mean +/- 1.96 sd` summaries misrepresent.
 .nl_wtd_quantile <- function(values, weights, probs) {
   ord <- order(values)
   v <- as.numeric(values)[ord]
@@ -549,9 +546,6 @@ nested_laplace <- function(...) {
 #
 # `return_log_sd = TRUE` skips the delta back-map and returns sd(log theta)
 # directly. Only meaningful with `log_axis = TRUE` -- returns NA otherwise.
-# Used by `.joint_attach_alpha_moments` to combine per-axis sigma SDs into
-# SD(alpha) via the delta method (Var(log alpha) = Var(log sigma_pos) +
-# Var(log sigma_occ) under independence).
 .nl_laplace_at_mode_sd_axis <- function(vals, log_marg, log_axis = NULL,
                                         return_log_sd = FALSE) {
   if (length(vals) < 3L) return(NA_real_)
@@ -575,39 +569,6 @@ nested_laplace <- function(...) {
   }
 }
 
-# Laplace-at-mode (mu, sd) on a single positive-valued axis, both on the
-# log scale. Fits the same 3-point parabola as `.nl_laplace_at_mode_sd_axis`
-# (centred on the modal cell, log-transformed axis) and in addition to the
-# curvature-derived SD = sqrt(-1 / (2a)) returns the parabola vertex
-# u_v = u[ix] - b/(2a) as the continuous MAP / Gaussian-Laplace mean on the
-# log axis. Returns list(mu = NA, sd = NA) when the modal cell sits at an
-# axis edge or the parabola is concave up (no Laplace approximation).
-#
-# Used by `.joint_alpha_log_params` to compute closed-form Lognormal
-# moments of derived `alpha = sigma_pos / sigma_occ` from per-axis Laplace
-# fits, replacing the discrete weighted sum `sum(weights * alpha_grid)` that
-# was upward-biased by Jensen's inequality on `1/sigma_occ` on coarse sigma
-# grids (gcol33/tulpa#21 follow-up).
-.nl_laplace_at_mode_log_params_axis <- function(vals, log_marg) {
-  na_pair <- list(mu = NA_real_, sd = NA_real_)
-  if (length(vals) < 3L) return(na_pair)
-  if (!all(is.finite(vals)) || !all(vals > 0)) return(na_pair)
-  ix <- which.max(log_marg)
-  if (ix == 1L || ix == length(vals)) return(na_pair)
-  u <- log(vals)
-  dm <- u[ix - 1L] - u[ix]
-  dp <- u[ix + 1L] - u[ix]
-  det <- dm * dp * (dm - dp)
-  if (!is.finite(det) || abs(det) < .Machine$double.eps) return(na_pair)
-  lm_m <- log_marg[ix - 1L] - log_marg[ix]
-  lm_p <- log_marg[ix + 1L] - log_marg[ix]
-  a <- (lm_m * dp - lm_p * dm) / det
-  b <- (lm_p * dm^2 - lm_m * dp^2) / det
-  if (!is.finite(a) || !is.finite(b) || a >= 0) return(na_pair)
-  list(mu = u[ix] - b / (2 * a),
-       sd = sqrt(-1 / (2 * a)))
-}
-
 # Replace `theta_sd` (and `block_moments[[b]]$sd` when present) entries
 # with the Laplace-at-mode SD wherever the 3-point fit succeeds. Axes
 # with the mode at an edge or wrong-signed curvature keep their var-of-
@@ -628,7 +589,6 @@ nested_laplace <- function(...) {
   col_names <- colnames(tg)
   if (!is.null(col_names) && !is.null(res$theta_sd)) {
     for (col in col_names) {
-      if (identical(col, "alpha")) next  # derived axis; not a grid column
       if (!col %in% names(res$theta_sd)) next
       keep <- refining == "" | refining == col |
               refining == paste0("consistency_", col)

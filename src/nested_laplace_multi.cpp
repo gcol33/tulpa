@@ -464,7 +464,8 @@ Rcpp::List cpp_nested_laplace_multi(
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    double prune_tol = 0.0
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -503,7 +504,9 @@ Rcpp::List cpp_nested_laplace_multi(
         blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, x_init,
-        store_Q
+        store_Q,
+        /*n_threads_outer=*/1,
+        prune_tol
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

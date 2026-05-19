@@ -149,6 +149,26 @@
 #'   present, the grid has a single tile, or `n_threads_outer <= 1L`. Set
 #'   to `FALSE` to recover the Phase 1 behaviour (e.g. for regression
 #'   testing).
+#' @param prune Logical (default `FALSE`). When `TRUE`, the driver runs a
+#'   cheap-pass screening Laplace at the centre-cell pilot mode for every
+#'   outer-grid cell (no inner Newton, just one `log_lik + log_prior`
+#'   evaluation per cell at the pilot mode), softmax-normalises the
+#'   screening log-marginals, and skips the full inner Newton on cells
+#'   whose normalised weight falls below `prune_tol`. Pruned cells are
+#'   marked with `log_marginal = -Inf`, `n_iter = 0`, and inherit the
+#'   pilot mode as their `mode` row. The pilot cell itself is never pruned.
+#'   Stacks with `n_threads_outer` (serial and parallel paths both honour
+#'   the prune mask). Approximate: the screen uses `log|H_pilot|` for every
+#'   cell rather than recomputing the Hessian, so cells where the data
+#'   posterior shape differs sharply from the pilot can be misranked at
+#'   the edges. Keep `prune_tol` conservative (`<= 1e-3`) when the cover
+#'   posterior is data-rich; pruning is most useful when the outer grid
+#'   has many low-mass tail cells.
+#' @param prune_tol Numeric (default `1e-3`). Screening weight threshold
+#'   below which cells are pruned. Cells whose softmax-normalised cheap
+#'   log-marginal weight is `< prune_tol` skip the full inner Newton. Has
+#'   no effect when `prune = FALSE`. Default keeps cells holding ~99.9%
+#'   of cheap-pass mass.
 #' @param x_init Optional warm-start for the first grid point's inner solve.
 #' @param verbose Currently a no-op; reserved.
 #' @param store_Q If `TRUE`, also return the per-grid joint precision Q
@@ -209,6 +229,12 @@
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
+#'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
+#'      `prune_tol` — present only when `prune = TRUE`. Cheap-pass log-
+#'      marginals at every cell, a logical mask of pruned cells, the
+#'      pruned-cell count, and the threshold actually applied. Pruned
+#'      cells have `log_marginal = -Inf` so they get zero weight under
+#'      `.nl_normalise_weights`.
 #'
 #' @seealso [tulpa_nested_laplace()] for the single-arm engine.
 #' @export
@@ -222,6 +248,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                        n_threads = 1L,
                                        n_threads_outer = 1L,
                                        tile_warm = TRUE,
+                                       prune = FALSE,
+                                       prune_tol = 1e-3,
                                        x_init = NULL, verbose = FALSE,
                                        store_Q = FALSE,
                                        adaptive_grid = FALSE,
@@ -261,6 +289,22 @@ tulpa_nested_laplace_joint <- function(responses,
 
     # Detect multi-block prior (list-of-blocks). Routed to a separate
     # dispatch path that builds vector<LatentBlock> on the joint side.
+    # Pruning toggle: the kernel takes prune_tol > 0 to mean "screen and
+    # prune"; gate it here with the user-facing `prune` boolean so the toggle
+    # composes cleanly (prune=FALSE always disables, prune=TRUE uses
+    # prune_tol). prune_tol must be in [0, 1) — clamp out-of-range to 0
+    # rather than erroring, because a zero tolerance is the safe no-op.
+    if (!isTRUE(prune)) {
+        prune_tol_eff <- 0.0
+    } else {
+        prune_tol_eff <- as.numeric(prune_tol)
+        if (!is.finite(prune_tol_eff) || prune_tol_eff < 0 ||
+            prune_tol_eff >= 1) {
+            stop("`prune_tol` must be a finite numeric in [0, 1).",
+                 call. = FALSE)
+        }
+    }
+
     if (.is_multi_block_prior_joint(prior)) {
         return(.joint_dispatch_multi(
             responses = responses, prior_list = prior, copy = copy,
@@ -269,6 +313,7 @@ tulpa_nested_laplace_joint <- function(responses,
             max_iter = max_iter, tol = tol, n_threads = n_threads,
             n_threads_outer = n_threads_outer,
             tile_warm = tile_warm,
+            prune_tol = prune_tol_eff,
             x_init = x_init, verbose = verbose, store_Q = store_Q
         ))
     }
@@ -299,7 +344,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                 n_threads, x_init, isTRUE(store_Q),
                                 arm_names = arm_names,
                                 n_threads_outer = n_threads_outer,
-                                tile_warm = tile_warm)
+                                tile_warm = tile_warm,
+                                prune_tol = prune_tol_eff)
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # at the kernel-call boundary. Every cell carries the same prior
@@ -539,12 +585,13 @@ tulpa_nested_laplace_joint <- function(responses,
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
                                 n_threads, x_init, store_Q = FALSE,
                                 arm_names = NULL, n_threads_outer = 1L,
-                                tile_warm = TRUE) {
+                                tile_warm = TRUE, prune_tol = 0.0) {
             .joint_call_kernel_via_multi("bym2", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
                                           n_threads_outer = n_threads_outer,
-                                          tile_warm = tile_warm)
+                                          tile_warm = tile_warm,
+                                          prune_tol = prune_tol)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -571,12 +618,13 @@ tulpa_nested_laplace_joint <- function(responses,
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
                                 n_threads, x_init, store_Q = FALSE,
                                 arm_names = NULL, n_threads_outer = 1L,
-                                tile_warm = TRUE) {
+                                tile_warm = TRUE, prune_tol = 0.0) {
             .joint_call_kernel_via_multi("icar", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
                                           n_threads_outer = n_threads_outer,
-                                          tile_warm = tile_warm)
+                                          tile_warm = tile_warm,
+                                          prune_tol = prune_tol)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -603,12 +651,13 @@ tulpa_nested_laplace_joint <- function(responses,
         call_kernel = function(arms, prior, cp, grids, max_iter, tol,
                                 n_threads, x_init, store_Q = FALSE,
                                 arm_names = NULL, n_threads_outer = 1L,
-                                tile_warm = TRUE) {
+                                tile_warm = TRUE, prune_tol = 0.0) {
             .joint_call_kernel_via_multi("car_proper", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
                                           n_threads_outer = n_threads_outer,
-                                          tile_warm = tile_warm)
+                                          tile_warm = tile_warm,
+                                          prune_tol = prune_tol)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -655,7 +704,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
                                           n_threads_outer = 1L,
-                                          tile_warm = TRUE) {
+                                          tile_warm = TRUE,
+                                          prune_tol = 0.0) {
     n_arms <- length(arms)
     spi <- lapply(arms, function(a) as.integer(a$spatial_idx))
 
@@ -752,7 +802,8 @@ tulpa_nested_laplace_joint <- function(responses,
         phi_grid_per_arm = phi_grid_per_arm,
         n_threads_outer = as.integer(n_threads_outer),
         tile_ids        = tile_partition$tile_ids,
-        tile_pilot_cells = tile_partition$tile_pilot_cells
+        tile_pilot_cells = tile_partition$tile_pilot_cells,
+        prune_tol       = as.numeric(prune_tol)
     )
     # Strip the C++-side theta_grid / axis_offsets — the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare
@@ -1051,44 +1102,30 @@ tulpa_nested_laplace_joint <- function(responses,
     res
 }
 
-# Posterior moments for alpha (copy coefficient) on the joint
-# nested-Laplace grid. After the (sigma, alpha) reparameterization,
-# alpha is a primary grid axis, not a derived ratio -- the user picks
-# the alpha grid directly and each cell carries an alpha value read
-# straight off the theta_grid axis. The summaries are weighted-quantile
-# empirical median + 2.5/97.5 CI on the joint posterior, plus the
-# (now-direct) weighted mean and SD.
+# Weighted-quantile median + 2.5/97.5 empirical CI for alpha on the joint
+# nested-Laplace grid. After the (sigma, alpha) reparameterization alpha
+# is a primary grid axis; mean and SD are produced generically by
+# `.nl_posterior_moments` + `.joint_recalibrate_axis_moments`, so this
+# helper only adds the quantile-based summaries.
 #
-# `tg` is a matrix with named column `alpha`.
-# `res` is a list with `log_marginal`.
-# `refining` is the per-cell refining-axis mask (cells that pin alpha
-# at a non-varying value are excluded from the alpha marginal).
+# `tg` is a matrix with named column `alpha`. `res` is a list with
+# `log_marginal`. `refining` is the per-cell refining-axis mask: foreign-
+# axis slice cells (which pin alpha at a single value while varying some
+# other axis) are excluded; Cartesian and same-axis slice cells stay.
 #
-# Returns list(mean, sd, median, ci_lo, ci_hi). Each scalar is NA when
-# its computation is unavailable. Shared by the single-block and
-# multi-block joint-fit code paths.
+# Returns list(median, ci_lo, ci_hi); each scalar is NA when unavailable.
+# Shared by the single-block and multi-block joint-fit code paths.
 .alpha_grid_moments <- function(tg, res, refining) {
-    out <- list(mean = NA_real_, sd = NA_real_,
-                median = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_)
+    out <- list(median = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_)
     alpha_vec <- as.numeric(tg[, "alpha"])
-
-    # Exclude foreign-axis slice cells (those that pin alpha at a single
-    # value while varying some other axis). Cells flagged with refining
-    # == "alpha" or "consistency_alpha" do vary alpha and belong in the
-    # marginal; cells with empty refining (Cartesian pass) also belong.
     keep <- refining == "" | refining == "alpha" |
             refining == "consistency_alpha"
     use <- keep & is.finite(alpha_vec)
     if (sum(use) == 0L) return(out)
 
     lm_use <- res$log_marginal[use]
-    ws     <- exp(lm_use - max(lm_use));  ws <- ws / sum(ws)
-    a_use  <- alpha_vec[use]
-
-    mu <- sum(ws * a_use)
-    out$mean <- mu
-    out$sd   <- sqrt(max(0, sum(ws * a_use^2) - mu^2))
-    qs       <- .nl_wtd_quantile(a_use, ws, c(0.025, 0.5, 0.975))
+    ws     <- exp(lm_use - max(lm_use)); ws <- ws / sum(ws)
+    qs     <- .nl_wtd_quantile(alpha_vec[use], ws, c(0.025, 0.5, 0.975))
     out$ci_lo  <- qs[1L]
     out$median <- qs[2L]
     out$ci_hi  <- qs[3L]
@@ -2115,7 +2152,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                   max_iter, tol, n_threads,
                                   x_init, verbose, store_Q,
                                   n_threads_outer = 1L,
-                                  tile_warm = TRUE) {
+                                  tile_warm = TRUE,
+                                  prune_tol = 0.0) {
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -2262,7 +2300,8 @@ tulpa_nested_laplace_joint <- function(responses,
         phi_grid_per_arm = phi_grid_per_arm_list,
         n_threads_outer = as.integer(n_threads_outer),
         tile_ids        = tile_partition$tile_ids,
-        tile_pilot_cells = tile_partition$tile_pilot_cells
+        tile_pilot_cells = tile_partition$tile_pilot_cells,
+        prune_tol       = as.numeric(prune_tol)
     )
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal

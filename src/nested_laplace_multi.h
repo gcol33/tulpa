@@ -138,7 +138,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
     bool store_modes,
     const Rcpp::NumericVector& x_init,
     bool store_Q = false,
-    int n_threads_outer = 1
+    int n_threads_outer = 1,
+    double prune_tol = 0.0
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -158,9 +159,15 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // dev_notes/issue_body_adaptive_grid_cost.md for the empirical sweep.
     int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
 
-    auto solve_at_theta = [&](int k,
-                              const std::vector<double>& prev_mode,
-                              SparseCholeskySolver* solver) -> LaplaceResult
+    // Inner implementation: takes max_iter as a parameter so the cheap-pass
+    // path can call with max_iter=1 for a one-Newton-step screen. See the
+    // joint analogue in nested_laplace_joint_multi.h for the rationale.
+    auto solve_at_theta_impl = [&](int k,
+                                   const std::vector<double>& prev_mode,
+                                   SparseCholeskySolver* solver,
+                                   int max_iter_use,
+                                   NewtonScratch* scratch_override
+                                   = nullptr) -> LaplaceResult
     {
         for (const auto& b : blocks) {
             if (b.prep && !b.prep(k)) {
@@ -243,16 +250,47 @@ inline Rcpp::List run_multi_block_nested_laplace(
         tid = 0;
         #endif
 
+        NewtonScratch& scratch = scratch_override ? *scratch_override
+                                                  : scratch_pool[tid];
+
         return laplace_newton_solve(
             y, n_trials, family, phi, N, n_x,
-            max_iter, tol, n_threads_inner_eff,
+            max_iter_use, tol, n_threads_inner_eff,
             compute_eta, scatter, center, log_prior,
-            scratch_pool[tid], prev_mode, solver, store_Q
+            scratch, prev_mode, solver, store_Q
         );
     };
 
+    // 3-arg adapter for run_nested_laplace_grid.
+    auto solve_at_theta = [&](int k,
+                              const std::vector<double>& prev_mode,
+                              SparseCholeskySolver* solver) -> LaplaceResult
+    {
+        return solve_at_theta_impl(k, prev_mode, solver, max_iter, nullptr);
+    };
+
+    // Cheap-pass screening (Phase 3, dev_notes/speedup.md): one Newton step
+    // from the pilot mode, return the Laplace log-marginal at that quasi-
+    // mode. Same trick as the joint kernel — calling solve_at_theta_impl
+    // with max_iter=1 reuses all the per-cell callbacks without
+    // duplicating scatter/eta logic. Dedicated thread-local solver +
+    // scratch keep cheap_eval independent of the parallel fan-out's pool.
+    SparseCholeskySolver cheap_solver;
+    NewtonScratch cheap_scratch;
+    cheap_scratch.allocate(n_x, N);
+    auto cheap_eval = [&](int k_grid,
+                          const std::vector<double>& x_pilot) -> double {
+        LaplaceResult r = solve_at_theta_impl(
+            k_grid, x_pilot, &cheap_solver,
+            /*max_iter_use=*/1, &cheap_scratch);
+        return r.log_marginal;
+    };
+
     return run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer
+        n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
+        /*tile_ids=*/std::vector<int>(),
+        /*tile_pilot_cells=*/std::vector<int>(),
+        cheap_eval, prune_tol
     );
 }
 

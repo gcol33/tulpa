@@ -185,7 +185,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     std::function<void(int)>         prep_at_grid = nullptr,
     int                              n_threads_outer = 1,
     const std::vector<int>&          tile_ids = std::vector<int>(),
-    const std::vector<int>&          tile_pilot_cells = std::vector<int>()
+    const std::vector<int>&          tile_pilot_cells = std::vector<int>(),
+    double                           prune_tol = 0.0
 ) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
@@ -208,9 +209,16 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     // see run_multi_block_nested_laplace for the rationale.
     int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
 
-    auto solve_at_theta = [&](int k_grid,
-                              const std::vector<double>& prev_mode,
-                              SparseCholeskySolver* shared_solver) -> LaplaceResult
+    // Inner implementation: takes max_iter as a parameter so the cheap-pass
+    // path can call this with max_iter=1 for a one-Newton-step screen at the
+    // pilot mode. The 3-arg `solve_at_theta` wrapper below threads the outer
+    // `max_iter` through.
+    auto solve_at_theta_impl = [&](int k_grid,
+                                   const std::vector<double>& prev_mode,
+                                   SparseCholeskySolver* shared_solver,
+                                   int max_iter_use,
+                                   NewtonScratchJoint* scratch_override
+                                   = nullptr) -> LaplaceResult
     {
         if (prep_at_grid) prep_at_grid(k_grid);
         for (const auto& b : blocks) {
@@ -333,18 +341,58 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
         tid = 0;
         #endif
 
+        NewtonScratchJoint& scratch = scratch_override
+                                       ? *scratch_override
+                                       : scratch_pool[tid];
+
         return laplace_newton_solve_joint(
             arms, n_x,
-            max_iter, tol, n_threads_inner_eff,
+            max_iter_use, tol, n_threads_inner_eff,
             compute_eta_joint, scatter_joint, center_joint, log_prior_joint,
-            scratch_pool[tid], prev_mode, shared_solver,
+            scratch, prev_mode, shared_solver,
             store_Q
         );
     };
 
+    // 3-arg adapter for run_nested_laplace_grid (which calls
+    // solve_at_theta(k, prev_mode, solver) without knowing about the
+    // max_iter parameter). Threads the outer `max_iter` through.
+    auto solve_at_theta = [&](int k_grid,
+                              const std::vector<double>& prev_mode,
+                              SparseCholeskySolver* shared_solver) -> LaplaceResult
+    {
+        return solve_at_theta_impl(k_grid, prev_mode, shared_solver,
+                                    max_iter, nullptr);
+    };
+
+    // Cheap-pass screening (Phase 3, dev_notes/speedup.md): one Newton step
+    // from the pilot mode, then report the Laplace log-marginal at that
+    // quasi-mode. This is much more accurate than evaluating `log_lik +
+    // log_prior` at the raw pilot mode — for cells whose data MAP differs
+    // from x_pilot (especially when sigma or alpha shifts the design
+    // multiplicatively), one Newton step corrects the worst of the pilot
+    // bias.
+    //
+    // Cost per cell: 1 eta+scatter+Cholesky factor+step ≈ 20% of the full
+    // 5-iter Newton. The cheap pass runs serially after the pilot solve and
+    // before any parallel region, so a dedicated thread-local solver +
+    // scratch keep it isolated from the parallel fan-out's pool (the pool's
+    // entries are reserved for the inner Newton on survivors).
+    SparseCholeskySolver cheap_solver;
+    NewtonScratchJoint cheap_scratch;
+    cheap_scratch.allocate(n_x, arms);
+    auto cheap_eval = [&](int k_grid,
+                          const std::vector<double>& x_pilot) -> double {
+        LaplaceResult r = solve_at_theta_impl(
+            k_grid, x_pilot, &cheap_solver,
+            /*max_iter_use=*/1, &cheap_scratch);
+        return r.log_marginal;
+    };
+
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
-        tile_ids, tile_pilot_cells
+        tile_ids, tile_pilot_cells,
+        cheap_eval, prune_tol
     );
 }
 

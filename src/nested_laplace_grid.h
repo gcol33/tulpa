@@ -32,6 +32,22 @@
 // is the cell index used as tile t's representative (typically the cell
 // closest to the median copy coefficient within the tile).
 //
+// Optional cheap-pass pruning (Phase 3): when `cheap_eval` is provided and
+// `prune_tol > 0`, the driver
+//   1) solves the pilot cell (always, regardless of n_threads_outer),
+//   2) calls `cheap_eval(k, pilot_mode)` for every non-pilot cell to compute
+//      a Gaussian-Laplace screening log-marginal at the pilot mode,
+//   3) softmax-normalises the screening log-marginals over the full grid
+//      and marks cells with weight < prune_tol as pruned,
+//   4) skips the full inner Newton on pruned cells (filling their result
+//      with `log_marginal = -inf`, `n_iter = 0`, `mode = pilot_mode`) and
+//      runs the full pass only on survivors.
+// The pilot cell is never pruned. Tile pilots whose cells are themselves
+// pruned skip their Tier-2 solve; Tier-3 cells in that tile then fall back
+// to the global pilot mode as warm-start. The cheap_eval callable runs
+// serially after the pilot solve and before any parallel region — callers
+// can use the same scratch buffers without thread-safety concerns.
+//
 // Result post-processing (filling the Rcpp::List) happens single-threaded
 // after the parallel region. Per-cell LaplaceResult objects use only
 // std::vector storage (laplace_core.h:LaplaceResult after the gcol33/tulpa
@@ -43,8 +59,10 @@
 #include "laplace_core.h"
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
+#include <cmath>
 #include <limits>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 #ifdef _OPENMP
@@ -70,7 +88,23 @@ namespace tulpa {
 // n_threads_outer > 1: pilot solve at the centre cell first, then
 //   #pragma omp parallel for over all cells warm-started from the pilot mode.
 //   Pilot cell's result is reused (no double-solve).
-template<typename SolveAtTheta>
+// CheapEval is any callable with signature
+//   double(int k, const std::vector<double>& x_pilot)
+// returning the screening log-marginal at cell k. Implementations evaluate
+// `log_lik(y | x_pilot, theta_k) + log_prior(x_pilot | theta_k)` (constants
+// like `0.5 n_x log(2pi) - 0.5 log|H_pilot|` drop out under softmax
+// normalisation, so callers may omit them). Return -infinity to force
+// pruning of an infeasible cell (e.g. proper-CAR rho outside the PD
+// interval). Pass `NoCheapEval{}` (default) to disable pruning entirely;
+// std::function is avoided here to keep Windows DLL export-symbol
+// instantiations cheap.
+struct NoCheapEval {
+    double operator()(int, const std::vector<double>&) const {
+        return -std::numeric_limits<double>::infinity();
+    }
+};
+
+template<typename SolveAtTheta, typename CheapEval = NoCheapEval>
 inline Rcpp::List run_nested_laplace_grid(
     int n_grid, int n_x,
     SolveAtTheta solve_at_theta,
@@ -78,7 +112,9 @@ inline Rcpp::List run_nested_laplace_grid(
     bool store_modes = true,
     int n_threads_outer = 1,
     const std::vector<int>& tile_ids = std::vector<int>(),
-    const std::vector<int>& tile_pilot_cells = std::vector<int>()
+    const std::vector<int>& tile_pilot_cells = std::vector<int>(),
+    CheapEval cheap_eval = CheapEval{},
+    double prune_tol = 0.0
 ) {
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
@@ -114,30 +150,122 @@ inline Rcpp::List run_nested_laplace_grid(
         x_init_vec.assign(x_init.begin(), x_init.end());
     }
 
-    if (n_threads_outer <= 1) {
-        // Serial path: chained warm-starts as before.
-        SparseCholeskySolver solver;
-        std::vector<double> prev_mode = x_init_vec;
-        for (int k = 0; k < n_grid; k++) {
-            cell_results[k] = solve_at_theta(k, prev_mode, &solver);
-            prev_mode = cell_results[k].mode;
-        }
-    } else {
-        // Parallel path: pilot solve at the centre cell, then parallel fan-out.
-        const int k_pilot = n_grid / 2;
+    // Determine whether we need an explicit pilot pass. Required either by
+    // outer parallelism (the parallel branches use the pilot mode as the
+    // warm-start for every other cell) or by cheap-pass pruning (the prune
+    // step needs the pilot mode to evaluate cheap log-marginals). When the
+    // caller leaves cheap_eval at the NoCheapEval default, prune_tol is
+    // ignored — the no-op cheap_eval would prune everything otherwise.
+    const bool cheap_eval_supplied =
+        !std::is_same<CheapEval, NoCheapEval>::value;
+    const bool prune_active =
+        cheap_eval_supplied && prune_tol > 0.0 && n_grid > 1;
+    const bool need_pilot = (n_threads_outer > 1) || prune_active;
+    const int k_pilot = n_grid / 2;
+
+    // Output flags (filled below). pruned[k]: cheap-pass below threshold,
+    // skip full Newton. log_marginal[k] is forced to -inf for pruned cells.
+    // n_cells_pruned is reported back to the caller for the R-side toggle.
+    std::vector<unsigned char> pruned(n_grid, 0);
+    int n_cells_pruned = 0;
+    std::vector<double> cheap_lm;  // size n_grid when prune_active
+
+    std::vector<double> pilot_mode;
+    if (need_pilot) {
+        // Tier-1 / global pilot. Always serial: any outer threads would
+        // contend on a single CHOLMOD solver and the pilot is one cell.
         SparseCholeskySolver pilot_solver;
         cell_results[k_pilot] =
             solve_at_theta(k_pilot, x_init_vec, &pilot_solver);
-
-        // Pilot mode is the warm-start for every other cell.
-        std::vector<double> pilot_mode = cell_results[k_pilot].mode;
-        // If the pilot itself diverged (rare — e.g. proper-CAR with rho
-        // outside the PD interval at the centre cell), fall back to zero
-        // warm-start so the parallel pass doesn't inherit garbage.
+        pilot_mode = cell_results[k_pilot].mode;
+        // If the pilot diverged (rare — e.g. proper-CAR with rho outside the
+        // PD interval at the centre cell), fall back to zero warm-start so
+        // downstream passes don't inherit garbage.
         if (!std::isfinite(cell_results[k_pilot].log_marginal)) {
             pilot_mode.assign(n_x, 0.0);
         }
 
+        // Cheap-pass pruning: evaluate the screening log-marginal at every
+        // cell — *including the pilot* — so all cells share the same
+        // approximation constants. cheap_eval returns `log_lik + log_prior`
+        // at the pilot mode under cell k's hyperparameters and drops the
+        // additive `-0.5 log|H_pilot| + 0.5 n_x log(2pi)` term, which is
+        // cell-constant and falls out under softmax. Using cell_results[
+        // k_pilot].log_marginal (the *full* Laplace) for the pilot mixes
+        // formulas and biases the softmax — every cell must use the same
+        // formula. The pilot is still never pruned (it is the reference
+        // cell, marked below by exempting k_pilot from the threshold).
+        if (prune_active) {
+            cheap_lm.assign(n_grid,
+                            -std::numeric_limits<double>::infinity());
+            for (int k = 0; k < n_grid; k++) {
+                cheap_lm[k] = cheap_eval(k, pilot_mode);
+            }
+
+            // Softmax over finite entries. Cells with non-finite cheap log-
+            // marginal (block.prep returned infeasible) get weight 0 and are
+            // pruned automatically.
+            double m = -std::numeric_limits<double>::infinity();
+            for (double v : cheap_lm) {
+                if (std::isfinite(v) && v > m) m = v;
+            }
+            double Z = 0.0;
+            if (std::isfinite(m)) {
+                for (double v : cheap_lm) {
+                    if (std::isfinite(v)) Z += std::exp(v - m);
+                }
+            }
+            for (int k = 0; k < n_grid; k++) {
+                if (k == k_pilot) continue;
+                double w = (std::isfinite(cheap_lm[k]) && Z > 0.0)
+                           ? std::exp(cheap_lm[k] - m) / Z
+                           : 0.0;
+                if (w < prune_tol) {
+                    pruned[k] = 1;
+                    n_cells_pruned++;
+                    LaplaceResult r;
+                    r.mode = pilot_mode;
+                    r.log_marginal =
+                        -std::numeric_limits<double>::infinity();
+                    r.n_iter = 0;
+                    r.converged = false;
+                    r.log_det_Q = 0.0;
+                    cell_results[k] = r;
+                }
+            }
+        }
+    }
+
+    if (n_threads_outer <= 1) {
+        // Serial path. Two sub-cases:
+        //  - prune off, pilot off: classic mode-chained warm-start across
+        //    every cell. Bitwise compatible with the pre-refactor driver.
+        //  - prune on (need_pilot): pilot already solved; loop over the
+        //    remaining cells warm-starting from the previous non-pruned
+        //    cell's mode (chained across survivors only).
+        SparseCholeskySolver solver;
+        if (!need_pilot) {
+            std::vector<double> prev_mode = x_init_vec;
+            for (int k = 0; k < n_grid; k++) {
+                cell_results[k] = solve_at_theta(k, prev_mode, &solver);
+                prev_mode = cell_results[k].mode;
+            }
+        } else {
+            std::vector<double> prev_mode = pilot_mode;
+            // Iterate in original cell order, starting from cell 0; pilot
+            // and pruned cells are skipped (already filled above).
+            for (int k = 0; k < n_grid; k++) {
+                if (k == k_pilot) {
+                    prev_mode = cell_results[k_pilot].mode;
+                    continue;
+                }
+                if (pruned[k]) continue;
+                cell_results[k] = solve_at_theta(k, prev_mode, &solver);
+                prev_mode = cell_results[k].mode;
+            }
+        }
+    } else {
+        // Parallel path: pilot already solved above.
         // One CHOLMOD solver per outer thread. CHOLMOD's cholmod_common is
         // *not* thread-safe — each thread must own its own. We use
         // unique_ptr so the solvers RAII-clean on scope exit even if a
@@ -163,6 +291,7 @@ inline Rcpp::List run_nested_laplace_grid(
             #endif
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) continue;  // already solved
+                if (pruned[k]) continue;     // cheap-pass pruned
                 #ifdef _OPENMP
                 int tid = omp_get_thread_num();
                 #else
@@ -188,7 +317,10 @@ inline Rcpp::List run_nested_laplace_grid(
 
             std::vector<std::vector<double>> tile_modes(n_tiles);
 
-            // Tier 2: one warm solve per tile, parallel over tiles.
+            // Tier 2: one warm solve per tile, parallel over tiles. Pruned
+            // tile-pilots are skipped; their tile_modes entry stays empty
+            // and Tier-3 falls back to the global pilot for cells in that
+            // tile.
             #ifdef _OPENMP
             #pragma omp parallel for schedule(dynamic, 1) \
                 num_threads(n_threads_outer)
@@ -201,6 +333,7 @@ inline Rcpp::List run_nested_laplace_grid(
                     tile_modes[t] = pilot_mode;
                     continue;
                 }
+                if (pruned[k]) continue;
                 #ifdef _OPENMP
                 int tid = omp_get_thread_num();
                 #else
@@ -216,7 +349,9 @@ inline Rcpp::List run_nested_laplace_grid(
                                 : pilot_mode;
             }
 
-            // Tier 3: every non-pilot cell warm-started from its tile pilot.
+            // Tier 3: every non-pilot cell warm-started from its tile
+            // pilot (falling back to the global pilot when the tile pilot
+            // is pruned or out of range).
             #ifdef _OPENMP
             #pragma omp parallel for schedule(dynamic, 1) \
                 num_threads(n_threads_outer)
@@ -224,25 +359,19 @@ inline Rcpp::List run_nested_laplace_grid(
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) continue;       // global pilot, Tier 1
                 if (is_tile_pilot[k]) continue;   // tile pilot, Tier 2
+                if (pruned[k]) continue;          // cheap-pass pruned
                 int t = tile_ids[k];
-                if (t < 0 || t >= n_tiles) {
-                    // Out-of-range tile id falls back to the global pilot.
-                    #ifdef _OPENMP
-                    int tid = omp_get_thread_num();
-                    #else
-                    int tid = 0;
-                    #endif
-                    cell_results[k] = solve_at_theta(
-                        k, pilot_mode, solver_pool[tid].get());
-                    continue;
-                }
                 #ifdef _OPENMP
                 int tid = omp_get_thread_num();
                 #else
                 int tid = 0;
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
-                cell_results[k] = solve_at_theta(k, tile_modes[t], solver);
+                const std::vector<double>& warm =
+                    (t >= 0 && t < n_tiles && !tile_modes[t].empty())
+                    ? tile_modes[t]
+                    : pilot_mode;
+                cell_results[k] = solve_at_theta(k, warm, solver);
             }
         }
     }
@@ -281,6 +410,18 @@ inline Rcpp::List run_nested_laplace_grid(
         out["Q_csc_i_per_grid"] = Q_i_per_grid;
         out["Q_csc_x_per_grid"] = Q_x_per_grid;
         out["Q_csc_n"] = n_x;
+    }
+    if (prune_active) {
+        Rcpp::NumericVector cheap_lm_out(n_grid);
+        Rcpp::LogicalVector pruned_out(n_grid);
+        for (int k = 0; k < n_grid; k++) {
+            cheap_lm_out[k] = cheap_lm[k];
+            pruned_out[k]   = (pruned[k] != 0);
+        }
+        out["prune_cheap_log_marginal"] = cheap_lm_out;
+        out["prune_mask"]                = pruned_out;
+        out["prune_n_pruned"]           = n_cells_pruned;
+        out["prune_tol"]                = prune_tol;
     }
     return out;
 }

@@ -592,7 +592,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue,
     int                 n_threads_outer = 1,
     Rcpp::Nullable<Rcpp::IntegerVector> tile_ids = R_NilValue,
-    Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells = R_NilValue,
+    double              prune_tol = 0.0
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -681,7 +682,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         prep,
         n_threads_outer,
         tile_ids_vec,
-        tile_pilot_cells_vec
+        tile_pilot_cells_vec,
+        prune_tol
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
