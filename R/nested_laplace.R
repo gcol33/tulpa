@@ -512,10 +512,15 @@ nested_laplace <- function(...) {
   w <- w / w_tot
   if (length(v) == 1L) return(rep(v[1L], length(probs)))
   p <- cumsum(w) - w / 2
+  # `approx` emits "collapsing to unique 'x' values" when tiny floor
+  # weights against a dominant prefix sum produce numerically equal
+  # midpoints. The collapse (tied p -> mean of v) is the right behavior
+  # at that resolution -- the underlying mass between the tied cells is
+  # zero up to floating-point error. Suppress the noise.
   vapply(probs, function(q) {
     if (q <= p[1L])          return(v[1L])
     if (q >= p[length(p)])   return(v[length(v)])
-    approx(p, v, xout = q, method = "linear")$y
+    suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
   }, numeric(1L))
 }
 
