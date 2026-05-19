@@ -113,7 +113,7 @@ struct NewtonScratchJoint {
 
     void zero_for_iter() {
         std::fill(grad.begin(), grad.end(), 0.0);
-        for (auto& row : H) std::fill(row.begin(), row.end(), 0.0);
+        H.zero();
         std::fill(delta.begin(), delta.end(), 0.0);
     }
 };

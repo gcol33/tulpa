@@ -13,6 +13,7 @@
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>
+#include "laplace_types.h"  // for tulpa::DenseMat
 
 // CHOLMOD types from Matrix package.
 // Matrix/cholmod.h defines cholmod_sparse, cholmod_factor, etc.
@@ -130,7 +131,7 @@ void takahashi_partial_inverse_dense(
 // CHOLMOD CSC format. Only the lower triangle is stored (stype = -1).
 // The returned sparse matrix must be freed with cholmod_free_sparse.
 cholmod_sparse* dense_to_cholmod_sparse(
-    const std::vector<std::vector<double>>& H, int n,
+    const DenseMat& H, int n,
     cholmod_common* common
 );
 
@@ -138,7 +139,7 @@ cholmod_sparse* dense_to_cholmod_sparse(
 // This produces a genuinely sparse matrix from a dense H that has
 // structural sparsity (e.g., ICAR Hessians are banded).
 cholmod_sparse* dense_to_cholmod_sparse_drop(
-    const std::vector<std::vector<double>>& H, int n,
+    const DenseMat& H, int n,
     double drop_tol,
     cholmod_common* common
 );

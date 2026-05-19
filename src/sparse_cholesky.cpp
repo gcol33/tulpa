@@ -235,7 +235,7 @@ std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
 // =====================================================================
 
 cholmod_sparse* dense_to_cholmod_sparse(
-    const std::vector<std::vector<double>>& H, int n,
+    const DenseMat& H, int n,
     cholmod_common* common
 ) {
     // Full lower triangle: n*(n+1)/2 entries
@@ -273,7 +273,7 @@ cholmod_sparse* dense_to_cholmod_sparse(
 }
 
 cholmod_sparse* dense_to_cholmod_sparse_drop(
-    const std::vector<std::vector<double>>& H, int n,
+    const DenseMat& H, int n,
     double drop_tol,
     cholmod_common* common
 ) {

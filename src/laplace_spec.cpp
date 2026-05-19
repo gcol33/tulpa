@@ -436,7 +436,7 @@ inline void scatter_spec(
     int /*n_threads*/
 ) {
     std::fill(grad.begin(), grad.end(), 0.0);
-    for (auto& row : H) std::fill(row.begin(), row.end(), 0.0);
+    H.zero();
 
     const int np = L.np;
     std::vector<double> grad_eta(np, 0.0);
@@ -521,7 +521,7 @@ inline void scatter_spec(
                     if (k == l) {
                         for (int j = 0; j < pk.p; j++) {
                             const double w_xj = w_kl * xk[j];
-                            double* row_j = H[off_k + j].data();
+                            double* row_j = H[off_k + j];
                             for (int m = 0; m <= j; m++) {
                                 row_j[off_l + m] += w_xj * xl[m];
                             }
@@ -529,7 +529,7 @@ inline void scatter_spec(
                     } else {
                         for (int j = 0; j < pk.p; j++) {
                             const double w_xj = w_kl * xk[j];
-                            double* row_j = H[off_k + j].data();
+                            double* row_j = H[off_k + j];
                             for (int m = 0; m < pl.p; m++) {
                                 row_j[off_l + m] += w_xj * xl[m];
                             }
@@ -563,7 +563,7 @@ inline void scatter_spec(
             for (int c = 0; c < q; c++) {
                 const double zc = z_term[t][c];
                 if (zc == 0.0) continue;
-                double* row = H[re_row_base + c].data();
+                double* row = H[re_row_base + c];
                 for (int l = 0; l < np; l++) {
                     const ProcessData& pl = data.processes[l];
                     if (pl.p == 0) continue;
@@ -606,7 +606,7 @@ inline void scatter_spec(
                     for (int c = 0; c < qt; c++) {
                         const double zc = z_term[t][c];
                         if (zc == 0.0) continue;
-                        double* row = H[row_base_t + c].data();
+                        double* row = H[row_base_t + c];
                         if (t == tp) {
                             // Same term, same group? Block is on the
                             // diagonal of the H lower triangle and we
