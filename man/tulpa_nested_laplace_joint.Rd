@@ -9,6 +9,8 @@ tulpa_nested_laplace_joint(
   prior,
   copy = NULL,
   phi_grid = NULL,
+  prior_sigma_occ = NULL,
+  prior_sigma_pos = NULL,
   max_iter = 50L,
   tol = 1e-06,
   n_threads = 1L,
@@ -17,7 +19,8 @@ tulpa_nested_laplace_joint(
   store_Q = FALSE,
   adaptive_grid = FALSE,
   adaptive_grid_edge_thresh = 0.02,
-  adaptive_grid_max_passes = 1L
+  adaptive_grid_max_passes = 1L,
+  var_of_means_consistency = TRUE
 )
 }
 \arguments{
@@ -96,6 +99,29 @@ Each \verb{phi_<arm>} axis is appended to the Cartesian product and
 varies slowest (within-spatial warm starts hold). The axis appears
 as a regular hyperparameter in \code{theta_grid}, \code{theta_mean}, and
 \code{theta_sd}, and participates in adaptive-grid refinement.}
+
+\item{prior_sigma_occ, prior_sigma_pos}{Optional regularizing hyperpriors
+on the per-arm field amplitudes. Each is \code{NULL} (flat, default) or a
+list of the form \code{list(family, params)}:
+\itemize{
+\item \code{list("pc.prec", c(U, alpha))} -- Penalized Complexity prior on
+sigma, calibrated by \code{P(sigma > U) = alpha}. Closed-form density
+\code{lambda * exp(-lambda * sigma)} with \code{lambda = -log(alpha)/U}.
+Drop-in for the weakly-identified small-\code{n_pos} regime
+(gcol33/tulpa#22): default-friendly choice is \code{c(U = 1.0, alpha = 0.01)}, which shrinks the upper tail of sigma_pos without
+biasing the modal cell when the data identifies it.
+\item \code{list("half_normal", scale)} -- half-normal on sigma with scale
+\code{scale > 0}. Sharper tail decay than PC; use when stronger
+regularization is desired and the truth is well inside the prior.
+The contribution is added to \code{log_marginal} cell-by-cell at the
+kernel-call boundary, so refinement passes (adaptive grid,
+var-of-means consistency) see the regularized posterior. When the
+data identifies sigma (e.g. \code{n_pos >= ~200}) the prior is
+essentially harmless -- the lever is tail-shrinkage at small
+\code{n_pos}. The prior on \code{sigma_pos} only applies when \code{copy} is
+active; the prior on \code{sigma_occ} applies on any
+\code{sigma_occ}-named axis (with or without copy).
+}}
 
 \item{max_iter, tol}{Inner Newton iteration budget and tolerance.}
 
