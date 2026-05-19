@@ -81,9 +81,33 @@ public:
     // Access the cholmod_common (for advanced use)
     cholmod_common& common() { return common_; }
 
+    // Refill an owned cholmod_sparse with values from a dense lower-triangle
+    // Hessian H. On the FIRST call the sparsity pattern is discovered using
+    // the supplied drop_tol (entries with |H[i][j]| <= drop_tol are dropped
+    // off-diagonal), then cached for the lifetime of the solver. On
+    // subsequent calls the pattern is reused: only Ax is overwritten by
+    // reading H[Ai[idx]][j] for each cached non-zero. This skips the
+    // O(n^2) discovery scan and the per-iter malloc/free of cholmod_sparse,
+    // which dominate the inner Newton loop at n_x ~ 800 with banded H.
+    //
+    // The returned pointer is owned by the solver and stable across calls.
+    // Callers must NOT M_cholmod_free_sparse() it.
+    //
+    // Stability contract: the H sparsity pattern must be model-structural
+    // (fixed across Newton iters, outer-grid cells, and hyperparameter
+    // values). A reset() call clears the cached pattern; otherwise the
+    // pattern is locked from the first refill.
+    cholmod_sparse* refill_from_dense(const DenseMat& H, int n, double drop_tol);
+
+    // Drop the analyzed factor + cached sparse pattern. Next refill_from_dense
+    // / analyze cycle will re-discover the pattern. Used when reusing a solver
+    // across genuinely different sparsity structures.
+    void reset();
+
 private:
     cholmod_common common_;
     cholmod_factor* factor_;
+    cholmod_sparse* A_owned_;
     bool analyzed_;
     bool factored_;
 };

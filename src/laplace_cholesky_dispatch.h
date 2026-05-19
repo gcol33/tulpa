@@ -55,8 +55,11 @@ inline bool dispatch_factor_solve(
 ) {
     bool ok = false;
     if (prefer_sparse) {
-        cholmod_sparse* A = dense_to_cholmod_sparse_drop(
-            H, n_x, SPARSE_DROP_TOL_DISPATCH, &sparse_solver.common());
+        // Owned-sparse path: first call discovers + caches the pattern; later
+        // calls just refill Ax. No per-iter cholmod_sparse alloc/free, no
+        // O(n^2) discovery scan. Solver owns A; do NOT free here.
+        cholmod_sparse* A = sparse_solver.refill_from_dense(
+            H, n_x, SPARSE_DROP_TOL_DISPATCH);
         if (A) {
             if (!sparse_solver.analyzed()) sparse_solver.analyze(A);
             if (sparse_solver.factorize(A)) {
@@ -66,7 +69,6 @@ inline bool dispatch_factor_solve(
                     if (!std::isfinite(delta[j])) { ok = false; break; }
                 }
             }
-            M_cholmod_free_sparse(&A, &sparse_solver.common());
         }
     }
     if (!ok) {
@@ -88,13 +90,12 @@ inline void dispatch_factor_log_det(
     log_det_out = 0.0;
     bool sparse_ok = false;
     if (prefer_sparse) {
-        cholmod_sparse* A = dense_to_cholmod_sparse_drop(
-            H, n_x, SPARSE_DROP_TOL_DISPATCH, &sparse_solver.common());
+        cholmod_sparse* A = sparse_solver.refill_from_dense(
+            H, n_x, SPARSE_DROP_TOL_DISPATCH);
         if (A) {
             if (!sparse_solver.analyzed()) sparse_solver.analyze(A);
             sparse_ok = sparse_solver.factorize(A);
             if (sparse_ok) log_det_out = sparse_solver.log_determinant();
-            M_cholmod_free_sparse(&A, &sparse_solver.common());
         }
     }
     if (!sparse_ok) {

@@ -22,7 +22,7 @@ namespace tulpa {
 // =====================================================================
 
 SparseCholeskySolver::SparseCholeskySolver()
-    : factor_(nullptr), analyzed_(false), factored_(false)
+    : factor_(nullptr), A_owned_(nullptr), analyzed_(false), factored_(false)
 {
     M_cholmod_start(&common_);
     // Prefer supernodal factorization (converts sparse to many small dense
@@ -34,7 +34,72 @@ SparseCholeskySolver::~SparseCholeskySolver() {
     if (factor_) {
         M_cholmod_free_factor(&factor_, &common_);
     }
+    if (A_owned_) {
+        M_cholmod_free_sparse(&A_owned_, &common_);
+    }
     M_cholmod_finish(&common_);
+}
+
+void SparseCholeskySolver::reset() {
+    if (factor_) {
+        M_cholmod_free_factor(&factor_, &common_);
+        factor_ = nullptr;
+    }
+    if (A_owned_) {
+        M_cholmod_free_sparse(&A_owned_, &common_);
+        A_owned_ = nullptr;
+    }
+    analyzed_ = false;
+    factored_ = false;
+}
+
+cholmod_sparse* SparseCholeskySolver::refill_from_dense(
+    const DenseMat& H, int n, double drop_tol
+) {
+    if (!A_owned_) {
+        // First call: discover pattern, allocate, fill values.
+        size_t nnz = 0;
+        for (int j = 0; j < n; j++) {
+            for (int i = j; i < n; i++) {
+                if (i == j || std::abs(H[i][j]) > drop_tol) nnz++;
+            }
+        }
+        A_owned_ = M_cholmod_allocate_sparse(
+            n, n, nnz, 1, 1, -1, CHOLMOD_REAL, &common_
+        );
+        if (!A_owned_) return nullptr;
+
+        int* Ap = static_cast<int*>(A_owned_->p);
+        int* Ai = static_cast<int*>(A_owned_->i);
+        double* Ax = static_cast<double*>(A_owned_->x);
+
+        size_t idx = 0;
+        for (int j = 0; j < n; j++) {
+            Ap[j] = static_cast<int>(idx);
+            for (int i = j; i < n; i++) {
+                if (i == j || std::abs(H[i][j]) > drop_tol) {
+                    Ai[idx] = i;
+                    Ax[idx] = H[i][j];
+                    idx++;
+                }
+            }
+        }
+        Ap[n] = static_cast<int>(idx);
+        return A_owned_;
+    }
+
+    // Subsequent calls: refill Ax in place from the cached (Ap, Ai).
+    // No allocator traffic, no n^2 discovery scan.
+    const int* Ap = static_cast<const int*>(A_owned_->p);
+    const int* Ai = static_cast<const int*>(A_owned_->i);
+    double* Ax    = static_cast<double*>(A_owned_->x);
+    for (int j = 0; j < n; j++) {
+        const int end = Ap[j + 1];
+        for (int idx = Ap[j]; idx < end; idx++) {
+            Ax[idx] = H[Ai[idx]][j];
+        }
+    }
+    return A_owned_;
 }
 
 void SparseCholeskySolver::analyze(cholmod_sparse* A) {
