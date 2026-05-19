@@ -494,10 +494,18 @@ nested_laplace <- function(...) {
   keep <- is.finite(v) & is.finite(w) & w > 0
   if (!any(keep)) return(rep(NA_real_, length(probs)))
   v <- v[keep]; w <- w[keep]
-  if (anyDuplicated(v)) {
-    sp <- split(w, factor(v, levels = unique(v)))
-    v  <- as.numeric(names(sp))
-    w  <- vapply(sp, sum, numeric(1L))
+  # Aggregate runs of strictly-equal adjacent values (already sorted).
+  # Cannot use factor(v) here: distinct doubles that share an
+  # `as.character` print form (e.g. 0.4/0.7 and a near-equal ratio off
+  # by ~1e-16) trigger "factor level [k] is duplicated". Group by
+  # integer run-IDs derived from numeric equality on the sorted vector.
+  if (length(v) > 1L) {
+    is_first <- c(TRUE, v[-1L] != v[-length(v)])
+    if (!all(is_first)) {
+      grp <- cumsum(is_first)
+      w   <- as.numeric(tapply(w, grp, sum))
+      v   <- v[is_first]
+    }
   }
   w_tot <- sum(w)
   if (!is.finite(w_tot) || w_tot <= 0) return(rep(NA_real_, length(probs)))
