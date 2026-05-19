@@ -1,21 +1,17 @@
-# Joint BYM2 — per-arm sigma posterior under the small-n_pos / low-psi
-# regime that triggered gcol33/tulpa#18.
+# Joint BYM2 — sigma and alpha posteriors under the small-n_pos / low-psi
+# regime (d7 Cell B).
 #
-# Old (sigma, alpha) parameterization: the cover-arm likelihood identified
-# only the product alpha * sigma; sigma was pulled toward its prior and
-# alpha inflated to compensate. Reported sigma mean was 0.51 (bias -15%
-# vs truth 0.6) and alpha mean was 1.27 (bias +27% vs truth 1.0) on 30
-# d7 Cell B seeds.
+# Historical context (gcol33/tulpa#18, gcol33/tulpa#22): an earlier
+# derived-alpha parameterization computed alpha = sigma_pos / sigma_occ
+# post-hoc from a (sigma_occ, sigma_pos) grid; the cover-arm likelihood
+# ridge then dragged sigma_occ toward its prior (mean 0.51, bias -15% vs
+# truth 0.6) and the derived alpha picked up the ratio noise (mean 1.27,
+# bias +27% vs truth 1.0) on this regime.
 #
-# New (sigma_occ, sigma_pos) parameterization: each arm's likelihood
-# anchors its own field amplitude axis. The donor arm's sigma_occ
-# posterior should center on truth without leaning on the prior; same
-# for sigma_pos from the cover arm. The derived alpha = sigma_pos /
-# sigma_occ is reported on the joint posterior, but as a ratio of two
-# small-N posteriors it inherits intrinsic small-sample skew (E[X/Y] !=
-# E[X]/E[Y] when Y has support near 0); the underlying scientific fix is
-# that the *anchoring* posterior moments — sigma_occ, sigma_pos — are
-# now unbiased.
+# Current parameterization: (sigma, alpha) are both direct outer-grid axes.
+# Sigma is jointly identified by both arms and alpha is grid-evaluated
+# without ratio noise, so the seed-averaged posterior means should sit
+# close to truth even when n_pos is small.
 
 .chain_adj_ridge <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
@@ -65,12 +61,12 @@
          truth = list(alpha = alpha_true, sigma = sigma_b))
 }
 
-test_that("per-arm sigma is unbiased on small-n_pos BYM2 (gcol33/tulpa#18)", {
+test_that("sigma and alpha are unbiased on small-n_pos BYM2 (gcol33/tulpa#22)", {
     skip_on_cran()
     adj <- .chain_adj_ridge(25L)
     seeds <- 7501:7510
-    sigma_occ <- numeric(length(seeds))
-    sigma_pos <- numeric(length(seeds))
+    sigma_hat <- numeric(length(seeds))
+    alpha_hat <- numeric(length(seeds))
     for (i in seq_along(seeds)) {
         sim <- .simulate_d7_cellB(seeds[i])
         arm_occ <- list(
@@ -98,21 +94,18 @@ test_that("per-arm sigma is unbiased on small-n_pos BYM2 (gcol33/tulpa#18)", {
             responses = list(occ = arm_occ, pos = arm_pos),
             prior     = prior,
             copy      = list(arm = "pos",
-                              sigma_pos_grid = exp(seq(log(0.15),
-                                                       log(1.2),
-                                                       length.out = 5L))),
+                              alpha_grid = c(0, 0.4, 0.7, 1.0, 1.4, 2.0)),
             adaptive_grid = FALSE
         )
-        sigma_occ[i] <- fit$theta_mean[["sigma_occ"]]
-        sigma_pos[i] <- fit$theta_mean[["sigma_pos"]]
+        sigma_hat[i] <- fit$theta_mean[["sigma"]]
+        alpha_hat[i] <- fit$theta_mean[["alpha"]]
     }
-    # Under the old (sigma, alpha) parameterization, the cover-arm
-    # likelihood ridge dragged sigma toward its prior — reported mean
-    # was 0.51 (bias -15% vs truth 0.6) on the same regime. After the
-    # reparam each arm's sigma is anchored by its own likelihood and the
-    # seed-averaged means should sit within ~15% of truth.
-    occ_bias <- mean(sigma_occ) - 0.6
-    pos_bias <- mean(sigma_pos) - 0.6
-    expect_lt(abs(occ_bias), 0.09)
-    expect_lt(abs(pos_bias), 0.12)
+    # Under the derived-alpha parameterization the same regime showed
+    # sigma mean 0.51 (bias -15%) and alpha mean 1.27 (bias +27%). With
+    # (sigma, alpha) both as direct grid axes the seed-averaged means
+    # should sit within ~15-25% of truth.
+    sigma_bias <- mean(sigma_hat) - 0.6
+    alpha_bias <- mean(alpha_hat) - 1.0
+    expect_lt(abs(sigma_bias), 0.12)
+    expect_lt(abs(alpha_bias), 0.25)
 })

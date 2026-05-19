@@ -2,31 +2,29 @@
 #
 # Statistical validation, not a smoke test. Simulates 30 datasets from a
 # two-arm joint model
-#   arm1 (binomial occupancy): eta1 = X1 beta1 + sigma_occ * w[s_idx_1]
+#   arm1 (binomial occupancy): eta1 = X1 beta1 + sigma * w[s_idx_1]
 #                                              + ar[t_idx_1] + iota[o_idx_1]
-#   arm2 (beta cover):          eta2 = X2 beta2 + sigma_pos * w[s_idx_2]
+#   arm2 (beta cover):          eta2 = X2 beta2 + alpha * sigma * w[s_idx_2]
 #                                              + ar[t_idx_2] + iota[o_idx_2]
 # with shared latent fields
 #   w     = sqrt(rho) * phi + sqrt(1-rho) * theta    (BYM2-style)
 #   ar    = AR1(rho_ar, marginal precision tau_ar)
 #   iota  = IID N(0, sigma_iid^2)
-# truth: sigma_occ = 0.6, sigma_pos = 0.9 (alpha = 1.5), rho_b = 0.7,
-#        tau_ar = 10, rho_ar = 0.8, sigma_iid = 0.3.
+# truth: sigma = 0.6, alpha = 1.5, rho_b = 0.7, tau_ar = 10, rho_ar = 0.8,
+#        sigma_iid = 0.3.
 #
 # Fits via tulpa_nested_laplace_joint() with multi-block prior
 #   list(BYM2, AR1, IID)   copy block = 1 (BYM2) on arm "pos".
 #
-# Recovery thresholds (calibrated on 3-seed pilot at N=500 in
-# dev_notes/pilot_joint_multi_recovery.R):
-#   * median |sigma_occ_hat - 0.6| / 0.6 < 0.30
-#   * median |sigma_pos_hat - 0.9| / 0.9 < 0.30
-#   * median |alpha_hat     - 1.5| / 1.5 < 0.40
-#   * 95% CI coverage >= 0.80 on each of sigma_occ, sigma_pos.
+# Recovery thresholds (calibrated on 3-seed pilot at N=500):
+#   * median |sigma_hat - 0.6| / 0.6 < 0.30
+#   * median |alpha_hat - 1.5| / 1.5 < 0.40
+#   * 95% CI coverage >= 0.80 on each of sigma, alpha.
 #
 # AR1 tau and rho are not asserted on -- with n_years = 10 plus competing
 # BYM2 / IID variance the AR1 marginal posterior is identification-limited
 # (pilot shows tau biased +100% with grid mean near upper edge). The
-# headline recoveries (sigma_occ, sigma_pos, alpha) are the contract.
+# headline recoveries (sigma, alpha) are the contract.
 
 skip_on_cran()
 
@@ -52,7 +50,7 @@ skip_on_cran()
                                   N1 = 500L, N2 = 500L,
                                   n_sites = 25L, n_years = 10L,
                                   n_obs = 30L,
-                                  sigma_occ = 0.6, sigma_pos = 0.9,
+                                  sigma = 0.6, alpha = 1.5,
                                   rho_b = 0.7,
                                   tau_ar = 10, rho_ar = 0.8,
                                   sigma_iid = 0.3,
@@ -87,10 +85,10 @@ skip_on_cran()
     X2 <- cbind(1, rnorm(N2))
 
     eta1 <- as.numeric(X1 %*% betaO) +
-            sigma_occ * w_unit[s_idx_1] +
+            sigma * w_unit[s_idx_1] +
             ar_t[t_idx_1] + iota_o[o_idx_1]
     eta2 <- as.numeric(X2 %*% betaP) +
-            sigma_pos * w_unit[s_idx_2] +
+            alpha * sigma * w_unit[s_idx_2] +
             ar_t[t_idx_2] + iota_o[o_idx_2]
 
     y1 <- rbinom(N1, 1L, plogis(eta1))
@@ -115,7 +113,7 @@ skip_on_cran()
     )
 }
 
-test_that("joint multi-block (BYM2+AR1+IID) recovers sigma_occ/sigma_pos/alpha (30 seeds)", {
+test_that("joint multi-block (BYM2+AR1+IID) recovers sigma/alpha (30 seeds)", {
     adj      <- .chain_adj_rec(25L)
     n_sites  <- adj$n_spatial_units
     n_years  <- 10L
@@ -125,22 +123,20 @@ test_that("joint multi-block (BYM2+AR1+IID) recovers sigma_occ/sigma_pos/alpha (
 
     # Grids bracket truth on every axis; cell count = 3*2*3 * 3*2 * 3 = 324.
     sigma_grid     <- c(0.3, 0.6, 1.0)
-    sigma_pos_grid <- c(0.45, 0.9, 1.6)
+    alpha_grid     <- c(0.75, 1.5, 2.5)
     rho_grid       <- c(0.5, 0.8)
     tau_grid       <- c(4, 10, 25)
     rho_ar1_grid   <- c(0.5, 0.85)
     sigma_iid_grid <- c(0.15, 0.3, 0.6)
 
-    truth <- list(sigma_occ = 0.6, sigma_pos = 0.9, alpha = 1.5,
+    truth <- list(sigma = 0.6, alpha = 1.5,
                   rho_b = 0.7, tau_ar = 10, rho_ar = 0.8,
                   sigma_iid = 0.3)
 
-    sigma_occ_hat <- numeric(n_seeds)
-    sigma_pos_hat <- numeric(n_seeds)
-    sigma_occ_sd  <- numeric(n_seeds)
-    sigma_pos_sd  <- numeric(n_seeds)
-    alpha_hat     <- numeric(n_seeds)
-    alpha_sd      <- numeric(n_seeds)
+    sigma_hat <- numeric(n_seeds)
+    sigma_sd  <- numeric(n_seeds)
+    alpha_hat <- numeric(n_seeds)
+    alpha_sd  <- numeric(n_seeds)
 
     for (i in seq_along(seeds)) {
         sim <- .sim_joint_multi_rec(seeds[i], n_sites = n_sites,
@@ -174,7 +170,7 @@ test_that("joint multi-block (BYM2+AR1+IID) recovers sigma_occ/sigma_pos/alpha (
                 responses = list(occ = sim$arm_occ, pos = sim$arm_pos),
                 prior = prior,
                 copy = list(block = 1L, arm = "pos",
-                            sigma_pos_grid = sigma_pos_grid),
+                            alpha_grid = alpha_grid),
                 adaptive_grid = FALSE,
                 max_iter = 60L, tol = 1e-5
             )
@@ -185,48 +181,35 @@ test_that("joint multi-block (BYM2+AR1+IID) recovers sigma_occ/sigma_pos/alpha (
                                     seeds[i]))
 
         bm1 <- fit$block_moments[[1L]]
-        sigma_occ_hat[i] <- bm1$mean[["sigma_occ"]]
-        sigma_pos_hat[i] <- bm1$mean[["sigma_pos"]]
-        sigma_occ_sd[i]  <- bm1$sd[["sigma_occ"]]
-        sigma_pos_sd[i]  <- bm1$sd[["sigma_pos"]]
-        alpha_hat[i] <- fit$theta_mean[["alpha"]]
-        alpha_sd[i]  <- fit$theta_sd[["alpha"]]
+        sigma_hat[i] <- bm1$mean[["sigma"]]
+        sigma_sd[i]  <- bm1$sd[["sigma"]]
+        alpha_hat[i] <- bm1$mean[["alpha"]]
+        alpha_sd[i]  <- bm1$sd[["alpha"]]
     }
 
     rel_err <- function(hat, tr) abs(hat - tr) / abs(tr)
-    med_occ   <- median(rel_err(sigma_occ_hat, truth$sigma_occ))
-    med_pos   <- median(rel_err(sigma_pos_hat, truth$sigma_pos))
-    med_alpha <- median(rel_err(alpha_hat,     truth$alpha))
+    med_sigma <- median(rel_err(sigma_hat, truth$sigma))
+    med_alpha <- median(rel_err(alpha_hat, truth$alpha))
 
-    # 95% CI coverage on the two arm-anchoring amplitudes and the derived
-    # alpha = sigma_pos / sigma_occ. Alpha SD is the delta-method estimate
-    # combined from the per-axis log-sigma Laplace SDs (gcol33/tulpa#21);
-    # the assertion locks that in so a regression to var-of-means on the
-    # derived grid (which under-covers at ~0.70) is caught.
-    cover_occ <- mean(
-        truth$sigma_occ >= sigma_occ_hat - 1.96 * sigma_occ_sd &
-        truth$sigma_occ <= sigma_occ_hat + 1.96 * sigma_occ_sd
-    )
-    cover_pos <- mean(
-        truth$sigma_pos >= sigma_pos_hat - 1.96 * sigma_pos_sd &
-        truth$sigma_pos <= sigma_pos_hat + 1.96 * sigma_pos_sd
+    # 95% CI coverage on sigma and alpha. Both are direct outer-grid axes
+    # with Laplace-at-mode SD (gcol33/tulpa#21, gcol33/tulpa#22).
+    cover_sigma <- mean(
+        truth$sigma >= sigma_hat - 1.96 * sigma_sd &
+        truth$sigma <= sigma_hat + 1.96 * sigma_sd
     )
     cover_alpha <- mean(
         truth$alpha >= alpha_hat - 1.96 * alpha_sd &
         truth$alpha <= alpha_hat + 1.96 * alpha_sd
     )
 
-    # Diagnostic line on test failure -- keeps repro cheap.
     info_str <- sprintf(
-        "median |bias|/truth: sigma_occ=%.2f sigma_pos=%.2f alpha=%.2f | coverage: sigma_occ=%.2f sigma_pos=%.2f alpha=%.2f",
-        med_occ, med_pos, med_alpha, cover_occ, cover_pos, cover_alpha
+        "median |bias|/truth: sigma=%.2f alpha=%.2f | coverage: sigma=%.2f alpha=%.2f",
+        med_sigma, med_alpha, cover_sigma, cover_alpha
     )
 
-    expect_lt(med_occ,   0.30, label = info_str)
-    expect_lt(med_pos,   0.30, label = info_str)
+    expect_lt(med_sigma, 0.30, label = info_str)
     expect_lt(med_alpha, 0.40, label = info_str)
-    expect_gte(cover_occ,   0.80, label = info_str)
-    expect_gte(cover_pos,   0.80, label = info_str)
+    expect_gte(cover_sigma, 0.80, label = info_str)
     expect_gte(cover_alpha, 0.80, label = info_str)
 })
 
@@ -237,7 +220,7 @@ test_that("joint multi-block (BYM2+AR1+IID) recovers sigma_occ/sigma_pos/alpha (
 # INLA's BYM2 uses scale.model = TRUE (geomean of marginal variance = 1) so   #
 # we pass scale_factor = compute_bym2_scale(adjacency) on the tulpa side for  #
 # convention compatibility. Compares across-seed mean posterior moments       #
-# (mean, sd) on sigma_occ, sigma_pos, alpha, sigma_iid -- the cleanly        #
+# (mean, sd) on sigma, alpha, sigma_iid -- the cleanly identified           #
 # identified hyperparameters. Skipped on:                                     #
 #   - CRAN (INLA isn't on CRAN, and the joint INLA fit takes 5-10s/seed)     #
 #   - any machine without INLA installed.                                     #
@@ -269,13 +252,13 @@ test_that("INLA joint fit agrees with tulpa joint multi-block (5 seeds)", {
     sf <- compute_bym2_scale(adj_dense)
 
     sigma_grid     <- c(0.3, 0.6, 1.0)
-    sigma_pos_grid <- c(0.45, 0.9, 1.6)
+    alpha_grid     <- c(0.75, 1.5, 2.5)
     rho_grid       <- c(0.5, 0.8)
     tau_grid       <- c(4, 10, 25)
     rho_ar1_grid   <- c(0.5, 0.85)
     sigma_iid_grid <- c(0.15, 0.3, 0.6)
 
-    keys     <- c("sigma_occ", "sigma_pos", "alpha", "sigma_iid")
+    keys     <- c("sigma", "alpha", "sigma_iid")
     tul_mean <- matrix(NA_real_, length(seeds), length(keys),
                        dimnames = list(NULL, keys))
     tul_sd   <- tul_mean
@@ -310,19 +293,17 @@ test_that("INLA joint fit agrees with tulpa joint multi-block (5 seeds)", {
                 responses = list(occ = sim$arm_occ, pos = sim$arm_pos),
                 prior = prior,
                 copy = list(block = 1L, arm = "pos",
-                            sigma_pos_grid = sigma_pos_grid),
+                            alpha_grid = alpha_grid),
                 adaptive_grid = FALSE, max_iter = 60L, tol = 1e-5
             )
         )
         bm1 <- fit_t$block_moments[[1L]]
         bm3 <- fit_t$block_moments[[3L]]
-        tul_mean[i, "sigma_occ"] <- bm1$mean[["sigma_occ"]]
-        tul_mean[i, "sigma_pos"] <- bm1$mean[["sigma_pos"]]
-        tul_mean[i, "alpha"]     <- fit_t$theta_mean[["alpha"]]
+        tul_mean[i, "sigma"]     <- bm1$mean[["sigma"]]
+        tul_mean[i, "alpha"]     <- bm1$mean[["alpha"]]
         tul_mean[i, "sigma_iid"] <- bm3$mean[["sigma"]]
-        tul_sd[i, "sigma_occ"] <- bm1$sd[["sigma_occ"]]
-        tul_sd[i, "sigma_pos"] <- bm1$sd[["sigma_pos"]]
-        tul_sd[i, "alpha"]     <- fit_t$theta_sd[["alpha"]]
+        tul_sd[i, "sigma"]     <- bm1$sd[["sigma"]]
+        tul_sd[i, "alpha"]     <- bm1$sd[["alpha"]]
         tul_sd[i, "sigma_iid"] <- bm3$sd[["sigma"]]
 
         # --- INLA joint fit: stack arms; binomial on row block 1, beta on
@@ -366,17 +347,15 @@ test_that("INLA joint fit agrees with tulpa joint multi-block (5 seeds)", {
         beta_area <- hp["Beta for area2",      c("mean", "sd")]
         prec_obs  <- hp["Precision for obs",   c("mean", "sd")]
 
-        # sigma_occ = 1/sqrt(prec_area). Delta-method sd.
-        m_occ <- 1 / sqrt(prec_area[["mean"]])
-        s_occ <- prec_area[["sd"]] / (2 * prec_area[["mean"]]^1.5)
+        # sigma = 1/sqrt(prec_area). Delta-method sd.
+        m_sig <- 1 / sqrt(prec_area[["mean"]])
+        s_sig <- prec_area[["sd"]] / (2 * prec_area[["mean"]]^1.5)
         m_alp <- beta_area[["mean"]]; s_alp <- beta_area[["sd"]]
         m_iid <- 1 / sqrt(prec_obs[["mean"]])
         s_iid <- prec_obs[["sd"]] / (2 * prec_obs[["mean"]]^1.5)
-        m_pos <- m_occ * m_alp
-        s_pos <- sqrt((s_occ * m_alp)^2 + (m_occ * s_alp)^2)
 
-        inla_mean[i, ] <- c(m_occ, m_pos, m_alp, m_iid)
-        inla_sd[i, ]   <- c(s_occ, s_pos, s_alp, s_iid)
+        inla_mean[i, ] <- c(m_sig, m_alp, m_iid)
+        inla_sd[i, ]   <- c(s_sig, s_alp, s_iid)
     }
 
     # Across-seed averages.
@@ -398,16 +377,14 @@ test_that("INLA joint fit agrees with tulpa joint multi-block (5 seeds)", {
     )
 
     # Means: within 15% on each well-identified quantity.
-    expect_lt(rel_mean[["sigma_occ"]], 0.15, label = info_str)
-    expect_lt(rel_mean[["sigma_pos"]], 0.15, label = info_str)
+    expect_lt(rel_mean[["sigma"]],     0.15, label = info_str)
     expect_lt(rel_mean[["alpha"]],     0.15, label = info_str)
     expect_lt(rel_mean[["sigma_iid"]], 0.15, label = info_str)
 
     # SDs: discrete tulpa grid produces ~30-60% wider/narrower posterior SD
     # than INLA's continuous integration -- expected. Cap at 0.60 so the test
     # still catches order-of-magnitude regressions.
-    expect_lt(rel_sd[["sigma_occ"]], 0.60, label = info_str)
-    expect_lt(rel_sd[["sigma_pos"]], 0.60, label = info_str)
+    expect_lt(rel_sd[["sigma"]],     0.60, label = info_str)
     expect_lt(rel_sd[["alpha"]],     0.80, label = info_str)
     expect_lt(rel_sd[["sigma_iid"]], 0.95, label = info_str)
 })

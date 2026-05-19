@@ -11,6 +11,7 @@
 #ifndef TULPA_SPARSE_HESSIAN_H
 #define TULPA_SPARSE_HESSIAN_H
 
+#include "laplace_newton.h"        // NewtonScratch (shared with dense solver)
 #include "laplace_newton_loop.h"   // shared eval_*, step_halving_update, finalize_log_marginal
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -125,6 +126,9 @@ public:
 // CenterEffects: same
 // ComputeLogPrior: same
 
+// Scratch-aware sparse-Hessian Newton solver. Same scratch contract as the
+// dense-Hessian solver in laplace_newton.h: caller owns NewtonScratch
+// allocation outside the parallel region.
 template<typename ComputeEta, typename ScatterSparse,
          typename CenterEffects, typename ComputeLogPrior>
 LaplaceResult laplace_newton_solve_sparse(
@@ -139,39 +143,37 @@ LaplaceResult laplace_newton_solve_sparse(
     CenterEffects center_effects_fn,
     ComputeLogPrior compute_log_prior,
     SparseHessianBuilder& H_builder,
-    const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
-    SparseCholeskySolver* shared_solver = nullptr,
-    bool store_Q = false
+    NewtonScratch& scratch,
+    const std::vector<double>& x_init,
+    SparseCholeskySolver* shared_solver,
+    bool store_Q
 ) {
     LaplaceResult result;
-    result.mode = Rcpp::NumericVector(n_x, 0.0);
+    result.mode.assign(n_x, 0.0);
     result.converged = false;
     result.n_iter = 0;
     result.log_det_Q = 0.0;
     result.log_marginal = 0.0;
 
-    Rcpp::NumericVector x(n_x, 0.0);
-    if (x_init.size() == n_x) {
+    Rcpp::NumericVector& x = scratch.x;
+    if (static_cast<int>(x_init.size()) == n_x) {
         for (int j = 0; j < n_x; j++) x[j] = x_init[j];
+    } else {
+        for (int j = 0; j < n_x; j++) x[j] = 0.0;
     }
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& solver = shared_solver ? *shared_solver : local_solver;
 
-    #ifdef _OPENMP
-    if (n_threads > 0) omp_set_num_threads(n_threads);
-    #endif
-
     for (int iter = 0; iter < max_iter; iter++) {
-        Rcpp::NumericVector eta(N, 0.0);
-        compute_eta(x, eta);
+        compute_eta(x, scratch.eta);
 
         // Gradient (dense — it's only n_x entries, always manageable)
         DenseVec grad(n_x, 0.0);
 
         // Hessian (sparse!)
         H_builder.zero();
-        scatter_sparse(x, eta, grad, H_builder);
+        scatter_sparse(x, scratch.eta, grad, H_builder);
 
         // Solve H * delta = grad via CHOLMOD
         cholmod_sparse H_cholmod = H_builder.as_cholmod(&solver.common());
@@ -201,13 +203,17 @@ LaplaceResult laplace_newton_solve_sparse(
 
         // Step halving on penalized deviance (shared helper).
         auto eval_obj = [&](const Rcpp::NumericVector& xv) -> double {
-            return eval_penalized_log_lik(xv, y, n_trials, N, family, phi, n_threads,
-                                           compute_eta, compute_log_prior);
+            return eval_penalized_log_lik(
+                xv, y, n_trials, N, family, phi, n_threads,
+                compute_eta, compute_log_prior, scratch.eta_tmp
+            );
         };
 
         double obj_old = eval_obj(x);
         double obj_unused = 0.0;
-        double step_scale = step_halving_update(x, delta, n_x, obj_old, eval_obj, obj_unused);
+        double step_scale = step_halving_update(
+            x, delta, n_x, obj_old, eval_obj, obj_unused, scratch.x_try
+        );
 
         result.n_iter = iter + 1;
         if (max_abs_step(delta, step_scale, n_x) < tol) {
@@ -217,15 +223,14 @@ LaplaceResult laplace_newton_solve_sparse(
     }
 
     center_effects_fn(x);
-    result.mode = x;
+    for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
 
-    // Finalize: log-det and log-marginal
-    Rcpp::NumericVector eta_final(N, 0.0);
-    compute_eta(x, eta_final);
+    // Finalize: log-det and log-marginal. Reuse scratch.eta as eta_final.
+    compute_eta(x, scratch.eta);
 
     DenseVec grad_final(n_x, 0.0);
     H_builder.zero();
-    scatter_sparse(x, eta_final, grad_final, H_builder);
+    scatter_sparse(x, scratch.eta, grad_final, H_builder);
 
     cholmod_sparse H_final = H_builder.as_cholmod(&solver.common());
     if (!solver.analyzed()) solver.analyze(&H_final);
@@ -233,8 +238,8 @@ LaplaceResult laplace_newton_solve_sparse(
         result.log_det_Q = solver.log_determinant();
     }
 
-    double log_lik = compute_total_log_lik(y, n_trials, eta_final, N, family, phi, n_threads);
-    double log_prior = compute_log_prior(x, eta_final);
+    double log_lik = compute_total_log_lik(y, n_trials, scratch.eta, N, family, phi, n_threads);
+    double log_prior = compute_log_prior(x, scratch.eta);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
 
@@ -249,6 +254,43 @@ LaplaceResult laplace_newton_solve_sparse(
     }
 
     return result;
+}
+
+// Convenience overload that allocates scratch locally. Use only outside
+// parallel regions.
+template<typename ComputeEta, typename ScatterSparse,
+         typename CenterEffects, typename ComputeLogPrior>
+LaplaceResult laplace_newton_solve_sparse(
+    const Rcpp::NumericVector& y,
+    const Rcpp::IntegerVector& n_trials,
+    const std::string& family,
+    double phi,
+    int N, int n_x,
+    int max_iter, double tol, int n_threads,
+    ComputeEta compute_eta,
+    ScatterSparse scatter_sparse,
+    CenterEffects center_effects_fn,
+    ComputeLogPrior compute_log_prior,
+    SparseHessianBuilder& H_builder,
+    const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
+    SparseCholeskySolver* shared_solver = nullptr,
+    bool store_Q = false
+) {
+    NewtonScratch scratch;
+    scratch.allocate(n_x, N);
+    std::vector<double> x_init_vec;
+    if (x_init.size() == n_x) {
+        x_init_vec.assign(x_init.begin(), x_init.end());
+    }
+    #ifdef _OPENMP
+    if (n_threads > 0) omp_set_num_threads(n_threads);
+    #endif
+    return laplace_newton_solve_sparse(
+        y, n_trials, family, phi, N, n_x,
+        max_iter, tol, n_threads,
+        compute_eta, scatter_sparse, center_effects_fn, compute_log_prior,
+        H_builder, scratch, x_init_vec, shared_solver, store_Q
+    );
 }
 
 } // namespace tulpa

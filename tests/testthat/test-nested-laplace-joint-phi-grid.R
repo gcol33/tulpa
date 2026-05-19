@@ -3,7 +3,7 @@
 # `phi_grid` lifts each Gaussian/lognormal arm's residual SD off the
 # parse-time scalar onto the outer grid. The kernel rewrites `arm.phi`
 # at each grid point before the inner Newton solve, and `phi_<arm>`
-# enters the joint posterior alongside (sigma_occ, rho, sigma_pos).
+# enters the joint posterior alongside (sigma, rho, alpha).
 #
 # Two recovery tests:
 #   1. Gaussian copy arm — phi_grid recovers true residual SD.
@@ -11,7 +11,7 @@
 #      `eta = E[log y]` and `-log(y)` Jacobian; phi_grid recovers
 #      true residual SD on the log scale.
 #
-# Both pin (sigma_occ, rho, sigma_pos) at truth on a tight grid to
+# Both pin (sigma, rho, alpha) at truth on a tight grid to
 # isolate the phi_pos axis — the failure mode here is mis-identification
 # of residual noise from spatial signal, not the spatial hyperparameters.
 
@@ -115,7 +115,7 @@ test_that("phi_grid on gaussian copy arm recovers true residual SD", {
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior     = prior,
-        copy      = list(arm = "pos", sigma_pos_grid = sim$truth$sigma),
+        copy      = list(arm = "pos", alpha_grid = 1),
         phi_grid  = list(pos = phi_axis)
     )
 
@@ -180,7 +180,7 @@ test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", 
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior     = prior,
-        copy      = list(arm = "pos", sigma_pos_grid = sim$truth$sigma),
+        copy      = list(arm = "pos", alpha_grid = 1),
         phi_grid  = list(pos = phi_axis)
     )
 
@@ -205,7 +205,7 @@ test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", 
 #    by the constant -sum(log y) Jacobian.                                    #
 # --------------------------------------------------------------------------- #
 
-test_that("lognormal == gaussian(log y) at any (sigma, rho, sigma_pos, phi)", {
+test_that("lognormal == gaussian(log y) at any (sigma, rho, alpha, phi)", {
     sim <- .simulate_joint_pg(N = 300, n_s = 25,
                               sigma = 0.6, rho = 0.7,
                               alpha_true = 1.0, sd_pos = 0.35,
@@ -241,12 +241,12 @@ test_that("lognormal == gaussian(log y) at any (sigma, rho, sigma_pos, phi)", {
     fit_ln <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos_ln),
         prior     = prior,
-        copy      = list(arm = "pos", sigma_pos_grid = sim$truth$sigma)
+        copy      = list(arm = "pos", alpha_grid = 1)
     )
     fit_gn <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos_gn),
         prior     = prior,
-        copy      = list(arm = "pos", sigma_pos_grid = sim$truth$sigma)
+        copy      = list(arm = "pos", alpha_grid = 1)
     )
 
     # log p_lognormal(y|eta,phi) = log p_gaussian(log y|eta,phi) - log(y).
@@ -317,7 +317,7 @@ test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior     = prior,
-        copy      = list(arm = "pos", sigma_pos_grid = c(0.3, 0.6, 0.9)),
+        copy      = list(arm = "pos", alpha_grid = c(0.5, 1, 1.5)),
         phi_grid  = list(pos = phi_axis),
         adaptive_grid = FALSE,
         var_of_means_consistency = FALSE

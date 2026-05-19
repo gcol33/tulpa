@@ -61,7 +61,7 @@
 # 1. alpha = 0 decouples the second arm from the shared field                  #
 # --------------------------------------------------------------------------- #
 
-test_that("joint CAR_proper with sigma_pos = 0 leaves beta_occ unchanged", {
+test_that("joint CAR_proper with alpha = 0 leaves beta_occ unchanged", {
     sim <- .simulate_joint_car(N = 300, n_s = 30, alpha_true = 0.0, seed = 42)
     adj <- .chain_adj(sim$n_s)
 
@@ -89,7 +89,7 @@ test_that("joint CAR_proper with sigma_pos = 0 leaves beta_occ unchanged", {
     fit_joint <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", sigma_pos_grid = 0.0)
+        copy = list(arm = "pos", alpha_grid = 0)
     )
     expect_s3_class(fit_joint, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit_joint$log_marginal)))
@@ -147,7 +147,7 @@ test_that("joint CAR_proper recovers per-arm betas and locates the alpha mode", 
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
         copy = list(arm = "pos",
-                    sigma_pos_grid = c(0.0, 0.3, 0.7, 1.4))
+                    alpha_grid = c(0, 0.5, 1.0, 1.5))
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))

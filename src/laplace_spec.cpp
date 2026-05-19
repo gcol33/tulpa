@@ -913,6 +913,8 @@ void laplace_mode_spec_dense_impl(
 
     bool use_sparse = (n_x >= 200);
     SparseCholeskySolver sparse_solver;
+    DenseCholeskyScratch dense_scratch;
+    dense_scratch.ensure(n_x);
     const void* response_data = data.model_response_data;
 
     #ifdef _OPENMP
@@ -946,7 +948,8 @@ void laplace_mode_spec_dense_impl(
 
         std::fill(delta.begin(), delta.end(), 0.0);
         bool solve_ok = dispatch_factor_solve(H, grad, delta, n_x,
-                                              sparse_solver, use_sparse);
+                                              sparse_solver, use_sparse,
+                                              dense_scratch);
         if (!solve_ok) {
             // Damped fall-back: tiny gradient step keeps the search moving so a
             // bad starting point doesn't kill the run.
@@ -993,7 +996,8 @@ void laplace_mode_spec_dense_impl(
                  data_use, layout, *spec, response_data, N, 1.0,
                  grad, H, n_threads);
     double log_det_Q = 0.0;
-    dispatch_factor_log_det(H, n_x, sparse_solver, use_sparse, log_det_Q);
+    dispatch_factor_log_det(H, n_x, sparse_solver, use_sparse,
+                             dense_scratch, log_det_Q);
 
     double ll = total_log_lik_spec(
         params_inout, eta_flat, data_use, layout, *spec, response_data, N

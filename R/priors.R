@@ -95,6 +95,12 @@ validate_prior <- function(prior, name) {
   }
 }
 
+# Validate that a prior parameter is strictly positive. Centralised so every
+# prior_*() constructor checks the same way and the error wording stays in sync.
+.assert_positive <- function(value, name) {
+  if (value <= 0) stop(sprintf("%s must be positive", name), call. = FALSE)
+}
+
 
 #' Normal prior
 #'
@@ -112,7 +118,7 @@ validate_prior <- function(prior, name) {
 #'
 #' @export
 prior_normal <- function(mean = 0, sd = 2.5) {
-  if (sd <= 0) stop("sd must be positive", call. = FALSE)
+  .assert_positive(sd, "sd")
   structure(
     list(
       distribution = "normal",
@@ -138,7 +144,7 @@ prior_normal <- function(mean = 0, sd = 2.5) {
 #'
 #' @export
 prior_half_normal <- function(sd = 1) {
-  if (sd <= 0) stop("sd must be positive", call. = FALSE)
+  .assert_positive(sd, "sd")
   structure(
     list(
       distribution = "half_normal",
@@ -164,7 +170,7 @@ prior_half_normal <- function(sd = 1) {
 #'
 #' @export
 prior_half_cauchy <- function(scale = 2.5) {
-  if (scale <= 0) stop("scale must be positive", call. = FALSE)
+  .assert_positive(scale, "scale")
   structure(
     list(
       distribution = "half_cauchy",
@@ -194,8 +200,8 @@ prior_half_cauchy <- function(scale = 2.5) {
 #'
 #' @export
 prior_gamma <- function(shape = 2, rate = 0.1) {
-  if (shape <= 0) stop("shape must be positive", call. = FALSE)
-  if (rate <= 0) stop("rate must be positive", call. = FALSE)
+  .assert_positive(shape, "shape")
+  .assert_positive(rate, "rate")
   structure(
     list(
       distribution = "gamma",
@@ -221,7 +227,7 @@ prior_gamma <- function(shape = 2, rate = 0.1) {
 #'
 #' @export
 prior_exponential <- function(rate = 1) {
-  if (rate <= 0) stop("rate must be positive", call. = FALSE)
+  .assert_positive(rate, "rate")
   structure(
     list(
       distribution = "exponential",
@@ -255,8 +261,8 @@ prior_exponential <- function(rate = 1) {
 #'
 #' @export
 prior_beta <- function(alpha = 1, beta = 1) {
-  if (alpha <= 0) stop("alpha must be positive", call. = FALSE)
-  if (beta <= 0) stop("beta must be positive", call. = FALSE)
+  .assert_positive(alpha, "alpha")
+  .assert_positive(beta, "beta")
   structure(
     list(
       distribution = "beta",
@@ -297,7 +303,7 @@ prior_beta <- function(alpha = 1, beta = 1) {
 #'
 #' @export
 prior_pc <- function(U = 1, alpha = 0.01) {
-  if (U <= 0) stop("U must be positive", call. = FALSE)
+  .assert_positive(U, "U")
   if (alpha <= 0 || alpha >= 1) stop("alpha must be in (0, 1)", call. = FALSE)
 
   rate <- -log(alpha) / U
@@ -339,15 +345,15 @@ tulpa_priors_legacy <- function(
 ) {
 
   # Validate
-  if (sigma_U <= 0) stop("sigma_U must be positive", call. = FALSE)
+  .assert_positive(sigma_U, "sigma_U")
   if (sigma_alpha <= 0 || sigma_alpha >= 1) {
     stop("sigma_alpha must be in (0, 1)", call. = FALSE)
   }
-  if (phi_U <= 0) stop("phi_U must be positive", call. = FALSE)
+  .assert_positive(phi_U, "phi_U")
   if (phi_alpha <= 0 || phi_alpha >= 1) {
     stop("phi_alpha must be in (0, 1)", call. = FALSE)
   }
-  if (beta_sd <= 0) stop("beta_sd must be positive", call. = FALSE)
+  .assert_positive(beta_sd, "beta_sd")
 
   tulpa_priors(
     beta = prior_normal(0, beta_sd),

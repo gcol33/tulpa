@@ -1,16 +1,12 @@
-# Regularizing hyperprior on sigma_pos (gcol33/tulpa#22).
+# Regularizing hyperprior on alpha (gcol33/tulpa#22).
 #
 # At small n_pos the cover-arm likelihood is weakly identifying and the
-# marginal on sigma_pos is right-skewed. The derived
-#   alpha = sigma_pos / sigma_occ
-# inherits the skew: even after marginalizing the joint sigma grid (the
-# tulpa#21 fix to plug-in-MAP-from-skewed-axis), the posterior median of
-# alpha overshoots truth on the D7 Cell B regime (n_pos ~ 45,
-# alpha_true = 1.0). The well-identified sigma_occ axis doesn't
-# compensate.
+# marginal on alpha is right-skewed. The posterior median of alpha
+# overshoots truth on the D7 Cell B regime (n_pos ~ 45, alpha_true = 1.0).
+# The well-identified sigma axis doesn't compensate.
 #
-# A regularizing hyperprior on sigma_pos -- PC (`pc.prec`) or half-normal
-# -- tightens the upper tail of the weakly-identified marginal without
+# A regularizing hyperprior on alpha -- PC (`pc.prec`) or half-normal --
+# tightens the upper tail of the weakly-identified marginal without
 # biasing the modal cell when the data identifies it. This test fits the
 # D7 Cell B-like fixture 30 times with and without the prior and asserts:
 #
@@ -18,23 +14,12 @@
 #       upward bias on alpha (sanity check that the fixture exercises
 #       the regime tulpa#22 targets),
 #   (2) the documented-default pc.prec(U=1.0, alpha=0.01) cuts the
-#       alpha geometric bias by ~half (target on this fixture: <= 9%;
-#       observed ~7.3% on a 30-seed sweep dated 2026-05-19; allows
-#       headroom for seed variation),
+#       alpha geometric bias meaningfully (target on this fixture:
+#       <= 9%; calibrated for the (sigma, alpha) reparam),
 #   (3) a stronger half_normal(scale=0.5) gives at least 15% relative
-#       reduction vs flat (the documented scale=1.0 default barely
-#       changes the bias on this fixture; the test exercises a regime
-#       where half_normal demonstrably regularizes),
-#   (4) the regularizer on sigma_pos does not corrupt the
-#       well-identified donor-arm amplitude sigma_occ (cross-axis
-#       coupling check; observed pc.prec drag ~0.06 on truth = 0.6).
-#
-# The #22 issue's stated target of <5% geom bias on INLAabun's D7 Cell B
-# is a downstream validation on INLAabun's own harness (its fixture
-# starts at +8.5% flat bias); this fixture is similar but not identical
-# and starts at +13.9% flat bias, so the in-tulpa target is calibrated
-# to "the prior regularizes meaningfully and consistently" rather than a
-# specific absolute floor.
+#       reduction vs flat,
+#   (4) the regularizer on alpha does not corrupt the well-identified
+#       donor-arm amplitude sigma (cross-axis coupling check).
 #
 # Skipped on CRAN: 30 joint BYM2 fits x 3 prior settings cost ~30-40s.
 
@@ -87,7 +72,7 @@
          truth = list(alpha = alpha_true, sigma = sigma_b))
 }
 
-.fit_pp <- function(sim, adj, prior_sigma_pos = NULL) {
+.fit_pp <- function(sim, adj, prior_alpha = NULL) {
     arm_occ <- list(
         y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
         X = sim$Xocc, spatial_idx = sim$spatial_idx,
@@ -113,38 +98,36 @@
         responses = list(occ = arm_occ, pos = arm_pos),
         prior     = prior,
         copy      = list(arm = "pos",
-                          sigma_pos_grid = exp(seq(log(0.15),
-                                                   log(1.2),
-                                                   length.out = 5L))),
-        prior_sigma_pos = prior_sigma_pos,
-        adaptive_grid   = FALSE
+                          alpha_grid = c(0, 0.4, 0.7, 1.0, 1.4, 2.0)),
+        prior_alpha   = prior_alpha,
+        adaptive_grid = FALSE
     )
 }
 
-test_that("pc.prec on sigma_pos cuts alpha bias at small n_pos (gcol33/tulpa#22)", {
+test_that("pc.prec on alpha cuts alpha bias at small n_pos (gcol33/tulpa#22)", {
     skip_on_cran()
     adj   <- .chain_adj_pp(25L)
     seeds <- 7501:7530
     n_seeds <- length(seeds)
 
-    alpha_flat   <- numeric(n_seeds)
-    alpha_pc     <- numeric(n_seeds)
-    alpha_hn     <- numeric(n_seeds)
-    sig_occ_flat <- numeric(n_seeds)
-    sig_occ_pc   <- numeric(n_seeds)
+    alpha_flat <- numeric(n_seeds)
+    alpha_pc   <- numeric(n_seeds)
+    alpha_hn   <- numeric(n_seeds)
+    sig_flat   <- numeric(n_seeds)
+    sig_pc     <- numeric(n_seeds)
 
     for (i in seq_along(seeds)) {
         sim <- .simulate_d7_pp(seeds[i])
-        f_flat <- .fit_pp(sim, adj, prior_sigma_pos = NULL)
+        f_flat <- .fit_pp(sim, adj, prior_alpha = NULL)
         f_pc   <- .fit_pp(sim, adj,
-                          prior_sigma_pos = list("pc.prec", c(1.0, 0.01)))
+                          prior_alpha = list("pc.prec", c(1.0, 0.01)))
         f_hn   <- .fit_pp(sim, adj,
-                          prior_sigma_pos = list("half_normal", 0.5))
-        alpha_flat[i]   <- f_flat$theta_median[["alpha"]]
-        alpha_pc[i]     <- f_pc$theta_median[["alpha"]]
-        alpha_hn[i]     <- f_hn$theta_median[["alpha"]]
-        sig_occ_flat[i] <- f_flat$theta_mean[["sigma_occ"]]
-        sig_occ_pc[i]   <- f_pc$theta_mean[["sigma_occ"]]
+                          prior_alpha = list("half_normal", 0.5))
+        alpha_flat[i] <- f_flat$theta_median[["alpha"]]
+        alpha_pc[i]   <- f_pc$theta_median[["alpha"]]
+        alpha_hn[i]   <- f_hn$theta_median[["alpha"]]
+        sig_flat[i]   <- f_flat$theta_mean[["sigma"]]
+        sig_pc[i]     <- f_pc$theta_mean[["sigma"]]
     }
 
     geom_bias <- function(hat, truth) {
@@ -156,59 +139,51 @@ test_that("pc.prec on sigma_pos cuts alpha bias at small n_pos (gcol33/tulpa#22)
     gb_hn   <- geom_bias(alpha_hn,   1.0)
 
     info_str <- sprintf(
-        "geom_bias alpha: flat=%.3f  pc.prec=%.3f  half_normal=%.3f | mean sigma_occ: flat=%.3f pc=%.3f",
-        gb_flat, gb_pc, gb_hn, mean(sig_occ_flat), mean(sig_occ_pc)
+        "geom_bias alpha: flat=%.3f  pc.prec=%.3f  half_normal=%.3f | mean sigma: flat=%.3f pc=%.3f",
+        gb_flat, gb_pc, gb_hn, mean(sig_flat), mean(sig_pc)
     )
 
     # (1) Sanity: flat-prior baseline carries small-n_pos upward bias.
-    #     Precondition for the regularization test below -- if this
-    #     fails, the fixture has stopped exercising the regime tulpa#22
-    #     targets and the rest of the assertions aren't meaningful.
     expect_gt(gb_flat, 0.08, label = info_str)
 
     # (2) Documented default `pc.prec(U=1.0, alpha=0.01)` regularizes
-    #     meaningfully. On a 30-seed sweep (2026-05-19) this cut bias
-    #     from +13.9% (flat) to +7.3% on the same fixture; 0.09 leaves
-    #     headroom for seed-set variation.
+    #     meaningfully.
     expect_lt(abs(gb_pc), 0.09, label = info_str)
 
     # (3) `half_normal(scale = 0.5)` gives at least 15% relative
-    #     reduction vs flat (the looser scale=1.0 default barely moves
-    #     the bias on this fixture -- the test exercises the regime
-    #     where half_normal demonstrably regularizes).
+    #     reduction vs flat.
     expect_lt(abs(gb_hn), 0.85 * abs(gb_flat), label = info_str)
 
-    # (4) The regularizer on sigma_pos doesn't corrupt the
-    #     well-identified donor-arm amplitude. Truth is 0.6; pc.prec(1,
-    #     0.01) pulls sigma_occ down via joint coupling but should stay
-    #     within ~0.10 of truth (observed offset ~0.06 on 30 seeds).
-    expect_lt(abs(mean(sig_occ_pc) - 0.6), 0.10, label = info_str)
+    # (4) The regularizer on alpha doesn't corrupt the well-identified
+    #     donor amplitude sigma. Truth is 0.6; pc.prec(1, 0.01) should
+    #     keep sigma within ~0.10 of truth.
+    expect_lt(abs(mean(sig_pc) - 0.6), 0.10, label = info_str)
 })
 
-test_that("PC / half_normal log-density is finite at sigma = 0 boundary", {
+test_that("PC / half_normal log-density is finite at the 0 boundary", {
     # Regression for the `ok <- s > 0` -> `ok <- s >= 0` fix. The PC
-    # prior density at sigma=0 is the finite limit `lambda`, not zero;
+    # prior density at 0 is the finite limit `lambda`, not zero;
     # half-normal at 0 is `2 / (scale * sqrt(2 * pi))`. Earlier impl
-    # returned `-Inf` for s = 0, which zeroed the sigma_pos = 0 grid
-    # cell entirely and biased derived alpha when the truth sat on the
+    # returned `-Inf` for s = 0, which zeroed the alpha = 0 grid cell
+    # entirely and biased the posterior when the truth sat on the
     # boundary (e.g. INLAabun D3 alpha_true = 0.0).
     f_pc <- tulpa:::.joint_parse_sigma_prior(list("pc.prec", c(1.0, 0.01)),
-                                              "prior_sigma_pos")
+                                              "prior_alpha")
     expect_true(is.finite(f_pc(0)))
     expect_equal(f_pc(0), log(-log(0.01) / 1.0))
 
     f_hn <- tulpa:::.joint_parse_sigma_prior(list("half_normal", 0.5),
-                                              "prior_sigma_pos")
+                                              "prior_alpha")
     expect_true(is.finite(f_hn(0)))
     expect_equal(f_hn(0), log(2) - 0.5 * log(2 * pi) - log(0.5))
 })
 
-test_that("sigma_pos = 0 grid cell is not zeroed by the prior", {
-    # Integration-level check: with a sigma_pos grid that includes 0 and
-    # truth alpha = 0 (sigma_pos truth = 0), the posterior should
-    # concentrate near 0. Pre-fix the boundary bug pushed the posterior
-    # to the next-smallest cell, surfacing as a +500% bias on derived
-    # alpha. One seed is enough to catch a regression of the boundary.
+test_that("alpha = 0 grid cell is not zeroed by the prior", {
+    # Integration-level check: with an alpha grid that includes 0 and
+    # truth alpha = 0, the posterior should concentrate near 0. Pre-fix
+    # the boundary bug pushed the posterior to the next-smallest cell,
+    # surfacing as a +500% bias on alpha. One seed is enough to catch a
+    # regression of the boundary.
     skip_on_cran()
     adj <- .chain_adj_pp(25L)
     sim <- .simulate_d7_pp(seed = 7501L, alpha_true = 0.0)
@@ -237,11 +212,11 @@ test_that("sigma_pos = 0 grid cell is not zeroed by the prior", {
         responses = list(occ = arm_occ, pos = arm_pos),
         prior     = prior,
         copy      = list(arm = "pos",
-                          sigma_pos_grid = c(0.0, 0.3, 0.6, 0.9, 1.2)),
-        prior_sigma_pos = list("pc.prec", c(1.0, 0.01)),
+                          alpha_grid = c(0, 0.5, 1.0, 1.5, 2.0)),
+        prior_alpha     = list("pc.prec", c(1.0, 0.01)),
         adaptive_grid   = FALSE
     )
-    # With sigma_pos_truth = 0, alpha posterior median should be small
+    # With alpha_truth = 0, the alpha posterior median should be small
     # (well below 0.2). Pre-fix the median jumped to ~0.5 because the
     # zero cell was eliminated. 0.2 is generous headroom for one seed.
     expect_lt(fit$theta_median[["alpha"]], 0.2)

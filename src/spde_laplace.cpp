@@ -321,10 +321,15 @@ Rcpp::List cpp_nested_laplace_spde(
     tulpa::SparseHessianBuilder H_builder;
     H_builder.init(n_x, pattern);
 
-    // Shared CHOLMOD across grid points (warm symbolic factorization).
-    tulpa::SparseCholeskySolver shared_solver;
+    // Per-thread NewtonScratch pool. SPDE outer grid is not yet exposed to
+    // user-driven parallelism — n_outer = 1 keeps the legacy serial path.
+    const int n_outer = 1;
+    std::vector<tulpa::NewtonScratch> scratch_pool(n_outer);
+    for (auto& s : scratch_pool) s.allocate(n_x, N);
 
-    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
+    auto solve_at_theta = [&](int k,
+                              const std::vector<double>& prev_mode,
+                              tulpa::SparseCholeskySolver* solver)
         -> tulpa::LaplaceResult
     {
         double kappa_k = std::sqrt(8.0 * nu) / range_grid[k];
@@ -436,11 +441,17 @@ Rcpp::List cpp_nested_laplace_spde(
             return lp;
         };
 
+        int tid;
+        #ifdef _OPENMP
+        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+        #else
+        tid = 0;
+        #endif
         return tulpa::laplace_newton_solve_sparse(
             y, n_trials, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter_sparse, center, log_prior,
-            H_builder, prev_mode, &shared_solver, store_Q
+            H_builder, scratch_pool[tid], prev_mode, solver, store_Q
         );
     };
 
@@ -449,7 +460,7 @@ Rcpp::List cpp_nested_laplace_spde(
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
     Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
+        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true, n_outer
     );
     out["range_grid"] = range_grid;
     out["sigma_grid"] = sigma_grid;

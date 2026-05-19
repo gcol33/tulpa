@@ -9,18 +9,22 @@ tulpa_nested_laplace_joint(
   prior,
   copy = NULL,
   phi_grid = NULL,
-  prior_sigma_occ = NULL,
-  prior_sigma_pos = NULL,
+  prior_sigma = NULL,
+  prior_alpha = NULL,
   max_iter = 50L,
   tol = 1e-06,
   n_threads = 1L,
+  n_threads_outer = 1L,
+  tile_warm = TRUE,
   x_init = NULL,
   verbose = FALSE,
   store_Q = FALSE,
   adaptive_grid = FALSE,
   adaptive_grid_edge_thresh = 0.02,
   adaptive_grid_max_passes = 1L,
-  var_of_means_consistency = TRUE
+  var_of_means_consistency = TRUE,
+  prior_sigma_occ = NULL,
+  prior_sigma_pos = NULL
 )
 }
 \arguments{
@@ -62,12 +66,13 @@ in \verb{[0.1, 3]}).
 
 \item{copy}{Optional list controlling the copy arm:
 \itemize{
-\item \code{arm}            — name (or 1-based index) of the copy arm.
-\item \code{sigma_pos_grid} — numeric grid for that arm's field amplitude
-\eqn{\sigma_{pos}}; default mirrors the donor
-\code{sigma_grid} axis.
+\item \code{arm}        — name (or 1-based index) of the copy arm.
+\item \code{alpha_grid} — numeric grid for the copy coefficient \eqn{\alpha};
+the copy arm's field amplitude at each cell is
+\eqn{\alpha \cdot \sigma}. Default
+\code{c(0, exp(seq(log(0.1), log(3), length.out = 5)))}.
 When \code{NULL} (default), no copy scaling is applied — all arms share
-the donor \code{sigma_grid} axis.
+the donor \code{sigma_grid} axis and \eqn{\alpha = 1} implicitly.
 }}
 
 \item{phi_grid}{Optional list specifying per-arm dispersion axes on the
@@ -100,32 +105,61 @@ varies slowest (within-spatial warm starts hold). The axis appears
 as a regular hyperparameter in \code{theta_grid}, \code{theta_mean}, and
 \code{theta_sd}, and participates in adaptive-grid refinement.}
 
-\item{prior_sigma_occ, prior_sigma_pos}{Optional regularizing hyperpriors
-on the per-arm field amplitudes. Each is \code{NULL} (flat, default) or a
-list of the form \code{list(family, params)}:
+\item{prior_sigma, prior_alpha}{Optional regularizing hyperpriors on the
+donor field amplitude \eqn{\sigma} and on the copy coefficient
+\eqn{\alpha}. Each is \code{NULL} (flat, default) or a list of the form
+\code{list(family, params)}:
 \itemize{
-\item \code{list("pc.prec", c(U, alpha))} -- Penalized Complexity prior on
-sigma, calibrated by \code{P(sigma > U) = alpha}. Closed-form density
-\code{lambda * exp(-lambda * sigma)} with \code{lambda = -log(alpha)/U}.
+\item \code{list("pc.prec", c(U, alpha))} -- Penalized Complexity prior,
+calibrated by \code{P(theta > U) = alpha}. Closed-form density
+\code{lambda * exp(-lambda * theta)} with \code{lambda = -log(alpha)/U}.
 Drop-in for the weakly-identified small-\code{n_pos} regime
-(gcol33/tulpa#22): default-friendly choice is \code{c(U = 1.0, alpha = 0.01)}, which shrinks the upper tail of sigma_pos without
-biasing the modal cell when the data identifies it.
-\item \code{list("half_normal", scale)} -- half-normal on sigma with scale
-\code{scale > 0}. Sharper tail decay than PC; use when stronger
-regularization is desired and the truth is well inside the prior.
+(gcol33/tulpa#22): default-friendly choice on \eqn{\alpha} is
+\code{c(U = 1.0, alpha = 0.01)}, which shrinks the upper tail of
+\eqn{\alpha} without biasing the modal cell when the data
+identifies it.
+\item \code{list("half_normal", scale)} -- half-normal with scale \code{scale > 0}.
+Sharper tail decay than PC; use when stronger regularization is
+desired and the truth is well inside the prior.
 The contribution is added to \code{log_marginal} cell-by-cell at the
 kernel-call boundary, so refinement passes (adaptive grid,
 var-of-means consistency) see the regularized posterior. When the
-data identifies sigma (e.g. \code{n_pos >= ~200}) the prior is
+data identifies the parameter (e.g. \code{n_pos >= ~200}) the prior is
 essentially harmless -- the lever is tail-shrinkage at small
-\code{n_pos}. The prior on \code{sigma_pos} only applies when \code{copy} is
-active; the prior on \code{sigma_occ} applies on any
-\code{sigma_occ}-named axis (with or without copy).
+\code{n_pos}. \code{prior_alpha} only applies when \code{copy} is active;
+\code{prior_sigma} applies on any \code{sigma}-named axis.
 }}
 
 \item{max_iter, tol}{Inner Newton iteration budget and tolerance.}
 
-\item{n_threads}{OpenMP threads.}
+\item{n_threads}{Inner-loop OpenMP threads (per-observation scatter,
+compute_eta, log-likelihood reduction). Defaults to \code{1L} — for typical
+tulpa joint workloads (\code{N} in the hundreds to a few thousand) inner
+parallelism is overhead-dominated, see
+\code{dev_notes/issue_body_adaptive_grid_cost.md}. Coarse-grained
+parallelism over the outer hyperparameter grid is exposed via
+\code{n_threads_outer} and stacks better on hardware with many cores.}
+
+\item{n_threads_outer}{Outer-grid OpenMP threads. When \verb{> 1}, the driver
+runs a pilot Laplace at the centre cell, then dispatches the remaining
+cells across \code{n_threads_outer} OpenMP threads with each cell warm-started
+from the pilot mode. Each outer thread owns its own CHOLMOD solver and
+NewtonScratch; inner-loop OpenMP is auto-disabled to avoid nested
+parallelism overhead. Default \code{1L} (serial, chained warm-starts —
+bitwise identical to the pre-speedup driver). Recommended on multi-core
+workstations: \code{parallel::detectCores() - 1L}.}
+
+\item{tile_warm}{Logical (default \code{TRUE}). When \code{n_threads_outer > 1}
+and a copy block is present, the driver groups outer-grid cells into
+\emph{tiles} sharing every hyperparameter axis except the copy coefficient
+\code{alpha}, runs one Tier-2 warm solve per tile from the centre-cell
+pilot, and warm-starts the remaining cells from their tile pilot
+instead of the global pilot. Cuts inner-Newton iterations by a tile-
+sized factor on the slowest cells (boundary alpha values). Falls back
+silently to the single-tier Phase 1 path when no copy block is
+present, the grid has a single tile, or \code{n_threads_outer <= 1L}. Set
+to \code{FALSE} to recover the Phase 1 behaviour (e.g. for regression
+testing).}
 
 \item{x_init}{Optional warm-start for the first grid point's inner solve.}
 
@@ -213,20 +247,21 @@ Latent: \code{phi (n_s)} with \code{Q = D - rho_car * W}.
 Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
 land under Phase 3.
 }
-\section{Per-arm sigma parameterization (gcol33/tulpa#18)}{
+\section{(sigma, alpha) parameterization (gcol33/tulpa#22)}{
 
 Each arm's linear predictor reads
 \deqn{\eta_{arm} = X_{arm} \beta_{arm} + \sigma_{arm} \cdot z_s,}
 where \eqn{z_s} is a unit-precision latent (ICAR(tau=1) for ICAR/BYM2,
 or the BYM2 mix; CAR_proper uses the structure of
-\eqn{D - \rho_{car} W}). Non-copy arms see \eqn{\sigma_{arm}} from the
-outer-grid \code{sigma_grid} axis (\eqn{\sigma_{occ}}). The copy arm sees
-\eqn{\sigma_{arm}} from \code{copy$sigma_pos_grid} (\eqn{\sigma_{pos}}). The
-Cartesian product is over \verb{(sigma_occ, [rho/rho_car,] sigma_pos[, phi])}.
-Anchoring each arm's field amplitude in its own likelihood breaks the
-alpha-sigma identifiability ridge at small \code{n_pos}. The classical
-copy-scale is recovered post-hoc as
-\eqn{\alpha = \sigma_{pos} / \sigma_{occ}} on the joint posterior.
+\eqn{D - \rho_{car} W}). All arms share the donor amplitude
+\eqn{\sigma} from the outer-grid \code{sigma_grid} axis. The copy arm's
+amplitude is \eqn{\sigma_{arm} = \alpha \cdot \sigma}, where \eqn{\alpha}
+is a direct outer-grid axis taken from \code{copy$alpha_grid}. The Cartesian
+product is over \verb{(sigma, [rho/rho_car,] alpha[, phi])}. Direct \eqn{\alpha}
+as an outer-grid axis (rather than a post-hoc ratio
+\eqn{\alpha = \sigma_{pos} / \sigma_{occ}}) avoids plug-in bias on the
+weakly-identified ratio at small \code{n_pos} and lets a regularizing
+hyperprior land on \eqn{\alpha} directly.
 }
 
 \seealso{

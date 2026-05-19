@@ -507,9 +507,15 @@ Rcpp::List cpp_nested_laplace_nngp(
     int gp_start = p + n_re_groups;
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
 
-    tulpa::SparseCholeskySolver shared_solver;
+    // Per-thread NewtonScratch pool. Outer-grid parallelism for NNGP is
+    // gated behind GPU batching, not OpenMP — keep n_outer = 1 here.
+    const int n_outer = 1;
+    std::vector<tulpa::NewtonScratch> scratch_pool(n_outer);
+    for (auto& s : scratch_pool) s.allocate(n_x, N);
 
-    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
+    auto solve_at_theta = [&](int k,
+                              const std::vector<double>& prev_mode,
+                              tulpa::SparseCholeskySolver* solver)
         -> tulpa::LaplaceResult
     {
         double sigma2_k = sigma2_grid[k];
@@ -589,11 +595,17 @@ Rcpp::List cpp_nested_laplace_nngp(
             return lp;
         };
 
+        int tid;
+        #ifdef _OPENMP
+        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+        #else
+        tid = 0;
+        #endif
         return tulpa::laplace_newton_solve(
             y, n, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver,
+            scratch_pool[tid], prev_mode, solver,
             store_Q
         );
     };
@@ -602,7 +614,7 @@ Rcpp::List cpp_nested_laplace_nngp(
     if (x_init_nullable.isNotNull()) x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
     Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
+        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true, n_outer
     );
     out["sigma2_grid"] = sigma2_grid;
     out["phi_gp_grid"] = phi_gp_grid;
@@ -647,9 +659,18 @@ Rcpp::List cpp_nested_laplace_hsgp(
     int beta_gp_start = p + n_re_groups;
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
 
-    tulpa::SparseCholeskySolver shared_solver;
+    // Per-thread NewtonScratch pool. omp_get_thread_num() returns 0 outside
+    // parallel regions so serial callers correctly land on scratch_pool[0].
+    // No outer-grid parallelism is exposed at this kernel yet (HSGP is a
+    // small-M problem; the joint multi-block path is where the tulpaObs win
+    // lives) — keep n_outer hardcoded at 1 here.
+    const int n_outer = 1;
+    std::vector<tulpa::NewtonScratch> scratch_pool(n_outer);
+    for (auto& s : scratch_pool) s.allocate(n_x, N);
 
-    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
+    auto solve_at_theta = [&](int k,
+                              const std::vector<double>& prev_mode,
+                              tulpa::SparseCholeskySolver* solver)
         -> tulpa::LaplaceResult
     {
         double sigma2_k = sigma2_grid[k];
@@ -733,11 +754,17 @@ Rcpp::List cpp_nested_laplace_hsgp(
             return lp;
         };
 
+        int tid;
+        #ifdef _OPENMP
+        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+        #else
+        tid = 0;
+        #endif
         return tulpa::laplace_newton_solve(
             y, n, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver,
+            scratch_pool[tid], prev_mode, solver,
             store_Q
         );
     };
@@ -746,7 +773,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
     if (x_init_nullable.isNotNull()) x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
     Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true
+        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true, n_outer
     );
     out["sigma2_grid"] = sigma2_grid;
     out["lengthscale_grid"] = lengthscale_grid;
@@ -943,16 +970,24 @@ inline Rcpp::List run_spatial_x_indexed_temporal_nested_laplace(
 ) {
     int n_x = p + n_re_groups + spatial_ops.block_len + n_t;
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
-    tulpa::SparseCholeskySolver shared_solver;
+    // Per-thread NewtonScratch pool. Outer-grid parallelism for spatio-
+    // temporal kernels is not yet exposed to R (the win lives in the joint
+    // multi-block driver); n_outer = 1 here.
+    const int n_outer = 1;
+    std::vector<tulpa::NewtonScratch> scratch_pool(n_outer);
+    for (auto& s : scratch_pool) s.allocate(n_x, N);
     int s_start = spatial_ops.start;
 
-    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
+    auto solve_at_theta = [&](int k,
+                              const std::vector<double>& prev_mode,
+                              tulpa::SparseCholeskySolver* solver)
         -> tulpa::LaplaceResult
     {
         if (!spatial_ops.prep_at_k(k) || !prep_t_at_k(k)) {
             tulpa::LaplaceResult bad;
-            bad.mode = (prev_mode.size() == n_x) ? prev_mode :
-                       Rcpp::NumericVector(n_x, 0.0);
+            bad.mode = (static_cast<int>(prev_mode.size()) == n_x)
+                       ? prev_mode
+                       : std::vector<double>(n_x, 0.0);
             bad.log_marginal = -std::numeric_limits<double>::infinity();
             bad.n_iter = 0;
             bad.converged = false;
@@ -993,16 +1028,22 @@ inline Rcpp::List run_spatial_x_indexed_temporal_nested_laplace(
             return lp;
         };
 
+        int tid;
+        #ifdef _OPENMP
+        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+        #else
+        tid = 0;
+        #endif
         return tulpa::laplace_newton_solve(
             y, n_trials, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver, store_Q
+            scratch_pool[tid], prev_mode, solver, store_Q
         );
     };
 
     return tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, store_modes
+        n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer
     );
 }
 

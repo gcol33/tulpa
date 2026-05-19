@@ -120,6 +120,13 @@ inline void accumulate_latent_cross_terms(
 }
 
 // Generic outer-grid driver over a vector of LatentBlocks.
+//
+// `n_threads_outer` controls the outer-grid parallelism (1 = serial, the
+// pre-refactor default). `n_threads_inner` controls per-observation parallel
+// kernels (compute_eta, scatter, log-lik reduction) inside each cell. When
+// `n_threads_outer > 1`, the driver pre-allocates n_threads_outer worth of
+// NewtonScratch (one per OpenMP thread) and one SparseCholeskySolver per
+// thread, then parallelises the grid via run_nested_laplace_grid.
 inline Rcpp::List run_multi_block_nested_laplace(
     int n_grid,
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
@@ -130,23 +137,37 @@ inline Rcpp::List run_multi_block_nested_laplace(
     int max_iter, double tol, int n_threads,
     bool store_modes,
     const Rcpp::NumericVector& x_init,
-    bool store_Q = false
+    bool store_Q = false,
+    int n_threads_outer = 1
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
         n_x = std::max(n_x, b.start + b.size);
     }
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
-    SparseCholeskySolver shared_solver;
 
-    auto solve_at_theta = [&](int k, const Rcpp::NumericVector& prev_mode)
-        -> LaplaceResult
+    // Per-outer-thread NewtonScratch. omp_get_thread_num() returns 0 outside
+    // parallel regions so the serial path correctly picks scratch_pool[0].
+    int n_outer = std::max(1, n_threads_outer);
+    std::vector<NewtonScratch> scratch_pool(n_outer);
+    for (auto& s : scratch_pool) s.allocate(n_x, N);
+
+    // When the outer grid is parallel, force inner kernels to single-thread
+    // OpenMP (compute_eta / scatter / log-lik reduction). Nested OpenMP at
+    // this problem size is overhead-dominated — see
+    // dev_notes/issue_body_adaptive_grid_cost.md for the empirical sweep.
+    int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
+
+    auto solve_at_theta = [&](int k,
+                              const std::vector<double>& prev_mode,
+                              SparseCholeskySolver* solver) -> LaplaceResult
     {
         for (const auto& b : blocks) {
             if (b.prep && !b.prep(k)) {
                 LaplaceResult bad;
-                bad.mode = (prev_mode.size() == n_x) ? prev_mode :
-                           Rcpp::NumericVector(n_x, 0.0);
+                bad.mode = (static_cast<int>(prev_mode.size()) == n_x)
+                           ? prev_mode
+                           : std::vector<double>(n_x, 0.0);
                 bad.log_marginal = -std::numeric_limits<double>::infinity();
                 bad.n_iter = 0;
                 bad.converged = false;
@@ -163,7 +184,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
         auto compute_eta = [&](const Rcpp::NumericVector& x,
                                Rcpp::NumericVector& eta) {
             #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
+            #pragma omp parallel for schedule(static) \
+                num_threads(n_threads_inner_eff > 0 ? n_threads_inner_eff : 1) \
+                if(n_threads_inner_eff > 1)
             #endif
             for (int i = 0; i < N; i++) {
                 eta[i] = 0.0;
@@ -187,7 +210,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
             scatter_obs_grad_hess_base(y, n_trials, X, re_idx,
                                         N, p, n_re_groups,
                                         eta, family, phi,
-                                        grad, H, n_threads);
+                                        grad, H, n_threads_inner_eff);
             accumulate_latent_cross_terms(y, n_trials, X, re_idx,
                                            N, p, n_re_groups,
                                            eta, family, phi,
@@ -213,16 +236,23 @@ inline Rcpp::List run_multi_block_nested_laplace(
             return lp;
         };
 
+        int tid;
+        #ifdef _OPENMP
+        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+        #else
+        tid = 0;
+        #endif
+
         return laplace_newton_solve(
             y, n_trials, family, phi, N, n_x,
-            max_iter, tol, n_threads,
+            max_iter, tol, n_threads_inner_eff,
             compute_eta, scatter, center, log_prior,
-            prev_mode, &shared_solver, store_Q
+            scratch_pool[tid], prev_mode, solver, store_Q
         );
     };
 
     return run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, store_modes
+        n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer
     );
 }
 

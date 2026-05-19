@@ -63,27 +63,64 @@ inline double compute_total_log_lik_joint(
     return total;
 }
 
-// Penalised log-lik (joint) used by the line search.
+// Penalised log-lik (joint) used by the line search. `etas_scratch` is the
+// caller's pre-allocated per-arm eta buffer set; we never reallocate.
 template<typename ComputeEtaJoint, typename ComputeLogPriorJoint>
 inline double eval_penalized_log_lik_joint(
     const Rcpp::NumericVector& x,
     const std::vector<JointArm>& arms,
     int n_threads,
     ComputeEtaJoint compute_eta_joint,
-    ComputeLogPriorJoint compute_log_prior_joint
+    ComputeLogPriorJoint compute_log_prior_joint,
+    std::vector<Rcpp::NumericVector>& etas_scratch
 ) {
-    std::vector<Rcpp::NumericVector> etas;
-    etas.reserve(arms.size());
-    for (size_t k = 0; k < arms.size(); k++) {
-        etas.emplace_back(arms[k].N, 0.0);
-    }
-    compute_eta_joint(x, etas);
-    double ll = compute_total_log_lik_joint(arms, etas, n_threads);
-    double lp = compute_log_prior_joint(x, etas);
+    compute_eta_joint(x, etas_scratch);
+    double ll = compute_total_log_lik_joint(arms, etas_scratch, n_threads);
+    double lp = compute_log_prior_joint(x, etas_scratch);
     return ll + lp;
 }
 
-// Joint Newton solver.
+// Per-thread scratch for the joint Newton solver. Same role as NewtonScratch
+// but with per-arm eta vectors. Allocate once, single-threaded outside any
+// OpenMP region. See NewtonScratch comment for why grad / H / delta are
+// hoisted: per-iter std::vector allocation is thread-safe but contends on the
+// central allocator under concurrent outer-grid threads, eating parallel
+// efficiency.
+struct NewtonScratchJoint {
+    Rcpp::NumericVector x;       // size n_x
+    Rcpp::NumericVector x_try;   // size n_x
+    std::vector<Rcpp::NumericVector> etas;      // size = arms.size(), each N_k
+    std::vector<Rcpp::NumericVector> etas_tmp;  // same shape, line-search buffer
+    DenseVec  grad;              // size n_x, zeroed per iter
+    DenseMat  H;                 // n_x x n_x, zeroed per iter
+    DenseVec  delta;             // size n_x, zeroed per iter
+    DenseCholeskyScratch chol;   // raw L/z buffers for dense fallback
+
+    void allocate(int n_x, const std::vector<JointArm>& arms) {
+        x       = Rcpp::NumericVector(n_x, 0.0);
+        x_try   = Rcpp::NumericVector(n_x, 0.0);
+        etas.clear();     etas.reserve(arms.size());
+        etas_tmp.clear(); etas_tmp.reserve(arms.size());
+        for (const JointArm& a : arms) {
+            etas.emplace_back(a.N, 0.0);
+            etas_tmp.emplace_back(a.N, 0.0);
+        }
+        grad.assign(n_x, 0.0);
+        H.assign(n_x, DenseVec(n_x, 0.0));
+        delta.assign(n_x, 0.0);
+        chol.ensure(n_x);
+    }
+
+    void zero_for_iter() {
+        std::fill(grad.begin(), grad.end(), 0.0);
+        for (auto& row : H) std::fill(row.begin(), row.end(), 0.0);
+        std::fill(delta.begin(), delta.end(), 0.0);
+    }
+};
+
+// Scratch-aware joint Newton solver. Like the single-arm version, performs
+// zero Rcpp allocations once `scratch` is supplied; safe inside an OpenMP
+// parallel region with a thread-local `shared_solver`.
 template<typename ComputeEtaJoint, typename ScatterJoint,
          typename CenterEffects, typename ComputeLogPriorJoint>
 LaplaceResult laplace_newton_solve_joint(
@@ -94,65 +131,55 @@ LaplaceResult laplace_newton_solve_joint(
     ScatterJoint scatter_joint,
     CenterEffects center_effects_fn,
     ComputeLogPriorJoint compute_log_prior_joint,
-    const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
-    SparseCholeskySolver* shared_solver = nullptr,
-    bool store_Q = false
+    NewtonScratchJoint& scratch,
+    const std::vector<double>& x_init,
+    SparseCholeskySolver* shared_solver,
+    bool store_Q
 ) {
     LaplaceResult result;
-    result.mode = Rcpp::NumericVector(n_x, 0.0);
+    result.mode.assign(n_x, 0.0);
     result.converged = false;
     result.n_iter = 0;
     result.log_det_Q = 0.0;
     result.log_marginal = 0.0;
 
-    Rcpp::NumericVector x(n_x, 0.0);
-    if (x_init.size() == n_x) {
+    Rcpp::NumericVector& x = scratch.x;
+    if (static_cast<int>(x_init.size()) == n_x) {
         for (int j = 0; j < n_x; j++) x[j] = x_init[j];
+    } else {
+        for (int j = 0; j < n_x; j++) x[j] = 0.0;
     }
     bool use_sparse = (n_x >= SPARSE_THRESHOLD);
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;
 
-    #ifdef _OPENMP
-    if (n_threads > 0) omp_set_num_threads(n_threads);
-    #endif
-
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
         return eval_penalized_log_lik_joint(
-            xv, arms, n_threads, compute_eta_joint, compute_log_prior_joint
+            xv, arms, n_threads, compute_eta_joint, compute_log_prior_joint,
+            scratch.etas_tmp
         );
     };
 
     auto cholesky_solve = [&](DenseMat& H, DenseVec& grad,
                               std::vector<double>& delta) -> bool {
-        return dispatch_factor_solve(H, grad, delta, n_x, sparse_solver, use_sparse);
+        return dispatch_factor_solve(H, grad, delta, n_x, sparse_solver,
+                                     use_sparse, scratch.chol);
     };
-
-    // Reusable per-arm eta buffers — same lifetime as the Newton loop, so we
-    // skip a vector<NumericVector> reallocation per iteration.
-    std::vector<Rcpp::NumericVector> etas;
-    etas.reserve(arms.size());
-    for (size_t k = 0; k < arms.size(); k++) {
-        etas.emplace_back(arms[k].N, 0.0);
-    }
 
     double obj_current = -1e300;
     bool obj_valid = false;
 
     for (int iter = 0; iter < max_iter; iter++) {
-        compute_eta_joint(x, etas);
+        compute_eta_joint(x, scratch.etas);
+        scratch.zero_for_iter();
+        scatter_joint(x, scratch.etas, scratch.grad, scratch.H);
 
-        DenseVec grad(n_x, 0.0);
-        DenseMat H(n_x, DenseVec(n_x, 0.0));
-        scatter_joint(x, etas, grad, H);
-
-        std::vector<double> delta(n_x, 0.0);
-        bool solve_ok = cholesky_solve(H, grad, delta);
+        bool solve_ok = cholesky_solve(scratch.H, scratch.grad, scratch.delta);
 
         if (!solve_ok) {
             for (int j = 0; j < n_x; j++) {
-                if (std::isfinite(delta[j])) x[j] += 0.1 * delta[j];
+                if (std::isfinite(scratch.delta[j])) x[j] += 0.1 * scratch.delta[j];
             }
             obj_valid = false;
             result.n_iter = iter + 1;
@@ -164,11 +191,13 @@ LaplaceResult laplace_newton_solve_joint(
             obj_valid = true;
         }
 
-        double step_scale = step_halving_update(x, delta, n_x, obj_current,
-                                                  eval_objective, obj_current);
+        double step_scale = step_halving_update(
+            x, scratch.delta, n_x, obj_current, eval_objective, obj_current,
+            scratch.x_try
+        );
 
         result.n_iter = iter + 1;
-        if (max_abs_step(delta, step_scale, n_x) < tol) {
+        if (max_abs_step(scratch.delta, step_scale, n_x) < tol) {
             result.converged = true;
             break;
         }
@@ -183,31 +212,64 @@ LaplaceResult laplace_newton_solve_joint(
     // *after* log_marginal so the reported mode block has mean(phi) = 0 with
     // the equivalent intercept shift absorbed into each arm's first beta
     // column. Net effect: same eta, same log_marginal, centered phi block.
-    compute_eta_joint(x, etas);
+    compute_eta_joint(x, scratch.etas);
+    scratch.zero_for_iter();
+    scatter_joint(x, scratch.etas, scratch.grad, scratch.H);
 
-    DenseVec grad_final(n_x, 0.0);
-    DenseMat H_final(n_x, DenseVec(n_x, 0.0));
-    scatter_joint(x, etas, grad_final, H_final);
+    dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
+                             scratch.chol, result.log_det_Q);
 
-    dispatch_factor_log_det(H_final, n_x, sparse_solver, use_sparse, result.log_det_Q);
-
-    double log_lik   = compute_total_log_lik_joint(arms, etas, n_threads);
-    double log_prior = compute_log_prior_joint(x, etas);
+    double log_lik   = compute_total_log_lik_joint(arms, scratch.etas, n_threads);
+    double log_prior = compute_log_prior_joint(x, scratch.etas);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
 
     center_effects_fn(x);
-    result.mode = x;
+    for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
 
     if (store_Q) {
         dense_to_csc_lower_drop_raw(
-            H_final, n_x, SPARSE_DROP_TOL_DISPATCH,
+            scratch.H, n_x, SPARSE_DROP_TOL_DISPATCH,
             result.Q_csc_p, result.Q_csc_i, result.Q_csc_x
         );
         result.Q_csc_n = n_x;
     }
 
     return result;
+}
+
+// Convenience overload that allocates scratch locally. Safe to call from
+// non-parallel call sites only; the outer driver passes scratch through
+// when it parallelises the grid.
+template<typename ComputeEtaJoint, typename ScatterJoint,
+         typename CenterEffects, typename ComputeLogPriorJoint>
+LaplaceResult laplace_newton_solve_joint(
+    const std::vector<JointArm>& arms,
+    int n_x,
+    int max_iter, double tol, int n_threads,
+    ComputeEtaJoint compute_eta_joint,
+    ScatterJoint scatter_joint,
+    CenterEffects center_effects_fn,
+    ComputeLogPriorJoint compute_log_prior_joint,
+    const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
+    SparseCholeskySolver* shared_solver = nullptr,
+    bool store_Q = false
+) {
+    NewtonScratchJoint scratch;
+    scratch.allocate(n_x, arms);
+    std::vector<double> x_init_vec;
+    if (x_init.size() == n_x) {
+        x_init_vec.assign(x_init.begin(), x_init.end());
+    }
+    #ifdef _OPENMP
+    if (n_threads > 0) omp_set_num_threads(n_threads);
+    #endif
+    return laplace_newton_solve_joint(
+        arms, n_x, max_iter, tol, n_threads,
+        compute_eta_joint, scatter_joint, center_effects_fn,
+        compute_log_prior_joint,
+        scratch, x_init_vec, shared_solver, store_Q
+    );
 }
 
 } // namespace tulpa

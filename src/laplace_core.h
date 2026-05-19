@@ -15,9 +15,13 @@ namespace tulpa {
 // Laplace approximation core
 // ---------------------------------------------------------------------
 
-// Result structure for Laplace mode finding
+// Result structure for Laplace mode finding.
+//
+// `mode` is `std::vector<double>` rather than `Rcpp::NumericVector` so the
+// solver can populate it inside an OpenMP parallel region — Rf_allocVector
+// is not thread-safe (run_nested_laplace_grid relies on this).
 struct LaplaceResult {
-  Rcpp::NumericVector mode;     // Mode of latent field x*(theta)
+  std::vector<double> mode;     // Mode of latent field x*(theta)
   double log_det_Q;             // Log determinant of posterior precision
   double log_marginal;          // Log p(y | theta) approximation
   int n_iter;                   // Newton iterations used
@@ -36,7 +40,8 @@ struct LaplaceResult {
 };
 
 // Convert LaplaceResult to Rcpp::List. Single source of truth used by every
-// laplace_core* R export.
+// laplace_core* R export. Rcpp wraps std::vector<double> implicitly into a
+// fresh NumericVector at the boundary.
 inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
   return Rcpp::List::create(
     Rcpp::Named("mode") = result.mode,

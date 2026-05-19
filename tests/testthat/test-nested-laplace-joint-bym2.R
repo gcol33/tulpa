@@ -1,14 +1,14 @@
 # Joint BYM2 nested-Laplace smoke tests (Phase 1c).
 #
-# Outer grid is (sigma_occ, rho [, sigma_pos]) after gcol33/tulpa#18.
-# alpha = sigma_pos / sigma_occ is derived post-hoc on the joint posterior.
+# Outer grid is (sigma, rho [, alpha]) — sigma is the latent-field
+# amplitude on the reference (occ) arm and alpha is the copy coefficient
+# that scales the shared field on the second arm.
 #
-# 1. sigma_pos = 0 reduces the joint to two independent fits — beta_occ should
+# 1. alpha = 0 reduces the joint to two independent fits — beta_occ should
 #    match the single-arm binomial fit and beta_pos should match the
 #    single-arm gaussian fit (both at the best grid point), within tolerance.
 # 2. Joint fit on simulated data with a true shared spatial field recovers
-#    the per-arm betas and locates a sensible (sigma_occ, rho, sigma_pos)
-#    maximum / alpha posterior mean.
+#    the per-arm betas and locates a sensible (sigma, rho, alpha) maximum.
 
 # --------------------------------------------------------------------------- #
 # Helpers                                                                      #
@@ -70,7 +70,7 @@
 # 1. alpha = 0 decouples the second arm from the shared field                  #
 # --------------------------------------------------------------------------- #
 
-test_that("joint BYM2 with sigma_pos = 0 leaves beta_occ unchanged from single-arm", {
+test_that("joint BYM2 with alpha = 0 leaves beta_occ unchanged from single-arm", {
     sim <- .simulate_joint(N = 300, n_s = 30, alpha_true = 0.0, seed = 42)
     adj <- .chain_adj(sim$n_s)
 
@@ -97,7 +97,7 @@ test_that("joint BYM2 with sigma_pos = 0 leaves beta_occ unchanged from single-a
     fit_joint <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", sigma_pos_grid = 0.0)
+        copy = list(arm = "pos", alpha_grid = 0)
     )
     expect_s3_class(fit_joint, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit_joint$log_marginal)))
@@ -161,7 +161,7 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
         copy = list(arm = "pos",
-                    sigma_pos_grid = c(0.0, 0.3, 0.6, 1.0))
+                    alpha_grid = c(0, 0.5, 1.0, 1.5))
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))
@@ -176,9 +176,8 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
     expect_lt(abs(slope_occ - sim$truth$beta_occ[2]), 0.30)
     expect_lt(abs(slope_pos - sim$truth$beta_pos[2]), 0.30)
 
-    # alpha = sigma_pos / sigma_occ posterior mean should land near the
-    # true 1.0. Computed post-hoc from the joint posterior over
-    # (sigma_occ, sigma_pos) — see gcol33/tulpa#18.
+    # alpha posterior mean should land near the true 1.0. alpha is a
+    # direct outer-grid axis after gcol33/tulpa#22 — no post-hoc ratio.
     alpha_mean <- fit$theta_mean[["alpha"]]
     expect_lt(abs(alpha_mean - 1.0), 0.6)
 })
@@ -189,11 +188,11 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
 # --------------------------------------------------------------------------- #
 # Before the fix, post-Newton `center_effects` shifted the phi block to mean
 # zero without compensating each arm's intercept, which dragged eta off the
-# Newton mode and tanked log_lik for the gaussian copy arm. At phi =
-# sigma_pos_true the bug made sigma_pos = 0 the best cell by 500+ log units.
-# The fix: shift the per-arm intercept (first beta column) by
-# arm_sigma * d_phi_base_unit * mean(phi) so eta — and hence log_marginal —
-# is invariant under the centering.
+# Newton mode and tanked log_lik for the gaussian copy arm. At phi = true
+# noise the bug made alpha = 0 the best cell by 500+ log units. The fix:
+# shift the per-arm intercept (first beta column) by arm_sigma *
+# d_phi_base_unit * mean(phi) so eta — and hence log_marginal — is
+# invariant under the centering.
 
 test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true phi", {
     sim <- .simulate_joint(N = 300, n_s = 25,
@@ -213,42 +212,41 @@ test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true 
         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
         family = "gaussian", phi = sim$truth$sd_pos
     )
-    # True donor amplitude is sigma=0.6 in this simulator. Pin sigma_occ to
-    # the truth so the test isolates the copy-arm mode along sigma_pos —
-    # the centering-bug failure mode is on sigma_pos, not on sigma_occ.
-    sigma_occ_true <- 0.6
+    # True donor amplitude is sigma=0.6 in this simulator. Pin sigma to the
+    # truth so the test isolates the copy-arm mode along alpha — the
+    # centering-bug failure mode is on alpha, not on sigma.
+    sigma_true <- 0.6
     prior <- list(
         type = "bym2",
         n_spatial_units = adj$n_spatial_units,
         adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
         n_neighbors = adj$n_neighbors, scale_factor = 1.0,
-        sigma_grid = sigma_occ_true,
+        sigma_grid = sigma_true,
         rho_grid   = c(0.5, 0.7, 0.9)
     )
 
-    sigma_pos_grid <- c(0.0, 0.3, 0.6, 0.9)
+    alpha_grid <- c(0, 0.5, 1.0, 1.5)
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
-        copy = list(arm = "pos", sigma_pos_grid = sigma_pos_grid)
+        copy = list(arm = "pos", alpha_grid = alpha_grid)
     )
 
-    # alpha = sigma_pos / sigma_occ; sigma_occ pinned at 0.6, alpha_true = 1.
-    # The centering-bug regression is about which level of the user-supplied
-    # grid scores highest — sigma_pos = 0 was the pathological winner.
-    # Restrict to the original grid so var-of-means / alpha-consistency
-    # refinement cells (gcol33/tulpa#21) at off-grid sigma_pos values don't
-    # mask the bug being tested here.
-    df <- data.frame(sigma_pos = fit$theta_grid[, "sigma_pos"],
+    # sigma pinned at 0.6, alpha_true = 1. The centering-bug regression is
+    # about which level of the user-supplied grid scores highest —
+    # alpha = 0 was the pathological winner. Restrict to the original grid
+    # so var-of-means refinement cells (gcol33/tulpa#21) at off-grid alpha
+    # values don't mask the bug being tested here.
+    df <- data.frame(alpha = fit$theta_grid[, "alpha"],
                      log_marginal = fit$log_marginal)
-    df_grid <- df[df$sigma_pos %in% sigma_pos_grid, , drop = FALSE]
-    best_sp <- df_grid$sigma_pos[which.max(df_grid$log_marginal)]
-    expect_equal(best_sp, sigma_occ_true)
+    df_grid <- df[df$alpha %in% alpha_grid, , drop = FALSE]
+    best_a <- df_grid$alpha[which.max(df_grid$log_marginal)]
+    expect_equal(best_a, 1.0)
 
-    max_by_sp <- vapply(sigma_pos_grid,
-                        function(sp) max(df$log_marginal[df$sigma_pos == sp]),
-                        numeric(1))
-    # sigma_pos = 0 must be the worst cell at the true noise scale (this
-    # fails catastrophically before the fix).
-    expect_lt(max_by_sp[1], max_by_sp[3] - 50)
+    max_by_a <- vapply(alpha_grid,
+                       function(a) max(df$log_marginal[df$alpha == a]),
+                       numeric(1))
+    # alpha = 0 must score far worse than alpha = 1 at the true noise
+    # scale (this fails catastrophically before the centering fix).
+    expect_lt(max_by_a[1], max_by_a[3] - 50)
 })

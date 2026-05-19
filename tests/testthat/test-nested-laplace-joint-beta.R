@@ -89,7 +89,7 @@ test_that("joint BYM2 with beta-positive arm runs and recovers betas", {
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
         copy = list(arm = "pos",
-                    sigma_pos_grid = c(0.0, 0.4, 0.6, 0.8))
+                    alpha_grid = c(0, 0.5, 1.0, 1.5))
     )
 
     expect_s3_class(fit, "tulpa_nested_laplace_joint")

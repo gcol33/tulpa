@@ -57,7 +57,7 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
     y2 <- rnorm(N2, eta2, 0.5)
 
     sigma_grid <- c(0.3, 0.6, 1.0)
-    sigma_pos_grid <- c(0.5, 1.0, 1.5)
+    alpha_grid <- c(0.5, 1.0, 1.5)
 
     arm_occ <- list(
         y = as.numeric(y1), n_trials = rep(1L, N1), X = X1,
@@ -83,7 +83,7 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
     fit_legacy <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior_single,
-        copy = list(arm = "pos", sigma_pos_grid = sigma_pos_grid)
+        copy = list(arm = "pos", alpha_grid = alpha_grid)
     )
 
     # Multi-block path (length-1 ICAR block, copy on the spatial block).
@@ -100,12 +100,12 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
     fit_multi <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior_multi,
-        copy = list(block = 1, arm = "pos", sigma_pos_grid = sigma_pos_grid)
+        copy = list(block = 1, arm = "pos", alpha_grid = alpha_grid)
     )
 
-    # Both paths build a (sigma_occ x sigma_pos) Cartesian grid of the same
-    # size. The legacy build_grids varies sigma fastest then sigma_pos; the
-    # multi build_grids matches that ordering (expand.grid varies first arg
+    # Both paths build a (sigma x alpha) Cartesian grid of the same size.
+    # The legacy build_grids varies sigma fastest then alpha; the multi
+    # build_grids matches that ordering (expand.grid varies first arg
     # fastest). Reordering would still pass via key matching, but a direct
     # comparison should align.
     expect_equal(length(fit_legacy$log_marginal),
@@ -113,7 +113,7 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
 
     # Bit-exact log_marginal up to FP reordering noise. The two code paths
     # compose the same operations (per-arm scatter, ICAR prior at tau=1,
-    # arm_scale = sigma_occ/sigma_pos, no centering on theta) in the same
+    # arm_scale = sigma/(alpha*sigma), no centering on theta) in the same
     # order, so the cell-by-cell difference should be at the level of
     # accumulated rounding, well under 1e-10.
     expect_lt(max(abs(fit_legacy$log_marginal - fit_multi$log_marginal)),
@@ -126,12 +126,14 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
     # path doesn't have block_moments (single-block keeps just theta_mean).
     expect_length(fit_multi$block_moments, 1L)
     expect_named(fit_multi$block_moments[[1]]$mean,
-                 c("sigma_occ", "sigma_pos"))
-    # Alpha moments computed identically on both paths from sigma_pos /
-    # sigma_occ over the joint grid.
-    expect_true("alpha" %in% names(fit_multi$theta_mean))
+                 c("sigma", "alpha"))
+    # alpha is a direct outer-grid axis; theta_mean carries it from both
+    # paths and the two should agree at FP rounding. The multi-block path
+    # prefixes per-block axes (`b<N>.alpha`); the legacy single-block path
+    # uses the bare name.
+    expect_true("b1.alpha" %in% names(fit_multi$theta_mean))
     expect_lt(abs(fit_legacy$theta_mean[["alpha"]] -
-                  fit_multi$theta_mean[["alpha"]]), 1e-8)
+                  fit_multi$theta_mean[["b1.alpha"]]), 1e-8)
 })
 
 # --------------------------------------------------------------------------- #
@@ -240,7 +242,7 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
             responses = list(occ = arm_occ, pos = arm_pos),
             prior = prior,
             copy = list(block = 1L, arm = "pos",
-                        sigma_pos_grid = c(0.6, 1.0, 1.5)),
+                        alpha_grid = c(0.5, 1.0, 1.5)),
             max_iter = 30L, tol = 1e-5
         )
     )
@@ -252,22 +254,23 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
     # Each block reports the expected axis names (after stripping the
     # `b<N>.` prefix in .joint_posterior_moments_multi).
     expect_named(fit$block_moments[[1L]]$mean,
-                 c("sigma_occ", "sigma_pos", "rho"))
+                 c("sigma", "alpha", "rho"))
     expect_named(fit$block_moments[[2L]]$mean, c("tau", "rho"))
     expect_named(fit$block_moments[[3L]]$mean, "sigma")
 
     # Posterior moments are finite and sit inside the user grid extents.
     bm1 <- fit$block_moments[[1L]]$mean
-    expect_true(bm1[["sigma_occ"]] > 0 && bm1[["sigma_occ"]] < 1.5)
-    expect_true(bm1[["sigma_pos"]] > 0 && bm1[["sigma_pos"]] < 2.0)
-    expect_true(bm1[["rho"]]       >= 0.5 && bm1[["rho"]] <= 0.85)
+    expect_true(bm1[["sigma"]] > 0 && bm1[["sigma"]] < 1.5)
+    expect_true(bm1[["alpha"]] >= 0.5 && bm1[["alpha"]] <= 1.5)
+    expect_true(bm1[["rho"]]   >= 0.5 && bm1[["rho"]] <= 0.85)
     bm2 <- fit$block_moments[[2L]]$mean
     expect_true(bm2[["tau"]] >= 3 && bm2[["tau"]] <= 20)
     bm3 <- fit$block_moments[[3L]]$mean
     expect_true(bm3[["sigma"]] >= 0.2 && bm3[["sigma"]] <= 0.5)
 
-    # alpha = sigma_pos / sigma_occ attached on the copy block.
-    expect_true("alpha" %in% names(fit$theta_mean))
-    expect_true(is.finite(fit$theta_mean[["alpha"]]))
-    expect_true(fit$theta_mean[["alpha"]] > 0)
+    # alpha is a direct outer-grid axis attached on the copy block; the
+    # multi-block path exposes it as `b1.alpha` in theta_mean.
+    expect_true("b1.alpha" %in% names(fit$theta_mean))
+    expect_true(is.finite(fit$theta_mean[["b1.alpha"]]))
+    expect_true(fit$theta_mean[["b1.alpha"]] > 0)
 })

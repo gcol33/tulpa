@@ -182,7 +182,10 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     bool                             store_modes,
     const Rcpp::NumericVector&       x_init,
     bool                             store_Q = false,
-    std::function<void(int)>         prep_at_grid = nullptr
+    std::function<void(int)>         prep_at_grid = nullptr,
+    int                              n_threads_outer = 1,
+    const std::vector<int>&          tile_ids = std::vector<int>(),
+    const std::vector<int>&          tile_pilot_cells = std::vector<int>()
 ) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
@@ -194,17 +197,28 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
         n_x = std::max(n_x, b.start + b.size);
     }
 
-    SparseCholeskySolver shared_solver;
+    // Per-outer-thread Newton scratch + CHOLMOD solver pool. The solver pool
+    // lives inside run_nested_laplace_grid (one per outer thread); scratch
+    // pool lives here because it's joint-shaped (per-arm etas).
+    int n_outer = std::max(1, n_threads_outer);
+    std::vector<NewtonScratchJoint> scratch_pool(n_outer);
+    for (auto& s : scratch_pool) s.allocate(n_x, arms);
 
-    auto solve_at_theta = [&](int k_grid, const Rcpp::NumericVector& prev_mode)
-        -> LaplaceResult
+    // Force inner OpenMP to single-thread when the outer grid is parallel —
+    // see run_multi_block_nested_laplace for the rationale.
+    int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
+
+    auto solve_at_theta = [&](int k_grid,
+                              const std::vector<double>& prev_mode,
+                              SparseCholeskySolver* shared_solver) -> LaplaceResult
     {
         if (prep_at_grid) prep_at_grid(k_grid);
         for (const auto& b : blocks) {
             if (b.prep && !b.prep(k_grid)) {
                 LaplaceResult bad;
-                bad.mode = (prev_mode.size() == n_x) ? prev_mode :
-                           Rcpp::NumericVector(n_x, 0.0);
+                bad.mode = (static_cast<int>(prev_mode.size()) == n_x)
+                           ? prev_mode
+                           : std::vector<double>(n_x, 0.0);
                 bad.log_marginal = -std::numeric_limits<double>::infinity();
                 bad.n_iter = 0;
                 bad.converged = false;
@@ -244,7 +258,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
 
                 #ifdef _OPENMP
                 #pragma omp parallel for schedule(static) \
-                    num_threads(n_threads > 0 ? n_threads : 1)
+                    num_threads(n_threads_inner_eff > 0 ? n_threads_inner_eff : 1) \
+                    if(n_threads_inner_eff > 1)
                 #endif
                 for (int i = 0; i < N_k; i++) {
                     double e = 0.0;
@@ -311,17 +326,25 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
             return lp;
         };
 
+        int tid;
+        #ifdef _OPENMP
+        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
+        #else
+        tid = 0;
+        #endif
+
         return laplace_newton_solve_joint(
             arms, n_x,
-            max_iter, tol, n_threads,
+            max_iter, tol, n_threads_inner_eff,
             compute_eta_joint, scatter_joint, center_joint, log_prior_joint,
-            prev_mode, &shared_solver,
+            scratch_pool[tid], prev_mode, shared_solver,
             store_Q
         );
     };
 
     return run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, store_modes
+        n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
+        tile_ids, tile_pilot_cells
     );
 }
 

@@ -5,8 +5,19 @@
 //
 // At most one block in the list can be designated the "copy block" (first
 // ship: must be a spatial block -- icar / bym2 / car_proper). The copy block
-// uses INLA `copy=` semantics: donor arms see sigma_occ, the copy arm sees
-// sigma_pos. Other blocks are shared identically across arms.
+// uses INLA `copy=` semantics: donor arms see one amplitude axis, the copy
+// arm sees a second. Other blocks are shared identically across arms.
+//
+// The R-side primary spec is (sigma, alpha) (gcol33/tulpa#22): sigma is the
+// donor amplitude axis and alpha is the direct copy coefficient, so the copy
+// arm's field amplitude is `alpha * sigma`. The R parser materializes the
+// per-arm scaling by passing `sigma` in the donor column and `alpha * sigma`
+// in the copy column of theta_grid. This kernel only sees two arm-scale
+// columns (donor and copy) and is parameterization-agnostic: any R-side
+// reparameterization that yields per-arm amplitudes on the same two columns
+// works without changing the kernel. The legacy convention was to grid the
+// two arms' sigmas directly; the new convention plus the R-side materialize
+// preserves the kernel ABI.
 //
 // Block-spec input format (R side wraps this into the .NL_REGISTRY shape):
 //   blocks_spec[[b]] = list(
@@ -29,11 +40,13 @@
 //       ar1       : (tau, rho)
 //       iid       : (sigma,)
 //   * Copy block (spatial only; first ship restriction):
-//       icar      : (sigma_occ, sigma_pos)
-//       bym2      : (sigma_occ, sigma_pos, rho)
-//       car_proper: (sigma_occ, sigma_pos, rho_car)
-// The R-side parser is responsible for building theta_grid with the correct
-// per-block layout; this kernel just reads the axes by offset.
+//       icar      : (sigma_donor, sigma_copy)
+//       bym2      : (sigma_donor, sigma_copy, rho)
+//       car_proper: (sigma_donor, sigma_copy, rho_car)
+// where the R side fills `sigma_donor = sigma`, `sigma_copy = alpha * sigma`
+// before calling. The R-side parser is responsible for building theta_grid
+// with the correct per-block layout; this kernel just reads the axes by
+// offset.
 
 #include "laplace_core.h"
 #include "laplace_re_priors.h"
@@ -78,17 +91,20 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
     };
 }
 
-// Per-arm sigma dispatch for a copy block. axis_sigma_occ and axis_sigma_pos
-// are column indices into theta_grid for this block's sigma_occ and sigma_pos
-// axes respectively (set up by the R-side parser).
+// Per-arm amplitude dispatch for a copy block. axis_donor and axis_copy are
+// column indices into theta_grid for this block's donor-arm and copy-arm
+// amplitude axes respectively (set up by the R-side parser). Under the
+// (sigma, alpha) reparameterization (gcol33/tulpa#22), the R side fills
+// theta_grid[, axis_donor] = sigma and theta_grid[, axis_copy] = alpha*sigma
+// before calling this kernel.
 inline std::function<double(int, int)> make_copy_arm_scale_fn(
-    int copy_arm, int axis_sigma_occ, int axis_sigma_pos,
+    int copy_arm, int axis_donor, int axis_copy,
     const Rcpp::NumericMatrix& theta_grid
 ) {
-    return [copy_arm, axis_sigma_occ, axis_sigma_pos, theta_grid](
+    return [copy_arm, axis_donor, axis_copy, theta_grid](
         int k_arm, int k_grid) -> double {
-        return (k_arm == copy_arm) ? theta_grid(k_grid, axis_sigma_pos)
-                                   : theta_grid(k_grid, axis_sigma_occ);
+        return (k_arm == copy_arm) ? theta_grid(k_grid, axis_copy)
+                                   : theta_grid(k_grid, axis_donor);
     };
 }
 
@@ -97,8 +113,9 @@ inline std::function<double(int, int)> make_copy_arm_scale_fn(
 // sub-vector(s) to the joint latent vector layout.
 //
 // `is_copy_block` toggles the copy-block parameterization for spatial types:
-//   * unit-precision prior (tau = 1) with arm_scale carrying sigma_occ /
-//     sigma_pos
+//   * unit-precision prior (tau = 1) with arm_scale carrying the per-arm
+//     amplitudes (donor: sigma, copy: alpha * sigma under the (sigma, alpha)
+//     reparam materialized R-side; see file header)
 //   * 2 (icar) or 3 (bym2, car_proper) per-block axes
 // For non-copy blocks, the standard single-arm parameterization is used
 // (tau on the prior, no arm_scale, axes as in the single-arm registry).
@@ -140,7 +157,7 @@ int build_joint_blocks_from_spec(
                                             "spatial_idx", block_index);
 
         if (is_copy_block) {
-            require_axes(2);  // (sigma_occ, sigma_pos)
+            require_axes(2);  // (sigma_donor, sigma_copy)
             block.d_fac = [](int) -> double { return 1.0; };
             block.arm_scale = make_copy_arm_scale_fn(
                 copy_arm, axis0, axis0 + 1, theta_grid);
@@ -200,7 +217,7 @@ int build_joint_blocks_from_spec(
         std::function<double(int)>      d_fac_theta_fn;
 
         if (is_copy_block) {
-            require_axes(3);  // (sigma_occ, sigma_pos, rho)
+            require_axes(3);  // (sigma_donor, sigma_copy, rho)
             arm_scale_fn = make_copy_arm_scale_fn(
                 copy_arm, axis0, axis0 + 1, theta_grid);
             int axis_rho = axis0 + 2;
@@ -315,7 +332,7 @@ int build_joint_blocks_from_spec(
                                             "spatial_idx", block_index);
 
         if (is_copy_block) {
-            require_axes(3);  // (sigma_occ, sigma_pos, rho_car)
+            require_axes(3);  // (sigma_donor, sigma_copy, rho_car)
             block.d_fac = [](int) -> double { return 1.0; };
             block.arm_scale = make_copy_arm_scale_fn(
                 copy_arm, axis0, axis0 + 1, theta_grid);
@@ -572,7 +589,10 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     int                 n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool                store_Q = false,
-    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue,
+    int                 n_threads_outer = 1,
+    Rcpp::Nullable<Rcpp::IntegerVector> tile_ids = R_NilValue,
+    Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells = R_NilValue
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -626,12 +646,42 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
     }
 
+    std::vector<int> tile_ids_vec;
+    if (tile_ids.isNotNull()) {
+        Rcpp::IntegerVector iv(tile_ids);
+        // Empty IntegerVector is interpreted as "no tiles" and falls back
+        // to Phase 1 (single-tier) behaviour inside run_nested_laplace_grid.
+        if (iv.size() > 0) {
+            if (iv.size() != n_grid) {
+                Rcpp::stop("tile_ids must have length n_grid (%d), got %d.",
+                           n_grid, static_cast<int>(iv.size()));
+            }
+            tile_ids_vec.assign(iv.begin(), iv.end());
+        }
+    }
+    std::vector<int> tile_pilot_cells_vec;
+    if (tile_pilot_cells.isNotNull()) {
+        Rcpp::IntegerVector iv(tile_pilot_cells);
+        if (iv.size() > 0) {
+            tile_pilot_cells_vec.assign(iv.begin(), iv.end());
+            for (int k : tile_pilot_cells_vec) {
+                if (k < 0 || k >= n_grid) {
+                    Rcpp::stop("tile_pilot_cells entry %d out of range [0, %d).",
+                               k, n_grid);
+                }
+            }
+        }
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads,
         /*store_modes=*/true, x_init,
         store_Q,
-        prep
+        prep,
+        n_threads_outer,
+        tile_ids_vec,
+        tile_pilot_cells_vec
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
