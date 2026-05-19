@@ -59,7 +59,9 @@ Rcpp::List cpp_spde_laplace_gradient(
         [&](const tulpa::LaplaceResult& res) { inner_result = res; }
     );
 
-    // Compute gradient via implicit differentiation
+    // Compute gradient via implicit differentiation. Both sides now use
+    // std::vector<double> for the mode (see laplace_core.h on the parallel-
+    // safety motivation), so no wrap copy is needed here.
     tulpa::ImplicitDiffResult grad = tulpa::spde_implicit_gradient(
         inner_result.mode, y, n_trials, X, N, p, n_mesh, mesh_start,
         a_rows, qb, range, sigma_spde, nu,

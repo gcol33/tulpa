@@ -34,8 +34,13 @@ struct ImplicitDiffResult {
     double log_marginal;
 };
 
+// `mode` is `std::vector<double>` to match LaplaceResult::mode directly
+// (laplace_core.h: that type was chosen so the inner solver can populate
+// the mode inside OpenMP parallel regions, where Rf_allocVector is not
+// thread-safe). Taking the same type here avoids a wrap copy at the call
+// site and makes the function safe to invoke from those regions later.
 inline ImplicitDiffResult spde_implicit_gradient(
-    const Rcpp::NumericVector& mode,
+    const std::vector<double>& mode,
     const Rcpp::NumericVector& y,
     const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericMatrix& X,
