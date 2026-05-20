@@ -282,7 +282,8 @@ Rcpp::List cpp_nested_laplace_st_icar_ar1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_icar_rw1(
@@ -298,7 +299,8 @@ Rcpp::List cpp_nested_laplace_st_icar_rw1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_icar_rw2(
@@ -314,7 +316,8 @@ Rcpp::List cpp_nested_laplace_st_icar_rw2(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
@@ -331,7 +334,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_car_proper_rw2(
@@ -348,7 +352,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper_rw2(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_car_proper_ar1(
@@ -366,7 +371,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper_ar1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_bym2_rw1(
@@ -384,7 +390,8 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_bym2_rw2(
@@ -402,7 +409,8 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw2(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_bym2_ar1(
@@ -421,7 +429,8 @@ Rcpp::List cpp_nested_laplace_st_bym2_ar1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_hsgp_rw1(
@@ -437,7 +446,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp_rw1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_hsgp_rw2(
@@ -453,7 +463,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp_rw2(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_hsgp_ar1(
@@ -470,7 +481,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp_ar1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_nngp_rw1(
@@ -488,7 +500,8 @@ Rcpp::List cpp_nested_laplace_st_nngp_rw1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_nngp_rw2(
@@ -506,7 +519,8 @@ Rcpp::List cpp_nested_laplace_st_nngp_rw2(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_st_nngp_ar1(
@@ -525,7 +539,8 @@ Rcpp::List cpp_nested_laplace_st_nngp_ar1(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    bool force_sparse = false
 );
 
 Rcpp::List cpp_nested_laplace_spde(

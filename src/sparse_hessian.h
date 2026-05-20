@@ -185,7 +185,7 @@ LaplaceResult laplace_newton_solve_sparse(
         std::vector<double> delta(n_x, 0.0);
         bool solve_ok = false;
 
-        if (solver.factorize(&H_cholmod)) {
+        if (solver.factorize_with_ridge_retry(&H_cholmod)) {
             solver.solve(grad.data(), delta.data(), n_x);
             solve_ok = true;
             for (int j = 0; j < n_x; j++) {
@@ -234,7 +234,7 @@ LaplaceResult laplace_newton_solve_sparse(
 
     cholmod_sparse H_final = H_builder.as_cholmod(&solver.common());
     if (!solver.analyzed()) solver.analyze(&H_final);
-    if (solver.factorize(&H_final)) {
+    if (solver.factorize_with_ridge_retry(&H_final)) {
         result.log_det_Q = solver.log_determinant();
     }
 
