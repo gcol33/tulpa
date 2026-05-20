@@ -29,10 +29,14 @@
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
+#include "nested_laplace_joint_core.h"      // ParsedArm / JointArm (single-arm joint setup)
+#include "nested_laplace_joint_multi.h"     // run_multi_block_nested_laplace_joint_sparse_impl
 #include "nested_laplace_multi.h"  // accumulate_latent_cross_terms, run_multi_block_nested_laplace
 #include "hmc_car_proper.h"
 #include "gpu_nngp_laplace.h"
 #include "hmc_hsgp_kernels.h"  // Eigen-free spectral density only
+#include "hsgp_block_factory.h"             // make_hsgp_block
+#include "nngp_block_factory.h"             // make_nngp_block
 #include "sparse_hessian.h"     // SparseHessianBuilder + laplace_newton_solve_sparse
 #include <Rcpp.h>
 #include <algorithm>
@@ -495,127 +499,82 @@ Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false
 ) {
-    int n_grid = sigma2_grid.size();
+    const int n_grid = sigma2_grid.size();
     if (phi_gp_grid.size() != n_grid)
         Rcpp::stop("sigma2_grid and phi_gp_grid must have the same length");
-    int N = y.size();
-    int p = X.ncol();
+    const int N = y.size();
+    const int p = X.ncol();
     if (spatial_idx.size() != N)
         Rcpp::stop("length(spatial_idx) must equal length(y)");
     if (coords.nrow() != n_spatial)
         Rcpp::stop("nrow(coords) must equal n_spatial");
-    int n_x = p + n_re_groups + n_spatial;
-    int gp_start = p + n_re_groups;
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
 
-    // Per-thread NewtonScratch pool. Outer-grid parallelism for NNGP is
-    // gated behind GPU batching, not OpenMP — keep n_outer = 1 here.
-    const int n_outer = 1;
-    std::vector<tulpa::NewtonScratch> scratch_pool(n_outer);
-    for (auto& s : scratch_pool) s.allocate(n_x, N);
+    // ---- Single-arm joint setup ----
+    // Layout: [beta (p), re (n_re_groups), w_nngp (n_spatial)]. NNGP is
+    // INDEXED_SINGLE — each obs maps to one spatial unit via spatial_idx.
+    // The prior precision Λ = (I-A)' D⁻¹ (I-A) is NN_K-shaped sparse and
+    // is applied by make_nngp_block's add_prior_sparse using
+    // apply_nngp_full_prior_sparse.
+    const int n_x = p + n_re_groups + n_spatial;
+    const int gp_start = p + n_re_groups;
 
-    auto solve_at_theta = [&](int k,
-                              const std::vector<double>& prev_mode,
-                              tulpa::SparseCholeskySolver* solver)
-        -> tulpa::LaplaceResult
+    std::vector<tulpa::ParsedArm> parsed(1);
     {
-        double sigma2_k = sigma2_grid[k];
-        double phi_gp_k = phi_gp_grid[k];
+        tulpa::ParsedArm& pa = parsed[0];
+        pa.X           = X;
+        pa.re_idx      = re_idx;
+        pa.spatial_idx = spatial_idx;
+        pa.p           = p;
+        pa.n_re_groups = n_re_groups;
+        pa.sigma_re    = sigma_re;
+        pa.beta_start  = 0;
+        pa.re_start    = p;
+        pa.tau_re      = (n_re_groups > 0)
+                         ? 1.0 / (sigma_re * sigma_re + 1e-10)
+                         : 0.0;
+    }
 
-        auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                int s = spatial_idx[i] - 1;
-                if (s >= 0 && s < n_spatial) eta[i] += x[gp_start + s];
-            }
-        };
+    std::vector<tulpa::JointArm> arms(1);
+    {
+        tulpa::JointArm& a = arms[0];
+        a.y        = y;
+        a.n_trials = n;
+        a.family   = family;
+        a.phi      = phi;
+        a.N        = N;
+    }
 
-        auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
-                           tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            tulpa::scatter_obs_grad_hess_base(y, n, X, re_idx, N, p, n_re_groups,
-                                                eta, family, phi, grad, H, n_threads);
-            for (int i = 0; i < N; i++) {
-                int s = spatial_idx[i] - 1;
-                if (s < 0 || s >= n_spatial) continue;
-                auto gh = tulpa::grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-                int gp_idx = gp_start + s;
-                grad[gp_idx] += gh.grad;
-                H[gp_idx][gp_idx] += gh.neg_hess;
-                for (int j = 0; j < p; j++) {
-                    H[gp_idx][j] += gh.neg_hess * X(i, j);
-                    H[j][gp_idx] += gh.neg_hess * X(i, j);
-                }
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) {
-                        H[p + g][gp_idx] += gh.neg_hess;
-                        H[gp_idx][p + g] += gh.neg_hess;
-                    }
-                }
-            }
-            // NNGP prior: full precision Λ = (I-A)' D⁻¹ (I-A) — not diagonal.
-            // Diagonal-on-w gives wrong w-mode + wrong field covariance on
-            // smooth latent fields; full scatter restores pointwise recovery.
-            std::vector<double> w(n_spatial);
-            for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-            std::vector<double> cm, cv, nngp_alpha;
-            bool gpu_used;
-            tulpa::batch_nngp_scatter(w, n_spatial, nn, sigma2_k, phi_gp_k, cov_type,
-                                        coords, nn_idx, nn_dist, nn_order,
-                                        cm, cv, gpu_used, &nngp_alpha);
-            tulpa::apply_nngp_full_prior_dense(grad, H, w, nngp_alpha, cv,
-                                                 nn_idx, nn_order,
-                                                 n_spatial, nn, gp_start);
-            tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
-        };
+    // ---- theta_grid: (sigma2, phi_gp). ----
+    Rcpp::NumericMatrix theta_grid(n_grid, 2);
+    for (int k = 0; k < n_grid; k++) {
+        theta_grid(k, 0) = sigma2_grid[k];
+        theta_grid(k, 1) = phi_gp_grid[k];
+    }
 
-        auto center = [](Rcpp::NumericVector&) {};
+    Rcpp::List spatial_idx_per_arm = Rcpp::List::create(spatial_idx);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
 
-        auto log_prior = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector&) {
-            double lp = tulpa::compute_log_prior_re(x, p, n_re_groups, tau_re);
-            std::vector<double> w(n_spatial);
-            for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-            std::vector<double> cm, cv;
-            bool gpu_used;
-            tulpa::batch_nngp_scatter(w, n_spatial, nn, sigma2_k, phi_gp_k, cov_type,
-                                        coords, nn_idx, nn_dist, nn_order,
-                                        cm, cv, gpu_used);
-            for (int s = 0; s < n_spatial; s++) {
-                double resid = w[s] - cm[s];
-                lp += -0.5 * std::log(2.0 * M_PI * cv[s]) -
-                       0.5 * resid * resid / cv[s];
-            }
-            return lp;
-        };
-
-        int tid;
-        #ifdef _OPENMP
-        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
-        #else
-        tid = 0;
-        #endif
-        return tulpa::laplace_newton_solve(
-            y, n, family, phi, N, n_x,
-            max_iter, tol, n_threads,
-            compute_eta, scatter, center, log_prior,
-            scratch_pool[tid], prev_mode, solver,
-            store_Q
-        );
-    };
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_nngp_block(
+        /*start=*/gp_start, /*n_spatial=*/n_spatial,
+        spatial_idx_per_arm, n_obs_per_arm,
+        /*n_arms=*/1, /*block_index=*/0,
+        nn, cov_type, coords, nn_idx, nn_dist, nn_order,
+        /*axis_sigma2=*/0, /*axis_phi_gp=*/1, theta_grid
+    ));
 
     Rcpp::NumericVector x_init;
-    if (x_init_nullable.isNotNull()) x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
+    if (x_init_nullable.isNotNull())
+        x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
-    Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true, n_outer
+    Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
+        n_grid, arms, parsed, blocks, n_x,
+        max_iter, tol, n_threads,
+        /*store_modes=*/true, x_init, store_Q,
+        /*prep_at_grid=*/nullptr,
+        /*tile_ids=*/std::vector<int>(),
+        /*tile_pilot_cells=*/std::vector<int>(),
+        /*prune_tol=*/0.0
     );
     out["sigma2_grid"] = sigma2_grid;
     out["phi_gp_grid"] = phi_gp_grid;
@@ -646,137 +605,86 @@ Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false
 ) {
-    int n_grid = sigma2_grid.size();
+    const int n_grid = sigma2_grid.size();
     if (lengthscale_grid.size() != n_grid)
         Rcpp::stop("sigma2_grid and lengthscale_grid must have the same length");
-    int N = y.size();
-    int p = X.ncol();
-    int M = phi_basis.ncol();
+    const int N = y.size();
+    const int p = X.ncol();
+    const int M = phi_basis.ncol();
     if (phi_basis.nrow() != N)
         Rcpp::stop("phi_basis must have N rows (one per observation)");
     if (lambda_eig.size() != M)
         Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
-    int n_x = p + n_re_groups + M;
-    int beta_gp_start = p + n_re_groups;
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
 
-    // Per-thread NewtonScratch pool. omp_get_thread_num() returns 0 outside
-    // parallel regions so serial callers correctly land on scratch_pool[0].
-    // No outer-grid parallelism is exposed at this kernel yet (HSGP is a
-    // small-M problem; the joint multi-block path is where the tulpaObs win
-    // lives) — keep n_outer hardcoded at 1 here.
-    const int n_outer = 1;
-    std::vector<tulpa::NewtonScratch> scratch_pool(n_outer);
-    for (auto& s : scratch_pool) s.allocate(n_x, N);
+    // ---- Single-arm joint setup ----
+    // Layout: [beta (p), re (n_re_groups), beta_gp (M)]. The HSGP block is
+    // DENSE_BASIS — every obs touches every basis coefficient via
+    // Phi[i, j] * sqrt(S_j) — so the LatentBlock factory exposes basis_eval
+    // and the joint sparse impl handles the pattern and scatter via the
+    // unified path.
+    const int n_x = p + n_re_groups + M;
+    const int beta_gp_start = p + n_re_groups;
 
-    auto solve_at_theta = [&](int k,
-                              const std::vector<double>& prev_mode,
-                              tulpa::SparseCholeskySolver* solver)
-        -> tulpa::LaplaceResult
+    std::vector<tulpa::ParsedArm> parsed(1);
     {
-        double sigma2_k = sigma2_grid[k];
-        double ell_k = lengthscale_grid[k];
+        tulpa::ParsedArm& pa = parsed[0];
+        pa.X           = X;
+        pa.re_idx      = re_idx;
+        pa.spatial_idx = Rcpp::IntegerVector(N, 0);  // unused for DENSE_BASIS
+        pa.p           = p;
+        pa.n_re_groups = n_re_groups;
+        pa.sigma_re    = sigma_re;
+        pa.beta_start  = 0;
+        pa.re_start    = p;
+        pa.tau_re      = (n_re_groups > 0)
+                         ? 1.0 / (sigma_re * sigma_re + 1e-10)
+                         : 0.0;
+    }
 
-        std::vector<double> sqrt_S(M);
-        for (int j = 0; j < M; j++) {
-            double S = tulpa_hsgp::spectral_density_se(lambda_eig[j], sigma2_k, ell_k);
-            sqrt_S[j] = std::sqrt(std::max(S, 1e-30));
-        }
+    std::vector<tulpa::JointArm> arms(1);
+    {
+        tulpa::JointArm& a = arms[0];
+        a.y        = y;
+        a.n_trials = n;
+        a.family   = family;
+        a.phi      = phi;
+        a.N        = N;
+    }
 
-        auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                double e = 0.0;
-                for (int j = 0; j < p; j++) e += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) e += x[p + g];
-                }
-                for (int j = 0; j < M; j++) {
-                    e += phi_basis(i, j) * sqrt_S[j] * x[beta_gp_start + j];
-                }
-                eta[i] = e;
-            }
-        };
+    // ---- theta_grid: (log_sigma2, log_lengthscale). The factory works in log
+    // space because PC priors on (sigma2, ell) are typically applied in log
+    // space upstream. ----
+    Rcpp::NumericMatrix theta_grid(n_grid, 2);
+    for (int k = 0; k < n_grid; k++) {
+        theta_grid(k, 0) = std::log(sigma2_grid[k]);
+        theta_grid(k, 1) = std::log(lengthscale_grid[k]);
+    }
 
-        auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
-                           tulpa::DenseVec& grad, tulpa::DenseMat& H) {
-            tulpa::scatter_obs_grad_hess_base(y, n, X, re_idx, N, p, n_re_groups,
-                                                eta, family, phi, grad, H, n_threads);
-            for (int i = 0; i < N; i++) {
-                auto gh = tulpa::grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-                for (int j = 0; j < M; j++) {
-                    double bij = phi_basis(i, j) * sqrt_S[j];
-                    int idx_j = beta_gp_start + j;
-                    grad[idx_j] += gh.grad * bij;
-                    H[idx_j][idx_j] += gh.neg_hess * bij * bij;
-                    for (int kk = j + 1; kk < M; kk++) {
-                        double bik = phi_basis(i, kk) * sqrt_S[kk];
-                        double cross = gh.neg_hess * bij * bik;
-                        H[idx_j][beta_gp_start + kk] += cross;
-                        H[beta_gp_start + kk][idx_j] += cross;
-                    }
-                    for (int jj = 0; jj < p; jj++) {
-                        double cross = gh.neg_hess * bij * X(i, jj);
-                        H[idx_j][jj] += cross;
-                        H[jj][idx_j] += cross;
-                    }
-                    if (n_re_groups > 0) {
-                        int g = (int)re_idx[i] - 1;
-                        if (g >= 0 && g < n_re_groups) {
-                            double cross = gh.neg_hess * bij;
-                            H[idx_j][p + g] += cross;
-                            H[p + g][idx_j] += cross;
-                        }
-                    }
-                }
-            }
-            // beta_gp prior N(0, I): grad -= beta_gp; H_diag += 1.
-            for (int j = 0; j < M; j++) {
-                int idx = beta_gp_start + j;
-                grad[idx] -= x[idx];
-                H[idx][idx] += 1.0;
-            }
-            tulpa::add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
-        };
+    Rcpp::List phi_per_arm = Rcpp::List::create(phi_basis);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
 
-        auto center = [](Rcpp::NumericVector&) {};
-
-        auto log_prior = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector&) {
-            double lp = tulpa::compute_log_prior_re(x, p, n_re_groups, tau_re);
-            double q = 0.0;
-            for (int j = 0; j < M; j++) {
-                double b = x[beta_gp_start + j];
-                q += b * b;
-            }
-            lp += -0.5 * q - 0.5 * M * std::log(2.0 * M_PI);
-            return lp;
-        };
-
-        int tid;
-        #ifdef _OPENMP
-        tid = omp_in_parallel() ? omp_get_thread_num() : 0;
-        #else
-        tid = 0;
-        #endif
-        return tulpa::laplace_newton_solve(
-            y, n, family, phi, N, n_x,
-            max_iter, tol, n_threads,
-            compute_eta, scatter, center, log_prior,
-            scratch_pool[tid], prev_mode, solver,
-            store_Q
-        );
-    };
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_hsgp_block(
+        /*start=*/beta_gp_start, /*m_total=*/M,
+        phi_per_arm, n_obs_per_arm, /*n_arms=*/1, /*block_index=*/0,
+        lambda_eig,
+        /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid
+    ));
 
     Rcpp::NumericVector x_init;
-    if (x_init_nullable.isNotNull()) x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
+    if (x_init_nullable.isNotNull())
+        x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
-    Rcpp::List out = tulpa::run_nested_laplace_grid(
-        n_grid, n_x, solve_at_theta, x_init, /*store_modes=*/true, n_outer
+    Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
+        n_grid, arms, parsed, blocks, n_x,
+        max_iter, tol, n_threads,
+        /*store_modes=*/true, x_init, store_Q,
+        /*prep_at_grid=*/nullptr,
+        /*tile_ids=*/std::vector<int>(),
+        /*tile_pilot_cells=*/std::vector<int>(),
+        /*prune_tol=*/0.0
     );
-    out["sigma2_grid"] = sigma2_grid;
+    out["sigma2_grid"]      = sigma2_grid;
     out["lengthscale_grid"] = lengthscale_grid;
     return out;
 }
