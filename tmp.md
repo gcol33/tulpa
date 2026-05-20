@@ -176,7 +176,40 @@ remove the dense pivot-clamp hack entirely. Deferred because:
    testthat::test_file("tests/testthat/test-nested-laplace-joint-sparse-equivalence.R", reporter="summary")'
 ```
 
-## What's pending after 1.4b
+## 1.5c complete — scale smoke validated linear scaling
+
+Joint multi-arm sparse path (ICAR, chain graph, 2 arms = binomial +
+gaussian with copy):
+
+| n_s   | n_x  | wall_s | mem_MB | n_iter |
+| ----- | ---- | ------ | ------ | ------ |
+| 1e3   | 1004 |   0.06 |    181 |      5 |
+| 1e4   | 1e4+ |   0.58 |    252 |      5 |
+| 1e5   | 1e5+ |   6.48 |    176 |      5 |
+| 1e6   | 1e6+ | 111.17 |    485 |      6 |
+
+Log-log slope = **1.09** (linear=1.0, quadratic=2.0). No hidden
+O(n_x^2) work in pattern enumeration, scatter, factor, or eta accumulation.
+
+Extras:
+- **BYM2 at n_s=1e5** (n_x ~ 2e5): wall 13.8s = 2.1x ICAR — perfectly
+  linear in n_x (banded Cholesky O(n) post-symbolic).
+- **4-cell outer grid at n_s=1e4**: per-cell 0.345s (lower than
+  single-cell 0.58s). Symbolic-factor reuse works; warm-start from
+  previous cell mode also drops Newton iters from 5 to 4 on cells 2-4.
+
+Dev script: `dev_notes/scale_smoke_sparse_joint.R` and
+`dev_notes/scale_smoke_bym2_and_grid.R`. Both gitignored (the smoke
+runs in seconds at smallish sizes; rerun on demand).
+
+For the original 20M outer-grid / n_s=1e6 target: per-cell ~2 minutes
+serial. Outer grid parallelizes trivially (independent Newtons per
+cell, solver pool already in `run_nested_laplace_grid`). Typical
+hyper-grids are 10-100 cells, not 20M; large hyper-grids would call
+for a cheaper screening pass (already in place via cheap-pass + tile
+pilots).
+
+## What's pending after 1.5c
 
 **1.4c** Wire single-arm `cpp_nested_laplace_nngp` /
 `cpp_nested_laplace_spde` / `cpp_nested_laplace_hsgp` to sparse
@@ -193,10 +226,6 @@ diagonal ridge for the fully principled rank-deficient handling — see
 `build_joint_hessian_pattern` and each block's `add_prior_pattern`.
 Currently we rely on numerical equivalence (1.5b) which would catch
 pattern bugs in covered combos but not in untested tail combos.
-
-**1.5c** Shape coverage + scale smoke tests — exercise the sparse path
-at n_s ≥ 10000 to confirm it doesn't crash or pathologically slow down.
-Less precise than 1.5b but tests scale-up behavior.
 
 ## Quick orientation tips
 
