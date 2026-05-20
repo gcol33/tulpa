@@ -185,6 +185,10 @@ cpp_nested_laplace_joint_multi <- function(arms_list, copy_arm, copy_block, bloc
     .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse)
 }
 
+cpp_test_joint_pattern <- function(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets) {
+    .Call(`_tulpa_cpp_test_joint_pattern`, arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets)
+}
+
 cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0) {
     .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol)
 }

@@ -1234,6 +1234,22 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_joint_pattern
+Rcpp::List cpp_test_joint_pattern(Rcpp::List arms_list, int copy_arm, int copy_block, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets);
+RcppExport SEXP _tulpa_cpp_test_joint_pattern(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP copy_blockSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type arms_list(arms_listSEXP);
+    Rcpp::traits::input_parameter< int >::type copy_arm(copy_armSEXP);
+    Rcpp::traits::input_parameter< int >::type copy_block(copy_blockSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type blocks_spec(blocks_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type theta_grid(theta_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type axis_offsets(axis_offsetsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_joint_pattern(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_nested_laplace_multi
 Rcpp::List cpp_nested_laplace_multi(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, double prune_tol);
 RcppExport SEXP _tulpa_cpp_nested_laplace_multi(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP prune_tolSEXP) {
@@ -3138,6 +3154,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_st_nngp_rw2", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_rw2, 27},
     {"_tulpa_cpp_nested_laplace_st_nngp_ar1", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_ar1, 28},
     {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 17},
+    {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 17},
     {"_tulpa_cpp_nmix_laplace_fixed", (DL_FUNC) &_tulpa_cpp_nmix_laplace_fixed, 10},
     {"_tulpa_cpp_nmix_total_log_lik", (DL_FUNC) &_tulpa_cpp_nmix_total_log_lik, 5},

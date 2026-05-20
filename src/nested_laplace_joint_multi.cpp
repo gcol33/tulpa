@@ -917,3 +917,70 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     out["axis_offsets"] = axis_offsets;
     return out;
 }
+
+// ==========================================================================
+// Pattern correctness debug entry (1.5a).
+// ==========================================================================
+// Parses arms_list + blocks_spec the same way cpp_nested_laplace_joint_multi
+// does, then stops after build_joint_hessian_pattern and returns the joint
+// Hessian sparsity pattern as a CSC triple (i, p, dim). R-side tests build
+// a Matrix::sparseMatrix from it and assert exact pattern equality against
+// hand-computed references.
+//
+// No Newton iteration, no scatter, no factorization — pure pattern. Use
+// theta_grid with a single dummy row when the block factory needs a
+// theta_grid (axis_offsets must still cover the schema for each block
+// type's prep callback to validate at parse time).
+
+// [[Rcpp::export]]
+Rcpp::List cpp_test_joint_pattern(
+    Rcpp::List          arms_list,
+    int                 copy_arm,
+    int                 copy_block,
+    Rcpp::List          blocks_spec,
+    Rcpp::NumericMatrix theta_grid,
+    Rcpp::IntegerVector axis_offsets
+) {
+    int n_arms = arms_list.size();
+    int B = blocks_spec.size();
+    if (axis_offsets.size() != B + 1) {
+        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   static_cast<int>(axis_offsets.size()), B);
+    }
+    bool has_copy = (copy_arm >= 0);
+
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm>  arms;
+    int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
+
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.reserve(B);
+    int latent_offset = n_x_after_re;
+    for (int b = 0; b < B; b++) {
+        Rcpp::List bs = blocks_spec[b];
+        int axis0 = axis_offsets[b];
+        int axis_count = axis_offsets[b + 1] - axis0;
+        latent_offset = build_joint_blocks_from_spec(
+            bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
+            has_copy && b == copy_block, copy_arm, blocks
+        );
+    }
+    int n_x = latent_offset;
+
+    tulpa::SparseHessianBuilder H_builder;
+    tulpa::build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builder);
+
+    // Return CSC triples. col_ptr has length n+1; row_idx has length nnz.
+    // R-side converts to Matrix::sparseMatrix(i = row_idx + 1, p = col_ptr,
+    // dims = c(n_x, n_x)) for a lower-triangle pattern matrix.
+    Rcpp::IntegerVector col_ptr(H_builder.col_ptr.begin(),
+                                 H_builder.col_ptr.end());
+    Rcpp::IntegerVector row_idx(H_builder.row_idx.begin(),
+                                 H_builder.row_idx.end());
+    return Rcpp::List::create(
+        Rcpp::Named("n_x")     = n_x,
+        Rcpp::Named("nnz")     = H_builder.nnz,
+        Rcpp::Named("col_ptr") = col_ptr,
+        Rcpp::Named("row_idx") = row_idx
+    );
+}
