@@ -49,18 +49,23 @@ inline constexpr double SPARSE_DROP_TOL_DISPATCH = 1e-12;
 // `prefer_sparse`, fall back to the dense hand-rolled Cholesky on any failure.
 // Returns true if either path produced a finite delta.
 //
-// On rank-deficient H the sparse path goes through
-// SparseCholeskySolver::factorize_with_ridge_retry: supernodal first, then
-// simplicial LDL' with dbound = 1e-6 and CHOLMOD_NATURAL ordering, then a
-// uniform diagonal ridge as last resort. Mirrors the dense hand-rolled
-// Cholesky's pivot clamp (cholesky_factorize_impl_raw: `if (sum <= 0)
-// sum = 1e-6`) so the LikelihoodSpec dense entry inherits the same
-// rank-deficient robustness the joint / ST sparse drivers got in 1.4d.
+// Both paths see `H + LAPLACE_UNIFORM_RIDGE * I`. The uniform upstream ridge
+// guarantees positive-definiteness even on rank-deficient priors (ICAR, RW1,
+// RW2, ...) so dense and sparse factor the same matrix and agree on
+// log_det / mode to numerical tolerance. Replaces the asymmetric dense
+// pivot clamp (`if (sum <= 0) sum = 1e-6`) AND the sparse simplicial-LDL'
+// + dbound retry path; both were activated on different pivot subsets in
+// different elimination orders and produced O(1)-O(10) log_marginal
+// divergence on doubly rank-deficient inputs.
 inline bool dispatch_factor_solve(
     DenseMat& H, DenseVec& grad, std::vector<double>& delta, int n_x,
     SparseCholeskySolver& sparse_solver, bool prefer_sparse,
     DenseCholeskyScratch& dense_scratch
 ) {
+    // Apply the uniform upstream ridge once. H is rebuilt fresh per Newton
+    // iter, so each call re-applies it on top of the unridged assembly.
+    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
+
     bool ok = false;
     if (prefer_sparse) {
         // Owned-sparse path: first call discovers + caches the pattern; later
@@ -70,7 +75,7 @@ inline bool dispatch_factor_solve(
             H, n_x, SPARSE_DROP_TOL_DISPATCH);
         if (A) {
             if (!sparse_solver.analyzed()) sparse_solver.analyze(A);
-            if (sparse_solver.factorize_with_ridge_retry(A)) {
+            if (sparse_solver.factorize(A)) {
                 sparse_solver.solve(grad.data(), delta.data(), n_x);
                 ok = true;
                 for (int j = 0; j < n_x; j++) {
@@ -87,14 +92,17 @@ inline bool dispatch_factor_solve(
     return ok;
 }
 
-// Factor H and return log|H| via the diagonal of L. Same sparse/dense
-// dispatch as dispatch_factor_solve (incl. rank-deficient retry).
+// Factor H and return log|H + ridge*I| via the diagonal of L. Same
+// sparse/dense dispatch and uniform upstream regularization as
+// dispatch_factor_solve.
 inline void dispatch_factor_log_det(
     DenseMat& H, int n_x,
     SparseCholeskySolver& sparse_solver, bool prefer_sparse,
     DenseCholeskyScratch& dense_scratch,
     double& log_det_out
 ) {
+    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
+
     log_det_out = 0.0;
     bool sparse_ok = false;
     if (prefer_sparse) {
@@ -102,7 +110,7 @@ inline void dispatch_factor_log_det(
             H, n_x, SPARSE_DROP_TOL_DISPATCH);
         if (A) {
             if (!sparse_solver.analyzed()) sparse_solver.analyze(A);
-            sparse_ok = sparse_solver.factorize_with_ridge_retry(A);
+            sparse_ok = sparse_solver.factorize(A);
             if (sparse_ok) log_det_out = sparse_solver.log_determinant();
         }
     }

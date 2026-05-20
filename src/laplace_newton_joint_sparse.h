@@ -135,6 +135,10 @@ LaplaceResult laplace_newton_solve_joint_sparse(
         H_builder.zero();
         scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder);
 
+        // Uniform upstream ridge so the dense pivot-clamp and sparse-dbound
+        // hacks aren't needed (see LAPLACE_UNIFORM_RIDGE in laplace_cholesky.h).
+        H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+
         // Factorize and solve via CHOLMOD.
         cholmod_sparse H_cholmod = H_builder.as_cholmod(&solver.common());
         if (!solver.analyzed()) {
@@ -142,7 +146,7 @@ LaplaceResult laplace_newton_solve_joint_sparse(
         }
 
         bool solve_ok = false;
-        if (solver.factorize_with_ridge_retry(&H_cholmod)) {
+        if (solver.factorize(&H_cholmod)) {
             solver.solve(scratch.grad.data(), scratch.delta.data(), n_x);
             solve_ok = true;
             for (int j = 0; j < n_x; j++) {
@@ -185,10 +189,11 @@ LaplaceResult laplace_newton_solve_joint_sparse(
     scratch.zero_grad();
     H_builder.zero();
     scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder);
+    H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 
     cholmod_sparse H_final = H_builder.as_cholmod(&solver.common());
     if (!solver.analyzed()) solver.analyze(&H_final);
-    if (solver.factorize_with_ridge_retry(&H_final)) {
+    if (solver.factorize(&H_final)) {
         result.log_det_Q = solver.log_determinant();
     }
 

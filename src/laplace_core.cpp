@@ -540,7 +540,11 @@ Rcpp::NumericMatrix cpp_laplace_sample(
     int n_x = mode.size();
     Rcpp::NumericMatrix samples(n_samples, n_x);
 
-    // Cholesky of H
+    // Cholesky of H + ridge*I. The same uniform upstream regularization
+    // every Laplace solve uses (see LAPLACE_UNIFORM_RIDGE in
+    // laplace_cholesky.h); guarantees PD on rank-deficient priors so the
+    // sampler never hits a non-positive pivot.
+    for (int j = 0; j < n_x; j++) H(j, j) += tulpa::LAPLACE_UNIFORM_RIDGE;
     Rcpp::NumericMatrix L(n_x, n_x);
     double log_det;
     tulpa::dense_cholesky_factorize(H, n_x, L, log_det);

@@ -227,8 +227,12 @@
 #'   * `theta_mean`, `theta_sd` — posterior moments per hyperparameter,
 #'      including `alpha` when `copy` is set.
 #'   * `theta_median`, `theta_ci_lo`, `theta_ci_hi` — weighted-quantile
-#'      median and 2.5/97.5 empirical CI for `alpha` (present only when
-#'      `copy` is set).
+#'      median and 2.5/97.5 empirical CI per hyperparameter axis (same
+#'      names as `theta_mean`). Recommended summary for right-skewed
+#'      scale-like axes (alpha at small n_pos, sigma/range/phi near
+#'      a boundary), where the posterior mean is pulled by the right
+#'      tail away from the bulk and `mean +/- 1.96 sd` mis-states the
+#'      uncertainty.
 #'   * `modes` — `[n_grid x n_x]` matrix of inner modes.
 #'   * `n_iter` — inner Newton iterations per grid point.
 #'   * `arm_layout` — list with per-arm `beta_start`, `re_start`,
@@ -421,7 +425,6 @@ tulpa_nested_laplace_joint <- function(responses,
         }
         res$var_of_means_consistency_info <- consistency$info
     }
-    res             <- .joint_attach_alpha_moments(res, cp$has_copy)
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior
     res$responses   <- responses
@@ -1083,56 +1086,13 @@ tulpa_nested_laplace_joint <- function(responses,
     res
 }
 
-# Weighted-quantile median + 2.5/97.5 empirical CI for alpha on the joint
-# nested-Laplace grid. After the (sigma, alpha) reparameterization alpha
-# is a primary grid axis; mean and SD are produced generically by
-# `.nl_posterior_moments` + `.joint_recalibrate_axis_moments`, so this
-# helper only adds the quantile-based summaries.
-#
-# `tg` is a matrix with named column `alpha`. `res` is a list with
-# `log_marginal`. `refining` is the per-cell refining-axis mask: foreign-
-# axis slice cells (which pin alpha at a single value while varying some
-# other axis) are excluded; Cartesian and same-axis slice cells stay.
-#
-# Returns list(median, ci_lo, ci_hi); each scalar is NA when unavailable.
-# Shared by the single-block and multi-block joint-fit code paths.
-.alpha_grid_moments <- function(tg, res, refining) {
-    out <- list(median = NA_real_, ci_lo = NA_real_, ci_hi = NA_real_)
-    alpha_vec <- as.numeric(tg[, "alpha"])
-    keep <- refining == "" | refining == "alpha" |
-            refining == "consistency_alpha"
-    use <- keep & is.finite(alpha_vec)
-    if (sum(use) == 0L) return(out)
-
-    lm_use <- res$log_marginal[use]
-    ws     <- exp(lm_use - max(lm_use)); ws <- ws / sum(ws)
-    qs     <- .nl_wtd_quantile(alpha_vec[use], ws, c(0.025, 0.5, 0.975))
-    out$ci_lo  <- qs[1L]
-    out$median <- qs[2L]
-    out$ci_hi  <- qs[3L]
-    out
-}
-
-# Attach weighted-quantile alpha summaries to the joint result. After
-# the reparameterization, alpha is already a column of theta_grid via
-# the backend's `theta_grid()` callback -- this helper only computes
-# the median + 2.5/97.5 empirical CI and merges them with the standard
-# theta_mean / theta_sd that `.nl_posterior_moments` already produced
-# for every grid axis (alpha included).
-.joint_attach_alpha_moments <- function(res, has_copy) {
-    if (!isTRUE(has_copy)) return(res)
-    tg <- res$theta_grid
-    if (is.null(tg) || !("alpha" %in% colnames(tg))) return(res)
-    refining <- res$refining_axis %||% rep("", nrow(tg))
-    m <- .alpha_grid_moments(tg, res, refining)
-    # theta_mean / theta_sd for alpha are already populated by
-    # .nl_posterior_moments + .joint_recalibrate_axis_moments (alpha is
-    # a regular axis). Append the quantile-based summaries here.
-    res$theta_median <- c(res$theta_median, alpha = m$median)
-    res$theta_ci_lo  <- c(res$theta_ci_lo,  alpha = m$ci_lo)
-    res$theta_ci_hi  <- c(res$theta_ci_hi,  alpha = m$ci_hi)
-    res
-}
+# Weighted-quantile median + 2.5/97.5 empirical CI for every hyperparameter
+# axis are produced generically by `.nl_axis_quantiles` (defined in
+# nested_laplace.R) and attached by `.nl_posterior_moments`. No alpha-
+# specific helper is needed: median/CI are the recommended summary for
+# right-skewed scale-like axes (alpha = sigma_pos/sigma_occ, sigma,
+# range, phi at small n), while mean +/- SD remains available on the
+# same axis names via `theta_mean / theta_sd`.
 
 # Alpha refinement piggybacks on the generic consistency pass: alpha
 # appears in `.refinable_axes`, and `.nl_var_of_means_consistency_pass`
@@ -2040,7 +2000,12 @@ tulpa_nested_laplace_joint <- function(responses,
 # format. Per-arm idx vectors live in the BLOCK spec (not the arm spec);
 # the user supplies `spatial_idx` / `temporal_idx` / `obs_idx` as a list
 # of length n_arms.
-.joint_block_spec_for_cpp <- function(p, n_arms, block_index) {
+#
+# `arms` is the list of normalised arm specs produced by
+# `.normalise_joint_arm_multi()`. It is consumed by block types that need
+# to read covariate columns at fit-time (HSGP with `svc_column`). Pass
+# NULL only from contexts where no such block can appear.
+.joint_block_spec_for_cpp <- function(p, n_arms, block_index, arms = NULL) {
     type <- tolower(p$type)
     if (type %in% c("icar", "bym2", "car_proper")) {
         if (is.null(p$spatial_idx)) {
@@ -2115,6 +2080,15 @@ tulpa_nested_laplace_joint <- function(responses,
     } else if (type == "hsgp") {
         # HSGP block: shared eigenvalues + per-arm Phi basis matrices.
         # Axes are (log_sigma2, log_lengthscale).
+        #
+        # Optional `svc_column`: 1-based index into each arm's `X`. When
+        # set, the block becomes a spatially-varying coefficient:
+        #     eta_i += X[i, svc_column] * f(s_i)
+        # Implemented by row-scaling the per-arm basis at fit-time
+        #     phi_scaled[k][i, m] = phi[k][i, m] * X[k][i, svc_column]
+        # and passing the scaled phi to the existing DENSE_BASIS factory.
+        # Multi-scale composition (1.6c) falls out by declaring multiple
+        # type='hsgp' blocks in the same prior_list.
         for (req in c("m_total", "phi", "n_obs_per_arm", "eigenvalues")) {
             if (is.null(p[[req]])) {
                 stop("Block ", block_index, " (type 'hsgp'): `", req,
@@ -2125,12 +2099,41 @@ tulpa_nested_laplace_joint <- function(responses,
             stop("Block ", block_index, " (type 'hsgp'): `phi` must be a ",
                  "list of length n_arms (", n_arms, ").", call. = FALSE)
         }
+        phi <- lapply(p$phi, function(M) {
+            M <- as.matrix(M); storage.mode(M) <- "double"; M
+        })
+        if (!is.null(p$svc_column)) {
+            if (is.null(arms)) {
+                stop("Block ", block_index, " (type 'hsgp'): `svc_column` ",
+                     "requires the joint multi-block dispatcher path ",
+                     "(arms not available here).", call. = FALSE)
+            }
+            svc <- as.integer(p$svc_column)
+            if (length(svc) != 1L || is.na(svc) || svc < 1L) {
+                stop("Block ", block_index, " (type 'hsgp'): `svc_column` ",
+                     "must be a single positive integer (1-based column ",
+                     "index into each arm's X).", call. = FALSE)
+            }
+            for (k in seq_len(n_arms)) {
+                Xk <- arms[[k]]$X
+                if (svc > ncol(Xk)) {
+                    stop("Block ", block_index, " (type 'hsgp'): ",
+                         "`svc_column` = ", svc, " exceeds ncol(arm ", k,
+                         "$X) = ", ncol(Xk), ".", call. = FALSE)
+                }
+                if (nrow(phi[[k]]) != nrow(Xk)) {
+                    stop("Block ", block_index, " (type 'hsgp'): ",
+                         "nrow(phi[[", k, "]]) (", nrow(phi[[k]]),
+                         ") must equal nrow(arm ", k, "$X) (", nrow(Xk),
+                         ") when svc_column is set.", call. = FALSE)
+                }
+                phi[[k]] <- phi[[k]] * as.numeric(Xk[, svc])
+            }
+        }
         list(
             type           = "hsgp",
             m_total        = as.integer(p$m_total),
-            phi            = lapply(p$phi, function(M) {
-                                  M <- as.matrix(M); storage.mode(M) <- "double"; M
-                              }),
+            phi            = phi,
             n_obs_per_arm  = as.integer(p$n_obs_per_arm),
             eigenvalues    = as.numeric(p$eigenvalues)
         )
@@ -2171,6 +2174,29 @@ tulpa_nested_laplace_joint <- function(responses,
             out$rational_poles <- as.numeric(p$rational_poles)
         if (!is.null(p$rational_weights))
             out$rational_weights <- as.numeric(p$rational_weights)
+        out
+    } else if (type == "lf") {
+        # Latent factor block (Stage 1.6a). Per-arm `obs_idx` maps each
+        # obs to a slot in the factor field `u` (length n_latent); the
+        # per-arm loadings `lambda` (length n_arms) are part of the joint
+        # latent vector and co-optimized by the inner Newton. No outer-
+        # grid axes — identifiability handled by tight Gaussian anchors
+        # on (u_1, lambda_1) inside the C++ factory.
+        if (is.null(p$obs_idx) || is.null(p$n_latent)) {
+            stop("Block ", block_index, " (type 'lf'): both `obs_idx` ",
+                 "(list of length n_arms) and `n_latent` are required.",
+                 call. = FALSE)
+        }
+        obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
+                                              block_index, "obs_idx")
+        out <- list(
+            type     = "lf",
+            n_latent = as.integer(p$n_latent),
+            obs_idx  = obs_idx
+        )
+        if (!is.null(p$sigma_u))      out$sigma_u      <- as.numeric(p$sigma_u)
+        if (!is.null(p$sigma_lambda)) out$sigma_lambda <- as.numeric(p$sigma_lambda)
+        if (!is.null(p$anchor_eps))   out$anchor_eps   <- as.numeric(p$anchor_eps)
         out
     } else {
         stop("Block type '", type, "' is not supported in multi-block joint priors.",
@@ -2250,12 +2276,14 @@ tulpa_nested_laplace_joint <- function(responses,
     axis_counts  <- vapply(block_grids, ncol, integer(1))
     axis_offsets <- as.integer(c(0L, cumsum(axis_counts)))
     axis_names <- unlist(lapply(seq_along(block_grids), function(b) {
-        paste0("b", b, ".", colnames(block_grids[[b]]))
+        cn <- colnames(block_grids[[b]])
+        if (is.null(cn) || length(cn) == 0L) return(character(0))
+        paste0("b", b, ".", cn)
     }))
-    colnames(joint_grid) <- axis_names
+    if (ncol(joint_grid) > 0L) colnames(joint_grid) <- axis_names
 
     blocks_spec <- lapply(seq_along(prepared), function(b) {
-        .joint_block_spec_for_cpp(prepared[[b]], n_arms, b)
+        .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
     })
 
     # phi_grid (per-arm dispersion overrides on the outer grid): only
@@ -2451,7 +2479,10 @@ tulpa_nested_laplace_joint <- function(responses,
         # block's `n_spatial_units` / `n_times` / `n_units`.
         n_units <- prepared[[b]]$n_spatial_units %||%
                    prepared[[b]]$n_times         %||%
-                   prepared[[b]]$n_units         %||% 0L
+                   prepared[[b]]$n_units         %||%
+                   prepared[[b]]$n_latent        %||%
+                   prepared[[b]]$n_mesh          %||%
+                   prepared[[b]]$m_total         %||% 0L
         n_units <- as.integer(n_units)
         if (type == "bym2") {
             block_size[b] <- 2L * n_units
@@ -2459,6 +2490,10 @@ tulpa_nested_laplace_joint <- function(responses,
                 phi_start   <- cur
                 theta_start <- cur + n_units
             }
+        } else if (type == "lf") {
+            # Latent factor block stores u (n_latent) followed by lambda
+            # (n_arms). Total size = n_latent + n_arms.
+            block_size[b] <- n_units + n_arms
         } else {
             block_size[b] <- n_units
             if (is.null(phi_start) && type %in% c("icar", "car_proper")) {
@@ -2486,8 +2521,9 @@ tulpa_nested_laplace_joint <- function(responses,
 
 # Posterior moments for the multi-block joint grid. Mirrors the single-arm
 # multi-block helper (`.nl_posterior_moments_multi`) and additionally
-# attaches the alpha quantile moments (median + 2.5/97.5 CI) when a copy
-# block is active.
+# attaches the weighted-quantile median + 2.5/97.5 CI for every joint-grid
+# axis -- the calibrated headline summary for right-skewed scale-like
+# hyperparameters (alpha at small n_pos, sigma/range/phi near boundary).
 .joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
                                             joint_grid, cp) {
     w <- res$weights
@@ -2502,7 +2538,19 @@ tulpa_nested_laplace_joint <- function(responses,
     B <- length(prepared)
     per_block_moments <- vector("list", B)
     for (b in seq_len(B)) {
-        cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+        n_axes_b <- axis_offsets[b + 1L] - axis_offsets[b]
+        if (n_axes_b == 0L) {
+            # Block contributes no outer-grid axes (e.g. type = "lf"):
+            # empty moments, empty axis_cols.
+            per_block_moments[[b]] <- list(
+                type      = tolower(prepared[[b]]$type),
+                mean      = numeric(0),
+                sd        = numeric(0),
+                axis_cols = integer(0)
+            )
+            next
+        }
+        cols <- seq.int(axis_offsets[b] + 1L, axis_offsets[b + 1L])
         sub <- joint_grid[, cols, drop = FALSE]
         block_mean <- as.numeric(crossprod(w, sub))
         block_sd   <- sqrt(pmax(0, as.numeric(crossprod(w, sub^2)) - block_mean^2))
@@ -2520,29 +2568,15 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     res$block_moments <- per_block_moments
 
-    # alpha is a primary grid axis after the (sigma, alpha) reparameterization.
-    # `theta_mean / theta_sd` on `alpha` are already populated by the
-    # crossprod above (alpha is one of joint_grid's columns). Compute the
-    # weighted-quantile median + empirical 2.5/97.5 CI here so the multi-
-    # block path exposes the same `theta_median / theta_ci_lo / theta_ci_hi`
-    # surface as the single-block path.
-    if (cp$has_copy) {
-        b <- cp$copy_block_zero + 1L
-        cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
-        col_names <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols])
-        i_alpha <- match("alpha", col_names)
-        if (!is.na(i_alpha)) {
-            alpha_vec <- as.numeric(joint_grid[, cols[i_alpha]])
-            tg_local <- cbind(alpha = alpha_vec)
-            res_local <- list(log_marginal = res$log_marginal)
-            refining <- res$refining_axis %||% rep("", length(alpha_vec))
-            m <- .alpha_grid_moments(tg_local, res_local, refining)
-            if (is.finite(m$median)) {
-                res$theta_median <- c(res$theta_median, alpha = m$median)
-                res$theta_ci_lo  <- c(res$theta_ci_lo,  alpha = m$ci_lo)
-                res$theta_ci_hi  <- c(res$theta_ci_hi,  alpha = m$ci_hi)
-            }
-        }
-    }
+    # Weighted-quantile median + 2.5/97.5 CI per axis. Generic helper
+    # filters foreign-axis slice cells per axis name. After the (sigma,
+    # alpha) reparameterization, alpha is a column of joint_grid like
+    # any other axis; this attaches the calibrated summary for every
+    # axis, not just alpha.
+    qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
+                              res$refining_axis)
+    res$theta_median <- qs$median
+    res$theta_ci_lo  <- qs$ci_lo
+    res$theta_ci_hi  <- qs$ci_hi
     res
 }

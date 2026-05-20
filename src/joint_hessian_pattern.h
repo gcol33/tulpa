@@ -62,6 +62,9 @@ inline void add_dense_block_pattern(
 // pairs. Weight is unused by the pattern builder but kept for API symmetry
 // with the scatter side. Returns nothing for DENSE_BASIS — that case is
 // handled at the block level (full sub-pattern, no per-obs work).
+// For BILINEAR_FACTOR, emits both the factor slot u and the loading slot
+// lambda; the active × active intra-block pass fills the (u, lambda)
+// cross pattern entry naturally.
 inline void resolve_indexed_dofs(
     const LatentBlock&                       blk,
     int                                       i,
@@ -82,6 +85,12 @@ inline void resolve_indexed_dofs(
         for (auto& [idx_local, w] : scratch) {
             idx_local = blk.start + idx_local - 1;
         }
+    } else if (blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
+        if (!blk.obs_factor_lambda) return;
+        auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+        if (u_slot < 0 || lambda_slot < 0) return;
+        scratch.emplace_back(u_slot, 1.0);
+        scratch.emplace_back(lambda_slot, 1.0);
     }
     // DENSE_BASIS: caller adds full sub-pattern; scratch left empty.
 }

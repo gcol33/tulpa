@@ -247,8 +247,12 @@ weights (sum to 1).
 \item \code{theta_mean}, \code{theta_sd} — posterior moments per hyperparameter,
 including \code{alpha} when \code{copy} is set.
 \item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} — weighted-quantile
-median and 2.5/97.5 empirical CI for \code{alpha} (present only when
-\code{copy} is set).
+median and 2.5/97.5 empirical CI per hyperparameter axis (same
+names as \code{theta_mean}). Recommended summary for right-skewed
+scale-like axes (alpha at small n_pos, sigma/range/phi near
+a boundary), where the posterior mean is pulled by the right
+tail away from the bulk and \verb{mean +/- 1.96 sd} mis-states the
+uncertainty.
 \item \code{modes} — \verb{[n_grid x n_x]} matrix of inner modes.
 \item \code{n_iter} — inner Newton iterations per grid point.
 \item \code{arm_layout} — list with per-arm \code{beta_start}, \code{re_start},

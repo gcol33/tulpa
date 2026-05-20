@@ -84,6 +84,22 @@ public:
         std::fill(values.begin(), values.end(), 0.0);
     }
 
+    // Add `ridge` to every diagonal entry. The CSC lower-triangle stores
+    // each column's diagonal as the FIRST entry of the column (smallest
+    // row index in the lower triangle is row == col), so the diagonal is
+    // at `values[col_ptr[j]]` for column j with `row_idx[col_ptr[j]] == j`.
+    // Used to apply the uniform upstream regularization (see
+    // `LAPLACE_UNIFORM_RIDGE` in laplace_cholesky.h) after scatter and
+    // before factorization.
+    void add_uniform_ridge(double ridge) {
+        for (int j = 0; j < n; j++) {
+            const int idx = col_ptr[j];
+            if (idx < col_ptr[j + 1] && row_idx[idx] == j) {
+                values[idx] += ridge;
+            }
+        }
+    }
+
     // Add value to entry (row, col). Handles symmetric storage (lower triangle).
     // If the entry doesn't exist in the pattern, it's silently dropped.
     void add(int row, int col, double val) {
@@ -175,6 +191,10 @@ LaplaceResult laplace_newton_solve_sparse(
         H_builder.zero();
         scatter_sparse(x, scratch.eta, grad, H_builder);
 
+        // Uniform upstream ridge so the dense pivot-clamp and sparse-dbound
+        // hacks aren't needed (see LAPLACE_UNIFORM_RIDGE in laplace_cholesky.h).
+        H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+
         // Solve H * delta = grad via CHOLMOD
         cholmod_sparse H_cholmod = H_builder.as_cholmod(&solver.common());
 
@@ -185,7 +205,7 @@ LaplaceResult laplace_newton_solve_sparse(
         std::vector<double> delta(n_x, 0.0);
         bool solve_ok = false;
 
-        if (solver.factorize_with_ridge_retry(&H_cholmod)) {
+        if (solver.factorize(&H_cholmod)) {
             solver.solve(grad.data(), delta.data(), n_x);
             solve_ok = true;
             for (int j = 0; j < n_x; j++) {
@@ -231,10 +251,11 @@ LaplaceResult laplace_newton_solve_sparse(
     DenseVec grad_final(n_x, 0.0);
     H_builder.zero();
     scatter_sparse(x, scratch.eta, grad_final, H_builder);
+    H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 
     cholmod_sparse H_final = H_builder.as_cholmod(&solver.common());
     if (!solver.analyzed()) solver.analyze(&H_final);
-    if (solver.factorize_with_ridge_retry(&H_final)) {
+    if (solver.factorize(&H_final)) {
         result.log_det_Q = solver.log_determinant();
     }
 

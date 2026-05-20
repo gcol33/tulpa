@@ -9,16 +9,11 @@
 #
 # Coverage: ICAR / CAR_proper / BYM2 × {AR1, RW1, RW2}.
 #
-# Doubly rank-deficient combos (ICAR/BYM2 × RW1/RW2) get looser
-# tolerance because the dense path's pivot clamp
-# (`cholesky_factorize_impl_raw`: if (sum <= 0) sum = 1e-6) and CHOLMOD's
-# dbound-based fallback bias log_det differently on the rank-deficient
-# direction — they activate on different pivot subsets in different
-# elimination orders. The sparse path is numerically valid (Newton
-# converges, log_marginal finite, modes finite); it just doesn't match
-# dense bit-for-bit on pathological inputs. The strict numerical
-# equivalence proof for these cases would require adding a uniform
-# upstream diagonal ridge to BOTH paths, which is deferred.
+# Both paths factor `H + LAPLACE_UNIFORM_RIDGE * I` (1.4e: uniform
+# upstream diagonal ridge), so even doubly rank-deficient combos
+# (ICAR/BYM2 × RW1/RW2) factor the same matrix and agree to numerical
+# tolerance — no asymmetric dense pivot clamp, no symmetric CHOLMOD
+# dbound fallback on a different pivot subset.
 #
 # HSGP and NNGP spatial kinds carry the dense-only path until 1.4c (their
 # sparse fields are empty; force_sparse = TRUE errors out explicitly).
@@ -82,23 +77,22 @@ skip_on_cran()
     }
 }
 
-# Looser check used on doubly rank-deficient combos: confirm the sparse
-# path returns finite, sensibly bounded log_marginal values without
-# requiring bit-for-bit agreement with the dense pivot-clamped baseline.
+# Rank-deficient combos now factor `H + ridge * I` on both paths (1.4e),
+# so the strict per-cell equivalence holds — looser tolerance (1e-4
+# vs the PD-case 1e-6) only because doubly rank-deficient Newton steps
+# accumulate floating-point noise across more elimination operations.
 .expect_finite_and_bounded <- function(fit_dense, fit_sparse,
-                                          max_abs_div = 25) {
+                                          lm_tol = 1e-4) {
     expect_true(all(is.finite(fit_sparse$log_marginal)),
                 info = "sparse path produced non-finite log_marginal")
     expect_true(all(is.finite(fit_dense$log_marginal)),
                 info = "dense path produced non-finite log_marginal")
-    expect_equal(length(fit_sparse$log_marginal),
-                 length(fit_dense$log_marginal))
-    div <- abs(as.numeric(fit_sparse$log_marginal) -
-               as.numeric(fit_dense$log_marginal))
-    expect_true(all(div < max_abs_div),
-                info = paste("sparse-vs-dense log_marginal divergence",
-                              "exceeds expected pivot-bias bound (",
-                              max(div), ">", max_abs_div, ")"))
+    expect_equal(
+        as.numeric(fit_sparse$log_marginal),
+        as.numeric(fit_dense$log_marginal),
+        tolerance = lm_tol,
+        info = "per-cell log_marginal disagreement on rank-deficient combo"
+    )
 }
 
 # ---- ICAR × {AR1, RW1, RW2} -----------------------------------------------

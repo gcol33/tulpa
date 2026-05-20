@@ -10,6 +10,39 @@
 
 namespace tulpa {
 
+// Uniform upstream diagonal ridge.
+//
+// Every Laplace factorize-call site adds `LAPLACE_UNIFORM_RIDGE * I` to H
+// before factorization. This is a tiny vague Gaussian prior on the latent
+// (precision = ridge per coordinate) that does two jobs:
+//
+//   1. Guarantees H + ridge*I is PD whenever H is PSD with rank deficit k.
+//      Cholesky pivots stay strictly positive, so dense and sparse paths
+//      agree even on rank-deficient priors (ICAR with k=1, RW1 with k=1,
+//      ICAR x RW1 with k=2, etc.). No asymmetric pivot clamp, no
+//      symmetric CHOLMOD dbound fallback that activates on a different
+//      pivot subset than the dense path.
+//   2. Bounds log_det contributions from rank-deficient directions at
+//      log(ridge) per zero eigenvalue, a theoretically interpretable
+//      baseline (vague Gaussian prior on those directions). Replaces
+//      both the dense clamp's elimination-order-dependent log(1e-6) and
+//      CHOLMOD's permutation-dependent log(1e-6).
+//
+// The value 1e-10 is well below typical full-rank pivots (where ICAR
+// adjacencies produce O(1)-O(10) Schur complements at the n_sites scale
+// we care about), so healthy fits are unaffected to numerical tolerance.
+// Rank-deficient log_marginal baselines shift by k*log(1e-10/1e-6) =
+// -k*log(1e4) ~ -9.2*k units versus the pre-ridge dense baseline. This
+// is a documented one-time baseline shift, not a regression.
+inline constexpr double LAPLACE_UNIFORM_RIDGE = 1e-10;
+
+// Add `ridge` to the diagonal of a DenseMat-storage Hessian. Used by
+// `dispatch_factor_solve` / `dispatch_factor_log_det` and the LikelihoodSpec
+// dense entry before factorization.
+inline void add_uniform_ridge_dense(DenseMat& H, int n, double ridge) {
+    for (int j = 0; j < n; j++) H[j][j] += ridge;
+}
+
 struct CholeskyResult {
     Rcpp::NumericMatrix L;
     Rcpp::NumericVector delta;
@@ -45,9 +78,12 @@ inline double chol_at(const Rcpp::NumericMatrix& H, int j, int k) { return H(j, 
 // Templated Cholesky factorization core: writes L (lower-triangular) and
 // log_det = log|H| from any matrix-like H supported by chol_at().
 //
-// Singularity guard: tiny / non-positive pivots are clamped to 1e-6 (the
-// Laplace solver tolerates this — Newton-Raphson inflates the Hessian
-// regularization on the next outer iteration).
+// Rank-deficient handling lives upstream: every Laplace callsite adds
+// `LAPLACE_UNIFORM_RIDGE * I` to H before calling here (see
+// `add_uniform_ridge_dense` in this header). The factorize routines below
+// therefore assume H is PD; a non-positive pivot during elimination
+// surfaces as NaN through sqrt and propagates to log_det / delta so the
+// caller can detect it. There is no in-pivot clamp.
 template <class MatLike>
 inline void cholesky_factorize_impl(
     const MatLike& H, int n,
@@ -59,7 +95,10 @@ inline void cholesky_factorize_impl(
             double sum = chol_at(H, j, k);
             for (int i = 0; i < k; i++) sum -= L(j, i) * L(k, i);
             if (j == k) {
-                if (sum <= 0) sum = 1e-6;
+                // No in-pivot clamp: every callsite adds
+                // LAPLACE_UNIFORM_RIDGE * I upstream, so a non-positive
+                // pivot here means the upstream ridge wasn't applied
+                // (a bug) — let sqrt produce NaN and propagate.
                 L(j, k) = std::sqrt(sum);
             } else {
                 L(j, k) = sum / L(k, k);
@@ -87,7 +126,10 @@ inline void cholesky_factorize_impl_raw(
                 sum -= L_data[j + i * n] * L_data[k + i * n];
             }
             if (j == k) {
-                if (sum <= 0) sum = 1e-6;
+                // No in-pivot clamp: every callsite adds
+                // LAPLACE_UNIFORM_RIDGE * I upstream, so a non-positive
+                // pivot here means the upstream ridge wasn't applied
+                // (a bug) — let sqrt produce NaN and propagate.
                 L_data[j + k * n] = std::sqrt(sum);
             } else {
                 L_data[j + k * n] = sum / L_data[k + k * n];

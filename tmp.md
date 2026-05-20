@@ -266,24 +266,434 @@ Net 1.4d coverage:
 Every Laplace driver in tulpa now goes through `factorize_with_ridge_retry`
 on the sparse path.
 
+## 1.5d complete — shape coverage smoke
+
+One small fit per row of the `hessian_plan.md` workload table, exercising
+every (contrib_kind, prior_kind, n_arms, block-mix) cell currently in the
+engine. Counterpart to 1.5a (pattern correctness), 1.5b (dense/sparse
+equivalence) and 1.5c (linear scaling): not a perf test, just a logged
+green-canary per shape so the §1.5 checklist closes.
+
+| shape                  | n_arms | p_arm | blocks            | n_x | wall_s | n_iter |
+| ---------------------- | ------ | ----- | ----------------- | --- | ------ | ------ |
+| MOTIVATE cover hurdle  |   2    |   3   | bym2 + copy       |  56 |  0.11  |   4    |
+| Single-arm BYM2        |   1    |   3   | bym2              |  53 |  0.02  |   5    |
+| N-mix + occupancy      |   2    |   2   | icar              |  44 |  0.11  |   7    |
+| Multi-process ratio    |   4    |   2   | icar + ar1        |  44 |  0.11  |   5    |
+| Spline-heavy 1-arm     |   1    |  60   | iid               | 460 |  0.17  |   5    |
+| ST joint               |   1    |   2   | icar x ar1        |  30 |  0.01  |   5    |
+| SPDE mesh              |   1    |   1   | spde (FEM)        | 211 |  0.27  |   4    |
+| HSGP                   |   1    |   1   | hsgp (M=25)       |  26 |  0.04  |   4    |
+| NNGP                   |   1    |   1   | nngp (nn=8)       |  81  |  0.14  |   6    |
+| User tgmrf             |   1    |   1   | tgmrf (AR1 CSC)   |  31 |  0.06  |   7    |
+
+Every row: `log_marginal` finite at every outer-grid cell, modes finite,
+inner Newton converged within 7 iterations. Joint multi-arm paths
+(MOTIVATE, N-mix shape, multi-process ratio) exercised the `force_sparse =
+TRUE` Newton; ST joint also routed through the sparse Newton. SPDE,
+HSGP, and NNGP single-arm entries now share the same pattern enumerator
+after 1.4c, so this run is the first end-to-end matrix-coverage
+confirmation that all three migrated drivers still run on shapes outside
+their dedicated tests.
+
+Latent factors deliberately skipped — DENSE_BASIS with a
+constraint-aware extension (sum-to-zero / first-zero on factor loadings
+across obs) is out of scope until item 2 of the open list lands.
+
+Smoke script: `dev_notes/shape_coverage_smoke.R` (gitignored). Re-run on
+demand via `source("dev_notes/shape_coverage_smoke.R")`.
+
+## 1.4e complete — uniform upstream diagonal ridge
+
+Single `LAPLACE_UNIFORM_RIDGE * I = 1e-10 * I` added to H at every
+Laplace factorize callsite — dense dispatch, sparse joint Newton,
+sparse single-arm Newton, posterior sampler. Replaces both the dense
+`if (sum <= 0) sum = 1e-6` in-pivot clamp and the sparse
+`factorize_with_ridge_retry` simplicial-LDL'-with-dbound + uniform-ridge
+fallback. Both paths now factor the SAME matrix and agree to numerical
+tolerance even on doubly rank-deficient priors.
+
+**Audit results (dev_notes/ridge_audit.R).** On three small ST fits:
+
+| shape                  | n_grid | max abs(d-s) before | max abs(d-s) after | dense shift | sparse shift |
+| ---------------------- | ------ | ------------------- | ------------------ | ----------- | ------------ |
+| ICAR x AR1 (PD)        |   2    | 1.5e-10             | 1.6e-10            | 0.0         | 0.0          |
+| ICAR x RW1 (rank-def)  |   2    | 11.22               | 3.6e-6             | -1.82       | +4.64        |
+| ICAR x RW2 (rank-def)  |   2    | 10.53               | 4.1e-6             | -1.48       | +4.64        |
+
+- **PD fits**: unchanged to numerical tolerance (ridge=1e-10 is well below
+  typical pivots O(1)-O(10)).
+- **Rank-deficient fits**: dense and sparse converge on the SAME new
+  baseline; both shift toward a common value. The shift magnitude
+  (~1-5 units, smaller than the rough 9-23 estimate in this doc's
+  prior section) reflects the new theoretical baseline:
+  `log_det = sum(log(lambda_i + ridge))` where lambda_i = 0 for the
+  k rank-deficient directions contribute `k * log(ridge)`. This is a
+  vague Gaussian prior on those directions; documented one-time
+  baseline shift, not a regression.
+
+**Files changed:**
+- `src/laplace_cholesky.h` — `LAPLACE_UNIFORM_RIDGE`, `add_uniform_ridge_dense`,
+  removed `if (sum <= 0) sum = 1e-6` clamp from both
+  `cholesky_factorize_impl` and `cholesky_factorize_impl_raw`.
+- `src/sparse_hessian.h` — `SparseHessianBuilder::add_uniform_ridge`,
+  wired into `laplace_newton_solve_sparse` (per-iter + final).
+- `src/laplace_newton_joint_sparse.h` — same wiring into
+  `laplace_newton_solve_joint_sparse`.
+- `src/laplace_cholesky_dispatch.h` — `dispatch_factor_solve` and
+  `dispatch_factor_log_det` apply `add_uniform_ridge_dense` then call
+  plain `factorize` (no more `factorize_with_ridge_retry`).
+- `src/laplace_core.cpp::cpp_laplace_sample` — adds the ridge before
+  the posterior-sampler Cholesky.
+- `src/sparse_cholesky.{h,cpp}` — `factorize_with_ridge_retry` removed
+  (no callers; per CLAUDE.md "no back-compat shims").
+- `tests/testthat/test-nested-laplace-st-sparse-equivalence.R` —
+  `.expect_finite_and_bounded` tightened from `max_abs_div = 25` to
+  `lm_tol = 1e-4`; header docstring updated.
+
+**Tests**: 22 nested-laplace files (~1100+ assertions), full ST sparse
+equivalence (28), joint sparse equivalence (12), sparse-cholesky (30),
+joint-hessian-pattern (70), spde (40), em-laplace (56), imh-laplace (22),
+tgmrf families (186 across 8 files), nmix-spatial (50) — all green. No
+regressions on hard-coded absolute log_marginal expectations.
+
 ## What's still open
 
-**Uniform upstream diagonal ridge.** The fully principled
-rank-deficient handling — add `ridge * I` to H in BOTH dense and
-sparse paths before factorization — is still queued. The current
-dense `if (sum <= 0) sum = 1e-6` pivot clamp and the sparse
-`factorize_with_ridge_retry` are both effective but introduce
-asymmetric (only non-positive vs all small-magnitude) bias. A
-uniform upstream ridge would unify them and remove the clamp
-entirely.
+Stage 2 work — arrow Schur, iterative S, Vecchia for NNGP, SYRK/Woodbury
+for DENSE_BASIS — remains future, gated on Stage-1 profiling at scale.
 
-Deferred because the absolute log_marginal baselines on
-pathologically rank-deficient fits would shift by ~9-23 units
-depending on ridge magnitude. Healthy fits unaffected. Audit
-required: simulate rank-deficient ground-truth fits, compare
-log_marginals under current clamp vs uniform-ridge baselines,
-confirm new baseline is theoretically defensible. Estimated
-half-day.
+Stage 1.6 (DENSE_BASIS follow-ups) is now complete; see §1.6 below.
+
+---
+
+## Stage 1.6 — DENSE_BASIS follow-ups (landed)
+
+All three sub-stages shipped this session. Implementation notes below;
+original design sketch retained verbatim further down for reference.
+
+### 1.6b complete — HSGP-SVC via per-arm phi scaling
+
+`.joint_block_spec_for_cpp` (R) accepts an optional `svc_column` field on
+type='hsgp' specs. When set, the R parser row-scales each arm's basis at
+fit-time:
+```
+phi_scaled[k][i, m] = phi[k][i, m] * arm[k]$X[i, svc_column]
+```
+The scaled phi is passed to the existing C++ `make_hsgp_block` factory
+unchanged — no new contrib_kind, no C++ surface change. The block then
+contributes
+```
+eta_i += X[i, svc_column] * sum_m Phi[i, m] * sqrt_S_m * beta_m
+       = X[i, svc_column] * f(s_i)
+```
+which is the SVC semantic. Validation: error on out-of-range or
+non-positive svc_column, error when nrow(phi[[k]]) != nrow(arm[k]$X).
+
+R signature change: `.joint_block_spec_for_cpp(p, n_arms, block_index)`
+gains a fourth arg `arms = NULL`; the multi-block dispatcher passes the
+normalised arm specs. Other block types ignore the arms arg.
+
+### 1.6c complete — HSGP multi-scale composition
+
+No new code. The 1.3c block factory + the joint multi-block dispatcher
+already compose multiple HSGP blocks; declaring two `type='hsgp'` block
+specs in `prior_list` with different eigenvalue spectra additively
+decomposes the latent field. Outer grid is the Cartesian product of each
+block's paired `(sigma2_grid, lengthscale_grid)` axes. Test in
+`test-nested-laplace-joint-hsgp-svc.R` exercises a 4-cell × 4-cell = 16-
+cell multi-scale fit.
+
+Multi-output co-regionalization HSGP (option (b) in the design plan) is
+deferred until a downstream workload asks for it — would need a K x K
+LKJ-cholesky hyperparameter on the basis coefficients.
+
+### 1.6a complete — latent factors via BILINEAR_FACTOR contrib_kind
+
+**Block layout (F = 1).** A single latent factor block stores
+```
+x[block.start .. block.start + n_latent)        ->  u_1, ..., u_n_latent
+x[block.start + n_latent .. block.start + size) ->  lambda_1, ..., lambda_n_arms
+```
+where `size = n_latent + n_arms`. Each obs (i, k_arm) contributes
+```
+eta_i += x[u_slot(obs_idx(i))] * x[lambda_slot(k_arm)]
+```
+which is bilinear in x — not linear. Both u and lambda are jointly
+optimized by the inner Newton.
+
+**New contrib_kind.** `BlockContribKind::BILINEAR_FACTOR` plus a new
+field on LatentBlock:
+```
+std::function<std::pair<int,int>(int i, int k_arm)> obs_factor_lambda;
+```
+returning the global (u_slot, lambda_slot) pair for each obs.
+
+**Scatter (Gauss-Newton).** Dispatch in
+`scatter_arm_obs_joint_multi_sparse` (sparse joint path) emplaces two
+active dofs per obs with bilinear weights:
+```
+active[u_slot]      = lambda * d_eff
+active[lambda_slot] = u * d_eff
+```
+The existing active × active intra-block, β × active and RE × active
+formulas then fill the right Gauss-Newton gradient and Hessian entries —
+including the (u, lambda) mixed-curvature cross term. The g_i term (full-
+Newton mixed second derivative) is dropped per Gauss-Newton convention,
+matching INLA / Stan-Laplace / TMB practice for nonlinear-eta GLM blocks.
+
+**Eta accumulator.** A dedicated BILINEAR_FACTOR case in
+`compute_eta_joint_sparse_dispatch` adds `d_e * u * lambda` once per
+obs. The active-dof linear formula used by INDEXED_MULTI / DENSE_BASIS
+would double-count the product, so eta computation is the one place
+BILINEAR can't reuse the existing dispatch surface.
+
+**Pattern enumerator.** `detail::resolve_indexed_dofs` returns the (u,
+lambda) pair as two block-local active dofs; the existing β × active,
+RE × active, and active × active per-obs enumeration then fills every
+required pattern entry (including the (u, lambda) cross within the
+block). No new pattern-builder branch needed beyond the resolver.
+
+**Identifiability.** A bilinear (u, lambda) product has overall-sign and
+overall-scale degeneracies. Both are broken by tight Gaussian anchors
+on (u_1, lambda_1):
+```
+u_1     ~ N(0, anchor_eps^2)
+lambda_1 ~ N(1, anchor_eps^2)
+```
+with `anchor_eps = 1e-3` by default. The other slots carry user-facing
+priors: `u_j ~ N(0, sigma_u^2)`, `lambda_k ~ N(0, sigma_lambda^2)`,
+defaults sigma_u = sigma_lambda = 1.0. Anchoring via priors rather than
+hard reparam keeps the per-slot scatter uniform across all (u, lambda)
+slots — much simpler than reconstructing a pinned slot inside every
+scatter call.
+
+**Outer grid.** Zero outer-grid axes for first-ship latent factors.
+sigma_u, sigma_lambda, anchor_eps are scalar block-spec fields, not
+gridded hyperparameters. The block is hyperparameter-free from the
+outer-integration perspective.
+
+**Files added.**
+- `src/latent_factor_block_factory.h` — `make_latent_factor_block`.
+- `tests/testthat/test-nested-laplace-joint-latent-factor.R` — smoke +
+  recovery (lambda_1 anchor, lambda ratio, u correlation) + validation
+  (n_latent < 2 errors).
+
+**Files changed.**
+- `src/latent_block.h` — `BILINEAR_FACTOR` enum value + `obs_factor_lambda`.
+- `src/joint_hessian_pattern.h` — `resolve_indexed_dofs` BILINEAR case.
+- `src/nested_laplace_joint_multi.h` — scatter dispatch + eta dispatch.
+- `src/nested_laplace_joint_multi.cpp` — R parser dispatch for
+  `type = 'lf'`.
+- `R/nested_laplace_joint.R` — `.joint_block_spec_for_cpp` entry,
+  `arms` arg threading.
+- `R/nested_laplace.R` — `.NL_REGISTRY$lf` (1 x 0 grid),
+  `.nl_axis_quantiles` 0-col guard.
+- `.joint_posterior_moments_multi` — guard 0-axis blocks.
+- `.joint_multi_layout` — recognize `lf` block size = n_latent + n_arms.
+
+**Test results.** 13 / 13 assertions pass: smoke (3), recovery (5,
+including lambda_1 ≈ 1 ± 0.05, lambda ratio within ±0.30, u correlation
+> 0.6 against simulated truth), validation (2). Full broader sweep
+green: joint sparse equivalence, joint multi parity, joint BYM2 /
+ICAR / beta / prune / adaptive / phi-grid / parallel, multi-block
+recovery (110 assertions), nested-laplace-cpp, ST sparse equivalence,
+joint-hessian-pattern (70), spde (40), nested-laplace-gp (16),
+sparse-cholesky (30), HSGP-SVC + multi-scale (14).
+
+**Out of scope for this ship.**
+- F > 1 factors. Would need a rotation constraint (lower-triangular
+  Lambda matrix) on top of the (u_1, lambda_1) anchors. The
+  BILINEAR_FACTOR scatter / pattern / eta surface generalizes
+  trivially — the new factory would emit F × 2 = 2F active dofs per
+  obs and tile F (u_f, lambda_f) sub-blocks. Identifiability ceiling
+  is the only design work left.
+- Tau / sigma axes on the outer grid. The factor field amplitude is
+  pinned at sigma_u = 1.0 (default) and absorbed by the lambda
+  loadings. Gridding sigma_u would add one outer-grid axis per
+  factor; doable but not needed for the F = 1 first ship.
+- Full-Newton mixed-curvature cross term (drop g_i term in scatter).
+  Standard Gauss-Newton practice — leave the g_i term to a future
+  refinement only if a recovery study shows it matters.
+
+---
+
+## Stage 1.6 design plan (original sketch, for reference)
+
+Three DENSE_BASIS block types were flagged out-of-scope in 1.3c. Each
+needs different surgery on the LatentBlock interface; this section is
+the design sketch to pick up in a fresh session.
+
+### 1.6a — Latent factors (highest priority, hardest)
+
+**Goal.** A length-`K` factor block with one loading vector per obs.
+Shape: `eta_arm_k = X_k beta_k + sum_{f=1..F} lambda_f[arm_k] * eta_factor_f[obs_idx_f]`,
+where `lambda_f[k_arm]` is the per-arm loading on factor `f` and
+`eta_factor_f` is the latent factor field (length `n_latent`). Standard
+identifiability constraints: `sum_i eta_factor_f[i] = 0` (sum-to-zero)
+OR `eta_factor_f[1] = 0` (first-zero) for each factor.
+
+**Why DENSE_BASIS doesn't fit.** DENSE_BASIS as currently defined
+(`hsgp_block_factory.h`) assumes every obs touches every coefficient
+in the block via `basis_eval(i, k_arm, out)`. Latent factors are
+**INDEXED_MULTI** in disguise: each obs touches exactly one index in
+`eta_factor_f` per factor, multiplied by `lambda_f[arm_k]`. That fits
+INDEXED_MULTI's `(local_idx, weight)` interface — `weight = lambda_f[arm_k]`
+— except the loadings `lambda_f[arm_k]` are themselves latent (must be
+estimated), not fixed at fit-time.
+
+**The constraint piece.** Sum-to-zero on `eta_factor_f` makes the prior
+precision `Q_f` rank-deficient by 1 per factor. The 1.4e uniform ridge
+handles this for the Newton solve, but the rank deficit breaks
+identifiability with `lambda_f` (any uniform shift of `eta_factor_f`
+can be absorbed by adjusting per-arm intercepts in `beta_k`). Solutions:
+
+  1. **Hard constraint via reparameterization.** Internally store
+     `eta_factor_f[2..n_latent]` and reconstruct `eta_factor_f[1] = -sum(rest)`
+     (sum-to-zero) or `eta_factor_f[1] = 0` (first-zero). Newton solver
+     never sees the constrained DOF. Requires a `reparam_in` /
+     `reparam_out` pair on the block — new hooks.
+  2. **Lagrange multiplier.** Append a Lagrange row to H enforcing
+     `sum(eta_factor_f) = 0`. Cleaner but inflates n_x by F (one extra
+     DOF per factor) and breaks the sparsity assumption.
+  3. **Soft constraint (penalty).** Add `kappa * (sum eta_factor_f)^2`
+     to log_prior with kappa large. Numerically OK but doesn't truly
+     remove the flat direction; relies on uniform ridge to mop up.
+
+  **Recommendation: option (1).** Matches how INLA handles the same
+  constraint (`extraconstr` in `f()` formula), preserves sparsity,
+  doesn't grow n_x. The new `LatentBlock` field would be
+  `std::function<void(...)> reparam_to_constrained` /
+  `std::function<void(...)> reparam_from_constrained`, called inside
+  the Newton loop's scatter and eta-accumulator.
+
+**Loadings as hyperparameters.** Each factor has F * n_arms loadings
+`lambda_f[k_arm]`. Treat them as hyperparameters (outer-grid axes) —
+prohibitive at F >= 2 because the grid grows as
+`product(loading_grid_size^(F * n_arms))`. Alternatives:
+
+  1. **Pin one loading per factor.** `lambda_f[arm_1] := 1` (canonical
+     for identifiability), grid only over the remaining `lambda_f[arm_k]`
+     for `k > 1`. Reduces to `(n_arms - 1) * F` outer-grid axes.
+  2. **Treat loadings as latent.** Append `lambda` to the latent vector
+     `x`, fit jointly with `eta_factor`. Newton then optimizes both.
+     Identifiability constraint enforced via the reparam in (1) above.
+     Cleaner — no outer-grid axis explosion — but requires gradient/
+     Hessian contributions from `lambda` (per-arm scatter ops).
+
+  **Recommendation: option (2).** Keeps the outer grid small and
+  matches how SPDE-SVC and other multi-parameter latent priors handle
+  per-arm scaling. Per-arm scatter now has TWO contributions per obs
+  for each factor: gradient wrt `eta_factor_f[obs_idx_f(i)]`
+  (= `dlogL/deta * lambda_f`) and gradient wrt `lambda_f[arm_k]`
+  (= `dlogL/deta * eta_factor_f[obs_idx_f(i)]`).
+
+**Files to touch**:
+- `src/latent_block.h` — add `reparam_to_constrained` /
+  `reparam_from_constrained` fields; new contrib_kind value (or reuse
+  INDEXED_MULTI with a constraint flag).
+- New `src/latent_factor_block_factory.h` — analogous to `make_spde_block`.
+- `src/nested_laplace_joint_multi.cpp` — R parser entry for `type = "lf"`,
+  C++ dispatch in `build_joint_blocks_from_spec`.
+- `R/nested_laplace_joint.R` — `.joint_block_spec_for_cpp` entry, new
+  spec validation.
+- `tests/testthat/test-latent-factor.R` — recovery test (simulate F=2
+  factors with known loadings + sum-to-zero, fit, check loading
+  recovery + factor field recovery up to sign/scale identifiability).
+
+**Effort estimate**: 2-3 days. The hard part is the reparam + scatter
+gradient terms for `lambda`; the rest is plumbing.
+
+### 1.6b — HSGP-SVC (spatially-varying coefficient)
+
+**Goal.** Replace a fixed-effect column with an HSGP-expanded coefficient
+field: `eta_i = X_i[1] * f_1(s_i) + X_i[2] * f_2(s_i) + ...`, where each
+`f_j(s)` is its own HSGP block with shared eigenvalues but a per-arm
+basis evaluation `Phi_i * X_i[j] * sqrt(S)`. That is the workload table's
+"HSGP-SVC (per-term scaling)" row.
+
+**Why current HSGP doesn't fit.** `make_hsgp_block` (1.3c) computes
+`basis_eval(i, k_arm, out) = Phi[i] * sqrt_S` — a constant basis
+evaluation per obs. For SVC each obs needs `Phi[i] * X_i[j] * sqrt_S`,
+which depends on a covariate at obs `i` (column `j` of the arm's design).
+
+**Design.** Two clean options:
+
+  1. **One HSGP block per SVC term.** User declares
+     `list(type = "hsgp", basis = Phi, ..., svc_column = j)` for each
+     column. The block factory bakes `Phi * X[, j]` into a per-arm
+     scaled basis at fit-time, then proceeds as a standard DENSE_BASIS
+     HSGP. Simple, composable, no new fields on LatentBlock.
+  2. **Single HSGP-SVC block with `svc_columns = c(j1, j2, ...)`.**
+     One block contributes K independent factor fields (each on the
+     same eigenvalue spectrum); per-obs basis_eval emits a
+     `(K * m_total)`-wide vector. Saves repeated `sqrt_S` computation
+     across the K terms but couples them; harder to give per-term
+     `sigma2 / lengthscale` axes.
+
+  **Recommendation: option (1).** Composable, matches how INLA
+  spatial-SVC works (one `f()` per column), and the user gets
+  per-term hyperparameter axes for free via the outer-grid Cartesian
+  product. Tradeoff: K independent symbolic factors instead of one.
+  At HSGP scales (M = 50-500) this is fine.
+
+**Files to touch**:
+- `R/nested_laplace_joint.R` — `.joint_block_spec_for_cpp` entry for
+  `type = "hsgp"` accepts an optional `svc_column` field (1-based index
+  into `arm$X`). The R-side builds the scaled `Phi_scaled[i, m] =
+  Phi[i, m] * X[i, svc_column]` once and passes it to the existing C++
+  factory unchanged.
+- New test exercising HSGP-SVC + joint dispatch.
+
+**Effort estimate**: half-day. Mostly R-side plumbing; existing
+DENSE_BASIS infrastructure handles the rest.
+
+### 1.6c — HSGP-MSGP (multi-scale / multi-output)
+
+**Goal.** Two interpretations. Default to (a) until user clarifies:
+
+  (a) **Multi-scale.** A latent field that's the sum of `S` independent
+      HSGP components at different lengthscales: `f(s) = sum_{l=1..S} f_l(s)`,
+      where each `f_l` has its own `(sigma2_l, lengthscale_l)` axis. Used
+      for multi-scale spatial heterogeneity (long-range trend + local
+      variation).
+  (b) **Multi-output.** One basis, shared across `K` correlated arms,
+      with a `K x K` cross-arm covariance matrix on the basis
+      coefficients. Closer to a co-regionalization model.
+
+**Design for (a) "multi-scale".** Same as HSGP-SVC option (1): one
+HSGP block per scale, each contributes its own basis to the joint
+latent. Outer-grid Cartesian product over `(sigma2, lengthscale)` per
+scale; expect to use 2-3 scales in practice. No new infrastructure
+beyond what HSGP-SVC needs.
+
+**Design for (b) "multi-output".** Needs a new `K x K` matrix
+hyperparameter — outer-grid over LKJ-cholesky factors or similar.
+Heavier; defer until a user actually requests it.
+
+**Effort estimate**: half-day for (a), 2-3 days for (b).
+
+### Recommended ordering
+
+1. **1.6b (HSGP-SVC)** first — half-day, pure R-side, validates the
+   "compose by adding more blocks" design pattern against an actual
+   workload.
+2. **1.6c (HSGP-MSGP, multi-scale)** — half-day, falls out of 1.6b
+   trivially. Defer the multi-output variant.
+3. **1.6a (latent factors)** — 2-3 days, the hard one. Standalone PR
+   because it adds the constraint-aware extension to LatentBlock.
+
+Total ~3-4 days end-to-end for full Stage 1.6.
+
+### Open design questions for new session
+
+- Does the latent-factors workload need centred (sum-to-zero) or
+  first-zero constraint? Different downstream interpretation; pick
+  whichever matches the published applications you have in mind.
+- For HSGP-SVC, do we need a `(sigma2, lengthscale)` axis pair PER
+  scaled column, or do the SVC fields share hyperparameters? Sharing
+  shrinks the grid but couples the inferences.
+- Multi-output HSGP-MSGP: who needs it? If no one in tulpa's user base
+  has it on a roadmap, defer indefinitely.
 
 ## Quick orientation tips
 

@@ -373,6 +373,25 @@ nested_laplace <- function(...) {
     )
   ),
 
+  lf = list(
+    # Latent factor block (Stage 1.6a). F = 1 only. No outer-grid axes:
+    # identifiability is handled by tight Gaussian anchors on (u_1,
+    # lambda_1) inside the C++ factory; everything else is jointly
+    # optimized by the inner Newton. Returns a 1 x 0 grid so the joint
+    # Cartesian product treats this block as a "no axis" contributor.
+    cpp_fn = NULL,
+    defaults = function(p, a) p,
+    pack = function(p) stop(
+      "lf is only supported inside a multi-block prior. ",
+      "Wrap the block in list(): tulpa_nested_laplace_joint(prior = list(blk), ...).",
+      call. = FALSE
+    ),
+    theta = function(p) list(
+      grid  = matrix(numeric(0), nrow = 1L, ncol = 0L),
+      names = character(0)
+    )
+  ),
+
   tgmrf = list(
     # User-defined GMRF block (see ?tgmrf). Only available inside a multi-
     # block prior. The outer theta-grid is the Cartesian product of
@@ -444,7 +463,14 @@ nested_laplace <- function(...) {
   w / sum(w)
 }
 
-# Compute weighted theta_mean / theta_sd from grid + weights.
+# Compute weighted theta_mean / theta_sd / theta_median / theta_ci_lo /
+# theta_ci_hi from grid + weights. The mean and SD are produced via the
+# usual `sum(w * x)` / `sum(w * x^2)` moments; the median and 2.5/97.5
+# CI are produced via `.nl_axis_quantiles` so that asymmetric scale-like
+# hyperparameters (sigma, alpha, range, phi) have a calibrated headline
+# summary alongside mean +/- SD. Median is the recommended summary for
+# right-skewed posteriors: `mean` of a weakly-identified positive ratio
+# is pulled up by the right tail; `median` matches truth at small n.
 .nl_posterior_moments <- function(res, type) {
   w <- res$weights
   tg <- res$theta_grid
@@ -458,6 +484,10 @@ nested_laplace <- function(...) {
     res$theta_mean <- sum(w * tg)
     res$theta_sd <- sqrt(max(0, sum(w * tg^2) - res$theta_mean^2))
   }
+  qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis)
+  res$theta_median <- qs$median
+  res$theta_ci_lo  <- qs$ci_lo
+  res$theta_ci_hi  <- qs$ci_hi
   res
 }
 
@@ -519,6 +549,60 @@ nested_laplace <- function(...) {
     if (q >= p[length(p)])   return(v[length(v)])
     suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
   }, numeric(1L))
+}
+
+# Weighted-quantile median + 2.5/97.5 empirical CI for every axis of a
+# (scalar or matrix) theta_grid. Returns named numeric vectors so the
+# joint nested-Laplace surface exposes `theta_median / theta_ci_lo /
+# theta_ci_hi` alongside `theta_mean / theta_sd` for every hyperparameter.
+#
+# `tg` is a vector or matrix; `log_marginal` aligns with `tg` rows;
+# `refining` is the per-cell refining-axis tag from mode-tracked
+# refinement (NULL or all-"" outside the joint path). For each axis,
+# slice cells from OTHER axes are dropped before computing the quantile
+# -- those cells pin the current axis at a single non-varying value, so
+# including them oversamples that value. Cartesian cells, same-axis
+# slice cells, and same-axis consistency cells are kept. This is the
+# same per-axis mask used by `.joint_recalibrate_axis_moments` for the
+# mean/SD path.
+#
+# Returns list(median = named_vec, ci_lo = named_vec, ci_hi = named_vec).
+# For scalar tg the returned vectors are length-1 with names = "value".
+.nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
+                                probs = c(0.025, 0.5, 0.975)) {
+  if (is.null(dim(tg))) {
+    tg <- matrix(as.numeric(tg), ncol = 1L,
+                 dimnames = list(NULL, "value"))
+  }
+  # Empty grid (no outer-grid axes — e.g. an lf-only fit): nothing to
+  # quantilize; return empty named vectors. paste0 recycles the prefix
+  # past zero-length integers, so we guard ncol(tg) == 0 explicitly.
+  if (ncol(tg) == 0L) {
+    empty <- setNames(numeric(0), character(0))
+    return(list(median = empty, ci_lo = empty, ci_hi = empty))
+  }
+  nms <- colnames(tg) %||% paste0("V", seq_len(ncol(tg)))
+  n_ax <- length(nms)
+  lo  <- setNames(rep(NA_real_, n_ax), nms)
+  med <- setNames(rep(NA_real_, n_ax), nms)
+  hi  <- setNames(rep(NA_real_, n_ax), nms)
+  if (is.null(refining)) refining <- rep("", nrow(tg))
+  for (j in seq_len(n_ax)) {
+    ax    <- nms[j]
+    keep  <- refining == "" | refining == ax |
+             refining == paste0("consistency_", ax)
+    use   <- keep & is.finite(tg[, j])
+    if (sum(use) == 0L) next
+    lm_u  <- log_marginal[use]
+    m     <- max(lm_u)
+    if (!is.finite(m)) next
+    ws    <- exp(lm_u - m); ws <- ws / sum(ws)
+    qs    <- .nl_wtd_quantile(tg[use, j], ws, probs)
+    lo[j]  <- qs[1L]
+    med[j] <- qs[2L]
+    hi[j]  <- qs[3L]
+  }
+  list(median = med, ci_lo = lo, ci_hi = hi)
 }
 
 .nl_axis_marginal_logdensity <- function(vals, log_marg, keep = NULL) {
@@ -994,6 +1078,13 @@ nested_laplace <- function(...) {
     )
   }
   out$block_moments <- per_block_moments
+
+  # Weighted-quantile median + 2.5/97.5 CI per axis (calibrated summary
+  # for right-skewed scale-like hyperparameters; see `.nl_axis_quantiles`).
+  qs <- .nl_axis_quantiles(joint_grid, out$log_marginal, out$refining_axis)
+  out$theta_median <- qs$median
+  out$theta_ci_lo  <- qs$ci_lo
+  out$theta_ci_hi  <- qs$ci_hi
   out
 }
 

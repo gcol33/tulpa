@@ -55,29 +55,14 @@ public:
     // Phase 2: Numeric factorization. Computes L such that PAP' = LL'.
     // Returns true on success, false if matrix is not positive definite.
     // A must have the same sparsity pattern as in analyze().
+    //
+    // Rank-deficient handling lives upstream, not here: every Laplace
+    // factorize callsite adds `LAPLACE_UNIFORM_RIDGE * I` to H before
+    // calling factorize (see laplace_cholesky.h). That guarantees the
+    // matrix is PD even for ICAR / RW1 / RW2 priors with rank deficit,
+    // so this method only needs the plain supernodal path — no
+    // simplicial fallback, no dbound, no per-call ridge retry.
     bool factorize(cholmod_sparse* A);
-
-    // Numeric factorization with diagonal-ridge retry for rank-deficient H.
-    // Mirrors the dense hand-rolled Cholesky's pivot clamp
-    // (cholesky_factorize_impl_raw: if (sum <= 0) sum = 1e-6) by adding a
-    // small ridge to the diagonal of A on factorization failure and
-    // retrying. The ridge starts at ridge_init and grows geometrically
-    // (x10 per retry). The factorization that succeeds factors
-    // A + ridge*I, so log_determinant() returns log|A + ridge*I| — exactly
-    // the bias the dense clamp introduces for the deficient pivot.
-    //
-    // Mutates A->x in place when retries are needed. Caller must re-zero
-    // and re-scatter before the next iteration (H_builder.zero() does
-    // this for the standard Newton loops).
-    //
-    // Pattern requirement: every column of A must include its diagonal
-    // entry at row index == column index. All tulpa prior patterns (ICAR,
-    // BYM2, CAR_proper, RW1, RW2, AR1, IID) satisfy this.
-    bool factorize_with_ridge_retry(
-        cholmod_sparse* A,
-        double ridge_init = 1e-6,
-        int max_retries = 8
-    );
 
     // Solve Ax = b using the current factorization.
     // b and x are dense vectors of length n.

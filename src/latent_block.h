@@ -51,14 +51,24 @@ class SparseHessianBuilder;
 //   mesh nodes via barycentric interpolation; FEM-P2: more). Use
 //   `obs_indices(i, k_arm, out)` to fill (idx, weight) pairs.
 // - DENSE_BASIS: every block coefficient is touched by every obs (HSGP,
-//   HSGP-SVC, HSGP-MSGP, latent factors). Use `basis_eval(i, k_arm, out)`
-//   to fill the full `size`-vector of basis weights. Pattern builder
-//   bypasses per-obs enumeration and fills the full block × block
-//   sub-pattern unconditionally.
+//   HSGP-SVC, HSGP-MSGP). Use `basis_eval(i, k_arm, out)` to fill the
+//   full `size`-vector of basis weights. Pattern builder bypasses per-
+//   obs enumeration and fills the full block × block sub-pattern
+//   unconditionally.
+// - BILINEAR_FACTOR: each obs touches exactly TWO block-local DOFs —
+//   one factor-field slot u_i and one per-arm loading lambda_k — and
+//   the eta contribution is the PRODUCT `u_i * lambda_k` (bilinear, not
+//   linear in x). Use `obs_factor_lambda(i, k_arm)` to fetch the two
+//   GLOBAL slot indices; the scatter reads `x[u_slot]` and
+//   `x[lambda_slot]` to weight the Gauss-Newton scatter entries
+//   (weight on u = lambda * d_e, weight on lambda = u * d_e). Eta
+//   accumulator must NOT use the standard active-dof linear formula
+//   (it double-counts the product); see compute_eta_joint_sparse_dispatch.
 enum class BlockContribKind {
     INDEXED_SINGLE,
     INDEXED_MULTI,
-    DENSE_BASIS
+    DENSE_BASIS,
+    BILINEAR_FACTOR
 };
 
 // Sparsity shape of this block's prior precision Q (governs nnz/row
@@ -157,11 +167,20 @@ struct LatentBlock {
         obs_indices;
 
     // DENSE_BASIS only. Fill `out[0..size)` with the basis weights for obs i
-    // in arm k_arm. E.g. HSGP fills out[j] = Phi(s_i, j) * sqrt(S_j); latent
-    // factors fill out[k] = factor loading for obs i on factor k. Caller
+    // in arm k_arm. E.g. HSGP fills out[j] = Phi(s_i, j) * sqrt(S_j). Caller
     // owns the buffer (sized to `size`); implementations write in place.
     std::function<void(int /*i*/, int /*k_arm*/, double* /*out*/)>
         basis_eval;
+
+    // BILINEAR_FACTOR only. Return the pair (u_slot_global, lambda_slot_global)
+    // for obs i in arm k_arm. Both indices are absolute (i.e. include the
+    // block's start offset). Return any negative slot to skip the obs
+    // (e.g. when obs_idx_per_arm returns 0/-1 for "no factor contribution
+    // at this obs"). The scatter reads x[u_slot] and x[lambda_slot] to
+    // compute the bilinear linearization weights at the current Newton
+    // iterate.
+    std::function<std::pair<int,int>(int /*i*/, int /*k_arm*/)>
+        obs_factor_lambda;
 
     // Append (row, col) lower-triangle entries the prior contributes to the
     // joint H sparsity pattern. Indices are global in the joint latent x

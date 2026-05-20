@@ -58,6 +58,7 @@
 #include "nested_laplace_joint_multi.h"
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
+#include "latent_factor_block_factory.h"
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
 #include "hmc_car_proper.h"
@@ -755,6 +756,42 @@ int build_joint_blocks_from_spec(
         );
         blocks.push_back(block);
         return latent_offset + n_mesh;
+    }
+
+    if (type == "lf") {
+        // Latent factor block (Stage 1.6a): u in R^n_latent shared across
+        // arms, lambda in R^n_arms per-arm loadings, eta_i += u[obs_idx(i)] *
+        // lambda[k_arm]. F = 1 only in this first ship.
+        if (is_copy_block) {
+            Rcpp::stop("Block %d: copy semantics are not supported for "
+                       "latent factor blocks (the factor field IS the "
+                       "shared latent; per-arm scaling lives in `lambda`).",
+                       block_index + 1);
+        }
+        // No outer-grid axes for first-ship latent factors. sigma_u,
+        // sigma_lambda, anchor_eps are R-side scalar fields on the block
+        // spec; data informs (u, lambda) via the joint Newton solve.
+        require_axes(0);
+
+        int n_latent = Rcpp::as<int>(bs["n_latent"]);
+        Rcpp::List obs_idx_list = bs["obs_idx"];
+        auto obs_idx_fn = make_per_arm_idx_fn(obs_idx_list, n_arms,
+                                                "obs_idx", block_index);
+
+        double sigma_u      = bs.containsElementNamed("sigma_u")
+                                  ? Rcpp::as<double>(bs["sigma_u"])      : 1.0;
+        double sigma_lambda = bs.containsElementNamed("sigma_lambda")
+                                  ? Rcpp::as<double>(bs["sigma_lambda"]) : 1.0;
+        double anchor_eps   = bs.containsElementNamed("anchor_eps")
+                                  ? Rcpp::as<double>(bs["anchor_eps"])   : 1e-3;
+
+        tulpa::LatentBlock block = tulpa::make_latent_factor_block(
+            latent_offset, n_latent, n_arms, obs_idx_fn,
+            sigma_u, sigma_lambda, anchor_eps,
+            block_index
+        );
+        blocks.push_back(block);
+        return latent_offset + n_latent + n_arms;
     }
 
     Rcpp::stop("Unknown block type '%s' in cpp_nested_laplace_joint_multi",

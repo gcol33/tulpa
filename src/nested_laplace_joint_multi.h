@@ -183,7 +183,7 @@ inline void scatter_arm_obs_joint_multi(
 // (row, col) this scatter will touch — H.add() silently drops entries not
 // present in the pattern.
 inline void scatter_arm_obs_joint_multi_sparse(
-    const Rcpp::NumericVector& /*x*/,
+    const Rcpp::NumericVector&    x,
     const Rcpp::NumericVector&    eta,
     const ParsedArm&              pa,
     const JointArm&               arm,
@@ -255,6 +255,18 @@ inline void scatter_arm_obs_joint_multi_sparse(
                 int l = blk.idx(i, k_arm);
                 if (l > 0 && l <= blk.size) {
                     active_scratch.emplace_back(blk.start + l - 1, d_eff);
+                }
+            } else if (kind_cache[b] == BlockContribKind::BILINEAR_FACTOR) {
+                // eta_i += d_eff * u * lambda. Gauss-Newton linearization:
+                // emit u_slot with weight (lambda * d_eff) and lambda_slot
+                // with weight (u * d_eff). Active × active fills the
+                // mixed-curvature (u, lambda) Hessian entry naturally.
+                auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+                if (u_slot >= 0 && lambda_slot >= 0) {
+                    const double u_val      = x[u_slot];
+                    const double lambda_val = x[lambda_slot];
+                    active_scratch.emplace_back(u_slot,      lambda_val * d_eff);
+                    active_scratch.emplace_back(lambda_slot, u_val      * d_eff);
                 }
             } else {  // INDEXED_MULTI
                 multi_scratch.clear();
@@ -382,6 +394,14 @@ inline void compute_eta_joint_sparse_dispatch(
                         acc += basis_scratch[j] * x[blk.start + j];
                     }
                     e += d_e * acc;
+                    break;
+                }
+                case BlockContribKind::BILINEAR_FACTOR: {
+                    if (!blk.obs_factor_lambda) break;
+                    auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+                    if (u_slot >= 0 && lambda_slot >= 0) {
+                        e += d_e * x[u_slot] * x[lambda_slot];
+                    }
                     break;
                 }
                 }
