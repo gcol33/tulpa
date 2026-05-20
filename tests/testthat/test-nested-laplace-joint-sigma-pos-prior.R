@@ -13,9 +13,13 @@
 #   (1) the flat-prior baseline carries the documented small-n_pos
 #       upward bias on alpha (sanity check that the fixture exercises
 #       the regime tulpa#22 targets),
-#   (2) the documented-default pc.prec(U=1.0, alpha=0.01) cuts the
+#   (2) the documented-default pc.prec(U=2.0, alpha=0.01) cuts the
 #       alpha geometric bias meaningfully (target on this fixture:
-#       <= 9%; calibrated for the (sigma, alpha) reparam),
+#       <= 9%; calibrated for the (sigma, alpha) reparam, where U is the
+#       upper end of plausible alpha values rather than the truth itself
+#       -- the prior test sweep dated 2026-05-20 found U=1.0 overshrinks
+#       past truth and inflates the cross-axis sigma by ~+13%, so the
+#       recommended default on the alpha domain shifted to U=2.0),
 #   (3) a stronger half_normal(scale=0.5) gives at least 15% relative
 #       reduction vs flat,
 #   (4) the regularizer on alpha does not corrupt the well-identified
@@ -120,7 +124,7 @@ test_that("pc.prec on alpha cuts alpha bias at small n_pos (gcol33/tulpa#22)", {
         sim <- .simulate_d7_pp(seeds[i])
         f_flat <- .fit_pp(sim, adj, prior_alpha = NULL)
         f_pc   <- .fit_pp(sim, adj,
-                          prior_alpha = list("pc.prec", c(1.0, 0.01)))
+                          prior_alpha = list("pc.prec", c(2.0, 0.01)))
         f_hn   <- .fit_pp(sim, adj,
                           prior_alpha = list("half_normal", 0.5))
         alpha_flat[i] <- f_flat$theta_median[["alpha"]]
@@ -146,8 +150,10 @@ test_that("pc.prec on alpha cuts alpha bias at small n_pos (gcol33/tulpa#22)", {
     # (1) Sanity: flat-prior baseline carries small-n_pos upward bias.
     expect_gt(gb_flat, 0.08, label = info_str)
 
-    # (2) Documented default `pc.prec(U=1.0, alpha=0.01)` regularizes
-    #     meaningfully.
+    # (2) Documented default `pc.prec(U=2.0, alpha=0.01)` regularizes
+    #     meaningfully. U sits at the upper end of plausible alpha values
+    #     (the alpha grid extends to 2.0) rather than at the truth, so
+    #     the prior shrinks the tail without pulling past the modal cell.
     expect_lt(abs(gb_pc), 0.09, label = info_str)
 
     # (3) `half_normal(scale = 0.5)` gives at least 15% relative

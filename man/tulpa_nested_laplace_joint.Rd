@@ -24,7 +24,8 @@ tulpa_nested_laplace_joint(
   adaptive_grid = FALSE,
   adaptive_grid_edge_thresh = 0.02,
   adaptive_grid_max_passes = 1L,
-  var_of_means_consistency = TRUE
+  var_of_means_consistency = TRUE,
+  force_sparse = FALSE
 )
 }
 \arguments{
@@ -114,10 +115,15 @@ donor field amplitude \eqn{\sigma} and on the copy coefficient
 calibrated by \code{P(theta > U) = alpha}. Closed-form density
 \code{lambda * exp(-lambda * theta)} with \code{lambda = -log(alpha)/U}.
 Drop-in for the weakly-identified small-\code{n_pos} regime
-(gcol33/tulpa#22): default-friendly choice on \eqn{\alpha} is
-\code{c(U = 1.0, alpha = 0.01)}, which shrinks the upper tail of
-\eqn{\alpha} without biasing the modal cell when the data
-identifies it.
+(gcol33/tulpa#22). Pick \code{U} at the upper end of plausible values
+so the prior shrinks the tail without biasing the modal cell when
+the data identifies it: default-friendly choice on \eqn{\sigma} is
+\code{c(U = 1.0, alpha = 0.01)} (donor amplitude); on the dimensionless
+copy coefficient \eqn{\alpha} the recommended choice is
+\code{c(U = 2.0, alpha = 0.01)}. Choosing \code{U} smaller than truth on
+\eqn{\alpha} actively shrinks past the modal cell -- e.g. on
+a fixture with truth \eqn{\alpha = 1}, \code{c(U = 1.0, alpha = 0.01)}
+puts \code{P(alpha > 1) = 0.01} and pulls the posterior toward zero.
 \item \code{list("half_normal", scale)} -- half-normal with scale \code{scale > 0}.
 Sharper tail decay than PC; use when stronger regularization is
 desired and the truth is well inside the prior.
