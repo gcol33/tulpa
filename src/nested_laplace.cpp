@@ -828,6 +828,15 @@ struct SpatialBlockOps {
                        const Rcpp::NumericVector&, int)> add_prior_at_k;
     std::function<double(const Rcpp::NumericVector&, int)> log_prior_at_k;
     std::function<void(Rcpp::NumericVector&)>             center;
+
+    // Sparse-path fields (Stage 1.4b). Populated by spatial ops factories
+    // that support the sparse Newton path. May be empty for kinds that
+    // require dense scatter (HSGP / NNGP — implementation deferred).
+    std::function<void(std::vector<std::pair<int,int>>&)>
+        add_prior_pattern;          // appends prior nonzero entries (lower triangle)
+    std::function<void(tulpa::SparseHessianBuilder&, tulpa::DenseVec&,
+                       const Rcpp::NumericVector&, int)>
+        add_prior_sparse;
 };
 
 // Base eta: X·β + re[g(i)] + temporal[t_idx[i]]. The spatial contribution is
@@ -1070,6 +1079,14 @@ struct IndexedPriorOps {
     std::function<void(tulpa::DenseVec&, tulpa::DenseMat&,
                        const Rcpp::NumericVector&, int)> add_prior;
     std::function<double(const Rcpp::NumericVector&, int)> log_prior;
+
+    // Sparse-path fields (Stage 1.4b). Populated by all RW1/RW2/AR1 ops
+    // factories using the sparse twins added in 1.3a.
+    std::function<void(std::vector<std::pair<int,int>>&)>
+        add_prior_pattern;
+    std::function<void(tulpa::SparseHessianBuilder&, tulpa::DenseVec&,
+                       const Rcpp::NumericVector&, int)>
+        add_prior_sparse;
 };
 
 // RW1 — 1D τ grid; cyclic flag closes the chain.
@@ -1089,6 +1106,16 @@ inline IndexedPriorOps make_rw1_ops(
                     (const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_rw1(x, start, n_units, tau_grid[k], cyclic);
     };
+    ops.add_prior_pattern = [start, n_units, cyclic]
+                            (std::vector<std::pair<int,int>>& out) {
+        tulpa::add_rw1_pattern(out, start, n_units, cyclic);
+    };
+    ops.add_prior_sparse = [start, n_units, &tau_grid, cyclic]
+                           (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                            const Rcpp::NumericVector& x, int k) {
+        tulpa::add_rw1_precision_sparse(grad, H, x, start, n_units,
+                                          tau_grid[k], cyclic);
+    };
     return ops;
 }
 
@@ -1107,6 +1134,16 @@ inline IndexedPriorOps make_rw2_ops(
     ops.log_prior = [start, n_units, &tau_grid]
                     (const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_rw2(x, start, n_units, tau_grid[k], false);
+    };
+    ops.add_prior_pattern = [start, n_units]
+                            (std::vector<std::pair<int,int>>& out) {
+        tulpa::add_rw2_pattern(out, start, n_units, /*cyclic=*/false);
+    };
+    ops.add_prior_sparse = [start, n_units, &tau_grid]
+                           (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                            const Rcpp::NumericVector& x, int k) {
+        tulpa::add_rw2_precision_sparse(grad, H, x, start, n_units,
+                                          tau_grid[k], false);
     };
     return ops;
 }
@@ -1128,6 +1165,16 @@ inline IndexedPriorOps make_ar1_ops(
     ops.log_prior = [start, n_units, &tau_grid, &rho_grid]
                     (const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_ar1(x, start, n_units, tau_grid[k], rho_grid[k]);
+    };
+    ops.add_prior_pattern = [start, n_units]
+                            (std::vector<std::pair<int,int>>& out) {
+        tulpa::add_ar1_pattern(out, start, n_units);
+    };
+    ops.add_prior_sparse = [start, n_units, &tau_grid, &rho_grid]
+                           (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                            const Rcpp::NumericVector& x, int k) {
+        tulpa::add_ar1_precision_sparse(grad, H, x, start, n_units,
+                                          tau_grid[k], rho_grid[k]);
     };
     return ops;
 }
@@ -1195,6 +1242,17 @@ inline SpatialBlockOps make_icar_spatial_ops(
                           &adj_row_ptr, &adj_col_idx, &n_neighbors]
                          (const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_icar(x, start, n_units, tau_grid[k],
+                                       adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    ops.add_prior_pattern = [start, n_units, &adj_row_ptr, &adj_col_idx]
+                            (std::vector<std::pair<int,int>>& out) {
+        tulpa::add_car_pattern(out, start, n_units, adj_row_ptr, adj_col_idx);
+    };
+    ops.add_prior_sparse = [start, n_units, &tau_grid,
+                             &adj_row_ptr, &adj_col_idx, &n_neighbors]
+                            (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                             const Rcpp::NumericVector& x, int k) {
+        tulpa::add_icar_prior_sparse(grad, H, x, start, n_units, tau_grid[k],
                                        adj_row_ptr, adj_col_idx, n_neighbors);
     };
     ops.center = [start, n_units](Rcpp::NumericVector& x) {

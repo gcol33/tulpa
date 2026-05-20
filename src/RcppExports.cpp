@@ -1193,8 +1193,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_joint_multi
-Rcpp::List cpp_nested_laplace_joint_multi(Rcpp::List arms_list, int copy_arm, int copy_block, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_threads_outer, Rcpp::Nullable<Rcpp::IntegerVector> tile_ids, Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells, double prune_tol);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP copy_blockSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP n_threads_outerSEXP, SEXP tile_idsSEXP, SEXP tile_pilot_cellsSEXP, SEXP prune_tolSEXP) {
+Rcpp::List cpp_nested_laplace_joint_multi(Rcpp::List arms_list, int copy_arm, int copy_block, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_threads_outer, Rcpp::Nullable<Rcpp::IntegerVector> tile_ids, Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells, double prune_tol, bool force_sparse);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP copy_blockSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP n_threads_outerSEXP, SEXP tile_idsSEXP, SEXP tile_pilot_cellsSEXP, SEXP prune_tolSEXP, SEXP force_sparseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1214,7 +1214,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type tile_ids(tile_idsSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type tile_pilot_cells(tile_pilot_cellsSEXP);
     Rcpp::traits::input_parameter< double >::type prune_tol(prune_tolSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol));
+    Rcpp::traits::input_parameter< bool >::type force_sparse(force_sparseSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3121,7 +3122,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_st_nngp_rw1", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_rw1, 27},
     {"_tulpa_cpp_nested_laplace_st_nngp_rw2", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_rw2, 26},
     {"_tulpa_cpp_nested_laplace_st_nngp_ar1", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp_ar1, 27},
-    {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 16},
+    {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 17},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 17},
     {"_tulpa_cpp_nmix_laplace_fixed", (DL_FUNC) &_tulpa_cpp_nmix_laplace_fixed, 10},
     {"_tulpa_cpp_nmix_total_log_lik", (DL_FUNC) &_tulpa_cpp_nmix_total_log_lik, 5},

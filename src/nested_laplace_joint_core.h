@@ -14,6 +14,7 @@
 #include "laplace_core.h"
 #include "laplace_newton_joint.h"
 #include "laplace_re_priors.h"
+#include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <vector>
 
@@ -111,6 +112,28 @@ inline void add_per_arm_beta_re_priors(
         for (int g = 0; g < pa.n_re_groups; g++) {
             grad[pa.re_start + g] -= pa.tau_re * x[pa.re_start + g];
             H[pa.re_start + g][pa.re_start + g] += pa.tau_re;
+        }
+    }
+}
+
+// Sparse twin of add_per_arm_beta_re_priors. Writes diagonal entries via
+// SparseHessianBuilder::add.
+inline void add_per_arm_beta_re_priors_sparse(
+    DenseVec& grad, SparseHessianBuilder& H,
+    const Rcpp::NumericVector& x,
+    const std::vector<ParsedArm>& parsed,
+    double tau_beta = 1e-4
+) {
+    for (const ParsedArm& pa : parsed) {
+        for (int j = 0; j < pa.p; j++) {
+            int idx = pa.beta_start + j;
+            grad[idx] -= tau_beta * x[idx];
+            H.add(idx, idx, tau_beta);
+        }
+        for (int g = 0; g < pa.n_re_groups; g++) {
+            int idx = pa.re_start + g;
+            grad[idx] -= pa.tau_re * x[idx];
+            H.add(idx, idx, pa.tau_re);
         }
     }
 }

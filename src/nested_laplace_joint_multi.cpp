@@ -48,6 +48,7 @@
 // with the correct per-block layout; this kernel just reads the axes by
 // offset.
 
+#include "joint_hessian_pattern.h"
 #include "laplace_core.h"
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
@@ -55,12 +56,17 @@
 #include "latent_block.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
+#include "sparse_hessian.h"
+#include "hsgp_block_factory.h"
+#include "spde_block_factory.h"
+#include "tgmrf_block_factory.h"
 #include "hmc_car_proper.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifndef M_PI
@@ -167,6 +173,12 @@ int build_joint_blocks_from_spec(
                 tulpa::add_icar_prior(grad, H, x, start, size, /*tau=*/1.0,
                                        adj_rp, adj_ci, n_nbr);
             };
+            block.add_prior_sparse = [start, size, adj_rp, adj_ci, n_nbr](
+                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                const Rcpp::NumericVector& x, int /*k*/) {
+                tulpa::add_icar_prior_sparse(grad, H, x, start, size, /*tau=*/1.0,
+                                              adj_rp, adj_ci, n_nbr);
+            };
             block.log_prior = [start, size, adj_rp, adj_ci, n_nbr](
                 const Rcpp::NumericVector& x, int /*k*/) -> double {
                 return tulpa::log_prior_icar(x, start, size, /*tau=*/1.0,
@@ -183,6 +195,14 @@ int build_joint_blocks_from_spec(
                 tulpa::add_icar_prior(grad, H, x, start, size, tau,
                                        adj_rp, adj_ci, n_nbr);
             };
+            block.add_prior_sparse = [start, size, axis0, theta_grid,
+                                       adj_rp, adj_ci, n_nbr](
+                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                const Rcpp::NumericVector& x, int k) {
+                double tau = theta_grid(k, axis0);
+                tulpa::add_icar_prior_sparse(grad, H, x, start, size, tau,
+                                              adj_rp, adj_ci, n_nbr);
+            };
             block.log_prior = [start, size, axis0, theta_grid,
                                 adj_rp, adj_ci, n_nbr](
                 const Rcpp::NumericVector& x, int k) -> double {
@@ -191,6 +211,12 @@ int build_joint_blocks_from_spec(
                                               adj_rp, adj_ci, n_nbr);
             };
         }
+        block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
+        block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
+        block.add_prior_pattern = [start, size, adj_rp, adj_ci](
+            std::vector<std::pair<int,int>>& out) {
+            tulpa::add_car_pattern(out, start, size, adj_rp, adj_ci);
+        };
         block.center = [start, size](Rcpp::NumericVector& x) -> double {
             return tulpa::center_effects(x, start, size);
         };
@@ -262,6 +288,19 @@ int build_joint_blocks_from_spec(
             tulpa::add_icar_prior(grad, H, x, phi_start, size, /*tau=*/1.0,
                                    adj_rp, adj_ci, n_nbr);
         };
+        phi_block.add_prior_sparse = [phi_start, size, adj_rp, adj_ci, n_nbr](
+            tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+            const Rcpp::NumericVector& x, int /*k*/) {
+            tulpa::add_icar_prior_sparse(grad, H, x, phi_start, size,
+                                          /*tau=*/1.0,
+                                          adj_rp, adj_ci, n_nbr);
+        };
+        phi_block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
+        phi_block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
+        phi_block.add_prior_pattern = [phi_start, size, adj_rp, adj_ci](
+            std::vector<std::pair<int,int>>& out) {
+            tulpa::add_car_pattern(out, phi_start, size, adj_rp, adj_ci);
+        };
         phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr](
             const Rcpp::NumericVector& x, int /*k*/) -> double {
             double quad_form = 0.0;
@@ -297,6 +336,19 @@ int build_joint_blocks_from_spec(
                 H[idx][idx] += 1.0;
             }
         };
+        theta_block.add_prior_sparse = [theta_start, size](
+            tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+            const Rcpp::NumericVector& x, int /*k*/) {
+            for (int s = 0; s < size; s++) {
+                int idx = theta_start + s;
+                grad[idx] -= x[idx];
+                H.add(idx, idx, 1.0);
+            }
+        };
+        theta_block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
+        theta_block.prior_kind   = tulpa::PriorFillKind::NONE;
+        // No add_prior_pattern: prior is diagonal, builder adds it
+        // unconditionally.
         theta_block.log_prior = [theta_start, size](
             const Rcpp::NumericVector& x, int /*k*/) -> double {
             double lp = 0.0;
@@ -355,6 +407,16 @@ int build_joint_blocks_from_spec(
                                              theta_grid(k_grid, axis_rho_car),
                                              adj_rp, adj_ci, n_nbr);
             };
+            block.add_prior_sparse = [start, size, axis_rho_car, theta_grid,
+                                       adj_rp, adj_ci, n_nbr](
+                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                const Rcpp::NumericVector& x, int k_grid) {
+                tulpa::add_car_proper_prior_sparse(
+                    grad, H, x, start, size,
+                    /*tau=*/1.0,
+                    theta_grid(k_grid, axis_rho_car),
+                    adj_rp, adj_ci, n_nbr);
+            };
             block.log_prior = [start, size, axis_rho_car, theta_grid,
                                 adj_rp, adj_ci, n_nbr, log_det_Q_rho](
                 const Rcpp::NumericVector& x, int k_grid) -> double {
@@ -387,6 +449,16 @@ int build_joint_blocks_from_spec(
                                              theta_grid(k_grid, axis_rho_car),
                                              adj_rp, adj_ci, n_nbr);
             };
+            block.add_prior_sparse = [start, size, axis_tau, axis_rho_car,
+                                       theta_grid, adj_rp, adj_ci, n_nbr](
+                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                const Rcpp::NumericVector& x, int k_grid) {
+                tulpa::add_car_proper_prior_sparse(
+                    grad, H, x, start, size,
+                    theta_grid(k_grid, axis_tau),
+                    theta_grid(k_grid, axis_rho_car),
+                    adj_rp, adj_ci, n_nbr);
+            };
             block.log_prior = [start, size, axis_tau, axis_rho_car, theta_grid,
                                 adj_rp, adj_ci, n_nbr, log_det_Q_rho](
                 const Rcpp::NumericVector& x, int k_grid) -> double {
@@ -399,6 +471,12 @@ int build_joint_blocks_from_spec(
                 return tulpa::center_effects(x, start, size);
             };
         }
+        block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
+        block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
+        block.add_prior_pattern = [start, size, adj_rp, adj_ci](
+            std::vector<std::pair<int,int>>& out) {
+            tulpa::add_car_pattern(out, start, size, adj_rp, adj_ci);
+        };
         blocks.push_back(block);
         return start + size;
     }
@@ -429,6 +507,16 @@ int build_joint_blocks_from_spec(
                 double tau = theta_grid(k, axis0);
                 tulpa::add_rw1_precision(grad, H, x, start, size, tau, cyclic);
             };
+            block.add_prior_sparse = [start, size, axis0, theta_grid, cyclic](
+                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                const Rcpp::NumericVector& x, int k) {
+                double tau = theta_grid(k, axis0);
+                tulpa::add_rw1_precision_sparse(grad, H, x, start, size, tau, cyclic);
+            };
+            block.add_prior_pattern = [start, size, cyclic](
+                std::vector<std::pair<int,int>>& out) {
+                tulpa::add_rw1_pattern(out, start, size, cyclic);
+            };
             block.log_prior = [start, size, axis0, theta_grid, cyclic](
                 const Rcpp::NumericVector& x, int k) -> double {
                 double tau = theta_grid(k, axis0);
@@ -441,12 +529,24 @@ int build_joint_blocks_from_spec(
                 double tau = theta_grid(k, axis0);
                 tulpa::add_rw2_precision(grad, H, x, start, size, tau, false);
             };
+            block.add_prior_sparse = [start, size, axis0, theta_grid](
+                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+                const Rcpp::NumericVector& x, int k) {
+                double tau = theta_grid(k, axis0);
+                tulpa::add_rw2_precision_sparse(grad, H, x, start, size, tau, false);
+            };
+            block.add_prior_pattern = [start, size](
+                std::vector<std::pair<int,int>>& out) {
+                tulpa::add_rw2_pattern(out, start, size, /*cyclic=*/false);
+            };
             block.log_prior = [start, size, axis0, theta_grid](
                 const Rcpp::NumericVector& x, int k) -> double {
                 double tau = theta_grid(k, axis0);
                 return tulpa::log_prior_rw2(x, start, size, tau, false);
             };
         }
+        block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
+        block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
         block.center = [start, size](Rcpp::NumericVector& x) -> double {
             return tulpa::center_effects(x, start, size);
         };
@@ -476,6 +576,19 @@ int build_joint_blocks_from_spec(
             double tau = theta_grid(k, axis0);
             double rho = theta_grid(k, axis0 + 1);
             tulpa::add_ar1_precision(grad, H, x, start, size, tau, rho);
+        };
+        block.add_prior_sparse = [start, size, axis0, theta_grid](
+            tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+            const Rcpp::NumericVector& x, int k) {
+            double tau = theta_grid(k, axis0);
+            double rho = theta_grid(k, axis0 + 1);
+            tulpa::add_ar1_precision_sparse(grad, H, x, start, size, tau, rho);
+        };
+        block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
+        block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
+        block.add_prior_pattern = [start, size](
+            std::vector<std::pair<int,int>>& out) {
+            tulpa::add_ar1_pattern(out, start, size);
         };
         block.log_prior = [start, size, axis0, theta_grid](
             const Rcpp::NumericVector& x, int k) -> double {
@@ -517,6 +630,19 @@ int build_joint_blocks_from_spec(
                 H[idx][idx] += 1.0;
             }
         };
+        block.add_prior_sparse = [start, size](
+            tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
+            const Rcpp::NumericVector& x, int) {
+            for (int s = 0; s < size; s++) {
+                int idx = start + s;
+                grad[idx] -= x[idx];
+                H.add(idx, idx, 1.0);
+            }
+        };
+        block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
+        block.prior_kind   = tulpa::PriorFillKind::NONE;
+        // No add_prior_pattern: prior is diagonal, builder adds it
+        // unconditionally.
         block.log_prior = [start, size](const Rcpp::NumericVector& x, int)
             -> double {
             double lp = 0.0;
@@ -529,6 +655,106 @@ int build_joint_blocks_from_spec(
         // IID is anchored by the global per-arm intercepts; no centering.
         blocks.push_back(block);
         return start + size;
+    }
+
+    if (type == "tgmrf") {
+        if (is_copy_block) {
+            Rcpp::stop("Block %d: copy semantics for tgmrf blocks are not "
+                       "supported (first ship: spatial copy only on icar / "
+                       "bym2 / car_proper).",
+                       block_index + 1);
+        }
+        // axis_count is allowed to vary; the C++ side never indexes
+        // theta_grid for this block (Q_k is precomputed R-side).
+
+        int size = Rcpp::as<int>(bs["n_latent"]);
+        Rcpp::List obs_idx_list = bs["obs_idx"];
+        auto obs_idx_fn = make_per_arm_idx_fn(obs_idx_list, n_arms,
+                                                "obs_idx", block_index);
+
+        Rcpp::List Q_p_list = bs["Q_csc_p_per_grid"];
+        Rcpp::List Q_i_list = bs["Q_csc_i_per_grid"];
+        Rcpp::List Q_x_list = bs["Q_csc_x_per_grid"];
+        Rcpp::NumericVector logdet_Q_v = bs["logdet_Q_per_grid"];
+        Rcpp::NumericVector log_pi_v   = bs["log_prior_theta_per_grid"];
+
+        tulpa::LatentBlock block = tulpa::make_tgmrf_block(
+            latent_offset, size, obs_idx_fn,
+            Q_p_list, Q_i_list, Q_x_list,
+            logdet_Q_v, log_pi_v,
+            block_index
+        );
+        blocks.push_back(block);
+        return latent_offset + size;
+    }
+
+    if (type == "hsgp") {
+        if (is_copy_block) {
+            Rcpp::stop("Block %d: copy semantics for HSGP blocks are not "
+                       "supported (first ship: spatial copy only on icar / "
+                       "bym2 / car_proper).",
+                       block_index + 1);
+        }
+        require_axes(2);  // (log_sigma2, log_lengthscale)
+
+        int m_total = Rcpp::as<int>(bs["m_total"]);
+        Rcpp::List phi_per_arm = bs["phi"];
+        Rcpp::IntegerVector n_obs_per_arm = bs["n_obs_per_arm"];
+        Rcpp::NumericVector eigenvalues = bs["eigenvalues"];
+
+        tulpa::LatentBlock block = tulpa::make_hsgp_block(
+            latent_offset, m_total,
+            phi_per_arm, n_obs_per_arm, n_arms, block_index,
+            eigenvalues,
+            /*axis_log_sigma2=*/axis0,
+            /*axis_log_ell=*/axis0 + 1,
+            theta_grid
+        );
+        blocks.push_back(block);
+        return latent_offset + m_total;
+    }
+
+    if (type == "spde") {
+        if (is_copy_block) {
+            Rcpp::stop("Block %d: copy semantics for SPDE blocks are not "
+                       "supported (first ship: spatial copy only on icar / "
+                       "bym2 / car_proper).",
+                       block_index + 1);
+        }
+        require_axes(2);  // (range, sigma)
+
+        int n_mesh = Rcpp::as<int>(bs["n_mesh"]);
+        Rcpp::List A_x_per_arm = bs["A_x"];
+        Rcpp::List A_i_per_arm = bs["A_i"];
+        Rcpp::List A_p_per_arm = bs["A_p"];
+        Rcpp::IntegerVector n_obs_per_arm = bs["n_obs_per_arm"];
+        Rcpp::NumericVector C0_diag = bs["C0_diag"];
+        Rcpp::NumericVector G1_x   = bs["G1_x"];
+        Rcpp::IntegerVector G1_i   = bs["G1_i"];
+        Rcpp::IntegerVector G1_p   = bs["G1_p"];
+        double nu = Rcpp::as<double>(bs["nu"]);
+
+        bool use_rational = false;
+        std::vector<double> rat_poles, rat_weights;
+        if (bs.containsElementNamed("rational_poles") &&
+            bs.containsElementNamed("rational_weights") &&
+            !Rf_isNull(bs["rational_poles"]) &&
+            !Rf_isNull(bs["rational_weights"])) {
+            rat_poles   = Rcpp::as<std::vector<double>>(bs["rational_poles"]);
+            rat_weights = Rcpp::as<std::vector<double>>(bs["rational_weights"]);
+            use_rational = !rat_poles.empty();
+        }
+
+        tulpa::LatentBlock block = tulpa::make_spde_block(
+            latent_offset, n_mesh,
+            A_x_per_arm, A_i_per_arm, A_p_per_arm, n_obs_per_arm,
+            n_arms, block_index,
+            C0_diag, G1_x, G1_i, G1_p, nu,
+            /*axis_range=*/axis0, /*axis_sigma=*/axis0 + 1, theta_grid,
+            use_rational, rat_poles, rat_weights
+        );
+        blocks.push_back(block);
+        return latent_offset + n_mesh;
     }
 
     Rcpp::stop("Unknown block type '%s' in cpp_nested_laplace_joint_multi",
@@ -593,7 +819,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     int                 n_threads_outer = 1,
     Rcpp::Nullable<Rcpp::IntegerVector> tile_ids = R_NilValue,
     Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells = R_NilValue,
-    double              prune_tol = 0.0
+    double              prune_tol = 0.0,
+    bool                force_sparse = false
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -683,7 +910,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         n_threads_outer,
         tile_ids_vec,
         tile_pilot_cells_vec,
-        prune_tol
+        prune_tol,
+        force_sparse
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

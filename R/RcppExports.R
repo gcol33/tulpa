@@ -181,8 +181,8 @@ cpp_nested_laplace_st_nngp_ar1 <- function(y, n, X, re_idx, n_re_groups, sigma_r
     .Call(`_tulpa_cpp_nested_laplace_st_nngp_ar1`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, rho_temporal_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q)
 }
 
-cpp_nested_laplace_joint_multi <- function(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0) {
-    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol)
+cpp_nested_laplace_joint_multi <- function(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0, force_sparse = FALSE) {
+    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse)
 }
 
 cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0) {

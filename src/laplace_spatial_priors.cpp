@@ -2,6 +2,7 @@
 // Spatial prior gradient/Hessian and log-prior helpers for Laplace engines.
 
 #include "laplace_spatial_priors.h"
+#include "sparse_hessian.h"
 #include <cmath>
 
 using namespace Rcpp;
@@ -34,6 +35,37 @@ inline void add_car_grad_hess(
         for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
             int neighbor = adj_col_idx[k];
             H[sp_idx][spatial_start + neighbor] -= tau * rho;
+        }
+    }
+}
+
+// Sparse twin of `add_car_grad_hess`. Same math; writes lower-triangle
+// entries into a SparseHessianBuilder via add(row, col, val) which
+// internally normalizes orientation. We pass each (s, neighbor) pair once
+// (skip neighbor < s, since the same edge is visited from both ends) to
+// avoid double-counting off-diagonal contributions.
+inline void add_car_grad_hess_sparse(
+    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
+    int spatial_start, int n_spatial_units, double tau, double rho,
+    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
+    const IntegerVector& n_neighbors
+) {
+    for (int s = 0; s < n_spatial_units; s++) {
+        int sp_idx = spatial_start + s;
+        double phi_s = x[sp_idx];
+
+        double neighbor_sum = 0.0;
+        for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
+            int neighbor = adj_col_idx[k];
+            neighbor_sum += x[spatial_start + neighbor];
+        }
+        grad[sp_idx] -= tau * (n_neighbors[s] * phi_s - rho * neighbor_sum);
+        H.add(sp_idx, sp_idx, tau * n_neighbors[s]);
+
+        for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
+            int neighbor = adj_col_idx[k];
+            if (neighbor < s) continue;  // visit each edge once
+            H.add(sp_idx, spatial_start + neighbor, -tau * rho);
         }
     }
 }
@@ -73,6 +105,17 @@ void add_icar_prior(
                       adj_row_ptr, adj_col_idx, n_neighbors);
 }
 
+void add_icar_prior_sparse(
+    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
+    int spatial_start, int n_spatial_units, double tau_spatial,
+    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
+    const IntegerVector& n_neighbors
+) {
+    add_car_grad_hess_sparse(grad, H, x, spatial_start, n_spatial_units,
+                              tau_spatial, /*rho=*/1.0,
+                              adj_row_ptr, adj_col_idx, n_neighbors);
+}
+
 double log_prior_icar(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
@@ -97,6 +140,38 @@ void add_car_proper_prior(
     add_car_grad_hess(grad, H, x, spatial_start, n_spatial_units,
                       tau, rho,
                       adj_row_ptr, adj_col_idx, n_neighbors);
+}
+
+void add_car_proper_prior_sparse(
+    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
+    int spatial_start, int n_spatial_units, double tau, double rho,
+    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
+    const IntegerVector& n_neighbors
+) {
+    add_car_grad_hess_sparse(grad, H, x, spatial_start, n_spatial_units,
+                              tau, rho,
+                              adj_row_ptr, adj_col_idx, n_neighbors);
+}
+
+void add_car_pattern(
+    std::vector<std::pair<int,int>>& out,
+    int spatial_start, int n_spatial_units,
+    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx
+) {
+    // Diagonal entries are added unconditionally by the pattern builder.
+    // We only emit the off-diagonal adjacency edges (s, neighbor), s != neighbor.
+    // Normalize to lower triangle (hi >= lo) — SparseHessianBuilder dedupes.
+    for (int s = 0; s < n_spatial_units; s++) {
+        int sp_idx = spatial_start + s;
+        for (int k = adj_row_ptr[s]; k < adj_row_ptr[s + 1]; k++) {
+            int neighbor = adj_col_idx[k];
+            if (neighbor == s) continue;
+            int n_idx = spatial_start + neighbor;
+            int hi = (sp_idx > n_idx) ? sp_idx : n_idx;
+            int lo = (sp_idx > n_idx) ? n_idx : sp_idx;
+            out.emplace_back(hi, lo);
+        }
+    }
 }
 
 double log_prior_car_proper(

@@ -24,9 +24,7 @@ tulpa_nested_laplace_joint(
   adaptive_grid = FALSE,
   adaptive_grid_edge_thresh = 0.02,
   adaptive_grid_max_passes = 1L,
-  var_of_means_consistency = TRUE,
-  prior_sigma_occ = NULL,
-  prior_sigma_pos = NULL
+  var_of_means_consistency = TRUE
 )
 }
 \arguments{
@@ -215,8 +213,9 @@ Opt-in for now; defaults to \code{FALSE} to preserve legacy fixed-grid
 behaviour for existing callers.}
 
 \item{adaptive_grid_edge_thresh}{Numeric (default \code{0.02}). Refinement
-triggers when the per-axis edge score on the boundary of the
-refinable axis (currently \code{sigma_pos} only) exceeds this value. The
+triggers when the per-axis edge score on the boundary of any
+refinable axis (\code{alpha} when a copy block is active; \verb{phi_<arm>}
+when \code{phi_grid} adds dispersion axes) exceeds this value. The
 score is
 \code{max(marginal_weight_at_boundary, exp(max_log_marginal_at_boundary - max_log_marginal_overall))},
 i.e. the larger of the integrated weight on the boundary level and
@@ -236,12 +235,14 @@ useful and inflates runtime.}
 A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")} with:
 \itemize{
 \item \code{theta_grid}, \code{theta_names} — outer-grid hyperparameter values
-(includes the derived \code{alpha} column when \code{copy} is set).
+(includes the \code{alpha} axis when \code{copy} is set).
 \item \code{log_marginal}, \code{weights} — per-grid-point log-marginal and integration
 weights (sum to 1).
 \item \code{theta_mean}, \code{theta_sd} — posterior moments per hyperparameter,
-including the derived \code{alpha} moment computed from
-\code{sigma_pos / sigma_occ} over the joint grid.
+including \code{alpha} when \code{copy} is set.
+\item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} — weighted-quantile
+median and 2.5/97.5 empirical CI for \code{alpha} (present only when
+\code{copy} is set).
 \item \code{modes} — \verb{[n_grid x n_x]} matrix of inner modes.
 \item \code{n_iter} — inner Newton iterations per grid point.
 \item \code{arm_layout} — list with per-arm \code{beta_start}, \code{re_start},
@@ -263,14 +264,14 @@ Outer-grid nested Laplace driver for \emph{joint} models — multiple response
 arms sharing one latent prior block, parameterized as a per-arm field
 amplitude (sigma) on a unit-precision latent.
 
-Supported priors (Phase 1c):
+Supported priors:
 \itemize{
-\item \code{"bym2"}       — outer grid over \verb{(sigma_spatial, rho [, sigma_pos])}.
+\item \code{"bym2"}       — outer grid over \verb{(sigma, rho [, alpha])}.
 Latent: \code{phi (n_s) | theta (n_s)} with unit-precision
 ICAR + iid components.
-\item \code{"icar"}       — outer grid over \code{(sigma_spatial [, sigma_pos])}.
+\item \code{"icar"}       — outer grid over \code{(sigma [, alpha])}.
 Latent: \code{phi (n_s)} with unit-precision ICAR.
-\item \code{"car_proper"} — outer grid over \verb{(sigma_spatial, rho_car [, sigma_pos])}.
+\item \code{"car_proper"} — outer grid over \verb{(sigma, rho_car [, alpha])}.
 Latent: \code{phi (n_s)} with \code{Q = D - rho_car * W}.
 }
 
