@@ -209,23 +209,81 @@ hyper-grids are 10-100 cells, not 20M; large hyper-grids would call
 for a cheaper screening pass (already in place via cheap-pass + tile
 pilots).
 
-## What's pending after 1.5c
+## 1.4c complete — SPDE/HSGP/NNGP single-arm drivers unified
 
-**1.4c** Wire single-arm `cpp_nested_laplace_nngp` /
-`cpp_nested_laplace_spde` / `cpp_nested_laplace_hsgp` to sparse
-LatentBlock-based factories (the standalone drivers in `spde_laplace.cpp`
-and `nested_laplace.cpp` predate the LatentBlock interface; should be
-refactored to use the new factories from 1.3b/c).
+All three standalone drivers now route through the LatentBlock
+infrastructure instead of bespoke pattern/scatter code. Net diff
+**-424 lines, +412 lines** (mostly the new `make_nngp_block`).
 
-**1.4d (still open)** Wire `laplace_spec_dense` (model-package facing
-`LikelihoodSpec` dense entry) to sparse dispatch. Also: uniform upstream
-diagonal ridge for the fully principled rank-deficient handling — see
-"1.4d partially landed" section above.
+* `cpp_nested_laplace_spde`: -170 lines after replacing inline
+  pattern + scatter + log_prior with `make_spde_block` +
+  `run_multi_block_nested_laplace_joint_sparse_impl`.
+* `cpp_nested_laplace_hsgp`: migrated from dense Newton to sparse
+  path via `make_hsgp_block` (DENSE_BASIS); pattern builder
+  unconditionally fills the full beta x M, RE x M, M x M sub-blocks.
+* `cpp_nested_laplace_nngp`: new `src/nngp_block_factory.h::make_nngp_block`
+  (INDEXED_SINGLE + NN_K). Reuses the existing
+  `apply_nngp_full_prior_sparse` and `make_nngp_prior_sparsity_pattern`
+  helpers in `gpu_nngp_laplace.h`. Migrated from dense to sparse path.
 
-**1.5a** Per-block pattern-correctness tests — direct C++ unit tests of
-`build_joint_hessian_pattern` and each block's `add_prior_pattern`.
-Currently we rely on numerical equivalence (1.5b) which would catch
-pattern bugs in covered combos but not in untested tail combos.
+All three single-arm entries now share the same pattern enumerator
+(`build_joint_hessian_pattern`), scatter (`scatter_arm_obs_joint_multi_sparse`),
+prior-scatter dispatch (`block.add_prior_sparse`), and CHOLMOD
+factorization (`factorize_with_ridge_retry` from 1.4d). Future
+additions to the joint path automatically reach single-arm.
+
+Tests: test-spde (39 pass), test-nested-laplace-gp (16 pass), joint
+sparse equivalence (12 pass), ST sparse equivalence (32 pass).
+
+## 1.5a complete — direct pattern-correctness tests
+
+`cpp_test_joint_pattern` Rcpp entry exposes the joint H sparsity
+pattern as a CSC triple, bypassing all Newton/scatter machinery. Seven
+test cases in `tests/testthat/test-joint-hessian-pattern.R` exercise:
+ICAR (chain adjacency + observed-site beta cross), BYM2 (ICAR on phi,
+diagonal on theta, same-site phi/theta coupling), RW1 (tridiagonal),
+RW2 (pentadiagonal), AR1 (tridiagonal), IID (diagonal-only), and the
+ICAR × RW1 cross-block coupling case. 70 assertions pass.
+
+## 1.4d complete — robust factorization wired through every Laplace entry
+
+`dispatch_factor_solve` / `dispatch_factor_log_det` in
+`src/laplace_cholesky_dispatch.h` now call
+`SparseCholeskySolver::factorize_with_ridge_retry` instead of bare
+`factorize`. This is the dispatch wrapper used by the
+`LikelihoodSpec` dense Laplace entry (`laplace_mode_spec_dense_impl`),
+so model packages (`numdenom`, `tulpaObs`) plugging through that ABI
+now inherit the same rank-deficient robustness the joint multi and ST
+sparse drivers got in the first 1.4d landing.
+
+Net 1.4d coverage:
+* `laplace_newton_solve_sparse` (single-arm sparse direct entries)
+* `laplace_newton_solve_joint_sparse` (joint multi-arm sparse)
+* ST sparse runner (via the above)
+* `dispatch_factor_solve` / `dispatch_factor_log_det` (LikelihoodSpec
+  dense entry — `laplace_mode_spec_dense_impl`)
+
+Every Laplace driver in tulpa now goes through `factorize_with_ridge_retry`
+on the sparse path.
+
+## What's still open
+
+**Uniform upstream diagonal ridge.** The fully principled
+rank-deficient handling — add `ridge * I` to H in BOTH dense and
+sparse paths before factorization — is still queued. The current
+dense `if (sum <= 0) sum = 1e-6` pivot clamp and the sparse
+`factorize_with_ridge_retry` are both effective but introduce
+asymmetric (only non-positive vs all small-magnitude) bias. A
+uniform upstream ridge would unify them and remove the clamp
+entirely.
+
+Deferred because the absolute log_marginal baselines on
+pathologically rank-deficient fits would shift by ~9-23 units
+depending on ridge magnitude. Healthy fits unaffected. Audit
+required: simulate rank-deficient ground-truth fits, compare
+log_marginals under current clamp vs uniform-ridge baselines,
+confirm new baseline is theoretically defensible. Estimated
+half-day.
 
 ## Quick orientation tips
 
