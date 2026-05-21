@@ -31,6 +31,7 @@
 #include "laplace_family_link.h"
 #include "laplace_newton_joint.h"     // JointArm, compute_total_log_lik_joint
 #include "laplace_newton_loop.h"
+#include "laplace_profile.h"
 #include "sparse_cholesky.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
@@ -129,11 +130,13 @@ LaplaceResult laplace_newton_solve_joint_sparse(
     bool obj_valid = false;
 
     for (int iter = 0; iter < max_iter; iter++) {
-        compute_eta_joint(x, scratch.etas);
+        { TULPA_PROFILE_PHASE(PHASE_ETA);
+          compute_eta_joint(x, scratch.etas); }
 
         scratch.zero_grad();
         H_builder.zero();
-        scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder);
+        { TULPA_PROFILE_PHASE(PHASE_SCATTER);
+          scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder); }
 
         // Uniform upstream ridge so the dense pivot-clamp and sparse-dbound
         // hacks aren't needed (see LAPLACE_UNIFORM_RIDGE in laplace_cholesky.h).
@@ -142,12 +145,17 @@ LaplaceResult laplace_newton_solve_joint_sparse(
         // Factorize and solve via CHOLMOD.
         cholmod_sparse H_cholmod = H_builder.as_cholmod(&solver.common());
         if (!solver.analyzed()) {
+            TULPA_PROFILE_PHASE(PHASE_ANALYZE);
             solver.analyze(&H_cholmod);
         }
 
+        bool factorize_ok = false;
+        { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+          factorize_ok = solver.factorize(&H_cholmod); }
         bool solve_ok = false;
-        if (solver.factorize(&H_cholmod)) {
-            solver.solve(scratch.grad.data(), scratch.delta.data(), n_x);
+        if (factorize_ok) {
+            { TULPA_PROFILE_PHASE(PHASE_SOLVE);
+              solver.solve(scratch.grad.data(), scratch.delta.data(), n_x); }
             solve_ok = true;
             for (int j = 0; j < n_x; j++) {
                 if (!std::isfinite(scratch.delta[j])) { solve_ok = false; break; }
@@ -170,10 +178,12 @@ LaplaceResult laplace_newton_solve_joint_sparse(
             obj_valid = true;
         }
 
-        double step_scale = step_halving_update(
-            x, scratch.delta, n_x, obj_current, eval_objective, obj_current,
-            scratch.x_try
-        );
+        double step_scale;
+        { TULPA_PROFILE_PHASE(PHASE_LINE_SEARCH);
+          step_scale = step_halving_update(
+              x, scratch.delta, n_x, obj_current, eval_objective, obj_current,
+              scratch.x_try
+          ); }
 
         result.n_iter = iter + 1;
         if (max_abs_step(scratch.delta, step_scale, n_x) < tol) {
@@ -185,25 +195,37 @@ LaplaceResult laplace_newton_solve_joint_sparse(
     // Final pass at the Newton mode (uncentered): rebuild grad + H for
     // log_det evaluation, then center post-hoc. See laplace_newton_joint.h
     // line 207 for the BYM2/ICAR rank-deficiency rationale.
-    compute_eta_joint(x, scratch.etas);
+    { TULPA_PROFILE_PHASE(PHASE_ETA);
+      compute_eta_joint(x, scratch.etas); }
     scratch.zero_grad();
     H_builder.zero();
-    scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder);
+    { TULPA_PROFILE_PHASE(PHASE_SCATTER);
+      scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder); }
     H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 
     cholmod_sparse H_final = H_builder.as_cholmod(&solver.common());
-    if (!solver.analyzed()) solver.analyze(&H_final);
-    if (solver.factorize(&H_final)) {
+    if (!solver.analyzed()) {
+        TULPA_PROFILE_PHASE(PHASE_ANALYZE);
+        solver.analyze(&H_final);
+    }
+    bool final_fact_ok = false;
+    { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+      final_fact_ok = solver.factorize(&H_final); }
+    if (final_fact_ok) {
+        TULPA_PROFILE_PHASE(PHASE_LOG_DET);
         result.log_det_Q = solver.log_determinant();
     }
 
-    double log_lik   = compute_total_log_lik_joint(arms, scratch.etas, n_threads);
-    double log_prior = compute_log_prior_joint(x, scratch.etas);
+    double log_lik, log_prior;
+    { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
+      log_lik   = compute_total_log_lik_joint(arms, scratch.etas, n_threads);
+      log_prior = compute_log_prior_joint(x, scratch.etas); }
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior,
                                                   result.log_det_Q, n_x);
 
-    center_effects_fn(x);
+    { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
+      center_effects_fn(x); }
     for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
 
     if (store_Q) {

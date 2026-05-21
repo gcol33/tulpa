@@ -359,11 +359,106 @@ regressions on hard-coded absolute log_marginal expectations.
 
 ## What's still open
 
-Stage 2 work — arrow Schur, iterative S, Vecchia for NNGP, SYRK/Woodbury
-for DENSE_BASIS — remains future, gated on Stage-1 profiling at scale.
+Stage 2 work — see §Stage 2 priority (data-driven) below for the
+profile-informed ordering. Original list (arrow Schur, iterative S, Vecchia
+for NNGP, SYRK/Woodbury for DENSE_BASIS) is reshuffled by the sweep results.
 
 Stage 1.6 (DENSE_BASIS follow-ups) is complete; see §1.6 below.
 Stage 1.7 (multi-output / co-regionalization HSGP) is complete; see §1.7.
+
+---
+
+## Stage 2 priority (data-driven, from profile sweep 2026-05-21)
+
+A per-phase profile sweep ran across the five main block shapes at three
+sizes each (script: `dev_notes/stage2_profile_sweep.R`, instrumentation:
+`src/laplace_profile.{h,cpp}` with thread-local accumulator, `cpp_profile_
+reset()` / `cpp_profile_read()` exposed to R). The sweep isolates a single
+outer-grid cell per row so per-cell wall is what's reported.
+
+### Dominant phase per shape
+
+| shape             | size              | wall_s | scatter | factorize | pattern | dominant |
+| ----------------- | ----------------- | -----: | ------: | --------: | ------: | -------- |
+| ICAR 2-arm joint  | n_s = 1e3 / 1e4 / 1e5 | 0.11 / 0.64 / 10.08 | 60 / 66 / 76 % | 1.6 / 1.3 / 1.0 % | 26 / 23 / 16 % | scatter |
+| BYM2 2-arm joint  | n_s = 1e3 / 1e4 / 5e4 | 0.08 / 0.95 / 7.76  | 58 / 64 / 74 % | 2.0 / 1.5 / 1.3 % | 31 / 27 / 19 % | scatter |
+| HSGP single-arm   | M = 25 / 100 / 400    | 0.13 / 1.45 / 29.40 | 98 / 99 / 99.5 % | 0.1 / 0.0 / 0.1 % | 0.4 / 0.5 / 0.4 % | **scatter (catastrophic)** |
+| SPDE single-arm   | n_mesh ~ 500 / 2k / 10k | 0.56 / 0.94 / 7.20 | 30 / 28 / 22 % | 18 / 27 / **46 %** | 44 / 38 / 28 % | factorize (at scale) |
+| NNGP single-arm   | n_s = 500 / 2k / 8k     | 0.62 / 0.30 / 2.33 | 4 / 47 / 53 % | 0.3 / 6 / 12 % | 2 / 28 / 21 % | scatter (factor catches up) |
+
+`solve` is **0.0–0.9 %** everywhere; `line_search` is 0–8 %; `log_det`
+is ≤ 0.1 % on every row. The original Stage 2 plan's "iterative S (CG
+with prec)" is not justified by data — solve is never the bottleneck.
+
+### Surprises vs the original Stage 2 plan
+
+1. **CHOLMOD supernodal factor is essentially free** on banded sparse
+   Hessians. ICAR / BYM2 / NNGP all factor in 1–12 % of wall. Arrow-
+   Schur preconditioning would optimize the smallest cost row.
+2. **scatter is the universal bottleneck.** On joint multi-arm ICAR
+   it climbs to 76 % at n_s = 1e5 and the share is still growing
+   (linear extrapolation: ~85 % at n_s = 1e6). The original plan
+   underweighted scatter.
+3. **HSGP DENSE_BASIS scatter scales catastrophically** in basis dim
+   M. At M = 400 a single Newton iteration's scatter is ~7 s; the
+   per-obs full M-wide outer product is being computed in scalar form.
+4. **SPDE factorize is the one place factor genuinely grows**: 18 %
+   → 27 % → 46 % as n_mesh goes 500 → 2k → 10k. SPDE meshes ≥ 50k
+   are where arrow Schur / nested dissection on the FEM graph would
+   matter.
+
+### Reordered Stage 2 priority list
+
+1. **SYRK/Woodbury for DENSE_BASIS scatter (HSGP, HSGP-MO, HSGP-SVC).**
+   Biggest single win. Replace per-obs scalar accumulation with
+   blocked DSYRK: build `Q_i = Phi_i ⊙ sqrt_S` (length M) once per
+   iter, then H_block += sum_i w_i Q_i Q_i^T → one BLAS-3 call at
+   O(N M^2). For M = 400 this should drop scatter from ~7 s/iter to
+   well under 1 s/iter. For HSGP-MO (K = 2) the K * M-wide buffer
+   makes the win 4 × bigger.
+2. **Scatter optimization for INDEXED_SINGLE / INDEXED_MULTI
+   (ICAR, BYM2, SPDE).** Biggest absolute-wall reduction on the
+   canonical workload. The per-obs Eigen sparse-builder traversal
+   has CSC lookup overhead; consider:
+   (a) per-obs precomputed `(grad_idx, hess_flat_idx, weight)` cache
+       (built once per Newton iter alongside the existing scatter),
+   (b) tile-coloring so multiple obs hit disjoint H entries and
+       scatter can vectorize across obs.
+3. **Arrow-Schur / nested dissection on SPDE FEM Q.** SPDE factorize
+   at n_mesh = 10k is the only place factor breaks 25 %, and it
+   grows. CHOLMOD's AMD ordering is fine on banded ICAR but
+   suboptimal on FEM meshes; an SPDE-aware ordering or arrow-Schur
+   on the C0/G1/G2 decomposition would target this row.
+4. **Vecchia for NNGP.** Factor share is 12 % at n_s = 8k. At n_s
+   = 1e6 the banded NN_K pattern would still factor much faster
+   than scatter. Deferred until profile shows factor > 30 % at the
+   target scale.
+5. **iterative S (CG with prec).** Not justified by current data.
+   Solve is ≤ 0.9 % everywhere; even a 10x speedup buys < 1 % wall.
+   Shelve until a workload changes the shape (e.g., per-iter pivoting
+   that breaks the symbolic-Cholesky reuse).
+
+### Profile harness pointers
+
+- Instrumentation: `src/laplace_profile.h` (PhaseTimer RAII +
+  thread-local accumulator); `src/laplace_profile.cpp` (Rcpp exports
+  `cpp_profile_reset` / `cpp_profile_read`).
+- Per-phase scopes wired into `src/laplace_newton_joint_sparse.h`
+  (joint multi-arm), `src/sparse_hessian.h::laplace_newton_solve_
+  sparse` (single-arm sparse, used by ST runner and the legacy single-
+  arm path), `src/nested_laplace_joint_multi.h` (per-cell prep,
+  pattern_build).
+- Phase enum: pattern_build / prep / eta / scatter / analyze /
+  factorize / solve / line_search / log_det / log_lik_prior.
+- Harness: `dev_notes/stage2_profile_sweep.R` (gitignored). TSV
+  output `dev_notes/stage2_profile_sweep.tsv`.
+- Smoke: `dev_notes/_profile_smoke.R` — tiny ICAR fit, verifies the
+  accumulator is non-zero.
+
+Regression check after instrumentation: joint-sparse-equivalence
+(12), st-sparse-equivalence (28), joint-hsgp-mo (24) all green;
+no overhead measurable on the smoke fit (PhaseTimer dtor is
+O(100 ns) vs typical scope cost of microseconds-to-milliseconds).
 
 ---
 

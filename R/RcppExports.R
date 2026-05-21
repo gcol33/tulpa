@@ -73,6 +73,14 @@ cpp_laplace_fit_rsr <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_
     .Call(`_tulpa_cpp_laplace_fit_rsr`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rsr_projection, rsr_n, family, phi, max_iter, tol, n_threads)
 }
 
+cpp_profile_reset <- function() {
+    invisible(.Call(`_tulpa_cpp_profile_reset`))
+}
+
+cpp_profile_read <- function() {
+    .Call(`_tulpa_cpp_profile_read`)
+}
+
 cpp_laplace_spec_test_gaussian <- function(y, X, re_idx, n_re_groups, sigma_re, sigma_beta, phi, max_iter = 100L, tol = 1e-8, n_threads = 1L) {
     .Call(`_tulpa_cpp_laplace_spec_test_gaussian`, y, X, re_idx, n_re_groups, sigma_re, sigma_beta, phi, max_iter, tol, n_threads)
 }

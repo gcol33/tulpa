@@ -375,6 +375,25 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_profile_reset
+void cpp_profile_reset();
+RcppExport SEXP _tulpa_cpp_profile_reset() {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    cpp_profile_reset();
+    return R_NilValue;
+END_RCPP
+}
+// cpp_profile_read
+Rcpp::List cpp_profile_read();
+RcppExport SEXP _tulpa_cpp_profile_read() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_profile_read());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_laplace_spec_test_gaussian
 Rcpp::List cpp_laplace_spec_test_gaussian(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::IntegerVector re_idx, int n_re_groups, double sigma_re, double sigma_beta, double phi, int max_iter, double tol, int n_threads);
 RcppExport SEXP _tulpa_cpp_laplace_spec_test_gaussian(SEXP ySEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP sigma_betaSEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
@@ -3126,6 +3145,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_spatial", (DL_FUNC) &_tulpa_cpp_laplace_fit_spatial, 18},
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 19},
     {"_tulpa_cpp_laplace_fit_rsr", (DL_FUNC) &_tulpa_cpp_laplace_fit_rsr, 19},
+    {"_tulpa_cpp_profile_reset", (DL_FUNC) &_tulpa_cpp_profile_reset, 0},
+    {"_tulpa_cpp_profile_read", (DL_FUNC) &_tulpa_cpp_profile_read, 0},
     {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
     {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 17},
     {"_tulpa_cpp_laplace_spec_test_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_multi_re, 8},

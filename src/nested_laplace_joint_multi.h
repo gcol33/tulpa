@@ -34,6 +34,7 @@
 #include "laplace_family_link.h"
 #include "laplace_newton_joint.h"
 #include "laplace_newton_joint_sparse.h"
+#include "laplace_profile.h"
 #include "laplace_re_priors.h"
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
@@ -728,7 +729,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
 
     // Build the joint H pattern ONCE. Reused for every outer-grid cell.
     SparseHessianBuilder H_builder;
-    build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builder);
+    { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
+      build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builder); }
 
     NewtonScratchJointSparse scratch;
     scratch.allocate(n_x, arms);
@@ -736,7 +738,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // Cheap-pass dedicated scratch / solver / builder. Pattern reused;
     // VALUES live in the builder, so each builder needs its own copy.
     SparseHessianBuilder cheap_builder;
-    build_joint_hessian_pattern(parsed, arms, blocks, n_x, cheap_builder);
+    { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
+      build_joint_hessian_pattern(parsed, arms, blocks, n_x, cheap_builder); }
     NewtonScratchJointSparse cheap_scratch;
     cheap_scratch.allocate(n_x, arms);
     SparseCholeskySolver cheap_solver;
@@ -747,8 +750,10 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                                    int max_iter_use,
                                    bool use_cheap_scratch) -> LaplaceResult
     {
-        if (prep_at_grid) prep_at_grid(k_grid);
+        { TULPA_PROFILE_PHASE(PHASE_PREP);
+          if (prep_at_grid) prep_at_grid(k_grid); }
         for (const auto& b : blocks) {
+            TULPA_PROFILE_PHASE(PHASE_PREP);
             if (b.prep && !b.prep(k_grid)) {
                 LaplaceResult bad;
                 bad.mode = (static_cast<int>(prev_mode.size()) == n_x)
