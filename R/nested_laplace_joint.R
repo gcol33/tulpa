@@ -2137,6 +2137,38 @@ tulpa_nested_laplace_joint <- function(responses,
             n_obs_per_arm  = as.integer(p$n_obs_per_arm),
             eigenvalues    = as.numeric(p$eigenvalues)
         )
+    } else if (type == "hsgp_mo") {
+        # Multi-output (co-regionalization) HSGP block (Stage 1.7). K = n_arms
+        # correlated latent fields share basis + eigenvalues; coefficients are
+        # cross-output-correlated via Sigma. First ship restricts K == 2 with
+        # axes (sigma_1, sigma_2, rho, ell), all raw.
+        for (req in c("m_total", "phi", "n_obs_per_arm", "eigenvalues")) {
+            if (is.null(p[[req]])) {
+                stop("Block ", block_index, " (type 'hsgp_mo'): `", req,
+                     "` is required.", call. = FALSE)
+            }
+        }
+        if (n_arms != 2L) {
+            stop("Block ", block_index, " (type 'hsgp_mo'): first ship ",
+                 "requires n_arms == 2 (got ", n_arms, "). Multi-output HSGP ",
+                 "with K > 2 needs an LKJ-cholesky correlation ",
+                 "parameterization on the outer grid (deferred follow-up).",
+                 call. = FALSE)
+        }
+        if (!is.list(p$phi) || length(p$phi) != n_arms) {
+            stop("Block ", block_index, " (type 'hsgp_mo'): `phi` must be a ",
+                 "list of length n_arms (", n_arms, ").", call. = FALSE)
+        }
+        phi <- lapply(p$phi, function(M) {
+            M <- as.matrix(M); storage.mode(M) <- "double"; M
+        })
+        list(
+            type           = "hsgp_mo",
+            m_total        = as.integer(p$m_total),
+            phi            = phi,
+            n_obs_per_arm  = as.integer(p$n_obs_per_arm),
+            eigenvalues    = as.numeric(p$eigenvalues)
+        )
     } else if (type == "spde") {
         # SPDE block: per-arm sparse barycentric projector A and shared FEM
         # mesh (C0_diag, G1). Axes are (range, sigma). Optional rational
@@ -2494,6 +2526,10 @@ tulpa_nested_laplace_joint <- function(responses,
             # Latent factor block stores u (n_latent) followed by lambda
             # (n_arms). Total size = n_latent + n_arms.
             block_size[b] <- n_units + n_arms
+        } else if (type == "hsgp_mo") {
+            # Multi-output HSGP stores K * M coefficients in output-major
+            # order: beta_{k, m} at offset k * M + m. K = n_arms.
+            block_size[b] <- n_arms * n_units
         } else {
             block_size[b] <- n_units
             if (is.null(phi_start) && type %in% c("icar", "car_proper")) {

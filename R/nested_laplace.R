@@ -298,6 +298,49 @@ nested_laplace <- function(...) {
     )
   ),
 
+  hsgp_mo = list(
+    # Multi-output (co-regionalization) HSGP block (Stage 1.7). K = n_arms
+    # correlated latent fields share basis + eigenvalues, cross-output
+    # coefficients live in Sigma. First ship: K = 2 with raw axes
+    # (sigma_1, sigma_2, rho, ell) and the natural Cartesian product over
+    # paired per-axis grids. Multi-block-only — there is no single-arm
+    # version of multi-output HSGP.
+    cpp_fn = NULL,
+    defaults = function(p, a) {
+      # All four grids treated as paired axes (each row of theta_grid is
+      # one (sigma_1, sigma_2, rho, ell) tuple). When any grid is missing
+      # we fill in a small Cartesian default; when the user supplies grids
+      # they must already be aligned (use expand.grid() on the R side to
+      # form a Cartesian, then pass the four aligned columns).
+      if (is.null(p$sigma_1_grid) || is.null(p$sigma_2_grid) ||
+          is.null(p$rho_grid) || is.null(p$lengthscale_grid)) {
+        s1 <- exp(seq(log(0.3), log(1.5), length.out = 3))
+        s2 <- exp(seq(log(0.3), log(1.5), length.out = 3))
+        rh <- c(-0.4, 0.0, 0.4)
+        ls <- exp(seq(log(0.1), log(1.0), length.out = 3))
+        gr <- expand.grid(sigma_1 = s1, sigma_2 = s2, rho = rh, ell = ls,
+                          KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+        p$sigma_1_grid     <- gr$sigma_1
+        p$sigma_2_grid     <- gr$sigma_2
+        p$rho_grid         <- gr$rho
+        p$lengthscale_grid <- gr$ell
+      }
+      p
+    },
+    pack = function(p) stop(
+      "hsgp_mo is only supported inside a multi-block joint prior. ",
+      "Wrap the block in list() and pass to tulpa_nested_laplace_joint(prior = list(blk), ...).",
+      call. = FALSE
+    ),
+    theta = function(p) list(
+      grid  = cbind(sigma_1 = as.numeric(p$sigma_1_grid),
+                    sigma_2 = as.numeric(p$sigma_2_grid),
+                    rho     = as.numeric(p$rho_grid),
+                    ell     = as.numeric(p$lengthscale_grid)),
+      names = c("sigma_1", "sigma_2", "rho", "ell")
+    )
+  ),
+
   rw1 = list(
     cpp_fn = "cpp_nested_laplace_rw1",
     defaults = function(p, a) {

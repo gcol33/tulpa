@@ -58,6 +58,7 @@
 #include "nested_laplace_joint_multi.h"
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
+#include "hsgp_mo_block_factory.h"
 #include "latent_factor_block_factory.h"
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
@@ -713,6 +714,44 @@ int build_joint_blocks_from_spec(
         );
         blocks.push_back(block);
         return latent_offset + m_total;
+    }
+
+    if (type == "hsgp_mo") {
+        // Multi-output (co-regionalization) HSGP block (Stage 1.7).
+        // First ship: K == n_arms == 2, with axes
+        //   (sigma_1, sigma_2, rho, ell)
+        // all raw (no log transform). See src/hsgp_mo_block_factory.h
+        // for the full design rationale.
+        if (is_copy_block) {
+            Rcpp::stop("Block %d: copy semantics are not supported for "
+                       "hsgp_mo blocks (the K cross-output fields are the "
+                       "shared latent; per-arm scaling lives in Sigma).",
+                       block_index + 1);
+        }
+        require_axes(4);  // (sigma_1, sigma_2, rho, ell)
+        if (n_arms != 2) {
+            Rcpp::stop("Block %d (type 'hsgp_mo'): first ship requires "
+                       "n_arms == 2 (got %d).",
+                       block_index + 1, n_arms);
+        }
+
+        int m_total = Rcpp::as<int>(bs["m_total"]);
+        Rcpp::List phi_per_arm = bs["phi"];
+        Rcpp::IntegerVector n_obs_per_arm = bs["n_obs_per_arm"];
+        Rcpp::NumericVector eigenvalues = bs["eigenvalues"];
+
+        tulpa::LatentBlock block = tulpa::make_hsgp_mo_block(
+            latent_offset, m_total, n_arms,
+            phi_per_arm, n_obs_per_arm, block_index,
+            eigenvalues,
+            /*axis_sigma_1=*/axis0,
+            /*axis_sigma_2=*/axis0 + 1,
+            /*axis_rho=*/axis0 + 2,
+            /*axis_ell=*/axis0 + 3,
+            theta_grid
+        );
+        blocks.push_back(block);
+        return latent_offset + n_arms * m_total;
     }
 
     if (type == "spde") {

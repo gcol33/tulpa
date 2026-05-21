@@ -362,7 +362,8 @@ regressions on hard-coded absolute log_marginal expectations.
 Stage 2 work — arrow Schur, iterative S, Vecchia for NNGP, SYRK/Woodbury
 for DENSE_BASIS — remains future, gated on Stage-1 profiling at scale.
 
-Stage 1.6 (DENSE_BASIS follow-ups) is now complete; see §1.6 below.
+Stage 1.6 (DENSE_BASIS follow-ups) is complete; see §1.6 below.
+Stage 1.7 (multi-output / co-regionalization HSGP) is complete; see §1.7.
 
 ---
 
@@ -514,6 +515,123 @@ sparse-cholesky (30), HSGP-SVC + multi-scale (14).
 - Full-Newton mixed-curvature cross term (drop g_i term in scatter).
   Standard Gauss-Newton practice — leave the g_i term to a future
   refinement only if a recovery study shows it matters.
+
+---
+
+## Stage 1.7 — Multi-output HSGP (co-regionalization, landed)
+
+The 1.6c "multi-output" option (b) from the original design sketch shipped
+in this session as a new `hsgp_mo` block type. The 1.6c §1.6c entry above
+left this variant deferred until a workload asked; the user requested it
+directly so it landed alongside the multi-scale and SVC compositions.
+
+### Model
+
+K = n_arms correlated latent fields f_1(s), ..., f_K(s) share basis Phi
+and eigenvalues but have cross-output-correlated basis coefficients:
+
+```
+f_k(s) = sum_m phi_m(s) * sqrt(S_norm(lambda_m, ell)) * beta_{k, m}
+(beta_{1,m}, ..., beta_{K,m}) ~ N(0, Sigma)   independently per m
+```
+
+For K = 2 (first ship):
+```
+Sigma = [[sigma_1^2,            rho * sigma_1 * sigma_2],
+         [rho * sigma_1 * sigma_2,  sigma_2^2          ]]
+```
+
+The marginal variance of f_k matches a standard HSGP with sigma^2 =
+sigma_k^2; rho = 0 reduces the block to K independent single-output
+HSGPs. `sqrt(S_norm)` carries only the spectral shape; the scale lives
+entirely in Sigma.
+
+### Storage layout (output-major)
+
+```
+x[start + k*M + m] = beta_{k, m}    for k in [0, K), m in [0, M)
+```
+
+Each output occupies a contiguous range `[k*M, (k+1)*M)` so basis_eval
+writes the active arm's range and zeros elsewhere (the sparse scatter
+filters zeros via the `w != 0.0` check on the K*M-wide buffer). This is
+cache-friendly for K = 2 at the cost of K*M - M zero writes per obs;
+flagged as a potential pattern-enumerator follow-up if K > 2 needs
+arrive (MULTI_OUTPUT_BASIS contrib_kind).
+
+### Prior precision Q = I_M ⊗ Sigma^{-1}
+
+In output-major the prior couples (k1, m) and (k2, m) at matched basis
+index m only — M independent K x K precision blocks scattered through
+the K*M sub-vector. `add_prior_pattern` enumerates K*(K+1)/2 * M lower-
+triangle entries; `add_prior_sparse` scatters the matching values.
+
+For K = 2 the Sigma^{-1} closed form (used in `prep`):
+```
+det(Sigma)      = sigma_1^2 * sigma_2^2 * (1 - rho^2)
+Sigma_inv[0,0]  = 1 / (sigma_1^2 * (1 - rho^2))
+Sigma_inv[1,1]  = 1 / (sigma_2^2 * (1 - rho^2))
+Sigma_inv[0,1]  = -rho / (sigma_1 * sigma_2 * (1 - rho^2))
+log|Sigma|      = 2*log(sigma_1) + 2*log(sigma_2) + log(1 - rho^2)
+```
+
+### Outer grid
+
+Four axes (first ship K = 2): `(sigma_1, sigma_2, rho, ell)` — all raw
+(no log transform), with feasibility `sigma_1, sigma_2 > 0; |rho| < 1;
+ell > 0`. `prep` returns false on any violation; the outer-grid driver
+short-circuits the cell to `log_marginal = -inf`.
+
+Default Cartesian grid: 3 x 3 x 3 x 3 = 81 cells. User-supplied grids
+treated as paired axes (no re-Cartesian), matching the existing HSGP /
+multi-scale convention.
+
+### Files added
+
+- `src/hsgp_mo_block_factory.h` — `make_hsgp_mo_block`.
+- `tests/testthat/test-nested-laplace-joint-hsgp-mo.R` — smoke,
+  pattern correctness (M K x K precision blocks), independence-reduction
+  sanity at rho = 0, cross-output coupling recovery (rho_true > 0 wins
+  posterior weight), validation errors (missing fields, K != 2).
+
+### Files changed
+
+- `src/nested_laplace_joint_multi.cpp` — `type == "hsgp_mo"` dispatch,
+  4-axis require_axes, K = 2 first-ship guard, latent stride
+  `n_arms * m_total`. Includes the new factory header.
+- `R/nested_laplace_joint.R` — `.joint_block_spec_for_cpp` entry,
+  `.joint_multi_layout` learns the `hsgp_mo` block size.
+- `R/nested_laplace.R` — `.NL_REGISTRY$hsgp_mo` (multi-block-only;
+  cpp_fn = NULL; theta returns the 4-column grid).
+
+### Test results
+
+24 / 24 assertions in the new file (smoke, pattern, independence,
+coupling recovery, validation), green. Full broader sweep also green:
+joint sparse equivalence (12), ST sparse equivalence (28), joint multi
+parity (51), joint multi recovery (110), joint BYM2 / ICAR / beta /
+prune / adaptive / phi-grid / parallel, HSGP-SVC + multi-scale (14),
+latent factor (13), joint-hessian-pattern (70), spde (40), nested-
+laplace-gp (16), sparse-cholesky (30), nested-laplace-cpp,
+multi-block. No regressions on hard-coded absolute log_marginal
+expectations.
+
+### Out of scope for this ship
+
+- **K > 2 outputs.** Needs an LKJ-cholesky correlation parameterization
+  on the outer grid (K + K*(K-1)/2 axes for marginal scales +
+  correlations) plus an Eigen LLT to invert Sigma in `prep`. The
+  basis_eval / add_prior_* code already generalizes once those axes
+  are wired; only the prep + parser need K = 2 lifted.
+- **Per-output lengthscales (separable Sigma).** Right now lengthscale
+  is shared. Per-output lengthscales would need K independent sqrt_S
+  caches and a different effective basis per arm — more like K
+  separate-but-coupled HSGP blocks. Probably better handled by
+  declaring K type='hsgp' blocks plus a thin coupling block once we
+  know the workload.
+- **Copy semantics.** Multi-output HSGP IS the cross-arm coupling;
+  the standard `copy=` parameterization doesn't apply. Errors with a
+  clear message.
 
 ---
 
