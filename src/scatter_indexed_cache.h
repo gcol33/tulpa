@@ -17,9 +17,15 @@
 //     When DENSE_BASIS is present alongside INDEXED blocks, the DB cross
 //     terms keep using the per-obs map-lookup path; the INDEXED cache
 //     handles its own subset.
-//   * BILINEAR_FACTOR has dynamic (x-dependent) active weights, so the
-//     weight cannot be precomputed. The cache is disabled when any block
-//     is BILINEAR_FACTOR; scatter falls back to the per-obs loop.
+//   * BILINEAR_FACTOR is handled by caching the static (u_slot,
+//     lambda_slot) pair per obs alongside all flat values[] indices for
+//     the H entries the scatter touches. Weights remain x-dependent (the
+//     u active dof's weight is `x[lambda_slot] * d_eff` and the lambda
+//     active dof's weight is `x[u_slot] * d_eff`) but are computed
+//     cheaply at scatter time from a per-obs `paired_slot` lookup. The
+//     `active_local_w` entry for a bilinear active dof is unused;
+//     `active_paired_slot[a]` carries the source x-index (>= 0 marks the
+//     dof as bilinear).
 //
 // Layout (single flat allocation per arm, indexed by per-obs offset):
 //
@@ -79,6 +85,11 @@ struct ArmIndexedCache {
     std::vector<int>    active_dof_global;
     std::vector<int>    active_block_idx;
     std::vector<double> active_local_w;
+    // For BILINEAR_FACTOR active dofs: index of the paired x-slot whose
+    // value supplies the per-iter weight (active weight = x[paired_slot]
+    // * d_eff_cache[block]). -1 for non-bilinear dofs (use active_local_w
+    // instead). Same length as active_dof_global.
+    std::vector<int>    active_paired_slot;
 
     // Concatenated flat-index arrays:
     //   idx_beta_active[ obs.bxa_start + j*A_idx + a ]  for j in [0,p_k), a in [0,A_idx)
@@ -90,8 +101,9 @@ struct ArmIndexedCache {
 };
 
 struct ScatterIndexCache {
-    bool enabled = false;      // false if any block is BILINEAR_FACTOR (no static weights)
+    bool enabled = false;      // false only if cache structure failed to build
     bool any_dense_basis = false; // true if any block is DENSE_BASIS — DB cross terms keep using the per-obs map path
+    bool any_bilinear   = false;  // true if any block is BILINEAR_FACTOR (active weights computed from x at scatter time)
 
     // Validity key
     const void* cache_H_ptr = nullptr;
@@ -122,10 +134,14 @@ inline int upper_diag_lt_pos(int j, int l) {
 } // namespace detail
 
 // Build the cache. Must be called AFTER `H_builder.init()` so the
-// entry_map has its final pattern. Inspects blocks: if any block is
-// BILINEAR_FACTOR, the cache is left disabled. DENSE_BASIS blocks set
-// `any_dense_basis = true` and are skipped at lookup time (the per-obs
-// loop continues to handle DB cross terms via H.add).
+// entry_map has its final pattern. Inspects blocks: DENSE_BASIS sets
+// `any_dense_basis = true` and DB rows / columns are skipped (the per-
+// obs loop handles DB cross terms via H.add). BILINEAR_FACTOR sets
+// `any_bilinear = true`; the cache stores the (u_slot, lambda_slot) pair
+// and the flat indices, and weights are derived from x[] at scatter
+// time. The cached fast path engages when no DENSE_BASIS block is
+// present (BILINEAR is fine — it has its own dedicated weight branch in
+// scatter_arm_obs_indexed_cached).
 inline void build_scatter_index_cache(
     const std::vector<ParsedArm>&    parsed,
     const std::vector<JointArm>&     arms,
@@ -139,19 +155,15 @@ inline void build_scatter_index_cache(
     cache.cache_H_ptr = static_cast<const void*>(&H);
     cache.cache_H_nnz = H.nnz;
 
-    // Disable when any block is BILINEAR_FACTOR (dynamic weights).
-    cache.enabled        = true;
+    cache.enabled         = true;
     cache.any_dense_basis = false;
+    cache.any_bilinear    = false;
     for (int b = 0; b < B; b++) {
-        if (blocks[b].contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
-            cache.enabled = false;
-        } else if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS) {
+        if (blocks[b].contrib_kind == BlockContribKind::DENSE_BASIS) {
             cache.any_dense_basis = true;
+        } else if (blocks[b].contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
+            cache.any_bilinear = true;
         }
-    }
-    if (!cache.enabled) {
-        cache.arm.clear();
-        return;
     }
 
     cache.arm.assign(n_arms, ArmIndexedCache{});
@@ -203,8 +215,8 @@ inline void build_scatter_index_cache(
         ac.plans.assign(N_k, PerObsScatterPlan{});
 
         // First pass: resolve active dofs per obs to size the flat arrays.
-        // Counts only INDEXED_SINGLE / INDEXED_MULTI; DENSE_BASIS is handled
-        // outside the cache. BILINEAR is already disabled above.
+        // Counts INDEXED_SINGLE / INDEXED_MULTI / BILINEAR_FACTOR; DENSE_BASIS
+        // is handled outside the cache by scatter_dense_basis.h (2.2a).
         size_t total_A = 0;
         for (int i = 0; i < N_k; i++) {
             int A_i = 0;
@@ -223,6 +235,10 @@ inline void build_scatter_index_cache(
                             (void)w_local;
                         }
                     }
+                } else if (blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
+                    if (!blk.obs_factor_lambda) continue;
+                    auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+                    if (u_slot >= 0 && lambda_slot >= 0) A_i += 2;
                 }
                 // DENSE_BASIS skipped from cache; handled by 2.2a.
             }
@@ -233,6 +249,15 @@ inline void build_scatter_index_cache(
         ac.active_dof_global.resize(total_A);
         ac.active_block_idx .resize(total_A);
         ac.active_local_w   .resize(total_A);
+        // Allocate paired-slot storage only when bilinear blocks are
+        // present. Pure-INDEXED arms keep `active_paired_slot` empty so
+        // the scatter hot loop takes the no-branch path
+        // (aps == nullptr) — see scatter_arm_obs_indexed_cached.
+        if (cache.any_bilinear) {
+            ac.active_paired_slot.assign(total_A, -1);
+        } else {
+            ac.active_paired_slot.clear();
+        }
 
         // Size flat-index arrays via prefix sums.
         size_t total_bxa = 0, total_rxa = 0, total_axa = 0;
@@ -287,6 +312,23 @@ inline void build_scatter_index_cache(
                             ac.active_local_w   [act_cursor + a] = w_local;
                             a++;
                         }
+                    }
+                } else if (blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
+                    if (!blk.obs_factor_lambda) continue;
+                    auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
+                    if (u_slot >= 0 && lambda_slot >= 0) {
+                        // u active dof: weight = x[lambda_slot] * d_eff[b]
+                        ac.active_dof_global  [act_cursor + a] = u_slot;
+                        ac.active_block_idx   [act_cursor + a] = b;
+                        ac.active_local_w     [act_cursor + a] = 0.0;
+                        ac.active_paired_slot [act_cursor + a] = lambda_slot;
+                        a++;
+                        // lambda active dof: weight = x[u_slot] * d_eff[b]
+                        ac.active_dof_global  [act_cursor + a] = lambda_slot;
+                        ac.active_block_idx   [act_cursor + a] = b;
+                        ac.active_local_w     [act_cursor + a] = 0.0;
+                        ac.active_paired_slot [act_cursor + a] = u_slot;
+                        a++;
                     }
                 }
                 // DENSE_BASIS: skipped (per-obs path retained).
@@ -346,19 +388,22 @@ inline bool scatter_index_cache_valid(
     return true;
 }
 
-// Cached scatter for one arm. Used when every block is INDEXED_SINGLE or
-// INDEXED_MULTI (no DENSE_BASIS, no BILINEAR_FACTOR). Writes the same
-// gradient and Hessian entries as the per-obs path in
+// Cached scatter for one arm. Used when no DENSE_BASIS block is present
+// (INDEXED_SINGLE / INDEXED_MULTI / BILINEAR_FACTOR are all supported).
+// Writes the same gradient and Hessian entries as the per-obs path in
 // scatter_arm_obs_joint_multi_sparse, but replaces every H.add() with a
 // direct values[idx] += val using flat indices precomputed at fit-time.
 //
 // Caller passes:
+//   - x: current latent vector. Read only by BILINEAR_FACTOR dofs; ignored
+//     for purely INDEXED arms.
 //   - eta, pa, arm: per-arm data (same as the legacy scatter).
 //   - d_eff_cache[b]: per-block effective coefficient at this outer-grid
 //     cell (arm_scale * d_fac). Length = blocks.size().
 //   - arm_cache: precomputed cache for this k_arm.
 //   - family, phi_disp: per-arm likelihood family + dispersion.
 inline void scatter_arm_obs_indexed_cached(
+    const Rcpp::NumericVector&  x,
     const Rcpp::NumericVector&  eta,
     const ParsedArm&            pa,
     const JointArm&             arm,
@@ -384,6 +429,10 @@ inline void scatter_arm_obs_indexed_cached(
     const int* __restrict__    adg = ac.active_dof_global.data();
     const int* __restrict__    abi = ac.active_block_idx.data();
     const double* __restrict__ alw = ac.active_local_w.data();
+    const int* __restrict__    aps = ac.active_paired_slot.empty()
+                                     ? nullptr
+                                     : ac.active_paired_slot.data();
+    const double* __restrict__ xv  = REAL(x);
 
     // Per-obs active weight buffer; reused across i. Sized to max A_idx.
     int max_A = 0;
@@ -398,10 +447,23 @@ inline void scatter_arm_obs_indexed_cached(
         const int A_i      = plan.A_idx;
         const int g_re_glb = plan.g_re_global;
 
-        // Compose per-obs active weights: d_eff_cache[block] * local_w.
-        for (int a = 0; a < A_i; a++) {
-            w_active[a] = d_eff_cache[abi[plan.act_start + a]]
-                          * alw[plan.act_start + a];
+        // Compose per-obs active weights:
+        //   bilinear (paired_slot >= 0): d_eff_cache[block] * x[paired_slot]
+        //   else                       : d_eff_cache[block] * local_w
+        if (aps) {
+            for (int a = 0; a < A_i; a++) {
+                const int  base   = plan.act_start + a;
+                const int  paired = aps[base];
+                const double d_eff = d_eff_cache[abi[base]];
+                w_active[a] = (paired >= 0)
+                              ? d_eff * xv[paired]
+                              : d_eff * alw[base];
+            }
+        } else {
+            for (int a = 0; a < A_i; a++) {
+                w_active[a] = d_eff_cache[abi[plan.act_start + a]]
+                              * alw[plan.act_start + a];
+            }
         }
 
         // β block: gradient + β/β diagonal + β × RE + β × active.

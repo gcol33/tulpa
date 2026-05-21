@@ -199,7 +199,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
     std::vector<double>&          basis_scratch,
     std::vector<std::pair<int,double>>& multi_scratch,
     std::vector<DenseBasisActive>&    active_db_scratch,
-    DenseBasisScratch&                db_buffer,
+    std::vector<DenseBasisScratch>&   db_buffers,
     const ScatterIndexCache*          idx_cache = nullptr
 ) {
     const int p_k      = pa.p;
@@ -249,11 +249,13 @@ inline void scatter_arm_obs_joint_multi_sparse(
         (n_db_total > 0) &&
         ((n_indexed > 0) || (n_db_total >= 2) || (n_db_legacy > 0));
 
-    // Stage 2.2b fast path: when no DENSE_BASIS / BILINEAR blocks are
-    // present, the per-obs scatter resolves to a fully static (i, k_arm) ->
-    // (active_dof, flat_idx) mapping. Use the precomputed cache to skip
-    // every entry_map lookup. Mixed cases (DB + INDEXED, any BILINEAR)
-    // fall through to the legacy per-obs path.
+    // Stage 2.2b fast path: when no DENSE_BASIS block is present, the
+    // per-obs scatter resolves to a (mostly) static (i, k_arm) ->
+    // (active_dof, flat_idx) mapping. INDEXED_SINGLE / INDEXED_MULTI have
+    // fully static weights; BILINEAR_FACTOR active weights are computed
+    // from x[paired_slot] inside the cached scatter (paired-slot is also
+    // cached). Mixed DB + INDEXED cases fall through to the legacy per-
+    // obs path.
     const bool use_indexed_cache =
         idx_cache
         && scatter_index_cache_valid(*idx_cache, H)
@@ -263,7 +265,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
         && static_cast<int>(idx_cache->arm[k_arm].plans.size()) == arm.N;
     if (use_indexed_cache) {
         scatter_arm_obs_indexed_cached(
-            eta, pa, arm, d_eff_cache, idx_cache->arm[k_arm],
+            x, eta, pa, arm, d_eff_cache, idx_cache->arm[k_arm],
             grad, H, family, phi_disp
         );
         return;
@@ -432,12 +434,20 @@ inline void scatter_arm_obs_joint_multi_sparse(
     // Post-loop batched scatter for every DENSE_BASIS block that exposes a
     // dense_basis_batch hook. One SYRK + one GEMM + per-group RE reduction
     // + one GEMV per block; replaces the per-obs M^2 scalar loop.
+    //
+    // db_buffers is indexed by (k_arm * B + b). Each (arm, block) slot holds
+    // its own scatter index cache; cache keys (blk_off_row, M, p_k, n_re_k,
+    // bstart, rstart, H_ptr) are stable across outer-grid cells, so each
+    // slot rebuilds at most once per fit.
     if (n_db_with_batch > 0) {
+        const size_t needed = static_cast<size_t>(k_arm + 1) * B;
+        if (db_buffers.size() < needed) db_buffers.resize(needed);
         for (int b = 0; b < B; b++) {
             if (kind_cache[b] != BlockContribKind::DENSE_BASIS) continue;
             if (!blocks[b].dense_basis_batch) continue;
             scatter_dense_basis_block(blocks[b], k_arm, pa, arm, eta,
-                                       d_eff_cache[b], grad, H, db_buffer);
+                                       d_eff_cache[b], grad, H,
+                                       db_buffers[static_cast<size_t>(k_arm) * B + b]);
         }
     }
 }
@@ -873,6 +883,17 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
       build_scatter_index_cache(parsed, arms, blocks, H_builder,    idx_cache_main);
       build_scatter_index_cache(parsed, arms, blocks, cheap_builder, idx_cache_cheap); }
 
+    // DENSE_BASIS scatter scratch buffers — lifted outside the per-cell
+    // lambda so each (k_arm, b) slot's index cache (built once on first
+    // scatter call) survives across every outer-grid cell. Cache keys are
+    // stable per slot (blk_off_row, M, p_k, n_re_k, bstart, rstart,
+    // H_ptr) so the same scratch hits across cells. Separate buffer sets
+    // per H_builder because the cache validity check pins the H pointer.
+    std::vector<DenseBasisScratch> db_buffers_main(
+        static_cast<size_t>(n_arms) * B);
+    std::vector<DenseBasisScratch> db_buffers_cheap(
+        static_cast<size_t>(n_arms) * B);
+
     auto solve_at_theta_impl = [&](int k_grid,
                                    const std::vector<double>& prev_mode,
                                    SparseCholeskySolver* shared_solver,
@@ -913,7 +934,10 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         std::vector<std::pair<int,double>> active_scratch;
         std::vector<std::pair<int,double>> multi_scratch;
         std::vector<DenseBasisActive>     active_db_scratch;
-        DenseBasisScratch                 db_buffer;
+        // db_buffers is a reference into the lifted-out per-fit storage so
+        // each (k_arm, b) cache survives across outer-grid cells.
+        std::vector<DenseBasisScratch>&   db_buffers =
+            use_cheap_scratch ? db_buffers_cheap : db_buffers_main;
 
         auto compute_eta_joint = [&](const Rcpp::NumericVector& x,
                                      std::vector<Rcpp::NumericVector>& etas) {
@@ -935,7 +959,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                     x, etas[k_arm], parsed[k_arm], arms[k_arm], k_arm,
                     blocks, k_grid, grad, H,
                     active_scratch, basis_scratch, multi_scratch,
-                    active_db_scratch, db_buffer,
+                    active_db_scratch, db_buffers,
                     idx_cache_use
                 );
             }

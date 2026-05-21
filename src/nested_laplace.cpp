@@ -38,6 +38,7 @@
 #include "hsgp_block_factory.h"             // make_hsgp_block
 #include "nngp_block_factory.h"             // make_nngp_block
 #include "sparse_hessian.h"     // SparseHessianBuilder + laplace_newton_solve_sparse
+#include "scatter_st_cache.h"   // STScatterIndexCache + cached ST scatter
 #include <Rcpp.h>
 #include <algorithm>
 #include <functional>
@@ -1832,6 +1833,19 @@ inline Rcpp::List run_spatial_x_indexed_temporal_nested_laplace_sparse_impl(
         n_x, H_builder
     );
 
+    // Stage 2 follow-up: precompute flat values[] indices for every H
+    // entry the per-obs ST scatter touches. Built once at fit-time,
+    // reused across every outer-grid cell. Eliminates the per-write
+    // std::map lookup in the inner scatter loop (mirrors the joint
+    // multi-arm cache from Stage 2.2b).
+    tulpa::STScatterIndexCache st_cache;
+    tulpa::build_st_scatter_index_cache(
+        N, p, n_re_groups, re_idx, s_start,
+        *spatial_ops.obs_p, *spatial_ops.obs_local_idx,
+        t_start, n_t, t_idx,
+        H_builder, st_cache
+    );
+
     tulpa::NewtonScratch scratch;
     scratch.allocate(n_x, N);
 
@@ -1863,13 +1877,24 @@ inline Rcpp::List run_spatial_x_indexed_temporal_nested_laplace_sparse_impl(
                                    const Rcpp::NumericVector& eta,
                                    tulpa::DenseVec& grad,
                                    tulpa::SparseHessianBuilder& H) {
-            nl_scatter_obs_spatial_x_indexed_temporal_sparse(
-                y, n_trials, X, re_idx, N, p, n_re_groups,
-                eta, family, phi,
-                s_start,
-                *spatial_ops.obs_p, *spatial_ops.obs_local_idx, *spatial_ops.obs_weight,
-                t_start, n_t, t_idx,
-                grad, H);
+            const bool use_cache = tulpa::st_scatter_index_cache_valid(
+                st_cache, H, N, p, n_re_groups, s_start, t_start, n_t);
+            if (use_cache) {
+                tulpa::nl_scatter_obs_spatial_x_indexed_temporal_cached(
+                    y, n_trials, X, N, p, n_re_groups,
+                    eta, family, phi,
+                    s_start,
+                    *spatial_ops.obs_p, *spatial_ops.obs_local_idx, *spatial_ops.obs_weight,
+                    st_cache, grad, H);
+            } else {
+                nl_scatter_obs_spatial_x_indexed_temporal_sparse(
+                    y, n_trials, X, re_idx, N, p, n_re_groups,
+                    eta, family, phi,
+                    s_start,
+                    *spatial_ops.obs_p, *spatial_ops.obs_local_idx, *spatial_ops.obs_weight,
+                    t_start, n_t, t_idx,
+                    grad, H);
+            }
             spatial_ops.add_prior_sparse(H, grad, x, k);
             temporal_ops.add_prior_sparse(H, grad, x, k);
             // RE + β regularization (mirrors add_re_beta_priors).

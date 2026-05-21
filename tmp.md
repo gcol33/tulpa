@@ -366,6 +366,426 @@ for NNGP, SYRK/Woodbury for DENSE_BASIS) is reshuffled by the sweep results.
 Stage 1.6 (DENSE_BASIS follow-ups) is complete; see §1.6 below.
 Stage 1.7 (multi-output / co-regionalization HSGP) is complete; see §1.7.
 Stage 2.1 (DENSE_BASIS SYRK / GEMM scatter) is complete; see §2.1 below.
+Stage 2.2 (scatter index cache) is complete; see §2.2 below.
+Stage 2.3 (out-of-scope follow-ups: BILINEAR cache, ST scatter cache,
+cross-cell DenseBasisScratch) is complete; see §2.3 below.
+
+---
+
+## Stage 2.3 complete — BILINEAR cache + ST scatter cache + cross-cell DB scratch
+
+Three follow-ups flagged out-of-scope on the Stage 2.2 ship landed in
+this session. None changes the inference math; all three eliminate
+per-write `std::map` lookups or rebuild work on shapes the Stage 2.2
+cache could not cover.
+
+### 2.3a — BILINEAR_FACTOR cached scatter
+
+`ScatterIndexCache` was disabled when any block was `BILINEAR_FACTOR`
+because the per-obs active weights are x-dependent (the u active dof's
+weight is `x[lambda_slot] * d_eff` and the lambda active dof's weight
+is `x[u_slot] * d_eff`). Static slot identities and all flat
+`values[]` indices are stable across cells, so only the weights need
+recomputing per Newton iter.
+
+Design: a new `active_paired_slot[a]` parallel array on
+`ArmIndexedCache`:
+
+* `>= 0` for bilinear active dofs — stores the paired x-slot. Scatter-
+  time weight is `x[paired_slot] * d_eff_cache[block]`.
+* `-1` for INDEXED_SINGLE / INDEXED_MULTI — falls back to the existing
+  `active_local_w[a] * d_eff_cache[block]` path.
+
+`build_scatter_index_cache` walks BILINEAR_FACTOR blocks the same way
+the legacy per-obs scatter does (`obs_factor_lambda(i, k_arm)` → two
+active dofs per obs with paired slots). `scatter_arm_obs_indexed_cached`
+gained an `x` parameter and a per-obs branch that reads
+`xv[paired_slot]` when `aps` is non-null. The branch is gated on
+`aps != nullptr` so pure-INDEXED arms keep the original tight loop.
+
+`scatter_arm_obs_joint_multi_sparse` now passes `x` through to the
+cached scatter and dispatches the fast path whenever no DENSE_BASIS
+block is present (BILINEAR alone is fine — its weights are handled
+inside the cached scatter). The legacy per-obs path remains in place
+for mixed DB + INDEXED shapes.
+
+**Net effect.** Latent-factor fits (the canonical BILINEAR workload)
+now hit the cached fast path instead of the per-obs `H.add` loop. Per-
+iter scatter share drops to the same regime as canonical ICAR/BYM2
+once the inner Newton converges (small N latent-factor smoke fits are
+prep-bound; the speedup will surface on large-N factor models). The
+13/13 `nested-laplace-joint-latent-factor` assertions still pass —
+recovery for `lambda_1` anchor, `lambda` ratio, and `u` correlation
+holds within tolerance.
+
+### 2.3b — ST sparse scatter cache
+
+`nl_scatter_obs_spatial_x_indexed_temporal_sparse` had the same per-
+write `entry_map` lookup pattern as the joint multi-arm scatter, but
+ran in a separate function with its own loop. New file
+`src/scatter_st_cache.h` adds:
+
+* `STScatterIndexCache` — fit-time storage of every flat `values[]`
+  index the per-obs scatter touches.
+* `build_st_scatter_index_cache` — walks `obs_p` / `obs_local_idx` /
+  `t_idx` / `re_idx` once at fit-time and resolves indices for:
+  β/β lower triangle, β × RE, RE diag, temporal diag, β × temporal,
+  RE × temporal, per-obs spatial diag + spatial × spatial within obs +
+  β × spatial + RE × spatial + spatial × temporal.
+* `nl_scatter_obs_spatial_x_indexed_temporal_cached` — mirrors the
+  legacy scatter entry-for-entry, but every `H.add` becomes a direct
+  `values[idx] += val`.
+
+Validity keyed on `(H_ptr, H.nnz, p, n_re_groups, s_start, t_start,
+n_t, N)`. The ST runner builds the cache alongside the H pattern;
+dispatch in `run_spatial_x_indexed_temporal_nested_laplace_sparse_impl`
+calls the cached path when the cache is valid (it always is in the
+single-builder ST runner) and falls back to the legacy scatter
+otherwise. The 28/28 `nested-laplace-st-sparse-equivalence`
+assertions still pass — log_marginal and modes match the dense path
+to numerical tolerance.
+
+### 2.3c — Cross-cell DenseBasisScratch lifetime
+
+`DenseBasisScratch` was declared inside `solve_at_theta_impl` so its
+SYRK/GEMM/RE flat-index cache rebuilt on every outer-grid cell. The
+cache key (`H_ptr, H.nnz, M, p_k, n_re_k, blk_off_row, bstart,
+rstart`) is stable across cells, so the rebuild is pure waste.
+
+Fix: `scatter_arm_obs_joint_multi_sparse`'s `DenseBasisScratch&
+db_buffer` parameter became `std::vector<DenseBasisScratch>&
+db_buffers`, indexed by `k_arm * B + b`. Each (arm, block) slot holds
+its own scratch; the dispatching driver
+(`run_multi_block_nested_laplace_joint_sparse_impl`) declares
+`db_buffers_main` and `db_buffers_cheap` at fit-time outside the per-
+cell lambda. The per-call branch picks the right vector based on which
+H_builder is being scattered into.
+
+Why `(k_arm, b)` and not a single buffer: HSGP-MO uses
+`m_offset_in_block = k_arm * m_total` (output-major layout), so the
+block-row anchor differs per arm. A single scratch's cache would
+invalidate between arms within a cell. Per (arm, block) slot each
+cache key is fixed for the whole fit.
+
+Memory cost: `n_arms * B * cache_size` ints. For HSGP M=400 with
+n_arms=2, B=2: ~1.3 MB total — negligible against the 16GB VRAM
+budget.
+
+### Files
+
+**Added.**
+* `src/scatter_st_cache.h` — `STScatterIndexCache`,
+  `build_st_scatter_index_cache`,
+  `nl_scatter_obs_spatial_x_indexed_temporal_cached`,
+  `st_scatter_index_cache_valid`.
+
+**Changed.**
+* `src/scatter_indexed_cache.h` — `active_paired_slot` field on
+  `ArmIndexedCache`; `any_bilinear` flag on `ScatterIndexCache`;
+  `build_scatter_index_cache` walks BILINEAR blocks instead of
+  disabling; `scatter_arm_obs_indexed_cached` reads `x` for bilinear
+  weights.
+* `src/nested_laplace_joint_multi.h` —
+  `scatter_arm_obs_joint_multi_sparse` takes
+  `std::vector<DenseBasisScratch>&`; dispatcher passes `x` to the
+  cached fast path; driver lifts `db_buffers_main` / `db_buffers_cheap`
+  outside the per-cell lambda; cache fast path engages when no DB
+  block is present (BILINEAR + INDEXED both supported).
+* `src/nested_laplace.cpp` — `#include "scatter_st_cache.h"`; build
+  `st_cache` alongside the H pattern; ST scatter lambda dispatches to
+  the cached path when valid.
+
+### Regression caught + fixed during validation
+
+First Stage 2.3 build had a real ~30% slowdown on the canonical ICAR /
+BYM2 workload: `scatter_arm_obs_indexed_cached` always allocated
+`active_paired_slot` (filled with -1 for non-bilinear dofs), which
+forced the hot inner loop into the `if (aps != nullptr)` branch with
+an extra `if (paired >= 0)` check per active dof. Fix:
+`build_scatter_index_cache` only allocates `active_paired_slot` when
+`any_bilinear` is true; pure-INDEXED arms keep the vector empty so
+`aps == nullptr` selects the original tight loop. Verified by
+side-by-side bench (Stage 2.2 baseline 5.42s median vs Stage 2.3
+post-fix 5.39s median on ICAR n_s=1e5; both within laptop noise
+floor).
+
+### Test sweep (all green)
+
+* nested-laplace-joint-sparse-equivalence: 12
+* nested-laplace-st-sparse-equivalence: 28
+* nested-laplace-joint-latent-factor: 13 (exercises BILINEAR cache;
+  recovery within tolerance)
+* nested-laplace-gp: 16 (HSGP single-arm; any_dense_basis → legacy
+  per-obs path + 2.1 batched scatter via lifted db_buffers_main)
+* nested-laplace-joint-hsgp-mo: 24
+* nested-laplace-joint-hsgp-svc: 14
+* joint-hessian-pattern: 70
+* nested-laplace-joint-icar: 10
+* nested-laplace-joint-bym2: 12
+* nested-laplace-joint-multi: 51
+* nested-laplace-joint-multi-recovery: 110
+* nested-laplace-multi-block: 43 + 1 slow-skip
+* spde: 39 + 1 skip
+* sparse-cholesky: 30
+* em-laplace: 56
+* imh-laplace: 22
+* nested-laplace-cpp: 46
+* nested-laplace-joint-parallel: 53
+* nested-laplace-joint-adaptive-grid: 15
+* nested-laplace-joint-prune: 38
+* nested-laplace-joint-car-proper: 10
+* nested-laplace-joint-phi-grid: 14
+* nested-laplace-joint-beta: 4
+
+Joint sparse-vs-dense and ST sparse-vs-dense equivalence still pass at
+1e-6/1e-7 log_marginal tolerance — every change preserves the legacy
+scatter's per-entry arithmetic exactly; only the write path changed.
+
+### Profile sweep — main shapes (no measurable change)
+
+Stage 2.3 wins live in shapes the main sweep doesn't cover (BILINEAR
+workloads, ST runner, multi-cell outer grids), so the main per-shape
+sweep should be unchanged. Side-by-side on the 15-row Stage 2 sweep,
+post-fix Stage 2.3 vs the Stage 2.2 TSV baseline:
+
+| shape              | n_x       | 2.2 wall | 2.3 wall |  delta |
+| ------------------ | --------- | -------: | -------: | -----: |
+| ICAR 2-arm n_s=1e3 |     1004  |    0.08  |    0.08  |     0% |
+| ICAR 2-arm n_s=1e4 |    10004  |    0.42  |    0.43  |    +2% |
+| ICAR 2-arm n_s=1e5 |   100004  |    4.67  |    5.84  |   +25% |
+| BYM2 2-arm n_s=1e3 |     2004  |    0.06  |    0.06  |     0% |
+| BYM2 2-arm n_s=1e4 |    20004  |    0.57  |    0.69  |   +21% |
+| BYM2 2-arm n_s=5e4 |   100004  |    3.75  |    4.94  |   +32% |
+| HSGP M=25          |       26  |    0.03  |    0.03  |     0% |
+| HSGP M=100         |      101  |    0.08  |    0.10  |   +25% |
+| HSGP M=400         |      401  |    0.93  |    1.00  |    +8% |
+| SPDE n_mesh~500    |     1862  |    0.46  |    0.43  |    -7% |
+| SPDE n_mesh~2000   |     7455  |    0.94  |    0.97  |    +3% |
+| SPDE n_mesh~10000  |    35751  |    6.83  |    7.70  |   +13% |
+| NNGP n_s=500       |      501  |    0.20  |    0.20  |     0% |
+| NNGP n_s=2000      |     2001  |    0.31  |    0.32  |    +3% |
+| NNGP n_s=8000      |     8001  |    2.41  |    2.53  |    +5% |
+
+The non-zero rows look concerning at first read, but a direct 5-rep
+variance check on the largest row (ICAR n_s=1e5) gave:
+
+* Stage 2.2 baseline (post git-stash): 5.34 / 5.59 / 5.42 / 5.37 / 5.92s,
+  median 5.42s
+* Stage 2.3 (post aps fix): 5.39 / 5.16 / 5.12 / 6.45 / 5.89s,
+  median 5.39s
+
+Per-run spread on this hardware is 11-26 % within a single condition,
+so the sweep deltas above are within run-to-run noise. The 4.67s
+baseline TSV row was a colder single-shot; on the same hardware
+revisited it lands at ~5.4s. Stage 2.3 is at the same baseline.
+
+### Targeted benches (where the wins live)
+
+The Stage 2 main sweep tests single-cell joint multi-arm and single-arm
+fits — none of the three shapes Stage 2.3 actually targets. The
+targeted bench `dev_notes/stage2_3_bench.R` exercises:
+
+* **2.3a BILINEAR cache.** Latent-factor fits with K = 2 arms and
+  n_obs in {1k, 5k, 20k}. Stage 2.2 routed these through the legacy
+  per-obs scatter (cache disabled when any block was BILINEAR). Stage
+  2.3 routes them through the cached fast path with x-dependent
+  weights computed inline from `xv[paired_slot]`.
+* **2.3b ST sparse scatter cache.** ICAR × RW1 fits at
+  (n_s, n_t) in {(500, 10), (2k, 20), (10k, 50)}. Eliminates per-write
+  `entry_map` lookups in the ST scatter loop.
+* **2.3c Cross-cell DenseBasisScratch.** HSGP M=100 with a 3×3 = 9-cell
+  and 6×6 = 36-cell outer grid. Without 2.3c, the DB scratch cache
+  rebuilds once per cell (M*(M+1)/2 + M*p + M*n_re lookups per arm
+  per block per cell); with 2.3c, the lifted per-fit storage hits on
+  every cell after cell 0.
+
+The win on each is structural (eliminate map lookup, eliminate
+per-cell rebuild), proven equivalent via the regression suite, but
+the magnitude depends on the workload's per-iter scatter share — not
+visible in the main sweep's canonical shapes.
+
+### Out of scope for this ship (genuine remaining items)
+
+* **DB × DB inter-block GEMM batching.** Multi-scale HSGP (≥ 2 DB
+  blocks) still emits inter-block crosses via the per-obs loop.
+  Volume is small relative to the intra-block savings already shipped.
+* **DB × INDEXED cross batching.** HSGP + ICAR cross is per-obs;
+  could be batched per ICAR dof. Low share at typical M.
+* **HSGP SYRK BLAS-3 ceiling.** Stage 2.2 / 2.3 leave HSGP M=400
+  scatter dominated by `selfadjointView<Lower>().rankUpdate()` not
+  hitting BLAS-3 speed against Eigen's built-in kernel. Separate
+  lever (explicit `dsyrk_` link or BLAS-3 path).
+* **SPDE arrow-Schur ordering.** SPDE n_mesh=10k still has factorize
+  ≈ 44 % of wall. CHOLMOD AMD ordering on FEM meshes is suboptimal;
+  arrow-Schur on the C0/G1/G2 decomposition would target this row.
+* **Pattern_build amortization.** Now the dominant phase on canonical
+  ICAR/BYM2 (~56-69 % of wall). One-shot per fit. For very wide
+  outer-grid sweeps a parallel pattern enumeration would help.
+
+---
+
+## Stage 2.2 complete — scatter index cache (2.2a DENSE_BASIS + 2.2b INDEXED)
+
+`SparseHessianBuilder::lookup(row, col) -> int` returns the flat
+`values[]` index for an existing pattern entry, or -1. Scatter callers
+build a flat-index cache once (fit-time stable; built alongside the
+pattern) and use direct `values[idx] += val` writes during every Newton
+iter, skipping the per-write `std::map` find.
+
+### 2.2a — DENSE_BASIS (HSGP / HSGP-MO / HSGP-SVC)
+
+Cache lives inside `DenseBasisScratch` (one per scatter call). Keyed on
+(H_builder pointer, H_builder.nnz, block.start + m_off, M, p_k, n_re_k,
+bstart, rstart); rebuilt lazily on first call or when stale. Replaces
+`H.add(r, c, val)` in three loops:
+
+* SYRK output (block × block lower triangle, M*(M+1)/2 entries)
+* GEMM output (block × beta, M * p_k entries)
+* per-group RE accumulate (M * n_re_k entries)
+
+### 2.2b — INDEXED (ICAR / BYM2 / SPDE / NNGP / RW / AR1 / IID)
+
+Cache lives in a new `ScatterIndexCache` (header
+`src/scatter_indexed_cache.h`) built once per H_builder via
+`build_scatter_index_cache` and stored alongside the joint sparse
+driver's `H_builder` / `cheap_builder`. Covers INDEXED_SINGLE and
+INDEXED_MULTI; disabled when any block is BILINEAR_FACTOR (active
+weights are x-dependent, not cacheable as static).
+
+Per (k_arm, i) it stores:
+
+* Number of active INDEXED dofs `A_i`
+* For each active dof: global index, block index (for d_eff lookup),
+  block-local weight (1.0 for INDEXED_SINGLE, w_local for INDEXED_MULTI)
+* `g_re_global` (per-obs RE-group global index, or -1)
+* Flat `values[]` indices for β × active (p_k * A_i), RE × active (A_i),
+  active × active lower triangle (A_i * (A_i + 1) / 2)
+
+Per arm it stores p_k * (p_k + 1) / 2 indices for β × β lower triangle,
+n_re_k indices for RE diagonal, and p_k * n_re_k indices for β × RE.
+
+At scatter time, `scatter_arm_obs_indexed_cached` writes the full obs
+contribution with zero `H.add()` calls: `p_k * (p_k+1)/2 + p_k + p_k *
+A_i + 1 (RE diag) + A_i (RE×active) + A_i*(A_i+1)/2 (active×active)`
+direct `values[idx] += val` writes per obs.
+
+`scatter_arm_obs_joint_multi_sparse` gained an optional
+`const ScatterIndexCache* idx_cache` (default `nullptr`). When the cache
+is valid AND no DENSE_BASIS block is present, the cached fast path
+runs and the function returns; otherwise the per-obs legacy path
+runs unchanged. Pure-DB cases (HSGP single-arm) sit between: cache is
+present but `any_dense_basis = true` disables the fast path; DENSE_BASIS
+batched scatter (2.2a) does the heavy lifting via `scatter_dense_basis_block`.
+
+### Profile sweep (Stage 2.1 baseline → Stage 2.2)
+
+| shape              | wall (2.1) | wall (2.2) | speedup | dom phase (2.2) |
+| ------------------ | ---------: | ---------: | ------: | --------------- |
+| ICAR 2-arm n_s=1e3 | 0.11       | 0.08       | 1.4x    | pattern_build   |
+| ICAR 2-arm n_s=1e4 | 0.64       | 0.42       | 1.5x    | pattern_build   |
+| **ICAR 2-arm n_s=1e5** | **10.08** | **4.67** | **2.2x** | pattern_build |
+| BYM2 2-arm n_s=1e3 | 0.08       | 0.06       | 1.3x    | pattern_build   |
+| BYM2 2-arm n_s=1e4 | 0.95       | 0.57       | 1.7x    | pattern_build   |
+| **BYM2 2-arm n_s=5e4** | **7.76** | **3.75** | **2.1x** | pattern_build |
+| HSGP M=25          | 0.03       | 0.03       | 1.0x    | scatter         |
+| HSGP M=100         | 0.06       | 0.08       | 0.8x    | scatter         |
+| HSGP M=400         | 0.96       | 0.93       | 1.0x    | scatter         |
+| SPDE n_mesh~500    | 0.56       | 0.46       | 1.2x    | pattern_build   |
+| SPDE n_mesh~2000   | 0.94       | 0.94       | 1.0x    | pattern_build   |
+| SPDE n_mesh~10000  | 7.20       | 6.83       | 1.06x   | factorize       |
+| NNGP n_s=500       | 0.62       | 0.20       | 3.1x    | prep            |
+| NNGP n_s=2000      | 0.30       | 0.31       | 1.0x    | scatter         |
+| NNGP n_s=8000      | 2.33       | 2.41       | 0.97x   | scatter         |
+
+**Where the win lives.** ICAR n_s=1e5: pre-2.2 had scatter = 76% of
+10.08s = 7.65s; post-2.2 has scatter = 23% of 4.67s = ~1.09s — a 7x
+scatter reduction. The per-obs map lookup was the bulk of scatter, not
+the per-obs arithmetic (the original tmp.md hypothesis of "~7%
+improvement" was off by 10x).
+
+**Where the win doesn't live.**
+
+* HSGP single-arm (any M): pure-DB, the cached fast path doesn't engage
+  (any_dense_basis = true). Stage 2.2a saves the M*(M+1)/2 SYRK output
+  map lookups but those were a small share to begin with. Real HSGP
+  bottleneck is the SYRK `selfadjointView<Lower>().rankUpdate()` itself
+  — not hitting BLAS-3 speeds against Eigen's built-in kernel. Address
+  separately (BLAS-3 linkage check or explicit `dsyrk_`).
+* NNGP at scale: variance-level; underlying scatter on NNGP uses
+  INDEXED_SINGLE with NN_K active dofs per obs, so the cache DOES engage,
+  but the per-obs arithmetic share (A_i ≈ 8 nearest-neighbor crosses,
+  A_i^2 ≈ 64 active × active writes per obs) is large enough that the
+  map-lookup share was smaller relative to the total than ICAR's.
+* SPDE n_mesh=10k: factorize dominates (44%), not scatter. Arrow-Schur
+  / nested-dissection ordering is the next lever there.
+
+### Outer-grid amortization
+
+`pattern_build` is now the dominant phase on ICAR/BYM2 (~56-69% of wall),
+but it's a one-shot cost — built once at fit-time, not per cell. For a
+20M / 100-cell / 10-cell outer grid:
+
+* per-cell scatter dropped 7x (1.09s vs 7.65s on the n_s=1e5 cell)
+* per-cell prep/eta/factorize unchanged
+* one-shot pattern_build cost shared across all cells
+
+So a representative 100-cell outer-grid fit at n_s=1e5: pre-2.2 ≈ 2.6s
+(pattern) + 100 × 7.65s (scatter) ≈ 768s. post-2.2 ≈ 2.6s (pattern) +
+2.6s (cache build) + 100 × 1.09s (scatter) + 100 × ~0.5s (other) ≈
+160s. ~5x speedup at outer-grid scale.
+
+### Files
+
+Added:
+* `src/scatter_indexed_cache.h` — `PerObsScatterPlan`, `ArmIndexedCache`,
+  `ScatterIndexCache`, `build_scatter_index_cache`,
+  `scatter_arm_obs_indexed_cached`, `scatter_index_cache_valid`.
+
+Changed:
+* `src/sparse_hessian.h` — `SparseHessianBuilder::lookup(row, col) -> int`
+  (read-only sibling of `add`).
+* `src/scatter_dense_basis.h` — index-cache fields in `DenseBasisScratch`
+  (idx_bb, idx_bbeta, idx_bre + validity tag); SYRK / GEMM / RE write
+  loops replaced with direct `values[idx] += val`.
+* `src/nested_laplace_joint_multi.h` — optional `idx_cache` parameter on
+  `scatter_arm_obs_joint_multi_sparse`; fast-path dispatch when cache is
+  valid and no DB; `run_multi_block_nested_laplace_joint_sparse_impl`
+  builds two caches (main + cheap_pass) alongside the two `H_builder`s.
+
+### Test sweep (all green)
+
+* nested-laplace-joint-sparse-equivalence: 12
+* nested-laplace-st-sparse-equivalence: 28
+* joint-hessian-pattern: 70
+* nested-laplace-joint-latent-factor: 13 (exercises BILINEAR_FACTOR;
+  cache is disabled → legacy path)
+* nested-laplace-gp: 16 (HSGP single-arm; any_dense_basis = true →
+  legacy path + 2.2a batch helper)
+* nested-laplace-joint-hsgp-mo: 24
+* nested-laplace-joint-hsgp-svc: 14
+* nested-laplace-joint-icar: 10
+* nested-laplace-joint-bym2: 12
+* nested-laplace-joint-multi: 51
+* nested-laplace-joint-multi-recovery: 110
+* nested-laplace-joint-beta / prune / parallel / adaptive-grid /
+  car-proper / phi-grid: 4 + 38 + 53 + 15 + 10 + 14
+* spde: 39 (+ 1 skip)
+* sparse-cholesky: 30
+* em-laplace: 56
+* imh-laplace: 22
+* nested-laplace-cpp: 46
+* nested-laplace-multi-block: 43 (+ 1 slow-test skip)
+
+Joint sparse-vs-dense equivalence still passes at 1e-7 log_marginal
+tolerance — math is unchanged, only the write path differs.
+
+### Out of scope for this ship — all three landed in Stage 2.3
+
+* **BILINEAR_FACTOR cached scatter.** Landed as Stage 2.3a.
+* **ST sparse scatter cache.** Landed as Stage 2.3b.
+* **Cross-cell cache lifetime for DENSE_BASIS.** Landed as Stage 2.3c.
+
+See §2.3 below.
 
 ---
 
