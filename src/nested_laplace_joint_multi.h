@@ -39,6 +39,8 @@
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
 #include "nested_laplace_joint_core.h"
+#include "scatter_dense_basis.h"
+#include "scatter_indexed_cache.h"
 #include "sparse_cholesky.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
@@ -195,7 +197,10 @@ inline void scatter_arm_obs_joint_multi_sparse(
     SparseHessianBuilder&         H,
     std::vector<std::pair<int,double>>& active_scratch,
     std::vector<double>&          basis_scratch,
-    std::vector<std::pair<int,double>>& multi_scratch
+    std::vector<std::pair<int,double>>& multi_scratch,
+    std::vector<DenseBasisActive>&    active_db_scratch,
+    DenseBasisScratch&                db_buffer,
+    const ScatterIndexCache*          idx_cache = nullptr
 ) {
     const int p_k      = pa.p;
     const int n_re_k   = pa.n_re_groups;
@@ -207,23 +212,61 @@ inline void scatter_arm_obs_joint_multi_sparse(
 
     // Cache per-block d_eff = arm_scale(k_arm, k_grid) * d_fac(k_grid),
     // contrib_kind, and the max DENSE_BASIS size so basis_scratch is
-    // sized once per call.
+    // sized once per call. Count DENSE_BASIS vs INDEXED blocks to decide
+    // whether basis_eval must run inside the per-obs loop (for cross
+    // emissions) or can be skipped entirely in favor of the batch helper.
     std::vector<double> d_eff_cache(B);
     std::vector<BlockContribKind> kind_cache(B);
-    int max_basis_size = 0;
+    int max_basis_size  = 0;
+    int n_db_with_batch = 0;
+    int n_db_legacy     = 0;
+    int n_indexed       = 0;
     for (int b = 0; b < B; b++) {
         double s = blocks[b].arm_scale
                     ? blocks[b].arm_scale(k_arm, k_grid)
                     : 1.0;
         d_eff_cache[b] = s * blocks[b].d_fac(k_grid);
         kind_cache[b]  = blocks[b].contrib_kind;
-        if (kind_cache[b] == BlockContribKind::DENSE_BASIS
-            && blocks[b].size > max_basis_size) {
-            max_basis_size = blocks[b].size;
+        if (kind_cache[b] == BlockContribKind::DENSE_BASIS) {
+            if (blocks[b].size > max_basis_size) max_basis_size = blocks[b].size;
+            if (blocks[b].dense_basis_batch) n_db_with_batch++;
+            else                              n_db_legacy++;
+        } else {
+            n_indexed++;
         }
     }
     if (static_cast<int>(basis_scratch.size()) < max_basis_size) {
         basis_scratch.resize(max_basis_size);
+    }
+
+    const int n_db_total = n_db_with_batch + n_db_legacy;
+    // basis_eval must run in the per-obs loop when there are cross terms
+    // to emit (DB x INDEXED, DB x DB inter-block) or when a legacy DB
+    // block lacks the batch hook. The pure-single-DB case (HSGP /
+    // HSGP-MO / HSGP-SVC alone) skips per-obs DB entirely; the batch
+    // helper handles every block-internal contribution.
+    const bool need_db_in_perobs =
+        (n_db_total > 0) &&
+        ((n_indexed > 0) || (n_db_total >= 2) || (n_db_legacy > 0));
+
+    // Stage 2.2b fast path: when no DENSE_BASIS / BILINEAR blocks are
+    // present, the per-obs scatter resolves to a fully static (i, k_arm) ->
+    // (active_dof, flat_idx) mapping. Use the precomputed cache to skip
+    // every entry_map lookup. Mixed cases (DB + INDEXED, any BILINEAR)
+    // fall through to the legacy per-obs path.
+    const bool use_indexed_cache =
+        idx_cache
+        && scatter_index_cache_valid(*idx_cache, H)
+        && !idx_cache->any_dense_basis
+        && n_db_total == 0
+        && static_cast<int>(idx_cache->arm.size()) > k_arm
+        && static_cast<int>(idx_cache->arm[k_arm].plans.size()) == arm.N;
+    if (use_indexed_cache) {
+        scatter_arm_obs_indexed_cached(
+            eta, pa, arm, d_eff_cache, idx_cache->arm[k_arm],
+            grad, H, family, phi_disp
+        );
+        return;
     }
 
     for (int i = 0; i < arm.N; i++) {
@@ -236,20 +279,31 @@ inline void scatter_arm_obs_joint_multi_sparse(
             if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
         }
 
-        // Build flat active-dofs list across all blocks, with the per-dof
-        // weight that contributes to eta (and therefore scales gradient
-        // and Hessian crosses).
+        // INDEXED active dofs across all non-DENSE_BASIS blocks.
         active_scratch.clear();
+        // DENSE_BASIS active dofs — populated only when cross terms are
+        // needed; otherwise left empty so the per-obs loop costs O(p_k +
+        // n_re_k + A_idx^2) instead of O(M^2).
+        active_db_scratch.clear();
+
         for (int b = 0; b < B; b++) {
             const LatentBlock& blk = blocks[b];
             const double d_eff = d_eff_cache[b];
 
             if (kind_cache[b] == BlockContribKind::DENSE_BASIS) {
+                const bool has_batch = static_cast<bool>(blk.dense_basis_batch);
+                if (!need_db_in_perobs && has_batch) continue;
+
                 blk.basis_eval(i, k_arm, basis_scratch.data());
                 for (int j = 0; j < blk.size; j++) {
                     double w = basis_scratch[j] * d_eff;
                     if (w != 0.0) {
-                        active_scratch.emplace_back(blk.start + j, w);
+                        DenseBasisActive e;
+                        e.dof       = blk.start + j;
+                        e.weight    = w;
+                        e.block_idx = b;
+                        e.has_batch = has_batch;
+                        active_db_scratch.push_back(e);
                     }
                 }
             } else if (kind_cache[b] == BlockContribKind::INDEXED_SINGLE) {
@@ -280,14 +334,15 @@ inline void scatter_arm_obs_joint_multi_sparse(
                 }
             }
         }
-        const int A = static_cast<int>(active_scratch.size());
+        const int A_idx = static_cast<int>(active_scratch.size());
+        const int A_db  = static_cast<int>(active_db_scratch.size());
 
-        // β block: gradient + diagonal Hessian (lower triangle only) +
-        // single-write cross with RE and active dofs.
+        // β block: gradient + β/β diagonal + β × RE + β × active crosses.
+        // DENSE_BASIS contributions with a batch hook are skipped — the
+        // post-loop scatter_dense_basis_block writes β × block via GEMM.
         for (int j = 0; j < p_k; j++) {
             const double Xij = pa.X(i, j);
             grad[bstart + j] += gh.grad * Xij;
-            // β/β lower triangle (l <= j)
             for (int l = 0; l <= j; l++) {
                 H.add(bstart + j, bstart + l,
                       gh.neg_hess * Xij * pa.X(i, l));
@@ -295,24 +350,36 @@ inline void scatter_arm_obs_joint_multi_sparse(
             if (g_re >= 0) {
                 H.add(bstart + j, g_re, gh.neg_hess * Xij);
             }
-            for (int a = 0; a < A; a++) {
+            for (int a = 0; a < A_idx; a++) {
                 H.add(bstart + j, active_scratch[a].first,
                       gh.neg_hess * Xij * active_scratch[a].second);
+            }
+            for (int a = 0; a < A_db; a++) {
+                if (active_db_scratch[a].has_batch) continue;
+                H.add(bstart + j, active_db_scratch[a].dof,
+                      gh.neg_hess * Xij * active_db_scratch[a].weight);
             }
         }
 
         // RE block: gradient + diagonal + cross with active dofs.
+        // DENSE_BASIS with batch hook handled in post-loop.
         if (g_re >= 0) {
             grad[g_re] += gh.grad;
             H.add(g_re, g_re, gh.neg_hess);
-            for (int a = 0; a < A; a++) {
+            for (int a = 0; a < A_idx; a++) {
                 H.add(g_re, active_scratch[a].first,
                       gh.neg_hess * active_scratch[a].second);
             }
+            for (int a = 0; a < A_db; a++) {
+                if (active_db_scratch[a].has_batch) continue;
+                H.add(g_re, active_db_scratch[a].dof,
+                      gh.neg_hess * active_db_scratch[a].weight);
+            }
         }
 
-        // Active × active intra/inter (lower triangle only): a >= b.
-        for (int a = 0; a < A; a++) {
+        // INDEXED × INDEXED intra/inter (lower triangle including diagonal):
+        // gradient + H. Existing semantics unchanged.
+        for (int a = 0; a < A_idx; a++) {
             const int d_a = active_scratch[a].first;
             const double w_a = active_scratch[a].second;
             grad[d_a] += gh.grad * w_a;
@@ -321,6 +388,56 @@ inline void scatter_arm_obs_joint_multi_sparse(
                 const double w_b = active_scratch[b].second;
                 H.add(d_a, d_b, gh.neg_hess * w_a * w_b);
             }
+        }
+
+        // DENSE_BASIS active interactions.
+        //   * Gradient: skip when batch hook covers it (batch helper
+        //     accumulates Phi^T g_obs). Emit when legacy (no batch hook).
+        //   * DB × INDEXED cross: always emit (batch doesn't see INDEXED).
+        //   * DB × DB intra-block: skip when both have batch hook (SYRK
+        //     covers it). Emit when at least one is legacy or when the
+        //     pair is across different blocks (inter-block cross).
+        for (int a = 0; a < A_db; a++) {
+            const int    d_a       = active_db_scratch[a].dof;
+            const double w_a       = active_db_scratch[a].weight;
+            const int    blk_a     = active_db_scratch[a].block_idx;
+            const bool   a_batch   = active_db_scratch[a].has_batch;
+
+            if (!a_batch) {
+                grad[d_a] += gh.grad * w_a;
+            }
+
+            // DB × INDEXED (cross with all INDEXED active dofs)
+            for (int b = 0; b < A_idx; b++) {
+                const int d_b    = active_scratch[b].first;
+                const double w_b = active_scratch[b].second;
+                H.add(d_a, d_b, gh.neg_hess * w_a * w_b);
+            }
+            // DB × DB lower triangle including diagonal
+            for (int b = 0; b <= a; b++) {
+                const int    d_b     = active_db_scratch[b].dof;
+                const double w_b     = active_db_scratch[b].weight;
+                const int    blk_b   = active_db_scratch[b].block_idx;
+                const bool   b_batch = active_db_scratch[b].has_batch;
+                const bool   same    = (blk_a == blk_b);
+                // Skip the case the batch helper covers: both sides have
+                // a batch hook AND both live in the same block (intra-
+                // block SYRK output).
+                if (a_batch && b_batch && same) continue;
+                H.add(d_a, d_b, gh.neg_hess * w_a * w_b);
+            }
+        }
+    }
+
+    // Post-loop batched scatter for every DENSE_BASIS block that exposes a
+    // dense_basis_batch hook. One SYRK + one GEMM + per-group RE reduction
+    // + one GEMV per block; replaces the per-obs M^2 scalar loop.
+    if (n_db_with_batch > 0) {
+        for (int b = 0; b < B; b++) {
+            if (kind_cache[b] != BlockContribKind::DENSE_BASIS) continue;
+            if (!blocks[b].dense_basis_batch) continue;
+            scatter_dense_basis_block(blocks[b], k_arm, pa, arm, eta,
+                                       d_eff_cache[b], grad, H, db_buffer);
         }
     }
 }
@@ -744,6 +861,18 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     cheap_scratch.allocate(n_x, arms);
     SparseCholeskySolver cheap_solver;
 
+    // Stage 2.2b: precompute per-(k_arm, i) flat-index cache for the
+    // scatter. Built once per H_builder; disabled automatically when any
+    // block is BILINEAR_FACTOR (dynamic active weights). DENSE_BASIS
+    // presence is recorded so scatter falls back to the per-obs path on
+    // mixed shapes. Each builder needs its own cache (validity keyed on
+    // the H pointer).
+    ScatterIndexCache idx_cache_main;
+    ScatterIndexCache idx_cache_cheap;
+    { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
+      build_scatter_index_cache(parsed, arms, blocks, H_builder,    idx_cache_main);
+      build_scatter_index_cache(parsed, arms, blocks, cheap_builder, idx_cache_cheap); }
+
     auto solve_at_theta_impl = [&](int k_grid,
                                    const std::vector<double>& prev_mode,
                                    SparseCholeskySolver* shared_solver,
@@ -783,6 +912,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         std::vector<double>              basis_scratch;
         std::vector<std::pair<int,double>> active_scratch;
         std::vector<std::pair<int,double>> multi_scratch;
+        std::vector<DenseBasisActive>     active_db_scratch;
+        DenseBasisScratch                 db_buffer;
 
         auto compute_eta_joint = [&](const Rcpp::NumericVector& x,
                                      std::vector<Rcpp::NumericVector>& etas) {
@@ -792,6 +923,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         };
 
         SparseHessianBuilder& H_use = use_cheap_scratch ? cheap_builder : H_builder;
+        const ScatterIndexCache* idx_cache_use =
+            use_cheap_scratch ? &idx_cache_cheap : &idx_cache_main;
 
         auto scatter_joint_sparse = [&](const Rcpp::NumericVector& x,
                                          const std::vector<Rcpp::NumericVector>& etas,
@@ -801,7 +934,9 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                 scatter_arm_obs_joint_multi_sparse(
                     x, etas[k_arm], parsed[k_arm], arms[k_arm], k_arm,
                     blocks, k_grid, grad, H,
-                    active_scratch, basis_scratch, multi_scratch
+                    active_scratch, basis_scratch, multi_scratch,
+                    active_db_scratch, db_buffer,
+                    idx_cache_use
                 );
             }
             for (const auto& b : blocks) {

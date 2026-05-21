@@ -172,6 +172,40 @@ struct LatentBlock {
     std::function<void(int /*i*/, int /*k_arm*/, double* /*out*/)>
         basis_eval;
 
+    // DENSE_BASIS only. Batched view of the per-arm basis matrix for the
+    // SYRK / GEMM scatter path (Stage 2.1).
+    //
+    //   data           : row-major (N_k * m_per_arm) buffer of the RAW basis
+    //                    Phi_k (NOT pre-scaled by sqrt_S); the scatter helper
+    //                    applies sqrt_S on the fly so the buffer can be a
+    //                    long-lived cache that does not change with theta.
+    //   sqrt_S         : length-m_per_arm vector of spectral-density square
+    //                    roots cached by the block's `prep` step (HSGP and
+    //                    derivatives) or 1.0 placeholders for blocks whose
+    //                    column scaling lives elsewhere. May be nullptr to
+    //                    mean "no spectral scaling".
+    //   N_k            : rows in the per-arm Phi
+    //   m_per_arm      : columns in the per-arm Phi (= per-output basis dim)
+    //   m_offset_in_block : the per-arm Phi's contribution lands at
+    //                       [start + m_offset_in_block, + m_per_arm). For
+    //                       single-output HSGP this is 0; for HSGP-MO it is
+    //                       k_arm * m_per_arm (output-major layout).
+    //
+    // The scatter helper batches every obs across the arm in a single SYRK /
+    // GEMM call. The data and sqrt_S pointers are valid until the block's
+    // next `prep` call; the scatter must hold them only across one solve.
+    //
+    // Optional: when this callback is empty the per-obs `basis_eval` path is
+    // used (current behavior pre-Stage 2.1). Both should agree on values.
+    struct DenseBasisBatch {
+        const double* data              = nullptr;
+        const double* sqrt_S            = nullptr;
+        int           N_k               = 0;
+        int           m_per_arm         = 0;
+        int           m_offset_in_block = 0;
+    };
+    std::function<DenseBasisBatch(int /*k_arm*/)> dense_basis_batch;
+
     // BILINEAR_FACTOR only. Return the pair (u_slot_global, lambda_slot_global)
     // for obs i in arm k_arm. Both indices are absolute (i.e. include the
     // block's start offset). Return any negative slot to skip the obs

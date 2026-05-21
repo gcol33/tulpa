@@ -112,6 +112,19 @@ public:
         }
     }
 
+    // Return the flat index in `values` for the entry (row, col), or -1
+    // if the entry is not in the pattern. Lower-triangle normalization
+    // matches `add()`. Used by scatter callers that want to cache the
+    // index once and then write via `values[idx] += val` directly,
+    // avoiding the per-write std::map lookup. Stage 2.2 scatter index
+    // cache.
+    int lookup(int row, int col) const {
+        int lo = std::min(row, col);
+        int hi = std::max(row, col);
+        auto it = entry_map.find({hi, lo});
+        return (it == entry_map.end()) ? -1 : it->second;
+    }
+
     // Create a cholmod_sparse view (does NOT allocate — reuses internal arrays).
     // The returned pointer is valid until the next init() or destruction.
     // Caller must NOT free the returned sparse matrix.

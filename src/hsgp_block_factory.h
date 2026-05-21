@@ -148,6 +148,22 @@ inline LatentBlock make_hsgp_block(
         }
     };
 
+    // Batched view for the SYRK / GEMM scatter path (Stage 2.1).
+    // Raw Phi (cached at factory time) + sqrt_S (refreshed each prep).
+    // m_offset_in_block = 0 for single-output HSGP.
+    auto n_obs_cache = std::make_shared<std::vector<int>>(
+        n_obs_per_arm.begin(), n_obs_per_arm.end());
+    block.dense_basis_batch = [phi_flat_per_arm, sqrt_S_cache, n_obs_cache,
+                                m_total](int k_arm) -> LatentBlock::DenseBasisBatch {
+        LatentBlock::DenseBasisBatch b;
+        b.data              = (*phi_flat_per_arm)[k_arm].data();
+        b.sqrt_S            = sqrt_S_cache->data();
+        b.N_k               = (*n_obs_cache)[k_arm];
+        b.m_per_arm         = m_total;
+        b.m_offset_in_block = 0;
+        return b;
+    };
+
     // Prior on beta is N(0, I): diagonal precision. No off-diagonal pattern
     // entries (pattern builder adds the diagonal unconditionally).
     block.add_prior_sparse = [start, m_total](

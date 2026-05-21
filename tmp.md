@@ -365,6 +365,7 @@ for NNGP, SYRK/Woodbury for DENSE_BASIS) is reshuffled by the sweep results.
 
 Stage 1.6 (DENSE_BASIS follow-ups) is complete; see §1.6 below.
 Stage 1.7 (multi-output / co-regionalization HSGP) is complete; see §1.7.
+Stage 2.1 (DENSE_BASIS SYRK / GEMM scatter) is complete; see §2.1 below.
 
 ---
 
@@ -437,6 +438,115 @@ with prec)" is not justified by data — solve is never the bottleneck.
    Solve is ≤ 0.9 % everywhere; even a 10x speedup buys < 1 % wall.
    Shelve until a workload changes the shape (e.g., per-iter pivoting
    that breaks the symbolic-Cholesky reuse).
+
+---
+
+## Stage 2.1 complete — DENSE_BASIS SYRK / GEMM scatter
+
+Per-obs scalar accumulation on DENSE_BASIS blocks (HSGP / HSGP-MO /
+HSGP-SVC) replaced with batched BLAS-3 ops. Each Newton iter, per arm,
+per DENSE_BASIS block:
+
+* `H[block, block] += d_eff^2 * Q^T diag(neg_hess) Q`         (Eigen `selfadjointView::rankUpdate`)
+* `H[block, beta]  += d_eff   * Q^T diag(neg_hess) X`         (Eigen GEMM)
+* `H[block, RE_g]  += d_eff   * sum_{i in g} neg_hess_i Q(i,:)` (per-group axpy)
+* `grad[block]     += d_eff   * Q^T grad_obs`                  (Eigen GEMV)
+
+where `Q[i, j] = Phi[i, j] * sqrt_S[j]` is built lazily inside the
+helper. Phi is cached at factory time, sqrt_S in `prep`; both are passed
+as raw pointers through a new `DenseBasisBatch` view on `LatentBlock`.
+
+### Per-shape wall-time impact (profile sweep 2026-05-21 → 2026-05-21)
+
+| shape             | size  | wall_s before | wall_s after | speedup |
+| ----------------- | ----- | ------------- | ------------ | ------- |
+| HSGP single-arm   | M=25  |   0.13        |   0.03       |  4.3x   |
+| HSGP single-arm   | M=100 |   1.45        |   0.06       | 24x     |
+| HSGP single-arm   | M=400 |  29.40        |   0.96       | **30x** |
+| ICAR 2-arm joint  | n_s=1e5 |  10.08      |  10.78       | unchanged (no DB) |
+| BYM2 2-arm joint  | n_s=5e4 |   7.76      |   8.71       | unchanged (no DB) |
+| SPDE single-arm   | n_mesh=10k |  7.20    |   7.48       | unchanged (no DB) |
+| NNGP single-arm   | n_s=8000 |   2.33     |   2.50       | unchanged (no DB) |
+
+HSGP M=400 raw phase breakdown after:
+* scatter: 0.77s (down from ~29.2s)
+* pattern_build: 0.13s (one-shot)
+* factorize: 17ms
+* eta: 4ms
+
+The remaining 0.77s scatter is dominated by `H.add()` calls writing the
+M*(M+1)/2 SYRK output entries via the `std::map`-backed pattern lookup
+(~50 ns per lookup × 80k entries × 5 iters ≈ 0.4s — matches). Stage 2.2
+(scatter index cache, replacing `H.add` with direct `H.values[k]`
+writes) targets exactly this and should bring it down another 5-10x.
+
+### Design
+
+`scatter_arm_obs_joint_multi_sparse` was split into:
+
+1. **Per-obs INDEXED loop** — `INDEXED_SINGLE / INDEXED_MULTI /
+   BILINEAR_FACTOR` blocks. DENSE_BASIS entries skipped unless cross
+   terms are needed (DB × INDEXED or DB × DB inter-block).
+2. **Post-loop batched scatter** — `scatter_dense_basis_block` fires
+   once per DENSE_BASIS block per arm, batched across all obs in that
+   arm.
+3. **Cross-term emission** in the per-obs loop, conditional on
+   `need_db_in_perobs = (has_indexed || n_db_blocks >= 2)`. The
+   common pure-DB case (single HSGP block, no INDEXED) hits this
+   condition false → DB never appears in the per-obs loop.
+
+### Files added
+* `src/scatter_dense_basis.h` — `DenseBasisActive`, `DenseBasisScratch`,
+  `scatter_dense_basis_block` helper.
+
+### Files changed
+* `src/latent_block.h` — `DenseBasisBatch` struct + `dense_basis_batch`
+  field on `LatentBlock`. Optional; empty hook → legacy per-obs path.
+* `src/hsgp_block_factory.h` — wire `dense_basis_batch` returning raw
+  Phi + cached sqrt_S, m_offset_in_block = 0.
+* `src/hsgp_mo_block_factory.h` — same, m_offset_in_block = k_arm *
+  m_total (output-major K*M layout). Sigma cross-output coupling stays
+  in `add_prior_sparse`; the batch only handles the diagonal block.
+* `src/nested_laplace_joint_multi.h` — `scatter_arm_obs_joint_multi_sparse`
+  takes two new scratch args (`active_db_scratch`, `db_buffer`); per-obs
+  loop split as above; post-loop batched call fires automatically when
+  any block has the `dense_basis_batch` hook.
+
+### Test sweep (all green)
+
+* nested-laplace-joint-sparse-equivalence: 12
+* nested-laplace-joint-hsgp-mo: 24
+* nested-laplace-joint-hsgp-svc: 14
+* nested-laplace-gp: 16
+* nested-laplace-st-sparse-equivalence: 28
+* test-spde: 40
+* test-joint-hessian-pattern: 70
+* nested-laplace-joint-latent-factor: 13
+* test-sparse-cholesky: 30
+* nested-laplace-joint-* (full sweep: adaptive-grid, alpha-ridge, beta,
+  bym2, car-proper, icar, multi-recovery, multi, parallel,
+  phase1-alpha-smoke, phi-grid, prune, sigma-pos-prior): ~510
+* nested-laplace-cpp, nested-laplace-multi-block, em-laplace,
+  imh-laplace, nmix-spatial: ~250
+
+Joint equivalence still hits the 1e-7 log_marginal tolerance — math is
+algebraically identical, only the loop order changed.
+
+### Out of scope for this ship
+
+* **DB × DB inter-block GEMM.** Multi-scale HSGP (≥ 2 DENSE_BASIS blocks)
+  still emits inter-block cross via the per-obs loop. Could be batched as
+  one GEMM per (b1, b2) pair: `H_cross = (sqrt(w) Phi_b1)^T (sqrt(w)
+  Phi_b2) * d_eff_b1 * d_eff_b2`. Deferred — multi-scale workloads use
+  modest M and the inter-block share is small relative to the intra-block
+  savings already landed.
+* **DB × INDEXED cross batching.** HSGP + ICAR cross is per-obs; could be
+  batched by ICAR dof. Deferred — current code is BLAS-2 in this slice,
+  not BLAS-3 friendly, and the volume is low.
+* **Scatter index cache** (Stage 2.2). Replacing `H.add()` with direct
+  `H.values[k]` writes via a precomputed obs cache is the next biggest
+  win — both for the SYRK output scatter (the new bottleneck after 2.1)
+  and for the INDEXED scatter on the canonical ICAR/BYM2 workload.
 
 ### Profile harness pointers
 

@@ -215,6 +215,23 @@ inline LatentBlock make_hsgp_mo_block(
         }
     };
 
+    // Batched view for the SYRK / GEMM scatter path (Stage 2.1).
+    // Per-arm Phi is N_k x m_total; lands at slot k_arm * m_total inside the
+    // K*M block (output-major). Sigma cross-output coupling is handled
+    // separately via add_prior_sparse, not here.
+    auto n_obs_cache = std::make_shared<std::vector<int>>(
+        n_obs_per_arm.begin(), n_obs_per_arm.end());
+    block.dense_basis_batch = [phi_flat_per_arm, sqrt_S_cache, n_obs_cache,
+                                m_total](int k_arm) -> LatentBlock::DenseBasisBatch {
+        LatentBlock::DenseBasisBatch b;
+        b.data              = (*phi_flat_per_arm)[k_arm].data();
+        b.sqrt_S            = sqrt_S_cache->data();
+        b.N_k               = (*n_obs_cache)[k_arm];
+        b.m_per_arm         = m_total;
+        b.m_offset_in_block = k_arm * m_total;
+        return b;
+    };
+
     block.add_prior_pattern = [start, m_total, K](
         std::vector<std::pair<int,int>>& out
     ) {
