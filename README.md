@@ -33,11 +33,11 @@ never silently chooses Tier 3.
 
 ```r
 install.packages("pak")
-pak::pak("gcol33/tulpaMesh")
 pak::pak("gcol33/tulpa@v0.0.1")
 ```
 
-For the development version, drop the tag:
+pak resolves the dependency tree, including `tulpaMesh` (declared in
+`Remotes:`). For the development version, drop the tag:
 
 ```r
 pak::pak("gcol33/tulpa")
