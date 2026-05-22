@@ -1198,15 +1198,24 @@ prior_from_spec <- function(spec, data) {
   csr <- adjacency_to_csr_tulpa(adj)
   n_spatial_units <- nrow(adj)
 
-  # spatial_idx per obs
+  # spatial_idx per obs. Resolves group values to 1-based row indices
+  # into the adjacency. Allows empty cells (cells with no data) — the
+  # ICAR / CAR / BYM2 prior is well-defined on every node of the graph
+  # regardless of whether data touches the node; unobserved cells just
+  # contribute no likelihood term. See `.resolve_spatial_idx()` in
+  # spatial_car.R for the resolution rules.
   if (!is.null(spec$level) && spec$level == "group" &&
       !is.null(spec$group_var)) {
     if (!(spec$group_var %in% names(data))) {
       stop("Spatial group variable '", spec$group_var,
            "' not found in data.", call. = FALSE)
     }
-    g <- as.factor(data[[spec$group_var]])
-    spatial_idx <- as.integer(g)
+    spatial_idx <- .resolve_spatial_idx(
+      values = data[[spec$group_var]],
+      n_spatial_units = n_spatial_units,
+      adjacency = adj,
+      group_var = spec$group_var
+    )
   } else {
     if (nrow(data) != n_spatial_units) {
       stop("Observation-level spatial spec requires nrow(data) == ",

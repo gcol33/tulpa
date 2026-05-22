@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+* fix(spatial): `spatial_car()` / `spatial_bym2()` /
+  `spatial_car_proper()` with `level = "group"` now accept datasets that
+  cover only a subset of adjacency cells. Closes gcol33/tulpa#25. The
+  Besag / ICAR / BYM2 / proper-CAR field is well-defined on every node
+  of the graph regardless of whether each node has an observation;
+  unobserved cells simply contribute no likelihood term (matching
+  INLA's `f(cell, model = "besag", graph = g)`). `validate_spatial()`
+  and `prior_from_spec()` now resolve `group_var` to 1-based adjacency
+  row indices via a new `.resolve_spatial_idx()` helper:
+  - integer / numeric `group_var` -> 1-based row indices,
+    validated against `[1, n_spatial_units]`.
+  - character / factor `group_var` with `rownames(adjacency)` set ->
+    matched by name (preserves cell identity for sparse subsets).
+  - character / factor `group_var` without rownames -> legacy
+    `as.integer(as.factor(.))`, retained for back-compat; errors with
+    an actionable message when level count differs from adjacency
+    size.
+
 * refactor(joint-laplace): unify single-block and multi-block joint
   dispatch (Phase J-E). `tulpa_nested_laplace_joint()`'s single-block
   path (`prior = list(type = "bym2"/"icar"/"car_proper", ...)`) now

@@ -136,6 +136,89 @@ spatial_car_proper <- function(adjacency,
 }
 
 
+# Resolve a user-supplied group_var vector to 1-based indices into the rows
+# of an adjacency matrix. Empty cells (cells with no data) are allowed:
+# the ICAR / CAR / BYM2 Q-matrix is well-defined on every node of the graph
+# regardless of whether the data touches that node. This matches INLA's
+# `f(cell, model = "besag", graph = g)` semantics.
+#
+# Resolution rules:
+#   * integer / numeric values  -> interpreted as 1-based row indices into
+#                                   the adjacency. Values are validated
+#                                   to lie in [1, n_spatial_units].
+#   * character / factor values + rownames(adjacency) set
+#                              -> match by name.
+#   * character / factor values, no rownames
+#                              -> fall back to as.integer(as.factor(.)),
+#                                  but require the number of unique values
+#                                  to equal n_spatial_units (otherwise the
+#                                  factor levels reindex the cells and lose
+#                                  the user's cell identity).
+#
+# The fallback restriction is the original (pre-issue-#25) behavior, kept
+# for backward compatibility with tests that pass factors covering every
+# cell. Users hitting the empty-cell case should switch to integer 1-based
+# indices or attach `rownames(adjacency)`.
+.resolve_spatial_idx <- function(values, n_spatial_units, adjacency,
+                                 group_var = "group") {
+  if (length(values) == 0L) return(integer(0))
+  if (anyNA(values)) {
+    stop("Spatial group variable '", group_var,
+         "' contains NA values; cannot resolve to adjacency indices.",
+         call. = FALSE)
+  }
+
+  rn <- rownames(adjacency)
+
+  if (is.numeric(values) || is.integer(values)) {
+    idx <- as.integer(values)
+    if (anyNA(idx) || any(idx != values)) {
+      stop("Spatial group variable '", group_var,
+           "' must contain whole-number indices when numeric.",
+           call. = FALSE)
+    }
+    bad <- idx[idx < 1L | idx > n_spatial_units]
+    if (length(bad) > 0L) {
+      stop("Spatial group variable '", group_var,
+           "' has values outside [1, n_spatial_units = ",
+           n_spatial_units, "]: ",
+           paste(unique(bad), collapse = ", "), ". ",
+           "Integer `group_var` values are treated as 1-based row indices ",
+           "into the adjacency matrix.", call. = FALSE)
+    }
+    return(idx)
+  }
+
+  if (is.character(values) || is.factor(values)) {
+    char_vals <- as.character(values)
+    if (!is.null(rn)) {
+      idx <- match(char_vals, rn)
+      missing_vals <- unique(char_vals[is.na(idx)])
+      if (length(missing_vals) > 0L) {
+        stop("Spatial group variable '", group_var,
+             "' has values not found in rownames(adjacency): ",
+             paste(missing_vals, collapse = ", "), ".", call. = FALSE)
+      }
+      return(idx)
+    }
+    f <- as.factor(values)
+    if (nlevels(f) != n_spatial_units) {
+      stop("Spatial group variable '", group_var,
+           "' has ", nlevels(f), " unique values but adjacency has ",
+           n_spatial_units, " cells. ",
+           "To use a sparse subset of cells, either pass `group_var` as ",
+           "integer 1-based indices into the adjacency, or attach ",
+           "`rownames(adjacency)` and use matching character / factor ",
+           "values in the data.", call. = FALSE)
+    }
+    return(as.integer(f))
+  }
+
+  stop("Spatial group variable '", group_var,
+       "' must be integer, numeric, character, or factor.", call. = FALSE)
+}
+
+
 #' Compute valid bounds for rho in proper CAR
 #'
 #' @description

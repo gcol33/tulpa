@@ -20,14 +20,18 @@ validate_spatial <- function(spatial, data) {
                    spatial$group_var), call. = FALSE)
     }
 
-    # Check number of groups matches adjacency matrix
-    n_groups <- length(unique(data[[spatial$group_var]]))
-    if (n_groups != spatial$n_spatial) {
-      stop(sprintf(
-        "Number of groups in data (%d) does not match adjacency matrix (%d)",
-        n_groups, spatial$n_spatial
-      ), call. = FALSE)
-    }
+    # Resolve the group values to 1-based adjacency-row indices. The
+    # resolver allows empty cells (cells with no observed data) when the
+    # mapping is unambiguous (integer 1-based indices, or character /
+    # factor labels matching `rownames(adjacency)`). It errors with a
+    # clear message when cells can't be identified — e.g. an unrowed
+    # factor whose level count differs from the adjacency size.
+    .resolve_spatial_idx(
+      values = data[[spatial$group_var]],
+      n_spatial_units = spatial$n_spatial,
+      adjacency = spatial$adjacency,
+      group_var = spatial$group_var
+    )
   } else {
     # Observation-level spatial
     if (nrow(data) != spatial$n_spatial) {
