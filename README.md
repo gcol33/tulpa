@@ -32,12 +32,19 @@ never silently chooses Tier 3.
 ## Installation
 
 ```r
-# install.packages("remotes")
-remotes::install_github("gcol33/tulpaMesh")
-remotes::install_github("gcol33/tulpa")
+install.packages("pak")
+pak::pak("gcol33/tulpaMesh")
+pak::pak("gcol33/tulpa@v0.0.1")
 ```
 
-Requires a C++17 toolchain.
+For the development version, drop the tag:
+
+```r
+pak::pak("gcol33/tulpa")
+```
+
+Requires a C++17 toolchain (Rtools on Windows, Xcode CLI tools on macOS,
+`r-base-dev` on Linux). `tulpa` compiles its C++ backend on first install.
 
 ## Model packages
 
