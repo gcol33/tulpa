@@ -19,8 +19,11 @@
 //     coefficients per group per term (q_t == 1 for `(1|g)`, q_t > 1
 //     for slopes). The latent contribution at obs i is
 //         sum_t  z_{t,i}^T b_{t, g_t(i)}
-//     where z_{t,i,0} = 1 and slopes z_{t,i,c} (c = 1..q_t-1) are read
-//     from data->re_slope_matrices[t][i*(q_t-1) + (c-1)]. Per-term
+//     where, for an intercept-carrying block, z_{t,i,0} = 1 and slopes
+//     z_{t,i,c} (c = 1..q_t-1) are read from
+//     data->re_slope_matrices[t][i*n_slopes + (c-1)]. A slope-only block
+//     (`(0 + x | g)`, re_has_intercept[t] == 0) has no z = 1 column: every
+//     coef c = 0..q_t-1 is a slope read at column c. Per-term
 //     prior covariance Σ_t is uncorrelated (`(x||g)` -> diagonal) or
 //     correlated (`(x|g)` -> tanh-Cholesky-parameterized in
 //     params[chol_re_start_multi[t]..chol_re_end_multi[t])).

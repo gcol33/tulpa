@@ -313,23 +313,29 @@ inline int re_group_at(
     return -1;
 }
 
-// Read the slope row z_{t,i,c} for c in 1..q_t-1 from
-// data.re_slope_matrices[t]. Intercept (c == 0) is implicit (= 1) and not
-// stored. Returns 0 when the term is intercept-only.
+// Read the design value z_{t,i,c} for coefficient c of RE term t. When the
+// term carries the implicit group intercept (the common case) coef 0 is the
+// intercept (z = 1, not stored) and coefs 1..q_t-1 are slopes read from
+// data.re_slope_matrices[t] at column c-1. When the term has no intercept
+// (lme4 `(0 + x | g)`) every coef 0..q_t-1 is a slope read at column c.
+// Returns 0 when the term is intercept-only or the index is out of range.
 inline double slope_at(
     const ModelData& data,
     int t,
     int i,
-    int c        // 1-based slope coefficient: c >= 1 means slope (c-1)
+    int c        // coefficient index in 0..q_t-1
 ) {
-    if (c <= 0) return 1.0; // intercept
+    const bool has_int = re_term_has_intercept(data, t);
+    if (has_int && c <= 0) return 1.0; // implicit intercept
+    const int col = has_int ? (c - 1) : c;
+    if (col < 0) return 0.0;
     if ((int)data.re_slope_matrices.size() <= t) return 0.0;
     const auto& M = data.re_slope_matrices[t];
     if (M.empty()) return 0.0;
     if ((int)data.re_n_slopes.size() <= t) return 0.0;
     const int n_slopes = data.re_n_slopes[t];
-    if (n_slopes <= 0) return 0.0;
-    return M[(size_t)i * n_slopes + (c - 1)];
+    if (n_slopes <= 0 || col >= n_slopes) return 0.0;
+    return M[(size_t)i * n_slopes + col];
 }
 
 // True iff the RE contributes to process k's linear predictor. Falls back
@@ -362,9 +368,10 @@ inline double obs_re_contrib(
         if (g >= s.n_groups) continue;
         const int q = s.n_coefs;
         const int base = s.param_start + g * q;
-        // Intercept (c = 0) z = 1, slopes z = re_slope_matrices[t][i, c-1].
-        double contrib = params[base];
-        for (int c = 1; c < q; c++) {
+        // z_{t,i,c} = 1 for the implicit intercept (when present) and the
+        // slope design value otherwise; slope_at() encodes both cases.
+        double contrib = 0.0;
+        for (int c = 0; c < q; c++) {
             contrib += params[base + c] * slope_at(data, t, i, c);
         }
         re_eff += contrib;
@@ -469,8 +476,7 @@ inline void scatter_spec(
             g_term[t] = g;
             q_term[t] = s.n_coefs;
             if (g < 0) continue;
-            z_term[t][0] = 1.0;
-            for (int c = 1; c < s.n_coefs; c++) {
+            for (int c = 0; c < s.n_coefs; c++) {
                 z_term[t][c] = slope_at(data, t, i, c);
             }
         }
@@ -1414,6 +1420,7 @@ Rcpp::List cpp_laplace_spec_test_multi_re(
     data.re_n_groups_multi.assign(K, 0);
     data.re_n_coefs.assign(K, 1);
     data.re_n_slopes.assign(K, 0);
+    data.re_has_intercept.assign(K, 1);  // this harness always carries intercept
     data.re_correlated.assign(K, false);
     data.re_n_chol.assign(K, 0);
     data.re_offsets.assign(K, 0);

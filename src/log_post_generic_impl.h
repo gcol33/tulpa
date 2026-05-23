@@ -269,15 +269,20 @@ static T generic_re_effect(
             const int g = group_idx - 1;
             const int n_coefs_t = layout.re_n_coefs_multi[t];
             const int off = state.re_term_offsets[t];
-            T term_effect = state.re_vals[off + g * n_coefs_t];
-            const int n_slopes = n_coefs_t - 1;
+            // Implicit group intercept (coef 0) present unless this is a
+            // slope-only block (lme4 `(0 + x | g)`). When absent, every coef
+            // is a slope and there is no z = 1 column.
+            const bool has_int = re_term_has_intercept(data, t);
+            const int n_slopes = n_coefs_t - (has_int ? 1 : 0);
+            const int coef0 = has_int ? 1 : 0;  // first slope's coef index
+            T term_effect = has_int ? state.re_vals[off + g * n_coefs_t] : T(0.0);
 
             if (n_slopes > 0 && t < (int)data.re_slope_matrices.size() &&
                 !data.re_slope_matrices[t].empty()) {
                 for (int s = 0; s < n_slopes; s++) {
                     const double x_slope = data.re_slope_matrices[t][i * n_slopes + s];
                     term_effect = term_effect
-                        + state.re_vals[off + g * n_coefs_t + 1 + s] * T(x_slope);
+                        + state.re_vals[off + g * n_coefs_t + coef0 + s] * T(x_slope);
                 }
             }
             effect = effect + term_effect;

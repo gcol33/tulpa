@@ -24,7 +24,7 @@ namespace tulpa {
 // process-global TgmrfSpec registry that backs `tgmrf_cpp()` (P7). New
 // callable; existing layouts unchanged.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 21;
+constexpr int TULPA_ABI_VERSION = 22;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -139,6 +139,11 @@ struct ModelData {
     int total_re_params = 0;
     int total_sigma_params = 0;
     int total_chol_params = 0;
+    // Per-term flag: does the block carry the implicit group intercept (coef 0)?
+    // Empty (the common case) means "all terms have an intercept" — see
+    // re_term_has_intercept(). When false, all re_n_coefs[t] coefficients are
+    // slopes and there is no implicit z=1 column (lme4 `(0 + x | g)`).
+    std::vector<int> re_has_intercept;
 
     // RE parameterization: 0 = centered, 1 = non-centered
     int re_parameterization = 1;
@@ -327,6 +332,16 @@ struct ModelData {
     // ================================================================
     int n_threads = 1;
 };
+
+// Does RE term t carry the implicit group intercept (coef 0, z = 1)? Default
+// true: callers that never set re_has_intercept (the overwhelming majority,
+// since `(0 + x | g)` is rare) get the historical intercept-carrying block.
+// When false, all re_n_coefs[t] coefficients are slopes read from the slope
+// design matrix and there is no implicit intercept column.
+inline bool re_term_has_intercept(const ModelData& data, int t) {
+    if (t < 0 || t >= (int)data.re_has_intercept.size()) return true;
+    return data.re_has_intercept[t] != 0;
+}
 
 } // namespace tulpa
 
