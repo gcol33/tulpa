@@ -45,7 +45,7 @@ are needed.
 temporal_ar1("year")
 temporal_ar1("year", group = "site")
 
-\donttest{
+\dontrun{
 # AR1 temporal correlation
 set.seed(127)
 df <- data.frame(

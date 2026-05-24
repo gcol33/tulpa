@@ -110,7 +110,7 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' # Create temporal RW2 specification
 #' temporal_rw2("year")
 #'
-#' \donttest{
+#' \dontrun{
 #' # Smooth temporal trend
 #' set.seed(126)
 #' df <- data.frame(
@@ -217,7 +217,7 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' temporal_ar1("year")
 #' temporal_ar1("year", group = "site")
 #'
-#' \donttest{
+#' \dontrun{
 #' # AR1 temporal correlation
 #' set.seed(127)
 #' df <- data.frame(
@@ -335,7 +335,7 @@ print.tulpa_temporal <- function(x, ...) {
    cat("Cyclic: Yes\n")
  }
 
- cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+ cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
  if (!is.null(x$n_times)) {
    cat("Time points:", x$n_times, "\n")

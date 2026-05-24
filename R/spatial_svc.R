@@ -143,7 +143,7 @@ print.tulpa_svc <- function(x, ...) {
   cat("Coordinates:", paste(x$coord_vars, collapse = ", "), "\n")
   cat("Covariance:", x$cov, "\n")
   cat("Neighbors (NNGP):", x$nn, "\n")
-  cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_svc)) {
     cat("\nSVC terms:", x$n_svc, "\n")

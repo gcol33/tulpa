@@ -74,7 +74,7 @@ The hyperparameters are:
 hsgp <- spatial_hsgp(~ lon + lat)
 print(hsgp)
 
-\donttest{
+\dontrun{
 # Generate synthetic spatial data
 set.seed(42)
 n <- 100

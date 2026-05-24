@@ -7,7 +7,7 @@
 latent_factor(
   n_factors = 1L,
   prior = NULL,
-  shared = NULL,
+  shared = TRUE,
   constraint = c("sum_to_zero", "first_zero"),
   scale = TRUE
 )

@@ -39,21 +39,22 @@ prior preference for structured vs. unstructured spatial variation.
 }
 }
 \examples{
-# Show defaults for negbin_negbin family
-priors_default(tulpa_negbin_negbin())
-
-# Show defaults for binomial family
-priors_default(tulpa_binomial())
-
-# Show defaults including spatial parameters
-priors_default(tulpa_negbin_negbin(), spatial = TRUE)
-
-# Show defaults for all families
+# Defaults for all families (no family argument)
 priors_default()
 
-# Use as starting point for customization
+# Family-specific defaults take a family object from a model package
+# (e.g. numdenom's tulpa_negbin_negbin()), so they are not run here.
+\dontrun{
+priors_default(tulpa_negbin_negbin())
+priors_default(tulpa_binomial())
+
+# Including spatial parameters
+priors_default(tulpa_negbin_negbin(), spatial = TRUE)
+
+# Use as a starting point for customization
 my_priors <- priors_default(tulpa_poisson_gamma())
 my_priors$beta <- prior_normal(0, 1)  # Tighter prior on fixed effects
+}
 
 }
 \seealso{

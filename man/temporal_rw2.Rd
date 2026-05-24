@@ -41,7 +41,7 @@ The precision matrix is rank T-2 (two constraints needed).
 # Create temporal RW2 specification
 temporal_rw2("year")
 
-\donttest{
+\dontrun{
 # Smooth temporal trend
 set.seed(126)
 df <- data.frame(

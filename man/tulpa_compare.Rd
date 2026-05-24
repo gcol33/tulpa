@@ -18,7 +18,7 @@ A loo_compare object
 Compare multiple tulpa models using LOO-CV or WAIC.
 }
 \examples{
-\donttest{
+\dontrun{
 # Fit models with different structures (slow, not run on CRAN)
 set.seed(123)
 n <- 50

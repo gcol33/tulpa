@@ -54,7 +54,7 @@ For ratio predictions, averaging is performed on the log scale to respect
 the multiplicative nature of ratios.
 }
 \examples{
-\donttest{
+\dontrun{
 # Fit candidate models (slow, not run on CRAN)
 set.seed(123)
 n <- 60

@@ -111,7 +111,7 @@ print.tulpa_tvc <- function(x, ...) {
     gp = "GP (Gaussian process)"
   )
   cat("Structure:", struct_name, "\n")
-  cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_tvc)) {
     cat("\nTVC terms:", x$n_tvc, "\n")

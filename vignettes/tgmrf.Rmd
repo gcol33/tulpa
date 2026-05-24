@@ -3,7 +3,7 @@ title: "User-defined GMRF latent blocks with tgmrf()"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{User-defined GMRF latent blocks with tgmrf()}
-  %\VignetteEngine{knitr::knitr}
+  %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 

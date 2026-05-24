@@ -168,7 +168,7 @@ print.tulpa_gp <- function(x, ...) {
   )
   cat("Solver:", solver_str, "\n")
 
-  cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
     cat("\nObservations:", x$n_obs, "\n")
@@ -234,7 +234,7 @@ print.tulpa_gp <- function(x, ...) {
 #' hsgp <- spatial_hsgp(~ lon + lat)
 #' print(hsgp)
 #'
-#' \donttest{
+#' \dontrun{
 #' # Generate synthetic spatial data
 #' set.seed(42)
 #' n <- 100
@@ -339,7 +339,7 @@ print.tulpa_hsgp <- function(x, ...) {
   cat("Coordinates:", paste(x$coord_vars, collapse = ", "), "\n")
   cat("Basis functions:", x$m, "per dim (", x$m^2, "total )\n")
   cat("Boundary factor:", x$c, "\n")
-  cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
     cat("\nObservations:", x$n_obs, "\n")
@@ -600,7 +600,7 @@ print.tulpa_multiscale <- function(x, ...) {
     cov_str <- sprintf("%s (nu = %.1f)", x$cov, x$nu)
   }
   cat("\nCovariance:", cov_str, "\n")
-  cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
     cat("\nObservations:", x$n_obs, "\n")

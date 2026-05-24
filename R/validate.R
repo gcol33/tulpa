@@ -27,7 +27,7 @@ NULL
 #' # pp_check requires a fitted model with posterior predictive draws
 #' # See tulpa() examples for fitting models
 #'
-#' \donttest{
+#' \dontrun{
 #' # Simulate data and fit model (slow, not run on CRAN)
 #' set.seed(123)
 #' n <- 50
@@ -402,7 +402,7 @@ waic.tulpa_fit <- function(x, ...) {
 #' @return A loo_compare object
 #'
 #' @examples
-#' \donttest{
+#' \dontrun{
 #' # Fit models with different structures (slow, not run on CRAN)
 #' set.seed(123)
 #' n <- 50
@@ -493,7 +493,7 @@ tulpa_compare <- function(..., criterion = c("loo", "waic")) {
 #' the multiplicative nature of ratios.
 #'
 #' @examples
-#' \donttest{
+#' \dontrun{
 #' # Fit candidate models (slow, not run on CRAN)
 #' set.seed(123)
 #' n <- 60

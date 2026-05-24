@@ -262,7 +262,7 @@ print.tulpa_spatiotemporal <- function(x, ...) {
     cat("  Time points:", x$n_times, "\n")
   }
 
-  cat("\nShared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("\nShared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_params)) {
     cat("Total interaction parameters:", x$n_params, "\n")
@@ -937,7 +937,7 @@ print.tulpa_st_gp <- function(x, ...) {
   )
   cat("Non-separability:", nonsep_desc, "\n")
   cat("Neighbors (NNGP):", x$nn, "\n")
-  cat("Shared:", if (x$shared) "Yes" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
     cat("\nObservations:", x$n_obs, "\n")

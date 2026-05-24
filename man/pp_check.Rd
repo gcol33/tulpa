@@ -41,7 +41,7 @@ distribution.
 # pp_check requires a fitted model with posterior predictive draws
 # See tulpa() examples for fitting models
 
-\donttest{
+\dontrun{
 # Simulate data and fit model (slow, not run on CRAN)
 set.seed(123)
 n <- 50

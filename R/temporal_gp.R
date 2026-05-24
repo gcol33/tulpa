@@ -132,7 +132,7 @@ print.tulpa_temporal_multiscale <- function(x, ...) {
     cat("  Short-term:", short_name, "\n")
   }
 
-  cat("\nShared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("\nShared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_times)) {
     cat("Time points:", x$n_times, "\n")
@@ -441,7 +441,7 @@ print.tulpa_temporal_gp <- function(x, ...) {
     cov_str <- sprintf("%s (period = %.1f)", x$cov, x$period)
   }
   cat("Covariance:", cov_str, "\n")
-  cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_obs)) {
     cat("\nObservations:", x$n_obs, "\n")

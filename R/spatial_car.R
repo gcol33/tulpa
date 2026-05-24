@@ -461,7 +461,7 @@ print.tulpa_spatial <- function(x, ...) {
   cat("Type:", type_name, "\n")
   cat("Level:", x$level, "\n")
   cat("Spatial units:", x$n_spatial, "\n")
-  cat("Shared:", if (x$shared) "Yes (enters both processes)" else "No", "\n")
+  cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$group_var)) {
     cat("Group variable:", x$group_var, "\n")

@@ -64,8 +64,8 @@ fam <- tulpa_family(
 )
 df <- data.frame(y = rep(0, 20), x = rnorm(20))
 theta <- list(
-  beta = list(p1 = c(0.5, 1.0)),
-  u = list(p1 = list()),
+  beta = list(y = c(0.5, 1.0)),
+  u = list(y = list()),
   extras = list(sigma_y = 0.5)
 )
 sim <- tulpa_simulate(y ~ x, fam, df, theta = theta, n_sims = 3, seed = 1)
