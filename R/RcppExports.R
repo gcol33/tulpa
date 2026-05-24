@@ -633,8 +633,12 @@ cpp_tulpa_fit_gaussian <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, 
     .Call(`_tulpa_cpp_tulpa_fit_gaussian`, y_r, X_r, sigma_beta, n_iter, n_warmup, step_size, n_leapfrog, seed)
 }
 
-cpp_tulpa_fit_generic <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = TRUE) {
-    .Call(`_tulpa_cpp_tulpa_fit_generic`, y_r, X_r, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose)
+cpp_tulpa_fit_generic <- function(y_r, X_r, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = TRUE, init = NULL, inv_metric_init = NULL) {
+    .Call(`_tulpa_cpp_tulpa_fit_generic`, y_r, X_r, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init)
+}
+
+cpp_tulpa_fit_generic_chains <- function(y_r, X_r, n_chains = 4L, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE, init = NULL, inv_metric_init = NULL) {
+    .Call(`_tulpa_cpp_tulpa_fit_generic_chains`, y_r, X_r, n_chains, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init)
 }
 
 tulpa_version <- function() {

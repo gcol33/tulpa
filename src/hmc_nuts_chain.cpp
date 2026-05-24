@@ -61,6 +61,13 @@ HMCResultCpp run_hmc_chain_cpp(
 
   result.epsilon = da.final_epsilon();
 
+  // Warm-start / resume outputs (gcol33/tulpa#29): the adapted inverse-mass
+  // diagonal and the final raw sampler position. `q` holds the last sampler
+  // state in the sampling parameterization (z for NC GP, not the stored w);
+  // resuming from it is what continues the trajectory.
+  result.inv_metric_diag = mass.inv_mass_diag;
+  result.final_position = q;
+
   // Diagnostic stats - only when verbose
   if (verbose) {
     int sampling_total_lf = 0;

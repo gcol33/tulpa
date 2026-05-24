@@ -12,6 +12,53 @@ std::string tulpa_version() {
 }
 
 // ============================================================================
+// Copy one pure-C++ chain result into a flat NUTSResult (caller owns the
+// allocated buffers via free_buffers). Single source of truth shared by the
+// single-chain and multi-chain registered callables.
+// ============================================================================
+static void fill_nuts_result_from_cpp(
+    tulpa::NUTSResult* out,
+    const tulpa_hmc::HMCResultCpp& hmc,
+    int n_params
+) {
+    out->n_sample = hmc.n_sample;
+    out->n_params = n_params;
+    out->epsilon = hmc.epsilon;
+    std::strncpy(out->sampler, hmc.sampler.c_str(), 63);
+    out->sampler[63] = '\0';
+
+    int ns = hmc.n_sample;
+    out->samples = new double[ns * n_params];
+    out->log_prob = new double[ns];
+    out->accept_prob = new double[ns];
+    out->divergent = new int[ns];
+    out->treedepth = new int[ns];
+
+    for (int s = 0; s < ns; s++) {
+        const double* row = hmc.sample_row(s);
+        for (int j = 0; j < n_params; j++) {
+            out->samples[s * n_params + j] = row[j];
+        }
+        out->log_prob[s] = hmc.log_prob[s];
+        out->accept_prob[s] = hmc.accept_prob[s];
+        out->divergent[s] = hmc.divergent[s] ? 1 : 0;
+        out->treedepth[s] = hmc.treedepth[s];
+    }
+
+    // Warm-start / resume outputs (gcol33/tulpa#29). run_hmc_chain_cpp always
+    // sizes these to n_params; the bounds check is belt-and-braces so a short
+    // vector defaults to the identity metric / origin rather than reading OOB.
+    out->inv_metric_out = new double[n_params];
+    out->final_position = new double[n_params];
+    for (int j = 0; j < n_params; j++) {
+        out->inv_metric_out[j] =
+            (j < (int)hmc.inv_metric_diag.size()) ? hmc.inv_metric_diag[j] : 1.0;
+        out->final_position[j] =
+            (j < (int)hmc.final_position.size()) ? hmc.final_position[j] : 0.0;
+    }
+}
+
+// ============================================================================
 // Registered C callable: tulpa_run_nuts_generic
 // Called by model packages (tulpaObs, etc.) via R_GetCCallable.
 // Thin wrapper around tulpa_hmc::run_hmc_chain_cpp.
@@ -54,30 +101,59 @@ static void tulpa_run_nuts_generic_impl(
         inv_metric_init
     );
 
-    // Fill result struct
-    result_out->n_sample = hmc.n_sample;
-    result_out->n_params = n_params;
-    result_out->epsilon = hmc.epsilon;
-    std::strncpy(result_out->sampler, hmc.sampler.c_str(), 63);
-    result_out->sampler[63] = '\0';
+    fill_nuts_result_from_cpp(result_out, hmc, n_params);
+}
 
-    // Allocate and copy result buffers (caller owns these via free_buffers)
-    int ns = hmc.n_sample;
-    result_out->samples = new double[ns * n_params];
-    result_out->log_prob = new double[ns];
-    result_out->accept_prob = new double[ns];
-    result_out->divergent = new int[ns];
-    result_out->treedepth = new int[ns];
+// ============================================================================
+// Registered C callable: tulpa_run_nuts_chains (gcol33/tulpa#30)
+// Multi-chain across-chain OpenMP runner. `init` is chain-major
+// [n_chains * n_params]; `inv_metric_diag` is chain-major
+// [n_chains * n_params] or nullptr (structural default for all chains).
+// `results_out` is a caller-allocated array of n_chains NUTSResult.
+// ============================================================================
+static void tulpa_run_nuts_chains_impl(
+    const tulpa::ModelData* data,
+    const tulpa::ParamLayout* /*layout*/,
+    const double* init,
+    int n_params,
+    int n_chains,
+    int n_iter,
+    int n_warmup,
+    int max_treedepth,
+    double adapt_delta,
+    unsigned int seed,
+    int verbose,
+    const double* inv_metric_diag,
+    tulpa::NUTSResult* results_out
+) {
+    // Per-chain init (chain-major rows).
+    std::vector<std::vector<double>> q_init_per_chain(n_chains);
+    for (int c = 0; c < n_chains; c++) {
+        const double* row = init + (std::size_t)c * n_params;
+        q_init_per_chain[c].assign(row, row + n_params);
+    }
 
-    for (int s = 0; s < ns; s++) {
-        const double* row = hmc.sample_row(s);
-        for (int j = 0; j < n_params; j++) {
-            result_out->samples[s * n_params + j] = row[j];
+    // Per-chain inverse-mass diagonal (empty -> default for every chain).
+    std::vector<std::vector<double>> inv_metric_per_chain;
+    if (inv_metric_diag != nullptr) {
+        inv_metric_per_chain.resize(n_chains);
+        for (int c = 0; c < n_chains; c++) {
+            const double* row = inv_metric_diag + (std::size_t)c * n_params;
+            inv_metric_per_chain[c].assign(row, row + n_params);
         }
-        result_out->log_prob[s] = hmc.log_prob[s];
-        result_out->accept_prob[s] = hmc.accept_prob[s];
-        result_out->divergent[s] = hmc.divergent[s] ? 1 : 0;
-        result_out->treedepth[s] = hmc.treedepth[s];
+    }
+
+    std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
+        q_init_per_chain, inv_metric_per_chain, *data,
+        n_iter, n_warmup,
+        0,                // L=0 → NUTS
+        n_chains, seed, verbose != 0, max_treedepth,
+        tulpa::MassMatrixType::DIAG, adapt_delta,
+        0                 // riemannian=off
+    );
+
+    for (int c = 0; c < n_chains; c++) {
+        fill_nuts_result_from_cpp(&results_out[c], chains[c], n_params);
     }
 }
 
@@ -135,6 +211,8 @@ void tulpa_register_tgmrf_callables(DllInfo* dll);
 void tulpa_register_callables(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_run_nuts_generic",
                         (DL_FUNC)&tulpa_run_nuts_generic_impl);
+    R_RegisterCCallable("tulpa", "tulpa_run_nuts_chains",
+                        (DL_FUNC)&tulpa_run_nuts_chains_impl);
     R_RegisterCCallable("tulpa", "tulpa_compute_param_layout",
                         (DL_FUNC)&tulpa_compute_param_layout_impl);
     R_RegisterCCallable("tulpa", "tulpa_get_abi_version",

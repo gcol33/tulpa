@@ -2,6 +2,8 @@ src/*.o
 src/*.dll
 src/*.so
 src/*.exe
+src/*.def
+!src/tulpa-win.def
 src/symbols.rds
 *.Rcheck/
 *.tar.gz

@@ -54,12 +54,24 @@ struct NUTSResult {
     double epsilon;        // Final adapted step size
     char sampler[64];      // Sampler name (e.g. "NUTS")
 
+    // Warm-start / resume outputs (ABI v23+, gcol33/tulpa#29). Both length
+    // n_params; caller must free. Together with `epsilon` they capture the
+    // adapted geometry and last sampler state, so a continued chain is
+    //   init = final_position, inv_metric_diag = inv_metric_out, n_warmup = 0.
+    // inv_metric_out is the inverse-mass *diagonal* (the diagonal part even
+    // when the run used a denser metric internally). final_position is the
+    // last draw in the sampling parameterization.
+    double* inv_metric_out;   // [n_params] adapted inverse-mass diagonal
+    double* final_position;   // [n_params] last sampler position
+
     void free_buffers() {
-        if (samples)     { delete[] samples;     samples = nullptr; }
-        if (log_prob)    { delete[] log_prob;     log_prob = nullptr; }
-        if (accept_prob) { delete[] accept_prob;  accept_prob = nullptr; }
-        if (divergent)   { delete[] divergent;    divergent = nullptr; }
-        if (treedepth)   { delete[] treedepth;    treedepth = nullptr; }
+        if (samples)        { delete[] samples;         samples = nullptr; }
+        if (log_prob)       { delete[] log_prob;        log_prob = nullptr; }
+        if (accept_prob)    { delete[] accept_prob;     accept_prob = nullptr; }
+        if (divergent)      { delete[] divergent;       divergent = nullptr; }
+        if (treedepth)      { delete[] treedepth;       treedepth = nullptr; }
+        if (inv_metric_out) { delete[] inv_metric_out;  inv_metric_out = nullptr; }
+        if (final_position) { delete[] final_position;  final_position = nullptr; }
     }
 };
 
@@ -94,6 +106,60 @@ inline NUTSFn get_nuts_fn() {
     if (!fn) {
         check_abi_version();
         fn = (NUTSFn)R_GetCCallable("tulpa", "tulpa_run_nuts_generic");
+    }
+    return fn;
+}
+
+// ============================================================================
+// Multi-chain NUTS (ABI v24+, gcol33/tulpa#30). Runs `n_chains` chains via
+// tulpa's OpenMP across-chain runner in one call, so model packages stop
+// re-implementing chain orchestration (offset-seed loops / PSOCK clusters) in
+// R and get the engine's thread-parallel path for free.
+//
+// Layout conventions (chain-major):
+//   init             [n_chains * n_params]  — chain c starts at row c. For a
+//                                             fresh fit, replicate one init
+//                                             across rows; for a resume, pass
+//                                             each chain's final_position.
+//   inv_metric_diag  [n_chains * n_params]  — row c seeds chain c's inverse-
+//                    or nullptr               mass diagonal (see NUTSFn doc).
+//                                             nullptr -> structural default for
+//                                             every chain. For a resume, pass
+//                                             each chain's inv_metric_out and
+//                                             n_warmup = 0.
+//   results_out      [n_chains]             — caller-allocated array; entry c
+//                                             is filled exactly like the single
+//                                             -chain NUTSResult (samples,
+//                                             diagnostics, epsilon, and the v23
+//                                             inv_metric_out / final_position).
+//                                             Call free_buffers() on each.
+//
+// `seed` is the base seed; chains are diversified internally by chain index,
+// so a shared init still yields independent chains.
+// ============================================================================
+typedef void (*NUTSChainsFn)(
+    const ModelData* data,
+    const ParamLayout* layout,
+    const double* init,
+    int n_params,
+    int n_chains,
+    int n_iter,
+    int n_warmup,
+    int max_treedepth,
+    double adapt_delta,
+    unsigned int seed,
+    int verbose,
+    const double* inv_metric_diag,
+    NUTSResult* results_out
+);
+
+// Retrieve the multi-chain NUTS function pointer from tulpa.
+// Automatically checks ABI version on first call.
+inline NUTSChainsFn get_nuts_chains_fn() {
+    static NUTSChainsFn fn = nullptr;
+    if (!fn) {
+        check_abi_version();
+        fn = (NUTSChainsFn)R_GetCCallable("tulpa", "tulpa_run_nuts_chains");
     }
     return fn;
 }

@@ -23,8 +23,16 @@ namespace tulpa {
 // 20 -> 21: added `tulpa_register_tgmrf` registered C callable + the
 // process-global TgmrfSpec registry that backs `tgmrf_cpp()` (P7). New
 // callable; existing layouts unchanged.
+//
+// 22 -> 23: appended `inv_metric_out` + `final_position` to NUTSResult
+// (gcol33/tulpa#29) so callers can resume / warm-start a chain. NUTSResult
+// layout grew (two trailing pointers); NUTSFn signature unchanged.
+//
+// 23 -> 24: added the `tulpa_run_nuts_chains` registered C callable
+// (multi-chain OpenMP across-chain runner, gcol33/tulpa#30). New callable
+// only; no struct layout change (NUTSResult / NUTSFn unchanged).
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 22;
+constexpr int TULPA_ABI_VERSION = 24;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

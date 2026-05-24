@@ -112,6 +112,28 @@ std::vector<HMCResult> run_hmc_parallel_chains(
     int riemannian = -1
 );
 
+// Pure-C++ across-chain core (no Rcpp types -> callable from the C ABI).
+// q_init_per_chain: length n_chains (chain c starts at entry c).
+// inv_metric_per_chain: empty (all default) or length n_chains (entry c may
+// itself be empty). Together these let one call do a fresh fit (broadcast
+// init) or a warm-started resume (per-chain final_position + inv_metric,
+// n_warmup = 0). See gcol33/tulpa#30.
+std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
+    const std::vector<std::vector<double>>& q_init_per_chain,
+    const std::vector<std::vector<double>>& inv_metric_per_chain,
+    const ModelData& data,
+    int n_iter,
+    int n_warmup,
+    int L,
+    int n_chains,
+    unsigned int seed,
+    bool verbose,
+    int max_treedepth = 10,
+    MassMatrixType metric_type = MassMatrixType::DIAG,
+    double adapt_delta = -1.0,
+    int riemannian = -1
+);
+
 // =====================================================================
 // SoftAbs per-trajectory metric (Riemannian-like divergence retry)
 // =====================================================================

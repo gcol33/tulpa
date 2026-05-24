@@ -340,27 +340,26 @@ namespace tulpa_hmc {
         const std::vector<double>& inv_metric_init);
 }
 
-// [[Rcpp::export]]
-Rcpp::List cpp_tulpa_fit_generic(
-    Rcpp::NumericVector y_r,           // Response vector
-    Rcpp::NumericMatrix X_r,           // Design matrix (single process for now)
-    double sigma_beta = 10.0,
-    int n_iter = 2000,
-    int n_warmup = 1000,
-    int max_treedepth = 10,
-    double adapt_delta = 0.8,
-    int seed = 42,
-    bool verbose = true
+// ============================================================================
+// Shared Gaussian fixture: build the (GaussianData, LikelihoodSpec, ModelData,
+// ParamLayout) bundle from y/X. The caller owns gd/spec/data/layout as locals
+// so the pointers ModelData holds into gd/spec stay valid. Single source of
+// truth for the single- and multi-chain generic entry points.
+// ============================================================================
+static void build_gaussian_model(
+    const Rcpp::NumericVector& y_r,
+    const Rcpp::NumericMatrix& X_r,
+    double sigma_beta,
+    GaussianData& gd,
+    tulpa::LikelihoodSpec& spec,
+    ModelData& data,
+    ParamLayout& layout
 ) {
     const int N = y_r.size();
     const int p = X_r.ncol();
 
-    // Gaussian model data
-    GaussianData gd;
     gd.y.assign(y_r.begin(), y_r.end());
 
-    // LikelihoodSpec (with arena AD for automatic gradients)
-    tulpa::LikelihoodSpec spec;
     spec.name = "gaussian";
     spec.n_processes = 1;
     spec.ll_double = gaussian_likelihood<double>;
@@ -368,8 +367,6 @@ Rcpp::List cpp_tulpa_fit_generic(
     spec.ll_fwd = gaussian_likelihood<::fwd::Dual>;
     spec.n_extra_params = 1;  // log_sigma
 
-    // ModelData
-    ModelData data;
     data.N = N;
     data.n_processes = 1;
     data.sigma_beta = sigma_beta;
@@ -387,23 +384,73 @@ Rcpp::List cpp_tulpa_fit_generic(
     data.likelihood_spec = &spec;
     data.sharing.init(1);
 
-    // Unused fields
     data.zi_type = tulpa::ZIType::NONE;
     data.p_zi = 0;
     data.p_oi = 0;
     data.zi_prior_sd = 1.0;
     data.oi_prior_sd = 1.0;
 
-    // ParamLayout (computed via the generic branch in compute_param_layout)
-    ParamLayout layout = tulpa_hmc::compute_param_layout(data);
+    layout = tulpa_hmc::compute_param_layout(data);
+}
+
+// Column names for the Gaussian fixture: beta[1..p], log_sigma.
+static Rcpp::CharacterVector gaussian_col_names(int p) {
+    Rcpp::CharacterVector cn(p + 1);
+    for (int j = 0; j < p; j++) {
+        cn[j] = "beta[" + std::to_string(j + 1) + "]";
+    }
+    cn[p] = "log_sigma";
+    return cn;
+}
+
+// [[Rcpp::export]]
+Rcpp::List cpp_tulpa_fit_generic(
+    Rcpp::NumericVector y_r,           // Response vector
+    Rcpp::NumericMatrix X_r,           // Design matrix (single process for now)
+    double sigma_beta = 10.0,
+    int n_iter = 2000,
+    int n_warmup = 1000,
+    int max_treedepth = 10,
+    double adapt_delta = 0.8,
+    int seed = 42,
+    bool verbose = true,
+    Rcpp::Nullable<Rcpp::NumericVector> init = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init = R_NilValue
+) {
+    const int p = X_r.ncol();
+
+    GaussianData gd;
+    tulpa::LikelihoodSpec spec;
+    ModelData data;
+    ParamLayout layout;
+    build_gaussian_model(y_r, X_r, sigma_beta, gd, spec, data, layout);
     int n_params = layout.total_params;
 
-    // Initial values
-    std::vector<double> init(n_params, 0.0);
+    // Initial values — default origin, or caller-supplied for chain resume.
+    std::vector<double> init_vec(n_params, 0.0);
+    if (init.isNotNull()) {
+        Rcpp::NumericVector iv(init);
+        if ((int)iv.size() != n_params) {
+            Rcpp::stop("init length %d != n_params %d", (int)iv.size(), n_params);
+        }
+        init_vec.assign(iv.begin(), iv.end());
+    }
+
+    // Optional warm-start inverse-mass diagonal (e.g. from a previous fit's
+    // inv_metric output, gcol33/tulpa#29). Empty -> structural warm-start.
+    std::vector<double> inv_metric_vec;
+    if (inv_metric_init.isNotNull()) {
+        Rcpp::NumericVector mv(inv_metric_init);
+        if ((int)mv.size() != n_params) {
+            Rcpp::stop("inv_metric_init length %d != n_params %d",
+                       (int)mv.size(), n_params);
+        }
+        inv_metric_vec.assign(mv.begin(), mv.end());
+    }
 
     // Run full NUTS (L=0 means NUTS)
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
-        init, data, layout,
+        init_vec, data, layout,
         n_iter, n_warmup,
         0,            // L=0 means NUTS
         1,            // chain_id
@@ -412,7 +459,8 @@ Rcpp::List cpp_tulpa_fit_generic(
         max_treedepth,
         tulpa::MassMatrixType::DIAG,
         adapt_delta,
-        0             // riemannian=off
+        0,            // riemannian=off
+        inv_metric_vec
     );
 
     // Convert to R matrix
@@ -426,11 +474,7 @@ Rcpp::List cpp_tulpa_fit_generic(
     }
 
     // Name columns
-    Rcpp::CharacterVector col_names(n_params);
-    for (int j = 0; j < p; j++) {
-        col_names[j] = "beta[" + std::to_string(j + 1) + "]";
-    }
-    col_names[p] = "log_sigma";
+    Rcpp::CharacterVector col_names = gaussian_col_names(p);
     Rcpp::colnames(draws) = col_names;
 
     // Posterior means
@@ -452,6 +496,144 @@ Rcpp::List cpp_tulpa_fit_generic(
         Rcpp::Named("divergent") = Rcpp::wrap(result.divergent),
         Rcpp::Named("treedepth") = Rcpp::wrap(result.treedepth),
         Rcpp::Named("sampler") = result.sampler.empty() ? "nuts" : result.sampler,
-        Rcpp::Named("epsilon") = result.epsilon
+        Rcpp::Named("epsilon") = result.epsilon,
+        // Warm-start / resume outputs (gcol33/tulpa#29)
+        Rcpp::Named("inv_metric") = Rcpp::wrap(result.inv_metric_diag),
+        Rcpp::Named("final_position") = Rcpp::wrap(result.final_position)
+    );
+}
+
+// ============================================================================
+// Multi-chain generic NUTS (gcol33/tulpa#30).
+// Runs n_chains chains via tulpa's OpenMP across-chain core in one call and
+// returns draws stacked chain-major with a chain_id vector — the layout
+// tulpa::mcmc_diagnostics() consumes (#26) — plus per-chain epsilon, adapted
+// inverse-mass diagonal, and final position (for resume).
+//
+// `init` / `inv_metric_init`, when supplied, are [n_chains x n_params]
+// matrices (row c = chain c). `init` NULL -> origin for every chain;
+// `inv_metric_init` NULL -> structural default for every chain. Passing the
+// previous fit's `final_position` + `inv_metric` with n_warmup = 0 continues
+// the chains.
+// ============================================================================
+// [[Rcpp::export]]
+Rcpp::List cpp_tulpa_fit_generic_chains(
+    Rcpp::NumericVector y_r,
+    Rcpp::NumericMatrix X_r,
+    int n_chains = 4,
+    double sigma_beta = 10.0,
+    int n_iter = 2000,
+    int n_warmup = 1000,
+    int max_treedepth = 10,
+    double adapt_delta = 0.8,
+    int seed = 42,
+    bool verbose = false,
+    Rcpp::Nullable<Rcpp::NumericMatrix> init = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue
+) {
+    if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+    const int p = X_r.ncol();
+
+    GaussianData gd;
+    tulpa::LikelihoodSpec spec;
+    ModelData data;
+    ParamLayout layout;
+    build_gaussian_model(y_r, X_r, sigma_beta, gd, spec, data, layout);
+    const int n_params = layout.total_params;
+
+    // Per-chain initial position (rows of `init`, else origin).
+    std::vector<std::vector<double>> q_init_per_chain(
+        n_chains, std::vector<double>(n_params, 0.0));
+    if (init.isNotNull()) {
+        Rcpp::NumericMatrix im(init);
+        if (im.nrow() != n_chains || im.ncol() != n_params) {
+            Rcpp::stop("init must be [n_chains x n_params] = [%d x %d]",
+                       n_chains, n_params);
+        }
+        for (int c = 0; c < n_chains; c++) {
+            for (int j = 0; j < n_params; j++) q_init_per_chain[c][j] = im(c, j);
+        }
+    }
+
+    // Per-chain inverse-mass diagonal (rows of `inv_metric_init`, else default).
+    std::vector<std::vector<double>> inv_metric_per_chain;
+    if (inv_metric_init.isNotNull()) {
+        Rcpp::NumericMatrix mm(inv_metric_init);
+        if (mm.nrow() != n_chains || mm.ncol() != n_params) {
+            Rcpp::stop("inv_metric_init must be [n_chains x n_params] = [%d x %d]",
+                       n_chains, n_params);
+        }
+        inv_metric_per_chain.resize(n_chains);
+        for (int c = 0; c < n_chains; c++) {
+            inv_metric_per_chain[c].resize(n_params);
+            for (int j = 0; j < n_params; j++) inv_metric_per_chain[c][j] = mm(c, j);
+        }
+    }
+
+    std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
+        q_init_per_chain, inv_metric_per_chain, data,
+        n_iter, n_warmup,
+        0,                // L=0 means NUTS
+        n_chains, static_cast<unsigned int>(seed), verbose,
+        max_treedepth, tulpa::MassMatrixType::DIAG, adapt_delta,
+        0                 // riemannian=off
+    );
+
+    const int n_sample = chains[0].n_sample;
+    const int n_total = n_sample * n_chains;
+
+    // Draws stacked chain-major: chain 1's iterations, then chain 2's, ...
+    Rcpp::NumericMatrix draws(n_total, n_params);
+    Rcpp::IntegerVector chain_id(n_total);
+    Rcpp::NumericVector log_prob(n_total);
+    Rcpp::NumericVector accept_prob(n_total);
+    Rcpp::IntegerVector divergent(n_total);
+    Rcpp::IntegerVector treedepth(n_total);
+    Rcpp::NumericVector epsilon(n_chains);
+    Rcpp::NumericMatrix inv_metric(n_chains, n_params);
+    Rcpp::NumericMatrix final_position(n_chains, n_params);
+
+    int r = 0;
+    for (int c = 0; c < n_chains; c++) {
+        const tulpa_hmc::HMCResultCpp& ch = chains[c];
+        for (int s = 0; s < ch.n_sample; s++) {
+            const double* row = ch.sample_row(s);
+            for (int j = 0; j < n_params; j++) draws(r, j) = row[j];
+            chain_id[r] = c + 1;
+            log_prob[r] = ch.log_prob[s];
+            accept_prob[r] = ch.accept_prob[s];
+            divergent[r] = ch.divergent[s];
+            treedepth[r] = ch.treedepth[s];
+            r++;
+        }
+        epsilon[c] = ch.epsilon;
+        for (int j = 0; j < n_params; j++) {
+            inv_metric(c, j) = (j < (int)ch.inv_metric_diag.size())
+                                   ? ch.inv_metric_diag[j] : 1.0;
+            final_position(c, j) = (j < (int)ch.final_position.size())
+                                       ? ch.final_position[j] : 0.0;
+        }
+    }
+
+    Rcpp::CharacterVector col_names = gaussian_col_names(p);
+    Rcpp::colnames(draws) = col_names;
+    Rcpp::colnames(inv_metric) = col_names;
+    Rcpp::colnames(final_position) = col_names;
+
+    return Rcpp::List::create(
+        Rcpp::Named("draws") = draws,
+        Rcpp::Named("chain_id") = chain_id,
+        Rcpp::Named("n_chains") = n_chains,
+        Rcpp::Named("n_samples") = n_sample,
+        Rcpp::Named("n_params") = n_params,
+        Rcpp::Named("log_prob") = log_prob,
+        Rcpp::Named("accept_prob") = accept_prob,
+        Rcpp::Named("divergent") = divergent,
+        Rcpp::Named("treedepth") = treedepth,
+        Rcpp::Named("sampler") = chains[0].sampler.empty() ? "nuts" : chains[0].sampler,
+        Rcpp::Named("epsilon") = epsilon,
+        // Per-chain warm-start / resume outputs (gcol33/tulpa#29 + #30)
+        Rcpp::Named("inv_metric") = inv_metric,
+        Rcpp::Named("final_position") = final_position
     );
 }

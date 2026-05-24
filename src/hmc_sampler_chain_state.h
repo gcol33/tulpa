@@ -44,6 +44,14 @@ struct HMCResultCpp {
   int n_max_treedepth = 0;       // Count of iterations hitting max treedepth
   std::string sampler;           // Sampler name (e.g., "NUTS", "HMC", "NUTS->HMC(L=10)")
 
+  // Warm-start / resume outputs (gcol33/tulpa#29). Both length n_params after
+  // a completed run. `inv_metric_diag` is the adapted inverse-mass diagonal at
+  // end of warmup; `final_position` is the last raw sampler state (sampling
+  // parameterization, e.g. z for an NC GP, not the stored w transform). Feeding
+  // them back as inv_metric_init + q_init with n_warmup=0 continues the chain.
+  std::vector<double> inv_metric_diag;
+  std::vector<double> final_position;
+
   // Collapsed mode draws (populated only when collapsed parameterization active)
   int n_gp_collapsed = 0;                         // N_gp if collapsed GP, 0 otherwise
   int n_icar_collapsed = 0;                        // S if collapsed ICAR/BYM2, 0 otherwise

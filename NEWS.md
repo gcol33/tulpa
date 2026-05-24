@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+* feat(nuts): expose tulpa's across-chain OpenMP runner through the model-facing
+  C ABI (gcol33/tulpa#30). New registered callable `tulpa_run_nuts_chains`
+  (header accessor `tulpa::get_nuts_chains_fn()`) runs `n_chains` chains in one
+  call and fills a caller-allocated array of `NUTSResult`, so downstream packages
+  stop re-implementing chain orchestration (offset-seed loops / PSOCK clusters)
+  in R and get the engine's thread-parallel path for free. `init` and the
+  optional `inv_metric_diag` are chain-major `[n_chains * n_params]`, so a fresh
+  fit broadcasts one init while a resume passes each chain's `final_position` +
+  `inv_metric_out` (with `n_warmup = 0`) — composing with #29 to continue a whole
+  multi-chain fit. The OpenMP loop now lives in one pure-C++ core
+  (`run_hmc_parallel_chains_cpp`) shared by the C ABI and the existing
+  Rcpp-returning `run_hmc_parallel_chains`. New generic R entry point
+  `cpp_tulpa_fit_generic_chains()` returns draws stacked chain-major with a
+  `chain_id` vector — the layout `mcmc_diagnostics()` (#26) consumes directly —
+  plus per-chain `epsilon` / `inv_metric` / `final_position`. Validated in
+  `tests/testthat/test-generic-sampler.R`, including a cross-chain Rhat/ESS check
+  through `mcmc_diagnostics()`. **ABI bump 23 -> 24** (new callable only; no
+  struct layout change).
+
+* feat(nuts): the NUTS C-ABI now returns the state needed to resume or
+  warm-start a chain (gcol33/tulpa#29). `NUTSResult` gains `inv_metric_out`
+  (the adapted inverse-mass diagonal at end of warmup) and `final_position`
+  (the last raw sampler state); `epsilon` was already returned. Feeding them
+  back as `init` + `inv_metric_diag` with `n_warmup = 0` continues the chain
+  from the previous fit's geometry instead of rediscovering it. The inputs
+  already existed on `NUTSFn`; only the result fields were missing. The
+  generic R entry point `cpp_tulpa_fit_generic()` gains optional `init` /
+  `inv_metric_init` arguments and returns `inv_metric` / `final_position`,
+  exercised in `tests/testthat/test-generic-sampler.R`. **ABI bump 22 -> 23**
+  (two trailing pointers appended to `NUTSResult`; `NUTSFn` unchanged).
+
 * feat(diagnostics): extend the native MCMC convergence surface
   (`R/convergence.R`) toward posterior parity (gcol33/tulpa#26).
   `mcmc_diagnostics()` gains `measures` and `probs` arguments selecting from
