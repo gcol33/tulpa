@@ -2,7 +2,6 @@
 % Please edit documentation in R/tulpa-package.R
 \docType{package}
 \name{tulpa-package}
-\alias{tulpa}
 \alias{tulpa-package}
 \title{tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models}
 \description{

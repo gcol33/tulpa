@@ -22,7 +22,8 @@ tulpa_nested_laplace(
   n_threads = 1L,
   x_init = NULL,
   verbose = FALSE,
-  keep_grid_hessians = FALSE
+  keep_grid_hessians = FALSE,
+  det_prob = NULL
 )
 
 nested_laplace(...)
@@ -81,6 +82,17 @@ list as \verb{$grid_hessians} (list of dense \eqn{p\times p} matrices) and
 \verb{$grid_modes} (list of length-\eqn{p} vectors). Default \code{FALSE}.
 Used downstream by simplified-Laplace (SLA) callers to assemble
 skew-aware marginals — see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.}
+
+\item{det_prob}{Optional per-observation detection probability vector for the
+\code{family = "occupancy"} marginalized single-season occupancy likelihood, in
+which each site contributes a Bernoulli on \eqn{D_i = 1\{\ge 1\ detection\}}
+with mean \eqn{\mu_i = q_i\,\sigma(\eta_i)}, where \eqn{q_i = 1-(1-p_i)^{J_i}}
+is the per-site probability of at least one detection given occupancy. A
+site with no visits has \eqn{q_i = 0}, so it drops from the likelihood but
+keeps its latent value (the INLA NA-response held-out case). The latent
+occupancy state is integrated out analytically, so the converged Hessian is
+the marginal curvature and \code{fitted_eta_var} is calibrated directly. Ignored
+for every other family. Multi-block dispatch only. Default \code{NULL}.}
 }
 \value{
 A list with:

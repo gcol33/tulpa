@@ -3,20 +3,14 @@
 \docType{data}
 \name{BACKEND_FAMILY_SUPPORT}
 \alias{BACKEND_FAMILY_SUPPORT}
-\title{Backend → supported families registry}
+\title{Backend -> supported families, derived from the registry.}
 \format{
-An object of class \code{list} of length 1.
+An object of class \code{list} of length 2.
 }
 \usage{
 BACKEND_FAMILY_SUPPORT
 }
 \description{
-Single source of truth for backend-vs-family compatibility. Adding a new
-Gibbs-supported family means appending one string here. Backends not
-listed are assumed to support all families (HMC, Laplace, VI, etc.).
-
-Family identity is checked against three slots in priority order:
-\code{family$name}, \code{family$distribution}, \code{family$numerator$distribution}
-(numdenom-style ratio families nest a per-process distribution).
+Backend -> supported families, derived from the registry.
 }
 \keyword{internal}

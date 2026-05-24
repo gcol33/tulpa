@@ -3,14 +3,14 @@
 \docType{data}
 \name{ALL_BACKENDS}
 \alias{ALL_BACKENDS}
-\title{All registered backends across every tier (derived from INFERENCE_TIERS).}
+\title{All registered backends across every tier (derived from the registry).}
 \format{
-An object of class \code{character} of length 12.
+An object of class \code{character} of length 14.
 }
 \usage{
 ALL_BACKENDS
 }
 \description{
-All registered backends across every tier (derived from INFERENCE_TIERS).
+All registered backends across every tier (derived from the registry).
 }
 \keyword{internal}

@@ -363,6 +363,13 @@ tulpa_dispatch <- function(mode,
     fit$inference_tier <- fit$inference_tier %||% sel$tier
     fit$backend <- fit$backend %||% sel$backend
     fit$selection_reason <- fit$selection_reason %||% sel$reason
+    # Guarantee a consistent return type: lower-level fitters (e.g.
+    # tulpa_laplace) return a bare result list for model packages to wrap;
+    # through dispatch the inference contract -- including the class -- must be
+    # visible, so tag any unclassed result as a tulpa_fit.
+    if (!inherits(fit, "tulpa_fit")) {
+      class(fit) <- c(oldClass(fit), "tulpa_fit")
+    }
   }
   fit
 }

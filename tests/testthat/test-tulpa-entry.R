@@ -1,0 +1,70 @@
+# test-tulpa-entry.R
+# Integration contract for the unified tulpa() entry: formula -> bundle ->
+# backend selection -> per-backend arg assembly -> dispatch. Verifies routing,
+# the fail-loud reachability contract, and the documented coverage boundaries.
+
+make_pois_re <- function(seed = 1, ng = 8L, per = 10L) {
+  set.seed(seed)
+  g <- rep(seq_len(ng), each = per)
+  x <- rnorm(ng * per)
+  eta <- 0.3 + 0.5 * x + rnorm(ng, 0, 0.6)[g]
+  data.frame(y = rpois(ng * per, exp(eta)), x = x, g = factor(g))
+}
+
+test_that("tulpa() routes a random-intercept GLMM through the Laplace path", {
+  d <- make_pois_re()
+  fit <- tulpa(y ~ x + (1 | g), d, family = "poisson",
+               mode = "laplace", sigma_re = 0.6)
+  expect_s3_class(fit, "tulpa_fit")
+  expect_equal(fit$backend, "laplace")
+  expect_equal(fit$inference_tier, 2L)
+  expect_identical(fit$family, "poisson")
+  expect_true(inherits(fit$formula, "formula"))
+})
+
+test_that("tulpa() routes through a sampler (logpost) backend", {
+  d <- make_pois_re()
+  fit <- tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "mala",
+               sigma_re = 0.6, control = list(n_iter = 400L, warmup = 200L))
+  expect_s3_class(fit, "tulpa_fit")
+  expect_equal(fit$backend, "mala")
+  expect_equal(fit$inference_tier, 1L)
+})
+
+test_that("tulpa() fails loudly on a C-ABI-only backend", {
+  d <- make_pois_re()
+  err <- expect_error(tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "ess"))
+  expect_match(conditionMessage(err), "no R-level fitter")
+  expect_match(conditionMessage(err), "tulpa_run_ess_sampler")
+})
+
+test_that("random slopes: logpost path works, design path errors with guidance", {
+  d <- make_pois_re(seed = 2)
+  # logpost path handles slopes (builder is general)
+  fit <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "mala",
+               sigma_re = 0.5, control = list(n_iter = 300L, warmup = 150L))
+  expect_equal(fit$backend, "mala")
+  # design path is not wired for slopes yet
+  err <- expect_error(
+    tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",
+          sigma_re = 0.5)
+  )
+  expect_match(conditionMessage(err), "random slopes|not yet")
+})
+
+test_that("tulpa() validates family and defaults sigma_re with a message", {
+  d <- make_pois_re()
+  expect_error(tulpa(y ~ x + (1 | g), d, family = "weibull"), "Unknown family")
+  expect_message(
+    tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "laplace"),
+    "sigma_re = 1"
+  )
+})
+
+test_that("tulpa() handles a no-RE model on the design path", {
+  set.seed(5)
+  d <- data.frame(y = rpois(120, exp(0.4 + 0.3 * rnorm(120))), x = rnorm(120))
+  fit <- tulpa(y ~ x, d, family = "poisson", mode = "laplace")
+  expect_s3_class(fit, "tulpa_fit")
+  expect_equal(fit$backend, "laplace")
+})

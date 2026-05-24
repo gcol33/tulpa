@@ -7,6 +7,8 @@
 glmm_weights(eta, family, n_trials = NULL, phi = 1)
 }
 \description{
-Compute GLM working weights for Laplace Hessian
+Thin wrapper over the family-ops registry (\code{\link[=family_weight]{family_weight()}}) so the weight
+formulas live in exactly one place (\code{R/family_loglik.R}). Unknown families
+fall back to unit weights, preserving the historical permissive behaviour.
 }
 \keyword{internal}
