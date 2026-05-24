@@ -44,7 +44,7 @@ Concretely:
 |---|---|---|
 | 0 | Baseline load_all + blast-radius map | ✅ done |
 | 1 | Remove dead `nested_laplace()` alias; ASCII-only `ccd_grid` roxygen | ✅ done — commit `175fa62` |
-| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); L2 next |
+| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); **L2 ICAR verified** (single INDEXED_SINGLE block + RE cross-terms + centering match the nested kernel); next L2: bym2 (d_fac!=1 + block x block) then car_proper (prep) |
 | 2 | Collapse nested engine knobs into `control = list()` | ⬜ pending |
 | 3 | Remove `tulpa_priors_legacy` | ⬜ pending |
 | 4 | Route single-arm `latent()` formulas through `tulpa()`; register nested backends | ⬜ pending |
@@ -120,12 +120,39 @@ live in a tulpaObs `LikelihoodSpec`. The family-enum inner loop is retired.
   families (+ iid RE) against `cpp_laplace_fit` to 1e-5. This adapter is what
   L3/L4 will feed into the nested kernel.
 - **L2 — GMRF blocks in the spec solver.** Generalize `SpecLatentLayout`,
-  `compute_eta_spec`, `scatter_spec`, `log_prior_latent` to carry GMRF block
-  segments: their latent positions, obs→unit scatter into eta, and the block's
-  `Q(theta)` contribution to grad (`-Q·field`) and Hessian (`+Q`). The outer
-  driver passes `Q` (CSC) per cell. This is the core C++ work. Block types to
-  support: icar, bym2, car_proper, nngp, hsgp, rw1, rw2, ar1, iid, lf (latent
-  factor), tgmrf (user GMRF). Mirror what the nested kernel does today.
+  `compute_eta_spec`, `scatter_spec`, `log_prior_latent`, `apply_latent_step` to
+  carry GMRF block segments. **Design decided (2026-05-24), correcting the doc's
+  earlier "pass Q as CSC" sketch:**
+  - **Reuse `tulpa::LatentBlock`, not a flat CSC.** Each block's `add_prior`
+    (scatters `-Q.field` into grad, `+Q` into H), `log_prior`, `center`, `d_fac`
+    (BYM2/IID reparam coefficient), and `idx` (obs->unit) callbacks already
+    encode the per-block prior math via the existing factories (`add_icar_prior`,
+    `add_rw1_precision`, ...). A raw CSC can express ICAR but not BYM2's `d_fac`
+    or HSGP's basis — reusing `LatentBlock` is the single-source-of-truth move
+    and what "mirror the nested kernel" actually means.
+  - **`laplace_mode_spec_dense_impl` gains `const std::vector<LatentBlock>*
+    blocks = nullptr, int k_grid = 0`.** nullptr => existing behaviour, so every
+    current caller (gaussian/family/multi-RE harnesses, tulpaRatio/tulpaObs
+    conditional Laplace) is untouched.
+  - **Layout contract:** compacted latent is `[beta per proc | RE terms |
+    blocks]`. For the single-arm case this is bit-identical to the nested
+    kernel's `x` (`block.start == p + n_re_groups == block's compacted
+    latent_offset`). The solver gathers `params -> x_latent` (one Rcpp buffer,
+    allocated once outside the Newton loop) only for the three block callbacks
+    that take `const Rcpp::NumericVector&` (add_prior/log_prior/center); eta and
+    the likelihood cross-terms read `params[block_param_start + idx - 1]`
+    directly. Guard: assert `block.start == computed block_latent_offset`.
+  - **Scope of L2 = `INDEXED_SINGLE` blocks, dense, single-process** — exactly
+    `run_multi_block_nested_laplace`'s capability (its `accumulate_latent_cross_
+    terms` is `INDEXED_SINGLE`-only). Covers icar, bym2 (two blocks), car_proper
+    (has `prep`), rw1, rw2, ar1, iid, nngp, tgmrf. **DENSE_BASIS (hsgp) and
+    BILINEAR_FACTOR (lf) defer to the sparse joint path at L4** — they never went
+    through the dense single-arm driver.
+  - **Verify:** `cpp_laplace_spec_test_block` harness builds an ICAR block
+    (mirroring `cpp_nested_laplace_icar`) + builtin-family spec; cross-check
+    mode/log_marginal at a single tau against `cpp_nested_laplace_icar`
+    (tau_grid length 1) to 1e-5. The family-enum vs spec likelihood equality is
+    already proven (L1), so any mismatch isolates the block-scatter wiring.
 - **L3 — Route single-block nested through the unified solver.** Numerical-
   equivalence test vs current (`tests/testthat/test-nested-laplace*.R` must pass
   to tolerance).

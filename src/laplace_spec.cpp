@@ -35,11 +35,15 @@
 #include "laplace_cholesky.h"
 #include "laplace_cholesky_dispatch.h"
 #include "laplace_newton_loop.h"
+#include "laplace_re_priors.h"
+#include "laplace_spatial_priors.h"
+#include "latent_block.h"
 #include "linalg_fast.h"
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -82,6 +86,24 @@ struct SpecLatentLayout {
 
     bool has_re = false;
     std::vector<ReTermSlot> re_terms;   // empty when no RE; size = K otherwise
+
+    // GMRF latent blocks (icar/bym2/car_proper/rw1/rw2/ar1/iid/nngp/tgmrf).
+    // Appended to the compacted latent vector AFTER all beta + RE blocks, so
+    // the compacted layout is [beta per proc | RE terms | blocks] -- bit-
+    // identical to the single-arm nested kernel's `x`. Each block b lives at
+    // [block_latent_offset[b], + block_size[b]) in the compacted n_x vector and
+    // at [block_param_start[b], + block_size[b]) in the params vector. The
+    // contiguous-latent contract (enforced in build_latent_layout) requires
+    // block_param_start[b] == blocks[b].start == block_latent_offset[b], i.e.
+    // each LatentBlock's own `start` offset (used by its idx/d_fac/add_prior/
+    // log_prior/center callbacks) coincides with the compacted offset. Empty
+    // when no blocks (the conditional-Laplace path used by tulpaRatio/tulpaObs).
+    const std::vector<LatentBlock>* blocks = nullptr;
+    int n_blocks = 0;
+    std::vector<int> block_latent_offset;  // [n_blocks] compacted offset
+    std::vector<int> block_param_start;    // [n_blocks] params offset (== block.start)
+    std::vector<int> block_size;           // [n_blocks]
+
     int n_x = 0;
 };
 
@@ -90,7 +112,8 @@ struct SpecLatentLayout {
 // falls back to the legacy single-term fields when n_re_terms == 0.
 inline SpecLatentLayout build_latent_layout(
     const ModelData& data,
-    const ParamLayout& layout
+    const ParamLayout& layout,
+    const std::vector<LatentBlock>* blocks = nullptr
 ) {
     SpecLatentLayout L;
     if (layout.process_beta_start.empty()) {
@@ -182,6 +205,33 @@ inline SpecLatentLayout build_latent_layout(
             running += s.n_groups * s.n_coefs;
         }
     }
+
+    // GMRF blocks follow [beta | RE] contiguously in the compacted latent
+    // vector. The contiguous-latent contract: each block's own `start` offset
+    // (the position its callbacks index into x) must equal the compacted offset
+    // we compute here, so the block callbacks operate directly on the gathered
+    // x_latent and scatter into the matching grad/H rows.
+    if (blocks != nullptr && !blocks->empty()) {
+        L.blocks   = blocks;
+        L.n_blocks = static_cast<int>(blocks->size());
+        L.block_latent_offset.resize(L.n_blocks);
+        L.block_param_start.resize(L.n_blocks);
+        L.block_size.resize(L.n_blocks);
+        for (int b = 0; b < L.n_blocks; b++) {
+            const LatentBlock& blk = (*blocks)[b];
+            if (blk.start != running) {
+                Rcpp::stop("laplace_spec_dense: block %d start (%d) != computed "
+                           "compacted latent offset (%d). Blocks must follow "
+                           "[beta | RE] contiguously in both the params and "
+                           "latent vectors.", b, blk.start, running);
+            }
+            L.block_latent_offset[b] = running;
+            L.block_param_start[b]   = blk.start;
+            L.block_size[b]          = blk.size;
+            running += blk.size;
+        }
+    }
+
     L.n_x = running;
     return L;
 }
@@ -393,11 +443,20 @@ inline void compute_eta_spec(
     const SpecLatentLayout& L,
     const std::vector<int>& /*re_group_1based*/,
     int N,
+    int k_grid,
     std::vector<double>& eta_flat,
     int n_threads
 ) {
     const int np = L.np;
     const int n_terms_unified = (data.n_re_terms > 0) ? data.n_re_terms : 1;
+
+    // Per-block grid-mixing coefficient d_fac(k_grid) (BYM2/IID reparam; 1.0
+    // for plain indexed blocks). Constant across observations, so cache once.
+    std::vector<double> d_fac_cache(L.n_blocks, 1.0);
+    for (int b = 0; b < L.n_blocks; b++) {
+        const LatentBlock& blk = (*L.blocks)[b];
+        if (blk.d_fac) d_fac_cache[b] = blk.d_fac(k_grid);
+    }
 
     #ifdef _OPENMP
     #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
@@ -405,6 +464,17 @@ inline void compute_eta_spec(
     for (int i = 0; i < N; i++) {
         bool re_used = false;
         double re_eff = obs_re_contrib(data, params, L, i, n_terms_unified, re_used);
+
+        // Block contribution to this obs's predictor (single-process: blocks
+        // are guarded to np == 1 at the impl entry, so they enter process 0).
+        double blk_eff = 0.0;
+        for (int b = 0; b < L.n_blocks; b++) {
+            const LatentBlock& blk = (*L.blocks)[b];
+            int l = blk.idx(i, /*k_arm=*/0);
+            if (l >= 1 && l <= L.block_size[b]) {
+                blk_eff += d_fac_cache[b] * params[L.block_param_start[b] + l - 1];
+            }
+        }
 
         for (int k = 0; k < np; k++) {
             const ProcessData& proc = data.processes[k];
@@ -416,6 +486,7 @@ inline void compute_eta_spec(
             }
             if (!proc.offset.empty()) e += proc.offset[i];
             if (re_used && re_shared_into(data, k)) e += re_eff;
+            if (k == 0) e += blk_eff;
             eta_flat[(std::ptrdiff_t)i * np + k] = e;
         }
     }
@@ -438,6 +509,8 @@ inline void scatter_spec(
     const LikelihoodSpec& spec,
     const void* response_data,
     int N,
+    int k_grid,
+    const Rcpp::NumericVector* x_latent,
     double /*tau_re_legacy*/,
     DenseVec& grad,
     DenseMat& H,
@@ -458,6 +531,16 @@ inline void scatter_spec(
     // Slope-row z_{t,i,c} for c = 0..q_t-1 packed contiguously per term.
     std::vector<std::vector<double>> z_term(K);
     for (int t = 0; t < K; t++) z_term[t].assign(L.re_terms[t].n_coefs, 0.0);
+
+    // Block grid-mixing coefficients d_fac(k_grid) (cached once) and per-obs
+    // active-unit scratch (compacted latent index of the unit obs i loads onto,
+    // or -1).
+    std::vector<double> blk_dfac(L.n_blocks, 1.0);
+    for (int b = 0; b < L.n_blocks; b++) {
+        const LatentBlock& blk = (*L.blocks)[b];
+        if (blk.d_fac) blk_dfac[b] = blk.d_fac(k_grid);
+    }
+    std::vector<int> blk_active_idx(L.n_blocks, -1);
 
     for (int i = 0; i < N; i++) {
         std::fill(grad_eta.begin(), grad_eta.end(), 0.0);
@@ -644,6 +727,71 @@ inline void scatter_spec(
                 }
             }
         }
+
+        // ============= LATENT BLOCK scatter (lower triangle) =============
+        // Single-process (np == 1): blocks enter process 0, so the effective
+        // eta-space score / weight summed over shared processes are exactly
+        // s_grad / s_hess / w_l_vec computed above. Mirrors the multi-block
+        // nested kernel's accumulate_latent_cross_terms, but the weights come
+        // from the LikelihoodSpec rather than grad_hess_for_family. Each
+        // INDEXED_SINGLE block touches one unit at obs i:
+        //   grad[blk]                += d_b * s_grad
+        //   H[blk, beta_l]           += d_b * w_l * X_l(i, .)
+        //   H[blk, re_row]           += d_b * z * s_hess
+        //   H[blk_a, blk_b] (lower)  += d_a * d_b * s_hess
+        // The block prior Q(theta) is added once after symmetrisation below.
+        if (L.n_blocks > 0) {
+            for (int b = 0; b < L.n_blocks; b++) {
+                const LatentBlock& blk = (*L.blocks)[b];
+                int l = blk.idx(i, /*k_arm=*/0);
+                blk_active_idx[b] = (l >= 1 && l <= L.block_size[b])
+                                    ? (L.block_latent_offset[b] + l - 1) : -1;
+            }
+            for (int b = 0; b < L.n_blocks; b++) {
+                const int idx_b = blk_active_idx[b];
+                if (idx_b < 0) continue;
+                const double d_b = blk_dfac[b];
+
+                grad[idx_b] += d_b * s_grad;
+
+                // block x beta (block row > beta col -> lower triangle)
+                double* row_b = H[idx_b];
+                for (int l = 0; l < np; l++) {
+                    const ProcessData& pl = data.processes[l];
+                    if (pl.p == 0) continue;
+                    const double w_l = w_l_vec[l];
+                    if (w_l == 0.0) continue;
+                    const double* xl = pl.X_flat.data() + (std::ptrdiff_t)i * pl.p;
+                    const double d_w = d_b * w_l;
+                    const int off_l = L.latent_offset[l];
+                    for (int m = 0; m < pl.p; m++) row_b[off_l + m] += d_w * xl[m];
+                }
+
+                if (s_hess != 0.0) {
+                    // block x RE (block row > re row -> lower triangle)
+                    for (int t = 0; t < K; t++) {
+                        int g = g_term[t]; if (g < 0) continue;
+                        const ReTermSlot& s = L.re_terms[t];
+                        const int qn = q_term[t];
+                        const int re_row_base = s.latent_offset + g * qn;
+                        for (int c = 0; c < qn; c++) {
+                            const double zc = z_term[t][c];
+                            if (zc == 0.0) continue;
+                            row_b[re_row_base + c] += d_b * zc * s_hess;
+                        }
+                    }
+                    // block x block (route each pair to the lower triangle;
+                    // includes the b == b2 block diagonal d_b^2 * s_hess).
+                    for (int b2 = 0; b2 <= b; b2++) {
+                        const int idx_b2 = blk_active_idx[b2];
+                        if (idx_b2 < 0) continue;
+                        const double v = d_b * blk_dfac[b2] * s_hess;
+                        if (idx_b >= idx_b2) row_b[idx_b2] += v;
+                        else                 H[idx_b2][idx_b] += v;
+                    }
+                }
+            }
+        }
     }
 
     // Symmetrise lower → upper triangle.
@@ -701,6 +849,19 @@ inline void scatter_spec(
             }
         }
     }
+
+    // Block prior Q(theta): added AFTER symmetrisation so the block factory's
+    // full-symmetric write (e.g. add_icar_prior fills both adjacency triangles
+    // and the diagonal) is not clobbered by the lower->upper copy. add_prior
+    // reads the current field from x_latent (gathered in compacted order, so
+    // x_latent[block.start + s] holds unit s's value) and scatters -Q.field
+    // into grad and +Q into H at the same compacted offsets.
+    if (L.n_blocks > 0 && x_latent != nullptr) {
+        for (int b = 0; b < L.n_blocks; b++) {
+            const LatentBlock& blk = (*L.blocks)[b];
+            if (blk.add_prior) blk.add_prior(grad, H, *x_latent, k_grid);
+        }
+    }
 }
 
 inline double total_log_lik_spec(
@@ -727,7 +888,9 @@ inline double log_prior_latent(
     const std::vector<double>& params,
     const SpecLatentLayout& L,
     double sigma_beta,
-    double /*tau_re_legacy*/
+    double /*tau_re_legacy*/,
+    const Rcpp::NumericVector* x_latent = nullptr,
+    int k_grid = 0
 ) {
     double lp = 0.0;
     double tau_beta = 1.0 / (sigma_beta * sigma_beta + 1e-300);
@@ -771,6 +934,14 @@ inline double log_prior_latent(
             // log normalisation: 0.5 G_t log|Q_t| - 0.5 G_t q log(2π)
             lp += 0.5 * (double)s.n_groups * log_det_Q;
             lp += -0.5 * (double)s.n_groups * (double)q * std::log(2.0 * M_PI);
+        }
+    }
+
+    // Block log-priors log p(x_block | theta_k), summed across blocks.
+    if (L.n_blocks > 0 && x_latent != nullptr) {
+        for (int b = 0; b < L.n_blocks; b++) {
+            const LatentBlock& blk = (*L.blocks)[b];
+            if (blk.log_prior) lp += blk.log_prior(*x_latent, k_grid);
         }
     }
     return lp;
@@ -820,6 +991,13 @@ inline void apply_latent_step(
                                      + scale * step[s.latent_offset + j];
         }
     }
+    for (int b = 0; b < L.n_blocks; b++) {
+        const int n = L.block_size[b];
+        for (int j = 0; j < n; j++) {
+            out[L.block_param_start[b] + j] = base[L.block_param_start[b] + j]
+                                       + scale * step[L.block_latent_offset[b] + j];
+        }
+    }
 }
 
 void laplace_mode_spec_dense_impl(
@@ -831,7 +1009,9 @@ void laplace_mode_spec_dense_impl(
     int* n_iter_out,
     int* converged_out,
     double* log_det_Q_out,
-    double* log_marginal_out
+    double* log_marginal_out,
+    const std::vector<LatentBlock>* blocks = nullptr,
+    int k_grid = 0
 ) {
     if (data.n_processes < 1) {
         Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
@@ -854,7 +1034,7 @@ void laplace_mode_spec_dense_impl(
                    (int)data.processes.size(), data.n_processes);
     }
 
-    SpecLatentLayout L = build_latent_layout(data, layout);
+    SpecLatentLayout L = build_latent_layout(data, layout, blocks);
     const int np = L.np;
     for (int k = 0; k < np; k++) {
         const ProcessData& proc = data.processes[k];
@@ -867,6 +1047,31 @@ void laplace_mode_spec_dense_impl(
             Rcpp::stop("laplace_spec_dense: process[%d] design matrix shape "
                        "(%d) inconsistent with N * p (%d * %d)",
                        k, (int)proc.X_flat.size(), data.N, proc.p);
+        }
+    }
+
+    // GMRF blocks are wired for the single-process (single-arm) path only;
+    // multi-process / joint blocks (arm_scale, per-arm sharing) are the L4 step
+    // of the solver unification (clean_migration.md).
+    if (L.n_blocks > 0 && np != 1) {
+        Rcpp::stop("laplace_spec_dense: GMRF latent blocks currently require "
+                   "n_processes == 1 (got %d); joint/multi-arm blocks land at "
+                   "L4 of the solver unification.", np);
+    }
+
+    // Per-block feasibility at this grid cell (e.g. proper-CAR PD interval).
+    // Mirror the nested kernel: infeasible -> log_marginal = -inf, no solve.
+    if (L.n_blocks > 0) {
+        for (int b = 0; b < L.n_blocks; b++) {
+            const LatentBlock& blk = (*blocks)[b];
+            if (blk.prep && !blk.prep(k_grid)) {
+                if (n_iter_out)       *n_iter_out       = 0;
+                if (converged_out)    *converged_out    = 0;
+                if (log_det_Q_out)    *log_det_Q_out    = 0.0;
+                if (log_marginal_out) *log_marginal_out =
+                    -std::numeric_limits<double>::infinity();
+                return;
+            }
         }
     }
     // Multi-term path resolution. Three legitimate input shapes:
@@ -930,12 +1135,45 @@ void laplace_mode_spec_dense_impl(
 
     std::vector<double> eta_flat((size_t)N * np, 0.0);
 
+    // Compacted latent view [beta | RE | blocks] for the block callbacks
+    // (add_prior / log_prior / center take const Rcpp::NumericVector&). Allocated
+    // once here (Rf_allocVector is not thread-safe; this impl runs serial) and
+    // refilled from the params vector each time a block callback needs the field.
+    // Eta and the likelihood cross-terms read params directly, so x_latent is
+    // only touched when blocks are present.
+    Rcpp::NumericVector x_latent_buf;
+    if (L.n_blocks > 0) x_latent_buf = Rcpp::NumericVector(n_x, 0.0);
+    const Rcpp::NumericVector* x_latent_ptr = (L.n_blocks > 0) ? &x_latent_buf : nullptr;
+    auto gather_latent = [&](const std::vector<double>& p) {
+        if (L.n_blocks == 0) return;
+        for (int k = 0; k < L.np; k++) {
+            for (int j = 0; j < L.beta_count[k]; j++) {
+                x_latent_buf[L.latent_offset[k] + j] = p[L.beta_start[k] + j];
+            }
+        }
+        for (int t = 0; t < (int)L.re_terms.size(); t++) {
+            const ReTermSlot& s = L.re_terms[t];
+            const int n = s.n_groups * s.n_coefs;
+            for (int j = 0; j < n; j++) {
+                x_latent_buf[s.latent_offset + j] = p[s.param_start + j];
+            }
+        }
+        for (int b = 0; b < L.n_blocks; b++) {
+            for (int j = 0; j < L.block_size[b]; j++) {
+                x_latent_buf[L.block_latent_offset[b] + j] = p[L.block_param_start[b] + j];
+            }
+        }
+    };
+
     auto eval_objective = [&](const std::vector<double>& trial_params) -> double {
-        compute_eta_spec(data_use, trial_params, L, re_group_1based, N, eta_flat, n_threads);
+        compute_eta_spec(data_use, trial_params, L, re_group_1based, N, k_grid,
+                         eta_flat, n_threads);
         double ll = total_log_lik_spec(
             trial_params, eta_flat, data_use, layout, *spec, response_data, N
         );
-        double lp = log_prior_latent(trial_params, L, data_use.sigma_beta, 1.0);
+        gather_latent(trial_params);
+        double lp = log_prior_latent(trial_params, L, data_use.sigma_beta, 1.0,
+                                     x_latent_ptr, k_grid);
         return ll + lp;
     };
 
@@ -948,9 +1186,12 @@ void laplace_mode_spec_dense_impl(
     std::vector<double> delta(n_x, 0.0);
 
     for (int iter = 0; iter < max_iter; iter++) {
-        compute_eta_spec(data_use, params_inout, L, re_group_1based, N, eta_flat, n_threads);
+        compute_eta_spec(data_use, params_inout, L, re_group_1based, N, k_grid,
+                         eta_flat, n_threads);
+        gather_latent(params_inout);
         scatter_spec(params_inout, eta_flat, re_group_1based, L,
-                     data_use, layout, *spec, response_data, N, 1.0,
+                     data_use, layout, *spec, response_data, N, k_grid,
+                     x_latent_ptr, 1.0,
                      grad, H, n_threads);
 
         std::fill(delta.begin(), delta.end(), 0.0);
@@ -997,10 +1238,35 @@ void laplace_mode_spec_dense_impl(
         }
     }
 
-    // Final Hessian + log-marginal at the mode.
-    compute_eta_spec(data_use, params_inout, L, re_group_1based, N, eta_flat, n_threads);
+    // Block centering (sum-to-zero projection for rank-deficient blocks),
+    // applied once post-convergence exactly as laplace_newton_solve does, then
+    // the final Hessian + log-marginal are taken at the centered mode. Single-
+    // arm: the mean offset center() returns is discarded (the global intercept
+    // anchors the level).
+    if (L.n_blocks > 0) {
+        gather_latent(params_inout);
+        bool any_centered = false;
+        for (int b = 0; b < L.n_blocks; b++) {
+            const LatentBlock& blk = (*blocks)[b];
+            if (blk.center) { blk.center(x_latent_buf); any_centered = true; }
+        }
+        if (any_centered) {
+            for (int b = 0; b < L.n_blocks; b++) {
+                for (int j = 0; j < L.block_size[b]; j++) {
+                    params_inout[L.block_param_start[b] + j] =
+                        x_latent_buf[L.block_latent_offset[b] + j];
+                }
+            }
+        }
+    }
+
+    // Final Hessian + log-marginal at the (centered) mode.
+    compute_eta_spec(data_use, params_inout, L, re_group_1based, N, k_grid,
+                     eta_flat, n_threads);
+    gather_latent(params_inout);
     scatter_spec(params_inout, eta_flat, re_group_1based, L,
-                 data_use, layout, *spec, response_data, N, 1.0,
+                 data_use, layout, *spec, response_data, N, k_grid,
+                 x_latent_ptr, 1.0,
                  grad, H, n_threads);
     double log_det_Q = 0.0;
     dispatch_factor_log_det(H, n_x, sparse_solver, use_sparse,
@@ -1009,7 +1275,8 @@ void laplace_mode_spec_dense_impl(
     double ll = total_log_lik_spec(
         params_inout, eta_flat, data_use, layout, *spec, response_data, N
     );
-    double lp = log_prior_latent(params_inout, L, data_use.sigma_beta, 1.0);
+    double lp = log_prior_latent(params_inout, L, data_use.sigma_beta, 1.0,
+                                 x_latent_ptr, k_grid);
     double log_marginal = finalize_log_marginal(ll, lp, log_det_Q, n_x);
 
     if (n_iter_out)      *n_iter_out      = n_iter;
@@ -1695,6 +1962,148 @@ Rcpp::List cpp_laplace_spec_test_family(
     if (has_re) {
         for (int g = 0; g < n_re_groups; g++) mode[p + g] = params[layout.re_start + g];
     }
+    return Rcpp::List::create(
+        Rcpp::Named("mode")         = mode,
+        Rcpp::Named("log_det_Q")    = log_det_Q,
+        Rcpp::Named("log_marginal") = log_marginal,
+        Rcpp::Named("n_iter")       = n_iter,
+        Rcpp::Named("converged")    = (converged != 0)
+    );
+}
+
+// ============================================================================
+// GMRF latent-block fixture (L2 of the solver unification, clean_migration.md):
+// drives the spec-Laplace path with a single ICAR block built exactly as
+// cpp_nested_laplace_icar builds it (same add_icar_prior / log_prior_icar /
+// center_effects callbacks), plus the builtin_family_spec adapter. The R test
+// (test-laplace-spec-block-icar.R) cross-checks the mode against
+// cpp_nested_laplace_icar (tau_grid of length 1, single cell) and confirms the
+// log-marginal gap is exactly the beta-prior log-density the nested kernel
+// omits -- proving the block scatter, prior, and centering all match the
+// family-enum nested kernel's inner solve.
+//
+// Param layout is fully contiguous so block_param_start == block.start ==
+// compacted latent offset (the contiguous-latent contract build_latent_layout
+// enforces): [ beta (p) | RE (G) | block (M) | log_sigma_re? ].
+
+// [[Rcpp::export]]
+Rcpp::List cpp_laplace_spec_test_icar(
+    Rcpp::NumericVector y,
+    Rcpp::IntegerVector n,             // n_trials; rep(1L, N) for non-binomial
+    Rcpp::NumericMatrix X,
+    Rcpp::IntegerVector re_idx,        // 1-based; integer(0) for no RE
+    int n_re_groups,
+    double sigma_re,
+    Rcpp::IntegerVector spatial_idx,   // 1-based block-local index per obs
+    int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr,
+    Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    double tau_spatial,
+    double sigma_beta,
+    std::string family,
+    double phi = 1.0,
+    int max_iter = 200,
+    double tol = 1e-10,
+    int n_threads = 1
+) {
+    int N = y.size();
+    int p = X.ncol();
+    bool has_re = (n_re_groups > 0) && (re_idx.size() == N);
+    int block_start = p + (has_re ? n_re_groups : 0);
+
+    tulpa::ProcessData proc;
+    proc.p = p;
+    proc.X_flat.resize((size_t)N * p);
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < p; j++) {
+            proc.X_flat[(size_t)i * p + j] = X(i, j);
+        }
+    }
+
+    tulpa::LikelihoodSpec spec = tulpa::builtin_family_spec(family);
+    std::vector<int> n_trials(n.begin(), n.end());
+    tulpa::BuiltinFamilyResponse resp;
+    resp.y        = y.begin();
+    resp.n_trials = n_trials.data();
+    resp.N        = N;
+    resp.family   = family;
+    resp.phi      = phi;
+
+    tulpa::ModelData data;
+    data.n_processes         = 1;
+    data.processes.push_back(proc);
+    data.N                   = N;
+    data.sigma_beta          = sigma_beta;
+    data.likelihood_spec     = &spec;
+    data.model_response_data = &resp;
+    data.sharing.init(1);
+    if (has_re) {
+        data.n_re_groups = n_re_groups;
+        data.re_group.assign(re_idx.begin(), re_idx.end());
+    }
+
+    tulpa::ParamLayout layout;
+    layout.process_beta_start.push_back(0);
+    layout.process_beta_count.push_back(p);
+    int next = p;
+    if (has_re) {
+        layout.has_re   = true;
+        layout.re_start = next;          // RE param_start == compacted offset
+        next += n_re_groups;
+        layout.re_end   = next;
+    }
+    next += n_spatial_units;             // block latent occupies [block_start, +M)
+    if (has_re) layout.log_sigma_re_idx = next++;  // hyperparam AFTER latent
+    layout.total_params = next;
+
+    // ICAR LatentBlock, identical to cpp_nested_laplace_icar.
+    tulpa::LatentBlock block;
+    block.start = block_start;
+    block.size  = n_spatial_units;
+    block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
+    block.d_fac = [](int) { return 1.0; };
+    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                          const Rcpp::NumericVector& x, int /*k*/) {
+        tulpa::add_icar_prior(grad, H, x, block_start, n_spatial_units,
+                               tau_spatial, adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
+        return tulpa::log_prior_icar(x, block_start, n_spatial_units, tau_spatial,
+                                       adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, block_start, n_spatial_units);
+    };
+    std::vector<tulpa::LatentBlock> blocks{ block };
+
+    std::vector<double> params(layout.total_params, 0.0);
+    if (has_re) params[layout.log_sigma_re_idx] = std::log(sigma_re);
+
+    std::vector<int> re_group_1based;
+    if (has_re) re_group_1based.assign(re_idx.begin(), re_idx.end());
+
+    int n_iter = 0;
+    int converged = 0;
+    double log_det_Q = 0.0;
+    double log_marginal = 0.0;
+    tulpa::laplace_mode_spec_dense_impl(
+        data, layout, params, re_group_1based,
+        max_iter, tol, n_threads,
+        &n_iter, &converged, &log_det_Q, &log_marginal,
+        &blocks, /*k_grid=*/0
+    );
+
+    // Mode in the nested kernel's [beta | RE | block] concatenation order.
+    int n_x = p + (has_re ? n_re_groups : 0) + n_spatial_units;
+    Rcpp::NumericVector mode(n_x);
+    int off = 0;
+    for (int j = 0; j < p; j++) mode[off++] = params[j];
+    if (has_re) {
+        for (int g = 0; g < n_re_groups; g++) mode[off++] = params[layout.re_start + g];
+    }
+    for (int s = 0; s < n_spatial_units; s++) mode[off++] = params[block_start + s];
+
     return Rcpp::List::create(
         Rcpp::Named("mode")         = mode,
         Rcpp::Named("log_det_Q")    = log_det_Q,

@@ -6,6 +6,11 @@
 
 namespace tulpa {
 
+// Forward declaration: the GMRF-block parameters below are pointer-only at
+// this declaration, so an incomplete type suffices (full definition in
+// latent_block.h, pulled in by the .cpp that drives the nested kernel).
+struct LatentBlock;
+
 void laplace_mode_spec_dense_impl(
     const ModelData& data,
     const ParamLayout& layout,
@@ -15,7 +20,9 @@ void laplace_mode_spec_dense_impl(
     int* n_iter_out,
     int* converged_out,
     double* log_det_Q_out,
-    double* log_marginal_out
+    double* log_marginal_out,
+    const std::vector<LatentBlock>* blocks = nullptr,
+    int k_grid = 0
 );
 
 } // namespace tulpa
