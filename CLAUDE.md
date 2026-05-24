@@ -94,9 +94,13 @@ tests/testthat/     — Unit and integration tests
 `tulpa_em_laplace()` is the generic EM driver: per-submodel `family` +
 `offset` on the `m_step_encode` return blocks (gcol33/tulpa#3) and the
 optional `m_step_extra(fits, weights, ...) -> fits` callback for non-η
-parameters fired between M-step and E-step (gcol33/tulpa#4). MI / Gibbs
-corrections are stubbed (`correction = "mi"/"gibbs"` raises a clear error).
-See `?tulpa_em_laplace`.
+parameters fired between M-step and E-step (gcol33/tulpa#4). `correction =
+"mi"/"gibbs"` run post-EM multiple-imputation / warm-started Gibbs refits
+pooled via `rubins_pool()` (`.mi_correction` / `.gibbs_correction` in
+`R/em_correction.R`). An optional `beta_prior = list(mean, sd)` threads a
+Gaussian fixed-effect prior into every `tulpa_laplace()` block and into the
+MI/Gibbs refits (gcol33/tulpa#27); blocks may override it with their own
+`beta_prior` field. See `?tulpa_em_laplace`.
 
 ### Generic S3 Methods and Diagnostics
 

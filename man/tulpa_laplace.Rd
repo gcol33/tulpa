@@ -17,7 +17,8 @@ tulpa_laplace(
   max_iter = 100L,
   tol = 1e-06,
   n_threads = 1L,
-  return_hessian = TRUE
+  return_hessian = TRUE,
+  beta_prior = NULL
 )
 }
 \arguments{
@@ -41,6 +42,12 @@ tulpa_laplace(
 
 \item{spatial}{Optional spatial specification (tulpa_spatial object)}
 
+\item{weights}{Optional observation weights (numeric vector, length \code{length(y)}).
+Scales each observation's likelihood contribution. \code{NULL} (default) uses 1.}
+
+\item{offset}{Optional observation-level offset on the linear predictor
+(numeric vector, length \code{length(y)}). \code{NULL} (default) uses 0.}
+
 \item{max_iter}{Maximum Newton iterations (default 100)}
 
 \item{tol}{Convergence tolerance (default 1e-6)}
@@ -48,6 +55,14 @@ tulpa_laplace(
 \item{n_threads}{Number of threads (default 1)}
 
 \item{return_hessian}{Logical: return the fixed-effect Hessian block? (default TRUE)}
+
+\item{beta_prior}{Optional Gaussian prior on the fixed effects. \code{NULL}
+(default) keeps the weak built-in prior \code{beta ~ N(0, 100^2)}. Otherwise a
+list with element \code{sd} (prior standard deviation, required) and optional
+\code{mean} (prior mean, default 0). Each may be a scalar (applied to every
+coefficient) or a length-\code{ncol(X)} vector. Adds
+\code{sum((beta - mean)^2 / (2 * sd^2))} to the negative log-posterior, so the
+mode is the penalized (MAP) estimate. Not supported on the spatial path.}
 }
 \value{
 A list with:

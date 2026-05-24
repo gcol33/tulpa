@@ -17,6 +17,7 @@ tulpa_em_laplace(
   n_gibbs = 10L,
   draw_z = NULL,
   m_step_extra = NULL,
+  beta_prior = NULL,
   verbose = TRUE,
   ...
 )
@@ -90,6 +91,16 @@ possibly with mutated dispersion / shape / precision fields (e.g.
 the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
 Gaussian sigma). When \code{NULL} (default), behavior is unchanged. See
 \code{gcol33/tulpa#4}.}
+
+\item{beta_prior}{Optional Gaussian prior on the fixed effects, applied to
+every block fit via \code{\link[=tulpa_laplace]{tulpa_laplace()}} (i.e. blocks without a \code{prior}
+field). \code{NULL} (default) keeps the weak built-in prior. Otherwise a list
+with \code{sd} (required) and optional \code{mean}; see \code{\link[=tulpa_laplace]{tulpa_laplace()}}. The same
+prior flows into the MI / Gibbs correction refits, so penalized
+corrections come for free. A block may override the default by setting its
+own \code{beta_prior} field in \code{m_step_encode} (e.g. different priors for the
+occupancy and detection submodels). Use scalar \code{mean} / \code{sd} here when
+blocks differ in width; per-coefficient vectors belong on the block.}
 
 \item{verbose}{Print per-iteration progress.}
 

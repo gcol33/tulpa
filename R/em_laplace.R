@@ -133,12 +133,20 @@
 # for "block -> tulpa_laplace() call" so MI/Gibbs (when implemented) can
 # share it.
 # ----------------------------------------------------------------------------
-.fit_block_via_laplace <- function(block, n_threads, return_hessian = TRUE) {
+.fit_block_via_laplace <- function(block, n_threads, return_hessian = TRUE,
+                                   beta_prior = NULL) {
   n_trials <- if (is.null(block$n_trials)) {
     rep(1L, length(block$y))
   } else {
     block$n_trials
   }
+
+  # Per-block `beta_prior` overrides the EM-level default. The default is
+  # applied only to non-spatial blocks (the spatial solvers carry their own
+  # fixed-effect prior); an explicit per-block `beta_prior` on a spatial block
+  # is forwarded and errors in tulpa_laplace().
+  bp <- block$beta_prior
+  if (is.null(bp) && is.null(block$spatial)) bp <- beta_prior
 
   args <- list(
     y         = block$y,
@@ -150,7 +158,8 @@
     weights   = block$weights,
     offset    = block$offset,
     n_threads = as.integer(n_threads),
-    return_hessian = isTRUE(return_hessian)
+    return_hessian = isTRUE(return_hessian),
+    beta_prior = bp
   )
   if (!is.null(block$phi)) args$phi <- block$phi
 
@@ -246,12 +255,16 @@
 # Single point of truth for "block -> fit" so all EM-driven code paths
 # (main loop, MI/Gibbs correction) share the same routing.
 # ----------------------------------------------------------------------------
-.fit_em_block <- function(block, n_threads, return_hessian = TRUE) {
+.fit_em_block <- function(block, n_threads, return_hessian = TRUE,
+                          beta_prior = NULL) {
   if (!is.null(block$prior)) {
+    # Nested-Laplace blocks carry their own prior spec; `beta_prior` (a plain
+    # fixed-effect penalty) does not apply and is ignored here.
     .fit_block_via_nested_laplace(block, n_threads = n_threads)
   } else {
     .fit_block_via_laplace(block, n_threads = n_threads,
-                           return_hessian = return_hessian)
+                           return_hessian = return_hessian,
+                           beta_prior = beta_prior)
   }
 }
 
@@ -342,6 +355,15 @@
 #'   the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
 #'   Gaussian sigma). When `NULL` (default), behavior is unchanged. See
 #'   `gcol33/tulpa#4`.
+#' @param beta_prior Optional Gaussian prior on the fixed effects, applied to
+#'   every block fit via [tulpa_laplace()] (i.e. blocks without a `prior`
+#'   field). `NULL` (default) keeps the weak built-in prior. Otherwise a list
+#'   with `sd` (required) and optional `mean`; see [tulpa_laplace()]. The same
+#'   prior flows into the MI / Gibbs correction refits, so penalized
+#'   corrections come for free. A block may override the default by setting its
+#'   own `beta_prior` field in `m_step_encode` (e.g. different priors for the
+#'   occupancy and detection submodels). Use scalar `mean` / `sd` here when
+#'   blocks differ in width; per-coefficient vectors belong on the block.
 #' @param verbose Print per-iteration progress.
 #' @param ... Forwarded to `e_step`, `m_step_encode`, and `m_step_extra`.
 #'
@@ -369,6 +391,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
                               n_imputations = 20L, n_gibbs = 10L,
                               draw_z = NULL,
                               m_step_extra = NULL,
+                              beta_prior = NULL,
                               verbose = TRUE, ...) {
   correction <- match.arg(correction)
   if (correction == "auto") correction <- "none"
@@ -462,7 +485,8 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
       # is a fresh fit on the damped weights, so we don't need to mix beta
       # vectors directly. A block with `$prior` set routes through
       # tulpa_nested_laplace(); otherwise tulpa_laplace().
-      new_fits[[k]] <- .fit_em_block(blocks[[k]], n_threads = 1L)
+      new_fits[[k]] <- .fit_em_block(blocks[[k]], n_threads = 1L,
+                                     beta_prior = beta_prior)
     }
 
     fits <- new_fits
@@ -514,6 +538,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
       draw_z         = draw_z_fn,
       n_imputations  = n_imputations,
       m_step_extra   = m_step_extra,
+      beta_prior     = beta_prior,
       verbose        = verbose,
       ...
     )
@@ -530,6 +555,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
       draw_z         = draw_z_fn,
       n_gibbs        = n_gibbs,
       m_step_extra   = m_step_extra,
+      beta_prior     = beta_prior,
       verbose        = verbose,
       ...
     )
@@ -575,10 +601,9 @@ apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
 
 
 # ============================================================================
-# Rubin's rules: pool K imputation draws.
-#
-# Kept as a generic helper for downstream use even though MI/Gibbs corrections
-# are not yet wired into tulpa_em_laplace().
+# Rubin's rules: pool K imputation draws. Used by the MI and Gibbs corrections
+# (.mi_correction / .gibbs_correction) and exported for downstream callers that
+# pool their own draws.
 # ============================================================================
 
 #' Pool multiple imputation draws via Rubin's rules

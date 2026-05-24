@@ -14,6 +14,64 @@
 
 namespace tulpa {
 
+// Default fixed-effect prior precision: beta_j ~ N(0, 1e4), i.e. sd = 100.
+// This is the historical weak prior every Laplace solver applied inline;
+// keeping it here makes it a single named constant.
+inline constexpr double DEFAULT_TAU_BETA = 1e-4;
+
+// Gaussian prior on the fixed effects beta. With both vectors empty it
+// reproduces the historical weak prior beta_j ~ N(0, 1e4) applied
+// uniformly. A non-empty `tau` overrides the precision (1/sd^2) per
+// coefficient; a non-empty `mean` shifts the prior mean per coefficient.
+// When set, each vector must have length p -- the R layer recycles scalar
+// mean/sd to full length before constructing this.
+struct BetaPrior {
+    std::vector<double> mean;  // length p, or empty -> 0
+    std::vector<double> tau;   // length p precision, or empty -> DEFAULT_TAU_BETA
+
+    double tau_at(int j) const { return tau.empty() ? DEFAULT_TAU_BETA : tau[j]; }
+    double mean_at(int j) const { return mean.empty() ? 0.0 : mean[j]; }
+};
+
+// grad -= tau * (beta - mean); H += tau on the diagonal. Single source of
+// truth for the fixed-effect Gaussian penalty across every Laplace solver.
+inline void add_beta_prior(
+    DenseVec& grad, DenseMat& H,
+    const Rcpp::NumericVector& x, int p, const BetaPrior& bp
+) {
+    for (int j = 0; j < p; j++) {
+        double tau = bp.tau_at(j);
+        grad[j] -= tau * (x[j] - bp.mean_at(j));
+        H[j][j] += tau;
+    }
+}
+
+inline void add_beta_prior(
+    Rcpp::NumericVector& grad, Rcpp::NumericMatrix& H,
+    const Rcpp::NumericVector& x, int p, const BetaPrior& bp
+) {
+    for (int j = 0; j < p; j++) {
+        double tau = bp.tau_at(j);
+        grad[j] -= tau * (x[j] - bp.mean_at(j));
+        H(j, j) += tau;
+    }
+}
+
+// Quadratic log-prior contribution -0.5 * sum tau_j * (beta_j - mean_j)^2.
+// Normalizing constant omitted (it is fixed when tau is fixed, so it
+// cancels in any model comparison at fixed structure) -- matching the
+// historical inline behaviour.
+inline double log_prior_beta(
+    const Rcpp::NumericVector& x, int p, const BetaPrior& bp
+) {
+    double lp = 0.0;
+    for (int j = 0; j < p; j++) {
+        double d = x[j] - bp.mean_at(j);
+        lp -= 0.5 * bp.tau_at(j) * d * d;
+    }
+    return lp;
+}
+
 inline void add_re_beta_priors(
     DenseVec& grad, DenseMat& H,
     const Rcpp::NumericVector& x,
@@ -23,11 +81,7 @@ inline void add_re_beta_priors(
         grad[p + g] -= tau_re * x[p + g];
         H[p + g][p + g] += tau_re;
     }
-    double tau_beta = 1e-4;
-    for (int j = 0; j < p; j++) {
-        grad[j] -= tau_beta * x[j];
-        H[j][j] += tau_beta;
-    }
+    add_beta_prior(grad, H, x, p, BetaPrior());
 }
 
 inline void add_re_beta_priors(
@@ -39,11 +93,7 @@ inline void add_re_beta_priors(
         grad[p + g] -= tau_re * x[p + g];
         H(p + g, p + g) += tau_re;
     }
-    double tau_beta = 1e-4;
-    for (int j = 0; j < p; j++) {
-        grad[j] -= tau_beta * x[j];
-        H(j, j) += tau_beta;
-    }
+    add_beta_prior(grad, H, x, p, BetaPrior());
 }
 
 inline double compute_log_prior_re(

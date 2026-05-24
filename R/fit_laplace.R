@@ -19,10 +19,21 @@
 #' @param family Character: `"binomial"`, `"poisson"`, `"neg_binomial_2"`, `"gaussian"`
 #' @param phi Dispersion parameter (neg_binomial_2 and gamma only)
 #' @param spatial Optional spatial specification (tulpa_spatial object)
+#' @param weights Optional observation weights (numeric vector, length `length(y)`).
+#'   Scales each observation's likelihood contribution. `NULL` (default) uses 1.
+#' @param offset Optional observation-level offset on the linear predictor
+#'   (numeric vector, length `length(y)`). `NULL` (default) uses 0.
 #' @param max_iter Maximum Newton iterations (default 100)
 #' @param tol Convergence tolerance (default 1e-6)
 #' @param n_threads Number of threads (default 1)
 #' @param return_hessian Logical: return the fixed-effect Hessian block? (default TRUE)
+#' @param beta_prior Optional Gaussian prior on the fixed effects. `NULL`
+#'   (default) keeps the weak built-in prior `beta ~ N(0, 100^2)`. Otherwise a
+#'   list with element `sd` (prior standard deviation, required) and optional
+#'   `mean` (prior mean, default 0). Each may be a scalar (applied to every
+#'   coefficient) or a length-`ncol(X)` vector. Adds
+#'   `sum((beta - mean)^2 / (2 * sd^2))` to the negative log-posterior, so the
+#'   mode is the penalized (MAP) estimate. Not supported on the spatial path.
 #'
 #' @return A list with:
 #'   - `mode`: full mode vector (beta, then RE values per term)
@@ -42,7 +53,8 @@ tulpa_laplace <- function(y, n_trials, X,
                           offset = NULL,
                           max_iter = 100L, tol = 1e-6,
                           n_threads = 1L,
-                          return_hessian = TRUE) {
+                          return_hessian = TRUE,
+                          beta_prior = NULL) {
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
@@ -51,6 +63,9 @@ tulpa_laplace <- function(y, n_trials, X,
   stopifnot(is.numeric(y) || is.integer(y))
   stopifnot(is.matrix(X))
   stopifnot(nrow(X) == n_obs)
+
+  # Normalize the optional fixed-effect prior to length-p mean / sd vectors.
+  bp <- .normalize_beta_prior(beta_prior, n_fixed)
 
   if (identical(family, "beta")) {
     if (!is.numeric(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0) {
@@ -69,6 +84,12 @@ tulpa_laplace <- function(y, n_trials, X,
 
   # Route based on number of RE terms and spatial type
   if (!is.null(spatial)) {
+    if (!is.null(bp)) {
+      stop("`beta_prior` is not supported on the spatial Laplace path. ",
+           "The spatial solvers use the built-in weak fixed-effect prior; ",
+           "drop `beta_prior`, or use NUTS for a custom fixed-effect prior ",
+           "under a spatial field.", call. = FALSE)
+    }
     # Spatial path: use first RE term (single-block)
     if (length(re_list) == 0) {
       re_idx <- rep(1L, n_obs); n_re_groups <- 1L; sigma_re <- 1.0
@@ -132,7 +153,9 @@ tulpa_laplace <- function(y, n_trials, X,
       re_Z_list = if (has_slopes) re_Z_list else NULL,
       re_ncoefs = if (has_slopes) re_ncoefs else NULL,
       weights = weights,
-      offset = offset
+      offset = offset,
+      beta_prior_mean = if (is.null(bp)) NULL else bp$mean,
+      beta_prior_sd   = if (is.null(bp)) NULL else bp$sd
     )
   }
 
@@ -278,6 +301,49 @@ tulpa_laplace <- function(y, n_trials, X,
   }
 
   result
+}
+
+
+#' Normalize an optional fixed-effect Gaussian prior
+#'
+#' Validates `beta_prior` and recycles scalar `mean` / `sd` to length `p`.
+#' Returns `NULL` (use the built-in weak prior) or `list(mean, sd)` with both
+#' vectors of length `p`. Shared by [tulpa_laplace()] and the EM driver so the
+#' validation rules live in one place.
+#'
+#' @param beta_prior `NULL`, or a list with `sd` (required) and optional `mean`.
+#' @param p Number of fixed effects (`ncol(X)`).
+#' @keywords internal
+.normalize_beta_prior <- function(beta_prior, p) {
+  if (is.null(beta_prior)) return(NULL)
+  if (!is.list(beta_prior)) {
+    stop("`beta_prior` must be NULL or a list with `sd` (and optional `mean`); ",
+         "got ", class(beta_prior)[1], ".", call. = FALSE)
+  }
+  if (is.null(beta_prior$sd)) {
+    stop("`beta_prior` must supply `sd` (prior standard deviation on the ",
+         "fixed effects).", call. = FALSE)
+  }
+
+  recycle <- function(v, nm) {
+    v <- as.numeric(v)
+    if (length(v) == 1L) return(rep(v, p))
+    if (length(v) == p)  return(v)
+    stop(sprintf("`beta_prior$%s` must have length 1 or %d (ncol(X)); got %d.",
+                 nm, p, length(v)), call. = FALSE)
+  }
+
+  sd   <- recycle(beta_prior$sd, "sd")
+  mean <- recycle(if (is.null(beta_prior$mean)) 0 else beta_prior$mean, "mean")
+
+  if (any(!is.finite(sd)) || any(sd <= 0)) {
+    stop("`beta_prior$sd` must be positive and finite.", call. = FALSE)
+  }
+  if (any(!is.finite(mean))) {
+    stop("`beta_prior$mean` must be finite.", call. = FALSE)
+  }
+
+  list(mean = mean, sd = sd)
 }
 
 

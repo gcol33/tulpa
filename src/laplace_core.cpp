@@ -208,7 +208,8 @@ LaplaceResult laplace_mode_dense_multi_re(
     Rcpp::Nullable<Rcpp::IntegerVector> re_ncoefs_ = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> weights_ = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_ = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_ = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_ = R_NilValue,
+    const BetaPrior& beta_prior = BetaPrior()
 ) {
     int N = y.size();
     int p = X.ncol();
@@ -446,20 +447,15 @@ LaplaceResult laplace_mode_dense_multi_re(
             }
         }
 
-        // Beta prior
-        double tau_beta = 1e-4;
-        for (int j = 0; j < p; j++) {
-            grad[j] -= tau_beta * x[j];
-            H[j][j] += tau_beta;
-        }
+        // Fixed-effect Gaussian prior (default weak N(0, 1e4); configurable
+        // via cpp_laplace_fit_multi_re's beta_prior_mean / beta_prior_sd).
+        add_beta_prior(grad, H, x, p, beta_prior);
     };
 
     auto center = [](NumericVector&) {};
 
     auto log_prior = [&](const NumericVector& x, const NumericVector&) {
-        double lp = 0.0;
-        double tau_beta = 1e-4;
-        for (int j = 0; j < p; j++) lp -= 0.5 * tau_beta * x[j] * x[j];
+        double lp = log_prior_beta(x, p, beta_prior);
         for (int k = 0; k < n_terms; k++) {
             int ck = ncoefs_vec[k];
             // -0.5 * u_g' Q_k u_g for each group
@@ -524,11 +520,40 @@ Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::Nullable<Rcpp::IntegerVector> re_ncoefs = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> weights = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> beta_prior_mean = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd = R_NilValue
 ) {
+    // Optional Gaussian prior on the fixed effects. R recycles scalar
+    // mean/sd to length p before calling; here we just copy (sd -> tau).
+    int p = X.ncol();
+    tulpa::BetaPrior bp;
+    if (beta_prior_sd.isNotNull()) {
+        Rcpp::NumericVector sd = Rcpp::as<Rcpp::NumericVector>(beta_prior_sd);
+        if ((int)sd.size() != p) {
+            Rcpp::stop("beta_prior_sd has length %d but X has %d columns.",
+                       (int)sd.size(), p);
+        }
+        bp.tau.resize(p);
+        for (int j = 0; j < p; j++) {
+            if (!(sd[j] > 0.0) || !R_finite(sd[j])) {
+                Rcpp::stop("beta_prior_sd[%d] must be a positive finite number.", j + 1);
+            }
+            bp.tau[j] = 1.0 / (sd[j] * sd[j]);
+        }
+    }
+    if (beta_prior_mean.isNotNull()) {
+        Rcpp::NumericVector mn = Rcpp::as<Rcpp::NumericVector>(beta_prior_mean);
+        if ((int)mn.size() != p) {
+            Rcpp::stop("beta_prior_mean has length %d but X has %d columns.",
+                       (int)mn.size(), p);
+        }
+        bp.mean.assign(mn.begin(), mn.end());
+    }
+
     tulpa::LaplaceResult result = tulpa::laplace_mode_dense_multi_re(
         y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads,
-        re_Z_list, re_ncoefs, weights, offset, x_init
+        re_Z_list, re_ncoefs, weights, offset, x_init, bp
     );
     return tulpa::laplace_result_to_list(result);
 }

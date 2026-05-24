@@ -74,7 +74,7 @@
 # this helper doesn't care, m_step_encode handles both forms).
 # ----------------------------------------------------------------------------
 .fit_one_draw <- function(weights, m_step_encode, label_prefix = "",
-                          n_threads = 1L, ...) {
+                          n_threads = 1L, beta_prior = NULL, ...) {
   blocks <- m_step_encode(weights, ...)
   if (!is.list(blocks) || length(blocks) == 0L) {
     stop("`m_step_encode` must return a non-empty list of blocks.",
@@ -95,7 +95,8 @@
       } else {
         sprintf("%s#%d", label_prefix, k)
       })
-    fit <- .fit_em_block(blocks[[k]], n_threads = n_threads)
+    fit <- .fit_em_block(blocks[[k]], n_threads = n_threads,
+                         beta_prior = beta_prior)
     fits[[k]] <- .attach_beta_se(fit, n_fixed = ncol(blocks[[k]]$X))
   }
   fits
@@ -110,13 +111,14 @@
 # dispersion / shape / precision updates also propagate into each draw.
 # ----------------------------------------------------------------------------
 .mi_correction <- function(weights, m_step_encode, draw_z, n_imputations,
-                           m_step_extra, verbose, ...) {
+                           m_step_extra, verbose, beta_prior = NULL, ...) {
   draws <- vector("list", n_imputations)
   for (m in seq_len(n_imputations)) {
     z <- draw_z(weights)
     fits <- .fit_one_draw(
       z, m_step_encode,
-      label_prefix = sprintf("MI draw %d ", m), ...)
+      label_prefix = sprintf("MI draw %d ", m),
+      beta_prior = beta_prior, ...)
     if (!is.null(m_step_extra)) {
       fits <- apply_m_step_extra(m_step_extra, fits, weights, ...)
     }
@@ -143,7 +145,8 @@
 # own chain-level analysis (autocorrelation, thinning, ESS).
 # ----------------------------------------------------------------------------
 .gibbs_correction <- function(initial_fits, e_step, m_step_encode, draw_z,
-                              n_gibbs, m_step_extra, verbose, ...) {
+                              n_gibbs, m_step_extra, verbose,
+                              beta_prior = NULL, ...) {
   draws <- vector("list", n_gibbs)
   fits <- initial_fits
 
@@ -156,7 +159,8 @@
     z <- draw_z(e_result$weights)
     fits <- .fit_one_draw(
       z, m_step_encode,
-      label_prefix = sprintf("Gibbs step %d ", g), ...)
+      label_prefix = sprintf("Gibbs step %d ", g),
+      beta_prior = beta_prior, ...)
     if (!is.null(m_step_extra)) {
       fits <- apply_m_step_extra(m_step_extra, fits, e_result$weights, ...)
     }

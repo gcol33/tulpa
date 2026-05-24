@@ -437,6 +437,133 @@ test_that("Gibbs passes continuous E-step weights to m_step_extra (not hard z)",
 })
 
 
+# ---------------------------------------------------------------------------
+# beta_prior threading (gcol33/tulpa#27): the EM-level default reaches every
+# block's tulpa_laplace() call, per-block fields override it, spatial blocks
+# skip the default, and the MI / Gibbs refits inherit the same prior.
+# ---------------------------------------------------------------------------
+
+test_that("EM-level beta_prior reaches every block's tulpa_laplace call", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, 10))
+  m_step_encode <- function(weights, ...) {
+    list(
+      psi = make_block("binomial", n = 10L, p = 2L),
+      p   = make_block("binomial", n = 10L, p = 3L)
+    )
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  prior <- list(mean = 0, sd = 2.5)
+  res <- tulpa_em_laplace(
+    e_step, m_step_encode,
+    beta_prior = prior, max_iter = 1L, verbose = FALSE
+  )
+
+  expect_equal(length(capture_env$calls), 2L)
+  for (call in capture_env$calls) {
+    expect_equal(call$beta_prior, prior)
+  }
+})
+
+
+test_that("per-block beta_prior overrides the EM-level default", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  block_prior <- list(mean = 1, sd = 0.5)
+  em_prior    <- list(mean = 0, sd = 2.5)
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, 10))
+  m_step_encode <- function(weights, ...) {
+    psi <- make_block("binomial", n = 10L, p = 2L)
+    psi$beta_prior <- block_prior            # block overrides the EM default
+    list(psi = psi, p = make_block("binomial", n = 10L, p = 3L))
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  tulpa_em_laplace(e_step, m_step_encode,
+                   beta_prior = em_prior, max_iter = 1L, verbose = FALSE)
+
+  expect_equal(capture_env$calls[[1]]$beta_prior, block_prior)  # psi: override
+  expect_equal(capture_env$calls[[2]]$beta_prior, em_prior)     # p:   default
+})
+
+
+test_that("EM-level beta_prior default is not applied to spatial blocks", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, 10))
+  m_step_encode <- function(weights, ...) {
+    blk <- make_block("binomial", n = 10L, p = 2L)
+    blk$spatial <- list(type = "icar")  # spatial solvers carry their own prior
+    list(only = blk)
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  tulpa_em_laplace(e_step, m_step_encode,
+                   beta_prior = list(mean = 0, sd = 2.5),
+                   max_iter = 1L, verbose = FALSE)
+
+  expect_null(capture_env$calls[[1]]$beta_prior)
+})
+
+
+test_that("MI correction refits inherit the EM-level beta_prior", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, 6))
+  m_step_encode <- function(weights, ...) {
+    list(only = make_block("binomial", n = 6L, p = 2L))
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  prior <- list(mean = 0, sd = 1.5)
+  tulpa_em_laplace(
+    e_step, m_step_encode,
+    correction = "mi", n_imputations = 3L,
+    beta_prior = prior, max_iter = 1L, verbose = FALSE
+  )
+
+  # EM iteration(s) + 3 MI refits all carry the prior.
+  for (call in capture_env$calls) {
+    expect_equal(call$beta_prior, prior)
+  }
+})
+
+
+test_that("Gibbs correction refits inherit the EM-level beta_prior", {
+  capture_env <- new.env()
+  stub <- make_recording_stub(capture_env)
+
+  e_step <- function(fits, ...) list(weights = rep(0.5, 6))
+  m_step_encode <- function(weights, ...) {
+    list(only = make_block("binomial", n = 6L, p = 2L))
+  }
+
+  local_mocked_bindings(tulpa_laplace = stub, .package = "tulpa")
+
+  prior <- list(mean = 0, sd = 1.5)
+  tulpa_em_laplace(
+    e_step, m_step_encode,
+    correction = "gibbs", n_gibbs = 3L,
+    beta_prior = prior, max_iter = 1L, verbose = FALSE
+  )
+
+  for (call in capture_env$calls) {
+    expect_equal(call$beta_prior, prior)
+  }
+})
+
+
 test_that(".attach_beta_se warns when H_beta is smaller than n_fixed", {
   fit <- list(mode = c(0.1, 0.2, 0.3), H_beta = diag(1))
   expect_warning(

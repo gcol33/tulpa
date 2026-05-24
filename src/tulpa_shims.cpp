@@ -15,6 +15,7 @@
 #include <limits>
 
 #include "laplace_core.h"
+#include "laplace_re_priors.h"
 #include "pg_binomial.h"
 #include "pg_negbin.h"
 #include "ess_sampler.h"
@@ -76,7 +77,8 @@ LaplaceResult laplace_mode_dense_multi_re(
     Rcpp::Nullable<Rcpp::IntegerVector> re_ncoefs_,
     Rcpp::Nullable<Rcpp::NumericVector> weights_,
     Rcpp::Nullable<Rcpp::NumericVector> offset_,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_,
+    const BetaPrior& beta_prior = BetaPrior()
 );
 
 LaplaceResult laplace_mode_bym2(
