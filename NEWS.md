@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+* feat(laplace): correlated random slopes `(1 + x | g)` on the Laplace engine
+  (gcol33/tulpa#28). `tulpa_laplace()` RE terms accept a per-term covariance via
+  `L` (lower-triangular Cholesky, `Sigma = L L'`) or `cov`; the off-diagonal now
+  enters both the joint Hessian (mode finding) and the marginal fixed-effect SE.
+  Previously a multi-coefficient RE block could only carry a per-coefficient
+  marginal-sigma vector (a diagonal covariance), so `(1 + x | g)` was
+  inexpressible under Laplace and downstream packages routed it to NUTS. The C++
+  multi-RE kernel already consumed a packed Cholesky; this wires the R API to it
+  through a single `.re_cov_spec()` helper and rebuilds the marginal Schur
+  complement with a block-diagonal precision. It also fixes a pre-existing bug
+  in the marginal-SE linear predictor -- the eta reconstruction treated every RE
+  term as intercept-only, so the returned `H_beta` silently ignored random
+  slopes (this affected `(x || g)` as well). Validated against an independent
+  full-precision Schur in `tests/testthat/test-laplace-corr-re.R`. Estimating the
+  covariance itself (the EM M-step for a full `Sigma`) is the follow-up; the
+  engine now fits correlated slopes at a supplied covariance.
+
 * feat(nuts): expose tulpa's across-chain OpenMP runner through the model-facing
   C ABI (gcol33/tulpa#30). New registered callable `tulpa_run_nuts_chains`
   (header accessor `tulpa::get_nuts_chains_fn()`) runs `n_chains` chains in one

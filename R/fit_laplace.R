@@ -14,8 +14,16 @@
 #' @param re_list List of RE specifications. Each element is a list with:
 #'   - `idx`: integer vector of group indices (1-based)
 #'   - `n_groups`: number of groups
-#'   - `sigma`: RE standard deviation
-#'   - `Z`: optional slope design matrix (n_obs x n_coefs). If NULL, intercept-only.
+#'   - `n_coefs`: coefficients per group (1 = intercept-only, >1 = random slopes)
+#'   - `sigma`: per-coefficient RE standard deviation(s), a diagonal covariance
+#'     (uncorrelated, lme4 `(x || g)`). A scalar is recycled to `n_coefs`.
+#'   - `Z`: slope design matrix (n_obs x n_coefs) when `n_coefs > 1`; `NULL`
+#'     means intercept-only.
+#'   - `L` / `cov`: optional `n_coefs x n_coefs` covariance for a *correlated*
+#'     term (lme4 `(1 + x | g)`) -- supply either a lower-triangular Cholesky
+#'     factor `L` (covariance = `L L'`) or the covariance matrix `cov`. When
+#'     present these take precedence over `sigma`; the off-diagonal enters both
+#'     the joint Hessian (mode finding) and the marginal fixed-effect SE.
 #' @param family Character: `"binomial"`, `"poisson"`, `"neg_binomial_2"`, `"gaussian"`
 #' @param phi Dispersion parameter (neg_binomial_2 and gamma only)
 #' @param spatial Optional spatial specification (tulpa_spatial object)
@@ -139,11 +147,9 @@ tulpa_laplace <- function(y, n_trials, X,
     )
 
     if (length(re_list) > 0) {
-      re_sigma_list <- lapply(re_list, function(r) {
-        s <- r$sigma
-        nc <- r$n_coefs %||% 1L
-        if (length(s) == 1L && nc > 1L) rep(s, nc) else s
-      })
+      # `pack` is the value the C++ kernel consumes: a length-n_coefs marginal-SD
+      # vector (diagonal) or a packed lower-triangular Cholesky (correlated).
+      re_sigma_list <- lapply(re_list, function(r) .re_cov_spec(r)$pack)
     }
 
     re_Z_list <- lapply(
@@ -196,17 +202,21 @@ tulpa_laplace <- function(y, n_trials, X,
     beta <- mode_vec[seq_len(n_fixed)]
     re_vals <- mode_vec[-seq_len(n_fixed)]
 
-    # Linear predictor at mode: eta = X*beta + sum_k Z_k * u_k
+    # Linear predictor at mode: eta = X*beta + sum_k Z_k %*% u_k. The mode
+    # stores term k as [g1_c1, g1_c2, ..., g2_c1, ...] (n_groups * n_coefs),
+    # so a slope term contributes Z_k[i, ] %*% u_{g(i)}, not just an intercept.
     eta <- as.numeric(X %*% beta)
 
     if (length(re_list) > 0) {
-      # For multi-block: each term adds its RE contribution
       offset <- 0L
       for (k in seq_along(re_list)) {
-        r <- re_list[[k]]
-        u_k <- re_vals[offset + seq_len(r$n_groups)]
-        eta <- eta + u_k[r$idx]
-        offset <- offset + r$n_groups
+        r  <- re_list[[k]]
+        nc <- r$n_coefs %||% 1L
+        Zk <- if (nc == 1L) matrix(1, n_obs, 1L) else (r$Z %||% matrix(1, n_obs, 1L))
+        u_k <- re_vals[offset + seq_len(r$n_groups * nc)]
+        u_mat <- matrix(u_k, ncol = nc, byrow = TRUE)   # row g = (c1, ..., cnc)
+        eta <- eta + rowSums(Zk * u_mat[r$idx, , drop = FALSE])
+        offset <- offset + r$n_groups * nc
       }
     }
 
@@ -220,19 +230,17 @@ tulpa_laplace <- function(y, n_trials, X,
     XtWX <- crossprod(X, W * X)
 
     if (length(re_list) > 0) {
-      # Build combined Z and block-diagonal D^{-1} for Schur complement
-      # Each term k contributes n_groups[k] * n_coefs[k] latent variables
-      total_re <- sum(vapply(re_list, function(r) {
-        as.integer(r$n_groups) * (r$n_coefs %||% 1L)
-      }, integer(1)))
+      # Build combined Z and the RE precision D^{-1} for the Schur complement.
+      # D^{-1} is block-diagonal in the latent layout [g1_c1, g1_c2, g2_c1, ...]:
+      # one n_coefs x n_coefs precision block per group -- full (off-diagonal
+      # included) for a correlated term, diagonal otherwise. Each term k
+      # contributes n_groups[k] * n_coefs[k] latent variables.
       Z_parts <- list()
-      D_inv_diag <- numeric(total_re)
-      offset <- 0L
+      Dinv_blocks <- list()
       for (k in seq_along(re_list)) {
         r <- re_list[[k]]
         nc <- r$n_coefs %||% 1L
-        sig <- r$sigma
-        if (length(sig) < nc) sig <- rep(sig[1], nc)
+        Qk <- .re_cov_spec(r)$Q  # nc x nc RE precision (Sigma^{-1})
 
         if (nc == 1L) {
           # Intercept-only: Z is n_obs x n_groups indicator matrix
@@ -240,35 +248,28 @@ tulpa_laplace <- function(y, n_trials, X,
             i = seq_len(n_obs), j = r$idx,
             x = rep(1.0, n_obs), dims = c(n_obs, r$n_groups)
           )
-          D_inv_diag[offset + seq_len(r$n_groups)] <- 1 / (sig[1]^2 + 1e-10)
-          offset <- offset + r$n_groups
         } else {
-          # Slopes: Z is n_obs x (n_groups * n_coefs)
-          # Column layout: [g1_c1, g1_c2, ..., g2_c1, g2_c2, ...]
-          # Build Z from the full Z matrix (intercept + slopes)
-          Z_full <- r$Z  # n_obs x nc
-          if (is.null(Z_full)) {
-            Z_full <- matrix(1, nrow = n_obs, ncol = 1)
-          }
+          # Slopes: Z is n_obs x (n_groups * n_coefs), column layout
+          # [g1_c1, g1_c2, ..., g2_c1, g2_c2, ...].
+          Z_full <- r$Z %||% matrix(1, nrow = n_obs, ncol = 1)
           n_latent <- r$n_groups * nc
-          # Build sparse Z: for obs i in group g, row i has Z_full[i,:] at cols (g-1)*nc+1 .. g*nc
           ii <- rep(seq_len(n_obs), each = nc)
           jj <- rep((r$idx - 1L) * nc, each = nc) + rep(seq_len(nc), n_obs)
           xx <- as.numeric(t(Z_full))
           Z_parts[[k]] <- Matrix::sparseMatrix(
             i = ii, j = jj, x = xx, dims = c(n_obs, n_latent)
           )
-          # D_inv: per-coef sigma applied to each group's copy of that coef
-          for (c_idx in seq_len(nc)) {
-            cols <- seq(c_idx, n_latent, by = nc)
-            D_inv_diag[offset + cols] <- 1 / (sig[c_idx]^2 + 1e-10)
-          }
-          offset <- offset + n_latent
         }
+        # One precision block per group, same column order as Z. The block is
+        # the full Q_k for a correlated term, so the off-diagonal propagates
+        # into the marginal fixed-effect SE rather than being dropped.
+        Dinv_blocks[[k]] <- Matrix::bdiag(
+          rep(list(Matrix::Matrix(Qk, sparse = TRUE)), r$n_groups)
+        )
       }
       Z <- do.call(cbind, Z_parts)
       ZtWZ <- Matrix::crossprod(Z, W * Z)
-      D_inv <- Matrix::Diagonal(total_re, D_inv_diag)
+      D_inv <- Matrix::bdiag(Dinv_blocks)
       ZtWZ_Dinv <- ZtWZ + D_inv
       XtWZ <- crossprod(X, W * Z)
       R <- chol(as.matrix(ZtWZ_Dinv))
@@ -375,6 +376,45 @@ tulpa_laplace <- function(y, n_trials, X,
   }
 
   list(mean = mean, sd = sd)
+}
+
+
+#' Interpret an RE term's covariance specification
+#'
+#' Maps one `re_list` element to the two representations the Laplace path needs:
+#' `pack`, the value the C++ kernel consumes (a length-`n_coefs` marginal-SD
+#' vector for a diagonal / uncorrelated term, or a packed lower-triangular
+#' Cholesky of length `n_coefs (n_coefs + 1) / 2` for a correlated one), and
+#' `Q`, the `n_coefs x n_coefs` RE precision `Sigma^{-1}` used to build the
+#' marginal fixed-effect SE. A correlated term is signalled by `r$L` (a lower-
+#' triangular Cholesky factor, `Sigma = L L'`) or `r$cov` (the covariance
+#' matrix); when present these take precedence over `r$sigma`.
+#'
+#' @param r One element of a `re_list` (see [tulpa_laplace()]).
+#' @return `list(pack, Q, diagonal)`.
+#' @keywords internal
+.re_cov_spec <- function(r) {
+  nc <- r$n_coefs %||% 1L
+
+  if (nc > 1L && (!is.null(r$L) || !is.null(r$cov))) {
+    L <- if (!is.null(r$L)) as.matrix(r$L) else t(chol(as.matrix(r$cov)))
+    if (nrow(L) != nc || ncol(L) != nc) {
+      stop(sprintf("RE term `L`/`cov` must be %d x %d (n_coefs); got %d x %d.",
+                   nc, nc, nrow(L), ncol(L)), call. = FALSE)
+    }
+    # Column-major lower-triangular packing, unpacked by the C++ kernel as
+    # L[r, c] = pack[idx] over columns c = 1..nc, rows r = c..nc.
+    pack <- L[lower.tri(L, diag = TRUE)]
+    # Q = Sigma^{-1} = (L L')^{-1}. t(L) is the upper factor with
+    # (t(L))' t(L) = L L' = Sigma, so chol2inv(t(L)) = Sigma^{-1}.
+    Q <- chol2inv(t(L))
+    return(list(pack = pack, Q = Q, diagonal = FALSE))
+  }
+
+  # Diagonal (uncorrelated) covariance: per-coefficient marginal SD.
+  sig <- r$sigma
+  if (length(sig) == 1L && nc > 1L) sig <- rep(sig, nc)
+  list(pack = sig, Q = diag(1 / (sig^2 + 1e-10), nc), diagonal = TRUE)
 }
 
 

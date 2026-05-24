@@ -32,8 +32,16 @@ tulpa_laplace(
 \itemize{
 \item \code{idx}: integer vector of group indices (1-based)
 \item \code{n_groups}: number of groups
-\item \code{sigma}: RE standard deviation
-\item \code{Z}: optional slope design matrix (n_obs x n_coefs). If NULL, intercept-only.
+\item \code{n_coefs}: coefficients per group (1 = intercept-only, >1 = random slopes)
+\item \code{sigma}: per-coefficient RE standard deviation(s), a diagonal covariance
+(uncorrelated, lme4 \code{(x || g)}). A scalar is recycled to \code{n_coefs}.
+\item \code{Z}: slope design matrix (n_obs x n_coefs) when \code{n_coefs > 1}; \code{NULL}
+means intercept-only.
+\item \code{L} / \code{cov}: optional \verb{n_coefs x n_coefs} covariance for a \emph{correlated}
+term (lme4 \code{(1 + x | g)}) -- supply either a lower-triangular Cholesky
+factor \code{L} (covariance = \verb{L L'}) or the covariance matrix \code{cov}. When
+present these take precedence over \code{sigma}; the off-diagonal enters both
+the joint Hessian (mode finding) and the marginal fixed-effect SE.
 }}
 
 \item{family}{Character: \code{"binomial"}, \code{"poisson"}, \code{"neg_binomial_2"}, \code{"gaussian"}}
