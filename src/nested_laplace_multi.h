@@ -150,13 +150,14 @@ inline Rcpp::List run_multi_block_nested_laplace(
     }
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
 
-    // Per-observation detection probability q_i = 1 - (1-p)^J for the
-    // `occupancy` family (mu_i = q_i * sigma(eta_i)); nullptr for every other
-    // family. Threaded into the likelihood scatter, the step-halving objective,
-    // and the per-cell log-marginal so the inner solve fits the marginalized
-    // occupancy state likelihood directly. With this family the converged
-    // Hessian is already the marginal curvature, so the predictive variance is
-    // read off the live factor with no rescaling.
+    // Per-observation probability scale q_i for the `bernoulli` family
+    // (mu_i = q_i * sigma(eta_i)); nullptr for every other family. Threaded into
+    // the likelihood scatter, the step-halving objective, and the per-cell
+    // log-marginal so the inner solve fits the scaled-Bernoulli likelihood
+    // directly. (tulpaObs sets q_i = 1 - (1-p)^J to fit the marginalized
+    // occupancy state likelihood.) With this family the converged Hessian is
+    // already the marginal curvature, so the predictive variance is read off
+    // the live factor with no rescaling.
     const double* det_prob_ptr =
         (det_prob.size() == N) ? &det_prob[0] : nullptr;
 
@@ -296,9 +297,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
         // at the converged mode (sparse path solves the CHOLMOD factor in
         // `solver`, dense path back-substitutes scratch.chol.L) -- N back-solves,
         // no refactorization. H is the fitting Hessian at the mode; for the
-        // `occupancy` family that is already the marginal curvature (the
-        // expected information q*sigma*(1-sigma)^2/(1-q*sigma)), so no rescaling
-        // is needed -- the calibrated variance falls out directly.
+        // `bernoulli` family with a per-obs probability scale that is already
+        // the marginal curvature (the expected information
+        // q*sigma*(1-sigma)^2/(1-q*sigma)), so no rescaling is needed -- the
+        // calibrated variance falls out directly.
         if (want_var && std::isfinite(res.log_marginal) &&
             static_cast<std::size_t>(k + 1) * N <= fitted_var_buf.size()) {
             const bool use_sparse = (n_x >= SPARSE_THRESHOLD);

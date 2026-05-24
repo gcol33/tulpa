@@ -36,7 +36,7 @@ nested_laplace(...)
 \item{X}{Fixed-effects design matrix.}
 
 \item{prior}{A list describing the latent prior block. Required field
-\code{type} ∈ \{"icar", "bym2", "car_proper", "rw1", "rw2", "ar1"\}.
+\code{type} one of \{"icar", "bym2", "car_proper", "rw1", "rw2", "ar1"\}.
 Type-specific fields:
 \itemize{
 \item icar:  \code{spatial_idx}, \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
@@ -83,16 +83,18 @@ list as \verb{$grid_hessians} (list of dense \eqn{p\times p} matrices) and
 Used downstream by simplified-Laplace (SLA) callers to assemble
 skew-aware marginals — see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.}
 
-\item{det_prob}{Optional per-observation detection probability vector for the
-\code{family = "occupancy"} marginalized single-season occupancy likelihood, in
-which each site contributes a Bernoulli on \eqn{D_i = 1\{\ge 1\ detection\}}
-with mean \eqn{\mu_i = q_i\,\sigma(\eta_i)}, where \eqn{q_i = 1-(1-p_i)^{J_i}}
-is the per-site probability of at least one detection given occupancy. A
-site with no visits has \eqn{q_i = 0}, so it drops from the likelihood but
-keeps its latent value (the INLA NA-response held-out case). The latent
-occupancy state is integrated out analytically, so the converged Hessian is
-the marginal curvature and \code{fitted_eta_var} is calibrated directly. Ignored
-for every other family. Multi-block dispatch only. Default \code{NULL}.}
+\item{det_prob}{Optional per-observation probability-scale vector for the
+\code{family = "bernoulli"} likelihood, under which a binary response \eqn{y_i}
+has mean \eqn{\mu_i = q_i\,\sigma(\eta_i)} for a known per-observation scale
+\eqn{q_i \in [0, 1]} (defaults to 1, a plain logit Bernoulli). An
+observation with \eqn{q_i = 0} drops from the likelihood but keeps its
+latent value (the INLA NA-response held-out case). The expected information
+\eqn{q_i\,\sigma(1-\sigma)^2/(1-q_i\sigma)} stays positive for the
+non-canonical scaled link, so the converged Hessian is the marginal
+curvature and \code{fitted_eta_var} is calibrated directly. tulpaObs uses this to
+fit single-season occupancy: \eqn{y_i = 1\{\ge 1\ detection\}} and
+\eqn{q_i = 1-(1-p_i)^{J_i}} integrates out the latent occupancy state.
+Ignored for every other family. Multi-block dispatch only. Default \code{NULL}.}
 }
 \value{
 A list with:
