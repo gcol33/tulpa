@@ -14,7 +14,7 @@
 #'  * Spatial (continuous): `"nngp"` (2D on (sigma2, phi_gp)),
 #'    `"hsgp"` (2D on (sigma2, lengthscale)).
 #'  * Temporal: `"rw1"`, `"rw2"` (1D grid on tau), `"ar1"` (2D on (tau, rho))
-#'  * SPDE continuous spatial: see [cpp_nested_laplace_spde()] (separate
+#'  * SPDE continuous spatial: see \code{cpp_nested_laplace_spde()} (separate
 #'    entry, rebuilds Q via SPDE Q-builder).
 #'
 #' @param y Response vector.
@@ -1146,7 +1146,7 @@ nested_laplace <- function(...) {
 #'    Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
 #'    using the spec's eigenvalue-derived `rho_bounds`.
 #'    Continuous-spatial GP / SPDE specs need their own entry — see
-#'    [cpp_nested_laplace_spde()].
+#'    \code{cpp_nested_laplace_spde()}.
 #'
 #' @param spec A `tulpa_temporal` or `tulpa_spatial` object.
 #' @param data Data frame the spec resolves time/group/site indices against.

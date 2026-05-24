@@ -120,6 +120,6 @@ fit <- tulpa(
 
 }
 \seealso{
-\code{\link[=ratio]{ratio()}} for extracting ratio posteriors,
-\code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}} for predictions at new locations
+\code{ratio()} for extracting ratio posteriors,
+\code{predict.tulpa_fit()} for predictions at new locations
 }

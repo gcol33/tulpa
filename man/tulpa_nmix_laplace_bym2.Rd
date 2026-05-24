@@ -35,7 +35,7 @@ length as \code{y}.}
 
 \item{map_site_to_unit}{Integer vector of length \code{n_sites}, 1-based spatial
 unit index for each site. Sites can share spatial units; the data
-contribution to z\link{u} aggregates across all sites that map to u.}
+contribution to \code{z[u]} aggregates across all sites that map to \code{u}.}
 
 \item{X_lambda}{Numeric matrix \verb{[n_sites x p_lambda]} of abundance covariates.}
 

@@ -1,3 +1,38 @@
+#' Multi-scale temporal structure
+#'
+#' @description
+#' Specify a temporal random effect that decomposes variation into separate
+#' scales: a smooth trend, an optional seasonal cycle, and a short-term
+#' component. Each scale uses its own prior, letting slow and fast dynamics be
+#' modelled jointly.
+#'
+#' @param time_var Single character string naming the time variable in the data.
+#' @param trend Prior for the smooth long-term trend. One of `"rw2"`, `"rw1"`,
+#'   or `"none"`.
+#' @param seasonal Optional integer period (`>= 2`) of a seasonal cycle, e.g.
+#'   `12` for monthly data with an annual cycle. `NULL` (default) omits the
+#'   seasonal component.
+#' @param short_term Prior for the short-term component. One of `"ar1"`,
+#'   `"iid"`, or `"none"`.
+#' @param group_var Optional character string naming a grouping variable for
+#'   group-specific temporal effects.
+#' @param shared Whether the effect is shared across processes in a
+#'   multi-process model. `NULL` (default) shares it; `FALSE` fits
+#'   process-specific effects and emits a warning.
+#'
+#' @return A `tulpa_temporal_multiscale` object.
+#'
+#' @details
+#' At least one of `trend`, `seasonal`, or `short_term` must be active.
+#'
+#' @seealso [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] for
+#'   single-scale temporal priors.
+#'
+#' @examples
+#' # Trend + annual seasonal cycle + AR1 short-term component on monthly data
+#' temporal_multiscale("month", trend = "rw2", seasonal = 12, short_term = "ar1")
+#'
+#' @export
 temporal_multiscale <- function(time_var,
                                 trend = c("rw2", "rw1", "none"),
                                 seasonal = NULL,

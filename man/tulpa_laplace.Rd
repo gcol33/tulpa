@@ -18,7 +18,8 @@ tulpa_laplace(
   tol = 1e-06,
   n_threads = 1L,
   return_hessian = TRUE,
-  beta_prior = NULL
+  beta_prior = NULL,
+  return_re_cov = FALSE
 )
 }
 \arguments{
@@ -73,6 +74,13 @@ coefficient) or a length-\code{ncol(X)} vector. Adds
 mode is the penalized (MAP) estimate. A coefficient's \code{sd} may be \code{+Inf},
 which sets its precision to 0 (no penalty on that coefficient). Not
 supported on the spatial path.}
+
+\item{return_re_cov}{If \code{TRUE}, additionally return per-group marginal
+posterior covariance blocks \code{Cov(u_g | y, Sigma)} -- one
+\verb{n_coefs x n_coefs} matrix per (RE term, group), with the fixed effects
+and other groups marginalized out (each block is a diagonal block of the
+full inverse Hessian, not the inverse of a diagonal block). Used by the EM
+M-step for a full random-effect covariance. Non-spatial multi-RE path only.}
 }
 \value{
 A list with:
@@ -83,6 +91,8 @@ A list with:
 \item \code{converged}: logical
 \item \code{log_det_Q}: log-determinant of the Hessian
 \item \code{H_beta}: fixed-effect block of the Hessian (if return_hessian = TRUE)
+\item \code{cov_blocks}: list of per-group posterior covariance matrices, one per
+(RE term, group) in term-major then group order (if return_re_cov = TRUE)
 }
 }
 \description{

@@ -12,6 +12,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 #ifdef _OPENMP
@@ -88,7 +89,8 @@ LaplaceResult laplace_newton_solve(
     NewtonScratch& scratch,
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
-    bool store_Q
+    bool store_Q,
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -173,6 +175,46 @@ LaplaceResult laplace_newton_solve(
     dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
                              scratch.chol, result.log_det_Q);
 
+    // Diagonal blocks of H^{-1} for the requested index ranges. Reuses the
+    // factor just built for the log-determinant (no refactorization): for each
+    // unit column e_j inside a block we solve H v = e_j and read the block
+    // rows of v, giving the FULL-inverse block (fixed effects and other blocks
+    // marginalized out). Sparse path solves against the live CHOLMOD factor;
+    // dense path back-substitutes the live scratch.chol.L. Each block is
+    // symmetrized and stored column-major.
+    if (inv_block_layout && !inv_block_layout->empty()) {
+        bool used_sparse_factor = use_sparse && sparse_solver.factored();
+        std::vector<double> rhs(n_x, 0.0), col(n_x, 0.0);
+        std::vector<double> z_work;
+        if (!used_sparse_factor) z_work.assign(n_x, 0.0);
+
+        for (const auto& blk : *inv_block_layout) {
+            int s = blk.first, m = blk.second;
+            std::vector<double> block(static_cast<std::size_t>(m) * m, 0.0);
+
+            for (int c = 0; c < m; c++) {
+                std::fill(rhs.begin(), rhs.end(), 0.0);
+                rhs[s + c] = 1.0;
+                if (used_sparse_factor) {
+                    sparse_solver.solve(rhs.data(), col.data(), n_x);
+                } else {
+                    chol_substitute_raw(scratch.chol.L.data(), n_x,
+                                        rhs.data(), col.data(), z_work.data());
+                }
+                for (int r = 0; r < m; r++) block[r * m + c] = col[s + r];
+            }
+
+            // Symmetrize (numerical asymmetry only) and append column-major.
+            for (int cc = 0; cc < m; cc++) {
+                for (int r = 0; r < m; r++) {
+                    result.re_cov_flat.push_back(
+                        0.5 * (block[r * m + cc] + block[cc * m + r]));
+                }
+            }
+            result.re_cov_block_sizes.push_back(m);
+        }
+    }
+
     double log_lik = compute_total_log_lik(y, n_trials, scratch.eta, N, family, phi, n_threads);
     double log_prior = compute_log_prior(x, scratch.eta);
 
@@ -211,7 +253,8 @@ LaplaceResult laplace_newton_solve(
     ComputeLogPrior compute_log_prior,
     const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
     SparseCholeskySolver* shared_solver = nullptr,
-    bool store_Q = false
+    bool store_Q = false,
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
 ) {
     NewtonScratch scratch;
     scratch.allocate(n_x, N);
@@ -226,7 +269,7 @@ LaplaceResult laplace_newton_solve(
         y, n_trials, family, phi, N, n_x,
         max_iter, tol, n_threads,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
-        scratch, x_init_vec, shared_solver, store_Q
+        scratch, x_init_vec, shared_solver, store_Q, inv_block_layout
     );
 }
 

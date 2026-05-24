@@ -1,3 +1,41 @@
+#' Spatially varying coefficient structure
+#'
+#' @description
+#' Specify a spatially varying coefficient (SVC): one or more fixed-effect
+#' coefficients are allowed to vary smoothly over space, with the variation
+#' governed by a Gaussian process (NNGP or HSGP approximation).
+#'
+#' @param coords A formula (`~ lon + lat`) or character vector of length 2
+#'   naming the two coordinate variables in the data.
+#' @param terms Which coefficients vary over space. A formula, an integer vector
+#'   of design-matrix column indices, or a character vector of term names.
+#'   Default `1` (the intercept).
+#' @param cov Covariance function. One of `"exponential"`, `"matern"`,
+#'   `"gaussian"`, or `"spherical"`.
+#' @param nn Number of nearest neighbours used in the NNGP approximation
+#'   (`approx = "nngp"`).
+#' @param shared Whether the effect is shared across processes in a
+#'   multi-process model. `NULL` (default) shares it; `FALSE` fits
+#'   process-specific effects and emits a warning.
+#' @param scale_coords Logical. Standardize coordinates before fitting
+#'   (default `TRUE`).
+#' @param approx Spatial approximation. `"nngp"` (nearest-neighbour GP) or
+#'   `"hsgp"` (Hilbert-space GP).
+#' @param m Number of basis functions per dimension for the HSGP approximation
+#'   (`approx = "hsgp"`).
+#' @param c_boundary Boundary-extension factor for the HSGP domain
+#'   (`approx = "hsgp"`).
+#'
+#' @return A `tulpa_svc` object (also of class `tulpa_spatial`).
+#'
+#' @seealso [spatial_gp()] for a spatial random effect (rather than a varying
+#'   coefficient).
+#'
+#' @examples
+#' # Intercept that varies smoothly over space
+#' spatial_svc(~ lon + lat)
+#'
+#' @export
 spatial_svc <- function(coords,
                         terms = 1,
                         cov = c("exponential", "matern", "gaussian", "spherical"),

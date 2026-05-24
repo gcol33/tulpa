@@ -209,7 +209,8 @@ LaplaceResult laplace_mode_dense_multi_re(
     Rcpp::Nullable<Rcpp::NumericVector> weights_ = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_ = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_ = R_NilValue,
-    const BetaPrior& beta_prior = BetaPrior()
+    const BetaPrior& beta_prior = BetaPrior(),
+    bool compute_re_cov = false
 ) {
     int N = y.size();
     int p = X.ncol();
@@ -481,10 +482,25 @@ LaplaceResult laplace_mode_dense_multi_re(
         x_init_vec = Rcpp::as<Rcpp::NumericVector>(x_init_);
     }
 
+    // Per-group covariance layout: one block per (term, group), of side
+    // n_coefs[k]. The EM M-step for a full RE covariance consumes these as
+    // Cov(u_{k,g} | y, Sigma). Built only when requested.
+    std::vector<std::pair<int, int>> inv_block_layout;
+    if (compute_re_cov) {
+        for (int k = 0; k < n_terms; k++) {
+            int ck = ncoefs_vec[k];
+            for (int g = 0; g < ngroups_vec[k]; g++) {
+                inv_block_layout.emplace_back(offsets[k] + g * ck, ck);
+            }
+        }
+    }
+
     return laplace_newton_solve(y, n, family, phi, N, n_x,
                                  max_iter, tol, n_threads,
                                  compute_eta, scatter, center, log_prior,
-                                 x_init_vec);
+                                 x_init_vec, /*shared_solver=*/nullptr,
+                                 /*store_Q=*/false,
+                                 compute_re_cov ? &inv_block_layout : nullptr);
 }
 
 } // namespace tulpa
@@ -522,7 +538,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::Nullable<Rcpp::NumericVector> offset = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> x_init = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> beta_prior_mean = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd = R_NilValue,
+    bool return_re_cov = false
 ) {
     // Optional Gaussian prior on the fixed effects. R recycles scalar
     // mean/sd to length p before calling; here we just copy (sd -> tau).
@@ -556,7 +573,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
 
     tulpa::LaplaceResult result = tulpa::laplace_mode_dense_multi_re(
         y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads,
-        re_Z_list, re_ncoefs, weights, offset, x_init, bp
+        re_Z_list, re_ncoefs, weights, offset, x_init, bp, return_re_cov
     );
     return tulpa::laplace_result_to_list(result);
 }

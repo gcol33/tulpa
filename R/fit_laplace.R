@@ -45,6 +45,13 @@
 #'   which sets its precision to 0 (no penalty on that coefficient). Not
 #'   supported on the spatial path.
 #'
+#' @param return_re_cov If `TRUE`, additionally return per-group marginal
+#'   posterior covariance blocks `Cov(u_g | y, Sigma)` -- one
+#'   `n_coefs x n_coefs` matrix per (RE term, group), with the fixed effects
+#'   and other groups marginalized out (each block is a diagonal block of the
+#'   full inverse Hessian, not the inverse of a diagonal block). Used by the EM
+#'   M-step for a full random-effect covariance. Non-spatial multi-RE path only.
+#'
 #' @return A list with:
 #'   - `mode`: full mode vector (beta, then RE values per term)
 #'   - `log_marginal`: Laplace-approximated log-marginal likelihood
@@ -52,6 +59,8 @@
 #'   - `converged`: logical
 #'   - `log_det_Q`: log-determinant of the Hessian
 #'   - `H_beta`: fixed-effect block of the Hessian (if return_hessian = TRUE)
+#'   - `cov_blocks`: list of per-group posterior covariance matrices, one per
+#'     (RE term, group) in term-major then group order (if return_re_cov = TRUE)
 #'
 #' @export
 tulpa_laplace <- function(y, n_trials, X,
@@ -64,7 +73,8 @@ tulpa_laplace <- function(y, n_trials, X,
                           max_iter = 100L, tol = 1e-6,
                           n_threads = 1L,
                           return_hessian = TRUE,
-                          beta_prior = NULL) {
+                          beta_prior = NULL,
+                          return_re_cov = FALSE) {
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
@@ -91,6 +101,12 @@ tulpa_laplace <- function(y, n_trials, X,
   }
 
   if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
+
+  if (isTRUE(return_re_cov) && !is.null(spatial)) {
+    stop("`return_re_cov` is only available on the non-spatial multi-RE path. ",
+         "The spatial solvers do not expose per-group posterior covariance ",
+         "blocks; drop `spatial` or `return_re_cov`.", call. = FALSE)
+  }
 
   # Route based on number of RE terms and spatial type
   if (!is.null(spatial)) {
@@ -180,7 +196,8 @@ tulpa_laplace <- function(y, n_trials, X,
       weights = weights,
       offset = offset,
       beta_prior_mean = if (is.null(bp)) NULL else bp$mean,
-      beta_prior_sd   = if (is.null(bp)) NULL else bp$sd
+      beta_prior_sd   = if (is.null(bp)) NULL else bp$sd,
+      return_re_cov   = isTRUE(return_re_cov)
     )
   }
 

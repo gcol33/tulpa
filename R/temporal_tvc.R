@@ -1,3 +1,32 @@
+#' Time-varying coefficient structure
+#'
+#' @description
+#' Specify a time-varying coefficient (TVC): one or more fixed-effect
+#' coefficients are allowed to evolve over time, with the evolution governed by
+#' a temporal prior (`rw1`, `rw2`, `ar1`, or a GP).
+#'
+#' @param time_var Single character string naming the time variable in the data.
+#' @param terms Which coefficients vary over time. A formula, an integer vector
+#'   of design-matrix column indices, or a character vector of term names.
+#'   Default `1` (the intercept).
+#' @param structure Temporal prior governing how the coefficients evolve. One of
+#'   `"rw1"`, `"rw2"`, `"ar1"`, or `"gp"`.
+#' @param group_var Optional character string naming a grouping variable for
+#'   group-specific time-varying coefficients.
+#' @param shared Whether the effect is shared across processes in a
+#'   multi-process model. `NULL` (default) shares it; `FALSE` fits
+#'   process-specific effects and emits a warning.
+#'
+#' @return A `tulpa_tvc` object.
+#'
+#' @seealso [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] for the
+#'   underlying temporal priors.
+#'
+#' @examples
+#' # Intercept that drifts as a first-order random walk over year
+#' temporal_tvc("year", structure = "rw1")
+#'
+#' @export
 temporal_tvc <- function(time_var,
                          terms = 1,
                          structure = c("rw1", "rw2", "ar1", "gp"),

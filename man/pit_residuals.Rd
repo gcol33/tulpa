@@ -17,7 +17,7 @@ of simulated values (n_obs x nsim)}
 \item{seed}{Random seed (default 123)}
 }
 \value{
-Numeric vector of length n_obs with values in \link{0, 1}
+Numeric vector of length n_obs with values in \verb{[0, 1]}
 }
 \description{
 For each observation, computes the quantile of the observed value within

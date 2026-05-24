@@ -191,6 +191,36 @@ inline void dense_cholesky_factorize(
     detail::cholesky_factorize_impl(H, n, L, log_det);
 }
 
+// Solve (L L') out = rhs for an already-computed column-major lower-triangular
+// factor L_data (L(j,k) at L_data[j + k*n], k <= j). z_work is caller-supplied
+// scratch of length >= n. Pure forward/back substitution — does NOT factorize.
+// Returns true if `out` is finite.
+//
+// Single source of truth for the substitution used by the dense Newton solve
+// AND by posterior-covariance block extraction, which reuses one factor across
+// many unit right-hand sides to read diagonal blocks of H^{-1}.
+inline bool chol_substitute_raw(
+    const double* L_data, int n,
+    const double* rhs, double* out, double* z_work
+) {
+    // Forward substitution: L z = rhs
+    for (int j = 0; j < n; j++) {
+        double sum = rhs[j];
+        for (int k = 0; k < j; k++) sum -= L_data[j + k * n] * z_work[k];
+        z_work[j] = sum / L_data[j + j * n];
+    }
+    // Back substitution: L' out = z
+    for (int j = n - 1; j >= 0; j--) {
+        double sum = z_work[j];
+        for (int k = j + 1; k < n; k++) sum -= L_data[k + j * n] * out[k];
+        out[j] = sum / L_data[j + j * n];
+    }
+    for (int j = 0; j < n; j++) {
+        if (!std::isfinite(out[j])) return false;
+    }
+    return true;
+}
+
 // Raw-buffer solve: writes delta_out in-place, uses scratch.L/z, no Rcpp alloc.
 // Returns true if the back-substituted delta is finite. Singular-pivot guard
 // inside cholesky_factorize_impl_raw clamps tiny pivots so factorization
@@ -203,31 +233,11 @@ inline bool dense_cholesky_solve_raw(
 ) {
     scratch.ensure(n);
     if (static_cast<int>(delta_out.size()) < n) delta_out.assign(n, 0.0);
-    double* L_data = scratch.L.data();
-    double* z = scratch.z.data();
 
-    detail::cholesky_factorize_impl_raw(H, n, L_data, log_det_out);
+    detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
 
-    // Forward substitution: L z = rhs  (L is column-major lower-triangular)
-    for (int j = 0; j < n; j++) {
-        double sum = rhs[j];
-        for (int k = 0; k < j; k++) sum -= L_data[j + k * n] * z[k];
-        z[j] = sum / L_data[j + j * n];
-    }
-
-    // Back substitution: L' delta = z
-    for (int j = n - 1; j >= 0; j--) {
-        double sum = z[j];
-        for (int k = j + 1; k < n; k++) {
-            sum -= L_data[k + j * n] * delta_out[k];
-        }
-        delta_out[j] = sum / L_data[j + j * n];
-    }
-
-    for (int j = 0; j < n; j++) {
-        if (!std::isfinite(delta_out[j])) return false;
-    }
-    return true;
+    return chol_substitute_raw(scratch.L.data(), n,
+                               rhs.data(), delta_out.data(), scratch.z.data());
 }
 
 // Raw-buffer factorize-for-log-det: no solve, no Rcpp alloc.

@@ -8,7 +8,7 @@
 }
 \description{
 NNGP latent w lives on unique coordinates; each observation maps to one
-unique-coord slot via \code{spatial_idx}. So Z\link{i, j} = 1 iff observation i
+unique-coord slot via \code{spatial_idx}. So \code{Z[i, j]} = 1 iff observation i
 belongs to unique location j.
 }
 \keyword{internal}

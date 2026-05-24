@@ -80,8 +80,8 @@
 #' # plot_map(fit)  # requires ggplot2
 #' }
 #'
-#' @seealso [ratio()] for extracting ratio posteriors,
-#'   [predict.tulpa_fit()] for predictions at new locations
+#' @seealso \code{ratio()} for extracting ratio posteriors,
+#'   \code{predict.tulpa_fit()} for predictions at new locations
 #'
 #' @export
 plot_map <- function(x,

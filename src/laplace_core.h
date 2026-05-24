@@ -37,19 +37,52 @@ struct LaplaceResult {
   std::vector<int>    Q_csc_i;
   std::vector<double> Q_csc_x;
   int                 Q_csc_n = 0;
+
+  // Marginal posterior-covariance blocks of the latent field: each block is a
+  // diagonal block of H^{-1} (the FULL inverse, so cross-coupling with the
+  // fixed effects and other blocks is marginalized out). Populated only when
+  // the solver is called with a non-empty inv-block layout (default empty).
+  // `re_cov_block_sizes[b]` is the side length m_b of block b; `re_cov_flat`
+  // is the column-major concatenation of the blocks (block b occupies
+  // m_b * m_b entries). Empty `re_cov_block_sizes` means "not computed".
+  // Used by the EM M-step for a full random-effect covariance, which needs
+  // Cov(u_g | y, Sigma) per group.
+  std::vector<double> re_cov_flat;
+  std::vector<int>    re_cov_block_sizes;
 };
 
 // Convert LaplaceResult to Rcpp::List. Single source of truth used by every
 // laplace_core* R export. Rcpp wraps std::vector<double> implicitly into a
 // fresh NumericVector at the boundary.
 inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
-  return Rcpp::List::create(
+  Rcpp::List out = Rcpp::List::create(
     Rcpp::Named("mode") = result.mode,
     Rcpp::Named("log_det_Q") = result.log_det_Q,
     Rcpp::Named("log_marginal") = result.log_marginal,
     Rcpp::Named("n_iter") = result.n_iter,
     Rcpp::Named("converged") = result.converged
   );
+
+  // Marginal posterior-covariance blocks, when the solver was asked to extract
+  // them. Emitted as an R list of m_b x m_b numeric matrices (one per block),
+  // in the order the layout requested. Absent otherwise so every other caller
+  // is unaffected.
+  if (!result.re_cov_block_sizes.empty()) {
+    int n_blocks = static_cast<int>(result.re_cov_block_sizes.size());
+    Rcpp::List cov_blocks(n_blocks);
+    std::size_t off = 0;
+    for (int b = 0; b < n_blocks; b++) {
+      int m = result.re_cov_block_sizes[b];
+      Rcpp::NumericMatrix M(m, m);
+      // re_cov_flat is column-major per block, matching NumericMatrix storage.
+      for (int e = 0; e < m * m; e++) M[e] = result.re_cov_flat[off + e];
+      off += static_cast<std::size_t>(m) * m;
+      cov_blocks[b] = M;
+    }
+    out["cov_blocks"] = cov_blocks;
+  }
+
+  return out;
 }
 
 } // namespace tulpa

@@ -78,7 +78,8 @@ LaplaceResult laplace_mode_dense_multi_re(
     Rcpp::Nullable<Rcpp::NumericVector> weights_,
     Rcpp::Nullable<Rcpp::NumericVector> offset_,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_,
-    const BetaPrior& beta_prior = BetaPrior()
+    const BetaPrior& beta_prior = BetaPrior(),
+    bool compute_re_cov = false
 );
 
 LaplaceResult laplace_mode_bym2(

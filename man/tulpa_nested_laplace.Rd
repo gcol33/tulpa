@@ -109,7 +109,7 @@ D^{-1}W).
 \item Spatial (continuous): \code{"nngp"} (2D on (sigma2, phi_gp)),
 \code{"hsgp"} (2D on (sigma2, lengthscale)).
 \item Temporal: \code{"rw1"}, \code{"rw2"} (1D grid on tau), \code{"ar1"} (2D on (tau, rho))
-\item SPDE continuous spatial: see \code{\link[=cpp_nested_laplace_spde]{cpp_nested_laplace_spde()}} (separate
+\item SPDE continuous spatial: see \code{cpp_nested_laplace_spde()} (separate
 entry, rebuilds Q via SPDE Q-builder).
 }
 

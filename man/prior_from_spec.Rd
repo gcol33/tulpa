@@ -28,6 +28,6 @@ Supported spec types:
 Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
 using the spec's eigenvalue-derived \code{rho_bounds}.
 Continuous-spatial GP / SPDE specs need their own entry — see
-\code{\link[=cpp_nested_laplace_spde]{cpp_nested_laplace_spde()}}.
+\code{cpp_nested_laplace_spde()}.
 }
 }

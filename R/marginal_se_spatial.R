@@ -192,7 +192,7 @@ NULL
 #' Build a length-n_obs → length-n_unique indicator design matrix Z.
 #'
 #' NNGP latent w lives on unique coordinates; each observation maps to one
-#' unique-coord slot via `spatial_idx`. So Z[i, j] = 1 iff observation i
+#' unique-coord slot via `spatial_idx`. So `Z[i, j]` = 1 iff observation i
 #' belongs to unique location j.
 #'
 #' @keywords internal

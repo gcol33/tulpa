@@ -1,3 +1,37 @@
+#' RW1 temporal structure (First-order Random Walk)
+#'
+#' @description
+#' Specify a first-order random walk temporal random effect. RW1 penalizes
+#' first differences, so adjacent time points are smoothed toward each other:
+#' `phi[t] - phi[t-1] ~ N(0, sigma^2)`.
+#'
+#' @param time_var A formula (`~ time`) or single character string naming the
+#'   time variable in the data.
+#' @param group_var Optional formula (`~ g`) or character string naming a
+#'   grouping variable. When supplied, a separate random walk is fit per group;
+#'   `NULL` (default) fits a single walk shared across all observations.
+#' @param cyclic Logical. If `TRUE`, the random walk wraps around so the last
+#'   time point is a neighbour of the first (cyclic boundary, e.g. month of
+#'   year). Default `FALSE`.
+#' @param shared Whether the temporal effect is shared across processes in a
+#'   multi-process model. `NULL` (default) shares the effect; `FALSE` fits
+#'   process-specific effects and emits a warning about unshared confounding.
+#'
+#' @return A `tulpa_temporal` object.
+#'
+#' @details
+#' The precision matrix is rank `T - 1` (one constraint needed). RW1 is the
+#' least smooth of the random-walk priors; for smoother trends see
+#' [temporal_rw2()], and for a stationary alternative see [temporal_ar1()].
+#'
+#' @examples
+#' # Create temporal RW1 specification
+#' temporal_rw1("year")
+#' temporal_rw1("month", cyclic = TRUE)
+#'
+#' @seealso [temporal_rw2()], [temporal_ar1()] for other temporal priors.
+#'
+#' @export
 temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
                          shared = NULL) {
 

@@ -7,6 +7,17 @@
 temporal_ar1(time_var, group_var = NULL, shared = NULL, rho_prior = NULL)
 }
 \arguments{
+\item{time_var}{A formula (\code{~ time}) or single character string naming the
+time variable in the data.}
+
+\item{group_var}{Optional formula (\code{~ g}) or character string naming a
+grouping variable. When supplied, a separate random walk is fit per group;
+\code{NULL} (default) fits a single walk shared across all observations.}
+
+\item{shared}{Whether the temporal effect is shared across processes in a
+multi-process model. \code{NULL} (default) shares the effect; \code{FALSE} fits
+process-specific effects and emits a warning about unshared confounding.}
+
 \item{rho_prior}{Prior for the autocorrelation parameter. Default is
 \code{NULL} which uses a Uniform(-1, 1) prior. Can specify a Beta prior
 on (rho+1)/2 for more informative priors.}

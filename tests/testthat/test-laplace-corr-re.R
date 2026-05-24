@@ -108,6 +108,98 @@ test_that("the marginal SE uses the off-diagonal precision (tulpa#28)", {
 })
 
 
+# Independent reference for the per-group posterior covariance: assemble the
+# full joint precision H at the fit's mode using the SAME working weights the
+# kernel uses (glmm_weights), add the RE prior precision per group, the weak
+# beta-prior ridge (DEFAULT_TAU_BETA), and the uniform 1e-10 ridge, invert, and
+# read off each group's 2x2 diagonal block of solve(H). This is the FULL
+# inverse block (fixed effects + other groups marginalized out), which is what
+# the kernel returns.
+ref_cov_blocks <- function(d, Sigma, fit) {
+  DEFAULT_TAU_BETA <- 1e-4   # BetaPrior() default (laplace_re_priors.h)
+  UNIFORM_RIDGE    <- 1e-10  # LAPLACE_UNIFORM_RIDGE (laplace_cholesky.h)
+  p <- ncol(d$X)
+
+  beta_hat <- fit$mode[seq_len(p)]
+  u_hat    <- matrix(fit$mode[-(seq_len(p))], ncol = 2, byrow = TRUE)  # G x 2
+  eta <- as.numeric(d$X %*% beta_hat) + rowSums(d$Z * u_hat[d$grp, ])
+  W   <- tulpa:::glmm_weights(eta, "binomial", rep(1L, d$N))
+
+  ii <- rep(seq_len(d$N), each = 2L)
+  jj <- rep((d$grp - 1L) * 2L, each = 2L) + rep(1:2, d$N)
+  Zs <- Matrix::sparseMatrix(i = ii, j = jj, x = as.numeric(t(d$Z)),
+                             dims = c(d$N, 2L * d$G))
+  Dfull <- cbind(Matrix::Matrix(d$X, sparse = TRUE), Zs)   # N x (p + 2G)
+
+  H <- as.matrix(Matrix::crossprod(Dfull, W * Dfull))
+  diag(H)[seq_len(p)] <- diag(H)[seq_len(p)] + DEFAULT_TAU_BETA
+  Q <- solve(Sigma)
+  for (g in seq_len(d$G)) {
+    idx <- p + (g - 1L) * 2L + (1:2)
+    H[idx, idx] <- H[idx, idx] + Q
+  }
+  diag(H) <- diag(H) + UNIFORM_RIDGE
+  Cov <- solve(H)
+
+  lapply(seq_len(d$G), function(g) {
+    idx <- p + (g - 1L) * 2L + (1:2)
+    unname(Cov[idx, idx])
+  })
+}
+
+test_that("return_re_cov gives per-group posterior covariance (dense path)", {
+  skip_on_cran()
+  Sig <- matrix(c(0.8, 0.3, 0.3, 0.5), 2)
+  d <- sim_corr(11L, G = 40L, npg = 20L, Sigma = Sig)   # n_x = 2 + 80 = 82 (dense)
+  f <- tulpa_laplace(
+    y = d$y, n_trials = rep(1L, d$N), X = d$X,
+    re_list = re_term(d, L = t(chol(Sig))), family = "binomial",
+    max_iter = 200L, tol = 1e-10, return_hessian = FALSE, return_re_cov = TRUE
+  )
+
+  expect_length(f$cov_blocks, d$G)
+  expect_equal(dim(f$cov_blocks[[1]]), c(2L, 2L))
+  # each block symmetric positive-definite
+  expect_true(all(vapply(f$cov_blocks, function(B) isSymmetric(unname(B)), logical(1))))
+  expect_true(all(vapply(f$cov_blocks, function(B) all(eigen(B, TRUE,
+                          only.values = TRUE)$values > 0), logical(1))))
+
+  ref <- ref_cov_blocks(d, Sig, f)
+  err <- max(vapply(seq_len(d$G),
+                    function(g) max(abs(f$cov_blocks[[g]] - ref[[g]])), numeric(1)))
+  expect_lt(err, 1e-8)
+})
+
+test_that("return_re_cov matches the full-inverse blocks on the sparse path", {
+  skip_on_cran()
+  Sig <- matrix(c(0.8, 0.3, 0.3, 0.5), 2)
+  d <- sim_corr(12L, G = 120L, npg = 8L, Sigma = Sig)   # n_x = 2 + 240 = 242 (sparse)
+  f <- tulpa_laplace(
+    y = d$y, n_trials = rep(1L, d$N), X = d$X,
+    re_list = re_term(d, L = t(chol(Sig))), family = "binomial",
+    max_iter = 200L, tol = 1e-10, return_hessian = FALSE, return_re_cov = TRUE
+  )
+
+  expect_length(f$cov_blocks, d$G)
+  ref <- ref_cov_blocks(d, Sig, f)
+  err <- max(vapply(seq_len(d$G),
+                    function(g) max(abs(f$cov_blocks[[g]] - ref[[g]])), numeric(1)))
+  expect_lt(err, 1e-8)
+})
+
+test_that("return_re_cov is rejected on the spatial path", {
+  skip_on_cran()
+  d <- sim_corr(3L, G = 10L, npg = 10L)
+  expect_error(
+    tulpa_laplace(
+      y = d$y, n_trials = rep(1L, d$N), X = d$X,
+      re_list = re_term(d, L = t(chol(d$Sigma))), family = "binomial",
+      spatial = list(type = "spde"), return_re_cov = TRUE
+    ),
+    "return_re_cov"
+  )
+})
+
 test_that("a malformed L / cov is rejected", {
   skip_on_cran()
   d <- sim_corr(3L, G = 10L, npg = 10L)

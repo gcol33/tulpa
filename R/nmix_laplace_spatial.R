@@ -28,7 +28,7 @@
 #'   length as `y`.
 #' @param map_site_to_unit Integer vector of length `n_sites`, 1-based spatial
 #'   unit index for each site. Sites can share spatial units; the data
-#'   contribution to z[u] aggregates across all sites that map to u.
+#'   contribution to `z[u]` aggregates across all sites that map to `u`.
 #' @param X_lambda Numeric matrix `[n_sites x p_lambda]` of abundance covariates.
 #' @param X_p Numeric matrix `[n_obs x p_p]` of detection covariates.
 #' @param adj_row_ptr,adj_col_idx,n_neighbors CSR adjacency for the ICAR graph

@@ -30,7 +30,7 @@ NULL
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
 #'
-#' @return Numeric vector of length n_obs with values in [0, 1]
+#' @return Numeric vector of length n_obs with values in `[0, 1]`
 #'
 #' @export
 pit_residuals <- function(object, observed = NULL, nsim = 250L, seed = 123L) {

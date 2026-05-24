@@ -1,3 +1,39 @@
+#' Gaussian process spatial structure (NNGP)
+#'
+#' @description
+#' Specify a Gaussian-process spatial random effect, approximated with a
+#' nearest-neighbour GP (NNGP) for scalability. Captures smooth spatial
+#' variation from point-referenced coordinates.
+#'
+#' @param coords A formula (`~ lon + lat`) or character vector of length 2
+#'   naming the two coordinate variables in the data.
+#' @param cov Covariance function. One of `"exponential"`, `"matern"`,
+#'   `"gaussian"`, or `"spherical"`.
+#' @param nu Matern smoothness parameter. Used only when `cov = "matern"`.
+#' @param nn Number of nearest neighbours used in the NNGP approximation.
+#' @param solver Linear solver for the GP. One of `"auto"`, `"cholesky"`,
+#'   `"cg"`, `"pcg"`, or `"gpu"`. `"gpu"` falls back to `"pcg"` when CUDA
+#'   support is unavailable.
+#' @param cg_tol Convergence tolerance for the (preconditioned) CG solver.
+#' @param cg_maxiter Maximum number of (preconditioned) CG iterations.
+#' @param shared Whether the spatial effect is shared across processes in a
+#'   multi-process model. `NULL` (default) shares the effect; `FALSE` fits
+#'   process-specific effects and emits a warning.
+#' @param scale_coords Logical. Standardize coordinates before fitting
+#'   (default `TRUE`).
+#' @param parameterization Latent parameterization. One of `"centered"`,
+#'   `"noncentered"`, or `"collapsed"` (the last is deprecated).
+#'
+#' @return A `tulpa_gp` object (also of class `tulpa_spatial`).
+#'
+#' @seealso [spatial_car()], [spatial_bym2()] for areal spatial effects.
+#'
+#' @examples
+#' # GP spatial specification from coordinate columns
+#' spatial_gp(~ lon + lat)
+#' spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
+#'
+#' @export
 spatial_gp <- function(coords,
                        cov = c("exponential", "matern", "gaussian", "spherical"),
                        nu = 1.5,
