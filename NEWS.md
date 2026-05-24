@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+* feat(diagnostics): extend the native MCMC convergence surface
+  (`R/convergence.R`) toward posterior parity (gcol33/tulpa#26).
+  `mcmc_diagnostics()` gains `measures` and `probs` arguments selecting from
+  improved `rhat` (now the maximum of rank-normalized split-Rhat and folded
+  split-Rhat, matching `posterior::rhat`), `rhat_bulk`, `rhat_fold`,
+  `ess_bulk`, `ess_tail`, `ess_mean`, `ess_sd`, `mcse_mean`, `mcse_sd`, and
+  per-probability `ess_quantile` / `mcse_quantile`. The default columns
+  (`rhat`, `ess_bulk`, `ess_tail`) are unchanged. New measures are registered
+  in one table (`.tulpa_diag_measures`), so adding a statistic is a one-line
+  change. Two estimator bugs are fixed so the native code reproduces
+  `posterior` to machine precision (~1e-12): the rank-normalization divisor is
+  now the Blom `S + 1/4` (was `S - 1/4`) and the Geyer `tau_hat` tail term no
+  longer double-counts. New exported helpers: `tulpa_draws_array()` (an
+  `as_draws_array()`-style `[iter, chain, param]` accessor), `n_divergent()`,
+  and `check_diagnostics()`. The plotting / summary layer (`plot_rhat`,
+  `plot_ess`, `diagnostic_summary`, `plot_diagnostics`, `plot_acf`,
+  `plot_pairs`) now resolves the previously undefined `get_draws_array()`,
+  `grep_params()`, and `n_divergent()` helpers and runs end-to-end on a
+  multi-chain fit. Validated in `tests/testthat/test-convergence.R`.
+
+* feat(re): random-effect blocks support an optional per-term intercept.
+  `ModelData::re_has_intercept` (default: all terms carry the implicit group
+  intercept) lets a term be slope-only (lme4 `(0 + x | g)`): every
+  `re_n_coefs[t]` coefficient is a slope read from the slope design matrix and
+  there is no `z = 1` column. The change is threaded through the design lookup
+  (`slope_at()` / `obs_re_contrib()` in `laplace_spec.cpp`) and the autodiff
+  RE contribution (`log_post_generic_impl.h`), so the value and its gradient
+  stay consistent. `re_term_has_intercept()` (in `model_data.h`) centralises
+  the per-term test. **ABI bump 21 -> 22** (new `ModelData` field). Enables
+  gcol33/tulpaObs#10 slope-only bar syntax.
+
 * fix(spatial): `spatial_car()` / `spatial_bym2()` /
   `spatial_car_proper()` with `level = "group"` now accept datasets that
   cover only a subset of adjacency cells. Closes gcol33/tulpa#25. The

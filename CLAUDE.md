@@ -108,6 +108,28 @@ Implemented in `R/methods_generic.R` (`coef`, `confint`, `vcov`, `logLik`,
 `test_zero_inflation`, `check_model`).
 Model packages inherit via `class = c("model_fit", "tulpa_fit")`.
 
+### Convergence diagnostics (Rhat / ESS) live HERE, not in model packages
+
+`R/convergence.R` owns `mcmc_diagnostics(fit, pars, measures, probs)` ->
+data.frame(parameter, <selected measures>) and `select_main_params()`. The
+default measures are `rhat, ess_bulk, ess_tail`; the full surface adds
+`rhat_bulk`, `rhat_fold`, `ess_mean`, `ess_sd`, `mcse_mean`, `mcse_sd`, and
+per-probability `ess_quantile` / `mcse_quantile`. `rhat` is the improved
+Vehtari et al. (2021) value: `max(rank-normalized split-Rhat, folded
+split-Rhat)`. All estimators are implemented **natively** and reproduce
+`posterior::rhat` / `ess_*` / `mcse_*` to ~1e-12 -- do NOT add a `posterior`
+/ `coda` dependency for these (they are generic engine output). Each statistic
+is one entry in the `.tulpa_diag_measures` registry, so adding a column is a
+one-liner. It reads `fit$draws` plus a chain structure (`fit$chain_id`,
+`fit$n_chains`, or a 3D `[iter, chain, param]` array) -- the same layouts
+`tulpa_draws_array()` (the `as_draws_array()`-style accessor) emits -- so it
+works for any `tulpa_fit` subclass; downstream packages (tulpaObs, numdenom)
+call `tulpa::mcmc_diagnostics()` rather than re-deriving Rhat/ESS. The plotting
+/ summary layer (`plot_rhat`, `plot_ess`, `diagnostic_summary`,
+`check_diagnostics`, `n_divergent`) is built on it. Remaining work
+(gcol33/tulpa#26): wire the parallel-NUTS multi-chain output producer into the
+chain structure and verify on a native multi-chain fit.
+
 ### Matrix CHOLMOD Fix
 
 tulpa's `R_init_tulpa` calls `M_cholmod_start` which requires Matrix's

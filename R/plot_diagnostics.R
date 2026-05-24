@@ -468,38 +468,64 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
     }
   }
 
-  # Use bayesplot for pairs if available
+  # Use bayesplot for pairs if available. Fall back to the base R renderer if
+  # bayesplot is absent or rejects the inputs.
   if (requireNamespace("bayesplot", quietly = TRUE)) {
     draws_array <- get_draws_array(fit)$draws
     draws_array <- draws_array[, , pars, drop = FALSE]
 
-    if (has_divergent) {
-      # Create np object for bayesplot
-      np <- bayesplot::nuts_params(list(
-        list(Value = as.numeric(draws_subset$divergent))
-      ))
-      names(np) <- "divergent__"
+    np <- if (has_divergent) {
+      .tulpa_divergent_np(fit, dim(draws_array)[1L], dim(draws_array)[2L])
+    } else {
+      NULL
+    }
 
-      p <- bayesplot::mcmc_pairs(
+    p <- tryCatch(
+      bayesplot::mcmc_pairs(
         draws_array,
         pars = pars,
         np = np,
         off_diag_args = list(size = 0.5, alpha = alpha)
-      )
-    } else {
-      p <- bayesplot::mcmc_pairs(
-        draws_array,
-        pars = pars,
-        off_diag_args = list(size = 0.5, alpha = alpha)
-      )
-    }
-
-    return(p)
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(p)) return(p)
   }
 
   # Base R pairs plot fallback
   plot_pairs_base(draws_subset, pars, has_divergent, alpha)
   invisible(NULL)
+}
+
+
+# Build a bayesplot `np`-style data frame flagging divergent transitions, keyed
+# by (Iteration, Chain) to align with an [iter, chain, param] draws array.
+# Divergence row indices in `fit$diagnostics$divergent_idx` are mapped from the
+# pooled chain-major draws onto the per-chain (iteration, chain) grid.
+.tulpa_divergent_np <- function(fit, n_iter, n_chain) {
+  np <- data.frame(
+    Iteration = rep(seq_len(n_iter), times = n_chain),
+    Chain     = rep(seq_len(n_chain), each = n_iter),
+    Parameter = factor("divergent__"),
+    Value     = 0
+  )
+  div_idx <- fit$diagnostics$divergent_idx
+  if (is.null(div_idx) || length(div_idx) == 0L) return(np)
+
+  cid <- fit$chain_id
+  if (!is.null(cid) && length(cid) >= max(div_idx)) {
+    chain <- cid[div_idx]
+    iter  <- ave(seq_along(cid), cid, FUN = seq_along)[div_idx]
+  } else {
+    per   <- if (is.matrix(fit$draws)) nrow(fit$draws) %/% n_chain else n_iter
+    chain <- (div_idx - 1L) %/% per + 1L
+    iter  <- (div_idx - 1L) %% per + 1L
+  }
+  hit <- chain >= 1L & chain <= n_chain & iter >= 1L & iter <= n_iter
+  for (k in which(hit)) {
+    np$Value[np$Chain == chain[k] & np$Iteration == iter[k]] <- 1
+  }
+  np
 }
 
 
@@ -1300,6 +1326,109 @@ print.tulpa_geweke <- function(x, ...) {
   }
 
   invisible(x)
+}
+
+
+# Resolve a vector of parameter patterns against available draw names. Exact
+# names (including bracketed-index entries like `u[3]`) match literally; any
+# remaining patterns are treated as regular expressions, falling back to a
+# fixed-substring match if the pattern is not valid regex.
+grep_params <- function(pattern, names) {
+  if (is.null(pattern)) return(names)
+  out <- character(0)
+  for (p in pattern) {
+    exact <- names[names == p]
+    if (length(exact)) {
+      out <- c(out, exact)
+      next
+    }
+    m <- tryCatch(grep(p, names, value = TRUE), error = function(e) NULL)
+    if (is.null(m) || length(m) == 0L) m <- grep(p, names, value = TRUE, fixed = TRUE)
+    out <- c(out, m)
+  }
+  unique(out)
+}
+
+
+#' Number of divergent transitions
+#'
+#' Counts divergent transitions recorded by an HMC/NUTS fit, reading whichever
+#' field the backend populated (`$diagnostics$n_divergent`,
+#' `$diagnostics$divergent_idx`, `$diagnostics$divergent`, or the top-level
+#' `$n_divergent` / `$divergent`).
+#'
+#' @param fit A `tulpa_fit` object.
+#' @return Integer count of divergent transitions (0 if none are recorded).
+#' @seealso [plot_divergences()], [check_diagnostics()]
+#' @export
+n_divergent <- function(fit) {
+  d <- fit$diagnostics
+  if (!is.null(d$n_divergent))   return(as.integer(d$n_divergent))
+  if (!is.null(d$divergent_idx)) return(length(d$divergent_idx))
+  if (!is.null(d$divergent))     return(sum(as.logical(d$divergent), na.rm = TRUE))
+  if (!is.null(fit$n_divergent)) return(as.integer(fit$n_divergent))
+  if (!is.null(fit$divergent))   return(sum(as.logical(fit$divergent), na.rm = TRUE))
+  0L
+}
+
+
+#' Quick convergence check
+#'
+#' Runs the core convergence diagnostics on a fit and reports whether Rhat,
+#' bulk-ESS, and divergence thresholds are all met. A terse companion to
+#' [diagnostic_summary()] for use in scripts and tests.
+#'
+#' @param fit A `tulpa_fit` object.
+#' @param rhat_threshold Maximum acceptable Rhat (default 1.01).
+#' @param ess_threshold Minimum acceptable bulk-ESS (default 400).
+#' @param quiet Logical; if TRUE, suppress messages (default FALSE).
+#'
+#' @return Invisibly, `TRUE` if all checks pass, otherwise `FALSE`.
+#'
+#' @examples
+#' # See plot_rhat() examples for fitting a model
+#' # check_diagnostics(fit)
+#'
+#' @seealso [diagnostic_summary()], [mcmc_diagnostics()], [n_divergent()]
+#' @export
+check_diagnostics <- function(fit, rhat_threshold = 1.01, ess_threshold = 400,
+                              quiet = FALSE) {
+  if (!inherits(fit, "tulpa_fit")) {
+    stop("fit must be a tulpa_fit object", call. = FALSE)
+  }
+
+  issues <- character(0)
+  diag <- tryCatch(mcmc_diagnostics(fit), error = function(e) NULL)
+  if (!is.null(diag)) {
+    main_pars <- select_main_params(diag$parameter)
+    diag <- diag[diag$parameter %in% main_pars, , drop = FALSE]
+    n_bad_rhat <- sum(diag$rhat > rhat_threshold, na.rm = TRUE)
+    if (n_bad_rhat > 0) {
+      issues <- c(issues, sprintf("%d parameter(s) with Rhat > %s",
+                                  n_bad_rhat, format(rhat_threshold)))
+    }
+    n_low_ess <- sum(diag$ess_bulk < ess_threshold, na.rm = TRUE)
+    if (n_low_ess > 0) {
+      issues <- c(issues, sprintf("%d parameter(s) with bulk-ESS < %d",
+                                  n_low_ess, ess_threshold))
+    }
+  }
+
+  n_div <- n_divergent(fit)
+  if (n_div > 0) {
+    issues <- c(issues, sprintf("%d divergent transition(s)", n_div))
+  }
+
+  ok <- length(issues) == 0L
+  if (!quiet) {
+    if (ok) {
+      message("Convergence checks passed (Rhat, bulk-ESS, divergences).")
+    } else {
+      message("Convergence warnings:")
+      for (msg in issues) message("  - ", msg)
+    }
+  }
+  invisible(ok)
 }
 
 
