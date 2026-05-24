@@ -101,6 +101,10 @@ cpp_laplace_spec_test_icar <- function(y, n, X, re_idx, n_re_groups, sigma_re, s
     .Call(`_tulpa_cpp_laplace_spec_test_icar`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, sigma_beta, family, phi, max_iter, tol, n_threads)
 }
 
+cpp_laplace_spec_test_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial, rho, sigma_beta, family, phi = 1.0, max_iter = 200L, tol = 1e-10, n_threads = 1L) {
+    .Call(`_tulpa_cpp_laplace_spec_test_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial, rho, sigma_beta, family, phi, max_iter, tol, n_threads)
+}
+
 cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warmup = 1000L, seed = 42L, adjusted = FALSE) {
     .Call(`_tulpa_cpp_mclmc_test`, mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted)
 }

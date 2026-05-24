@@ -2112,3 +2112,180 @@ Rcpp::List cpp_laplace_spec_test_icar(
         Rcpp::Named("converged")    = (converged != 0)
     );
 }
+
+// ============================================================================
+// BYM2 fixture (L2): two LatentBlocks -- phi (ICAR-structured, centered) and
+// theta (IID, not centered) -- both mixed into eta with a grid-dependent
+// d_fac, exactly as cpp_nested_laplace_bym2. Exercises the parts ICAR does not:
+// d_fac != 1 (sigma * sqrt(rho) * scale_factor for phi, sigma * sqrt(1-rho) for
+// theta) and the block x block likelihood cross-term (both blocks active at the
+// same obs). Cross-checked at one (sigma_spatial, rho) cell against
+// cpp_nested_laplace_bym2 in test-laplace-spec-block-bym2.R.
+//
+// Latent layout: [ beta (p) | RE (G) | phi (M) | theta (M) | log_sigma_re? ].
+
+// [[Rcpp::export]]
+Rcpp::List cpp_laplace_spec_test_bym2(
+    Rcpp::NumericVector y,
+    Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X,
+    Rcpp::IntegerVector re_idx,
+    int n_re_groups,
+    double sigma_re,
+    Rcpp::IntegerVector spatial_idx,
+    int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr,
+    Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    double scale_factor,
+    double sigma_spatial,
+    double rho,
+    double sigma_beta,
+    std::string family,
+    double phi = 1.0,
+    int max_iter = 200,
+    double tol = 1e-10,
+    int n_threads = 1
+) {
+    int N = y.size();
+    int p = X.ncol();
+    bool has_re = (n_re_groups > 0) && (re_idx.size() == N);
+    int phi_start   = p + (has_re ? n_re_groups : 0);
+    int theta_start = phi_start + n_spatial_units;
+
+    tulpa::ProcessData proc;
+    proc.p = p;
+    proc.X_flat.resize((size_t)N * p);
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < p; j++) {
+            proc.X_flat[(size_t)i * p + j] = X(i, j);
+        }
+    }
+
+    tulpa::LikelihoodSpec spec = tulpa::builtin_family_spec(family);
+    std::vector<int> n_trials(n.begin(), n.end());
+    tulpa::BuiltinFamilyResponse resp;
+    resp.y        = y.begin();
+    resp.n_trials = n_trials.data();
+    resp.N        = N;
+    resp.family   = family;
+    resp.phi      = phi;
+
+    tulpa::ModelData data;
+    data.n_processes         = 1;
+    data.processes.push_back(proc);
+    data.N                   = N;
+    data.sigma_beta          = sigma_beta;
+    data.likelihood_spec     = &spec;
+    data.model_response_data = &resp;
+    data.sharing.init(1);
+    if (has_re) {
+        data.n_re_groups = n_re_groups;
+        data.re_group.assign(re_idx.begin(), re_idx.end());
+    }
+
+    tulpa::ParamLayout layout;
+    layout.process_beta_start.push_back(0);
+    layout.process_beta_count.push_back(p);
+    int next = p;
+    if (has_re) {
+        layout.has_re   = true;
+        layout.re_start = next;
+        next += n_re_groups;
+        layout.re_end   = next;
+    }
+    next += 2 * n_spatial_units;          // phi block + theta block
+    if (has_re) layout.log_sigma_re_idx = next++;
+    layout.total_params = next;
+
+    // phi block: ICAR-structured, d = sigma * sqrt(rho) * scale_factor, centered.
+    tulpa::LatentBlock phi_block;
+    phi_block.start = phi_start;
+    phi_block.size  = n_spatial_units;
+    phi_block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
+    phi_block.d_fac = [&, scale_factor](int) {
+        return sigma_spatial * std::sqrt(rho + 1e-10) * scale_factor;
+    };
+    phi_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                              const Rcpp::NumericVector& x, int /*k*/) {
+        tulpa::add_icar_prior(grad, H, x, phi_start, n_spatial_units, 1.0,
+                               adj_row_ptr, adj_col_idx, n_neighbors);
+    };
+    phi_block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
+        double quad_form = 0.0;
+        for (int s = 0; s < n_spatial_units; s++) {
+            double phi_s = x[phi_start + s];
+            quad_form += n_neighbors[s] * phi_s * phi_s;
+            for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; kk++) {
+                int neighbor = adj_col_idx[kk];
+                if (neighbor > s) quad_form -= 2.0 * phi_s * x[phi_start + neighbor];
+            }
+        }
+        return -0.5 * quad_form;
+    };
+    phi_block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, phi_start, n_spatial_units);
+    };
+
+    // theta block: IID, d = sigma * sqrt(1 - rho), no centering.
+    tulpa::LatentBlock theta_block;
+    theta_block.start = theta_start;
+    theta_block.size  = n_spatial_units;
+    theta_block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
+    theta_block.d_fac = [&](int) {
+        return sigma_spatial * std::sqrt(1.0 - rho + 1e-10);
+    };
+    theta_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                                const Rcpp::NumericVector& x, int /*k*/) {
+        for (int s = 0; s < n_spatial_units; s++) {
+            int idx = theta_start + s;
+            grad[idx] -= x[idx];
+            H[idx][idx] += 1.0;
+        }
+    };
+    theta_block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
+        double lp = 0.0;
+        for (int s = 0; s < n_spatial_units; s++) {
+            lp -= 0.5 * x[theta_start + s] * x[theta_start + s];
+        }
+        lp -= 0.5 * n_spatial_units * std::log(2.0 * M_PI);
+        return lp;
+    };
+
+    std::vector<tulpa::LatentBlock> blocks{ phi_block, theta_block };
+
+    std::vector<double> params(layout.total_params, 0.0);
+    if (has_re) params[layout.log_sigma_re_idx] = std::log(sigma_re);
+
+    std::vector<int> re_group_1based;
+    if (has_re) re_group_1based.assign(re_idx.begin(), re_idx.end());
+
+    int n_iter = 0;
+    int converged = 0;
+    double log_det_Q = 0.0;
+    double log_marginal = 0.0;
+    tulpa::laplace_mode_spec_dense_impl(
+        data, layout, params, re_group_1based,
+        max_iter, tol, n_threads,
+        &n_iter, &converged, &log_det_Q, &log_marginal,
+        &blocks, /*k_grid=*/0
+    );
+
+    int n_x = p + (has_re ? n_re_groups : 0) + 2 * n_spatial_units;
+    Rcpp::NumericVector mode(n_x);
+    int off = 0;
+    for (int j = 0; j < p; j++) mode[off++] = params[j];
+    if (has_re) {
+        for (int g = 0; g < n_re_groups; g++) mode[off++] = params[layout.re_start + g];
+    }
+    for (int s = 0; s < n_spatial_units; s++) mode[off++] = params[phi_start + s];
+    for (int s = 0; s < n_spatial_units; s++) mode[off++] = params[theta_start + s];
+
+    return Rcpp::List::create(
+        Rcpp::Named("mode")         = mode,
+        Rcpp::Named("log_det_Q")    = log_det_Q,
+        Rcpp::Named("log_marginal") = log_marginal,
+        Rcpp::Named("n_iter")       = n_iter,
+        Rcpp::Named("converged")    = (converged != 0)
+    );
+}
