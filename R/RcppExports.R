@@ -93,6 +93,10 @@ cpp_laplace_spec_test_multi_re <- function(y, X, re_terms, sigma_beta, phi, max_
     .Call(`_tulpa_cpp_laplace_spec_test_multi_re`, y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads)
 }
 
+cpp_laplace_spec_test_family <- function(y, n, X, re_idx, n_re_groups, sigma_re, sigma_beta, family, phi = 1.0, max_iter = 100L, tol = 1e-8, n_threads = 1L) {
+    .Call(`_tulpa_cpp_laplace_spec_test_family`, y, n, X, re_idx, n_re_groups, sigma_re, sigma_beta, family, phi, max_iter, tol, n_threads)
+}
+
 cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warmup = 1000L, seed = 42L, adjusted = FALSE) {
     .Call(`_tulpa_cpp_mclmc_test`, mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted)
 }

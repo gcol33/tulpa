@@ -31,6 +31,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
+#include "laplace_builtin_family_spec.h"
 #include "laplace_cholesky.h"
 #include "laplace_cholesky_dispatch.h"
 #include "laplace_newton_loop.h"
@@ -1587,6 +1588,112 @@ Rcpp::List cpp_laplace_spec_test_multi_re(
         for (int j = 0; j < n_g * q; j++) {
             mode[off++] = params[layout.re_start_multi[t] + j];
         }
+    }
+    return Rcpp::List::create(
+        Rcpp::Named("mode")         = mode,
+        Rcpp::Named("log_det_Q")    = log_det_Q,
+        Rcpp::Named("log_marginal") = log_marginal,
+        Rcpp::Named("n_iter")       = n_iter,
+        Rcpp::Named("converged")    = (converged != 0)
+    );
+}
+
+// ============================================================================
+// Built-in family fixture: drives the spec-Laplace path with the generic
+// builtin_family_spec() adapter (laplace_builtin_family_spec.h), which routes
+// the per-obs likelihood through the same grad_hess_for_family /
+// log_lik_for_family closed forms the family-enum reference uses. The R test
+// (test-laplace-spec-builtin-family.R) cross-checks every shipped family
+// against cpp_laplace_fit, proving the adapter reproduces the family-enum mode.
+// This is the L1 step toward routing the nested kernel through one spec-driven
+// solver (clean_migration.md).
+// ============================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_laplace_spec_test_family(
+    Rcpp::NumericVector y,
+    Rcpp::IntegerVector n,         // n_trials; rep(1L, N) for non-binomial
+    Rcpp::NumericMatrix X,
+    Rcpp::IntegerVector re_idx,    // 1-based; integer(0) for no RE
+    int n_re_groups,
+    double sigma_re,
+    double sigma_beta,
+    std::string family,
+    double phi = 1.0,
+    int max_iter = 100,
+    double tol = 1e-8,
+    int n_threads = 1
+) {
+    int N = y.size();
+    int p = X.ncol();
+    bool has_re = (n_re_groups > 0) && (re_idx.size() == N);
+
+    tulpa::ProcessData proc;
+    proc.p = p;
+    proc.X_flat.resize((size_t)N * p);
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < p; j++) {
+            proc.X_flat[(size_t)i * p + j] = X(i, j);
+        }
+    }
+
+    tulpa::LikelihoodSpec spec = tulpa::builtin_family_spec(family);
+
+    // Stable int* for n_trials over the fit's lifetime.
+    std::vector<int> n_trials(n.begin(), n.end());
+    tulpa::BuiltinFamilyResponse resp;
+    resp.y        = y.begin();
+    resp.n_trials = n_trials.data();
+    resp.N        = N;
+    resp.family   = family;
+    resp.phi      = phi;
+
+    tulpa::ModelData data;
+    data.n_processes         = 1;
+    data.processes.push_back(proc);
+    data.N                   = N;
+    data.sigma_beta          = sigma_beta;
+    data.likelihood_spec     = &spec;
+    data.model_response_data = &resp;
+    data.sharing.init(1);
+    if (has_re) {
+        data.n_re_groups = n_re_groups;
+        data.re_group.assign(re_idx.begin(), re_idx.end());
+    }
+
+    tulpa::ParamLayout layout;
+    layout.process_beta_start.push_back(0);
+    layout.process_beta_count.push_back(p);
+    int next = p;
+    if (has_re) {
+        layout.has_re = true;
+        layout.log_sigma_re_idx = next++;
+        layout.re_start = next;
+        layout.re_end   = next + n_re_groups;
+        next = layout.re_end;
+    }
+    layout.total_params = next;
+
+    std::vector<double> params(layout.total_params, 0.0);
+    if (has_re) params[layout.log_sigma_re_idx] = std::log(sigma_re);
+
+    std::vector<int> re_group_1based;
+    if (has_re) re_group_1based.assign(re_idx.begin(), re_idx.end());
+
+    int n_iter = 0;
+    int converged = 0;
+    double log_det_Q = 0.0;
+    double log_marginal = 0.0;
+    tulpa::laplace_mode_spec_dense_impl(
+        data, layout, params, re_group_1based,
+        max_iter, tol, n_threads,
+        &n_iter, &converged, &log_det_Q, &log_marginal
+    );
+
+    Rcpp::NumericVector mode(p + (has_re ? n_re_groups : 0));
+    for (int j = 0; j < p; j++) mode[j] = params[j];
+    if (has_re) {
+        for (int g = 0; g < n_re_groups; g++) mode[p + g] = params[layout.re_start + g];
     }
     return Rcpp::List::create(
         Rcpp::Named("mode")         = mode,
