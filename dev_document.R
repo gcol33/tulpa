@@ -1,0 +1,3 @@
+devtools::document()
+cat("documented
+")
