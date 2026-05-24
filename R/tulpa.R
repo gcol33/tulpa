@@ -31,6 +31,20 @@
 }
 
 
+# Find the joint MAP and the positive-definite precision (-Hessian at the mode)
+# of a GLMM log-posterior. This is the Laplace proposal imh_laplace consumes
+# (it forms N(mode, scale^2 * precision^{-1})). Hessian is numerical via
+# optimHess using the analytic gradient; suited to low-dimensional joints.
+.glmm_mode_precision <- function(m, maxit = 500L) {
+  opt <- stats::optim(m$init, fn = m$log_posterior, gr = m$grad_log_posterior,
+                      method = "BFGS", control = list(fnscale = -1, maxit = maxit))
+  H <- stats::optimHess(opt$par, fn = m$log_posterior, gr = m$grad_log_posterior)
+  prec <- -H
+  prec <- 0.5 * (prec + t(prec))   # symmetrise
+  list(mode = opt$par, precision = prec, convergence = opt$convergence)
+}
+
+
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
@@ -47,10 +61,43 @@
         offset = bundle$offset, beta_prior = beta_prior
       ))
     }
+    if (backend == "gibbs") {
+      re <- bundle$re_terms %||% list()
+      if (length(re) != 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
+        stop("Gibbs (tulpa_gibbs) supports exactly one random-intercept term ",
+             "(a single `(1 | g)`). Use a logpost backend (mode = 'mala') for ",
+             "richer RE structure, or call tulpa_gibbs() directly.",
+             call. = FALSE)
+      }
+      if (!family %in% c("binomial", "neg_binomial_2")) {
+        stop(sprintf(paste0(
+          "Gibbs (tulpa_gibbs) supports family 'binomial' or 'neg_binomial_2'; ",
+          "got '%s'. Use mode = 'laplace' or a logpost backend."), family),
+          call. = FALSE)
+      }
+      if (!is.null(beta_prior$mean) && any(beta_prior$mean != 0)) {
+        warning("Gibbs uses a mean-zero Gaussian prior on the fixed effects; ",
+                "`beta_prior$mean` is ignored.", call. = FALSE)
+      }
+      # tulpa_gibbs samples the RE sd (prior_sigma_scale); `sigma_re` is unused.
+      return(list(
+        y = bundle$y,
+        n_trials = n_trials %||% rep(1L, bundle$n_obs),
+        X = bundle$X,
+        group = as.integer(re[[1]]$group_idx),
+        n_groups = re[[1]]$n_groups,
+        family = family,
+        iter = control$iter %||% control$n_iter %||% 2000L,
+        warmup = control$warmup %||% 1000L,
+        prior_beta_sd = beta_prior$sd %||% 10.0,
+        prior_sigma_scale = control$prior_sigma_scale %||% 2.5,
+        verbose = FALSE
+      ))
+    }
     stop(sprintf(
       "Backend '%s' is reachable but not yet wired through tulpa(). Call its\n",
       backend),
-      "fitter directly (e.g. tulpa_gibbs(), agq_fit()).", call. = FALSE)
+      "fitter directly (e.g. agq_fit()).", call. = FALSE)
   }
 
   if (input == "logpost") {
@@ -75,11 +122,23 @@
         n_draws = control$n_draws %||% 1000L
       ))
     }
+    if (backend == "imh_laplace") {
+      # Independence MH with a Laplace proposal: needs the MAP + precision.
+      mp <- .glmm_mode_precision(m)
+      n_iter <- control$n_iter %||% 2000L
+      return(list(
+        log_posterior = m$log_posterior,
+        mode = mp$mode,
+        hessian = mp$precision,
+        n_iter = n_iter,
+        warmup = control$warmup %||% (n_iter %/% 2L),
+        scale = control$scale %||% 1.0
+      ))
+    }
     stop(sprintf(
-      "Backend '%s' is reachable but not yet wired through tulpa(). It needs a\n",
+      "Backend '%s' is reachable but not yet wired through tulpa(). Call its\n",
       backend),
-      "mode + Hessian (imh_laplace) or other setup; call its fitter directly.",
-      call. = FALSE)
+      "fitter directly.", call. = FALSE)
   }
 
   stop(sprintf("Backend '%s' (input '%s') is not supported by tulpa() yet.",
@@ -102,11 +161,15 @@
 #'
 #' @section Coverage:
 #' * **No random effects** and **random intercepts** (`(1 | g)`) are supported on
-#'   both the design path (`mode = "laplace"`) and the sampler path
-#'   (`mode = "mala"`, `"pathfinder"`).
+#'   the design path (`mode = "laplace"`) and the sampler path (`mode = "mala"`,
+#'   `"pathfinder"`, `"imh_laplace"`).
 #' * **Random slopes** (`(1 + x | g)`) are supported on the sampler path; the
 #'   design path errors with guidance (use a logpost backend or `tulpa_laplace()`
 #'   directly).
+#' * `mode = "gibbs"` (Polya-Gamma) fits a single random-intercept model for
+#'   `family = "binomial"` or `"neg_binomial_2"`, and **samples** the RE sd
+#'   rather than conditioning on `sigma_re`; tune it via `control$prior_sigma_scale`
+#'   and a mean-zero `beta_prior`.
 #' * Selecting a backend whose kernel is C-ABI-only (e.g. `ess`, `sghmc`, `smc`)
 #'   errors loudly -- those are reachable from model packages, not from R yet.
 #'
@@ -155,8 +218,17 @@ tulpa <- function(formula, data,
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
 
-  # Conditional fits need one SD per RE term.
-  if (K > 0L) {
+  fam_obj <- list(name = family, distribution = family)
+  sel <- select_inference_mode(
+    mode, family = fam_obj, n_obs = bundle$n_obs,
+    has_spatial = has_latent, has_temporal = FALSE, has_latent = has_latent
+  )
+  assert_backend_reachable(sel$backend)
+
+  # Conditional backends (everything except the sigma-sampling Gibbs) need one
+  # RE sd per term to condition on; resolve/recycle it after the backend is
+  # known so Gibbs does not emit a misleading "conditioning" message.
+  if (K > 0L && sel$backend != "gibbs") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)
       message("tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for ",
@@ -168,13 +240,6 @@ tulpa <- function(formula, data,
            call. = FALSE)
     }
   }
-
-  fam_obj <- list(name = family, distribution = family)
-  sel <- select_inference_mode(
-    mode, family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = has_latent, has_temporal = FALSE, has_latent = has_latent
-  )
-  assert_backend_reachable(sel$backend)
 
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                              n_trials, phi, beta_prior, control)

@@ -68,3 +68,48 @@ test_that("tulpa() handles a no-RE model on the design path", {
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$backend, "laplace")
 })
+
+test_that("tulpa() routes through imh_laplace (Laplace proposal + MH)", {
+  d <- make_pois_re()
+  fit <- tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "imh_laplace",
+               sigma_re = 0.6, control = list(n_iter = 400L, warmup = 200L))
+  expect_s3_class(fit, "tulpa_fit")
+  expect_equal(fit$backend, "imh_laplace")
+  expect_equal(fit$inference_tier, 1L)
+  expect_true(is.finite(fit$mean_accept))
+})
+
+make_binom_re <- function(seed = 3, ng = 8L, per = 12L, nt = 10L) {
+  set.seed(seed)
+  g <- rep(seq_len(ng), each = per)
+  x <- rnorm(ng * per)
+  eta <- -0.2 + 0.6 * x + rnorm(ng, 0, 0.5)[g]
+  list(
+    d = data.frame(y = rbinom(ng * per, nt, plogis(eta)), x = x, g = factor(g)),
+    nt = rep(nt, ng * per)
+  )
+}
+
+test_that("tulpa() routes a binomial random-intercept model through Gibbs", {
+  s <- make_binom_re()
+  fit <- tulpa(y ~ x + (1 | g), s$d, family = "binomial", mode = "gibbs",
+               n_trials = s$nt, control = list(iter = 400L, warmup = 200L))
+  expect_s3_class(fit, "tulpa_fit")
+  expect_equal(fit$backend, "gibbs")
+  expect_equal(fit$inference_tier, 1L)
+})
+
+test_that("Gibbs rejects unsupported families and non-intercept RE structure", {
+  s <- make_binom_re()
+  # gaussian not supported by the PG sampler
+  err1 <- expect_error(
+    tulpa(y ~ x + (1 | g), s$d, family = "gaussian", mode = "gibbs")
+  )
+  expect_match(conditionMessage(err1), "binomial.*neg_binomial_2")
+  # random slope: more than a single intercept term
+  err2 <- expect_error(
+    tulpa(y ~ x + (1 + x | g), s$d, family = "binomial", mode = "gibbs",
+          n_trials = s$nt)
+  )
+  expect_match(conditionMessage(err2), "one random-intercept")
+})

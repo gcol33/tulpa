@@ -66,11 +66,15 @@ hyperparameters is the role of the nested-Laplace / EM layer.
 
 \itemize{
 \item \strong{No random effects} and \strong{random intercepts} (\code{(1 | g)}) are supported on
-both the design path (\code{mode = "laplace"}) and the sampler path
-(\code{mode = "mala"}, \code{"pathfinder"}).
+the design path (\code{mode = "laplace"}) and the sampler path (\code{mode = "mala"},
+\code{"pathfinder"}, \code{"imh_laplace"}).
 \item \strong{Random slopes} (\code{(1 + x | g)}) are supported on the sampler path; the
 design path errors with guidance (use a logpost backend or \code{tulpa_laplace()}
 directly).
+\item \code{mode = "gibbs"} (Polya-Gamma) fits a single random-intercept model for
+\code{family = "binomial"} or \code{"neg_binomial_2"}, and \strong{samples} the RE sd
+rather than conditioning on \code{sigma_re}; tune it via \code{control$prior_sigma_scale}
+and a mean-zero \code{beta_prior}.
 \item Selecting a backend whose kernel is C-ABI-only (e.g. \code{ess}, \code{sghmc}, \code{smc})
 errors loudly -- those are reachable from model packages, not from R yet.
 }
