@@ -13,16 +13,16 @@ precision on \eqn{\beta \mid u^*}, which under-states uncertainty.
 The correct marginal precision comes from a Schur complement on the
 joint Hessian at the mode:
 
-H_\beta^{marg} = X'WX - X'WZ (Z'WZ + Q_u)^{-1} Z'WX
+\deqn{H_\beta^{\mathrm{marg}} = X'WX - X'WZ (Z'WZ + Q_u)^{-1} Z'WX}
 
-where \eqn{Z} is the obs→latent map (SPDE: projection matrix A;
+where \eqn{Z} is the obs->latent map (SPDE: projection matrix A;
 NNGP: indicator from obs to unique-location field) and \eqn{Q_u}
 is the spatial precision at the fitted hyperparameters.
 
 These helpers rebuild the spatial precision in R from the spec and
 fitted hyperparameters, then solve via sparse Cholesky. The shape
 matches what \code{cpp_laplace_fit_spde} / \code{cpp_laplace_fit_gp} use
-internally — Q construction here is a 1:1 port of \code{spde_qbuilder.h}
+internally -- Q construction here is a 1:1 port of \code{spde_qbuilder.h}
 (orphan ridge included).
 }
 \keyword{internal}
