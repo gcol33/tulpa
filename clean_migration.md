@@ -44,7 +44,7 @@ Concretely:
 |---|---|---|
 | 0 | Baseline load_all + blast-radius map | ✅ done |
 | 1 | Remove dead `nested_laplace()` alias; ASCII-only `ccd_grid` roxygen | ✅ done — commit `175fa62` |
-| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | ⬜ designed, not started — **next** |
+| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); L2 next |
 | 2 | Collapse nested engine knobs into `control = list()` | ⬜ pending |
 | 3 | Remove `tulpa_priors_legacy` | ⬜ pending |
 | 4 | Route single-arm `latent()` formulas through `tulpa()`; register nested backends | ⬜ pending |
@@ -111,12 +111,14 @@ ship as `LikelihoodSpec`s inside tulpa. Occupancy's scaled-Bernoulli + `det_prob
 live in a tulpaObs `LikelihoodSpec`. The family-enum inner loop is retired.
 
 **Steps (verify + commit each):**
-- **L1 — Built-in family specs.** Ship `LikelihoodSpec`s in tulpa for
-  gaussian/binomial/poisson/neg_binomial_2/beta/gamma/inverse_gaussian/lognormal,
-  wrapping the existing closed forms from `laplace_family_link.h` as
-  `eta_weights_fn` (Fisher weight) + `ll_double`. Verify each reproduces the
-  family-enum numbers bit-for-bit (extend the `cpp_laplace_spec_test_*` harness
-  pattern in `laplace_spec.cpp`).
+- **L1 — Built-in family specs. ✅ DONE (`228ee05`).** `builtin_family_spec()`
+  in `src/laplace_builtin_family_spec.h` wraps the family-enum closed forms
+  (`grad_hess_for_family` / `log_lik_for_family`) as `eta_weights_fn` +
+  `ll_double` — one generic adapter, no per-family copy-paste, Fisher weight
+  preserved. Test harness `cpp_laplace_spec_test_family` (in `laplace_spec.cpp`)
+  + `tests/testthat/test-laplace-spec-builtin-family.R` cross-check all 8
+  families (+ iid RE) against `cpp_laplace_fit` to 1e-5. This adapter is what
+  L3/L4 will feed into the nested kernel.
 - **L2 — GMRF blocks in the spec solver.** Generalize `SpecLatentLayout`,
   `compute_eta_spec`, `scatter_spec`, `log_prior_latent` to carry GMRF block
   segments: their latent positions, obs→unit scatter into eta, and the block's
