@@ -38,7 +38,7 @@ sim_occu <- function(seed, n_regions = 40L, sites_per_region = 5L,
        eta_true = eta, psi = psi, q = q, n_sites = n_sites)
 }
 
-fit_occu <- function(d, det_prob = d$det_prob, family = "occupancy",
+fit_occu <- function(d, det_prob = d$det_prob, family = "bernoulli",
                      sigma_grid = c(0.3, 0.6, 1.0)) {
   prior <- list(list(type = "iid", obs_idx = d$region,
                      n_units = d$n_regions, sigma_grid = sigma_grid))
@@ -88,7 +88,7 @@ test_that("occupancy fit exposes calibrated fitted_eta / fitted_eta_var", {
 
 test_that("occupancy with det_prob == 1 reduces to a logit Bernoulli", {
   d  <- sim_occu(seed = 22L)
-  fo <- fit_occu(d, det_prob = rep(1, d$n_sites), family = "occupancy")
+  fo <- fit_occu(d, det_prob = rep(1, d$n_sites), family = "bernoulli")
   fb <- fit_occu(d, det_prob = NULL,             family = "binomial")
 
   # q = 1 makes mu = sigma(eta): identical mode, evidence, and curvature.
