@@ -55,19 +55,22 @@ NULL
 
 
 # ==============================================================================
-# Tier Definitions
+# Tier metadata + backend registry (single source of truth)
 # ==============================================================================
 
-#' Inference tiers with their properties
+#' Tier metadata: the epistemic guarantee attached to each tier.
+#'
+#' Tier *membership* (which backends live in a tier) is not stored here -- it
+#' is derived from `BACKEND_REGISTRY`. This table holds only the per-tier
+#' description/guarantee so the two never drift.
+#'
 #' @keywords internal
-INFERENCE_TIERS <- list(
+TIER_META <- list(
   exact = list(
     tier = 1L,
     name = "Exact",
     description = "Asymptotically correct posterior inference",
     guarantee = "Credible intervals interpretable as posterior uncertainty",
-    backends = c("hmc", "ess", "pg", "gibbs", "sghmc", "sgld",
-                 "imh_laplace", "mala"),
     note = "Reference standard"
   ),
   structured = list(
@@ -75,7 +78,6 @@ INFERENCE_TIERS <- list(
     name = "Structured",
     description = "Accurate inference conditional on structural assumptions",
     guarantee = "Correct if model meets structural assumptions",
-    backends = c("laplace", "pathfinder", "agq"),
     note = "Controlled approximation, not heuristics"
   ),
   optimized = list(
@@ -83,45 +85,158 @@ INFERENCE_TIERS <- list(
     name = "Optimized",
     description = "Optimization-based approximate inference",
     guarantee = "No general correctness guarantee",
-    backends = c("vi"),
     note = "Uncertainty often underestimated; requires explicit opt-in"
   )
 )
 
 
-#' Backend → supported families registry
+#' Backend registry -- single source of truth for the inference backends.
 #'
 #' @description
-#' Single source of truth for backend-vs-family compatibility. Adding a new
-#' Gibbs-supported family means appending one string here. Backends not
-#' listed are assumed to support all families (HMC, Laplace, VI, etc.).
+#' One entry per backend. Adding a backend is a single entry here; tier
+#' membership, family support, the input contract, and R-level reachability
+#' all derive from this list. Replaces the previously scattered per-tier
+#' `backends` vectors and the separate `BACKEND_FAMILY_SUPPORT` table.
 #'
-#' Family identity is checked against three slots in priority order:
-#' `family$name`, `family$distribution`, `family$numerator$distribution`
-#' (numdenom-style ratio families nest a per-process distribution).
+#' Fields:
+#' * `tier`     -- tier key (`"exact"`, `"structured"`, `"optimized"`).
+#' * `input`    -- the input contract the backend's fitter consumes:
+#'     - `"design"`    : design-matrix bundle (`y`, `n_trials`, `X`, RE structure).
+#'     - `"logpost"`   : a `log_posterior(theta)` closure plus dimension/init.
+#'     - `"modeldata"` : a tulpa `ModelData` / `LikelihoodSpec` (C-ABI NUTS path).
+#' * `fitter`   -- name of the R function implementing the backend, or `NULL`
+#'     when only a C++ kernel exists with no R entry point yet. Stored as a
+#'     *string* (not the function object) so the registry is independent of
+#'     source-load order; resolved lazily via [resolve_backend_fitter()].
+#'     `NULL` => not selectable from R; dispatch fails loudly.
+#' * `families` -- character vector of supported family identifiers, or `NULL`
+#'     for an unrestricted backend.
+#' * `cabi`     -- the registered C-ABI callable backing the backend (the symbol
+#'     a model package reaches via `LinkingTo: tulpa`, and the one an R wrapper
+#'     would call), or `NULL`.
+#' * `note`     -- optional human-readable note.
+#'
+#' Family identity (for `families`) is checked against `family$name`,
+#' `family$distribution`, and `family$numerator$distribution` (numdenom-style
+#' ratio families nest a per-process distribution).
 #'
 #' @keywords internal
-BACKEND_FAMILY_SUPPORT <- list(
-  gibbs = c(
-    "poisson_gamma", "negbin_negbin", "binomial",
-    "negbin_gamma", "gamma_gamma", "lognormal",
-    "beta_binomial", "lognormal_lognormal",
-    "beta_binomial_fixed",
-    "poisson", "neg_binomial_2", "negative_binomial"
+BACKEND_REGISTRY <- list(
+  # ---- Tier 1: Exact ----
+  hmc = list(
+    tier = "exact", input = "modeldata", fitter = NULL, families = NULL,
+    cabi = "tulpa_run_nuts_generic",
+    note = "Model packages drive NUTS through the C ABI; no generic R fitter yet"
+  ),
+  ess = list(
+    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
+    cabi = "tulpa_run_ess_sampler"
+  ),
+  pg = list(
+    tier = "exact", input = "design", fitter = NULL,
+    families = c("binomial", "beta_binomial", "beta_binomial_fixed",
+                 "negbin_negbin", "neg_binomial_2", "negative_binomial"),
+    cabi = "tulpa_pg_binomial_gibbs"
+  ),
+  gibbs = list(
+    tier = "exact", input = "design", fitter = "tulpa_gibbs",
+    families = c("poisson_gamma", "negbin_negbin", "binomial",
+                 "negbin_gamma", "gamma_gamma", "lognormal",
+                 "beta_binomial", "lognormal_lognormal",
+                 "beta_binomial_fixed",
+                 "poisson", "neg_binomial_2", "negative_binomial"),
+    cabi = "tulpa_cpp_gibbs_spatial"
+  ),
+  sghmc = list(
+    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
+    cabi = "tulpa_sghmc_fit"
+  ),
+  sgld = list(
+    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
+    cabi = "tulpa_sgld_fit"
+  ),
+  mclmc = list(
+    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
+    cabi = "tulpa_mclmc_fit",
+    note = "Microcanonical Langevin Monte Carlo; C-ABI kernel only"
+  ),
+  smc = list(
+    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
+    cabi = "tulpa_smc_fit",
+    note = "Sequential Monte Carlo; C-ABI kernel only"
+  ),
+  imh_laplace = list(
+    tier = "exact", input = "logpost", fitter = "imh_laplace",
+    families = NULL, cabi = NULL
+  ),
+  mala = list(
+    tier = "exact", input = "logpost", fitter = "mala",
+    families = NULL, cabi = NULL
+  ),
+  # ---- Tier 2: Structured ----
+  laplace = list(
+    tier = "structured", input = "design", fitter = "tulpa_laplace",
+    families = NULL, cabi = "tulpa_laplace_mode_dense_multi_re"
+  ),
+  pathfinder = list(
+    tier = "structured", input = "logpost", fitter = "pathfinder",
+    families = NULL, cabi = NULL
+  ),
+  agq = list(
+    tier = "structured", input = "design", fitter = "agq_fit",
+    families = NULL, cabi = NULL
+  ),
+  # ---- Tier 3: Optimized ----
+  vi = list(
+    tier = "optimized", input = "logpost", fitter = NULL, families = NULL,
+    cabi = "tulpa_fit_vi",
+    note = "Generic VI via C ABI; tgmrf VI exposed as tulpa_tgmrf_vi"
   )
 )
 
 
-#' All registered backends across every tier (derived from INFERENCE_TIERS).
+#' Backend names belonging to a tier (derived from the registry).
 #' @keywords internal
-ALL_BACKENDS <- unlist(lapply(INFERENCE_TIERS, "[[", "backends"),
-                       use.names = FALSE)
+.tier_backends <- function(tier_key) {
+  names(Filter(function(e) e$tier == tier_key, BACKEND_REGISTRY))
+}
+
+
+#' Inference tiers with their properties (derived from `TIER_META` +
+#' `BACKEND_REGISTRY`). Preserves the `INFERENCE_TIERS$<tier>$backends`
+#' interface relied on by downstream code and tests.
+#' @keywords internal
+INFERENCE_TIERS <- local({
+  out <- vector("list", length(TIER_META))
+  names(out) <- names(TIER_META)
+  for (tk in names(TIER_META)) {
+    out[[tk]] <- c(TIER_META[[tk]], list(backends = .tier_backends(tk)))
+  }
+  out
+})
+
+
+#' Backend -> supported families, derived from the registry.
+#' @keywords internal
+BACKEND_FAMILY_SUPPORT <- local({
+  out <- list()
+  for (b in names(BACKEND_REGISTRY)) {
+    fam <- BACKEND_REGISTRY[[b]]$families
+    if (!is.null(fam)) out[[b]] <- fam
+  }
+  out
+})
+
+
+#' All registered backends across every tier (derived from the registry).
+#' @keywords internal
+ALL_BACKENDS <- names(BACKEND_REGISTRY)
 
 
 #' Test whether a backend supports the given family.
 #' @keywords internal
 backend_supports_family <- function(backend, family) {
-  supported <- BACKEND_FAMILY_SUPPORT[[backend]]
+  supported <- BACKEND_REGISTRY[[backend]]$families
   if (is.null(supported)) return(TRUE)  # unrestricted backend
 
   fam_name <- family$name %||% ""
@@ -135,20 +250,121 @@ backend_supports_family <- function(backend, family) {
 #' @return List with tier information
 #' @keywords internal
 get_backend_tier <- function(backend) {
-  for (tier_name in names(INFERENCE_TIERS)) {
-    tier <- INFERENCE_TIERS[[tier_name]]
-    if (backend %in% tier$backends) {
-      return(list(
-        tier = tier$tier,
-        name = tier$name,
-        mode = tier_name,
-        description = tier$description,
-        guarantee = tier$guarantee,
-        note = tier$note
-      ))
-    }
+  entry <- BACKEND_REGISTRY[[backend]]
+  if (is.null(entry)) {
+    stop(sprintf("Unknown backend: '%s'", backend), call. = FALSE)
   }
-  stop(sprintf("Unknown backend: '%s'", backend), call. = FALSE)
+  meta <- TIER_META[[entry$tier]]
+  list(
+    tier = meta$tier,
+    name = meta$name,
+    mode = entry$tier,
+    description = meta$description,
+    guarantee = meta$guarantee,
+    note = meta$note
+  )
+}
+
+
+# ==============================================================================
+# Reachability + dispatch spine
+# ==============================================================================
+
+#' Is a backend reachable from R (does it have an R-level fitter)?
+#' @keywords internal
+backend_is_reachable <- function(backend) {
+  entry <- BACKEND_REGISTRY[[backend]]
+  !is.null(entry) && !is.null(entry$fitter)
+}
+
+
+#' Error if a selected backend has no R-level fitter.
+#'
+#' @description
+#' Enforces the registry honesty contract: a backend may ship a C++ kernel
+#' reachable from model packages (via `LinkingTo: tulpa`) yet have no R entry
+#' point. Such a backend must never be *silently* selectable from R --
+#' selecting it errors with a precise message naming the C-ABI symbol, rather
+#' than pretending to dispatch.
+#'
+#' @keywords internal
+assert_backend_reachable <- function(backend) {
+  entry <- BACKEND_REGISTRY[[backend]]
+  if (is.null(entry)) {
+    stop(sprintf("Unknown backend: '%s'", backend), call. = FALSE)
+  }
+  if (is.null(entry$fitter)) {
+    meta <- TIER_META[[entry$tier]]
+    cabi <- entry$cabi %||% "(none)"
+    stop(sprintf(paste0(
+      "Backend '%s' is registered (Tier %d, %s) but has no R-level fitter.\n",
+      "Its C++ kernel is reachable from model packages through the C ABI\n",
+      "(%s), but it cannot be driven directly from R yet. Choose a reachable\n",
+      "backend, or wire an R wrapper over the kernel."),
+      backend, meta$tier, meta$name, cabi),
+      call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+
+#' Resolve the R fitter function for a backend (errors if unreachable).
+#'
+#' Looks up the fitter *name* string in the registry and resolves it lazily,
+#' so the registry stays independent of source-file load order.
+#' @keywords internal
+resolve_backend_fitter <- function(backend) {
+  assert_backend_reachable(backend)
+  match.fun(BACKEND_REGISTRY[[backend]]$fitter)
+}
+
+
+#' Dispatch a fit to the backend chosen by the mode/tier system.
+#'
+#' @description
+#' The routing spine. Resolves `mode` to a concrete backend via
+#' [select_inference_mode()], asserts the backend is R-reachable (fails loudly
+#' otherwise), then calls its fitter with `fitter_args`. The caller supplies
+#' `fitter_args` matching the backend's input contract
+#' (`BACKEND_REGISTRY$<backend>$input`).
+#'
+#' The selected mode/tier/backend are stamped onto the returned fit (without
+#' overwriting any the fitter already set), so the inference contract is always
+#' visible in the output.
+#'
+#' @param mode User-specified mode (`"auto"`, a tier, or a backend name).
+#' @param fitter_args Named list of arguments forwarded to the backend fitter.
+#' @param family,n_obs,has_spatial,has_temporal,has_latent,spatial_type,temporal
+#'   Model characteristics forwarded to [select_inference_mode()].
+#' @return The fitter's result, with `inference_mode`, `inference_tier`,
+#'   `backend`, and `selection_reason` ensured.
+#' @keywords internal
+tulpa_dispatch <- function(mode,
+                           fitter_args = list(),
+                           family = NULL,
+                           n_obs = NULL,
+                           has_spatial = FALSE,
+                           has_temporal = FALSE,
+                           has_latent = FALSE,
+                           spatial_type = NULL,
+                           temporal = NULL) {
+  sel <- select_inference_mode(
+    mode,
+    family = family, n_obs = n_obs,
+    has_spatial = has_spatial, has_temporal = has_temporal,
+    has_latent = has_latent, spatial_type = spatial_type, temporal = temporal
+  )
+
+  fitter <- resolve_backend_fitter(sel$backend)
+  fit <- do.call(fitter, fitter_args)
+
+  if (is.list(fit)) {
+    fit$inference_mode <- fit$inference_mode %||% sel$mode
+    fit$inference_tier <- fit$inference_tier %||% sel$tier
+    fit$backend <- fit$backend %||% sel$backend
+    fit$selection_reason <- fit$selection_reason %||% sel$reason
+  }
+  fit
 }
 
 
@@ -452,13 +668,15 @@ inference_mode_info <- function() {
   cat("  tulpa(..., mode = 'structured') # Tier 2\n")
   cat("  tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)\n\n")
 
-  cat("Usage (by backend):\n")
-  cat("  tulpa(..., mode = 'hmc')        # HMC/NUTS (Tier 1)\n")
-  cat("  tulpa(..., mode = 'ess')        # Elliptical Slice Sampling (Tier 1)\n")
-  cat("  tulpa(..., mode = 'sghmc')      # Stochastic Gradient HMC (Tier 1, large N)\n")
-  cat("  tulpa(..., mode = 'sgld')       # Stochastic Gradient Langevin (Tier 1, large N)\n")
-  cat("  tulpa(..., mode = 'laplace')    # Laplace approximation (Tier 2)\n")
-  cat("  tulpa(..., mode = 'vi')         # Variational Inference (Tier 3)\n")
+  cat("Backends ([R] = callable from R, [C-ABI] = model-package kernel only):\n")
+  for (tk in c("exact", "structured", "optimized")) {
+    for (b in .tier_backends(tk)) {
+      entry <- BACKEND_REGISTRY[[b]]
+      tag <- if (is.null(entry$fitter)) "[C-ABI]" else "[R]    "
+      cat(sprintf("  %s mode = '%-11s # Tier %d (%s)\n",
+                  tag, paste0(b, "'"), TIER_META[[tk]]$tier, TIER_META[[tk]]$name))
+    }
+  }
 
   invisible(NULL)
 }
