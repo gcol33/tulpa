@@ -298,6 +298,30 @@ inline double compute_total_log_lik(
     return log_lik;
 }
 
+// Data log-likelihood as a functor of the current linear predictor eta.
+//
+// The shared Newton loop (laplace_newton_solve_ll) reads the data log-lik
+// only through a callable `double(const Rcpp::NumericVector& eta)`, so the
+// likelihood is no longer baked into the loop as a family enum. This functor
+// is the built-in-family value of that callable: a single source of truth that
+// the family-enum mode finders pass while the LikelihoodSpec path passes its
+// own spec.ll_double-backed functor. The borrowed pointers must outlive the
+// fit.
+struct FamilyLogLik {
+    const Rcpp::NumericVector* y = nullptr;
+    const Rcpp::IntegerVector* n_trials = nullptr;
+    int N = 0;
+    std::string family;
+    double phi = 1.0;
+    int n_threads = 1;
+    const double* det_prob = nullptr;
+
+    double operator()(const Rcpp::NumericVector& eta) const {
+        return compute_total_log_lik(*y, *n_trials, eta, N, family, phi,
+                                     n_threads, det_prob);
+    }
+};
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_FAMILY_LINK_H

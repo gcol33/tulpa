@@ -21,12 +21,31 @@ namespace tulpa {
 
 constexpr int MAX_HALVING = 12;
 
-// Penalized log-likelihood: log p(y|x,theta) + log p(x|theta).
+// Penalized log-likelihood: log p(y|x,theta) + log p(x|theta), with the data
+// log-lik supplied as a functor of the current eta. This is the likelihood-
+// agnostic form the shared Newton loop uses: `log_lik_fn(eta)` returns the data
+// log-lik (family-enum, LikelihoodSpec, or any other) so the loop carries no
+// family knowledge.
 //
 // `eta_scratch` is a caller-owned NumericVector of length N used as the
 // objective's working eta buffer. Hoisting the allocation out of this
 // function lets run_nested_laplace_grid call the Newton solver from inside
 // an OpenMP parallel region — Rf_allocVector is not thread-safe.
+template<typename ComputeEta, typename ComputeLogPrior, typename LogLik>
+inline double eval_penalized_log_lik_ll(
+    const Rcpp::NumericVector& x,
+    ComputeEta compute_eta, ComputeLogPrior compute_log_prior, LogLik log_lik_fn,
+    Rcpp::NumericVector& eta_scratch
+) {
+    compute_eta(x, eta_scratch);
+    double ll = log_lik_fn(eta_scratch);
+    double lp = compute_log_prior(x, eta_scratch);
+    return ll + lp;
+}
+
+// Family-enum convenience overload: wraps the built-in family log-lik as the
+// functor. Single source of truth for the loop body; callers that still pass a
+// family string (the sparse solver) keep working unchanged.
 template<typename ComputeEta, typename ComputeLogPrior>
 inline double eval_penalized_log_lik(
     const Rcpp::NumericVector& x,
@@ -36,11 +55,9 @@ inline double eval_penalized_log_lik(
     Rcpp::NumericVector& eta_scratch,
     const double* det_prob = nullptr
 ) {
-    compute_eta(x, eta_scratch);
-    double ll = compute_total_log_lik(y, n_trials, eta_scratch, N, family, phi,
-                                      n_threads, det_prob);
-    double lp = compute_log_prior(x, eta_scratch);
-    return ll + lp;
+    FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads, det_prob};
+    return eval_penalized_log_lik_ll(x, compute_eta, compute_log_prior, ll,
+                                     eta_scratch);
 }
 
 // Step halving: try x + step_scale*delta, halve until objective recovers or

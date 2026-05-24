@@ -69,29 +69,31 @@ struct NewtonScratch {
     }
 };
 
-// Scratch-aware Newton solver. The four pre-allocated buffers in `scratch`
-// must be sized to (n_x, n_x, N, N). The solver does not allocate any Rcpp
-// objects; the caller can therefore drive this from a parallel region as
-// long as the SparseCholeskySolver is also thread-local.
+// Scratch-aware, likelihood-agnostic Newton solver. The four pre-allocated
+// buffers in `scratch` must be sized to (n_x, n_x, N, N). The solver does not
+// allocate any Rcpp objects; the caller can therefore drive this from a
+// parallel region as long as the SparseCholeskySolver is also thread-local.
+//
+// The data log-likelihood enters ONLY through `log_lik_fn(eta) -> double`, so
+// the loop carries no family knowledge: the family-enum mode finders pass a
+// FamilyLogLik (see the forwarding overload below) and the LikelihoodSpec path
+// passes a functor backed by spec.ll_double. This is the single Newton loop the
+// whole engine shares (clean_migration.md, Phase L).
 template<typename ComputeEta, typename ScatterGradHess,
-         typename CenterEffects, typename ComputeLogPrior>
-LaplaceResult laplace_newton_solve(
-    const Rcpp::NumericVector& y,
-    const Rcpp::IntegerVector& n_trials,
-    const std::string& family,
-    double phi,
+         typename CenterEffects, typename ComputeLogPrior, typename LogLik>
+LaplaceResult laplace_newton_solve_ll(
     int N, int n_x,
-    int max_iter, double tol, int n_threads,
+    int max_iter, double tol,
     ComputeEta compute_eta,
     ScatterGradHess scatter_grad_hess,
     CenterEffects center_effects_fn,
     ComputeLogPrior compute_log_prior,
+    LogLik log_lik_fn,
     NewtonScratch& scratch,
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
     bool store_Q,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
-    const double* det_prob = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -113,14 +115,12 @@ LaplaceResult laplace_newton_solve(
 
     // Do NOT call omp_set_num_threads here. When the outer driver runs us
     // from inside a parallel region we want the inner kernels (per-obs
-    // scatter, etc.) to inherit the per-thread context. The n_threads value
-    // is still forwarded to compute_eta / scatter / compute_total_log_lik
-    // for callers that drive the solver serially with inner parallelism.
+    // scatter, etc.) to inherit the per-thread context. The closures and the
+    // log-lik functor own their own threading.
 
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
-        return eval_penalized_log_lik(
-            xv, y, n_trials, N, family, phi, n_threads,
-            compute_eta, compute_log_prior, scratch.eta_tmp, det_prob
+        return eval_penalized_log_lik_ll(
+            xv, compute_eta, compute_log_prior, log_lik_fn, scratch.eta_tmp
         );
     };
 
@@ -216,8 +216,7 @@ LaplaceResult laplace_newton_solve(
         }
     }
 
-    double log_lik = compute_total_log_lik(y, n_trials, scratch.eta, N, family,
-                                           phi, n_threads, det_prob);
+    double log_lik = log_lik_fn(scratch.eta);
     double log_prior = compute_log_prior(x, scratch.eta);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
@@ -234,6 +233,38 @@ LaplaceResult laplace_newton_solve(
     }
 
     return result;
+}
+
+// Family-enum forwarder (scratch-aware). Wraps the built-in family log-lik as
+// the functor and delegates to the shared loop above, so the family-string
+// callers (laplace_core*, the nested ST driver, spde_qbuilder) keep their exact
+// signature while the loop body lives in one place.
+template<typename ComputeEta, typename ScatterGradHess,
+         typename CenterEffects, typename ComputeLogPrior>
+LaplaceResult laplace_newton_solve(
+    const Rcpp::NumericVector& y,
+    const Rcpp::IntegerVector& n_trials,
+    const std::string& family,
+    double phi,
+    int N, int n_x,
+    int max_iter, double tol, int n_threads,
+    ComputeEta compute_eta,
+    ScatterGradHess scatter_grad_hess,
+    CenterEffects center_effects_fn,
+    ComputeLogPrior compute_log_prior,
+    NewtonScratch& scratch,
+    const std::vector<double>& x_init,
+    SparseCholeskySolver* shared_solver,
+    bool store_Q,
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
+    const double* det_prob = nullptr
+) {
+    FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads, det_prob};
+    return laplace_newton_solve_ll(
+        N, n_x, max_iter, tol,
+        compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
+        ll, scratch, x_init, shared_solver, store_Q, inv_block_layout
+    );
 }
 
 // Convenience overload: allocates scratch locally. Used by the standalone
