@@ -694,32 +694,14 @@ adjacency_to_csr_tulpa <- function(adj) {
 
 
 #' Compute GLM working weights for Laplace Hessian
+#'
+#' Thin wrapper over the family-ops registry ([family_weight()]) so the weight
+#' formulas live in exactly one place (`R/family_loglik.R`). Unknown families
+#' fall back to unit weights, preserving the historical permissive behaviour.
 #' @keywords internal
 glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0) {
-
-  if (family == "binomial") {
-    mu <- 1 / (1 + exp(-eta))
-    mu <- pmin(pmax(mu, 1e-8), 1 - 1e-8)
-    n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
-    w <- n * mu * (1 - mu)
-  } else if (family == "poisson") {
-    w <- pmax(exp(eta), 1e-8)
-  } else if (family == "neg_binomial_2") {
-    mu <- pmax(exp(eta), 1e-8)
-    w <- mu * phi / (mu + phi)
-  } else if (family == "gaussian") {
-    w <- rep(1, length(eta))
-  } else if (family == "beta") {
-    mu <- 1 / (1 + exp(-eta))
-    mu <- pmin(pmax(mu, 1e-7), 1 - 1e-7)
-    dmu <- mu * (1 - mu)
-    tg <- trigamma(mu * phi) + trigamma((1 - mu) * phi)
-    w <- phi * phi * tg * dmu * dmu
-  } else {
-    w <- rep(1, length(eta))
-  }
-
-  as.numeric(w)
+  if (is.null(.FAMILY_OPS[[family]])) return(rep(1, length(eta)))
+  as.numeric(family_weight(eta, family, n_trials, phi))
 }
 
 
