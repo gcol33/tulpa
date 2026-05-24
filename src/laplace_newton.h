@@ -90,7 +90,8 @@ LaplaceResult laplace_newton_solve(
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
     bool store_Q,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
+    const double* det_prob = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -119,7 +120,7 @@ LaplaceResult laplace_newton_solve(
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
         return eval_penalized_log_lik(
             xv, y, n_trials, N, family, phi, n_threads,
-            compute_eta, compute_log_prior, scratch.eta_tmp
+            compute_eta, compute_log_prior, scratch.eta_tmp, det_prob
         );
     };
 
@@ -215,7 +216,8 @@ LaplaceResult laplace_newton_solve(
         }
     }
 
-    double log_lik = compute_total_log_lik(y, n_trials, scratch.eta, N, family, phi, n_threads);
+    double log_lik = compute_total_log_lik(y, n_trials, scratch.eta, N, family,
+                                           phi, n_threads, det_prob);
     double log_prior = compute_log_prior(x, scratch.eta);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
@@ -254,7 +256,8 @@ LaplaceResult laplace_newton_solve(
     const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
     SparseCholeskySolver* shared_solver = nullptr,
     bool store_Q = false,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
+    const double* det_prob = nullptr
 ) {
     NewtonScratch scratch;
     scratch.allocate(n_x, N);
@@ -269,7 +272,7 @@ LaplaceResult laplace_newton_solve(
         y, n_trials, family, phi, N, n_x,
         max_iter, tol, n_threads,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
-        scratch, x_init_vec, shared_solver, store_Q, inv_block_layout
+        scratch, x_init_vec, shared_solver, store_Q, inv_block_layout, det_prob
     );
 }
 

@@ -228,6 +228,13 @@
     n_threads   = as.integer(n_threads)
   )
   if (!is.null(block$phi)) args$phi <- block$phi
+  # Per-site detection probability for the marginalized `occupancy` family
+  # (mu = det_prob * sigma(eta)); the engine then fits the true marginal state
+  # likelihood, so the converged Hessian is the calibrated marginal curvature
+  # and fitted_eta_var needs no rescaling (see tulpa_nested_laplace()).
+  if (!is.null(block$det_prob)) {
+    args$det_prob <- as.numeric(block$det_prob)
+  }
 
   fit <- do.call(tulpa_nested_laplace, args)
 

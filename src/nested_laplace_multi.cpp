@@ -465,7 +465,8 @@ Rcpp::List cpp_nested_laplace_multi(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    double prune_tol = 0.0
+    double prune_tol = 0.0,
+    Rcpp::Nullable<Rcpp::NumericVector> det_prob_nullable = R_NilValue
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -499,6 +500,13 @@ Rcpp::List cpp_nested_laplace_multi(
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
     }
 
+    // Per-site detection probability q_i for the `occupancy` family; empty
+    // (-> nullptr inside the driver) for every other family.
+    Rcpp::NumericVector det_prob;
+    if (det_prob_nullable.isNotNull()) {
+        det_prob = Rcpp::as<Rcpp::NumericVector>(det_prob_nullable);
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -506,7 +514,8 @@ Rcpp::List cpp_nested_laplace_multi(
         /*store_modes=*/true, x_init,
         store_Q,
         /*n_threads_outer=*/1,
-        prune_tol
+        prune_tol,
+        det_prob
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

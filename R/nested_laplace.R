@@ -63,6 +63,16 @@
 #'   `$grid_modes` (list of length-\eqn{p} vectors). Default `FALSE`.
 #'   Used downstream by simplified-Laplace (SLA) callers to assemble
 #'   skew-aware marginals — see the cumulant pooling in [rubins_pool()].
+#' @param det_prob Optional per-observation detection probability vector for the
+#'   `family = "occupancy"` marginalized single-season occupancy likelihood, in
+#'   which each site contributes a Bernoulli on \eqn{D_i = 1\{\ge 1\ detection\}}
+#'   with mean \eqn{\mu_i = q_i\,\sigma(\eta_i)}, where \eqn{q_i = 1-(1-p_i)^{J_i}}
+#'   is the per-site probability of at least one detection given occupancy. A
+#'   site with no visits has \eqn{q_i = 0}, so it drops from the likelihood but
+#'   keeps its latent value (the INLA NA-response held-out case). The latent
+#'   occupancy state is integrated out analytically, so the converged Hessian is
+#'   the marginal curvature and `fitted_eta_var` is calibrated directly. Ignored
+#'   for every other family. Multi-block dispatch only. Default `NULL`.
 #'
 #' @keywords internal
 #' @export
@@ -72,7 +82,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             family = "binomial", phi = 1.0,
                             max_iter = 50L, tol = 1e-6, n_threads = 1L,
                             x_init = NULL, verbose = FALSE,
-                            keep_grid_hessians = FALSE) {
+                            keep_grid_hessians = FALSE,
+                            det_prob = NULL) {
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {
@@ -116,7 +127,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   p_fixed <- ncol(X)
 
   if (.is_multi_block_prior(prior)) {
-    res <- .nl_dispatch_multi(cargs, prior)
+    res <- .nl_dispatch_multi(cargs, prior, det_prob = det_prob)
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed)
     }
@@ -996,7 +1007,7 @@ nested_laplace <- function(...) {
 .NL_MULTI_GRID_WARN <- 50L
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 
-.nl_dispatch_multi <- function(cargs, prior_list) {
+.nl_dispatch_multi <- function(cargs, prior_list, det_prob = NULL) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.
   # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
   # the canonical "one obs per latent slot" case has N == n_latent and the
@@ -1071,7 +1082,8 @@ nested_laplace <- function(...) {
     tol         = cargs$tol,
     n_threads   = cargs$n_threads,
     x_init_nullable = cargs$x_init_nullable,
-    store_Q     = isTRUE(cargs$store_Q)
+    store_Q     = isTRUE(cargs$store_Q),
+    det_prob_nullable = if (is.null(det_prob)) NULL else as.numeric(det_prob)
   )
 
   out$theta_grid   <- joint_grid

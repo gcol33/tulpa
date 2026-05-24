@@ -27,6 +27,17 @@
   covariance itself (the EM M-step for a full `Sigma`) is the follow-up; the
   engine now fits correlated slopes at a supplied covariance.
 
+* feat(laplace): `tulpa_laplace(return_re_cov = TRUE)` returns per-group
+  posterior covariance blocks `cov_blocks` -- one `n_coefs x n_coefs` matrix per
+  (RE term, group) in term-major then group order, each a diagonal block of the
+  *full* inverse Hessian (fixed effects and other groups marginalized out), i.e.
+  `Cov(u_g | y, Sigma)`, not the inverse of a diagonal block. Built by reusing
+  the Cholesky factor from the log-determinant (one back-solve per block column,
+  no refactorization). This is the primitive a full-covariance EM M-step
+  consumes to update `Sigma_k <- mean_g [u_g u_g' + Cov(u_g)]`; tulpaObs#11 uses
+  it to fit `(1 + x | g)` deterministically. Non-spatial multi-RE path only
+  (rejected with `spatial`).
+
 * feat(nuts): expose tulpa's across-chain OpenMP runner through the model-facing
   C ABI (gcol33/tulpa#30). New registered callable `tulpa_run_nuts_chains`
   (header accessor `tulpa::get_nuts_chains_fn()`) runs `n_chains` chains in one
