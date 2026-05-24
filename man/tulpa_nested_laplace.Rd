@@ -2,7 +2,6 @@
 % Please edit documentation in R/nested_laplace.R
 \name{tulpa_nested_laplace}
 \alias{tulpa_nested_laplace}
-\alias{nested_laplace}
 \title{Nested Laplace approximation for latent Gaussian models}
 \usage{
 tulpa_nested_laplace(
@@ -25,8 +24,6 @@ tulpa_nested_laplace(
   keep_grid_hessians = FALSE,
   det_prob = NULL
 )
-
-nested_laplace(...)
 }
 \arguments{
 \item{y}{Response vector.}
@@ -126,8 +123,5 @@ in the eigenvalue interval (1/lambda_min, 1/lambda_max) of
 \item SPDE continuous spatial: see \code{cpp_nested_laplace_spde()} (separate
 entry, rebuilds Q via SPDE Q-builder).
 }
-
-\code{nested_laplace()} is a deprecated alias retained for backward compatibility.
-Use \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} instead. Will be removed in a future release.
 }
 \keyword{internal}

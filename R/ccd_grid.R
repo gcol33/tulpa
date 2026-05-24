@@ -24,20 +24,20 @@
 #' blocks. The standardised z-coordinates are mapped to physical
 #' hyperparameters \eqn{\theta} via [ccd_to_theta()].
 #'
-#' @param k Number of hyperparameters (length of θ). Must be ≥ 1.
+#' @param k Number of hyperparameters (length of theta). Must be >= 1.
 #' @param f_0 Radius of the design sphere (default \eqn{\sqrt{k}}). Larger
 #'   `f_0` spreads points further out; smaller concentrates near the
 #'   centre. INLA's default scales like \eqn{\sqrt{k}}.
 #'
 #' @return A list with components:
-#'   * `z`: numeric matrix `[n_points × k]` of standardised hyperparameter
+#'   * `z`: numeric matrix `[n_points x k]` of standardised hyperparameter
 #'     coordinates.
 #'   * `n_points`: integer; total grid size.
 #'   * `kind`: character vector labelling each point as
 #'     `"center"`, `"axial"`, or `"factorial"`.
 #'   * `f_0`: the sphere radius used.
 #'
-#' @seealso [ccd_to_theta()] to map z-coordinates to physical θ.
+#' @seealso [ccd_to_theta()] to map z-coordinates to physical theta.
 #' @keywords internal
 #' @export
 ccd_grid <- function(k, f_0 = sqrt(k)) {
@@ -105,7 +105,7 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #' negative Hessian inverse evaluated at the (working) mode \eqn{\hat\theta}
 #' — i.e. it scales `z` to one posterior standard deviation per axis.
 #'
-#' @param z Matrix `[n_points × k]` of standardised coordinates from
+#' @param z Matrix `[n_points x k]` of standardised coordinates from
 #'   [ccd_grid()].
 #' @param theta_hat Numeric vector of length `k`: centre of the design,
 #'   in either physical or log-space (per `log_scale`).
@@ -116,9 +116,9 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #' @param log_scale Logical (or logical vector of length k). If `TRUE`
 #'   for component j, `theta_hat[j]` and column j of the affine
 #'   transform live on log-scale and are exponentiated afterward
-#'   (useful for positive parameters like τ). Default `FALSE` everywhere.
+#'   (useful for positive parameters like tau). Default `FALSE` everywhere.
 #'
-#' @return Numeric matrix `[n_points × k]` of physical θ-values.
+#' @return Numeric matrix `[n_points x k]` of physical theta-values.
 #'
 #' @keywords internal
 #' @export

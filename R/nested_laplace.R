@@ -156,16 +156,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res
 }
 
-#' @rdname tulpa_nested_laplace
-#' @description
-#' `nested_laplace()` is a deprecated alias retained for backward compatibility.
-#' Use [tulpa_nested_laplace()] instead. Will be removed in a future release.
-#' @export
-nested_laplace <- function(...) {
-  .Deprecated("tulpa_nested_laplace", package = "tulpa")
-  tulpa_nested_laplace(...)
-}
-
 # --- Per-prior registry & dispatcher ---
 #
 # Each entry describes one supported prior `type`. To add a new prior:

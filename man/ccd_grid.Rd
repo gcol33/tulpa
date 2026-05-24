@@ -7,7 +7,7 @@
 ccd_grid(k, f_0 = sqrt(k))
 }
 \arguments{
-\item{k}{Number of hyperparameters (length of θ). Must be ≥ 1.}
+\item{k}{Number of hyperparameters (length of theta). Must be >= 1.}
 
 \item{f_0}{Radius of the design sphere (default \eqn{\sqrt{k}}). Larger
 \code{f_0} spreads points further out; smaller concentrates near the
@@ -16,7 +16,7 @@ centre. INLA's default scales like \eqn{\sqrt{k}}.}
 \value{
 A list with components:
 \itemize{
-\item \code{z}: numeric matrix \verb{[n_points × k]} of standardised hyperparameter
+\item \code{z}: numeric matrix \verb{[n_points x k]} of standardised hyperparameter
 coordinates.
 \item \code{n_points}: integer; total grid size.
 \item \code{kind}: character vector labelling each point as
@@ -51,6 +51,6 @@ blocks. The standardised z-coordinates are mapped to physical
 hyperparameters \eqn{\theta} via \code{\link[=ccd_to_theta]{ccd_to_theta()}}.
 }
 \seealso{
-\code{\link[=ccd_to_theta]{ccd_to_theta()}} to map z-coordinates to physical θ.
+\code{\link[=ccd_to_theta]{ccd_to_theta()}} to map z-coordinates to physical theta.
 }
 \keyword{internal}

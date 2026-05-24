@@ -7,7 +7,7 @@
 ccd_to_theta(z, theta_hat, L, log_scale = FALSE)
 }
 \arguments{
-\item{z}{Matrix \verb{[n_points × k]} of standardised coordinates from
+\item{z}{Matrix \verb{[n_points x k]} of standardised coordinates from
 \code{\link[=ccd_grid]{ccd_grid()}}.}
 
 \item{theta_hat}{Numeric vector of length \code{k}: centre of the design,
@@ -21,10 +21,10 @@ correlations between hyperparameters.}
 \item{log_scale}{Logical (or logical vector of length k). If \code{TRUE}
 for component j, \code{theta_hat[j]} and column j of the affine
 transform live on log-scale and are exponentiated afterward
-(useful for positive parameters like τ). Default \code{FALSE} everywhere.}
+(useful for positive parameters like tau). Default \code{FALSE} everywhere.}
 }
 \value{
-Numeric matrix \verb{[n_points × k]} of physical θ-values.
+Numeric matrix \verb{[n_points x k]} of physical theta-values.
 }
 \description{
 Converts standardised CCD z-coordinates (in \eqn{\mathbb{R}^k}) to
