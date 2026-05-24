@@ -62,7 +62,9 @@ list with element \code{sd} (prior standard deviation, required) and optional
 \code{mean} (prior mean, default 0). Each may be a scalar (applied to every
 coefficient) or a length-\code{ncol(X)} vector. Adds
 \code{sum((beta - mean)^2 / (2 * sd^2))} to the negative log-posterior, so the
-mode is the penalized (MAP) estimate. Not supported on the spatial path.}
+mode is the penalized (MAP) estimate. A coefficient's \code{sd} may be \code{+Inf},
+which sets its precision to 0 (no penalty on that coefficient). Not
+supported on the spatial path.}
 }
 \value{
 A list with:

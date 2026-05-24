@@ -33,7 +33,9 @@
 #'   `mean` (prior mean, default 0). Each may be a scalar (applied to every
 #'   coefficient) or a length-`ncol(X)` vector. Adds
 #'   `sum((beta - mean)^2 / (2 * sd^2))` to the negative log-posterior, so the
-#'   mode is the penalized (MAP) estimate. Not supported on the spatial path.
+#'   mode is the penalized (MAP) estimate. A coefficient's `sd` may be `+Inf`,
+#'   which sets its precision to 0 (no penalty on that coefficient). Not
+#'   supported on the spatial path.
 #'
 #' @return A list with:
 #'   - `mode`: full mode vector (beta, then RE values per term)
@@ -92,7 +94,16 @@ tulpa_laplace <- function(y, n_trials, X,
     }
     # Spatial path: use first RE term (single-block)
     if (length(re_list) == 0) {
-      re_idx <- rep(1L, n_obs); n_re_groups <- 1L; sigma_re <- 1.0
+      # No formula-side RE: genuine no-RE fit (n_re_groups = 0). The areal
+      # kernels (laplace_mode_spatial / _bym2 / _rsr) all guard their RE block
+      # with `if (n_re_groups > 0)` and size the latent vector as
+      # p + n_re_groups + n_spatial_units, so 0 means zero RE dims. Injecting a
+      # 1-group sigma = 1 random intercept here (as we used to) adds a spurious
+      # latent that confounds with the fixed intercept -- inert at the MAP only
+      # when the intercept is unpenalised, but it perturbs the joint Hessian /
+      # marginal likelihood and would bias the intercept under a beta_prior.
+      # Matches the SPDE (fit_spde.R) and GP (laplace_gp_at) no-RE convention.
+      re_idx <- rep(0L, n_obs); n_re_groups <- 0L; sigma_re <- 1.0
     } else {
       re_idx <- re_list[[1]]$idx
       n_re_groups <- re_list[[1]]$n_groups
@@ -106,9 +117,17 @@ tulpa_laplace <- function(y, n_trials, X,
     # All non-spatial paths: use cpp_laplace_fit_multi_re
     # (handles single RE, multiple RE, slopes, weights, offset)
     if (length(re_list) == 0) {
-      re_idx_list <- list(as.integer(rep(1L, n_obs)))
-      re_ngroups <- 1L
-      re_sigma_list <- list(1.0)
+      # No random effects: fit a pure fixed-effects model (n_terms = 0 in the
+      # kernel, so the latent vector is beta only). A dummy 1-group RE used to
+      # be injected here, but a global random intercept (sigma = 1) confounds
+      # with the fixed intercept once a `beta_prior` is active: the prior pulls
+      # the penalised beta toward its mean while the unpenalised RE absorbs the
+      # difference, biasing the fixed-effect MAP (the penalty's effective
+      # precision on the intercept collapses to 1). An empty RE set removes the
+      # spurious latent entirely so the MAP is the true penalised optimum.
+      re_idx_list <- list()
+      re_ngroups <- integer(0)
+      re_sigma_list <- list()
     } else {
       re_idx_list <- lapply(re_list, function(r) as.integer(r$idx))
       re_ngroups <- vapply(re_list, function(r) as.integer(r$n_groups), integer(1))
@@ -259,6 +278,15 @@ tulpa_laplace <- function(y, n_trials, X,
       P_beta <- XtWX
     }
 
+    # Add the fixed-effect prior precision so H_beta is the negative-log-
+    # POSTERIOR curvature (matching the penalty the mode-finding kernel added),
+    # not just the likelihood information. Without this the Laplace SE would
+    # ignore the prior. `sd = Inf` contributes 0 (no penalty on that coef).
+    if (!is.null(bp)) {
+      pen_prec <- ifelse(is.finite(bp$sd), 1 / (bp$sd^2), 0)
+      diag(P_beta) <- diag(P_beta) + pen_prec[seq_len(n_fixed)]
+    }
+
     result$H_beta <- as.matrix(P_beta)
   }
 
@@ -336,8 +364,11 @@ tulpa_laplace <- function(y, n_trials, X,
   sd   <- recycle(beta_prior$sd, "sd")
   mean <- recycle(if (is.null(beta_prior$mean)) 0 else beta_prior$mean, "mean")
 
-  if (any(!is.finite(sd)) || any(sd <= 0)) {
-    stop("`beta_prior$sd` must be positive and finite.", call. = FALSE)
+  # `sd = +Inf` is allowed and means "no penalty on that coefficient"
+  # (precision 1 / sd^2 = 0). The C++ layer maps +Inf -> tau = 0.
+  if (any(is.na(sd)) || any(sd <= 0)) {
+    stop("`beta_prior$sd` must be positive (Inf allowed = no penalty).",
+         call. = FALSE)
   }
   if (any(!is.finite(mean))) {
     stop("`beta_prior$mean` must be finite.", call. = FALSE)

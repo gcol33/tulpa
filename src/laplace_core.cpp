@@ -536,10 +536,13 @@ Rcpp::List cpp_laplace_fit_multi_re(
         }
         bp.tau.resize(p);
         for (int j = 0; j < p; j++) {
-            if (!(sd[j] > 0.0) || !R_finite(sd[j])) {
-                Rcpp::stop("beta_prior_sd[%d] must be a positive finite number.", j + 1);
+            if (!(sd[j] > 0.0) || ISNAN(sd[j])) {
+                Rcpp::stop("beta_prior_sd[%d] must be positive (Inf allowed = no penalty).", j + 1);
             }
-            bp.tau[j] = 1.0 / (sd[j] * sd[j]);
+            // sd = +Inf -> tau = 0 (no penalty on this coefficient); the
+            // single-source penalty add_beta_prior() handles tau = 0 as a
+            // no-op, so the quadratic term (beta - mean)^2 / (2 sd^2) vanishes.
+            bp.tau[j] = R_finite(sd[j]) ? 1.0 / (sd[j] * sd[j]) : 0.0;
         }
     }
     if (beta_prior_mean.isNotNull()) {

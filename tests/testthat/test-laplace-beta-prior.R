@@ -7,9 +7,9 @@
 #   * per-coefficient priors shrink only the targeted columns;
 #   * validation rejects malformed priors and the spatial combination.
 
-# Simulate a logistic GLM. The empty re_list path still carries a single
-# N(0,1) group intercept (engine quirk), but it is shared across every
-# comparison below, so prior-effect contrasts are unaffected.
+# Simulate a logistic GLM. With no formula-side random effects the Laplace
+# path fits a pure fixed-effects model (no spurious group intercept), so an
+# unpenalized fit is the plain logistic MLE and matches glm() on every column.
 sim_logit <- function(n = 600L, beta = c(-0.5, 1.2, -0.8), seed = 1L) {
   set.seed(seed)
   p <- length(beta)
@@ -43,10 +43,9 @@ test_that("weak prior recovers glm() coefficients", {
   b_tulpa <- fit_beta(d, list(mean = 0, sd = 100))
   g <- glm(d$y ~ d$X[, -1], family = binomial())
   b_glm <- unname(coef(g))
-  # Slopes are pure fixed effects -> match glm tightly. The intercept shares
-  # a hair with the N(0,1) group term, so it gets a looser band.
-  expect_equal(b_tulpa[-1], b_glm[-1], tolerance = 1e-3)
-  expect_equal(b_tulpa[1],  b_glm[1],  tolerance = 5e-2)
+  # No spurious group intercept now, so a weak prior (tau = 1e-4, negligible
+  # vs the likelihood) matches glm on every column including the intercept.
+  expect_equal(b_tulpa, b_glm, tolerance = 1e-2)
 })
 
 
@@ -98,9 +97,30 @@ test_that("per-coefficient sd shrinks the targeted column far more than others",
 test_that("beta_prior validation rejects malformed input", {
   d <- sim_logit(n = 50L)
   expect_error(fit_beta(d, list(mean = 0)),            "must supply `sd`")
-  expect_error(fit_beta(d, list(sd = -1)),             "positive and finite")
+  expect_error(fit_beta(d, list(sd = -1)),             "must be positive")
   expect_error(fit_beta(d, list(sd = c(1, 2))),        "length 1 or 3")
   expect_error(fit_beta(d, 2.5),                       "must be NULL or a list")
+})
+
+
+test_that("sd = +Inf is a no-op penalty: MAP equals the unpenalized MLE", {
+  d <- sim_logit(n = 800L)
+  # Precision 1 / Inf^2 = 0 on every coefficient -> no penalty at all. With no
+  # spurious latent the Laplace mode is exactly the logistic MLE.
+  b_noprior <- fit_beta(d, list(mean = 0, sd = Inf))
+  g <- glm(d$y ~ d$X[, -1], family = binomial())
+  expect_equal(b_noprior, unname(coef(g)), tolerance = 1e-3)
+})
+
+
+test_that("per-coefficient sd = Inf leaves only the finite-sd columns penalized", {
+  d <- sim_logit(n = 1500L)
+  b_weak <- fit_beta(d, list(mean = 0, sd = 100))
+  # Inf on cols 1 and 3 (no penalty), tight on col 2 -> only col 2 shrinks; the
+  # Inf columns stay at their (near-)unpenalized values.
+  b_mix  <- fit_beta(d, list(mean = 0, sd = c(Inf, 0.01, Inf)))
+  expect_true(abs(b_mix[2]) < 0.1)
+  expect_equal(b_mix[c(1, 3)], b_weak[c(1, 3)], tolerance = 0.3)
 })
 
 
