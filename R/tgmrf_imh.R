@@ -18,7 +18,7 @@
 #'      (the user prior is already embedded in `log_marginal` via the
 #'      `prior` closure attached to the block).
 #'   4. Each proposal `theta'` is evaluated by a single-point inner
-#'      Laplace solve through `cpp_nested_laplace_multi` — `n_iter`
+#'      Laplace solve through `cpp_nested_laplace_multi` -- `n_iter`
 #'      inner solves total.
 #'
 #' Because the body (Laplace approximation of `(beta, z) | theta`) is
@@ -28,7 +28,7 @@
 #' than full NUTS over the joint `(beta, z, theta)`.
 #'
 #' @param y,n_trials,X Response, trials per obs (1L vector for non-binomial),
-#'   and fixed-effects design matrix — same arguments as
+#'   and fixed-effects design matrix -- same arguments as
 #'   [tulpa_nested_laplace()].
 #' @param block A `tgmrf` object.
 #' @param family,phi Likelihood family and dispersion.
@@ -141,7 +141,7 @@ tulpa_tgmrf_imh <- function(y, n_trials, X, block,
                     dimnames = list(block$theta_names, block$theta_names))
   lm_centre <- log_marginal_at(theta_mode)
   if (!is.finite(lm_centre)) {
-    stop("Pilot log_marginal at the grid argmax is not finite — ",
+    stop("Pilot log_marginal at the grid argmax is not finite -- ",
          "tighten `bounds` or check the user `Q()`/`prior()`.", call. = FALSE)
   }
 

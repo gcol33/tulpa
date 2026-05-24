@@ -15,3 +15,14 @@
 ^dev_notes$
 ^dev_scripts$
 ^.*\.tar\.gz$
+^accuracy\.md$
+^generic-todo\.md$
+^hessian_plan\.md$
+^plan\.md$
+^potential_issues\.md$
+^stage2_plan\.md$
+^tgeneric-todo\.md$
+^tmp\.md$
+^todo\.md$
+^src/GRADIENT_COVERAGE\.md$
+^tgmrf\.html$

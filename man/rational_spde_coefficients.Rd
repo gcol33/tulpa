@@ -37,13 +37,10 @@ and this function is not needed. For fractional nu (e.g. 0.5, 1.5),
 this computes the coefficients for the rational SPDE approach
 (Bolin, Simas & Xiong, 2023).
 
-The rational approximation writes:
-x^(-beta) ≈ sum_k w_k / (x + r_k)
-
-which translates to the precision:
-Q ≈ tau² * sum_k w_k * (L + r_k\emph{C)' * C^{-1} * (L + r_k}C)
-
-where L = kappa²*C + G is the FEM operator.
+The rational approximation writes
+\verb{x^(-beta) ~= sum_k w_k / (x + r_k)}, which translates to the precision
+\verb{Q ~= tau^2 * sum_k w_k * (L + r_k*C)' * C^\{-1\} * (L + r_k*C)}, where
+\code{L = kappa^2 * C + G} is the FEM operator.
 }
 \references{
 Bolin, D., Simas, A.B. & Xiong, J. (2023). Rational SPDE approach for

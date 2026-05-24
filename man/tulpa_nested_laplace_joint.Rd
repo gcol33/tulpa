@@ -236,6 +236,14 @@ refine more aggressively at the cost of extra kernel passes.}
 \item{adaptive_grid_max_passes}{Integer (default \code{1L}). Maximum number
 of refinement passes. One pass typically suffices; two is rarely
 useful and inflates runtime.}
+
+\item{var_of_means_consistency}{Logical (default \code{TRUE}). When \code{TRUE}, run a
+post-integration consistency pass on the variance of the per-arm posterior
+means and attach the diagnostics as \code{var_of_means_consistency_info}.}
+
+\item{force_sparse}{Logical (default \code{FALSE}). When \code{TRUE}, force the sparse
+linear-algebra backend for the inner joint solve regardless of the
+automatic dense/sparse heuristic.}
 }
 \value{
 A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")} with:

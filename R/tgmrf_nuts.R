@@ -24,6 +24,10 @@
 #'   adaptation. Default 0.65.
 #' @param fd_gradient_step Finite-difference step for `d/dtheta_j
 #'   log_marginal`. Default 0.02.
+#' @param n_iter Total number of NUTS iterations (including warmup). Default
+#'   `500L`.
+#' @param warmup Number of warmup iterations used for step-size adaptation and
+#'   then discarded. Must satisfy `1 <= warmup < n_iter`. Default `n_iter %/% 2L`.
 #'
 #' @return A list with class `c("tulpa_tgmrf_nuts", "tulpa_fit")`:
 #'   * `draws`, `means`, `sds` — posterior draws of `theta` and moments.

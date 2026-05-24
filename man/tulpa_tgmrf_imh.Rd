@@ -28,7 +28,7 @@ tulpa_tgmrf_imh(
 }
 \arguments{
 \item{y, n_trials, X}{Response, trials per obs (1L vector for non-binomial),
-and fixed-effects design matrix — same arguments as
+and fixed-effects design matrix -- same arguments as
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.}
 
 \item{block}{A \code{tgmrf} object.}
@@ -86,7 +86,7 @@ against the target
 (the user prior is already embedded in \code{log_marginal} via the
 \code{prior} closure attached to the block).
 \item Each proposal \verb{theta'} is evaluated by a single-point inner
-Laplace solve through \code{cpp_nested_laplace_multi} — \code{n_iter}
+Laplace solve through \code{cpp_nested_laplace_multi} -- \code{n_iter}
 inner solves total.
 }
 

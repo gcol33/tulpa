@@ -62,6 +62,10 @@ adjacency via dense eigendecomposition.}
 
 \item{beta_p_init}{Optional warm start; default \code{rep(0, p_p)}.}
 
+\item{v_init, w_init}{Optional warm starts (each length \code{n_spatial}) for the
+two BYM2 latent components -- the structured (spatial) and unstructured
+(iid) effects. \code{NULL} (default) starts both at zero.}
+
 \item{K_max}{Truncation for the per-site marginal sum over N. Defaults to
 \code{max(y) + 100}. Returned \code{boundary_max} flags any grid point whose worst
 site puts non-trivial mass on \code{K_max} -- raise \code{K_max} if it exceeds 1e-4.}

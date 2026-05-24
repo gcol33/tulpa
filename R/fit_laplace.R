@@ -561,8 +561,8 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
     family = family, phi = phi, alpha = alpha,
     max_iter = as.integer(max_iter), tol = tol,
     n_threads = as.integer(n_threads),
-    rational_poles = if (!rat$is_integer) rat$poles else NULL,
-    rational_weights = if (!rat$is_integer) rat$weights else NULL
+    rational_poles_nullable = if (!rat$is_integer) rat$poles else NULL,
+    rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL
   )
 
   result$range <- range

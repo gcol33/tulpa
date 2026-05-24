@@ -10,7 +10,7 @@
 #'  * Spatial (areal): `"icar"` (1D grid on tau), `"bym2"`
 #'    (2D on (sigma, rho)), `"car_proper"` (2D on (tau, rho); rho lives
 #'    in the eigenvalue interval (1/lambda_min, 1/lambda_max) of
-#'    D^{-1}W).
+#'    `D^{-1} W`).
 #'  * Spatial (continuous): `"nngp"` (2D on (sigma2, phi_gp)),
 #'    `"hsgp"` (2D on (sigma2, lengthscale)).
 #'  * Temporal: `"rw1"`, `"rw2"` (1D grid on tau), `"ar1"` (2D on (tau, rho))

@@ -2,7 +2,7 @@
 % Please edit documentation in R/spatial_rsr_spde.R
 \name{spatial_spde}
 \alias{spatial_spde}
-\title{SPDE Spatial Field (Matérn via Triangular Mesh)}
+\title{SPDE Spatial Field (Matern via Triangular Mesh)}
 \usage{
 spatial_spde(
   coords,
@@ -32,7 +32,7 @@ or \code{c(inner, outer)}.}
 
 \item{cutoff}{Minimum distance between mesh vertices. Default 0.}
 
-\item{nu}{Matérn smoothness parameter. Default 1 (exponential covariance).
+\item{nu}{Matern smoothness parameter. Default 1 (exponential covariance).
 Currently only integer values supported; fractional smoothness via
 rational SPDE is planned.}
 
@@ -46,8 +46,8 @@ where P(range < U) = alpha. Default \code{c(0.5, 0.5)}.}
 A \code{tulpa_spatial} object with type \code{"spde"}.
 }
 \description{
-Specify a continuous Matérn spatial field using the SPDE approach
-(Lindgren, Rue & Lindström 2011). Builds a triangular mesh from
+Specify a continuous Matern spatial field using the SPDE approach
+(Lindgren, Rue & Lindstrom 2011). Builds a triangular mesh from
 observation coordinates, computes FEM matrices, and passes them
 to tulpa's SPDE Laplace engine with CHOLMOD sparse solver.
 }

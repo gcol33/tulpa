@@ -218,8 +218,8 @@ tulpa_nuts_spde <- function(y, X, spatial,
     # fractional. The fixed-hyper Laplace path uses them to rebuild Q
     # at the outer grid points; the joint-NUTS path uses them inside
     # SpdeNcTransform on every gradient call.
-    rational_poles   = if (!rat$is_integer) rat$poles   else NULL,
-    rational_weights = if (!rat$is_integer) rat$weights else NULL,
+    rational_poles_nullable   = if (!rat$is_integer) rat$poles   else NULL,
+    rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL,
     joint_hypers      = joint,
     prior_range_0     = prior_range_0,
     prior_range_alpha = prior_range_alpha,

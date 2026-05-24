@@ -29,7 +29,7 @@ tulpa_tgmrf_nuts(
 }
 \arguments{
 \item{y, n_trials, X}{Response, trials per obs (1L vector for non-binomial),
-and fixed-effects design matrix — same arguments as
+and fixed-effects design matrix -- same arguments as
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.}
 
 \item{block}{A \code{tgmrf} object.}
@@ -38,6 +38,12 @@ and fixed-effects design matrix — same arguments as
 
 \item{re_idx, n_re_groups, sigma_re}{Optional RE wiring (forwarded to
 the inner Laplace).}
+
+\item{n_iter}{Total number of NUTS iterations (including warmup). Default
+\code{500L}.}
+
+\item{warmup}{Number of warmup iterations used for step-size adaptation and
+then discarded. Must satisfy \verb{1 <= warmup < n_iter}. Default \code{n_iter \%/\% 2L}.}
 
 \item{epsilon}{Initial leapfrog step size. Default is \code{0.2 / sqrt(theta_dim)}.}
 

@@ -31,7 +31,7 @@ tulpa_tgmrf_nuts_joint(
 }
 \arguments{
 \item{y, n_trials, X}{Response, trials per obs (1L vector for non-binomial),
-and fixed-effects design matrix — same arguments as
+and fixed-effects design matrix -- same arguments as
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.}
 
 \item{block}{A tgmrf block with \code{backend == "cpp"}. R-closure blocks are
@@ -42,6 +42,13 @@ rejected with an error pointing to \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} or
 
 \item{re_idx, n_re_groups, sigma_re}{Optional RE wiring (forwarded to
 the inner Laplace).}
+
+\item{n_iter}{Total number of NUTS iterations (including warmup). Default
+\code{500L}.}
+
+\item{warmup}{Number of warmup iterations used for dual-averaging step-size
+adaptation and then discarded. Must satisfy \verb{1 <= warmup < n_iter}. Default
+\code{n_iter \%/\% 2L}.}
 
 \item{epsilon}{Initial leapfrog step size. Default is \code{0.2 / sqrt(theta_dim)}.}
 

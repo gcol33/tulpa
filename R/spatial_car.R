@@ -554,7 +554,7 @@ is_connected <- function(adjacency) {
 #'   - `"gpu"`: GPU-accelerated batched Cholesky using CUDA (if available).
 #'     Requires tulpa to be compiled with GPU support. Falls back to PCG
 #'     if GPU is unavailable. Best for large datasets (N > 5000) with
-#'     CUDA-capable GPU. Use [gpu_available()] to check support.
+#'     CUDA-capable GPU. GPU support is detected automatically at fit time.
 #' @param cg_tol Convergence tolerance for CG/PCG solvers. Default 1e-6.
 #'   Smaller values give more accurate solutions but slower convergence.
 #' @param cg_maxiter Maximum iterations for CG/PCG. Default 100.

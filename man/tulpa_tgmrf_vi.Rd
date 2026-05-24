@@ -26,7 +26,7 @@ tulpa_tgmrf_vi(
 }
 \arguments{
 \item{y, n_trials, X}{Response, trials per obs (1L vector for non-binomial),
-and fixed-effects design matrix — same arguments as
+and fixed-effects design matrix -- same arguments as
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}.}
 
 \item{block}{A \code{tgmrf} object.}

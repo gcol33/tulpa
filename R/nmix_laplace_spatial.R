@@ -436,6 +436,9 @@ tulpa_nmix_laplace_car_proper <- function(y,
 #' @param scale_factor Optional scalar Riebler scaling factor (geometric mean
 #'   of non-zero eigenvalues of \eqn{Q}). If `NULL`, it is computed from the
 #'   adjacency via dense eigendecomposition.
+#' @param v_init,w_init Optional warm starts (each length `n_spatial`) for the
+#'   two BYM2 latent components -- the structured (spatial) and unstructured
+#'   (iid) effects. `NULL` (default) starts both at zero.
 #'
 #' @return A list of class `tulpa_nmix_spatial_fit`:
 #'   * `theta_grid` -- `[n_grid x 2]` matrix of (sigma, rho) per grid point

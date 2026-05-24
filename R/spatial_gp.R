@@ -61,7 +61,7 @@ spatial_gp <- function(coords,
 
   # Check GPU availability if requested
 
-if (solver == "gpu" && !gpu_available()) {
+if (solver == "gpu" && !cpp_gpu_available()) {
     warning("GPU solver requested but GPU support is not available. ",
             "Falling back to PCG solver. ",
             "To enable GPU support, reinstall tulpa with CUDA.",

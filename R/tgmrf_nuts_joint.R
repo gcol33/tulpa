@@ -60,6 +60,11 @@
 #'   sanity check at the initial \eqn{q} and prints the max relative error
 #'   across all `D = p + n_lat + theta_dim` components.
 #' @param seed Integer seed for the C++ RNG. Default uses `sample.int(.Machine$integer.max, 1L)`.
+#' @param n_iter Total number of NUTS iterations (including warmup). Default
+#'   `500L`.
+#' @param warmup Number of warmup iterations used for dual-averaging step-size
+#'   adaptation and then discarded. Must satisfy `1 <= warmup < n_iter`. Default
+#'   `n_iter %/% 2L`.
 #'
 #' @return A list with class `c("tulpa_tgmrf_nuts_joint", "tulpa_fit")`:
 #'   \itemize{

@@ -24,7 +24,7 @@ validate_spatial <- function(spatial, data) {
     # resolver allows empty cells (cells with no observed data) when the
     # mapping is unambiguous (integer 1-based indices, or character /
     # factor labels matching `rownames(adjacency)`). It errors with a
-    # clear message when cells can't be identified — e.g. an unrowed
+    # clear message when cells can't be identified -- e.g. an unrowed
     # factor whose level count differs from the adjacency size.
     .resolve_spatial_idx(
       values = data[[spatial$group_var]],
@@ -287,13 +287,13 @@ apply_rsr_projection <- function(w, P_perp) {
 
 
 # =====================================================================
-# SPDE spatial field (Matérn via FEM on triangular mesh)
+# SPDE spatial field (Matern via FEM on triangular mesh)
 # =====================================================================
 
-#' SPDE Spatial Field (Matérn via Triangular Mesh)
+#' SPDE Spatial Field (Matern via Triangular Mesh)
 #'
-#' Specify a continuous Matérn spatial field using the SPDE approach
-#' (Lindgren, Rue & Lindström 2011). Builds a triangular mesh from
+#' Specify a continuous Matern spatial field using the SPDE approach
+#' (Lindgren, Rue & Lindstrom 2011). Builds a triangular mesh from
 #' observation coordinates, computes FEM matrices, and passes them
 #' to tulpa's SPDE Laplace engine with CHOLMOD sparse solver.
 #'
@@ -306,7 +306,7 @@ apply_rsr_projection <- function(w, P_perp) {
 #' @param max_edge Maximum edge length for mesh refinement. A single value
 #'   or `c(inner, outer)`.
 #' @param cutoff Minimum distance between mesh vertices. Default 0.
-#' @param nu Matérn smoothness parameter. Default 1 (exponential covariance).
+#' @param nu Matern smoothness parameter. Default 1 (exponential covariance).
 #'   Currently only integer values supported; fractional smoothness via
 #'   rational SPDE is planned.
 #' @param prior_range Prior for the spatial range. A numeric vector `c(U, alpha)`
@@ -388,13 +388,13 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
 
 #' SPDE Spatial Field from Custom Matrices
 #'
-#' Specify a continuous Matérn spatial field using externally-provided FEM
+#' Specify a continuous Matern spatial field using externally-provided FEM
 #' matrices. Use this with meshes from fmesher, rSPDE, or any other source.
 #'
 #' @param C Mass matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$c0`).
 #' @param G Stiffness matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$g1`).
 #' @param A Projection matrix (n_obs x n_mesh sparse matrix, e.g. from `fmesher::fm_basis()`).
-#' @param nu Matérn smoothness parameter. Default 1.
+#' @param nu Matern smoothness parameter. Default 1.
 #' @param prior_range Prior for the spatial range. Default `c(0.5, 0.5)`.
 #' @param prior_sigma Prior for the marginal standard deviation. Default `c(1, 0.5)`.
 #'
@@ -439,7 +439,7 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
 #' @export
 print.tulpa_spatial <- function(x, ...) {
   if (!is.null(x$type) && x$type == "spde") {
-    cat("tulpa_spatial: SPDE (Matérn, nu =", x$nu, ")\n")
+    cat("tulpa_spatial: SPDE (Matern, nu =", x$nu, ")\n")
     cat("  Mesh nodes:", x$n_mesh, "\n")
     if (!is.null(x$mesh)) {
       cat("  Triangles: ", x$mesh$n_triangles, "\n")

@@ -217,6 +217,12 @@
 #' @param adaptive_grid_max_passes Integer (default `1L`). Maximum number
 #'   of refinement passes. One pass typically suffices; two is rarely
 #'   useful and inflates runtime.
+#' @param var_of_means_consistency Logical (default `TRUE`). When `TRUE`, run a
+#'   post-integration consistency pass on the variance of the per-arm posterior
+#'   means and attach the diagnostics as `var_of_means_consistency_info`.
+#' @param force_sparse Logical (default `FALSE`). When `TRUE`, force the sparse
+#'   linear-algebra backend for the inner joint solve regardless of the
+#'   automatic dense/sparse heuristic.
 #'
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:

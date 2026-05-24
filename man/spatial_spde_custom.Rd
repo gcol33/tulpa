@@ -20,7 +20,7 @@ spatial_spde_custom(
 
 \item{A}{Projection matrix (n_obs x n_mesh sparse matrix, e.g. from \code{fmesher::fm_basis()}).}
 
-\item{nu}{Matérn smoothness parameter. Default 1.}
+\item{nu}{Matern smoothness parameter. Default 1.}
 
 \item{prior_range}{Prior for the spatial range. Default \code{c(0.5, 0.5)}.}
 
@@ -30,6 +30,6 @@ spatial_spde_custom(
 A \code{tulpa_spatial} object with type \code{"spde"}.
 }
 \description{
-Specify a continuous Matérn spatial field using externally-provided FEM
+Specify a continuous Matern spatial field using externally-provided FEM
 matrices. Use this with meshes from fmesher, rSPDE, or any other source.
 }

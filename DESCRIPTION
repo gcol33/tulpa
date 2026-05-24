@@ -20,20 +20,27 @@ Depends:
     R (>= 4.1.0)
 Imports:
     Rcpp (>= 1.0.12),
-    RcppEigen (>= 0.3.4),
-    posterior (>= 1.5.0),
     loo (>= 2.7.0),
     Matrix,
     tulpaMesh,
     stats,
-    utils
+    utils,
+    methods,
+    graphics,
+    grDevices
 Suggests:
     testthat (>= 3.0.0),
     bayesplot,
     ggplot2,
     sf,
     knitr,
-    rmarkdown
+    rmarkdown,
+    MASS,
+    betareg,
+    fmesher,
+    unmarked,
+    patchwork,
+    stars
 LinkingTo:
     Rcpp,
     RcppEigen,
