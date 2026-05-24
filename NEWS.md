@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+* feat(laplace): `tulpa_laplace_beta()` gains a `beta_prior` argument, forwarded
+  to the inner `tulpa_laplace()` fits (both the outer `phi` search and the final
+  refit) so the beta arm can carry a Gaussian fixed-effect penalty. Pure R
+  passthrough -- `tulpa_laplace()` already applied `beta_prior` for
+  `family = "beta"`. Enables penalised beta-regression arms downstream
+  (tulpaObs `cover_priors()` positive arm). Rejected with `spatial`, matching
+  `tulpa_laplace()`.
+
 * feat(laplace): correlated random slopes `(1 + x | g)` on the Laplace engine
   (gcol33/tulpa#28). `tulpa_laplace()` RE terms accept a per-term covariance via
   `L` (lower-triangular Cholesky, `Sigma = L L'`) or `cov`; the off-diagonal now

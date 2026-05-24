@@ -12,8 +12,13 @@
 #'
 #' @param y Response in `(0, 1)`.
 #' @param X Fixed-effects design matrix.
-#' @param re_list,spatial,weights,offset,max_iter,tol,n_threads Passed to
-#'   [tulpa_laplace()] verbatim.
+#' @param re_list,spatial,weights,offset,max_iter,tol,n_threads,beta_prior
+#'   Passed to [tulpa_laplace()] verbatim. `beta_prior` places a Gaussian
+#'   penalty on the fixed effects (a list with `sd`, optional `mean`; see
+#'   [tulpa_laplace()]). It is included in the Laplace log-marginal that the
+#'   precision `phi` is optimised against, so the penalised model is fit
+#'   consistently across the outer `phi` search. Not supported with `spatial`
+#'   (the spatial solver carries its own prior).
 #' @param phi_init Optional starting value for the precision. If `NULL`,
 #'   a method-of-moments warm start is used.
 #' @param phi_bounds Numeric length-2 vector with lower/upper bounds on
@@ -33,6 +38,7 @@ tulpa_laplace_beta <- function(y, X,
                                max_iter  = 100L,
                                tol       = 1e-6,
                                n_threads = 1L,
+                               beta_prior = NULL,
                                phi_init   = NULL,
                                phi_bounds = c(0.1, 1e4),
                                outer_tol  = 1e-4) {
@@ -54,7 +60,7 @@ tulpa_laplace_beta <- function(y, X,
       family = "beta", phi = phi, spatial = spatial,
       weights = weights, offset = offset,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      return_hessian = FALSE
+      return_hessian = FALSE, beta_prior = beta_prior
     )
   }
 
@@ -90,7 +96,7 @@ tulpa_laplace_beta <- function(y, X,
     family = "beta", phi = phi_hat, spatial = spatial,
     weights = weights, offset = offset,
     max_iter = max_iter, tol = tol, n_threads = n_threads,
-    return_hessian = TRUE
+    return_hessian = TRUE, beta_prior = beta_prior
   )
   fit$phi <- phi_hat
   fit$phi_trace <- do.call(rbind, trace)

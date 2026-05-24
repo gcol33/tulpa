@@ -14,6 +14,7 @@ tulpa_laplace_beta(
   max_iter = 100L,
   tol = 1e-06,
   n_threads = 1L,
+  beta_prior = NULL,
   phi_init = NULL,
   phi_bounds = c(0.1, 10000),
   outer_tol = 1e-04
@@ -24,8 +25,12 @@ tulpa_laplace_beta(
 
 \item{X}{Fixed-effects design matrix.}
 
-\item{re_list, spatial, weights, offset, max_iter, tol, n_threads}{Passed to
-\code{\link[=tulpa_laplace]{tulpa_laplace()}} verbatim.}
+\item{re_list, spatial, weights, offset, max_iter, tol, n_threads, beta_prior}{Passed to \code{\link[=tulpa_laplace]{tulpa_laplace()}} verbatim. \code{beta_prior} places a Gaussian
+penalty on the fixed effects (a list with \code{sd}, optional \code{mean}; see
+\code{\link[=tulpa_laplace]{tulpa_laplace()}}). It is included in the Laplace log-marginal that the
+precision \code{phi} is optimised against, so the penalised model is fit
+consistently across the outer \code{phi} search. Not supported with \code{spatial}
+(the spatial solver carries its own prior).}
 
 \item{phi_init}{Optional starting value for the precision. If \code{NULL},
 a method-of-moments warm start is used.}
