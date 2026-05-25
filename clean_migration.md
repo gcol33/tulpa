@@ -181,10 +181,20 @@ live in a tulpaObs `LikelihoodSpec`. The family-enum inner loop is retired.
   `(sigma, alpha)` reparam and post-Newton phi-centering invariant are untouched
   (see global memory `feedback_centering_breaks_joint_logmarginal`). Equivalence
   net green: joint/spec suite 924 pass / 0 fail (phi-grid 14/0, multi-recovery
-  106/0). NOTE: the single-arm `cpp_nested_laplace_multi` already routes through
-  the spec at L3 (`fd29078`); this leaves the np>=2 multi-PROCESS spec path
-  (`laplace_spec.cpp`) as the remaining family-enum scatter — distinct from the
-  multi-ARM joint driver and out of L4's scope.
+  106/0).
+- **L4.3 — Collapse the np>=2 multi-process spec loop into the shared solve.
+  ✅ DONE.** `82573d0` — the np>=2 branch of `laplace_mode_spec_dense_impl`
+  was already spec-driven (no family enum) but hand-rolled its own Newton loop,
+  duplicating the machinery L3 unified for np==1. Generalized `spec_inner_solve_np1`
+  -> `spec_inner_solve` (eta buffer N*np; the shared `laplace_newton_solve_ll`
+  treats eta as opaque, so np lives entirely in the spec helpers), generalized
+  `scatter`/`gather_compacted_latent` to all np processes, and collapsed the np==1
+  special-case + the ~155-line np>=2 loop into one call (deleted `apply_latent_step`).
+  GMRF blocks stay gated to np==1, so np>=2 has no blocks / no centering. This is
+  now the single inner Laplace loop for every spec path. Net -188 lines.
+  Equivalence net green: `test-laplace-spec.R` 17/0 (carries the np==2 gaussian2p
+  fixture that drove the deleted loop), spec block icar/bym2 27/0, nested 52/0,
+  multi-block 42/0.
 - **L5 — Retire family-enum + det_prob.** Remove the nested kernel's
   `grad_hess_for_family`/`det_prob` usage; delete `det_prob` from tulpa's R + C++
   surface. Add the occupancy scaled-Bernoulli `LikelihoodSpec` to tulpaObs
