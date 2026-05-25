@@ -167,11 +167,15 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   }
   L <- t(chol(sigma_post))   # sigma_post = L L^T
 
-  # CCD design (k = 2 -> 1 + 4 + 4 = 9 points). Map z to physical
-  # (log_range, log_sigma), then exponentiate. Cap log-scale excursions
-  # at the optimisation box so a CCD axial that exceeds the prior support
-  # snaps back to the boundary instead of overflowing to 1e+200.
-  ccd <- ccd_grid(k = 2L, f_0 = sqrt(2))
+  # CCD design (k = 2 -> 1 + 4 + 4 = 9 points). Sphere radius sqrt(2)*1.1
+  # places the factorial corners at +/- 1.1 per axis -- INLA's standardized
+  # scaling (f0 = 1.1) -- and `ccd_weights()` gives the matching corrected
+  # R-INLA design weights (single source of truth with re_cov; see ccd_grid.R).
+  # Map z to physical (log_range, log_sigma), then exponentiate. Cap log-scale
+  # excursions at the optimisation box so a CCD axial that exceeds the prior
+  # support snaps back to the boundary instead of overflowing to 1e+200.
+  ccd <- ccd_grid(k = 2L, f_0 = sqrt(2) * 1.1)
+  dnode <- ccd_weights(ccd)
   theta_grid <- ccd_to_theta(ccd$z, theta_hat, L, log_scale = FALSE)
   theta_grid[, 1] <- pmin(pmax(theta_grid[, 1], lower[1]), upper[1])
   theta_grid[, 2] <- pmin(pmax(theta_grid[, 2], lower[2]), upper[2])
@@ -182,8 +186,10 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   log_post <- result$log_marginal +
     pc_prior_log_density(range_grid, sigma_grid,
                          sp$prior_range, sp$prior_sigma)
+  # CCD quadrature: node weight = design weight (Delta_k) times exp(log_post),
+  # the INLA convention int ~ sum_k Delta_k pi(theta_k).
   log_max <- max(log_post)
-  weights <- exp(log_post - log_max)
+  weights <- dnode * exp(log_post - log_max)
   weights <- weights / sum(weights)
 
   best <- which.max(log_post)

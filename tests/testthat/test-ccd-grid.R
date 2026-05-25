@@ -95,3 +95,42 @@ test_that("ccd_to_theta validates dimensions", {
                              log_scale = c(TRUE, FALSE, TRUE)),
                "length 1 or k")
 })
+
+test_that("ccd_weights matches the corrected R-INLA reference values", {
+  # Corrected R-INLA formula (fixes the Rue et al. 2009 typo), standardized
+  # f0 = 1.1: w = 1/((np-1)(1 + e^{-m f0^2/2}(f0^2-1))), w0 = 1-(np-1)w. These
+  # constants are the function's output; the *correctness* property (Gaussian
+  # moment reproduction) is checked independently in the next test.
+  g2 <- ccd_grid(2L, f_0 = sqrt(2) * 1.1)
+  w2 <- ccd_weights(g2)
+  expect_equal(w2[g2$kind == "center"][1], 0.05893108, tolerance = 1e-7)
+  expect_equal(w2[g2$kind != "center"][1], 0.11763361, tolerance = 1e-7)
+
+  g3 <- ccd_grid(3L, f_0 = sqrt(3) * 1.1)
+  w3 <- ccd_weights(g3)
+  expect_equal(w3[g3$kind == "center"][1], 0.03306526, tolerance = 1e-7)
+  expect_equal(w3[g3$kind != "center"][1], 0.06906677, tolerance = 1e-7)
+
+  # Design weights sum to 1; centre weight is positive and the smallest.
+  expect_equal(sum(w3), 1, tolerance = 1e-12)
+  expect_gt(w3[g3$kind == "center"][1], 0)
+  expect_lt(w3[g3$kind == "center"][1], w3[g3$kind != "center"][1])
+})
+
+test_that("ccd_weights reproduce N(0, I) moments (the integration check)", {
+  # The whole point of the design weights: on a standardized Gaussian posterior
+  # the CCD quadrature must recover mean 0 and unit variance. W_k ~ Delta_k * pi.
+  for (m in c(2L, 3L, 6L)) {
+    g <- ccd_grid(m, f_0 = sqrt(m) * 1.1)
+    dnode <- ccd_weights(g)
+    logf <- apply(g$z, 1L, function(z) -0.5 * sum(z^2))   # log N(0, I)
+    W <- dnode * exp(logf - max(logf)); W <- W / sum(W)
+
+    mean_hat <- colSums(W * g$z)
+    var_hat  <- colSums(W * g$z^2)
+    cov_hat  <- sum(W * g$z[, 1] * g$z[, 2])
+    expect_equal(mean_hat, rep(0, m), tolerance = 1e-8)
+    expect_equal(var_hat, rep(1, m), tolerance = 1e-8)
+    expect_equal(cov_hat, 0, tolerance = 1e-8)
+  }
+})
