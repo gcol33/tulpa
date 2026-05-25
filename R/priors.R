@@ -320,48 +320,6 @@ prior_pc <- function(U = 1, alpha = 0.01) {
 }
 
 
-#' Legacy prior specification (deprecated)
-#'
-#' @description
-#' Old-style prior specification for backwards compatibility.
-#' Use `tulpa_priors()` with `prior_*()` functions instead.
-#'
-#' @param sigma_U Upper bound for random effect SD.
-#' @param sigma_alpha Tail probability.
-#' @param phi_U Upper bound for overdispersion.
-#' @param phi_alpha Tail probability for overdispersion.
-#' @param beta_sd SD for normal prior on fixed effects.
-#'
-#' @return A `tulpa_priors` object
-#'
-#' @keywords internal
-#' @export
-tulpa_priors_legacy <- function(
-    sigma_U = 1.0,
-    sigma_alpha = 0.01,
-    phi_U = 10.0,
-    phi_alpha = 0.01,
-    beta_sd = 2.5
-) {
-
-  # Validate
-  .assert_positive(sigma_U, "sigma_U")
-  if (sigma_alpha <= 0 || sigma_alpha >= 1) {
-    stop("sigma_alpha must be in (0, 1)", call. = FALSE)
-  }
-  .assert_positive(phi_U, "phi_U")
-  if (phi_alpha <= 0 || phi_alpha >= 1) {
-    stop("phi_alpha must be in (0, 1)", call. = FALSE)
-  }
-  .assert_positive(beta_sd, "beta_sd")
-
-  tulpa_priors(
-    beta = prior_normal(0, beta_sd),
-    sigma = prior_pc(U = sigma_U, alpha = sigma_alpha),
-    phi = prior_pc(U = phi_U, alpha = phi_alpha)
-  )
-}
-
 #' Print method for tulpa_priors
 #'
 #' @param x A tulpa_priors object
