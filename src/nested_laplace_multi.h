@@ -21,11 +21,13 @@
 #ifndef TULPA_NESTED_LAPLACE_MULTI_H
 #define TULPA_NESTED_LAPLACE_MULTI_H
 
+#include "laplace_builtin_family_spec.h"  // builtin_family_spec, BuiltinFamilyResponse
 #include "laplace_core.h"
 #include "laplace_family_link.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
 #include "laplace_scatter.h"
+#include "laplace_spec_solve.h"           // spec_inner_solve_np1 (the unified inner solve)
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
 #include "sparse_cholesky.h"
@@ -40,86 +42,6 @@
 #endif
 
 namespace tulpa {
-
-// Per-observation latent-block scatter for the multi-block driver.
-//
-// Generalizes the BYM2 hand-rolled cross-term loop to a vector of blocks. For
-// each observation i, resolves the active subset of blocks (those whose
-// idx(i) is in [1, size]), then accumulates the latent grad and the latent-
-// {self,β,RE} Hessian cross-terms with d_fac coefficients.
-//
-// β/RE x β/RE blocks are NOT touched here — those are produced by
-// scatter_obs_grad_hess_base. This helper only adds the latent-side
-// contributions.
-//
-// Serial across observations. The latent block count B is small (typically
-// 1-3), so the inner cost is dominated by the base scatter's β x β block.
-inline void accumulate_latent_cross_terms(
-    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
-    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
-    int N, int p, int n_re_groups,
-    const Rcpp::NumericVector& eta,
-    const std::string& family, double phi,
-    const std::vector<LatentBlock>& blocks, int k,
-    DenseVec& grad, DenseMat& H,
-    const double* det_prob = nullptr
-) {
-    const int B = static_cast<int>(blocks.size());
-    if (B == 0) return;
-
-    std::vector<double> d_fac_cache(B);
-    for (int b = 0; b < B; b++) d_fac_cache[b] = blocks[b].d_fac(k);
-
-    std::vector<int> active_idx;
-    std::vector<double> active_d;
-    active_idx.reserve(B);
-    active_d.reserve(B);
-
-    for (int i = 0; i < N; i++) {
-        active_idx.clear();
-        active_d.clear();
-        for (int b = 0; b < B; b++) {
-            int l_b = blocks[b].idx(i, /*k_arm=*/0);
-            if (l_b > 0 && l_b <= blocks[b].size) {
-                active_idx.push_back(blocks[b].start + l_b - 1);
-                active_d.push_back(d_fac_cache[b]);
-            }
-        }
-        if (active_idx.empty()) continue;
-
-        auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi,
-                                       det_prob ? det_prob[i] : 1.0);
-
-        int re_g = -1;
-        if (n_re_groups > 0) {
-            int g = static_cast<int>(re_idx[i]) - 1;
-            if (g >= 0 && g < n_re_groups) re_g = g;
-        }
-
-        const int A = static_cast<int>(active_idx.size());
-        for (int a = 0; a < A; a++) {
-            const int idx_a = active_idx[a];
-            const double d_a = active_d[a];
-
-            grad[idx_a] += gh.grad * d_a;
-
-            for (int j = 0; j < p; j++) {
-                double v = gh.neg_hess * X(i, j) * d_a;
-                H[j][idx_a]     += v;
-                H[idx_a][j]     += v;
-            }
-            if (re_g >= 0) {
-                double v = gh.neg_hess * d_a;
-                H[p + re_g][idx_a] += v;
-                H[idx_a][p + re_g] += v;
-            }
-
-            for (int b = 0; b < A; b++) {
-                H[idx_a][active_idx[b]] += gh.neg_hess * d_a * active_d[b];
-            }
-        }
-    }
-}
 
 // Generic outer-grid driver over a vector of LatentBlocks.
 //
@@ -160,6 +82,66 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // the live factor with no rescaling.
     const double* det_prob_ptr =
         (det_prob.size() == N) ? &det_prob[0] : nullptr;
+
+    // ---- Unified spec-driven inner solve setup (L3.3) -----------------------
+    // Each single-block (and np==1 multi-block) nested kernel routes its inner
+    // Laplace solve through spec_inner_solve_np1: a builtin_family_spec supplies
+    // the likelihood (the same grad_hess_for_family / log_lik_for_family closed
+    // forms, now via the LikelihoodSpec adapter, with det_prob threaded) and
+    // scatter_spec assembles the latent gradient + Hessian. The driver therefore
+    // no longer carries a second copy of the obs + latent-cross scatter. Built
+    // once; read-only inside the (possibly parallel) grid. sigma_beta = 100 makes
+    // the spec's beta ridge tau_beta = 1e-4, identical to the nested kernel's
+    // DEFAULT_TAU_BETA; the spec additionally folds the beta-prior log-density
+    // into the log-marginal -- the convention gap the L2 spec-block fixtures
+    // flagged for reconciliation here at L3 (modes are unchanged).
+    const bool has_re = (n_re_groups > 0) && (re_idx.size() == N);
+
+    ProcessData proc;
+    proc.p = p;
+    proc.X_flat.resize((size_t)N * p);
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < p; j++)
+            proc.X_flat[(size_t)i * p + j] = X(i, j);
+
+    LikelihoodSpec spec = builtin_family_spec(family);
+    std::vector<int> n_trials_vec(n_trials.begin(), n_trials.end());
+    BuiltinFamilyResponse resp;
+    resp.y        = y.begin();
+    resp.n_trials = n_trials_vec.data();
+    resp.N        = N;
+    resp.family   = family;
+    resp.phi      = phi;
+    resp.det_prob = det_prob_ptr;
+
+    ModelData data;
+    data.n_processes         = 1;
+    data.processes.push_back(proc);
+    data.N                   = N;
+    data.sigma_beta          = 100.0;   // tau_beta = 1e-4 == DEFAULT_TAU_BETA
+    data.likelihood_spec     = &spec;
+    data.model_response_data = &resp;
+    data.sharing.init(1);
+    std::vector<int> re_group_1based;
+    if (has_re) {
+        data.n_re_groups = n_re_groups;
+        re_group_1based.resize(N);
+        for (int i = 0; i < N; i++) re_group_1based[i] = static_cast<int>(re_idx[i]);
+        data.re_group = re_group_1based;
+    }
+
+    ParamLayout layout;
+    layout.process_beta_start.push_back(0);
+    layout.process_beta_count.push_back(p);
+    if (has_re) {
+        layout.has_re           = true;
+        layout.re_start         = p;
+        layout.re_end           = p + n_re_groups;
+        layout.log_sigma_re_idx = n_x;   // hyperparam slot AFTER all latent
+    }
+    const int total_params = n_x + (has_re ? 1 : 0);
+    layout.total_params = total_params;
+    const double log_sigma_re = std::log(sigma_re);
 
     // Per-outer-thread NewtonScratch. omp_get_thread_num() returns 0 outside
     // parallel regions so the serial path correctly picks scratch_pool[0].
@@ -217,63 +199,6 @@ inline Rcpp::List run_multi_block_nested_laplace(
             d_fac_cache[b] = blocks[b].d_fac(k);
         }
 
-        auto compute_eta = [&](const Rcpp::NumericVector& x,
-                               Rcpp::NumericVector& eta) {
-            #ifdef _OPENMP
-            #pragma omp parallel for schedule(static) \
-                num_threads(n_threads_inner_eff > 0 ? n_threads_inner_eff : 1) \
-                if(n_threads_inner_eff > 1)
-            #endif
-            for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                if (n_re_groups > 0) {
-                    int g = static_cast<int>(re_idx[i]) - 1;
-                    if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-                }
-                for (size_t b = 0; b < blocks.size(); b++) {
-                    int l = blocks[b].idx(i, /*k_arm=*/0);
-                    if (l > 0 && l <= blocks[b].size) {
-                        eta[i] += d_fac_cache[b] * x[blocks[b].start + l - 1];
-                    }
-                }
-            }
-        };
-
-        auto scatter = [&](const Rcpp::NumericVector& x,
-                           const Rcpp::NumericVector& eta,
-                           DenseVec& grad, DenseMat& H) {
-            scatter_obs_grad_hess_base(y, n_trials, X, re_idx,
-                                        N, p, n_re_groups,
-                                        eta, family, phi,
-                                        grad, H, n_threads_inner_eff,
-                                        det_prob_ptr);
-            accumulate_latent_cross_terms(y, n_trials, X, re_idx,
-                                           N, p, n_re_groups,
-                                           eta, family, phi,
-                                           blocks, k, grad, H,
-                                           det_prob_ptr);
-            for (const auto& b : blocks) {
-                if (b.add_prior) b.add_prior(grad, H, x, k);
-            }
-            add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
-        };
-
-        auto center = [&](Rcpp::NumericVector& x) {
-            for (const auto& b : blocks) {
-                if (b.center) b.center(x);
-            }
-        };
-
-        auto log_prior = [&](const Rcpp::NumericVector& x,
-                             const Rcpp::NumericVector&) {
-            double lp = compute_log_prior_re(x, p, n_re_groups, tau_re);
-            for (const auto& b : blocks) {
-                if (b.log_prior) lp += b.log_prior(x, k);
-            }
-            return lp;
-        };
-
         int tid;
         #ifdef _OPENMP
         tid = omp_in_parallel() ? omp_get_thread_num() : 0;
@@ -284,12 +209,20 @@ inline Rcpp::List run_multi_block_nested_laplace(
         NewtonScratch& scratch = scratch_override ? *scratch_override
                                                   : scratch_pool[tid];
 
-        LaplaceResult res = laplace_newton_solve(
-            y, n_trials, family, phi, N, n_x,
-            max_iter_use, tol, n_threads_inner_eff,
-            compute_eta, scatter, center, log_prior,
-            scratch, prev_mode, solver, store_Q,
-            /*inv_block_layout=*/nullptr, det_prob_ptr
+        // base_params: latent warm start in [0, n_x); log_sigma_re hyperparam
+        // after. spec_inner_solve_np1 builds the [beta | RE | blocks] layout,
+        // wraps the spec helpers as the shared Newton loop's closures, and leaves
+        // the live Cholesky factor resident in scratch/solver for the predictive-
+        // variance back-solves below.
+        std::vector<double> base_params(total_params, 0.0);
+        if (static_cast<int>(prev_mode.size()) == n_x)
+            std::copy(prev_mode.begin(), prev_mode.end(), base_params.begin());
+        if (has_re) base_params[layout.log_sigma_re_idx] = log_sigma_re;
+
+        LaplaceResult res = spec_inner_solve_np1(
+            data, layout, &blocks, k, spec, &resp, re_group_1based,
+            max_iter_use, tol, n_threads_inner_eff, base_params,
+            scratch, solver, store_Q, /*inv_block_layout=*/nullptr
         );
 
         // Per-row predictive variance, var(eta_i | theta_k) = a_i' H^{-1} a_i,

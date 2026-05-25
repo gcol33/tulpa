@@ -60,7 +60,15 @@ test_that("C++ grid loop matches R single-point calls", {
     family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L
   )
 
-  # R single-point calls (cold start each)
+  # The nested grid kernel routes its inner solve through the unified spec path
+  # (L3), which folds the beta-prior log-density into the log-marginal;
+  # cpp_laplace_fit_spatial is a separate single-point entry still on the pre-L3
+  # convention that omits it. The two therefore differ by exactly that beta
+  # density (tau_beta = 1e-4 = the shared DEFAULT_TAU_BETA, p fixed effects), so
+  # accounting for it keeps this a test of grid-vs-single-point agreement of the
+  # shared mode + likelihood + Hessian (it cancels once that entry is unified).
+  p <- ncol(dat$X)
+  tau_beta <- 1e-4
   for (k in seq_along(tau_grid)) {
     r_result <- cpp_laplace_fit_spatial(
       y = dat$y, n = dat$n_trials, X = dat$X,
@@ -71,9 +79,9 @@ test_that("C++ grid loop matches R single-point calls", {
       family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L
     )
 
-    # Log-marginals should match closely (may differ slightly due to warm-start
-    # finding a slightly different mode path, but converged results should agree)
-    expect_equal(cpp_result$log_marginal[k], r_result$log_marginal,
+    beta <- r_result$mode[seq_len(p)]
+    beta_density <- sum(-0.5 * tau_beta * beta^2) + 0.5 * p * log(tau_beta / (2 * pi))
+    expect_equal(cpp_result$log_marginal[k], r_result$log_marginal + beta_density,
                  tolerance = 1e-3,
                  label = paste("tau =", tau_grid[k]))
   }

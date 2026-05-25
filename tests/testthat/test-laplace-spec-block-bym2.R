@@ -4,8 +4,9 @@
 # LatentBlocks cpp_nested_laplace_bym2 builds, with grid-dependent d_fac. This
 # exercises the paths the single ICAR block does not: d_fac != 1 on the eta
 # mixing and the block x block likelihood cross-term (both blocks active at the
-# same observation). As in the ICAR test, the spec log-marginal matches the
-# nested kernel up to the beta-prior log-density the nested kernel omits.
+# same observation). As in the ICAR test, the spec and nested log-marginals
+# match exactly: at L3 the nested kernel routes through the same spec inner
+# solve, so both include the beta-prior log-density.
 
 build_chain_adj <- function(K) {
   nbrs <- lapply(seq_len(K), function(s) c(if (s > 1L) s - 1L, if (s < K) s + 1L))
@@ -50,13 +51,11 @@ expect_bym2_match <- function(family, y, n_trials, X, spatial_idx, K, adj,
   expect_equal(spec$mode, ref_mode, tolerance = tol,
                info = paste0(family, " BYM2: mode"))
 
-  p <- ncol(X)
-  beta <- spec$mode[seq_len(p)]
-  tau_beta <- 1 / (sigma_beta * sigma_beta)
-  beta_density <- sum(-0.5 * tau_beta * beta^2) + 0.5 * p * log(tau_beta / (2 * pi))
-  expect_equal(spec$log_marginal, ref$log_marginal[1] + beta_density,
+  # L3: nested kernel routes through the same spec inner solve, so it includes
+  # the beta-prior log-density too -- the log-marginals match exactly.
+  expect_equal(spec$log_marginal, ref$log_marginal[1],
                tolerance = tol,
-               info = paste0(family, " BYM2: log_marginal up to beta density"))
+               info = paste0(family, " BYM2: log_marginal"))
 }
 
 test_that("spec BYM2 blocks reproduce the nested BYM2 kernel (no RE)", {

@@ -7,10 +7,10 @@
 # nested kernel's inner solve at a single hyperparameter cell:
 #   * the mode must match (full gradient: likelihood cross-terms + block prior
 #     gradient + centering),
-#   * the Laplace log-marginal must match UP TO the beta-prior log-density,
-#     which the spec solver includes in its latent log-prior but the nested
-#     kernel's compute_log_prior_re omits (a known convention gap to reconcile
-#     at L3). That the gap equals the beta density exactly also pins the shared
+#   * the Laplace log-marginal must match exactly. The nested kernel now routes
+#     its inner solve through the same spec path (L3), so both include the
+#     beta-prior log-density -- the convention gap the earlier fixtures flagged
+#     is reconciled. Exact log-marginal agreement also pins the shared
 #     log-likelihood and the shared Hessian (via log|H|).
 
 # Chain graph on K nodes: s ~ s-1, s+1. CSR adjacency with 0-based col idx.
@@ -56,14 +56,11 @@ expect_icar_match <- function(family, y, n_trials, X, spatial_idx, K, adj,
   expect_equal(spec$mode, ref_mode, tolerance = tol,
                info = paste0(family, " ICAR: mode"))
 
-  # Spec log-marginal = nested log-marginal + beta-prior log-density.
-  p <- ncol(X)
-  beta <- spec$mode[seq_len(p)]
-  tau_beta <- 1 / (sigma_beta * sigma_beta)
-  beta_density <- sum(-0.5 * tau_beta * beta^2) + 0.5 * p * log(tau_beta / (2 * pi))
-  expect_equal(spec$log_marginal, ref$log_marginal[1] + beta_density,
+  # L3: the nested kernel routes through the same spec inner solve, so it now
+  # includes the beta-prior log-density too -- the log-marginals match exactly.
+  expect_equal(spec$log_marginal, ref$log_marginal[1],
                tolerance = tol,
-               info = paste0(family, " ICAR: log_marginal up to beta density"))
+               info = paste0(family, " ICAR: log_marginal"))
 }
 
 test_that("spec ICAR block reproduces the nested ICAR kernel (no RE)", {
