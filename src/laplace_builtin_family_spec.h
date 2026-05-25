@@ -31,6 +31,11 @@ struct BuiltinFamilyResponse {
     int N = 0;
     std::string family;              // resolved against laplace_family_link.h
     double phi = 1.0;                // dispersion / precision / size
+    // Per-obs probability scale q_i for the `bernoulli` family (mu_i =
+    // q_i * sigma(eta_i)); null => q_i = 1 (plain logit Bernoulli). tulpaObs sets
+    // q_i = 1 - (1-p)^J to fit the marginalized occupancy state likelihood.
+    // Borrowed; must outlive the fit. Ignored by every other family.
+    const double* det_prob = nullptr;
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
@@ -42,7 +47,8 @@ inline double builtin_family_ll_double(
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
-    return log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi);
+    const double q = r->det_prob ? r->det_prob[i] : 1.0;
+    return log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi, q);
 }
 
 // EtaWeightsFn: per-obs eta-space score + Fisher working weight. n_processes
@@ -55,7 +61,8 @@ inline void builtin_family_eta_weights(
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
-    const GradHess gh = grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi);
+    const double q = r->det_prob ? r->det_prob[i] : 1.0;
+    const GradHess gh = grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi, q);
     grad_eta[0]     = gh.grad;
     neg_hess_eta[0] = gh.neg_hess;
 }
