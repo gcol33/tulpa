@@ -11,6 +11,7 @@ tulpa_re_cov_nested(
   re_term,
   family = "binomial",
   phi = 1,
+  integration = c("ccd", "grid"),
   n_per_axis = 5L,
   span = 3,
   log_prior_theta = NULL,
@@ -29,11 +30,15 @@ index per observation), \code{n_groups}, \code{n_coefs} (\code{c}), and \code{Z}
 \code{cov} / \code{sigma} field is ignored -- \code{Sigma} is what this function
 integrates over.}
 
-\item{n_per_axis}{Points per \code{theta} axis in the tensor grid (default 5).
-Grid size is \code{n_per_axis^(c(c+1)/2)}; each cell is one Laplace fit.}
+\item{integration}{Node layout: \code{"ccd"} (default, central-composite design,
+scales to larger \code{c}) or \code{"grid"} (full tensor product). See Details.}
 
-\item{span}{Half-width of the grid in posterior standard deviations per
-whitened axis (default 3).}
+\item{n_per_axis}{Points per \code{theta} axis in the tensor grid (default 5);
+used only when \code{integration = "grid"}. Grid size is \code{n_per_axis^(c(c+1)/2)};
+each cell is one Laplace fit.}
+
+\item{span}{Half-width of the tensor grid in posterior standard deviations
+per whitened axis (default 3); used only when \code{integration = "grid"}.}
 
 \item{log_prior_theta}{Optional \verb{function(theta)} returning a scalar log
 prior density in the log-Cholesky parameterization. Default flat (\code{0}).}
@@ -68,12 +73,26 @@ headline summary should be the marginalized median, not the mode.
 \code{Sigma} is parameterized by its lower Cholesky factor \code{L} (\verb{Sigma = L L'})
 in log-Cholesky coordinates \code{theta}: the log-diagonal and the strictly-lower
 entries of \code{L} (\code{c(c+1)/2} values for a \code{c}-coefficient term), which keeps
-\code{Sigma} positive definite for every \code{theta}. The integration grid is a
-tensor grid in whitened \code{theta}-space, centred at the marginal-likelihood
-mode \code{theta_hat} and rotated/scaled by the Cholesky of the mode's posterior
-covariance (\code{solve(Hessian)}), so points track the posterior ridge. Each
-grid cell \code{k} contributes weight proportional to
-\code{exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}.
+\code{Sigma} positive definite for every \code{theta}. Integration nodes live in
+whitened \code{theta}-space, centred at the marginal-likelihood mode \code{theta_hat}
+and rotated/scaled by the Cholesky of the mode's posterior covariance
+(\code{solve(Hessian)}), so points track the posterior ridge.
+
+Two node layouts are available via \code{integration}:
+\itemize{
+\item \code{"ccd"} (default): a central-composite design (\code{\link[=ccd_grid]{ccd_grid()}}) of
+\verb{1 + 2k + 2^(k-q)} points for \code{k = c(c+1)/2} hyperparameters, with the
+corrected R-INLA design weights (\code{\link[=ccd_weights]{ccd_weights()}}). Scales polynomially in
+the number of coefficients \code{c}, where the tensor grid is exponential
+(\code{c = 3} -> \code{k = 6} -> \code{5^6 ~ 15600} cells vs \code{77} CCD points).
+\item \code{"grid"}: the full \code{n_per_axis^k} tensor product with uniform cell
+weights -- denser and more robust to a non-Gaussian whitened posterior,
+but only tractable for small \code{c}.
+}
+Each node \code{k} contributes integration weight proportional to
+\code{Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}, where
+\code{Delta_k} is the CCD design weight (uniform for the tensor grid), following
+the INLA convention \verb{int ~ sum_k Delta_k pi(theta_k)}.
 
 The default \code{log_prior_theta} is flat in \code{theta} (improper, but the finite
 grid truncates the tails). Supply a function for an informative prior; note

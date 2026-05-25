@@ -140,3 +140,39 @@ ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
   }
   unname(theta)
 }
+
+#' Corrected R-INLA CCD integration weights
+#'
+#' @description
+#' Per-point design weights for a [ccd_grid()] used as nested-Laplace integration
+#' nodes. Implements the corrected R-INLA central-composite-design weights: the
+#' formula in Rue, Martino and Chopin (2009) has a typo, corrected by the R-INLA
+#' team to give a positive central weight. With `m` hyperparameters, `np` design
+#' points and standardized scaling `f0`, every non-centre point gets
+#' \deqn{w = 1 / ((np - 1)(1 + e^{-m f0^2 / 2}(f0^2 - 1)))}
+#' and the centre point gets \eqn{w_0 = 1 - (np - 1) w}. Used as
+#' \eqn{\Delta_k}: the integration weight of node \eqn{k} is
+#' \eqn{\Delta_k \exp(\log\,\mathrm{marginal}_k)}, renormalized. On a standardized
+#' (whitened) hyperparameter posterior these reproduce the Gaussian moments
+#' exactly.
+#'
+#' @param ccd A [ccd_grid()] result. The standardized scaling is recovered as
+#'   `f0 = ccd$f_0 / sqrt(m)`: a `ccd_grid(m, f_0 = sqrt(m) * f0)` design places
+#'   the factorial corners at `+/- f0`, matching the INLA convention (`f0 = 1.1`
+#'   is the INLA default).
+#'
+#' @return Numeric vector of length `ccd$n_points`: the design weight for each
+#'   point (the centre weight `w0` for the central point, `w` otherwise).
+#'
+#' @seealso [ccd_grid()], [ccd_to_theta()].
+#' @keywords internal
+#' @export
+ccd_weights <- function(ccd) {
+  m  <- ncol(ccd$z)
+  np <- ccd$n_points
+  if (np <= 1L) return(rep(1, max(np, 1L)))
+  f0 <- ccd$f_0 / sqrt(m)
+  w  <- 1 / ((np - 1) * (1 + exp(-m * f0^2 / 2) * (f0^2 - 1)))
+  w0 <- 1 - (np - 1) * w
+  ifelse(ccd$kind == "center", w0, w)
+}

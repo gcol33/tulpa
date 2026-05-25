@@ -98,12 +98,26 @@
 #' `Sigma` is parameterized by its lower Cholesky factor `L` (`Sigma = L L'`)
 #' in log-Cholesky coordinates `theta`: the log-diagonal and the strictly-lower
 #' entries of `L` (`c(c+1)/2` values for a `c`-coefficient term), which keeps
-#' `Sigma` positive definite for every `theta`. The integration grid is a
-#' tensor grid in whitened `theta`-space, centred at the marginal-likelihood
-#' mode `theta_hat` and rotated/scaled by the Cholesky of the mode's posterior
-#' covariance (`solve(Hessian)`), so points track the posterior ridge. Each
-#' grid cell `k` contributes weight proportional to
-#' `exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`.
+#' `Sigma` positive definite for every `theta`. Integration nodes live in
+#' whitened `theta`-space, centred at the marginal-likelihood mode `theta_hat`
+#' and rotated/scaled by the Cholesky of the mode's posterior covariance
+#' (`solve(Hessian)`), so points track the posterior ridge.
+#'
+#' Two node layouts are available via `integration`:
+#' \itemize{
+#'   \item `"ccd"` (default): a central-composite design ([ccd_grid()]) of
+#'     `1 + 2k + 2^(k-q)` points for `k = c(c+1)/2` hyperparameters, with the
+#'     corrected R-INLA design weights ([ccd_weights()]). Scales polynomially in
+#'     the number of coefficients `c`, where the tensor grid is exponential
+#'     (`c = 3` -> `k = 6` -> `5^6 ~ 15600` cells vs `77` CCD points).
+#'   \item `"grid"`: the full `n_per_axis^k` tensor product with uniform cell
+#'     weights -- denser and more robust to a non-Gaussian whitened posterior,
+#'     but only tractable for small `c`.
+#' }
+#' Each node `k` contributes integration weight proportional to
+#' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, where
+#' `Delta_k` is the CCD design weight (uniform for the tensor grid), following
+#' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
 #'
 #' The default `log_prior_theta` is flat in `theta` (improper, but the finite
 #' grid truncates the tails). Supply a function for an informative prior; note
@@ -116,10 +130,13 @@
 #'   `n_obs x c` RE design, e.g. `cbind(1, x)` for `(1 + x | g)`). Any `L` /
 #'   `cov` / `sigma` field is ignored -- `Sigma` is what this function
 #'   integrates over.
-#' @param n_per_axis Points per `theta` axis in the tensor grid (default 5).
-#'   Grid size is `n_per_axis^(c(c+1)/2)`; each cell is one Laplace fit.
-#' @param span Half-width of the grid in posterior standard deviations per
-#'   whitened axis (default 3).
+#' @param integration Node layout: `"ccd"` (default, central-composite design,
+#'   scales to larger `c`) or `"grid"` (full tensor product). See Details.
+#' @param n_per_axis Points per `theta` axis in the tensor grid (default 5);
+#'   used only when `integration = "grid"`. Grid size is `n_per_axis^(c(c+1)/2)`;
+#'   each cell is one Laplace fit.
+#' @param span Half-width of the tensor grid in posterior standard deviations
+#'   per whitened axis (default 3); used only when `integration = "grid"`.
 #' @param log_prior_theta Optional `function(theta)` returning a scalar log
 #'   prior density in the log-Cholesky parameterization. Default flat (`0`).
 #' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
@@ -140,9 +157,11 @@
 #' @export
 tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
                                 family = "binomial", phi = 1.0,
+                                integration = c("ccd", "grid"),
                                 n_per_axis = 5L, span = 3,
                                 log_prior_theta = NULL,
                                 max_iter = 100L, tol = 1e-8, n_threads = 1L) {
+  integration <- match.arg(integration)
 
   if (is.null(re_term$n_coefs)) re_term$n_coefs <- 1L
   c_re <- as.integer(re_term$n_coefs)
@@ -223,10 +242,23 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
   }, error = function(e) diag(0.5^2, k))
   L_scale <- t(chol(post_cov))
 
-  # --- rotated tensor grid in whitened theta-space --------------------------
-  ax <- seq(-span, span, length.out = as.integer(n_per_axis))
-  z <- as.matrix(expand.grid(rep(list(ax), k)))
-  dimnames(z) <- NULL
+  # --- integration nodes in whitened theta-space ----------------------------
+  # CCD (default): O(2^k) nodes -- 1 centre + 2k axial + 2^k factorial -- versus
+  # n_per_axis^k for the tensor grid, the only tractable choice once k = c(c+1)/2
+  # grows (c=3 -> k=6). Sphere radius sqrt(k)*1.1 places the factorial corners at
+  # +/- 1.1 (INLA standardized scaling); `dnode` are the corrected R-INLA design
+  # weights. The tensor grid stays available via `integration = "grid"` (denser,
+  # more robust to a non-Gaussian whitened posterior, but exponential in k).
+  if (integration == "ccd") {
+    ccd   <- ccd_grid(k, f_0 = sqrt(k) * 1.1)
+    z     <- ccd$z
+    dnode <- ccd_weights(ccd)
+  } else {
+    ax    <- seq(-span, span, length.out = as.integer(n_per_axis))
+    z     <- as.matrix(expand.grid(rep(list(ax), k)))
+    dimnames(z) <- NULL
+    dnode <- rep(1, nrow(z))                # uniform tensor-cell weight
+  }
   theta_grid <- ccd_to_theta(z, theta_hat, L_scale)   # n_grid x k
   ng <- nrow(theta_grid)
 
@@ -239,7 +271,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
     logm[i] <- inner_logmarg(L) + log_prior_theta(th)
     Sig_entries[[i]] <- L %*% t(L)
   }
-  w <- .nl_normalise_weights(logm)
+  # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
+  # evaluated joint exp(logm), the INLA convention int ~ sum_k Delta_k pi(theta_k).
+  # log-sum-exp shift for stability; reduces to .nl_normalise_weights when dnode==1.
+  lw <- log(dnode) + (logm - max(logm))
+  w  <- exp(lw); w <- w / sum(w)
 
   # --- derived quantities, marginalized over the grid -----------------------
   # Each derived value is computed PER cell and weighted-quantiled (never a

@@ -23,12 +23,19 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   d <- sim_corr_recov(1L)
   re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                             family = "binomial", n_per_axis = 5L, span = 3)
+                             family = "binomial")
 
-  # grid + weights
-  expect_equal(res$n_grid, 5L^3L)                 # k = c(c+1)/2 = 3 axes
+  # default CCD layout: k = c(c+1)/2 = 3 -> 1 centre + 2k axial + 2^k factorial
+  expect_equal(res$n_grid, 1L + 2L * 3L + 2L^3L)  # = 15
   expect_equal(sum(res$weights), 1, tolerance = 1e-10)
   expect_true(all(res$weights >= 0))
+
+  # tensor grid is opt-in via integration = "grid": n_per_axis^k cells
+  res_grid <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
+                                  family = "binomial",
+                                  integration = "grid", n_per_axis = 5L, span = 3)
+  expect_equal(res_grid$n_grid, 5L^3L)
+  expect_equal(sum(res_grid$weights), 1, tolerance = 1e-10)
 
   # posterior table shape: sigma_1, sigma_2, rho_12, Sigma_11/12/22
   expect_setequal(res$posterior$parameter,
@@ -70,7 +77,7 @@ test_that("marginalized 95% intervals cover the true Sigma parameters", {
     d <- sim_corr_recov(100L + s)
     re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
     res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                               family = "binomial", n_per_axis = 5L, span = 3)
+                               family = "binomial")   # default CCD integration
     for (nm in names(truth)) {
       row <- res$posterior[res$posterior$parameter == nm, ]
       if (truth[[nm]] >= row$ci_lo && truth[[nm]] <= row$ci_hi)
@@ -92,7 +99,7 @@ test_that("the median is a more central summary than the mode under skew", {
   d <- sim_corr_recov(7L, G = 25L, npg = 12L)
   re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
-                             family = "binomial", n_per_axis = 5L, span = 3)
+                             family = "binomial")   # default CCD integration
   s1 <- res$posterior[res$posterior$parameter == "Sigma_11", ]
   # right-skewed: mean >= median, and both finite/positive
   expect_gte(s1$mean, s1$median - 1e-6)
