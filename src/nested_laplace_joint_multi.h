@@ -75,6 +75,7 @@ inline void scatter_arm_obs_joint_multi(
     const Rcpp::NumericVector&    eta,
     const ParsedArm&              pa,
     const JointArm&               arm,
+    const ArmSpecView&            view,
     int                           k_arm,
     const std::vector<LatentBlock>& blocks,
     int                           k_grid,
@@ -85,8 +86,6 @@ inline void scatter_arm_obs_joint_multi(
     const int n_re_k   = pa.n_re_groups;
     const int bstart   = pa.beta_start;
     const int rstart   = pa.re_start;
-    const std::string& family = arm.family;
-    const double phi_disp     = arm.phi;
     const int B = static_cast<int>(blocks.size());
 
     // Cache per-block effective coefficient for this (k_arm, k_grid).
@@ -104,8 +103,7 @@ inline void scatter_arm_obs_joint_multi(
     active_d.reserve(B);
 
     for (int i = 0; i < arm.N; i++) {
-        auto gh = grad_hess_for_family(
-            arm.y[i], arm.n_trials[i], eta[i], family, phi_disp);
+        auto gh = arm_grad_hess(view, i, eta[i]);
 
         int g_re = -1;
         if (n_re_k > 0) {
@@ -190,6 +188,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
     const Rcpp::NumericVector&    eta,
     const ParsedArm&              pa,
     const JointArm&               arm,
+    const ArmSpecView&            view,
     int                           k_arm,
     const std::vector<LatentBlock>& blocks,
     int                           k_grid,
@@ -206,8 +205,6 @@ inline void scatter_arm_obs_joint_multi_sparse(
     const int n_re_k   = pa.n_re_groups;
     const int bstart   = pa.beta_start;
     const int rstart   = pa.re_start;
-    const std::string& family = arm.family;
-    const double phi_disp     = arm.phi;
     const int B = static_cast<int>(blocks.size());
 
     // Cache per-block d_eff = arm_scale(k_arm, k_grid) * d_fac(k_grid),
@@ -265,15 +262,14 @@ inline void scatter_arm_obs_joint_multi_sparse(
         && static_cast<int>(idx_cache->arm[k_arm].plans.size()) == arm.N;
     if (use_indexed_cache) {
         scatter_arm_obs_indexed_cached(
-            x, eta, pa, arm, d_eff_cache, idx_cache->arm[k_arm],
-            grad, H, family, phi_disp
+            x, eta, pa, arm, view, d_eff_cache, idx_cache->arm[k_arm],
+            grad, H
         );
         return;
     }
 
     for (int i = 0; i < arm.N; i++) {
-        auto gh = grad_hess_for_family(
-            arm.y[i], arm.n_trials[i], eta[i], family, phi_disp);
+        auto gh = arm_grad_hess(view, i, eta[i]);
 
         int g_re = -1;
         if (n_re_k > 0) {
@@ -445,7 +441,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
         for (int b = 0; b < B; b++) {
             if (kind_cache[b] != BlockContribKind::DENSE_BASIS) continue;
             if (!blocks[b].dense_basis_batch) continue;
-            scatter_dense_basis_block(blocks[b], k_arm, pa, arm, eta,
+            scatter_dense_basis_block(blocks[b], k_arm, pa, arm, view, eta,
                                        d_eff_cache[b], grad, H,
                                        db_buffers[static_cast<size_t>(k_arm) * B + b]);
         }
@@ -635,6 +631,13 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
     for (auto& s : scratch_pool) s.allocate(n_x, arms);
 
+    // Resolve each arm to a spec view ONCE for the whole grid: built-in family
+    // arms materialize a builtin_family_spec + response, model-supplied arms
+    // borrow their spec. Read-only after build, so it is shared safely across
+    // the parallel outer-grid threads. The scatter and the joint log-lik read
+    // every arm only through these views (clean_migration.md Phase L / L4).
+    JointArmSpecs specs = build_joint_arm_specs(arms);
+
     // Force inner OpenMP to single-thread when the outer grid is parallel —
     // see run_multi_block_nested_laplace for the rationale.
     int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
@@ -664,6 +667,10 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                 return bad;
             }
         }
+
+        // prep_at_grid may have rewritten arm.phi (phi_grid axis); refresh the
+        // built-in responses so the spec sees the current dispersion.
+        specs.sync_dispersion(arms);
 
         // Cache per-block (k_arm, k_grid) -> d_eff. Per-block d_fac(k_grid)
         // is evaluated once; per-arm scaling is re-evaluated inside the
@@ -722,7 +729,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                                  DenseVec& grad, DenseMat& H) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 scatter_arm_obs_joint_multi(
-                    x, etas[k_arm], parsed[k_arm], arms[k_arm], k_arm,
+                    x, etas[k_arm], parsed[k_arm], arms[k_arm],
+                    specs.views[k_arm], k_arm,
                     blocks, k_grid, grad, H
                 );
             }
@@ -775,11 +783,12 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                                        ? *scratch_override
                                        : scratch_pool[tid];
 
-        return laplace_newton_solve_joint(
-            arms, n_x,
-            max_iter_use, tol, n_threads_inner_eff,
+        JointSpecLogLik joint_ll{&specs.views, n_threads_inner_eff};
+        return laplace_newton_solve_joint_ll(
+            n_x,
+            max_iter_use, tol,
             compute_eta_joint, scatter_joint, center_joint, log_prior_joint,
-            scratch, prev_mode, shared_solver,
+            joint_ll, scratch, prev_mode, shared_solver,
             store_Q
         );
     };
@@ -833,7 +842,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
 //   * NewtonScratchJointSparse (no DenseMat H)
 //   * compute_eta dispatches on contrib_kind (INDEXED_SINGLE/MULTI/DENSE_BASIS)
 //   * scatter calls add_prior_sparse + scatter_arm_obs_joint_multi_sparse
-//   * laplace_newton_solve_joint_sparse (CHOLMOD-only factor/solve path)
+//   * laplace_newton_solve_joint_sparse_ll (CHOLMOD-only factor/solve path)
 inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     int                              n_grid,
     std::vector<JointArm>&           arms,
@@ -861,6 +870,11 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
 
     NewtonScratchJointSparse scratch;
     scratch.allocate(n_x, arms);
+
+    // Resolve each arm to a spec view ONCE for the whole grid (see the dense
+    // driver). Read-only after build; the scatter and joint log-lik read every
+    // arm only through these views.
+    JointArmSpecs specs = build_joint_arm_specs(arms);
 
     // Cheap-pass dedicated scratch / solver / builder. Pattern reused;
     // VALUES live in the builder, so each builder needs its own copy.
@@ -917,6 +931,10 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
             }
         }
 
+        // prep_at_grid may have rewritten arm.phi (phi_grid axis); refresh the
+        // built-in responses so the spec sees the current dispersion.
+        specs.sync_dispersion(arms);
+
         // Per-block-per-arm d_eff cache: d_fac(k_grid) * arm_scale(k_arm, k_grid).
         std::vector<std::vector<double>> d_eff(B, std::vector<double>(n_arms, 0.0));
         for (int b = 0; b < B; b++) {
@@ -956,7 +974,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                                          SparseHessianBuilder& H) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 scatter_arm_obs_joint_multi_sparse(
-                    x, etas[k_arm], parsed[k_arm], arms[k_arm], k_arm,
+                    x, etas[k_arm], parsed[k_arm], arms[k_arm],
+                    specs.views[k_arm], k_arm,
                     blocks, k_grid, grad, H,
                     active_scratch, basis_scratch, multi_scratch,
                     active_db_scratch, db_buffers,
@@ -996,12 +1015,13 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         };
 
         NewtonScratchJointSparse& sc = use_cheap_scratch ? cheap_scratch : scratch;
-        return laplace_newton_solve_joint_sparse(
-            arms, n_x,
-            max_iter_use, tol, n_threads,
+        JointSpecLogLik joint_ll{&specs.views, n_threads};
+        return laplace_newton_solve_joint_sparse_ll(
+            n_x,
+            max_iter_use, tol,
             compute_eta_joint, scatter_joint_sparse,
             center_joint, log_prior_joint,
-            H_use, sc, prev_mode, shared_solver, store_Q
+            joint_ll, H_use, sc, prev_mode, shared_solver, store_Q
         );
     };
 

@@ -115,6 +115,7 @@ inline bool scatter_dense_basis_block(
     int                            k_arm,
     const ParsedArm&               pa,
     const JointArm&                arm,
+    const ArmSpecView&             view,
     const Rcpp::NumericVector&     eta,
     double                         d_eff,
     DenseVec&                      grad,
@@ -135,8 +136,6 @@ inline bool scatter_dense_basis_block(
     const int n_re_k    = pa.n_re_groups;
     const int bstart    = pa.beta_start;
     const int rstart    = pa.re_start;
-    const std::string& family = arm.family;
-    const double phi_disp     = arm.phi;
 
     if (N_k == 0 || M == 0) return true;
     if (N_k != arm.N) {
@@ -210,8 +209,7 @@ inline bool scatter_dense_basis_block(
     scratch.w_obs.resize(N_k);
     scratch.w_sqrt.resize(N_k);
     for (int i = 0; i < N_k; i++) {
-        auto gh = grad_hess_for_family(
-            arm.y[i], arm.n_trials[i], eta[i], family, phi_disp);
+        auto gh = arm_grad_hess(view, i, eta[i]);
         scratch.g_obs(i) = gh.grad;
         scratch.w_obs(i) = gh.neg_hess;
         const double w = gh.neg_hess;

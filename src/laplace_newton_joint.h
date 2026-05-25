@@ -20,6 +20,7 @@
 #ifndef TULPA_LAPLACE_NEWTON_JOINT_H
 #define TULPA_LAPLACE_NEWTON_JOINT_H
 
+#include "laplace_builtin_family_spec.h"  // builtin_family_spec, BuiltinFamilyResponse
 #include "laplace_cholesky.h"
 #include "laplace_cholesky_dispatch.h"
 #include "laplace_family_link.h"
@@ -42,38 +43,155 @@ namespace tulpa {
 struct JointArm {
     Rcpp::NumericVector y;         // [N]
     Rcpp::IntegerVector n_trials;  // [N]
-    std::string         family;
-    double              phi;
+    std::string         family;    // built-in family (ignored when spec != null)
+    double              phi;        // built-in dispersion (ignored when spec)
     int                 N;
+    // Optional per-obs probability scale for the `bernoulli` family
+    // (mu_i = det_prob_i * sigma(eta_i)); empty => 1. tulpaObs sets
+    // 1 - (1-p)^J for the marginalized occupancy state. Folded into the
+    // built-in family response by build_joint_arm_specs.
+    Rcpp::NumericVector det_prob;
+    // Optional model-supplied likelihood (tulpaGlmm / tulpaObs custom arms).
+    // When spec != nullptr the joint solver routes this arm's score, Fisher
+    // curvature and log-lik through it instead of the built-in family closed
+    // forms; the pointees (spec, response, and any data/layout/params it reads)
+    // must outlive the fit. The spec must be single-process (n_processes == 1).
+    const LikelihoodSpec*      spec          = nullptr;
+    const void*                response_data = nullptr;
+    const ModelData*           data          = nullptr;
+    const ParamLayout*         layout        = nullptr;
+    const std::vector<double>* params        = nullptr;
 };
 
-// Sum of per-arm log-likelihoods at the current per-arm eta vectors.
+// A resolved single-process likelihood for one joint arm: everything the spec
+// callbacks need, with stable storage owned by JointArmSpecs. The joint scatter
+// and log-lik read every arm only through this view, so the joint path has a
+// single spec-driven likelihood boundary (clean_migration.md Phase L / L4).
+struct ArmSpecView {
+    const LikelihoodSpec*      spec          = nullptr;
+    const void*                response_data = nullptr;
+    const ModelData*           data          = nullptr;
+    const ParamLayout*         layout        = nullptr;
+    const std::vector<double>* params        = nullptr;
+};
+
+// Per-obs eta-space score + Fisher working weight for one arm, sourced through
+// its spec view (single process => scalars). Returns a GradHess so existing
+// scatter bodies (gh.grad / gh.neg_hess) are unchanged.
+inline GradHess arm_grad_hess(const ArmSpecView& view, int i, double eta_i) {
+    GradHess gh;
+    view.spec->eta_weights_fn(
+        i, &eta_i, 0.0, 0.0,
+        *view.params, *view.data, *view.layout, view.response_data,
+        &gh.grad, &gh.neg_hess);
+    return gh;
+}
+
+// Owns the resolved spec views for a joint fit. Arms with a model-supplied spec
+// borrow it; otherwise a built-in family spec + response is materialized here
+// (single source of truth: builtin_family_spec). The empty ModelData /
+// ParamLayout / params satisfy the spec-callback signature for built-in
+// families, which ignore them. Pointer stability: builtin_specs / responses are
+// reserved to n_arms up front so no reallocation invalidates the view pointers.
+struct JointArmSpecs {
+    std::vector<LikelihoodSpec>        builtin_specs;
+    std::vector<BuiltinFamilyResponse> builtin_responses;
+    ModelData                          empty_data;
+    ParamLayout                        empty_layout;
+    std::vector<double>                empty_params;
+    std::vector<ArmSpecView>           views;
+    // Per-arm pointer into builtin_responses (nullptr for model-supplied arms).
+    // Lets the driver refresh per-cell-mutable dispersion after prep.
+    std::vector<BuiltinFamilyResponse*> arm_builtin_response;
+
+    // Refresh built-in dispersion from the live arms. The phi_grid hyperparameter
+    // axis rewrites arm.phi before each inner solve, so the response (snapshotted
+    // at build) must track it. No-op for model-supplied arms, which own their
+    // dispersion through the spec. Mirrors the pre-existing arm.phi rewrite, so
+    // it inherits the same serial-outer-grid assumption as phi_grid.
+    void sync_dispersion(const std::vector<JointArm>& arms) {
+        for (size_t k = 0; k < arm_builtin_response.size(); k++) {
+            if (arm_builtin_response[k]) arm_builtin_response[k]->phi = arms[k].phi;
+        }
+    }
+};
+
+inline JointArmSpecs build_joint_arm_specs(const std::vector<JointArm>& arms) {
+    const int n = static_cast<int>(arms.size());
+    JointArmSpecs s;
+    s.builtin_specs.reserve(n);
+    s.builtin_responses.reserve(n);
+    s.views.resize(n);
+    s.arm_builtin_response.assign(n, nullptr);
+    for (int k = 0; k < n; k++) {
+        const JointArm& a = arms[k];
+        if (a.spec) {
+            s.views[k] = ArmSpecView{
+                a.spec, a.response_data,
+                a.data   ? a.data   : &s.empty_data,
+                a.layout ? a.layout : &s.empty_layout,
+                a.params ? a.params : &s.empty_params
+            };
+        } else {
+            s.builtin_specs.push_back(builtin_family_spec(a.family));
+            BuiltinFamilyResponse r;
+            r.y        = (a.N > 0)              ? REAL(a.y)            : nullptr;
+            r.n_trials = (a.n_trials.size() > 0) ? INTEGER(a.n_trials) : nullptr;
+            r.N        = a.N;
+            r.family   = a.family;
+            r.phi      = a.phi;
+            r.det_prob = (a.det_prob.size() > 0) ? REAL(a.det_prob)   : nullptr;
+            s.builtin_responses.push_back(r);
+            s.views[k] = ArmSpecView{
+                &s.builtin_specs.back(), &s.builtin_responses.back(),
+                &s.empty_data, &s.empty_layout, &s.empty_params
+            };
+            s.arm_builtin_response[k] = &s.builtin_responses.back();
+        }
+    }
+    return s;
+}
+
+// Sum of per-arm log-likelihoods at the current per-arm etas, sourced through
+// each arm's resolved spec view (single process => ll_double sees one eta).
 inline double compute_total_log_lik_joint(
-    const std::vector<JointArm>& arms,
+    const std::vector<ArmSpecView>& views,
     const std::vector<Rcpp::NumericVector>& etas,
     int n_threads
 ) {
+    const double zd = 0.0;  // logit_zi / logit_oi are unused at np == 1
     double total = 0.0;
-    for (size_t k = 0; k < arms.size(); k++) {
-        total += compute_total_log_lik(
-            arms[k].y, arms[k].n_trials, etas[k], arms[k].N,
-            arms[k].family, arms[k].phi, n_threads
-        );
+    for (size_t k = 0; k < views.size(); k++) {
+        const ArmSpecView& v = views[k];
+        const Rcpp::NumericVector& eta = etas[k];
+        const int N = static_cast<int>(eta.size());
+        double sub = 0.0;
+        #ifdef _OPENMP
+        #pragma omp parallel for reduction(+:sub) schedule(static) \
+            num_threads(n_threads > 0 ? n_threads : 1) if(n_threads > 1)
+        #endif
+        for (int i = 0; i < N; i++) {
+            double eta_i = eta[i];
+            sub += v.spec->ll_double(i, &eta_i, zd, zd,
+                                     *v.params, *v.data, *v.layout,
+                                     v.response_data);
+        }
+        total += sub;
     }
     return total;
 }
 
-// Joint data log-likelihood as a functor of the per-arm eta vectors. The joint
-// analog of FamilyLogLik: the joint Newton loop reads the data log-lik only
-// through `log_lik_fn(etas) -> double`, so the family-enum joint driver passes
-// this (summing compute_total_log_lik over arms) while the spec-driven joint
-// path (L4) passes a functor backed by each arm's LikelihoodSpec. The borrowed
-// arms vector must outlive the fit.
-struct JointFamilyLogLik {
-    const std::vector<JointArm>* arms = nullptr;
+// Joint data log-lik as a functor of the per-arm etas, sourced through each
+// arm's resolved spec view. The joint Newton loop reads the data log-lik only
+// through `log_lik_fn(etas) -> double`; the built-in family enters solely via
+// build_joint_arm_specs, so model packages (tulpaGlmm / tulpaObs) can supply a
+// custom per-arm likelihood with no family-enum extension. The borrowed views
+// vector must outlive the fit.
+struct JointSpecLogLik {
+    const std::vector<ArmSpecView>* views = nullptr;
     int n_threads = 1;
     double operator()(const std::vector<Rcpp::NumericVector>& etas) const {
-        return compute_total_log_lik_joint(*arms, etas, n_threads);
+        return compute_total_log_lik_joint(*views, etas, n_threads);
     }
 };
 
@@ -92,23 +210,6 @@ inline double eval_penalized_log_lik_joint_ll(
     double ll = log_lik_fn(etas_scratch);
     double lp = compute_log_prior_joint(x, etas_scratch);
     return ll + lp;
-}
-
-// Family-enum convenience overload: wraps the per-arm built-in log-lik as the
-// functor. Single source of truth for the joint loop body.
-template<typename ComputeEtaJoint, typename ComputeLogPriorJoint>
-inline double eval_penalized_log_lik_joint(
-    const Rcpp::NumericVector& x,
-    const std::vector<JointArm>& arms,
-    int n_threads,
-    ComputeEtaJoint compute_eta_joint,
-    ComputeLogPriorJoint compute_log_prior_joint,
-    std::vector<Rcpp::NumericVector>& etas_scratch
-) {
-    JointFamilyLogLik ll{&arms, n_threads};
-    return eval_penalized_log_lik_joint_ll(x, compute_eta_joint,
-                                           compute_log_prior_joint, ll,
-                                           etas_scratch);
 }
 
 // Per-thread scratch for the joint Newton solver. Same role as NewtonScratch
@@ -152,10 +253,11 @@ struct NewtonScratchJoint {
 // Scratch-aware, likelihood-agnostic joint Newton solver. Like the single-arm
 // laplace_newton_solve_ll, the data log-lik enters ONLY through
 // `log_lik_fn(etas) -> double`, so the loop carries no family knowledge: the
-// family-enum forwarder below passes a JointFamilyLogLik and the spec-driven
-// joint path (L4) passes a functor backed by each arm's LikelihoodSpec.
-// Performs zero Rcpp allocations once `scratch` is supplied; safe inside an
-// OpenMP parallel region with a thread-local `shared_solver`.
+// nested joint driver passes a JointSpecLogLik backed by each arm's resolved
+// LikelihoodSpec (built-in family or model-supplied), so this is the single
+// joint Newton loop for every likelihood. Performs zero Rcpp allocations once
+// `scratch` is supplied; safe inside an OpenMP parallel region with a
+// thread-local `shared_solver`.
 template<typename ComputeEtaJoint, typename ScatterJoint,
          typename CenterEffects, typename ComputeLogPriorJoint, typename JointLogLik>
 LaplaceResult laplace_newton_solve_joint_ll(
@@ -271,67 +373,6 @@ LaplaceResult laplace_newton_solve_joint_ll(
     }
 
     return result;
-}
-
-// Family-enum forwarder (scratch-aware): wraps the per-arm built-in log-lik as
-// the functor and delegates to the shared loop above, keeping the existing
-// nested joint driver's call sites unchanged while the loop body lives in one
-// place.
-template<typename ComputeEtaJoint, typename ScatterJoint,
-         typename CenterEffects, typename ComputeLogPriorJoint>
-LaplaceResult laplace_newton_solve_joint(
-    const std::vector<JointArm>& arms,
-    int n_x,
-    int max_iter, double tol, int n_threads,
-    ComputeEtaJoint compute_eta_joint,
-    ScatterJoint scatter_joint,
-    CenterEffects center_effects_fn,
-    ComputeLogPriorJoint compute_log_prior_joint,
-    NewtonScratchJoint& scratch,
-    const std::vector<double>& x_init,
-    SparseCholeskySolver* shared_solver,
-    bool store_Q
-) {
-    JointFamilyLogLik ll{&arms, n_threads};
-    return laplace_newton_solve_joint_ll(
-        n_x, max_iter, tol,
-        compute_eta_joint, scatter_joint, center_effects_fn,
-        compute_log_prior_joint, ll, scratch, x_init, shared_solver, store_Q
-    );
-}
-
-// Convenience overload that allocates scratch locally. Safe to call from
-// non-parallel call sites only; the outer driver passes scratch through
-// when it parallelises the grid.
-template<typename ComputeEtaJoint, typename ScatterJoint,
-         typename CenterEffects, typename ComputeLogPriorJoint>
-LaplaceResult laplace_newton_solve_joint(
-    const std::vector<JointArm>& arms,
-    int n_x,
-    int max_iter, double tol, int n_threads,
-    ComputeEtaJoint compute_eta_joint,
-    ScatterJoint scatter_joint,
-    CenterEffects center_effects_fn,
-    ComputeLogPriorJoint compute_log_prior_joint,
-    const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
-    SparseCholeskySolver* shared_solver = nullptr,
-    bool store_Q = false
-) {
-    NewtonScratchJoint scratch;
-    scratch.allocate(n_x, arms);
-    std::vector<double> x_init_vec;
-    if (x_init.size() == n_x) {
-        x_init_vec.assign(x_init.begin(), x_init.end());
-    }
-    #ifdef _OPENMP
-    if (n_threads > 0) omp_set_num_threads(n_threads);
-    #endif
-    return laplace_newton_solve_joint(
-        arms, n_x, max_iter, tol, n_threads,
-        compute_eta_joint, scatter_joint, center_effects_fn,
-        compute_log_prior_joint,
-        scratch, x_init_vec, shared_solver, store_Q
-    );
 }
 
 } // namespace tulpa

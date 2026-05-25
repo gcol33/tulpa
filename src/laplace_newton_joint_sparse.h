@@ -2,10 +2,10 @@
 // Sparse-Hessian PIRLS-equivalent Newton solver for *joint multi-likelihood*
 // Laplace modes.
 //
-// Sibling of laplace_newton_joint.h::laplace_newton_solve_joint: same arm
-// vector, same callback shapes for compute_eta_joint / center / log_prior,
-// but the scatter writes into a SparseHessianBuilder rather than a DenseMat
-// and the Newton step factorizes the sparse H directly via CHOLMOD.
+// Sibling of laplace_newton_joint.h::laplace_newton_solve_joint_ll: same
+// JointLogLik functor, same callback shapes for compute_eta_joint / center /
+// log_prior, but the scatter writes into a SparseHessianBuilder rather than a
+// DenseMat and the Newton step factorizes the sparse H directly via CHOLMOD.
 //
 // Why a separate header (not a unified solver with branching):
 //   * NewtonScratchJointSparse never allocates n_x x n_x DenseMat H.
@@ -76,7 +76,7 @@ struct NewtonScratchJointSparse {
 };
 
 // Sparse-H joint Newton solver. Compositional skeleton mirrors
-// laplace_newton_solve_joint exactly; differences are isolated to the H
+// laplace_newton_solve_joint_ll exactly; differences are isolated to the H
 // container (SparseHessianBuilder vs DenseMat) and the factor/solve path
 // (CHOLMOD only, no dense fallback).
 //
@@ -238,35 +238,6 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     }
 
     return result;
-}
-
-// Family-enum forwarder (sparse, scratch-aware): wraps the per-arm built-in
-// log-lik as the functor and delegates to the shared sparse loop above, so the
-// nested joint driver's sparse call sites keep their signature while the loop
-// body lives in one place.
-template<typename ComputeEtaJoint, typename ScatterJointSparse,
-         typename CenterEffects, typename ComputeLogPriorJoint>
-LaplaceResult laplace_newton_solve_joint_sparse(
-    const std::vector<JointArm>& arms,
-    int n_x,
-    int max_iter, double tol, int n_threads,
-    ComputeEtaJoint compute_eta_joint,
-    ScatterJointSparse scatter_joint_sparse,
-    CenterEffects center_effects_fn,
-    ComputeLogPriorJoint compute_log_prior_joint,
-    SparseHessianBuilder& H_builder,
-    NewtonScratchJointSparse& scratch,
-    const std::vector<double>& x_init,
-    SparseCholeskySolver* shared_solver,
-    bool store_Q
-) {
-    JointFamilyLogLik ll{&arms, n_threads};
-    return laplace_newton_solve_joint_sparse_ll(
-        n_x, max_iter, tol,
-        compute_eta_joint, scatter_joint_sparse, center_effects_fn,
-        compute_log_prior_joint, ll, H_builder, scratch, x_init,
-        shared_solver, store_Q
-    );
 }
 
 } // namespace tulpa

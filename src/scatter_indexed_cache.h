@@ -401,18 +401,18 @@ inline bool scatter_index_cache_valid(
 //   - d_eff_cache[b]: per-block effective coefficient at this outer-grid
 //     cell (arm_scale * d_fac). Length = blocks.size().
 //   - arm_cache: precomputed cache for this k_arm.
-//   - family, phi_disp: per-arm likelihood family + dispersion.
+//   - view: resolved spec view; the per-obs score + Fisher curvature come
+//     from view.spec (built-in family or model-supplied likelihood).
 inline void scatter_arm_obs_indexed_cached(
     const Rcpp::NumericVector&  x,
     const Rcpp::NumericVector&  eta,
     const ParsedArm&            pa,
     const JointArm&             arm,
+    const ArmSpecView&          view,
     const std::vector<double>&  d_eff_cache,
     const ArmIndexedCache&      ac,
     DenseVec&                   grad,
-    SparseHessianBuilder&       H,
-    const std::string&          family,
-    double                      phi_disp
+    SparseHessianBuilder&       H
 ) {
     const int p_k    = pa.p;
     const int n_re_k = pa.n_re_groups;
@@ -440,8 +440,7 @@ inline void scatter_arm_obs_indexed_cached(
     std::vector<double> w_active(max_A, 0.0);
 
     for (int i = 0; i < arm.N; i++) {
-        auto gh = grad_hess_for_family(
-            arm.y[i], arm.n_trials[i], eta[i], family, phi_disp);
+        auto gh = arm_grad_hess(view, i, eta[i]);
 
         const PerObsScatterPlan& plan = ac.plans[i];
         const int A_i      = plan.A_idx;
