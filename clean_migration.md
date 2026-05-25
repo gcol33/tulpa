@@ -49,7 +49,7 @@ Concretely:
 | 3 | Remove `tulpa_priors_legacy` | ✅ done — commit `7f6b5c5`: dead back-compat shim over `tulpa_priors()` with **zero callers** (R/tests/examples/vignettes). Removed fn + `@export` + generated Rd; NAMESPACE regenerated. Prior tests green. |
 | 4 | Route single-arm `latent()` formulas through `tulpa()`; register nested backends | ✅ done — commit `f642c38`: `nested_laplace` (single-arm) + `nested_laplace_joint` registered Tier 2 with a new `input = "nested"` contract; `auto_select_mode` / `select_backend_for_mode` route `latent(...)` blocks to `nested_laplace` (auto + structured + explicit), precedence over the size heuristics. `.tulpa_fitter_args` "nested" branch builds the prior from parsed latent blocks (each tgmrf is already a valid multi-block prior block), threads a single `(1\|g)` through the kernel's `re_idx`/`n_re_groups`/`sigma_re`. Joint is a registered model-package engine — never auto-selected, errors loudly if forced (single formula can't express multiple arms). Fail-loud guards (latent + non-nested backend, nested + no block, joint via formula, >1 RE term) run **before** the reachability check so the latent message wins. `test-tulpa-entry-nested.R`: routing/registry contract + guard errors + **formula route is numerically identical to a direct `tulpa_nested_laplace()` call** (theta_grid/log_marginal/moments) + front-door beta recovery across seeds. |
 | 5 | Split `nested_laplace_joint.R` (2625 lines) | ✅ done — commit `e1d6ebc`: byte-identical code move (verified: LF-normalized reconstruction `cmp`-equals the HEAD blob, all 58 U+2014 em-dashes intact, zero double-encoding). The 2592-line monolith split into the public entry (`tulpa_nested_laplace_joint`, kept in `nested_laplace_joint.R`, 409 ln) + 5 concern files: `_hyperpriors.R` (sigma/alpha PC + half-normal), `_backends.R` (single-block dispatch table + `.joint_call_kernel_via_multi`), `_helpers.R` (cartesian/arm/copy/layout), `_refine.R` (adaptive grid + var-of-means consistency), `_multi.R` (list-of-blocks dispatch). No `Collate`, no load-order dep (only fn defs + one deferred-closure list), no roxygen/`@export` moved -> NAMESPACE + `man/` untouched, no re-document. load_all green; joint equivalence net green (icar/bym2/car-proper/adaptive-grid/phi-grid/multi/multi-block/sigma-pos-prior/alpha-ridge/prune/sparse-equiv/beta/latent-factor/hsgp-svc/hsgp-mo/parallel + entry-nested + the heavy joint multi-recovery net, all under `NOT_CRAN=true`). |
-| 6 | Update siblings (tulpaObs et al.); final `devtools::check` | ⬜ pending |
+| 6 | Update siblings (tulpaObs et al.); final `devtools::check` | ✅ done — commit `edee90c` (auto). tulpaObs call sites were already migrated by its own commits `86c6036` (L5 occupancy `LikelihoodSpec` via `likelihood=`) + `be3bdb1` (joint `control=list()` + N-mixture family); this phase **verified** them against the reinstalled current-HEAD tulpa and fixed the fallout the **first** full `R CMD check` surfaced. tulpa reinstalled from source (ABI 24, headers byte-identical), tulpaObs recompiled+loaded clean against it. **tulpaObs suite: 39/39 files, 928 pass / 0 fail** (NOT_CRAN=true so all recovery/CI-coverage assertions ran; 3 benign warnings = N-mixture `K_max` truncation-boundary diagnostics, tulpaObs-owned, unrelated). **tulpa `R CMD check --no-manual`: Status OK (0/0/0)** after three fixes (all in-scope tulpa repo, none touching runtime R/C++): (1) WARNING — `tulpa_nested_laplace.Rd` `\link{LikelihoodSpec}` (broken; `LikelihoodSpec` is a C++ struct w/ no Rd page) -> `\code{}` in the L5 roxygen; (2) NOTE — `clean_migration.md` + `dev_document.R` -> `.Rbuildignore`; (3) ERROR — `test-nmix-laplace.R` `coef(um_fit)`/`logLik(um_fit)` fell through to `coef.default` ("$ operator not defined for this S4 class") in the shared `test_check` session (order-dependent search-path shift after another file attaches a pkg; passes in isolation). Fixed by namespace-qualifying unmarked's S4 generics (`unmarked::coef`/`unmarked::logLik`) — immune to the shadowing. **Migration complete (all 7 phases).** |
 
 ### Recommended sequencing for a fresh session
 The keystone (L) is foundational — Phase 4 (unification) routes through the
@@ -291,6 +291,17 @@ Laplace spec joins them.
 
 Finish with `devtools::check(args="--no-manual")` on tulpa, `load_all` on
 siblings.
+
+**Outcome (2026-05-26).** All tulpaObs call sites were already on the new API
+(its own commits `86c6036` + `be3bdb1`); `R/laplace.R` and
+`R/sla_cover_hurdle_joint.R` never call the engine directly (they route through
+`tulpa_em_laplace()` / consume the joint fit's `store_Q` output), and `abun.R`
+shares the occupancy EM path — so no further edits were needed there. The work
+was **verification + check fallout**: reinstall current-HEAD tulpa, recompile
+tulpaObs against it (clean), run the tulpaObs suite under `NOT_CRAN=true`
+(39/39, 928 pass / 0 fail), and clear the first full `R CMD check`'s 1 ERROR /
+1 WARNING / 1 NOTE (see the Phase-6 status row). Final tulpa check: **Status
+OK**.
 
 ---
 
