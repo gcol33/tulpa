@@ -16,6 +16,8 @@
 ^dev_scripts$
 ^.*\.tar\.gz$
 ^accuracy\.md$
+^clean_migration\.md$
+^dev_document\.R$
 ^generic-todo\.md$
 ^hessian_plan\.md$
 ^plan\.md$

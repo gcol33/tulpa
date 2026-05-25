@@ -94,8 +94,11 @@ test_that("Multi-seed coverage of 95% Wald CIs is near nominal", {
 
 test_that("Cross-check against unmarked::pcount", {
   skip_if_not_installed("unmarked")
-  # unmarked uses S4 dispatch; attach to make coef()/logLik()/vcov() resolve
-  # to the S4 methods rather than stats::coef.default.
+  # unmarked fits are S4. Call its coef()/logLik() namespace-qualified so they
+  # bind to unmarked's S4 generics directly: under R CMD check all test files
+  # share one session, and a bare coef() can resolve to stats::coef.default
+  # (-> "$ operator not defined for this S4 class") if the search path shifts
+  # after another file attaches a package. unmarked:: is immune to that.
   suppressPackageStartupMessages(library(unmarked))
   dat <- simulate_nmix(seed = 42)
   fit <- tulpa_nmix_laplace(
@@ -110,9 +113,9 @@ test_that("Cross-check against unmarked::pcount", {
   )
   um_fit <- unmarked::pcount(~ wind ~ elev, data = umf,
                              K = max(dat$y) + 100L, mixture = "P")
-  um_coef <- coef(um_fit)
+  um_coef <- unmarked::coef(um_fit)
   # tulpa should match (or slightly improve on) unmarked's BFGS-with-numerical-derivatives
-  expect_gte(fit$log_lik, as.numeric(logLik(um_fit)) - 1e-3)
+  expect_gte(fit$log_lik, as.numeric(unmarked::logLik(um_fit)) - 1e-3)
   expect_lt(abs(fit$beta_lambda[1] - um_coef["lam(Int)"]),  5e-3)
   expect_lt(abs(fit$beta_lambda[2] - um_coef["lam(elev)"]), 5e-3)
   expect_lt(abs(fit$beta_p[1]      - um_coef["p(Int)"]),    5e-3)

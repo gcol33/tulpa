@@ -62,7 +62,7 @@ time/group/site indices. Required when \code{spec} is supplied.}
 
 \item{likelihood}{Optional model-supplied likelihood, replacing the built-in
 \code{family}. Pass an external pointer to a \code{tulpa::NestedLikelihood} (built in
-a model package's own C++ from a \link{LikelihoodSpec}); the inner Laplace solve
+a model package's own C++ from a \code{LikelihoodSpec}); the inner Laplace solve
 then reads the per-observation score, Fisher weight, and log-likelihood from
 that spec instead of \code{family}, so \code{family}/\code{phi} are ignored. Used by model
 packages to fit a custom response without adding a family to tulpa -- for

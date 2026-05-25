@@ -68,7 +68,7 @@
 #'   time/group/site indices. Required when `spec` is supplied.
 #' @param likelihood Optional model-supplied likelihood, replacing the built-in
 #'   `family`. Pass an external pointer to a `tulpa::NestedLikelihood` (built in
-#'   a model package's own C++ from a [LikelihoodSpec]); the inner Laplace solve
+#'   a model package's own C++ from a `LikelihoodSpec`); the inner Laplace solve
 #'   then reads the per-observation score, Fisher weight, and log-likelihood from
 #'   that spec instead of `family`, so `family`/`phi` are ignored. Used by model
 #'   packages to fit a custom response without adding a family to tulpa -- for
