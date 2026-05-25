@@ -75,11 +75,51 @@ inline double nmix_car_log_prior_dispatch(
         adj_row_ptr, adj_col_idx, n_neighbors, z);
 }
 
+// Marginal (beta_lambda, beta_p) covariance from the factored joint Hessian:
+// the top-left p_beta block of H^{-1}, obtained by solving H X = [I; 0]. For a
+// Gaussian (Laplace) approximation the marginal covariance of a subvector is
+// the corresponding block of the full inverse, so this is the within-grid
+// conditional Cov(beta | theta_k) the R-side grid mixture integrates.
+inline MatrixXd nmix_beta_cov_from_chol(const Eigen::LLT<MatrixXd>& chol,
+                                        int n_x, int p_beta) {
+    MatrixXd E = MatrixXd::Zero(n_x, p_beta);
+    E.topLeftCorner(p_beta, p_beta).setIdentity();
+    MatrixXd Hinv_cols = chol.solve(E);          // n_x x p_beta = H^{-1}[:, beta]
+    return Hinv_cols.topLeftCorner(p_beta, p_beta);
+}
+
+// Coefficient covariance for an intrinsic (rank-deficient, sum-to-zero) field
+// such as ICAR. The improper prior leaves the (intercept, field-mean) direction
+// flat in the joint log-posterior -- the mode is pinned by sum-to-zero
+// centering, but the unconstrained Hessian H^{-1} blows up along it and the
+// intercept variance is meaningless. We add a large quadratic penalty on
+// (sum of the field block)^2, the penalty-method form of the sum-to-zero
+// constraint, so the beta-block of the (augmented) inverse is the constrained
+// covariance (intercept variance = data precision for the global level). `H` is
+// taken by value so the caller's matrix is untouched.
+inline MatrixXd nmix_spatial_beta_cov(MatrixXd H, int n_x, int p_beta,
+                                      int field_start, int field_len,
+                                      bool constrain) {
+    if (constrain && field_len > 0) {
+        double md = H.diagonal().head(p_beta).cwiseAbs().mean();
+        if (!(md > 0)) md = 1.0;
+        const double kappa = 1e6 * md;          // >> ridge; pins sum(field)=0
+        for (int i = 0; i < field_len; ++i)
+            for (int j = 0; j < field_len; ++j)
+                H(field_start + i, field_start + j) += kappa;
+    }
+    Eigen::LLT<MatrixXd> chol(H);
+    if (chol.info() != Eigen::Success)
+        return MatrixXd::Constant(p_beta, p_beta, R_NaN);
+    return nmix_beta_cov_from_chol(chol, n_x, p_beta);
+}
+
 // Per-grid-point inner solve result.
 struct SpatialInnerResult {
     VectorXd beta_lambda;
     VectorXd beta_p;
     VectorXd z;
+    MatrixXd cov_beta;    // (p_lam+p_p) marginal coefficient covariance at mode
     double log_lik;
     double log_marginal;
     double grad_norm;
@@ -291,11 +331,17 @@ SpatialInnerResult inner_newton_spatial_car(
         adj_row_ptr, adj_col_idx, n_neighbors, H_final
     );
     nmix_add_diagonal_ridge(H_final);
+    const int p_beta = p_lam + p_p;
     Eigen::LLT<MatrixXd> chol(H_final);
     double log_det_H;
+    // ICAR is rank-deficient (sum-to-zero); CAR_proper is full-rank and
+    // identifies the intercept through Q(rho), so it needs no constraint.
+    const bool constrain_field = (kind == CarPriorKind::ICAR);
     if (chol.info() == Eigen::Success) {
         log_det_H = 2.0 * chol.matrixL().toDenseMatrix().diagonal()
                               .array().log().sum();
+        res.cov_beta = nmix_spatial_beta_cov(H_final, n_x, p_beta,
+                                             p_beta, n_spatial, constrain_field);
     } else {
         MatrixXd H_f = MatrixXd::Zero(n_x, n_x);
         nmix_assemble_complete_fisher_spatial(
@@ -310,6 +356,7 @@ SpatialInnerResult inner_newton_spatial_car(
         nmix_add_diagonal_ridge(H_f);
         Eigen::LLT<MatrixXd> chol_f(H_f);
         if (chol_f.info() != Eigen::Success) {
+            res.cov_beta = MatrixXd::Constant(p_beta, p_beta, R_NaN);
             res.log_marginal = R_NegInf;
             res.log_lik = log_lik_final;
             res.grad_norm = grad_norm;
@@ -318,6 +365,8 @@ SpatialInnerResult inner_newton_spatial_car(
         }
         log_det_H = 2.0 * chol_f.matrixL().toDenseMatrix().diagonal()
                                 .array().log().sum();
+        res.cov_beta = nmix_spatial_beta_cov(H_f, n_x, p_beta,
+                                             p_beta, n_spatial, constrain_field);
     }
 
     res.log_lik = log_lik_final;
@@ -409,6 +458,7 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
     Rcpp::NumericVector log_liks(n_grid);
     Rcpp::NumericVector boundary_maxes(n_grid);
     Rcpp::NumericMatrix modes(n_grid, n_x);
+    Rcpp::List cov_blocks(n_grid);   // per-grid marginal coef covariance
 
     for (int k = 0; k < n_grid; ++k) {
         SpatialInnerResult ir = inner_newton_spatial_car(
@@ -430,6 +480,7 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
         for (int j = 0; j < p_lam; ++j)        modes(k, j) = ir.beta_lambda(j);
         for (int j = 0; j < p_p; ++j)          modes(k, p_lam + j) = ir.beta_p(j);
         for (int j = 0; j < n_spatial; ++j)    modes(k, p_lam + p_p + j) = ir.z(j);
+        cov_blocks[k] = Rcpp::wrap(ir.cov_beta);
 
         // Reset to user-supplied defaults for the next grid point. Warm-
         // starting from the previous tau's mode is appealing but the
@@ -456,6 +507,7 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
         Rcpp::Named("tau_grid")        = tau_grid,
         Rcpp::Named("log_marginal")    = log_marginals,
         Rcpp::Named("modes")           = modes,
+        Rcpp::Named("cov_blocks")      = cov_blocks,
         Rcpp::Named("n_iter")          = n_iters,
         Rcpp::Named("converged")       = convergeds,
         Rcpp::Named("grad_norm")       = grad_norms,
@@ -584,6 +636,7 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
     Rcpp::NumericVector log_liks(n_grid);
     Rcpp::NumericVector boundary_maxes(n_grid);
     Rcpp::NumericMatrix modes(n_grid, n_x);
+    Rcpp::List cov_blocks(n_grid);   // per-grid marginal coef covariance
 
     int k = 0;
     for (int r = 0; r < n_rho; ++r) {
@@ -630,6 +683,7 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
             for (int j = 0; j < p_lam; ++j)        modes(k, j) = ir.beta_lambda(j);
             for (int j = 0; j < p_p; ++j)          modes(k, p_lam + j) = ir.beta_p(j);
             for (int j = 0; j < n_spatial; ++j)    modes(k, p_lam + p_p + j) = ir.z(j);
+            cov_blocks[k] = Rcpp::wrap(ir.cov_beta);
 
             if (verbose) {
                 Rcpp::Rcout << "[grid " << k + 1 << "/" << n_grid
@@ -649,6 +703,7 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
         Rcpp::Named("log_det_Q_rho")   = Rcpp::wrap(log_det_Q_rho),
         Rcpp::Named("log_marginal")    = log_marginals,
         Rcpp::Named("modes")           = modes,
+        Rcpp::Named("cov_blocks")      = cov_blocks,
         Rcpp::Named("n_iter")          = n_iters,
         Rcpp::Named("converged")       = convergeds,
         Rcpp::Named("grad_norm")       = grad_norms,

@@ -56,11 +56,42 @@ inline void add_diagonal_ridge_bym2(MatrixXd& H, double rel_ridge = 1e-10) {
     for (int i = 0; i < n; ++i) H(i, i) += ridge;
 }
 
+// Marginal (beta_lambda, beta_p) covariance from the factored joint Hessian:
+// the top-left p_beta block of H^{-1} (the Gaussian/Laplace marginal of the
+// coefficient subvector), solved as H X = [I; 0].
+inline MatrixXd nmix_beta_cov_from_chol_bym2(const Eigen::LLT<MatrixXd>& chol,
+                                             int n_x, int p_beta) {
+    MatrixXd E = MatrixXd::Zero(n_x, p_beta);
+    E.topLeftCorner(p_beta, p_beta).setIdentity();
+    MatrixXd Hinv_cols = chol.solve(E);
+    return Hinv_cols.topLeftCorner(p_beta, p_beta);
+}
+
+// Constrained coefficient covariance for BYM2. The structured component v is
+// rank-deficient (sum-to-zero), so the (intercept, v-mean) direction is flat in
+// the joint posterior and the unconstrained intercept variance is meaningless.
+// Pin sum(v)=0 with a large quadratic penalty (the penalty-method form of the
+// constraint); the iid component w is proper and is left alone. `H` is by value.
+inline MatrixXd nmix_beta_cov_bym2(MatrixXd H, int n_x, int p_beta,
+                                   int v_start, int n_spatial) {
+    double md = H.diagonal().head(p_beta).cwiseAbs().mean();
+    if (!(md > 0)) md = 1.0;
+    const double kappa = 1e6 * md;
+    for (int i = 0; i < n_spatial; ++i)
+        for (int j = 0; j < n_spatial; ++j)
+            H(v_start + i, v_start + j) += kappa;
+    Eigen::LLT<MatrixXd> chol(H);
+    if (chol.info() != Eigen::Success)
+        return MatrixXd::Constant(p_beta, p_beta, R_NaN);
+    return nmix_beta_cov_from_chol_bym2(chol, n_x, p_beta);
+}
+
 struct BYM2InnerResult {
     VectorXd beta_lambda;
     VectorXd beta_p;
     VectorXd v;
     VectorXd w;
+    MatrixXd cov_beta;    // (p_lam+p_p) marginal coefficient covariance at mode
     double log_lik;
     double log_marginal;
     double grad_norm;
@@ -272,11 +303,14 @@ BYM2InnerResult inner_newton_bym2(
         adj_row_ptr, adj_col_idx, n_neighbors, H_final
     );
     add_diagonal_ridge_bym2(H_final);
+    const int p_beta = p_lam + p_p;
     Eigen::LLT<MatrixXd> chol(H_final);
     double log_det_H;
+    const int v_start = p_lam + p_p;
     if (chol.info() == Eigen::Success) {
         log_det_H = 2.0 * chol.matrixL().toDenseMatrix().diagonal()
                               .array().log().sum();
+        res.cov_beta = nmix_beta_cov_bym2(H_final, n_x, p_beta, v_start, n_spatial);
     } else {
         MatrixXd H_f = MatrixXd::Zero(n_x, n_x);
         nmix_assemble_complete_fisher_bym2(
@@ -291,6 +325,7 @@ BYM2InnerResult inner_newton_bym2(
         add_diagonal_ridge_bym2(H_f);
         Eigen::LLT<MatrixXd> chol_f(H_f);
         if (chol_f.info() != Eigen::Success) {
+            res.cov_beta = MatrixXd::Constant(p_beta, p_beta, R_NaN);
             res.log_marginal = R_NegInf;
             res.log_lik = log_lik_final;
             res.grad_norm = grad_norm;
@@ -299,6 +334,7 @@ BYM2InnerResult inner_newton_bym2(
         }
         log_det_H = 2.0 * chol_f.matrixL().toDenseMatrix().diagonal()
                                 .array().log().sum();
+        res.cov_beta = nmix_beta_cov_bym2(H_f, n_x, p_beta, v_start, n_spatial);
     }
 
     res.log_lik = log_lik_final;
@@ -402,6 +438,7 @@ Rcpp::List cpp_nested_laplace_nmix_bym2(
     Rcpp::NumericVector log_liks(n_grid);
     Rcpp::NumericVector boundary_maxes(n_grid);
     Rcpp::NumericMatrix modes(n_grid, n_x);
+    Rcpp::List cov_blocks(n_grid);   // per-grid marginal coef covariance
 
     int k = 0;
     for (int r = 0; r < n_rho; ++r) {
@@ -452,6 +489,7 @@ Rcpp::List cpp_nested_laplace_nmix_bym2(
             for (int j = 0; j < p_p; ++j)          modes(k, p_lam + j) = ir.beta_p(j);
             for (int j = 0; j < n_spatial; ++j)    modes(k, p_lam + p_p + j) = ir.v(j);
             for (int j = 0; j < n_spatial; ++j)    modes(k, p_lam + p_p + n_spatial + j) = ir.w(j);
+            cov_blocks[k] = Rcpp::wrap(ir.cov_beta);
 
             if (verbose) {
                 Rcpp::Rcout << "[grid " << k + 1 << "/" << n_grid
@@ -472,6 +510,7 @@ Rcpp::List cpp_nested_laplace_nmix_bym2(
         Rcpp::Named("scale_factor")    = scale_factor,
         Rcpp::Named("log_marginal")    = log_marginals,
         Rcpp::Named("modes")           = modes,
+        Rcpp::Named("cov_blocks")      = cov_blocks,
         Rcpp::Named("n_iter")          = n_iters,
         Rcpp::Named("converged")       = convergeds,
         Rcpp::Named("grad_norm")       = grad_norms,

@@ -196,6 +196,8 @@ tulpa_nmix_laplace_icar <- function(y,
     tau_sd           = tau_sd,
     beta_lambda_mean = beta_lambda_mean,
     beta_p_mean      = beta_p_mean,
+    vcov             = .nmix_grid_vcov(fit$cov_blocks, modes, weights,
+                                       p_lam, p_p, c(nm_lam, nm_p)),
     z_mean           = z_mean,
     n_sites          = n_sites,
     n_obs            = n_obs,
@@ -394,6 +396,8 @@ tulpa_nmix_laplace_car_proper <- function(y,
     rho_sd           = rho_sd,
     beta_lambda_mean = beta_lambda_mean,
     beta_p_mean      = beta_p_mean,
+    vcov             = .nmix_grid_vcov(fit$cov_blocks, modes, weights,
+                                       p_lam, p_p, c(nm_lam, nm_p)),
     z_mean           = z_mean,
     n_sites          = n_sites,
     n_obs            = n_obs,
@@ -642,6 +646,8 @@ tulpa_nmix_laplace_bym2 <- function(y,
     rho_sd           = rho_sd,
     beta_lambda_mean = beta_lambda_mean,
     beta_p_mean      = beta_p_mean,
+    vcov             = .nmix_grid_vcov(fit$cov_blocks, modes, weights,
+                                       p_lam, p_p, c(nm_lam, nm_p)),
     v_mean           = v_mean,
     w_mean           = w_mean,
     phi_mean         = phi_mean,
@@ -701,4 +707,32 @@ print.tulpa_nmix_spatial_fit <- function(x, ...) {
   cat("\ndetection (logit p):\n")
   print(x$beta_p_mean)
   invisible(x)
+}
+
+# Grid-integrated coefficient covariance via the law of total covariance:
+#   V(beta) = sum_k w_k [ Cov_k + (m_k - mbar)(m_k - mbar)' ]
+# where Cov_k = cov_blocks[[k]] is the within-grid Laplace covariance of
+# beta = (beta_lambda, beta_p) at the k-th grid mode (the (beta) block of the
+# joint H^{-1} returned by the C++ kernel), and the second term is the
+# between-grid mode variance. The result is the marginal coefficient covariance
+# integrating over the hyperparameter grid -- the right object for calibrated
+# coefficient standard errors.
+.nmix_grid_vcov <- function(cov_blocks, modes, weights, p_lam, p_p, nm) {
+  p_beta <- p_lam + p_p
+  beta_modes <- modes[, seq_len(p_beta), drop = FALSE]
+  V <- matrix(NA_real_, p_beta, p_beta)
+  ok <- is.finite(weights) & weights > 0
+  if (any(ok)) {
+    w <- weights; w[!ok] <- 0
+    mbar <- as.numeric(crossprod(w, beta_modes))
+    V <- matrix(0, p_beta, p_beta)
+    for (k in which(ok)) {
+      Ck <- cov_blocks[[k]]
+      if (is.null(Ck) || anyNA(Ck)) next
+      dk <- beta_modes[k, ] - mbar
+      V <- V + w[k] * (as.matrix(Ck) + tcrossprod(dk))
+    }
+  }
+  dimnames(V) <- list(nm, nm)
+  V
 }
