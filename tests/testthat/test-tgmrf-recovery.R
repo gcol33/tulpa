@@ -104,7 +104,7 @@ test_that("tgmrf periodic AR1 recovers theta across 30 seeds (median + coverage)
   #
   # On variance hyperparameters (log_sigma here) Laplace + a coarse outer
   # grid is known to underestimate the posterior SD relative to exact
-  # MCMC — see the discussion in generic-todo.md P9. Bias-corrected
+  # MCMC — see the discussion in dev_notes/plans/generic-todo.md P9. Bias-corrected
   # marginals (IMH-Laplace, P3) bring coverage back into the nominal
   # band; the raw grid path lands around 0.65–0.75 at n=60. The
   # threshold below reflects that floor for the grid path. Coverage of

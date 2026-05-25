@@ -1,6 +1,6 @@
-# Joint multi-block nested-Laplace recovery sweep (accuracy.md Phase 3).
+# Joint multi-block nested-Laplace recovery sweep (dev_notes/plans/accuracy.md Phase 3).
 #
-# Statistical validation, not a smoke test. Per accuracy.md sec. Win 1 Validation
+# Statistical validation, not a smoke test. Per dev_notes/plans/accuracy.md sec. Win 1 Validation
 # Plan, sweeps recovery across three alpha regimes -- {0.0, 1.0, 2.0} -- on a
 # BYM2 + AR1 + IID two-arm joint model (binomial occupancy + beta cover).
 #
@@ -16,7 +16,7 @@
 # Truth (held fixed across regimes): sigma = 0.6, rho_b = 0.7, tau_ar = 10,
 # rho_ar = 0.8, sigma_iid = 0.3. Truth on alpha varies per regime.
 #
-# CI semantics: per accuracy.md Win 2, alpha is summarized via weighted
+# CI semantics: per dev_notes/plans/accuracy.md Win 2, alpha is summarized via weighted
 # empirical 2.5 / 97.5 quantiles on the joint hyperparameter grid
 # (`theta_ci_lo` / `theta_ci_hi`), not mean +/- 1.96 sd. Sigma is reported
 # from per-block Laplace-at-mode Gaussian moments (`block_moments[[1]]$mean`,
@@ -412,9 +412,9 @@ test_that("INLA joint fit agrees with tulpa at alpha = 1 (5-seed cross-check)", 
 })
 
 # --------------------------------------------------------------------------- #
-# accuracy.md headline at alpha = 0 -- positioning note.                      #
+# dev_notes/plans/accuracy.md headline at alpha = 0 -- positioning note.                      #
 #                                                                             #
-# accuracy.md claims a "beat rgeneric" win at alpha = 0: tulpa's (sigma,      #
+# dev_notes/plans/accuracy.md claims a "beat rgeneric" win at alpha = 0: tulpa's (sigma,      #
 # alpha) reparameterization with PC-style prior puts calibrated mass at      #
 # alpha = 0 while INLA's `rgeneric` (custom user-coded Q with no boundary    #
 # atom) overshoots. The 30-seed sweep above pins down the tulpa side of      #
@@ -426,7 +426,7 @@ test_that("INLA joint fit agrees with tulpa at alpha = 1 (5-seed cross-check)", 
 # canonical built-in copy machinery. That comparison is NOT informative:     #
 # the zero-centered Gaussian on Beta puts effective mass at 0 just like      #
 # tulpa's grid + PC atom, and 95% CI contains 0 in 100% of seeds. INLA's     #
-# `copy =` is not what accuracy.md calls "rgeneric" -- the rgeneric path     #
+# `copy =` is not what dev_notes/plans/accuracy.md calls "rgeneric" -- the rgeneric path     #
 # requires writing a user-defined Q-matrix + prior callback (no PC prior on  #
 # alpha by default), and *that* is where the boundary atom matters.         #
 #                                                                             #

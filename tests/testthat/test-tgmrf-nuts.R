@@ -7,7 +7,7 @@
 # finite-difference gradient. This is the closest analogue to a full
 # joint-(beta, z, theta) NUTS reachable without plumbing user-Q
 # callbacks through the C++ hmc_nuts_* leapfrog (P3 full -- a separate
-# C++ scope; see generic-todo.md).
+# C++ scope; see dev_notes/plans/generic-todo.md).
 #
 # These tests are slow (~30 s) because each leapfrog step costs
 # 2 * theta_dim inner Laplace solves. Marked skip_on_cran to keep

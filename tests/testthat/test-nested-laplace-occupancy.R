@@ -1,7 +1,7 @@
 # test-nested-laplace-occupancy.R
 # Recovery and calibration tests for the marginalized single-season occupancy
 # likelihood routed through the multi-block nested-Laplace dispatch as a
-# model-supplied LikelihoodSpec (clean_migration.md L5). tulpa no longer ships
+# model-supplied LikelihoodSpec (dev_notes/plans/clean_migration.md L5). tulpa no longer ships
 # the occupancy family; the scaled Bernoulli is built by the reference C++
 # harness cpp_nested_laplace_test_occupancy_likelihood() and passed via the
 # `likelihood =` external pointer -- the same path (and very nearly the same

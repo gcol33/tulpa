@@ -1,5 +1,5 @@
 # Built-in family LikelihoodSpec adapter (L1 of the spec-driven-solver
-# unification, see clean_migration.md). builtin_family_spec() routes the
+# unification, see dev_notes/plans/clean_migration.md). builtin_family_spec() routes the
 # per-observation likelihood through the same grad_hess_for_family /
 # log_lik_for_family closed forms the family-enum reference uses, so the
 # spec-driven Laplace mode must equal the family-enum mode (cpp_laplace_fit)

@@ -1,5 +1,5 @@
 # GMRF latent block in the spec-driven Laplace solver (L2 of the solver
-# unification, see clean_migration.md). cpp_laplace_spec_test_icar drives the
+# unification, see dev_notes/plans/clean_migration.md). cpp_laplace_spec_test_icar drives the
 # generalized laplace_mode_spec_dense_impl with a single ICAR LatentBlock built
 # exactly as cpp_nested_laplace_icar builds it (same add_icar_prior /
 # log_prior_icar / center_effects callbacks) and a builtin_family_spec

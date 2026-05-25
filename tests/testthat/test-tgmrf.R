@@ -4,7 +4,7 @@
 # Covers:
 #   * Constructor validation (Q, prior, init, mu, graph, bounds).
 #   * Shape capture (n_latent, theta_dim, theta_names, sparsity pattern).
-#   * Periodic AR(1) worked example from generic-todo.md §7.
+#   * Periodic AR(1) worked example from dev_notes/plans/generic-todo.md §7.
 #   * Formula parser hook: latent(tgmrf(...)) detected, evaluated, stripped.
 #
 # P2 (Laplace adapter) and beyond are covered in separate test files.

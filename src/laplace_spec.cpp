@@ -1129,7 +1129,7 @@ void laplace_mode_spec_dense_impl(
 
     // GMRF blocks are wired for the single-process (single-arm) path only;
     // multi-process / joint blocks (arm_scale, per-arm sharing) are the L4 step
-    // of the solver unification (clean_migration.md).
+    // of the solver unification (dev_notes/plans/clean_migration.md).
     if (L.n_blocks > 0 && np != 1) {
         Rcpp::stop("laplace_spec_dense: GMRF latent blocks currently require "
                    "n_processes == 1 (got %d); joint/multi-arm blocks land at "
@@ -1205,7 +1205,7 @@ void laplace_mode_spec_dense_impl(
     // total_log_lik_spec / log_prior_latent) as the shared Newton loop's closures
     // over an N*np eta buffer, so this standalone entry (any np) and the
     // single-arm nested outer-grid driver (nested_laplace_multi.h) run the same
-    // loop body (clean_migration.md, Phase L). GMRF blocks are gated to np == 1
+    // loop body (dev_notes/plans/clean_migration.md, Phase L). GMRF blocks are gated to np == 1
     // above, so for np >= 2 there are no blocks and centering is a no-op.
     NewtonScratch scratch;
     scratch.allocate(n_x, N * np);
@@ -1811,7 +1811,7 @@ Rcpp::List cpp_laplace_spec_test_multi_re(
 // (test-laplace-spec-builtin-family.R) cross-checks every shipped family
 // against cpp_laplace_fit, proving the adapter reproduces the family-enum mode.
 // This is the L1 step toward routing the nested kernel through one spec-driven
-// solver (clean_migration.md).
+// solver (dev_notes/plans/clean_migration.md).
 // ============================================================================
 
 // [[Rcpp::export]]
@@ -1910,7 +1910,7 @@ Rcpp::List cpp_laplace_spec_test_family(
 }
 
 // ============================================================================
-// GMRF latent-block fixture (L2 of the solver unification, clean_migration.md):
+// GMRF latent-block fixture (L2 of the solver unification, dev_notes/plans/clean_migration.md):
 // drives the spec-Laplace path with a single ICAR block built exactly as
 // cpp_nested_laplace_icar builds it (same add_icar_prior / log_prior_icar /
 // center_effects callbacks), plus the builtin_family_spec adapter. The R test

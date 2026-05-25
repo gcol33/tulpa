@@ -1,6 +1,6 @@
 # test-nested-laplace-recovery.R
 # Parameter-recovery + CI-coverage tests for the built-in families fit through
-# the unified spec-driven nested-Laplace path (clean_migration.md L6).
+# the unified spec-driven nested-Laplace path (dev_notes/plans/clean_migration.md L6).
 #
 # After L1-L5 every built-in family flows through ONE inner solve: the
 # multi-block nested driver -> spec_inner_solve -> builtin_family_spec. The

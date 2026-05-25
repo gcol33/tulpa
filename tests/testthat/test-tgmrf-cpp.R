@@ -2,7 +2,7 @@
 # tgmrf P7 -- C++ fast backend (tgmrf_cpp()) equivalence with the
 # R-closure path (tgmrf()).
 #
-# The hard exit gate (R-vs-C++ equivalence, generic-todo.md section 8.5):
+# The hard exit gate (R-vs-C++ equivalence, dev_notes/plans/generic-todo.md section 8.5):
 # defining the same periodic-AR1 block in R and in C++ and fitting both
 # with tulpa_nested_laplace() on identical data and identical outer grid
 # must agree on log_marginal and theta_mean to within a tight numerical

@@ -635,7 +635,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     // arms materialize a builtin_family_spec + response, model-supplied arms
     // borrow their spec. Read-only after build, so it is shared safely across
     // the parallel outer-grid threads. The scatter and the joint log-lik read
-    // every arm only through these views (clean_migration.md Phase L / L4).
+    // every arm only through these views (dev_notes/plans/clean_migration.md Phase L / L4).
     JointArmSpecs specs = build_joint_arm_specs(arms);
 
     // Force inner OpenMP to single-thread when the outer grid is parallel —

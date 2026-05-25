@@ -143,7 +143,7 @@ struct LatentBlock {
     // centering happened. May be empty (no centering at all, e.g. AR1).
     std::function<double(Rcpp::NumericVector&)> center;
 
-    // ----- Sparse-builder fields (Stage 1 of hessian_plan.md) -----
+    // ----- Sparse-builder fields (Stage 1 of dev_notes/plans/hessian_plan.md) -----
     //
     // Every existing factory defaults to INDEXED_SINGLE + ADJACENCY, matching
     // the historical block registry shape (one block-local DOF per obs, sparse

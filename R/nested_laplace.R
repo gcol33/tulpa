@@ -104,7 +104,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   }
   # Allow passing a single tgmrf S3 object directly: wrap it in a length-1
   # block list so the multi-block dispatch picks it up. This keeps the
-  # ergonomic API close to the formula sketch in generic-todo.md (one block,
+  # ergonomic API close to the formula sketch in dev_notes/plans/generic-todo.md (one block,
   # one call) while still routing through the validated multi-block path.
   if (inherits(prior, "tulpa_latent_block")) {
     prior <- list(prior)

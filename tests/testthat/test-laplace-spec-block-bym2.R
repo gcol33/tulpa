@@ -1,5 +1,5 @@
 # BYM2 (two-block) GMRF in the spec-driven Laplace solver (L2, see
-# clean_migration.md). cpp_laplace_spec_test_bym2 drives the generalized
+# dev_notes/plans/clean_migration.md). cpp_laplace_spec_test_bym2 drives the generalized
 # laplace_mode_spec_dense_impl with the same phi (ICAR, centered) + theta (IID)
 # LatentBlocks cpp_nested_laplace_bym2 builds, with grid-dependent d_fac. This
 # exercises the paths the single ICAR block does not: d_fac != 1 on the eta

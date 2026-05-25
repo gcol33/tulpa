@@ -127,7 +127,7 @@ test_that("tgmrf AR1 recovers theta on a Poisson sim", {
   # Posterior weight should sit in a sensible band around the truth in the
   # block's parameterisation. Single-seed sanity, not a strict recovery
   # threshold (the multi-seed recovery test is the user-driven validation
-  # follow-on per generic-todo.md P9).
+  # follow-on per dev_notes/plans/generic-todo.md P9).
   expect_true(abs(fit$theta_mean[1] - log(tau_true)) < 2.0)
   expect_true(abs(tanh(fit$theta_mean[2]) - rho_true) < 0.6)
 })
