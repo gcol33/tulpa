@@ -87,15 +87,15 @@ struct NewtonScratchJointSparse {
 // The H_builder must already be init()ed with the joint pattern before
 // this function is called.
 template<typename ComputeEtaJoint, typename ScatterJointSparse,
-         typename CenterEffects, typename ComputeLogPriorJoint>
-LaplaceResult laplace_newton_solve_joint_sparse(
-    const std::vector<JointArm>& arms,
+         typename CenterEffects, typename ComputeLogPriorJoint, typename JointLogLik>
+LaplaceResult laplace_newton_solve_joint_sparse_ll(
     int n_x,
-    int max_iter, double tol, int n_threads,
+    int max_iter, double tol,
     ComputeEtaJoint compute_eta_joint,
     ScatterJointSparse scatter_joint_sparse,
     CenterEffects center_effects_fn,
     ComputeLogPriorJoint compute_log_prior_joint,
+    JointLogLik log_lik_fn,
     SparseHessianBuilder& H_builder,
     NewtonScratchJointSparse& scratch,
     const std::vector<double>& x_init,
@@ -120,8 +120,8 @@ LaplaceResult laplace_newton_solve_joint_sparse(
     SparseCholeskySolver& solver = shared_solver ? *shared_solver : local_solver;
 
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
-        return eval_penalized_log_lik_joint(
-            xv, arms, n_threads, compute_eta_joint, compute_log_prior_joint,
+        return eval_penalized_log_lik_joint_ll(
+            xv, compute_eta_joint, compute_log_prior_joint, log_lik_fn,
             scratch.etas_tmp
         );
     };
@@ -218,7 +218,7 @@ LaplaceResult laplace_newton_solve_joint_sparse(
 
     double log_lik, log_prior;
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
-      log_lik   = compute_total_log_lik_joint(arms, scratch.etas, n_threads);
+      log_lik   = log_lik_fn(scratch.etas);
       log_prior = compute_log_prior_joint(x, scratch.etas); }
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior,
@@ -238,6 +238,35 @@ LaplaceResult laplace_newton_solve_joint_sparse(
     }
 
     return result;
+}
+
+// Family-enum forwarder (sparse, scratch-aware): wraps the per-arm built-in
+// log-lik as the functor and delegates to the shared sparse loop above, so the
+// nested joint driver's sparse call sites keep their signature while the loop
+// body lives in one place.
+template<typename ComputeEtaJoint, typename ScatterJointSparse,
+         typename CenterEffects, typename ComputeLogPriorJoint>
+LaplaceResult laplace_newton_solve_joint_sparse(
+    const std::vector<JointArm>& arms,
+    int n_x,
+    int max_iter, double tol, int n_threads,
+    ComputeEtaJoint compute_eta_joint,
+    ScatterJointSparse scatter_joint_sparse,
+    CenterEffects center_effects_fn,
+    ComputeLogPriorJoint compute_log_prior_joint,
+    SparseHessianBuilder& H_builder,
+    NewtonScratchJointSparse& scratch,
+    const std::vector<double>& x_init,
+    SparseCholeskySolver* shared_solver,
+    bool store_Q
+) {
+    JointFamilyLogLik ll{&arms, n_threads};
+    return laplace_newton_solve_joint_sparse_ll(
+        n_x, max_iter, tol,
+        compute_eta_joint, scatter_joint_sparse, center_effects_fn,
+        compute_log_prior_joint, ll, H_builder, scratch, x_init,
+        shared_solver, store_Q
+    );
 }
 
 } // namespace tulpa

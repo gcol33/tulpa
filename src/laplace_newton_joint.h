@@ -63,8 +63,39 @@ inline double compute_total_log_lik_joint(
     return total;
 }
 
-// Penalised log-lik (joint) used by the line search. `etas_scratch` is the
-// caller's pre-allocated per-arm eta buffer set; we never reallocate.
+// Joint data log-likelihood as a functor of the per-arm eta vectors. The joint
+// analog of FamilyLogLik: the joint Newton loop reads the data log-lik only
+// through `log_lik_fn(etas) -> double`, so the family-enum joint driver passes
+// this (summing compute_total_log_lik over arms) while the spec-driven joint
+// path (L4) passes a functor backed by each arm's LikelihoodSpec. The borrowed
+// arms vector must outlive the fit.
+struct JointFamilyLogLik {
+    const std::vector<JointArm>* arms = nullptr;
+    int n_threads = 1;
+    double operator()(const std::vector<Rcpp::NumericVector>& etas) const {
+        return compute_total_log_lik_joint(*arms, etas, n_threads);
+    }
+};
+
+// Penalised log-lik (joint), likelihood-agnostic: the data log-lik enters as a
+// functor of the per-arm etas, mirroring eval_penalized_log_lik_ll. `etas_scratch`
+// is the caller's pre-allocated per-arm eta buffer set; we never reallocate.
+template<typename ComputeEtaJoint, typename ComputeLogPriorJoint, typename JointLogLik>
+inline double eval_penalized_log_lik_joint_ll(
+    const Rcpp::NumericVector& x,
+    ComputeEtaJoint compute_eta_joint,
+    ComputeLogPriorJoint compute_log_prior_joint,
+    JointLogLik log_lik_fn,
+    std::vector<Rcpp::NumericVector>& etas_scratch
+) {
+    compute_eta_joint(x, etas_scratch);
+    double ll = log_lik_fn(etas_scratch);
+    double lp = compute_log_prior_joint(x, etas_scratch);
+    return ll + lp;
+}
+
+// Family-enum convenience overload: wraps the per-arm built-in log-lik as the
+// functor. Single source of truth for the joint loop body.
 template<typename ComputeEtaJoint, typename ComputeLogPriorJoint>
 inline double eval_penalized_log_lik_joint(
     const Rcpp::NumericVector& x,
@@ -74,10 +105,10 @@ inline double eval_penalized_log_lik_joint(
     ComputeLogPriorJoint compute_log_prior_joint,
     std::vector<Rcpp::NumericVector>& etas_scratch
 ) {
-    compute_eta_joint(x, etas_scratch);
-    double ll = compute_total_log_lik_joint(arms, etas_scratch, n_threads);
-    double lp = compute_log_prior_joint(x, etas_scratch);
-    return ll + lp;
+    JointFamilyLogLik ll{&arms, n_threads};
+    return eval_penalized_log_lik_joint_ll(x, compute_eta_joint,
+                                           compute_log_prior_joint, ll,
+                                           etas_scratch);
 }
 
 // Per-thread scratch for the joint Newton solver. Same role as NewtonScratch
@@ -118,19 +149,23 @@ struct NewtonScratchJoint {
     }
 };
 
-// Scratch-aware joint Newton solver. Like the single-arm version, performs
-// zero Rcpp allocations once `scratch` is supplied; safe inside an OpenMP
-// parallel region with a thread-local `shared_solver`.
+// Scratch-aware, likelihood-agnostic joint Newton solver. Like the single-arm
+// laplace_newton_solve_ll, the data log-lik enters ONLY through
+// `log_lik_fn(etas) -> double`, so the loop carries no family knowledge: the
+// family-enum forwarder below passes a JointFamilyLogLik and the spec-driven
+// joint path (L4) passes a functor backed by each arm's LikelihoodSpec.
+// Performs zero Rcpp allocations once `scratch` is supplied; safe inside an
+// OpenMP parallel region with a thread-local `shared_solver`.
 template<typename ComputeEtaJoint, typename ScatterJoint,
-         typename CenterEffects, typename ComputeLogPriorJoint>
-LaplaceResult laplace_newton_solve_joint(
-    const std::vector<JointArm>& arms,
+         typename CenterEffects, typename ComputeLogPriorJoint, typename JointLogLik>
+LaplaceResult laplace_newton_solve_joint_ll(
     int n_x,
-    int max_iter, double tol, int n_threads,
+    int max_iter, double tol,
     ComputeEtaJoint compute_eta_joint,
     ScatterJoint scatter_joint,
     CenterEffects center_effects_fn,
     ComputeLogPriorJoint compute_log_prior_joint,
+    JointLogLik log_lik_fn,
     NewtonScratchJoint& scratch,
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
@@ -155,8 +190,8 @@ LaplaceResult laplace_newton_solve_joint(
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;
 
     auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
-        return eval_penalized_log_lik_joint(
-            xv, arms, n_threads, compute_eta_joint, compute_log_prior_joint,
+        return eval_penalized_log_lik_joint_ll(
+            xv, compute_eta_joint, compute_log_prior_joint, log_lik_fn,
             scratch.etas_tmp
         );
     };
@@ -219,7 +254,7 @@ LaplaceResult laplace_newton_solve_joint(
     dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
                              scratch.chol, result.log_det_Q);
 
-    double log_lik   = compute_total_log_lik_joint(arms, scratch.etas, n_threads);
+    double log_lik   = log_lik_fn(scratch.etas);
     double log_prior = compute_log_prior_joint(x, scratch.etas);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
@@ -236,6 +271,33 @@ LaplaceResult laplace_newton_solve_joint(
     }
 
     return result;
+}
+
+// Family-enum forwarder (scratch-aware): wraps the per-arm built-in log-lik as
+// the functor and delegates to the shared loop above, keeping the existing
+// nested joint driver's call sites unchanged while the loop body lives in one
+// place.
+template<typename ComputeEtaJoint, typename ScatterJoint,
+         typename CenterEffects, typename ComputeLogPriorJoint>
+LaplaceResult laplace_newton_solve_joint(
+    const std::vector<JointArm>& arms,
+    int n_x,
+    int max_iter, double tol, int n_threads,
+    ComputeEtaJoint compute_eta_joint,
+    ScatterJoint scatter_joint,
+    CenterEffects center_effects_fn,
+    ComputeLogPriorJoint compute_log_prior_joint,
+    NewtonScratchJoint& scratch,
+    const std::vector<double>& x_init,
+    SparseCholeskySolver* shared_solver,
+    bool store_Q
+) {
+    JointFamilyLogLik ll{&arms, n_threads};
+    return laplace_newton_solve_joint_ll(
+        n_x, max_iter, tol,
+        compute_eta_joint, scatter_joint, center_effects_fn,
+        compute_log_prior_joint, ll, scratch, x_init, shared_solver, store_Q
+    );
 }
 
 // Convenience overload that allocates scratch locally. Safe to call from
