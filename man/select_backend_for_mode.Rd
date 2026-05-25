@@ -4,7 +4,14 @@
 \alias{select_backend_for_mode}
 \title{Select best backend within a mode}
 \usage{
-select_backend_for_mode(mode, family, n_obs, has_spatial, has_temporal)
+select_backend_for_mode(
+  mode,
+  family,
+  n_obs,
+  has_spatial,
+  has_temporal,
+  has_latent = FALSE
+)
 }
 \description{
 Select best backend within a mode

@@ -104,6 +104,9 @@ TIER_META <- list(
 #'     - `"design"`    : design-matrix bundle (`y`, `n_trials`, `X`, RE structure).
 #'     - `"logpost"`   : a `log_posterior(theta)` closure plus dimension/init.
 #'     - `"modeldata"` : a tulpa `ModelData` / `LikelihoodSpec` (C-ABI NUTS path).
+#'     - `"nested"`    : a design-matrix bundle plus one or more latent prior
+#'                       blocks (`latent(tgmrf(...))`), integrated over the block
+#'                       hyperparameters by the nested-Laplace driver.
 #' * `fitter`   -- name of the R function implementing the backend, or `NULL`
 #'     when only a C++ kernel exists with no R entry point yet. Stored as a
 #'     *string* (not the function object) so the registry is independent of
@@ -185,6 +188,17 @@ BACKEND_REGISTRY <- list(
   agq = list(
     tier = "structured", input = "design", fitter = "agq_fit",
     families = NULL, cabi = NULL
+  ),
+  nested_laplace = list(
+    tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",
+    families = NULL, cabi = "cpp_nested_laplace_multi",
+    note = "Single-arm nested Laplace; integrates latent-block hyperparameters"
+  ),
+  nested_laplace_joint = list(
+    tier = "structured", input = "nested", fitter = "tulpa_nested_laplace_joint",
+    families = NULL, cabi = "cpp_nested_laplace_joint_multi",
+    note = paste("Joint multi-arm nested Laplace; driven by model packages, not the",
+                 "single-response tulpa() formula (cannot express multiple arms)")
   ),
   # ---- Tier 3: Optimized ----
   vi = list(
@@ -470,7 +484,8 @@ select_inference_mode <- function(mode,
   }
 
   # Explicit tier mode: select best backend within that tier
-  backend <- select_backend_for_mode(mode, family, n_obs, has_spatial, has_temporal)
+  backend <- select_backend_for_mode(mode, family, n_obs, has_spatial, has_temporal,
+                                     has_latent)
   tier_info <- get_backend_tier(backend)
 
   return(list(
@@ -494,6 +509,20 @@ select_inference_mode <- function(mode,
 #' @keywords internal
 auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_latent, temporal = NULL,
                              spatial_type = NULL) {
+
+  # Latent prior blocks (`latent(tgmrf(...))`) integrate their hyperparameters
+  # via nested Laplace -- the designed Tier 2 hot path for latent Gaussian
+  # structure. This takes precedence over the dataset-size heuristics below:
+  # a latent-block model goes nested regardless of n.
+  if (has_latent) {
+    return(list(
+      mode = "structured",
+      backend = "nested_laplace",
+      tier = 2L,
+      tier_name = "Structured",
+      reason = "latent prior block(s); nested-Laplace hyperparameter integration"
+    ))
+  }
 
   # Thresholds
   VERY_LARGE <- 50000
@@ -565,7 +594,8 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
 
 #' Select best backend within a mode
 #' @keywords internal
-select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_temporal) {
+select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_temporal,
+                                    has_latent = FALSE) {
 
   if (mode == "exact") {
     # HMC is the default for Exact - most general
@@ -573,7 +603,9 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
   }
 
   if (mode == "structured") {
-    # Laplace is currently the only Tier 2 backend
+    # Latent prior blocks need the nested-Laplace path; plain (conditional)
+    # Laplace does not consume them. Otherwise Laplace is the Tier 2 default.
+    if (has_latent) return("nested_laplace")
     return("laplace")
   }
 

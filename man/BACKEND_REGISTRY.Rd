@@ -5,7 +5,7 @@
 \alias{BACKEND_REGISTRY}
 \title{Backend registry -- single source of truth for the inference backends.}
 \format{
-An object of class \code{list} of length 14.
+An object of class \code{list} of length 16.
 }
 \usage{
 BACKEND_REGISTRY
@@ -24,6 +24,9 @@ Fields:
 \item \code{"design"}    : design-matrix bundle (\code{y}, \code{n_trials}, \code{X}, RE structure).
 \item \code{"logpost"}   : a \code{log_posterior(theta)} closure plus dimension/init.
 \item \code{"modeldata"} : a tulpa \code{ModelData} / \code{LikelihoodSpec} (C-ABI NUTS path).
+\item \code{"nested"}    : a design-matrix bundle plus one or more latent prior
+blocks (\code{latent(tgmrf(...))}), integrated over the block
+hyperparameters by the nested-Laplace driver.
 }
 \item \code{fitter}   -- name of the R function implementing the backend, or \code{NULL}
 when only a C++ kernel exists with no R entry point yet. Stored as a

@@ -75,6 +75,12 @@ directly).
 \code{family = "binomial"} or \code{"neg_binomial_2"}, and \strong{samples} the RE sd
 rather than conditioning on \code{sigma_re}; tune it via \code{control$prior_sigma_scale}
 and a mean-zero \code{beta_prior}.
+\item \strong{Latent prior blocks} (\code{latent(tgmrf(...))}) route to the nested-Laplace
+path (Tier 2), which integrates over the block hyperparameters. \code{mode = "auto"} and \code{"structured"} select it automatically when latent blocks are
+present; \code{mode = "nested_laplace"} forces it. At most one random-intercept
+\code{(1 | g)} term may accompany the blocks (model richer grouping as an \code{iid}
+block). Joint multi-arm nested models cannot be expressed by a
+single-response formula -- call \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} directly.
 \item Selecting a backend whose kernel is C-ABI-only (e.g. \code{ess}, \code{sghmc}, \code{smc})
 errors loudly -- those are reachable from model packages, not from R yet.
 }

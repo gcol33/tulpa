@@ -45,12 +45,81 @@
 }
 
 
+# Build the `prior` argument for tulpa_nested_laplace() from the formula's
+# parsed latent blocks. Every `latent(...)` term resolves to a
+# tulpa_latent_block (a tgmrf), which is itself a valid nested-Laplace prior
+# block (it carries `type = "tgmrf"`). One block or many, the list is exactly
+# the multi-block prior the driver consumes -- a length-1 list routes through
+# the same multi-block path.
+.latent_blocks_to_prior <- function(latent_blocks) {
+  if (length(latent_blocks) == 0L) {
+    stop("Internal error: .latent_blocks_to_prior() called with no blocks.",
+         call. = FALSE)
+  }
+  latent_blocks
+}
+
+
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
-                               n_trials, phi, beta_prior, control) {
+                               n_trials, phi, beta_prior, control,
+                               latent_blocks = list()) {
   input <- BACKEND_REGISTRY[[backend]]$input
+
+  if (input == "nested") {
+    if (backend != "nested_laplace") {
+      stop(sprintf(paste0(
+        "Backend '%s' is a nested engine driven by model packages, not the\n",
+        "single-response tulpa() formula -- it needs multiple response arms,\n",
+        "which a single formula cannot express. Call %s() directly."),
+        backend, backend), call. = FALSE)
+    }
+    if (length(latent_blocks) == 0L) {
+      stop("Backend 'nested_laplace' needs at least one `latent(...)` block ",
+           "in the formula. For a plain GLMM use mode = 'laplace' / 'mala' / ",
+           "'auto'.", call. = FALSE)
+    }
+    if (!is.null(beta_prior)) {
+      warning("`beta_prior` is not threaded through tulpa()'s nested-Laplace ",
+              "path; it is ignored. Call tulpa_nested_laplace() directly if you ",
+              "need a fixed-effect prior here.", call. = FALSE)
+    }
+    # The nested driver carries a single iid random-intercept natively via
+    # re_idx / n_re_groups / sigma_re (conditioned on, like the other tulpa()
+    # backends). Richer RE structure should be modelled as an `iid` latent
+    # block; surface that rather than silently dropping terms.
+    re <- bundle$re_terms %||% list()
+    re_idx      <- rep(0L, bundle$n_obs)
+    n_re_groups <- 0L
+    sigma_re_scalar <- 1.0
+    if (length(re) > 0L) {
+      if (length(re) > 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
+        stop(paste0(
+          "The nested-Laplace path supports at most one random-intercept term\n",
+          "`(1 | g)` alongside latent blocks. For richer random-effect structure,\n",
+          "model the extra grouping as an `iid` latent block, or call\n",
+          "tulpa_nested_laplace() directly with an explicit RE layout."),
+          call. = FALSE)
+      }
+      re_idx          <- as.integer(re[[1]]$group_idx)
+      n_re_groups     <- re[[1]]$n_groups
+      sigma_re_scalar <- sigma_re[1]
+    }
+    return(list(
+      y           = bundle$y,
+      n_trials    = n_trials %||% rep(1L, bundle$n_obs),
+      X           = bundle$X,
+      prior       = .latent_blocks_to_prior(latent_blocks),
+      re_idx      = re_idx,
+      n_re_groups = n_re_groups,
+      sigma_re    = sigma_re_scalar,
+      family      = family,
+      phi         = phi,
+      control     = control
+    ))
+  }
 
   if (input == "design") {
     if (backend == "laplace") {
@@ -170,6 +239,13 @@
 #'   `family = "binomial"` or `"neg_binomial_2"`, and **samples** the RE sd
 #'   rather than conditioning on `sigma_re`; tune it via `control$prior_sigma_scale`
 #'   and a mean-zero `beta_prior`.
+#' * **Latent prior blocks** (`latent(tgmrf(...))`) route to the nested-Laplace
+#'   path (Tier 2), which integrates over the block hyperparameters. `mode =
+#'   "auto"` and `"structured"` select it automatically when latent blocks are
+#'   present; `mode = "nested_laplace"` forces it. At most one random-intercept
+#'   `(1 | g)` term may accompany the blocks (model richer grouping as an `iid`
+#'   block). Joint multi-arm nested models cannot be expressed by a
+#'   single-response formula -- call [tulpa_nested_laplace_joint()] directly.
 #' * Selecting a backend whose kernel is C-ABI-only (e.g. `ess`, `sghmc`, `smc`)
 #'   errors loudly -- those are reachable from model packages, not from R yet.
 #'
@@ -221,8 +297,23 @@ tulpa <- function(formula, data,
   fam_obj <- list(name = family, distribution = family)
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = has_latent, has_temporal = FALSE, has_latent = has_latent
+    has_spatial = FALSE, has_temporal = FALSE, has_latent = has_latent
   )
+
+  # Latent prior blocks are consumed only by the nested-Laplace path. If the
+  # user forced a non-nested backend (e.g. mode = "laplace" / "mala" / "exact"),
+  # the blocks would otherwise be silently dropped -- fail loudly, and before
+  # the generic reachability check so the latent-specific guidance wins (e.g.
+  # mode = "exact" resolves to the unreachable `hmc`).
+  if (has_latent && (BACKEND_REGISTRY[[sel$backend]]$input %||% "") != "nested") {
+    stop(sprintf(paste0(
+      "Formula has %d latent prior block(s) (`latent(...)`), which are integrated\n",
+      "by the nested-Laplace backend. The selected backend '%s' (mode = '%s')\n",
+      "does not consume latent blocks. Use mode = 'auto', 'structured', or\n",
+      "'nested_laplace'."),
+      parsed$n_latent_blocks, sel$backend, mode), call. = FALSE)
+  }
+
   assert_backend_reachable(sel$backend)
 
   # Conditional backends (everything except the sigma-sampling Gibbs) need one
@@ -242,13 +333,14 @@ tulpa <- function(formula, data,
   }
 
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
-                             n_trials, phi, beta_prior, control)
+                             n_trials, phi, beta_prior, control,
+                             latent_blocks = parsed$latent_blocks)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(
     sel$backend, fitter_args = args,
     family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = has_latent, has_latent = has_latent
+    has_spatial = FALSE, has_latent = has_latent
   )
 
   if (is.list(fit)) {
