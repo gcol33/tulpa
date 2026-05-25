@@ -44,7 +44,7 @@ Concretely:
 |---|---|---|
 | 0 | Baseline load_all + blast-radius map | ✅ done |
 | 1 | Remove dead `nested_laplace()` alias; ASCII-only `ccd_grid` roxygen | ✅ done — commit `175fa62` |
-| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); **L2 done** (`9ece117` ICAR + bym2); **L3 done** (`4829dea` functor loop, `192591a` spec np==1 → shared loop, `4146d9f` spec_inner_solve_np1 + det_prob, `fd29078` nested driver → spec): every single-block / np==1 multi-block nested kernel now solves through one spec inner solve; duplicate obs+latent-cross scatter deleted; beta-prior convention reconciled. **L4 done** (`a1e4f18`/`32569bd` joint multi-arm spec-driven), **L4.3 done** (`82573d0` np>=2 spec loop collapsed), **L5 done** (`det_prob` + `bernoulli` family retired; single-arm driver takes a model `LikelihoodSpec` via `XPtr<NestedLikelihood>`; occupancy scaled Bernoulli moved to tulpaObs). Equivalence net green. **L6 (recovery tests) next** |
+| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); **L2 done** (`9ece117` ICAR + bym2); **L3 done** (`4829dea` functor loop, `192591a` spec np==1 → shared loop, `4146d9f` spec_inner_solve_np1 + det_prob, `fd29078` nested driver → spec): every single-block / np==1 multi-block nested kernel now solves through one spec inner solve; duplicate obs+latent-cross scatter deleted; beta-prior convention reconciled. **L4 done** (`a1e4f18`/`32569bd` joint multi-arm spec-driven), **L4.3 done** (`82573d0` np>=2 spec loop collapsed), **L5 done** (`det_prob` + `bernoulli` family retired; single-arm driver takes a model `LikelihoodSpec` via `XPtr<NestedLikelihood>`; occupancy scaled Bernoulli moved to tulpaObs). Equivalence net green. **L6 done** (`test-nested-laplace-recovery.R`: beta + RE-SD recovery + CI coverage for all 6 built-in families through the unified path; occupancy recovery shipped in L5). **Keystone (L) complete — Phase 2 next** |
 | 2 | Collapse nested engine knobs into `control = list()` | ⬜ pending |
 | 3 | Remove `tulpa_priors_legacy` | ⬜ pending |
 | 4 | Route single-arm `latent()` formulas through `tulpa()`; register nested backends | ⬜ pending |
@@ -221,9 +221,24 @@ live in a tulpaObs `LikelihoodSpec`. The family-enum inner loop is retired.
   q = 1 case asserting spec == built-in binomial. Equivalence net green: the
   spec + nested + joint sweep (`laplace-spec*`, all `nested-laplace*` incl.
   joint multi-recovery) 0 fail.
-- **L6 — Recovery tests** (per global "statistical code needs recovery tests"):
-  parameter recovery for built-in families + occupancy through the unified path,
-  fit-to-convergence, `|est-truth| < tol` across seeds, CI coverage.
+- **L6 — Recovery tests. ✅ DONE.** Per the global "statistical code needs
+  recovery tests" rule, `test-nested-laplace-recovery.R` certifies that the
+  unified path *recovers* parameters, not just that it reproduces the
+  family-enum mode (the L1 equivalence net). A region-grouped IID block keeps
+  the RE identified while the outer grid integrates its SD; the fixed-effect
+  posterior is the Gaussian mixture over grid cells (`grid_modes` +
+  `solve(grid_hessians)`, weighted) -- beta is marginalized over the
+  hyperparameter grid, never read off a plug-in-MAP cell. In-suite: poisson +
+  binomial, 12 seeds, beta bias + interval calibration + RE-SD recovery. Slow
+  gate (`TULPA_SLOW_TESTS=true`): all 6 built-in families (gaussian, poisson,
+  binomial, neg_binomial_2, gamma, beta), 20 seeds, fit-to-convergence,
+  `|bias| < 0.12`, and >= 85% *aggregate* CI coverage (pooled over all
+  family x coefficient cells, plus a loose per-cell floor) -- a hard
+  per-coefficient 17/20 gate is mis-designed at N = 20 (a correctly calibrated
+  ~90%-coverage Laplace fails it on some coefficient ~80% of the time across 12
+  cells; pooling 240 trials makes the mean a stable standard). Occupancy
+  recovery + calibration already shipped with L5 in
+  `test-nested-laplace-occupancy.R`. **This completes the keystone (Phase L).**
 
 **Guard:** the 24 `test-nested-laplace*.R` + joint test files are the numerical-
 equivalence safety net. Keep them green at L3/L4.
