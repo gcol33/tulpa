@@ -102,6 +102,35 @@ Gaussian fixed-effect prior into every `tulpa_laplace()` block and into the
 MI/Gibbs refits (gcol33/tulpa#27); blocks may override it with their own
 `beta_prior` field. See `?tulpa_em_laplace`.
 
+### Random-effect covariance integration (free Sigma for `(1 + x | g)`)
+
+For a single correlated random-effect term the engine can treat the RE
+covariance `Sigma` itself as the inferred quantity instead of a point
+estimate -- the nested-approx + debias philosophy applied to a free `Sigma`:
+
+- **`tulpa_re_cov_nested()`** (`R/nested_laplace_re_cov.R`) -- nested-Laplace
+  grid integration over `Sigma`. `Sigma = L L'` is parameterized in
+  **log-Cholesky** coordinates (log-diagonal + strict-lower of `L`,
+  `c(c+1)/2` params, **general `c`/K**, always PD), the grid is centred at the
+  marginal-likelihood mode and rotated by the Cholesky of its posterior
+  covariance, and each derived quantity (`sigma_i`, `rho_ij`, `Sigma_ij`) is
+  computed per cell then weighted-quantiled -- the "Marginalize Derived
+  Quantities" rule (corrects the plug-in-MAP/"summary" bias, Bias-2). Inner
+  solve is `tulpa_laplace()` at a supplied `Sigma`; outer is the
+  `nested_laplace` + CCD recipe.
+- **`tulpa_re_cov_gibbs()`** (`R/re_cov_gibbs.R`) -- the exact debias (Bias-1):
+  Metropolis-within-Gibbs (MH on `b_g`/`beta` with Laplace-shaped proposals,
+  **exact conjugate inverse-Wishart draw** for `Sigma | b`). Removes the
+  Laplace under-dispersion that biases `Sigma` low for binary/low-count small
+  groups.
+
+Both summarize through the shared `.re_cov_derived_summary` (weighted
+quantiles == sample quantiles at equal weight). Tests:
+`test-re-cov-nested.R`, `test-re-cov-gibbs.R`, `test-re-cov-recovery.R`.
+**Status:** standalone (caller builds `re_term` by hand) -- not yet routed
+from the `tulpa()` / `(1 + x | g)` formula front door, and the grid is a full
+tensor product (CCD-design swap + PC/LKJ default hyperpriors are planned).
+
 ### Generic S3 Methods and Diagnostics
 
 Implemented in `R/methods_generic.R` (`coef`, `confint`, `vcov`, `logLik`,

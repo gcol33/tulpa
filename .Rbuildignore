@@ -8,6 +8,7 @@
 ^_pkgdown\.yml$
 ^\.github$
 ^CLAUDE\.md$
+^api\.md$
 ^\.claude$
 ^\.code-review-graph$
 ^\.vscode$
