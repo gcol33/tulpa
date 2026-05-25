@@ -12,3 +12,4 @@ dev_notes/
 dev_scripts/
 tmp_lib/
 .code-review-graph/
+.claude/
