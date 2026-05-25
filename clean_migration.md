@@ -44,7 +44,7 @@ Concretely:
 |---|---|---|
 | 0 | Baseline load_all + blast-radius map | ✅ done |
 | 1 | Remove dead `nested_laplace()` alias; ASCII-only `ccd_grid` roxygen | ✅ done — commit `175fa62` |
-| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); **L2 done** (`9ece117` ICAR + bym2): spec solver carries INDEXED_SINGLE blocks, verified vs the nested kernel across families + RE; **L3 next** (route the real nested entries through it) |
+| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); **L2 done** (`9ece117` ICAR + bym2); **L3 done** (`4829dea` functor loop, `192591a` spec np==1 → shared loop, `4146d9f` spec_inner_solve_np1 + det_prob, `fd29078` nested driver → spec): every single-block / np==1 multi-block nested kernel now solves through one spec inner solve; duplicate obs+latent-cross scatter deleted; beta-prior convention reconciled; full suite 2421 pass / 0 fail. **L4 next** (multi-arm joint) |
 | 2 | Collapse nested engine knobs into `control = list()` | ⬜ pending |
 | 3 | Remove `tulpa_priors_legacy` | ⬜ pending |
 | 4 | Route single-arm `latent()` formulas through `tulpa()`; register nested backends | ⬜ pending |
@@ -153,9 +153,20 @@ live in a tulpaObs `LikelihoodSpec`. The family-enum inner loop is retired.
     mode/log_marginal at a single tau against `cpp_nested_laplace_icar`
     (tau_grid length 1) to 1e-5. The family-enum vs spec likelihood equality is
     already proven (L1), so any mismatch isolates the block-scatter wiring.
-- **L3 — Route single-block nested through the unified solver.** Numerical-
-  equivalence test vs current (`tests/testthat/test-nested-laplace*.R` must pass
-  to tolerance).
+- **L3 — Route single-block nested through the unified solver. ✅ DONE.**
+  `4829dea` lifts the data log-lik in `laplace_newton_solve` to a templated
+  functor (one Newton loop for family + spec). `192591a` delegates the spec
+  solver's np==1 path to it. `4146d9f` extracts `spec_inner_solve_np1`
+  (laplace_spec_solve.h) as the single np==1 inner solve and threads `det_prob`
+  through `BuiltinFamilyResponse`. `fd29078` routes
+  `run_multi_block_nested_laplace` through `spec_inner_solve_np1` (one-process
+  `ModelData`/`ParamLayout`/`builtin_family_spec` built once, pooled scratch per
+  outer-grid thread, predictive variance / cheap-pass / fitted_eta preserved),
+  deleting the driver's duplicate `scatter_obs_grad_hess_base` +
+  `accumulate_latent_cross_terms`. Covers icar/bym2/car_proper/rw1/rw2/ar1/iid/
+  nngp/tgmrf and the np==1 multi-block entry. Beta-prior log-density convention
+  reconciled (spec path includes it; modes unchanged). Equivalence net: full
+  suite 2421 pass / 0 fail, spec-block icar/bym2 now assert exact log-marginal.
 - **L4 — Route multi-block + joint through it** (`cpp_nested_laplace_multi`,
   `cpp_nested_laplace_joint_multi`). Watch the `(sigma, alpha)` reparam and the
   post-Newton phi-centering invariant (centering must shift each arm's
