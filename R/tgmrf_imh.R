@@ -117,29 +117,22 @@ tulpa_tgmrf_imh <- function(y, n_trials, X, block,
 
   # --- 2. FD Hessian on log_marginal(theta) ---------------------------------
   # Evaluate log_marginal at theta_mode +/- fd_step * e_j and cross-terms.
-  # log_marginal at a single theta is one inner Laplace solve.
-  log_marginal_at <- function(theta_vec) {
-    blk <- block
-    blk$obs_idx <- obs_idx
-    blk$theta_grid_built <- matrix(theta_vec, nrow = 1L,
-                                   dimnames = list(NULL, block$theta_names))
-    out <- tryCatch(
-      tulpa_nested_laplace(
-        y = y, n_trials = n_trials, X = X,
-        prior = blk,
-        re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
-        family = family, phi = phi,
-        control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
-      ),
-      error = function(e) NULL
-    )
-    if (is.null(out)) return(-Inf)
-    as.numeric(out$log_marginal[1])
-  }
+  # log_marginal at a single theta is one inner Laplace solve. Shared builder
+  # (see .tgmrf_make_log_marginal); no bounds wall here -- the +/- fd_step
+  # steps stay near the interior pilot mode.
+  .lm <- .tgmrf_make_log_marginal(
+    y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+    family = family, phi = phi,
+    max_iter = max_iter, tol = tol, n_threads = n_threads
+  )
+  log_marginal_at <- .lm$eval
 
   H_theta <- matrix(0, nrow = d, ncol = d,
                     dimnames = list(block$theta_names, block$theta_names))
-  lm_centre <- log_marginal_at(theta_mode)
+  # Eager structural check at the feasible pilot mode (non-swallowing): a
+  # failure here is a bug, not numerical infeasibility -- surface it.
+  lm_centre <- .lm$raw(theta_mode)
   if (!is.finite(lm_centre)) {
     stop("Pilot log_marginal at the grid argmax is not finite -- ",
          "tighten `bounds` or check the user `Q()`/`prior()`.", call. = FALSE)

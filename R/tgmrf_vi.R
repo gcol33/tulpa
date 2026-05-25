@@ -91,36 +91,29 @@ tulpa_tgmrf_vi <- function(y, n_trials, X, block,
   names(theta_init) <- block$theta_names
 
   # --- 2. log_marginal(theta) closure -------------------------------------
-  # Same shape as in tgmrf_imh/tgmrf_nuts: hard-wall bounds, suppress
-  # CHOLMOD non-PD warnings inside the L-BFGS line search, return -Inf
-  # on any failure so L-BFGS-B retreats from the infeasible region.
+  # Shared builder (see .tgmrf_make_log_marginal): hard-wall bounds, suppress
+  # CHOLMOD non-PD warnings inside the L-BFGS line search, return -Inf on any
+  # failure so L-BFGS-B retreats from the infeasible region.
   bounds_lo <- if (!is.null(block$bounds)) block$bounds$lower else NULL
   bounds_hi <- if (!is.null(block$bounds)) block$bounds$upper else NULL
+  .lm <- .tgmrf_make_log_marginal(
+    y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+    family = family, phi = phi,
+    max_iter = max_iter, tol = tol, n_threads = n_threads,
+    bounds_lo = bounds_lo, bounds_hi = bounds_hi
+  )
+  log_marginal_at <- .lm$eval
 
-  log_marginal_at <- function(theta_vec) {
-    if (!is.null(bounds_lo) &&
-        (any(theta_vec < bounds_lo) || any(theta_vec > bounds_hi))) {
-      return(-Inf)
-    }
-    blk <- block
-    blk$obs_idx <- obs_idx
-    blk$theta_grid_built <- matrix(theta_vec, nrow = 1L,
-                                   dimnames = list(NULL, block$theta_names))
-    out <- tryCatch(
-      suppressWarnings(tulpa_nested_laplace(
-        y = y, n_trials = n_trials, X = X,
-        prior = blk,
-        re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
-        family = family, phi = phi,
-        max_iter = max_iter, tol = tol, n_threads = n_threads
-      )),
-      error = function(e) NULL,
-      warning = function(w) NULL
-    )
-    if (is.null(out)) return(-Inf)
-    lm <- as.numeric(out$log_marginal[1])
-    if (!is.finite(lm)) return(-Inf)
-    lm
+  # Eager structural check at the feasible pilot mode (the grid argmax, where
+  # the inner Laplace already succeeded): a failure here is a bug, not
+  # numerical infeasibility -- surface its real message rather than letting
+  # pathfinder's finite-init guard resurface it as a cryptic "not finite".
+  init_lm <- .lm$raw(theta_init)
+  if (!is.finite(init_lm)) {
+    stop("Inner nested-Laplace returned a non-finite log-marginal at the ",
+         "pilot mode; cannot initialise VI. Tighten `bounds` or check the ",
+         "user `Q()` / `prior()`.", call. = FALSE)
   }
 
   # --- 3. Pathfinder on log_marginal(theta) -------------------------------

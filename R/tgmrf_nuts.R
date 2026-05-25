@@ -106,39 +106,21 @@ tulpa_tgmrf_nuts <- function(y, n_trials, X, block,
   if (is.null(epsilon)) epsilon <- 0.2 / sqrt(d)
 
   # --- Closures: log_post and FD gradient on log_marginal -----------------
-  # Hard-wall bounds when the user supplied them — a leapfrog step
-  # that overshoots into the infeasible region returns -Inf and NUTS
-  # rejects via the slice variable. This stops the chain from wandering
-  # to numerically-divergent theta where Q goes singular and log|Q|
-  # has wide swings that the FD gradient can't track.
+  # Shared builder (see .tgmrf_make_log_marginal): hard-wall bounds when the
+  # user supplied them — a leapfrog step that overshoots into the infeasible
+  # region returns -Inf and NUTS rejects via the slice variable. This stops
+  # the chain from wandering to numerically-divergent theta where Q goes
+  # singular and log|Q| has wide swings that the FD gradient can't track.
   bounds_lo <- if (!is.null(block$bounds)) block$bounds$lower else NULL
   bounds_hi <- if (!is.null(block$bounds)) block$bounds$upper else NULL
-
-  log_marginal_at <- function(theta_vec) {
-    if (!is.null(bounds_lo) &&
-        (any(theta_vec < bounds_lo) || any(theta_vec > bounds_hi))) {
-      return(-Inf)
-    }
-    blk <- block
-    blk$obs_idx <- obs_idx
-    blk$theta_grid_built <- matrix(theta_vec, nrow = 1L,
-                                   dimnames = list(NULL, block$theta_names))
-    out <- tryCatch(
-      suppressWarnings(tulpa_nested_laplace(
-        y = y, n_trials = n_trials, X = X,
-        prior = blk,
-        re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
-        family = family, phi = phi,
-        max_iter = max_iter, tol = tol, n_threads = n_threads
-      )),
-      error = function(e) NULL,
-      warning = function(w) NULL
-    )
-    if (is.null(out)) return(-Inf)
-    lm <- as.numeric(out$log_marginal[1])
-    if (!is.finite(lm)) return(-Inf)
-    lm
-  }
+  .lm <- .tgmrf_make_log_marginal(
+    y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+    family = family, phi = phi,
+    max_iter = max_iter, tol = tol, n_threads = n_threads,
+    bounds_lo = bounds_lo, bounds_hi = bounds_hi
+  )
+  log_marginal_at <- .lm$eval
 
   grad_log_marginal_at <- function(theta_vec) {
     g <- numeric(d)
@@ -246,11 +228,13 @@ tulpa_tgmrf_nuts <- function(y, n_trials, X, block,
 
   # --- Main loop ----------------------------------------------------------
   theta_curr <- theta_init
-  grad_curr  <- grad_log_marginal_at(theta_curr)
-  log_post_curr <- log_marginal_at(theta_curr)
+  # Eager structural check at the feasible pilot mode (non-swallowing): a
+  # failure here is a bug, not numerical infeasibility.
+  log_post_curr <- .lm$raw(theta_curr)
   if (!is.finite(log_post_curr)) {
     stop("Pilot log_marginal at the grid argmax is not finite.", call. = FALSE)
   }
+  grad_curr  <- grad_log_marginal_at(theta_curr)
 
   draws_all  <- matrix(NA_real_, nrow = n_iter, ncol = d)
   tree_depth <- integer(n_iter)
