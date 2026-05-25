@@ -228,12 +228,14 @@
     n_threads   = as.integer(n_threads)
   )
   if (!is.null(block$phi)) args$phi <- block$phi
-  # Per-observation probability scale for the `bernoulli` family
-  # (mu = det_prob * sigma(eta)); the converged Hessian is then the calibrated
-  # marginal curvature and fitted_eta_var needs no rescaling (see
-  # tulpa_nested_laplace()).
-  if (!is.null(block$det_prob)) {
-    args$det_prob <- as.numeric(block$det_prob)
+  # Model-supplied likelihood (an external pointer to a tulpa::NestedLikelihood).
+  # When a block carries one, the nested inner solve routes its per-observation
+  # score / Fisher weight / log-lik through that spec instead of the built-in
+  # `family` -- e.g. tulpaObs' marginalized single-season occupancy, whose
+  # converged Hessian is the calibrated marginal curvature so fitted_eta_var
+  # needs no rescaling. See tulpa_nested_laplace(likelihood=).
+  if (!is.null(block$likelihood)) {
+    args$likelihood <- block$likelihood
   }
 
   fit <- do.call(tulpa_nested_laplace, args)

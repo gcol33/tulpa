@@ -209,8 +209,12 @@ cpp_test_joint_pattern <- function(arms_list, copy_arm, copy_block, blocks_spec,
     .Call(`_tulpa_cpp_test_joint_pattern`, arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets)
 }
 
-cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, det_prob_nullable = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, det_prob_nullable)
+cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, likelihood = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood)
+}
+
+cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {
+    .Call(`_tulpa_cpp_nested_laplace_test_occupancy_likelihood`, y, det_prob)
 }
 
 cpp_nmix_laplace_fixed <- function(y, site_idx, X_lambda_R, X_p_R, beta_lambda_init, beta_p_init, K_max, max_iter, tol, verbose) {

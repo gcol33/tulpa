@@ -256,10 +256,9 @@ LaplaceResult laplace_newton_solve(
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
     bool store_Q,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
-    const double* det_prob = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
 ) {
-    FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads, det_prob};
+    FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads};
     return laplace_newton_solve_ll(
         N, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
@@ -287,8 +286,7 @@ LaplaceResult laplace_newton_solve(
     const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
     SparseCholeskySolver* shared_solver = nullptr,
     bool store_Q = false,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
-    const double* det_prob = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
 ) {
     NewtonScratch scratch;
     scratch.allocate(n_x, N);
@@ -303,7 +301,7 @@ LaplaceResult laplace_newton_solve(
         y, n_trials, family, phi, N, n_x,
         max_iter, tol, n_threads,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
-        scratch, x_init_vec, shared_solver, store_Q, inv_block_layout, det_prob
+        scratch, x_init_vec, shared_solver, store_Q, inv_block_layout
     );
 }
 

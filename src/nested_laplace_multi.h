@@ -64,7 +64,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
     bool store_Q = false,
     int n_threads_outer = 1,
     double prune_tol = 0.0,
-    const Rcpp::NumericVector& det_prob = Rcpp::NumericVector()
+    const LikelihoodSpec* ext_spec = nullptr,
+    void* ext_response = nullptr
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -72,29 +73,23 @@ inline Rcpp::List run_multi_block_nested_laplace(
     }
     double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
 
-    // Per-observation probability scale q_i for the `bernoulli` family
-    // (mu_i = q_i * sigma(eta_i)); nullptr for every other family. Threaded into
-    // the likelihood scatter, the step-halving objective, and the per-cell
-    // log-marginal so the inner solve fits the scaled-Bernoulli likelihood
-    // directly. (tulpaObs sets q_i = 1 - (1-p)^J to fit the marginalized
-    // occupancy state likelihood.) With this family the converged Hessian is
-    // already the marginal curvature, so the predictive variance is read off
-    // the live factor with no rescaling.
-    const double* det_prob_ptr =
-        (det_prob.size() == N) ? &det_prob[0] : nullptr;
-
-    // ---- Unified spec-driven inner solve setup (L3.3) -----------------------
+    // ---- Likelihood: built-in family or model-supplied spec -----------------
     // Each single-block (and np==1 multi-block) nested kernel routes its inner
-    // Laplace solve through spec_inner_solve: a builtin_family_spec supplies
-    // the likelihood (the same grad_hess_for_family / log_lik_for_family closed
-    // forms, now via the LikelihoodSpec adapter, with det_prob threaded) and
-    // scatter_spec assembles the latent gradient + Hessian. The driver therefore
-    // no longer carries a second copy of the obs + latent-cross scatter. Built
-    // once; read-only inside the (possibly parallel) grid. sigma_beta = 100 makes
-    // the spec's beta ridge tau_beta = 1e-4, identical to the nested kernel's
-    // DEFAULT_TAU_BETA; the spec additionally folds the beta-prior log-density
-    // into the log-marginal -- the convention gap the L2 spec-block fixtures
-    // flagged for reconciliation here at L3 (modes are unchanged).
+    // Laplace solve through spec_inner_solve, which reads the per-observation
+    // score / Fisher weight / log-lik entirely from a single-process
+    // LikelihoodSpec; scatter_spec assembles the latent gradient + Hessian. The
+    // driver therefore carries no copy of the obs + latent-cross scatter.
+    //
+    // By default tulpa builds builtin_family_spec(family) over (y, n_trials,
+    // family, phi). A model package (tulpaObs occupancy, tulpaGlmm custom
+    // families) instead supplies its own spec + response via ext_spec /
+    // ext_response (passed from R as an XPtr<NestedLikelihood>); then `family` /
+    // `phi` / `y` / `n_trials` are unused here and the likelihood -- including any
+    // per-observation scaling, e.g. the marginalized occupancy state -- lives
+    // wholly in the model's spec. Built once; read-only inside the (possibly
+    // parallel) grid. sigma_beta = 100 makes the spec's beta ridge tau_beta =
+    // 1e-4, identical to the nested kernel's DEFAULT_TAU_BETA; the spec also
+    // folds the beta-prior log-density into the log-marginal.
     const bool has_re = (n_re_groups > 0) && (re_idx.size() == N);
 
     ProcessData proc;
@@ -104,23 +99,30 @@ inline Rcpp::List run_multi_block_nested_laplace(
         for (int j = 0; j < p; j++)
             proc.X_flat[(size_t)i * p + j] = X(i, j);
 
-    LikelihoodSpec spec = builtin_family_spec(family);
-    std::vector<int> n_trials_vec(n_trials.begin(), n_trials.end());
+    LikelihoodSpec builtin_spec;
+    std::vector<int> n_trials_vec;
     BuiltinFamilyResponse resp;
-    resp.y        = y.begin();
-    resp.n_trials = n_trials_vec.data();
-    resp.N        = N;
-    resp.family   = family;
-    resp.phi      = phi;
-    resp.det_prob = det_prob_ptr;
+    const LikelihoodSpec* spec_ptr = ext_spec;
+    void*                 resp_ptr = ext_response;
+    if (!ext_spec) {
+        builtin_spec  = builtin_family_spec(family);
+        n_trials_vec.assign(n_trials.begin(), n_trials.end());
+        resp.y        = y.begin();
+        resp.n_trials = n_trials_vec.data();
+        resp.N        = N;
+        resp.family   = family;
+        resp.phi      = phi;
+        spec_ptr      = &builtin_spec;
+        resp_ptr      = &resp;
+    }
 
     ModelData data;
     data.n_processes         = 1;
     data.processes.push_back(proc);
     data.N                   = N;
     data.sigma_beta          = 100.0;   // tau_beta = 1e-4 == DEFAULT_TAU_BETA
-    data.likelihood_spec     = &spec;
-    data.model_response_data = &resp;
+    data.likelihood_spec     = spec_ptr;
+    data.model_response_data = resp_ptr;
     data.sharing.init(1);
     std::vector<int> re_group_1based;
     if (has_re) {
@@ -220,7 +222,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
         if (has_re) base_params[layout.log_sigma_re_idx] = log_sigma_re;
 
         LaplaceResult res = spec_inner_solve(
-            data, layout, &blocks, k, spec, &resp, re_group_1based,
+            data, layout, &blocks, k, *spec_ptr, resp_ptr, re_group_1based,
             max_iter_use, tol, n_threads_inner_eff, base_params,
             scratch, solver, store_Q, /*inv_block_layout=*/nullptr
         );
@@ -229,11 +231,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
         // read off the live Cholesky factor laplace_newton_solve left resident
         // at the converged mode (sparse path solves the CHOLMOD factor in
         // `solver`, dense path back-substitutes scratch.chol.L) -- N back-solves,
-        // no refactorization. H is the fitting Hessian at the mode; for the
-        // `bernoulli` family with a per-obs probability scale that is already
-        // the marginal curvature (the expected information
-        // q*sigma*(1-sigma)^2/(1-q*sigma)), so no rescaling is needed -- the
-        // calibrated variance falls out directly.
+        // no refactorization. H is the spec's Fisher curvature at the mode; when
+        // the model spec already returns the marginal information (e.g. tulpaObs'
+        // occupancy q*sigma*(1-sigma)^2/(1-q*sigma)), no rescaling is needed --
+        // the calibrated variance falls out directly.
         if (want_var && std::isfinite(res.log_marginal) &&
             static_cast<std::size_t>(k + 1) * N <= fitted_var_buf.size()) {
             const bool use_sparse = (n_x >= SPARSE_THRESHOLD);

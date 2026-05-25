@@ -1353,8 +1353,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_multi
-Rcpp::List cpp_nested_laplace_multi(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, double prune_tol, Rcpp::Nullable<Rcpp::NumericVector> det_prob_nullable);
-RcppExport SEXP _tulpa_cpp_nested_laplace_multi(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP prune_tolSEXP, SEXP det_prob_nullableSEXP) {
+Rcpp::List cpp_nested_laplace_multi(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, double prune_tol, SEXP likelihood);
+RcppExport SEXP _tulpa_cpp_nested_laplace_multi(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP prune_tolSEXP, SEXP likelihoodSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1375,8 +1375,20 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
     Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
     Rcpp::traits::input_parameter< double >::type prune_tol(prune_tolSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type det_prob_nullable(det_prob_nullableSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_multi(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, det_prob_nullable));
+    Rcpp::traits::input_parameter< SEXP >::type likelihood(likelihoodSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_multi(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_nested_laplace_test_occupancy_likelihood
+SEXP cpp_nested_laplace_test_occupancy_likelihood(Rcpp::NumericVector y, Rcpp::NumericVector det_prob);
+RcppExport SEXP _tulpa_cpp_nested_laplace_test_occupancy_likelihood(SEXP ySEXP, SEXP det_probSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type det_prob(det_probSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_test_occupancy_likelihood(y, det_prob));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3288,6 +3300,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 17},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 18},
+    {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
     {"_tulpa_cpp_nmix_laplace_fixed", (DL_FUNC) &_tulpa_cpp_nmix_laplace_fixed, 10},
     {"_tulpa_cpp_nmix_total_log_lik", (DL_FUNC) &_tulpa_cpp_nmix_total_log_lik, 5},
     {"_tulpa_cpp_nested_laplace_nmix_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_nmix_icar, 17},

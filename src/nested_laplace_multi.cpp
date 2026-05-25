@@ -34,6 +34,7 @@
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
 #include "nested_laplace_multi.h"
+#include "tulpa/nested_likelihood.h"
 #include "hmc_car_proper.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -466,7 +467,7 @@ Rcpp::List cpp_nested_laplace_multi(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
     double prune_tol = 0.0,
-    Rcpp::Nullable<Rcpp::NumericVector> det_prob_nullable = R_NilValue
+    SEXP likelihood = R_NilValue
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -500,11 +501,20 @@ Rcpp::List cpp_nested_laplace_multi(
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
     }
 
-    // Per-site detection probability q_i for the `occupancy` family; empty
-    // (-> nullptr inside the driver) for every other family.
-    Rcpp::NumericVector det_prob;
-    if (det_prob_nullable.isNotNull()) {
-        det_prob = Rcpp::as<Rcpp::NumericVector>(det_prob_nullable);
+    // Model-supplied likelihood (e.g. tulpaObs occupancy): when present, the
+    // inner solve routes its per-observation score / Fisher weight / log-lik
+    // through this spec instead of the built-in `family`. The XPtr keeps the
+    // spec + its response storage alive for the duration of the call.
+    // nullptr => built-in family.
+    const tulpa::LikelihoodSpec* ext_spec     = nullptr;
+    void*                        ext_response = nullptr;
+    if (!Rf_isNull(likelihood)) {
+        Rcpp::XPtr<tulpa::NestedLikelihood> lk(likelihood);
+        if (lk->spec == nullptr) {
+            Rcpp::stop("cpp_nested_laplace_multi: `likelihood` has a null spec.");
+        }
+        ext_spec     = lk->spec;
+        ext_response = lk->response_data;
     }
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace(
@@ -515,7 +525,7 @@ Rcpp::List cpp_nested_laplace_multi(
         store_Q,
         /*n_threads_outer=*/1,
         prune_tol,
-        det_prob
+        ext_spec, ext_response
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

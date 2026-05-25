@@ -192,49 +192,10 @@ struct GradHess {
     double neg_hess;
 };
 
-// Bernoulli with a known per-observation probability scale: the response
-// y in {0, 1} has mean mu = q * sigma(eta), where q in [0, 1] is supplied per
-// observation via `det_prob` and defaults to 1 (a plain logit Bernoulli). An
-// observation with q = 0 contributes zero gradient and zero information, so it
-// drops from the likelihood while keeping its latent value (the INLA
-// NA-response held-out case). The information returned is the expected (Fisher)
-// information q*sigma*(1-sigma)^2/(1-q*sigma), which stays positive for the
-// non-canonical scaled link and equals sigma*(1-sigma) when q = 1.
-//
-// tulpaObs maps single-season occupancy onto this family: y = 1{>=1 detection}
-// and q = 1 - (1-p)^J is the per-site probability of detecting at least once
-// given occupancy, so the latent occupancy state z is integrated out
-// analytically and the field is fit against the true marginal state likelihood.
-inline double bernoulli_sigma(double eta) {
-    if (eta > 0) return 1.0 / (1.0 + std::exp(-eta));
-    double e = std::exp(eta);
-    return e / (1.0 + e);
-}
-
-inline double log_lik_bernoulli(int y, double q, double eta) {
-    if (q <= 0.0) return 0.0;
-    double mu = q * bernoulli_sigma(eta);
-    mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
-    return y ? std::log(mu) : std::log(1.0 - mu);
-}
-
-inline GradHess grad_hess_bernoulli(int y, double q, double eta) {
-    if (q <= 0.0) return {0.0, 0.0};
-    double s     = bernoulli_sigma(eta);
-    double mu    = q * s;
-    double denom = std::max(1.0 - mu, 1e-12);          // 1 - q*sigma
-    double grad  = (static_cast<double>(y) - mu) * (1.0 - s) / denom;
-    double info  = q * s * (1.0 - s) * (1.0 - s) / denom;
-    return {grad, info};
-}
-
 inline GradHess grad_hess_for_family(
     double y, int n_trials, double eta,
-    const std::string& family, double phi, double det_prob = 1.0
+    const std::string& family, double phi
 ) {
-    if (family == "bernoulli") {
-        return grad_hess_bernoulli((int)y, det_prob, eta);
-    }
     if (family == "binomial") {
         return {grad_log_lik_binomial((int)y, n_trials, eta),
                 neg_hess_log_lik_binomial((int)y, n_trials, eta)};
@@ -264,9 +225,8 @@ inline GradHess grad_hess_for_family(
 
 inline double log_lik_for_family(
     double y, int n_trials, double eta,
-    const std::string& family, double phi, double det_prob = 1.0
+    const std::string& family, double phi
 ) {
-    if (family == "bernoulli") return log_lik_bernoulli((int)y, det_prob, eta);
     if (family == "binomial") return log_lik_binomial((int)y, n_trials, eta);
     if (family == "poisson") return log_lik_poisson((int)y, eta);
     if (family == "neg_binomial_2") return log_lik_negbin((int)y, eta, phi);
@@ -284,16 +244,14 @@ inline double log_lik_for_family(
 inline double compute_total_log_lik(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericVector& eta, int N,
-    const std::string& family, double phi, int n_threads,
-    const double* det_prob = nullptr
+    const std::string& family, double phi, int n_threads
 ) {
     double log_lik = 0.0;
     #ifdef _OPENMP
     #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
     #endif
     for (int i = 0; i < N; i++) {
-        log_lik += log_lik_for_family(y[i], n_trials[i], eta[i], family, phi,
-                                      det_prob ? det_prob[i] : 1.0);
+        log_lik += log_lik_for_family(y[i], n_trials[i], eta[i], family, phi);
     }
     return log_lik;
 }
@@ -314,11 +272,10 @@ struct FamilyLogLik {
     std::string family;
     double phi = 1.0;
     int n_threads = 1;
-    const double* det_prob = nullptr;
 
     double operator()(const Rcpp::NumericVector& eta) const {
         return compute_total_log_lik(*y, *n_trials, eta, N, family, phi,
-                                     n_threads, det_prob);
+                                     n_threads);
     }
 };
 

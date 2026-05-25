@@ -1,6 +1,11 @@
 # test-nested-laplace-occupancy.R
 # Recovery and calibration tests for the marginalized single-season occupancy
-# family in the multi-block nested-Laplace dispatch (the det_prob path).
+# likelihood routed through the multi-block nested-Laplace dispatch as a
+# model-supplied LikelihoodSpec (clean_migration.md L5). tulpa no longer ships
+# the occupancy family; the scaled Bernoulli is built by the reference C++
+# harness cpp_nested_laplace_test_occupancy_likelihood() and passed via the
+# `likelihood =` external pointer -- the same path (and very nearly the same
+# code) tulpaObs uses.
 #
 # Model. Each site i contributes one Bernoulli on the detection indicator
 # D_i = 1{>= 1 detection}, with the latent occupancy state integrated out:
@@ -10,7 +15,7 @@
 # is the per-site probability of at least one detection given occupancy (J_i
 # visits, detection prob p). q_i is supplied as `det_prob`; q_i = 0 (no visits)
 # drops the site from the likelihood but keeps its latent value (held-out), and
-# q_i = 1 reduces the family to a standard logit Bernoulli. Because the
+# q_i = 1 reduces the likelihood to a standard logit Bernoulli. Because the
 # occupancy state is marginalized analytically, the converged Hessian carries
 # the expected (Fisher) information q*sigma*(1-sigma)^2/(1-q*sigma) -- the true
 # marginal curvature -- so the per-row predictive variance fitted_eta_var is
@@ -38,13 +43,28 @@ sim_occu <- function(seed, n_regions = 40L, sites_per_region = 5L,
        eta_true = eta, psi = psi, q = q, n_sites = n_sites)
 }
 
-fit_occu <- function(d, det_prob = d$det_prob, family = "bernoulli",
-                     sigma_grid = c(0.3, 0.6, 1.0)) {
+# Fit through the model-supplied occupancy LikelihoodSpec (the L5 path):
+# build the scaled-Bernoulli spec from (D_i, q_i) and pass it as `likelihood`.
+fit_occu <- function(d, det_prob = d$det_prob, sigma_grid = c(0.3, 0.6, 1.0)) {
+  prior <- list(list(type = "iid", obs_idx = d$region,
+                     n_units = d$n_regions, sigma_grid = sigma_grid))
+  lik <- tulpa:::cpp_nested_laplace_test_occupancy_likelihood(
+    y = as.numeric(d$y), det_prob = as.numeric(det_prob))
+  suppressWarnings(tulpa_nested_laplace(
+    y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,
+    prior = prior, likelihood = lik,
+    max_iter = 50L, tol = 1e-7, n_threads = 1L
+  ))
+}
+
+# Built-in binomial fit (n_trials = 1) -- the reference the q = 1 occupancy
+# spec must reproduce exactly.
+fit_binom <- function(d, sigma_grid = c(0.3, 0.6, 1.0)) {
   prior <- list(list(type = "iid", obs_idx = d$region,
                      n_units = d$n_regions, sigma_grid = sigma_grid))
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,
-    prior = prior, family = family, det_prob = det_prob,
+    prior = prior, family = "binomial",
     max_iter = 50L, tol = 1e-7, n_threads = 1L
   ))
 }
@@ -88,10 +108,11 @@ test_that("occupancy fit exposes calibrated fitted_eta / fitted_eta_var", {
 
 test_that("occupancy with det_prob == 1 reduces to a logit Bernoulli", {
   d  <- sim_occu(seed = 22L)
-  fo <- fit_occu(d, det_prob = rep(1, d$n_sites), family = "bernoulli")
-  fb <- fit_occu(d, det_prob = NULL,             family = "binomial")
+  fo <- fit_occu(d, det_prob = rep(1, d$n_sites))
+  fb <- fit_binom(d)
 
-  # q = 1 makes mu = sigma(eta): identical mode, evidence, and curvature.
+  # q = 1 makes mu = sigma(eta): the model spec and the built-in binomial must
+  # agree on mode, evidence, and curvature.
   expect_equal(fo$log_marginal, fb$log_marginal, tolerance = 1e-7)
   expect_equal(fo$fitted_eta, fb$fitted_eta, tolerance = 1e-7)
   expect_equal(fo$fitted_eta_var, fb$fitted_eta_var, tolerance = 1e-6)

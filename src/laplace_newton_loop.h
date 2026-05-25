@@ -52,10 +52,9 @@ inline double eval_penalized_log_lik(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
     int N, const std::string& family, double phi, int n_threads,
     ComputeEta compute_eta, ComputeLogPrior compute_log_prior,
-    Rcpp::NumericVector& eta_scratch,
-    const double* det_prob = nullptr
+    Rcpp::NumericVector& eta_scratch
 ) {
-    FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads, det_prob};
+    FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads};
     return eval_penalized_log_lik_ll(x, compute_eta, compute_log_prior, ll,
                                      eta_scratch);
 }

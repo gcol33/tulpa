@@ -46,11 +46,6 @@ struct JointArm {
     std::string         family;    // built-in family (ignored when spec != null)
     double              phi;        // built-in dispersion (ignored when spec)
     int                 N;
-    // Optional per-obs probability scale for the `bernoulli` family
-    // (mu_i = det_prob_i * sigma(eta_i)); empty => 1. tulpaObs sets
-    // 1 - (1-p)^J for the marginalized occupancy state. Folded into the
-    // built-in family response by build_joint_arm_specs.
-    Rcpp::NumericVector det_prob;
     // Optional model-supplied likelihood (tulpaGlmm / tulpaObs custom arms).
     // When spec != nullptr the joint solver routes this arm's score, Fisher
     // curvature and log-lik through it instead of the built-in family closed
@@ -140,7 +135,6 @@ inline JointArmSpecs build_joint_arm_specs(const std::vector<JointArm>& arms) {
             r.N        = a.N;
             r.family   = a.family;
             r.phi      = a.phi;
-            r.det_prob = (a.det_prob.size() > 0) ? REAL(a.det_prob)   : nullptr;
             s.builtin_responses.push_back(r);
             s.views[k] = ArmSpecView{
                 &s.builtin_specs.back(), &s.builtin_responses.back(),

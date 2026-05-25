@@ -63,18 +63,15 @@
 #'   `$grid_modes` (list of length-\eqn{p} vectors). Default `FALSE`.
 #'   Used downstream by simplified-Laplace (SLA) callers to assemble
 #'   skew-aware marginals — see the cumulant pooling in [rubins_pool()].
-#' @param det_prob Optional per-observation probability-scale vector for the
-#'   `family = "bernoulli"` likelihood, under which a binary response \eqn{y_i}
-#'   has mean \eqn{\mu_i = q_i\,\sigma(\eta_i)} for a known per-observation scale
-#'   \eqn{q_i \in [0, 1]} (defaults to 1, a plain logit Bernoulli). An
-#'   observation with \eqn{q_i = 0} drops from the likelihood but keeps its
-#'   latent value (the INLA NA-response held-out case). The expected information
-#'   \eqn{q_i\,\sigma(1-\sigma)^2/(1-q_i\sigma)} stays positive for the
-#'   non-canonical scaled link, so the converged Hessian is the marginal
-#'   curvature and `fitted_eta_var` is calibrated directly. tulpaObs uses this to
-#'   fit single-season occupancy: \eqn{y_i = 1\{\ge 1\ detection\}} and
-#'   \eqn{q_i = 1-(1-p_i)^{J_i}} integrates out the latent occupancy state.
-#'   Ignored for every other family. Multi-block dispatch only. Default `NULL`.
+#' @param likelihood Optional model-supplied likelihood, replacing the built-in
+#'   `family`. Pass an external pointer to a `tulpa::NestedLikelihood` (built in
+#'   a model package's own C++ from a [LikelihoodSpec]); the inner Laplace solve
+#'   then reads the per-observation score, Fisher weight, and log-likelihood from
+#'   that spec instead of `family`, so `family`/`phi` are ignored. Used by model
+#'   packages to fit a custom response without adding a family to tulpa -- for
+#'   example tulpaObs threads its marginalized single-season occupancy
+#'   likelihood (a scaled Bernoulli, with the latent occupancy state integrated
+#'   out) through this. Multi-block `prior` only. Default `NULL` (use `family`).
 #'
 #' @keywords internal
 #' @export
@@ -85,7 +82,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             max_iter = 50L, tol = 1e-6, n_threads = 1L,
                             x_init = NULL, verbose = FALSE,
                             keep_grid_hessians = FALSE,
-                            det_prob = NULL) {
+                            likelihood = NULL) {
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {
@@ -106,6 +103,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (!is.list(prior)) {
     stop("`prior` must be a list (single block) or list-of-lists (multi-block).",
          call. = FALSE)
+  }
+  # A model-supplied `likelihood` is only honoured by the spec-driven multi-block
+  # driver (run_multi_block_nested_laplace); the single-kernel path (.nl_dispatch)
+  # has no spec hook. Route a single LatentBlock-type prior through the
+  # multi-block driver by wrapping it as a length-1 block list -- the per-cell
+  # math is identical (every single-block kernel already calls the same driver).
+  if (!is.null(likelihood) && !is.null(prior$type)) {
+    prior <- list(prior)
   }
   N <- length(y)
   if (is.null(re_idx)) re_idx <- rep(0L, N)
@@ -129,13 +134,18 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   p_fixed <- ncol(X)
 
   if (.is_multi_block_prior(prior)) {
-    res <- .nl_dispatch_multi(cargs, prior, det_prob = det_prob)
+    res <- .nl_dispatch_multi(cargs, prior, likelihood = likelihood)
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed)
     }
     res$prior <- prior
     class(res) <- c("tulpa_nested_laplace", "list")
     return(res)
+  }
+
+  if (!is.null(likelihood)) {
+    stop("`likelihood` (model-supplied spec) needs a latent prior block. ",
+         "Pass `prior` (a block or list of blocks).", call. = FALSE)
   }
 
   if (is.null(prior$type)) {
@@ -999,7 +1009,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .NL_MULTI_GRID_WARN <- 50L
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 
-.nl_dispatch_multi <- function(cargs, prior_list, det_prob = NULL) {
+.nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.
   # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
   # the canonical "one obs per latent slot" case has N == n_latent and the
@@ -1075,7 +1085,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     n_threads   = cargs$n_threads,
     x_init_nullable = cargs$x_init_nullable,
     store_Q     = isTRUE(cargs$store_Q),
-    det_prob_nullable = if (is.null(det_prob)) NULL else as.numeric(det_prob)
+    likelihood  = likelihood
   )
 
   out$theta_grid   <- joint_grid

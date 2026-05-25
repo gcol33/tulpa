@@ -17,8 +17,7 @@ void scatter_obs_grad_hess_base(
     const NumericMatrix& X, const NumericVector& re_idx,
     int N, int p, int n_re_groups,
     const NumericVector& eta, const std::string& family, double phi,
-    DenseVec& grad, DenseMat& H, int n_threads,
-    const double* det_prob
+    DenseVec& grad, DenseMat& H, int n_threads
 ) {
     #ifdef _OPENMP
     #pragma omp parallel num_threads(n_threads > 0 ? n_threads : 1)
@@ -28,8 +27,7 @@ void scatter_obs_grad_hess_base(
 
         #pragma omp for schedule(static)
         for (int i = 0; i < N; i++) {
-            auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi,
-                                           det_prob ? det_prob[i] : 1.0);
+            auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi);
 
             for (int j = 0; j < p; j++) {
                 grad_thread[j] += gh.grad * X(i, j);
@@ -64,8 +62,7 @@ void scatter_obs_grad_hess_base(
     }
     #else
     for (int i = 0; i < N; i++) {
-        auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi,
-                                       det_prob ? det_prob[i] : 1.0);
+        auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi);
 
         for (int j = 0; j < p; j++) {
             grad[j] += gh.grad * X(i, j);

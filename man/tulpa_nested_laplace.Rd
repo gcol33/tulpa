@@ -22,7 +22,7 @@ tulpa_nested_laplace(
   x_init = NULL,
   verbose = FALSE,
   keep_grid_hessians = FALSE,
-  det_prob = NULL
+  likelihood = NULL
 )
 }
 \arguments{
@@ -80,18 +80,15 @@ list as \verb{$grid_hessians} (list of dense \eqn{p\times p} matrices) and
 Used downstream by simplified-Laplace (SLA) callers to assemble
 skew-aware marginals — see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.}
 
-\item{det_prob}{Optional per-observation probability-scale vector for the
-\code{family = "bernoulli"} likelihood, under which a binary response \eqn{y_i}
-has mean \eqn{\mu_i = q_i\,\sigma(\eta_i)} for a known per-observation scale
-\eqn{q_i \in [0, 1]} (defaults to 1, a plain logit Bernoulli). An
-observation with \eqn{q_i = 0} drops from the likelihood but keeps its
-latent value (the INLA NA-response held-out case). The expected information
-\eqn{q_i\,\sigma(1-\sigma)^2/(1-q_i\sigma)} stays positive for the
-non-canonical scaled link, so the converged Hessian is the marginal
-curvature and \code{fitted_eta_var} is calibrated directly. tulpaObs uses this to
-fit single-season occupancy: \eqn{y_i = 1\{\ge 1\ detection\}} and
-\eqn{q_i = 1-(1-p_i)^{J_i}} integrates out the latent occupancy state.
-Ignored for every other family. Multi-block dispatch only. Default \code{NULL}.}
+\item{likelihood}{Optional model-supplied likelihood, replacing the built-in
+\code{family}. Pass an external pointer to a \code{tulpa::NestedLikelihood} (built in
+a model package's own C++ from a \link{LikelihoodSpec}); the inner Laplace solve
+then reads the per-observation score, Fisher weight, and log-likelihood from
+that spec instead of \code{family}, so \code{family}/\code{phi} are ignored. Used by model
+packages to fit a custom response without adding a family to tulpa -- for
+example tulpaObs threads its marginalized single-season occupancy
+likelihood (a scaled Bernoulli, with the latent occupancy state integrated
+out) through this. Multi-block \code{prior} only. Default \code{NULL} (use \code{family}).}
 }
 \value{
 A list with:

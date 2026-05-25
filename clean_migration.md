@@ -44,7 +44,7 @@ Concretely:
 |---|---|---|
 | 0 | Baseline load_all + blast-radius map | ✅ done |
 | 1 | Remove dead `nested_laplace()` alias; ASCII-only `ccd_grid` roxygen | ✅ done — commit `175fa62` |
-| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); **L2 done** (`9ece117` ICAR + bym2); **L3 done** (`4829dea` functor loop, `192591a` spec np==1 → shared loop, `4146d9f` spec_inner_solve_np1 + det_prob, `fd29078` nested driver → spec): every single-block / np==1 multi-block nested kernel now solves through one spec inner solve; duplicate obs+latent-cross scatter deleted; beta-prior convention reconciled; full suite 2421 pass / 0 fail. **L4 next** (multi-arm joint) |
+| L | **Keystone:** full solver unification (spec-driven Laplace handles GMRF blocks; det_prob → tulpaObs) | 🔄 in progress — **L1 done** (`228ee05`); **L2 done** (`9ece117` ICAR + bym2); **L3 done** (`4829dea` functor loop, `192591a` spec np==1 → shared loop, `4146d9f` spec_inner_solve_np1 + det_prob, `fd29078` nested driver → spec): every single-block / np==1 multi-block nested kernel now solves through one spec inner solve; duplicate obs+latent-cross scatter deleted; beta-prior convention reconciled. **L4 done** (`a1e4f18`/`32569bd` joint multi-arm spec-driven), **L4.3 done** (`82573d0` np>=2 spec loop collapsed), **L5 done** (`det_prob` + `bernoulli` family retired; single-arm driver takes a model `LikelihoodSpec` via `XPtr<NestedLikelihood>`; occupancy scaled Bernoulli moved to tulpaObs). Equivalence net green. **L6 (recovery tests) next** |
 | 2 | Collapse nested engine knobs into `control = list()` | ⬜ pending |
 | 3 | Remove `tulpa_priors_legacy` | ⬜ pending |
 | 4 | Route single-arm `latent()` formulas through `tulpa()`; register nested backends | ⬜ pending |
@@ -195,10 +195,32 @@ live in a tulpaObs `LikelihoodSpec`. The family-enum inner loop is retired.
   Equivalence net green: `test-laplace-spec.R` 17/0 (carries the np==2 gaussian2p
   fixture that drove the deleted loop), spec block icar/bym2 27/0, nested 52/0,
   multi-block 42/0.
-- **L5 — Retire family-enum + det_prob.** Remove the nested kernel's
-  `grad_hess_for_family`/`det_prob` usage; delete `det_prob` from tulpa's R + C++
-  surface. Add the occupancy scaled-Bernoulli `LikelihoodSpec` to tulpaObs
-  (`eta_weights_fn` returning the `q*sigma*(1-sigma)^2/(1-q*sigma)` Fisher info).
+- **L5 — Retire det_prob; model-supplied nested likelihood. ✅ DONE.** The
+  occupancy `det_prob` hook and the `bernoulli` family are gone from tulpa:
+  `grad_hess_for_family`/`log_lik_for_family` lost their `det_prob` arg, the
+  scaled-Bernoulli closed forms (`bernoulli_sigma`/`*_bernoulli`) are deleted
+  (plain Bernoulli is `binomial` with `n_trials = 1`), and the `det_prob`
+  plumbing is removed from `BuiltinFamilyResponse`, `FamilyLogLik`,
+  `scatter_obs_grad_hess_base`, `laplace_newton_solve`, `eval_penalized_log_lik`,
+  the dead `JointArm.det_prob`, the single-arm driver, `cpp_nested_laplace_multi`,
+  the R `tulpa_nested_laplace` / `em_laplace` block convention, and the Rd. In
+  its place the single-arm nested driver takes an optional model-supplied
+  `LikelihoodSpec` (mirroring `JointArm.spec`): a new `tulpa::NestedLikelihood`
+  bundle (`inst/include/tulpa/nested_likelihood.h` -- `{spec, response_data,
+  shared_ptr keepalive}`) is built in a model package's C++ and passed from R as
+  an `XPtr<NestedLikelihood>` via `tulpa_nested_laplace(likelihood = )` (a
+  single-block prior auto-wraps into the spec-capable multi-block path); the
+  inner solve routes its score / Fisher weight / log-lik through the spec. The
+  marginalized single-season occupancy likelihood (scaled Bernoulli, Fisher info
+  `q*sigma*(1-sigma)^2/(1-q*sigma)`) now lives in tulpaObs
+  (`src/occ_nested_likelihood.cpp::occ_make_nested_likelihood`), wired into
+  `.tobs_occu_state_marginal_fit`. tulpa ships a byte-identical reference as the
+  test harness `cpp_nested_laplace_test_occupancy_likelihood`
+  (`src/nested_laplace_test_occupancy.cpp`); `test-nested-laplace-occupancy.R`
+  drives the full recovery/calibration net through `likelihood = `, with the
+  q = 1 case asserting spec == built-in binomial. Equivalence net green: the
+  spec + nested + joint sweep (`laplace-spec*`, all `nested-laplace*` incl.
+  joint multi-recovery) 0 fail.
 - **L6 — Recovery tests** (per global "statistical code needs recovery tests"):
   parameter recovery for built-in families + occupancy through the unified path,
   fit-to-convergence, `|est-truth| < tol` across seeds, CI coverage.
@@ -244,8 +266,8 @@ R signature changes mostly don't touch it; the keystone's det_prob removal does
 not affect it), tulpaGlmm, tulpaMesh.
 
 tulpaObs call sites to migrate (new `control=` signatures + occupancy spec from
-Phase L): `R/em_nested_laplace.R` (calls `tulpa_nested_laplace(..., family=
-"bernoulli", det_prob=q_i)` at ~:308 — this becomes a tulpaObs LikelihoodSpec),
+Phase L): `R/em_nested_laplace.R` (the `family="bernoulli", det_prob=q_i` call
+became `occ_make_nested_likelihood()` + `likelihood=` — **done in L5**),
 `R/family_cover_hurdle.R` (`tulpa_nested_laplace_joint` at ~:880/901),
 `R/laplace.R`, `R/occu_fit.R`, `R/sla_cover_hurdle_joint.R`, plus
 `tests/testthat/test-*.R`. tulpaObs already ships `LikelihoodSpec`s

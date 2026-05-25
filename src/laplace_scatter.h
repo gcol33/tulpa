@@ -16,8 +16,7 @@ void scatter_obs_grad_hess_base(
     const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
     int N, int p, int n_re_groups,
     const Rcpp::NumericVector& eta, const std::string& family, double phi,
-    DenseVec& grad, DenseMat& H, int n_threads,
-    const double* det_prob = nullptr
+    DenseVec& grad, DenseMat& H, int n_threads
 );
 
 void scatter_obs_with_latent(
