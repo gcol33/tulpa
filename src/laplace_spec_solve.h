@@ -1,14 +1,17 @@
 // laplace_spec_solve.h
-// Single-arm (n_processes == 1) spec-driven Laplace inner solve, exposed for
-// reuse by the nested-Laplace outer-grid driver (nested_laplace_multi.h).
+// Spec-driven Laplace inner solve for any number of processes (np >= 1),
+// exposed for reuse by the nested-Laplace outer-grid driver
+// (nested_laplace_multi.h).
 //
-// `spec_inner_solve_np1` is the one place the LikelihoodSpec helpers
+// `spec_inner_solve` is the one place the LikelihoodSpec helpers
 // (compute_eta_spec / scatter_spec / total_log_lik_spec / log_prior_latent) are
 // wrapped as the closures of the shared Newton loop (laplace_newton_solve_ll).
-// Both standalone callers (laplace_mode_spec_dense_impl) and the outer-grid
-// driver route through it, so the spec inner solve has a single source of truth
-// (clean_migration.md, Phase L). The implementation lives in laplace_spec.cpp
-// where the anonymous-namespace spec helpers are visible.
+// It is np-agnostic: the eta buffer is sized N * np and the helpers handle the
+// multi-process coupling internally, so the single-arm standalone caller, the
+// outer-grid driver, and the multi-process (np >= 2) spec entry all run the same
+// loop body -- a single source of truth (clean_migration.md, Phase L). The
+// implementation lives in laplace_spec.cpp where the anonymous-namespace spec
+// helpers are visible.
 //
 // The caller owns the Newton scratch and the sparse solver, so the driver can
 // pool one per outer-grid thread and, after the call returns, read the live
@@ -32,7 +35,7 @@
 
 namespace tulpa {
 
-LaplaceResult spec_inner_solve_np1(
+LaplaceResult spec_inner_solve(
     const ModelData& data,
     const ParamLayout& layout,
     const std::vector<LatentBlock>* blocks,

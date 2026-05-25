@@ -27,7 +27,7 @@
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
 #include "laplace_scatter.h"
-#include "laplace_spec_solve.h"           // spec_inner_solve_np1 (the unified inner solve)
+#include "laplace_spec_solve.h"           // spec_inner_solve (the unified inner solve)
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
 #include "sparse_cholesky.h"
@@ -85,7 +85,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
 
     // ---- Unified spec-driven inner solve setup (L3.3) -----------------------
     // Each single-block (and np==1 multi-block) nested kernel routes its inner
-    // Laplace solve through spec_inner_solve_np1: a builtin_family_spec supplies
+    // Laplace solve through spec_inner_solve: a builtin_family_spec supplies
     // the likelihood (the same grad_hess_for_family / log_lik_for_family closed
     // forms, now via the LikelihoodSpec adapter, with det_prob threaded) and
     // scatter_spec assembles the latent gradient + Hessian. The driver therefore
@@ -210,7 +210,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                                                   : scratch_pool[tid];
 
         // base_params: latent warm start in [0, n_x); log_sigma_re hyperparam
-        // after. spec_inner_solve_np1 builds the [beta | RE | blocks] layout,
+        // after. spec_inner_solve builds the [beta | RE | blocks] layout,
         // wraps the spec helpers as the shared Newton loop's closures, and leaves
         // the live Cholesky factor resident in scratch/solver for the predictive-
         // variance back-solves below.
@@ -219,7 +219,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
             std::copy(prev_mode.begin(), prev_mode.end(), base_params.begin());
         if (has_re) base_params[layout.log_sigma_re_idx] = log_sigma_re;
 
-        LaplaceResult res = spec_inner_solve_np1(
+        LaplaceResult res = spec_inner_solve(
             data, layout, &blocks, k, spec, &resp, re_group_1based,
             max_iter_use, tol, n_threads_inner_eff, base_params,
             scratch, solver, store_Q, /*inv_block_layout=*/nullptr

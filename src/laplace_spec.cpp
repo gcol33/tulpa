@@ -37,7 +37,7 @@
 #include "laplace_newton.h"       // shared single-arm loop (np == 1 delegates here)
 #include "laplace_newton_loop.h"
 #include "laplace_re_priors.h"
-#include "laplace_spec_solve.h"   // spec_inner_solve_np1 (defined below, shared with driver)
+#include "laplace_spec_solve.h"   // spec_inner_solve (defined below, shared with driver)
 #include "laplace_spatial_priors.h"
 #include "latent_block.h"
 #include "linalg_fast.h"
@@ -968,50 +968,17 @@ inline double log_prior_latent(
 // ----------------------------------------------------------------------------
 struct LaplaceShimResult;
 
-// Helper: write a trial latent step into the parameter vector. Used by both
-// the Newton step and the gradient-only fall-back when factorisation fails.
-inline void apply_latent_step(
-    const SpecLatentLayout& L,
-    const std::vector<double>& base,
-    const std::vector<double>& step,
-    double scale,
-    std::vector<double>& out
-) {
-    out = base;
-    for (int k = 0; k < L.np; k++) {
-        const int off_k = L.latent_offset[k];
-        for (int j = 0; j < L.beta_count[k]; j++) {
-            out[L.beta_start[k] + j] = base[L.beta_start[k] + j]
-                                       + scale * step[off_k + j];
-        }
-    }
-    for (int t = 0; t < (int)L.re_terms.size(); t++) {
-        const ReTermSlot& s = L.re_terms[t];
-        const int n = s.n_groups * s.n_coefs;
-        for (int j = 0; j < n; j++) {
-            out[s.param_start + j] = base[s.param_start + j]
-                                     + scale * step[s.latent_offset + j];
-        }
-    }
-    for (int b = 0; b < L.n_blocks; b++) {
-        const int n = L.block_size[b];
-        for (int j = 0; j < n; j++) {
-            out[L.block_param_start[b] + j] = base[L.block_param_start[b] + j]
-                                       + scale * step[L.block_latent_offset[b] + j];
-        }
-    }
-}
-
 // Coordinate map between the compacted latent vector (length n_x, layout
 // [beta | RE | blocks]) the shared Newton loop drives and the full params vector
 // the spec helpers read (latent slots interleaved with pinned hyperparameters).
 // Mutual inverses; single source of truth for the bridge used by
-// spec_inner_solve_np1 and its callers.
+// spec_inner_solve and its callers.
 static inline void scatter_compacted_latent(
     const SpecLatentLayout& L, const double* x, std::vector<double>& p
 ) {
-    for (int j = 0; j < L.beta_count[0]; j++)
-        p[L.beta_start[0] + j] = x[L.latent_offset[0] + j];
+    for (int k = 0; k < L.np; k++)
+        for (int j = 0; j < L.beta_count[k]; j++)
+            p[L.beta_start[k] + j] = x[L.latent_offset[k] + j];
     for (const ReTermSlot& s : L.re_terms) {
         const int n = s.n_groups * s.n_coefs;
         for (int j = 0; j < n; j++) p[s.param_start + j] = x[s.latent_offset + j];
@@ -1023,8 +990,9 @@ static inline void scatter_compacted_latent(
 static inline void gather_compacted_latent(
     const SpecLatentLayout& L, const std::vector<double>& p, double* x
 ) {
-    for (int j = 0; j < L.beta_count[0]; j++)
-        x[L.latent_offset[0] + j] = p[L.beta_start[0] + j];
+    for (int k = 0; k < L.np; k++)
+        for (int j = 0; j < L.beta_count[k]; j++)
+            x[L.latent_offset[k] + j] = p[L.beta_start[k] + j];
     for (const ReTermSlot& s : L.re_terms) {
         const int n = s.n_groups * s.n_coefs;
         for (int j = 0; j < n; j++) x[s.latent_offset + j] = p[s.param_start + j];
@@ -1034,13 +1002,15 @@ static inline void gather_compacted_latent(
             x[L.block_latent_offset[b] + j] = p[L.block_param_start[b] + j];
 }
 
-// Single-arm (np == 1) spec inner solve: the one place the LikelihoodSpec
-// helpers are wrapped as the shared loop's closures. Declared in
-// laplace_spec_solve.h; both laplace_mode_spec_dense_impl and the nested
-// outer-grid driver route through it. The returned mode is in compacted
+// Spec-driven Laplace inner solve for any np >= 1: the one place the
+// LikelihoodSpec helpers are wrapped as the shared loop's closures. Declared in
+// laplace_spec_solve.h; the standalone entry (laplace_mode_spec_dense_impl, any
+// np) and the single-arm nested outer-grid driver both route through it. The eta
+// buffer is N * np (the spec helpers own the multi-process coupling); the caller
+// must size scratch.eta to at least N * np. The returned mode is in compacted
 // [beta | RE | blocks] coordinates; the live Cholesky factor is left resident in
 // `scratch`/`solver` for the caller's predictive-variance back-solves.
-LaplaceResult spec_inner_solve_np1(
+LaplaceResult spec_inner_solve(
     const ModelData& data,
     const ParamLayout& layout,
     const std::vector<LatentBlock>* blocks,
@@ -1057,22 +1027,24 @@ LaplaceResult spec_inner_solve_np1(
 ) {
     const SpecLatentLayout L = build_latent_layout(data, layout, blocks);
     const int N = data.N;
+    const int np = L.np;
+    const int n_eta = N * np;        // flattened per-process eta [i*np + k]
     const int n_x = L.n_x;
 
     std::vector<double> params_work = base_params;   // pinned hyperparams + warm start
-    std::vector<double> eta_flat((size_t)N, 0.0);    // np == 1
+    std::vector<double> eta_flat((size_t)n_eta, 0.0);
 
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta_out) {
         scatter_compacted_latent(L, x.begin(), params_work);
         compute_eta_spec(data, params_work, L, re_group_1based, N, k_grid,
                          eta_flat, n_threads);
-        for (int i = 0; i < N; i++) eta_out[i] = eta_flat[i];
+        for (int i = 0; i < n_eta; i++) eta_out[i] = eta_flat[i];
     };
     auto scatter_grad_hess = [&](const Rcpp::NumericVector& x,
                                  const Rcpp::NumericVector& eta,
                                  DenseVec& grad, DenseMat& H) {
         scatter_compacted_latent(L, x.begin(), params_work);
-        for (int i = 0; i < N; i++) eta_flat[i] = eta[i];
+        for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
         // x is the compacted latent the block callbacks index -> pass &x as x_latent.
         scatter_spec(params_work, eta_flat, re_group_1based, L,
                      data, layout, spec, response_data, N, k_grid,
@@ -1081,7 +1053,7 @@ LaplaceResult spec_inner_solve_np1(
     auto center_effects_fn = [&](Rcpp::NumericVector& x) {
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*blocks)[b];
-            if (blk.center) blk.center(x);   // single-arm: mean offset discarded
+            if (blk.center) blk.center(x);   // mean offset discarded (intercept anchors)
         }
     };
     auto compute_log_prior = [&](const Rcpp::NumericVector& x,
@@ -1090,7 +1062,7 @@ LaplaceResult spec_inner_solve_np1(
         return log_prior_latent(params_work, L, data.sigma_beta, 1.0, &x, k_grid);
     };
     auto log_lik_fn = [&](const Rcpp::NumericVector& eta) -> double {
-        for (int i = 0; i < N; i++) eta_flat[i] = eta[i];
+        for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
         return total_log_lik_spec(params_work, eta_flat, data, layout,
                                   spec, response_data, N);
     };
@@ -1099,7 +1071,7 @@ LaplaceResult spec_inner_solve_np1(
     gather_compacted_latent(L, base_params, x_init.data());   // latent warm start
 
     return laplace_newton_solve_ll(
-        N, n_x, max_iter, tol,
+        n_eta, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout
     );
@@ -1228,190 +1200,27 @@ void laplace_mode_spec_dense_impl(
     int N = data_use.N;
     int n_x = L.n_x;
 
-    // ===== L3.2/L3.3: single-arm (np == 1) routes through the one shared spec
-    // inner solve. spec_inner_solve_np1 wraps the spec helpers as the shared
-    // Newton loop's closures, so this standalone entry and the nested outer-grid
-    // driver (nested_laplace_multi.h) run the same loop body (clean_migration.md,
-    // Phase L). Multi-arm (np >= 2) keeps its own conditional-Laplace loop below
-    // until the joint-solver unification (L4).
-    if (np == 1) {
-        NewtonScratch scratch;
-        scratch.allocate(n_x, N);
-        SparseCholeskySolver newton_solver;
-        LaplaceResult res = spec_inner_solve_np1(
-            data_use, layout, blocks, k_grid, *spec, data_use.model_response_data,
-            re_group_1based, max_iter, tol, n_threads,
-            params_inout, scratch, &newton_solver,
-            /*store_Q=*/false, /*inv_block_layout=*/nullptr
-        );
-        scatter_compacted_latent(L, res.mode.data(), params_inout);  // mode -> params latent
-        if (n_iter_out)       *n_iter_out       = res.n_iter;
-        if (converged_out)    *converged_out    = res.converged ? 1 : 0;
-        if (log_det_Q_out)    *log_det_Q_out    = res.log_det_Q;
-        if (log_marginal_out) *log_marginal_out = res.log_marginal;
-        return;
-    }
-
-    bool use_sparse = (n_x >= 200);
-    SparseCholeskySolver sparse_solver;
-    DenseCholeskyScratch dense_scratch;
-    dense_scratch.ensure(n_x);
-    const void* response_data = data.model_response_data;
-
-    #ifdef _OPENMP
-    if (n_threads > 0) omp_set_num_threads(n_threads);
-    #endif
-
-    std::vector<double> eta_flat((size_t)N * np, 0.0);
-
-    // Compacted latent view [beta | RE | blocks] for the block callbacks
-    // (add_prior / log_prior / center take const Rcpp::NumericVector&). Allocated
-    // once here (Rf_allocVector is not thread-safe; this impl runs serial) and
-    // refilled from the params vector each time a block callback needs the field.
-    // Eta and the likelihood cross-terms read params directly, so x_latent is
-    // only touched when blocks are present.
-    Rcpp::NumericVector x_latent_buf;
-    if (L.n_blocks > 0) x_latent_buf = Rcpp::NumericVector(n_x, 0.0);
-    const Rcpp::NumericVector* x_latent_ptr = (L.n_blocks > 0) ? &x_latent_buf : nullptr;
-    auto gather_latent = [&](const std::vector<double>& p) {
-        if (L.n_blocks == 0) return;
-        for (int k = 0; k < L.np; k++) {
-            for (int j = 0; j < L.beta_count[k]; j++) {
-                x_latent_buf[L.latent_offset[k] + j] = p[L.beta_start[k] + j];
-            }
-        }
-        for (int t = 0; t < (int)L.re_terms.size(); t++) {
-            const ReTermSlot& s = L.re_terms[t];
-            const int n = s.n_groups * s.n_coefs;
-            for (int j = 0; j < n; j++) {
-                x_latent_buf[s.latent_offset + j] = p[s.param_start + j];
-            }
-        }
-        for (int b = 0; b < L.n_blocks; b++) {
-            for (int j = 0; j < L.block_size[b]; j++) {
-                x_latent_buf[L.block_latent_offset[b] + j] = p[L.block_param_start[b] + j];
-            }
-        }
-    };
-
-    auto eval_objective = [&](const std::vector<double>& trial_params) -> double {
-        compute_eta_spec(data_use, trial_params, L, re_group_1based, N, k_grid,
-                         eta_flat, n_threads);
-        double ll = total_log_lik_spec(
-            trial_params, eta_flat, data_use, layout, *spec, response_data, N
-        );
-        gather_latent(trial_params);
-        double lp = log_prior_latent(trial_params, L, data_use.sigma_beta, 1.0,
-                                     x_latent_ptr, k_grid);
-        return ll + lp;
-    };
-
-    double obj_current = eval_objective(params_inout);
-    int n_iter = 0;
-    bool converged = false;
-
-    DenseVec grad(n_x, 0.0);
-    DenseMat H(n_x, DenseVec(n_x, 0.0));
-    std::vector<double> delta(n_x, 0.0);
-
-    for (int iter = 0; iter < max_iter; iter++) {
-        compute_eta_spec(data_use, params_inout, L, re_group_1based, N, k_grid,
-                         eta_flat, n_threads);
-        gather_latent(params_inout);
-        scatter_spec(params_inout, eta_flat, re_group_1based, L,
-                     data_use, layout, *spec, response_data, N, k_grid,
-                     x_latent_ptr, 1.0,
-                     grad, H, n_threads);
-
-        std::fill(delta.begin(), delta.end(), 0.0);
-        bool solve_ok = dispatch_factor_solve(H, grad, delta, n_x,
-                                              sparse_solver, use_sparse,
-                                              dense_scratch);
-        if (!solve_ok) {
-            // Damped fall-back: tiny gradient step keeps the search moving so a
-            // bad starting point doesn't kill the run.
-            std::vector<double> grad_step(n_x, 0.0);
-            for (int j = 0; j < n_x; j++) {
-                grad_step[j] = std::isfinite(grad[j]) ? 0.01 * grad[j] : 0.0;
-            }
-            std::vector<double> trial;
-            apply_latent_step(L, params_inout, grad_step, 1.0, trial);
-            params_inout = trial;
-            obj_current = eval_objective(params_inout);
-            n_iter = iter + 1;
-            continue;
-        }
-
-        // Step halving in latent slots only — hyperparameter slots are pinned.
-        double step_scale = 1.0;
-        std::vector<double> trial;
-        for (int half = 0; half <= 12; half++) {
-            apply_latent_step(L, params_inout, delta, step_scale, trial);
-            double obj_try = eval_objective(trial);
-            if (obj_try >= obj_current - 1e-8 || half == 12) {
-                params_inout = trial;
-                obj_current = obj_try;
-                break;
-            }
-            step_scale *= 0.5;
-        }
-
-        n_iter = iter + 1;
-        double m = 0.0;
-        for (int j = 0; j < n_x; j++) {
-            m = std::max(m, std::abs(step_scale * delta[j]));
-        }
-        if (m < tol) {
-            converged = true;
-            break;
-        }
-    }
-
-    // Block centering (sum-to-zero projection for rank-deficient blocks),
-    // applied once post-convergence exactly as laplace_newton_solve does, then
-    // the final Hessian + log-marginal are taken at the centered mode. Single-
-    // arm: the mean offset center() returns is discarded (the global intercept
-    // anchors the level).
-    if (L.n_blocks > 0) {
-        gather_latent(params_inout);
-        bool any_centered = false;
-        for (int b = 0; b < L.n_blocks; b++) {
-            const LatentBlock& blk = (*blocks)[b];
-            if (blk.center) { blk.center(x_latent_buf); any_centered = true; }
-        }
-        if (any_centered) {
-            for (int b = 0; b < L.n_blocks; b++) {
-                for (int j = 0; j < L.block_size[b]; j++) {
-                    params_inout[L.block_param_start[b] + j] =
-                        x_latent_buf[L.block_latent_offset[b] + j];
-                }
-            }
-        }
-    }
-
-    // Final Hessian + log-marginal at the (centered) mode.
-    compute_eta_spec(data_use, params_inout, L, re_group_1based, N, k_grid,
-                     eta_flat, n_threads);
-    gather_latent(params_inout);
-    scatter_spec(params_inout, eta_flat, re_group_1based, L,
-                 data_use, layout, *spec, response_data, N, k_grid,
-                 x_latent_ptr, 1.0,
-                 grad, H, n_threads);
-    double log_det_Q = 0.0;
-    dispatch_factor_log_det(H, n_x, sparse_solver, use_sparse,
-                             dense_scratch, log_det_Q);
-
-    double ll = total_log_lik_spec(
-        params_inout, eta_flat, data_use, layout, *spec, response_data, N
+    // L3/L4: every np routes through the one shared spec inner solve.
+    // spec_inner_solve wraps the spec helpers (compute_eta_spec / scatter_spec /
+    // total_log_lik_spec / log_prior_latent) as the shared Newton loop's closures
+    // over an N*np eta buffer, so this standalone entry (any np) and the
+    // single-arm nested outer-grid driver (nested_laplace_multi.h) run the same
+    // loop body (clean_migration.md, Phase L). GMRF blocks are gated to np == 1
+    // above, so for np >= 2 there are no blocks and centering is a no-op.
+    NewtonScratch scratch;
+    scratch.allocate(n_x, N * np);
+    SparseCholeskySolver newton_solver;
+    LaplaceResult res = spec_inner_solve(
+        data_use, layout, blocks, k_grid, *spec, data_use.model_response_data,
+        re_group_1based, max_iter, tol, n_threads,
+        params_inout, scratch, &newton_solver,
+        /*store_Q=*/false, /*inv_block_layout=*/nullptr
     );
-    double lp = log_prior_latent(params_inout, L, data_use.sigma_beta, 1.0,
-                                 x_latent_ptr, k_grid);
-    double log_marginal = finalize_log_marginal(ll, lp, log_det_Q, n_x);
-
-    if (n_iter_out)      *n_iter_out      = n_iter;
-    if (converged_out)   *converged_out   = converged ? 1 : 0;
-    if (log_det_Q_out)   *log_det_Q_out   = log_det_Q;
-    if (log_marginal_out)*log_marginal_out= log_marginal;
+    scatter_compacted_latent(L, res.mode.data(), params_inout);  // mode -> params latent
+    if (n_iter_out)       *n_iter_out       = res.n_iter;
+    if (converged_out)    *converged_out    = res.converged ? 1 : 0;
+    if (log_det_Q_out)    *log_det_Q_out    = res.log_det_Q;
+    if (log_marginal_out) *log_marginal_out = res.log_marginal;
 }
 
 } // namespace tulpa
