@@ -127,102 +127,64 @@
 #'   `n_pos`. `prior_alpha` only applies when `copy` is active;
 #'   `prior_sigma` applies on any `sigma`-named axis.
 #'
-#' @param max_iter,tol Inner Newton iteration budget and tolerance.
-#' @param n_threads Inner-loop OpenMP threads (per-observation scatter,
-#'   compute_eta, log-likelihood reduction). Defaults to `1L` — for typical
-#'   tulpa joint workloads (`N` in the hundreds to a few thousand) inner
-#'   parallelism is overhead-dominated, see
-#'   `dev_notes/issue_body_adaptive_grid_cost.md`. Coarse-grained
-#'   parallelism over the outer hyperparameter grid is exposed via
-#'   `n_threads_outer` and stacks better on hardware with many cores.
-#' @param n_threads_outer Outer-grid OpenMP threads. When `> 1`, the driver
-#'   runs a pilot Laplace at the centre cell, then dispatches the remaining
-#'   cells across `n_threads_outer` OpenMP threads with each cell warm-started
-#'   from the pilot mode. Each outer thread owns its own CHOLMOD solver and
-#'   NewtonScratch; inner-loop OpenMP is auto-disabled to avoid nested
-#'   parallelism overhead. Default `1L` (serial, chained warm-starts —
-#'   bitwise identical to the pre-speedup driver). Recommended on multi-core
-#'   workstations: `parallel::detectCores() - 1L`.
-#' @param tile_warm Logical (default `TRUE`). When `n_threads_outer > 1`
-#'   and a copy block is present, the driver groups outer-grid cells into
-#'   *tiles* sharing every hyperparameter axis except the copy coefficient
-#'   `alpha`, runs one Tier-2 warm solve per tile from the centre-cell
-#'   pilot, and warm-starts the remaining cells from their tile pilot
-#'   instead of the global pilot. Cuts inner-Newton iterations by a tile-
-#'   sized factor on the slowest cells (boundary alpha values). Falls back
-#'   silently to the single-tier Phase 1 path when no copy block is
-#'   present, the grid has a single tile, or `n_threads_outer <= 1L`. Set
-#'   to `FALSE` to recover the Phase 1 behaviour (e.g. for regression
-#'   testing).
-#' @param prune Logical (default `FALSE`). When `TRUE`, the driver runs a
-#'   cheap-pass screening Laplace at the centre-cell pilot mode for every
-#'   outer-grid cell (no inner Newton, just one `log_lik + log_prior`
-#'   evaluation per cell at the pilot mode), softmax-normalises the
-#'   screening log-marginals, and skips the full inner Newton on cells
-#'   whose normalised weight falls below `prune_tol`. Pruned cells are
-#'   marked with `log_marginal = -Inf`, `n_iter = 0`, and inherit the
-#'   pilot mode as their `mode` row. The pilot cell itself is never pruned.
-#'   Stacks with `n_threads_outer` (serial and parallel paths both honour
-#'   the prune mask). Approximate: the screen uses `log|H_pilot|` for every
-#'   cell rather than recomputing the Hessian, so cells where the data
-#'   posterior shape differs sharply from the pilot can be misranked at
-#'   the edges. Keep `prune_tol` conservative (`<= 1e-3`) when the cover
-#'   posterior is data-rich; pruning is most useful when the outer grid
-#'   has many low-mass tail cells.
-#' @param prune_tol Numeric (default `1e-3`). Screening weight threshold
-#'   below which cells are pruned. Cells whose softmax-normalised cheap
-#'   log-marginal weight is `< prune_tol` skip the full inner Newton. Has
-#'   no effect when `prune = FALSE`. Default keeps cells holding ~99.9%
-#'   of cheap-pass mass.
-#' @param x_init Optional warm-start for the first grid point's inner solve.
-#' @param verbose Currently a no-op; reserved.
-#' @param store_Q If `TRUE`, also return the per-grid joint precision Q
-#'   (lower triangle, CSC) as `Q_csc_p_per_grid`, `Q_csc_i_per_grid`,
-#'   `Q_csc_x_per_grid`, `Q_csc_n`. Lets callers compute INLA-style
-#'   total-variance posterior moments (`Var-of-means + Mean-of-Var`) on
-#'   inner latent coordinates such as fixed-effect betas. Default `FALSE`
-#'   to keep the result lightweight.
-#' @param adaptive_grid Logical (default `FALSE`). When `TRUE`, a mode-
-#'   tracked 1D refinement pass is triggered on any hyperparameter axis
-#'   whose marginal posterior weight on the boundary point(s) exceeds
-#'   `adaptive_grid_edge_thresh`. New points are appended on that axis
-#'   (one densification between the boundary and its neighbour, two
-#'   outward extensions beyond the boundary on a log-spaced axis) and
-#'   the kernel is evaluated at each new point paired with the modal
-#'   other-axis values from the boundary cell — *not* the full
-#'   cartesian product. Each slice cell carries a calibration term
-#'   `log S_b` so it contributes to the joint softmax on the
-#'   *marginal* scale (where `S_b` is the integrated relative weight
-#'   of the other axes at the boundary). Cost per refinement is
-#'   `O(n_new_points)` kernel solves, not
-#'   `O(n_new_points * prod(other_axis_sizes))`. Fixes posterior CI
-#'   under-coverage when truth sits near or at the user's grid edge.
-#'   Opt-in for now; defaults to `FALSE` to preserve legacy fixed-grid
-#'   behaviour for existing callers.
-#' @param adaptive_grid_edge_thresh Numeric (default `0.02`). Refinement
-#'   triggers when the per-axis edge score on the boundary of any
-#'   refinable axis (`alpha` when a copy block is active; `phi_<arm>`
-#'   when `phi_grid` adds dispersion axes) exceeds this value. The
-#'   score is
-#'   `max(marginal_weight_at_boundary,
-#'        exp(max_log_marginal_at_boundary - max_log_marginal_overall))`,
-#'   i.e. the larger of the integrated weight on the boundary level and
-#'   the relative integrand density at the boundary level. Catches both
-#'   boundary pile-up (truth lies *at* a grid endpoint, weight is heavy
-#'   there) and integrand truncation (integrand still has appreciable
-#'   density at the boundary, but the cell width is so narrow it gets
-#'   little integrated weight). The default `0.02` corresponds to ~4 log
-#'   units of decay before refinement stops. Lower the threshold to
-#'   refine more aggressively at the cost of extra kernel passes.
-#' @param adaptive_grid_max_passes Integer (default `1L`). Maximum number
-#'   of refinement passes. One pass typically suffices; two is rarely
-#'   useful and inflates runtime.
-#' @param var_of_means_consistency Logical (default `TRUE`). When `TRUE`, run a
-#'   post-integration consistency pass on the variance of the per-arm posterior
-#'   means and attach the diagnostics as `var_of_means_consistency_info`.
-#' @param force_sparse Logical (default `FALSE`). When `TRUE`, force the sparse
-#'   linear-algebra backend for the inner joint solve regardless of the
-#'   automatic dense/sparse heuristic.
+#' @param control Optional list of perf/numerical tuning knobs (statistical
+#'   arguments stay top-level), following the `control` convention of
+#'   [tulpa()]. Recognised elements (defaults in parentheses):
+#'   * `max_iter` (`50L`), `tol` (`1e-6`) -- inner Newton iteration budget and
+#'     tolerance.
+#'   * `n_threads` (`1L`) -- inner-loop OpenMP threads (per-observation
+#'     scatter, compute_eta, log-likelihood reduction). For typical joint
+#'     workloads (`N` in the hundreds to a few thousand) inner parallelism is
+#'     overhead-dominated (see `dev_notes/issue_body_adaptive_grid_cost.md`);
+#'     prefer `n_threads_outer`, which stacks better on many-core hardware.
+#'   * `n_threads_outer` (`1L`) -- outer-grid OpenMP threads. When `> 1`, a
+#'     pilot Laplace at the centre cell warm-starts the remaining cells, each
+#'     dispatched across `n_threads_outer` threads with its own CHOLMOD solver
+#'     and NewtonScratch (inner OpenMP auto-disabled). `1L` is serial, chained
+#'     warm-starts -- bitwise identical to the pre-speedup driver. Recommended
+#'     on multi-core workstations: `parallel::detectCores() - 1L`.
+#'   * `tile_warm` (`TRUE`) -- when `n_threads_outer > 1` and a copy block is
+#'     present, group outer cells into tiles sharing every axis except the copy
+#'     coefficient `alpha`, solve one warm Tier-2 per tile from the centre
+#'     pilot, and warm-start the rest from their tile pilot. Falls back to the
+#'     single-tier path when no copy block / single tile / `n_threads_outer
+#'     <= 1L`. `FALSE` recovers the pre-tiling behaviour (e.g. regression
+#'     testing).
+#'   * `prune` (`FALSE`), `prune_tol` (`1e-3`) -- when `prune = TRUE`, run a
+#'     cheap-pass screening Laplace at the centre pilot mode for every cell
+#'     (one `log_lik + log_prior` at the pilot mode), softmax-normalise, and
+#'     skip the full inner Newton on cells whose normalised weight is
+#'     `< prune_tol`. Pruned cells get `log_marginal = -Inf`, `n_iter = 0`, and
+#'     inherit the pilot mode; the pilot cell is never pruned. Stacks with
+#'     `n_threads_outer`. `prune_tol` must be in `[0, 1)`. Approximate (the
+#'     screen reuses `log|H_pilot|` per cell), so keep `prune_tol` conservative
+#'     (`<= 1e-3`) when the posterior is data-rich; pruning helps most when the
+#'     grid has many low-mass tail cells.
+#'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
+#'   * `verbose` (`FALSE`) -- currently a no-op; reserved.
+#'   * `store_Q` (`FALSE`) -- also return the per-grid joint precision Q (lower
+#'     triangle, CSC) as `Q_csc_p_per_grid`, `Q_csc_i_per_grid`,
+#'     `Q_csc_x_per_grid`, `Q_csc_n`, letting callers compute INLA-style
+#'     total-variance posterior moments (`Var-of-means + Mean-of-Var`) on inner
+#'     latent coordinates such as fixed-effect betas.
+#'   * `adaptive_grid` (`FALSE`), `adaptive_grid_edge_thresh` (`0.02`),
+#'     `adaptive_grid_max_passes` (`1L`) -- when `adaptive_grid = TRUE`, a
+#'     mode-tracked 1D refinement pass triggers on any axis whose marginal
+#'     boundary weight exceeds `adaptive_grid_edge_thresh`. New points are
+#'     appended on that axis (interior densification + outward log-spaced
+#'     extension) paired with the boundary cell's modal other-axis values, each
+#'     carrying a calibration term so it contributes on the marginal scale --
+#'     `O(n_new_points)` kernel solves, not the full cartesian product. The
+#'     edge score is `max(marginal_weight_at_boundary, exp(max_log_marginal_at
+#'     _boundary - max_log_marginal_overall))`, catching both boundary pile-up
+#'     and integrand truncation; `0.02` is ~4 log units of decay.
+#'     `adaptive_grid_max_passes` caps the passes (one usually suffices). Fixes
+#'     posterior CI under-coverage when truth sits near a grid edge.
+#'   * `var_of_means_consistency` (`TRUE`) -- run a post-integration
+#'     consistency pass on the variance of the per-arm posterior means and
+#'     attach `var_of_means_consistency_info`.
+#'   * `force_sparse` (`FALSE`) -- force the sparse linear-algebra backend for
+#'     the inner joint solve regardless of the dense/sparse heuristic.
 #'
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:
@@ -262,19 +224,25 @@ tulpa_nested_laplace_joint <- function(responses,
                                        phi_grid = NULL,
                                        prior_sigma = NULL,
                                        prior_alpha = NULL,
-                                       max_iter = 50L, tol = 1e-6,
-                                       n_threads = 1L,
-                                       n_threads_outer = 1L,
-                                       tile_warm = TRUE,
-                                       prune = FALSE,
-                                       prune_tol = 1e-3,
-                                       x_init = NULL, verbose = FALSE,
-                                       store_Q = FALSE,
-                                       adaptive_grid = FALSE,
-                                       adaptive_grid_edge_thresh = 0.02,
-                                       adaptive_grid_max_passes = 1L,
-                                       var_of_means_consistency = TRUE,
-                                       force_sparse = FALSE) {
+                                       control = list()) {
+    # Perf/numerical knobs live in `control = list()` (matching tulpa()); the
+    # top-level signature carries only statistical arguments.
+    max_iter                  <- control$max_iter %||% 50L
+    tol                       <- control$tol %||% 1e-6
+    n_threads                 <- control$n_threads %||% 1L
+    n_threads_outer           <- control$n_threads_outer %||% 1L
+    tile_warm                 <- control$tile_warm %||% TRUE
+    prune                     <- control$prune %||% FALSE
+    prune_tol                 <- control$prune_tol %||% 1e-3
+    x_init                    <- control$x_init
+    verbose                   <- control$verbose %||% FALSE
+    store_Q                   <- control$store_Q %||% FALSE
+    adaptive_grid             <- control$adaptive_grid %||% FALSE
+    adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
+    adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
+    var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
+    force_sparse              <- control$force_sparse %||% FALSE
+
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
     }

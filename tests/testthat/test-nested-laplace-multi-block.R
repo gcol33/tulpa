@@ -150,7 +150,7 @@ fit_one_seed <- function(d) {
       y = d$y, n_trials = rep(1L, length(d$y)), X = d$X,
       prior = prior_list,
       family = "binomial",
-      max_iter = 30L, tol = 1e-5, n_threads = 1L
+      control = list(max_iter = 30L, tol = 1e-5, n_threads = 1L)
     )
   )
 }

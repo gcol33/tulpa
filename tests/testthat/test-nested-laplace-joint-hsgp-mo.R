@@ -125,7 +125,7 @@ test_that("hsgp_mo joint dispatch runs end-to-end on 2 arms (K = n_arms = 2)", {
 
     fit <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = list(block), copy = NULL,
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))
@@ -222,7 +222,7 @@ test_that("hsgp_mo at rho = 0 stays finite and matches independent-fields scale"
                         ell_grid     = c(0.4))
     fit <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = list(block), copy = NULL,
-        max_iter = 60L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 60L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_true(all(is.finite(fit$log_marginal)))
     expect_equal(length(fit$log_marginal), 1L)
@@ -247,7 +247,7 @@ test_that("hsgp_mo posterior weight concentrates on rho_true > 0 cells", {
 
     fit <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = list(block), copy = NULL,
-        max_iter = 80L, tol = 1e-8, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 80L, tol = 1e-8, n_threads = 1L, verbose = FALSE)
     )
     expect_true(all(is.finite(fit$log_marginal)))
 
@@ -277,7 +277,7 @@ test_that("hsgp_mo raises clean errors on bad spec", {
                               n_obs_per_arm = c(sim$N1, sim$N2),
                               sigma_1_grid = 0.5, sigma_2_grid = 0.5,
                               rho_grid = 0.0, lengthscale_grid = 0.4)),
-            max_iter = 5L, tol = 1e-4, n_threads = 1L
+            control = list(max_iter = 5L, tol = 1e-4, n_threads = 1L)
         ),
         "eigenvalues"
     )
@@ -292,7 +292,7 @@ test_that("hsgp_mo raises clean errors on bad spec", {
                               eigenvalues = sim$lam,
                               sigma_1_grid = 0.5, sigma_2_grid = 0.5,
                               rho_grid = 0.0, lengthscale_grid = 0.4)),
-            max_iter = 5L, tol = 1e-4, n_threads = 1L
+            control = list(max_iter = 5L, tol = 1e-4, n_threads = 1L)
         ),
         "length n_arms"
     )
@@ -314,7 +314,7 @@ test_that("hsgp_mo errors when n_arms != 2 (first-ship K = 2 restriction)", {
                               eigenvalues = sim$lam,
                               sigma_1_grid = 0.5, sigma_2_grid = 0.5,
                               rho_grid = 0.0, lengthscale_grid = 0.4)),
-            max_iter = 5L, tol = 1e-4, n_threads = 1L
+            control = list(max_iter = 5L, tol = 1e-4, n_threads = 1L)
         ),
         "n_arms == 2"
     )

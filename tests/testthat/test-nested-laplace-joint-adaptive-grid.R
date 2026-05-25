@@ -80,8 +80,8 @@
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior,
         copy = list(arm = "pos", alpha_grid = alpha_grid),
-        adaptive_grid = adaptive_grid,
-        var_of_means_consistency = FALSE
+        control = list(adaptive_grid = adaptive_grid,
+                       var_of_means_consistency = FALSE)
     )
 }
 

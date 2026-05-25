@@ -16,13 +16,8 @@ tulpa_nested_laplace(
   sigma_re = 1,
   family = "binomial",
   phi = 1,
-  max_iter = 50L,
-  tol = 1e-06,
-  n_threads = 1L,
-  x_init = NULL,
-  verbose = FALSE,
-  keep_grid_hessians = FALSE,
-  likelihood = NULL
+  likelihood = NULL,
+  control = list()
 )
 }
 \arguments{
@@ -65,21 +60,6 @@ time/group/site indices. Required when \code{spec} is supplied.}
 
 \item{phi}{Dispersion (negbin/gamma).}
 
-\item{max_iter, tol}{Inner Newton iteration budget and tolerance.}
-
-\item{n_threads}{OpenMP threads.}
-
-\item{x_init}{Optional warm-start for the first grid point's inner solve.}
-
-\item{verbose}{Print grid-point progress.}
-
-\item{keep_grid_hessians}{If \code{TRUE}, retain per-grid-point fixed-effects
-marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}} on the return
-list as \verb{$grid_hessians} (list of dense \eqn{p\times p} matrices) and
-\verb{$grid_modes} (list of length-\eqn{p} vectors). Default \code{FALSE}.
-Used downstream by simplified-Laplace (SLA) callers to assemble
-skew-aware marginals — see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.}
-
 \item{likelihood}{Optional model-supplied likelihood, replacing the built-in
 \code{family}. Pass an external pointer to a \code{tulpa::NestedLikelihood} (built in
 a model package's own C++ from a \link{LikelihoodSpec}); the inner Laplace solve
@@ -89,6 +69,22 @@ packages to fit a custom response without adding a family to tulpa -- for
 example tulpaObs threads its marginalized single-season occupancy
 likelihood (a scaled Bernoulli, with the latent occupancy state integrated
 out) through this. Multi-block \code{prior} only. Default \code{NULL} (use \code{family}).}
+
+\item{control}{Optional list of perf/numerical tuning knobs (statistical
+arguments stay top-level), following the \code{control} convention of
+\code{\link[=tulpa]{tulpa()}}. Recognised elements (defaults in parentheses):
+\itemize{
+\item \code{max_iter} (\code{50L}), \code{tol} (\code{1e-6}) -- inner Newton iteration budget and
+tolerance.
+\item \code{n_threads} (\code{1L}) -- inner-loop OpenMP threads.
+\item \code{x_init} (\code{NULL}) -- warm-start for the first grid point's inner solve.
+\item \code{keep_grid_hessians} (\code{FALSE}) -- when \code{TRUE}, retain per-grid-point
+fixed-effects marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}}
+on the return list as \verb{$grid_hessians} (list of dense \eqn{p\times p}
+matrices) and \verb{$grid_modes} (list of length-\eqn{p} vectors). Used
+downstream by simplified-Laplace (SLA) callers to assemble skew-aware
+marginals -- see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.
+}}
 }
 \value{
 A list with:

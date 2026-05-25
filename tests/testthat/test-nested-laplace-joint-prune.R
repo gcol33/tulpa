@@ -68,9 +68,9 @@
     tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior, copy = copy,
-        n_threads = 1L, n_threads_outer = n_threads_outer,
-        prune = prune, prune_tol = prune_tol,
-        adaptive_grid = FALSE, var_of_means_consistency = FALSE
+        control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
+                       prune = prune, prune_tol = prune_tol,
+                       adaptive_grid = FALSE, var_of_means_consistency = FALSE)
     )
 }
 

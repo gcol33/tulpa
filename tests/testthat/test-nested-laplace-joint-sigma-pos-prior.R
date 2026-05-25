@@ -104,7 +104,7 @@
         copy      = list(arm = "pos",
                           alpha_grid = c(0, 0.4, 0.7, 1.0, 1.4, 2.0)),
         prior_alpha   = prior_alpha,
-        adaptive_grid = FALSE
+        control = list(adaptive_grid = FALSE)
     )
 }
 
@@ -220,7 +220,7 @@ test_that("alpha = 0 grid cell is not zeroed by the prior", {
         copy      = list(arm = "pos",
                           alpha_grid = c(0, 0.5, 1.0, 1.5, 2.0)),
         prior_alpha     = list("pc.prec", c(1.0, 0.01)),
-        adaptive_grid   = FALSE
+        control = list(adaptive_grid = FALSE)
     )
     # With alpha_truth = 0, the alpha posterior median should be small
     # (well below 0.2). Pre-fix the median jumped to ~0.5 because the

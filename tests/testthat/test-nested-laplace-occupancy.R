@@ -53,7 +53,7 @@ fit_occu <- function(d, det_prob = d$det_prob, sigma_grid = c(0.3, 0.6, 1.0)) {
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,
     prior = prior, likelihood = lik,
-    max_iter = 50L, tol = 1e-7, n_threads = 1L
+    control = list(max_iter = 50L, tol = 1e-7, n_threads = 1L)
   ))
 }
 
@@ -65,7 +65,7 @@ fit_binom <- function(d, sigma_grid = c(0.3, 0.6, 1.0)) {
   suppressWarnings(tulpa_nested_laplace(
     y = d$y, n_trials = rep(1L, d$n_sites), X = d$X,
     prior = prior, family = "binomial",
-    max_iter = 50L, tol = 1e-7, n_threads = 1L
+    control = list(max_iter = 50L, tol = 1e-7, n_threads = 1L)
   ))
 }
 

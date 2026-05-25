@@ -116,9 +116,9 @@ test_that("(sigma, alpha) reparam recovers sigma/alpha across alpha in {0, 1, 2}
                     responses = sim,
                     prior     = prior_tmpl,
                     copy      = copy_spec,
-                    adaptive_grid            = FALSE,
-                    var_of_means_consistency = FALSE,
-                    max_iter = 60L, tol = 1e-5
+                    control = list(adaptive_grid            = FALSE,
+                                   var_of_means_consistency = FALSE,
+                                   max_iter = 60L, tol = 1e-5)
                 )
             )
             expect_true(all(is.finite(fit$log_marginal)),

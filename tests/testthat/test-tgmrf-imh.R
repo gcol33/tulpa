@@ -68,7 +68,7 @@ test_that("tulpa_tgmrf_imh posterior means agree with grid Laplace within MC err
   grid <- tulpa_nested_laplace(
     y = y, n_trials = rep(1L, n), X = X,
     prior = blk, family = "poisson",
-    max_iter = 80L, tol = 1e-8
+    control = list(max_iter = 80L, tol = 1e-8)
   )
   fit <- tulpa_tgmrf_imh(
     y = y, n_trials = rep(1L, n), X = X, block = blk,

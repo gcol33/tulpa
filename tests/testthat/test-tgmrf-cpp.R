@@ -95,7 +95,7 @@ test_that("tgmrf_cpp() compiles, registers, and fits a periodic-AR1 sim", {
   fit <- tulpa_nested_laplace(
     y = y, n_trials = rep(1L, n), X = X,
     prior = blk, family = "poisson",
-    max_iter = 100L, tol = 1e-8
+    control = list(max_iter = 100L, tol = 1e-8)
   )
   expect_true(all(is.finite(fit$log_marginal)))
   # Posterior weight should sit in a sensible band around the truth. Single
@@ -135,12 +135,12 @@ test_that("tgmrf_cpp() and tgmrf() agree to numerical tol on the same fit", {
   fit_r <- tulpa_nested_laplace(
     y = y, n_trials = rep(1L, n), X = X,
     prior = blk_r, family = "poisson",
-    max_iter = 100L, tol = 1e-10
+    control = list(max_iter = 100L, tol = 1e-10)
   )
   fit_c <- tulpa_nested_laplace(
     y = y, n_trials = rep(1L, n), X = X,
     prior = blk_c, family = "poisson",
-    max_iter = 100L, tol = 1e-10
+    control = list(max_iter = 100L, tol = 1e-10)
   )
 
   # The two paths feed bit-identical CSC triples into the same Newton

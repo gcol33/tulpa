@@ -36,10 +36,19 @@
 #' @param sigma_re RE standard deviation (default 1).
 #' @param family `"binomial"`, `"poisson"`, `"neg_binomial_2"`, etc.
 #' @param phi Dispersion (negbin/gamma).
-#' @param max_iter,tol Inner Newton iteration budget and tolerance.
-#' @param n_threads OpenMP threads.
-#' @param x_init Optional warm-start for the first grid point's inner solve.
-#' @param verbose Print grid-point progress.
+#' @param control Optional list of perf/numerical tuning knobs (statistical
+#'   arguments stay top-level), following the `control` convention of
+#'   [tulpa()]. Recognised elements (defaults in parentheses):
+#'   * `max_iter` (`50L`), `tol` (`1e-6`) -- inner Newton iteration budget and
+#'     tolerance.
+#'   * `n_threads` (`1L`) -- inner-loop OpenMP threads.
+#'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
+#'   * `keep_grid_hessians` (`FALSE`) -- when `TRUE`, retain per-grid-point
+#'     fixed-effects marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}}
+#'     on the return list as `$grid_hessians` (list of dense \eqn{p\times p}
+#'     matrices) and `$grid_modes` (list of length-\eqn{p} vectors). Used
+#'     downstream by simplified-Laplace (SLA) callers to assemble skew-aware
+#'     marginals -- see the cumulant pooling in [rubins_pool()].
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -57,12 +66,6 @@
 #'   [prior_from_spec()] — pass either `prior` or `spec`, not both.
 #' @param data Data frame used to validate `spec` and resolve
 #'   time/group/site indices. Required when `spec` is supplied.
-#' @param keep_grid_hessians If `TRUE`, retain per-grid-point fixed-effects
-#'   marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}} on the return
-#'   list as `$grid_hessians` (list of dense \eqn{p\times p} matrices) and
-#'   `$grid_modes` (list of length-\eqn{p} vectors). Default `FALSE`.
-#'   Used downstream by simplified-Laplace (SLA) callers to assemble
-#'   skew-aware marginals — see the cumulant pooling in [rubins_pool()].
 #' @param likelihood Optional model-supplied likelihood, replacing the built-in
 #'   `family`. Pass an external pointer to a `tulpa::NestedLikelihood` (built in
 #'   a model package's own C++ from a [LikelihoodSpec]); the inner Laplace solve
@@ -79,10 +82,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             spec = NULL, data = NULL,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                             family = "binomial", phi = 1.0,
-                            max_iter = 50L, tol = 1e-6, n_threads = 1L,
-                            x_init = NULL, verbose = FALSE,
-                            keep_grid_hessians = FALSE,
-                            likelihood = NULL) {
+                            likelihood = NULL,
+                            control = list()) {
+
+  # Perf/numerical knobs live in `control = list()` (matching tulpa()); the
+  # top-level signature carries only statistical arguments.
+  max_iter           <- control$max_iter %||% 50L
+  tol                <- control$tol %||% 1e-6
+  n_threads          <- control$n_threads %||% 1L
+  x_init             <- control$x_init
+  keep_grid_hessians <- isTRUE(control$keep_grid_hessians)
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {

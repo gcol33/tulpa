@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+* refactor(api): `tulpa_nested_laplace()` and `tulpa_nested_laplace_joint()`
+  collapse their perf/numerical knobs into a single `control = list()` argument,
+  matching `tulpa()`. The top-level signatures now carry only statistical
+  arguments (`y`/`n_trials`/`X`/`prior`/`spec`/`family`/`phi`/`likelihood`/...;
+  `responses`/`prior`/`copy`/`phi_grid`/`prior_sigma`/`prior_alpha`). Tuning
+  knobs move into `control`: single-arm `max_iter`, `tol`, `n_threads`, `x_init`,
+  `keep_grid_hessians`; joint additionally `n_threads_outer`, `tile_warm`,
+  `prune`, `prune_tol`, `store_Q`, `adaptive_grid`,
+  `adaptive_grid_edge_thresh`, `adaptive_grid_max_passes`,
+  `var_of_means_consistency`, `force_sparse`, `verbose`. Pre-release breaking
+  change -- pass these inside `control = list(...)` (no deprecation shim). The
+  dead single-arm `verbose` knob was dropped. Internal callers (`em_laplace`,
+  the tgmrf pilots) and the shipped examples were migrated.
+
 * feat(laplace): `tulpa_laplace_beta()` gains a `beta_prior` argument, forwarded
   to the inner `tulpa_laplace()` fits (both the outer `phi` search and the final
   refit) so the beta arm can carry a Gaussian fixed-effect penalty. Pure R

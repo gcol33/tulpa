@@ -85,8 +85,8 @@ recov_sweep <- function(family, cfg, n_seed, seed_off) {
     f <- suppressWarnings(tulpa_nested_laplace(
       y = d$y, n_trials = rep(cfg$ntr, d$N), X = d$X,
       prior = prior, family = family, phi = cfg$phi,
-      max_iter = 100L, tol = 1e-8, n_threads = 1L,
-      keep_grid_hessians = TRUE))
+      control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                     keep_grid_hessians = TRUE)))
     bp <- beta_post(f)
     est[s, ] <- bp$mean
     for (j in seq_len(p)) {

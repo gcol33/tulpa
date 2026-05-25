@@ -118,7 +118,7 @@ test_that("(sigma, alpha) reparam removes the cover-arm ridge on small-n_pos BYM
             prior     = prior,
             copy      = list(arm = "pos",
                               alpha_grid = c(0, 0.4, 0.7, 1.0, 1.4, 2.0)),
-            adaptive_grid = FALSE
+            control = list(adaptive_grid = FALSE)
         )
         sigma_hat[i] <- fit$theta_mean[["sigma"]]
         alpha_lo[i]  <- fit$theta_ci_lo[["alpha"]]

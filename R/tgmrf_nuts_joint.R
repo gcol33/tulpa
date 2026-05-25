@@ -151,7 +151,7 @@ tulpa_tgmrf_nuts_joint <- function(y, n_trials, X, block,
     y = y, n_trials = n_trials, X = X,
     prior = pilot_block,
     family = family, phi = phi,
-    max_iter = max_iter, tol = tol, n_threads = n_threads
+    control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
   )
 
   k_star <- which.max(pilot$log_marginal)

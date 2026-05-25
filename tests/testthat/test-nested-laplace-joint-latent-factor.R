@@ -67,7 +67,7 @@ test_that("joint dispatch routes `type = 'lf'` and converges on a 2-arm fit", {
     )
     fit <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = NULL,
-        max_iter = 60L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 60L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))
@@ -98,7 +98,7 @@ test_that("lf block recovers loading ratio and factor field up to sign", {
     )
     fit <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = NULL,
-        max_iter = 100L, tol = 1e-8, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L, verbose = FALSE)
     )
     expect_true(all(is.finite(fit$log_marginal)))
 
@@ -135,7 +135,7 @@ test_that("lf block raises clean errors on bad spec", {
             responses = sim$responses,
             prior = list(list(type = "lf", n_latent = 1L,
                               obs_idx = sim$s_idx)),
-            max_iter = 5L, tol = 1e-4, n_threads = 1L
+            control = list(max_iter = 5L, tol = 1e-4, n_threads = 1L)
         ),
         "n_latent.*at least 2"
     )
@@ -144,7 +144,7 @@ test_that("lf block raises clean errors on bad spec", {
             responses = sim$responses,
             prior = list(list(type = "lf",
                               obs_idx = sim$s_idx)),
-            max_iter = 5L, tol = 1e-4, n_threads = 1L
+            control = list(max_iter = 5L, tol = 1e-4, n_threads = 1L)
         ),
         "n_latent"
     )

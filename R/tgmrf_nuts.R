@@ -91,7 +91,7 @@ tulpa_tgmrf_nuts <- function(y, n_trials, X, block,
     prior = pilot_block,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
     family = family, phi = phi,
-    max_iter = max_iter, tol = tol, n_threads = n_threads
+    control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
   )
   k_star <- which.max(pilot$log_marginal)
   theta_init <- as.numeric(pilot$theta_grid[k_star, ])

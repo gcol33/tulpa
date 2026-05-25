@@ -74,7 +74,7 @@ test_that("tgmrf AR1 matches built-in AR1 modes up to z-block recentering", {
            rho_grid = gr$rho)
     ),
     family = "poisson",
-    max_iter = 100L, tol = 1e-10
+    control = list(max_iter = 100L, tol = 1e-10)
   )
 
   theta_grid_matrix <- cbind(log_tau = log(gr$tau),
@@ -84,7 +84,7 @@ test_that("tgmrf AR1 matches built-in AR1 modes up to z-block recentering", {
     y = y, n_trials = rep(1L, n), X = X,
     prior = list(blk),
     family = "poisson",
-    max_iter = 100L, tol = 1e-10
+    control = list(max_iter = 100L, tol = 1e-10)
   )
 
   expect_equal(dim(user$modes), dim(builtin$modes))
@@ -121,7 +121,7 @@ test_that("tgmrf AR1 recovers theta on a Poisson sim", {
     y = y, n_trials = rep(1L, n), X = X,
     prior = list(blk),
     family = "poisson",
-    max_iter = 100L, tol = 1e-8
+    control = list(max_iter = 100L, tol = 1e-8)
   )
   expect_true(all(is.finite(fit$log_marginal)))
   # Posterior weight should sit in a sensible band around the truth in the
@@ -147,13 +147,13 @@ test_that("tulpa_nested_laplace accepts a bare tgmrf object as prior", {
     y = y, n_trials = rep(1L, n), X = X,
     prior = blk,                     # bare tgmrf, NOT list(blk)
     family = "poisson",
-    max_iter = 60L, tol = 1e-7
+    control = list(max_iter = 60L, tol = 1e-7)
   )
   fit_list <- tulpa_nested_laplace(
     y = y, n_trials = rep(1L, n), X = X,
     prior = list(blk),
     family = "poisson",
-    max_iter = 60L, tol = 1e-7
+    control = list(max_iter = 60L, tol = 1e-7)
   )
   expect_equal(fit_bare$log_marginal, fit_list$log_marginal, tolerance = 1e-10)
   expect_equal(fit_bare$theta_mean, fit_list$theta_mean, tolerance = 1e-10)
@@ -192,7 +192,7 @@ test_that("tgmrf inside a multi-block prior composes with an iid block", {
     y = y, n_trials = rep(1L, n), X = X,
     prior = list(blk_tgmrf, iid_blk),
     family = "poisson",
-    max_iter = 80L, tol = 1e-7
+    control = list(max_iter = 80L, tol = 1e-7)
   ))
   expect_true(all(is.finite(fit$log_marginal)))
   # 5x5 tgmrf grid * 3 sigma grid = 75 cells.

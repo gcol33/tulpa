@@ -121,7 +121,7 @@ test_that("joint HSGP (no svc) runs end-to-end via multi-block dispatch", {
     fit <- tulpa_nested_laplace_joint(
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = prior, copy = NULL,
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))
@@ -142,12 +142,12 @@ test_that("svc_column on a constant-1 X column reproduces the no-svc fit", {
     fit_plain <- tulpa_nested_laplace_joint(
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = list(.hsgp_block(sim, svc_column = NULL)),
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     fit_svc <- tulpa_nested_laplace_joint(
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = list(.hsgp_block(sim, svc_column = 2L)),
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_equal(as.numeric(fit_svc$log_marginal),
                  as.numeric(fit_plain$log_marginal),
@@ -167,12 +167,12 @@ test_that("svc_column on a varying X column shifts the HSGP fit", {
     fit_plain <- tulpa_nested_laplace_joint(
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = list(.hsgp_block(sim, svc_column = NULL)),
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     fit_svc <- tulpa_nested_laplace_joint(
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = list(.hsgp_block(sim, svc_column = 2L)),
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_true(all(is.finite(fit_svc$log_marginal)))
     # The fits must differ on at least one cell; the basis row-scaling
@@ -194,7 +194,7 @@ test_that("bad svc_column values raise clean errors before C++ entry", {
         tulpa_nested_laplace_joint(
             responses = list(occ = arms$a1, pos = arms$a2),
             prior = list(.hsgp_block(sim, svc_column = 99L)),
-            max_iter = 5L, tol = 1e-4, n_threads = 1L
+            control = list(max_iter = 5L, tol = 1e-4, n_threads = 1L)
         ),
         "exceeds ncol"
     )
@@ -202,7 +202,7 @@ test_that("bad svc_column values raise clean errors before C++ entry", {
         tulpa_nested_laplace_joint(
             responses = list(occ = arms$a1, pos = arms$a2),
             prior = list(.hsgp_block(sim, svc_column = 0L)),
-            max_iter = 5L, tol = 1e-4, n_threads = 1L
+            control = list(max_iter = 5L, tol = 1e-4, n_threads = 1L)
         ),
         "positive integer"
     )
@@ -260,7 +260,7 @@ test_that("multi-scale HSGP (two blocks) composes via the multi-block prior", {
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = list(block_long, block_short),
         copy = NULL,
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_s3_class(fit_multi, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit_multi$log_marginal)))
@@ -274,7 +274,7 @@ test_that("multi-scale HSGP (two blocks) composes via the multi-block prior", {
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = list(block_long),
         copy = NULL,
-        max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
     )
     expect_equal(length(fit_long$log_marginal), 4L)
     # Both fits exist; the multi-scale fit's max log_marginal must differ

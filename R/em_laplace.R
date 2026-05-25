@@ -225,7 +225,7 @@
     n_re_groups = n_re_groups,
     sigma_re    = sigma_re,
     family      = block$family,
-    n_threads   = as.integer(n_threads)
+    control     = list(n_threads = as.integer(n_threads))
   )
   if (!is.null(block$phi)) args$phi <- block$phi
   # Model-supplied likelihood (an external pointer to a tulpa::NestedLikelihood).

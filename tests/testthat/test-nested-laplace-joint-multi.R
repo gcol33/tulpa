@@ -243,7 +243,7 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
             prior = prior,
             copy = list(block = 1L, arm = "pos",
                         alpha_grid = c(0.5, 1.0, 1.5)),
-            max_iter = 30L, tol = 1e-5
+            control = list(max_iter = 30L, tol = 1e-5)
         )
     )
 

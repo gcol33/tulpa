@@ -157,7 +157,7 @@ skip_on_cran()
             responses = list(occ = sim$arm_occ, pos = sim$arm_pos),
             prior = prior,
             copy = list(block = 1L, arm = "pos", alpha_grid = alpha_grid),
-            adaptive_grid = FALSE, max_iter = 60L, tol = 1e-5
+            control = list(adaptive_grid = FALSE, max_iter = 60L, tol = 1e-5)
         )
     )
     bm1 <- fit$block_moments[[1L]]

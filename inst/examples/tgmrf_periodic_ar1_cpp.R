@@ -58,8 +58,7 @@ fit <- tulpa_nested_laplace(
   X        = X,
   prior    = blk,
   family   = "poisson",
-  max_iter = 100L,
-  tol      = 1e-8
+  control  = list(max_iter = 100L, tol = 1e-8)
 )
 
 # -- 4. Report ------------------------------------------------------------------

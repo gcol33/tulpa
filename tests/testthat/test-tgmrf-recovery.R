@@ -82,7 +82,7 @@ test_that("tgmrf periodic AR1 recovers theta across 30 seeds (median + coverage)
     fit <- tulpa_nested_laplace(
       y = sim$y, n_trials = rep(1L, n), X = sim$X,
       prior = blk, family = "poisson",
-      max_iter = 80L, tol = 1e-7
+      control = list(max_iter = 80L, tol = 1e-7)
     )
     hat[s, ]    <- as.numeric(fit$theta_mean)
     sd_hat[s, ] <- as.numeric(fit$theta_sd)

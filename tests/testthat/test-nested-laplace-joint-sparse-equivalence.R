@@ -100,13 +100,13 @@ test_that("sparse path matches dense on joint BYM2 with copy", {
 
     fit_dense  <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = copy_spec,
-        max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
-        force_sparse = FALSE
+        control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+                       force_sparse = FALSE)
     )
     fit_sparse <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = copy_spec,
-        max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
-        force_sparse = TRUE
+        control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+                       force_sparse = TRUE)
     )
     .expect_equiv_fits(fit_dense, fit_sparse)
 })
@@ -121,13 +121,13 @@ test_that("sparse path matches dense on joint ICAR (no copy)", {
 
     fit_dense  <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = NULL,
-        max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
-        force_sparse = FALSE
+        control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+                       force_sparse = FALSE)
     )
     fit_sparse <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = NULL,
-        max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
-        force_sparse = TRUE
+        control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+                       force_sparse = TRUE)
     )
     .expect_equiv_fits(fit_dense, fit_sparse)
 })
@@ -143,13 +143,13 @@ test_that("sparse path matches dense on joint CAR_proper", {
 
     fit_dense  <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = NULL,
-        max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
-        force_sparse = FALSE
+        control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+                       force_sparse = FALSE)
     )
     fit_sparse <- tulpa_nested_laplace_joint(
         responses = sim$responses, prior = prior, copy = NULL,
-        max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
-        force_sparse = TRUE
+        control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+                       force_sparse = TRUE)
     )
     .expect_equiv_fits(fit_dense, fit_sparse)
 })

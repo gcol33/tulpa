@@ -319,8 +319,8 @@ test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks
         prior     = prior,
         copy      = list(arm = "pos", alpha_grid = c(0.5, 1, 1.5)),
         phi_grid  = list(pos = phi_axis),
-        adaptive_grid = FALSE,
-        var_of_means_consistency = FALSE
+        control = list(adaptive_grid = FALSE,
+                       var_of_means_consistency = FALSE)
     )
 
     # Var-of-means SD across the full joint cartesian grid.

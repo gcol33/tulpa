@@ -102,7 +102,7 @@ tulpa_tgmrf_imh <- function(y, n_trials, X, block,
     prior = pilot_block,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
     family = family, phi = phi,
-    max_iter = max_iter, tol = tol, n_threads = n_threads
+    control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
   )
 
   # Strip block-prefix from joint axis names for the d-dim theta vector.
@@ -129,7 +129,7 @@ tulpa_tgmrf_imh <- function(y, n_trials, X, block,
         prior = blk,
         re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
         family = family, phi = phi,
-        max_iter = max_iter, tol = tol, n_threads = n_threads
+        control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
       ),
       error = function(e) NULL
     )
