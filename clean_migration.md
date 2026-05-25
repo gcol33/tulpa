@@ -167,10 +167,24 @@ live in a tulpaObs `LikelihoodSpec`. The family-enum inner loop is retired.
   nngp/tgmrf and the np==1 multi-block entry. Beta-prior log-density convention
   reconciled (spec path includes it; modes unchanged). Equivalence net: full
   suite 2421 pass / 0 fail, spec-block icar/bym2 now assert exact log-marginal.
-- **L4 — Route multi-block + joint through it** (`cpp_nested_laplace_multi`,
-  `cpp_nested_laplace_joint_multi`). Watch the `(sigma, alpha)` reparam and the
-  post-Newton phi-centering invariant (centering must shift each arm's
-  intercept — see global memory `feedback_centering_breaks_joint_logmarginal`).
+- **L4 — Route the joint multi-arm driver through it. ✅ DONE.** `a1e4f18`
+  functor-izes both joint Newton loops (`laplace_newton_solve_joint{,_sparse}_ll`
+  take a `JointLogLik`; family forwarders build the functor — pure refactor).
+  `32569bd` makes `cpp_nested_laplace_joint_multi` spec-driven: `JointArm` carries
+  an optional per-arm `LikelihoodSpec` bundle (+ `det_prob`); `build_joint_arm_specs`
+  resolves each arm to an `ArmSpecView` once per grid (built-in via
+  `builtin_family_spec`, else model-supplied), `arm_grad_hess` bridges
+  `eta_weights_fn -> GradHess` so all four scatters (dense / sparse / indexed-cached
+  / dense-basis) flow through one boundary, and `JointSpecLogLik` sums per-arm
+  `ll_double`. Family-enum forwarders + `JointFamilyLogLik` deleted. `sync_dispersion`
+  refreshes the built-in `phi` from the live arm after prep (phi_grid axis). The
+  `(sigma, alpha)` reparam and post-Newton phi-centering invariant are untouched
+  (see global memory `feedback_centering_breaks_joint_logmarginal`). Equivalence
+  net green: joint/spec suite 924 pass / 0 fail (phi-grid 14/0, multi-recovery
+  106/0). NOTE: the single-arm `cpp_nested_laplace_multi` already routes through
+  the spec at L3 (`fd29078`); this leaves the np>=2 multi-PROCESS spec path
+  (`laplace_spec.cpp`) as the remaining family-enum scatter — distinct from the
+  multi-ARM joint driver and out of L4's scope.
 - **L5 — Retire family-enum + det_prob.** Remove the nested kernel's
   `grad_hess_for_family`/`det_prob` usage; delete `det_prob` from tulpa's R + C++
   surface. Add the occupancy scaled-Bernoulli `LikelihoodSpec` to tulpaObs
