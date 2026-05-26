@@ -97,43 +97,73 @@
 }
 
 
-# Convert the front-door spatial spec (type + adjacency + a 1-based
-# `spatial_idx`, as assembled in tulpa()) into the `prior` block that
-# tulpa_nested_laplace() integrates over. Areal types only (see
-# .NL_FRONTDOOR_AREAL); intrinsic CAR ("car") shares the ICAR precision.
-# Reuses adjacency_to_csr_tulpa() -- the same 0-based CSR builder the
-# conditional spatial Laplace path uses -- so the two spatial entries share one
-# adjacency encoding. The nested driver consumes a 1-based per-obs spatial_idx
-# (matching the conditional path), so the resolved index passes straight
-# through. Continuous fields error here rather than silently fall back.
+# Convert the front-door spatial spec into the `prior` block that
+# tulpa_nested_laplace() integrates over. Two families:
+#  * Areal (icar/car/bym2/car_proper): built from type + adjacency + a 1-based
+#    per-obs `spatial_idx` (as assembled in tulpa()), reusing
+#    adjacency_to_csr_tulpa() -- the same 0-based CSR builder the conditional
+#    spatial Laplace path uses. Intrinsic CAR ("car") shares the ICAR precision.
+#  * Continuous gp/nngp: built from a validated tulpa_gp spec (validate_gp() has
+#    filled unique_coords / neighbor_info / obs_to_loc). The (coords, nn_order,
+#    spatial_idx) convention matches the production conditional path
+#    laplace_gp_at(): coords in ORIGINAL unique-location order, a 1-based
+#    nn_order permutation (the nested registry subtracts 1), and spatial_idx
+#    mapping each obs to its 1-based location. This is the indexing
+#    batch_nngp_scatter() expects (it reads coords(nn_order[i])).
+# The nested driver consumes a 1-based per-obs spatial_idx for both families.
+# Field types outside .NL_FRONTDOOR_NESTED error rather than silently fall back.
 .spatial_spec_to_nl_prior <- function(spatial) {
   type <- tolower(spatial$type)
-  if (!type %in% .NL_FRONTDOOR_AREAL) {
-    stop(sprintf(paste0(
-      "Nested-Laplace through tulpa() supports areal spatial fields (%s); the\n",
-      "continuous field '%s' is not yet routed here. Call tulpa_nested_laplace()\n",
-      "(gp/nngp/hsgp) or fit_spde() directly, or use mode = 'laplace' for a\n",
-      "conditional fit at a fixed hyperparameter."),
-      paste(.NL_FRONTDOOR_AREAL, collapse = ", "), spatial$type), call. = FALSE)
+
+  if (type %in% .NL_FRONTDOOR_AREAL) {
+    adj <- as.matrix(spatial$adjacency)
+    csr <- adjacency_to_csr_tulpa(adj)
+    backend <- if (type == "car") "icar" else type
+    prior <- list(
+      type            = backend,
+      spatial_idx     = as.integer(spatial$spatial_idx),
+      n_spatial_units = as.integer(nrow(adj)),
+      adj_row_ptr     = as.integer(csr$row_ptr),
+      adj_col_idx     = as.integer(csr$col_idx),
+      n_neighbors     = as.integer(csr$n_neighbors)
+    )
+    if (backend == "bym2") {
+      prior$scale_factor <- as.numeric(spatial$scale_factor %||% 1.0)
+    }
+    if (backend == "car_proper" && !is.null(spatial$rho_bounds)) {
+      prior$rho_bounds <- as.numeric(spatial$rho_bounds)
+    }
+    return(prior)
   }
-  adj <- as.matrix(spatial$adjacency)
-  csr <- adjacency_to_csr_tulpa(adj)
-  backend <- if (type == "car") "icar" else type
-  prior <- list(
-    type            = backend,
-    spatial_idx     = as.integer(spatial$spatial_idx),
-    n_spatial_units = as.integer(nrow(adj)),
-    adj_row_ptr     = as.integer(csr$row_ptr),
-    adj_col_idx     = as.integer(csr$col_idx),
-    n_neighbors     = as.integer(csr$n_neighbors)
-  )
-  if (backend == "bym2") {
-    prior$scale_factor <- as.numeric(spatial$scale_factor %||% 1.0)
+
+  if (type %in% .NL_FRONTDOOR_CONTINUOUS) {
+    ni <- spatial$neighbor_info
+    if (is.null(ni)) {
+      stop("Internal: continuous spatial spec is unvalidated (neighbor_info is ",
+           "NULL). tulpa() validates it via validate_gp(); pass spatial_gp(~x+y).",
+           call. = FALSE)
+    }
+    n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
+    return(list(
+      type        = "nngp",
+      coords      = as.matrix(spatial$unique_coords),
+      nn_idx      = as.matrix(ni$nn_idx),
+      nn_dist     = as.matrix(ni$nn_dist),
+      nn_order    = as.integer(ni$nn_order %||% seq_len(n_spatial)),
+      n_spatial   = as.integer(n_spatial),
+      nn          = as.integer(spatial$nn %||% ncol(ni$nn_idx)),
+      cov_type    = gp_cov_type_for_laplace(spatial),
+      spatial_idx = as.integer(spatial$obs_to_loc %||% seq_len(n_spatial))
+    ))
   }
-  if (backend == "car_proper" && !is.null(spatial$rho_bounds)) {
-    prior$rho_bounds <- as.numeric(spatial$rho_bounds)
-  }
-  prior
+
+  stop(sprintf(paste0(
+    "Nested-Laplace through tulpa() supports areal (%s) and NNGP/GP (%s)\n",
+    "spatial fields; '%s' is not yet routed here. Call tulpa_nested_laplace()\n",
+    "(hsgp) or fit_spde() (spde) directly, or use mode = 'laplace' for a\n",
+    "conditional fit at a fixed hyperparameter."),
+    paste(.NL_FRONTDOOR_AREAL, collapse = ", "),
+    paste(.NL_FRONTDOOR_CONTINUOUS, collapse = ", "), spatial$type), call. = FALSE)
 }
 
 
@@ -462,23 +492,27 @@
 #'   gaussian, size for neg_binomial_2, precision for beta).
 #' @param beta_prior Optional `list(mean, sd)` Gaussian prior on the fixed
 #'   effects.
-#' @param spatial Optional spatial-field spec, paired with a `spatial(col)` term
-#'   in `formula` that names the per-observation spatial-unit column. A list with
-#'   `type` (`"icar"`, `"bym2"`, `"car"`, `"car_proper"`, `"spde"`, `"gp"`) and
-#'   the structure's inputs (e.g. `adjacency` for areal types). The mode selects
-#'   how the spatial hyperparameter is handled:
-#'   * `mode = "nested_laplace"`, `"structured"`, and `"auto"` (for an areal
-#'     field that is not the binomial Gibbs case below) **integrate** the
-#'     hyperparameter via [tulpa_nested_laplace()] -- the designed Tier 2 path,
-#'     mirroring `latent(...)` blocks. Areal types only (`icar`/`car`/`bym2`/
-#'     `car_proper`); continuous fields call [tulpa_nested_laplace()] / `fit_spde()`
-#'     directly.
+#' @param spatial Optional spatial-field spec. How it is addressed depends on the
+#'   field family:
+#'   * **Areal** (`"icar"`, `"car"`, `"bym2"`, `"car_proper"`): a list with `type`
+#'     and `adjacency`, paired with a `spatial(col)` term in `formula` naming the
+#'     per-observation unit column. Term and spec must be supplied together.
+#'   * **Continuous** (`spatial_gp(~ lon + lat)`, an NNGP field): the spec object
+#'     carries the coordinate columns, so **no** `spatial(col)` term is used --
+#'     observations are mapped to locations from their coordinates.
+#'
+#'   The mode selects how the spatial hyperparameter is handled:
+#'   * `mode = "nested_laplace"`, `"structured"`, and `"auto"` (when not the
+#'     binomial Gibbs case below) **integrate** the hyperparameter via
+#'     [tulpa_nested_laplace()] -- the designed Tier 2 path, mirroring
+#'     `latent(...)` blocks. Supported field types: areal `icar`/`car`/`bym2`/
+#'     `car_proper` and continuous `gp`/`nngp`. HSGP and SPDE call
+#'     [tulpa_nested_laplace()] / [fit_spde()] directly for now.
 #'   * `mode = "laplace"` **conditions** on a fixed hyperparameter via
-#'     [tulpa_laplace()] (the cheap explicit fit; supports `spde`/`gp` too).
+#'     [tulpa_laplace()] (the cheap explicit fit).
 #'   * `mode = "gibbs"` routes the areal `icar`/`bym2` cases through the binomial
 #'     Polya-Gamma samplers (Tier 1 exact); `mode = "auto"` picks this for a
 #'     binomial `icar`/`bym2` field.
-#'   The `spatial(col)` term and `spatial=` must be supplied together.
 #' @param temporal Reserved: temporal terms are not yet routed through `tulpa()`.
 #' @param control Optional list of backend tuning arguments (e.g. `n_iter`,
 #'   `warmup`, `epsilon` for `mala`; `n_draws` for `pathfinder`).
@@ -512,40 +546,68 @@ tulpa <- function(formula, data,
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
 
-  # Spatial special term. A `spatial(col)` term in the formula names the
-  # per-observation spatial-unit column; the structure (type, adjacency,
-  # coords) arrives via the `spatial=` argument. The two must appear together.
-  # Resolve the named column to a 1-based unit index and store it on the spec
-  # as `spatial_idx` -- the value the spatial dispatchers consume.
+  # Spatial field. The structure arrives via the `spatial=` argument; how it is
+  # addressed depends on the field family:
+  #  * Areal (icar/car/bym2/car_proper): a `spatial(col)` term names the
+  #    per-observation unit column, resolved to a 1-based `spatial_idx` against
+  #    the adjacency. Term and spec must appear together.
+  #  * Continuous gp/nngp: a spatial_gp(~lon+lat) spec carries the coordinate
+  #    columns; obs -> location is derived from the coordinates, so NO
+  #    spatial(col) term is used. validate_gp() resolves the unique locations,
+  #    obs_to_loc map, and NNGP neighbour structure onto the spec.
   spatial_spec <- spatial
   has_spatial  <- !is.null(parsed$spatial_var) || !is.null(spatial_spec)
   spatial_type <- NULL
   if (has_spatial) {
-    if (is.null(parsed$spatial_var)) {
-      stop("`spatial=` was supplied but the formula has no spatial(col) term ",
-           "naming the per-observation spatial unit. Add e.g. `+ spatial(region)`.",
-           call. = FALSE)
-    }
     if (is.null(spatial_spec)) {
       stop(sprintf(paste0(
-        "Formula has a spatial(%s) term but `spatial=` (the structure spec, e.g.\n",
-        "list(type = 'icar', adjacency = W)) was not supplied."),
+        "Formula has a spatial(%s) term but the structure spec `spatial=` was ",
+        "not supplied (e.g. list(type = 'icar', adjacency = W) or ",
+        "spatial_gp(~ lon + lat))."),
         parsed$spatial_var), call. = FALSE)
     }
     if (is.null(spatial_spec$type)) {
       stop("`spatial$type` is required (e.g. 'icar', 'bym2', 'car', 'spde', 'gp').",
            call. = FALSE)
     }
-    if (!parsed$spatial_var %in% names(data)) {
-      stop("spatial(", parsed$spatial_var, ") column not found in data.",
+    spatial_type <- spatial_spec$type
+    sp_lc <- tolower(spatial_type)
+    if (sp_lc %in% .NL_FRONTDOOR_CONTINUOUS) {
+      # Coordinate-addressed field: coords come from the spec; no spatial(col)
+      # term. validate_gp() fills unique_coords / obs_to_loc / neighbor_info.
+      if (!is.null(parsed$spatial_var)) {
+        stop("A continuous spatial field (", spatial_type, ") is addressed by ",
+             "its coordinate columns in the spec; drop the spatial(",
+             parsed$spatial_var, ") term from the formula.", call. = FALSE)
+      }
+      if (!inherits(spatial_spec, "tulpa_gp")) {
+        stop("A continuous spatial field must be a spatial_gp(~ lon + lat) spec ",
+             "object (it carries the coordinate columns); got a bare list.",
+             call. = FALSE)
+      }
+      spatial_spec <- validate_gp(spatial_spec, data)
+    } else if (sp_lc %in% .NL_FRONTDOOR_AREAL) {
+      # Areal field: spatial(col) names the per-observation unit.
+      if (is.null(parsed$spatial_var)) {
+        stop("`spatial=` was supplied but the formula has no spatial(col) term ",
+             "naming the per-observation spatial unit. Add e.g. `+ spatial(region)`.",
+             call. = FALSE)
+      }
+      if (!parsed$spatial_var %in% names(data)) {
+        stop("spatial(", parsed$spatial_var, ") column not found in data.",
+             call. = FALSE)
+      }
+      n_units <- if (!is.null(spatial_spec$adjacency)) {
+        nrow(as.matrix(spatial_spec$adjacency))
+      } else NULL
+      spatial_spec$spatial_idx <-
+        .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
+    } else {
+      stop("Spatial type '", spatial_type, "' is not yet routed through tulpa(). ",
+           "Call its fitter directly (fit_spde() for SPDE, tulpa_nested_laplace() ",
+           "for HSGP), or use an areal (icar/bym2/car/car_proper) or gp field.",
            call. = FALSE)
     }
-    n_units <- if (!is.null(spatial_spec$adjacency)) {
-      nrow(as.matrix(spatial_spec$adjacency))
-    } else NULL
-    spatial_spec$spatial_idx <-
-      .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
-    spatial_type <- spatial_spec$type
   }
 
   # Temporal terms are not yet routed through tulpa() (planned -- see

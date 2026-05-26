@@ -248,13 +248,16 @@ test_that("nested_laplace bym2 packs the scale factor and wires through", {
   expect_true(all(is.finite(fit$theta_mean)))
 })
 
-test_that("nested_laplace rejects a continuous spatial field with guidance", {
+test_that("a continuous type given with an areal spatial(col) term is rejected", {
+  # A continuous field is addressed by coordinates, not a unit column, so a
+  # spatial(col) term alongside a continuous type is contradictory. (Genuinely
+  # continuous routing -- gp/nngp via spatial_gp() -- lives in
+  # test-tulpa-spatial-gp-frontdoor.R; hsgp/spde "not yet routed" too.)
   s <- sim_areal_binomial(reps = 1L)
   expect_error(
     tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
-          n_trials = s$data$ntrials,
-          spatial = list(type = "gp", adjacency = s$W),
+          n_trials = s$data$ntrials, spatial = list(type = "gp"),
           mode = "nested_laplace"),
-    "areal spatial fields"
+    "coordinate columns"
   )
 })
