@@ -1,16 +1,11 @@
-# GMRF latent block in the spec-driven Laplace solver (L2 of the solver
-# unification, see dev_notes/plans/clean_migration.md). cpp_laplace_spec_test_icar drives the
-# generalized laplace_mode_spec_dense_impl with a single ICAR LatentBlock built
-# exactly as cpp_nested_laplace_icar builds it (same add_icar_prior /
-# log_prior_icar / center_effects callbacks) and a builtin_family_spec
-# likelihood. So the spec-driven inner solve must reproduce the family-enum
-# nested kernel's inner solve at a single hyperparameter cell:
+# Single-point ICAR Laplace (cpp_laplace_fit_spatial) vs the nested ICAR kernel
+# at one hyperparameter cell. Since B2-live, the single-point export builds the
+# same ICAR LatentBlock and routes through the same unified spec inner solve as
+# the nested grid kernel (cpp_nested_laplace_icar), so at a tau_grid of length 1:
 #   * the mode must match (full gradient: likelihood cross-terms + block prior
 #     gradient + centering),
-#   * the Laplace log-marginal must match exactly. The nested kernel now routes
-#     its inner solve through the same spec path (L3), so both include the
-#     beta-prior log-density -- the convention gap the earlier fixtures flagged
-#     is reconciled. Exact log-marginal agreement also pins the shared
+#   * the Laplace log-marginal must match exactly -- both fold in the beta-prior
+#     log-density (the L3-reconciled convention), which also pins the shared
 #     log-likelihood and the shared Hessian (via log|H|).
 
 # Chain graph on K nodes: s ~ s-1, s+1. CSR adjacency with 0-based col idx.
@@ -24,12 +19,11 @@ build_chain_adj <- function(K) {
   )
 }
 
-# Spec mode/log-marginal must match the nested ICAR kernel at one tau cell.
+# Single-point mode/log-marginal must match the nested ICAR kernel at one tau cell.
 expect_icar_match <- function(family, y, n_trials, X, spatial_idx, K, adj,
                               tau_spatial, phi = 1.0,
                               re_idx = integer(0), n_re_groups = 0L,
-                              sigma_re = 1.0, sigma_beta = 100,
-                              tol = 1e-5) {
+                              sigma_re = 1.0, tol = 1e-5) {
   ref <- tulpa:::cpp_nested_laplace_icar(
     y = y, n = n_trials, X = X,
     re_idx = if (n_re_groups > 0L) as.numeric(re_idx) else numeric(0),
@@ -40,25 +34,24 @@ expect_icar_match <- function(family, y, n_trials, X, spatial_idx, K, adj,
     tau_grid = tau_spatial, family = family, phi = phi,
     max_iter = 300L, tol = 1e-11, n_threads = 1L
   )
-  spec <- tulpa:::cpp_laplace_spec_test_icar(
+  # cpp_laplace_fit_spatial fixes the beta ridge at sigma_beta = 100 internally,
+  # matching the nested kernel's; re_idx is the numeric per-obs group index.
+  fit <- tulpa:::cpp_laplace_fit_spatial(
     y = y, n = n_trials, X = X,
-    re_idx = if (n_re_groups > 0L) as.integer(re_idx) else integer(0),
+    re_idx = if (n_re_groups > 0L) as.numeric(re_idx) else numeric(0),
     n_re_groups = n_re_groups, sigma_re = sigma_re,
     spatial_idx = as.integer(spatial_idx), n_spatial_units = K,
     adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
     n_neighbors = adj$n_neighbors,
-    tau_spatial = tau_spatial, sigma_beta = sigma_beta,
+    tau_spatial = tau_spatial,
     family = family, phi = phi, max_iter = 300L, tol = 1e-11, n_threads = 1L
   )
 
-  expect_true(spec$converged, info = paste0(family, " ICAR: converged"))
+  expect_true(fit$converged, info = paste0(family, " ICAR: converged"))
   ref_mode <- as.numeric(ref$modes[1, ])
-  expect_equal(spec$mode, ref_mode, tolerance = tol,
+  expect_equal(fit$mode, ref_mode, tolerance = tol,
                info = paste0(family, " ICAR: mode"))
-
-  # L3: the nested kernel routes through the same spec inner solve, so it now
-  # includes the beta-prior log-density too -- the log-marginals match exactly.
-  expect_equal(spec$log_marginal, ref$log_marginal[1],
+  expect_equal(fit$log_marginal, ref$log_marginal[1],
                tolerance = tol,
                info = paste0(family, " ICAR: log_marginal"))
 }

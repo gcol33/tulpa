@@ -1,11 +1,13 @@
-# LikelihoodSpec-driven Laplace path. Cross-checks the new
-# tulpa_laplace_spec_dense entry against the family-enum reference
-# (cpp_laplace_fit, family = "gaussian") on a small simulated dataset.
-# Both paths should land on the same posterior mode within Newton
-# tolerance — that proves the spec contract computes the same answer
-# the proven internal Laplace path does.
+# LikelihoodSpec-driven Laplace path. cpp_laplace_spec_test_gaussian drives the
+# spec solver with a hand-written Gaussian LikelihoodSpec (a stand-in for a
+# downstream package's custom likelihood, NOT the built-in family adapter);
+# cross-checking it against cpp_laplace_fit (family = "gaussian", the built-in
+# adapter) proves an arbitrary user spec lands on the same posterior mode as the
+# shipped family math. The multi-RE blocks below check the spec solver against a
+# closed-form Gaussian posterior; the np == 2 fixtures exercise the multi-process
+# coupling no single-response export reaches.
 
-test_that("spec-driven Laplace matches family-enum reference for Gaussian + iid RE", {
+test_that("custom Gaussian spec matches the built-in family path for Gaussian + iid RE", {
   set.seed(42L)
   N <- 200L
   p <- 3L
@@ -20,8 +22,9 @@ test_that("spec-driven Laplace matches family-enum reference for Gaussian + iid 
   eta <- as.numeric(X %*% beta_true) + u_true[re_idx]
   y <- eta + rnorm(N, sd = phi)
 
-  # Reference: family-enum Laplace (binomial path also exercises the same
-  # solver — gaussian uses identity link with the same scatter helpers).
+  # Reference: the built-in Gaussian family through cpp_laplace_fit (identity
+  # link), itself spec-driven since B2-live -- so this pins a custom user spec
+  # against the shipped family closed form.
   ref <- tulpa:::cpp_laplace_fit(
     y         = y,
     n         = rep(1L, N),
