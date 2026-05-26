@@ -462,3 +462,74 @@ occupancy test). **tulpaGlmm is under a large concurrent external rewrite** of
 path); the ST + A temporal-shim call-site updates (`get_nested_laplace_temporal_fn`)
 are present in that working tree but entangled in the external WIP, so tulpaGlmm's
 rebuild/commit against ABI 27 is owned by that effort, not this one.
+
+---
+
+## 11. Follow-up after B2 (2026-05-26): fold the spatial x temporal driver onto the unified inner solve
+
+`unrot` (re-run after B2) flags the nested-Laplace spatial-family clones as the
+top remaining CRITICAL clusters: `cpp_nested_laplace_st_*` (5, J=86%),
+`tulpa_nested_laplace_st_*` (5 shims), `tulpa_nested_laplace_*` (8 shims). The
+boilerplate (`pack_laplace_shim_inputs`, `marshal_adj`, `copy_nested_laplace_
+result`) is already extracted and the per-family C-ABI signatures are genuinely
+heterogeneous (icar: tau; car: tau+rho; bym2: sigma+rho+scale; nngp: coords+nn;
+hsgp: basis+eig) -- those shims cannot collapse into one entry. The real rot is
+one layer down.
+
+**Key finding -- B2's "only one inner Newton remains" was scoped, not total.**
+The keystone (L) unified the single-arm `run_multi_block_nested_laplace` and the
+joint multi-arm `cpp_nested_laplace_joint_multi` onto `spec_inner_solve`. But the
+**spatio-temporal dispatch path** (`run_spatial_x_indexed_temporal_nested_laplace`
++ its `_sparse_impl`, in `nested_laplace.cpp`) is a **third inner solve** that L
+left out of scope (L2 was explicitly "INDEXED_SINGLE blocks ... exactly
+run_multi_block's capability"). It still:
+- runs its own Newton via `laplace_newton_solve_sparse` with a hand-rolled
+  `nl_scatter_obs_spatial_x_indexed_temporal{,_sparse,_cached}` scatter that calls
+  `grad_hess_for_family` **directly** (the family enum, not the spec boundary);
+- carries a parallel block representation, `struct SpatialBlockOps`, built by five
+  `make_<x>_spatial_ops` factories -- duplicating the per-family block math that
+  the pure-spatial entries express as `tulpa::LatentBlock`;
+- carries an ST-specific sparsity cache (`st_scatter_index_cache`).
+
+**Why it folds cleanly (verified by reading, 2026-05-26).** Spatial x temporal is
+structurally just two INDEXED_SINGLE `LatentBlock`s sharing observations -- the
+same shape BYM2 already runs through `run_multi_block_nested_laplace` (two blocks),
+except the two blocks index by different factors (spatial_idx vs temporal_idx).
+`scatter_spec` (`laplace_spec.cpp:746-796`) assembles the latent-block Hessian
+generically: each block resolves its **own** `blk.idx(i, 0)` and the **block x
+block cross term** (`:788-794`) uses each block's independently-resolved index --
+there is no assumption the two blocks share an index (BYM2 just happens to). And
+`run_multi_block_nested_laplace` already routes to sparse Cholesky at
+`n_x >= SPARSE_THRESHOLD`, iterates blocks with per-block `idx` for the predictive
+variance (`nested_laplace_multi.h:253`), and supports `store_Q` / cheap-pass.
+`LatentBlock` carries the sparse path (`add_prior_pattern` / `add_prior_sparse`,
+`latent_block.h:225-235`). The family-enum vs spec weight equality is already
+proven (L1: `builtin_family_spec` wraps `grad_hess_for_family`), so any mismatch
+isolates block wiring. For np==1, single-DOF spatial + single-DOF temporal, the ST
+scatter's `gh.neg_hess * w_a * w_b` (w=1) equals `scatter_spec`'s `d_a*d_b*s_hess`
+(d=1) exactly.
+
+This is the genuine continuation of goal #4 ("retire the family-enum inner loop"):
+after this phase there is **one** inner Laplace solve (`spec_inner_solve`) for every
+nested path, single-arm / multi-arm / spatial / temporal / spatio-temporal.
+
+### Family landscape (drives the sub-steps)
+
+| Family | pure-spatial driver | ST driver (today) |
+|---|---|---|
+| icar / car_proper / bym2 (areal) | `run_multi_block_nested_laplace` (dense, spec-driven; **inline** LatentBlock build) | `run_spatial_x_indexed_temporal_*` (own scatter, `SpatialBlockOps`) |
+| nngp / hsgp | `run_multi_block_nested_laplace_joint_sparse_impl` (`make_nngp_block` / `make_hsgp_block`) | `run_spatial_x_indexed_temporal_*` **dense only** (`make_{nngp,hsgp}_spatial_ops`; sparse fields empty) |
+
+Note the latent inconsistency the collapse also fixes: the inline pure-spatial ICAR
+`LatentBlock` sets only the **dense** prior callbacks, while `make_icar_spatial_ops`
+also has the sparse ones -- so pure-spatial ICAR at large `n_spatial` is dense where
+it need not be. One block factory (with sparse) used by both paths cures it.
+
+### Plan (verify + commit each; the 24 `test-nested-laplace*.R` files are the net)
+
+| Step | What | Status |
+|---|---|---|
+| C0 | One `make_<x>_latent_block()` per areal family (icar/car_proper/bym2) returning `LatentBlock`(s) with **all** callbacks set (dense + sparse `add_prior_pattern`/`add_prior_sparse` ported from `make_<x>_spatial_ops`, + car_proper's `prep` log\|Q(rho)\|). Rewrite pure-spatial `cpp_nested_laplace_{icar,car_proper,bym2}` to build via these. Behaviour-preserving (modes/log-marginal identical; ICAR now sparse-capable). Single source of truth for areal spatial blocks. | TODO |
+| C1 | Rewrite `cpp_nested_laplace_st_{icar,car_proper,bym2}` as `run_multi_block_nested_laplace(blocks = [spatial block(s) from C0, temporal block from make_temporal_ops])`. Delete dense `run_spatial_x_indexed_temporal_nested_laplace`, `nl_scatter_obs_spatial_x_indexed_temporal{,_cached}`, `nl_compute_eta_base_x_indexed_temporal`, the `st_scatter_index_cache`, and `make_{icar,car_proper,bym2}_spatial_ops`. Kills the family-enum ST scatter for areal. Convert any equivalence-vs-old-path test to recovery (B2's test-shift discipline). | TODO |
+| C2 | Rewrite `cpp_nested_laplace_st_{nngp,hsgp}` onto `run_multi_block_nested_laplace_joint_sparse_impl(blocks = [make_nngp_block/make_hsgp_block, temporal block])`. Delete `make_{nngp,hsgp}_spatial_ops`, the sparse `run_spatial_x_indexed_temporal_nested_laplace_sparse_impl`, the dispatch wrapper, and finally `struct SpatialBlockOps`. (Moves ST nngp/hsgp dense -> sparse, an improvement.) | TODO |
+| C-clean | Remove orphaned helpers; `Rcpp::compileAttributes()` + `devtools::document()`; full nested/joint/spec suite under `NOT_CRAN=true`. No `TULPA_ABI_VERSION` bump unless a shim signature changes (the ST shims stay; their cpp bodies just rebuild blocks differently). | TODO |
