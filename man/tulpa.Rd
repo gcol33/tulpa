@@ -13,6 +13,8 @@ tulpa(
   n_trials = NULL,
   phi = 1,
   beta_prior = NULL,
+  spatial = NULL,
+  temporal = NULL,
   control = list(),
   ...
 )
@@ -40,6 +42,17 @@ gaussian, size for neg_binomial_2, precision for beta).}
 
 \item{beta_prior}{Optional \code{list(mean, sd)} Gaussian prior on the fixed
 effects.}
+
+\item{spatial}{Optional spatial-field spec, paired with a \code{spatial(col)} term
+in \code{formula} that names the per-observation spatial-unit column. A list with
+\code{type} (\code{"icar"}, \code{"bym2"}, \code{"car"}, \code{"spde"}, \code{"gp"}) and the structure's
+inputs (e.g. \code{adjacency} for areal types). \code{mode = "laplace"} routes it
+through \code{\link[=tulpa_laplace]{tulpa_laplace()}}; \code{mode = "gibbs"} routes the areal \code{icar}/\code{bym2}
+cases through the binomial Polya-Gamma samplers; \code{mode = "auto"} picks Gibbs
+for a binomial \code{icar}/\code{bym2} field. The \code{spatial(col)} term and \verb{spatial=}
+must be supplied together.}
+
+\item{temporal}{Reserved: temporal terms are not yet routed through \code{tulpa()}.}
 
 \item{control}{Optional list of backend tuning arguments (e.g. \code{n_iter},
 \code{warmup}, \code{epsilon} for \code{mala}; \code{n_draws} for \code{pathfinder}).}

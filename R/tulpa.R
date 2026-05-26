@@ -66,12 +66,43 @@
 }
 
 
+# Resolve a spatial(col) / temporal(col) column to 1-based contiguous unit
+# indices for the per-observation field map. Integer/numeric columns are taken
+# as already-1-based ids (matching adjacency row / coordinate order); factor or
+# character columns are factored and the level order then defines the unit
+# order (which must align with the adjacency / coordinate spec). `n_units`, when
+# known (areal adjacency), bounds the index so an out-of-range id fails in R
+# rather than indexing out of bounds in the C++ kernel.
+.resolve_unit_index <- function(col, var, n_units = NULL) {
+  if (is.factor(col)) {
+    idx <- as.integer(col)
+  } else if (is.numeric(col) && !anyNA(col) && all(col == as.integer(col))) {
+    idx <- as.integer(col)
+  } else {
+    idx <- as.integer(as.factor(col))
+  }
+  if (anyNA(idx)) {
+    stop("Spatial/temporal index column '", var, "' has missing values.",
+         call. = FALSE)
+  }
+  if (min(idx) < 1L) {
+    stop("Spatial/temporal index column '", var,
+         "' must resolve to 1-based positive integers.", call. = FALSE)
+  }
+  if (!is.null(n_units) && max(idx) > n_units) {
+    stop("Spatial index column '", var, "' references unit ", max(idx),
+         " but the adjacency has only ", n_units, " unit(s).", call. = FALSE)
+  }
+  idx
+}
+
+
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
-                               latent_blocks = list()) {
+                               latent_blocks = list(), spatial = NULL) {
   input <- BACKEND_REGISTRY[[backend]]$input
 
   if (input == "nested") {
@@ -175,6 +206,35 @@
       )))
     }
     if (backend == "laplace") {
+      if (!is.null(spatial)) {
+        # Spatial Laplace: route the field spec through tulpa_laplace(spatial=),
+        # which dispatches on spatial$type (icar/car/bym2/spde/gp). At most one
+        # random-intercept (1 | g) term may ride alongside the field -- the
+        # spatial solvers consume a single RE block (re_list[[1]]); richer RE
+        # structure is not supported here. beta_prior / offset are not threaded
+        # through the spatial solvers, so reject them loudly rather than drop.
+        re <- bundle$re_terms %||% list()
+        if (length(re) > 1L || (length(re) == 1L && (re[[1]]$n_coefs %||% 1L) != 1L)) {
+          stop("Spatial Laplace supports at most one random-intercept (1 | g) ",
+               "term alongside the spatial field; drop the extra RE term(s).",
+               call. = FALSE)
+        }
+        if (!is.null(beta_prior)) {
+          stop("`beta_prior` is not supported on the spatial Laplace path; the ",
+               "spatial solvers use a built-in weak fixed-effect prior. Drop ",
+               "`beta_prior`, or use a sampler for a custom prior under a field.",
+               call. = FALSE)
+        }
+        if (!is.null(bundle$offset)) {
+          stop("offset() terms are not yet supported on the spatial Laplace ",
+               "path through tulpa().", call. = FALSE)
+        }
+        return(list(
+          y = bundle$y, n_trials = n_trials, X = bundle$X,
+          re_list = .bundle_to_re_list(bundle, sigma_re),
+          family = family, phi = phi, spatial = spatial
+        ))
+      }
       return(list(
         y = bundle$y, n_trials = n_trials, X = bundle$X,
         re_list = .bundle_to_re_list(bundle, sigma_re),
@@ -184,13 +244,29 @@
     }
     if (backend == "gibbs") {
       re <- bundle$re_terms %||% list()
-      if (length(re) != 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
+      # The spatial Polya-Gamma samplers carry the iid random-intercept block
+      # alongside the field, so 0 or 1 `(1 | g)` term is allowed; the plain
+      # Gibbs path requires exactly one. Either way the term must be a single
+      # random intercept (no slopes).
+      if (!is.null(spatial)) {
+        if (length(re) > 1L || (length(re) == 1L && (re[[1]]$n_coefs %||% 1L) != 1L)) {
+          stop("Spatial Gibbs supports at most one random-intercept (1 | g) ",
+               "term alongside the spatial field.", call. = FALSE)
+        }
+      } else if (length(re) != 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
         stop("Gibbs (tulpa_gibbs) supports exactly one random-intercept term ",
              "(a single `(1 | g)`). Use a logpost backend (mode = 'mala') for ",
              "richer RE structure, or call tulpa_gibbs() directly.",
              call. = FALSE)
       }
-      if (!family %in% c("binomial", "neg_binomial_2")) {
+      if (!is.null(spatial)) {
+        if (family != "binomial") {
+          stop(sprintf(paste0(
+            "Spatial Gibbs supports family = 'binomial' only; got '%s'. Use ",
+            "mode = 'laplace' for other families under a spatial field."), family),
+            call. = FALSE)
+        }
+      } else if (!family %in% c("binomial", "neg_binomial_2")) {
         stop(sprintf(paste0(
           "Gibbs (tulpa_gibbs) supports family 'binomial' or 'neg_binomial_2'; ",
           "got '%s'. Use mode = 'laplace' or a logpost backend."), family),
@@ -200,14 +276,22 @@
         warning("Gibbs uses a mean-zero Gaussian prior on the fixed effects; ",
                 "`beta_prior$mean` is ignored.", call. = FALSE)
       }
+      # One `(1 | g)` -> that grouping; none -> a degenerate 0-group block that
+      # the sampler treats as no iid RE (the spatial-only case).
+      if (length(re) == 1L) {
+        group <- as.integer(re[[1]]$group_idx); n_groups <- re[[1]]$n_groups
+      } else {
+        group <- rep(1L, bundle$n_obs); n_groups <- 0L
+      }
       # tulpa_gibbs samples the RE sd (prior_sigma_scale); `sigma_re` is unused.
       return(list(
         y = bundle$y,
         n_trials = n_trials %||% rep(1L, bundle$n_obs),
         X = bundle$X,
-        group = as.integer(re[[1]]$group_idx),
-        n_groups = re[[1]]$n_groups,
+        group = group,
+        n_groups = n_groups,
         family = family,
+        spatial = spatial,
         iter = control$iter %||% control$n_iter %||% 2000L,
         warmup = control$warmup %||% 1000L,
         prior_beta_sd = beta_prior$sd %||% 10.0,
@@ -324,6 +408,15 @@
 #'   gaussian, size for neg_binomial_2, precision for beta).
 #' @param beta_prior Optional `list(mean, sd)` Gaussian prior on the fixed
 #'   effects.
+#' @param spatial Optional spatial-field spec, paired with a `spatial(col)` term
+#'   in `formula` that names the per-observation spatial-unit column. A list with
+#'   `type` (`"icar"`, `"bym2"`, `"car"`, `"spde"`, `"gp"`) and the structure's
+#'   inputs (e.g. `adjacency` for areal types). `mode = "laplace"` routes it
+#'   through [tulpa_laplace()]; `mode = "gibbs"` routes the areal `icar`/`bym2`
+#'   cases through the binomial Polya-Gamma samplers; `mode = "auto"` picks Gibbs
+#'   for a binomial `icar`/`bym2` field. The `spatial(col)` term and `spatial=`
+#'   must be supplied together.
+#' @param temporal Reserved: temporal terms are not yet routed through `tulpa()`.
 #' @param control Optional list of backend tuning arguments (e.g. `n_iter`,
 #'   `warmup`, `epsilon` for `mala`; `n_draws` for `pathfinder`).
 #' @param ... Reserved for future use.
@@ -341,6 +434,8 @@ tulpa <- function(formula, data,
                   n_trials = NULL,
                   phi = 1.0,
                   beta_prior = NULL,
+                  spatial = NULL,
+                  temporal = NULL,
                   control = list(),
                   ...) {
   if (is.null(.FAMILY_OPS[[family]])) {
@@ -354,10 +449,54 @@ tulpa <- function(formula, data,
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
 
+  # Spatial special term. A `spatial(col)` term in the formula names the
+  # per-observation spatial-unit column; the structure (type, adjacency,
+  # coords) arrives via the `spatial=` argument. The two must appear together.
+  # Resolve the named column to a 1-based unit index and store it on the spec
+  # as `spatial_idx` -- the value the spatial dispatchers consume.
+  spatial_spec <- spatial
+  has_spatial  <- !is.null(parsed$spatial_var) || !is.null(spatial_spec)
+  spatial_type <- NULL
+  if (has_spatial) {
+    if (is.null(parsed$spatial_var)) {
+      stop("`spatial=` was supplied but the formula has no spatial(col) term ",
+           "naming the per-observation spatial unit. Add e.g. `+ spatial(region)`.",
+           call. = FALSE)
+    }
+    if (is.null(spatial_spec)) {
+      stop(sprintf(paste0(
+        "Formula has a spatial(%s) term but `spatial=` (the structure spec, e.g.\n",
+        "list(type = 'icar', adjacency = W)) was not supplied."),
+        parsed$spatial_var), call. = FALSE)
+    }
+    if (is.null(spatial_spec$type)) {
+      stop("`spatial$type` is required (e.g. 'icar', 'bym2', 'car', 'spde', 'gp').",
+           call. = FALSE)
+    }
+    if (!parsed$spatial_var %in% names(data)) {
+      stop("spatial(", parsed$spatial_var, ") column not found in data.",
+           call. = FALSE)
+    }
+    n_units <- if (!is.null(spatial_spec$adjacency)) {
+      nrow(as.matrix(spatial_spec$adjacency))
+    } else NULL
+    spatial_spec$spatial_idx <-
+      .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
+    spatial_type <- spatial_spec$type
+  }
+
+  # Temporal terms are not yet routed through tulpa() (planned -- see
+  # dev_notes/plan_gibbs_spatial_frontdoor.md). Fail loudly rather than drop.
+  if (!is.null(parsed$temporal_var) || !is.null(temporal)) {
+    stop("Temporal terms are not yet routed through tulpa(). Call the temporal ",
+         "fitter directly for now.", call. = FALSE)
+  }
+
   fam_obj <- list(name = family, distribution = family)
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = FALSE, has_temporal = FALSE, has_latent = has_latent
+    has_spatial = has_spatial, has_temporal = FALSE, has_latent = has_latent,
+    spatial_type = spatial_type
   )
 
   # Latent prior blocks are consumed only by the nested-Laplace path. If the
@@ -386,6 +525,11 @@ tulpa <- function(formula, data,
   re_terms <- bundle$re_terms %||% list()
   has_slope <- length(re_terms) > 0L &&
     any(vapply(re_terms, function(rt) (rt$n_coefs %||% 1L) > 1L, logical(1)))
+  if (has_spatial && has_slope) {
+    stop("Random-slope term(s) together with a spatial field are not supported ",
+         "through tulpa() yet. Use a random intercept (1 | g) alongside the ",
+         "spatial term, or drop the spatial field.", call. = FALSE)
+  }
   if (sel$backend == "laplace" && has_slope) {
     re_cov_method <- match.arg(control$re_cov %||% "nested",
                                c("nested", "gibbs"))
@@ -418,13 +562,15 @@ tulpa <- function(formula, data,
 
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                              n_trials, phi, beta_prior, control,
-                             latent_blocks = parsed$latent_blocks)
+                             latent_blocks = parsed$latent_blocks,
+                             spatial = spatial_spec)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(
     sel$backend, fitter_args = args,
     family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = FALSE, has_latent = has_latent
+    has_spatial = has_spatial, has_latent = has_latent,
+    spatial_type = spatial_type
   )
 
   if (is.list(fit)) {

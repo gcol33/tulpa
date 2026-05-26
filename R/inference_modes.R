@@ -570,26 +570,31 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
-  # Gibbs for ICAR spatial-only models (no temporal, no latent)
-  # Gibbs is ~18x faster than HMC for ICAR because it updates phi
-  # component-wise, avoiding HMC's curse of dimensionality
+  # Gibbs for areal spatial models (no temporal, no latent). The Polya-Gamma
+  # samplers update the field component-wise, avoiding HMC's curse of
+  # dimensionality. Only the wired areal samplers (ICAR, BYM2) are auto-selected
+  # here -- car_proper / hsgp have no PG sampler, and the remaining fields
+  # (nngp/gp, multiscale_gp, rsr) are not yet wired through dispatch_gibbs_spatial
+  # (see dev_notes/plan_gibbs_spatial_frontdoor.md); auto must never pick a
+  # backend that would error at dispatch. The PG augmentation is binomial-only,
+  # so a non-binomial spatial field falls through to the default below.
   is_gibbs_spatial <- has_spatial && !is.null(spatial_type) &&
-                      spatial_type %in% c("icar", "car", "bym2", "hsgp")
+                      spatial_type %in% c("icar", "bym2")
+  fam_nm <- family$name %||% family$distribution %||% ""
+  gibbs_binomial <- identical(fam_nm, "binomial")
   # Gibbs supports: no temporal, TVC, or RW1/AR1 GMRF temporal
   has_tvc_only <- !is.null(temporal) && inherits(temporal, "tulpa_tvc")
   has_gmrf_temporal <- !is.null(temporal) && inherits(temporal, "tulpa_temporal") &&
                        !is.null(temporal$type) && temporal$type %in% c("rw1", "ar1")
   gibbs_temporal_ok <- !has_temporal || has_tvc_only || has_gmrf_temporal
-  if (is_gibbs_spatial && gibbs_temporal_ok && !has_latent) {
-    if (backend_supports_family("gibbs", family)) {
-      return(list(
-        mode = "exact",
-        backend = "gibbs",
-        tier = 1L,
-        tier_name = "Exact",
-        reason = sprintf("ICAR/BYM2 spatial model (Gibbs %s)", spatial_type)
-      ))
-    }
+  if (is_gibbs_spatial && gibbs_binomial && gibbs_temporal_ok && !has_latent) {
+    return(list(
+      mode = "exact",
+      backend = "gibbs",
+      tier = 1L,
+      tier_name = "Exact",
+      reason = sprintf("%s spatial model (binomial Polya-Gamma Gibbs)", spatial_type)
+    ))
   }
 
   # Default: Tier 1 (Exact) with HMC
