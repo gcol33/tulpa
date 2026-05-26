@@ -698,6 +698,82 @@ adjacency_to_csr_tulpa <- function(adj) {
   list(row_ptr = row_ptr, col_idx = col_idx, n_neighbors = n_neighbors)
 }
 
+# Neighbor-list form of an adjacency matrix for the Polya-Gamma Gibbs spatial
+# samplers. They take `adj_list` as an R list whose j-th element is the 1-based
+# neighbor indices of unit j (the C++ subtracts 1 internally), plus the
+# `n_neighbors` count -- in contrast to the CSR row_ptr/col_idx form
+# adjacency_to_csr_tulpa() builds for the Laplace kernels.
+adjacency_to_list_tulpa <- function(adj) {
+  if (inherits(adj, "sparseMatrix")) adj <- as.matrix(adj)
+  n <- nrow(adj)
+  adj_list <- lapply(seq_len(n), function(i) as.integer(which(adj[i, ] != 0)))
+  list(adj_list = adj_list,
+       n_neighbors = vapply(adj_list, length, integer(1)))
+}
+
+#' Dispatch a spatial Polya-Gamma Gibbs fit to the correct sampler
+#'
+#' The Gibbs analogue of [dispatch_laplace_spatial()]: routes on `spatial$type`
+#' to the matching `cpp_pg_binomial_gibbs_<structure>` sampler, building the
+#' neighbour-list / coordinate inputs each one needs. Binomial only (the
+#' Polya-Gamma augmentation is for the binomial/logit likelihood).
+#' @keywords internal
+dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
+                                   spatial, family,
+                                   iter, warmup, thin = 1L,
+                                   prior_beta_sd = 10.0,
+                                   prior_sigma_re_scale = 2.5,
+                                   verbose = FALSE, n_threads = 1L) {
+  if (!identical(family, "binomial")) {
+    stop("Spatial Gibbs supports family = 'binomial' only; got '", family,
+         "'. Use mode = 'laplace' for other families under a spatial field.",
+         call. = FALSE)
+  }
+  spatial_type <- spatial$type
+
+  common <- list(
+    y = as.numeric(y), n = as.integer(n_trials), X = X,
+    re_group = as.integer(re_group), n_re_groups = as.integer(n_re_groups),
+    n_iter = as.integer(iter), n_warmup = as.integer(warmup),
+    thin = as.integer(thin),
+    prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_re_scale,
+    store_eta = FALSE, verbose = verbose, n_threads = as.integer(n_threads)
+  )
+
+  if (spatial_type %in% c("icar", "bym2", "rsr")) {
+    adj <- spatial$adjacency
+    if (is.null(adj)) {
+      stop("Spatial Gibbs (", spatial_type, ") needs `spatial$adjacency`.",
+           call. = FALSE)
+    }
+    al <- adjacency_to_list_tulpa(adj)
+    areal <- list(
+      spatial_group   = as.integer(spatial$spatial_idx %||% seq_len(nrow(adj))),
+      n_spatial_units = as.integer(nrow(adj)),
+      adj_list        = al$adj_list,
+      n_neighbors     = al$n_neighbors
+    )
+  }
+
+  if (spatial_type == "icar") {
+    do.call(cpp_pg_binomial_gibbs_spatial, c(common, areal, list(
+      prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
+      prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01
+    )))
+  } else if (spatial_type == "bym2") {
+    do.call(cpp_pg_binomial_gibbs_bym2, c(common, areal, list(
+      scale_factor              = spatial$scale_factor %||% 1.0,
+      prior_sigma_spatial_scale = spatial$prior_sigma_spatial_scale %||% 2.5,
+      prior_rho_alpha           = spatial$prior_rho_alpha %||% 0.5,
+      prior_rho_beta            = spatial$prior_rho_beta  %||% 0.5
+    )))
+  } else {
+    stop("Spatial Gibbs not yet wired for type '", spatial_type,
+         "' (planned: nngp/gp, multiscale_gp, rsr, temporal). ",
+         "See dev_notes/plan_gibbs_spatial_frontdoor.md.", call. = FALSE)
+  }
+}
+
 
 #' Compute GLM working weights for Laplace Hessian
 #'
@@ -727,17 +803,44 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0) {
 #' @param warmup Warmup iterations
 #' @param prior_beta_sd Prior SD for betas
 #' @param prior_sigma_scale Prior scale for RE sigma
+#' @param spatial Optional spatial spec (list with `type` and the structure's
+#'   inputs, e.g. `list(type = "icar", adjacency = W, spatial_idx = unit)`).
+#'   When supplied, the fit routes to the matching spatial Polya-Gamma Gibbs
+#'   sampler via [dispatch_gibbs_spatial()] (binomial only); `group`/`n_groups`
+#'   are the iid random-effect block carried alongside the field. Supported
+#'   `type`s: "icar", "bym2".
+#' @param temporal Optional temporal spec (not yet wired).
 #' @param verbose Print progress
 #' @param n_threads Number of threads
 #'
-#' @return List with beta draws, RE draws, sigma_re draws
+#' @return List with beta draws, RE draws, sigma_re draws (plus the spatial
+#'   field draws when `spatial` is supplied)
 #'
 #' @export
 tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         family = "binomial",
                         iter = 2000L, warmup = 1000L,
                         prior_beta_sd = 10.0, prior_sigma_scale = 2.5,
+                        spatial = NULL, temporal = NULL,
                         verbose = TRUE, n_threads = 1L) {
+
+  # Spatial / temporal field present: route to the matching Polya-Gamma Gibbs
+  # sampler (the Gibbs analogue of tulpa_laplace(spatial = ...)). `group` /
+  # `n_groups` become the iid random-effect block carried alongside the field.
+  if (!is.null(spatial)) {
+    return(dispatch_gibbs_spatial(
+      y = y, n_trials = if (is.null(n_trials)) rep(1L, length(y)) else n_trials,
+      X = X, re_group = group, n_re_groups = n_groups,
+      spatial = spatial, family = family,
+      iter = iter, warmup = warmup,
+      prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_scale,
+      verbose = verbose, n_threads = n_threads
+    ))
+  }
+  if (!is.null(temporal)) {
+    stop("Temporal Gibbs dispatch is not yet wired. ",
+         "See dev_notes/plan_gibbs_spatial_frontdoor.md.", call. = FALSE)
+  }
 
   if (family == "binomial") {
     cpp_pg_binomial_gibbs(

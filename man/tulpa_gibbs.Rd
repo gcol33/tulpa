@@ -15,6 +15,8 @@ tulpa_gibbs(
   warmup = 1000L,
   prior_beta_sd = 10,
   prior_sigma_scale = 2.5,
+  spatial = NULL,
+  temporal = NULL,
   verbose = TRUE,
   n_threads = 1L
 )
@@ -40,12 +42,22 @@ tulpa_gibbs(
 
 \item{prior_sigma_scale}{Prior scale for RE sigma}
 
+\item{spatial}{Optional spatial spec (list with \code{type} and the structure's
+inputs, e.g. \code{list(type = "icar", adjacency = W, spatial_idx = unit)}).
+When supplied, the fit routes to the matching spatial Polya-Gamma Gibbs
+sampler via \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}} (binomial only); \code{group}/\code{n_groups}
+are the iid random-effect block carried alongside the field. Supported
+\code{type}s: "icar", "bym2".}
+
+\item{temporal}{Optional temporal spec (not yet wired).}
+
 \item{verbose}{Print progress}
 
 \item{n_threads}{Number of threads}
 }
 \value{
-List with beta draws, RE draws, sigma_re draws
+List with beta draws, RE draws, sigma_re draws (plus the spatial
+field draws when \code{spatial} is supplied)
 }
 \description{
 Public API for PG Gibbs sampling. Used by model packages for
