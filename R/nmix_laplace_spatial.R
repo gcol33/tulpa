@@ -165,22 +165,7 @@ tulpa_nmix_laplace_icar <- function(y,
   )
 
   # Normalise grid weights.
-  lm <- fit$log_marginal
-  finite_lm <- lm[is.finite(lm)]
-  if (length(finite_lm) == 0L) {
-    warning("All grid points returned non-finite log_marginal -- check tau_grid / data.",
-            call. = FALSE)
-    weights <- rep(NA_real_, length(lm))
-  } else {
-    m <- max(finite_lm)
-    w <- exp(lm - m)
-    w[!is.finite(w)] <- 0
-    if (sum(w) == 0) {
-      weights <- rep(NA_real_, length(lm))
-    } else {
-      weights <- w / sum(w)
-    }
-  }
+  weights <- .nl_normalise_weights_safe(fit$log_marginal, "tau_grid / data")
 
   # Per-grid hyperparameter values (theta_grid columns: tau, r).
   tau_vec <- fit$theta_grid[, "tau"]
@@ -374,22 +359,7 @@ tulpa_nmix_laplace_car_proper <- function(y,
   )
 
   # Normalise grid weights (joint over the (tau, rho) grid).
-  lm <- fit$log_marginal
-  finite_lm <- lm[is.finite(lm)]
-  if (length(finite_lm) == 0L) {
-    warning("All grid points returned non-finite log_marginal -- check grids / data.",
-            call. = FALSE)
-    weights <- rep(NA_real_, length(lm))
-  } else {
-    m <- max(finite_lm)
-    w <- exp(lm - m)
-    w[!is.finite(w)] <- 0
-    if (sum(w) == 0) {
-      weights <- rep(NA_real_, length(lm))
-    } else {
-      weights <- w / sum(w)
-    }
-  }
+  weights <- .nl_normalise_weights_safe(fit$log_marginal)
 
   tau_vec <- fit$theta_grid[, "tau"]
   rho_vec <- fit$theta_grid[, "rho"]
@@ -625,22 +595,7 @@ tulpa_nmix_laplace_bym2 <- function(y,
   )
 
   # Normalise grid weights (joint over (sigma, rho)).
-  lm <- fit$log_marginal
-  finite_lm <- lm[is.finite(lm)]
-  if (length(finite_lm) == 0L) {
-    warning("All grid points returned non-finite log_marginal -- check grids / data.",
-            call. = FALSE)
-    weights <- rep(NA_real_, length(lm))
-  } else {
-    m <- max(finite_lm)
-    w <- exp(lm - m)
-    w[!is.finite(w)] <- 0
-    if (sum(w) == 0) {
-      weights <- rep(NA_real_, length(lm))
-    } else {
-      weights <- w / sum(w)
-    }
-  }
+  weights <- .nl_normalise_weights_safe(fit$log_marginal)
 
   sigma_vec <- fit$theta_grid[, "sigma"]
   rho_vec   <- fit$theta_grid[, "rho"]

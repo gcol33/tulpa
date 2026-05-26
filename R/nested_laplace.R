@@ -535,6 +535,24 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   w / sum(w)
 }
 
+# Finite-guarded normalisation for outer hyperparameter grids that may return
+# non-finite log-marginals at extreme nodes (the nmix spatial fitters). Drops
+# non-finite nodes from the max-shift, zeroes their weight, and returns all-NA
+# (with a warning) when no node carries mass -- instead of NaN. `what` names the
+# grid in the degenerate-case warning.
+.nl_normalise_weights_safe <- function(lm, what = "grids / data") {
+  finite_lm <- lm[is.finite(lm)]
+  if (length(finite_lm) == 0L) {
+    warning(sprintf("All grid points returned non-finite log_marginal -- check %s.", what),
+            call. = FALSE)
+    return(rep(NA_real_, length(lm)))
+  }
+  w <- exp(lm - max(finite_lm))
+  w[!is.finite(w)] <- 0
+  if (sum(w) == 0) return(rep(NA_real_, length(lm)))
+  w / sum(w)
+}
+
 # Compute weighted theta_mean / theta_sd / theta_median / theta_ci_lo /
 # theta_ci_hi from grid + weights. The mean and SD are produced via the
 # usual `sum(w * x)` / `sum(w * x^2)` moments; the median and 2.5/97.5

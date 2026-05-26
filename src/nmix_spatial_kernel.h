@@ -28,6 +28,7 @@
 #define TULPA_NMIX_SPATIAL_KERNEL_H
 
 #include "nmix_kernel.h"
+#include "nmix_spatial_assemble.h"   // nmix_assemble_obs_info / _complete_fisher
 #include <Rcpp.h>
 #include <RcppEigen.h>
 #include <Eigen/Cholesky>
@@ -155,6 +156,17 @@ inline void compute_eta_lambda_spatial(
 //
 // ICAR / BYM2 / CAR prior contributions on z are added separately by the
 // caller, so this function only handles the likelihood-side scatter.
+// ICAR / proper-CAR loading: eta_lambda[s] += 1 * z[u(s)].
+inline SpatialLoading nmix_loading_spatial(
+    int z_start, const std::vector<int>& map_site_to_unit, int s
+) {
+    SpatialLoading L;
+    L.n = 1;
+    L.col[0] = z_start + map_site_to_unit[s];
+    L.coef[0] = 1.0;
+    return L;
+}
+
 inline void nmix_assemble_obs_info_spatial(
     int p_lam, int p_p, int n_spatial,
     const Eigen::Map<Eigen::MatrixXd>& X_lambda,
@@ -168,73 +180,13 @@ inline void nmix_assemble_obs_info_spatial(
     const Eigen::VectorXd& score_wt_lambda,   // N-coeff of s_lambda (1 for Poisson)
     Eigen::MatrixXd& H_obs /* in/out: zero-initialized [n_x x n_x] */
 ) {
-    const int n_sites = static_cast<int>(obs_by_site.size());
     const int z_start = p_lam + p_p;
-
-    for (int s = 0; s < n_sites; ++s) {
-        const auto& idx = obs_by_site[s];
-        const int J = static_cast<int>(idx.size());
-        if (J == 0) continue;
-        const int u = map_site_to_unit[s];
-
-        // ----- Complete-data Fisher D_s -----
-        double w_lam = info_eta_lam(s);
-        if (w_lam > 0.0) {
-            // beta_lambda x beta_lambda block
-            H_obs.block(0, 0, p_lam, p_lam)
-                .selfadjointView<Eigen::Lower>()
-                .rankUpdate(X_lambda.row(s).transpose(), w_lam);
-            // z[u] x z[u] (diagonal entry)
-            H_obs(z_start + u, z_start + u) += w_lam;
-            // beta_lambda x z[u] cross-term: w_lam * X_lambda[s,]
-            for (int k = 0; k < p_lam; ++k) {
-                double v = w_lam * X_lambda(s, k);
-                H_obs(k, z_start + u) += v;
-                H_obs(z_start + u, k) += v;
-            }
-        }
-        for (int j = 0; j < J; ++j) {
-            double w_p = info_eta_p(idx[j]);
-            if (w_p > 0.0) {
-                H_obs.block(p_lam, p_lam, p_p, p_p)
-                    .selfadjointView<Eigen::Lower>()
-                    .rankUpdate(X_p.row(idx[j]).transpose(), w_p);
-            }
-        }
-
-        // ----- Var[N|y_s] rank-1 marginal correction -----
-        // The eta_lambda score has N-coefficient score_wt_lambda(s) (1 for
-        // Poisson, 1-q for NB); it scales every coordinate eta_lambda depends
-        // on -- beta_lambda (via X_lambda) and z[u] (via the unit indicator).
-        if (var_N(s) > 0.0) {
-            const double swl = score_wt_lambda(s);
-            const int n_x_local = p_lam + p_p + n_spatial;
-            Eigen::VectorXd u_s = Eigen::VectorXd::Zero(n_x_local);
-            // beta_lambda coord: -score_wt_lambda * X_lambda[s,]
-            u_s.segment(0, p_lam) = -swl * X_lambda.row(s).transpose();
-            // beta_p coord: sum_j p_ij X_p[ij,]
-            Eigen::VectorXd ssum = Eigen::VectorXd::Zero(p_p);
-            for (int j = 0; j < J; ++j) {
-                double e = eta_p_long(idx[j]);
-                double p_ij;
-                if (e > 0.0) {
-                    p_ij = 1.0 / (1.0 + std::exp(-e));
-                } else {
-                    double ee = std::exp(e);
-                    p_ij = ee / (1.0 + ee);
-                }
-                ssum += p_ij * X_p.row(idx[j]).transpose();
-            }
-            u_s.segment(p_lam, p_p) = ssum;
-            // z coord: -score_wt_lambda at u
-            u_s(z_start + u) = -swl;
-
-            H_obs.selfadjointView<Eigen::Lower>().rankUpdate(u_s, -var_N(s));
-        }
-    }
-    // Symmetrise from lower triangle. The block(...)+rankUpdate fills only
-    // the lower; the explicit cross-fills above already hit both sides.
-    H_obs = H_obs.selfadjointView<Eigen::Lower>();
+    const int n_x = p_lam + p_p + n_spatial;
+    nmix_assemble_obs_info(
+        p_lam, p_p, n_x, X_lambda, X_p, eta_p_long, obs_by_site,
+        info_eta_lam, info_eta_p, var_N, score_wt_lambda,
+        [&](int s) { return nmix_loading_spatial(z_start, map_site_to_unit, s); },
+        H_obs);
 }
 
 // Complete-data Fisher Hessian (no var_N correction). Always PSD; used as
@@ -249,33 +201,13 @@ inline void nmix_assemble_complete_fisher_spatial(
     const Eigen::VectorXd& info_eta_p,
     Eigen::MatrixXd& H_f /* in/out: zero-initialized [n_x x n_x] */
 ) {
-    const int n_sites = static_cast<int>(obs_by_site.size());
     const int z_start = p_lam + p_p;
-
-    for (int s = 0; s < n_sites; ++s) {
-        double w_lam = info_eta_lam(s);
-        if (w_lam > 0.0) {
-            const int u = map_site_to_unit[s];
-            H_f.block(0, 0, p_lam, p_lam)
-                .selfadjointView<Eigen::Lower>()
-                .rankUpdate(X_lambda.row(s).transpose(), w_lam);
-            H_f(z_start + u, z_start + u) += w_lam;
-            for (int k = 0; k < p_lam; ++k) {
-                double v = w_lam * X_lambda(s, k);
-                H_f(k, z_start + u) += v;
-                H_f(z_start + u, k) += v;
-            }
-        }
-    }
-    for (int o = 0; o < static_cast<int>(X_p.rows()); ++o) {
-        double w_p = info_eta_p(o);
-        if (w_p > 0.0) {
-            H_f.block(p_lam, p_lam, p_p, p_p)
-                .selfadjointView<Eigen::Lower>()
-                .rankUpdate(X_p.row(o).transpose(), w_p);
-        }
-    }
-    H_f = H_f.selfadjointView<Eigen::Lower>();
+    const int n_x = p_lam + p_p + n_spatial;
+    nmix_assemble_complete_fisher(
+        p_lam, p_p, n_x, X_lambda, X_p, obs_by_site,
+        info_eta_lam, info_eta_p,
+        [&](int s) { return nmix_loading_spatial(z_start, map_site_to_unit, s); },
+        H_f);
 }
 
 // Add the CAR(rho) contribution tau * Q(rho) to the z-block of H, and tau * Q z
