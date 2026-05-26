@@ -337,33 +337,72 @@ test_that("sparse ST: BYM2 x RW2 finite + bounded vs dense (rank-deficient)", {
     .expect_finite_and_bounded(fit_d, fit_s)
 })
 
-# ---- HSGP / NNGP refuse force_sparse with a clear error -------------------
+# ---- HSGP / NNGP spatio-temporal run through the joint sparse path ---------
+# Phase C2 folds ST nngp/hsgp onto run_multi_block_nested_laplace_joint's sparse
+# path (the same one the pure-spatial nngp/hsgp entries use), retiring the
+# dense-only ST driver that previously refused force_sparse. These are smoke +
+# finite checks (no dense reference to compare against -- the basis / NNGP
+# precision blocks only run sparse), matching the pure-spatial nngp/hsgp tests.
 
-test_that("sparse ST: HSGP x AR1 refuses force_sparse with a clear message", {
+test_that("ST: HSGP x AR1 runs through the joint sparse path (finite)", {
     set.seed(50L)
-    N <- 50L; M <- 10L; n_t <- 5L
+    N <- 60L; M <- 12L; n_t <- 5L
     X <- cbind(1, rnorm(N))
-    coords <- matrix(runif(N * 2), N, 2)
     phi_basis <- matrix(rnorm(N * M), N, M)
-    lambda_eig <- abs(rnorm(M)) + 0.1
+    lambda_eig <- sort(abs(rnorm(M)) + 0.1, decreasing = TRUE)
     t_idx <- sample(seq_len(n_t), N, replace = TRUE)
     y <- rbinom(N, 1L, 0.5)
-    expect_error(
-        cpp_nested_laplace_st_hsgp(
-            y = as.numeric(y), n = rep(1L, N), X = X, re_idx = rep(0, N),
-            n_re_groups = 0L, sigma_re = 1.0,
-            phi_basis = phi_basis, lambda_eig = lambda_eig,
-            temporal_idx = as.integer(t_idx), n_times = n_t,
-            sigma2_spatial_grid      = c(1.0),
-            lengthscale_spatial_grid = c(1.0),
-            temporal_type            = "ar1",
-            tau_temporal_grid        = c(1.0),
-            rho_temporal_grid        = c(0.5),
-            cyclic = FALSE,
-            family = "binomial", phi = 1.0,
-            max_iter = 10L, tol = 1e-6, n_threads = 1L,
-            force_sparse = TRUE
-        ),
-        regexp = "force_sparse"
+    fit <- cpp_nested_laplace_st_hsgp(
+        y = as.numeric(y), n = rep(1L, N), X = X, re_idx = rep(0, N),
+        n_re_groups = 0L, sigma_re = 1.0,
+        phi_basis = phi_basis, lambda_eig = lambda_eig,
+        temporal_idx = as.integer(t_idx), n_times = n_t,
+        sigma2_spatial_grid      = c(0.5, 1.0),
+        lengthscale_spatial_grid = c(0.5, 1.0),
+        temporal_type            = "ar1",
+        tau_temporal_grid        = c(1.0, 1.5),
+        rho_temporal_grid        = c(0.5, 0.6),
+        cyclic = FALSE,
+        family = "binomial", phi = 1.0,
+        max_iter = 40L, tol = 1e-7, n_threads = 1L
     )
+    expect_equal(length(as.numeric(fit$log_marginal)), 2L)
+    expect_true(all(is.finite(fit$log_marginal)))
+})
+
+test_that("ST: NNGP x RW1 runs through the joint sparse path (finite)", {
+    set.seed(51L)
+    n_s <- 40L; n_t <- 5L; N <- n_s   # NNGP: one obs per spatial unit
+    coords <- cbind(runif(n_s), runif(n_s))
+    order_idx <- order(coords[, 1], coords[, 2])
+    coords_ord <- coords[order_idx, ]
+    nnk <- 8L
+    nn_idx <- matrix(0L, n_s, nnk); nn_dist <- matrix(0, n_s, nnk)
+    for (i in 2:n_s) {
+        dd <- sqrt((coords_ord[1:(i - 1), 1] - coords_ord[i, 1])^2 +
+                   (coords_ord[1:(i - 1), 2] - coords_ord[i, 2])^2)
+        nc <- min(length(dd), nnk); ord <- order(dd)[1:nc]
+        nn_idx[i, seq_len(nc)] <- ord; nn_dist[i, seq_len(nc)] <- dd[ord]
+    }
+    X <- matrix(1, N, 1)
+    t_idx <- sample(seq_len(n_t), N, replace = TRUE)
+    y <- rbinom(N, 1L, 0.5)
+    fit <- cpp_nested_laplace_st_nngp(
+        y = as.numeric(y), n = rep(1L, N), X = X, re_idx = rep(0, N),
+        n_re_groups = 0L, sigma_re = 1.0,
+        spatial_idx = seq_len(n_s), n_spatial = n_s,
+        coords = coords_ord, nn_idx = nn_idx, nn_dist = nn_dist,
+        nn_order = as.integer(order_idx - 1L), nn = nnk, cov_type = 0L,
+        temporal_idx = as.integer(t_idx), n_times = n_t,
+        sigma2_spatial_grid = c(0.5, 1.0),
+        phi_gp_spatial_grid = c(0.3, 0.5),
+        temporal_type       = "rw1",
+        tau_temporal_grid   = c(1.0, 2.0),
+        rho_temporal_grid   = NULL,
+        cyclic = FALSE,
+        family = "binomial", phi = 1.0,
+        max_iter = 40L, tol = 1e-7, n_threads = 1L
+    )
+    expect_equal(length(as.numeric(fit$log_marginal)), 2L)
+    expect_true(all(is.finite(fit$log_marginal)))
 })

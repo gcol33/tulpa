@@ -2351,22 +2351,36 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
     int s_start = p + n_re_groups;
     int t_start = s_start + M;
+    (void) force_sparse;  // HSGP is DENSE_BASIS -> the joint driver always takes
+                          // the sparse path; the legacy force_sparse knob is moot.
 
-    auto ops_s = make_hsgp_spatial_ops(s_start, N, phi_basis, lambda_eig,
-                                        sigma2_spatial_grid, lengthscale_spatial_grid);
-    auto ops_t = make_temporal_ops(temporal_type, t_start, n_times,
-                                   tau_temporal_grid, rho_t, cyclic);
+    // theta_grid for the HSGP block: (log_sigma2, log_lengthscale), matching the
+    // pure-spatial HSGP entry (PC priors applied in log space upstream).
+    Rcpp::NumericMatrix theta_grid(n_grid, 2);
+    for (int k = 0; k < n_grid; k++) {
+        theta_grid(k, 0) = std::log(sigma2_spatial_grid[k]);
+        theta_grid(k, 1) = std::log(lengthscale_spatial_grid[k]);
+    }
+    Rcpp::List phi_per_arm = Rcpp::List::create(phi_basis);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
 
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_hsgp_block(
+        /*start=*/s_start, /*m_total=*/M,
+        phi_per_arm, n_obs_per_arm, /*n_arms=*/1, /*block_index=*/0,
+        lambda_eig,
+        /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid));
+    blocks.push_back(make_temporal_latent_block(
+        t_start, n_times, temporal_idx, temporal_type,
+        tau_temporal_grid, rho_t, cyclic));
+
+    // DENSE_BASIS HSGP block forces the joint sparse path regardless of n_x.
+    Rcpp::IntegerVector spatial_idx_unused(N, 0);  // HSGP has no per-obs unit idx
+    Rcpp::List out = run_indexed_st_nested_laplace_joint(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
+        spatial_idx_unused, blocks,
         family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true
     );
     out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
     out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
@@ -2414,24 +2428,35 @@ Rcpp::List cpp_nested_laplace_st_nngp(
         Rcpp::stop("nrow(coords) must equal n_spatial");
     int s_start = p + n_re_groups;
     int t_start = s_start + n_spatial;
+    (void) force_sparse;  // NNGP's prior is sparse-native -> the joint driver
+                          // always takes the sparse path; force_sparse is moot.
 
-    auto ops_s = make_nngp_spatial_ops(s_start, n_spatial, N, spatial_idx,
-                                        coords, nn_idx, nn_dist, nn_order, nn,
-                                        sigma2_spatial_grid, phi_gp_spatial_grid,
-                                        cov_type);
-    auto ops_t = make_temporal_ops(temporal_type, t_start, n_times,
-                                   tau_temporal_grid, rho_t, cyclic);
+    // theta_grid for the NNGP block: (sigma2, phi_gp), matching the pure-spatial
+    // NNGP entry (linear, not log).
+    Rcpp::NumericMatrix theta_grid(n_grid, 2);
+    for (int k = 0; k < n_grid; k++) {
+        theta_grid(k, 0) = sigma2_spatial_grid[k];
+        theta_grid(k, 1) = phi_gp_spatial_grid[k];
+    }
+    Rcpp::List spatial_idx_per_arm = Rcpp::List::create(spatial_idx);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
 
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_nngp_block(
+        /*start=*/s_start, /*n_spatial=*/n_spatial,
+        spatial_idx_per_arm, n_obs_per_arm,
+        /*n_arms=*/1, /*block_index=*/0,
+        nn, cov_type, coords, nn_idx, nn_dist, nn_order,
+        /*axis_sigma2=*/0, /*axis_phi_gp=*/1, theta_grid));
+    blocks.push_back(make_temporal_latent_block(
+        t_start, n_times, temporal_idx, temporal_type,
+        tau_temporal_grid, rho_t, cyclic));
+
+    Rcpp::List out = run_indexed_st_nested_laplace_joint(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
+        spatial_idx, blocks,
         family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true
     );
     out["sigma2_spatial_grid"] = sigma2_spatial_grid;
     out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
