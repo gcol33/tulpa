@@ -107,6 +107,46 @@ test_that("PC tail probability and LKJ shape behave as specified", {
 })
 
 
+test_that("a diagonal block uses log-SD coords with no LKJ term", {
+  # correlated = FALSE: theta_i = log sigma_i, prior = PC(sigma_i) + Jacobian
+  # sum_i theta_i, and no correlation factor regardless of eta.
+  prior_sigma <- c(2.5, 0.05)
+  lambda <- -log(prior_sigma[2L]) / prior_sigma[1L]
+  for (nc in c(1L, 2L, 3L)) {
+    p2 <- re_cov_pc_lkj_prior(nc, prior_sigma = prior_sigma, eta = 2,
+                              correlated = FALSE)
+    p9 <- re_cov_pc_lkj_prior(nc, prior_sigma = prior_sigma, eta = 9,
+                              correlated = FALSE)
+    set.seed(nc)
+    th <- rnorm(nc, sd = 0.4)
+    sig <- exp(th)
+    expected <- sum(log(lambda) - lambda * sig) + sum(th)
+    expect_equal(p2(th), expected, tolerance = 1e-12,
+                 label = sprintf("nc=%d diagonal prior", nc))
+    # eta is irrelevant for a diagonal block
+    expect_equal(p9(th), p2(th), tolerance = 1e-12)
+  }
+})
+
+
+test_that("the joint multi-block prior sums independent per-block priors", {
+  prior_sigma <- c(3, 0.05); eta <- 2
+  layout <- list(
+    list(nc = 2L, full = TRUE,  k = 3L, label = "g"),
+    list(nc = 1L, full = FALSE, k = 1L, label = "h")
+  )
+  joint <- tulpa:::.re_cov_joint_prior(layout, prior_sigma, eta)
+  p_g <- re_cov_pc_lkj_prior(2L, prior_sigma = prior_sigma, eta = eta,
+                             correlated = TRUE)
+  p_h <- re_cov_pc_lkj_prior(1L, prior_sigma = prior_sigma, eta = eta,
+                             correlated = FALSE)
+  set.seed(99L)
+  theta <- rnorm(4L, sd = 0.4)   # 3 (g) + 1 (h)
+  expect_equal(joint(theta), p_g(theta[1:3]) + p_h(theta[4]),
+               tolerance = 1e-12)
+})
+
+
 test_that("supplied prior_sigma / eta change the integrated posterior", {
   skip_on_cran()
   # End-to-end: the default prior is wired into tulpa_re_cov_nested and a

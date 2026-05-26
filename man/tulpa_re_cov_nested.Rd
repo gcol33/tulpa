@@ -2,13 +2,13 @@
 % Please edit documentation in R/nested_laplace_re_cov.R
 \name{tulpa_re_cov_nested}
 \alias{tulpa_re_cov_nested}
-\title{Nested-Laplace integration over a random-effect covariance}
+\title{Nested-Laplace integration over random-effect covariances}
 \usage{
 tulpa_re_cov_nested(
   y,
   n_trials = NULL,
   X,
-  re_term,
+  re_terms,
   family = "binomial",
   phi = 1,
   integration = c("ccd", "grid"),
@@ -29,18 +29,20 @@ tulpa_re_cov_nested(
 \item{y, n_trials, X, family, phi}{Passed to \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the inner
 solve. \code{n_trials = NULL} defaults to 1 (binary / single-trial).}
 
-\item{re_term}{A single random-effect term: a list with \code{idx} (1-based group
-index per observation), \code{n_groups}, \code{n_coefs} (\code{c}), and \code{Z} (the
-\verb{n_obs x c} RE design, e.g. \code{cbind(1, x)} for \code{(1 + x | g)}). Any \code{L} /
-\code{cov} / \code{sigma} field is ignored -- \code{Sigma} is what this function
-integrates over.}
+\item{re_terms}{Either a single random-effect term or a list of them. Each
+term is a list with \code{idx} (1-based group index per observation),
+\code{n_groups}, \code{n_coefs} (\code{c}), \code{Z} (the \verb{n_obs x c} RE design, e.g.
+\code{cbind(1, x)} for \code{(1 + x | g)}; only required when \code{c > 1}), and
+\code{correlated} (\code{TRUE} for a full \code{Sigma}, \code{FALSE} for a diagonal one;
+defaults to \code{TRUE}). An optional \code{label} / \code{group_var} names the block in
+the output. Any \code{L} / \code{cov} / \code{sigma} field is ignored -- \code{Sigma} is what
+this function integrates over.}
 
 \item{integration}{Node layout: \code{"ccd"} (default, central-composite design,
-scales to larger \code{c}) or \code{"grid"} (full tensor product). See Details.}
+scales to larger total parameter count) or \code{"grid"} (full tensor product).}
 
-\item{n_per_axis}{Points per \code{theta} axis in the tensor grid (default 5);
-used only when \code{integration = "grid"}. Grid size is \code{n_per_axis^(c(c+1)/2)};
-each cell is one Laplace fit.}
+\item{n_per_axis}{Points per parameter axis in the tensor grid (default 5);
+used only when \code{integration = "grid"}.}
 
 \item{span}{Half-width of the tensor grid in posterior standard deviations
 per whitened axis (default 3); used only when \code{integration = "grid"}.}
@@ -51,11 +53,11 @@ per whitened axis (default 3); used only when \code{integration = "grid"}.}
 (default 2). Ignored when \code{log_prior_theta} is supplied.}
 
 \item{log_prior_theta}{Optional \verb{function(theta)} returning a scalar log
-prior density in the log-Cholesky parameterization. Default \code{NULL}, which
+prior density on the full stacked parameter vector. Default \code{NULL}, which
 builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}.}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
-every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}; see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).
+every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}).
 \code{NULL} (default) keeps the weak built-in prior.}
 
 \item{n_draws}{Number of posterior draws of the fixed effects to synthesize
@@ -70,64 +72,67 @@ node quantiles) in \code{posterior}, independent of \code{n_draws}.}
 \value{
 A list with:
 \itemize{
-\item \code{posterior}: data frame with one row per parameter (\code{sigma_i}, \code{rho_ij},
-\code{Sigma_ij}) and columns \code{mean}, \code{sd}, \code{median}, \code{ci_lo}, \code{ci_hi} -- the
-marginalized summaries.
-\item \code{map}: the plug-in-mode summary (\code{Sigma}, \code{sigma}, \code{rho}) at \code{theta_hat},
-for comparison with the marginalized \code{posterior}.
-\item \code{Sigma_mean}: the weighted posterior mean of \code{Sigma} (a \verb{c x c} matrix).
-\item \code{beta}: the node-weighted posterior mean of the fixed effects.
-\item \code{draws}: \verb{n_draws x ncol(X)} matrix of fixed-effect posterior draws from
-the node mixture (drives \code{coef}/\code{confint}/\code{vcov}/\code{summary}); \code{means},
-\code{param_names}, \code{process_info} accompany it.
-\item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{n_coefs}.
+\item \code{posterior}: data frame with one row per parameter and columns \code{mean},
+\code{sd}, \code{median}, \code{ci_lo}, \code{ci_hi}. Parameter names are \code{sigma_i}, \code{rho_ij},
+\code{Sigma_ij} for a single block, prefixed by the block label
+(\code{g.sigma_1}, ...) when there are several blocks. Diagonal blocks report
+no \code{rho}.
+\item \code{map}: the plug-in-mode summary at \code{theta_hat} (a single \code{list(Sigma, sigma, rho)} for one block, or a named list of them).
+\item \code{Sigma_mean}: the weighted posterior mean of \code{Sigma} (a matrix for one
+block, or a named list of matrices).
+\item \code{beta}, \code{draws}, \code{means}, \code{param_names}, \code{process_info}: the fixed-effect
+posterior from the node mixture (drives \code{coef}/\code{confint}/\code{vcov}/\code{summary}).
+\item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
+\code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
 }
 }
 \description{
-For a single correlated random-effects term (e.g. \code{(1 + x | g)}), integrate
-the Laplace marginal likelihood over the random-effect covariance \code{Sigma}
-instead of fixing it at a point estimate. Reports weighted posterior
-summaries (mean, SD, median, 2.5\\%/97.5\\%) of \code{Sigma} and its derived scale
-(\code{sigma_i}) and correlation (\code{rho_ij}) parameters, marginalizing the joint
-posterior over a \code{Sigma}-grid.
+For one or more random-effects terms (e.g. \code{(1 + x | g)}, \code{(1 + x || g)}, or
+several terms together), integrate the Laplace marginal likelihood over the
+random-effect covariances \code{Sigma} instead of fixing them at point estimates.
+Reports weighted posterior summaries (mean, SD, median, 2.5\\%/97.5\\%) of every
+\code{Sigma} and its derived scale (\code{sigma_i}) and correlation (\code{rho_ij})
+parameters, marginalizing the joint posterior over a \code{Sigma}-grid.
 
 This corrects the plug-in-MAP ("summary") bias: the mode of a skewed
 variance-component marginal is biased low relative to its median, so the
 headline summary should be the marginalized median, not the mode.
 }
 \details{
-\code{Sigma} is parameterized by its lower Cholesky factor \code{L} (\verb{Sigma = L L'})
-in log-Cholesky coordinates \code{theta}: the log-diagonal and the strictly-lower
-entries of \code{L} (\code{c(c+1)/2} values for a \code{c}-coefficient term), which keeps
-\code{Sigma} positive definite for every \code{theta}. Integration nodes live in
-whitened \code{theta}-space, centred at the marginal-likelihood mode \code{theta_hat}
-and rotated/scaled by the Cholesky of the mode's posterior covariance
-(\code{solve(Hessian)}), so points track the posterior ridge.
+Each term is one covariance \strong{block}. A correlated block (\code{(1 + x | g)}) is
+a full \verb{Sigma = L L'} parameterized by its lower Cholesky factor in
+log-Cholesky coordinates (the log-diagonal and the strictly-lower entries of
+\code{L}, \code{c(c+1)/2} values for a \code{c}-coefficient block), which keeps \code{Sigma}
+positive definite for every coordinate. An uncorrelated block
+(\code{(1 + x || g)}) is a diagonal \code{Sigma} parameterized by its \code{c} log standard
+deviations. A scalar \code{(1 | g)} term is the degenerate \code{c = 1} block. Several
+blocks stack their parameters into one integration vector; a single-term
+model is the length-1 case.
 
-Two node layouts are available via \code{integration}:
+Integration nodes live in the whitened stacked-parameter space, centred at
+the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
+mode's posterior covariance (\code{solve(Hessian)}), so points track the posterior
+ridge. Two node layouts are available via \code{integration}:
 \itemize{
 \item \code{"ccd"} (default): a central-composite design (\code{\link[=ccd_grid]{ccd_grid()}}) of
-\verb{1 + 2k + 2^(k-q)} points for \code{k = c(c+1)/2} hyperparameters, with the
-corrected R-INLA design weights (\code{\link[=ccd_weights]{ccd_weights()}}). Scales polynomially in
-the number of coefficients \code{c}, where the tensor grid is exponential
-(\code{c = 3} -> \code{k = 6} -> \code{5^6 ~ 15600} cells vs \code{77} CCD points).
+\verb{1 + 2k + 2^(k-q)} points for the total \code{k = sum_blocks} parameters, with
+the corrected R-INLA design weights (\code{\link[=ccd_weights]{ccd_weights()}}). Scales polynomially
+in \code{k}, where the tensor grid is exponential.
 \item \code{"grid"}: the full \code{n_per_axis^k} tensor product with uniform cell
 weights -- denser and more robust to a non-Gaussian whitened posterior,
-but only tractable for small \code{c}.
+but only tractable for small \code{k}.
 }
 Each node \code{k} contributes integration weight proportional to
-\code{Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}, where
-\code{Delta_k} is the CCD design weight (uniform for the tensor grid), following
+\code{Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}, following
 the INLA convention \verb{int ~ sum_k Delta_k pi(theta_k)}.
 
 By default \code{log_prior_theta} is the weakly-informative PC + LKJ hyperprior
-built by \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} (PC prior on each marginal SD via
-\code{prior_sigma}, LKJ prior on the correlation matrix via \code{eta}), expressed in
-the log-Cholesky parameterization above with the exact change-of-variables
-Jacobian. This makes the integrated surface a proper posterior with an
-interior mode and mildly regularizes small-group variance components. Supply
-a custom \code{log_prior_theta} function to override it (then \code{prior_sigma} /
-\code{eta} are ignored); it must act in the same log-Cholesky parameterization.
+built per block by \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} and summed over blocks (PC prior on
+each marginal SD via \code{prior_sigma}, LKJ prior on each correlated block's
+correlation matrix via \code{eta}), expressed in the same parameterization with the
+exact change-of-variables Jacobian. Supply a custom \code{log_prior_theta} function
+to override it (then \code{prior_sigma} / \code{eta} are ignored); it must act on the
+full stacked parameter vector.
 }
 \seealso{
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the inner solve; \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for

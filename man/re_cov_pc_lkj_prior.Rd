@@ -4,34 +4,46 @@
 \alias{re_cov_pc_lkj_prior}
 \title{PC + LKJ hyperprior for a random-effect covariance}
 \usage{
-re_cov_pc_lkj_prior(n_coefs, prior_sigma = c(3, 0.05), eta = 2)
+re_cov_pc_lkj_prior(
+  n_coefs,
+  prior_sigma = c(3, 0.05),
+  eta = 2,
+  correlated = TRUE
+)
 }
 \arguments{
-\item{n_coefs}{Number of correlated coefficients \code{c} in the RE term.}
+\item{n_coefs}{Number of coefficients \code{c} in the RE block.}
 
 \item{prior_sigma}{\code{c(U, alpha)} giving \code{P(sigma_i > U) = alpha} (default
 \code{c(3, 0.05)}), applied independently to every marginal SD.}
 
 \item{eta}{LKJ shape (default 2). \code{eta = 1} is uniform on correlation
-matrices; larger values favour weaker correlations.}
+matrices; larger values favour weaker correlations. Ignored for a diagonal
+block.}
+
+\item{correlated}{\code{TRUE} (default) for a full covariance block (log-Cholesky
+coordinates, LKJ prior); \code{FALSE} for a diagonal / uncorrelated block
+(log-SD coordinates, no correlation). For \code{n_coefs = 1} the two coincide.}
 }
 \value{
 A \verb{function(theta)} returning the scalar log prior density in the
-log-Cholesky parameterization, suitable for the \code{log_prior_theta} argument
-of \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}.
+block's integration coordinates, suitable for one block of the
+\code{log_prior_theta} argument of \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}.
 }
 \description{
 Construct the default weakly-informative hyperprior used by
-\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}: independent Penalized-Complexity (PC) priors on the
-marginal standard deviations \code{sigma_i} together with an LKJ prior on the
-correlation matrix \code{R}, returned as a \code{log_prior_theta} function in the
-log-Cholesky parameterization the integrator works in.
+\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} for one covariance block: independent
+Penalized-Complexity (PC) priors on the marginal standard deviations
+\code{sigma_i} together with an LKJ prior on the correlation matrix \code{R}
+(correlated block) or no correlation (diagonal block), returned as a
+\code{log_prior_theta} function in the block's integration coordinates.
 }
 \details{
-The prior is specified on the natural scale,
+For a correlated block the prior is specified on the natural scale,
 \verb{p(sigma, R) = LKJ(R | eta) * prod_i PC(sigma_i)}, then pushed to the
 log-Cholesky coordinates \code{theta} of \verb{Sigma = L L'} by the exact
-change-of-variables Jacobian.
+change-of-variables Jacobian. For a diagonal (uncorrelated) block the LKJ
+factor drops and \verb{theta_i = log sigma_i} with Jacobian \verb{sum_i theta_i}.
 
 PC prior (Simpson et al. 2017) on each marginal SD: exponential with rate
 \code{lambda = -log(alpha) / U}, so \code{P(sigma_i > U) = alpha} -- the
@@ -43,11 +55,10 @@ correlation matrices; \code{eta > 1} concentrates toward the identity. The
 normalizing constant is dropped (constant across the grid, so it cancels when
 the integration weights are renormalized).
 
-Jacobian: with \code{theta} packing \verb{log L_ii} on the diagonal and the raw
-strict-lower entries of \code{L}, the change of variables from \verb{(sigma, R)} to
-\code{theta} adds \verb{sum_i (c + 2 - i) * log L_ii  -  c * sum_i log sigma_i} to
-\verb{log p(sigma, R)}. (Composition of the log-diagonal map, the standard
-Cholesky-to-covariance Jacobian \verb{2^c prod_i L_ii^(c+1-i)}, and the
+Jacobian (correlated block): with \code{theta} packing \verb{log L_ii} on the diagonal
+and the raw strict-lower entries of \code{L}, the change of variables from
+\verb{(sigma, R)} to \code{theta} adds \verb{sum_i (c + 2 - i) * log L_ii  -  c * sum_i log sigma_i} to \verb{log p(sigma, R)}. (Composition of the log-diagonal map, the
+standard Cholesky-to-covariance Jacobian \verb{2^c prod_i L_ii^(c+1-i)}, and the
 covariance-to-\verb{(sigma, R)} Jacobian; verified against numerical
 differentiation in \code{test-re-cov-prior.R}.)
 }

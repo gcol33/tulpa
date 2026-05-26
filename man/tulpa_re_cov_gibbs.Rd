@@ -2,13 +2,13 @@
 % Please edit documentation in R/re_cov_gibbs.R
 \name{tulpa_re_cov_gibbs}
 \alias{tulpa_re_cov_gibbs}
-\title{Gibbs estimation of a random-effect covariance (exact-target debias)}
+\title{Gibbs estimation of random-effect covariances (exact-target debias)}
 \usage{
 tulpa_re_cov_gibbs(
   y,
   n_trials = NULL,
   X,
-  re_term,
+  re_terms,
   family = "binomial",
   phi = 1,
   n_iter = 2000L,
@@ -28,10 +28,13 @@ tulpa_re_cov_gibbs(
 \item{y, n_trials, X, family, phi}{Passed to the likelihood and to
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the pilot solve. \code{n_trials = NULL} defaults to 1.}
 
-\item{re_term}{A single random-effect term: a list with \code{idx} (1-based group
-index per observation), \code{n_groups}, \code{n_coefs} (\code{c}), and \code{Z} (the
-\verb{n_obs x c} RE design, e.g. \code{cbind(1, x)} for \code{(1 + x | g)}). Any supplied
-\code{L} / \code{cov} / \code{sigma} is ignored -- \code{Sigma} is what this function samples.}
+\item{re_terms}{Either a single random-effect term or a list of them. Each
+term is a list with \code{idx} (1-based group index per observation),
+\code{n_groups}, \code{n_coefs} (\code{c}), \code{Z} (the \verb{n_obs x c} RE design; only required
+when \code{c > 1}), and \code{correlated} (\code{TRUE} for a full \code{Sigma}, \code{FALSE} for a
+diagonal one; defaults to \code{TRUE}). An optional \code{label} / \code{group_var} names
+the block. Any supplied \code{L} / \code{cov} / \code{sigma} is ignored -- \code{Sigma} is what
+this function samples.}
 
 \item{n_iter}{Number of recorded post-burn-in sweeps (default 2000).}
 
@@ -40,16 +43,17 @@ index per observation), \code{n_groups}, \code{n_coefs} (\code{c}), and \code{Z}
 
 \item{thin}{Keep every \code{thin}-th recorded sweep (default 1).}
 
-\item{prior_df}{Inverse-Wishart prior degrees of freedom \code{nu0} (default
-\code{n_coefs + 1}, the minimal proper / weakly informative choice). Must
-exceed \code{n_coefs - 1}.}
+\item{prior_df}{Inverse-Wishart prior degrees of freedom. Applied to every
+correlated block (default \code{n_coefs + 1}, the minimal proper choice) and as
+the scalar inverse-gamma shape for every diagonal block (default 2). Must
+leave each block's prior proper.}
 
-\item{prior_scale}{Inverse-Wishart prior scale matrix \code{Lambda0}
-(\verb{n_coefs x n_coefs}, default \code{diag(n_coefs)}).}
+\item{prior_scale}{Inverse-Wishart prior scale matrix. Used for a block when
+its dimension matches (default \code{diag(n_coefs)}); otherwise the per-block
+default is used.}
 
 \item{beta_prior_mean, beta_prior_sd}{Gaussian fixed-effect prior (defaults
-\code{0} and \code{100}, matching the weak built-in prior of \code{\link[=tulpa_laplace]{tulpa_laplace()}}).
-Scalars are recycled to \code{ncol(X)}.}
+\code{0} and \code{100}). Scalars are recycled to \code{ncol(X)}.}
 
 \item{seed}{Optional integer seed for reproducibility.}
 
@@ -59,48 +63,52 @@ Scalars are recycled to \code{ncol(X)}.}
 A list with:
 \itemize{
 \item \code{posterior}: data frame with one row per parameter (\code{sigma_i}, \code{rho_ij},
-\code{Sigma_ij}) and columns \code{mean}, \code{sd}, \code{median}, \code{ci_lo}, \code{ci_hi}.
-\item \code{Sigma_mean}: the posterior mean of \code{Sigma} (a \verb{c x c} matrix).
-\item \code{Sigma_draws}: list of recorded \code{Sigma} draws.
-\item \code{beta_draws} / \code{draws}: matrix of recorded \code{beta} draws (\verb{n_kept x ncol(X)});
-\code{draws} (with \code{means}, \code{param_names}, \code{process_info}) drives the generic
-\code{tulpa_fit} methods (\code{coef}/\code{confint}/\code{vcov}/\code{summary}).
+\code{Sigma_ij}; prefixed by block label when there are several terms; diagonal
+blocks report no \code{rho}) and columns \code{mean}, \code{sd}, \code{median}, \code{ci_lo},
+\code{ci_hi}.
+\item \code{Sigma_mean}: the posterior mean of \code{Sigma} (a matrix for one block, a
+named list of matrices for several).
+\item \code{Sigma_draws}: list of recorded draws; each element is the per-block list
+of \code{Sigma} matrices for that sweep.
+\item \code{beta_draws} / \code{draws}: matrix of recorded \code{beta} draws; \code{draws} (with
+\code{means}, \code{param_names}, \code{process_info}) drives the generic \code{tulpa_fit}
+methods.
 \item \code{accept}: list with \code{beta} and \code{b} acceptance rates over recorded sweeps.
-\item \code{n_kept}, \code{n_coefs}, \code{prior}: bookkeeping.
+\item \code{n_kept}, \code{n_coefs} (vector of per-block \code{c}), \code{prior}: bookkeeping.
 }
 }
 \description{
-For a single correlated random-effects term (e.g. \code{(1 + x | g)}), estimate
-the random-effect covariance \code{Sigma} by sampling the exact joint posterior
-\code{p(beta, b, Sigma | y)} rather than fixing \code{Sigma} at the Laplace mode. This
-removes the Laplace / PQL "approximation" bias that shrinks variance
-components low for binary and low-count responses with small groups.
+For one or more random-effects terms (e.g. \code{(1 + x | g)}, \code{(1 + x || g)}, or
+several terms together), estimate the random-effect covariances \code{Sigma} by
+sampling the exact joint posterior \code{p(beta, {b}, {Sigma} | y)} rather than
+fixing each \code{Sigma} at the Laplace mode. This removes the Laplace / PQL
+"approximation" bias that shrinks variance components low for binary and
+low-count responses with small groups.
 }
 \details{
-Metropolis-within-Gibbs targeting \code{p(beta, b, Sigma | y)}:
+Metropolis-within-Gibbs targeting \code{p(beta, {b_m}, {Sigma_m} | y)}:
 \itemize{
-\item \strong{\verb{b_g | beta, Sigma, y}} -- random-walk Metropolis per group (groups are
-conditionally independent given \code{beta}, \code{Sigma}). The proposal \emph{shape} is
-the Laplace per-group posterior covariance block (\code{return_re_cov} from
-\code{\link[=tulpa_laplace]{tulpa_laplace()}}); the Metropolis acceptance is computed against the exact
-group log-likelihood plus the Gaussian RE log-prior, which corrects the
-non-Gaussianity the Laplace approximation misses.
+\item \strong{\verb{b_\{m,g\} | beta, Sigma, y}} -- random-walk Metropolis per (term, group)
+(groups are conditionally independent given \code{beta} and the covariances). The
+proposal \emph{shape} is the Laplace per-group posterior covariance block
+(\code{return_re_cov} from \code{\link[=tulpa_laplace]{tulpa_laplace()}}); the Metropolis acceptance is
+computed against the exact group log-likelihood plus the Gaussian RE
+log-prior, which corrects the non-Gaussianity the Laplace approximation
+misses. The linear predictor holds every other term's contribution fixed.
 \item \strong{\verb{beta | b, Sigma, y}} -- random-walk Metropolis, proposal shape from the
 Laplace fixed-effect Hessian block \code{H_beta}.
-\item \strong{\code{Sigma | b}} -- exact conjugate inverse-Wishart draw: under prior
-\code{IW(prior_df, prior_scale)} and \code{b_g ~ N(0, Sigma)} i.i.d. over \code{G} groups,
-\verb{Sigma | b ~ IW(prior_df + G, prior_scale + sum_g b_g b_g')}. No
-linearization enters this step -- the bias is removed by sampling \code{b}
-exactly, not by correcting the \code{Sigma} update.
+\item \strong{\code{Sigma_m | b_m}} -- exact conjugate draw. A correlated block draws the
+full matrix from \verb{IW(prior_df + G_m, prior_scale + sum_g b_\{m,g\} b_\{m,g\}')};
+an uncorrelated (diagonal) block draws each variance from its scalar
+conjugate (inverse-gamma). No linearization enters this step.
 }
 
-A single Laplace solve provides the starting values (\code{beta}, \code{b}) and the two
-proposal shapes; the random-walk scales for the \code{beta} block and the (shared)
+A single Laplace solve provides the starting values (\code{beta}, \code{b}) and the
+proposal shapes; the random-walk scales for the \code{beta} block and the per-term
 \code{b} blocks are adapted toward their target acceptance during burn-in
 (Robbins-Monro), then held fixed for the recorded sweeps. The covariance
 summary marginalizes the derived scale / correlation parameters over the
-posterior draws via the same machinery as \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} (each
-\code{sigma_i} / \code{rho_ij} computed per draw, then quantiled).
+posterior draws via the same machinery as \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}.
 
 For \code{family = "gaussian"} the response is already conditionally Gaussian, so
 there is no Laplace bias to remove; \code{phi} (the residual variance) is treated

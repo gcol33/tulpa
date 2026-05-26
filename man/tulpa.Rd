@@ -68,15 +68,17 @@ hyperparameters is the role of the nested-Laplace / EM layer.
 \item \strong{No random effects} and \strong{random intercepts} (\code{(1 | g)}) are supported on
 the design path (\code{mode = "laplace"}) and the sampler path (\code{mode = "mala"},
 \code{"pathfinder"}, \code{"imh_laplace"}).
-\item \strong{Correlated random slopes} (\code{(1 + x | g)}, a single term) are supported on
-the Laplace (Tier 2) path: there is no scalar \code{sigma_re} to condition on, so
-the RE covariance \code{Sigma} is integrated rather than fixed. \code{mode = "laplace"}
+\item \strong{Random slopes} are supported on the Laplace (Tier 2) path: there is no
+scalar \code{sigma_re} to condition on, so the RE covariance \code{Sigma} is integrated
+rather than fixed. This covers correlated terms (\code{(1 + x | g)}, a full
+\code{Sigma}), uncorrelated terms (\code{(1 + x || g)}, a diagonal \code{Sigma}), and
+several terms together (\code{(1 + x | g) + (1 | h)}) -- each term becomes a
+covariance block, and any accompanying \code{(1 | g)} term is integrated as a 1x1
+block (nothing is silently conditioned at \code{sigma_re = 1}). \code{mode = "laplace"}
 routes to the nested-Laplace \code{Sigma} integrator (\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}},
 CCD design + PC/LKJ prior); \code{control$re_cov = "gibbs"} switches to the exact
 Metropolis-within-Gibbs debias (\code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}}). Both also run on the
-sampler path (\code{mode = "mala"} / \code{"pathfinder"}). Uncorrelated slopes
-(\code{(1 + x || g)}) and slope terms mixed with other RE terms still error on the
-design path with guidance (use a logpost backend or call the fitter directly).
+sampler path (\code{mode = "mala"} / \code{"pathfinder"}).
 \item \code{mode = "gibbs"} (Polya-Gamma) fits a single random-intercept model for
 \code{family = "binomial"} or \code{"neg_binomial_2"}, and \strong{samples} the RE sd
 rather than conditioning on \code{sigma_re}; tune it via \code{control$prior_sigma_scale}

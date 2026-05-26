@@ -105,3 +105,83 @@ test_that("the median is a more central summary than the mode under skew", {
   expect_gte(s1$mean, s1$median - 1e-6)
   expect_gt(s1$median, 0)
 })
+
+
+# --- diagonal (uncorrelated) block -------------------------------------------
+# A `(1 + x || g)` term is a diagonal Sigma: c log-SD integration params (here
+# k = 2, vs 3 for the full block), no correlation parameter, and the off-diagonal
+# entry is structurally zero. Truth has uncorrelated intercept/slope.
+sim_diag_recov <- function(seed, G = 60L, npg = 12L, beta = c(-0.3, 0.6),
+                           s1 = 0.8, s2 = 0.5) {
+  set.seed(seed)
+  N <- G * npg
+  grp <- rep(seq_len(G), each = npg)
+  x <- rnorm(N); X <- cbind(1, x); Z <- cbind(1, x)
+  u <- cbind(rnorm(G, 0, s1), rnorm(G, 0, s2))   # independent intercept/slope
+  eta <- as.numeric(X %*% beta) + rowSums(Z * u[grp, ])
+  list(y = rbinom(N, 1L, plogis(eta)), X = X, Z = Z, grp = grp, G = G, N = N)
+}
+
+test_that("tulpa_re_cov_nested integrates a diagonal (uncorrelated) block", {
+  skip_on_cran()
+  d <- sim_diag_recov(11L)
+  rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z,
+             correlated = FALSE)
+  res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial")
+
+  # diagonal block: k = c = 2 -> CCD 1 + 2k + 2^k = 9 nodes
+  expect_equal(res$n_grid, 1L + 2L * 2L + 2L^2L)
+  # no correlation reported; only diagonal variances
+  expect_setequal(res$posterior$parameter,
+                  c("sigma_1", "sigma_2", "Sigma_11", "Sigma_22"))
+  expect_length(res$map$rho, 0L)
+  # the MAP Sigma really is diagonal (off-diagonal exactly zero)
+  expect_equal(res$map$Sigma[1L, 2L], 0)
+  # scales recovered to the right ballpark (interval covers truth)
+  for (nm in c("sigma_1", "sigma_2")) {
+    row <- res$posterior[res$posterior$parameter == nm, ]
+    truth <- if (nm == "sigma_1") 0.8 else 0.5
+    expect_gte(row$ci_hi, truth * 0.6)
+    expect_lte(row$ci_lo, truth * 1.4)
+  }
+})
+
+
+# --- multi-term: a list of blocks --------------------------------------------
+test_that("tulpa_re_cov_nested integrates several terms as separate blocks", {
+  skip_on_cran()
+  set.seed(21L)
+  G <- 40L; H <- 25L; npg <- 12L; N <- G * npg
+  g <- rep(seq_len(G), each = npg)
+  h <- sample.int(H, N, replace = TRUE)
+  x <- rnorm(N); X <- cbind(1, x); Zg <- cbind(1, x)
+  Sg <- matrix(c(0.8^2, 0.4 * 0.8 * 0.5, 0.4 * 0.8 * 0.5, 0.5^2), 2)
+  ug <- t(t(chol(Sg)) %*% matrix(rnorm(2 * G), 2))
+  uh <- rnorm(H, 0, 0.6)
+  eta <- as.numeric(X %*% c(-0.2, 0.6)) + rowSums(Zg * ug[g, ]) + uh[h]
+  y <- rbinom(N, 1L, plogis(eta))
+
+  re_terms <- list(
+    list(idx = g, n_groups = G, n_coefs = 2L, Z = Zg, correlated = TRUE,
+         label = "g"),
+    list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h")
+  )
+  res <- tulpa_re_cov_nested(y, rep(1L, N), X, re_terms, family = "binomial",
+                             seed = 3L, n_draws = 300L)
+
+  expect_equal(res$n_blocks, 2L)
+  expect_equal(unname(res$n_coefs), c(2L, 1L))
+  # stacked integration dimension k = 3 (full g) + 1 (scalar h) = 4
+  # CCD(k=4): 1 + 2*4 + fractional factorial -- just check it ran with > 4 nodes
+  expect_gt(res$n_grid, 4L)
+  expect_setequal(res$posterior$parameter,
+                  c("g.sigma_1", "g.sigma_2", "g.rho_12",
+                    "g.Sigma_11", "g.Sigma_12", "g.Sigma_22",
+                    "h.sigma_1", "h.Sigma_11"))
+  expect_named(res$Sigma_mean, c("g", "h"))
+  expect_equal(dim(res$Sigma_mean$g), c(2L, 2L))
+  # both grouping scales positive
+  for (nm in c("g.sigma_1", "g.sigma_2", "h.sigma_1")) {
+    expect_gt(res$posterior[res$posterior$parameter == nm, "median"], 0)
+  }
+})

@@ -102,49 +102,58 @@ Gaussian fixed-effect prior into every `tulpa_laplace()` block and into the
 MI/Gibbs refits (gcol33/tulpa#27); blocks may override it with their own
 `beta_prior` field. See `?tulpa_em_laplace`.
 
-### Random-effect covariance integration (free Sigma for `(1 + x | g)`)
+### Random-effect covariance integration (free Sigma for random slopes)
 
-For a single correlated random-effect term the engine can treat the RE
-covariance `Sigma` itself as the inferred quantity instead of a point
-estimate -- the nested-approx + debias philosophy applied to a free `Sigma`:
+For random-slope terms the engine treats the RE covariance(s) `Sigma`
+themselves as the inferred quantity instead of a point estimate -- the
+nested-approx + debias philosophy applied to a free `Sigma`. Both fitters
+operate on a **list of covariance blocks**: one block per RE term, each either
+**full** (correlated, `(1 + x | g)`) or **diagonal** (uncorrelated,
+`(1 + x || g)`), with a scalar `(1 | g)` term as the degenerate `c = 1` block.
+A single-term model is the length-1 case of the same path -- no special-casing.
 
 - **`tulpa_re_cov_nested()`** (`R/nested_laplace_re_cov.R`) -- nested-Laplace
-  integration over `Sigma`. `Sigma = L L'` is parameterized in
-  **log-Cholesky** coordinates (log-diagonal + strict-lower of `L`,
-  `c(c+1)/2` params, **general `c`/K**, always PD), the nodes are centred at the
-  marginal-likelihood mode and rotated by the Cholesky of its posterior
-  covariance, and each derived quantity (`sigma_i`, `rho_ij`, `Sigma_ij`) is
-  computed per cell then weighted-quantiled -- the "Marginalize Derived
-  Quantities" rule (corrects the plug-in-MAP/"summary" bias, Bias-2). Inner
-  solve is `tulpa_laplace()` at a supplied `Sigma`; outer is the
-  `nested_laplace` + CCD recipe. Node layout defaults to the CCD design
-  (`ccd_grid()` + corrected `ccd_weights()`, polynomial in `c`); the full
-  tensor product is opt-in via `integration = "grid"`. The default
-  `log_prior_theta` is the weakly-informative PC + LKJ hyperprior
-  (`re_cov_pc_lkj_prior()`), pushed to log-Cholesky coords with the exact
-  change-of-variables Jacobian.
+  integration over the joint `Sigma`. A full block parameterizes `Sigma = L L'`
+  in **log-Cholesky** coords (log-diagonal + strict-lower of `L`, `c(c+1)/2`
+  params, **general `c`**, always PD); a diagonal block uses `c` log-SD coords.
+  Per-block params stack into one integration vector. Nodes are centred at the
+  joint marginal-likelihood mode and rotated by the Cholesky of its posterior
+  covariance, and each derived quantity (`sigma_i`, `rho_ij` for full blocks,
+  `Sigma_ij`) is computed per cell then weighted-quantiled -- the "Marginalize
+  Derived Quantities" rule (Bias-2). Inner solve is `tulpa_laplace()` (which is
+  already multi-RE, correlated-or-diagonal) at the supplied covariances; outer
+  is the `nested_laplace` + CCD recipe. Node layout defaults to CCD (`ccd_grid()`
+  + corrected `ccd_weights()`, polynomial in total `k`); tensor product opt-in
+  via `integration = "grid"`. Default `log_prior_theta` is the weakly-informative
+  PC + LKJ hyperprior built **per block** by `re_cov_pc_lkj_prior()` (LKJ only on
+  full blocks; `correlated = FALSE` gives the diagonal log-SD prior) and summed
+  over blocks, with the exact change-of-variables Jacobian.
 - **`tulpa_re_cov_gibbs()`** (`R/re_cov_gibbs.R`) -- the exact debias (Bias-1):
-  Metropolis-within-Gibbs (MH on `b_g`/`beta` with Laplace-shaped proposals,
-  **exact conjugate inverse-Wishart draw** for `Sigma | b`). Removes the
-  Laplace under-dispersion that biases `Sigma` low for binary/low-count small
-  groups.
+  Metropolis-within-Gibbs (MH on per-(term,group) `b`/`beta` with Laplace-shaped
+  proposals, cross-term eta bookkeeping). `Sigma_m | b_m` is an **exact conjugate
+  draw**: full block -> inverse-Wishart on the matrix; diagonal block ->
+  per-coordinate scalar inverse-Wishart (== inverse-gamma). Removes the Laplace
+  under-dispersion that biases `Sigma` low for binary/low-count small groups.
 
-Both summarize through the shared `.re_cov_derived_summary` (weighted
-quantiles == sample quantiles at equal weight) and expose the generic
-`tulpa_fit` accessors: each returns `draws` (fixed-effect posterior -- the
-nested path mixture-samples `N(beta_k, Vb_k)` over the weighted nodes, the
-Gibbs path uses its `beta_draws`) plus `means` / `param_names` /
-`process_info`, while the `Sigma` posterior stays in `posterior`. Tests:
-`test-re-cov-nested.R`, `test-re-cov-gibbs.R`, `test-re-cov-recovery.R`,
-`test-re-cov-prior.R` (Jacobian vs finite differences), `test-ccd-grid.R`,
-`test-tulpa-re-cov-frontdoor.R`.
-**Status:** wired through the `tulpa()` front door. A single correlated
-`(1 + x | g)` term under `mode = "laplace"` has no scalar `sigma_re` to
-condition on, so `tulpa()` redirects to `re_cov_nested` (default) or
-`re_cov_gibbs` (`control$re_cov = "gibbs"`) -- both registered backends.
-CCD integration and PC/LKJ default hyperpriors are in place. Remaining:
-multi-term and uncorrelated `(... || g)` slope cases still error on the
-design path (use a logpost backend or call the fitter directly).
+Both summarize through the shared `.re_cov_derived_summary` over the per-block
+covariance layout (weighted quantiles == sample quantiles at equal weight) and
+expose the generic `tulpa_fit` accessors: each returns `draws` (fixed-effect
+posterior -- the nested path mixture-samples `N(beta_k, Vb_k)` over the weighted
+nodes, the Gibbs path uses its `beta_draws`) plus `means` / `param_names` /
+`process_info`, while the `Sigma` posterior stays in `posterior`. With one block
+the parameter names are bare (`sigma_1`, `rho_12`, ...); with several they are
+prefixed by the block label (`g.sigma_1`, `h.sigma_1`, ...). `Sigma_mean` is a
+matrix for one block, a named list for several. Tests: `test-re-cov-nested.R`,
+`test-re-cov-gibbs.R`, `test-re-cov-recovery.R`, `test-re-cov-prior.R` (Jacobian
+vs finite differences, diagonal + joint priors), `test-ccd-grid.R`,
+`test-tulpa-re-cov-frontdoor.R` (single, diagonal, multi-term routing).
+**Status:** fully wired through the `tulpa()` front door. When any RE term
+carries slopes (no scalar `sigma_re` to condition on), `mode = "laplace"`
+redirects to `re_cov_nested` (default) or `re_cov_gibbs`
+(`control$re_cov = "gibbs"`) and treats **every** RE term as a covariance block
+-- correlated, uncorrelated `(... || g)`, multiple terms, and any accompanying
+`(1 | g)` (a 1x1 block); nothing is silently conditioned at `sigma_re = 1`.
+Plain random-intercept-only models keep the scalar-`sigma_re` design path.
 
 ### Generic S3 Methods and Diagnostics
 

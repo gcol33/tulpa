@@ -98,3 +98,66 @@ test_that("Gibbs debias recovers Sigma with covering intervals", {
   expect_lt(abs(mean(med[, "sigma_1"]) - 0.8) / 0.8, 0.25)
   expect_lt(abs(mean(med[, "sigma_2"]) - 0.6) / 0.6, 0.25)
 })
+
+
+test_that("Gibbs samples a diagonal (uncorrelated) block exactly", {
+  skip_on_cran()
+  set.seed(31L)
+  G <- 60L; npg <- 15L; N <- G * npg
+  grp <- rep(seq_len(G), each = npg)
+  x <- rnorm(N); X <- cbind(1, x); Z <- cbind(1, x)
+  u <- cbind(rnorm(G, 0, 0.8), rnorm(G, 0, 0.5))   # independent
+  eta <- as.numeric(X %*% c(-0.3, 0.6)) + rowSums(Z * u[grp, ])
+  y <- rbinom(N, 1L, plogis(eta))
+
+  rt <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = Z, correlated = FALSE)
+  res <- tulpa_re_cov_gibbs(y, rep(1L, N), X, rt, family = "binomial",
+                            n_iter = 1500L, n_burnin = 800L, seed = 12L)
+
+  # diagonal: no correlation parameter; off-diagonal Sigma identically zero
+  expect_setequal(res$posterior$parameter,
+                  c("sigma_1", "sigma_2", "Sigma_11", "Sigma_22"))
+  expect_equal(res$Sigma_mean[1L, 2L], 0)
+  expect_true(all(vapply(res$Sigma_draws, function(S) S[1L, 2L] == 0, logical(1))))
+  # scales recovered to the right ballpark
+  s1 <- res$posterior[res$posterior$parameter == "sigma_1", ]
+  s2 <- res$posterior[res$posterior$parameter == "sigma_2", ]
+  expect_lt(abs(s1$median - 0.8) / 0.8, 0.30)
+  expect_lt(abs(s2$median - 0.5) / 0.5, 0.35)
+})
+
+
+test_that("Gibbs samples several terms jointly", {
+  skip_on_cran()
+  set.seed(41L)
+  G <- 40L; H <- 25L; npg <- 14L; N <- G * npg
+  g <- rep(seq_len(G), each = npg)
+  h <- sample.int(H, N, replace = TRUE)
+  x <- rnorm(N); X <- cbind(1, x); Zg <- cbind(1, x)
+  Sg <- matrix(c(0.8^2, 0.4 * 0.8 * 0.5, 0.4 * 0.8 * 0.5, 0.5^2), 2)
+  ug <- t(t(chol(Sg)) %*% matrix(rnorm(2 * G), 2))
+  uh <- rnorm(H, 0, 0.6)
+  eta <- as.numeric(X %*% c(-0.2, 0.6)) + rowSums(Zg * ug[g, ]) + uh[h]
+  y <- rbinom(N, 1L, plogis(eta))
+
+  re_terms <- list(
+    list(idx = g, n_groups = G, n_coefs = 2L, Z = Zg, correlated = TRUE,
+         label = "g"),
+    list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h")
+  )
+  res <- tulpa_re_cov_gibbs(y, rep(1L, N), X, re_terms, family = "binomial",
+                            n_iter = 1000L, n_burnin = 600L, seed = 13L)
+
+  expect_equal(res$n_blocks, 2L)
+  expect_setequal(res$posterior$parameter,
+                  c("g.sigma_1", "g.sigma_2", "g.rho_12",
+                    "g.Sigma_11", "g.Sigma_12", "g.Sigma_22",
+                    "h.sigma_1", "h.Sigma_11"))
+  # each recorded sweep carries a per-block list of Sigma matrices
+  expect_length(res$Sigma_draws[[1L]], 2L)
+  expect_named(res$Sigma_mean, c("g", "h"))
+  # both grouping scales positive, h variance recovered to ballpark
+  expect_gt(res$posterior[res$posterior$parameter == "h.sigma_1", "median"], 0)
+  hrow <- res$posterior[res$posterior$parameter == "h.sigma_1", ]
+  expect_lt(abs(hrow$median - 0.6) / 0.6, 0.45)
+})

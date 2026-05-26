@@ -1,16 +1,22 @@
-# Nested-Laplace integration over a random-effect covariance Sigma.
+# Nested-Laplace integration over random-effect covariances Sigma.
 #
 # Bias-2 fix (the `Marginalize Derived Quantities` principle): rather than
-# report Sigma at its mode (the plug-in MAP, biased low for skewed
+# report each Sigma at its mode (the plug-in MAP, biased low for skewed
 # variance-component marginals at small G), integrate the Laplace marginal
-# likelihood over a Sigma-grid and report weighted quantiles of Sigma and its
-# derived scale / correlation parameters.
+# likelihood over the joint Sigma-grid and report weighted quantiles of every
+# Sigma and its derived scale / correlation parameters.
 #
-# Composition: the inner solve at each grid point is the correlated-RE Laplace
-# fit (tulpa_laplace, which returns the Laplace log-marginal at a SUPPLIED
-# Sigma); the grid is the nested_laplace + CCD recipe (here a rotated tensor
-# grid centred at the marginal-likelihood mode); the summary reuses the same
-# weighted-quantile machinery as the spatial/temporal nested-Laplace surface.
+# Composition: the inner solve at each grid point is the multi-RE Laplace fit
+# (tulpa_laplace, which returns the Laplace log-marginal at SUPPLIED covariances);
+# the grid is the nested_laplace + CCD recipe over the stacked covariance
+# parameters; the summary reuses the same weighted-quantile machinery as the
+# spatial/temporal nested-Laplace surface.
+#
+# A model may carry several random-effect terms (e.g. `(1 + x | g) + (1 | h)`),
+# each with its own covariance block, and a block may be CORRELATED (a full
+# `Sigma`, `(1 + x | g)`) or UNCORRELATED (a diagonal `Sigma`, `(1 + x || g)`).
+# Each block contributes its own parameters to the joint integration grid; a
+# single-term model is the length-1 case of the same path.
 
 # log-Cholesky <-> matrix helpers ---------------------------------------------
 # theta packs the lower Cholesky factor L (Sigma = L L') in column-major
@@ -41,20 +47,145 @@
   theta
 }
 
+# Multi-block covariance layout ------------------------------------------------
+# Several RE terms share one nested integration. Each term becomes a covariance
+# `block`, described once and reused by the prior, the parameter packing, and the
+# derived-quantity summary. A block is `full` (correlated, `Sigma = L L'`,
+# c(c+1)/2 log-Cholesky params, LKJ-style prior + correlations reported) or not
+# (uncorrelated / diagonal `Sigma`, c log-SD params, no off-diagonal). A scalar
+# `(1 | g)` term is the degenerate c = 1 block.
+
+# Normalize the `re_terms` argument: accept either a single term (a list with an
+# `idx` field) or a list of such terms. Returns a list of terms.
+.as_re_terms_list <- function(re_terms) {
+  if (is.null(re_terms)) stop("`re_terms` must be supplied.", call. = FALSE)
+  if (!is.null(re_terms$idx)) list(re_terms) else re_terms
+}
+
+# Build the per-block layout from normalized re_terms. `n_obs` is needed to
+# default the scalar-block design Z to the intercept column.
+.re_cov_block_layout <- function(re_terms, n_obs) {
+  lapply(seq_along(re_terms), function(m) {
+    rt <- re_terms[[m]]
+    nc <- as.integer(rt$n_coefs %||% 1L)
+    if (nc < 1L) stop("RE block has n_coefs < 1.", call. = FALSE)
+    if (is.null(rt$idx) || is.null(rt$n_groups)) {
+      stop(sprintf("RE block %d must supply `idx` and `n_groups`.", m),
+           call. = FALSE)
+    }
+    if (nc > 1L && is.null(rt$Z)) {
+      stop(sprintf("RE block %d (n_coefs = %d) requires `Z` (the n_obs x ",
+                   "n_coefs RE design).", m, nc), call. = FALSE)
+    }
+    # Default to a full (correlated) covariance when c > 1; an explicit
+    # `correlated = FALSE` selects a diagonal Sigma. For c = 1 the two coincide.
+    full <- (rt$correlated %||% TRUE) && nc > 1L
+    Z <- if (nc == 1L) matrix(1, n_obs, 1L) else as.matrix(rt$Z)
+    list(nc = nc, full = full,
+         k = as.integer(if (full) nc * (nc + 1L) / 2L else nc),
+         label = rt$label %||% rt$group_var %||% NA_character_,
+         idx = as.integer(rt$idx), n_groups = as.integer(rt$n_groups), Z = Z)
+  })
+}
+
+.re_cov_block_label <- function(bl, m) {
+  if (!is.null(bl$label) && !is.na(bl$label)) bl$label else paste0("re", m)
+}
+
+# Stacked theta -> list of Cholesky factors L_m, one per block. A full block
+# unpacks log-Cholesky coords; a diagonal block exponentiates its log-SDs onto
+# the diagonal (L_m = diag(sigma)).
+.re_cov_theta_to_L_list <- function(theta, layout) {
+  out <- vector("list", length(layout)); pos <- 0L
+  for (m in seq_along(layout)) {
+    bl <- layout[[m]]; th <- theta[pos + seq_len(bl$k)]; pos <- pos + bl$k
+    out[[m]] <- if (bl$full) {
+      .re_logchol_to_L(th, bl$nc)
+    } else {
+      Lm <- matrix(0, bl$nc, bl$nc); diag(Lm) <- exp(th); Lm
+    }
+  }
+  out
+}
+
+# Inverse of .re_cov_theta_to_L_list: stack the per-block log-Cholesky / log-SD
+# coordinates of supplied factors into one theta vector (used for grid centring).
+.re_cov_L_list_to_theta <- function(L_list, layout) {
+  unlist(lapply(seq_along(layout), function(m) {
+    bl <- layout[[m]]; L <- L_list[[m]]
+    if (bl$full) .re_L_to_logchol(L, bl$nc)
+    else log(pmax(diag(L), 1e-8))
+  }), use.names = FALSE)
+}
+
+# Build the inner-solve `re_list` for tulpa_laplace from per-block factors. A
+# scalar block (c = 1) is passed as a marginal SD (the diagonal Laplace path);
+# a c > 1 block is passed as the Cholesky factor `L` (correlated path) -- a
+# diagonal `L` reproduces the uncorrelated covariance exactly.
+.re_cov_build_re_list <- function(L_list, layout) {
+  lapply(seq_along(layout), function(m) {
+    bl <- layout[[m]]; L <- L_list[[m]]
+    base <- list(idx = bl$idx, n_groups = bl$n_groups, n_coefs = bl$nc, Z = bl$Z)
+    if (bl$nc == 1L) c(base, list(sigma = as.numeric(L[1L, 1L])))
+    else c(base, list(L = L))
+  })
+}
+
+# Per-block log-prior in the block's integration coordinates. Shared by the
+# exported single-block builder (re_cov_pc_lkj_prior) and the joint multi-block
+# prior (.re_cov_joint_prior) -- one source of truth for the PC + LKJ + Jacobian
+# algebra. `full` selects the log-Cholesky (correlated) coordinates with the LKJ
+# term; otherwise log-SD (diagonal) coordinates with no correlation.
+.re_cov_block_logprior <- function(nc, full, prior_sigma, eta) {
+  U <- prior_sigma[1L]; alpha <- prior_sigma[2L]
+  if (U <= 0 || alpha <= 0 || alpha >= 1) {
+    stop("`prior_sigma = c(U, alpha)` needs U > 0 and 0 < alpha < 1.",
+         call. = FALSE)
+  }
+  lambda     <- -log(alpha) / U
+  log_lambda <- log(lambda)
+
+  if (full) {
+    jac_coef <- nc + 2L - seq_len(nc)        # (c + 2 - i) on each log L_ii
+    function(th) {
+      L      <- .re_logchol_to_L(th, nc)
+      logLii <- log(diag(L))                 # = th diagonal entries
+      sig    <- sqrt(rowSums(L^2))           # sigma_i = sqrt(Sigma_ii)
+      logsig <- log(sig)
+      lp <- sum(log_lambda - lambda * sig)   # PC on each marginal SD
+      # LKJ: (eta - 1) log det(R), log det(R) = 2 sum log L_ii - 2 sum log sigma_i.
+      if (nc > 1L && eta != 1) {
+        lp <- lp + (eta - 1) * (2 * sum(logLii) - 2 * sum(logsig))
+      }
+      # Change of variables (sigma, R) -> theta.
+      lp + sum(jac_coef * logLii) - nc * sum(logsig)
+    }
+  } else {
+    # Diagonal: th = log sigma_i, so d sigma_i / d th_i = sigma_i and the
+    # log-Jacobian is sum_i log sigma_i = sum_i th_i. No correlation term.
+    function(th) {
+      sig <- exp(th)
+      sum(log_lambda - lambda * sig) + sum(th)
+    }
+  }
+}
+
 #' PC + LKJ hyperprior for a random-effect covariance
 #'
 #' @description
 #' Construct the default weakly-informative hyperprior used by
-#' [tulpa_re_cov_nested()]: independent Penalized-Complexity (PC) priors on the
-#' marginal standard deviations `sigma_i` together with an LKJ prior on the
-#' correlation matrix `R`, returned as a `log_prior_theta` function in the
-#' log-Cholesky parameterization the integrator works in.
+#' [tulpa_re_cov_nested()] for one covariance block: independent
+#' Penalized-Complexity (PC) priors on the marginal standard deviations
+#' `sigma_i` together with an LKJ prior on the correlation matrix `R`
+#' (correlated block) or no correlation (diagonal block), returned as a
+#' `log_prior_theta` function in the block's integration coordinates.
 #'
 #' @details
-#' The prior is specified on the natural scale,
+#' For a correlated block the prior is specified on the natural scale,
 #' `p(sigma, R) = LKJ(R | eta) * prod_i PC(sigma_i)`, then pushed to the
 #' log-Cholesky coordinates `theta` of `Sigma = L L'` by the exact
-#' change-of-variables Jacobian.
+#' change-of-variables Jacobian. For a diagonal (uncorrelated) block the LKJ
+#' factor drops and `theta_i = log sigma_i` with Jacobian `sum_i theta_i`.
 #'
 #' PC prior (Simpson et al. 2017) on each marginal SD: exponential with rate
 #' `lambda = -log(alpha) / U`, so `P(sigma_i > U) = alpha` -- the
@@ -66,90 +197,115 @@
 #' normalizing constant is dropped (constant across the grid, so it cancels when
 #' the integration weights are renormalized).
 #'
-#' Jacobian: with `theta` packing `log L_ii` on the diagonal and the raw
-#' strict-lower entries of `L`, the change of variables from `(sigma, R)` to
-#' `theta` adds `sum_i (c + 2 - i) * log L_ii  -  c * sum_i log sigma_i` to
-#' `log p(sigma, R)`. (Composition of the log-diagonal map, the standard
-#' Cholesky-to-covariance Jacobian `2^c prod_i L_ii^(c+1-i)`, and the
+#' Jacobian (correlated block): with `theta` packing `log L_ii` on the diagonal
+#' and the raw strict-lower entries of `L`, the change of variables from
+#' `(sigma, R)` to `theta` adds `sum_i (c + 2 - i) * log L_ii  -  c * sum_i log
+#' sigma_i` to `log p(sigma, R)`. (Composition of the log-diagonal map, the
+#' standard Cholesky-to-covariance Jacobian `2^c prod_i L_ii^(c+1-i)`, and the
 #' covariance-to-`(sigma, R)` Jacobian; verified against numerical
 #' differentiation in `test-re-cov-prior.R`.)
 #'
-#' @param n_coefs Number of correlated coefficients `c` in the RE term.
+#' @param n_coefs Number of coefficients `c` in the RE block.
 #' @param prior_sigma `c(U, alpha)` giving `P(sigma_i > U) = alpha` (default
 #'   `c(3, 0.05)`), applied independently to every marginal SD.
 #' @param eta LKJ shape (default 2). `eta = 1` is uniform on correlation
-#'   matrices; larger values favour weaker correlations.
+#'   matrices; larger values favour weaker correlations. Ignored for a diagonal
+#'   block.
+#' @param correlated `TRUE` (default) for a full covariance block (log-Cholesky
+#'   coordinates, LKJ prior); `FALSE` for a diagonal / uncorrelated block
+#'   (log-SD coordinates, no correlation). For `n_coefs = 1` the two coincide.
 #'
 #' @return A `function(theta)` returning the scalar log prior density in the
-#'   log-Cholesky parameterization, suitable for the `log_prior_theta` argument
-#'   of [tulpa_re_cov_nested()].
+#'   block's integration coordinates, suitable for one block of the
+#'   `log_prior_theta` argument of [tulpa_re_cov_nested()].
 #' @seealso [tulpa_re_cov_nested()]
 #' @export
-re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
+re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
+                                correlated = TRUE) {
   c_re <- as.integer(n_coefs)
   if (c_re < 1L) stop("`n_coefs` must be >= 1.", call. = FALSE)
-  U <- prior_sigma[1L]; alpha <- prior_sigma[2L]
-  if (U <= 0 || alpha <= 0 || alpha >= 1) {
-    stop("`prior_sigma = c(U, alpha)` needs U > 0 and 0 < alpha < 1.",
-         call. = FALSE)
-  }
-  lambda     <- -log(alpha) / U
-  log_lambda <- log(lambda)
-  jac_coef   <- c_re + 2L - seq_len(c_re)   # (c + 2 - i) on each log L_ii
+  .re_cov_block_logprior(c_re, isTRUE(correlated) && c_re > 1L, prior_sigma, eta)
+}
 
+# Joint default prior over all blocks: blocks are a priori independent, so the
+# joint log-prior is the sum of per-block log-priors evaluated on each block's
+# slice of the stacked theta.
+.re_cov_joint_prior <- function(layout, prior_sigma, eta) {
+  blocks <- lapply(layout, function(bl)
+    .re_cov_block_logprior(bl$nc, bl$full, prior_sigma, eta))
+  ks <- vapply(layout, `[[`, integer(1), "k")
   function(theta) {
-    L     <- .re_logchol_to_L(theta, c_re)
-    logLii <- log(diag(L))                  # = theta diagonal entries
-    sig   <- sqrt(rowSums(L^2))             # sigma_i = sqrt(Sigma_ii)
-    logsig <- log(sig)
-    # PC prior on each marginal SD.
-    lp <- sum(log_lambda - lambda * sig)
-    # LKJ on the correlation matrix: (eta - 1) log det(R),
-    # log det(R) = log det(Sigma) - 2 sum log sigma_i = 2 sum log L_ii - 2 sum log sigma_i.
-    if (c_re > 1L && eta != 1) {
-      logdetR <- 2 * sum(logLii) - 2 * sum(logsig)
-      lp <- lp + (eta - 1) * logdetR
+    pos <- 0L; lp <- 0
+    for (m in seq_along(blocks)) {
+      lp <- lp + blocks[[m]](theta[pos + seq_len(ks[m])])
+      pos <- pos + ks[m]
     }
-    # Change of variables (sigma, R) -> theta.
-    lp + sum(jac_coef * logLii) - c_re * sum(logsig)
+    lp
   }
 }
 
-# Marginalized summary of a random-effect covariance from a set of Sigma
-# matrices and weights. Shared by the grid integrator (tulpa_re_cov_nested,
-# weighted grid cells) and the Gibbs sampler (tulpa_re_cov_gibbs, equal-weight
-# posterior draws). `Marginalize Derived Quantities`: each derived value
-# (sigma_i = sqrt(Sigma_ii), rho_ij = Sigma_ij / (sigma_i sigma_j), and the raw
-# Sigma entries) is computed PER matrix, then weighted-quantiled -- never a
-# transform of summarized components. With equal weights `.nl_wtd_quantile`
-# reduces to the sample quantile, so the same code summarizes both.
-# Derived quantities of a set of Sigma matrices as a matrix: one row per Sigma,
-# named columns sigma_i (= sqrt(Sigma_ii)), rho_ij (i<j), Sigma_ij (i<=j). Each
-# value is a transform of a SINGLE Sigma (never of summarized components), so
-# this is the per-cell / per-draw input both the weighted-quantile summary and
-# the posterior-draw synthesis consume (`Marginalize Derived Quantities`).
-.re_cov_derived_matrix <- function(Sig_list, c_re) {
+# Derived quantities of one block's Sigma draws as a matrix: one row per Sigma,
+# named columns sigma_i (= sqrt(Sigma_ii)); for a `full` block also rho_ij
+# (i<j) and the upper-triangular Sigma_ij; for a diagonal block only the
+# diagonal Sigma_ii (off-diagonals are structurally zero, so no rho). Each value
+# is a transform of a SINGLE Sigma (never of summarized components), so this is
+# the per-cell / per-draw input the weighted-quantile summary and the
+# posterior-draw synthesis consume (`Marginalize Derived Quantities`).
+.re_cov_derived_matrix <- function(Sig_list, nc, full = TRUE) {
   cols <- list()
-  for (i in seq_len(c_re)) {
+  for (i in seq_len(nc)) {
     cols[[sprintf("sigma_%d", i)]] <-
       vapply(Sig_list, function(S) sqrt(S[i, i]), numeric(1))
   }
-  if (c_re > 1L) {
-    for (i in seq_len(c_re - 1L)) for (j in (i + 1L):c_re) {
+  if (full && nc > 1L) {
+    for (i in seq_len(nc - 1L)) for (j in (i + 1L):nc) {
       cols[[sprintf("rho_%d%d", i, j)]] <-
         vapply(Sig_list, function(S) S[i, j] / sqrt(S[i, i] * S[j, j]),
                numeric(1))
     }
   }
-  for (i in seq_len(c_re)) for (j in i:c_re) {
-    cols[[sprintf("Sigma_%d%d", i, j)]] <-
-      vapply(Sig_list, function(S) S[i, j], numeric(1))
+  if (full) {
+    for (i in seq_len(nc)) for (j in i:nc) {
+      cols[[sprintf("Sigma_%d%d", i, j)]] <-
+        vapply(Sig_list, function(S) S[i, j], numeric(1))
+    }
+  } else {
+    for (i in seq_len(nc)) {
+      cols[[sprintf("Sigma_%d%d", i, i)]] <-
+        vapply(Sig_list, function(S) S[i, i], numeric(1))
+    }
   }
   do.call(cbind, cols)   # length(Sig_list) x n_derived, named columns
 }
 
-.re_cov_derived_summary <- function(Sig_list, w, c_re) {
-  D <- .re_cov_derived_matrix(Sig_list, c_re)
+# Combine the per-block derived matrices for a set of joint Sigma draws. Each
+# element of `Sig_node_list` is the list of per-block Sigma matrices for one
+# cell / draw. With a single block the column names are bare (`sigma_1`,
+# `rho_12`, ...); with several blocks each is prefixed by the block label
+# (`g.sigma_1`, `h.sigma_1`, ...) so terms stay distinguishable.
+.re_cov_derived_matrix_multi <- function(Sig_node_list, layout) {
+  M <- length(layout)
+  parts <- lapply(seq_len(M), function(m) {
+    bl <- layout[[m]]
+    Sig_m <- lapply(Sig_node_list, `[[`, m)
+    D <- .re_cov_derived_matrix(Sig_m, bl$nc, full = bl$full)
+    if (M > 1L) {
+      colnames(D) <- paste0(.re_cov_block_label(bl, m), ".", colnames(D))
+    }
+    D
+  })
+  do.call(cbind, parts)
+}
+
+# Marginalized summary of one or more random-effect covariances. Shared by the
+# grid integrator (tulpa_re_cov_nested, weighted grid cells) and the Gibbs
+# sampler (tulpa_re_cov_gibbs, equal-weight posterior draws). Each element of
+# `Sig_node_list` is the per-block list of Sigma matrices for one cell / draw.
+# `Marginalize Derived Quantities`: each derived value is computed PER matrix
+# then weighted-quantiled. With equal weights `.nl_wtd_quantile` reduces to the
+# sample quantile, so the same code summarizes both paths.
+.re_cov_derived_summary <- function(Sig_node_list, w, layout) {
+  D <- .re_cov_derived_matrix_multi(Sig_node_list, layout)
 
   summarize <- function(x) {
     m   <- sum(w * x)
@@ -161,16 +317,25 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
   rownames(post) <- colnames(D)
   posterior <- data.frame(parameter = rownames(post), post,
                           row.names = NULL, check.names = FALSE)
-  Sigma_mean <- Reduce(`+`, Map(function(S, wi) S * wi, Sig_list, w))
+
+  M <- length(layout)
+  Sig_mean <- lapply(seq_len(M), function(m) {
+    Sig_m <- lapply(Sig_node_list, `[[`, m)
+    Reduce(`+`, Map(function(S, wi) S * wi, Sig_m, w))
+  })
+  Sigma_mean <- if (M == 1L) Sig_mean[[1L]] else
+    stats::setNames(Sig_mean,
+                    vapply(seq_len(M), function(m)
+                      .re_cov_block_label(layout[[m]], m), character(1)))
   list(posterior = posterior, Sigma_mean = Sigma_mean)
 }
 
 # Posterior beta draws for the nested-Laplace mixture. Each grid node k carries
 # a Gaussian fixed-effect block N(beta_k, Vb_k) from its inner Laplace solve;
-# the node weights w summarize the Sigma posterior. Drawing node ~ Categorical(w)
-# then beta ~ N(beta_k, Vb_k) yields an equal-weight sample of the marginal
-# fixed-effect posterior (the Sigma uncertainty is propagated through the node
-# mixture). Nodes with zero weight or a failed solve are dropped.
+# the node weights w summarize the joint Sigma posterior. Drawing node ~
+# Categorical(w) then beta ~ N(beta_k, Vb_k) yields an equal-weight sample of
+# the marginal fixed-effect posterior (the Sigma uncertainty is propagated
+# through the node mixture). Nodes with zero weight or a failed solve are dropped.
 .re_cov_nested_beta_draws <- function(beta_nodes, beta_cov_nodes, w,
                                       n_draws, beta_names) {
   p  <- ncol(beta_nodes)
@@ -193,66 +358,88 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
   out
 }
 
-#' Nested-Laplace integration over a random-effect covariance
+# Per-block plug-in MAP summary (Sigma, sigma, rho) from the mode theta_hat.
+.re_cov_map_summary <- function(theta_hat, layout) {
+  L_list <- .re_cov_theta_to_L_list(theta_hat, layout)
+  M <- length(layout)
+  per <- lapply(seq_len(M), function(m) {
+    bl <- layout[[m]]
+    S  <- L_list[[m]] %*% t(L_list[[m]])
+    sig <- sqrt(diag(S))
+    rho <- if (bl$full && bl$nc > 1L) {
+      R <- S / outer(sig, sig); R[upper.tri(R)]
+    } else numeric(0)
+    list(Sigma = S, sigma = sig, rho = rho)
+  })
+  if (M == 1L) per[[1L]] else
+    stats::setNames(per, vapply(seq_len(M), function(m)
+      .re_cov_block_label(layout[[m]], m), character(1)))
+}
+
+#' Nested-Laplace integration over random-effect covariances
 #'
 #' @description
-#' For a single correlated random-effects term (e.g. `(1 + x | g)`), integrate
-#' the Laplace marginal likelihood over the random-effect covariance `Sigma`
-#' instead of fixing it at a point estimate. Reports weighted posterior
-#' summaries (mean, SD, median, 2.5\%/97.5\%) of `Sigma` and its derived scale
-#' (`sigma_i`) and correlation (`rho_ij`) parameters, marginalizing the joint
-#' posterior over a `Sigma`-grid.
+#' For one or more random-effects terms (e.g. `(1 + x | g)`, `(1 + x || g)`, or
+#' several terms together), integrate the Laplace marginal likelihood over the
+#' random-effect covariances `Sigma` instead of fixing them at point estimates.
+#' Reports weighted posterior summaries (mean, SD, median, 2.5\%/97.5\%) of every
+#' `Sigma` and its derived scale (`sigma_i`) and correlation (`rho_ij`)
+#' parameters, marginalizing the joint posterior over a `Sigma`-grid.
 #'
 #' This corrects the plug-in-MAP ("summary") bias: the mode of a skewed
 #' variance-component marginal is biased low relative to its median, so the
 #' headline summary should be the marginalized median, not the mode.
 #'
 #' @details
-#' `Sigma` is parameterized by its lower Cholesky factor `L` (`Sigma = L L'`)
-#' in log-Cholesky coordinates `theta`: the log-diagonal and the strictly-lower
-#' entries of `L` (`c(c+1)/2` values for a `c`-coefficient term), which keeps
-#' `Sigma` positive definite for every `theta`. Integration nodes live in
-#' whitened `theta`-space, centred at the marginal-likelihood mode `theta_hat`
-#' and rotated/scaled by the Cholesky of the mode's posterior covariance
-#' (`solve(Hessian)`), so points track the posterior ridge.
+#' Each term is one covariance **block**. A correlated block (`(1 + x | g)`) is
+#' a full `Sigma = L L'` parameterized by its lower Cholesky factor in
+#' log-Cholesky coordinates (the log-diagonal and the strictly-lower entries of
+#' `L`, `c(c+1)/2` values for a `c`-coefficient block), which keeps `Sigma`
+#' positive definite for every coordinate. An uncorrelated block
+#' (`(1 + x || g)`) is a diagonal `Sigma` parameterized by its `c` log standard
+#' deviations. A scalar `(1 | g)` term is the degenerate `c = 1` block. Several
+#' blocks stack their parameters into one integration vector; a single-term
+#' model is the length-1 case.
 #'
-#' Two node layouts are available via `integration`:
+#' Integration nodes live in the whitened stacked-parameter space, centred at
+#' the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
+#' mode's posterior covariance (`solve(Hessian)`), so points track the posterior
+#' ridge. Two node layouts are available via `integration`:
 #' \itemize{
 #'   \item `"ccd"` (default): a central-composite design ([ccd_grid()]) of
-#'     `1 + 2k + 2^(k-q)` points for `k = c(c+1)/2` hyperparameters, with the
-#'     corrected R-INLA design weights ([ccd_weights()]). Scales polynomially in
-#'     the number of coefficients `c`, where the tensor grid is exponential
-#'     (`c = 3` -> `k = 6` -> `5^6 ~ 15600` cells vs `77` CCD points).
+#'     `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks` parameters, with
+#'     the corrected R-INLA design weights ([ccd_weights()]). Scales polynomially
+#'     in `k`, where the tensor grid is exponential.
 #'   \item `"grid"`: the full `n_per_axis^k` tensor product with uniform cell
 #'     weights -- denser and more robust to a non-Gaussian whitened posterior,
-#'     but only tractable for small `c`.
+#'     but only tractable for small `k`.
 #' }
 #' Each node `k` contributes integration weight proportional to
-#' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, where
-#' `Delta_k` is the CCD design weight (uniform for the tensor grid), following
+#' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
 #' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
 #'
 #' By default `log_prior_theta` is the weakly-informative PC + LKJ hyperprior
-#' built by [re_cov_pc_lkj_prior()] (PC prior on each marginal SD via
-#' `prior_sigma`, LKJ prior on the correlation matrix via `eta`), expressed in
-#' the log-Cholesky parameterization above with the exact change-of-variables
-#' Jacobian. This makes the integrated surface a proper posterior with an
-#' interior mode and mildly regularizes small-group variance components. Supply
-#' a custom `log_prior_theta` function to override it (then `prior_sigma` /
-#' `eta` are ignored); it must act in the same log-Cholesky parameterization.
+#' built per block by [re_cov_pc_lkj_prior()] and summed over blocks (PC prior on
+#' each marginal SD via `prior_sigma`, LKJ prior on each correlated block's
+#' correlation matrix via `eta`), expressed in the same parameterization with the
+#' exact change-of-variables Jacobian. Supply a custom `log_prior_theta` function
+#' to override it (then `prior_sigma` / `eta` are ignored); it must act on the
+#' full stacked parameter vector.
 #'
 #' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
 #'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
-#' @param re_term A single random-effect term: a list with `idx` (1-based group
-#'   index per observation), `n_groups`, `n_coefs` (`c`), and `Z` (the
-#'   `n_obs x c` RE design, e.g. `cbind(1, x)` for `(1 + x | g)`). Any `L` /
-#'   `cov` / `sigma` field is ignored -- `Sigma` is what this function
-#'   integrates over.
+#' @param re_terms Either a single random-effect term or a list of them. Each
+#'   term is a list with `idx` (1-based group index per observation),
+#'   `n_groups`, `n_coefs` (`c`), `Z` (the `n_obs x c` RE design, e.g.
+#'   `cbind(1, x)` for `(1 + x | g)`; only required when `c > 1`), and
+#'   `correlated` (`TRUE` for a full `Sigma`, `FALSE` for a diagonal one;
+#'   defaults to `TRUE`). An optional `label` / `group_var` names the block in
+#'   the output. Any `L` / `cov` / `sigma` field is ignored -- `Sigma` is what
+#'   this function integrates over.
 #' @param integration Node layout: `"ccd"` (default, central-composite design,
-#'   scales to larger `c`) or `"grid"` (full tensor product). See Details.
-#' @param n_per_axis Points per `theta` axis in the tensor grid (default 5);
-#'   used only when `integration = "grid"`. Grid size is `n_per_axis^(c(c+1)/2)`;
-#'   each cell is one Laplace fit.
+#'   scales to larger total parameter count) or `"grid"` (full tensor product).
+#' @param n_per_axis Points per parameter axis in the tensor grid (default 5);
+#'   used only when `integration = "grid"`.
 #' @param span Half-width of the tensor grid in posterior standard deviations
 #'   per whitened axis (default 3); used only when `integration = "grid"`.
 #' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
@@ -260,10 +447,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
 #'   `P(sigma_i > U) = alpha` (default `c(3, 0.05)`) and LKJ shape `eta`
 #'   (default 2). Ignored when `log_prior_theta` is supplied.
 #' @param log_prior_theta Optional `function(theta)` returning a scalar log
-#'   prior density in the log-Cholesky parameterization. Default `NULL`, which
+#'   prior density on the full stacked parameter vector. Default `NULL`, which
 #'   builds the PC + LKJ prior from `prior_sigma` / `eta`.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
-#'   every inner [tulpa_laplace()] solve (`list(mean, sd)`; see [tulpa_laplace()]).
+#'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
 #'   `NULL` (default) keeps the weak built-in prior.
 #' @param n_draws Number of posterior draws of the fixed effects to synthesize
 #'   from the node mixture (default 2000), exposed as `draws` for the generic
@@ -273,24 +460,26 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
 #' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
 #'
 #' @return A list with:
-#'   - `posterior`: data frame with one row per parameter (`sigma_i`, `rho_ij`,
-#'     `Sigma_ij`) and columns `mean`, `sd`, `median`, `ci_lo`, `ci_hi` -- the
-#'     marginalized summaries.
-#'   - `map`: the plug-in-mode summary (`Sigma`, `sigma`, `rho`) at `theta_hat`,
-#'     for comparison with the marginalized `posterior`.
-#'   - `Sigma_mean`: the weighted posterior mean of `Sigma` (a `c x c` matrix).
-#'   - `beta`: the node-weighted posterior mean of the fixed effects.
-#'   - `draws`: `n_draws x ncol(X)` matrix of fixed-effect posterior draws from
-#'     the node mixture (drives `coef`/`confint`/`vcov`/`summary`); `means`,
-#'     `param_names`, `process_info` accompany it.
-#'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `n_coefs`.
+#'   - `posterior`: data frame with one row per parameter and columns `mean`,
+#'     `sd`, `median`, `ci_lo`, `ci_hi`. Parameter names are `sigma_i`, `rho_ij`,
+#'     `Sigma_ij` for a single block, prefixed by the block label
+#'     (`g.sigma_1`, ...) when there are several blocks. Diagonal blocks report
+#'     no `rho`.
+#'   - `map`: the plug-in-mode summary at `theta_hat` (a single `list(Sigma,
+#'     sigma, rho)` for one block, or a named list of them).
+#'   - `Sigma_mean`: the weighted posterior mean of `Sigma` (a matrix for one
+#'     block, or a named list of matrices).
+#'   - `beta`, `draws`, `means`, `param_names`, `process_info`: the fixed-effect
+#'     posterior from the node mixture (drives `coef`/`confint`/`vcov`/`summary`).
+#'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
+#'     `n_blocks`, `n_coefs` (vector of per-block `c`).
 #'
 #' @seealso [tulpa_laplace()] for the inner solve; [tulpa_nested_laplace()] for
 #'   the analogous outer integration over spatial / temporal prior
 #'   hyperparameters.
 #'
 #' @export
-tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
+tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 family = "binomial", phi = 1.0,
                                 integration = c("ccd", "grid"),
                                 n_per_axis = 5L, span = 3,
@@ -302,31 +491,22 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
   integration <- match.arg(integration)
   if (!is.null(seed)) set.seed(as.integer(seed))
 
-  if (is.null(re_term$n_coefs)) re_term$n_coefs <- 1L
-  c_re <- as.integer(re_term$n_coefs)
-  if (c_re < 1L) stop("`re_term$n_coefs` must be >= 1.", call. = FALSE)
-  if (is.null(re_term$idx) || is.null(re_term$n_groups)) {
-    stop("`re_term` must supply `idx` and `n_groups`.", call. = FALSE)
-  }
-  if (c_re > 1L && is.null(re_term$Z)) {
-    stop("`re_term$Z` (the n_obs x n_coefs RE design) is required when ",
-         "n_coefs > 1.", call. = FALSE)
-  }
+  re_terms <- .as_re_terms_list(re_terms)
   if (is.null(n_trials)) n_trials <- rep(1L, length(y))
+  layout <- .re_cov_block_layout(re_terms, length(y))
+  k <- sum(vapply(layout, `[[`, integer(1), "k"))
   if (is.null(log_prior_theta)) {
-    log_prior_theta <- re_cov_pc_lkj_prior(c_re, prior_sigma, eta)
+    log_prior_theta <- .re_cov_joint_prior(layout, prior_sigma, eta)
   }
-  k <- c_re * (c_re + 1L) / 2L
 
-  # Inner solve: Laplace log-marginal at Sigma = L L'. Failures at extreme grid
-  # edges (non-finite / non-convergent) return -Inf so the cell gets zero
-  # weight rather than aborting the integration.
-  inner_logmarg <- function(L) {
-    rt <- re_term
-    rt$L <- L; rt$cov <- NULL; rt$sigma <- NULL
+  # Inner solve: Laplace log-marginal at the supplied per-block covariances.
+  # Failures at extreme grid edges (non-finite / non-convergent) return -Inf so
+  # the cell gets zero weight rather than aborting the integration.
+  inner_logmarg <- function(L_list) {
     val <- tryCatch(
       tulpa_laplace(
-        y = y, n_trials = n_trials, X = X, re_list = list(rt),
+        y = y, n_trials = n_trials, X = X,
+        re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi, return_hessian = FALSE,
         beta_prior = beta_prior,
         max_iter = max_iter, tol = tol, n_threads = n_threads
@@ -337,15 +517,13 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
   }
 
   # Full inner solve at the integration nodes: the Laplace log-marginal plus the
-  # fixed-effect mode and its MARGINAL covariance (solve(H_beta), the
-  # Schur-complemented block). Used only for the ng-node pass (not the optimizer
-  # loop), so the extra Hessian work is paid O(n_grid) times, not per optim step.
-  inner_fit <- function(L) {
-    rt <- re_term
-    rt$L <- L; rt$cov <- NULL; rt$sigma <- NULL
+  # fixed-effect mode and its MARGINAL covariance (solve(H_beta)). Paid O(n_grid)
+  # times, not per optim step.
+  inner_fit <- function(L_list) {
     tryCatch(
       tulpa_laplace(
-        y = y, n_trials = n_trials, X = X, re_list = list(rt),
+        y = y, n_trials = n_trials, X = X,
+        re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi, return_hessian = TRUE,
         beta_prior = beta_prior,
         max_iter = max_iter, tol = tol, n_threads = n_threads
@@ -354,39 +532,49 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
     )
   }
 
-  # --- pilot init: method-of-moments Sigma from a Sigma = I fit -------------
-  L0 <- diag(c_re)
+  # --- pilot init: method-of-moments per block from a Sigma = I fit ----------
+  p_fix  <- ncol(X)
+  L0_list <- lapply(layout, function(bl) diag(bl$nc))
   pilot <- tryCatch(
     tulpa_laplace(
       y = y, n_trials = n_trials, X = X,
-      re_list = list(utils::modifyList(re_term, list(L = L0, cov = NULL, sigma = NULL))),
+      re_list = .re_cov_build_re_list(L0_list, layout),
       family = family, phi = phi, return_hessian = FALSE,
       beta_prior = beta_prior,
       max_iter = max_iter, tol = tol, n_threads = n_threads
     ),
     error = function(e) NULL
   )
-  Sigma_init <- diag(c_re)
+  L_init_list <- L0_list
   if (!is.null(pilot) && !is.null(pilot$mode)) {
-    p_fix <- ncol(X)
     re_vals <- pilot$mode[-seq_len(p_fix)]
-    if (length(re_vals) == c_re * re_term$n_groups) {
-      U <- matrix(re_vals, ncol = c_re, byrow = TRUE)   # n_groups x c
-      S <- stats::cov(U)
-      # clamp to PD with a floor on the variances
-      if (all(is.finite(S))) {
-        diag(S) <- pmax(diag(S), 1e-3)
-        ev <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
-        if (min(ev) > 1e-8) Sigma_init <- S
+    pos <- 0L
+    for (m in seq_along(layout)) {
+      bl  <- layout[[m]]
+      len <- bl$n_groups * bl$nc
+      if (pos + len <= length(re_vals) && bl$n_groups > bl$nc) {
+        U <- matrix(re_vals[pos + seq_len(len)], ncol = bl$nc, byrow = TRUE)
+        S <- stats::cov(U)
+        if (all(is.finite(S))) {
+          if (!bl$full) S <- diag(diag(S), bl$nc)     # diagonal block: drop covs
+          diag(S) <- pmax(diag(S), 1e-3)
+          ev <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
+          if (min(ev) > 1e-8) {
+            L_init_list[[m]] <- if (bl$full) t(chol(S)) else {
+              Lm <- matrix(0, bl$nc, bl$nc); diag(Lm) <- sqrt(diag(S)); Lm
+            }
+          }
+        }
       }
+      pos <- pos + len
     }
   }
-  theta0 <- .re_L_to_logchol(t(chol(Sigma_init)), c_re)
+  theta0 <- .re_cov_L_list_to_theta(L_init_list, layout)
 
   # --- mode of g(theta) = log_marginal(Sigma(theta)) + log_prior ------------
   negg <- function(theta) {
-    L <- .re_logchol_to_L(theta, c_re)
-    -(inner_logmarg(L) + log_prior_theta(theta))
+    L_list <- .re_cov_theta_to_L_list(theta, layout)
+    -(inner_logmarg(L_list) + log_prior_theta(theta))
   }
   opt <- stats::optim(theta0, negg, method = "Nelder-Mead", hessian = TRUE,
                       control = list(maxit = 500L, reltol = 1e-8))
@@ -404,12 +592,6 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
   L_scale <- t(chol(post_cov))
 
   # --- integration nodes in whitened theta-space ----------------------------
-  # CCD (default): O(2^k) nodes -- 1 centre + 2k axial + 2^k factorial -- versus
-  # n_per_axis^k for the tensor grid, the only tractable choice once k = c(c+1)/2
-  # grows (c=3 -> k=6). Sphere radius sqrt(k)*1.1 places the factorial corners at
-  # +/- 1.1 (INLA standardized scaling); `dnode` are the corrected R-INLA design
-  # weights. The tensor grid stays available via `integration = "grid"` (denser,
-  # more robust to a non-Gaussian whitened posterior, but exponential in k).
   if (integration == "ccd") {
     ccd   <- ccd_grid(k, f_0 = sqrt(k) * 1.1)
     z     <- ccd$z
@@ -426,52 +608,41 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
   # --- evaluate inner marginal + derived quantities per cell ----------------
   # One FULL Laplace solve per node: the log-marginal feeds the integration
   # weight; the fixed-effect mode + marginal covariance feed the posterior-draw
-  # synthesis. A failed / non-finite node keeps logm = -Inf (weight 0) and is
-  # excluded from the draw mixture.
-  p_fix          <- ncol(X)
+  # synthesis. A failed / non-finite node keeps logm = -Inf (weight 0).
   logm           <- rep(-Inf, ng)
-  Sig_entries    <- vector("list", ng)
+  Sig_node_list  <- vector("list", ng)
   beta_nodes     <- matrix(NA_real_, ng, p_fix)
   beta_cov_nodes <- vector("list", ng)
   for (i in seq_len(ng)) {
-    th <- theta_grid[i, ]
-    L  <- .re_logchol_to_L(th, c_re)
-    Sig_entries[[i]] <- L %*% t(L)
-    fit_i <- inner_fit(L)
+    th     <- theta_grid[i, ]
+    L_list <- .re_cov_theta_to_L_list(th, layout)
+    Sig_node_list[[i]] <- lapply(L_list, function(L) L %*% t(L))
+    fit_i  <- inner_fit(L_list)
     if (is.null(fit_i) || is.null(fit_i$mode) ||
         length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) next
-    logm[i]          <- fit_i$log_marginal + log_prior_theta(th)
-    beta_nodes[i, ]  <- fit_i$mode[seq_len(p_fix)]
+    logm[i]            <- fit_i$log_marginal + log_prior_theta(th)
+    beta_nodes[i, ]    <- fit_i$mode[seq_len(p_fix)]
     beta_cov_nodes[[i]] <-
       if (is.null(fit_i$H_beta)) NULL
       else tryCatch(solve(fit_i$H_beta), error = function(e) NULL)
   }
   # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
-  # evaluated joint exp(logm), the INLA convention int ~ sum_k Delta_k pi(theta_k).
-  # log-sum-exp shift for stability; reduces to .nl_normalise_weights when dnode==1.
+  # evaluated joint exp(logm); log-sum-exp shift for stability.
   lw <- log(dnode) + (logm - max(logm))
   w  <- exp(lw); w <- w / sum(w)
 
   # --- derived quantities, marginalized over the grid -----------------------
-  # Each derived value is computed PER cell and weighted-quantiled (never a
-  # transform of summarized components); see `.re_cov_derived_summary`.
-  summ <- .re_cov_derived_summary(Sig_entries, w, c_re)
+  summ <- .re_cov_derived_summary(Sig_node_list, w, layout)
   posterior <- summ$posterior
 
-  # --- plug-in MAP summary (for comparison) and weighted-mean Sigma ---------
-  L_hat <- .re_logchol_to_L(theta_hat, c_re)
-  Sigma_hat <- L_hat %*% t(L_hat)
-  sig_hat <- sqrt(diag(Sigma_hat))
-  rho_hat <- if (c_re > 1L) {
-    R <- Sigma_hat / outer(sig_hat, sig_hat); R[upper.tri(R)]
-  } else numeric(0)
+  # --- plug-in MAP summary (for comparison) ---------------------------------
+  map <- .re_cov_map_summary(theta_hat, layout)
 
   # --- fixed-effect posterior from the node mixture -------------------------
   beta_names <- colnames(X) %||% paste0("beta", seq_len(p_fix))
   draws <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
                                      as.integer(n_draws), beta_names)
   beta_mean <- if (is.null(draws)) {
-    # degenerate fallback: weighted node mean (no usable per-node covariance)
     ok <- is.finite(rowSums(beta_nodes)) & w > 0
     if (any(ok)) colSums(w[ok] / sum(w[ok]) * beta_nodes[ok, , drop = FALSE])
     else rep(NA_real_, p_fix)
@@ -480,7 +651,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
 
   list(
     posterior   = posterior,
-    map         = list(Sigma = Sigma_hat, sigma = sig_hat, rho = rho_hat),
+    map         = map,
     Sigma_mean  = summ$Sigma_mean,
     beta        = beta_mean,
     draws       = draws,
@@ -496,6 +667,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
     weights     = w,
     log_marginal = logm,
     n_grid      = ng,
-    n_coefs     = c_re
+    layout      = layout,
+    n_blocks    = length(layout),
+    n_coefs     = vapply(layout, `[[`, integer(1), "nc")
   )
 }
