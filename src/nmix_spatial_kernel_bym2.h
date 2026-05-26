@@ -87,6 +87,7 @@ inline void nmix_assemble_obs_info_bym2(
     const Eigen::VectorXd& info_eta_lam,
     const Eigen::VectorXd& info_eta_p,
     const Eigen::VectorXd& var_N,
+    const Eigen::VectorXd& score_wt_lambda,   // N-coeff of s_lambda (1 for Poisson)
     Eigen::MatrixXd& H_obs /* in/out: zero-initialized [n_x x n_x] */
 ) {
     const int n_sites = static_cast<int>(obs_by_site.size());
@@ -134,10 +135,14 @@ inline void nmix_assemble_obs_info_bym2(
         }
 
         // ----- Var[N|y_s] rank-1 marginal correction -----
+        // score_wt_lambda(s) is the N-coefficient of the eta_lambda score
+        // (1 for Poisson, 1-q for NB); it scales beta_lambda (via X_lambda) and
+        // the v / w coords (via a, b) that enter eta_lambda.
         if (var_N(s) > 0.0) {
+            const double swl = score_wt_lambda(s);
             const int n_x_local = p_lam + p_p + 2 * n_spatial;
             Eigen::VectorXd u_s = Eigen::VectorXd::Zero(n_x_local);
-            u_s.segment(0, p_lam) = -X_lambda.row(s).transpose();
+            u_s.segment(0, p_lam) = -swl * X_lambda.row(s).transpose();
             Eigen::VectorXd ssum = Eigen::VectorXd::Zero(p_p);
             for (int j = 0; j < J; ++j) {
                 double e = eta_p_long(idx[j]);
@@ -151,8 +156,8 @@ inline void nmix_assemble_obs_info_bym2(
                 ssum += p_ij * X_p.row(idx[j]).transpose();
             }
             u_s.segment(p_lam, p_p) = ssum;
-            u_s(v_start + u) = -a;
-            u_s(w_start + u) = -b;
+            u_s(v_start + u) = -swl * a;
+            u_s(w_start + u) = -swl * b;
 
             H_obs.selfadjointView<Eigen::Lower>().rankUpdate(u_s, -var_N(s));
         }

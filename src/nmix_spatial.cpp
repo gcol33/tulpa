@@ -143,6 +143,7 @@ SpatialInnerResult inner_newton_spatial_car(
     const Rcpp::IntegerVector& adj_col_idx,
     const Rcpp::IntegerVector& n_neighbors,
     double tau, double rho, double log_det_Q_rho,
+    double r,                          // NB size; +Inf for Poisson
     int K_max,
     int max_iter,
     double tol,
@@ -162,6 +163,7 @@ SpatialInnerResult inner_newton_spatial_car(
 
     VectorXd grad_eta_lam(n_sites), info_eta_lam(n_sites);
     VectorXd mean_N(n_sites), var_N(n_sites), boundary_weight(n_sites);
+    VectorXd score_wt_lambda(n_sites);
     VectorXd grad_eta_p(n_obs), info_eta_p(n_obs);
     VectorXd eta_lam(n_sites);
     VectorXd eta_p_long(n_obs);
@@ -175,9 +177,9 @@ SpatialInnerResult inner_newton_spatial_car(
         eta_p_long.noalias() = Xp * res.beta_p;
 
         log_lik = nmix_kernel_sweep_spatial(
-            obs_by_site, y_R, eta_lam, eta_p_long, K_max,
+            obs_by_site, y_R, eta_lam, eta_p_long, K_max, r,
             grad_eta_lam, info_eta_lam, grad_eta_p, info_eta_p,
-            mean_N, var_N, boundary_weight
+            mean_N, var_N, boundary_weight, score_wt_lambda
         );
 
         VectorXd grad = VectorXd::Zero(n_x);
@@ -195,7 +197,7 @@ SpatialInnerResult inner_newton_spatial_car(
         nmix_assemble_obs_info_spatial(
             p_lam, p_p, n_spatial,
             Xl, Xp, eta_p_long, obs_by_site, map_site_to_unit,
-            info_eta_lam, info_eta_p, var_N, H
+            info_eta_lam, info_eta_p, var_N, score_wt_lambda, H
         );
         nmix_add_car_to_spatial_block(
             p_lam, p_p, n_spatial, tau, rho,
@@ -265,7 +267,7 @@ SpatialInnerResult inner_newton_spatial_car(
                                        map_site_to_unit, eta_lam_try);
             eta_p_try.noalias() = Xp * beta_p_try;
             double ll_try = nmix_kernel_log_lik_only_spatial(
-                obs_by_site, y_R, eta_lam_try, eta_p_try, K_max
+                obs_by_site, y_R, eta_lam_try, eta_p_try, K_max, r
             );
             double lp_try = nmix_car_log_prior_dispatch(
                 kind, n_spatial, tau, rho, log_det_Q_rho,
@@ -308,9 +310,9 @@ SpatialInnerResult inner_newton_spatial_car(
                                map_site_to_unit, eta_lam);
     eta_p_long.noalias() = Xp * res.beta_p;
     double log_lik_final = nmix_kernel_sweep_spatial(
-        obs_by_site, y_R, eta_lam, eta_p_long, K_max,
+        obs_by_site, y_R, eta_lam, eta_p_long, K_max, r,
         grad_eta_lam, info_eta_lam, grad_eta_p, info_eta_p,
-        mean_N, var_N, boundary_weight
+        mean_N, var_N, boundary_weight, score_wt_lambda
     );
     double log_prior_z_final = nmix_car_log_prior_dispatch(
         kind, n_spatial, tau, rho, log_det_Q_rho,
@@ -321,7 +323,7 @@ SpatialInnerResult inner_newton_spatial_car(
     nmix_assemble_obs_info_spatial(
         p_lam, p_p, n_spatial,
         Xl, Xp, eta_p_long, obs_by_site, map_site_to_unit,
-        info_eta_lam, info_eta_p, var_N, H_final
+        info_eta_lam, info_eta_p, var_N, score_wt_lambda, H_final
     );
     // For the log|H| term, use observed info + CAR(rho). If non-PSD, fall
     // back to complete-data Fisher + CAR(rho) (will overstate curvature
@@ -390,6 +392,7 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
     Rcpp::IntegerVector n_neighbors,
     int n_spatial,
     Rcpp::NumericVector tau_grid,
+    Rcpp::NumericVector r_grid,               // NB size grid; c(Inf) for Poisson
     Rcpp::NumericVector beta_lambda_init,
     Rcpp::NumericVector beta_p_init,
     Rcpp::Nullable<Rcpp::NumericVector> z_init = R_NilValue,
@@ -409,6 +412,7 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
     }
     if ((int)beta_lambda_init.size() != p_lam) Rcpp::stop("beta_lambda_init length mismatch.");
     if ((int)beta_p_init.size() != p_p) Rcpp::stop("beta_p_init length mismatch.");
+    if (r_grid.size() < 1) Rcpp::stop("r_grid must have length >= 1.");
     if (K_max < 0) {
         int ymax = 0;
         for (int o = 0; o < n_obs; ++o) if (y[o] > ymax) ymax = y[o];
@@ -444,13 +448,12 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
     } else {
         z_default.setZero();
     }
-    VectorXd beta_lam = beta_lam_default;
-    VectorXd beta_p   = beta_p_default;
-    VectorXd z        = z_default;
-
-    const int n_grid = tau_grid.size();
+    const int n_tau  = tau_grid.size();
+    const int n_r    = r_grid.size();
+    const int n_grid = n_tau * n_r;
     const int n_x    = p_lam + p_p + n_spatial;
 
+    Rcpp::NumericMatrix theta_grid_out(n_grid, 2);   // (tau, r) per grid point
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
     Rcpp::LogicalVector convergeds(n_grid);
@@ -460,51 +463,60 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
     Rcpp::NumericMatrix modes(n_grid, n_x);
     Rcpp::List cov_blocks(n_grid);   // per-grid marginal coef covariance
 
-    for (int k = 0; k < n_grid; ++k) {
-        SpatialInnerResult ir = inner_newton_spatial_car(
-            CarPriorKind::ICAR,
-            p_lam, p_p, n_sites, n_spatial, n_obs,
-            Xl, Xp, y, obs_by_site, map_site_to_unit,
-            adj_row_ptr, adj_col_idx, n_neighbors,
-            tau_grid[k], /*rho=*/1.0, /*log_det_Q_rho=*/0.0,
-            K_max, max_iter, tol,
-            beta_lam, beta_p, z, verbose
-        );
-        log_marginals[k]  = ir.log_marginal;
-        n_iters[k]        = ir.n_iter;
-        convergeds[k]     = ir.converged;
-        grad_norms[k]     = ir.grad_norm;
-        log_liks[k]       = ir.log_lik;
-        boundary_maxes[k] = ir.boundary_max;
+    // Outer grid integrates the NB dispersion r (outermost) and the ICAR
+    // precision tau. For Poisson, r_grid = c(Inf) (single pass, Poisson kernel).
+    int k = 0;
+    for (int ri = 0; ri < n_r; ++ri) {
+        for (int t = 0; t < n_tau; ++t, ++k) {
+            const double tau = tau_grid[t];
+            const double rr  = r_grid[ri];
+            theta_grid_out(k, 0) = tau;
+            theta_grid_out(k, 1) = rr;
 
-        for (int j = 0; j < p_lam; ++j)        modes(k, j) = ir.beta_lambda(j);
-        for (int j = 0; j < p_p; ++j)          modes(k, p_lam + j) = ir.beta_p(j);
-        for (int j = 0; j < n_spatial; ++j)    modes(k, p_lam + p_p + j) = ir.z(j);
-        cov_blocks[k] = Rcpp::wrap(ir.cov_beta);
+            // Cold-restart per grid point: the N-mixture identifiability ridge
+            // between (lambda intercept) and (p intercept) shifts substantially
+            // across tau (and r) as z absorbs different fractions of variance;
+            // warm-starting across it confounds Newton's step-halving.
+            VectorXd beta_lam = beta_lam_default;
+            VectorXd beta_p   = beta_p_default;
+            VectorXd z        = z_default;
 
-        // Reset to user-supplied defaults for the next grid point. Warm-
-        // starting from the previous tau's mode is appealing but the
-        // N-mixture identifiability ridge between (lambda intercept) and
-        // (p intercept) shifts substantially across tau when z absorbs
-        // different fractions of the spatial variance: at low tau the
-        // optimum sits at high-lambda/low-p; at high tau, low-lambda/
-        // high-p. Warm-starting across that ridge confounds Newton's
-        // step-halving. Cold-starting each tau costs ~10-20 Newton
-        // iterations per grid point and is dramatically more reliable.
-        beta_lam = beta_lam_default;
-        beta_p   = beta_p_default;
-        z        = z_default;
+            SpatialInnerResult ir = inner_newton_spatial_car(
+                CarPriorKind::ICAR,
+                p_lam, p_p, n_sites, n_spatial, n_obs,
+                Xl, Xp, y, obs_by_site, map_site_to_unit,
+                adj_row_ptr, adj_col_idx, n_neighbors,
+                tau, /*rho=*/1.0, /*log_det_Q_rho=*/0.0, rr,
+                K_max, max_iter, tol,
+                beta_lam, beta_p, z, verbose
+            );
+            log_marginals[k]  = ir.log_marginal;
+            n_iters[k]        = ir.n_iter;
+            convergeds[k]     = ir.converged;
+            grad_norms[k]     = ir.grad_norm;
+            log_liks[k]       = ir.log_lik;
+            boundary_maxes[k] = ir.boundary_max;
 
-        if (verbose) {
-            Rcpp::Rcout << "[grid " << k + 1 << "/" << n_grid << "] tau=" << tau_grid[k]
-                        << " log_marg=" << ir.log_marginal
-                        << " n_iter=" << ir.n_iter
-                        << " conv=" << ir.converged << "\n";
+            for (int j = 0; j < p_lam; ++j)     modes(k, j) = ir.beta_lambda(j);
+            for (int j = 0; j < p_p; ++j)       modes(k, p_lam + j) = ir.beta_p(j);
+            for (int j = 0; j < n_spatial; ++j) modes(k, p_lam + p_p + j) = ir.z(j);
+            cov_blocks[k] = Rcpp::wrap(ir.cov_beta);
+
+            if (verbose) {
+                Rcpp::Rcout << "[grid " << k + 1 << "/" << n_grid << "] tau=" << tau
+                            << " r=" << rr
+                            << " log_marg=" << ir.log_marginal
+                            << " n_iter=" << ir.n_iter
+                            << " conv=" << ir.converged << "\n";
+            }
         }
     }
 
+    Rcpp::colnames(theta_grid_out) = Rcpp::CharacterVector::create("tau", "r");
     return Rcpp::List::create(
+        Rcpp::Named("theta_grid")      = theta_grid_out,
         Rcpp::Named("tau_grid")        = tau_grid,
+        Rcpp::Named("r_grid")          = r_grid,
         Rcpp::Named("log_marginal")    = log_marginals,
         Rcpp::Named("modes")           = modes,
         Rcpp::Named("cov_blocks")      = cov_blocks,
@@ -517,6 +529,8 @@ Rcpp::List cpp_nested_laplace_nmix_icar(
         Rcpp::Named("p_p")             = p_p,
         Rcpp::Named("n_spatial")       = n_spatial,
         Rcpp::Named("n_grid")          = n_grid,
+        Rcpp::Named("n_tau")           = n_tau,
+        Rcpp::Named("n_r")             = n_r,
         Rcpp::Named("K_max")           = K_max
     );
 }
@@ -561,6 +575,7 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
     int n_spatial,
     Rcpp::NumericVector tau_grid,
     Rcpp::NumericVector rho_grid,
+    Rcpp::NumericVector r_grid,               // NB size grid; c(Inf) for Poisson
     Rcpp::NumericVector beta_lambda_init,
     Rcpp::NumericVector beta_p_init,
     Rcpp::Nullable<Rcpp::NumericVector> z_init = R_NilValue,
@@ -580,6 +595,7 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
     }
     if ((int)beta_lambda_init.size() != p_lam) Rcpp::stop("beta_lambda_init length mismatch.");
     if ((int)beta_p_init.size() != p_p) Rcpp::stop("beta_p_init length mismatch.");
+    if (r_grid.size() < 1) Rcpp::stop("r_grid must have length >= 1.");
     if (K_max < 0) {
         int ymax = 0;
         for (int o = 0; o < n_obs; ++o) if (y[o] > ymax) ymax = y[o];
@@ -618,17 +634,18 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
 
     const int n_tau = tau_grid.size();
     const int n_rho = rho_grid.size();
-    const int n_grid = n_tau * n_rho;
+    const int n_r   = r_grid.size();
+    const int n_grid = n_tau * n_rho * n_r;
     const int n_x    = p_lam + p_p + n_spatial;
 
     // Precompute log|Q(rho)| once per rho grid point.
     std::vector<double> log_det_Q_rho(n_rho);
-    for (int r = 0; r < n_rho; ++r) {
-        log_det_Q_rho[r] = log_det_Q_car_proper(
-            n_spatial, rho_grid[r], adj_row_ptr, adj_col_idx, n_neighbors);
+    for (int ir_rho = 0; ir_rho < n_rho; ++ir_rho) {
+        log_det_Q_rho[ir_rho] = log_det_Q_car_proper(
+            n_spatial, rho_grid[ir_rho], adj_row_ptr, adj_col_idx, n_neighbors);
     }
 
-    Rcpp::NumericMatrix tau_grid_out(n_grid, 2);  // (tau, rho) per grid point
+    Rcpp::NumericMatrix theta_grid_out(n_grid, 3);  // (tau, rho, r) per grid point
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
     Rcpp::LogicalVector convergeds(n_grid);
@@ -639,67 +656,72 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
     Rcpp::List cov_blocks(n_grid);   // per-grid marginal coef covariance
 
     int k = 0;
-    for (int r = 0; r < n_rho; ++r) {
-        for (int t = 0; t < n_tau; ++t, ++k) {
-            const double tau = tau_grid[t];
-            const double rho = rho_grid[r];
-            tau_grid_out(k, 0) = tau;
-            tau_grid_out(k, 1) = rho;
+    for (int ir_disp = 0; ir_disp < n_r; ++ir_disp) {
+        const double rr = r_grid[ir_disp];
+        for (int ir_rho = 0; ir_rho < n_rho; ++ir_rho) {
+            for (int t = 0; t < n_tau; ++t, ++k) {
+                const double tau = tau_grid[t];
+                const double rho = rho_grid[ir_rho];
+                theta_grid_out(k, 0) = tau;
+                theta_grid_out(k, 1) = rho;
+                theta_grid_out(k, 2) = rr;
 
-            if (!R_finite(log_det_Q_rho[r])) {
-                // Q(rho) not PD: skip but record placeholder.
-                log_marginals[k]  = R_NegInf;
-                n_iters[k]        = 0;
-                convergeds[k]     = false;
-                grad_norms[k]     = R_PosInf;
-                log_liks[k]       = R_NegInf;
-                boundary_maxes[k] = 0.0;
-                continue;
-            }
+                if (!R_finite(log_det_Q_rho[ir_rho])) {
+                    // Q(rho) not PD: skip but record placeholder.
+                    log_marginals[k]  = R_NegInf;
+                    n_iters[k]        = 0;
+                    convergeds[k]     = false;
+                    grad_norms[k]     = R_PosInf;
+                    log_liks[k]       = R_NegInf;
+                    boundary_maxes[k] = 0.0;
+                    continue;
+                }
 
-            // Cold-restart per grid point (same rationale as ICAR: the
-            // identifiability ridge between (lambda intercept) and (p intercept)
-            // shifts substantially across both tau and rho).
-            VectorXd beta_lam = beta_lam_default;
-            VectorXd beta_p   = beta_p_default;
-            VectorXd z        = z_default;
+                // Cold-restart per grid point (same rationale as ICAR: the
+                // identifiability ridge between (lambda intercept) and (p
+                // intercept) shifts substantially across tau, rho, and r).
+                VectorXd beta_lam = beta_lam_default;
+                VectorXd beta_p   = beta_p_default;
+                VectorXd z        = z_default;
 
-            SpatialInnerResult ir = inner_newton_spatial_car(
-                CarPriorKind::CAR_PROPER,
-                p_lam, p_p, n_sites, n_spatial, n_obs,
-                Xl, Xp, y, obs_by_site, map_site_to_unit,
-                adj_row_ptr, adj_col_idx, n_neighbors,
-                tau, rho, log_det_Q_rho[r],
-                K_max, max_iter, tol,
-                beta_lam, beta_p, z, verbose
-            );
-            log_marginals[k]  = ir.log_marginal;
-            n_iters[k]        = ir.n_iter;
-            convergeds[k]     = ir.converged;
-            grad_norms[k]     = ir.grad_norm;
-            log_liks[k]       = ir.log_lik;
-            boundary_maxes[k] = ir.boundary_max;
+                SpatialInnerResult ir = inner_newton_spatial_car(
+                    CarPriorKind::CAR_PROPER,
+                    p_lam, p_p, n_sites, n_spatial, n_obs,
+                    Xl, Xp, y, obs_by_site, map_site_to_unit,
+                    adj_row_ptr, adj_col_idx, n_neighbors,
+                    tau, rho, log_det_Q_rho[ir_rho], rr,
+                    K_max, max_iter, tol,
+                    beta_lam, beta_p, z, verbose
+                );
+                log_marginals[k]  = ir.log_marginal;
+                n_iters[k]        = ir.n_iter;
+                convergeds[k]     = ir.converged;
+                grad_norms[k]     = ir.grad_norm;
+                log_liks[k]       = ir.log_lik;
+                boundary_maxes[k] = ir.boundary_max;
 
-            for (int j = 0; j < p_lam; ++j)        modes(k, j) = ir.beta_lambda(j);
-            for (int j = 0; j < p_p; ++j)          modes(k, p_lam + j) = ir.beta_p(j);
-            for (int j = 0; j < n_spatial; ++j)    modes(k, p_lam + p_p + j) = ir.z(j);
-            cov_blocks[k] = Rcpp::wrap(ir.cov_beta);
+                for (int j = 0; j < p_lam; ++j)     modes(k, j) = ir.beta_lambda(j);
+                for (int j = 0; j < p_p; ++j)       modes(k, p_lam + j) = ir.beta_p(j);
+                for (int j = 0; j < n_spatial; ++j) modes(k, p_lam + p_p + j) = ir.z(j);
+                cov_blocks[k] = Rcpp::wrap(ir.cov_beta);
 
-            if (verbose) {
-                Rcpp::Rcout << "[grid " << k + 1 << "/" << n_grid
-                            << "] tau=" << tau << " rho=" << rho
-                            << " log_marg=" << ir.log_marginal
-                            << " n_iter=" << ir.n_iter
-                            << " conv=" << ir.converged << "\n";
+                if (verbose) {
+                    Rcpp::Rcout << "[grid " << k + 1 << "/" << n_grid
+                                << "] tau=" << tau << " rho=" << rho << " r=" << rr
+                                << " log_marg=" << ir.log_marginal
+                                << " n_iter=" << ir.n_iter
+                                << " conv=" << ir.converged << "\n";
+                }
             }
         }
     }
 
-    Rcpp::colnames(tau_grid_out) = Rcpp::CharacterVector::create("tau", "rho");
+    Rcpp::colnames(theta_grid_out) = Rcpp::CharacterVector::create("tau", "rho", "r");
     return Rcpp::List::create(
-        Rcpp::Named("theta_grid")      = tau_grid_out,
+        Rcpp::Named("theta_grid")      = theta_grid_out,
         Rcpp::Named("tau_grid")        = tau_grid,
         Rcpp::Named("rho_grid")        = rho_grid,
+        Rcpp::Named("r_grid")          = r_grid,
         Rcpp::Named("log_det_Q_rho")   = Rcpp::wrap(log_det_Q_rho),
         Rcpp::Named("log_marginal")    = log_marginals,
         Rcpp::Named("modes")           = modes,
@@ -715,6 +737,7 @@ Rcpp::List cpp_nested_laplace_nmix_car_proper(
         Rcpp::Named("n_grid")          = n_grid,
         Rcpp::Named("n_tau")           = n_tau,
         Rcpp::Named("n_rho")           = n_rho,
+        Rcpp::Named("n_r")             = n_r,
         Rcpp::Named("K_max")           = K_max
     );
 }

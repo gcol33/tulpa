@@ -15,6 +15,8 @@ tulpa_nmix_laplace_icar(
   n_neighbors,
   n_spatial,
   tau_grid = NULL,
+  mixture = c("P", "NB"),
+  r_grid = NULL,
   beta_lambda_init = NULL,
   beta_p_init = NULL,
   z_init = NULL,
@@ -47,6 +49,15 @@ degree of unit s.}
 
 \item{tau_grid}{Optional numeric vector of \eqn{\tau} grid points. Defaults
 to \code{exp(seq(log(0.3), log(30), length.out = 9))}.}
+
+\item{mixture}{Abundance mixing distribution: \code{"P"} (Poisson, default) or
+\code{"NB"} (negative binomial). Under \code{"NB"} the NB size \eqn{r} is integrated
+as an additional outer grid dimension (alongside \eqn{\tau}); the posterior
+\code{r_mean} / \code{r_sd} are reported from the grid weights.}
+
+\item{r_grid}{Optional numeric vector of NB size grid points (NB only).
+Defaults to \code{exp(seq(log(0.5), log(40), length.out = 6))}. Ignored under
+Poisson.}
 
 \item{beta_lambda_init}{Optional warm start; default \code{c(log(mean(y)+0.1), 0, ...)}.}
 

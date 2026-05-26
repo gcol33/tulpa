@@ -38,6 +38,13 @@
 #' @param n_spatial Number of spatial units.
 #' @param tau_grid Optional numeric vector of \eqn{\tau} grid points. Defaults
 #'   to `exp(seq(log(0.3), log(30), length.out = 9))`.
+#' @param mixture Abundance mixing distribution: `"P"` (Poisson, default) or
+#'   `"NB"` (negative binomial). Under `"NB"` the NB size \eqn{r} is integrated
+#'   as an additional outer grid dimension (alongside \eqn{\tau}); the posterior
+#'   `r_mean` / `r_sd` are reported from the grid weights.
+#' @param r_grid Optional numeric vector of NB size grid points (NB only).
+#'   Defaults to `exp(seq(log(0.5), log(40), length.out = 6))`. Ignored under
+#'   Poisson.
 #' @param beta_lambda_init Optional warm start; default `c(log(mean(y)+0.1), 0, ...)`.
 #' @param beta_p_init Optional warm start; default `rep(0, p_p)`.
 #' @param z_init Optional warm start for the spatial field; default zeros.
@@ -79,6 +86,8 @@ tulpa_nmix_laplace_icar <- function(y,
                                     n_neighbors,
                                     n_spatial,
                                     tau_grid = NULL,
+                                    mixture = c("P", "NB"),
+                                    r_grid = NULL,
                                     beta_lambda_init = NULL,
                                     beta_p_init = NULL,
                                     z_init = NULL,
@@ -86,6 +95,7 @@ tulpa_nmix_laplace_icar <- function(y,
                                     max_iter = 100L,
                                     tol = 1e-6,
                                     verbose = FALSE) {
+  mixture <- match.arg(mixture)
   y                <- as.integer(y)
   site_idx         <- as.integer(site_idx)
   map_site_to_unit <- as.integer(map_site_to_unit)
@@ -109,6 +119,7 @@ tulpa_nmix_laplace_icar <- function(y,
   if (length(n_neighbors) != n_spatial) {
     stop("length(n_neighbors) must equal n_spatial.", call. = FALSE)
   }
+  r_grid_use <- .nmix_resolve_r_grid(mixture, r_grid)
   if (is.null(tau_grid)) {
     tau_grid <- exp(seq(log(0.3), log(30), length.out = 9L))
   }
@@ -143,6 +154,7 @@ tulpa_nmix_laplace_icar <- function(y,
     n_neighbors        = as.integer(n_neighbors),
     n_spatial          = as.integer(n_spatial),
     tau_grid           = as.numeric(tau_grid),
+    r_grid             = as.numeric(r_grid_use),
     beta_lambda_init   = as.numeric(beta_lambda_init),
     beta_p_init        = as.numeric(beta_p_init),
     z_init             = if (is.null(z_init)) NULL else as.numeric(z_init),
@@ -170,8 +182,11 @@ tulpa_nmix_laplace_icar <- function(y,
     }
   }
 
-  tau_mean <- sum(weights * tau_grid, na.rm = TRUE)
-  tau_sd   <- sqrt(max(0, sum(weights * tau_grid^2, na.rm = TRUE) - tau_mean^2))
+  # Per-grid hyperparameter values (theta_grid columns: tau, r).
+  tau_vec <- fit$theta_grid[, "tau"]
+  tau_mean <- sum(weights * tau_vec, na.rm = TRUE)
+  tau_sd   <- sqrt(max(0, sum(weights * tau_vec^2, na.rm = TRUE) - tau_mean^2))
+  disp <- .nmix_dispersion_summary(mixture, fit$theta_grid, weights)
 
   # Posterior-mean coefficients (weighted across grid points).
   modes <- fit$modes
@@ -194,6 +209,9 @@ tulpa_nmix_laplace_icar <- function(y,
     weights          = weights,
     tau_mean         = tau_mean,
     tau_sd           = tau_sd,
+    mixture          = mixture,
+    r_mean           = disp$r_mean,
+    r_sd             = disp$r_sd,
     beta_lambda_mean = beta_lambda_mean,
     beta_p_mean      = beta_p_mean,
     vcov             = .nmix_grid_vcov(fit$cov_blocks, modes, weights,
@@ -235,6 +253,9 @@ tulpa_nmix_laplace_icar <- function(y,
 #' @inheritParams tulpa_nmix_laplace_icar
 #' @param tau_grid Optional numeric vector of \eqn{\tau} grid points
 #'   (defaults to `exp(seq(log(0.3), log(30), length.out = 7L))`).
+#' @param mixture Abundance mixing distribution `"P"` (default) or `"NB"`; under
+#'   `"NB"` the NB size \eqn{r} is integrated as an additional outer grid axis.
+#' @param r_grid Optional NB size grid (NB only); see [tulpa_nmix_laplace_icar()].
 #' @param rho_grid Optional numeric vector of \eqn{\rho} grid points in
 #'   the valid eigenvalue interval. Defaults to a 5-point grid in
 #'   \eqn{(0, 1)} -- callers that want eigenvalue-derived bounds should
@@ -265,6 +286,8 @@ tulpa_nmix_laplace_car_proper <- function(y,
                                           n_spatial,
                                           tau_grid = NULL,
                                           rho_grid = NULL,
+                                          mixture = c("P", "NB"),
+                                          r_grid = NULL,
                                           beta_lambda_init = NULL,
                                           beta_p_init = NULL,
                                           z_init = NULL,
@@ -272,6 +295,7 @@ tulpa_nmix_laplace_car_proper <- function(y,
                                           max_iter = 100L,
                                           tol = 1e-6,
                                           verbose = FALSE) {
+  mixture <- match.arg(mixture)
   y                <- as.integer(y)
   site_idx         <- as.integer(site_idx)
   map_site_to_unit <- as.integer(map_site_to_unit)
@@ -306,6 +330,7 @@ tulpa_nmix_laplace_car_proper <- function(y,
          "eigenvalue interval. Pass explicit bounds via spatial_car_proper().",
          call. = FALSE)
   }
+  r_grid_use <- .nmix_resolve_r_grid(mixture, r_grid)
   if (is.null(beta_lambda_init)) {
     beta_lambda_init <- c(log(mean(y) + 0.1), rep(0, p_lam - 1L))
   }
@@ -338,6 +363,7 @@ tulpa_nmix_laplace_car_proper <- function(y,
     n_spatial          = as.integer(n_spatial),
     tau_grid           = as.numeric(tau_grid),
     rho_grid           = as.numeric(rho_grid),
+    r_grid             = as.numeric(r_grid_use),
     beta_lambda_init   = as.numeric(beta_lambda_init),
     beta_p_init        = as.numeric(beta_p_init),
     z_init             = if (is.null(z_init)) NULL else as.numeric(z_init),
@@ -365,12 +391,13 @@ tulpa_nmix_laplace_car_proper <- function(y,
     }
   }
 
-  tau_vec <- fit$theta_grid[, 1]
-  rho_vec <- fit$theta_grid[, 2]
+  tau_vec <- fit$theta_grid[, "tau"]
+  rho_vec <- fit$theta_grid[, "rho"]
   tau_mean <- sum(weights * tau_vec, na.rm = TRUE)
   tau_sd   <- sqrt(max(0, sum(weights * tau_vec^2, na.rm = TRUE) - tau_mean^2))
   rho_mean <- sum(weights * rho_vec, na.rm = TRUE)
   rho_sd   <- sqrt(max(0, sum(weights * rho_vec^2, na.rm = TRUE) - rho_mean^2))
+  disp <- .nmix_dispersion_summary(mixture, fit$theta_grid, weights)
 
   modes <- fit$modes
   beta_lambda_mean <- as.numeric(crossprod(weights, modes[, seq_len(p_lam), drop = FALSE]))
@@ -394,6 +421,9 @@ tulpa_nmix_laplace_car_proper <- function(y,
     tau_sd           = tau_sd,
     rho_mean         = rho_mean,
     rho_sd           = rho_sd,
+    mixture          = mixture,
+    r_mean           = disp$r_mean,
+    r_sd             = disp$r_sd,
     beta_lambda_mean = beta_lambda_mean,
     beta_p_mean      = beta_p_mean,
     vcov             = .nmix_grid_vcov(fit$cov_blocks, modes, weights,
@@ -433,6 +463,9 @@ tulpa_nmix_laplace_car_proper <- function(y,
 #' \eqn{(\sigma, \rho)}.
 #'
 #' @inheritParams tulpa_nmix_laplace_icar
+#' @param mixture Abundance mixing distribution `"P"` (default) or `"NB"`; under
+#'   `"NB"` the NB size \eqn{r} is integrated as an additional outer grid axis.
+#' @param r_grid Optional NB size grid (NB only); see [tulpa_nmix_laplace_icar()].
 #' @param sigma_grid Numeric vector of \eqn{\sigma} (joint sd) grid points.
 #'   Defaults to `exp(seq(log(0.2), log(3), length.out = 5L))`.
 #' @param rho_grid Numeric vector of spatial-fraction grid points in
@@ -478,6 +511,8 @@ tulpa_nmix_laplace_bym2 <- function(y,
                                     n_spatial,
                                     sigma_grid = NULL,
                                     rho_grid = NULL,
+                                    mixture = c("P", "NB"),
+                                    r_grid = NULL,
                                     scale_factor = NULL,
                                     beta_lambda_init = NULL,
                                     beta_p_init = NULL,
@@ -487,6 +522,7 @@ tulpa_nmix_laplace_bym2 <- function(y,
                                     max_iter = 100L,
                                     tol = 1e-6,
                                     verbose = FALSE) {
+  mixture <- match.arg(mixture)
   y                <- as.integer(y)
   site_idx         <- as.integer(site_idx)
   map_site_to_unit <- as.integer(map_site_to_unit)
@@ -520,6 +556,7 @@ tulpa_nmix_laplace_bym2 <- function(y,
   if (any(rho_grid < 0) || any(rho_grid > 1)) {
     stop("rho_grid values must lie in [0, 1].", call. = FALSE)
   }
+  r_grid_use <- .nmix_resolve_r_grid(mixture, r_grid)
   if (is.null(scale_factor)) {
     # Build dense Q = D - W from CSR, compute geometric mean of non-zero
     # eigenvalues (Riebler scaling).
@@ -575,6 +612,7 @@ tulpa_nmix_laplace_bym2 <- function(y,
     n_spatial          = as.integer(n_spatial),
     sigma_grid         = as.numeric(sigma_grid),
     rho_grid           = as.numeric(rho_grid),
+    r_grid             = as.numeric(r_grid_use),
     scale_factor       = as.numeric(scale_factor),
     beta_lambda_init   = as.numeric(beta_lambda_init),
     beta_p_init        = as.numeric(beta_p_init),
@@ -604,12 +642,13 @@ tulpa_nmix_laplace_bym2 <- function(y,
     }
   }
 
-  sigma_vec <- fit$theta_grid[, 1]
-  rho_vec   <- fit$theta_grid[, 2]
+  sigma_vec <- fit$theta_grid[, "sigma"]
+  rho_vec   <- fit$theta_grid[, "rho"]
   sigma_mean <- sum(weights * sigma_vec, na.rm = TRUE)
   sigma_sd   <- sqrt(max(0, sum(weights * sigma_vec^2, na.rm = TRUE) - sigma_mean^2))
   rho_mean   <- sum(weights * rho_vec, na.rm = TRUE)
   rho_sd     <- sqrt(max(0, sum(weights * rho_vec^2, na.rm = TRUE) - rho_mean^2))
+  disp <- .nmix_dispersion_summary(mixture, fit$theta_grid, weights)
 
   modes <- fit$modes
   beta_lambda_mean <- as.numeric(crossprod(weights, modes[, seq_len(p_lam), drop = FALSE]))
@@ -644,6 +683,9 @@ tulpa_nmix_laplace_bym2 <- function(y,
     sigma_sd         = sigma_sd,
     rho_mean         = rho_mean,
     rho_sd           = rho_sd,
+    mixture          = mixture,
+    r_mean           = disp$r_mean,
+    r_sd             = disp$r_sd,
     beta_lambda_mean = beta_lambda_mean,
     beta_p_mean      = beta_p_mean,
     vcov             = .nmix_grid_vcov(fit$cov_blocks, modes, weights,
@@ -674,9 +716,15 @@ print.tulpa_nmix_spatial_fit <- function(x, ...) {
                   car_proper = "CAR(rho)",
                   bym2       = "BYM2",
                   toupper(ptype))
-  cat(sprintf("tulpa spatial N-mixture (%s) nested-Laplace fit\n", label))
+  mix <- x$mixture %||% "P"
+  cat(sprintf("tulpa spatial N-mixture (%s, mixture = %s) nested-Laplace fit\n",
+              label, mix))
   cat(sprintf("  n_sites = %d   n_obs = %d   n_spatial = %d   K_max = %d\n",
               x$n_sites, x$n_obs, x$n_spatial, x$K_max))
+  if (identical(mix, "NB") && is.finite(x$r_mean %||% NA_real_)) {
+    cat(sprintf("  NB size r: mean = %.3g   sd = %.3g (grid-integrated)\n",
+                x$r_mean, x$r_sd))
+  }
   if (ptype == "icar") {
     cat(sprintf("  tau grid = [%.3g, %.3g] over %d points\n",
                 min(x$tau_grid), max(x$tau_grid), x$n_grid))
@@ -707,6 +755,33 @@ print.tulpa_nmix_spatial_fit <- function(x, ...) {
   cat("\ndetection (logit p):\n")
   print(x$beta_p_mean)
   invisible(x)
+}
+
+# Resolve the NB-dispersion grid for the spatial fits. Poisson -> a single
+# r = Inf node (the kernel takes its Poisson branch). NB -> a user grid or a
+# default log-spaced grid of NB sizes spanning strong overdispersion to nearly
+# Poisson. The outer nested-Laplace integration treats r like tau/rho/sigma.
+.nmix_resolve_r_grid <- function(mixture, r_grid) {
+  if (identical(mixture, "P")) return(Inf)
+  if (is.null(r_grid)) {
+    return(exp(seq(log(0.5), log(40), length.out = 6L)))
+  }
+  if (!is.numeric(r_grid) || length(r_grid) < 1L || any(r_grid <= 0) || anyNA(r_grid)) {
+    stop("`r_grid` must be a vector of positive NB sizes.", call. = FALSE)
+  }
+  r_grid
+}
+
+# Posterior mean / sd of the NB size r from the outer grid weights (the "r"
+# column of theta_grid). Poisson -> NA. Weighted moments mirror tau/rho/sigma.
+.nmix_dispersion_summary <- function(mixture, theta_grid, weights) {
+  if (identical(mixture, "P") || !("r" %in% colnames(theta_grid))) {
+    return(list(r_mean = NA_real_, r_sd = NA_real_))
+  }
+  r_vec  <- theta_grid[, "r"]
+  r_mean <- sum(weights * r_vec, na.rm = TRUE)
+  r_sd   <- sqrt(max(0, sum(weights * r_vec^2, na.rm = TRUE) - r_mean^2))
+  list(r_mean = r_mean, r_sd = r_sd)
 }
 
 # Grid-integrated coefficient covariance via the law of total covariance:

@@ -16,6 +16,8 @@ tulpa_nmix_laplace_bym2(
   n_spatial,
   sigma_grid = NULL,
   rho_grid = NULL,
+  mixture = c("P", "NB"),
+  r_grid = NULL,
   scale_factor = NULL,
   beta_lambda_init = NULL,
   beta_p_init = NULL,
@@ -53,6 +55,11 @@ Defaults to \code{exp(seq(log(0.2), log(3), length.out = 5L))}.}
 
 \item{rho_grid}{Numeric vector of spatial-fraction grid points in
 \eqn{[0, 1]}. Defaults to \code{c(0.05, 0.3, 0.5, 0.7, 0.95)}.}
+
+\item{mixture}{Abundance mixing distribution \code{"P"} (default) or \code{"NB"}; under
+\code{"NB"} the NB size \eqn{r} is integrated as an additional outer grid axis.}
+
+\item{r_grid}{Optional NB size grid (NB only); see \code{\link[=tulpa_nmix_laplace_icar]{tulpa_nmix_laplace_icar()}}.}
 
 \item{scale_factor}{Optional scalar Riebler scaling factor (geometric mean
 of non-zero eigenvalues of \eqn{Q}). If \code{NULL}, it is computed from the

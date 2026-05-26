@@ -39,19 +39,23 @@ namespace tulpa {
 
 // One per-site kernel pass at the current (beta_lambda, beta_p, z).
 // Returns total log-lik; fills per-site / per-visit grad and info vectors.
+// `r` is the NB size (pass +Inf for the Poisson kernel); `score_wt_lambda`
+// receives the N-coefficient of the lambda score (1 for Poisson, 1-q for NB),
+// used by the Hessian assembler's Var[N|y] rank-1 correction.
 inline double nmix_kernel_sweep_spatial(
     const std::vector<std::vector<int>>& obs_by_site,
     const Rcpp::IntegerVector& y_R,
     const Eigen::VectorXd& eta_lambda,
     const Eigen::VectorXd& eta_p_long,
-    int K_max,
+    int K_max, double r,
     Eigen::VectorXd& grad_eta_lam,    // out [n_sites]
     Eigen::VectorXd& info_eta_lam,    // out [n_sites]
     Eigen::VectorXd& grad_eta_p,      // out [n_obs]
     Eigen::VectorXd& info_eta_p,      // out [n_obs]
     Eigen::VectorXd& mean_N,          // out [n_sites]
     Eigen::VectorXd& var_N,           // out [n_sites]
-    Eigen::VectorXd& boundary_weight  // out [n_sites]
+    Eigen::VectorXd& boundary_weight, // out [n_sites]
+    Eigen::VectorXd& score_wt_lambda  // out [n_sites]
 ) {
     const int n_sites = static_cast<int>(obs_by_site.size());
     double log_lik = 0.0;
@@ -64,6 +68,7 @@ inline double nmix_kernel_sweep_spatial(
             mean_N(s) = std::exp(eta_lambda(s));
             var_N(s)  = std::exp(eta_lambda(s));
             boundary_weight(s) = 0.0;
+            score_wt_lambda(s) = 1.0;
             continue;
         }
         std::vector<int>    y_site(J);
@@ -72,31 +77,33 @@ inline double nmix_kernel_sweep_spatial(
             y_site[j]     = y_R[idx[j]];
             eta_p_site[j] = eta_p_long(idx[j]);
         }
-        NMixSiteResult r = compute_nmix_site(
+        NMixSiteResult res = compute_nmix_site(
             y_site.data(), eta_p_site.data(), J,
-            eta_lambda(s), K_max
+            eta_lambda(s), K_max, r
         );
-        log_lik += r.log_lik;
-        grad_eta_lam(s)    = r.grad_eta_lambda;
-        info_eta_lam(s)    = r.info_eta_lambda;
-        mean_N(s)          = r.mean_N;
-        var_N(s)           = r.var_N;
-        boundary_weight(s) = r.boundary_weight;
+        log_lik += res.log_lik;
+        grad_eta_lam(s)    = res.grad_eta_lambda;
+        info_eta_lam(s)    = res.info_eta_lambda;
+        mean_N(s)          = res.mean_N;
+        var_N(s)           = res.var_N;
+        boundary_weight(s) = res.boundary_weight;
+        score_wt_lambda(s) = res.score_wt_lambda;
         for (int j = 0; j < J; ++j) {
-            grad_eta_p(idx[j]) = r.grad_eta_p[j];
-            info_eta_p(idx[j]) = r.info_eta_p[j];
+            grad_eta_p(idx[j]) = res.grad_eta_p[j];
+            info_eta_p(idx[j]) = res.info_eta_p[j];
         }
     }
     return log_lik;
 }
 
-// Cheap log-lik-only sweep at trial points (line search).
+// Cheap log-lik-only sweep at trial points (line search). `r` is the NB size
+// (pass +Inf for Poisson).
 inline double nmix_kernel_log_lik_only_spatial(
     const std::vector<std::vector<int>>& obs_by_site,
     const Rcpp::IntegerVector& y_R,
     const Eigen::VectorXd& eta_lambda,
     const Eigen::VectorXd& eta_p_long,
-    int K_max
+    int K_max, double r
 ) {
     double log_lik = 0.0;
     const int n_sites = static_cast<int>(obs_by_site.size());
@@ -110,12 +117,12 @@ inline double nmix_kernel_log_lik_only_spatial(
             y_site[j]     = y_R[idx[j]];
             eta_p_site[j] = eta_p_long(idx[j]);
         }
-        NMixSiteResult r = compute_nmix_site(
+        NMixSiteResult res = compute_nmix_site(
             y_site.data(), eta_p_site.data(), J,
-            eta_lambda(s), K_max
+            eta_lambda(s), K_max, r
         );
-        if (!R_finite(r.log_lik)) return r.log_lik;
-        log_lik += r.log_lik;
+        if (!R_finite(res.log_lik)) return res.log_lik;
+        log_lik += res.log_lik;
     }
     return log_lik;
 }
@@ -158,6 +165,7 @@ inline void nmix_assemble_obs_info_spatial(
     const Eigen::VectorXd& info_eta_lam,
     const Eigen::VectorXd& info_eta_p,
     const Eigen::VectorXd& var_N,
+    const Eigen::VectorXd& score_wt_lambda,   // N-coeff of s_lambda (1 for Poisson)
     Eigen::MatrixXd& H_obs /* in/out: zero-initialized [n_x x n_x] */
 ) {
     const int n_sites = static_cast<int>(obs_by_site.size());
@@ -195,11 +203,15 @@ inline void nmix_assemble_obs_info_spatial(
         }
 
         // ----- Var[N|y_s] rank-1 marginal correction -----
+        // The eta_lambda score has N-coefficient score_wt_lambda(s) (1 for
+        // Poisson, 1-q for NB); it scales every coordinate eta_lambda depends
+        // on -- beta_lambda (via X_lambda) and z[u] (via the unit indicator).
         if (var_N(s) > 0.0) {
+            const double swl = score_wt_lambda(s);
             const int n_x_local = p_lam + p_p + n_spatial;
             Eigen::VectorXd u_s = Eigen::VectorXd::Zero(n_x_local);
-            // beta_lambda coord: -X_lambda[s,]
-            u_s.segment(0, p_lam) = -X_lambda.row(s).transpose();
+            // beta_lambda coord: -score_wt_lambda * X_lambda[s,]
+            u_s.segment(0, p_lam) = -swl * X_lambda.row(s).transpose();
             // beta_p coord: sum_j p_ij X_p[ij,]
             Eigen::VectorXd ssum = Eigen::VectorXd::Zero(p_p);
             for (int j = 0; j < J; ++j) {
@@ -214,8 +226,8 @@ inline void nmix_assemble_obs_info_spatial(
                 ssum += p_ij * X_p.row(idx[j]).transpose();
             }
             u_s.segment(p_lam, p_p) = ssum;
-            // z coord: -1 at u
-            u_s(z_start + u) = -1.0;
+            // z coord: -score_wt_lambda at u
+            u_s(z_start + u) = -swl;
 
             H_obs.selfadjointView<Eigen::Lower>().rankUpdate(u_s, -var_N(s));
         }

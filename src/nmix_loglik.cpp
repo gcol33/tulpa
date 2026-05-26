@@ -29,7 +29,8 @@ Rcpp::List cpp_nmix_total_log_lik(
     Rcpp::IntegerVector site_idx,
     Rcpp::NumericVector eta_p,
     Rcpp::NumericVector eta_lambda,
-    int K_max
+    int K_max,
+    double r          // NB size; pass Inf for the Poisson kernel
 ) {
     const int n_obs = y.size();
     const int n_sites = eta_lambda.size();
@@ -42,6 +43,7 @@ Rcpp::List cpp_nmix_total_log_lik(
                    eta_p.size(), n_obs);
     }
     if (K_max < 0) Rcpp::stop("K_max must be >= 0.");
+    if (R_finite(r) && r <= 0.0) Rcpp::stop("r (NB size) must be > 0.");
 
     // Group observations by site (preserves input order within each site).
     std::vector<std::vector<int>> obs_by_site(n_sites);
@@ -56,6 +58,7 @@ Rcpp::List cpp_nmix_total_log_lik(
 
     // Outputs.
     double total_log_lik = 0.0;
+    double total_grad_theta = 0.0;   // sum_i d log L_i / d theta (NB only; 0 for Poisson)
     Rcpp::NumericVector grad_eta_lambda(n_sites);
     Rcpp::NumericVector info_eta_lambda(n_sites);
     Rcpp::NumericVector mean_N(n_sites);
@@ -86,20 +89,21 @@ Rcpp::List cpp_nmix_total_log_lik(
             y_site[j]     = y[idx[j]];
             eta_p_site[j] = eta_p[idx[j]];
         }
-        tulpa::NMixSiteResult r = tulpa::compute_nmix_site(
+        tulpa::NMixSiteResult res = tulpa::compute_nmix_site(
             y_site.data(), eta_p_site.data(), J,
-            eta_lambda[s], K_max
+            eta_lambda[s], K_max, r
         );
-        if (!R_finite(r.log_lik)) ++n_K_inadmissible;
-        total_log_lik += r.log_lik;
-        grad_eta_lambda[s] = r.grad_eta_lambda;
-        info_eta_lambda[s] = r.info_eta_lambda;
-        mean_N[s] = r.mean_N;
-        var_N[s]  = r.var_N;
-        boundary_weight[s] = r.boundary_weight;
+        if (!R_finite(res.log_lik)) ++n_K_inadmissible;
+        total_log_lik += res.log_lik;
+        total_grad_theta += res.grad_theta;
+        grad_eta_lambda[s] = res.grad_eta_lambda;
+        info_eta_lambda[s] = res.info_eta_lambda;
+        mean_N[s] = res.mean_N;
+        var_N[s]  = res.var_N;
+        boundary_weight[s] = res.boundary_weight;
         for (int j = 0; j < J; ++j) {
-            grad_eta_p[idx[j]] = r.grad_eta_p[j];
-            info_eta_p[idx[j]] = r.info_eta_p[j];
+            grad_eta_p[idx[j]] = res.grad_eta_p[j];
+            info_eta_p[idx[j]] = res.info_eta_p[j];
         }
     }
 
@@ -107,6 +111,7 @@ Rcpp::List cpp_nmix_total_log_lik(
         Rcpp::Named("log_lik")          = total_log_lik,
         Rcpp::Named("grad_eta_lambda")  = grad_eta_lambda,
         Rcpp::Named("grad_eta_p")       = grad_eta_p,
+        Rcpp::Named("grad_theta")       = total_grad_theta,
         Rcpp::Named("info_eta_lambda")  = info_eta_lambda,
         Rcpp::Named("info_eta_p")       = info_eta_p,
         Rcpp::Named("mean_N")           = mean_N,

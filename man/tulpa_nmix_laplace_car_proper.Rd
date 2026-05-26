@@ -16,6 +16,8 @@ tulpa_nmix_laplace_car_proper(
   n_spatial,
   tau_grid = NULL,
   rho_grid = NULL,
+  mixture = c("P", "NB"),
+  r_grid = NULL,
   beta_lambda_init = NULL,
   beta_p_init = NULL,
   z_init = NULL,
@@ -54,6 +56,11 @@ the valid eigenvalue interval. Defaults to a 5-point grid in
 \eqn{(0, 1)} -- callers that want eigenvalue-derived bounds should
 compute them via tulpa::spatial_car_proper(adjacency)\code{$}rho_bounds and
 pass an explicit grid in that interval.}
+
+\item{mixture}{Abundance mixing distribution \code{"P"} (default) or \code{"NB"}; under
+\code{"NB"} the NB size \eqn{r} is integrated as an additional outer grid axis.}
+
+\item{r_grid}{Optional NB size grid (NB only); see \code{\link[=tulpa_nmix_laplace_icar]{tulpa_nmix_laplace_icar()}}.}
 
 \item{beta_lambda_init}{Optional warm start; default \code{c(log(mean(y)+0.1), 0, ...)}.}
 

@@ -17,6 +17,28 @@
 
 ## Unreleased
 
+* feat(nmix): `tulpa_nmix_laplace()` gains `mixture = c("P", "NB")` -- a
+  negative-binomial abundance mixing distribution
+  (`N_i ~ NegBin(mean = lambda_i, size = r)`, `neg_binomial_2` convention) in
+  addition to the Royle (2004) Poisson kernel. The per-site marginal, its
+  scores (including the analytic dispersion score `d log L / d log r`), and the
+  full joint observed-information Hessian are closed form; the dispersion
+  `log_r` is profiled by block coordinate ascent outside the inner beta-Newton
+  and reported with its standard error in `vcov`. Matches
+  `unmarked::pcount(mixture = "NB")` on coefficients, log-likelihood, and
+  standard errors to machine precision, with the usual analytic-derivative
+  speed advantage. Poisson remains the default and is unchanged.
+
+* feat(nmix): the spatial nested-Laplace N-mixture fits
+  (`tulpa_nmix_laplace_icar()`, `tulpa_nmix_laplace_car_proper()`,
+  `tulpa_nmix_laplace_bym2()`) gain `mixture = "NB"`. The NB size `r` is
+  integrated as an additional outer grid dimension alongside the spatial
+  hyperparameters (`tau` / `rho` / `sigma`); the posterior `r_mean` / `r_sd`
+  are reported from the grid weights. The inner `(beta, z)` / `(beta, v, w)`
+  Newton is unchanged in dimension -- only the likelihood pieces and the
+  NB-aware `Var[N|y]` rank-1 correction depend on `r`. Poisson remains the
+  default with identical behaviour and grid shape.
+
 * refactor(api): `tulpa_nested_laplace()` and `tulpa_nested_laplace_joint()`
   collapse their perf/numerical knobs into a single `control = list()` argument,
   matching `tulpa()`. The top-level signatures now carry only statistical

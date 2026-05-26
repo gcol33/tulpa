@@ -30,7 +30,8 @@ simulate_nmix_bym2 <- function(seed,
                                beta_lambda = c(log(4), 0.4),
                                beta_p = c(qlogis(0.45), -0.25),
                                sigma_true = 1.0,
-                               rho_true = 0.7) {
+                               rho_true = 0.7,
+                               r = Inf) {
   set.seed(seed)
   n_sites <- n_row * n_col
   adj <- grid_adj_csr_bym2(n_row, n_col)
@@ -77,7 +78,7 @@ simulate_nmix_bym2 <- function(seed,
   }
   p_mat <- plogis(eta_p_mat)
 
-  N <- rpois(n_sites, lambda)
+  N <- if (is.finite(r)) rnbinom(n_sites, size = r, mu = lambda) else rpois(n_sites, lambda)
   y_mat <- matrix(0L, n_sites, J)
   for (s in seq_len(n_sites)) for (j in seq_len(J)) {
     y_mat[s, j] <- rbinom(1, N[s], p_mat[s, j])
@@ -94,6 +95,7 @@ simulate_nmix_bym2 <- function(seed,
     phi_true = phi,
     sigma_true = sigma_true,
     rho_true = rho_true,
+    r_true = r,
     scale_factor = scale_factor,
     beta_lambda_true = beta_lambda,
     beta_p_true = beta_p,
@@ -118,7 +120,8 @@ test_that("BYM2 nested Laplace runs end-to-end", {
   ))
   expect_equal(nrow(fit$theta_grid),
                length(fit$sigma_grid) * length(fit$rho_grid))
-  expect_equal(ncol(fit$theta_grid), 2L)
+  # theta_grid always carries the dispersion axis (sigma, rho, r); Poisson uses r = Inf.
+  expect_equal(ncol(fit$theta_grid), 3L)
   expect_true(all(is.finite(fit$log_marginal)))
   expect_equal(sum(fit$weights), 1, tolerance = 1e-8)
   expect_true(all(fit$boundary_max < 1e-2))
@@ -216,4 +219,27 @@ test_that("Print method runs for BYM2 fit", {
   expect_output(print(fit), "spatial N-mixture")
   expect_output(print(fit), "BYM2")
   expect_output(print(fit), "sigma_mean")
+})
+
+test_that("BYM2 NB integrates r as a third grid axis", {
+  skip_on_cran()
+  dat <- simulate_nmix_bym2(seed = 31, n_row = 6, n_col = 6, J = 5, r = 2)
+  fit <- suppressWarnings(tulpa_nmix_laplace_bym2(
+    y = dat$y, site_idx = dat$site_idx,
+    map_site_to_unit = dat$map_site_to_unit,
+    X_lambda = dat$X_lambda, X_p = dat$X_p,
+    adj_row_ptr = dat$adj$adj_row_ptr,
+    adj_col_idx = dat$adj$adj_col_idx,
+    n_neighbors = dat$adj$n_neighbors,
+    n_spatial = dat$adj$n_units,
+    sigma_grid = exp(seq(log(0.2), log(2), length.out = 4L)),
+    rho_grid = c(0.3, 0.7, 0.95),
+    mixture = "NB", r_grid = c(1, 2, 5, 15),
+    max_iter = 100L, tol = 1e-6
+  ))
+  expect_identical(fit$mixture, "NB")
+  expect_true(any(fit$converged))
+  expect_true(is.finite(fit$r_mean) && fit$r_mean > 0)
+  expect_true(all(c("sigma", "rho", "r") %in% colnames(fit$theta_grid)))
+  expect_equal(length(fit$weights), nrow(fit$theta_grid))
 })

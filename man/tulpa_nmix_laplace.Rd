@@ -9,8 +9,11 @@ tulpa_nmix_laplace(
   site_idx,
   X_lambda,
   X_p,
+  mixture = c("P", "NB"),
   beta_lambda_init = NULL,
   beta_p_init = NULL,
+  log_r_init = NULL,
+  r_max = 1e+05,
   K_max = NULL,
   max_iter = 100L,
   tol = 1e-06,
@@ -28,10 +31,23 @@ indicating which site each visit belongs to.}
 \item{X_p}{Numeric matrix \verb{[n_obs x p_p]} of detection covariates (long form,
 row order matches \code{y}).}
 
+\item{mixture}{Abundance mixing distribution: \code{"P"} (Poisson, default) or
+\code{"NB"} (negative binomial). Under \code{"NB"} an extra dispersion parameter
+\code{log_r} (log NB size) is estimated jointly and reported with its standard
+error.}
+
 \item{beta_lambda_init}{Optional numeric \verb{[p_lambda]} warm start. Defaults
 to \code{c(log(mean(y) + 0.1), 0, 0, ...)}.}
 
 \item{beta_p_init}{Optional numeric \verb{[p_p]} warm start. Defaults to zeros.}
+
+\item{log_r_init}{Optional scalar warm start for \code{log_r} (NB only). Defaults
+to a method-of-moments estimate from the site count totals, clamped to a
+sensible range.}
+
+\item{r_max}{Upper bound on the NB size \code{r} (NB only, default \code{1e5}). If the
+optimiser pins \code{log_r} at \code{log(r_max)} the data are consistent with Poisson
+and a warning recommends \code{mixture = "P"}.}
 
 \item{K_max}{Marginal-sum truncation. Defaults to \code{max(y) + 100} (matches
 \code{unmarked::pcount}). The returned \code{boundary_weight} per site flags any
@@ -48,11 +64,16 @@ site whose posterior over N puts non-trivial mass on \code{K_max}; raise
 A list of class \code{tulpa_nmix_fit}:
 \itemize{
 \item \code{beta_lambda}, \code{beta_p} -- MLE coefficient vectors
+\item \code{mixture} -- \code{"P"} or \code{"NB"}
+\item \code{log_r}, \code{r} -- estimated log NB size and the NB size \code{exp(log_r)}
+(NB only; \code{NA} under Poisson). \code{vcov} carries \code{log_r} as its last
+coordinate, so \code{sqrt(diag(vcov))["log_r"]} is its standard error.
 \item \code{log_lik} -- marginal log-likelihood at the mode
-\item \code{vcov} -- variance-covariance matrix (marginal observed Fisher inverse)
+\item \code{vcov} -- variance-covariance matrix (marginal observed Fisher inverse),
+over \verb{(beta_lambda, beta_p)} and, under NB, \code{log_r}
 \item \code{vcov_ok} -- whether the final observed-info Cholesky succeeded
 \item \code{H_obs} -- final marginal observed Fisher information matrix
-\item \code{n_iter} -- Newton iterations consumed
+\item \code{n_iter} -- (outer) iterations consumed
 \item \code{converged} -- whether the convergence tolerance was reached
 \item \code{grad_norm} -- gradient norm at termination
 \item \code{mean_N}, \code{var_N} -- per-site posterior mean and variance of N | y
@@ -62,20 +83,26 @@ A list of class \code{tulpa_nmix_fit}:
 }
 \description{
 Maximum-likelihood fit (non-spatial, fixed effects only) of the
-Royle (2004) N-mixture model
-\deqn{N_i \sim \mathrm{Poisson}(\lambda_i), \qquad
-      y_{ij} | N_i \sim \mathrm{Binomial}(N_i, p_{ij}),}
+Royle (2004) N-mixture model with a Poisson or negative-binomial
+abundance mixing distribution:
+\deqn{N_i \sim \mathrm{Poisson}(\lambda_i) \quad\text{or}\quad
+      N_i \sim \mathrm{NegBin}(\mathrm{mean}=\lambda_i, \mathrm{size}=r),
+      \qquad y_{ij} | N_i \sim \mathrm{Binomial}(N_i, p_{ij}),}
 with abundance linear predictor \eqn{\log \lambda_i = X_\lambda^{(i)}
 \beta_\lambda} and detection linear predictor
-\eqn{\mathrm{logit}\, p_{ij} = X_p^{(ij)} \beta_p}.
+\eqn{\mathrm{logit}\, p_{ij} = X_p^{(ij)} \beta_p}. The NB uses the
+\code{neg_binomial_2} convention (size \eqn{r}, variance
+\eqn{\lambda + \lambda^2/r}); Poisson is the \eqn{r \to \infty} limit.
 
-Optimisation uses inner Newton with the marginal observed Fisher
-information matrix as the curvature, with a complete-data Fisher
-fallback at iterates where the observed-info Hessian is not PSD. Both
-gradients and Hessian are analytical (no numerical differentiation),
-so the fit converges in a small number of iterations and is typically
-20-50x faster than \code{unmarked::pcount()}'s BFGS-with-numerical-derivatives
-path on equivalent problems.
+Optimisation uses inner Newton on \eqn{(\beta_\lambda, \beta_p)} with the
+marginal observed Fisher information matrix as the curvature (complete-data
+Fisher fallback at iterates where the observed-info Hessian is not PSD).
+Under \code{mixture = "NB"} the dispersion \eqn{\theta = \log r} is a single
+global scalar, profiled outside the beta-Newton by block coordinate ascent
+on its analytic profile score. All gradients and Hessians are analytical (no
+numerical differentiation), so the fit converges in a small number of
+iterations and is typically 20-50x faster than \code{unmarked::pcount()}'s
+BFGS-with-numerical-derivatives path on equivalent problems.
 
 This is the non-spatial entry point; a spatial nested-Laplace path
 that places a latent prior block on the abundance arm is a separate
