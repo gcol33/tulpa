@@ -62,7 +62,9 @@ A list with:
 \code{Sigma_ij}) and columns \code{mean}, \code{sd}, \code{median}, \code{ci_lo}, \code{ci_hi}.
 \item \code{Sigma_mean}: the posterior mean of \code{Sigma} (a \verb{c x c} matrix).
 \item \code{Sigma_draws}: list of recorded \code{Sigma} draws.
-\item \code{beta_draws}: matrix of recorded \code{beta} draws (\verb{n_kept x ncol(X)}).
+\item \code{beta_draws} / \code{draws}: matrix of recorded \code{beta} draws (\verb{n_kept x ncol(X)});
+\code{draws} (with \code{means}, \code{param_names}, \code{process_info}) drives the generic
+\code{tulpa_fit} methods (\code{coef}/\code{confint}/\code{vcov}/\code{summary}).
 \item \code{accept}: list with \code{beta} and \code{b} acceptance rates over recorded sweeps.
 \item \code{n_kept}, \code{n_coefs}, \code{prior}: bookkeeping.
 }

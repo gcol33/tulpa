@@ -137,7 +137,9 @@
 #'     `Sigma_ij`) and columns `mean`, `sd`, `median`, `ci_lo`, `ci_hi`.
 #'   - `Sigma_mean`: the posterior mean of `Sigma` (a `c x c` matrix).
 #'   - `Sigma_draws`: list of recorded `Sigma` draws.
-#'   - `beta_draws`: matrix of recorded `beta` draws (`n_kept x ncol(X)`).
+#'   - `beta_draws` / `draws`: matrix of recorded `beta` draws (`n_kept x ncol(X)`);
+#'     `draws` (with `means`, `param_names`, `process_info`) drives the generic
+#'     `tulpa_fit` methods (`coef`/`confint`/`vcov`/`summary`).
 #'   - `accept`: list with `beta` and `b` acceptance rates over recorded sweeps.
 #'   - `n_kept`, `n_coefs`, `prior`: bookkeeping.
 #'
@@ -303,11 +305,27 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_term,
   w <- rep(1 / n_kept, n_kept)
   summ <- .re_cov_derived_summary(Sigma_draws, w, c_re)
 
+  # Fixed-effect posterior is the recorded beta draws directly (equal weight);
+  # name the columns and expose the generic `tulpa_fit` accessors. The Sigma
+  # posterior stays in `posterior` (weighted == sample quantiles at equal weight).
+  beta_names <- colnames(X) %||% paste0("beta", seq_len(p))
+  colnames(beta_draws) <- beta_names
+  beta_mean <- colMeans(beta_draws)
+
   list(
     posterior   = summ$posterior,
     Sigma_mean  = summ$Sigma_mean,
     Sigma_draws = Sigma_draws,
     beta_draws  = beta_draws,
+    beta        = beta_mean,
+    draws       = beta_draws,
+    means       = beta_mean,
+    param_names = beta_names,
+    process_info = list(list(name = "fixed_effects", p = p,
+                             coef_names = beta_names)),
+    n_samples   = n_kept,
+    n_params    = p,
+    N           = n_obs,
     accept      = list(beta = acc_beta_rec / n_kept,
                        b    = if (n_b_rec > 0L) acc_b_rec / n_b_rec else NA_real_),
     n_kept      = n_kept,

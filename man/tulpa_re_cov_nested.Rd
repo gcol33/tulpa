@@ -17,6 +17,9 @@ tulpa_re_cov_nested(
   prior_sigma = c(3, 0.05),
   eta = 2,
   log_prior_theta = NULL,
+  beta_prior = NULL,
+  n_draws = 2000L,
+  seed = NULL,
   max_iter = 100L,
   tol = 1e-08,
   n_threads = 1L
@@ -51,6 +54,17 @@ per whitened axis (default 3); used only when \code{integration = "grid"}.}
 prior density in the log-Cholesky parameterization. Default \code{NULL}, which
 builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}.}
 
+\item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
+every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}; see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).
+\code{NULL} (default) keeps the weak built-in prior.}
+
+\item{n_draws}{Number of posterior draws of the fixed effects to synthesize
+from the node mixture (default 2000), exposed as \code{draws} for the generic
+\code{tulpa_fit} methods. The \code{Sigma} posterior is summarized exactly (weighted
+node quantiles) in \code{posterior}, independent of \code{n_draws}.}
+
+\item{seed}{Optional integer seed for the fixed-effect draw synthesis.}
+
 \item{max_iter, tol, n_threads}{Inner-solve controls (see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).}
 }
 \value{
@@ -62,6 +76,10 @@ marginalized summaries.
 \item \code{map}: the plug-in-mode summary (\code{Sigma}, \code{sigma}, \code{rho}) at \code{theta_hat},
 for comparison with the marginalized \code{posterior}.
 \item \code{Sigma_mean}: the weighted posterior mean of \code{Sigma} (a \verb{c x c} matrix).
+\item \code{beta}: the node-weighted posterior mean of the fixed effects.
+\item \code{draws}: \verb{n_draws x ncol(X)} matrix of fixed-effect posterior draws from
+the node mixture (drives \code{coef}/\code{confint}/\code{vcov}/\code{summary}); \code{means},
+\code{param_names}, \code{process_info} accompany it.
 \item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{n_coefs}.
 }
 }

@@ -123,23 +123,33 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
 # Sigma entries) is computed PER matrix, then weighted-quantiled -- never a
 # transform of summarized components. With equal weights `.nl_wtd_quantile`
 # reduces to the sample quantile, so the same code summarizes both.
-.re_cov_derived_summary <- function(Sig_list, w, c_re) {
-  derived <- list()
+# Derived quantities of a set of Sigma matrices as a matrix: one row per Sigma,
+# named columns sigma_i (= sqrt(Sigma_ii)), rho_ij (i<j), Sigma_ij (i<=j). Each
+# value is a transform of a SINGLE Sigma (never of summarized components), so
+# this is the per-cell / per-draw input both the weighted-quantile summary and
+# the posterior-draw synthesis consume (`Marginalize Derived Quantities`).
+.re_cov_derived_matrix <- function(Sig_list, c_re) {
+  cols <- list()
   for (i in seq_len(c_re)) {
-    derived[[sprintf("sigma_%d", i)]] <-
+    cols[[sprintf("sigma_%d", i)]] <-
       vapply(Sig_list, function(S) sqrt(S[i, i]), numeric(1))
   }
   if (c_re > 1L) {
     for (i in seq_len(c_re - 1L)) for (j in (i + 1L):c_re) {
-      derived[[sprintf("rho_%d%d", i, j)]] <-
+      cols[[sprintf("rho_%d%d", i, j)]] <-
         vapply(Sig_list, function(S) S[i, j] / sqrt(S[i, i] * S[j, j]),
                numeric(1))
     }
   }
   for (i in seq_len(c_re)) for (j in i:c_re) {
-    derived[[sprintf("Sigma_%d%d", i, j)]] <-
+    cols[[sprintf("Sigma_%d%d", i, j)]] <-
       vapply(Sig_list, function(S) S[i, j], numeric(1))
   }
+  do.call(cbind, cols)   # length(Sig_list) x n_derived, named columns
+}
+
+.re_cov_derived_summary <- function(Sig_list, w, c_re) {
+  D <- .re_cov_derived_matrix(Sig_list, c_re)
 
   summarize <- function(x) {
     m   <- sum(w * x)
@@ -147,11 +157,40 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
     q   <- .nl_wtd_quantile(x, w, c(0.025, 0.5, 0.975))
     c(mean = m, sd = sdv, median = q[2L], ci_lo = q[1L], ci_hi = q[3L])
   }
-  post <- do.call(rbind, lapply(derived, summarize))
+  post <- t(vapply(seq_len(ncol(D)), function(j) summarize(D[, j]), numeric(5)))
+  rownames(post) <- colnames(D)
   posterior <- data.frame(parameter = rownames(post), post,
                           row.names = NULL, check.names = FALSE)
   Sigma_mean <- Reduce(`+`, Map(function(S, wi) S * wi, Sig_list, w))
   list(posterior = posterior, Sigma_mean = Sigma_mean)
+}
+
+# Posterior beta draws for the nested-Laplace mixture. Each grid node k carries
+# a Gaussian fixed-effect block N(beta_k, Vb_k) from its inner Laplace solve;
+# the node weights w summarize the Sigma posterior. Drawing node ~ Categorical(w)
+# then beta ~ N(beta_k, Vb_k) yields an equal-weight sample of the marginal
+# fixed-effect posterior (the Sigma uncertainty is propagated through the node
+# mixture). Nodes with zero weight or a failed solve are dropped.
+.re_cov_nested_beta_draws <- function(beta_nodes, beta_cov_nodes, w,
+                                      n_draws, beta_names) {
+  p  <- ncol(beta_nodes)
+  ok <- is.finite(w) & w > 0 & is.finite(rowSums(beta_nodes))
+  if (!any(ok)) return(NULL)
+  w2 <- w; w2[!ok] <- 0; w2 <- w2 / sum(w2)
+  Lb <- lapply(seq_along(w2), function(k) {
+    if (!isTRUE(ok[k])) return(matrix(0, p, p))
+    V <- beta_cov_nodes[[k]]
+    if (is.null(V) || any(!is.finite(V))) return(matrix(0, p, p))
+    tryCatch(t(chol((V + t(V)) / 2)), error = function(e) matrix(0, p, p))
+  })
+  picks <- sample.int(length(w2), n_draws, replace = TRUE, prob = w2)
+  out <- matrix(NA_real_, n_draws, p)
+  for (d in seq_len(n_draws)) {
+    k <- picks[d]
+    out[d, ] <- beta_nodes[k, ] + as.numeric(Lb[[k]] %*% stats::rnorm(p))
+  }
+  colnames(out) <- beta_names %||% paste0("beta", seq_len(p))
+  out
 }
 
 #' Nested-Laplace integration over a random-effect covariance
@@ -223,6 +262,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
 #' @param log_prior_theta Optional `function(theta)` returning a scalar log
 #'   prior density in the log-Cholesky parameterization. Default `NULL`, which
 #'   builds the PC + LKJ prior from `prior_sigma` / `eta`.
+#' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
+#'   every inner [tulpa_laplace()] solve (`list(mean, sd)`; see [tulpa_laplace()]).
+#'   `NULL` (default) keeps the weak built-in prior.
+#' @param n_draws Number of posterior draws of the fixed effects to synthesize
+#'   from the node mixture (default 2000), exposed as `draws` for the generic
+#'   `tulpa_fit` methods. The `Sigma` posterior is summarized exactly (weighted
+#'   node quantiles) in `posterior`, independent of `n_draws`.
+#' @param seed Optional integer seed for the fixed-effect draw synthesis.
 #' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
 #'
 #' @return A list with:
@@ -232,6 +279,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
 #'   - `map`: the plug-in-mode summary (`Sigma`, `sigma`, `rho`) at `theta_hat`,
 #'     for comparison with the marginalized `posterior`.
 #'   - `Sigma_mean`: the weighted posterior mean of `Sigma` (a `c x c` matrix).
+#'   - `beta`: the node-weighted posterior mean of the fixed effects.
+#'   - `draws`: `n_draws x ncol(X)` matrix of fixed-effect posterior draws from
+#'     the node mixture (drives `coef`/`confint`/`vcov`/`summary`); `means`,
+#'     `param_names`, `process_info` accompany it.
 #'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `n_coefs`.
 #'
 #' @seealso [tulpa_laplace()] for the inner solve; [tulpa_nested_laplace()] for
@@ -245,8 +296,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
                                 n_per_axis = 5L, span = 3,
                                 prior_sigma = c(3, 0.05), eta = 2,
                                 log_prior_theta = NULL,
+                                beta_prior = NULL,
+                                n_draws = 2000L, seed = NULL,
                                 max_iter = 100L, tol = 1e-8, n_threads = 1L) {
   integration <- match.arg(integration)
+  if (!is.null(seed)) set.seed(as.integer(seed))
 
   if (is.null(re_term$n_coefs)) re_term$n_coefs <- 1L
   c_re <- as.integer(re_term$n_coefs)
@@ -274,11 +328,30 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X, re_list = list(rt),
         family = family, phi = phi, return_hessian = FALSE,
+        beta_prior = beta_prior,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       )$log_marginal,
       error = function(e) -Inf
     )
     if (length(val) != 1L || !is.finite(val)) -Inf else val
+  }
+
+  # Full inner solve at the integration nodes: the Laplace log-marginal plus the
+  # fixed-effect mode and its MARGINAL covariance (solve(H_beta), the
+  # Schur-complemented block). Used only for the ng-node pass (not the optimizer
+  # loop), so the extra Hessian work is paid O(n_grid) times, not per optim step.
+  inner_fit <- function(L) {
+    rt <- re_term
+    rt$L <- L; rt$cov <- NULL; rt$sigma <- NULL
+    tryCatch(
+      tulpa_laplace(
+        y = y, n_trials = n_trials, X = X, re_list = list(rt),
+        family = family, phi = phi, return_hessian = TRUE,
+        beta_prior = beta_prior,
+        max_iter = max_iter, tol = tol, n_threads = n_threads
+      ),
+      error = function(e) NULL
+    )
   }
 
   # --- pilot init: method-of-moments Sigma from a Sigma = I fit -------------
@@ -288,6 +361,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
       y = y, n_trials = n_trials, X = X,
       re_list = list(utils::modifyList(re_term, list(L = L0, cov = NULL, sigma = NULL))),
       family = family, phi = phi, return_hessian = FALSE,
+      beta_prior = beta_prior,
       max_iter = max_iter, tol = tol, n_threads = n_threads
     ),
     error = function(e) NULL
@@ -350,13 +424,27 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
   ng <- nrow(theta_grid)
 
   # --- evaluate inner marginal + derived quantities per cell ----------------
-  logm <- numeric(ng)
-  Sig_entries <- vector("list", ng)
+  # One FULL Laplace solve per node: the log-marginal feeds the integration
+  # weight; the fixed-effect mode + marginal covariance feed the posterior-draw
+  # synthesis. A failed / non-finite node keeps logm = -Inf (weight 0) and is
+  # excluded from the draw mixture.
+  p_fix          <- ncol(X)
+  logm           <- rep(-Inf, ng)
+  Sig_entries    <- vector("list", ng)
+  beta_nodes     <- matrix(NA_real_, ng, p_fix)
+  beta_cov_nodes <- vector("list", ng)
   for (i in seq_len(ng)) {
     th <- theta_grid[i, ]
     L  <- .re_logchol_to_L(th, c_re)
-    logm[i] <- inner_logmarg(L) + log_prior_theta(th)
     Sig_entries[[i]] <- L %*% t(L)
+    fit_i <- inner_fit(L)
+    if (is.null(fit_i) || is.null(fit_i$mode) ||
+        length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) next
+    logm[i]          <- fit_i$log_marginal + log_prior_theta(th)
+    beta_nodes[i, ]  <- fit_i$mode[seq_len(p_fix)]
+    beta_cov_nodes[[i]] <-
+      if (is.null(fit_i$H_beta)) NULL
+      else tryCatch(solve(fit_i$H_beta), error = function(e) NULL)
   }
   # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
   # evaluated joint exp(logm), the INLA convention int ~ sum_k Delta_k pi(theta_k).
@@ -378,10 +466,31 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
     R <- Sigma_hat / outer(sig_hat, sig_hat); R[upper.tri(R)]
   } else numeric(0)
 
+  # --- fixed-effect posterior from the node mixture -------------------------
+  beta_names <- colnames(X) %||% paste0("beta", seq_len(p_fix))
+  draws <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
+                                     as.integer(n_draws), beta_names)
+  beta_mean <- if (is.null(draws)) {
+    # degenerate fallback: weighted node mean (no usable per-node covariance)
+    ok <- is.finite(rowSums(beta_nodes)) & w > 0
+    if (any(ok)) colSums(w[ok] / sum(w[ok]) * beta_nodes[ok, , drop = FALSE])
+    else rep(NA_real_, p_fix)
+  } else colMeans(draws)
+  names(beta_mean) <- beta_names
+
   list(
     posterior   = posterior,
     map         = list(Sigma = Sigma_hat, sigma = sig_hat, rho = rho_hat),
     Sigma_mean  = summ$Sigma_mean,
+    beta        = beta_mean,
+    draws       = draws,
+    means       = beta_mean,
+    param_names = beta_names,
+    process_info = list(list(name = "fixed_effects", p = p_fix,
+                             coef_names = beta_names)),
+    n_samples   = if (is.null(draws)) 0L else nrow(draws),
+    n_params    = p_fix,
+    N           = length(y),
     theta_hat   = theta_hat,
     theta_grid  = theta_grid,
     weights     = w,
