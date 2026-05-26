@@ -8,8 +8,9 @@ tulpa_re_aghq(
   theta0,
   re_terms,
   Sigma0,
-  make_site,
-  n_obs,
+  make_site = NULL,
+  make_group = NULL,
+  n_obs = NULL,
   keep = NULL,
   n_quad = 9L,
   lkj_eta = 1,
@@ -18,28 +19,50 @@ tulpa_re_aghq(
 }
 \arguments{
 \item{theta0}{Initial fixed-parameter vector. The engine optimizes these
-jointly with the RE covariance; \code{make_site(theta)} interprets them.}
+jointly with the RE covariance; the callback interprets them.}
 
-\item{re_terms}{A list of RE term specs (or one spec), each with \code{idx}
-(1-based group index, length \code{n_obs}), \code{n_groups}, \code{n_coefs}, optional \code{Z}
-(the \verb{n_obs x n_coefs} design for a slope block) and \code{correlated}. All
-terms must share the same \code{idx} / \code{n_groups}. Passed to
-\code{.re_cov_block_layout()}.}
+\item{re_terms}{A list of RE term specs (or one spec), each defining a
+covariance block: \code{n_coefs} (block dimension \eqn{c_m}), optional
+\code{correlated} (default \code{TRUE} for \code{c_m > 1}; \code{FALSE} gives a diagonal block),
+and \code{n_groups} (shared across terms). For the \code{make_site} path each term
+also carries \code{idx} (1-based group index, length \code{n_obs}) and, for a slope
+block, \code{Z} (the \verb{n_obs x n_coefs} design). For the \code{make_group} path the
+per-observation \code{idx} / \code{Z} are optional -- the callback owns them -- and
+the term needs only \code{n_coefs} / \code{correlated} / \code{n_groups}.}
 
 \item{Sigma0}{List of initial per-term covariance matrices (the EM estimate).}
 
-\item{make_site}{\verb{function(theta)} returning a list with: \code{eta_re} (length
-\code{n_obs}, the RE-arm fixed predictor), \verb{deriv = function(rows, eta)}
-returning \code{list(logL, d1, d2)} (per-row marginal log-likelihood and its
-first/second derivatives w.r.t. the RE-arm predictor \code{eta}, used for the
-per-group mode), and \verb{lmat = function(rows, ETA)} returning a
-\verb{length(rows) x ncol(ETA)} matrix of per-observation log-likelihoods over
-the quadrature node columns.}
+\item{make_site}{\verb{function(theta)} for the single-arm separable case,
+returning a list with: \code{eta_re} (length \code{n_obs}, the RE-arm fixed
+predictor), \verb{deriv = function(rows, eta)} returning \code{list(logL, d1, d2)}
+(per-row marginal log-likelihood and its first/second derivatives w.r.t.
+the RE-arm predictor \code{eta}, used for the per-group mode), and \verb{lmat = function(rows, ETA)} returning a \verb{length(rows) x ncol(ETA)} matrix of
+per-observation log-likelihoods over the quadrature node columns. Supply
+this or \code{make_group}, not both.}
 
-\item{n_obs}{Number of observations (length of each term's \code{idx}).}
+\item{make_group}{\verb{function(theta)} for the general / multi-arm case,
+returning a list with two per-group closures (let \code{d = sum(n_coefs)} be the
+group RE dimension):
+\itemize{
+\item \code{grad_hess(g, b)} -- for group \code{g} at RE value \code{b} (length \code{d}), the list
+\code{list(logL, grad, negH)}: the group conditional log-likelihood
+\eqn{\ell_g(b)}, its gradient \eqn{\partial \ell_g/\partial b} (length
+\code{d}), and the \strong{data-only} observed information
+\eqn{-\partial^2 \ell_g/\partial b^2} (\verb{d x d}; the engine adds the
+\eqn{\Sigma^{-1}} prior curvature).
+\item \code{node_ll(g, B)} -- for group \code{g}, a numeric vector of length \code{nrow(B)}
+giving \eqn{\ell_g} at each quadrature node (rows of the \verb{nrow x d}
+matrix \code{B} are candidate \code{b} vectors).
+The callback owns all arm / design / clamping bookkeeping. Supply this or
+\code{make_site}, not both.
+}}
+
+\item{n_obs}{Number of observations (length of each term's \code{idx}). Required
+for the \code{make_site} path; ignored for \code{make_group}.}
 
 \item{keep}{Optional logical/integer mask of observations to include
-(default all). Rows outside \code{keep} are dropped from every group.}
+(default all; \code{make_site} path only). Rows outside \code{keep} are dropped from
+every group.}
 
 \item{n_quad}{Quadrature nodes per RE dimension (default 9; \code{1} = Laplace).}
 
@@ -66,22 +89,40 @@ adaptive Gauss-Hermite quadrature (AGHQ). At \code{n_quad = 1} this is the joint
 Laplace (glmer \code{nAGQ = 1}); higher \code{n_quad} reduces the small-cluster
 attenuation of the variance components for binary / count data. Unlike
 \code{\link[=agq_fit]{agq_fit()}} (intercept-only RE, built-in \code{binomial}/\code{poisson}/\code{gaussian}
-likelihoods), this engine is \strong{callback-driven} and handles \strong{random
-slopes and correlated multi-coefficient blocks} sharing one grouping
-factor: the caller supplies the per-observation marginal likelihood through
-\code{make_site}, so a custom marginal (e.g. a latent-state-integrated occupancy
-or detection likelihood) refines through the same quadrature.
+likelihoods), this engine is \strong{callback-driven}: the caller supplies the
+per-group conditional likelihood, so a custom marginal (e.g. a
+latent-state-integrated occupancy / detection likelihood, or the
+latent-abundance-integrated N-mixture marginal) refines through the same
+quadrature.
 
-The per-group marginal is
-\deqn{M_g = \int \prod_{i \in g} f_i(\eta_i + Z_i b_g)\, N(b_g; 0, \Sigma)\, db_g,}
-where \eqn{\eta_i} is the RE-bearing linear predictor's fixed part (supplied
-by \code{make_site} as \code{eta_re}) and \eqn{f_i} is the per-observation marginal
-(its value and first two derivatives in \eqn{\eta} supplied by \code{deriv} /
-\code{lmat}). The fixed parameters \code{theta} and the log-Cholesky coordinates of
+The engine is \strong{structure-agnostic}. It integrates the per-group marginal
+\deqn{M_g = \int \exp\{\ell_g(b_g)\}\, N(b_g; 0, \Sigma)\, db_g,}
+where \eqn{b_g} is the group's random-effect vector (dimension
+\eqn{\sum_m c_m} over the RE terms) and \eqn{\ell_g(b_g)} is the group's
+conditional log-likelihood when its linear predictors are perturbed by
+\eqn{b_g}. How \eqn{b_g} enters the likelihood -- through one linear
+predictor, or through several coupled arms at different observation
+granularities (e.g. a per-site abundance arm and a per-visit detection arm
+sharing a species grouping) -- lives entirely in the callback. The engine
+only needs, per group, the value / gradient / Hessian of \eqn{\ell_g} in
+\eqn{b_g} (for the mode) and \eqn{\ell_g} at the quadrature nodes (for the
+sum). The fixed parameters \code{theta} and the log-Cholesky coordinates of
 \eqn{\Sigma} are optimized jointly on \eqn{\sum_g \log M_g}; standard errors
 come from the exact-marginal Hessian.
 
+Two callback forms select the structure (supply exactly one):
+\itemize{
+\item \strong{\code{make_site}} -- the common \strong{single-arm, per-row-separable} case
+(\eqn{\ell_g(b_g) = \sum_{i \in g} \log f_i(\eta_i + Z_i b_g)} for one
+linear predictor \eqn{\eta}). The engine builds the oracle from the
+per-row marginal and the RE design \code{Z} itself.
+\item \strong{\code{make_group}} -- the \strong{general / multi-arm} case. The caller supplies
+the per-group \code{b}-space oracle directly, so non-separable units (e.g. the
+visits of an N-mixture site coupled through the shared latent count) and
+random effects on several arms at once are handled with no engine change.
+}
+
 Scope: one shared grouping factor across all RE terms (the per-group integral
-factorizes), each term a \code{(1 | g)} / slope / correlated block. The total RE
-dimension per group should be small (the quadrature grid is \code{n_quad^dim}).
+factorizes). The total RE dimension per group should be small (the quadrature
+grid is \code{n_quad^dim}).
 }

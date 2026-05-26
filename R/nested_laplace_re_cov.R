@@ -64,29 +64,41 @@
 
 # Build the per-block layout from normalized re_terms. `n_obs` is needed to
 # default the scalar-block design Z to the intercept column.
+#
+# A block without `idx` is a *covariance-only* block: it carries the dimension /
+# correlation structure (nc, full, k) for the Sigma packing but no
+# per-observation design (idx = Z = NULL). This is the form the structure-
+# agnostic `tulpa_re_aghq(make_group = )` path uses, where the per-group
+# likelihood oracle -- not the engine -- owns the design and observation
+# granularity. The per-row callers (single-arm AGHQ, re_cov_nested / gibbs)
+# always pass `idx` and get the full design path.
 .re_cov_block_layout <- function(re_terms, n_obs) {
   lapply(seq_along(re_terms), function(m) {
     rt <- re_terms[[m]]
     nc <- as.integer(rt$n_coefs %||% 1L)
     if (nc < 1L) stop("RE block has n_coefs < 1.", call. = FALSE)
-    if (is.null(rt$idx) || is.null(rt$n_groups)) {
-      stop(sprintf("RE block %d must supply `idx` and `n_groups`.", m),
-           call. = FALSE)
+    if (is.null(rt$n_groups)) {
+      stop(sprintf("RE block %d must supply `n_groups`.", m), call. = FALSE)
+    }
+    # Default to a full (correlated) covariance when c > 1; an explicit
+    # `correlated = FALSE` selects a diagonal Sigma. For c = 1 the two coincide.
+    full <- (rt$correlated %||% TRUE) && nc > 1L
+    base <- list(nc = nc, full = full,
+                 k = as.integer(if (full) nc * (nc + 1L) / 2L else nc),
+                 label = rt$label %||% rt$group_var %||% NA_character_,
+                 n_groups = as.integer(rt$n_groups))
+    if (is.null(rt$idx)) {
+      # Covariance-only block (make_group path): no per-observation design.
+      return(c(base, list(idx = NULL, Z = NULL)))
     }
     if (nc > 1L && is.null(rt$Z)) {
       stop(sprintf("RE block %d (n_coefs = %d) requires `Z` (the n_obs x ",
                    "n_coefs RE design).", m, nc), call. = FALSE)
     }
-    # Default to a full (correlated) covariance when c > 1; an explicit
-    # `correlated = FALSE` selects a diagonal Sigma. For c = 1 the two coincide.
-    full <- (rt$correlated %||% TRUE) && nc > 1L
     # Design: a supplied Z (slopes, incl. a single `(0 + x | g)`) or the
     # intercept indicator when absent (a `(1 | g)` block).
     Z <- if (is.null(rt$Z)) matrix(1, n_obs, nc) else as.matrix(rt$Z)
-    list(nc = nc, full = full,
-         k = as.integer(if (full) nc * (nc + 1L) / 2L else nc),
-         label = rt$label %||% rt$group_var %||% NA_character_,
-         idx = as.integer(rt$idx), n_groups = as.integer(rt$n_groups), Z = Z)
+    c(base, list(idx = as.integer(rt$idx), Z = Z))
   })
 }
 

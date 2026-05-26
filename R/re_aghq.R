@@ -7,43 +7,80 @@
 #' Laplace (glmer `nAGQ = 1`); higher `n_quad` reduces the small-cluster
 #' attenuation of the variance components for binary / count data. Unlike
 #' [agq_fit()] (intercept-only RE, built-in `binomial`/`poisson`/`gaussian`
-#' likelihoods), this engine is **callback-driven** and handles **random
-#' slopes and correlated multi-coefficient blocks** sharing one grouping
-#' factor: the caller supplies the per-observation marginal likelihood through
-#' `make_site`, so a custom marginal (e.g. a latent-state-integrated occupancy
-#' or detection likelihood) refines through the same quadrature.
+#' likelihoods), this engine is **callback-driven**: the caller supplies the
+#' per-group conditional likelihood, so a custom marginal (e.g. a
+#' latent-state-integrated occupancy / detection likelihood, or the
+#' latent-abundance-integrated N-mixture marginal) refines through the same
+#' quadrature.
 #'
-#' The per-group marginal is
-#' \deqn{M_g = \int \prod_{i \in g} f_i(\eta_i + Z_i b_g)\, N(b_g; 0, \Sigma)\, db_g,}
-#' where \eqn{\eta_i} is the RE-bearing linear predictor's fixed part (supplied
-#' by `make_site` as `eta_re`) and \eqn{f_i} is the per-observation marginal
-#' (its value and first two derivatives in \eqn{\eta} supplied by `deriv` /
-#' `lmat`). The fixed parameters `theta` and the log-Cholesky coordinates of
+#' The engine is **structure-agnostic**. It integrates the per-group marginal
+#' \deqn{M_g = \int \exp\{\ell_g(b_g)\}\, N(b_g; 0, \Sigma)\, db_g,}
+#' where \eqn{b_g} is the group's random-effect vector (dimension
+#' \eqn{\sum_m c_m} over the RE terms) and \eqn{\ell_g(b_g)} is the group's
+#' conditional log-likelihood when its linear predictors are perturbed by
+#' \eqn{b_g}. How \eqn{b_g} enters the likelihood -- through one linear
+#' predictor, or through several coupled arms at different observation
+#' granularities (e.g. a per-site abundance arm and a per-visit detection arm
+#' sharing a species grouping) -- lives entirely in the callback. The engine
+#' only needs, per group, the value / gradient / Hessian of \eqn{\ell_g} in
+#' \eqn{b_g} (for the mode) and \eqn{\ell_g} at the quadrature nodes (for the
+#' sum). The fixed parameters `theta` and the log-Cholesky coordinates of
 #' \eqn{\Sigma} are optimized jointly on \eqn{\sum_g \log M_g}; standard errors
 #' come from the exact-marginal Hessian.
 #'
+#' Two callback forms select the structure (supply exactly one):
+#'
+#' * **`make_site`** -- the common **single-arm, per-row-separable** case
+#'   (\eqn{\ell_g(b_g) = \sum_{i \in g} \log f_i(\eta_i + Z_i b_g)} for one
+#'   linear predictor \eqn{\eta}). The engine builds the oracle from the
+#'   per-row marginal and the RE design `Z` itself.
+#' * **`make_group`** -- the **general / multi-arm** case. The caller supplies
+#'   the per-group `b`-space oracle directly, so non-separable units (e.g. the
+#'   visits of an N-mixture site coupled through the shared latent count) and
+#'   random effects on several arms at once are handled with no engine change.
+#'
 #' Scope: one shared grouping factor across all RE terms (the per-group integral
-#' factorizes), each term a `(1 | g)` / slope / correlated block. The total RE
-#' dimension per group should be small (the quadrature grid is `n_quad^dim`).
+#' factorizes). The total RE dimension per group should be small (the quadrature
+#' grid is `n_quad^dim`).
 #'
 #' @param theta0 Initial fixed-parameter vector. The engine optimizes these
-#'   jointly with the RE covariance; `make_site(theta)` interprets them.
-#' @param re_terms A list of RE term specs (or one spec), each with `idx`
-#'   (1-based group index, length `n_obs`), `n_groups`, `n_coefs`, optional `Z`
-#'   (the `n_obs x n_coefs` design for a slope block) and `correlated`. All
-#'   terms must share the same `idx` / `n_groups`. Passed to
-#'   `.re_cov_block_layout()`.
+#'   jointly with the RE covariance; the callback interprets them.
+#' @param re_terms A list of RE term specs (or one spec), each defining a
+#'   covariance block: `n_coefs` (block dimension \eqn{c_m}), optional
+#'   `correlated` (default `TRUE` for `c_m > 1`; `FALSE` gives a diagonal block),
+#'   and `n_groups` (shared across terms). For the `make_site` path each term
+#'   also carries `idx` (1-based group index, length `n_obs`) and, for a slope
+#'   block, `Z` (the `n_obs x n_coefs` design). For the `make_group` path the
+#'   per-observation `idx` / `Z` are optional -- the callback owns them -- and
+#'   the term needs only `n_coefs` / `correlated` / `n_groups`.
 #' @param Sigma0 List of initial per-term covariance matrices (the EM estimate).
-#' @param make_site `function(theta)` returning a list with: `eta_re` (length
-#'   `n_obs`, the RE-arm fixed predictor), `deriv = function(rows, eta)`
-#'   returning `list(logL, d1, d2)` (per-row marginal log-likelihood and its
-#'   first/second derivatives w.r.t. the RE-arm predictor `eta`, used for the
-#'   per-group mode), and `lmat = function(rows, ETA)` returning a
-#'   `length(rows) x ncol(ETA)` matrix of per-observation log-likelihoods over
-#'   the quadrature node columns.
-#' @param n_obs Number of observations (length of each term's `idx`).
+#' @param make_site `function(theta)` for the single-arm separable case,
+#'   returning a list with: `eta_re` (length `n_obs`, the RE-arm fixed
+#'   predictor), `deriv = function(rows, eta)` returning `list(logL, d1, d2)`
+#'   (per-row marginal log-likelihood and its first/second derivatives w.r.t.
+#'   the RE-arm predictor `eta`, used for the per-group mode), and `lmat =
+#'   function(rows, ETA)` returning a `length(rows) x ncol(ETA)` matrix of
+#'   per-observation log-likelihoods over the quadrature node columns. Supply
+#'   this or `make_group`, not both.
+#' @param make_group `function(theta)` for the general / multi-arm case,
+#'   returning a list with two per-group closures (let `d = sum(n_coefs)` be the
+#'   group RE dimension):
+#'   * `grad_hess(g, b)` -- for group `g` at RE value `b` (length `d`), the list
+#'     `list(logL, grad, negH)`: the group conditional log-likelihood
+#'     \eqn{\ell_g(b)}, its gradient \eqn{\partial \ell_g/\partial b} (length
+#'     `d`), and the **data-only** observed information
+#'     \eqn{-\partial^2 \ell_g/\partial b^2} (`d x d`; the engine adds the
+#'     \eqn{\Sigma^{-1}} prior curvature).
+#'   * `node_ll(g, B)` -- for group `g`, a numeric vector of length `nrow(B)`
+#'     giving \eqn{\ell_g} at each quadrature node (rows of the `nrow x d`
+#'     matrix `B` are candidate `b` vectors).
+#'   The callback owns all arm / design / clamping bookkeeping. Supply this or
+#'   `make_site`, not both.
+#' @param n_obs Number of observations (length of each term's `idx`). Required
+#'   for the `make_site` path; ignored for `make_group`.
 #' @param keep Optional logical/integer mask of observations to include
-#'   (default all). Rows outside `keep` are dropped from every group.
+#'   (default all; `make_site` path only). Rows outside `keep` are dropped from
+#'   every group.
 #' @param n_quad Quadrature nodes per RE dimension (default 9; `1` = Laplace).
 #' @param lkj_eta LKJ shape for an optional correlation penalty on each
 #'   *correlated* block (log-density `(eta - 1) log det R`, maximized at
@@ -60,12 +97,26 @@
 #'   `lkj_eta`, and `converged`. Returns `NULL` if the RE terms do not share one
 #'   grouping factor or the optimum is not usable (caller keeps its prior fit).
 #' @export
-tulpa_re_aghq <- function(theta0, re_terms, Sigma0, make_site, n_obs,
+tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
+                          make_site = NULL, make_group = NULL,
+                          n_obs = NULL,
                           keep = NULL, n_quad = 9L, lkj_eta = 1,
                           maxit = 200L) {
+  if (is.null(make_site) == is.null(make_group)) {
+    stop("Supply exactly one of `make_site` (single-arm) or `make_group` ",
+         "(general / multi-arm).", call. = FALSE)
+  }
+  single_arm <- !is.null(make_site)
+  if (single_arm && is.null(n_obs)) {
+    stop("`n_obs` is required for the `make_site` path.", call. = FALSE)
+  }
+
   layout <- .re_cov_block_layout(.as_re_terms_list(re_terms), n_obs)
 
   # One shared grouping factor (the per-group integral factorizes only then).
+  # The make_group path may omit the per-observation `idx`; the layout then
+  # carries `idx = NULL`, and the shared-factor check reduces to matching
+  # `n_groups` (identical(NULL, NULL) is TRUE).
   idx1 <- layout[[1L]]$idx
   ng   <- layout[[1L]]$n_groups
   same <- all(vapply(layout, function(b)
@@ -75,14 +126,6 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0, make_site, n_obs,
   nc_terms <- vapply(layout, function(b) b$nc, integer(1))
   dtot     <- sum(nc_terms)
   coef_off <- cumsum(c(0L, nc_terms))
-  Zc <- do.call(cbind, lapply(layout, function(b) b$Z))   # n_obs x dtot
-
-  if (is.null(keep)) keep <- rep(TRUE, n_obs)
-  if (is.logical(keep)) keep <- which(keep)
-  rows_by_g <- lapply(seq_len(ng), function(g) {
-    r <- which(idx1 == g)
-    r[r %in% keep]
-  })
 
   # Fixed-parameter / RE-covariance parameter split. The RE block reuses tulpa's
   # log-Cholesky packing (.re_cov_theta_to_L_list); `theta` is everything else.
@@ -106,35 +149,75 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0, make_site, n_obs,
     out
   }
 
+  # -------------------------------------------------------------------------
+  # Per-group conditional-likelihood oracle. `build_oracle(theta)` returns
+  #   grad_hess(g, b) -> list(logL, grad, negH)   data-only value/score/info
+  #   node_ll(g, B)   -> numeric over node rows    data log-lik at nodes
+  # The integration core below is identical for both callback forms; only the
+  # oracle differs. For make_site the engine assembles it from the per-row
+  # marginal and the RE design; for make_group the caller supplies it directly.
+  # -------------------------------------------------------------------------
+  if (single_arm) {
+    Zc <- do.call(cbind, lapply(layout, function(b) b$Z))   # n_obs x dtot
+    if (is.null(keep)) keep <- rep(TRUE, n_obs)
+    if (is.logical(keep)) keep <- which(keep)
+    rows_by_g <- lapply(seq_len(ng), function(g) {
+      r <- which(idx1 == g); r[r %in% keep]
+    })
+    active_groups <- which(lengths(rows_by_g) > 0L)
+
+    build_oracle <- function(theta) {
+      site <- make_site(theta)
+      aRE  <- cl(site$eta_re)
+      list(
+        grad_hess = function(g, b) {
+          rows <- rows_by_g[[g]]
+          Zg <- Zc[rows, , drop = FALSE]
+          gv <- site$deriv(rows, cl(aRE[rows] + as.numeric(Zg %*% b)))
+          list(logL = sum(gv$logL),
+               grad = as.numeric(crossprod(Zg, gv$d1)),
+               negH = -crossprod(Zg, gv$d2 * Zg))
+        },
+        node_ll = function(g, B) {
+          rows <- rows_by_g[[g]]
+          Zg <- Zc[rows, , drop = FALSE]
+          ETA <- cl(matrix(aRE[rows], length(rows), nrow(B)) + Zg %*% t(B))
+          colSums(site$lmat(rows, ETA))
+        })
+    }
+  } else {
+    active_groups <- seq_len(ng)
+    build_oracle  <- function(theta) make_group(theta)
+  }
+
   # Per-group posterior mode of b (damped Newton on the penalized integrand) and
-  # the precision -H there; arm-agnostic via the caller's `deriv`.
-  grp_mode <- function(rows, a_g, Zg, P, deriv) {
+  # the precision -H there. Structure-agnostic via the oracle.
+  grp_mode <- function(g, oracle, P) {
     bb <- numeric(dtot)
     for (it in seq_len(50L)) {
-      gv <- deriv(rows, cl(a_g + as.numeric(Zg %*% bb)))
-      grad <- as.numeric(crossprod(Zg, gv$d1)) - as.numeric(P %*% bb)
-      negH <- P - crossprod(Zg, gv$d2 * Zg)
+      gh <- oracle$grad_hess(g, bb)
+      grad <- gh$grad - as.numeric(P %*% bb)
+      negH <- gh$negH + P
       step <- tryCatch(solve(negH, grad), error = function(e) NULL)
       if (is.null(step)) break
       bb <- bb + step
       if (max(abs(step)) < 1e-9) break
     }
-    gv <- deriv(rows, cl(a_g + as.numeric(Zg %*% bb)))
-    list(b = bb, negH = P - crossprod(Zg, gv$d2 * Zg))
+    gh <- oracle$grad_hess(g, bb)
+    list(b = bb, negH = gh$negH + P)
   }
 
   # log M_g via adaptive GHQ centred at the mode (probabilist's convention):
   #   b_k = b_hat + L_c z_k,  C = L_c L_c' = (-H)^{-1}
   #   log M_g = -0.5 logdetSigma + log|L_c|
-  #             + lse_k[ log w_k + sum_i log f_i(b_k) - 0.5 b_k' Sigma^{-1} b_k
+  #             + lse_k[ log w_k + ell_g(b_k) - 0.5 b_k' Sigma^{-1} b_k
   #                      + 0.5 z_k' z_k ]
-  grp_logM <- function(rows, a_g, Zg, P, logdetS, lmat, deriv, want_post = FALSE) {
-    m <- grp_mode(rows, a_g, Zg, P, deriv)
+  grp_logM <- function(g, oracle, P, logdetS, want_post = FALSE) {
+    m <- grp_mode(g, oracle, P)
     Lc <- tryCatch(t(chol(solve(m$negH))), error = function(e) NULL)
     if (is.null(Lc)) return(NULL)
     B <- matrix(m$b, nrow(Znodes), dtot, byrow = TRUE) + Znodes %*% t(Lc)
-    ETA <- cl(matrix(a_g, length(rows), nrow(B)) + Zg %*% t(B))
-    hvals <- colSums(lmat(rows, ETA)) - 0.5 * rowSums((B %*% P) * B)
+    hvals <- oracle$node_ll(g, B) - 0.5 * rowSums((B %*% P) * B)
     terms <- logw_q + hvals + 0.5 * z2_q
     mx <- max(terms)
     logM <- -0.5 * logdetS + sum(log(diag(Lc))) + mx + log(sum(exp(terms - mx)))
@@ -164,14 +247,10 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0, make_site, n_obs,
     P <- tryCatch(solve(Sig), error = function(e) NULL)
     if (is.null(P)) return(1e10)
     logdetS <- as.numeric(determinant(Sig, logarithm = TRUE)$modulus)
-    site <- make_site(theta)
-    aRE <- cl(site$eta_re)
+    oracle <- build_oracle(theta)
     total <- 0
-    for (g in seq_len(ng)) {
-      rows <- rows_by_g[[g]]
-      if (!length(rows)) next
-      lm <- grp_logM(rows, aRE[rows], Zc[rows, , drop = FALSE], P, logdetS,
-                     site$lmat, site$deriv)
+    for (g in active_groups) {
+      lm <- grp_logM(g, oracle, P, logdetS)
       if (is.null(lm) || !is.finite(lm)) return(1e10)
       total <- total + lm
     }
@@ -191,15 +270,11 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0, make_site, n_obs,
   Sig <- block_diag(Sigma_list) + diag(1e-10, dtot)
   P <- solve(Sig)
   logdetS <- as.numeric(determinant(Sig, logarithm = TRUE)$modulus)
-  site <- make_site(theta_ref)
-  aRE <- cl(site$eta_re)
+  oracle <- build_oracle(theta_ref)
   BHAT <- matrix(0, ng, dtot)
   BVAR <- matrix(rep(diag(Sig), each = ng), ng, dtot)   # empty groups -> prior
-  for (g in seq_len(ng)) {
-    rows <- rows_by_g[[g]]
-    if (!length(rows)) next
-    post <- grp_logM(rows, aRE[rows], Zc[rows, , drop = FALSE], P, logdetS,
-                     site$lmat, site$deriv, want_post = TRUE)
+  for (g in active_groups) {
+    post <- grp_logM(g, oracle, P, logdetS, want_post = TRUE)
     if (is.null(post)) return(NULL)
     BHAT[g, ] <- post$b
     BVAR[g, ] <- post$var

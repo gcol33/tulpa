@@ -184,15 +184,36 @@ A single-term model is the length-1 case of the same path -- no special-casing.
 - **`tulpa_re_aghq()`** (`R/re_aghq.R`) -- a deterministic alternative debias:
   replaces each per-group Laplace integral with `n_quad`-point adaptive
   Gauss-Hermite quadrature (`n_quad = 1` is the joint Laplace; higher reduces
-  small-cluster variance attenuation). Callback-driven via `make_site(theta)`
-  (the caller supplies the per-observation marginal and its first two eta
-  derivatives), so it handles random slopes / correlated blocks sharing **one**
-  grouping factor and refines custom marginals too. Fixed params + log-Cholesky
+  small-cluster variance attenuation). The integration core is
+  **structure-agnostic**: it integrates an abstract per-group conditional
+  log-likelihood `ell_g(b)` against `N(b; 0, Sigma)` given a `b`-space oracle,
+  so the grouping / quadrature / log-Cholesky `Sigma` / LKJ / marginal-Hessian
+  machinery is shared across every structure. Two callback forms select it:
+  - `make_site(theta)` -- the common **single-arm, per-row-separable** case
+    (`ell_g(b) = sum_i log f_i(eta_i + Z_i b)` on one linear predictor): the
+    caller supplies the per-observation marginal and its first two eta
+    derivatives, and the engine builds the oracle from them and the RE design.
+    Handles random slopes / correlated blocks sharing **one** grouping factor.
+  - `make_group(theta)` -- the **general / multi-arm** case: the caller supplies
+    the per-group oracle directly (`grad_hess(g, b)` -> value/score/data-only
+    observed info; `node_ll(g, B)` -> log-lik at the quadrature nodes). Arms,
+    designs and observation granularity live entirely in the callback, so
+    non-separable units and random effects on several coupled arms at once
+    (e.g. a community N-mixture: species priors on BOTH the abundance and the
+    detection coefficients, coupled through the latent count -- the `msNMix`
+    structure) integrate with no engine change. `re_terms` then carries only
+    the covariance structure (`n_coefs` / `correlated` / `n_groups`); the
+    per-observation `idx` / `Z` are optional. The N-mixture per-group marginal
+    primitive an `msNMix` oracle is built from is `tulpa_nmix_site_marginal()`
+    (`R/nmix_site_marginal.R`, gcol33/tulpa#31).
+  Supply exactly one of `make_site` / `make_group`. Fixed params + log-Cholesky
   `Sigma` coords are optimized jointly on `sum_g log M_g`; SEs from the
   exact-marginal Hessian. Optional `lkj_eta > 1` penalizes a weakly-identified
   correlation off the boundary without shrinking the marginal SDs. Distinct
   from `agq_fit()` (`R/agq.R`), which is intercept-only RE with built-in
-  `binomial`/`poisson`/`gaussian` likelihoods. Recovery: `test-re-aghq.R`.
+  `binomial`/`poisson`/`gaussian` likelihoods. Recovery / equivalence:
+  `test-re-aghq.R` (single-arm), `test-re-aghq-multiarm.R` (make_group == make_site
+  at d=1/d=2, two-arm N-mixture oracle FD-checks + end-to-end).
 
 Both summarize through the shared `.re_cov_derived_summary` over the per-block
 covariance layout (weighted quantiles == sample quantiles at equal weight) and
