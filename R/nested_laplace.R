@@ -1164,8 +1164,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #' `tulpa_nested_laplace()` instead.
 #'
 #' Supported spec types:
-#'  * `tulpa_temporal` with `type ∈ {"rw1", "rw2", "ar1"}`
-#'  * `tulpa_spatial` with `type ∈ {"car", "icar", "car_proper", "bym2"}`.
+#'  * `tulpa_temporal` with `type in {"rw1", "rw2", "ar1"}`
+#'  * `tulpa_spatial` with `type in {"car", "icar", "car_proper", "bym2"}`.
 #'    Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
 #'    using the spec's eigenvalue-derived `rho_bounds`.
 #'    Continuous-spatial GP / SPDE specs need their own entry — see

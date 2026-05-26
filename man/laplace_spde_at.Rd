@@ -31,9 +31,9 @@ laplace_spde_at(
 
 \item{phi}{Dispersion parameter (negbin / gamma only).}
 
-\item{range}{Spatial range (NULL → use \code{spatial$prior_range[1]}).}
+\item{range}{Spatial range (NULL -> use \code{spatial$prior_range[1]}).}
 
-\item{sigma}{Marginal SD (NULL → use \code{spatial$prior_sigma[1]}).}
+\item{sigma}{Marginal SD (NULL -> use \code{spatial$prior_sigma[1]}).}
 
 \item{max_iter}{Newton iterations.}
 

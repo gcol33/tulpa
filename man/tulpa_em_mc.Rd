@@ -20,7 +20,7 @@ tulpa_em_mc(
 \item{e_step_sample}{Function \verb{function(fits, n_mc, ...) -> list}.
 Must return a list of length \code{n_mc}, each element a weights
 object of the same shape \code{m_step_encode} consumes (typically a
-numeric vector of length \code{n_obs}, or a matrix \verb{n_obs × K} for
+numeric vector of length \code{n_obs}, or a matrix \verb{n_obs x K} for
 K-class latent variables). On the first iteration \code{fits} is
 \code{list()} — the callback should return draws from the prior.}
 
@@ -79,7 +79,7 @@ set \code{n_mc_growth > 1}.
 }
 \section{Tier}{
 
-Inherits the tier of the inner M-step (Laplace ⇒ Tier 2). The
+Inherits the tier of the inner M-step (Laplace => Tier 2). The
 Monte-Carlo E-step \emph{itself} is exact in the limit \code{n_mc -> infinity},
 so as a \emph{full pipeline} MCEM is asymptotically Tier 1 if
 \code{e_step_sample} is exact.

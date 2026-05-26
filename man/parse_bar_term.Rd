@@ -24,10 +24,10 @@ A list of RE specs (one per grouping level). Each spec has:
 \description{
 Takes a \code{|} or \code{||} language object and extracts the grouping variable(s),
 effect terms (intercept, slopes), and correlation structure. The bar
-operator drives the \code{correlated} flag: \code{|} → \code{TRUE} (LKJ-Cholesky on the
-joint slope vector), \code{||} → \code{FALSE} (diagonal covariance, one σ per
+operator drives the \code{correlated} flag: \code{|} -> \code{TRUE} (LKJ-Cholesky on the
+joint slope vector), \code{||} -> \code{FALSE} (diagonal covariance, one sigma per
 coefficient). This matches lme4 / glmmTMB and lets downstream packages
-branch on \code{correlated} to choose between independent-σ and Cholesky
+branch on \code{correlated} to choose between independent-sigma and Cholesky
 parameterizations.
 }
 \details{

@@ -17,7 +17,7 @@
 #'
 #' The implementation simply composes:
 #'
-#' 1. Pilot grid Laplace → init `theta` (grid argmax).
+#' 1. Pilot grid Laplace -> init `theta` (grid argmax).
 #' 2. [pathfinder()] on `log_marginal(theta)` with FD-based L-BFGS
 #'    (gradients from `stats::optim`'s internal finite differences).
 #' 3. Wrap the result with tgmrf-specific metadata + block hyperparameter

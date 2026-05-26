@@ -35,7 +35,7 @@
 #' set `n_mc_growth > 1`.
 #'
 #' @section Tier:
-#' Inherits the tier of the inner M-step (Laplace ⇒ Tier 2). The
+#' Inherits the tier of the inner M-step (Laplace => Tier 2). The
 #' Monte-Carlo E-step *itself* is exact in the limit `n_mc -> infinity`,
 #' so as a *full pipeline* MCEM is asymptotically Tier 1 if
 #' `e_step_sample` is exact.
@@ -43,7 +43,7 @@
 #' @param e_step_sample Function `function(fits, n_mc, ...) -> list`.
 #'   Must return a list of length `n_mc`, each element a weights
 #'   object of the same shape `m_step_encode` consumes (typically a
-#'   numeric vector of length `n_obs`, or a matrix `n_obs × K` for
+#'   numeric vector of length `n_obs`, or a matrix `n_obs x K` for
 #'   K-class latent variables). On the first iteration `fits` is
 #'   `list()` — the callback should return draws from the prior.
 #' @param m_step_encode Function `function(weights, ...) -> list of blocks`.

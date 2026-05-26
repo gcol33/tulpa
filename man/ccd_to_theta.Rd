@@ -13,7 +13,7 @@ ccd_to_theta(z, theta_hat, L, log_scale = FALSE)
 \item{theta_hat}{Numeric vector of length \code{k}: centre of the design,
 in either physical or log-space (per \code{log_scale}).}
 
-\item{L}{Numeric \verb{[k × k]} matrix: scale/rotation applied to z. Pass
+\item{L}{Numeric \verb{[k x k]} matrix: scale/rotation applied to z. Pass
 \code{diag(sd)} for a diagonal axis-aligned grid where \code{sd} is the
 per-axis posterior SD; pass a Cholesky factor to capture
 correlations between hyperparameters.}

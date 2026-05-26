@@ -33,7 +33,7 @@
 #' @param verbose Print L-BFGS / ELBO summary at end (default FALSE).
 #'
 #' @return A list with class `tulpa_fit` carrying:
-#'   * `draws`: `n_draws × d` matrix of Gaussian draws at the mode.
+#'   * `draws`: `n_draws x d` matrix of Gaussian draws at the mode.
 #'   * `means`: posterior means (= mode for a Gaussian fit).
 #'   * `mode`: the L-BFGS mode.
 #'   * `cov`: the proposal covariance (`solve(-hessian)`).

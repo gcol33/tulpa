@@ -21,7 +21,7 @@
 #' epistemic class as Laplace.
 #'
 #' @param y Response vector.
-#' @param X Fixed-effects design matrix (`n_obs × p`).
+#' @param X Fixed-effects design matrix (`n_obs x p`).
 #' @param group Integer cluster labels (1-based, length `n_obs`).
 #' @param n_groups Number of clusters (default `max(group)`).
 #' @param family One of `"binomial"`, `"poisson"`, `"gaussian"`.

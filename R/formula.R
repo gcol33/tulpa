@@ -171,10 +171,10 @@ no_latent_terms <- function(term) {
 #'
 #' Takes a `|` or `||` language object and extracts the grouping variable(s),
 #' effect terms (intercept, slopes), and correlation structure. The bar
-#' operator drives the `correlated` flag: `|` → `TRUE` (LKJ-Cholesky on the
-#' joint slope vector), `||` → `FALSE` (diagonal covariance, one σ per
+#' operator drives the `correlated` flag: `|` -> `TRUE` (LKJ-Cholesky on the
+#' joint slope vector), `||` -> `FALSE` (diagonal covariance, one sigma per
 #' coefficient). This matches lme4 / glmmTMB and lets downstream packages
-#' branch on `correlated` to choose between independent-σ and Cholesky
+#' branch on `correlated` to choose between independent-sigma and Cholesky
 #' parameterizations.
 #'
 #' Nested grouping `(1 | a/b)` is expanded into one spec per level
@@ -223,9 +223,9 @@ parse_bar_term <- function(bar_term) {
 #' Resolve the RHS of a bar term into one or more group specs
 #'
 #' Three cases:
-#'   - simple name: `g` → one spec with `group_vars = "g"`.
-#'   - nested `/` :   `a/b` → two specs (`"a"`, `c("a","b")`).
-#'   - other call:    `factor(g)` or `g1:g2` → one spec carrying the
+#'   - simple name: `g` -> one spec with `group_vars = "g"`.
+#'   - nested `/` :   `a/b` -> two specs (`"a"`, `c("a","b")`).
+#'   - other call:    `factor(g)` or `g1:g2` -> one spec carrying the
 #'     language object in `group_expr` so we evaluate it at build time
 #'     instead of guessing column names.
 #'

@@ -37,7 +37,7 @@ numerically via \link[stats:optim]{stats::optim}'s built-in finite differences.}
 \value{
 A list with class \code{tulpa_fit} carrying:
 \itemize{
-\item \code{draws}: \verb{n_draws × d} matrix of Gaussian draws at the mode.
+\item \code{draws}: \verb{n_draws x d} matrix of Gaussian draws at the mode.
 \item \code{means}: posterior means (= mode for a Gaussian fit).
 \item \code{mode}: the L-BFGS mode.
 \item \code{cov}: the proposal covariance (\code{solve(-hessian)}).

@@ -2,7 +2,7 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.nngp_design_Z}
 \alias{.nngp_design_Z}
-\title{Build a length-n_obs → length-n_unique indicator design matrix Z.}
+\title{Build a length-n_obs -> length-n_unique indicator design matrix Z.}
 \usage{
 .nngp_design_Z(spatial, n_obs)
 }

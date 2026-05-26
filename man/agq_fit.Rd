@@ -23,7 +23,7 @@ agq_fit(
 \arguments{
 \item{y}{Response vector.}
 
-\item{X}{Fixed-effects design matrix (\verb{n_obs × p}).}
+\item{X}{Fixed-effects design matrix (\verb{n_obs x p}).}
 
 \item{group}{Integer cluster labels (1-based, length \code{n_obs}).}
 

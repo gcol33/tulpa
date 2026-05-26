@@ -101,17 +101,17 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
 #' @description
 #' Convenience wrapper for `spatial_car(..., proper = TRUE)`. Creates a
 #' proper conditional autoregressive (CAR) spatial random effect with the
-#' autocorrelation parameter ρ estimated from the data.
+#' autocorrelation parameter rho estimated from the data.
 #'
 #' Use this when you want spatial autocorrelation to be a parameter of the
-#' model rather than fixed at 1 (as in ICAR). ρ ≈ 0 collapses to IID,
-#' ρ ≈ 1 approaches ICAR.
+#' model rather than fixed at 1 (as in ICAR). rho ~= 0 collapses to IID,
+#' rho ~= 1 approaches ICAR.
 #'
 #' @inheritParams spatial_car
 #'
 #' @return A `tulpa_spatial` object with `type = "car_proper"`.
 #'
-#' @seealso [spatial_car()] for ICAR (ρ fixed at 1),
+#' @seealso [spatial_car()] for ICAR (rho fixed at 1),
 #'   [spatial_bym2()] for the BYM2 decomposition.
 #'
 #' @examples

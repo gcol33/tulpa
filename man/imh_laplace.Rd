@@ -46,7 +46,7 @@ spread.}
 \value{
 A list with class \code{tulpa_fit} carrying:
 \itemize{
-\item \code{draws}: \code{(n_iter - warmup) / thin} × \code{d} matrix of draws.
+\item \code{draws}: \code{(n_iter - warmup) / thin} x \code{d} matrix of draws.
 \item \code{means}: posterior means.
 \item \code{accept_prob}: per-iteration acceptance indicators.
 \item \code{mean_accept}: overall post-warmup acceptance rate.

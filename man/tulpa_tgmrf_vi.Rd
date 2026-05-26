@@ -82,7 +82,7 @@ approximation. Pair with \code{\link[=tulpa_tgmrf_imh]{tulpa_tgmrf_imh()}} for a
 
 The implementation simply composes:
 \enumerate{
-\item Pilot grid Laplace → init \code{theta} (grid argmax).
+\item Pilot grid Laplace -> init \code{theta} (grid argmax).
 \item \code{\link[=pathfinder]{pathfinder()}} on \code{log_marginal(theta)} with FD-based L-BFGS
 (gradients from \code{stats::optim}'s internal finite differences).
 \item Wrap the result with tgmrf-specific metadata + block hyperparameter

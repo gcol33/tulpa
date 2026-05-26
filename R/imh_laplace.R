@@ -41,7 +41,7 @@
 #' @param verbose Print acceptance rate at end (default `FALSE`).
 #'
 #' @return A list with class `tulpa_fit` carrying:
-#'   * `draws`: `(n_iter - warmup) / thin` × `d` matrix of draws.
+#'   * `draws`: `(n_iter - warmup) / thin` x `d` matrix of draws.
 #'   * `means`: posterior means.
 #'   * `accept_prob`: per-iteration acceptance indicators.
 #'   * `mean_accept`: overall post-warmup acceptance rate.

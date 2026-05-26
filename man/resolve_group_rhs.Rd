@@ -15,9 +15,9 @@ List of group specs.
 \description{
 Three cases:
 \itemize{
-\item simple name: \code{g} → one spec with \code{group_vars = "g"}.
-\item nested \code{/} :   \code{a/b} → two specs (\code{"a"}, \code{c("a","b")}).
-\item other call:    \code{factor(g)} or \code{g1:g2} → one spec carrying the
+\item simple name: \code{g} -> one spec with \code{group_vars = "g"}.
+\item nested \code{/} :   \code{a/b} -> two specs (\code{"a"}, \code{c("a","b")}).
+\item other call:    \code{factor(g)} or \code{g1:g2} -> one spec carrying the
 language object in \code{group_expr} so we evaluate it at build time
 instead of guessing column names.
 }

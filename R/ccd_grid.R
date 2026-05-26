@@ -109,7 +109,7 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #'   [ccd_grid()].
 #' @param theta_hat Numeric vector of length `k`: centre of the design,
 #'   in either physical or log-space (per `log_scale`).
-#' @param L Numeric `[k × k]` matrix: scale/rotation applied to z. Pass
+#' @param L Numeric `[k x k]` matrix: scale/rotation applied to z. Pass
 #'   `diag(sd)` for a diagonal axis-aligned grid where `sd` is the
 #'   per-axis posterior SD; pass a Cholesky factor to capture
 #'   correlations between hyperparameters.

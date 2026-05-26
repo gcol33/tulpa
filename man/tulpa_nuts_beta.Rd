@@ -28,7 +28,7 @@ tulpa_nuts_beta(
 
 \item{log_phi_prior_sd}{Prior SD on \code{log(phi)}
 (\code{log_phi ~ N(0, log_phi_prior_sd)}). Default \code{3} (very weak;
-covers \code{phi} from ~0.001 to ~1000 within ±2 SD).}
+covers \code{phi} from ~0.001 to ~1000 within +-2 SD).}
 
 \item{log_phi_init}{Starting value for \code{log(phi)}. Default \code{0}
 (i.e. \code{phi = 1}); a method-of-moments warm start can speed warmup

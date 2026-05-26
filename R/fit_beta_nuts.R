@@ -19,7 +19,7 @@
 #'   (`beta_j ~ N(0, sigma_beta)`). Default `10`.
 #' @param log_phi_prior_sd Prior SD on `log(phi)`
 #'   (`log_phi ~ N(0, log_phi_prior_sd)`). Default `3` (very weak;
-#'   covers `phi` from ~0.001 to ~1000 within ±2 SD).
+#'   covers `phi` from ~0.001 to ~1000 within +-2 SD).
 #' @param log_phi_init Starting value for `log(phi)`. Default `0`
 #'   (i.e. `phi = 1`); a method-of-moments warm start can speed warmup
 #'   in highly concentrated regimes.

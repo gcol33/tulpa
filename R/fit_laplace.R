@@ -534,8 +534,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 #' @param spatial A `tulpa_spatial` object of type `"spde"`.
 #' @param family Distribution family.
 #' @param phi Dispersion parameter (negbin / gamma only).
-#' @param range Spatial range (NULL → use `spatial$prior_range[1]`).
-#' @param sigma Marginal SD (NULL → use `spatial$prior_sigma[1]`).
+#' @param range Spatial range (NULL -> use `spatial$prior_range[1]`).
+#' @param sigma Marginal SD (NULL -> use `spatial$prior_sigma[1]`).
 #' @param max_iter Newton iterations.
 #' @param tol Newton tolerance.
 #' @param n_threads OpenMP threads.
@@ -619,8 +619,8 @@ gp_cov_type_for_laplace <- function(spatial) {
 #' @param spatial A `tulpa_gp` spec, validated (i.e., `neighbor_info` populated).
 #' @param family Distribution family.
 #' @param phi Dispersion parameter (negbin / gamma only).
-#' @param sigma2_gp Marginal variance (NULL → 1.0).
-#' @param phi_gp Range / decay parameter (NULL → 1.0).
+#' @param sigma2_gp Marginal variance (NULL -> 1.0).
+#' @param phi_gp Range / decay parameter (NULL -> 1.0).
 #' @param max_iter Newton iterations.
 #' @param tol Newton tolerance.
 #' @param n_threads OpenMP threads.

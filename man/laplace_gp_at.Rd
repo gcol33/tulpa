@@ -31,9 +31,9 @@ laplace_gp_at(
 
 \item{phi}{Dispersion parameter (negbin / gamma only).}
 
-\item{sigma2_gp}{Marginal variance (NULL → 1.0).}
+\item{sigma2_gp}{Marginal variance (NULL -> 1.0).}
 
-\item{phi_gp}{Range / decay parameter (NULL → 1.0).}
+\item{phi_gp}{Range / decay parameter (NULL -> 1.0).}
 
 \item{max_iter}{Newton iterations.}
 
