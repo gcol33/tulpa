@@ -163,6 +163,64 @@ no_latent_terms <- function(term) {
   call(deparse(term[[1]]), nb_left, nb_right)
 }
 
+# ----------------------------------------------------------------------------
+# Special model terms: spatial(col) / temporal(col)
+#
+# These name a single data column (the per-observation spatial unit / time
+# index); the structure + adjacency/coords arrive through tulpa()'s spatial= /
+# temporal= argument, not the formula. The finder/stripper mirror nobars()
+# but are parameterised by the wrapper name, so spatial and temporal share one
+# implementation. (latent(...) keeps its own pair above -- it evaluates its
+# argument to an object, a different semantics from naming a column.)
+# ----------------------------------------------------------------------------
+
+# Collect all `fname(...)` calls on the rhs (fname = "spatial" / "temporal").
+find_special_terms <- function(term, fname) {
+  if (is.name(term) || !is.language(term)) return(NULL)
+  if (is.call(term) && identical(term[[1]], as.name(fname))) return(list(term))
+  if (identical(term[[1]], as.name("("))) return(find_special_terms(term[[2]], fname))
+  if (length(term) == 2L) return(find_special_terms(term[[2]], fname))
+  c(find_special_terms(term[[2]], fname), find_special_terms(term[[3]], fname))
+}
+
+# Rewrite the rhs with all `fname(...)` calls removed (NULL if nothing remains).
+no_special_terms <- function(term, fname) {
+  if (is.name(term) || !is.language(term)) return(term)
+  if (is.call(term) && identical(term[[1]], as.name(fname))) return(NULL)
+  if (identical(term[[1]], as.name("("))) {
+    inner <- no_special_terms(term[[2]], fname)
+    if (is.null(inner)) return(NULL)
+    return(call("(", inner))
+  }
+  if (length(term) == 2L) {
+    nb <- no_special_terms(term[[2]], fname)
+    if (is.null(nb)) return(NULL)
+    return(call(deparse(term[[1]]), nb))
+  }
+  nb_left  <- no_special_terms(term[[2]], fname)
+  nb_right <- no_special_terms(term[[3]], fname)
+  if (is.null(nb_left) && is.null(nb_right)) return(NULL)
+  if (is.null(nb_left))  return(nb_right)
+  if (is.null(nb_right)) return(nb_left)
+  call(deparse(term[[1]]), nb_left, nb_right)
+}
+
+# Extract the single bare column name from a special term, e.g. spatial(region).
+# At most one such term is allowed; it must wrap exactly one bare name.
+.special_term_var <- function(calls, fname) {
+  if (length(calls) == 0L) return(NULL)
+  if (length(calls) > 1L) {
+    stop(sprintf("At most one %s(...) term is allowed in a formula.", fname),
+         call. = FALSE)
+  }
+  cl <- calls[[1]]
+  if (length(cl) != 2L || !is.name(cl[[2]])) {
+    stop(sprintf("%s(...) takes exactly one bare column name, e.g. %s(region).",
+                 fname, fname), call. = FALSE)
+  }
+  deparse(cl[[2]])
+}
+
 # ============================================================================
 # Bar term parsing: structured RE specification with || expansion
 # ============================================================================
@@ -429,6 +487,19 @@ tulpa_parse_formula <- function(formula) {
     rhs_clean <- no_latent_terms(rhs_clean)
   }
 
+  # Spatial / temporal special terms: spatial(col) / temporal(col) name a data
+  # column (the per-observation spatial unit / time index). The structure +
+  # adjacency/coords arrive via tulpa()'s spatial= / temporal= argument. Record
+  # the column name and strip the term from the fixed-effects formula.
+  spatial_var <- NULL
+  temporal_var <- NULL
+  if (!is.null(rhs_clean)) {
+    spatial_var  <- .special_term_var(find_special_terms(rhs_clean, "spatial"), "spatial")
+    temporal_var <- .special_term_var(find_special_terms(rhs_clean, "temporal"), "temporal")
+    rhs_clean <- no_special_terms(rhs_clean, "spatial")
+    if (!is.null(rhs_clean)) rhs_clean <- no_special_terms(rhs_clean, "temporal")
+  }
+
   fixed_rhs <- if (is.null(rhs_clean)) 1 else rhs_clean
   fixed_formula <- if (is.null(response_expr)) {
     as.formula(call("~", fixed_rhs), env = formula_env)
@@ -445,6 +516,8 @@ tulpa_parse_formula <- function(formula) {
       n_re_terms      = length(random_effects),
       latent_blocks   = latent_blocks,
       n_latent_blocks = length(latent_blocks),
+      spatial_var     = spatial_var,
+      temporal_var    = temporal_var,
       original        = formula
     ),
     class = "tulpa_parsed_formula"
