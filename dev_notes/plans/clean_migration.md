@@ -344,3 +344,76 @@ OK**.
 `numdenom` was renamed to **tulpaRatio**. tulpa's own `CLAUDE.md` still says
 "numdenom: Ratio models" and "Extracted from numdenom" — the live-sibling
 reference is stale (the historical "extracted from" mention is fine as history).
+
+---
+
+## 10. Follow-up (2026-05-26): collapse the unrot-flagged ABI families + retire the family-enum single-point solver
+
+`unrot` flagged two CRITICAL clone clusters left after the keystone:
+1. the spatio-temporal nested-Laplace cross-product
+   (`tulpa_nested_laplace_st_<spatial>_<temporal>`, 15 callables);
+2. the single-block nested temporal entries (`*_{rw1,rw2,ar1}`); and
+3. the family-enum single-point Laplace family (`tulpa_laplace_mode_*` C-ABI +
+   the `tulpa::laplace_mode_*` solver bodies behind `cpp_laplace_fit*`).
+
+Key finding: the keystone (Phase L) unified the **inner solve** (`spec_inner_solve`)
+for the *nested* path, but the *standalone single-point* path
+(`cpp_laplace_fit*` -> `tulpa::laplace_mode_*` in `laplace_core*.cpp`) is still on
+the old **family-enum inner Newton** -- the surviving second inner Newton that
+goal #4 ("retire the family-enum inner loop") removed only on the nested side.
+
+| Step | What | Status |
+|---|---|---|
+| ST | Collapse 15 `*_st_<spatial>_<temporal>` -> 5 `*_st_<spatial>` (runtime `temporal_type` via `make_temporal_ops`). ABI 24->25. | DONE -- commit `f0c39ef` |
+| B1 | Remove the 8 dead `tulpa_laplace_mode_*` C-callables + `LaplaceMode*Fn` typedefs + `tulpa_shims_laplace.h` + `copy_mode_result`; keep `LaplaceShimResult` (spec shims reuse it). No sibling consumes them. ABI 25->26. | DONE -- commit `cdf348a` |
+| A | Collapse the 3 single-block temporal entries `*_{rw1,rw2,ar1}` -> one `*_temporal` (runtime `temporal_type` via the same `make_temporal_ops`). ABI 26->27. tulpaGlmm temporal call sites updated. | DONE -- commit `48c3de7` |
+| B2 | Retire the family-enum single-point solvers (`tulpa::laplace_mode_*`); route the spec-shaped fits onto `spec_inner_solve`. | **SPECIFIED below -- not yet done** |
+
+### B2 spec (next phase) -- "kill the second inner Newton, single-point side"
+
+Scope decided from a usage + architecture sweep (R callers / test refs / spec
+support). **No `TULPA_ABI_VERSION` bump:** `cpp_laplace_fit*` are Rcpp `.Call`
+exports + internal C++, not registered cross-package callables. tulpaRatio has
+its **own** `_tulpaRatio_cpp_laplace_fit*` (separate compiled copies) -- not
+tulpa's -- so B2 is contained within tulpa.
+
+- **B2-dead (clean, low-risk).** Delete `cpp_laplace_fit_{rsr,multiscale_gp,
+  multiscale_temporal}` (0 R callers, 0 test refs in tulpa) + their
+  `tulpa::laplace_mode_{rsr,multiscale_gp,multiscale_temporal}` bodies
+  (`laplace_core_spatial.cpp`, `laplace_core_gp.cpp`) + any rsr/multiscale-only
+  static helpers that orphan. Regenerate RcppExports. Also delete the
+  B1-orphaned forward declarations of every `tulpa::laplace_mode_*` in
+  `tulpa_shims.cpp:48-137` (left behind when B1 removed the shims that used
+  them -- harmless but dead).
+- **B2-live (the prize, delicate).** Route `cpp_laplace_fit`, `_multi_re`,
+  `_spatial` (icar), `_bym2` through `spec_inner_solve` /
+  `laplace_mode_spec_dense_impl` and delete the four
+  `tulpa::laplace_mode_{dense,dense_multi_re,spatial,bym2}` bodies. Equivalence
+  is already proven by the `cpp_laplace_spec_test_{family,multi_re,icar,bym2}`
+  harnesses -- the marshalling they do (build `ModelData`/`ParamLayout`/
+  `builtin_family_spec` + the ICAR/BYM2 `LatentBlock`) is exactly what the real
+  exports need; promote it from the harness into the export. Must preserve every
+  current input: `weights`, `offset`, `beta_prior` (mean/sd), `return_re_cov`
+  (the EM M-step covariance blocks -- `spec_inner_solve` already supports it via
+  `inv_block_layout` + `LaplaceResult.re_cov_flat`), and `x_init`.
+  **Test shift:** the `cpp_laplace_spec_test_*` harnesses cross-check spec vs
+  family-enum; once the family-enum bodies are gone there is nothing to compare
+  against, so convert those equivalence assertions to parameter-recovery /
+  CI-coverage tests (the L6 discipline) before deleting the bodies.
+  Heaviest test surface: `cpp_laplace_fit_spatial` (13 test refs).
+- **B2-NNGP (intentional boundary -- keep specialized).** `cpp_laplace_fit_gp`
+  (6 R callers) stays on its specialized NNGP path. NNGP is **not** a dense
+  `LatentBlock`/spec backend even in the nested driver -- the nested nngp/hsgp
+  entries route through `run_multi_block_nested_laplace_joint_sparse_impl`
+  (sparse), not the dense `spec_inner_solve`. Routing single-point NNGP through
+  spec would require making NNGP a spec block, disproportionate and divergent
+  from the nested path. Document the boundary; do not force it.
+
+### Sibling caveat (2026-05-26)
+
+tulpaObs is clean and was verified against ABI 27 (recompile + targeted nested/
+occupancy test). **tulpaGlmm is under a large concurrent external rewrite** of
+`src/glmm_nested_laplace.cpp` (~757-line uncommitted diff touching the temporal
+path); the ST + A temporal-shim call-site updates (`get_nested_laplace_temporal_fn`)
+are present in that working tree but entangled in the external WIP, so tulpaGlmm's
+rebuild/commit against ABI 27 is owned by that effort, not this one.
