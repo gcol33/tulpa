@@ -46,8 +46,15 @@ namespace tulpa {
 // every consumer routes single-point Laplace through the LikelihoodSpec path
 // (`tulpa_laplace_spec_*`). LaplaceShimResult is retained (shared with the
 // spec shims). No core struct layout change.
+//
+// 26 -> 27: collapsed the 3 single-block temporal nested-Laplace callables
+// (`tulpa_nested_laplace_{rw1,rw2,ar1}`) to one `tulpa_nested_laplace_temporal`
+// that selects the kernel at runtime via a `temporal_type` argument (same
+// make_temporal_ops registry the ST entries use); the 3 NestedLaplace{Rw1,Rw2,
+// Ar1}Fn typedefs became one NestedLaplaceTemporalFn. No core struct layout
+// change.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 26;
+constexpr int TULPA_ABI_VERSION = 27;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

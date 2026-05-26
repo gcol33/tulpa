@@ -364,36 +364,41 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   ),
 
   rw1 = list(
-    cpp_fn = "cpp_nested_laplace_rw1",
+    cpp_fn = "cpp_nested_laplace_temporal",
     defaults = function(p, a) {
       if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw1")
       p
     },
     pack = function(p) list(
-      temporal_idx = as.integer(p$temporal_idx),
-      n_times      = as.integer(p$n_times),
-      cyclic       = isTRUE(p$cyclic),
-      tau_grid     = as.numeric(p$tau_grid)
+      temporal_idx  = as.integer(p$temporal_idx),
+      n_times       = as.integer(p$n_times),
+      temporal_type = "rw1",
+      tau_grid      = as.numeric(p$tau_grid),
+      rho_grid      = numeric(0),
+      cyclic        = isTRUE(p$cyclic)
     ),
     theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
   ),
 
   rw2 = list(
-    cpp_fn = "cpp_nested_laplace_rw2",
+    cpp_fn = "cpp_nested_laplace_temporal",
     defaults = function(p, a) {
       if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw2")
       p
     },
     pack = function(p) list(
-      temporal_idx = as.integer(p$temporal_idx),
-      n_times      = as.integer(p$n_times),
-      tau_grid     = as.numeric(p$tau_grid)
+      temporal_idx  = as.integer(p$temporal_idx),
+      n_times       = as.integer(p$n_times),
+      temporal_type = "rw2",
+      tau_grid      = as.numeric(p$tau_grid),
+      rho_grid      = numeric(0),
+      cyclic        = FALSE
     ),
     theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
   ),
 
   ar1 = list(
-    cpp_fn = "cpp_nested_laplace_ar1",
+    cpp_fn = "cpp_nested_laplace_temporal",
     defaults = function(p, a) {
       if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
         g_tau <- exp(seq(log(0.5), log(20), length.out = 5))
@@ -404,10 +409,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       p
     },
     pack = function(p) list(
-      temporal_idx = as.integer(p$temporal_idx),
-      n_times      = as.integer(p$n_times),
-      tau_grid     = as.numeric(p$tau_grid),
-      rho_grid     = as.numeric(p$rho_grid)
+      temporal_idx  = as.integer(p$temporal_idx),
+      n_times       = as.integer(p$n_times),
+      temporal_type = "ar1",
+      tau_grid      = as.numeric(p$tau_grid),
+      rho_grid      = as.numeric(p$rho_grid),
+      cyclic        = FALSE
     ),
     theta = function(p) list(
       grid  = cbind(tau = p$tau_grid, rho = p$rho_grid),

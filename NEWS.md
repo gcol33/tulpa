@@ -17,6 +17,17 @@
 
 ## Unreleased
 
+* refactor(nested-laplace)!: collapsed the 3 single-block temporal entries
+  (`*_{rw1,rw2,ar1}`) to one `*_temporal` entry that selects the kernel at
+  runtime via a `temporal_type` argument through the shared `make_temporal_ops`
+  registry -- the same collapse the spatio-temporal entries already use, so
+  adding a temporal kernel is O(1) at every layer (Rcpp entry, extern-C shim,
+  exported ABI). **ABI break** (`TULPA_ABI_VERSION` 26 -> 27):
+  `tulpa_nested_laplace_{rw1,rw2,ar1}` + their `NestedLaplace{Rw1,Rw2,Ar1}Fn`
+  typedefs become `tulpa_nested_laplace_temporal` / `NestedLaplaceTemporalFn`;
+  downstream packages rebuild. The R-level `rw1` / `rw2` / `ar1` block types are
+  unchanged.
+
 * refactor(laplace)!: removed the 8 dead family-enum single-point Laplace
   C-callables (`tulpa_laplace_mode_{dense,spatial,dense_multi_re,bym2,gp,
   multiscale_gp,multiscale_temporal,rsr}`) and their `LaplaceMode*Fn` typedefs.

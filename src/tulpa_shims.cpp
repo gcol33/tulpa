@@ -204,36 +204,13 @@ Rcpp::List cpp_nested_laplace_car_proper(
     bool store_Q
 );
 
-Rcpp::List cpp_nested_laplace_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector tau_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
-);
-
-Rcpp::List cpp_nested_laplace_rw2(
+Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
     Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
-);
-
-Rcpp::List cpp_nested_laplace_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid,
+    std::string temporal_type,
+    Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic,
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
@@ -518,12 +495,8 @@ void tulpa_register_shims(DllInfo* dll) {
         (DL_FUNC)&tulpa_nested_laplace_bym2_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_car_proper",
         (DL_FUNC)&tulpa_nested_laplace_car_proper_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_rw1",
-        (DL_FUNC)&tulpa_nested_laplace_rw1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_rw2",
-        (DL_FUNC)&tulpa_nested_laplace_rw2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_ar1",
-        (DL_FUNC)&tulpa_nested_laplace_ar1_impl);
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_temporal",
+        (DL_FUNC)&tulpa_nested_laplace_temporal_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_nngp",
         (DL_FUNC)&tulpa_nested_laplace_nngp_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_hsgp",

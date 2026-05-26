@@ -197,42 +197,26 @@ inline NestedLaplaceCarProperFn get_nested_laplace_car_proper_fn() {
 }
 
 // ----------------------------------------------------------------------------
-// RW1: 1D grid over τ (precision). Latent [beta] [re] [w_temporal (n_times)].
-// cyclic = 1 closes the chain (RW1 on a circular index). store_modes = 1.
-// Pass store_Q = 1 to retain Q at each grid point (ABI v6+).
+// TEMPORAL: one entry for the rw1 / rw2 / ar1 single-block temporal kernels.
+// `temporal_type` ("rw1" / "rw2" / "ar1") selects the kernel at runtime through
+// tulpa's make_temporal_ops registry -- the same registry the spatio-temporal
+// entries use, so adding a temporal kernel is O(1) (one registry branch, no new
+// callable). Latent [beta] [re] [w_temporal (n_times)]. store_modes = 1; pass
+// store_Q = 1 to retain Q at each grid point (ABI v6+).
+//
+//   tau_grid : [n_grid] precision grid (all kernels).
+//   rho_grid : [n_grid] AR1 lag-1 correlation grid; nullptr / ignored for
+//              rw1, rw2.
+//   cyclic   : 1 closes the chain for rw1 (RW1 on a circular index); ignored
+//              by rw2 / ar1.
 // ----------------------------------------------------------------------------
-typedef void (*NestedLaplaceRw1Fn)(
-    const double* y, const int* n_trials,
-    const double* X_flat, const double* re_idx,
-    int N, int p, int n_re_groups, double sigma_re,
-    const int* temporal_idx, int n_times, int cyclic,
-    const double* tau_grid, int n_grid,
-    const char* family, double phi,
-    int max_iter, double tol, int n_threads,
-    const double* x_init, int n_x_init,
-    int store_Q,
-    NestedLaplaceShimResult* result_out
-);
-
-inline NestedLaplaceRw1Fn get_nested_laplace_rw1_fn() {
-    static NestedLaplaceRw1Fn fn = nullptr;
-    if (!fn) {
-        check_abi_version();
-        fn = (NestedLaplaceRw1Fn)R_GetCCallable("tulpa", "tulpa_nested_laplace_rw1");
-    }
-    return fn;
-}
-
-// ----------------------------------------------------------------------------
-// RW2: 1D grid over τ. Same latent layout as RW1; no cyclic flag.
-// store_modes = 1. Pass store_Q = 1 to retain Q (ABI v6+).
-// ----------------------------------------------------------------------------
-typedef void (*NestedLaplaceRw2Fn)(
+typedef void (*NestedLaplaceTemporalFn)(
     const double* y, const int* n_trials,
     const double* X_flat, const double* re_idx,
     int N, int p, int n_re_groups, double sigma_re,
     const int* temporal_idx, int n_times,
-    const double* tau_grid, int n_grid,
+    const char* temporal_type,
+    const double* tau_grid, const double* rho_grid, int n_grid, int cyclic,
     const char* family, double phi,
     int max_iter, double tol, int n_threads,
     const double* x_init, int n_x_init,
@@ -240,37 +224,11 @@ typedef void (*NestedLaplaceRw2Fn)(
     NestedLaplaceShimResult* result_out
 );
 
-inline NestedLaplaceRw2Fn get_nested_laplace_rw2_fn() {
-    static NestedLaplaceRw2Fn fn = nullptr;
+inline NestedLaplaceTemporalFn get_nested_laplace_temporal_fn() {
+    static NestedLaplaceTemporalFn fn = nullptr;
     if (!fn) {
         check_abi_version();
-        fn = (NestedLaplaceRw2Fn)R_GetCCallable("tulpa", "tulpa_nested_laplace_rw2");
-    }
-    return fn;
-}
-
-// ----------------------------------------------------------------------------
-// AR1: 2D grid over (τ, ρ). store_modes = 1.
-// Pass store_Q = 1 to retain Q at each grid point (ABI v6+).
-// ----------------------------------------------------------------------------
-typedef void (*NestedLaplaceAr1Fn)(
-    const double* y, const int* n_trials,
-    const double* X_flat, const double* re_idx,
-    int N, int p, int n_re_groups, double sigma_re,
-    const int* temporal_idx, int n_times,
-    const double* tau_grid, const double* rho_grid, int n_grid,
-    const char* family, double phi,
-    int max_iter, double tol, int n_threads,
-    const double* x_init, int n_x_init,
-    int store_Q,
-    NestedLaplaceShimResult* result_out
-);
-
-inline NestedLaplaceAr1Fn get_nested_laplace_ar1_fn() {
-    static NestedLaplaceAr1Fn fn = nullptr;
-    if (!fn) {
-        check_abi_version();
-        fn = (NestedLaplaceAr1Fn)R_GetCCallable("tulpa", "tulpa_nested_laplace_ar1");
+        fn = (NestedLaplaceTemporalFn)R_GetCCallable("tulpa", "tulpa_nested_laplace_temporal");
     }
     return fn;
 }

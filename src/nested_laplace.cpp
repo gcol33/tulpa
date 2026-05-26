@@ -314,162 +314,12 @@ Rcpp::List cpp_nested_laplace_car_proper(
 }
 
 // =====================================================================
-// Nested Laplace: RW1 (1D grid over tau_temporal)
+// Nested Laplace: single-block temporal (rw1 / rw2 / ar1)
+//
+// Collapsed into one runtime-dispatched entry, cpp_nested_laplace_temporal,
+// defined further down next to the spatio-temporal entries so it can reuse the
+// make_temporal_ops registry (declared later in this file). See that entry.
 // =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector tau_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
-) {
-    int n_grid = tau_grid.size();
-    int N = y.size();
-    int p = X.ncol();
-    int temporal_start = p + n_re_groups;
-
-    tulpa::LatentBlock block;
-    block.start = temporal_start;
-    block.size  = n_times;
-    block.idx   = [&](int i, int /*k_arm*/) { return temporal_idx[i]; };
-    block.d_fac = [](int) { return 1.0; };
-    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                          const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw1_precision(grad, H, x, temporal_start, n_times,
-                                  tau_grid[k], cyclic);
-    };
-    block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_rw1(x, temporal_start, n_times, tau_grid[k], cyclic);
-    };
-    block.center = [&](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, temporal_start, n_times);
-    };
-
-    std::vector<tulpa::LatentBlock> blocks{ block };
-
-    Rcpp::List out = run_multi_block_nested_laplace(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        blocks,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        store_Q
-    );
-    out["tau_grid"] = tau_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: RW2 (1D grid over tau_temporal)
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_rw2(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
-) {
-    int n_grid = tau_grid.size();
-    int N = y.size();
-    int p = X.ncol();
-    int temporal_start = p + n_re_groups;
-
-    tulpa::LatentBlock block;
-    block.start = temporal_start;
-    block.size  = n_times;
-    block.idx   = [&](int i, int /*k_arm*/) { return temporal_idx[i]; };
-    block.d_fac = [](int) { return 1.0; };
-    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                          const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw2_precision(grad, H, x, temporal_start, n_times,
-                                  tau_grid[k], false);
-    };
-    block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_rw2(x, temporal_start, n_times, tau_grid[k], false);
-    };
-    block.center = [&](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, temporal_start, n_times);
-    };
-
-    std::vector<tulpa::LatentBlock> blocks{ block };
-
-    Rcpp::List out = run_multi_block_nested_laplace(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        blocks,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        store_Q
-    );
-    out["tau_grid"] = tau_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: AR1 (2D grid over (tau, rho))
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
-) {
-    int n_grid = tau_grid.size();
-    int N = y.size();
-    int p = X.ncol();
-    int temporal_start = p + n_re_groups;
-
-    // AR1 is proper (full rank) — no sum-to-zero constraint required, but
-    // we still center the latent block to stabilise identifiability against
-    // the intercept (matches RW1/RW2/ICAR).
-    tulpa::LatentBlock block;
-    block.start = temporal_start;
-    block.size  = n_times;
-    block.idx   = [&](int i, int /*k_arm*/) { return temporal_idx[i]; };
-    block.d_fac = [](int) { return 1.0; };
-    block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                          const Rcpp::NumericVector& x, int k) {
-        tulpa::add_ar1_precision(grad, H, x, temporal_start, n_times,
-                                  tau_grid[k], rho_grid[k]);
-    };
-    block.log_prior = [&](const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_ar1(x, temporal_start, n_times,
-                                      tau_grid[k], rho_grid[k]);
-    };
-    block.center = [&](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, temporal_start, n_times);
-    };
-
-    std::vector<tulpa::LatentBlock> blocks{ block };
-
-    Rcpp::List out = run_multi_block_nested_laplace(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        blocks,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        store_Q
-    );
-    out["tau_grid"] = tau_grid;
-    out["rho_grid"] = rho_grid;
-    return out;
-}
 
 // =====================================================================
 // Nested Laplace: NNGP (2D grid over (sigma2_gp, phi_gp))
@@ -2043,6 +1893,63 @@ inline Rcpp::NumericVector nl_unwrap_rho_temporal(
         : Rcpp::NumericVector(0);
 }
 } // namespace
+
+// ---- Temporal-only (rw1 / rw2 / ar1) ---------------------------------------
+// Single latent temporal block, no spatial side. `temporal_type` selects the
+// kernel at runtime through the same make_temporal_ops registry the ST entries
+// use, so rw1 / rw2 / ar1 share one entry / shim / ABI typedef instead of
+// three. tau_grid drives all kernels; rho_grid is the ar1 lag-1 grid (empty for
+// rw1 / rw2); cyclic closes the rw1 chain (ignored by rw2 / ar1).
+//   Latent: [beta (p)] [re (n_re_groups)] [w_temporal (n_times)].
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_temporal(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector temporal_idx, int n_times,
+    std::string temporal_type,
+    Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic,
+    std::string family, double phi = 1.0,
+    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    bool store_Q = false
+) {
+    int n_grid = tau_grid.size();
+    int N = y.size();
+    int p = X.ncol();
+    int temporal_start = p + n_re_groups;
+
+    // One temporal kernel from the shared registry; its add_prior / log_prior
+    // close over tau_grid / rho_grid, which this frame keeps alive across the
+    // run_multi_block_nested_laplace call below.
+    auto ops_t = make_temporal_ops(temporal_type, temporal_start, n_times,
+                                   tau_grid, rho_grid, cyclic);
+
+    tulpa::LatentBlock block;
+    block.start = temporal_start;
+    block.size  = n_times;
+    block.idx   = [&](int i, int /*k_arm*/) { return temporal_idx[i]; };
+    block.d_fac = [](int) { return 1.0; };
+    block.add_prior = ops_t.add_prior;
+    block.log_prior = ops_t.log_prior;
+    block.center = [&](Rcpp::NumericVector& x) -> double {
+        return tulpa::center_effects(x, temporal_start, n_times);
+    };
+
+    std::vector<tulpa::LatentBlock> blocks{ block };
+
+    Rcpp::List out = run_multi_block_nested_laplace(
+        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
+        blocks,
+        family, phi, max_iter, tol, n_threads,
+        /*store_modes=*/true, unwrap_x_init(x_init_nullable),
+        store_Q
+    );
+    out["tau_grid"] = tau_grid;
+    if (rho_grid.size() > 0) out["rho_grid"] = rho_grid;
+    return out;
+}
 
 // ---- ICAR (spatial) --------------------------------------------------------
 // Grid axes: tau_spatial (1D) x temporal.
