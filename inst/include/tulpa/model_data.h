@@ -39,8 +39,15 @@ namespace tulpa {
 // callables renamed + signatures changed (added const char* temporal_type,
 // nullable rho_temporal_grid, int cyclic); the 15 NestedLaplaceSt*Fn typedefs
 // became 5 NestedLaplaceSt<Spatial>Fn. No core struct layout change.
+//
+// 25 -> 26: removed the 8 family-enum single-point Laplace callables
+// (`tulpa_laplace_mode_{dense,spatial,dense_multi_re,bym2,gp,multiscale_gp,
+// multiscale_temporal,rsr}`) + their LaplaceMode*Fn typedefs. Dead surface:
+// every consumer routes single-point Laplace through the LikelihoodSpec path
+// (`tulpa_laplace_spec_*`). LaplaceShimResult is retained (shared with the
+// spec shims). No core struct layout change.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 25;
+constexpr int TULPA_ABI_VERSION = 26;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

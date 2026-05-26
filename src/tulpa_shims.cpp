@@ -403,23 +403,6 @@ Rcpp::List cpp_nested_laplace_spde(
 // ============================================================================
 namespace {
 
-inline void copy_mode_result(
-    const tulpa::LaplaceResult& result,
-    tulpa::LaplaceShimResult* result_out
-) {
-    int n_x = result.mode.size();
-    result_out->n_x = n_x;
-    result_out->log_det_Q = result.log_det_Q;
-    result_out->log_marginal = result.log_marginal;
-    result_out->n_iter = result.n_iter;
-    result_out->converged = result.converged ? 1 : 0;
-
-    result_out->mode = new double[n_x];
-    for (int j = 0; j < n_x; j++) {
-        result_out->mode[j] = result.mode[j];
-    }
-}
-
 // Build a column-major Rcpp::NumericMatrix from a flat caller buffer.
 inline Rcpp::NumericMatrix build_matrix_colmajor(
     const double* X_flat, int N, int p
@@ -508,8 +491,6 @@ inline void marshal_adj(
 
 } // namespace
 
-#include "tulpa_shims_laplace.h"
-
 #include "tulpa_shims_nested_laplace.h"
 
 #include "tulpa_shims_pg.h"
@@ -528,22 +509,6 @@ inline void marshal_adj(
 // ============================================================================
 
 void tulpa_register_shims(DllInfo* dll) {
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_dense",
-        (DL_FUNC)&tulpa_laplace_mode_dense_impl);
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_spatial",
-        (DL_FUNC)&tulpa_laplace_mode_spatial_impl);
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_dense_multi_re",
-        (DL_FUNC)&tulpa_laplace_mode_dense_multi_re_impl);
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_bym2",
-        (DL_FUNC)&tulpa_laplace_mode_bym2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_gp",
-        (DL_FUNC)&tulpa_laplace_mode_gp_impl);
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_multiscale_gp",
-        (DL_FUNC)&tulpa_laplace_mode_multiscale_gp_impl);
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_multiscale_temporal",
-        (DL_FUNC)&tulpa_laplace_mode_multiscale_temporal_impl);
-    R_RegisterCCallable("tulpa", "tulpa_laplace_mode_rsr",
-        (DL_FUNC)&tulpa_laplace_mode_rsr_impl);
     R_RegisterCCallable("tulpa", "tulpa_laplace_spec_dense",
         (DL_FUNC)&tulpa_laplace_spec_dense_impl);
 

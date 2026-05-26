@@ -17,6 +17,14 @@
 
 ## Unreleased
 
+* refactor(laplace)!: removed the 8 dead family-enum single-point Laplace
+  C-callables (`tulpa_laplace_mode_{dense,spatial,dense_multi_re,bym2,gp,
+  multiscale_gp,multiscale_temporal,rsr}`) and their `LaplaceMode*Fn` typedefs.
+  No package consumes them -- every model package routes single-point Laplace
+  through the `LikelihoodSpec` path (`tulpa_laplace_spec_*`). **ABI break**
+  (`TULPA_ABI_VERSION` 25 -> 26); downstream packages must rebuild. The shared
+  `LaplaceShimResult` POD is retained (reused by the spec shims).
+
 * refactor(nested-laplace)!: collapsed the 15 spatio-temporal nested-Laplace
   entries (`*_st_<spatial>_<temporal>`) to 5 per-spatial-family entries
   (`*_st_{icar,car_proper,bym2,hsgp,nngp}`) that select the temporal kernel

@@ -1,12 +1,11 @@
 // laplace_spec_api.h
 // Cross-package LikelihoodSpec-driven Laplace API for model packages.
 //
-// The family-enum Laplace shims in laplace_api.h dispatch to the six
-// hard-coded families wired in src/laplace_family_link.h. This header
-// exposes a complementary path that reads the per-observation log-lik
-// and IRLS weights from data->likelihood_spec instead, so a model
-// package can route arbitrary families (beta, tweedie, ordered_beta,
-// truncated/hurdle, ratio, ...) through Laplace without touching tulpa.
+// This header exposes the LikelihoodSpec-driven Laplace path: it reads the
+// per-observation log-lik and IRLS weights from data->likelihood_spec, so a
+// model package can route arbitrary families (binomial, poisson, beta,
+// tweedie, ordered_beta, truncated/hurdle, ratio, ...) through Laplace
+// without touching tulpa's internals.
 //
 // Contract:
 //   - data->n_processes >= 1 (multi-process supported; ratio likelihoods

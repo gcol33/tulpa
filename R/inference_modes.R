@@ -186,7 +186,7 @@ BACKEND_REGISTRY <- list(
   # ---- Tier 2: Structured ----
   laplace = list(
     tier = "structured", input = "design", fitter = "tulpa_laplace",
-    families = NULL, cabi = "tulpa_laplace_mode_dense_multi_re"
+    families = NULL, cabi = "tulpa_laplace_spec_dense"
   ),
   re_cov_nested = list(
     tier = "structured", input = "design", fitter = "tulpa_re_cov_nested",
