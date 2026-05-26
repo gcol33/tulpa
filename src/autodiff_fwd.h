@@ -16,7 +16,7 @@
 #include <vector>
 #include <algorithm>
 #include <Rcpp.h>
-#include "portable_math.h"
+#include "tulpa/portable_math.h"
 
 namespace fwd {
 

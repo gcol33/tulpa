@@ -48,7 +48,7 @@
 #ifndef TULPA_NMIX_KERNEL_H
 #define TULPA_NMIX_KERNEL_H
 
-#include "portable_math.h"   // tulpa::math::portable_digamma / portable_trigamma
+#include "tulpa/portable_math.h"   // tulpa::math::portable_digamma / portable_trigamma
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>

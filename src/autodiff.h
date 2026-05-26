@@ -10,7 +10,7 @@
 #include <cmath>
 #include <memory>
 #include <functional>
-#include "portable_math.h"
+#include "tulpa/portable_math.h"
 
 namespace tulpa {
 namespace ad {
