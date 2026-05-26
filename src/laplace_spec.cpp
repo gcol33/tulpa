@@ -516,7 +516,8 @@ inline void scatter_spec(
     double /*tau_re_legacy*/,
     DenseVec& grad,
     DenseMat& H,
-    int /*n_threads*/
+    int /*n_threads*/,
+    const BetaPrior* beta_prior
 ) {
     std::fill(grad.begin(), grad.end(), 0.0);
     H.zero();
@@ -803,13 +804,22 @@ inline void scatter_spec(
         }
     }
 
-    // beta prior: N(0, sigma_beta^2 I), applied per process.
-    double tau_beta = 1.0 / (data.sigma_beta * data.sigma_beta + 1e-300);
-    for (int k = 0; k < np; k++) {
-        const int off_k = L.latent_offset[k];
-        for (int j = 0; j < L.beta_count[k]; j++) {
-            grad[off_k + j] += -tau_beta * params[L.beta_start[k] + j];
-            H[off_k + j][off_k + j] += tau_beta;
+    // Fixed-effect Gaussian prior. With an explicit BetaPrior (per-coef mean +
+    // precision -- e.g. the EM block prior threaded from cpp_laplace_fit_multi_re)
+    // each coefficient gets its own tau_j / mean_j; otherwise the legacy scalar
+    // ridge N(0, sigma_beta^2 I). bj is the global beta index across processes,
+    // matching the length-p BetaPrior (single-process for the multi-RE caller).
+    {
+        const double tau_scalar = 1.0 / (data.sigma_beta * data.sigma_beta + 1e-300);
+        int bj = 0;
+        for (int k = 0; k < np; k++) {
+            const int off_k = L.latent_offset[k];
+            for (int j = 0; j < L.beta_count[k]; j++, bj++) {
+                const double tau  = beta_prior ? beta_prior->tau_at(bj)  : tau_scalar;
+                const double mean = beta_prior ? beta_prior->mean_at(bj) : 0.0;
+                grad[off_k + j] += -tau * (params[L.beta_start[k] + j] - mean);
+                H[off_k + j][off_k + j] += tau;
+            }
         }
     }
 
@@ -892,19 +902,23 @@ inline double log_prior_latent(
     double sigma_beta,
     double /*tau_re_legacy*/,
     const Rcpp::NumericVector* x_latent = nullptr,
-    int k_grid = 0
+    int k_grid = 0,
+    const BetaPrior* beta_prior = nullptr
 ) {
     double lp = 0.0;
-    double tau_beta = 1.0 / (sigma_beta * sigma_beta + 1e-300);
-    int p_total = 0;
+    // Fixed-effect Gaussian log-prior (per-coef tau_j / mean_j when a BetaPrior
+    // is supplied, else the scalar N(0, sigma_beta^2 I) ridge). Mirrors the
+    // scatter beta-prior block so the mode and this log-density agree.
+    const double tau_scalar = 1.0 / (sigma_beta * sigma_beta + 1e-300);
+    int bj = 0;
     for (int k = 0; k < L.np; k++) {
-        for (int j = 0; j < L.beta_count[k]; j++) {
-            double b = params[L.beta_start[k] + j];
-            lp += -0.5 * tau_beta * b * b;
+        for (int j = 0; j < L.beta_count[k]; j++, bj++) {
+            const double tau  = beta_prior ? beta_prior->tau_at(bj)  : tau_scalar;
+            const double mean = beta_prior ? beta_prior->mean_at(bj) : 0.0;
+            const double d = params[L.beta_start[k] + j] - mean;
+            lp += -0.5 * tau * d * d + 0.5 * std::log(tau / (2.0 * M_PI));
         }
-        p_total += L.beta_count[k];
     }
-    lp += 0.5 * p_total * std::log(tau_beta / (2.0 * M_PI));
 
     if (!L.re_terms.empty()) {
         std::vector<double> L_flat, Q_flat;
@@ -1023,7 +1037,8 @@ LaplaceResult spec_inner_solve(
     NewtonScratch& scratch,
     SparseCholeskySolver* solver,
     bool store_Q,
-    const std::vector<std::pair<int, int>>* inv_block_layout
+    const std::vector<std::pair<int, int>>* inv_block_layout,
+    const BetaPrior* beta_prior
 ) {
     const SpecLatentLayout L = build_latent_layout(data, layout, blocks);
     const int N = data.N;
@@ -1048,7 +1063,7 @@ LaplaceResult spec_inner_solve(
         // x is the compacted latent the block callbacks index -> pass &x as x_latent.
         scatter_spec(params_work, eta_flat, re_group_1based, L,
                      data, layout, spec, response_data, N, k_grid,
-                     &x, 1.0, grad, H, n_threads);
+                     &x, 1.0, grad, H, n_threads, beta_prior);
     };
     auto center_effects_fn = [&](Rcpp::NumericVector& x) {
         for (int b = 0; b < L.n_blocks; b++) {
@@ -1059,7 +1074,8 @@ LaplaceResult spec_inner_solve(
     auto compute_log_prior = [&](const Rcpp::NumericVector& x,
                                  const Rcpp::NumericVector& /*eta*/) -> double {
         scatter_compacted_latent(L, x.begin(), params_work);
-        return log_prior_latent(params_work, L, data.sigma_beta, 1.0, &x, k_grid);
+        return log_prior_latent(params_work, L, data.sigma_beta, 1.0, &x, k_grid,
+                                beta_prior);
     };
     auto log_lik_fn = [&](const Rcpp::NumericVector& eta) -> double {
         for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
@@ -1077,18 +1093,23 @@ LaplaceResult spec_inner_solve(
     );
 }
 
-void laplace_mode_spec_dense_impl(
+// Result-returning standalone spec Laplace. Carries the full LaplaceResult
+// (compacted [beta | RE | blocks] mode, log_marginal, and -- when return_re_cov
+// -- the per-(term,group) marginal covariance blocks the EM M-step consumes).
+// beta_prior overrides the scalar sigma_beta ridge with a full per-coef Gaussian.
+// The void laplace_mode_spec_dense_impl (the cross-package shim entry) is a thin
+// wrapper over this; the standalone single-point Laplace R exports
+// (cpp_laplace_fit{,_multi_re,_spatial,_bym2}) call it directly.
+LaplaceResult laplace_mode_spec_dense_solve(
     const ModelData& data,
     const ParamLayout& layout,
     std::vector<double>& params_inout,
     const std::vector<int>& re_group_1based,
     int max_iter, double tol, int n_threads,
-    int* n_iter_out,
-    int* converged_out,
-    double* log_det_Q_out,
-    double* log_marginal_out,
-    const std::vector<LatentBlock>* blocks = nullptr,
-    int k_grid = 0
+    const std::vector<LatentBlock>* blocks,
+    int k_grid,
+    const BetaPrior* beta_prior,
+    bool return_re_cov
 ) {
     if (data.n_processes < 1) {
         Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
@@ -1142,12 +1163,14 @@ void laplace_mode_spec_dense_impl(
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*blocks)[b];
             if (blk.prep && !blk.prep(k_grid)) {
-                if (n_iter_out)       *n_iter_out       = 0;
-                if (converged_out)    *converged_out    = 0;
-                if (log_det_Q_out)    *log_det_Q_out    = 0.0;
-                if (log_marginal_out) *log_marginal_out =
-                    -std::numeric_limits<double>::infinity();
-                return;
+                LaplaceResult infeasible;
+                infeasible.mode.assign(L.n_x, 0.0);
+                gather_compacted_latent(L, params_inout, infeasible.mode.data());
+                infeasible.log_det_Q    = 0.0;
+                infeasible.log_marginal = -std::numeric_limits<double>::infinity();
+                infeasible.n_iter       = 0;
+                infeasible.converged    = false;
+                return infeasible;
             }
         }
     }
@@ -1200,6 +1223,21 @@ void laplace_mode_spec_dense_impl(
     int N = data_use.N;
     int n_x = L.n_x;
 
+    // Per-(term,group) marginal-covariance block layout for the EM M-step
+    // (return_re_cov): one block of side n_coefs per RE group, in compacted
+    // latent coords -- mirrors the retired family-enum multi-RE solver's
+    // inv_block_layout. spec_inner_solve fills LaplaceResult.re_cov_flat from it.
+    std::vector<std::pair<int, int>> inv_block_layout;
+    if (return_re_cov) {
+        const SpecLatentLayout L_use = build_latent_layout(data_use, layout, blocks);
+        for (const ReTermSlot& s : L_use.re_terms) {
+            for (int g = 0; g < s.n_groups; g++) {
+                inv_block_layout.emplace_back(s.latent_offset + g * s.n_coefs,
+                                              s.n_coefs);
+            }
+        }
+    }
+
     // L3/L4: every np routes through the one shared spec inner solve.
     // spec_inner_solve wraps the spec helpers (compute_eta_spec / scatter_spec /
     // total_log_lik_spec / log_prior_latent) as the shared Newton loop's closures
@@ -1214,9 +1252,34 @@ void laplace_mode_spec_dense_impl(
         data_use, layout, blocks, k_grid, *spec, data_use.model_response_data,
         re_group_1based, max_iter, tol, n_threads,
         params_inout, scratch, &newton_solver,
-        /*store_Q=*/false, /*inv_block_layout=*/nullptr
+        /*store_Q=*/false,
+        return_re_cov ? &inv_block_layout : nullptr,
+        beta_prior
     );
     scatter_compacted_latent(L, res.mode.data(), params_inout);  // mode -> params latent
+    return res;
+}
+
+// Void shim wrapper over laplace_mode_spec_dense_solve: the cross-package
+// C-callable (tulpa_shims_laplace_spec.h) and the test harnesses below take the
+// mode back through params_inout and the diagnostics through out-pointers. Keeps
+// the historical signature (no beta_prior / re_cov) so the ABI is unchanged.
+void laplace_mode_spec_dense_impl(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& params_inout,
+    const std::vector<int>& re_group_1based,
+    int max_iter, double tol, int n_threads,
+    int* n_iter_out,
+    int* converged_out,
+    double* log_det_Q_out,
+    double* log_marginal_out,
+    const std::vector<LatentBlock>* blocks = nullptr,
+    int k_grid = 0
+) {
+    LaplaceResult res = laplace_mode_spec_dense_solve(
+        data, layout, params_inout, re_group_1based,
+        max_iter, tol, n_threads, blocks, k_grid);
     if (n_iter_out)       *n_iter_out       = res.n_iter;
     if (converged_out)    *converged_out    = res.converged ? 1 : 0;
     if (log_det_Q_out)    *log_det_Q_out    = res.log_det_Q;

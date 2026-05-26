@@ -35,6 +35,12 @@
 
 namespace tulpa {
 
+// Full Gaussian fixed-effect prior (per-coef mean + precision). Pointer-only
+// in this declaration, so the forward decl suffices; full definition in
+// laplace_re_priors.h (included by laplace_spec.cpp). A null beta_prior keeps
+// the legacy scalar N(0, data.sigma_beta^2 I) ridge.
+struct BetaPrior;
+
 LaplaceResult spec_inner_solve(
     const ModelData& data,
     const ParamLayout& layout,
@@ -48,7 +54,27 @@ LaplaceResult spec_inner_solve(
     NewtonScratch& scratch,
     SparseCholeskySolver* solver,
     bool store_Q,
-    const std::vector<std::pair<int, int>>* inv_block_layout
+    const std::vector<std::pair<int, int>>* inv_block_layout,
+    const BetaPrior* beta_prior = nullptr
+);
+
+// Result-returning standalone spec Laplace (defined in laplace_spec.cpp).
+// Builds the [beta | RE | blocks] layout, runs spec_inner_solve, and returns the
+// full LaplaceResult: compacted mode, log_marginal, and -- when return_re_cov --
+// the per-(term,group) marginal covariance blocks (LaplaceResult.re_cov_flat)
+// the EM M-step consumes. beta_prior overrides the scalar data.sigma_beta ridge
+// with a full per-coef Gaussian. This is the entry the standalone single-point
+// Laplace R exports (cpp_laplace_fit{,_multi_re,_spatial,_bym2}) route through.
+LaplaceResult laplace_mode_spec_dense_solve(
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& params_inout,
+    const std::vector<int>& re_group_1based,
+    int max_iter, double tol, int n_threads,
+    const std::vector<LatentBlock>* blocks = nullptr,
+    int k_grid = 0,
+    const BetaPrior* beta_prior = nullptr,
+    bool return_re_cov = false
 );
 
 } // namespace tulpa

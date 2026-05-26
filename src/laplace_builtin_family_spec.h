@@ -31,6 +31,7 @@ struct BuiltinFamilyResponse {
     int N = 0;
     std::string family;              // resolved against laplace_family_link.h
     double phi = 1.0;                // dispersion / precision / size
+    const double* weights = nullptr; // [N] per-obs likelihood weights, or null (=> 1)
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
@@ -46,7 +47,13 @@ inline double builtin_family_ll_double(
 }
 
 // EtaWeightsFn: per-obs eta-space score + Fisher working weight. n_processes
-// is 1, so grad_eta / neg_hess_eta are scalars.
+// is 1, so grad_eta / neg_hess_eta are scalars. A per-obs likelihood weight w_i
+// scales both the score and the Fisher information, reproducing the
+// `gh.grad *= w_i; gh.neg_hess *= w_i` convention of the retired family-enum
+// multi-RE solver (the EM M-step's E-step responsibilities enter here). The
+// log-likelihood (ll_double) is left unweighted to match that solver exactly --
+// the mode is the only quantity the EM engine reads back, and it is fixed by
+// the weighted score/Hessian alone.
 inline void builtin_family_eta_weights(
     int i, const double* eta, double /*logit_zi*/, double /*logit_oi*/,
     const std::vector<double>& /*params*/, const ModelData& /*data*/,
@@ -56,8 +63,9 @@ inline void builtin_family_eta_weights(
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const GradHess gh = grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi);
-    grad_eta[0]     = gh.grad;
-    neg_hess_eta[0] = gh.neg_hess;
+    const double w = r->weights ? r->weights[i] : 1.0;
+    grad_eta[0]     = w * gh.grad;
+    neg_hess_eta[0] = w * gh.neg_hess;
 }
 
 // Build a single-process LikelihoodSpec backed by the family-enum closed forms.
