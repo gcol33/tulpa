@@ -41,6 +41,80 @@
   theta
 }
 
+#' PC + LKJ hyperprior for a random-effect covariance
+#'
+#' @description
+#' Construct the default weakly-informative hyperprior used by
+#' [tulpa_re_cov_nested()]: independent Penalized-Complexity (PC) priors on the
+#' marginal standard deviations `sigma_i` together with an LKJ prior on the
+#' correlation matrix `R`, returned as a `log_prior_theta` function in the
+#' log-Cholesky parameterization the integrator works in.
+#'
+#' @details
+#' The prior is specified on the natural scale,
+#' `p(sigma, R) = LKJ(R | eta) * prod_i PC(sigma_i)`, then pushed to the
+#' log-Cholesky coordinates `theta` of `Sigma = L L'` by the exact
+#' change-of-variables Jacobian.
+#'
+#' PC prior (Simpson et al. 2017) on each marginal SD: exponential with rate
+#' `lambda = -log(alpha) / U`, so `P(sigma_i > U) = alpha` -- the
+#' `prior_sigma = c(U, alpha)` convention also used by the SPDE prior in tulpa.
+#'
+#' LKJ prior (Lewandowski et al. 2009) on the correlation matrix:
+#' `p(R)` proportional to `det(R)^(eta - 1)`. `eta = 1` is uniform over
+#' correlation matrices; `eta > 1` concentrates toward the identity. The
+#' normalizing constant is dropped (constant across the grid, so it cancels when
+#' the integration weights are renormalized).
+#'
+#' Jacobian: with `theta` packing `log L_ii` on the diagonal and the raw
+#' strict-lower entries of `L`, the change of variables from `(sigma, R)` to
+#' `theta` adds `sum_i (c + 2 - i) * log L_ii  -  c * sum_i log sigma_i` to
+#' `log p(sigma, R)`. (Composition of the log-diagonal map, the standard
+#' Cholesky-to-covariance Jacobian `2^c prod_i L_ii^(c+1-i)`, and the
+#' covariance-to-`(sigma, R)` Jacobian; verified against numerical
+#' differentiation in `test-re-cov-prior.R`.)
+#'
+#' @param n_coefs Number of correlated coefficients `c` in the RE term.
+#' @param prior_sigma `c(U, alpha)` giving `P(sigma_i > U) = alpha` (default
+#'   `c(3, 0.05)`), applied independently to every marginal SD.
+#' @param eta LKJ shape (default 2). `eta = 1` is uniform on correlation
+#'   matrices; larger values favour weaker correlations.
+#'
+#' @return A `function(theta)` returning the scalar log prior density in the
+#'   log-Cholesky parameterization, suitable for the `log_prior_theta` argument
+#'   of [tulpa_re_cov_nested()].
+#' @seealso [tulpa_re_cov_nested()]
+#' @export
+re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2) {
+  c_re <- as.integer(n_coefs)
+  if (c_re < 1L) stop("`n_coefs` must be >= 1.", call. = FALSE)
+  U <- prior_sigma[1L]; alpha <- prior_sigma[2L]
+  if (U <= 0 || alpha <= 0 || alpha >= 1) {
+    stop("`prior_sigma = c(U, alpha)` needs U > 0 and 0 < alpha < 1.",
+         call. = FALSE)
+  }
+  lambda     <- -log(alpha) / U
+  log_lambda <- log(lambda)
+  jac_coef   <- c_re + 2L - seq_len(c_re)   # (c + 2 - i) on each log L_ii
+
+  function(theta) {
+    L     <- .re_logchol_to_L(theta, c_re)
+    logLii <- log(diag(L))                  # = theta diagonal entries
+    sig   <- sqrt(rowSums(L^2))             # sigma_i = sqrt(Sigma_ii)
+    logsig <- log(sig)
+    # PC prior on each marginal SD.
+    lp <- sum(log_lambda - lambda * sig)
+    # LKJ on the correlation matrix: (eta - 1) log det(R),
+    # log det(R) = log det(Sigma) - 2 sum log sigma_i = 2 sum log L_ii - 2 sum log sigma_i.
+    if (c_re > 1L && eta != 1) {
+      logdetR <- 2 * sum(logLii) - 2 * sum(logsig)
+      lp <- lp + (eta - 1) * logdetR
+    }
+    # Change of variables (sigma, R) -> theta.
+    lp + sum(jac_coef * logLii) - c_re * sum(logsig)
+  }
+}
+
 # Marginalized summary of a random-effect covariance from a set of Sigma
 # matrices and weights. Shared by the grid integrator (tulpa_re_cov_nested,
 # weighted grid cells) and the Gibbs sampler (tulpa_re_cov_gibbs, equal-weight
@@ -119,9 +193,14 @@
 #' `Delta_k` is the CCD design weight (uniform for the tensor grid), following
 #' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
 #'
-#' The default `log_prior_theta` is flat in `theta` (improper, but the finite
-#' grid truncates the tails). Supply a function for an informative prior; note
-#' it acts in the log-Cholesky parameterization described above.
+#' By default `log_prior_theta` is the weakly-informative PC + LKJ hyperprior
+#' built by [re_cov_pc_lkj_prior()] (PC prior on each marginal SD via
+#' `prior_sigma`, LKJ prior on the correlation matrix via `eta`), expressed in
+#' the log-Cholesky parameterization above with the exact change-of-variables
+#' Jacobian. This makes the integrated surface a proper posterior with an
+#' interior mode and mildly regularizes small-group variance components. Supply
+#' a custom `log_prior_theta` function to override it (then `prior_sigma` /
+#' `eta` are ignored); it must act in the same log-Cholesky parameterization.
 #'
 #' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
 #'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
@@ -137,8 +216,13 @@
 #'   each cell is one Laplace fit.
 #' @param span Half-width of the tensor grid in posterior standard deviations
 #'   per whitened axis (default 3); used only when `integration = "grid"`.
+#' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
+#'   [re_cov_pc_lkj_prior()]): `prior_sigma = c(U, alpha)` with
+#'   `P(sigma_i > U) = alpha` (default `c(3, 0.05)`) and LKJ shape `eta`
+#'   (default 2). Ignored when `log_prior_theta` is supplied.
 #' @param log_prior_theta Optional `function(theta)` returning a scalar log
-#'   prior density in the log-Cholesky parameterization. Default flat (`0`).
+#'   prior density in the log-Cholesky parameterization. Default `NULL`, which
+#'   builds the PC + LKJ prior from `prior_sigma` / `eta`.
 #' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
 #'
 #' @return A list with:
@@ -159,6 +243,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
                                 family = "binomial", phi = 1.0,
                                 integration = c("ccd", "grid"),
                                 n_per_axis = 5L, span = 3,
+                                prior_sigma = c(3, 0.05), eta = 2,
                                 log_prior_theta = NULL,
                                 max_iter = 100L, tol = 1e-8, n_threads = 1L) {
   integration <- match.arg(integration)
@@ -174,7 +259,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_term,
          "n_coefs > 1.", call. = FALSE)
   }
   if (is.null(n_trials)) n_trials <- rep(1L, length(y))
-  if (is.null(log_prior_theta)) log_prior_theta <- function(theta) 0
+  if (is.null(log_prior_theta)) {
+    log_prior_theta <- re_cov_pc_lkj_prior(c_re, prior_sigma, eta)
+  }
   k <- c_re * (c_re + 1L) / 2L
 
   # Inner solve: Laplace log-marginal at Sigma = L L'. Failures at extreme grid

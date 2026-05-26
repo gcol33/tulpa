@@ -14,6 +14,8 @@ tulpa_re_cov_nested(
   integration = c("ccd", "grid"),
   n_per_axis = 5L,
   span = 3,
+  prior_sigma = c(3, 0.05),
+  eta = 2,
   log_prior_theta = NULL,
   max_iter = 100L,
   tol = 1e-08,
@@ -40,8 +42,14 @@ each cell is one Laplace fit.}
 \item{span}{Half-width of the tensor grid in posterior standard deviations
 per whitened axis (default 3); used only when \code{integration = "grid"}.}
 
+\item{prior_sigma, eta}{Hyperparameters of the default PC + LKJ prior (see
+\code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}): \code{prior_sigma = c(U, alpha)} with
+\code{P(sigma_i > U) = alpha} (default \code{c(3, 0.05)}) and LKJ shape \code{eta}
+(default 2). Ignored when \code{log_prior_theta} is supplied.}
+
 \item{log_prior_theta}{Optional \verb{function(theta)} returning a scalar log
-prior density in the log-Cholesky parameterization. Default flat (\code{0}).}
+prior density in the log-Cholesky parameterization. Default \code{NULL}, which
+builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}.}
 
 \item{max_iter, tol, n_threads}{Inner-solve controls (see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).}
 }
@@ -94,9 +102,14 @@ Each node \code{k} contributes integration weight proportional to
 \code{Delta_k} is the CCD design weight (uniform for the tensor grid), following
 the INLA convention \verb{int ~ sum_k Delta_k pi(theta_k)}.
 
-The default \code{log_prior_theta} is flat in \code{theta} (improper, but the finite
-grid truncates the tails). Supply a function for an informative prior; note
-it acts in the log-Cholesky parameterization described above.
+By default \code{log_prior_theta} is the weakly-informative PC + LKJ hyperprior
+built by \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} (PC prior on each marginal SD via
+\code{prior_sigma}, LKJ prior on the correlation matrix via \code{eta}), expressed in
+the log-Cholesky parameterization above with the exact change-of-variables
+Jacobian. This makes the integrated surface a proper posterior with an
+interior mode and mildly regularizes small-group variance components. Supply
+a custom \code{log_prior_theta} function to override it (then \code{prior_sigma} /
+\code{eta} are ignored); it must act in the same log-Cholesky parameterization.
 }
 \seealso{
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the inner solve; \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for
