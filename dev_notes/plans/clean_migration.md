@@ -525,11 +525,75 @@ Note the latent inconsistency the collapse also fixes: the inline pure-spatial I
 also has the sparse ones -- so pure-spatial ICAR at large `n_spatial` is dense where
 it need not be. One block factory (with sparse) used by both paths cures it.
 
+### Sparse-assembly finding (sets the C1/C2 driver choice; no regression)
+
+`spec_inner_solve` -> `laplace_newton_solve_ll` assembles a **dense** `DenseMat H`
+(via `scatter_spec`) and only sparse-*factors* it at `n_x >= SPARSE_THRESHOLD`
+(=200) -- it does NOT do sparse *assembly*. The current ST sparse path
+(`run_spatial_x_indexed_temporal_nested_laplace_sparse_impl`) uses a true
+`SparseHessianBuilder` that never materialises the dense `n_x^2` matrix. So
+routing large ST through the dense `run_multi_block_nested_laplace` would regress
+big problems to O(n_x^2) assembly -- forbidden (`feedback_speed_first_no_dep_swap`).
+
+The clean out needs **no new scatter machinery**: the joint sparse driver
+`run_multi_block_nested_laplace_joint_sparse_impl` already does true sparse
+assembly AND is spec-driven (L4: `build_joint_arm_specs` / `ArmSpecView` /
+`arm_grad_hess` bridging `eta_weights_fn`). It is already the path pure-spatial
+NNGP / HSGP use. So ST folds onto a 1-arm config with `blocks = [spatial(s),
+temporal]`, dispatched exactly as today (dense vs sparse on `force_sparse` / n_x)
+but to the two **unified spec-driven** drivers:
+```
+blocks = [spatial block(s) (C0 factory), temporal block (make_temporal_ops)]
+if (force_sparse || n_x >= SPARSE_THRESHOLD) and blocks sparse-capable:
+    run_multi_block_nested_laplace_joint_sparse_impl(1 arm, blocks)   # true sparse
+else:
+    run_multi_block_nested_laplace(blocks)                            # dense
+```
+This keeps the `force_sparse` knob + the dense-vs-sparse equivalence test alive,
+preserves the sparse hot path, and kills the family-enum ST scatter. The areal
+block factories (C0) therefore MUST carry the sparse callbacks for the joint-
+sparse branch. Correctness gate for the joint-sparse branch: the existing
+`test-nested-laplace-st-sparse-equivalence.R` (ICAR/CAR/BYM2 x {ar1,rw1,rw2},
+dense == sparse) must stay green.
+
 ### Plan (verify + commit each; the 24 `test-nested-laplace*.R` files are the net)
 
 | Step | What | Status |
 |---|---|---|
-| C0 | One `make_<x>_latent_block()` per areal family (icar/car_proper/bym2) returning `LatentBlock`(s) with **all** callbacks set (dense + sparse `add_prior_pattern`/`add_prior_sparse` ported from `make_<x>_spatial_ops`, + car_proper's `prep` log\|Q(rho)\|). Rewrite pure-spatial `cpp_nested_laplace_{icar,car_proper,bym2}` to build via these. Behaviour-preserving (modes/log-marginal identical; ICAR now sparse-capable). Single source of truth for areal spatial blocks. | TODO |
-| C1 | Rewrite `cpp_nested_laplace_st_{icar,car_proper,bym2}` as `run_multi_block_nested_laplace(blocks = [spatial block(s) from C0, temporal block from make_temporal_ops])`. Delete dense `run_spatial_x_indexed_temporal_nested_laplace`, `nl_scatter_obs_spatial_x_indexed_temporal{,_cached}`, `nl_compute_eta_base_x_indexed_temporal`, the `st_scatter_index_cache`, and `make_{icar,car_proper,bym2}_spatial_ops`. Kills the family-enum ST scatter for areal. Convert any equivalence-vs-old-path test to recovery (B2's test-shift discipline). | TODO |
-| C2 | Rewrite `cpp_nested_laplace_st_{nngp,hsgp}` onto `run_multi_block_nested_laplace_joint_sparse_impl(blocks = [make_nngp_block/make_hsgp_block, temporal block])`. Delete `make_{nngp,hsgp}_spatial_ops`, the sparse `run_spatial_x_indexed_temporal_nested_laplace_sparse_impl`, the dispatch wrapper, and finally `struct SpatialBlockOps`. (Moves ST nngp/hsgp dense -> sparse, an improvement.) | TODO |
-| C-clean | Remove orphaned helpers; `Rcpp::compileAttributes()` + `devtools::document()`; full nested/joint/spec suite under `NOT_CRAN=true`. No `TULPA_ABI_VERSION` bump unless a shim signature changes (the ST shims stay; their cpp bodies just rebuild blocks differently). | TODO |
+| C0 | One `make_<x>_latent_block()` per areal family (icar/car_proper/bym2) returning `LatentBlock`(s) with **all** callbacks set (dense + sparse `add_prior_pattern`/`add_prior_sparse` ported from `make_<x>_spatial_ops`, + car_proper's `prep` log\|Q(rho)\|). Rewrite pure-spatial `cpp_nested_laplace_{icar,car_proper,bym2}` to build via these. Behaviour-preserving (modes/log-marginal identical; ICAR now sparse-capable). Single source of truth for areal spatial blocks. | DONE -- `feac842` |
+| C1 | Rewrite `cpp_nested_laplace_st_{icar,car_proper,bym2}` to build `[spatial block(s) from C0, temporal block]` and dispatch through `run_multi_block_nested_laplace_joint` (1 arm; dense/sparse on `force_sparse`/n_x -- one spec-driven convention, so dense == sparse by construction). New `make_temporal_latent_block` wraps `make_temporal_ops` (used by the ST entries and `cpp_nested_laplace_temporal`). Kills the family-enum ST scatter for areal. `test-nested-laplace-st-sparse-equivalence.R` green. | DONE -- `9226b34` |
+| C2a | Rewrite `cpp_nested_laplace_st_{nngp,hsgp}` onto the joint sparse path (`run_indexed_st_nested_laplace_joint(..., force_sparse=TRUE)`, blocks = `[make_nngp_block/make_hsgp_block, temporal]`). Test shift: the "HSGP refuses force_sparse" expect_error becomes HSGP x AR1 + NNGP x RW1 finite/smoke (first ST coverage for the GP families; nngp/hsgp ST were dense-only and now run sparse). | DONE -- `f67fc74` |
+| C2b | Delete the now-dead machinery: `struct SpatialBlockOps`, `nl_compute_eta_base_x_indexed_temporal`, `nl_scatter_obs_spatial_x_indexed_temporal{,_sparse}` (the last nested family-enum scatter), `build_st_hessian_pattern`, `run_spatial_x_indexed_temporal_nested_laplace{,_sparse_impl,_dispatch}`, all five `make_<x>_spatial_ops`, and `src/scatter_st_cache.h`. ~1600 lines net removed; pure dead-code removal. | DONE -- `69286fa` |
+| C-clean | No `TULPA_ABI_VERSION` bump and no RcppExports/Rd change (no `[[Rcpp::export]]` signature changed; the C-ABI shims are untouched). Verified green (NOT_CRAN=true) across ST / temporal / pure-spatial gp / areal / multi-block / joint / spec-block / front-door / spatial. | DONE |
+
+### C outcome (2026-05-26)
+
+Done in five commits (`feac842` C0, `9226b34` C1, `f67fc74` C2a, `69286fa` C2b),
+no ABI bump. **There is now ONE inner Laplace solve** (`spec_inner_solve`, reached
+via `run_multi_block_nested_laplace` / `run_multi_block_nested_laplace_joint`) for
+every nested path -- single-block, multi-block, joint multi-arm, and
+spatio-temporal. The family enum survives only as the per-obs closed forms behind
+`builtin_family_spec`. This closes the gap B2's "only one inner Newton remains"
+note left open (the ST path was a third one).
+
+`unrot` re-run after C: the **`cpp_nested_laplace_st_*` kernel exports dropped
+CRITICAL -> HIGH** (textual-clone similarity 86% -> 62%; the deep driver/scatter/
+factory duplication is gone). The residual CRITICAL clusters are the **C-ABI shim
+layer** (`tulpa_nested_laplace_*_impl` in `src/tulpa_shims_nested_laplace.h`) +
+the cpp entry wrappers -- heterogeneous per-family signatures (icar: tau; bym2:
+sigma+rho+scale; nngp: coords+nn; hsgp: basis+eig) whose shared boilerplate
+(`pack_laplace_shim_inputs`, `marshal_adj`, `copy_nested_laplace_result`) is
+already extracted. The remaining per-shim code is signature-bound marshalling;
+collapsing it into one entry would need a tagged-union arg descriptor -- a
+router-wrapper over heterogeneous internals, which the global "clean scaling
+design" rule rejects. **Scoped out as irreducible** (the §11 spec said so up
+front); not pursued.
+
+**ST recovery-test gap (pre-existing, recorded per the recovery-tests rule):** the
+ST path is covered by dense-vs-sparse equivalence (areal) + finite/smoke (nngp/
+hsgp), not parameter recovery. The underlying spec-driven joint driver IS
+recovery-tested (`test-nested-laplace-joint-multi-recovery.R`,
+`test-nested-laplace-multi-block.R` slow gate) and the areal blocks via
+pure-spatial recovery, so the 2-axis ST combination inherits validated
+components; a dedicated ST recovery test remains a future add, not a regression
+from this phase.
