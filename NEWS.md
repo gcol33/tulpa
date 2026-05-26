@@ -17,6 +17,17 @@
 
 ## Unreleased
 
+* refactor(nested-laplace)!: collapsed the 15 spatio-temporal nested-Laplace
+  entries (`*_st_<spatial>_<temporal>`) to 5 per-spatial-family entries
+  (`*_st_{icar,car_proper,bym2,hsgp,nngp}`) that select the temporal kernel
+  (rw1 / rw2 / ar1) at runtime via a `temporal_type` argument, dispatched
+  through a single `make_temporal_ops` registry. Adding a temporal kernel is
+  now O(1) -- one registry branch, no new cross-product function at any layer
+  (Rcpp entry, extern-C shim, or exported ABI). **ABI break** (`TULPA_ABI_VERSION`
+  24 -> 25): the 15 `tulpa_nested_laplace_st_*` registered callables + their
+  `NestedLaplaceSt*Fn` typedefs became 5; downstream packages must rebuild.
+  Dense/sparse per-kernel equivalence preserved (`test-nested-laplace-st-sparse-equivalence.R`).
+
 * feat(nmix): `tulpa_nmix_laplace()` gains `mixture = c("P", "NB")` -- a
   negative-binomial abundance mixing distribution
   (`N_i ~ NegBin(mean = lambda_i, size = r)`, `neg_binomial_2` convention) in

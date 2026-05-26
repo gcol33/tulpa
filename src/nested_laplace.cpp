@@ -1089,6 +1089,36 @@ inline IndexedPriorOps make_ar1_ops(
     return ops;
 }
 
+// Temporal prior dispatcher: pick the RW1 / RW2 / AR1 builder by name.
+// The temporal axis is uniform (tau, optional rho, optional cyclic), so one
+// registry keeps adding a temporal kernel O(1) -- a new kernel registers here
+// and is immediately available to every spatial family, with no new spatial x
+// temporal entry function. rho_grid is consulted only for AR1; cyclic only for
+// RW1 (RW2 ignores it, matching make_rw2_ops).
+inline IndexedPriorOps make_temporal_ops(
+    const std::string& temporal_type,
+    int start, int n_units,
+    const Rcpp::NumericVector& tau_grid,
+    const Rcpp::NumericVector& rho_grid,
+    bool cyclic
+) {
+    if (temporal_type == "rw1") {
+        return make_rw1_ops(start, n_units, tau_grid, cyclic);
+    }
+    if (temporal_type == "rw2") {
+        return make_rw2_ops(start, n_units, tau_grid);
+    }
+    if (temporal_type == "ar1") {
+        if (rho_grid.size() != tau_grid.size()) {
+            Rcpp::stop("ar1 temporal prior requires rho_temporal_grid of the "
+                       "same length as tau_temporal_grid");
+        }
+        return make_ar1_ops(start, n_units, tau_grid, rho_grid);
+    }
+    Rcpp::stop("unknown temporal_type '%s' (expected 'rw1', 'rw2', or 'ar1')",
+               temporal_type.c_str());
+}
+
 // ---- spatial block factories ---------------------------------------------
 // Each factory returns a SpatialBlockOps bundle that owns its per-obs design
 // store (obs_p / obs_local_idx / obs_weight) and the prior callbacks. The
@@ -1986,14 +2016,39 @@ inline Rcpp::List run_spatial_x_indexed_temporal_nested_laplace_dispatch(
 } // namespace
 
 // =====================================================================
-// Nested Laplace: ICAR (spatial) × AR1 (temporal)
-//   Joint over (τ_s) × (τ_t, ρ_t). Caller passes paired vectors of length
-//   n_grid (the Cartesian product is built R-side).
-//   Latent: [beta (p)] [re (n_re_groups)] [w_spatial (n_s)] [w_temporal (n_t)].
+// Spatio-temporal nested Laplace: one typed entry per spatial family.
+//
+// The temporal kernel (rw1 / rw2 / ar1) is selected at runtime via
+// `temporal_type` and built by make_temporal_ops, so the spatial x temporal
+// cross-product is no longer one hand-written function per pair. Each entry
+// owns the typed spatial inputs (adjacency / HSGP basis / NNGP neighbours),
+// validates its own paired grids, and shares run_..._dispatch for the joint
+// inner Newton. Adding a temporal kernel touches only make_temporal_ops.
+//
+// Joint over the spatial hyperparameter(s) x the temporal hyperparameter(s).
+// Caller passes paired vectors of length n_grid (the Cartesian product is
+// built R-side). Temporal axis: tau_temporal_grid always; rho_temporal_grid
+// only for ar1 (pass NULL otherwise); cyclic only for rw1.
+//   Latent: [beta (p)] [re (n_re_groups)] [w_spatial] [w_temporal (n_t)].
 // =====================================================================
 
+namespace {
+// Materialise an optional rho grid (ar1) into a concrete vector that outlives
+// the temporal ops (whose lambdas capture it by reference).
+inline Rcpp::NumericVector nl_unwrap_rho_temporal(
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid
+) {
+    return rho_temporal_grid.isNotNull()
+        ? Rcpp::NumericVector(rho_temporal_grid)
+        : Rcpp::NumericVector(0);
+}
+} // namespace
+
+// ---- ICAR (spatial) --------------------------------------------------------
+// Grid axes: tau_spatial (1D) x temporal.
+
 // [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_icar_ar1(
+Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -2002,62 +2057,10 @@ Rcpp::List cpp_nested_laplace_st_icar_ar1(
     Rcpp::IntegerVector n_neighbors,
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector tau_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = tau_spatial_grid.size();
-    if (tau_temporal_grid.size() != n_grid || rho_temporal_grid.size() != n_grid) {
-        Rcpp::stop("tau_spatial_grid, tau_temporal_grid, rho_temporal_grid must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial_units;
-
-    auto ops_s = make_icar_spatial_ops(s_start, n_spatial_units, N,
-                                        spatial_idx, tau_spatial_grid,
-                                        adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["tau_spatial_grid"]  = tau_spatial_grid;
-    out["tau_temporal_grid"] = tau_temporal_grid;
-    out["rho_temporal_grid"] = rho_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: ICAR (spatial) × RW1 (temporal)
-//   1D τ_s × 1D τ_t grid. Caller passes paired vectors of length n_grid.
-//   Latent: [beta] [re] [w_spatial (n_s)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_icar_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
@@ -2068,6 +2071,7 @@ Rcpp::List cpp_nested_laplace_st_icar_rw1(
     if (tau_temporal_grid.size() != n_grid) {
         Rcpp::stop("tau_spatial_grid and tau_temporal_grid must have the same length");
     }
+    Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
     int p = X.ncol();
     int s_start = p + n_re_groups;
@@ -2076,7 +2080,8 @@ Rcpp::List cpp_nested_laplace_st_icar_rw1(
     auto ops_s = make_icar_spatial_ops(s_start, n_spatial_units, N,
                                         spatial_idx, tau_spatial_grid,
                                         adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+    auto ops_t = make_temporal_ops(temporal_type, t_start, n_times,
+                                   tau_temporal_grid, rho_t, cyclic);
 
     Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -2091,16 +2096,15 @@ Rcpp::List cpp_nested_laplace_st_icar_rw1(
     );
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
+    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
     return out;
 }
 
-// =====================================================================
-// Nested Laplace: ICAR (spatial) × RW2 (temporal)
-//   1D τ_s × 1D τ_t grid.
-// =====================================================================
+// ---- CAR_proper (spatial) --------------------------------------------------
+// Grid axes: (tau_spatial, rho_spatial) (paired 2D) x temporal.
 
 // [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_icar_rw2(
+Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -2109,60 +2113,11 @@ Rcpp::List cpp_nested_laplace_st_icar_rw2(
     Rcpp::IntegerVector n_neighbors,
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = tau_spatial_grid.size();
-    if (tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("tau_spatial_grid and tau_temporal_grid must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial_units;
-
-    auto ops_s = make_icar_spatial_ops(s_start, n_spatial_units, N,
-                                        spatial_idx, tau_spatial_grid,
-                                        adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["tau_spatial_grid"]  = tau_spatial_grid;
-    out["tau_temporal_grid"] = tau_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: CAR_proper (spatial) × RW1 (temporal)
-//   2D (τ_s, ρ_s) × 1D τ_t grid.
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector tau_spatial_grid,
     Rcpp::NumericVector rho_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
@@ -2173,6 +2128,7 @@ Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
     if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
         Rcpp::stop("tau_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
     }
+    Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
     int p = X.ncol();
     int s_start = p + n_re_groups;
@@ -2182,7 +2138,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
                                               spatial_idx,
                                               tau_spatial_grid, rho_spatial_grid,
                                               adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+    auto ops_t = make_temporal_ops(temporal_type, t_start, n_times,
+                                   tau_temporal_grid, rho_t, cyclic);
 
     Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -2198,131 +2155,16 @@ Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["rho_spatial_grid"]  = rho_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
+    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
     return out;
 }
 
-// =====================================================================
-// Nested Laplace: CAR_proper (spatial) × RW2 (temporal)
-//   2D (τ_s, ρ_s) × 1D τ_t grid.
-// =====================================================================
+// ---- BYM2 (spatial) --------------------------------------------------------
+// Grid axes: (sigma_spatial, rho_spatial) (paired 2D) x temporal.
+//   Latent spatial block is [phi (n_s) + theta (n_s)] -> 2 * n_spatial_units.
 
 // [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_car_proper_rw2(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = tau_spatial_grid.size();
-    if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("tau_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial_units;
-
-    auto ops_s = make_car_proper_spatial_ops(s_start, n_spatial_units, N,
-                                              spatial_idx,
-                                              tau_spatial_grid, rho_spatial_grid,
-                                              adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["tau_spatial_grid"]  = tau_spatial_grid;
-    out["rho_spatial_grid"]  = rho_spatial_grid;
-    out["tau_temporal_grid"] = tau_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: CAR_proper (spatial) × AR1 (temporal)
-//   2D (τ_s, ρ_s) × 2D (τ_t, ρ_t) grid.
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_car_proper_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = tau_spatial_grid.size();
-    if (rho_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid ||
-        rho_temporal_grid.size() != n_grid) {
-        Rcpp::stop("All four paired grids must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial_units;
-
-    auto ops_s = make_car_proper_spatial_ops(s_start, n_spatial_units, N,
-                                              spatial_idx,
-                                              tau_spatial_grid, rho_spatial_grid,
-                                              adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["tau_spatial_grid"]  = tau_spatial_grid;
-    out["rho_spatial_grid"]  = rho_spatial_grid;
-    out["tau_temporal_grid"] = tau_temporal_grid;
-    out["rho_temporal_grid"] = rho_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: BYM2 (spatial) × RW1 (temporal)
-//   2D (σ_s, ρ_s) × 1D τ_t grid. cyclic flag closes the temporal chain.
-//   Latent: [beta] [re] [phi (n_s) + theta (n_s)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_bym2_rw1(
+Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -2330,10 +2172,13 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw1(
     Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
     Rcpp::IntegerVector n_neighbors,
     double scale_factor,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
+    Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector sigma_spatial_grid,
     Rcpp::NumericVector rho_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
@@ -2344,6 +2189,7 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw1(
     if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
         Rcpp::stop("sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
     }
+    Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
     int p = X.ncol();
     int s_start = p + n_re_groups;
@@ -2353,7 +2199,8 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw1(
                                         spatial_idx, scale_factor,
                                         sigma_spatial_grid, rho_spatial_grid,
                                         adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+    auto ops_t = make_temporal_ops(temporal_type, t_start, n_times,
+                                   tau_temporal_grid, rho_t, cyclic);
 
     Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -2369,144 +2216,28 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw1(
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_spatial_grid"]   = rho_spatial_grid;
     out["tau_temporal_grid"]  = tau_temporal_grid;
+    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
     return out;
 }
 
-// =====================================================================
-// Nested Laplace: BYM2 (spatial) × RW2 (temporal)
-//   2D (σ_s, ρ_s) × 1D τ_t grid.
-//   Latent: [beta] [re] [phi (n_s) + theta (n_s)] [w_temporal (n_t)].
-// =====================================================================
+// ---- HSGP (spatial) --------------------------------------------------------
+// Grid axes: (sigma2_spatial, lengthscale_spatial) (paired 2D) x temporal.
+//   Spatial block is the M-dim basis-weight vector beta_M.
 
 // [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_bym2_rw2(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    double scale_factor,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = sigma_spatial_grid.size();
-    if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + 2 * n_spatial_units;
-
-    auto ops_s = make_bym2_spatial_ops(s_start, n_spatial_units, N,
-                                        spatial_idx, scale_factor,
-                                        sigma_spatial_grid, rho_spatial_grid,
-                                        adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["sigma_spatial_grid"] = sigma_spatial_grid;
-    out["rho_spatial_grid"]   = rho_spatial_grid;
-    out["tau_temporal_grid"]  = tau_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: BYM2 (spatial) × AR1 (temporal)
-//   2D (σ_s, ρ_s) × 2D (τ_t, ρ_t) grid (full 4-axis product).
-//   Latent: [beta] [re] [phi (n_s) + theta (n_s)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_bym2_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    double scale_factor,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = sigma_spatial_grid.size();
-    if (rho_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid ||
-        rho_temporal_grid.size() != n_grid) {
-        Rcpp::stop("All four paired BYM2 x AR1 grids must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + 2 * n_spatial_units;
-
-    auto ops_s = make_bym2_spatial_ops(s_start, n_spatial_units, N,
-                                        spatial_idx, scale_factor,
-                                        sigma_spatial_grid, rho_spatial_grid,
-                                        adj_row_ptr, adj_col_idx, n_neighbors);
-    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["sigma_spatial_grid"] = sigma_spatial_grid;
-    out["rho_spatial_grid"]   = rho_spatial_grid;
-    out["tau_temporal_grid"]  = tau_temporal_grid;
-    out["rho_temporal_grid"]  = rho_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: HSGP (spatial) × RW1 (temporal)
-//   2D (σ²_s, ℓ_s) × 1D τ_t grid. cyclic flag closes the temporal chain.
-//   Latent: [beta] [re] [beta_M (n_basis)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_hsgp_rw1(
+Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
     Rcpp::NumericMatrix phi_basis,
     Rcpp::NumericVector lambda_eig,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
+    Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector sigma2_spatial_grid,
     Rcpp::NumericVector lengthscale_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
@@ -2518,6 +2249,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp_rw1(
         tau_temporal_grid.size() != n_grid) {
         Rcpp::stop("sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid must have the same length");
     }
+    Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
     int p = X.ncol();
     int M = phi_basis.ncol();
@@ -2530,7 +2262,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp_rw1(
 
     auto ops_s = make_hsgp_spatial_ops(s_start, N, phi_basis, lambda_eig,
                                         sigma2_spatial_grid, lengthscale_spatial_grid);
-    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+    auto ops_t = make_temporal_ops(temporal_type, t_start, n_times,
+                                   tau_temporal_grid, rho_t, cyclic);
 
     Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -2546,138 +2279,15 @@ Rcpp::List cpp_nested_laplace_st_hsgp_rw1(
     out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
     out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
     out["tau_temporal_grid"]        = tau_temporal_grid;
+    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
     return out;
 }
 
-// =====================================================================
-// Nested Laplace: HSGP (spatial) × RW2 (temporal)
-//   2D (σ²_s, ℓ_s) × 1D τ_t grid.
-//   Latent: [beta] [re] [beta_M (n_basis)] [w_temporal (n_t)].
-// =====================================================================
+// ---- NNGP (spatial) --------------------------------------------------------
+// Grid axes: (sigma2_spatial, phi_gp_spatial) (paired 2D) x temporal.
 
 // [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_hsgp_rw2(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::NumericMatrix phi_basis,
-    Rcpp::NumericVector lambda_eig,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector lengthscale_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = sigma2_spatial_grid.size();
-    if (lengthscale_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int M = phi_basis.ncol();
-    if (phi_basis.nrow() != N)
-        Rcpp::stop("phi_basis must have N rows (one per observation)");
-    if (lambda_eig.size() != M)
-        Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
-    int s_start = p + n_re_groups;
-    int t_start = s_start + M;
-
-    auto ops_s = make_hsgp_spatial_ops(s_start, N, phi_basis, lambda_eig,
-                                        sigma2_spatial_grid, lengthscale_spatial_grid);
-    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
-    out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
-    out["tau_temporal_grid"]        = tau_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: HSGP (spatial) × AR1 (temporal)
-//   2D (σ²_s, ℓ_s) × 2D (τ_t, ρ_t) grid (full 4-axis product).
-//   Latent: [beta] [re] [beta_M (n_basis)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_hsgp_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::NumericMatrix phi_basis,
-    Rcpp::NumericVector lambda_eig,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector lengthscale_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = sigma2_spatial_grid.size();
-    if (lengthscale_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid ||
-        rho_temporal_grid.size() != n_grid) {
-        Rcpp::stop("All four paired HSGP x AR1 grids must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    int M = phi_basis.ncol();
-    if (phi_basis.nrow() != N)
-        Rcpp::stop("phi_basis must have N rows (one per observation)");
-    if (lambda_eig.size() != M)
-        Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
-    int s_start = p + n_re_groups;
-    int t_start = s_start + M;
-
-    auto ops_s = make_hsgp_spatial_ops(s_start, N, phi_basis, lambda_eig,
-                                        sigma2_spatial_grid, lengthscale_spatial_grid);
-    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
-    out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
-    out["tau_temporal_grid"]        = tau_temporal_grid;
-    out["rho_temporal_grid"]        = rho_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: NNGP (spatial) × RW1 (temporal)
-//   2D (σ²_s, φ_gp_s) × 1D τ_t grid. cyclic flag closes the temporal chain.
-//   Latent: [beta] [re] [w_spatial (n_spatial)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_nngp_rw1(
+Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -2685,10 +2295,13 @@ Rcpp::List cpp_nested_laplace_st_nngp_rw1(
     Rcpp::NumericMatrix coords,
     Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
     Rcpp::IntegerVector nn_order, int nn, int cov_type,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
+    Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector sigma2_spatial_grid,
     Rcpp::NumericVector phi_gp_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
@@ -2700,6 +2313,7 @@ Rcpp::List cpp_nested_laplace_st_nngp_rw1(
         tau_temporal_grid.size() != n_grid) {
         Rcpp::stop("sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid must have the same length");
     }
+    Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
     int p = X.ncol();
     if (spatial_idx.size() != N)
@@ -2713,7 +2327,8 @@ Rcpp::List cpp_nested_laplace_st_nngp_rw1(
                                         coords, nn_idx, nn_dist, nn_order, nn,
                                         sigma2_spatial_grid, phi_gp_spatial_grid,
                                         cov_type);
-    auto ops_t = make_rw1_ops(t_start, n_times, tau_temporal_grid, cyclic);
+    auto ops_t = make_temporal_ops(temporal_type, t_start, n_times,
+                                   tau_temporal_grid, rho_t, cyclic);
 
     Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -2729,133 +2344,6 @@ Rcpp::List cpp_nested_laplace_st_nngp_rw1(
     out["sigma2_spatial_grid"] = sigma2_spatial_grid;
     out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
     out["tau_temporal_grid"]   = tau_temporal_grid;
+    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
     return out;
 }
-
-// =====================================================================
-// Nested Laplace: NNGP (spatial) × RW2 (temporal)
-//   2D (σ²_s, φ_gp_s) × 1D τ_t grid.
-//   Latent: [beta] [re] [w_spatial (n_spatial)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_nngp_rw2(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial,
-    Rcpp::NumericMatrix coords,
-    Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
-    Rcpp::IntegerVector nn_order, int nn, int cov_type,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector phi_gp_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = sigma2_spatial_grid.size();
-    if (phi_gp_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    if (spatial_idx.size() != N)
-        Rcpp::stop("length(spatial_idx) must equal length(y)");
-    if (coords.nrow() != n_spatial)
-        Rcpp::stop("nrow(coords) must equal n_spatial");
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial;
-
-    auto ops_s = make_nngp_spatial_ops(s_start, n_spatial, N, spatial_idx,
-                                        coords, nn_idx, nn_dist, nn_order, nn,
-                                        sigma2_spatial_grid, phi_gp_spatial_grid,
-                                        cov_type);
-    auto ops_t = make_rw2_ops(t_start, n_times, tau_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["sigma2_spatial_grid"] = sigma2_spatial_grid;
-    out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
-    out["tau_temporal_grid"]   = tau_temporal_grid;
-    return out;
-}
-
-// =====================================================================
-// Nested Laplace: NNGP (spatial) × AR1 (temporal)
-//   2D (σ²_s, φ_gp_s) × 2D (τ_t, ρ_t) grid (full 4-axis product).
-//   Latent: [beta] [re] [w_spatial (n_spatial)] [w_temporal (n_t)].
-// =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_nested_laplace_st_nngp_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial,
-    Rcpp::NumericMatrix coords,
-    Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
-    Rcpp::IntegerVector nn_order, int nn, int cov_type,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector phi_gp_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi = 1.0,
-    int max_iter = 50, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false,
-    bool force_sparse = false
-) {
-    int n_grid = sigma2_spatial_grid.size();
-    if (phi_gp_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid ||
-        rho_temporal_grid.size() != n_grid) {
-        Rcpp::stop("All four paired NNGP x AR1 grids must have the same length");
-    }
-    int N = y.size();
-    int p = X.ncol();
-    if (spatial_idx.size() != N)
-        Rcpp::stop("length(spatial_idx) must equal length(y)");
-    if (coords.nrow() != n_spatial)
-        Rcpp::stop("nrow(coords) must equal n_spatial");
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial;
-
-    auto ops_s = make_nngp_spatial_ops(s_start, n_spatial, N, spatial_idx,
-                                        coords, nn_idx, nn_dist, nn_order, nn,
-                                        sigma2_spatial_grid, phi_gp_spatial_grid,
-                                        cov_type);
-    auto ops_t = make_ar1_ops(t_start, n_times, tau_temporal_grid, rho_temporal_grid);
-
-    Rcpp::List out = run_spatial_x_indexed_temporal_nested_laplace_dispatch(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        ops_s,
-        t_start, n_times, temporal_idx,
-        ops_t,
-        family, phi, max_iter, tol, n_threads,
-        /*store_modes=*/true,
-        unwrap_x_init(x_init_nullable),
-        store_Q,
-        force_sparse
-    );
-    out["sigma2_spatial_grid"] = sigma2_spatial_grid;
-    out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
-    out["tau_temporal_grid"]   = tau_temporal_grid;
-    out["rho_temporal_grid"]   = rho_temporal_grid;
-    return out;
-}
-

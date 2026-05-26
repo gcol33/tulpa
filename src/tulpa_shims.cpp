@@ -271,7 +271,10 @@ Rcpp::List cpp_nested_laplace_hsgp(
     bool store_Q
 );
 
-Rcpp::List cpp_nested_laplace_st_icar_ar1(
+// Spatio-temporal nested-Laplace entries (defined in nested_laplace.cpp):
+// one per spatial family, temporal kernel selected at runtime via
+// `temporal_type`. Declared here so the shims below can call them.
+Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -280,8 +283,10 @@ Rcpp::List cpp_nested_laplace_st_icar_ar1(
     Rcpp::IntegerVector n_neighbors,
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector tau_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
@@ -289,59 +294,7 @@ Rcpp::List cpp_nested_laplace_st_icar_ar1(
     bool force_sparse = false
 );
 
-Rcpp::List cpp_nested_laplace_st_icar_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_icar_rw2(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_car_proper_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_car_proper_rw2(
+Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -351,7 +304,10 @@ Rcpp::List cpp_nested_laplace_st_car_proper_rw2(
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector tau_spatial_grid,
     Rcpp::NumericVector rho_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
@@ -359,45 +315,7 @@ Rcpp::List cpp_nested_laplace_st_car_proper_rw2(
     bool force_sparse = false
 );
 
-Rcpp::List cpp_nested_laplace_st_car_proper_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector tau_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_bym2_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    double scale_factor,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector sigma_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_bym2_rw2(
+Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -408,7 +326,10 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw2(
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector sigma_spatial_grid,
     Rcpp::NumericVector rho_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
@@ -416,44 +337,7 @@ Rcpp::List cpp_nested_laplace_st_bym2_rw2(
     bool force_sparse = false
 );
 
-Rcpp::List cpp_nested_laplace_st_bym2_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors,
-    double scale_factor,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma_spatial_grid,
-    Rcpp::NumericVector rho_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_hsgp_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::NumericMatrix phi_basis,
-    Rcpp::NumericVector lambda_eig,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector lengthscale_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_hsgp_rw2(
+Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -462,7 +346,10 @@ Rcpp::List cpp_nested_laplace_st_hsgp_rw2(
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector sigma2_spatial_grid,
     Rcpp::NumericVector lengthscale_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
@@ -470,44 +357,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp_rw2(
     bool force_sparse = false
 );
 
-Rcpp::List cpp_nested_laplace_st_hsgp_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::NumericMatrix phi_basis,
-    Rcpp::NumericVector lambda_eig,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector lengthscale_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_nngp_rw1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial,
-    Rcpp::NumericMatrix coords,
-    Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
-    Rcpp::IntegerVector nn_order, int nn, int cov_type,
-    Rcpp::IntegerVector temporal_idx, int n_times, bool cyclic,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector phi_gp_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_nngp_rw2(
+Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
@@ -518,27 +368,10 @@ Rcpp::List cpp_nested_laplace_st_nngp_rw2(
     Rcpp::IntegerVector temporal_idx, int n_times,
     Rcpp::NumericVector sigma2_spatial_grid,
     Rcpp::NumericVector phi_gp_spatial_grid,
+    std::string temporal_type,
     Rcpp::NumericVector tau_temporal_grid,
-    std::string family, double phi,
-    int max_iter, double tol, int n_threads,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q,
-    bool force_sparse = false
-);
-
-Rcpp::List cpp_nested_laplace_st_nngp_ar1(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial,
-    Rcpp::NumericMatrix coords,
-    Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist,
-    Rcpp::IntegerVector nn_order, int nn, int cov_type,
-    Rcpp::IntegerVector temporal_idx, int n_times,
-    Rcpp::NumericVector sigma2_spatial_grid,
-    Rcpp::NumericVector phi_gp_spatial_grid,
-    Rcpp::NumericVector tau_temporal_grid,
-    Rcpp::NumericVector rho_temporal_grid,
+    Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid,
+    bool cyclic,
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
@@ -730,36 +563,16 @@ void tulpa_register_shims(DllInfo* dll) {
         (DL_FUNC)&tulpa_nested_laplace_nngp_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_hsgp",
         (DL_FUNC)&tulpa_nested_laplace_hsgp_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_icar_ar1",
-        (DL_FUNC)&tulpa_nested_laplace_st_icar_ar1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_icar_rw1",
-        (DL_FUNC)&tulpa_nested_laplace_st_icar_rw1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_icar_rw2",
-        (DL_FUNC)&tulpa_nested_laplace_st_icar_rw2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_car_proper_rw1",
-        (DL_FUNC)&tulpa_nested_laplace_st_car_proper_rw1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_car_proper_rw2",
-        (DL_FUNC)&tulpa_nested_laplace_st_car_proper_rw2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_car_proper_ar1",
-        (DL_FUNC)&tulpa_nested_laplace_st_car_proper_ar1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_bym2_rw1",
-        (DL_FUNC)&tulpa_nested_laplace_st_bym2_rw1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_bym2_rw2",
-        (DL_FUNC)&tulpa_nested_laplace_st_bym2_rw2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_bym2_ar1",
-        (DL_FUNC)&tulpa_nested_laplace_st_bym2_ar1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_hsgp_rw1",
-        (DL_FUNC)&tulpa_nested_laplace_st_hsgp_rw1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_hsgp_rw2",
-        (DL_FUNC)&tulpa_nested_laplace_st_hsgp_rw2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_hsgp_ar1",
-        (DL_FUNC)&tulpa_nested_laplace_st_hsgp_ar1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_nngp_rw1",
-        (DL_FUNC)&tulpa_nested_laplace_st_nngp_rw1_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_nngp_rw2",
-        (DL_FUNC)&tulpa_nested_laplace_st_nngp_rw2_impl);
-    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_nngp_ar1",
-        (DL_FUNC)&tulpa_nested_laplace_st_nngp_ar1_impl);
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_icar",
+        (DL_FUNC)&tulpa_nested_laplace_st_icar_impl);
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_car_proper",
+        (DL_FUNC)&tulpa_nested_laplace_st_car_proper_impl);
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_bym2",
+        (DL_FUNC)&tulpa_nested_laplace_st_bym2_impl);
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_hsgp",
+        (DL_FUNC)&tulpa_nested_laplace_st_hsgp_impl);
+    R_RegisterCCallable("tulpa", "tulpa_nested_laplace_st_nngp",
+        (DL_FUNC)&tulpa_nested_laplace_st_nngp_impl);
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_spde",
         (DL_FUNC)&tulpa_nested_laplace_spde_impl);
 

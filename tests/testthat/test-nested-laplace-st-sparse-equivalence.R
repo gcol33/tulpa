@@ -1,18 +1,20 @@
 # Sparse-path numerical equivalence for spatio-temporal nested Laplace
 # (gcol33/tulpa: Stage 1.4b ST coverage).
 #
-# Each cpp_nested_laplace_st_* kernel takes a force_sparse parameter that
-# routes the inner Newton through SparseHessianBuilder + CHOLMOD instead of
-# the dense DenseMat path. At small n_x both paths build mathematically
-# identical Hessians, so log_marginal and modes must agree to machine
-# epsilon up to Newton-step quantization.
+# Each cpp_nested_laplace_st_<spatial> kernel takes a force_sparse parameter
+# that routes the inner Newton through SparseHessianBuilder + CHOLMOD instead
+# of the dense DenseMat path. At small n_x both paths build mathematically
+# identical Hessians, so log_marginal and modes must agree to machine epsilon
+# up to Newton-step quantization.
 #
-# Coverage: ICAR / CAR_proper / BYM2 × {AR1, RW1, RW2}.
+# Coverage: ICAR / CAR_proper / BYM2 x {AR1, RW1, RW2}. The temporal kernel is
+# selected at call time via temporal_type ("ar1" / "rw1" / "rw2"); five typed
+# spatial entries replace the former 15 spatial-x-temporal functions.
 #
 # Both paths factor `H + LAPLACE_UNIFORM_RIDGE * I` (1.4e: uniform
 # upstream diagonal ridge), so even doubly rank-deficient combos
-# (ICAR/BYM2 × RW1/RW2) factor the same matrix and agree to numerical
-# tolerance — no asymmetric dense pivot clamp, no symmetric CHOLMOD
+# (ICAR/BYM2 x RW1/RW2) factor the same matrix and agree to numerical
+# tolerance -- no asymmetric dense pivot clamp, no symmetric CHOLMOD
 # dbound fallback on a different pivot subset.
 #
 # HSGP and NNGP spatial kinds carry the dense-only path until 1.4c (their
@@ -78,7 +80,7 @@ skip_on_cran()
 }
 
 # Rank-deficient combos now factor `H + ridge * I` on both paths (1.4e),
-# so the strict per-cell equivalence holds — looser tolerance (1e-4
+# so the strict per-cell equivalence holds -- looser tolerance (1e-4
 # vs the PD-case 1e-6) only because doubly rank-deficient Newton steps
 # accumulate floating-point noise across more elimination operations.
 .expect_finite_and_bounded <- function(fit_dense, fit_sparse,
@@ -95,9 +97,9 @@ skip_on_cran()
     )
 }
 
-# ---- ICAR × {AR1, RW1, RW2} -----------------------------------------------
+# ---- ICAR x {AR1, RW1, RW2} -----------------------------------------------
 
-test_that("sparse ST: ICAR × AR1 matches dense", {
+test_that("sparse ST: ICAR x AR1 matches dense", {
     s <- .sim_st_small(seed = 21L)
     args <- list(
         y = s$y, n = s$n_trials, X = s$X, re_idx = s$re_idx,
@@ -108,14 +110,16 @@ test_that("sparse ST: ICAR × AR1 matches dense", {
         n_neighbors = s$adj$n_neighbors,
         temporal_idx = s$temporal_idx, n_times = s$n_t,
         tau_spatial_grid  = c(1.0, 2.0),
+        temporal_type     = "ar1",
         tau_temporal_grid = c(1.0, 1.5),
         rho_temporal_grid = c(0.6, 0.7),
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_icar_ar1,
+    fit_d <- do.call(cpp_nested_laplace_st_icar,
                      c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_icar_ar1,
+    fit_s <- do.call(cpp_nested_laplace_st_icar,
                      c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
@@ -129,15 +133,18 @@ test_that("sparse ST: ICAR x RW1 finite + bounded vs dense (rank-deficient)", {
         adj_row_ptr = s$adj$adj_row_ptr,
         adj_col_idx = s$adj$adj_col_idx,
         n_neighbors = s$adj$n_neighbors,
-        temporal_idx = s$temporal_idx, n_times = s$n_t, cyclic = FALSE,
+        temporal_idx = s$temporal_idx, n_times = s$n_t,
         tau_spatial_grid  = c(1.0, 2.0),
+        temporal_type     = "rw1",
         tau_temporal_grid = c(1.0, 2.0),
+        rho_temporal_grid = NULL,
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_icar_rw1,
+    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
                      c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_icar_rw1,
+    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
                      c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
@@ -153,20 +160,23 @@ test_that("sparse ST: ICAR x RW2 finite + bounded vs dense (rank-deficient)", {
         n_neighbors = s$adj$n_neighbors,
         temporal_idx = s$temporal_idx, n_times = s$n_t,
         tau_spatial_grid  = c(1.0, 2.0),
+        temporal_type     = "rw2",
         tau_temporal_grid = c(1.0, 2.0),
+        rho_temporal_grid = NULL,
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_icar_rw2,
+    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
                      c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_icar_rw2,
+    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_icar,
                      c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
 
-# ---- CAR_proper × {AR1, RW1, RW2} -----------------------------------------
+# ---- CAR_proper x {AR1, RW1, RW2} -----------------------------------------
 
-test_that("sparse ST: CAR_proper × AR1 matches dense", {
+test_that("sparse ST: CAR_proper x AR1 matches dense", {
     s <- .sim_st_small(seed = 31L)
     args <- list(
         y = s$y, n = s$n_trials, X = s$X, re_idx = s$re_idx,
@@ -178,19 +188,21 @@ test_that("sparse ST: CAR_proper × AR1 matches dense", {
         temporal_idx = s$temporal_idx, n_times = s$n_t,
         tau_spatial_grid  = c(1.0, 1.5),
         rho_spatial_grid  = c(0.85, 0.9),
+        temporal_type     = "ar1",
         tau_temporal_grid = c(1.0, 1.5),
         rho_temporal_grid = c(0.5, 0.6),
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_car_proper_ar1,
+    fit_d <- do.call(cpp_nested_laplace_st_car_proper,
                      c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_car_proper_ar1,
+    fit_s <- do.call(cpp_nested_laplace_st_car_proper,
                      c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
-test_that("sparse ST: CAR_proper × RW1 matches dense", {
+test_that("sparse ST: CAR_proper x RW1 matches dense", {
     s <- .sim_st_small(seed = 32L)
     args <- list(
         y = s$y, n = s$n_trials, X = s$X, re_idx = s$re_idx,
@@ -199,21 +211,24 @@ test_that("sparse ST: CAR_proper × RW1 matches dense", {
         adj_row_ptr = s$adj$adj_row_ptr,
         adj_col_idx = s$adj$adj_col_idx,
         n_neighbors = s$adj$n_neighbors,
-        temporal_idx = s$temporal_idx, n_times = s$n_t, cyclic = FALSE,
+        temporal_idx = s$temporal_idx, n_times = s$n_t,
         tau_spatial_grid  = c(1.0, 1.5),
         rho_spatial_grid  = c(0.85, 0.9),
+        temporal_type     = "rw1",
         tau_temporal_grid = c(1.0, 2.0),
+        rho_temporal_grid = NULL,
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_car_proper_rw1,
+    fit_d <- do.call(cpp_nested_laplace_st_car_proper,
                      c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_car_proper_rw1,
+    fit_s <- do.call(cpp_nested_laplace_st_car_proper,
                      c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
-test_that("sparse ST: CAR_proper × RW2 matches dense", {
+test_that("sparse ST: CAR_proper x RW2 matches dense", {
     s <- .sim_st_small(seed = 33L)
     args <- list(
         y = s$y, n = s$n_trials, X = s$X, re_idx = s$re_idx,
@@ -225,20 +240,23 @@ test_that("sparse ST: CAR_proper × RW2 matches dense", {
         temporal_idx = s$temporal_idx, n_times = s$n_t,
         tau_spatial_grid  = c(1.0, 1.5),
         rho_spatial_grid  = c(0.85, 0.9),
+        temporal_type     = "rw2",
         tau_temporal_grid = c(1.0, 2.0),
+        rho_temporal_grid = NULL,
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_car_proper_rw2,
+    fit_d <- do.call(cpp_nested_laplace_st_car_proper,
                      c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_car_proper_rw2,
+    fit_s <- do.call(cpp_nested_laplace_st_car_proper,
                      c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
 
-# ---- BYM2 × {AR1, RW1, RW2} -----------------------------------------------
+# ---- BYM2 x {AR1, RW1, RW2} -----------------------------------------------
 
-test_that("sparse ST: BYM2 × AR1 matches dense", {
+test_that("sparse ST: BYM2 x AR1 matches dense", {
     s <- .sim_st_small(seed = 41L)
     args <- list(
         y = s$y, n = s$n_trials, X = s$X, re_idx = s$re_idx,
@@ -251,14 +269,16 @@ test_that("sparse ST: BYM2 × AR1 matches dense", {
         temporal_idx = s$temporal_idx, n_times = s$n_t,
         sigma_spatial_grid = c(0.4, 0.6),
         rho_spatial_grid   = c(0.6, 0.7),
+        temporal_type      = "ar1",
         tau_temporal_grid  = c(1.0, 1.5),
         rho_temporal_grid  = c(0.4, 0.5),
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- do.call(cpp_nested_laplace_st_bym2_ar1,
+    fit_d <- do.call(cpp_nested_laplace_st_bym2,
                      c(args, list(force_sparse = FALSE)))
-    fit_s <- do.call(cpp_nested_laplace_st_bym2_ar1,
+    fit_s <- do.call(cpp_nested_laplace_st_bym2,
                      c(args, list(force_sparse = TRUE)))
     .expect_equiv(fit_d, fit_s)
 })
@@ -273,16 +293,19 @@ test_that("sparse ST: BYM2 x RW1 finite + bounded vs dense (rank-deficient)", {
         adj_col_idx = s$adj$adj_col_idx,
         n_neighbors = s$adj$n_neighbors,
         scale_factor = 1.0,
-        temporal_idx = s$temporal_idx, n_times = s$n_t, cyclic = FALSE,
+        temporal_idx = s$temporal_idx, n_times = s$n_t,
         sigma_spatial_grid = c(0.4, 0.6),
         rho_spatial_grid   = c(0.6, 0.7),
+        temporal_type      = "rw1",
         tau_temporal_grid  = c(1.0, 2.0),
+        rho_temporal_grid  = NULL,
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2_rw1,
+    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
                      c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2_rw1,
+    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
                      c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
@@ -300,20 +323,23 @@ test_that("sparse ST: BYM2 x RW2 finite + bounded vs dense (rank-deficient)", {
         temporal_idx = s$temporal_idx, n_times = s$n_t,
         sigma_spatial_grid = c(0.4, 0.6),
         rho_spatial_grid   = c(0.6, 0.7),
+        temporal_type      = "rw2",
         tau_temporal_grid  = c(1.0, 2.0),
+        rho_temporal_grid  = NULL,
+        cyclic = FALSE,
         family = s$family, phi = s$phi,
         max_iter = 40L, tol = 1e-8, n_threads = 1L
     )
-    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2_rw2,
+    fit_d <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
                      c(args, list(force_sparse = FALSE))))
-    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2_rw2,
+    fit_s <- suppressWarnings(do.call(cpp_nested_laplace_st_bym2,
                      c(args, list(force_sparse = TRUE))))
     .expect_finite_and_bounded(fit_d, fit_s)
 })
 
 # ---- HSGP / NNGP refuse force_sparse with a clear error -------------------
 
-test_that("sparse ST: HSGP × AR1 refuses force_sparse with a clear message", {
+test_that("sparse ST: HSGP x AR1 refuses force_sparse with a clear message", {
     set.seed(50L)
     N <- 50L; M <- 10L; n_t <- 5L
     X <- cbind(1, rnorm(N))
@@ -323,15 +349,17 @@ test_that("sparse ST: HSGP × AR1 refuses force_sparse with a clear message", {
     t_idx <- sample(seq_len(n_t), N, replace = TRUE)
     y <- rbinom(N, 1L, 0.5)
     expect_error(
-        cpp_nested_laplace_st_hsgp_ar1(
+        cpp_nested_laplace_st_hsgp(
             y = as.numeric(y), n = rep(1L, N), X = X, re_idx = rep(0, N),
             n_re_groups = 0L, sigma_re = 1.0,
             phi_basis = phi_basis, lambda_eig = lambda_eig,
             temporal_idx = as.integer(t_idx), n_times = n_t,
             sigma2_spatial_grid      = c(1.0),
             lengthscale_spatial_grid = c(1.0),
+            temporal_type            = "ar1",
             tau_temporal_grid        = c(1.0),
             rho_temporal_grid        = c(0.5),
+            cyclic = FALSE,
             family = "binomial", phi = 1.0,
             max_iter = 10L, tol = 1e-6, n_threads = 1L,
             force_sparse = TRUE

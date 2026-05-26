@@ -31,8 +31,16 @@ namespace tulpa {
 // 23 -> 24: added the `tulpa_run_nuts_chains` registered C callable
 // (multi-chain OpenMP across-chain runner, gcol33/tulpa#30). New callable
 // only; no struct layout change (NUTSResult / NUTSFn unchanged).
+//
+// 24 -> 25: collapsed the 15 spatio-temporal nested-Laplace callables
+// (`tulpa_nested_laplace_st_<spatial>_<temporal>`) to 5 per-spatial entries
+// (`tulpa_nested_laplace_st_{icar,car_proper,bym2,hsgp,nngp}`) that select the
+// temporal kernel at runtime via a `temporal_type` argument. Registered
+// callables renamed + signatures changed (added const char* temporal_type,
+// nullable rho_temporal_grid, int cyclic); the 15 NestedLaplaceSt*Fn typedefs
+// became 5 NestedLaplaceSt<Spatial>Fn. No core struct layout change.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 24;
+constexpr int TULPA_ABI_VERSION = 25;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
