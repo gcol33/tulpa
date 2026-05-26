@@ -367,7 +367,7 @@ goal #4 ("retire the family-enum inner loop") removed only on the nested side.
 | ST | Collapse 15 `*_st_<spatial>_<temporal>` -> 5 `*_st_<spatial>` (runtime `temporal_type` via `make_temporal_ops`). ABI 24->25. | DONE -- commit `f0c39ef` |
 | B1 | Remove the 8 dead `tulpa_laplace_mode_*` C-callables + `LaplaceMode*Fn` typedefs + `tulpa_shims_laplace.h` + `copy_mode_result`; keep `LaplaceShimResult` (spec shims reuse it). No sibling consumes them. ABI 25->26. | DONE -- commit `cdf348a` |
 | A | Collapse the 3 single-block temporal entries `*_{rw1,rw2,ar1}` -> one `*_temporal` (runtime `temporal_type` via the same `make_temporal_ops`). ABI 26->27. tulpaGlmm temporal call sites updated. | DONE -- commit `48c3de7` |
-| B2 | Retire the family-enum single-point solvers (`tulpa::laplace_mode_*`); route the spec-shaped fits onto `spec_inner_solve`. | **SPECIFIED below -- not yet done** |
+| B2 | Retire the family-enum single-point solvers (`tulpa::laplace_mode_*`); route the spec-shaped fits onto `spec_inner_solve`. | DONE -- `b0967fe` (dead trio), `2c66415` (engine ext), `9e165d7` (route + delete bodies), `6ffbe47` (test shift) |
 
 ### B2 spec (next phase) -- "kill the second inner Newton, single-point side"
 
@@ -408,6 +408,51 @@ tulpa's -- so B2 is contained within tulpa.
   (sparse), not the dense `spec_inner_solve`. Routing single-point NNGP through
   spec would require making NNGP a spec block, disproportionate and divergent
   from the nested path. Document the boundary; do not force it.
+
+### B2 outcome (2026-05-26)
+
+Done in four commits, no `TULPA_ABI_VERSION` bump (contained within tulpa).
+
+- **B2-dead (`b0967fe`).** Deleted `cpp_laplace_fit_{rsr,multiscale_gp,
+  multiscale_temporal}` + their `tulpa::laplace_mode_*` bodies (only shared
+  helpers used -> nothing orphaned) + all 8 B1-orphaned `tulpa::laplace_mode_*`
+  forward decls in `tulpa_shims.cpp`. RcppExports regenerated.
+- **Engine ext (`2c66415`, additive/behaviour-preserving).** `BuiltinFamilyResponse`
+  gained an optional per-obs `weights` (scales the eta score + Fisher weight,
+  `ll_double` left unweighted to match the retired solver); `scatter_spec` /
+  `log_prior_latent` / `spec_inner_solve` thread an optional `const BetaPrior*`
+  (per-coef mean+precision; null = the scalar `sigma_beta` ridge); new
+  `laplace_mode_spec_dense_solve` returns the full `LaplaceResult` (+ `return_re_cov`
+  builds the per-(term,group) inv-block layout from the spec layout). The void
+  `laplace_mode_spec_dense_impl` (the cross-package shim entry) is now a thin
+  wrapper over it -- shim ABI unchanged.
+- **Route + delete bodies (`9e165d7`).** `cpp_laplace_fit{,_multi_re,_spatial,
+  _bym2}` marshal into `laplace_mode_spec_dense_solve` and the four
+  `tulpa::laplace_mode_{dense,dense_multi_re,spatial,bym2}` bodies are deleted.
+  New `laplace_spec_fit.h`: `build_spec_family_inputs` (the iid-RE built-in-family
+  ModelData/ParamLayout shared by fit/spatial/bym2) + `pack_to_spec_re_params`
+  (a term's marginal-SD or packed Sigma-Cholesky `pack` -> spec log-Cholesky
+  params; exact same Q + log|Q|). multi_re carries the full multi-term marshalling
+  (slopes / correlated via the pack conversion; the `(0+x|g)` no-intercept design
+  detected by an all-ones first column) + weights + offset + per-coef beta prior
+  + warm start + `return_re_cov`; spatial builds the ICAR block + x_init, bym2 the
+  phi+theta blocks. **Mode preserved bit-for-bit; log-marginal now folds in the
+  beta-prior log-density on the single-point/spatial paths too**, so the
+  single-point entry agrees exactly with the nested kernel at one cell (the old
+  `cpp_laplace_fit_spatial`-omits-beta gap is closed).
+- **Test shift (`6ffbe47`).** Deleted the now-redundant `cpp_laplace_spec_test_
+  {family,icar,bym2}` harnesses. `test-laplace-spec-builtin-family.R` now checks
+  `cpp_laplace_fit`'s MAP against the `stats::glm` MLE (gaussian/poisson/binomial/
+  gamma) + an 8-family convergence smoke + a fit-vs-multi_re marshalling-consistency
+  check; the block tests drive `cpp_laplace_fit_{spatial,bym2}` directly against
+  the nested kernel. Kept `cpp_laplace_spec_test_{gaussian,gaussian2p,multi_re}`
+  (custom user spec / np==2 / closed-form Gaussian -- each reaches what no
+  single-response export does).
+
+**Only one inner Newton remains** (`spec_inner_solve`); the family enum survives
+only as the per-obs closed forms behind `builtin_family_spec`. `cpp_laplace_fit_gp`
+(NNGP) intentionally stays specialized. Verified green across the spec, family,
+block, RE-cov, AGHQ, EM, front-door, and nested-kernel suites (NOT_CRAN=true).
 
 ### Sibling caveat (2026-05-26)
 
