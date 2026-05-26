@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.2
+
+* feat: `tulpa_re_aghq()` -- a callback-driven adaptive Gauss-Hermite refinement
+  of a grouped random-effect covariance. Generalizes `agq_fit()` (intercept-only
+  RE, built-in `binomial`/`poisson`/`gaussian`) to **random slopes and
+  correlated multi-coefficient blocks** sharing one grouping factor, with the
+  per-observation marginal likelihood supplied by the caller through a
+  `make_site` callback. This lets a downstream package refine a custom marginal
+  (e.g. a latent-state-integrated occupancy / detection likelihood) through the
+  same quadrature. Reuses the existing log-Cholesky covariance parametrization
+  (`.re_cov_*`), `gauss_hermite_prob()`, and an optional LKJ correlation penalty;
+  the fixed parameters and `chol(Sigma)` are optimized jointly on the
+  exact-marginal log-likelihood, with SEs from the marginal Hessian. Recovery
+  tests in `tests/testthat/test-re-aghq.R`.
+
 ## Unreleased
 
 * refactor(api): `tulpa_nested_laplace()` and `tulpa_nested_laplace_joint()`
