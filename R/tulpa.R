@@ -98,11 +98,12 @@
 
 
 # Convert the front-door spatial spec into the `prior` block that
-# tulpa_nested_laplace() integrates over. Two families:
+# tulpa_nested_laplace() integrates over. Three families:
 #  * Areal (icar/car/bym2/car_proper): built from type + adjacency + a 1-based
 #    per-obs `spatial_idx` (as assembled in tulpa()), reusing
 #    adjacency_to_csr_tulpa() -- the same 0-based CSR builder the conditional
 #    spatial Laplace path uses. Intrinsic CAR ("car") shares the ICAR precision.
+#    The nested driver consumes the 1-based per-obs spatial_idx.
 #  * Continuous gp/nngp: built from a validated tulpa_gp spec (validate_gp() has
 #    filled unique_coords / neighbor_info / obs_to_loc). The (coords, nn_order,
 #    spatial_idx) convention matches the production conditional path
@@ -110,7 +111,12 @@
 #    nn_order permutation (the nested registry subtracts 1), and spatial_idx
 #    mapping each obs to its 1-based location. This is the indexing
 #    batch_nngp_scatter() expects (it reads coords(nn_order[i])).
-# The nested driver consumes a 1-based per-obs spatial_idx for both families.
+#  * Continuous hsgp: built from a validated tulpa_hsgp spec (validate_hsgp()
+#    has filled coords_matrix at every observation). The Laplacian basis
+#    (phi_basis N x M + matching lambda_eig) is built by cpp_hsgp_basis_2d --
+#    a thin wrapper over setup_hsgp_2d, the single source of truth -- so the
+#    basis math is never duplicated in R. The HSGP field is evaluated per
+#    observation directly (no obs->location map).
 # Field types outside .NL_FRONTDOOR_NESTED error rather than silently fall back.
 .spatial_spec_to_nl_prior <- function(spatial) {
   type <- tolower(spatial$type)
@@ -136,7 +142,29 @@
     return(prior)
   }
 
-  if (type %in% .NL_FRONTDOOR_CONTINUOUS) {
+  if (type == "hsgp") {
+    # Hilbert-space GP: the field is a sum of Laplacian basis functions
+    # evaluated at every observation, so the nested kernel takes a per-obs
+    # phi_basis (N x M) + matching eigenvalues -- no obs->location map. The
+    # basis is built by cpp_hsgp_basis_2d (over setup_hsgp_2d, the single
+    # source of truth) from the validated coordinate matrix; sigma2/lengthscale
+    # default in the registry.
+    cm <- spatial$coords_matrix
+    if (is.null(cm)) {
+      stop("Internal: HSGP spatial spec is unvalidated (coords_matrix is NULL). ",
+           "tulpa() validates it via validate_hsgp(); pass spatial_hsgp(~x+y).",
+           call. = FALSE)
+    }
+    basis <- cpp_hsgp_basis_2d(as.matrix(cm), as.integer(spatial$m),
+                               as.numeric(spatial$c))
+    return(list(
+      type       = "hsgp",
+      phi_basis  = basis$phi_basis,
+      lambda_eig = basis$lambda_eig
+    ))
+  }
+
+  if (type %in% c("gp", "nngp")) {
     ni <- spatial$neighbor_info
     if (is.null(ni)) {
       stop("Internal: continuous spatial spec is unvalidated (neighbor_info is ",
@@ -158,10 +186,10 @@
   }
 
   stop(sprintf(paste0(
-    "Nested-Laplace through tulpa() supports areal (%s) and NNGP/GP (%s)\n",
-    "spatial fields; '%s' is not yet routed here. Call tulpa_nested_laplace()\n",
-    "(hsgp) or fit_spde() (spde) directly, or use mode = 'laplace' for a\n",
-    "conditional fit at a fixed hyperparameter."),
+    "Nested-Laplace through tulpa() supports areal (%s) and continuous (%s)\n",
+    "spatial fields; '%s' is not yet routed here. Call fit_spde() (spde)\n",
+    "directly, or use mode = 'laplace' for a conditional fit at a fixed\n",
+    "hyperparameter."),
     paste(.NL_FRONTDOOR_AREAL, collapse = ", "),
     paste(.NL_FRONTDOOR_CONTINUOUS, collapse = ", "), spatial$type), call. = FALSE)
 }
@@ -497,7 +525,8 @@
 #'   * **Areal** (`"icar"`, `"car"`, `"bym2"`, `"car_proper"`): a list with `type`
 #'     and `adjacency`, paired with a `spatial(col)` term in `formula` naming the
 #'     per-observation unit column. Term and spec must be supplied together.
-#'   * **Continuous** (`spatial_gp(~ lon + lat)`, an NNGP field): the spec object
+#'   * **Continuous** (`spatial_gp(~ lon + lat)` for an NNGP field,
+#'     `spatial_hsgp(~ lon + lat)` for a Hilbert-space GP): the spec object
 #'     carries the coordinate columns, so **no** `spatial(col)` term is used --
 #'     observations are mapped to locations from their coordinates.
 #'
@@ -506,8 +535,8 @@
 #'     binomial Gibbs case below) **integrate** the hyperparameter via
 #'     [tulpa_nested_laplace()] -- the designed Tier 2 path, mirroring
 #'     `latent(...)` blocks. Supported field types: areal `icar`/`car`/`bym2`/
-#'     `car_proper` and continuous `gp`/`nngp`. HSGP and SPDE call
-#'     [tulpa_nested_laplace()] / [fit_spde()] directly for now.
+#'     `car_proper` and continuous `gp`/`nngp`/`hsgp`. SPDE calls [fit_spde()]
+#'     directly for now.
 #'   * `mode = "laplace"` **conditions** on a fixed hyperparameter via
 #'     [tulpa_laplace()] (the cheap explicit fit).
 #'   * `mode = "gibbs"` routes the areal `icar`/`bym2` cases through the binomial
@@ -574,18 +603,29 @@ tulpa <- function(formula, data,
     sp_lc <- tolower(spatial_type)
     if (sp_lc %in% .NL_FRONTDOOR_CONTINUOUS) {
       # Coordinate-addressed field: coords come from the spec; no spatial(col)
-      # term. validate_gp() fills unique_coords / obs_to_loc / neighbor_info.
+      # term. validate_{gp,hsgp}() resolve the coordinate structure onto the
+      # spec (gp/nngp: unique_coords / obs_to_loc / neighbor_info; hsgp:
+      # coords_matrix at every observation for the basis builder).
       if (!is.null(parsed$spatial_var)) {
         stop("A continuous spatial field (", spatial_type, ") is addressed by ",
              "its coordinate columns in the spec; drop the spatial(",
              parsed$spatial_var, ") term from the formula.", call. = FALSE)
       }
-      if (!inherits(spatial_spec, "tulpa_gp")) {
-        stop("A continuous spatial field must be a spatial_gp(~ lon + lat) spec ",
-             "object (it carries the coordinate columns); got a bare list.",
-             call. = FALSE)
+      if (sp_lc == "hsgp") {
+        if (!inherits(spatial_spec, "tulpa_hsgp")) {
+          stop("An HSGP spatial field must be a spatial_hsgp(~ lon + lat) spec ",
+               "object (it carries the coordinate columns); got a bare list.",
+               call. = FALSE)
+        }
+        spatial_spec <- validate_hsgp(spatial_spec, data)
+      } else {
+        if (!inherits(spatial_spec, "tulpa_gp")) {
+          stop("A continuous spatial field must be a spatial_gp(~ lon + lat) spec ",
+               "object (it carries the coordinate columns); got a bare list.",
+               call. = FALSE)
+        }
+        spatial_spec <- validate_gp(spatial_spec, data)
       }
-      spatial_spec <- validate_gp(spatial_spec, data)
     } else if (sp_lc %in% .NL_FRONTDOOR_AREAL) {
       # Areal field: spatial(col) names the per-observation unit.
       if (is.null(parsed$spatial_var)) {
@@ -604,8 +644,8 @@ tulpa <- function(formula, data,
         .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
     } else {
       stop("Spatial type '", spatial_type, "' is not yet routed through tulpa(). ",
-           "Call its fitter directly (fit_spde() for SPDE, tulpa_nested_laplace() ",
-           "for HSGP), or use an areal (icar/bym2/car/car_proper) or gp field.",
+           "Call its fitter directly (fit_spde() for SPDE), or use an areal ",
+           "(icar/bym2/car/car_proper) or continuous (gp/nngp/hsgp) field.",
            call. = FALSE)
     }
   }

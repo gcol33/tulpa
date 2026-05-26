@@ -269,13 +269,15 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 .NL_FRONTDOOR_AREAL <- c("icar", "car", "bym2", "car_proper")
 
 # Continuous (coordinate-addressed) spatial field types the nested-Laplace
-# front door supports. Addressed by coordinate columns in a spatial_gp() spec
+# front door supports. Addressed by coordinate columns in a spatial_gp() /
+# spatial_hsgp() spec
 # (no spatial(col) term); tulpa() validates via validate_gp() to derive the
 # unique locations, the obs -> location map, and the NNGP neighbour structure.
-# spatial_gp() emits type "gp"; the nested kernel block is "nngp". HSGP (needs
-# a basis) and SPDE (needs a mesh) are not yet routed through tulpa() -- call
-# tulpa_nested_laplace() / fit_spde() directly.
-.NL_FRONTDOOR_CONTINUOUS <- c("gp", "nngp")
+# spatial_gp() emits type "gp" (the nested kernel block is "nngp");
+# spatial_hsgp() emits type "hsgp" (the nested kernel block consumes a
+# Laplacian basis built by cpp_hsgp_basis_2d). SPDE (needs a mesh) is not yet
+# routed through tulpa() -- call fit_spde() directly.
+.NL_FRONTDOOR_CONTINUOUS <- c("gp", "nngp", "hsgp")
 
 # Spatial field types tulpa() routes to the nested-Laplace integrator (areal +
 # continuous). Single source of truth for the auto/structured router
@@ -572,10 +574,10 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   #    here -- the remaining fields (nngp/gp, multiscale_gp, rsr) are not yet
   #    wired through dispatch_gibbs_spatial (dev_notes/plan_gibbs_spatial_frontdoor.md);
   #    auto must never pick a backend that errors at dispatch.
-  #  * areal (icar/car/bym2/car_proper) and continuous gp/nngp: nested Laplace
-  #    (Tier 2) integrates the spatial hyperparameter through the tulpa() front
-  #    door (.NL_FRONTDOOR_NESTED).
-  #  * other continuous (hsgp/spde/multiscale): the nested path is not yet
+  #  * areal (icar/car/bym2/car_proper) and continuous gp/nngp/hsgp: nested
+  #    Laplace (Tier 2) integrates the spatial hyperparameter through the
+  #    tulpa() front door (.NL_FRONTDOOR_NESTED).
+  #  * other continuous (spde/multiscale): the nested path is not yet
   #    front-door-wired, so use the conditional Laplace path that is.
   if (has_spatial && !is.null(spatial_type)) {
     fam_nm <- family$name %||% family$distribution %||% ""
@@ -637,8 +639,8 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
     # Laplace does not consume them. A spatial field is itself a latent Gaussian
     # block whose hyperparameter the designed Tier-2 path integrates, so
     # structured routes the nested-wired types (.NL_FRONTDOOR_NESTED: areal +
-    # gp/nngp) to nested_laplace too (conditioning at a fixed scale is the
-    # explicit mode = "laplace"). Field types not yet nested-wired (hsgp/spde)
+    # gp/nngp/hsgp) to nested_laplace too (conditioning at a fixed scale is the
+    # explicit mode = "laplace"). Field types not yet nested-wired (spde)
     # stay on the conditional Laplace path. Otherwise Laplace is the Tier 2
     # default.
     if (has_latent) return("nested_laplace")
