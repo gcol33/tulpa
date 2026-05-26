@@ -262,6 +262,18 @@ BACKEND_FAMILY_SUPPORT <- local({
 ALL_BACKENDS <- names(BACKEND_REGISTRY)
 
 
+# Areal spatial field types the nested-Laplace front door supports. A
+# spatial(col) + spatial= spec routes to tulpa_nested_laplace() only for these
+# areal types -- the prior block is buildable from type + adjacency + a resolved
+# spatial_idx alone. Continuous fields (gp/spde/nngp/hsgp) need coordinates /
+# basis the spec does not carry, so they are not auto-routed to nested
+# integration through tulpa() yet (call tulpa_nested_laplace() / fit_spde()
+# directly). Single source of truth for the auto/structured router
+# (auto_select_mode, select_backend_for_mode) and the spec -> prior converter
+# (.spatial_spec_to_nl_prior). Intrinsic CAR ("car") shares the ICAR precision.
+.NL_FRONTDOOR_AREAL <- c("icar", "car", "bym2", "car_proper")
+
+
 #' Test whether a backend supports the given family.
 #' @keywords internal
 backend_supports_family <- function(backend, family) {
@@ -500,7 +512,7 @@ select_inference_mode <- function(mode,
 
   # Explicit tier mode: select best backend within that tier
   backend <- select_backend_for_mode(mode, family, n_obs, has_spatial, has_temporal,
-                                     has_latent)
+                                     has_latent, spatial_type)
   tier_info <- get_backend_tier(backend)
 
   return(list(
@@ -539,75 +551,61 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
-  # Thresholds
+  # Spatial latent Gaussian field. Like a latent block, its hyperparameter
+  # (spatial precision / mixing) is integrated -- not conditioned at a fixed
+  # scale, which is the explicit mode = "laplace". Three treatments, in
+  # preference order:
+  #  * binomial areal (icar/bym2): exact component-wise Polya-Gamma Gibbs
+  #    (Tier 1). The PG samplers update the field component-wise, avoiding
+  #    HMC's curse of dimensionality. Only the wired areal samplers are picked
+  #    here -- the remaining fields (nngp/gp, multiscale_gp, rsr) are not yet
+  #    wired through dispatch_gibbs_spatial (dev_notes/plan_gibbs_spatial_frontdoor.md);
+  #    auto must never pick a backend that errors at dispatch.
+  #  * other areal (icar/car/bym2/car_proper): nested Laplace (Tier 2)
+  #    integrates the spatial hyperparameter through the tulpa() front door.
+  #  * continuous (gp/spde/nngp/hsgp): the nested-continuous path is not yet
+  #    front-door-wired, so use the conditional Laplace path that is.
+  if (has_spatial && !is.null(spatial_type)) {
+    fam_nm <- family$name %||% family$distribution %||% ""
+    # Gibbs supports: no temporal, TVC, or RW1/AR1 GMRF temporal.
+    has_tvc_only <- !is.null(temporal) && inherits(temporal, "tulpa_tvc")
+    has_gmrf_temporal <- !is.null(temporal) && inherits(temporal, "tulpa_temporal") &&
+                         !is.null(temporal$type) && temporal$type %in% c("rw1", "ar1")
+    gibbs_temporal_ok <- !has_temporal || has_tvc_only || has_gmrf_temporal
+    if (spatial_type %in% c("icar", "bym2") && identical(fam_nm, "binomial") &&
+        gibbs_temporal_ok) {
+      return(list(
+        mode = "exact", backend = "gibbs", tier = 1L, tier_name = "Exact",
+        reason = sprintf("%s spatial model (binomial Polya-Gamma Gibbs)", spatial_type)
+      ))
+    }
+    if (spatial_type %in% .NL_FRONTDOOR_AREAL) {
+      return(list(
+        mode = "structured", backend = "nested_laplace", tier = 2L,
+        tier_name = "Structured",
+        reason = sprintf("%s spatial field; nested-Laplace hyperparameter integration",
+                         spatial_type)
+      ))
+    }
+    return(list(
+      mode = "structured", backend = "laplace", tier = 2L, tier_name = "Structured",
+      reason = sprintf("continuous spatial field (%s); conditional Laplace", spatial_type)
+    ))
+  }
+
+  # Non-spatial size heuristic: very large designs go to Laplace (Tier 2).
   VERY_LARGE <- 50000
-  LARGE <- 10000
-
-  # Decision logic
-  reason_parts <- character(0)
-
-  # Check if Laplace (Tier 2) is appropriate
-  use_structured <- FALSE
-
   if (n_obs > VERY_LARGE) {
-    use_structured <- TRUE
-    reason_parts <- c(reason_parts, sprintf("large dataset (n=%s)", format(n_obs, big.mark = ",")))
-  }
-
-  # Latent Gaussian models are ideal for Laplace
-  if (has_spatial && !has_latent && n_obs > LARGE) {
-    use_structured <- TRUE
-    reason_parts <- c(reason_parts, "spatial model with large n")
-  }
-
-  if (use_structured) {
     return(list(
-      mode = "structured",
-      backend = "laplace",
-      tier = 2L,
-      tier_name = "Structured",
-      reason = paste(reason_parts, collapse = "; ")
+      mode = "structured", backend = "laplace", tier = 2L, tier_name = "Structured",
+      reason = sprintf("large dataset (n=%s)", format(n_obs, big.mark = ","))
     ))
   }
 
-  # Gibbs for areal spatial models (no temporal, no latent). The Polya-Gamma
-  # samplers update the field component-wise, avoiding HMC's curse of
-  # dimensionality. Only the wired areal samplers (ICAR, BYM2) are auto-selected
-  # here -- car_proper / hsgp have no PG sampler, and the remaining fields
-  # (nngp/gp, multiscale_gp, rsr) are not yet wired through dispatch_gibbs_spatial
-  # (see dev_notes/plan_gibbs_spatial_frontdoor.md); auto must never pick a
-  # backend that would error at dispatch. The PG augmentation is binomial-only,
-  # so a non-binomial spatial field falls through to the default below.
-  is_gibbs_spatial <- has_spatial && !is.null(spatial_type) &&
-                      spatial_type %in% c("icar", "bym2")
-  fam_nm <- family$name %||% family$distribution %||% ""
-  gibbs_binomial <- identical(fam_nm, "binomial")
-  # Gibbs supports: no temporal, TVC, or RW1/AR1 GMRF temporal
-  has_tvc_only <- !is.null(temporal) && inherits(temporal, "tulpa_tvc")
-  has_gmrf_temporal <- !is.null(temporal) && inherits(temporal, "tulpa_temporal") &&
-                       !is.null(temporal$type) && temporal$type %in% c("rw1", "ar1")
-  gibbs_temporal_ok <- !has_temporal || has_tvc_only || has_gmrf_temporal
-  if (is_gibbs_spatial && gibbs_binomial && gibbs_temporal_ok && !has_latent) {
-    return(list(
-      mode = "exact",
-      backend = "gibbs",
-      tier = 1L,
-      tier_name = "Exact",
-      reason = sprintf("%s spatial model (binomial Polya-Gamma Gibbs)", spatial_type)
-    ))
-  }
-
-  # Default: Tier 1 (Exact) with HMC
-  # HMC is the most general and robust
-  backend <- "hmc"
-  reason <- "default (full MCMC)"
-
+  # Default: Tier 1 (Exact) with HMC -- the most general and robust.
   return(list(
-    mode = "exact",
-    backend = backend,
-    tier = 1L,
-    tier_name = "Exact",
-    reason = reason
+    mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
+    reason = "default (full MCMC)"
   ))
 }
 
@@ -615,7 +613,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
 #' Select best backend within a mode
 #' @keywords internal
 select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_temporal,
-                                    has_latent = FALSE) {
+                                    has_latent = FALSE, spatial_type = NULL) {
 
   if (mode == "exact") {
     # HMC is the default for Exact - most general
@@ -624,8 +622,16 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
 
   if (mode == "structured") {
     # Latent prior blocks need the nested-Laplace path; plain (conditional)
-    # Laplace does not consume them. Otherwise Laplace is the Tier 2 default.
+    # Laplace does not consume them. An areal spatial field is itself a latent
+    # Gaussian block whose hyperparameter the designed Tier-2 path integrates,
+    # so structured routes it to nested_laplace too (conditioning at a fixed
+    # scale is the explicit mode = "laplace"). Continuous fields are not yet
+    # nested-wired through tulpa() -- they stay on the conditional Laplace
+    # path. Otherwise Laplace is the Tier 2 default.
     if (has_latent) return("nested_laplace")
+    if (has_spatial && !is.null(spatial_type) && spatial_type %in% .NL_FRONTDOOR_AREAL) {
+      return("nested_laplace")
+    }
     return("laplace")
   }
 

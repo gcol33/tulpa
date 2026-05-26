@@ -147,3 +147,114 @@ test_that("spatial Gibbs is binomial-only and rejects random slopes", {
     "Random-slope"
   )
 })
+
+# --- Nested-Laplace spatial routing (Increment 4) ------------------------
+# mode = "nested_laplace" / "structured" / "auto" (non-binomial-Gibbs) route an
+# areal field through tulpa_nested_laplace(), which INTEGRATES the spatial
+# hyperparameter -- the designed Tier 2 path, distinct from the conditional
+# tulpa_laplace(spatial=) fit (mode = "laplace") that fixes it. The routing
+# layer must add no math: the front-door grid/log-marginal are identical to a
+# direct tulpa_nested_laplace() call on the same prior.
+
+test_that("mode = nested_laplace integrates an areal field through tulpa()", {
+  skip_on_cran()
+  s <- sim_areal_binomial()
+  fit <- tulpa(
+    y ~ x + spatial(region), data = s$data, family = "binomial",
+    n_trials = s$data$ntrials,
+    spatial = list(type = "icar", adjacency = s$W),
+    mode = "nested_laplace",
+    control = list(keep_grid_hessians = TRUE)
+  )
+  expect_equal(fit$backend, "nested_laplace")
+  expect_equal(fit$inference_tier, 2L)
+  expect_s3_class(fit, "tulpa_fit")
+  expect_s3_class(fit, "tulpa_nested_laplace")
+  # The spatial precision tau was integrated, not conditioned on.
+  expect_true(all(is.finite(fit$theta_mean)))
+  expect_true(all(is.finite(fit$weights)) && abs(sum(fit$weights) - 1) < 1e-8)
+
+  # Recovery: marginalize beta over the tau grid (grid modes weighted by the
+  # integration weights), never a plug-in MAP (CLAUDE.md "Marginalize Derived
+  # Quantities"). grid_modes[[k]] holds the length-p fixed-effect block.
+  w  <- fit$weights
+  bm <- do.call(rbind, lapply(fit$grid_modes, function(m) m[1:2]))
+  beta_hat <- as.numeric(crossprod(w, bm))
+  expect_lt(abs(beta_hat[1] - s$beta[1]), 0.45)   # intercept
+  expect_lt(abs(beta_hat[2] - s$beta[2]), 0.30)   # slope
+})
+
+test_that("the nested spatial route is numerically identical to a direct call", {
+  s <- sim_areal_binomial(reps = 3L)
+  via <- tulpa(
+    y ~ x + spatial(region), data = s$data, family = "binomial",
+    n_trials = s$data$ntrials,
+    spatial = list(type = "icar", adjacency = s$W),
+    mode = "nested_laplace"
+  )
+  # Build the same areal prior the front door builds, then call the fitter
+  # directly: the routing layer adds no math.
+  spec <- list(type = "icar", adjacency = s$W,
+               spatial_idx = tulpa:::.resolve_unit_index(
+                 s$data$region, "region", nrow(s$W)))
+  prior <- tulpa:::.spatial_spec_to_nl_prior(spec)
+  direct <- tulpa_nested_laplace(
+    y = s$data$y, n_trials = s$data$ntrials,
+    X = model.matrix(y ~ x, s$data),
+    prior = prior, family = "binomial"
+  )
+  expect_equal(via$theta_grid,   direct$theta_grid)
+  expect_equal(via$log_marginal, direct$log_marginal)
+  expect_equal(via$theta_mean,   direct$theta_mean)
+})
+
+test_that("mode = structured routes an areal field to nested_laplace", {
+  s <- sim_areal_binomial(reps = 2L)
+  fit <- tulpa(
+    y ~ x + spatial(region), data = s$data, family = "binomial",
+    n_trials = s$data$ntrials,
+    spatial = list(type = "icar", adjacency = s$W),
+    mode = "structured"
+  )
+  expect_equal(fit$backend, "nested_laplace")
+  expect_equal(fit$inference_tier, 2L)
+})
+
+test_that("auto integrates a non-binomial areal field via nested Laplace", {
+  # A non-binomial areal field is not the binomial Gibbs case, so auto picks
+  # the nested-Laplace Tier 2 path (not the conditional Laplace at fixed tau,
+  # and not HMC). y in 0..5 are valid Poisson counts.
+  s <- sim_areal_binomial(reps = 2L)
+  fit <- tulpa(
+    y ~ x + spatial(region), data = s$data, family = "poisson",
+    spatial = list(type = "icar", adjacency = s$W),
+    mode = "auto"
+  )
+  expect_equal(fit$backend, "nested_laplace")
+  expect_equal(fit$inference_mode, "structured")
+})
+
+test_that("nested_laplace bym2 packs the scale factor and wires through", {
+  s <- sim_areal_binomial(reps = 2L)
+  fit <- tulpa(
+    y ~ x + spatial(region), data = s$data, family = "binomial",
+    n_trials = s$data$ntrials,
+    spatial = list(type = "bym2", adjacency = s$W, scale_factor = 1.0),
+    mode = "nested_laplace"
+  )
+  expect_equal(fit$backend, "nested_laplace")
+  # BYM2 integrates a 2D (sigma, rho) grid.
+  expect_equal(ncol(fit$theta_grid), 2L)
+  expect_true(all(is.finite(fit$theta_mean)))
+})
+
+test_that("nested_laplace rejects a continuous spatial field with guidance", {
+  s <- sim_areal_binomial(reps = 1L)
+  expect_error(
+    tulpa(y ~ x + spatial(region), data = s$data, family = "binomial",
+          n_trials = s$data$ntrials,
+          spatial = list(type = "gp", adjacency = s$W),
+          mode = "nested_laplace"),
+    "areal spatial fields"
+  )
+})

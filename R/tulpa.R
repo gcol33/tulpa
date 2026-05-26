@@ -97,6 +97,46 @@
 }
 
 
+# Convert the front-door spatial spec (type + adjacency + a 1-based
+# `spatial_idx`, as assembled in tulpa()) into the `prior` block that
+# tulpa_nested_laplace() integrates over. Areal types only (see
+# .NL_FRONTDOOR_AREAL); intrinsic CAR ("car") shares the ICAR precision.
+# Reuses adjacency_to_csr_tulpa() -- the same 0-based CSR builder the
+# conditional spatial Laplace path uses -- so the two spatial entries share one
+# adjacency encoding. The nested driver consumes a 1-based per-obs spatial_idx
+# (matching the conditional path), so the resolved index passes straight
+# through. Continuous fields error here rather than silently fall back.
+.spatial_spec_to_nl_prior <- function(spatial) {
+  type <- tolower(spatial$type)
+  if (!type %in% .NL_FRONTDOOR_AREAL) {
+    stop(sprintf(paste0(
+      "Nested-Laplace through tulpa() supports areal spatial fields (%s); the\n",
+      "continuous field '%s' is not yet routed here. Call tulpa_nested_laplace()\n",
+      "(gp/nngp/hsgp) or fit_spde() directly, or use mode = 'laplace' for a\n",
+      "conditional fit at a fixed hyperparameter."),
+      paste(.NL_FRONTDOOR_AREAL, collapse = ", "), spatial$type), call. = FALSE)
+  }
+  adj <- as.matrix(spatial$adjacency)
+  csr <- adjacency_to_csr_tulpa(adj)
+  backend <- if (type == "car") "icar" else type
+  prior <- list(
+    type            = backend,
+    spatial_idx     = as.integer(spatial$spatial_idx),
+    n_spatial_units = as.integer(nrow(adj)),
+    adj_row_ptr     = as.integer(csr$row_ptr),
+    adj_col_idx     = as.integer(csr$col_idx),
+    n_neighbors     = as.integer(csr$n_neighbors)
+  )
+  if (backend == "bym2") {
+    prior$scale_factor <- as.numeric(spatial$scale_factor %||% 1.0)
+  }
+  if (backend == "car_proper" && !is.null(spatial$rho_bounds)) {
+    prior$rho_bounds <- as.numeric(spatial$rho_bounds)
+  }
+  prior
+}
+
+
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
@@ -113,15 +153,29 @@
         "which a single formula cannot express. Call %s() directly."),
         backend, backend), call. = FALSE)
     }
-    if (length(latent_blocks) == 0L) {
-      stop("Backend 'nested_laplace' needs at least one `latent(...)` block ",
-           "in the formula. For a plain GLMM use mode = 'laplace' / 'mala' / ",
-           "'auto'.", call. = FALSE)
+    # The nested driver integrates the hyperparameters of latent prior blocks
+    # and/or an areal spatial field. A spatial(col) field becomes one areal
+    # prior block (.spatial_spec_to_nl_prior); latent(...) terms are blocks
+    # already. Either alone routes the single-block path; together they form a
+    # multi-block prior (the driver integrates the joint hyperparameter grid).
+    # At least one of the two must be present.
+    spatial_block <- if (!is.null(spatial)) .spatial_spec_to_nl_prior(spatial) else NULL
+    if (is.null(spatial_block) && length(latent_blocks) == 0L) {
+      stop("Backend 'nested_laplace' needs at least one `latent(...)` block or ",
+           "a spatial(col) field in the formula. For a plain GLMM use mode = ",
+           "'laplace' / 'mala' / 'auto'.", call. = FALSE)
     }
     if (!is.null(beta_prior)) {
       warning("`beta_prior` is not threaded through tulpa()'s nested-Laplace ",
               "path; it is ignored. Call tulpa_nested_laplace() directly if you ",
               "need a fixed-effect prior here.", call. = FALSE)
+    }
+    if (is.null(spatial_block)) {
+      prior <- .latent_blocks_to_prior(latent_blocks)   # latent-only (unchanged)
+    } else if (length(latent_blocks) == 0L) {
+      prior <- spatial_block                            # single areal block
+    } else {
+      prior <- c(list(spatial_block), latent_blocks)    # multi-block (spatial + latent)
     }
     # The nested driver carries a single iid random-intercept natively via
     # re_idx / n_re_groups / sigma_re (conditioned on, like the other tulpa()
@@ -148,7 +202,7 @@
       y           = bundle$y,
       n_trials    = n_trials %||% rep(1L, bundle$n_obs),
       X           = bundle$X,
-      prior       = .latent_blocks_to_prior(latent_blocks),
+      prior       = prior,
       re_idx      = re_idx,
       n_re_groups = n_re_groups,
       sigma_re    = sigma_re_scalar,
@@ -410,12 +464,21 @@
 #'   effects.
 #' @param spatial Optional spatial-field spec, paired with a `spatial(col)` term
 #'   in `formula` that names the per-observation spatial-unit column. A list with
-#'   `type` (`"icar"`, `"bym2"`, `"car"`, `"spde"`, `"gp"`) and the structure's
-#'   inputs (e.g. `adjacency` for areal types). `mode = "laplace"` routes it
-#'   through [tulpa_laplace()]; `mode = "gibbs"` routes the areal `icar`/`bym2`
-#'   cases through the binomial Polya-Gamma samplers; `mode = "auto"` picks Gibbs
-#'   for a binomial `icar`/`bym2` field. The `spatial(col)` term and `spatial=`
-#'   must be supplied together.
+#'   `type` (`"icar"`, `"bym2"`, `"car"`, `"car_proper"`, `"spde"`, `"gp"`) and
+#'   the structure's inputs (e.g. `adjacency` for areal types). The mode selects
+#'   how the spatial hyperparameter is handled:
+#'   * `mode = "nested_laplace"`, `"structured"`, and `"auto"` (for an areal
+#'     field that is not the binomial Gibbs case below) **integrate** the
+#'     hyperparameter via [tulpa_nested_laplace()] -- the designed Tier 2 path,
+#'     mirroring `latent(...)` blocks. Areal types only (`icar`/`car`/`bym2`/
+#'     `car_proper`); continuous fields call [tulpa_nested_laplace()] / `fit_spde()`
+#'     directly.
+#'   * `mode = "laplace"` **conditions** on a fixed hyperparameter via
+#'     [tulpa_laplace()] (the cheap explicit fit; supports `spde`/`gp` too).
+#'   * `mode = "gibbs"` routes the areal `icar`/`bym2` cases through the binomial
+#'     Polya-Gamma samplers (Tier 1 exact); `mode = "auto"` picks this for a
+#'     binomial `icar`/`bym2` field.
+#'   The `spatial(col)` term and `spatial=` must be supplied together.
 #' @param temporal Reserved: temporal terms are not yet routed through `tulpa()`.
 #' @param control Optional list of backend tuning arguments (e.g. `n_iter`,
 #'   `warmup`, `epsilon` for `mala`; `n_draws` for `pathfinder`).

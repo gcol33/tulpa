@@ -45,12 +45,23 @@ effects.}
 
 \item{spatial}{Optional spatial-field spec, paired with a \code{spatial(col)} term
 in \code{formula} that names the per-observation spatial-unit column. A list with
-\code{type} (\code{"icar"}, \code{"bym2"}, \code{"car"}, \code{"spde"}, \code{"gp"}) and the structure's
-inputs (e.g. \code{adjacency} for areal types). \code{mode = "laplace"} routes it
-through \code{\link[=tulpa_laplace]{tulpa_laplace()}}; \code{mode = "gibbs"} routes the areal \code{icar}/\code{bym2}
-cases through the binomial Polya-Gamma samplers; \code{mode = "auto"} picks Gibbs
-for a binomial \code{icar}/\code{bym2} field. The \code{spatial(col)} term and \verb{spatial=}
-must be supplied together.}
+\code{type} (\code{"icar"}, \code{"bym2"}, \code{"car"}, \code{"car_proper"}, \code{"spde"}, \code{"gp"}) and
+the structure's inputs (e.g. \code{adjacency} for areal types). The mode selects
+how the spatial hyperparameter is handled:
+\itemize{
+\item \code{mode = "nested_laplace"}, \code{"structured"}, and \code{"auto"} (for an areal
+field that is not the binomial Gibbs case below) \strong{integrate} the
+hyperparameter via \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} -- the designed Tier 2 path,
+mirroring \code{latent(...)} blocks. Areal types only (\code{icar}/\code{car}/\code{bym2}/
+\code{car_proper}); continuous fields call \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} / \code{fit_spde()}
+directly.
+\item \code{mode = "laplace"} \strong{conditions} on a fixed hyperparameter via
+\code{\link[=tulpa_laplace]{tulpa_laplace()}} (the cheap explicit fit; supports \code{spde}/\code{gp} too).
+\item \code{mode = "gibbs"} routes the areal \code{icar}/\code{bym2} cases through the binomial
+Polya-Gamma samplers (Tier 1 exact); \code{mode = "auto"} picks this for a
+binomial \code{icar}/\code{bym2} field.
+The \code{spatial(col)} term and \verb{spatial=} must be supplied together.
+}}
 
 \item{temporal}{Reserved: temporal terms are not yet routed through \code{tulpa()}.}
 

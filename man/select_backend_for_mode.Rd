@@ -10,7 +10,8 @@ select_backend_for_mode(
   n_obs,
   has_spatial,
   has_temporal,
-  has_latent = FALSE
+  has_latent = FALSE,
+  spatial_type = NULL
 )
 }
 \description{
