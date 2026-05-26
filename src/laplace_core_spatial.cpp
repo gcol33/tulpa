@@ -1,5 +1,5 @@
 // laplace_core_spatial.cpp
-// Spatial / BYM2 / RSR Laplace mode finders + their R exports.
+// Spatial / BYM2 Laplace mode finders + their R exports.
 // Split from laplace_core.cpp on 2026-05-02.
 //
 // Each mode finder still uses laplace_newton_solve (in laplace_newton.h) and the
@@ -241,140 +241,6 @@ LaplaceResult laplace_mode_bym2(
                                  compute_eta, scatter, center, log_prior);
 }
 
-// --- 7. RSR (Restricted Spatial Regression) ---
-
-LaplaceResult laplace_mode_rsr(
-    const NumericVector& y, const IntegerVector& n,
-    const NumericMatrix& X, const NumericVector& re_idx,
-    int n_re_groups, double sigma_re,
-    const IntegerVector& spatial_idx, int n_spatial_units,
-    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, double tau_spatial,
-    const NumericVector& rsr_projection, int rsr_n,
-    const std::string& family, double phi,
-    int max_iter, double tol, int n_threads
-) {
-    int N = y.size();
-    int p = X.ncol();
-    int n_x = p + n_re_groups + n_spatial_units;
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
-    int spatial_start = p + n_re_groups;
-
-    auto compute_eta = [&](const NumericVector& x, NumericVector& eta) {
-        // Compute projected spatial: w_proj = P_perp * w
-        NumericVector w_proj(n_spatial_units, 0.0);
-        for (int i = 0; i < n_spatial_units; i++) {
-            for (int j = 0; j < n_spatial_units; j++) {
-                w_proj[i] += rsr_projection[i * rsr_n + j] * x[spatial_start + j];
-            }
-        }
-
-        #ifdef _OPENMP
-        #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-        #endif
-        for (int i = 0; i < N; i++) {
-            eta[i] = 0.0;
-            for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-            if (n_re_groups > 0) {
-                int g = (int)re_idx[i] - 1;
-                if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-            }
-            if (n_spatial_units > 0) {
-                int s = spatial_idx[i] - 1;
-                if (s >= 0 && s < n_spatial_units) eta[i] += w_proj[s];
-            }
-        }
-    };
-
-    auto scatter = [&](const NumericVector& x, const NumericVector& eta,
-                       DenseVec& grad, DenseMat& H) {
-        // Base scatter for fixed + RE
-        scatter_obs_grad_hess_base(y, n, X, re_idx, N, p, n_re_groups,
-                                    eta, family, phi, grad, H, n_threads);
-
-        // RSR: gradient w.r.t. projected spatial, then transform through P_perp
-        std::vector<double> grad_w_proj(n_spatial_units, 0.0);
-        std::vector<double> H_w_proj_diag(n_spatial_units, 0.0);
-
-        for (int i = 0; i < N; i++) {
-            if (n_spatial_units <= 0) continue;
-            int s = spatial_idx[i] - 1;
-            if (s < 0 || s >= n_spatial_units) continue;
-
-            auto gh = grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-            grad_w_proj[s] += gh.grad;
-            H_w_proj_diag[s] += gh.neg_hess;
-        }
-
-        // Transform: grad_w = P_perp' * grad_w_proj
-        for (int i = 0; i < n_spatial_units; i++) {
-            for (int j = 0; j < n_spatial_units; j++) {
-                grad[spatial_start + i] += rsr_projection[i * rsr_n + j] * grad_w_proj[j];
-            }
-        }
-
-        // Hessian: H_w = P_perp' diag(H_w_proj) P_perp
-        for (int i = 0; i < n_spatial_units; i++) {
-            for (int j = 0; j <= i; j++) {
-                double sum = 0.0;
-                for (int k = 0; k < n_spatial_units; k++) {
-                    sum += rsr_projection[k * rsr_n + i] * H_w_proj_diag[k] * rsr_projection[k * rsr_n + j];
-                }
-                H[spatial_start + i][spatial_start + j] = sum;
-                if (i != j) H[spatial_start + j][spatial_start + i] = sum;
-            }
-        }
-
-        // Cross-terms between fixed effects and projected spatial effects
-        for (int i = 0; i < N; i++) {
-            if (n_spatial_units <= 0) continue;
-            int s = spatial_idx[i] - 1;
-            if (s < 0 || s >= n_spatial_units) continue;
-
-            auto gh = grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-
-            for (int j = 0; j < p; j++) {
-                for (int k = 0; k < n_spatial_units; k++) {
-                    double P_ks = rsr_projection[s * rsr_n + k];
-                    H[j][spatial_start + k] += gh.neg_hess * X(i, j) * P_ks;
-                    H[spatial_start + k][j] += gh.neg_hess * X(i, j) * P_ks;
-                }
-            }
-            if (n_re_groups > 0) {
-                int g = (int)re_idx[i] - 1;
-                if (g >= 0 && g < n_re_groups) {
-                    for (int k = 0; k < n_spatial_units; k++) {
-                        double P_ks = rsr_projection[s * rsr_n + k];
-                        H[p + g][spatial_start + k] += gh.neg_hess * P_ks;
-                        H[spatial_start + k][p + g] += gh.neg_hess * P_ks;
-                    }
-                }
-            }
-        }
-
-        // ICAR prior on unprojected spatial
-        add_icar_prior(grad, H, x, spatial_start, n_spatial_units, tau_spatial,
-                        adj_row_ptr, adj_col_idx, n_neighbors);
-
-        add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
-    };
-
-    auto center = [&](NumericVector& x) {
-        center_effects(x, spatial_start, n_spatial_units);
-    };
-
-    auto log_prior = [&](const NumericVector& x, const NumericVector&) {
-        double lp = compute_log_prior_re(x, p, n_re_groups, tau_re);
-        lp += log_prior_icar(x, spatial_start, n_spatial_units, tau_spatial,
-                              adj_row_ptr, adj_col_idx, n_neighbors);
-        return lp;
-    };
-
-    return laplace_newton_solve(y, n, family, phi, N, n_x,
-                                 max_iter, tol, n_threads,
-                                 compute_eta, scatter, center, log_prior);
-}
-
 } // namespace tulpa
 
 // =====================================================================
@@ -421,27 +287,6 @@ Rcpp::List cpp_laplace_fit_bym2(
         y, n, X, re_idx, n_re_groups, sigma_re,
         spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors,
         sigma_spatial, rho, scale_factor,
-        family, phi, max_iter, tol, n_threads
-    );
-    return tulpa::laplace_result_to_list(result);
-}
-
-// [[Rcpp::export]]
-Rcpp::List cpp_laplace_fit_rsr(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
-    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
-    Rcpp::IntegerVector n_neighbors, double tau_spatial,
-    Rcpp::NumericVector rsr_projection, int rsr_n,
-    std::string family, double phi = 1.0,
-    int max_iter = 100, double tol = 1e-6, int n_threads = 1
-) {
-    tulpa::LaplaceResult result = tulpa::laplace_mode_rsr(
-        y, n, X, re_idx, n_re_groups, sigma_re,
-        spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors,
-        tau_spatial, rsr_projection, rsr_n,
         family, phi, max_iter, tol, n_threads
     );
     return tulpa::laplace_result_to_list(result);

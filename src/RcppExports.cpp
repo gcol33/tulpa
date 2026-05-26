@@ -226,72 +226,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_laplace_fit_multiscale_gp
-Rcpp::List cpp_laplace_fit_multiscale_gp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx_local, Rcpp::NumericMatrix nn_dist_local, Rcpp::IntegerVector nn_order_local, int nn_local, Rcpp::IntegerMatrix nn_idx_regional, Rcpp::NumericMatrix nn_dist_regional, Rcpp::IntegerVector nn_order_regional, int nn_regional, int n_spatial, double sigma2_local, double phi_local, double sigma2_regional, double phi_regional, int cov_type, std::string family, double phi, int max_iter, double tol, int n_threads);
-RcppExport SEXP _tulpa_cpp_laplace_fit_multiscale_gp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP coordsSEXP, SEXP nn_idx_localSEXP, SEXP nn_dist_localSEXP, SEXP nn_order_localSEXP, SEXP nn_localSEXP, SEXP nn_idx_regionalSEXP, SEXP nn_dist_regionalSEXP, SEXP nn_order_regionalSEXP, SEXP nn_regionalSEXP, SEXP n_spatialSEXP, SEXP sigma2_localSEXP, SEXP phi_localSEXP, SEXP sigma2_regionalSEXP, SEXP phi_regionalSEXP, SEXP cov_typeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
-    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coords(coordsSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx_local(nn_idx_localSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist_local(nn_dist_localSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order_local(nn_order_localSEXP);
-    Rcpp::traits::input_parameter< int >::type nn_local(nn_localSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx_regional(nn_idx_regionalSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist_regional(nn_dist_regionalSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order_regional(nn_order_regionalSEXP);
-    Rcpp::traits::input_parameter< int >::type nn_regional(nn_regionalSEXP);
-    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma2_local(sigma2_localSEXP);
-    Rcpp::traits::input_parameter< double >::type phi_local(phi_localSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma2_regional(sigma2_regionalSEXP);
-    Rcpp::traits::input_parameter< double >::type phi_regional(phi_regionalSEXP);
-    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
-    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_multiscale_gp(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx_local, nn_dist_local, nn_order_local, nn_local, nn_idx_regional, nn_dist_regional, nn_order_regional, nn_regional, n_spatial, sigma2_local, phi_local, sigma2_regional, phi_regional, cov_type, family, phi, max_iter, tol, n_threads));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_laplace_fit_multiscale_temporal
-Rcpp::List cpp_laplace_fit_multiscale_temporal(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector time_idx, int n_times, int seasonal_period, int trend_type, int short_type, double sigma2_trend, double sigma2_seasonal, double sigma2_short, double rho_short, std::string family, double phi, int max_iter, double tol, int n_threads);
-RcppExport SEXP _tulpa_cpp_laplace_fit_multiscale_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP time_idxSEXP, SEXP n_timesSEXP, SEXP seasonal_periodSEXP, SEXP trend_typeSEXP, SEXP short_typeSEXP, SEXP sigma2_trendSEXP, SEXP sigma2_seasonalSEXP, SEXP sigma2_shortSEXP, SEXP rho_shortSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
-    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type time_idx(time_idxSEXP);
-    Rcpp::traits::input_parameter< int >::type n_times(n_timesSEXP);
-    Rcpp::traits::input_parameter< int >::type seasonal_period(seasonal_periodSEXP);
-    Rcpp::traits::input_parameter< int >::type trend_type(trend_typeSEXP);
-    Rcpp::traits::input_parameter< int >::type short_type(short_typeSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma2_trend(sigma2_trendSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma2_seasonal(sigma2_seasonalSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma2_short(sigma2_shortSEXP);
-    Rcpp::traits::input_parameter< double >::type rho_short(rho_shortSEXP);
-    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_multiscale_temporal(y, n, X, re_idx, n_re_groups, sigma_re, time_idx, n_times, seasonal_period, trend_type, short_type, sigma2_trend, sigma2_seasonal, sigma2_short, rho_short, family, phi, max_iter, tol, n_threads));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_laplace_fit_spatial
 Rcpp::List cpp_laplace_fit_spatial(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double tau_spatial, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable);
 RcppExport SEXP _tulpa_cpp_laplace_fit_spatial(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_spatialSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP) {
@@ -346,35 +280,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_bym2(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_laplace_fit_rsr
-Rcpp::List cpp_laplace_fit_rsr(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double tau_spatial, Rcpp::NumericVector rsr_projection, int rsr_n, std::string family, double phi, int max_iter, double tol, int n_threads);
-RcppExport SEXP _tulpa_cpp_laplace_fit_rsr(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_spatialSEXP, SEXP rsr_projectionSEXP, SEXP rsr_nSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
-    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type spatial_idx(spatial_idxSEXP);
-    Rcpp::traits::input_parameter< int >::type n_spatial_units(n_spatial_unitsSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_neighbors(n_neighborsSEXP);
-    Rcpp::traits::input_parameter< double >::type tau_spatial(tau_spatialSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type rsr_projection(rsr_projectionSEXP);
-    Rcpp::traits::input_parameter< int >::type rsr_n(rsr_nSEXP);
-    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_rsr(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rsr_projection, rsr_n, family, phi, max_iter, tol, n_threads));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2881,11 +2786,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 19},
     {"_tulpa_cpp_laplace_sample", (DL_FUNC) &_tulpa_cpp_laplace_sample, 3},
     {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 20},
-    {"_tulpa_cpp_laplace_fit_multiscale_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_multiscale_gp, 26},
-    {"_tulpa_cpp_laplace_fit_multiscale_temporal", (DL_FUNC) &_tulpa_cpp_laplace_fit_multiscale_temporal, 20},
     {"_tulpa_cpp_laplace_fit_spatial", (DL_FUNC) &_tulpa_cpp_laplace_fit_spatial, 18},
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 19},
-    {"_tulpa_cpp_laplace_fit_rsr", (DL_FUNC) &_tulpa_cpp_laplace_fit_rsr, 19},
     {"_tulpa_cpp_profile_reset", (DL_FUNC) &_tulpa_cpp_profile_reset, 0},
     {"_tulpa_cpp_profile_read", (DL_FUNC) &_tulpa_cpp_profile_read, 0},
     {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
