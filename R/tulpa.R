@@ -9,19 +9,24 @@
 # ------------------------------------------------------------------------------
 
 # Map a model-data bundle's RE terms to the `re_list` that tulpa_laplace()
-# consumes. Intercept-only terms carry a marginal SD; slope terms are not yet
-# wired through the design path (use the logpost path or tulpa_laplace directly).
+# consumes. Intercept-only terms carry a marginal SD. A single CORRELATED
+# slope term `(1 + x | g)` is auto-routed to the Sigma integrator before this
+# point (see tulpa()), so it never reaches here; what remains is the
+# uncorrelated `(1 + x || g)` case and slope terms mixed with other RE terms,
+# which the conditional Laplace design path does not yet handle.
 .bundle_to_re_list <- function(bundle, sigma_re) {
   re <- bundle$re_terms %||% list()
   lapply(seq_along(re), function(k) {
     rt <- re[[k]]
     if ((rt$n_coefs %||% 1L) > 1L) {
       stop(sprintf(
-        "RE term %d has %d coefficients (random slopes). Slope terms are not yet\n",
+        "RE term %d has %d coefficients (random slopes). A *single* correlated\n",
         k, rt$n_coefs),
-        "wired through tulpa()'s design (Laplace) path. Use a logpost backend\n",
-        "(mode = 'mala' / 'pathfinder'), or call tulpa_laplace() with an explicit\n",
-        "re_list.", call. = FALSE)
+        "term `(1 + x | g)` is integrated over its covariance Sigma automatically\n",
+        "(mode = 'laplace'); this term is uncorrelated `(... || g)` or mixed with\n",
+        "other RE terms, which the design (Laplace) path does not yet handle. Use\n",
+        "a logpost backend (mode = 'mala' / 'pathfinder'), or call tulpa_laplace()\n",
+        "/ tulpa_re_cov_nested() directly.", call. = FALSE)
     }
     list(idx = as.integer(rt$group_idx),
          n_groups = rt$n_groups,
@@ -122,6 +127,48 @@
   }
 
   if (input == "design") {
+    if (backend %in% c("re_cov_nested", "re_cov_gibbs")) {
+      # Correlated random-slope term `(1 + x | g)`: build the single `re_term`
+      # the Sigma integrator / sampler consumes. The RE design Z is the
+      # intercept column (if present) plus the slope columns, in coefficient
+      # order (sigma_1 = intercept SD, sigma_2.. = slope SDs). The redirect in
+      # tulpa() guarantees exactly one correlated term reaches here.
+      rt0 <- (bundle$re_terms %||% list())[[1]]
+      nc  <- rt0$n_coefs %||% 1L
+      Z   <- cbind(
+        if (isTRUE(rt0$has_intercept)) rep(1, bundle$n_obs) else NULL,
+        rt0$slope_matrix
+      )
+      re_term <- list(idx = as.integer(rt0$group_idx),
+                      n_groups = rt0$n_groups, n_coefs = nc,
+                      Z = as.matrix(Z))
+      common <- list(
+        y = bundle$y, n_trials = n_trials %||% rep(1L, bundle$n_obs),
+        X = bundle$X, re_term = re_term, family = family, phi = phi
+      )
+      if (backend == "re_cov_nested") {
+        return(c(common, list(
+          beta_prior  = beta_prior,
+          integration = control$integration %||% "ccd",
+          prior_sigma = control$prior_sigma %||% c(3, 0.05),
+          eta         = control$eta %||% 2,
+          n_per_axis  = control$n_per_axis %||% 5L,
+          span        = control$span %||% 3,
+          n_draws     = control$n_draws %||% 2000L,
+          seed        = control$seed
+        )))
+      }
+      # re_cov_gibbs: exact Metropolis-within-Gibbs debias.
+      return(c(common, list(
+        n_iter          = control$n_iter %||% 2000L,
+        n_burnin        = control$n_burnin %||% control$warmup %||% 1000L,
+        prior_df        = control$prior_df,
+        prior_scale     = control$prior_scale,
+        beta_prior_mean = beta_prior$mean %||% 0,
+        beta_prior_sd   = beta_prior$sd %||% 100,
+        seed            = control$seed
+      )))
+    }
     if (backend == "laplace") {
       return(list(
         y = bundle$y, n_trials = n_trials, X = bundle$X,
@@ -232,9 +279,15 @@
 #' * **No random effects** and **random intercepts** (`(1 | g)`) are supported on
 #'   the design path (`mode = "laplace"`) and the sampler path (`mode = "mala"`,
 #'   `"pathfinder"`, `"imh_laplace"`).
-#' * **Random slopes** (`(1 + x | g)`) are supported on the sampler path; the
-#'   design path errors with guidance (use a logpost backend or `tulpa_laplace()`
-#'   directly).
+#' * **Correlated random slopes** (`(1 + x | g)`, a single term) are supported on
+#'   the Laplace (Tier 2) path: there is no scalar `sigma_re` to condition on, so
+#'   the RE covariance `Sigma` is integrated rather than fixed. `mode = "laplace"`
+#'   routes to the nested-Laplace `Sigma` integrator ([tulpa_re_cov_nested()],
+#'   CCD design + PC/LKJ prior); `control$re_cov = "gibbs"` switches to the exact
+#'   Metropolis-within-Gibbs debias ([tulpa_re_cov_gibbs()]). Both also run on the
+#'   sampler path (`mode = "mala"` / `"pathfinder"`). Uncorrelated slopes
+#'   (`(1 + x || g)`) and slope terms mixed with other RE terms still error on the
+#'   design path with guidance (use a logpost backend or call the fitter directly).
 #' * `mode = "gibbs"` (Polya-Gamma) fits a single random-intercept model for
 #'   `family = "binomial"` or `"neg_binomial_2"`, and **samples** the RE sd
 #'   rather than conditioning on `sigma_re`; tune it via `control$prior_sigma_scale`
@@ -314,12 +367,33 @@ tulpa <- function(formula, data,
       parsed$n_latent_blocks, sel$backend, mode), call. = FALSE)
   }
 
+  # A single correlated random-slope term `(1 + x | g)` has no scalar sigma_re
+  # to condition on -- the inferred quantity is the RE covariance Sigma. Under
+  # the Laplace (Tier 2) path, redirect to the nested-Laplace Sigma integrator
+  # (default) or, with `control$re_cov = "gibbs"`, the exact Metropolis-within-
+  # Gibbs debias. Multi-term / uncorrelated slope cases are left to
+  # .bundle_to_re_list (which errors with guidance).
+  re_terms <- bundle$re_terms %||% list()
+  correlated_single <- length(re_terms) == 1L &&
+    (re_terms[[1]]$n_coefs %||% 1L) > 1L && isTRUE(re_terms[[1]]$correlated)
+  if (sel$backend == "laplace" && correlated_single) {
+    re_cov_method <- match.arg(control$re_cov %||% "nested",
+                               c("nested", "gibbs"))
+    sel$backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
+    ti <- get_backend_tier(sel$backend)
+    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
+    sel$reason <- sprintf(
+      "single correlated random-slope term; RE covariance Sigma integrated via %s",
+      sel$backend)
+  }
+
   assert_backend_reachable(sel$backend)
 
-  # Conditional backends (everything except the sigma-sampling Gibbs) need one
-  # RE sd per term to condition on; resolve/recycle it after the backend is
-  # known so Gibbs does not emit a misleading "conditioning" message.
-  if (K > 0L && sel$backend != "gibbs") {
+  # Conditional backends (everything except the sigma-sampling Gibbs and the
+  # Sigma-integrating re_cov backends) need one RE sd per term to condition on;
+  # resolve/recycle it after the backend is known so the others do not emit a
+  # misleading "conditioning" message.
+  if (K > 0L && !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs")) {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)
       message("tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for ",
@@ -344,6 +418,13 @@ tulpa <- function(formula, data,
   )
 
   if (is.list(fit)) {
+    # Honour the front-door selection (including the correlated-RE redirect) over
+    # tulpa_dispatch's re-resolution of the backend name, so `selection_reason`
+    # reports the redirect rather than "user-specified backend".
+    fit$inference_mode <- sel$mode
+    fit$inference_tier <- sel$tier
+    fit$backend <- sel$backend
+    fit$selection_reason <- sel$reason
     fit$formula <- formula
     fit$family <- family
     fit$call <- match.call()

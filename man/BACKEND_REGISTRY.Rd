@@ -5,7 +5,7 @@
 \alias{BACKEND_REGISTRY}
 \title{Backend registry -- single source of truth for the inference backends.}
 \format{
-An object of class \code{list} of length 16.
+An object of class \code{list} of length 18.
 }
 \usage{
 BACKEND_REGISTRY

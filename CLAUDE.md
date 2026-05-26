@@ -130,12 +130,21 @@ estimate -- the nested-approx + debias philosophy applied to a free `Sigma`:
   groups.
 
 Both summarize through the shared `.re_cov_derived_summary` (weighted
-quantiles == sample quantiles at equal weight). Tests:
+quantiles == sample quantiles at equal weight) and expose the generic
+`tulpa_fit` accessors: each returns `draws` (fixed-effect posterior -- the
+nested path mixture-samples `N(beta_k, Vb_k)` over the weighted nodes, the
+Gibbs path uses its `beta_draws`) plus `means` / `param_names` /
+`process_info`, while the `Sigma` posterior stays in `posterior`. Tests:
 `test-re-cov-nested.R`, `test-re-cov-gibbs.R`, `test-re-cov-recovery.R`,
-`test-re-cov-prior.R` (Jacobian vs finite differences), `test-ccd-grid.R`.
-**Status:** CCD integration and PC/LKJ default hyperpriors are in place.
-Still standalone -- the caller builds `re_term` by hand; not yet routed from
-the `tulpa()` / `(1 + x | g)` formula front door (the remaining planned item).
+`test-re-cov-prior.R` (Jacobian vs finite differences), `test-ccd-grid.R`,
+`test-tulpa-re-cov-frontdoor.R`.
+**Status:** wired through the `tulpa()` front door. A single correlated
+`(1 + x | g)` term under `mode = "laplace"` has no scalar `sigma_re` to
+condition on, so `tulpa()` redirects to `re_cov_nested` (default) or
+`re_cov_gibbs` (`control$re_cov = "gibbs"`) -- both registered backends.
+CCD integration and PC/LKJ default hyperpriors are in place. Remaining:
+multi-term and uncorrelated `(... || g)` slope cases still error on the
+design path (use a logpost backend or call the fitter directly).
 
 ### Generic S3 Methods and Diagnostics
 

@@ -5,7 +5,7 @@
 \alias{ALL_BACKENDS}
 \title{All registered backends across every tier (derived from the registry).}
 \format{
-An object of class \code{character} of length 16.
+An object of class \code{character} of length 18.
 }
 \usage{
 ALL_BACKENDS

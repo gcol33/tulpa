@@ -150,6 +150,13 @@ BACKEND_REGISTRY <- list(
                  "poisson", "neg_binomial_2", "negative_binomial"),
     cabi = "tulpa_cpp_gibbs_spatial"
   ),
+  re_cov_gibbs = list(
+    tier = "exact", input = "design", fitter = "tulpa_re_cov_gibbs",
+    families = NULL, cabi = NULL,
+    note = paste("Correlated random-slope term (1 + x | g): exact",
+                 "Metropolis-within-Gibbs debias of the RE covariance Sigma.",
+                 "Auto-selected from the Laplace path with control$re_cov = 'gibbs'")
+  ),
   sghmc = list(
     tier = "exact", input = "logpost", fitter = NULL, families = NULL,
     cabi = "tulpa_sghmc_fit"
@@ -180,6 +187,14 @@ BACKEND_REGISTRY <- list(
   laplace = list(
     tier = "structured", input = "design", fitter = "tulpa_laplace",
     families = NULL, cabi = "tulpa_laplace_mode_dense_multi_re"
+  ),
+  re_cov_nested = list(
+    tier = "structured", input = "design", fitter = "tulpa_re_cov_nested",
+    families = NULL, cabi = NULL,
+    note = paste("Correlated random-slope term (1 + x | g): nested-Laplace",
+                 "integration over the RE covariance Sigma (CCD design + PC/LKJ",
+                 "prior). Auto-selected from the Laplace path for a single",
+                 "correlated term")
   ),
   pathfinder = list(
     tier = "structured", input = "logpost", fitter = "pathfinder",

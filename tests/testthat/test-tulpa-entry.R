@@ -38,18 +38,26 @@ test_that("tulpa() fails loudly on a C-ABI-only backend", {
   expect_match(conditionMessage(err), "tulpa_run_ess_sampler")
 })
 
-test_that("random slopes: logpost path works, design path errors with guidance", {
+test_that("correlated random slopes: logpost path works, Laplace path integrates Sigma", {
   d <- make_pois_re(seed = 2)
   # logpost path handles slopes (builder is general)
   fit <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "mala",
                sigma_re = 0.5, control = list(n_iter = 300L, warmup = 150L))
   expect_equal(fit$backend, "mala")
-  # design path is not wired for slopes yet
-  err <- expect_error(
-    tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",
-          sigma_re = 0.5)
-  )
-  expect_match(conditionMessage(err), "random slopes|not yet")
+  # Laplace path now routes a single correlated `(1 + x | g)` term to the
+  # nested-Laplace Sigma integrator (no scalar sigma_re to condition on).
+  fit2 <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",
+                control = list(seed = 1L, n_draws = 300L))
+  expect_equal(fit2$backend, "re_cov_nested")
+  expect_equal(fit2$inference_tier, 2L)
+  expect_setequal(fit2$posterior$parameter,
+                  c("sigma_1", "sigma_2", "rho_12",
+                    "Sigma_11", "Sigma_12", "Sigma_22"))
+  # the exact debias is reachable via control$re_cov
+  fit3 <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",
+                control = list(re_cov = "gibbs", n_iter = 400L, n_burnin = 200L,
+                               seed = 1L))
+  expect_equal(fit3$backend, "re_cov_gibbs")
 })
 
 test_that("tulpa() validates family and defaults sigma_re with a message", {
