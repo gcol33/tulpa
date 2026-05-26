@@ -39,6 +39,7 @@ debias, or outer integration), not as standalone alternatives.
 3. **Runtime gradient verification**: Before NUTS sampling, verify active gradient against numerical.
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
 5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions.
+6. **Statistical args vs `control` knobs**: front-door fitters (`tulpa()`, `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`) carry only statistical arguments in their signature; all perf / numerical / tuning knobs live in a single `control = list()` (e.g. `control$re_cov`, `n_threads`, `max_iter`, `tol`, `adaptive_grid`, `prune`, ...). Pre-release: no deprecation shims -- moved knobs hard-error.
 
 ## C++ Interface
 
@@ -58,6 +59,21 @@ debias, or outer integration), not as standalone alternatives.
 devtools::load_all()
 devtools::check(args = "--no-manual")
 ```
+
+**Release caveats** (the routine `check()` above does not catch these):
+
+- `--no-manual` skips the PDF reference manual, so Rd LaTeX errors stay
+  hidden locally. Non-ASCII typographic Unicode in roxygen (arrows, super/
+  subscripts, math operators, Greek -- see the ASCII-only rule) only fails on
+  `R CMD Rd2pdf` / win-builder / CRAN. Before any release, build the manual
+  (drop `--no-manual`) or run `devtools::check_win_devel()`.
+- Recovery / coverage tests are `skip_on_cran()`-gated, so a default
+  `check()` run exercises plumbing only and a calibration regression passes
+  silently. Validate with `NOT_CRAN=true` (recovery) and
+  `TULPA_SLOW_TESTS=true` (the 20-seed aggregate coverage gate in
+  `test-nested-laplace-recovery.R`) set in the environment.
+- Heavy multi-recovery files can SIGKILL (exit 137) under a background test
+  harness; run decisive files individually rather than the full suite at once.
 
 ## File Organization
 
@@ -88,6 +104,37 @@ tests/testthat/     — Unit and integration tests
 - Model-specific fitted/residuals/simulate
 - Data formatting and simulation functions
 - Print methods referencing model-specific parameter names
+
+### N-mixture fits currently live in the engine (boundary decision pending)
+
+A full N-mixture (Royle 2004) observation model ships from the engine today:
+`tulpa_nmix_laplace()` (`R/nmix_laplace.R`, `src/nmix_laplace.cpp`,
+`src/nmix_kernel.h`) with `mixture = c("P", "NB")` -- one parameterized
+per-site marginal kernel that branches on `is.finite(r)`, closed-form scores
+(incl. the analytic dispersion score `d log L / d log r`) and joint
+observed-information Hessian, matching `unmarked::pcount()` on coefficients,
+log-likelihood and SEs to machine precision. The spatial nested-Laplace
+variants `tulpa_nmix_laplace_icar()` / `_car_proper()` / `_bym2()`
+(`R/nmix_laplace_spatial.R`, `src/nmix_spatial*.cpp`,
+`src/nmix_spatial_kernel*.h`) also take `mixture = "NB"`, integrating the NB
+size `r` as an extra outer grid dimension alongside the spatial
+hyperparameters. All four are exported, documented (`man/tulpa_nmix_*.Rd`) and
+tested (`test-nmix-*.R`; `test-nmix-nb.R` checks the analytic gradient/Hessian
+vs numerical, recovery lives in `test-nmix-laplace.R`).
+
+This is model-specific likelihood code in the engine, in tension with
+principle #4 ("model packages own their likelihood") and the tulpaObs scope
+(occupancy + detection + **N-mixture**). **Pending decision:** migrate the
+`nmix_*` R/C++ to tulpaObs as a `LikelihoodSpec` consumer, or keep it here as
+the canonical worked reference. Flagged so new nmix surface (e.g. the NB
+kernel just added) does not keep accreting in core before the call is made.
+
+Known cleanup if it stays: the ICAR vs BYM2 spatial Hessian assembly
+(`nmix_assemble_obs_info_*` / `nmix_assemble_complete_fisher_*`) is ~35-45%
+copy-paste differing only in block indexing + rank-1 weights -- extract one
+templated `static inline` taking a block-updater functor (principle #5). The
+weight-normalization block in `nmix_laplace_spatial.R` is also duplicated 3x
+instead of reusing `.nl_normalise_weights()`.
 
 ### EM+Laplace Engine
 
@@ -134,6 +181,18 @@ A single-term model is the length-1 case of the same path -- no special-casing.
   draw**: full block -> inverse-Wishart on the matrix; diagonal block ->
   per-coordinate scalar inverse-Wishart (== inverse-gamma). Removes the Laplace
   under-dispersion that biases `Sigma` low for binary/low-count small groups.
+- **`tulpa_re_aghq()`** (`R/re_aghq.R`) -- a deterministic alternative debias:
+  replaces each per-group Laplace integral with `n_quad`-point adaptive
+  Gauss-Hermite quadrature (`n_quad = 1` is the joint Laplace; higher reduces
+  small-cluster variance attenuation). Callback-driven via `make_site(theta)`
+  (the caller supplies the per-observation marginal and its first two eta
+  derivatives), so it handles random slopes / correlated blocks sharing **one**
+  grouping factor and refines custom marginals too. Fixed params + log-Cholesky
+  `Sigma` coords are optimized jointly on `sum_g log M_g`; SEs from the
+  exact-marginal Hessian. Optional `lkj_eta > 1` penalizes a weakly-identified
+  correlation off the boundary without shrinking the marginal SDs. Distinct
+  from `agq_fit()` (`R/agq.R`), which is intercept-only RE with built-in
+  `binomial`/`poisson`/`gaussian` likelihoods. Recovery: `test-re-aghq.R`.
 
 Both summarize through the shared `.re_cov_derived_summary` over the per-block
 covariance layout (weighted quantiles == sample quantiles at equal weight) and
