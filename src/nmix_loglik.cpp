@@ -12,12 +12,27 @@
 //
 // All exported quantities aggregate site-level kernel outputs:
 //   log_lik           = sum_i log L_i
+//   log_lik_site      = log L_i                 per site  (grouped-marginal sums)
 //   grad_eta_lambda   = (E[N|y_i] - lambda_i)   per site
 //   grad_eta_p        = (y_ij - E[N|y_i] p_ij)  per visit
 //   info_eta_lambda   = lambda_i                per site  (complete-data Fisher)
 //   info_eta_p        = E[N|y_i] p_ij (1-p_ij)  per visit (complete-data Fisher)
+//   score_wt_lambda   = N-coeff of s_lambda     per site  (1 Poisson / 1-q NB)
 //   mean_N, var_N     posterior moments per site (diagnostics, observed-info path)
 //   boundary_weight   posterior mass on N = K_max per site (K_max sanity check)
+//
+// The per-site marginal observed-information block in the eta coordinates
+// (eta_lambda_i, eta_p_{i,1..J}) is assembled from these pieces as
+//   B_i = diag(info_eta_lambda_i, info_eta_p_{ij}) - var_N_i * v_i v_i^T,
+//   v_i = (-score_wt_lambda_i, p_{i1}, ..., p_{iJ}),   p_{ij} = plogis(eta_p_{ij}),
+// i.e. the complete-data Fisher diagonal minus the rank-1 shared-latent
+// score covariance (Louis 1982; same coupling assemble_beta_obs_info() in
+// nmix_laplace.cpp sandwiches with the design matrices). The lambda<->p cross
+// term var_N * score_wt_lambda * p_ij is the both-arm coupling a random-effect
+// integrator needs. Under NB the theta = log r pieces (info_theta,
+// info_lambda_theta, cov_N_stheta, var_stheta, per site) carry the dispersion
+// row/col of the joint observed information when log r is treated as a free
+// (global) parameter; they are zero on the Poisson path.
 
 #include "nmix_kernel.h"
 #include <Rcpp.h>
@@ -59,13 +74,20 @@ Rcpp::List cpp_nmix_total_log_lik(
     // Outputs.
     double total_log_lik = 0.0;
     double total_grad_theta = 0.0;   // sum_i d log L_i / d theta (NB only; 0 for Poisson)
+    Rcpp::NumericVector log_lik_site(n_sites);
     Rcpp::NumericVector grad_eta_lambda(n_sites);
     Rcpp::NumericVector info_eta_lambda(n_sites);
+    Rcpp::NumericVector score_wt_lambda(n_sites);
     Rcpp::NumericVector mean_N(n_sites);
     Rcpp::NumericVector var_N(n_sites);
     Rcpp::NumericVector boundary_weight(n_sites);
     Rcpp::NumericVector grad_eta_p(n_obs);
     Rcpp::NumericVector info_eta_p(n_obs);
+    // NB dispersion (theta = log r) coupling pieces, per site (0 on Poisson).
+    Rcpp::NumericVector info_theta(n_sites);
+    Rcpp::NumericVector info_lambda_theta(n_sites);
+    Rcpp::NumericVector cov_N_stheta(n_sites);
+    Rcpp::NumericVector var_stheta(n_sites);
     int n_K_inadmissible = 0;
 
     for (int s = 0; s < n_sites; ++s) {
@@ -75,9 +97,13 @@ Rcpp::List cpp_nmix_total_log_lik(
             // Site with no visits: marginal collapses to 1 (log_lik = 0),
             // posterior over N equals the Poisson prior. The site contributes
             // *zero* marginal information about lambda (no data), so info = 0
-            // even though the complete-data Fisher would be lambda.
+            // even though the complete-data Fisher would be lambda. The rank-1
+            // coupling vanishes (var_N drops out via info = 0), so the
+            // Poisson-neutral score_wt_lambda = 1 is harmless.
+            log_lik_site[s]    = 0.0;
             grad_eta_lambda[s] = 0.0;
             info_eta_lambda[s] = 0.0;
+            score_wt_lambda[s] = 1.0;
             mean_N[s] = std::exp(eta_lambda[s]);
             var_N[s]  = std::exp(eta_lambda[s]);
             boundary_weight[s] = 0.0;
@@ -96,11 +122,17 @@ Rcpp::List cpp_nmix_total_log_lik(
         if (!R_finite(res.log_lik)) ++n_K_inadmissible;
         total_log_lik += res.log_lik;
         total_grad_theta += res.grad_theta;
+        log_lik_site[s]    = res.log_lik;
         grad_eta_lambda[s] = res.grad_eta_lambda;
         info_eta_lambda[s] = res.info_eta_lambda;
+        score_wt_lambda[s] = res.score_wt_lambda;
         mean_N[s] = res.mean_N;
         var_N[s]  = res.var_N;
         boundary_weight[s] = res.boundary_weight;
+        info_theta[s]        = res.info_theta;
+        info_lambda_theta[s] = res.info_lambda_theta;
+        cov_N_stheta[s]      = res.cov_N_stheta;
+        var_stheta[s]        = res.var_stheta;
         for (int j = 0; j < J; ++j) {
             grad_eta_p[idx[j]] = res.grad_eta_p[j];
             info_eta_p[idx[j]] = res.info_eta_p[j];
@@ -108,15 +140,21 @@ Rcpp::List cpp_nmix_total_log_lik(
     }
 
     return Rcpp::List::create(
-        Rcpp::Named("log_lik")          = total_log_lik,
-        Rcpp::Named("grad_eta_lambda")  = grad_eta_lambda,
-        Rcpp::Named("grad_eta_p")       = grad_eta_p,
-        Rcpp::Named("grad_theta")       = total_grad_theta,
-        Rcpp::Named("info_eta_lambda")  = info_eta_lambda,
-        Rcpp::Named("info_eta_p")       = info_eta_p,
-        Rcpp::Named("mean_N")           = mean_N,
-        Rcpp::Named("var_N")            = var_N,
-        Rcpp::Named("boundary_weight")  = boundary_weight,
-        Rcpp::Named("n_K_inadmissible") = n_K_inadmissible
+        Rcpp::Named("log_lik")           = total_log_lik,
+        Rcpp::Named("log_lik_site")      = log_lik_site,
+        Rcpp::Named("grad_eta_lambda")   = grad_eta_lambda,
+        Rcpp::Named("grad_eta_p")        = grad_eta_p,
+        Rcpp::Named("grad_theta")        = total_grad_theta,
+        Rcpp::Named("info_eta_lambda")   = info_eta_lambda,
+        Rcpp::Named("info_eta_p")        = info_eta_p,
+        Rcpp::Named("score_wt_lambda")   = score_wt_lambda,
+        Rcpp::Named("mean_N")            = mean_N,
+        Rcpp::Named("var_N")             = var_N,
+        Rcpp::Named("boundary_weight")   = boundary_weight,
+        Rcpp::Named("info_theta")        = info_theta,
+        Rcpp::Named("info_lambda_theta") = info_lambda_theta,
+        Rcpp::Named("cov_N_stheta")      = cov_N_stheta,
+        Rcpp::Named("var_stheta")        = var_stheta,
+        Rcpp::Named("n_K_inadmissible")  = n_K_inadmissible
     );
 }
