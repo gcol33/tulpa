@@ -60,6 +60,24 @@ test_that("correlated random slopes: logpost path works, Laplace path integrates
   expect_equal(fit3$backend, "re_cov_gibbs")
 })
 
+test_that("tulpa() fits a single random slope (0 + x | g) on the Laplace path", {
+  set.seed(91L)
+  G <- 40L; npg <- 12L; N <- G * npg
+  g <- rep(seq_len(G), each = npg); x <- rnorm(N)
+  u <- rnorm(G, 0, 0.7)
+  d <- data.frame(y = rpois(N, exp(0.3 + 0.5 * x + x * u[g])), x = x,
+                  g = factor(g))
+  # n_coefs == 1 (a single random slope, no intercept) stays on the scalar
+  # sigma_re design path -- it does not trigger the RE-covariance redirect.
+  fit <- suppressMessages(
+    tulpa(y ~ x + (0 + x | g), d, family = "poisson", mode = "laplace",
+          sigma_re = 0.7))
+  expect_s3_class(fit, "tulpa_fit")
+  expect_equal(fit$backend, "laplace")
+  expect_equal(fit$inference_tier, 2L)
+})
+
+
 test_that("tulpa() validates family and defaults sigma_re with a message", {
   d <- make_pois_re()
   expect_error(tulpa(y ~ x + (1 | g), d, family = "weibull"), "Unknown family")

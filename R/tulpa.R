@@ -9,11 +9,12 @@
 # ------------------------------------------------------------------------------
 
 # Map a model-data bundle's RE terms to the `re_list` that tulpa_laplace()
-# consumes on the scalar-sigma_re design path. Any random-slope term (any
-# n_coefs > 1, correlated or uncorrelated) is auto-routed to the RE-covariance
-# integrator before this point (see tulpa()), so only intercept-only terms
-# `(1 | g)` reach here; each carries the marginal SD it is conditioned on. The
-# n_coefs > 1 guard is defensive (this helper is internal to the laplace path).
+# consumes on the scalar-sigma_re design path. Multi-coefficient terms (any
+# n_coefs > 1, correlated or uncorrelated) are auto-routed to the RE-covariance
+# integrator before this point (see tulpa()), so only single-coefficient terms
+# reach here: a random intercept `(1 | g)` (no Z) or a single random slope
+# `(0 + x | g)` (which carries its slope column as Z). Each is conditioned on
+# its marginal SD. The n_coefs > 1 guard is defensive (internal to this path).
 .bundle_to_re_list <- function(bundle, sigma_re) {
   re <- bundle$re_terms %||% list()
   lapply(seq_along(re), function(k) {
@@ -21,13 +22,16 @@
     if ((rt$n_coefs %||% 1L) > 1L) {
       stop(sprintf(paste0(
         "Internal: RE term %d has %d coefficients (random slopes) on the scalar\n",
-        "design path. Slope terms should route to the RE-covariance integrator;\n",
-        "use mode = 'laplace' (auto-redirects) or call tulpa_re_cov_nested()."),
+        "design path. Multi-coefficient terms should route to the RE-covariance\n",
+        "integrator; use mode = 'laplace' (auto-redirects) or tulpa_re_cov_nested()."),
         k, rt$n_coefs), call. = FALSE)
     }
     list(idx = as.integer(rt$group_idx),
          n_groups = rt$n_groups,
          n_coefs = 1L,
+         # `(1 | g)` has no Z (intercept indicator); `(0 + x | g)` supplies its
+         # single slope column so the engine builds the right design.
+         Z = if (isTRUE(rt$has_intercept)) NULL else rt$slope_matrix,
          sigma = sigma_re[k])
   })
 }

@@ -168,16 +168,19 @@ tulpa_laplace <- function(y, n_trials, X,
       re_sigma_list <- lapply(re_list, function(r) .re_cov_spec(r)$pack)
     }
 
+    # Per-term RE design: an intercept-only term carries no Z (the kernel
+    # defaults to a column of 1s); a slope term -- including a single random
+    # slope `(0 + x | g)` with n_coefs == 1 -- carries its own design Z.
     re_Z_list <- lapply(
       if (length(re_list) > 0) re_list else list(list(n_coefs = 1L)),
-      function(r) {
-        nc <- r$n_coefs %||% 1L
-        if (nc == 1L) return(NULL)
-        r$Z
-      }
+      function(r) r$Z
     )
 
-    has_slopes <- any(re_ncoefs > 1L)
+    # The kernel needs the Z / n_coefs metadata whenever any term has a
+    # non-intercept design: a correlated/uncorrelated slope (n_coefs > 1) or a
+    # single random slope that supplied its own Z.
+    has_design <- any(re_ncoefs > 1L) ||
+      any(vapply(re_Z_list, Negate(is.null), logical(1)))
 
     result <- cpp_laplace_fit_multi_re(
       y = as.numeric(y),
@@ -191,8 +194,8 @@ tulpa_laplace <- function(y, n_trials, X,
       max_iter = as.integer(max_iter),
       tol = tol,
       n_threads = as.integer(n_threads),
-      re_Z_list = if (has_slopes) re_Z_list else NULL,
-      re_ncoefs = if (has_slopes) re_ncoefs else NULL,
+      re_Z_list = if (has_design) re_Z_list else NULL,
+      re_ncoefs = if (has_design) re_ncoefs else NULL,
       weights = weights,
       offset = offset,
       beta_prior_mean = if (is.null(bp)) NULL else bp$mean,
@@ -229,7 +232,9 @@ tulpa_laplace <- function(y, n_trials, X,
       for (k in seq_along(re_list)) {
         r  <- re_list[[k]]
         nc <- r$n_coefs %||% 1L
-        Zk <- if (nc == 1L) matrix(1, n_obs, 1L) else (r$Z %||% matrix(1, n_obs, 1L))
+        # Z is the term's design: a supplied Z (slopes, incl. a single
+        # `(0 + x | g)`) or the intercept indicator (column of 1s) when absent.
+        Zk <- r$Z %||% matrix(1, n_obs, 1L)
         u_k <- re_vals[offset + seq_len(r$n_groups * nc)]
         u_mat <- matrix(u_k, ncol = nc, byrow = TRUE)   # row g = (c1, ..., cnc)
         eta <- eta + rowSums(Zk * u_mat[r$idx, , drop = FALSE])
@@ -259,14 +264,15 @@ tulpa_laplace <- function(y, n_trials, X,
         nc <- r$n_coefs %||% 1L
         Qk <- .re_cov_spec(r)$Q  # nc x nc RE precision (Sigma^{-1})
 
-        if (nc == 1L) {
+        if (nc == 1L && is.null(r$Z)) {
           # Intercept-only: Z is n_obs x n_groups indicator matrix
           Z_parts[[k]] <- Matrix::sparseMatrix(
             i = seq_len(n_obs), j = r$idx,
             x = rep(1.0, n_obs), dims = c(n_obs, r$n_groups)
           )
         } else {
-          # Slopes: Z is n_obs x (n_groups * n_coefs), column layout
+          # Slopes (incl. a single random slope `(0 + x | g)`, n_coefs == 1 with
+          # a supplied Z): Z is n_obs x (n_groups * n_coefs), column layout
           # [g1_c1, g1_c2, ..., g2_c1, g2_c2, ...].
           Z_full <- r$Z %||% matrix(1, nrow = n_obs, ncol = 1)
           n_latent <- r$n_groups * nc

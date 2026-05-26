@@ -80,7 +80,9 @@
     # Default to a full (correlated) covariance when c > 1; an explicit
     # `correlated = FALSE` selects a diagonal Sigma. For c = 1 the two coincide.
     full <- (rt$correlated %||% TRUE) && nc > 1L
-    Z <- if (nc == 1L) matrix(1, n_obs, 1L) else as.matrix(rt$Z)
+    # Design: a supplied Z (slopes, incl. a single `(0 + x | g)`) or the
+    # intercept indicator when absent (a `(1 | g)` block).
+    Z <- if (is.null(rt$Z)) matrix(1, n_obs, nc) else as.matrix(rt$Z)
     list(nc = nc, full = full,
          k = as.integer(if (full) nc * (nc + 1L) / 2L else nc),
          label = rt$label %||% rt$group_var %||% NA_character_,

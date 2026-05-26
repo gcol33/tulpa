@@ -187,6 +187,40 @@ test_that("return_re_cov matches the full-inverse blocks on the sparse path", {
   expect_lt(err, 1e-8)
 })
 
+test_that("a single random slope (0 + x | g) uses its slope design, not intercept", {
+  skip_on_cran()
+  set.seed(77L)
+  G <- 60L; npg <- 15L; N <- G * npg
+  grp <- rep(seq_len(G), each = npg)
+  x <- rnorm(N); X <- cbind(1, x)
+  s_true <- 0.8
+  u <- rnorm(G, 0, s_true)              # random SLOPE on x, no random intercept
+  eta <- as.numeric(X %*% c(-0.3, 0.7)) + x * u[grp]
+  y <- rbinom(N, 1L, plogis(eta))
+
+  # n_coefs == 1 with a supplied slope column -> random slope `(0 + x | g)`
+  f_slope <- tulpa_laplace(
+    y, rep(1L, N), X,
+    re_list = list(list(idx = grp, n_groups = G, n_coefs = 1L,
+                        Z = matrix(x, ncol = 1L), sigma = s_true)),
+    family = "binomial", return_hessian = TRUE, max_iter = 200L, tol = 1e-10)
+  # the same term mis-specified as a random intercept (no Z)
+  f_int <- tulpa_laplace(
+    y, rep(1L, N), X,
+    re_list = list(list(idx = grp, n_groups = G, n_coefs = 1L, sigma = s_true)),
+    family = "binomial", return_hessian = TRUE, max_iter = 200L, tol = 1e-10)
+
+  # the slope design is honoured: the fits genuinely differ, and the correctly
+  # specified slope model fits the slope-structured data better (higher Laplace
+  # marginal at the same sigma).
+  expect_gt(f_slope$log_marginal, f_int$log_marginal)
+  expect_false(isTRUE(all.equal(f_slope$mode, f_int$mode, tolerance = 1e-3)))
+
+  # fixed effects recover under the correct design
+  expect_equal(f_slope$mode[1:2], c(-0.3, 0.7), tolerance = 0.3)
+})
+
+
 test_that("return_re_cov is rejected on the spatial path", {
   skip_on_cran()
   d <- sim_corr(3L, G = 10L, npg = 10L)
