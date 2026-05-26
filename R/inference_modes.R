@@ -215,6 +215,17 @@ BACKEND_REGISTRY <- list(
     note = paste("Joint multi-arm nested Laplace; driven by model packages, not the",
                  "single-response tulpa() formula (cannot express multiple arms)")
   ),
+  spde = list(
+    tier = "structured", input = "spde", fitter = "fit_spde",
+    families = c("binomial", "poisson", "neg_binomial_2"),
+    cabi = "cpp_nested_laplace_spde",
+    note = paste("Continuous Matern SPDE field; nested-Laplace integration over",
+                 "(range, sigma) via fit_spde(). Uses its own CCD / grid",
+                 "hyperparameter engine (the FEM Q-builder rebuilds the precision",
+                 "per node), not the generic registry grid that tulpa_nested_laplace",
+                 "drives -- so an SPDE field selecting nested_laplace is redirected",
+                 "here in tulpa().")
+  ),
   # ---- Tier 3: Optimized ----
   vi = list(
     tier = "optimized", input = "logpost", fitter = NULL, families = NULL,
@@ -269,22 +280,34 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 .NL_FRONTDOOR_AREAL <- c("icar", "car", "bym2", "car_proper")
 
 # Continuous (coordinate-addressed) spatial field types the nested-Laplace
-# front door supports. Addressed by coordinate columns in a spatial_gp() /
-# spatial_hsgp() spec
+# front door supports via the generic registry grid (tulpa_nested_laplace).
+# Addressed by coordinate columns in a spatial_gp() / spatial_hsgp() spec
 # (no spatial(col) term); tulpa() validates via validate_gp() to derive the
 # unique locations, the obs -> location map, and the NNGP neighbour structure.
 # spatial_gp() emits type "gp" (the nested kernel block is "nngp");
 # spatial_hsgp() emits type "hsgp" (the nested kernel block consumes a
-# Laplacian basis built by cpp_hsgp_basis_2d). SPDE (needs a mesh) is not yet
-# routed through tulpa() -- call fit_spde() directly.
+# Laplacian basis built by cpp_hsgp_basis_2d).
 .NL_FRONTDOOR_CONTINUOUS <- c("gp", "nngp", "hsgp")
 
-# Spatial field types tulpa() routes to the nested-Laplace integrator (areal +
-# continuous). Single source of truth for the auto/structured router
-# (auto_select_mode, select_backend_for_mode) and the spec -> prior converter
-# (.spatial_spec_to_nl_prior). Types outside this set stay on the conditional
-# Laplace path under auto/structured.
-.NL_FRONTDOOR_NESTED <- c(.NL_FRONTDOOR_AREAL, .NL_FRONTDOOR_CONTINUOUS)
+# SPDE is also coordinate-addressed (no spatial(col) term) and nested-integrated,
+# but it carries its OWN nested engine -- fit_spde() rebuilds the Matern precision
+# Q(range, sigma) per node via the FEM Q-builder and integrates (range, sigma)
+# with a CCD / grid design in R, not the generic registry grid above. The spec
+# (spatial_spde() / spatial_spde_custom()) is self-contained (mesh + FEM matrices
+# built at construction), so there is no validate_* step. Kept separate from
+# .NL_FRONTDOOR_CONTINUOUS so the grammar branch knows it is coord-addressed yet
+# does NOT route it through validate_gp() / tulpa_nested_laplace(); the dedicated
+# `spde` backend (redirected from nested_laplace in tulpa()) drives fit_spde().
+.NL_FRONTDOOR_SPDE <- "spde"
+
+# Spatial field types tulpa() routes to a nested-Laplace integrator (areal +
+# continuous + SPDE). Single source of truth for the auto/structured router
+# (auto_select_mode, select_backend_for_mode). The areal + .NL_FRONTDOOR_CONTINUOUS
+# subset goes through the generic nested_laplace backend (and the spec -> prior
+# converter .spatial_spec_to_nl_prior); SPDE is redirected to the `spde` backend.
+# Types outside this set stay on the conditional Laplace path under auto/structured.
+.NL_FRONTDOOR_NESTED <- c(.NL_FRONTDOOR_AREAL, .NL_FRONTDOOR_CONTINUOUS,
+                          .NL_FRONTDOOR_SPDE)
 
 
 #' Test whether a backend supports the given family.
@@ -574,11 +597,13 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   #    here -- the remaining fields (nngp/gp, multiscale_gp, rsr) are not yet
   #    wired through dispatch_gibbs_spatial (dev_notes/plan_gibbs_spatial_frontdoor.md);
   #    auto must never pick a backend that errors at dispatch.
-  #  * areal (icar/car/bym2/car_proper) and continuous gp/nngp/hsgp: nested
-  #    Laplace (Tier 2) integrates the spatial hyperparameter through the
-  #    tulpa() front door (.NL_FRONTDOOR_NESTED).
-  #  * other continuous (spde/multiscale): the nested path is not yet
-  #    front-door-wired, so use the conditional Laplace path that is.
+  #  * areal (icar/car/bym2/car_proper), continuous gp/nngp/hsgp, and SPDE:
+  #    nested Laplace (Tier 2) integrates the spatial hyperparameter through the
+  #    tulpa() front door (.NL_FRONTDOOR_NESTED). The areal + gp/nngp/hsgp subset
+  #    runs the generic nested_laplace backend; SPDE is redirected in tulpa() to
+  #    the dedicated `spde` backend (its own fit_spde CCD / grid engine).
+  #  * other continuous (multiscale): the nested path is not yet front-door-wired,
+  #    so use the conditional Laplace path that is.
   if (has_spatial && !is.null(spatial_type)) {
     fam_nm <- family$name %||% family$distribution %||% ""
     # Gibbs supports: no temporal, TVC, or RW1/AR1 GMRF temporal.
@@ -639,10 +664,11 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
     # Laplace does not consume them. A spatial field is itself a latent Gaussian
     # block whose hyperparameter the designed Tier-2 path integrates, so
     # structured routes the nested-wired types (.NL_FRONTDOOR_NESTED: areal +
-    # gp/nngp/hsgp) to nested_laplace too (conditioning at a fixed scale is the
-    # explicit mode = "laplace"). Field types not yet nested-wired (spde)
-    # stay on the conditional Laplace path. Otherwise Laplace is the Tier 2
-    # default.
+    # gp/nngp/hsgp + spde) to nested_laplace too (conditioning at a fixed scale
+    # is the explicit mode = "laplace"). SPDE is redirected from nested_laplace
+    # to the `spde` backend in tulpa() (its own fit_spde engine). Field types not
+    # yet nested-wired (multiscale) stay on the conditional Laplace path.
+    # Otherwise Laplace is the Tier 2 default.
     if (has_latent) return("nested_laplace")
     if (has_spatial && !is.null(spatial_type) && spatial_type %in% .NL_FRONTDOOR_NESTED) {
       return("nested_laplace")

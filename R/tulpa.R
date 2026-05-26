@@ -185,11 +185,13 @@
     ))
   }
 
+  # SPDE never reaches the generic converter -- tulpa() redirects an SPDE field
+  # to the dedicated `spde` backend (fit_spde) before .tulpa_fitter_args builds a
+  # nested prior. Any other type is genuinely unsupported on this path.
   stop(sprintf(paste0(
-    "Nested-Laplace through tulpa() supports areal (%s) and continuous (%s)\n",
-    "spatial fields; '%s' is not yet routed here. Call fit_spde() (spde)\n",
-    "directly, or use mode = 'laplace' for a conditional fit at a fixed\n",
-    "hyperparameter."),
+    "The generic nested-Laplace converter supports areal (%s) and continuous\n",
+    "(%s) spatial fields; '%s' is not routed here. Use one of those, or\n",
+    "mode = 'laplace' for a conditional fit at a fixed hyperparameter."),
     paste(.NL_FRONTDOOR_AREAL, collapse = ", "),
     paste(.NL_FRONTDOOR_CONTINUOUS, collapse = ", "), spatial$type), call. = FALSE)
 }
@@ -267,6 +269,54 @@
       family      = family,
       phi         = phi,
       control     = control
+    ))
+  }
+
+  if (input == "spde") {
+    # Continuous Matern SPDE field, nested-Laplace integrated over (range, sigma)
+    # by fit_spde() (its own CCD / grid engine). fit_spde() takes the design
+    # bundle (y, X) plus the self-contained SPDE spec; it has no RE / latent /
+    # beta_prior / offset support, so reject those loudly rather than drop them.
+    if (length(latent_blocks) > 0L) {
+      stop("An SPDE spatial field cannot be combined with latent(...) blocks ",
+           "through tulpa(); fit_spde() integrates a single Matern field. Drop ",
+           "the latent block(s).", call. = FALSE)
+    }
+    re <- bundle$re_terms %||% list()
+    if (length(re) > 0L) {
+      stop("The SPDE nested-Laplace path does not support an additional ",
+           "random-effect term yet; drop the (1 | g) term, or use mode = ",
+           "'exact' for a sampler under the field.", call. = FALSE)
+    }
+    if (!is.null(beta_prior)) {
+      stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses a ",
+           "built-in weak fixed-effect prior.", call. = FALSE)
+    }
+    if (!is.null(bundle$offset)) {
+      stop("offset() terms are not yet supported on the SPDE path through tulpa().",
+           call. = FALSE)
+    }
+    if (!family %in% c("binomial", "poisson", "neg_binomial_2")) {
+      stop(sprintf(
+        "SPDE supports family 'binomial', 'poisson', or 'neg_binomial_2'; got '%s'.",
+        family), call. = FALSE)
+    }
+    method <- match.arg(control$method %||% "ccd", c("ccd", "grid"))
+    return(list(
+      y              = bundle$y,
+      X              = bundle$X,
+      spatial        = spatial,
+      family         = family,
+      n_trials       = n_trials %||% rep(1L, bundle$n_obs),
+      range          = NULL,
+      sigma          = NULL,
+      nested_laplace = TRUE,
+      method         = method,
+      n_grid         = control$n_grid %||% 5L,
+      phi            = phi,
+      max_iter       = control$max_iter %||% 100L,
+      tol            = control$tol %||% 1e-6,
+      n_threads      = control$n_threads %||% 1L
     ))
   }
 
@@ -526,17 +576,19 @@
 #'     and `adjacency`, paired with a `spatial(col)` term in `formula` naming the
 #'     per-observation unit column. Term and spec must be supplied together.
 #'   * **Continuous** (`spatial_gp(~ lon + lat)` for an NNGP field,
-#'     `spatial_hsgp(~ lon + lat)` for a Hilbert-space GP): the spec object
-#'     carries the coordinate columns, so **no** `spatial(col)` term is used --
-#'     observations are mapped to locations from their coordinates.
+#'     `spatial_hsgp(~ lon + lat)` for a Hilbert-space GP, `spatial_spde(~ lon +
+#'     lat, data)` for a Matern SPDE field): the spec object carries the
+#'     coordinate columns (the SPDE spec also carries the mesh + FEM matrices),
+#'     so **no** `spatial(col)` term is used -- observations are mapped to
+#'     locations from their coordinates.
 #'
 #'   The mode selects how the spatial hyperparameter is handled:
 #'   * `mode = "nested_laplace"`, `"structured"`, and `"auto"` (when not the
-#'     binomial Gibbs case below) **integrate** the hyperparameter via
-#'     [tulpa_nested_laplace()] -- the designed Tier 2 path, mirroring
-#'     `latent(...)` blocks. Supported field types: areal `icar`/`car`/`bym2`/
-#'     `car_proper` and continuous `gp`/`nngp`/`hsgp`. SPDE calls [fit_spde()]
-#'     directly for now.
+#'     binomial Gibbs case below) **integrate** the hyperparameter -- the
+#'     designed Tier 2 path, mirroring `latent(...)` blocks. Areal `icar`/`car`/
+#'     `bym2`/`car_proper` and continuous `gp`/`nngp`/`hsgp` go through
+#'     [tulpa_nested_laplace()]; SPDE is redirected to [fit_spde()], which
+#'     integrates `(range, sigma)` with its own CCD / grid design.
 #'   * `mode = "laplace"` **conditions** on a fixed hyperparameter via
 #'     [tulpa_laplace()] (the cheap explicit fit).
 #'   * `mode = "gibbs"` routes the areal `icar`/`bym2` cases through the binomial
@@ -580,10 +632,13 @@ tulpa <- function(formula, data,
   #  * Areal (icar/car/bym2/car_proper): a `spatial(col)` term names the
   #    per-observation unit column, resolved to a 1-based `spatial_idx` against
   #    the adjacency. Term and spec must appear together.
-  #  * Continuous gp/nngp: a spatial_gp(~lon+lat) spec carries the coordinate
-  #    columns; obs -> location is derived from the coordinates, so NO
-  #    spatial(col) term is used. validate_gp() resolves the unique locations,
-  #    obs_to_loc map, and NNGP neighbour structure onto the spec.
+  #  * Continuous gp/nngp/hsgp: a spatial_gp(~lon+lat) / spatial_hsgp(~lon+lat)
+  #    spec carries the coordinate columns; obs -> location is derived from the
+  #    coordinates, so NO spatial(col) term is used. validate_gp()/validate_hsgp()
+  #    resolve the coordinate structure onto the spec.
+  #  * Continuous spde: a spatial_spde(~lon+lat, data) spec is self-contained
+  #    (mesh + FEM matrices built at construction); also coord-addressed (no
+  #    spatial(col) term). Routed to the dedicated `spde` backend (fit_spde).
   spatial_spec <- spatial
   has_spatial  <- !is.null(parsed$spatial_var) || !is.null(spatial_spec)
   spatial_type <- NULL
@@ -601,17 +656,30 @@ tulpa <- function(formula, data,
     }
     spatial_type <- spatial_spec$type
     sp_lc <- tolower(spatial_type)
-    if (sp_lc %in% .NL_FRONTDOOR_CONTINUOUS) {
+    if (sp_lc %in% c(.NL_FRONTDOOR_CONTINUOUS, .NL_FRONTDOOR_SPDE)) {
       # Coordinate-addressed field: coords come from the spec; no spatial(col)
-      # term. validate_{gp,hsgp}() resolve the coordinate structure onto the
-      # spec (gp/nngp: unique_coords / obs_to_loc / neighbor_info; hsgp:
-      # coords_matrix at every observation for the basis builder).
+      # term. gp/nngp/hsgp resolve their coordinate structure via validate_*()
+      # (gp/nngp: unique_coords / obs_to_loc / neighbor_info; hsgp:
+      # coords_matrix at every observation for the basis builder). SPDE is
+      # self-contained -- spatial_spde() built the mesh + FEM matrices (A, C, G)
+      # at construction -- so it only needs a dimension check.
       if (!is.null(parsed$spatial_var)) {
         stop("A continuous spatial field (", spatial_type, ") is addressed by ",
              "its coordinate columns in the spec; drop the spatial(",
              parsed$spatial_var, ") term from the formula.", call. = FALSE)
       }
-      if (sp_lc == "hsgp") {
+      if (sp_lc == "spde") {
+        # The SPDE projector A maps observations -> mesh nodes; it must have one
+        # row per observation in `data`. spatial_spde() builds A from the same
+        # data, so a mismatch means the spec was built from a different frame.
+        n_a <- tryCatch(nrow(spatial_spec$A), error = function(e) NULL)
+        if (is.null(n_a) || n_a != bundle$n_obs) {
+          stop("SPDE projector matrix A has ", n_a %||% "?", " row(s) but `data` ",
+               "has ", bundle$n_obs, " observation(s). Build the SPDE spec from ",
+               "the same data (spatial_spde(~ lon + lat, data = <data>)).",
+               call. = FALSE)
+        }
+      } else if (sp_lc == "hsgp") {
         if (!inherits(spatial_spec, "tulpa_hsgp")) {
           stop("An HSGP spatial field must be a spatial_hsgp(~ lon + lat) spec ",
                "object (it carries the coordinate columns); got a bare list.",
@@ -644,9 +712,8 @@ tulpa <- function(formula, data,
         .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
     } else {
       stop("Spatial type '", spatial_type, "' is not yet routed through tulpa(). ",
-           "Call its fitter directly (fit_spde() for SPDE), or use an areal ",
-           "(icar/bym2/car/car_proper) or continuous (gp/nngp/hsgp) field.",
-           call. = FALSE)
+           "Use an areal (icar/bym2/car/car_proper) or continuous ",
+           "(gp/nngp/hsgp/spde) field.", call. = FALSE)
     }
   }
 
@@ -704,6 +771,22 @@ tulpa <- function(formula, data,
     sel$reason <- sprintf(
       "random-slope term(s) present; RE covariance(s) integrated via %s (%d block(s))",
       sel$backend, length(re_terms))
+  }
+
+  # SPDE carries its own nested-Laplace integration engine: fit_spde() rebuilds
+  # the Matern precision Q(range, sigma) per node via the FEM Q-builder and
+  # integrates (range, sigma) with a CCD / grid design in R -- not the generic
+  # registry grid that tulpa_nested_laplace drives. Every nested mode (auto,
+  # structured, or the nested_laplace backend by name) selects the generic
+  # nested_laplace backend for a spatial field; redirect that to the dedicated
+  # `spde` backend so the SPDE field reaches its own integrator. The conditional
+  # mode = "laplace" stays on the fixed-hyperparameter tulpa_laplace path.
+  if (sel$backend == "nested_laplace" &&
+      identical(tolower(spatial_type %||% ""), "spde")) {
+    sel$backend <- "spde"
+    ti <- get_backend_tier("spde")
+    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
+    sel$reason <- "SPDE spatial field; nested-Laplace over (range, sigma) via fit_spde()"
   }
 
   assert_backend_reachable(sel$backend)

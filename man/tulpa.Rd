@@ -50,19 +50,20 @@ field family:
 and \code{adjacency}, paired with a \code{spatial(col)} term in \code{formula} naming the
 per-observation unit column. Term and spec must be supplied together.
 \item \strong{Continuous} (\code{spatial_gp(~ lon + lat)} for an NNGP field,
-\code{spatial_hsgp(~ lon + lat)} for a Hilbert-space GP): the spec object
-carries the coordinate columns, so \strong{no} \code{spatial(col)} term is used --
-observations are mapped to locations from their coordinates.
+\code{spatial_hsgp(~ lon + lat)} for a Hilbert-space GP, \code{spatial_spde(~ lon + lat, data)} for a Matern SPDE field): the spec object carries the
+coordinate columns (the SPDE spec also carries the mesh + FEM matrices),
+so \strong{no} \code{spatial(col)} term is used -- observations are mapped to
+locations from their coordinates.
 }
 
 The mode selects how the spatial hyperparameter is handled:
 \itemize{
 \item \code{mode = "nested_laplace"}, \code{"structured"}, and \code{"auto"} (when not the
-binomial Gibbs case below) \strong{integrate} the hyperparameter via
-\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} -- the designed Tier 2 path, mirroring
-\code{latent(...)} blocks. Supported field types: areal \code{icar}/\code{car}/\code{bym2}/
-\code{car_proper} and continuous \code{gp}/\code{nngp}/\code{hsgp}. SPDE calls \code{\link[=fit_spde]{fit_spde()}}
-directly for now.
+binomial Gibbs case below) \strong{integrate} the hyperparameter -- the
+designed Tier 2 path, mirroring \code{latent(...)} blocks. Areal \code{icar}/\code{car}/
+\code{bym2}/\code{car_proper} and continuous \code{gp}/\code{nngp}/\code{hsgp} go through
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}; SPDE is redirected to \code{\link[=fit_spde]{fit_spde()}}, which
+integrates \verb{(range, sigma)} with its own CCD / grid design.
 \item \code{mode = "laplace"} \strong{conditions} on a fixed hyperparameter via
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} (the cheap explicit fit).
 \item \code{mode = "gibbs"} routes the areal \code{icar}/\code{bym2} cases through the binomial

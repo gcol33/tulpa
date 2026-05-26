@@ -109,12 +109,15 @@ test_that("a continuous field rejects a spatial(col) term", {
   )
 })
 
-test_that("spde fields are not yet routed through tulpa()", {
+# SPDE is now routed through tulpa() (its own `spde` backend; see
+# test-tulpa-spatial-spde-frontdoor.R). A field type with no front-door wiring
+# yet (e.g. multiscale) must still error with guidance rather than fall through.
+test_that("an unrouted spatial type errors with guidance", {
   s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
   expect_error(
     suppressMessages(tulpa(
       y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = list(type = "spde"), mode = "nested_laplace")),
+      spatial = list(type = "multiscale"), mode = "nested_laplace")),
     "not yet routed"
   )
 })
