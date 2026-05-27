@@ -90,6 +90,112 @@ inline void logit_log_probs(double eta, double& log_p, double& log_1mp) {
     }
 }
 
+// --- Cached per-site evaluation (Poisson) --------------------------------
+// The combinatorial lgamma terms of the marginal sum -- (J-1) lgamma(N+1),
+// sum_j lgamma(N - y_j + 1), and the -sum_j lgamma(y_j + 1) constant -- depend
+// only on the counts y and the truncation, NOT on the linear predictors. An
+// iterative fitter that evaluates a site many times at changing eta (the
+// community Laplace-EM below, or any Newton loop) recomputes them every call;
+// caching them once per site removes the dominant lgamma cost from the hot
+// loop. The single-shot compute_nmix_site() Poisson path delegates here, so
+// this is the single source of the Poisson per-site marginal math.
+struct NMixSiteCache {
+    int n_visits;
+    int K_lo, K_hi;                  // sum range [max(y), K_max]
+    std::vector<int> y;              // counts (the detection score uses y_j)
+    std::vector<double> term_lgam;   // (J-1)lgamma(N+1) - sum_j lgamma(N-y_j+1)
+    double const_log_yfact;          // -sum_j lgamma(y_j + 1)
+    bool admissible;                 // K_max >= max(y)
+};
+
+inline NMixSiteCache nmix_precompute_site(const int* y, int n_visits, int K_max) {
+    NMixSiteCache c;
+    c.n_visits = n_visits;
+    c.y.assign(y, y + n_visits);
+    int y_max = 0;
+    for (int j = 0; j < n_visits; ++j) if (y[j] > y_max) y_max = y[j];
+    c.K_lo = y_max;
+    c.K_hi = K_max;
+    c.admissible = (K_max >= y_max);
+    c.const_log_yfact = 0.0;
+    for (int j = 0; j < n_visits; ++j)
+        c.const_log_yfact -= R::lgammafn((double)y[j] + 1.0);
+    const int K_grid = c.admissible ? (c.K_hi - c.K_lo + 1) : 0;
+    c.term_lgam.assign(K_grid, 0.0);
+    for (int k = 0; k < K_grid; ++k) {
+        const int N = c.K_lo + k;
+        double t = (double)(n_visits - 1) * R::lgammafn((double)N + 1.0);
+        for (int j = 0; j < n_visits; ++j)
+            t -= R::lgammafn((double)(N - y[j]) + 1.0);
+        c.term_lgam[k] = t;
+    }
+    return c;
+}
+
+// Poisson per-site marginal from a precomputed cache. Recomputes only the
+// eta-dependent pieces (the abundance slope, the per-visit detection terms,
+// the log-sum-exp and posterior moments); no lgamma. Numerically identical to
+// the Poisson branch of compute_nmix_site().
+inline NMixSiteResult compute_nmix_site_cached(const NMixSiteCache& c,
+                                               const double* eta_p,
+                                               double eta_lambda) {
+    const int n_visits = c.n_visits;
+    NMixSiteResult res;
+    res.grad_eta_p.assign(n_visits, 0.0);
+    res.info_eta_p.assign(n_visits, 0.0);
+    res.grad_theta = 0.0; res.info_theta = 0.0; res.info_lambda_theta = 0.0;
+    res.cov_N_stheta = 0.0; res.var_stheta = 0.0; res.score_wt_lambda = 1.0;
+    if (!c.admissible) {
+        res.log_lik = -std::numeric_limits<double>::infinity();
+        res.grad_eta_lambda = 0.0; res.info_eta_lambda = 0.0;
+        res.mean_N = 0.0; res.var_N = 0.0; res.boundary_weight = 0.0;
+        return res;
+    }
+    const double lambda = std::exp(eta_lambda);
+    std::vector<double> p_vec(n_visits);
+    double sum_log_1mp = 0.0, sum_y_eta_p = 0.0;
+    for (int j = 0; j < n_visits; ++j) {
+        double lp, l1mp;
+        logit_log_probs(eta_p[j], lp, l1mp);
+        sum_log_1mp += l1mp;
+        sum_y_eta_p += (double)c.y[j] * eta_p[j];
+        if (eta_p[j] > 0.0) p_vec[j] = 1.0 / (1.0 + std::exp(-eta_p[j]));
+        else { double e = std::exp(eta_p[j]); p_vec[j] = e / (1.0 + e); }
+    }
+    const double slope = eta_lambda + sum_log_1mp;
+    const double base_const = -lambda + sum_y_eta_p + c.const_log_yfact;
+    const int K_grid = c.K_hi - c.K_lo + 1;
+
+    std::vector<double> a(K_grid);
+    double max_a = -std::numeric_limits<double>::infinity();
+    for (int k = 0; k < K_grid; ++k) {
+        a[k] = (double)(c.K_lo + k) * slope + base_const + c.term_lgam[k];
+        if (a[k] > max_a) max_a = a[k];
+    }
+    double sum_exp = 0.0;
+    for (int k = 0; k < K_grid; ++k) sum_exp += std::exp(a[k] - max_a);
+    const double log_lik = max_a + std::log(sum_exp);
+
+    double mean_N = 0.0, mean_N2 = 0.0, w_boundary = 0.0;
+    for (int k = 0; k < K_grid; ++k) {
+        const double w = std::exp(a[k] - log_lik);
+        const double Nd = (double)(c.K_lo + k);
+        mean_N += w * Nd; mean_N2 += w * Nd * Nd;
+        if (k == K_grid - 1) w_boundary = w;
+    }
+    const double var_N = std::max(mean_N2 - mean_N * mean_N, 0.0);
+    res.log_lik = log_lik; res.mean_N = mean_N; res.var_N = var_N;
+    res.boundary_weight = w_boundary;
+    for (int j = 0; j < n_visits; ++j) {
+        res.grad_eta_p[j] = (double)c.y[j] - mean_N * p_vec[j];
+        res.info_eta_p[j] = mean_N * p_vec[j] * (1.0 - p_vec[j]);
+    }
+    res.grad_eta_lambda = mean_N - lambda;
+    res.info_eta_lambda = lambda;
+    res.score_wt_lambda = 1.0;
+    return res;
+}
+
 // Compute per-site N-mixture marginal log-lik, gradients (wrt linear
 // predictors and, under NB, theta = log r), and the complete-data Fisher /
 // score-covariance pieces the Laplace driver assembles into the Hessian.
@@ -117,6 +223,14 @@ inline NMixSiteResult compute_nmix_site(
     double r = std::numeric_limits<double>::infinity()
 ) {
     const bool is_nb = std::isfinite(r);
+
+    // Poisson path: delegate to the cached evaluator (single source of the
+    // Poisson marginal math). The lgamma precompute is one-shot here; the
+    // community fitter caches it across the EM iterations instead.
+    if (!is_nb) {
+        const NMixSiteCache c = nmix_precompute_site(y, n_visits, K_max);
+        return compute_nmix_site_cached(c, eta_p, eta_lambda);
+    }
 
     NMixSiteResult res;
     res.grad_eta_p.assign(n_visits, 0.0);

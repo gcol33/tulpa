@@ -17,6 +17,34 @@
 
 ## Unreleased
 
+* feat(nmix): community / multispecies N-mixture (`tulpa_nmix_laplace_re()`, the
+  spAbundance `msNMix` model). A C++ Laplace-EM (`src/nmix_re.cpp`) over
+  per-species coefficient random effects with Gaussian community covariances:
+  per-species mode-finding on the closed-form marginal (complete-data Fisher,
+  PSD), a closed-form covariance M-step `Sigma_k = mean_s[b_s b_s' + Cov(b_s|y)]`,
+  and fixed-effect SEs from the marginal observed-information Schur complement of
+  the b-block (with the `Var[N|y]` rank-1 coupling between the abundance and
+  detection arms; Louis 1982). Reuses the per-site kernel; an internal warm start
+  seeds the EM from independent per-species `tulpa_nmix_laplace()` fits. Poisson
+  only for now. Recovery / coverage exercised downstream (tulpaObs `ms_abun()`).
+
+* feat(nmix): `tulpa_nmix_site_marginal()` exposes the per-site N-mixture
+  marginal as a composable random-effect callback (`eval` / `eval_beta` /
+  `obs_info_block`), and `tulpa_re_aghq()` gained a `make_group` path for the
+  general / multi-arm case (a per-group `b`-space oracle), so a custom marginal
+  with coupled arms at different granularities -- the abundance / detection arms
+  of an N-mixture site sharing a species grouping -- integrates through the same
+  quadrature. (The C++ `tulpa_nmix_laplace_re()` above is the production fitter;
+  this is the composable / AGHQ-refinement path.)
+
+* perf(nmix): the per-site kernel (`nmix_kernel.h`) caches its eta-independent
+  `lgamma` combinatorial terms (`NMixSiteCache` / `nmix_precompute_site` /
+  `compute_nmix_site_cached`), so an iterative fitter that evaluates a site many
+  times at changing linear predictors skips the `lgamma` recompute (the dominant
+  cost). The single-shot `compute_nmix_site()` Poisson path delegates to the
+  cached helper -- single source of truth -- so existing single-species / spatial
+  fits are byte-identical (nmix regression suite unchanged).
+
 * refactor(nested-laplace)!: collapsed the 3 single-block temporal entries
   (`*_{rw1,rw2,ar1}`) to one `*_temporal` entry that selects the kernel at
   runtime via a `temporal_type` argument through the shared `make_temporal_ops`

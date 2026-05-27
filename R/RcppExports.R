@@ -157,6 +157,10 @@ cpp_nmix_total_log_lik <- function(y, site_idx, eta_p, eta_lambda, K_max, r) {
     .Call(`_tulpa_cpp_nmix_total_log_lik`, y, site_idx, eta_p, eta_lambda, K_max, r)
 }
 
+cpp_nmix_laplace_re <- function(y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, Sigma_lambda_init, Sigma_p_init, mu_lambda_init, mu_p_init, K_max, max_iter = 100L, tol = 1e-6, inner_max = 50L, inner_tol = 1e-8, sigma_beta = 100.0, verbose = FALSE) {
+    .Call(`_tulpa_cpp_nmix_laplace_re`, y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, Sigma_lambda_init, Sigma_p_init, mu_lambda_init, mu_p_init, K_max, max_iter, tol, inner_max, inner_tol, sigma_beta, verbose)
+}
+
 cpp_nested_laplace_nmix_icar <- function(y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, r_grid, beta_lambda_init, beta_p_init, z_init = NULL, K_max = -1L, max_iter = 100L, tol = 1e-6, verbose = FALSE) {
     .Call(`_tulpa_cpp_nested_laplace_nmix_icar`, y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, r_grid, beta_lambda_init, beta_p_init, z_init, K_max, max_iter, tol, verbose)
 }
