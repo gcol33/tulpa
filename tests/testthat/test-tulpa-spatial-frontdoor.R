@@ -148,6 +148,42 @@ test_that("spatial Gibbs is binomial-only and rejects random slopes", {
   )
 })
 
+# --- RSR front-door routing (Increment 5) --------------------------------
+# spatial_rsr() wraps an areal spec and flags $rsr; tulpa() routes it as its own
+# gibbs-only areal type (auto picks Gibbs for binomial), building the unit-level
+# projector from restrict_to so the field is orthogonal to the covariates.
+
+test_that("tulpa() routes an RSR field to the binomial Gibbs sampler (auto)", {
+  skip_on_cran()
+  s <- sim_areal_binomial()
+  fit <- tulpa(
+    y ~ x + spatial(region), data = s$data, family = "binomial",
+    n_trials = s$data$ntrials,
+    spatial = spatial_rsr(spatial_car(s$W, level = "obs"), restrict_to = ~ x),
+    mode = "auto",
+    control = list(iter = 3000L, warmup = 1500L)
+  )
+  # Routing: auto picked the (Tier 1) RSR Polya-Gamma sampler, not nested/plain.
+  expect_equal(fit$backend, "gibbs")
+  expect_equal(fit$inference_mode, "exact")
+  expect_true(all(c("beta", "spatial", "spatial_raw", "tau") %in% names(fit)))
+  expect_equal(ncol(fit$spatial), s$n_units)
+  # Recovery: RSR orthogonalises the field to x, so the slope is uncontaminated.
+  beta_hat <- colMeans(fit$beta)
+  expect_lt(abs(beta_hat[2] - s$beta[2]), 0.30)
+})
+
+test_that("tulpa() rejects a non-binomial RSR field", {
+  s <- sim_areal_binomial(reps = 2L)
+  s$data$count <- rpois(nrow(s$data), 3)
+  expect_error(
+    tulpa(count ~ x + spatial(region), data = s$data, family = "poisson",
+          spatial = spatial_rsr(spatial_car(s$W, level = "obs"), restrict_to = ~ x),
+          mode = "auto", control = list(iter = 50L, warmup = 25L)),
+    "binomial"
+  )
+})
+
 # --- Nested-Laplace spatial routing (Increment 4) ------------------------
 # mode = "nested_laplace" / "structured" / "auto" (non-binomial-Gibbs) route an
 # areal field through tulpa_nested_laplace(), which INTEGRATES the spatial

@@ -801,7 +801,10 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
          "'. Use mode = 'laplace' for other families under a spatial field.",
          call. = FALSE)
   }
-  spatial_type <- tolower(spatial$type)
+  # RSR keeps the underlying areal $type (icar/car) and flags $rsr; normalise it
+  # to the "rsr" route so the projection is applied rather than a plain areal fit.
+  spatial_type <- tolower(spatial$type %||% "")
+  if (isTRUE(spatial$rsr)) spatial_type <- "rsr"
 
   common <- .pg_gibbs_common_args(
     y, n_trials, X, re_group, n_re_groups, iter, warmup, thin,

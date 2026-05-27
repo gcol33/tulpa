@@ -591,17 +591,15 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # (spatial precision / mixing) is integrated -- not conditioned at a fixed
   # scale, which is the explicit mode = "laplace". Three treatments, in
   # preference order:
-  #  * binomial areal (icar/bym2): exact component-wise Polya-Gamma Gibbs
+  #  * binomial areal (icar/bym2/rsr): exact component-wise Polya-Gamma Gibbs
   #    (Tier 1). The PG samplers update the field component-wise, avoiding
-  #    HMC's curse of dimensionality. dispatch_gibbs_spatial() now ALSO handles
-  #    rsr / gp / nngp / multiscale_gp (reachable via the explicit back door
-  #    tulpa_gibbs(spatial=)), but auto deliberately keeps the trigger at the
-  #    front-door-routed binomial areal {icar, bym2}: the continuous fields route
-  #    to the more general nested path below (their Gibbs samplers need one
-  #    observation per location), and rsr is not yet front-door-routed to gibbs.
-  #    Expanding this trigger requires the matching tulpa() grammar arm first --
-  #    auto must never pick a backend that errors at dispatch
-  #    (dev_notes/plan_gibbs_spatial_frontdoor.md).
+  #    HMC's curse of dimensionality. RSR (an ICAR field projected orthogonal to
+  #    the covariates) has a gibbs-only tulpa() grammar arm, so auto can pick it.
+  #    dispatch_gibbs_spatial() also handles gp / nngp / multiscale_gp, but auto
+  #    deliberately routes those to the more general nested path below (their
+  #    Gibbs samplers need one observation per location); they stay reachable via
+  #    the explicit back door tulpa_gibbs(spatial=). auto must never pick a
+  #    backend that errors at dispatch (dev_notes/plan_gibbs_spatial_frontdoor.md).
   #  * areal (icar/car/bym2/car_proper), continuous gp/nngp/hsgp, and SPDE:
   #    nested Laplace (Tier 2) integrates the spatial hyperparameter through the
   #    tulpa() front door (.NL_FRONTDOOR_NESTED). The areal + gp/nngp/hsgp subset
@@ -616,7 +614,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     has_gmrf_temporal <- !is.null(temporal) && inherits(temporal, "tulpa_temporal") &&
                          !is.null(temporal$type) && temporal$type %in% c("rw1", "ar1")
     gibbs_temporal_ok <- !has_temporal || has_tvc_only || has_gmrf_temporal
-    if (spatial_type %in% c("icar", "bym2") && identical(fam_nm, "binomial") &&
+    if (spatial_type %in% c("icar", "bym2", "rsr") && identical(fam_nm, "binomial") &&
         gibbs_temporal_ok) {
       return(list(
         mode = "exact", backend = "gibbs", tier = 1L, tier_name = "Exact",

@@ -656,6 +656,14 @@ tulpa <- function(formula, data,
     }
     spatial_type <- spatial_spec$type
     sp_lc <- tolower(spatial_type)
+    # RSR is an areal field (icar/car) carrying a projection modifier: the spec
+    # keeps the underlying $type but flags $rsr (spatial_rsr()). Route it as its
+    # own gibbs-only areal type so it reaches the RSR Polya-Gamma sampler instead
+    # of the plain areal / nested path, which would silently drop the projection.
+    if (isTRUE(spatial_spec$rsr) || identical(sp_lc, "rsr")) {
+      spatial_type <- "rsr"
+      sp_lc <- "rsr"
+    }
     if (sp_lc %in% c(.NL_FRONTDOOR_CONTINUOUS, .NL_FRONTDOOR_SPDE)) {
       # Coordinate-addressed field: coords come from the spec; no spatial(col)
       # term. gp/nngp/hsgp resolve their coordinate structure via validate_*()
@@ -694,8 +702,9 @@ tulpa <- function(formula, data,
         }
         spatial_spec <- validate_gp(spatial_spec, data)
       }
-    } else if (sp_lc %in% .NL_FRONTDOOR_AREAL) {
-      # Areal field: spatial(col) names the per-observation unit.
+    } else if (sp_lc %in% c(.NL_FRONTDOOR_AREAL, "rsr")) {
+      # Areal field: spatial(col) names the per-observation unit. RSR is areal
+      # too (it carries an adjacency), and gibbs-only.
       if (is.null(parsed$spatial_var)) {
         stop("`spatial=` was supplied but the formula has no spatial(col) term ",
              "naming the per-observation spatial unit. Add e.g. `+ spatial(region)`.",
@@ -710,6 +719,23 @@ tulpa <- function(formula, data,
       } else NULL
       spatial_spec$spatial_idx <-
         .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
+      if (sp_lc == "rsr") {
+        # RSR is routed only through the binomial Polya-Gamma Gibbs sampler.
+        if (family != "binomial") {
+          stop("RSR spatial fields are fit by the binomial Polya-Gamma Gibbs ",
+               "sampler; `family` must be 'binomial' (got '", family, "').",
+               call. = FALSE)
+        }
+        # Build the unit-level projector orthogonal to the restrict_to design --
+        # the whole point of the modifier. Honour the spec's restrict_to formula
+        # rather than the full model design; dispatch_gibbs_spatial() consumes
+        # the precomputed n_units x n_units projection.
+        if (!is.null(spatial_spec$rsr_formula)) {
+          X_rsr <- stats::model.matrix(spatial_spec$rsr_formula, data = data)
+          spatial_spec$rsr_projection <-
+            .rsr_unit_projection(X_rsr, spatial_spec$spatial_idx, n_units)
+        }
+      }
     } else {
       stop("Spatial type '", spatial_type, "' is not yet routed through tulpa(). ",
            "Use an areal (icar/bym2/car/car_proper) or continuous ",
