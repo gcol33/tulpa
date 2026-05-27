@@ -1,15 +1,23 @@
 # TULPA — Template Unified Latent Process Architecture
 
-General-purpose Bayesian hierarchical modelling engine. Extracted from numdenom.
+General-purpose Bayesian hierarchical modelling engine (v0.0.2). Engine
+extracted from numdenom, which has since been renamed tulpaRatio.
 
 ## Architecture
 
-Three-package ecosystem:
-- **tulpa**: Engine — samplers, autodiff, spatial, temporal, priors, formula infrastructure
-- **numdenom**: Ratio models (Depends: tulpa)
-- **tulpaObs**: Occupancy models (Depends: tulpa)
+The hub of a `tulpa*` package ecosystem. The engine owns inference, latent
+structure, and the C++ interface; model packages plug an observation
+likelihood in via `LikelihoodSpec` and inherit the rest.
 
-Model packages plug likelihoods into tulpa via `LikelihoodSpec` (see `inst/include/tulpa/likelihood.h`).
+- **tulpa** (engine, 0.0.2) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
+- **tulpaRatio** (1.3.0) — ratio, rate, and proportion models (renamed from numdenom).
+- **tulpaObs** (0.0.1) — occupancy, N-mixture, and detection models.
+- **tulpaGlmm** (0.0.0.9000) — generalized linear mixed models.
+- **tulpaMesh** (0.1.1) — constrained Delaunay meshes for SPDE fields (an engine dependency, not a consumer).
+
+Consumers depend on the engine via `Imports: tulpa (>= 0.0.2)` +
+`LinkingTo: tulpa` and plug likelihoods in through `LikelihoodSpec`
+(see `inst/include/tulpa/likelihood.h`).
 
 ## Design Philosophy
 
@@ -50,7 +58,7 @@ debias, or outer integration), not as standalone alternatives.
   changes. Model packages auto-check on first NUTS call — mismatch gives a clear error instead
   of segfault. Registered via `R_RegisterCCallable("tulpa", "tulpa_get_abi_version", ...)`.
 - **Legacy fields**: `ModelData` contains deprecated ratio-specific fields (y_num, y_denom,
-  X_num/denom_flat, model_type). Used only when `n_processes == 0`. Will move to numdenom.
+  X_num/denom_flat, model_type). Used only when `n_processes == 0`. Will move to tulpaRatio.
   New fields go in the stable sections — never insert before existing fields.
 
 ## Building
@@ -96,7 +104,7 @@ tests/testthat/     — Unit and integration tests
 - Rubin's rules pooling
 - Parameter back-transformation (logit → probability)
 
-**Model packages own** (e.g., tulpaObs, numdenom):
+**Model packages own** (e.g., tulpaObs, tulpaRatio):
 - Likelihood functions (LikelihoodSpec)
 - E-step weight computation (model-specific latent variable posterior)
 - Data structures and encoding (how to map model data → binomial pseudo-data for Laplace)
@@ -276,7 +284,7 @@ is one entry in the `.tulpa_diag_measures` registry, so adding a column is a
 one-liner. It reads `fit$draws` plus a chain structure (`fit$chain_id`,
 `fit$n_chains`, or a 3D `[iter, chain, param]` array) -- the same layouts
 `tulpa_draws_array()` (the `as_draws_array()`-style accessor) emits -- so it
-works for any `tulpa_fit` subclass; downstream packages (tulpaObs, numdenom)
+works for any `tulpa_fit` subclass; downstream packages (tulpaObs, tulpaRatio)
 call `tulpa::mcmc_diagnostics()` rather than re-deriving Rhat/ESS. The plotting
 / summary layer (`plot_rhat`, `plot_ess`, `diagnostic_summary`,
 `check_diagnostics`, `n_divergent`) is built on it. Remaining work
@@ -339,5 +347,7 @@ driven entry point. No DSL, no parser, no codegen.
 
 ## Origin
 
-Engine extracted from numdenom (82K lines, faster than Stan on all 18 benchmarks).
+Engine extracted from numdenom (82K lines, faster than Stan on all 18
+benchmarks); numdenom was then renamed tulpaRatio as the engine became the
+hub of the `tulpa*` ecosystem.
 Name: Twin Peaks reference + acronym (Template Unified Latent Process Architecture).
