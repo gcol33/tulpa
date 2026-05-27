@@ -20,118 +20,10 @@ using namespace Rcpp;
 // GP Spatial Gibbs Sampler for Binomial Models
 // Uses sequential NNGP updates
 // ---------------------------------------------------------------------
-
-// Helper: compute NNGP conditional mean and variance
-inline void pg_nngp_conditional(
-    int i,
-    const std::vector<double>& w,
-    double sigma2,
-    double phi_gp,
-    int cov_type,
-    const Rcpp::NumericMatrix& coords,
-    const Rcpp::IntegerMatrix& nn_idx,
-    const Rcpp::NumericMatrix& nn_dist,
-    const Rcpp::IntegerVector& nn_order,
-    int nn,
-    double& cond_mean,
-    double& cond_var
-) {
-  int n_neighbors = 0;
-  for (int j = 0; j < nn; j++) {
-    if (nn_idx(i, j) > 0) n_neighbors++;
-  }
-
-  if (n_neighbors == 0) {
-    cond_mean = 0.0;
-    cond_var = sigma2;
-    return;
-  }
-
-  // Covariance function lambda
-  auto compute_cov = [sigma2, phi_gp, cov_type](double d) {
-    if (d < 1e-10) return sigma2;
-    if (cov_type == 0) {  // Exponential
-      return sigma2 * std::exp(-d / phi_gp);
-    } else if (cov_type == 1) {  // Matern 1.5
-      double x = std::sqrt(3.0) * d / phi_gp;
-      return sigma2 * (1.0 + x) * std::exp(-x);
-    } else {  // Matern 2.5
-      double x = std::sqrt(5.0) * d / phi_gp;
-      return sigma2 * (1.0 + x + x * x / 3.0) * std::exp(-x);
-    }
-  };
-
-  std::vector<double> c_vec(n_neighbors);
-  std::vector<double> C_mat(n_neighbors * n_neighbors);
-
-  for (int j = 0; j < n_neighbors; j++) {
-    c_vec[j] = compute_cov(nn_dist(i, j));
-  }
-
-  for (int j1 = 0; j1 < n_neighbors; j1++) {
-    int nn_orig1 = nn_order[nn_idx(i, j1) - 1];
-    for (int j2 = 0; j2 < n_neighbors; j2++) {
-      int nn_orig2 = nn_order[nn_idx(i, j2) - 1];
-      if (j1 == j2) {
-        C_mat[j1 * n_neighbors + j2] = sigma2;
-      } else {
-        double d12 = std::sqrt(
-          std::pow(coords(nn_orig1, 0) - coords(nn_orig2, 0), 2) +
-          std::pow(coords(nn_orig1, 1) - coords(nn_orig2, 1), 2)
-        );
-        C_mat[j1 * n_neighbors + j2] = compute_cov(d12);
-      }
-    }
-  }
-
-  // Cholesky of C
-  std::vector<double> L(n_neighbors * n_neighbors, 0.0);
-  for (int j = 0; j < n_neighbors; j++) {
-    for (int k = 0; k <= j; k++) {
-      double sum = C_mat[j * n_neighbors + k];
-      for (int m = 0; m < k; m++) {
-        sum -= L[j * n_neighbors + m] * L[k * n_neighbors + m];
-      }
-      if (j == k) {
-        L[j * n_neighbors + j] = std::sqrt(std::max(1e-10, sum));
-      } else {
-        L[j * n_neighbors + k] = sum / L[k * n_neighbors + k];
-      }
-    }
-  }
-
-  // Solve L * y_sol = c_vec
-  std::vector<double> y_sol(n_neighbors);
-  for (int j = 0; j < n_neighbors; j++) {
-    double sum = c_vec[j];
-    for (int k = 0; k < j; k++) {
-      sum -= L[j * n_neighbors + k] * y_sol[k];
-    }
-    y_sol[j] = sum / L[j * n_neighbors + j];
-  }
-
-  // Solve L^T * alpha = y_sol
-  std::vector<double> alpha(n_neighbors);
-  for (int j = n_neighbors - 1; j >= 0; j--) {
-    double sum = y_sol[j];
-    for (int k = j + 1; k < n_neighbors; k++) {
-      sum -= L[k * n_neighbors + j] * alpha[k];
-    }
-    alpha[j] = sum / L[j * n_neighbors + j];
-  }
-
-  cond_mean = 0.0;
-  for (int j = 0; j < n_neighbors; j++) {
-    int nn_orig = nn_order[nn_idx(i, j) - 1];
-    cond_mean += alpha[j] * w[nn_orig];
-  }
-
-  double c_Cinv_c = 0.0;
-  for (int j = 0; j < n_neighbors; j++) {
-    c_Cinv_c += c_vec[j] * alpha[j];
-  }
-  cond_var = std::max(1e-10, sigma2 - c_Cinv_c);
-}
+//
+// The sequential NNGP conditional N(w_i | cond_mean, cond_var) now lives in
+// pg_shared.h (tulpa::pg_nngp_conditional) so the single-scale and multiscale
+// samplers share one solve (principle #5).
 
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_binomial_gibbs_gp(
@@ -214,9 +106,9 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
       int obs_i = nn_order[idx];
 
       double cond_mean, cond_var;
-      pg_nngp_conditional(idx, w, sigma2_gp, phi_gp, cov_type,
-                          coords, nn_idx, nn_dist, nn_order, nn,
-                          cond_mean, cond_var);
+      tulpa::pg_nngp_conditional(idx, w, sigma2_gp, phi_gp, cov_type,
+                                 coords, nn_idx, nn_dist, nn_order, nn,
+                                 cond_mean, cond_var);
 
       double tau_prior = 1.0 / cond_var;
       double tau_lik = sum_omega_gp[obs_i];

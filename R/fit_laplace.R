@@ -876,24 +876,15 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       cov_type       = gp_cov_type_for_laplace(spatial)
     )))
   } else if (spatial_type %in% c("multiscale", "multiscale_gp")) {
-    # NOTE: the multiscale_gp C++ kernel's per-scale neighbour update is a crude
-    # pseudo-NNGP conditional (cond_mean = tau * sum_k cov_k * w_neighbor) whose
-    # coefficient sum can exceed 1 -> the field is an explosive AR recursion that
-    # can diverge to NaN. The R wiring below is correct; the kernel needs to reuse
-    # the single-scale pg_nngp_conditional() solve before it can carry a recovery
-    # net (test-gibbs-spatial.R skips it; dev_notes/plan_gibbs_spatial_frontdoor.md).
+    # Both scales reuse the shared NNGP kriging conditional
+    # (tulpa::pg_nngp_conditional), so cov_type (exponential / Matern 3/2 / 5/2)
+    # is honoured exactly as in the single-scale sampler.
     if (is.null(spatial$neighbor_info_local) ||
         is.null(spatial$neighbor_info_regional)) {
       stop("Spatial Gibbs (multiscale GP) needs a validated spatial_multiscale() ",
            "spec (neighbor_info_local / _regional are NULL). Call ",
            "validate_gp(spatial, data) first, or fit through tulpa().",
            call. = FALSE)
-    }
-    cov <- spatial$cov %||% "exponential"
-    if (!identical(cov, "exponential")) {
-      stop("The multiscale GP Gibbs sampler implements an exponential covariance ",
-           "only; got cov = '", cov, "'. Use cov = 'exponential', or mode = ",
-           "'laplace' / HMC for other covariances.", call. = FALSE)
     }
     n_spatial <- .gp_gibbs_require_one_obs_per_loc(spatial, length(y), "multiscale GP")
     loc <- .gp_gibbs_nn_inputs(spatial$neighbor_info_local, n_spatial)
@@ -915,7 +906,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       phi_local_init       = mean(rl),
       sigma2_regional_init = 1.0,
       phi_regional_init    = mean(rr),
-      cov_type             = 0L,                  # exponential (sampler ignores it)
+      cov_type             = gp_cov_type_for_laplace(spatial),
       prior_phi_local_lower    = rl[1], prior_phi_local_upper    = rl[2],
       prior_phi_regional_lower = rr[1], prior_phi_regional_upper = rr[2]
     )))

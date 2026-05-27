@@ -8,12 +8,142 @@
 #include <Rcpp.h>
 #include <cmath>
 #include <algorithm>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 namespace tulpa {
+
+// ============================================================================
+// Sequential NNGP conditional N(w_i | cond_mean, cond_var)
+//
+// Conditional of the i-th location (in NNGP ordering) given its already-updated
+// neighbours, for an isotropic GP with marginal variance `sigma2`, range `phi`
+// and covariance `cov_type` (0 = exponential, 1 = Matern 3/2, 2 = Matern 5/2).
+// `cond_mean = c' C^{-1} w_nb` is the kriging predictor (a contraction -- its
+// weights are bounded, unlike a raw covariance-weighted sum), `cond_var =
+// sigma2 - c' C^{-1} c >= 0`.
+//
+// Index conventions (shared by the single-scale GP sampler and every scale of
+// the multiscale sampler): `i` is the 0-based ordered position; `nn_idx(i, j)`
+// is a 1-based neighbour position in ordered space; `nn_order` maps an ordered
+// position to its 0-based original location id, so `coords` / `w` are addressed
+// in original-location order. Because cond_mean is scale-invariant, calling with
+// `sigma2 = 1` yields (m_i, v0_i) for the phi-only quadratic form used by the
+// sigma2 conditional.
+// ============================================================================
+inline void pg_nngp_conditional(
+    int i,
+    const std::vector<double>& w,
+    double sigma2,
+    double phi_gp,
+    int cov_type,
+    const Rcpp::NumericMatrix& coords,
+    const Rcpp::IntegerMatrix& nn_idx,
+    const Rcpp::NumericMatrix& nn_dist,
+    const Rcpp::IntegerVector& nn_order,
+    int nn,
+    double& cond_mean,
+    double& cond_var
+) {
+  int n_neighbors = 0;
+  for (int j = 0; j < nn; j++) {
+    if (nn_idx(i, j) > 0) n_neighbors++;
+  }
+
+  if (n_neighbors == 0) {
+    cond_mean = 0.0;
+    cond_var = sigma2;
+    return;
+  }
+
+  // Covariance function lambda
+  auto compute_cov = [sigma2, phi_gp, cov_type](double d) {
+    if (d < 1e-10) return sigma2;
+    if (cov_type == 0) {  // Exponential
+      return sigma2 * std::exp(-d / phi_gp);
+    } else if (cov_type == 1) {  // Matern 1.5
+      double x = std::sqrt(3.0) * d / phi_gp;
+      return sigma2 * (1.0 + x) * std::exp(-x);
+    } else {  // Matern 2.5
+      double x = std::sqrt(5.0) * d / phi_gp;
+      return sigma2 * (1.0 + x + x * x / 3.0) * std::exp(-x);
+    }
+  };
+
+  std::vector<double> c_vec(n_neighbors);
+  std::vector<double> C_mat(n_neighbors * n_neighbors);
+
+  for (int j = 0; j < n_neighbors; j++) {
+    c_vec[j] = compute_cov(nn_dist(i, j));
+  }
+
+  for (int j1 = 0; j1 < n_neighbors; j1++) {
+    int nn_orig1 = nn_order[nn_idx(i, j1) - 1];
+    for (int j2 = 0; j2 < n_neighbors; j2++) {
+      int nn_orig2 = nn_order[nn_idx(i, j2) - 1];
+      if (j1 == j2) {
+        C_mat[j1 * n_neighbors + j2] = sigma2;
+      } else {
+        double d12 = std::sqrt(
+          std::pow(coords(nn_orig1, 0) - coords(nn_orig2, 0), 2) +
+          std::pow(coords(nn_orig1, 1) - coords(nn_orig2, 1), 2)
+        );
+        C_mat[j1 * n_neighbors + j2] = compute_cov(d12);
+      }
+    }
+  }
+
+  // Cholesky of C
+  std::vector<double> L(n_neighbors * n_neighbors, 0.0);
+  for (int j = 0; j < n_neighbors; j++) {
+    for (int k = 0; k <= j; k++) {
+      double sum = C_mat[j * n_neighbors + k];
+      for (int m = 0; m < k; m++) {
+        sum -= L[j * n_neighbors + m] * L[k * n_neighbors + m];
+      }
+      if (j == k) {
+        L[j * n_neighbors + j] = std::sqrt(std::max(1e-10, sum));
+      } else {
+        L[j * n_neighbors + k] = sum / L[k * n_neighbors + k];
+      }
+    }
+  }
+
+  // Solve L * y_sol = c_vec
+  std::vector<double> y_sol(n_neighbors);
+  for (int j = 0; j < n_neighbors; j++) {
+    double sum = c_vec[j];
+    for (int k = 0; k < j; k++) {
+      sum -= L[j * n_neighbors + k] * y_sol[k];
+    }
+    y_sol[j] = sum / L[j * n_neighbors + j];
+  }
+
+  // Solve L^T * alpha = y_sol
+  std::vector<double> alpha(n_neighbors);
+  for (int j = n_neighbors - 1; j >= 0; j--) {
+    double sum = y_sol[j];
+    for (int k = j + 1; k < n_neighbors; k++) {
+      sum -= L[k * n_neighbors + j] * alpha[k];
+    }
+    alpha[j] = sum / L[j * n_neighbors + j];
+  }
+
+  cond_mean = 0.0;
+  for (int j = 0; j < n_neighbors; j++) {
+    int nn_orig = nn_order[nn_idx(i, j) - 1];
+    cond_mean += alpha[j] * w[nn_orig];
+  }
+
+  double c_Cinv_c = 0.0;
+  for (int j = 0; j < n_neighbors; j++) {
+    c_Cinv_c += c_vec[j] * alpha[j];
+  }
+  cond_var = std::max(1e-10, sigma2 - c_Cinv_c);
+}
 
 // Cholesky decomposition (lower triangular) for small dense matrices
 // Used in PG Gibbs samplers for posterior sampling of beta

@@ -129,24 +129,11 @@ test_that("tulpa_gibbs(spatial = gp) recovers fixed effects (one obs per locatio
 
 test_that("tulpa_gibbs(spatial = multiscale_gp) recovers fixed effects", {
   skip_on_cran()
-  # KNOWN BUG (dev_notes/plan_gibbs_spatial_frontdoor.md): the multiscale_gp C++
-  # kernel's per-scale neighbour update is not a valid NNGP conditional -- it
-  # uses cond_mean = tau * sum_k cov_k * w_neighbor, whose coefficient sum can
-  # exceed 1, so the field is an explosive AR recursion that diverges to NaN.
-  # The R dispatch wiring is correct and exercised by this file's structural
-  # checks; the recovery net is blocked until the kernel reuses the single-scale
-  # pg_nngp_conditional() solve (the post-net refactor). Skip rather than certify
-  # a divergent sampler.
-  skip("multiscale_gp kernel neighbour conditional diverges; recovery blocked on the proper-NNGP-conditional fix")
   set.seed(303)
   side <- 8L
   g <- expand.grid(lon = seq(0, 1, length.out = side),
                    lat = seq(0, 1, length.out = side))
   coords <- as.matrix(g)
-  # The multiscale sampler indexes neighbours by original location id, so it is
-  # only self-consistent when the NNGP ordering is the identity -- give it
-  # coordinate-sorted input (the front door would enforce this).
-  coords <- coords[order(coords[, 1], coords[, 2]), , drop = FALSE]
   n <- nrow(coords)
 
   D <- as.matrix(dist(coords))
@@ -174,9 +161,16 @@ test_that("tulpa_gibbs(spatial = multiscale_gp) recovers fixed effects", {
   expect_true(all(c("beta", "w_local", "w_regional",
                     "sigma2_local", "sigma2_regional") %in% names(fit)))
   expect_equal(ncol(fit$w_local), n)
+  expect_true(all(is.finite(colMeans(fit$w_local))))
   beta_hat <- colMeans(fit$beta)
-  expect_lt(abs(beta_hat[1] - beta_true[1]), 0.55)
+  # As in the single-scale GP case the slope is identified; the intercept and the
+  # two additive field levels are confounded, so assert the identifiable
+  # combination (intercept + both field means).
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.35)
+  level_hat  <- beta_hat[1] + mean(colMeans(fit$w_local)) +
+                mean(colMeans(fit$w_regional))
+  level_true <- beta_true[1] + mean(w_true)
+  expect_lt(abs(level_hat - level_true), 0.50)
 })
 
 test_that("dispatch_gibbs_spatial rejects non-binomial and unwired types", {

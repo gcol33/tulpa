@@ -20,6 +20,77 @@ using namespace Rcpp;
 // Multiscale GP Gibbs sampler (local + regional components)
 // -----------------------------------------------------------------------------
 
+// One NNGP scale's Gibbs sweep, shared by the local and regional components
+// (principle #5 -- the two scales differ only in their neighbour structure and
+// hyperprior bounds). Updates the field `w` by sequential NNGP conditionals
+// (tulpa::pg_nngp_conditional -- the same kriging solve the single-scale sampler
+// uses, whose weights are bounded, unlike the previous raw covariance-weighted
+// sum that could diverge), then (sigma2, phi) by their NNGP-correct full
+// conditionals: sigma2 ~ InvGamma on the standardized quadratic form
+// sum_i (w_i - m_i)^2 / v0_i (m_i, v0_i evaluated at sigma2 = 1, exploiting that
+// the kriging mean is scale-invariant and cond_var scales linearly), and phi by
+// a log-random-walk MH on the proper NNGP log-density. `sum_omega` / `sum_resid`
+// are the Polya-Gamma likelihood aggregates for this scale (built by the caller
+// from the offset that holds the OTHER scale). Indexing follows
+// pg_nngp_conditional: `idx` is the ordered position, `nn_order[idx]` the
+// original location id.
+static inline void update_nngp_scale(
+    std::vector<double>& w, double& sigma2, double& phi, int cov_type,
+    const Rcpp::NumericMatrix& coords,
+    const Rcpp::IntegerMatrix& nn_idx, const Rcpp::NumericMatrix& nn_dist,
+    const Rcpp::IntegerVector& nn_order, int nn, int n_spatial,
+    const std::vector<double>& sum_omega, const std::vector<double>& sum_resid,
+    double prior_sigma_U, double prior_phi_lower, double prior_phi_upper
+) {
+  // 1. Field: sequential NNGP Gibbs update.
+  for (int idx = 0; idx < n_spatial; idx++) {
+    int obs_i = nn_order[idx];
+    double cm, cv;
+    tulpa::pg_nngp_conditional(idx, w, sigma2, phi, cov_type,
+                               coords, nn_idx, nn_dist, nn_order, nn, cm, cv);
+    double tau_prior = 1.0 / cv;
+    double tau_post  = tau_prior + sum_omega[obs_i];
+    double mean_post = (tau_prior * cm + sum_resid[obs_i]) / tau_post;
+    w[obs_i] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
+  }
+
+  // 2. sigma2 | w, phi ~ InvGamma(n/2 + 1, Q0/2 + prior_sigma_U), where the
+  //    phi-only quadratic form Q0 = sum_i (w_i - m_i)^2 / v0_i uses conditionals
+  //    at sigma2 = 1.
+  double Q0 = 0.0;
+  for (int idx = 0; idx < n_spatial; idx++) {
+    int obs_i = nn_order[idx];
+    double m0, v0;
+    tulpa::pg_nngp_conditional(idx, w, 1.0, phi, cov_type,
+                               coords, nn_idx, nn_dist, nn_order, nn, m0, v0);
+    double r = w[obs_i] - m0;
+    Q0 += r * r / v0;
+  }
+  double shape = 0.5 * n_spatial + 1.0;
+  double rate  = 0.5 * Q0 + prior_sigma_U;
+  sigma2 = 1.0 / R::rgamma(shape, 1.0 / rate);
+
+  // 3. phi: log-random-walk MH on the proper NNGP log-density.
+  double phi_prop = phi * tulpa_linalg::safe_exp(R::rnorm(0, 0.1));
+  if (std::isfinite(phi_prop) &&
+      phi_prop >= prior_phi_lower && phi_prop <= prior_phi_upper) {
+    double ll_curr = 0.0, ll_prop = 0.0;
+    for (int idx = 0; idx < n_spatial; idx++) {
+      int obs_i = nn_order[idx];
+      double cm_c, cv_c, cm_p, cv_p;
+      tulpa::pg_nngp_conditional(idx, w, sigma2, phi, cov_type,
+                                 coords, nn_idx, nn_dist, nn_order, nn, cm_c, cv_c);
+      tulpa::pg_nngp_conditional(idx, w, sigma2, phi_prop, cov_type,
+                                 coords, nn_idx, nn_dist, nn_order, nn, cm_p, cv_p);
+      double rc = w[obs_i] - cm_c, rp = w[obs_i] - cm_p;
+      ll_curr += -0.5 * std::log(cv_c) - 0.5 * rc * rc / cv_c;
+      ll_prop += -0.5 * std::log(cv_p) - 0.5 * rp * rp / cv_p;
+    }
+    double log_ratio = ll_prop - ll_curr + std::log(phi_prop / phi);
+    if (std::log(R::runif(0, 1)) < log_ratio) phi = phi_prop;
+  }
+}
+
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     Rcpp::IntegerVector y,
@@ -115,12 +186,11 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         combined_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd, prior_sigma_re_scale);
 
-    // 5. Update local GP effects
+    // 5. Update the local scale (field + sigma2 + phi), conditioning on the
+    //    regional contribution. sum_resid uses the full current offset.
     for (int i = 0; i < N; i++) {
       C.offset[i] = C.X_beta[i] + C.re_contrib[i] + regional_contrib[i];
     }
-
-    // Aggregate likelihood info per spatial location
     std::vector<double> sum_omega_local(n_spatial, 0.0);
     std::vector<double> sum_resid_local(n_spatial, 0.0);
     for (int i = 0; i < N; i++) {
@@ -129,42 +199,20 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         sum_resid_local[i] += C.kappa[i] - C.omega[i] * C.offset[i];
       }
     }
-
-    // Sequential NNGP Gibbs update for local effects
-    double tau_local = 1.0 / sigma2_local;
-    for (int ii = 0; ii < n_spatial; ii++) {
-      int i = nn_order_local[ii];
-
-      double cond_mean = 0.0;
-      double cond_prec = tau_local;
-
-      for (int k = 0; k < nn_local; k++) {
-        int neighbor = nn_idx_local(i, k) - 1;
-        if (neighbor >= 0 && neighbor < n_spatial) {
-          double dist = nn_dist_local(i, k);
-          double cov_val = std::exp(-dist / phi_local);
-          cond_mean += cov_val * w_local[neighbor];
-        }
-      }
-      cond_mean *= tau_local;
-
-      double post_prec = cond_prec + sum_omega_local[i];
-      double post_mean = (cond_mean + sum_resid_local[i]) / post_prec;
-      w_local[i] = R::rnorm(post_mean, 1.0 / std::sqrt(post_prec));
-    }
-
-    // Update local contributions
+    update_nngp_scale(w_local, sigma2_local, phi_local, cov_type,
+                      coords, nn_idx_local, nn_dist_local, nn_order_local,
+                      nn_local, n_spatial, sum_omega_local, sum_resid_local,
+                      prior_sigma_local_U, prior_phi_local_lower,
+                      prior_phi_local_upper);
     for (int i = 0; i < N; i++) {
-      if (i < n_spatial) {
-        local_contrib[i] = w_local[i];
-      }
+      if (i < n_spatial) local_contrib[i] = w_local[i];
     }
 
-    // 6. Update regional GP effects
+    // 6. Update the regional scale, conditioning on the (just-updated) local
+    //    contribution.
     for (int i = 0; i < N; i++) {
       C.offset[i] = C.X_beta[i] + C.re_contrib[i] + local_contrib[i];
     }
-
     std::vector<double> sum_omega_regional(n_spatial, 0.0);
     std::vector<double> sum_resid_regional(n_spatial, 0.0);
     for (int i = 0; i < N; i++) {
@@ -173,98 +221,14 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         sum_resid_regional[i] += C.kappa[i] - C.omega[i] * C.offset[i];
       }
     }
-
-    double tau_regional = 1.0 / sigma2_regional;
-    for (int ii = 0; ii < n_spatial; ii++) {
-      int i = nn_order_regional[ii];
-
-      double cond_mean = 0.0;
-      double cond_prec = tau_regional;
-
-      for (int k = 0; k < nn_regional; k++) {
-        int neighbor = nn_idx_regional(i, k) - 1;
-        if (neighbor >= 0 && neighbor < n_spatial) {
-          double dist = nn_dist_regional(i, k);
-          double cov_val = std::exp(-dist / phi_regional);
-          cond_mean += cov_val * w_regional[neighbor];
-        }
-      }
-      cond_mean *= tau_regional;
-
-      double post_prec = cond_prec + sum_omega_regional[i];
-      double post_mean = (cond_mean + sum_resid_regional[i]) / post_prec;
-      w_regional[i] = R::rnorm(post_mean, 1.0 / std::sqrt(post_prec));
-    }
-
+    update_nngp_scale(w_regional, sigma2_regional, phi_regional, cov_type,
+                      coords, nn_idx_regional, nn_dist_regional,
+                      nn_order_regional, nn_regional, n_spatial,
+                      sum_omega_regional, sum_resid_regional,
+                      prior_sigma_regional_U, prior_phi_regional_lower,
+                      prior_phi_regional_upper);
     for (int i = 0; i < N; i++) {
-      if (i < n_spatial) {
-        regional_contrib[i] = w_regional[i];
-      }
-    }
-
-    // 7. Update hyperparameters via MH
-    // Update sigma2_local (Gibbs from inverse-gamma)
-    double ss_local = 0.0;
-    for (int i = 0; i < n_spatial; i++) {
-      ss_local += w_local[i] * w_local[i];
-    }
-    double shape_local = 0.5 * n_spatial + 1.0;
-    double rate_local = 0.5 * ss_local + prior_sigma_local_U;
-    sigma2_local = 1.0 / R::rgamma(shape_local, 1.0 / rate_local);
-
-    // Update sigma2_regional
-    double ss_regional = 0.0;
-    for (int i = 0; i < n_spatial; i++) {
-      ss_regional += w_regional[i] * w_regional[i];
-    }
-    double shape_regional = 0.5 * n_spatial + 1.0;
-    double rate_regional = 0.5 * ss_regional + prior_sigma_regional_U;
-    sigma2_regional = 1.0 / R::rgamma(shape_regional, 1.0 / rate_regional);
-
-    // Update phi_local via random walk MH
-    double phi_local_prop = phi_local * tulpa_linalg::safe_exp(R::rnorm(0, 0.1));
-    if (std::isfinite(phi_local_prop) && phi_local_prop >= prior_phi_local_lower && phi_local_prop <= prior_phi_local_upper) {
-      double ll_curr = 0.0, ll_prop = 0.0;
-      for (int i = 0; i < n_spatial; i++) {
-        double cond_mean_curr = 0.0, cond_mean_prop = 0.0;
-        for (int k = 0; k < nn_local; k++) {
-          int neighbor = nn_idx_local(i, k) - 1;
-          if (neighbor >= 0 && neighbor < n_spatial) {
-            double dist = nn_dist_local(i, k);
-            cond_mean_curr += std::exp(-dist / phi_local) * w_local[neighbor];
-            cond_mean_prop += std::exp(-dist / phi_local_prop) * w_local[neighbor];
-          }
-        }
-        ll_curr += -0.5 * tau_local * (w_local[i] - cond_mean_curr) * (w_local[i] - cond_mean_curr);
-        ll_prop += -0.5 * tau_local * (w_local[i] - cond_mean_prop) * (w_local[i] - cond_mean_prop);
-      }
-      double log_ratio = ll_prop - ll_curr + std::log(phi_local_prop / phi_local);
-      if (std::log(R::runif(0, 1)) < log_ratio) {
-        phi_local = phi_local_prop;
-      }
-    }
-
-    // Update phi_regional via MH
-    double phi_regional_prop = phi_regional * tulpa_linalg::safe_exp(R::rnorm(0, 0.1));
-    if (std::isfinite(phi_regional_prop) && phi_regional_prop >= prior_phi_regional_lower && phi_regional_prop <= prior_phi_regional_upper) {
-      double ll_curr = 0.0, ll_prop = 0.0;
-      for (int i = 0; i < n_spatial; i++) {
-        double cond_mean_curr = 0.0, cond_mean_prop = 0.0;
-        for (int k = 0; k < nn_regional; k++) {
-          int neighbor = nn_idx_regional(i, k) - 1;
-          if (neighbor >= 0 && neighbor < n_spatial) {
-            double dist = nn_dist_regional(i, k);
-            cond_mean_curr += std::exp(-dist / phi_regional) * w_regional[neighbor];
-            cond_mean_prop += std::exp(-dist / phi_regional_prop) * w_regional[neighbor];
-          }
-        }
-        ll_curr += -0.5 * tau_regional * (w_regional[i] - cond_mean_curr) * (w_regional[i] - cond_mean_curr);
-        ll_prop += -0.5 * tau_regional * (w_regional[i] - cond_mean_prop) * (w_regional[i] - cond_mean_prop);
-      }
-      double log_ratio = ll_prop - ll_curr + std::log(phi_regional_prop / phi_regional);
-      if (std::log(R::runif(0, 1)) < log_ratio) {
-        phi_regional = phi_regional_prop;
-      }
+      if (i < n_spatial) regional_contrib[i] = w_regional[i];
     }
 
     // Store draws after warmup
