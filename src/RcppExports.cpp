@@ -1351,6 +1351,29 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_re_cov_gibbs_sweep
+List cpp_re_cov_gibbs_sweep(std::string family, double phi, NumericVector y, NumericVector n_trials, NumericMatrix X, List blocks, NumericVector beta0, NumericMatrix L_beta, int n_iter, int n_burnin, int thin, NumericVector beta_prior_mean, NumericVector beta_prior_sd);
+RcppExport SEXP _tulpa_cpp_re_cov_gibbs_sweep(SEXP familySEXP, SEXP phiSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP blocksSEXP, SEXP beta0SEXP, SEXP L_betaSEXP, SEXP n_iterSEXP, SEXP n_burninSEXP, SEXP thinSEXP, SEXP beta_prior_meanSEXP, SEXP beta_prior_sdSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< List >::type blocks(blocksSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type beta0(beta0SEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type L_beta(L_betaSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_burnin(n_burninSEXP);
+    Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type beta_prior_mean(beta_prior_meanSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type beta_prior_sd(beta_prior_sdSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_re_cov_gibbs_sweep(family, phi, y, n_trials, X, blocks, beta0, L_beta, n_iter, n_burnin, thin, beta_prior_mean, beta_prior_sd));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_smc_test
 Rcpp::List cpp_smc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, int n_particles, int n_mcmc_steps, int seed);
 RcppExport SEXP _tulpa_cpp_smc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP n_particlesSEXP, SEXP n_mcmc_stepsSEXP, SEXP seedSEXP) {
@@ -2807,6 +2830,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_pg_negbin_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs_spatial, 21},
     {"_tulpa_cpp_rpg1", (DL_FUNC) &_tulpa_cpp_rpg1, 1},
     {"_tulpa_cpp_rpg", (DL_FUNC) &_tulpa_cpp_rpg, 2},
+    {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
     {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 23},

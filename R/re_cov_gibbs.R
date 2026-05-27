@@ -26,7 +26,10 @@
 # uncorrelated) are sampled jointly; a single-term model is the length-1 case.
 #
 # Composition: Laplace body (starting values + proposal shapes) + MH debias
-# (exact b / beta conditionals) + conjugate outer (exact Sigma). The summary
+# (exact b / beta conditionals) + conjugate outer (exact Sigma). The pilot solve
+# and the posterior summary live in R; the Metropolis-within-Gibbs sweep is the
+# compiled engine (src/re_cov_gibbs{,_sweep}.h), driven by one per-row family
+# likelihood source (the native GLMM oracle, src/glmm_oracle.h). The summary
 # reuses `.re_cov_derived_summary` (shared with the grid integrator).
 
 # inverse-Wishart sampler via Bartlett (native, no dependency) ---------------
@@ -51,22 +54,6 @@
   CA <- C %*% A
   W  <- tcrossprod(CA)                   # Wishart(df, V) = Sigma^{-1}
   chol2inv(chol(W))                      # Sigma
-}
-
-# Per-observation log-likelihood matching tulpa's links (logit / log / identity
-# / log). Full normalizing constants included (harmless: only differences enter
-# the MH ratio, but keeps the routine self-contained / reusable).
-.re_obs_loglik <- function(eta, y, n_trials, family, phi) {
-  switch(family,
-    binomial       = stats::dbinom(y, size = n_trials, prob = stats::plogis(eta),
-                                   log = TRUE),
-    poisson        = stats::dpois(y, lambda = exp(eta), log = TRUE),
-    gaussian       = stats::dnorm(y, mean = eta, sd = sqrt(phi), log = TRUE),
-    neg_binomial_2 = stats::dnbinom(y, size = phi, mu = exp(eta), log = TRUE),
-    negbin         = stats::dnbinom(y, size = phi, mu = exp(eta), log = TRUE),
-    stop(sprintf("tulpa_re_cov_gibbs: unsupported family '%s'.", family),
-         call. = FALSE)
-  )
 }
 
 # Symmetrize + eigen-floor a proposal covariance block to SPD, then return its
@@ -107,22 +94,6 @@
            call. = FALSE)
     }
     list(full = FALSE, nu0 = nu0, lambda0 = lam)
-  }
-}
-
-# Exact conjugate draw of one block's Sigma given its random effects B_m
-# (G_m x nc). Correlated: inverse-Wishart on the full matrix. Uncorrelated:
-# independent scalar inverse-Wishart per diagonal variance.
-.re_gibbs_draw_sigma <- function(B_m, pr) {
-  G <- nrow(B_m); nc <- ncol(B_m)
-  if (pr$full) {
-    .rinvwishart(pr$nu0 + G, pr$Lambda0 + crossprod(B_m))
-  } else {
-    v <- vapply(seq_len(nc), function(i) {
-      as.numeric(.rinvwishart(pr$nu0 + G,
-                              matrix(pr$lambda0[i] + sum(B_m[, i]^2), 1L, 1L)))
-    }, numeric(1))
-    S <- matrix(0, nc, nc); diag(S) <- v; S
   }
 }
 
@@ -223,6 +194,11 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   n_obs <- length(y)
   p     <- ncol(X)
   if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
+  if (!family %in% c("binomial", "poisson", "gaussian",
+                     "neg_binomial_2", "negbin")) {
+    stop(sprintf("tulpa_re_cov_gibbs: unsupported family '%s'.", family),
+         call. = FALSE)
+  }
   layout <- .re_cov_block_layout(re_terms, n_obs)
   M      <- length(layout)
 
@@ -237,7 +213,6 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     stop("`beta_prior_mean` / `beta_prior_sd` must be length 1 or ncol(X).",
          call. = FALSE)
   }
-  log_prior_beta <- function(b) sum(stats::dnorm(b, bmean, bsd, log = TRUE))
 
   # --- pilot Laplace solve: starting values + proposal shapes ---------------
   # Sigma_m = I init for every block; mode gives beta and per-term b; H_beta and
@@ -258,10 +233,8 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
 
   # Slice the latent mode (term-major then group order) and the per-group
   # proposal blocks into per-term structures.
-  B_list      <- vector("list", M)   # B_list[[m]]: G_m x nc_m random effects
-  L_g_list    <- vector("list", M)   # per-group RW proposal Cholesky factors
-  grp_obs     <- vector("list", M)   # per-group observation indices
-  Z_g_list    <- vector("list", M)
+  B_list   <- vector("list", M)   # B_list[[m]]: G_m x nc random effects (init)
+  L_g_list <- vector("list", M)   # per-group RW proposal Cholesky factors
   pos_re <- 0L; pos_cb <- 0L
   cb <- pilot$cov_blocks
   cb_ok <- !is.null(cb) && length(cb) == sum(vapply(layout, `[[`, integer(1),
@@ -277,17 +250,10 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
       L_g_list[[m]] <- rep(list(diag(nc)), G)
     }
     pos_cb <- pos_cb + G
-    go <- split(seq_len(n_obs), bl$idx)[as.character(seq_len(G))]
-    grp_obs[[m]] <- go
-    Z_g_list[[m]] <- lapply(seq_len(G), function(g) bl$Z[go[[g]], , drop = FALSE])
   }
-  y_g_list <- lapply(seq_len(M), function(m)
-    lapply(grp_obs[[m]], function(o) y[o]))
-  n_g_list <- lapply(seq_len(M), function(m)
-    lapply(grp_obs[[m]], function(o) n_trials[o]))
 
   # initial per-block Sigma from the pilot RE modes (method-of-moments), PD-clamped
-  Sigma_list <- vector("list", M); Q_list <- vector("list", M)
+  Sigma_list <- vector("list", M)
   for (m in seq_len(M)) {
     bl <- layout[[m]]; B <- B_list[[m]]
     S <- if (bl$n_groups > bl$nc) stats::cov(B) else diag(bl$nc)
@@ -296,99 +262,34 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     if (min(eigen(S, symmetric = TRUE, only.values = TRUE)$values) < 1e-8)
       S <- diag(bl$nc)
     Sigma_list[[m]] <- S
-    Q_list[[m]]     <- chol2inv(chol(S))
   }
 
-  # per-term running RE contribution to the linear predictor, and its total
-  re_contrib <- lapply(seq_len(M), function(m)
-    rowSums(layout[[m]]$Z * B_list[[m]][layout[[m]]$idx, , drop = FALSE]))
-  re_total <- Reduce(`+`, re_contrib)
-  xb <- as.numeric(X %*% beta)
+  # --- per-block specs for the compiled sweep -------------------------------
+  # The engine owns the shared linear predictor and the cross-block eta coupling;
+  # each block carries its design (Z, idx), conjugate prior, initial RE / Sigma
+  # and per-group proposal Cholesky factors.
+  blocks <- lapply(seq_len(M), function(m) {
+    bl <- layout[[m]]; pr <- priors[[m]]
+    spec <- list(Z = bl$Z, idx = bl$idx, nc = bl$nc, full = isTRUE(bl$full),
+                 n_groups = bl$n_groups, nu0 = pr$nu0,
+                 b0 = B_list[[m]], Lg0 = L_g_list[[m]], Sigma0 = Sigma_list[[m]])
+    if (pr$full) spec$Lambda0 <- pr$Lambda0 else spec$lambda0 <- pr$lambda0
+    spec
+  })
 
-  # random-walk scales (adapted during burn-in): beta block + one per term
-  s_beta   <- 2.4 / sqrt(p)
-  s_b      <- vapply(layout, function(bl) 2.4 / sqrt(bl$nc), numeric(1))
-  tgt_beta <- if (p > 1L) 0.234 else 0.44
-  tgt_b    <- vapply(layout, function(bl) if (bl$nc > 1L) 0.234 else 0.44,
-                     numeric(1))
+  out <- cpp_re_cov_gibbs_sweep(
+    family = family, phi = phi,
+    y = as.numeric(y), n_trials = as.numeric(n_trials),
+    X = as.matrix(X), blocks = blocks,
+    beta0 = as.numeric(beta), L_beta = as.matrix(L_beta),
+    n_iter = as.integer(n_iter), n_burnin = as.integer(n_burnin),
+    thin = as.integer(thin),
+    beta_prior_mean = as.numeric(bmean), beta_prior_sd = as.numeric(bsd)
+  )
 
-  n_sweep <- as.integer(n_burnin + n_iter)
-  keep_at <- seq.int(n_burnin + 1L, n_sweep, by = as.integer(thin))
-  n_kept  <- length(keep_at)
-  Sigma_draws <- vector("list", n_kept)
-  beta_draws  <- matrix(NA_real_, n_kept, p)
-  acc_beta_rec <- 0L; acc_b_rec <- 0L; n_b_rec <- 0L
-  kept <- 0L
-
-  for (sweep in seq_len(n_sweep)) {
-    adapting <- sweep <= n_burnin
-    gamma_t  <- 1 / sqrt(sweep)
-
-    # --- beta | b, Sigma, y : RW Metropolis ---------------------------------
-    eta_cur <- xb + re_total
-    ll_cur  <- sum(.re_obs_loglik(eta_cur, y, n_trials, family, phi)) +
-               log_prior_beta(beta)
-    beta_prop <- beta + s_beta * as.numeric(L_beta %*% stats::rnorm(p))
-    xb_prop   <- as.numeric(X %*% beta_prop)
-    eta_prop  <- xb_prop + re_total
-    ll_prop   <- sum(.re_obs_loglik(eta_prop, y, n_trials, family, phi)) +
-                 log_prior_beta(beta_prop)
-    acc_beta <- log(stats::runif(1)) < (ll_prop - ll_cur)
-    if (isTRUE(acc_beta)) { beta <- beta_prop; xb <- xb_prop }
-    if (adapting) s_beta <- exp(log(s_beta) + gamma_t * ((acc_beta) - tgt_beta))
-
-    # --- b_{m,g} | beta, Sigma, y : per-(term, group) RW Metropolis ---------
-    n_acc_b <- 0L; n_prop_b <- 0L
-    for (m in seq_len(M)) {
-      bl <- layout[[m]]; G <- bl$n_groups; nc <- bl$nc
-      Q  <- Q_list[[m]]; Lg <- L_g_list[[m]]; B <- B_list[[m]]
-      # offset = linear predictor minus this term's contribution (others fixed)
-      base <- xb + (re_total - re_contrib[[m]])
-      acc_m <- 0L
-      for (g in seq_len(G)) {
-        obs <- grp_obs[[m]][[g]]
-        if (length(obs) == 0L) next
-        bg  <- B[g, ]
-        Zg  <- Z_g_list[[m]][[g]]
-        eta_g_cur <- base[obs] + as.numeric(Zg %*% bg)
-        ll_g_cur  <- sum(.re_obs_loglik(eta_g_cur, y_g_list[[m]][[g]],
-                                        n_g_list[[m]][[g]], family, phi)) -
-                     0.5 * as.numeric(t(bg) %*% Q %*% bg)
-        bg_prop <- bg + s_b[m] * as.numeric(Lg[[g]] %*% stats::rnorm(nc))
-        eta_g_prop <- base[obs] + as.numeric(Zg %*% bg_prop)
-        ll_g_prop  <- sum(.re_obs_loglik(eta_g_prop, y_g_list[[m]][[g]],
-                                         n_g_list[[m]][[g]], family, phi)) -
-                      0.5 * as.numeric(t(bg_prop) %*% Q %*% bg_prop)
-        if (log(stats::runif(1)) < (ll_g_prop - ll_g_cur)) {
-          B[g, ] <- bg_prop; acc_m <- acc_m + 1L
-        }
-      }
-      B_list[[m]] <- B
-      # refresh this term's contribution and the running total
-      new_contrib   <- rowSums(bl$Z * B[bl$idx, , drop = FALSE])
-      re_total      <- re_total - re_contrib[[m]] + new_contrib
-      re_contrib[[m]] <- new_contrib
-      if (adapting) s_b[m] <- exp(log(s_b[m]) + gamma_t * (acc_m / G - tgt_b[m]))
-      n_acc_b  <- n_acc_b + acc_m
-      n_prop_b <- n_prop_b + G
-    }
-
-    # --- Sigma_m | b_m : exact conjugate draw per block ---------------------
-    for (m in seq_len(M)) {
-      Sigma_list[[m]] <- .re_gibbs_draw_sigma(B_list[[m]], priors[[m]])
-      Q_list[[m]]     <- chol2inv(chol(Sigma_list[[m]]))
-    }
-
-    # --- record -------------------------------------------------------------
-    if (!adapting && (sweep %in% keep_at)) {
-      kept <- kept + 1L
-      Sigma_draws[[kept]] <- Sigma_list
-      beta_draws[kept, ]  <- beta
-      acc_beta_rec <- acc_beta_rec + as.integer(acc_beta)
-      acc_b_rec    <- acc_b_rec + n_acc_b
-      n_b_rec      <- n_b_rec + n_prop_b
-    }
-  }
+  n_kept      <- out$n_kept
+  Sigma_draws <- out$Sigma_draws        # list (n_kept) of per-block list of Sigma
+  beta_draws  <- out$beta_draws
 
   w <- rep(1 / n_kept, n_kept)
   summ <- .re_cov_derived_summary(Sigma_draws, w, layout)
@@ -417,8 +318,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     n_samples   = n_kept,
     n_params    = p,
     N           = n_obs,
-    accept      = list(beta = acc_beta_rec / n_kept,
-                       b    = if (n_b_rec > 0L) acc_b_rec / n_b_rec else NA_real_),
+    accept      = list(beta = out$accept_beta, b = out$accept_b),
     n_kept      = n_kept,
     n_blocks    = M,
     n_coefs     = vapply(layout, `[[`, integer(1), "nc"),

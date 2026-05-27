@@ -31,6 +31,19 @@
   `tulpa_re_aghq()` gains `theta_prior_sd` (a Gaussian ridge on the fixed
   parameters) and returns `log_marginal`.
 
+* refactor(gibbs): the exact-target random-effect-covariance sampler
+  (`tulpa_re_cov_gibbs()`) runs its Metropolis-within-Gibbs sweep in compiled
+  code (`src/re_cov_gibbs.cpp`, `src/re_cov_gibbs_sweep.h`), driven by one native
+  per-row GLMM likelihood (`src/glmm_oracle.h`) rather than a duplicated R
+  density. This removes `.re_obs_loglik`: the family densities (binomial /
+  poisson / gaussian / negative-binomial-2) now have a single source, and the
+  engine owns the shared linear predictor with the cross-block eta coupling for
+  several terms. The estimator is unchanged -- the C++ sweep keeps the R
+  sampler's RNG-draw order, so a seeded run reproduces the previous sampler's
+  draws bit-for-bit (verified across the correlated, diagonal and multi-term
+  `test-re-cov-gibbs.R` cases). The R wrapper keeps the pilot Laplace solve
+  (starting values + proposal shapes) and the weighted-quantile summary.
+
 * feat(nmix): community / multispecies N-mixture (`tulpa_nmix_laplace_re()`, the
   spAbundance `msNMix` model) now fits through that shared engine -- it wraps
   `tulpa_nmix_site_marginal()` as the per-species oracle (the marginal, the
