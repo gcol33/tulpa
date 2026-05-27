@@ -593,10 +593,15 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # preference order:
   #  * binomial areal (icar/bym2): exact component-wise Polya-Gamma Gibbs
   #    (Tier 1). The PG samplers update the field component-wise, avoiding
-  #    HMC's curse of dimensionality. Only the wired areal samplers are picked
-  #    here -- the remaining fields (nngp/gp, multiscale_gp, rsr) are not yet
-  #    wired through dispatch_gibbs_spatial (dev_notes/plan_gibbs_spatial_frontdoor.md);
-  #    auto must never pick a backend that errors at dispatch.
+  #    HMC's curse of dimensionality. dispatch_gibbs_spatial() now ALSO handles
+  #    rsr / gp / nngp / multiscale_gp (reachable via the explicit back door
+  #    tulpa_gibbs(spatial=)), but auto deliberately keeps the trigger at the
+  #    front-door-routed binomial areal {icar, bym2}: the continuous fields route
+  #    to the more general nested path below (their Gibbs samplers need one
+  #    observation per location), and rsr is not yet front-door-routed to gibbs.
+  #    Expanding this trigger requires the matching tulpa() grammar arm first --
+  #    auto must never pick a backend that errors at dispatch
+  #    (dev_notes/plan_gibbs_spatial_frontdoor.md).
   #  * areal (icar/car/bym2/car_proper), continuous gp/nngp/hsgp, and SPDE:
   #    nested Laplace (Tier 2) integrates the spatial hyperparameter through the
   #    tulpa() front door (.NL_FRONTDOOR_NESTED). The areal + gp/nngp/hsgp subset

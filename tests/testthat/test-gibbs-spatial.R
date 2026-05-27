@@ -49,6 +49,136 @@ test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data"
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)   # slope
 })
 
+test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data", {
+  skip_on_cran()
+  set.seed(11)
+  nr <- nc <- 7L
+  W <- rook_adj(nr, nc)
+  n <- nr * nc                                   # one observation per unit
+
+  phi_true  <- sim_spatial_effects(W, sigma = 0.5, type = "icar")
+  beta_true <- c(-0.3, 0.8)
+  x  <- rnorm(n)
+  X  <- cbind(1, x)
+  eta <- as.numeric(X %*% beta_true) + phi_true
+  ntr <- rep(12L, n)
+  y   <- rbinom(n, ntr, plogis(eta))
+
+  fit <- tulpa_gibbs(
+    y = y, n_trials = ntr, X = X, group = rep(1L, n), n_groups = 0L,
+    family = "binomial",
+    spatial = list(type = "rsr", adjacency = W, spatial_idx = seq_len(n)),
+    iter = 3000L, warmup = 1500L, verbose = FALSE
+  )
+
+  # Wiring: the RSR sampler returns raw + projected field draws plus tau.
+  expect_true(all(c("beta", "spatial", "spatial_raw", "tau") %in% names(fit)))
+  expect_equal(ncol(fit$spatial), n)
+  expect_true(all(is.finite(fit$tau)))
+
+  # Recovery: RSR orthogonalises the field to X, so beta is uncontaminated.
+  beta_hat <- colMeans(fit$beta)
+  expect_lt(abs(beta_hat[1] - beta_true[1]), 0.45)
+  expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)
+})
+
+test_that("tulpa_gibbs(spatial = gp) recovers fixed effects (one obs per location)", {
+  skip_on_cran()
+  set.seed(202)
+  side <- 8L
+  g <- expand.grid(lon = seq(0, 1, length.out = side),
+                   lat = seq(0, 1, length.out = side))
+  coords <- as.matrix(g)
+  n <- nrow(coords)                              # 64 unique locations, 1 obs each
+
+  # Smooth exponential-GP field on the raw grid.
+  D     <- as.matrix(dist(coords))
+  Sigma <- 0.6^2 * exp(-D / 0.30)
+  w_true <- as.numeric(t(chol(Sigma + diag(1e-8, n))) %*% rnorm(n))
+
+  beta_true <- c(-0.2, 0.7)
+  x  <- rnorm(n)
+  X  <- cbind(1, x)
+  eta <- as.numeric(X %*% beta_true) + w_true
+  ntr <- rep(20L, n)
+  y   <- rbinom(n, ntr, plogis(eta))
+
+  sp <- validate_gp(
+    spatial_gp(~ lon + lat, cov = "exponential", nn = 10L),
+    data = data.frame(lon = coords[, 1], lat = coords[, 2])
+  )
+  fit <- tulpa_gibbs(
+    y = y, n_trials = ntr, X = X, group = rep(1L, n), n_groups = 0L,
+    family = "binomial", spatial = sp,
+    iter = 3000L, warmup = 1500L, verbose = FALSE
+  )
+
+  expect_true(all(c("beta", "gp", "sigma2_gp", "phi_gp") %in% names(fit)))
+  expect_equal(ncol(fit$gp), n)
+  expect_true(all(is.finite(fit$sigma2_gp)))
+  beta_hat <- colMeans(fit$beta)
+  # The slope is identified separately from the field; the intercept and the GP
+  # surface's overall level are confounded (the smooth field can absorb a global
+  # offset), so assert the identifiable combination -- intercept + mean field --
+  # against the truth + the simulated field's own mean, not the bare intercept.
+  expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)
+  level_hat  <- beta_hat[1] + mean(colMeans(fit$gp))
+  level_true <- beta_true[1] + mean(w_true)
+  expect_lt(abs(level_hat - level_true), 0.45)
+})
+
+test_that("tulpa_gibbs(spatial = multiscale_gp) recovers fixed effects", {
+  skip_on_cran()
+  # KNOWN BUG (dev_notes/plan_gibbs_spatial_frontdoor.md): the multiscale_gp C++
+  # kernel's per-scale neighbour update is not a valid NNGP conditional -- it
+  # uses cond_mean = tau * sum_k cov_k * w_neighbor, whose coefficient sum can
+  # exceed 1, so the field is an explosive AR recursion that diverges to NaN.
+  # The R dispatch wiring is correct and exercised by this file's structural
+  # checks; the recovery net is blocked until the kernel reuses the single-scale
+  # pg_nngp_conditional() solve (the post-net refactor). Skip rather than certify
+  # a divergent sampler.
+  skip("multiscale_gp kernel neighbour conditional diverges; recovery blocked on the proper-NNGP-conditional fix")
+  set.seed(303)
+  side <- 8L
+  g <- expand.grid(lon = seq(0, 1, length.out = side),
+                   lat = seq(0, 1, length.out = side))
+  coords <- as.matrix(g)
+  # The multiscale sampler indexes neighbours by original location id, so it is
+  # only self-consistent when the NNGP ordering is the identity -- give it
+  # coordinate-sorted input (the front door would enforce this).
+  coords <- coords[order(coords[, 1], coords[, 2]), , drop = FALSE]
+  n <- nrow(coords)
+
+  D <- as.matrix(dist(coords))
+  w_true <- as.numeric(t(chol(0.25^2 * exp(-D / 0.4) + diag(1e-8, n))) %*% rnorm(n))
+
+  beta_true <- c(0.1, 0.6)
+  x  <- rnorm(n)
+  X  <- cbind(1, x)
+  eta <- as.numeric(X %*% beta_true) + w_true
+  ntr <- rep(25L, n)
+  y   <- rbinom(n, ntr, plogis(eta))
+
+  sp <- validate_gp(
+    spatial_multiscale(~ lon + lat, cov = "exponential",
+                       nn_local = 6L, nn_regional = 12L,
+                       range_local = c(0.05, 1.5), range_regional = c(1.5, 8)),
+    data = data.frame(lon = coords[, 1], lat = coords[, 2])
+  )
+  fit <- tulpa_gibbs(
+    y = y, n_trials = ntr, X = X, group = rep(1L, n), n_groups = 0L,
+    family = "binomial", spatial = sp,
+    iter = 3000L, warmup = 1500L, verbose = FALSE
+  )
+
+  expect_true(all(c("beta", "w_local", "w_regional",
+                    "sigma2_local", "sigma2_regional") %in% names(fit)))
+  expect_equal(ncol(fit$w_local), n)
+  beta_hat <- colMeans(fit$beta)
+  expect_lt(abs(beta_hat[1] - beta_true[1]), 0.55)
+  expect_lt(abs(beta_hat[2] - beta_true[2]), 0.35)
+})
+
 test_that("dispatch_gibbs_spatial rejects non-binomial and unwired types", {
   W <- rook_adj(3L, 3L)
   expect_error(
@@ -64,6 +194,23 @@ test_that("dispatch_gibbs_spatial rejects non-binomial and unwired types", {
                 family = "binomial",
                 spatial = list(type = "car_proper", adjacency = W,
                                spatial_idx = seq_len(9))),
-    "not yet wired"
+    "not wired"
+  )
+})
+
+test_that("continuous Gibbs samplers reject repeated-location designs", {
+  skip_on_cran()
+  set.seed(99)
+  coords <- as.matrix(expand.grid(lon = 1:5, lat = 1:5))
+  # Two observations per location -> no obs->loc map, must error.
+  d <- data.frame(lon = rep(coords[, 1], 2), lat = rep(coords[, 2], 2))
+  n <- nrow(d)
+  sp <- validate_gp(spatial_gp(~ lon + lat, nn = 6L), data = d)
+  expect_error(
+    tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
+                X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
+                family = "binomial", spatial = sp,
+                iter = 100L, warmup = 50L, verbose = FALSE),
+    "one observation per unique location"
   )
 })

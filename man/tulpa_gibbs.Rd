@@ -42,14 +42,26 @@ tulpa_gibbs(
 
 \item{prior_sigma_scale}{Prior scale for RE sigma}
 
-\item{spatial}{Optional spatial spec (list with \code{type} and the structure's
-inputs, e.g. \code{list(type = "icar", adjacency = W, spatial_idx = unit)}).
-When supplied, the fit routes to the matching spatial Polya-Gamma Gibbs
-sampler via \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}} (binomial only); \code{group}/\code{n_groups}
-are the iid random-effect block carried alongside the field. Supported
-\code{type}s: "icar", "bym2".}
+\item{spatial}{Optional spatial spec. When supplied the fit routes to the
+matching spatial Polya-Gamma Gibbs sampler via \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}}
+(binomial only); \code{group}/\code{n_groups} are the iid random-effect block carried
+alongside the field. Supported \code{type}s:
+\itemize{
+\item areal -- \code{"icar"}, \code{"bym2"}, \code{"rsr"}: a list with \code{type}, \code{adjacency} and
+a 1-based \code{spatial_idx} per observation (e.g.
+\code{list(type = "icar", adjacency = W, spatial_idx = unit)}). \code{"rsr"} reuses
+\code{spatial$rsr_projection} if present, else builds the unit-level projector
+from the design.
+\item continuous -- \code{"gp"}/\code{"nngp"} (a validated \code{\link[=spatial_gp]{spatial_gp()}} spec) and
+\code{"multiscale_gp"} (a validated \code{\link[=spatial_multiscale]{spatial_multiscale()}} spec). These
+samplers carry no observation->location map, so they require one
+observation per unique location in coordinate order.
+}}
 
-\item{temporal}{Optional temporal spec (not yet wired).}
+\item{temporal}{Optional temporal spec: a validated \code{\link[=temporal_multiscale]{temporal_multiscale()}}
+object. Routes to the multiscale temporal Polya-Gamma sampler via
+\code{\link[=dispatch_gibbs_temporal]{dispatch_gibbs_temporal()}} (binomial only; RW1 trend + cyclic seasonal +
+AR1/IID short-term). Cannot be combined with \code{spatial}.}
 
 \item{verbose}{Print progress}
 
