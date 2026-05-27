@@ -14,7 +14,12 @@
 #' shared N-mixture kernel exposed by [tulpa_nmix_site_marginal()]); the
 #' per-species coefficient deviations \eqn{b_s = (b^\lambda_s, b^p_s)} are the
 #' random effects, integrated by the shared compiled AGHQ engine
-#' ([tulpa_re_aghq()] at `n_quad = 1`, i.e. the joint Laplace). Each species'
+#' ([tulpa_re_aghq()]). At `n_quad = 1` (the default) this is the joint Laplace
+#' (glmer `nAGQ = 1`); a higher `n_quad` replaces each species' Laplace integral
+#' with adaptive Gauss-Hermite quadrature, reducing the small-cluster (few
+#' species) downward bias of the community covariances `Sigma_lambda` /
+#' `Sigma_p` -- at a `n_quad^(p_lambda + p_p)` per-species grid cost. Each
+#' species'
 #' marginal -- value, abundance/detection score, and the per-site observed-
 #' information block carrying the \eqn{\mathrm{Var}(N_i\mid y_i)} abundance/
 #' detection coupling -- is supplied as the per-group oracle, so there is one
@@ -43,6 +48,14 @@
 #'   per-species coefficient estimates.
 #' @param K_max Marginal-sum truncation (default `max(y) + 100`).
 #' @param max_iter Optimizer iteration cap (default 200).
+#' @param n_quad Quadrature points per random-effect dimension passed to
+#'   [tulpa_re_aghq()] (default 1, the joint Laplace). A higher `n_quad`
+#'   debiases the community covariances at a `n_quad^(p_lambda + p_p)`
+#'   per-species grid cost, so keep it modest when the coefficient dimension is
+#'   large.
+#' @param lkj_eta LKJ shape regularizing each *correlated* community covariance
+#'   block's correlation off the boundary (default 1, no penalty); passed
+#'   through to [tulpa_re_aghq()]. Does not touch the marginal SDs.
 #' @param sigma_beta Weak Gaussian ridge SD on the community means (default 100,
 #'   i.e. `tau = 1e-4`, matching the other Laplace paths); stabilizes a
 #'   weakly-identified community mean without materially shifting it.
@@ -53,7 +66,8 @@
 #'   `(p_lambda + p_p)` square; marginalizes the community-covariance
 #'   uncertainty rather than plugging in `Sigma`), `Sigma_lambda`, `Sigma_p`
 #'   (community covariances), `b_lambda`, `b_p` (per-species BLUP deviations,
-#'   `n_species` rows), `log_lik` (Laplace marginal), `converged`, `K_max`.
+#'   `n_species` rows), `log_lik` (AGHQ marginal), `converged`, `K_max`,
+#'   `n_quad`, `lkj_eta`.
 #'
 #' @references
 #' Royle, J. A. (2004). N-mixture models for estimating population size from
@@ -69,6 +83,7 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
                                   mu_lambda_init = NULL, mu_p_init = NULL,
                                   Sigma_lambda_init = NULL, Sigma_p_init = NULL,
                                   K_max = NULL, max_iter = 200L,
+                                  n_quad = 1L, lkj_eta = 1,
                                   sigma_beta = 100, verbose = FALSE) {
   y        <- as.integer(y)
   site_idx <- as.integer(site_idx)
@@ -121,19 +136,22 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     if (is.null(Sigma_p_init))      Sigma_p_init      <- .nmix_re_cov0(B_p[ok_p, , drop = FALSE], p_p)
   }
 
-  # ---- per-species marginal oracle, integrated by the shared engine ----
-  orc <- .nmix_re_oracle(y, site_idx, species_idx, X_lambda, X_p,
-                         n_sites, n_species, p_lam, p_p, K_max)
+  # ---- native compiled per-species oracle, integrated by the shared engine ----
+  # The species marginal / score / observed-info are assembled in C++
+  # (NMixCommunityOracle); the AGHQ integration core (mode-find, quadrature,
+  # log-Cholesky Sigma, optimizer) is the same shared engine the R-closure bridge
+  # uses, so there is one integration implementation and no per-group round trip.
+  orc <- cpp_nmix_community_oracle(y, site_idx, species_idx, X_lambda, X_p,
+                                   n_sites, n_species, K_max)
 
   fit <- tulpa_re_aghq(
     theta0  = c(as.numeric(mu_lambda_init), as.numeric(mu_p_init)),
     re_terms = list(list(n_groups = n_species, n_coefs = p_lam, correlated = p_lam > 1L),
                     list(n_groups = n_species, n_coefs = p_p,   correlated = p_p   > 1L)),
     Sigma0  = list(as.matrix(Sigma_lambda_init), as.matrix(Sigma_p_init)),
-    make_group = function(theta) list(
-      grad_hess = function(g, b) orc$grad_hess(g, b + theta),
-      node_ll   = function(g, B) orc$node_ll(g, sweep(B, 2, theta, `+`))),
-    n_quad = 1L, theta_prior_sd = sigma_beta, maxit = as.integer(max_iter))
+    oracle  = orc,
+    n_quad = as.integer(n_quad), lkj_eta = lkj_eta,
+    theta_prior_sd = sigma_beta, maxit = as.integer(max_iter))
 
   if (is.null(fit)) {
     stop("Community N-mixture optimization failed (singular marginal Hessian ",
@@ -152,6 +170,8 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     log_lik      = fit$log_marginal,
     converged    = fit$converged,
     K_max        = K_max,
+    n_quad       = fit$n_quad,
+    lkj_eta      = fit$lkj_eta,
     mixture      = "P"
   )
   class(out) <- c("tulpa_nmix_re_fit", "list")

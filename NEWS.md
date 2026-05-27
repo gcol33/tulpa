@@ -31,6 +31,17 @@
   `tulpa_re_aghq()` gains `theta_prior_sd` (a Gaussian ridge on the fixed
   parameters) and returns `log_marginal`.
 
+* refactor(aghq): `agq_fit()` builds its per-group marginal from the native
+  GLMM oracle (`cpp_glmm_oracle_make`, `src/glmm_oracle.h`) instead of an
+  R-closure oracle over an R family density. The built-in `binomial` /
+  `poisson` / `gaussian` densities now have a single C++ source of truth shared
+  with `tulpa_re_aghq()`, `tulpa_re_cov_nested(n_quad > 1)` and the Gibbs sweep;
+  this removes `.agq_loglik_elt()` / `.agq_score_info()`. Estimates,
+  covariances and `n_quad`-convergence are unchanged; the reported
+  `log_marginal` now carries the full likelihood normalizing constants (the
+  binomial coefficient and Poisson `lgamma` the R density previously dropped),
+  matching the other AGHQ fitters.
+
 * refactor(gibbs): the exact-target random-effect-covariance sampler
   (`tulpa_re_cov_gibbs()`) runs its Metropolis-within-Gibbs sweep in compiled
   code (`src/re_cov_gibbs.cpp`, `src/re_cov_gibbs_sweep.h`), driven by one native

@@ -5,6 +5,10 @@ cpp_aghq_make_rclosure_oracle <- function(builder, n_groups, d, n_theta) {
     .Call(`_tulpa_cpp_aghq_make_rclosure_oracle`, builder, n_groups, d, n_theta)
 }
 
+cpp_nmix_community_oracle <- function(y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, K_max) {
+    .Call(`_tulpa_cpp_nmix_community_oracle`, y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, K_max)
+}
+
 cpp_aghq_objective <- function(par, oracle, nc, full, n_quad, lkj_eta) {
     .Call(`_tulpa_cpp_aghq_objective`, par, oracle, nc, full, n_quad, lkj_eta)
 }

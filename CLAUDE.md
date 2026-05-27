@@ -188,7 +188,7 @@ A single-term model is the length-1 case of the same path -- no special-casing.
   **structure-agnostic**: it integrates an abstract per-group conditional
   log-likelihood `ell_g(b)` against `N(b; 0, Sigma)` given a `b`-space oracle,
   so the grouping / quadrature / log-Cholesky `Sigma` / LKJ / marginal-Hessian
-  machinery is shared across every structure. Two callback forms select it:
+  machinery is shared across every structure. Three input forms select it:
   - `make_site(theta)` -- the common **single-arm, per-row-separable** case
     (`ell_g(b) = sum_i log f_i(eta_i + Z_i b)` on one linear predictor): the
     caller supplies the per-observation marginal and its first two eta
@@ -206,12 +206,28 @@ A single-term model is the length-1 case of the same path -- no special-casing.
     per-observation `idx` / `Z` are optional. The N-mixture per-group marginal
     primitive an `msNMix` oracle is built from is `tulpa_nmix_site_marginal()`
     (`R/nmix_site_marginal.R`, gcol33/tulpa#31).
-  Supply exactly one of `make_site` / `make_group`. Fixed params + log-Cholesky
+  - `oracle` -- a **prebuilt native (compiled) oracle**, an external pointer to a
+    `REGroupOracle` (e.g. `cpp_nmix_community_oracle()`, `src/nmix_community_oracle.h`):
+    the engine drives it directly with **no per-group / per-node round trip into
+    R**. `re_terms` / `theta0` / `Sigma0` must still describe the layout the oracle
+    exposes; the integration core is identical to the R-closure path. This is now
+    the production path for `tulpa_nmix_laplace_re()`, which passes a native
+    `NMixCommunityOracle` (species = groups, per-group RE `(b_lambda, b_p)`,
+    `theta` = community means) instead of a `make_group` R closure, and gained
+    `n_quad` / `lkj_eta` to debias the community covariances at a
+    `n_quad^(p_lambda + p_p)` per-species grid cost.
+  Supply exactly one of `make_site` / `make_group` / `oracle`. Fixed params + log-Cholesky
   `Sigma` coords are optimized jointly on `sum_g log M_g`; SEs from the
   exact-marginal Hessian. Optional `lkj_eta > 1` penalizes a weakly-identified
   correlation off the boundary without shrinking the marginal SDs. Distinct
-  from `agq_fit()` (`R/agq.R`), which is intercept-only RE with built-in
-  `binomial`/`poisson`/`gaussian` likelihoods. Recovery / equivalence:
+  from `agq_fit()` (`R/agq.R`), which is intercept-only RE -- but its built-in
+  `binomial`/`poisson`/`gaussian` densities are now the **shared compiled GLMM
+  oracle** (`cpp_glmm_oracle_make`, `src/glmm_oracle.h`): a single C++ source of
+  truth that `agq_fit()` (`Z = 1` intercept), the single-arm `make_site` path
+  here, `tulpa_re_cov_nested(n_quad > 1)` and the Gibbs sweep all consume,
+  replacing the per-fitter R density closures (`.agq_loglik_elt()` /
+  `.agq_score_info()`, removed). The gaussian residual variance is `phi =
+  sigma_eps^2`; binomial / poisson ignore `phi`. Recovery / equivalence:
   `test-re-aghq.R` (single-arm), `test-re-aghq-multiarm.R` (make_group == make_site
   at d=1/d=2, two-arm N-mixture oracle FD-checks + end-to-end).
 

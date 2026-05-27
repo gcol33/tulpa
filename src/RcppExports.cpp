@@ -25,6 +25,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_nmix_community_oracle
+SEXP cpp_nmix_community_oracle(IntegerVector y, IntegerVector site_idx, IntegerVector species_idx, NumericMatrix X_lambda, NumericMatrix X_p, int n_sites, int n_species, int K_max);
+RcppExport SEXP _tulpa_cpp_nmix_community_oracle(SEXP ySEXP, SEXP site_idxSEXP, SEXP species_idxSEXP, SEXP X_lambdaSEXP, SEXP X_pSEXP, SEXP n_sitesSEXP, SEXP n_speciesSEXP, SEXP K_maxSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< IntegerVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type site_idx(site_idxSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type species_idx(species_idxSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type X_lambda(X_lambdaSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type X_p(X_pSEXP);
+    Rcpp::traits::input_parameter< int >::type n_sites(n_sitesSEXP);
+    Rcpp::traits::input_parameter< int >::type n_species(n_speciesSEXP);
+    Rcpp::traits::input_parameter< int >::type K_max(K_maxSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nmix_community_oracle(y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, K_max));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_aghq_objective
 double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full, int n_quad, double lkj_eta);
 RcppExport SEXP _tulpa_cpp_aghq_objective(SEXP parSEXP, SEXP oracleSEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP n_quadSEXP, SEXP lkj_etaSEXP) {
@@ -2792,6 +2810,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_make_rclosure_oracle", (DL_FUNC) &_tulpa_cpp_aghq_make_rclosure_oracle, 4},
+    {"_tulpa_cpp_nmix_community_oracle", (DL_FUNC) &_tulpa_cpp_nmix_community_oracle, 8},
     {"_tulpa_cpp_aghq_objective", (DL_FUNC) &_tulpa_cpp_aghq_objective, 6},
     {"_tulpa_cpp_aghq_blups", (DL_FUNC) &_tulpa_cpp_aghq_blups, 4},
     {"_tulpa_cpp_flatten_3d_rowmajor", (DL_FUNC) &_tulpa_cpp_flatten_3d_rowmajor, 4},

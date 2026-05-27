@@ -18,6 +18,8 @@ tulpa_nmix_laplace_re(
   Sigma_p_init = NULL,
   K_max = NULL,
   max_iter = 200L,
+  n_quad = 1L,
+  lkj_eta = 1,
   sigma_beta = 100,
   verbose = FALSE
 )
@@ -50,6 +52,16 @@ per-species coefficient estimates.}
 
 \item{max_iter}{Optimizer iteration cap (default 200).}
 
+\item{n_quad}{Quadrature points per random-effect dimension passed to
+\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} (default 1, the joint Laplace). A higher \code{n_quad}
+debiases the community covariances at a \code{n_quad^(p_lambda + p_p)}
+per-species grid cost, so keep it modest when the coefficient dimension is
+large.}
+
+\item{lkj_eta}{LKJ shape regularizing each \emph{correlated} community covariance
+block's correlation off the boundary (default 1, no penalty); passed
+through to \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}. Does not touch the marginal SDs.}
+
 \item{sigma_beta}{Weak Gaussian ridge SD on the community means (default 100,
 i.e. \code{tau = 1e-4}, matching the other Laplace paths); stabilizes a
 weakly-identified community mean without materially shifting it.}
@@ -62,7 +74,8 @@ means), \code{vcov} (their joint covariance from the AGHQ marginal Hessian,
 \code{(p_lambda + p_p)} square; marginalizes the community-covariance
 uncertainty rather than plugging in \code{Sigma}), \code{Sigma_lambda}, \code{Sigma_p}
 (community covariances), \code{b_lambda}, \code{b_p} (per-species BLUP deviations,
-\code{n_species} rows), \code{log_lik} (Laplace marginal), \code{converged}, \code{K_max}.
+\code{n_species} rows), \code{log_lik} (AGHQ marginal), \code{converged}, \code{K_max},
+\code{n_quad}, \code{lkj_eta}.
 }
 \description{
 Fits the community (spAbundance \code{msNMix}) N-mixture model: a per-species
@@ -78,7 +91,12 @@ The latent abundances integrate out per species-site in closed form (the
 shared N-mixture kernel exposed by \code{\link[=tulpa_nmix_site_marginal]{tulpa_nmix_site_marginal()}}); the
 per-species coefficient deviations \eqn{b_s = (b^\lambda_s, b^p_s)} are the
 random effects, integrated by the shared compiled AGHQ engine
-(\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} at \code{n_quad = 1}, i.e. the joint Laplace). Each species'
+(\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}). At \code{n_quad = 1} (the default) this is the joint Laplace
+(glmer \code{nAGQ = 1}); a higher \code{n_quad} replaces each species' Laplace integral
+with adaptive Gauss-Hermite quadrature, reducing the small-cluster (few
+species) downward bias of the community covariances \code{Sigma_lambda} /
+\code{Sigma_p} -- at a \code{n_quad^(p_lambda + p_p)} per-species grid cost. Each
+species'
 marginal -- value, abundance/detection score, and the per-site observed-
 information block carrying the \eqn{\mathrm{Var}(N_i\mid y_i)} abundance/
 detection coupling -- is supplied as the per-group oracle, so there is one

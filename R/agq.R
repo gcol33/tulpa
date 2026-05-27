@@ -89,6 +89,7 @@ agq_fit <- function(y, X, group,
 
   family <- match.arg(family)
   if (!is.matrix(X)) X <- as.matrix(X)
+  storage.mode(X) <- "double"
   n_obs <- length(y)
   p <- ncol(X)
   if (nrow(X) != n_obs) stop("nrow(X) != length(y).", call. = FALSE)
@@ -103,49 +104,17 @@ agq_fit <- function(y, X, group,
   if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
   if (is.null(beta_init)) beta_init <- rep(0, p)
 
-  # Pre-split observations by cluster — one closure capture, reused
-  # at every optim iteration.
-  obs_by_g <- split(seq_len(n_obs), group)
-  if (length(obs_by_g) < n_groups) {
-    # Pad empty groups (no obs) — they contribute log p(y_g | u_g) = 0
-    # but still pay the prior log N(u_g | 0, sigma^2).
-    for (g in seq_len(n_groups)) {
-      if (is.null(obs_by_g[[as.character(g)]])) {
-        obs_by_g[[as.character(g)]] <- integer(0L)
-      }
-    }
-    obs_by_g <- obs_by_g[as.character(seq_len(n_groups))]
-  }
-
-  # Intercept-only RE: route through the shared compiled AGHQ engine. `theta` is
-  # the fixed effects beta; the 1x1 RE covariance is one log-SD coordinate
-  # (log-Cholesky of a scalar), so par = c(beta, log_sigma_re). At n_quad = 1
-  # this is the joint Laplace. The family likelihood is the only model-specific
-  # piece and lives in the per-group builder (Z = 1 intercept).
-  builder <- function(beta) {
-    eta_fixed <- as.numeric(X %*% beta)
-    list(
-      grad_hess = function(g, b) {
-        rows <- obs_by_g[[g]]
-        if (length(rows) == 0L)
-          return(list(logL = 0, grad = 0, negH = matrix(0, 1L, 1L)))
-        eta <- eta_fixed[rows] + b[1L]
-        ntg <- if (family == "binomial") n_trials[rows] else NULL
-        si  <- .agq_score_info(eta, y[rows], ntg, family, sigma_eps)
-        list(logL = sum(.agq_loglik_elt(eta, y[rows], ntg, family, sigma_eps)),
-             grad = sum(si$d1),
-             negH = matrix(-sum(si$d2), 1L, 1L))
-      },
-      node_ll = function(g, B) {
-        rows <- obs_by_g[[g]]
-        if (length(rows) == 0L) return(rep(0, nrow(B)))
-        ntg <- if (family == "binomial") n_trials[rows] else NULL
-        ETA <- eta_fixed[rows] + matrix(B[, 1L], length(rows), nrow(B), byrow = TRUE)
-        colSums(.agq_loglik_elt(ETA, y[rows], ntg, family, sigma_eps))
-      })
-  }
-
-  orc <- cpp_aghq_make_rclosure_oracle(builder, n_groups, 1L, p)
+  # Intercept-only RE: route through the shared compiled GLMM oracle, so the
+  # family density (binomial / poisson / gaussian) has a single C++ source of
+  # truth shared with tulpa_re_aghq() and the Gibbs sweep. The RE design is the
+  # 1x1 intercept Z = 1; its covariance is one log-SD coordinate (log-Cholesky
+  # of a scalar), so par = c(beta, log_sigma_re) and at n_quad = 1 this is the
+  # joint Laplace. Empty groups (no obs) are handled in the oracle: they pay
+  # only the N(0, sigma^2) prior. The gaussian residual VARIANCE is phi =
+  # sigma_eps^2; binomial / poisson ignore phi.
+  Z <- matrix(1, n_obs, 1L)
+  orc <- cpp_glmm_oracle_make(family, sigma_eps^2, as.numeric(y),
+                              as.numeric(n_trials), X, Z, group, n_groups)
   negf <- function(par)
     -cpp_aghq_objective(par, orc, 1L, FALSE, as.integer(n_quad), 1.0)
 
@@ -196,52 +165,6 @@ agq_fit <- function(y, X, group,
 }
 
 
-#' Per-observation conditional log-likelihood at a linear predictor
-#'
-#' Elementwise log-likelihood contribution (works on a vector or a matrix of
-#' `eta`, so the quadrature-node sweep reuses it). Drops the additive constants
-#' that do not depend on `eta` (binomial coefficient, Poisson `lgamma`).
-#' @keywords internal
-.agq_loglik_elt <- function(eta, y, n_trials, family, sigma_eps) {
-  if (family == "binomial") {
-    y * eta - n_trials * log1pexp(eta)
-  } else if (family == "poisson") {
-    y * eta - exp(eta)
-  } else if (family == "gaussian") {
-    # Explicit form (not dnorm) so a matrix `eta` keeps its dimensions.
-    -0.5 * log(2 * pi) - log(sigma_eps) - 0.5 * ((y - eta) / sigma_eps)^2
-  } else {
-    stop("Unsupported family in AGQ: ", family, call. = FALSE)
-  }
-}
-
-#' Per-observation score and observed information wrt the linear predictor
-#'
-#' First and second `eta`-derivatives of `.agq_loglik_elt()` (`d2` is the second
-#' derivative, i.e. minus the observed information). Drives the per-group mode.
-#' @keywords internal
-.agq_score_info <- function(eta, y, n_trials, family, sigma_eps) {
-  if (family == "binomial") {
-    mu <- 1 / (1 + exp(-eta))
-    list(d1 = y - n_trials * mu, d2 = -n_trials * mu * (1 - mu))
-  } else if (family == "poisson") {
-    lam <- exp(eta)
-    list(d1 = y - lam, d2 = -lam)
-  } else if (family == "gaussian") {
-    list(d1 = (y - eta) / sigma_eps^2, d2 = rep(-1 / sigma_eps^2, length(eta)))
-  } else {
-    stop("Unsupported family in AGQ: ", family, call. = FALSE)
-  }
-}
-
-
-#' Stable log(1 + exp(x))
-#' @keywords internal
-log1pexp <- function(x) {
-  ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))
-}
-
-
 #' Gauss-Hermite quadrature (probabilist's, exp(-z^2/2) weight)
 #'
 #' Computes nodes and weights for `\int f(z) (2\pi)^{-1/2} exp(-z^2/2) dz`
@@ -269,12 +192,4 @@ gauss_hermite_prob <- function(n) {
   weights <- ev$vectors[1L, ]^2
   ord <- order(nodes)
   list(nodes = nodes[ord], weights = weights[ord])
-}
-
-
-#' Numerically stable log-sum-exp on a vector
-#' @keywords internal
-logsumexp <- function(x) {
-  m <- max(x)
-  m + log(sum(exp(x - m)))
 }

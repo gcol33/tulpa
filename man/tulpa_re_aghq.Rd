@@ -10,6 +10,7 @@ tulpa_re_aghq(
   Sigma0,
   make_site = NULL,
   make_group = NULL,
+  oracle = NULL,
   n_obs = NULL,
   keep = NULL,
   n_quad = 9L,
@@ -57,6 +58,13 @@ matrix \code{B} are candidate \code{b} vectors).
 The callback owns all arm / design / clamping bookkeeping. Supply this or
 \code{make_site}, not both.
 }}
+
+\item{oracle}{Optional prebuilt native (compiled) oracle, an external pointer
+to a \code{REGroupOracle} (e.g. from \code{cpp_nmix_community_oracle()}). When
+supplied the engine drives it directly, with no per-group / per-node round
+trip into R, and neither \code{make_site} nor \code{make_group} is needed; \code{re_terms},
+\code{theta0} and \code{Sigma0} must still describe the same layout the oracle
+exposes. The integration core is identical to the R-closure path.}
 
 \item{n_obs}{Number of observations (length of each term's \code{idx}). Required
 for the \code{make_site} path; ignored for \code{make_group}.}
