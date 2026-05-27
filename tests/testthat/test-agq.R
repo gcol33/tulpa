@@ -113,6 +113,30 @@ test_that("agq registers in Tier 2 (Structured)", {
 })
 
 
+test_that("agq_fit fixed-effect CIs achieve near-nominal coverage", {
+  skip_on_cran()
+  # Coverage gate on the shared marginal-Hessian SE path (the same path
+  # tulpa_re_aghq / tulpa_nmix_laplace_re report SEs from). 95% Wald CIs for the
+  # fixed effects should cover truth at >= 85% over >= 20 seeds (the
+  # "Statistical Code Needs Recovery Tests" rule).
+  beta_true <- c(0.4, 0.8); sigma_true <- 0.7
+  covered <- function(seed) {
+    set.seed(seed)
+    n_g <- 40L; n_per <- 8L; n <- n_g * n_per
+    group <- rep(seq_len(n_g), each = n_per)
+    x <- rnorm(n); X <- cbind(1, x)
+    u <- rnorm(n_g, 0, sigma_true)
+    y <- rbinom(n, 1L, plogis(as.numeric(X %*% beta_true) + u[group]))
+    fit <- agq_fit(y, X, group, family = "binomial", n_quad = 7L)
+    se <- sqrt(diag(fit$cov))[1:2]
+    abs(fit$means[1:2] - beta_true) <= stats::qnorm(0.975) * se
+  }
+  cov <- rowMeans(vapply(1:30, covered, logical(2)))
+  expect_gt(cov[1], 0.85)
+  expect_gt(cov[2], 0.85)
+})
+
+
 test_that("agq_fit errors on bad inputs", {
   expect_error(agq_fit(1:5, matrix(1, 5, 1), c(1, 1, 2, 2, 2),
                        family = "binomial", n_quad = 0L),

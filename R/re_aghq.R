@@ -88,20 +88,27 @@
 #'   correlation off the boundary without touching the marginal SDs. The
 #'   marginal SDs are otherwise unpenalized (pure ML), so the refinement debiases
 #'   them rather than shrinking them.
+#' @param theta_prior_sd Optional Gaussian ridge SD on the fixed parameters
+#'   `theta` (a mean-zero `N(0, theta_prior_sd^2)` prior, added to the optimized
+#'   objective and hence the marginal Hessian). `Inf` (default) is pure ML on
+#'   `theta`; a large finite value (e.g. 100) is a weak ridge that stabilizes a
+#'   weakly-identified fixed effect without materially shifting the estimate.
 #' @param maxit Optimizer iteration cap (default 200).
 #'
 #' @return A list with: `theta` (refined fixed parameters), `Sigma_list`
 #'   (refined per-term covariance), `blup` / `blup_var` (per-term `n_groups x
 #'   n_coefs` posterior mean / variance of the RE), `theta_cov` / `theta_se`
-#'   (fixed-parameter covariance / SE from the marginal Hessian), `n_quad`,
-#'   `lkj_eta`, and `converged`. Returns `NULL` if the RE terms do not share one
-#'   grouping factor or the optimum is not usable (caller keeps its prior fit).
+#'   (fixed-parameter covariance / SE from the marginal Hessian), `log_marginal`
+#'   (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
+#'   `n_quad`, `lkj_eta`, and `converged`. Returns `NULL` if the RE terms do not
+#'   share one grouping factor or the optimum is not usable (caller keeps its
+#'   prior fit).
 #' @export
 tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                           make_site = NULL, make_group = NULL,
                           n_obs = NULL,
                           keep = NULL, n_quad = 9L, lkj_eta = 1,
-                          maxit = 200L) {
+                          theta_prior_sd = Inf, maxit = 200L) {
   if (is.null(make_site) == is.null(make_group)) {
     stop("Supply exactly one of `make_site` (single-arm) or `make_group` ",
          "(general / multi-arm).", call. = FALSE)
@@ -132,30 +139,20 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   re_par0 <- .re_cov_L_list_to_theta(lapply(Sigma0, .re_chol_spd), layout)
   n_theta <- length(theta0)
 
-  gh <- gauss_hermite_prob(n_quad)              # nodes z, weights w (sum w = 1)
-  Q  <- length(gh$nodes)
-  grid   <- as.matrix(expand.grid(rep(list(seq_len(Q)), dtot)))
-  Znodes <- matrix(gh$nodes[grid],        nrow = nrow(grid), ncol = dtot)
-  logw_q <- rowSums(matrix(log(gh$weights)[grid], nrow = nrow(grid)))
-  z2_q   <- rowSums(Znodes^2)
+  # Block dimensions / correlated flags for the compiled engine. `cl` is shared
+  # with the single-arm oracle assembly below; the quadrature grid, log-Cholesky
+  # packing and LKJ penalty all live in C++ (src/aghq_re*.{h,cpp}).
+  full_vec <- vapply(layout, function(b) isTRUE(b$full), logical(1))
   cl <- function(e) pmin(pmax(e, -30), 30)
-
-  block_diag <- function(mats) {
-    if (length(mats) == 1L) return(mats[[1L]])
-    out <- matrix(0, dtot, dtot); pos <- 0L
-    for (m in mats) {
-      k <- nrow(m); out[pos + seq_len(k), pos + seq_len(k)] <- m; pos <- pos + k
-    }
-    out
-  }
 
   # -------------------------------------------------------------------------
   # Per-group conditional-likelihood oracle. `build_oracle(theta)` returns
   #   grad_hess(g, b) -> list(logL, grad, negH)   data-only value/score/info
   #   node_ll(g, B)   -> numeric over node rows    data log-lik at nodes
-  # The integration core below is identical for both callback forms; only the
-  # oracle differs. For make_site the engine assembles it from the per-row
-  # marginal and the RE design; for make_group the caller supplies it directly.
+  # The compiled core is identical for both callback forms; only the oracle
+  # differs. For make_site the engine assembles it from the per-row marginal and
+  # the RE design; for make_group the caller supplies it directly. The R-closure
+  # bridge (cpp_aghq_make_rclosure_oracle) marshals it into the C++ engine.
   # -------------------------------------------------------------------------
   if (single_arm) {
     Zc <- do.call(cbind, lapply(layout, function(b) b$Z))   # n_obs x dtot
@@ -164,7 +161,6 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     rows_by_g <- lapply(seq_len(ng), function(g) {
       r <- which(idx1 == g); r[r %in% keep]
     })
-    active_groups <- which(lengths(rows_by_g) > 0L)
 
     build_oracle <- function(theta) {
       site <- make_site(theta)
@@ -186,99 +182,38 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
         })
     }
   } else {
-    active_groups <- seq_len(ng)
-    build_oracle  <- function(theta) make_group(theta)
+    build_oracle <- function(theta) make_group(theta)
   }
 
-  # Per-group posterior mode of b (damped Newton on the penalized integrand) and
-  # the precision -H there. Structure-agnostic via the oracle.
-  grp_mode <- function(g, oracle, P) {
-    bb <- numeric(dtot)
-    for (it in seq_len(50L)) {
-      gh <- oracle$grad_hess(g, bb)
-      grad <- gh$grad - as.numeric(P %*% bb)
-      negH <- gh$negH + P
-      step <- tryCatch(solve(negH, grad), error = function(e) NULL)
-      if (is.null(step)) break
-      bb <- bb + step
-      if (max(abs(step)) < 1e-9) break
-    }
-    gh <- oracle$grad_hess(g, bb)
-    list(b = bb, negH = gh$negH + P)
-  }
+  # -------------------------------------------------------------------------
+  # Optimize sum_g log M_g (+ optional LKJ) over [theta ; log-Cholesky Sigma]
+  # with the compiled AGHQ engine. cpp_aghq_objective returns a large finite
+  # penalty on a failed solve so stats::optim rejects it; the gradient is the
+  # finite difference of this objective (consistent at every n_quad, including
+  # n_quad = 1 == joint Laplace).
+  # -------------------------------------------------------------------------
+  orc   <- cpp_aghq_make_rclosure_oracle(build_oracle, ng, dtot, n_theta)
+  ridge <- if (is.finite(theta_prior_sd)) 0.5 / theta_prior_sd^2 else 0
+  negf  <- function(par)
+    -cpp_aghq_objective(par, orc, nc_terms, full_vec, as.integer(n_quad), lkj_eta) +
+      ridge * sum(par[seq_len(n_theta)]^2)
 
-  # log M_g via adaptive GHQ centred at the mode (probabilist's convention):
-  #   b_k = b_hat + L_c z_k,  C = L_c L_c' = (-H)^{-1}
-  #   log M_g = -0.5 logdetSigma + log|L_c|
-  #             + lse_k[ log w_k + ell_g(b_k) - 0.5 b_k' Sigma^{-1} b_k
-  #                      + 0.5 z_k' z_k ]
-  grp_logM <- function(g, oracle, P, logdetS, want_post = FALSE) {
-    m <- grp_mode(g, oracle, P)
-    Lc <- tryCatch(t(chol(solve(m$negH))), error = function(e) NULL)
-    if (is.null(Lc)) return(NULL)
-    B <- matrix(m$b, nrow(Znodes), dtot, byrow = TRUE) + Znodes %*% t(Lc)
-    hvals <- oracle$node_ll(g, B) - 0.5 * rowSums((B %*% P) * B)
-    terms <- logw_q + hvals + 0.5 * z2_q
-    mx <- max(terms)
-    logM <- -0.5 * logdetS + sum(log(diag(Lc))) + mx + log(sum(exp(terms - mx)))
-    if (want_post) list(logM = logM, b = m$b, var = diag(solve(m$negH)))
-    else logM
-  }
-
-  # LKJ(eta) penalty on each correlated block: (eta - 1) log det R, with
-  # log det R = 2 sum log L_ii - 2 sum log sigma_i (sigma_i = sqrt(Sigma_ii)).
-  # Marginal SDs are left unpenalized.
-  lkj_logprior <- function(L_list) {
-    if (lkj_eta == 1) return(0)
-    s <- 0
-    for (m in seq_along(layout)) {
-      if (!layout[[m]]$full) next
-      L <- L_list[[m]]
-      sig <- sqrt(rowSums(L^2))
-      s <- s + (lkj_eta - 1) * (2 * sum(log(diag(L))) - 2 * sum(log(pmax(sig, 1e-12))))
-    }
-    s
-  }
-
-  nll <- function(par) {
-    theta <- par[seq_len(n_theta)]
-    L_list <- .re_cov_theta_to_L_list(par[-seq_len(n_theta)], layout)
-    Sig <- block_diag(lapply(L_list, tcrossprod)) + diag(1e-10, dtot)
-    P <- tryCatch(solve(Sig), error = function(e) NULL)
-    if (is.null(P)) return(1e10)
-    logdetS <- as.numeric(determinant(Sig, logarithm = TRUE)$modulus)
-    oracle <- build_oracle(theta)
-    total <- 0
-    for (g in active_groups) {
-      lm <- grp_logM(g, oracle, P, logdetS)
-      if (is.null(lm) || !is.finite(lm)) return(1e10)
-      total <- total + lm
-    }
-    -(total + lkj_logprior(L_list))
-  }
-
-  opt <- stats::optim(c(theta0, re_par0), nll, method = "BFGS", hessian = TRUE,
+  opt <- stats::optim(c(theta0, re_par0), negf, method = "BFGS", hessian = TRUE,
                       control = list(maxit = maxit, reltol = 1e-9))
   V <- tryCatch(solve(opt$hessian), error = function(e) NULL)
   if (is.null(V) || any(!is.finite(opt$par))) return(NULL)
 
-  theta_ref <- opt$par[seq_len(n_theta)]
-  L_list <- .re_cov_theta_to_L_list(opt$par[-seq_len(n_theta)], layout)
+  theta_ref  <- opt$par[seq_len(n_theta)]
+  L_list     <- .re_cov_theta_to_L_list(opt$par[-seq_len(n_theta)], layout)
   Sigma_list <- lapply(L_list, tcrossprod)
+  # Pure AGHQ marginal at the optimum (no ridge), for callers reporting log-lik.
+  log_marginal <- cpp_aghq_objective(opt$par, orc, nc_terms, full_vec,
+                                     as.integer(n_quad), lkj_eta)
 
-  # Per-group BLUPs + variances at the optimum.
-  Sig <- block_diag(Sigma_list) + diag(1e-10, dtot)
-  P <- solve(Sig)
-  logdetS <- as.numeric(determinant(Sig, logarithm = TRUE)$modulus)
-  oracle <- build_oracle(theta_ref)
-  BHAT <- matrix(0, ng, dtot)
-  BVAR <- matrix(rep(diag(Sig), each = ng), ng, dtot)   # empty groups -> prior
-  for (g in active_groups) {
-    post <- grp_logM(g, oracle, P, logdetS, want_post = TRUE)
-    if (is.null(post)) return(NULL)
-    BHAT[g, ] <- post$b
-    BVAR[g, ] <- post$var
-  }
+  # Per-group BLUPs + marginal variances at the optimum. The engine returns the
+  # prior fallback for empty groups (mode 0, variance diag(Sigma)).
+  bl   <- cpp_aghq_blups(opt$par, orc, nc_terms, full_vec)
+  BHAT <- bl$bhat; BVAR <- bl$bvar
   blup     <- lapply(seq_along(layout), function(m) BHAT[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
   blup_var <- lapply(seq_along(layout), function(m) BVAR[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
 
@@ -289,6 +224,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     blup_var   = blup_var,
     theta_cov  = V[seq_len(n_theta), seq_len(n_theta), drop = FALSE],
     theta_se   = sqrt(pmax(diag(V)[seq_len(n_theta)], 0)),
+    log_marginal = log_marginal,
     n_quad     = as.integer(n_quad),
     lkj_eta    = lkj_eta,
     converged  = isTRUE(opt$convergence == 0L)

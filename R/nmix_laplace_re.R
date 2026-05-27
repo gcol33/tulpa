@@ -1,4 +1,4 @@
-#' Community / multispecies N-mixture by Laplace-EM
+#' Community / multispecies N-mixture by Laplace
 #'
 #' @description
 #' Fits the community (spAbundance `msNMix`) N-mixture model: a per-species
@@ -11,15 +11,17 @@
 #' \deqn{b^\lambda_s \sim N(0, \Sigma_\lambda), \quad b^p_s \sim N(0, \Sigma_p).}
 #'
 #' The latent abundances integrate out per species-site in closed form (the
-#' shared N-mixture kernel); the per-species coefficient deviations
-#' \eqn{b_s = (b^\lambda_s, b^p_s)} are the random effects, integrated by a
-#' Laplace-EM in C++ (`cpp_nmix_laplace_re`). The Gaussian community priors pin
-#' \eqn{(\mu_\lambda, \mu_p)} as fixed effects, so no sum-to-zero constraint is
-#' needed. Fixed-effect standard errors come from the marginal observed-
-#' information Hessian (the b-block Schur complement, with the \eqn{\mathrm{Var}
-#' [N|y]} rank-1 correction). This is the compiled counterpart of wrapping
-#' [tulpa_nmix_site_marginal()] into [tulpa_re_aghq()]; it runs the same Laplace
-#' marginal without the per-group R-interpreter overhead.
+#' shared N-mixture kernel exposed by [tulpa_nmix_site_marginal()]); the
+#' per-species coefficient deviations \eqn{b_s = (b^\lambda_s, b^p_s)} are the
+#' random effects, integrated by the shared compiled AGHQ engine
+#' ([tulpa_re_aghq()] at `n_quad = 1`, i.e. the joint Laplace). Each species'
+#' marginal -- value, abundance/detection score, and the per-site observed-
+#' information block carrying the \eqn{\mathrm{Var}(N_i\mid y_i)} abundance/
+#' detection coupling -- is supplied as the per-group oracle, so there is one
+#' marginal/quadrature/covariance implementation across the package. The
+#' Gaussian community priors pin \eqn{(\mu_\lambda, \mu_p)} as fixed effects, so
+#' no sum-to-zero constraint is needed; their standard errors come from the
+#' marginal observed-information Hessian.
 #'
 #' Poisson abundance only (a global negative-binomial size is a planned
 #' extension).
@@ -40,18 +42,18 @@
 #'   covariances. Default: the (ridge-regularized) sample covariance of the
 #'   per-species coefficient estimates.
 #' @param K_max Marginal-sum truncation (default `max(y) + 100`).
-#' @param max_iter,tol EM iteration budget / `Sigma`-change tolerance.
-#' @param inner_max,inner_tol Inner mode-finder (block-coordinate Newton) budget
-#'   / step tolerance.
-#' @param sigma_beta Weak ridge SD on the community means (default 100, i.e.
-#'   `tau = 1e-4`, matching the other Laplace paths).
-#' @param verbose Print per-iteration `Sigma` change.
+#' @param max_iter Optimizer iteration cap (default 200).
+#' @param sigma_beta Weak Gaussian ridge SD on the community means (default 100,
+#'   i.e. `tau = 1e-4`, matching the other Laplace paths); stabilizes a
+#'   weakly-identified community mean without materially shifting it.
+#' @param verbose Unused (kept for backward compatibility); the engine is silent.
 #'
 #' @return A list of class `tulpa_nmix_re_fit`: `mu_lambda`, `mu_p` (community
-#'   means), `vcov` (their joint covariance, `(p_lambda + p_p)` square),
-#'   `Sigma_lambda`, `Sigma_p` (community covariances), `b_lambda`, `b_p` (per-
-#'   species BLUP deviations, `n_species` rows), `log_lik` (Laplace marginal),
-#'   `converged`, `n_iter`, `K_max`.
+#'   means), `vcov` (their joint covariance from the AGHQ marginal Hessian,
+#'   `(p_lambda + p_p)` square; marginalizes the community-covariance
+#'   uncertainty rather than plugging in `Sigma`), `Sigma_lambda`, `Sigma_p`
+#'   (community covariances), `b_lambda`, `b_p` (per-species BLUP deviations,
+#'   `n_species` rows), `log_lik` (Laplace marginal), `converged`, `K_max`.
 #'
 #' @references
 #' Royle, J. A. (2004). N-mixture models for estimating population size from
@@ -59,14 +61,14 @@
 #' Doser, J. et al. (2023). spAbundance. `msNMix()`.
 #'
 #' @seealso [tulpa_nmix_laplace()] (single species), [tulpa_nmix_site_marginal()]
-#'   / [tulpa_re_aghq()] (the composable RE-integrator path).
+#'   (the per-species marginal primitive), [tulpa_re_aghq()] (the shared
+#'   random-effect integrator).
 #' @export
 tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
                                   X_lambda, X_p, n_sites, n_species,
                                   mu_lambda_init = NULL, mu_p_init = NULL,
                                   Sigma_lambda_init = NULL, Sigma_p_init = NULL,
-                                  K_max = NULL, max_iter = 100L, tol = 1e-6,
-                                  inner_max = 50L, inner_tol = 1e-8,
+                                  K_max = NULL, max_iter = 200L,
                                   sigma_beta = 100, verbose = FALSE) {
   y        <- as.integer(y)
   site_idx <- as.integer(site_idx)
@@ -94,7 +96,7 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     B_p   <- matrix(NA_real_, n_species, p_p)
     for (s in seq_len(n_species)) {
       sel <- species_idx == s
-      # Warm start only seeds the community EM, so a boundary-weight warning on
+      # Warm start only seeds the community fit, so a boundary-weight warning on
       # a throwaway per-species init fit is not actionable -- suppress it (the
       # community fit's own K_max governs the final truncation).
       f <- tryCatch(
@@ -119,20 +121,98 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     if (is.null(Sigma_p_init))      Sigma_p_init      <- .nmix_re_cov0(B_p[ok_p, , drop = FALSE], p_p)
   }
 
-  raw <- cpp_nmix_laplace_re(
-    y = y, site_idx = site_idx, species_idx = species_idx,
-    X_lambda = X_lambda, X_p = X_p,
-    n_sites = as.integer(n_sites), n_species = as.integer(n_species),
-    Sigma_lambda_init = as.matrix(Sigma_lambda_init),
-    Sigma_p_init = as.matrix(Sigma_p_init),
-    mu_lambda_init = as.numeric(mu_lambda_init),
-    mu_p_init = as.numeric(mu_p_init),
-    K_max = K_max, max_iter = as.integer(max_iter), tol = as.numeric(tol),
-    inner_max = as.integer(inner_max), inner_tol = as.numeric(inner_tol),
-    sigma_beta = as.numeric(sigma_beta), verbose = isTRUE(verbose))
-  raw$mixture <- "P"
-  class(raw) <- c("tulpa_nmix_re_fit", "list")
-  raw
+  # ---- per-species marginal oracle, integrated by the shared engine ----
+  orc <- .nmix_re_oracle(y, site_idx, species_idx, X_lambda, X_p,
+                         n_sites, n_species, p_lam, p_p, K_max)
+
+  fit <- tulpa_re_aghq(
+    theta0  = c(as.numeric(mu_lambda_init), as.numeric(mu_p_init)),
+    re_terms = list(list(n_groups = n_species, n_coefs = p_lam, correlated = p_lam > 1L),
+                    list(n_groups = n_species, n_coefs = p_p,   correlated = p_p   > 1L)),
+    Sigma0  = list(as.matrix(Sigma_lambda_init), as.matrix(Sigma_p_init)),
+    make_group = function(theta) list(
+      grad_hess = function(g, b) orc$grad_hess(g, b + theta),
+      node_ll   = function(g, B) orc$node_ll(g, sweep(B, 2, theta, `+`))),
+    n_quad = 1L, theta_prior_sd = sigma_beta, maxit = as.integer(max_iter))
+
+  if (is.null(fit)) {
+    stop("Community N-mixture optimization failed (singular marginal Hessian ",
+         "or non-finite optimum). Try a different warm start or K_max.", call. = FALSE)
+  }
+
+  mu <- fit$theta
+  out <- list(
+    mu_lambda    = mu[seq_len(p_lam)],
+    mu_p         = mu[p_lam + seq_len(p_p)],
+    vcov         = fit$theta_cov,
+    Sigma_lambda = fit$Sigma_list[[1L]],
+    Sigma_p      = fit$Sigma_list[[2L]],
+    b_lambda     = fit$blup[[1L]],
+    b_p          = fit$blup[[2L]],
+    log_lik      = fit$log_marginal,
+    converged    = fit$converged,
+    K_max        = K_max,
+    mixture      = "P"
+  )
+  class(out) <- c("tulpa_nmix_re_fit", "list")
+  out
+}
+
+# Per-species community N-mixture oracle for the shared RE integrator. Each
+# species' marginal (tulpa_nmix_site_marginal) is built once; the oracle
+# evaluates it at the full coefficients coef = (mu + b_s), mapping the RE
+# deviation through the abundance / detection designs. The b-space curvature is
+# the design-sandwiched per-site observed-information block (with the latent-N
+# coupling) -- the covariate generalization of the intercept-only assembly.
+.nmix_re_oracle <- function(y, site_idx, species_idx, X_lambda, X_p,
+                            n_sites, n_species, p_lam, p_p, K_max) {
+  cl <- function(e) pmin(pmax(e, -30), 30)
+  d  <- p_lam + p_p
+  rows_by_sp <- split(seq_len(length(y)), species_idx)
+  marg <- lapply(seq_len(n_species), function(s) {
+    sel <- rows_by_sp[[as.character(s)]]
+    if (is.null(sel)) sel <- integer(0)
+    tulpa_nmix_site_marginal(
+      y = y[sel], site_idx = site_idx[sel],
+      X_lambda = X_lambda, X_p = X_p[sel, , drop = FALSE],
+      mixture = "P", K_max = K_max)
+  })
+
+  eta_of <- function(m, coef) {
+    list(lambda = cl(as.numeric(m$X_lambda %*% coef[seq_len(p_lam)])),
+         p      = cl(as.numeric(m$X_p %*% coef[p_lam + seq_len(p_p)])))
+  }
+
+  list(
+    grad_hess = function(s, coef) {
+      m  <- marg[[s]]
+      e  <- eta_of(m, coef)
+      ev <- m$eval(e$lambda, e$p)
+      grad <- c(as.numeric(crossprod(m$X_lambda, ev$grad_eta_lambda)),
+                as.numeric(crossprod(m$X_p, ev$grad_eta_p)))
+      # negH: marginal observed info (with the Var[N|y] abundance/detection
+      # coupling), used by the Laplace marginal. fisher: complete-data Fisher
+      # (block-diagonal, PSD), supplied for the mode-find Newton -- the observed
+      # info can be indefinite away from the mode (latent-N coupling).
+      negH <- matrix(0, d, d); fisher <- matrix(0, d, d)
+      for (i in seq_len(m$n_sites)) {
+        obs <- m$obs_by_site[[i]]; Ji <- length(obs)
+        Zi  <- matrix(0, 1L + Ji, d)
+        Zi[1L, seq_len(p_lam)] <- m$X_lambda[i, ]
+        if (Ji > 0L) Zi[-1L, p_lam + seq_len(p_p)] <- m$X_p[obs, , drop = FALSE]
+        negH   <- negH + crossprod(Zi, m$obs_info_block(i, ev) %*% Zi)
+        Fdiag  <- c(ev$info_eta_lambda[i], if (Ji > 0L) ev$info_eta_p[obs] else numeric(0))
+        fisher <- fisher + crossprod(Zi, Fdiag * Zi)
+      }
+      list(logL = ev$log_lik, grad = grad, negH = negH, fisher = fisher)
+    },
+    node_ll = function(s, COEF) {
+      m <- marg[[s]]
+      vapply(seq_len(nrow(COEF)), function(k) {
+        e <- eta_of(m, COEF[k, ])
+        m$eval(e$lambda, e$p)$log_lik
+      }, numeric(1))
+    })
 }
 
 # Method-of-moments community covariance seed: the sample covariance of the

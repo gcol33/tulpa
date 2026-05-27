@@ -14,6 +14,7 @@ tulpa_re_aghq(
   keep = NULL,
   n_quad = 9L,
   lkj_eta = 1,
+  theta_prior_sd = Inf,
   maxit = 200L
 )
 }
@@ -73,14 +74,22 @@ correlation off the boundary without touching the marginal SDs. The
 marginal SDs are otherwise unpenalized (pure ML), so the refinement debiases
 them rather than shrinking them.}
 
+\item{theta_prior_sd}{Optional Gaussian ridge SD on the fixed parameters
+\code{theta} (a mean-zero \code{N(0, theta_prior_sd^2)} prior, added to the optimized
+objective and hence the marginal Hessian). \code{Inf} (default) is pure ML on
+\code{theta}; a large finite value (e.g. 100) is a weak ridge that stabilizes a
+weakly-identified fixed effect without materially shifting the estimate.}
+
 \item{maxit}{Optimizer iteration cap (default 200).}
 }
 \value{
 A list with: \code{theta} (refined fixed parameters), \code{Sigma_list}
 (refined per-term covariance), \code{blup} / \code{blup_var} (per-term \verb{n_groups x n_coefs} posterior mean / variance of the RE), \code{theta_cov} / \code{theta_se}
-(fixed-parameter covariance / SE from the marginal Hessian), \code{n_quad},
-\code{lkj_eta}, and \code{converged}. Returns \code{NULL} if the RE terms do not share one
-grouping factor or the optimum is not usable (caller keeps its prior fit).
+(fixed-parameter covariance / SE from the marginal Hessian), \code{log_marginal}
+(the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
+\code{n_quad}, \code{lkj_eta}, and \code{converged}. Returns \code{NULL} if the RE terms do not
+share one grouping factor or the optimum is not usable (caller keeps its
+prior fit).
 }
 \description{
 Refines a generalized linear mixed model's fixed effects and random-effect

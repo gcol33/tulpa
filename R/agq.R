@@ -117,60 +117,43 @@ agq_fit <- function(y, X, group,
     obs_by_g <- obs_by_g[as.character(seq_len(n_groups))]
   }
 
-  # Gauss-Hermite quadrature nodes (probabilist's: ∫ f(z) exp(-z²/2) dz / sqrt(2π))
-  gh <- gauss_hermite_prob(n_quad)
-  z_nodes <- gh$nodes
-  w_nodes <- gh$weights      # weights such that sum_k w_k f(z_k) ≈ E[f(Z)], Z ~ N(0,1)
-
-  neg_log_marg <- function(par) {
-    beta <- par[seq_len(p)]
-    sigma_re <- exp(par[p + 1L])
-
+  # Intercept-only RE: route through the shared compiled AGHQ engine. `theta` is
+  # the fixed effects beta; the 1x1 RE covariance is one log-SD coordinate
+  # (log-Cholesky of a scalar), so par = c(beta, log_sigma_re). At n_quad = 1
+  # this is the joint Laplace. The family likelihood is the only model-specific
+  # piece and lives in the per-group builder (Z = 1 intercept).
+  builder <- function(beta) {
     eta_fixed <- as.numeric(X %*% beta)
-    log_marg <- 0
-    for (g in seq_len(n_groups)) {
-      idx <- obs_by_g[[g]]
-      eta_g_fixed <- eta_fixed[idx]
-      y_g <- y[idx]
-      n_g <- if (family == "binomial") n_trials[idx] else NULL
-
-      # Find cluster mode u_hat_g via 1-D Newton (cheap; max ~5 iter).
-      mode_info <- find_cluster_mode(eta_g_fixed, y_g, n_g, sigma_re,
-                                     family, sigma_eps,
-                                     max_iter = 50L, tol = 1e-8)
-      u_hat <- mode_info$u_hat
-      s_g <- 1 / mode_info$neg_hess   # posterior cluster variance
-
-      # AGQ: u_g_k = u_hat + sqrt(s_g) * z_k, weight rescaled.
-      sd_g <- sqrt(s_g)
-      log_int_terms <- numeric(n_quad)
-      for (k in seq_len(n_quad)) {
-        u_k <- u_hat + sd_g * z_nodes[k]
-        log_lik_k <- cond_log_lik(eta_g_fixed + u_k, y_g, n_g,
-                                  family, sigma_eps)
-        log_prior_k <- dnorm(u_k, 0, sigma_re, log = TRUE)
-        # Probabilist's weight w_k already integrates against N(0,1);
-        # transform from N(0,1) on z to N(u_hat, s_g) on u contributes
-        # the extra sqrt(s_g) * sqrt(2π) factor in the log:
-        log_int_terms[k] <- log(w_nodes[k]) + log_lik_k + log_prior_k +
-          0.5 * z_nodes[k]^2 + log(sd_g) + 0.5 * log(2 * pi)
-      }
-      log_marg <- log_marg + logsumexp(log_int_terms)
-    }
-    -log_marg
+    list(
+      grad_hess = function(g, b) {
+        rows <- obs_by_g[[g]]
+        if (length(rows) == 0L)
+          return(list(logL = 0, grad = 0, negH = matrix(0, 1L, 1L)))
+        eta <- eta_fixed[rows] + b[1L]
+        ntg <- if (family == "binomial") n_trials[rows] else NULL
+        si  <- .agq_score_info(eta, y[rows], ntg, family, sigma_eps)
+        list(logL = sum(.agq_loglik_elt(eta, y[rows], ntg, family, sigma_eps)),
+             grad = sum(si$d1),
+             negH = matrix(-sum(si$d2), 1L, 1L))
+      },
+      node_ll = function(g, B) {
+        rows <- obs_by_g[[g]]
+        if (length(rows) == 0L) return(rep(0, nrow(B)))
+        ntg <- if (family == "binomial") n_trials[rows] else NULL
+        ETA <- eta_fixed[rows] + matrix(B[, 1L], length(rows), nrow(B), byrow = TRUE)
+        colSums(.agq_loglik_elt(ETA, y[rows], ntg, family, sigma_eps))
+      })
   }
 
-  par_init <- c(beta_init, log(sigma_init))
-  opt <- stats::optim(
-    par = par_init, fn = neg_log_marg,
-    method = "BFGS",
-    hessian = TRUE,
-    control = list(maxit = max_iter, reltol = tol)
-  )
+  orc <- cpp_aghq_make_rclosure_oracle(builder, n_groups, 1L, p)
+  negf <- function(par)
+    -cpp_aghq_objective(par, orc, 1L, FALSE, as.integer(n_quad), 1.0)
 
-  beta_hat <- opt$par[seq_len(p)]
-  log_sigma_hat <- opt$par[p + 1L]
-  sigma_hat <- exp(log_sigma_hat)
+  par_init <- c(beta_init, log(sigma_init))
+  opt <- stats::optim(par = par_init, fn = negf, method = "BFGS", hessian = TRUE,
+                      control = list(maxit = max_iter, reltol = tol))
+
+  sigma_hat <- exp(opt$par[p + 1L])
 
   cov_par <- tryCatch(solve(opt$hessian),
                       error = function(e) {
@@ -213,20 +196,39 @@ agq_fit <- function(y, X, group,
 }
 
 
-#' Per-cluster conditional log-likelihood evaluator
+#' Per-observation conditional log-likelihood at a linear predictor
+#'
+#' Elementwise log-likelihood contribution (works on a vector or a matrix of
+#' `eta`, so the quadrature-node sweep reuses it). Drops the additive constants
+#' that do not depend on `eta` (binomial coefficient, Poisson `lgamma`).
 #' @keywords internal
-cond_log_lik <- function(eta, y, n_trials, family, sigma_eps) {
-  if (length(y) == 0L) return(0)
+.agq_loglik_elt <- function(eta, y, n_trials, family, sigma_eps) {
   if (family == "binomial") {
-    # log Bernoulli/binomial pmf via log-sum-exp form:
-    # y * eta - n * log(1 + exp(eta)), plus the binomial coefficient.
-    # We can drop the binomial coefficient since it is constant in (beta, u).
-    sum(y * eta - n_trials * log1pexp(eta))
+    y * eta - n_trials * log1pexp(eta)
   } else if (family == "poisson") {
-    # y * eta - exp(eta) - lgamma(y + 1) — drop lgamma (const in eta).
-    sum(y * eta - exp(eta))
+    y * eta - exp(eta)
   } else if (family == "gaussian") {
-    sum(dnorm(y, eta, sigma_eps, log = TRUE))
+    # Explicit form (not dnorm) so a matrix `eta` keeps its dimensions.
+    -0.5 * log(2 * pi) - log(sigma_eps) - 0.5 * ((y - eta) / sigma_eps)^2
+  } else {
+    stop("Unsupported family in AGQ: ", family, call. = FALSE)
+  }
+}
+
+#' Per-observation score and observed information wrt the linear predictor
+#'
+#' First and second `eta`-derivatives of `.agq_loglik_elt()` (`d2` is the second
+#' derivative, i.e. minus the observed information). Drives the per-group mode.
+#' @keywords internal
+.agq_score_info <- function(eta, y, n_trials, family, sigma_eps) {
+  if (family == "binomial") {
+    mu <- 1 / (1 + exp(-eta))
+    list(d1 = y - n_trials * mu, d2 = -n_trials * mu * (1 - mu))
+  } else if (family == "poisson") {
+    lam <- exp(eta)
+    list(d1 = y - lam, d2 = -lam)
+  } else if (family == "gaussian") {
+    list(d1 = (y - eta) / sigma_eps^2, d2 = rep(-1 / sigma_eps^2, length(eta)))
   } else {
     stop("Unsupported family in AGQ: ", family, call. = FALSE)
   }
@@ -237,48 +239,6 @@ cond_log_lik <- function(eta, y, n_trials, family, sigma_eps) {
 #' @keywords internal
 log1pexp <- function(x) {
   ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))
-}
-
-
-#' Find cluster random-effect mode + curvature via 1-D Newton
-#' @keywords internal
-find_cluster_mode <- function(eta_fixed, y, n_trials, sigma_re,
-                              family, sigma_eps,
-                              max_iter = 50L, tol = 1e-8) {
-  u <- 0
-  for (iter in seq_len(max_iter)) {
-    eta <- eta_fixed + u
-    grad_lik <- if (length(y) == 0L) 0 else {
-      if (family == "binomial") {
-        mu <- 1 / (1 + exp(-eta))
-        sum(y - n_trials * mu)
-      } else if (family == "poisson") {
-        sum(y - exp(eta))
-      } else if (family == "gaussian") {
-        sum(y - eta) / sigma_eps^2
-      }
-    }
-    neg_hess_lik <- if (length(y) == 0L) 0 else {
-      if (family == "binomial") {
-        mu <- 1 / (1 + exp(-eta))
-        sum(n_trials * mu * (1 - mu))
-      } else if (family == "poisson") {
-        sum(exp(eta))
-      } else if (family == "gaussian") {
-        length(y) / sigma_eps^2
-      }
-    }
-    grad <- grad_lik - u / sigma_re^2
-    neg_hess <- neg_hess_lik + 1 / sigma_re^2
-    step <- grad / neg_hess
-    u_new <- u + step
-    if (abs(step) < tol) {
-      u <- u_new
-      break
-    }
-    u <- u_new
-  }
-  list(u_hat = u, neg_hess = neg_hess)
 }
 
 

@@ -2,7 +2,7 @@
 % Please edit documentation in R/nmix_laplace_re.R
 \name{tulpa_nmix_laplace_re}
 \alias{tulpa_nmix_laplace_re}
-\title{Community / multispecies N-mixture by Laplace-EM}
+\title{Community / multispecies N-mixture by Laplace}
 \usage{
 tulpa_nmix_laplace_re(
   y,
@@ -17,10 +17,7 @@ tulpa_nmix_laplace_re(
   Sigma_lambda_init = NULL,
   Sigma_p_init = NULL,
   K_max = NULL,
-  max_iter = 100L,
-  tol = 1e-06,
-  inner_max = 50L,
-  inner_tol = 1e-08,
+  max_iter = 200L,
   sigma_beta = 100,
   verbose = FALSE
 )
@@ -51,22 +48,21 @@ per-species coefficient estimates.}
 
 \item{K_max}{Marginal-sum truncation (default \code{max(y) + 100}).}
 
-\item{max_iter, tol}{EM iteration budget / \code{Sigma}-change tolerance.}
+\item{max_iter}{Optimizer iteration cap (default 200).}
 
-\item{inner_max, inner_tol}{Inner mode-finder (block-coordinate Newton) budget
-/ step tolerance.}
+\item{sigma_beta}{Weak Gaussian ridge SD on the community means (default 100,
+i.e. \code{tau = 1e-4}, matching the other Laplace paths); stabilizes a
+weakly-identified community mean without materially shifting it.}
 
-\item{sigma_beta}{Weak ridge SD on the community means (default 100, i.e.
-\code{tau = 1e-4}, matching the other Laplace paths).}
-
-\item{verbose}{Print per-iteration \code{Sigma} change.}
+\item{verbose}{Unused (kept for backward compatibility); the engine is silent.}
 }
 \value{
 A list of class \code{tulpa_nmix_re_fit}: \code{mu_lambda}, \code{mu_p} (community
-means), \code{vcov} (their joint covariance, \code{(p_lambda + p_p)} square),
-\code{Sigma_lambda}, \code{Sigma_p} (community covariances), \code{b_lambda}, \code{b_p} (per-
-species BLUP deviations, \code{n_species} rows), \code{log_lik} (Laplace marginal),
-\code{converged}, \code{n_iter}, \code{K_max}.
+means), \code{vcov} (their joint covariance from the AGHQ marginal Hessian,
+\code{(p_lambda + p_p)} square; marginalizes the community-covariance
+uncertainty rather than plugging in \code{Sigma}), \code{Sigma_lambda}, \code{Sigma_p}
+(community covariances), \code{b_lambda}, \code{b_p} (per-species BLUP deviations,
+\code{n_species} rows), \code{log_lik} (Laplace marginal), \code{converged}, \code{K_max}.
 }
 \description{
 Fits the community (spAbundance \code{msNMix}) N-mixture model: a per-species
@@ -79,15 +75,17 @@ abundance and detection coefficients,
 \deqn{b^\lambda_s \sim N(0, \Sigma_\lambda), \quad b^p_s \sim N(0, \Sigma_p).}
 
 The latent abundances integrate out per species-site in closed form (the
-shared N-mixture kernel); the per-species coefficient deviations
-\eqn{b_s = (b^\lambda_s, b^p_s)} are the random effects, integrated by a
-Laplace-EM in C++ (\code{cpp_nmix_laplace_re}). The Gaussian community priors pin
-\eqn{(\mu_\lambda, \mu_p)} as fixed effects, so no sum-to-zero constraint is
-needed. Fixed-effect standard errors come from the marginal observed-
-information Hessian (the b-block Schur complement, with the \eqn{\mathrm{Var}
-[N|y]} rank-1 correction). This is the compiled counterpart of wrapping
-\code{\link[=tulpa_nmix_site_marginal]{tulpa_nmix_site_marginal()}} into \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}; it runs the same Laplace
-marginal without the per-group R-interpreter overhead.
+shared N-mixture kernel exposed by \code{\link[=tulpa_nmix_site_marginal]{tulpa_nmix_site_marginal()}}); the
+per-species coefficient deviations \eqn{b_s = (b^\lambda_s, b^p_s)} are the
+random effects, integrated by the shared compiled AGHQ engine
+(\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} at \code{n_quad = 1}, i.e. the joint Laplace). Each species'
+marginal -- value, abundance/detection score, and the per-site observed-
+information block carrying the \eqn{\mathrm{Var}(N_i\mid y_i)} abundance/
+detection coupling -- is supplied as the per-group oracle, so there is one
+marginal/quadrature/covariance implementation across the package. The
+Gaussian community priors pin \eqn{(\mu_\lambda, \mu_p)} as fixed effects, so
+no sum-to-zero constraint is needed; their standard errors come from the
+marginal observed-information Hessian.
 
 Poisson abundance only (a global negative-binomial size is a planned
 extension).
@@ -99,5 +97,6 @@ Doser, J. et al. (2023). spAbundance. \code{msNMix()}.
 }
 \seealso{
 \code{\link[=tulpa_nmix_laplace]{tulpa_nmix_laplace()}} (single species), \code{\link[=tulpa_nmix_site_marginal]{tulpa_nmix_site_marginal()}}
-/ \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} (the composable RE-integrator path).
+(the per-species marginal primitive), \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} (the shared
+random-effect integrator).
 }

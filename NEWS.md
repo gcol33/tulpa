@@ -17,16 +17,34 @@
 
 ## Unreleased
 
+* refactor(aghq): one compiled adaptive-Gauss-Hermite engine behind the whole
+  ML-II optimize family. The per-group marginal -- mode-find, quadrature grid,
+  log-Cholesky `Sigma` packing, LKJ penalty and marginal Hessian -- now lives in
+  C++ (`src/aghq_re*.{h,cpp}`, `inst/include/tulpa/aghq_oracle.h`), driven through
+  one structure-agnostic per-group oracle. `tulpa_re_aghq()` and `agq_fit()` are
+  thin wrappers over it (their R integration loops are gone; the optimizer takes
+  finite differences of the compiled objective, consistent at every `n_quad`).
+  The mode-find is a globally-convergent modified Newton (prefers the true
+  observed-info Hessian where PD; falls back to a caller-supplied PSD Fisher or an
+  eigenvalue-reflected curvature otherwise), so a latent-variable marginal whose
+  observed information is indefinite away from the mode no longer breaks it.
+  `tulpa_re_aghq()` gains `theta_prior_sd` (a Gaussian ridge on the fixed
+  parameters) and returns `log_marginal`.
+
 * feat(nmix): community / multispecies N-mixture (`tulpa_nmix_laplace_re()`, the
-  spAbundance `msNMix` model). A C++ Laplace-EM (`src/nmix_re.cpp`) over
-  per-species coefficient random effects with Gaussian community covariances:
-  per-species mode-finding on the closed-form marginal (complete-data Fisher,
-  PSD), a closed-form covariance M-step `Sigma_k = mean_s[b_s b_s' + Cov(b_s|y)]`,
-  and fixed-effect SEs from the marginal observed-information Schur complement of
-  the b-block (with the `Var[N|y]` rank-1 coupling between the abundance and
-  detection arms; Louis 1982). Reuses the per-site kernel; an internal warm start
-  seeds the EM from independent per-species `tulpa_nmix_laplace()` fits. Poisson
-  only for now. Recovery / coverage exercised downstream (tulpaObs `ms_abun()`).
+  spAbundance `msNMix` model) now fits through that shared engine -- it wraps
+  `tulpa_nmix_site_marginal()` as the per-species oracle (the marginal, the
+  abundance/detection score, and both the observed-info block with the
+  `Var[N|y]` coupling and the PSD complete-data Fisher for the mode-find) and
+  integrates the per-species coefficient random effects at `n_quad = 1` (joint
+  Laplace). This replaces and removes the bespoke C++ Laplace-EM
+  (`src/nmix_re.cpp`); the community fit verified against an independent Laplace
+  marginal and recovered over seeds (`tests/testthat/test-nmix-re.R`).
+  Fixed-effect SEs are now the joint marginal Hessian (marginalizing the
+  community-covariance uncertainty, closer to the spAbundance posterior) rather
+  than a `Sigma`-plug-in Schur complement. The numerical knobs `tol` / `inner_max`
+  / `inner_tol` are dropped (the engine owns the mode-find); `sigma_beta` is kept
+  as the fixed-effect ridge. Poisson only for now.
 
 * feat(nmix): `tulpa_nmix_site_marginal()` exposes the per-site N-mixture
   marginal as a composable random-effect callback (`eval` / `eval_beta` /
