@@ -118,11 +118,17 @@ struct NMixCommunityOracle : REGroupOracle {
         return e < -30.0 ? -30.0 : (e > 30.0 ? 30.0 : e);
     }
 
-    SpeciesEval eval_species(int g, const double* b) const {
+    // Compute the per-species value / score, and optionally the marginal observed
+    // information (`want_negH`) and / or the PSD complete-data Fisher
+    // (`want_fisher`). The kernel evaluation (value + score) always runs; the
+    // design-sandwiched curvature blocks are assembled only when requested -- the
+    // EM hot loop needs only the Fisher, the final SE pass only the observed info.
+    SpeciesEval eval_species(int g, const double* b,
+                             bool want_negH = true, bool want_fisher = true) const {
         SpeciesEval e;
         e.grad   = Eigen::VectorXd::Zero(d);
-        e.negH   = Eigen::MatrixXd::Zero(d, d);
-        e.fisher = Eigen::MatrixXd::Zero(d, d);
+        if (want_negH)   e.negH   = Eigen::MatrixXd::Zero(d, d);
+        if (want_fisher) e.fisher = Eigen::MatrixXd::Zero(d, d);
 
         Eigen::VectorXd coef(d);
         for (int i = 0; i < d; ++i) coef(i) = mu(i) + b[i];
@@ -152,17 +158,18 @@ struct NMixCommunityOracle : REGroupOracle {
                 for (int c = 0; c < p_p; ++c)
                     e.grad(p_lam + c) += rec.Xp(j, c) * res.grad_eta_p[j];
 
+            if (!want_negH && !want_fisher) continue;
+
             // Per-site eta-space blocks (coords: 0 = lambda, 1..J = visits).
             const int dd = 1 + J;
-            Eigen::MatrixXd Bobs = Eigen::MatrixXd::Zero(dd, dd);   // marginal observed info
-            Eigen::MatrixXd Bfis = Eigen::MatrixXd::Zero(dd, dd);   // complete-data Fisher
-            Bobs(0, 0) = res.info_eta_lambda;
-            Bfis(0, 0) = res.info_eta_lambda;
+            Eigen::MatrixXd Bobs, Bfis;
+            if (want_negH)   { Bobs = Eigen::MatrixXd::Zero(dd, dd); Bobs(0, 0) = res.info_eta_lambda; }
+            if (want_fisher) { Bfis = Eigen::MatrixXd::Zero(dd, dd); Bfis(0, 0) = res.info_eta_lambda; }
             for (int j = 0; j < J; ++j) {
-                Bobs(1 + j, 1 + j) = res.info_eta_p[j];
-                Bfis(1 + j, 1 + j) = res.info_eta_p[j];
+                if (want_negH)   Bobs(1 + j, 1 + j) = res.info_eta_p[j];
+                if (want_fisher) Bfis(1 + j, 1 + j) = res.info_eta_p[j];
             }
-            if (J > 0) {
+            if (want_negH && J > 0) {
                 Eigen::VectorXd vv(dd);
                 vv(0) = -res.score_wt_lambda;
                 for (int j = 0; j < J; ++j) {
@@ -181,15 +188,15 @@ struct NMixCommunityOracle : REGroupOracle {
             for (int j = 0; j < J; ++j)
                 for (int c = 0; c < p_p; ++c) Zi(1 + j, p_lam + c) = rec.Xp(j, c);
 
-            e.negH.noalias()   += Zi.transpose() * Bobs * Zi;
-            e.fisher.noalias() += Zi.transpose() * Bfis * Zi;
+            if (want_negH)   e.negH.noalias()   += Zi.transpose() * Bobs * Zi;
+            if (want_fisher) e.fisher.noalias() += Zi.transpose() * Bfis * Zi;
         }
         return e;
     }
 
     void grad_hess(int g, const double* b, double& logL,
                    double* grad, double* negH) const override {
-        const SpeciesEval e = eval_species(g, b);
+        const SpeciesEval e = eval_species(g, b, /*want_negH=*/true, /*want_fisher=*/false);
         logL = e.logL;
         for (int i = 0; i < d; ++i) grad[i] = e.grad(i);
         for (int i = 0; i < d; ++i)
@@ -222,14 +229,14 @@ struct NMixCommunityOracle : REGroupOracle {
 
     // theta = mu enters as coef = mu + b, so d ell_g / d theta == d ell_g / db.
     void theta_score(int g, const double* b, double* dl_dtheta) const override {
-        const SpeciesEval e = eval_species(g, b);
+        const SpeciesEval e = eval_species(g, b, /*want_negH=*/false, /*want_fisher=*/false);
         for (int i = 0; i < d; ++i) dl_dtheta[i] = e.grad(i);
     }
 
     // PSD complete-data Fisher for the safeguarded Newton (the marginal observed
     // info `negH` can be indefinite away from the mode for a latent-N marginal).
     bool newton_hess(int g, const double* b, double* H) const override {
-        const SpeciesEval e = eval_species(g, b);
+        const SpeciesEval e = eval_species(g, b, /*want_negH=*/false, /*want_fisher=*/true);
         for (int i = 0; i < d; ++i)
             for (int j = 0; j < d; ++j) H[(std::size_t)i * d + j] = e.fisher(i, j);
         return true;

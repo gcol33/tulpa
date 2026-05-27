@@ -13,13 +13,16 @@
 #' The latent abundances integrate out per species-site in closed form (the
 #' shared N-mixture kernel exposed by [tulpa_nmix_site_marginal()]); the
 #' per-species coefficient deviations \eqn{b_s = (b^\lambda_s, b^p_s)} are the
-#' random effects, integrated by the shared compiled AGHQ engine
-#' ([tulpa_re_aghq()]). At `n_quad = 1` (the default) this is the joint Laplace
-#' (glmer `nAGQ = 1`); a higher `n_quad` replaces each species' Laplace integral
-#' with adaptive Gauss-Hermite quadrature, reducing the small-cluster (few
-#' species) downward bias of the community covariances `Sigma_lambda` /
-#' `Sigma_p` -- at a `n_quad^(p_lambda + p_p)` per-species grid cost. Each
-#' species'
+#' random effects. Both solvers assemble the per-species marginal in compiled
+#' code via a native oracle (no per-group round trip into R). At `n_quad = 1`
+#' (the default, the joint Laplace / glmer `nAGQ = 1`) the fit is a Laplace-EM
+#' (block-coordinate Newton mode + closed-form covariance M-step + Schur-
+#' complement SEs) -- the fast production path. A higher `n_quad` routes the same
+#' native oracle through the shared compiled AGHQ engine ([tulpa_re_aghq()]),
+#' replacing each species' Laplace integral with adaptive Gauss-Hermite
+#' quadrature to reduce the small-cluster (few species) downward bias of the
+#' community covariances `Sigma_lambda` / `Sigma_p` -- at a
+#' `n_quad^(p_lambda + p_p)` per-species grid cost. Each species'
 #' marginal -- value, abundance/detection score, and the per-site observed-
 #' information block carrying the \eqn{\mathrm{Var}(N_i\mid y_i)} abundance/
 #' detection coupling -- is supplied as the per-group oracle, so there is one
@@ -136,21 +139,46 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     if (is.null(Sigma_p_init))      Sigma_p_init      <- .nmix_re_cov0(B_p[ok_p, , drop = FALSE], p_p)
   }
 
-  # ---- native compiled per-species oracle, integrated by the shared engine ----
-  # The species marginal / score / observed-info are assembled in C++
-  # (NMixCommunityOracle); the AGHQ integration core (mode-find, quadrature,
-  # log-Cholesky Sigma, optimizer) is the same shared engine the R-closure bridge
-  # uses, so there is one integration implementation and no per-group round trip.
+  # The per-species marginal / score / observed-info / complete-data Fisher are
+  # assembled in C++ (NMixCommunityOracle), the single source for both solvers.
+  n_quad <- as.integer(n_quad)
+  if (n_quad == 1L) {
+    # n_quad = 1 (joint Laplace, the default): the fast EM solver. The block-
+    # Newton + closed-form Sigma M-step reach the same stationary point as the
+    # joint optimizer (agq_plan.md 4.3) without the FD-gradient sweep, so this
+    # is the production path. (The LKJ correlation penalty is an n_quad > 1
+    # feature; the EM M-step is the unpenalized ML covariance.)
+    em <- cpp_nmix_community_em(
+      y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species,
+      Sigma_lambda_init = as.matrix(Sigma_lambda_init),
+      Sigma_p_init      = as.matrix(Sigma_p_init),
+      mu_lambda_init    = as.numeric(mu_lambda_init),
+      mu_p_init         = as.numeric(mu_p_init),
+      K_max = K_max, max_iter = as.integer(max_iter), tol = 1e-6,
+      inner_max = 50L, inner_tol = 1e-8, sigma_beta = sigma_beta,
+      verbose = isTRUE(verbose))
+    out <- list(
+      mu_lambda = as.numeric(em$mu_lambda), mu_p = as.numeric(em$mu_p),
+      vcov = em$vcov, Sigma_lambda = em$Sigma_lambda, Sigma_p = em$Sigma_p,
+      b_lambda = em$b_lambda, b_p = em$b_p, log_lik = em$log_lik,
+      converged = isTRUE(em$converged), K_max = K_max,
+      n_quad = 1L, lkj_eta = lkj_eta, mixture = "P")
+    class(out) <- c("tulpa_nmix_re_fit", "list")
+    return(out)
+  }
+
+  # n_quad > 1 (AGHQ variance-component debias): the shared compiled engine
+  # integrates the same native oracle by quadrature; mode-find, log-Cholesky
+  # Sigma, and the optimizer are the one implementation the R-closure bridge uses.
   orc <- cpp_nmix_community_oracle(y, site_idx, species_idx, X_lambda, X_p,
                                    n_sites, n_species, K_max)
-
   fit <- tulpa_re_aghq(
     theta0  = c(as.numeric(mu_lambda_init), as.numeric(mu_p_init)),
     re_terms = list(list(n_groups = n_species, n_coefs = p_lam, correlated = p_lam > 1L),
                     list(n_groups = n_species, n_coefs = p_p,   correlated = p_p   > 1L)),
     Sigma0  = list(as.matrix(Sigma_lambda_init), as.matrix(Sigma_p_init)),
     oracle  = orc,
-    n_quad = as.integer(n_quad), lkj_eta = lkj_eta,
+    n_quad = n_quad, lkj_eta = lkj_eta,
     theta_prior_sd = sigma_beta, maxit = as.integer(max_iter))
 
   if (is.null(fit)) {

@@ -165,6 +165,10 @@ cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {
     .Call(`_tulpa_cpp_nested_laplace_test_occupancy_likelihood`, y, det_prob)
 }
 
+cpp_nmix_community_em <- function(y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, Sigma_lambda_init, Sigma_p_init, mu_lambda_init, mu_p_init, K_max, max_iter = 100L, tol = 1e-6, inner_max = 50L, inner_tol = 1e-8, sigma_beta = 100.0, verbose = FALSE) {
+    .Call(`_tulpa_cpp_nmix_community_em`, y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, Sigma_lambda_init, Sigma_p_init, mu_lambda_init, mu_p_init, K_max, max_iter, tol, inner_max, inner_tol, sigma_beta, verbose)
+}
+
 cpp_nmix_laplace_fixed <- function(y, site_idx, X_lambda_R, X_p_R, beta_lambda_init, beta_p_init, K_max, max_iter, tol, verbose, nb, log_r_init, theta_max) {
     .Call(`_tulpa_cpp_nmix_laplace_fixed`, y, site_idx, X_lambda_R, X_p_R, beta_lambda_init, beta_p_init, K_max, max_iter, tol, verbose, nb, log_r_init, theta_max)
 }

@@ -90,13 +90,16 @@ abundance and detection coefficients,
 The latent abundances integrate out per species-site in closed form (the
 shared N-mixture kernel exposed by \code{\link[=tulpa_nmix_site_marginal]{tulpa_nmix_site_marginal()}}); the
 per-species coefficient deviations \eqn{b_s = (b^\lambda_s, b^p_s)} are the
-random effects, integrated by the shared compiled AGHQ engine
-(\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}). At \code{n_quad = 1} (the default) this is the joint Laplace
-(glmer \code{nAGQ = 1}); a higher \code{n_quad} replaces each species' Laplace integral
-with adaptive Gauss-Hermite quadrature, reducing the small-cluster (few
-species) downward bias of the community covariances \code{Sigma_lambda} /
-\code{Sigma_p} -- at a \code{n_quad^(p_lambda + p_p)} per-species grid cost. Each
-species'
+random effects. Both solvers assemble the per-species marginal in compiled
+code via a native oracle (no per-group round trip into R). At \code{n_quad = 1}
+(the default, the joint Laplace / glmer \code{nAGQ = 1}) the fit is a Laplace-EM
+(block-coordinate Newton mode + closed-form covariance M-step + Schur-
+complement SEs) -- the fast production path. A higher \code{n_quad} routes the same
+native oracle through the shared compiled AGHQ engine (\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}),
+replacing each species' Laplace integral with adaptive Gauss-Hermite
+quadrature to reduce the small-cluster (few species) downward bias of the
+community covariances \code{Sigma_lambda} / \code{Sigma_p} -- at a
+\code{n_quad^(p_lambda + p_p)} per-species grid cost. Each species'
 marginal -- value, abundance/detection score, and the per-site observed-
 information block carrying the \eqn{\mathrm{Var}(N_i\mid y_i)} abundance/
 detection coupling -- is supplied as the per-group oracle, so there is one
