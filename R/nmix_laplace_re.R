@@ -51,6 +51,15 @@
 #'   per-species coefficient estimates.
 #' @param K_max Marginal-sum truncation (default `max(y) + 100`).
 #' @param max_iter Optimizer iteration cap (default 200).
+#' @param optimizer Outer optimize driver over the shared native oracle:
+#'   `"em"` (default) is the fast Laplace-EM (block-coordinate Newton mode +
+#'   closed-form covariance M-step + Schur SE) at `n_quad = 1`; `"joint_fd"` is
+#'   the joint `(theta, log-Cholesky Sigma)` optimizer ([tulpa_re_aghq()]) with a
+#'   finite-difference gradient of the compiled objective -- it is the only
+#'   driver that does the `n_quad > 1` AGHQ debias, but its FD-gradient objective
+#'   sweep makes it slower than the EM, so it is opt-in (correctness / debias).
+#'   `"joint_grad"` (analytic-gradient joint optimizer) is a reserved extension
+#'   point and currently errors.
 #' @param n_quad Quadrature points per random-effect dimension passed to
 #'   [tulpa_re_aghq()] (default 1, the joint Laplace). A higher `n_quad`
 #'   debiases the community covariances at a `n_quad^(p_lambda + p_p)`
@@ -86,8 +95,10 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
                                   mu_lambda_init = NULL, mu_p_init = NULL,
                                   Sigma_lambda_init = NULL, Sigma_p_init = NULL,
                                   K_max = NULL, max_iter = 200L,
+                                  optimizer = c("em", "joint_fd", "joint_grad"),
                                   n_quad = 1L, lkj_eta = 1,
                                   sigma_beta = 100, verbose = FALSE) {
+  optimizer <- match.arg(optimizer)
   y        <- as.integer(y)
   site_idx <- as.integer(site_idx)
   species_idx <- as.integer(species_idx)
@@ -139,22 +150,36 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     if (is.null(Sigma_p_init))      Sigma_p_init      <- .nmix_re_cov0(B_p[ok_p, , drop = FALSE], p_p)
   }
 
-  # The per-species marginal / score / observed-info / complete-data Fisher are
-  # assembled in C++ (NMixCommunityOracle), the single source for both solvers.
+  # One native oracle (NMixCommunityOracle) is the shared backend: it assembles
+  # the per-species marginal / score / observed-info / complete-data Fisher in
+  # C++, and BOTH optimize drivers consume it -- there is no second marginal
+  # source. The driver is selected by `optimizer`.
   n_quad <- as.integer(n_quad)
-  if (n_quad == 1L) {
-    # n_quad = 1 (joint Laplace, the default): the fast EM solver. The block-
-    # Newton + closed-form Sigma M-step reach the same stationary point as the
-    # joint optimizer (agq_plan.md 4.3) without the FD-gradient sweep, so this
-    # is the production path. (The LKJ correlation penalty is an n_quad > 1
-    # feature; the EM M-step is the unpenalized ML covariance.)
+  orc <- cpp_nmix_community_oracle(y, site_idx, species_idx, X_lambda, X_p,
+                                   n_sites, n_species, K_max)
+
+  if (optimizer == "joint_grad") {
+    stop("optimizer = \"joint_grad\" (analytic-gradient joint optimizer) is a ",
+         "planned extension and not yet implemented. Use \"em\" (default) or ",
+         "\"joint_fd\".", call. = FALSE)
+  }
+
+  if (optimizer == "em") {
+    # Default. EM is an outer driver over the shared oracle: block-coordinate
+    # Newton mode (complete-data Fisher) + closed-form Sigma M-step + Schur SE.
+    # It reaches the same n_quad = 1 (joint Laplace) stationary point as the
+    # joint optimizer (agq_plan.md 4.3) without the FD-gradient objective sweep
+    # that dominates joint_fd's runtime, so it is the production path. Quadrature
+    # (n_quad > 1) is a joint-driver feature; the EM is Laplace (n_quad = 1).
+    if (n_quad != 1L) {
+      stop("optimizer = \"em\" is the n_quad = 1 (Laplace) solver; AGHQ ",
+           "(n_quad > 1) needs optimizer = \"joint_fd\".", call. = FALSE)
+    }
     em <- cpp_nmix_community_em(
-      y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species,
+      orc, mu_init = c(as.numeric(mu_lambda_init), as.numeric(mu_p_init)),
       Sigma_lambda_init = as.matrix(Sigma_lambda_init),
       Sigma_p_init      = as.matrix(Sigma_p_init),
-      mu_lambda_init    = as.numeric(mu_lambda_init),
-      mu_p_init         = as.numeric(mu_p_init),
-      K_max = K_max, max_iter = as.integer(max_iter), tol = 1e-6,
+      max_iter = as.integer(max_iter), tol = 1e-6,
       inner_max = 50L, inner_tol = 1e-8, sigma_beta = sigma_beta,
       verbose = isTRUE(verbose))
     out <- list(
@@ -162,16 +187,17 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
       vcov = em$vcov, Sigma_lambda = em$Sigma_lambda, Sigma_p = em$Sigma_p,
       b_lambda = em$b_lambda, b_p = em$b_p, log_lik = em$log_lik,
       converged = isTRUE(em$converged), K_max = K_max,
-      n_quad = 1L, lkj_eta = lkj_eta, mixture = "P")
+      n_quad = 1L, lkj_eta = lkj_eta, optimizer = "em", mixture = "P")
     class(out) <- c("tulpa_nmix_re_fit", "list")
     return(out)
   }
 
-  # n_quad > 1 (AGHQ variance-component debias): the shared compiled engine
-  # integrates the same native oracle by quadrature; mode-find, log-Cholesky
-  # Sigma, and the optimizer are the one implementation the R-closure bridge uses.
-  orc <- cpp_nmix_community_oracle(y, site_idx, species_idx, X_lambda, X_p,
-                                   n_sites, n_species, K_max)
+  # optimizer == "joint_fd": the shared compiled AGHQ engine drives the SAME
+  # oracle by quadrature, with a finite-difference gradient of the compiled
+  # objective (tulpa_re_aghq). It is the only driver that does the n_quad > 1
+  # variance-component debias. The FD-gradient objective sweep makes it slower
+  # than the EM (profiling: ~100% of the residual runtime), so it is opt-in --
+  # kept for correctness / architecture validation and the AGHQ debias path.
   fit <- tulpa_re_aghq(
     theta0  = c(as.numeric(mu_lambda_init), as.numeric(mu_p_init)),
     re_terms = list(list(n_groups = n_species, n_coefs = p_lam, correlated = p_lam > 1L),
@@ -200,6 +226,7 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     K_max        = K_max,
     n_quad       = fit$n_quad,
     lkj_eta      = fit$lkj_eta,
+    optimizer    = "joint_fd",
     mixture      = "P"
   )
   class(out) <- c("tulpa_nmix_re_fit", "list")

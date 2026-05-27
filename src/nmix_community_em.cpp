@@ -61,28 +61,34 @@ double logdet_spd(const MatrixXd& M) {
 
 }  // namespace
 
-// Community N-mixture Laplace-EM at n_quad = 1. Returns the same contract the R
-// wrapper packages for tulpa_nmix_laplace_re.
+// Community N-mixture Laplace-EM optimize driver (the n_quad = 1 default). It
+// consumes the SAME native oracle (NMixCommunityOracle) the joint optimizer
+// drives -- the per-species marginal / score / Fisher / observed-info all come
+// from orc.eval_species, so there is one marginal source and the EM is purely an
+// alternative outer solver. `oracle` is the external pointer from
+// cpp_nmix_community_oracle(); `mu_init` is the stacked (mu_lambda, mu_p) warm
+// start. Returns the contract tulpa_nmix_laplace_re packages.
 // [[Rcpp::export]]
-List cpp_nmix_community_em(IntegerVector y, IntegerVector site_idx,
-                          IntegerVector species_idx, NumericMatrix X_lambda,
-                          NumericMatrix X_p, int n_sites, int n_species,
+List cpp_nmix_community_em(SEXP oracle, NumericVector mu_init,
                           NumericMatrix Sigma_lambda_init, NumericMatrix Sigma_p_init,
-                          NumericVector mu_lambda_init, NumericVector mu_p_init,
-                          int K_max, int max_iter = 100, double tol = 1e-6,
+                          int max_iter = 100, double tol = 1e-6,
                           int inner_max = 50, double inner_tol = 1e-8,
                           double sigma_beta = 100.0, bool verbose = false) {
-    tulpa::NMixCommunityOracle orc(y, site_idx, species_idx, X_lambda, X_p,
-                                   n_sites, n_species, K_max);
-    const int p_lam = X_lambda.ncol();
-    const int p_p   = X_p.ncol();
-    const int d     = p_lam + p_p;
-    const int S     = n_species;
+    Rcpp::XPtr<tulpa::REGroupOracle> base(oracle);
+    tulpa::NMixCommunityOracle* orcp =
+        dynamic_cast<tulpa::NMixCommunityOracle*>(base.get());
+    if (orcp == nullptr)
+        Rcpp::stop("cpp_nmix_community_em: `oracle` is not an NMixCommunityOracle.");
+    tulpa::NMixCommunityOracle& orc = *orcp;
+
+    const int p_lam = orc.p_lam;
+    const int p_p   = orc.p_p;
+    const int d     = orc.d;
+    const int S     = orc.n_groups;
     const double tau_beta = 1.0 / (sigma_beta * sigma_beta);
 
     VectorXd mu(d);
-    for (int j = 0; j < p_lam; ++j) mu[j] = mu_lambda_init[j];
-    for (int j = 0; j < p_p; ++j)   mu[p_lam + j] = mu_p_init[j];
+    for (int j = 0; j < d; ++j) mu[j] = mu_init[j];
     MatrixXd Sig_l = Eigen::Map<MatrixXd>(Sigma_lambda_init.begin(), p_lam, p_lam);
     MatrixXd Sig_p = Eigen::Map<MatrixXd>(Sigma_p_init.begin(), p_p, p_p);
 
