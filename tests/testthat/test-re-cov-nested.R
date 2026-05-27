@@ -185,3 +185,52 @@ test_that("tulpa_re_cov_nested integrates several terms as separate blocks", {
     expect_gt(res$posterior[res$posterior$parameter == nm, "median"], 0)
   }
 })
+
+
+# --- AGHQ-refined inner solve (n_quad > 1) -----------------------------------
+# Single shared grouping factor only: the per-group integral must factorize, so
+# n_quad > 1 errors on crossed RE terms.
+test_that("n_quad > 1 (AGHQ inner solve) errors on crossed grouping factors", {
+  set.seed(21L)
+  G <- 20L; H <- 15L; npg <- 8L; N <- G * npg
+  g <- rep(seq_len(G), each = npg)
+  h <- sample.int(H, N, replace = TRUE)
+  x <- rnorm(N); X <- cbind(1, x); Zg <- cbind(1, x)
+  y <- rbinom(N, 1L, plogis(as.numeric(X %*% c(-0.2, 0.5))))
+  re_terms <- list(
+    list(idx = g, n_groups = G, n_coefs = 2L, Z = Zg, label = "g"),
+    list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h")
+  )
+  expect_error(
+    tulpa_re_cov_nested(y, rep(1L, N), X, re_terms, family = "binomial",
+                        n_quad = 5L),
+    "single shared grouping factor"
+  )
+})
+
+test_that("n_quad > 1 (AGHQ inner solve) recovers Sigma on a single factor", {
+  skip_on_cran()
+  # AGHQ refines each per-group inner marginal (the tulpa_re_aghq debias applied
+  # inside the Sigma integration); the marginalized 95% intervals should still
+  # cover the true scales, and the posterior keeps the full-block shape.
+  truth <- c(sigma_1 = 0.8, sigma_2 = 0.6)
+  covered <- c(sigma_1 = 0L, sigma_2 = 0L)
+  for (s in seq_len(3L)) {
+    d <- sim_corr_recov(300L + s)
+    rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
+    res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
+                               n_quad = 5L)
+    expect_setequal(res$posterior$parameter,
+                    c("sigma_1", "sigma_2", "rho_12",
+                      "Sigma_11", "Sigma_12", "Sigma_22"))
+    expect_true(all(eigen(res$Sigma_mean, symmetric = TRUE,
+                          only.values = TRUE)$values > 0))
+    for (nm in names(truth)) {
+      row <- res$posterior[res$posterior$parameter == nm, ]
+      if (truth[[nm]] >= row$ci_lo && truth[[nm]] <= row$ci_hi)
+        covered[[nm]] <- covered[[nm]] + 1L
+    }
+  }
+  expect_gte(covered[["sigma_1"]], 2L)
+  expect_gte(covered[["sigma_2"]], 2L)
+})

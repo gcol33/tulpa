@@ -18,6 +18,7 @@ tulpa_re_cov_nested(
   eta = 2,
   log_prior_theta = NULL,
   beta_prior = NULL,
+  n_quad = 1L,
   n_draws = 2000L,
   seed = NULL,
   max_iter = 100L,
@@ -59,6 +60,16 @@ builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}.}
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
 every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}).
 \code{NULL} (default) keeps the weak built-in prior.}
+
+\item{n_quad}{Quadrature order for the inner marginal. \code{1} (default) uses the
+joint-field Laplace inner solve (\code{\link[=tulpa_laplace]{tulpa_laplace()}}). \verb{> 1} refines the inner
+marginal with \code{n_quad}-point adaptive Gauss-Hermite quadrature (the
+\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} debias applied inside the \code{Sigma} integration), reducing
+the small-cluster variance attenuation for binary / low-count data. AGHQ
+requires a single shared grouping factor (the per-group integral must
+factorize); with crossed RE terms \code{n_quad > 1} errors. When AGHQ is used the
+fixed effects are integrated, so the reported fixed-effect posterior is the
+marginal (ML-II) one rather than the joint-mode (PQL) estimate.}
 
 \item{n_draws}{Number of posterior draws of the fixed effects to synthesize
 from the node mixture (default 2000), exposed as \code{draws} for the generic

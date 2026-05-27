@@ -229,6 +229,10 @@ cpp_rpg <- function(b, z) {
     .Call(`_tulpa_cpp_rpg`, b, z)
 }
 
+cpp_glmm_oracle_make <- function(family, phi, y, n_trials, X, Z, idx, n_groups) {
+    .Call(`_tulpa_cpp_glmm_oracle_make`, family, phi, y, n_trials, X, Z, idx, n_groups)
+}
+
 cpp_re_cov_gibbs_sweep <- function(family, phi, y, n_trials, X, blocks, beta0, L_beta, n_iter, n_burnin, thin, beta_prior_mean, beta_prior_sd) {
     .Call(`_tulpa_cpp_re_cov_gibbs_sweep`, family, phi, y, n_trials, X, blocks, beta0, L_beta, n_iter, n_burnin, thin, beta_prior_mean, beta_prior_sd)
 }

@@ -44,6 +44,20 @@
   `test-re-cov-gibbs.R` cases). The R wrapper keeps the pilot Laplace solve
   (starting values + proposal shapes) and the weighted-quantile summary.
 
+* feat(re-cov): `tulpa_re_cov_nested()` gains `n_quad` -- an adaptive
+  Gauss-Hermite refinement of the inner marginal. `n_quad = 1` (default) keeps
+  the joint-field Laplace inner solve unchanged; `n_quad > 1` routes the inner
+  solve through the shared compiled AGHQ engine (`cpp_glmm_oracle_make` +
+  `cpp_aghq_objective`), so each per-group integral inside the `Sigma`
+  integration is debiased by quadrature (the `tulpa_re_aghq()` correction applied
+  under the grid), reducing the small-cluster variance attenuation for binary /
+  low-count data. The fixed effects are integrated (profiled out + a fixed-effect
+  Laplace term), so the reported fixed-effect posterior is the marginal (ML-II)
+  one rather than the joint-mode (PQL) estimate. The per-group integral only
+  factorizes over one shared grouping factor, so AGHQ requires that; crossed RE
+  terms keep the joint-field Laplace (`n_quad > 1` errors). Recovery + the
+  crossed-factor guard in `test-re-cov-nested.R`.
+
 * feat(nmix): community / multispecies N-mixture (`tulpa_nmix_laplace_re()`, the
   spAbundance `msNMix` model) now fits through that shared engine -- it wraps
   `tulpa_nmix_site_marginal()` as the per-species oracle (the marginal, the

@@ -1351,6 +1351,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_glmm_oracle_make
+SEXP cpp_glmm_oracle_make(std::string family, double phi, NumericVector y, NumericVector n_trials, NumericMatrix X, NumericMatrix Z, IntegerVector idx, int n_groups);
+RcppExport SEXP _tulpa_cpp_glmm_oracle_make(SEXP familySEXP, SEXP phiSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP ZSEXP, SEXP idxSEXP, SEXP n_groupsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type Z(ZSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type idx(idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_groups(n_groupsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_glmm_oracle_make(family, phi, y, n_trials, X, Z, idx, n_groups));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_re_cov_gibbs_sweep
 List cpp_re_cov_gibbs_sweep(std::string family, double phi, NumericVector y, NumericVector n_trials, NumericMatrix X, List blocks, NumericVector beta0, NumericMatrix L_beta, int n_iter, int n_burnin, int thin, NumericVector beta_prior_mean, NumericVector beta_prior_sd);
 RcppExport SEXP _tulpa_cpp_re_cov_gibbs_sweep(SEXP familySEXP, SEXP phiSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP blocksSEXP, SEXP beta0SEXP, SEXP L_betaSEXP, SEXP n_iterSEXP, SEXP n_burninSEXP, SEXP thinSEXP, SEXP beta_prior_meanSEXP, SEXP beta_prior_sdSEXP) {
@@ -2830,6 +2848,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_pg_negbin_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs_spatial, 21},
     {"_tulpa_cpp_rpg1", (DL_FUNC) &_tulpa_cpp_rpg1, 1},
     {"_tulpa_cpp_rpg", (DL_FUNC) &_tulpa_cpp_rpg, 2},
+    {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 8},
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},

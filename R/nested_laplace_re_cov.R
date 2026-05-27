@@ -466,6 +466,15 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
 #'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
 #'   `NULL` (default) keeps the weak built-in prior.
+#' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
+#'   joint-field Laplace inner solve ([tulpa_laplace()]). `> 1` refines the inner
+#'   marginal with `n_quad`-point adaptive Gauss-Hermite quadrature (the
+#'   [tulpa_re_aghq()] debias applied inside the `Sigma` integration), reducing
+#'   the small-cluster variance attenuation for binary / low-count data. AGHQ
+#'   requires a single shared grouping factor (the per-group integral must
+#'   factorize); with crossed RE terms `n_quad > 1` errors. When AGHQ is used the
+#'   fixed effects are integrated, so the reported fixed-effect posterior is the
+#'   marginal (ML-II) one rather than the joint-mode (PQL) estimate.
 #' @param n_draws Number of posterior draws of the fixed effects to synthesize
 #'   from the node mixture (default 2000), exposed as `draws` for the generic
 #'   `tulpa_fit` methods. The `Sigma` posterior is summarized exactly (weighted
@@ -499,10 +508,12 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 n_per_axis = 5L, span = 3,
                                 prior_sigma = c(3, 0.05), eta = 2,
                                 log_prior_theta = NULL,
-                                beta_prior = NULL,
+                                beta_prior = NULL, n_quad = 1L,
                                 n_draws = 2000L, seed = NULL,
                                 max_iter = 100L, tol = 1e-8, n_threads = 1L) {
   integration <- match.arg(integration)
+  n_quad <- as.integer(n_quad)
+  if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
   if (!is.null(seed)) set.seed(as.integer(seed))
 
   re_terms <- .as_re_terms_list(re_terms)
@@ -512,6 +523,25 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   if (is.null(log_prior_theta)) {
     log_prior_theta <- .re_cov_joint_prior(layout, prior_sigma, eta)
   }
+
+  # AGHQ refinement (n_quad > 1) replaces the joint-field Laplace inner marginal
+  # with the per-group adaptive Gauss-Hermite marginal (the same debias as
+  # tulpa_re_aghq, applied INSIDE the Sigma integration), profiling the fixed
+  # effects out by an inner optimization + a fixed-effect Laplace term. The
+  # per-group integral only factorizes over ONE shared grouping factor, so AGHQ
+  # is available only then; crossed RE terms keep the joint-field Laplace inner
+  # solve (n_quad = 1).
+  idx1 <- layout[[1L]]$idx
+  ng1  <- layout[[1L]]$n_groups
+  single_factor <- !is.null(idx1) && all(vapply(layout, function(b)
+    identical(b$idx, idx1) && identical(b$n_groups, ng1), logical(1)))
+  if (n_quad > 1L && !single_factor) {
+    stop("`n_quad > 1` (adaptive Gauss-Hermite refinement of the inner solve) ",
+         "requires a single shared grouping factor; this model has crossed RE ",
+         "terms. Use `n_quad = 1` (the joint-field Laplace inner solve).",
+         call. = FALSE)
+  }
+  use_core <- single_factor && n_quad > 1L
 
   # Inner solve: Laplace log-marginal at the supplied per-block covariances.
   # Failures at extreme grid edges (non-finite / non-convergent) return -Inf so
@@ -584,6 +614,56 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     }
   }
   theta0 <- .re_cov_L_list_to_theta(L_init_list, layout)
+
+  # --- AGHQ inner solve (single shared grouping factor, n_quad > 1) ----------
+  # Replace the joint-field Laplace inner_logmarg / inner_fit with the per-group
+  # adaptive Gauss-Hermite marginal from the shared compiled engine: at a fixed
+  # Sigma, profile the fixed effects beta out by an inner optimization of
+  # sum_g log M_g(beta, Sigma) and add the fixed-effect Laplace correction
+  # (0.5 p log 2pi - 0.5 logdet H_beta + log prior(beta_hat)), so log_marginal
+  # integrates beta exactly as the joint-field path does -- but with each
+  # per-group integral debiased by n_quad-point quadrature. beta is integrated
+  # (not just profiled), so the reported fixed-effect posterior is the marginal
+  # (ML-II) one, not the joint-mode (PQL) estimate.
+  if (use_core) {
+    nc_terms <- vapply(layout, function(b) b$nc, integer(1))
+    full_vec <- vapply(layout, function(b) isTRUE(b$full), logical(1))
+    Zc  <- do.call(cbind, lapply(layout, function(b) b$Z))   # n x sum(nc), stacked
+    orc <- cpp_glmm_oracle_make(family, phi, as.numeric(y), as.numeric(n_trials),
+                                as.matrix(X), as.matrix(Zc), as.integer(idx1), ng1)
+    bp  <- .normalize_beta_prior(beta_prior, p_fix)
+    log_prior_beta_at <- if (is.null(bp)) function(b) 0 else
+      function(b) sum(stats::dnorm(b, bp$mean, bp$sd, log = TRUE))
+    beta_warm <- if (!is.null(pilot) && !is.null(pilot$mode))
+      pilot$mode[seq_len(p_fix)] else rep(0, p_fix)
+
+    core_solve <- function(L_list) {
+      sc   <- .re_cov_L_list_to_theta(L_list, layout)
+      negf <- function(b) {
+        v <- cpp_aghq_objective(c(b, sc), orc, nc_terms, full_vec, n_quad, 1.0)
+        if (!is.finite(v)) return(.Machine$double.xmax)
+        -(v + log_prior_beta_at(b))
+      }
+      opt <- tryCatch(stats::optim(beta_warm, negf, method = "BFGS",
+                                   hessian = TRUE,
+                                   control = list(reltol = 1e-10, maxit = 300L)),
+                      error = function(e) NULL)
+      if (is.null(opt) || !all(is.finite(opt$par))) return(NULL)
+      logMb <- cpp_aghq_objective(c(opt$par, sc), orc, nc_terms, full_vec,
+                                  n_quad, 1.0)
+      ld <- tryCatch(as.numeric(determinant(opt$hessian,
+                                            logarithm = TRUE)$modulus),
+                     error = function(e) NA_real_)
+      if (!is.finite(logMb) || !is.finite(ld)) return(NULL)
+      lm <- logMb + log_prior_beta_at(opt$par) +
+        0.5 * p_fix * log(2 * pi) - 0.5 * ld
+      list(log_marginal = lm, mode = opt$par, H_beta = opt$hessian)
+    }
+    inner_logmarg <- function(L_list) {
+      r <- core_solve(L_list); if (is.null(r)) -Inf else r$log_marginal
+    }
+    inner_fit <- function(L_list) core_solve(L_list)
+  }
 
   # --- mode of g(theta) = log_marginal(Sigma(theta)) + log_prior ------------
   negg <- function(theta) {

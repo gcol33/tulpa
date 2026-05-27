@@ -15,6 +15,28 @@
 using namespace Rcpp;
 using namespace tulpa;
 
+// Build a native single-arm GLMM oracle (XPtr<REGroupOracle>) for the AGHQ
+// engine: the per-group conditional likelihood of a separable GLMM with RE
+// design Z over one shared grouping factor. theta = beta (the fixed effects).
+// Reused by the deterministic-integrate driver (single-factor tulpa_re_cov_nested)
+// so its inner solve shares the one compiled family density. Z is the stacked
+// RE design (n x sum_block n_coefs); the block split lives in the objective's
+// Sigma packing, not the oracle.
+// [[Rcpp::export]]
+SEXP cpp_glmm_oracle_make(std::string family, double phi,
+                          NumericVector y, NumericVector n_trials,
+                          NumericMatrix X, NumericMatrix Z,
+                          IntegerVector idx, int n_groups) {
+    const GLMMFamily fam = glmm_family_from_string(family);
+    Eigen::MatrixXd Xe = as<Eigen::MatrixXd>(X);
+    Eigen::MatrixXd Ze = as<Eigen::MatrixXd>(Z);
+    Eigen::VectorXi ix = as<Eigen::VectorXi>(idx);
+    Eigen::VectorXd ye = as<Eigen::VectorXd>(y);
+    Eigen::VectorXd nt = as<Eigen::VectorXd>(n_trials);
+    return XPtr<REGroupOracle>(
+        new SingleArmGLMMOracle(fam, phi, Xe, Ze, ix, n_groups, ye, nt), true);
+}
+
 // blocks: list of per-block specs, each a list with
 //   Z (n x nc), idx (n, 1-based), nc, full (logical), n_groups, nu0,
 //   Lambda0 (nc x nc, full only) or lambda0 (nc, diagonal only),
