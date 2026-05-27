@@ -14,7 +14,6 @@ Description: A general-purpose engine for fitting Bayesian hierarchical models w
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
 SystemRequirements: C++17
 Depends:
     R (>= 4.1.0)
@@ -52,3 +51,4 @@ Remotes:
     gcol33/tulpaMesh@v0.1.1
 URL: https://github.com/gcol33/tulpa
 BugReports: https://github.com/gcol33/tulpa/issues
+Config/roxygen2/version: 8.0.0

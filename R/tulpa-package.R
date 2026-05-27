@@ -8,10 +8,7 @@
 #' @importFrom grDevices adjustcolor colorRampPalette rgb
 #' @importFrom graphics abline hist lines pairs par polygon
 #' @importFrom methods as
-#' @importFrom stats approx ar as.formula ave binom.test coef cor cov density
-#'   dist dnorm fitted ks.test logLik lowess median model.frame model.matrix
-#'   model.response na.pass pnorm predict qnorm reshape residuals runif sd
-#'   setNames simulate var
+#' @importFrom stats approx ar as.formula ave binom.test coef cor cov density dist dnorm fitted ks.test logLik lowess median model.frame model.matrix model.response na.pass pnorm predict qnorm reshape residuals runif sd setNames simulate var
 #' @importFrom utils head
 ## usethis namespace: end
 NULL

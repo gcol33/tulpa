@@ -59,10 +59,12 @@ on the field. Default to the SPDE prior medians
 
 \item{prior_range, prior_sigma}{Joint mode only. PC prior anchors as
 \code{c(value, alpha)} pairs:
-* \code{prior_range = c(r0, a_r)} encodes \code{P(range < r0) = a_r}
-* \code{prior_sigma = c(s0, a_s)} encodes \code{P(sigma > s0) = a_s}
+\itemize{
+\item \code{prior_range = c(r0, a_r)} encodes \code{P(range < r0) = a_r}
+\item \code{prior_sigma = c(s0, a_s)} encodes \code{P(sigma > s0) = a_s}
 Default to the spec's anchors (\code{spatial$prior_range},
-\code{spatial$prior_sigma}) when those are length-2 PC anchors.}
+\code{spatial$prior_sigma}) when those are length-2 PC anchors.
+}}
 
 \item{log_kappa_init, log_tau_init}{Joint mode only. Initial values for
 the hyper slots. Default to the value implied by the PC anchor's

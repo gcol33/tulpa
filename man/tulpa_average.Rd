@@ -78,5 +78,5 @@ fit2 <- tulpa(count | effort ~ x + z + (1 | site), data = df,
 
 }
 \seealso{
-\code{\link[=tulpa_compare]{tulpa_compare()}} for model comparison, \code{\link[loo:loo_model_weights]{loo::stacking_weights()}}
+\code{\link[=tulpa_compare]{tulpa_compare()}} for model comparison, \code{\link[loo:stacking_weights]{loo::stacking_weights()}}
 }
