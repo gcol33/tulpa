@@ -229,8 +229,10 @@ test_that("failed inner_fit cells get weight 0", {
 test_that("hyper_axis_spec validates its inputs", {
   expect_error(hyper_axis_spec("", grid = 1),       "non-empty")
   expect_error(hyper_axis_spec("a", grid = numeric(0)), "non-empty")
-  expect_error(hyper_axis_spec("a", grid = c(0, 1),  log_scale = TRUE),
-               "strictly positive")
+  expect_error(hyper_axis_spec("a", grid = c(-0.5, 1),  log_scale = TRUE),
+               "negative")
+  # `0` is allowed in a log-scale grid (no-effect atom).
+  expect_silent(hyper_axis_spec("a", grid = c(0, 1, 2), log_scale = TRUE))
   expect_error(hyper_axis_spec("a", grid = c(0, 1),  bounds = c(0.5, 0.5)),
                "lower < upper")
   expect_error(hyper_axis_spec("a", grid = c(0, 1),  bounds = c(2, 3)),
@@ -238,6 +240,63 @@ test_that("hyper_axis_spec validates its inputs", {
   expect_error(hyper_axis_spec("a", grid = 1,
                                 log_prior = "not a function"),
                "must be NULL or a function")
+})
+
+# -----------------------------------------------------------------------------
+# Adaptive refinement
+# -----------------------------------------------------------------------------
+test_that("adaptive_grid extends a too-narrow boundary", {
+  # The inner_fit's mode (a unimodal Gaussian in mu) sits PAST the user's
+  # initial grid endpoint; the boundary edge score should fire, and refinement
+  # should append cells on the heavy side.
+  inner_fit <- function(hypers) {
+    mu <- as.numeric(hypers["mu"])
+    list(log_marginal = -0.5 * (mu - 5)^2 / 0.3^2)
+  }
+  specs <- list(hyper_axis_spec("mu",
+                                 grid = c(2.0, 2.5, 3.0, 3.5),
+                                 refinable = TRUE))
+  res <- tulpa_hyper_grid(specs, inner_fit, combine = "none",
+                          control = list(adaptive_grid = TRUE,
+                                          adaptive_grid_max_passes = 2L))
+  expect_gt(nrow(res$theta_grid), 4L)
+  expect_true("mu" %in% res$adaptive_grid_info$triggered_axes ||
+              any(grepl("mu", res$adaptive_grid_info$triggered_axes)))
+  # New cells appear on the heavy (max) side of the original grid.
+  expect_true(any(res$theta_grid[, "mu"] > 3.5))
+  # The refined posterior median should track the true mode closer than the
+  # initial-grid posterior would have.
+  expect_true(res$theta_median[["mu"]] > 3.5)
+})
+
+test_that("adaptive_grid skips non-refinable axes", {
+  inner_fit <- function(hypers) list(log_marginal = 0)
+  specs <- list(hyper_axis_spec("a", grid = c(0, 1, 2)))  # refinable = FALSE
+  res <- tulpa_hyper_grid(specs, inner_fit, combine = "none",
+                          control = list(adaptive_grid = TRUE))
+  expect_equal(nrow(res$theta_grid), 3L)
+  expect_null(res$adaptive_grid_info)
+})
+
+test_that("var_of_means_consistency adds slice points on a sharp posterior", {
+  # Gaussian in log-sigma at 0 (sigma=1) with SD 0.2 on the log axis. A coarse
+  # 5-point grid at log_sigma = (-1, -0.5, 0, 0.5, 1) collapses var-of-means
+  # SD onto two adjacent cells -- well below the Laplace-at-mode SD -- so the
+  # consistency pass fires and adds Laplace-guided slice points at
+  # `mu +/- {0.7, 1.5} * sd_lap` on the log axis (the 0.05 log-tolerance dedup
+  # in .hyper_propose_consistency_points keeps them).
+  inner_fit <- function(hypers) {
+    s <- as.numeric(hypers["sigma"])
+    list(log_marginal = -0.5 * (log(s) - log(1.0))^2 / 0.1^2)
+  }
+  specs <- list(hyper_axis_spec(
+    "sigma", grid = exp(seq(-1, 1, length.out = 5L)),
+    log_scale = TRUE, bounds = c(0, Inf), refinable = TRUE))
+  res <- tulpa_hyper_grid(specs, inner_fit, combine = "none",
+                          control = list(var_of_means_consistency = TRUE))
+  expect_true(!is.null(res$var_of_means_consistency_info))
+  expect_gt(nrow(res$theta_grid), 5L)
+  expect_gt(res$theta_sd[["sigma"]], 0)
 })
 
 test_that("duplicate axis names are rejected", {

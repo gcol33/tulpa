@@ -323,46 +323,69 @@ tulpa_nested_laplace_joint <- function(responses,
     # contribution ratio so refinement decisions (edge scores, modal cell
     # selection, var-of-means thresholds) all read the *regularized*
     # posterior. New cells appended in refinement passes get the prior
-    # baked in via the same `hp_fn` closure threaded through
-    # `.apply_axis_refinement`.
+    # baked in via the same `hp_fn` closure threaded through the generic
+    # `.hyper_apply_axis_refinement`. The generic helper passes the new
+    # cells as a numeric matrix, which `.joint_hp_vec_for_grids` already
+    # accepts (see `R/nested_laplace_joint_hyperpriors.R`).
     hp_fn <- if (is.null(fn_sigma) && is.null(fn_alpha)) NULL else {
-        function(grids_obj) {
-            tg <- backend$theta_grid(grids_obj, cp$has_copy)
-            .joint_hp_vec_for_grids(tg, fn_sigma, fn_alpha)
+        function(new_cells) {
+            .joint_hp_vec_for_grids(new_cells, fn_sigma, fn_alpha)
         }
     }
     if (!is.null(hp_fn)) {
-        hp_init <- hp_fn(grids)
+        tg_init <- backend$theta_grid(grids, cp$has_copy)
+        hp_init <- hp_fn(tg_init)
         if (!is.null(hp_init)) res$log_marginal <- res$log_marginal + hp_init
     }
 
-    # Adaptive grid refinement. Detect heavy boundary mass on any axis
-    # and append cartesian-product points covering an interior bisection
-    # plus an outward extension on that axis. The merged grid is fed to
-    # the same `backend$call_kernel`, and the C++ kernel is shape-agnostic
-    # (it just consumes paired hyperparameter vectors of equal length),
-    # so the legacy fixed-grid path and the refined path share a single
-    # implementation — no primary-and-fallback branching.
+    # --- generic-refinement glue (gcol33/tulpa#33 Step 3) -------------------
+    # Adaptive grid + var-of-means consistency are now driven by the
+    # axis-spec module in `R/hyper_grid_refine.R`. The joint driver builds:
+    #   * `specs`     -- one hyper_axis_spec per outer-grid axis (log_scale /
+    #                    bounds / refinable / refine_priority encoded once,
+    #                    from `.joint_axis_specs`).
+    #   * `kernel_fn` -- thin closure around `backend$call_kernel` that
+    #                    converts matrix new_cells <-> paired-vector grids and
+    #                    packs per-cell modes / n_iter / Q_csc_* into extras.
+    #   * `extras_list` -- per-cell side data the kernel returned; refinement
+    #                    carries it through, the warm-start chain reads
+    #                    `extras[[anchor]]$mode`.
+    # After refinement `.joint_glue_extras_to_res` puts the merged extras
+    # back into `res$modes` / `res$n_iter` / `res$Q_csc_*_per_grid` so
+    # downstream code (`.nl_posterior_moments`, `.nl_refit_axis_sd_laplace`,
+    # the modes / Q consumers) reads the refined values unchanged.
+    specs <- .joint_axis_specs(grids, cp)
+    kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
+                                        tol, n_threads, x_init, store_Q,
+                                        arm_names)
+    theta_grid_M  <- backend$theta_grid(grids, cp$has_copy)
+    log_marginal  <- res$log_marginal
+    extras_list   <- .joint_init_extras_from_res(res)
+    refining_axis <- rep("", length(log_marginal))
+
     refine_info <- NULL
     if (isTRUE(adaptive_grid)) {
-        refined <- .adaptive_refine_pass(
-            grids       = grids,
-            res         = res,
-            backend     = backend,
-            arms        = arms, prior = prior, cp = cp,
-            max_iter = max_iter, tol = tol, n_threads = n_threads,
-            x_init = x_init, store_Q = store_Q,
-            edge_thresh = adaptive_grid_edge_thresh,
-            max_passes  = adaptive_grid_max_passes,
-            arm_names   = arm_names,
-            hp_fn       = hp_fn
+        refined <- .hyper_adaptive_refine_pass(
+            theta_grid    = theta_grid_M,
+            log_marginal  = log_marginal,
+            extras        = extras_list,
+            refining_axis = refining_axis,
+            specs         = specs,
+            kernel_fn     = kernel_fn,
+            edge_thresh   = adaptive_grid_edge_thresh,
+            max_passes    = adaptive_grid_max_passes,
+            hp_fn         = hp_fn
         )
-        grids       <- refined$grids
-        res         <- refined$res
-        refine_info <- refined$info
+        theta_grid_M  <- refined$theta_grid
+        log_marginal  <- refined$log_marginal
+        extras_list   <- refined$extras
+        refining_axis <- refined$refining_axis
+        refine_info   <- refined$info
     }
+    res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
+                                      extras_list, refining_axis)
 
-    res$theta_grid  <- backend$theta_grid(grids, cp$has_copy)
+    res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
     res$weights     <- .nl_normalise_weights(res$log_marginal)
     res             <- .nl_posterior_moments(res, paste0("joint_", type))
@@ -380,17 +403,27 @@ tulpa_nested_laplace_joint <- function(responses,
     # which lets downstream packages use the legacy `weights * theta_grid`
     # pattern without reaching into `theta_sd` directly (gcol33/tulpa#21).
     if (isTRUE(var_of_means_consistency)) {
-        consistency <- .nl_var_of_means_consistency_pass(
-            grids = grids, res = res, backend = backend,
-            arms = arms, prior = prior, cp = cp,
-            max_iter = max_iter, tol = tol, n_threads = n_threads,
-            x_init = x_init, store_Q = store_Q, arm_names = arm_names,
-            hp_fn = hp_fn
+        consistency <- .hyper_consistency_pass(
+            theta_grid    = theta_grid_M,
+            log_marginal  = res$log_marginal,
+            extras        = extras_list,
+            refining_axis = refining_axis,
+            specs         = specs,
+            theta_mean    = res$theta_mean,
+            theta_sd      = res$theta_sd,
+            kernel_fn     = kernel_fn,
+            tolerance     = 0.7,
+            hp_fn         = hp_fn,
+            weights       = res$weights
         )
         if (consistency$n_added > 0L) {
-            grids           <- consistency$grids
-            res             <- consistency$res
-            res$theta_grid  <- backend$theta_grid(grids, cp$has_copy)
+            theta_grid_M  <- consistency$theta_grid
+            log_marginal  <- consistency$log_marginal
+            extras_list   <- consistency$extras
+            refining_axis <- consistency$refining_axis
+            res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
+                                              extras_list, refining_axis)
+            res$theta_grid  <- theta_grid_M
             res$theta_names <- colnames(res$theta_grid)
             res$weights     <- .nl_normalise_weights(res$log_marginal)
             res             <- .nl_posterior_moments(res, paste0("joint_", type))

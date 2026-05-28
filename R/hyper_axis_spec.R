@@ -75,10 +75,14 @@ hyper_axis_spec <- function(name, grid, log_prior = NULL,
          call. = FALSE)
   }
   log_scale <- isTRUE(log_scale)
-  if (log_scale && any(grid <= 0)) {
-    stop(sprintf("Axis '%s': `log_scale = TRUE` requires strictly positive ",
-                 name), "`grid` values.", call. = FALSE)
+  if (log_scale && any(grid < 0)) {
+    stop(sprintf("Axis '%s': `log_scale = TRUE` is incompatible with ",
+                 name), "negative `grid` values.", call. = FALSE)
   }
+  # A 0 in a log-scale grid is valid as a boundary / no-effect atom (e.g. the
+  # alpha = 0 cell representing "no copy" in the joint driver); refinement's
+  # log-midpoint formulae yield 0 there, which the `pts > bounds[1L]` filter
+  # in `.hyper_propose_axis_extension` correctly drops.
   if (!is.null(bounds)) {
     bounds <- as.numeric(bounds)
     if (length(bounds) != 2L || bounds[1L] >= bounds[2L]) {

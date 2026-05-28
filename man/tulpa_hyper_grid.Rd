@@ -10,7 +10,8 @@ tulpa_hyper_grid(
   combine = c("law_of_total_cov", "weighted_mean_only", "none"),
   n_draws = 2000L,
   seed = NULL,
-  beta_names = NULL
+  beta_names = NULL,
+  control = list()
 )
 }
 \arguments{
@@ -60,6 +61,23 @@ law-of-total-cov mean and covariance are still returned).}
 coordinates. When \code{NULL} (default) the names are taken from the first
 successful cell's \code{beta_mean} (or \code{beta1}, \code{beta2}, ... if it is
 unnamed).}
+
+\item{control}{Optional list of refinement / tuning knobs:
+\itemize{
+\item \code{adaptive_grid} (\code{FALSE}) -- run the boundary / interior refinement
+pass on every axis whose spec has \code{refinable = TRUE}. New cells are
+appended along the refining axis paired with the boundary modal cell's
+other-axis values, carrying a marginal-scale calibration so they
+contribute on the right scale.
+\item \code{adaptive_grid_edge_thresh} (\code{0.02}) -- per-axis trigger threshold.
+\item \code{adaptive_grid_max_passes} (\code{1L}) -- cap on refinement passes.
+\item \code{var_of_means_consistency} (\code{FALSE}) -- run a post-integration
+consistency pass: for refinable axes whose joint-grid var-of-means
+undershoots the Laplace-at-mode SD by more than \code{tolerance}, append
+Laplace-guided slice points at \verb{theta_mean +/- \{0.7, 1.5\} * theta_sd}
+pinned at the modal cell. One kernel call per axis.
+\item \code{var_of_means_tolerance} (\code{0.7}) -- consistency-pass trigger ratio.
+}}
 }
 \value{
 A list of class \code{c("tulpa_hyper_grid", "tulpa_fit", "list")} with:
@@ -95,7 +113,9 @@ and \code{draws} are \code{NULL}.
 fixed-effect posterior is assembled.
 \item \code{hyper_specs} -- echoed list of \code{hyper_axis_spec} objects (the
 normalised form).
-\item \code{combine}, \code{n_failed}, \code{n_grid} -- diagnostic fields.
+\item \code{combine}, \code{n_failed}, \code{n_grid}, \code{refining_axis} -- diagnostic fields.
+\item \code{adaptive_grid_info}, \code{var_of_means_consistency_info} -- present when
+the corresponding refinement pass fired.
 }
 }
 \description{

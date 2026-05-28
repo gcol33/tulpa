@@ -291,10 +291,154 @@
 # same axis names via `theta_mean / theta_sd`.
 
 # Alpha refinement piggybacks on the generic consistency pass: alpha
-# appears in `.refinable_axes`, and `.nl_var_of_means_consistency_pass`
+# appears in `.hyper_refinable_names`, and `.hyper_consistency_pass`
 # fires whenever the joint-grid alpha SD falls short of the Laplace-at-
 # mode alpha SD on its own axis. No bespoke helper.
 
+
+# Generic axis-spec adapter (gcol33/tulpa#33 Step 3).
+#
+# Builds the list of `hyper_axis_spec` objects the generic refinement / consistency
+# helpers (`R/hyper_grid_refine.R`) consume from the joint driver's paired-vector
+# `grids` + copy state. The spec's `grid` field is informational (refinement reads
+# the per-cell axis values from `theta_grid[, axis]` directly), but populating it
+# with the sorted unique levels keeps the spec object self-describing.
+#
+# Hardcoded metadata captures what the legacy joint helpers `.axis_is_log_scale`,
+# `.axis_bounds`, `.refinable_axes`, `.axis_refinement_order` encoded by name --
+# the same set, in one place.
+.joint_axis_specs <- function(grids, cp) {
+    has_alpha <- cp$has_copy && length(grids$alpha) > 0L
+    axes <- names(grids)
+    if (!has_alpha) axes <- setdiff(axes, "alpha")
+    lapply(axes, function(a) {
+        log_scale <- a %in% c("sigma", "alpha", "tau", "sigma2",
+                                "phi_gp", "lengthscale") ||
+                     startsWith(a, "phi_")
+        bounds <- if (a == "sigma")            c(0, Inf)
+                  else if (a == "alpha")        c(0, Inf)
+                  else if (a == "rho")          c(0, 1)
+                  else if (a == "rho_car")      c(-Inf, 1)
+                  else if (startsWith(a, "phi_")) c(0, Inf)
+                  else NULL
+        refinable <- a == "alpha" || startsWith(a, "phi_")
+        refine_priority <- if (a == "alpha") 1L
+                           else if (startsWith(a, "phi_")) 2L
+                           else 100L
+        spec <- hyper_axis_spec(
+            name      = a,
+            grid      = sort(unique(as.numeric(grids[[a]]))),
+            log_scale = log_scale,
+            bounds    = bounds,
+            refinable = refinable
+        )
+        spec$refine_priority <- refine_priority
+        spec
+    })
+}
+
+# Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint
+# kernel's paired-vector `grids` representation. When `cp$has_copy = FALSE`
+# the alpha entry stays `numeric(0)` (the no-copy contract the backend expects).
+.joint_grids_from_cells <- function(new_cells, cp) {
+    axes <- colnames(new_cells)
+    out <- stats::setNames(lapply(axes, function(a)
+        as.numeric(new_cells[, a])), axes)
+    if (!cp$has_copy) out$alpha <- numeric(0)
+    out
+}
+
+# Build the generic `kernel_fn(new_cells, warm_start, store_extras)` closure
+# refinement passes around `backend$call_kernel`. Packs the joint kernel's
+# per-cell modes + n_iter + Q_csc_* into a list of per-cell `extras` so the
+# generic helpers can carry them along across refinement appends (and the
+# warm-start chain still reads `extras[[idx0]]$mode`).
+.joint_make_kernel_fn <- function(arms, prior, cp, backend, max_iter, tol,
+                                  n_threads, x_init_default, store_Q,
+                                  arm_names) {
+    function(new_cells, warm_start = NULL, store_extras = FALSE) {
+        new_grids <- .joint_grids_from_cells(new_cells, cp)
+        slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
+                        as.numeric(warm_start$mode) else x_init_default
+        res_x <- backend$call_kernel(arms, prior, cp, new_grids,
+                                      max_iter, tol, n_threads,
+                                      slice_x_init, isTRUE(store_Q),
+                                      arm_names = arm_names)
+        extras <- NULL
+        if (isTRUE(store_extras)) {
+            n <- nrow(new_cells)
+            extras <- vector("list", n)
+            modes_mat  <- res_x$modes
+            n_iter_vec <- res_x$n_iter
+            Qp <- res_x$Q_csc_p_per_grid
+            Qi <- res_x$Q_csc_i_per_grid
+            Qx <- res_x$Q_csc_x_per_grid
+            for (k in seq_len(n)) {
+                e <- list()
+                if (!is.null(modes_mat))  e$mode   <- as.numeric(modes_mat[k, ])
+                if (!is.null(n_iter_vec)) e$n_iter <- as.integer(n_iter_vec[k])
+                if (!is.null(Qp))         e$Q_csc_p <- Qp[[k]]
+                if (!is.null(Qi))         e$Q_csc_i <- Qi[[k]]
+                if (!is.null(Qx))         e$Q_csc_x <- Qx[[k]]
+                extras[[k]] <- e
+            }
+        }
+        list(log_marginal = res_x$log_marginal, extras = extras)
+    }
+}
+
+# Build the initial per-cell extras list from the initial joint kernel result,
+# matching what `.joint_make_kernel_fn` would have produced for the cartesian
+# pass. Refinement extends this list; `.joint_glue_extras_to_res` puts the
+# refined extras back into `res` once integration is done.
+.joint_init_extras_from_res <- function(res) {
+    n <- length(res$log_marginal)
+    if (n == 0L) return(vector("list", 0L))
+    modes_mat  <- res$modes
+    n_iter_vec <- res$n_iter
+    Qp <- res$Q_csc_p_per_grid
+    Qi <- res$Q_csc_i_per_grid
+    Qx <- res$Q_csc_x_per_grid
+    lapply(seq_len(n), function(k) {
+        e <- list()
+        if (!is.null(modes_mat))  e$mode   <- as.numeric(modes_mat[k, ])
+        if (!is.null(n_iter_vec)) e$n_iter <- as.integer(n_iter_vec[k])
+        if (!is.null(Qp))         e$Q_csc_p <- Qp[[k]]
+        if (!is.null(Qi))         e$Q_csc_i <- Qi[[k]]
+        if (!is.null(Qx))         e$Q_csc_x <- Qx[[k]]
+        e
+    })
+}
+
+# Glue refined extras + log_marginal + refining_axis back into the joint
+# kernel result. Downstream `.joint_recalibrate_axis_moments` /
+# `.nl_posterior_moments` / `.nl_refit_axis_sd_laplace` read `res$modes`,
+# `res$log_marginal`, `res$refining_axis` directly; this keeps them in sync
+# after refinement without touching their implementations.
+.joint_glue_extras_to_res <- function(res, theta_grid_matrix, log_marginal,
+                                      extras, refining_axis) {
+    res$log_marginal  <- log_marginal
+    res$n_grid        <- nrow(theta_grid_matrix)
+    res$refining_axis <- refining_axis
+    if (is.null(extras) || length(extras) == 0L) return(res)
+    if (!is.null(extras[[1L]]$mode)) {
+        n_x <- length(extras[[1L]]$mode)
+        res$modes <- do.call(rbind, lapply(extras, function(e) {
+            if (is.null(e$mode)) rep(NA_real_, n_x) else as.numeric(e$mode)
+        }))
+    }
+    if (!is.null(extras[[1L]]$n_iter)) {
+        res$n_iter <- vapply(extras, function(e) {
+            if (is.null(e$n_iter)) NA_integer_ else as.integer(e$n_iter)
+        }, integer(1))
+    }
+    if (!is.null(extras[[1L]]$Q_csc_p)) {
+        res$Q_csc_p_per_grid <- lapply(extras, `[[`, "Q_csc_p")
+        res$Q_csc_i_per_grid <- lapply(extras, `[[`, "Q_csc_i")
+        res$Q_csc_x_per_grid <- lapply(extras, `[[`, "Q_csc_x")
+    }
+    res
+}
 
 # Compute per-arm latent offsets so callers can decode `modes` back into
 # per-arm (beta, re) blocks plus the shared spatial block(s). For BYM2 the
