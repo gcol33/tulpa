@@ -1,8 +1,11 @@
 // aghq_re_oracles.h
-// Concrete REGroupOracle implementations. RClosureOracle bridges arbitrary R
-// make_site / make_group closures into the engine (the path that keeps every
-// existing tulpa_re_aghq caller working unchanged); the native compiled oracles
-// (SingleArmSeparable, NMixCommunity) are added in Phase B.
+// Concrete REGroupOracle implementations in the engine. RClosureOracle bridges
+// arbitrary R make_site / make_group closures into the engine; the native
+// compiled SingleArmSeparable oracle backs the built-in single-arm GLMM family.
+// Model-specific compiled oracles (e.g. tulpaObs's NMixCommunityOracle) live in
+// the consumer package's src/ and reach the engine across the R boundary as an
+// XPtr<tulpa::REGroupOracle> -- the AGHQ core drives any subclass through the
+// virtual interface in <tulpa/aghq_oracle.h>.
 
 #ifndef TULPA_AGHQ_RE_ORACLES_H
 #define TULPA_AGHQ_RE_ORACLES_H

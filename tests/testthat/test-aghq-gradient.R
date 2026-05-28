@@ -4,33 +4,10 @@
 # AGHQ objective as n_quad grows (the omitted node-placement terms are O(AGHQ
 # truncation)), so these checks run at the AGHQ default n_quad = 9 where the two
 # match tightly. Per-parameter-block tolerance; a sign flip fails loudly.
-
-.sim_community_nmix <- function(seed, S, R, J, mu_lambda, mu_p, Sig_l, Sig_p) {
-  set.seed(seed)
-  p_lam <- length(mu_lambda); p_p <- length(mu_p)
-  Ll <- t(chol(Sig_l)); Lp <- t(chol(Sig_p))
-  X_lambda <- cbind(1, as.numeric(scale(rnorm(R))))[, seq_len(p_lam), drop = FALSE]
-  y <- integer(0); site_idx <- integer(0); species_idx <- integer(0)
-  xp_rows <- list()
-  for (s in seq_len(S)) {
-    cf_l <- mu_lambda + as.numeric(Ll %*% rnorm(p_lam))
-    cf_p <- mu_p      + as.numeric(Lp %*% rnorm(p_p))
-    for (i in seq_len(R)) {
-      lam <- exp(sum(X_lambda[i, ] * cf_l))
-      N   <- rpois(1, lam)
-      for (j in seq_len(J)) {
-        xp  <- c(1, rnorm(1))[seq_len(p_p)]
-        pij <- stats::plogis(sum(xp * cf_p))
-        y           <- c(y, stats::rbinom(1, N, pij))
-        site_idx    <- c(site_idx, i)
-        species_idx <- c(species_idx, s)
-        xp_rows[[length(xp_rows) + 1L]] <- xp
-      }
-    }
-  }
-  list(y = y, site_idx = site_idx, species_idx = species_idx,
-       X_lambda = X_lambda, X_p = do.call(rbind, xp_rows), R = R, S = S)
-}
+#
+# This file covers the engine's native single-arm GLMM oracle. The
+# community / multispecies N-mixture oracle is consumer code in tulpaObs and the
+# corresponding gradient check lives there.
 
 # Central FD of the exposed objective at every coordinate of par.
 .aghq_fd_grad <- function(par, orc, nc, full, nq, lkj, h = 1e-4) {
@@ -41,53 +18,6 @@
      tulpa:::cpp_aghq_objective(pm, orc, nc, full, nq, lkj)) / (2 * h)
   }, numeric(1))
 }
-
-test_that("analytic AGHQ gradient matches central FD (Poisson community N-mixture)", {
-  skip_on_cran()
-  p_lam <- 2L; p_p <- 2L
-  d <- .sim_community_nmix(
-    seed = 404L, S = 5L, R = 8L, J = 3L,
-    mu_lambda = c(1.0, 0.4), mu_p = c(0.2, -0.3),
-    Sig_l = matrix(c(0.30, 0.10, 0.10, 0.20), 2, 2),
-    Sig_p = matrix(c(0.25, -0.05, -0.05, 0.15), 2, 2))
-  K_max <- max(d$y) + 25L
-
-  orc <- tulpa:::cpp_nmix_community_oracle(
-    d$y, d$site_idx, d$species_idx, d$X_lambda, d$X_p, d$R, d$S, K_max)
-  nc   <- c(p_lam, p_p)
-  full <- c(p_lam > 1L, p_p > 1L)
-
-  # Pack Sigma with the engine's own log-Cholesky packer (no convention drift).
-  layout <- tulpa:::.re_cov_block_layout(
-    list(list(n_groups = d$S, n_coefs = p_lam, correlated = TRUE),
-         list(n_groups = d$S, n_coefs = p_p,   correlated = TRUE)), NULL)
-  re_par <- tulpa:::.re_cov_L_list_to_theta(
-    lapply(list(matrix(c(0.30, 0.10, 0.10, 0.20), 2, 2),
-                matrix(c(0.25, -0.05, -0.05, 0.15), 2, 2)), tulpa:::.re_chol_spd),
-    layout)
-
-  # Test point OFF the optimum so the gradient is non-trivial.
-  par0 <- c(c(1.0, 0.4) + 0.10, c(0.2, -0.3) - 0.10, re_par)
-  nq <- 9L; lkj <- 1
-
-  r <- tulpa:::cpp_aghq_objective_grad(par0, orc, nc, full, nq, lkj)
-  expect_true(isTRUE(r$ok))
-  ana <- r$grad
-  fd  <- .aghq_fd_grad(par0, orc, nc, full, nq, lkj)
-
-  th_idx  <- seq_len(p_lam + p_p)               # theta block (mu, link scale)
-  sig_idx <- setdiff(seq_along(par0), th_idx)   # log-Cholesky Sigma block
-
-  # Fail loudly on a sign flip among entries large enough to have a definite sign.
-  big <- abs(fd) > 1e-3
-  expect_true(all(sign(ana[big]) == sign(fd[big])),
-              info = paste0("gradient sign disagrees with FD:\n",
-                            "  analytic = ", paste(signif(ana, 4), collapse = ", "),
-                            "\n  FD       = ", paste(signif(fd, 4), collapse = ", ")))
-
-  expect_lt(max(abs(ana[th_idx]  - fd[th_idx])),  1e-4)   # theta (mu) block
-  expect_lt(max(abs(ana[sig_idx] - fd[sig_idx])), 1e-4)   # log-Cholesky Sigma block
-})
 
 # Same analytic-vs-FD gradient check for the native single-arm GLMM oracle
 # (cpp_glmm_oracle_make), which also implements theta_score. d_re = 2 exercises
@@ -125,46 +55,6 @@ test_that("analytic AGHQ gradient matches central FD (Poisson community N-mixtur
   fd  <- .aghq_fd_grad(par0, orc, nc, full, 9L, 1)
   list(ana = ana, fd = fd)
 }
-
-test_that("analytic AGHQ gradient matches FD with NB dispersion (community, incl log_r)", {
-  skip_on_cran()
-  p_lam <- 2L; p_p <- 2L
-  d <- .sim_community_nmix(
-    seed = 505L, S = 5L, R = 8L, J = 3L,
-    mu_lambda = c(1.0, 0.4), mu_p = c(0.2, -0.3),
-    Sig_l = matrix(c(0.30, 0.10, 0.10, 0.20), 2, 2),
-    Sig_p = matrix(c(0.25, -0.05, -0.05, 0.15), 2, 2))
-  K_max <- max(d$y) + 25L
-
-  # nb = TRUE: the oracle exposes n_theta = d + 1, carrying log_r as theta[d].
-  orc <- tulpa:::cpp_nmix_community_oracle(
-    d$y, d$site_idx, d$species_idx, d$X_lambda, d$X_p, d$R, d$S, K_max, nb = TRUE)
-  nc <- c(p_lam, p_p); full <- c(TRUE, TRUE)
-  layout <- tulpa:::.re_cov_block_layout(
-    list(list(n_groups = d$S, n_coefs = p_lam, correlated = TRUE),
-         list(n_groups = d$S, n_coefs = p_p,   correlated = TRUE)), NULL)
-  re_par <- tulpa:::.re_cov_L_list_to_theta(
-    lapply(list(matrix(c(0.30, 0.10, 0.10, 0.20), 2, 2),
-                matrix(c(0.25, -0.05, -0.05, 0.15), 2, 2)), tulpa:::.re_chol_spd),
-    layout)
-  # theta = [mu_lambda(2), mu_p(2), log_r(1)], then the log-Cholesky Sigma coords.
-  par0 <- c(c(1.0, 0.4) + 0.10, c(0.2, -0.3) - 0.10, log(8), re_par)
-  nq <- 9L; lkj <- 1
-
-  ana <- tulpa:::cpp_aghq_objective_grad(par0, orc, nc, full, nq, lkj)$grad
-  fd  <- .aghq_fd_grad(par0, orc, nc, full, nq, lkj)
-
-  th_idx  <- seq_len(p_lam + p_p + 1L)            # mu + log_r
-  sig_idx <- setdiff(seq_along(par0), th_idx)
-
-  big <- abs(fd) > 1e-3
-  expect_true(all(sign(ana[big]) == sign(fd[big])),
-              info = paste0("NB gradient sign disagrees with FD (incl log_r):\n  ana=",
-                            paste(signif(ana, 4), collapse = ", "),
-                            "\n  fd =", paste(signif(fd, 4), collapse = ", ")))
-  expect_lt(max(abs(ana[th_idx]  - fd[th_idx])),  5e-4)   # mu + log_r block
-  expect_lt(max(abs(ana[sig_idx] - fd[sig_idx])), 5e-4)   # log-Cholesky Sigma block
-})
 
 for (fam_dre in list(c("binomial", "2"), c("poisson", "1"), c("gaussian", "1"))) {
   local({

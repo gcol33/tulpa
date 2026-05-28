@@ -25,24 +25,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_nmix_community_oracle
-SEXP cpp_nmix_community_oracle(IntegerVector y, IntegerVector site_idx, IntegerVector species_idx, NumericMatrix X_lambda, NumericMatrix X_p, int n_sites, int n_species, int K_max);
-RcppExport SEXP _tulpa_cpp_nmix_community_oracle(SEXP ySEXP, SEXP site_idxSEXP, SEXP species_idxSEXP, SEXP X_lambdaSEXP, SEXP X_pSEXP, SEXP n_sitesSEXP, SEXP n_speciesSEXP, SEXP K_maxSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< IntegerVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< IntegerVector >::type site_idx(site_idxSEXP);
-    Rcpp::traits::input_parameter< IntegerVector >::type species_idx(species_idxSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type X_lambda(X_lambdaSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type X_p(X_pSEXP);
-    Rcpp::traits::input_parameter< int >::type n_sites(n_sitesSEXP);
-    Rcpp::traits::input_parameter< int >::type n_species(n_speciesSEXP);
-    Rcpp::traits::input_parameter< int >::type K_max(K_maxSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nmix_community_oracle(y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, K_max));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_aghq_objective
 double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full, int n_quad, double lkj_eta);
 RcppExport SEXP _tulpa_cpp_aghq_objective(SEXP parSEXP, SEXP oracleSEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP n_quadSEXP, SEXP lkj_etaSEXP) {
@@ -919,153 +901,6 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type det_prob(det_probSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_test_occupancy_likelihood(y, det_prob));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_nmix_community_em
-List cpp_nmix_community_em(SEXP oracle, NumericVector mu_init, NumericMatrix Sigma_lambda_init, NumericMatrix Sigma_p_init, int max_iter, double tol, int inner_max, double inner_tol, double sigma_beta, bool verbose);
-RcppExport SEXP _tulpa_cpp_nmix_community_em(SEXP oracleSEXP, SEXP mu_initSEXP, SEXP Sigma_lambda_initSEXP, SEXP Sigma_p_initSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP inner_maxSEXP, SEXP inner_tolSEXP, SEXP sigma_betaSEXP, SEXP verboseSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< SEXP >::type oracle(oracleSEXP);
-    Rcpp::traits::input_parameter< NumericVector >::type mu_init(mu_initSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type Sigma_lambda_init(Sigma_lambda_initSEXP);
-    Rcpp::traits::input_parameter< NumericMatrix >::type Sigma_p_init(Sigma_p_initSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< int >::type inner_max(inner_maxSEXP);
-    Rcpp::traits::input_parameter< double >::type inner_tol(inner_tolSEXP);
-    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
-    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nmix_community_em(oracle, mu_init, Sigma_lambda_init, Sigma_p_init, max_iter, tol, inner_max, inner_tol, sigma_beta, verbose));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_nmix_laplace_fixed
-Rcpp::List cpp_nmix_laplace_fixed(Rcpp::IntegerVector y, Rcpp::IntegerVector site_idx, Rcpp::NumericMatrix X_lambda_R, Rcpp::NumericMatrix X_p_R, Rcpp::NumericVector beta_lambda_init, Rcpp::NumericVector beta_p_init, int K_max, int max_iter, double tol, bool verbose, bool nb, double log_r_init, double theta_max);
-RcppExport SEXP _tulpa_cpp_nmix_laplace_fixed(SEXP ySEXP, SEXP site_idxSEXP, SEXP X_lambda_RSEXP, SEXP X_p_RSEXP, SEXP beta_lambda_initSEXP, SEXP beta_p_initSEXP, SEXP K_maxSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP verboseSEXP, SEXP nbSEXP, SEXP log_r_initSEXP, SEXP theta_maxSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type site_idx(site_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_lambda_R(X_lambda_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_p_R(X_p_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_lambda_init(beta_lambda_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_p_init(beta_p_initSEXP);
-    Rcpp::traits::input_parameter< int >::type K_max(K_maxSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    Rcpp::traits::input_parameter< bool >::type nb(nbSEXP);
-    Rcpp::traits::input_parameter< double >::type log_r_init(log_r_initSEXP);
-    Rcpp::traits::input_parameter< double >::type theta_max(theta_maxSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nmix_laplace_fixed(y, site_idx, X_lambda_R, X_p_R, beta_lambda_init, beta_p_init, K_max, max_iter, tol, verbose, nb, log_r_init, theta_max));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_nmix_total_log_lik
-Rcpp::List cpp_nmix_total_log_lik(Rcpp::IntegerVector y, Rcpp::IntegerVector site_idx, Rcpp::NumericVector eta_p, Rcpp::NumericVector eta_lambda, int K_max, double r);
-RcppExport SEXP _tulpa_cpp_nmix_total_log_lik(SEXP ySEXP, SEXP site_idxSEXP, SEXP eta_pSEXP, SEXP eta_lambdaSEXP, SEXP K_maxSEXP, SEXP rSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type site_idx(site_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta_p(eta_pSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta_lambda(eta_lambdaSEXP);
-    Rcpp::traits::input_parameter< int >::type K_max(K_maxSEXP);
-    Rcpp::traits::input_parameter< double >::type r(rSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nmix_total_log_lik(y, site_idx, eta_p, eta_lambda, K_max, r));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_nested_laplace_nmix_icar
-Rcpp::List cpp_nested_laplace_nmix_icar(Rcpp::IntegerVector y, Rcpp::IntegerVector site_idx, Rcpp::IntegerVector map_site_to_unit_R, Rcpp::NumericMatrix X_lambda_R, Rcpp::NumericMatrix X_p_R, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, int n_spatial, Rcpp::NumericVector tau_grid, Rcpp::NumericVector r_grid, Rcpp::NumericVector beta_lambda_init, Rcpp::NumericVector beta_p_init, Rcpp::Nullable<Rcpp::NumericVector> z_init, int K_max, int max_iter, double tol, bool verbose);
-RcppExport SEXP _tulpa_cpp_nested_laplace_nmix_icar(SEXP ySEXP, SEXP site_idxSEXP, SEXP map_site_to_unit_RSEXP, SEXP X_lambda_RSEXP, SEXP X_p_RSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP n_spatialSEXP, SEXP tau_gridSEXP, SEXP r_gridSEXP, SEXP beta_lambda_initSEXP, SEXP beta_p_initSEXP, SEXP z_initSEXP, SEXP K_maxSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP verboseSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type site_idx(site_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type map_site_to_unit_R(map_site_to_unit_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_lambda_R(X_lambda_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_p_R(X_p_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_neighbors(n_neighborsSEXP);
-    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type tau_grid(tau_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type r_grid(r_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_lambda_init(beta_lambda_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_p_init(beta_p_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type z_init(z_initSEXP);
-    Rcpp::traits::input_parameter< int >::type K_max(K_maxSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_nmix_icar(y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, r_grid, beta_lambda_init, beta_p_init, z_init, K_max, max_iter, tol, verbose));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_nested_laplace_nmix_car_proper
-Rcpp::List cpp_nested_laplace_nmix_car_proper(Rcpp::IntegerVector y, Rcpp::IntegerVector site_idx, Rcpp::IntegerVector map_site_to_unit_R, Rcpp::NumericMatrix X_lambda_R, Rcpp::NumericMatrix X_p_R, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, int n_spatial, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, Rcpp::NumericVector r_grid, Rcpp::NumericVector beta_lambda_init, Rcpp::NumericVector beta_p_init, Rcpp::Nullable<Rcpp::NumericVector> z_init, int K_max, int max_iter, double tol, bool verbose);
-RcppExport SEXP _tulpa_cpp_nested_laplace_nmix_car_proper(SEXP ySEXP, SEXP site_idxSEXP, SEXP map_site_to_unit_RSEXP, SEXP X_lambda_RSEXP, SEXP X_p_RSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP n_spatialSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP r_gridSEXP, SEXP beta_lambda_initSEXP, SEXP beta_p_initSEXP, SEXP z_initSEXP, SEXP K_maxSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP verboseSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type site_idx(site_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type map_site_to_unit_R(map_site_to_unit_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_lambda_R(X_lambda_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_p_R(X_p_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_neighbors(n_neighborsSEXP);
-    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type tau_grid(tau_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type rho_grid(rho_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type r_grid(r_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_lambda_init(beta_lambda_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_p_init(beta_p_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type z_init(z_initSEXP);
-    Rcpp::traits::input_parameter< int >::type K_max(K_maxSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_nmix_car_proper(y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, rho_grid, r_grid, beta_lambda_init, beta_p_init, z_init, K_max, max_iter, tol, verbose));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_nested_laplace_nmix_bym2
-Rcpp::List cpp_nested_laplace_nmix_bym2(Rcpp::IntegerVector y, Rcpp::IntegerVector site_idx, Rcpp::IntegerVector map_site_to_unit_R, Rcpp::NumericMatrix X_lambda_R, Rcpp::NumericMatrix X_p_R, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, int n_spatial, Rcpp::NumericVector sigma_grid, Rcpp::NumericVector rho_grid, Rcpp::NumericVector r_grid, double scale_factor, Rcpp::NumericVector beta_lambda_init, Rcpp::NumericVector beta_p_init, Rcpp::Nullable<Rcpp::NumericVector> v_init, Rcpp::Nullable<Rcpp::NumericVector> w_init, int K_max, int max_iter, double tol, bool verbose);
-RcppExport SEXP _tulpa_cpp_nested_laplace_nmix_bym2(SEXP ySEXP, SEXP site_idxSEXP, SEXP map_site_to_unit_RSEXP, SEXP X_lambda_RSEXP, SEXP X_p_RSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP n_spatialSEXP, SEXP sigma_gridSEXP, SEXP rho_gridSEXP, SEXP r_gridSEXP, SEXP scale_factorSEXP, SEXP beta_lambda_initSEXP, SEXP beta_p_initSEXP, SEXP v_initSEXP, SEXP w_initSEXP, SEXP K_maxSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP verboseSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type site_idx(site_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type map_site_to_unit_R(map_site_to_unit_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_lambda_R(X_lambda_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_p_R(X_p_RSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
-    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_neighbors(n_neighborsSEXP);
-    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type sigma_grid(sigma_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type rho_grid(rho_gridSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type r_grid(r_gridSEXP);
-    Rcpp::traits::input_parameter< double >::type scale_factor(scale_factorSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_lambda_init(beta_lambda_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type beta_p_init(beta_p_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type v_init(v_initSEXP);
-    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type w_init(w_initSEXP);
-    Rcpp::traits::input_parameter< int >::type K_max(K_maxSEXP);
-    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
-    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
-    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_nmix_bym2(y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, sigma_grid, rho_grid, r_grid, scale_factor, beta_lambda_init, beta_p_init, v_init, w_init, K_max, max_iter, tol, verbose));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2846,7 +2681,6 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_make_rclosure_oracle", (DL_FUNC) &_tulpa_cpp_aghq_make_rclosure_oracle, 4},
-    {"_tulpa_cpp_nmix_community_oracle", (DL_FUNC) &_tulpa_cpp_nmix_community_oracle, 8},
     {"_tulpa_cpp_aghq_objective", (DL_FUNC) &_tulpa_cpp_aghq_objective, 6},
     {"_tulpa_cpp_aghq_objective_grad", (DL_FUNC) &_tulpa_cpp_aghq_objective_grad, 6},
     {"_tulpa_cpp_aghq_blups", (DL_FUNC) &_tulpa_cpp_aghq_blups, 4},
@@ -2887,12 +2721,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 18},
     {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
-    {"_tulpa_cpp_nmix_community_em", (DL_FUNC) &_tulpa_cpp_nmix_community_em, 10},
-    {"_tulpa_cpp_nmix_laplace_fixed", (DL_FUNC) &_tulpa_cpp_nmix_laplace_fixed, 13},
-    {"_tulpa_cpp_nmix_total_log_lik", (DL_FUNC) &_tulpa_cpp_nmix_total_log_lik, 6},
-    {"_tulpa_cpp_nested_laplace_nmix_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_nmix_icar, 18},
-    {"_tulpa_cpp_nested_laplace_nmix_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_nmix_car_proper, 19},
-    {"_tulpa_cpp_nested_laplace_nmix_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_nmix_bym2, 21},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 21},

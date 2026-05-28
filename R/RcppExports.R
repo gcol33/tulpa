@@ -5,10 +5,6 @@ cpp_aghq_make_rclosure_oracle <- function(builder, n_groups, d, n_theta) {
     .Call(`_tulpa_cpp_aghq_make_rclosure_oracle`, builder, n_groups, d, n_theta)
 }
 
-cpp_nmix_community_oracle <- function(y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, K_max) {
-    .Call(`_tulpa_cpp_nmix_community_oracle`, y, site_idx, species_idx, X_lambda, X_p, n_sites, n_species, K_max)
-}
-
 cpp_aghq_objective <- function(par, oracle, nc, full, n_quad, lkj_eta) {
     .Call(`_tulpa_cpp_aghq_objective`, par, oracle, nc, full, n_quad, lkj_eta)
 }
@@ -167,30 +163,6 @@ cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blo
 
 cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {
     .Call(`_tulpa_cpp_nested_laplace_test_occupancy_likelihood`, y, det_prob)
-}
-
-cpp_nmix_community_em <- function(oracle, mu_init, Sigma_lambda_init, Sigma_p_init, max_iter = 100L, tol = 1e-6, inner_max = 50L, inner_tol = 1e-8, sigma_beta = 100.0, verbose = FALSE) {
-    .Call(`_tulpa_cpp_nmix_community_em`, oracle, mu_init, Sigma_lambda_init, Sigma_p_init, max_iter, tol, inner_max, inner_tol, sigma_beta, verbose)
-}
-
-cpp_nmix_laplace_fixed <- function(y, site_idx, X_lambda_R, X_p_R, beta_lambda_init, beta_p_init, K_max, max_iter, tol, verbose, nb, log_r_init, theta_max) {
-    .Call(`_tulpa_cpp_nmix_laplace_fixed`, y, site_idx, X_lambda_R, X_p_R, beta_lambda_init, beta_p_init, K_max, max_iter, tol, verbose, nb, log_r_init, theta_max)
-}
-
-cpp_nmix_total_log_lik <- function(y, site_idx, eta_p, eta_lambda, K_max, r) {
-    .Call(`_tulpa_cpp_nmix_total_log_lik`, y, site_idx, eta_p, eta_lambda, K_max, r)
-}
-
-cpp_nested_laplace_nmix_icar <- function(y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, r_grid, beta_lambda_init, beta_p_init, z_init = NULL, K_max = -1L, max_iter = 100L, tol = 1e-6, verbose = FALSE) {
-    .Call(`_tulpa_cpp_nested_laplace_nmix_icar`, y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, r_grid, beta_lambda_init, beta_p_init, z_init, K_max, max_iter, tol, verbose)
-}
-
-cpp_nested_laplace_nmix_car_proper <- function(y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, rho_grid, r_grid, beta_lambda_init, beta_p_init, z_init = NULL, K_max = -1L, max_iter = 100L, tol = 1e-6, verbose = FALSE) {
-    .Call(`_tulpa_cpp_nested_laplace_nmix_car_proper`, y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, tau_grid, rho_grid, r_grid, beta_lambda_init, beta_p_init, z_init, K_max, max_iter, tol, verbose)
-}
-
-cpp_nested_laplace_nmix_bym2 <- function(y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, sigma_grid, rho_grid, r_grid, scale_factor, beta_lambda_init, beta_p_init, v_init = NULL, w_init = NULL, K_max = -1L, max_iter = 100L, tol = 1e-6, verbose = FALSE) {
-    .Call(`_tulpa_cpp_nested_laplace_nmix_bym2`, y, site_idx, map_site_to_unit_R, X_lambda_R, X_p_R, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial, sigma_grid, rho_grid, r_grid, scale_factor, beta_lambda_init, beta_p_init, v_init, w_init, K_max, max_iter, tol, verbose)
 }
 
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {

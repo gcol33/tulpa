@@ -113,37 +113,6 @@ tests/testthat/     — Unit and integration tests
 - Data formatting and simulation functions
 - Print methods referencing model-specific parameter names
 
-### N-mixture fits currently live in the engine (boundary decision pending)
-
-A full N-mixture (Royle 2004) observation model ships from the engine today:
-`tulpa_nmix_laplace()` (`R/nmix_laplace.R`, `src/nmix_laplace.cpp`,
-`src/nmix_kernel.h`) with `mixture = c("P", "NB")` -- one parameterized
-per-site marginal kernel that branches on `is.finite(r)`, closed-form scores
-(incl. the analytic dispersion score `d log L / d log r`) and joint
-observed-information Hessian, matching `unmarked::pcount()` on coefficients,
-log-likelihood and SEs to machine precision. The spatial nested-Laplace
-variants `tulpa_nmix_laplace_icar()` / `_car_proper()` / `_bym2()`
-(`R/nmix_laplace_spatial.R`, `src/nmix_spatial*.cpp`,
-`src/nmix_spatial_kernel*.h`) also take `mixture = "NB"`, integrating the NB
-size `r` as an extra outer grid dimension alongside the spatial
-hyperparameters. All four are exported, documented (`man/tulpa_nmix_*.Rd`) and
-tested (`test-nmix-*.R`; `test-nmix-nb.R` checks the analytic gradient/Hessian
-vs numerical, recovery lives in `test-nmix-laplace.R`).
-
-This is model-specific likelihood code in the engine, in tension with
-principle #4 ("model packages own their likelihood") and the tulpaObs scope
-(occupancy + detection + **N-mixture**). **Pending decision:** migrate the
-`nmix_*` R/C++ to tulpaObs as a `LikelihoodSpec` consumer, or keep it here as
-the canonical worked reference. Flagged so new nmix surface (e.g. the NB
-kernel just added) does not keep accreting in core before the call is made.
-
-Known cleanup if it stays: the ICAR vs BYM2 spatial Hessian assembly
-(`nmix_assemble_obs_info_*` / `nmix_assemble_complete_fisher_*`) is ~35-45%
-copy-paste differing only in block indexing + rank-1 weights -- extract one
-templated `static inline` taking a block-updater functor (principle #5). The
-weight-normalization block in `nmix_laplace_spatial.R` is also duplicated 3x
-instead of reusing `.nl_normalise_weights()`.
-
 ### EM+Laplace Engine
 
 `tulpa_em_laplace()` is the generic EM driver: per-submodel `family` +
@@ -208,22 +177,18 @@ A single-term model is the length-1 case of the same path -- no special-casing.
     designs and observation granularity live entirely in the callback, so
     non-separable units and random effects on several coupled arms at once
     (e.g. a community N-mixture: species priors on BOTH the abundance and the
-    detection coefficients, coupled through the latent count -- the `msNMix`
-    structure) integrate with no engine change. `re_terms` then carries only
-    the covariance structure (`n_coefs` / `correlated` / `n_groups`); the
-    per-observation `idx` / `Z` are optional. The N-mixture per-group marginal
-    primitive an `msNMix` oracle is built from is `tulpa_nmix_site_marginal()`
-    (`R/nmix_site_marginal.R`, gcol33/tulpa#31).
+    detection coefficients, coupled through the latent count) integrate with no
+    engine change. `re_terms` then carries only the covariance structure
+    (`n_coefs` / `correlated` / `n_groups`); the per-observation `idx` / `Z` are
+    optional.
   - `oracle` -- a **prebuilt native (compiled) oracle**, an external pointer to a
-    `REGroupOracle` (e.g. `cpp_nmix_community_oracle()`, `src/nmix_community_oracle.h`):
-    the engine drives it directly with **no per-group / per-node round trip into
-    R**. `re_terms` / `theta0` / `Sigma0` must still describe the layout the oracle
-    exposes; the integration core is identical to the R-closure path. This is now
-    the production path for `tulpa_nmix_laplace_re()`, which passes a native
-    `NMixCommunityOracle` (species = groups, per-group RE `(b_lambda, b_p)`,
-    `theta` = community means) instead of a `make_group` R closure, and gained
-    `n_quad` / `lkj_eta` to debias the community covariances at a
-    `n_quad^(p_lambda + p_p)` per-species grid cost.
+    `REGroupOracle` constructed in a consumer package's src/ via
+    `LinkingTo: tulpa` against `<tulpa/aghq_oracle.h>`: the engine drives it
+    directly with **no per-group / per-node round trip into R**. `re_terms` /
+    `theta0` / `Sigma0` must still describe the layout the oracle exposes; the
+    integration core is identical to the R-closure path. This is the production
+    path for consumer-package community fitters (e.g. tulpaObs's
+    `nmix_laplace_re()` passes a native `NMixCommunityOracle`).
   Supply exactly one of `make_site` / `make_group` / `oracle`. Fixed params + log-Cholesky
   `Sigma` coords are optimized jointly on `sum_g log M_g`; SEs from the
   exact-marginal Hessian. Optional `lkj_eta > 1` penalizes a weakly-identified

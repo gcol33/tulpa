@@ -536,10 +536,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 }
 
 # Finite-guarded normalisation for outer hyperparameter grids that may return
-# non-finite log-marginals at extreme nodes (the nmix spatial fitters). Drops
-# non-finite nodes from the max-shift, zeroes their weight, and returns all-NA
-# (with a warning) when no node carries mass -- instead of NaN. `what` names the
-# grid in the degenerate-case warning.
+# non-finite log-marginals at extreme nodes (e.g. consumer-package N-mixture
+# spatial fitters). Drops non-finite nodes from the max-shift, zeroes their
+# weight, and returns all-NA (with a warning) when no node carries mass --
+# instead of NaN. `what` names the grid in the degenerate-case warning.
 .nl_normalise_weights_safe <- function(lm, what = "grids / data") {
   finite_lm <- lm[is.finite(lm)]
   if (length(finite_lm) == 0L) {

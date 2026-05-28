@@ -77,11 +77,12 @@
 #'   The callback owns all arm / design / clamping bookkeeping. Supply this or
 #'   `make_site`, not both.
 #' @param oracle Optional prebuilt native (compiled) oracle, an external pointer
-#'   to a `REGroupOracle` (e.g. from `cpp_nmix_community_oracle()`). When
-#'   supplied the engine drives it directly, with no per-group / per-node round
-#'   trip into R, and neither `make_site` nor `make_group` is needed; `re_terms`,
-#'   `theta0` and `Sigma0` must still describe the same layout the oracle
-#'   exposes. The integration core is identical to the R-closure path.
+#'   to a `REGroupOracle` (constructed in a consumer package's src/ via
+#'   `LinkingTo: tulpa` against `<tulpa/aghq_oracle.h>`). When supplied the
+#'   engine drives it directly, with no per-group / per-node round trip into R,
+#'   and neither `make_site` nor `make_group` is needed; `re_terms`, `theta0`
+#'   and `Sigma0` must still describe the same layout the oracle exposes. The
+#'   integration core is identical to the R-closure path.
 #' @param n_obs Number of observations (length of each term's `idx`). Required
 #'   for the `make_site` path; ignored for `make_group`.
 #' @param keep Optional logical/integer mask of observations to include

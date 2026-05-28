@@ -1,13 +1,17 @@
 // aghq_re.cpp
 // Rcpp entry points for the unified AGHQ random-effect-covariance engine. The R
-// optimize-family wrappers (tulpa_re_aghq, agq_fit, tulpa_nmix_laplace_re) build
-// an oracle, optimize the compiled objective with stats::optim, and extract
-// BLUPs / Sigma / SEs at the optimum. The numeric core lives in the headers
-// (aghq_re_core.h); these are thin marshalling shims.
+// optimize-family wrappers (tulpa_re_aghq, agq_fit) build an oracle, optimize
+// the compiled objective with stats::optim, and extract BLUPs / Sigma / SEs at
+// the optimum. The numeric core lives in the headers (aghq_re_core.h); these
+// are thin marshalling shims.
+//
+// Consumer-package oracles (e.g. tulpaObs's NMixCommunityOracle) construct
+// their XPtr<tulpa::REGroupOracle> in their own src/ and pass it across the R
+// boundary into tulpa_re_aghq() -- the engine drives any REGroupOracle through
+// the virtual interface declared in <tulpa/aghq_oracle.h>.
 
 #include "aghq_re_core.h"
 #include "aghq_re_oracles.h"
-#include "nmix_community_oracle.h"
 #include <Rcpp.h>
 #include <vector>
 
@@ -30,20 +34,6 @@ static std::vector<ReCovBlock> parse_blocks(const IntegerVector& nc,
 // [[Rcpp::export]]
 SEXP cpp_aghq_make_rclosure_oracle(Function builder, int n_groups, int d, int n_theta) {
     return XPtr<REGroupOracle>(new RClosureOracle(builder, n_groups, d, n_theta), true);
-}
-
-// Native compiled community / multispecies N-mixture oracle (msNMix). Groups are
-// species; the per-group RE is (b_lambda, b_p); theta is the community means.
-// Returns an external pointer the optimize driver consumes exactly like the
-// R-closure bridge, but with no per-group / per-node round trip into R.
-// [[Rcpp::export]]
-SEXP cpp_nmix_community_oracle(IntegerVector y, IntegerVector site_idx,
-                              IntegerVector species_idx, NumericMatrix X_lambda,
-                              NumericMatrix X_p, int n_sites, int n_species,
-                              int K_max, bool nb = false) {
-    return XPtr<REGroupOracle>(
-        new NMixCommunityOracle(y, site_idx, species_idx, X_lambda, X_p,
-                                n_sites, n_species, K_max, nb), true);
 }
 
 // AGHQ ML-II objective sum_g log M_g + LKJ at par = [theta ; log-Chol Sigma].
