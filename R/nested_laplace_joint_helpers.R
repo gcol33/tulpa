@@ -399,55 +399,6 @@
          field_coef_const = consts)
 }
 
-# Legacy `.resolve_copy` body retained for callers that still pass a `copy`
-# argument directly -- only the multi-block path uses this. After
-# `.desugar_copy_to_field_coef` runs on the responses, the multi-block
-# `.resolve_copy_multi` continues to consume the original `copy` argument to
-# pick the copy BLOCK (single-block `.resolve_copy` no longer needs the
-# argument). When that path also migrates to field_coef-on-arm semantics,
-# `.resolve_copy_legacy` can be retired.
-.resolve_copy_legacy <- function(copy, responses, prior, type) {
-    if (is.null(copy)) {
-        return(list(has_copy = FALSE, copy_arm_zero = -1L,
-                    alpha_grid = numeric(0)))
-    }
-    arm_id <- copy$arm
-    if (is.null(arm_id)) {
-        stop("`copy$arm` must be a name or 1-based index.", call. = FALSE)
-    }
-    if (is.character(arm_id)) {
-        nm <- names(responses)
-        if (is.null(nm) || !arm_id %in% nm) {
-            stop("`copy$arm` = '", arm_id, "' not found in names(responses).",
-                 call. = FALSE)
-        }
-        arm_zero <- match(arm_id, nm) - 1L
-    } else {
-        arm_zero <- as.integer(arm_id) - 1L
-        if (arm_zero < 0L || arm_zero >= length(responses)) {
-            stop("`copy$arm` index out of range.", call. = FALSE)
-        }
-    }
-    if (!is.null(copy$alpha_grid)) {
-        alpha_axis <- as.numeric(copy$alpha_grid)
-    } else {
-        # Default: a small log-spaced grid in [~0.1, ~3], with 0 included so
-        # the alpha=0 base-model atom carries posterior mass when the data
-        # supports "no copy".
-        alpha_axis <- c(0, exp(seq(log(0.1), log(3), length.out = 5)))
-    }
-    if (length(alpha_axis) == 0L) {
-        stop("`copy$alpha_grid` must have at least one non-negative value.",
-             call. = FALSE)
-    }
-    if (any(alpha_axis < 0)) {
-        stop("`copy$alpha_grid` values must be non-negative.",
-             call. = FALSE)
-    }
-    list(has_copy = TRUE, copy_arm_zero = arm_zero,
-         alpha_grid = alpha_axis)
-}
-
 # Recalibrate per-axis posterior moments after the joint pass. Slice
 # cells from mode-tracked refinement on axis Y are pinned at modal
 # (non-Y) values; including them in axis X's marginal (X != Y) collapses
