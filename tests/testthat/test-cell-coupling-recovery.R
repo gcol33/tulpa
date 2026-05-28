@@ -7,24 +7,27 @@
 # so the two paths should agree to numerical precision (no summation
 # order differences -- each cell has exactly one row).
 
+.chain_adj <- function(n_s) {
+    nbr <- lapply(seq_len(n_s),
+                  function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
+    n_neighbors <- vapply(nbr, length, integer(1))
+    list(
+        adj_row_ptr = as.integer(c(0L, cumsum(n_neighbors))),
+        adj_col_idx = as.integer(unlist(nbr)) - 1L,
+        n_neighbors = as.integer(n_neighbors),
+        n_spatial_units = n_s
+    )
+}
+
 setup_test_data <- function(seed = 1L, n_s = 12L, N = 60L) {
     set.seed(seed)
-    adj_row_ptr <- c(0L, 1L,
-                     3L, 4L, 6L, 8L, 9L, 11L, 13L, 14L, 16L, 18L, 19L, 20L)
-    adj_col_idx <- c(2L,
-                     1L, 3L, 2L,
-                     3L, 5L, 4L, 6L, 5L,
-                     7L, 9L, 8L, 10L, 9L,
-                     11L, 13L, 12L,
-                     11L, 12L) - 1L
-    n_neighbors <- c(1L, 2L, 1L, 2L, 2L, 1L, 2L, 2L, 1L, 2L, 2L, 1L)
+    adj <- .chain_adj(n_s)
     spatial_idx <- as.integer(rep(seq_len(n_s), length.out = N))
     eta_true <- 0.3 + rnorm(n_s, 0, 0.6)
     p_true   <- 1 / (1 + exp(-eta_true[spatial_idx]))
     y <- rbinom(N, 1, p_true)
     list(
-        n_s = n_s, adj_row_ptr = adj_row_ptr,
-        adj_col_idx = adj_col_idx, n_neighbors = n_neighbors,
+        n_s = n_s, adj = adj,
         spatial_idx = spatial_idx,
         y = y, N = N
     )
@@ -47,11 +50,11 @@ build_arm <- function(d, coupled) {
 }
 
 prior_spec <- function(d) {
-    list(type = "icar",
-         n_spatial_units = d$n_s,
-         adj_row_ptr     = d$adj_row_ptr,
-         adj_col_idx     = d$adj_col_idx,
-         n_neighbors     = d$n_neighbors,
+    list(type            = "icar",
+         n_spatial_units = d$adj$n_spatial_units,
+         adj_row_ptr     = d$adj$adj_row_ptr,
+         adj_col_idx     = d$adj$adj_col_idx,
+         n_neighbors     = d$adj$n_neighbors,
          sigma_grid      = c(0.4, 0.8, 1.5))
 }
 

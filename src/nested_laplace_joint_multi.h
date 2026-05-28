@@ -908,23 +908,24 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     const bool any_coupling = !coupled_arms.empty();
 
     std::vector<bool> arm_is_coupled(n_arms, false);
-    if (any_coupling) {
-        for (int k : coupled_arms) {
-            if (k < 0 || k >= n_arms) {
-                Rcpp::stop("cell_coupling: arm_ids() entry %d out of range "
-                           "[0, %d).", k, n_arms);
-            }
-            if (!arms[k].coupled) {
-                Rcpp::stop("cell_coupling: spec lists arm %d but the arm "
-                           "has coupled = FALSE.", k + 1);
-            }
-            arm_is_coupled[k] = true;
+    for (int k : coupled_arms) {
+        if (k < 0 || k >= n_arms) {
+            Rcpp::stop("cell_coupling: arm_ids() entry %d out of range "
+                       "[0, %d).", k, n_arms);
         }
-        for (int k = 0; k < n_arms; k++) {
-            if (arms[k].coupled && !arm_is_coupled[k]) {
-                Rcpp::stop("cell_coupling: arm %d has coupled = TRUE but "
-                           "the spec's arm_ids() does not list it.", k + 1);
-            }
+        if (!arms[k].coupled) {
+            Rcpp::stop("cell_coupling: spec lists arm %d but the arm "
+                       "has coupled = FALSE.", k + 1);
+        }
+        arm_is_coupled[k] = true;
+    }
+    for (int k = 0; k < n_arms; k++) {
+        if (arms[k].coupled && !arm_is_coupled[k]) {
+            Rcpp::stop("cell_coupling: arm %d has coupled = TRUE but the "
+                       "registered spec's arm_ids() does not list it. "
+                       "Register a spec whose arm_ids() includes this arm "
+                       "(default \"separable\" does not couple any arm).",
+                       k + 1);
         }
     }
 
