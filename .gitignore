@@ -10,6 +10,7 @@ src/symbols.rds
 *.log
 dev_notes/
 dev_scripts/
+experimental/
 tmp_lib/
 .code-review-graph/
 .claude/

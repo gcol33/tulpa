@@ -634,17 +634,31 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     bp  <- .normalize_beta_prior(beta_prior, p_fix)
     log_prior_beta_at <- if (is.null(bp)) function(b) 0 else
       function(b) sum(stats::dnorm(b, bp$mean, bp$sd, log = TRUE))
+    # Gradient of the fixed-effect Gaussian prior (0 when absent), for the
+    # analytic beta-gradient of the inner profile.
+    dlog_prior_beta <- if (is.null(bp)) function(b) rep(0, p_fix) else
+      function(b) -(b - bp$mean) / bp$sd^2
     beta_warm <- if (!is.null(pilot) && !is.null(pilot$mode))
       pilot$mode[seq_len(p_fix)] else rep(0, p_fix)
 
+    # n_quad > 1 here (the AGHQ inner path), so the analytic Fisher-identity
+    # gradient is consistent with the objective. Profiling beta at a fixed Sigma
+    # only needs the theta-block (first p_fix entries) of the joint gradient plus
+    # the beta-prior gradient; the cached eval serves fn and gr in one sweep.
     core_solve <- function(L_list) {
       sc   <- .re_cov_L_list_to_theta(L_list, layout)
+      eval_at <- .aghq_grad_cache(orc, nc_terms, full_vec, n_quad, 1.0)
       negf <- function(b) {
-        v <- cpp_aghq_objective(c(b, sc), orc, nc_terms, full_vec, n_quad, 1.0)
-        if (!is.finite(v)) return(.Machine$double.xmax)
+        v <- eval_at(c(b, sc))$f
+        if (!is.finite(v) || v <= -1e9) return(.Machine$double.xmax)
         -(v + log_prior_beta_at(b))
       }
-      opt <- tryCatch(stats::optim(beta_warm, negf, method = "BFGS",
+      negg <- function(b) {
+        r <- eval_at(c(b, sc))
+        if (!isTRUE(r$ok)) return(rep(0, p_fix))
+        -(r$grad[seq_len(p_fix)] + dlog_prior_beta(b))
+      }
+      opt <- tryCatch(stats::optim(beta_warm, negf, negg, method = "BFGS",
                                    hessian = TRUE,
                                    control = list(reltol = 1e-10, maxit = 300L)),
                       error = function(e) NULL)

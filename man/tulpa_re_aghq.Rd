@@ -16,6 +16,7 @@ tulpa_re_aghq(
   n_quad = 9L,
   lkj_eta = 1,
   theta_prior_sd = Inf,
+  gradient = c("fd", "analytic"),
   maxit = 200L
 )
 }
@@ -87,6 +88,17 @@ them rather than shrinking them.}
 objective and hence the marginal Hessian). \code{Inf} (default) is pure ML on
 \code{theta}; a large finite value (e.g. 100) is a weak ridge that stabilizes a
 weakly-identified fixed effect without materially shifting the estimate.}
+
+\item{gradient}{How \code{stats::optim} gets the gradient of the AGHQ objective.
+\code{"fd"} (default) lets \code{optim} finite-difference the objective -- correct at
+every \code{n_quad} and the only option for the R-closure (\code{make_site} /
+\code{make_group}) paths. \code{"analytic"} supplies the Fisher-identity gradient
+(posterior-weighted theta-score plus the \code{Sigma} moment-matching residual),
+which avoids the per-coordinate objective re-solve and so is far cheaper for
+the quadrature debias. It requires a prebuilt native \code{oracle} (the only one
+exposing the theta-score) and \code{n_quad > 1}: being the gradient of the true
+marginal it omits the node-placement terms (\code{O} of the AGHQ truncation), so
+it agrees with the objective only as \code{n_quad} grows.}
 
 \item{maxit}{Optimizer iteration cap (default 200).}
 }

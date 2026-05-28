@@ -99,6 +99,16 @@
 #'   objective and hence the marginal Hessian). `Inf` (default) is pure ML on
 #'   `theta`; a large finite value (e.g. 100) is a weak ridge that stabilizes a
 #'   weakly-identified fixed effect without materially shifting the estimate.
+#' @param gradient How `stats::optim` gets the gradient of the AGHQ objective.
+#'   `"fd"` (default) lets `optim` finite-difference the objective -- correct at
+#'   every `n_quad` and the only option for the R-closure (`make_site` /
+#'   `make_group`) paths. `"analytic"` supplies the Fisher-identity gradient
+#'   (posterior-weighted theta-score plus the `Sigma` moment-matching residual),
+#'   which avoids the per-coordinate objective re-solve and so is far cheaper for
+#'   the quadrature debias. It requires a prebuilt native `oracle` (the only one
+#'   exposing the theta-score) and `n_quad > 1`: being the gradient of the true
+#'   marginal it omits the node-placement terms (`O` of the AGHQ truncation), so
+#'   it agrees with the objective only as `n_quad` grows.
 #' @param maxit Optimizer iteration cap (default 200).
 #'
 #' @return A list with: `theta` (refined fixed parameters), `Sigma_list`
@@ -114,11 +124,21 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                           make_site = NULL, make_group = NULL, oracle = NULL,
                           n_obs = NULL,
                           keep = NULL, n_quad = 9L, lkj_eta = 1,
-                          theta_prior_sd = Inf, maxit = 200L) {
+                          theta_prior_sd = Inf, gradient = c("fd", "analytic"),
+                          maxit = 200L) {
+  gradient <- match.arg(gradient)
   native <- !is.null(oracle)
   if (!native && (is.null(make_site) == is.null(make_group))) {
     stop("Supply exactly one of `make_site` (single-arm), `make_group` ",
          "(general / multi-arm), or a prebuilt native `oracle`.", call. = FALSE)
+  }
+  # The analytic gradient is the posterior-weighted theta-score, which only the
+  # native compiled oracles supply (the R-closure bridge's theta_score is a
+  # no-op). So gradient = "analytic" requires a prebuilt native `oracle`.
+  if (gradient == "analytic" && !native) {
+    stop("gradient = \"analytic\" requires a prebuilt native `oracle`; the ",
+         "R-closure bridge (make_site / make_group) does not supply the ",
+         "theta-score. Use gradient = \"fd\".", call. = FALSE)
   }
   single_arm <- !is.null(make_site)
   if (single_arm && is.null(n_obs)) {
@@ -195,19 +215,34 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   # -------------------------------------------------------------------------
   # Optimize sum_g log M_g (+ optional LKJ) over [theta ; log-Cholesky Sigma]
   # with the compiled AGHQ engine. cpp_aghq_objective returns a large finite
-  # penalty on a failed solve so stats::optim rejects it; the gradient is the
-  # finite difference of this objective (consistent at every n_quad, including
-  # n_quad = 1 == joint Laplace).
+  # penalty on a failed solve so stats::optim rejects it.
+  #   gradient = "fd"        -- optim finite-differences the objective
+  #                             (consistent at every n_quad, incl. n_quad = 1).
+  #   gradient = "analytic"  -- supply the Fisher-identity gradient
+  #                             (cpp_aghq_objective_grad). It is the gradient of
+  #                             the true marginal: it omits the node-placement
+  #                             terms (O(AGHQ truncation)), so it is consistent
+  #                             with the objective only for n_quad > 1 and is
+  #                             cheap (one group sweep, no per-coordinate
+  #                             re-solve). The objective + gradient share one
+  #                             evaluation per par via a small cache.
   # -------------------------------------------------------------------------
   orc   <- if (native) oracle
            else cpp_aghq_make_rclosure_oracle(build_oracle, ng, dtot, n_theta)
   ridge <- if (is.finite(theta_prior_sd)) 0.5 / theta_prior_sd^2 else 0
-  negf  <- function(par)
-    -cpp_aghq_objective(par, orc, nc_terms, full_vec, as.integer(n_quad), lkj_eta) +
-      ridge * sum(par[seq_len(n_theta)]^2)
 
-  opt <- stats::optim(c(theta0, re_par0), negf, method = "BFGS", hessian = TRUE,
-                      control = list(maxit = maxit, reltol = 1e-9))
+  if (gradient == "analytic") {
+    fns <- .aghq_analytic_optim_fns(orc, nc_terms, full_vec, n_quad, lkj_eta,
+                                    ridge = ridge, n_theta = n_theta)
+    opt <- stats::optim(c(theta0, re_par0), fns$fn, fns$gr, method = "BFGS",
+                        hessian = TRUE, control = list(maxit = maxit, reltol = 1e-9))
+  } else {
+    negf <- function(par)
+      -cpp_aghq_objective(par, orc, nc_terms, full_vec, as.integer(n_quad), lkj_eta) +
+        ridge * sum(par[seq_len(n_theta)]^2)
+    opt <- stats::optim(c(theta0, re_par0), negf, method = "BFGS", hessian = TRUE,
+                        control = list(maxit = maxit, reltol = 1e-9))
+  }
   V <- tryCatch(solve(opt$hessian), error = function(e) NULL)
   if (is.null(V) || any(!is.finite(opt$par))) return(NULL)
 
@@ -236,5 +271,49 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     n_quad     = as.integer(n_quad),
     lkj_eta    = lkj_eta,
     converged  = isTRUE(opt$convergence == 0L)
+  )
+}
+
+# Memoize cpp_aghq_objective_grad over `par`: returns an `eval_at(par)` that
+# recomputes only when `par` changes (stats::optim queries fn and gr separately,
+# usually at the same point, so one C++ group sweep serves both). The single
+# source of the analytic objective+gradient call -- shared by the full-par ML-II
+# optimizer (.aghq_analytic_optim_fns) and the fixed-Sigma beta profile in
+# tulpa_re_cov_nested(n_quad > 1).
+.aghq_grad_cache <- function(orc, nc_terms, full_vec, n_quad, lkj_eta) {
+  cache <- new.env(parent = emptyenv()); cache$par <- NULL; cache$val <- NULL
+  function(par) {
+    if (is.null(cache$par) || !identical(par, cache$par)) {
+      cache$par <- par
+      cache$val <- cpp_aghq_objective_grad(par, orc, nc_terms, full_vec,
+                                            as.integer(n_quad), lkj_eta)
+    }
+    cache$val
+  }
+}
+
+# Shared optim closures for the full-par analytic-gradient AGHQ path. The
+# returned functions are NEGATED for minimization. `ridge` adds a mean-zero
+# Gaussian ridge `ridge * sum(par[1:n_theta]^2)` (ridge = 0.5 / sd^2) on the
+# first `n_theta` parameters and its gradient `2 * ridge * par`; `ridge = 0`
+# disables it. A failed solve returns the objective sentinel and a zero gradient
+# so optim backtracks. Consumed by tulpa_re_aghq(gradient = "analytic") and
+# agq_fit(n_quad > 1).
+.aghq_analytic_optim_fns <- function(orc, nc_terms, full_vec, n_quad, lkj_eta,
+                                     ridge = 0, n_theta = 0L) {
+  eval_at <- .aghq_grad_cache(orc, nc_terms, full_vec, n_quad, lkj_eta)
+  list(
+    fn = function(par) {
+      r <- eval_at(par)
+      f <- if (isTRUE(r$ok)) r$f else -1e10
+      -f + (if (ridge > 0) ridge * sum(par[seq_len(n_theta)]^2) else 0)
+    },
+    gr = function(par) {
+      r <- eval_at(par)
+      g <- if (isTRUE(r$ok)) -r$grad else rep(0, length(par))
+      if (ridge > 0)
+        g[seq_len(n_theta)] <- g[seq_len(n_theta)] + 2 * ridge * par[seq_len(n_theta)]
+      g
+    }
   )
 }

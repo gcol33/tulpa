@@ -13,6 +13,10 @@ cpp_aghq_objective <- function(par, oracle, nc, full, n_quad, lkj_eta) {
     .Call(`_tulpa_cpp_aghq_objective`, par, oracle, nc, full, n_quad, lkj_eta)
 }
 
+cpp_aghq_objective_grad <- function(par, oracle, nc, full, n_quad, lkj_eta) {
+    .Call(`_tulpa_cpp_aghq_objective_grad`, par, oracle, nc, full, n_quad, lkj_eta)
+}
+
 cpp_aghq_blups <- function(par, oracle, nc, full) {
     .Call(`_tulpa_cpp_aghq_blups`, par, oracle, nc, full)
 }

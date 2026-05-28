@@ -177,7 +177,12 @@ List cpp_nmix_community_em(SEXP oracle, NumericVector mu_init,
         const MatrixXd& A = e.negH;            // observed-info coefficient curvature
         const MatrixXd Bb = A + P;
         const MatrixXd Bbinv = safe_inverse(Bb);
-        I_mu += A - A * Bbinv * A;             // Schur complement contribution
+        // Schur complement A - A Bbinv A, via explicit intermediates (a fused
+        // triple-product expression template instantiates pathologically under
+        // -O2 on MinGW g++).
+        const MatrixXd ABbinv = A * Bbinv;
+        I_mu += A;
+        I_mu.noalias() -= ABbinv * A;
         const double ldH = logdet_spd(Bb);
         loglik_marg += e.logL - 0.5 * b[s].dot(P * b[s])
                        + 0.5 * logdetP - 0.5 * ldH;
@@ -211,6 +216,5 @@ List cpp_nmix_community_em(SEXP oracle, NumericVector mu_init,
         _["b_p"]          = bp_out,
         _["log_lik"]      = loglik_marg,
         _["converged"]    = converged,
-        _["n_iter"]       = n_iter,
-        _["K_max"]        = K_max);
+        _["n_iter"]       = n_iter);
 }

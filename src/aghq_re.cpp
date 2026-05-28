@@ -40,10 +40,10 @@ SEXP cpp_aghq_make_rclosure_oracle(Function builder, int n_groups, int d, int n_
 SEXP cpp_nmix_community_oracle(IntegerVector y, IntegerVector site_idx,
                               IntegerVector species_idx, NumericMatrix X_lambda,
                               NumericMatrix X_p, int n_sites, int n_species,
-                              int K_max) {
+                              int K_max, bool nb = false) {
     return XPtr<REGroupOracle>(
         new NMixCommunityOracle(y, site_idx, species_idx, X_lambda, X_p,
-                                n_sites, n_species, K_max), true);
+                                n_sites, n_species, K_max, nb), true);
 }
 
 // AGHQ ML-II objective sum_g log M_g + LKJ at par = [theta ; log-Chol Sigma].
@@ -58,6 +58,31 @@ double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc,
     for (int i = 0; i < par.size(); ++i) pe(i) = par(i);
     AghqValueGrad r = aghq_objective_grad(*orc, pe, blocks, grid, lkj_eta, /*want_grad=*/false);
     return r.ok ? r.f : -1e10;
+}
+
+// AGHQ objective AND its analytic gradient w.r.t. par = [theta ; log-Chol Sigma]
+// in one group sweep. The gradient is the Fisher-identity gradient of the TRUE
+// marginal (theta: posterior-weighted theta-score; Sigma: the moment-matching
+// residual mapped to log-Cholesky coords); it omits the node-placement
+// derivatives, which are O(AGHQ truncation), so it agrees with the finite
+// difference of cpp_aghq_objective only as n_quad grows -- matching to ~1e-6 by
+// n_quad = 9 and diverging at n_quad = 1 (the pure-Laplace curvature term). The
+// analytic-gradient optimize path (n_quad > 1) consumes this; the FD path uses
+// cpp_aghq_objective. `ok = FALSE` flags a failed solve; `grad` is then zeroed.
+// [[Rcpp::export]]
+List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc,
+                             LogicalVector full, int n_quad, double lkj_eta) {
+    XPtr<REGroupOracle> orc(oracle);
+    int d; std::vector<ReCovBlock> blocks = parse_blocks(nc, full, d);
+    AghqGrid grid = aghq_build_grid(d, n_quad);
+    Eigen::VectorXd pe(par.size());
+    for (int i = 0; i < par.size(); ++i) pe(i) = par(i);
+    AghqValueGrad r = aghq_objective_grad(*orc, pe, blocks, grid, lkj_eta, /*want_grad=*/true);
+    NumericVector grad(r.grad.size());
+    for (int i = 0; i < (int)r.grad.size(); ++i) grad(i) = r.grad(i);
+    return List::create(_["f"]    = r.ok ? r.f : -1e10,
+                        _["grad"] = grad,
+                        _["ok"]   = r.ok);
 }
 
 // Per-group posterior modes + marginal variances at the optimum (BLUPs).

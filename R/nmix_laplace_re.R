@@ -31,8 +31,10 @@
 #' no sum-to-zero constraint is needed; their standard errors come from the
 #' marginal observed-information Hessian.
 #'
-#' Poisson abundance only (a global negative-binomial size is a planned
-#' extension).
+#' The abundance mixing distribution is Poisson (`mixture = "P"`) or negative
+#' binomial (`mixture = "NB"`, a single global dispersion size `r` shared across
+#' species, carried as an extra fixed effect and integrated jointly with the
+#' community means). Poisson is the `r -> Inf` limit.
 #'
 #' @param y Integer vector of counts, one entry per observed visit (long form,
 #'   all species stacked).
@@ -53,13 +55,23 @@
 #' @param max_iter Optimizer iteration cap (default 200).
 #' @param optimizer Outer optimize driver over the shared native oracle:
 #'   `"em"` (default) is the fast Laplace-EM (block-coordinate Newton mode +
-#'   closed-form covariance M-step + Schur SE) at `n_quad = 1`; `"joint_fd"` is
-#'   the joint `(theta, log-Cholesky Sigma)` optimizer ([tulpa_re_aghq()]) with a
-#'   finite-difference gradient of the compiled objective -- it is the only
-#'   driver that does the `n_quad > 1` AGHQ debias, but its FD-gradient objective
-#'   sweep makes it slower than the EM, so it is opt-in (correctness / debias).
-#'   `"joint_grad"` (analytic-gradient joint optimizer) is a reserved extension
-#'   point and currently errors.
+#'   closed-form covariance M-step + Schur SE), the exact `n_quad = 1` solver.
+#'   `"joint_grad"` and `"joint_fd"` are the joint `(theta, log-Cholesky Sigma)`
+#'   optimizers ([tulpa_re_aghq()]) and both do the `n_quad > 1` AGHQ debias of
+#'   the community covariances. `"joint_grad"` (the fast debias path) supplies
+#'   the analytic Fisher-identity gradient -- one group sweep per step, no
+#'   per-coordinate objective re-solve -- and requires `n_quad > 1` (at
+#'   `n_quad = 1` use the EM). `"joint_fd"` finite-differences the objective
+#'   (slower; the FD sweep re-solves every per-species mode per coordinate) and
+#'   is kept for correctness / architecture validation and as the `n_quad = 1`
+#'   joint reference.
+#' @param mixture Abundance mixing distribution: `"P"` (Poisson, default) or
+#'   `"NB"` (negative binomial, one global dispersion size `r`). `"NB"` has no
+#'   closed-form EM, so it defaults `optimizer` to `"joint_grad"` and `n_quad`
+#'   to `5` when those are not supplied, and errors on `optimizer = "em"`.
+#' @param r_init Initial negative-binomial size for the joint optimizer
+#'   (`mixture = "NB"` only; default `10`, a moderate overdispersion start). The
+#'   optimizer carries `log_r` as the `(p_lambda + p_p + 1)`-th fixed effect.
 #' @param n_quad Quadrature points per random-effect dimension passed to
 #'   [tulpa_re_aghq()] (default 1, the joint Laplace). A higher `n_quad`
 #'   debiases the community covariances at a `n_quad^(p_lambda + p_p)`
@@ -79,7 +91,8 @@
 #'   uncertainty rather than plugging in `Sigma`), `Sigma_lambda`, `Sigma_p`
 #'   (community covariances), `b_lambda`, `b_p` (per-species BLUP deviations,
 #'   `n_species` rows), `log_lik` (AGHQ marginal), `converged`, `K_max`,
-#'   `n_quad`, `lkj_eta`.
+#'   `n_quad`, `lkj_eta`, and (when `mixture = "NB"`) `r`, the fitted global
+#'   negative-binomial size (its `log_r` SE is in `vcov`).
 #'
 #' @references
 #' Royle, J. A. (2004). N-mixture models for estimating population size from
@@ -96,9 +109,21 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
                                   Sigma_lambda_init = NULL, Sigma_p_init = NULL,
                                   K_max = NULL, max_iter = 200L,
                                   optimizer = c("em", "joint_fd", "joint_grad"),
+                                  mixture = c("P", "NB"), r_init = 10,
                                   n_quad = 1L, lkj_eta = 1,
                                   sigma_beta = 100, verbose = FALSE) {
+  mixture <- match.arg(mixture)
+  # NB has no closed-form EM (that is the Poisson Laplace special case): the
+  # global dispersion log_r is an extra fixed effect the joint optimizer carries.
+  # So NB defaults to the analytic-gradient debias path, which (like any
+  # joint_grad) needs n_quad > 1. Explicit optimizer = "em" with NB is an error.
+  if (mixture == "NB" && missing(optimizer)) optimizer <- "joint_grad"
+  if (mixture == "NB" && missing(n_quad))    n_quad <- 5L
   optimizer <- match.arg(optimizer)
+  if (mixture == "NB" && optimizer == "em") {
+    stop("mixture = \"NB\" needs a joint optimizer (\"joint_grad\" or ",
+         "\"joint_fd\"); the EM is the Poisson Laplace solver.", call. = FALSE)
+  }
   y        <- as.integer(y)
   site_idx <- as.integer(site_idx)
   species_idx <- as.integer(species_idx)
@@ -156,13 +181,8 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
   # source. The driver is selected by `optimizer`.
   n_quad <- as.integer(n_quad)
   orc <- cpp_nmix_community_oracle(y, site_idx, species_idx, X_lambda, X_p,
-                                   n_sites, n_species, K_max)
-
-  if (optimizer == "joint_grad") {
-    stop("optimizer = \"joint_grad\" (analytic-gradient joint optimizer) is a ",
-         "planned extension and not yet implemented. Use \"em\" (default) or ",
-         "\"joint_fd\".", call. = FALSE)
-  }
+                                   n_sites, n_species, K_max,
+                                   nb = (mixture == "NB"))
 
   if (optimizer == "em") {
     # Default. EM is an outer driver over the shared oracle: block-coordinate
@@ -192,18 +212,35 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     return(out)
   }
 
-  # optimizer == "joint_fd": the shared compiled AGHQ engine drives the SAME
-  # oracle by quadrature, with a finite-difference gradient of the compiled
-  # objective (tulpa_re_aghq). It is the only driver that does the n_quad > 1
-  # variance-component debias. The FD-gradient objective sweep makes it slower
-  # than the EM (profiling: ~100% of the residual runtime), so it is opt-in --
-  # kept for correctness / architecture validation and the AGHQ debias path.
+  # Joint optimizers (joint_fd / joint_grad) drive the SAME native oracle through
+  # the shared compiled AGHQ engine (tulpa_re_aghq) by quadrature, and both do the
+  # n_quad > 1 variance-component debias the EM cannot.
+  #   joint_grad: the analytic Fisher-identity gradient (cpp_aghq_objective_grad)
+  #     -- one group sweep per optim step, no per-coordinate objective re-solve.
+  #     This is the fast production debias path. It needs n_quad > 1: the analytic
+  #     gradient omits the Laplace curvature term, so at n_quad = 1 it disagrees
+  #     with the objective (use the EM, which is the exact n_quad = 1 solver).
+  #   joint_fd: optim finite-differences the objective -- the FD sweep re-solves
+  #     every per-species mode for each perturbed coordinate (~100% of the
+  #     residual runtime), so it is slower; kept for correctness / architecture
+  #     validation and as the n_quad = 1 joint reference.
+  if (optimizer == "joint_grad" && n_quad <= 1L) {
+    stop("optimizer = \"joint_grad\" is the analytic-gradient AGHQ debias path ",
+         "(n_quad > 1); at n_quad = 1 the analytic gradient omits the Laplace ",
+         "curvature term. Use optimizer = \"em\" (the exact n_quad = 1 solver).",
+         call. = FALSE)
+  }
+  grad_mode <- if (optimizer == "joint_grad") "analytic" else "fd"
+  # NB carries a global dispersion log_r as the (d+1)-th theta entry (the oracle
+  # built with nb = TRUE exposes n_theta = d + 1); Poisson omits it.
+  theta0 <- c(as.numeric(mu_lambda_init), as.numeric(mu_p_init))
+  if (mixture == "NB") theta0 <- c(theta0, log(r_init))
   fit <- tulpa_re_aghq(
-    theta0  = c(as.numeric(mu_lambda_init), as.numeric(mu_p_init)),
+    theta0  = theta0,
     re_terms = list(list(n_groups = n_species, n_coefs = p_lam, correlated = p_lam > 1L),
                     list(n_groups = n_species, n_coefs = p_p,   correlated = p_p   > 1L)),
     Sigma0  = list(as.matrix(Sigma_lambda_init), as.matrix(Sigma_p_init)),
-    oracle  = orc,
+    oracle  = orc, gradient = grad_mode,
     n_quad = n_quad, lkj_eta = lkj_eta,
     theta_prior_sd = sigma_beta, maxit = as.integer(max_iter))
 
@@ -226,9 +263,12 @@ tulpa_nmix_laplace_re <- function(y, site_idx, species_idx,
     K_max        = K_max,
     n_quad       = fit$n_quad,
     lkj_eta      = fit$lkj_eta,
-    optimizer    = "joint_fd",
-    mixture      = "P"
+    optimizer    = optimizer,
+    mixture      = mixture
   )
+  # NB: the (d+1)-th theta entry is log_r; report the size r (its log-scale SE is
+  # the corresponding marginal-Hessian diagonal in `vcov`).
+  if (mixture == "NB") out$r <- exp(mu[p_lam + p_p + 1L])
   class(out) <- c("tulpa_nmix_re_fit", "list")
   out
 }

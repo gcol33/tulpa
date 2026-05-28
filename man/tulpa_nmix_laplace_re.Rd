@@ -18,6 +18,9 @@ tulpa_nmix_laplace_re(
   Sigma_p_init = NULL,
   K_max = NULL,
   max_iter = 200L,
+  optimizer = c("em", "joint_fd", "joint_grad"),
+  mixture = c("P", "NB"),
+  r_init = 10,
   n_quad = 1L,
   lkj_eta = 1,
   sigma_beta = 100,
@@ -52,6 +55,28 @@ per-species coefficient estimates.}
 
 \item{max_iter}{Optimizer iteration cap (default 200).}
 
+\item{optimizer}{Outer optimize driver over the shared native oracle:
+\code{"em"} (default) is the fast Laplace-EM (block-coordinate Newton mode +
+closed-form covariance M-step + Schur SE), the exact \code{n_quad = 1} solver.
+\code{"joint_grad"} and \code{"joint_fd"} are the joint \verb{(theta, log-Cholesky Sigma)}
+optimizers (\code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}}) and both do the \code{n_quad > 1} AGHQ debias of
+the community covariances. \code{"joint_grad"} (the fast debias path) supplies
+the analytic Fisher-identity gradient -- one group sweep per step, no
+per-coordinate objective re-solve -- and requires \code{n_quad > 1} (at
+\code{n_quad = 1} use the EM). \code{"joint_fd"} finite-differences the objective
+(slower; the FD sweep re-solves every per-species mode per coordinate) and
+is kept for correctness / architecture validation and as the \code{n_quad = 1}
+joint reference.}
+
+\item{mixture}{Abundance mixing distribution: \code{"P"} (Poisson, default) or
+\code{"NB"} (negative binomial, one global dispersion size \code{r}). \code{"NB"} has no
+closed-form EM, so it defaults \code{optimizer} to \code{"joint_grad"} and \code{n_quad}
+to \code{5} when those are not supplied, and errors on \code{optimizer = "em"}.}
+
+\item{r_init}{Initial negative-binomial size for the joint optimizer
+(\code{mixture = "NB"} only; default \code{10}, a moderate overdispersion start). The
+optimizer carries \code{log_r} as the \code{(p_lambda + p_p + 1)}-th fixed effect.}
+
 \item{n_quad}{Quadrature points per random-effect dimension passed to
 \code{\link[=tulpa_re_aghq]{tulpa_re_aghq()}} (default 1, the joint Laplace). A higher \code{n_quad}
 debiases the community covariances at a \code{n_quad^(p_lambda + p_p)}
@@ -75,7 +100,8 @@ means), \code{vcov} (their joint covariance from the AGHQ marginal Hessian,
 uncertainty rather than plugging in \code{Sigma}), \code{Sigma_lambda}, \code{Sigma_p}
 (community covariances), \code{b_lambda}, \code{b_p} (per-species BLUP deviations,
 \code{n_species} rows), \code{log_lik} (AGHQ marginal), \code{converged}, \code{K_max},
-\code{n_quad}, \code{lkj_eta}.
+\code{n_quad}, \code{lkj_eta}, and (when \code{mixture = "NB"}) \code{r}, the fitted global
+negative-binomial size (its \code{log_r} SE is in \code{vcov}).
 }
 \description{
 Fits the community (spAbundance \code{msNMix}) N-mixture model: a per-species
@@ -108,8 +134,10 @@ Gaussian community priors pin \eqn{(\mu_\lambda, \mu_p)} as fixed effects, so
 no sum-to-zero constraint is needed; their standard errors come from the
 marginal observed-information Hessian.
 
-Poisson abundance only (a global negative-binomial size is a planned
-extension).
+The abundance mixing distribution is Poisson (\code{mixture = "P"}) or negative
+binomial (\code{mixture = "NB"}, a single global dispersion size \code{r} shared across
+species, carried as an extra fixed effect and integrated jointly with the
+community means). Poisson is the \code{r -> Inf} limit.
 }
 \references{
 Royle, J. A. (2004). N-mixture models for estimating population size from

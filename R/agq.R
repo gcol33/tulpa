@@ -115,12 +115,23 @@ agq_fit <- function(y, X, group,
   Z <- matrix(1, n_obs, 1L)
   orc <- cpp_glmm_oracle_make(family, sigma_eps^2, as.numeric(y),
                               as.numeric(n_trials), X, Z, group, n_groups)
-  negf <- function(par)
-    -cpp_aghq_objective(par, orc, 1L, FALSE, as.integer(n_quad), 1.0)
-
   par_init <- c(beta_init, log(sigma_init))
-  opt <- stats::optim(par = par_init, fn = negf, method = "BFGS", hessian = TRUE,
-                      control = list(maxit = max_iter, reltol = tol))
+
+  # At n_quad > 1 supply the analytic Fisher-identity gradient (one group sweep
+  # per optim step, no per-coordinate FD re-solve). At n_quad = 1 (Laplace) it
+  # omits the curvature term and disagrees with the objective, so fall back to
+  # optim's finite difference. The RE block is the scalar intercept (nc = 1,
+  # diagonal), no theta ridge.
+  if (n_quad > 1L) {
+    fns <- .aghq_analytic_optim_fns(orc, 1L, FALSE, n_quad, 1.0)
+    opt <- stats::optim(par = par_init, fn = fns$fn, gr = fns$gr, method = "BFGS",
+                        hessian = TRUE, control = list(maxit = max_iter, reltol = tol))
+  } else {
+    negf <- function(par)
+      -cpp_aghq_objective(par, orc, 1L, FALSE, as.integer(n_quad), 1.0)
+    opt <- stats::optim(par = par_init, fn = negf, method = "BFGS", hessian = TRUE,
+                        control = list(maxit = max_iter, reltol = tol))
+  }
 
   sigma_hat <- exp(opt$par[p + 1L])
 
