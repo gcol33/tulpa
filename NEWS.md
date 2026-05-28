@@ -15,7 +15,7 @@
   exact-marginal log-likelihood, with SEs from the marginal Hessian. Recovery
   tests in `tests/testthat/test-re-aghq.R`.
 
-## Unreleased
+## 0.0.3 (2026-05-28)
 
 * refactor(aghq): one compiled adaptive-Gauss-Hermite engine behind the whole
   ML-II optimize family. The per-group marginal -- mode-find, quadrature grid,

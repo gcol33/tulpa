@@ -61,11 +61,12 @@ The callback owns all arm / design / clamping bookkeeping. Supply this or
 }}
 
 \item{oracle}{Optional prebuilt native (compiled) oracle, an external pointer
-to a \code{REGroupOracle} (e.g. from \code{cpp_nmix_community_oracle()}). When
-supplied the engine drives it directly, with no per-group / per-node round
-trip into R, and neither \code{make_site} nor \code{make_group} is needed; \code{re_terms},
-\code{theta0} and \code{Sigma0} must still describe the same layout the oracle
-exposes. The integration core is identical to the R-closure path.}
+to a \code{REGroupOracle} (constructed in a consumer package's src/ via
+\code{LinkingTo: tulpa} against \verb{<tulpa/aghq_oracle.h>}). When supplied the
+engine drives it directly, with no per-group / per-node round trip into R,
+and neither \code{make_site} nor \code{make_group} is needed; \code{re_terms}, \code{theta0}
+and \code{Sigma0} must still describe the same layout the oracle exposes. The
+integration core is identical to the R-closure path.}
 
 \item{n_obs}{Number of observations (length of each term's \code{idx}). Required
 for the \code{make_site} path; ignored for \code{make_group}.}
