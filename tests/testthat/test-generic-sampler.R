@@ -292,3 +292,80 @@ test_that("per-chain warm-start resumes a multi-chain fit (tulpa#30 + #29)", {
   expect_equal(cont_mean[["beta[1]"]], ref_mean[["beta[1]"]], tolerance = 0.1)
   expect_equal(cont_mean[["beta[2]"]], ref_mean[["beta[2]"]], tolerance = 0.1)
 })
+
+# ---------------------------------------------------------------------------
+# C-ABI round-trip for the resume outputs (gcol33/tulpa#29)
+# ---------------------------------------------------------------------------
+# The Rcpp wrappers above read inv_metric / final_position straight off
+# HMCResultCpp; downstream packages instead reach tulpa through the registered
+# C ABI (R_GetCCallable("tulpa", "tulpa_run_nuts_generic") -> NUTSResult).
+# fill_nuts_result_from_cpp() copies the resume fields into the NUTSResult
+# struct; these tests run the C ABI itself end-to-end so a regression to that
+# copy fails here rather than only inside a downstream consumer.
+
+test_that("C ABI tulpa_run_nuts_generic populates inv_metric_out + final_position (tulpa#29)", {
+  skip_on_cran()
+
+  set.seed(29)
+  n <- 50L
+  X <- cbind(1, seq(-1, 1, length.out = n))
+  y <- as.numeric(X %*% c(0.5, 1.0) + rnorm(n, sd = 0.3))
+
+  abi <- tulpa:::cpp_test_c_abi_resume_roundtrip(
+    y_r = y, X_r = X,
+    n_iter = 400L, n_warmup = 200L,
+    max_treedepth = 7L, adapt_delta = 0.85,
+    seed = 29L
+  )
+
+  # Both resume fields must be length n_params and finite — the C ABI is
+  # responsible for allocating + populating them in fill_nuts_result_from_cpp.
+  expect_length(abi$inv_metric_out, abi$n_params)
+  expect_length(abi$final_position, abi$n_params)
+  expect_true(all(is.finite(abi$inv_metric_out)))
+  expect_true(all(is.finite(abi$final_position)))
+
+  # The inverse-mass diagonal should be strictly positive (a diagonal metric
+  # entry of zero would be a broken sampler, not a valid resume state).
+  expect_true(all(abi$inv_metric_out > 0))
+
+  # final_position must match the last draw of the returned chain — the C ABI
+  # advertises "init = final_position" as a valid continuation, so the field
+  # has to be the actual last sampler position, not e.g. the posterior mean.
+  last_row <- as.numeric(abi$draws[abi$n_samples, ])
+  expect_equal(as.numeric(abi$final_position), last_row, tolerance = 1e-10)
+})
+
+test_that("C ABI resume continues a chain from inv_metric_out + final_position (tulpa#29)", {
+  skip_on_cran()
+
+  set.seed(30)
+  n <- 60L
+  X <- cbind(1, seq(-1, 1, length.out = n))
+  y <- as.numeric(X %*% c(0.4, 1.0) + rnorm(n, sd = 0.3))
+
+  ref <- tulpa:::cpp_test_c_abi_resume_roundtrip(
+    y_r = y, X_r = X,
+    n_iter = 800L, n_warmup = 400L,
+    max_treedepth = 7L, adapt_delta = 0.85,
+    seed = 30L
+  )
+
+  # Hand the C-ABI resume fields back as warm-start inputs to a fresh C-ABI
+  # call with n_warmup = 0 — the documented continuation contract.
+  cont <- tulpa:::cpp_test_c_abi_resume_roundtrip(
+    y_r = y, X_r = X,
+    n_iter = 800L, n_warmup = 0L,
+    max_treedepth = 7L, adapt_delta = 0.85,
+    seed = 130L,
+    init = ref$final_position,
+    inv_metric_init = ref$inv_metric_out
+  )
+
+  expect_true(all(is.finite(cont$draws)))
+
+  ref_mean  <- colMeans(ref$draws)
+  cont_mean <- colMeans(cont$draws)
+  expect_equal(cont_mean[["beta[1]"]], ref_mean[["beta[1]"]], tolerance = 0.1)
+  expect_equal(cont_mean[["beta[2]"]], ref_mean[["beta[2]"]], tolerance = 0.1)
+})

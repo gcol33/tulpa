@@ -3,6 +3,7 @@
 // Demonstrates the tulpa multi-process interface end-to-end
 
 #include <Rcpp.h>
+#include <R_ext/Rdynload.h>
 #include <vector>
 #include <cmath>
 #include <random>
@@ -12,6 +13,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
+#include "tulpa/nuts_api.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -634,6 +636,112 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
         Rcpp::Named("epsilon") = epsilon,
         // Per-chain warm-start / resume outputs (gcol33/tulpa#29 + #30)
         Rcpp::Named("inv_metric") = inv_metric,
+        Rcpp::Named("final_position") = final_position
+    );
+}
+
+// ============================================================================
+// C-ABI round-trip verifier for the resume outputs (gcol33/tulpa#29).
+//
+// The Rcpp-wrapper paths (cpp_tulpa_fit_generic / *_chains) read inv_metric
+// and final_position directly off HMCResultCpp. Downstream packages instead
+// reach the engine through the registered C ABI: tulpa::get_nuts_fn()
+// -> R_GetCCallable("tulpa", "tulpa_run_nuts_generic") -> NUTSResult.
+// fill_nuts_result_from_cpp() copies the resume fields into the C-ABI struct;
+// this helper exercises that exact path so a regression to that copy (or to
+// the ABI version / registration) fails a unit test rather than only showing
+// up in a downstream consumer.
+//
+// Returns the two C-ABI resume fields (`inv_metric_out`, `final_position`)
+// and the matrix of draws, so R-level tests can assert: (a) the C ABI
+// populates the resume fields with the same values the Rcpp wrapper exposes,
+// and (b) a continued chain warm-started from them samples the same posterior.
+// ============================================================================
+// [[Rcpp::export]]
+Rcpp::List cpp_test_c_abi_resume_roundtrip(
+    Rcpp::NumericVector y_r,
+    Rcpp::NumericMatrix X_r,
+    int n_iter = 600,
+    int n_warmup = 300,
+    int max_treedepth = 7,
+    double adapt_delta = 0.85,
+    int seed = 9,
+    Rcpp::Nullable<Rcpp::NumericVector> init = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init = R_NilValue
+) {
+    GaussianData gd;
+    tulpa::LikelihoodSpec spec;
+    ModelData data;
+    ParamLayout layout;
+    build_gaussian_model(y_r, X_r, /*sigma_beta=*/10.0, gd, spec, data, layout);
+    const int n_params = layout.total_params;
+
+    std::vector<double> init_vec(n_params, 0.0);
+    if (init.isNotNull()) {
+        Rcpp::NumericVector iv(init);
+        if ((int)iv.size() != n_params) {
+            Rcpp::stop("init length %d != n_params %d", (int)iv.size(), n_params);
+        }
+        init_vec.assign(iv.begin(), iv.end());
+    }
+
+    std::vector<double> inv_metric_vec;
+    const double* inv_metric_ptr = nullptr;
+    if (inv_metric_init.isNotNull()) {
+        Rcpp::NumericVector mv(inv_metric_init);
+        if ((int)mv.size() != n_params) {
+            Rcpp::stop("inv_metric_init length %d != n_params %d",
+                       (int)mv.size(), n_params);
+        }
+        inv_metric_vec.assign(mv.begin(), mv.end());
+        inv_metric_ptr = inv_metric_vec.data();
+    }
+
+    // Reach the engine the way downstream packages do: through R_GetCCallable.
+    // get_nuts_fn() caches the lookup and runs the ABI-version check.
+    tulpa::NUTSFn run_nuts = tulpa::get_nuts_fn();
+    if (run_nuts == nullptr) {
+        Rcpp::stop("tulpa_run_nuts_generic is not registered");
+    }
+
+    tulpa::NUTSResult result = {};
+    run_nuts(
+        &data, &layout, init_vec.data(), n_params,
+        n_iter, n_warmup, max_treedepth, adapt_delta,
+        static_cast<unsigned int>(seed),
+        /*verbose=*/0,
+        inv_metric_ptr,
+        &result
+    );
+
+    const int ns = result.n_sample;
+    Rcpp::NumericMatrix draws(ns, n_params);
+    for (int s = 0; s < ns; s++) {
+        for (int j = 0; j < n_params; j++) {
+            draws(s, j) = result.samples[s * n_params + j];
+        }
+    }
+    Rcpp::CharacterVector col_names = gaussian_col_names(X_r.ncol());
+    Rcpp::colnames(draws) = col_names;
+
+    // The C-ABI resume fields — the thing this helper exists to verify.
+    Rcpp::NumericVector inv_metric_out(n_params), final_position(n_params);
+    for (int j = 0; j < n_params; j++) {
+        inv_metric_out[j] = result.inv_metric_out[j];
+        final_position[j] = result.final_position[j];
+    }
+    inv_metric_out.names() = col_names;
+    final_position.names() = col_names;
+
+    double epsilon = result.epsilon;
+    result.free_buffers();
+
+    return Rcpp::List::create(
+        Rcpp::Named("draws") = draws,
+        Rcpp::Named("n_samples") = ns,
+        Rcpp::Named("n_params") = n_params,
+        Rcpp::Named("epsilon") = epsilon,
+        Rcpp::Named("inv_metric_out") = inv_metric_out,
         Rcpp::Named("final_position") = final_position
     );
 }

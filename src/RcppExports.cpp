@@ -2555,6 +2555,25 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_c_abi_resume_roundtrip
+Rcpp::List cpp_test_c_abi_resume_roundtrip(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, Rcpp::Nullable<Rcpp::NumericVector> init, Rcpp::Nullable<Rcpp::NumericVector> inv_metric_init);
+RcppExport SEXP _tulpa_cpp_test_c_abi_resume_roundtrip(SEXP y_rSEXP, SEXP X_rSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP initSEXP, SEXP inv_metric_initSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y_r(y_rSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X_r(X_rSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type max_treedepth(max_treedepthSEXP);
+    Rcpp::traits::input_parameter< double >::type adapt_delta(adapt_deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type init(initSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type inv_metric_init(inv_metric_initSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_c_abi_resume_roundtrip(y_r, X_r, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init));
+    return rcpp_result_gen;
+END_RCPP
+}
 // tulpa_version
 std::string tulpa_version();
 RcppExport SEXP _tulpa_tulpa_version() {
@@ -2828,6 +2847,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tulpa_fit_gaussian", (DL_FUNC) &_tulpa_cpp_tulpa_fit_gaussian, 8},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 11},
     {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 12},
+    {"_tulpa_cpp_test_c_abi_resume_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_resume_roundtrip, 9},
     {"_tulpa_tulpa_version", (DL_FUNC) &_tulpa_tulpa_version, 0},
     {"_tulpa_cpp_spde_layout_probe", (DL_FUNC) &_tulpa_cpp_spde_layout_probe, 4},
     {"_tulpa_cpp_spde_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_prior_probe, 9},

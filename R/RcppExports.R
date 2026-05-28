@@ -593,6 +593,10 @@ cpp_tulpa_fit_generic_chains <- function(y_r, X_r, n_chains = 4L, sigma_beta = 1
     .Call(`_tulpa_cpp_tulpa_fit_generic_chains`, y_r, X_r, n_chains, sigma_beta, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, init, inv_metric_init)
 }
 
+cpp_test_c_abi_resume_roundtrip <- function(y_r, X_r, n_iter = 600L, n_warmup = 300L, max_treedepth = 7L, adapt_delta = 0.85, seed = 9L, init = NULL, inv_metric_init = NULL) {
+    .Call(`_tulpa_cpp_test_c_abi_resume_roundtrip`, y_r, X_r, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init)
+}
+
 tulpa_version <- function() {
     .Call(`_tulpa_tulpa_version`)
 }
