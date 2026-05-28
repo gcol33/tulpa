@@ -745,3 +745,137 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
         Rcpp::Named("final_position") = final_position
     );
 }
+
+// ============================================================================
+// C-ABI round-trip verifier for the multi-chain runner (gcol33/tulpa#30).
+//
+// Mirrors cpp_test_c_abi_resume_roundtrip but for tulpa_run_nuts_chains:
+// reaches the engine through tulpa::get_nuts_chains_fn() (R_GetCCallable),
+// packs the chain-major [n_chains * n_params] init / inv_metric_diag buffers,
+// allocates a NUTSResult[n_chains] for the output, and converts the per-chain
+// results into R-side matrices.
+//
+// Returns draws stacked chain-major + a chain_id vector + n_chains — the
+// exact (draws, chain_id, n_chains) layout tulpa::mcmc_diagnostics() reads
+// — plus per-chain `inv_metric_out` / `final_position` for the resume
+// contract verification.
+// ============================================================================
+// [[Rcpp::export]]
+Rcpp::List cpp_test_c_abi_chains_roundtrip(
+    Rcpp::NumericVector y_r,
+    Rcpp::NumericMatrix X_r,
+    int n_chains = 3,
+    int n_iter = 600,
+    int n_warmup = 300,
+    int max_treedepth = 7,
+    double adapt_delta = 0.85,
+    int seed = 30,
+    Rcpp::Nullable<Rcpp::NumericMatrix> init = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue
+) {
+    if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+
+    GaussianData gd;
+    tulpa::LikelihoodSpec spec;
+    ModelData data;
+    ParamLayout layout;
+    build_gaussian_model(y_r, X_r, /*sigma_beta=*/10.0, gd, spec, data, layout);
+    const int n_params = layout.total_params;
+    const int p = X_r.ncol();
+
+    // Per-chain init (chain-major rows), default origin.
+    std::vector<double> init_flat((std::size_t)n_chains * n_params, 0.0);
+    if (init.isNotNull()) {
+        Rcpp::NumericMatrix im(init);
+        if (im.nrow() != n_chains || im.ncol() != n_params) {
+            Rcpp::stop("init must be [n_chains x n_params] = [%d x %d]",
+                       n_chains, n_params);
+        }
+        for (int c = 0; c < n_chains; c++) {
+            for (int j = 0; j < n_params; j++) {
+                init_flat[(std::size_t)c * n_params + j] = im(c, j);
+            }
+        }
+    }
+
+    // Per-chain inverse-mass diagonal (chain-major rows), nullptr -> default.
+    std::vector<double> inv_metric_flat;
+    const double* inv_metric_ptr = nullptr;
+    if (inv_metric_init.isNotNull()) {
+        Rcpp::NumericMatrix mm(inv_metric_init);
+        if (mm.nrow() != n_chains || mm.ncol() != n_params) {
+            Rcpp::stop("inv_metric_init must be [n_chains x n_params] = [%d x %d]",
+                       n_chains, n_params);
+        }
+        inv_metric_flat.assign((std::size_t)n_chains * n_params, 0.0);
+        for (int c = 0; c < n_chains; c++) {
+            for (int j = 0; j < n_params; j++) {
+                inv_metric_flat[(std::size_t)c * n_params + j] = mm(c, j);
+            }
+        }
+        inv_metric_ptr = inv_metric_flat.data();
+    }
+
+    // Reach the engine through R_GetCCallable. get_nuts_chains_fn() caches
+    // the lookup and runs the ABI-version check on first use.
+    tulpa::NUTSChainsFn run_chains = tulpa::get_nuts_chains_fn();
+    if (run_chains == nullptr) {
+        Rcpp::stop("tulpa_run_nuts_chains is not registered");
+    }
+
+    std::vector<tulpa::NUTSResult> results(n_chains, tulpa::NUTSResult{});
+    run_chains(
+        &data, &layout, init_flat.data(), n_params, n_chains,
+        n_iter, n_warmup, max_treedepth, adapt_delta,
+        static_cast<unsigned int>(seed),
+        /*verbose=*/0,
+        inv_metric_ptr,
+        results.data()
+    );
+
+    const int n_sample = results[0].n_sample;
+    const int n_total = n_sample * n_chains;
+
+    Rcpp::NumericMatrix draws(n_total, n_params);
+    Rcpp::IntegerVector chain_id(n_total);
+    Rcpp::NumericVector epsilon(n_chains);
+    Rcpp::NumericMatrix inv_metric_out(n_chains, n_params);
+    Rcpp::NumericMatrix final_position(n_chains, n_params);
+
+    int r = 0;
+    for (int c = 0; c < n_chains; c++) {
+        const tulpa::NUTSResult& res = results[c];
+        for (int s = 0; s < res.n_sample; s++) {
+            for (int j = 0; j < n_params; j++) {
+                draws(r, j) = res.samples[s * n_params + j];
+            }
+            chain_id[r] = c + 1;
+            r++;
+        }
+        epsilon[c] = res.epsilon;
+        for (int j = 0; j < n_params; j++) {
+            inv_metric_out(c, j) = res.inv_metric_out[j];
+            final_position(c, j) = res.final_position[j];
+        }
+    }
+
+    // Free the C-ABI-owned per-chain buffers. Mirrors what a downstream
+    // consumer would do after copying results into its own R objects.
+    for (int c = 0; c < n_chains; c++) results[c].free_buffers();
+
+    Rcpp::CharacterVector col_names = gaussian_col_names(p);
+    Rcpp::colnames(draws) = col_names;
+    Rcpp::colnames(inv_metric_out) = col_names;
+    Rcpp::colnames(final_position) = col_names;
+
+    return Rcpp::List::create(
+        Rcpp::Named("draws") = draws,
+        Rcpp::Named("chain_id") = chain_id,
+        Rcpp::Named("n_chains") = n_chains,
+        Rcpp::Named("n_samples") = n_sample,
+        Rcpp::Named("n_params") = n_params,
+        Rcpp::Named("epsilon") = epsilon,
+        Rcpp::Named("inv_metric_out") = inv_metric_out,
+        Rcpp::Named("final_position") = final_position
+    );
+}

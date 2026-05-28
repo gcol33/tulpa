@@ -369,3 +369,122 @@ test_that("C ABI resume continues a chain from inv_metric_out + final_position (
   expect_equal(cont_mean[["beta[1]"]], ref_mean[["beta[1]"]], tolerance = 0.1)
   expect_equal(cont_mean[["beta[2]"]], ref_mean[["beta[2]"]], tolerance = 0.1)
 })
+
+# ---------------------------------------------------------------------------
+# C-ABI round-trip for the multi-chain runner (gcol33/tulpa#30)
+# ---------------------------------------------------------------------------
+# Mirrors the #29 round-trip but exercises tulpa_run_nuts_chains: reaches it
+# through tulpa::get_nuts_chains_fn() (R_GetCCallable), packs chain-major
+# init / inv_metric_diag, allocates a NUTSResult[n_chains] output buffer,
+# and returns the per-chain resume fields plus draws stacked chain-major
+# with a chain_id vector — the (draws, chain_id, n_chains) layout
+# mcmc_diagnostics() consumes.
+
+test_that("C ABI tulpa_run_nuts_chains returns chain-major draws + per-chain state (tulpa#30)", {
+  skip_on_cran()
+
+  set.seed(31)
+  n <- 50L
+  X <- cbind(1, seq(-1, 1, length.out = n))
+  y <- as.numeric(X %*% c(0.5, 1.1) + rnorm(n, sd = 0.3))
+
+  nch <- 4L
+  abi <- tulpa:::cpp_test_c_abi_chains_roundtrip(
+    y_r = y, X_r = X, n_chains = nch,
+    n_iter = 300L, n_warmup = 150L,
+    max_treedepth = 6L, adapt_delta = 0.8,
+    seed = 31L
+  )
+
+  ns <- abi$n_samples
+  np <- abi$n_params
+
+  expect_equal(abi$n_chains, nch)
+  expect_equal(nrow(abi$draws), ns * nch)
+  expect_equal(ncol(abi$draws), np)
+  expect_equal(abi$chain_id, rep(seq_len(nch), each = ns))
+  expect_true(all(is.finite(abi$draws)))
+
+  # Per-chain resume fields are populated by fill_nuts_result_from_cpp for
+  # every NUTSResult in the output array — verify shape, finiteness, sign.
+  expect_equal(dim(abi$inv_metric_out), c(nch, np))
+  expect_equal(dim(abi$final_position), c(nch, np))
+  expect_length(abi$epsilon, nch)
+  expect_true(all(is.finite(abi$inv_metric_out)) && all(abi$inv_metric_out > 0))
+  expect_true(all(is.finite(abi$final_position)))
+  expect_true(all(abi$epsilon > 0))
+
+  # Each chain's final_position must equal the last draw row of that chain's
+  # contiguous block (the resume contract is per-chain, not pooled).
+  for (c in seq_len(nch)) {
+    last_row <- as.numeric(abi$draws[c * ns, ])
+    expect_equal(as.numeric(abi$final_position[c, ]), last_row,
+                 tolerance = 1e-10, info = paste("chain", c))
+  }
+})
+
+test_that("C ABI multi-chain output feeds mcmc_diagnostics directly (tulpa#30 -> #26)", {
+  skip_on_cran()
+
+  set.seed(32)
+  n <- 80L
+  X <- cbind(1, seq(-1, 1, length.out = n))
+  y <- as.numeric(X %*% c(0.5, 1.0) + rnorm(n, sd = 0.3))
+
+  nch <- 4L
+  abi <- tulpa:::cpp_test_c_abi_chains_roundtrip(
+    y_r = y, X_r = X, n_chains = nch,
+    n_iter = 700L, n_warmup = 350L,
+    max_treedepth = 8L, adapt_delta = 0.9,
+    seed = 32L
+  )
+
+  # No R-side reshaping: the C-ABI multi-chain output is already the
+  # (draws, chain_id, n_chains) layout .tulpa_chain_list() expects.
+  diag <- tulpa::mcmc_diagnostics(
+    list(draws = abi$draws, chain_id = abi$chain_id, n_chains = abi$n_chains),
+    measures = c("rhat", "ess_bulk", "ess_tail")
+  )
+
+  expect_s3_class(diag, "data.frame")
+  expect_setequal(diag$parameter, c("beta[1]", "beta[2]", "log_sigma"))
+  expect_true(all(is.finite(diag$rhat)))
+  expect_true(all(diag$rhat < 1.1))
+  expect_true(all(diag$ess_bulk > 0))
+  expect_true(all(diag$ess_tail > 0))
+})
+
+test_that("C ABI multi-chain resume continues every chain from its own state (tulpa#30 + #29)", {
+  skip_on_cran()
+
+  set.seed(33)
+  n <- 60L
+  X <- cbind(1, seq(-1, 1, length.out = n))
+  y <- as.numeric(X %*% c(0.4, 1.0) + rnorm(n, sd = 0.3))
+
+  nch <- 3L
+  ref <- tulpa:::cpp_test_c_abi_chains_roundtrip(
+    y_r = y, X_r = X, n_chains = nch,
+    n_iter = 800L, n_warmup = 400L,
+    max_treedepth = 7L, adapt_delta = 0.85,
+    seed = 33L
+  )
+
+  # Pass each chain's final_position + adapted metric back through the C ABI
+  # with n_warmup = 0 — the documented per-chain continuation contract.
+  cont <- tulpa:::cpp_test_c_abi_chains_roundtrip(
+    y_r = y, X_r = X, n_chains = nch,
+    n_iter = 800L, n_warmup = 0L,
+    max_treedepth = 7L, adapt_delta = 0.85,
+    seed = 133L,
+    init = ref$final_position,
+    inv_metric_init = ref$inv_metric_out
+  )
+
+  expect_true(all(is.finite(cont$draws)))
+
+  ref_mean  <- colMeans(ref$draws)
+  cont_mean <- colMeans(cont$draws)
+  expect_equal(cont_mean[["beta[1]"]], ref_mean[["beta[1]"]], tolerance = 0.1)
+  expect_equal(cont_mean[["beta[2]"]], ref_mean[["beta[2]"]], tolerance = 0.1)
+})
