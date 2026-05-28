@@ -252,9 +252,13 @@ one-liner. It reads `fit$draws` plus a chain structure (`fit$chain_id`,
 works for any `tulpa_fit` subclass; downstream packages (tulpaObs, tulpaRatio)
 call `tulpa::mcmc_diagnostics()` rather than re-deriving Rhat/ESS. The plotting
 / summary layer (`plot_rhat`, `plot_ess`, `diagnostic_summary`,
-`check_diagnostics`, `n_divergent`) is built on it. Remaining work
-(gcol33/tulpa#26): wire the parallel-NUTS multi-chain output producer into the
-chain structure and verify on a native multi-chain fit.
+`check_diagnostics`, `n_divergent`) is built on it. The parallel-NUTS
+multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
+`cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
+`.tulpa_chain_list()` reads, verified end-to-end against `posterior` in
+`tests/testthat/test-convergence.R` and on a native multi-chain fit in
+`tests/testthat/test-generic-sampler.R` ("mcmc_diagnostics consumes a native
+multi-chain fit").
 
 ### Matrix CHOLMOD Fix
 
