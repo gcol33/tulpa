@@ -12,7 +12,6 @@
 #include "vi_fullrank.h"
 #include "vi_lowrank.h"
 #include "autodiff.h"
-#include "log_post_impl.h"
 #include <Rcpp.h>
 
 using namespace Rcpp;

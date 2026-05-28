@@ -18,7 +18,6 @@
 
 #include "hmc_progress.h"
 #include "hmc_sampler.h"
-#include "log_post_impl.h"
 
 namespace tulpa_hmc {
 

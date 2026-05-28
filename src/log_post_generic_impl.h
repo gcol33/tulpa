@@ -522,27 +522,18 @@ T compute_log_post_generic(
     return log_post;
 }
 
-inline double compute_log_post_generic_spec_double(
+double compute_log_post_generic_spec_double(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
-    bool skip_obs_loop = false
-) {
-    if (data.n_processes <= 0 || data.likelihood_spec == nullptr) {
-        return -INFINITY;
-    }
+    bool skip_obs_loop = false);
 
-    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
-    if (spec->ll_double == nullptr) {
-        return -INFINITY;
-    }
-
-    double log_post = compute_log_post_generic<double>(
-        params, data, layout, spec->ll_double, data.model_response_data, skip_obs_loop);
-    if (spec->extra_prior != nullptr) {
-        log_post += spec->extra_prior(params, layout, data.model_response_data);
-    }
-    return log_post;
-}
+extern template double compute_log_post_generic<double>(
+    const std::vector<double>&,
+    const ModelData&,
+    const ParamLayout&,
+    LikelihoodFnT<double>,
+    const void*,
+    bool);
 
 #endif  // TULPA_LOG_POST_GENERIC_IMPL_H
