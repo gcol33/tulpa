@@ -61,8 +61,16 @@ namespace tulpa {
 // existing `copy = list(arm, alpha_grid)` API desugars cleanly via
 // `responses[[X]]$field_coef = list(name = "alpha", grid = G)`. See
 // gcol33/tulpa#32 Change 1 and dev_notes/plans/n_arm_joint_engine.md.
+//
+// 28 -> 29: added the `tulpa_register_cell_coupling` registered C callable
+// (signature `tulpa::RegisterCellCouplingFn` in <tulpa/cell_coupling.h>)
+// + the process-global CellCouplingSpec registry that backs the new
+// `tulpa_nested_laplace_joint(cell_coupling = "<name>")` argument
+// (gcol33/tulpa#32 Change 2b, Layer A). New callable + new R-side
+// argument; no struct layout change. The inner-Newton per-cell branch
+// that actually drives a non-separable spec lands with Layer B.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 28;
+constexpr int TULPA_ABI_VERSION = 29;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

@@ -85,6 +85,27 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_cell_coupling_registry_has
+bool cpp_cell_coupling_registry_has(std::string name);
+RcppExport SEXP _tulpa_cpp_cell_coupling_registry_has(SEXP nameSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type name(nameSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_cell_coupling_registry_has(name));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_cell_coupling_registry_size
+int cpp_cell_coupling_registry_size();
+RcppExport SEXP _tulpa_cpp_cell_coupling_registry_size() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_cell_coupling_registry_size());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_sample_crt
 Rcpp::IntegerVector cpp_sample_crt(Rcpp::IntegerVector y, double r);
 RcppExport SEXP _tulpa_cpp_sample_crt(SEXP ySEXP, SEXP rSEXP) {
@@ -2724,6 +2745,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_objective_grad", (DL_FUNC) &_tulpa_cpp_aghq_objective_grad, 6},
     {"_tulpa_cpp_aghq_blups", (DL_FUNC) &_tulpa_cpp_aghq_blups, 4},
     {"_tulpa_cpp_flatten_3d_rowmajor", (DL_FUNC) &_tulpa_cpp_flatten_3d_rowmajor, 4},
+    {"_tulpa_cpp_cell_coupling_registry_has", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_has, 1},
+    {"_tulpa_cpp_cell_coupling_registry_size", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_size, 0},
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},

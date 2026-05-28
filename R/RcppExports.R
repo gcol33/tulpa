@@ -21,6 +21,14 @@ cpp_flatten_3d_rowmajor <- function(arr, d1, d2, d3) {
     .Call(`_tulpa_cpp_flatten_3d_rowmajor`, arr, d1, d2, d3)
 }
 
+cpp_cell_coupling_registry_has <- function(name) {
+    .Call(`_tulpa_cpp_cell_coupling_registry_has`, name)
+}
+
+cpp_cell_coupling_registry_size <- function() {
+    .Call(`_tulpa_cpp_cell_coupling_registry_size`)
+}
+
 cpp_sample_crt <- function(y, r) {
     .Call(`_tulpa_cpp_sample_crt`, y, r)
 }

@@ -62,10 +62,25 @@
 #define TULPA_CELL_COUPLING_H
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace tulpa {
+
+struct CellCouplingSpec;
+
+// Function-pointer signature of the `tulpa_register_cell_coupling` registered
+// C callable. Consumer packages (e.g. tulpaObs) declare a matching
+// `R_GetCCallable("tulpa", "tulpa_register_cell_coupling")` lookup in their
+// `R_init_<pkg>` and call through this signature to insert their compiled
+// `CellCouplingSpec` subclass into tulpa's process-global registry.
+//
+// Lives in the public header (rather than `src/cell_coupling_registry.h`) so
+// downstream packages linking via `LinkingTo: tulpa` can see it without
+// duplicating the typedef. The wire format is locked here.
+using RegisterCellCouplingFn = void (*)(const char* name,
+                                        std::shared_ptr<CellCouplingSpec> spec);
 
 // ----------------------------------------------------------------------------
 // CellEtas -- read-only per-cell view of each arm's eta at the rows the inner

@@ -461,7 +461,8 @@
                                   n_threads_outer = 1L,
                                   tile_warm = TRUE,
                                   prune_tol = 0.0,
-                                  force_sparse = FALSE) {
+                                  force_sparse = FALSE,
+                                  cell_coupling = "separable") {
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -653,11 +654,12 @@
     # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
     # modal cell (gcol33/tulpa#20).
     res <- .nl_refit_axis_sd_laplace(res)
-    res$arm_layout  <- .joint_multi_layout(arms, prepared)
-    res$blocks      <- prepared
-    res$prior       <- prior_list
-    res$responses   <- responses
-    res$copy        <- copy
+    res$arm_layout    <- .joint_multi_layout(arms, prepared)
+    res$blocks        <- prepared
+    res$prior         <- prior_list
+    res$responses     <- responses
+    res$copy          <- copy
+    res$cell_coupling <- cell_coupling
     class(res) <- c("tulpa_nested_laplace_joint_multi",
                     "tulpa_nested_laplace_joint",
                     "tulpa_nested_laplace", "list")

@@ -157,6 +157,17 @@
 #'   `n_pos`. `prior_alpha` only applies when `copy` is active;
 #'   `prior_sigma` applies on any `sigma`-named axis.
 #'
+#' @param cell_coupling Character scalar naming a per-cell coupled likelihood
+#'   registered against tulpa's process-global registry (see
+#'   `src/cell_coupling_registry.h`). Defaults to `"separable"`, the arm-
+#'   separable per-obs sum every existing joint fit uses. Consumer packages
+#'   (e.g. tulpaObs) compile a `tulpa::CellCouplingSpec` subclass in their
+#'   own `src/` and register it from `R_init_<pkg>` via the
+#'   `tulpa_register_cell_coupling` C callable; the R driver validates the
+#'   name against the registry and the inner Newton routes the per-cell
+#'   contribution through `evaluate_cell()` when the spec couples at least
+#'   one arm. (gcol33/tulpa#32 Change 2b.)
+#'
 #' @param control Optional list of perf/numerical tuning knobs (statistical
 #'   arguments stay top-level), following the `control` convention of
 #'   [tulpa()]. Recognised elements (defaults in parentheses):
@@ -254,7 +265,29 @@ tulpa_nested_laplace_joint <- function(responses,
                                        phi_grid = NULL,
                                        prior_sigma = NULL,
                                        prior_alpha = NULL,
+                                       cell_coupling = "separable",
                                        control = list()) {
+    # Resolve and validate the cell-coupling spec name against the C++
+    # registry (separable default is auto-registered on first touch). The
+    # resolved spec is held on the result but not yet routed through the
+    # inner-Newton scatter -- the per-cell branch in
+    # scatter_arm_obs_joint_multi[_sparse] lands with Layer B of #32 Change 2.
+    # In Layer A the default sentinel ("separable", arm_ids() empty) keeps
+    # every existing joint fit on the per-obs path with no behavioural change.
+    if (!is.character(cell_coupling) || length(cell_coupling) != 1L ||
+        is.na(cell_coupling) || !nzchar(cell_coupling)) {
+        stop("`cell_coupling` must be a single non-empty character string ",
+             "naming a registered spec (default: \"separable\").",
+             call. = FALSE)
+    }
+    if (!cpp_cell_coupling_registry_has(cell_coupling)) {
+        stop("`cell_coupling = \"", cell_coupling, "\"` is not registered. ",
+             "Consumer packages register specs from R_init_<pkg> via the ",
+             "tulpa_register_cell_coupling C callable; the built-in ",
+             "\"separable\" default is always available.",
+             call. = FALSE)
+    }
+
     # Perf/numerical knobs live in `control = list()` (matching tulpa()); the
     # top-level signature carries only statistical arguments.
     max_iter                  <- control$max_iter %||% 50L
@@ -320,7 +353,8 @@ tulpa_nested_laplace_joint <- function(responses,
             tile_warm = tile_warm,
             prune_tol = prune_tol_eff,
             x_init = x_init, verbose = verbose, store_Q = store_Q,
-            force_sparse = force_sparse
+            force_sparse = force_sparse,
+            cell_coupling = cell_coupling
         ))
     }
     if (is.null(prior$type)) {
@@ -475,6 +509,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$prior       <- prior
     res$responses   <- responses
     res$copy        <- copy
+    res$cell_coupling      <- cell_coupling
     res$adaptive_grid_info <- refine_info
     class(res) <- c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")
     res

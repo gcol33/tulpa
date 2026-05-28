@@ -207,6 +207,12 @@ void tulpa_register_shims(DllInfo* dll);
 // process-global registry at load time.
 void tulpa_register_tgmrf_callables(DllInfo* dll);
 
+// Defined in cell_coupling_registry.cpp — registers the
+// tulpa_register_cell_coupling C callable that user DLLs use to insert
+// CellCouplingSpec subclasses into tulpa's process-global registry at
+// load time (gcol33/tulpa#32 Change 2b).
+void tulpa_register_cell_coupling_callables(DllInfo* dll);
+
 // [[Rcpp::init]]
 void tulpa_register_callables(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_run_nuts_generic",
@@ -222,4 +228,5 @@ void tulpa_register_callables(DllInfo* dll) {
 
     tulpa_register_shims(dll);
     tulpa_register_tgmrf_callables(dll);
+    tulpa_register_cell_coupling_callables(dll);
 }

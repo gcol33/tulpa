@@ -11,6 +11,7 @@ tulpa_nested_laplace_joint(
   phi_grid = NULL,
   prior_sigma = NULL,
   prior_alpha = NULL,
+  cell_coupling = "separable",
   control = list()
 )
 }
@@ -149,6 +150,17 @@ essentially harmless -- the lever is tail-shrinkage at small
 \code{n_pos}. \code{prior_alpha} only applies when \code{copy} is active;
 \code{prior_sigma} applies on any \code{sigma}-named axis.
 }}
+
+\item{cell_coupling}{Character scalar naming a per-cell coupled likelihood
+registered against tulpa's process-global registry (see
+\code{src/cell_coupling_registry.h}). Defaults to \code{"separable"}, the arm-
+separable per-obs sum every existing joint fit uses. Consumer packages
+(e.g. tulpaObs) compile a \code{tulpa::CellCouplingSpec} subclass in their
+own \verb{src/} and register it from \verb{R_init_<pkg>} via the
+\code{tulpa_register_cell_coupling} C callable; the R driver validates the
+name against the registry and the inner Newton routes the per-cell
+contribution through \code{evaluate_cell()} when the spec couples at least
+one arm. (gcol33/tulpa#32 Change 2b.)}
 
 \item{control}{Optional list of perf/numerical tuning knobs (statistical
 arguments stay top-level), following the \code{control} convention of
