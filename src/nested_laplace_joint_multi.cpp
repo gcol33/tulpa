@@ -48,6 +48,7 @@
 // with the correct per-block layout; this kernel just reads the axes by
 // offset.
 
+#include "cell_coupling_registry.h"
 #include "joint_hessian_pattern.h"
 #include "laplace_core.h"
 #include "laplace_re_priors.h"
@@ -936,7 +937,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::IntegerVector> tile_ids = R_NilValue,
     Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells = R_NilValue,
     double              prune_tol = 0.0,
-    bool                force_sparse = false
+    bool                force_sparse = false,
+    std::string         cell_coupling_name = "separable"
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -1030,6 +1032,16 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         }
     }
 
+    // Resolve the cell-coupling spec by name (Layer A registered the
+    // separable default under "separable" so empty / default-named
+    // calls succeed without consumer registration).
+    std::shared_ptr<tulpa::CellCouplingSpec> cell_coupling_spec =
+        tulpa::lookup_cell_coupling(cell_coupling_name);
+    if (!cell_coupling_spec) {
+        Rcpp::stop("cell_coupling = \"%s\" is not registered.",
+                   cell_coupling_name.c_str());
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads,
@@ -1040,7 +1052,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         tile_ids_vec,
         tile_pilot_cells_vec,
         prune_tol,
-        force_sparse
+        force_sparse,
+        cell_coupling_spec
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

@@ -76,6 +76,22 @@ inline int parse_joint_arms(
         arms_out[k].field_coef = a.containsElementNamed("field_coef_const")
                                   ? Rcpp::as<double>(a["field_coef_const"])
                                   : 1.0;
+        // Per-arm cell coupling (gcol33/tulpa#32 Change 2b). When `coupled`
+        // is true, the inner Newton dispatches this arm's per-cell
+        // contribution to the registered CellCouplingSpec instead of summing
+        // per-obs through the family. `cell_obs_map` is 1-based; length is
+        // validated against arms[k].N below.
+        arms_out[k].coupled = a.containsElementNamed("coupled")
+                              ? Rcpp::as<bool>(a["coupled"])
+                              : false;
+        if (arms_out[k].coupled) {
+            if (!a.containsElementNamed("cell_obs_map")) {
+                Rcpp::stop("Arm %d: coupled = TRUE requires `cell_obs_map`.",
+                           k + 1);
+            }
+            arms_out[k].cell_obs_map =
+                Rcpp::as<Rcpp::IntegerVector>(a["cell_obs_map"]);
+        }
 
         int N_k = arms_out[k].N;
         if ((int)pa.X.nrow() != N_k) {
@@ -93,6 +109,11 @@ inline int parse_joint_arms(
         if ((int)pa.spatial_idx.size() != N_k) {
             Rcpp::stop("Arm %d: length(spatial_idx) (%d) != length(y) (%d).",
                        k + 1, (int)pa.spatial_idx.size(), N_k);
+        }
+        if (arms_out[k].coupled &&
+            (int)arms_out[k].cell_obs_map.size() != N_k) {
+            Rcpp::stop("Arm %d: length(cell_obs_map) (%d) != length(y) (%d).",
+                       k + 1, (int)arms_out[k].cell_obs_map.size(), N_k);
         }
     }
     // Second pass: REs come after all betas.

@@ -43,9 +43,11 @@
 #include "scatter_indexed_cache.h"
 #include "sparse_cholesky.h"
 #include "sparse_hessian.h"
+#include "tulpa/cell_coupling.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -54,6 +56,100 @@
 #endif
 
 namespace tulpa {
+
+// Scatter the gradient and Fisher curvature of ONE row of arm k_arm
+// (per-obs path: row = obs index i; per-cell path: row = a row from a
+// coupled cell's CellDerivs) into the joint (grad, H). Single source of
+// truth for both the per-obs scatter (called once per obs with the
+// family's `gh = arm_grad_hess(...)`) and the cell-coupling per-cell
+// scatter (called once per cell row with the spec's
+// `out.arm_grad[kk][j]` / `out.arm_neg_hess_diag[kk][j]`).
+//
+// `d_eff_cache[b]` carries `arm_scale_b(k_arm, k_grid) * d_fac_b(k_grid)`
+// (resolved once per scatter call by the caller); a zero entry skips
+// the block entirely (e.g. `field_coef = 0` arm, or `rho = 0` BYM2
+// phi-component). `active_idx` / `active_d` are caller-owned scratch
+// reused across rows.
+inline void scatter_one_arm_row_dense(
+    int                              i,
+    double                           g_row,
+    double                           H_row,
+    const ParsedArm&                 pa,
+    int                              k_arm,
+    const std::vector<LatentBlock>&  blocks,
+    const std::vector<double>&       d_eff_cache,
+    DenseVec&                        grad,
+    DenseMat&                        H,
+    std::vector<int>&                active_idx,
+    std::vector<double>&             active_d
+) {
+    const int p_k    = pa.p;
+    const int n_re_k = pa.n_re_groups;
+    const int bstart = pa.beta_start;
+    const int rstart = pa.re_start;
+    const int B      = static_cast<int>(blocks.size());
+
+    int g_re = -1;
+    if (n_re_k > 0) {
+        int gi = static_cast<int>(pa.re_idx[i]) - 1;
+        if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
+    }
+
+    // Resolve active blocks for row i. -1 from idx means "this row
+    // doesn't see this block" (e.g. an obs with no spatial unit). A
+    // block with d_eff == 0 (field_coef = 0 arm, or rho = 0 BYM2
+    // phi-component, etc.) contributes nothing and is skipped.
+    active_idx.clear();
+    active_d.clear();
+    for (int b = 0; b < B; b++) {
+        if (d_eff_cache[b] == 0.0) continue;
+        int l_b = blocks[b].idx(i, k_arm);
+        if (l_b > 0 && l_b <= blocks[b].size) {
+            active_idx.push_back(blocks[b].start + l_b - 1);
+            active_d.push_back(d_eff_cache[b]);
+        }
+    }
+    const int A = static_cast<int>(active_idx.size());
+
+    // β block: gradient + diagonal-block Hessian + cross with RE and
+    // every active latent block.
+    for (int j = 0; j < p_k; j++) {
+        const double Xij = pa.X(i, j);
+        grad[bstart + j] += g_row * Xij;
+        for (int l = 0; l < p_k; l++) {
+            H[bstart + j][bstart + l] += H_row * Xij * pa.X(i, l);
+        }
+        if (g_re >= 0) {
+            H[bstart + j][g_re] += H_row * Xij;
+            H[g_re][bstart + j] += H_row * Xij;
+        }
+        for (int a = 0; a < A; a++) {
+            H[bstart + j][active_idx[a]] += H_row * Xij * active_d[a];
+            H[active_idx[a]][bstart + j] += H_row * Xij * active_d[a];
+        }
+    }
+
+    // RE block: gradient + diagonal + cross with active latent indices.
+    if (g_re >= 0) {
+        grad[g_re] += g_row;
+        H[g_re][g_re] += H_row;
+        for (int a = 0; a < A; a++) {
+            H[g_re][active_idx[a]] += H_row * active_d[a];
+            H[active_idx[a]][g_re] += H_row * active_d[a];
+        }
+    }
+
+    // Latent x latent block (intra-block + inter-block). Includes both
+    // the diagonal at (idx_a, idx_a) and the off-diagonal (idx_a, idx_b)
+    // for a != b.
+    for (int a = 0; a < A; a++) {
+        grad[active_idx[a]] += g_row * active_d[a];
+        for (int b = 0; b < A; b++) {
+            H[active_idx[a]][active_idx[b]] +=
+                H_row * active_d[a] * active_d[b];
+        }
+    }
+}
 
 // Per-observation latent-block scatter for one arm at one grid point.
 //
@@ -64,12 +160,9 @@ namespace tulpa {
 // Each block's eta contribution carries an optional per-arm scaling
 // factor (arm_scale) for INLA `copy=` semantics.
 //
-// Accumulates β/RE/RE×β diagonal blocks (per arm, unchanged from
-// joint_core), then for each obs i resolves the active subset of blocks
-// (those with idx_b(i, k_arm) in [1, size_b]) and adds the latent
-// gradient and β×latent / RE×latent / latent×latent Hessian cross-terms
-// with the effective coefficient d_eff_b = arm_scale_b(k_arm, k_grid) *
-// d_fac_b(k_grid).
+// Per-row work is factored into `scatter_one_arm_row_dense()` so the
+// cell-coupling per-cell branch can share it; this function only owns
+// the d_eff cache + the per-obs loop over (i, gh.grad, gh.neg_hess).
 inline void scatter_arm_obs_joint_multi(
     const Rcpp::NumericVector& /*x*/,
     const Rcpp::NumericVector&    eta,
@@ -82,16 +175,8 @@ inline void scatter_arm_obs_joint_multi(
     DenseVec&                     grad,
     DenseMat&                     H
 ) {
-    const int p_k      = pa.p;
-    const int n_re_k   = pa.n_re_groups;
-    const int bstart   = pa.beta_start;
-    const int rstart   = pa.re_start;
     const int B = static_cast<int>(blocks.size());
 
-    // Cache per-block effective coefficient for this (k_arm, k_grid).
-    // d_eff carries `arm_scale(k_arm, k_grid) * d_fac(k_grid)`; when an
-    // arm's `field_coef == 0` propagates through arm_scale, d_eff is 0
-    // and that block's per-obs scatter contributions are skipped.
     std::vector<double> d_eff_cache(B);
     for (int b = 0; b < B; b++) {
         double s = blocks[b].arm_scale
@@ -107,65 +192,277 @@ inline void scatter_arm_obs_joint_multi(
 
     for (int i = 0; i < arm.N; i++) {
         auto gh = arm_grad_hess(view, i, eta[i]);
+        scatter_one_arm_row_dense(
+            i, gh.grad, gh.neg_hess,
+            pa, k_arm, blocks, d_eff_cache,
+            grad, H, active_idx, active_d
+        );
+    }
+}
 
-        int g_re = -1;
-        if (n_re_k > 0) {
-            int gi = static_cast<int>(pa.re_idx[i]) - 1;
-            if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
+// ============================================================================
+// Cell-coupling per-cell branch (dense path, gcol33/tulpa#32 Change 2b).
+//
+// When the joint fit registers a non-separable `CellCouplingSpec` (one
+// whose `arm_ids()` lists at least one arm), the per-obs scatter is
+// skipped for the coupled arms (the outer `scatter_joint` closure
+// guards on `arms[k_arm].coupled`) and the per-cell branch below is
+// fired once per call. For each cell, it builds CellEtas / CellResponse
+// / CellDerivs views, dispatches `spec->evaluate_cell()`, and scatters
+// the per-arm row derivatives through the same `scatter_one_arm_row_dense()`
+// helper the per-obs path uses. Single source of truth for the per-row
+// (β, RE, latent) bookkeeping.
+//
+// `cell_rows[kk][c]` = row indices (0-based, into arm.N) for cell c of
+// the kk-th coupled arm (where kk indexes `coupled_arms`). Pre-computed
+// once per fit by `build_cell_rows_from_arms()`.
+//
+// B.1 scope: single-arm cell coupling only (the per-cell `CellDerivs`
+// writes only `arm_grad` + `arm_neg_hess_diag`; the cross-arm Hessian
+// fields are left unread). Cross-arm Hessian + the sparse twin land
+// with B.2 alongside the real tulpaObs `OccuCoverLognormalCoupling`
+// consumer.
+// ============================================================================
+
+// Evaluate the cell-coupling spec's per-cell log-density sum at the
+// current etas, discarding derivatives. Used by the log-lik functor
+// during Newton line search (the scatter pass computes the same call
+// with derivatives kept; B.1 accepts the 2x evaluation cost as the
+// trivial way to keep the line-search objective consistent with the
+// scatter -- caching the scatter's derivatives across line-search
+// rejects is a B.2 micro-opt if the spec evaluate is expensive).
+inline double eval_cell_coupling_log_lik(
+    const CellCouplingSpec&                       spec,
+    const std::vector<int>&                       coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                                           n_cells,
+    const std::vector<JointArm>&                  arms,
+    const std::vector<Rcpp::NumericVector>&       etas
+) {
+    const int n_coupled = (int)coupled_arms.size();
+    if (n_coupled == 0 || n_cells == 0) return 0.0;
+
+    std::vector<const double*> arm_eta_ptr(n_coupled);
+    std::vector<const double*> arm_y_ptr(n_coupled);
+    std::vector<const int*>    arm_n_trials_ptr(n_coupled);
+    std::vector<std::string>   family_holder(n_coupled);
+    std::vector<const char*>   arm_family_ptr(n_coupled);
+    std::vector<double>        arm_phi_vec(n_coupled);
+    for (int kk = 0; kk < n_coupled; kk++) {
+        int k = coupled_arms[kk];
+        arm_eta_ptr[kk]      = REAL(etas[k]);
+        arm_y_ptr[kk]        = arms[k].y.size()       > 0 ? REAL(arms[k].y)             : nullptr;
+        arm_n_trials_ptr[kk] = arms[k].n_trials.size()> 0 ? INTEGER(arms[k].n_trials)   : nullptr;
+        family_holder[kk]    = arms[k].family;
+        arm_family_ptr[kk]   = family_holder[kk].c_str();
+        arm_phi_vec[kk]      = arms[k].phi;
+    }
+
+    std::vector<int>            arm_row_count(n_coupled);
+    std::vector<const int*>     arm_rows_ptr(n_coupled);
+    std::vector<std::vector<double>> arm_grad_buf(n_coupled);
+    std::vector<std::vector<double>> arm_neg_hess_diag_buf(n_coupled);
+    std::vector<double*>        arm_grad_ptr(n_coupled);
+    std::vector<double*>        arm_neg_hess_diag_ptr(n_coupled);
+
+    double total = 0.0;
+    for (int c = 0; c < n_cells; c++) {
+        for (int kk = 0; kk < n_coupled; kk++) {
+            int rc = (int)cell_rows[kk][c].size();
+            arm_row_count[kk] = rc;
+            arm_rows_ptr[kk]  = cell_rows[kk][c].data();
+            if ((int)arm_grad_buf[kk].size() < rc) {
+                arm_grad_buf[kk].assign(rc, 0.0);
+                arm_neg_hess_diag_buf[kk].assign(rc, 0.0);
+            } else {
+                std::fill(arm_grad_buf[kk].begin(),
+                          arm_grad_buf[kk].begin() + rc, 0.0);
+                std::fill(arm_neg_hess_diag_buf[kk].begin(),
+                          arm_neg_hess_diag_buf[kk].begin() + rc, 0.0);
+            }
+            arm_grad_ptr[kk]          = arm_grad_buf[kk].data();
+            arm_neg_hess_diag_ptr[kk] = arm_neg_hess_diag_buf[kk].data();
         }
+        CellEtas etas_view;
+        etas_view.arm_eta_ptr   = arm_eta_ptr.data();
+        etas_view.arm_rows      = arm_rows_ptr.data();
+        etas_view.arm_row_count = arm_row_count.data();
+        etas_view.n_arms_       = n_coupled;
+        CellResponse y_view;
+        y_view.arm_y           = arm_y_ptr.data();
+        y_view.arm_n_trials    = arm_n_trials_ptr.data();
+        y_view.arm_family      = arm_family_ptr.data();
+        y_view.arm_phi         = arm_phi_vec.data();
+        y_view.arm_rows        = arm_rows_ptr.data();
+        y_view.arm_row_count   = arm_row_count.data();
+        y_view.n_arms_         = n_coupled;
+        CellDerivs out;
+        out.arm_grad           = arm_grad_ptr.data();
+        out.arm_neg_hess_diag  = arm_neg_hess_diag_ptr.data();
+        out.arm_cross_hess     = nullptr;
+        out.arm_row_count      = arm_row_count.data();
+        out.n_arms_            = n_coupled;
+        total += spec.evaluate_cell(c, etas_view, y_view, out);
+    }
+    return total;
+}
 
-        // Resolve active blocks for obs i. -1 from idx means "this obs
-        // doesn't see this block" (e.g. an obs with no spatial unit). A
-        // block with d_eff == 0 (field_coef = 0 arm, or rho = 0 BYM2
-        // phi-component, etc.) contributes nothing and is skipped.
-        active_idx.clear();
-        active_d.clear();
+// Per-cell row index inversion. For each coupled arm kk (= index into
+// `coupled_arms`), `cell_rows[kk][c]` lists the 0-based rows of
+// arms[coupled_arms[kk]] that belong to cell c. Built once per fit at
+// the top of the joint driver. Returns the number of cells inferred
+// from the max of all coupled arms' `cell_obs_map` entries.
+inline int build_cell_rows_from_arms(
+    const std::vector<JointArm>&                  arms,
+    const std::vector<int>&                       coupled_arms,
+    std::vector<std::vector<std::vector<int>>>&   cell_rows_out
+) {
+    cell_rows_out.clear();
+    if (coupled_arms.empty()) return 0;
+    int n_cells = 0;
+    for (int k : coupled_arms) {
+        const Rcpp::IntegerVector& m = arms[k].cell_obs_map;
+        for (int i = 0; i < (int)m.size(); i++) {
+            if (m[i] > n_cells) n_cells = m[i];
+        }
+    }
+    cell_rows_out.assign(coupled_arms.size(),
+                         std::vector<std::vector<int>>(n_cells));
+    for (size_t kk = 0; kk < coupled_arms.size(); kk++) {
+        int k = coupled_arms[kk];
+        const Rcpp::IntegerVector& m = arms[k].cell_obs_map;
+        for (int i = 0; i < (int)m.size(); i++) {
+            int c = m[i] - 1;
+            if (c >= 0 && c < n_cells) cell_rows_out[kk][c].push_back(i);
+        }
+    }
+    return n_cells;
+}
+
+// Per-cell scatter branch. Walks cells, dispatches to
+// `spec->evaluate_cell()`, and scatters per-arm row derivatives via
+// `scatter_one_arm_row_dense()` (single source of truth, same writes
+// the per-obs path produces).
+inline void scatter_cell_coupling_dense_branch(
+    const CellCouplingSpec&                       spec,
+    const std::vector<int>&                       coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                                           n_cells,
+    const std::vector<JointArm>&                  arms,
+    const std::vector<ParsedArm>&                 parsed,
+    const std::vector<Rcpp::NumericVector>&       etas,
+    const std::vector<LatentBlock>&               blocks,
+    int                                           k_grid,
+    DenseVec&                                     grad,
+    DenseMat&                                     H
+) {
+    const int n_coupled = (int)coupled_arms.size();
+    const int B         = (int)blocks.size();
+    if (n_coupled == 0 || n_cells == 0) return;
+
+    // Per-arm d_eff cache (one entry per coupled arm × block).
+    std::vector<std::vector<double>> d_eff_per_arm(n_coupled,
+                                                    std::vector<double>(B));
+    for (int kk = 0; kk < n_coupled; kk++) {
+        int k = coupled_arms[kk];
         for (int b = 0; b < B; b++) {
-            if (d_eff_cache[b] == 0.0) continue;
-            int l_b = blocks[b].idx(i, k_arm);
-            if (l_b > 0 && l_b <= blocks[b].size) {
-                active_idx.push_back(blocks[b].start + l_b - 1);
-                active_d.push_back(d_eff_cache[b]);
-            }
+            double s = blocks[b].arm_scale
+                        ? blocks[b].arm_scale(k, k_grid)
+                        : 1.0;
+            d_eff_per_arm[kk][b] = s * blocks[b].d_fac(k_grid);
         }
-        const int A = static_cast<int>(active_idx.size());
+    }
 
-        // β block: gradient + diagonal-block Hessian + cross with RE and
-        // every active latent block.
-        for (int j = 0; j < p_k; j++) {
-            const double Xij = pa.X(i, j);
-            grad[bstart + j] += gh.grad * Xij;
-            for (int l = 0; l < p_k; l++) {
-                H[bstart + j][bstart + l] += gh.neg_hess * Xij * pa.X(i, l);
+    // Per-cell pointer arrays for the CellEtas/Response/Derivs views.
+    // Reused across cells -- the per-arm pointers themselves are stable
+    // across cells (etas / family / phi); only the per-arm row slice
+    // changes per cell.
+    std::vector<const double*> arm_eta_ptr(n_coupled);
+    std::vector<const double*> arm_y_ptr(n_coupled);
+    std::vector<const int*>    arm_n_trials_ptr(n_coupled);
+    std::vector<std::string>   family_holder(n_coupled);
+    std::vector<const char*>   arm_family_ptr(n_coupled);
+    std::vector<double>        arm_phi_vec(n_coupled);
+    for (int kk = 0; kk < n_coupled; kk++) {
+        int k = coupled_arms[kk];
+        arm_eta_ptr[kk]      = REAL(etas[k]);
+        arm_y_ptr[kk]        = arms[k].y.size()       > 0 ? REAL(arms[k].y)             : nullptr;
+        arm_n_trials_ptr[kk] = arms[k].n_trials.size()> 0 ? INTEGER(arms[k].n_trials)   : nullptr;
+        family_holder[kk]    = arms[k].family;
+        arm_family_ptr[kk]   = family_holder[kk].c_str();
+        arm_phi_vec[kk]      = arms[k].phi;
+    }
+
+    // Per-cell scratch (row counts + row pointer arrays + derivative
+    // buffers). Sized at construction; capacity grows monotonically as
+    // larger cells are encountered.
+    std::vector<int>            arm_row_count(n_coupled);
+    std::vector<const int*>     arm_rows_ptr(n_coupled);
+    std::vector<std::vector<double>> arm_grad_buf(n_coupled);
+    std::vector<std::vector<double>> arm_neg_hess_diag_buf(n_coupled);
+    std::vector<double*>        arm_grad_ptr(n_coupled);
+    std::vector<double*>        arm_neg_hess_diag_ptr(n_coupled);
+
+    // Scratch reused across rows by scatter_one_arm_row_dense().
+    std::vector<int>    active_idx;
+    std::vector<double> active_d;
+    active_idx.reserve(B);
+    active_d.reserve(B);
+
+    for (int c = 0; c < n_cells; c++) {
+        for (int kk = 0; kk < n_coupled; kk++) {
+            int rc = (int)cell_rows[kk][c].size();
+            arm_row_count[kk] = rc;
+            arm_rows_ptr[kk]  = cell_rows[kk][c].data();
+            if ((int)arm_grad_buf[kk].size() < rc) {
+                arm_grad_buf[kk].assign(rc, 0.0);
+                arm_neg_hess_diag_buf[kk].assign(rc, 0.0);
+            } else {
+                std::fill(arm_grad_buf[kk].begin(),
+                          arm_grad_buf[kk].begin() + rc, 0.0);
+                std::fill(arm_neg_hess_diag_buf[kk].begin(),
+                          arm_neg_hess_diag_buf[kk].begin() + rc, 0.0);
             }
-            if (g_re >= 0) {
-                H[bstart + j][g_re] += gh.neg_hess * Xij;
-                H[g_re][bstart + j] += gh.neg_hess * Xij;
-            }
-            for (int a = 0; a < A; a++) {
-                H[bstart + j][active_idx[a]] += gh.neg_hess * Xij * active_d[a];
-                H[active_idx[a]][bstart + j] += gh.neg_hess * Xij * active_d[a];
-            }
+            arm_grad_ptr[kk]          = arm_grad_buf[kk].data();
+            arm_neg_hess_diag_ptr[kk] = arm_neg_hess_diag_buf[kk].data();
         }
 
-        // RE block: gradient + diagonal + cross with active latent indices.
-        if (g_re >= 0) {
-            grad[g_re] += gh.grad;
-            H[g_re][g_re] += gh.neg_hess;
-            for (int a = 0; a < A; a++) {
-                H[g_re][active_idx[a]] += gh.neg_hess * active_d[a];
-                H[active_idx[a]][g_re] += gh.neg_hess * active_d[a];
-            }
-        }
+        CellEtas etas_view;
+        etas_view.arm_eta_ptr   = arm_eta_ptr.data();
+        etas_view.arm_rows      = arm_rows_ptr.data();
+        etas_view.arm_row_count = arm_row_count.data();
+        etas_view.n_arms_       = n_coupled;
 
-        // Latent x latent block (intra-block + inter-block). Includes both
-        // the diagonal at (idx_a, idx_a) and the off-diagonal (idx_a, idx_b)
-        // for a != b.
-        for (int a = 0; a < A; a++) {
-            grad[active_idx[a]] += gh.grad * active_d[a];
-            for (int b = 0; b < A; b++) {
-                H[active_idx[a]][active_idx[b]] +=
-                    gh.neg_hess * active_d[a] * active_d[b];
+        CellResponse y_view;
+        y_view.arm_y           = arm_y_ptr.data();
+        y_view.arm_n_trials    = arm_n_trials_ptr.data();
+        y_view.arm_family      = arm_family_ptr.data();
+        y_view.arm_phi         = arm_phi_vec.data();
+        y_view.arm_rows        = arm_rows_ptr.data();
+        y_view.arm_row_count   = arm_row_count.data();
+        y_view.n_arms_         = n_coupled;
+
+        CellDerivs out;
+        out.arm_grad           = arm_grad_ptr.data();
+        out.arm_neg_hess_diag  = arm_neg_hess_diag_ptr.data();
+        out.arm_cross_hess     = nullptr;  // B.1: cross-arm Hessian deferred to B.2
+        out.arm_row_count      = arm_row_count.data();
+        out.n_arms_            = n_coupled;
+
+        spec.evaluate_cell(c, etas_view, y_view, out);
+
+        for (int kk = 0; kk < n_coupled; kk++) {
+            int k  = coupled_arms[kk];
+            int rc = arm_row_count[kk];
+            const int*    rows = arm_rows_ptr[kk];
+            const double* g    = arm_grad_buf[kk].data();
+            const double* h    = arm_neg_hess_diag_buf[kk].data();
+            for (int j = 0; j < rc; j++) {
+                scatter_one_arm_row_dense(
+                    rows[j], g[j], h[j],
+                    parsed[k], k, blocks, d_eff_per_arm[kk],
+                    grad, H, active_idx, active_d
+                );
             }
         }
     }
@@ -594,12 +891,45 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     const std::vector<int>&          tile_ids = std::vector<int>(),
     const std::vector<int>&          tile_pilot_cells = std::vector<int>(),
     double                           prune_tol = 0.0,
-    bool                             force_sparse = false
+    bool                             force_sparse = false,
+    std::shared_ptr<CellCouplingSpec> cell_coupling_spec = nullptr
 ) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
     }
+
+    // Cell-coupling setup (Layer B.1). Resolve the spec's coupled-arm
+    // set, validate it agrees with the per-arm `coupled` flags, and
+    // invert each coupled arm's `cell_obs_map` into per-cell row lists
+    // once for the whole fit.
+    std::vector<int> coupled_arms;
+    if (cell_coupling_spec) coupled_arms = cell_coupling_spec->arm_ids();
+    const bool any_coupling = !coupled_arms.empty();
+
+    std::vector<bool> arm_is_coupled(n_arms, false);
+    if (any_coupling) {
+        for (int k : coupled_arms) {
+            if (k < 0 || k >= n_arms) {
+                Rcpp::stop("cell_coupling: arm_ids() entry %d out of range "
+                           "[0, %d).", k, n_arms);
+            }
+            if (!arms[k].coupled) {
+                Rcpp::stop("cell_coupling: spec lists arm %d but the arm "
+                           "has coupled = FALSE.", k + 1);
+            }
+            arm_is_coupled[k] = true;
+        }
+        for (int k = 0; k < n_arms; k++) {
+            if (arms[k].coupled && !arm_is_coupled[k]) {
+                Rcpp::stop("cell_coupling: arm %d has coupled = TRUE but "
+                           "the spec's arm_ids() does not list it.", k + 1);
+            }
+        }
+    }
+
+    std::vector<std::vector<std::vector<int>>> cell_rows;
+    int n_cells = build_cell_rows_from_arms(arms, coupled_arms, cell_rows);
 
     int n_x = n_x_after_re;
     for (const auto& b : blocks) {
@@ -622,6 +952,14 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
         }
     }
     if (needs_sparse) {
+        if (any_coupling) {
+            // The sparse per-cell branch lands with B.2 alongside the
+            // tulpaObs OccuCoverLognormalCoupling consumer + cross-arm
+            // Hessian pattern extension. Cover-hurdle joint fits that
+            // don't register a non-separable spec are unaffected.
+            Rcpp::stop("cell_coupling: non-separable specs are dense-only "
+                       "in B.1; the sparse per-cell branch lands with B.2.");
+        }
         // First-ship: sparse path is serial outer-grid. Each per-thread
         // SparseHessianBuilder would replicate the pattern (a few × 10^7
         // entries at n_sites = 10^6); serializing is the simplest correct
@@ -742,10 +1080,19 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                                  const std::vector<Rcpp::NumericVector>& etas,
                                  DenseVec& grad, DenseMat& H) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                // Cell-coupled arms route through the per-cell branch
+                // below; skip their per-obs scatter.
+                if (arm_is_coupled[k_arm]) continue;
                 scatter_arm_obs_joint_multi(
                     x, etas[k_arm], parsed[k_arm], arms[k_arm],
                     specs.views[k_arm], k_arm,
                     blocks, k_grid, grad, H
+                );
+            }
+            if (any_coupling) {
+                scatter_cell_coupling_dense_branch(
+                    *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
+                    arms, parsed, etas, blocks, k_grid, grad, H
                 );
             }
             for (const auto& b : blocks) {
@@ -798,6 +1145,16 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                                        : scratch_pool[tid];
 
         JointSpecLogLik joint_ll{&specs.views, n_threads_inner_eff};
+        if (any_coupling) {
+            joint_ll.skip_arm = &arm_is_coupled;
+            joint_ll.cell_coupling_log_lik_fn =
+                [&](const std::vector<Rcpp::NumericVector>& e) {
+                    return eval_cell_coupling_log_lik(
+                        *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
+                        arms, e
+                    );
+                };
+        }
         return laplace_newton_solve_joint_ll(
             n_x,
             max_iter_use, tol,

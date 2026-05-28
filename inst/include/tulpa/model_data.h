@@ -69,8 +69,15 @@ namespace tulpa {
 // (gcol33/tulpa#32 Change 2b, Layer A). New callable + new R-side
 // argument; no struct layout change. The inner-Newton per-cell branch
 // that actually drives a non-separable spec lands with Layer B.
+//
+// 29 -> 30: added `coupled` (bool) + `cell_obs_map` (IntegerVector) to
+// `JointArm` (src/laplace_newton_joint.h) and the inner-Newton dense
+// per-cell branch that dispatches coupled arms to the registered
+// CellCouplingSpec's `evaluate_cell()` (gcol33/tulpa#32 Change 2b,
+// Layer B.1). Single-arm path; sparse twin + cross-arm Hessian land
+// with B.2 alongside tulpaObs `OccuCoverLognormalCoupling`.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 29;
+constexpr int TULPA_ABI_VERSION = 30;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

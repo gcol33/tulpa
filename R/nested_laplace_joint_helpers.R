@@ -196,6 +196,36 @@
     a$family      <- as.character(a$family)
     a$phi         <- as.numeric(a$phi %||% 1.0)
     a <- .normalise_arm_field_coef(a, k)
+    a <- .normalise_arm_cell_coupling(a, k, N)
+    a
+}
+
+# Parse per-arm `coupled` / `cell_obs_map`. When `coupled` is TRUE, the
+# inner Newton routes this arm's per-cell contribution through the
+# registered CellCouplingSpec; `cell_obs_map[i]` is the 1-based cell id
+# for row i of this arm.
+.normalise_arm_cell_coupling <- function(a, k, N) {
+    coupled <- isTRUE(a$coupled)
+    a$coupled <- coupled
+    if (!coupled) {
+        a$cell_obs_map <- integer(0)
+        return(a)
+    }
+    m <- a$cell_obs_map
+    if (is.null(m)) {
+        stop("Arm ", k, ": coupled = TRUE requires `cell_obs_map`.",
+             call. = FALSE)
+    }
+    m <- as.integer(m)
+    if (length(m) != N) {
+        stop("Arm ", k, ": length(cell_obs_map) (", length(m),
+             ") must equal length(y) (", N, ").", call. = FALSE)
+    }
+    if (any(is.na(m)) || any(m < 1L)) {
+        stop("Arm ", k, ": `cell_obs_map` entries must be positive integers.",
+             call. = FALSE)
+    }
+    a$cell_obs_map <- m
     a
 }
 
@@ -511,7 +541,7 @@
 # warm-start chain still reads `extras[[idx0]]$mode`).
 .joint_make_kernel_fn <- function(arms, prior, cp, backend, max_iter, tol,
                                   n_threads, x_init_default, store_Q,
-                                  arm_names) {
+                                  arm_names, cell_coupling = "separable") {
     function(new_cells, warm_start = NULL, store_extras = FALSE) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
@@ -519,7 +549,8 @@
         res_x <- backend$call_kernel(arms, prior, cp, new_grids,
                                       max_iter, tol, n_threads,
                                       slice_x_init, isTRUE(store_Q),
-                                      arm_names = arm_names)
+                                      arm_names = arm_names,
+                                      cell_coupling = cell_coupling)
         extras <- NULL
         if (isTRUE(store_extras)) {
             n <- nrow(new_cells)

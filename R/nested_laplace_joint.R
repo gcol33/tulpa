@@ -389,7 +389,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                 n_threads_outer = n_threads_outer,
                                 tile_warm = tile_warm,
                                 prune_tol = prune_tol_eff,
-                                force_sparse = force_sparse)
+                                force_sparse = force_sparse,
+                                cell_coupling = cell_coupling)
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # at the kernel-call boundary. Every cell carries the same prior
@@ -430,7 +431,8 @@ tulpa_nested_laplace_joint <- function(responses,
     specs <- .joint_axis_specs(grids, cp)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
                                         tol, n_threads, x_init, store_Q,
-                                        arm_names)
+                                        arm_names,
+                                        cell_coupling = cell_coupling)
     theta_grid_M  <- backend$theta_grid(grids, cp$has_copy)
     log_marginal  <- res$log_marginal
     extras_list   <- .joint_init_extras_from_res(res)

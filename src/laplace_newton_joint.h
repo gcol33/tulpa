@@ -58,6 +58,18 @@ struct JointArm {
     // of `copy = list(arm, alpha_grid)` into `responses[[X]]$field_coef =
     // list(name = "alpha", grid = G)`.)
     double              field_coef = 1.0;
+    // Per-arm cell coupling (gcol33/tulpa#32 Change 2b).
+    //   coupled = true  -> the inner Newton skips this arm's per-obs scatter;
+    //                      the CellCouplingSpec's evaluate_cell() writes its
+    //                      gradient + (diagonal) Hessian contribution per cell,
+    //                      and the joint kernel scatters them through the same
+    //                      X / RE / latent bookkeeping as the per-obs path.
+    //   cell_obs_map[i] = 1-based cell id for row i of this arm; the kernel
+    //                      inverts it once into per-cell row lists for the
+    //                      per-cell branch. Length must equal arms[k].N when
+    //                      coupled == true; otherwise ignored.
+    bool                       coupled = false;
+    Rcpp::IntegerVector        cell_obs_map;
     // Optional model-supplied likelihood (tulpaGlmm / tulpaObs custom arms).
     // When spec != nullptr the joint solver routes this arm's score, Fisher
     // curvature and log-lik through it instead of the built-in family closed
@@ -160,14 +172,19 @@ inline JointArmSpecs build_joint_arm_specs(const std::vector<JointArm>& arms) {
 
 // Sum of per-arm log-likelihoods at the current per-arm etas, sourced through
 // each arm's resolved spec view (single process => ll_double sees one eta).
+// When `skip_arm` is non-null, arms whose `skip_arm[k]` is true contribute 0
+// (used by the cell-coupling path to skip coupled arms' per-obs sum so the
+// per-cell branch can add its own log-density contribution).
 inline double compute_total_log_lik_joint(
     const std::vector<ArmSpecView>& views,
     const std::vector<Rcpp::NumericVector>& etas,
-    int n_threads
+    int n_threads,
+    const std::vector<bool>* skip_arm = nullptr
 ) {
     const double zd = 0.0;  // logit_zi / logit_oi are unused at np == 1
     double total = 0.0;
     for (size_t k = 0; k < views.size(); k++) {
+        if (skip_arm && k < skip_arm->size() && (*skip_arm)[k]) continue;
         const ArmSpecView& v = views[k];
         const Rcpp::NumericVector& eta = etas[k];
         const int N = static_cast<int>(eta.size());
@@ -196,8 +213,21 @@ inline double compute_total_log_lik_joint(
 struct JointSpecLogLik {
     const std::vector<ArmSpecView>* views = nullptr;
     int n_threads = 1;
+    // When non-null, `skip_arm[k] = true` excludes arm k's per-obs sum.
+    // The cell-coupling path uses this to skip coupled arms and add the
+    // per-cell log-density via `cell_coupling_log_lik_fn` instead.
+    const std::vector<bool>* skip_arm = nullptr;
+    // Optional cell-coupling log-density adder. Called with `etas` once
+    // per log-lik evaluation; returns the spec's sum of `evaluate_cell()`
+    // log-densities across all cells. nullptr -> separable default
+    // (per-obs sum over every arm).
+    std::function<double(const std::vector<Rcpp::NumericVector>&)>
+                                    cell_coupling_log_lik_fn = nullptr;
     double operator()(const std::vector<Rcpp::NumericVector>& etas) const {
-        return compute_total_log_lik_joint(*views, etas, n_threads);
+        double total = compute_total_log_lik_joint(*views, etas, n_threads,
+                                                    skip_arm);
+        if (cell_coupling_log_lik_fn) total += cell_coupling_log_lik_fn(etas);
+        return total;
     }
 };
 

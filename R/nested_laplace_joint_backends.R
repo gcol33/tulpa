@@ -31,14 +31,16 @@
                                 n_threads, x_init, store_Q = FALSE,
                                 arm_names = NULL, n_threads_outer = 1L,
                                 tile_warm = TRUE, prune_tol = 0.0,
-                                force_sparse = FALSE) {
+                                force_sparse = FALSE,
+                                cell_coupling = "separable") {
             .joint_call_kernel_via_multi("bym2", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
                                           n_threads_outer = n_threads_outer,
                                           tile_warm = tile_warm,
                                           prune_tol = prune_tol,
-                                          force_sparse = force_sparse)
+                                          force_sparse = force_sparse,
+                                          cell_coupling = cell_coupling)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -66,14 +68,16 @@
                                 n_threads, x_init, store_Q = FALSE,
                                 arm_names = NULL, n_threads_outer = 1L,
                                 tile_warm = TRUE, prune_tol = 0.0,
-                                force_sparse = FALSE) {
+                                force_sparse = FALSE,
+                                cell_coupling = "separable") {
             .joint_call_kernel_via_multi("icar", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
                                           n_threads_outer = n_threads_outer,
                                           tile_warm = tile_warm,
                                           prune_tol = prune_tol,
-                                          force_sparse = force_sparse)
+                                          force_sparse = force_sparse,
+                                          cell_coupling = cell_coupling)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -101,14 +105,16 @@
                                 n_threads, x_init, store_Q = FALSE,
                                 arm_names = NULL, n_threads_outer = 1L,
                                 tile_warm = TRUE, prune_tol = 0.0,
-                                force_sparse = FALSE) {
+                                force_sparse = FALSE,
+                                cell_coupling = "separable") {
             .joint_call_kernel_via_multi("car_proper", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
                                           n_threads_outer = n_threads_outer,
                                           tile_warm = tile_warm,
                                           prune_tol = prune_tol,
-                                          force_sparse = force_sparse)
+                                          force_sparse = force_sparse,
+                                          cell_coupling = cell_coupling)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -157,7 +163,8 @@
                                           n_threads_outer = 1L,
                                           tile_warm = TRUE,
                                           prune_tol = 0.0,
-                                          force_sparse = FALSE) {
+                                          force_sparse = FALSE,
+                                          cell_coupling = "separable") {
     n_arms <- length(arms)
     spi <- lapply(arms, function(a) as.integer(a$spatial_idx))
 
@@ -256,7 +263,8 @@
         tile_ids        = tile_partition$tile_ids,
         tile_pilot_cells = tile_partition$tile_pilot_cells,
         prune_tol       = as.numeric(prune_tol),
-        force_sparse    = isTRUE(force_sparse)
+        force_sparse    = isTRUE(force_sparse),
+        cell_coupling_name = as.character(cell_coupling)
     )
     # Strip the C++-side theta_grid / axis_offsets — the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare

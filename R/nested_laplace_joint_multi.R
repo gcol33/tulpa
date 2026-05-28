@@ -72,6 +72,7 @@
     a$family      <- as.character(a$family)
     a$phi         <- as.numeric(a$phi %||% 1.0)
     a <- .normalise_arm_field_coef(a, k)
+    a <- .normalise_arm_cell_coupling(a, k, N)
     a
 }
 
@@ -613,7 +614,8 @@
         tile_ids        = tile_partition$tile_ids,
         tile_pilot_cells = tile_partition$tile_pilot_cells,
         prune_tol       = as.numeric(prune_tol),
-        force_sparse    = isTRUE(force_sparse)
+        force_sparse    = isTRUE(force_sparse),
+        cell_coupling_name = as.character(cell_coupling)
     )
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
