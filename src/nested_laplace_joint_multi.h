@@ -89,6 +89,9 @@ inline void scatter_arm_obs_joint_multi(
     const int B = static_cast<int>(blocks.size());
 
     // Cache per-block effective coefficient for this (k_arm, k_grid).
+    // d_eff carries `arm_scale(k_arm, k_grid) * d_fac(k_grid)`; when an
+    // arm's `field_coef == 0` propagates through arm_scale, d_eff is 0
+    // and that block's per-obs scatter contributions are skipped.
     std::vector<double> d_eff_cache(B);
     for (int b = 0; b < B; b++) {
         double s = blocks[b].arm_scale
@@ -112,10 +115,13 @@ inline void scatter_arm_obs_joint_multi(
         }
 
         // Resolve active blocks for obs i. -1 from idx means "this obs
-        // doesn't see this block" (e.g. an obs with no spatial unit).
+        // doesn't see this block" (e.g. an obs with no spatial unit). A
+        // block with d_eff == 0 (field_coef = 0 arm, or rho = 0 BYM2
+        // phi-component, etc.) contributes nothing and is skipped.
         active_idx.clear();
         active_d.clear();
         for (int b = 0; b < B; b++) {
+            if (d_eff_cache[b] == 0.0) continue;
             int l_b = blocks[b].idx(i, k_arm);
             if (l_b > 0 && l_b <= blocks[b].size) {
                 active_idx.push_back(blocks[b].start + l_b - 1);
@@ -287,6 +293,10 @@ inline void scatter_arm_obs_joint_multi_sparse(
         for (int b = 0; b < B; b++) {
             const LatentBlock& blk = blocks[b];
             const double d_eff = d_eff_cache[b];
+            // Field_coef = 0 arms (or any block with arm_scale * d_fac == 0)
+            // contribute nothing to gradient or Hessian for this arm; skip
+            // the per-block resolution work entirely.
+            if (d_eff == 0.0) continue;
 
             if (kind_cache[b] == BlockContribKind::DENSE_BASIS) {
                 const bool has_batch = static_cast<bool>(blk.dense_basis_batch);
@@ -714,6 +724,10 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                         if (g >= 0 && g < n_re_k) e += x[rstart + g];
                     }
                     for (int b = 0; b < B; b++) {
+                        // field_coef = 0 arms (and rho = 0 BYM2 components,
+                        // etc.) contribute nothing to eta; skip the index
+                        // resolution entirely.
+                        if (d_eff[b] == 0.0) continue;
                         int l = blocks[b].idx(i, k_arm);
                         if (l > 0 && l <= blocks[b].size) {
                             e += d_eff[b] * x[blocks[b].start + l - 1];

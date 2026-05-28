@@ -105,14 +105,36 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
 // (sigma, alpha) reparameterization (gcol33/tulpa#22), the R side fills
 // theta_grid[, axis_donor] = sigma and theta_grid[, axis_copy] = alpha*sigma
 // before calling this kernel.
+//
+// The returned closure additionally multiplies by each arm's constant
+// `field_coef` (parsed onto JointArm from the per-arm `field_coef_const`
+// field) so per-arm constant multipliers compose cleanly on top of the
+// hyperparam-driven copy axis. `arms_ptr` borrows the kernel's
+// `std::vector<JointArm>`; the caller owns its lifetime for the duration of
+// the outer-grid pass.
 inline std::function<double(int, int)> make_copy_arm_scale_fn(
     int copy_arm, int axis_donor, int axis_copy,
-    const Rcpp::NumericMatrix& theta_grid
+    const Rcpp::NumericMatrix& theta_grid,
+    const std::vector<tulpa::JointArm>* arms_ptr
 ) {
-    return [copy_arm, axis_donor, axis_copy, theta_grid](
+    return [copy_arm, axis_donor, axis_copy, theta_grid, arms_ptr](
         int k_arm, int k_grid) -> double {
-        return (k_arm == copy_arm) ? theta_grid(k_grid, axis_copy)
-                                   : theta_grid(k_grid, axis_donor);
+        double base = (k_arm == copy_arm) ? theta_grid(k_grid, axis_copy)
+                                          : theta_grid(k_grid, axis_donor);
+        double fc = (arms_ptr ? (*arms_ptr)[k_arm].field_coef : 1.0);
+        return base * fc;
+    };
+}
+
+// Per-arm constant-multiplier arm_scale for the non-copy path. Used when
+// some arm carries a `field_coef != 1` constant and no hyperparam axis is
+// declared. The block's `d_fac` continues to carry sigma (or rolls it into
+// the prior tau as before); this callback only injects the per-arm multiplier.
+inline std::function<double(int, int)> make_field_coef_arm_scale_fn(
+    const std::vector<tulpa::JointArm>* arms_ptr
+) {
+    return [arms_ptr](int k_arm, int /*k_grid*/) -> double {
+        return arms_ptr ? (*arms_ptr)[k_arm].field_coef : 1.0;
     };
 }
 
@@ -137,7 +159,9 @@ int build_joint_blocks_from_spec(
     int block_index,
     bool is_copy_block,
     int copy_arm,
-    std::vector<tulpa::LatentBlock>& blocks
+    std::vector<tulpa::LatentBlock>& blocks,
+    const std::vector<tulpa::JointArm>* arms_ptr,
+    bool any_nontrivial_field_coef
 ) {
     std::string type = Rcpp::as<std::string>(bs["type"]);
 
@@ -168,7 +192,7 @@ int build_joint_blocks_from_spec(
             require_axes(2);  // (sigma_donor, sigma_copy)
             block.d_fac = [](int) -> double { return 1.0; };
             block.arm_scale = make_copy_arm_scale_fn(
-                copy_arm, axis0, axis0 + 1, theta_grid);
+                copy_arm, axis0, axis0 + 1, theta_grid, arms_ptr);
             block.add_prior = [start, size, adj_rp, adj_ci, n_nbr](
                 tulpa::DenseVec& grad, tulpa::DenseMat& H,
                 const Rcpp::NumericVector& x, int /*k*/) {
@@ -189,6 +213,14 @@ int build_joint_blocks_from_spec(
         } else {
             require_axes(1);  // (tau,)
             block.d_fac = [](int) -> double { return 1.0; };
+            // Non-copy ICAR: tau on the prior, no d_fac scaling. When any
+            // arm carries a `field_coef != 1` constant, inject a per-arm
+            // multiplier so sigma_arm = field_coef * sigma is honored. tau
+            // already encodes sigma through the prior, so the field
+            // amplitude that multiplies x is just field_coef.
+            if (any_nontrivial_field_coef) {
+                block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
+            }
             block.add_prior = [start, size, axis0, theta_grid,
                                 adj_rp, adj_ci, n_nbr](
                 tulpa::DenseVec& grad, tulpa::DenseMat& H,
@@ -247,7 +279,7 @@ int build_joint_blocks_from_spec(
         if (is_copy_block) {
             require_axes(3);  // (sigma_donor, sigma_copy, rho)
             arm_scale_fn = make_copy_arm_scale_fn(
-                copy_arm, axis0, axis0 + 1, theta_grid);
+                copy_arm, axis0, axis0 + 1, theta_grid, arms_ptr);
             int axis_rho = axis0 + 2;
             d_fac_phi_fn = [axis_rho, theta_grid, scale_factor](int k_grid)
                 -> double {
@@ -276,6 +308,11 @@ int build_joint_blocks_from_spec(
                 double rho   = theta_grid(k_grid, axis_rho);
                 return sigma * std::sqrt(1.0 - rho + 1e-10);
             };
+            // When any arm has a `field_coef != 1` constant, the non-copy
+            // BYM2 block still needs a per-arm multiplier on top of d_fac.
+            if (any_nontrivial_field_coef) {
+                arm_scale_fn = make_field_coef_arm_scale_fn(arms_ptr);
+            }
         }
 
         tulpa::LatentBlock phi_block;
@@ -389,7 +426,7 @@ int build_joint_blocks_from_spec(
             require_axes(3);  // (sigma_donor, sigma_copy, rho_car)
             block.d_fac = [](int) -> double { return 1.0; };
             block.arm_scale = make_copy_arm_scale_fn(
-                copy_arm, axis0, axis0 + 1, theta_grid);
+                copy_arm, axis0, axis0 + 1, theta_grid, arms_ptr);
             int axis_rho_car = axis0 + 2;
             block.prep = [size, axis_rho_car, theta_grid,
                            adj_rp_v, adj_ci_v, n_nbr_v, log_det_Q_rho](
@@ -472,6 +509,9 @@ int build_joint_blocks_from_spec(
             block.center = [start, size](Rcpp::NumericVector& x) -> double {
                 return tulpa::center_effects(x, start, size);
             };
+            if (any_nontrivial_field_coef) {
+                block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
+            }
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
@@ -928,6 +968,18 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     std::vector<Rcpp::NumericVector> phi_overrides =
         parse_phi_overrides_multi(phi_grid_per_arm, n_arms, n_grid);
 
+    // Detect any per-arm constant `field_coef != 1` so the non-copy block
+    // factories know whether to install the per-arm multiplier `arm_scale`
+    // callback. The copy-block factories always install `arm_scale` (the
+    // copy axis lives there); they pick up `arms[k].field_coef` regardless.
+    bool any_nontrivial_field_coef = false;
+    for (const auto& a : arms) {
+        if (std::abs(a.field_coef - 1.0) > 0.0) {
+            any_nontrivial_field_coef = true;
+            break;
+        }
+    }
+
     std::vector<tulpa::LatentBlock> blocks;
     blocks.reserve(B + 2);
     int latent_offset = n_x_after_re;
@@ -937,7 +989,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         int axis_count = axis_offsets[b + 1] - axis0;
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
-            has_copy && b == copy_block, copy_arm, blocks
+            has_copy && b == copy_block, copy_arm, blocks,
+            &arms, any_nontrivial_field_coef
         );
     }
 
@@ -1029,6 +1082,14 @@ Rcpp::List cpp_test_joint_pattern(
     std::vector<tulpa::JointArm>  arms;
     int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
 
+    bool any_nontrivial_field_coef = false;
+    for (const auto& a : arms) {
+        if (std::abs(a.field_coef - 1.0) > 0.0) {
+            any_nontrivial_field_coef = true;
+            break;
+        }
+    }
+
     std::vector<tulpa::LatentBlock> blocks;
     blocks.reserve(B);
     int latent_offset = n_x_after_re;
@@ -1038,7 +1099,8 @@ Rcpp::List cpp_test_joint_pattern(
         int axis_count = axis_offsets[b + 1] - axis0;
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
-            has_copy && b == copy_block, copy_arm, blocks
+            has_copy && b == copy_block, copy_arm, blocks,
+            &arms, any_nontrivial_field_coef
         );
     }
     int n_x = latent_offset;

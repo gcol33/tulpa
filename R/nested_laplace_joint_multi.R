@@ -71,6 +71,7 @@
     a$sigma_re    <- as.numeric(a$sigma_re %||% 1.0)
     a$family      <- as.character(a$family)
     a$phi         <- as.numeric(a$phi %||% 1.0)
+    a <- .normalise_arm_field_coef(a, k)
     a
 }
 

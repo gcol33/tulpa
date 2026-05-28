@@ -69,6 +69,13 @@ inline int parse_joint_arms(
         arms_out[k].family   = Rcpp::as<std::string>(a["family"]);
         arms_out[k].phi      = Rcpp::as<double>(a["phi"]);
         arms_out[k].N        = (int)arms_out[k].y.size();
+        // Per-arm field coefficient (default 1.0). R side parses the user-
+        // facing `field_coef` into the resolved scalar `field_coef_const`
+        // before calling. See R/nested_laplace_joint_helpers.R's
+        // `.normalise_arm_field_coef`.
+        arms_out[k].field_coef = a.containsElementNamed("field_coef_const")
+                                  ? Rcpp::as<double>(a["field_coef_const"])
+                                  : 1.0;
 
         int N_k = arms_out[k].N;
         if ((int)pa.X.nrow() != N_k) {

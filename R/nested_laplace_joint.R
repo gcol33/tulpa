@@ -51,6 +51,28 @@
 #'                     the kernel's `log_lik`.
 #'   * `phi`         — numeric dispersion (gaussian/lognormal residual
 #'                     SD, negbin size, beta precision); default `1`.
+#'   * `field_coef`  — optional per-arm field coefficient controlling
+#'                     this arm's multiplier on the shared latent field's
+#'                     amplitude. One of:
+#'                     * numeric scalar (default `1`) -- constant
+#'                       multiplier. `0` means the arm carries NO field
+#'                       at all (the per-row scatter `eta += field_coef *
+#'                       sigma * z` is skipped for that arm).
+#'                     * character of length 1 -- names an outer-grid
+#'                       hyperparam axis (currently `"alpha"`); the
+#'                       coefficient varies across the grid.
+#'                     * `list(name = , grid = )` -- embedded axis
+#'                       declaration, equivalent to declaring the axis
+#'                       and naming it on this arm.
+#'                     At most one arm may declare a hyperparam-driven
+#'                     axis in the first ship (the cover hurdle and
+#'                     occu_cover both need only one). Shared axes
+#'                     across multiple arms are deferred.
+#'                     The legacy `copy = list(arm, alpha_grid)` argument
+#'                     is a back-compat shim that desugars to
+#'                     `responses[[X]]$field_coef = list(name = "alpha",
+#'                     grid = G)` -- use one or the other, not both on
+#'                     the same arm.
 #'
 #' @param prior A list describing the shared latent prior block. Required
 #'   field `type`. Backend-specific fields:
@@ -64,7 +86,8 @@
 #'   * **car_proper**: same as icar plus `rho_car_grid`
 #'     (default `c(0.5, 0.8, 0.95, 0.99)`).
 #'
-#' @param copy Optional list controlling the copy arm:
+#' @param copy Optional list controlling the copy arm (back-compat shim;
+#'   prefer per-arm `responses[[X]]$field_coef`):
 #'   * `arm`        — name (or 1-based index) of the copy arm.
 #'   * `alpha_grid` — numeric grid for the copy coefficient \eqn{\alpha};
 #'                    the copy arm's field amplitude at each cell is
@@ -72,6 +95,13 @@
 #'                    `c(0, exp(seq(log(0.1), log(3), length.out = 5)))`.
 #'   When `NULL` (default), no copy scaling is applied — all arms share
 #'   the donor `sigma_grid` axis and \eqn{\alpha = 1} implicitly.
+#'   `copy` is now a back-compat shim for the per-arm `field_coef` spec:
+#'   `copy = list(arm = X, alpha_grid = G)` desugars to
+#'   `responses[[X]]$field_coef = list(name = "alpha", grid = G)` at entry,
+#'   and the rest of the driver reads only `field_coef` thereafter
+#'   (gcol33/tulpa#32). The multi-block path still consumes `copy$block`
+#'   to pick the copy block; for single-block fits, leave `copy = NULL`
+#'   and put the spec on the arm.
 #'
 #' @param phi_grid Optional list specifying per-arm dispersion axes on the
 #'   outer grid. Accepts either a named list (keys = arm names) or a
@@ -250,6 +280,12 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`prior` must be a list with a `type` field, or a list of block specs.",
              call. = FALSE)
     }
+    # Back-compat shim: `copy = list(arm = X, alpha_grid = G)` desugars to
+    # `responses[[X]]$field_coef = list(name = "alpha", grid = G)`. After this
+    # rewrite, the rest of the driver only reads `responses[[k]]$field_coef`.
+    # The legacy `copy` argument is still echoed onto the result for callers
+    # that read it back.
+    responses <- .desugar_copy_to_field_coef(responses, copy)
     # Parse user-specified regularizing hyperpriors on (sigma, alpha) once,
     # at the entry point. Validation errors raised here surface to the user
     # without going through the multi-block / single-block fork.
@@ -305,7 +341,10 @@ tulpa_nested_laplace_joint <- function(responses,
         .normalise_joint_arm(a, k)
     })
 
-    cp <- .resolve_copy(copy, responses, prior, type)
+    # `.resolve_copy` reads the per-arm `field_coef_axis` / `field_coef_const`
+    # populated by `.normalise_joint_arm`; pass the normalised `arms` rather
+    # than the raw `responses` list.
+    cp <- .resolve_copy(copy, arms, prior, type)
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)

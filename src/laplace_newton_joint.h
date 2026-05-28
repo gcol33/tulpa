@@ -46,6 +46,18 @@ struct JointArm {
     std::string         family;    // built-in family (ignored when spec != null)
     double              phi;        // built-in dispersion (ignored when spec)
     int                 N;
+    // Per-arm field coefficient: multiplied into the field amplitude this
+    // arm sees on each shared latent block (sigma_arm = field_coef * sigma).
+    // Default 1.0 = donor behaviour (existing non-copy arms). `0.0` means
+    // this arm carries no field; the scatter / compute_eta paths short-
+    // circuit on a per-block per-arm `d_eff == 0` check.
+    //
+    // A hyperparam-driven field coefficient is materialized R-side onto the
+    // copy block's per-arm sigma axes; `field_coef` carries only the per-arm
+    // CONSTANT multiplier on top. (See nested_laplace_joint.R's desugaring
+    // of `copy = list(arm, alpha_grid)` into `responses[[X]]$field_coef =
+    // list(name = "alpha", grid = G)`.)
+    double              field_coef = 1.0;
     // Optional model-supplied likelihood (tulpaGlmm / tulpaObs custom arms).
     // When spec != nullptr the joint solver routes this arm's score, Fisher
     // curvature and log-lik through it instead of the built-in family closed

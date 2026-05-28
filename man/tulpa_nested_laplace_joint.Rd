@@ -35,6 +35,26 @@ log scale); the \code{-log(y)} Jacobian is included in
 the kernel's \code{log_lik}.
 \item \code{phi}         — numeric dispersion (gaussian/lognormal residual
 SD, negbin size, beta precision); default \code{1}.
+\item \code{field_coef}  — optional per-arm field coefficient controlling
+this arm's multiplier on the shared latent field's
+amplitude. One of:
+* numeric scalar (default \code{1}) -- constant
+multiplier. \code{0} means the arm carries NO field
+at all (the per-row scatter \verb{eta += field_coef * sigma * z} is skipped for that arm).
+* character of length 1 -- names an outer-grid
+hyperparam axis (currently \code{"alpha"}); the
+coefficient varies across the grid.
+* \code{list(name = , grid = )} -- embedded axis
+declaration, equivalent to declaring the axis
+and naming it on this arm.
+At most one arm may declare a hyperparam-driven
+axis in the first ship (the cover hurdle and
+occu_cover both need only one). Shared axes
+across multiple arms are deferred.
+The legacy \code{copy = list(arm, alpha_grid)} argument
+is a back-compat shim that desugars to
+\code{responses[[X]]$field_coef = list(name = "alpha", grid = G)} -- use one or the other, not both on
+the same arm.
 }}
 
 \item{prior}{A list describing the shared latent prior block. Required
@@ -51,7 +71,8 @@ in \verb{[0.1, 3]}).
 (default \code{c(0.5, 0.8, 0.95, 0.99)}).
 }}
 
-\item{copy}{Optional list controlling the copy arm:
+\item{copy}{Optional list controlling the copy arm (back-compat shim;
+prefer per-arm \code{responses[[X]]$field_coef}):
 \itemize{
 \item \code{arm}        — name (or 1-based index) of the copy arm.
 \item \code{alpha_grid} — numeric grid for the copy coefficient \eqn{\alpha};
@@ -60,6 +81,13 @@ the copy arm's field amplitude at each cell is
 \code{c(0, exp(seq(log(0.1), log(3), length.out = 5)))}.
 When \code{NULL} (default), no copy scaling is applied — all arms share
 the donor \code{sigma_grid} axis and \eqn{\alpha = 1} implicitly.
+\code{copy} is now a back-compat shim for the per-arm \code{field_coef} spec:
+\code{copy = list(arm = X, alpha_grid = G)} desugars to
+\code{responses[[X]]$field_coef = list(name = "alpha", grid = G)} at entry,
+and the rest of the driver reads only \code{field_coef} thereafter
+(gcol33/tulpa#32). The multi-block path still consumes \code{copy$block}
+to pick the copy block; for single-block fits, leave \code{copy = NULL}
+and put the spec on the arm.
 }}
 
 \item{phi_grid}{Optional list specifying per-arm dispersion axes on the

@@ -53,8 +53,16 @@ namespace tulpa {
 // make_temporal_ops registry the ST entries use); the 3 NestedLaplace{Rw1,Rw2,
 // Ar1}Fn typedefs became one NestedLaplaceTemporalFn. No core struct layout
 // change.
+//
+// 27 -> 28: added `field_coef` (default 1.0) to `JointArm`
+// (src/laplace_newton_joint.h) so each arm in a joint fit can carry a
+// per-arm constant multiplier on its field amplitude. Replaces the binary
+// donor / copy-arm dichotomy with a per-arm scalar coefficient, while the
+// existing `copy = list(arm, alpha_grid)` API desugars cleanly via
+// `responses[[X]]$field_coef = list(name = "alpha", grid = G)`. See
+// gcol33/tulpa#32 Change 1 and dev_notes/plans/n_arm_joint_engine.md.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 27;
+constexpr int TULPA_ABI_VERSION = 28;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
