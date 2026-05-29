@@ -322,10 +322,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   D <- .re_cov_derived_matrix_multi(Sig_node_list, layout)
 
   summarize <- function(x) {
-    m   <- sum(w * x)
-    sdv <- sqrt(max(0, sum(w * x^2) - m^2))
-    q   <- .nl_wtd_quantile(x, w, c(0.025, 0.5, 0.975))
-    c(mean = m, sd = sdv, median = q[2L], ci_lo = q[1L], ci_hi = q[3L])
+    ms <- .nl_wtd_mean_sd(x, w)
+    q  <- .nl_wtd_quantile(x, w, c(0.025, 0.5, 0.975))
+    c(mean = ms$mean, sd = ms$sd, median = q[2L], ci_lo = q[1L], ci_hi = q[3L])
   }
   post <- t(vapply(seq_len(ncol(D)), function(j) summarize(D[, j]), numeric(5)))
   rownames(post) <- colnames(D)

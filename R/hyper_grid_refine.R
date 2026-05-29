@@ -436,8 +436,7 @@
     mu     <- theta_mean[[axis]] %||% NA_real_
     if (!is.finite(sd_lap) || !is.finite(mu) || sd_lap <= 0) next
     axis_vals <- as.numeric(theta_grid[, axis])
-    vom_mean  <- sum(weights * axis_vals)
-    vom_sd    <- sqrt(max(0, sum(weights * axis_vals^2) - vom_mean^2))
+    vom_sd    <- .nl_wtd_mean_sd(axis_vals, weights)$sd
     if (vom_sd >= tolerance * sd_lap) next
 
     lev  <- sort(unique(as.numeric(theta_grid[, axis])))
@@ -471,10 +470,9 @@
 }
 
 # ============================================================================
-# Per-axis moment recalibration when slice cells are present.
-# Same logic as `.joint_recalibrate_axis_moments` (in
-# `R/nested_laplace_joint_helpers.R`), but operates on a matrix `theta_grid`
-# rather than the joint driver's paired-vector representation.
+# Per-axis moment recalibration when slice cells are present. Weighted
+# mean / SD on each axis over its own refinement slice (own-axis and
+# consistency cells), skipping axes with no foreign-slice contamination.
 # ============================================================================
 .hyper_recalibrate_axis_moments <- function(theta_grid, log_marginal,
                                             refining_axis, theta_mean,
@@ -492,10 +490,9 @@
     if (!is.finite(m)) next
     w    <- exp(lm_k - m); w <- w / sum(w)
     vals <- theta_grid[keep, col]
-    mu   <- sum(w * vals)
-    sd_v <- sqrt(max(0, sum(w * vals^2) - mu^2))
-    theta_mean[[col]] <- mu
-    theta_sd[[col]]   <- sd_v
+    ms   <- .nl_wtd_mean_sd(vals, w)
+    theta_mean[[col]] <- ms$mean
+    theta_sd[[col]]   <- ms$sd
   }
   list(theta_mean = theta_mean, theta_sd = theta_sd)
 }

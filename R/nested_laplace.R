@@ -571,8 +571,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                   res$theta_mean^2))
     names(res$theta_sd) <- colnames(tg)
   } else {
-    res$theta_mean <- sum(w * tg)
-    res$theta_sd <- sqrt(max(0, sum(w * tg^2) - res$theta_mean^2))
+    ms <- .nl_wtd_mean_sd(tg, w)
+    res$theta_mean <- ms$mean
+    res$theta_sd   <- ms$sd
   }
   qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis)
   res$theta_median <- qs$median
@@ -639,6 +640,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     if (q >= p[length(p)])   return(v[length(v)])
     suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
   }, numeric(1L))
+}
+
+# Weighted mean and SD of `values` under pre-normalized `weights` (which
+# sum to 1). SD uses the E[x^2] - E[x]^2 form, floored at 0 to absorb the
+# floating-point negatives that form can produce near a degenerate axis.
+.nl_wtd_mean_sd <- function(values, weights) {
+  mu <- sum(weights * values)
+  list(mean = mu, sd = sqrt(max(0, sum(weights * values^2) - mu^2)))
 }
 
 # Weighted-quantile median + 2.5/97.5 empirical CI for every axis of a

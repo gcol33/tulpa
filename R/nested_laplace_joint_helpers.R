@@ -442,29 +442,17 @@
 # in place rather than augmented — downstream callers should read the
 # axis marginal, not the cartesian-only joint moment.
 .joint_recalibrate_axis_moments <- function(res) {
-    refining <- res$refining_axis
-    if (is.null(refining) || all(refining == "")) return(res)
+    if (is.null(res$refining_axis) || all(res$refining_axis == "")) return(res)
     if (is.null(res$theta_grid) || !is.matrix(res$theta_grid)) return(res)
-    cols  <- colnames(res$theta_grid)
-    lm    <- res$log_marginal
-    for (col in cols) {
-        # Include `consistency_<col>` cells too: they vary on `col` only
-        # (other axes pinned at mode) and ARE part of col's own slice. The
-        # only cells we exclude are foreign-axis slices that fix `col` at
-        # a single non-varying value.
-        keep <- refining == "" | refining == col |
-                refining == paste0("consistency_", col)
-        if (all(keep)) next
-        lm_k <- lm[keep]
-        m    <- max(lm_k)
-        w    <- exp(lm_k - m)
-        w    <- w / sum(w)
-        vals <- res$theta_grid[keep, col]
-        mu   <- sum(w * vals)
-        sd_v <- sqrt(max(0, sum(w * vals^2) - mu^2))
-        res$theta_mean[[col]] <- mu
-        res$theta_sd[[col]]   <- sd_v
-    }
+    moments <- .hyper_recalibrate_axis_moments(
+        theta_grid    = res$theta_grid,
+        log_marginal  = res$log_marginal,
+        refining_axis = res$refining_axis,
+        theta_mean    = res$theta_mean,
+        theta_sd      = res$theta_sd
+    )
+    res$theta_mean <- moments$theta_mean
+    res$theta_sd   <- moments$theta_sd
     res
 }
 
