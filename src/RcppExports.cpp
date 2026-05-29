@@ -1428,6 +1428,18 @@ BEGIN_RCPP
     return R_NilValue;
 END_RCPP
 }
+// cpp_register_test_bivariate_gaussian_coupling
+void cpp_register_test_bivariate_gaussian_coupling(double lam00, double lam11, double lam01);
+RcppExport SEXP _tulpa_cpp_register_test_bivariate_gaussian_coupling(SEXP lam00SEXP, SEXP lam11SEXP, SEXP lam01SEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type lam00(lam00SEXP);
+    Rcpp::traits::input_parameter< double >::type lam11(lam11SEXP);
+    Rcpp::traits::input_parameter< double >::type lam01(lam01SEXP);
+    cpp_register_test_bivariate_gaussian_coupling(lam00, lam11, lam01);
+    return R_NilValue;
+END_RCPP
+}
 // cpp_test_leapfrog
 List cpp_test_leapfrog(NumericVector q_init, NumericVector p_init, double epsilon, int L);
 RcppExport SEXP _tulpa_cpp_test_leapfrog(SEXP q_initSEXP, SEXP p_initSEXP, SEXP epsilonSEXP, SEXP LSEXP) {
@@ -2813,6 +2825,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 27},
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
     {"_tulpa_cpp_register_test_separable_bernoulli_coupling", (DL_FUNC) &_tulpa_cpp_register_test_separable_bernoulli_coupling, 0},
+    {"_tulpa_cpp_register_test_bivariate_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_bivariate_gaussian_coupling, 3},
     {"_tulpa_cpp_test_leapfrog", (DL_FUNC) &_tulpa_cpp_test_leapfrog, 4},
     {"_tulpa_cpp_test_hamiltonian", (DL_FUNC) &_tulpa_cpp_test_hamiltonian, 2},
     {"_tulpa_cpp_test_log_sum_exp", (DL_FUNC) &_tulpa_cpp_test_log_sum_exp, 1},

@@ -104,6 +104,61 @@ test_that("kernel rejects coupled = TRUE with the separable default spec", {
     )
 })
 
+test_that("sparse per-cell branch matches dense per-obs baseline (B.2)", {
+    cpp_register_test_separable_bernoulli_coupling()
+    d <- setup_test_data(seed = 5L)
+
+    res_dense <- tulpa_nested_laplace_joint(
+        responses = list(occ = build_arm(d, coupled = FALSE)),
+        prior     = prior_spec(d),
+        control   = list(max_iter = 60L, tol = 1e-10)
+    )
+
+    res_sparse_coupled <- tulpa_nested_laplace_joint(
+        responses     = list(occ = build_arm(d, coupled = TRUE)),
+        prior         = prior_spec(d),
+        cell_coupling = "test_separable_bernoulli",
+        control       = list(max_iter = 60L, tol = 1e-10,
+                             force_sparse = TRUE)
+    )
+
+    expect_equal(res_sparse_coupled$log_marginal,
+                 res_dense$log_marginal,
+                 tolerance = 1e-9)
+    expect_equal(res_sparse_coupled$modes,
+                 res_dense$modes,
+                 tolerance = 1e-8)
+    expect_equal(res_sparse_coupled$theta_mean,
+                 res_dense$theta_mean,
+                 tolerance = 1e-8)
+    expect_equal(res_sparse_coupled$theta_sd,
+                 res_dense$theta_sd,
+                 tolerance = 1e-8)
+})
+
+test_that("sparse separable default stays byte-identical under cell_coupling", {
+    d <- setup_test_data(seed = 6L)
+
+    res_sparse <- tulpa_nested_laplace_joint(
+        responses = list(occ = build_arm(d, coupled = FALSE)),
+        prior     = prior_spec(d),
+        control   = list(max_iter = 60L, tol = 1e-10,
+                         force_sparse = TRUE)
+    )
+    res_dense <- tulpa_nested_laplace_joint(
+        responses = list(occ = build_arm(d, coupled = FALSE)),
+        prior     = prior_spec(d),
+        control   = list(max_iter = 60L, tol = 1e-10)
+    )
+
+    expect_equal(res_sparse$log_marginal,
+                 res_dense$log_marginal,
+                 tolerance = 1e-9)
+    expect_equal(res_sparse$theta_mean,
+                 res_dense$theta_mean,
+                 tolerance = 1e-8)
+})
+
 test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags", {
     cpp_register_test_separable_bernoulli_coupling()
     d <- setup_test_data(seed = 4L, N = 20L)

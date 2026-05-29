@@ -543,7 +543,11 @@ Rcpp::List cpp_nested_laplace_nngp(
         /*prep_at_grid=*/nullptr,
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(),
-        /*prune_tol=*/0.0
+        /*prune_tol=*/0.0,
+        /*cell_coupling_spec=*/nullptr,
+        /*coupled_arms=*/std::vector<int>(),
+        /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
+        /*n_cells=*/0
     );
     out["sigma2_grid"] = sigma2_grid;
     out["phi_gp_grid"] = phi_gp_grid;
@@ -651,7 +655,11 @@ Rcpp::List cpp_nested_laplace_hsgp(
         /*prep_at_grid=*/nullptr,
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(),
-        /*prune_tol=*/0.0
+        /*prune_tol=*/0.0,
+        /*cell_coupling_spec=*/nullptr,
+        /*coupled_arms=*/std::vector<int>(),
+        /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
+        /*n_cells=*/0
     );
     out["sigma2_grid"]      = sigma2_grid;
     out["lengthscale_grid"] = lengthscale_grid;

@@ -253,6 +253,10 @@ cpp_register_test_separable_bernoulli_coupling <- function() {
     invisible(.Call(`_tulpa_cpp_register_test_separable_bernoulli_coupling`))
 }
 
+cpp_register_test_bivariate_gaussian_coupling <- function(lam00, lam11, lam01) {
+    invisible(.Call(`_tulpa_cpp_register_test_bivariate_gaussian_coupling`, lam00, lam11, lam01))
+}
+
 cpp_test_leapfrog <- function(q_init, p_init, epsilon, L) {
     .Call(`_tulpa_cpp_test_leapfrog`, q_init, p_init, epsilon, L)
 }

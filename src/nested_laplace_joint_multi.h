@@ -151,6 +151,87 @@ inline void scatter_one_arm_row_dense(
     }
 }
 
+// Sparse-builder analogue of scatter_one_arm_row_dense. Scope matches the
+// dense helper: INDEXED_SINGLE blocks only (the per-cell branch contract;
+// the per-obs sparse scatter has its own optimized fast path that
+// additionally handles DENSE_BASIS / INDEXED_MULTI / BILINEAR_FACTOR).
+//
+// Lower-triangle writes only -- H.add() normalizes (row, col) to
+// (max, min) internally, so a single call covers both directions of an
+// off-diagonal entry. Caller-owned scratch (active_idx, active_d) is
+// reused across rows.
+inline void scatter_one_arm_row_sparse(
+    int                              i,
+    double                           g_row,
+    double                           H_row,
+    const ParsedArm&                 pa,
+    int                              k_arm,
+    const std::vector<LatentBlock>&  blocks,
+    const std::vector<double>&       d_eff_cache,
+    DenseVec&                        grad,
+    SparseHessianBuilder&            H,
+    std::vector<int>&                active_idx,
+    std::vector<double>&             active_d
+) {
+    const int p_k    = pa.p;
+    const int n_re_k = pa.n_re_groups;
+    const int bstart = pa.beta_start;
+    const int rstart = pa.re_start;
+    const int B      = static_cast<int>(blocks.size());
+
+    int g_re = -1;
+    if (n_re_k > 0) {
+        int gi = static_cast<int>(pa.re_idx[i]) - 1;
+        if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
+    }
+
+    active_idx.clear();
+    active_d.clear();
+    for (int b = 0; b < B; b++) {
+        if (d_eff_cache[b] == 0.0) continue;
+        if (!blocks[b].idx) continue;
+        int l_b = blocks[b].idx(i, k_arm);
+        if (l_b > 0 && l_b <= blocks[b].size) {
+            active_idx.push_back(blocks[b].start + l_b - 1);
+            active_d.push_back(d_eff_cache[b]);
+        }
+    }
+    const int A = static_cast<int>(active_idx.size());
+
+    // beta block: gradient + lower-triangle beta/beta + beta/RE + beta/active.
+    for (int j = 0; j < p_k; j++) {
+        const double Xij = pa.X(i, j);
+        grad[bstart + j] += g_row * Xij;
+        for (int l = 0; l <= j; l++) {
+            H.add(bstart + j, bstart + l, H_row * Xij * pa.X(i, l));
+        }
+        if (g_re >= 0) {
+            H.add(bstart + j, g_re, H_row * Xij);
+        }
+        for (int a = 0; a < A; a++) {
+            H.add(bstart + j, active_idx[a], H_row * Xij * active_d[a]);
+        }
+    }
+
+    // RE block: gradient + diagonal + RE/active.
+    if (g_re >= 0) {
+        grad[g_re] += g_row;
+        H.add(g_re, g_re, H_row);
+        for (int a = 0; a < A; a++) {
+            H.add(g_re, active_idx[a], H_row * active_d[a]);
+        }
+    }
+
+    // Active x active (intra + inter block): gradient + lower triangle.
+    for (int a = 0; a < A; a++) {
+        grad[active_idx[a]] += g_row * active_d[a];
+        for (int b = 0; b <= a; b++) {
+            H.add(active_idx[a], active_idx[b],
+                  H_row * active_d[a] * active_d[b]);
+        }
+    }
+}
+
 // Per-observation latent-block scatter for one arm at one grid point.
 //
 // Variable-length analogue of the single-arm multi-block scatter
@@ -339,11 +420,105 @@ inline int build_cell_rows_from_arms(
     return n_cells;
 }
 
+// One (idx, weight) entry in an eta -> joint-vector chain for a single
+// (arm, row) of a coupled cell. The within-row scatter writes
+// `H_row * outer(chain, chain)` into the joint H; the cross-arm scatter
+// writes `Hkl * (chain_k outer chain_l + transpose)` for a (k_row, l_row)
+// pair given the spec's `arm_cross_hess[kk][ll][j*Nl + m]`.
+struct ArmRowChainEntry {
+    int    idx;  // global index into the joint latent vector
+    double w;    // chain weight: X(j, a) for beta, 1.0 for RE, d_eff for latent
+};
+
+// Resolve the eta -> joint-vector chain for arm `pa` row `j` at grid point
+// `k_grid`. Matches the contract of `scatter_one_arm_row_{dense,sparse}`
+// (INDEXED_SINGLE blocks only); the entries are exactly the joint dofs
+// that the per-row helper would write nonzero contributions for in its
+// `H_row * outer(chain, chain)` term.
+inline void build_arm_row_chain(
+    int                              j,
+    const ParsedArm&                 pa,
+    int                              k_arm,
+    const std::vector<LatentBlock>&  blocks,
+    const std::vector<double>&       d_eff_cache,
+    std::vector<ArmRowChainEntry>&   out_chain
+) {
+    out_chain.clear();
+    for (int a = 0; a < pa.p; a++) {
+        out_chain.push_back({pa.beta_start + a, pa.X(j, a)});
+    }
+    if (pa.n_re_groups > 0) {
+        int gi = static_cast<int>(pa.re_idx[j]) - 1;
+        if (gi >= 0 && gi < pa.n_re_groups) {
+            out_chain.push_back({pa.re_start + gi, 1.0});
+        }
+    }
+    const int B = static_cast<int>(blocks.size());
+    for (int b = 0; b < B; b++) {
+        if (d_eff_cache[b] == 0.0) continue;
+        if (!blocks[b].idx) continue;
+        int l_b = blocks[b].idx(j, k_arm);
+        if (l_b > 0 && l_b <= blocks[b].size) {
+            out_chain.push_back({blocks[b].start + l_b - 1, d_eff_cache[b]});
+        }
+    }
+}
+
+// Cross-chain scatter (dense). Adds `Hkl * (chain_k chain_l^T + transpose)`
+// to the joint H. The symmetric-matrix entry at (a, b) is
+// `Hkl * (w_k(a) * w_l(b) + w_l(a) * w_k(b))`; iterating chain_k x chain_l
+// once and writing `val` to both (a, b) and (b, a) reproduces that for all
+// four cases (a-only in chain_k, b-only in chain_l, shared dofs, diagonal).
+// For shared diagonal a == b, the two writes to the same dense cell sum
+// to 2*val, which is the correct symmetric value.
+inline void scatter_cross_chain_dense(
+    double                                Hkl,
+    const std::vector<ArmRowChainEntry>&  chain_k,
+    const std::vector<ArmRowChainEntry>&  chain_l,
+    DenseMat&                             H
+) {
+    if (Hkl == 0.0) return;
+    for (const auto& e_k : chain_k) {
+        for (const auto& e_l : chain_l) {
+            double val = Hkl * e_k.w * e_l.w;
+            H[e_k.idx][e_l.idx] += val;
+            H[e_l.idx][e_k.idx] += val;
+        }
+    }
+}
+
+// Cross-chain scatter (sparse). H.add() normalizes to (max, min); a single
+// write per (a, b) iter accumulates the correct off-diagonal contribution
+// to the symmetric matrix. The diagonal (a == b) case needs an extra write
+// to match the dense version's 2*val accumulation.
+inline void scatter_cross_chain_sparse(
+    double                                Hkl,
+    const std::vector<ArmRowChainEntry>&  chain_k,
+    const std::vector<ArmRowChainEntry>&  chain_l,
+    SparseHessianBuilder&                 H
+) {
+    if (Hkl == 0.0) return;
+    for (const auto& e_k : chain_k) {
+        for (const auto& e_l : chain_l) {
+            double val = Hkl * e_k.w * e_l.w;
+            H.add(e_k.idx, e_l.idx, val);
+            if (e_k.idx == e_l.idx) {
+                H.add(e_k.idx, e_l.idx, val);
+            }
+        }
+    }
+}
+
 // Per-cell scatter branch. Walks cells, dispatches to
-// `spec->evaluate_cell()`, and scatters per-arm row derivatives via
-// `scatter_one_arm_row_dense()` (single source of truth, same writes
-// the per-obs path produces).
-inline void scatter_cell_coupling_dense_branch(
+// `spec->evaluate_cell()`, and scatters per-arm row derivatives via the
+// caller-supplied per-row helper (`scatter_one_arm_row_dense` or
+// `scatter_one_arm_row_sparse`) plus the cross-arm Hessian via the
+// caller-supplied cross-chain helper. Single source of truth for the
+// cell iteration, view construction, per-cell cross_hess buffer
+// allocation, and per-arm bookkeeping; dense/sparse share everything
+// except the H container and the two helpers.
+template <typename HType, typename ScatterRowFn, typename ScatterCrossFn>
+inline void scatter_cell_coupling_branch_impl(
     const CellCouplingSpec&                       spec,
     const std::vector<int>&                       coupled_arms,
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
@@ -354,7 +529,9 @@ inline void scatter_cell_coupling_dense_branch(
     const std::vector<LatentBlock>&               blocks,
     int                                           k_grid,
     DenseVec&                                     grad,
-    DenseMat&                                     H
+    HType&                                        H,
+    ScatterRowFn                                  scatter_row,
+    ScatterCrossFn                                scatter_cross
 ) {
     const int n_coupled = (int)coupled_arms.size();
     const int B         = (int)blocks.size();
@@ -403,11 +580,29 @@ inline void scatter_cell_coupling_dense_branch(
     std::vector<double*>        arm_grad_ptr(n_coupled);
     std::vector<double*>        arm_neg_hess_diag_ptr(n_coupled);
 
-    // Scratch reused across rows by scatter_one_arm_row_dense().
+    // Per-cell cross-arm Hessian scratch. arm_cross_hess[kk][ll] is a
+    // J_kk x J_ll row-major buffer (kk <= ll only; kk > ll left nullptr
+    // per the CellDerivs contract). The outer two dims have stable shape
+    // n_coupled x n_coupled across cells; only the per-cell J_kk * J_ll
+    // backing storage is grown monotonically.
+    std::vector<std::vector<std::vector<double>>> cross_hess_buf(n_coupled,
+        std::vector<std::vector<double>>(n_coupled));
+    std::vector<std::vector<double*>> cross_hess_ptr_inner(n_coupled,
+        std::vector<double*>(n_coupled, nullptr));
+    std::vector<double* const*> cross_hess_outer(n_coupled, nullptr);
+    for (int kk = 0; kk < n_coupled; kk++) {
+        cross_hess_outer[kk] = cross_hess_ptr_inner[kk].data();
+    }
+
+    // Per-row chain scratch reused across rows / pairs.
     std::vector<int>    active_idx;
     std::vector<double> active_d;
     active_idx.reserve(B);
     active_d.reserve(B);
+    std::vector<ArmRowChainEntry> chain_k_scratch;
+    std::vector<ArmRowChainEntry> chain_l_scratch;
+    chain_k_scratch.reserve(32);
+    chain_l_scratch.reserve(32);
 
     for (int c = 0; c < n_cells; c++) {
         for (int kk = 0; kk < n_coupled; kk++) {
@@ -425,6 +620,27 @@ inline void scatter_cell_coupling_dense_branch(
             }
             arm_grad_ptr[kk]          = arm_grad_buf[kk].data();
             arm_neg_hess_diag_ptr[kk] = arm_neg_hess_diag_buf[kk].data();
+        }
+
+        // Cross-arm Hessian buffers: allocate one J_kk * J_ll slab per
+        // (kk, ll) pair with kk <= ll. kk > ll stays nullptr per the
+        // CellDerivs contract; integration symmetrises.
+        for (int kk = 0; kk < n_coupled; kk++) {
+            int rc_k = arm_row_count[kk];
+            for (int ll = kk; ll < n_coupled; ll++) {
+                int rc_l = arm_row_count[ll];
+                std::size_t n_pair = (std::size_t)rc_k * (std::size_t)rc_l;
+                auto& buf = cross_hess_buf[kk][ll];
+                if (buf.size() < n_pair) {
+                    buf.assign(n_pair, 0.0);
+                } else {
+                    std::fill(buf.begin(), buf.begin() + n_pair, 0.0);
+                }
+                cross_hess_ptr_inner[kk][ll] = buf.data();
+            }
+            for (int ll = 0; ll < kk; ll++) {
+                cross_hess_ptr_inner[kk][ll] = nullptr;
+            }
         }
 
         CellEtas etas_view;
@@ -445,12 +661,13 @@ inline void scatter_cell_coupling_dense_branch(
         CellDerivs out;
         out.arm_grad           = arm_grad_ptr.data();
         out.arm_neg_hess_diag  = arm_neg_hess_diag_ptr.data();
-        out.arm_cross_hess     = nullptr;  // B.1: cross-arm Hessian deferred to B.2
+        out.arm_cross_hess     = cross_hess_outer.data();
         out.arm_row_count      = arm_row_count.data();
         out.n_arms_            = n_coupled;
 
         spec.evaluate_cell(c, etas_view, y_view, out);
 
+        // Within-arm per-row scatter (eta diagonal Hessian + gradient).
         for (int kk = 0; kk < n_coupled; kk++) {
             int k  = coupled_arms[kk];
             int rc = arm_row_count[kk];
@@ -458,14 +675,92 @@ inline void scatter_cell_coupling_dense_branch(
             const double* g    = arm_grad_buf[kk].data();
             const double* h    = arm_neg_hess_diag_buf[kk].data();
             for (int j = 0; j < rc; j++) {
-                scatter_one_arm_row_dense(
+                scatter_row(
                     rows[j], g[j], h[j],
                     parsed[k], k, blocks, d_eff_per_arm[kk],
                     grad, H, active_idx, active_d
                 );
             }
         }
+
+        // Cross-arm Hessian scatter. For each (kk, ll) pair with kk <= ll,
+        // walk rows of arm kk x arm ll. Same-arm (kk == ll) skips the
+        // j == m diagonal (already in arm_neg_hess_diag) and reads only
+        // off-diagonal entries.
+        for (int kk = 0; kk < n_coupled; kk++) {
+            int k     = coupled_arms[kk];
+            int rc_k  = arm_row_count[kk];
+            const int* rows_k = arm_rows_ptr[kk];
+            for (int ll = kk; ll < n_coupled; ll++) {
+                const double* ch = cross_hess_ptr_inner[kk][ll];
+                if (!ch) continue;
+                int l     = coupled_arms[ll];
+                int rc_l  = arm_row_count[ll];
+                const int* rows_l = arm_rows_ptr[ll];
+                for (int j = 0; j < rc_k; j++) {
+                    build_arm_row_chain(rows_k[j], parsed[k], k, blocks,
+                                        d_eff_per_arm[kk], chain_k_scratch);
+                    int m_start = (kk == ll) ? (j + 1) : 0;
+                    for (int m = m_start; m < rc_l; m++) {
+                        double Hkl = ch[(std::size_t)j * rc_l + m];
+                        if (Hkl == 0.0) continue;
+                        build_arm_row_chain(rows_l[m], parsed[l], l, blocks,
+                                            d_eff_per_arm[ll], chain_l_scratch);
+                        scatter_cross(Hkl, chain_k_scratch, chain_l_scratch, H);
+                    }
+                }
+            }
+        }
     }
+}
+
+// Dense wrapper: per-cell branch with `scatter_one_arm_row_dense` (writes
+// both directions into the n_x x n_x DenseMat).
+inline void scatter_cell_coupling_dense_branch(
+    const CellCouplingSpec&                       spec,
+    const std::vector<int>&                       coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                                           n_cells,
+    const std::vector<JointArm>&                  arms,
+    const std::vector<ParsedArm>&                 parsed,
+    const std::vector<Rcpp::NumericVector>&       etas,
+    const std::vector<LatentBlock>&               blocks,
+    int                                           k_grid,
+    DenseVec&                                     grad,
+    DenseMat&                                     H
+) {
+    scatter_cell_coupling_branch_impl(
+        spec, coupled_arms, cell_rows, n_cells,
+        arms, parsed, etas, blocks, k_grid, grad, H,
+        scatter_one_arm_row_dense,
+        scatter_cross_chain_dense
+    );
+}
+
+// Sparse wrapper: per-cell branch with `scatter_one_arm_row_sparse`
+// (lower-triangle writes into the joint SparseHessianBuilder; the pattern
+// must already cover every (row, col) the per-row helper touches, which
+// build_joint_hessian_pattern guarantees per arm regardless of coupling
+// since it iterates all arms).
+inline void scatter_cell_coupling_sparse_branch(
+    const CellCouplingSpec&                       spec,
+    const std::vector<int>&                       coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                                           n_cells,
+    const std::vector<JointArm>&                  arms,
+    const std::vector<ParsedArm>&                 parsed,
+    const std::vector<Rcpp::NumericVector>&       etas,
+    const std::vector<LatentBlock>&               blocks,
+    int                                           k_grid,
+    DenseVec&                                     grad,
+    SparseHessianBuilder&                         H
+) {
+    scatter_cell_coupling_branch_impl(
+        spec, coupled_arms, cell_rows, n_cells,
+        arms, parsed, etas, blocks, k_grid, grad, H,
+        scatter_one_arm_row_sparse,
+        scatter_cross_chain_sparse
+    );
 }
 
 // Sparse-builder analogue of scatter_arm_obs_joint_multi. Writes into a
@@ -861,7 +1156,11 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     std::function<void(int)>         prep_at_grid,
     const std::vector<int>&          tile_ids,
     const std::vector<int>&          tile_pilot_cells,
-    double                           prune_tol
+    double                           prune_tol,
+    std::shared_ptr<CellCouplingSpec> cell_coupling_spec,
+    const std::vector<int>&          coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                              n_cells
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -953,14 +1252,6 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
         }
     }
     if (needs_sparse) {
-        if (any_coupling) {
-            // The sparse per-cell branch lands with B.2 alongside the
-            // tulpaObs OccuCoverLognormalCoupling consumer + cross-arm
-            // Hessian pattern extension. Cover-hurdle joint fits that
-            // don't register a non-separable spec are unaffected.
-            Rcpp::stop("cell_coupling: non-separable specs are dense-only "
-                       "in B.1; the sparse per-cell branch lands with B.2.");
-        }
         // First-ship: sparse path is serial outer-grid. Each per-thread
         // SparseHessianBuilder would replicate the pattern (a few × 10^7
         // entries at n_sites = 10^6); serializing is the simplest correct
@@ -969,7 +1260,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
             n_grid, arms, parsed, blocks, n_x,
             max_iter, tol, n_threads,
             store_modes, x_init, store_Q,
-            prep_at_grid, tile_ids, tile_pilot_cells, prune_tol
+            prep_at_grid, tile_ids, tile_pilot_cells, prune_tol,
+            cell_coupling_spec, coupled_arms, cell_rows, n_cells
         );
     }
 
@@ -1230,15 +1522,25 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     std::function<void(int)>         prep_at_grid,
     const std::vector<int>&          tile_ids,
     const std::vector<int>&          tile_pilot_cells,
-    double                           prune_tol
+    double                           prune_tol,
+    std::shared_ptr<CellCouplingSpec> cell_coupling_spec,
+    const std::vector<int>&          coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                              n_cells
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
 
+    const bool any_coupling = !coupled_arms.empty();
+    std::vector<bool> arm_is_coupled(n_arms, false);
+    for (int k : coupled_arms) {
+        if (k >= 0 && k < n_arms) arm_is_coupled[k] = true;
+    }
+
     // Build the joint H pattern ONCE. Reused for every outer-grid cell.
     SparseHessianBuilder H_builder;
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builder); }
+      build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builder, coupled_arms); }
 
     NewtonScratchJointSparse scratch;
     scratch.allocate(n_x, arms);
@@ -1252,7 +1554,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // VALUES live in the builder, so each builder needs its own copy.
     SparseHessianBuilder cheap_builder;
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      build_joint_hessian_pattern(parsed, arms, blocks, n_x, cheap_builder); }
+      build_joint_hessian_pattern(parsed, arms, blocks, n_x, cheap_builder, coupled_arms); }
     NewtonScratchJointSparse cheap_scratch;
     cheap_scratch.allocate(n_x, arms);
     SparseCholeskySolver cheap_solver;
@@ -1345,6 +1647,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                                          DenseVec& grad,
                                          SparseHessianBuilder& H) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                if (arm_is_coupled[k_arm]) continue;
                 scatter_arm_obs_joint_multi_sparse(
                     x, etas[k_arm], parsed[k_arm], arms[k_arm],
                     specs.views[k_arm], k_arm,
@@ -1352,6 +1655,12 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                     active_scratch, basis_scratch, multi_scratch,
                     active_db_scratch, db_buffers,
                     idx_cache_use
+                );
+            }
+            if (any_coupling) {
+                scatter_cell_coupling_sparse_branch(
+                    *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
+                    arms, parsed, etas, blocks, k_grid, grad, H
                 );
             }
             for (const auto& b : blocks) {
@@ -1388,6 +1697,16 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
 
         NewtonScratchJointSparse& sc = use_cheap_scratch ? cheap_scratch : scratch;
         JointSpecLogLik joint_ll{&specs.views, n_threads};
+        if (any_coupling) {
+            joint_ll.skip_arm = &arm_is_coupled;
+            joint_ll.cell_coupling_log_lik_fn =
+                [&](const std::vector<Rcpp::NumericVector>& e) {
+                    return eval_cell_coupling_log_lik(
+                        *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
+                        arms, e
+                    );
+                };
+        }
         return laplace_newton_solve_joint_sparse_ll(
             n_x,
             max_iter_use, tol,

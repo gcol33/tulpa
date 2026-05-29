@@ -11,6 +11,7 @@
 
 #include "cell_coupling_registry.h"
 #include "test_cell_coupling_separable_bernoulli.h"
+#include "test_cell_coupling_bivariate_gaussian.h"
 
 #include <Rcpp.h>
 #include <memory>
@@ -20,5 +21,16 @@ void cpp_register_test_separable_bernoulli_coupling() {
     tulpa::register_cell_coupling(
         "test_separable_bernoulli",
         std::make_shared<tulpa::TestSeparableBernoulliCoupling>()
+    );
+}
+
+// [[Rcpp::export]]
+void cpp_register_test_bivariate_gaussian_coupling(double lam00,
+                                                   double lam11,
+                                                   double lam01) {
+    tulpa::register_cell_coupling(
+        "test_bivariate_gaussian",
+        std::make_shared<tulpa::TestBivariateGaussianCoupling>(
+            lam00, lam11, lam01)
     );
 }

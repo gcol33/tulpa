@@ -334,7 +334,11 @@ Rcpp::List cpp_nested_laplace_spde(
         /*prep_at_grid=*/nullptr,
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(),
-        /*prune_tol=*/0.0
+        /*prune_tol=*/0.0,
+        /*cell_coupling_spec=*/nullptr,
+        /*coupled_arms=*/std::vector<int>(),
+        /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
+        /*n_cells=*/0
     );
     out["range_grid"] = range_grid;
     out["sigma_grid"] = sigma_grid;

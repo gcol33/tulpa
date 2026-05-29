@@ -99,12 +99,22 @@ inline void resolve_indexed_dofs(
 
 // Build the joint Hessian sparsity pattern and initialize `out_builder`.
 // See file header for algorithm details.
+//
+// `coupled_arms` lists the 0-based arm indices a CellCouplingSpec couples
+// at this fit (empty if no spec is registered, or the spec is the
+// separable default). Every (k, l) pair with k != l from `coupled_arms`
+// adds cross-arm beta/beta, beta/RE, RE/beta, RE/RE dense pattern blocks
+// (section 5 below). Latent-block cross-coverage is already provided by
+// section 3's per-arm walk -- each arm's own per-obs path adds its beta/RE
+// x latent entries, so a shared latent dof reached from two coupled arms
+// already has both (beta_k, z) and (beta_l, z) in the pattern.
 inline void build_joint_hessian_pattern(
     const std::vector<ParsedArm>&    parsed,
     const std::vector<JointArm>&     arms,
     const std::vector<LatentBlock>&  blocks,
     int                              n_x,
-    SparseHessianBuilder&            out_builder
+    SparseHessianBuilder&            out_builder,
+    const std::vector<int>&          coupled_arms = std::vector<int>()
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -263,6 +273,50 @@ inline void build_joint_hessian_pattern(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // ---- (5) Cross-arm coupled blocks (CellCouplingSpec) ----
+    // For each pair (kk, ll) of coupled arms with kk < ll, the per-cell
+    // branch's cross_hess scatter writes Hkl * (chain_kk outer chain_ll
+    // + transpose) into the joint H. The beta_k/beta_l, beta_k/RE_l,
+    // RE_k/beta_l, RE_k/RE_l sub-blocks of that outer product are NOT
+    // covered by sections 1-3 (those are per-arm only). Add them as
+    // dense blocks here. Latent-block cross-coverage IS covered by
+    // section 3 (each arm's per-obs walk hits its own beta/RE x latent
+    // entries), so a shared latent dof reached from both kk and ll
+    // already has both (beta_kk, z) and (beta_ll, z) in the pattern.
+    for (size_t ii = 0; ii < coupled_arms.size(); ii++) {
+        int k = coupled_arms[ii];
+        if (k < 0 || k >= n_arms) continue;
+        const ParsedArm& pa_k = parsed[k];
+        for (size_t jj = ii + 1; jj < coupled_arms.size(); jj++) {
+            int l = coupled_arms[jj];
+            if (l < 0 || l >= n_arms) continue;
+            const ParsedArm& pa_l = parsed[l];
+            // beta_k x beta_l
+            if (pa_k.p > 0 && pa_l.p > 0) {
+                detail::add_dense_block_pattern(entries,
+                                                 pa_k.beta_start, pa_k.p,
+                                                 pa_l.beta_start, pa_l.p);
+            }
+            // beta_k x RE_l, beta_l x RE_k
+            if (pa_k.p > 0 && pa_l.n_re_groups > 0) {
+                detail::add_dense_block_pattern(entries,
+                                                 pa_k.beta_start, pa_k.p,
+                                                 pa_l.re_start, pa_l.n_re_groups);
+            }
+            if (pa_l.p > 0 && pa_k.n_re_groups > 0) {
+                detail::add_dense_block_pattern(entries,
+                                                 pa_l.beta_start, pa_l.p,
+                                                 pa_k.re_start, pa_k.n_re_groups);
+            }
+            // RE_k x RE_l
+            if (pa_k.n_re_groups > 0 && pa_l.n_re_groups > 0) {
+                detail::add_dense_block_pattern(entries,
+                                                 pa_k.re_start, pa_k.n_re_groups,
+                                                 pa_l.re_start, pa_l.n_re_groups);
             }
         }
     }
