@@ -14,3 +14,4 @@ experimental/
 tmp_lib/
 .code-review-graph/
 .claude/
+claude/
