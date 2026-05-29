@@ -77,17 +77,30 @@
 # ============================================================================
 .hyper_axis_edge_scores <- function(theta_grid, log_marginal, specs, axes) {
   if (length(log_marginal) == 0L) return(list())
-  lm_max_total <- max(log_marginal)
-  weights      <- .nl_normalise_weights(log_marginal)
+  # Non-finite cells (inner Newton non-convergent on consumer-package
+  # joint fitters, e.g. occu_cover_joint_coupled at degenerate sigma+alpha
+  # hyperpoints) must not poison the edge-score statistics. Treat them as
+  # zero-mass: drop from the global max-shift, use the safe weight
+  # normaliser, and skip them inside per-level max/sum reductions.
+  finite_lm <- log_marginal[is.finite(log_marginal)]
+  if (length(finite_lm) == 0L) return(list())
+  lm_max_total <- max(finite_lm)
+  weights      <- .nl_normalise_weights_safe(log_marginal,
+                                              what = "adaptive_grid edge scores")
+  if (all(is.na(weights))) return(list())
   out <- list()
+  per_level_max <- function(lm_at_lev) {
+    finite_lev <- lm_at_lev[is.finite(lm_at_lev)]
+    if (length(finite_lev) == 0L) -Inf else max(finite_lev)
+  }
   for (a in axes) {
     v   <- as.numeric(theta_grid[, a])
     lev <- sort(unique(v))
     if (length(lev) < 2L) next
-    w_lo <- sum(weights[v == lev[1L]])
-    w_hi <- sum(weights[v == lev[length(lev)]])
-    d_lo <- exp(max(log_marginal[v == lev[1L]])          - lm_max_total)
-    d_hi <- exp(max(log_marginal[v == lev[length(lev)]]) - lm_max_total)
+    w_lo <- sum(weights[v == lev[1L]],          na.rm = TRUE)
+    w_hi <- sum(weights[v == lev[length(lev)]], na.rm = TRUE)
+    d_lo <- exp(per_level_max(log_marginal[v == lev[1L]])          - lm_max_total)
+    d_hi <- exp(per_level_max(log_marginal[v == lev[length(lev)]]) - lm_max_total)
     out[[a]] <- list(
       levels    = lev,
       min_frac  = w_lo, max_frac = w_hi,
@@ -245,8 +258,11 @@
   ei  <- edge_info
   lev <- ei$levels
   v   <- as.numeric(theta_grid[, axis_name])
-  lm_max_at_lev <- vapply(lev, function(lv) max(log_marginal[v == lv]),
-                          numeric(1))
+  lm_max_at_lev <- vapply(lev, function(lv) {
+    lm_lv <- log_marginal[v == lv]
+    finite_lv <- lm_lv[is.finite(lm_lv)]
+    if (length(finite_lv) == 0L) -Inf else max(finite_lv)
+  }, numeric(1))
   mode_idx <- which.max(lm_max_at_lev)
   n_lev    <- length(lev)
 
