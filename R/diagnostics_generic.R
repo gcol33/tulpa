@@ -16,7 +16,8 @@ compare_models <- function(..., criterion = c("waic", "loglik")) {
   rows <- lapply(names(models), function(nm) {
     fit <- models[[nm]]
     ll <- tryCatch(as.numeric(logLik(fit)), error = function(e) NA_real_)
-    n_par <- fit$n_params %||% ncol(fit$draws)
+    n_par <- fit$n_params %||% fit$n_fixed %||%
+      (if (is.matrix(fit$draws)) ncol(fit$draws) else NA_integer_)
     row <- data.frame(model = nm, n_params = n_par, logLik = ll,
                       stringsAsFactors = FALSE)
     if (criterion == "waic" && !is.null(fit$waic_fn)) {

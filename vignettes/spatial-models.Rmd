@@ -1,0 +1,589 @@
+---
+title: "Spatial fields in tulpa"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Spatial fields in tulpa}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## Why a spatial field
+
+Regions that sit next to each other tend to look alike. Two adjacent
+counties share weather, soil, road networks, and the people who move
+between them, so their disease counts, yields, or survey rates carry a
+similar unmeasured signal. A regression that ignores this treats each
+region as an independent draw, and that assumption fails in two ways at
+once.
+
+The first failure is in the residuals. Neighbouring regions leave
+correlated leftovers, the model's effective sample size is smaller than
+the row count suggests, and the standard errors come out too small. You
+can see this in any map of model residuals: when nearby regions share the
+sign of their leftover, an inference procedure that assumes independence
+counts each of those regions as fresh information when, statistically,
+they are partly the same observation seen twice. Confidence intervals
+shrink below their nominal width, and a slope that is really uncertain
+gets reported as sharp.
+
+The second failure is in the coefficients themselves. When a covariate is
+itself spatially patterned, say elevation or median income, it competes
+with the unmeasured regional signal for the same variance. The fitted
+slope then absorbs part of that signal and drifts away from the effect you
+meant to estimate. This is the spatial face of confounding by an omitted
+variable: the covariate and the missing regional driver vary together
+across space, and a model with no place to put the regional driver has no
+choice but to load it onto the covariate. The bias stays hidden in plain
+sight. The slope looks plausible, the fit looks clean, and the number is
+wrong.
+
+Both failures share one cause. The model has nowhere to absorb the part of
+the response that depends on *where* an observation sits rather than on its
+covariates. A spatial field is the place. You add one random effect per
+region, tie neighbouring effects together so the field stays smooth, and
+let it soak up the regional signal the covariates do not explain. The
+slope is then read against a background that already accounts for location.
+The standard errors widen to their honest size because the random effect,
+not the covariate, now carries the spatial autocorrelation.
+
+The smoothing is the subtle part. A free random effect per region with no
+ties between neighbours would absorb the signal, but it would also absorb
+the covariate effect you are trying to measure, because with enough free
+parameters it can mimic almost anything. The neighbour ties are what keep
+the surface smooth and let the covariate keep its own variance. How strong
+those ties should be is a parameter in its own right, and a fit that fixes
+it by hand is making a choice the data could make better. tulpa builds the
+field from an adjacency matrix, integrates the smoothing strength over a
+grid rather than fixing it, and reports a standard error that carries the
+field's own uncertainty into the fixed effects.
+
+This vignette stays on the areal path, where regions are discrete units
+joined by an adjacency graph. We simulate a known field on a ring of
+regions, fit it, pull the field back out per region, check that it
+matches the truth, look at how the smoothing precision is recovered, and
+compare a spatial fit against a non-spatial one. Continuous fields, where
+the signal lives on raw coordinates, get a short note at the end with
+pointers to their own vignettes.
+
+## The model
+
+Write the response for observation $i$ in region $r_i$ through a linear
+predictor on the link scale:
+
+$$
+g(\mu_i) \;=\; \beta_0 + x_i^\top \beta + \phi_{r_i},
+$$
+
+where $\beta_0$ is the intercept, $\beta$ the covariate slopes, and
+$\phi_{r}$ the spatial effect for region $r$. The field $\phi$ carries the
+regional signal; everything spatially structured that $x$ misses lands
+there.
+
+The intrinsic conditional autoregressive (ICAR) prior ties the field to
+the adjacency graph. Each region's effect is centred on the mean of its
+neighbours:
+
+$$
+\phi_r \mid \phi_{-r} \;\sim\; \mathcal{N}\!\left(
+  \frac{1}{n_r}\sum_{s \sim r} \phi_s,\;\; \frac{1}{\tau\, n_r}\right),
+$$
+
+with $s \sim r$ meaning $s$ is a neighbour of $r$, $n_r$ the number of
+neighbours, and $\tau$ a precision that sets how tightly the field is
+smoothed. The conditional form above is convenient for intuition, since it says each
+region pulls toward its neighbours' average. The joint distribution it
+implies is a Gaussian Markov random field with precision matrix
+
+$$
+Q \;=\; \tau\,(D - W),
+$$
+
+where $W$ is the adjacency matrix and $D$ the diagonal of neighbour
+counts. The off-diagonal entries of $Q$ are nonzero only between
+neighbours, which is what makes $Q$ sparse and the model cheap to work
+with even on thousands of regions. That sparsity is the Markov property of
+the random effect written as a matrix, not a numerical convenience tacked
+on afterward. A region is conditionally independent of every
+non-neighbour given its neighbours, and that conditional independence is
+exactly a zero in $Q$.
+
+The matrix $D - W$ is the graph Laplacian. Its smallest eigenvalue is
+zero, with the constant vector as eigenvector, so $Q$ is rank-deficient by
+one. The practical consequence is that the field is pinned only up to an
+additive constant: shifting every $\phi_r$ by the same amount does not
+change the joint density. The overall level is left for the intercept to
+identify, and the field carries only the *contrasts* between regions, the
+part that actually describes spatial pattern. This is what makes the ICAR
+an intrinsic prior, improper on its own but proper once the data and a
+sum-to-zero handling fix the level.
+
+The precision $\tau$ sets the smoothing strength. A large $\tau$ inflates
+the penalty on neighbour differences, forces neighbours to agree, and
+flattens the field toward the constant. A small $\tau$ relaxes the
+penalty and lets each region drift toward an independent random effect.
+The value that fits the data is rarely known in advance, and choosing it
+wrong has a real cost: too much smoothing erases genuine pattern, too
+little lets it chase noise and steal variance from the covariates.
+Integrating $\tau$ rather than fixing it is the point of the nested path
+used below.
+
+BYM2 splits the field into a spatially structured ICAR part and an
+unstructured per-region part:
+
+$$
+\phi_r \;=\; \frac{1}{\sqrt{\tau}}\left(\sqrt{\lambda}\,u_r^{\star}
+  + \sqrt{1-\lambda}\,v_r\right),
+$$
+
+where $u^{\star}$ is a scaled ICAR field, $v$ an IID per-region effect,
+and $\lambda \in [0,1]$ a mixing parameter for the share of variance that
+is spatially structured. As $\lambda \to 1$ the field is pure ICAR; as
+$\lambda \to 0$ it collapses to independent noise. The ICAR component is
+scaled following Riebler et al. (2016) so that $\lambda$ reads on a
+comparable scale from one graph to the next, which a raw ICAR variance
+does not. Both `icar` and `bym2` route through the same machinery in
+tulpa; the choice between them is about interpretation, and it comes back
+in the practical guidance below.
+
+A proper CAR sits between the two. It keeps the single field of the ICAR
+but replaces the fixed unit autocorrelation with an estimated parameter
+$\rho$, so the precision becomes $Q = \tau\,(D - \rho W)$. With
+$\rho$ free in its valid range the field can range from near-independence
+at small $\rho$ to near-ICAR as $\rho$ approaches one, and the precision
+is proper rather than rank-deficient, which incidentally tames the
+intercept confounding. The cost is one more parameter to integrate and a
+field that no longer reduces to the clean graph Laplacian. For most
+smoothing tasks ICAR or BYM2 is the practical starting point, with proper
+CAR held in reserve for when the autocorrelation strength is itself a
+quantity of interest.
+
+## Simulating data
+
+A simulation with a known field is the only honest way to check a spatial
+fit. Real data never reveal the truth, so a recovered field that merely
+looks reasonable proves nothing. Here we set the field by hand, generate
+the response from it, and ask the fit to find it again. The test has
+teeth: the response is binary, the data are spread thin across many
+regions, and the field carries structure no intercept can fake.
+
+Put twenty-five regions on a ring, each adjacent to its two neighbours.
+The ring is the smallest graph that is connected, regular, and has an
+obvious smooth field on it. A regular graph keeps every region with the
+same neighbour count, so no region is privileged by the topology, and a
+ring's single loop gives the field one clean wavelength to recover.
+
+```{r adjacency}
+K <- 25
+W <- matrix(0, K, K)
+for (i in 1:K) {
+  j <- if (i < K) i + 1 else 1
+  W[i, j] <- W[j, i] <- 1
+}
+```
+
+The true field is one smooth wave around the ring, centred and scaled so
+its values run from roughly $-1.5$ to $1.5$. A wave is a fair test on two
+counts. It is smooth, so an ICAR prior that rewards agreement between
+neighbours should track it well rather than fight it. And it has real
+structure, a peak on one side of the ring and a trough on the other, that
+no single intercept can capture, so the random effect has to do genuine
+work. A pattern of pure noise would be the opposite test, one an ICAR
+prior is designed to smooth away, and recovering it would say little.
+
+```{r truth}
+field_true <- as.numeric(scale(sin(2 * pi * (1:K) / K)))
+beta0 <- -0.2
+beta1 <-  0.8
+```
+
+Draw `n` observations, assign each to a region, and build a binomial
+response on the logit scale. The intercept is $-0.2$, the covariate slope
+$0.8$, and the region's field value adds to the linear predictor.
+
+```{r simulate}
+n      <- 800
+x      <- rnorm(n)
+region <- sample(1:K, n, replace = TRUE)
+eta    <- beta0 + beta1 * x + field_true[region]
+y      <- rbinom(n, size = 1, prob = plogis(eta))
+ds     <- data.frame(y = y, x = x, region = factor(region))
+```
+
+The slope we want back is `beta1`; the field we want back is
+`field_true`. Eight hundred observations spread across twenty-five
+regions average to thirty-two rows each, but the sampling is random, so
+several regions land with far fewer. Those thin regions are where
+neighbour borrowing earns its keep: a region with a handful of binary
+trials cannot estimate its own effect, yet its neighbours can lend it
+theirs, and the smoothing is the channel that lending flows through.
+
+## Fitting
+
+An areal field needs two pieces that travel together. The `spatial=`
+argument carries the structure, a list with the field `type` and the
+adjacency matrix. A `spatial(region)` term in the formula names the column
+that maps each row to its region. Drop either piece and `tulpa()` stops
+with a message rather than guessing.
+
+```{r fit}
+fit <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
+             spatial = list(type = "icar", adjacency = W),
+             mode = "nested_laplace")
+fit$backend
+```
+
+`mode = "nested_laplace"` runs the Tier-2 path that integrates the field's
+precision $\tau$ over a grid rather than fixing it. The path lays a grid
+of $\tau$ values, runs an inner Laplace solve of the random effect and
+fixed coefficients at every value, weights each grid point by its marginal
+likelihood, and pools the answers. This integration turns a single guessed
+smoothing strength into a posterior over smoothing strengths, which is why
+the coefficient errors below inherit the field's uncertainty instead of
+pretending $\tau$ is known exactly.
+
+For a binomial areal field, `mode = "auto"` makes a different choice. It
+picks the Polya-Gamma Gibbs sampler, a Tier-1 exact fit that draws from
+the posterior directly and is the natural match for a binomial response.
+That sampler is correct and often what you want, but it does not expose
+the integration grid, so the per-region effects and the smoothing
+hyperparameter are not laid out on the returned object the way the nested
+path arranges them. This vignette requests `nested_laplace` explicitly so
+the marginalised field and $\tau$ summary are available to plot and check.
+For a routine binomial areal model where only the slopes matter,
+`mode = "auto"` is the lighter call.
+
+The fixed effects come back from `coef()`.
+
+```{r coef}
+coef(fit)
+```
+
+The slope lands near the simulated $0.8$. With the regional wave absorbed
+into the field, the covariate reports its own effect rather than a blend
+of effect and location. `summary()` adds the posterior standard
+error and the 2.5% / 97.5% credible bounds.
+
+These standard errors are grid-marginalised, and the distinction matters.
+At a single fixed $\tau$ the Laplace solve gives a within-point covariance,
+the uncertainty in the slope conditional on that smoothing strength. Such
+a conditional error understates the truth because it behaves as though
+$\tau$ were known. The law of total variance repairs this: the marginal
+variance of the slope equals the average within-point variance plus the
+spread of the within-point means across the grid. tulpa retains the
+per-grid covariance (`control$keep_grid_hessians` defaults to on for
+precisely this reason) and combines both terms, so the reported error
+absorbs the cost of not knowing how smooth the surface is.
+
+```{r summary}
+summary(fit)
+```
+
+### Extracting the field per region
+
+The slopes are only half the story. Often the field itself is the
+quantity of interest, the smoothed map you wanted in the first place, and
+the nested fit carries it on the object. `$modes` is an `n_grid` by
+`n_latent` matrix. Each row is one grid point's inner-Laplace mode, and
+the columns run `[fixed effects, field]`, so the first `n_fixed` columns
+are the intercept and slopes and the rest are the per-region effects.
+`$weights` are the integration weights over the grid, one per row, and
+they sum to one after normalising.
+
+The grid-marginalised value for region $u$ is the weighted average of its
+own column across grid points: take column `n_fixed + u`, weight each
+grid point's entry by its integration weight, and sum. This is the same
+marginalisation the slopes get, applied to the latent field instead of
+the fixed effects.
+
+```{r field-extract}
+w     <- fit$weights / sum(fit$weights)
+nf    <- fit$n_fixed
+field_hat <- vapply(seq_len(K), function(u) sum(w * fit$modes[, nf + u]),
+                    numeric(1))
+round(head(field_hat), 3)
+```
+
+That recipe is the same one the temporal path uses for a random-walk
+field, since an RW1 chain is an ICAR on a line: time $t$ neighbours $t-1$
+and $t+1$, the chain adjacency's Laplacian is the RW1 precision, and the
+field-extraction step reads the same `$modes` columns. One marginalisation
+serves both areal maps and time series.
+
+## Checking the fit
+
+Recovery means two things here: the field traces the truth, and the
+smoothing precision sits where the data put it.
+
+Plot the fitted values against the simulated ones. The intrinsic prior
+identifies the field only up to an additive constant, so centre both
+sequences before comparing.
+
+```{r field-plot, fig.alt = "Estimated spatial field per region against the simulated truth, near the identity line"}
+plot(field_true - mean(field_true),
+     field_hat  - mean(field_hat),
+     xlab = "true field (centred)", ylab = "estimated field (centred)",
+     pch = 19, col = "steelblue")
+abline(0, 1, lwd = 2, col = "grey40")
+```
+
+```{r field-cor}
+cor(field_true, field_hat)
+```
+
+The points fall along the identity line and the correlation is high. The
+fit has recovered the wave from binary data spread thin across
+twenty-five regions, which is exactly what neighbour borrowing buys. A
+region with only a few trials does not stand alone; its estimate is pulled
+toward the smooth curve its neighbours trace, and the binary noise that
+would swamp an isolated estimate averages out along the curve. The
+centring matters because the intrinsic prior fixes the effect only up to a
+constant, so the truth and the estimate can differ by an overall level
+even when their shapes match perfectly. Subtracting each mean removes that
+free constant and leaves the contrasts, which are what the model actually
+identifies.
+
+The precision $\tau$ is summarised on the object. `$theta_mean` is the
+posterior mean over the grid, on the natural precision scale, and
+`$theta_ci_lo` / `$theta_ci_hi` give a credible interval.
+
+```{r tau}
+c(tau_mean = fit$theta_mean,
+  lo = fit$theta_ci_lo, hi = fit$theta_ci_hi)
+```
+
+A larger $\tau$ would mean a stiffer penalty on neighbour differences and
+a flatter surface; in the limit of very large $\tau$ the effect collapses
+to a constant and the spatial structure vanishes. The interval here sits
+well away from that limit, so the data are telling you the pattern has
+real wiggle worth keeping. Reading $\tau$ alongside the recovered map is a
+useful habit. An apparently structured map whose $\tau$ interval drifts
+toward large values warns that the structure may be the prior talking
+rather than the data; a flat map with a small $\tau$ is the data declining
+to find any pattern at all.
+
+## Interpreting the fit
+
+Two points govern how to read a nested areal fit.
+
+The first is uncertainty. The slope's standard error in `summary()` is not
+the conditional error you would get by fixing $\tau$ at one value. It is
+marginalised over the grid of $\tau$ values, so it already includes the
+cost of not knowing how smooth the field is. `confint()` returns the same
+bounds as a matrix, and `vcov()` the fixed-effect covariance.
+
+```{r confint}
+confint(fit)
+```
+
+The second point is the intercept, and it follows directly from the
+rank-deficiency of the ICAR precision. Under an intrinsic field the
+overall level of $\phi$ and the intercept $\beta_0$ are confounded:
+shifting every $\phi_r$ up by a constant and the intercept down by the
+same constant leaves the linear predictor, and therefore the likelihood,
+unchanged. The two parameters trade off along a flat ridge, and no amount
+of data can pin them both. tulpa handles this by letting the intercept
+float against a near-flat prior, which shows up as a very wide intercept
+standard error in the summary above. The slopes are unaffected, because a
+covariate's effect does not live on that ridge. Read the slopes, which are
+identified, and treat the intercept as a nuisance level rather than a
+quantity to interpret.
+
+```{r intercept-se}
+summary(fit)["(Intercept)", "std.error"]
+```
+
+The wide value here is by design, not a fitting failure. A proper CAR or a
+BYM2 field with its IID part tamed will narrow it, at the cost of an extra
+estimated parameter. Whenever you report results from an intrinsic model,
+say so plainly: the intercept is a floating reference, the slopes are the
+inferential payload, and a reader who treats the intercept as an absolute
+baseline rate will be misled. This caveat travels with every disease-map
+or species-distribution table that smooths over an adjacency graph.
+
+## Prediction
+
+`predict()` gives the fixed-effect prediction at new covariate values.
+The spatial field is held at its population level, so the result is the
+marginal covariate trend with the regional signal averaged out. This is
+the right default for a question like "what does the covariate do on
+average across the map", as opposed to "what happens in region 7", which
+needs that region's field value added back. `se.fit = TRUE` adds the
+link-scale standard error and credible bounds, drawn from the same
+grid-marginalised fixed-effect covariance the summary uses.
+
+```{r predict}
+nd <- data.frame(x = seq(-2.5, 2.5, length.out = 50))
+pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
+head(pr, 3)
+```
+
+Plot the trend on the link scale with its credible band.
+
+```{r predict-plot, fig.alt = "Predicted logit response across x with a 95 percent credible band"}
+plot(nd$x, pr$fit, type = "n", xlab = "x", ylab = "predicted logit")
+polygon(c(nd$x, rev(nd$x)), c(pr$lower, rev(pr$upper)),
+        col = adjustcolor("steelblue", 0.25), border = NA)
+lines(nd$x, pr$fit, lwd = 2)
+```
+
+For a probability instead of a logit, pass `type = "response"`; the
+prediction and its bounds then pass through the inverse-logit and stay
+inside $[0, 1]$. Region-specific predictions come from adding the
+extracted `field_hat[r]` to the link-scale fit for that region's rows,
+then mapping through the link. The field value carries the region's
+departure from the average, so a region in the wave's peak predicts above
+the marginal trend and one in the trough below it, by exactly the field
+contrast you recovered earlier.
+
+## Comparing against a non-spatial fit
+
+Does the field earn its place? A high correlation with a known truth says
+yes in simulation, but on real data there is no truth to check against.
+What you can still ask is whether the field improves the model enough to
+justify its parameters, and the marginal likelihood answers exactly that. It
+is the probability of the data with every latent quantity integrated out,
+so a model is not rewarded for the extra flexibility of a field unless
+that flexibility buys real fit. Compare the same mean structure with and
+without the field on this scale.
+
+A nested fit reports its log marginal likelihood per grid point in
+`$log_marginal`, one value for each $\tau$ on the integration grid. The
+single integrated evidence is the log-sum-exp of that vector, which adds
+the per-grid evidences on the probability scale before taking logs again.
+The non-spatial Laplace fit has no grid and reports a scalar log marginal
+likelihood directly through `logLik()`.
+
+```{r compare}
+m0 <- tulpa(y ~ x, data = ds, family = "binomial", mode = "laplace")
+
+lse  <- function(z) { m <- max(z); m + log(sum(exp(z - m))) }
+ev_spatial    <- lse(fit$log_marginal)
+ev_nonspatial <- as.numeric(logLik(m0))
+c(nonspatial = ev_nonspatial, spatial = ev_spatial)
+```
+
+```{r compare-diff}
+ev_spatial - ev_nonspatial
+```
+
+The spatial fit carries the higher evidence by a wide margin, matching how
+the data were built. The difference is the log Bayes factor for the field,
+and a value this large is decisive: the data are vastly more probable with
+a field than without one. The marginal likelihood is the right currency
+because it already integrates over the field and its precision, so adding
+the field is not rewarded for free. It has to pay for its parameters
+through the integration and still come out ahead, which guards against the
+overfitting that a raw goodness-of-fit comparison would invite.
+
+`compare_models()` ranks base fits by `criterion = "loglik"` and is handy
+when both sides report a scalar log-likelihood. On a nested fit it expands
+to one row per grid point rather than collapsing to the integrated
+evidence, so for the areal-versus-flat question the log-sum-exp above is
+the cleaner read. The same comparison runs for two spatial models, an ICAR
+against a BYM2 for instance, by taking the log-sum-exp of each fit's
+`$log_marginal` and differencing.
+
+## Practical guidance
+
+A few rules of thumb for areal fields, with the numbers that make them
+actionable.
+
+- **At least 8 to 10 regions, ideally more.** The precision $\tau$ is
+  learned from how much neighbouring regions differ, and a handful of
+  units leaves it barely informed. Below roughly eight regions, a fixed
+  effect per region is usually the honest choice over a smoothed field,
+  since with so few units there is little to gain from borrowing and the
+  smoothing parameter is mostly prior. The field repays the extra
+  machinery when you have dozens to thousands of regions, many of them
+  thin.
+
+- **Check the graph is connected.** A field on a disconnected adjacency
+  splits into independent pieces, each pinned to its own floating level,
+  and the intercept can no longer anchor them jointly. `is_connected(W)`
+  flags this before you fit.
+
+- **Read slopes, never the intercept, under ICAR.** The intercept
+  confounds with the field level and its standard error runs to the
+  prior scale, on the order of 100 on the link scale, against slope errors
+  three orders of magnitude smaller. That gap is expected and is the
+  signature of the intrinsic ridge, not a convergence problem. If you need
+  a clean intercept, move to a proper CAR or a BYM2 field, whose IID part
+  breaks the exact confounding.
+
+- **ICAR versus BYM2.** Reach for `icar` when you want the simplest smooth
+  field and do not need to separate structured from unstructured variation;
+  it has one fewer parameter and a clean interpretation as pure smoothing.
+  Reach for `bym2` when you want an interpretable spatial fraction
+  $\lambda$, when some regional variation is plausibly independent noise
+  rather than smooth signal, or when the Riebler scaling matters for
+  comparing the field's magnitude across maps with different graphs. In
+  disease mapping BYM2 is the common default for exactly these reasons; for
+  a quick smoothing pass ICAR is the lighter choice.
+
+- **When a spatial field is the wrong tool.** Three cases call for leaving
+  it out. If the residuals from a non-spatial fit show no neighbour
+  correlation, a field adds parameters and uncertainty for nothing, and the
+  marginal-likelihood comparison above will report equal or lower evidence
+  for the spatial model. If you have fewer than about eight regions, the
+  smoothing parameter is too weakly informed to help. And if the units are
+  not truly areal, raw points on a map rather than regions joined by
+  borders, a continuous field fits the geometry better than an adjacency
+  you would have to invent by binning the points into arbitrary cells.
+
+## Continuous fields
+
+The areal path assumes the world comes pre-divided into regions with
+borders. Often it does not. Survey points, sensor locations, and trap
+sites sit on continuous coordinates, and the spatial signal is smooth in
+distance rather than tied to administrative units. When the signal lives
+on coordinates rather than discrete regions, tulpa carries three
+continuous fields. Each takes its coordinates in the spec, so there is no
+`spatial(col)` term and no adjacency to build:
+
+- `spatial_gp(~ lon + lat)` fits a nearest-neighbour Gaussian process
+  (NNGP), an exact GP thinned to each point's nearest neighbours so it
+  scales to large data.
+- `spatial_hsgp(~ lon + lat)` fits a Hilbert-space approximate GP, a sum
+  of basis functions that is fast for moderate ranges.
+- `spatial_spde(~ lon + lat, data)` fits a Matern field through the SPDE
+  representation on a mesh, routed to the dedicated `spde` backend.
+
+```{r continuous-spec}
+gp_spec <- spatial_gp(~ lon + lat)
+gp_spec$type
+```
+
+The call shape mirrors the areal path: pass the spec through `spatial=`,
+choose a mode, read the same accessors off the result. What changes is the
+smoothing geometry. An areal field penalises differences between
+neighbours on a graph; a continuous field penalises roughness as a
+function of euclidean distance, with a range parameter that says how far
+the correlation reaches before it decays. NNGP and HSGP trade a little
+exactness for the speed needed on large coordinate sets, while the SPDE
+representation links a Matern field to a sparse precision through a mesh,
+which keeps the Gaussian-Markov advantages on continuous space. The choice
+among the three is mostly a question of sample size and how smooth you
+expect the surface to be. Each has a dedicated vignette that builds an
+example from coordinates through to a fitted surface and a prediction map.
+
+## See also
+
+- `vignettes/quickstart.Rmd` for the engine basics: families, tiers,
+  random effects, prediction.
+- `vignettes/tgmrf.Rmd` for user-defined GMRF latent blocks, the
+  general form behind the built-in fields.
+- `?spatial_car`, `?spatial_bym2`, `?spatial_gp` for the spec
+  constructors and their references.

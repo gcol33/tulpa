@@ -2,18 +2,19 @@
 % Please edit documentation in R/methods_generic.R
 \name{coef.tulpa_fit}
 \alias{coef.tulpa_fit}
-\title{Extract coefficients from posterior means}
+\title{Fixed-effect coefficients}
 \usage{
 \method{coef}{tulpa_fit}(object, ...)
 }
 \arguments{
-\item{object}{A \code{tulpa_fit} object with \verb{$means} and \verb{$process_info}.}
+\item{object}{A \code{tulpa_fit} object.}
 
 \item{...}{Ignored.}
 }
 \value{
-Named list of coefficient vectors per process, or single vector.
+Named numeric vector of fixed-effect posterior means (the Laplace
+mode for the Laplace tier). Random effects come from \code{\link[=ranef]{ranef()}}.
 }
 \description{
-Extract coefficients from posterior means
+Fixed-effect coefficients
 }

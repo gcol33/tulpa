@@ -1,0 +1,363 @@
+---
+title: "Comparing tulpa models"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Comparing tulpa models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## Why compare
+
+You rarely fit one model. You fit a few: a plain trend, the trend
+with a covariate, the same again with a grouping structure. Each
+candidate encodes a different belief about what generated the data, and
+the question that follows is always the same. Which structure does the
+data support, and by how much?
+
+tulpa answers that at the engine level with one number per fit: the log
+marginal likelihood from a Laplace approximation. It is the model
+evidence, the quantity that automatically rewards a better fit and
+penalises wasted flexibility. This vignette walks through the criterion,
+builds a nested ladder of models on data with a known generating
+process, and reads the evidence as it climbs. It also says plainly where
+the marginal likelihood stops and where WAIC and LOO take over, because
+those two need machinery a base `tulpa()` fit does not carry.
+
+The plan is concrete. Simulate Gaussian data with an intercept, a slope,
+a group-level offset, and a second covariate that all genuinely shape
+the response. Fit the ladder. Watch the evidence rise at each rung.
+Replay the exercise on a binary outcome so the verdict holds across two
+families instead of resting on a single example.
+
+## Marginal likelihood from a Laplace fit
+
+A Bayesian model assigns a probability to the data after the parameters
+are integrated out:
+
+$$
+p(y \mid M) \;=\; \int p(y \mid \theta, M)\, p(\theta \mid M)\, d\theta .
+$$
+
+This is the marginal likelihood, also called the evidence. It sits in
+the denominator of Bayes' theorem, and it grades a whole specification
+rather than a single parameter value. A model whose prior mass piles up
+where the observations actually fall scores high. A model that scatters
+its prior across regions the data exclude pays a toll, since the integral
+averages the likelihood against the prior and that wasted breadth drags
+the average down. An extra coefficient earns its keep only when the
+likelihood it unlocks outweighs the dilution it imposes. This trade is
+Occam's razor, quantified: parsimony falls out of the arithmetic, and
+you never tack on a manual complexity penalty.
+
+The integral resists a closed form for most models. The Laplace
+approximation tackles it through a tidy device: locate the posterior
+mode, measure the curvature (the Hessian) there, and approximate the
+integrand by a Gaussian bell centred on that peak. Under a Gaussian
+likelihood paired with a Gaussian prior the bell is exact, so what comes
+out is the genuine marginal likelihood. For heavier-tailed or skewed
+families it becomes a second-order estimate, reliable whenever the
+posterior stays roughly bell-shaped, which holds at most realistic
+sample sizes.
+
+When you fit with `mode = "laplace"`, tulpa computes this quantity and
+stores it on the fit. `logLik()` returns it.
+
+```{r first-evidence}
+n  <- 500
+x  <- rnorm(n)
+y0 <- 0.5 + 1.2 * x + rnorm(n, sd = 0.8)
+df <- data.frame(y = y0, x = x)
+
+fit <- tulpa(y ~ x, data = df, family = "gaussian",
+             mode = "laplace", phi = 0.8)
+logLik(fit)
+```
+
+The `logLik` object carries two attributes worth knowing. `df` is the
+number of fixed effects the fit estimated, and `nobs` is the number of
+observations the evidence was computed on. Both matter for comparison:
+an evidence number only means something against another fit on the same
+data.
+
+```{r evidence-attrs}
+c(df = attr(logLik(fit), "df"), nobs = attr(logLik(fit), "nobs"))
+```
+
+A subtle point about the tiers. On the Laplace tier `logLik()` is the
+log *marginal* likelihood, the evidence with parameters integrated out.
+On a sampler tier (MALA, Gibbs, Pathfinder) the same accessor reports
+the mean log-density across the draws, which is a different object and
+not directly comparable to a marginal likelihood. For model comparison
+by evidence, fit every candidate on the Laplace tier so the numbers
+share a definition. That is also the fast path, which makes fitting a
+whole ladder cheap.
+
+## A nested model ladder
+
+The clearest way to read evidence is to nest your candidates, each one
+sitting inside the next, adding a single structural ingredient per step.
+When an ingredient mirrors a real feature of the generating mechanism,
+the evidence climbs once you include it. When it merely decorates, the
+evidence stalls or slips. A ladder built on simulated truth converts the
+criterion into something you verify rather than merely believe.
+
+Simulate the truth first. The response has an intercept of 0.5, a slope
+of 1.2 on `x`, a group-level offset with standard deviation 0.7 across
+fifteen groups, and a second slope of 0.8 on `z`. Every term is real, so
+a good criterion should reward each one as it enters.
+
+```{r sim-ladder}
+n  <- 500
+x  <- rnorm(n)
+z  <- rnorm(n)
+g  <- factor(sample(1:15, n, replace = TRUE))
+u  <- rnorm(15, sd = 0.7)
+y  <- 0.5 + 1.2 * x + 0.8 * z + u[g] + rnorm(n, sd = 0.8)
+dat <- data.frame(y = y, x = x, z = z, g = g)
+```
+
+Now the four rungs. The intercept-only model is the null reference. The
+second rung adds the `x` slope. The third adds a random intercept on
+`g`, conditioning on the random-effect standard deviation. The fourth
+adds the second covariate `z`. Each fit is a single Laplace solve.
+
+```{r fit-ladder}
+m0 <- tulpa(y ~ 1, data = dat, family = "gaussian",
+            mode = "laplace", phi = 0.8)
+m1 <- tulpa(y ~ x, data = dat, family = "gaussian",
+            mode = "laplace", phi = 0.8)
+m2 <- tulpa(y ~ x + (1 | g), data = dat, family = "gaussian",
+            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+m3 <- tulpa(y ~ x + z + (1 | g), data = dat, family = "gaussian",
+            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+```
+
+Pull the evidence from each and lay it side by side. The differences
+between adjacent rungs are what to read: each is the evidence gained by
+adding one true piece.
+
+```{r ladder-evidence}
+ll <- c(intercept = as.numeric(logLik(m0)),
+        slope     = as.numeric(logLik(m1)),
+        slope_re  = as.numeric(logLik(m2)),
+        full      = as.numeric(logLik(m3)))
+data.frame(model = names(ll), logLik = round(ll, 1),
+           gain = c(NA, round(diff(ll), 1)))
+```
+
+Every step up the ladder lifts the evidence, and by a wide margin. The
+`x` slope delivers the largest single jump, befitting its sizeable true
+coefficient, while the random intercept and the second covariate each
+contribute their own distinct signal that the evidence faithfully
+registers. The ordering reproduces the generating recipe precisely. That
+is exactly why running the comparison against a known truth pays off.
+
+The gains here are enormous because every added term is genuinely
+present and the sample is large. Read the *sign and size* of each gain,
+not its precise value. A large positive gain says the term earns its
+place. A gain near zero, or negative, would say the term adds structure
+the data do not ask for.
+
+## compare_models()
+
+Computing `logLik()` per fit and assembling a table by hand works, and
+`compare_models()` does it for you. Pass the fits as named arguments and
+choose the criterion.
+
+```{r compare}
+compare_models(intercept = m0, slope = m1,
+               slope_re = m2, full = m3, criterion = "loglik")
+```
+
+The table reports the model name, the parameter count, and the log
+marginal likelihood. The names come straight from the arguments, so
+label them in a way that reads as a ladder.
+
+Read the `n_params` column with care. It counts fixed effects. The
+random-intercept model `m2` shows the same count as the slope-only model
+`m1`, because the random intercept is a structural term conditioned on a
+fixed `sigma_re` rather than an estimated fixed effect. The evidence,
+which integrates over the group offsets, still rewards the structure;
+the column simply does not count it as a fixed parameter. When you read
+the table, lean on the `logLik` differences and treat `n_params` as a
+fixed-effect bookkeeping figure.
+
+How large a difference counts as real? Evidence lives on the log scale,
+so a gap of `d` means the winning model is `exp(d)` times more probable
+given the data, before any preference between the models themselves. A
+handful of log units already settles the matter; the leaps in this
+ladder run into the hundreds. Narrow margins, a unit or two, warrant
+caution, particularly where the added term strains the approximation,
+say a sharply skewed non-Gaussian response whose posterior departs from
+the bell shape.
+
+The same call shape works for a binary response. Simulate a logistic
+process with a real intercept, a real `x` slope, and a real `z` slope,
+then fit the same three-rung ladder.
+
+```{r binom-ladder}
+set.seed(101)
+xb  <- rnorm(n); zb <- rnorm(n)
+yb  <- rbinom(n, 1, plogis(-0.4 + 1.1 * xb + 0.9 * zb))
+dfb <- data.frame(y = yb, x = xb, z = zb)
+
+b0 <- tulpa(y ~ 1,     data = dfb, family = "binomial", mode = "laplace")
+b1 <- tulpa(y ~ x,     data = dfb, family = "binomial", mode = "laplace")
+b2 <- tulpa(y ~ x + z, data = dfb, family = "binomial", mode = "laplace")
+compare_models(intercept = b0, x = b1, xz = b2, criterion = "loglik")
+```
+
+Both covariates were in the generating process, and the evidence climbs
+as each enters. For the binomial family the marginal likelihood is a
+Laplace approximation rather than an exact integral, so the numbers
+carry a small approximation error. With a well-behaved posterior, as
+here, that error is far smaller than the gaps between models, and the
+ranking is safe to read.
+
+## Interpreting logLik differences
+
+A worked reading of one gap makes the scale concrete. Take the binomial
+ladder: adding `z` to the `x`-only model raised the evidence.
+
+```{r interpret-gap}
+gain <- as.numeric(logLik(b2)) - as.numeric(logLik(b1))
+c(log_evidence_gain = round(gain, 2),
+  evidence_ratio    = round(exp(gain), 1))
+```
+
+The evidence ratio is the Bayes factor for the larger model against the
+smaller, assuming equal prior weight on the two. A ratio well above one
+favours the richer model. The log scale is the comfortable place to work
+because the numbers stay manageable and differences add up across nested
+steps. Three rules of thumb help when you read a column of evidence:
+
+- A difference of a fraction of a unit is noise. Treat the two models as
+  tied and prefer the simpler one.
+- A difference of a few units is meaningful support for the better
+  model. The Bayes factor is in the tens or more.
+- A difference of tens or hundreds, as in the Gaussian ladder, is
+  decisive. The structure is clearly in the data.
+
+Always compare on the same data, the same family, and the same tier. The
+evidence is a property of a model *and* the data it saw; numbers from
+fits on different rows, different responses, or different inference tiers
+are not on a common scale.
+
+## glance() per model
+
+`glance()` gives a one-row summary of any single fit, which is handy for
+folding several fits into a tidy frame next to the comparison. On a
+Laplace fit it reports the fixed-effect count, the log marginal
+likelihood, and a convergence flag; the sampler-only fields stay `NA`
+because the Laplace tier carries no draws.
+
+```{r glance-one}
+glance(m3)
+```
+
+Stack the ladder into one frame by binding the per-model rows. This pairs
+naturally with `compare_models()`: the comparison ranks, while `glance()`
+carries the per-fit detail such as convergence.
+
+```{r glance-stack}
+do.call(rbind, Map(function(m, nm) cbind(model = nm, glance(m)),
+                   list(m0, m1, m2, m3),
+                   c("intercept", "slope", "slope_re", "full")))
+```
+
+The `converged` column is the one to scan before trusting any evidence
+number. A Laplace fit that did not converge has not found the mode, so
+its curvature, and the marginal likelihood that depends on it, are not
+to be read. On the sampler tiers `glance()` also reports `mean_accept`
+and the divergence count, which play the same gatekeeping role for those
+fits.
+
+## What WAIC and LOO need
+
+The marginal likelihood scores a model on the data it was fit to. WAIC
+and LOO estimate something different and complementary: how well the
+model predicts data it has not seen. Both are built from the *pointwise*
+log-likelihood, one value per observation per posterior draw, arranged
+in a draws-by-observations matrix. From that matrix the loo package
+computes the expected log predictive density and its information
+criteria.
+
+A base `tulpa()` fit does not carry that matrix. The Laplace tier stores
+a mode and a curvature, not a stack of draws, and even the sampler tiers
+store parameter draws rather than a per-observation log-likelihood. So
+the engine's `waic` and `loo` adapters have nothing to read on a plain
+fit, and they say so:
+
+```{r waic-needs, error = TRUE}
+loo::waic(b2)
+```
+
+The message names the missing piece. It is a pointwise log-likelihood,
+the kind that only a full observation model produces. Model packages
+built on this engine, such as tulpaObs and tulpaRatio, sample the
+observation model and populate `$draws$log_lik`, plus `$draws$y_rep` for
+posterior predictive checks. On those fits, `waic()`, `loo()`, and
+`compare_models(..., criterion = "waic")` work directly. The matrix they
+read is right there.
+
+The split is deliberate. The engine owns the structural model and scores
+it by evidence, which it can compute from the Laplace fit alone. The
+model packages own the observation likelihood and the predictive
+machinery that rides on it. If you need cross-validated predictive
+comparison, fit through the relevant model package; for evidence-based
+comparison of structural specifications, the engine's marginal
+likelihood is the tool, and it needs nothing beyond the Laplace fit you
+already have.
+
+## Practical guidance
+
+A short set of habits covers most comparison work:
+
+- **Fit the whole ladder on the Laplace tier.** It is deterministic and
+  fast, and it puts every candidate's evidence on one definition. Move a
+  model to a sampler only when you have a separate reason to doubt the
+  Gaussian posterior shape, and remember that a sampler fit's `logLik()`
+  is a mean log-density, not a marginal likelihood.
+- **Nest your models.** Add one structural piece per rung and read the
+  gap each piece buys. A non-nested set of models can still be ranked by
+  evidence, but nested steps make the *reason* for each gain legible.
+- **Hold `sigma_re` and `phi` fixed across the ladder.** The evidence
+  conditions on the values you pass. If you change `sigma_re` between
+  rungs, the comparison mixes a structural change with a hyperparameter
+  change and the gaps no longer mean one thing. To compare across
+  random-effect variances, integrate them through the nested-Laplace
+  path instead of fixing them by hand.
+- **Check convergence before reading evidence.** Scan the `converged`
+  column from `glance()`. A non-converged Laplace fit has no trustworthy
+  curvature, and its marginal likelihood inherits that.
+- **Match the criterion to the question.** Evidence answers "which
+  structure does this data support". WAIC and LOO answer "which model
+  forecasts fresh observations best". The two verdicts usually coincide;
+  where they diverge, the mismatch flags overfitting, since a model can
+  hug its training rows yet generalise poorly. For the predictive
+  question, route the analysis through a model package that supplies the
+  pointwise log-likelihood.
+
+## Where to go next
+
+- The marginal likelihood and the Laplace approximation in depth: the
+  inference-modes and algorithm vignettes.
+- Integrating random-effect variances rather than fixing them: the
+  nested-Laplace path and the `tgmrf()` vignette.
+- WAIC, LOO, posterior-predictive checks, and stacking on a full
+  observation model: the model packages (tulpaObs, tulpaRatio) built on
+  this engine.

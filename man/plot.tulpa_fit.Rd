@@ -2,17 +2,18 @@
 % Please edit documentation in R/methods_generic.R
 \name{plot.tulpa_fit}
 \alias{plot.tulpa_fit}
-\title{Plot posterior diagnostics}
+\title{Plot fixed-effect posteriors}
 \usage{
-\method{plot}{tulpa_fit}(x, type = c("trace", "density", "pairs"), ...)
+\method{plot}{tulpa_fit}(x, type = c("density", "trace", "pairs"), ...)
 }
 \arguments{
 \item{x}{A \code{tulpa_fit} object.}
 
-\item{type}{One of \code{"trace"}, \code{"density"}, \code{"pairs"}.}
+\item{type}{One of \code{"trace"}, \code{"density"}, \code{"pairs"}. The Laplace tier has no
+draws, so it always shows the Gaussian densities of the fixed effects.}
 
 \item{...}{Passed to plotting functions.}
 }
 \description{
-Plot posterior diagnostics
+Plot fixed-effect posteriors
 }

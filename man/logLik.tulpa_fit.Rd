@@ -2,12 +2,12 @@
 % Please edit documentation in R/methods_generic.R
 \name{logLik.tulpa_fit}
 \alias{logLik.tulpa_fit}
-\title{Log-likelihood (at posterior mean)}
+\title{Log-likelihood at the posterior mean}
 \usage{
 \method{logLik}{tulpa_fit}(object, ...)
 }
 \arguments{
-\item{object}{A \code{tulpa_fit} object with \verb{$log_prob}.}
+\item{object}{A \code{tulpa_fit} object.}
 
 \item{...}{Ignored.}
 }
@@ -15,5 +15,5 @@
 A \code{logLik} object.
 }
 \description{
-Log-likelihood (at posterior mean)
+Log-likelihood at the posterior mean
 }

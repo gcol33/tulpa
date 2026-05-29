@@ -3,7 +3,7 @@
 \name{tidy}
 \alias{tidy}
 \alias{tidy.tulpa_fit}
-\title{Tidy model output (broom-compatible)}
+\title{Tidy fixed-effect table (broom-compatible)}
 \usage{
 tidy(x, ...)
 
@@ -14,11 +14,11 @@ tidy(x, ...)
 
 \item{...}{Ignored.}
 
-\item{conf.level}{Confidence level (default 0.95).}
+\item{conf.level}{Interval level (default 0.95).}
 }
 \value{
-Data frame with term, estimate, std.error, conf.low, conf.high.
+Data frame: term, estimate, std.error, conf.low, conf.high.
 }
 \description{
-Tidy model output (broom-compatible)
+Tidy fixed-effect table (broom-compatible)
 }

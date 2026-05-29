@@ -1,0 +1,490 @@
+---
+title: "Inference modes: the three tiers and how to choose one"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Inference modes: the three tiers and how to choose one}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## Why the inference choice matters
+
+A fitted model is two things at once: a set of parameter estimates and a
+claim about how certain those estimates are. The estimates often agree
+across methods. The uncertainty does not. A Laplace approximation, a
+gradient sampler, and a variational fit can return the same posterior
+mean for a slope and still disagree about the width of its credible
+interval, the shape of its tail, and whether two parameters are
+correlated. The number you report as a 95% interval depends on which
+method produced it, and the methods do not all mean the same thing by
+"95%".
+
+Most fitting interfaces hide this. You call a fit function, a default
+runs, and the output looks identical no matter which numerical engine did
+the work. The default is usually a reasonable one. The problem is that it
+is silent: when the default is wrong for your model, nothing in the output
+tells you, and the failure shows up downstream as an interval that is too
+narrow or a correlation that was never there.
+
+tulpa makes the choice explicit. Every fit carries the mode it ran, the
+tier that mode belongs to, and a recorded reason for the selection. The
+tier carries the weight, because it pins down what the credible intervals
+mean. Two backends sharing a tier offer the same epistemic warranty; a
+backend one rung higher offers a weaker one. That warranty reads straight
+off the fitted object, and `mode = "auto"` picks among tiers by a rule you
+can inspect rather than by a buried heuristic.
+
+This vignette walks through the tier system, the automatic selection
+rule, and the backends you can drive from R. It fits one model three ways
+and compares the estimates and the timing, so the cost-versus-guarantee
+trade is concrete rather than abstract. It closes with practical guidance:
+which mode to reach for, and at what point to move up a tier.
+
+## The three tiers
+
+tulpa sorts every inference backend into one of three tiers. The tier is
+not a speed label. The tier states how correct the uncertainty a backend
+reports actually is. `inference_mode_info()` prints the full
+map, tier by tier, with the guarantee attached to each.
+
+```{r mode-info}
+inference_mode_info()
+```
+
+The output names three tiers. Read them as a ladder of promises.
+
+**Tier 1, Exact.** A Tier 1 backend draws from the posterior and its
+credible intervals are interpretable as posterior uncertainty, up to
+Monte Carlo error that shrinks as you draw more samples. This is the
+reference standard: if you want an interval you can quote without an
+asterisk, a Tier 1 fit gives it to you. The cost is iteration. Every draw
+is a likelihood evaluation, sometimes a gradient evaluation, and you need
+many of them. MALA and the independence-MH samplers live here, along with
+the Polya-Gamma Gibbs sampler for the families that admit it.
+
+**Tier 2, Structured.** A Tier 2 backend is accurate conditional on an
+explicit structural assumption. The Laplace approximation assumes the
+posterior is Gaussian near its mode. Pathfinder fits a Gaussian along an
+optimisation path. When the assumption holds, and for a latent Gaussian
+model with enough data it usually does, the fit is fast and its intervals
+are close to the exact ones. When the assumption fails, the failure is
+predictable: a skewed posterior gets symmetrised, a heavy tail gets
+clipped. You can see it coming from the model, and you can check it by
+comparing against a Tier 1 fit. The promise is conditional, and the
+condition is stated.
+
+**Tier 3, Optimized.** A Tier 3 backend gives a point estimate and a
+covariance from an optimisation objective with no general correctness
+guarantee on the uncertainty. The mode is usually good. The spread is
+often too small, the tails unreliable, the correlations approximate, and
+the failure is typically silent. Generic variational inference sits here.
+Tier 3 is optimisation, not sampling, and tulpa treats it as a deliberate
+choice rather than a fallback, reachable only by asking for it by name.
+
+The ladder runs from a promise you can quote, through a promise with a
+stated condition, to a tool with no promise on its uncertainty. Moving up
+a tier costs computation and buys a stronger guarantee. The point of the
+system is that the guarantee is never traded away without a record of the
+trade.
+
+The design follows four rules, and they are worth stating because they
+explain why the tier shows up on every fit. First, a mode changes the
+meaning of the output, not just its runtime: an interval from the optimised
+tier does not mean what an interval from the exact tier means, so the two
+must be distinguishable. Second, the mode is always visible in the result.
+Third, there is no silent upgrading or downgrading between tiers; if an
+exact fit fails, the call errors rather than quietly substituting a
+structured approximation and handing back numbers that look the same but
+promise less. Fourth, adding a backend slots it into an existing tier and
+never invents a new kind of promise, so the three guarantees above are the
+whole vocabulary. Tier membership for each backend is derived from a single
+registry, which is why `inference_mode_info()` and the field on a fit can
+never drift apart.
+
+## How `mode = "auto"` chooses
+
+The default mode is `"auto"`. Its contract is one sentence: use the most
+reliable method that is expected to finish for this model. Two parts of
+that sentence carry weight. "Most reliable" means it prefers Tier 1 over
+Tier 2 when both are feasible. "Expected to finish" means it steps down to
+Tier 2 when a Tier 1 sampler would be too slow to be practical. The rule
+never reaches Tier 3. The optimisation tier is never selected on your
+behalf, because its silent under-coverage is exactly the failure an
+automatic default should not introduce.
+
+The decision is deterministic and depends on the model, not on chance. Two
+properties drive it: structure and size. A latent prior block goes to
+nested Laplace, the designed Tier 2 hot path for latent Gaussian structure.
+A spatial field branches by its kind, with a binomial areal field handed to
+the exact component-wise Polya-Gamma Gibbs sampler (Tier 1) and most other
+fields sent to nested-Laplace integration of the spatial hyperparameter
+(Tier 2). An ordinary model carrying neither spatial nor latent structure
+heads for a full sampler, unless the dataset grows past tens of thousands
+of rows, where the Laplace path takes over because a sampler would no
+longer finish quickly enough to serve as a default.
+
+Every fit records the reason. The `selection_reason` field is a short
+string explaining the branch that was taken, and `backend` and
+`inference_tier` report the result. Take a binomial areal model: twenty
+regions on a ring, each adjacent to its two neighbours, with a latent
+field that varies smoothly around the loop.
+
+```{r auto-build}
+n <- 400L; K <- 20L
+W <- matrix(0, K, K)
+for (i in 1:K) { j <- if (i < K) i + 1L else 1L; W[i, j] <- W[j, i] <- 1 }
+x      <- rnorm(n)
+region <- factor(sample(1:K, n, replace = TRUE))
+field  <- as.numeric(scale(sin(2 * pi * (1:K) / K)))[region]
+ds <- data.frame(y = rbinom(n, 1, plogis(-0.2 + 0.7 * x + field)),
+                 x = x, region = region)
+```
+
+Fitting with `mode = "auto"` lets the rule pick. For a binomial ICAR field
+it selects the exact Polya-Gamma Gibbs sampler, a Tier 1 backend, and says
+so.
+
+```{r auto-spatial}
+fit_auto <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
+                  spatial = list(type = "icar", adjacency = W), mode = "auto")
+c(backend = fit_auto$backend, tier = fit_auto$inference_tier)
+fit_auto$selection_reason
+```
+
+Auto reached for the most reliable method, Tier 1, because for this model
+class an exact sampler is both available and fast. A binomial likelihood
+with an areal field admits the Polya-Gamma data augmentation, which turns
+each conditional update into a Gaussian draw, and the field components
+update one at a time. Those component-wise updates sidestep the
+dimensionality that would slow a general gradient sampler on a field of
+this size, so the exact route is also the practical one. The rule saw a
+case where the strongest guarantee was affordable and took it. Now change
+the situation to a large, plain Gaussian model where a full sampler would
+be slow.
+
+```{r auto-large}
+nL <- 60000L
+xL <- rnorm(nL)
+dL <- data.frame(y = 0.5 + 1.2 * xL + rnorm(nL, sd = 0.8), x = xL)
+fit_big <- tulpa(y ~ x, data = dL, family = "gaussian", mode = "auto",
+                 phi = 0.8)
+c(backend = fit_big$backend, tier = fit_big$inference_tier)
+fit_big$selection_reason
+```
+
+Here auto stepped down to the Laplace path. The reason names the dataset
+size: at sixty thousand rows the rule judges a full sampler too slow to be
+the sensible default and takes the Tier 2 route instead, which for a
+Gaussian likelihood is exact anyway. The estimates land on the truth.
+
+```{r auto-large-coef}
+coef(fit_big)
+```
+
+Two models, two different branches, each recorded. The same rule that
+picked an exact sampler for the small spatial model picked the structured
+approximation for the large plain one, and in both cases the choice traces
+to a property of the model you can name in advance. That predictability is
+the whole point. You are never left guessing which engine ran, and you can
+reason about what auto will do before you call it. When you disagree with
+the choice, override it by passing a tier (`"exact"` or `"structured"`) or
+a backend name directly, and the fit records that you overrode it rather
+than papering over the change.
+
+## The R-callable backends
+
+A backend is the concrete algorithm a mode resolves to. tulpa registers
+more backends than it exposes from R: several ship a C++ kernel reachable
+by model packages that link against tulpa, with no R entry point yet. The
+`inference_mode_info()` map tags each one, `[R]` for callable from R and
+`[C-ABI]` for the kernel-only ones. Asking for a C-ABI backend by name from
+R errors with a message that names the missing entry point rather than
+pretending to dispatch. This section covers the backends you can drive
+from R today.
+
+### laplace (Tier 2)
+
+The workhorse. `mode = "laplace"` finds the posterior mode and the
+curvature there, then reports a Gaussian centred at the mode with that
+curvature as its precision. For a Gaussian likelihood this is exact and
+returns immediately. For other families it is the Gaussian approximation
+to the posterior, accurate when the posterior is close to Gaussian.
+
+```{r laplace-fit}
+set.seed(101)
+g  <- factor(sample(1:12, n, replace = TRUE))
+u  <- rnorm(12, sd = 0.6)
+db <- data.frame(y = rbinom(n, 1, plogis(-0.3 + 1.0 * x + u[g])),
+                 x = x, g = g)
+fit_lap <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                 mode = "laplace", sigma_re = 0.6)
+coef(fit_lap)
+```
+
+The Laplace fit is deterministic, carries no Monte Carlo error, and its
+`logLik()` is the approximate log marginal likelihood, the model evidence
+that `compare_models()` uses. This is the first fit to run, every time, as
+the fast sanity check and the comparison baseline.
+
+### pathfinder (Tier 2)
+
+Pathfinder runs a quasi-Newton optimiser toward the mode, fits a Gaussian
+at the optimum from the inverse-Hessian estimate it accumulates along the
+way, and returns draws from that Gaussian plus an ELBO score. It sits in
+the same tier as Laplace: the output is a Gaussian approximation, not exact
+samples. What it adds over a plain Laplace fit is a set of draws and a
+diagnostic. The draws make it a drop-in where downstream code expects
+samples, and the ELBO gauges how well the Gaussian fits.
+
+```{r pathfinder-fit}
+fit_pf <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                mode = "pathfinder", sigma_re = 0.6,
+                control = list(n_draws = 1000))
+coef(fit_pf)
+fit_pf$elbo
+```
+
+Pathfinder fits three situations well: you want draws but not the cost of
+full MCMC, you need a warm start for a sampler, or you want a quick check on
+whether the Laplace Gaussian is reasonable.
+
+### mala (Tier 1)
+
+The Metropolis-adjusted Langevin algorithm is a gradient sampler. Each
+step proposes a move along the gradient of the log posterior and accepts or
+rejects it with a Metropolis step, which makes the chain asymptotically
+correct. Each iteration runs cheaper than full Hamiltonian Monte Carlo
+because no leapfrog trajectory needs integrating, and mixing beats a random
+walk because the drift term nudges proposals toward higher density. The
+step size adapts during warmup toward an acceptance rate near 0.574.
+
+```{r mala-fit}
+fit_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                  mode = "mala", sigma_re = 0.6,
+                  control = list(n_iter = 1500, warmup = 500))
+coef(fit_mala)
+fit_mala$mean_accept
+```
+
+MALA earns its keep when you want exact posterior moments at moderate
+dimension and the posterior is not so badly scaled that a single step size
+struggles across all directions. The acceptance rate is the diagnostic: far
+below the target means the chain needs a smaller step or more warmup.
+
+### imh_laplace (Tier 1)
+
+Independence Metropolis-Hastings with a Laplace proposal is the cheapest
+route to exact-tier draws when Laplace is almost right. It builds the
+Laplace mode and precision once, then proposes from that Gaussian and
+corrects with a Metropolis step. The proposal ignores
+the current state, so the iterations are nearly free and the acceptance rate
+doubles as a verdict on the Laplace approximation: high acceptance means
+the posterior is close to the Gaussian, low acceptance means it is far and
+Laplace was biased.
+
+```{r imh-fit}
+fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                 mode = "imh_laplace", sigma_re = 0.6,
+                 control = list(n_iter = 1500, warmup = 500))
+coef(fit_imh)
+fit_imh$mean_accept
+```
+
+The acceptance here is high, which says the Laplace fit was already close.
+Two jobs suit `imh_laplace`: debiasing a Laplace fit at low parameter
+dimension, and repeated-fit workflows such as cross-validation where a full
+sampler's startup cost would dominate.
+
+### gibbs (Tier 1)
+
+The Gibbs backend is the Polya-Gamma sampler for binomial and negative
+binomial responses, including the binomial areal spatial models that
+`mode = "auto"` selects it for. It samples the random-effect standard
+deviation rather than conditioning on a fixed `sigma_re`, which is why the
+spatial fit earlier reported a Gibbs backend. Its output carries the fixed
+effects in `$beta` and the field and variance components alongside.
+
+```{r gibbs-fields}
+round(fit_auto$beta, 3)
+```
+
+Gibbs is the right call when the family is conjugate-friendly under the
+Polya-Gamma scheme and you want an exact fit that samples the variance
+rather than fixing it. For a binomial areal field, auto takes this path on
+its own.
+
+### re_cov_nested and agq (Tier 2)
+
+Two further Tier 2 backends serve narrower roles. `re_cov_nested`
+integrates a random-effect covariance matrix rather than conditioning on a
+fixed standard deviation. A random-slope term such as `(1 + x | g)` has no
+scalar `sigma_re` to condition on, so when a slope term is present the
+Laplace path redirects to this backend automatically and integrates the
+covariance with a CCD design and a PC or LKJ prior. You reach it not by
+name but by writing a slope term and fitting at `mode = "laplace"`. The
+adaptive Gauss-Hermite quadrature backend, `agq`, integrates a
+random-intercept variance by quadrature and is callable through its fitter
+`agq_fit()` for the single-grouping case rather than through `tulpa()`.
+
+The seven R-callable backends span both exact tiers and the structured
+tier. The next section puts three of them on the same model so the trade
+between cost and guarantee is visible in numbers.
+
+## Cost versus guarantee
+
+The clearest way to see what a tier buys is to fit one model several ways
+and lay the results side by side. Take the binomial random-intercept model
+from above and fit it at Laplace, MALA, and Pathfinder, timing each with
+`system.time()`.
+
+```{r timing}
+t_lap  <- system.time(
+  f_lap  <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                  mode = "laplace", sigma_re = 0.6))[["elapsed"]]
+t_mala <- system.time(
+  f_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                  mode = "mala", sigma_re = 0.6,
+                  control = list(n_iter = 1500, warmup = 500)))[["elapsed"]]
+t_pf   <- system.time(
+  f_pf   <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
+                  mode = "pathfinder", sigma_re = 0.6,
+                  control = list(n_draws = 1000)))[["elapsed"]]
+```
+
+Collect the slope estimate, its standard error, the tier, and the elapsed
+time into one table.
+
+```{r timing-table}
+slope_se <- function(f) summary(f)["x", "std.error"]
+data.frame(
+  backend  = c(f_lap$backend, f_mala$backend, f_pf$backend),
+  tier     = c(f_lap$inference_tier, f_mala$inference_tier,
+               f_pf$inference_tier),
+  slope    = round(c(coef(f_lap)["x"], coef(f_mala)["x"],
+                     coef(f_pf)["x"]), 3),
+  slope_se = round(c(slope_se(f_lap), slope_se(f_mala),
+                     slope_se(f_pf)), 3),
+  seconds  = round(c(t_lap, t_mala, t_pf), 3)
+)
+```
+
+Three patterns sit in this table. The slope estimates agree across all
+three backends to within their standard errors. That is expected: the
+posterior mean is the easy quantity, and every method finds it. The
+standard errors agree too, because for this model the posterior is
+near-Gaussian and the Tier 2 approximation is accurate. That agreement is
+the signal that Laplace was safe here, confirmed independently by the high
+IMH acceptance earlier. Timing is where the methods part ways. The
+deterministic Laplace fit returns fastest. Pathfinder costs an optimisation
+plus a draw step. MALA pays for its full chain of gradient evaluations, and
+that cost is the visible price of the exact guarantee.
+
+Read the table as a guarantee you bought, not effort you wasted. The
+sampler purchased a promise this model did not need and another model
+would. The agreement you see is itself the product of a near-Gaussian
+posterior. Push the model toward a skewed or heavy-tailed posterior, by
+shrinking the data to a few dozen rows, moving to a sparse binomial with
+most outcomes zero, or adding a poorly identified variance component, and
+the Tier 2 standard error would start to drift away from the Tier 1 one.
+The samplers would track the true posterior spread through that drift,
+while the Gaussian approximation would keep reporting the symmetric
+interval its assumption forces on it. That is the moment the price of the
+sampler turns into a reason to pay it.
+
+The marginal likelihood ties the comparison back to model choice.
+`compare_models()` reads `logLik()` from each fit, which on the Laplace
+tier is the approximate log marginal likelihood.
+
+```{r compare}
+compare_models(laplace = f_lap, pathfinder = f_pf, criterion = "loglik")
+```
+
+The `glance()` accessor surfaces the per-fit diagnostics that matter for
+the sampler tiers: the number of post-warmup draws, the acceptance rate,
+and the divergence count.
+
+```{r glance}
+glance(f_mala)[c("n_samples", "mean_accept", "n_divergent")]
+```
+
+An acceptance rate inside the healthy band and no divergences say the MALA
+chain mixed well, which is the prerequisite for trusting its intervals.
+Without that check, a Tier 1 fit is only nominally exact: a stuck chain
+reports a posterior it never explored.
+
+## Choosing a mode
+
+The tier system gives a default worth following and a small set of rules
+for when to depart from it.
+
+- **Start at `mode = "laplace"`.** The fit is deterministic, carries no
+  Monte Carlo error, and returns in well under a second on the models in
+  this vignette and in a fraction of a second per thousand rows on much
+  larger ones. Use it for the first fit and for model comparison by marginal
+  likelihood, and keep it as the baseline even when you intend to finish
+  with a sampler.
+
+- **Check Laplace before you trust its intervals.** The cheapest check is
+  `mode = "imh_laplace"` on the same model: a high acceptance rate, above
+  roughly 0.5, says the posterior is close to the Laplace Gaussian and the
+  intervals are safe. An acceptance rate below about 0.1 says the posterior
+  is far from Gaussian and the Laplace intervals are biased. The fit
+  earlier accepted around 0.86, which is a clean pass.
+
+- **Move to `mode = "mala"` for exact moments at moderate dimension.** When
+  the posterior is visibly non-Gaussian, when imh_laplace acceptance is
+  low, or when you simply need intervals you can quote without the
+  Gaussian caveat, the gradient sampler is the next step. Budget a few
+  thousand iterations with warmup at a third to a half of them, and watch
+  the acceptance rate settle near 0.574 and the divergence count stay at
+  zero.
+
+- **Use `mode = "pathfinder"` when you want draws cheaply.** It costs more
+  than Laplace and far less than MALA, returns a sample you can feed to
+  downstream code, flags a poor Gaussian fit through its ELBO, and doubles
+  as a warm start for a sampler.
+
+- **Let `mode = "auto"` choose for structured models.** For a latent block
+  or a spatial field, auto routes to the designed path: nested Laplace for
+  latent and most spatial fields, exact Polya-Gamma Gibbs for binomial
+  areal models, and the Laplace path for very large plain models past tens
+  of thousands of rows. Read `selection_reason` to confirm the branch. On a
+  small plain model with no spatial or latent structure auto defaults to the
+  MALA gradient sampler (Tier 1); name `mode = "laplace"` instead when you
+  want the fast deterministic fit.
+
+- **Treat `mode = "optimized"` as a deliberate exception.** Tier 3 is opt-in
+  because its uncertainty is unreliable and its failures are silent. It fits
+  a narrow case: a fast point estimate when you have an independent handle on
+  the uncertainty. Keep it off the default path, and off any interval you
+  intend to report.
+
+The thread through all of it is that the tier is visible and the choice is
+recorded, so you are never reasoning about uncertainty you cannot account
+for. Read `$backend` and `$inference_tier` off any fit to see what ran and
+what its intervals promise, then read `$selection_reason` to see why that
+backend was chosen; when the promise on a fit is not the one your analysis
+needs, move up a tier and pay for the stronger guarantee on purpose.
+
+## See also
+
+- `inference_mode_info()` prints the full tier and backend map, with the
+  R-callable and C-ABI-only backends tagged.
+- The quickstart vignette covers the fitting workflow.
+- The `tgmrf()` vignette runs the same tier ladder on a user-defined latent
+  block, from nested Laplace through exact sampling.
+- `?mala`, `?pathfinder`, `?imh_laplace` for the low-level sampler
+  interfaces that drive a `log_posterior` closure directly.

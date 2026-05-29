@@ -2,16 +2,16 @@
 % Please edit documentation in R/methods_generic.R
 \name{confint.tulpa_fit}
 \alias{confint.tulpa_fit}
-\title{Confidence intervals from posterior quantiles}
+\title{Credible intervals for the fixed effects}
 \usage{
 \method{confint}{tulpa_fit}(object, parm = NULL, level = 0.95, ...)
 }
 \arguments{
-\item{object}{A \code{tulpa_fit} object with \verb{$draws}.}
+\item{object}{A \code{tulpa_fit} object.}
 
-\item{parm}{Parameter names or indices.}
+\item{parm}{Parameter names or indices (default: all fixed effects).}
 
-\item{level}{Confidence level (default 0.95).}
+\item{level}{Interval level (default 0.95).}
 
 \item{...}{Ignored.}
 }
@@ -19,5 +19,5 @@
 Matrix with lower and upper columns.
 }
 \description{
-Confidence intervals from posterior quantiles
+Credible intervals for the fixed effects
 }

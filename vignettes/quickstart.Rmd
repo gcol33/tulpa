@@ -1,0 +1,372 @@
+---
+title: "Getting started with tulpa"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with tulpa}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## What tulpa fits
+
+tulpa fits Bayesian hierarchical models from a formula. You write
+`y ~ x + (1 | g)`, choose a family, and `tulpa()` parses the formula,
+builds the design, picks an inference backend, and returns a fitted
+object you can summarise, predict from, and compare.
+
+The engine carries the structural pieces that hierarchical models reuse:
+fixed effects, random intercepts and slopes, spatial fields (SPDE, NNGP,
+HSGP, ICAR, BYM2), temporal structure, and user-defined latent blocks. It
+also carries a tier system for *how* the posterior is computed: a fast
+Laplace approximation, a gradient sampler, or a Pathfinder fit, each with
+a stated epistemic guarantee rather than a silent default.
+
+The observation likelihood is the one piece tulpa keeps deliberately
+small: five built-in families (`gaussian`, `binomial`, `poisson`,
+`neg_binomial_2`, `beta`). Model packages plug their own likelihoods into the same engine
+and add the predictive machinery (posterior-predictive checks, WAIC, LOO)
+on top. This vignette stays on the engine: simulate, fit, extract,
+predict, compare.
+
+## A first model
+
+Start with a Gaussian response and known coefficients, so the fit has a
+truth to recover. The intercept is 0.5 and the slope is 1.2.
+
+```{r sim-gaussian}
+n  <- 400
+x  <- rnorm(n)
+y  <- 0.5 + 1.2 * x + rnorm(n, sd = 0.8)
+df <- data.frame(y = y, x = x)
+```
+
+Fit with `tulpa()`. `mode = "laplace"` is the Tier-2 Gaussian
+approximation: it finds the posterior mode and the curvature there, which
+for a Gaussian likelihood is exact and returns immediately.
+
+```{r fit-gaussian}
+fit <- tulpa(y ~ x, data = df, family = "gaussian",
+             mode = "laplace", phi = 0.8)
+coef(fit)
+```
+
+The coefficients land near the truth. `summary()` adds the posterior
+standard error and the 2.5%/97.5% credible bounds for each fixed effect.
+
+```{r summary-gaussian}
+summary(fit)
+```
+
+`confint()` returns the same bounds as a matrix, and `vcov()` the
+fixed-effect covariance. Both read the fixed-effect block of the Hessian
+that the Laplace fit already computed, so there is no extra sampling step.
+
+```{r confint-gaussian}
+confint(fit)
+```
+
+The `phi` argument is the family's dispersion: residual variance for
+`gaussian`, the size parameter for `neg_binomial_2`, the precision for
+`beta`. The Laplace and sampler paths both condition on it; integrating it
+is the job of the nested-Laplace / EM layer (see the inference vignettes).
+
+## Random effects
+
+A random intercept enters through the `(1 | g)` term. Simulate twelve
+groups with their own offsets, then fit conditioning on the random-effect
+standard deviation `sigma_re`.
+
+```{r sim-re}
+g  <- factor(sample(1:12, n, replace = TRUE))
+u  <- rnorm(12, sd = 0.6)
+df$y <- 0.5 + 1.2 * df$x + u[g] + rnorm(n, sd = 0.8)
+df$g <- g
+
+fit_re <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
+                mode = "laplace", sigma_re = 0.6, phi = 0.8)
+coef(fit_re)
+```
+
+`coef()` reports the fixed effects; the group-level effects come from
+`ranef()`, one row per group with the posterior mean (BLUP).
+
+```{r ranef}
+head(ranef(fit_re), 4)
+```
+
+The fit conditions on `sigma_re` rather than estimating it. Passing one
+value applies it to the term; with several random-effect terms you pass
+one value per term. To integrate the random-effect variance instead of
+fixing it, use the nested-Laplace path; for random *slopes*
+(`(1 + x | g)`) the engine integrates the covariance automatically.
+
+## Inference tiers
+
+The same model can be fit at different tiers. `mode` selects the backend,
+and each backend states what its credible intervals mean. `inference_mode_info()`
+prints the full map.
+
+```{r modes, eval = FALSE}
+inference_mode_info()
+```
+
+The Tier-2 Laplace fit above conditions on a Gaussian posterior shape.
+Tier 1 draws from the posterior directly. MALA is a gradient sampler;
+Pathfinder is a variational fit that returns draws from a Gaussian
+approximation found along an optimisation path. Both are callable from R.
+
+```{r tiers}
+df_b <- df
+df_b$y <- rbinom(n, 1, plogis(-0.3 + 1.0 * df$x + u[df$g]))
+
+fit_lap <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
+                 mode = "laplace", sigma_re = 0.6)
+fit_mala <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
+                  mode = "mala", sigma_re = 0.6,
+                  control = list(n_iter = 1500, warmup = 500))
+```
+
+The two tiers agree on the fixed effects to within their uncertainty. The
+Laplace fit is deterministic and immediate; the sampler carries Monte
+Carlo error and stays agnostic about the posterior shape.
+
+```{r tiers-compare}
+data.frame(
+  term    = names(coef(fit_lap)),
+  laplace = round(coef(fit_lap), 3),
+  mala    = round(coef(fit_mala), 3)
+)
+```
+
+A fit reports which backend ran and at which tier through the object's
+`backend` and `inference_tier` fields, and `selection_reason` records why
+`mode = "auto"` chose what it did.
+
+```{r tier-fields}
+c(backend = fit_mala$backend, tier = fit_mala$inference_tier)
+```
+
+The tiers encode an epistemic guarantee, not just a speed trade-off. Tier 1
+(exact) draws from the posterior and its credible intervals are interpretable
+as posterior uncertainty. Tier 2 (structured) is correct *conditional* on its
+structural assumption (a Gaussian posterior shape for Laplace). `mode = "auto"`
+picks between Tier 1 and Tier 2 and never silently drops to the optimisation
+tier. The R-callable backends:
+
+| Mode | Tier | What it does | Reach for it when |
+|---|---|---|---|
+| `"laplace"` | 2 | mode + curvature | a fast, deterministic fit; the default sanity check |
+| `"pathfinder"` | 2 | variational draws along an optimisation path | you want draws but not full MCMC |
+| `"mala"` | 1 | gradient-based Metropolis sampler | exact posterior moments, moderate dimension |
+| `"imh_laplace"` | 1 | Laplace proposal with independence-MH correction | debiasing a Laplace fit at low parameter dimension |
+| `"gibbs"` | 1 | Polya-Gamma sampler (binomial / negbin) | a conjugate-style exact fit for those families |
+
+`inference_mode_info()` lists every backend, including the ones reachable only
+from model packages through the C interface.
+
+## Prediction
+
+`predict()` gives the fixed-effect prediction at new covariate values.
+Random effects are held at their population mean of zero, so this is the
+marginal trend. `se.fit = TRUE` adds the link-scale standard error and
+credible bounds from the fixed-effect covariance.
+
+```{r predict}
+nd <- data.frame(x = seq(-2, 2, length.out = 50))
+pr <- predict(fit_re, newdata = nd, se.fit = TRUE)
+head(pr, 3)
+```
+
+Plot the trend with its credible band.
+
+```{r predict-plot, fig.alt = "Predicted response across x with a 95% credible band"}
+plot(nd$x, pr$fit, type = "l", lwd = 2, xlab = "x", ylab = "predicted y")
+polygon(c(nd$x, rev(nd$x)), c(pr$lower, rev(pr$upper)),
+        col = adjustcolor("steelblue", 0.25), border = NA)
+lines(nd$x, pr$fit, lwd = 2)
+```
+
+For a non-Gaussian family, `type = "response"` maps the prediction
+through the inverse link, and the credible bounds stay inside the
+response range (probabilities in `[0, 1]` for `binomial`, positive means
+for `poisson`).
+
+```{r predict-response}
+pr_p <- predict(fit_lap, newdata = nd, type = "response", se.fit = TRUE)
+range(pr_p$fit)
+```
+
+## Comparing models
+
+`compare_models()` ranks fits by a shared criterion. With
+`criterion = "loglik"` it reports `logLik()` for each model, which for a
+Laplace fit is the approximate log *marginal* likelihood, the model
+evidence, the right quantity for comparing nested specifications.
+
+```{r compare}
+m0 <- tulpa(y ~ 1,     data = df, family = "gaussian", mode = "laplace", phi = 0.8)
+m1 <- tulpa(y ~ x,     data = df, family = "gaussian", mode = "laplace", phi = 0.8)
+m2 <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
+            mode = "laplace", sigma_re = 0.6, phi = 0.8)
+compare_models(intercept = m0, slope = m1, slope_re = m2, criterion = "loglik")
+```
+
+Adding the slope lifts the evidence sharply; adding the random intercept
+lifts it further, matching how the data were generated. WAIC and LOO are
+available for fits that carry a pointwise log-likelihood, which the model
+packages provide; the engine's own comparison runs on the marginal
+likelihood and the joint log-density.
+
+## Other families
+
+The same call shape covers counts, proportions, and binary data; only
+`family` (and any dispersion `phi`) changes.
+
+```{r families}
+# Poisson counts
+dp <- data.frame(y = rpois(n, exp(0.2 + 0.6 * x)), x = x)
+coef(tulpa(y ~ x, data = dp, family = "poisson", mode = "laplace"))
+
+# Beta proportions in (0, 1), precision phi
+mu <- plogis(0.1 + 0.8 * x)
+db <- data.frame(y = rbeta(n, mu * 8, (1 - mu) * 8), x = x)
+coef(tulpa(y ~ x, data = db, family = "beta", mode = "laplace", phi = 8))
+```
+
+## Prior predictive checks
+
+Before fitting, it helps to see what the priors imply about the data.
+`prior_predict()` draws parameters from their priors, pushes them through
+the linear predictor, and simulates responses. The simulator comes from a
+`tulpa_family` object; model packages supply rich ones, and a one-line
+Poisson simulator is enough here.
+
+```{r prior-pred}
+fam <- tulpa_family(
+  "poisson",
+  function(eta, params, n_obs, ...) rpois(n_obs, exp(eta[[1]]))
+)
+pp <- prior_predict(y ~ x, family = fam, data = dp, n_draws = 50,
+                    priors = tulpa_priors())
+pp
+```
+
+`pp$y` is a list with one simulated dataset per prior draw, and
+`plot(pp)` overlays their densities. When the prior predictive covers
+ranges the response could never take, the priors are too vague; the priors
+vignette tightens them with `prior_pc()`, `prior_normal()`, and friends.
+
+## A spatial field
+
+Areal data carry a neighbourhood structure. Pass the adjacency through
+`spatial=` and name the per-observation unit with a `spatial(col)` term;
+`type = "icar"` puts an intrinsic conditional-autoregressive field on the
+units. Here twenty regions sit on a ring, each adjacent to its two
+neighbours.
+
+```{r spatial-build}
+K <- 20
+W <- matrix(0, K, K)
+for (i in 1:K) { j <- if (i < K) i + 1 else 1; W[i, j] <- W[j, i] <- 1 }
+
+region <- factor(sample(1:K, n, replace = TRUE))
+field  <- as.numeric(scale(sin(2 * pi * (1:K) / K)))[region]
+ds <- data.frame(y = rbinom(n, 1, plogis(-0.2 + 0.7 * x + field)),
+                 x = x, region = region)
+```
+
+```{r spatial-fit}
+fit_sp <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
+                spatial = list(type = "icar", adjacency = W),
+                mode = "laplace")
+coef(fit_sp)
+```
+
+The slope recovers while the ICAR field absorbs the regional structure.
+Continuous fields use a coordinate spec instead of an adjacency:
+`spatial_gp(~ lon + lat)` for an NNGP field, `spatial_hsgp(~ lon + lat)`
+for a Hilbert-space GP, `spatial_spde(~ lon + lat, data)` for a Matern
+SPDE. The dedicated spatial vignette walks through each.
+
+## User-defined latent blocks
+
+When the structure you need is not a built-in field, `tgmrf()` lets a
+script define its own Gaussian Markov random field (a precision matrix
+and a hyperprior) and plug it in as a `latent(...)` term that reaches
+every inference tier. The `tgmrf()` vignette builds a periodic AR(1) block
+end to end.
+
+## Extracting results
+
+The fitted object answers the standard accessors. They work the same way
+on a Laplace fit and a sampler fit; the Laplace tier reports the Gaussian
+approximation, the sampler tier reports empirical posterior summaries.
+
+| Accessor | Returns |
+|---|---|
+| `coef()` | named fixed-effect estimates |
+| `summary()` | fixed effects: estimate, SE, credible bounds |
+| `confint()` | credible intervals (matrix) |
+| `vcov()` | fixed-effect covariance |
+| `ranef()` | group-level random effects |
+| `tidy()` | one-row-per-term data frame (broom style) |
+| `glance()` | one-row model summary |
+| `predict()`, `fitted()` | fixed-effect prediction / in-sample mean |
+| `logLik()` | log marginal likelihood (Laplace) or mean log-density |
+| `plot()` | fixed-effect densities (or trace for sampler fits) |
+
+```{r tidy}
+tidy(fit_re)
+```
+
+## Practical guidance
+
+A few rules of thumb for everyday use:
+
+- **Start at Tier 2.** `mode = "laplace"` is deterministic and returns in
+  well under a second on tens of thousands of rows. Use it for the first
+  look and for model comparison by marginal likelihood. Move to a sampler
+  (`mode = "mala"`) when you need exact posterior moments or the posterior
+  is visibly non-Gaussian.
+- **`sigma_re` is conditioned, not estimated, on the fixed-`sigma_re`
+  paths.** With a random intercept the fit assumes the value you pass. If
+  you do not have one, fit at a couple of values (say 0.3 and 1.0) and
+  check whether the fixed effects move; if they do, integrate the variance
+  through the nested-Laplace path rather than guessing.
+- **Sample size.** A random-effect term needs enough groups to inform its
+  variance: with fewer than about 5--8 groups, the group-level estimates
+  are dominated by the prior, and a fixed effect for the grouping is often
+  the honest choice.
+- **Watch convergence on the sampler tiers.** `glance()` reports
+  `mean_accept` and the divergence count; an acceptance rate far from
+  0.4--0.8, or any divergences, means the chain needs more warmup or a
+  smaller step size (`control$epsilon`).
+- **Reach for a model package when the likelihood is not built in.** The
+  five families here cover the common cases. Zero-inflation, hurdles,
+  detection/occupancy, ratio responses, and posterior-predictive checking
+  live in the packages built on this engine, not in `tulpa()` itself.
+
+## Where to go next
+
+- Inference details and the tier guarantees: the inference-modes and
+  algorithm vignettes.
+- Spatial and temporal fields, spatially varying coefficients: the
+  spatial, temporal, and SVC vignettes.
+- Priors and prior predictive checks: the priors vignette and
+  `prior_predict()`.
+- Posterior-predictive checks, WAIC, and LOO on a full observation model:
+  the model packages (tulpaObs, tulpaRatio) that build on this engine.
+```

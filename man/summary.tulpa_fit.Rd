@@ -2,18 +2,22 @@
 % Please edit documentation in R/methods_generic.R
 \name{summary.tulpa_fit}
 \alias{summary.tulpa_fit}
-\title{Posterior summary table}
+\title{Posterior summary of the fixed effects}
 \usage{
-\method{summary}{tulpa_fit}(object, ...)
+\method{summary}{tulpa_fit}(object, level = 0.95, ...)
 }
 \arguments{
-\item{object}{A \code{tulpa_fit} object with \verb{$draws}.}
+\item{object}{A \code{tulpa_fit} object.}
+
+\item{level}{Credible-interval level (default 0.95).}
 
 \item{...}{Ignored.}
 }
 \value{
-Data frame with mean, sd, quantiles.
+Data frame: estimate, std.error, and lower/upper credible bounds, one
+row per fixed effect. Sampler tiers report empirical quantiles; the Laplace
+tier reports the Gaussian approximation.
 }
 \description{
-Posterior summary table
+Posterior summary of the fixed effects
 }

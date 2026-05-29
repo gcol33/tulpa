@@ -1,0 +1,595 @@
+---
+title: "Temporal random-walk effects with tulpa"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Temporal random-walk effects with tulpa}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width = 6, fig.height = 4
+)
+set.seed(20260529)
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## Why a temporal field
+
+Many datasets carry a clock. Counts of a species are taken year after year,
+disease cases arrive month by month, a sensor logs a reading every hour. The
+quantity you care about is usually a covariate effect: does abundance rise with
+temperature, does risk fall with vaccination coverage. The clock sits in the
+background, and the background moves.
+
+When the background moves smoothly and you ignore it, the covariate pays for
+the omission. Suppose abundance drifts upward over a decade for reasons you
+never measured, and your covariate also happens to trend upward over the same
+decade. A model with no time term will read the shared drift as covariate
+signal and report a slope that is too steep. The trend and the covariate are
+confounded through time. This is the temporal twin of spatial confounding, and
+the fix has the same shape: give the model a flexible function of time, let it
+soak up the smooth background, and read the covariate effect off what remains.
+
+The confounding has a mechanism worth stating plainly. A regression slope is
+the covariation of the response and the covariate divided by the variance of the
+covariate. If both response and covariate share a slow drift, part of that
+covariation comes from the drift rather than from any direct link between them.
+The slope cannot tell the two sources apart on its own. A flexible time term
+gives it a way to: anything that varies smoothly across time can be carried by
+the curve, so the slope is left to explain only the part of the covariate that
+wiggles faster than the background can follow. The price is that a covariate
+which is itself very smooth in time becomes hard to disentangle, and its
+interval widens to admit the doubt. That widening is honest. A model with no time
+term would have reported a narrow interval around the wrong value.
+
+The choice of how flexible to make the time term is the modelling decision. Too
+stiff and the curve cannot absorb the background, leaving the bias in the slope.
+Too loose and it chases noise, stealing signal that belonged to the
+covariate. A random walk handles this by learning its own flexibility from the
+data through a single smoothing parameter, rather than asking you to pick the
+number of knots or the bandwidth by hand. The data decide how much the trend is
+allowed to bend.
+
+tulpa offers that flexible function as a first-order random walk. You declare
+it once, hand it to `tulpa()` through the `temporal=` argument, and the engine
+threads it through the same nested-Laplace machinery that integrates a spatial
+field. The covariate slope comes back with a marginalized standard error, the
+trend itself can be pulled out time point by time point, and the smoothing
+strength is summarised by a single hyperparameter. This vignette walks the full
+path: write down the model, simulate a known trend, fit, check the recovery,
+read the uncertainty honestly, predict, and compare against a model with no
+time term.
+
+A note on scope before we start. The front-door route through `tulpa()`
+currently carries the first-order random walk, `temporal_rw1()`. The second-order
+walk, the autoregressive process, panel (per-group) trends, and a temporal field
+sitting alongside a spatial field each raise a clean error and point you at the
+direct fitters. The closing section says what each of those is for. Everything
+shown here runs on `temporal_rw1()`.
+
+## The model
+
+Write the linear predictor for observation $i$ as
+
+$$
+\eta_i \;=\; \beta_0 + x_i^\top \beta + \phi_{t(i)},
+$$
+
+where $t(i)$ is the time index of observation $i$ and $\phi = (\phi_1, \dots,
+\phi_T)$ is a vector of one effect per time point. The covariate part $\beta_0 +
+x_i^\top \beta$ is the usual fixed-effect structure. The new piece is $\phi$,
+and the model is its prior.
+
+The prior on $\phi$ encodes a belief about time: nearby time points are alike.
+Rather than impose a parametric shape such as a line or a polynomial, a random
+walk imposes only local smoothness and lets the global shape emerge. This is why
+it suits a background you cannot name. The claim is modest: the trend does not
+jump, and beyond that it can take whatever shape the data support, quadratic or
+sinusoidal or neither.
+
+A first-order random walk says that consecutive time points should be close.
+Formally, the increments are independent and Gaussian,
+
+$$
+\phi_t - \phi_{t-1} \;\sim\; \mathcal{N}\!\left(0,\; \tau^{-1}\right),
+\qquad t = 2, \dots, T,
+$$
+
+with precision $\tau$. Large $\tau$ pins neighbouring time points together and
+forces a nearly flat trend; small $\tau$ lets the walk wander. The joint prior
+on $\phi$ is a Gaussian Markov random field with precision matrix $Q(\tau) =
+\tau R$, where $R$ is the structure matrix
+
+$$
+R_{tt} =
+\begin{cases}
+1 & t \in \{1, T\} \\
+2 & 1 < t < T,
+\end{cases}
+\qquad
+R_{t,\,t-1} = R_{t-1,\,t} = -1,
+$$
+
+and all other entries zero. Reading $R$ row by row reveals what it is: the
+penalty on $\phi_t$ ties it to its two chain neighbours, exactly the intrinsic
+conditional-autoregressive (ICAR) penalty you would write for a spatial field on
+a graph whose graph happens to be a line. An RW1 is an ICAR on a chain. That
+identity is what lets tulpa reuse one integration path for both: the chain
+adjacency (time $t$ neighbours $t-1$ and $t+1$) produces the precision above,
+and the nested-Laplace driver integrates it.
+
+The conditional form of the prior makes the smoothing concrete. Conditional on
+its neighbours, an interior time point has mean equal to the average of the two
+adjacent points,
+
+$$
+\mathbb{E}\!\left[\phi_t \mid \phi_{-t}\right]
+= \tfrac{1}{2}\left(\phi_{t-1} + \phi_{t+1}\right),
+\qquad
+\mathrm{Var}\!\left[\phi_t \mid \phi_{-t}\right]
+= \tfrac{1}{2}\,\tau^{-1}.
+$$
+
+Each point is pulled toward the midpoint of its neighbours, and the strength of
+the pull is set by $\tau$. This is the same conditional structure an ICAR field
+imposes on a spatial graph, with two neighbours instead of however many a map
+region happens to have. The endpoints, having one neighbour each, are pulled
+toward that single neighbour with twice the conditional variance, which is why
+the corner entries of $R$ are $1$ rather than $2$.
+
+Why an intrinsic prior rather than a proper one. The random walk fixes how the
+trend changes, not where it sits, and that is exactly the property you want from
+a confounding sponge: the field should be free to take whatever level the data
+imply without competing with the covariates for it. The cost is the rank
+deficiency, handled below by a constraint. The benefit is that the prior says
+nothing about the absolute level of the trend, only its shape, which is the
+honest position when the background is something you never measured.
+
+The matrix $R$ has rank $T - 1$. The walk fixes increments, not levels, so the
+whole trend can slide up or down by a constant without changing any increment.
+That constant is the unidentified direction, and it collides with the intercept
+$\beta_0$. tulpa resolves it with a sum-to-zero constraint on $\phi$, which has a
+consequence we return to when reading the intercept: under an intrinsic field
+the intercept absorbs the free level and its standard error sits near the prior
+width by design.
+
+One switch changes the geometry. With `cyclic = TRUE` the chain closes into a
+ring, so time $T$ becomes a neighbour of time $1$ and the increment $\phi_1 -
+\phi_T$ joins the prior. A ring is the right structure for phase-wrapped data
+where the last bin really does sit next to the first: month of year, hour of
+day, compass bearing. The default is the open chain, which suits a calendar year
+sequence where 2010 and 2030 are not neighbours.
+
+The difference shows up at the boundary. On an open chain the endpoints are
+weakly tied, each to a single neighbour, so the trend can swing freely at the
+ends where the data are thinnest. On a ring every point has two neighbours, the seam included,
+so a December estimate borrows strength from January and the trend joins up
+without a discontinuity at the wrap. For seasonal data fitted on an open chain,
+a spurious jump between the last and first bin is a common artefact; the ring
+removes it by construction. The rank deficiency stays at one in both cases, so
+the same single constraint identifies the level either way.
+
+## Simulating data
+
+To check that the fit recovers what it should, simulate with a trend you choose.
+Lay down $T = 30$ time points and a smooth seasonal-looking trend, a single sine
+wave centred at zero so it does not fight the intercept.
+
+```{r sim-trend}
+T_pts <- 30L
+trend <- as.numeric(scale(sin(2 * pi * seq_len(T_pts) / T_pts)))
+```
+
+Scaling to mean zero and unit variance keeps the trend on a comparable footing
+with the covariate effect, so neither dwarfs the other in the linear predictor.
+Now draw $n = 900$ observations, assign each to a time point, give each a
+covariate $x$, and build a binary response. The true intercept is $-0.2$, the
+true slope is $0.9$, and each observation picks up the trend value at its time
+point.
+
+```{r sim-binomial}
+set.seed(42)
+n     <- 900L
+time  <- sample(seq_len(T_pts), n, replace = TRUE)
+x     <- rnorm(n)
+eta   <- -0.2 + 0.9 * x + trend[time]
+y     <- rbinom(n, 1, plogis(eta))
+df    <- data.frame(y = y, x = x, time = time)
+```
+
+The `time` column holds integer time indices, but any orderable variable works.
+`validate_temporal()` sorts the unique values and maps them to a chain in that
+order, so calendar years, dates, or ordered factor levels all land on the same
+$1, \dots, T$ index internally. The trend enters every observation that shares a
+time point, which is what gives the random walk enough replication per node to
+be informed.
+
+A few details in the setup are deliberate. The trend is centred, so it carries
+shape but no level, which keeps it from quarrelling with the intercept and
+mirrors the sum-to-zero constraint the model will apply. The covariate is drawn
+independently of time here, so this simulation tests recovery rather than
+confounding correction; the trend and the slope describe genuinely separate
+features of the data and a good fit should return both. The thirty time points
+with nine hundred observations leave each time point about thirty observations on
+average, comfortably enough to inform each $\phi_t$ and the smoothing precision
+above them. If you wanted to study confounding directly, you would make $x$
+correlate with `trend[time]` and watch the no-trend slope inflate while the
+temporal model holds near $0.9$.
+
+The single sine wave is a convenient truth because it is smooth, bounded, and
+has no preferred level, so the centred trend the model recovers should overlay it
+cleanly. The walk knows nothing of sine waves; it learns only that neighbours
+are close, and the sine wave is a fair test of whether that local smoothness is
+enough to reconstruct a global shape from noisy binary data.
+
+## Fitting
+
+Declare the temporal structure with `temporal_rw1()`, naming the time column,
+and pass the spec through `temporal=`. The spec carries the time variable
+itself, the same way a continuous spatial spec carries its coordinates, so there
+is no `temporal(col)` term in the formula.
+
+```{r fit-binomial}
+tspec <- temporal_rw1("time")
+fit <- tulpa(y ~ x, data = df, family = "binomial",
+             temporal = tspec, mode = "auto")
+coef(fit)
+```
+
+The slope lands near the true $0.9$. The intercept reads near zero with a very
+wide interval, the sum-to-zero constraint at work, covered below. How was the
+fit routed?
+
+```{r routing}
+c(backend = fit$backend, tier = fit$inference_tier)
+fit$selection_reason
+```
+
+`mode = "auto"` recognised the temporal field, turned the RW1 into its chain
+ICAR block, and sent it to the nested-Laplace backend (Tier 2). That backend
+puts a grid over the smoothing precision $\tau$, runs an inner Laplace fit at
+each grid point, and integrates over the grid. The conditional `mode = "laplace"`
+path is not wired for temporal fields yet, so every temporal selection routes to
+the nested integrator.
+
+The two-layer structure is worth picturing. The inner layer is an ordinary
+Laplace fit: hold $\tau$ fixed, find the mode of the fixed effects and the trend
+together, and read the curvature there. The outer layer treats $\tau$ as the
+unknown it is, places a grid of candidate values across a sensible range, runs
+the inner fit at each, and weights the results by how well each $\tau$ explains
+the data. Nothing is fixed at a single best smoothness. The reported slope and
+its uncertainty are an average across the grid, so a fit that is genuinely unsure
+how smooth the trend should be will say so through a wider slope interval rather
+than a falsely confident one. `summary()` gives the fixed-effect table with
+marginalized standard errors and credible bounds.
+
+```{r summary-binomial}
+summary(fit)
+```
+
+`confint()` returns the same bounds as a matrix.
+
+```{r confint-binomial}
+confint(fit)
+```
+
+### Extracting the temporal trend
+
+The fixed-effect accessors report $\beta$, but the trend $\phi$ is the reason
+you added the field. A nested fit carries the per-grid posterior modes in
+`$modes`, a matrix with one row per grid point and one column per latent
+coordinate, ordered as `[fixed effects, field]`. It also carries the grid
+`$weights`. The grid-marginalized value of the field at time $u$ is the
+weight-averaged mode in the column for that time point.
+
+```{r extract-trend}
+w     <- fit$weights / sum(fit$weights)
+nf    <- fit$n_fixed
+phi_hat <- vapply(seq_len(T_pts),
+                  function(u) sum(w * fit$modes[, nf + u]),
+                  numeric(1))
+round(head(phi_hat), 3)
+```
+
+The offset `nf + u` skips the `nf` fixed-effect columns and lands on the field
+column for time $u$. The weighted sum integrates over the smoothing precision
+rather than fixing it at a point, which is the whole reason for the grid. This
+recipe is identical for a spatial field; only the meaning of the index changes.
+
+The column ordering is the key to reading `$modes`. Each row is one grid point's
+joint posterior mode for the latent vector, laid out as the fixed effects first
+and the field after, so column `nf + u` is always time point $u$ regardless of
+how many grid points the integrator chose. Averaging down the rows with the grid
+weights collapses the smoothing uncertainty into a single trend value per time
+point. If you wanted a credible band on the trend rather than a point, you would
+carry the per-grid curvature for the field columns through the same law of total
+variance the fixed effects use, combining within-grid variance and
+between-grid spread; the point estimate above is enough for the recovery check
+this vignette runs.
+
+## Checking the fit
+
+A recovery check plots the estimated trend against the truth. Because the
+random walk is identified only up to an additive constant, centre both before
+comparing.
+
+```{r trend-plot, fig.alt = "Estimated RW1 trend across time points overlaid on the true simulated trend"}
+plot(seq_len(T_pts), trend - mean(trend), type = "l", lwd = 2,
+     xlab = "time point", ylab = "centred temporal effect")
+lines(seq_len(T_pts), phi_hat - mean(phi_hat), col = "darkorange", lwd = 2)
+legend("topright", c("truth", "estimate"),
+       col = c("black", "darkorange"), lwd = 2, bty = "n")
+```
+
+The estimate tracks the sine wave it was built from, smoothed a touch where the
+prior pulls neighbours together. The correlation between the two confirms it.
+
+```{r trend-cor}
+round(cor(phi_hat, trend), 3)
+```
+
+The smoothing precision $\tau$ controls how tightly the walk hugs a straight
+line, and the fit reports its posterior summary directly. `$theta_mean` is the
+posterior mean of the field's hyperparameter, with `$theta_ci_lo` and
+`$theta_ci_hi` bounding it.
+
+```{r tau-summary}
+c(mean = fit$theta_mean,
+  lower = fit$theta_ci_lo,
+  upper = fit$theta_ci_hi)
+```
+
+A larger $\tau$ means a stiffer walk. Here the interval excludes the very large
+values that would flatten the trend to a line, so the data have spoken for some
+curvature, consistent with the sine wave underneath.
+
+Reading the precision interval is a useful diagnostic in its own right. If the
+posterior for $\tau$ piled up against the upper edge of the grid, that would say
+the data prefer a trend so smooth it is nearly flat, a hint that the field is
+absorbing little and might be dropped. If it piled against the lower edge, the
+trend would be straining to wiggle as much as the grid allows, a hint that the
+prior is too restrictive or that something faster than a smooth trend is at work.
+An interval comfortably inside the grid, as here, says the smoothing strength is
+identified and the trend is doing real work without overfitting. The grid bounds
+themselves come from the spec, so a precision pinned at an edge is also a cue to
+widen them and refit.
+
+## Interpreting the fit
+
+Two points deserve care when reading the table.
+
+First, the standard error on the slope is marginalized. The nested driver does
+not report the slope uncertainty at a single best $\tau$; it folds the per-grid
+fixed-effect covariances together through the law of total variance, so the
+interval already accounts for not knowing the smoothing strength exactly.
+`tulpa()` keeps the per-grid Hessians for this purpose. The practical reading is
+that the slope interval is honest about the trend being estimated rather than
+known.
+
+The law of total variance is the right tool because the slope uncertainty has
+two sources. Within any single grid point the inner Laplace fit gives a
+covariance for the fixed effects, the curvature of the log-posterior at that
+$\tau$. Across grid points the slope estimate itself moves, because a stiffer or
+looser trend leaves a slightly different residual for the covariate to explain.
+The total variance adds two pieces: the average of the within-grid covariances,
+plus the spread of the per-grid estimates. Both the conditional uncertainty and
+the smoothing uncertainty land in one interval. A naive fit that picked the single
+best $\tau$ and reported its covariance would capture only the first term and
+understate the interval, sometimes badly when the trend is hard to pin down.
+The coverage of the marginalized interval is tested at its nominal rate, so the
+ninety-five percent bounds mean what they say.
+
+Second, the intercept. Under an intrinsic field the level of the trend is not
+separately identified from $\beta_0$, so the sum-to-zero constraint hands the
+intercept a near-flat posterior and its standard error sits at roughly the prior
+width.
+
+```{r intercept-se}
+summary(fit)["(Intercept)", c("estimate", "std.error")]
+```
+
+That large standard error is a feature of the parameterisation, not a sign the
+fit failed. Interpret slopes, which are identified and marginalized; do not read
+the intercept as an estimate of the overall level. If you need a level, it lives
+in the trend $\phi$, which you extract and centre as shown above.
+
+The reason traces straight back to the intrinsic prior. The random walk
+constrains increments, so the data inform the shape of $\phi$ and the height of
+$\beta_0 + \bar\phi$ taken together, but not the split between them. tulpa pins
+$\phi$ to sum to zero and lets $\beta_0$ float, which is one valid way to break
+the tie, and under that choice the intercept inherits the unidentified level.
+A different software might pin the intercept and let the trend float; the slopes,
+which depend on neither convention, come out the same. The lesson is to anchor
+interpretation on quantities that do not depend on how the tie was broken.
+Slopes qualify. Differences in the trend between two time points qualify too,
+since the shared level cancels. The bare intercept stands apart, tied to a
+convention rather than to the data.
+
+## Prediction
+
+`predict()` gives the fixed-effect prediction at new covariate values, with the
+field held at its population average. On the link scale the intercept's wide
+posterior flows straight into the standard error, so a raw link-scale band is
+dominated by that unidentified level rather than by covariate uncertainty.
+
+```{r predict-link}
+nd <- data.frame(x = seq(-2, 2, length.out = 50))
+pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
+round(head(pr, 2), 3)
+```
+
+The informative quantity is how the prediction *changes* with $x$, which is the
+slope and its tight interval, not the absolute height of the line. To show the
+covariate effect cleanly, plot the link-scale prediction centred at its own
+mean, so the intercept's free level drops out and the slope's uncertainty is
+what remains.
+
+```{r predict-plot, fig.alt = "Centred link-scale prediction across x with the covariate slope and its credible band"}
+ctr <- pr$fit - mean(pr$fit)
+plot(nd$x, ctr, type = "l", lwd = 2,
+     xlab = "x", ylab = "centred linear predictor")
+band <- (pr$upper - pr$lower) / 2
+polygon(c(nd$x, rev(nd$x)),
+        c(ctr - band, rev(ctr + band)),
+        col = adjustcolor("steelblue", 0.25), border = NA)
+lines(nd$x, ctr, lwd = 2)
+```
+
+The band is narrow because the slope is well identified, even though the line's
+absolute position is not. Centring is the right move precisely because the
+quantity of interest is a contrast: the difference in linear predictor between
+two covariate values, which the slope controls and the intercept cancels out of.
+The raw `se.fit` is not wrong, it is answering a different question, namely how
+uncertain the absolute height of the line is, and under an intrinsic field that
+height is barely identified.
+
+`predict()` holds the temporal field at its population average. What you see is
+the covariate effect with the trend marginalised out, not a forecast at a
+particular time. To predict at a specific time point, add that time's $\phi$
+value from the extracted trend to the linear predictor before applying the
+inverse link, and set the intercept to whatever level you want to anchor on.
+The engine's population-level `predict()` deliberately stays on the marginal
+trend, so the default answer is the covariate relationship rather than a
+time-specific one.
+
+## Comparing against no temporal field
+
+Does the trend earn its place? Fit the same model without a time term and
+compare evidence. On a Laplace-tier fit `logLik()` returns the approximate log
+marginal likelihood, the quantity to compare across specifications.
+
+```{r fit-notemporal}
+m_nt <- tulpa(y ~ x, data = df, family = "binomial", mode = "laplace")
+as.numeric(logLik(m_nt))
+```
+
+A nested fit integrates over a grid of $\tau$, so its `$log_marginal` is a vector
+with one entry per grid point. The model evidence is the log of the
+grid-summed marginal likelihood, a log-sum-exp over that vector.
+
+```{r evidence}
+lse <- function(v) { m <- max(v); m + log(sum(exp(v - m))) }
+evidence_temporal <- lse(fit$log_marginal)
+c(no_temporal = as.numeric(logLik(m_nt)), temporal = evidence_temporal)
+```
+
+The temporal model carries substantially higher evidence, matching the fact that
+a trend really was in the data. `compare_models()` ranks fits by a shared
+criterion and runs on base fits.
+
+```{r compare}
+cmp <- compare_models(no_temporal = m_nt,
+                      temporal = m_nt,
+                      criterion = "loglik")
+cmp[cmp$model == "no_temporal", ]
+```
+
+On a nested fit `compare_models()` and `logLik()` expand to the per-grid vector,
+so for a single headline number the log-sum-exp evidence above is the clean
+summary to quote alongside the non-temporal `logLik()`.
+
+A word on what this comparison settles. The marginal likelihood already
+integrates over the walk and its smoothing precision, so it charges the temporal
+model for the extra flexibility it brought, and a higher value therefore means
+the trend paid for itself once that charge was levied. The gain in fit outweighed
+the added complexity. That is the property that makes the marginal likelihood the
+right yardstick for nested specifications, where one model is the other with a
+structural piece added. The raw maximised likelihood cannot do this job, since it
+always rises with more parameters and would crown the temporal model even when
+the curve was only chasing noise. Predictive scores such as WAIC and LOO answer a
+related but separate question about out-of-sample accuracy; they need a pointwise
+log-likelihood the base engine does not carry, so they live in the model packages
+built on it.
+
+## A second family
+
+The same call shape works for a Gaussian response; only `family` and the
+dispersion `phi` change. Reuse the trend and slope, swap the binary draw for a
+Gaussian one.
+
+```{r fit-gaussian}
+set.seed(7)
+yg  <- -0.2 + 0.9 * x + trend[time] + rnorm(n, sd = 0.5)
+dfg <- data.frame(y = yg, x = x, time = time)
+fitg <- tulpa(y ~ x, data = dfg, family = "gaussian",
+              temporal = tspec, mode = "auto", phi = 0.5)
+coef(fitg)["x"]
+```
+
+The slope again recovers near $0.9$, and the same field-extraction recipe lifts
+the trend out of `fitg$modes`. For the Gaussian family the dispersion `phi` is
+the residual variance, conditioned on rather than estimated on this path, so the
+value you pass should reflect the noise you expect; here it matches the `sd =
+0.5` the data were drawn with. The mechanics are otherwise unchanged. The same
+chain ICAR block, the same grid over $\tau$, the same marginalized slope. Only
+the inner likelihood differs, which is the point of routing every family through
+one integrator.
+
+## Practical guidance
+
+A handful of rules of thumb for everyday use.
+
+- **Give the walk enough time points.** An RW1 needs at least 2 points to be
+  defined, but a trend with fewer than about 8 to 10 time points has little room
+  to bend, and the smoothing precision is then weakly informed. Below that,
+  consider treating time as a small set of fixed effects instead. Replication
+  matters as much as count: many observations per time point inform each $\phi_t$
+  far better than one observation each.
+
+- **Pick the smoothness to match the trend you expect.** RW1 penalises first
+  differences, so it favours piecewise-flat trends and can look a little blocky.
+  RW2 penalises second differences and favours trends that are locally straight,
+  giving a smoother curve. If the underlying process is a gentle long-term drift,
+  RW2 is usually the better prior; for trends that genuinely change level in
+  steps, RW1 fits the shape. RW2 needs at least 3 time points.
+
+- **Use `cyclic = TRUE` for phase-wrapped data.** Month of year, hour of day, and
+  compass bearing all close on themselves, so December sits next to January and
+  the ring's wrap-around increment lets the trend join up across the seam. Leave
+  it `FALSE` for an open calendar sequence whose endpoints are not neighbours.
+
+- **Read slopes, not the intercept.** Under the intrinsic RW1 the intercept's
+  standard error sits near the prior width because the trend level is not
+  separately identified. The covariate slopes are identified and their intervals
+  are marginalized over $\tau$. If you need the overall level, read it from the
+  extracted, centred trend.
+
+- **Skip the field when time carries no shared signal.** If observations are not
+  clustered in time, or the response has no plausible smooth temporal component,
+  a random walk only adds parameters and softens the slope. Fit with and without
+  the term and compare evidence, as above; let the data say whether the trend
+  earns its place.
+
+### What is wired, and what is not yet
+
+The front door through `tulpa()` carries `temporal_rw1()`. Three close relatives
+exist as specs and raise a clear error when passed to `tulpa()`, pointing you at
+the direct fitters in the package.
+
+```{r rw2-error, error = TRUE}
+tulpa(y ~ x, data = df, family = "binomial",
+      temporal = temporal_rw2("time"), mode = "auto")
+```
+
+The autoregressive process `temporal_ar1()` errors the same way; it is a
+stationary, full-rank alternative with an estimated correlation parameter rather
+than an intrinsic walk. Panel trends through `group_var=` (a separate walk per
+site) and a temporal field combined with a spatial field are likewise not yet
+front-door wired and report it rather than dropping the term. For those cases the
+direct temporal fitters remain available, and the nested driver already carries
+RW1/RW2 registry blocks for later extension.
+
+## See also
+
+- `?temporal_rw1`: constructor reference.
+- The spatial vignette: the same nested-Laplace path on an areal ICAR field.
+- The `tgmrf()` vignette: building a custom GMRF latent block, including a
+  periodic AR(1), end to end.
+- The inference-modes vignette: what the Tier-2 nested-Laplace guarantee means.

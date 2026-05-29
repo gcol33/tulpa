@@ -2,18 +2,19 @@
 % Please edit documentation in R/methods_generic.R
 \name{vcov.tulpa_fit}
 \alias{vcov.tulpa_fit}
-\title{Variance-covariance matrix from posterior}
+\title{Variance-covariance matrix of the fixed effects}
 \usage{
 \method{vcov}{tulpa_fit}(object, ...)
 }
 \arguments{
-\item{object}{A \code{tulpa_fit} object with \verb{$draws}.}
+\item{object}{A \code{tulpa_fit} object.}
 
 \item{...}{Ignored.}
 }
 \value{
-Variance-covariance matrix.
+Fixed-effect variance-covariance matrix (empirical for sampler tiers,
+\code{H_beta^-1} for the Laplace tier).
 }
 \description{
-Variance-covariance matrix from posterior
+Variance-covariance matrix of the fixed effects
 }

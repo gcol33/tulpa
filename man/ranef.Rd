@@ -3,7 +3,7 @@
 \name{ranef}
 \alias{ranef}
 \alias{ranef.tulpa_fit}
-\title{Extract random effects}
+\title{Random-effect summaries}
 \usage{
 ranef(object, ...)
 
@@ -15,8 +15,9 @@ ranef(object, ...)
 \item{...}{Ignored.}
 }
 \value{
-Data frame with RE summaries.
+Data frame with one row per random-effect coefficient: term, group,
+level, estimate, and (sampler tier only) sd and credible bounds.
 }
 \description{
-Extract random effects
+Random-effect summaries
 }

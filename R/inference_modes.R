@@ -644,10 +644,14 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
-  # Default: Tier 1 (Exact) with HMC -- the most general and robust.
+  # Default: Tier 1 (Exact). HMC is the most general kernel, but it is C-ABI
+  # only (model packages drive it through the C interface); from the R front
+  # door the reachable Tier-1 gradient sampler is MALA. Auto's contract is to
+  # never select a backend that cannot finish, so it defaults to MALA here
+  # rather than to an HMC backend that has no R fitter.
   return(list(
-    mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
-    reason = "default (full MCMC)"
+    mode = "exact", backend = "mala", tier = 1L, tier_name = "Exact",
+    reason = "default (gradient sampler; HMC kernel is model-package only)"
   ))
 }
 

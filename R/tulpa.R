@@ -197,12 +197,47 @@
 }
 
 
+# Convert a validated RW1 temporal spec into the areal ICAR prior block the
+# nested driver integrates. An RW1 random walk on T ordered time points is an
+# intrinsic CAR on a 1D chain: time t neighbours t-1 and t+1 (and t=T neighbours
+# t=1 when cyclic), so the chain adjacency's ICAR precision Q = diag(n_nb) - W is
+# exactly the RW1 precision. The per-observation time index becomes spatial_idx.
+# This reuses adjacency_to_csr_tulpa() and the icar nested kernel -- the same
+# tested path the areal spatial field takes.
+.temporal_spec_to_nl_prior <- function(temporal) {
+  T <- temporal$n_times
+  if (is.null(T) || T < 2L) {
+    stop("Internal: temporal spec is unvalidated (n_times missing). tulpa() ",
+         "validates it via validate_temporal().", call. = FALSE)
+  }
+  W <- matrix(0, T, T)
+  if (isTRUE(temporal$cyclic)) {
+    for (t in seq_len(T)) {
+      nx <- if (t == T) 1L else t + 1L
+      W[t, nx] <- 1; W[nx, t] <- 1
+    }
+  } else {
+    for (t in seq_len(T - 1L)) { W[t, t + 1L] <- 1; W[t + 1L, t] <- 1 }
+  }
+  csr <- adjacency_to_csr_tulpa(W)
+  list(
+    type            = "icar",
+    spatial_idx     = as.integer(temporal$time_index),
+    n_spatial_units = as.integer(T),
+    adj_row_ptr     = as.integer(csr$row_ptr),
+    adj_col_idx     = as.integer(csr$col_idx),
+    n_neighbors     = as.integer(csr$n_neighbors)
+  )
+}
+
+
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
-                               latent_blocks = list(), spatial = NULL) {
+                               latent_blocks = list(), spatial = NULL,
+                               temporal = NULL) {
   input <- BACKEND_REGISTRY[[backend]]$input
 
   if (input == "nested") {
@@ -214,15 +249,18 @@
         backend, backend), call. = FALSE)
     }
     # The nested driver integrates the hyperparameters of latent prior blocks
-    # and/or an areal spatial field. A spatial(col) field becomes one areal
-    # prior block (.spatial_spec_to_nl_prior); latent(...) terms are blocks
-    # already. Either alone routes the single-block path; together they form a
-    # multi-block prior (the driver integrates the joint hyperparameter grid).
-    # At least one of the two must be present.
-    spatial_block <- if (!is.null(spatial)) .spatial_spec_to_nl_prior(spatial) else NULL
-    if (is.null(spatial_block) && length(latent_blocks) == 0L) {
-      stop("Backend 'nested_laplace' needs at least one `latent(...)` block or ",
-           "a spatial(col) field in the formula. For a plain GLMM use mode = ",
+    # and/or one field. A spatial(col) field becomes an areal prior block
+    # (.spatial_spec_to_nl_prior); a temporal RW1 field becomes the same areal
+    # block over its time chain (.temporal_spec_to_nl_prior); latent(...) terms
+    # are blocks already. tulpa() forbids combining a spatial and a temporal
+    # field, so at most one field block is present here. The field alone routes
+    # the single-block path; with latent terms they form a multi-block prior.
+    spatial_block  <- if (!is.null(spatial))  .spatial_spec_to_nl_prior(spatial)   else NULL
+    temporal_block <- if (!is.null(temporal)) .temporal_spec_to_nl_prior(temporal) else NULL
+    field_block <- spatial_block %||% temporal_block
+    if (is.null(field_block) && length(latent_blocks) == 0L) {
+      stop("Backend 'nested_laplace' needs at least one `latent(...)` block, a ",
+           "spatial(col) field, or a temporal field. For a plain GLMM use mode = ",
            "'laplace' / 'mala' / 'auto'.", call. = FALSE)
     }
     if (!is.null(beta_prior)) {
@@ -230,12 +268,12 @@
               "path; it is ignored. Call tulpa_nested_laplace() directly if you ",
               "need a fixed-effect prior here.", call. = FALSE)
     }
-    if (is.null(spatial_block)) {
+    if (is.null(field_block)) {
       prior <- .latent_blocks_to_prior(latent_blocks)   # latent-only (unchanged)
     } else if (length(latent_blocks) == 0L) {
-      prior <- spatial_block                            # single areal block
+      prior <- field_block                              # single field block
     } else {
-      prior <- c(list(spatial_block), latent_blocks)    # multi-block (spatial + latent)
+      prior <- c(list(field_block), latent_blocks)      # multi-block (field + latent)
     }
     # The nested driver carries a single iid random-intercept natively via
     # re_idx / n_re_groups / sigma_re (conditioned on, like the other tulpa()
@@ -258,6 +296,11 @@
       n_re_groups     <- re[[1]]$n_groups
       sigma_re_scalar <- sigma_re[1]
     }
+    # Retain the per-grid fixed-effect Hessians by default so summary()/vcov()
+    # can report the grid-marginalized fixed-effect SE (the within-grid Laplace
+    # covariance is needed for it). Cheap for the small fixed-effect block;
+    # users can switch it off via control$keep_grid_hessians = FALSE.
+    control$keep_grid_hessians <- control$keep_grid_hessians %||% TRUE
     return(list(
       y           = bundle$y,
       n_trials    = n_trials %||% rep(1L, bundle$n_obs),
@@ -743,18 +786,45 @@ tulpa <- function(formula, data,
     }
   }
 
-  # Temporal terms are not yet routed through tulpa() (planned -- see
-  # dev_notes/plan_gibbs_spatial_frontdoor.md). Fail loudly rather than drop.
-  if (!is.null(parsed$temporal_var) || !is.null(temporal)) {
-    stop("Temporal terms are not yet routed through tulpa(). Call the temporal ",
-         "fitter directly for now.", call. = FALSE)
+  # Temporal field. A temporal_rw1() spec carries its own time_var (like a
+  # continuous spatial spec carries its coordinates), so no temporal(col) term is
+  # used. An RW1 temporal effect is an intrinsic CAR on a 1D chain (a ring when
+  # cyclic): its precision is exactly the chain ICAR precision, so it integrates
+  # through the same nested-Laplace areal path as an ICAR field. RW2/AR1, panel
+  # (grouped) temporal effects, and temporal combined with a spatial field are
+  # not yet front-door wired; surface that rather than drop terms.
+  temporal_spec <- temporal
+  has_temporal  <- !is.null(parsed$temporal_var) || !is.null(temporal_spec)
+  if (has_temporal) {
+    if (!is.null(parsed$temporal_var)) {
+      stop("A temporal field is addressed by the time_var in its spec ",
+           "(e.g. temporal_rw1(\"", parsed$temporal_var, "\")); drop the temporal(",
+           parsed$temporal_var, ") term and pass `temporal=`.", call. = FALSE)
+    }
+    if (!inherits(temporal_spec, "tulpa_temporal")) {
+      stop("`temporal=` must be a temporal_rw1() / temporal_rw2() / temporal_ar1() ",
+           "spec object.", call. = FALSE)
+    }
+    if (!identical(temporal_spec$type, "rw1")) {
+      stop("Only temporal_rw1() is routed through tulpa() so far; for '",
+           temporal_spec$type, "' call the temporal fitter directly.", call. = FALSE)
+    }
+    if (!is.null(temporal_spec$group_var)) {
+      stop("Grouped (panel) temporal effects are not yet routed through tulpa(); ",
+           "drop `group_var`.", call. = FALSE)
+    }
+    if (has_spatial) {
+      stop("A temporal field together with a spatial field is not yet supported ",
+           "through tulpa(); fit one field at a time for now.", call. = FALSE)
+    }
+    temporal_spec <- validate_temporal(temporal_spec, data)
   }
 
   fam_obj <- list(name = family, distribution = family)
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
-    has_spatial = has_spatial, has_temporal = FALSE, has_latent = has_latent,
-    spatial_type = spatial_type
+    has_spatial = has_spatial, has_temporal = has_temporal, has_latent = has_latent,
+    spatial_type = spatial_type, temporal = temporal_spec
   )
 
   # Latent prior blocks are consumed only by the nested-Laplace path. If the
@@ -815,6 +885,17 @@ tulpa <- function(formula, data,
     sel$reason <- "SPDE spatial field; nested-Laplace over (range, sigma) via fit_spde()"
   }
 
+  # A temporal RW1 field is an ICAR chain; the nested-Laplace areal path
+  # integrates it. Every selection routes a temporal field there (the conditional
+  # mode = "laplace" is not wired for temporal yet), mirroring the spatial-field
+  # redirect.
+  if (has_temporal) {
+    sel$backend <- "nested_laplace"
+    ti <- get_backend_tier("nested_laplace")
+    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
+    sel$reason <- "temporal RW1 field; nested-Laplace integration (ICAR chain)"
+  }
+
   assert_backend_reachable(sel$backend)
 
   # Conditional backends (everything except the sigma-sampling Gibbs and the
@@ -837,7 +918,7 @@ tulpa <- function(formula, data,
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                              n_trials, phi, beta_prior, control,
                              latent_blocks = parsed$latent_blocks,
-                             spatial = spatial_spec)
+                             spatial = spatial_spec, temporal = temporal_spec)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(
@@ -858,6 +939,18 @@ tulpa <- function(formula, data,
     fit$formula <- formula
     fit$family <- family
     fit$call <- match.call()
+
+    # Canonical parameter layout for the S3 accessors: the fixed-effect count and
+    # names plus the [fixed, random] name vector both posterior shapes share, so
+    # coef()/summary()/ranef() report real names and a fixed/random split.
+    layout <- .tulpa_param_layout(bundle)
+    fit$n_fixed     <- layout$n_fixed
+    fit$fixed_names <- layout$fixed_names
+    fit$param_names <- fit$param_names %||% layout$param_names
+    fit$re_layout   <- layout$re_layout
+    fit$N           <- fit$N %||% bundle$n_obs
+    # Fixed-effect design for fitted()/predict(newdata = NULL).
+    fit$model_matrix <- bundle$X
   }
   fit
 }
