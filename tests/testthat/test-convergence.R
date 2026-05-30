@@ -215,3 +215,52 @@ test_that("plotting and summary layer runs end-to-end on a multi-chain fit", {
   skip_if_not_installed("bayesplot")
   expect_no_error(plot_pairs(fit, pars = c("theta1", "theta2")))
 })
+
+test_that("every backend declares a draws-provenance (emits) class", {
+  emits <- vapply(BACKEND_REGISTRY, function(e) e$emits %||% NA_character_,
+                  character(1))
+  expect_false(anyNA(emits))
+  expect_true(all(emits %in% c("chain", "iid", "point")))
+  # emits is orthogonal to tier: an Exact (Tier 1) SMC sampler emits i.i.d.
+  # particles, while a Structured (Tier 2) nested-Laplace fit also emits i.i.d.
+  expect_equal(BACKEND_REGISTRY$mala$emits, "chain")
+  expect_equal(BACKEND_REGISTRY$smc$emits, "iid")
+  expect_equal(BACKEND_REGISTRY$nested_laplace$emits, "iid")
+})
+
+test_that("draws-kind resolves from tag, registry, or unknown-as-chain", {
+  expect_true(.tulpa_is_chain(
+    structure(list(backend = "mala"), class = "tulpa_fit")))
+  expect_false(.tulpa_is_chain(
+    structure(list(backend = "nested_laplace"), class = "tulpa_fit")))
+  expect_false(.tulpa_is_chain(
+    structure(list(draws_kind = "iid"), class = "tulpa_fit")))   # explicit tag wins
+  expect_true(.tulpa_is_chain(
+    structure(list(), class = "tulpa_fit")))                     # unknown -> chain
+})
+
+test_that("chain diagnostics are withheld on a non-chain (approximation) fit", {
+  set.seed(1)
+  draws <- matrix(rnorm(2000), 1000, 2, dimnames = list(NULL, c("a", "b")))
+  chain <- structure(list(draws = draws, backend = "mala", n_chains = 2L),
+                     class = "tulpa_fit")
+  iid   <- structure(list(draws = draws, backend = "nested_laplace"),
+                     class = "tulpa_fit")
+
+  # chain fit: a real per-parameter table; i.i.d. fit: NULL, not a vacuous
+  # Rhat ~ 1 / ESS ~ n table that would read as a clean convergence pass.
+  d_chain <- mcmc_diagnostics(chain)
+  expect_s3_class(d_chain, "data.frame")
+  expect_true(all(c("rhat", "ess_bulk") %in% names(d_chain)))
+  expect_message(d_iid <- mcmc_diagnostics(iid), "not an MCMC chain")
+  expect_null(d_iid)
+
+  # check_diagnostics: a real verdict on the chain, NA ("not applicable") on iid.
+  expect_false(is.na(check_diagnostics(chain, quiet = TRUE)))
+  expect_true(is.na(suppressMessages(check_diagnostics(iid, quiet = TRUE))))
+
+  # typed accessors: summaries see any draws, the chain view is withheld for iid.
+  expect_false(is.null(posterior_sample(iid)))
+  expect_null(mcmc_draws(iid))
+  expect_false(is.null(mcmc_draws(chain)))
+})

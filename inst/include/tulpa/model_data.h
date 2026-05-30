@@ -77,7 +77,7 @@ namespace tulpa {
 // Layer B.1). Single-arm path; sparse twin + cross-arm Hessian land
 // with B.2 alongside tulpaObs `OccuCoverLognormalCoupling`.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 30;
+constexpr int TULPA_ABI_VERSION = 31;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

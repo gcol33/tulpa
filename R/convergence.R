@@ -231,6 +231,83 @@
   unlist(lapply(measures, function(mn) .tulpa_diag_measures[[mn]](sims, probs)))
 }
 
+# --- Draws provenance gate --------------------------------------------------
+# A fit's `$draws` may hold an autocorrelated MCMC chain or an i.i.d. sample
+# from a deterministic approximation (a nested-Laplace / VI / SMC fit
+# mixture-samples or resamples its posterior). Chain diagnostics (Rhat,
+# autocorrelation-ESS) are only meaningful for the former: on i.i.d. draws
+# split-Rhat sits at ~1 and ESS ~ n_draws by construction, which reads as a
+# clean convergence result while saying nothing about approximation bias. The
+# kind is carried explicitly on the fit (`$draws_kind`, stamped by
+# `tulpa_dispatch`) or derived from the backend's registry `emits` property.
+
+# Posterior representation kind: "chain", "iid", "point", or NA when unknown.
+.tulpa_draws_kind <- function(fit) {
+  k <- fit$draws_kind
+  if (!is.null(k)) return(k)
+  b <- fit$backend
+  if (!is.null(b) && !is.null(BACKEND_REGISTRY[[b]])) {
+    return(BACKEND_REGISTRY[[b]]$emits %||% NA_character_)
+  }
+  NA_character_
+}
+
+# TRUE when MCMC chain diagnostics describe the fit. Unknown provenance counts
+# as a chain, so a fit that predates the `emits` tag is never silently refused.
+.tulpa_is_chain <- function(fit) {
+  k <- .tulpa_draws_kind(fit)
+  is.na(k) || identical(k, "chain")
+}
+
+# Shared explanation for why chain diagnostics are withheld on a non-chain fit.
+.tulpa_non_chain_msg <- function(fit) {
+  k <- .tulpa_draws_kind(fit)
+  b <- fit$backend %||% "this backend"
+  if (identical(k, "point")) {
+    return(sprintf("Backend '%s' returns a point summary (mode + covariance), not a posterior sample.", b))
+  }
+  sprintf(paste0(
+    "Backend '%s' returns i.i.d. / resampled draws, not an MCMC chain: Rhat is ",
+    "vacuous and ESS = n_draws by construction, so they do not diagnose ",
+    "approximation accuracy. Assess this fit with the approximation/coverage ",
+    "diagnostics instead (the IMH/Gibbs debias step, PIT residuals, recovery ",
+    "checks)."), b)
+}
+
+#' Posterior parameter sample from a fit
+#'
+#' Returns a fit's posterior draws for summary purposes (quantiles, derived
+#' quantities, density plots), regardless of how they were produced -- an MCMC
+#' chain, a nested-Laplace node mixture, or a variational sample all answer
+#' here. For the chain-only view used by convergence diagnostics, see
+#' [mcmc_draws()].
+#'
+#' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
+#' @return The posterior draws matrix/array, or `NULL` if the fit carries none.
+#' @seealso [mcmc_draws()], [mcmc_diagnostics()]
+#' @export
+posterior_sample <- function(fit) {
+  fit$draws %||% fit$samples
+}
+
+#' MCMC chain draws from a fit
+#'
+#' Returns a fit's posterior draws only when they form a genuine MCMC chain
+#' (`$draws_kind == "chain"`, or an untagged legacy fit); for an i.i.d. /
+#' approximation fit (nested Laplace, VI, SMC, ...) it returns `NULL`, because
+#' chain diagnostics do not apply. This is the accessor [mcmc_diagnostics()]
+#' gates on. For the provenance-agnostic posterior sample used by summaries,
+#' see [posterior_sample()].
+#'
+#' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
+#' @return The chain draws matrix/array, or `NULL` for a non-chain fit.
+#' @seealso [posterior_sample()], [mcmc_diagnostics()]
+#' @export
+mcmc_draws <- function(fit) {
+  if (!.tulpa_is_chain(fit)) return(NULL)
+  fit$draws %||% fit$samples
+}
+
 # --- Draws extraction -------------------------------------------------------
 
 # Split a fit's posterior draws into a list of per-chain [n_draws x n_par]
@@ -311,6 +388,12 @@ get_draws_array <- function(fit) list(draws = tulpa_draws_array(fit))
 #' any number of chains. The estimators follow Vehtari et al. (2021) and
 #' reproduce the corresponding `posterior` functions.
 #'
+#' Returns `NULL` (with a message) for a fit whose draws are not an MCMC chain
+#' -- an i.i.d. / approximation fit such as nested Laplace, VI, or SMC -- where
+#' Rhat is vacuous and ESS equals the draw count by construction. Provenance is
+#' read from `$draws_kind` (or the backend's registry `emits` property); assess
+#' those fits with the approximation/coverage diagnostics instead.
+#'
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`. Multiple
 #'   chains are recognised from a 3D `[iter, chain, param]` draws array, a
 #'   `$chain_id` row map, or an `$n_chains` count over chain-major rows.
@@ -336,6 +419,10 @@ mcmc_diagnostics <- function(fit, pars = NULL,
                              measures = c("rhat", "ess_bulk", "ess_tail"),
                              probs = c(0.05, 0.95)) {
   measures <- match.arg(measures, names(.tulpa_diag_measures), several.ok = TRUE)
+  if (!.tulpa_is_chain(fit)) {
+    message(.tulpa_non_chain_msg(fit))
+    return(NULL)
+  }
   chain_list <- .tulpa_chain_list(fit)
   if (is.null(chain_list) || nrow(chain_list[[1L]]) < 4L) return(NULL)
 

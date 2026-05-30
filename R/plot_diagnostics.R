@@ -74,6 +74,11 @@ plot_rhat <- function(fit, threshold = 1.01, pars = NULL) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
 
+  if (!.tulpa_is_chain(fit)) {
+    message(.tulpa_non_chain_msg(fit))
+    return(invisible(NULL))
+  }
+
   # Get diagnostics
 
   diag <- mcmc_diagnostics(fit, pars = pars)
@@ -192,6 +197,11 @@ plot_ess <- function(fit, type = c("bulk", "tail"), threshold = 400, pars = NULL
   }
 
   type <- match.arg(type)
+
+  if (!.tulpa_is_chain(fit)) {
+    message(.tulpa_non_chain_msg(fit))
+    return(invisible(NULL))
+  }
 
   # Get diagnostics
   diag <- mcmc_diagnostics(fit, pars = pars)
@@ -930,12 +940,16 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     worst_rhat = NULL,
     worst_ess = NULL,
     e_bfmi = NA,
+    pareto_k = NA_real_,
+    quad_ess = NA_real_,
     recommendations = character(0),
     status = "PASS"
   )
 
-  # Get MCMC diagnostics
-  if (backend %in% c("hmc", "pg")) {
+  # Get MCMC diagnostics (chain fits only; the registry's `emits` property
+  # decides, so every chain backend -- hmc, gibbs, mala, imh_laplace, ess, ...
+  # -- is covered, and no approximation fit gets a vacuous Rhat/ESS table).
+  if (.tulpa_is_chain(fit)) {
     diag <- tryCatch(mcmc_diagnostics(fit), error = function(e) NULL)
 
     if (!is.null(diag)) {
@@ -1005,17 +1019,44 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     }
   }
 
-  # Laplace-specific notes
-  if (backend == "laplace") {
-    recommendations <- c(recommendations,
-      "Laplace provides approximate inference. Consider HMC for full uncertainty.")
+  # Approximation (non-chain) fits: chain diagnostics do not apply. The
+  # accuracy gate is the Pareto-k-hat of the nested integration (when the
+  # backend computed it); fall back to the grid's quadrature effective sample
+  # size for the C++ nested paths that store weights but no sampled k-hat yet.
+  if (!.tulpa_is_chain(fit)) {
+    k_hat <- fit$pareto_k
+    if (!is.null(k_hat) && is.finite(k_hat)) {
+      result$pareto_k <- k_hat
+      if (k_hat >= 0.7) {
+        status <- "WARN"
+        recommendations <- c(recommendations, sprintf(
+          paste("Pareto k-hat = %.2f (>= 0.7): the %s is misfit by the nested",
+                "grid; the approximation is unreliable -- escalate (debias / MCMC)."),
+          k_hat, fit$pareto_k_scope %||% "hyperparameter posterior"))
+      } else {
+        recommendations <- c(recommendations, sprintf(
+          "Pareto k-hat = %.2f (< 0.7): nested approximation is reliable.", k_hat))
+      }
+    } else {
+      w <- fit$weights
+      if (!is.null(w) && length(w) > 1L && is.finite(sum(w))) {
+        result$quad_ess <- sum(w)^2 / sum(w^2)
+        recommendations <- c(recommendations, sprintf(
+          paste("Quadrature ESS = %.1f of %d grid nodes (no sampled Pareto",
+                "k-hat for this backend); validate with debias / coverage checks."),
+          result$quad_ess, length(w)))
+      } else {
+        recommendations <- c(recommendations,
+          paste("Approximation fit: Rhat/ESS are not convergence diagnostics here.",
+                "Validate with the debias step (IMH/Gibbs) or coverage/recovery checks."))
+      }
+    }
 
-    # Check convergence
     converged <- fit$laplace_result$converged %||% fit$.internal$converged
     if (!is.null(converged) && !converged) {
       status <- "WARN"
       recommendations <- c(recommendations,
-        "Laplace optimization did not converge")
+        "Inner Laplace optimization did not converge")
     }
   }
 
@@ -1071,6 +1112,14 @@ print.tulpa_diagnostic_summary <- function(x, ...) {
       cat(sprintf("E-BFMI: %.3f (%s)\n", x$e_bfmi, ebfmi_status))
     }
     cat("\n")
+  }
+
+  # Pareto k-hat / quadrature ESS (approximation fits)
+  if (!is.null(x$pareto_k) && is.finite(x$pareto_k)) {
+    khat_status <- if (x$pareto_k < 0.7) "OK" else "HIGH"
+    cat(sprintf("Pareto k-hat: %.3f (%s)\n\n", x$pareto_k, khat_status))
+  } else if (!is.null(x$quad_ess) && is.finite(x$quad_ess)) {
+    cat(sprintf("Quadrature ESS: %.1f\n\n", x$quad_ess))
   }
 
   # Worst Rhat
@@ -1383,7 +1432,8 @@ n_divergent <- function(fit) {
 #' @param ess_threshold Minimum acceptable bulk-ESS (default 400).
 #' @param quiet Logical; if TRUE, suppress messages (default FALSE).
 #'
-#' @return Invisibly, `TRUE` if all checks pass, otherwise `FALSE`.
+#' @return Invisibly, `TRUE` if all checks pass, `FALSE` if any fail, or `NA`
+#'   for a non-chain (approximation) fit where Rhat/ESS do not apply.
 #'
 #' @examples
 #' # See plot_rhat() examples for fitting a model
@@ -1395,6 +1445,13 @@ check_diagnostics <- function(fit, rhat_threshold = 1.01, ess_threshold = 400,
                               quiet = FALSE) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
+  }
+
+  # Non-chain (approximation) fits have no Rhat/ESS to check; report "not
+  # applicable" rather than a vacuous pass.
+  if (!.tulpa_is_chain(fit)) {
+    if (!quiet) message(.tulpa_non_chain_msg(fit))
+    return(invisible(NA))
   }
 
   issues <- character(0)

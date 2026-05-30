@@ -82,6 +82,16 @@ struct CellCouplingSpec;
 using RegisterCellCouplingFn = void (*)(const char* name,
                                         std::shared_ptr<CellCouplingSpec> spec);
 
+// Curvature the kernel asks a CellCouplingSpec to write into CellDerivs.
+//   Observed : -d^2 log p_cell / d eta d eta (the true Hessian). Default;
+//              used for the final mode-pass that feeds log_det_Q and the SEs.
+//   Expected : the complete-data expected information (Fisher scoring). PSD by
+//              construction; used for the inner Newton step when the caller
+//              selects control$hessian = "fisher". A spec that does not
+//              implement it MUST ignore the request and write the observed
+//              Hessian (the default behaviour).
+enum class CurvatureMode { Observed, Expected };
+
 // ----------------------------------------------------------------------------
 // CellEtas -- read-only per-cell view of each arm's eta at the rows the inner
 // Newton has assigned to this cell.
@@ -226,6 +236,12 @@ struct CellDerivs {
     const int* arm_row_count = nullptr;
 
     int n_arms_ = 0;
+
+    // Which curvature the kernel is requesting for this scatter. A spec that
+    // implements Fisher scoring branches on it; specs that do not simply
+    // ignore it and always write the observed Hessian. Appended last so the
+    // vtable and the leading fields are unchanged.
+    CurvatureMode curvature = CurvatureMode::Observed;
 
     int n_arms() const { return n_arms_; }
     int n_rows_in_arm(int k) const { return arm_row_count[k]; }

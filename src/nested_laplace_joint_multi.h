@@ -531,7 +531,8 @@ inline void scatter_cell_coupling_branch_impl(
     DenseVec&                                     grad,
     HType&                                        H,
     ScatterRowFn                                  scatter_row,
-    ScatterCrossFn                                scatter_cross
+    ScatterCrossFn                                scatter_cross,
+    CurvatureMode                                 curvature = CurvatureMode::Observed
 ) {
     const int n_coupled = (int)coupled_arms.size();
     const int B         = (int)blocks.size();
@@ -664,6 +665,7 @@ inline void scatter_cell_coupling_branch_impl(
         out.arm_cross_hess     = cross_hess_outer.data();
         out.arm_row_count      = arm_row_count.data();
         out.n_arms_            = n_coupled;
+        out.curvature          = curvature;
 
         spec.evaluate_cell(c, etas_view, y_view, out);
 
@@ -727,13 +729,15 @@ inline void scatter_cell_coupling_dense_branch(
     const std::vector<LatentBlock>&               blocks,
     int                                           k_grid,
     DenseVec&                                     grad,
-    DenseMat&                                     H
+    DenseMat&                                     H,
+    CurvatureMode                                 curvature = CurvatureMode::Observed
 ) {
     scatter_cell_coupling_branch_impl(
         spec, coupled_arms, cell_rows, n_cells,
         arms, parsed, etas, blocks, k_grid, grad, H,
         scatter_one_arm_row_dense,
-        scatter_cross_chain_dense
+        scatter_cross_chain_dense,
+        curvature
     );
 }
 
@@ -753,13 +757,15 @@ inline void scatter_cell_coupling_sparse_branch(
     const std::vector<LatentBlock>&               blocks,
     int                                           k_grid,
     DenseVec&                                     grad,
-    SparseHessianBuilder&                         H
+    SparseHessianBuilder&                         H,
+    CurvatureMode                                 curvature = CurvatureMode::Observed
 ) {
     scatter_cell_coupling_branch_impl(
         spec, coupled_arms, cell_rows, n_cells,
         arms, parsed, etas, blocks, k_grid, grad, H,
         scatter_one_arm_row_sparse,
-        scatter_cross_chain_sparse
+        scatter_cross_chain_sparse,
+        curvature
     );
 }
 
@@ -1161,7 +1167,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     const std::vector<int>&          coupled_arms,
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
     int                              n_cells,
-    JointPDMode                      pd_mode = JointPDMode::LM
+    JointPDMode                      pd_mode = JointPDMode::LM,
+    CurvatureMode                    step_curvature = CurvatureMode::Observed
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1193,7 +1200,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     double                           prune_tol = 0.0,
     bool                             force_sparse = false,
     std::shared_ptr<CellCouplingSpec> cell_coupling_spec = nullptr,
-    JointPDMode                      pd_mode = JointPDMode::LM
+    JointPDMode                      pd_mode = JointPDMode::LM,
+    CurvatureMode                    step_curvature = CurvatureMode::Observed
 ) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
@@ -1263,7 +1271,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
             max_iter, tol, n_threads,
             store_modes, x_init, store_Q,
             prep_at_grid, tile_ids, tile_pilot_cells, prune_tol,
-            cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode
+            cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
+            step_curvature
         );
     }
 
@@ -1371,9 +1380,13 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
             }
         };
 
+        // `finalize` selects the coupled-cell curvature: the inner Newton step
+        // uses `step_curvature` (Expected = Fisher scoring when
+        // control$hessian = "fisher"); the final mode-pass uses the observed
+        // Hessian for log_det_Q and the SEs.
         auto scatter_joint = [&](const Rcpp::NumericVector& x,
                                  const std::vector<Rcpp::NumericVector>& etas,
-                                 DenseVec& grad, DenseMat& H) {
+                                 DenseVec& grad, DenseMat& H, bool finalize) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 // Cell-coupled arms route through the per-cell branch
                 // below; skip their per-obs scatter.
@@ -1385,9 +1398,11 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                 );
             }
             if (any_coupling) {
+                const CurvatureMode cm =
+                    finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_dense_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                    arms, parsed, etas, blocks, k_grid, grad, H
+                    arms, parsed, etas, blocks, k_grid, grad, H, cm
                 );
             }
             for (const auto& b : blocks) {
@@ -1529,7 +1544,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     const std::vector<int>&          coupled_arms,
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
     int                              n_cells,
-    JointPDMode                      pd_mode
+    JointPDMode                      pd_mode,
+    CurvatureMode                    step_curvature
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -1645,10 +1661,16 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         const ScatterIndexCache* idx_cache_use =
             use_cheap_scratch ? &idx_cache_cheap : &idx_cache_main;
 
+        // `finalize` selects the curvature for the coupled-cell scatter: the
+        // inner Newton step uses `step_curvature` (Expected = Fisher scoring,
+        // PSD by construction, when control$hessian = "fisher"), while the
+        // final mode-pass always uses the observed Hessian so log_det_Q and the
+        // SEs are the true curvature at the mode.
         auto scatter_joint_sparse = [&](const Rcpp::NumericVector& x,
                                          const std::vector<Rcpp::NumericVector>& etas,
                                          DenseVec& grad,
-                                         SparseHessianBuilder& H) {
+                                         SparseHessianBuilder& H,
+                                         bool finalize) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 if (arm_is_coupled[k_arm]) continue;
                 scatter_arm_obs_joint_multi_sparse(
@@ -1661,9 +1683,11 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                 );
             }
             if (any_coupling) {
+                const CurvatureMode cm =
+                    finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_sparse_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                    arms, parsed, etas, blocks, k_grid, grad, H
+                    arms, parsed, etas, blocks, k_grid, grad, H, cm
                 );
             }
             for (const auto& b : blocks) {

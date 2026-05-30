@@ -1,6 +1,6 @@
 // pg_rng.cpp
-// Pólya-Gamma random number generator implementation
-// Based on Polson, Scott & Windle (2013) and BayesLogit package
+// Polya-Gamma random number generator implementation
+// Based on Polson, Scott & Windle (2013) JASA and the BayesLogit package.
 
 #include "pg_rng.h"
 #include <Rcpp.h>
@@ -12,196 +12,176 @@ using namespace Rcpp;
 namespace tulpa {
 
 // Constants
-const double PI = 3.141592653589793;
+const double PI = 3.141592653589793238462643383279502884197;
 const double PI_SQ = PI * PI;
-const double TRUNC_T = 0.64;  // Truncation point for series
+const double TRUNC_T = 0.64;            // Devroye truncation point t
+const double TRUNC_T_RECIP = 1.0 / TRUNC_T;
+const double HALF_PI_SQ = 0.5 * PI_SQ;
 
 // ---------------------------------------------------------------------
-// Inverse Gaussian sampler
+// Shared sub-computations
 // ---------------------------------------------------------------------
 
+// Convex-tilting constant f(z) = pi^2/8 + z^2/2 for the J*(1,z) sampler.
+static inline double jacobi_fz(double z) {
+  return 0.125 * PI_SQ + 0.5 * z * z;
+}
+
+// Coefficient a_n(x) of the alternating series for the J*(1,z) density.
+// Two genuinely different analytic continuations meet at x = t: the cosine
+// (large-x) block for x > t and the exponential (small-x) block for x <= t.
+static inline double a_coef(int n, double x) {
+  double k = (n + 0.5) * PI;
+  if (x > TRUNC_T) {
+    return k * std::exp(-0.5 * k * k * x);
+  } else if (x > 0.0) {
+    double expnt = -1.5 * (std::log(0.5 * PI) + std::log(x)) +
+                   std::log(k) - 2.0 * (n + 0.5) * (n + 0.5) / x;
+    return std::exp(expnt);
+  }
+  return 0.0;
+}
+
+// ---------------------------------------------------------------------
+// Inverse Gaussian samplers
+// ---------------------------------------------------------------------
+
+// Sample from IG(mu, lambda) by the method of Michael, Schucany & Haas.
 double rinvgauss(double mu, double lambda) {
-  // Sample from IG(mu, lambda) using the method of Michael, Schucany & Haas
   double y = R::rnorm(0.0, 1.0);
   y = y * y;
-  double x = mu + (mu * mu * y) / (2.0 * lambda) -
-             (mu / (2.0 * lambda)) * std::sqrt(4.0 * mu * lambda * y + mu * mu * y * y);
-
+  double half_mu = 0.5 * mu;
+  double mu_y = mu * y;
+  double x = mu + half_mu * mu_y / lambda -
+             half_mu / lambda * std::sqrt(4.0 * lambda * mu_y + mu_y * mu_y);
   double u = R::runif(0.0, 1.0);
   if (u <= mu / (mu + x)) {
     return x;
-  } else {
-    return mu * mu / x;
   }
+  return mu * mu / x;
 }
 
-// Truncated inverse Gaussian (left truncated at trunc)
-double rinvgauss_trunc(double mu, double lambda, double trunc) {
-  double x;
-  do {
-    x = rinvgauss(mu, lambda);
-  } while (x < trunc);
+// Inverse Gaussian for the J*(1,z) proposal body, truncated to (0, t).
+// For z below 1/t the unconstrained mode lies past t, so the truncated draw
+// is taken from the tail of the corresponding stable variate; otherwise a
+// direct IG(1/z, 1) draw is rejected until it falls below t.
+static inline double rtigauss(double z) {
+  z = std::abs(z);
+  double t = TRUNC_T;
+  double x = t + 1.0;
+  if (TRUNC_T_RECIP > z) {
+    double alpha = 0.0;
+    while (R::runif(0.0, 1.0) > alpha) {
+      double e1 = R::rexp(1.0);
+      double e2 = R::rexp(1.0);
+      while (e1 * e1 > 2.0 * e2 / t) {
+        e1 = R::rexp(1.0);
+        e2 = R::rexp(1.0);
+      }
+      x = 1.0 + e1 * t;
+      x = t / (x * x);
+      alpha = std::exp(-0.5 * z * z * x);
+    }
+  } else {
+    double mu = 1.0 / z;
+    while (x > t) {
+      x = rinvgauss(mu, 1.0);
+    }
+  }
   return x;
 }
 
 // ---------------------------------------------------------------------
-// Jacobi tilted distribution sampler
+// J*(1, z) tilted-Jacobi sampler (Devroye)
 // ---------------------------------------------------------------------
 
-// Sample from truncated exponential on (0, t)
-double rexp_trunc(double rate, double t) {
-  double u = R::runif(0.0, 1.0);
-  return -std::log(1.0 - u * (1.0 - std::exp(-rate * t))) / rate;
+// Probability of choosing the truncated-exponential (right) proposal over the
+// truncated inverse-Gaussian (left) proposal, from the proposal-mass ratio.
+static inline double mass_texpon(double z) {
+  double t = TRUNC_T;
+  double fz = jacobi_fz(z);
+  double b = std::sqrt(1.0 / t) * (t * z - 1.0);
+  double a = std::sqrt(1.0 / t) * (t * z + 1.0) * -1.0;
+  double x0 = std::log(fz) + fz * t;
+  // log lower-tail standard-normal probabilities
+  double xb = x0 - z + R::pnorm(b, 0.0, 1.0, /*lower=*/1, /*log=*/1);
+  double xa = x0 + z + R::pnorm(a, 0.0, 1.0, /*lower=*/1, /*log=*/1);
+  double qdivp = 4.0 / PI * (std::exp(xb) + std::exp(xa));
+  return 1.0 / (1.0 + qdivp);
 }
 
-// Compute the a_n coefficient
-double a_coef(int n, double x, double t) {
-  double k = n + 0.5;
-  double out;
+// Draw a single J*(1, z) variate by the alternating-series squeeze.
+static inline double sample_jacobi_tilted(double z) {
+  z = std::abs(z) * 0.5;
+  double fz = jacobi_fz(z);
 
-  if (x <= t) {
-    out = PI * k * std::exp(-0.5 * k * k * PI_SQ * x);
-  } else {
-    out = PI * k * std::exp(-0.5 * k * k * PI_SQ * x);
-  }
-
-  return out;
-}
-
-// Mass function for J*(1,0)
-double mass_j_star(double x) {
-  double sum = 0.0;
-  double term;
-  int n = 0;
-
-  // Alternating series
-  do {
-    double k = n + 0.5;
-    term = std::exp(-0.5 * k * k * PI_SQ * x);
-    if (n % 2 == 0) {
-      sum += term;
+  while (true) {
+    double x;
+    if (R::runif(0.0, 1.0) < mass_texpon(z)) {
+      x = TRUNC_T + R::rexp(1.0) / fz;
     } else {
-      sum -= term;
+      x = rtigauss(z);
     }
-    n++;
-  } while (std::abs(term) > 1e-12 && n < 1000);
-
-  return PI * sum;
-}
-
-// Sample from J*(1, z) using Devroye's method
-double sample_jacobi_tilted(double z) {
-  double z_abs = std::abs(z) / 2.0;
-  double K = PI_SQ / 8.0 + z_abs * z_abs / 2.0;
-
-  double x, s;
-
-  if (z_abs < 1e-6) {
-    // z ≈ 0: sample from J*(1, 0) directly
-    // Use inverse CDF method or series approximation
-    do {
-      double e1 = R::rexp(1.0);
-      double e2 = R::rexp(1.0);
-      x = 1.0 / (2.0 * PI_SQ) * std::pow(PI_SQ / 8.0 + e1, -1.0);
-      // Simple rejection
-    } while (R::runif(0.0, 1.0) > mass_j_star(x));
-
-  } else {
-    // General case: use accept-reject with proposal
-    // Proposal: mixture of truncated inverse Gaussian and truncated exponential
-
-    double p = std::exp(-z_abs * TRUNC_T) / (std::exp(-z_abs * TRUNC_T) + 2.0 / PI);
-
-    bool accept = false;
-    while (!accept) {
-      if (R::runif(0.0, 1.0) < p) {
-        // Sample from truncated exponential
-        x = TRUNC_T + R::rexp(1.0) / K;
-        s = a_coef(0, x, TRUNC_T) / K;
+    double s = a_coef(0, x);
+    double y = R::runif(0.0, 1.0) * s;
+    int n = 0;
+    bool go = true;
+    while (go) {
+      ++n;
+      if (n % 2 == 1) {
+        s -= a_coef(n, x);
+        if (y <= s) {
+          return x;
+        }
       } else {
-        // Sample from truncated inverse Gaussian
-        double mu = 1.0 / z_abs;
-        double lambda = 1.0;
-        x = rinvgauss(mu, lambda);
-        while (x > TRUNC_T) {
-          x = rinvgauss(mu, lambda);
+        s += a_coef(n, x);
+        if (y > s) {
+          go = false;
         }
-        s = a_coef(0, x, TRUNC_T);
-      }
-
-      // Accept-reject step using alternating series
-      double u = R::runif(0.0, 1.0) * s;
-      int n = 1;
-      bool go = true;
-
-      while (go) {
-        double a_n = a_coef(n, x, TRUNC_T);
-        if (n % 2 == 1) {
-          s -= a_n;
-          if (u <= s) {
-            accept = true;
-            go = false;
-          }
-        } else {
-          s += a_n;
-          if (u > s) {
-            go = false;  // reject
-          }
-        }
-        n++;
-        if (n > 1000) go = false;  // safety
       }
     }
   }
-
-  // Apply exponential tilting
-  return x * std::exp(-z_abs * z_abs * x / 2.0);
 }
 
 // ---------------------------------------------------------------------
 // Main PG samplers
 // ---------------------------------------------------------------------
 
-// Sample from PG(1, z)
-// Uses the sum-of-gammas representation from Polson, Scott & Windle (2013)
-// PG(1, z) = (1/2π²) * sum_{k=0}^∞ G_k / ((k+0.5)² + z²/(4π²))
-// where G_k ~ Exp(1)
-//
-// Optimizations:
-// - Truncate adaptively based on z (convergence is faster for larger z)
+// Sample from PG(1, z) by the exact Devroye method.
+// PG(1, z) = (1/4) * J*(1, z / 2).
 double rpg1(double z) {
-  double z_abs = std::abs(z);
-
-  // Sum-of-gammas representation works well for all practical z
-  double sum = 0.0;
-  double c = z_abs * z_abs / (4.0 * PI_SQ);  // z² / (4π²)
-
-  // Adaptive truncation: fewer terms needed for larger z
-  // because the k=0 term dominates more as z increases
-  int n_terms;
-  if (z_abs < 0.5) {
-    n_terms = 50;
-  } else if (z_abs < 2.0) {
-    n_terms = 30;
-  } else if (z_abs < 5.0) {
-    n_terms = 20;
-  } else {
-    n_terms = 15;
-  }
-
-  for (int k = 0; k < n_terms; k++) {
-    double gk = R::rexp(1.0);  // Gamma(1,1) = Exp(1)
-    double k_half = k + 0.5;
-    double denom = k_half * k_half + c;
-    sum += gk / denom;
-  }
-
-  return sum / (2.0 * PI_SQ);
+  return 0.25 * sample_jacobi_tilted(z);
 }
 
-// Sample from PG(b, z) for integer b
+// Sample from PG(b, z) for integer b.
+// Exact sum of b independent Devroye draws for small/moderate b; a Gaussian
+// moment-match PG(b, z) ~= N(b m1, b v1) for large b, where m1 and v1 are the
+// closed-form PG(1, z) mean and variance (the latter is the exact second
+// central moment used in tests). The CLT error is O(1/sqrt(b)).
+static const int RPG_NORMAL_THRESHOLD = 200;
+
 double rpg_int(int b, double z) {
   if (b <= 0) return 0.0;
+
+  if (b >= RPG_NORMAL_THRESHOLD) {
+    double az = std::abs(z);
+    double m1, v1;
+    if (az < 1e-6) {
+      m1 = 0.25;
+      v1 = 1.0 / 24.0;
+    } else {
+      double zh = 0.5 * az;
+      double th = std::tanh(zh);
+      m1 = th / (2.0 * az);
+      // var = (sinh(z) - z) / (4 z^3 cosh(z/2)^2)
+      double ch = std::cosh(zh);
+      v1 = (std::sinh(az) - az) / (4.0 * az * az * az * ch * ch);
+    }
+    double mean = b * m1;
+    double sd = std::sqrt(b * v1);
+    double draw = R::rnorm(mean, sd);
+    return draw > 0.0 ? draw : 0.0;
+  }
 
   double sum = 0.0;
   for (int i = 0; i < b; i++) {

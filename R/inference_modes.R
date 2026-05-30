@@ -99,6 +99,16 @@ TIER_META <- list(
 #' `backends` vectors and the separate `BACKEND_FAMILY_SUPPORT` table.
 #'
 #' Fields:
+#' * `emits`    -- the kind of posterior representation the backend's draws
+#'     hold, which fixes whether MCMC chain diagnostics apply (independent of
+#'     `tier`: an exact SMC sampler emits `"iid"` particles, a Tier-3 VI fit
+#'     also emits `"iid"`, while a nested-Laplace Tier-2 fit emits `"iid"` too):
+#'     - `"chain"` : autocorrelated MCMC output -- Rhat and autocorrelation-ESS
+#'                   are meaningful (`mcmc_diagnostics()` computes them).
+#'     - `"iid"`   : exchangeable draws from a deterministic approximation, or
+#'                   resampled particles -- split-Rhat is vacuous and ESS = n by
+#'                   construction, so they say nothing about approximation bias.
+#'     - `"point"` : no posterior sample (mode + covariance only).
 #' * `tier`     -- tier key (`"exact"`, `"structured"`, `"optimized"`).
 #' * `input`    -- the input contract the backend's fitter consumes:
 #'     - `"design"`    : design-matrix bundle (`y`, `n_trials`, `X`, RE structure).
@@ -127,21 +137,25 @@ TIER_META <- list(
 BACKEND_REGISTRY <- list(
   # ---- Tier 1: Exact ----
   hmc = list(
+    emits = "chain",
     tier = "exact", input = "modeldata", fitter = NULL, families = NULL,
     cabi = "tulpa_run_nuts_generic",
     note = "Model packages drive NUTS through the C ABI; no generic R fitter yet"
   ),
   ess = list(
+    emits = "chain",
     tier = "exact", input = "logpost", fitter = NULL, families = NULL,
     cabi = "tulpa_run_ess_sampler"
   ),
   pg = list(
+    emits = "chain",
     tier = "exact", input = "design", fitter = NULL,
     families = c("binomial", "beta_binomial", "beta_binomial_fixed",
                  "negbin_negbin", "neg_binomial_2", "negative_binomial"),
     cabi = "tulpa_pg_binomial_gibbs"
   ),
   gibbs = list(
+    emits = "chain",
     tier = "exact", input = "design", fitter = "tulpa_gibbs",
     families = c("poisson_gamma", "negbin_negbin", "binomial",
                  "negbin_gamma", "gamma_gamma", "lognormal",
@@ -151,6 +165,7 @@ BACKEND_REGISTRY <- list(
     cabi = "tulpa_cpp_gibbs_spatial"
   ),
   re_cov_gibbs = list(
+    emits = "chain",
     tier = "exact", input = "design", fitter = "tulpa_re_cov_gibbs",
     families = NULL, cabi = NULL,
     note = paste("Correlated random-slope term (1 + x | g): exact",
@@ -158,37 +173,45 @@ BACKEND_REGISTRY <- list(
                  "Auto-selected from the Laplace path with control$re_cov = 'gibbs'")
   ),
   sghmc = list(
+    emits = "chain",
     tier = "exact", input = "logpost", fitter = NULL, families = NULL,
     cabi = "tulpa_sghmc_fit"
   ),
   sgld = list(
+    emits = "chain",
     tier = "exact", input = "logpost", fitter = NULL, families = NULL,
     cabi = "tulpa_sgld_fit"
   ),
   mclmc = list(
+    emits = "chain",
     tier = "exact", input = "logpost", fitter = NULL, families = NULL,
     cabi = "tulpa_mclmc_fit",
     note = "Microcanonical Langevin Monte Carlo; C-ABI kernel only"
   ),
   smc = list(
+    emits = "iid",
     tier = "exact", input = "logpost", fitter = NULL, families = NULL,
     cabi = "tulpa_smc_fit",
     note = "Sequential Monte Carlo; C-ABI kernel only"
   ),
   imh_laplace = list(
+    emits = "chain",
     tier = "exact", input = "logpost", fitter = "imh_laplace",
     families = NULL, cabi = NULL
   ),
   mala = list(
+    emits = "chain",
     tier = "exact", input = "logpost", fitter = "mala",
     families = NULL, cabi = NULL
   ),
   # ---- Tier 2: Structured ----
   laplace = list(
+    emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_laplace",
     families = NULL, cabi = "tulpa_laplace_spec_dense"
   ),
   re_cov_nested = list(
+    emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_re_cov_nested",
     families = NULL, cabi = NULL,
     note = paste("Correlated random-slope term (1 + x | g): nested-Laplace",
@@ -197,25 +220,30 @@ BACKEND_REGISTRY <- list(
                  "correlated term")
   ),
   pathfinder = list(
+    emits = "iid",
     tier = "structured", input = "logpost", fitter = "pathfinder",
     families = NULL, cabi = NULL
   ),
   agq = list(
+    emits = "iid",
     tier = "structured", input = "design", fitter = "agq_fit",
     families = NULL, cabi = NULL
   ),
   nested_laplace = list(
+    emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",
     families = NULL, cabi = "cpp_nested_laplace_multi",
     note = "Single-arm nested Laplace; integrates latent-block hyperparameters"
   ),
   nested_laplace_joint = list(
+    emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace_joint",
     families = NULL, cabi = "cpp_nested_laplace_joint_multi",
     note = paste("Joint multi-arm nested Laplace; driven by model packages, not the",
                  "single-response tulpa() formula (cannot express multiple arms)")
   ),
   spde = list(
+    emits = "iid",
     tier = "structured", input = "spde", fitter = "fit_spde",
     families = c("binomial", "poisson", "neg_binomial_2"),
     cabi = "cpp_nested_laplace_spde",
@@ -228,6 +256,7 @@ BACKEND_REGISTRY <- list(
   ),
   # ---- Tier 3: Optimized ----
   vi = list(
+    emits = "iid",
     tier = "optimized", input = "logpost", fitter = NULL, families = NULL,
     cabi = "tulpa_fit_vi",
     note = "Generic VI via C ABI; tgmrf VI exposed as tulpa_tgmrf_vi"
@@ -440,6 +469,7 @@ tulpa_dispatch <- function(mode,
     fit$inference_tier <- fit$inference_tier %||% sel$tier
     fit$backend <- fit$backend %||% sel$backend
     fit$selection_reason <- fit$selection_reason %||% sel$reason
+    fit$draws_kind <- fit$draws_kind %||% BACKEND_REGISTRY[[sel$backend]]$emits
     # Guarantee a consistent return type: lower-level fitters (e.g.
     # tulpa_laplace) return a bare result list for model packages to wrap;
     # through dispatch the inference contract -- including the class -- must be

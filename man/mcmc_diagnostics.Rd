@@ -42,6 +42,13 @@ for a single chain (the chain is split in two), so a result is produced for
 any number of chains. The estimators follow Vehtari et al. (2021) and
 reproduce the corresponding \code{posterior} functions.
 }
+\details{
+Returns \code{NULL} (with a message) for a fit whose draws are not an MCMC chain
+-- an i.i.d. / approximation fit such as nested Laplace, VI, or SMC -- where
+Rhat is vacuous and ESS equals the draw count by construction. Provenance is
+read from \verb{$draws_kind} (or the backend's registry \code{emits} property); assess
+those fits with the approximation/coverage diagnostics instead.
+}
 \references{
 Vehtari, Gelman, Simpson, Carpenter & Burkner (2021).
 Rank-normalization, folding, and localization: an improved Rhat for

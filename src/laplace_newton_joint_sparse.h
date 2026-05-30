@@ -223,7 +223,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         scratch.zero_grad();
         H_builder.zero();
         { TULPA_PROFILE_PHASE(PHASE_SCATTER);
-          scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder); }
+          scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder, /*finalize=*/false); }
 
         // Uniform upstream base ridge for numerical hygiene of an already-PD H.
         H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
@@ -276,7 +276,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     scratch.zero_grad();
     H_builder.zero();
     { TULPA_PROFILE_PHASE(PHASE_SCATTER);
-      scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder); }
+      scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder, /*finalize=*/true); }
     H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 
     // PD-enforced final factorize so log_det is defined even when the mode sits

@@ -21,7 +21,8 @@ check_diagnostics(
 \item{quiet}{Logical; if TRUE, suppress messages (default FALSE).}
 }
 \value{
-Invisibly, \code{TRUE} if all checks pass, otherwise \code{FALSE}.
+Invisibly, \code{TRUE} if all checks pass, \code{FALSE} if any fail, or \code{NA}
+for a non-chain (approximation) fit where Rhat/ESS do not apply.
 }
 \description{
 Runs the core convergence diagnostics on a fit and reports whether Rhat,

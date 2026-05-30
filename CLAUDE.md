@@ -252,7 +252,48 @@ one-liner. It reads `fit$draws` plus a chain structure (`fit$chain_id`,
 works for any `tulpa_fit` subclass; downstream packages (tulpaObs, tulpaRatio)
 call `tulpa::mcmc_diagnostics()` rather than re-deriving Rhat/ESS. The plotting
 / summary layer (`plot_rhat`, `plot_ess`, `diagnostic_summary`,
-`check_diagnostics`, `n_divergent`) is built on it. The parallel-NUTS
+`check_diagnostics`, `n_divergent`) is built on it.
+
+**Draws-provenance gate.** Chain diagnostics are only computed for fits whose
+draws are an MCMC chain. Each backend declares its posterior representation via
+the registry `emits` property (`"chain"` / `"iid"` / `"point"`), orthogonal to
+`tier` (Tier-1 SMC emits `"iid"`; Tier-2 nested Laplace emits `"iid"`; Tier-3
+VI emits `"iid"`). `tulpa_dispatch()` stamps it onto `fit$draws_kind`, and
+`.tulpa_is_chain()` reads tag-then-registry, treating unknown as chain so
+untagged fits still work. On a non-chain fit `mcmc_diagnostics()` returns `NULL`
+with a message (Rhat is vacuous and ESS = n_draws by construction there),
+`check_diagnostics()` returns `NA` ("not applicable"), and the plot/summary
+layer withholds the panels rather than printing a vacuous convergence pass.
+`posterior_sample(fit)` is the provenance-agnostic accessor for summaries;
+`mcmc_draws(fit)` is the chain-only view (`NULL` otherwise) the diagnostics
+gate on.
+
+### Approximation accuracy: Pareto-k-hat (the iid-fit counterpart of Rhat/ESS)
+
+`R/psis.R` owns the native PSIS core `tulpa_psis(log_ratios)` -> `pareto_k`,
+`is_ess`, smoothed `log_weights` (Zhang-Stephens GPD fit + Vehtari et al. 2024
+weakly-informative prior; reproduces `loo::psis()`, no `loo` dependency -- loo
+is Suggests, test oracle only). This is the accuracy gate for non-chain fits,
+the counterpart to what Rhat/ESS are for chains: where the gate WITHHOLDS the
+chain diagnostic, `pareto_k` is the number to report instead.
+
+`tulpa_re_cov_nested()` computes the **outer** k-hat (`fit$pareto_k`,
+`fit$pareto_k_is_ess`, scope `"outer (hyperparameter) Gaussian proposal"`):
+the inner-Laplace hyperparameter posterior is importance-sampled against the
+Gaussian proposal the integrator places its CCD/grid with (`theta_hat`,
+`L_scale`), via `.nested_outer_pareto_k()`. k-hat < 0.7 => the nested
+integration is reliable; >= 0.7 => the (skewed / heavy-tailed) hyperparameter
+posterior is misfit by the Gaussian grid and the fit should escalate to the
+Gibbs debias. Controlled by `diagnose_k` (default TRUE) / `k_samples`
+(default 200, each one extra inner Laplace solve); computed after the draw
+synthesis with the RNG restored, so draws are bit-for-bit unchanged. NOTE:
+small-group binary RE-covariance posteriors are genuinely skewed, so a high
+k-hat there is a correct signal, not a defect. `diagnostic_summary()` surfaces
+`pareto_k` for these fits, falling back to the grid's quadrature effective
+sample size (`sum(w)^2 / sum(w^2)`) for the C++ nested paths
+(`tulpa_nested_laplace`, joint, spde) that store weights but have no sampled
+k-hat yet -- a sampled k-hat there needs a C++ inner-marginal entry point and
+is a follow-on. The parallel-NUTS
 multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
 `.tulpa_chain_list()` reads, verified end-to-end against `posterior` in

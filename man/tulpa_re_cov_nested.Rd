@@ -21,6 +21,8 @@ tulpa_re_cov_nested(
   n_quad = 1L,
   n_draws = 2000L,
   seed = NULL,
+  diagnose_k = TRUE,
+  k_samples = 200L,
   max_iter = 100L,
   tol = 1e-08,
   n_threads = 1L

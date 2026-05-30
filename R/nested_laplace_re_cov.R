@@ -509,6 +509,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 log_prior_theta = NULL,
                                 beta_prior = NULL, n_quad = 1L,
                                 n_draws = 2000L, seed = NULL,
+                                diagnose_k = TRUE, k_samples = 200L,
                                 max_iter = 100L, tol = 1e-8, n_threads = 1L) {
   integration <- match.arg(integration)
   n_quad <- as.integer(n_quad)
@@ -756,12 +757,36 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   } else colMeans(draws)
   names(beta_mean) <- beta_names
 
+  # --- outer Pareto-k-hat: is the Gaussian grid proposal correctable? --------
+  # Importance-sample the hyperparameter posterior with the same Gaussian
+  # proposal (theta_hat, L_scale) the grid is placed with; k-hat gauges whether
+  # the nested integration is trustworthy (< 0.7) or the hyperparameter
+  # posterior is too skewed / heavy-tailed for the grid (>= 0.7). Run after the
+  # draw synthesis and with the RNG state restored, so existing draws are
+  # bit-for-bit unchanged whether or not the diagnostic is requested.
+  pareto_k <- NA_real_; k_is_ess <- NA_real_
+  if (isTRUE(diagnose_k) && k > 0L) {
+    has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+    old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+    kd <- tryCatch(
+      .nested_outer_pareto_k(
+        log_target = function(th) inner_logmarg(.re_cov_theta_to_L_list(th, layout)) +
+          log_prior_theta(th),
+        theta_hat = theta_hat, L_scale = L_scale, n_samples = k_samples),
+      error = function(e) NULL)
+    if (!is.null(kd)) { pareto_k <- kd$pareto_k; k_is_ess <- kd$is_ess }
+    if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+  }
+
   list(
     posterior   = posterior,
     map         = map,
     Sigma_mean  = summ$Sigma_mean,
     beta        = beta_mean,
     draws       = draws,
+    pareto_k    = pareto_k,
+    pareto_k_is_ess = k_is_ess,
+    pareto_k_scope  = "outer (hyperparameter) Gaussian proposal",
     means       = beta_mean,
     param_names = beta_names,
     process_info = list(list(name = "fixed_effects", p = p_fix,

@@ -346,7 +346,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
     for (int iter = 0; iter < max_iter; iter++) {
         compute_eta_joint(x, scratch.etas);
         scratch.zero_for_iter();
-        scatter_joint(x, scratch.etas, scratch.grad, scratch.H);
+        scatter_joint(x, scratch.etas, scratch.grad, scratch.H, /*finalize=*/false);
 
         bool solve_ok = cholesky_solve(scratch.H, scratch.grad, scratch.delta);
 
@@ -387,7 +387,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // column. Net effect: same eta, same log_marginal, centered phi block.
     compute_eta_joint(x, scratch.etas);
     scratch.zero_for_iter();
-    scatter_joint(x, scratch.etas, scratch.grad, scratch.H);
+    scatter_joint(x, scratch.etas, scratch.grad, scratch.H, /*finalize=*/true);
 
     dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
                              scratch.chol, result.log_det_Q);

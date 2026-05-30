@@ -14,6 +14,18 @@ all derive from this list. Replaces the previously scattered per-tier
 
 Fields:
 \itemize{
+\item \code{emits}    -- the kind of posterior representation the backend's draws
+hold, which fixes whether MCMC chain diagnostics apply (independent of
+\code{tier}: an exact SMC sampler emits \code{"iid"} particles, a Tier-3 VI fit
+also emits \code{"iid"}, while a nested-Laplace Tier-2 fit emits \code{"iid"} too):
+\itemize{
+\item \code{"chain"} : autocorrelated MCMC output -- Rhat and autocorrelation-ESS
+are meaningful (\code{mcmc_diagnostics()} computes them).
+\item \code{"iid"}   : exchangeable draws from a deterministic approximation, or
+resampled particles -- split-Rhat is vacuous and ESS = n by
+construction, so they say nothing about approximation bias.
+\item \code{"point"} : no posterior sample (mode + covariance only).
+}
 \item \code{tier}     -- tier key (\code{"exact"}, \code{"structured"}, \code{"optimized"}).
 \item \code{input}    -- the input contract the backend's fitter consumes:
 \itemize{

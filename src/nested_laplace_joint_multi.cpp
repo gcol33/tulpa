@@ -939,7 +939,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     double              prune_tol = 0.0,
     bool                force_sparse = false,
     std::string         cell_coupling_name = "separable",
-    int                 hessian_pd_mode = 0
+    int                 hessian_pd_mode = 0,
+    int                 step_curvature_mode = 0
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -1046,6 +1047,13 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     tulpa::JointPDMode pd_mode =
         (hessian_pd_mode == 1) ? tulpa::JointPDMode::PSD : tulpa::JointPDMode::LM;
 
+    // Inner Newton step curvature: Expected = complete-data Fisher (PSD by
+    // construction) when control$hessian = "fisher"; otherwise the observed
+    // mixture Hessian. The final mode-pass always uses Observed regardless.
+    tulpa::CurvatureMode step_curvature =
+        (step_curvature_mode == 1) ? tulpa::CurvatureMode::Expected
+                                   : tulpa::CurvatureMode::Observed;
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads,
@@ -1058,7 +1066,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         prune_tol,
         force_sparse,
         cell_coupling_spec,
-        pd_mode
+        pd_mode,
+        step_curvature
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
