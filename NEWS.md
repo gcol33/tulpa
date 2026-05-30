@@ -1,5 +1,39 @@
 # tulpa NEWS
 
+## 0.0.4
+
+* feat(nested-laplace): `tulpa_posterior_draws(fit, idx, n)` -- a generic
+  posterior sampler for the grid-integrated joint nested-Laplace backend (the
+  `inla.posterior.sample()` analogue, gcol33/tulpa#44). Draws from the outer-grid
+  mixture `sum_k w_k N(m_k, V_k)`: each draw picks a grid cell from the
+  integration weights, then samples the inner latent vector from that cell's
+  constrained Gaussian via the stored sparse precision `Q_csc_*_per_grid`
+  (requires `control$store_Q = TRUE`). The ICAR / BYM2 field sum-to-zero
+  constraint is imposed by conditioning on kriging (Rue & Held 2005), so the
+  per-cell marginal matches the constrained inner-Laplace covariance exactly;
+  single-block and multi-block (multi-field trend) layouts are both handled.
+  Sampling the mixture -- rather than a single moment-matched Gaussian -- is the
+  faithful primitive for marginalizing nonlinear derived quantities (change in
+  occupancy, expected-cover products). Draws are tagged `iid`. Tests in
+  `tests/testthat/test-posterior-draws-joint.R`.
+* fix(nested-laplace): the joint outer-grid cheap-pass prune
+  (`control$prune = TRUE`) no longer mis-ranks grid cells or drops the true
+  posterior mode (gcol33/tulpa#43). The screen previously ran a single Newton
+  step from one global pilot mode for every cell; when the inner latent mode
+  moves substantially across the outer grid (large spatial fields, wide
+  sigma/rho/alpha ranges) the one-step approximation mis-estimated far cells by
+  O(1e5) log-units and inverted the ranking, so the prune could skip the full
+  solve on the actual mode. The screen is now a rank-faithful chained sweep over
+  the lattice: each cell runs a short Newton run warm-started from the previous
+  screened cell's quasi-mode, so every cheap mode stays near its cell's true
+  mode and the cheap ranking agrees with the full-solve ranking.
+* fix(nested-laplace): added a safety gate to the joint cheap-pass prune. If the
+  cheap-screen argmax disagrees with the full-solve argmax, or the kept
+  posterior collapses onto a cell whose cheap-vs-full log-marginal gap is large,
+  the fitter warns and falls back to the full grid (`$prune_fallback_triggered`,
+  `$prune_fallback_reason`) rather than silently returning a pruned answer. A
+  silently-wrong pruned posterior is now impossible.
+
 ## 0.0.2
 
 * feat: `tulpa_re_aghq()` -- a callback-driven adaptive Gauss-Hermite refinement
@@ -16,6 +50,21 @@
   tests in `tests/testthat/test-re-aghq.R`.
 
 ## 0.0.3 (2026-05-28)
+
+* feat(nested-laplace): `tulpa_nested_laplace_joint()` now reports the outer
+  Pareto-k-hat accuracy diagnostic (`$pareto_k`, `$pareto_k_is_ess`) over its
+  heterogeneous hyperparameter space, completing the nested-Laplace k-hat family
+  alongside the re-cov, generic single-axis, and SPDE paths (gcol33/tulpa#42). A
+  block-type-aware per-axis transform registry unconstrains each axis -- positive
+  scales (`sigma`, `tau`, `phi_*`, ...) by `log`, the BYM2 mixing weight (`rho`)
+  by logit, the copy coefficient (`alpha`) by identity -- with the summed
+  log-Jacobians in the importance target; the inner marginal is re-evaluated
+  through the same kernel the integrator used. A fit carrying an axis whose
+  support is the adjacency eigenvalue interval (`CAR_proper`'s `rho_car`) declines
+  to the quadrature-ESS fallback rather than apply a guessed transform. Gated by
+  `control$diagnose_k` (default `TRUE`) / `control$k_samples` (`200`), RNG-restored
+  so draws are unchanged. Recovery + plumbing tests in
+  `tests/testthat/test-nested-laplace-joint-pareto-k.R`.
 
 * refactor(aghq): one compiled adaptive-Gauss-Hermite engine behind the whole
   ML-II optimize family. The per-group marginal -- mode-find, quadrature grid,
