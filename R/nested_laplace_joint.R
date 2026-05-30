@@ -230,6 +230,17 @@
 #'     attach `var_of_means_consistency_info`.
 #'   * `force_sparse` (`FALSE`) -- force the sparse linear-algebra backend for
 #'     the inner joint solve regardless of the dense/sparse heuristic.
+#'   * `diagnose_k` (`TRUE`), `k_samples` (`200L`) -- compute the outer
+#'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the
+#'     joint hyperparameter posterior against the Gaussian proposal the
+#'     integrator fits (mixed per-axis transforms: `log` for positive scales,
+#'     logit for the BYM2 mixing weight, identity for the copy coefficient
+#'     \eqn{\alpha}). `k_samples` is the number of importance draws, each one
+#'     extra inner joint solve; the draw is RNG-restored so the fit's modes /
+#'     draws are unchanged. A fit carrying an axis whose support is not safely
+#'     known (CAR_proper's `rho_car`) declines to the quadrature-ESS fallback
+#'     (`pareto_k = NA`) rather than apply a guessed transform. `FALSE` skips
+#'     the diagnostic (`pareto_k = NA`).
 #'
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:
@@ -251,6 +262,13 @@
 #'   * `arm_layout` — list with per-arm `beta_start`, `re_start`,
 #'      spatial offset(s) and `n_x` for decoding modes.
 #'   * `prior`, `responses`, `copy` — echoed inputs.
+#'   * `pareto_k`, `pareto_k_is_ess`, `pareto_k_scope` — outer
+#'      Pareto-\eqn{\hat{k}} accuracy diagnostic and its importance-sampling
+#'      ESS (both `NA` when `control$diagnose_k = FALSE` or the fit declines;
+#'      see the `diagnose_k` control knob). `pareto_k < 0.7` indicates the
+#'      nested integration is reliable; `>= 0.7` that the (skewed / heavy-
+#'      tailed) hyperparameter posterior is misfit by the Gaussian grid and
+#'      the fit should escalate to an exact debias.
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -309,6 +327,13 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
     force_sparse              <- control$force_sparse %||% FALSE
+    # Outer Pareto-k-hat accuracy diagnostic. `diagnose_k` (default TRUE)
+    # importance-samples the joint hyperparameter posterior against the
+    # Gaussian proposal the integrator fits; `k_samples` (default 200) is the
+    # number of draws, each one extra inner joint solve. RNG-restored, so the
+    # fit's draws are unchanged whether or not it runs.
+    diagnose_k                <- control$diagnose_k %||% TRUE
+    k_samples                 <- control$k_samples %||% 200L
     # Inner-Newton curvature + PD enforcement for the (possibly indefinite)
     # joint mixture Hessian. "lm" (default) escalates a diagonal ridge until
     # CHOLMOD factorizes the observed Hessian; "psd" eigen-clamps the dense
@@ -370,7 +395,8 @@ tulpa_nested_laplace_joint <- function(responses,
             prune_tol = prune_tol_eff,
             x_init = x_init, verbose = verbose, store_Q = store_Q,
             force_sparse = force_sparse,
-            cell_coupling = cell_coupling
+            cell_coupling = cell_coupling,
+            diagnose_k = diagnose_k, k_samples = k_samples
         ))
     }
     if (is.null(prior$type)) {
@@ -533,6 +559,14 @@ tulpa_nested_laplace_joint <- function(responses,
     res$copy        <- copy
     res$cell_coupling      <- cell_coupling
     res$adaptive_grid_info <- refine_info
+    # Outer Pareto-k-hat: re-evaluate the inner joint marginal at hyperparameters
+    # drawn from the integrator's Gaussian proposal (reusing the generic
+    # `kernel_fn` + `hp_fn` so no kernel-call machinery is duplicated) and
+    # PSIS-smooth. Declines (NA -> quad-ESS) when an axis has unguessable
+    # support (e.g. CAR_proper's rho_car).
+    res <- .joint_attach_pareto_k_single(res, kernel_fn, hp_fn,
+                                         diagnose_k = diagnose_k,
+                                         k_samples  = k_samples)
     class(res) <- c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")
     res
 }

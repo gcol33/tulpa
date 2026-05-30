@@ -529,6 +529,131 @@
     }
 }
 
+# Materialize the C++-facing theta_grid from a user-facing multi-block
+# `joint_grid` (the latent-block axis columns; any trailing phi_<arm>
+# dispersion columns are excluded here -- they ride on `phi_grid_per_arm`).
+# The kernel reads `sigma_occ` / `sigma_pos` on a copy block; the R-side grid
+# lives in (sigma, alpha), so this materializes sigma_occ = sigma and
+# sigma_pos = alpha * sigma per copy block. Non-copy block columns pass
+# through unchanged. Single source of truth for the main dispatch and the
+# Pareto-k re-evaluation.
+.joint_multi_cpp_grid <- function(joint_grid, axis_offsets, B, cp) {
+    cpp_grid <- joint_grid[, seq_len(axis_offsets[B + 1L]), drop = FALSE]
+    if (!cp$has_copy) return(cpp_grid)
+    new_names <- colnames(cpp_grid)
+    for (b_copy in (cp$copy_blocks_zero + 1L)) {
+        cols_b  <- (axis_offsets[b_copy] + 1L):axis_offsets[b_copy + 1L]
+        bare_b  <- sub("^b[0-9]+\\.", "", colnames(cpp_grid)[cols_b])
+        i_sigma <- match("sigma", bare_b)
+        i_alpha <- match("alpha", bare_b)
+        if (is.na(i_sigma) || is.na(i_alpha)) {
+            stop(".joint_multi_cpp_grid: copy block missing 'sigma' or 'alpha' axis.",
+                 call. = FALSE)
+        }
+        sigma_col <- as.numeric(cpp_grid[, cols_b[i_sigma]])
+        alpha_col <- as.numeric(cpp_grid[, cols_b[i_alpha]])
+        cpp_grid[, cols_b[i_sigma]] <- sigma_col             # -> sigma_occ
+        cpp_grid[, cols_b[i_alpha]] <- alpha_col * sigma_col  # -> sigma_pos
+        new_names[cols_b[i_sigma]] <- paste0("b", b_copy, ".sigma_occ")
+        new_names[cols_b[i_alpha]] <- paste0("b", b_copy, ".sigma_pos")
+    }
+    colnames(cpp_grid) <- new_names
+    cpp_grid
+}
+
+# Extract the per-arm dispersion override list from a `joint_grid` carrying
+# `phi_<arm>` columns. Returns NULL when no such column exists (the kernel
+# then uses each arm's parse-time scalar phi); otherwise a length-n_arms list
+# with entry k the column `phi_<arm_names[k]>` or NULL.
+.joint_multi_phi_per_arm <- function(joint_grid, arm_names) {
+    cn <- colnames(joint_grid)
+    if (is.null(cn) || !any(startsWith(cn, "phi_"))) return(NULL)
+    out <- vector("list", length(arm_names))
+    for (k in seq_along(arm_names)) {
+        col <- paste0("phi_", arm_names[k])
+        if (col %in% cn) out[[k]] <- as.numeric(joint_grid[, col])
+    }
+    out
+}
+
+# Add the regularizing (sigma, alpha) hyperprior to a per-cell log-marginal
+# vector for a multi-block `joint_grid`. With multiple copy blocks the prior
+# is baked on the first block carrying a (sigma, alpha) axis pair. Single
+# source of truth for the main dispatch and the Pareto-k re-evaluation.
+.joint_multi_add_hp <- function(log_marginal, joint_grid, axis_offsets, B,
+                                fn_sigma, fn_alpha) {
+    if (is.null(fn_sigma) && is.null(fn_alpha)) return(log_marginal)
+    view_map <- integer(0)
+    for (b_idx in seq_len(B)) {
+        cols_b  <- (axis_offsets[b_idx] + 1L):axis_offsets[b_idx + 1L]
+        bare_b  <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_b])
+        i_sigma <- match("sigma", bare_b)
+        i_alpha <- match("alpha", bare_b)
+        if (!is.na(i_sigma) && is.na(view_map["sigma"])) {
+            view_map["sigma"] <- cols_b[i_sigma]
+        }
+        if (!is.na(i_alpha) && is.na(view_map["alpha"])) {
+            view_map["alpha"] <- cols_b[i_alpha]
+        }
+    }
+    if (length(view_map) == 0L) return(log_marginal)
+    view <- joint_grid[, view_map, drop = FALSE]
+    colnames(view) <- names(view_map)
+    hp <- .joint_hp_vec_for_grids(view, fn_sigma, fn_alpha)
+    if (!is.null(hp) && length(hp) == length(log_marginal)) {
+        log_marginal <- log_marginal + hp
+    }
+    log_marginal
+}
+
+# Multi-block joint outer Pareto-k-hat. Builds the re-evaluation closure
+# (round-trips a sampled user-facing `joint_grid` through the SAME kernel via
+# the shared cpp-grid / phi / hyperprior helpers) and defers to the
+# block-type-aware driver `.joint_pareto_k`. n_threads_outer = 1 / no tiling
+# on the re-eval path, so no tile-partition reconstruction is needed.
+.joint_attach_pareto_k_multi <- function(res, arms, cp, blocks_spec,
+                                         axis_offsets, B, arm_names,
+                                         fn_sigma, fn_alpha,
+                                         max_iter, tol, n_threads,
+                                         force_sparse, cell_coupling,
+                                         diagnose_k = TRUE, k_samples = 200L) {
+    res$pareto_k        <- NA_real_
+    res$pareto_k_is_ess <- NA_real_
+    res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
+    if (!isTRUE(diagnose_k)) return(res)
+
+    refit <- function(theta_mat) {
+        cpp_grid <- .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp)
+        phi_ppa  <- .joint_multi_phi_per_arm(theta_mat, arm_names)
+        r <- cpp_nested_laplace_joint_multi(
+            arms_list    = arms,
+            copy_arms    = as.integer(cp$copy_arms_zero),
+            copy_blocks  = as.integer(cp$copy_blocks_zero),
+            blocks_spec  = blocks_spec,
+            theta_grid   = cpp_grid,
+            axis_offsets = axis_offsets,
+            max_iter     = as.integer(max_iter),
+            tol          = as.numeric(tol),
+            n_threads    = as.integer(n_threads),
+            x_init_nullable = NULL,
+            store_Q      = FALSE,
+            phi_grid_per_arm = phi_ppa,
+            n_threads_outer = 1L,
+            tile_ids        = NULL,
+            tile_pilot_cells = NULL,
+            prune_tol       = 0.0,
+            force_sparse    = isTRUE(force_sparse),
+            cell_coupling_name = as.character(cell_coupling)
+        )
+        .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
+                            fn_sigma, fn_alpha)
+    }
+    kd <- .joint_pareto_k(res, refit, k_samples)
+    res$pareto_k        <- kd$pareto_k
+    res$pareto_k_is_ess <- kd$is_ess
+    res
+}
+
 # Main multi-block joint dispatch. Mirrors the structure of the
 # single-block path (build grid, call C++, post-process) but accepts a
 # list-of-blocks `prior_list` and a `copy` spec that points at a
@@ -543,7 +668,9 @@
                                   tile_warm = TRUE,
                                   prune_tol = 0.0,
                                   force_sparse = FALSE,
-                                  cell_coupling = "separable") {
+                                  cell_coupling = "separable",
+                                  diagnose_k = TRUE,
+                                  k_samples = 200L) {
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -604,9 +731,13 @@
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     phi_grid_per_arm_list <- NULL
     if (!is.null(phi_axes)) {
-        # Embed phi axes into the joint grid as new columns. For now we
-        # support the single-block convention: phi varies independently
-        # of the latent-block grid, so phi axes multiply n_cells.
+        # The per-arm dispersion axes are embedded as additional outer-grid
+        # columns under the separable convention: each phi axis varies
+        # independently of the latent-block grid, so the phi grid forms a
+        # Cartesian product with the latent grid and multiplies n_cells. A phi
+        # axis whose values are tied to a latent-block axis is not expressible
+        # on this path; supply such a coupling by folding phi into the relevant
+        # block's own axis grid instead.
         active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
         if (length(active) > 0L) {
             phi_extra <- do.call(expand.grid,
@@ -621,41 +752,13 @@
             colnames(joint_grid) <- c(axis_names, phi_cols)
             # phi columns don't belong to any latent block; the C++ entry
             # consumes them via phi_grid_per_arm, not the block axes.
-            phi_grid_per_arm_list <- vector("list", length(arm_names))
-            for (k in seq_along(arm_names)) {
-                col <- paste0("phi_", arm_names[k])
-                if (col %in% colnames(joint_grid)) {
-                    phi_grid_per_arm_list[[k]] <- as.numeric(joint_grid[, col])
-                }
-            }
+            phi_grid_per_arm_list <- .joint_multi_phi_per_arm(joint_grid, arm_names)
         }
     }
 
-    # Build the C++-facing theta_grid. The C++ kernel reads `sigma_occ` /
-    # `sigma_pos` column names on the copy block; the R-side outer grid
-    # lives in (sigma, alpha) and materializes sigma_pos = alpha * sigma
-    # here. Columns for non-copy blocks pass through unchanged.
-    cpp_grid <- joint_grid[, seq_len(axis_offsets[B + 1L]), drop = FALSE]
-    if (cp$has_copy) {
-        new_names <- colnames(cpp_grid)
-        for (b_copy in (cp$copy_blocks_zero + 1L)) {
-            cols_b   <- (axis_offsets[b_copy] + 1L):axis_offsets[b_copy + 1L]
-            bare_b   <- sub("^b[0-9]+\\.", "", colnames(cpp_grid)[cols_b])
-            i_sigma  <- match("sigma", bare_b)
-            i_alpha  <- match("alpha", bare_b)
-            if (is.na(i_sigma) || is.na(i_alpha)) {
-                stop(".joint_dispatch_multi: copy block missing 'sigma' or 'alpha' axis.",
-                     call. = FALSE)
-            }
-            sigma_col <- as.numeric(cpp_grid[, cols_b[i_sigma]])
-            alpha_col <- as.numeric(cpp_grid[, cols_b[i_alpha]])
-            cpp_grid[, cols_b[i_sigma]] <- sigma_col            # -> sigma_occ
-            cpp_grid[, cols_b[i_alpha]] <- alpha_col * sigma_col # -> sigma_pos
-            new_names[cols_b[i_sigma]] <- paste0("b", b_copy, ".sigma_occ")
-            new_names[cols_b[i_alpha]] <- paste0("b", b_copy, ".sigma_pos")
-        }
-        colnames(cpp_grid) <- new_names
-    }
+    # Build the C++-facing theta_grid (sigma_occ / sigma_pos materialised on
+    # each copy block from the user-facing (sigma, alpha) outer grid).
+    cpp_grid <- .joint_multi_cpp_grid(joint_grid, axis_offsets, B, cp)
 
     # Tile partition for the three-tier warm-start (Phase 2 of
     # dev_notes/speedup.md). Tile axis = every joint_grid column EXCEPT the
@@ -705,34 +808,9 @@
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # (gcol33/tulpa#22). Multi-block has no in-package refinement passes,
-    # so one apply at the kernel-call boundary suffices. Columns in
-    # joint_grid are prefixed `b<N>.` -- build a bare-named view over the
-    # copy block's (sigma, alpha) columns to feed the shared helper.
-    if (!is.null(fn_sigma) || !is.null(fn_alpha)) {
-        # With multiple copy blocks the regularizing hyperprior is baked on
-        # the first block carrying a (sigma, alpha) axis pair only.
-        view_map <- integer(0)
-        for (b_idx in seq_len(B)) {
-            cols_b   <- (axis_offsets[b_idx] + 1L):axis_offsets[b_idx + 1L]
-            bare_b   <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_b])
-            i_sigma  <- match("sigma", bare_b)
-            i_alpha  <- match("alpha", bare_b)
-            if (!is.na(i_sigma) && is.na(view_map["sigma"])) {
-                view_map["sigma"] <- cols_b[i_sigma]
-            }
-            if (!is.na(i_alpha) && is.na(view_map["alpha"])) {
-                view_map["alpha"] <- cols_b[i_alpha]
-            }
-        }
-        if (length(view_map) > 0L) {
-            view <- joint_grid[, view_map, drop = FALSE]
-            colnames(view) <- names(view_map)
-            hp <- .joint_hp_vec_for_grids(view, fn_sigma, fn_alpha)
-            if (!is.null(hp) && length(hp) == length(res$log_marginal)) {
-                res$log_marginal <- res$log_marginal + hp
-            }
-        }
-    }
+    # so one apply at the kernel-call boundary suffices.
+    res$log_marginal <- .joint_multi_add_hp(res$log_marginal, joint_grid,
+                                            axis_offsets, B, fn_sigma, fn_alpha)
 
     res$theta_grid   <- joint_grid
     res$theta_names  <- colnames(joint_grid)
@@ -749,6 +827,17 @@
     res$responses     <- responses
     res$copy          <- copy
     res$cell_coupling <- cell_coupling
+    # Outer Pareto-k-hat: re-evaluate the inner joint marginal at sampled
+    # hyperparameters via the shared cpp-grid / phi / hyperprior helpers and
+    # PSIS-smooth. Declines (NA -> quad-ESS) when a block carries an axis with
+    # unguessable support (CAR_proper's rho_car, a non-BYM2 rho, ...).
+    res <- .joint_attach_pareto_k_multi(res, arms, cp, blocks_spec,
+                                        axis_offsets, B, arm_names,
+                                        fn_sigma, fn_alpha,
+                                        max_iter, tol, n_threads,
+                                        force_sparse, cell_coupling,
+                                        diagnose_k = diagnose_k,
+                                        k_samples  = k_samples)
     class(res) <- c("tulpa_nested_laplace_joint_multi",
                     "tulpa_nested_laplace_joint",
                     "tulpa_nested_laplace", "list")
