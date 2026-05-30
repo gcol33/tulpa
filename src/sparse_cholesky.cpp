@@ -28,6 +28,11 @@ SparseCholeskySolver::SparseCholeskySolver()
     // Prefer supernodal factorization (converts sparse to many small dense
     // BLAS ops → 5-20x faster than column-by-column on irregular sparsity)
     common_.supernodal = CHOLMOD_SUPERNODAL;
+    // Silence CHOLMOD's "matrix not positive definite" prints: non-PD is an
+    // expected, handled outcome here (the LM ridge escalates and refactorizes,
+    // the caller checks the return value), not an error to surface to the user.
+    common_.print = 0;
+    common_.error_handler = nullptr;
 }
 
 SparseCholeskySolver::~SparseCholeskySolver() {

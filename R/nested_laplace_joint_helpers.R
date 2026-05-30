@@ -529,7 +529,8 @@
 # warm-start chain still reads `extras[[idx0]]$mode`).
 .joint_make_kernel_fn <- function(arms, prior, cp, backend, max_iter, tol,
                                   n_threads, x_init_default, store_Q,
-                                  arm_names, cell_coupling = "separable") {
+                                  arm_names, cell_coupling = "separable",
+                                  hessian_pd_mode = 0L) {
     function(new_cells, warm_start = NULL, store_extras = FALSE) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
@@ -538,7 +539,8 @@
                                       max_iter, tol, n_threads,
                                       slice_x_init, isTRUE(store_Q),
                                       arm_names = arm_names,
-                                      cell_coupling = cell_coupling)
+                                      cell_coupling = cell_coupling,
+                                      hessian_pd_mode = hessian_pd_mode)
         extras <- NULL
         if (isTRUE(store_extras)) {
             n <- nrow(new_cells)

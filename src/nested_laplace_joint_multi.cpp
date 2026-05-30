@@ -938,7 +938,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells = R_NilValue,
     double              prune_tol = 0.0,
     bool                force_sparse = false,
-    std::string         cell_coupling_name = "separable"
+    std::string         cell_coupling_name = "separable",
+    int                 hessian_pd_mode = 0
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -1042,6 +1043,9 @@ Rcpp::List cpp_nested_laplace_joint_multi(
                    cell_coupling_name.c_str());
     }
 
+    tulpa::JointPDMode pd_mode =
+        (hessian_pd_mode == 1) ? tulpa::JointPDMode::PSD : tulpa::JointPDMode::LM;
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads,
@@ -1053,7 +1057,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         tile_pilot_cells_vec,
         prune_tol,
         force_sparse,
-        cell_coupling_spec
+        cell_coupling_spec,
+        pd_mode
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

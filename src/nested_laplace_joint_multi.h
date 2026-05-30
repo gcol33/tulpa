@@ -1160,7 +1160,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     std::shared_ptr<CellCouplingSpec> cell_coupling_spec,
     const std::vector<int>&          coupled_arms,
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
-    int                              n_cells
+    int                              n_cells,
+    JointPDMode                      pd_mode = JointPDMode::LM
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1191,7 +1192,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     const std::vector<int>&          tile_pilot_cells = std::vector<int>(),
     double                           prune_tol = 0.0,
     bool                             force_sparse = false,
-    std::shared_ptr<CellCouplingSpec> cell_coupling_spec = nullptr
+    std::shared_ptr<CellCouplingSpec> cell_coupling_spec = nullptr,
+    JointPDMode                      pd_mode = JointPDMode::LM
 ) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
@@ -1261,7 +1263,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
             max_iter, tol, n_threads,
             store_modes, x_init, store_Q,
             prep_at_grid, tile_ids, tile_pilot_cells, prune_tol,
-            cell_coupling_spec, coupled_arms, cell_rows, n_cells
+            cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode
         );
     }
 
@@ -1526,7 +1528,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     std::shared_ptr<CellCouplingSpec> cell_coupling_spec,
     const std::vector<int>&          coupled_arms,
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
-    int                              n_cells
+    int                              n_cells,
+    JointPDMode                      pd_mode
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -1712,7 +1715,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
             max_iter_use, tol,
             compute_eta_joint, scatter_joint_sparse,
             center_joint, log_prior_joint,
-            joint_ll, H_use, sc, prev_mode, shared_solver, store_Q
+            joint_ll, H_use, sc, prev_mode, shared_solver, store_Q, pd_mode
         );
     };
 

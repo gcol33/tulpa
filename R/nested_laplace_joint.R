@@ -305,6 +305,12 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
     force_sparse              <- control$force_sparse %||% FALSE
+    # Inner-Newton PD enforcement for the (possibly indefinite) joint mixture
+    # Hessian: "lm" (default) escalates a diagonal ridge until CHOLMOD
+    # factorizes; "psd" eigen-clamps the dense inner Hessian. See the joint
+    # sparse Newton solver. 0 = LM, 1 = PSD.
+    hessian                   <- match.arg(control$hessian %||% "lm", c("lm", "psd"))
+    hessian_pd_mode           <- if (identical(hessian, "psd")) 1L else 0L
 
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
@@ -390,7 +396,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                 tile_warm = tile_warm,
                                 prune_tol = prune_tol_eff,
                                 force_sparse = force_sparse,
-                                cell_coupling = cell_coupling)
+                                cell_coupling = cell_coupling,
+                                hessian_pd_mode = hessian_pd_mode)
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # at the kernel-call boundary. Every cell carries the same prior
@@ -432,7 +439,8 @@ tulpa_nested_laplace_joint <- function(responses,
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
                                         tol, n_threads, x_init, store_Q,
                                         arm_names,
-                                        cell_coupling = cell_coupling)
+                                        cell_coupling = cell_coupling,
+                                        hessian_pd_mode = hessian_pd_mode)
     theta_grid_M  <- backend$theta_grid(grids, cp$has_copy)
     log_marginal  <- res$log_marginal
     extras_list   <- .joint_init_extras_from_res(res)
