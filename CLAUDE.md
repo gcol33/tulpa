@@ -322,8 +322,8 @@ heterogeneous -- positive scales (sigma, phi), a bounded correlation
 (`rho_car`), and unbounded copy-coefficients (alpha) -- so a correct sampled
 k-hat needs per-axis mixed-support transforms plus reconstruction of
 `axis_offsets` / the tile partition for sampled cells. That is a backend
-refactor (the bounded `rho_car` is the unguessable axis), left as a follow-on.
-The parallel-NUTS
+refactor (the bounded `rho_car` is the unguessable axis), tracked in
+gcol33/tulpa#42. The parallel-NUTS
 multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
 `.tulpa_chain_list()` reads, verified end-to-end against `posterior` in
