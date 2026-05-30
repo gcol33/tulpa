@@ -73,7 +73,7 @@ test_that("ICAR pattern: chain adjacency + beta x spatial cross", {
             adj)
     pat <- cpp_test_joint_pattern(
         arms_list = list(arm),
-        copy_arm = -1L, copy_block = -1L,
+        copy_arms = -1L, copy_blocks = -1L,
         blocks_spec = list(bs),
         theta_grid = matrix(0.5, nrow = 1, ncol = 1),
         axis_offsets = as.integer(c(0, 1))
@@ -117,7 +117,7 @@ test_that("BYM2 pattern: ICAR on phi block + diagonal-only on theta block", {
     # BYM2 axes: (sigma, rho).
     pat <- cpp_test_joint_pattern(
         arms_list = list(arm),
-        copy_arm = -1L, copy_block = -1L,
+        copy_arms = -1L, copy_blocks = -1L,
         blocks_spec = list(bs),
         theta_grid = matrix(c(0.5, 0.7), nrow = 1, ncol = 2),
         axis_offsets = as.integer(c(0, 2))
@@ -162,7 +162,7 @@ test_that("RW1 pattern: tridiagonal (t, t-1) on the temporal block", {
                cyclic = FALSE)
     pat <- cpp_test_joint_pattern(
         arms_list = list(arm),
-        copy_arm = -1L, copy_block = -1L,
+        copy_arms = -1L, copy_blocks = -1L,
         blocks_spec = list(bs),
         theta_grid = matrix(0.5, nrow = 1, ncol = 1),
         axis_offsets = as.integer(c(0, 1))
@@ -193,7 +193,7 @@ test_that("RW2 pattern: pentadiagonal (t, t-1) and (t, t-2)", {
                n_times = n_t)
     pat <- cpp_test_joint_pattern(
         arms_list = list(arm),
-        copy_arm = -1L, copy_block = -1L,
+        copy_arms = -1L, copy_blocks = -1L,
         blocks_spec = list(bs),
         theta_grid = matrix(0.5, nrow = 1, ncol = 1),
         axis_offsets = as.integer(c(0, 1))
@@ -225,7 +225,7 @@ test_that("AR1 pattern: tridiagonal Q", {
     # AR1 axes: (sigma_t, rho).
     pat <- cpp_test_joint_pattern(
         arms_list = list(arm),
-        copy_arm = -1L, copy_block = -1L,
+        copy_arms = -1L, copy_blocks = -1L,
         blocks_spec = list(bs),
         theta_grid = matrix(c(0.5, 0.7), nrow = 1, ncol = 2),
         axis_offsets = as.integer(c(0, 2))
@@ -251,7 +251,7 @@ test_that("IID pattern: diagonal only, no off-diagonal entries", {
                n_units = n_u)
     pat <- cpp_test_joint_pattern(
         arms_list = list(arm),
-        copy_arm = -1L, copy_block = -1L,
+        copy_arms = -1L, copy_blocks = -1L,
         blocks_spec = list(bs),
         theta_grid = matrix(0.5, nrow = 1, ncol = 1),
         axis_offsets = as.integer(c(0, 1))
@@ -292,7 +292,7 @@ test_that("ICAR x RW1 cross-block pattern: only for obs hitting both", {
                     cyclic = FALSE)
     pat <- cpp_test_joint_pattern(
         arms_list = list(arm),
-        copy_arm = -1L, copy_block = -1L,
+        copy_arms = -1L, copy_blocks = -1L,
         blocks_spec = list(bs_icar, bs_rw1),
         theta_grid = matrix(c(0.5, 0.5), nrow = 1, ncol = 2),
         axis_offsets = as.integer(c(0, 1, 2))

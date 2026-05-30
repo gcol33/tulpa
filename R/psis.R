@@ -133,3 +133,44 @@ tulpa_psis <- function(log_ratios) {
   ps <- tulpa_psis(lr)
   list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
 }
+
+# Outer Pareto-k-hat for a grid-integrated nested fit (the generic
+# `tulpa_nested_laplace` path), where the inner marginal is evaluated by a
+# BATCHED re-fit rather than a per-sample closure. Fits a Gaussian proposal to
+# the hyperparameter posterior in the unconstrained (log) coordinate `u`, draws
+# `n_samples`, re-fits the inner marginal at the back-transformed grid in ONE
+# call, and PSIS-smooths log p(theta(u)) + log|d theta / d u| - log q(u). The
+# integrator's unnormalized target is exp(log_marginal) in theta-space, so the
+# log-Jacobian `sum(u)` (for theta = exp(u)) enters the u-space target; the
+# proposal's normalizing constant is common to every draw and drops under PSIS.
+#
+# `u_grid` is the K x d log-scale grid, `weights` the K integration weights,
+# `refit_log_marginal(theta_mat)` maps an S x d CONSTRAINED grid to its S inner
+# log-marginals. Restricted by the caller to all-positive-scale axes (a single
+# `log`), so there is no bounded-parameter (e.g. correlation) Jacobian to guess.
+.nested_grid_pareto_k <- function(u_grid, weights, refit_log_marginal,
+                                  n_samples = 200L) {
+  d <- ncol(u_grid)
+  u_hat <- as.numeric(crossprod(weights, u_grid))            # weighted mean
+  cen   <- sweep(u_grid, 2L, u_hat)
+  Su    <- crossprod(cen * weights, cen)                     # weighted covariance
+  Su    <- (Su + t(Su)) / 2
+  L <- tryCatch(t(chol(Su)), error = function(e) NULL)
+  if (is.null(L)) return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+
+  n_samples <- as.integer(n_samples)
+  Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
+  U <- sweep(Z %*% t(L), 2L, u_hat, `+`)                     # S x d, ~ N(u_hat, Su)
+  lm_s <- refit_log_marginal(exp(U))
+  if (length(lm_s) != n_samples) {
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+  }
+  lr <- lm_s + rowSums(U) + 0.5 * rowSums(Z^2)               # target + Jacobian - log q
+
+  n_eval <- sum(is.finite(lr))
+  if (n_eval < 25L) {
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
+  }
+  ps <- tulpa_psis(lr)
+  list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
+}

@@ -98,3 +98,54 @@ test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws",
   expect_true(is.na(off$pareto_k))
   expect_equal(off$draws, on$draws)
 })
+
+test_that("tulpa_nested_laplace reports an outer k-hat for a positive-scale block", {
+  skip_on_cran()
+  set.seed(3)
+  nr <- 60L; spr <- 10L; N <- nr * spr
+  region <- rep(seq_len(nr), each = spr)
+  X <- cbind(1, rnorm(N))
+  u <- rnorm(nr, 0, 0.5)
+  y <- rbinom(N, 10L, plogis(as.numeric(X %*% c(-0.2, 0.7)) + u[region]))
+  sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
+  mk <- function(grid) list(list(type = "iid", obs_idx = region,
+                                 n_units = nr, sigma_grid = grid))
+
+  fit <- suppressWarnings(tulpa_nested_laplace(
+    y = y, n_trials = rep(10L, N), X = X, prior = mk(sg),
+    family = "binomial", phi = 1,
+    control = list(max_iter = 100L, tol = 1e-8, k_samples = 200L)))
+  # Single positive-scale (RE-SD) axis: k-hat is computed via the log transform.
+  # The value is data-dependent (a sparse binary RE-SD posterior is skewed, so a
+  # high reading is correct) -- assert plumbing + ESS range, as in the re_cov case.
+  expect_true(is.finite(fit$pareto_k))
+  expect_true(is.finite(fit$pareto_k_is_ess))
+  expect_gt(fit$pareto_k_is_ess, 0)
+  expect_lte(fit$pareto_k_is_ess, 200 + 1e-6)
+  expect_equal(fit$pareto_k_scope, "outer (hyperparameter) Gaussian proposal")
+
+  off <- suppressWarnings(tulpa_nested_laplace(
+    y = y, n_trials = rep(10L, N), X = X, prior = mk(sg),
+    family = "binomial", phi = 1,
+    control = list(max_iter = 100L, tol = 1e-8, diagnose_k = FALSE)))
+  expect_true(is.na(off$pareto_k))                  # gated off
+})
+
+test_that("outer k-hat declines (NA) for a multi-block nested fit", {
+  skip_on_cran()
+  set.seed(4)
+  nr <- 40L; spr <- 8L; N <- nr * spr
+  region  <- rep(seq_len(nr), each = spr)
+  region2 <- rep(seq_len(nr), times = spr)
+  X <- cbind(1, rnorm(N))
+  y <- rbinom(N, 5L, plogis(as.numeric(X %*% c(-0.1, 0.5))))
+  sg <- exp(seq(log(0.2), log(1.2), length.out = 5))
+  prior <- list(
+    list(type = "iid", obs_idx = region,  n_units = nr, sigma_grid = sg),
+    list(type = "iid", obs_idx = region2, n_units = nr, sigma_grid = sg))
+  fit <- suppressWarnings(tulpa_nested_laplace(
+    y = y, n_trials = rep(5L, N), X = X, prior = prior,
+    family = "binomial", phi = 1, control = list(max_iter = 80L, tol = 1e-7)))
+  expect_true(is.na(fit$pareto_k))                  # multi-block: declined, not guessed
+  expect_gt(length(fit$weights), 1L)                # quadrature-ESS fallback available
+})

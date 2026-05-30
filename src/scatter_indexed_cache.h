@@ -296,9 +296,11 @@ inline void build_scatter_index_cache(
                     if (!blk.idx) continue;
                     int l = blk.idx(i, k_arm);
                     if (l > 0 && l <= blk.size) {
+                        double w = blk.row_weight ? blk.row_weight(i, k_arm)
+                                                  : 1.0;
                         ac.active_dof_global[act_cursor + a] = blk.start + l - 1;
                         ac.active_block_idx [act_cursor + a] = b;
-                        ac.active_local_w   [act_cursor + a] = 1.0;
+                        ac.active_local_w   [act_cursor + a] = w;
                         a++;
                     }
                 } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {

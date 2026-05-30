@@ -122,6 +122,21 @@ struct LatentBlock {
     // d_fac(k_grid) directly). The single-arm driver does not call arm_scale.
     std::function<double(int /*k_arm*/, int /*k_grid*/)> arm_scale;
 
+    // Per-arm per-row design weight on the block's eta contribution (joint
+    // driver, INDEXED_SINGLE only). Multiplied into the block-local weight of
+    // observation i in arm k_arm, so its eta contribution becomes
+    //   eta_i += arm_scale(k_arm, k_grid) * d_fac(k_grid)
+    //            * row_weight(i, k_arm) * x[start + idx(i, k_arm) - 1].
+    // This is the areal-block analogue of the HSGP `svc_column` row-scaling:
+    // an INLA f(cell, weight, copy=...) spatially-varying coefficient where
+    // the same field is multiplied by a per-observation covariate (e.g. a
+    // `time` column). The weight enters at exactly one layer (the block-local
+    // weight resolved alongside idx); the gradient and z-block Hessian inherit
+    // it through the chain rule (slope = d_eff * weight, Hessian accumulates
+    // weight^2), so it must NOT also be folded into d_fac / arm_scale.
+    // Empty = uniform weight 1 (byte-identical to a block without it).
+    std::function<double(int /*i*/, int /*k_arm*/)> row_weight;
+
     // Adds block's prior Q at grid point k to (grad, H). x is the full latent
     // vector; the helper indexes into [start, start + size).
     std::function<void(DenseVec&, DenseMat&, const Rcpp::NumericVector&, int)>

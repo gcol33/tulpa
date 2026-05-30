@@ -300,6 +300,10 @@
 # matching `field_coef` so the kernel boundary reads a single source of truth.
 .desugar_copy_to_field_coef <- function(responses, copy) {
     if (is.null(copy)) return(responses)
+    # A list-of-specs copy (multi-block: N coupled fields) carries its alpha
+    # axes on each copy block, not via per-arm field_coef. The per-block
+    # resolver (`.resolve_copy_multi`) reads it directly; no desugaring.
+    if (.is_copy_spec_list(copy)) return(responses)
     arm_id <- copy$arm
     if (is.null(arm_id)) {
         stop("`copy$arm` must be a name or 1-based index.", call. = FALSE)

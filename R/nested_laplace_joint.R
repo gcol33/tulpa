@@ -101,7 +101,11 @@
 #'   and the rest of the driver reads only `field_coef` thereafter
 #'   (gcol33/tulpa#32). The multi-block path still consumes `copy$block`
 #'   to pick the copy block; for single-block fits, leave `copy = NULL`
-#'   and put the spec on the arm.
+#'   and put the spec on the arm. On the multi-block path `copy` may also
+#'   be an unnamed list of such specs — `list(list(arm, block, alpha_grid),
+#'   ...)` — coupling N distinct shared spatial fields, each onto its own
+#'   arm with its own \eqn{\alpha} axis, integrated over the product outer
+#'   grid. Each spec must name a distinct spatial block.
 #'
 #' @param phi_grid Optional list specifying per-arm dispersion axes on the
 #'   outer grid. Accepts either a named list (keys = arm names) or a

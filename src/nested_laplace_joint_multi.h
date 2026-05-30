@@ -57,6 +57,15 @@
 
 namespace tulpa {
 
+// Per-arm per-row design weight on an INDEXED_SINGLE block (areal SVC).
+// Returns 1.0 when the block carries no row_weight, so the no-weight path is
+// byte-identical. The weight enters the block-local weight that multiplies
+// x[cell] at row i of arm k_arm; the per-block d_eff (arm_scale * d_fac)
+// amplitude is applied on top, unchanged.
+inline double block_row_weight(const LatentBlock& blk, int i, int k_arm) {
+    return blk.row_weight ? blk.row_weight(i, k_arm) : 1.0;
+}
+
 // Scatter the gradient and Fisher curvature of ONE row of arm k_arm
 // (per-obs path: row = obs index i; per-cell path: row = a row from a
 // coupled cell's CellDerivs) into the joint (grad, H). Single source of
@@ -105,8 +114,10 @@ inline void scatter_one_arm_row_dense(
         if (d_eff_cache[b] == 0.0) continue;
         int l_b = blocks[b].idx(i, k_arm);
         if (l_b > 0 && l_b <= blocks[b].size) {
+            double w = d_eff_cache[b] * block_row_weight(blocks[b], i, k_arm);
+            if (w == 0.0) continue;
             active_idx.push_back(blocks[b].start + l_b - 1);
-            active_d.push_back(d_eff_cache[b]);
+            active_d.push_back(w);
         }
     }
     const int A = static_cast<int>(active_idx.size());
@@ -192,8 +203,10 @@ inline void scatter_one_arm_row_sparse(
         if (!blocks[b].idx) continue;
         int l_b = blocks[b].idx(i, k_arm);
         if (l_b > 0 && l_b <= blocks[b].size) {
+            double w = d_eff_cache[b] * block_row_weight(blocks[b], i, k_arm);
+            if (w == 0.0) continue;
             active_idx.push_back(blocks[b].start + l_b - 1);
-            active_d.push_back(d_eff_cache[b]);
+            active_d.push_back(w);
         }
     }
     const int A = static_cast<int>(active_idx.size());
@@ -459,7 +472,9 @@ inline void build_arm_row_chain(
         if (!blocks[b].idx) continue;
         int l_b = blocks[b].idx(j, k_arm);
         if (l_b > 0 && l_b <= blocks[b].size) {
-            out_chain.push_back({blocks[b].start + l_b - 1, d_eff_cache[b]});
+            double w = d_eff_cache[b] * block_row_weight(blocks[b], j, k_arm);
+            if (w == 0.0) continue;
+            out_chain.push_back({blocks[b].start + l_b - 1, w});
         }
     }
 }
@@ -915,7 +930,10 @@ inline void scatter_arm_obs_joint_multi_sparse(
             } else if (kind_cache[b] == BlockContribKind::INDEXED_SINGLE) {
                 int l = blk.idx(i, k_arm);
                 if (l > 0 && l <= blk.size) {
-                    active_scratch.emplace_back(blk.start + l - 1, d_eff);
+                    double w = d_eff * block_row_weight(blk, i, k_arm);
+                    if (w != 0.0) {
+                        active_scratch.emplace_back(blk.start + l - 1, w);
+                    }
                 }
             } else if (kind_cache[b] == BlockContribKind::BILINEAR_FACTOR) {
                 // eta_i += d_eff * u * lambda. Gauss-Newton linearization:
@@ -1100,7 +1118,8 @@ inline void compute_eta_joint_sparse_dispatch(
                     if (!blk.idx) break;
                     int l = blk.idx(i, k_arm);
                     if (l > 0 && l <= blk.size) {
-                        e += d_e * x[blk.start + l - 1];
+                        e += d_e * block_row_weight(blk, i, k_arm)
+                                 * x[blk.start + l - 1];
                     }
                     break;
                 }
@@ -1372,7 +1391,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                         if (d_eff[b] == 0.0) continue;
                         int l = blocks[b].idx(i, k_arm);
                         if (l > 0 && l <= blocks[b].size) {
-                            e += d_eff[b] * x[blocks[b].start + l - 1];
+                            e += d_eff[b] * block_row_weight(blocks[b], i, k_arm)
+                                          * x[blocks[b].start + l - 1];
                         }
                     }
                     etas[k_arm][i] = e;

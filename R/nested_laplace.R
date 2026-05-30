@@ -49,6 +49,13 @@
 #'     matrices) and `$grid_modes` (list of length-\eqn{p} vectors). Used
 #'     downstream by simplified-Laplace (SLA) callers to assemble skew-aware
 #'     marginals -- see the cumulant pooling in [rubins_pool()].
+#'   * `diagnose_k` (`TRUE`), `k_samples` (`200L`) -- compute the outer
+#'     Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
+#'     sampling the hyperparameter posterior against the Gaussian proposal
+#'     fitted to the grid, drawing `k_samples` extra inner-marginal evaluations.
+#'     Computed for a single-block, single positive-scale-axis grid; left `NA`
+#'     (with the grid's quadrature ESS as the fallback diagnostic) for
+#'     multi-block, multi-axis, or bounded-parameter grids. See [tulpa_psis()].
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -57,6 +64,9 @@
 #'   * `theta_mean`, `theta_sd`: posterior moments per hyperparameter.
 #'   * `n_iter`: inner Newton iterations per grid point.
 #'   * `modes`: matrix `[n_grid x n_x]` of inner modes, when stored.
+#'   * `pareto_k`, `pareto_k_is_ess`: outer Pareto-\eqn{\hat{k}} and its
+#'     importance-sampling ESS (`NA` when not computed for the grid; see
+#'     `control$diagnose_k`).
 #'   * `prior`: echoed input.
 #'
 #' @param spec Optional `tulpa_temporal` or `tulpa_spatial` spec object
@@ -92,6 +102,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   n_threads          <- control$n_threads %||% 1L
   x_init             <- control$x_init
   keep_grid_hessians <- isTRUE(control$keep_grid_hessians)
+  diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
+  k_samples          <- as.integer(control$k_samples %||% 200L)
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {
@@ -147,6 +159,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed)
     }
+    res <- .nl_attach_pareto_k(res, prior, cargs, "multi", NULL, likelihood,
+                               k_samples, compute = diagnose_k)
     res$prior <- prior
     class(res) <- c("tulpa_nested_laplace", "list")
     return(res)
@@ -170,8 +184,62 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (isTRUE(keep_grid_hessians)) {
     res <- .nl_attach_grid_hessians(res, p_fixed)
   }
+  res <- .nl_attach_pareto_k(res, prior, cargs, "single", type, NULL,
+                             k_samples, compute = diagnose_k)
   res$prior <- prior
   class(res) <- c("tulpa_nested_laplace", "list")
+  res
+}
+
+# Positive-scale hyperparameter grid fields: one log-transform unconstrains
+# them, so the outer Pareto-k-hat (`.nested_grid_pareto_k`) is well-defined and
+# needs no bounded-parameter Jacobian. A block carrying a bounded axis (e.g. a
+# correlation `rho_grid`) is absent from this set and is declined to the
+# quadrature-ESS fallback rather than transformed with a guessed support.
+.NL_POS_GRID <- c("sigma_grid", "sigma2_grid", "tau_grid", "phi_gp_grid",
+                  "phi_grid", "range_grid", "scale_grid", "sigma_spatial_grid",
+                  "lambda_grid", "kappa_grid")
+
+# Attach res$pareto_k for a single-block, single positive-scale-axis nested fit.
+# Leaves res$pareto_k = NA (the diagnostic layer then reports the grid's
+# quadrature ESS) for multi-block, multi-axis, or bounded-parameter grids.
+# `refit` re-evaluates the inner marginal at a substituted grid through the SAME
+# driver `res` came from; run with the RNG restored so the fit is unperturbed.
+.nl_attach_pareto_k <- function(res, prior, cargs, dispatch_kind, type,
+                                likelihood, n_samples, compute = TRUE) {
+  res$pareto_k        <- NA_real_
+  res$pareto_k_is_ess <- NA_real_
+  res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
+  if (!compute) return(res)                                  # field present, not computed
+
+  blocks <- if (is.list(prior) && is.null(prior$type)) prior else list(prior)
+  if (length(blocks) != 1L) return(res)                      # multi-block: decline
+  blk <- blocks[[1L]]
+  gfs <- grep("_grid$", names(blk), value = TRUE)
+  gfs <- gfs[vapply(gfs, function(f) is.numeric(blk[[f]]) && length(blk[[f]]) >= 2L,
+                    logical(1))]
+  if (length(gfs) != 1L || !(gfs %in% .NL_POS_GRID)) return(res)  # multi-axis / bounded
+  tg <- as.numeric(res$theta_grid)
+  if (length(tg) != length(res$weights) || any(tg <= 0)) return(res)
+
+  refit <- function(theta_mat) {
+    blk2 <- blk; blk2[[gfs]] <- as.numeric(theta_mat[, 1L])
+    prior2 <- if (is.list(prior) && is.null(prior$type)) list(blk2) else blk2
+    lm <- tryCatch(
+      if (dispatch_kind == "multi")
+        .nl_dispatch_multi(cargs, prior2, likelihood = likelihood)$log_marginal
+      else .nl_dispatch(type, cargs, prior2)$log_marginal,
+      error = function(e) rep(-Inf, nrow(theta_mat)))
+    if (length(lm) != nrow(theta_mat)) rep(-Inf, nrow(theta_mat)) else lm
+  }
+
+  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+  kd <- tryCatch(
+    .nested_grid_pareto_k(matrix(log(tg), ncol = 1L), res$weights, refit, n_samples),
+    error = function(e) NULL)
+  if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+  if (!is.null(kd)) { res$pareto_k <- kd$pareto_k; res$pareto_k_is_ess <- kd$is_ess }
   res
 }
 

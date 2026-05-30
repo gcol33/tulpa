@@ -843,14 +843,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_joint_multi
-Rcpp::List cpp_nested_laplace_joint_multi(Rcpp::List arms_list, int copy_arm, int copy_block, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_threads_outer, Rcpp::Nullable<Rcpp::IntegerVector> tile_ids, Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells, double prune_tol, bool force_sparse, std::string cell_coupling_name, int hessian_pd_mode, int step_curvature_mode);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP copy_blockSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP n_threads_outerSEXP, SEXP tile_idsSEXP, SEXP tile_pilot_cellsSEXP, SEXP prune_tolSEXP, SEXP force_sparseSEXP, SEXP cell_coupling_nameSEXP, SEXP hessian_pd_modeSEXP, SEXP step_curvature_modeSEXP) {
+Rcpp::List cpp_nested_laplace_joint_multi(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_threads_outer, Rcpp::Nullable<Rcpp::IntegerVector> tile_ids, Rcpp::Nullable<Rcpp::IntegerVector> tile_pilot_cells, double prune_tol, bool force_sparse, std::string cell_coupling_name, int hessian_pd_mode, int step_curvature_mode);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP phi_grid_per_armSEXP, SEXP n_threads_outerSEXP, SEXP tile_idsSEXP, SEXP tile_pilot_cellsSEXP, SEXP prune_tolSEXP, SEXP force_sparseSEXP, SEXP cell_coupling_nameSEXP, SEXP hessian_pd_modeSEXP, SEXP step_curvature_modeSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List >::type arms_list(arms_listSEXP);
-    Rcpp::traits::input_parameter< int >::type copy_arm(copy_armSEXP);
-    Rcpp::traits::input_parameter< int >::type copy_block(copy_blockSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_arms(copy_armsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_blocks(copy_blocksSEXP);
     Rcpp::traits::input_parameter< Rcpp::List >::type blocks_spec(blocks_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type theta_grid(theta_gridSEXP);
     Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type axis_offsets(axis_offsetsSEXP);
@@ -868,23 +868,41 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type cell_coupling_name(cell_coupling_nameSEXP);
     Rcpp::traits::input_parameter< int >::type hessian_pd_mode(hessian_pd_modeSEXP);
     Rcpp::traits::input_parameter< int >::type step_curvature_mode(step_curvature_modeSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode));
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_test_joint_pattern
-Rcpp::List cpp_test_joint_pattern(Rcpp::List arms_list, int copy_arm, int copy_block, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets);
-RcppExport SEXP _tulpa_cpp_test_joint_pattern(SEXP arms_listSEXP, SEXP copy_armSEXP, SEXP copy_blockSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP) {
+Rcpp::List cpp_test_joint_pattern(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets);
+RcppExport SEXP _tulpa_cpp_test_joint_pattern(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::List >::type arms_list(arms_listSEXP);
-    Rcpp::traits::input_parameter< int >::type copy_arm(copy_armSEXP);
-    Rcpp::traits::input_parameter< int >::type copy_block(copy_blockSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_arms(copy_armsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_blocks(copy_blocksSEXP);
     Rcpp::traits::input_parameter< Rcpp::List >::type blocks_spec(blocks_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type theta_grid(theta_gridSEXP);
     Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type axis_offsets(axis_offsetsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_joint_pattern(arms_list, copy_arm, copy_block, blocks_spec, theta_grid, axis_offsets));
+    rcpp_result_gen = Rcpp::wrap(cpp_test_joint_pattern(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_joint_logpost_grad
+Rcpp::List cpp_test_joint_logpost_grad(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, Rcpp::NumericVector x, int k_grid);
+RcppExport SEXP _tulpa_cpp_test_joint_logpost_grad(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP xSEXP, SEXP k_gridSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type arms_list(arms_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_arms(copy_armsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type copy_blocks(copy_blocksSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type blocks_spec(blocks_specSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type theta_grid(theta_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type axis_offsets(axis_offsetsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type x(xSEXP);
+    Rcpp::traits::input_parameter< int >::type k_grid(k_gridSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_joint_logpost_grad(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, x, k_grid));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2805,6 +2823,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_st_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp, 30},
     {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 20},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
+    {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 8},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 18},
     {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},

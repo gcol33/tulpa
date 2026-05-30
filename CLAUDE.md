@@ -288,12 +288,25 @@ Gibbs debias. Controlled by `diagnose_k` (default TRUE) / `k_samples`
 (default 200, each one extra inner Laplace solve); computed after the draw
 synthesis with the RNG restored, so draws are bit-for-bit unchanged. NOTE:
 small-group binary RE-covariance posteriors are genuinely skewed, so a high
-k-hat there is a correct signal, not a defect. `diagnostic_summary()` surfaces
-`pareto_k` for these fits, falling back to the grid's quadrature effective
-sample size (`sum(w)^2 / sum(w^2)`) for the C++ nested paths
-(`tulpa_nested_laplace`, joint, spde) that store weights but have no sampled
-k-hat yet -- a sampled k-hat there needs a C++ inner-marginal entry point and
-is a follow-on. The parallel-NUTS
+k-hat there is a correct signal, not a defect.
+
+`tulpa_nested_laplace()` (the grid-integrated path) computes the same outer
+k-hat via `.nl_attach_pareto_k()` + `.nested_grid_pareto_k()`: it re-evaluates
+`log_marginal` at a Gaussian-sampled grid by re-dispatching through the SAME
+driver (NO new C++ -- the existing kernels already evaluate the inner marginal
+at any grid handed to them), unconstrains the positive-scale axis with a `log`
+transform (Jacobian `sum(u)`), and PSIS-smooths. Scoped to a single-block,
+single positive-scale-axis grid (`.NL_POS_GRID`: `sigma`, `tau`, `sigma2`,
+`phi_gp`, ...); multi-block, multi-axis, or bounded-parameter grids (a
+correlation `rho_grid`) DECLINE to `pareto_k = NA` rather than apply a guessed
+support transform. Same `control$diagnose_k` (default TRUE) / `k_samples` (200)
+knobs, RNG-restored.
+
+`diagnostic_summary()` surfaces `pareto_k` for any non-chain fit, falling back
+to the grid's quadrature effective sample size (`sum(w)^2 / sum(w^2)`) when
+k-hat was declined or not computed -- including the joint
+(`tulpa_nested_laplace_joint`) and `spde` backends, whose backend-specific grid
+machinery a sampled k-hat does not yet cover (a follow-on). The parallel-NUTS
 multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
 `.tulpa_chain_list()` reads, verified end-to-end against `posterior` in

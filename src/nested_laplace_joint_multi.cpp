@@ -100,6 +100,36 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
     };
 }
 
+// Build a per-arm per-row weight closure from an Rcpp::List of per-arm
+// NumericVectors (areal SVC). Mirrors make_per_arm_idx_fn: caches the
+// per-arm vectors so per-grid-point eta evaluation does not re-resolve the
+// list. The R side validates lengths; this only checks the list shape.
+// Returns an empty std::function when the spec carries no svc_weight, so the
+// block's row_weight stays unset (uniform weight 1, no behavior change).
+inline std::function<double(int, int)> make_per_arm_row_weight_fn(
+    const Rcpp::List& bs, int n_arms, int block_index
+) {
+    if (!bs.containsElementNamed("svc_weight") ||
+        Rf_isNull(bs["svc_weight"])) {
+        return std::function<double(int, int)>();
+    }
+    Rcpp::List w_list = bs["svc_weight"];
+    if (static_cast<int>(w_list.size()) != n_arms) {
+        Rcpp::stop("blocks_spec[[%d]]$svc_weight must be a list of length "
+                   "n_arms (%d), got %d.",
+                   block_index + 1, n_arms,
+                   static_cast<int>(w_list.size()));
+    }
+    std::vector<Rcpp::NumericVector> cache;
+    cache.reserve(n_arms);
+    for (int k = 0; k < n_arms; k++) {
+        cache.push_back(Rcpp::as<Rcpp::NumericVector>(w_list[k]));
+    }
+    return [cache](int i, int k_arm) -> double {
+        return cache[k_arm][i];
+    };
+}
+
 // Per-arm amplitude dispatch for a copy block. axis_donor and axis_copy are
 // column indices into theta_grid for this block's donor-arm and copy-arm
 // amplitude axes respectively (set up by the R-side parser). Under the
@@ -188,6 +218,7 @@ int build_joint_blocks_from_spec(
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(spatial_idx_list, n_arms,
                                             "spatial_idx", block_index);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
 
         if (is_copy_block) {
             require_axes(2);  // (sigma_donor, sigma_copy)
@@ -272,6 +303,8 @@ int build_joint_blocks_from_spec(
 
         auto idx_fn = make_per_arm_idx_fn(spatial_idx_list, n_arms,
                                            "spatial_idx", block_index);
+        auto row_weight_fn = make_per_arm_row_weight_fn(bs, n_arms,
+                                                        block_index);
 
         std::function<double(int, int)> arm_scale_fn;
         std::function<double(int)>      d_fac_phi_fn;
@@ -321,7 +354,8 @@ int build_joint_blocks_from_spec(
         phi_block.size  = size;
         phi_block.idx   = idx_fn;
         phi_block.d_fac = d_fac_phi_fn;
-        if (arm_scale_fn) phi_block.arm_scale = arm_scale_fn;
+        if (arm_scale_fn)  phi_block.arm_scale  = arm_scale_fn;
+        if (row_weight_fn) phi_block.row_weight = row_weight_fn;
         phi_block.add_prior = [phi_start, size, adj_rp, adj_ci, n_nbr](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int /*k*/) {
@@ -366,7 +400,8 @@ int build_joint_blocks_from_spec(
         theta_block.size  = size;
         theta_block.idx   = idx_fn;
         theta_block.d_fac = d_fac_theta_fn;
-        if (arm_scale_fn) theta_block.arm_scale = arm_scale_fn;
+        if (arm_scale_fn)  theta_block.arm_scale  = arm_scale_fn;
+        if (row_weight_fn) theta_block.row_weight = row_weight_fn;
         theta_block.add_prior = [theta_start, size](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int /*k*/) {
@@ -422,6 +457,7 @@ int build_joint_blocks_from_spec(
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(spatial_idx_list, n_arms,
                                             "spatial_idx", block_index);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
 
         if (is_copy_block) {
             require_axes(3);  // (sigma_donor, sigma_copy, rho_car)
@@ -922,8 +958,8 @@ inline void apply_phi_overrides_multi(
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::List          arms_list,
-    int                 copy_arm,         // -1 if no copy
-    int                 copy_block,       // 0-based block index; -1 if no copy
+    Rcpp::IntegerVector copy_arms,        // 0-based copy arm per copy block
+    Rcpp::IntegerVector copy_blocks,      // 0-based copy block index, parallel
     Rcpp::List          blocks_spec,
     Rcpp::NumericMatrix theta_grid,
     Rcpp::IntegerVector axis_offsets,
@@ -954,16 +990,33 @@ Rcpp::List cpp_nested_laplace_joint_multi(
                    total_axes, static_cast<int>(theta_grid.ncol()));
     }
     int n_grid = theta_grid.nrow();
-    bool has_copy = (copy_arm >= 0);
-    if (has_copy) {
-        if (copy_arm >= n_arms) {
+
+    // Resolve the copy specs into a per-block copy-arm map: entry b is the
+    // 0-based copy arm coupled onto block b, or -1 when block b is not a
+    // copy block. copy_arms / copy_blocks are parallel vectors; a single
+    // `-1` (or empty) means "no copy" (the scalar-shim back-compat shape).
+    std::vector<int> copy_arm_of_block(B, -1);
+    if (copy_blocks.size() != copy_arms.size()) {
+        Rcpp::stop("copy_arms (%d) and copy_blocks (%d) must have equal length.",
+                   static_cast<int>(copy_arms.size()),
+                   static_cast<int>(copy_blocks.size()));
+    }
+    for (int c = 0; c < copy_blocks.size(); c++) {
+        int cb = copy_blocks[c];
+        int ca = copy_arms[c];
+        if (cb < 0) continue;  // no-copy sentinel
+        if (cb >= B) {
+            Rcpp::stop("copy_block index (%d) out of range for B (%d).", cb, B);
+        }
+        if (ca < 0 || ca >= n_arms) {
             Rcpp::stop("copy_arm index (%d) out of range for n_arms (%d).",
-                       copy_arm, n_arms);
+                       ca, n_arms);
         }
-        if (copy_block < 0 || copy_block >= B) {
-            Rcpp::stop("copy_block index (%d) out of range for B (%d).",
-                       copy_block, B);
+        if (copy_arm_of_block[cb] >= 0) {
+            Rcpp::stop("block %d is marked as a copy block more than once.",
+                       cb + 1);
         }
+        copy_arm_of_block[cb] = ca;
     }
 
     std::vector<tulpa::ParsedArm> parsed;
@@ -991,9 +1044,10 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         Rcpp::List bs = blocks_spec[b];
         int axis0 = axis_offsets[b];
         int axis_count = axis_offsets[b + 1] - axis0;
+        bool is_copy_b = (copy_arm_of_block[b] >= 0);
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
-            has_copy && b == copy_block, copy_arm, blocks,
+            is_copy_b, copy_arm_of_block[b], blocks,
             &arms, any_nontrivial_field_coef
         );
     }
@@ -1091,8 +1145,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
 // [[Rcpp::export]]
 Rcpp::List cpp_test_joint_pattern(
     Rcpp::List          arms_list,
-    int                 copy_arm,
-    int                 copy_block,
+    Rcpp::IntegerVector copy_arms,
+    Rcpp::IntegerVector copy_blocks,
     Rcpp::List          blocks_spec,
     Rcpp::NumericMatrix theta_grid,
     Rcpp::IntegerVector axis_offsets
@@ -1103,7 +1157,21 @@ Rcpp::List cpp_test_joint_pattern(
         Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
                    static_cast<int>(axis_offsets.size()), B);
     }
-    bool has_copy = (copy_arm >= 0);
+    if (copy_blocks.size() != copy_arms.size()) {
+        Rcpp::stop("copy_arms (%d) and copy_blocks (%d) must have equal length.",
+                   static_cast<int>(copy_arms.size()),
+                   static_cast<int>(copy_blocks.size()));
+    }
+    std::vector<int> copy_arm_of_block(B, -1);
+    for (int c = 0; c < copy_blocks.size(); c++) {
+        int cb = copy_blocks[c];
+        int ca = copy_arms[c];
+        if (cb < 0) continue;  // no-copy sentinel
+        if (cb >= B) {
+            Rcpp::stop("copy_block index (%d) out of range for B (%d).", cb, B);
+        }
+        copy_arm_of_block[cb] = ca;
+    }
 
     std::vector<tulpa::ParsedArm> parsed;
     std::vector<tulpa::JointArm>  arms;
@@ -1124,9 +1192,10 @@ Rcpp::List cpp_test_joint_pattern(
         Rcpp::List bs = blocks_spec[b];
         int axis0 = axis_offsets[b];
         int axis_count = axis_offsets[b + 1] - axis0;
+        bool is_copy_b = (copy_arm_of_block[b] >= 0);
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
-            has_copy && b == copy_block, copy_arm, blocks,
+            is_copy_b, copy_arm_of_block[b], blocks,
             &arms, any_nontrivial_field_coef
         );
     }
@@ -1147,5 +1216,175 @@ Rcpp::List cpp_test_joint_pattern(
         Rcpp::Named("nnz")     = H_builder.nnz,
         Rcpp::Named("col_ptr") = col_ptr,
         Rcpp::Named("row_idx") = row_idx
+    );
+}
+
+// ==========================================================================
+// Joint log-posterior + gradient debug entry (FD gate).
+// ==========================================================================
+// Builds the same arms + blocks as cpp_nested_laplace_joint_multi but at a
+// FIXED single grid point (row k_grid of theta_grid), evaluates the joint
+// log-posterior at a supplied latent vector x, and returns its analytic
+// gradient. The gradient is the dense per-obs/prior scatter's `grad`, which
+// is exactly d/dx [ log_lik + log_prior_joint - 0.5*tau_beta*sum(beta^2) ];
+// the returned scalar adds the matching beta-prior term so a central finite
+// difference of `logpost` reproduces `grad` to ~1e-4.
+//
+// Dense path only (small n_x FD fixtures). No cell coupling. The areal SVC
+// row_weight is exercised here so a per-row weighted ICAR block's gradient
+// wrt the field latent z and wrt a beta can be FD-verified.
+
+// [[Rcpp::export]]
+Rcpp::List cpp_test_joint_logpost_grad(
+    Rcpp::List          arms_list,
+    Rcpp::IntegerVector copy_arms,
+    Rcpp::IntegerVector copy_blocks,
+    Rcpp::List          blocks_spec,
+    Rcpp::NumericMatrix theta_grid,
+    Rcpp::IntegerVector axis_offsets,
+    Rcpp::NumericVector x,
+    int                 k_grid = 0
+) {
+    int n_arms = arms_list.size();
+    int B = blocks_spec.size();
+    if (axis_offsets.size() != B + 1) {
+        Rcpp::stop("axis_offsets must have length B+1 (got %d for B=%d)",
+                   static_cast<int>(axis_offsets.size()), B);
+    }
+    if (copy_blocks.size() != copy_arms.size()) {
+        Rcpp::stop("copy_arms (%d) and copy_blocks (%d) must have equal length.",
+                   static_cast<int>(copy_arms.size()),
+                   static_cast<int>(copy_blocks.size()));
+    }
+    if (k_grid < 0 || k_grid >= theta_grid.nrow()) {
+        Rcpp::stop("k_grid (%d) out of range for theta_grid rows (%d).",
+                   k_grid, static_cast<int>(theta_grid.nrow()));
+    }
+
+    std::vector<int> copy_arm_of_block(B, -1);
+    for (int c = 0; c < copy_blocks.size(); c++) {
+        int cb = copy_blocks[c];
+        int ca = copy_arms[c];
+        if (cb < 0) continue;
+        if (cb >= B) Rcpp::stop("copy_block index (%d) out of range.", cb);
+        copy_arm_of_block[cb] = ca;
+    }
+
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm>  arms;
+    int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
+
+    bool any_nontrivial_field_coef = false;
+    for (const auto& a : arms) {
+        if (std::abs(a.field_coef - 1.0) > 0.0) {
+            any_nontrivial_field_coef = true;
+            break;
+        }
+    }
+
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.reserve(B);
+    int latent_offset = n_x_after_re;
+    for (int b = 0; b < B; b++) {
+        Rcpp::List bs = blocks_spec[b];
+        int axis0 = axis_offsets[b];
+        int axis_count = axis_offsets[b + 1] - axis0;
+        bool is_copy_b = (copy_arm_of_block[b] >= 0);
+        latent_offset = build_joint_blocks_from_spec(
+            bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
+            is_copy_b, copy_arm_of_block[b], blocks,
+            &arms, any_nontrivial_field_coef);
+    }
+    int n_x = latent_offset;
+    if (x.size() != n_x) {
+        Rcpp::stop("x has length %d but the joint latent dimension is %d.",
+                   static_cast<int>(x.size()), n_x);
+    }
+
+    for (const auto& b : blocks) {
+        if (b.prep && !b.prep(k_grid)) {
+            Rcpp::stop("block prep reported infeasible at k_grid=%d.", k_grid);
+        }
+    }
+
+    tulpa::JointArmSpecs specs = tulpa::build_joint_arm_specs(arms);
+
+    // eta per arm at x.
+    std::vector<Rcpp::NumericVector> etas;
+    etas.reserve(n_arms);
+    for (const auto& a : arms) etas.emplace_back(a.N, 0.0);
+
+    const int Bn = static_cast<int>(blocks.size());
+    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+        const tulpa::ParsedArm& pa = parsed[k_arm];
+        const int N_k    = arms[k_arm].N;
+        const int p_k    = pa.p;
+        const int n_re_k = pa.n_re_groups;
+        const int bstart = pa.beta_start;
+        const int rstart = pa.re_start;
+        std::vector<double> d_eff(Bn);
+        for (int b = 0; b < Bn; b++) {
+            double s = blocks[b].arm_scale ? blocks[b].arm_scale(k_arm, k_grid)
+                                           : 1.0;
+            d_eff[b] = s * blocks[b].d_fac(k_grid);
+        }
+        for (int i = 0; i < N_k; i++) {
+            double e = 0.0;
+            for (int j = 0; j < p_k; j++) e += pa.X(i, j) * x[bstart + j];
+            if (n_re_k > 0) {
+                int g = static_cast<int>(pa.re_idx[i]) - 1;
+                if (g >= 0 && g < n_re_k) e += x[rstart + g];
+            }
+            for (int b = 0; b < Bn; b++) {
+                if (d_eff[b] == 0.0) continue;
+                if (!blocks[b].idx) continue;
+                int l = blocks[b].idx(i, k_arm);
+                if (l > 0 && l <= blocks[b].size) {
+                    e += d_eff[b] * tulpa::block_row_weight(blocks[b], i, k_arm)
+                                  * x[blocks[b].start + l - 1];
+                }
+            }
+            etas[k_arm][i] = e;
+        }
+    }
+
+    // Analytic gradient: dense per-arm scatter + block priors + beta/RE priors.
+    tulpa::DenseVec grad(n_x, 0.0);
+    tulpa::DenseMat H(n_x, tulpa::DenseVec(n_x, 0.0));
+    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+        tulpa::scatter_arm_obs_joint_multi(
+            x, etas[k_arm], parsed[k_arm], arms[k_arm],
+            specs.views[k_arm], k_arm, blocks, k_grid, grad, H);
+    }
+    for (const auto& b : blocks) {
+        if (b.add_prior) b.add_prior(grad, H, x, k_grid);
+    }
+    tulpa::add_per_arm_beta_re_priors(grad, H, x, parsed);
+
+    // Scalar objective: log_lik + log_prior_joint + beta-prior term. The
+    // beta-prior term mirrors add_per_arm_beta_re_priors' weak Gaussian
+    // (tau_beta = 1e-4) so the FD of `logpost` matches `grad` on the betas.
+    double log_lik = tulpa::compute_total_log_lik_joint(specs.views, etas, 1);
+    double log_prior = tulpa::log_prior_per_arm_re(x, parsed);
+    for (const auto& b : blocks) {
+        if (b.log_prior) log_prior += b.log_prior(x, k_grid);
+    }
+    constexpr double tau_beta = 1e-4;
+    double beta_prior = 0.0;
+    for (const auto& pa : parsed) {
+        for (int j = 0; j < pa.p; j++) {
+            double v = x[pa.beta_start + j];
+            beta_prior -= 0.5 * tau_beta * v * v;
+        }
+    }
+    double logpost = log_lik + log_prior + beta_prior;
+
+    Rcpp::NumericVector grad_out(n_x);
+    for (int j = 0; j < n_x; j++) grad_out[j] = grad[j];
+
+    return Rcpp::List::create(
+        Rcpp::Named("logpost") = logpost,
+        Rcpp::Named("grad")    = grad_out,
+        Rcpp::Named("n_x")     = n_x
     );
 }
