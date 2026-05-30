@@ -30,6 +30,12 @@
 #' @param n_grid Number of grid points per hyperparameter dimension for
 #'   `method = "grid"`. Ignored under `method = "ccd"`. Default 5.
 #' @param phi Dispersion parameter (negbin only).
+#' @param diagnose_k Logical. If TRUE (default), compute the outer
+#'   Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
+#'   sampling the joint `(range, sigma)` posterior on the log scale against the
+#'   Gaussian proposal that orients the integration. See [tulpa_psis()].
+#' @param k_samples Number of importance draws for `diagnose_k`. Default 200,
+#'   each one extra batched SPDE marginal evaluation.
 #' @param max_iter Maximum Newton iterations. Default 100.
 #' @param tol Newton convergence tolerance. Default 1e-6.
 #' @param n_threads OpenMP threads. Default 1.
@@ -40,6 +46,8 @@
 #'     \item `log_marginal`: log marginal likelihood
 #'     \item `converged`: convergence flag
 #'     \item `spatial`: the spatial specification (for prediction)
+#'     \item `pareto_k`, `pareto_k_is_ess`: outer Pareto-\eqn{\hat{k}} and its
+#'       importance-sampling ESS (`NA` when `diagnose_k = FALSE`)
 #'     \item `nested`: nested Laplace results (if used)
 #'   }
 #'
@@ -50,6 +58,7 @@ fit_spde <- function(y, X, spatial,
                      nested_laplace = is.null(range) || is.null(sigma),
                      method = c("ccd", "grid"),
                      n_grid = 5L, phi = 1.0,
+                     diagnose_k = TRUE, k_samples = 200L,
                      max_iter = 100L, tol = 1e-6, n_threads = 1L) {
 
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
@@ -92,7 +101,8 @@ fit_spde <- function(y, X, spatial,
 
   if (nested_laplace && (is.null(range) || is.null(sigma))) {
     if (method == "grid") {
-      return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial))
+      return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial,
+                                  diagnose_k = diagnose_k, k_samples = k_samples))
     } else {
       return(fit_spde_nested_ccd(spde_log_marginal,
                                  fit_spde_single = function(r, s) {
@@ -104,7 +114,8 @@ fit_spde <- function(y, X, spatial,
                                      n_threads = n_threads
                                    )
                                  },
-                                 sp = sp, spatial = spatial))
+                                 sp = sp, spatial = spatial,
+                                 diagnose_k = diagnose_k, k_samples = k_samples))
     }
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---

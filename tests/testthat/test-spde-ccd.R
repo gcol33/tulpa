@@ -109,3 +109,24 @@ test_that("fit_spde(method='ccd') matches grid integration on shared mode", {
     expect_lt(abs(log(fit_c$nested$sigma_mean) - log(fit_g$nested$sigma_mean)), 1.0)
   }
 })
+
+test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
+  skip_if_not_installed("fmesher")
+  d <- helper_make_spde_for_ccd(n_obs = 250, range_true = 0.3, sigma_true = 0.6,
+                                seed = 11L, prior_sigma = c(0.6, 0.05))
+  y <- rpois(length(d$eta), lambda = exp(2.0 + d$eta))
+  X <- matrix(1, nrow = length(y), ncol = 1)
+
+  fit <- suppressWarnings(
+    fit_spde(y, X, d$spec, family = "poisson", method = "ccd", k_samples = 150L))
+  # Both hyperparameters are positive (log transform), so k-hat is well-defined;
+  # value is data-dependent -- assert plumbing + ESS range.
+  expect_true(is.finite(fit$pareto_k))
+  expect_true(is.finite(fit$pareto_k_is_ess))
+  expect_gt(fit$pareto_k_is_ess, 0)
+  expect_equal(fit$pareto_k_scope, "outer (range, sigma) Gaussian proposal")
+
+  off <- suppressWarnings(
+    fit_spde(y, X, d$spec, family = "poisson", method = "ccd", diagnose_k = FALSE))
+  expect_true(is.na(off$pareto_k))                  # gated off
+})

@@ -33,11 +33,35 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 # Both backends return the same shape so the user-facing fit_spde()
 # return contract is unchanged across methods.
 
+# Outer Pareto-k-hat for the SPDE (range, sigma) integration: importance-sample
+# the joint hyperparameter posterior on the log scale against the Gaussian
+# proposal (theta_hat, L_scale, both in (log_range, log_sigma) space) and
+# PSIS-smooth. The target is the SAME log_marginal + PC-prior the quadrature
+# weights use, so no extra Jacobian is needed -- the SPDE integrator already
+# works on the log scale. Both axes are positive, so the transform is
+# unambiguous. Runs with the RNG restored so the fit is unperturbed.
+.spde_pareto_k <- function(theta_hat, L_scale, spde_log_marginal, sp, n_samples) {
+  lt <- function(U) {
+    r <- exp(U[, 1L]); s <- exp(U[, 2L])
+    lm <- tryCatch(spde_log_marginal(r, s)$log_marginal,
+                   error = function(e) rep(-Inf, length(r)))
+    if (length(lm) != length(r)) return(rep(-Inf, length(r)))
+    lm + pc_prior_log_density(r, s, sp$prior_range, sp$prior_sigma)
+  }
+  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+  kd <- tryCatch(.nested_is_pareto_k(theta_hat, L_scale, lt, n_samples),
+                 error = function(e) NULL)
+  if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+  if (is.null(kd)) list(pareto_k = NA_real_, is_ess = NA_real_) else kd
+}
+
 # ---------------------------------------------------------------------
 # Method = "grid": legacy rectangular grid, repaired to use the v10
 # nested-Laplace ABI (re_idx / n_re_groups / sigma_re).
 # ---------------------------------------------------------------------
-fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial) {
+fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
+                                 diagnose_k = TRUE, k_samples = 200L) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -58,16 +82,32 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial) {
   weights <- exp(log_post - log_max)
   weights <- weights / sum(weights)
 
+  # Outer k-hat: no mode Hessian on the grid path, so fit the Gaussian proposal
+  # to the grid posterior moments in (log_range, log_sigma).
+  kd <- list(pareto_k = NA_real_, is_ess = NA_real_)
+  if (isTRUE(diagnose_k)) {
+    u_grid <- cbind(log(grid$range), log(grid$sigma))
+    u_hat  <- as.numeric(crossprod(weights, u_grid))
+    cen    <- sweep(u_grid, 2L, u_hat)
+    Su     <- crossprod(cen * weights, cen); Su <- (Su + t(Su)) / 2
+    Lk <- tryCatch(t(chol(Su)), error = function(e) NULL)
+    if (!is.null(Lk)) kd <- .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples)
+  }
+
   list(
     mode = NULL,
     log_marginal = result$log_marginal,
     converged = all(result$n_iter > 0),
     spatial = spatial,
+    pareto_k = kd$pareto_k,
+    pareto_k_is_ess = kd$is_ess,
+    pareto_k_scope = "outer (range, sigma) Gaussian proposal",
     nested = list(
       method     = "grid",
       range_grid = grid$range,
       sigma_grid = grid$sigma,
       weights    = weights,
+      pareto_k   = kd$pareto_k,
       n_iter     = result$n_iter,
       best_idx   = best,
       range_mean = sum(weights * grid$range),
@@ -85,7 +125,8 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial) {
 # ---------------------------------------------------------------------
 fit_spde_nested_ccd <- function(spde_log_marginal,
                                 fit_spde_single,
-                                sp, spatial) {
+                                sp, spatial,
+                                diagnose_k = TRUE, k_samples = 200L) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -134,7 +175,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     warning("nested-Laplace mode-find did not produce a usable mode ",
             "(degenerate or hit prior bounds); falling back to the ",
             "rectangular grid.")
-    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial))
+    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
+                                diagnose_k = diagnose_k, k_samples = k_samples))
   }
   theta_hat <- op$par
   range_hat <- exp(theta_hat[1])
@@ -157,13 +199,15 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
       min(ev) <= 1e-6 * max(abs(ev))) {
     warning("nested-Laplace Hessian is degenerate at the mode ",
             "(condition unfit for CCD); falling back to the rectangular grid.")
-    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial))
+    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
+                                diagnose_k = diagnose_k, k_samples = k_samples))
   }
   sigma_post <- tryCatch(solve(neg_H), error = function(e) NULL)
   if (is.null(sigma_post)) {
     warning("nested-Laplace Hessian inverse failed; ",
             "falling back to the rectangular grid.")
-    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial))
+    return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
+                                diagnose_k = diagnose_k, k_samples = k_samples))
   }
   L <- t(chol(sigma_post))   # sigma_post = L L^T
 
@@ -198,6 +242,13 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   # (the Laplace posterior at the marginal-mode hypers).
   fit_at_mode <- fit_spde_single(range_hat, sigma_hat)
 
+  # Outer k-hat reuses the mode-find's own Gaussian (theta_hat on the log scale,
+  # L = chol of the posterior covariance) as the importance proposal -- the same
+  # Gaussian the CCD design is oriented by.
+  kd <- if (isTRUE(diagnose_k)) {
+    .spde_pareto_k(theta_hat, L, spde_log_marginal, sp, k_samples)
+  } else list(pareto_k = NA_real_, is_ess = NA_real_)
+
   list(
     mode             = fit_at_mode$mode,
     beta             = fit_at_mode$beta,
@@ -208,11 +259,15 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     spatial          = spatial,
     range            = range_hat,
     sigma            = sigma_hat,
+    pareto_k         = kd$pareto_k,
+    pareto_k_is_ess  = kd$is_ess,
+    pareto_k_scope   = "outer (range, sigma) Gaussian proposal",
     nested = list(
       method        = "ccd",
       range_grid    = range_grid,
       sigma_grid    = sigma_grid,
       weights       = weights,
+      pareto_k      = kd$pareto_k,
       n_iter        = result$n_iter,
       kind          = ccd$kind,
       best_idx      = best,

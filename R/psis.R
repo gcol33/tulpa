@@ -144,13 +144,41 @@ tulpa_psis <- function(log_ratios) {
 # log-Jacobian `sum(u)` (for theta = exp(u)) enters the u-space target; the
 # proposal's normalizing constant is common to every draw and drops under PSIS.
 #
+# `theta_hat` / `L_scale` define the proposal N(theta_hat, L_scale L_scale')
+# in the integrator's OWN coordinate space; `log_target_batched(U_matrix)`
+# returns the integrator's unnormalized log posterior at the S x d sample in
+# that same space (any change-of-variables Jacobian is the caller's job, so the
+# diagnostic always matches whatever target the integrator actually weights).
+# The proposal's normalizing constant is common to all draws and drops under
+# PSIS, leaving the quadratic 0.5||z||^2.
+.nested_is_pareto_k <- function(theta_hat, L_scale, log_target_batched,
+                                n_samples = 200L) {
+  d <- length(theta_hat)
+  n_samples <- as.integer(n_samples)
+  Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
+  U <- sweep(Z %*% t(L_scale), 2L, theta_hat, `+`)           # S x d ~ N(theta_hat, .)
+  lt <- log_target_batched(U)
+  if (length(lt) != n_samples) {
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+  }
+  lr <- lt + 0.5 * rowSums(Z^2)                              # target - log q (up to const)
+  n_eval <- sum(is.finite(lr))
+  if (n_eval < 25L) {
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
+  }
+  ps <- tulpa_psis(lr)
+  list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
+}
+
+# Grid path whose integrator works in CONSTRAINED (positive) coordinates: fit
+# the Gaussian proposal to the grid posterior in the unconstrained `u = log`
+# coordinate and add the log-Jacobian `sum(u)` (theta = exp(u)) to the target.
 # `u_grid` is the K x d log-scale grid, `weights` the K integration weights,
 # `refit_log_marginal(theta_mat)` maps an S x d CONSTRAINED grid to its S inner
-# log-marginals. Restricted by the caller to all-positive-scale axes (a single
-# `log`), so there is no bounded-parameter (e.g. correlation) Jacobian to guess.
+# log-marginals. Restricted by the caller to all-positive-scale axes, so there
+# is no bounded-parameter (e.g. correlation) Jacobian to guess.
 .nested_grid_pareto_k <- function(u_grid, weights, refit_log_marginal,
                                   n_samples = 200L) {
-  d <- ncol(u_grid)
   u_hat <- as.numeric(crossprod(weights, u_grid))            # weighted mean
   cen   <- sweep(u_grid, 2L, u_hat)
   Su    <- crossprod(cen * weights, cen)                     # weighted covariance
@@ -158,19 +186,10 @@ tulpa_psis <- function(log_ratios) {
   L <- tryCatch(t(chol(Su)), error = function(e) NULL)
   if (is.null(L)) return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
 
-  n_samples <- as.integer(n_samples)
-  Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
-  U <- sweep(Z %*% t(L), 2L, u_hat, `+`)                     # S x d, ~ N(u_hat, Su)
-  lm_s <- refit_log_marginal(exp(U))
-  if (length(lm_s) != n_samples) {
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+  lt <- function(U) {
+    lm <- refit_log_marginal(exp(U))
+    if (length(lm) != nrow(U)) return(rep(NA_real_, nrow(U)))
+    lm + rowSums(U)                                          # + log|d theta / d u|
   }
-  lr <- lm_s + rowSums(U) + 0.5 * rowSums(Z^2)               # target + Jacobian - log q
-
-  n_eval <- sum(is.finite(lr))
-  if (n_eval < 25L) {
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
-  }
-  ps <- tulpa_psis(lr)
-  list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
+  .nested_is_pareto_k(u_hat, L, lt, n_samples)
 }

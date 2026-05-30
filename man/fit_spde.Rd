@@ -16,6 +16,8 @@ fit_spde(
   method = c("ccd", "grid"),
   n_grid = 5L,
   phi = 1,
+  diagnose_k = TRUE,
+  k_samples = 200L,
   max_iter = 100L,
   tol = 1e-06,
   n_threads = 1L
@@ -59,6 +61,14 @@ around the prior modes (\code{n_grid} points per axis).
 
 \item{phi}{Dispersion parameter (negbin only).}
 
+\item{diagnose_k}{Logical. If TRUE (default), compute the outer
+Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
+sampling the joint \verb{(range, sigma)} posterior on the log scale against the
+Gaussian proposal that orients the integration. See \code{\link[=tulpa_psis]{tulpa_psis()}}.}
+
+\item{k_samples}{Number of importance draws for \code{diagnose_k}. Default 200,
+each one extra batched SPDE marginal evaluation.}
+
 \item{max_iter}{Maximum Newton iterations. Default 100.}
 
 \item{tol}{Newton convergence tolerance. Default 1e-6.}
@@ -72,6 +82,8 @@ A list with:
 \item \code{log_marginal}: log marginal likelihood
 \item \code{converged}: convergence flag
 \item \code{spatial}: the spatial specification (for prediction)
+\item \code{pareto_k}, \code{pareto_k_is_ess}: outer Pareto-\eqn{\hat{k}} and its
+importance-sampling ESS (\code{NA} when \code{diagnose_k = FALSE})
 \item \code{nested}: nested Laplace results (if used)
 }
 }

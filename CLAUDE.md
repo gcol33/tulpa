@@ -302,11 +302,28 @@ correlation `rho_grid`) DECLINE to `pareto_k = NA` rather than apply a guessed
 support transform. Same `control$diagnose_k` (default TRUE) / `k_samples` (200)
 knobs, RNG-restored.
 
+`fit_spde()` also computes the outer k-hat over `(range, sigma)` (both positive,
+log transform), via `.spde_pareto_k()` + the shared `.nested_is_pareto_k()`
+core: it reuses the mode-find's own Gaussian (`theta_hat`, `chol(post_cov)` on
+the log scale) as the importance proposal and the SAME `log_marginal` + PC-prior
+the CCD weights use (no extra Jacobian -- the SPDE integrator works on the log
+scale). Both `method = "ccd"` (Hessian proposal) and `"grid"` (grid-moment
+proposal) are covered; same `diagnose_k` / `k_samples` knobs. `.nested_is_pareto_k()`
+is the shared batched IS-PSIS primitive: proposal `N(theta_hat, L L')` in the
+integrator's own space, caller-supplied batched target (the grid path adds the
+`sum(u)` log-Jacobian, the SPDE path does not).
+
 `diagnostic_summary()` surfaces `pareto_k` for any non-chain fit, falling back
 to the grid's quadrature effective sample size (`sum(w)^2 / sum(w^2)`) when
-k-hat was declined or not computed -- including the joint
-(`tulpa_nested_laplace_joint`) and `spde` backends, whose backend-specific grid
-machinery a sampled k-hat does not yet cover (a follow-on). The parallel-NUTS
+k-hat was declined or not computed. The one nested backend still on quad-ESS is
+the joint (`tulpa_nested_laplace_joint`): its `cpp_nested_laplace_joint_multi`
+does take a substitutable `theta_grid`, but the joint hyperparameter space is
+heterogeneous -- positive scales (sigma, phi), a bounded correlation
+(`rho_car`), and unbounded copy-coefficients (alpha) -- so a correct sampled
+k-hat needs per-axis mixed-support transforms plus reconstruction of
+`axis_offsets` / the tile partition for sampled cells. That is a backend
+refactor (the bounded `rho_car` is the unguessable axis), left as a follow-on.
+The parallel-NUTS
 multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
 `.tulpa_chain_list()` reads, verified end-to-end against `posterior` in
