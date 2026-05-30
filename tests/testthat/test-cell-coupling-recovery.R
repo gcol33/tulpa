@@ -91,6 +91,35 @@ test_that("per-cell branch matches per-obs path: mode and log-marginal", {
                  tolerance = 1e-8)
 })
 
+test_that("fisher step-curvature reproduces the observed-Hessian fit (Bernoulli is curvature-invariant)", {
+    # The single-arm Bernoulli per-cell spec writes the canonical-link Fisher
+    # weight p(1-p) as its curvature, so observed == expected information
+    # cell-by-cell (no latent mixture, no missing-information term).
+    # control$hessian = "fisher" (Expected step curvature) must therefore
+    # reproduce the default observed-Hessian fit to numerical precision -- the
+    # fisher path is a correct no-op for a curvature-invariant spec.
+    cpp_register_test_separable_bernoulli_coupling()
+    d <- setup_test_data(seed = 2L)
+
+    res_observed <- tulpa_nested_laplace_joint(
+        responses     = list(occ = build_arm(d, coupled = TRUE)),
+        prior         = prior_spec(d),
+        cell_coupling = "test_separable_bernoulli",
+        control       = list(max_iter = 60L, tol = 1e-10)
+    )
+    res_fisher <- tulpa_nested_laplace_joint(
+        responses     = list(occ = build_arm(d, coupled = TRUE)),
+        prior         = prior_spec(d),
+        cell_coupling = "test_separable_bernoulli",
+        control       = list(max_iter = 60L, tol = 1e-10, hessian = "fisher")
+    )
+
+    expect_equal(res_fisher$log_marginal, res_observed$log_marginal, tolerance = 1e-9)
+    expect_equal(res_fisher$modes,        res_observed$modes,        tolerance = 1e-8)
+    expect_equal(res_fisher$theta_mean,   res_observed$theta_mean,   tolerance = 1e-8)
+    expect_equal(res_fisher$theta_sd,     res_observed$theta_sd,     tolerance = 1e-8)
+})
+
 test_that("kernel rejects coupled = TRUE with the separable default spec", {
     d <- setup_test_data(seed = 3L, N = 20L)
     expect_error(

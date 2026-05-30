@@ -133,6 +133,40 @@ test_that("cross_hess scatter reduces to independent fits when lam01 = 0", {
                  tolerance = 1e-8)
 })
 
+test_that("fisher step-curvature retains the true Gaussian cross-Hessian", {
+    # The bivariate Gaussian spec's cross term lam01 is the genuine Fisher
+    # off-diagonal -- a Gaussian's Hessian equals its precision, which equals
+    # its Fisher information -- NOT a mixture missing-information term. Under
+    # control$hessian = "fisher" (Expected step curvature) it must be retained,
+    # so the coupled fit reproduces the default observed-Hessian fit to
+    # precision. Dropping cross-Hessians is correct only for a mixture spec
+    # (occu_cover); a spurious global cross-drop here would shift the mode.
+    cpp_register_test_bivariate_gaussian_coupling(
+        lam00 = 2.0, lam11 = 1.5, lam01 = 0.7
+    )
+    d <- setup_bivariate_data(seed = 11L)
+
+    res_observed <- tulpa_nested_laplace_joint(
+        responses = list(a = build_arm_biv(d, d$y0),
+                         b = build_arm_biv(d, d$y1)),
+        prior     = prior_spec_biv(d),
+        cell_coupling = "test_bivariate_gaussian",
+        control   = list(max_iter = 80L, tol = 1e-11)
+    )
+    res_fisher <- tulpa_nested_laplace_joint(
+        responses = list(a = build_arm_biv(d, d$y0),
+                         b = build_arm_biv(d, d$y1)),
+        prior     = prior_spec_biv(d),
+        cell_coupling = "test_bivariate_gaussian",
+        control   = list(max_iter = 80L, tol = 1e-11, hessian = "fisher")
+    )
+
+    expect_equal(res_fisher$log_marginal, res_observed$log_marginal, tolerance = 1e-9)
+    expect_equal(res_fisher$modes,        res_observed$modes,        tolerance = 1e-8)
+    expect_equal(res_fisher$theta_mean,   res_observed$theta_mean,   tolerance = 1e-8)
+    expect_equal(res_fisher$theta_sd,     res_observed$theta_sd,     tolerance = 1e-8)
+})
+
 test_that("opposite-sign cross_hess (lam01 < 0) still gives consistent dense/sparse", {
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 3.0, lam11 = 2.0, lam01 = -1.1
