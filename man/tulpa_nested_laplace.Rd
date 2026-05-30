@@ -84,6 +84,13 @@ on the return list as \verb{$grid_hessians} (list of dense \eqn{p\times p}
 matrices) and \verb{$grid_modes} (list of length-\eqn{p} vectors). Used
 downstream by simplified-Laplace (SLA) callers to assemble skew-aware
 marginals -- see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.
+\item \code{diagnose_k} (\code{TRUE}), \code{k_samples} (\code{200L}) -- compute the outer
+Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
+sampling the hyperparameter posterior against the Gaussian proposal
+fitted to the grid, drawing \code{k_samples} extra inner-marginal evaluations.
+Computed for a single-block, single positive-scale-axis grid; left \code{NA}
+(with the grid's quadrature ESS as the fallback diagnostic) for
+multi-block, multi-axis, or bounded-parameter grids. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
 }}
 }
 \value{
@@ -95,6 +102,9 @@ A list with:
 \item \code{theta_mean}, \code{theta_sd}: posterior moments per hyperparameter.
 \item \code{n_iter}: inner Newton iterations per grid point.
 \item \code{modes}: matrix \verb{[n_grid x n_x]} of inner modes, when stored.
+\item \code{pareto_k}, \code{pareto_k_is_ess}: outer Pareto-\eqn{\hat{k}} and its
+importance-sampling ESS (\code{NA} when not computed for the grid; see
+\code{control$diagnose_k}).
 \item \code{prior}: echoed input.
 }
 }
