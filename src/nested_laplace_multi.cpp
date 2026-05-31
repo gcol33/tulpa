@@ -516,7 +516,10 @@ Rcpp::List cpp_nested_laplace_multi(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
     double prune_tol = 0.0,
-    SEXP likelihood = R_NilValue
+    SEXP likelihood = R_NilValue,
+    bool progress = false, int progress_every = 0,
+    double progress_throttle = 0.0,
+    std::string progress_file = ""
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -566,6 +569,13 @@ Rcpp::List cpp_nested_laplace_multi(
         ext_response = lk->response_data;
     }
 
+    std::unique_ptr<tulpa_progress::GridProgress> gp;
+    if (progress) {
+        gp.reset(new tulpa_progress::GridProgress(
+            "nested-laplace", n_grid, progress_every, progress_throttle,
+            progress_file));
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -574,7 +584,8 @@ Rcpp::List cpp_nested_laplace_multi(
         store_Q,
         /*n_threads_outer=*/1,
         prune_tol,
-        ext_spec, ext_response
+        ext_spec, ext_response,
+        gp.get()
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

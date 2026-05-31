@@ -86,6 +86,30 @@
 #'   likelihood (a scaled Bernoulli, with the latent occupancy state integrated
 #'   out) through this. Multi-block `prior` only. Default `NULL` (use `family`).
 #'
+# Normalize the outer-grid progress knobs from a `control` list into the four
+# scalars the C++ entry points accept. Off by default; `progress = TRUE` turns
+# on the flushed cell-k/n_grid + ETA reporter (see the GridProgress reporter in
+# inst/include/tulpa/nested_progress.h and gcol33/tulpa#45). `progress.file`
+# adds a heartbeat file for detached runs where Rcout flushing is unreliable.
+.nl_progress_args <- function(control) {
+  # Control keys win; otherwise fall back to the scoped `tulpa.nl_progress`
+  # option a caller (e.g. tulpaObs) may have set for a whole fit, so progress
+  # reaches grids run through fixed-control internal paths (the EM per-block
+  # nested solve) without threading the knobs through every layer.
+  has_ctrl <- !is.null(control$progress) || !is.null(control$progress.every) ||
+              !is.null(control$progress.throttle) || !is.null(control$progress.file)
+  if (!has_ctrl) {
+    opt <- getOption("tulpa.nl_progress", NULL)
+    if (is.list(opt)) return(opt)
+  }
+  list(
+    progress          = isTRUE(control$progress),
+    progress_every    = as.integer(control$progress.every    %||% 0L),
+    progress_throttle = as.numeric(control$progress.throttle %||% 2),
+    progress_file     = as.character(control$progress.file    %||% "")
+  )
+}
+
 #' @keywords internal
 #' @export
 tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
@@ -155,7 +179,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   p_fixed <- ncol(X)
 
   if (.is_multi_block_prior(prior)) {
-    res <- .nl_dispatch_multi(cargs, prior, likelihood = likelihood)
+    res <- .nl_dispatch_multi(cargs, prior, likelihood = likelihood,
+                              progress = .nl_progress_args(control))
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed)
     }
@@ -1187,7 +1212,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .NL_MULTI_GRID_WARN <- 50L
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 
-.nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL) {
+.nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL,
+                               progress = .nl_progress_args(list())) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.
   # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
   # the canonical "one obs per latent slot" case has N == n_latent and the
@@ -1263,7 +1289,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     n_threads   = cargs$n_threads,
     x_init_nullable = cargs$x_init_nullable,
     store_Q     = isTRUE(cargs$store_Q),
-    likelihood  = likelihood
+    likelihood  = likelihood,
+    progress          = isTRUE(progress$progress),
+    progress_every    = as.integer(progress$progress_every),
+    progress_throttle = as.numeric(progress$progress_throttle),
+    progress_file     = as.character(progress$progress_file)
   )
 
   out$theta_grid   <- joint_grid

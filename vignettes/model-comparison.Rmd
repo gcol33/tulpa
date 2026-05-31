@@ -14,6 +14,7 @@ knitr::opts_chunk$set(
   fig.width = 6, fig.height = 4
 )
 set.seed(20260529)
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
 ```{r load, message = FALSE}
@@ -42,6 +43,17 @@ a group-level offset, and a second covariate that all genuinely shape
 the response. Fit the ladder. Watch the evidence rise at each rung.
 Replay the exercise on a binary outcome so the verdict holds across two
 families instead of resting on a single example.
+
+Three quantities do the work in this vignette, and they answer different
+questions. The marginal likelihood, read off a Laplace fit with
+`logLik()`, scores a whole specification against the data it saw. The
+Bayes factor turns two such scores into a ratio, the odds one structure
+gives the data over another. WAIC and LOO step outside that frame and
+ask how well a model predicts data it has not yet met. The first two the
+engine computes from a single deterministic solve; the third needs a
+pointwise log-likelihood that only a full observation model supplies, so
+it lives in the model packages. Knowing which number answers your
+question saves a great deal of confused staring at tables.
 
 ## Marginal likelihood from a Laplace fit
 
@@ -72,6 +84,28 @@ out is the genuine marginal likelihood. For heavier-tailed or skewed
 families it becomes a second-order estimate, reliable whenever the
 posterior stays roughly bell-shaped, which holds at most realistic
 sample sizes.
+
+The penalty in the approximation is worth seeing explicitly, because it
+is where Occam's razor enters the arithmetic. Write the log integrand as
+`g(theta) = log p(y | theta) + log p(theta)`. The Laplace value is
+`g(theta_hat) + (d/2) log(2 pi) - (1/2) log det H`, where `theta_hat` is
+the mode, `H` the negative Hessian of `g` there, and `d` the parameter
+count. The first piece rewards a good fit at the best parameter values.
+The `log det H` piece is the cost of flexibility: a sharply peaked
+posterior, the kind a well-identified extra parameter produces, has a
+large determinant and pays for itself only if the fit it buys is large
+enough. A parameter the data barely constrain leaves the posterior nearly
+as broad as the prior, so the determinant term grows while the fit term
+barely moves, and the evidence falls. That is the same trade you would
+get from integrating the parameter out exactly, which is the point: the
+penalty is not bolted on, it is what the integral does.
+
+This is why the evidence is not the maximised likelihood. The maximised
+likelihood only ever rises when you add a parameter, so ranking by it
+always picks the largest model. The marginal likelihood can fall when a
+parameter is added, and it does fall whenever the parameter earns less
+fit than it costs in posterior concentration. A criterion that can move
+in both directions is the one you want for choosing structure.
 
 When you fit with `mode = "laplace"`, tulpa computes this quantity and
 stores it on the fit. `logLik()` returns it.
@@ -172,6 +206,53 @@ not its precise value. A large positive gain says the term earns its
 place. A gain near zero, or negative, would say the term adds structure
 the data do not ask for.
 
+A plot of the ladder makes the climb easier to read than a column of
+numbers. Each bar is one rung's evidence relative to the null, so the bar
+heights are the cumulative gain and the steps between them are the
+per-rung gains from the table.
+
+```{r ladder-plot, eval = has_ggplot, fig.alt = "Bar chart of cumulative log evidence by ladder rung"}
+library(ggplot2)
+pd <- data.frame(model = factor(names(ll), levels = names(ll)),
+                 rel = ll - ll[1])
+ggplot(pd, aes(model, rel)) +
+  geom_col(width = 0.6, fill = "#3a6ea5") +
+  labs(x = NULL, y = "log evidence vs. null") +
+  theme_minimal() +
+  theme(panel.background = element_rect(fill = "transparent", colour = NA),
+        plot.background  = element_rect(fill = "transparent", colour = NA))
+```
+
+The first step, from intercept to slope, dominates the figure, which
+matches the table: the `x` coefficient is large and the sample is wide
+enough to pin it down. The random intercept and the second covariate add
+visibly shorter steps, each still a clear lift. Plotting the cumulative
+gain rather than the raw `logLik` keeps the axis readable, since the raw
+numbers run to several hundred and would crowd the small steps off the
+top of the panel.
+
+To see the penalty bite, add a covariate that is pure noise, unrelated to
+the response, and watch the evidence refuse to reward it. The full model
+already holds the two real slopes and the random intercept; the extra
+term `w` is independent of `y` by construction.
+
+```{r noise-term}
+dat$w <- rnorm(n)
+m4 <- tulpa(y ~ x + z + w + (1 | g), data = dat, family = "gaussian",
+            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+c(full = round(as.numeric(logLik(m3)), 2),
+  plus_noise = round(as.numeric(logLik(m4)), 2),
+  gain = round(as.numeric(logLik(m4)) - as.numeric(logLik(m3)), 2))
+```
+
+The noise covariate buys a gain near zero, often slightly negative once
+the determinant penalty is paid. A maximised likelihood would have risen
+here, since `w` can always soak up a sliver of residual variance at its
+best-fitting coefficient. The marginal likelihood declines to pay,
+because the fit `w` unlocks is smaller than the posterior concentration
+it costs. That asymmetry is Occam's razor doing its job on a term you
+know to be useless.
+
 ## compare_models()
 
 Computing `logLik()` per fit and assembling a table by hand works, and
@@ -228,6 +309,30 @@ carry a small approximation error. With a well-behaved posterior, as
 here, that error is far smaller than the gaps between models, and the
 ranking is safe to read.
 
+### Non-nested candidates
+
+Nesting makes each gain legible, but the evidence does not require it.
+Two models that are not versions of each other, say one covariate against
+a different covariate, still produce comparable marginal likelihoods as
+long as they saw the same response on the same rows. The criterion ranks
+them on the same scale; what you lose is the clean reading of one term's
+contribution, since the difference now bundles together everything that
+changed between the two specifications.
+
+```{r non-nested}
+mx <- tulpa(y ~ x, data = dat, family = "gaussian",
+            mode = "laplace", phi = 0.8)
+mz <- tulpa(y ~ z, data = dat, family = "gaussian",
+            mode = "laplace", phi = 0.8)
+compare_models(x_only = mx, z_only = mz, criterion = "loglik")
+```
+
+The `x`-only model wins, which fits the simulation: `x` carries the
+larger true coefficient, so it explains more of the response than `z`
+does on its own. A non-nested comparison answers "which of these
+explains the data better" cleanly; it just does not decompose into
+per-term gains the way a ladder does.
+
 ## Interpreting logLik differences
 
 A worked reading of one gap makes the scale concrete. Take the binomial
@@ -256,6 +361,71 @@ Always compare on the same data, the same family, and the same tier. The
 evidence is a property of a model *and* the data it saw; numbers from
 fits on different rows, different responses, or different inference tiers
 are not on a common scale.
+
+A fuller set of numeric anchors, beyond the three above, helps when the
+gaps are awkward. These follow the long-standing Jeffreys grading of
+Bayes factors, read here as differences on the natural-log evidence
+scale. A log gap below about 1 (Bayes factor under 3) is weak, barely
+worth a preference. A gap between 1 and 3 (Bayes factor 3 to 20) is
+positive support, enough to lean on the larger model. A gap between 3 and
+5 (Bayes factor 20 to 150) is strong. Above 5 (Bayes factor past 150) the
+support is decisive, and the Gaussian ladder above clears that bar by two
+orders of magnitude. These bands are conventions, not laws, but they keep
+you from over-reading a gap of half a unit or under-reading one of six.
+
+## Bayes factors and a bridge-sampling cross-check
+
+The Bayes factor between two models is the ratio of their marginal
+likelihoods, so on the log scale it is the plain difference the table
+already shows. For the binomial ladder, the factor for the two-covariate
+model over the one-covariate model is the exponentiated gap, and the
+posterior odds it implies depend on the prior odds you assign the models:
+
+$$
+\frac{p(M_2 \mid y)}{p(M_1 \mid y)}
+  \;=\;
+  \underbrace{\frac{p(y \mid M_2)}{p(y \mid M_1)}}_{\text{Bayes factor}}
+  \;\times\;
+  \frac{p(M_2)}{p(M_1)} .
+$$
+
+With equal prior weight on the two models the posterior odds equal the
+Bayes factor, which is why the evidence ratio reads directly as relative
+support.
+
+A Laplace marginal likelihood is an approximation for non-Gaussian
+families, so when a verdict is close it is worth a second estimate from a
+different route. The engine ships `bridge_sampling()`, which estimates
+the log marginal likelihood from posterior draws and an unnormalised
+log-posterior, by the Meng-Wong / Gronau identity. It needs a fit that
+carries draws, so fit the candidate on a sampler tier rather than the
+Laplace tier, then hand it the draws and a function returning
+`log p(theta, y)` at one parameter vector. The toy below estimates the
+evidence of a one-parameter conjugate Gaussian, where the closed form is
+known, so you can read the agreement directly.
+
+```{r bridge}
+y_obs   <- 1.5
+log_post <- function(theta)
+  dnorm(y_obs, theta, 1, log = TRUE) + dnorm(theta, 0, 10, log = TRUE)
+post_sd  <- sqrt(100 / 101)
+draws    <- matrix(rnorm(4000, y_obs * 100 / 101, post_sd), ncol = 1)
+bs <- bridge_sampling(draws, log_post)
+c(bridge = round(bs$log_marginal, 3),
+  exact  = round(dnorm(y_obs, 0, sqrt(101), log = TRUE), 3))
+```
+
+The two numbers land within a few thousandths, which is the calibration
+you want from a marginal-likelihood estimator on a problem with a known
+answer. On a real model with no closed form, a bridge estimate that
+tracks the Laplace value tells you the posterior is bell-shaped enough
+for the Laplace evidence to be trusted; a bridge estimate that pulls away
+from it flags a skewed or heavy-tailed posterior where the Laplace number
+needs care. The `re_sd` field on the returned list is a rough relative
+error, smaller meaning a tighter estimate. Bridge sampling is the
+heavier of the two tools, since it wants a stack of draws and a callable
+log-posterior, so reach for it as a check on a close call rather than as
+the everyday criterion.
 
 ## glance() per model
 
@@ -286,6 +456,23 @@ to be read. On the sampler tiers `glance()` also reports `mean_accept`
 and the divergence count, which play the same gatekeeping role for those
 fits.
 
+Where `glance()` summarises the whole fit in one row, `tidy()` opens up
+the fixed effects of a single model, one row per coefficient with an
+estimate, a standard error, and credible bounds. The two pair naturally:
+the comparison and `glance()` rank specifications, then `tidy()` reads
+off what the winner actually estimated.
+
+```{r tidy-winner}
+tidy(m3)
+```
+
+The slope on `x` sits near its true 1.2 and the slope on `z` near its
+true 0.8, with the intercept near 0.5, so the model that won the ladder
+also recovers the generating coefficients. A specification can rank first
+on evidence and still hide a coefficient pinned far from where you
+expected it, which is the kind of thing `tidy()` surfaces and a single
+evidence number cannot.
+
 ## What WAIC and LOO need
 
 The marginal likelihood scores a model on the data it was fit to. WAIC
@@ -295,6 +482,20 @@ log-likelihood, one value per observation per posterior draw, arranged
 in a draws-by-observations matrix. From that matrix the loo package
 computes the expected log predictive density and its information
 criteria.
+
+The pointwise structure is the part the engine cannot supply on its own,
+and the reason is worth stating. WAIC estimates the out-of-sample
+predictive density by summing the log pointwise predictive density over
+observations and subtracting a variance-based penalty computed per
+observation. LOO approximates leave-one-out cross-validation by
+reweighting the existing draws for each held-out point, using
+Pareto-smoothed importance sampling on the per-observation likelihood
+ratios. Both need to see how the log-likelihood of each single
+observation varies across the posterior draws, which is information a
+collapsed summary throws away. A marginal likelihood is one scalar for
+the whole dataset; it has already integrated over the observations and
+the parameters together, so there is no per-observation, per-draw stack
+left to read.
 
 A base `tulpa()` fit does not carry that matrix. The Laplace tier stores
 a mode and a curvature, not a stack of draws, and even the sampler tiers
@@ -323,6 +524,65 @@ comparison of structural specifications, the engine's marginal
 likelihood is the tool, and it needs nothing beyond the Laplace fit you
 already have.
 
+## modelAverage() for prediction
+
+When no single model clearly wins, averaging their predictions can beat
+committing to one. `modelAverage()` takes named fits, computes a weight
+per model from the chosen criterion, and returns the weighted-average
+fitted values alongside the weights and the comparison table. The fitted
+values come from `fitted()` on each fit, so every candidate must carry
+its design matrix, which a `tulpa()` fit does.
+
+```{r model-average}
+ma <- modelAverage(slope = m1, slope_re = m2, full = m3,
+                   criterion = "waic")
+ma$weights
+head(round(ma$averaged, 3))
+```
+
+The weighting deserves a plain statement. The weights here come out equal
+because the WAIC weight needs a pointwise log-likelihood, which a base
+engine fit does not carry, so `modelAverage()` falls back to a uniform
+split across the models. A uniform average is still a useful hedge when
+the candidates disagree, but it is not an evidence-weighted one. To
+weight by predictive accuracy, route the fits through a model package
+that populates the pointwise log-likelihood, and `modelAverage()` then
+draws genuine WAIC weights from the same `compare_models()` it calls
+internally. The `averaged` vector is the per-observation blend you would
+use as a combined prediction; `ma$comparison` is the table the weights
+were read from.
+
+## When comparison is not meaningful
+
+A few situations break the comparison quietly, returning numbers that
+look fine and mean nothing. The first is a difference in data. The
+evidence is a joint property of the model and the rows it saw, so two
+fits on different subsets, different responses, or even the same response
+after a transform are not on a shared scale. Dropping rows with a missing
+covariate in one model but not another is the common version of this trap,
+since the smaller dataset is genuinely a different `y`. Refit every
+candidate on identical rows before lining up their evidence.
+
+The second is a difference in family or link. A Gaussian fit and a
+binomial fit assign probability to different sample spaces, a density in
+one case and a mass function in the other, so their log marginal
+likelihoods are not comparable even on the same `y`. The third is a
+difference in tier. A `mode = "laplace"` fit reports a marginal
+likelihood through `logLik()`; a sampler fit reports a mean log-density,
+a different object entirely. Mixing the two in one `compare_models()`
+call lines up two incompatible quantities under one column heading.
+
+The fourth is subtler. When the Laplace approximation is poor for one
+candidate but fine for another, the gap between them blends a real
+structural difference with an approximation artefact. This bites hardest
+on small samples with sharply skewed posteriors, where the bell-shaped
+Gaussian around the mode misrepresents the integral. The bridge-sampling
+cross-check above is the tool for catching it: if the bridge and Laplace
+estimates agree for both models, the gap is structural; if they diverge
+for one, treat that model's evidence as provisional. A high Pareto-k from
+the engine's accuracy diagnostics on a nested-Laplace fit is the same
+warning from a different angle.
+
 ## Practical guidance
 
 A short set of habits covers most comparison work:
@@ -341,6 +601,21 @@ A short set of habits covers most comparison work:
   change and the gaps no longer mean one thing. To compare across
   random-effect variances, integrate them through the nested-Laplace
   path instead of fixing them by hand.
+- **Know what conditioning on a hyperparameter costs.** When you pass
+  `sigma_re = 0.7` or `phi = 0.8`, the marginal likelihood is the
+  evidence given that value, not integrated over it. The Gaussian
+  random-effect offsets and the fixed effects are integrated out; the
+  variance and the residual scale are held. That is exactly the right
+  object for a ladder where you want each rung to differ only in
+  structure, and it is the wrong object if the hyperparameter itself is
+  the thing in question. A fit at `sigma_re = 0.7` cannot tell you
+  whether `0.5` or `1.0` fits better, because both were excluded by the
+  conditioning. For that question the nested-Laplace path places a grid
+  over the hyperparameter and integrates, and `logLik()` on that fit
+  returns the log-sum-exp over the grid, the genuinely integrated
+  evidence rather than a conditional one. The same caution covers `phi`:
+  a Gaussian ladder run at one `phi` ranks structures cleanly, but it
+  says nothing about which residual scale the data prefer.
 - **Check convergence before reading evidence.** Scan the `converged`
   column from `glance()`. A non-converged Laplace fit has no trustworthy
   curvature, and its marginal likelihood inherits that.

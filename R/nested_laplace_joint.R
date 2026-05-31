@@ -237,6 +237,20 @@
 #'     attach `var_of_means_consistency_info`.
 #'   * `force_sparse` (`FALSE`) -- force the sparse linear-algebra backend for
 #'     the inner joint solve regardless of the dense/sparse heuristic.
+#'   * `inner_refresh` (`1L`) -- inner-Newton Cholesky factor reuse interval
+#'     (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
+#'     beta cover arm) the latent Hessian changes every inner iteration, so the
+#'     default re-factorizes the sparse Cholesky on each step -- the dominant
+#'     per-grid-cell cost. `inner_refresh = m > 1` re-factorizes only every
+#'     `m`-th inner step and reuses the cached factor in between (refreshing
+#'     early whenever a reused solve fails). The gradient is exact on every step
+#'     and each step is line-search safeguarded, so the converged mode is
+#'     unchanged and the final mode-pass Hessian (`log_det`, SEs) is always
+#'     fresh; only the path to the mode uses a stale curvature, which may cost a
+#'     few extra inner iterations. Applies to the sparse joint path with the
+#'     default `control$hessian = "lm"` curvature; the dense small-`n_x` path
+#'     re-factorizes a cheap Hessian and ignores it. `2L`-`4L` is a good range
+#'     for a slow beta arm.
 #'   * `diagnose_k` (`TRUE`), `k_samples` (`200L`) -- compute the outer
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the
 #'     joint hyperparameter posterior against the Gaussian proposal the
@@ -292,6 +306,22 @@
 #'
 #' @seealso [tulpa_nested_laplace()] for the single-arm engine.
 #' @export
+# Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid
+# progress knobs (gcol33/tulpa#45) from the scoped `tulpa.nl_progress` option set
+# by tulpa_nested_laplace_joint. Every backend / refinement call site routes
+# through here, so progress reaches the cpp entry without threading four scalars
+# through the polymorphic backend interface. Option unset -> progress = FALSE.
+.cpp_joint_multi <- function(...) {
+  p <- getOption("tulpa.nl_progress", NULL)
+  if (is.null(p)) p <- .nl_progress_args(list())
+  do.call(cpp_nested_laplace_joint_multi,
+          c(list(...),
+            list(progress          = isTRUE(p$progress),
+                 progress_every    = as.integer(p$progress_every),
+                 progress_throttle = as.numeric(p$progress_throttle),
+                 progress_file     = as.character(p$progress_file))))
+}
+
 tulpa_nested_laplace_joint <- function(responses,
                                        prior,
                                        copy = NULL,
@@ -357,6 +387,30 @@ tulpa_nested_laplace_joint <- function(responses,
                                            c("lm", "psd", "fisher"))
     hessian_pd_mode           <- if (identical(hessian, "psd")) 1L else 0L
     step_curvature_mode       <- if (identical(hessian, "fisher")) 1L else 0L
+    # Inner-Newton Cholesky factor reuse (Shamanskii / chord method). For a
+    # non-quadratic positive arm (e.g. beta cover) the latent Hessian changes
+    # every inner iteration, so the plain Newton loop re-factorizes the sparse
+    # Cholesky on each step -- the dominant per-grid-cell cost (gcol33/tulpa#46).
+    # `inner_refresh = m` re-factorizes only every m-th inner step and reuses
+    # the cached factor in between; the gradient stays exact and each step is
+    # line-search safeguarded, so the converged mode is unchanged and the final
+    # mode-pass Hessian (log_det / SEs) is always fresh. Applies to the sparse
+    # joint path (large fields, LM curvature); the dense small-n_x path
+    # re-factorizes cheaply and ignores it. Default 1 = re-factorize every step.
+    inner_refresh             <- as.integer(control$inner_refresh %||% 1L)
+    if (length(inner_refresh) != 1L || is.na(inner_refresh) ||
+        inner_refresh < 1L) {
+        stop("`control$inner_refresh` must be a single integer >= 1.",
+             call. = FALSE)
+    }
+
+    # Outer-grid progress (gcol33/tulpa#45). The cpp entry is reached through
+    # the polymorphic joint backends (`backend$call_kernel`) and the adaptive-
+    # refinement closures, so the four progress knobs travel via a scoped
+    # option rather than every backend signature; `.cpp_joint_multi` reads it at
+    # the cpp boundary. Restored on exit so the option never leaks past the fit.
+    .op_progress <- options(tulpa.nl_progress = .nl_progress_args(control))
+    on.exit(options(.op_progress), add = TRUE)
 
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
@@ -407,7 +461,8 @@ tulpa_nested_laplace_joint <- function(responses,
             x_init = x_init, verbose = verbose, store_Q = store_Q,
             force_sparse = force_sparse,
             cell_coupling = cell_coupling,
-            diagnose_k = diagnose_k, k_samples = k_samples
+            diagnose_k = diagnose_k, k_samples = k_samples,
+            inner_refresh = inner_refresh
         ))
     }
     if (is.null(prior$type)) {
@@ -446,7 +501,8 @@ tulpa_nested_laplace_joint <- function(responses,
                             force_sparse = force_sparse,
                             cell_coupling = cell_coupling,
                             hessian_pd_mode = hessian_pd_mode,
-                            step_curvature_mode = step_curvature_mode)
+                            step_curvature_mode = step_curvature_mode,
+                            inner_refresh = inner_refresh)
     }
     res <- call_kernel_with_tol(prune_tol_eff)
     # Safety gate: if the cheap-pass ranking is unreliable (the screen's
@@ -501,7 +557,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                         arm_names,
                                         cell_coupling = cell_coupling,
                                         hessian_pd_mode = hessian_pd_mode,
-                                        step_curvature_mode = step_curvature_mode)
+                                        step_curvature_mode = step_curvature_mode,
+                                        inner_refresh = inner_refresh)
     theta_grid_M  <- backend$theta_grid(grids, cp$has_copy)
     log_marginal  <- res$log_marginal
     extras_list   <- .joint_init_extras_from_res(res)

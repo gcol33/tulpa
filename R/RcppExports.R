@@ -157,8 +157,8 @@ cpp_nested_laplace_st_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, s
     .Call(`_tulpa_cpp_nested_laplace_st_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse)
 }
 
-cpp_nested_laplace_joint_multi <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0, force_sparse = FALSE, cell_coupling_name = "separable", hessian_pd_mode = 0L, step_curvature_mode = 0L) {
-    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode)
+cpp_nested_laplace_joint_multi <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0, force_sparse = FALSE, cell_coupling_name = "separable", hessian_pd_mode = 0L, step_curvature_mode = 0L, inner_refresh = 1L, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "") {
+    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file)
 }
 
 cpp_test_joint_pattern <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets) {
@@ -169,8 +169,8 @@ cpp_test_joint_logpost_grad <- function(arms_list, copy_arms, copy_blocks, block
     .Call(`_tulpa_cpp_test_joint_logpost_grad`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, x, k_grid)
 }
 
-cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, likelihood = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood)
+cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, likelihood = NULL, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "") {
+    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file)
 }
 
 cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {

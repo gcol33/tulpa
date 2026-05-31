@@ -625,7 +625,7 @@
     refit <- function(theta_mat) {
         cpp_grid <- .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp)
         phi_ppa  <- .joint_multi_phi_per_arm(theta_mat, arm_names)
-        r <- cpp_nested_laplace_joint_multi(
+        r <- .cpp_joint_multi(
             arms_list    = arms,
             copy_arms    = as.integer(cp$copy_arms_zero),
             copy_blocks  = as.integer(cp$copy_blocks_zero),
@@ -670,7 +670,8 @@
                                   force_sparse = FALSE,
                                   cell_coupling = "separable",
                                   diagnose_k = TRUE,
-                                  k_samples = 200L) {
+                                  k_samples = 200L,
+                                  inner_refresh = 1L) {
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -786,7 +787,7 @@
     }
 
     call_kernel_with_tol <- function(tol_prune) {
-        cpp_nested_laplace_joint_multi(
+        .cpp_joint_multi(
             arms_list    = arms,
             copy_arms    = as.integer(cp$copy_arms_zero),
             copy_blocks  = as.integer(cp$copy_blocks_zero),
@@ -804,7 +805,8 @@
             tile_pilot_cells = tile_partition$tile_pilot_cells,
             prune_tol       = as.numeric(tol_prune),
             force_sparse    = isTRUE(force_sparse),
-            cell_coupling_name = as.character(cell_coupling)
+            cell_coupling_name = as.character(cell_coupling),
+            inner_refresh   = as.integer(inner_refresh)
         )
     }
     res <- call_kernel_with_tol(prune_tol)

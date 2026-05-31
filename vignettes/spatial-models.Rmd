@@ -576,8 +576,35 @@ exactness for the speed needed on large coordinate sets, while the SPDE
 representation links a Matern field to a sparse precision through a mesh,
 which keeps the Gaussian-Markov advantages on continuous space. The choice
 among the three is mostly a question of sample size and how smooth you
-expect the surface to be. Each has a dedicated vignette that builds an
-example from coordinates through to a fitted surface and a prediction map.
+expect the surface to be.
+
+The SPDE field has a dedicated fitter. `fit_spde()` takes the response, a
+design matrix, and the `spatial_spde` spec directly, builds the Matern
+precision on the mesh, and solves the field by sparse Laplace. Simulate a
+smooth Poisson surface on scattered coordinates and fit it with the range
+and marginal SD held fixed:
+
+```{r spde-fit}
+set.seed(20260531)
+n      <- 300
+coords <- data.frame(lon = runif(n), lat = runif(n))
+field  <- 1.4 * (sin(2.5 * coords$lon) + cos(2.5 * coords$lat))
+field  <- field - mean(field)
+xcov   <- rnorm(n)
+y      <- rpois(n, exp(1.0 + 0.5 * xcov + field))
+
+spde <- spatial_spde(~ lon + lat, data = coords, max_edge = c(0.2, 0.5))
+fit  <- fit_spde(y = y, X = model.matrix(~ xcov), spatial = spde,
+                 family = "poisson", range = 0.4, sigma = 0.9)
+round(fit$beta, 3)
+```
+
+The fixed-effect estimates land on the generating intercept and slope; the
+mesh-node field effects sit in `fit$spatial_effects`, ready to project onto
+a prediction grid. Leaving `range` and `sigma` at their default `NULL`
+switches `fit_spde()` to nested Laplace over the two hyperparameters and
+adds an outer Pareto-k-hat to the result (`fit$pareto_k`), the same
+accuracy diagnostic the areal nested integration reports.
 
 ## See also
 

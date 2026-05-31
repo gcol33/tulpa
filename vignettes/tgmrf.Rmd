@@ -39,7 +39,7 @@ my_block <- tgmrf(
 )
 ```
 
-The closures are called numerically — no autodiff, no DSL, no codegen.
+The closures are called numerically: no autodiff, no DSL, no codegen.
 For a Gaussian latent block
 
 $$
@@ -55,14 +55,84 @@ $$
 
 So tulpa's Laplace inner step only needs `Q(theta)` and `mu(theta)` at
 numeric `theta`. Hyperparameter gradients (`d/d theta`) come from
-finite differences — typically 2-5 extra `Q` evaluations per outer
+finite differences, typically 2-5 extra `Q` evaluations per outer
 step, which is cheap when `Q` is sparse. The same block reaches every
 inference tier: Laplace, IMH-Laplace, NUTS, VI.
+
+## How a block becomes a fitted model: the algorithm
+
+A `tgmrf` object carries everything the engine needs and nothing it
+does not. The construct is a *templated GMRF latent block*: templated
+because the same machinery integrates any precision family the closures
+describe, latent because the block contributes a vector $z$ that lives
+under the linear predictor rather than in the likelihood. When you call
+`tgmrf()`, the constructor evaluates `Q(init)` exactly once. That single
+call does three jobs at registration time. It catches user errors early
+(a `Q` that throws, returns a dense matrix, or returns a non-square or
+asymmetric matrix all stop here with a specific message). It infers
+`n_latent` from `nrow(Q(init))`. And it captures the sparsity pattern,
+the set of stored nonzero positions, which the inner solver reuses at
+every later `theta` so the symbolic Cholesky factorisation is computed
+once, not per grid point.
+
+The block records `theta_dim` and `theta_names` from `init` (named
+elements become the canonical hyperparameter names; unnamed ones get
+`theta_1`, `theta_2`, ...), validates the optional `mu`, `graph`,
+`bounds`, and `obs_idx` arguments against the inferred shape, and stores
+the two closures by reference. Nothing is differentiated, compiled, or
+parsed. The returned object has class `c("tgmrf", "tulpa_latent_block")`
+and a `type = "tgmrf"` registry key that the nested-Laplace dispatcher
+recognises.
+
+At fit time the integration follows a fixed sequence. The steps below
+describe what `tulpa_nested_laplace()` does with a `tgmrf` block; the
+IMH, VI, and NUTS adapters share the inner machinery and differ only in
+how they explore `theta`.
+
+1. **Build the outer grid over `theta`.** If you supplied `bounds`, the
+   driver lays a per-axis grid between `lower` and `upper`. The default
+   resolution is 5 points per axis; the IMH, VI, and NUTS adapters expose
+   this as `pilot_axis_points`. With $d$ hyperparameters the default grid
+   is $5^d$ cells, so a two-parameter block is a 25-cell grid. You can
+   also hand the driver an explicit grid matrix.
+2. **For each grid point `theta_k`, run the inner Laplace solve.** The
+   driver assembles the joint mode of $(\beta, z)$ given `theta_k` by
+   Newton iteration. Each Newton step needs the score and Hessian in
+   $(\beta, z)$. The $z$-part comes from `Q(theta_k)` and `mu(theta_k)`
+   in closed form; the likelihood part comes from the chosen `family`
+   (or a model-supplied `likelihood`). Because the sparsity pattern was
+   captured at registration, the Cholesky of the system reuses the same
+   symbolic factor at every grid point.
+3. **Score the grid point.** At the inner mode the driver evaluates the
+   Laplace approximation to the log marginal likelihood
+   $\log p(y, \hat{z}_k \mid \theta_k)$ and adds the user `prior(theta_k)`.
+   This single scalar per grid point is what `$log_marginal` holds.
+4. **Integrate over the grid.** The per-cell log-marginals become
+   normalised integration weights (`$weights`), and the driver reports
+   posterior moments of every hyperparameter as weighted means and SDs
+   (`$theta_mean`, `$theta_sd`) plus weighted quantiles.
+5. **Diagnose the outer approximation.** With the grid integrated, the
+   driver fits a Gaussian proposal to the hyperparameter posterior and
+   importance-samples it to compute the outer Pareto-$\hat{k}$
+   (`$pareto_k`); see the convergence section.
+
+The adapters change only step 1's exploration of `theta`. IMH localises
+the grid argmax, builds a finite-difference Hessian there, and proposes
+$\theta' \sim N(\text{mode}, \text{scale}^2 H^{-1})$ with an exact
+Metropolis accept/reject against `log_marginal(theta) + prior(theta)`.
+VI runs L-BFGS on `log_marginal(theta)` and fits a Gaussian at the
+optimum. NUTS runs leapfrog integration on the same target with a
+finite-difference gradient. Every one of them calls the same inner
+Laplace solve to evaluate a candidate `theta`. The inner solve is the
+shared kernel, the outer loop is the only thing that varies. That is why
+a block written once reaches all four tiers without modification: the
+closures describe the latent prior, and the engine owns everything from
+the Newton system up.
 
 ## A worked example: periodic AR1
 
 The smallest non-trivial GMRF tulpa does not ship is a *periodic* AR1
-— useful for diurnal, seasonal, or phase-wrapped data. The precision
+(useful for diurnal, seasonal, or phase-wrapped data). The precision
 is tridiagonal with wrap-around:
 
 $$
@@ -99,7 +169,18 @@ periodic_ar1 <- function(n) {
 The optional `bounds` argument sets the outer grid for nested-Laplace
 and the hard-wall region for IMH and NUTS. The `prior` closure is a
 log-density on `theta`. If you don't have prior beliefs, `function(theta) 0`
-is fine — it's a flat prior on the unconstrained scale.
+is fine; it's a flat prior on the unconstrained scale.
+
+The closure shape is the contract. `Q` takes one numeric vector `theta`
+and returns a square symmetric sparse matrix; `prior` takes the same
+`theta` and returns one finite scalar; `init` is the numeric vector both
+closures expect. The reparameterisation to `log_sigma` and `atanh_rho`
+is deliberate: it maps the natural constraints $\sigma > 0$ and
+$|\rho| < 1$ to the whole real line, so the outer grid, the L-BFGS
+search, and the leapfrog steps all operate on unconstrained coordinates
+and never propose an invalid precision. The `bounds` you give are in
+those unconstrained units too. Use names on `init` and they propagate
+through every fit as the reported parameter names.
 
 ### Simulate from the block
 
@@ -150,7 +231,7 @@ fit_vi$elbo
 
 The Tier-1 upgrade composes the Laplace body with an
 independence-MH bias correction. The VI fit makes a near-optimal
-proposal — high acceptance, low MC error.
+proposal: high acceptance, low MC error.
 
 ```{r imh}
 fit_imh <- tulpa_tgmrf_imh(
@@ -197,6 +278,217 @@ Laplace and VI agree to within grid resolution / Gaussian-fit
 curvature; IMH lifts the structured-tier bias at the cost of `n_iter`
 inner Laplace solves.
 
+## The mathematics
+
+Fix notation first. The model has three layers. The data is
+$y = (y_1, \dots, y_N)$ with a per-observation likelihood from `family`.
+A fixed-effects design matrix $X$ of dimension $N \times p$ carries
+coefficients $\beta \in \mathbb{R}^p$. The latent block contributes a
+vector $z \in \mathbb{R}^{n_{\mathrm{lat}}}$ where
+$n_{\mathrm{lat}}$ is `n_latent`. An index vector `obs_idx` maps each
+observation to a latent slot; when it is `NULL` the driver assumes
+$N = n_{\mathrm{lat}}$ and uses row order. The linear predictor for
+observation $i$ is
+$$
+\eta_i \;=\; (X\beta)_i \;+\; z_{\,\mathrm{obs\_idx}[i]},
+$$
+and the mean is $g^{-1}(\eta_i)$ for the family's link $g$. The
+hyperparameter vector is $\theta \in \mathbb{R}^d$ with $d$ equal to
+`theta_dim`, living on the unconstrained scale your closures define.
+
+### The GMRF prior
+
+A Gaussian Markov Random Field is a multivariate normal whose precision
+matrix $Q$ is sparse, and the sparsity is the conditional-independence
+structure: $z_i$ and $z_j$ are conditionally independent given the rest
+exactly when $Q_{ij} = 0$. The block density is
+$$
+p(z \mid \theta) \;=\; (2\pi)^{-n_{\mathrm{lat}}/2}\,
+|Q(\theta)|^{1/2}\,
+\exp\!\Big(-\tfrac{1}{2}(z-\mu(\theta))^\top Q(\theta)(z-\mu(\theta))\Big),
+$$
+where $\mu(\theta)$ is the mean vector (your `mu` closure, or zero when
+`mu` is `NULL`) and $|Q(\theta)|$ is the determinant. Taking logs,
+$$
+\log p(z \mid \theta) \;=\;
+\tfrac{1}{2}\log|Q(\theta)|
+- \tfrac{1}{2}(z-\mu)^\top Q(\theta)(z-\mu)
++ \text{const}.
+$$
+The const absorbs the $(2\pi)$ factor, which does not depend on $z$ or
+$\theta$ and drops out of every gradient. Differentiating in $z$ gives
+the closed-form score and Hessian quoted above:
+$\partial_z \log p = -Q(z-\mu)$ and $\partial_z^2 \log p = -Q$. This is
+why you never write gradient code for the latent block. The Hessian in
+$z$ is just $-Q(\theta)$, a constant in $z$, so the latent part of the
+Newton system is exact, not an approximation.
+
+### The precision parameterisation
+
+The closure `Q(theta)` is the precision family. Whatever structure you
+encode (AR1, periodic AR1, a random walk, a custom spatial GMRF) lives
+entirely in how `Q` maps $\theta$ to nonzero entries. The reparameterise
+step matters here. The natural parameters of a precision are often
+positive scales or bounded correlations, and the integrator works best
+on the whole real line, so the convention is to define `theta` on an
+unconstrained scale and transform inside `Q`. For the periodic AR1 above,
+$\theta = (\log\sigma, \operatorname{atanh}\rho)$ so that $\sigma > 0$
+and $|\rho| < 1$ hold automatically. The Jacobian of that transform is
+absorbed into your `prior(theta)`: because the prior is a log-density on
+the unconstrained $\theta$, you supply whatever density you want there
+directly and the engine does not add a change-of-variables term. A flat
+`function(theta) 0` is a flat prior on the unconstrained scale, which is
+weakly informative on the natural scale.
+
+### The inner Laplace solve
+
+For a fixed $\theta$ the engine needs the marginal likelihood
+$p(y \mid \theta) = \int p(y \mid \beta, z)\,p(\beta)\,p(z \mid \theta)\,
+\mathrm{d}\beta\,\mathrm{d}z$. The Laplace approximation replaces the
+integrand by a Gaussian centred at its mode. Let $w = (\beta, z)$ and
+$\ell(w) = \log p(y \mid w) + \log p(z \mid \theta) + \log p(\beta)$ be
+the log joint. Newton iteration finds the mode $\hat{w}$ by repeatedly
+solving
+$$
+H(w)\,\Delta w \;=\; -\,\nabla \ell(w), \qquad
+H(w) \;=\; -\,\nabla^2 \ell(w),
+$$
+where $H$ is the negative Hessian of the log joint. The $z$-block of $H$
+is $Q(\theta)$ plus the likelihood's Fisher information, the
+$\beta$-block is $X^\top W X$ for the family's working weights $W$, and
+the cross term couples them through `obs_idx`. The Laplace approximation
+to the marginal is
+$$
+\log p(y \mid \theta) \;\approx\;
+\ell(\hat{w}) \;+\; \tfrac{1}{2}\,d_w\log(2\pi)
+\;-\; \tfrac{1}{2}\log|H(\hat{w})|,
+$$
+with $d_w = p + n_{\mathrm{lat}}$ the joint dimension. The engine adds
+your `prior(theta)` to this to form `log_marginal(theta) + prior(theta)`,
+which is the unnormalised log posterior of $\theta$ that every outer
+layer targets. The sparsity pattern captured at registration is what
+makes the $\log|H|$ and the linear solve cheap: a sparse Cholesky on a
+pattern that does not change across grid points reuses one symbolic
+factor.
+
+### Outer integration over `theta`
+
+The nested-Laplace layer treats $\theta$ as the remaining integration
+problem. It evaluates $L(\theta_k) = \log p(y \mid \theta_k) +
+\log p(\theta_k)$ at each grid point $\theta_k$, normalises to weights
+$w_k \propto \exp(L(\theta_k))$ with $\sum_k w_k = 1$, and reports
+posterior summaries as weighted statistics over the grid. The posterior
+mean of hyperparameter $j$ is $\sum_k w_k\,\theta_{k,j}$ and the SD comes
+from the weighted second moment. Derived quantities such as the
+natural-scale $\sigma = e^{\theta_1}$ or $\rho = \tanh(\theta_2)$ are summarised by
+evaluating the transform at each grid cell and taking weighted quantiles,
+not by transforming the mean. The IMH, VI, and NUTS layers replace the
+fixed grid by an adaptive exploration of the same $L(\theta)$ surface but
+integrate against the identical inner Laplace solve. Every symbol here is
+something your two closures and the family definition fully determine.
+
+## Convergence
+
+There are two convergence questions and they belong to different layers.
+The first is whether the inner Newton solve found the joint mode of
+$(\beta, z)$ at each $\theta$. The second is whether the outer
+exploration of $\theta$ (the grid, the L-BFGS optimum, or the MCMC chain)
+has actually characterised the hyperparameter posterior. These are
+diagnosed separately.
+
+For the inner solve, `tulpa_nested_laplace()` returns `$n_iter`, the
+number of Newton iterations spent per grid point, and `$log_marginal`,
+the per-cell scores. The inner budget is `control$max_iter` (default
+`50L`) with tolerance `control$tol` (default `1e-6`). If a cell hits
+`max_iter` without converging, or if `log_marginal` is non-finite at any
+cell, the fit is unreliable at that $\theta$: tighten `bounds` so the
+grid stays where $Q(\theta)$ is well-conditioned, or raise `max_iter`.
+The IMH and NUTS adapters add an eager check: they evaluate the inner
+solve at the pilot grid argmax before sampling and stop with a specific
+message if it is non-finite, because a failure there is a bug in the
+closures rather than numerical infeasibility at the edge.
+
+For the outer approximation on a structured-tier fit, the relevant
+number is the Pareto-$\hat{k}$, the iid-fit counterpart of Rhat. The
+nested-Laplace fit reports `$pareto_k` and `$pareto_k_is_ess`: the
+integrator fits a Gaussian proposal to the hyperparameter posterior,
+importance-samples it (`control$k_samples`, default `200L`, each one
+extra inner solve), and fits a generalised Pareto tail to the importance
+ratios. A $\hat{k} < 0.7$ means the Gaussian grid characterises the
+hyperparameter posterior well and the nested integration is reliable.
+A $\hat{k} \geq 0.7$ means the posterior is too skewed or heavy-tailed
+for the Gaussian grid, and you should escalate to the exact tier
+(`tulpa_tgmrf_imh()` or `tulpa_tgmrf_nuts()`). The diagnostic is computed
+for a single-block, single positive-scale-axis grid and left `NA` (with
+the grid's quadrature effective sample size as the fallback) for
+multi-axis or bounded grids. `diagnostic_summary(fit)` surfaces this for
+any non-chain fit, and `tulpa_psis()` is the underlying PSIS core if you
+want to compute it on your own importance ratios.
+
+For the exact-tier MCMC fits the diagnostics are the usual ones. The IMH
+fit reports `$mean_accept`, the post-warmup acceptance rate; a rate in a
+healthy band (the VI fit makes a near-optimal proposal, so a good model
+sees high acceptance) means the proposal matches the target. A collapsed
+acceptance rate is the signal to switch to NUTS. The NUTS fit reports
+`$mean_accept` plus `$tree_depth` per draw and the adapted `$epsilon`;
+draws repeatedly hitting `max_depth` indicate a step size that is too
+small for the posterior geometry. Both produce a `$draws` matrix you can
+feed to `mcmc_diagnostics(fit)` for Rhat and effective sample size, or to
+`check_diagnostics(fit)` for a pass/fail summary. The cleanest single
+check is to run the structured-tier fit, read its Pareto-$\hat{k}$, and
+only reach for the MCMC tiers when the diagnostic says the Gaussian
+approximation is biased.
+
+## Tuning
+
+The split between statistical arguments and tuning knobs follows the
+engine convention. `tulpa_nested_laplace()` carries statistical arguments
+(`y`, `n_trials`, `X`, `prior`, `family`, `phi`) at the top level and
+puts every numerical or performance knob in a single `control = list()`.
+The `tgmrf` adapters expose their tuning as named arguments because each
+adapter has a small, specific set.
+
+The first decision is the tier. Start with `tulpa_nested_laplace()` for a
+fast structured fit and read its `$pareto_k`. If the diagnostic is below
+0.7 the structured posterior is trustworthy and you are done; if it is
+above 0.7, escalate. `tulpa_tgmrf_imh()` is the cheapest exact tier and
+the right default escalation for low `theta_dim` (2-4) with a roughly
+Gaussian posterior, since its proposal is the VI Gaussian, so acceptance stays
+high. `tulpa_tgmrf_nuts()` is for higher `theta_dim` (5+) or a strongly
+non-Gaussian or multi-modal posterior, where independence-MH acceptance
+collapses and gradient information pays for itself.
+
+Inside the structured fit, the knobs that matter are the inner Newton
+budget and the diagnostic cost. `control$max_iter` (default `50L`) and
+`control$tol` (default `1e-6`) govern the inner solve; raise `max_iter`
+only if cells fail to converge. `control$n_threads` (default `1L`) sets
+OpenMP threads inside each inner solve, useful when `n_latent` is large.
+`control$diagnose_k` (default `TRUE`) and `control$k_samples` (default
+`200L`) control the Pareto-$\hat{k}$ computation; set `diagnose_k = FALSE`
+to skip the extra inner solves when you do not need the accuracy gate.
+The `bounds` you set on the block itself define the grid extent and the
+hard wall for IMH and NUTS. Set them generously enough to contain the
+posterior mass but tight enough to exclude $\theta$ where $Q$ goes
+singular.
+
+The adapters share `pilot_axis_points` (default `5L`), the per-axis
+resolution of the pilot grid that initialises every adapter and feeds the
+mode and Hessian estimates. Raise it when the default grid is too coarse
+to locate the mode. `tulpa_tgmrf_imh()` adds `n_iter` (default `2000L`),
+`warmup` (default `n_iter %/% 2L`), `thin`, `scale` (the proposal scale
+multiplier, default `1.0`, lower it if acceptance is too high, raise it
+if too low), and `fd_step` (default `0.05`, the finite-difference step
+for the mode Hessian). `tulpa_tgmrf_vi()` adds `n_draws` (default `1000L`,
+the variational draws returned), `max_lbfgs` (default `100L`), and
+`lbfgs_tol` (default `1e-6`). `tulpa_tgmrf_nuts()` adds `epsilon` (default
+`0.2 / sqrt(theta_dim)`, the initial leapfrog step), `max_depth` (default
+`6L`, the tree-depth cap so each draw is at most $2^6$ leapfrog steps),
+`target_accept` (default `0.65` for the warmup step-size adaptation), and
+`fd_gradient_step` (default `0.02`, the central-difference step for the
+gradient). The defaults are tuned for the common `theta_dim <= 5` case;
+reach for the knobs when the diagnostics in the previous section flag a
+specific failure, not pre-emptively.
+
 ## Which tier when
 
 | Tier  | Function                  | Cost                            | When to reach for it |
@@ -210,6 +502,45 @@ The general rule: start with `tulpa_nested_laplace()` for a sanity
 check, run `tulpa_tgmrf_imh()` for exact-tier posterior moments, and
 reach for `tulpa_tgmrf_nuts()` only when IMH acceptance collapses.
 
+## How this compares to other latent-block interfaces
+
+Several frameworks let a user inject a custom latent structure, and they
+trade off along the same axis: how much of the structure you write versus
+which inference tiers you reach.
+
+INLA's `rgeneric` interface lets you define a GMRF in R by supplying
+functions for the precision and a few related quantities. The callback
+runs in R and there is no autodiff, so the block is restricted to INLA's
+Laplace machinery: the structured tier only, with no path to exact MCMC
+and no debias step on a non-Gaussian residual. `tgmrf()` matches the
+ergonomics (two R closures, no compilation) but the same block reaches
+every tulpa tier, including the exact IMH and NUTS samplers, because the
+outer layers all drive the same inner Laplace solve.
+
+INLA's `cgeneric` interface moves the precision factory to a C function,
+which is faster than `rgeneric` but still has no autodiff and still
+supports the Laplace tier only: there is no exact-MCMC support for a
+`cgeneric` block. The forthcoming `tgmrf_cpp()` constructor (noted below)
+is the closer analog on the speed axis, but it keeps the full-tier reach
+that `cgeneric` lacks.
+
+Stan takes the opposite approach: you write the entire model in its DSL,
+which is then parsed and compiled to autodiffable C++. That gives exact
+HMC over everything, but it asks you to specify the whole model: there
+is no notion of plugging one latent block into an engine that owns the
+rest, and you pay full HMC cost on every block including the
+Gaussian-latent ones a Laplace approximation would handle cheaply.
+
+TMB is the closest analog: you write a templated C++ snippet and get
+autodiff through CppAD, with a Laplace approximation over the random
+effects. The `tgmrf()` R path is lighter (no C++, closed-form latent
+score from $Q$ rather than autodiff) and the planned `tgmrf_cpp()` path
+is the direct counterpart for hot inner loops. The distinguishing move
+across all four comparisons is tulpa's nested-approximation-plus-debias
+design: the structured tier gives a cheap Laplace answer, and the same
+block escalates to an exact-tier correction when the diagnostic says the
+approximation is biased, without rewriting anything.
+
 ## What `tgmrf()` does not require
 
 - No gradient code. The score in `z` is closed-form from `Q`.
@@ -218,15 +549,15 @@ reach for `tulpa_tgmrf_nuts()` only when IMH acceptance collapses.
 - No C++. The R closure path reaches every tier.
 
 The forthcoming `tgmrf_cpp()` constructor will offer a templated-C++
-backend with the same S3 contract for cases where the R↔C boundary on
+backend with the same S3 contract for cases where the R-to-C boundary on
 `Q(theta)` becomes the bottleneck (large `n_latent`, hot CCD grids).
-The user-visible API does not change — the same downstream consumers
+The user-visible API does not change; the same downstream consumers
 (formula parser, inference layers, methods) treat the two paths
 identically.
 
 ## See also
 
-- `?tgmrf` — constructor reference.
-- `?tulpa_nested_laplace` — Tier-2 grid integrator.
-- `?tulpa_tgmrf_imh`, `?tulpa_tgmrf_nuts`, `?tulpa_tgmrf_vi` — adapter family.
-- `inst/examples/tgmrf_periodic_ar1.R` — runnable script form of this vignette.
+- `?tgmrf`: constructor reference.
+- `?tulpa_nested_laplace`: Tier-2 grid integrator.
+- `?tulpa_tgmrf_imh`, `?tulpa_tgmrf_nuts`, `?tulpa_tgmrf_vi`: adapter family.
+- `inst/examples/tgmrf_periodic_ar1.R`: runnable script form of this vignette.

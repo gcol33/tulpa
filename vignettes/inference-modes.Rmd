@@ -334,8 +334,51 @@ fixed standard deviation. A random-slope term such as `(1 + x | g)` has no
 scalar `sigma_re` to condition on, so when a slope term is present the
 Laplace path redirects to this backend automatically and integrates the
 covariance with a CCD design and a PC or LKJ prior. You reach it not by
-name but by writing a slope term and fitting at `mode = "laplace"`. The
-adaptive Gauss-Hermite quadrature backend, `agq`, integrates a
+name but by writing a slope term and fitting at `mode = "laplace"`.
+
+```{r re-cov-slope}
+set.seed(20260531)
+ng <- 60; ni <- 15
+g   <- rep(seq_len(ng), each = ni)
+xg  <- rnorm(ng * ni)
+Sig <- matrix(c(0.9^2,            0.5 * 0.9 * 0.6,
+                0.5 * 0.9 * 0.6,  0.6^2), 2)
+b   <- matrix(rnorm(ng * 2), ng) %*% chol(Sig)
+eta <- -0.2 + 0.7 * xg + b[g, 1] + b[g, 2] * xg
+dsl <- data.frame(y = rbinom(ng * ni, 1, plogis(eta)),
+                  x = xg, g = factor(g))
+
+fit_rc <- tulpa(y ~ x + (1 + x | g), data = dsl,
+                family = "binomial", mode = "laplace")
+fit_rc$backend
+```
+
+The slope term routed the fit to `re_cov_nested` without being named. What
+comes back is the integrated covariance, not a point estimate of one: a
+2x2 matrix carrying the intercept and slope variances on its diagonal and
+their covariance off it.
+
+```{r re-cov-sigma}
+round(fit_rc$Sigma_mean, 3)
+```
+
+Integrating the covariance through a Gaussian grid over the hyperparameters
+means the fit carries a Pareto-k-hat accuracy diagnostic, the
+nested-approximation counterpart to the Rhat a sampler reports.
+
+```{r re-cov-k}
+round(fit_rc$pareto_k, 2)
+```
+
+Here k-hat sits below the 0.7 threshold, so the Gaussian grid fits the
+covariance posterior well and the integrated matrix can be trusted. With
+smaller groups or sparser binary data that posterior turns skewed and k-hat
+climbs past 0.7 -- not a defect but the signal to escalate to the exact
+debias, `control = list(re_cov = "gibbs")`, which replaces the
+deterministic integration with a Metropolis-within-Gibbs sweep and a
+conjugate inverse-Wishart draw for the covariance.
+
+The adaptive Gauss-Hermite quadrature backend, `agq`, integrates a
 random-intercept variance by quadrature and is callable through its fitter
 `agq_fit()` for the single-grouping case rather than through `tulpa()`.
 

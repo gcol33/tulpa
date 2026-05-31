@@ -65,7 +65,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
     int n_threads_outer = 1,
     double prune_tol = 0.0,
     const LikelihoodSpec* ext_spec = nullptr,
-    void* ext_response = nullptr
+    void* ext_response = nullptr,
+    tulpa_progress::GridProgress* progress = nullptr
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -315,7 +316,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(),
-        cheap_eval, prune_tol
+        cheap_eval, prune_tol, progress
     );
 
     // Per-row fitted linear predictor at every grid cell, reconstructed from the

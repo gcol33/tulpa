@@ -79,6 +79,7 @@
 
 #include "laplace_core.h"
 #include "sparse_cholesky.h"
+#include <tulpa/nested_progress.h>
 #include <Rcpp.h>
 #include <cmath>
 #include <limits>
@@ -145,7 +146,8 @@ inline Rcpp::List run_nested_laplace_grid(
     const std::vector<int>& tile_ids = std::vector<int>(),
     const std::vector<int>& tile_pilot_cells = std::vector<int>(),
     CheapEval cheap_eval = CheapEval{},
-    double prune_tol = 0.0
+    double prune_tol = 0.0,
+    tulpa_progress::GridProgress* progress = nullptr
 ) {
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
@@ -216,6 +218,7 @@ inline Rcpp::List run_nested_laplace_grid(
         if (!std::isfinite(cell_results[k_pilot].log_marginal)) {
             pilot_mode.assign(n_x, 0.0);
         }
+        if (progress) progress->tick();  // pilot counts as the first solved cell
 
         // Cheap-pass pruning: a chained sweep over the lattice that keeps
         // every cheap mode near its cell's true mode. Each cell runs a short
@@ -279,6 +282,9 @@ inline Rcpp::List run_nested_laplace_grid(
                 }
             }
         }
+        // Pruned cells get no full solve, so they are not part of the ETA
+        // denominator; revise it down to the survivors actually solved.
+        if (progress) progress->set_total(n_grid - n_cells_pruned);
     }
 
     if (n_threads_outer <= 1) {
@@ -294,6 +300,7 @@ inline Rcpp::List run_nested_laplace_grid(
             for (int k = 0; k < n_grid; k++) {
                 cell_results[k] = solve_at_theta(k, prev_mode, &solver);
                 prev_mode = cell_results[k].mode;
+                if (progress) progress->tick();
             }
         } else {
             std::vector<double> prev_mode = pilot_mode;
@@ -307,6 +314,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 if (pruned[k]) continue;
                 cell_results[k] = solve_at_theta(k, prev_mode, &solver);
                 prev_mode = cell_results[k].mode;
+                if (progress) progress->tick();
             }
         }
     } else {
@@ -344,6 +352,12 @@ inline Rcpp::List run_nested_laplace_grid(
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
                 cell_results[k] = solve_at_theta(k, pilot_mode, solver);
+                if (progress) {
+                    #ifdef _OPENMP
+                    #pragma omp critical(nl_grid_progress)
+                    #endif
+                    progress->tick();
+                }
             }
         } else {
             // Phase 2 path: Tier-2 tile pilots (one per tile, warm-started
@@ -392,6 +406,12 @@ inline Rcpp::List run_nested_laplace_grid(
                 tile_modes[t] = std::isfinite(cell_results[k].log_marginal)
                                 ? cell_results[k].mode
                                 : pilot_mode;
+                if (progress) {
+                    #ifdef _OPENMP
+                    #pragma omp critical(nl_grid_progress)
+                    #endif
+                    progress->tick();
+                }
             }
 
             // Tier 3: every non-pilot cell warm-started from its tile
@@ -417,6 +437,12 @@ inline Rcpp::List run_nested_laplace_grid(
                     ? tile_modes[t]
                     : pilot_mode;
                 cell_results[k] = solve_at_theta(k, warm, solver);
+                if (progress) {
+                    #ifdef _OPENMP
+                    #pragma omp critical(nl_grid_progress)
+                    #endif
+                    progress->tick();
+                }
             }
         }
     }
@@ -443,6 +469,8 @@ inline Rcpp::List run_nested_laplace_grid(
                 res.Q_csc_x.begin(), res.Q_csc_x.end());
         }
     }
+
+    if (progress) progress->finish();
 
     Rcpp::List out = Rcpp::List::create(
         Rcpp::Named("log_marginal") = log_marginals,

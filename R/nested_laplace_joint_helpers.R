@@ -535,7 +535,8 @@
                                   n_threads, x_init_default, store_Q,
                                   arm_names, cell_coupling = "separable",
                                   hessian_pd_mode = 0L,
-                                  step_curvature_mode = 0L) {
+                                  step_curvature_mode = 0L,
+                                  inner_refresh = 1L) {
     function(new_cells, warm_start = NULL, store_extras = FALSE) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
@@ -546,7 +547,8 @@
                                       arm_names = arm_names,
                                       cell_coupling = cell_coupling,
                                       hessian_pd_mode = hessian_pd_mode,
-                                      step_curvature_mode = step_curvature_mode)
+                                      step_curvature_mode = step_curvature_mode,
+                                      inner_refresh = inner_refresh)
         extras <- NULL
         if (isTRUE(store_extras)) {
             n <- nrow(new_cells)

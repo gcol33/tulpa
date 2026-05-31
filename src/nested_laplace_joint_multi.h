@@ -1187,7 +1187,9 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
     int                              n_cells,
     JointPDMode                      pd_mode = JointPDMode::LM,
-    CurvatureMode                    step_curvature = CurvatureMode::Observed
+    CurvatureMode                    step_curvature = CurvatureMode::Observed,
+    int                              hessian_refresh = 1,
+    tulpa_progress::GridProgress*    progress = nullptr
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1220,7 +1222,9 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     bool                             force_sparse = false,
     std::shared_ptr<CellCouplingSpec> cell_coupling_spec = nullptr,
     JointPDMode                      pd_mode = JointPDMode::LM,
-    CurvatureMode                    step_curvature = CurvatureMode::Observed
+    CurvatureMode                    step_curvature = CurvatureMode::Observed,
+    int                              hessian_refresh = 1,
+    tulpa_progress::GridProgress*    progress = nullptr
 ) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
@@ -1291,7 +1295,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
             store_modes, x_init, store_Q,
             prep_at_grid, tile_ids, tile_pilot_cells, prune_tol,
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
-            step_curvature
+            step_curvature, hessian_refresh, progress
         );
     }
 
@@ -1529,7 +1533,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         tile_ids, tile_pilot_cells,
-        cheap_eval, prune_tol
+        cheap_eval, prune_tol, progress
     );
 }
 
@@ -1562,7 +1566,9 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
     int                              n_cells,
     JointPDMode                      pd_mode,
-    CurvatureMode                    step_curvature
+    CurvatureMode                    step_curvature,
+    int                              hessian_refresh,
+    tulpa_progress::GridProgress*    progress
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -1751,12 +1757,17 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                     );
                 };
         }
+        // The cheap-screen pass always re-factorizes (refresh = 1) so the
+        // pruning ranking stays faithful to a full Newton screen; factor reuse
+        // applies only to the full per-cell solve.
+        const int refresh_use = use_cheap_scratch ? 1 : hessian_refresh;
         return laplace_newton_solve_joint_sparse_ll(
             n_x,
             max_iter_use, tol,
             compute_eta_joint, scatter_joint_sparse,
             center_joint, log_prior_joint,
-            joint_ll, H_use, sc, prev_mode, shared_solver, store_Q, pd_mode
+            joint_ll, H_use, sc, prev_mode, shared_solver, store_Q, pd_mode,
+            refresh_use
         );
     };
 
@@ -1780,7 +1791,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, n_x, solve_at_theta, x_init, store_modes,
         /*n_outer=*/1,
         tile_ids, tile_pilot_cells,
-        cheap_eval, prune_tol
+        cheap_eval, prune_tol, progress
     );
 }
 

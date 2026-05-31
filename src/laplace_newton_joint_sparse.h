@@ -187,7 +187,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
     bool store_Q,
-    JointPDMode pd_mode = JointPDMode::LM
+    JointPDMode pd_mode = JointPDMode::LM,
+    int hessian_refresh = 1
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -216,6 +217,26 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     double obj_current = -1e300;
     bool obj_valid = false;
 
+    // Shamanskii-style factor reuse (the chord method). For a non-quadratic
+    // arm (e.g. the beta cover positive arm) the latent Hessian changes every
+    // inner iteration, so a plain Newton loop re-factorizes the sparse
+    // Cholesky on each step -- the dominant per-grid-cell cost. With
+    // `hessian_refresh = m > 1` the factor is recomputed only every m-th
+    // iteration (and on the first iteration, and whenever a reused solve
+    // returns a non-finite step); the intervening iterations reuse the cached
+    // CHOLMOD factor and re-solve with the refreshed gradient. The gradient is
+    // exact on every iteration and each step is line-search safeguarded, so the
+    // converged mode is unchanged; only the path to it uses a stale curvature.
+    // The final mode-pass below always re-factorizes, so log_det_Q and the SEs
+    // use the true Hessian at the mode regardless of `hessian_refresh`.
+    //
+    // Reuse is only valid in LM mode: the PSD path eigen-solves a densified
+    // Hessian and never populates the CHOLMOD factor, so there is nothing to
+    // reuse. In PSD mode the refresh interval collapses to 1.
+    const int refresh = (hessian_refresh > 1) ? hessian_refresh : 1;
+    const bool reuse_enabled = (refresh > 1) && (pd_mode == JointPDMode::LM);
+    bool have_factor = false;
+
     for (int iter = 0; iter < max_iter; iter++) {
         { TULPA_PROFILE_PHASE(PHASE_ETA);
           compute_eta_joint(x, scratch.etas); }
@@ -231,11 +252,29 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         // PD-enforced factor + solve. LM escalates the ridge until CHOLMOD
         // factorizes; PSD eigen-clamps the (small) dense Hessian. Either yields
         // a usable ascent step where a plain factorize of the indefinite
-        // mixture Hessian would fail.
+        // mixture Hessian would fail. On reuse iterations the cached factor is
+        // re-applied to the refreshed gradient instead (see `reuse_enabled`).
+        const bool do_factor =
+            !reuse_enabled || !have_factor || (iter % refresh == 0);
         bool solve_ok;
         { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
-          solve_ok = joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
-                                         scratch.grad.data(), scratch.delta.data()); }
+          if (do_factor) {
+              solve_ok = joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
+                                             scratch.grad.data(), scratch.delta.data());
+              have_factor = solve_ok;
+          } else {
+              solver.solve(scratch.grad.data(), scratch.delta.data(), n_x);
+              solve_ok = true;
+              for (int j = 0; j < n_x; j++)
+                  if (!std::isfinite(scratch.delta[j])) { solve_ok = false; break; }
+              if (!solve_ok) {
+                  // The reused factor gave a non-finite step; refresh now.
+                  solve_ok = joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
+                                                 scratch.grad.data(), scratch.delta.data());
+                  have_factor = solve_ok;
+              }
+          }
+        }
 
         if (!solve_ok) {
             // Both conditioners failed; take a tiny gradient-ascent step.

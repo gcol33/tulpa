@@ -2,6 +2,19 @@
 
 ## 0.0.4
 
+* perf(nested-laplace): `control$inner_refresh` (default `1L`) adds
+  Shamanskii / chord-method Cholesky factor reuse to the sparse joint inner
+  Newton (gcol33/tulpa#46). For a non-quadratic positive arm (e.g. a beta cover
+  arm) the latent Hessian changes every inner iteration, so the default
+  re-factorizes the sparse Cholesky on each step -- the dominant per-grid-cell
+  cost. `inner_refresh = m > 1` re-factorizes only every `m`-th inner step and
+  reuses the cached factor in between (refreshing early if a reused solve
+  fails). The gradient is exact on every step and each step is line-search
+  safeguarded, so the converged mode is unchanged and the final mode-pass
+  Hessian (`log_det`, SEs) is always fresh -- only the path to the mode uses a
+  stale curvature. Applies to the sparse LM path; the dense small-`n_x` path
+  re-factorizes cheaply and ignores it. Bit-equivalence to the every-step
+  default is covered in `tests/testthat/test-nested-laplace-joint-inner-refresh.R`.
 * feat(nested-laplace): `tulpa_posterior_draws(fit, idx, n)` -- a generic
   posterior sampler for the grid-integrated joint nested-Laplace backend (the
   `inla.posterior.sample()` analogue, gcol33/tulpa#44). Draws from the outer-grid
@@ -33,6 +46,30 @@
   the fitter warns and falls back to the full grid (`$prune_fallback_triggered`,
   `$prune_fallback_reason`) rather than silently returning a pruned answer. A
   silently-wrong pruned posterior is now impossible.
+* feat(spde): `fit_spde()` reports an outer Pareto-k-hat accuracy diagnostic
+  (`$pareto_k`) over the integrated `(range, sigma)` hyperparameters -- the
+  iid-fit counterpart of Rhat. k-hat < 0.7 means the Gaussian proposal the
+  integrator orients its CCD/grid with fits the hyperparameter posterior;
+  >= 0.7 flags a skewed / heavy-tailed posterior the grid misfits. Controlled
+  by `diagnose_k` (default TRUE) / `k_samples` (default 200), RNG-restored so
+  the fit's draws are unchanged.
+* feat(nested-laplace): the joint backend (`tulpa_nested_laplace_joint`,
+  single- and multi-block) reports the same outer Pareto-k-hat over its
+  heterogeneous hyperparameter space (gcol33/tulpa#42). A block-type-aware
+  per-axis transform unconstrains each axis -- positive scales by `log`, the
+  BYM2 mixing weight by logit, the copy coefficient by identity -- and the
+  summed log-Jacobians enter the importance target. A CAR_proper `rho_car` axis
+  (support is the adjacency eigenvalue interval, not guessable) declines to
+  quadrature ESS rather than apply a wrong transform.
+* feat(nested-laplace): `control$hessian` selects the inner-Newton curvature for
+  the joint mixture Hessian -- `"lm"` (default, diagonal-ridge escalation until
+  CHOLMOD factorizes), `"psd"` (eigen-clamp the dense observed Hessian), or
+  `"fisher"` (complete-data expected information, PSD by construction).
+* feat(joint-laplace): cross-arm coupling via a `CellCouplingSpec` registry
+  (gcol33/tulpa#32). Consumer packages register a per-cell coupling spec (e.g.
+  tulpaObs's cover-hurdle) so two arms share a latent field; the cross-arm block
+  is assembled into the joint Hessian (`tulpa_register_cell_coupling` C
+  callable, default `"separable"` always available).
 
 ## 0.0.2
 

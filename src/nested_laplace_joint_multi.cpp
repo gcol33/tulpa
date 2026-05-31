@@ -976,7 +976,12 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     bool                force_sparse = false,
     std::string         cell_coupling_name = "separable",
     int                 hessian_pd_mode = 0,
-    int                 step_curvature_mode = 0
+    int                 step_curvature_mode = 0,
+    int                 inner_refresh = 1,
+    bool                progress = false,
+    int                 progress_every = 0,
+    double              progress_throttle = 0.0,
+    std::string         progress_file = ""
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -1108,6 +1113,13 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         (step_curvature_mode == 1) ? tulpa::CurvatureMode::Expected
                                    : tulpa::CurvatureMode::Observed;
 
+    std::unique_ptr<tulpa_progress::GridProgress> gp;
+    if (progress) {
+        gp.reset(new tulpa_progress::GridProgress(
+            "nested-laplace-joint", n_grid, progress_every, progress_throttle,
+            progress_file));
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads,
@@ -1121,7 +1133,9 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         force_sparse,
         cell_coupling_spec,
         pd_mode,
-        step_curvature
+        step_curvature,
+        inner_refresh,
+        gp.get()
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

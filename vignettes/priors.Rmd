@@ -34,6 +34,16 @@ fixed-effect prior and watch the posterior follow, and how to look at what a
 prior implies about the data before any of it touches the likelihood. The
 closing section turns that into a short set of working rules.
 
+Three jobs run through the whole vignette, and it helps to name them up front
+because the right prior depends on which one you are doing. A fixed-effect
+coefficient lives on the link scale and can be any real number, so it gets a
+prior over the whole line. A variance or scale parameter is positive by
+construction, so it gets a prior on the positive half-line and the question is
+how fast that prior decays toward zero. A correlation or mixing proportion is
+trapped in the unit interval, so it gets a prior on `(0, 1)` and the only real
+decision is whether you lean it toward one end. tulpa gives you one constructor
+family for each job, and `tulpa_priors()` keeps one of each in a single object.
+
 ## Prior families available
 
 A prior in tulpa is a small tagged list built by one of seven constructors.
@@ -56,6 +66,19 @@ The mean sets where the prior is centred and the standard deviation sets how
 far it reaches. On a logit or log link, a standard deviation of 2.5 already
 covers a wide range of multiplicative effects, so this is weakly informative
 rather than flat.
+
+The link scale is where this prior bites, and a few numbers make the width
+concrete. On a log link a coefficient of 2.5 multiplies the rate by `exp(2.5)`,
+about 12-fold; two prior standard deviations reach `exp(5)`, near 150-fold. On
+a logit link a coefficient of 2.5 is an odds ratio of about 12, and a slope of
+that size moves a probability from 0.5 to roughly 0.92 over one unit of a
+standardised predictor. So `prior_normal(0, 2.5)` is genuinely permissive: it
+expects most effects to be modest but does not rule out large ones. Tightening
+to `prior_normal(0, 1)` says you would be surprised by an odds ratio past about
+7, which is a defensible statement for a standardised covariate where a unit is
+one standard deviation of the data. The mean is rarely worth moving away from
+zero unless you have an external estimate to centre on; the standard deviation
+is the knob you actually turn.
 
 ### Scale: priors for standard deviations
 
@@ -82,6 +105,25 @@ parameters. With `shape = 2, rate = 0.1` the mean sits at 20, a deliberately
 loose prior for a quantity you expect to be large. `prior_exponential(rate)`
 is the one-parameter special case (a gamma with `shape = 1`); its mean is
 `1 / rate`.
+
+The four positive priors differ in two ways that matter at fit time: their
+behaviour near zero and the weight of their right tail. The half-normal,
+exponential, and PC priors all put their mode at zero, so they shrink a scale
+parameter toward switching off. The half-Cauchy shares the mode at zero but
+carries a polynomial tail that never decays as fast as a normal's, so it
+tolerates a large standard deviation when the data demand one. The gamma is the
+odd one out: with `shape > 1` its density is zero at the origin and rises to an
+interior mode, so it actively pulls a parameter away from zero, which is what
+you want for a dispersion you know is bounded above the Poisson limit but not
+for a random-effect variance you would happily let vanish. The rule of thumb is
+to reserve the gamma for parameters you expect to be clearly positive and use a
+mode-at-zero prior whenever switching the component off is a live possibility.
+
+```{r prior-scale-means}
+c(half_normal_mean = prior_half_normal(1)$sd * sqrt(2 / pi),
+  exponential_mean = 1 / prior_exponential(1)$rate,
+  gamma_mean       = prior_gamma(2, 0.1)$shape / prior_gamma(2, 0.1)$rate)
+```
 
 ### The PC prior
 
@@ -114,6 +156,52 @@ the residual. A PC prior leans the other way by default, switching the
 component off unless the groups disagree enough to keep it on. That is the
 behaviour you want from a regulariser: invisible when the data speak, firm when
 they do not.
+
+The tail-probability framing is what makes the PC prior easy to set. The rate
+is `-log(alpha) / U`, so for `P(sigma > 1) = 0.01` the rate is about 4.6, and
+the implied prior median sits near `0.69 / 4.6`, around 0.15. That is a small
+standard deviation on a link scale, which is the intended default: it expects
+group-to-group spread to be modest and asks the data to argue for more. Moving
+`U` rescales the whole prior linearly, so a PC prior with `U = 5, alpha = 0.01`
+is just the `U = 1` prior stretched fivefold and suits a setting where group
+effects of several link-scale units are plausible.
+
+The cleanest way to see what a PC prior on `sigma` actually implies is to push
+it through the data scale with a prior predictive draw of a grouped model. Set
+up a small grouped frame on a logit link and a Bernoulli simulator, then draw
+the group spread from two PC priors of different width.
+
+```{r pc-pp-data}
+bin <- tulpa_family("binomial",
+  function(eta, params, n_obs, ...) rbinom(n_obs, 1, plogis(eta[[1]])))
+gdat <- data.frame(y = 0, x = rnorm(200), g = factor(rep(1:20, each = 10)))
+```
+
+`prior_predict()` reads the `(1 | g)` term, draws `sigma` from `priors$sigma`,
+and uses it to generate the group intercepts that enter the linear predictor.
+Summarise each draw by the spread of group-level mean probabilities, which is
+what a too-wide `sigma` prior inflates.
+
+```{r pc-pp}
+group_spread <- function(pp) {
+  vapply(seq_along(pp$y), function(d) {
+    p <- plogis(pp$linpred[[d]][[1]])
+    sd(tapply(p, gdat$g, mean))
+  }, numeric(1))
+}
+pp_tight <- prior_predict(y ~ x + (1 | g), family = bin, data = gdat,
+  n_draws = 200, priors = tulpa_priors(sigma = prior_pc(1, 0.01)), seed = 7)
+pp_wide  <- prior_predict(y ~ x + (1 | g), family = bin, data = gdat,
+  n_draws = 200, priors = tulpa_priors(sigma = prior_pc(5, 0.01)), seed = 7)
+rbind(tight = quantile(group_spread(pp_tight), c(0.5, 0.9, 0.99)),
+      wide  = quantile(group_spread(pp_wide),  c(0.5, 0.9, 0.99)))
+```
+
+Under the tight default the between-group spread of probabilities stays small;
+under the wide prior the upper draws scatter group means across most of the unit
+interval before any data are seen. If you believe groups differ that strongly,
+the wide prior is honest; if you do not, the default PC prior keeps the prior
+predictive in a believable band and lets the groups earn their variance.
 
 ### Proportions: the beta prior
 
@@ -149,6 +237,44 @@ accept any combination, so the table is the convention to follow rather than a
 rule the code checks. A normal prior paired with a standard deviation slot will
 build without complaint and then misbehave at fit time, so treat the support of
 each parameter as the first thing to get right.
+
+## Three classes of parameter, three kinds of prior
+
+The table above sorts priors by the slot they fill, but the deeper division is
+by what the parameter does in the model, because that determines how much the
+prior should be allowed to say.
+
+Fixed effects sit in the linear predictor and the data usually identify them
+well once you have a few dozen informative rows. The prior on them is
+regularisation: a backstop for thin data or collinear predictors, not a
+structural assumption. A wide normal is the right default precisely because you
+want the likelihood to win whenever it can.
+
+Variance and scale components are different. They are weakly identified by
+construction, especially when the grouping factor has few levels or the
+responses are binary, so the prior carries real weight in the posterior and
+keeps doing so as the data grow until the number of groups grows with them. A
+PC prior is the recommended default here because it states its strength as a
+tail probability and shrinks toward the simpler model, which is the safe
+direction when the data underdetermine the variance. The half-Cauchy is the
+fallback when you expect a genuinely large component that the PC penalty would
+fight.
+
+Spatial and temporal hyperparameters are the most weakly identified of all.
+A single realisation of a spatial field or a time series carries little
+information about its range or its autocorrelation, so the prior often shapes
+the posterior more than the data do. The `rho_temporal` and `rho_spatial` slots
+take beta priors on `(0, 1)`: the default `prior_beta(2, 2)` on temporal
+correlation is symmetric and pulls gently off the endpoints, where an AR(1)
+process is hard to estimate, and the default `prior_beta(1, 1)` on the BYM2
+mixing proportion stays flat because there is rarely prior reason to favour
+structured over unstructured variation. SPDE and Matern range parameters live
+on the positive half-line and take PC priors of the same kind as a variance
+component, set from a range you would call large for your study region. The
+engine assembles these structured priors from a latent specification through
+`prior_from_spec()`, which reads a `tulpa_temporal` or `tulpa_spatial` object
+and returns the matching prior, so the structured paths and the manual
+constructors stay in step.
 
 ## Default priors
 
@@ -188,6 +314,25 @@ tulpa_priors(
 Because each slot validates its argument, passing something that is not a
 `tulpa_prior` object fails early with a clear message rather than surfacing
 deep inside a fit.
+
+The five defaults are deliberately conservative. `prior_normal(0, 2.5)` on
+fixed effects keeps coefficients roughly in the link-scale band `[-5, 5]`
+without going flat. The PC prior `P(sigma > 1) = 0.01` on random-effect
+standard deviations favours small variance components and protects against the
+variance running away when groups are few. The PC prior `P(phi > 10) = 0.01` on
+the dispersion regularises toward the Poisson limit. The two beta priors stay
+neutral on the correlation parameters. Those choices are right for a first fit
+on a healthy dataset, and the cases for overriding them are specific: a strong
+external estimate to centre a fixed effect on, a variance you expect to be large
+enough that the default PC prior would over-shrink, a dispersion you can bound
+tightly from prior counts, or a temporal correlation you have reason to believe
+is high. Absent one of those, the defaults are the place to start.
+
+`priors_default()` also takes a `family` argument. Pass a `tulpa_family` object
+from a model package and it prints only the slots that family uses, with a note
+on what each parameter means for that likelihood, which is the quick way to
+check whether a family even has a dispersion or a temporal slot before you try
+to set it.
 
 ## Priors on fixed effects
 
@@ -255,6 +400,19 @@ The tight prior narrows the slope's interval and shifts it toward zero. A
 vector `sd` lets you regularise some coefficients hard while leaving others
 free, which is the usual pattern: pin nuisance terms, let the effects of
 interest follow the data.
+
+The amount of movement is set by the ratio of prior to likelihood information,
+which on this Gaussian fit has a closed form worth carrying in your head. For a
+single coefficient the posterior mean is a precision-weighted average of the
+prior mean and the least-squares estimate, with weights `1 / sd_prior^2` and
+`1 / se_mle^2`. When the prior standard deviation is much larger than the
+coefficient's standard error the likelihood dominates and the prior is nearly
+invisible; when it is much smaller the prior wins and the estimate sits near the
+prior mean. The slope's standard error here is on the order of the residual
+standard deviation over `sqrt(n)` times the predictor spread, a few tenths, so a
+prior standard deviation of 0.2 is comparable to the data's own precision and
+the two split the difference, which is what the table shows. Setting a vector
+`sd` is then a per-coefficient choice of where on that continuum to sit.
 
 The fixed-effect prior threads through the plain Laplace and sampler paths.
 Some structured paths (spatial fields, the SPDE integrator) carry their own
@@ -360,6 +518,28 @@ you pull it in. The same machinery extends to any family by swapping the
 `simulate_fn`, and to random-effect spread by setting the `sigma` prior, which
 `prior_predict()` draws and feeds into the group effects.
 
+The PC-prior example earlier produced exactly that kind of random-effect spread,
+and plotting the two `group_spread` distributions side by side shows the prior's
+effect at a glance. The wide PC prior pushes a long right tail onto the
+between-group spread; the tight default keeps it compact.
+
+```{r pc-pp-plot, message = FALSE, fig.alt = "Between-group spread under two PC priors on sigma"}
+library(ggplot2)
+sp <- rbind(
+  data.frame(prior = "tight (U=1)", spread = group_spread(pp_tight)),
+  data.frame(prior = "wide (U=5)",  spread = group_spread(pp_wide)))
+ggplot(sp, aes(spread, fill = prior)) +
+  geom_density(alpha = 0.5) +
+  labs(x = "SD of group-mean probabilities", y = "Prior predictive density") +
+  theme(panel.background = element_rect(fill = "transparent"),
+        plot.background  = element_rect(fill = "transparent"))
+```
+
+Reading this plot is the variance-component analogue of the count check: the
+question is whether the spread the prior expects between groups matches what you
+would believe before seeing the data, and the wide prior's mass near the right
+edge of the unit interval is the warning sign.
+
 ## Choosing priors
 
 A working order of operations for setting priors in tulpa:
@@ -403,6 +583,40 @@ A working order of operations for setting priors in tulpa:
   both `prior_predict()` and the fit, so a prior that survives the predictive
   check is the prior you go on to fit with, with no second specification drifting
   out of sync behind it.
+
+### Numbers to start from
+
+Concrete defaults are easier to adjust than blank slots. Standardise continuous
+predictors to unit standard deviation first; every scale below assumes a unit
+predictor and a link-scale coefficient.
+
+- **Fixed effects on a logit or log link.** `prior_normal(0, 1.5)` to
+  `prior_normal(0, 2.5)`. A standard deviation of 1.5 expects odds ratios or
+  rate ratios mostly under about 4.5 per unit; 2.5 stretches that to about 12.
+  Drop toward `prior_normal(0, 1)` when predictors are collinear or the sample
+  is under a few dozen rows. Go wider than 2.5 only with a reason, because the
+  prior predictive starts to admit impossible data past there.
+
+- **Fixed effects on an identity link.** Match the standard deviation to the
+  response scale: a few times the response's own standard deviation is weakly
+  informative, less than that begins to regularise.
+
+- **Random-effect standard deviations.** `prior_pc(U, alpha)` with `U` a spread
+  you would call large between groups on the link scale and `alpha = 0.01`. On a
+  logit link `U = 1` is already a wide spread of group probabilities, so the
+  default rarely needs raising unless groups genuinely differ by several units;
+  with under about eight groups, lean tighter rather than looser.
+
+- **Dispersion.** `prior_pc(U = 10, alpha = 0.01)` regularises a negative-
+  binomial size toward the Poisson limit. Use `prior_gamma()` with an interior
+  mode only when you can bound the dispersion away from both zero and infinity.
+
+- **Correlations and mixing proportions.** `prior_beta(2, 2)` when you want to
+  stay off the endpoints, `prior_beta(1, 1)` when you have no lean, and a skewed
+  beta such as `prior_beta(5, 2)` only when you can name the direction.
+
+A prior predictive draw is the final arbiter for any of these: if simulated data
+look like data the process could produce, the scale is in range.
 
 ## See also
 
