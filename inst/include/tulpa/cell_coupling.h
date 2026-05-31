@@ -243,6 +243,18 @@ struct CellDerivs {
     // vtable and the leading fields are unchanged.
     CurvatureMode curvature = CurvatureMode::Observed;
 
+    // Gradient-only request. When true the kernel will NOT use the Hessian this
+    // call produces (it is reusing a cached factorization for this inner Newton
+    // step -- the Shamanskii / chord path behind control$inner_refresh), so a
+    // spec MAY skip its negative-Hessian work (e.g. the digamma/trigamma terms
+    // of a beta arm) and leave `arm_neg_hess_diag` / `arm_cross_hess` at the
+    // zeros the kernel pre-fills. The gradient (`arm_grad`) and the returned
+    // log-density MUST still be exact -- only the curvature may be omitted. A
+    // spec that does not implement this simply ignores it and writes the full
+    // Hessian (correct, just no saving). Appended last to keep the leading
+    // fields and any existing field offsets unchanged.
+    bool grad_only = false;
+
     int n_arms() const { return n_arms_; }
     int n_rows_in_arm(int k) const { return arm_row_count[k]; }
 };

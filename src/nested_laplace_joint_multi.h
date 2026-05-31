@@ -547,7 +547,8 @@ inline void scatter_cell_coupling_branch_impl(
     HType&                                        H,
     ScatterRowFn                                  scatter_row,
     ScatterCrossFn                                scatter_cross,
-    CurvatureMode                                 curvature = CurvatureMode::Observed
+    CurvatureMode                                 curvature = CurvatureMode::Observed,
+    bool                                          grad_only = false
 ) {
     const int n_coupled = (int)coupled_arms.size();
     const int B         = (int)blocks.size();
@@ -681,6 +682,7 @@ inline void scatter_cell_coupling_branch_impl(
         out.arm_row_count      = arm_row_count.data();
         out.n_arms_            = n_coupled;
         out.curvature          = curvature;
+        out.grad_only          = grad_only;
 
         spec.evaluate_cell(c, etas_view, y_view, out);
 
@@ -703,27 +705,30 @@ inline void scatter_cell_coupling_branch_impl(
         // Cross-arm Hessian scatter. For each (kk, ll) pair with kk <= ll,
         // walk rows of arm kk x arm ll. Same-arm (kk == ll) skips the
         // j == m diagonal (already in arm_neg_hess_diag) and reads only
-        // off-diagonal entries.
-        for (int kk = 0; kk < n_coupled; kk++) {
-            int k     = coupled_arms[kk];
-            int rc_k  = arm_row_count[kk];
-            const int* rows_k = arm_rows_ptr[kk];
-            for (int ll = kk; ll < n_coupled; ll++) {
-                const double* ch = cross_hess_ptr_inner[kk][ll];
-                if (!ch) continue;
-                int l     = coupled_arms[ll];
-                int rc_l  = arm_row_count[ll];
-                const int* rows_l = arm_rows_ptr[ll];
-                for (int j = 0; j < rc_k; j++) {
-                    build_arm_row_chain(rows_k[j], parsed[k], k, blocks,
-                                        d_eff_per_arm[kk], chain_k_scratch);
-                    int m_start = (kk == ll) ? (j + 1) : 0;
-                    for (int m = m_start; m < rc_l; m++) {
-                        double Hkl = ch[(std::size_t)j * rc_l + m];
-                        if (Hkl == 0.0) continue;
-                        build_arm_row_chain(rows_l[m], parsed[l], l, blocks,
-                                            d_eff_per_arm[ll], chain_l_scratch);
-                        scatter_cross(Hkl, chain_k_scratch, chain_l_scratch, H);
+        // off-diagonal entries. Pure curvature with no gradient contribution,
+        // so a grad-only step (cached-factor reuse) skips it entirely.
+        if (!grad_only) {
+            for (int kk = 0; kk < n_coupled; kk++) {
+                int k     = coupled_arms[kk];
+                int rc_k  = arm_row_count[kk];
+                const int* rows_k = arm_rows_ptr[kk];
+                for (int ll = kk; ll < n_coupled; ll++) {
+                    const double* ch = cross_hess_ptr_inner[kk][ll];
+                    if (!ch) continue;
+                    int l     = coupled_arms[ll];
+                    int rc_l  = arm_row_count[ll];
+                    const int* rows_l = arm_rows_ptr[ll];
+                    for (int j = 0; j < rc_k; j++) {
+                        build_arm_row_chain(rows_k[j], parsed[k], k, blocks,
+                                            d_eff_per_arm[kk], chain_k_scratch);
+                        int m_start = (kk == ll) ? (j + 1) : 0;
+                        for (int m = m_start; m < rc_l; m++) {
+                            double Hkl = ch[(std::size_t)j * rc_l + m];
+                            if (Hkl == 0.0) continue;
+                            build_arm_row_chain(rows_l[m], parsed[l], l, blocks,
+                                                d_eff_per_arm[ll], chain_l_scratch);
+                            scatter_cross(Hkl, chain_k_scratch, chain_l_scratch, H);
+                        }
                     }
                 }
             }
@@ -773,14 +778,15 @@ inline void scatter_cell_coupling_sparse_branch(
     int                                           k_grid,
     DenseVec&                                     grad,
     SparseHessianBuilder&                         H,
-    CurvatureMode                                 curvature = CurvatureMode::Observed
+    CurvatureMode                                 curvature = CurvatureMode::Observed,
+    bool                                          grad_only = false
 ) {
     scatter_cell_coupling_branch_impl(
         spec, coupled_arms, cell_rows, n_cells,
         arms, parsed, etas, blocks, k_grid, grad, H,
         scatter_one_arm_row_sparse,
         scatter_cross_chain_sparse,
-        curvature
+        curvature, grad_only
     );
 }
 
@@ -1752,7 +1758,8 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                                          const std::vector<Rcpp::NumericVector>& etas,
                                          DenseVec& grad,
                                          SparseHessianBuilder& H,
-                                         bool finalize) {
+                                         bool finalize,
+                                         bool grad_only) {
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 if (arm_is_coupled[k_arm]) continue;
                 scatter_arm_obs_joint_multi_sparse(
@@ -1765,11 +1772,14 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                 );
             }
             if (any_coupling) {
+                // A grad-only step reuses a cached factor, so the coupled-cell
+                // spec may skip its Hessian (digamma/trigamma) work; the
+                // curvature mode is irrelevant on such a step.
                 const CurvatureMode cm =
                     finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_sparse_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                    arms, parsed, etas, blocks, k_grid, grad, H, cm
+                    arms, parsed, etas, blocks, k_grid, grad, H, cm, grad_only
                 );
             }
             for (const auto& b : blocks) {

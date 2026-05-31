@@ -118,3 +118,38 @@ test_that("factor reuse matches the every-step default (ICAR, no copy)", {
     fit_reuse <- .ir_fit(sim, prior, NULL, inner_refresh = 4L)
     .ir_expect_equiv(fit_ref, fit_reuse)
 })
+
+test_that("factor reuse with a grad-only-honoring cell-coupling spec matches", {
+    # Exercises the grad-only reuse path through the cell-coupling branch: the
+    # test Bernoulli spec skips its Hessian when out.grad_only, so reuse steps
+    # build only the gradient. The converged mode must still match the
+    # every-step default (the gradient is exact on every step).
+    cpp_register_test_separable_bernoulli_coupling()
+    set.seed(909L)
+    n_s <- 14L; N <- 90L
+    adj <- .ir_chain_adj(n_s)
+    spatial_idx <- as.integer(rep(seq_len(n_s), length.out = N))
+    eta_true <- 0.3 + rnorm(n_s, 0, 0.6)
+    y <- rbinom(N, 1, plogis(eta_true[spatial_idx]))
+    arm <- list(y = y, n_trials = rep(1L, N),
+                X = matrix(1, nrow = N, ncol = 1L),
+                spatial_idx = spatial_idx, family = "binomial", phi = 1,
+                coupled = TRUE, cell_obs_map = seq_len(N))
+    prior <- c(list(type = "icar", sigma_grid = c(0.4, 0.8, 1.5)), adj)
+
+    fit_coupled <- function(inner_refresh) {
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm), prior = prior,
+            cell_coupling = "test_separable_bernoulli",
+            control = list(max_iter = 60L, tol = 1e-9, force_sparse = TRUE,
+                           inner_refresh = inner_refresh))
+    }
+    fit_ref   <- fit_coupled(1L)
+    fit_reuse <- fit_coupled(3L)
+    expect_equal(as.numeric(fit_reuse$log_marginal),
+                 as.numeric(fit_ref$log_marginal), tolerance = 1e-6,
+                 info = "grad-only cell-coupling reuse changed log_marginal")
+    expect_equal(as.numeric(fit_reuse$modes), as.numeric(fit_ref$modes),
+                 tolerance = 1e-5,
+                 info = "grad-only cell-coupling reuse changed modes")
+})

@@ -46,7 +46,11 @@ public:
             cell_ll += y * log_p_safe + (1.0 - y) * log_1mp_safe;
 
             out.arm_grad[0][j]          = y - p;
-            out.arm_neg_hess_diag[0][j] = p * one_m_p;
+            // On a grad-only step (cached-factor reuse) the kernel discards the
+            // Hessian, so leave arm_neg_hess_diag at the pre-filled zero.
+            if (!out.grad_only) {
+                out.arm_neg_hess_diag[0][j] = p * one_m_p;
+            }
         }
         return cell_ll;
     }

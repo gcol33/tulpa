@@ -15,6 +15,16 @@
   replicated builders would be too large (very wide fields fall back to fewer
   outer threads). Parallel-vs-serial parity (with and without a phi axis) is
   covered in `tests/testthat/test-nested-laplace-joint-sparse-parallel.R`.
+* perf(nested-laplace): grad-only inner-Newton steps under `inner_refresh`
+  (gcol33/tulpa#46, lever 1b). On a factor-reuse step the Hessian is discarded,
+  so the cell-coupling scatter now passes a `grad_only` request to the
+  `CellCouplingSpec` (a new ABI-appended `CellDerivs::grad_only`): a spec may
+  skip its negative-Hessian work (e.g. a beta arm's digamma/trigamma) and emit
+  only the exact gradient, and the kernel skips the cross-arm Hessian scatter.
+  Specs that do not implement it write the full Hessian as before (correct, no
+  saving). The gradient stays exact on every step, so the converged mode is
+  unchanged -- validated by a grad-only-honoring cell-coupling reuse test in
+  `tests/testthat/test-nested-laplace-joint-inner-refresh.R`.
 * perf(nested-laplace): `control$inner_refresh` (default `1L`) adds
   Shamanskii / chord-method Cholesky factor reuse to the sparse joint inner
   Newton (gcol33/tulpa#46). For a non-quadratic positive arm (e.g. a beta cover

@@ -241,10 +241,18 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         { TULPA_PROFILE_PHASE(PHASE_ETA);
           compute_eta_joint(x, scratch.etas); }
 
+        // Decide up front whether this iteration re-factorizes. A reuse
+        // iteration applies the cached factor to a fresh gradient, so the
+        // Hessian it would build is discarded -- the scatter is told to skip
+        // the (expensive) likelihood curvature and emit the gradient only.
+        const bool do_factor =
+            !reuse_enabled || !have_factor || (iter % refresh == 0);
+
         scratch.zero_grad();
         H_builder.zero();
         { TULPA_PROFILE_PHASE(PHASE_SCATTER);
-          scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder, /*finalize=*/false); }
+          scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder,
+                               /*finalize=*/false, /*grad_only=*/!do_factor); }
 
         // Uniform upstream base ridge for numerical hygiene of an already-PD H.
         H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
@@ -254,8 +262,6 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         // a usable ascent step where a plain factorize of the indefinite
         // mixture Hessian would fail. On reuse iterations the cached factor is
         // re-applied to the refreshed gradient instead (see `reuse_enabled`).
-        const bool do_factor =
-            !reuse_enabled || !have_factor || (iter % refresh == 0);
         bool solve_ok;
         { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
           if (do_factor) {
@@ -267,12 +273,12 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
               solve_ok = true;
               for (int j = 0; j < n_x; j++)
                   if (!std::isfinite(scratch.delta[j])) { solve_ok = false; break; }
-              if (!solve_ok) {
-                  // The reused factor gave a non-finite step; refresh now.
-                  solve_ok = joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
-                                                 scratch.grad.data(), scratch.delta.data());
-                  have_factor = solve_ok;
-              }
+              // A reuse step builds only the gradient, so H_builder lacks the
+              // likelihood curvature and must NOT be factorized here. On the
+              // rare failure (non-finite step from a non-finite gradient), fall
+              // through to the gradient-ascent guard and force a full
+              // re-factorization on the next iteration.
+              if (!solve_ok) have_factor = false;
           }
         }
 
@@ -315,7 +321,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     scratch.zero_grad();
     H_builder.zero();
     { TULPA_PROFILE_PHASE(PHASE_SCATTER);
-      scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder, /*finalize=*/true); }
+      scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder,
+                           /*finalize=*/true, /*grad_only=*/false); }
     H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 
     // PD-enforced final factorize so log_det is defined even when the mode sits
