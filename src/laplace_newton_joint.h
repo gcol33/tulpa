@@ -135,12 +135,20 @@ struct JointArmSpecs {
     }
 };
 
-inline JointArmSpecs build_joint_arm_specs(const std::vector<JointArm>& arms) {
+// Populate an already-constructed JointArmSpecs in place. Required for building
+// a per-outer-thread pool of specs: JointArmSpecs is self-referential (each
+// ArmSpecView points at the owner's builtin_responses storage AND at the owner's
+// own empty_data / empty_layout / empty_params members), so it cannot be moved
+// or copied into a pool slot without dangling those pointers. Constructing each
+// pool element in place via this routine keeps every pointer valid.
+inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
+                                       JointArmSpecs& s) {
     const int n = static_cast<int>(arms.size());
-    JointArmSpecs s;
+    s.builtin_specs.clear();
+    s.builtin_responses.clear();
     s.builtin_specs.reserve(n);
     s.builtin_responses.reserve(n);
-    s.views.resize(n);
+    s.views.assign(n, ArmSpecView{});
     s.arm_builtin_response.assign(n, nullptr);
     for (int k = 0; k < n; k++) {
         const JointArm& a = arms[k];
@@ -167,6 +175,15 @@ inline JointArmSpecs build_joint_arm_specs(const std::vector<JointArm>& arms) {
             s.arm_builtin_response[k] = &s.builtin_responses.back();
         }
     }
+}
+
+// Convenience wrapper returning a freshly built JointArmSpecs by value. Safe for
+// a single fit-scoped specs object (NRVO / move keeps the std::vector buffers, so
+// the views into builtin_responses stay valid); for a per-thread POOL use
+// build_joint_arm_specs_into on an in-place slot instead (see its note).
+inline JointArmSpecs build_joint_arm_specs(const std::vector<JointArm>& arms) {
+    JointArmSpecs s;
+    build_joint_arm_specs_into(arms, s);
     return s;
 }
 

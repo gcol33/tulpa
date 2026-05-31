@@ -1189,6 +1189,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     JointPDMode                      pd_mode = JointPDMode::LM,
     CurvatureMode                    step_curvature = CurvatureMode::Observed,
     int                              hessian_refresh = 1,
+    int                              n_threads_outer = 1,
     tulpa_progress::GridProgress*    progress = nullptr
 );
 
@@ -1295,7 +1296,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
             store_modes, x_init, store_Q,
             prep_at_grid, tile_ids, tile_pilot_cells, prune_tol,
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
-            step_curvature, hessian_refresh, progress
+            step_curvature, hessian_refresh, n_threads_outer, progress
         );
     }
 
@@ -1568,6 +1569,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     JointPDMode                      pd_mode,
     CurvatureMode                    step_curvature,
     int                              hessian_refresh,
+    int                              n_threads_outer,
     tulpa_progress::GridProgress*    progress
 ) {
     const int n_arms = static_cast<int>(arms.size());
@@ -1579,50 +1581,81 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         if (k >= 0 && k < n_arms) arm_is_coupled[k] = true;
     }
 
-    // Build the joint H pattern ONCE. Reused for every outer-grid cell.
-    SparseHessianBuilder H_builder;
+    // Outer-grid parallelism. Each full per-cell solve owns mutable state that
+    // cannot be shared across concurrent cells -- the sparse Hessian builder,
+    // the Newton scratch, the per-arm likelihood specs (whose built-in
+    // dispersion the phi-grid axis rewrites per cell), the scatter index cache,
+    // and the DENSE_BASIS scratch -- so each outer thread gets its own. The
+    // cheap-screen sweep runs serially (before any parallel region), so its
+    // resources stay a single set. n_outer == 1 reproduces the prior serial
+    // path exactly (one pool slot, used by every cell).
+    int n_outer = std::max(1, n_threads_outer);
+
+    // Build the shared pattern into slot 0 first, size a memory guard from its
+    // nnz, then clamp the thread count so the replicated builders stay bounded.
+    // Each builder copies the pattern's row_idx + values + entry_map; at
+    // n_sites ~ 10^6 a per-thread copy is large, so a very wide field falls back
+    // to fewer outer threads rather than exhausting memory.
+    std::vector<SparseHessianBuilder> H_builders(1);
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builder, coupled_arms); }
+      build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builders[0], coupled_arms); }
+    {
+        const size_t nnz = H_builders[0].values.size();
+        // row_idx(int) + values(double) + a std::map node (~48 B) per nonzero.
+        const size_t per_builder = nnz * (sizeof(int) + sizeof(double) + 48) + 1;
+        const size_t budget = static_cast<size_t>(2) * 1024 * 1024 * 1024; // 2 GB
+        int max_builders =
+            static_cast<int>(std::max<size_t>(1, budget / per_builder));
+        if (n_outer > max_builders) n_outer = max_builders;
+    }
+    H_builders.resize(n_outer);
+    for (int t = 1; t < n_outer; t++) {
+        TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
+        build_joint_hessian_pattern(parsed, arms, blocks, n_x,
+                                    H_builders[t], coupled_arms);
+    }
 
-    NewtonScratchJointSparse scratch;
-    scratch.allocate(n_x, arms);
+    std::vector<NewtonScratchJointSparse> scratches(n_outer);
+    for (auto& s : scratches) s.allocate(n_x, arms);
 
-    // Resolve each arm to a spec view ONCE for the whole grid (see the dense
-    // driver). Read-only after build; the scatter and joint log-lik read every
-    // arm only through these views.
-    JointArmSpecs specs = build_joint_arm_specs(arms);
+    // Per-thread arm specs, built in place: JointArmSpecs is self-referential
+    // (its views point at the owner's own storage and members), so it cannot be
+    // moved into a pool slot -- see build_joint_arm_specs_into. Read-only in
+    // structure; only the built-in dispersion is rewritten per cell, into the
+    // owning thread's copy under a short critical (see below).
+    std::vector<JointArmSpecs> specs_pool(n_outer);
+    for (auto& sp : specs_pool) build_joint_arm_specs_into(arms, sp);
 
-    // Cheap-pass dedicated scratch / solver / builder. Pattern reused;
-    // VALUES live in the builder, so each builder needs its own copy.
+    // Per-thread scatter index cache (validity keyed on the owning builder's H
+    // pointer) and DENSE_BASIS scratch.
+    std::vector<ScatterIndexCache> idx_caches(n_outer);
+    { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
+      for (int t = 0; t < n_outer; t++)
+          build_scatter_index_cache(parsed, arms, blocks,
+                                    H_builders[t], idx_caches[t]); }
+    std::vector<std::vector<DenseBasisScratch>> db_buffers_pool(n_outer);
+    for (auto& d : db_buffers_pool)
+        d.assign(static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
+
+    // Cheap-pass dedicated scratch / solver / builder / specs / caches. The
+    // cheap sweep is serial, so a single set suffices.
     SparseHessianBuilder cheap_builder;
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
       build_joint_hessian_pattern(parsed, arms, blocks, n_x, cheap_builder, coupled_arms); }
     NewtonScratchJointSparse cheap_scratch;
     cheap_scratch.allocate(n_x, arms);
     SparseCholeskySolver cheap_solver;
-
-    // Stage 2.2b: precompute per-(k_arm, i) flat-index cache for the
-    // scatter. Built once per H_builder; disabled automatically when any
-    // block is BILINEAR_FACTOR (dynamic active weights). DENSE_BASIS
-    // presence is recorded so scatter falls back to the per-obs path on
-    // mixed shapes. Each builder needs its own cache (validity keyed on
-    // the H pointer).
-    ScatterIndexCache idx_cache_main;
+    JointArmSpecs cheap_specs;
+    build_joint_arm_specs_into(arms, cheap_specs);
     ScatterIndexCache idx_cache_cheap;
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      build_scatter_index_cache(parsed, arms, blocks, H_builder,    idx_cache_main);
       build_scatter_index_cache(parsed, arms, blocks, cheap_builder, idx_cache_cheap); }
-
-    // DENSE_BASIS scatter scratch buffers — lifted outside the per-cell
-    // lambda so each (k_arm, b) slot's index cache (built once on first
-    // scatter call) survives across every outer-grid cell. Cache keys are
-    // stable per slot (blk_off_row, M, p_k, n_re_k, bstart, rstart,
-    // H_ptr) so the same scratch hits across cells. Separate buffer sets
-    // per H_builder because the cache validity check pins the H pointer.
-    std::vector<DenseBasisScratch> db_buffers_main(
-        static_cast<size_t>(n_arms) * B);
     std::vector<DenseBasisScratch> db_buffers_cheap(
         static_cast<size_t>(n_arms) * B);
+
+    // Inner OpenMP collapses to a single thread when the outer grid is parallel
+    // (the dense driver does the same); nested parallelism would oversubscribe.
+    const int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
 
     auto solve_at_theta_impl = [&](int k_grid,
                                    const std::vector<double>& prev_mode,
@@ -1630,8 +1663,36 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                                    int max_iter_use,
                                    bool use_cheap_scratch) -> LaplaceResult
     {
-        { TULPA_PROFILE_PHASE(PHASE_PREP);
-          if (prep_at_grid) prep_at_grid(k_grid); }
+        // Pick this outer thread's resource slot. The cheap-screen sweep is
+        // serial and uses the single cheap_* set; the full solve uses the
+        // per-thread pool indexed by the OpenMP thread id.
+        int tid = 0;
+        #ifdef _OPENMP
+        if (!use_cheap_scratch) tid = omp_get_thread_num();
+        #endif
+        if (tid < 0 || tid >= n_outer) tid = 0;
+        JointArmSpecs& specs_use =
+            use_cheap_scratch ? cheap_specs : specs_pool[tid];
+
+        // phi-grid axis: prep_at_grid rewrites the SHARED `arms` dispersion for
+        // this cell, then sync copies it into THIS thread's specs. Both run
+        // under one short critical so a concurrent cell's prep cannot clobber
+        // the dispersion between our write and our snapshot; the expensive
+        // Newton solve below then runs lock-free on the thread-local specs.
+        // (prep_at_grid touches only arm.phi; the spatial block prep below is
+        // independent of it and stays outside the critical, as in the dense
+        // parallel driver.)
+        {
+            TULPA_PROFILE_PHASE(PHASE_PREP);
+            #ifdef _OPENMP
+            #pragma omp critical(nl_sparse_phi)
+            #endif
+            {
+                if (prep_at_grid) prep_at_grid(k_grid);
+                specs_use.sync_dispersion(arms);
+            }
+        }
+
         for (const auto& b : blocks) {
             TULPA_PROFILE_PHASE(PHASE_PREP);
             if (b.prep && !b.prep(k_grid)) {
@@ -1646,10 +1707,6 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                 return bad;
             }
         }
-
-        // prep_at_grid may have rewritten arm.phi (phi_grid axis); refresh the
-        // built-in responses so the spec sees the current dispersion.
-        specs.sync_dispersion(arms);
 
         // Per-block-per-arm d_eff cache: d_fac(k_grid) * arm_scale(k_arm, k_grid).
         std::vector<std::vector<double>> d_eff(B, std::vector<double>(n_arms, 0.0));
@@ -1668,10 +1725,11 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
         std::vector<std::pair<int,double>> active_scratch;
         std::vector<std::pair<int,double>> multi_scratch;
         std::vector<DenseBasisActive>     active_db_scratch;
-        // db_buffers is a reference into the lifted-out per-fit storage so
-        // each (k_arm, b) cache survives across outer-grid cells.
+        // db_buffers is a reference into the lifted-out per-thread storage so
+        // each (k_arm, b) cache survives across the outer-grid cells this
+        // thread solves.
         std::vector<DenseBasisScratch>&   db_buffers =
-            use_cheap_scratch ? db_buffers_cheap : db_buffers_main;
+            use_cheap_scratch ? db_buffers_cheap : db_buffers_pool[tid];
 
         auto compute_eta_joint = [&](const Rcpp::NumericVector& x,
                                      std::vector<Rcpp::NumericVector>& etas) {
@@ -1680,9 +1738,10 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                 d_eff, basis_scratch, multi_scratch);
         };
 
-        SparseHessianBuilder& H_use = use_cheap_scratch ? cheap_builder : H_builder;
+        SparseHessianBuilder& H_use =
+            use_cheap_scratch ? cheap_builder : H_builders[tid];
         const ScatterIndexCache* idx_cache_use =
-            use_cheap_scratch ? &idx_cache_cheap : &idx_cache_main;
+            use_cheap_scratch ? &idx_cache_cheap : &idx_caches[tid];
 
         // `finalize` selects the curvature for the coupled-cell scatter: the
         // inner Newton step uses `step_curvature` (Expected = Fisher scoring,
@@ -1698,7 +1757,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
                 if (arm_is_coupled[k_arm]) continue;
                 scatter_arm_obs_joint_multi_sparse(
                     x, etas[k_arm], parsed[k_arm], arms[k_arm],
-                    specs.views[k_arm], k_arm,
+                    specs_use.views[k_arm], k_arm,
                     blocks, k_grid, grad, H,
                     active_scratch, basis_scratch, multi_scratch,
                     active_db_scratch, db_buffers,
@@ -1745,8 +1804,9 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
             return lp;
         };
 
-        NewtonScratchJointSparse& sc = use_cheap_scratch ? cheap_scratch : scratch;
-        JointSpecLogLik joint_ll{&specs.views, n_threads};
+        NewtonScratchJointSparse& sc =
+            use_cheap_scratch ? cheap_scratch : scratches[tid];
+        JointSpecLogLik joint_ll{&specs_use.views, n_threads_inner_eff};
         if (any_coupling) {
             joint_ll.skip_arm = &arm_is_coupled;
             joint_ll.cell_coupling_log_lik_fn =
@@ -1789,7 +1849,7 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
 
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes,
-        /*n_outer=*/1,
+        /*n_outer=*/n_outer,
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress
     );

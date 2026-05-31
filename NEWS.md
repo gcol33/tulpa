@@ -2,6 +2,19 @@
 
 ## 0.0.4
 
+* perf(nested-laplace): the **sparse** joint outer grid now runs in parallel
+  under `control$n_threads_outer` (gcol33/tulpa#46, lever 2). It previously
+  forced a serial outer loop, so on a large field only the inner per-observation
+  OpenMP parallelised and most cores idled. The sparse driver now allocates a
+  per-outer-thread pool (Hessian builder, Newton scratch, arm specs, scatter
+  index cache, DENSE_BASIS scratch) and dispatches grid cells across
+  `n_threads_outer`, matching the dense driver. The phi-grid dispersion axis is
+  parallel-safe: it rewrites the shared `arms` dispersion per cell, so each cell
+  snapshots it into its own thread's specs under a short critical before the
+  lock-free Newton solve. A memory guard clamps the thread count when the
+  replicated builders would be too large (very wide fields fall back to fewer
+  outer threads). Parallel-vs-serial parity (with and without a phi axis) is
+  covered in `tests/testthat/test-nested-laplace-joint-sparse-parallel.R`.
 * perf(nested-laplace): `control$inner_refresh` (default `1L`) adds
   Shamanskii / chord-method Cholesky factor reuse to the sparse joint inner
   Newton (gcol33/tulpa#46). For a non-quadratic positive arm (e.g. a beta cover
