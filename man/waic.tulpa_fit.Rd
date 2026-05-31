@@ -9,11 +9,15 @@ waic.tulpa_fit(x, ...)
 \arguments{
 \item{x}{A \code{tulpa_fit} object}
 
-\item{...}{Additional arguments passed to loo::waic}
+\item{...}{Ignored.}
 }
 \value{
-A waic object
+A \code{waic} object.
 }
 \description{
-Compute Widely Applicable Information Criterion (WAIC).
+Compute the Widely Applicable Information Criterion (WAIC) via the native
+\code{\link[=tulpa_criteria]{tulpa_criteria()}} layer, returned as a \code{loo}-ecosystem \code{waic} object.
+}
+\seealso{
+\code{\link[=tulpa_criteria]{tulpa_criteria()}} for the native criteria surface.
 }

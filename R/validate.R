@@ -283,112 +283,98 @@ plot.tulpa_prior_predict <- function(x, process = 1L, max_draws = 50L, ...) {
   }
 }
 
+# Extract the [n_draws x n_obs] pointwise log-likelihood from a tulpa_fit:
+# the combined `log_lik`, or the sum of the two-process num/denom components.
+.tulpa_fit_loglik <- function(x) {
+  if (is.list(x$draws) && !is.matrix(x$draws)) {
+    ll <- x$draws$log_lik
+    if (!is.null(ll)) return(ll)
+    ll_num <- x$draws$log_lik_num
+    ll_denom <- x$draws$log_lik_denom
+    if (!is.null(ll_num) && !is.null(ll_denom)) return(ll_num + ll_denom)
+    if (!is.null(ll_num)) return(ll_num)
+    if (!is.null(ll_denom)) return(ll_denom)
+  }
+  stop("Log-likelihood not found in model output.", call. = FALSE)
+}
+
+# Present a tulpa_criteria result as a `loo`-ecosystem object so that
+# loo::loo_compare() / loo::stacking_weights() consume the SAME native
+# computation (tulpa_criteria + tulpa_psis) rather than a second WAIC/LOO path.
+.criteria_as_loo <- function(cr, type = c("loo", "waic")) {
+  type <- match.arg(type)
+  N <- cr$n_obs
+  if (type == "loo") {
+    est <- matrix(
+      c(cr$elpd_loo, cr$p_loo, cr$looic,
+        cr$se_elpd_loo, NA_real_, cr$se_looic),
+      nrow = 3L,
+      dimnames = list(c("elpd_loo", "p_loo", "looic"), c("Estimate", "SE"))
+    )
+    pw <- cbind(
+      elpd_loo      = cr$pointwise$elpd_loo,
+      mcse_elpd_loo = NA_real_,
+      p_loo         = cr$pointwise$p_loo,
+      looic         = -2 * cr$pointwise$elpd_loo
+    )
+    return(structure(
+      list(estimates = est, pointwise = pw,
+           diagnostics = list(pareto_k = cr$pointwise$pareto_k,
+                              n_eff = rep(NA_real_, N))),
+      class = c("psis_loo", "loo")
+    ))
+  }
+  est <- matrix(
+    c(cr$elpd_waic, cr$p_waic, cr$waic,
+      cr$se_elpd_waic, cr$se_p_waic, cr$se_waic),
+    nrow = 3L,
+    dimnames = list(c("elpd_waic", "p_waic", "waic"), c("Estimate", "SE"))
+  )
+  pw <- cbind(
+    elpd_waic = cr$pointwise$elpd_waic,
+    p_waic    = cr$pointwise$p_waic,
+    waic      = -2 * cr$pointwise$elpd_waic
+  )
+  structure(list(estimates = est, pointwise = pw), class = c("waic", "loo"))
+}
+
 #' LOO cross-validation
 #'
 #' @description
-#' Compute leave-one-out cross-validation using Pareto-smoothed
-#' importance sampling (PSIS-LOO).
+#' Compute leave-one-out cross-validation using Pareto-smoothed importance
+#' sampling (PSIS-LOO). The computation is the native [tulpa_criteria()] layer
+#' (which reuses [tulpa_psis()]); the result is returned as a `loo` object so it
+#' plugs into [tulpa_compare()] and the `loo` ecosystem.
 #'
 #' @param x A `tulpa_fit` object
-#' @param ... Additional arguments passed to loo::loo
+#' @param ... Ignored.
 #'
-#' @return A loo object
-#'
+#' @return A `loo` object.
+#' @seealso [tulpa_criteria()] for the native criteria surface (WAIC, DIC,
+#'   CPO/LPML, PSIS-LOO).
 #' @export
 loo.tulpa_fit <- function(x, ...) {
-  if (!requireNamespace("loo", quietly = TRUE)) {
-    stop("Package 'loo' is required. Install with:\n",
-         "  install.packages('loo')", call. = FALSE)
-  }
-
-  # Try combined log_lik first (all models should have this)
-  # Handle both list and matrix draws formats
-  if (is.list(x$draws) && !is.matrix(x$draws)) {
-    ll <- x$draws$log_lik
-  } else {
-    ll <- NULL
-  }
-
-  if (!is.null(ll)) {
-    return(loo::loo(ll, ...))
-  }
-
-  # Fall back to separate components for two-process models
-  if (is.list(x$draws) && !is.matrix(x$draws)) {
-    ll_num <- x$draws$log_lik_num
-    ll_denom <- x$draws$log_lik_denom
-  } else {
-    ll_num <- NULL
-    ll_denom <- NULL
-  }
-
-  if (is.null(ll_num) && is.null(ll_denom)) {
-    stop("Log-likelihood not found in model output.", call. = FALSE)
-  }
-
-  # Sum components that exist
-  if (!is.null(ll_num) && !is.null(ll_denom)) {
-    ll <- ll_num + ll_denom
-  } else if (!is.null(ll_num)) {
-    ll <- ll_num
-  } else {
-    ll <- ll_denom
-  }
-
-  loo::loo(ll, ...)
+  ll <- .tulpa_fit_loglik(x)
+  cr <- tulpa_criteria(ll, criteria = "loo", pointwise = TRUE)
+  .criteria_as_loo(cr, "loo")
 }
 
 #' WAIC computation
 #'
 #' @description
-#' Compute Widely Applicable Information Criterion (WAIC).
+#' Compute the Widely Applicable Information Criterion (WAIC) via the native
+#' [tulpa_criteria()] layer, returned as a `loo`-ecosystem `waic` object.
 #'
 #' @param x A `tulpa_fit` object
-#' @param ... Additional arguments passed to loo::waic
+#' @param ... Ignored.
 #'
-#' @return A waic object
-#'
+#' @return A `waic` object.
+#' @seealso [tulpa_criteria()] for the native criteria surface.
 #' @export
 waic.tulpa_fit <- function(x, ...) {
-  if (!requireNamespace("loo", quietly = TRUE)) {
-    stop("Package 'loo' is required. Install with:\n",
-         "  install.packages('loo')", call. = FALSE)
-  }
-
-  # Try combined log_lik first
-  # Handle both list and matrix draws formats
-  if (is.list(x$draws) && !is.matrix(x$draws)) {
-    ll <- x$draws$log_lik
-  } else {
-    ll <- NULL
-  }
-
-  if (!is.null(ll)) {
-    return(loo::waic(ll, ...))
-  }
-
-  # Fall back to separate components
-  if (is.list(x$draws) && !is.matrix(x$draws)) {
-    ll_num <- x$draws$log_lik_num
-    ll_denom <- x$draws$log_lik_denom
-  } else {
-    ll_num <- NULL
-    ll_denom <- NULL
-  }
-
-  if (is.null(ll_num) && is.null(ll_denom)) {
-    stop("Log-likelihood not found in model output.", call. = FALSE)
-  }
-
-  if (!is.null(ll_num) && !is.null(ll_denom)) {
-    ll <- ll_num + ll_denom
-  } else if (!is.null(ll_num)) {
-    ll <- ll_num
-  } else {
-    ll <- ll_denom
-  }
-
-  loo::waic(ll, ...)
+  ll <- .tulpa_fit_loglik(x)
+  cr <- tulpa_criteria(ll, criteria = "waic", pointwise = TRUE)
+  .criteria_as_loo(cr, "waic")
 }
 
 #' Compare tulpa models

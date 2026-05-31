@@ -9,12 +9,18 @@ loo.tulpa_fit(x, ...)
 \arguments{
 \item{x}{A \code{tulpa_fit} object}
 
-\item{...}{Additional arguments passed to loo::loo}
+\item{...}{Ignored.}
 }
 \value{
-A loo object
+A \code{loo} object.
 }
 \description{
-Compute leave-one-out cross-validation using Pareto-smoothed
-importance sampling (PSIS-LOO).
+Compute leave-one-out cross-validation using Pareto-smoothed importance
+sampling (PSIS-LOO). The computation is the native \code{\link[=tulpa_criteria]{tulpa_criteria()}} layer
+(which reuses \code{\link[=tulpa_psis]{tulpa_psis()}}); the result is returned as a \code{loo} object so it
+plugs into \code{\link[=tulpa_compare]{tulpa_compare()}} and the \code{loo} ecosystem.
+}
+\seealso{
+\code{\link[=tulpa_criteria]{tulpa_criteria()}} for the native criteria surface (WAIC, DIC,
+CPO/LPML, PSIS-LOO).
 }
