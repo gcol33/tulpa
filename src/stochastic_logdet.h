@@ -87,42 +87,78 @@ inline void lanczos(
     }
 }
 
-// Compute log-determinant of tridiagonal matrix T (m×m) via eigendecomposition.
-// T has diagonal alpha and off-diagonal beta.
-// log|T| = sum(log(eigenvalues of T))
-inline double tridiag_logdet(
+// Eigendecomposition of a symmetric tridiagonal matrix T (m x m) with diagonal
+// alpha and off-diagonal beta, via the implicit-shift QL algorithm (EISPACK
+// tql2). Returns the eigenvalues theta_j in eval and, for each eigenvalue, the
+// first component s_j[0] of its (orthonormal) eigenvector in first_comp.
+//
+// The full eigenvector matrix is never formed: tracking only its first row is
+// all the Gauss-quadrature weight tau_j = (e_1 . s_j)^2 needs.
+inline bool tridiag_eig_first_component(
     const std::vector<double>& alpha,
     const std::vector<double>& beta,
-    int m
+    int m,
+    std::vector<double>& eval,
+    std::vector<double>& first_comp
 ) {
-    if (m == 0) return 0.0;
-    if (m == 1) return std::log(std::max(1e-15, alpha[0]));
+    eval.assign(alpha.begin(), alpha.begin() + m);
+    std::vector<double> e(m, 0.0);
+    for (int i = 0; i < m - 1; i++) e[i] = beta[i];
+    e[m - 1] = 0.0;
 
-    // Compute eigenvalues via the recurrence for the characteristic polynomial
-    // p_k(lambda) = (alpha_k - lambda) * p_{k-1}(lambda) - beta_{k-1}^2 * p_{k-2}(lambda)
-    // Use Sturm bisection or QR iteration.
-    // For simplicity, use the LAPACK-free approach: eigenvalues of small tridiagonal.
+    // first_comp accumulates the first row of the accumulated rotation matrix,
+    // initialized to the identity's first row (e_1).
+    first_comp.assign(m, 0.0);
+    first_comp[0] = 1.0;
 
-    // For small m (20-50), direct eigenvalue computation is fine.
-    // Use the Golub-Welsch approach: eigenvalues via implicit QR.
-    // Or simpler: use the formula log|T| = sum_j log(eigenvalue_j)
-    // computed via recursive determinant.
-
-    // Recursive determinant: det_k = alpha_k * det_{k-1} - beta_{k-1}^2 * det_{k-2}
-    // log|T| = log(det_m)
-    // But this overflows. Use log-space:
-    // log(det_k) = log(alpha_k * det_{k-1} - beta_{k-1}^2 * det_{k-2})
-
-    // Direct computation (stable for small m):
-    std::vector<double> det(m + 1);
-    det[0] = 1.0;
-    det[1] = alpha[0];
-    for (int k = 2; k <= m; k++) {
-        det[k] = alpha[k-1] * det[k-1] - beta[k-2] * beta[k-2] * det[k-2];
+    const int max_iter = 50;
+    for (int l = 0; l < m; l++) {
+        int iter = 0;
+        int mm;
+        do {
+            // Find a small sub-diagonal element to split the matrix.
+            for (mm = l; mm < m - 1; mm++) {
+                double dd = std::fabs(eval[mm]) + std::fabs(eval[mm + 1]);
+                if (std::fabs(e[mm]) <= 1e-300 + 1e-15 * dd) break;
+            }
+            if (mm != l) {
+                if (iter++ == max_iter) return false;
+                double g = (eval[l + 1] - eval[l]) / (2.0 * e[l]);
+                double r = std::hypot(g, 1.0);
+                double sign_g = (g >= 0.0) ? std::fabs(r) : -std::fabs(r);
+                g = eval[mm] - eval[l] + e[l] / (g + sign_g);
+                double s = 1.0, c = 1.0, p = 0.0;
+                int i;
+                for (i = mm - 1; i >= l; i--) {
+                    double f = s * e[i];
+                    double b = c * e[i];
+                    r = std::hypot(f, g);
+                    e[i + 1] = r;
+                    if (r == 0.0) {
+                        eval[i + 1] -= p;
+                        e[mm] = 0.0;
+                        break;
+                    }
+                    s = f / r;
+                    c = g / r;
+                    g = eval[i + 1] - p;
+                    r = (eval[i] - g) * s + 2.0 * c * b;
+                    p = s * r;
+                    eval[i + 1] = g + p;
+                    g = c * r - b;
+                    // Accumulate the rotation into the first row only.
+                    double fc = first_comp[i + 1];
+                    first_comp[i + 1] = s * first_comp[i] + c * fc;
+                    first_comp[i] = c * first_comp[i] - s * fc;
+                }
+                if (r == 0.0 && i >= l) continue;
+                eval[l] -= p;
+                e[l] = g;
+                e[mm] = 0.0;
+            }
+        } while (mm != l);
     }
-
-    if (det[m] <= 0) return -1e10;  // not positive definite
-    return std::log(det[m]);
+    return true;
 }
 
 // Stochastic Lanczos Quadrature for log|H|.
@@ -158,21 +194,27 @@ inline double stochastic_log_determinant(
         int m = std::min(n_lanczos, n);
         lanczos(col_ptr, row_idx, values, n, z, m, alpha, beta);
 
-        // log|T| for the tridiagonal approximation
-        double log_det_T = tridiag_logdet(alpha, beta, m);
+        // SLQ Gauss-quadrature estimate of z' log(H) z (Ubaru, Chen & Saad 2017):
+        // eigendecompose T_m to get Ritz values theta_j and the squared first
+        // eigenvector components tau_j = (e_1 . s_j)^2 (the quadrature weights,
+        // sum_j tau_j = 1), then z' log(H) z ~ sum_j tau_j * log(theta_j) since z
+        // is unit norm. The per-probe contribution to log|H| is n times this.
+        std::vector<double> theta, first_comp;
+        if (!tridiag_eig_first_component(alpha, beta, m, theta, first_comp)) {
+            Rcpp::stop("stochastic_log_determinant: tridiagonal eigensolve failed to converge");
+        }
 
-        // Contribution: n * z' log(H) z ≈ n * log|T_m|
-        // (the Lanczos approximation gives z'f(H)z ≈ e_1' f(T) e_1
-        //  and for f = log: z'log(H)z ≈ log|T| / m ... not quite)
-        //
-        // Actually, the SLQ estimate is:
-        //   log|H| ≈ n * (1/n_probes) * sum_i z_i' log(H) z_i
-        // where z_i' log(H) z_i ≈ sum_j log(theta_j) * (e_1' s_j)^2
-        // with (theta_j, s_j) being eigenvalues/vectors of T_m.
-        //
-        // For simplicity, use: log|H| ≈ (n/m) * log|T_m| averaged over probes
-        // This is a crude but functional approximation.
-        log_det_sum += (static_cast<double>(n) / m) * log_det_T;
+        double quad = 0.0;
+        for (int j = 0; j < m; j++) {
+            double tau = first_comp[j] * first_comp[j];
+            double lam = theta[j];
+            if (lam <= 0.0) {
+                Rcpp::stop("stochastic_log_determinant: non-positive Ritz value; matrix is not positive definite");
+            }
+            quad += tau * std::log(lam);
+        }
+
+        log_det_sum += static_cast<double>(n) * quad;
     }
 
     return log_det_sum / n_probes;

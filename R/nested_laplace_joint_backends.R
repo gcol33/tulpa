@@ -289,3 +289,73 @@
     res$axis_offsets <- NULL
     res
 }
+
+# --- cheap-pass prune safety gate --------------------------------------------
+#
+# After a pruned kernel run, decide whether the kept set can be trusted. The
+# cheap screen ranks cells; the full inner Newton only ran on survivors. If
+# the screen's ranking disagrees with the full-solve ranking the prune may
+# have dropped the true posterior mode (gcol33/tulpa#43), so we WARN and fall
+# back to the full grid rather than silently returning the pruned answer.
+#
+# Two triggers, either of which forces the fallback:
+#   1) argmax disagreement: the cheap-screen argmax cell is not the cell the
+#      full solve favours among survivors (or the cheap argmax was itself
+#      pruned). The kernel flags this in `prune_argmax_disagree`.
+#   2) cheap-vs-full gap collapse: the kept set's posterior collapses onto one
+#      cell (low quadrature ESS) AND the cheap screen badly mis-estimated that
+#      cell's log-marginal (`prune_cheap_full_gap` large relative to the spread
+#      of full log-marginals across kept cells). A large gap on the cell the
+#      whole posterior sits on means the screen could just as easily have
+#      ranked it below the threshold and pruned it.
+#
+# `res` is the pruned kernel result (already carries the prune_* fields).
+# `resolve_full` is a zero-argument thunk re-running the SAME kernel call with
+# `prune_tol = 0` (the full grid). Returns either `res` (gate passed) or the
+# full-grid result (gate tripped). When the gate trips, the returned result
+# carries `prune_fallback_triggered = TRUE` and `prune_fallback_reason`.
+.joint_prune_safety_gate <- function(res, resolve_full,
+                                      gap_abs_floor = 5.0,
+                                      gap_frac = 0.5,
+                                      ess_collapse_frac = 0.05) {
+    # No prune ran (prune off, prune_tol = 0, or single-cell grid): nothing
+    # to gate. The kernel only emits prune_mask when it actually screened.
+    if (is.null(res$prune_mask)) return(res)
+
+    disagree <- isTRUE(res$prune_argmax_disagree)
+
+    # Gap-collapse trigger. Quadrature ESS over the kept (finite-weight)
+    # cells; "collapse" = ESS below a small fraction of the kept count.
+    lm   <- res$log_marginal
+    kept <- is.finite(lm)
+    n_kept <- sum(kept)
+    gap_collapse <- FALSE
+    if (n_kept >= 1L && !is.null(res$prune_cheap_full_gap) &&
+        is.finite(res$prune_cheap_full_gap)) {
+        w <- .nl_normalise_weights(lm)
+        ess <- if (sum(w^2) > 0) (sum(w)^2) / sum(w^2) else 1
+        lm_kept <- lm[kept]
+        lm_spread <- if (n_kept > 1L) diff(range(lm_kept)) else 0
+        gap_thresh <- max(gap_abs_floor, gap_frac * lm_spread)
+        gap_collapse <- (ess <= max(1.0, ess_collapse_frac * n_kept)) &&
+                        (res$prune_cheap_full_gap > gap_thresh)
+    }
+
+    if (!disagree && !gap_collapse) return(res)
+
+    reason <- if (disagree && gap_collapse) {
+        "cheap-screen argmax disagrees with full-solve argmax and the kept posterior collapses onto a cell the screen badly mis-estimated"
+    } else if (disagree) {
+        "cheap-screen argmax disagrees with the full-solve argmax"
+    } else {
+        "kept posterior collapses onto a cell whose cheap-vs-full log-marginal gap is large"
+    }
+    warning(sprintf(
+        "tulpa_nested_laplace_joint(): cheap-pass prune is unreliable for this fit (%s); falling back to the full grid. Set control$prune = FALSE to silence this, or leave it -- the full grid is correct.",
+        reason), call. = FALSE)
+
+    full <- resolve_full()
+    full$prune_fallback_triggered <- TRUE
+    full$prune_fallback_reason    <- reason
+    full
+}

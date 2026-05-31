@@ -785,26 +785,36 @@
         }
     }
 
-    res <- cpp_nested_laplace_joint_multi(
-        arms_list    = arms,
-        copy_arms    = as.integer(cp$copy_arms_zero),
-        copy_blocks  = as.integer(cp$copy_blocks_zero),
-        blocks_spec  = blocks_spec,
-        theta_grid   = cpp_grid,
-        axis_offsets = axis_offsets,
-        max_iter     = as.integer(max_iter),
-        tol          = as.numeric(tol),
-        n_threads    = as.integer(n_threads),
-        x_init_nullable = x_init,
-        store_Q      = isTRUE(store_Q),
-        phi_grid_per_arm = phi_grid_per_arm_list,
-        n_threads_outer = as.integer(n_threads_outer),
-        tile_ids        = tile_partition$tile_ids,
-        tile_pilot_cells = tile_partition$tile_pilot_cells,
-        prune_tol       = as.numeric(prune_tol),
-        force_sparse    = isTRUE(force_sparse),
-        cell_coupling_name = as.character(cell_coupling)
-    )
+    call_kernel_with_tol <- function(tol_prune) {
+        cpp_nested_laplace_joint_multi(
+            arms_list    = arms,
+            copy_arms    = as.integer(cp$copy_arms_zero),
+            copy_blocks  = as.integer(cp$copy_blocks_zero),
+            blocks_spec  = blocks_spec,
+            theta_grid   = cpp_grid,
+            axis_offsets = axis_offsets,
+            max_iter     = as.integer(max_iter),
+            tol          = as.numeric(tol),
+            n_threads    = as.integer(n_threads),
+            x_init_nullable = x_init,
+            store_Q      = isTRUE(store_Q),
+            phi_grid_per_arm = phi_grid_per_arm_list,
+            n_threads_outer = as.integer(n_threads_outer),
+            tile_ids        = tile_partition$tile_ids,
+            tile_pilot_cells = tile_partition$tile_pilot_cells,
+            prune_tol       = as.numeric(tol_prune),
+            force_sparse    = isTRUE(force_sparse),
+            cell_coupling_name = as.character(cell_coupling)
+        )
+    }
+    res <- call_kernel_with_tol(prune_tol)
+    # Safety gate (gcol33/tulpa#43): fall back to the full grid when the
+    # cheap-pass ranking is unreliable rather than silently returning a
+    # pruned answer.
+    if (as.numeric(prune_tol) > 0) {
+        res <- .joint_prune_safety_gate(
+            res, resolve_full = function() call_kernel_with_tol(0.0))
+    }
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # (gcol33/tulpa#22). Multi-block has no in-package refinement passes,

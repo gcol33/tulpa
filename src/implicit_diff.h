@@ -100,63 +100,107 @@ inline ImplicitDiffResult spde_implicit_gradient(
             double q = qb.Q_x[qidx];
             xQx += wiwj * q;
 
-            // dQ/d(log_kappa): derivative of each term w.r.t. log(kappa)
-            // d/d(log_kappa) [tau^2*(k4*c0 + 2*k2*g1 + gdg)]
-            // = tau^2 * (4*k4*c0 + 4*k2*g1)
+            // kappa channel of dQ/d(log_range). With
+            //   Q = tau^2 (kappa^4 c0 + 2 kappa^2 g1 + gdg),
+            //   dQ/d(log_kappa) = tau^2 (4 kappa^4 c0 + 4 kappa^2 g1),
+            // and kappa = sqrt(8 nu)/range gives d(log_kappa)/d(log_range) = -1,
+            // so the kappa channel of dQ/d(log_range) is -dQ/d(log_kappa).
             double dq_dlogk = tau2 * (4.0 * k4 * qb.c0_contrib[qidx] +
                                        4.0 * k2 * qb.g1_contrib[qidx]);
-            // d(log_kappa)/d(log_range) = -1
-            // So dQ/d(log_range) = -dQ/d(log_kappa)
             xdQdr_x -= wiwj * dq_dlogk;
 
-            // dQ/d(log_tau) = 2*Q (tau^2 → 2*tau^2)
-            // d(log_tau)/d(log_sigma) involves the chain rule:
-            // tau = 1/(sqrt(4pi)*kappa*sigma), so d(log_tau)/d(log_sigma) = -1
-            // Also d(log_tau)/d(log_range) = -1 (via kappa)
-            // So dQ/d(log_sigma) = -2*Q
+            // tau channel. Q is proportional to tau^2, so dQ/d(log_tau) = 2 Q.
+            // tau = 1/(sqrt(4 pi) kappa sigma) gives d(log_tau)/d(log_sigma) = -1,
+            // hence dQ/d(log_sigma) = -2 Q.
             xdQds_x -= 2.0 * wiwj * q;
 
-            // Range also affects tau: d(log_tau)/d(log_range) = -1
-            // So dQ/d(log_range) += -2*Q (from tau channel)
-            xdQdr_x -= 2.0 * wiwj * q;
+            // Range also enters tau through kappa: d(log_tau)/d(log_range) =
+            // -d(log_kappa)/d(log_range) = +1, so the tau channel of
+            // dQ/d(log_range) is +2 Q.
+            xdQdr_x += 2.0 * wiwj * q;
         }
     }
 
-    // log p(x*|theta) = -0.5 * xQx (ignoring normalization for now)
+    // log p(x*|theta) quadratic part: -0.5 x*'Q x*. The 0.5 log|Q|
+    // normalization is omitted here to match the inner solver's log_marginal,
+    // which carries -0.5 x*'Q x* without the 0.5 log|Q| term.
     double d_logprior_d_logrange = -0.5 * xdQdr_x;
     double d_logprior_d_logsigma = -0.5 * xdQds_x;
 
     // --- Term 2: -0.5 tr(H^{-1} dH/d(theta)) ---
-    // dH/d(theta) = dQ/d(theta) (likelihood part doesn't depend on theta)
-    // tr(H^{-1} dQ/d(theta)) = sum_{(i,j) in Q} H^{-1}_{ij} * dQ_{ij}/d(theta)
+    // dH/d(theta) = dQ/d(theta) (likelihood part doesn't depend on theta).
+    // tr(H^{-1} dQ/d(theta)) = sum_{(i,j) in Q} H^{-1}_{ij} * dQ_{ij}/d(theta),
+    // over the full (symmetric) Q pattern — the off-diagonal is where the SPDE
+    // smoothing lives, so it carries real trace weight.
+    //
+    // Rebuild the posterior Hessian H = (X'WX | X'WA ; A'WX | A'WA + Q) at the
+    // mode, matching run_spde_laplace's scatter exactly, and factor it here.
+    // The inner Newton solve uses the dense Cholesky path below the sparse
+    // threshold, so its `solver` is not guaranteed to hold a factor; building
+    // and factoring H here makes the selected inversion available for any mesh
+    // size. The Takahashi selected inverse then gives H^{-1}_{ij} on the
+    // fill-in pattern of the Cholesky factor, a superset of Q's nonzeros, so
+    // every (i,j) on Q's pattern is available.
+    int n_x = mesh_start + n_mesh;
+    DenseMat H(n_x, DenseVec(1, 0.0));
+    for (int i = 0; i < N; i++) {
+        // eta at the mode for observation i.
+        double eta_i = 0.0;
+        for (int j = 0; j < p; j++) eta_i += X(i, j) * mode[j];
+        for (const auto& ae : a_rows[i]) eta_i += ae.weight * mode[mesh_start + ae.mesh_idx];
+        auto gh = grad_hess_for_family(y[i], n_trials[i], eta_i, family, phi);
+        double w = gh.neg_hess;
+        for (int j = 0; j < p; j++) {
+            for (int k = 0; k < p; k++) H[j][k] += w * X(i, j) * X(i, k);
+        }
+        const auto& row = a_rows[i];
+        for (size_t s1 = 0; s1 < row.size(); s1++) {
+            int idx1 = mesh_start + row[s1].mesh_idx;
+            double a1 = row[s1].weight;
+            H[idx1][idx1] += w * a1 * a1;
+            for (int j = 0; j < p; j++) {
+                H[j][idx1] += w * X(i, j) * a1;
+                H[idx1][j] += w * X(i, j) * a1;
+            }
+            for (size_t s2 = s1 + 1; s2 < row.size(); s2++) {
+                int idx2 = mesh_start + row[s2].mesh_idx;
+                double cross = w * a1 * row[s2].weight;
+                H[idx1][idx2] += cross;
+                H[idx2][idx1] += cross;
+            }
+        }
+    }
+    for (int j = 0; j < n_mesh; j++) {
+        for (int qidx = qb.Q_p[j]; qidx < qb.Q_p[j + 1]; qidx++) {
+            int qi = qb.Q_i[qidx];
+            H[mesh_start + qi][mesh_start + j] += qb.Q_x[qidx];
+        }
+    }
+    const double tau_beta = 1e-4;
+    for (int j = 0; j < p; j++) H[j][j] += tau_beta;
 
-    // Get H^{-1} diagonal (and selected off-diagonal) via Takahashi
-    std::vector<double> H_inv_diag = solver.selected_inversion_diagonal();
+    cholmod_sparse* H_sp = dense_to_cholmod_sparse_drop(H, n_x, 1e-14, &solver.common());
+    solver.reset();
+    solver.analyze(H_sp);
+    solver.factorize(H_sp);
+    M_cholmod_free_sparse(&H_sp, &solver.common());
 
-    // For the trace, we need H^{-1}_{ij} at Q's nonzero positions.
-    // selected_inversion_diagonal only gives the diagonal.
-    // For a full implicit diff, we'd need the full selected inversion (off-diagonal too).
-    // For now, use the diagonal approximation:
-    // tr(H^{-1} dQ/d(theta)) ≈ sum_i H^{-1}_{ii} * dQ_{ii}/d(theta)
-    // This is exact when Q and dQ are diagonal, approximate otherwise.
+    SparseCholeskySolver::SelectedInverse H_inv = solver.selected_inversion_full();
 
     double trace_range = 0.0;
     double trace_sigma = 0.0;
     for (int col = 0; col < n_mesh; col++) {
         for (int qidx = qb.Q_p[col]; qidx < qb.Q_p[col + 1]; qidx++) {
             int row = qb.Q_i[qidx];
-            if (row != col) continue;  // diagonal only for now
 
-            int orig_row = row;  // already in original ordering from Takahashi
-            if (orig_row < 0 || orig_row >= (int)H_inv_diag.size()) continue;
-
-            double h_inv = H_inv_diag[mesh_start + orig_row];
+            double h_inv = H_inv.at(mesh_start + row, mesh_start + col);
 
             double dq_dlogk = tau2 * (4.0 * k4 * qb.c0_contrib[qidx] +
                                        4.0 * k2 * qb.g1_contrib[qidx]);
-            // dQ/d(log_range) = -(dQ/d(log_kappa)) - 2Q
-            trace_range += h_inv * (-dq_dlogk - 2.0 * qb.Q_x[qidx]);
-            // dQ/d(log_sigma) = -2Q
+            // dQ/d(log_range) = -(dQ/d(log_kappa)) + 2Q (kappa channel minus,
+            // tau channel plus — d(log_tau)/d(log_range) = +1).
+            trace_range += h_inv * (-dq_dlogk + 2.0 * qb.Q_x[qidx]);
+            // dQ/d(log_sigma) = -2Q (d(log_tau)/d(log_sigma) = -1).
             trace_sigma += h_inv * (-2.0 * qb.Q_x[qidx]);
         }
     }

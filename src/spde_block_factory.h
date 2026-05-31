@@ -177,7 +177,25 @@ inline LatentBlock make_spde_block(
         }
     };
 
-    // add_prior left empty: SPDE forces the sparse path. See file header.
+    // Dense add_prior: the same FEM precision Q scattered into a DenseMat for
+    // the dense Newton path (n_x < SPARSE_THRESHOLD), used by the non-joint
+    // multi-block driver. Mirrors add_prior_sparse exactly -- gradient walks
+    // the FULL Q (both triangles via the CSC), Hessian fills both triangles so
+    // the caller's lower->upper symmetrise does not clobber it. Reads the same
+    // qb->Q_x rebuilt by prep(), so there is one source of FEM assembly.
+    block.add_prior = [start, n_mesh, qb](
+        DenseVec& grad, DenseMat& H,
+        const Rcpp::NumericVector& x, int /*k_grid*/
+    ) {
+        for (int col = 0; col < n_mesh; col++) {
+            for (int idx = qb->Q_p[col]; idx < qb->Q_p[col + 1]; idx++) {
+                int row = qb->Q_i[idx];
+                double q = qb->Q_x[idx];
+                grad[start + row] -= q * x[start + col];
+                H[start + row][start + col] += q;
+            }
+        }
+    };
 
     block.log_prior = [start, n_mesh, qb](
         const Rcpp::NumericVector& x, int /*k_grid*/

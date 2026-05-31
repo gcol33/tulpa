@@ -427,16 +427,20 @@
                 extras = extras, refining_axis = refining_axis,
                 info = NULL, n_added = 0L))
   }
-  if (is.null(weights)) {
-    weights <- .nl_normalise_weights(log_marginal)
-  }
-  overall_mode_idx <- which.max(log_marginal)
   for (axis in refinable) {
     sd_lap <- theta_sd[[axis]] %||% NA_real_
     mu     <- theta_mean[[axis]] %||% NA_real_
     if (!is.finite(sd_lap) || !is.finite(mu) || sd_lap <= 0) next
+    # Refinement on a previous axis grows theta_grid / log_marginal, so the
+    # weights and the mode index are recomputed each iteration to stay aligned
+    # with the current grid rows.
+    iter_weights <- weights
+    if (is.null(iter_weights) || length(iter_weights) != length(log_marginal)) {
+      iter_weights <- .nl_normalise_weights(log_marginal)
+    }
+    overall_mode_idx <- which.max(log_marginal)
     axis_vals <- as.numeric(theta_grid[, axis])
-    vom_sd    <- .nl_wtd_mean_sd(axis_vals, weights)$sd
+    vom_sd    <- .nl_wtd_mean_sd(axis_vals, iter_weights)$sd
     if (vom_sd >= tolerance * sd_lap) next
 
     lev  <- sort(unique(as.numeric(theta_grid[, axis])))

@@ -254,8 +254,21 @@ void takahashi_partial_inverse_dense(
     }
 }
 
-std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
-    if (!factored_ || !factor_) return {};
+double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
+    int pi = perm_inv[i_orig];
+    int pj = perm_inv[j_orig];
+    int lo = std::min(pi, pj);
+    int hi = std::max(pi, pj);
+    for (int s = Lp[lo]; s < Lp[lo + 1]; s++) {
+        if (Li[s] == hi) return Zx[s];
+        if (Li[s] > hi) break;
+    }
+    return 0.0;
+}
+
+SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_full() {
+    SelectedInverse out;
+    if (!factored_ || !factor_) return out;
 
     int n = static_cast<int>(factor_->n);
 
@@ -285,16 +298,32 @@ std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
     int* Perm = static_cast<int*>(factor_->Perm);
 
     int nnz = Lp[n];
-    std::vector<double> Zx(nnz, 0.0);
-    takahashi_partial_inverse_csc(n, Lp, Li, Lx, Zx.data());
+    out.n = n;
+    out.Lp.assign(Lp, Lp + n + 1);
+    out.Li.assign(Li, Li + nnz);
+    out.Zx.assign(nnz, 0.0);
+    takahashi_partial_inverse_csc(n, Lp, Li, Lx, out.Zx.data());
 
-    // Extract diagonal of Z in permuted space, then unpermute.
-    std::vector<double> diag_inv(n, 0.0);
+    // original index -> permuted index (inverse of the factor's Perm).
+    out.perm_inv.resize(n);
     for (int j = 0; j < n; j++) {
-        int col_start = Lp[j];
-        double z_jj = Zx[col_start];
         int orig_j = Perm ? Perm[j] : j;
-        diag_inv[orig_j] = z_jj;
+        out.perm_inv[orig_j] = j;
+    }
+
+    return out;
+}
+
+std::vector<double> SparseCholeskySolver::selected_inversion_diagonal() {
+    SelectedInverse si = selected_inversion_full();
+    if (si.n == 0) return {};
+
+    // Diagonal of Z in original ordering: Z[orig_j, orig_j] is the diagonal
+    // entry of column perm_inv[orig_j], which is the first slot of that column.
+    std::vector<double> diag_inv(si.n, 0.0);
+    for (int orig_j = 0; orig_j < si.n; orig_j++) {
+        int pj = si.perm_inv[orig_j];
+        diag_inv[orig_j] = si.Zx[si.Lp[pj]];
     }
 
     return diag_inv;

@@ -34,6 +34,7 @@
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
 #include "nested_laplace_multi.h"
+#include "spde_block_factory.h"
 #include "tulpa/nested_likelihood.h"
 #include "hmc_car_proper.h"
 #include <Rcpp.h>
@@ -229,6 +230,54 @@ int build_blocks_from_spec(
         };
         blocks.push_back(block);
         return start + size;
+    }
+
+    if (type == "spde") {
+        require_axes(2);  // (range, sigma)
+        int n_mesh = Rcpp::as<int>(bs["n_mesh"]);
+
+        // A is supplied as a single CSC projection (one arm). The shared SPDE
+        // factory consumes per-arm lists, so wrap the slots in length-1 lists.
+        Rcpp::NumericVector A_x = bs["A_x"];
+        Rcpp::IntegerVector A_i = bs["A_i"];
+        Rcpp::IntegerVector A_p = bs["A_p"];
+        int n_obs = Rcpp::as<int>(bs["n_obs"]);
+        Rcpp::List A_x_per_arm = Rcpp::List::create(A_x);
+        Rcpp::List A_i_per_arm = Rcpp::List::create(A_i);
+        Rcpp::List A_p_per_arm = Rcpp::List::create(A_p);
+        Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(n_obs);
+
+        Rcpp::NumericVector C0_diag = bs["C0_diag"];
+        Rcpp::NumericVector G1_x   = bs["G1_x"];
+        Rcpp::IntegerVector G1_i   = bs["G1_i"];
+        Rcpp::IntegerVector G1_p   = bs["G1_p"];
+        double nu = Rcpp::as<double>(bs["nu"]);
+
+        bool use_rational = false;
+        std::vector<double> rat_poles, rat_weights;
+        if (bs.containsElementNamed("rational_poles") &&
+            bs.containsElementNamed("rational_weights") &&
+            !Rf_isNull(bs["rational_poles"]) &&
+            !Rf_isNull(bs["rational_weights"])) {
+            rat_poles   = Rcpp::as<std::vector<double>>(bs["rational_poles"]);
+            rat_weights = Rcpp::as<std::vector<double>>(bs["rational_weights"]);
+            use_rational = !rat_poles.empty();
+        }
+
+        // Same factory and SpdeQBuilder the single-Laplace occupancy SPDE path
+        // uses (cpp_nested_laplace_spde); axis_range / axis_sigma index this
+        // block's two columns in theta_grid. INDEXED_MULTI: the per-obs eta
+        // contribution is (A u)_i, read from obs_indices, not a one-node idx.
+        tulpa::LatentBlock block = tulpa::make_spde_block(
+            /*start=*/latent_offset, n_mesh,
+            A_x_per_arm, A_i_per_arm, A_p_per_arm, n_obs_per_arm,
+            /*n_arms=*/1, /*block_index=*/0,
+            C0_diag, G1_x, G1_i, G1_p, nu,
+            /*axis_range=*/axis0, /*axis_sigma=*/axis0 + 1, theta_grid,
+            use_rational, rat_poles, rat_weights
+        );
+        blocks.push_back(block);
+        return latent_offset + n_mesh;
     }
 
     if (type == "rw1" || type == "rw2") {

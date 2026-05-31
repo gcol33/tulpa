@@ -81,14 +81,18 @@ test_that("gradient points in correct direction (finite difference check)", {
                           c(common_args, list(log_range = lr0, log_sigma = ls0 - eps)))
   fd_sigma <- (res_s_plus$log_marginal - res_s_minus$log_marginal) / (2 * eps)
 
-  # Gradient sign should agree with finite difference
-  # (exact match not expected due to diagonal approximation in trace term)
   cat("\n  Implicit diff:  range=", round(res0$grad_log_range, 3),
       " sigma=", round(res0$grad_log_sigma, 3), "\n")
   cat("  Finite diff:    range=", round(fd_range, 3),
       " sigma=", round(fd_sigma, 3), "\n")
 
-  # At minimum, both should be finite
   expect_true(is.finite(fd_range))
   expect_true(is.finite(fd_sigma))
+
+  # The full Takahashi selected inversion makes the trace term exact, so the
+  # implicit gradient agrees with the central finite difference of the
+  # log-marginal. The diagonal-only trace term this replaced missed the
+  # off-diagonal smoothing contributions and would fail this tolerance.
+  expect_equal(res0$grad_log_range, fd_range, tolerance = 0.05)
+  expect_equal(res0$grad_log_sigma, fd_sigma, tolerance = 0.05)
 })

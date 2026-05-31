@@ -315,15 +315,23 @@ integrator's own space, caller-supplied batched target (the grid path adds the
 
 `diagnostic_summary()` surfaces `pareto_k` for any non-chain fit, falling back
 to the grid's quadrature effective sample size (`sum(w)^2 / sum(w^2)`) when
-k-hat was declined or not computed. The one nested backend still on quad-ESS is
-the joint (`tulpa_nested_laplace_joint`): its `cpp_nested_laplace_joint_multi`
-does take a substitutable `theta_grid`, but the joint hyperparameter space is
-heterogeneous -- positive scales (sigma, phi), a bounded correlation
-(`rho_car`), and unbounded copy-coefficients (alpha) -- so a correct sampled
-k-hat needs per-axis mixed-support transforms plus reconstruction of
-`axis_offsets` / the tile partition for sampled cells. That is a backend
-refactor (the bounded `rho_car` is the unguessable axis), tracked in
-gcol33/tulpa#42. The parallel-NUTS
+k-hat was declined or not computed. The joint backend
+(`tulpa_nested_laplace_joint`, both the single-block and multi-block paths) now
+computes the same outer k-hat over its heterogeneous hyperparameter space
+(`R/nested_laplace_joint_pareto_k.R`, gcol33/tulpa#42): a block-type-aware
+per-axis transform registry unconstrains each axis -- positive scales (sigma,
+tau, phi_*, ...) by `log`, the BYM2 mixing weight (`rho`) by logit, the copy
+coefficient (`alpha`) by identity -- and the summed log-Jacobians enter the
+importance target. Re-evaluation reuses the SAME kernel the integrator used
+(the single-block path threads the generic `kernel_fn` + `hp_fn`; the
+multi-block path round-trips a sampled `theta_grid` through the shared
+`.joint_multi_cpp_grid` / `_phi_per_arm` / `_add_hp` helpers, serial so no tile
+partition is reconstructed), and `.joint_pareto_k` defers to the shared
+`.nested_is_pareto_k` core. CAR_proper's `rho_car` (and any other axis whose
+support is the adjacency eigenvalue interval) is the unguessable axis: a fit
+carrying one DECLINES to quad-ESS (`pareto_k = NA`) rather than apply a guessed
+transform -- never a wrong k-hat. Gated by `control$diagnose_k` (default TRUE) /
+`k_samples` (200), RNG-restored. The parallel-NUTS
 multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
 `.tulpa_chain_list()` reads, verified end-to-end against `posterior` in

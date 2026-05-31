@@ -364,6 +364,51 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     )
   ),
 
+  spde = list(
+    # Continuous Matern SPDE field on a shared FEM mesh. INDEXED_MULTI: each
+    # observation projects onto ~3 mesh nodes through the FEM matrix A, so the
+    # block is consumed via obs_indices (the A CSC slots), not a one-node
+    # spatial_idx. Same SpdeQBuilder and make_spde_block factory the
+    # single-Laplace occupancy SPDE path (cpp_nested_laplace_spde) uses.
+    cpp_fn = NULL,   # multi-block only; reached via .nl_dispatch_multi
+    defaults = function(p, a) {
+      if (is.null(p$range_grid) || is.null(p$sigma_grid)) {
+        # Geometric grid centred on the PC-prior mode (prior_range[1] /
+        # prior_sigma[1]). The span is kept tight (mode / SPAN .. mode * SPAN)
+        # rather than the wide [mode*0.3, mode*3] window: a rectangular
+        # Cartesian grid (no CCD mode-find here) that runs to a very small
+        # range / large sigma corner lets the binary-occupancy field over-fit
+        # there, and the corner cell -- being the highest inner likelihood --
+        # dominates the weighted field even though the PC prior disfavours it.
+        # Anchoring the grid near the regularised prior mode keeps the
+        # integrated field in the well-identified region the single-Laplace
+        # SPDE path fits at the fixed mode, while still integrating modest
+        # hyperparameter uncertainty.
+        n_g <- as.integer(p$n_grid %||% 5L)
+        span <- as.numeric(p$grid_span %||% 1.4)
+        rng_mode <- (p$prior_range %||% c(1, 0.5))[1]
+        sig_mode <- (p$prior_sigma %||% c(1, 0.5))[1]
+        rg <- exp(seq(log(rng_mode / span), log(rng_mode * span), length.out = n_g))
+        sg <- exp(seq(log(sig_mode / span), log(sig_mode * span), length.out = n_g))
+        gr <- expand.grid(range = rg, sigma = sg)
+        p$range_grid <- gr$range
+        p$sigma_grid <- gr$sigma
+      }
+      p
+    },
+    pack = function(p) stop(
+      "spde is only supported inside a multi-block latent prior on the ",
+      "nested-Laplace path. Pass it as a one-element list to ",
+      "tulpa_nested_laplace(prior = list(blk), ...).",
+      call. = FALSE
+    ),
+    theta = function(p) list(
+      grid  = cbind(range = as.numeric(p$range_grid),
+                    sigma = as.numeric(p$sigma_grid)),
+      names = c("range", "sigma")
+    )
+  ),
+
   hsgp = list(
     cpp_fn = "cpp_nested_laplace_hsgp",
     defaults = function(p, a) {
@@ -989,6 +1034,28 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       obs_idx = as.integer(p$obs_idx),
       n_units = as.integer(p$n_units)
     )
+  } else if (type == "spde") {
+    # FEM mesh + projection. The C++ side wraps the single A CSC in a length-1
+    # per-arm list and builds the LatentBlock via make_spde_block. Optional
+    # rational coefficients (fractional nu) pass through when present.
+    out <- list(
+      type    = "spde",
+      n_mesh  = as.integer(p$n_mesh),
+      n_obs   = as.integer(p$n_obs),
+      A_x     = as.numeric(p$A_x),
+      A_i     = as.integer(p$A_i),
+      A_p     = as.integer(p$A_p),
+      C0_diag = as.numeric(p$C0_diag),
+      G1_x    = as.numeric(p$G1_x),
+      G1_i    = as.integer(p$G1_i),
+      G1_p    = as.integer(p$G1_p),
+      nu      = as.numeric(p$nu)
+    )
+    if (!is.null(p$rational_poles) && !is.null(p$rational_weights)) {
+      out$rational_poles   <- as.numeric(p$rational_poles)
+      out$rational_weights <- as.numeric(p$rational_weights)
+    }
+    out
   } else if (type == "tgmrf") {
     # Precompute Q(theta_k) for every joint-grid row and pack CSC triples +
     # logdet + log p(theta_k). The C++ side reads them directly at grid
@@ -1202,6 +1269,26 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   out$theta_grid   <- joint_grid
   out$theta_names  <- axis_names
   out$axis_offsets <- axis_offsets
+
+  # Fold each SPDE block's PC prior on (range, sigma) into the per-cell
+  # log-marginal. The areal / temporal / iid blocks carry their hyperprior
+  # inside the C++ block log_prior (it folds into log|Q|); the SPDE factory
+  # drops the log|Q|/2 normalizer (it is recovered from the Laplace Hessian
+  # log-determinant) and carries no hyperprior, so the proper Matern PC prior
+  # is added here -- the same prior + closed form the single-Laplace SPDE path
+  # uses (pc_prior_log_density), so both paths integrate the same posterior.
+  for (b in seq_along(prepared)) {
+    pb <- prepared[[b]]
+    if (!identical(tolower(pb$type %||% ""), "spde")) next
+    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+    rng  <- as.numeric(joint_grid[, cols[1L]])
+    sig  <- as.numeric(joint_grid[, cols[2L]])
+    lp <- pc_prior_log_density(rng, sig,
+                               pb$prior_range %||% c(1, 0.5),
+                               pb$prior_sigma %||% c(1, 0.5))
+    out$log_marginal <- out$log_marginal + lp
+  }
+
   out$weights      <- .nl_normalise_weights(out$log_marginal)
   out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid)
   out$blocks       <- prepared

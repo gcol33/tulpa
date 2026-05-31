@@ -144,13 +144,14 @@ test_that("prune posterior matches no-prune across seeds (conservative tol)", {
     # so theta_mean / theta_sd / derived alpha quantiles must match the no-
     # prune fit within numerical noise across seeds.
     #
-    # The cheap-pass uses a one-Newton-step screen from the centre-cell
-    # pilot mode (much more accurate than the raw pilot-mode evaluation but
-    # not bit-equal to full Newton convergence). Empirically the cheap-pass
-    # posterior matches the full-Newton posterior to ~1e-3 on means and
-    # ~1e-2 on SDs at this workload. We assert absolute tolerances rather
-    # than expect_equal's default relative ones because SD values can be
-    # small (~0.05) where 1% relative is sub-noise.
+    # The cheap-pass uses a rank-faithful chained-lattice screen (each cell's
+    # short Newton run warm-started from the previous screened cell's quasi-
+    # mode) rather than full Newton convergence, so it is not bit-equal to
+    # the full pass. Empirically the cheap-pass posterior matches the full-
+    # Newton posterior to ~1e-3 on means and ~1e-2 on SDs at this workload.
+    # We assert absolute tolerances rather than expect_equal's default
+    # relative ones because SD values can be small (~0.05) where 1% relative
+    # is sub-noise.
     skip_on_cran()
     seeds <- 8200L + seq_len(5L)
     for (seed in seeds) {

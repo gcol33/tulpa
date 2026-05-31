@@ -32,21 +32,42 @@
 // is the cell index used as tile t's representative (typically the cell
 // closest to the median copy coefficient within the tile).
 //
-// Optional cheap-pass pruning (Phase 3): when `cheap_eval` is provided and
+// Optional cheap-pass pruning: when `cheap_eval` is provided and
 // `prune_tol > 0`, the driver
 //   1) solves the pilot cell (always, regardless of n_threads_outer),
-//   2) calls `cheap_eval(k, pilot_mode)` for every non-pilot cell to compute
-//      a Gaussian-Laplace screening log-marginal at the pilot mode,
+//   2) SWEEPS the outer lattice in flat-index order, warm-starting each
+//      cell's short cheap Newton run from the nearest already-screened
+//      neighbour's cheap mode (the previous cell in flat order, which is
+//      lattice-adjacent along the fastest-varying axis of the Cartesian
+//      product), and computes a screening log-marginal at the resulting
+//      quasi-mode,
 //   3) softmax-normalises the screening log-marginals over the full grid
 //      and marks cells with weight < prune_tol as pruned,
 //   4) skips the full inner Newton on pruned cells (filling their result
 //      with `log_marginal = -inf`, `n_iter = 0`, `mode = pilot_mode`) and
 //      runs the full pass only on survivors.
+//
+// The neighbour warm-start sweep keeps every cheap mode near its true mode:
+// a single global pilot is a poor warm-start for cells whose inner latent
+// mode moves substantially across the grid (large spatial fields, wide
+// sigma/rho/alpha ranges), so a fixed-pilot one-step screen mis-ranks far
+// cells by O(1e5) log-units and can prune the true posterior mode. The
+// chained sweep with CHEAP_SCREEN_ITERS Newton steps per cell makes the
+// cheap ranking faithful to the full-solve ranking.
+//
+// Safety gate: after the full pass, the driver compares the cheap-screen
+// argmax (over all cells) against the full-solve argmax (over kept cells)
+// and the cheap-vs-full log-marginal gap at the full argmax cell. A
+// disagreement, or a large gap, is surfaced to the caller (`prune_argmax_
+// disagree`, `prune_cheap_full_gap`, `prune_full_argmax`) so the R driver
+// can WARN and fall back to the full grid rather than silently returning a
+// pruned answer.
+//
 // The pilot cell is never pruned. Tile pilots whose cells are themselves
 // pruned skip their Tier-2 solve; Tier-3 cells in that tile then fall back
-// to the global pilot mode as warm-start. The cheap_eval callable runs
-// serially after the pilot solve and before any parallel region — callers
-// can use the same scratch buffers without thread-safety concerns.
+// to the global pilot mode as warm-start. The cheap sweep runs serially
+// after the pilot solve and before any parallel region — callers can use
+// the same scratch buffers without thread-safety concerns.
 //
 // Result post-processing (filling the Rcpp::List) happens single-threaded
 // after the parallel region. Per-cell LaplaceResult objects use only
@@ -89,20 +110,30 @@ namespace tulpa {
 //   #pragma omp parallel for over all cells warm-started from the pilot mode.
 //   Pilot cell's result is reused (no double-solve).
 // CheapEval is any callable with signature
-//   double(int k, const std::vector<double>& x_pilot)
-// returning the screening log-marginal at cell k. Implementations evaluate
-// `log_lik(y | x_pilot, theta_k) + log_prior(x_pilot | theta_k)` (constants
-// like `0.5 n_x log(2pi) - 0.5 log|H_pilot|` drop out under softmax
-// normalisation, so callers may omit them). Return -infinity to force
-// pruning of an infeasible cell (e.g. proper-CAR rho outside the PD
-// interval). Pass `NoCheapEval{}` (default) to disable pruning entirely;
-// std::function is avoided here to keep Windows DLL export-symbol
-// instantiations cheap.
+//   LaplaceResult(int k, const std::vector<double>& warm_start, int n_steps)
+// running a short (`n_steps`-iteration) inner Newton-Laplace at cell k
+// warm-started from `warm_start`, and returning the quasi-mode and the
+// Laplace screening log-marginal at that quasi-mode. The driver chains the
+// warm-start across the lattice (each cell starts from the previous
+// screened cell's `.mode`), so `n_steps` need only correct the residual
+// drift between adjacent cells, not the full distance from a global pilot.
+// A returned `log_marginal` of -infinity forces pruning of an infeasible
+// cell (e.g. proper-CAR rho outside the PD interval). Pass `NoCheapEval{}`
+// (default) to disable pruning entirely; std::function is avoided here to
+// keep Windows DLL export-symbol instantiations cheap.
 struct NoCheapEval {
-    double operator()(int, const std::vector<double>&) const {
-        return -std::numeric_limits<double>::infinity();
+    LaplaceResult operator()(int, const std::vector<double>&, int) const {
+        LaplaceResult r;
+        r.log_marginal = -std::numeric_limits<double>::infinity();
+        return r;
     }
 };
+
+// Number of inner Newton steps per cell in the cheap screening sweep. With
+// neighbour warm-starts across the lattice this is enough to converge the
+// cheap mode to its cell's true mode for ranking purposes while staying far
+// cheaper than the full inner solve (which iterates to `tol`).
+static const int CHEAP_SCREEN_ITERS = 5;
 
 template<typename SolveAtTheta, typename CheapEval = NoCheapEval>
 inline Rcpp::List run_nested_laplace_grid(
@@ -169,6 +200,7 @@ inline Rcpp::List run_nested_laplace_grid(
     std::vector<unsigned char> pruned(n_grid, 0);
     int n_cells_pruned = 0;
     std::vector<double> cheap_lm;  // size n_grid when prune_active
+    int cheap_argmax = -1;          // cell with the largest cheap log-marginal
 
     std::vector<double> pilot_mode;
     if (need_pilot) {
@@ -185,29 +217,42 @@ inline Rcpp::List run_nested_laplace_grid(
             pilot_mode.assign(n_x, 0.0);
         }
 
-        // Cheap-pass pruning: evaluate the screening log-marginal at every
-        // cell — *including the pilot* — so all cells share the same
-        // approximation constants. cheap_eval returns `log_lik + log_prior`
-        // at the pilot mode under cell k's hyperparameters and drops the
-        // additive `-0.5 log|H_pilot| + 0.5 n_x log(2pi)` term, which is
-        // cell-constant and falls out under softmax. Using cell_results[
-        // k_pilot].log_marginal (the *full* Laplace) for the pilot mixes
-        // formulas and biases the softmax — every cell must use the same
-        // formula. The pilot is still never pruned (it is the reference
-        // cell, marked below by exempting k_pilot from the threshold).
+        // Cheap-pass pruning: a chained sweep over the lattice that keeps
+        // every cheap mode near its cell's true mode. Each cell runs a short
+        // (CHEAP_SCREEN_ITERS-step) inner Newton warm-started from the
+        // previous screened cell's quasi-mode — lattice-adjacent along the
+        // fastest axis of the Cartesian product — instead of one step from a
+        // fixed global pilot. The pilot mode seeds the sweep so cell 0 is not
+        // mode-starved. All cells use the same screening formula (Laplace
+        // log-marginal at the quasi-mode), so the softmax ranking is faithful
+        // to the full-solve ranking. The pilot is still never pruned (it is
+        // the reference cell, exempted from the threshold below).
         if (prune_active) {
             cheap_lm.assign(n_grid,
                             -std::numeric_limits<double>::infinity());
+            std::vector<double> warm = pilot_mode;
             for (int k = 0; k < n_grid; k++) {
-                cheap_lm[k] = cheap_eval(k, pilot_mode);
+                LaplaceResult cr = cheap_eval(k, warm, CHEAP_SCREEN_ITERS);
+                cheap_lm[k] = cr.log_marginal;
+                // Chain the warm-start only across feasible cells; an
+                // infeasible cell (prep failed, log_marginal = -inf) leaves
+                // `warm` at the last good quasi-mode so the next feasible
+                // cell still starts from a near neighbour.
+                if (std::isfinite(cr.log_marginal) &&
+                    static_cast<int>(cr.mode.size()) == n_x) {
+                    warm = cr.mode;
+                }
             }
 
             // Softmax over finite entries. Cells with non-finite cheap log-
             // marginal (block.prep returned infeasible) get weight 0 and are
             // pruned automatically.
             double m = -std::numeric_limits<double>::infinity();
-            for (double v : cheap_lm) {
-                if (std::isfinite(v) && v > m) m = v;
+            for (int k = 0; k < n_grid; k++) {
+                if (std::isfinite(cheap_lm[k]) && cheap_lm[k] > m) {
+                    m = cheap_lm[k];
+                    cheap_argmax = k;
+                }
             }
             double Z = 0.0;
             if (std::isfinite(m)) {
@@ -422,6 +467,50 @@ inline Rcpp::List run_nested_laplace_grid(
         out["prune_mask"]                = pruned_out;
         out["prune_n_pruned"]           = n_cells_pruned;
         out["prune_tol"]                = prune_tol;
+
+        // ---- Safety gate -------------------------------------------------
+        // The full pass only ran on survivors, so the full-solve argmax is
+        // taken over kept (non-pruned) cells. If the cheap screen's argmax
+        // was pruned (i.e. it disagrees with where the full solve actually
+        // placed its mode), or the cheap-vs-full log-marginal gap at the
+        // full argmax cell is large, the ranking is not trustworthy and the
+        // caller must fall back to the full grid. We surface the raw signals;
+        // the R driver decides the fallback (it owns the warning + re-solve).
+        int full_argmax = -1;
+        double full_max = -std::numeric_limits<double>::infinity();
+        for (int k = 0; k < n_grid; k++) {
+            if (pruned[k]) continue;
+            double v = log_marginals[k];
+            if (std::isfinite(v) && v > full_max) {
+                full_max = v;
+                full_argmax = k;
+            }
+        }
+        // Cheap-vs-full gap at the full argmax cell: how far the cheap screen
+        // mis-estimated the log-marginal of the cell the full solve favours.
+        double cheap_full_gap = NA_REAL;
+        if (full_argmax >= 0 &&
+            std::isfinite(full_max) &&
+            std::isfinite(cheap_lm[full_argmax])) {
+            cheap_full_gap = std::abs(full_max - cheap_lm[full_argmax]);
+        }
+        // Argmax disagreement: the cheap screen's top cell is not the full
+        // solve's top cell. A disagreement means the screen would have ranked
+        // a different cell first — exactly the failure that prunes the true
+        // mode. (cheap_argmax == full_argmax is the safe case.)
+        bool argmax_disagree =
+            (cheap_argmax >= 0 && full_argmax >= 0 &&
+             cheap_argmax != full_argmax);
+        // The cheap argmax being pruned is the sharpest tell: the screen's
+        // own top-ranked cell never got a full solve.
+        bool cheap_argmax_pruned =
+            (cheap_argmax >= 0 && pruned[cheap_argmax] != 0);
+
+        out["prune_cheap_argmax"]   = cheap_argmax + 1;   // 1-based for R
+        out["prune_full_argmax"]    = full_argmax + 1;    // 1-based for R
+        out["prune_cheap_full_gap"] = cheap_full_gap;
+        out["prune_argmax_disagree"] =
+            (argmax_disagree || cheap_argmax_pruned);
     }
     return out;
 }

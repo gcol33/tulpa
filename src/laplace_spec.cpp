@@ -469,12 +469,27 @@ inline void compute_eta_spec(
 
         // Block contribution to this obs's predictor (single-process: blocks
         // are guarded to np == 1 at the impl entry, so they enter process 0).
+        // INDEXED_SINGLE blocks touch one unit (idx); INDEXED_MULTI blocks
+        // (SPDE: ~3 mesh nodes via the FEM projector A) touch several units
+        // with barycentric weights read from obs_indices.
         double blk_eff = 0.0;
+        std::vector<std::pair<int,double>> blk_multi;
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*L.blocks)[b];
-            int l = blk.idx(i, /*k_arm=*/0);
-            if (l >= 1 && l <= L.block_size[b]) {
-                blk_eff += d_fac_cache[b] * params[L.block_param_start[b] + l - 1];
+            if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+                blk.obs_indices(i, /*k_arm=*/0, blk_multi);
+                for (const auto& nw : blk_multi) {
+                    int l = nw.first;
+                    if (l >= 1 && l <= L.block_size[b]) {
+                        blk_eff += d_fac_cache[b] * nw.second
+                                 * params[L.block_param_start[b] + l - 1];
+                    }
+                }
+            } else {
+                int l = blk.idx(i, /*k_arm=*/0);
+                if (l >= 1 && l <= L.block_size[b]) {
+                    blk_eff += d_fac_cache[b] * params[L.block_param_start[b] + l - 1];
+                }
             }
         }
 
@@ -544,6 +559,13 @@ inline void scatter_spec(
         if (blk.d_fac) blk_dfac[b] = blk.d_fac(k_grid);
     }
     std::vector<int> blk_active_idx(L.n_blocks, -1);
+    // Per-obs flat list of latent contributions (compacted latent index,
+    // effective weight d_fac * a). One entry per INDEXED_SINGLE block (weight
+    // d_fac), several per INDEXED_MULTI block (one per FEM mesh node, weight
+    // d_fac * barycentric_weight). The block scatter walks this list so the
+    // many-to-one SPDE projection and the one-to-one areal index share a path.
+    std::vector<std::pair<int,double>> blk_contrib;
+    std::vector<std::pair<int,double>> blk_multi_scratch;
 
     for (int i = 0; i < N; i++) {
         std::fill(grad_eta.begin(), grad_eta.end(), 0.0);
@@ -736,38 +758,59 @@ inline void scatter_spec(
         // eta-space score / weight summed over shared processes are exactly
         // s_grad / s_hess / w_l_vec computed above. Mirrors the multi-block
         // nested kernel's accumulate_latent_cross_terms, but the weights come
-        // from the LikelihoodSpec rather than grad_hess_for_family. Each
-        // INDEXED_SINGLE block touches one unit at obs i:
-        //   grad[blk]                += d_b * s_grad
-        //   H[blk, beta_l]           += d_b * w_l * X_l(i, .)
-        //   H[blk, re_row]           += d_b * z * s_hess
-        //   H[blk_a, blk_b] (lower)  += d_a * d_b * s_hess
+        // from the LikelihoodSpec rather than grad_hess_for_family.
+        //
+        // The obs contributes through a flat list of (compacted latent index,
+        // effective weight) pairs: one pair per INDEXED_SINGLE block (weight
+        // d_fac), several per INDEXED_MULTI block (one per FEM mesh node, weight
+        // d_fac * barycentric_weight). For each contribution (idx_c, a_c):
+        //   grad[idx_c]               += a_c * s_grad
+        //   H[idx_c, beta_l]          += a_c * w_l * X_l(i, .)
+        //   H[idx_c, re_row]          += a_c * z * s_hess
+        //   H[idx_c, idx_d] (lower)   += a_c * a_d * s_hess  (every pair, incl.
+        //                                the diagonal and cross-node SPDE terms)
         // The block prior Q(theta) is added once after symmetrisation below.
         if (L.n_blocks > 0) {
+            blk_contrib.clear();
             for (int b = 0; b < L.n_blocks; b++) {
                 const LatentBlock& blk = (*L.blocks)[b];
-                int l = blk.idx(i, /*k_arm=*/0);
-                blk_active_idx[b] = (l >= 1 && l <= L.block_size[b])
-                                    ? (L.block_latent_offset[b] + l - 1) : -1;
-            }
-            for (int b = 0; b < L.n_blocks; b++) {
-                const int idx_b = blk_active_idx[b];
-                if (idx_b < 0) continue;
                 const double d_b = blk_dfac[b];
+                if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+                    blk.obs_indices(i, /*k_arm=*/0, blk_multi_scratch);
+                    for (const auto& nw : blk_multi_scratch) {
+                        int l = nw.first;
+                        if (l >= 1 && l <= L.block_size[b]) {
+                            blk_contrib.emplace_back(
+                                L.block_latent_offset[b] + l - 1,
+                                d_b * nw.second);
+                        }
+                    }
+                } else {
+                    int l = blk.idx(i, /*k_arm=*/0);
+                    if (l >= 1 && l <= L.block_size[b]) {
+                        blk_contrib.emplace_back(
+                            L.block_latent_offset[b] + l - 1, d_b);
+                    }
+                }
+            }
+            const int n_contrib = static_cast<int>(blk_contrib.size());
+            for (int c = 0; c < n_contrib; c++) {
+                const int    idx_c = blk_contrib[c].first;
+                const double a_c   = blk_contrib[c].second;
 
-                grad[idx_b] += d_b * s_grad;
+                grad[idx_c] += a_c * s_grad;
 
                 // block x beta (block row > beta col -> lower triangle)
-                double* row_b = H[idx_b];
+                double* row_c = H[idx_c];
                 for (int l = 0; l < np; l++) {
                     const ProcessData& pl = data.processes[l];
                     if (pl.p == 0) continue;
                     const double w_l = w_l_vec[l];
                     if (w_l == 0.0) continue;
                     const double* xl = pl.X_flat.data() + (std::ptrdiff_t)i * pl.p;
-                    const double d_w = d_b * w_l;
+                    const double a_w = a_c * w_l;
                     const int off_l = L.latent_offset[l];
-                    for (int m = 0; m < pl.p; m++) row_b[off_l + m] += d_w * xl[m];
+                    for (int m = 0; m < pl.p; m++) row_c[off_l + m] += a_w * xl[m];
                 }
 
                 if (s_hess != 0.0) {
@@ -777,20 +820,20 @@ inline void scatter_spec(
                         const ReTermSlot& s = L.re_terms[t];
                         const int qn = q_term[t];
                         const int re_row_base = s.latent_offset + g * qn;
-                        for (int c = 0; c < qn; c++) {
-                            const double zc = z_term[t][c];
+                        for (int cc = 0; cc < qn; cc++) {
+                            const double zc = z_term[t][cc];
                             if (zc == 0.0) continue;
-                            row_b[re_row_base + c] += d_b * zc * s_hess;
+                            row_c[re_row_base + cc] += a_c * zc * s_hess;
                         }
                     }
-                    // block x block (route each pair to the lower triangle;
-                    // includes the b == b2 block diagonal d_b^2 * s_hess).
-                    for (int b2 = 0; b2 <= b; b2++) {
-                        const int idx_b2 = blk_active_idx[b2];
-                        if (idx_b2 < 0) continue;
-                        const double v = d_b * blk_dfac[b2] * s_hess;
-                        if (idx_b >= idx_b2) row_b[idx_b2] += v;
-                        else                 H[idx_b2][idx_b] += v;
+                    // block x block over every contribution pair (route to the
+                    // lower triangle by compacted index; includes the c == d
+                    // diagonal and the cross-node SPDE interactions).
+                    for (int d = 0; d < n_contrib; d++) {
+                        const int    idx_d = blk_contrib[d].first;
+                        if (idx_d > idx_c) continue;   // upper handled when c,d swap
+                        const double v = a_c * blk_contrib[d].second * s_hess;
+                        row_c[idx_d] += v;
                     }
                 }
             }

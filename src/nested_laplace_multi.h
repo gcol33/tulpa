@@ -242,6 +242,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                 use_sparse && solver && solver->factored();
             std::vector<double> a(n_x, 0.0), z(n_x, 0.0), zwork;
             if (!used_sparse_factor) zwork.assign(n_x, 0.0);
+            std::vector<std::pair<int,double>> a_multi;
             const std::size_t base = static_cast<std::size_t>(k) * N;
             for (int i = 0; i < N; i++) {
                 std::fill(a.begin(), a.end(), 0.0);
@@ -251,9 +252,21 @@ inline Rcpp::List run_multi_block_nested_laplace(
                     if (g >= 0 && g < n_re_groups) a[p + g] += 1.0;
                 }
                 for (size_t b = 0; b < blocks.size(); b++) {
-                    int l = blocks[b].idx(i, /*k_arm=*/0);
-                    if (l > 0 && l <= blocks[b].size) {
-                        a[blocks[b].start + l - 1] += d_fac_cache[b];
+                    if (blocks[b].contrib_kind
+                            == BlockContribKind::INDEXED_MULTI) {
+                        blocks[b].obs_indices(i, /*k_arm=*/0, a_multi);
+                        for (const auto& nw : a_multi) {
+                            int l = nw.first;
+                            if (l > 0 && l <= blocks[b].size) {
+                                a[blocks[b].start + l - 1] +=
+                                    d_fac_cache[b] * nw.second;
+                            }
+                        }
+                    } else {
+                        int l = blocks[b].idx(i, /*k_arm=*/0);
+                        if (l > 0 && l <= blocks[b].size) {
+                            a[blocks[b].start + l - 1] += d_fac_cache[b];
+                        }
                     }
                 }
                 bool ok = true;
@@ -281,21 +294,21 @@ inline Rcpp::List run_multi_block_nested_laplace(
                                    /*want_var=*/store_modes);
     };
 
-    // Cheap-pass screening (Phase 3, dev_notes/speedup.md): one Newton step
-    // from the pilot mode, return the Laplace log-marginal at that quasi-
-    // mode. Same trick as the joint kernel — calling solve_at_theta_impl
-    // with max_iter=1 reuses all the per-cell callbacks without
-    // duplicating scatter/eta logic. Dedicated thread-local solver +
-    // scratch keep cheap_eval independent of the parallel fan-out's pool.
+    // Cheap-pass screening: a short inner Newton run warm-started from the
+    // neighbour quasi-mode the driver chains across the lattice, returning
+    // the quasi-mode and the Laplace log-marginal at it. Calling
+    // solve_at_theta_impl with the driver-supplied `n_steps` reuses all the
+    // per-cell callbacks without duplicating scatter/eta logic. Dedicated
+    // thread-local solver + scratch keep cheap_eval independent of the
+    // parallel fan-out's pool.
     SparseCholeskySolver cheap_solver;
     NewtonScratch cheap_scratch;
     cheap_scratch.allocate(n_x, N);
     auto cheap_eval = [&](int k_grid,
-                          const std::vector<double>& x_pilot) -> double {
-        LaplaceResult r = solve_at_theta_impl(
-            k_grid, x_pilot, &cheap_solver,
-            /*max_iter_use=*/1, &cheap_scratch);
-        return r.log_marginal;
+                          const std::vector<double>& warm,
+                          int n_steps) -> LaplaceResult {
+        return solve_at_theta_impl(
+            k_grid, warm, &cheap_solver, n_steps, &cheap_scratch);
     };
 
     Rcpp::List out = run_nested_laplace_grid(
@@ -318,6 +331,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
         int ng = modes.nrow();
         Rcpp::NumericMatrix fitted_eta(ng, N);
         std::vector<double> dfac(blocks.size());
+        std::vector<std::pair<int,double>> e_multi;
         for (int k = 0; k < ng; k++) {
             for (size_t b = 0; b < blocks.size(); b++) dfac[b] = blocks[b].d_fac(k);
             for (int i = 0; i < N; i++) {
@@ -328,9 +342,21 @@ inline Rcpp::List run_multi_block_nested_laplace(
                     if (g >= 0 && g < n_re_groups) e += modes(k, p + g);
                 }
                 for (size_t b = 0; b < blocks.size(); b++) {
-                    int l = blocks[b].idx(i, /*k_arm=*/0);
-                    if (l > 0 && l <= blocks[b].size) {
-                        e += dfac[b] * modes(k, blocks[b].start + l - 1);
+                    if (blocks[b].contrib_kind
+                            == BlockContribKind::INDEXED_MULTI) {
+                        blocks[b].obs_indices(i, /*k_arm=*/0, e_multi);
+                        for (const auto& nw : e_multi) {
+                            int l = nw.first;
+                            if (l > 0 && l <= blocks[b].size) {
+                                e += dfac[b] * nw.second
+                                   * modes(k, blocks[b].start + l - 1);
+                            }
+                        }
+                    } else {
+                        int l = blocks[b].idx(i, /*k_arm=*/0);
+                        if (l > 0 && l <= blocks[b].size) {
+                            e += dfac[b] * modes(k, blocks[b].start + l - 1);
+                        }
                     }
                 }
                 fitted_eta(k, i) = e;

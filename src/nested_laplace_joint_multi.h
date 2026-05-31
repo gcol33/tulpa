@@ -1505,28 +1505,25 @@ inline Rcpp::List run_multi_block_nested_laplace_joint(
                                     max_iter, nullptr);
     };
 
-    // Cheap-pass screening (Phase 3, dev_notes/speedup.md): one Newton step
-    // from the pilot mode, then report the Laplace log-marginal at that
-    // quasi-mode. This is much more accurate than evaluating `log_lik +
-    // log_prior` at the raw pilot mode — for cells whose data MAP differs
-    // from x_pilot (especially when sigma or alpha shifts the design
-    // multiplicatively), one Newton step corrects the worst of the pilot
-    // bias.
-    //
-    // Cost per cell: 1 eta+scatter+Cholesky factor+step ≈ 20% of the full
-    // 5-iter Newton. The cheap pass runs serially after the pilot solve and
-    // before any parallel region, so a dedicated thread-local solver +
-    // scratch keep it isolated from the parallel fan-out's pool (the pool's
-    // entries are reserved for the inner Newton on survivors).
+    // Cheap-pass screening: a short inner Newton run warm-started from the
+    // neighbour quasi-mode the driver chains across the lattice, returning
+    // the quasi-mode and the Laplace log-marginal at it. The driver sweeps
+    // cells in flat order and threads the previous screened cell's `.mode`
+    // in as `warm`, so each cheap solve only corrects the residual drift
+    // between adjacent lattice cells (much cheaper and far more
+    // rank-faithful than a one-step screen from a single distant pilot).
+    // The cheap pass runs serially after the pilot solve and before any
+    // parallel region, so a dedicated thread-local solver + scratch keep it
+    // isolated from the parallel fan-out's pool (the pool's entries are
+    // reserved for the inner Newton on survivors).
     SparseCholeskySolver cheap_solver;
     NewtonScratchJoint cheap_scratch;
     cheap_scratch.allocate(n_x, arms);
     auto cheap_eval = [&](int k_grid,
-                          const std::vector<double>& x_pilot) -> double {
-        LaplaceResult r = solve_at_theta_impl(
-            k_grid, x_pilot, &cheap_solver,
-            /*max_iter_use=*/1, &cheap_scratch);
-        return r.log_marginal;
+                          const std::vector<double>& warm,
+                          int n_steps) -> LaplaceResult {
+        return solve_at_theta_impl(
+            k_grid, warm, &cheap_solver, n_steps, &cheap_scratch);
     };
 
     return run_nested_laplace_grid(
@@ -1772,11 +1769,11 @@ inline Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     };
 
     auto cheap_eval = [&](int k_grid,
-                          const std::vector<double>& x_pilot) -> double {
-        LaplaceResult r = solve_at_theta_impl(
-            k_grid, x_pilot, &cheap_solver,
-            /*max_iter_use=*/1, /*use_cheap_scratch=*/true);
-        return r.log_marginal;
+                          const std::vector<double>& warm,
+                          int n_steps) -> LaplaceResult {
+        return solve_at_theta_impl(
+            k_grid, warm, &cheap_solver,
+            n_steps, /*use_cheap_scratch=*/true);
     };
 
     return run_nested_laplace_grid(

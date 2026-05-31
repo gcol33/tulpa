@@ -195,16 +195,23 @@
 #'     single-tier path when no copy block / single tile / `n_threads_outer
 #'     <= 1L`. `FALSE` recovers the pre-tiling behaviour (e.g. regression
 #'     testing).
-#'   * `prune` (`FALSE`), `prune_tol` (`1e-3`) -- when `prune = TRUE`, run a
-#'     cheap-pass screening Laplace at the centre pilot mode for every cell
-#'     (one `log_lik + log_prior` at the pilot mode), softmax-normalise, and
-#'     skip the full inner Newton on cells whose normalised weight is
-#'     `< prune_tol`. Pruned cells get `log_marginal = -Inf`, `n_iter = 0`, and
-#'     inherit the pilot mode; the pilot cell is never pruned. Stacks with
-#'     `n_threads_outer`. `prune_tol` must be in `[0, 1)`. Approximate (the
-#'     screen reuses `log|H_pilot|` per cell), so keep `prune_tol` conservative
-#'     (`<= 1e-3`) when the posterior is data-rich; pruning helps most when the
-#'     grid has many low-mass tail cells.
+#'   * `prune` (`FALSE`), `prune_tol` (`1e-3`) -- opt-in cheap-pass screening.
+#'     When `prune = TRUE`, the driver sweeps the outer lattice running a short
+#'     inner Newton per cell, each warm-started from the previous screened
+#'     cell's quasi-mode (lattice-adjacent), computes a screening Laplace
+#'     log-marginal, softmax-normalises, and skips the full inner Newton on
+#'     cells whose normalised weight is `< prune_tol`. The neighbour-warm-start
+#'     sweep keeps every cheap mode near its cell's true mode, so the cheap
+#'     ranking is faithful to the full-solve ranking even when the inner latent
+#'     mode moves substantially across the grid. Pruned cells get
+#'     `log_marginal = -Inf`, `n_iter = 0`, and inherit the pilot mode; the
+#'     pilot cell is never pruned. A safety gate falls back to the full grid
+#'     (with a warning) if the cheap-screen argmax disagrees with the
+#'     full-solve argmax or the kept posterior collapses onto a cell the screen
+#'     badly mis-estimated, so a silently-wrong pruned posterior is impossible.
+#'     Stacks with `n_threads_outer`. `prune_tol` must be in `[0, 1)`. Keep it
+#'     conservative (`<= 1e-3`); pruning helps most when the grid has many
+#'     low-mass tail cells. Default `FALSE` (the full grid is correct).
 #'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
 #'   * `verbose` (`FALSE`) -- currently a no-op; reserved.
 #'   * `store_Q` (`FALSE`) -- also return the per-grid joint precision Q (lower
@@ -273,11 +280,15 @@
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
-#'      `prune_tol` — present only when `prune = TRUE`. Cheap-pass log-
-#'      marginals at every cell, a logical mask of pruned cells, the
-#'      pruned-cell count, and the threshold actually applied. Pruned
-#'      cells have `log_marginal = -Inf` so they get zero weight under
-#'      `.nl_normalise_weights`.
+#'      `prune_tol` — present only when `prune = TRUE` and the safety gate did
+#'      not fall back. Cheap-pass log-marginals at every cell, a logical mask
+#'      of pruned cells, the pruned-cell count, and the threshold actually
+#'      applied. Pruned cells have `log_marginal = -Inf` so they get zero
+#'      weight under `.nl_normalise_weights`.
+#'   * `prune_fallback_triggered`, `prune_fallback_reason` — present only when
+#'      the safety gate fell back to the full grid. The returned fit is the
+#'      full-grid (unpruned) result; the reason string records which gate
+#'      condition tripped.
 #'
 #' @seealso [tulpa_nested_laplace()] for the single-arm engine.
 #' @export
@@ -425,16 +436,28 @@ tulpa_nested_laplace_joint <- function(responses,
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)
 
-    res <- backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, isTRUE(store_Q),
-                                arm_names = arm_names,
-                                n_threads_outer = n_threads_outer,
-                                tile_warm = tile_warm,
-                                prune_tol = prune_tol_eff,
-                                force_sparse = force_sparse,
-                                cell_coupling = cell_coupling,
-                                hessian_pd_mode = hessian_pd_mode,
-                                step_curvature_mode = step_curvature_mode)
+    call_kernel_with_tol <- function(tol_prune) {
+        backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
+                            n_threads, x_init, isTRUE(store_Q),
+                            arm_names = arm_names,
+                            n_threads_outer = n_threads_outer,
+                            tile_warm = tile_warm,
+                            prune_tol = tol_prune,
+                            force_sparse = force_sparse,
+                            cell_coupling = cell_coupling,
+                            hessian_pd_mode = hessian_pd_mode,
+                            step_curvature_mode = step_curvature_mode)
+    }
+    res <- call_kernel_with_tol(prune_tol_eff)
+    # Safety gate: if the cheap-pass ranking is unreliable (the screen's
+    # argmax disagrees with the full-solve argmax, or the kept posterior
+    # collapses onto a cell the screen badly mis-estimated), warn and fall
+    # back to the full grid rather than silently returning a pruned answer
+    # (gcol33/tulpa#43). A silently-wrong posterior must be impossible.
+    if (prune_tol_eff > 0) {
+        res <- .joint_prune_safety_gate(
+            res, resolve_full = function() call_kernel_with_tol(0.0))
+    }
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # at the kernel-call boundary. Every cell carries the same prior

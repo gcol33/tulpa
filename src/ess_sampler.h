@@ -254,34 +254,32 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
         priors.push_back(prior);
     }
 
-    // Spatial effects (ICAR): phi ~ N(0, tau^-1 * Q^-)
-    // For ICAR, the precision matrix is the graph Laplacian
-    // For now, we treat these as standard normals (simplified)
+    // Spatial effects (ICAR / BYM2): phi ~ N(0, tau^-1 * Q^-), where Q is the
+    // graph Laplacian with a sum-to-zero constraint. The ESS prior block carries
+    // an isotropic N(0, scale^2 I) covariance only; it cannot represent the
+    // neighbour-coupling precision Q, so sampling a structured spatial field
+    // here would silently drop all spatial smoothing. Error rather than fall
+    // back to N(0, I).
     if (layout.has_spatial && layout.spatial_end > layout.spatial_start) {
-        GaussianPrior prior;
-        for (int j = layout.spatial_start; j < layout.spatial_end; j++) {
-            prior.param_indices.push_back(j);
-        }
-
-        int n = prior.param_indices.size();
-        prior.mean = Eigen::VectorXd::Zero(n);
-        prior.is_identity_cov = true;  // Simplified - proper ICAR would use precision
-        prior.scale = 1.0;
-        priors.push_back(prior);
+        Rcpp::stop("ESS prior builder: structured spatial (ICAR/BYM2) block at "
+                   "indices [%d, %d) requires the graph-Laplacian precision "
+                   "tau^-1 Q^-, which the ESS Gaussian-prior block cannot carry. "
+                   "Sample the spatial field with the NUTS/Laplace spatial path, "
+                   "not the legacy ESS sampler.",
+                   layout.spatial_start, layout.spatial_end);
     }
 
-    // Temporal effects: phi_temporal ~ N(0, tau_temporal^-1 * Q)
+    // Temporal effects: phi_temporal ~ N(0, tau_temporal^-1 * Q) with Q the
+    // AR1 / RW graph precision. Same limitation as the spatial block: the ESS
+    // Gaussian-prior block is isotropic and cannot carry Q. Error rather than
+    // silently drop the temporal correlation.
     if (layout.has_temporal && layout.temporal_end > layout.temporal_start) {
-        GaussianPrior prior;
-        for (int j = layout.temporal_start; j < layout.temporal_end; j++) {
-            prior.param_indices.push_back(j);
-        }
-
-        int n = prior.param_indices.size();
-        prior.mean = Eigen::VectorXd::Zero(n);
-        prior.is_identity_cov = true;  // Simplified
-        prior.scale = 1.0;
-        priors.push_back(prior);
+        Rcpp::stop("ESS prior builder: structured temporal (AR1/RW) block at "
+                   "indices [%d, %d) requires the graph precision "
+                   "tau^-1 Q^-, which the ESS Gaussian-prior block cannot carry. "
+                   "Sample the temporal field with the NUTS/Laplace temporal path, "
+                   "not the legacy ESS sampler.",
+                   layout.temporal_start, layout.temporal_end);
     }
 
     // GP spatial effects

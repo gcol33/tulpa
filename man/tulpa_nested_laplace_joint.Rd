@@ -188,16 +188,23 @@ coefficient \code{alpha}, solve one warm Tier-2 per tile from the centre
 pilot, and warm-start the rest from their tile pilot. Falls back to the
 single-tier path when no copy block / single tile / \code{n_threads_outer <= 1L}. \code{FALSE} recovers the pre-tiling behaviour (e.g. regression
 testing).
-\item \code{prune} (\code{FALSE}), \code{prune_tol} (\code{1e-3}) -- when \code{prune = TRUE}, run a
-cheap-pass screening Laplace at the centre pilot mode for every cell
-(one \code{log_lik + log_prior} at the pilot mode), softmax-normalise, and
-skip the full inner Newton on cells whose normalised weight is
-\verb{< prune_tol}. Pruned cells get \code{log_marginal = -Inf}, \code{n_iter = 0}, and
-inherit the pilot mode; the pilot cell is never pruned. Stacks with
-\code{n_threads_outer}. \code{prune_tol} must be in \verb{[0, 1)}. Approximate (the
-screen reuses \verb{log|H_pilot|} per cell), so keep \code{prune_tol} conservative
-(\verb{<= 1e-3}) when the posterior is data-rich; pruning helps most when the
-grid has many low-mass tail cells.
+\item \code{prune} (\code{FALSE}), \code{prune_tol} (\code{1e-3}) -- opt-in cheap-pass screening.
+When \code{prune = TRUE}, the driver sweeps the outer lattice running a short
+inner Newton per cell, each warm-started from the previous screened
+cell's quasi-mode (lattice-adjacent), computes a screening Laplace
+log-marginal, softmax-normalises, and skips the full inner Newton on
+cells whose normalised weight is \verb{< prune_tol}. The neighbour-warm-start
+sweep keeps every cheap mode near its cell's true mode, so the cheap
+ranking is faithful to the full-solve ranking even when the inner latent
+mode moves substantially across the grid. Pruned cells get
+\code{log_marginal = -Inf}, \code{n_iter = 0}, and inherit the pilot mode; the
+pilot cell is never pruned. A safety gate falls back to the full grid
+(with a warning) if the cheap-screen argmax disagrees with the
+full-solve argmax or the kept posterior collapses onto a cell the screen
+badly mis-estimated, so a silently-wrong pruned posterior is impossible.
+Stacks with \code{n_threads_outer}. \code{prune_tol} must be in \verb{[0, 1)}. Keep it
+conservative (\verb{<= 1e-3}); pruning helps most when the grid has many
+low-mass tail cells. Default \code{FALSE} (the full grid is correct).
 \item \code{x_init} (\code{NULL}) -- warm-start for the first grid point's inner solve.
 \item \code{verbose} (\code{FALSE}) -- currently a no-op; reserved.
 \item \code{store_Q} (\code{FALSE}) -- also return the per-grid joint precision Q (lower
@@ -222,6 +229,17 @@ consistency pass on the variance of the per-arm posterior means and
 attach \code{var_of_means_consistency_info}.
 \item \code{force_sparse} (\code{FALSE}) -- force the sparse linear-algebra backend for
 the inner joint solve regardless of the dense/sparse heuristic.
+\item \code{diagnose_k} (\code{TRUE}), \code{k_samples} (\code{200L}) -- compute the outer
+Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the
+joint hyperparameter posterior against the Gaussian proposal the
+integrator fits (mixed per-axis transforms: \code{log} for positive scales,
+logit for the BYM2 mixing weight, identity for the copy coefficient
+\eqn{\alpha}). \code{k_samples} is the number of importance draws, each one
+extra inner joint solve; the draw is RNG-restored so the fit's modes /
+draws are unchanged. A fit carrying an axis whose support is not safely
+known (CAR_proper's \code{rho_car}) declines to the quadrature-ESS fallback
+(\code{pareto_k = NA}) rather than apply a guessed transform. \code{FALSE} skips
+the diagnostic (\code{pareto_k = NA}).
 }}
 }
 \value{
@@ -245,15 +263,26 @@ uncertainty.
 \item \code{arm_layout} — list with per-arm \code{beta_start}, \code{re_start},
 spatial offset(s) and \code{n_x} for decoding modes.
 \item \code{prior}, \code{responses}, \code{copy} — echoed inputs.
+\item \code{pareto_k}, \code{pareto_k_is_ess}, \code{pareto_k_scope} — outer
+Pareto-\eqn{\hat{k}} accuracy diagnostic and its importance-sampling
+ESS (both \code{NA} when \code{control$diagnose_k = FALSE} or the fit declines;
+see the \code{diagnose_k} control knob). \code{pareto_k < 0.7} indicates the
+nested integration is reliable; \verb{>= 0.7} that the (skewed / heavy-
+tailed) hyperparameter posterior is misfit by the Gaussian grid and
+the fit should escalate to an exact debias.
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
-\code{prune_tol} — present only when \code{prune = TRUE}. Cheap-pass log-
-marginals at every cell, a logical mask of pruned cells, the
-pruned-cell count, and the threshold actually applied. Pruned
-cells have \code{log_marginal = -Inf} so they get zero weight under
-\code{.nl_normalise_weights}.
+\code{prune_tol} — present only when \code{prune = TRUE} and the safety gate did
+not fall back. Cheap-pass log-marginals at every cell, a logical mask
+of pruned cells, the pruned-cell count, and the threshold actually
+applied. Pruned cells have \code{log_marginal = -Inf} so they get zero
+weight under \code{.nl_normalise_weights}.
+\item \code{prune_fallback_triggered}, \code{prune_fallback_reason} — present only when
+the safety gate fell back to the full grid. The returned fit is the
+full-grid (unpruned) result; the reason string records which gate
+condition tripped.
 }
 }
 \description{

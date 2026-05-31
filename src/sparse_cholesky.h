@@ -79,6 +79,25 @@ public:
     // Returns empty vector on failure.
     std::vector<double> selected_inversion_diagonal();
 
+    // Full selected inversion (Takahashi equations): the partial inverse
+    // Z = A^{-1} computed on pattern(L + L^T), the fill-in superset of A's
+    // sparsity pattern. Returns a lookup keyed by ORIGINAL (pre-permutation)
+    // (i, j): every (i, j) on A's nonzero pattern is present, since A's
+    // pattern is a subset of the factor's pattern. O(nnz(L)) complexity.
+    // Converts factor to simplicial LL' if currently supernodal.
+    struct SelectedInverse {
+        int n = 0;
+        std::vector<int> Lp;            // factor column pointers (permuted space)
+        std::vector<int> Li;            // factor row indices (permuted space)
+        std::vector<double> Zx;         // Takahashi partial inverse, pattern(L)
+        std::vector<int> perm_inv;      // original index -> permuted index
+
+        // A^{-1}_{ij} in original ordering. Returns 0.0 if (i, j) is off the
+        // computed pattern (which never happens for (i, j) on A's pattern).
+        double at(int i_orig, int j_orig) const;
+    };
+    SelectedInverse selected_inversion_full();
+
     // Whether analyze() has been called
     bool analyzed() const { return analyzed_; }
 

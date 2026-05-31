@@ -270,8 +270,8 @@ double update_sigma_spatial(
   return tulpa::update_sigma_halfcauchy(u, scale);
 }
 
-// Update rho (mixing proportion) with beta prior
-// Uses slice sampling or direct sampling if possible
+// Update rho (mixing proportion) with beta prior via a grid approximation of
+// the Polya-Gamma full conditional.
 double update_rho_bym2(
     const NumericVector& phi_scaled,
     const NumericVector& theta,
@@ -284,9 +284,7 @@ double update_rho_bym2(
 ) {
   int J = phi_scaled.size();
 
-  // Compute log-posterior at current rho and nearby values
-  // This uses a grid search approach for simplicity
-
+  // Evaluate the log-posterior on a grid over rho in (0, 1) and sample.
   int n_grid = 20;
   NumericVector log_probs(n_grid);
   NumericVector rho_vals(n_grid);
@@ -299,11 +297,14 @@ double update_rho_bym2(
     double sqrt_1_rho = std::sqrt(1.0 - rho + 1e-10);
 
     // Log-likelihood contribution
+    // Polya-Gamma full conditional for rho through u_j(rho): the quadratic
+    // data-precision term and the linear data-fit term. The phi_scaled (scaled
+    // ICAR) and theta (iid) priors do not depend on rho, so there is no
+    // log-determinant term.
     double log_lik = 0.0;
     for (int j = 0; j < J; j++) {
       double u_j = sigma_spatial * (sqrt_rho * phi_scaled[j] * scale_factor + sqrt_1_rho * theta[j]);
-      // Simplified: just use the quadratic form
-      log_lik -= 0.5 * sum_omega[j] * u_j * u_j;
+      log_lik += -0.5 * sum_omega[j] * u_j * u_j + sum_resid[j] * u_j;
     }
 
     // Beta prior: (alpha-1)*log(rho) + (beta-1)*log(1-rho)

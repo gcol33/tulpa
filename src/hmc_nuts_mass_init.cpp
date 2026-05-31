@@ -84,20 +84,15 @@ MassMatrixConfig select_and_init_mass_matrix(
         block_specs.push_back({layout.log_sigma2_gp_regional_idx, 2});
       }
     }
+    // SVC layout groups all sigma2 then all phi: [sigma2_0..sigma2_{k-1},
+    // phi_0..phi_{k-1}]. The correlated pair for SVC t is (sigma2_t, phi_t),
+    // which is contiguous only when k == 1 (sigma2_0 immediately followed by
+    // phi_0). A BLOCK_DIAG MassBlock spans a contiguous index range, so the
+    // (sigma2_t, phi_t) pairs are blockable only in that single-SVC case;
+    // multi-SVC models keep the DIAG/DENSE selection below.
     if (layout.has_svc && layout.log_sigma2_svc_start >= 0 &&
         layout.log_phi_svc_start >= 0) {
       int n_svc = layout.log_sigma2_svc_end - layout.log_sigma2_svc_start;
-      for (int t = 0; t < n_svc; t++) {
-        int sigma_idx = layout.log_sigma2_svc_start + t;
-        int phi_idx = layout.log_phi_svc_start + t;
-        if (phi_idx == sigma_idx + n_svc) {
-          // SVC sigma2 and phi are in separate contiguous blocks; can't form a 2x2 block
-          // unless they're consecutive. Skip non-consecutive pairs.
-        }
-      }
-      // SVC layout: [sigma2_0, sigma2_1, ..., phi_0, phi_1, ...]
-      // These aren't consecutive pairs, so we'd need per-SVC blocks of non-contiguous params.
-      // For now, only handle n_svc=1 where sigma2 and phi are adjacent:
       if (n_svc == 1 && layout.log_phi_svc_start == layout.log_sigma2_svc_start + 1) {
         block_specs.push_back({layout.log_sigma2_svc_start, 2});
       }
@@ -132,14 +127,16 @@ MassMatrixConfig select_and_init_mass_matrix(
         block_specs.push_back({ms_block_start, ms_block_size});
       }
     }
-    // Correlated slopes: Cholesky params form a natural block
+    // Correlated slopes: the per-term Cholesky params form a contiguous,
+    // naturally correlated block. A MassBlock holds a dense block up to 4x4
+    // (its stack-allocated storage stride), so terms with 2..4 Cholesky params
+    // get a dedicated block; wider correlated-slope terms keep the DIAG/DENSE
+    // selection below.
     if (layout.has_re_correlated_slopes) {
       for (size_t t = 0; t < layout.chol_re_start_multi.size(); t++) {
         if (layout.re_correlated_multi[t]) {
           int chol_start = layout.chol_re_start_multi[t];
           int chol_size = layout.chol_re_end_multi[t] - chol_start;
-          // Also include the corresponding sigma params
-          // For now, just handle the Cholesky block if size <= 4
           if (chol_size >= 2 && chol_size <= 4) {
             block_specs.push_back({chol_start, chol_size});
           }
