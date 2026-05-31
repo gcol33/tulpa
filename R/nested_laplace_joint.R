@@ -306,22 +306,6 @@
 #'
 #' @seealso [tulpa_nested_laplace()] for the single-arm engine.
 #' @export
-# Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid
-# progress knobs (gcol33/tulpa#45) from the scoped `tulpa.nl_progress` option set
-# by tulpa_nested_laplace_joint. Every backend / refinement call site routes
-# through here, so progress reaches the cpp entry without threading four scalars
-# through the polymorphic backend interface. Option unset -> progress = FALSE.
-.cpp_joint_multi <- function(...) {
-  p <- getOption("tulpa.nl_progress", NULL)
-  if (is.null(p)) p <- .nl_progress_args(list())
-  do.call(cpp_nested_laplace_joint_multi,
-          c(list(...),
-            list(progress          = isTRUE(p$progress),
-                 progress_every    = as.integer(p$progress_every),
-                 progress_throttle = as.numeric(p$progress_throttle),
-                 progress_file     = as.character(p$progress_file))))
-}
-
 tulpa_nested_laplace_joint <- function(responses,
                                        prior,
                                        copy = NULL,
@@ -649,4 +633,20 @@ tulpa_nested_laplace_joint <- function(responses,
                                          k_samples  = k_samples)
     class(res) <- c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")
     res
+}
+
+# Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid
+# progress knobs (gcol33/tulpa#45) from the scoped `tulpa.nl_progress` option set
+# by tulpa_nested_laplace_joint. Every backend / refinement call site routes
+# through here, so progress reaches the cpp entry without threading four scalars
+# through the polymorphic backend interface. Option unset -> progress = FALSE.
+.cpp_joint_multi <- function(...) {
+  p <- getOption("tulpa.nl_progress", NULL)
+  if (is.null(p)) p <- .nl_progress_args(list())
+  do.call(cpp_nested_laplace_joint_multi,
+          c(list(...),
+            list(progress          = isTRUE(p$progress),
+                 progress_every    = as.integer(p$progress_every),
+                 progress_throttle = as.numeric(p$progress_throttle),
+                 progress_file     = as.character(p$progress_file))))
 }
