@@ -254,6 +254,18 @@ draws are unchanged. A fit carrying an axis whose support is not safely
 known (CAR_proper's \code{rho_car}) declines to the quadrature-ESS fallback
 (\code{pareto_k = NA}) rather than apply a guessed transform. \code{FALSE} skips
 the diagnostic (\code{pareto_k = NA}).
+\item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
+\code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
+fit resumable: each completed outer-grid cell is appended to \code{path}, and
+a later call with the same responses + grid + control loads the finished
+cells and solves only the rest. EVA-scale joint fits run for hours, so a
+wrapper teardown, reboot, or OOM near the end otherwise loses the whole
+run. \code{resume = TRUE} (the default when a \code{path} is given) continues from
+an existing file; \code{resume = FALSE} removes it first and starts over.
+Adaptive-grid refinement cells are checkpointed under their own
+coordinate keys, so resume covers them too. A file written for different
+data or solver settings is rejected (fingerprint mismatch) rather than
+resumed onto a stale result.
 }}
 }
 \value{

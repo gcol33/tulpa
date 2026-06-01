@@ -262,6 +262,18 @@
 #'     known (CAR_proper's `rho_car`) declines to the quadrature-ESS fallback
 #'     (`pareto_k = NA`) rather than apply a guessed transform. `FALSE` skips
 #'     the diagnostic (`pareto_k = NA`).
+#'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
+#'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
+#'     fit resumable: each completed outer-grid cell is appended to `path`, and
+#'     a later call with the same responses + grid + control loads the finished
+#'     cells and solves only the rest. EVA-scale joint fits run for hours, so a
+#'     wrapper teardown, reboot, or OOM near the end otherwise loses the whole
+#'     run. `resume = TRUE` (the default when a `path` is given) continues from
+#'     an existing file; `resume = FALSE` removes it first and starts over.
+#'     Adaptive-grid refinement cells are checkpointed under their own
+#'     coordinate keys, so resume covers them too. A file written for different
+#'     data or solver settings is rejected (fingerprint mismatch) rather than
+#'     resumed onto a stale result.
 #'
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:
@@ -402,6 +414,21 @@ tulpa_nested_laplace_joint <- function(responses,
     # the cpp boundary. Restored on exit so the option never leaks past the fit.
     .op_progress <- options(tulpa.nl_progress = .nl_progress_args(control))
     on.exit(options(.op_progress), add = TRUE)
+
+    # Grid-cell checkpoint/resume (gcol33/tulpa#50). Threaded to the cpp
+    # boundary via a scoped option, like progress, so every backend / adaptive-
+    # refinement kernel call within this fit shares one checkpoint file. On a
+    # fresh run (resume = FALSE) any prior file is removed once here, before the
+    # first kernel call, so the several within-fit calls all append rather than
+    # truncate each other. A resume (the default) keeps the file and the C++
+    # layer loads its completed cells.
+    .ckpt <- .nl_checkpoint_args(control)
+    .op_checkpoint <- options(tulpa.nl_checkpoint = .ckpt)
+    on.exit(options(.op_checkpoint), add = TRUE)
+    if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) &&
+        file.exists(.ckpt$path)) {
+        file.remove(.ckpt$path)
+    }
 
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)
@@ -659,10 +686,13 @@ tulpa_nested_laplace_joint <- function(responses,
 .cpp_joint_multi <- function(...) {
   p <- getOption("tulpa.nl_progress", NULL)
   if (is.null(p)) p <- .nl_progress_args(list())
+  cp <- getOption("tulpa.nl_checkpoint", NULL)
+  checkpoint_path <- if (is.list(cp)) as.character(cp$path) else ""
   do.call(cpp_nested_laplace_joint_multi,
           c(list(...),
             list(progress          = isTRUE(p$progress),
                  progress_every    = as.integer(p$progress_every),
                  progress_throttle = as.numeric(p$progress_throttle),
-                 progress_file     = as.character(p$progress_file))))
+                 progress_file     = as.character(p$progress_file),
+                 checkpoint_path   = checkpoint_path)))
 }

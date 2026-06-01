@@ -1499,3 +1499,30 @@ prior_from_spec <- function(spec, data) {
     progress_file     = as.character(control$progress.file    %||% "")
   )
 }
+
+# Resolve the grid-cell checkpoint spec (gcol33/tulpa#50) to a normalized
+# `list(path, resume)`. `control$checkpoint = list(path = , resume = TRUE)`
+# enables it; `resume = FALSE` starts over (the front door removes any prior
+# file before the first kernel call). Like `.nl_progress_args`, an absent
+# control key falls back to the scoped `tulpa.nl_checkpoint` option so the
+# checkpoint reaches grids run through fixed-control internal paths.
+.nl_checkpoint_args <- function(control) {
+  cp <- control$checkpoint
+  if (is.null(cp)) {
+    opt <- getOption("tulpa.nl_checkpoint", NULL)
+    if (is.list(opt)) return(opt)
+    return(list(path = "", resume = TRUE))
+  }
+  if (!is.list(cp) || is.null(cp$path) || !is.character(cp$path) ||
+      length(cp$path) != 1L || is.na(cp$path) || !nzchar(cp$path)) {
+    stop("`control$checkpoint` must be a list with a single non-empty ",
+         "character `path` (e.g. ",
+         "list(path = \"fit.ckpt\", resume = TRUE)).", call. = FALSE)
+  }
+  resume <- cp$resume %||% TRUE
+  if (!is.logical(resume) || length(resume) != 1L || is.na(resume)) {
+    stop("`control$checkpoint$resume` must be a single TRUE or FALSE.",
+         call. = FALSE)
+  }
+  list(path = path.expand(cp$path), resume = isTRUE(resume))
+}

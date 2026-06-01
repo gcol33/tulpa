@@ -78,6 +78,7 @@
 #define TULPA_NESTED_LAPLACE_GRID_H
 
 #include "laplace_core.h"
+#include "nested_laplace_checkpoint.h"
 #include "sparse_cholesky.h"
 #include <tulpa/nested_progress.h>
 #include <Rcpp.h>
@@ -122,6 +123,11 @@ namespace tulpa {
 // cell (e.g. proper-CAR rho outside the PD interval). Pass `NoCheapEval{}`
 // (default) to disable pruning entirely; std::function is avoided here to
 // keep Windows DLL export-symbol instantiations cheap.
+//
+// `ckpt` (default nullptr) enables grid-cell checkpoint/resume: cells whose
+// hyperparameter coordinate was completed in a prior pass / killed run are
+// loaded from disk and skipped, and every freshly solved cell is appended.
+// See nested_laplace_checkpoint.h.
 struct NoCheapEval {
     LaplaceResult operator()(int, const std::vector<double>&, int) const {
         LaplaceResult r;
@@ -147,7 +153,8 @@ inline Rcpp::List run_nested_laplace_grid(
     const std::vector<int>& tile_pilot_cells = std::vector<int>(),
     CheapEval cheap_eval = CheapEval{},
     double prune_tol = 0.0,
-    tulpa_progress::GridProgress* progress = nullptr
+    tulpa_progress::GridProgress* progress = nullptr,
+    GridCheckpoint* ckpt = nullptr
 ) {
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
@@ -183,6 +190,26 @@ inline Rcpp::List run_nested_laplace_grid(
         x_init_vec.assign(x_init.begin(), x_init.end());
     }
 
+    // Checkpoint preload (gcol33/tulpa#50). A cell whose hyperparameter
+    // coordinate was completed in a prior pass / killed run is filled straight
+    // from disk and flagged done, so every solve site below skips it and the
+    // warm-start chain reads its stored mode. `record(k)` appends a freshly
+    // solved cell. Both are no-ops when `ckpt == nullptr`.
+    std::vector<unsigned char> ckpt_done(n_grid, 0);
+    int n_loaded = 0;
+    if (ckpt) {
+        for (int k = 0; k < n_grid; k++) {
+            if (ckpt->has(k)) {
+                cell_results[k] = ckpt->get(k);
+                ckpt_done[k] = 1;
+                n_loaded++;
+            }
+        }
+    }
+    auto record = [&](int k) {
+        if (ckpt && !ckpt_done[k]) ckpt->save(k, cell_results[k]);
+    };
+
     // Determine whether we need an explicit pilot pass. Required either by
     // outer parallelism (the parallel branches use the pilot mode as the
     // warm-start for every other cell) or by cheap-pass pruning (the prune
@@ -207,10 +234,15 @@ inline Rcpp::List run_nested_laplace_grid(
     std::vector<double> pilot_mode;
     if (need_pilot) {
         // Tier-1 / global pilot. Always serial: any outer threads would
-        // contend on a single CHOLMOD solver and the pilot is one cell.
-        SparseCholeskySolver pilot_solver;
-        cell_results[k_pilot] =
-            solve_at_theta(k_pilot, x_init_vec, &pilot_solver);
+        // contend on a single CHOLMOD solver and the pilot is one cell. A
+        // resumed pilot is read from the checkpoint instead of re-solved.
+        if (!ckpt_done[k_pilot]) {
+            SparseCholeskySolver pilot_solver;
+            cell_results[k_pilot] =
+                solve_at_theta(k_pilot, x_init_vec, &pilot_solver);
+            record(k_pilot);
+            if (progress) progress->tick();  // first solved cell
+        }
         pilot_mode = cell_results[k_pilot].mode;
         // If the pilot diverged (rare — e.g. proper-CAR with rho outside the
         // PD interval at the centre cell), fall back to zero warm-start so
@@ -218,7 +250,6 @@ inline Rcpp::List run_nested_laplace_grid(
         if (!std::isfinite(cell_results[k_pilot].log_marginal)) {
             pilot_mode.assign(n_x, 0.0);
         }
-        if (progress) progress->tick();  // pilot counts as the first solved cell
 
         // Cheap-pass pruning: a chained sweep over the lattice that keeps
         // every cheap mode near its cell's true mode. Each cell runs a short
@@ -235,6 +266,17 @@ inline Rcpp::List run_nested_laplace_grid(
                             -std::numeric_limits<double>::infinity());
             std::vector<double> warm = pilot_mode;
             for (int k = 0; k < n_grid; k++) {
+                // An already-completed cell needs no screening: use its true
+                // log-marginal for ranking and its stored mode to warm the
+                // chain, and never prune it (handled in the marking loop).
+                if (ckpt_done[k]) {
+                    cheap_lm[k] = cell_results[k].log_marginal;
+                    if (std::isfinite(cell_results[k].log_marginal) &&
+                        static_cast<int>(cell_results[k].mode.size()) == n_x) {
+                        warm = cell_results[k].mode;
+                    }
+                    continue;
+                }
                 LaplaceResult cr = cheap_eval(k, warm, CHEAP_SCREEN_ITERS);
                 cheap_lm[k] = cr.log_marginal;
                 // Chain the warm-start only across feasible cells; an
@@ -265,6 +307,7 @@ inline Rcpp::List run_nested_laplace_grid(
             }
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) continue;
+                if (ckpt_done[k]) continue;  // completed cells are never pruned
                 double w = (std::isfinite(cheap_lm[k]) && Z > 0.0)
                            ? std::exp(cheap_lm[k] - m) / Z
                            : 0.0;
@@ -282,9 +325,10 @@ inline Rcpp::List run_nested_laplace_grid(
                 }
             }
         }
-        // Pruned cells get no full solve, so they are not part of the ETA
-        // denominator; revise it down to the survivors actually solved.
-        if (progress) progress->set_total(n_grid - n_cells_pruned);
+        // Pruned and checkpoint-loaded cells get no full solve, so they are
+        // not part of the ETA denominator; revise it down to the survivors
+        // actually solved this run.
+        if (progress) progress->set_total(n_grid - n_cells_pruned - n_loaded);
     }
 
     if (n_threads_outer <= 1) {
@@ -296,23 +340,38 @@ inline Rcpp::List run_nested_laplace_grid(
         //    cell's mode (chained across survivors only).
         SparseCholeskySolver solver;
         if (!need_pilot) {
+            // No pilot was solved, so checkpoint-loaded cells were not yet
+            // discounted from the progress total; do it here.
+            if (progress && n_loaded) progress->set_total(n_grid - n_loaded);
             std::vector<double> prev_mode = x_init_vec;
             for (int k = 0; k < n_grid; k++) {
+                // A loaded cell is already in cell_results; chain its stored
+                // mode as the next warm-start and skip the solve.
+                if (ckpt_done[k]) {
+                    prev_mode = cell_results[k].mode;
+                    continue;
+                }
                 cell_results[k] = solve_at_theta(k, prev_mode, &solver);
+                record(k);
                 prev_mode = cell_results[k].mode;
                 if (progress) progress->tick();
             }
         } else {
             std::vector<double> prev_mode = pilot_mode;
-            // Iterate in original cell order, starting from cell 0; pilot
-            // and pruned cells are skipped (already filled above).
+            // Iterate in original cell order, starting from cell 0; pilot,
+            // pruned, and loaded cells are skipped (already filled above).
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) {
                     prev_mode = cell_results[k_pilot].mode;
                     continue;
                 }
                 if (pruned[k]) continue;
+                if (ckpt_done[k]) {
+                    prev_mode = cell_results[k].mode;
+                    continue;
+                }
                 cell_results[k] = solve_at_theta(k, prev_mode, &solver);
+                record(k);
                 prev_mode = cell_results[k].mode;
                 if (progress) progress->tick();
             }
@@ -345,6 +404,7 @@ inline Rcpp::List run_nested_laplace_grid(
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) continue;  // already solved
                 if (pruned[k]) continue;     // cheap-pass pruned
+                if (ckpt_done[k]) continue;  // checkpoint-loaded
                 #ifdef _OPENMP
                 int tid = omp_get_thread_num();
                 #else
@@ -352,6 +412,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
                 cell_results[k] = solve_at_theta(k, pilot_mode, solver);
+                record(k);
                 if (progress) {
                     #ifdef _OPENMP
                     #pragma omp critical(nl_grid_progress)
@@ -393,6 +454,13 @@ inline Rcpp::List run_nested_laplace_grid(
                     continue;
                 }
                 if (pruned[k]) continue;
+                if (ckpt_done[k]) {
+                    // Loaded tile pilot: its stored mode still seeds Tier 3.
+                    tile_modes[t] = std::isfinite(cell_results[k].log_marginal)
+                                    ? cell_results[k].mode
+                                    : pilot_mode;
+                    continue;
+                }
                 #ifdef _OPENMP
                 int tid = omp_get_thread_num();
                 #else
@@ -400,6 +468,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
                 cell_results[k] = solve_at_theta(k, pilot_mode, solver);
+                record(k);
                 // Tile-pilot mode is the Tier-3 warm-start; if the cell
                 // diverged, fall back to the global pilot mode so we don't
                 // propagate garbage to the rest of the tile.
@@ -425,6 +494,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 if (k == k_pilot) continue;       // global pilot, Tier 1
                 if (is_tile_pilot[k]) continue;   // tile pilot, Tier 2
                 if (pruned[k]) continue;          // cheap-pass pruned
+                if (ckpt_done[k]) continue;       // checkpoint-loaded
                 int t = tile_ids[k];
                 #ifdef _OPENMP
                 int tid = omp_get_thread_num();
@@ -437,6 +507,7 @@ inline Rcpp::List run_nested_laplace_grid(
                     ? tile_modes[t]
                     : pilot_mode;
                 cell_results[k] = solve_at_theta(k, warm, solver);
+                record(k);
                 if (progress) {
                     #ifdef _OPENMP
                     #pragma omp critical(nl_grid_progress)
