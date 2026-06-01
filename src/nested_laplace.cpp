@@ -916,6 +916,40 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
     );
 }
 
+// Shared tail for every cpp_nested_laplace_st_<spatial> entry: stack the
+// temporal latent block onto the caller's spatial block(s) at the right latent
+// offset and run the joint inner solve. The temporal block, the [beta | re |
+// spatial | temporal] offset bookkeeping, and the driver call live here once;
+// each entry supplies only its spatial Q policy (the prebuilt block(s) and their
+// latent dimension), its spatial_idx, and the force_sparse routing. `blocks` is
+// taken by value so the temporal block appends without disturbing the caller.
+inline Rcpp::List run_st_spatial_kernel(
+    int n_grid, int spatial_latent_dim,
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    int n_re_groups, double sigma_re,
+    const Rcpp::IntegerVector& spatial_idx,
+    std::vector<tulpa::LatentBlock> blocks,
+    const Rcpp::IntegerVector& temporal_idx, int n_times,
+    const std::string& temporal_type,
+    const Rcpp::NumericVector& tau_temporal_grid,
+    const Rcpp::NumericVector& rho_t, bool cyclic,
+    const std::string& family, double phi,
+    int max_iter, double tol, int n_threads,
+    const Rcpp::NumericVector& x_init, bool store_Q, bool force_sparse
+) {
+    const int N = y.size();
+    const int p = X.ncol();
+    const int t_start = p + n_re_groups + spatial_latent_dim;
+    blocks.push_back(make_temporal_latent_block(
+        t_start, n_times, temporal_idx, temporal_type,
+        tau_temporal_grid, rho_t, cyclic));
+    return run_indexed_st_nested_laplace_joint(
+        n_grid, y, n_trials, X, re_idx, N, p, n_re_groups, sigma_re,
+        spatial_idx, blocks, family, phi, max_iter, tol, n_threads,
+        x_init, store_Q, force_sparse);
+}
+
 } // namespace
 
 // =====================================================================
@@ -1020,24 +1054,18 @@ Rcpp::List cpp_nested_laplace_st_icar(
         Rcpp::stop("tau_spatial_grid and tau_temporal_grid must have the same length");
     }
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial_units;
+    int s_start = X.ncol() + n_re_groups;
 
     std::vector<tulpa::LatentBlock> blocks = make_icar_latent_blocks(
         s_start, n_spatial_units, spatial_idx, tau_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
-    blocks.push_back(make_temporal_latent_block(
-        t_start, n_times, temporal_idx, temporal_type,
-        tau_temporal_grid, rho_t, cyclic));
 
-    Rcpp::List out = run_indexed_st_nested_laplace_joint(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        spatial_idx, blocks,
+    Rcpp::List out = run_st_spatial_kernel(
+        n_grid, /*spatial_latent_dim=*/n_spatial_units,
+        y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
+        temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse
-    );
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse);
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
     if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
@@ -1073,24 +1101,18 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
         Rcpp::stop("tau_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
     }
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial_units;
+    int s_start = X.ncol() + n_re_groups;
 
     std::vector<tulpa::LatentBlock> blocks = make_car_proper_latent_blocks(
         s_start, n_spatial_units, spatial_idx, tau_spatial_grid, rho_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
-    blocks.push_back(make_temporal_latent_block(
-        t_start, n_times, temporal_idx, temporal_type,
-        tau_temporal_grid, rho_t, cyclic));
 
-    Rcpp::List out = run_indexed_st_nested_laplace_joint(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        spatial_idx, blocks,
+    Rcpp::List out = run_st_spatial_kernel(
+        n_grid, /*spatial_latent_dim=*/n_spatial_units,
+        y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
+        temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse
-    );
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse);
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["rho_spatial_grid"]  = rho_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
@@ -1129,25 +1151,19 @@ Rcpp::List cpp_nested_laplace_st_bym2(
         Rcpp::stop("sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
     }
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
-    int N = y.size();
-    int p = X.ncol();
-    int s_start = p + n_re_groups;
-    int t_start = s_start + 2 * n_spatial_units;
+    int s_start = X.ncol() + n_re_groups;
 
     std::vector<tulpa::LatentBlock> blocks = make_bym2_latent_blocks(
         s_start, n_spatial_units, spatial_idx, scale_factor,
         sigma_spatial_grid, rho_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
-    blocks.push_back(make_temporal_latent_block(
-        t_start, n_times, temporal_idx, temporal_type,
-        tau_temporal_grid, rho_t, cyclic));
 
-    Rcpp::List out = run_indexed_st_nested_laplace_joint(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        spatial_idx, blocks,
+    Rcpp::List out = run_st_spatial_kernel(
+        n_grid, /*spatial_latent_dim=*/2 * n_spatial_units,
+        y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
+        temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse
-    );
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse);
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_spatial_grid"]   = rho_spatial_grid;
     out["tau_temporal_grid"]  = tau_temporal_grid;
@@ -1193,7 +1209,6 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     if (lambda_eig.size() != M)
         Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
     int s_start = p + n_re_groups;
-    int t_start = s_start + M;
     (void) force_sparse;  // HSGP is DENSE_BASIS -> the joint driver always takes
                           // the sparse path; the legacy force_sparse knob is moot.
 
@@ -1213,18 +1228,14 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         phi_per_arm, n_obs_per_arm, /*n_arms=*/1, /*block_index=*/0,
         lambda_eig,
         /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid));
-    blocks.push_back(make_temporal_latent_block(
-        t_start, n_times, temporal_idx, temporal_type,
-        tau_temporal_grid, rho_t, cyclic));
-
     // DENSE_BASIS HSGP block forces the joint sparse path regardless of n_x.
     Rcpp::IntegerVector spatial_idx_unused(N, 0);  // HSGP has no per-obs unit idx
-    Rcpp::List out = run_indexed_st_nested_laplace_joint(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        spatial_idx_unused, blocks,
+    Rcpp::List out = run_st_spatial_kernel(
+        n_grid, /*spatial_latent_dim=*/M,
+        y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx_unused, std::move(blocks),
+        temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true
-    );
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true);
     out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
     out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
     out["tau_temporal_grid"]        = tau_temporal_grid;
@@ -1270,7 +1281,6 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     if (coords.nrow() != n_spatial)
         Rcpp::stop("nrow(coords) must equal n_spatial");
     int s_start = p + n_re_groups;
-    int t_start = s_start + n_spatial;
     (void) force_sparse;  // NNGP's prior is sparse-native -> the joint driver
                           // always takes the sparse path; force_sparse is moot.
 
@@ -1291,16 +1301,13 @@ Rcpp::List cpp_nested_laplace_st_nngp(
         /*n_arms=*/1, /*block_index=*/0,
         nn, cov_type, coords, nn_idx, nn_dist, nn_order,
         /*axis_sigma2=*/0, /*axis_phi_gp=*/1, theta_grid));
-    blocks.push_back(make_temporal_latent_block(
-        t_start, n_times, temporal_idx, temporal_type,
-        tau_temporal_grid, rho_t, cyclic));
 
-    Rcpp::List out = run_indexed_st_nested_laplace_joint(
-        n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
-        spatial_idx, blocks,
+    Rcpp::List out = run_st_spatial_kernel(
+        n_grid, /*spatial_latent_dim=*/n_spatial,
+        y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
+        temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true
-    );
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true);
     out["sigma2_spatial_grid"] = sigma2_spatial_grid;
     out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
     out["tau_temporal_grid"]   = tau_temporal_grid;
