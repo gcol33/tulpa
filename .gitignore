@@ -8,6 +8,7 @@ src/symbols.rds
 *.Rcheck/
 *.tar.gz
 *.log
+Rplots.pdf
 dev_notes/
 dev_scripts/
 experimental/
