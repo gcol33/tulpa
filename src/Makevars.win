@@ -1,3 +1,19 @@
+# Keep the package DLL the default goal: R reads this file before
+# winshlib.mk, so the tulpa_pch.h.gch rule below would otherwise become the
+# first (default) target and stop the build after the PCH.
+all: $(SHLIB)
+
 CXX_STD = CXX17
-PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) -I../inst/include -Wa,-mbig-obj
+PKG_CPPFLAGS = -I../inst/include -include tulpa_pch.h
+PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) -Wa,-mbig-obj -Winvalid-pch
 PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
+
+# Build the RcppEigen precompiled header before any object, with the exact
+# compiler and flags R uses for the .cpp.o rule so GCC accepts the .gch. The
+# guarded -include tulpa_pch.h in PKG_CPPFLAGS is a no-op while building the
+# header itself. -Winvalid-pch downgrades a flag mismatch to a warning plus a
+# normal compile, so a stale or rejected .gch never breaks the build.
+tulpa_pch.h.gch: tulpa_pch.h
+	$(CXX) $(ALL_CPPFLAGS) $(ALL_CXXFLAGS) -x c++-header tulpa_pch.h -o tulpa_pch.h.gch
+
+$(OBJECTS): tulpa_pch.h.gch

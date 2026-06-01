@@ -5,6 +5,7 @@ src/*.exe
 src/*.def
 !src/tulpa-win.def
 src/symbols.rds
+src/*.gch
 *.Rcheck/
 *.tar.gz
 *.log
