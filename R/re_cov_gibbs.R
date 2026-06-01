@@ -228,7 +228,12 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   re_vals <- pilot$mode[-seq_len(p)]
 
   L_beta <- if (!is.null(pilot$H_beta)) {
-    .re_chol_spd(tryCatch(solve(pilot$H_beta), error = function(e) diag(p)))
+    .re_chol_spd(tryCatch(solve(pilot$H_beta), error = function(e) {
+      warning("tulpa_re_cov_gibbs(): pilot fixed-effect Hessian not ",
+              "invertible (", conditionMessage(e), "); using an identity ",
+              "proposal scale for the beta block.", call. = FALSE)
+      diag(p)
+    }))
   } else diag(p)
 
   # Slice the latent mode (term-major then group order) and the per-group

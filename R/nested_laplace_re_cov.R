@@ -701,7 +701,13 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
     if (min(ev) <= 1e-8) stop("non-PD Hessian")
     solve(Hs)
-  }, error = function(e) diag(0.5^2, k))
+  }, error = function(e) {
+    warning("tulpa_re_cov_nested(): outer theta-Hessian not usable (",
+            conditionMessage(e), "); falling back to a diagonal proposal ",
+            "scale. Integration nodes may be mis-placed -- check the outer ",
+            "Pareto-k (fit$pareto_k).", call. = FALSE)
+    diag(0.5^2, k)
+  })
   L_scale <- t(chol(post_cov))
 
   # --- integration nodes in whitened theta-space ----------------------------
