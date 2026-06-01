@@ -64,6 +64,29 @@ test_that(".nested_outer_pareto_k rises when the target is heavier than the prop
   expect_gt(kd$pareto_k, 0.5)                          # heavier target -> not correctable
 })
 
+test_that("the IS cores decline before evaluating the target below the floor", {
+  # gcol33/tulpa#51: a sub-floor n_samples can never reach .PSIS_MIN_EVAL finite
+  # evaluations, so both cores must return NA WITHOUT touching the (expensive)
+  # target -- not evaluate the whole budget and then discard it.
+  expect_lt(20L, .PSIS_MIN_EVAL)
+
+  hit <- 0L
+  target_counting <- function(th) { hit <<- hit + 1L; 0 }
+  kd <- .nested_outer_pareto_k(target_counting, theta_hat = c(0, 0),
+                               L_scale = diag(1, 2), n_samples = 20L)
+  expect_true(is.na(kd$pareto_k))
+  expect_equal(kd$n_eval, 0L)
+  expect_identical(hit, 0L)                            # no inner solve was paid
+
+  hit_b <- 0L
+  batched_counting <- function(U) { hit_b <<- hit_b + nrow(U); rep(0, nrow(U)) }
+  kb <- .nested_is_pareto_k(theta_hat = c(0, 0), L_scale = diag(1, 2),
+                            log_target_batched = batched_counting, n_samples = 20L)
+  expect_true(is.na(kb$pareto_k))
+  expect_equal(kb$n_eval, 0L)
+  expect_identical(hit_b, 0L)
+})
+
 test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws", {
   skip_on_cran()
   sim <- function(seed, G = 50L, npg = 10L) {

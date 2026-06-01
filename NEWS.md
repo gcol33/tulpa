@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.7 (development)
+
+* fix(nested-laplace): the outer Pareto-k accuracy diagnostic no longer
+  dominates runtime or runs solves it then discards (gcol33/tulpa#51). Three
+  changes, all on the diagnostic path -- the integration result is unchanged:
+  - The importance-sampling cores decline up front when `k_samples` is below
+    the GPD-fit floor (`.PSIS_MIN_EVAL`, 25): a sub-floor budget can never reach
+    enough finite evaluations, so it now returns `NA` without paying a single
+    inner solve instead of evaluating the whole budget and discarding it.
+  - Each diagnostic re-evaluation solve is warm-started from the modal cell's
+    converged latent mode, so the draws carrying the bulk of the importance
+    weight converge in a few Newton steps rather than from a cold start.
+  - The diagnostic solves cap their inner iterations at `min(max_iter, 25)`. A
+    draw at an implausible hyperparameter (where the inner Newton would
+    otherwise stall to the full budget) carries negligible importance weight, so
+    the cap bounds its cost without moving the k-hat -- converged draws keep
+    their exact log-marginal; only the negligible-weight tail is truncated.
+  Covers `tulpa_nested_laplace_joint()` (single- and multi-block); the
+  sub-floor decline also covers `tulpa_nested_laplace()`, `tulpa_re_cov_nested()`
+  and `fit_spde()` through the shared PSIS cores.
+
 ## 0.0.6
 
 * `tulpa_re_cov_nested()` documents its outer accuracy-diagnostic controls

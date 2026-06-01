@@ -15,6 +15,31 @@
 # guessed transform (never a wrong k-hat). This mirrors the generic path's
 # decline on a bounded `rho_grid` (gcol33/tulpa#42).
 
+# Capped inner-Newton budget for the outer Pareto-k diagnostic's re-evaluation
+# solves (gcol33/tulpa#51). Warm-started from the modal latent mode, a draw at a
+# plausible hyperparameter converges in a few steps; a draw at an implausible
+# one (where the cold Newton would stall to the fit's full `max_iter`) carries
+# negligible importance weight, so capping it bounds the diagnostic cost without
+# moving the k-hat. The effective cap is `min(max_iter, .K_DIAG_MAX_ITER)`.
+.K_DIAG_MAX_ITER <- 25L
+
+# Modal-cell latent mode for warm-starting the diagnostic solves: the converged
+# inner mode at the highest-weight grid cell. Broadcast as the `x_init` for
+# every re-evaluation draw (the bulk of the importance weight sits near the
+# posterior mode, so those draws warm-start well). Returns NULL when modes were
+# not stored, so the caller falls back to the kernel's cold default.
+.joint_modal_mode <- function(res) {
+    modes <- res$modes
+    w     <- res$weights
+    if (is.null(modes) || !is.matrix(modes) || is.null(w) ||
+        length(w) != nrow(modes) || !any(is.finite(w))) {
+        return(NULL)
+    }
+    m <- as.numeric(modes[which.max(w), ])
+    if (length(m) == 0L || any(!is.finite(m))) return(NULL)
+    m
+}
+
 # Positive-scale axes integrated on the log scale (theta = exp(u), Jacobian
 # d theta / d u = theta, log-Jacobian u). Per-arm dispersion axes carry the
 # `phi_` prefix and join this set by name.
@@ -137,6 +162,15 @@
     tags <- .joint_pareto_axis_tags(res)
     if (is.null(tags)) return(list(pareto_k = NA_real_, is_ess = NA_real_))
 
+    # Decline before any inner solve when the sample budget cannot reach the
+    # GPD-fit floor (gcol33/tulpa#51): a sub-floor `n_samples` would run every
+    # one of its solves and then discard the result as NA. The shared core
+    # short-circuits, but catching it here too keeps the costly forward/inverse
+    # transform + proposal fit off the table.
+    if (as.integer(n_samples) < .PSIS_MIN_EVAL) {
+        return(list(pareto_k = NA_real_, is_ess = NA_real_))
+    }
+
     tg <- res$theta_grid
     w  <- res$weights
     if (is.null(w) || length(w) != nrow(tg) || !is.finite(sum(w)) || sum(w) <= 0) {
@@ -185,17 +219,26 @@
 # `kernel_fn` (the closure refinement passes drive, which round-trips a
 # user-facing cell matrix through `backend$call_kernel`) and `hp_fn` (the
 # baked-hyperprior closure) as the re-evaluation path, so no kernel-call
-# machinery is duplicated. Attaches `pareto_k` / `pareto_k_is_ess` /
-# `pareto_k_scope`; with `diagnose_k = FALSE` the fields are present but NA.
+# machinery is duplicated. The diagnostic solves are warm-started from the
+# modal latent mode and capped at `.K_DIAG_MAX_ITER` (gcol33/tulpa#51), the
+# same cost bound as the multi-block path. Attaches `pareto_k` /
+# `pareto_k_is_ess` / `pareto_k_scope`; with `diagnose_k = FALSE` the fields
+# are present but NA.
 .joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
+                                          max_iter = 50L,
                                           diagnose_k = TRUE, k_samples = 200L) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
     if (!isTRUE(diagnose_k)) return(res)
 
+    warm      <- .joint_modal_mode(res)
+    warm_arg  <- if (is.null(warm)) NULL else list(mode = warm)
+    k_max_iter <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
+
     refit <- function(theta_mat) {
-        r  <- kernel_fn(theta_mat)
+        r  <- kernel_fn(theta_mat, warm_start = warm_arg,
+                        max_iter_override = k_max_iter)
         lm <- r$log_marginal
         if (!is.null(hp_fn)) {
             hp <- hp_fn(theta_mat)

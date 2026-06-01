@@ -15,6 +15,14 @@
 # misfit by the Gaussian grid and the nested result is not trustworthy.
 # =============================================================================
 
+# Minimum number of finite importance draws for a usable outer Pareto-k-hat.
+# The GPD tail fit (Zhang-Stephens) below this is too noisy to report, so a
+# diagnostic with fewer finite evaluations declines to NA. A `n_samples` budget
+# under this floor can never clear it, so the IS cores short-circuit BEFORE
+# paying any inner solve rather than evaluate the whole budget and discard it
+# (gcol33/tulpa#51).
+.PSIS_MIN_EVAL <- 25L
+
 # Log-sum-exp, numerically stabilized.
 .tulpa_logsumexp <- function(x) {
   m <- max(x)
@@ -117,6 +125,9 @@ tulpa_psis <- function(log_ratios) {
 .nested_outer_pareto_k <- function(log_target, theta_hat, L_scale,
                                    n_samples = 200L) {
   n_samples <- as.integer(n_samples)
+  if (n_samples < .PSIS_MIN_EVAL) {                    # cannot reach the floor
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+  }
   k <- length(theta_hat)
   Z <- matrix(stats::rnorm(n_samples * k), n_samples, k)
   lr <- vapply(seq_len(n_samples), function(s) {
@@ -127,7 +138,7 @@ tulpa_psis <- function(log_ratios) {
   }, numeric(1))
 
   n_eval <- sum(is.finite(lr))
-  if (n_eval < 25L) {
+  if (n_eval < .PSIS_MIN_EVAL) {
     return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
   }
   ps <- tulpa_psis(lr)
@@ -155,6 +166,9 @@ tulpa_psis <- function(log_ratios) {
                                 n_samples = 200L) {
   d <- length(theta_hat)
   n_samples <- as.integer(n_samples)
+  if (n_samples < .PSIS_MIN_EVAL) {                          # cannot reach the floor
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+  }
   Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
   U <- sweep(Z %*% t(L_scale), 2L, theta_hat, `+`)           # S x d ~ N(theta_hat, .)
   lt <- log_target_batched(U)
@@ -163,7 +177,7 @@ tulpa_psis <- function(log_ratios) {
   }
   lr <- lt + 0.5 * rowSums(Z^2)                              # target - log q (up to const)
   n_eval <- sum(is.finite(lr))
-  if (n_eval < 25L) {
+  if (n_eval < .PSIS_MIN_EVAL) {
     return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
   }
   ps <- tulpa_psis(lr)

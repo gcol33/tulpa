@@ -670,6 +670,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # PSIS-smooth. Declines (NA -> quad-ESS) when an axis has unguessable
     # support (e.g. CAR_proper's rho_car).
     res <- .joint_attach_pareto_k_single(res, kernel_fn, hp_fn,
+                                         max_iter   = max_iter,
                                          diagnose_k = diagnose_k,
                                          k_samples  = k_samples)
     tm$mark("diagnostics")

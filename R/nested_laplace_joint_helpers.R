@@ -537,12 +537,15 @@
                                   hessian_pd_mode = 0L,
                                   step_curvature_mode = 0L,
                                   inner_refresh = 1L) {
-    function(new_cells, warm_start = NULL, store_extras = FALSE) {
+    function(new_cells, warm_start = NULL, store_extras = FALSE,
+             max_iter_override = NULL) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
+        mi <- if (is.null(max_iter_override)) max_iter
+              else as.integer(max_iter_override)
         res_x <- backend$call_kernel(arms, prior, cp, new_grids,
-                                      max_iter, tol, n_threads,
+                                      mi, tol, n_threads,
                                       slice_x_init, isTRUE(store_Q),
                                       arm_names = arm_names,
                                       cell_coupling = cell_coupling,

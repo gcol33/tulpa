@@ -611,6 +611,15 @@
 # the shared cpp-grid / phi / hyperprior helpers) and defers to the
 # block-type-aware driver `.joint_pareto_k`. n_threads_outer = 1 / no tiling
 # on the re-eval path, so no tile-partition reconstruction is needed.
+#
+# The diagnostic solves are bounded (gcol33/tulpa#51): each is warm-started
+# from the modal cell's converged latent mode (the bulk of the importance
+# weight sits near it, so those draws converge in a few Newton steps) and
+# capped at `.K_DIAG_MAX_ITER` iterations. A draw at an implausible
+# hyperparameter where the inner Newton would otherwise stall to `max_iter`
+# carries negligible importance weight, so the cap bounds its cost without
+# moving the k-hat (converged draws keep their exact log-marginal; only the
+# negligible-weight tail is truncated).
 .joint_attach_pareto_k_multi <- function(res, arms, cp, blocks_spec,
                                          axis_offsets, B, arm_names,
                                          fn_sigma, fn_alpha,
@@ -622,6 +631,9 @@
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
     if (!isTRUE(diagnose_k)) return(res)
 
+    warm_mode  <- .joint_modal_mode(res)
+    k_max_iter <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
+
     refit <- function(theta_mat) {
         cpp_grid <- .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp)
         phi_ppa  <- .joint_multi_phi_per_arm(theta_mat, arm_names)
@@ -632,10 +644,10 @@
             blocks_spec  = blocks_spec,
             theta_grid   = cpp_grid,
             axis_offsets = axis_offsets,
-            max_iter     = as.integer(max_iter),
+            max_iter     = as.integer(k_max_iter),
             tol          = as.numeric(tol),
             n_threads    = as.integer(n_threads),
-            x_init_nullable = NULL,
+            x_init_nullable = warm_mode,
             store_Q      = FALSE,
             phi_grid_per_arm = phi_ppa,
             n_threads_outer = 1L,

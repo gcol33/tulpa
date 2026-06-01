@@ -236,6 +236,61 @@ test_that("diagnose_k = FALSE skips k-hat and leaves modes unchanged", {
     expect_equal(on$modes, off$modes)
 })
 
+test_that("a sub-floor k_samples declines to NA without paying the solves", {
+    skip_on_cran()
+    # gcol33/tulpa#51: k_samples below .PSIS_MIN_EVAL can never produce a usable
+    # GPD fit, so the diagnostic must decline (NA) up front rather than run every
+    # one of its inner solves and discard the result. The decline path costs no
+    # more than diagnose_k = FALSE.
+    sim <- .jpk_sim(seed = 71)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    cp <- list(arm = "pos", alpha_grid = c(0.5, 1.0, 1.5))
+
+    fit <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms(sim), prior = prior, copy = cp,
+        control = list(diagnose_k = TRUE, k_samples = 20L))
+    expect_lt(20L, tulpa:::.PSIS_MIN_EVAL)
+    expect_true(is.na(fit$pareto_k))
+    expect_true(is.na(fit$pareto_k_is_ess))
+    # The fit itself is unaffected.
+    off <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms(sim), prior = prior, copy = cp,
+        control = list(diagnose_k = FALSE))
+    expect_equal(fit$log_marginal, off$log_marginal)
+})
+
+test_that("warm-start + capped diagnostic iters leave the k-hat unchanged", {
+    skip_on_cran()
+    # The cost bound (gcol33/tulpa#51) warm-starts each diagnostic solve from the
+    # modal latent mode and caps its iterations. Converged draws keep their exact
+    # log-marginal and only negligible-weight tail draws are truncated, so the
+    # k-hat is unchanged. Compare the capped path against an uncapped reference
+    # built by overriding the cap to the full iteration budget.
+    sim <- .jpk_sim(seed = 73)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.8, 1.2))
+    cp <- list(arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5))
+    ctrl <- list(diagnose_k = TRUE, k_samples = 200L, max_iter = 80L,
+                 adaptive_grid = FALSE)
+
+    capped <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms(sim), prior = prior, copy = cp, control = ctrl)
+
+    old <- tulpa:::.K_DIAG_MAX_ITER
+    assignInNamespace(".K_DIAG_MAX_ITER", 10000L, ns = "tulpa")
+    on.exit(assignInNamespace(".K_DIAG_MAX_ITER", old, ns = "tulpa"), add = TRUE)
+    uncapped <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms(sim), prior = prior, copy = cp, control = ctrl)
+
+    expect_true(is.finite(capped$pareto_k))
+    expect_equal(capped$pareto_k, uncapped$pareto_k, tolerance = 1e-3)
+})
+
 test_that("diagnose_k does not perturb the global RNG state", {
     skip_on_cran()
     sim <- .jpk_sim(seed = 61)
