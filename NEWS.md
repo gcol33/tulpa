@@ -1,7 +1,18 @@
 # tulpa NEWS
 
-## 0.0.4
+## 0.0.5
 
+* feat(nested-laplace): fits now record wall-clock runtime on the returned
+  object as `fit$timing` (gcol33/tulpa#48). A named numeric of seconds carrying
+  `total` plus a phase breakdown -- `setup` (validation / encoding / grid
+  construction), `grid` (the inner Laplace solves that scale with grid size and
+  core count, including adaptive-refinement and consistency passes), `postproc`
+  (weight / moment / marginal assembly), and `diagnostics` (the outer
+  Pareto-k-hat). Covers `tulpa_nested_laplace()` (single- and multi-block) and
+  `tulpa_nested_laplace_joint()` (single- and multi-block dispatch); consumer
+  fits riding on the joint object inherit it. A new `print` method for the
+  nested-Laplace classes surfaces a one-line summary (`"fit in 5h 25m (grid 2h
+  09m)"`) alongside the hyperparameters, grid size, and outer Pareto-k-hat.
 * perf(nested-laplace): the **sparse** joint outer grid now runs in parallel
   under `control$n_threads_outer` (gcol33/tulpa#46, lever 2). It previously
   forced a serial outer loop, so on a large field only the inner per-observation

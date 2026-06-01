@@ -283,6 +283,12 @@
 #'   * `arm_layout` — list with per-arm `beta_start`, `re_start`,
 #'      spatial offset(s) and `n_x` for decoding modes.
 #'   * `prior`, `responses`, `copy` — echoed inputs.
+#'   * `timing` — named numeric of wall-clock seconds: `total` plus the
+#'      `setup` (validation / encoding / grid construction), `grid` (inner
+#'      Laplace solves, including adaptive-refinement and consistency passes),
+#'      `postproc` (weight / moment / marginal assembly) and `diagnostics`
+#'      (outer Pareto-\eqn{\hat{k}}) phases. The `grid` phase is the one that
+#'      scales with grid size and core count. Surfaced one-line in `print`.
 #'   * `pareto_k`, `pareto_k_is_ess`, `pareto_k_scope` — outer
 #'      Pareto-\eqn{\hat{k}} accuracy diagnostic and its importance-sampling
 #'      ESS (both `NA` when `control$diagnose_k = FALSE` or the fit declines;
@@ -314,6 +320,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                        prior_alpha = NULL,
                                        cell_coupling = "separable",
                                        control = list()) {
+    tm <- .tulpa_timer()                               # gcol33/tulpa#48
     # Resolve and validate the cell-coupling spec name against the C++
     # registry (separable default is auto-registered on first touch). The
     # resolved spec is held on the result but not yet routed through the
@@ -446,7 +453,8 @@ tulpa_nested_laplace_joint <- function(responses,
             force_sparse = force_sparse,
             cell_coupling = cell_coupling,
             diagnose_k = diagnose_k, k_samples = k_samples,
-            inner_refresh = inner_refresh
+            inner_refresh = inner_refresh,
+            timer = tm
         ))
     }
     if (is.null(prior$type)) {
@@ -474,6 +482,7 @@ tulpa_nested_laplace_joint <- function(responses,
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)
+    tm$mark("setup")
 
     call_kernel_with_tol <- function(tol_prune) {
         backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
@@ -498,6 +507,7 @@ tulpa_nested_laplace_joint <- function(responses,
         res <- .joint_prune_safety_gate(
             res, resolve_full = function() call_kernel_with_tol(0.0))
     }
+    tm$mark("grid")
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # at the kernel-call boundary. Every cell carries the same prior
@@ -569,6 +579,7 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     res <- .joint_glue_extras_to_res(res, theta_grid_M, log_marginal,
                                       extras_list, refining_axis)
+    tm$mark("grid")                          # adaptive-refinement inner solves
 
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
@@ -578,6 +589,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # Replace per-axis var-of-means SDs with Laplace-at-mode SDs where the
     # 3-point parabolic fit at the modal cell succeeds (gcol33/tulpa#20).
     res             <- .nl_refit_axis_sd_laplace(res)
+    tm$mark("postproc")
 
     # Var-of-means consistency pass. Sharply peaked axes (gaussian
     # noise SD, beta phi at high n_pos) collapse joint weight onto a
@@ -616,6 +628,7 @@ tulpa_nested_laplace_joint <- function(responses,
             res             <- .nl_refit_axis_sd_laplace(res)
         }
         res$var_of_means_consistency_info <- consistency$info
+        tm$mark("grid")                      # consistency-pass inner solves
     }
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior
@@ -623,6 +636,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$copy        <- copy
     res$cell_coupling      <- cell_coupling
     res$adaptive_grid_info <- refine_info
+    tm$mark("postproc")
     # Outer Pareto-k-hat: re-evaluate the inner joint marginal at hyperparameters
     # drawn from the integrator's Gaussian proposal (reusing the generic
     # `kernel_fn` + `hp_fn` so no kernel-call machinery is duplicated) and
@@ -631,6 +645,8 @@ tulpa_nested_laplace_joint <- function(responses,
     res <- .joint_attach_pareto_k_single(res, kernel_fn, hp_fn,
                                          diagnose_k = diagnose_k,
                                          k_samples  = k_samples)
+    tm$mark("diagnostics")
+    res$timing <- tm$timing()
     class(res) <- c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")
     res
 }

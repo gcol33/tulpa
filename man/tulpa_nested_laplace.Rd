@@ -105,6 +105,9 @@ A list with:
 \item \code{pareto_k}, \code{pareto_k_is_ess}: outer Pareto-\eqn{\hat{k}} and its
 importance-sampling ESS (\code{NA} when not computed for the grid; see
 \code{control$diagnose_k}).
+\item \code{timing}: named numeric of wall-clock seconds (\code{total}, \code{setup},
+\code{grid}, \code{postproc}, \code{diagnostics}); the \code{grid} phase is the inner
+Laplace pass that scales with grid size. Surfaced one-line in \code{print}.
 \item \code{prior}: echoed input.
 }
 }

@@ -67,6 +67,9 @@
 #'   * `pareto_k`, `pareto_k_is_ess`: outer Pareto-\eqn{\hat{k}} and its
 #'     importance-sampling ESS (`NA` when not computed for the grid; see
 #'     `control$diagnose_k`).
+#'   * `timing`: named numeric of wall-clock seconds (`total`, `setup`,
+#'     `grid`, `postproc`, `diagnostics`); the `grid` phase is the inner
+#'     Laplace pass that scales with grid size. Surfaced one-line in `print`.
 #'   * `prior`: echoed input.
 #'
 #' @param spec Optional `tulpa_temporal` or `tulpa_spatial` spec object
@@ -94,6 +97,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             family = "binomial", phi = 1.0,
                             likelihood = NULL,
                             control = list()) {
+
+  tm <- .tulpa_timer()                                   # gcol33/tulpa#48
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa()); the
   # top-level signature carries only statistical arguments.
@@ -155,14 +160,19 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   p_fixed <- ncol(X)
 
   if (.is_multi_block_prior(prior)) {
+    tm$mark("setup")
     res <- .nl_dispatch_multi(cargs, prior, likelihood = likelihood,
                               progress = .nl_progress_args(control))
+    tm$mark("grid")
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed)
     }
+    tm$mark("postproc")
     res <- .nl_attach_pareto_k(res, prior, cargs, "multi", NULL, likelihood,
                                k_samples, compute = diagnose_k)
+    tm$mark("diagnostics")
     res$prior <- prior
+    res$timing <- tm$timing()
     class(res) <- c("tulpa_nested_laplace", "list")
     return(res)
   }
@@ -177,7 +187,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
          "or pass a list of blocks for multi-block.", call. = FALSE)
   }
   type <- tolower(prior$type)
+  tm$mark("setup")
   res <- .nl_dispatch(type, cargs, prior)
+  tm$mark("grid")
 
   # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
   res$weights <- .nl_normalise_weights(res$log_marginal)
@@ -185,9 +197,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (isTRUE(keep_grid_hessians)) {
     res <- .nl_attach_grid_hessians(res, p_fixed)
   }
+  tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs, "single", type, NULL,
                              k_samples, compute = diagnose_k)
+  tm$mark("diagnostics")
   res$prior <- prior
+  res$timing <- tm$timing()
   class(res) <- c("tulpa_nested_laplace", "list")
   res
 }

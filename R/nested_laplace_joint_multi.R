@@ -671,7 +671,9 @@
                                   cell_coupling = "separable",
                                   diagnose_k = TRUE,
                                   k_samples = 200L,
-                                  inner_refresh = 1L) {
+                                  inner_refresh = 1L,
+                                  timer = NULL) {
+    tm <- timer %||% .tulpa_timer()                    # gcol33/tulpa#48
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -809,6 +811,7 @@
             inner_refresh   = as.integer(inner_refresh)
         )
     }
+    tm$mark("setup")
     res <- call_kernel_with_tol(prune_tol)
     # Safety gate (gcol33/tulpa#43): fall back to the full grid when the
     # cheap-pass ranking is unreliable rather than silently returning a
@@ -817,6 +820,7 @@
         res <- .joint_prune_safety_gate(
             res, resolve_full = function() call_kernel_with_tol(0.0))
     }
+    tm$mark("grid")
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     # (gcol33/tulpa#22). Multi-block has no in-package refinement passes,
@@ -839,6 +843,7 @@
     res$responses     <- responses
     res$copy          <- copy
     res$cell_coupling <- cell_coupling
+    tm$mark("postproc")
     # Outer Pareto-k-hat: re-evaluate the inner joint marginal at sampled
     # hyperparameters via the shared cpp-grid / phi / hyperprior helpers and
     # PSIS-smooth. Declines (NA -> quad-ESS) when a block carries an axis with
@@ -850,6 +855,8 @@
                                         force_sparse, cell_coupling,
                                         diagnose_k = diagnose_k,
                                         k_samples  = k_samples)
+    tm$mark("diagnostics")
+    res$timing <- tm$timing()
     class(res) <- c("tulpa_nested_laplace_joint_multi",
                     "tulpa_nested_laplace_joint",
                     "tulpa_nested_laplace", "list")

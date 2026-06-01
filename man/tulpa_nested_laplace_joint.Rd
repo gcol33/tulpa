@@ -277,6 +277,12 @@ uncertainty.
 \item \code{arm_layout} — list with per-arm \code{beta_start}, \code{re_start},
 spatial offset(s) and \code{n_x} for decoding modes.
 \item \code{prior}, \code{responses}, \code{copy} — echoed inputs.
+\item \code{timing} — named numeric of wall-clock seconds: \code{total} plus the
+\code{setup} (validation / encoding / grid construction), \code{grid} (inner
+Laplace solves, including adaptive-refinement and consistency passes),
+\code{postproc} (weight / moment / marginal assembly) and \code{diagnostics}
+(outer Pareto-\eqn{\hat{k}}) phases. The \code{grid} phase is the one that
+scales with grid size and core count. Surfaced one-line in \code{print}.
 \item \code{pareto_k}, \code{pareto_k_is_ess}, \code{pareto_k_scope} — outer
 Pareto-\eqn{\hat{k}} accuracy diagnostic and its importance-sampling
 ESS (both \code{NA} when \code{control$diagnose_k = FALSE} or the fit declines;
