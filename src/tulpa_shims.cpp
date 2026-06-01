@@ -70,7 +70,8 @@ Rcpp::List cpp_nested_laplace_icar(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_bym2(
@@ -86,7 +87,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_car_proper(
@@ -100,7 +102,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_temporal(
@@ -113,7 +116,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_nngp(
@@ -130,7 +134,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_hsgp(
@@ -144,7 +149,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     std::string family, double phi,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
-    bool store_Q
+    bool store_Q,
+    std::string checkpoint_path = ""
 );
 
 // Spatio-temporal nested-Laplace entries (defined in nested_laplace.cpp):
@@ -167,7 +173,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
     bool store_Q,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_st_car_proper(
@@ -188,7 +195,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
     bool store_Q,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_st_bym2(
@@ -210,7 +218,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
     bool store_Q,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_st_hsgp(
@@ -230,7 +239,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
     bool store_Q,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_st_nngp(
@@ -252,7 +262,8 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
     bool store_Q,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 );
 
 Rcpp::List cpp_nested_laplace_spde(
@@ -271,7 +282,8 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
     Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable,
     Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable,
-    bool store_Q
+    bool store_Q,
+    std::string checkpoint_path = ""
 );
 
 // ============================================================================

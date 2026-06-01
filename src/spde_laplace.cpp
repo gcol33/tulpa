@@ -233,7 +233,8 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    std::string checkpoint_path = ""
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -327,6 +328,27 @@ Rcpp::List cpp_nested_laplace_spde(
     if (x_init_nullable.isNotNull())
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
+    // Grid-cell checkpoint/resume (gcol33/tulpa#50). Structure fingerprint folds
+    // the SPDE FEM operators (A, C0, G1), nu, and any rational coefficients;
+    // keys are the paired (range, sigma) grid coordinates.
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("spde");
+    sfp.fold_pod(n_mesh);
+    sfp.fold_pod(nu);
+    if (A_x.size())     sfp.fold(A_x.begin(),    (std::size_t)A_x.size() * sizeof(double));
+    if (A_i.size())     sfp.fold(A_i.begin(),    (std::size_t)A_i.size() * sizeof(int));
+    if (A_p.size())     sfp.fold(A_p.begin(),    (std::size_t)A_p.size() * sizeof(int));
+    if (C0_diag.size()) sfp.fold(C0_diag.begin(),(std::size_t)C0_diag.size() * sizeof(double));
+    if (G1_x.size())    sfp.fold(G1_x.begin(),   (std::size_t)G1_x.size() * sizeof(double));
+    if (G1_i.size())    sfp.fold(G1_i.begin(),   (std::size_t)G1_i.size() * sizeof(int));
+    if (G1_p.size())    sfp.fold(G1_p.begin(),   (std::size_t)G1_p.size() * sizeof(int));
+    sfp.fold_pod(use_rational);
+    if (!rat_poles.empty())   sfp.fold(rat_poles.data(),   rat_poles.size() * sizeof(double));
+    if (!rat_weights.empty()) sfp.fold(rat_weights.data(), rat_weights.size() * sizeof(double));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n_trials, X,
+        n_re_groups, sigma_re, family, phi, {range_grid, sigma_grid});
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
         max_iter, tol, n_threads,
@@ -338,7 +360,10 @@ Rcpp::List cpp_nested_laplace_spde(
         /*cell_coupling_spec=*/nullptr,
         /*coupled_arms=*/std::vector<int>(),
         /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
-        /*n_cells=*/0
+        /*n_cells=*/0,
+        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
+        /*progress=*/nullptr, ckpt.get()
     );
     out["range_grid"] = range_grid;
     out["sigma_grid"] = sigma_grid;

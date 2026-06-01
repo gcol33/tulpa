@@ -313,7 +313,8 @@ Rcpp::List cpp_nested_laplace_icar(
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -324,12 +325,25 @@ Rcpp::List cpp_nested_laplace_icar(
         spatial_start, n_spatial_units, spatial_idx, tau_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("icar");
+    sfp.fold_pod(n_spatial_units);
+    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
+                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
+    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
+                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi, {tau_grid});
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        store_Q
+        store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
+        /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
+        /*progress=*/nullptr, ckpt.get()
     );
     out["tau_grid"] = tau_grid;
     return out;
@@ -363,7 +377,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = sigma_spatial_grid.size();
     int N = y.size();
@@ -373,12 +388,26 @@ Rcpp::List cpp_nested_laplace_bym2(
         sigma_spatial_grid, rho_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("bym2");
+    sfp.fold_pod(n_spatial_units);
+    sfp.fold_pod(scale_factor);
+    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
+                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
+    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
+                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi, {sigma_spatial_grid, rho_grid});
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        store_Q
+        store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
+        /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
+        /*progress=*/nullptr, ckpt.get()
     );
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_grid"] = rho_grid;
@@ -405,7 +434,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = tau_grid.size();
     if (rho_grid.size() != n_grid) {
@@ -419,12 +449,25 @@ Rcpp::List cpp_nested_laplace_car_proper(
         spatial_start, n_spatial_units, spatial_idx, tau_grid, rho_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("car_proper");
+    sfp.fold_pod(n_spatial_units);
+    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
+                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
+    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
+                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        store_Q
+        store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
+        /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
+        /*progress=*/nullptr, ckpt.get()
     );
     out["tau_grid"] = tau_grid;
     out["rho_grid"] = rho_grid;
@@ -466,7 +509,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    std::string checkpoint_path = ""
 ) {
     const int n_grid = sigma2_grid.size();
     if (phi_gp_grid.size() != n_grid)
@@ -536,6 +580,21 @@ Rcpp::List cpp_nested_laplace_nngp(
     if (x_init_nullable.isNotNull())
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("nngp");
+    sfp.fold_pod(n_spatial);
+    sfp.fold_pod(nn);
+    sfp.fold_pod(cov_type);
+    if (coords.size())      sfp.fold(coords.begin(),
+                                     (std::size_t)coords.size() * sizeof(double));
+    if (nn_idx.size())      sfp.fold(nn_idx.begin(),
+                                     (std::size_t)nn_idx.size() * sizeof(int));
+    if (spatial_idx.size()) sfp.fold(spatial_idx.begin(),
+                                     (std::size_t)spatial_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi, {sigma2_grid, phi_gp_grid});
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
         max_iter, tol, n_threads,
@@ -547,7 +606,10 @@ Rcpp::List cpp_nested_laplace_nngp(
         /*cell_coupling_spec=*/nullptr,
         /*coupled_arms=*/std::vector<int>(),
         /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
-        /*n_cells=*/0
+        /*n_cells=*/0,
+        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
+        /*progress=*/nullptr, ckpt.get()
     );
     out["sigma2_grid"] = sigma2_grid;
     out["phi_gp_grid"] = phi_gp_grid;
@@ -576,7 +638,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    std::string checkpoint_path = ""
 ) {
     const int n_grid = sigma2_grid.size();
     if (lengthscale_grid.size() != n_grid)
@@ -648,6 +711,17 @@ Rcpp::List cpp_nested_laplace_hsgp(
     if (x_init_nullable.isNotNull())
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("hsgp");
+    sfp.fold_pod(M);
+    if (phi_basis.size())  sfp.fold(phi_basis.begin(),
+                                    (std::size_t)phi_basis.size() * sizeof(double));
+    if (lambda_eig.size()) sfp.fold(lambda_eig.begin(),
+                                    (std::size_t)lambda_eig.size() * sizeof(double));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi, {sigma2_grid, lengthscale_grid});
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
         max_iter, tol, n_threads,
@@ -659,7 +733,10 @@ Rcpp::List cpp_nested_laplace_hsgp(
         /*cell_coupling_spec=*/nullptr,
         /*coupled_arms=*/std::vector<int>(),
         /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
-        /*n_cells=*/0
+        /*n_cells=*/0,
+        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
+        /*progress=*/nullptr, ckpt.get()
     );
     out["sigma2_grid"]      = sigma2_grid;
     out["lengthscale_grid"] = lengthscale_grid;
@@ -879,7 +956,8 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
     const std::vector<tulpa::LatentBlock>& blocks,
     const std::string& family, double phi,
     int max_iter, double tol, int n_threads,
-    const Rcpp::NumericVector& x_init, bool store_Q, bool force_sparse
+    const Rcpp::NumericVector& x_init, bool store_Q, bool force_sparse,
+    tulpa::GridCheckpoint* ckpt = nullptr
 ) {
     const int n_x_after_re = p + n_re_groups;
 
@@ -912,7 +990,10 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
         max_iter, tol, n_threads, /*store_modes=*/true, x_init, store_Q,
         /*prep_at_grid=*/nullptr, /*n_threads_outer=*/1,
         std::vector<int>(), std::vector<int>(), /*prune_tol=*/0.0,
-        force_sparse
+        force_sparse,
+        /*cell_coupling_spec=*/nullptr,
+        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        /*hessian_refresh=*/1, /*progress=*/nullptr, ckpt
     );
 }
 
@@ -936,7 +1017,8 @@ inline Rcpp::List run_st_spatial_kernel(
     const Rcpp::NumericVector& rho_t, bool cyclic,
     const std::string& family, double phi,
     int max_iter, double tol, int n_threads,
-    const Rcpp::NumericVector& x_init, bool store_Q, bool force_sparse
+    const Rcpp::NumericVector& x_init, bool store_Q, bool force_sparse,
+    tulpa::GridCheckpoint* ckpt = nullptr
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -947,7 +1029,7 @@ inline Rcpp::List run_st_spatial_kernel(
     return run_indexed_st_nested_laplace_joint(
         n_grid, y, n_trials, X, re_idx, N, p, n_re_groups, sigma_re,
         spatial_idx, blocks, family, phi, max_iter, tol, n_threads,
-        x_init, store_Q, force_sparse);
+        x_init, store_Q, force_sparse, ckpt);
 }
 
 } // namespace
@@ -1000,7 +1082,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     std::string family, double phi = 1.0,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    bool store_Q = false
+    bool store_Q = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -1014,12 +1097,25 @@ Rcpp::List cpp_nested_laplace_temporal(
         temporal_start, n_times, temporal_idx, temporal_type,
         tau_grid, rho_grid, cyclic) };
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("temporal");
+    sfp.fold_str(temporal_type);
+    sfp.fold_pod(n_times);
+    sfp.fold_pod(cyclic);
+    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
+                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
         family, phi, max_iter, tol, n_threads,
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
-        store_Q
+        store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
+        /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
+        /*progress=*/nullptr, ckpt.get()
     );
     out["tau_grid"] = tau_grid;
     if (rho_grid.size() > 0) out["rho_grid"] = rho_grid;
@@ -1047,7 +1143,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = tau_spatial_grid.size();
     if (tau_temporal_grid.size() != n_grid) {
@@ -1060,12 +1157,29 @@ Rcpp::List cpp_nested_laplace_st_icar(
         s_start, n_spatial_units, spatial_idx, tau_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("st_icar");
+    sfp.fold_pod(n_spatial_units);
+    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
+                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
+    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
+                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    sfp.fold_str(temporal_type);
+    sfp.fold_pod(n_times);
+    sfp.fold_pod(cyclic);
+    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
+                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi,
+        {tau_spatial_grid, tau_temporal_grid, rho_t});
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial_units,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse);
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get());
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
     if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
@@ -1094,7 +1208,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = tau_spatial_grid.size();
     if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
@@ -1107,12 +1222,29 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
         s_start, n_spatial_units, spatial_idx, tau_spatial_grid, rho_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("st_car_proper");
+    sfp.fold_pod(n_spatial_units);
+    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
+                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
+    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
+                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    sfp.fold_str(temporal_type);
+    sfp.fold_pod(n_times);
+    sfp.fold_pod(cyclic);
+    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
+                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi,
+        {tau_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial_units,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse);
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get());
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["rho_spatial_grid"]  = rho_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
@@ -1144,7 +1276,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = sigma_spatial_grid.size();
     if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
@@ -1158,12 +1291,30 @@ Rcpp::List cpp_nested_laplace_st_bym2(
         sigma_spatial_grid, rho_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("st_bym2");
+    sfp.fold_pod(n_spatial_units);
+    sfp.fold_pod(scale_factor);
+    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
+                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
+    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
+                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    sfp.fold_str(temporal_type);
+    sfp.fold_pod(n_times);
+    sfp.fold_pod(cyclic);
+    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
+                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi,
+        {sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/2 * n_spatial_units,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse);
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get());
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_spatial_grid"]   = rho_spatial_grid;
     out["tau_temporal_grid"]  = tau_temporal_grid;
@@ -1193,7 +1344,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = sigma2_spatial_grid.size();
     if (lengthscale_spatial_grid.size() != n_grid ||
@@ -1230,12 +1382,30 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid));
     // DENSE_BASIS HSGP block forces the joint sparse path regardless of n_x.
     Rcpp::IntegerVector spatial_idx_unused(N, 0);  // HSGP has no per-obs unit idx
+
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("st_hsgp");
+    sfp.fold_pod(M);
+    if (phi_basis.size())  sfp.fold(phi_basis.begin(),
+                                    (std::size_t)phi_basis.size() * sizeof(double));
+    if (lambda_eig.size()) sfp.fold(lambda_eig.begin(),
+                                    (std::size_t)lambda_eig.size() * sizeof(double));
+    sfp.fold_str(temporal_type);
+    sfp.fold_pod(n_times);
+    sfp.fold_pod(cyclic);
+    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
+                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi,
+        {sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid, rho_t});
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/M,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx_unused, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true);
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true, ckpt.get());
     out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
     out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
     out["tau_temporal_grid"]        = tau_temporal_grid;
@@ -1266,7 +1436,8 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    bool force_sparse = false
+    bool force_sparse = false,
+    std::string checkpoint_path = ""
 ) {
     int n_grid = sigma2_spatial_grid.size();
     if (phi_gp_spatial_grid.size() != n_grid ||
@@ -1302,12 +1473,33 @@ Rcpp::List cpp_nested_laplace_st_nngp(
         nn, cov_type, coords, nn_idx, nn_dist, nn_order,
         /*axis_sigma2=*/0, /*axis_phi_gp=*/1, theta_grid));
 
+    tulpa::Fingerprint sfp;
+    sfp.fold_str("st_nngp");
+    sfp.fold_pod(n_spatial);
+    sfp.fold_pod(nn);
+    sfp.fold_pod(cov_type);
+    if (coords.size())   sfp.fold(coords.begin(),
+                                  (std::size_t)coords.size() * sizeof(double));
+    if (nn_idx.size())   sfp.fold(nn_idx.begin(),
+                                  (std::size_t)nn_idx.size() * sizeof(int));
+    if (spatial_idx.size()) sfp.fold(spatial_idx.begin(),
+                                     (std::size_t)spatial_idx.size() * sizeof(int));
+    sfp.fold_str(temporal_type);
+    sfp.fold_pod(n_times);
+    sfp.fold_pod(cyclic);
+    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
+                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    auto ckpt = tulpa::make_nl_grid_checkpoint(
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        n_re_groups, sigma_re, family, phi,
+        {sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, rho_t});
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true);
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true, ckpt.get());
     out["sigma2_spatial_grid"] = sigma2_spatial_grid;
     out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
     out["tau_temporal_grid"]   = tau_temporal_grid;

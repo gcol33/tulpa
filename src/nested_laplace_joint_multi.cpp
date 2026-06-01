@@ -1133,52 +1133,43 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     // resumed run hits every previously completed cell regardless of order.
     std::unique_ptr<tulpa::GridCheckpoint> ckpt;
     if (!checkpoint_path.empty()) {
-        std::uint64_t fp = 1469598103934665603ULL;
-        auto fold = [&](const void* d, std::size_t n) {
-            fp = tulpa::fnv1a64(d, n, fp);
-        };
-        fold(&max_iter, sizeof(max_iter));
-        fold(&tol, sizeof(tol));
-        fold(&hessian_pd_mode, sizeof(hessian_pd_mode));
-        fold(&step_curvature_mode, sizeof(step_curvature_mode));
-        fold(&inner_refresh, sizeof(inner_refresh));
-        fold(&total_axes, sizeof(total_axes));
+        tulpa::Fingerprint fp;
+        fp.fold_pod(max_iter);
+        fp.fold_pod(tol);
+        fp.fold_pod(hessian_pd_mode);
+        fp.fold_pod(step_curvature_mode);
+        fp.fold_pod(inner_refresh);
+        fp.fold_pod(total_axes);
         if (axis_offsets.size() > 0)
-            fold(&axis_offsets[0], axis_offsets.size() * sizeof(int));
-        fold(cell_coupling_name.data(), cell_coupling_name.size());
+            fp.fold(&axis_offsets[0], axis_offsets.size() * sizeof(int));
+        fp.fold_str(cell_coupling_name);
         for (int k = 0; k < n_arms; k++) {
             const tulpa::ParsedArm& pa = parsed[k];
             const tulpa::JointArm&  a  = arms[k];
-            fold(&a.N, sizeof(a.N));
-            fold(&pa.p, sizeof(pa.p));
-            fold(&pa.n_re_groups, sizeof(pa.n_re_groups));
-            fold(a.family.data(), a.family.size());
-            if (a.y.size() > 0)        fold(&a.y[0], a.y.size() * sizeof(double));
-            if (pa.X.size() > 0)       fold(&pa.X[0], pa.X.size() * sizeof(double));
-            if (a.n_trials.size() > 0) fold(&a.n_trials[0],
-                                            a.n_trials.size() * sizeof(int));
+            fp.fold_pod(a.N);
+            fp.fold_pod(pa.p);
+            fp.fold_pod(pa.n_re_groups);
+            fp.fold_str(a.family);
+            if (a.y.size())        fp.fold(a.y.begin(),
+                                           (std::size_t)a.y.size() * sizeof(double));
+            if (pa.X.size())       fp.fold(pa.X.begin(),
+                                           (std::size_t)pa.X.size() * sizeof(double));
+            if (a.n_trials.size()) fp.fold(a.n_trials.begin(),
+                                           (std::size_t)a.n_trials.size() * sizeof(int));
         }
 
-        // Per-cell coordinate keys: theta_grid row k ++ per-arm phi at k.
-        std::vector<std::string> cell_keys(n_grid);
-        for (int k = 0; k < n_grid; k++) {
-            std::string key;
-            key.reserve((total_axes + n_arms) * sizeof(double));
-            for (int j = 0; j < total_axes; j++) {
-                double v = theta_grid(k, j);
-                key.append(reinterpret_cast<const char*>(&v), sizeof(double));
-            }
-            for (int a = 0; a < n_arms; a++) {
-                if (phi_overrides[a].size() > 0) {
-                    double v = phi_overrides[a][k];
-                    key.append(reinterpret_cast<const char*>(&v),
-                               sizeof(double));
-                }
-            }
-            cell_keys[k] = std::move(key);
-        }
-        ckpt.reset(new tulpa::GridCheckpoint(checkpoint_path, fp,
-                                             std::move(cell_keys)));
+        // Per-cell coordinate keys: theta_grid row k ++ per-arm phi at k. Each
+        // theta_grid column is contiguous (column-major, nrow == n_grid) so
+        // add_axis reads it with stride 1; an arm with no phi override adds
+        // nothing.
+        tulpa::CellKeyBuilder kb(n_grid);
+        for (int j = 0; j < total_axes; j++)
+            kb.add_axis(theta_grid.begin() + (std::size_t)j * n_grid);
+        for (int a = 0; a < n_arms; a++)
+            if (phi_overrides[a].size() > 0)
+                kb.add_axis(phi_overrides[a].begin());
+        ckpt.reset(new tulpa::GridCheckpoint(checkpoint_path, fp.value(),
+                                             kb.take()));
     }
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(

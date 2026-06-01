@@ -20,7 +20,8 @@ fit_spde(
   k_samples = 200L,
   max_iter = 100L,
   tol = 1e-06,
-  n_threads = 1L
+  n_threads = 1L,
+  checkpoint = NULL
 )
 }
 \arguments{
@@ -74,6 +75,12 @@ each one extra batched SPDE marginal evaluation.}
 \item{tol}{Newton convergence tolerance. Default 1e-6.}
 
 \item{n_threads}{OpenMP threads. Default 1.}
+
+\item{checkpoint}{Optional grid-cell checkpoint/resume spec
+(gcol33/tulpa#50), \code{list(path = , resume = )}. Each solved \verb{(range, sigma)}
+cell is appended to \code{path}; a \code{resume = TRUE} run loads the finished cells
+and re-solves only the rest, so a killed or rebooted fit resumes instead of
+restarting. \code{resume = FALSE} starts a fresh file. Default \code{NULL} (off).}
 }
 \value{
 A list with:

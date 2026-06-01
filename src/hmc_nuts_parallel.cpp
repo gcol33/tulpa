@@ -14,6 +14,7 @@
 
 #include "hmc_progress.h"
 #include "hmc_sampler.h"
+#include "hmc_chain_checkpoint.h"
 
 namespace tulpa_hmc {
 
@@ -43,7 +44,8 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int max_treedepth,
     MassMatrixType metric_type,
     double adapt_delta,
-    int riemannian
+    int riemannian,
+    const std::string& checkpoint_path
 ) {
   ParamLayout layout = compute_param_layout(data);
 
@@ -68,32 +70,73 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
 
   std::vector<HMCResultCpp> cpp_results(n_chains);
 
+  // Per-chain checkpoint/resume (gcol33/tulpa#50). A chain is the checkpoint
+  // unit: deterministic in (seed, chain_id, data, settings), so a resumed chain
+  // is bit-for-bit identical to the uninterrupted one. The fingerprint folds the
+  // sampler settings, the seed, the per-chain init + metric, and the latent /
+  // data dimensions, so a resume onto a file from a different fit errors. Done
+  // chains are loaded SERIALLY here (has()/get() are unsynchronized reads); the
+  // parallel loop then skips them and only the missing chains run + save()
+  // (save() is mutex-guarded).
+  std::unique_ptr<tulpa::ChainCheckpoint> ckpt;
+  std::vector<unsigned char> done(n_chains, 0);
+  if (!checkpoint_path.empty()) {
+    tulpa::Fingerprint fp;
+    fp.fold_str("nuts_chains");
+    fp.fold_pod(n_iter);
+    fp.fold_pod(n_warmup);
+    fp.fold_pod(L);
+    fp.fold_pod(n_chains);
+    fp.fold_pod(seed);
+    fp.fold_pod(max_treedepth);
+    int mt = static_cast<int>(metric_type);
+    fp.fold_pod(mt);
+    fp.fold_pod(adapt_delta);
+    fp.fold_pod(riemannian);
+    fp.fold_pod(layout.total_params);
+    fp.fold_pod(data.N);
+    for (const auto& q : q_init_per_chain)   fp.fold_vec(q);
+    for (const auto& m : inv_metric_per_chain) fp.fold_vec(m);
+    ckpt.reset(new tulpa::ChainCheckpoint(
+        checkpoint_path, fp.value(), tulpa::chain_checkpoint_keys(n_chains)));
+    for (int c = 0; c < n_chains; c++) {
+      if (ckpt->has(c)) { cpp_results[c] = ckpt->get(c); done[c] = 1; }
+    }
+  }
+
   // Thread-safe autodiff: each chain creates its own tape via TapeScope (RAII),
   // so all gradient modes (N, A, A_t, H) run in parallel.
 #ifdef _OPENMP
   if (n_chains > 1) {
     #pragma omp parallel for schedule(static) num_threads(n_chains)
     for (int c = 0; c < n_chains; c++) {
+      if (done[c]) continue;
       cpp_results[c] = run_hmc_chain_cpp(
         q_init_per_chain[c], data, layout,
         n_iter, n_warmup, L, c, seed, false, max_treedepth,
         metric_type, adapt_delta, riemannian, metric_for(c)
       );
+      if (ckpt) ckpt->save(c, cpp_results[c]);
     }
   } else {
-    cpp_results[0] = run_hmc_chain_cpp(
-      q_init_per_chain[0], data, layout,
-      n_iter, n_warmup, L, 0, seed, verbose, max_treedepth,
-      metric_type, adapt_delta, riemannian, metric_for(0)
-    );
+    if (!done[0]) {
+      cpp_results[0] = run_hmc_chain_cpp(
+        q_init_per_chain[0], data, layout,
+        n_iter, n_warmup, L, 0, seed, verbose, max_treedepth,
+        metric_type, adapt_delta, riemannian, metric_for(0)
+      );
+      if (ckpt) ckpt->save(0, cpp_results[0]);
+    }
   }
 #else
   for (int c = 0; c < n_chains; c++) {
+    if (done[c]) continue;
     cpp_results[c] = run_hmc_chain_cpp(
       q_init_per_chain[c], data, layout,
       n_iter, n_warmup, L, c, seed, verbose, max_treedepth,
       metric_type, adapt_delta, riemannian, metric_for(c)
     );
+    if (ckpt) ckpt->save(c, cpp_results[c]);
   }
 #endif
 

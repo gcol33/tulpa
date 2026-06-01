@@ -110,6 +110,20 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% 200L)
 
+  # Grid-cell checkpoint/resume (gcol33/tulpa#50). `control$checkpoint =
+  # list(path =, resume =)` makes every grid cell append to `path`; a resume
+  # loads the finished cells and solves only the rest. A fresh (resume = FALSE)
+  # run removes any stale file once here, before the first kernel call, so the
+  # several within-fit kernel calls (initial grid, adaptive refinement) all
+  # append rather than truncate each other. The path threads into `cargs` and
+  # reaches both the single-block (.nl_dispatch) and multi-block
+  # (.nl_dispatch_multi) kernels by name; the k-hat diagnostic re-evaluations
+  # are run with it stripped so they do not pollute the file.
+  .ckpt <- .nl_checkpoint_args(control)
+  if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
+    file.remove(.ckpt$path)
+  }
+
   if (!is.null(spec)) {
     if (!is.null(prior)) {
       stop("Pass either `spec` or `prior`, not both.", call. = FALSE)
@@ -154,8 +168,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     tol = as.numeric(tol),
     n_threads = as.integer(n_threads),
     x_init_nullable = x_init,
-    store_Q = isTRUE(keep_grid_hessians)
+    store_Q = isTRUE(keep_grid_hessians),
+    checkpoint_path = .ckpt$path
   )
+
+  # cargs without the checkpoint, for the k-hat diagnostic re-evaluations.
+  cargs_no_ckpt <- utils::modifyList(cargs, list(checkpoint_path = ""))
 
   p_fixed <- ncol(X)
 
@@ -168,8 +186,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       res <- .nl_attach_grid_hessians(res, p_fixed)
     }
     tm$mark("postproc")
-    res <- .nl_attach_pareto_k(res, prior, cargs, "multi", NULL, likelihood,
-                               k_samples, compute = diagnose_k)
+    res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
+                               likelihood, k_samples, compute = diagnose_k)
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
@@ -198,7 +216,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res <- .nl_attach_grid_hessians(res, p_fixed)
   }
   tm$mark("postproc")
-  res <- .nl_attach_pareto_k(res, prior, cargs, "single", type, NULL,
+  res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
                              k_samples, compute = diagnose_k)
   tm$mark("diagnostics")
   res$prior <- prior
@@ -1284,7 +1302,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     progress          = isTRUE(progress$progress),
     progress_every    = as.integer(progress$progress_every),
     progress_throttle = as.numeric(progress$progress_throttle),
-    progress_file     = as.character(progress$progress_file)
+    progress_file     = as.character(progress$progress_file),
+    checkpoint_path   = as.character(cargs$checkpoint_path %||% "")
   )
 
   out$theta_grid   <- joint_grid

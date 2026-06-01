@@ -18,6 +18,51 @@
 # Each block contributes its own parameters to the joint integration grid; a
 # single-term model is the length-1 case of the same path.
 
+# Node checkpoint/resume for the CCD / grid integration (gcol33/tulpa#50).
+# `checkpoint = list(path =, resume =)`. Nodes are deterministic given the
+# fingerprint (which folds the data, layout and the node grid), so each node is
+# keyed by its integer index. The store is a single RDS rewritten atomically
+# (temp + rename) after each completed node, so a kill leaves either the prior
+# complete state or the new one -- never a torn file. A present file whose
+# fingerprint disagrees errors rather than resuming onto a stale result; an
+# unreadable file (corrupt) re-solves from scratch. Returns NULL when no path is
+# given, so the caller wires it unconditionally.
+.re_cov_node_checkpoint <- function(checkpoint, fingerprint) {
+  spec <- .nl_checkpoint_args(list(checkpoint = checkpoint))
+  path <- spec$path
+  if (!nzchar(path)) return(NULL)
+  resume <- isTRUE(spec$resume)
+  store  <- list()
+  if (file.exists(path)) {
+    if (!resume) {
+      file.remove(path)
+    } else {
+      obj <- tryCatch(readRDS(path), error = function(e) NULL)
+      if (!is.null(obj)) {
+        if (!identical(obj$fingerprint, fingerprint)) {
+          stop("`checkpoint`: '", path, "' was written for different data, ",
+               "layout, or integration grid (fingerprint mismatch). Use a ",
+               "fresh path or set checkpoint$resume = FALSE to start over.",
+               call. = FALSE)
+        }
+        store <- obj$nodes
+      }
+    }
+  }
+  e <- new.env(parent = emptyenv())
+  e$store <- store
+  list(
+    has  = function(key) !is.null(e$store[[key]]),
+    get  = function(key) e$store[[key]],
+    save = function(key, value) {
+      e$store[[key]] <- value
+      tmp <- paste0(path, ".tmp")
+      saveRDS(list(fingerprint = fingerprint, nodes = e$store), tmp)
+      file.rename(tmp, path)
+    }
+  )
+}
+
 # log-Cholesky <-> matrix helpers ---------------------------------------------
 # theta packs the lower Cholesky factor L (Sigma = L L') in column-major
 # lower-triangular order: diagonal entries as log(L_ii) (positivity), strictly
@@ -485,6 +530,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #' @param k_samples Number of importance draws for the `diagnose_k` estimate
 #'   (default 200).
 #' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
+#' @param checkpoint Optional node checkpoint/resume spec (gcol33/tulpa#50),
+#'   `list(path = , resume = )`. Each completed CCD / grid node (one inner
+#'   Laplace solve) is cached to `path`; a `resume = TRUE` run loads the finished
+#'   nodes and re-solves only the rest. `resume = FALSE` starts fresh. A file
+#'   written for different data, layout, or grid is rejected (fingerprint
+#'   mismatch). Default `NULL` (off).
 #'
 #' @return A list with:
 #'   - `posterior`: data frame with one row per parameter and columns `mean`,
@@ -515,7 +566,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 beta_prior = NULL, n_quad = 1L,
                                 n_draws = 2000L, seed = NULL,
                                 diagnose_k = TRUE, k_samples = 200L,
-                                max_iter = 100L, tol = 1e-8, n_threads = 1L) {
+                                max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                                checkpoint = NULL) {
   integration <- match.arg(integration)
   n_quad <- as.integer(n_quad)
   if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
@@ -724,6 +776,20 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   theta_grid <- ccd_to_theta(z, theta_hat, L_scale)   # n_grid x k
   ng <- nrow(theta_grid)
 
+  # --- node checkpoint/resume (gcol33/tulpa#50) -----------------------------
+  # Each CCD / grid node is one full inner Laplace solve. `checkpoint =
+  # list(path =, resume =)` caches each completed node so a killed run resumes.
+  # The node grid is deterministic given the fingerprint (which includes
+  # theta_grid), so nodes are keyed by their integer index; the store is an
+  # atomically-rewritten RDS, fingerprint-guarded against resuming onto a file
+  # written for different data / layout / grid.
+  ckpt <- .re_cov_node_checkpoint(checkpoint, fingerprint = list(
+    y = as.numeric(y), n_trials = as.integer(n_trials), X = X,
+    family = family, phi = phi,
+    layout = lapply(layout, function(b) b[c("k", "nc", "full")]),
+    theta_grid = theta_grid, max_iter = max_iter, tol = tol,
+    beta_prior = beta_prior, n_quad = n_quad))
+
   # --- evaluate inner marginal + derived quantities per cell ----------------
   # One FULL Laplace solve per node: the log-marginal feeds the integration
   # weight; the fixed-effect mode + marginal covariance feed the posterior-draw
@@ -736,7 +802,16 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     th     <- theta_grid[i, ]
     L_list <- .re_cov_theta_to_L_list(th, layout)
     Sig_node_list[[i]] <- lapply(L_list, function(L) L %*% t(L))
-    fit_i  <- inner_fit(L_list)
+    key <- as.character(i)
+    if (!is.null(ckpt) && ckpt$has(key)) {
+      fit_i <- ckpt$get(key)
+    } else {
+      fit_i <- inner_fit(L_list)
+      if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
+          length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
+        ckpt$save(key, fit_i)
+      }
+    }
     if (is.null(fit_i) || is.null(fit_i$mode) ||
         length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) next
     logm[i]            <- fit_i$log_marginal + log_prior_theta(th)

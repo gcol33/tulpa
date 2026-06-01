@@ -131,7 +131,8 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     int max_treedepth = 10,
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
-    int riemannian = -1
+    int riemannian = -1,
+    const std::string& checkpoint_path = ""
 );
 
 // =====================================================================

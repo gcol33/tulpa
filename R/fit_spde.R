@@ -39,6 +39,11 @@
 #' @param max_iter Maximum Newton iterations. Default 100.
 #' @param tol Newton convergence tolerance. Default 1e-6.
 #' @param n_threads OpenMP threads. Default 1.
+#' @param checkpoint Optional grid-cell checkpoint/resume spec
+#'   (gcol33/tulpa#50), `list(path = , resume = )`. Each solved `(range, sigma)`
+#'   cell is appended to `path`; a `resume = TRUE` run loads the finished cells
+#'   and re-solves only the rest, so a killed or rebooted fit resumes instead of
+#'   restarting. `resume = FALSE` starts a fresh file. Default `NULL` (off).
 #'
 #' @return A list with:
 #'   \itemize{
@@ -59,13 +64,25 @@ fit_spde <- function(y, X, spatial,
                      method = c("ccd", "grid"),
                      n_grid = 5L, phi = 1.0,
                      diagnose_k = TRUE, k_samples = 200L,
-                     max_iter = 100L, tol = 1e-6, n_threads = 1L) {
+                     max_iter = 100L, tol = 1e-6, n_threads = 1L,
+                     checkpoint = NULL) {
 
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }
 
   method <- match.arg(method)
+
+  # Grid-cell checkpoint/resume (gcol33/tulpa#50). `checkpoint = list(path =,
+  # resume =)` appends each solved (range, sigma) cell to `path`; a resume loads
+  # finished cells and re-solves only the rest. The outer integrator
+  # (CCD / grid) calls spde_log_marginal() many times across mode search and the
+  # final grid -- every cell is keyed by its (range, sigma) coordinate, so all
+  # those calls share one file and any previously solved coordinate is reused.
+  .ckpt <- .nl_checkpoint_args(list(checkpoint = checkpoint))
+  if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
+    file.remove(.ckpt$path)
+  }
 
   y <- as.numeric(y)
   n_obs <- length(y)
@@ -94,7 +111,8 @@ fit_spde <- function(y, X, spatial,
       range_grid = range_vec, sigma_grid = sigma_vec,
       nu = sp$nu,
       family = family, phi = phi,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      checkpoint_path = .ckpt$path
     )
     res
   }

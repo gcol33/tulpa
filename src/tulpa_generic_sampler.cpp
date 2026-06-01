@@ -531,7 +531,8 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
     int seed = 42,
     bool verbose = false,
     Rcpp::Nullable<Rcpp::NumericMatrix> init = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericMatrix> inv_metric_init = R_NilValue,
+    std::string checkpoint_path = ""
 ) {
     if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
     const int p = X_r.ncol();
@@ -578,7 +579,8 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
         0,                // L=0 means NUTS
         n_chains, static_cast<unsigned int>(seed), verbose,
         max_treedepth, tulpa::MassMatrixType::DIAG, adapt_delta,
-        0                 // riemannian=off
+        0,                // riemannian=off
+        checkpoint_path
     );
 
     const int n_sample = chains[0].n_sample;

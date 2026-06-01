@@ -339,6 +339,50 @@ multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `tests/testthat/test-generic-sampler.R` ("mcmc_diagnostics consumes a native
 multi-chain fit").
 
+### Checkpoint / resume across every fitter (gcol33/tulpa#50)
+
+Every fitter with an outer loop of independent, expensive units supports
+checkpoint/resume: a killed or rebooted fit reloads the completed units and
+runs only the rest. The mechanism is one content-addressed binary append log
+(`src/checkpoint_io.h`, `CheckpointLog<Payload>`): magic + fingerprint header,
+then per-unit `key + payload + FNV-1a checksum` records. A torn final record
+(killed mid-write) is detected on load (short read / checksum mismatch),
+**truncated** to the last valid record, and re-run; a header fingerprint
+mismatch (different data / settings / grid) **errors** rather than resuming onto
+a stale result. `CheckpointLog<Payload>` is generic over the per-unit payload
+via two ADL customization points (`ckpt_serialize` / `ckpt_deserialize`), so the
+file format, load/append/torn-tail logic, and fingerprinting live once.
+
+Two specializations:
+- **`GridCheckpoint` = `CheckpointLog<LaplaceResult>`** (`nested_laplace_checkpoint.h`):
+  the unit is an outer grid cell, keyed by its hyperparameter coordinate (the
+  `theta_grid` row plus any per-arm phi), so adaptive-refinement cells append
+  under their own keys and resume is order-independent. Wired through the joint
+  driver, the shared `run_multi_block_nested_laplace` (every single-block
+  kernel: icar / bym2 / car_proper / temporal / the ST variants / nngp / hsgp),
+  `cpp_nested_laplace_multi`, and the sparse driver (`fit_spde`). `make_nl_grid_checkpoint()`
+  is the single-arm kernel factory (a per-kernel structural seed + the shared
+  obs inputs + the grid axes). The RE-covariance CCD path
+  (`tulpa_re_cov_nested`) uses a small R-level analogue (atomic-RDS node cache
+  keyed by node index, the CCD grid being deterministic given the fingerprint).
+- **`ChainCheckpoint` = `CheckpointLog<HMCResultCpp>`** (`hmc_chain_checkpoint.h`):
+  the unit is a whole MCMC chain. A chain is deterministic in
+  `(seed, chain_id, data, settings)`, so a resumed chain is **bit-for-bit**
+  identical to the uninterrupted one -- no mid-trajectory RNG / dual-averaging /
+  metric state to restore. Wired into `run_hmc_parallel_chains_cpp` (completed
+  chains load serially, the parallel loop skips them and `save()`s the rest under
+  a mutex) and exposed on `cpp_tulpa_fit_generic_chains(checkpoint_path=)`.
+
+R surface: `control$checkpoint = list(path =, resume =)` on the nested-Laplace
+fitters (`.nl_checkpoint_args()` parses it; the front door fresh-deletes on
+`resume = FALSE` so within-fit calls append, and the k-hat diagnostic
+re-evaluations run with it stripped so they do not pollute the file); a
+`checkpoint = ` arg on `fit_spde()` / `tulpa_re_cov_nested()`; a
+`checkpoint_path = ` arg on the NUTS producer. Tests:
+`test-nested-laplace-joint-checkpoint.R` (joint) and
+`test-checkpoint-universal.R` (single-block, RE-cov, per-chain NUTS:
+equivalence, resume-loads-nothing, torn-tail re-solve, fingerprint mismatch).
+
 ### Matrix CHOLMOD Fix
 
 tulpa's `R_init_tulpa` calls `M_cholmod_start` which requires Matrix's

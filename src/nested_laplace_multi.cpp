@@ -519,7 +519,8 @@ Rcpp::List cpp_nested_laplace_multi(
     SEXP likelihood = R_NilValue,
     bool progress = false, int progress_every = 0,
     double progress_throttle = 0.0,
-    std::string progress_file = ""
+    std::string progress_file = "",
+    std::string checkpoint_path = ""
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -576,6 +577,36 @@ Rcpp::List cpp_nested_laplace_multi(
             progress_file));
     }
 
+    // Grid-cell checkpoint/resume (gcol33/tulpa#50). The fingerprint folds the
+    // shared observation inputs, the solver settings, the axis layout, and the
+    // full block spec (adjacency / coords / type strings, via fold_sexp) so a
+    // resume onto a file written for any different input errors. Per-cell keys
+    // are the theta_grid row coordinates (column-major, stride 1).
+    std::unique_ptr<tulpa::GridCheckpoint> ckpt;
+    if (!checkpoint_path.empty()) {
+        tulpa::Fingerprint fp;
+        fp.fold_str("nl_multi");
+        fp.fold_pod(max_iter);
+        fp.fold_pod(tol);
+        fp.fold_pod(N);
+        fp.fold_pod(p);
+        fp.fold_pod(n_re_groups);
+        fp.fold_pod(sigma_re);
+        fp.fold_str(family);
+        fp.fold_pod(phi);
+        fp.fold_pod(total_axes);
+        if (axis_offsets.size()) fp.fold(axis_offsets.begin(),
+                                         (std::size_t)axis_offsets.size() * sizeof(int));
+        if (y.size())  fp.fold(y.begin(), (std::size_t)y.size() * sizeof(double));
+        if (n.size())  fp.fold(n.begin(), (std::size_t)n.size() * sizeof(int));
+        if (X.size())  fp.fold(X.begin(), (std::size_t)X.size() * sizeof(double));
+        tulpa::fold_sexp(fp, blocks_spec);
+        tulpa::CellKeyBuilder kb(n_grid);
+        for (int j = 0; j < total_axes; j++) kb.add_axis(&theta_grid(0, j));
+        ckpt.reset(new tulpa::GridCheckpoint(checkpoint_path, fp.value(),
+                                             kb.take()));
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -585,7 +616,7 @@ Rcpp::List cpp_nested_laplace_multi(
         /*n_threads_outer=*/1,
         prune_tol,
         ext_spec, ext_response,
-        gp.get()
+        gp.get(), ckpt.get()
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

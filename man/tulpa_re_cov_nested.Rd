@@ -25,7 +25,8 @@ tulpa_re_cov_nested(
   k_samples = 200L,
   max_iter = 100L,
   tol = 1e-08,
-  n_threads = 1L
+  n_threads = 1L,
+  checkpoint = NULL
 )
 }
 \arguments{
@@ -88,6 +89,13 @@ hyperparameters, returned as \code{pareto_k}.}
 (default 200).}
 
 \item{max_iter, tol, n_threads}{Inner-solve controls (see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).}
+
+\item{checkpoint}{Optional node checkpoint/resume spec (gcol33/tulpa#50),
+\code{list(path = , resume = )}. Each completed CCD / grid node (one inner
+Laplace solve) is cached to \code{path}; a \code{resume = TRUE} run loads the finished
+nodes and re-solves only the rest. \code{resume = FALSE} starts fresh. A file
+written for different data, layout, or grid is rejected (fingerprint
+mismatch). Default \code{NULL} (off).}
 }
 \value{
 A list with:
