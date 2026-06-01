@@ -1,7 +1,27 @@
 # tulpa NEWS
 
-## 0.0.7 (development)
+## 0.0.7 (2026-06-01)
 
+* feat: grid-cell / per-unit **checkpoint/resume across every fitter with an
+  expensive outer loop** (gcol33/tulpa#50). A killed or rebooted fit reloads the
+  completed units and runs only the rest. One content-addressed binary append
+  log (`src/checkpoint_io.h`, `CheckpointLog<Payload>`) owns the file format,
+  load/append/torn-tail logic and fingerprinting once; a torn final record is
+  truncated and re-run, and a header fingerprint mismatch (different data /
+  settings / grid) errors rather than resuming onto a stale result. Wired
+  through:
+  - the single-block nested-Laplace kernels (icar / bym2 / car_proper /
+    temporal / the ST variants / nngp / hsgp), `tulpa_nested_laplace()`
+    multi-block, and `fit_spde()` -- `control$checkpoint = list(path =,
+    resume =)` (a `checkpoint =` arg on `fit_spde()`);
+  - `tulpa_re_cov_nested()`'s CCD node integration (`checkpoint =` arg, an
+    atomic-RDS node cache);
+  - the per-chain NUTS producer (`cpp_tulpa_fit_generic_chains(checkpoint_path=)`):
+    a chain is deterministic in `(seed, chain_id, data, settings)`, so a resumed
+    chain is bit-for-bit identical to the uninterrupted one.
+  Extends the joint-fit checkpoint shipped earlier to the rest of the engine;
+  the joint path was refactored onto the shared core with no file-format change.
+  Tests: `test-checkpoint-universal.R`.
 * fix(nested-laplace): the outer Pareto-k accuracy diagnostic no longer
   dominates runtime or runs solves it then discards (gcol33/tulpa#51). Three
   changes, all on the diagnostic path -- the integration result is unchanged:
