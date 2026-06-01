@@ -37,7 +37,7 @@ test_that("correlated (1 + x | g) routes to re_cov_nested under mode='laplace'",
 
   # coherent fixed-effect accessors (process_info => coef returns the 2 betas)
   cf <- coef(fit)
-  expect_equal(unname(lengths(cf)), 2L)
+  expect_length(cf, 2L)
   expect_true(all(c("2.5%", "97.5%") %in% colnames(confint(fit))))
   expect_equal(dim(vcov(fit)), c(2L, 2L))
   expect_equal(nrow(fit$draws), 800L)
@@ -93,7 +93,7 @@ test_that("uncorrelated (1 + x || g) routes to a diagonal-Sigma integration", {
   expect_false(any(grepl("rho", fit$posterior$parameter)))
   expect_false(any(grepl("Sigma_12", fit$posterior$parameter)))
   # fixed-effect accessors still coherent
-  expect_equal(unname(lengths(coef(fit))), 2L)
+  expect_length(coef(fit), 2L)
   expect_equal(dim(vcov(fit)), c(2L, 2L))
 })
 
@@ -132,7 +132,7 @@ test_that("multi-term (1 + x | g) + (1 | h) integrates one block per term", {
   expect_equal(dim(fit$Sigma_mean$g), c(2L, 2L))
   expect_equal(dim(fit$Sigma_mean$h), c(1L, 1L))
   # fixed effects coherent
-  expect_equal(unname(lengths(coef(fit))), 2L)
+  expect_length(coef(fit), 2L)
   expect_equal(nrow(fit$draws), 400L)
 })
 

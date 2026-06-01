@@ -1,5 +1,15 @@
 # tulpa NEWS
 
+## 0.0.6
+
+* `tulpa_re_cov_nested()` documents its outer accuracy-diagnostic controls
+  `diagnose_k` (default `TRUE`) and `k_samples` (default 200) in the help page.
+* Requires tulpaMesh (>= 0.1.2), which fixes SPDE mesh construction returning a
+  zero-triangle mesh on some constrained inputs (gcol33/tulpaMesh#3).
+* The two-arm community N-mixture oracle equivalence/recovery test moves to its
+  model-adapter home in tulpaObs (`ms_abun`); the generic engine retains the
+  structure-agnostic `make_site`/`make_group` equivalence checks.
+
 ## 0.0.5
 
 * feat(nested-laplace): fits now record wall-clock runtime on the returned

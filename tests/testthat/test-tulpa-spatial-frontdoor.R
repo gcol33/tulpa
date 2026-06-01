@@ -121,11 +121,11 @@ test_that("front door rejects malformed spatial specifications", {
           mode = "gibbs"),
     "spatial\\$type"
   )
-  # temporal terms are not yet routed through tulpa().
+  # a temporal() formula term is rejected in favour of the `temporal=` argument.
   expect_error(
     tulpa(y ~ x + temporal(region), data = s$data, family = "binomial",
           n_trials = s$data$ntrials, mode = "gibbs"),
-    "not yet routed"
+    "drop the temporal"
   )
 })
 

@@ -8,16 +8,13 @@
 # detection coefficients) integrate with no engine change.
 #
 # The integration core is arm-agnostic -- it only ever sees b in R^d and the
-# oracle. Correctness is established by composition:
-#   * make_group reproduces make_site EXACTLY at d = 1 and d = 2 (correlated
-#     slope) -- the d-dimensional quadrature core is already recovery-validated
-#     for make_site in test-re-aghq.R, so the equivalence inherits that;
-#   * the two-arm N-mixture oracle's gradient and the 2x2 observed-information
-#     block (the abundance<->detection coupling from
-#     tulpa_nmix_site_marginal()$obs_info_block) match finite differences.
-# Tight community parameter recovery -- which needs an identified design
-# (covariates) and a warm start to avoid the N-mixture lambda<->p ridge -- is a
-# model-adapter concern (tulpaObs ms_abun), not the generic engine.
+# oracle. Correctness is established by composition: make_group reproduces
+# make_site EXACTLY at d = 1 and d = 2 (correlated slope) -- the d-dimensional
+# quadrature core is already recovery-validated for make_site in test-re-aghq.R,
+# so the equivalence inherits that. The two-arm N-mixture oracle (species priors
+# on both the abundance and detection coefficients) and its community parameter
+# recovery are a model-adapter concern (tulpaObs ms_abun), tested there, not in
+# the generic engine.
 
 cl <- function(e) pmin(pmax(e, -30), 30)
 l1pe <- function(x) ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))   # log(1+e^x)
@@ -141,109 +138,4 @@ test_that("make_site / make_group are mutually exclusive", {
   expect_error(
     tulpa_re_aghq(0, re_terms, Sigma0, make_site = function(th) NULL,
                   make_group = function(th) NULL, n_obs = 6L), "exactly one")
-})
-
-# ---- two-arm community N-mixture oracle (the msNMix structure) ---------------
-
-# Per-group b-space oracle for an intercept-only community N-mixture: per species
-# the RE b = (b_lambda, b_p) enters the abundance and detection intercepts. The
-# per-species marginal, gradient and the 2x2 observed-info block (the abundance
-# <-> detection coupling) come from tulpa_nmix_site_marginal(). Reference an
-# msNMix adapter follows; `b` already includes the community mean.
-.nmix_community_oracle <- function(marg_by_sp) {
-  list(
-    grad_hess = function(s, b) {
-      m  <- marg_by_sp[[s]]
-      ev <- m$eval(cl(rep(b[1], m$n_sites)), cl(rep(b[2], m$n_obs)))
-      negH <- matrix(0, 2, 2)
-      for (i in seq_len(m$n_sites)) {
-        Ji <- length(m$obs_by_site[[i]]); Bi <- m$obs_info_block(i, ev)
-        Zi <- cbind(c(1, rep(0, Ji)), c(0, rep(1, Ji)))
-        negH <- negH + crossprod(Zi, Bi %*% Zi)
-      }
-      list(logL = ev$log_lik,
-           grad = c(sum(ev$grad_eta_lambda), sum(ev$grad_eta_p)), negH = negH)
-    },
-    node_ll = function(s, B) {
-      m <- marg_by_sp[[s]]
-      vapply(seq_len(nrow(B)), function(k)
-        m$eval(cl(rep(B[k, 1], m$n_sites)), cl(rep(B[k, 2], m$n_obs)))$log_lik,
-        numeric(1))
-    })
-}
-
-simulate_ms_nmix <- function(seed, S = 20L, n_sites = 12L, J = 6L,
-                             mu_lambda = log(8), mu_p = qlogis(0.6),
-                             sigma_lambda = 0.6, sigma_p = 0.5) {
-  set.seed(seed)
-  b_lam <- rnorm(S, 0, sigma_lambda); b_p <- rnorm(S, 0, sigma_p)
-  marg_by_sp <- lapply(seq_len(S), function(s) {
-    lam <- exp(mu_lambda + b_lam[s]); p <- plogis(mu_p + b_p[s])
-    N <- rpois(n_sites, lam)
-    y_mat <- matrix(rbinom(n_sites * J, rep(N, times = J), p), n_sites, J)
-    tulpa_nmix_site_marginal(
-      y = as.integer(as.vector(t(y_mat))),
-      site_idx = rep(seq_len(n_sites), each = J),
-      X_lambda = matrix(1, n_sites, 1), X_p = matrix(1, n_sites * J, 1),
-      mixture = "P")
-  })
-  list(marg_by_sp = marg_by_sp, S = S,
-       truth = c(mu_lambda = mu_lambda, mu_p = mu_p,
-                 sigma_lambda = sigma_lambda, sigma_p = sigma_p))
-}
-
-test_that("community N-mixture oracle: grad / cross-arm Hessian match finite differences", {
-  # Decisive correctness check for the two-arm assembly: the per-species b-space
-  # gradient and the 2x2 observed-information block (the abundance / detection
-  # coupling) match finite differences of the per-species marginal log-lik.
-  sim <- simulate_ms_nmix(seed = 5L, S = 6L, n_sites = 12L, J = 6L)
-  orc <- .nmix_community_oracle(sim$marg_by_sp)
-  h <- 1e-5
-  for (b0 in list(c(0, 0), c(0.3, -0.4), c(-0.5, 0.6))) {
-    gh <- orc$grad_hess(1L, b0)
-    fd_grad <- c(
-      (orc$grad_hess(1L, b0 + c(h, 0))$logL - orc$grad_hess(1L, b0 - c(h, 0))$logL) / (2 * h),
-      (orc$grad_hess(1L, b0 + c(0, h))$logL - orc$grad_hess(1L, b0 - c(0, h))$logL) / (2 * h))
-    fd_H <- matrix(0, 2, 2)
-    for (i in 1:2) for (j in 1:2) {
-      ei <- c(0, 0); ei[i] <- h; ej <- c(0, 0); ej[j] <- h
-      fd_H[i, j] <- (orc$grad_hess(1L, b0 + ei + ej)$logL - orc$grad_hess(1L, b0 + ei - ej)$logL -
-                     orc$grad_hess(1L, b0 - ei + ej)$logL + orc$grad_hess(1L, b0 - ei - ej)$logL) / (4 * h * h)
-    }
-    expect_lt(max(abs(gh$grad - fd_grad)), 1e-4)
-    expect_lt(max(abs(gh$negH - (-(fd_H + t(fd_H)) / 2))), 1e-3)
-    expect_gt(abs(gh$negH[1, 2]), 1e-8)               # genuine cross-arm coupling
-    expect_equal(orc$node_ll(1L, matrix(b0, 1, 2)), gh$logL)
-  }
-})
-
-test_that("two-arm community N-mixture integrates end-to-end", {
-  skip_on_cran()
-  # End-to-end smoke: the full tulpa-side stack (marginal primitive -> oracle ->
-  # N-arm engine) composes and returns a usable community fit. Not a precision
-  # recovery claim (see file header). Warm-started near the data to keep the
-  # lambda<->p ridge off the boundary.
-  sim <- simulate_ms_nmix(seed = 23L, S = 14L, n_sites = 10L, J = 8L)
-  orc <- .nmix_community_oracle(sim$marg_by_sp)
-  ybar <- mean(vapply(sim$marg_by_sp, function(m) mean(m$y), numeric(1)))
-  fit <- tulpa_re_aghq(
-    theta0 = c(log(max(ybar / 0.5, 0.5)), qlogis(0.5)),
-    re_terms = list(list(n_groups = sim$S, n_coefs = 1L),
-                    list(n_groups = sim$S, n_coefs = 1L)),
-    Sigma0 = list(matrix(0.4^2, 1, 1), matrix(0.4^2, 1, 1)),
-    make_group = function(theta) list(
-      grad_hess = function(g, b) orc$grad_hess(g, b + theta),
-      node_ll   = function(g, B) orc$node_ll(g, sweep(B, 2, theta, `+`))),
-    n_quad = 3L)
-  skip_if(is.null(fit))                       # flat-likelihood seeds can null out
-  expect_true(all(is.finite(fit$theta)))
-  expect_length(fit$theta, 2L)
-  expect_true(fit$Sigma_list[[1]][1, 1] > 0 && fit$Sigma_list[[2]][1, 1] > 0)
-  expect_true(all(is.finite(fit$theta_se)))
-  # Estimates land in a broad plausible region (means within ~0.8 on the link
-  # scale, SDs positive and not blown up) -- gross-divergence guard, not recovery.
-  expect_lt(abs(fit$theta[1] - sim$truth["mu_lambda"]), 0.8)
-  expect_lt(abs(fit$theta[2] - sim$truth["mu_p"]), 0.8)
-  expect_lt(sqrt(fit$Sigma_list[[1]][1, 1]), 1.5)
-  expect_lt(sqrt(fit$Sigma_list[[2]][1, 1]), 1.5)
 })

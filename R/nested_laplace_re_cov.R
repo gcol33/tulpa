@@ -479,6 +479,11 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'   `tulpa_fit` methods. The `Sigma` posterior is summarized exactly (weighted
 #'   node quantiles) in `posterior`, independent of `n_draws`.
 #' @param seed Optional integer seed for the fixed-effect draw synthesis.
+#' @param diagnose_k Logical. If `TRUE` (default), compute the outer Pareto
+#'   k-hat accuracy diagnostic for the Gaussian proposal over the
+#'   hyperparameters, returned as `pareto_k`.
+#' @param k_samples Number of importance draws for the `diagnose_k` estimate
+#'   (default 200).
 #' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
 #'
 #' @return A list with:

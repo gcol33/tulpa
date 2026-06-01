@@ -80,6 +80,13 @@ node quantiles) in \code{posterior}, independent of \code{n_draws}.}
 
 \item{seed}{Optional integer seed for the fixed-effect draw synthesis.}
 
+\item{diagnose_k}{Logical. If \code{TRUE} (default), compute the outer Pareto
+k-hat accuracy diagnostic for the Gaussian proposal over the
+hyperparameters, returned as \code{pareto_k}.}
+
+\item{k_samples}{Number of importance draws for the \code{diagnose_k} estimate
+(default 200).}
+
 \item{max_iter, tol, n_threads}{Inner-solve controls (see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).}
 }
 \value{
