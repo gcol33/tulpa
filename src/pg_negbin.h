@@ -175,32 +175,16 @@ Rcpp::List pg_negbin_gibbs_spatial(
 // Helper functions for Gibbs updates
 // ---------------------------------------------------------------------
 
-// Update beta (fixed effects) given PG auxiliary variables
-// Uses normal-normal conjugacy after PG augmentation
-Rcpp::NumericVector update_beta_negbin(
-    const Rcpp::NumericVector& kappa,     // (y - r) / 2
-    const Rcpp::NumericVector& omega,     // PG draws
-    const Rcpp::NumericMatrix& X,
-    const Rcpp::NumericVector& re_contrib,
-    double prior_sd
-);
+// The beta and random-effect updates reuse the shared PG normal-normal
+// kernels update_beta / update_re (declared in pg_shared.h).
 
-// Update random effects given PG auxiliary variables
-Rcpp::NumericVector update_re_negbin(
-    const Rcpp::NumericVector& kappa,
-    const Rcpp::NumericVector& omega,
-    const Rcpp::NumericVector& X_beta,
-    const Rcpp::IntegerVector& group,
-    int n_groups,
-    double sigma_re
-);
-
-// Update dispersion r using CRT augmentation
-// Prior: r ~ Gamma(shape, rate)
-// Posterior: r | y, L, p ~ Gamma(shape + sum(L), rate - sum(log(1-p)))
+// Update dispersion r with a Metropolis-Hastings step on log(r).
+// Prior: r ~ Gamma(shape, rate). The likelihood uses the NB-as-logistic
+// (Zhou) parameterization mu = r * exp(eta), so the second argument is the
+// linear predictor eta, NOT a probability.
 double update_r_negbin(
     const Rcpp::IntegerVector& y,
-    const Rcpp::NumericVector& p,  // success probabilities
+    const Rcpp::NumericVector& eta,  // linear predictor (mu = r * exp(eta))
     double r_current,
     double prior_shape,
     double prior_rate

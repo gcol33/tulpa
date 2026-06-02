@@ -23,154 +23,11 @@ using namespace Rcpp;
 namespace tulpa {
 
 // ---------------------------------------------------------------------
-// Helper functions for linear algebra
+// The PG normal-normal beta and random-effect updates are model-agnostic
+// (the post-PG conjugate step is identical to the binomial sampler), so
+// this file reuses the shared update_beta / update_re kernels declared in
+// pg_shared.h. Only the NB-specific dispersion (r) update lives below.
 // ---------------------------------------------------------------------
-
-// Compute X'WX + prior_prec * I and X'W * (kappa/omega - offset)
-static List compute_posterior_normal_nb(
-    const NumericMatrix& X,
-    const NumericVector& omega,
-    const NumericVector& kappa,
-    const NumericVector& offset,
-    double prior_prec
-) {
-  int n = X.nrow();
-  int p = X.ncol();
-
-  NumericMatrix XWX(p, p);
-  NumericVector XWkappa(p);
-
-  for (int j = 0; j < p; j++) {
-    for (int k = j; k < p; k++) {
-      double sum = 0.0;
-      for (int i = 0; i < n; i++) {
-        sum += X(i, j) * omega[i] * X(i, k);
-      }
-      XWX(j, k) = sum;
-      if (j != k) XWX(k, j) = sum;
-    }
-    XWX(j, j) += prior_prec;
-
-    double sum_kappa = 0.0;
-    for (int i = 0; i < n; i++) {
-      sum_kappa += X(i, j) * omega[i] * (kappa[i] / omega[i] - offset[i]);
-    }
-    XWkappa[j] = sum_kappa;
-  }
-
-  return List::create(
-    Named("XWX") = XWX,
-    Named("XWkappa") = XWkappa
-  );
-}
-
-// Cholesky decomposition — delegates to shared helper
-static NumericMatrix chol_decomp_nb(const NumericMatrix& A) {
-  return tulpa::chol_decomp_pg(A);
-}
-
-// Cholesky solve: solve (L L') x = b
-static NumericVector chol_solve_nb(const NumericMatrix& L, const NumericVector& b) {
-  int p = L.ncol();
-  NumericVector y(p), x(p);
-
-  // Forward substitution: L y = b
-  for (int i = 0; i < p; i++) {
-    double sum = b[i];
-    for (int j = 0; j < i; j++) {
-      sum -= L(i, j) * y[j];
-    }
-    y[i] = sum / L(i, i);
-  }
-
-  // Back substitution: L' x = y
-  for (int i = p - 1; i >= 0; i--) {
-    double sum = y[i];
-    for (int j = i + 1; j < p; j++) {
-      sum -= L(j, i) * x[j];
-    }
-    x[i] = sum / L(i, i);
-  }
-
-  return x;
-}
-
-// ---------------------------------------------------------------------
-// Update functions for NB model
-// ---------------------------------------------------------------------
-
-// Update beta (fixed effects)
-NumericVector update_beta_negbin(
-    const NumericVector& kappa,
-    const NumericVector& omega,
-    const NumericMatrix& X,
-    const NumericVector& re_contrib,
-    double prior_sd
-) {
-  int p = X.ncol();
-  double prior_prec = 1.0 / (prior_sd * prior_sd);
-
-  List post = compute_posterior_normal_nb(X, omega, kappa, re_contrib, prior_prec);
-  NumericMatrix XWX = post["XWX"];
-  NumericVector XWkappa = post["XWkappa"];
-
-  NumericMatrix L = chol_decomp_nb(XWX);
-  NumericVector post_mean = chol_solve_nb(L, XWkappa);
-
-  // Sample from posterior: beta ~ N(post_mean, XWX^{-1})
-  NumericVector z(p);
-  for (int i = 0; i < p; i++) {
-    z[i] = R::rnorm(0.0, 1.0);
-  }
-
-  // Solve L z_star = z
-  NumericVector z_star(p);
-  for (int i = 0; i < p; i++) {
-    double sum = z[i];
-    for (int j = 0; j < i; j++) {
-      sum -= L(i, j) * z_star[j];
-    }
-    z_star[i] = sum / L(i, i);
-  }
-
-  NumericVector beta(p);
-  for (int i = 0; i < p; i++) {
-    beta[i] = post_mean[i] + z_star[i];
-  }
-
-  return beta;
-}
-
-// Update random effects
-NumericVector update_re_negbin(
-    const NumericVector& kappa,
-    const NumericVector& omega,
-    const NumericVector& X_beta,
-    const IntegerVector& group,
-    int n_groups,
-    double sigma_re
-) {
-  int n = kappa.size();
-  NumericVector re(n_groups);
-  double prior_prec = 1.0 / (sigma_re * sigma_re + 1e-10);
-
-  NumericVector sum_omega(n_groups);
-  NumericVector sum_resid(n_groups);
-
-  for (int i = 0; i < n; i++) {
-    int g = group[i] - 1;
-    sum_omega[g] += omega[i];
-    sum_resid[g] += kappa[i] - omega[i] * X_beta[i];
-  }
-
-  for (int g = 0; g < n_groups; g++) {
-    double post_var = 1.0 / (sum_omega[g] + prior_prec);
-    double post_mean = post_var * sum_resid[g];
-    re[g] = R::rnorm(post_mean, std::sqrt(post_var));
-  }
-
-  return re;
-}
 
 // Update sigma_re with proper half-Cauchy prior using auxiliary variable
 // Reference: Gelman (2006) "Prior distributions for variance parameters"
@@ -535,7 +392,7 @@ List pg_negbin_gibbs(
     }
 
     // 5. Update beta | omega, re, y
-    NumericVector beta_new = update_beta_negbin(kappa, omega, X, re_contrib, prior_beta_sd);
+    NumericVector beta_new = update_beta(kappa, omega, X, re_contrib, prior_beta_sd);
 
     // Check for numerical issues and keep previous value if invalid
     bool beta_valid = true;
@@ -563,7 +420,7 @@ List pg_negbin_gibbs(
 
     // 7. Update random effects
     if (n_groups > 0) {
-      NumericVector re_new = update_re_negbin(kappa, omega, X_beta, group, n_groups, sigma_re);
+      NumericVector re_new = update_re(kappa, omega, X_beta, group, n_groups, sigma_re);
 
       // Check for numerical issues
       bool re_valid = true;
@@ -737,7 +594,7 @@ List pg_negbin_negbin_gibbs(
   NumericVector eta_num(N), eta_denom(N);
   NumericVector X_beta_num(N), X_beta_denom(N);
   NumericVector re_contrib(N);
-  NumericVector p_num_vec(N), p_denom_vec(N);
+  NumericVector eta_r_num(N), eta_r_denom(N);
 
   // Gibbs iterations
   int save_idx = 0;
@@ -757,7 +614,6 @@ List pg_negbin_negbin_gibbs(
         re_contrib[i] = 0.0;
       }
       eta_num[i] = X_beta_num[i] + re_contrib[i];
-      p_num_vec[i] = 1.0 / (1.0 + std::exp(-eta_num[i]));
       kappa_num[i] = (y_num[i] - r_num) / 2.0;
     }
 
@@ -768,7 +624,7 @@ List pg_negbin_negbin_gibbs(
     }
 
     // 3a. Update beta_num
-    beta_num = update_beta_negbin(kappa_num, omega_num, X_num, re_contrib, prior_beta_sd);
+    beta_num = update_beta(kappa_num, omega_num, X_num, re_contrib, prior_beta_sd);
 
     // 4a. Update r_num
     for (int i = 0; i < N; i++) {
@@ -779,9 +635,9 @@ List pg_negbin_negbin_gibbs(
       if (shared && n_groups > 0) {
         eta_new += re[group[i] - 1];
       }
-      p_num_vec[i] = 1.0 / (1.0 + std::exp(-eta_new));
+      eta_r_num[i] = eta_new;
     }
-    r_num = update_r_negbin(y_num, p_num_vec, r_num, prior_r_shape, prior_r_rate);
+    r_num = update_r_negbin(y_num, eta_r_num, r_num, prior_r_shape, prior_r_rate);
 
     // --- Denominator process ---
 
@@ -797,7 +653,6 @@ List pg_negbin_negbin_gibbs(
         re_contrib[i] = 0.0;
       }
       eta_denom[i] = X_beta_denom[i] + re_contrib[i];
-      p_denom_vec[i] = 1.0 / (1.0 + std::exp(-eta_denom[i]));
       kappa_denom[i] = (y_denom[i] - r_denom) / 2.0;
     }
 
@@ -808,7 +663,7 @@ List pg_negbin_negbin_gibbs(
     }
 
     // 3b. Update beta_denom
-    beta_denom = update_beta_negbin(kappa_denom, omega_denom, X_denom, re_contrib, prior_beta_sd);
+    beta_denom = update_beta(kappa_denom, omega_denom, X_denom, re_contrib, prior_beta_sd);
 
     // 4b. Update r_denom
     for (int i = 0; i < N; i++) {
@@ -819,9 +674,9 @@ List pg_negbin_negbin_gibbs(
       if (shared && n_groups > 0) {
         eta_new += re[group[i] - 1];
       }
-      p_denom_vec[i] = 1.0 / (1.0 + std::exp(-eta_new));
+      eta_r_denom[i] = eta_new;
     }
-    r_denom = update_r_negbin(y_denom, p_denom_vec, r_denom, prior_r_shape, prior_r_rate);
+    r_denom = update_r_negbin(y_denom, eta_r_denom, r_denom, prior_r_shape, prior_r_rate);
 
     // --- Shared random effects ---
     if (shared && n_groups > 0) {
@@ -984,7 +839,6 @@ List pg_negbin_gibbs_spatial(
   NumericVector X_beta(N);
   NumericVector re_contrib(N);
   NumericVector spatial_contrib(N);
-  NumericVector p_success(N);
 
   // Gibbs iterations
   int save_idx = 0;
@@ -1003,7 +857,6 @@ List pg_negbin_gibbs_spatial(
       }
       spatial_contrib[i] = spatial[spatial_group[i] - 1];
       eta[i] = X_beta[i] + re_contrib[i] + spatial_contrib[i];
-      p_success[i] = 1.0 / (1.0 + std::exp(-eta[i]));
       kappa[i] = (y[i] - r) / 2.0;
     }
 
@@ -1018,7 +871,7 @@ List pg_negbin_gibbs_spatial(
     for (int i = 0; i < N; i++) {
       offset[i] = re_contrib[i] + spatial_contrib[i];
     }
-    beta = update_beta_negbin(kappa, omega, X, offset, prior_beta_sd);
+    beta = update_beta(kappa, omega, X, offset, prior_beta_sd);
 
     // Recompute X_beta
     for (int i = 0; i < N; i++) {
@@ -1136,9 +989,8 @@ List pg_negbin_gibbs_spatial(
     // 6. Update dispersion r
     for (int i = 0; i < N; i++) {
       eta[i] = X_beta[i] + re_contrib[i] + spatial_contrib[i];
-      p_success[i] = 1.0 / (1.0 + std::exp(-eta[i]));
     }
-    r = update_r_negbin(y, p_success, r, prior_r_shape, prior_r_rate);
+    r = update_r_negbin(y, eta, r, prior_r_shape, prior_r_rate);
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {

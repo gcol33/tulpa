@@ -229,17 +229,11 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     };
     phi_block.log_prior = [phi_start, n_s, &adj_row_ptr, &adj_col_idx, &n_neighbors]
                           (const Rcpp::NumericVector& x, int /*k*/) {
-        // Bare ICAR quadratic at tau = 1 (matches the original BYM2 log_prior).
-        double quad_form = 0.0;
-        for (int s = 0; s < n_s; s++) {
-            double phi_s = x[phi_start + s];
-            quad_form += n_neighbors[s] * phi_s * phi_s;
-            for (int kk = adj_row_ptr[s]; kk < adj_row_ptr[s + 1]; kk++) {
-                int neighbor = adj_col_idx[kk];
-                if (neighbor > s) quad_form -= 2.0 * phi_s * x[phi_start + neighbor];
-            }
-        }
-        return -0.5 * quad_form;
+        // Structured ICAR component (tau = 1); shares the quadratic form and the
+        // sum-to-zero penalty with add_icar_prior so the objective stays
+        // consistent with the gradient, instead of re-deriving them inline.
+        return tulpa::log_prior_icar_structured(x, phi_start, n_s, /*tau=*/1.0,
+                                                adj_row_ptr, adj_col_idx, n_neighbors);
     };
     phi_block.center = [phi_start, n_s](Rcpp::NumericVector& x) -> double {
         return tulpa::center_effects(x, phi_start, n_s);

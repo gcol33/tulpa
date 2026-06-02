@@ -35,6 +35,7 @@
 #include "latent_block.h"
 #include "nested_laplace_multi.h"
 #include "spde_block_factory.h"
+#include "tgmrf_block_factory.h"
 #include "tulpa/nested_likelihood.h"
 #include "hmc_car_proper.h"
 #include <Rcpp.h>
@@ -132,18 +133,11 @@ int build_blocks_from_spec(
         };
         phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr](
             const Rcpp::NumericVector& x, int) {
-            double quad_form = 0.0;
-            for (int s = 0; s < size; s++) {
-                double phi_s = x[phi_start + s];
-                quad_form += n_nbr[s] * phi_s * phi_s;
-                for (int kk = adj_rp[s]; kk < adj_rp[s + 1]; kk++) {
-                    int neighbor = adj_ci[kk];
-                    if (neighbor > s) {
-                        quad_form -= 2.0 * phi_s * x[phi_start + neighbor];
-                    }
-                }
-            }
-            return -0.5 * quad_form;
+            // Structured ICAR component (tau = 1); shares the quadratic form and
+            // the sum-to-zero penalty with add_icar_prior so the objective stays
+            // consistent with the gradient, instead of re-deriving them inline.
+            return tulpa::log_prior_icar_structured(x, phi_start, size, /*tau=*/1.0,
+                                                    adj_rp, adj_ci, n_nbr);
         };
         phi_block.center = [phi_start, size](Rcpp::NumericVector& x) -> double {
             return tulpa::center_effects(x, phi_start, size);
@@ -359,102 +353,25 @@ int build_blocks_from_spec(
 
     if (type == "tgmrf") {
         // User-defined GMRF block. The R side has precomputed Q(theta_k) at
-        // every outer-grid row plus log|Q_k| and log p(theta_k); this branch
-        // just reads them and assembles add_prior / log_prior callbacks.
-        // axis_count = block$theta_dim is allowed to vary; the C++ side
-        // never indexes theta_grid for this block (Q_k is precomputed).
+        // every outer-grid row plus log|Q_k| and log p(theta_k); the shared
+        // factory (also used by the joint multi-arm driver) reads them and
+        // assembles the callbacks. The single-block dense driver consumes only
+        // block.idx / add_prior / log_prior, so the factory's sparse / pattern
+        // / contrib-kind fields are inert here.
         int size = Rcpp::as<int>(bs["n_latent"]);
         Rcpp::IntegerVector obs_idx = bs["obs_idx"];
-
-        Rcpp::List Q_p_list = bs["Q_csc_p_per_grid"];
-        Rcpp::List Q_i_list = bs["Q_csc_i_per_grid"];
-        Rcpp::List Q_x_list = bs["Q_csc_x_per_grid"];
-        Rcpp::NumericVector logdet_Q_v = bs["logdet_Q_per_grid"];
-        Rcpp::NumericVector log_pi_v   = bs["log_prior_theta_per_grid"];
-
-        int n_grid_local = Q_p_list.size();
-        if (Q_i_list.size() != n_grid_local ||
-            Q_x_list.size() != n_grid_local ||
-            logdet_Q_v.size() != n_grid_local ||
-            log_pi_v.size() != n_grid_local) {
-            Rcpp::stop("tgmrf block: per-grid arrays must all have length %d",
-                       n_grid_local);
-        }
-
-        // Copy the CSC triples into pure C++ vectors. Two reasons: keep the
-        // callback closures independent of the R-owned SEXP lifetimes once
-        // build_blocks_from_spec returns, and let OpenMP scatter touch them
-        // without R locks.
-        auto Q_p_vec = std::make_shared<std::vector<std::vector<int>>>(n_grid_local);
-        auto Q_i_vec = std::make_shared<std::vector<std::vector<int>>>(n_grid_local);
-        auto Q_x_vec = std::make_shared<std::vector<std::vector<double>>>(n_grid_local);
-        auto logdet_Q = std::make_shared<std::vector<double>>(n_grid_local);
-        auto log_pi_theta = std::make_shared<std::vector<double>>(n_grid_local);
-        for (int k = 0; k < n_grid_local; k++) {
-            Rcpp::IntegerVector p_k = Q_p_list[k];
-            Rcpp::IntegerVector i_k = Q_i_list[k];
-            Rcpp::NumericVector x_k = Q_x_list[k];
-            if (static_cast<int>(p_k.size()) != size + 1) {
-                Rcpp::stop("tgmrf block: Q_csc_p_per_grid[[%d]] has length %d, expected %d",
-                           k + 1, p_k.size(), size + 1);
-            }
-            (*Q_p_vec)[k].assign(p_k.begin(), p_k.end());
-            (*Q_i_vec)[k].assign(i_k.begin(), i_k.end());
-            (*Q_x_vec)[k].assign(x_k.begin(), x_k.end());
-            (*logdet_Q)[k] = logdet_Q_v[k];
-            (*log_pi_theta)[k] = log_pi_v[k];
-        }
-
         int start = latent_offset;
 
-        tulpa::LatentBlock block;
-        block.start = start;
-        block.size  = size;
-        block.idx   = [obs_idx](int i, int /*k_arm*/) { return obs_idx[i]; };
-        block.d_fac = [](int) { return 1.0; };
-        block.add_prior = [start, size, Q_p_vec, Q_i_vec, Q_x_vec](
-            tulpa::DenseVec& grad, tulpa::DenseMat& H,
-            const Rcpp::NumericVector& x, int k) {
-            const auto& p_v = (*Q_p_vec)[k];
-            const auto& i_v = (*Q_i_vec)[k];
-            const auto& x_v = (*Q_x_vec)[k];
-            // Q is stored full (dgCMatrix coerced via generalMatrix). The
-            // scatter walks every (i, j) once and adds Q_{ij} to H[i][j]
-            // and -Q_{ij} * x_j to grad[i]; symmetric storage is implicit
-            // because both (i, j) and (j, i) entries appear in the CSC.
-            for (int j = 0; j < size; j++) {
-                double xj = x[start + j];
-                for (int idx = p_v[j]; idx < p_v[j + 1]; idx++) {
-                    int    i_loc = i_v[idx];
-                    double q_ij  = x_v[idx];
-                    H[start + i_loc][start + j] += q_ij;
-                    grad[start + i_loc] -= q_ij * xj;
-                }
-            }
-        };
-        block.log_prior = [start, size, Q_p_vec, Q_i_vec, Q_x_vec,
-                           logdet_Q, log_pi_theta](
-            const Rcpp::NumericVector& x, int k) {
-            const auto& p_v = (*Q_p_vec)[k];
-            const auto& i_v = (*Q_i_vec)[k];
-            const auto& x_v = (*Q_x_vec)[k];
-            double quad = 0.0;
-            for (int j = 0; j < size; j++) {
-                double xj = x[start + j];
-                for (int idx = p_v[j]; idx < p_v[j + 1]; idx++) {
-                    int    i_loc = i_v[idx];
-                    double q_ij  = x_v[idx];
-                    quad += x[start + i_loc] * q_ij * xj;
-                }
-            }
-            return 0.5 * (*logdet_Q)[k]
-                 - 0.5 * quad
-                 - 0.5 * size * std::log(2.0 * M_PI)
-                 + (*log_pi_theta)[k];
-        };
-        // No center: the user owns the parameterisation; centering would
-        // require shifting the global intercept by the per-step mean offset
-        // which is incompatible with arbitrary Q structures.
+        Rcpp::List Q_p = bs["Q_csc_p_per_grid"];
+        Rcpp::List Q_i = bs["Q_csc_i_per_grid"];
+        Rcpp::List Q_x = bs["Q_csc_x_per_grid"];
+        Rcpp::NumericVector logdet_Q = bs["logdet_Q_per_grid"];
+        Rcpp::NumericVector log_pi   = bs["log_prior_theta_per_grid"];
+
+        tulpa::LatentBlock block = tulpa::make_tgmrf_block(
+            start, size,
+            [obs_idx](int i, int /*k_arm*/) { return obs_idx[i]; },
+            Q_p, Q_i, Q_x, logdet_Q, log_pi, /*block_index=*/0);
         blocks.push_back(block);
         return start + size;
     }

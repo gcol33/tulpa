@@ -32,6 +32,13 @@ struct ParsedArm {
     int                 beta_start;   // offset into joint x where this arm's beta begins
     int                 re_start;     // offset for this arm's RE block
     double              tau_re;
+    // Optional per-coefficient Gaussian beta prior (length p each). When set,
+    // overrides the scalar `tau_beta` default in the prior helpers below: the
+    // consumer supplies an informative intercept prior to break the occupancy
+    // psi-p identifiability ridge on the coupled arm. Empty -> fall back to the
+    // weak scalar default (back-compatible).
+    Rcpp::NumericVector beta_prior_mean;
+    Rcpp::NumericVector beta_prior_prec;
 };
 
 // Parse the R-side arms_list into ParsedArm + JointArm vectors and assign
@@ -63,6 +70,26 @@ inline int parse_joint_arms(
                          : 0.0;
         pa.beta_start  = n_x_running;
         n_x_running   += pa.p;
+
+        // Optional per-coefficient beta prior (mean + precision). Length must
+        // match pa.p when supplied; absence leaves the empty vectors that the
+        // prior helpers read as "use the scalar tau_beta default".
+        if (a.containsElementNamed("beta_prior_mean")) {
+            pa.beta_prior_mean =
+                Rcpp::as<Rcpp::NumericVector>(a["beta_prior_mean"]);
+            if ((int)pa.beta_prior_mean.size() != pa.p) {
+                Rcpp::stop("Arm %d: length(beta_prior_mean) (%d) != p (%d).",
+                           k + 1, (int)pa.beta_prior_mean.size(), pa.p);
+            }
+        }
+        if (a.containsElementNamed("beta_prior_prec")) {
+            pa.beta_prior_prec =
+                Rcpp::as<Rcpp::NumericVector>(a["beta_prior_prec"]);
+            if ((int)pa.beta_prior_prec.size() != pa.p) {
+                Rcpp::stop("Arm %d: length(beta_prior_prec) (%d) != p (%d).",
+                           k + 1, (int)pa.beta_prior_prec.size(), pa.p);
+            }
+        }
 
         arms_out[k].y        = Rcpp::as<Rcpp::NumericVector>(a["y"]);
         arms_out[k].n_trials = Rcpp::as<Rcpp::IntegerVector>(a["n_trials"]);
@@ -133,9 +160,13 @@ inline void add_per_arm_beta_re_priors(
     double tau_beta = 1e-4
 ) {
     for (const ParsedArm& pa : parsed) {
+        const bool has_prior = ((int)pa.beta_prior_prec.size() == pa.p);
         for (int j = 0; j < pa.p; j++) {
-            grad[pa.beta_start + j] -= tau_beta * x[pa.beta_start + j];
-            H[pa.beta_start + j][pa.beta_start + j] += tau_beta;
+            const double prec = has_prior ? pa.beta_prior_prec[j] : tau_beta;
+            const double mean = ((int)pa.beta_prior_mean.size() == pa.p)
+                                ? pa.beta_prior_mean[j] : 0.0;
+            grad[pa.beta_start + j] -= prec * (x[pa.beta_start + j] - mean);
+            H[pa.beta_start + j][pa.beta_start + j] += prec;
         }
         for (int g = 0; g < pa.n_re_groups; g++) {
             grad[pa.re_start + g] -= pa.tau_re * x[pa.re_start + g];
@@ -153,10 +184,14 @@ inline void add_per_arm_beta_re_priors_sparse(
     double tau_beta = 1e-4
 ) {
     for (const ParsedArm& pa : parsed) {
+        const bool has_prior = ((int)pa.beta_prior_prec.size() == pa.p);
         for (int j = 0; j < pa.p; j++) {
-            int idx = pa.beta_start + j;
-            grad[idx] -= tau_beta * x[idx];
-            H.add(idx, idx, tau_beta);
+            const int idx = pa.beta_start + j;
+            const double prec = has_prior ? pa.beta_prior_prec[j] : tau_beta;
+            const double mean = ((int)pa.beta_prior_mean.size() == pa.p)
+                                ? pa.beta_prior_mean[j] : 0.0;
+            grad[idx] -= prec * (x[idx] - mean);
+            H.add(idx, idx, prec);
         }
         for (int g = 0; g < pa.n_re_groups; g++) {
             int idx = pa.re_start + g;
@@ -166,9 +201,15 @@ inline void add_per_arm_beta_re_priors_sparse(
     }
 }
 
-// Per-arm RE log-prior contribution. Matches single-arm convention: weak
-// beta prior is dropped from log_prior so the joint log-marginal stays
-// comparable to two single-arm fits.
+// Per-arm RE + beta log-prior contribution. The weak default beta prior
+// (tau_beta) is dropped so the joint log-marginal stays comparable to two
+// single-arm fits. An INFORMATIVE per-arm beta prior (beta_prior_prec set by
+// the consumer) IS included: it must enter the penalized objective so the
+// inner Newton's line search accepts the prior-driven steps that
+// add_per_arm_beta_re_priors writes into the gradient. Without this the
+// gradient pulls beta toward the prior mean while the objective (likelihood
+// only) rejects the step, pinning beta at the unpenalized MLE -- which at the
+// occupancy psi-p boundary runs to +Inf (gcol33/tulpa, occu_cover coupling).
 inline double log_prior_per_arm_re(const Rcpp::NumericVector& x,
                                     const std::vector<ParsedArm>& parsed) {
     constexpr double LOG_2PI = 1.8378770664093454835606594728112;
@@ -180,6 +221,16 @@ inline double log_prior_per_arm_re(const Rcpp::NumericVector& x,
         }
         if (pa.n_re_groups > 0) {
             lp += 0.5 * pa.n_re_groups * (std::log(pa.tau_re) - LOG_2PI);
+        }
+        if ((int)pa.beta_prior_prec.size() == pa.p) {
+            for (int j = 0; j < pa.p; j++) {
+                const double prec = pa.beta_prior_prec[j];
+                const double mean = ((int)pa.beta_prior_mean.size() == pa.p)
+                                    ? pa.beta_prior_mean[j] : 0.0;
+                const double d = x[pa.beta_start + j] - mean;
+                lp -= 0.5 * prec * d * d;
+                lp += 0.5 * (std::log(prec) - LOG_2PI);
+            }
         }
     }
     return lp;

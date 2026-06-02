@@ -53,7 +53,7 @@ inline double type_i_log_prior(
 // Log-prior for Type II interaction
 // For each spatial unit s, delta[s,*] follows temporal structure
 inline double type_ii_log_prior(
-    const double* delta,  // Flattened S*T vector (column-major: delta[s + S*t])
+    const double* delta,  // Flattened S*T vector (row-major: delta[s*T + t], t contiguous)
     int S,
     int T,
     double tau,
@@ -67,7 +67,7 @@ inline double type_ii_log_prior(
     // Extract temporal series for this location
     std::vector<double> delta_s(T);
     for (int t = 0; t < T; t++) {
-      delta_s[t] = delta[s * T + t];  // Column-major
+      delta_s[t] = delta[s * T + t];  // row-major: t contiguous within unit s
     }
 
     // Apply temporal prior
@@ -131,7 +131,7 @@ inline double type_iii_log_prior(
     // Extract spatial field for this time point
     std::vector<double> delta_t(S);
     for (int s = 0; s < S; s++) {
-      delta_t[s] = delta[s * T + t];  // Column-major
+      delta_t[s] = delta[s * T + t];  // row-major: delta[s*T + t]
     }
 
     // Apply ICAR prior
@@ -151,7 +151,7 @@ inline double type_iii_log_prior(
 // Quadratic form: delta' Q_delta delta = sum over (s1,t1,s2,t2) of delta[s1,t1] * Q_s[s1,s2] * Q_t[t1,t2] * delta[s2,t2]
 // This can be computed as: sum_t1,t2 Q_t[t1,t2] * (delta[*,t1]' Q_s delta[*,t2])
 inline double type_iv_log_prior(
-    const double* delta,  // Flattened S*T vector (column-major)
+    const double* delta,  // Flattened S*T vector (row-major: delta[s*T + t])
     int S,
     int T,
     double tau_space,

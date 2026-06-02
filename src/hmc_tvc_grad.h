@@ -158,9 +158,10 @@ inline void ar1_grad_w(const double* w, int n_times, double tau, double rho, dou
 inline double ar1_grad_log_tau(const double* w, int n_times, double tau, double rho) {
     double one_m_rho2 = 1.0 - rho * rho;
 
-    // Stationary part
-    double grad = -0.5;  // From -0.5*log(2*pi*var_stationary)
-    grad += 0.5 * (n_times - 1);  // From normalization constants for t>0
+    // Stationary part. var_stationary = 1/(tau*(1-rho^2)) is the precision
+    // parameterization, so d/d(log tau)[-0.5*log(2*pi*var_stationary)] = +0.5.
+    double grad = 0.5;
+    grad += 0.5 * (n_times - 1);  // From the t>0 conditional normalizers (1/tau)
 
     // Quadratic terms
     double quad = one_m_rho2 * w[0] * w[0];
