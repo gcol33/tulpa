@@ -50,7 +50,7 @@ would call), or \code{NULL}.
 }
 
 Family identity (for \code{families}) is checked against \code{family$name},
-\code{family$distribution}, and \code{family$numerator$distribution} (numdenom-style
+\code{family$distribution}, and \code{family$numerator$distribution} (tulpaRatio-style
 ratio families nest a per-process distribution).
 }
 \keyword{internal}

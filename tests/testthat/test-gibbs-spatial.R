@@ -49,6 +49,69 @@ test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data"
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)   # slope
 })
 
+test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", {
+  skip_on_cran()
+  set.seed(71)
+  nr <- nc <- 7L
+  W <- rook_adj(nr, nc)
+  n_units <- nr * nc
+
+  reps  <- 4L
+  unit  <- rep(seq_len(n_units), each = reps)   # per-obs spatial unit (1-based)
+  N     <- length(unit)
+
+  phi_true  <- sim_spatial_effects(W, sigma = 0.5, type = "icar")
+  beta_true <- c(0.8, 0.5)                       # log-mean intercept + slope
+  x  <- rnorm(N)
+  X  <- cbind(1, x)
+
+  n_groups      <- 6L
+  grp           <- ((unit - 1L) %% n_groups) + 1L
+  sigma_re_true <- 0.3
+  b_re          <- rnorm(n_groups, 0, sigma_re_true)
+
+  r_true <- 5.0                                  # negbin dispersion (size)
+  eta <- as.numeric(X %*% beta_true) + phi_true[unit] + b_re[grp]
+  y   <- rnbinom(N, size = r_true, mu = exp(eta))
+
+  fit <- tulpa_gibbs(
+    y = y, n_trials = NULL, X = X, group = grp, n_groups = n_groups,
+    family = "neg_binomial_2",
+    spatial = list(type = "icar", adjacency = W, spatial_idx = unit),
+    iter = 3000L, warmup = 1500L, verbose = FALSE
+  )
+
+  # Wiring: the negbin ICAR sampler returns its universal + spatial + r draws.
+  expect_true(is.list(fit))
+  expect_true(all(c("beta", "spatial", "tau", "sigma_re", "r") %in% names(fit)))
+  expect_equal(ncol(fit$spatial), n_units)
+  expect_true(all(is.finite(fit$r)))
+
+  # Recovery: the slope is identified separately from the field; the ICAR
+  # field is improper (constant null space) and the kernel re-centers it to
+  # mean-zero each sweep, so the intercept and the field's overall level are
+  # confounded. Assert the identifiable combination (intercept + mean field)
+  # against truth + the simulated field's mean, as the GP case does.
+  beta_hat <- colMeans(fit$beta)
+  expect_lt(abs(beta_hat[2] - beta_true[2]), 0.25)   # slope
+  level_hat  <- beta_hat[1] + mean(colMeans(fit$spatial))
+  level_true <- beta_true[1] + mean(phi_true)
+  expect_lt(abs(level_hat - level_true), 0.45)
+  expect_gt(mean(fit$r), 1.5)                        # dispersion stays sane
+})
+
+test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {
+  W <- rook_adj(3L, 3L)
+  expect_error(
+    tulpa_gibbs(y = rnbinom(9, size = 5, mu = 2), n_trials = NULL,
+                X = cbind(1, rnorm(9)), group = rep(1L, 9), n_groups = 1L,
+                family = "neg_binomial_2",
+                spatial = list(type = "bym2", adjacency = W,
+                               spatial_idx = seq_len(9))),
+    "areal ICAR field"
+  )
+})
+
 test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data", {
   skip_on_cran()
   set.seed(11)

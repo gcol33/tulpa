@@ -465,11 +465,11 @@
              call. = FALSE)
       }
       if (!is.null(spatial)) {
-        if (family != "binomial") {
+        if (!family %in% c("binomial", "neg_binomial_2")) {
           stop(sprintf(paste0(
-            "Spatial Gibbs supports family = 'binomial' only; got '%s'. Use ",
-            "mode = 'laplace' for other families under a spatial field."), family),
-            call. = FALSE)
+            "Spatial Gibbs supports family 'binomial' or 'neg_binomial_2'; got ",
+            "'%s'. Use mode = 'laplace' for other families under a spatial field."),
+            family), call. = FALSE)
         }
       } else if (!family %in% c("binomial", "neg_binomial_2")) {
         stop(sprintf(paste0(
@@ -549,6 +549,45 @@
       "Backend '%s' is reachable but not yet wired through tulpa(). Call its\n",
       backend),
       "fitter directly.", call. = FALSE)
+  }
+
+  if (input == "modeldata") {
+    # The model-agnostic ModelData sampler kernels (hmc/ess/sghmc/sgld/mclmc/
+    # smc/vi) fit a fixed-effect GLM via tulpa_sample_glmm(). They build the
+    # ModelData themselves; random-effect, spatial, and latent structure are
+    # not threaded through this path. Random-effect models have a clean home on
+    # the conditional R-closure logpost backends (mode = "mala"/"pathfinder"/
+    # "imh_laplace"), which condition on sigma_re; route the user there rather
+    # than silently dropping the term.
+    re <- bundle$re_terms %||% list()
+    if (length(re) > 0L) {
+      stop(sprintf(paste0(
+        "Backend '%s' fits a fixed-effect GLM and does not yet support the\n",
+        "random-effect term(s) in the formula. Use mode = 'mala' (or\n",
+        "'pathfinder' / 'imh_laplace'), which condition on sigma_re, for a\n",
+        "sampler under random effects."), backend), call. = FALSE)
+    }
+    if (!is.null(spatial) || !is.null(temporal)) {
+      stop(sprintf(paste0(
+        "Backend '%s' fits a fixed-effect GLM; a spatial / temporal field is\n",
+        "not threaded through this path. Use a nested-Laplace mode ('auto' /\n",
+        "'structured' / 'nested_laplace') for an integrated field."), backend),
+        call. = FALSE)
+    }
+    if (!is.null(bundle$offset)) {
+      stop(sprintf("Backend '%s' does not yet support offset() terms.", backend),
+           call. = FALSE)
+    }
+    return(list(
+      y           = bundle$y,
+      n_trials    = n_trials %||% rep(1L, bundle$n_obs),
+      X           = bundle$X,
+      family      = family,
+      backend     = backend,
+      phi         = phi,
+      fixed_names = bundle$fixed_names,
+      control     = control
+    ))
   }
 
   stop(sprintf("Backend '%s' (input '%s') is not supported by tulpa() yet.",

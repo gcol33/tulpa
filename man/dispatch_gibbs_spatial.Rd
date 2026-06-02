@@ -23,8 +23,10 @@ dispatch_gibbs_spatial(
 }
 \description{
 The Gibbs analogue of \code{\link[=dispatch_laplace_spatial]{dispatch_laplace_spatial()}}: routes on \code{spatial$type}
-to the matching \verb{cpp_pg_binomial_gibbs_<structure>} sampler, building the
-neighbour-list / coordinate inputs each one needs. Binomial only (the
-Polya-Gamma augmentation is for the binomial/logit likelihood).
+to the matching \verb{cpp_pg_<family>_gibbs_<structure>} sampler, building the
+neighbour-list / coordinate inputs each one needs. The binomial Polya-Gamma
+augmentation backs the full areal (icar/bym2/rsr) + continuous (gp/nngp/
+multiscale_gp) family; \code{neg_binomial_2} is backed by the single areal ICAR
+negbin sampler (\code{cpp_pg_negbin_gibbs_spatial}), the only negbin spatial kernel.
 }
 \keyword{internal}

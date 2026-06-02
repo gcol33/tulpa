@@ -43,9 +43,11 @@ tulpa_gibbs(
 \item{prior_sigma_scale}{Prior scale for RE sigma}
 
 \item{spatial}{Optional spatial spec. When supplied the fit routes to the
-matching spatial Polya-Gamma Gibbs sampler via \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}}
-(binomial only); \code{group}/\code{n_groups} are the iid random-effect block carried
-alongside the field. Supported \code{type}s:
+matching spatial Polya-Gamma Gibbs sampler via \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}};
+\code{group}/\code{n_groups} are the iid random-effect block carried alongside the
+field. The full areal + continuous family is available for
+\code{family = "binomial"}; \code{family = "neg_binomial_2"} is backed by the areal
+ICAR negbin sampler only. Supported \code{type}s:
 \itemize{
 \item areal -- \code{"icar"}, \code{"bym2"}, \code{"rsr"}: a list with \code{type}, \code{adjacency} and
 a 1-based \code{spatial_idx} per observation (e.g.

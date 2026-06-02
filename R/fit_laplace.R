@@ -786,9 +786,11 @@ adjacency_to_list_tulpa <- function(adj) {
 #' Dispatch a spatial Polya-Gamma Gibbs fit to the correct sampler
 #'
 #' The Gibbs analogue of [dispatch_laplace_spatial()]: routes on `spatial$type`
-#' to the matching `cpp_pg_binomial_gibbs_<structure>` sampler, building the
-#' neighbour-list / coordinate inputs each one needs. Binomial only (the
-#' Polya-Gamma augmentation is for the binomial/logit likelihood).
+#' to the matching `cpp_pg_<family>_gibbs_<structure>` sampler, building the
+#' neighbour-list / coordinate inputs each one needs. The binomial Polya-Gamma
+#' augmentation backs the full areal (icar/bym2/rsr) + continuous (gp/nngp/
+#' multiscale_gp) family; `neg_binomial_2` is backed by the single areal ICAR
+#' negbin sampler (`cpp_pg_negbin_gibbs_spatial`), the only negbin spatial kernel.
 #' @keywords internal
 dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
                                    spatial, family,
@@ -796,9 +798,9 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
                                    prior_beta_sd = 10.0,
                                    prior_sigma_re_scale = 2.5,
                                    verbose = FALSE, n_threads = 1L) {
-  if (!identical(family, "binomial")) {
-    stop("Spatial Gibbs supports family = 'binomial' only; got '", family,
-         "'. Use mode = 'laplace' for other families under a spatial field.",
+  if (!family %in% c("binomial", "neg_binomial_2")) {
+    stop("Spatial Gibbs supports family 'binomial' or 'neg_binomial_2'; got '",
+         family, "'. Use mode = 'laplace' for other families under a spatial field.",
          call. = FALSE)
   }
   # RSR keeps the underlying areal $type (icar/car) and flags $rsr; normalise it
@@ -806,12 +808,8 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
   spatial_type <- tolower(spatial$type %||% "")
   if (isTRUE(spatial$rsr)) spatial_type <- "rsr"
 
-  common <- .pg_gibbs_common_args(
-    y, n_trials, X, re_group, n_re_groups, iter, warmup, thin,
-    prior_beta_sd, prior_sigma_re_scale, verbose, n_threads
-  )
-
-  # Areal samplers (icar / bym2 / rsr) share the neighbour-list block.
+  # Areal samplers (icar / bym2 / rsr) share the neighbour-list block; the negbin
+  # areal kernel below reuses the same block.
   if (spatial_type %in% c("icar", "bym2", "rsr")) {
     adj <- spatial$adjacency
     if (is.null(adj)) {
@@ -826,6 +824,40 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       n_neighbors     = al$n_neighbors
     )
   }
+
+  # Negative-binomial spatial Gibbs: a single areal ICAR kernel. No bym2/rsr/gp
+  # negbin samplers exist, so a non-ICAR field under negbin is rejected rather
+  # than silently downgraded. The kernel carries no trial count `n`, adds the
+  # dispersion-r prior, and shares the iid RE block + ICAR neighbour list.
+  if (identical(family, "neg_binomial_2")) {
+    if (spatial_type != "icar") {
+      stop("Negative-binomial spatial Gibbs is wired for the areal ICAR field ",
+           "only; got '", spatial_type, "'. Use family = 'binomial' for ",
+           "bym2 / rsr / gp fields, or mode = 'laplace'.", call. = FALSE)
+    }
+    return(cpp_pg_negbin_gibbs_spatial(
+      y = as.integer(y), X = X,
+      re_group = as.integer(re_group), n_re_groups = as.integer(n_re_groups),
+      spatial_group = areal$spatial_group, n_spatial_units = areal$n_spatial_units,
+      adj_list = areal$adj_list, n_neighbors = areal$n_neighbors,
+      n_iter = as.integer(iter), n_warmup = as.integer(warmup),
+      thin = as.integer(thin),
+      prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_re_scale,
+      prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
+      prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01,
+      prior_r_shape   = spatial$prior_r_shape %||% 1.0,
+      prior_r_rate    = spatial$prior_r_rate  %||% 0.1,
+      r_init          = spatial$r_init %||% 5.0,
+      store_eta = FALSE, verbose = verbose, n_threads = as.integer(n_threads)
+    ))
+  }
+
+  # Binomial spatial Gibbs: the full areal + continuous sampler family. The
+  # shared GLMM input block (with the binomial trial count `n`) is assembled once.
+  common <- .pg_gibbs_common_args(
+    y, n_trials, X, re_group, n_re_groups, iter, warmup, thin,
+    prior_beta_sd, prior_sigma_re_scale, verbose, n_threads
+  )
 
   if (spatial_type == "icar") {
     do.call(cpp_pg_binomial_gibbs_spatial, c(common, areal, list(
@@ -1001,9 +1033,11 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0) {
 #' @param prior_beta_sd Prior SD for betas
 #' @param prior_sigma_scale Prior scale for RE sigma
 #' @param spatial Optional spatial spec. When supplied the fit routes to the
-#'   matching spatial Polya-Gamma Gibbs sampler via [dispatch_gibbs_spatial()]
-#'   (binomial only); `group`/`n_groups` are the iid random-effect block carried
-#'   alongside the field. Supported `type`s:
+#'   matching spatial Polya-Gamma Gibbs sampler via [dispatch_gibbs_spatial()];
+#'   `group`/`n_groups` are the iid random-effect block carried alongside the
+#'   field. The full areal + continuous family is available for
+#'   `family = "binomial"`; `family = "neg_binomial_2"` is backed by the areal
+#'   ICAR negbin sampler only. Supported `type`s:
 #'   * areal -- `"icar"`, `"bym2"`, `"rsr"`: a list with `type`, `adjacency` and
 #'     a 1-based `spatial_idx` per observation (e.g.
 #'     `list(type = "icar", adjacency = W, spatial_idx = unit)`). `"rsr"` reuses

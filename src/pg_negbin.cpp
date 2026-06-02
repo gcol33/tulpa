@@ -93,6 +93,23 @@ void center_random_effects(NumericVector& re, NumericVector& beta) {
   }
 }
 
+// The PG-NB augmentation samples beta / eta on the Zhou (2012) log-odds scale,
+// where the mean is mu = r * exp(eta). tulpa's neg_binomial_2 family is the NB2
+// mean scale mu = exp(eta_nb2) (R/family_loglik.R, .mean_log), shared by the
+// Laplace / NUTS backends. The two parameterizations differ only by a log(r)
+// shift in the intercept: eta_nb2 = eta + log(r), so beta_nb2[0] = beta[0] +
+// log(r) (slopes and random effects are identical). Report the user-facing
+// draws on the NB2 mean scale so tulpa_gibbs() agrees with the other backends;
+// the internal sampler stays on the Zhou scale, where the PG augmentation and
+// the joint (r, beta0) update are derived. The transform is applied per draw
+// (a derived quantity summarised after sampling), so the posterior is exact.
+static inline void store_beta_nb2(Rcpp::NumericMatrix& beta_draws, int row,
+                                  const Rcpp::NumericVector& beta, double r) {
+  const int p = beta.size();
+  beta_draws(row, 0) = beta[0] + std::log(r);   // intercept on the NB2 mean scale
+  for (int j = 1; j < p; j++) beta_draws(row, j) = beta[j];
+}
+
 // Compute log-likelihood for NB given eta (linear predictor) and r
 // In Zhou parameterization: mu = r * exp(eta), so p = exp(eta)/(1+exp(eta))
 // This uses the standard NB2 likelihood with R's parameterization
@@ -490,11 +507,9 @@ List pg_negbin_gibbs(
     }
     r = update_r_negbin(y, eta_for_r, r, prior_r_shape, prior_r_rate);
 
-    // Save draws
+    // Save draws (reported on the NB2 mean scale; see store_beta_nb2).
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      for (int j = 0; j < p; j++) {
-        beta_draws(save_idx, j) = beta[j];
-      }
+      store_beta_nb2(beta_draws, save_idx, beta, r);
       for (int g = 0; g < n_groups; g++) {
         re_draws(save_idx, g) = re[g];
       }
@@ -502,8 +517,9 @@ List pg_negbin_gibbs(
       r_draws[save_idx] = r;
 
       if (store_eta) {
+        const double log_r = std::log(r);
         for (int i = 0; i < N; i++) {
-          eta_draws(save_idx, i) = eta[i];
+          eta_draws(save_idx, i) = eta[i] + log_r;  // NB2 log-mean
         }
       }
       save_idx++;
@@ -992,11 +1008,9 @@ List pg_negbin_gibbs_spatial(
     }
     r = update_r_negbin(y, eta, r, prior_r_shape, prior_r_rate);
 
-    // Save draws
+    // Save draws (reported on the NB2 mean scale; see store_beta_nb2).
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      for (int j = 0; j < p; j++) {
-        beta_draws(save_idx, j) = beta[j];
-      }
+      store_beta_nb2(beta_draws, save_idx, beta, r);
       for (int g = 0; g < n_re_groups; g++) {
         re_draws(save_idx, g) = re[g];
       }
@@ -1008,8 +1022,9 @@ List pg_negbin_gibbs_spatial(
       r_draws[save_idx] = r;
 
       if (store_eta) {
+        const double log_r = std::log(r);
         for (int i = 0; i < N; i++) {
-          eta_draws(save_idx, i) = eta[i];
+          eta_draws(save_idx, i) = eta[i] + log_r;  // NB2 log-mean
         }
       }
       save_idx++;

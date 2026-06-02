@@ -33,19 +33,22 @@ test_that("get_backend_tier preserves its shape and errors on unknown", {
 })
 
 test_that("reachability reflects whether an R fitter exists", {
-  reachable <- c("gibbs", "imh_laplace", "mala", "laplace", "pathfinder", "agq")
-  cabi_only <- c("hmc", "ess", "pg", "sghmc", "sgld", "mclmc", "smc", "vi")
+  # The ModelData sampler kernels are now reachable through tulpa_sample_glmm
+  # (gcol33/tulpa#54, #55). `pg` remains C-ABI-only (reached via tulpa_gibbs).
+  reachable <- c("gibbs", "imh_laplace", "mala", "laplace", "pathfinder", "agq",
+                 "hmc", "ess", "sghmc", "sgld", "mclmc", "smc", "vi")
+  cabi_only <- c("pg")
   for (b in reachable) expect_true(backend_is_reachable(b), info = b)
   for (b in cabi_only) expect_false(backend_is_reachable(b), info = b)
 })
 
 test_that("selecting a C-ABI-only backend fails loudly, naming the kernel", {
-  err <- expect_error(assert_backend_reachable("smc"))
+  err <- expect_error(assert_backend_reachable("pg"))
   expect_match(conditionMessage(err), "no R-level fitter")
-  expect_match(conditionMessage(err), "tulpa_smc_fit")
+  expect_match(conditionMessage(err), "tulpa_pg_binomial_gibbs")
 
-  err2 <- expect_error(tulpa_dispatch("ess", fitter_args = list()))
-  expect_match(conditionMessage(err2), "tulpa_run_ess_sampler")
+  err2 <- expect_error(tulpa_dispatch("pg", fitter_args = list()))
+  expect_match(conditionMessage(err2), "tulpa_pg_binomial_gibbs")
 })
 
 test_that("resolve_backend_fitter returns the real function for reachable backends", {

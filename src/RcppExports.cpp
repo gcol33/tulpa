@@ -142,17 +142,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_gibbs_spatial
-Rcpp::List cpp_gibbs_spatial(Rcpp::List data_list);
-RcppExport SEXP _tulpa_cpp_gibbs_spatial(SEXP data_listSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< Rcpp::List >::type data_list(data_listSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_gibbs_spatial(data_list));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_gpu_available
 bool cpp_gpu_available();
 RcppExport SEXP _tulpa_cpp_gpu_available() {
@@ -2090,208 +2079,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// cpp_test_log1pexp
-double cpp_test_log1pexp(double x);
-RcppExport SEXP _tulpa_cpp_test_log1pexp(SEXP xSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< double >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_log1pexp(x));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_logistic
-double cpp_test_zi_logistic(double x);
-RcppExport SEXP _tulpa_cpp_test_zi_logistic(SEXP xSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< double >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_logistic(x));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_log_logistic
-double cpp_test_log_logistic(double x);
-RcppExport SEXP _tulpa_cpp_test_log_logistic(SEXP xSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< double >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_log_logistic(x));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_log1m_logistic
-double cpp_test_log1m_logistic(double x);
-RcppExport SEXP _tulpa_cpp_test_log1m_logistic(SEXP xSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< double >::type x(xSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_log1m_logistic(x));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_poisson_lpmf
-double cpp_test_zi_poisson_lpmf(int y, double mu);
-RcppExport SEXP _tulpa_cpp_test_zi_poisson_lpmf(SEXP ySEXP, SEXP muSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_poisson_lpmf(y, mu));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_negbin_lpmf
-double cpp_test_zi_negbin_lpmf(int y, double mu, double phi);
-RcppExport SEXP _tulpa_cpp_test_zi_negbin_lpmf(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_negbin_lpmf(y, mu, phi));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_poisson_lpmf_logit
-double cpp_test_zi_poisson_lpmf_logit(int y, double mu, double logit_zi);
-RcppExport SEXP _tulpa_cpp_test_zi_poisson_lpmf_logit(SEXP ySEXP, SEXP muSEXP, SEXP logit_ziSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type logit_zi(logit_ziSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_poisson_lpmf_logit(y, mu, logit_zi));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_negbin_lpmf_logit
-double cpp_test_zi_negbin_lpmf_logit(int y, double mu, double phi, double logit_zi);
-RcppExport SEXP _tulpa_cpp_test_zi_negbin_lpmf_logit(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP, SEXP logit_ziSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type logit_zi(logit_ziSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_negbin_lpmf_logit(y, mu, phi, logit_zi));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_truncated_poisson_lpmf
-double cpp_test_truncated_poisson_lpmf(int y, double mu);
-RcppExport SEXP _tulpa_cpp_test_truncated_poisson_lpmf(SEXP ySEXP, SEXP muSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_truncated_poisson_lpmf(y, mu));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_truncated_negbin_lpmf
-double cpp_test_truncated_negbin_lpmf(int y, double mu, double phi);
-RcppExport SEXP _tulpa_cpp_test_truncated_negbin_lpmf(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_truncated_negbin_lpmf(y, mu, phi));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_hurdle_poisson_lpmf_logit
-double cpp_test_hurdle_poisson_lpmf_logit(int y, double mu, double logit_theta);
-RcppExport SEXP _tulpa_cpp_test_hurdle_poisson_lpmf_logit(SEXP ySEXP, SEXP muSEXP, SEXP logit_thetaSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type logit_theta(logit_thetaSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_hurdle_poisson_lpmf_logit(y, mu, logit_theta));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_hurdle_negbin_lpmf_logit
-double cpp_test_hurdle_negbin_lpmf_logit(int y, double mu, double phi, double logit_theta);
-RcppExport SEXP _tulpa_cpp_test_hurdle_negbin_lpmf_logit(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP, SEXP logit_thetaSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type logit_theta(logit_thetaSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_hurdle_negbin_lpmf_logit(y, mu, phi, logit_theta));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_log_likelihood
-double cpp_test_zi_log_likelihood(int y, double mu, double phi, double logit_zi, std::string zi_type_str);
-RcppExport SEXP _tulpa_cpp_test_zi_log_likelihood(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP, SEXP logit_ziSEXP, SEXP zi_type_strSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type logit_zi(logit_ziSEXP);
-    Rcpp::traits::input_parameter< std::string >::type zi_type_str(zi_type_strSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_log_likelihood(y, mu, phi, logit_zi, zi_type_str));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_poisson_grad_logit_zi
-double cpp_test_zi_poisson_grad_logit_zi(int y, double mu, double logit_zi);
-RcppExport SEXP _tulpa_cpp_test_zi_poisson_grad_logit_zi(SEXP ySEXP, SEXP muSEXP, SEXP logit_ziSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type logit_zi(logit_ziSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_poisson_grad_logit_zi(y, mu, logit_zi));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_zi_negbin_grad_logit_zi
-double cpp_test_zi_negbin_grad_logit_zi(int y, double mu, double phi, double logit_zi);
-RcppExport SEXP _tulpa_cpp_test_zi_negbin_grad_logit_zi(SEXP ySEXP, SEXP muSEXP, SEXP phiSEXP, SEXP logit_ziSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type mu(muSEXP);
-    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
-    Rcpp::traits::input_parameter< double >::type logit_zi(logit_ziSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_zi_negbin_grad_logit_zi(y, mu, phi, logit_zi));
-    return rcpp_result_gen;
-END_RCPP
-}
-// cpp_test_hurdle_grad_logit_theta
-double cpp_test_hurdle_grad_logit_theta(int y, double logit_theta);
-RcppExport SEXP _tulpa_cpp_test_hurdle_grad_logit_theta(SEXP ySEXP, SEXP logit_thetaSEXP) {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    Rcpp::traits::input_parameter< int >::type y(ySEXP);
-    Rcpp::traits::input_parameter< double >::type logit_theta(logit_thetaSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_hurdle_grad_logit_theta(y, logit_theta));
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_test_parallel_dot_products
 List cpp_test_parallel_dot_products(NumericMatrix X, NumericVector y, int n_threads);
 RcppExport SEXP _tulpa_cpp_test_parallel_dot_products(SEXP XSEXP, SEXP ySEXP, SEXP n_threadsSEXP) {
@@ -2691,6 +2478,42 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_tulpa_sample_glmm
+Rcpp::List cpp_tulpa_sample_glmm(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, std::string backend, double phi, double sigma_beta, int n_iter, int n_warmup, int seed, bool verbose, int n_chains, int max_treedepth, double adapt_delta, double epsilon, int L, int batch_size, double alpha, int mclmc_adjusted, int n_particles, int n_mcmc_steps, double ess_threshold, int vi_variant, int vi_mc_samples, int vi_max_iter, int vi_n_draws);
+RcppExport SEXP _tulpa_cpp_tulpa_sample_glmm(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP backendSEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP n_chainsSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP epsilonSEXP, SEXP LSEXP, SEXP batch_sizeSEXP, SEXP alphaSEXP, SEXP mclmc_adjustedSEXP, SEXP n_particlesSEXP, SEXP n_mcmc_stepsSEXP, SEXP ess_thresholdSEXP, SEXP vi_variantSEXP, SEXP vi_mc_samplesSEXP, SEXP vi_max_iterSEXP, SEXP vi_n_drawsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< std::string >::type backend(backendSEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    Rcpp::traits::input_parameter< int >::type n_chains(n_chainsSEXP);
+    Rcpp::traits::input_parameter< int >::type max_treedepth(max_treedepthSEXP);
+    Rcpp::traits::input_parameter< double >::type adapt_delta(adapt_deltaSEXP);
+    Rcpp::traits::input_parameter< double >::type epsilon(epsilonSEXP);
+    Rcpp::traits::input_parameter< int >::type L(LSEXP);
+    Rcpp::traits::input_parameter< int >::type batch_size(batch_sizeSEXP);
+    Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
+    Rcpp::traits::input_parameter< int >::type mclmc_adjusted(mclmc_adjustedSEXP);
+    Rcpp::traits::input_parameter< int >::type n_particles(n_particlesSEXP);
+    Rcpp::traits::input_parameter< int >::type n_mcmc_steps(n_mcmc_stepsSEXP);
+    Rcpp::traits::input_parameter< double >::type ess_threshold(ess_thresholdSEXP);
+    Rcpp::traits::input_parameter< int >::type vi_variant(vi_variantSEXP);
+    Rcpp::traits::input_parameter< int >::type vi_mc_samples(vi_mc_samplesSEXP);
+    Rcpp::traits::input_parameter< int >::type vi_max_iter(vi_max_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type vi_n_draws(vi_n_drawsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_sample_glmm(y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_spde_layout_probe
 Rcpp::List cpp_spde_layout_probe(int n_mesh, int p, bool joint_hypers, int n_extra_params);
 RcppExport SEXP _tulpa_cpp_spde_layout_probe(SEXP n_meshSEXP, SEXP pSEXP, SEXP joint_hypersSEXP, SEXP n_extra_paramsSEXP) {
@@ -2816,7 +2639,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},
-    {"_tulpa_cpp_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_gibbs_spatial, 1},
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
     {"_tulpa_cpp_get_max_threads", (DL_FUNC) &_tulpa_cpp_get_max_threads, 0},
@@ -2921,22 +2743,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_ar1_log_density", (DL_FUNC) &_tulpa_cpp_test_ar1_log_density, 3},
     {"_tulpa_cpp_test_temporal_log_prior", (DL_FUNC) &_tulpa_cpp_test_temporal_log_prior, 5},
     {"_tulpa_cpp_test_sum_to_zero_penalty", (DL_FUNC) &_tulpa_cpp_test_sum_to_zero_penalty, 2},
-    {"_tulpa_cpp_test_log1pexp", (DL_FUNC) &_tulpa_cpp_test_log1pexp, 1},
-    {"_tulpa_cpp_test_zi_logistic", (DL_FUNC) &_tulpa_cpp_test_zi_logistic, 1},
-    {"_tulpa_cpp_test_log_logistic", (DL_FUNC) &_tulpa_cpp_test_log_logistic, 1},
-    {"_tulpa_cpp_test_log1m_logistic", (DL_FUNC) &_tulpa_cpp_test_log1m_logistic, 1},
-    {"_tulpa_cpp_test_zi_poisson_lpmf", (DL_FUNC) &_tulpa_cpp_test_zi_poisson_lpmf, 2},
-    {"_tulpa_cpp_test_zi_negbin_lpmf", (DL_FUNC) &_tulpa_cpp_test_zi_negbin_lpmf, 3},
-    {"_tulpa_cpp_test_zi_poisson_lpmf_logit", (DL_FUNC) &_tulpa_cpp_test_zi_poisson_lpmf_logit, 3},
-    {"_tulpa_cpp_test_zi_negbin_lpmf_logit", (DL_FUNC) &_tulpa_cpp_test_zi_negbin_lpmf_logit, 4},
-    {"_tulpa_cpp_test_truncated_poisson_lpmf", (DL_FUNC) &_tulpa_cpp_test_truncated_poisson_lpmf, 2},
-    {"_tulpa_cpp_test_truncated_negbin_lpmf", (DL_FUNC) &_tulpa_cpp_test_truncated_negbin_lpmf, 3},
-    {"_tulpa_cpp_test_hurdle_poisson_lpmf_logit", (DL_FUNC) &_tulpa_cpp_test_hurdle_poisson_lpmf_logit, 3},
-    {"_tulpa_cpp_test_hurdle_negbin_lpmf_logit", (DL_FUNC) &_tulpa_cpp_test_hurdle_negbin_lpmf_logit, 4},
-    {"_tulpa_cpp_test_zi_log_likelihood", (DL_FUNC) &_tulpa_cpp_test_zi_log_likelihood, 5},
-    {"_tulpa_cpp_test_zi_poisson_grad_logit_zi", (DL_FUNC) &_tulpa_cpp_test_zi_poisson_grad_logit_zi, 3},
-    {"_tulpa_cpp_test_zi_negbin_grad_logit_zi", (DL_FUNC) &_tulpa_cpp_test_zi_negbin_grad_logit_zi, 4},
-    {"_tulpa_cpp_test_hurdle_grad_logit_theta", (DL_FUNC) &_tulpa_cpp_test_hurdle_grad_logit_theta, 2},
     {"_tulpa_cpp_test_parallel_dot_products", (DL_FUNC) &_tulpa_cpp_test_parallel_dot_products, 3},
     {"_tulpa_cpp_test_parallel_likelihood", (DL_FUNC) &_tulpa_cpp_test_parallel_likelihood, 3},
     {"_tulpa_cpp_test_parallel_independent", (DL_FUNC) &_tulpa_cpp_test_parallel_independent, 2},
@@ -2962,6 +2768,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_c_abi_resume_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_resume_roundtrip, 9},
     {"_tulpa_cpp_test_c_abi_chains_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_chains_roundtrip, 10},
     {"_tulpa_tulpa_version", (DL_FUNC) &_tulpa_tulpa_version, 0},
+    {"_tulpa_cpp_tulpa_sample_glmm", (DL_FUNC) &_tulpa_cpp_tulpa_sample_glmm, 26},
     {"_tulpa_cpp_spde_layout_probe", (DL_FUNC) &_tulpa_cpp_spde_layout_probe, 4},
     {"_tulpa_cpp_spde_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_prior_probe, 9},
     {"_tulpa_cpp_spde_nc_apply_probe", (DL_FUNC) &_tulpa_cpp_spde_nc_apply_probe, 7},

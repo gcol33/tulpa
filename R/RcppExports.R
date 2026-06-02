@@ -41,10 +41,6 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
-cpp_gibbs_spatial <- function(data_list) {
-    .Call(`_tulpa_cpp_gibbs_spatial`, data_list)
-}
-
 cpp_gpu_available <- function() {
     .Call(`_tulpa_cpp_gpu_available`)
 }
@@ -461,70 +457,6 @@ cpp_test_sum_to_zero_penalty <- function(phi, lambda) {
     .Call(`_tulpa_cpp_test_sum_to_zero_penalty`, phi, lambda)
 }
 
-cpp_test_log1pexp <- function(x) {
-    .Call(`_tulpa_cpp_test_log1pexp`, x)
-}
-
-cpp_test_zi_logistic <- function(x) {
-    .Call(`_tulpa_cpp_test_zi_logistic`, x)
-}
-
-cpp_test_log_logistic <- function(x) {
-    .Call(`_tulpa_cpp_test_log_logistic`, x)
-}
-
-cpp_test_log1m_logistic <- function(x) {
-    .Call(`_tulpa_cpp_test_log1m_logistic`, x)
-}
-
-cpp_test_zi_poisson_lpmf <- function(y, mu) {
-    .Call(`_tulpa_cpp_test_zi_poisson_lpmf`, y, mu)
-}
-
-cpp_test_zi_negbin_lpmf <- function(y, mu, phi) {
-    .Call(`_tulpa_cpp_test_zi_negbin_lpmf`, y, mu, phi)
-}
-
-cpp_test_zi_poisson_lpmf_logit <- function(y, mu, logit_zi) {
-    .Call(`_tulpa_cpp_test_zi_poisson_lpmf_logit`, y, mu, logit_zi)
-}
-
-cpp_test_zi_negbin_lpmf_logit <- function(y, mu, phi, logit_zi) {
-    .Call(`_tulpa_cpp_test_zi_negbin_lpmf_logit`, y, mu, phi, logit_zi)
-}
-
-cpp_test_truncated_poisson_lpmf <- function(y, mu) {
-    .Call(`_tulpa_cpp_test_truncated_poisson_lpmf`, y, mu)
-}
-
-cpp_test_truncated_negbin_lpmf <- function(y, mu, phi) {
-    .Call(`_tulpa_cpp_test_truncated_negbin_lpmf`, y, mu, phi)
-}
-
-cpp_test_hurdle_poisson_lpmf_logit <- function(y, mu, logit_theta) {
-    .Call(`_tulpa_cpp_test_hurdle_poisson_lpmf_logit`, y, mu, logit_theta)
-}
-
-cpp_test_hurdle_negbin_lpmf_logit <- function(y, mu, phi, logit_theta) {
-    .Call(`_tulpa_cpp_test_hurdle_negbin_lpmf_logit`, y, mu, phi, logit_theta)
-}
-
-cpp_test_zi_log_likelihood <- function(y, mu, phi, logit_zi, zi_type_str) {
-    .Call(`_tulpa_cpp_test_zi_log_likelihood`, y, mu, phi, logit_zi, zi_type_str)
-}
-
-cpp_test_zi_poisson_grad_logit_zi <- function(y, mu, logit_zi) {
-    .Call(`_tulpa_cpp_test_zi_poisson_grad_logit_zi`, y, mu, logit_zi)
-}
-
-cpp_test_zi_negbin_grad_logit_zi <- function(y, mu, phi, logit_zi) {
-    .Call(`_tulpa_cpp_test_zi_negbin_grad_logit_zi`, y, mu, phi, logit_zi)
-}
-
-cpp_test_hurdle_grad_logit_theta <- function(y, logit_theta) {
-    .Call(`_tulpa_cpp_test_hurdle_grad_logit_theta`, y, logit_theta)
-}
-
 cpp_test_parallel_dot_products <- function(X, y, n_threads) {
     .Call(`_tulpa_cpp_test_parallel_dot_products`, X, y, n_threads)
 }
@@ -623,6 +555,10 @@ cpp_test_c_abi_chains_roundtrip <- function(y_r, X_r, n_chains = 3L, n_iter = 60
 
 tulpa_version <- function() {
     .Call(`_tulpa_tulpa_version`)
+}
+
+cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L) {
+    .Call(`_tulpa_cpp_tulpa_sample_glmm`, y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws)
 }
 
 cpp_spde_layout_probe <- function(n_mesh, p, joint_hypers, n_extra_params = 0L) {

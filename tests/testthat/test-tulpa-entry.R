@@ -31,11 +31,27 @@ test_that("tulpa() routes through a sampler (logpost) backend", {
   expect_equal(fit$inference_tier, 1L)
 })
 
-test_that("tulpa() fails loudly on a C-ABI-only backend", {
+test_that("tulpa() routes a random-effect model away from the fixed-effect samplers", {
+  # The ModelData sampler backends (ess/sghmc/.../hmc) fit fixed-effect GLMs;
+  # a random-effect model is routed to the conditional logpost backends.
   d <- make_pois_re()
   err <- expect_error(tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "ess"))
-  expect_match(conditionMessage(err), "no R-level fitter")
-  expect_match(conditionMessage(err), "tulpa_run_ess_sampler")
+  expect_match(conditionMessage(err), "random-effect")
+  expect_match(conditionMessage(err), "mala")
+})
+
+test_that("tulpa(mode = 'ess'/'hmc') fits a fixed-effect GLM end to end", {
+  skip_on_cran()
+  set.seed(3)
+  n <- 400L; x <- rnorm(n)
+  d <- data.frame(y = rbinom(n, 1L, plogis(-0.3 + 0.8 * x)), x = x)
+  for (m in c("ess", "hmc")) {
+    fit <- tulpa(y ~ x, d, family = "binomial", mode = m,
+                 control = list(n_iter = 1000L, warmup = 500L, n_chains = 2L))
+    expect_s3_class(fit, "tulpa_fit")
+    expect_equal(fit$backend, m)
+    expect_true(all(is.finite(fit$means)))
+  }
 })
 
 test_that("correlated random slopes: logpost path works, Laplace path integrates Sigma", {

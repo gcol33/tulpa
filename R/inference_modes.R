@@ -130,7 +130,7 @@ TIER_META <- list(
 #' * `note`     -- optional human-readable note.
 #'
 #' Family identity (for `families`) is checked against `family$name`,
-#' `family$distribution`, and `family$numerator$distribution` (numdenom-style
+#' `family$distribution`, and `family$numerator$distribution` (tulpaRatio-style
 #' ratio families nest a per-process distribution).
 #'
 #' @keywords internal
@@ -138,14 +138,16 @@ BACKEND_REGISTRY <- list(
   # ---- Tier 1: Exact ----
   hmc = list(
     emits = "chain",
-    tier = "exact", input = "modeldata", fitter = NULL, families = NULL,
+    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    families = NULL,
     cabi = "tulpa_run_nuts_generic",
-    note = "Model packages drive NUTS through the C ABI; no generic R fitter yet"
+    note = paste("Generic NUTS over a fixed-effect GLM (tulpa_sample_glmm);",
+                 "model packages also drive NUTS through the C ABI")
   ),
   ess = list(
     emits = "chain",
-    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
-    cabi = "tulpa_run_ess_sampler"
+    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    families = NULL, cabi = "tulpa_run_ess_sampler"
   ),
   pg = list(
     emits = "chain",
@@ -157,12 +159,12 @@ BACKEND_REGISTRY <- list(
   gibbs = list(
     emits = "chain",
     tier = "exact", input = "design", fitter = "tulpa_gibbs",
-    families = c("poisson_gamma", "negbin_negbin", "binomial",
-                 "negbin_gamma", "gamma_gamma", "lognormal",
-                 "beta_binomial", "lognormal_lognormal",
-                 "beta_binomial_fixed",
-                 "poisson", "neg_binomial_2", "negative_binomial"),
-    cabi = "tulpa_cpp_gibbs_spatial"
+    families = c("binomial", "neg_binomial_2", "negative_binomial"),
+    cabi = NULL,
+    note = paste("Polya-Gamma Gibbs (binomial / negbin) via tulpa_gibbs();",
+                 "base plus spatial (icar/bym2/rsr/gp/multiscale_gp) and temporal",
+                 "dispatch through the cpp_pg_binomial_gibbs* / cpp_pg_negbin_gibbs",
+                 "kernels")
   ),
   re_cov_gibbs = list(
     emits = "chain",
@@ -174,25 +176,25 @@ BACKEND_REGISTRY <- list(
   ),
   sghmc = list(
     emits = "chain",
-    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
-    cabi = "tulpa_sghmc_fit"
+    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    families = NULL, cabi = "tulpa_sghmc_fit"
   ),
   sgld = list(
     emits = "chain",
-    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
-    cabi = "tulpa_sgld_fit"
+    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    families = NULL, cabi = "tulpa_sgld_fit"
   ),
   mclmc = list(
     emits = "chain",
-    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
-    cabi = "tulpa_mclmc_fit",
-    note = "Microcanonical Langevin Monte Carlo; C-ABI kernel only"
+    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    families = NULL, cabi = "tulpa_mclmc_fit",
+    note = "Microcanonical Langevin Monte Carlo over a fixed-effect GLM"
   ),
   smc = list(
     emits = "iid",
-    tier = "exact", input = "logpost", fitter = NULL, families = NULL,
-    cabi = "tulpa_smc_fit",
-    note = "Sequential Monte Carlo; C-ABI kernel only"
+    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    families = NULL, cabi = "tulpa_smc_fit",
+    note = "Sequential Monte Carlo over a fixed-effect GLM"
   ),
   imh_laplace = list(
     emits = "chain",
@@ -257,9 +259,9 @@ BACKEND_REGISTRY <- list(
   # ---- Tier 3: Optimized ----
   vi = list(
     emits = "iid",
-    tier = "optimized", input = "logpost", fitter = NULL, families = NULL,
-    cabi = "tulpa_fit_vi",
-    note = "Generic VI via C ABI; tgmrf VI exposed as tulpa_tgmrf_vi"
+    tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
+    families = NULL, cabi = "tulpa_fit_vi",
+    note = "Generic VI over a fixed-effect GLM (mean-field / low-rank / full-rank)"
   )
 )
 
