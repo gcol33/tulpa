@@ -343,6 +343,34 @@
          tags = tags)
 }
 
+# Announce the engaged outer integrator under verbose, at selection time
+# (gcol33/tulpa#63). One authoritative line tied to the resolved
+# `integration_used`, so a consumer who omitted `integration` from the control
+# sees which integrator actually ran -- whether the CCD engaged, the tensor grid
+# was kept, or (on a ridged posterior) the CCD declined back to the tensor --
+# rather than having to read `fit$...$integration` after the fact. `n_latent` is
+# the latent node / cell count, `n_phi` the crossed phi-tensor cell count,
+# `n_total` their product; `declined` flags a CCD that engaged by axis count but
+# fell back (the specific reason is messaged by .joint_ccd_grid just before).
+.joint_announce_integration <- function(integration_used, d_axes,
+                                        n_latent, n_phi, n_total,
+                                        declined) {
+    if (identical(integration_used, "ccd")) {
+        phi_part <- if (n_phi > 1L)
+            sprintf(" x %d phi = %d cells", n_phi, n_total) else ""
+        message(sprintf(
+            "tulpa joint: outer integration: CCD (%d latent axes, %d nodes%s)",
+            d_axes, n_latent, phi_part))
+    } else if (isTRUE(declined)) {
+        message(sprintf(
+            "tulpa joint: outer integration: CCD declined -> tensor grid (%d cells)",
+            n_total))
+    } else {
+        message(sprintf(
+            "tulpa joint: outer integration: tensor grid (%d cells)", n_total))
+    }
+}
+
 # Integration weights for an outer grid carrying CCD design weights `dnode`:
 # w_k proportional to dnode_k * exp(log_marginal_k). With dnode == NULL this is
 # the plain softmax (uniform tensor-cell weight) of `.nl_normalise_weights`.

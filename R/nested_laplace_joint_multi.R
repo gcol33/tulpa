@@ -748,7 +748,8 @@
     integration_used      <- "grid"
     joint_grid            <- NULL
 
-    use_ccd <- .joint_ccd_engage(integration, d_axes)
+    ccd_requested <- .joint_ccd_engage(integration, d_axes)
+    use_ccd <- ccd_requested
     if (use_ccd) {
         block_of_axis <- rep(seq_len(B), times = axis_counts)
         col_within    <- unlist(lapply(axis_counts, seq_len))
@@ -859,6 +860,10 @@
         if (ncol(joint_grid) > 0L) colnames(joint_grid) <- axis_names
     }
 
+    # Latent node / cell count, before the phi tensor crosses on top -- the CCD
+    # node count or the tensor latent-cell count, for the verbose announcement.
+    n_latent_cells <- nrow(joint_grid)
+
     # phi_grid (per-arm dispersion overrides on the outer grid): each phi axis
     # varies independently of the latent-block grid, so it forms a Cartesian
     # product with the latent grid -- the dense tensor or the CCD design alike
@@ -885,6 +890,18 @@
         # Replicate the CCD design weights across the crossed phi cells (NULL on
         # the dense path, where weights are the uniform-cell softmax).
         if (!is.null(dnode)) dnode <- dnode[joint_idx$joint]
+    }
+
+    # Announce the engaged outer integrator at selection time (gcol33/tulpa#63):
+    # the single authoritative line, tied to integration_used, before the heavy
+    # inner solves -- so a CCD engaged silently by axis count (or declined back
+    # to the tensor on a ridge) is visible without reading fit$...$integration.
+    if (isTRUE(verbose)) {
+        n_phi_cells <- as.integer(round(nrow(joint_grid) / n_latent_cells))
+        .joint_announce_integration(
+            integration_used, d_axes, n_latent_cells, n_phi_cells,
+            nrow(joint_grid),
+            declined = ccd_requested && !identical(integration_used, "ccd"))
     }
 
     # Tile partition for the three-tier warm-start (Phase 2 of

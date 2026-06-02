@@ -206,7 +206,9 @@ Stacks with \code{n_threads_outer}. \code{prune_tol} must be in \verb{[0, 1)}. K
 conservative (\verb{<= 1e-3}); pruning helps most when the grid has many
 low-mass tail cells. Default \code{FALSE} (the full grid is correct).
 \item \code{x_init} (\code{NULL}) -- warm-start for the first grid point's inner solve.
-\item \code{verbose} (\code{FALSE}) -- currently a no-op; reserved.
+\item \code{verbose} (\code{FALSE}) -- when \code{TRUE}, announce the engaged outer integrator
+for a multi-block prior in one line at selection time (see \code{integration}),
+and report each CCD decline reason.
 \item \code{store_Q} (\code{FALSE}) -- also return the per-grid joint precision Q (lower
 triangle, CSC) as \code{Q_csc_p_per_grid}, \code{Q_csc_i_per_grid},
 \code{Q_csc_x_per_grid}, \code{Q_csc_n}, letting callers compute INLA-style
@@ -244,7 +246,11 @@ support is not safely transformable (a CAR_proper \code{rho_car} or a non-BYM2
 active \code{phi_grid} rides as a tensor axis crossed on top of the CCD.
 Single-block joint priors always use the tensor grid. The CCD mode-find
 runs cheap warm-started inner solves and does not write to the checkpoint
-file.
+file. Under \code{verbose = TRUE} the engaged integrator is announced in one
+line at selection time (e.g. \verb{outer integration: CCD (4 latent axes, 25 nodes)} or \verb{tensor grid (72 cells)}, or \verb{CCD declined -> tensor grid}),
+so the auto switch to the CCD at \verb{>= 4} axes is never silent. The
+resolved integrator is also returned on the joint result as
+\verb{$integration}.
 \item \code{inner_refresh} (\code{1L}) -- inner-Newton Cholesky factor reuse interval
 (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 beta cover arm) the latent Hessian changes every inner iteration, so the

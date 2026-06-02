@@ -40,6 +40,30 @@ test_that(".joint_ccd_engage applies the auto (>=4) / ccd (>=3) / grid threshold
     expect_true(eng("ccd", 3L));   expect_true(eng("ccd", 4L))
 })
 
+test_that(".joint_announce_integration names the engaged outer integrator (gcol33/tulpa#63)", {
+    ann <- tulpa:::.joint_announce_integration
+    # CCD engaged, no phi: latent axes + node count, no cell product.
+    expect_message(
+        ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 1L, n_total = 25L,
+            declined = FALSE),
+        "outer integration: CCD \\(4 latent axes, 25 nodes\\)")
+    # CCD engaged with a crossed phi tensor: nodes x phi = total cells.
+    expect_message(
+        ann("ccd", d_axes = 4L, n_latent = 25L, n_phi = 2L, n_total = 50L,
+            declined = FALSE),
+        "CCD \\(4 latent axes, 25 nodes x 2 phi = 50 cells\\)")
+    # Plain tensor grid (e.g. <= 3 axes or integration = \"grid\").
+    expect_message(
+        ann("grid", d_axes = 3L, n_latent = 27L, n_phi = 1L, n_total = 27L,
+            declined = FALSE),
+        "outer integration: tensor grid \\(27 cells\\)")
+    # CCD engaged by axis count but declined (ridge / unguessable axis) -> tensor.
+    expect_message(
+        ann("grid", d_axes = 4L, n_latent = 81L, n_phi = 1L, n_total = 81L,
+            declined = TRUE),
+        "CCD declined -> tensor grid \\(81 cells\\)")
+})
+
 test_that(".joint_ccd_outer_hess_ok accepts neg-def, rejects ridge / indefinite", {
     ok   <- tulpa:::.joint_ccd_outer_hess_ok
     expect_true(ok(diag(c(-1, -2, -3))))

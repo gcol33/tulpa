@@ -2,6 +2,15 @@
 
 ## 0.0.9 (development version)
 
+* feat(nested-laplace): the multi-block joint path announces the engaged outer
+  integrator under `control$verbose = TRUE`, in one line at selection time
+  before the inner solves (gcol33/tulpa#63): e.g. `outer integration: CCD
+  (4 latent axes, 25 nodes)`, `tensor grid (72 cells)`, or `CCD declined ->
+  tensor grid (72 cells)`. Previously the `"auto"` switch to the CCD at `>= 4`
+  latent axes was silent -- a consumer who omitted `integration` from the
+  control could end up on the CCD path (and, on a ridged posterior, in the
+  #62 thrash) with no signal, the only post-hoc tell being `fit$...$integration`.
+  The resolved integrator is still returned on the joint result as `$integration`.
 * fix(nested-laplace): the joint multi-block CCD outer mode-find now declines
   **fast** on a flat / ridged hyperparameter posterior (gcol33/tulpa#62).
   Previously a sigma-alpha ridge produced a near-singular outer Hessian, a huge

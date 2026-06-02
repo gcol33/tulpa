@@ -70,6 +70,30 @@ test_that("CCD engages for a 3-axis BYM2 copy block and counts nodes", {
     expect_true(abs(sum(fit$weights) - 1) < 1e-8)
 })
 
+test_that("verbose announces the engaged outer integrator at selection time (gcol33/tulpa#63)", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    copy_spec <- list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2))
+    base_ctrl <- list(diagnose_k = FALSE, var_of_means_consistency = FALSE,
+                      verbose = TRUE)
+
+    # 3 axes with integration = "ccd": the CCD engages and is announced.
+    expect_message(
+        tulpa_nested_laplace_joint(
+            sim$responses, list(blk), copy = copy_spec,
+            control = c(base_ctrl, list(integration = "ccd"))),
+        "outer integration: CCD \\(3 latent axes")
+
+    # integration = "grid" forces the tensor product; the line names it.
+    expect_message(
+        tulpa_nested_laplace_joint(
+            sim$responses, list(blk), copy = copy_spec,
+            control = c(base_ctrl, list(integration = "grid"))),
+        "outer integration: tensor grid \\([0-9]+ cells\\)")
+})
+
 test_that("CCD matches a fine tensor grid in the tighter-posterior regime", {
     skip_on_cran()
     skip_if_fast()

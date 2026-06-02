@@ -213,7 +213,9 @@
 #'     conservative (`<= 1e-3`); pruning helps most when the grid has many
 #'     low-mass tail cells. Default `FALSE` (the full grid is correct).
 #'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
-#'   * `verbose` (`FALSE`) -- currently a no-op; reserved.
+#'   * `verbose` (`FALSE`) -- when `TRUE`, announce the engaged outer integrator
+#'     for a multi-block prior in one line at selection time (see `integration`),
+#'     and report each CCD decline reason.
 #'   * `store_Q` (`FALSE`) -- also return the per-grid joint precision Q (lower
 #'     triangle, CSC) as `Q_csc_p_per_grid`, `Q_csc_i_per_grid`,
 #'     `Q_csc_x_per_grid`, `Q_csc_n`, letting callers compute INLA-style
@@ -252,7 +254,12 @@
 #'     active `phi_grid` rides as a tensor axis crossed on top of the CCD.
 #'     Single-block joint priors always use the tensor grid. The CCD mode-find
 #'     runs cheap warm-started inner solves and does not write to the checkpoint
-#'     file.
+#'     file. Under `verbose = TRUE` the engaged integrator is announced in one
+#'     line at selection time (e.g. `outer integration: CCD (4 latent axes, 25
+#'     nodes)` or `tensor grid (72 cells)`, or `CCD declined -> tensor grid`),
+#'     so the auto switch to the CCD at `>= 4` axes is never silent. The
+#'     resolved integrator is also returned on the joint result as
+#'     `$integration`.
 #'   * `inner_refresh` (`1L`) -- inner-Newton Cholesky factor reuse interval
 #'     (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 #'     beta cover arm) the latent Hessian changes every inner iteration, so the
