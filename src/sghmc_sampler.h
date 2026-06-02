@@ -28,7 +28,6 @@ namespace tulpa_sghmc {
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
-using tulpa_hmc::ModelType;
 using tulpa_hmc::compute_gradient;
 using tulpa_hmc::compute_log_post;
 

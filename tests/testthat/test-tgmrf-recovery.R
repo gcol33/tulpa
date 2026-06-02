@@ -13,6 +13,7 @@
 # ---------------------------------------------------------------------------
 
 skip_on_cran()
+skip_if_fast()
 
 make_recovery_ar1_block <- function(n) {
   tgmrf(

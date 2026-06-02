@@ -218,6 +218,7 @@ assert_recovery <- function(reps,
 # ---------------------------------------------------------------------------
 test_that("joint NUTS recovers (range, sigma, beta) -- slim tier", {
   skip_on_cran()
+  skip_if_fast()
   skip_if_not_installed("fmesher")
   skip_if_not_installed("Matrix")
 
@@ -276,6 +277,7 @@ test_that("joint NUTS recovers (range, sigma, beta) -- slim tier", {
 # ---------------------------------------------------------------------------
 test_that("joint NUTS recovers (range, sigma, beta) -- full tier", {
   skip_on_cran()
+  skip_if_fast()
   skip_if_not_installed("fmesher")
   skip_if_not_installed("Matrix")
   if (!identical(Sys.getenv("TULPA_FULL_RECOVERY"), "true")) {
@@ -374,6 +376,7 @@ test_that("joint NUTS round-trip: output structure matches contract", {
 # ---------------------------------------------------------------------------
 test_that("joint NUTS runs end-to-end with rational alpha (nu = 0.5)", {
   skip_on_cran()
+  skip_if_fast()
   skip_if_not_installed("fmesher")
   skip_if_not_installed("Matrix")
 

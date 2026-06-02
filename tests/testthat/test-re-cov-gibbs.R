@@ -21,6 +21,7 @@ sim_corr_gibbs <- function(seed, G = 50L, npg = 15L, beta = c(-0.3, 0.7),
 
 test_that(".rinvwishart reproduces the inverse-Wishart mean", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(1L)
   nu <- 20L; p <- 2L
   Lambda <- matrix(c(2, 0.5, 0.5, 1), 2)
@@ -37,6 +38,7 @@ test_that(".rinvwishart reproduces the inverse-Wishart mean", {
 
 test_that("tulpa_re_cov_gibbs returns a well-formed posterior", {
   skip_on_cran()
+  skip_if_fast()
   d <- sim_corr_gibbs(1L)
   re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
   res <- tulpa_re_cov_gibbs(d$y, rep(1L, d$N), d$X, re_term,
@@ -71,6 +73,7 @@ test_that("tulpa_re_cov_gibbs returns a well-formed posterior", {
 
 test_that("Gibbs debias recovers Sigma with covering intervals", {
   skip_on_cran()
+  skip_if_fast()
   truth <- c(sigma_1 = 0.8, sigma_2 = 0.6, rho_12 = 0.5)
   covered <- c(sigma_1 = 0L, sigma_2 = 0L, rho_12 = 0L)
   med <- matrix(NA_real_, 4L, 3L, dimnames = list(NULL, names(truth)))
@@ -102,6 +105,7 @@ test_that("Gibbs debias recovers Sigma with covering intervals", {
 
 test_that("Gibbs samples a diagonal (uncorrelated) block exactly", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(31L)
   G <- 60L; npg <- 15L; N <- G * npg
   grp <- rep(seq_len(G), each = npg)
@@ -129,6 +133,7 @@ test_that("Gibbs samples a diagonal (uncorrelated) block exactly", {
 
 test_that("Gibbs samples several terms jointly", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(41L)
   G <- 40L; H <- 25L; npg <- 14L; N <- G * npg
   g <- rep(seq_len(G), each = npg)

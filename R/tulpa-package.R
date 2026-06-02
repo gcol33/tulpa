@@ -14,7 +14,7 @@
 NULL
 
 # `.data` is the rlang/ggplot2 pronoun used inside conditional ggplot2 plotting
-# helpers; `ratio` is the downstream model-package (numdenom) accessor invoked by
+# helpers; `ratio` is the downstream model-package (tulpaRatio) accessor invoked by
 # prepare_map_data_from_fit when mapping a ratio fit. Neither is a tulpa symbol,
 # so register them to keep R CMD check's global-variable analysis quiet.
 utils::globalVariables(c(".data", "ratio"))

@@ -573,46 +573,8 @@ inline T log_lik_hurdle_negbin(int y, const T& mu, const T& phi, const T& logit_
 }
 
 // ============================================================================
-// New family likelihoods: Gamma-Gamma, Lognormal, Beta-Binomial
+// Beta-Binomial
 // ============================================================================
-
-// Gamma-Gamma: Both numerator and denominator are Gamma distributed
-// Using mean parameterization: mu = shape/rate, so rate = shape/mu
-template<typename T>
-inline T log_lik_gamma_gamma(double y_num, double y_denom,
-                             const T& mu_num, const T& mu_denom,
-                             const T& shape_num, const T& shape_denom) {
-    // Numerator: Gamma(y_num | shape_num, shape_num/mu_num)
-    T rate_num = shape_num / mu_num;
-    T ll_num = shape_num * safe_log(rate_num) + (shape_num - T(1.0)) * std::log(y_num)
-               - rate_num * y_num - lgamma_fn(shape_num);
-
-    // Denominator: Gamma(y_denom | shape_denom, shape_denom/mu_denom)
-    T rate_denom = shape_denom / mu_denom;
-    T ll_denom = shape_denom * safe_log(rate_denom) + (shape_denom - T(1.0)) * std::log(y_denom)
-                 - rate_denom * y_denom - lgamma_fn(shape_denom);
-
-    return ll_num + ll_denom;
-}
-
-// Lognormal: log(y) ~ Normal(mu, sigma^2)
-// Log-likelihood: -log(y) - log(sigma) - 0.5*log(2*pi) - 0.5*((log(y)-mu)/sigma)^2
-template<typename T>
-inline T log_lik_lognormal(double y, const T& mu, const T& sigma) {
-    double log_y = std::log(y);
-    T z = (log_y - mu) / sigma;
-    // Omitting constant -0.5*log(2*pi)
-    return -std::log(y) - safe_log(sigma) - T(0.5) * z * z;
-}
-
-// Lognormal-Lognormal: Both numerator and denominator are Lognormal
-template<typename T>
-inline T log_lik_lognormal_lognormal(double y_num, double y_denom,
-                                     const T& mu_num, const T& mu_denom,
-                                     const T& sigma_num, const T& sigma_denom) {
-    return log_lik_lognormal(y_num, mu_num, sigma_num) +
-           log_lik_lognormal(y_denom, mu_denom, sigma_denom);
-}
 
 // Beta-Binomial: y ~ BetaBinomial(n, alpha, beta)
 // Using mean-precision parameterization: mu = alpha/(alpha+beta), phi = alpha+beta

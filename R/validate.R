@@ -121,7 +121,7 @@ pp_check_single <- function(y, yrep, type, stat, ndraws, title_suffix, ...) {
 #' @param formula A model formula (e.g., `y ~ x + (1 | g)`). For multi-process
 #'   families, a list of formulas keyed by process name.
 #' @param family A `tulpa_family` object exposing a `simulate_fn` (see
-#'   [tulpa_family()]). Model packages (numdenom, tulpaObs) provide families;
+#'   [tulpa_family()]). Model packages (tulpaRatio, tulpaObs) provide families;
 #'   tests can build a minimal one with [tulpa_family()].
 #' @param data Data frame containing covariates and grouping factors. Used for
 #'   dimensions and design matrices; the response column may be absent or NA.

@@ -255,7 +255,7 @@ Rcpp::List cpp_tulpa_fit_gaussian(
     data.sharing.init(1);
 
     // ZI fields (not used)
-    data.zi_type = tulpa_zi::ZIType::NONE;
+    data.zi_type = tulpa::ZIType::NONE;
     data.p_zi = 0;
     data.p_oi = 0;
     data.zi_prior_sd = 1.0;

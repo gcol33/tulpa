@@ -4,6 +4,7 @@
 
 test_that("tulpa_gibbs(temporal = rw1 trend) recovers the slope on simulated data", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(7)
   Tt   <- 40L
   reps <- 8L

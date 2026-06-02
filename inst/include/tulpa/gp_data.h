@@ -21,7 +21,7 @@ struct GPData {
     std::vector<int> obs_to_loc;                // Observation-to-location mapping
     CovType cov_type = CovType::EXPONENTIAL;
     double nu = 1.5;                            // Matern smoothness
-    bool shared = true;                         // Legacy: shared between num/denom
+    bool shared = true;                         // shared across processes
     GPSolverConfig solver_config;
 };
 
@@ -57,7 +57,7 @@ struct MultiscaleGPData {
 
     CovType cov_type = CovType::EXPONENTIAL;
     double nu = 1.5;                            // Matern smoothness
-    bool shared = true;                         // Legacy: shared between num/denom
+    bool shared = true;                         // shared across processes
     MSGPSampler sampler = MSGPSampler::AUTO;
 };
 

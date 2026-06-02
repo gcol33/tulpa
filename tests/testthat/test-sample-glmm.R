@@ -8,6 +8,7 @@
 # fixed-effect binomial GLM (the MLE is the right reference at a weak prior).
 test_that("every sampler backend recovers the binomial-GLM fixed effects", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(101)
   n <- 800L
   x1 <- rnorm(n); x2 <- rnorm(n)
@@ -41,6 +42,7 @@ test_that("every sampler backend recovers the binomial-GLM fixed effects", {
 # Poisson + Gaussian through NUTS, to exercise the family scaffold beyond binomial.
 test_that("NUTS recovers poisson and gaussian fixed effects", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(202)
   n <- 800L; x <- rnorm(n); X <- cbind(1, x)
 
@@ -63,6 +65,7 @@ test_that("NUTS recovers poisson and gaussian fixed effects", {
 # iid backends emit particles/variational draws (the diagnostics gate withholds).
 test_that("draws_kind contract holds through tulpa(mode = ...)", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(303)
   n <- 400L; x <- rnorm(n)
   d <- data.frame(y = rbinom(n, 1L, plogis(0.2 + 0.7 * x)), x = x)

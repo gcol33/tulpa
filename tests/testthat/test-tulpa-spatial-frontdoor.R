@@ -31,6 +31,7 @@ sim_areal_binomial <- function(nr = 7L, nc = 7L, reps = 4L, seed = 7L) {
 
 test_that("tulpa(spatial = icar, mode = gibbs) recovers beta end-to-end", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_areal_binomial()
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",
@@ -54,6 +55,7 @@ test_that("tulpa(spatial = icar, mode = gibbs) recovers beta end-to-end", {
 
 test_that("auto picks Gibbs for a binomial icar field", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_areal_binomial()
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",
@@ -68,6 +70,7 @@ test_that("auto picks Gibbs for a binomial icar field", {
 
 test_that("tulpa(spatial = bym2, mode = gibbs) wires through and returns field draws", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_areal_binomial(reps = 3L)
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",
@@ -83,6 +86,7 @@ test_that("tulpa(spatial = bym2, mode = gibbs) wires through and returns field d
 
 test_that("mode = laplace routes a spatial field through tulpa_laplace", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_areal_binomial()
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",
@@ -155,6 +159,7 @@ test_that("spatial Gibbs is binomial-only and rejects random slopes", {
 
 test_that("tulpa() routes an RSR field to the binomial Gibbs sampler (auto)", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_areal_binomial()
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",
@@ -194,6 +199,7 @@ test_that("tulpa() rejects a non-binomial RSR field", {
 
 test_that("mode = nested_laplace integrates an areal field through tulpa()", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_areal_binomial()
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",

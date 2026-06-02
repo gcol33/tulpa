@@ -82,7 +82,8 @@ enum class NonsepType : int {
 // ============================================================================
 enum class ZIType : int {
     NONE = 0,
-    // Distribution-specific (used by legacy ratio engine)
+    // Distribution-specific mechanisms: the engine sizes the zi/oi coefficient
+    // blocks (has_zi / has_oi); model packages compute the likelihood.
     ZI_POISSON = 1,
     ZI_NEGBIN = 2,
     HURDLE_POISSON = 3,
@@ -182,19 +183,6 @@ enum class MSGPSampler : int {
     ADAPTIVE = 4,
     RIEMANNIAN = 5,
     LBFGS = 6
-};
-
-// ============================================================================
-// Ratio model types (legacy — will move to numdenom)
-// ============================================================================
-enum class ModelType : int {
-    BINOMIAL = 0,
-    NEGBIN_NEGBIN = 1,
-    POISSON_GAMMA = 2,
-    NEGBIN_GAMMA = 3,
-    GAMMA_GAMMA = 4,
-    LOGNORMAL = 5,
-    BETA_BINOMIAL = 6
 };
 
 // ============================================================================

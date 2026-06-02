@@ -2,7 +2,7 @@
 // CUDA implementation for GPU-accelerated GP computations
 // Uses dynamic loading - no CUDA SDK required at compile time
 //
-// TODO: Wire into tulpa sampler (ported from numdenom, not yet integrated)
+// TODO: Wire into tulpa sampler (not yet integrated)
 //
 // Minimum requirements:
 // - CUDA Toolkit 11.0+ (for cusolverDnDpotrfBatched)

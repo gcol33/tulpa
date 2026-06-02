@@ -116,7 +116,7 @@ HMCResult run_hmc_chain(
         "Gradient mismatch detected: active gradient function disagrees with "
         "numerical gradients (max rel diff > 1e-4). Falling back to numerical "
         "gradients (mode='N'). This is slower but correct. Please report this "
-        "as a bug at https://github.com/gcol33/numdenom/issues"
+        "as a bug at https://github.com/gcol33/tulpa/issues"
       );
     }
   }

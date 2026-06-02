@@ -115,6 +115,7 @@ CFG <- list(
 
 test_that("poisson + binomial: beta recovers with calibrated intervals through the unified path", {
   skip_on_cran()
+  skip_if_fast()
   for (fam in c("poisson", "binomial")) {
     R <- recov_sweep(fam, CFG[[fam]], n_seed = 12L, seed_off = 2000L)
     # Point recovery: the marginalized posterior mean tracks every true beta.
@@ -134,6 +135,7 @@ test_that("poisson + binomial: beta recovers with calibrated intervals through t
 
 test_that("all built-in families: beta recovery and >= 85% aggregate coverage (slow gate)", {
   skip_on_cran()
+  skip_if_fast()
   if (!isTRUE(as.logical(Sys.getenv("TULPA_SLOW_TESTS", "false")))) {
     skip("Slow 20-seed x 6-family recovery gate. Set TULPA_SLOW_TESTS=true to run.")
   }

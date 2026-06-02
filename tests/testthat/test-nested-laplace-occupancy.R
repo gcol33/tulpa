@@ -153,6 +153,7 @@ test_that("held-out (det_prob = 0) sites get finite prior-driven predictions", {
 
 test_that("occupancy predictive intervals reach nominal coverage", {
   skip_on_cran()
+  skip_if_fast()
   if (!isTRUE(as.logical(Sys.getenv("TULPA_SLOW_TESTS", "false")))) {
     skip("Slow 20-seed coverage test. Set TULPA_SLOW_TESTS=true to run.")
   }

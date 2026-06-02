@@ -42,6 +42,7 @@ test_that("tulpa() routes a random-effect model away from the fixed-effect sampl
 
 test_that("tulpa(mode = 'ess'/'hmc') fits a fixed-effect GLM end to end", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(3)
   n <- 400L; x <- rnorm(n)
   d <- data.frame(y = rbinom(n, 1L, plogis(-0.3 + 0.8 * x)), x = x)

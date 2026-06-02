@@ -33,6 +33,7 @@ make_spde_panel <- function(n_obs = 250L, range_true = 0.3, sigma_true = 0.6,
 
 test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
   skip_on_cran()
+  skip_if_fast()
   skip_if_not_installed("fmesher")
   s <- make_spde_panel()
   fit <- suppressWarnings(suppressMessages(tulpa(
@@ -59,6 +60,7 @@ test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
 
 test_that("structured and auto route an SPDE field to the spde backend", {
   skip_on_cran()
+  skip_if_fast()
   skip_if_not_installed("fmesher")
   s <- make_spde_panel(n_obs = 150L, seed = 3L)
   for (m in c("structured", "auto")) {

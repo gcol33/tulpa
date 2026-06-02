@@ -17,6 +17,7 @@
 # ---------------------------------------------------------------------------
 
 skip_on_cran()
+skip_if_fast()
 
 # Helper: locate the periodic-AR1 example .cpp. Works under load_all and
 # under installed package.

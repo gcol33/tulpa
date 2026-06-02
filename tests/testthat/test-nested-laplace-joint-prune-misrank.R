@@ -87,6 +87,7 @@
 
 test_that("pruned posterior recovers the full-grid mode (rank-faithful screen)", {
     skip_on_cran()
+    skip_if_fast()
     sim <- .mr_sim(4242L)
     fit_full  <- .mr_fit(sim, prune = FALSE)
     fit_prune <- expect_warning(.mr_fit(sim, prune = TRUE, prune_tol = 1e-3),
@@ -113,6 +114,7 @@ test_that("pruned posterior recovers the full-grid mode (rank-faithful screen)",
 
 test_that("safety gate warns and falls back on argmax disagreement", {
     skip_on_cran()
+    skip_if_fast()
     # Construct a pruned-result shape whose cheap-screen argmax disagrees with
     # the full-solve argmax, and a resolve_full thunk standing in for the
     # full-grid re-solve. The gate must warn and return the full-grid result.
@@ -140,6 +142,7 @@ test_that("safety gate warns and falls back on argmax disagreement", {
 
 test_that("safety gate warns and falls back on gap-collapse", {
     skip_on_cran()
+    skip_if_fast()
     # Posterior collapses onto one kept cell whose cheap-vs-full gap is huge:
     # argmax agrees, but the screen badly mis-estimated the cell the whole
     # posterior sits on, so the prune is not trustworthy.
@@ -170,6 +173,7 @@ test_that("safety gate warns and falls back on gap-collapse", {
 
 test_that("safety gate is a no-op when the ranking is trustworthy", {
     skip_on_cran()
+    skip_if_fast()
     # Argmax agrees, gap small, ESS healthy: no fallback, returns res as-is.
     res_pruned <- list(
         log_marginal = c(-1, -1.2, -1.1, -Inf),
@@ -189,6 +193,7 @@ test_that("safety gate is a no-op when the ranking is trustworthy", {
 
 test_that("safety gate is a no-op when no prune ran", {
     skip_on_cran()
+    skip_if_fast()
     res_noprune <- list(log_marginal = c(-1, -2, -3))  # no prune_mask
     out <- .joint_prune_safety_gate(res_noprune,
                                     resolve_full = function()

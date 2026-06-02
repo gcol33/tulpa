@@ -23,6 +23,7 @@ make_binom_site <- function(X, y, nt) {
 
 test_that("intercept-only AGHQ recovers sigma and beats Laplace (n_quad=1)", {
   skip_on_cran()
+  skip_if_fast()
   truth <- 0.9
   one <- function(seed, n_quad) {
     set.seed(seed)
@@ -47,6 +48,7 @@ test_that("intercept-only AGHQ recovers sigma and beats Laplace (n_quad=1)", {
 
 test_that("correlated (1 + x | g) block: full Sigma + structure recovered", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(11)
   ng <- 50L; n_per <- 20L; N <- ng * n_per
   group <- rep(seq_len(ng), each = n_per)
@@ -80,6 +82,7 @@ test_that("correlated (1 + x | g) block: full Sigma + structure recovered", {
 
 test_that("LKJ penalty pulls a weakly-identified correlation off the boundary", {
   skip_on_cran()
+  skip_if_fast()
   # Small per-group n: the unregularized correlation can run toward +-1.
   one <- function(eta) {
     set.seed(303)

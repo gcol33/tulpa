@@ -62,6 +62,7 @@ for (fam_dre in list(c("binomial", "2"), c("poisson", "1"), c("gaussian", "1")))
     test_that(sprintf("analytic AGHQ gradient matches FD (GLMM oracle, %s d=%d)",
                       family, d_re), {
       skip_on_cran()
+      skip_if_fast()
       r <- .glmm_grad_check(family, seed = 11L, d_re = d_re)
       big <- abs(r$fd) > 1e-3
       expect_true(all(sign(r$ana[big]) == sign(r$fd[big])),

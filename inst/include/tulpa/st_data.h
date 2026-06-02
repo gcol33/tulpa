@@ -11,7 +11,7 @@ namespace tulpa {
 // ============================================================================
 struct SpatiotemporalData {
     STType type = STType::NONE;
-    bool shared = true;                 // Legacy: shared between num/denom
+    bool shared = true;                 // shared across processes
 
     int n_spatial = 0;                  // Number of spatial units (S)
     int n_times = 0;                    // Number of time points (T)

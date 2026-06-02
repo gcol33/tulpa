@@ -43,6 +43,7 @@
 # by ~100% with grid mean near the upper edge).
 
 skip_on_cran()
+skip_if_fast()
 
 # Chain adjacency (25 sites). Same shape as the alpha-ridge regression test;
 # keeps BYM2 scale_factor = 1 calibration roughly correct on the spatial

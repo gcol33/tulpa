@@ -172,7 +172,7 @@ instead -- e.g. tulpaObs's marginalized single-season occupancy likelihood
 
 | Type (header) | Role |
 |---|---|
-| `ModelData` (`model_data.h`) | Inputs: response, designs, latent-structure data. Deprecated ratio-specific fields (used only when `n_processes == 0`) are slated to move to tulpaRatio -- never insert before existing fields. |
+| `ModelData` (`model_data.h`) | Inputs: response, designs, latent-structure data. Requires `n_processes > 0` and a `LikelihoodSpec` (ratio models live in tulpaRatio via that interface) -- never insert before existing fields. |
 | `ParamLayout` (`param_layout.h`) | Parameter-vector positions; `extend_layout` appends model-specific slots. |
 | `ResidualFn`, `LikelihoodFn<T>`, `EtaWeightsFn` (`likelihood.h`) | Likelihood callback typedefs. |
 

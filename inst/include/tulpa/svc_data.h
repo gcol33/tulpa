@@ -21,7 +21,7 @@ struct SVCData {
     std::vector<int> nn_order;          // Observation ordering
     std::vector<int> nn_order_inv;      // Inverse ordering
     CovType cov_type = CovType::EXPONENTIAL;
-    bool shared = true;                 // Legacy: shared between num/denom
+    bool shared = true;                 // shared across processes
 
     // Workspace (engine-allocated, not set by model packages)
     mutable std::vector<double> w_flat_ws;      // [n_obs x n_svc]

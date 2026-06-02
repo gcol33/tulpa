@@ -34,6 +34,7 @@ fit_lap <- function(d, re_list) {
 
 test_that("L, cov, and a diagonal sigma agree when the covariance is the same", {
   skip_on_cran()
+  skip_if_fast()
   d <- sim_corr(1L)
   s <- c(0.7, 0.4)
   L0 <- diag(s)                               # zero correlation
@@ -53,6 +54,7 @@ test_that("L, cov, and a diagonal sigma agree when the covariance is the same", 
 
 test_that("correlated fit recovers fixed effects and the RE structure", {
   skip_on_cran()
+  skip_if_fast()
   rec <- t(vapply(1:5, function(sd) {
     d <- sim_corr(100L + sd)
     f <- fit_lap(d, re_term(d, L = t(chol(d$Sigma))))
@@ -74,6 +76,7 @@ test_that("correlated fit recovers fixed effects and the RE structure", {
 
 test_that("the marginal SE uses the off-diagonal precision (tulpa#28)", {
   skip_on_cran()
+  skip_if_fast()
   Sig <- matrix(c(1.0, 0.8, 0.8, 1.0), 2)        # strong correlation
   d <- sim_corr(7L, Sigma = Sig)
 
@@ -149,6 +152,7 @@ ref_cov_blocks <- function(d, Sigma, fit) {
 
 test_that("return_re_cov gives per-group posterior covariance (dense path)", {
   skip_on_cran()
+  skip_if_fast()
   Sig <- matrix(c(0.8, 0.3, 0.3, 0.5), 2)
   d <- sim_corr(11L, G = 40L, npg = 20L, Sigma = Sig)   # n_x = 2 + 80 = 82 (dense)
   f <- tulpa_laplace(
@@ -172,6 +176,7 @@ test_that("return_re_cov gives per-group posterior covariance (dense path)", {
 
 test_that("return_re_cov matches the full-inverse blocks on the sparse path", {
   skip_on_cran()
+  skip_if_fast()
   Sig <- matrix(c(0.8, 0.3, 0.3, 0.5), 2)
   d <- sim_corr(12L, G = 120L, npg = 8L, Sigma = Sig)   # n_x = 2 + 240 = 242 (sparse)
   f <- tulpa_laplace(
@@ -189,6 +194,7 @@ test_that("return_re_cov matches the full-inverse blocks on the sparse path", {
 
 test_that("a single random slope (0 + x | g) uses its slope design, not intercept", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(77L)
   G <- 60L; npg <- 15L; N <- G * npg
   grp <- rep(seq_len(G), each = npg)
@@ -223,6 +229,7 @@ test_that("a single random slope (0 + x | g) uses its slope design, not intercep
 
 test_that("return_re_cov is rejected on the spatial path", {
   skip_on_cran()
+  skip_if_fast()
   d <- sim_corr(3L, G = 10L, npg = 10L)
   expect_error(
     tulpa_laplace(
@@ -236,6 +243,7 @@ test_that("return_re_cov is rejected on the spatial path", {
 
 test_that("a malformed L / cov is rejected", {
   skip_on_cran()
+  skip_if_fast()
   d <- sim_corr(3L, G = 10L, npg = 10L)
   expect_error(
     fit_lap(d, re_term(d, L = matrix(1, 3, 3))),

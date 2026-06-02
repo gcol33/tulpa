@@ -499,20 +499,18 @@
             epsilon = da.final_epsilon();
           }
 
-          // Precision-informed diagonal mass for ST_IV was built from
-          // data.legacy.model_type + data.legacy.X_num_flat in the legacy
-          // ratio path. Phase D (gcol33/tulpa#15) removed those fields;
-          // re-enabling the override for the generic LikelihoodSpec path
-          // means routing per-observation likelihood Hessians through
-          // spec->eta_weights_fn (the IRLS callback already used by
-          // laplace_mode_spec_dense). Until that wiring lands, deactivate
-          // the sparse GMRF block so ST_IV chains fall back to the
-          // adapted DIAG mass matrix (one warmup-end no-op per chain).
+          // The precision-informed diagonal mass override for ST_IV is not
+          // wired for the generic LikelihoodSpec path: it would route
+          // per-observation likelihood Hessians through spec->eta_weights_fn
+          // (the IRLS callback already used by laplace_mode_spec_dense).
+          // Until that wiring lands, deactivate the sparse GMRF block so
+          // ST_IV chains fall back to the adapted DIAG mass matrix (one
+          // warmup-end no-op per chain).
           if (mass.sparse_gmrf.active) {
             mass.sparse_gmrf.active = false;
             if (verbose) {
               REprintf("  [SPARSE_GMRF] ST_IV precision-informed mass override "
-                       "disabled in Phase D (gcol33/tulpa#15); using adapted "
+                       "not wired for the generic path; using adapted "
                        "diagonal mass.\n");
             }
           }

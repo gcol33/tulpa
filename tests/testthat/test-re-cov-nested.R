@@ -20,6 +20,7 @@ sim_corr_recov <- function(seed, G = 60L, npg = 12L, beta = c(-0.3, 0.7),
 
 test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   skip_on_cran()
+  skip_if_fast()
   d <- sim_corr_recov(1L)
   re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
@@ -66,6 +67,7 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
 
 test_that("marginalized 95% intervals cover the true Sigma parameters", {
   skip_on_cran()
+  skip_if_fast()
   # A few seeds; the marginalized 95% CI should contain truth in the large
   # majority. (Point recovery of the scales is mildly biased low by the
   # Laplace approximation -- Bias 1 -- which the Gibbs correction targets;
@@ -93,6 +95,7 @@ test_that("marginalized 95% intervals cover the true Sigma parameters", {
 
 test_that("the median is a more central summary than the mode under skew", {
   skip_on_cran()
+  skip_if_fast()
   # Small G -> skewed variance-component marginal. The marginalized posterior
   # mean should sit at or above the plug-in MAP for the variance scales (right
   # skew pulls the mean up), and the median between them.
@@ -124,6 +127,7 @@ sim_diag_recov <- function(seed, G = 60L, npg = 12L, beta = c(-0.3, 0.6),
 
 test_that("tulpa_re_cov_nested integrates a diagonal (uncorrelated) block", {
   skip_on_cran()
+  skip_if_fast()
   d <- sim_diag_recov(11L)
   rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z,
              correlated = FALSE)
@@ -150,6 +154,7 @@ test_that("tulpa_re_cov_nested integrates a diagonal (uncorrelated) block", {
 # --- multi-term: a list of blocks --------------------------------------------
 test_that("tulpa_re_cov_nested integrates several terms as separate blocks", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(21L)
   G <- 40L; H <- 25L; npg <- 12L; N <- G * npg
   g <- rep(seq_len(G), each = npg)
@@ -210,6 +215,7 @@ test_that("n_quad > 1 (AGHQ inner solve) errors on crossed grouping factors", {
 
 test_that("n_quad > 1 (AGHQ inner solve) recovers Sigma on a single factor", {
   skip_on_cran()
+  skip_if_fast()
   # AGHQ refines each per-group inner marginal (the tulpa_re_aghq debias applied
   # inside the Sigma integration); the marginalized 95% intervals should still
   # cover the true scales, and the posterior keeps the full-block shape.

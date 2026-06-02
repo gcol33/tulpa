@@ -19,7 +19,7 @@ prior_predict(
 families, a list of formulas keyed by process name.}
 
 \item{family}{A \code{tulpa_family} object exposing a \code{simulate_fn} (see
-\code{\link[=tulpa_family]{tulpa_family()}}). Model packages (numdenom, tulpaObs) provide families;
+\code{\link[=tulpa_family]{tulpa_family()}}). Model packages (tulpaRatio, tulpaObs) provide families;
 tests can build a minimal one with \code{\link[=tulpa_family]{tulpa_family()}}.}
 
 \item{data}{Data frame containing covariates and grouping factors. Used for

@@ -21,6 +21,7 @@
 #   (4) Validation: bad svc_weight lengths error before the C++ entry.
 
 skip_on_cran()
+skip_if_fast()
 
 .chain_adj_svc <- function(n_s) {
     nbr <- lapply(seq_len(n_s),

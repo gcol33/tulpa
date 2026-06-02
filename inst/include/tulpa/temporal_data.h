@@ -17,7 +17,7 @@ struct TemporalData {
     int n_groups = 1;                   // Number of temporal groups
     int n_temporal_params = 0;          // Total temporal parameters
     bool cyclic = false;                // Cyclic RW flag
-    bool shared = true;                 // Legacy: shared between num/denom
+    bool shared = true;                 // shared across processes
     double tau_temporal_shape = 1.0;    // Gamma shape for temporal precision
     double tau_temporal_rate = 0.01;    // Gamma rate for temporal precision
 };
@@ -52,7 +52,7 @@ struct TemporalGPData {
     TemporalCovType cov_type = TemporalCovType::EXPONENTIAL;
     double nu = 1.5;                    // Matern smoothness
     double period = 1.0;               // Period for periodic covariance
-    bool shared = true;                 // Legacy: shared between num/denom
+    bool shared = true;                 // shared across processes
 };
 
 } // namespace tulpa

@@ -144,14 +144,10 @@ MassMatrixConfig select_and_init_mass_matrix(
       }
     }
 
-    // Family-specific overdispersion block-spec heuristics used to live
-    // here, driven by layout.legacy.has_phi_num/denom and
-    // data.legacy.model_type. Phase D (gcol33/tulpa#15) removed those
-    // fields; downstream LikelihoodSpec packages ship their own
-    // extra-parameter blocks via spec->n_extra_params at
-    // layout.extra_offset. A future revision can re-introduce the
-    // family-specific BLOCK_DIAG heuristic via a LikelihoodSpec callback
-    // (e.g. spec->suggest_mass_blocks).
+    // Model packages ship their own extra-parameter blocks via
+    // spec->n_extra_params at layout.extra_offset. A family-specific
+    // BLOCK_DIAG mass heuristic could be introduced via a LikelihoodSpec
+    // callback (e.g. spec->suggest_mass_blocks).
     bool is_icar = (data.spatial_type == SpatialType::ICAR);
     // HSGP+temporal: 36 HSGP basis coefs and 20 temporal effects have complex
     // cross-correlations that DIAG can't handle (106 div) and BLOCK_DIAG misses
@@ -163,10 +159,8 @@ MassMatrixConfig select_and_init_mass_matrix(
     bool hsgp_temporal = layout.is_hsgp && data.has_hsgp && n_params <= DENSE_MAX_PARAMS &&
                          (layout.has_temporal || layout.has_tvc || layout.has_multiscale_temporal);
 
-    // Family + ICAR heuristics (NB+ICAR, Bin+ICAR forcing DENSE) used to
-    // live here, gated on legacy ModelType. Phase D (gcol33/tulpa#15)
-    // removed the family enum; the ICAR+family pairing would need to be
-    // re-expressed through a LikelihoodSpec hint to come back.
+    // A family + ICAR mass heuristic (NB+ICAR, Bin+ICAR forcing DENSE)
+    // would need to be expressed through a LikelihoodSpec hint.
     bool needs_full_dense = layout.has_latent ||  // N×K latent factors
                             hsgp_temporal ||      // HSGP+temporal cross-correlations
                             (is_icar && n_params <= DENSE_MAX_PARAMS);

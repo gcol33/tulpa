@@ -29,13 +29,9 @@ namespace tulpa {
 //    temporal_params | svc_params | tvc_params | st_params | zi_params |
 //    oi_params | latent_params | model_extra_params]
 //
-// The legacy ratio sub-layout (LegacyRatioLayout: beta_num_start /
-// beta_denom_start / log_phi_num_idx / log_phi_denom_idx /
-// has_phi_num / has_phi_denom) was removed in Phase D of the tulpaRatio
-// migration (gcol33/tulpa#15) along with its consumers in tulpa. Ratio
-// models live in tulpaRatio and ride the generic LikelihoodSpec
-// interface; model-specific scalars now sit in the extra-parameter
-// block at extra_offset.
+// Model-specific scalars (overdispersion / shape / sigma) sit in the
+// extra-parameter block at extra_offset; ratio models live in tulpaRatio
+// and ride the generic LikelihoodSpec interface.
 // ============================================================================
 struct ParamLayout {
     int total_params = 0;

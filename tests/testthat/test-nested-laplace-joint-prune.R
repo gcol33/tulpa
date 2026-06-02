@@ -76,6 +76,7 @@
 
 test_that("prune = FALSE leaves no prune fields in the result", {
     skip_on_cran()
+    skip_if_fast()
     sim <- .sim_joint_bym2(8101L)
     fit <- .fit_joint_prune(sim, prune = FALSE)
     expect_null(fit$prune_mask)
@@ -86,6 +87,7 @@ test_that("prune = FALSE leaves no prune fields in the result", {
 
 test_that("prune = TRUE populates prune fields and marks pruned cells", {
     skip_on_cran()
+    skip_if_fast()
     sim <- .sim_joint_bym2(8101L)
     # Aggressive tol to force at least one prune on this 45-cell grid.
     fit <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 0.05)
@@ -118,6 +120,7 @@ test_that("prune = TRUE populates prune fields and marks pruned cells", {
 
 test_that("prune_tol = 0 with prune = TRUE is the no-prune path", {
     skip_on_cran()
+    skip_if_fast()
     sim <- .sim_joint_bym2(8101L)
     fit_off <- .fit_joint_prune(sim, prune = FALSE)
     fit_zero <- .fit_joint_prune(sim, prune = TRUE, prune_tol = 0.0)
@@ -153,6 +156,7 @@ test_that("prune posterior matches no-prune across seeds (conservative tol)", {
     # relative ones because SD values can be small (~0.05) where 1% relative
     # is sub-noise.
     skip_on_cran()
+    skip_if_fast()
     seeds <- 8200L + seq_len(5L)
     for (seed in seeds) {
         sim <- .sim_joint_bym2(seed)
@@ -188,6 +192,7 @@ test_that("prune composes with outer-grid parallelism", {
     # because the cheap pass runs single-threaded before the parallel fan-
     # out and the mask drives both paths.
     skip_on_cran()
+    skip_if_fast()
     skip_if_not(parallel::detectCores() >= 2L,
                 "needs multi-core to exercise the parallel path")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))

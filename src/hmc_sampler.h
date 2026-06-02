@@ -5,7 +5,7 @@
 // This umbrella is a thin re-export. Each fragment is self-contained:
 // it includes its own dependencies and defines symbols inside namespace
 // tulpa_hmc. The umbrella additionally pulls in the sibling latent-structure
-// headers (tulpa_temporal, tulpa_zi, tulpa_spatiotemporal, etc.) that the
+// headers (tulpa_temporal, tulpa_spatiotemporal, etc.) that the
 // rest of the backend expects to find through `hmc_sampler.h`.
 
 #ifndef TULPA_HMC_SAMPLER_H
@@ -13,10 +13,9 @@
 
 // Sibling latent-structure headers — separate namespaces, brought in here
 // for callers (log_post_impl.h, gradient kernels, ESS, ...) that include
-// hmc_sampler.h to access tulpa_temporal::, tulpa_zi::, etc.
+// hmc_sampler.h to access tulpa_temporal::, etc.
 #include "hmc_temporal.h"
 #include "hmc_temporal_gp.h"
-#include "hmc_zi.h"
 #include "hmc_svc.h"
 #include "hmc_gp.h"
 #include "hmc_temporal_multiscale.h"

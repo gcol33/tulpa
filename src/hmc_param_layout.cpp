@@ -135,13 +135,9 @@ ParamLayout compute_param_layout(const ModelData& data) {
     layout.re_start = layout.re_end = -1;
   }
 
-  // Overdispersion / shape / sigma parameters used to live here as
-  // layout.legacy.log_phi_num_idx / log_phi_denom_idx, allocated based
-  // on the legacy ratio ModelType (NEGBIN_NEGBIN / POISSON_GAMMA /
-  // GAMMA_GAMMA / LOGNORMAL / BETA_BINOMIAL). After Phase D
-  // (gcol33/tulpa#15) those scalars are owned by the model package's
-  // LikelihoodSpec: the package packs them into a contiguous block at
-  // layout.extra_offset (length spec->n_extra_params), allocated at
+  // Model-specific overdispersion / shape / sigma scalars are owned by the
+  // model package's LikelihoodSpec: the package packs them into a contiguous
+  // block at layout.extra_offset (length spec->n_extra_params), allocated at
   // the bottom of this function.
 
   // Spatial effects (ICAR/BYM2/CAR_PROPER only - GP handled separately below)

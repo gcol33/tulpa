@@ -89,6 +89,7 @@ test_that("the IS cores decline before evaluating the target below the floor", {
 
 test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws", {
   skip_on_cran()
+  skip_if_fast()
   sim <- function(seed, G = 50L, npg = 10L) {
     set.seed(seed)
     N <- G * npg; grp <- rep(seq_len(G), each = npg)
@@ -124,6 +125,7 @@ test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws",
 
 test_that("tulpa_nested_laplace reports an outer k-hat for a positive-scale block", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(3)
   nr <- 60L; spr <- 10L; N <- nr * spr
   region <- rep(seq_len(nr), each = spr)
@@ -156,6 +158,7 @@ test_that("tulpa_nested_laplace reports an outer k-hat for a positive-scale bloc
 
 test_that("outer k-hat declines (NA) for a multi-block nested fit", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(4)
   nr <- 40L; spr <- 8L; N <- nr * spr
   region  <- rep(seq_len(nr), each = spr)

@@ -65,6 +65,7 @@ test_that("tulpa_tgmrf_vi returns Gaussian draws with sensible moments", {
 
 test_that("VI mode and IMH posterior mean agree up to the structured-tier gap", {
   skip_on_cran()
+  skip_if_fast()
   set.seed(2031)
   n <- 30L
   z <- as.numeric(arima.sim(list(ar = 0.55), n = n, sd = 1))

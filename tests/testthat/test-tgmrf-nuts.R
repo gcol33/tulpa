@@ -15,6 +15,7 @@
 # ---------------------------------------------------------------------------
 
 skip_on_cran()
+skip_if_fast()
 
 make_nuts_ar1_block <- function(n) {
   tgmrf(

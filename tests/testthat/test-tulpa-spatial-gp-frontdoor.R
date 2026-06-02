@@ -36,6 +36,7 @@ sim_gp_binomial <- function(n_loc = 60L, reps = 3L, sigma2 = 0.7, phi_gp = 0.25,
 
 test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_gp_binomial()
   fit <- suppressMessages(tulpa(
     y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
@@ -66,6 +67,7 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
 
 test_that("structured and auto route an NNGP field to nested_laplace", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_gp_binomial(n_loc = 40L, reps = 2L)
   for (m in c("structured", "auto")) {
     fit <- suppressMessages(tulpa(
@@ -142,6 +144,7 @@ test_that("a bare list continuous spec is rejected with guidance", {
 
 test_that("mode = nested_laplace integrates an HSGP field through tulpa()", {
   skip_on_cran()
+  skip_if_fast()
   # A smooth (long-range) field is what HSGP approximates well.
   s <- sim_gp_binomial(n_loc = 60L, reps = 3L, sigma2 = 0.8, phi_gp = 0.5,
                        beta = c(-0.2, 0.6), seed = 21L)
@@ -173,6 +176,7 @@ test_that("mode = nested_laplace integrates an HSGP field through tulpa()", {
 
 test_that("structured and auto route an HSGP field to nested_laplace", {
   skip_on_cran()
+  skip_if_fast()
   s <- sim_gp_binomial(n_loc = 40L, reps = 2L)
   for (m in c("structured", "auto")) {
     fit <- suppressMessages(tulpa(

@@ -14,7 +14,7 @@
 # `mcmc_diagnostics()` is the single source of truth for Rhat / ESS / MCSE in
 # the tulpa ecosystem: the plotting layer (plot_rhat, plot_ess,
 # diagnostic_summary, check_diagnostics) and downstream model packages
-# (tulpaObs, numdenom) all call it. These statistics are location/scale-
+# (tulpaObs, tulpaRatio) all call it. These statistics are location/scale-
 # invariant per parameter, so they may be computed on engine-scale draws.
 # =============================================================================
 

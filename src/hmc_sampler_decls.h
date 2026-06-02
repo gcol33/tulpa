@@ -35,7 +35,6 @@ using tulpa::NonsepType;
 using tulpa::SVCData;
 using tulpa::HSGPData;
 using tulpa::TVCData;
-using tulpa::ModelType;
 using tulpa::SpatialType;
 using tulpa::GradientMode;
 using tulpa::MassMatrixType;

@@ -1,8 +1,8 @@
 // pg_api.h
 // Cross-package Pólya-Gamma Gibbs samplers for binomial / negbin GLMMs.
 //
-// Salvage logs (numdenom benchmarks) put PG-Gibbs at 1.9-3.7x faster than
-// HMC on these likelihoods, so the model packages need a stable hook.
+// Benchmarks put PG-Gibbs at 1.9-3.7x faster than HMC on these
+// likelihoods, so the model packages need a stable hook.
 
 #ifndef TULPA_PG_API_H
 #define TULPA_PG_API_H

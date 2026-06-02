@@ -26,6 +26,7 @@ test_that("re_cov backends are registered, reachable, and forceable", {
 
 test_that("correlated (1 + x | g) routes to re_cov_nested under mode='laplace'", {
   skip_on_cran()
+  skip_if_fast()
   d <- make_corr_re_data()
   fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "binomial",
                mode = "laplace", control = list(seed = 1L, n_draws = 800L))
@@ -55,6 +56,7 @@ test_that("correlated (1 + x | g) routes to re_cov_nested under mode='laplace'",
 
 test_that("control$re_cov='gibbs' routes to the exact Sigma debias", {
   skip_on_cran()
+  skip_if_fast()
   d <- make_corr_re_data()
   fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "binomial",
                mode = "laplace",
@@ -72,6 +74,7 @@ test_that("control$re_cov='gibbs' routes to the exact Sigma debias", {
 
 test_that("forcing mode='re_cov_nested' resolves directly", {
   skip_on_cran()
+  skip_if_fast()
   d <- make_corr_re_data(seed = 4L, G = 30L, npg = 12L)
   fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "binomial",
                mode = "re_cov_nested", control = list(seed = 2L, n_draws = 400L))
@@ -81,6 +84,7 @@ test_that("forcing mode='re_cov_nested' resolves directly", {
 
 test_that("uncorrelated (1 + x || g) routes to a diagonal-Sigma integration", {
   skip_on_cran()
+  skip_if_fast()
   d <- make_corr_re_data(seed = 5L, G = 40L, npg = 12L)
   fit <- tulpa(y ~ x + (1 + x || g), data = d, family = "binomial",
                mode = "laplace", control = list(seed = 1L, n_draws = 400L))
@@ -116,6 +120,7 @@ make_multi_re_data <- function(seed = 7L, G = 40L, H = 25L, npg = 12L) {
 
 test_that("multi-term (1 + x | g) + (1 | h) integrates one block per term", {
   skip_on_cran()
+  skip_if_fast()
   d <- make_multi_re_data()
   fit <- tulpa(y ~ x + (1 + x | g) + (1 | h), data = d, family = "binomial",
                mode = "laplace", control = list(seed = 2L, n_draws = 400L))
@@ -139,6 +144,7 @@ test_that("multi-term (1 + x | g) + (1 | h) integrates one block per term", {
 
 test_that("multi-term routes to the Gibbs debias via control$re_cov", {
   skip_on_cran()
+  skip_if_fast()
   d <- make_multi_re_data(seed = 8L, G = 30L, H = 18L, npg = 12L)
   fit <- tulpa(y ~ x + (1 + x | g) + (1 | h), data = d, family = "binomial",
                mode = "laplace",

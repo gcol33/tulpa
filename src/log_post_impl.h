@@ -42,12 +42,10 @@ T compute_log_post_impl(
     const ParamLayout& layout
 ) {
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
-        // Legacy ratio body was deleted in Phase D. Reaching this branch
-        // means a caller built ModelData without a LikelihoodSpec, which
-        // is no longer supported in tulpa core. Return T(0) as a defensive
-        // no-op so callers that defer error reporting to a downstream
-        // check (e.g. resolve_gradient_fn's Rcpp::stop) see a finite
-        // value rather than UB on layout.legacy.*.
+        // A caller built ModelData without a LikelihoodSpec, which tulpa
+        // core does not support. Return T(0) as a defensive no-op so
+        // callers that defer error reporting to a downstream check
+        // (e.g. resolve_gradient_fn's Rcpp::stop) see a finite value.
         return T(0);
     }
 

@@ -149,6 +149,7 @@ test_that("the joint multi-block prior sums independent per-block priors", {
 
 test_that("supplied prior_sigma / eta change the integrated posterior", {
   skip_on_cran()
+  skip_if_fast()
   # End-to-end: the default prior is wired into tulpa_re_cov_nested and a
   # tighter PC prior shrinks the variance-component summaries.
   set.seed(5L)

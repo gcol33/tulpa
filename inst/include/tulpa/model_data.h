@@ -133,11 +133,8 @@ struct SharingSpec {
 //     Model packages depend on them.
 //   - Shared infrastructure fields (spatial, temporal, RE, GP, etc.)
 //     are STABLE.
-//   - n_processes > 0 is the ONLY supported configuration. The legacy
-//     ratio sub-struct (LegacyRatioData: y_num, y_denom, X_num/denom_flat,
-//     p_num/p_denom, model_type) was removed in Phase D of the
-//     tulpaRatio migration (gcol33/tulpa#15). Ratio models route through
-//     tulpaRatio's LikelihoodSpec.
+//   - n_processes > 0 is the ONLY supported configuration. Ratio models
+//     route through tulpaRatio's LikelihoodSpec.
 //
 // LAYOUT RULE: New fields go in the appropriate stable section.
 //   Never insert fields before existing ones — append within sections.
@@ -293,7 +290,7 @@ struct ModelData {
     int n_temporal_groups = 1;
     int n_temporal_params = 0;
     bool temporal_cyclic = false;
-    bool temporal_shared = true;            // Legacy: shared between num/denom
+    bool temporal_shared = true;            // shared across processes
     double tau_temporal_shape = 1.0;
     double tau_temporal_rate = 0.01;
 

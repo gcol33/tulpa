@@ -1,7 +1,7 @@
 # ============================================================================
 # Generic EM + Laplace engine.
 #
-# Model packages (tulpaObs, numdenom, ...) provide callbacks for:
+# Model packages (tulpaObs, tulpaRatio, ...) provide callbacks for:
 #   - e_step:        compute latent variable posterior weights
 #   - m_step_encode: build per-submodel data blocks from weights
 #

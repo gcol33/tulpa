@@ -1,5 +1,6 @@
 test_that("generic LikelihoodSpec path runs through production NUTS", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(11)
   n <- 12L
@@ -28,6 +29,7 @@ test_that("generic LikelihoodSpec path runs through production NUTS", {
 
 test_that("NUTS returns adapted metric + final position for resume (tulpa#29)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(7)
   n <- 40L
@@ -58,6 +60,7 @@ test_that("NUTS returns adapted metric + final position for resume (tulpa#29)", 
 
 test_that("warm-start metric is honored and echoed back at n_warmup=0 (tulpa#29)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(8)
   n <- 30L
@@ -86,6 +89,7 @@ test_that("warm-start metric is honored and echoed back at n_warmup=0 (tulpa#29)
 
 test_that("warm-started continuation samples the same posterior (tulpa#29)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(9)
   n <- 60L
@@ -122,6 +126,7 @@ test_that("warm-started continuation samples the same posterior (tulpa#29)", {
 
 test_that("multi-chain runner returns chain-major draws + per-chain state (tulpa#30)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(21)
   n <- 50L
@@ -156,6 +161,7 @@ test_that("multi-chain runner returns chain-major draws + per-chain state (tulpa
 
 test_that("each chain's final_position is its own last draw (tulpa#30)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(22)
   n <- 40L
@@ -181,6 +187,7 @@ test_that("each chain's final_position is its own last draw (tulpa#30)", {
 
 test_that("a shared init still yields independent chains (tulpa#30)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(23)
   n <- 40L
@@ -205,6 +212,7 @@ test_that("a shared init still yields independent chains (tulpa#30)", {
 
 test_that("multi-chain fit is reproducible for a fixed seed (tulpa#30)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(24)
   n <- 35L
@@ -228,6 +236,7 @@ test_that("multi-chain fit is reproducible for a fixed seed (tulpa#30)", {
 
 test_that("mcmc_diagnostics consumes a native multi-chain fit (tulpa#26 via #30)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(25)
   n <- 80L
@@ -259,6 +268,7 @@ test_that("mcmc_diagnostics consumes a native multi-chain fit (tulpa#26 via #30)
 
 test_that("per-chain warm-start resumes a multi-chain fit (tulpa#30 + #29)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(26)
   n <- 60L
@@ -305,6 +315,7 @@ test_that("per-chain warm-start resumes a multi-chain fit (tulpa#30 + #29)", {
 
 test_that("C ABI tulpa_run_nuts_generic populates inv_metric_out + final_position (tulpa#29)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(29)
   n <- 50L
@@ -338,6 +349,7 @@ test_that("C ABI tulpa_run_nuts_generic populates inv_metric_out + final_positio
 
 test_that("C ABI resume continues a chain from inv_metric_out + final_position (tulpa#29)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(30)
   n <- 60L
@@ -382,6 +394,7 @@ test_that("C ABI resume continues a chain from inv_metric_out + final_position (
 
 test_that("C ABI tulpa_run_nuts_chains returns chain-major draws + per-chain state (tulpa#30)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(31)
   n <- 50L
@@ -425,6 +438,7 @@ test_that("C ABI tulpa_run_nuts_chains returns chain-major draws + per-chain sta
 
 test_that("C ABI multi-chain output feeds mcmc_diagnostics directly (tulpa#30 -> #26)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(32)
   n <- 80L
@@ -456,6 +470,7 @@ test_that("C ABI multi-chain output feeds mcmc_diagnostics directly (tulpa#30 ->
 
 test_that("C ABI multi-chain resume continues every chain from its own state (tulpa#30 + #29)", {
   skip_on_cran()
+  skip_if_fast()
 
   set.seed(33)
   n <- 60L

@@ -466,7 +466,7 @@ format.tulpa_prior <- function(x, indent = "", ...) {
 #' priors_default()
 #'
 #' # Family-specific defaults take a family object from a model package
-#' # (e.g. numdenom's tulpa_negbin_negbin()), so they are not run here.
+#' # (e.g. tulpaRatio's tulpa_negbin_negbin()), so they are not run here.
 #' \dontrun{
 #' priors_default(tulpa_negbin_negbin())
 #' priors_default(tulpa_binomial())

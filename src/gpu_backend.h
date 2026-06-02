@@ -3,7 +3,7 @@
 // Supports CUDA (NVIDIA) and OpenCL (cross-platform)
 //
 // Uses RUNTIME detection - works even if user installs CUDA/OpenCL after
-// installing numdenom. No recompilation needed.
+// installing tulpa. No recompilation needed.
 //
 // On Windows: looks for nvcuda.dll (CUDA) or OpenCL.dll
 // On Linux: looks for libcuda.so or libOpenCL.so

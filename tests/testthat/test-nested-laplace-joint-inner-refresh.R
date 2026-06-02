@@ -10,6 +10,7 @@
 # Reuse is active only on the sparse LM path, so we force_sparse = TRUE.
 
 skip_on_cran()
+skip_if_fast()
 
 .ir_chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),

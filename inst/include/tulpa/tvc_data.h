@@ -19,7 +19,7 @@ struct TVCData {
     std::vector<int> tvc_indices;       // Design matrix columns with TVCs
     std::vector<double> X_tvc;          // Design matrix subset [n_obs x n_tvc]
     TemporalType structure = TemporalType::RW1;
-    bool shared = false;                // Legacy: shared between num/denom
+    bool shared = false;                // shared across processes
     bool cyclic = false;                // Cyclic temporal structure
 
     // Workspace (engine-allocated, not set by model packages)

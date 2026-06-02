@@ -18,7 +18,7 @@ struct HSGPData {
     std::vector<double> phi_flat;   // Basis matrix phi[i,j], flattened [n_obs x m_total]
     std::vector<double> eigenvalues;// Spectral eigenvalues [m_total]
     std::vector<double> coords_scaled; // Scaled coordinates [-1,1] [n_obs x n_dim]
-    bool shared = true;             // Legacy: shared between num/denom
+    bool shared = true;             // shared across processes
 };
 
 } // namespace tulpa

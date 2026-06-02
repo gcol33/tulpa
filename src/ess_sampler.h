@@ -24,7 +24,6 @@ namespace tulpa_ess {
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
-using tulpa_hmc::ModelType;
 
 // ============================================================================
 // ESS Configuration

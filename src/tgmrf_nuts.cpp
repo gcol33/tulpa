@@ -58,7 +58,7 @@
 // =============================================================================
 //
 // The existing src/hmc_nuts_*.cpp leapfrog assumes a ModelData/ParamLayout
-// owned by the model package (numdenom, tulpaObs). Plumbing a tgmrf block into
+// owned by the model package (tulpaRatio, tulpaObs). Plumbing a tgmrf block into
 // that layout would mean inventing a new "tgmrf-only" ParamLayout and a custom
 // log_post_impl, which is more invasive than writing a focused 400-line driver
 // targeted exactly at this problem. The dispatch surface tulpa exposes to

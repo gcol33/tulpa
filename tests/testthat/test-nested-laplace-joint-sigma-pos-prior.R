@@ -110,6 +110,7 @@
 
 test_that("pc.prec on alpha cuts alpha bias at small n_pos (gcol33/tulpa#22)", {
     skip_on_cran()
+    skip_if_fast()
     adj   <- .chain_adj_pp(25L)
     seeds <- 7501:7530
     n_seeds <- length(seeds)
@@ -191,6 +192,7 @@ test_that("alpha = 0 grid cell is not zeroed by the prior", {
     # surfacing as a +500% bias on alpha. One seed is enough to catch a
     # regression of the boundary.
     skip_on_cran()
+    skip_if_fast()
     adj <- .chain_adj_pp(25L)
     sim <- .simulate_d7_pp(seed = 7501L, alpha_true = 0.0)
     arm_occ <- list(
