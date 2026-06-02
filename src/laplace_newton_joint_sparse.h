@@ -280,6 +280,14 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
               // re-factorization on the next iteration.
               if (!solve_ok) have_factor = false;
           }
+          // Fold the sum-to-zero rank-1 penalties into the Newton step
+          // (Woodbury) against the just-computed CHOLMOD factor. Only the LM
+          // path populates that factor; the PSD path eigen-solves a densified
+          // Hessian (used only for small n_x, where the field densifies and no
+          // rank-1 is registered), so it has no factor to reuse.
+          if (solve_ok && pd_mode == JointPDMode::LM)
+              apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
+                                         scratch.delta.data(), nullptr);
         }
 
         if (!solve_ok) {
@@ -331,7 +339,13 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
       joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
                           scratch.grad.data(), scratch.delta.data(),
-                          &result.log_det_Q); }
+                          &result.log_det_Q);
+      // Fold the sum-to-zero rank-1 penalties into log|H| (det lemma) so the
+      // sparse log-marginal matches the dense full-11' path. LM only (the PSD
+      // path has no reusable factor; it is small-n_x / densified anyway).
+      if (pd_mode == JointPDMode::LM)
+          apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
+                                     scratch.delta.data(), &result.log_det_Q); }
 
     double log_lik, log_prior;
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);

@@ -282,7 +282,7 @@ int build_joint_blocks_from_spec(
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
         block.add_prior_pattern = [start, size, adj_rp, adj_ci](
             std::vector<std::pair<int,int>>& out) {
-            tulpa::add_car_pattern(out, start, size, adj_rp, adj_ci);
+            tulpa::add_icar_pattern(out, start, size, adj_rp, adj_ci);
         };
         block.center = [start, size](Rcpp::NumericVector& x) -> double {
             return tulpa::center_effects(x, start, size);
@@ -374,7 +374,7 @@ int build_joint_blocks_from_spec(
         phi_block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
         phi_block.add_prior_pattern = [phi_start, size, adj_rp, adj_ci](
             std::vector<std::pair<int,int>>& out) {
-            tulpa::add_car_pattern(out, phi_start, size, adj_rp, adj_ci);
+            tulpa::add_icar_pattern(out, phi_start, size, adj_rp, adj_ci);
         };
         phi_block.log_prior = [phi_start, size, adj_rp, adj_ci, n_nbr](
             const Rcpp::NumericVector& x, int /*k*/) -> double {

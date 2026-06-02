@@ -150,14 +150,45 @@ void add_icar_prior_sparse(
     add_car_grad_hess_sparse(grad, H, x, spatial_start, n_spatial_units,
                               tau_spatial, /*rho=*/1.0,
                               adj_row_ptr, adj_col_idx, n_neighbors);
-    // Sum-to-zero constraint. The exact rank-1 11' Hessian does not fit the
-    // fixed adjacency pattern, so add the exact gradient plus the in-pattern
-    // diagonal of 11' (SUM2ZERO_TAU per node) for a stable step; the line search
-    // on the exact penalty (log_prior_icar) reaches the same constrained mode.
-    double s = field_sum(x, spatial_start, n_spatial_units);
-    for (int i = 0; i < n_spatial_units; i++) {
+    // Sum-to-zero constraint: -0.5 SUM2ZERO_TAU (sum phi)^2, Hessian SUM2ZERO_TAU 11'.
+    // The exact gradient is always added. The rank-1 11' Hessian is handled by
+    // field size (see icar_s2z_densify): a densified field block (laid out by
+    // add_icar_pattern) stores the full 11' exactly, matching the dense
+    // add_icar_prior; a large field leaves the off-diagonals off the stored
+    // Hessian and keeps only the in-pattern diagonal for a stable step (the
+    // rank-1 log-det / step correction is applied at solve time).
+    const double s = field_sum(x, spatial_start, n_spatial_units);
+    for (int i = 0; i < n_spatial_units; i++)
         grad[spatial_start + i] -= SUM2ZERO_TAU * s;
-        H.add(spatial_start + i, spatial_start + i, SUM2ZERO_TAU);
+    if (icar_s2z_densify(n_spatial_units)) {
+        // Full 11' into the dense field block; each lower-triangle slot once
+        // (CHOLMOD stype=-1 reads it as the symmetric entry).
+        for (int i = 0; i < n_spatial_units; i++)
+            for (int j = 0; j <= i; j++)
+                H.add(spatial_start + i, spatial_start + j, SUM2ZERO_TAU);
+    } else {
+        // Large field: leave the off-diagonals off the adjacency pattern and
+        // register the rank-1 11' for the solver to fold in at solve time
+        // (Sherman-Morrison step + matrix-determinant-lemma log-det). Nothing
+        // is added to the stored Hessian here; the exact gradient above already
+        // pins the field mean during the Newton iteration.
+        H.add_s2z_rank1(spatial_start, n_spatial_units, SUM2ZERO_TAU);
+    }
+}
+
+void add_icar_pattern(
+    std::vector<std::pair<int,int>>& out,
+    int spatial_start, int n_spatial_units,
+    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx
+) {
+    if (icar_s2z_densify(n_spatial_units)) {
+        // Dense lower-triangle field block so the sum-to-zero 11' fits exactly.
+        for (int i = 0; i < n_spatial_units; i++)
+            for (int j = 0; j <= i; j++)
+                out.emplace_back(spatial_start + i, spatial_start + j);
+    } else {
+        add_car_pattern(out, spatial_start, n_spatial_units,
+                        adj_row_ptr, adj_col_idx);
     }
 }
 

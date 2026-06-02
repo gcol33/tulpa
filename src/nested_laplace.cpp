@@ -118,7 +118,7 @@ inline std::vector<tulpa::LatentBlock> make_icar_latent_blocks(
     };
     block.add_prior_pattern = [start, n_units, &adj_row_ptr, &adj_col_idx]
                               (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_car_pattern(out, start, n_units, adj_row_ptr, adj_col_idx);
+        tulpa::add_icar_pattern(out, start, n_units, adj_row_ptr, adj_col_idx);
     };
     block.add_prior_sparse = [start, n_units, &tau_grid,
                               &adj_row_ptr, &adj_col_idx, &n_neighbors]
@@ -240,7 +240,7 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     };
     phi_block.add_prior_pattern = [phi_start, n_s, &adj_row_ptr, &adj_col_idx]
                                   (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_car_pattern(out, phi_start, n_s, adj_row_ptr, adj_col_idx);
+        tulpa::add_icar_pattern(out, phi_start, n_s, adj_row_ptr, adj_col_idx);
     };
     phi_block.add_prior_sparse = [phi_start, n_s, &adj_row_ptr, &adj_col_idx, &n_neighbors]
                                  (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,

@@ -201,3 +201,35 @@ test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags"
         regexp = "spec lists arm 1"
     )
 })
+
+test_that("rank-1 (Woodbury) sum-to-zero matches the dense full-11' path", {
+    # The intrinsic-ICAR sum-to-zero penalty has a dense rank-1 (1 1') Hessian.
+    # A field up to S2Z_DENSIFY_MAX densifies its block and stores 1 1' exactly;
+    # a larger field folds it in at solve time (Sherman-Morrison step + the
+    # matrix-determinant lemma for the log-det). TULPA_S2Z_DENSIFY_MAX = 0 forces
+    # the rank-1 path on this small field so both branches are exercised on the
+    # same data; the result must still equal the dense baseline.
+    old <- Sys.getenv("TULPA_S2Z_DENSIFY_MAX", unset = NA)
+    Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "0")
+    on.exit(if (is.na(old)) Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
+            else Sys.setenv(TULPA_S2Z_DENSIFY_MAX = old), add = TRUE)
+
+    d <- setup_test_data(seed = 6L)
+
+    res_dense <- tulpa_nested_laplace_joint(
+        responses = list(occ = build_arm(d, coupled = FALSE)),
+        prior     = prior_spec(d),
+        control   = list(max_iter = 60L, tol = 1e-10)
+    )
+    res_sparse_rank1 <- tulpa_nested_laplace_joint(
+        responses = list(occ = build_arm(d, coupled = FALSE)),
+        prior     = prior_spec(d),
+        control   = list(max_iter = 60L, tol = 1e-10, force_sparse = TRUE)
+    )
+
+    expect_equal(res_sparse_rank1$log_marginal, res_dense$log_marginal,
+                 tolerance = 1e-7)
+    expect_equal(res_sparse_rank1$modes, res_dense$modes, tolerance = 1e-6)
+    expect_equal(res_sparse_rank1$theta_mean, res_dense$theta_mean,
+                 tolerance = 1e-6)
+})
