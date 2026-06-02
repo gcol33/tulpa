@@ -1,5 +1,36 @@
 # tulpa NEWS
 
+## 0.0.8 (2026-06-02)
+
+* feat(nested-laplace): CCD outer integration for the joint multi-block path
+  (gcol33/tulpa#59). `control$integration = "ccd"` (default for >= 3
+  transformable axes) integrates the joint hyperparameter posterior on a central
+  composite design around its mode -- far fewer inner solves than the k^d tensor
+  product. Auto-declines to the tensor grid for <= 2 axes, an active `phi_grid`,
+  an unguessable axis (CAR_proper `rho_car` / non-BYM2 `rho`), or a degenerate
+  mode-find.
+* feat(samplers): generic R fitter for NUTS + log-posterior kernels; negbin
+  spatial (areal ICAR) Gibbs.
+* refactor(spatial/joint/pg): share the ICAR prior (one structured quadratic +
+  Besag sum-to-zero penalty across the dense / sparse paths), thread an optional
+  informative per-coefficient Gaussian beta prior into the joint arms (breaks the
+  occupancy psi-p identifiability ridge), and fix the AR1 gradient.
+* fix(nested-laplace): exact sparse ICAR / BYM2 sum-to-zero (gcol33/tulpa#60).
+  The Besag sum-to-zero penalty has a dense rank-1 (`1 1'`) Hessian; the sparse
+  path previously stored only its diagonal, so `force_sparse` / large-field ICAR
+  and BYM2 joint fits had a log-marginal off from the dense path by the missing
+  rank-1 log-det term. Now exact, size-gated: small fields densify the field
+  block and store `1 1'` directly; large fields fold the rank-1 in at solve time
+  (Sherman-Morrison step + matrix-determinant-lemma log-det) via one reuse-solve
+  per field. `TULPA_S2Z_DENSIFY_MAX` tunes the cutoff.
+* chore: finish Phase D of the tulpaRatio migration -- remove the dead legacy
+  ratio C++ (`gibbs_spatial*`, `hmc_zi.h`) and the trailing `ModelType` /
+  `LegacyRatio` references in the exported headers; rename stale `numdenom`
+  references to `tulpaRatio` in the docs.
+* tests: `TULPA_FAST` dev tier (`skip_if_fast()`) runs the structural /
+  closed-form / gradient unit tests only; the default still runs the full
+  recovery suite.
+
 ## 0.0.7 (2026-06-01)
 
 * feat: grid-cell / per-unit **checkpoint/resume across every fitter with an
