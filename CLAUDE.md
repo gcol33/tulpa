@@ -47,7 +47,7 @@ debias, or outer integration), not as standalone alternatives.
 3. **Runtime gradient verification**: Before NUTS sampling, verify active gradient against numerical.
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
 5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions.
-6. **Statistical args vs `control` knobs**: front-door fitters (`tulpa()`, `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`) carry only statistical arguments in their signature; all perf / numerical / tuning knobs live in a single `control = list()` (e.g. `control$re_cov`, `n_threads`, `max_iter`, `tol`, `adaptive_grid`, `prune`, ...). Pre-release: no deprecation shims -- moved knobs hard-error.
+6. **Statistical args vs `control` knobs**: front-door fitters (`tulpa()`, `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`) carry only statistical arguments in their signature; all perf / numerical / tuning knobs live in a single `control = list()` (e.g. `control$re_cov`, `n_threads`, `max_iter`, `tol`, `adaptive_grid`, `prune`, `integration`, ...). Pre-release: no deprecation shims -- moved knobs hard-error.
 
 ## C++ Interface
 
@@ -57,9 +57,9 @@ debias, or outer integration), not as standalone alternatives.
 - **ABI version**: `TULPA_ABI_VERSION` in `model_data.h`. Bump when any exported struct layout
   changes. Model packages auto-check on first NUTS call — mismatch gives a clear error instead
   of segfault. Registered via `R_RegisterCCallable("tulpa", "tulpa_get_abi_version", ...)`.
-- **Legacy fields**: `ModelData` contains deprecated ratio-specific fields (y_num, y_denom,
-  X_num/denom_flat, model_type). Used only when `n_processes == 0`. Will move to tulpaRatio.
-  New fields go in the stable sections — never insert before existing fields.
+- **Layout rule**: `ModelData` requires `n_processes > 0` and a `LikelihoodSpec`
+  (ratio models live in tulpaRatio via that interface). New fields go in the
+  stable sections — never insert before existing fields.
 
 ## Building
 
@@ -98,6 +98,7 @@ tests/testthat/     — Unit and integration tests
 - Inference engines: Laplace, EM+Laplace, VI, ESS, NUTS, MI correction, Gibbs correction
 - Autodiff: arena, forward, tape
 - Latent structure: spatial, temporal, RE, SVC, TVC, ST, latent factors
+- ZI/OI parameter-layout hooks only (`ZIType` enum, `has_zi` / `has_oi`); the distribution-specific ZI likelihood math lives in model packages
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary
 - Generic diagnostics: moran_i, durbin_watson, tulpa_variogram, compare_models, modelAverage
 - Generic plotting: trace, density, pairs plots of posterior draws
@@ -105,7 +106,7 @@ tests/testthat/     — Unit and integration tests
 - Parameter back-transformation (logit → probability)
 
 **Model packages own** (e.g., tulpaObs, tulpaRatio):
-- Likelihood functions (LikelihoodSpec)
+- Likelihood functions (LikelihoodSpec), including the distribution-specific zero-inflation / hurdle / one-inflation and ratio (num/denom) likelihood math
 - E-step weight computation (model-specific latent variable posterior)
 - Data structures and encoding (how to map model data → binomial pseudo-data for Laplace)
 - Model-specific diagnostics (waicOccu, ppcOccu, pitResiduals)

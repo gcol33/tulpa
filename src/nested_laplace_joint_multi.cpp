@@ -1533,10 +1533,12 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         }
     }
     if (needs_sparse) {
-        // First-ship: sparse path is serial outer-grid. Each per-thread
-        // SparseHessianBuilder would replicate the pattern (a few × 10^7
-        // entries at n_sites = 10^6); serializing is the simplest correct
-        // shape. Parallel sparse is a follow-up to this stage.
+        // The sparse impl runs the outer grid across n_threads_outer with one
+        // SparseHessianBuilder + Newton scratch + arm-spec set + scatter cache
+        // per outer thread (the shared symbolic pattern is read-only across the
+        // grid; only values + the CHOLMOD numeric factor are per-thread). The
+        // thread count is clamped there by a memory budget on the replicated
+        // builders, so a very wide field falls back to fewer outer threads.
         return run_multi_block_nested_laplace_joint_sparse_impl(
             n_grid, arms, parsed, blocks, n_x,
             max_iter, tol, n_threads,

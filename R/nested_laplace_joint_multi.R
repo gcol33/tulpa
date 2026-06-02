@@ -684,8 +684,10 @@
                                   diagnose_k = TRUE,
                                   k_samples = 200L,
                                   inner_refresh = 1L,
+                                  integration = "grid",
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()                    # gcol33/tulpa#48
+    integration <- match.arg(integration, c("grid", "ccd"))
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -707,26 +709,7 @@
     block_grids <- lapply(per_block, function(x) x$grid)
     prepared    <- lapply(per_block, function(x) x$prepared)
 
-    # Cartesian product of per-block axis grids.
-    row_counts <- vapply(block_grids, nrow, integer(1))
-    idx <- do.call(expand.grid, lapply(row_counts, seq_len))
-    n_cells <- nrow(idx)
-    if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
-        stop(sprintf(
-            "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or wait for CCD integration support.",
-            n_cells, .NL_MULTI_GRID_HARD_CAP
-        ), call. = FALSE)
-    }
-    if (n_cells > .NL_MULTI_GRID_WARN) {
-        warning(sprintf(
-            "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
-            n_cells, .NL_MULTI_GRID_WARN
-        ), call. = FALSE)
-    }
-
-    joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
-        block_grids[[b]][idx[[b]], , drop = FALSE]
-    }))
+    # Axis layout (independent of node placement: tensor or CCD).
     axis_counts  <- vapply(block_grids, ncol, integer(1))
     axis_offsets <- as.integer(c(0L, cumsum(axis_counts)))
     axis_names <- unlist(lapply(seq_along(block_grids), function(b) {
@@ -734,27 +717,134 @@
         if (is.null(cn) || length(cn) == 0L) return(character(0))
         paste0("b", b, ".", cn)
     }))
-    if (ncol(joint_grid) > 0L) colnames(joint_grid) <- axis_names
+    d_axes <- as.integer(axis_offsets[B + 1L])
 
     blocks_spec <- lapply(seq_along(prepared), function(b) {
         .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
     })
 
-    # phi_grid (per-arm dispersion overrides on the outer grid): only
-    # populated when the user supplied one. Same convention as the
-    # single-block joint path.
+    # Per-arm dispersion overrides on the outer grid. Resolved up front because
+    # CCD declines when a phi axis is active (the phi/latent Cartesian product
+    # is a tensor-only construction).
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
+    has_phi  <- !is.null(phi_axes) &&
+                any(vapply(phi_axes, length, integer(1)) > 0L)
+
+    # Node placement. CCD (gcol33/tulpa#59) integrates on a central composite
+    # design around the joint hyperparameter mode for d >= 3 transformable
+    # axes; it declines (-> tensor grid) for d <= 2, an active phi axis, an
+    # unguessable axis (CAR_proper rho_car / non-BYM2 rho), or a degenerate
+    # outer mode-find / Hessian.
+    dnode                 <- NULL
+    tile_partition        <- NULL
     phi_grid_per_arm_list <- NULL
-    if (!is.null(phi_axes)) {
-        # The per-arm dispersion axes are embedded as additional outer-grid
-        # columns under the separable convention: each phi axis varies
-        # independently of the latent-block grid, so the phi grid forms a
+    integration_used      <- "grid"
+    joint_grid            <- NULL
+
+    use_ccd <- identical(integration, "ccd") && d_axes >= 3L && !has_phi
+    if (use_ccd) {
+        block_of_axis <- rep(seq_len(B), times = axis_counts)
+        col_within    <- unlist(lapply(axis_counts, seq_len))
+        axis_values <- lapply(seq_len(d_axes), function(j) {
+            sort(unique(as.numeric(
+                block_grids[[block_of_axis[j]]][, col_within[j]])))
+        })
+
+        # Warm latent mode for the mode-find / node solves: one solve at the
+        # box-centre coordinate, broadcast as x_init so each subsequent inner
+        # Newton converges in a few steps. Checkpoint/progress are stripped for
+        # every CCD probe so they neither pollute the fit's checkpoint file nor
+        # tick its progress bar.
+        ccd_warm <- x_init
+        with_quiet_opts <- function(expr) {
+            op <- options(
+                tulpa.nl_checkpoint = list(path = "", resume = TRUE),
+                tulpa.nl_progress   = .nl_progress_args(list()))
+            on.exit(options(op), add = TRUE)
+            force(expr)
+        }
+        centre_row <- matrix(vapply(axis_values, stats::median, numeric(1)),
+                             nrow = 1L, dimnames = list(NULL, axis_names))
+        init_fit <- tryCatch(with_quiet_opts(.cpp_joint_multi(
+            arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
+            copy_blocks = as.integer(cp$copy_blocks_zero),
+            blocks_spec = blocks_spec,
+            theta_grid = .joint_multi_cpp_grid(centre_row, axis_offsets, B, cp),
+            axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
+            tol = as.numeric(tol), n_threads = as.integer(n_threads),
+            x_init_nullable = x_init, store_Q = FALSE, phi_grid_per_arm = NULL,
+            n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL,
+            prune_tol = 0.0, force_sparse = isTRUE(force_sparse),
+            cell_coupling_name = as.character(cell_coupling),
+            inner_refresh = as.integer(inner_refresh))),
+            error = function(e) NULL)
+        if (!is.null(init_fit) && is.matrix(init_fit$modes) &&
+            nrow(init_fit$modes) >= 1L &&
+            is.finite(init_fit$log_marginal[1L])) {
+            m1 <- as.numeric(init_fit$modes[1L, ])
+            if (all(is.finite(m1))) ccd_warm <- m1
+        }
+
+        eval_logpost <- function(theta_mat) {
+            r <- with_quiet_opts(.cpp_joint_multi(
+                arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
+                copy_blocks = as.integer(cp$copy_blocks_zero),
+                blocks_spec = blocks_spec,
+                theta_grid = .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp),
+                axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
+                tol = as.numeric(tol), n_threads = as.integer(n_threads),
+                x_init_nullable = ccd_warm, store_Q = FALSE,
+                phi_grid_per_arm = NULL,
+                n_threads_outer = as.integer(n_threads_outer),
+                tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0,
+                force_sparse = isTRUE(force_sparse),
+                cell_coupling_name = as.character(cell_coupling),
+                inner_refresh = as.integer(inner_refresh)))
+            .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
+                                fn_sigma, fn_alpha)
+        }
+
+        ccd <- .joint_ccd_grid(axis_names, axis_offsets, prepared, axis_values,
+                               eval_logpost, verbose = verbose)
+        if (is.null(ccd)) {
+            use_ccd <- FALSE
+        } else {
+            joint_grid       <- ccd$grid
+            dnode            <- ccd$dnode
+            integration_used <- "ccd"
+        }
+    }
+
+    if (!use_ccd) {
+        # Cartesian product of per-block axis grids.
+        row_counts <- vapply(block_grids, nrow, integer(1))
+        idx <- do.call(expand.grid, lapply(row_counts, seq_len))
+        n_cells <- nrow(idx)
+        if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
+            stop(sprintf(
+                "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or set control$integration = \"ccd\".",
+                n_cells, .NL_MULTI_GRID_HARD_CAP
+            ), call. = FALSE)
+        }
+        if (n_cells > .NL_MULTI_GRID_WARN) {
+            warning(sprintf(
+                "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes or set control$integration = \"ccd\".",
+                n_cells, .NL_MULTI_GRID_WARN
+            ), call. = FALSE)
+        }
+
+        joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
+            block_grids[[b]][idx[[b]], , drop = FALSE]
+        }))
+        if (ncol(joint_grid) > 0L) colnames(joint_grid) <- axis_names
+
+        # phi_grid (per-arm dispersion overrides on the outer grid): each phi
+        # axis varies independently of the latent-block grid, so it forms a
         # Cartesian product with the latent grid and multiplies n_cells. A phi
-        # axis whose values are tied to a latent-block axis is not expressible
-        # on this path; supply such a coupling by folding phi into the relevant
-        # block's own axis grid instead.
-        active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
-        if (length(active) > 0L) {
+        # axis tied to a latent-block axis is not expressible on this path; fold
+        # it into the relevant block's own axis grid instead.
+        if (has_phi) {
+            active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
             phi_extra <- do.call(expand.grid,
                                   c(active, list(KEEP.OUT.ATTRS = FALSE,
                                                   stringsAsFactors = FALSE)))
@@ -769,36 +859,35 @@
             # consumes them via phi_grid_per_arm, not the block axes.
             phi_grid_per_arm_list <- .joint_multi_phi_per_arm(joint_grid, arm_names)
         }
+
+        # Tile partition for the three-tier warm-start (Phase 2 of
+        # dev_notes/speedup.md). Tile axis = every joint_grid column EXCEPT the
+        # copy block's alpha column. Built from the *user-facing* (sigma,
+        # alpha) grid (before sigma_pos materialisation) so the partition
+        # reflects what is constant across alpha at fixed (sigma, rho, ...
+        # other-block axes).
+        if (isTRUE(tile_warm) && cp$has_copy &&
+            length(cp$copy_blocks_zero) == 1L &&
+            as.integer(n_threads_outer) > 1L) {
+            b_copy_R <- cp$copy_blocks_zero[[1L]] + 1L
+            cols_bc  <- (axis_offsets[b_copy_R] + 1L):axis_offsets[b_copy_R + 1L]
+            bare_bc  <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_bc])
+            i_alpha  <- match("alpha", bare_bc)
+            if (!is.na(i_alpha)) {
+                alpha_col_idx <- cols_bc[i_alpha]
+                non_alpha_idx <- setdiff(seq_len(ncol(joint_grid)), alpha_col_idx)
+                tile_partition <- .joint_compute_tile_partition(
+                    joint_grid[, non_alpha_idx, drop = FALSE],
+                    as.numeric(joint_grid[, alpha_col_idx]),
+                    nrow(joint_grid)
+                )
+            }
+        }
     }
 
     # Build the C++-facing theta_grid (sigma_occ / sigma_pos materialised on
     # each copy block from the user-facing (sigma, alpha) outer grid).
     cpp_grid <- .joint_multi_cpp_grid(joint_grid, axis_offsets, B, cp)
-
-    # Tile partition for the three-tier warm-start (Phase 2 of
-    # dev_notes/speedup.md). Tile axis = every joint_grid column EXCEPT the
-    # copy block's alpha column. Built from the *user-facing* (sigma,
-    # alpha) grid (before sigma_pos materialisation) so the partition
-    # reflects what is constant across alpha at fixed (sigma, rho, ...
-    # other-block axes).
-    tile_partition <- NULL
-    if (isTRUE(tile_warm) && cp$has_copy &&
-        length(cp$copy_blocks_zero) == 1L &&
-        as.integer(n_threads_outer) > 1L) {
-        b_copy_R <- cp$copy_blocks_zero[[1L]] + 1L
-        cols_bc  <- (axis_offsets[b_copy_R] + 1L):axis_offsets[b_copy_R + 1L]
-        bare_bc  <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_bc])
-        i_alpha  <- match("alpha", bare_bc)
-        if (!is.na(i_alpha)) {
-            alpha_col_idx <- cols_bc[i_alpha]
-            non_alpha_idx <- setdiff(seq_len(ncol(joint_grid)), alpha_col_idx)
-            tile_partition <- .joint_compute_tile_partition(
-                joint_grid[, non_alpha_idx, drop = FALSE],
-                as.numeric(joint_grid[, alpha_col_idx]),
-                nrow(joint_grid)
-            )
-        }
-    }
 
     call_kernel_with_tol <- function(tol_prune) {
         .cpp_joint_multi(
@@ -843,12 +932,22 @@
     res$theta_grid   <- joint_grid
     res$theta_names  <- colnames(joint_grid)
     res$axis_offsets <- axis_offsets
-    res$weights      <- .nl_normalise_weights(res$log_marginal)
-    res <- .joint_posterior_moments_multi(res, prepared, axis_offsets,
-                                           joint_grid, cp)
-    # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
-    # modal cell (gcol33/tulpa#20).
-    res <- .nl_refit_axis_sd_laplace(res)
+    res$integration  <- integration_used
+    # Integration weights fold in the CCD design weights (`dnode`); for the
+    # tensor grid `dnode` is NULL and this is the plain log-marginal softmax.
+    res$weights      <- .joint_integration_weights(res$log_marginal, dnode)
+    is_ccd <- identical(integration_used, "ccd")
+    res <- .joint_posterior_moments_multi(
+        res, prepared, axis_offsets, joint_grid, cp,
+        int_weights = if (is_ccd) res$weights else NULL)
+    if (!is_ccd) {
+        # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
+        # modal cell (gcol33/tulpa#20). The 3-point grid-profile fit needs the
+        # regular per-axis lattice; on the scattered CCD design the weighted
+        # var-of-means over the design IS the calibrated SD (the corrected
+        # design weights reproduce the Gaussian moments), so it is kept as is.
+        res <- .nl_refit_axis_sd_laplace(res)
+    }
     res$arm_layout    <- .joint_multi_layout(arms, prepared)
     res$blocks        <- prepared
     res$prior         <- prior_list
@@ -982,7 +1081,8 @@
 # axis -- the calibrated headline summary for right-skewed scale-like
 # hyperparameters (alpha at small n_pos, sigma/range/phi near boundary).
 .joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
-                                            joint_grid, cp) {
+                                            joint_grid, cp,
+                                            int_weights = NULL) {
     w <- res$weights
     # Joint moments across every column of joint_grid (including phi
     # columns appended for per-arm dispersion overrides).
@@ -1031,7 +1131,7 @@
     # any other axis; this attaches the calibrated summary for every
     # axis, not just alpha.
     qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
-                              res$refining_axis)
+                              res$refining_axis, weights = int_weights)
     res$theta_median <- qs$median
     res$theta_ci_lo  <- qs$ci_lo
     res$theta_ci_hi  <- qs$ci_hi

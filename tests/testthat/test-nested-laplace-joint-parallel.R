@@ -98,8 +98,75 @@
     )
 }
 
+# Multi-block joint with two full-rank blocks (RW1 temporal + IID), fit through
+# the SPARSE driver (force_sparse) so the outer grid runs through
+# run_multi_block_nested_laplace_joint_sparse_impl with its per-outer-thread
+# builder / scratch / spec / cache pool (gcol33/tulpa#58). Full-rank blocks make
+# the inner Newton converge cleanly (rank-deficient ICAR/BYM2 over-iterate on the
+# field null space -- a separate inner-solve issue), so serial and parallel land
+# on the same converged mode and the parity is exact up to FP noise.
+.fit_joint_rw1_iid_sparse <- function(seed, n_threads_outer) {
+    set.seed(seed)
+    N <- 360L; n_t <- 6L; n_u <- N
+    t_idx <- sample.int(n_t, N, replace = TRUE)
+    x <- rnorm(N); Xocc <- cbind(1, x)
+    f_t <- cumsum(rnorm(n_t, sd = 0.5)); f_t <- f_t - mean(f_t)
+    eta_occ <- as.numeric(Xocc %*% c(-0.2, 0.4)) + f_t[t_idx] + rnorm(N, 0, 0.3)
+    occur <- rbinom(N, 1, plogis(eta_occ))
+    is_pos <- occur == 1L
+    Xpos  <- Xocc[is_pos, , drop = FALSE]
+    t_pos <- t_idx[is_pos]
+    eta_pos <- as.numeric(Xpos %*% c(0.1, -0.3)) + f_t[t_pos]
+    y_pos <- rnorm(sum(is_pos), eta_pos, 0.5)
+    arm_occ <- list(y = as.numeric(occur), n_trials = rep(1L, N), X = Xocc,
+                    spatial_idx = rep(0L, N), re_idx = rep(0, N),
+                    n_re_groups = 0L, sigma_re = 1.0, family = "binomial",
+                    phi = 1.0)
+    arm_pos <- list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
+                    spatial_idx = rep(0L, length(y_pos)),
+                    re_idx = rep(0, length(y_pos)), n_re_groups = 0L,
+                    sigma_re = 1.0, family = "gaussian", phi = 0.5)
+    prior <- list(
+        list(type = "rw1", temporal_idx = list(t_idx, t_pos), n_times = n_t,
+             tau_grid = c(0.5, 1.0, 2.0)),
+        list(type = "iid", obs_idx = list(seq_len(N), which(is_pos)),
+             n_units = n_u, sigma_grid = c(0.5, 1.0))
+    )
+    tulpa_nested_laplace_joint(
+        responses = list(occ = arm_occ, pos = arm_pos), prior = prior,
+        control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
+                       force_sparse = TRUE, integration = "grid",
+                       max_iter = 100L, tol = 1e-8, diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+}
+
+test_that("multi-block SPARSE path parallel matches serial across seeds", {
+    skip_on_cran()
+    skip_if_fast()
+    skip_if_not(parallel::detectCores() >= 2L,
+                "needs multi-core to exercise the parallel sparse path")
+    n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
+
+    seeds <- 7160L + seq_len(4L)
+    for (seed in seeds) {
+        fit_s <- .fit_joint_rw1_iid_sparse(seed, n_threads_outer = 1L)
+        fit_p <- .fit_joint_rw1_iid_sparse(seed, n_threads_outer = n_outer)
+        expect_true(all(fit_s$n_iter < 100L),
+                    info = sprintf("seed=%d serial converged", seed))
+        expect_equal(fit_p$log_marginal, fit_s$log_marginal, tolerance = 1e-6,
+                     info = sprintf("seed=%d log_marginal", seed))
+        expect_equal(fit_p$weights, fit_s$weights, tolerance = 1e-6,
+                     info = sprintf("seed=%d weights", seed))
+        expect_equal(fit_p$theta_mean, fit_s$theta_mean, tolerance = 1e-5,
+                     info = sprintf("seed=%d theta_mean", seed))
+        expect_equal(fit_p$modes, fit_s$modes, tolerance = 1e-4,
+                     info = sprintf("seed=%d modes", seed))
+    }
+})
+
 test_that("joint BYM2 parallel path matches serial across seeds", {
     skip_on_cran()
+    skip_if_fast()
     skip_if_not(parallel::detectCores() >= 2L,
                 "needs multi-core to exercise the parallel path")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
@@ -143,6 +210,7 @@ test_that("joint BYM2 tile_warm path matches no-tile path across seeds", {
     # must match the no-tile path at this problem size where both Newton
     # paths converge cleanly inside `max_iter`.
     skip_on_cran()
+    skip_if_fast()
     skip_if_not(parallel::detectCores() >= 2L,
                 "needs multi-core to exercise tile_warm")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
@@ -184,6 +252,7 @@ test_that("joint BYM2 tile_warm path matches no-tile path across seeds", {
 
 test_that("tile_warm is a no-op when n_threads_outer == 1", {
     skip_on_cran()
+    skip_if_fast()
     # Serial path: tile metadata is ignored by run_nested_laplace_grid, so
     # tile_warm = TRUE vs FALSE must produce identical results. Guards
     # against accidental tile-path activation outside the parallel branch.

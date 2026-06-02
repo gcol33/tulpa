@@ -229,6 +229,18 @@ consistency pass on the variance of the per-arm posterior means and
 attach \code{var_of_means_consistency_info}.
 \item \code{force_sparse} (\code{FALSE}) -- force the sparse linear-algebra backend for
 the inner joint solve regardless of the dense/sparse heuristic.
+\item \code{integration} (\code{"ccd"}) -- outer-grid node layout for a multi-block
+prior. \code{"ccd"} integrates the hyperparameter posterior on a central
+composite design (\verb{1 + 2d + 2^d} nodes) oriented by the Cholesky of the
+posterior covariance at the joint hyperparameter mode -- far fewer inner
+solves than the \code{d}-dimensional tensor product (\code{25} vs \code{81} at \code{d = 4}).
+It engages only when there are \verb{>= 3} transformable axes and otherwise
+falls back to the tensor grid: \verb{<= 2} axes, an active \code{phi_grid}, an axis
+whose support is not safely transformable (a CAR_proper \code{rho_car} or a
+non-BYM2 \code{rho}), or a degenerate outer mode-find / Hessian. \code{"grid"}
+forces the full tensor product. Single-block joint priors always use the
+tensor grid. The CCD mode-find runs cheap warm-started inner solves and
+does not write to the checkpoint file.
 \item \code{inner_refresh} (\code{1L}) -- inner-Newton Cholesky factor reuse interval
 (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 beta cover arm) the latent Hessian changes every inner iteration, so the

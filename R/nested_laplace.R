@@ -815,7 +815,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # Returns list(median = named_vec, ci_lo = named_vec, ci_hi = named_vec).
 # For scalar tg the returned vectors are length-1 with names = "value".
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
-                                probs = c(0.025, 0.5, 0.975)) {
+                                probs = c(0.025, 0.5, 0.975),
+                                weights = NULL) {
   if (is.null(dim(tg))) {
     tg <- matrix(as.numeric(tg), ncol = 1L,
                  dimnames = list(NULL, "value"))
@@ -839,10 +840,21 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
              refining == paste0("consistency_", ax)
     use   <- keep & is.finite(tg[, j])
     if (sum(use) == 0L) next
-    lm_u  <- log_marginal[use]
-    m     <- max(lm_u)
-    if (!is.finite(m)) next
-    ws    <- exp(lm_u - m); ws <- ws / sum(ws)
+    # Precomputed integration weights (CCD design weights * exp(log-marginal),
+    # passed for scattered node sets where the per-axis softmax of the raw
+    # log-marginal is not the integration weight); otherwise the regular-grid
+    # softmax of the log-marginal.
+    if (!is.null(weights)) {
+      ws  <- weights[use]
+      if (!any(is.finite(ws)) || sum(ws, na.rm = TRUE) <= 0) next
+      ws[!is.finite(ws)] <- 0
+      ws  <- ws / sum(ws)
+    } else {
+      lm_u  <- log_marginal[use]
+      m     <- max(lm_u)
+      if (!is.finite(m)) next
+      ws    <- exp(lm_u - m); ws <- ws / sum(ws)
+    }
     qs    <- .nl_wtd_quantile(tg[use, j], ws, probs)
     lo[j]  <- qs[1L]
     med[j] <- qs[2L]
