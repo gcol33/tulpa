@@ -237,18 +237,22 @@
 #'     attach `var_of_means_consistency_info`.
 #'   * `force_sparse` (`FALSE`) -- force the sparse linear-algebra backend for
 #'     the inner joint solve regardless of the dense/sparse heuristic.
-#'   * `integration` (`"ccd"`) -- outer-grid node layout for a multi-block
-#'     prior. `"ccd"` integrates the hyperparameter posterior on a central
-#'     composite design (`1 + 2d + 2^d` nodes) oriented by the Cholesky of the
+#'   * `integration` (`"auto"`) -- outer-grid node layout for a multi-block
+#'     prior. A central composite design (CCD) integrates the hyperparameter
+#'     posterior on `1 + 2d + 2^d` nodes oriented by the Cholesky of the
 #'     posterior covariance at the joint hyperparameter mode -- far fewer inner
 #'     solves than the `d`-dimensional tensor product (`25` vs `81` at `d = 4`).
-#'     It engages only when there are `>= 3` transformable axes and otherwise
-#'     falls back to the tensor grid: `<= 2` axes, an active `phi_grid`, an axis
-#'     whose support is not safely transformable (a CAR_proper `rho_car` or a
-#'     non-BYM2 `rho`), or a degenerate outer mode-find / Hessian. `"grid"`
-#'     forces the full tensor product. Single-block joint priors always use the
-#'     tensor grid. The CCD mode-find runs cheap warm-started inner solves and
-#'     does not write to the checkpoint file.
+#'     `"auto"` (the default) uses the CCD only at `>= 4` transformable axes,
+#'     where the tensor product's `k^d` blow-up bites hardest, and keeps the
+#'     cheaper, more ridge-robust tensor grid at `<= 3` axes; `"ccd"` lowers the
+#'     CCD threshold to `>= 3` axes; `"grid"` always forces the full tensor
+#'     product. The CCD auto-falls back to the tensor grid for an axis whose
+#'     support is not safely transformable (a CAR_proper `rho_car` or a non-BYM2
+#'     `rho`), or a flat / ridged / degenerate outer mode-find or Hessian; an
+#'     active `phi_grid` rides as a tensor axis crossed on top of the CCD.
+#'     Single-block joint priors always use the tensor grid. The CCD mode-find
+#'     runs cheap warm-started inner solves and does not write to the checkpoint
+#'     file.
 #'   * `inner_refresh` (`1L`) -- inner-Newton Cholesky factor reuse interval
 #'     (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 #'     beta cover arm) the latent Hessian changes every inner iteration, so the
@@ -390,16 +394,20 @@ tulpa_nested_laplace_joint <- function(responses,
     # fit's draws are unchanged whether or not it runs.
     diagnose_k                <- control$diagnose_k %||% TRUE
     k_samples                 <- control$k_samples %||% 200L
-    # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). "ccd"
-    # (default) places a central-composite design around the joint
-    # hyperparameter mode when there are >= 3 transformable axes -- far fewer
-    # inner solves than the full tensor product; it auto-falls back to the
-    # tensor grid for <= 2 axes, an active phi grid, an unguessable axis
-    # (CAR_proper rho_car / non-BYM2 rho), or a degenerate mode-find. "grid"
-    # forces the tensor product. Single-block joint backends always use the
-    # tensor grid (CCD applies to the multi-block path only).
-    integration               <- match.arg(control$integration %||% "ccd",
-                                            c("ccd", "grid"))
+    # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). A CCD
+    # places a central-composite design around the joint hyperparameter mode --
+    # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
+    # "auto" (default) uses the CCD only where the tensor blow-up bites hardest,
+    # >= 4 transformable axes, and the tensor grid at <= 3 axes (the d = 3 grid
+    # is cheap and a ridged 3-axis posterior integrates more reliably on it).
+    # "ccd" lowers the threshold to >= 3 axes; "grid" always forces the tensor
+    # product. The CCD auto-falls back to the tensor grid for an unguessable axis
+    # (CAR_proper rho_car / non-BYM2 rho), a flat / ridged outer posterior, or a
+    # degenerate mode-find (gcol33/tulpa#62); an active phi grid rides as a
+    # tensor axis crossed on top of the CCD (gcol33/tulpa#61). Single-block joint
+    # backends always use the tensor grid (CCD applies to the multi-block path).
+    integration               <- match.arg(control$integration %||% "auto",
+                                            c("auto", "ccd", "grid"))
     # Inner-Newton curvature + PD enforcement for the (possibly indefinite)
     # joint mixture Hessian. "lm" (default) escalates a diagonal ridge until
     # CHOLMOD factorizes the observed Hessian; "psd" eigen-clamps the dense

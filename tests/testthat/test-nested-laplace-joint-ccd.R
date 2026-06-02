@@ -209,6 +209,23 @@ test_that("CCD x phi matches the tensor grid x phi in the tighter-posterior regi
     expect_lt(rel("phi_pos"),  0.15)
 })
 
+test_that("the auto default uses the tensor grid at 3 axes (gcol33/tulpa#59)", {
+    skip_on_cran()
+    # No `integration` in control -> "auto", which keeps the cheaper, more
+    # ridge-robust tensor grid at <= 3 axes and reserves CCD for >= 4 (where the
+    # k^d blow-up bites hardest). A single BYM2 copy block is 3 axes (sigma,
+    # alpha, rho), so the default integrates on the 3 * 3 * 3 = 27 tensor cells.
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
+        control = list(diagnose_k = FALSE, var_of_means_consistency = FALSE))
+    expect_identical(fit$integration, "grid")
+    expect_equal(length(fit$log_marginal), 27L)
+})
+
 test_that("integration = 'grid' forces the tensor product even for >= 3 axes", {
     skip_on_cran()
     sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)

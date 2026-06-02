@@ -684,10 +684,10 @@
                                   diagnose_k = TRUE,
                                   k_samples = 200L,
                                   inner_refresh = 1L,
-                                  integration = "grid",
+                                  integration = "auto",
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()                    # gcol33/tulpa#48
-    integration <- match.arg(integration, c("grid", "ccd"))
+    integration <- match.arg(integration, c("auto", "ccd", "grid"))
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -733,19 +733,22 @@
                 any(vapply(phi_axes, length, integer(1)) > 0L)
 
     # Node placement for the LATENT axes. CCD (gcol33/tulpa#59) integrates on a
-    # central composite design around the joint hyperparameter mode for d >= 3
-    # transformable latent axes; it declines (-> tensor grid) for d <= 2, an
-    # unguessable axis (CAR_proper rho_car / non-BYM2 rho), or a degenerate
-    # outer mode-find / Hessian. An active phi axis no longer disables CCD
+    # central composite design around the joint hyperparameter mode; it declines
+    # (-> tensor grid) for too few axes, an unguessable axis (CAR_proper rho_car
+    # / non-BYM2 rho), or a degenerate / ridged outer mode-find / Hessian
+    # (gcol33/tulpa#62). An active phi axis no longer disables CCD
     # (gcol33/tulpa#61): the CCD rides the latent axes and the phi tensor
     # crosses on top, with the CCD design weights replicated across phi cells.
+    # Axis threshold: "auto" (the default) engages CCD only at d >= 4, where the
+    # tensor blow-up bites hardest, and keeps the cheaper, ridge-robust tensor
+    # grid at d <= 3; explicit "ccd" lowers the threshold to d >= 3.
     dnode                 <- NULL
     tile_partition        <- NULL
     phi_grid_per_arm_list <- NULL
     integration_used      <- "grid"
     joint_grid            <- NULL
 
-    use_ccd <- identical(integration, "ccd") && d_axes >= 3L
+    use_ccd <- .joint_ccd_engage(integration, d_axes)
     if (use_ccd) {
         block_of_axis <- rep(seq_len(B), times = axis_counts)
         col_within    <- unlist(lapply(axis_counts, seq_len))
@@ -804,12 +807,25 @@
                 force_sparse = isTRUE(force_sparse),
                 cell_coupling_name = as.character(cell_coupling),
                 inner_refresh = as.integer(inner_refresh)))
-            .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
-                                fn_sigma, fn_alpha)
+            lp <- .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
+                                      fn_sigma, fn_alpha)
+            # Carry the inner latent modes so the CCD mode-find can advance the
+            # warm start per accepted point (gcol33/tulpa#62).
+            if (is.matrix(r$modes)) attr(lp, "modes") <- r$modes
+            lp
+        }
+
+        # Advance the inner warm start to the latent mode at each accepted
+        # mode-find point, so subsequent probes solve in a few Newton steps
+        # rather than cold from the box centre (gcol33/tulpa#62).
+        set_warm <- function(mode) {
+            mode <- as.numeric(mode)
+            if (length(mode) && all(is.finite(mode))) ccd_warm <<- mode
         }
 
         ccd <- .joint_ccd_grid(axis_names, axis_offsets, prepared, axis_values,
-                               eval_logpost, verbose = verbose)
+                               eval_logpost, verbose = verbose,
+                               set_warm = set_warm)
         if (is.null(ccd)) {
             use_ccd <- FALSE
         } else {

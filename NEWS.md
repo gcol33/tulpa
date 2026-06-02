@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.9 (development version)
+
+* fix(nested-laplace): the joint multi-block CCD outer mode-find now declines
+  **fast** on a flat / ridged hyperparameter posterior (gcol33/tulpa#62).
+  Previously a sigma-alpha ridge produced a near-singular outer Hessian, a huge
+  Newton step, and a deeply backtracking line search of full-field inner solves
+  (hours, before the post-hoc guard could decline). The mode-find now (a)
+  pre-checks the centre Hessian conditioning and declines to the tensor grid
+  immediately on a ridge -- the same verdict, minus the line search; (b)
+  trust-clamps the Newton step so a candidate never leaps to an extreme
+  hyperparameter; (c) caps the line-search backtracking; and (d) advances the
+  inner warm start to each accepted point so probes solve in a few Newton steps
+  instead of cold from the box centre.
+* feat(nested-laplace): `control$integration` for a multi-block joint prior
+  gains `"auto"` (the new default) and now takes `"auto"` / `"ccd"` / `"grid"`
+  (gcol33/tulpa#59). `"auto"` uses the CCD only at `>= 4` transformable axes,
+  where the tensor product's `k^d` blow-up bites hardest, and keeps the cheaper,
+  more ridge-robust tensor grid at `<= 3` axes; `"ccd"` lowers the CCD threshold
+  to `>= 3` axes; `"grid"` always forces the tensor product. (Previously the
+  default engaged the CCD at `>= 3` axes.)
+
 ## 0.0.8 (2026-06-02)
 
 * feat(nested-laplace): CCD outer integration for the joint multi-block path
