@@ -723,25 +723,29 @@
         .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
     })
 
-    # Per-arm dispersion overrides on the outer grid. Resolved up front because
-    # CCD declines when a phi axis is active (the phi/latent Cartesian product
-    # is a tensor-only construction).
+    # Per-arm dispersion overrides on the outer grid. A phi axis varies
+    # independently of the latent-block axes, so it forms a Cartesian (tensor)
+    # product with the latent grid -- whether that latent grid is the dense
+    # tensor or a CCD design (gcol33/tulpa#61). The cross is applied once,
+    # below, to whichever latent grid was built.
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     has_phi  <- !is.null(phi_axes) &&
                 any(vapply(phi_axes, length, integer(1)) > 0L)
 
-    # Node placement. CCD (gcol33/tulpa#59) integrates on a central composite
-    # design around the joint hyperparameter mode for d >= 3 transformable
-    # axes; it declines (-> tensor grid) for d <= 2, an active phi axis, an
+    # Node placement for the LATENT axes. CCD (gcol33/tulpa#59) integrates on a
+    # central composite design around the joint hyperparameter mode for d >= 3
+    # transformable latent axes; it declines (-> tensor grid) for d <= 2, an
     # unguessable axis (CAR_proper rho_car / non-BYM2 rho), or a degenerate
-    # outer mode-find / Hessian.
+    # outer mode-find / Hessian. An active phi axis no longer disables CCD
+    # (gcol33/tulpa#61): the CCD rides the latent axes and the phi tensor
+    # crosses on top, with the CCD design weights replicated across phi cells.
     dnode                 <- NULL
     tile_partition        <- NULL
     phi_grid_per_arm_list <- NULL
     integration_used      <- "grid"
     joint_grid            <- NULL
 
-    use_ccd <- identical(integration, "ccd") && d_axes >= 3L && !has_phi
+    use_ccd <- identical(integration, "ccd") && d_axes >= 3L
     if (use_ccd) {
         block_of_axis <- rep(seq_len(B), times = axis_counts)
         col_within    <- unlist(lapply(axis_counts, seq_len))
@@ -837,51 +841,58 @@
             block_grids[[b]][idx[[b]], , drop = FALSE]
         }))
         if (ncol(joint_grid) > 0L) colnames(joint_grid) <- axis_names
+    }
 
-        # phi_grid (per-arm dispersion overrides on the outer grid): each phi
-        # axis varies independently of the latent-block grid, so it forms a
-        # Cartesian product with the latent grid and multiplies n_cells. A phi
-        # axis tied to a latent-block axis is not expressible on this path; fold
-        # it into the relevant block's own axis grid instead.
-        if (has_phi) {
-            active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
-            phi_extra <- do.call(expand.grid,
-                                  c(active, list(KEEP.OUT.ATTRS = FALSE,
-                                                  stringsAsFactors = FALSE)))
-            joint_idx <- expand.grid(joint = seq_len(nrow(joint_grid)),
-                                       phi   = seq_len(nrow(phi_extra)),
-                                       KEEP.OUT.ATTRS = FALSE)
-            joint_grid <- cbind(joint_grid[joint_idx$joint, , drop = FALSE],
-                                  as.matrix(phi_extra[joint_idx$phi, , drop = FALSE]))
-            phi_cols <- paste0("phi_", names(active))
-            colnames(joint_grid) <- c(axis_names, phi_cols)
-            # phi columns don't belong to any latent block; the C++ entry
-            # consumes them via phi_grid_per_arm, not the block axes.
-            phi_grid_per_arm_list <- .joint_multi_phi_per_arm(joint_grid, arm_names)
-        }
+    # phi_grid (per-arm dispersion overrides on the outer grid): each phi axis
+    # varies independently of the latent-block grid, so it forms a Cartesian
+    # product with the latent grid -- the dense tensor or the CCD design alike
+    # (gcol33/tulpa#61). On the CCD path the per-node design weights `dnode`
+    # are replicated across the phi cells so each (latent node, phi cell) keeps
+    # the latent node's quadrature weight; phi rides as a uniform tensor axis,
+    # exactly as on the dense path. A phi axis tied to a latent-block axis is
+    # not expressible here; fold it into the relevant block's own axis grid.
+    if (has_phi) {
+        active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
+        phi_extra <- do.call(expand.grid,
+                              c(active, list(KEEP.OUT.ATTRS = FALSE,
+                                              stringsAsFactors = FALSE)))
+        joint_idx <- expand.grid(joint = seq_len(nrow(joint_grid)),
+                                   phi   = seq_len(nrow(phi_extra)),
+                                   KEEP.OUT.ATTRS = FALSE)
+        joint_grid <- cbind(joint_grid[joint_idx$joint, , drop = FALSE],
+                              as.matrix(phi_extra[joint_idx$phi, , drop = FALSE]))
+        phi_cols <- paste0("phi_", names(active))
+        colnames(joint_grid) <- c(axis_names, phi_cols)
+        # phi columns don't belong to any latent block; the C++ entry consumes
+        # them via phi_grid_per_arm, not the block axes.
+        phi_grid_per_arm_list <- .joint_multi_phi_per_arm(joint_grid, arm_names)
+        # Replicate the CCD design weights across the crossed phi cells (NULL on
+        # the dense path, where weights are the uniform-cell softmax).
+        if (!is.null(dnode)) dnode <- dnode[joint_idx$joint]
+    }
 
-        # Tile partition for the three-tier warm-start (Phase 2 of
-        # dev_notes/speedup.md). Tile axis = every joint_grid column EXCEPT the
-        # copy block's alpha column. Built from the *user-facing* (sigma,
-        # alpha) grid (before sigma_pos materialisation) so the partition
-        # reflects what is constant across alpha at fixed (sigma, rho, ...
-        # other-block axes).
-        if (isTRUE(tile_warm) && cp$has_copy &&
-            length(cp$copy_blocks_zero) == 1L &&
-            as.integer(n_threads_outer) > 1L) {
-            b_copy_R <- cp$copy_blocks_zero[[1L]] + 1L
-            cols_bc  <- (axis_offsets[b_copy_R] + 1L):axis_offsets[b_copy_R + 1L]
-            bare_bc  <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_bc])
-            i_alpha  <- match("alpha", bare_bc)
-            if (!is.na(i_alpha)) {
-                alpha_col_idx <- cols_bc[i_alpha]
-                non_alpha_idx <- setdiff(seq_len(ncol(joint_grid)), alpha_col_idx)
-                tile_partition <- .joint_compute_tile_partition(
-                    joint_grid[, non_alpha_idx, drop = FALSE],
-                    as.numeric(joint_grid[, alpha_col_idx]),
-                    nrow(joint_grid)
-                )
-            }
+    # Tile partition for the three-tier warm-start (Phase 2 of
+    # dev_notes/speedup.md). Tensor-grid-only: the scattered CCD design is not a
+    # per-axis lattice the alpha-tile reuse relies on. Tile axis = every
+    # joint_grid column EXCEPT the copy block's alpha column. Built from the
+    # *user-facing* (sigma, alpha) grid (before sigma_pos materialisation) so
+    # the partition reflects what is constant across alpha at fixed (sigma, rho,
+    # ... other-block axes).
+    if (!use_ccd && isTRUE(tile_warm) && cp$has_copy &&
+        length(cp$copy_blocks_zero) == 1L &&
+        as.integer(n_threads_outer) > 1L) {
+        b_copy_R <- cp$copy_blocks_zero[[1L]] + 1L
+        cols_bc  <- (axis_offsets[b_copy_R] + 1L):axis_offsets[b_copy_R + 1L]
+        bare_bc  <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_bc])
+        i_alpha  <- match("alpha", bare_bc)
+        if (!is.na(i_alpha)) {
+            alpha_col_idx <- cols_bc[i_alpha]
+            non_alpha_idx <- setdiff(seq_len(ncol(joint_grid)), alpha_col_idx)
+            tile_partition <- .joint_compute_tile_partition(
+                joint_grid[, non_alpha_idx, drop = FALSE],
+                as.numeric(joint_grid[, alpha_col_idx]),
+                nrow(joint_grid)
+            )
         }
     }
 

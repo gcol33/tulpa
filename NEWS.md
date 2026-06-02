@@ -6,9 +6,14 @@
   (gcol33/tulpa#59). `control$integration = "ccd"` (default for >= 3
   transformable axes) integrates the joint hyperparameter posterior on a central
   composite design around its mode -- far fewer inner solves than the k^d tensor
-  product. Auto-declines to the tensor grid for <= 2 axes, an active `phi_grid`,
-  an unguessable axis (CAR_proper `rho_car` / non-BYM2 `rho`), or a degenerate
-  mode-find.
+  product. Auto-declines to the tensor grid for <= 2 axes, an unguessable axis
+  (CAR_proper `rho_car` / non-BYM2 `rho`), or a degenerate mode-find.
+* feat(nested-laplace): CCD now rides an active `phi_grid` (gcol33/tulpa#61).
+  An active per-arm dispersion axis no longer disables CCD: the design is built
+  over the `>= 3` latent axes and the `phi` tensor is Cartesian-crossed on top,
+  with the CCD node weights replicated across the `phi` cells. A two-field beta
+  `occu_cover()` / `cover()` joint fit (4 latent axes + a `phi` grid) integrates
+  on `25 x phi` cells instead of the `81 x phi` dense tensor.
 * feat(samplers): generic R fitter for NUTS + log-posterior kernels; negbin
   spatial (areal ICAR) Gibbs.
 * refactor(spatial/joint/pg): share the ICAR prior (one structured quadratic +

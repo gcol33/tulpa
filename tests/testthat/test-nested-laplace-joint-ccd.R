@@ -150,6 +150,65 @@ test_that("CCD declines for <= 2 transformable axes (single ICAR copy)", {
     expect_equal(length(fit$log_marginal), 9L)
 })
 
+test_that("CCD rides the latent axes and crosses an active phi tensor (gcol33/tulpa#61)", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    phi_axis <- c(0.4, 0.6)
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
+        phi_grid = list(pos = phi_axis),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    # An active phi axis no longer disables CCD: 15 latent CCD nodes
+    # (1 + 2*3 + 2^3) crossed with the 2-point phi tensor = 30 cells.
+    expect_identical(fit$integration, "ccd")
+    expect_equal(length(fit$log_marginal), (1L + 2L * 3L + 2L^3L) * length(phi_axis))
+    expect_true("phi_pos" %in% names(fit$theta_mean))
+    expect_true(all(is.finite(fit$theta_mean)))
+    expect_true(abs(sum(fit$weights) - 1) < 1e-8)
+    # The integrated phi sits inside the supplied tensor support.
+    expect_gte(fit$theta_mean[["phi_pos"]], min(phi_axis))
+    expect_lte(fit$theta_mean[["phi_pos"]], max(phi_axis))
+})
+
+test_that("CCD x phi matches the tensor grid x phi in the tighter-posterior regime", {
+    skip_on_cran()
+    skip_if_fast()
+    sim <- .sim_joint_ccd(7L, N = 4000L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    phi_axis <- exp(seq(log(0.3), log(0.8), length.out = 4))
+
+    fit_ccd <- tulpa_nested_laplace_joint(
+        sim$responses,
+        list(.bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
+        phi_grid = list(pos = phi_axis),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit_ccd$integration, "ccd")
+
+    fine <- .bym2_copy_block(sim$adj,
+                             exp(seq(log(0.2), log(2.0), length.out = 7)),
+                             seq(0.05, 0.95, length.out = 7), sp)
+    fit_grid <- suppressWarnings(tulpa_nested_laplace_joint(
+        sim$responses, list(fine),
+        copy = list(arm = "pos", block = 1L,
+                    alpha_grid = seq(0.1, 2.0, length.out = 7)),
+        phi_grid = list(pos = phi_axis),
+        control = list(integration = "grid", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE)))
+    expect_identical(fit_grid$integration, "grid")
+
+    rel <- function(nm) abs(fit_ccd$theta_mean[[nm]] - fit_grid$theta_mean[[nm]]) /
+                        max(abs(fit_grid$theta_mean[[nm]]), 0.1)
+    expect_lt(rel("b1.sigma"), 0.15)
+    expect_lt(rel("b1.alpha"), 0.15)
+    expect_lt(rel("phi_pos"),  0.15)
+})
+
 test_that("integration = 'grid' forces the tensor product even for >= 3 axes", {
     skip_on_cran()
     sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
