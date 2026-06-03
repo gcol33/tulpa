@@ -210,7 +210,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tm$mark("grid")
 
   # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
-  res$weights <- .nl_normalise_weights(res$log_marginal)
+  res$weights <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
   res <- .nl_posterior_moments(res, type)
   if (isTRUE(keep_grid_hessians)) {
     res <- .nl_attach_grid_hessians(res, p_fixed)
@@ -673,20 +673,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   exp(seq(log(0.3), log(30), length.out = 9))
 }
 
-# Normalise log-marginals to integration weights summing to 1.
-# 1D regular grids: trapezoidal on the log-x axis (preserves shape).
-# 2D / irregular: just exp-and-normalise (good enough for moments).
-.nl_normalise_weights <- function(lm) {
-  m <- max(lm)
-  w <- exp(lm - m)
-  w / sum(w)
-}
-
-# Finite-guarded normalisation for outer hyperparameter grids that may return
-# non-finite log-marginals at extreme nodes (e.g. consumer-package N-mixture
-# spatial fitters). Drops non-finite nodes from the max-shift, zeroes their
-# weight, and returns all-NA (with a warning) when no node carries mass --
-# instead of NaN. `what` names the grid in the degenerate-case warning.
+# Normalise log-marginals to integration weights summing to 1. The single
+# weight normaliser for every outer hyperparameter grid: it drops non-finite
+# nodes (an inner Newton diverging in a grid corner returns +Inf / NaN) from
+# the max-shift, zeroes their weight, and renormalises over the finite cells;
+# all-NA (with a warning) when no node carries mass, never NaN. There is no
+# unguarded variant -- a single `max(lm)` over a grid with one +Inf / NaN cell
+# would collapse every weight to NaN and break the grid sampler. `what` names
+# the grid in the degenerate-case warning.
 .nl_normalise_weights_safe <- function(lm, what = "grids / data") {
   finite_lm <- lm[is.finite(lm)]
   if (length(finite_lm) == 0L) {
@@ -1341,7 +1335,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     out$log_marginal <- out$log_marginal + lp
   }
 
-  out$weights      <- .nl_normalise_weights(out$log_marginal)
+  out$weights      <- .nl_normalise_weights_safe(out$log_marginal, "multi-block outer grid")
   out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid)
   out$blocks       <- prepared
   out

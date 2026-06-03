@@ -339,7 +339,7 @@
 #'      not fall back. Cheap-pass log-marginals at every cell, a logical mask
 #'      of pruned cells, the pruned-cell count, and the threshold actually
 #'      applied. Pruned cells have `log_marginal = -Inf` so they get zero
-#'      weight under `.nl_normalise_weights`.
+#'      weight under `.nl_normalise_weights_safe`.
 #'   * `prune_fallback_triggered`, `prune_fallback_reason` — present only when
 #'      the safety gate fell back to the full grid. The returned fit is the
 #'      full-grid (unpruned) result; the reason string records which gate

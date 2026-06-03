@@ -340,8 +340,8 @@
     gap_collapse <- FALSE
     if (n_kept >= 1L && !is.null(res$prune_cheap_full_gap) &&
         is.finite(res$prune_cheap_full_gap)) {
-        w <- .nl_normalise_weights(lm)
-        ess <- if (sum(w^2) > 0) (sum(w)^2) / sum(w^2) else 1
+        w <- .nl_normalise_weights_safe(lm, "cheap-screen gate")
+        ess <- if (sum(w^2, na.rm = TRUE) > 0) (sum(w, na.rm = TRUE)^2) / sum(w^2, na.rm = TRUE) else 1
         lm_kept <- lm[kept]
         lm_spread <- if (n_kept > 1L) diff(range(lm_kept)) else 0
         gap_thresh <- max(gap_abs_floor, gap_frac * lm_spread)

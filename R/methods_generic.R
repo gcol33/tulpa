@@ -301,9 +301,15 @@ logLik.tulpa_fit <- function(object, ...) {
   } else if (!is.null(object$log_marginal)) {
     # A nested-Laplace fit stores one log-marginal per hyperparameter grid point;
     # the integrated log evidence is the log-sum-exp over the grid. A single-point
-    # (e.g. conditional Laplace) marginal passes through unchanged.
+    # (e.g. conditional Laplace) marginal passes through unchanged. Non-finite
+    # cells (an inner Newton diverging in a grid corner returns +Inf / NaN) are
+    # dropped from the log-sum-exp, matching the finite-guarded weight grid;
+    # an unguarded max() would otherwise collapse the evidence to NaN.
     lm <- object$log_marginal
-    if (length(lm) > 1L) {
+    lm <- lm[is.finite(lm)]
+    if (length(lm) == 0L) {
+      NA_real_
+    } else if (length(lm) > 1L) {
       mx <- max(lm)
       mx + log(sum(exp(lm - mx)))
     } else {

@@ -2,6 +2,17 @@
 
 ## 0.0.9 (development version)
 
+* fix(nested-laplace): retire the unguarded `.nl_normalise_weights` softmax
+  entirely -- every outer-grid weight normaliser now routes through the
+  finite-guarded `.nl_normalise_weights_safe` (gcol33/tulpa#65). The remaining
+  unguarded call sites (the single-block grid, the multi-block grid, the
+  adaptive-refinement reweight, and the cheap-screen ESS gate) could still
+  collapse `fit$weights` to all-NaN when one outer cell returned a non-finite
+  `log_marginal`, breaking `tulpa_posterior_draws()` / `predict()` / WAIC on the
+  finite, precision-carrying cells. `logLik()`'s grid log-sum-exp is guarded the
+  same way so a non-finite cell no longer poisons the integrated evidence (and
+  `AIC` / `compare_models` downstream). Behaviour is unchanged on all-finite grids.
+
 * fix(nested-laplace-joint): the single-block joint path normalises the outer-grid
   weights with the NaN-safe `.nl_normalise_weights_safe` (drop non-finite cells,
   renormalise) instead of the bare `max(lm)` softmax. A single non-finite

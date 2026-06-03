@@ -332,7 +332,7 @@ describing the refinement passes. NULL otherwise.
 not fall back. Cheap-pass log-marginals at every cell, a logical mask
 of pruned cells, the pruned-cell count, and the threshold actually
 applied. Pruned cells have \code{log_marginal = -Inf} so they get zero
-weight under \code{.nl_normalise_weights}.
+weight under \code{.nl_normalise_weights_safe}.
 \item \code{prune_fallback_triggered}, \code{prune_fallback_reason} — present only when
 the safety gate fell back to the full grid. The returned fit is the
 full-grid (unpruned) result; the reason string records which gate

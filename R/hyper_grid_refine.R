@@ -436,7 +436,7 @@
     # with the current grid rows.
     iter_weights <- weights
     if (is.null(iter_weights) || length(iter_weights) != length(log_marginal)) {
-      iter_weights <- .nl_normalise_weights(log_marginal)
+      iter_weights <- .nl_normalise_weights_safe(log_marginal, "refinement grid")
     }
     overall_mode_idx <- which.max(log_marginal)
     axis_vals <- as.numeric(theta_grid[, axis])
