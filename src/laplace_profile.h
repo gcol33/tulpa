@@ -1,7 +1,13 @@
 // laplace_profile.h
-// Lightweight thread-local phase accumulator for the sparse Laplace path.
-// Always-on but zero-overhead when not reset (the timer scopes always add
-// to the same buffer; reading is what makes the data meaningful).
+// Lightweight phase accumulator for the sparse Laplace path. The accumulator
+// is process-global and mutex-guarded so the per-cell solves the parallel
+// outer grid runs on its worker threads all add into the same buffer; a
+// thread-local buffer would leave cpp_profile_read() (called on the R main
+// thread) seeing only the cells that happened to run on that thread.
+//
+// The phase timers fire at per-iteration granularity (one add() per scatter /
+// factorize / line-search scope, never per observation), so the lock taken
+// after each measurement adds no measurable overhead.
 //
 // Usage from R:
 //   cpp_profile_reset()
@@ -20,6 +26,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <mutex>
 
 namespace tulpa {
 
@@ -55,12 +62,14 @@ struct PhaseAccumulator {
     }
 };
 
-// Per-thread accumulator. Outer-grid parallelism (when added) would
-// accumulate per-thread separately; the R-side reader currently only
-// inspects the calling thread, which is fine for the single-thread
-// profile sweeps Stage 2 needs.
+// Process-global accumulator shared across the outer-grid worker threads, and
+// the mutex that guards every add / reset / read of it.
+inline std::mutex& phase_mutex() {
+    static std::mutex m;
+    return m;
+}
 inline PhaseAccumulator& global_phase_accumulator() {
-    static thread_local PhaseAccumulator acc;
+    static PhaseAccumulator acc;
     return acc;
 }
 
@@ -74,6 +83,7 @@ struct PhaseTimer {
         double us = static_cast<double>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count()
         ) * 1e-3;
+        std::lock_guard<std::mutex> guard(phase_mutex());
         global_phase_accumulator().add(idx, us);
     }
 };

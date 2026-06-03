@@ -25,11 +25,13 @@ static_assert(
 
 // [[Rcpp::export]]
 void cpp_profile_reset() {
+    std::lock_guard<std::mutex> guard(tulpa::phase_mutex());
     tulpa::global_phase_accumulator().reset();
 }
 
 // [[Rcpp::export]]
 Rcpp::List cpp_profile_read() {
+    std::lock_guard<std::mutex> guard(tulpa::phase_mutex());
     const auto& acc = tulpa::global_phase_accumulator();
     Rcpp::NumericVector us(tulpa::PHASE_COUNT);
     Rcpp::IntegerVector ns(tulpa::PHASE_COUNT);
