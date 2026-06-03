@@ -1,6 +1,6 @@
 # tulpa NEWS
 
-## 0.0.9 (development version)
+## 0.0.9 (2026-06-03)
 
 * perf(nested-laplace-joint): budget the replicated per-outer-thread state
   (the sparse-Hessian builders + numeric factor) against detected physical RAM
