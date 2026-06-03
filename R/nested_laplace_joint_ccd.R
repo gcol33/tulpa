@@ -373,9 +373,13 @@
 
 # Integration weights for an outer grid carrying CCD design weights `dnode`:
 # w_k proportional to dnode_k * exp(log_marginal_k). With dnode == NULL this is
-# the plain softmax (uniform tensor-cell weight) of `.nl_normalise_weights`.
+# the plain softmax (uniform tensor-cell weight). Both branches drop non-finite
+# log-marginal nodes from the max-shift and zero their weight: a non-converged
+# inner Newton returns NaN log_marginal, and an unguarded max() would propagate
+# that NaN to every weight, poisoning the whole vector (the dense tensor path is
+# the one tulpa_posterior_draws / theta_mean read directly).
 .joint_integration_weights <- function(log_marginal, dnode = NULL) {
-    if (is.null(dnode)) return(.nl_normalise_weights(log_marginal))
+    if (is.null(dnode)) return(.nl_normalise_weights_safe(log_marginal, "outer grid"))
     fin <- is.finite(log_marginal)
     if (!any(fin)) return(rep(NA_real_, length(log_marginal)))
     w <- dnode * exp(log_marginal - max(log_marginal[fin]))

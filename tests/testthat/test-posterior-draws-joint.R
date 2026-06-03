@@ -254,3 +254,41 @@ test_that("multi-block joint fit samples through inherited dispatch", {
     expect_lt(max(abs(stats::cov(draws) - target$Sigma) / sc), 0.08)
     expect_equal(unname(colMeans(draws)), unname(target$mean), tolerance = 0.05)
 })
+
+test_that("a non-converged (NaN log_marginal) cell does not poison the weights", {
+    # A non-converged inner Newton returns NaN log_marginal. The dense-tensor
+    # integration weights are read directly by tulpa_posterior_draws() and
+    # theta_mean; an unguarded max(log_marginal) would propagate the NaN to
+    # every weight, leaving the whole outer grid unsamplable. The finite-guarded
+    # normaliser must drop the NaN cell and renormalise over the rest.
+    lm <- c(-2.0, -1.0, NaN, -3.0, NA_real_, -0.5)
+    w  <- tulpa:::.joint_integration_weights(lm, dnode = NULL)
+    expect_length(w, length(lm))
+    expect_true(all(is.finite(w)))
+    expect_equal(sum(w), 1, tolerance = 1e-12)
+    expect_identical(w[c(3L, 5L)], c(0, 0))      # non-finite cells carry no mass
+    expect_gt(w[6L], w[1L])                       # ordering by log_marginal kept
+
+    # All-non-finite -> all-NA (degenerate), not NaN, with a warning.
+    expect_warning(w0 <- tulpa:::.joint_integration_weights(c(NaN, NA_real_)),
+                   "non-finite")
+    expect_true(all(is.na(w0)))
+})
+
+test_that("posterior draws survive a grid with a non-converged cell", {
+    skip_on_cran()
+    skip_if_fast()
+    fit <- build_icar_joint_fit()
+    # Inject a NaN log_marginal cell (a non-converged inner Newton) and recompute
+    # the integration weights the way the fitter does: the sampler must still
+    # find valid mass instead of erroring on an all-NaN weight vector.
+    fit$log_marginal[1L] <- NaN
+    fit$weights <- tulpa:::.joint_integration_weights(fit$log_marginal, dnode = NULL)
+    expect_true(any(is.finite(fit$weights) & fit$weights > 0))
+    set.seed(3)
+    draws <- tulpa_posterior_draws(fit, n = 200L)
+    expect_equal(nrow(draws), 200L)
+    expect_true(all(is.finite(draws)))
+    # the poisoned cell must never be sampled from
+    expect_false(any(attr(draws, "cells") == 1L))
+})
