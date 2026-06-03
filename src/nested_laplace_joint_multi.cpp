@@ -65,6 +65,7 @@
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
 #include "hmc_car_proper.h"
+#include "sysmem.h"
 #include <Rcpp.h>
 #include <cmath>
 #include <functional>
@@ -1554,6 +1555,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // lives inside run_nested_laplace_grid (one per outer thread); scratch
     // pool lives here because it's joint-shaped (per-arm etas).
     int n_outer = std::max(1, n_threads_outer);
+    if (progress) progress->set_width(n_outer);
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
     for (auto& s : scratch_pool) s.allocate(n_x, arms);
 
@@ -1844,13 +1846,33 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
       build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builders[0], coupled_arms); }
     {
         const size_t nnz = H_builders[0].values.size();
+        // Per-thread working set, dominated by the replicated builder: its
         // row_idx(int) + values(double) + a std::map node (~48 B) per nonzero.
-        const size_t per_builder = nnz * (sizeof(int) + sizeof(double) + 48) + 1;
-        const size_t budget = static_cast<size_t>(2) * 1024 * 1024 * 1024; // 2 GB
+        // Add a numeric-factor allowance (~16 B per nonzero, doubled for typical
+        // sparse fill-in) for the CHOLMOD factor each concurrent solve carries;
+        // the Newton scratch / arm specs are O(n_x) and negligible beside nnz.
+        const size_t per_builder = nnz * (sizeof(int) + sizeof(double) + 48);
+        const size_t per_factor  = nnz * 2 * sizeof(double);
+        const size_t per_thread  = per_builder + per_factor + 1;
+        // Budget the per-thread working set against detected physical RAM so a
+        // wide field still uses every requested outer thread on a machine with
+        // the memory for it, replacing the fixed 2 GB cap (tulpa#64). Half of
+        // RAM goes to the replicated per-thread state; the other half is left
+        // for the shared problem data, the grid results, and the OS. Fall back
+        // to the 2 GB cap only when the RAM query is unavailable.
+        const size_t ram = tulpa::total_ram_bytes();
+        const size_t budget = (ram > 0)
+            ? (ram / 2)                                     // 50% of total RAM
+            : static_cast<size_t>(2) * 1024 * 1024 * 1024;  // fallback: 2 GB
         int max_builders =
-            static_cast<int>(std::max<size_t>(1, budget / per_builder));
+            static_cast<int>(std::max<size_t>(1, budget / per_thread));
         if (n_outer > max_builders) n_outer = max_builders;
     }
+
+    // The progress ETA needs the realised outer width (after the memory clamp)
+    // so it projects the remaining cells over the parallel grid, not the serial
+    // pilot rate (tulpa#64).
+    if (progress) progress->set_width(n_outer);
     H_builders.resize(n_outer);
     for (int t = 1; t < n_outer; t++) {
         TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);

@@ -2,6 +2,22 @@
 
 ## 0.0.9 (development version)
 
+* perf(nested-laplace-joint): budget the replicated per-outer-thread state
+  (the sparse-Hessian builders + numeric factor) against detected physical RAM
+  instead of a fixed 2 GB cap (gcol33/tulpa#64). The old cap clamped the outer
+  grid to ~15 threads at EVA scale on a 64 GB box even when 28 were requested;
+  a new standalone `sysmem` translation unit (`total_ram_bytes()`, Windows /
+  macOS / POSIX) lets a wide field use every requested outer thread when the
+  memory is there, falling back to the 2 GB cap only when the RAM query fails.
+
+* fix(nested-laplace-joint): the outer-grid progress ETA is now computed from
+  the realised parallel width, not a serial extrapolation of the pilot rate
+  (gcol33/tulpa#64). A ~21 min serial pilot on a 48-cell grid previously
+  projected `ETA ~16 h`; the ETA now estimates per-cell wall time from completed
+  *waves* (one serial pilot wave + `(done-1)/width` parallel waves) and projects
+  the remaining cells over `ceil(remaining/width)` waves. At outer width 1 this
+  is exactly the previous serial formula.
+
 * fix(nested-laplace): retire the unguarded `.nl_normalise_weights` softmax
   entirely -- every outer-grid weight normaliser now routes through the
   finite-guarded `.nl_normalise_weights_safe` (gcol33/tulpa#65). The remaining

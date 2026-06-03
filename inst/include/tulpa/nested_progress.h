@@ -67,12 +67,21 @@ public:
           file_(heartbeat_file),
           done_(0),
           last_emit_done_(0),
+          width_(1),
           start_(std::chrono::steady_clock::now()),
           last_(start_) {}
 
     // Revise the denominator (e.g. after cheap-pass pruning drops cells from
     // the full-solve set). done_ is left untouched.
     void set_total(int total) { if (total > 0) total_ = total; }
+
+    // Outer-grid concurrency: how many cells run at once in the parallel
+    // region. The ETA needs it because the pilot cell runs serially and the
+    // remaining cells run `width` at a time; extrapolating the serial pilot
+    // rate across every remaining cell over-states the wall-clock by ~`width`x
+    // (a 21-min pilot on a 48-cell grid projects to ~16 h instead of the real
+    // ~1.5 h). Defaults to 1 (the serial path, unchanged).
+    void set_width(int width) { width_ = (width > 0) ? width : 1; }
 
     // One completed outer cell. Under OpenMP, call from a critical section.
     void tick() {
@@ -94,9 +103,20 @@ private:
 
         double elapsed = std::chrono::duration<double>(now - start_).count();
         double frac = (total_ > 0) ? static_cast<double>(done_) / total_ : 0.0;
-        double eta  = (frac > 1e-6 && frac < 1.0)
-                          ? elapsed * (1.0 - frac) / frac : 0.0;
-        double per  = (done_ > 0) ? elapsed / done_ : 0.0;
+        // ETA from the per-cell *wall* time, estimated from completed waves
+        // rather than completed cells: one serial pilot wave plus (done-1)/width
+        // parallel waves. Remaining cells finish ceil((total-done)/width) waves
+        // ahead. At width == 1 this is exactly the old serial extrapolation
+        // (waves == done, eta == elapsed*(1-frac)/frac); at width > 1 it stops
+        // the serial pilot rate from inflating the projection across the
+        // parallel grid, and it stays correct once parallel throughput is
+        // reached (`per` below is the serial-equivalent per-cell wall time).
+        double w = static_cast<double>(width_ > 0 ? width_ : 1);
+        double waves_done = 1.0 + (done_ - 1.0) / w;            // >= 1 for done >= 1
+        double per = (waves_done > 0.0) ? elapsed / waves_done : 0.0;
+        double remaining_waves =
+            (total_ > done_) ? std::ceil((total_ - done_) / w) : 0.0;
+        double eta = (frac < 1.0) ? remaining_waves * per : 0.0;
 
         // Heartbeat file: reliable across stdout redirection. Overwrite +
         // fflush + fclose each tick so a detached reader always sees the
@@ -144,6 +164,7 @@ private:
     std::string file_;
     int    done_;
     int    last_emit_done_;
+    int    width_;
     std::chrono::steady_clock::time_point start_;
     std::chrono::steady_clock::time_point last_;
 };
