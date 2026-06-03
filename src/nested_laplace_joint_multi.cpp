@@ -2027,7 +2027,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                     blocks, k_grid, grad, H,
                     active_scratch, basis_scratch, multi_scratch,
                     active_db_scratch, db_buffers,
-                    idx_cache_use
+                    idx_cache_use, n_threads_inner_eff
                 );
             }
             if (any_coupling) {

@@ -824,7 +824,8 @@ inline void scatter_arm_obs_joint_multi_sparse(
     std::vector<std::pair<int,double>>& multi_scratch,
     std::vector<DenseBasisActive>&    active_db_scratch,
     std::vector<DenseBasisScratch>&   db_buffers,
-    const ScatterIndexCache*          idx_cache = nullptr
+    const ScatterIndexCache*          idx_cache = nullptr,
+    int                               n_threads = 1
 ) {
     const int p_k      = pa.p;
     const int n_re_k   = pa.n_re_groups;
@@ -888,7 +889,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
     if (use_indexed_cache) {
         scatter_arm_obs_indexed_cached(
             x, eta, pa, arm, view, d_eff_cache, idx_cache->arm[k_arm],
-            grad, H
+            grad, H, n_threads
         );
         return;
     }

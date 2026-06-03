@@ -94,3 +94,46 @@ test_that("sparse parallel path matches serial (phi_grid axis)", {
                            .spar_fit(sim, n_outer, phi_grid))
     }
 })
+
+# Inner-scatter parallelism: a single outer cell forces n_outer == 1, so the
+# inner Newton solve receives every thread and the per-obs scatter runs its
+# parallel buffer-reduce path (N >= 1000 trips the fill-vs-reduction guard).
+# This is orthogonal to the outer-grid parallelism above, which pins the
+# inner solve to one thread.
+test_that("inner parallel scatter matches serial on a single outer cell", {
+    skip_if_not(parallel::detectCores() >= 2L, "needs multi-core")
+    set.seed(515)
+    N <- 4000L; n_s <- 60L
+    spatial_idx <- sample.int(n_s, N, replace = TRUE)
+    w_s <- 0.6 * rnorm(n_s)
+    x <- rnorm(N); Xocc <- cbind(1, x)
+    eta_occ <- as.numeric(Xocc %*% c(-0.3, 0.5)) + w_s[spatial_idx]
+    occur <- rbinom(N, 1, plogis(eta_occ))
+    is_pos <- occur == 1L
+    Xpos <- Xocc[is_pos, , drop = FALSE]; spi_pos <- spatial_idx[is_pos]
+    eta_pos <- as.numeric(Xpos %*% c(0.2, -0.4)) + w_s[spi_pos]
+    y_pos <- rnorm(sum(is_pos), eta_pos, 0.5)
+    adj <- .spar_chain_adj(n_s)
+
+    arm_occ <- list(y = as.numeric(occur), n_trials = rep(1L, N), X = Xocc,
+                    spatial_idx = spatial_idx, re_idx = rep(0, N),
+                    n_re_groups = 0L, sigma_re = 1.0, family = "binomial",
+                    phi = 1.0)
+    arm_pos <- list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
+                    spatial_idx = spi_pos, re_idx = rep(0, length(y_pos)),
+                    n_re_groups = 0L, sigma_re = 1.0, family = "gaussian",
+                    phi = 0.5)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = 1.0)  # 1 cell
+    copy <- list(arm = "pos", alpha_grid = 1.0)
+
+    fit_inner <- function(nt) {
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm_occ, pos = arm_pos),
+            prior = prior, copy = copy,
+            control = list(n_threads = nt, force_sparse = TRUE,
+                           adaptive_grid = FALSE))
+    }
+    .spar_expect_equiv(fit_inner(1L), fit_inner(8L))
+})

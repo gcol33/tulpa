@@ -55,6 +55,10 @@
 #include <cstddef>
 #include <vector>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace tulpa {
 
 struct PerObsScatterPlan {
@@ -405,6 +409,117 @@ inline bool scatter_index_cache_valid(
 //   - arm_cache: precomputed cache for this k_arm.
 //   - view: resolved spec view; the per-obs score + Fisher curvature come
 //     from view.spec (built-in family or model-supplied likelihood).
+// Scatter one observation's gradient and Hessian contributions into the
+// supplied `grad_out` / `Hv_out` arrays, using `w_buf` (size >= max A_idx)
+// as the per-obs active-weight scratch. Pulled out of the obs loop so the
+// serial and parallel drivers share one body (no duplicated scatter logic).
+inline void scatter_one_obs_indexed(
+    int i,
+    const Rcpp::NumericVector&  eta,
+    const ParsedArm&            pa,
+    const ArmSpecView&          view,
+    const std::vector<double>&  d_eff_cache,
+    const ArmIndexedCache&      ac,
+    int p_k, int bstart, int rstart,
+    const int* __restrict__ bb,  const int* __restrict__ bre,
+    const int* __restrict__ red, const int* __restrict__ bxa,
+    const int* __restrict__ rxa, const int* __restrict__ axa,
+    const int* __restrict__ adg, const int* __restrict__ abi,
+    const double* __restrict__ alw, const int* __restrict__ aps,
+    const double* __restrict__ xv,
+    double* __restrict__ w_buf,
+    double* __restrict__ grad_out,
+    double* __restrict__ Hv_out
+) {
+    auto gh = arm_grad_hess(view, i, eta[i]);
+
+    const PerObsScatterPlan& plan = ac.plans[i];
+    const int A_i      = plan.A_idx;
+    const int g_re_glb = plan.g_re_global;
+
+    // Compose per-obs active weights:
+    //   bilinear (paired_slot >= 0): d_eff_cache[block] * x[paired_slot]
+    //   else                       : d_eff_cache[block] * local_w
+    if (aps) {
+        for (int a = 0; a < A_i; a++) {
+            const int  base   = plan.act_start + a;
+            const int  paired = aps[base];
+            const double d_eff = d_eff_cache[abi[base]];
+            w_buf[a] = (paired >= 0)
+                       ? d_eff * xv[paired]
+                       : d_eff * alw[base];
+        }
+    } else {
+        for (int a = 0; a < A_i; a++) {
+            w_buf[a] = d_eff_cache[abi[plan.act_start + a]]
+                       * alw[plan.act_start + a];
+        }
+    }
+
+    // β block: gradient + β/β diagonal + β × RE + β × active.
+    for (int j = 0; j < p_k; j++) {
+        const double Xij = pa.X(i, j);
+        grad_out[bstart + j] += gh.grad * Xij;
+    }
+    // β/β lower triangle column-major: idx_bb layout matches.
+    {
+        int t = 0;
+        for (int l = 0; l < p_k; l++) {
+            const double Xil = pa.X(i, l);
+            for (int j = l; j < p_k; j++) {
+                const int k = bb[t++];
+                if (k >= 0) Hv_out[k] += gh.neg_hess * pa.X(i, j) * Xil;
+            }
+        }
+    }
+    // β × RE diagonal: indexed by the obs's g_re_global.
+    if (g_re_glb >= 0) {
+        const int g_local = g_re_glb - rstart;
+        const int row_off = g_local * p_k;
+        for (int j = 0; j < p_k; j++) {
+            const int k = bre[row_off + j];
+            if (k >= 0) Hv_out[k] += gh.neg_hess * pa.X(i, j);
+        }
+    }
+    // β × active: idx_beta_active[bxa_start + j*A_i + a].
+    if (A_i > 0) {
+        for (int j = 0; j < p_k; j++) {
+            const double Xij = pa.X(i, j);
+            const int row_off = plan.bxa_start + j * A_i;
+            for (int a = 0; a < A_i; a++) {
+                const int k = bxa[row_off + a];
+                if (k >= 0) Hv_out[k] += gh.neg_hess * Xij * w_buf[a];
+            }
+        }
+    }
+
+    // RE block: gradient + RE/RE diagonal + RE × active.
+    if (g_re_glb >= 0) {
+        grad_out[g_re_glb] += gh.grad;
+        const int g_local = g_re_glb - rstart;
+        const int k_re = red[g_local];
+        if (k_re >= 0) Hv_out[k_re] += gh.neg_hess;
+        for (int a = 0; a < A_i; a++) {
+            const int k = rxa[plan.rxa_start + a];
+            if (k >= 0) Hv_out[k] += gh.neg_hess * w_buf[a];
+        }
+    }
+
+    // active × active lower triangle column-major + gradient.
+    if (A_i > 0) {
+        int t = 0;
+        for (int a2 = 0; a2 < A_i; a2++) {
+            const double w_a2 = w_buf[a2];
+            // active gradient (one entry per active dof).
+            grad_out[adg[plan.act_start + a2]] += gh.grad * w_a2;
+            for (int a1 = a2; a1 < A_i; a1++) {
+                const int k = axa[plan.axa_start + t++];
+                if (k >= 0) Hv_out[k] += gh.neg_hess * w_buf[a1] * w_a2;
+            }
+        }
+    }
+}
+
 inline void scatter_arm_obs_indexed_cached(
     const Rcpp::NumericVector&  x,
     const Rcpp::NumericVector&  eta,
@@ -414,14 +529,13 @@ inline void scatter_arm_obs_indexed_cached(
     const std::vector<double>&  d_eff_cache,
     const ArmIndexedCache&      ac,
     DenseVec&                   grad,
-    SparseHessianBuilder&       H
+    SparseHessianBuilder&       H,
+    int                         n_threads = 1
 ) {
     const int p_k    = pa.p;
-    const int n_re_k = pa.n_re_groups;
     const int bstart = pa.beta_start;
     const int rstart = pa.re_start;
 
-    double* __restrict__       Hv  = H.values.data();
     const int* __restrict__    bb  = ac.idx_bb.data();
     const int* __restrict__    bre = ac.idx_beta_re.data();
     const int* __restrict__    red = ac.idx_re_diag.data();
@@ -436,99 +550,81 @@ inline void scatter_arm_obs_indexed_cached(
                                      : ac.active_paired_slot.data();
     const double* __restrict__ xv  = REAL(x);
 
-    // Per-obs active weight buffer; reused across i. Sized to max A_idx.
+    // Per-obs active weight buffer sized to max A_idx.
     int max_A = 0;
     for (const auto& p : ac.plans) if (p.A_idx > max_A) max_A = p.A_idx;
-    std::vector<double> w_active(max_A, 0.0);
+    const int w_sz = (max_A > 0) ? max_A : 1;
 
-    for (int i = 0; i < arm.N; i++) {
-        auto gh = arm_grad_hess(view, i, eta[i]);
+    const std::size_t nnz   = H.values.size();
+    const std::size_t n_x   = grad.size();
+    double* __restrict__ Hv = H.values.data();
 
-        const PerObsScatterPlan& plan = ac.plans[i];
-        const int A_i      = plan.A_idx;
-        const int g_re_glb = plan.g_re_global;
+#ifdef _OPENMP
+    // Parallelize across observations only when the fill work plausibly
+    // exceeds the per-thread buffer + reduction overhead (T * (nnz + n_x)).
+    // Below that the serial path is faster -- the reduction would dominate.
+    // fill_ops is a lower bound: it omits the per-obs arm_grad_hess cost
+    // (digamma/trigamma on a beta arm), which only makes parallel more
+    // favorable, so the guard stays conservative.
+    const std::size_t total_A   = ac.active_dof_global.size();
+    const std::size_t bb_per    = static_cast<std::size_t>(p_k) * (p_k + 1) / 2;
+    const std::size_t fill_ops  =
+        static_cast<std::size_t>(arm.N) * bb_per
+        + static_cast<std::size_t>(p_k) * total_A
+        + ac.idx_act_act.size();
+    const std::size_t reduce_ops =
+        static_cast<std::size_t>(n_threads) * (nnz + n_x);
+    const bool go_parallel =
+        n_threads > 1 && arm.N >= 1000 && fill_ops > 2 * reduce_ops;
 
-        // Compose per-obs active weights:
-        //   bilinear (paired_slot >= 0): d_eff_cache[block] * x[paired_slot]
-        //   else                       : d_eff_cache[block] * local_w
-        if (aps) {
-            for (int a = 0; a < A_i; a++) {
-                const int  base   = plan.act_start + a;
-                const int  paired = aps[base];
-                const double d_eff = d_eff_cache[abi[base]];
-                w_active[a] = (paired >= 0)
-                              ? d_eff * xv[paired]
-                              : d_eff * alw[base];
-            }
-        } else {
-            for (int a = 0; a < A_i; a++) {
-                w_active[a] = d_eff_cache[abi[plan.act_start + a]]
-                              * alw[plan.act_start + a];
-            }
-        }
-
-        // β block: gradient + β/β diagonal + β × RE + β × active.
-        for (int j = 0; j < p_k; j++) {
-            const double Xij = pa.X(i, j);
-            grad[bstart + j] += gh.grad * Xij;
-        }
-        // β/β lower triangle column-major: idx_bb layout matches.
+    if (go_parallel) {
+        const int T = n_threads;
+        std::vector<std::vector<double>> Hbuf(T), gbuf(T);
+        #pragma omp parallel num_threads(T)
         {
-            int t = 0;
-            for (int l = 0; l < p_k; l++) {
-                const double Xil = pa.X(i, l);
-                for (int j = l; j < p_k; j++) {
-                    const int k = bb[t++];
-                    if (k >= 0) Hv[k] += gh.neg_hess * pa.X(i, j) * Xil;
-                }
-            }
-        }
-        // β × RE diagonal: indexed by the obs's g_re_global.
-        if (g_re_glb >= 0) {
-            const int g_local = g_re_glb - rstart;
-            const int row_off = g_local * p_k;
-            for (int j = 0; j < p_k; j++) {
-                const int k = bre[row_off + j];
-                if (k >= 0) Hv[k] += gh.neg_hess * pa.X(i, j);
-            }
-        }
-        // β × active: idx_beta_active[bxa_start + j*A_i + a].
-        if (A_i > 0) {
-            for (int j = 0; j < p_k; j++) {
-                const double Xij = pa.X(i, j);
-                const int row_off = plan.bxa_start + j * A_i;
-                for (int a = 0; a < A_i; a++) {
-                    const int k = bxa[row_off + a];
-                    if (k >= 0) Hv[k] += gh.neg_hess * Xij * w_active[a];
-                }
-            }
-        }
+            const int t = omp_get_thread_num();
+            std::vector<double>& Hl = Hbuf[t];
+            std::vector<double>& gl = gbuf[t];
+            Hl.assign(nnz, 0.0);
+            gl.assign(n_x, 0.0);
+            std::vector<double> w_buf(w_sz, 0.0);
 
-        // RE block: gradient + RE/RE diagonal + RE × active.
-        if (g_re_glb >= 0) {
-            grad[g_re_glb] += gh.grad;
-            const int g_local = g_re_glb - rstart;
-            const int k_re = red[g_local];
-            if (k_re >= 0) Hv[k_re] += gh.neg_hess;
-            for (int a = 0; a < A_i; a++) {
-                const int k = rxa[plan.rxa_start + a];
-                if (k >= 0) Hv[k] += gh.neg_hess * w_active[a];
+            #pragma omp for schedule(static)
+            for (int i = 0; i < arm.N; i++) {
+                scatter_one_obs_indexed(
+                    i, eta, pa, view, d_eff_cache, ac, p_k, bstart, rstart,
+                    bb, bre, red, bxa, rxa, axa, adg, abi, alw, aps, xv,
+                    w_buf.data(), gl.data(), Hl.data());
             }
-        }
 
-        // active × active lower triangle column-major + gradient.
-        if (A_i > 0) {
-            int t = 0;
-            for (int a2 = 0; a2 < A_i; a2++) {
-                const double w_a2 = w_active[a2];
-                // active gradient (one entry per active dof).
-                grad[adg[plan.act_start + a2]] += gh.grad * w_a2;
-                for (int a1 = a2; a1 < A_i; a1++) {
-                    const int k = axa[plan.axa_start + t++];
-                    if (k >= 0) Hv[k] += gh.neg_hess * w_active[a1] * w_a2;
-                }
+            // Reduce thread-private buffers into the shared targets. Each
+            // thread owns a disjoint slice of the index space, so no critical
+            // section is needed.
+            #pragma omp for schedule(static)
+            for (long k = 0; k < static_cast<long>(nnz); k++) {
+                double s = 0.0;
+                for (int tt = 0; tt < T; tt++) s += Hbuf[tt][k];
+                Hv[k] += s;
+            }
+            #pragma omp for schedule(static)
+            for (long j = 0; j < static_cast<long>(n_x); j++) {
+                double s = 0.0;
+                for (int tt = 0; tt < T; tt++) s += gbuf[tt][j];
+                grad[j] += s;
             }
         }
+        return;
+    }
+#else
+    (void) n_threads; (void) n_x; (void) nnz;
+#endif
+
+    std::vector<double> w_buf(w_sz, 0.0);
+    for (int i = 0; i < arm.N; i++) {
+        scatter_one_obs_indexed(
+            i, eta, pa, view, d_eff_cache, ac, p_k, bstart, rstart,
+            bb, bre, red, bxa, rxa, axa, adg, abi, alw, aps, xv,
+            w_buf.data(), grad.data(), Hv);
     }
 }
 
