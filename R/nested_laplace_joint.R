@@ -648,7 +648,7 @@ tulpa_nested_laplace_joint <- function(responses,
 
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
-    res$weights     <- .nl_normalise_weights(res$log_marginal)
+    res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
     res             <- .nl_posterior_moments(res, paste0("joint_", type))
     res             <- .joint_recalibrate_axis_moments(res)
     # Replace per-axis var-of-means SDs with Laplace-at-mode SDs where the
@@ -687,7 +687,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                               extras_list, refining_axis)
             res$theta_grid  <- theta_grid_M
             res$theta_names <- colnames(res$theta_grid)
-            res$weights     <- .nl_normalise_weights(res$log_marginal)
+            res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
             res             <- .nl_posterior_moments(res, paste0("joint_", type))
             res             <- .joint_recalibrate_axis_moments(res)
             res             <- .nl_refit_axis_sd_laplace(res)

@@ -18,7 +18,7 @@
 
 #include "tulpa/aghq_oracle.h"
 #include "aghq_re_mode.h"
-#include "gauss_hermite.h"
+#include "tulpa/gauss_hermite.h"
 #include "re_cov_chol.h"
 #include <RcppEigen.h>
 #include <vector>

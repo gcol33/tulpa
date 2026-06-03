@@ -2,7 +2,9 @@
 // Probabilist's Gauss-Hermite quadrature via Golub-Welsch. C++ port of
 // gauss_hermite_prob() in R/agq.R: nodes z_k and weights w_k (sum w_k = 1) such
 // that sum_k w_k f(z_k) approximates E_{Z~N(0,1)}[f(Z)]. Self-contained so the
-// AGHQ engine carries no R round-trip in the inner loop.
+// AGHQ engine carries no R round-trip in the inner loop. Exported under
+// inst/include/tulpa/ so consumer packages (LinkingTo: tulpa) reuse the one
+// implementation instead of re-deriving the nodes.
 
 #ifndef TULPA_GAUSS_HERMITE_H
 #define TULPA_GAUSS_HERMITE_H

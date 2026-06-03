@@ -2,6 +2,20 @@
 
 ## 0.0.9 (development version)
 
+* fix(nested-laplace-joint): the single-block joint path normalises the outer-grid
+  weights with the NaN-safe `.nl_normalise_weights_safe` (drop non-finite cells,
+  renormalise) instead of the bare `max(lm)` softmax. A single non-finite
+  `log_marginal` (an inner solve that diverges at an extreme hyperparameter cell)
+  previously poisoned the whole `weights` vector to NaN, so `theta_*` summaries
+  had to work around it and `tulpa_posterior_draws()` failed with "no outer-grid
+  cell has positive weight". Degenerate cells now get zero weight and the
+  remaining cells carry the mass, matching the multi-block path and the
+  hyper-grid path. Behaviour is unchanged on all-finite grids.
+
+* feat(gauss-hermite): export `gauss_hermite.h` (probabilist Golub-Welsch nodes)
+  under `inst/include/tulpa/` so `LinkingTo` consumer packages reuse the engine's
+  one implementation instead of re-deriving the quadrature.
+
 * feat(nested-laplace): the multi-block joint path announces the engaged outer
   integrator under `control$verbose = TRUE`, in one line at selection time
   before the inner solves (gcol33/tulpa#63): e.g. `outer integration: CCD
