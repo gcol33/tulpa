@@ -58,6 +58,7 @@
 #include "nested_laplace_checkpoint.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
+#include "nested_laplace_joint_batch.h"   // gcol33/tulpa#66 fused batched scatter (WIP)
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
 #include "hsgp_mo_block_factory.h"
@@ -1187,6 +1188,104 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
     return out;
+}
+
+// ==========================================================================
+// Batched multi-response entry (gcol33/tulpa#66). Mirrors the setup above
+// (reusing parse_joint_arms + build_joint_blocks_from_spec, both in this TU)
+// then routes to the fused batched driver. y_batch[[k]] is a [N_k x B] matrix
+// (species columns) for data arms, R_NilValue for no-data arms (psi);
+// phi_batch is [n_arms x B]. Dense path, all-coupled families (occu_cover).
+// ==========================================================================
+
+// [[Rcpp::export]]
+Rcpp::List cpp_nested_laplace_joint_multi_batch(
+    Rcpp::List          arms_list,
+    Rcpp::IntegerVector copy_arms,
+    Rcpp::IntegerVector copy_blocks,
+    Rcpp::List          blocks_spec,
+    Rcpp::NumericMatrix theta_grid,
+    Rcpp::IntegerVector axis_offsets,
+    int                 n_batch,
+    Rcpp::List          y_batch,
+    Rcpp::NumericMatrix phi_batch,
+    int                 max_iter = 200,
+    double              tol = 1e-6,
+    std::string         cell_coupling_name = "separable"
+) {
+    int n_arms = arms_list.size();
+    int Bspec  = blocks_spec.size();
+    if (axis_offsets.size() != Bspec + 1)
+        Rcpp::stop("axis_offsets must have length B+1.");
+    int total_axes = axis_offsets[Bspec];
+    if (theta_grid.ncol() != total_axes)
+        Rcpp::stop("theta_grid must have %d columns.", total_axes);
+    int n_grid = theta_grid.nrow();
+
+    std::vector<int> copy_arm_of_block(Bspec, -1);
+    if (copy_blocks.size() != copy_arms.size())
+        Rcpp::stop("copy_arms / copy_blocks length mismatch.");
+    for (int c = 0; c < copy_blocks.size(); c++) {
+        int cb = copy_blocks[c], ca = copy_arms[c];
+        if (cb < 0) continue;
+        if (cb >= Bspec) Rcpp::stop("copy_block out of range.");
+        copy_arm_of_block[cb] = ca;
+    }
+
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm>  arms;
+    int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
+
+    bool any_fc = false;
+    for (const auto& a : arms)
+        if (std::abs(a.field_coef - 1.0) > 0.0) { any_fc = true; break; }
+
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.reserve(Bspec + 2);
+    int latent_offset = n_x_after_re;
+    for (int b = 0; b < Bspec; b++) {
+        Rcpp::List bs = blocks_spec[b];
+        int axis0 = axis_offsets[b];
+        int axis_count = axis_offsets[b + 1] - axis0;
+        bool is_copy_b = (copy_arm_of_block[b] >= 0);
+        latent_offset = build_joint_blocks_from_spec(
+            bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
+            is_copy_b, copy_arm_of_block[b], blocks, &arms, any_fc);
+    }
+
+    tulpa::BatchArmBuffers buf;
+    buf.allocate(arms, n_batch);
+    if ((int) phi_batch.nrow() != n_arms || (int) phi_batch.ncol() != n_batch)
+        Rcpp::stop("phi_batch must be [n_arms x n_batch].");
+    for (int k = 0; k < n_arms; k++) {
+        for (int s = 0; s < n_batch; s++)
+            buf.phi[(std::size_t) k * n_batch + s] = phi_batch(k, s);
+        SEXP yk = y_batch[k];
+        if (Rf_isNull(yk)) continue;  // no-data arm (psi)
+        Rcpp::NumericMatrix ym(yk);
+        if ((int) ym.nrow() != arms[k].N || (int) ym.ncol() != n_batch)
+            Rcpp::stop("y_batch[[%d]] must be [N_k x n_batch].", k + 1);
+        buf.y[k].assign((std::size_t) arms[k].N * n_batch, 0.0);
+        for (int s = 0; s < n_batch; s++)
+            for (int i = 0; i < arms[k].N; i++)
+                buf.y[k][(std::size_t) s * arms[k].N + i] = ym(i, s);
+    }
+
+    std::shared_ptr<tulpa::CellCouplingSpec> spec =
+        tulpa::lookup_cell_coupling(cell_coupling_name);
+    if (!spec)
+        Rcpp::stop("cell_coupling = \"%s\" not registered.",
+                   cell_coupling_name.c_str());
+
+    Rcpp::List res = tulpa::run_multi_block_nested_laplace_joint_batch(
+        n_grid, n_batch, arms, parsed, blocks, n_x_after_re, buf,
+        max_iter, tol, nullptr, spec);
+
+    return Rcpp::List::create(
+        Rcpp::Named("per_species")  = res,
+        Rcpp::Named("theta_grid")   = theta_grid,
+        Rcpp::Named("axis_offsets") = axis_offsets
+    );
 }
 
 // ==========================================================================

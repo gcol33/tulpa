@@ -120,13 +120,30 @@ struct CellEtas {
 
     int n_arms_ = 0;
 
+    // Batched multi-response (gcol33/tulpa#66). When n_batch_ > 1 each arm's
+    // eta buffer holds B species' eta columns laid species-major:
+    // arm_eta_ptr[k] + s * arm_eta_stride[k] is species s's column. The B=1
+    // path leaves n_batch_ = 1 and arm_eta_stride = nullptr, so eta(k, j) and
+    // the (k, j) two-arg accessor below are byte-identical to the pre-batch
+    // path. Appended last so existing field offsets are unchanged.
+    const int* arm_eta_stride = nullptr;  // per-arm column stride (= total rows)
+    int n_batch_ = 1;
+
     int n_arms() const { return n_arms_; }
+    int n_batch() const { return n_batch_; }
     int n_rows_in_arm(int k) const { return arm_row_count[k]; }
 
     // eta(k, j) -- the eta value at the j-th row of arm k that belongs to
-    // this cell. j in [0, n_rows_in_arm(k)).
+    // this cell. j in [0, n_rows_in_arm(k)). B=1 / first-species view.
     double eta(int k, int j) const {
         return arm_eta_ptr[k][arm_rows[k][j]];
+    }
+
+    // eta(k, j, s) -- species s's eta at the j-th row of arm k. For s = 0 and
+    // the default (null) stride this reduces exactly to eta(k, j).
+    double eta(int k, int j, int s) const {
+        const int off = arm_eta_stride ? s * arm_eta_stride[k] : 0;
+        return arm_eta_ptr[k][off + arm_rows[k][j]];
     }
 };
 
@@ -170,14 +187,30 @@ struct CellResponse {
 
     int n_arms_ = 0;
 
-    int n_arms() const { return n_arms_; }
+    // Batched multi-response (gcol33/tulpa#66). Mirrors CellEtas: arm_y[k] +
+    // s * arm_y_stride[k] is species s's response column; arm_phi_batch (when
+    // set) carries per-species dispersion laid [k * n_batch_ + s]. B=1 leaves
+    // both null and n_batch_ = 1, so y(k, j) / phi(k) are byte-identical.
+    const int*    arm_y_stride   = nullptr;  // per-arm y column stride
+    const double* arm_phi_batch  = nullptr;  // [n_arms * n_batch_], or null
+    int           n_batch_       = 1;
+
+    int n_arms()  const { return n_arms_; }
+    int n_batch() const { return n_batch_; }
     int n_rows_in_arm(int k) const { return arm_row_count[k]; }
 
     // y(k, j) -- the response value at the j-th row of arm k that belongs
     // to this cell. Undefined if arm_y[k] is nullptr (the spec must know
-    // which of its arms carry data).
+    // which of its arms carry data). B=1 / first-species view.
     double y(int k, int j) const {
         return arm_y[k][arm_rows[k][j]];
+    }
+
+    // y(k, j, s) -- species s's response at the j-th row of arm k. s = 0 with
+    // null stride reduces exactly to y(k, j).
+    double y(int k, int j, int s) const {
+        const int off = arm_y_stride ? s * arm_y_stride[k] : 0;
+        return arm_y[k][off + arm_rows[k][j]];
     }
 
     int n_trials(int k, int j) const {
@@ -186,6 +219,12 @@ struct CellResponse {
 
     const char* family(int k) const { return arm_family[k]; }
     double phi(int k)               const { return arm_phi[k];    }
+
+    // phi(k, s) -- species s's dispersion for arm k. Falls back to the shared
+    // arm_phi[k] when no per-species table is supplied.
+    double phi(int k, int s) const {
+        return arm_phi_batch ? arm_phi_batch[k * n_batch_ + s] : arm_phi[k];
+    }
 };
 
 // ----------------------------------------------------------------------------
@@ -237,6 +276,16 @@ struct CellDerivs {
 
     int n_arms_ = 0;
 
+    // Batched multi-response (gcol33/tulpa#66). When n_batch_ > 1 the kernel
+    // sizes arm_grad[k] / arm_neg_hess_diag[k] to rc * n_batch_ and the spec
+    // writes species s's row j at index [s * rc + j] (species-major). The
+    // cross buffers arm_cross_hess[k][l] are sized rc_k * rc_l * n_batch_ with
+    // species s's (j, m) entry at [s * (rc_k * rc_l) + j * rc_l + m] (same
+    // species only; no cross-species curvature). B=1 leaves n_batch_ = 1 so
+    // [0 * rc + j] == [j], byte-identical to the pre-batch layout. Appended
+    // last to keep existing field offsets unchanged.
+    int n_batch_ = 1;
+
     // Which curvature the kernel is requesting for this scatter. A spec that
     // implements Fisher scoring branches on it; specs that do not simply
     // ignore it and always write the observed Hessian. Appended last so the
@@ -256,6 +305,7 @@ struct CellDerivs {
     bool grad_only = false;
 
     int n_arms() const { return n_arms_; }
+    int n_batch() const { return n_batch_; }
     int n_rows_in_arm(int k) const { return arm_row_count[k]; }
 };
 
