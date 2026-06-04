@@ -112,13 +112,18 @@ namespace tulpa {
 //   #pragma omp parallel for over all cells warm-started from the pilot mode.
 //   Pilot cell's result is reused (no double-solve).
 // CheapEval is any callable with signature
-//   LaplaceResult(int k, const std::vector<double>& warm_start, int n_steps)
+//   LaplaceResult(int k, const std::vector<double>& warm_start, int n_steps,
+//                 int worker)
 // running a short (`n_steps`-iteration) inner Newton-Laplace at cell k
 // warm-started from `warm_start`, and returning the quasi-mode and the
 // Laplace screening log-marginal at that quasi-mode. The driver chains the
 // warm-start across the lattice (each cell starts from the previous
 // screened cell's `.mode`), so `n_steps` need only correct the residual
 // drift between adjacent cells, not the full distance from a global pilot.
+// `worker` is a 0-based slot id in [0, n_threads_outer): the cheap screen
+// may run per-tile chains concurrently across outer threads, so the callable
+// must use a per-worker solver + scratch (CHOLMOD's cholmod_common is not
+// thread-safe) selected by `worker`. The serial screen always passes 0.
 // A returned `log_marginal` of -infinity forces pruning of an infeasible
 // cell (e.g. proper-CAR rho outside the PD interval). Pass `NoCheapEval{}`
 // (default) to disable pruning entirely; std::function is avoided here to
@@ -129,7 +134,7 @@ namespace tulpa {
 // loaded from disk and skipped, and every freshly solved cell is appended.
 // See nested_laplace_checkpoint.h.
 struct NoCheapEval {
-    LaplaceResult operator()(int, const std::vector<double>&, int) const {
+    LaplaceResult operator()(int, const std::vector<double>&, int, int) const {
         LaplaceResult r;
         r.log_marginal = -std::numeric_limits<double>::infinity();
         return r;
@@ -264,28 +269,129 @@ inline Rcpp::List run_nested_laplace_grid(
         if (prune_active) {
             cheap_lm.assign(n_grid,
                             -std::numeric_limits<double>::infinity());
-            std::vector<double> warm = pilot_mode;
-            for (int k = 0; k < n_grid; k++) {
-                // An already-completed cell needs no screening: use its true
-                // log-marginal for ranking and its stored mode to warm the
-                // chain, and never prune it (handled in the marking loop).
-                if (ckpt_done[k]) {
-                    cheap_lm[k] = cell_results[k].log_marginal;
-                    if (std::isfinite(cell_results[k].log_marginal) &&
-                        static_cast<int>(cell_results[k].mode.size()) == n_x) {
-                        warm = cell_results[k].mode;
-                    }
-                    continue;
+
+            // A completed (checkpoint-loaded) cell needs no screening: its
+            // true log-marginal ranks it and its stored mode warms the chain,
+            // and it is never pruned (handled in the marking loop). Shared by
+            // both the serial and per-tile parallel sweeps.
+            auto use_loaded_for_chain = [&](int k, std::vector<double>& warm) {
+                cheap_lm[k] = cell_results[k].log_marginal;
+                if (std::isfinite(cell_results[k].log_marginal) &&
+                    static_cast<int>(cell_results[k].mode.size()) == n_x) {
+                    warm = cell_results[k].mode;
                 }
-                LaplaceResult cr = cheap_eval(k, warm, CHEAP_SCREEN_ITERS);
-                cheap_lm[k] = cr.log_marginal;
-                // Chain the warm-start only across feasible cells; an
-                // infeasible cell (prep failed, log_marginal = -inf) leaves
-                // `warm` at the last good quasi-mode so the next feasible
-                // cell still starts from a near neighbour.
-                if (std::isfinite(cr.log_marginal) &&
-                    static_cast<int>(cr.mode.size()) == n_x) {
-                    warm = cr.mode;
+            };
+
+            // Whether the cheap screen can parallelize: the same tile metadata
+            // the full parallel pass uses, plus more than one outer thread. A
+            // single global chain is load-bearing for rank faithfulness (a
+            // fixed-pilot one-step screen mis-ranks far cells by O(1e5)), so we
+            // parallelize only by splitting it into independent per-tile chains
+            // -- each tile groups cells whose donor-arm prior + design coincide
+            // (only the copy/alpha axis varies), so within-tile chaining is at
+            // least as near-neighbour as the global flat chain, while the tiles
+            // run concurrently on their own worker slots. (gcol33/tulpa#68)
+            const bool cheap_use_tiles =
+                (n_threads_outer > 1) &&
+                (static_cast<int>(tile_ids.size()) == n_grid) &&
+                (!tile_pilot_cells.empty());
+
+            if (!cheap_use_tiles) {
+                // Serial chained sweep over the whole lattice in flat order
+                // (the historical behaviour; worker slot 0).
+                std::vector<double> warm = pilot_mode;
+                for (int k = 0; k < n_grid; k++) {
+                    if (ckpt_done[k]) { use_loaded_for_chain(k, warm); continue; }
+                    LaplaceResult cr =
+                        cheap_eval(k, warm, CHEAP_SCREEN_ITERS, /*worker=*/0);
+                    cheap_lm[k] = cr.log_marginal;
+                    // Chain the warm-start only across feasible cells; an
+                    // infeasible cell (prep failed, log_marginal = -inf) leaves
+                    // `warm` at the last good quasi-mode so the next feasible
+                    // cell still starts from a near neighbour.
+                    if (std::isfinite(cr.log_marginal) &&
+                        static_cast<int>(cr.mode.size()) == n_x) {
+                        warm = cr.mode;
+                    }
+                }
+            } else {
+                // Parallel cheap screen with the same two-tier warm-start
+                // backbone the full parallel pass uses, so the screen ranking
+                // stays faithful to the serial chain while parallelizing:
+                //   Phase A (serial): chain the TILE PILOTS in tile order from
+                //     the global pilot. n_tiles short solves give every tile
+                //     root a near-neighbour-chained quasi-mode -- the coarse
+                //     backbone (mirrors the full pass's Tier-2 tile pilots).
+                //   Phase B (parallel over tiles): chain each tile's remaining
+                //     cells in flat order from ITS tile root's quasi-mode, on
+                //     the tile's own outer-worker slot. Tiles group cells whose
+                //     only differing axis is the copy alpha, so within-tile
+                //     chaining from the central tile pilot is a genuine
+                //     near-neighbour warm-start. (gcol33/tulpa#68)
+                // The tile partition (.joint_compute_tile_partition) covers
+                // every cell exactly once, so each cheap_lm[k] is written by a
+                // single thread (no race).
+                const int n_tiles = static_cast<int>(tile_pilot_cells.size());
+                std::vector<std::vector<int>> tile_cells(n_tiles);
+                for (int k = 0; k < n_grid; k++) {
+                    int t = tile_ids[k];
+                    if (t >= 0 && t < n_tiles) tile_cells[t].push_back(k);
+                }
+
+                // Phase A: serial tile-pilot backbone (worker slot 0).
+                std::vector<std::vector<double>> tile_root_mode(n_tiles,
+                                                               pilot_mode);
+                {
+                    std::vector<double> warm = pilot_mode;
+                    for (int t = 0; t < n_tiles; t++) {
+                        int kp = tile_pilot_cells[t];
+                        if (kp < 0 || kp >= n_grid) {
+                            tile_root_mode[t] = warm;
+                            continue;
+                        }
+                        if (ckpt_done[kp]) {
+                            use_loaded_for_chain(kp, warm);
+                            tile_root_mode[t] = warm;
+                            continue;
+                        }
+                        LaplaceResult cr =
+                            cheap_eval(kp, warm, CHEAP_SCREEN_ITERS, /*worker=*/0);
+                        cheap_lm[kp] = cr.log_marginal;
+                        if (std::isfinite(cr.log_marginal) &&
+                            static_cast<int>(cr.mode.size()) == n_x) {
+                            warm = cr.mode;
+                        }
+                        tile_root_mode[t] = warm;
+                    }
+                }
+
+                // Phase B: per-tile parallel chains hanging off each tile root.
+                #ifdef _OPENMP
+                #pragma omp parallel for schedule(dynamic, 1) \
+                    num_threads(n_threads_outer)
+                #endif
+                for (int t = 0; t < n_tiles; t++) {
+                    #ifdef _OPENMP
+                    int worker = omp_get_thread_num();
+                    #else
+                    int worker = 0;
+                    #endif
+                    int kp = tile_pilot_cells[t];
+                    std::vector<double> warm = tile_root_mode[t];
+                    for (int k : tile_cells[t]) {
+                        if (k == kp) continue;  // root screened in Phase A
+                        if (ckpt_done[k]) {
+                            use_loaded_for_chain(k, warm);
+                            continue;
+                        }
+                        LaplaceResult cr =
+                            cheap_eval(k, warm, CHEAP_SCREEN_ITERS, worker);
+                        cheap_lm[k] = cr.log_marginal;
+                        if (std::isfinite(cr.log_marginal) &&
+                            static_cast<int>(cr.mode.size()) == n_x) {
+                            warm = cr.mode;
+                        }
+                    }
                 }
             }
 

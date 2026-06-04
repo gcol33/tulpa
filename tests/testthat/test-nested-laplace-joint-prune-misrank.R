@@ -53,7 +53,7 @@
          Xpos = Xpos, y_pos = y_pos, spi_pos = as.integer(spi_pos))
 }
 
-.mr_fit <- function(sim, prune, prune_tol = 1e-3) {
+.mr_fit <- function(sim, prune, prune_tol = 1e-3, n_threads_outer = 1L) {
     adj <- .mr_chain_adj(sim$n_s)
     arm_occ <- list(
         y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
@@ -78,7 +78,7 @@
     tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior, copy = copy,
-        control = list(n_threads = 1L, n_threads_outer = 1L,
+        control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
                        prune = prune, prune_tol = prune_tol,
                        adaptive_grid = FALSE, var_of_means_consistency = FALSE,
                        diagnose_k = FALSE)
@@ -110,6 +110,46 @@ test_that("pruned posterior recovers the full-grid mode (rank-faithful screen)",
               label = "pruned vs full theta_mean max-abs-diff")
     # And no silent fallback fired (the screen was rank-faithful here).
     expect_null(fit_prune$prune_fallback_triggered)
+})
+
+test_that("parallel per-tile cheap screen is rank-faithful (gcol33/tulpa#68)", {
+    skip_on_cran()
+    skip_if_fast()
+    # The cheap screen parallelises by splitting the load-bearing global
+    # neighbour chain into independent per-tile chains (one tile per non-alpha
+    # outer coordinate), run concurrently on outer-thread worker slots. This
+    # must keep the same rank faithfulness as the serial chain: still keep the
+    # true mode, still recover the full-grid theta_mean, and agree with the
+    # serial screen's prune decisions.
+    sim <- .mr_sim(4242L)
+    fit_full <- .mr_fit(sim, prune = FALSE)
+    fit_ser  <- .mr_fit(sim, prune = TRUE, prune_tol = 1e-3,
+                        n_threads_outer = 1L)
+    fit_par  <- expect_warning(
+        .mr_fit(sim, prune = TRUE, prune_tol = 1e-3, n_threads_outer = 4L),
+        regexp = NA)  # rank-faithful: NO fallback warning
+
+    k_full <- which.max(fit_full$log_marginal)
+
+    # The parallel screen prunes something but never the true mode.
+    expect_gt(fit_par$prune_n_pruned, 0L)
+    expect_false(fit_par$prune_mask[k_full],
+                 info = "parallel screen must NOT prune the full-grid argmax")
+    expect_equal(which.max(fit_par$log_marginal), k_full)
+
+    # Rank-faithful: parallel-screen posterior recovers the full grid to the
+    # same order of accuracy as the serial screen.
+    expect_lt(max(abs(fit_par$theta_mean - fit_full$theta_mean)), 2e-2,
+              label = "parallel-screen vs full theta_mean max-abs-diff")
+    expect_null(fit_par$prune_fallback_triggered)
+
+    # The two-tier tile-pilot backbone gives the parallel screen the same
+    # near-neighbour warm-starts as the serial chain, so it reaches essentially
+    # the same prune decisions: the survivor count matches within a couple of
+    # borderline cells and the marginalised posterior agrees closely.
+    expect_lte(abs(fit_par$prune_n_pruned - fit_ser$prune_n_pruned), 2L)
+    expect_lt(max(abs(fit_par$theta_mean - fit_ser$theta_mean)), 2e-2,
+              label = "parallel vs serial screen theta_mean max-abs-diff")
 })
 
 test_that("safety gate warns and falls back on argmax disagreement", {

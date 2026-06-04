@@ -303,14 +303,21 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // per-cell callbacks without duplicating scatter/eta logic. Dedicated
     // thread-local solver + scratch keep cheap_eval independent of the
     // parallel fan-out's pool.
-    SparseCholeskySolver cheap_solver;
-    NewtonScratch cheap_scratch;
-    cheap_scratch.allocate(n_x, N);
+    // One cheap solver + scratch per outer worker slot: the cheap screen may
+    // run per-tile chains concurrently (gcol33/tulpa#68), and CHOLMOD's
+    // cholmod_common is not thread-safe, so each worker needs its own. This
+    // path passes no tile metadata, so the screen stays serial (worker 0), but
+    // the pool keeps the CheapEval contract uniform across call sites.
+    const int n_cheap_workers = std::max(1, n_outer);
+    std::vector<SparseCholeskySolver> cheap_solvers(n_cheap_workers);
+    std::vector<NewtonScratch> cheap_scratches(n_cheap_workers);
+    for (auto& cs : cheap_scratches) cs.allocate(n_x, N);
     auto cheap_eval = [&](int k_grid,
                           const std::vector<double>& warm,
-                          int n_steps) -> LaplaceResult {
+                          int n_steps, int worker) -> LaplaceResult {
         return solve_at_theta_impl(
-            k_grid, warm, &cheap_solver, n_steps, &cheap_scratch);
+            k_grid, warm, &cheap_solvers[worker], n_steps,
+            &cheap_scratches[worker]);
     };
 
     Rcpp::List out = run_nested_laplace_grid(
