@@ -172,6 +172,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_performance_core_count
+int cpp_performance_core_count();
+RcppExport SEXP _tulpa_cpp_performance_core_count() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_performance_core_count());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_hsgp_basis_2d
 Rcpp::List cpp_hsgp_basis_2d(const Rcpp::NumericMatrix& coords, int m, double c);
 RcppExport SEXP _tulpa_cpp_hsgp_basis_2d(SEXP coordsSEXP, SEXP mSEXP, SEXP cSEXP) {
@@ -2642,6 +2652,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
     {"_tulpa_cpp_get_max_threads", (DL_FUNC) &_tulpa_cpp_get_max_threads, 0},
+    {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
     {"_tulpa_cpp_laplace_fit", (DL_FUNC) &_tulpa_cpp_laplace_fit, 11},

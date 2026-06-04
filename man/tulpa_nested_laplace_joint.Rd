@@ -176,6 +176,14 @@ scatter, compute_eta, log-likelihood reduction). For typical joint
 workloads (\code{N} in the hundreds to a few thousand) inner parallelism is
 overhead-dominated (see \code{dev_notes/issue_body_adaptive_grid_cost.md});
 prefer \code{n_threads_outer}, which stacks better on many-core hardware.
+Capped at the physical performance-core count by default (see
+\code{n_threads_scatter}), as the inner per-observation loops oversubscribe a
+hybrid CPU's efficiency cores past that point.
+\item \code{n_threads_scatter} (performance-core count) -- cap on the inner
+per-observation threads. Overrides the default performance-core cap on
+\code{n_threads}; raise it to use all logical cores or lower it to leave
+headroom. No effect where the core topology cannot be resolved (off
+Windows), where \code{n_threads} is used as requested.
 \item \code{n_threads_outer} (\code{1L}) -- outer-grid OpenMP threads. When \verb{> 1}, a
 pilot Laplace at the centre cell warm-starts the remaining cells, each
 dispatched across \code{n_threads_outer} threads with its own CHOLMOD solver

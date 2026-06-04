@@ -182,6 +182,14 @@
 #'     workloads (`N` in the hundreds to a few thousand) inner parallelism is
 #'     overhead-dominated (see `dev_notes/issue_body_adaptive_grid_cost.md`);
 #'     prefer `n_threads_outer`, which stacks better on many-core hardware.
+#'     Capped at the physical performance-core count by default (see
+#'     `n_threads_scatter`), as the inner per-observation loops oversubscribe a
+#'     hybrid CPU's efficiency cores past that point.
+#'   * `n_threads_scatter` (performance-core count) -- cap on the inner
+#'     per-observation threads. Overrides the default performance-core cap on
+#'     `n_threads`; raise it to use all logical cores or lower it to leave
+#'     headroom. No effect where the core topology cannot be resolved (off
+#'     Windows), where `n_threads` is used as requested.
 #'   * `n_threads_outer` (`1L`) -- outer-grid OpenMP threads. When `> 1`, a
 #'     pilot Laplace at the centre cell warm-starts the remaining cells, each
 #'     dispatched across `n_threads_outer` threads with its own CHOLMOD solver
@@ -381,7 +389,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # top-level signature carries only statistical arguments.
     max_iter                  <- control$max_iter %||% 50L
     tol                       <- control$tol %||% 1e-6
-    n_threads                 <- control$n_threads %||% 1L
+    n_threads                 <- .tulpa_inner_threads(control$n_threads %||% 1L,
+                                                       control$n_threads_scatter)
     n_threads_outer           <- control$n_threads_outer %||% 1L
     tile_warm                 <- control$tile_warm %||% TRUE
     prune                     <- control$prune %||% FALSE

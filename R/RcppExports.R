@@ -53,6 +53,10 @@ cpp_get_max_threads <- function() {
     .Call(`_tulpa_cpp_get_max_threads`)
 }
 
+cpp_performance_core_count <- function() {
+    .Call(`_tulpa_cpp_performance_core_count`)
+}
+
 cpp_hsgp_basis_2d <- function(coords, m, c) {
     .Call(`_tulpa_cpp_hsgp_basis_2d`, coords, m, c)
 }
