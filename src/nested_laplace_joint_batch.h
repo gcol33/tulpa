@@ -290,7 +290,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     int                              max_iter,
     double                           tol,
     std::function<void(int)>         prep_at_grid,
-    std::shared_ptr<CellCouplingSpec> spec
+    std::shared_ptr<CellCouplingSpec> spec,
+    bool                             store_Q = true
 );
 
 } // namespace tulpa

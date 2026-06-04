@@ -889,8 +889,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_joint_multi_batch
-Rcpp::List cpp_nested_laplace_joint_multi_batch(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int n_batch, Rcpp::List y_batch, Rcpp::NumericMatrix phi_batch, int max_iter, double tol, std::string cell_coupling_name);
-RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi_batch(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP n_batchSEXP, SEXP y_batchSEXP, SEXP phi_batchSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP cell_coupling_nameSEXP) {
+Rcpp::List cpp_nested_laplace_joint_multi_batch(Rcpp::List arms_list, Rcpp::IntegerVector copy_arms, Rcpp::IntegerVector copy_blocks, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, int n_batch, Rcpp::List y_batch, Rcpp::NumericMatrix phi_batch, int max_iter, double tol, std::string cell_coupling_name, bool store_Q);
+RcppExport SEXP _tulpa_cpp_nested_laplace_joint_multi_batch(SEXP arms_listSEXP, SEXP copy_armsSEXP, SEXP copy_blocksSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP n_batchSEXP, SEXP y_batchSEXP, SEXP phi_batchSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP cell_coupling_nameSEXP, SEXP store_QSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -906,7 +906,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< std::string >::type cell_coupling_name(cell_coupling_nameSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi_batch(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name));
+    Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_joint_multi_batch(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name, store_Q));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2701,7 +2702,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_st_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_hsgp, 25},
     {"_tulpa_cpp_nested_laplace_st_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp, 31},
     {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 26},
-    {"_tulpa_cpp_nested_laplace_joint_multi_batch", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi_batch, 12},
+    {"_tulpa_cpp_nested_laplace_joint_multi_batch", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi_batch, 13},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 8},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 23},

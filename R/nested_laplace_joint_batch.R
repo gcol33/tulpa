@@ -6,7 +6,8 @@
 # CCD, no phi-grid axis -- per-arm per-species dispersion is supplied fixed via
 # `phi_batch`), all-coupled cell-coupling families (occu_cover). Returns the C++
 # result: `per_species` (length n_batch; each list(log_marginal, weights, modes,
-# n_iter)), `theta_grid`, `axis_offsets`.
+# n_iter, and -- when store_Q -- Q_csc_{p,i,x}_per_grid + Q_csc_n)),
+# `theta_grid`, `axis_offsets`.
 #
 # `y_batch`  : length n_arms list; element k is a [N_k x n_batch] response matrix
 #              (species columns) for a data arm, or NULL for a no-data arm (psi).
@@ -51,16 +52,18 @@
   cpp_grid <- .joint_multi_cpp_grid(joint_grid, axis_offsets, B, cp)
 
   list(arms = arms, cp = cp, blocks_spec = blocks_spec,
-       axis_offsets = axis_offsets, cpp_grid = cpp_grid)
+       axis_offsets = axis_offsets, cpp_grid = cpp_grid,
+       prepared = prepared, joint_grid = joint_grid)
 }
 
 # @keywords internal
 tulpa_nl_joint_batch <- function(responses, prior, copy = NULL,
                                  n_batch, y_batch, phi_batch,
                                  max_iter = 200L, tol = 1e-6,
-                                 cell_coupling = "separable") {
+                                 cell_coupling = "separable",
+                                 store_Q = TRUE) {
   m <- .tulpa_nl_joint_marshal(responses, prior, copy)
-  cpp_nested_laplace_joint_multi_batch(
+  res <- cpp_nested_laplace_joint_multi_batch(
     arms_list          = m$arms,
     copy_arms          = as.integer(m$cp$copy_arms_zero),
     copy_blocks        = as.integer(m$cp$copy_blocks_zero),
@@ -72,8 +75,16 @@ tulpa_nl_joint_batch <- function(responses, prior, copy = NULL,
     phi_batch          = phi_batch,
     max_iter           = as.integer(max_iter),
     tol                = as.numeric(tol),
-    cell_coupling_name = as.character(cell_coupling)
+    cell_coupling_name = as.character(cell_coupling),
+    store_Q            = isTRUE(store_Q)
   )
+  # Structural metadata shared by every species (the design is species-
+  # invariant): the latent-vector layout and the user-facing (sigma, alpha, ...)
+  # outer grid with colnames. A consumer reshapes each per_species slice +
+  # these into a single-species engine-fit for post-processing.
+  res$arm_layout <- .joint_multi_layout(m$arms, m$prepared)
+  res$theta_grid <- m$joint_grid
+  res
 }
 
 # Single-species fit at the SAME dense grid as tulpa_nl_joint_batch (validation

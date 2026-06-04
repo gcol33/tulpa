@@ -10,15 +10,17 @@
 // First cut: dense path only (small/medium fields), cell-coupling families with
 // ALL arms coupled (occu_cover), plain outer-grid sweep with per-species
 // warm-start chaining. Returns per-species { log_marginal, modes, weights,
-// n_iter } so R unpacks each through the existing single-species post-processing.
-// (store_Q for the per-grid inner covariance -> SDs is a follow-up; the first
-// gate checks means / field / log_marginal.)
+// n_iter, Q_csc_*_per_grid } so R unpacks each through the existing
+// single-species post-processing (including .joint_inner_vcov_block for SDs;
+// store_Q stores the converged-mode observed Hessian per grid in CSC
+// lower-triangle, mirroring the single-species path exactly).
 
 #include "nested_laplace_joint_batch.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
 #include "laplace_newton_joint.h"
 #include "laplace_newton_loop.h"
+#include "laplace_cholesky.h"
 #include "laplace_cholesky_dispatch.h"
 #include "laplace_core.h"
 #include "latent_block.h"
@@ -218,7 +220,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     int                              max_iter,
     double                           tol,
     std::function<void(int)>         prep_at_grid,
-    std::shared_ptr<CellCouplingSpec> spec
+    std::shared_ptr<CellCouplingSpec> spec,
+    bool                             store_Q
 ) {
     const int n_arms = (int) arms.size();
     const int B = n_batch;
@@ -260,6 +263,21 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     std::vector<std::vector<int>> n_iter(B, std::vector<int>(n_grid, 0));
     std::vector<std::vector<double>> prev_mode(B, std::vector<double>(n_x, 0.0));
     std::vector<bool> have_prev(B, false);
+
+    // Per-species per-grid inner covariance precision Q (the converged-mode
+    // observed Hessian, ridge included) in CSC lower-triangle, mirroring the
+    // single-species store_Q path so the SD post-processing
+    // (.joint_inner_vcov_block) is bit-identical. Lists pre-allocated per
+    // species; slot kg filled in the final mode-pass below.
+    std::vector<Rcpp::List> Q_p_per_sp, Q_i_per_sp, Q_x_per_sp;
+    if (store_Q) {
+        Q_p_per_sp.resize(B); Q_i_per_sp.resize(B); Q_x_per_sp.resize(B);
+        for (int s = 0; s < B; s++) {
+            Q_p_per_sp[s] = Rcpp::List(n_grid);
+            Q_i_per_sp[s] = Rcpp::List(n_grid);
+            Q_x_per_sp[s] = Rcpp::List(n_grid);
+        }
+    }
 
     std::vector<DenseVec> grad_per_sp(B);
     std::vector<DenseMat> H_per_sp(B);
@@ -360,6 +378,14 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
             double log_det = 0.0;
             dispatch_factor_log_det(H, n_x, st[s].sparse, use_sparse, st[s].chol, log_det);
+            if (store_Q) {
+                std::vector<int> qp, qi; std::vector<double> qx;
+                dense_to_csc_lower_drop_raw(H, n_x, SPARSE_DROP_TOL_DISPATCH,
+                                            qp, qi, qx);
+                Q_p_per_sp[s][kg] = Rcpp::IntegerVector(qp.begin(), qp.end());
+                Q_i_per_sp[s][kg] = Rcpp::IntegerVector(qi.begin(), qi.end());
+                Q_x_per_sp[s][kg] = Rcpp::NumericVector(qx.begin(), qx.end());
+            }
             double ll = species_cell_loglik(*spec, coupled_arms, cell_rows, n_cells,
                                             arms, st[s].etas, wbuf, s);
             double lp = log_prior_per_arm_re(st[s].x, parsed);
@@ -401,12 +427,19 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         for (int k = 0; k < n_grid; k++)
             for (int j = 0; j < n_x; j++)
                 md(k, j) = modes_flat[s][(std::size_t) k * n_x + j];
-        out[s] = Rcpp::List::create(
+        Rcpp::List sp = Rcpp::List::create(
             Rcpp::Named("log_marginal") = lm,
             Rcpp::Named("weights")      = w,
             Rcpp::Named("modes")        = md,
             Rcpp::Named("n_iter")       = ni
         );
+        if (store_Q) {
+            sp["Q_csc_p_per_grid"] = Q_p_per_sp[s];
+            sp["Q_csc_i_per_grid"] = Q_i_per_sp[s];
+            sp["Q_csc_x_per_grid"] = Q_x_per_sp[s];
+            sp["Q_csc_n"]          = n_x;
+        }
+        out[s] = sp;
     }
     return out;
 }

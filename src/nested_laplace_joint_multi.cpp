@@ -1211,7 +1211,8 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     Rcpp::NumericMatrix phi_batch,
     int                 max_iter = 200,
     double              tol = 1e-6,
-    std::string         cell_coupling_name = "separable"
+    std::string         cell_coupling_name = "separable",
+    bool                store_Q = true
 ) {
     int n_arms = arms_list.size();
     int Bspec  = blocks_spec.size();
@@ -1279,7 +1280,7 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
 
     Rcpp::List res = tulpa::run_multi_block_nested_laplace_joint_batch(
         n_grid, n_batch, arms, parsed, blocks, n_x_after_re, buf,
-        max_iter, tol, nullptr, spec);
+        max_iter, tol, nullptr, spec, store_Q);
 
     return Rcpp::List::create(
         Rcpp::Named("per_species")  = res,

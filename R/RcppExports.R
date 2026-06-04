@@ -161,8 +161,8 @@ cpp_nested_laplace_joint_multi <- function(arms_list, copy_arms, copy_blocks, bl
     .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file, checkpoint_path)
 }
 
-cpp_nested_laplace_joint_multi_batch <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter = 200L, tol = 1e-6, cell_coupling_name = "separable") {
-    .Call(`_tulpa_cpp_nested_laplace_joint_multi_batch`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name)
+cpp_nested_laplace_joint_multi_batch <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter = 200L, tol = 1e-6, cell_coupling_name = "separable", store_Q = TRUE) {
+    .Call(`_tulpa_cpp_nested_laplace_joint_multi_batch`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter, tol, cell_coupling_name, store_Q)
 }
 
 cpp_test_joint_pattern <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets) {
