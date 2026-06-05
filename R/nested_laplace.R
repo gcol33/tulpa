@@ -1403,11 +1403,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #'
 #' Supported spec types:
 #'  * `tulpa_temporal` with `type in {"rw1", "rw2", "ar1"}`
-#'  * `tulpa_spatial` with `type in {"car", "icar", "car_proper", "bym2"}`.
+#'  * `tulpa_spatial`, areal `type in {"car", "icar", "car_proper", "bym2"}`.
 #'    Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
 #'    using the spec's eigenvalue-derived `rho_bounds`.
-#'    Continuous-spatial GP / SPDE specs need their own entry — see
-#'    \code{cpp_nested_laplace_spde()}.
+#'  * `tulpa_gp` / `tulpa_hsgp`, continuous `type in {"gp", "nngp", "hsgp"}`:
+#'    validated against `data` and routed to the `nngp` / `hsgp` nested kernel
+#'    through the shared converter.
+#'
+#'  SPDE is the one continuous field not built here -- it carries its own
+#'  (range, sigma) FEM integrator; call [fit_spde()] with the `spatial_spde()`
+#'  spec.
 #'
 #' @param spec A `tulpa_temporal` or `tulpa_spatial` object.
 #' @param data Data frame the spec resolves time/group/site indices against.
@@ -1441,37 +1446,47 @@ prior_from_spec <- function(spec, data) {
 }
 
 .prior_from_spatial_spec <- function(spec, data) {
-  validate_spatial(spec, data)
   type <- tolower(spec$type)
-  if (type %in% c("car", "icar")) {
-    backend <- "icar"
-  } else if (type == "bym2") {
-    backend <- "bym2"
-  } else if (type == "car_proper") {
-    backend <- "car_proper"
-  } else {
-    stop("tulpa_nested_laplace() does not yet support spatial type '", type,
-         "'. Use BYM2/ICAR/proper CAR for areal models or ",
-         "cpp_nested_laplace_spde for SPDE.", call. = FALSE)
+
+  # Continuous coordinate-addressed fields (gp/nngp/hsgp). Validate to populate
+  # the spec's resolved coordinate structure (NNGP neighbour info / HSGP basis),
+  # then build the nested prior block through the shared converter
+  # `.spatial_spec_to_nl_prior` -- the single source of truth for spec -> nested
+  # prior, also used by the tulpa() front door. gp/nngp drive the `nngp` kernel,
+  # hsgp the `hsgp` kernel; both are single-block (cpp_fn present in .NL_REGISTRY).
+  if (type %in% c("gp", "nngp")) {
+    return(.spatial_spec_to_nl_prior(validate_gp(spec, data)))
+  }
+  if (type == "hsgp") {
+    return(.spatial_spec_to_nl_prior(validate_hsgp(spec, data)))
+  }
+  if (type == "spde") {
+    stop("tulpa_nested_laplace() does not host an SPDE field: SPDE carries its ",
+         "own (range, sigma) FEM integrator. Call fit_spde() with the ",
+         "spatial_spde() spec.", call. = FALSE)
   }
 
-  adj <- spec$adjacency
-  csr <- adjacency_to_csr_tulpa(adj)
-  n_spatial_units <- nrow(adj)
+  if (!type %in% .NL_FRONTDOOR_AREAL) {
+    stop("Unknown spatial type '", type, "'. Areal: ",
+         paste(.NL_FRONTDOOR_AREAL, collapse = "/"),
+         "; continuous: gp/nngp/hsgp; SPDE via fit_spde().", call. = FALSE)
+  }
+  validate_spatial(spec, data)
 
-  # spatial_idx per obs. Resolves group values to 1-based row indices
-  # into the adjacency. Allows empty cells (cells with no data) — the
-  # ICAR / CAR / BYM2 prior is well-defined on every node of the graph
-  # regardless of whether data touches the node; unobserved cells just
-  # contribute no likelihood term. See `.resolve_spatial_idx()` in
-  # spatial_car.R for the resolution rules.
+  # Areal field: resolve the per-observation spatial_idx (1-based row indices
+  # into the adjacency) onto the spec, then build the block through the shared
+  # converter. Empty cells (no data) are allowed -- the ICAR / CAR / BYM2 prior
+  # is well-defined on every graph node; unobserved cells contribute no
+  # likelihood term. See `.resolve_spatial_idx()` for the resolution rules.
+  adj <- spec$adjacency
+  n_spatial_units <- nrow(as.matrix(adj))
   if (!is.null(spec$level) && spec$level == "group" &&
       !is.null(spec$group_var)) {
     if (!(spec$group_var %in% names(data))) {
       stop("Spatial group variable '", spec$group_var,
            "' not found in data.", call. = FALSE)
     }
-    spatial_idx <- .resolve_spatial_idx(
+    spec$spatial_idx <- .resolve_spatial_idx(
       values = data[[spec$group_var]],
       n_spatial_units = n_spatial_units,
       adjacency = adj,
@@ -1482,26 +1497,9 @@ prior_from_spec <- function(spec, data) {
       stop("Observation-level spatial spec requires nrow(data) == ",
            "nrow(adjacency).", call. = FALSE)
     }
-    spatial_idx <- seq_len(n_spatial_units)
+    spec$spatial_idx <- seq_len(n_spatial_units)
   }
-
-  out <- list(
-    type = backend,
-    spatial_idx = spatial_idx,
-    n_spatial_units = as.integer(n_spatial_units),
-    adj_row_ptr = as.integer(csr$row_ptr),
-    adj_col_idx = as.integer(csr$col_idx),
-    n_neighbors = as.integer(csr$n_neighbors)
-  )
-  if (backend == "bym2") {
-    out$scale_factor <- as.numeric(spec$scale_factor %||% 1.0)
-  }
-  if (backend == "car_proper") {
-    rb <- spec$rho_bounds
-    if (is.null(rb)) rb <- c(0, 1)
-    out$rho_bounds <- as.numeric(rb)
-  }
-  out
+  .spatial_spec_to_nl_prior(spec)
 }
 
 # Normalize the outer-grid progress knobs from a `control` list into the four

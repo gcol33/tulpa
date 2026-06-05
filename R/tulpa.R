@@ -904,9 +904,9 @@ tulpa <- function(formula, data,
         }
       }
     } else {
-      stop("Spatial type '", spatial_type, "' is not yet routed through tulpa(). ",
-           "Use an areal (icar/bym2/car/car_proper) or continuous ",
-           "(gp/nngp/hsgp/spde) field.", call. = FALSE)
+      stop("Unknown spatial type '", spatial_type, "'. `spatial$type` must be one ",
+           "of: areal icar/car/bym2/car_proper, continuous gp/nngp/hsgp/spde, or ",
+           "rsr.", call. = FALSE)
     }
   }
 
