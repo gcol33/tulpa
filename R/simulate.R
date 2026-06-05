@@ -117,18 +117,26 @@ tulpa_simulate <- function(formula, family, data,
 }
 
 
+# Shared banner printer for the simulate / prior-predictive summary objects:
+# a title rule, the family and process names, one count line, and the obs
+# count. Single source of truth for print.tulpa_simulate and
+# print.tulpa_prior_predict, which differ only in the title and count line.
+.print_draws_summary <- function(x, title, count_label, count_value) {
+  cat(title, "\n", sep = "")
+  cat(strrep("=", nchar(title)), "\n", sep = "")
+  cat("Family:    ", x$family$name, "\n")
+  cat("Processes: ", paste(x$process_names, collapse = ", "), "\n")
+  cat(count_label, count_value, "\n")
+  cat("Obs:       ", x$n_obs, "\n")
+  invisible(x)
+}
+
 #' Print method for tulpa_simulate
 #' @param x A tulpa_simulate object
 #' @param ... Ignored
 #' @export
 print.tulpa_simulate <- function(x, ...) {
-  cat("tulpa simulated datasets\n")
-  cat("========================\n")
-  cat("Family:    ", x$family$name, "\n")
-  cat("Processes: ", paste(x$process_names, collapse = ", "), "\n")
-  cat("Sims:      ", x$n_sims, "\n")
-  cat("Obs:       ", x$n_obs, "\n")
-  invisible(x)
+  .print_draws_summary(x, "tulpa simulated datasets", "Sims:      ", x$n_sims)
 }
 
 

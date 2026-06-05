@@ -224,13 +224,7 @@ prior_predict <- function(formula, family, data,
 #' @param ... Ignored
 #' @export
 print.tulpa_prior_predict <- function(x, ...) {
-  cat("tulpa prior predictive draws\n")
-  cat("============================\n")
-  cat("Family:    ", x$family$name, "\n")
-  cat("Processes: ", paste(x$process_names, collapse = ", "), "\n")
-  cat("Draws:     ", x$n_draws, "\n")
-  cat("Obs:       ", x$n_obs, "\n")
-  invisible(x)
+  .print_draws_summary(x, "tulpa prior predictive draws", "Draws:     ", x$n_draws)
 }
 
 

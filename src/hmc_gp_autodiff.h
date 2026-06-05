@@ -16,6 +16,9 @@ namespace tulpa_gp {
 using namespace tulpa::math;
 // Use canonical covariance dispatcher from tulpa_svc_ad (single source of truth)
 using tulpa_svc_ad::compute_cov;
+// Canonical templated triangular solves also live in tulpa_svc_ad
+using tulpa_svc_ad::solve_lower;
+using tulpa_svc_ad::solve_upper;
 // Alias for backward compatibility with code that uses the _t suffix
 template<typename T>
 inline T compute_cov_t(double d, const T& sigma2, const T& phi,
@@ -62,34 +65,6 @@ inline bool cholesky_decompose_t(const std::vector<T>& A, int n, std::vector<T>&
     }
 
     return true;
-}
-
-// Forward substitution: solve L * y = b
-template<typename T>
-inline void forward_solve_t(const std::vector<T>& L, int n,
-                            const std::vector<T>& b, std::vector<T>& y) {
-    y.resize(n);
-    for (int i = 0; i < n; i++) {
-        T sum = b[i];
-        for (int j = 0; j < i; j++) {
-            sum = sum - L[i * n + j] * y[j];
-        }
-        y[i] = sum / L[i * n + i];
-    }
-}
-
-// Backward substitution: solve L^T * x = y
-template<typename T>
-inline void backward_solve_t(const std::vector<T>& L, int n,
-                             const std::vector<T>& y, std::vector<T>& x) {
-    x.resize(n);
-    for (int i = n - 1; i >= 0; i--) {
-        T sum = y[i];
-        for (int j = i + 1; j < n; j++) {
-            sum = sum - L[j * n + i] * x[j];
-        }
-        x[i] = sum / L[i * n + i];
-    }
 }
 
 // =============================================================================
@@ -232,11 +207,11 @@ T gp_nngp_log_lik_t(
         // Solve L * y = c_vec (forward substitution)
         std::vector<T> c_small(c_vec.begin(), c_vec.begin() + n_neighbors);
         std::vector<T> y_small;
-        forward_solve_t(L_small, n_neighbors, c_small, y_small);
+        solve_lower(L_small, n_neighbors, c_small, y_small);
 
         // Solve L^T * alpha = y (backward substitution)
         std::vector<T> alpha_small;
-        backward_solve_t(L_small, n_neighbors, y_small, alpha_small);
+        solve_upper(L_small, n_neighbors, y_small, alpha_small);
 
         // Conditional mean
         T cond_mean = T(0.0);
