@@ -559,38 +559,107 @@
 
   if (input == "modeldata") {
     # The model-agnostic ModelData sampler kernels (hmc/ess/sghmc/sgld/mclmc/
-    # smc/vi) fit a fixed-effect GLM via tulpa_sample_glmm(). They build the
-    # ModelData themselves; an offset() is threaded into the linear predictor,
-    # but random-effect, spatial, and latent structure are not threaded through
-    # this path. Random-effect models have a clean home on
-    # the conditional R-closure logpost backends (mode = "mala"/"pathfinder"/
-    # "imh_laplace"), which condition on sigma_re; route the user there rather
-    # than silently dropping the term.
+    # smc/vi) sample the full latent vector compute_param_layout() lays out
+    # (gcol33/tulpa#75). Random effects (intercept / slopes / correlated /
+    # multi-term), an areal spatial field (ICAR / BYM2), and a temporal field
+    # (RW1 / RW2 / AR1) are packed into per-block specs and threaded into the
+    # ModelData builder; the kernels sample the variance-component
+    # hyperparameters jointly with the latent + fixed effects (full Bayes), not
+    # conditioning on them like the Laplace / logpost backends.
+    n_obs <- bundle$n_obs
+
+    # Random-effect spec: one entry per term, mirroring the re_cov packing.
     re <- bundle$re_terms %||% list()
+    re_spec <- NULL
     if (length(re) > 0L) {
-      stop(sprintf(paste0(
-        "Backend '%s' fits a fixed-effect GLM and does not yet support the\n",
-        "random-effect term(s) in the formula. Use mode = 'mala' (or\n",
-        "'pathfinder' / 'imh_laplace'), which condition on sigma_re, for a\n",
-        "sampler under random effects."), backend), call. = FALSE)
+      re_spec <- list(
+        idx        = lapply(re, function(rt) as.integer(rt$group_idx)),
+        ngroups    = vapply(re, function(rt) as.integer(rt$n_groups), integer(1)),
+        ncoefs     = vapply(re, function(rt) as.integer(rt$n_coefs %||% 1L), integer(1)),
+        correlated = vapply(re, function(rt) isTRUE(rt$correlated), logical(1)),
+        Z          = lapply(re, function(rt) {
+          Z <- cbind(
+            if (isTRUE(rt$has_intercept)) rep(1, n_obs) else NULL,
+            rt$slope_matrix
+          )
+          if (is.null(Z)) NULL else as.matrix(Z)
+        })
+      )
     }
-    if (!is.null(spatial) || !is.null(temporal)) {
-      stop(sprintf(paste0(
-        "Backend '%s' fits a fixed-effect GLM; a spatial / temporal field is\n",
-        "not threaded through this path. Use a nested-Laplace mode ('auto' /\n",
-        "'structured' / 'nested_laplace') for an integrated field."), backend),
-        call. = FALSE)
+
+    # Areal spatial spec (ICAR / BYM2). Reuses the nested-Laplace areal converter
+    # for the adjacency CSR + per-obs unit index; continuous (gp/nngp/hsgp),
+    # CAR_proper, and SPDE fields are not threaded through this path (the generic
+    # ESS Gaussian-prior block / the dedicated SPDE sampler own those).
+    spatial_spec_arg <- NULL
+    if (!is.null(spatial)) {
+      sp <- .spatial_spec_to_nl_prior(spatial)
+      if (!sp$type %in% c("icar", "bym2")) {
+        stop(sprintf(paste0(
+          "Backend '%s' samples areal spatial fields (icar / bym2); the field\n",
+          "type '%s' is not threaded through this path. Use a nested-Laplace mode\n",
+          "('auto' / 'structured' / 'nested_laplace'), or fit_spde() for SPDE."),
+          backend, sp$type), call. = FALSE)
+      }
+      spatial_spec_arg <- list(
+        type            = sp$type,
+        spatial_idx     = sp$spatial_idx,
+        n_spatial_units = sp$n_spatial_units,
+        adj_row_ptr     = sp$adj_row_ptr,
+        adj_col_idx     = sp$adj_col_idx,
+        n_neighbors     = sp$n_neighbors,
+        scale_factor    = sp$scale_factor %||% 1.0
+      )
     }
+
+    # Temporal spec (RW1 / RW2 / AR1). The generic eta assembler recombines the
+    # within-group time index and the group index itself, so pass them
+    # unflattened (not the nested block's combined node index).
+    temporal_spec_arg <- NULL
+    if (!is.null(temporal)) {
+      ttype <- tolower(temporal$type %||% "")
+      if (!ttype %in% c("rw1", "rw2", "ar1")) {
+        stop(sprintf(paste0(
+          "Backend '%s' samples temporal fields rw1 / rw2 / ar1; got '%s'."),
+          backend, ttype), call. = FALSE)
+      }
+      n_groups <- as.integer(temporal$n_groups %||% 1L)
+      temporal_spec_arg <- list(
+        type      = ttype,
+        time_idx  = as.integer(temporal$time_index),
+        n_times   = as.integer(temporal$n_times),
+        n_groups  = n_groups,
+        group_idx = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
+        cyclic    = isTRUE(temporal$cyclic)
+      )
+    }
+
+    # ESS samples Gaussian-prior latent blocks with an isotropic proposal, which
+    # cannot carry the structured spatial / temporal precision; the gradient /
+    # density kernels can. Redirect rather than fail deep in C++.
+    if (backend == "ess" &&
+        (!is.null(spatial_spec_arg) || !is.null(temporal_spec_arg))) {
+      stop(paste0(
+        "Backend 'ess' samples latent Gaussian blocks with an isotropic prior\n",
+        "and cannot carry the structured spatial / temporal precision. Use\n",
+        "mode = 'hmc' / 'mclmc' / 'smc' / 'vi' for a sampler under a field, or a\n",
+        "nested-Laplace mode for an integrated field."), call. = FALSE)
+    }
+
     return(list(
-      y           = bundle$y,
-      n_trials    = n_trials %||% rep(1L, bundle$n_obs),
-      X           = bundle$X,
-      family      = family,
-      backend     = backend,
-      phi         = phi,
-      offset      = bundle$offset,
-      fixed_names = bundle$fixed_names,
-      control     = control
+      y             = bundle$y,
+      n_trials      = n_trials %||% rep(1L, n_obs),
+      X             = bundle$X,
+      family        = family,
+      backend       = backend,
+      phi           = phi,
+      offset        = bundle$offset,
+      fixed_names   = bundle$fixed_names,
+      re_spec       = re_spec,
+      spatial_spec  = spatial_spec_arg,
+      temporal_spec = temporal_spec_arg,
+      sigma_re_scale = control$sigma_re_scale %||% 2.5,
+      control       = control
     ))
   }
 
@@ -615,7 +684,8 @@
 #' @section Coverage:
 #' * **No random effects** and **random intercepts** (`(1 | g)`) are supported on
 #'   the design path (`mode = "laplace"`) and the sampler path (`mode = "mala"`,
-#'   `"pathfinder"`, `"imh_laplace"`).
+#'   `"pathfinder"`, `"imh_laplace"`, and the ModelData kernels `"hmc"` / `"sghmc"`
+#'   / `"sgld"` / `"mclmc"` / `"smc"` / `"vi"` / `"ess"`).
 #' * **Random slopes** are supported on the Laplace (Tier 2) path: there is no
 #'   scalar `sigma_re` to condition on, so the RE covariance `Sigma` is integrated
 #'   rather than fixed. This covers correlated terms (`(1 + x | g)`, a full
@@ -638,8 +708,15 @@
 #'   `(1 | g)` term may accompany the blocks (model richer grouping as an `iid`
 #'   block). Joint multi-arm nested models cannot be expressed by a
 #'   single-response formula -- call [tulpa_nested_laplace_joint()] directly.
-#' * Selecting a backend whose kernel is C-ABI-only (e.g. `ess`, `sghmc`, `smc`)
-#'   errors loudly -- those are reachable from model packages, not from R yet.
+#' * The ModelData sampler kernels (`"hmc"`, `"ess"`, `"sghmc"`, `"sgld"`,
+#'   `"mclmc"`, `"smc"`, `"vi"`) thread the full latent vector -- fixed effects,
+#'   random effects (all forms), areal spatial (`icar` / `bym2`), and temporal
+#'   (`rw1` / `rw2` / `ar1`) -- through one ModelData builder and sample the
+#'   variance components jointly with the field. `ess` carries random effects but
+#'   declines a structured spatial / temporal block (its isotropic Gaussian-prior
+#'   block cannot represent the graph precision); continuous-coordinate fields
+#'   (`gp` / `nngp` / `hsgp` / `spde`), `car_proper`, and exotic latent blocks stay
+#'   on the dedicated nested-Laplace / SPDE / Polya-Gamma paths.
 #'
 #' @param formula A model formula. Fixed effects, `(1 | g)` / `(1 + x | g)`
 #'   random effects, and `offset(...)` terms are recognised.
@@ -950,10 +1027,14 @@ tulpa <- function(formula, data,
 
   # A temporal field (rw1/rw2/ar1) integrates through the nested-Laplace temporal
   # kernel; with a spatial field present it joins a [spatial, temporal] joint
-  # prior. Every selection routes a temporal field there (the conditional mode =
-  # "laplace" is not wired for temporal yet), mirroring and superseding the
-  # spatial-field redirect above when both fields are present.
-  if (has_temporal) {
+  # prior. The auto / structured / conditional-Laplace selections route a
+  # temporal field there (the conditional mode = "laplace" is not wired for
+  # temporal yet), mirroring and superseding the spatial-field redirect above
+  # when both fields are present. An explicitly chosen ModelData sampler backend
+  # (hmc / ess / sghmc / sgld / mclmc / smc / vi) consumes the temporal field
+  # directly (gcol33/tulpa#75), so it keeps its selection rather than being
+  # redirected.
+  if (has_temporal && BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     sel$backend <- "nested_laplace"
     ti <- get_backend_tier("nested_laplace")
     sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
@@ -967,11 +1048,13 @@ tulpa <- function(formula, data,
 
   assert_backend_reachable(sel$backend)
 
-  # Conditional backends (everything except the sigma-sampling Gibbs and the
-  # Sigma-integrating re_cov backends) need one RE sd per term to condition on;
-  # resolve/recycle it after the backend is known so the others do not emit a
-  # misleading "conditioning" message.
-  if (K > 0L && !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs")) {
+  # Conditional backends (everything except the sigma-sampling Gibbs, the
+  # Sigma-integrating re_cov backends, and the ModelData samplers that draw the
+  # RE sd jointly) need one RE sd per term to condition on; resolve/recycle it
+  # after the backend is known so the others do not emit a misleading
+  # "conditioning" message.
+  if (K > 0L && !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs") &&
+      BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)
       message("tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for ",

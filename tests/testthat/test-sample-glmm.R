@@ -84,21 +84,29 @@ test_that("draws_kind contract holds through tulpa(mode = ...)", {
   expect_true(is.null(mcmc_diagnostics(fit_iid)))
 })
 
-# Random-effect / spatial models are routed away from the fixed-effect samplers
-# rather than silently dropping the structure; offset() is threaded through.
-test_that("RE models are rejected with guidance; offset() is supported", {
+# Random-effect models now thread through the ModelData samplers (gcol33/tulpa#75)
+# instead of being routed away; offset() is threaded through too.
+test_that("RE models thread through the sampler; offset() is supported", {
+  skip_on_cran()
+  skip_if_fast()
   set.seed(404)
-  n <- 200L
-  d <- data.frame(y = rbinom(n, 1L, 0.4), x = rnorm(n),
-                  g = factor(sample(6, n, TRUE)), o = runif(n))
-  err_re <- expect_error(suppressMessages(
-    tulpa(y ~ x + (1 | g), d, family = "binomial", mode = "hmc")))
-  expect_match(conditionMessage(err_re), "random-effect")
-  expect_match(conditionMessage(err_re), "mala")
+  G <- 18L; n_per <- 16L; N <- G * n_per
+  g <- rep(seq_len(G), each = n_per); x <- rnorm(N)
+  b <- rnorm(G, 0, 0.7)
+  y <- rpois(N, exp(0.4 + 0.6 * x + b[g]))
+  d <- data.frame(y = y, x = x, g = factor(g))
+  fit <- suppressMessages(tulpa(y ~ x + (1 | g), d, family = "poisson",
+                                mode = "hmc",
+                                control = list(n_iter = 1200L, warmup = 600L,
+                                               n_chains = 2L, seed = 11L)))
+  expect_true("log_sigma_re" %in% fit$param_names)
+  expect_equal(fit$n_params, 2L + 1L + G)         # beta(2) + log_sigma_re + b[G]
+  expect_lt(abs(fit$means[["x"]] - 0.6), 0.18)
+  expect_lt(abs(exp(fit$means[["log_sigma_re"]]) - 0.7), 0.35)
 
-  # offset() now threads into the sampler's linear predictor (gcol33/tulpa#72)
-  # instead of erroring.
-  fit_off <- tulpa(y ~ x + offset(o), d, family = "binomial", mode = "ess",
+  # offset() threads into the sampler's linear predictor (gcol33/tulpa#72).
+  d$o <- runif(N)
+  fit_off <- tulpa(y ~ x + offset(o), d, family = "poisson", mode = "ess",
                    control = list(n_iter = 400L, warmup = 200L))
   expect_false(is.null(fit_off$draws))
   expect_equal(ncol(fit_off$draws), 2L)

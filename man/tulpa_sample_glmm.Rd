@@ -13,6 +13,10 @@ tulpa_sample_glmm(
   phi = 1,
   offset = NULL,
   fixed_names = NULL,
+  re_spec = NULL,
+  spatial_spec = NULL,
+  temporal_spec = NULL,
+  sigma_re_scale = 2.5,
   control = list()
 )
 }
@@ -34,6 +38,21 @@ tulpa_sample_glmm(
 (\verb{eta = offset + X beta}), length \code{length(y)}; \code{NULL} -> no offset.}
 
 \item{fixed_names}{Optional fixed-effect names for the draw columns.}
+
+\item{re_spec}{Optional random-effect spec: a list with \code{idx} (list of
+per-term 1-based group-index vectors), \code{ngroups}, \code{ncoefs}, \code{correlated}
+(per-term), and \code{Z} (per-term RE design or \code{NULL}). \code{NULL} -> no RE.}
+
+\item{spatial_spec}{Optional areal spatial spec: a list with \code{type}
+(\code{"icar"}/\code{"bym2"}), \code{spatial_idx}, \code{n_spatial_units}, \code{adj_row_ptr},
+\code{adj_col_idx}, \code{n_neighbors}, and \code{scale_factor} (BYM2). \code{NULL} -> none.}
+
+\item{temporal_spec}{Optional temporal spec: a list with \code{type}
+(\code{"rw1"}/\code{"rw2"}/\code{"ar1"}), \code{time_idx}, \code{n_times}, \code{n_groups}, \code{group_idx},
+and \code{cyclic}. \code{NULL} -> none.}
+
+\item{sigma_re_scale}{Half-Cauchy scale for the RE / BYM2 standard-deviation
+hyperprior (sampled jointly with the latent effects).}
 
 \item{control}{List of kernel tuning knobs (\code{n_iter}, \code{warmup}, \code{seed},
 \code{sigma_beta}, \code{n_chains}, \code{max_treedepth}, \code{adapt_delta}, \code{epsilon}, \code{L},

@@ -10,6 +10,7 @@
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
 #include "laplace_spec_fit.h"     // spec-solver marshalling for the single-point fits
+#include "re_structure.h"         // shared multi-term RE ModelData marshalling
 #include "laplace_scatter.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
@@ -281,85 +282,29 @@ Rcpp::List cpp_laplace_fit_multi_re(
     data.model_response_data = &resp;
     data.sharing.init(1);
 
-    // --- Multi-term RE structure. ---
-    data.n_re_terms = K;
+    // --- Multi-term RE structure (shared marshalling, re_structure.h). ---
     data.re_parameterization = 1;       // unused on the centered Laplace path
-    data.re_n_groups_multi.assign(K, 0);
-    data.re_n_coefs.assign(K, 1);
-    data.re_n_slopes.assign(K, 0);
-    data.re_has_intercept.assign(K, 1);
-    data.re_correlated.assign(K, false);
-    data.re_n_chol.assign(K, 0);
-    data.re_offsets.assign(K, 0);
-    data.re_slope_matrices.assign(K, std::vector<double>());
-    data.re_group_multi_flat.assign((size_t)N * K, 0);
-
-    const bool have_Z = re_Z_list.isNotNull();
-    Rcpp::List zl = have_Z ? Rcpp::as<Rcpp::List>(re_Z_list) : Rcpp::List();
-
-    std::vector<std::vector<double>> term_log_sigma(K), term_tanh_raw(K);
-    int total_re_groups = 0, total_re_params = 0, total_sigma_params = 0, total_chol_params = 0;
-    bool any_slopes = false, any_correlated = false;
-
+    // Correlated when a packed Sigma-Cholesky (length q(q+1)/2) is supplied;
+    // otherwise diagonal (length-q marginal SDs).
+    std::vector<bool> corr_flags(K, false);
     for (int t = 0; t < K; t++) {
-        const int n_g = re_ngroups[t];
-        const int q   = ncoefs[t];
-        Rcpp::IntegerVector gi = Rcpp::as<Rcpp::IntegerVector>(re_idx_list[t]);
-        if ((int)gi.size() != N) {
-            Rcpp::stop("re_idx_list[[%d]] has length %d but N = %d.", t + 1, (int)gi.size(), N);
-        }
         Rcpp::NumericVector sig = Rcpp::as<Rcpp::NumericVector>(re_sigma_list[t]);
-        // Correlated when a packed Sigma-Cholesky (length q(q+1)/2) is supplied;
-        // otherwise diagonal (length-q marginal SDs).
-        const bool corr = (q > 1) && ((int)sig.size() == q * (q + 1) / 2);
-        tulpa::pack_to_spec_re_params(sig.begin(), q, corr,
-                                      term_log_sigma[t], term_tanh_raw[t]);
-
-        // RE design -> intercept flag + slope matrix. A null / absent Z is
-        // intercept-only; otherwise an all-ones first column marks the implicit
-        // intercept (lme4 (1 + x | g)), so slopes are columns 1.., while a
-        // non-ones first column is a no-intercept design ((0 + x | g)).
-        bool has_int = true;
-        int  n_slopes = 0;
-        if (have_Z && !Rf_isNull(zl[t])) {
-            Rcpp::NumericMatrix Z = Rcpp::as<Rcpp::NumericMatrix>(zl[t]);
-            if (Z.nrow() != N) {
-                Rcpp::stop("re_Z_list[[%d]] has %d rows but N = %d.", t + 1, Z.nrow(), N);
-            }
-            has_int = true;
-            for (int i = 0; i < N; i++) { if (Z(i, 0) != 1.0) { has_int = false; break; } }
-            n_slopes = has_int ? (Z.ncol() - 1) : Z.ncol();
-            if (n_slopes > 0) {
-                data.re_slope_matrices[t].assign((size_t)N * n_slopes, 0.0);
-                for (int i = 0; i < N; i++)
-                    for (int s = 0; s < n_slopes; s++)
-                        data.re_slope_matrices[t][(size_t)i * n_slopes + s]
-                            = Z(i, has_int ? s + 1 : s);
-            }
-        }
-
-        data.re_n_groups_multi[t] = n_g;
-        data.re_n_coefs[t]        = q;
-        data.re_n_slopes[t]       = n_slopes;
-        data.re_has_intercept[t]  = has_int ? 1 : 0;
-        data.re_correlated[t]     = corr;
-        data.re_n_chol[t]         = corr ? q * (q - 1) / 2 : 0;
-        data.re_offsets[t]        = total_re_groups;
-        for (int i = 0; i < N; i++) data.re_group_multi_flat[(size_t)i * K + t] = gi[i];
-
-        if (n_slopes > 0) any_slopes = true;
-        if (corr)         any_correlated = true;
-        total_re_groups    += n_g;
-        total_re_params    += n_g * q;
-        total_sigma_params += q;
-        total_chol_params  += data.re_n_chol[t];
+        corr_flags[t] = (ncoefs[t] > 1) && ((int)sig.size() == ncoefs[t] * (ncoefs[t] + 1) / 2);
     }
-    data.total_re_groups          = total_re_groups;
-    data.total_re_params          = total_re_params;
-    data.total_sigma_params       = total_sigma_params;
-    data.total_chol_params        = total_chol_params;
-    data.has_re_slopes            = any_slopes;
-    data.has_re_correlated_slopes = any_correlated;
+    tulpa::populate_re_structure(
+        data, N, re_idx_list,
+        std::vector<int>(re_ngroups.begin(), re_ngroups.end()),
+        ncoefs, re_Z_list, corr_flags);
+
+    // Per-term sigma packing: convert each term's `pack` (marginal SDs or a
+    // packed Sigma-Cholesky) into the spec log-Cholesky parameterization the
+    // params vector below carries.
+    std::vector<std::vector<double>> term_log_sigma(K), term_tanh_raw(K);
+    for (int t = 0; t < K; t++) {
+        Rcpp::NumericVector sig = Rcpp::as<Rcpp::NumericVector>(re_sigma_list[t]);
+        tulpa::pack_to_spec_re_params(sig.begin(), ncoefs[t], data.re_correlated[t],
+                                      term_log_sigma[t], term_tanh_raw[t]);
+    }
 
     // --- ParamLayout: [beta | sigma slots | chol slots | RE effects], the
     //     schema build_latent_layout reads (mirrors hmc_param_layout). ---
@@ -368,8 +313,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     layout.process_beta_count.push_back(p);
     int next = p;
     layout.has_re                   = (K > 0);   // fixed-effects-only when no RE terms
-    layout.has_re_slopes            = any_slopes;
-    layout.has_re_correlated_slopes = any_correlated;
+    layout.has_re_slopes            = data.has_re_slopes;
+    layout.has_re_correlated_slopes = data.has_re_correlated_slopes;
     layout.log_sigma_re_multi.resize(K);
     layout.log_sigma_re_slopes.resize(K);
     layout.re_start_multi.resize(K);

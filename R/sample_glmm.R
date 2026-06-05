@@ -33,6 +33,17 @@
 #' @param offset Optional fixed additive term on the linear predictor
 #'   (`eta = offset + X beta`), length `length(y)`; `NULL` -> no offset.
 #' @param fixed_names Optional fixed-effect names for the draw columns.
+#' @param re_spec Optional random-effect spec: a list with `idx` (list of
+#'   per-term 1-based group-index vectors), `ngroups`, `ncoefs`, `correlated`
+#'   (per-term), and `Z` (per-term RE design or `NULL`). `NULL` -> no RE.
+#' @param spatial_spec Optional areal spatial spec: a list with `type`
+#'   (`"icar"`/`"bym2"`), `spatial_idx`, `n_spatial_units`, `adj_row_ptr`,
+#'   `adj_col_idx`, `n_neighbors`, and `scale_factor` (BYM2). `NULL` -> none.
+#' @param temporal_spec Optional temporal spec: a list with `type`
+#'   (`"rw1"`/`"rw2"`/`"ar1"`), `time_idx`, `n_times`, `n_groups`, `group_idx`,
+#'   and `cyclic`. `NULL` -> none.
+#' @param sigma_re_scale Half-Cauchy scale for the RE / BYM2 standard-deviation
+#'   hyperprior (sampled jointly with the latent effects).
 #' @param control List of kernel tuning knobs (`n_iter`, `warmup`, `seed`,
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
@@ -43,8 +54,10 @@
 #'   apply.
 #' @keywords internal
 tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
-                              offset = NULL,
-                              fixed_names = NULL, control = list()) {
+                              offset = NULL, fixed_names = NULL,
+                              re_spec = NULL, spatial_spec = NULL,
+                              temporal_spec = NULL, sigma_re_scale = 2.5,
+                              control = list()) {
   if (is.null(.FAMILY_OPS[[family]])) {
     stop(sprintf("Unknown family '%s'. Supported: %s.",
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)
@@ -88,15 +101,23 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     vi_mc_samples = as.integer(control$vi_mc_samples %||% 10L),
     vi_max_iter   = as.integer(control$vi_max_iter %||% 10000L),
     vi_n_draws    = as.integer(control$n_draws %||% 2000L),
-    offset        = offset
+    offset        = offset,
+    re_spec       = re_spec,
+    spatial_spec  = spatial_spec,
+    temporal_spec = temporal_spec,
+    sigma_re_scale = as.numeric(sigma_re_scale),
+    fixed_names   = fixed_names %||% colnames(X)
   )
 
-  nm <- fixed_names %||% colnames(X) %||% paste0("beta", seq_len(ncol(X)))
-  res$param_names <- nm
-  if (!is.null(res$means)) names(res$means) <- nm
-  if (!is.null(res$draws) && ncol(res$draws) == length(nm)) {
-    colnames(res$draws) <- nm
+  # The C++ kernel names every column of the full parameter vector (fixed effects
+  # + latent effects + variance-component hyperparameters) via the ParamLayout,
+  # so the draws / means carry their own names. Fall back to fixed-effect names
+  # only when the draw matrix is empty (no columns named).
+  nm <- colnames(res$draws)
+  if (is.null(nm)) {
+    nm <- fixed_names %||% colnames(X) %||% paste0("beta", seq_len(ncol(X)))
   }
+  res$param_names <- nm
   class(res) <- c("tulpa_sample_fit", "tulpa_fit")
   res
 }

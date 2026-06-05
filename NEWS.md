@@ -1,5 +1,29 @@
 # tulpa NEWS
 
+## 0.0.11 (2026-06-06)
+
+* feat(samplers): thread random-effect, areal-spatial, and temporal latent
+  structure through the model-agnostic ModelData sampler kernels --
+  hmc / ess / sghmc / sgld / mclmc / smc / vi (gcol33/tulpa#75). These kernels
+  previously fit a fixed-effect GLM only; a structured formula was routed away
+  to the conditional logpost / nested-Laplace paths. They now sample the full
+  latent vector `compute_param_layout()` lays out: random effects (intercept,
+  slopes, correlated, multi-term), an areal spatial field (ICAR / BYM2), and a
+  temporal field (RW1 / RW2 / AR1). The variance-component hyperparameters
+  (`sigma_re` per term/coef, spatial `tau` / BYM2 `sigma`+`rho`, temporal `tau`
+  / AR1 `rho`) are sampled JOINTLY with the latent and fixed effects -- full
+  Bayes over the variance components, the exact-MCMC counterpart of the Laplace
+  / logpost backends that condition on them. The four default-link families
+  (gaussian / poisson / binomial / neg_binomial_2) get an analytic reverse-mode
+  AD gradient; other families fall back to the numerical gradient, which still
+  scores the full latent log-posterior. `tulpa(mode = "hmc" / "smc" / "vi" /
+  ...)` reaches the new path for a structured formula; `ess` carries random
+  effects but declines a structured spatial / temporal field (its isotropic
+  Gaussian-prior block cannot hold the graph precision). The multi-term RE
+  ModelData marshalling is now shared (`re_structure.h`) between the Laplace
+  multi-RE fit and the sampler builder. Continuous spatial (gp / nngp / hsgp),
+  CAR_proper, and SPDE fields keep their dedicated paths.
+
 ## 0.0.10 (2026-06-05)
 
 * Fix a data race in the threaded sparse joint outer-grid nested-Laplace driver

@@ -103,7 +103,8 @@ hyperparameters is the role of the nested-Laplace / EM layer.
 \itemize{
 \item \strong{No random effects} and \strong{random intercepts} (\code{(1 | g)}) are supported on
 the design path (\code{mode = "laplace"}) and the sampler path (\code{mode = "mala"},
-\code{"pathfinder"}, \code{"imh_laplace"}).
+\code{"pathfinder"}, \code{"imh_laplace"}, and the ModelData kernels \code{"hmc"} / \code{"sghmc"}
+/ \code{"sgld"} / \code{"mclmc"} / \code{"smc"} / \code{"vi"} / \code{"ess"}).
 \item \strong{Random slopes} are supported on the Laplace (Tier 2) path: there is no
 scalar \code{sigma_re} to condition on, so the RE covariance \code{Sigma} is integrated
 rather than fixed. This covers correlated terms (\code{(1 + x | g)}, a full
@@ -125,8 +126,15 @@ present; \code{mode = "nested_laplace"} forces it. At most one random-intercept
 \code{(1 | g)} term may accompany the blocks (model richer grouping as an \code{iid}
 block). Joint multi-arm nested models cannot be expressed by a
 single-response formula -- call \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} directly.
-\item Selecting a backend whose kernel is C-ABI-only (e.g. \code{ess}, \code{sghmc}, \code{smc})
-errors loudly -- those are reachable from model packages, not from R yet.
+\item The ModelData sampler kernels (\code{"hmc"}, \code{"ess"}, \code{"sghmc"}, \code{"sgld"},
+\code{"mclmc"}, \code{"smc"}, \code{"vi"}) thread the full latent vector -- fixed effects,
+random effects (all forms), areal spatial (\code{icar} / \code{bym2}), and temporal
+(\code{rw1} / \code{rw2} / \code{ar1}) -- through one ModelData builder and sample the
+variance components jointly with the field. \code{ess} carries random effects but
+declines a structured spatial / temporal block (its isotropic Gaussian-prior
+block cannot represent the graph precision); continuous-coordinate fields
+(\code{gp} / \code{nngp} / \code{hsgp} / \code{spde}), \code{car_proper}, and exotic latent blocks stay
+on the dedicated nested-Laplace / SPDE / Polya-Gamma paths.
 }
 }
 
