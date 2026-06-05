@@ -148,6 +148,211 @@ test_that("duplicate copy block targets error", {
                 list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
             )
         ),
-        "distinct spatial block"
+        "distinct block"
+    )
+})
+
+test_that("joint multi-block recovers a copied TEMPORAL (rw1) field", {
+    # gcol33/tulpa#76: copy (alpha-coupling) on a non-spatial block. A shared
+    # smooth temporal trend f[t] is donated to arm1 at amplitude sigma and
+    # copied onto arm2 at amplitude alpha * sigma.
+    set.seed(11)
+    n_t <- 40L
+
+    f <- cumsum(rnorm(n_t, 0, 1)); f <- f - mean(f); f <- f / sd(f)
+
+    sigma_true <- 1.0
+    alpha_true <- 1.6
+
+    N1 <- 900L
+    N2 <- 900L
+    t1 <- sample.int(n_t, N1, replace = TRUE)
+    t2 <- sample.int(n_t, N2, replace = TRUE)
+    X1 <- cbind(1, rnorm(N1))
+    X2 <- cbind(1, rnorm(N2))
+
+    eta1 <- X1 %*% c(0.2, 0.5) + sigma_true * f[t1]
+    eta2 <- X2 %*% c(-0.1, 0.3) + alpha_true * sigma_true * f[t2]
+    y1 <- rnorm(N1, eta1, 0.3)
+    y2 <- rnorm(N2, eta2, 0.3)
+
+    arm1 <- list(y = y1, n_trials = rep(1L, N1), X = X1,
+                 re_idx = rep(0, N1), n_re_groups = 0L, sigma_re = 1.0,
+                 family = "gaussian", phi = 1.0)
+    arm2 <- list(y = y2, n_trials = rep(1L, N2), X = X2,
+                 re_idx = rep(0, N2), n_re_groups = 0L, sigma_re = 1.0,
+                 family = "gaussian", phi = 1.0)
+
+    rw1_block <- list(type = "rw1", n_times = n_t,
+                      sigma_grid = c(0.6, 0.9, 1.2),
+                      temporal_idx = list(t1, t2))
+
+    fit <- suppressWarnings(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm1, pos = arm2),
+            prior = list(rw1_block),
+            copy = list(arm = "pos", block = 1L,
+                        alpha_grid = c(1.0, 1.3, 1.6, 1.9)),
+            control = list(max_iter = 50L, tol = 1e-6)
+        )
+    )
+
+    expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
+    expect_true(all(is.finite(fit$log_marginal)))
+    expect_named(fit$block_moments[[1L]]$mean, c("sigma", "alpha"))
+
+    alpha_hat <- fit$block_moments[[1L]]$mean[["alpha"]]
+    expect_lt(abs(alpha_hat - alpha_true), 0.5)
+
+    # Posterior-mean temporal field: the rw1 block is the first (only) block,
+    # so its latent columns start at block_start[1] (0-based).
+    bs0  <- fit$arm_layout$block_start[1L]
+    w    <- fit$weights
+    cols <- bs0 + seq_len(n_t)
+    f_hat <- as.numeric(crossprod(w, fit$modes[, cols, drop = FALSE]))
+    expect_gt(abs(cor(f_hat, f)), 0.7)
+})
+
+test_that("joint multi-block recovers a copied TEMPORAL (ar1) field", {
+    # gcol33/tulpa#76: ar1 copy carries an extra rho axis, so the donor / copy
+    # amplitude axes sit at (axis0, axis0 + 1) and rho moves to axis0 + 2.
+    # Exercises that axis shift end-to-end.
+    set.seed(12)
+    n_t <- 40L
+
+    rho_true <- 0.8
+    f <- numeric(n_t); f[1] <- rnorm(1)
+    for (t in 2:n_t) f[t] <- rho_true * f[t - 1] + rnorm(1, 0, sqrt(1 - rho_true^2))
+    f <- f - mean(f); f <- f / sd(f)
+
+    sigma_true <- 1.0
+    alpha_true <- 1.5
+
+    N1 <- 900L
+    N2 <- 900L
+    t1 <- sample.int(n_t, N1, replace = TRUE)
+    t2 <- sample.int(n_t, N2, replace = TRUE)
+    X1 <- cbind(1, rnorm(N1))
+    X2 <- cbind(1, rnorm(N2))
+
+    eta1 <- X1 %*% c(0.2, 0.5) + sigma_true * f[t1]
+    eta2 <- X2 %*% c(-0.1, 0.3) + alpha_true * sigma_true * f[t2]
+    y1 <- rnorm(N1, eta1, 0.3)
+    y2 <- rnorm(N2, eta2, 0.3)
+
+    arm1 <- list(y = y1, n_trials = rep(1L, N1), X = X1,
+                 re_idx = rep(0, N1), n_re_groups = 0L, sigma_re = 1.0,
+                 family = "gaussian", phi = 1.0)
+    arm2 <- list(y = y2, n_trials = rep(1L, N2), X = X2,
+                 re_idx = rep(0, N2), n_re_groups = 0L, sigma_re = 1.0,
+                 family = "gaussian", phi = 1.0)
+
+    ar1_block <- list(type = "ar1", n_times = n_t,
+                      sigma_grid = c(0.6, 0.9, 1.2),
+                      rho_grid = c(0.5, 0.7, 0.9),
+                      temporal_idx = list(t1, t2))
+
+    fit <- suppressWarnings(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm1, pos = arm2),
+            prior = list(ar1_block),
+            copy = list(arm = "pos", block = 1L,
+                        alpha_grid = c(0.9, 1.2, 1.5, 1.8)),
+            control = list(max_iter = 50L, tol = 1e-6)
+        )
+    )
+
+    expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
+    expect_true(all(is.finite(fit$log_marginal)))
+    expect_named(fit$block_moments[[1L]]$mean, c("sigma", "alpha", "rho"))
+
+    alpha_hat <- fit$block_moments[[1L]]$mean[["alpha"]]
+    expect_lt(abs(alpha_hat - alpha_true), 0.5)
+
+    bs0  <- fit$arm_layout$block_start[1L]
+    w    <- fit$weights
+    cols <- bs0 + seq_len(n_t)
+    f_hat <- as.numeric(crossprod(w, fit$modes[, cols, drop = FALSE]))
+    expect_gt(abs(cor(f_hat, f)), 0.7)
+})
+
+test_that("joint multi-block recovers a copied IID field", {
+    # gcol33/tulpa#76: copy on an unstructured (iid) block. A shared per-group
+    # random effect u[g] enters arm1 at amplitude sigma and arm2 at alpha*sigma.
+    set.seed(13)
+    n_g <- 30L
+
+    u <- rnorm(n_g, 0, 1); u <- u - mean(u); u <- u / sd(u)
+
+    sigma_true <- 1.0
+    alpha_true <- 0.6
+
+    # Many observations per group so the unstructured effect is identifiable.
+    reps <- 40L
+    g1 <- rep(seq_len(n_g), each = reps)
+    g2 <- rep(seq_len(n_g), each = reps)
+    N1 <- length(g1)
+    N2 <- length(g2)
+    X1 <- cbind(1, rnorm(N1))
+    X2 <- cbind(1, rnorm(N2))
+
+    eta1 <- X1 %*% c(0.2, 0.4) + sigma_true * u[g1]
+    eta2 <- X2 %*% c(-0.1, 0.3) + alpha_true * sigma_true * u[g2]
+    y1 <- rnorm(N1, eta1, 0.3)
+    y2 <- rnorm(N2, eta2, 0.3)
+
+    arm1 <- list(y = y1, n_trials = rep(1L, N1), X = X1,
+                 re_idx = rep(0, N1), n_re_groups = 0L, sigma_re = 1.0,
+                 family = "gaussian", phi = 1.0)
+    arm2 <- list(y = y2, n_trials = rep(1L, N2), X = X2,
+                 re_idx = rep(0, N2), n_re_groups = 0L, sigma_re = 1.0,
+                 family = "gaussian", phi = 1.0)
+
+    iid_block <- list(type = "iid", n_units = n_g,
+                      sigma_grid = c(0.6, 0.9, 1.2),
+                      obs_idx = list(g1, g2))
+
+    fit <- suppressWarnings(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm1, pos = arm2),
+            prior = list(iid_block),
+            copy = list(arm = "pos", block = 1L,
+                        alpha_grid = c(0.3, 0.6, 0.9, 1.2)),
+            control = list(max_iter = 50L, tol = 1e-6)
+        )
+    )
+
+    expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
+    expect_true(all(is.finite(fit$log_marginal)))
+    expect_named(fit$block_moments[[1L]]$mean, c("sigma", "alpha"))
+
+    alpha_hat <- fit$block_moments[[1L]]$mean[["alpha"]]
+    expect_lt(abs(alpha_hat - alpha_true), 0.4)
+
+    bs0  <- fit$arm_layout$block_start[1L]
+    w    <- fit$weights
+    cols <- bs0 + seq_len(n_g)
+    u_hat <- as.numeric(crossprod(w, fit$modes[, cols, drop = FALSE]))
+    expect_gt(abs(cor(u_hat, u)), 0.7)
+})
+
+test_that("copy on an unsupported block type (lf) errors", {
+    set.seed(17)
+    n_s <- 10L
+    adj <- .chain_adj_copy(n_s)
+    N <- 40L
+    s <- sample.int(n_s, N, replace = TRUE)
+    X <- cbind(1, rnorm(N))
+    arm <- list(y = rnorm(N), n_trials = rep(1L, N), X = X,
+                re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
+                family = "gaussian", phi = 1.0)
+    lf_block <- list(type = "lf", n_latent = n_s, obs_idx = list(s, s))
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(a = arm, b = arm),
+            prior = list(lf_block),
+            copy = list(arm = "b", block = 1L, alpha_grid = c(0.5, 1.0))
+        ),
+        "supported on types"
     )
 })

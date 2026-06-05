@@ -103,9 +103,12 @@
 #'   to pick the copy block; for single-block fits, leave `copy = NULL`
 #'   and put the spec on the arm. On the multi-block path `copy` may also
 #'   be an unnamed list of such specs — `list(list(arm, block, alpha_grid),
-#'   ...)` — coupling N distinct shared spatial fields, each onto its own
+#'   ...)` — coupling N distinct shared latent fields, each onto its own
 #'   arm with its own \eqn{\alpha} axis, integrated over the product outer
-#'   grid. Each spec must name a distinct spatial block.
+#'   grid. Each spec must name a distinct block. The copy block may be any
+#'   of `icar` / `bym2` / `car_proper` / `rw1` / `rw2` / `ar1` / `iid`
+#'   (gcol33/tulpa#76); blocks with their own per-arm scaling (`lf`,
+#'   `hsgp_mo`) or a precomputed precision (`tgmrf`) do not take a copy.
 #'
 #' @param phi_grid Optional list specifying per-arm dispersion axes on the
 #'   outer grid. Accepts either a named list (keys = arm names) or a

@@ -9,9 +9,10 @@
 #
 # Activated when `prior` is a list-of-blocks (each element has a `type`
 # field). Routes to cpp_nested_laplace_joint_multi, which builds a
-# std::vector<LatentBlock> on the joint side. At most one block can be
-# the copy block; first ship restricts the copy block to spatial types
-# (icar / bym2 / car_proper). See dev_notes/plan_multi_block_joint.md.
+# std::vector<LatentBlock> on the joint side. Each block can be a copy
+# block; copy (alpha-coupling) is supported on areal spatial (icar / bym2 /
+# car_proper), temporal (rw1 / rw2 / ar1), and unstructured (iid) blocks
+# (gcol33/tulpa#76). See dev_notes/plan_multi_block_joint.md.
 
 # Multi-block detection. Same shape as the single-arm side: a list whose
 # elements are themselves named lists carrying a `type` field, and whose
@@ -115,9 +116,7 @@
     block_id <- spec$block
     if (is.null(block_id)) {
         stop("`copy$block` must be a 1-based index into `prior` for the ",
-             "multi-block joint driver. (Copy semantics are restricted to ",
-             "spatial blocks; see dev_notes/plan_multi_block_joint.md.)",
-             call. = FALSE)
+             "multi-block joint driver.", call. = FALSE)
     }
     block_zero <- as.integer(block_id) - 1L
     if (block_zero < 0L || block_zero >= length(prior_list)) {
@@ -125,12 +124,19 @@
              length(prior_list), ").", call. = FALSE)
     }
     block_type <- tolower(prior_list[[block_zero + 1L]]$type)
-    spatial_types <- c("icar", "bym2", "car_proper")
-    if (!block_type %in% spatial_types) {
+    # Copy (alpha-coupling) is supported on any block whose amplitude is a
+    # single scalar the donor / copy arms scale independently: areal spatial
+    # (icar / bym2 / car_proper), temporal (rw1 / rw2 / ar1), and unstructured
+    # (iid). Blocks whose per-arm scaling lives elsewhere (lf via lambda,
+    # hsgp_mo via Sigma) or whose precision is precomputed (tgmrf) do not take
+    # a copy (gcol33/tulpa#76).
+    copy_types <- c("icar", "bym2", "car_proper", "rw1", "rw2", "ar1", "iid")
+    if (!block_type %in% copy_types) {
         stop("`copy$block` points at type '", block_type, "'. Copy semantics ",
-             "are restricted to spatial types (",
-             paste(shQuote(spatial_types), collapse = ", "), "). ",
-             "See dev_notes/plan_multi_block_joint.md.", call. = FALSE)
+             "are supported on types (",
+             paste(shQuote(copy_types), collapse = ", "), "). ",
+             "Blocks with their own per-arm scaling (lf, hsgp_mo) or a ",
+             "precomputed precision (tgmrf) do not take a copy.", call. = FALSE)
     }
     if (!is.null(spec$alpha_grid)) {
         alpha_axis <- as.numeric(spec$alpha_grid)
@@ -153,8 +159,8 @@
 # Resolve the copy specification for the multi-block joint driver. `copy`
 # may be a single spec `list(arm, block, alpha_grid)` (back-compat) OR an
 # unnamed list of such specs (N coupled fields, one alpha axis each). Each
-# spec must name a distinct spatial block. Returns vectors parallel over
-# the copy blocks:
+# spec must name a distinct copy-supported block. Returns vectors parallel
+# over the copy blocks:
 #   has_copy, copy_arms_zero (int vec), copy_blocks_zero (int vec),
 #   alpha_grids (list of numeric, one per copy block).
 .resolve_copy_multi <- function(copy, responses, prior_list) {
@@ -172,17 +178,18 @@
         stop("Two copy specs target the same block (1-based index ",
              paste(unique(copy_blocks_zero[duplicated(copy_blocks_zero)]) + 1L,
                    collapse = ", "),
-             "). Each coupled field must name a distinct spatial block.",
+             "). Each coupled field must name a distinct block.",
              call. = FALSE)
     }
     list(has_copy = TRUE, copy_arms_zero = copy_arms_zero,
          copy_blocks_zero = copy_blocks_zero, alpha_grids = alpha_grids)
 }
 
-# Per-block axis grid for the multi-block joint driver. When the block is
-# the copy block (spatial only for first ship), the parameterisation
-# uses (sigma, alpha[, rho/rho_car]) directly. Non-copy blocks use the
-# standard single-arm conventions and reuse the `.NL_REGISTRY` defaults.
+# Per-block axis grid for the multi-block joint driver. When the block is a
+# copy block (any of icar / bym2 / car_proper / rw1 / rw2 / ar1 / iid), the
+# parameterisation uses (sigma, alpha[, rho/rho_car]) directly. Non-copy
+# blocks use the standard single-arm conventions and reuse the `.NL_REGISTRY`
+# defaults.
 #
 # Returns:
 #   $grid    : matrix [n_block_cells x n_axes_for_block]
@@ -198,7 +205,14 @@
             sigma_axis <- exp(seq(log(0.1), log(3), length.out = 5))
         }
         sigma_axis <- as.numeric(sigma_axis)
-        if (type == "icar") {
+        # Copy axes always lead with (sigma, alpha); the kernel materializes
+        # sigma_donor = sigma and sigma_copy = alpha * sigma in those two
+        # leading columns (see .joint_multi_cpp_grid), so any trailing
+        # correlation axis (rho / rho_car) must follow them. A unit-precision
+        # block (icar / rw1 / rw2 / iid) has just (sigma, alpha); a block with a
+        # second hyperparameter (bym2 rho, car_proper rho_car, ar1 rho) appends
+        # it (gcol33/tulpa#76).
+        if (type %in% c("icar", "rw1", "rw2", "iid")) {
             gr <- expand.grid(sigma = sigma_axis,
                               alpha = alpha_grid,
                               KEEP.OUT.ATTRS = FALSE,
@@ -217,9 +231,16 @@
                               rho_car = as.numeric(rho_car),
                               KEEP.OUT.ATTRS = FALSE,
                               stringsAsFactors = FALSE)
+        } else if (type == "ar1") {
+            rho <- p$rho_grid %||% c(0.0, 0.4, 0.7, 0.9, 0.97)
+            gr <- expand.grid(sigma = sigma_axis,
+                              alpha = alpha_grid,
+                              rho   = as.numeric(rho),
+                              KEEP.OUT.ATTRS = FALSE,
+                              stringsAsFactors = FALSE)
         } else {
-            stop("Block ", block_index, ": copy semantics not supported for ",
-                 "type '", type, "' in first ship.", call. = FALSE)
+            stop("Block ", block_index, ": copy semantics are not supported ",
+                 "for type '", type, "'.", call. = FALSE)
         }
         return(list(grid     = as.matrix(gr),
                     names    = colnames(gr),

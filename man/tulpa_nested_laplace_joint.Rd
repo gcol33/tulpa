@@ -89,9 +89,12 @@ and the rest of the driver reads only \code{field_coef} thereafter
 (gcol33/tulpa#32). The multi-block path still consumes \code{copy$block}
 to pick the copy block; for single-block fits, leave \code{copy = NULL}
 and put the spec on the arm. On the multi-block path \code{copy} may also
-be an unnamed list of such specs — \code{list(list(arm, block, alpha_grid), ...)} — coupling N distinct shared spatial fields, each onto its own
+be an unnamed list of such specs — \code{list(list(arm, block, alpha_grid), ...)} — coupling N distinct shared latent fields, each onto its own
 arm with its own \eqn{\alpha} axis, integrated over the product outer
-grid. Each spec must name a distinct spatial block.
+grid. Each spec must name a distinct block. The copy block may be any
+of \code{icar} / \code{bym2} / \code{car_proper} / \code{rw1} / \code{rw2} / \code{ar1} / \code{iid}
+(gcol33/tulpa#76); blocks with their own per-arm scaling (\code{lf},
+\code{hsgp_mo}) or a precomputed precision (\code{tgmrf}) do not take a copy.
 }}
 
 \item{phi_grid}{Optional list specifying per-arm dispersion axes on the

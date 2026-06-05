@@ -3,8 +3,9 @@
 // nested Laplace with a list-of-blocks prior. The joint analogue of
 // cpp_nested_laplace_multi (single-arm).
 //
-// At most one block in the list can be designated the "copy block" (first
-// ship: must be a spatial block -- icar / bym2 / car_proper). The copy block
+// Any block in the list can be designated a "copy block" -- one of icar /
+// bym2 / car_proper / rw1 / rw2 / ar1 / iid (gcol33/tulpa#76; the alpha-scaled
+// eta contribution does not depend on the field being spatial). The copy block
 // uses INLA `copy=` semantics: donor arms see one amplitude axis, the copy
 // arm sees a second. Other blocks are shared identically across arms.
 //
@@ -39,10 +40,13 @@
 //       rw1, rw2  : (tau,)
 //       ar1       : (tau, rho)
 //       iid       : (sigma,)
-//   * Copy block (spatial only; first ship restriction):
+//   * Copy block (any of icar / bym2 / car_proper / rw1 / rw2 / ar1 / iid):
 //       icar      : (sigma_donor, sigma_copy)
 //       bym2      : (sigma_donor, sigma_copy, rho)
 //       car_proper: (sigma_donor, sigma_copy, rho_car)
+//       rw1, rw2  : (sigma_donor, sigma_copy)
+//       ar1       : (sigma_donor, sigma_copy, rho)
+//       iid       : (sigma_donor, sigma_copy)
 // where the R side fills `sigma_donor = sigma`, `sigma_copy = alpha * sigma`
 // before calling. The R-side parser is responsible for building theta_grid
 // with the correct per-block layout; this kernel just reads the axes by
@@ -591,11 +595,6 @@ int build_joint_blocks_from_spec(
     }
 
     if (type == "rw1" || type == "rw2") {
-        if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics are only supported on spatial blocks for now (J-B first ship). See dev_notes/plan_multi_block_joint.md.",
-                       block_index + 1);
-        }
-        require_axes(1);
         int size = Rcpp::as<int>(bs["n_times"]);
         Rcpp::List temporal_idx_list = bs["temporal_idx"];
         bool cyclic = (type == "rw1") &&
@@ -609,48 +608,69 @@ int build_joint_blocks_from_spec(
         block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
                                             "temporal_idx", block_index);
         block.d_fac = [](int) -> double { return 1.0; };
+
+        // Copy block: unit-precision prior (tau = 1) with the per-arm
+        // amplitude (donor: sigma, copy: alpha * sigma, materialized R-side)
+        // riding on arm_scale -- identical machinery to the spatial copy
+        // blocks, since the alpha-scaled eta contribution does not depend on
+        // the field being spatial. Non-copy: tau on the prior off axis0, plus
+        // the per-arm field_coef multiplier when some arm carries one.
+        if (is_copy_block) {
+            require_axes(2);  // (sigma_donor, sigma_copy)
+            block.arm_scale = make_copy_arm_scale_fn(
+                copy_arm, axis0, axis0 + 1, theta_grid, arms_ptr);
+        } else {
+            require_axes(1);  // (tau,)
+            if (any_nontrivial_field_coef) {
+                block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
+            }
+        }
         if (type == "rw1") {
-            block.add_prior = [start, size, axis0, theta_grid, cyclic](
+            block.add_prior = [start, size, axis0, theta_grid, cyclic,
+                                is_copy_block](
                 tulpa::DenseVec& grad, tulpa::DenseMat& H,
                 const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
+                double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
                 tulpa::add_rw1_precision(grad, H, x, start, size, tau, cyclic);
             };
-            block.add_prior_sparse = [start, size, axis0, theta_grid, cyclic](
+            block.add_prior_sparse = [start, size, axis0, theta_grid, cyclic,
+                                       is_copy_block](
                 tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                 const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
+                double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
                 tulpa::add_rw1_precision_sparse(grad, H, x, start, size, tau, cyclic);
             };
             block.add_prior_pattern = [start, size, cyclic](
                 std::vector<std::pair<int,int>>& out) {
                 tulpa::add_rw1_pattern(out, start, size, cyclic);
             };
-            block.log_prior = [start, size, axis0, theta_grid, cyclic](
+            block.log_prior = [start, size, axis0, theta_grid, cyclic,
+                                is_copy_block](
                 const Rcpp::NumericVector& x, int k) -> double {
-                double tau = theta_grid(k, axis0);
+                double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
                 return tulpa::log_prior_rw1(x, start, size, tau, cyclic);
             };
         } else {
-            block.add_prior = [start, size, axis0, theta_grid](
+            block.add_prior = [start, size, axis0, theta_grid, is_copy_block](
                 tulpa::DenseVec& grad, tulpa::DenseMat& H,
                 const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
+                double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
                 tulpa::add_rw2_precision(grad, H, x, start, size, tau, false);
             };
-            block.add_prior_sparse = [start, size, axis0, theta_grid](
+            block.add_prior_sparse = [start, size, axis0, theta_grid,
+                                       is_copy_block](
                 tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                 const Rcpp::NumericVector& x, int k) {
-                double tau = theta_grid(k, axis0);
+                double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
                 tulpa::add_rw2_precision_sparse(grad, H, x, start, size, tau, false);
             };
             block.add_prior_pattern = [start, size](
                 std::vector<std::pair<int,int>>& out) {
                 tulpa::add_rw2_pattern(out, start, size, /*cyclic=*/false);
             };
-            block.log_prior = [start, size, axis0, theta_grid](
+            block.log_prior = [start, size, axis0, theta_grid, is_copy_block](
                 const Rcpp::NumericVector& x, int k) -> double {
-                double tau = theta_grid(k, axis0);
+                double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
                 return tulpa::log_prior_rw2(x, start, size, tau, false);
             };
         }
@@ -664,11 +684,6 @@ int build_joint_blocks_from_spec(
     }
 
     if (type == "ar1") {
-        if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics are only supported on spatial blocks for now (J-B first ship). See dev_notes/plan_multi_block_joint.md.",
-                       block_index + 1);
-        }
-        require_axes(2);
         int size = Rcpp::as<int>(bs["n_times"]);
         Rcpp::List temporal_idx_list = bs["temporal_idx"];
         int start = latent_offset;
@@ -679,18 +694,40 @@ int build_joint_blocks_from_spec(
         block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
                                             "temporal_idx", block_index);
         block.d_fac = [](int) -> double { return 1.0; };
-        block.add_prior = [start, size, axis0, theta_grid](
+
+        // Copy block: unit-precision prior (tau = 1), per-arm amplitude on
+        // arm_scale; the AR1 correlation rho moves to axis0 + 2 so the donor /
+        // copy amplitude axes occupy axis0 / axis0 + 1 (the (sigma_donor,
+        // sigma_copy, rho) layout, parallel to the spatial copy blocks).
+        // Non-copy: (tau, rho) on axis0 / axis0 + 1, plus the per-arm
+        // field_coef multiplier when set.
+        int axis_rho;
+        if (is_copy_block) {
+            require_axes(3);  // (sigma_donor, sigma_copy, rho)
+            block.arm_scale = make_copy_arm_scale_fn(
+                copy_arm, axis0, axis0 + 1, theta_grid, arms_ptr);
+            axis_rho = axis0 + 2;
+        } else {
+            require_axes(2);  // (tau, rho)
+            if (any_nontrivial_field_coef) {
+                block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
+            }
+            axis_rho = axis0 + 1;
+        }
+        block.add_prior = [start, size, axis0, axis_rho, theta_grid,
+                            is_copy_block](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            double rho = theta_grid(k, axis0 + 1);
+            double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
+            double rho = theta_grid(k, axis_rho);
             tulpa::add_ar1_precision(grad, H, x, start, size, tau, rho);
         };
-        block.add_prior_sparse = [start, size, axis0, theta_grid](
+        block.add_prior_sparse = [start, size, axis0, axis_rho, theta_grid,
+                                   is_copy_block](
             tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
             const Rcpp::NumericVector& x, int k) {
-            double tau = theta_grid(k, axis0);
-            double rho = theta_grid(k, axis0 + 1);
+            double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
+            double rho = theta_grid(k, axis_rho);
             tulpa::add_ar1_precision_sparse(grad, H, x, start, size, tau, rho);
         };
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
@@ -699,10 +736,11 @@ int build_joint_blocks_from_spec(
             std::vector<std::pair<int,int>>& out) {
             tulpa::add_ar1_pattern(out, start, size);
         };
-        block.log_prior = [start, size, axis0, theta_grid](
+        block.log_prior = [start, size, axis0, axis_rho, theta_grid,
+                            is_copy_block](
             const Rcpp::NumericVector& x, int k) -> double {
-            double tau = theta_grid(k, axis0);
-            double rho = theta_grid(k, axis0 + 1);
+            double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
+            double rho = theta_grid(k, axis_rho);
             return tulpa::log_prior_ar1(x, start, size, tau, rho);
         };
         block.center = [start, size](Rcpp::NumericVector& x) -> double {
@@ -713,11 +751,6 @@ int build_joint_blocks_from_spec(
     }
 
     if (type == "iid") {
-        if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics are only supported on spatial blocks for now (J-B first ship). See dev_notes/plan_multi_block_joint.md.",
-                       block_index + 1);
-        }
-        require_axes(1);
         int size = Rcpp::as<int>(bs["n_units"]);
         Rcpp::List obs_idx_list = bs["obs_idx"];
         int start = latent_offset;
@@ -727,9 +760,25 @@ int build_joint_blocks_from_spec(
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(obs_idx_list, n_arms,
                                             "obs_idx", block_index);
-        block.d_fac = [axis0, theta_grid](int k) -> double {
-            return theta_grid(k, axis0);
-        };
+
+        // Copy block: the unit-precision prior is unchanged (an IID field is
+        // already N(0, I)); the per-arm amplitude (donor: sigma, copy:
+        // alpha * sigma) rides on arm_scale with d_fac = 1. Non-copy: sigma on
+        // d_fac off axis0, plus the per-arm field_coef multiplier when set.
+        if (is_copy_block) {
+            require_axes(2);  // (sigma_donor, sigma_copy)
+            block.d_fac = [](int) -> double { return 1.0; };
+            block.arm_scale = make_copy_arm_scale_fn(
+                copy_arm, axis0, axis0 + 1, theta_grid, arms_ptr);
+        } else {
+            require_axes(1);  // (sigma,)
+            block.d_fac = [axis0, theta_grid](int k) -> double {
+                return theta_grid(k, axis0);
+            };
+            if (any_nontrivial_field_coef) {
+                block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
+            }
+        }
         block.add_prior = [start, size](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int) {
