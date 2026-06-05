@@ -2080,6 +2080,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // (prep_at_grid touches only arm.phi; the spatial block prep below is
         // independent of it and stays outside the critical, as in the dense
         // parallel driver.)
+        // Per-thread snapshot of the coupled arms' dispersion, taken under the
+        // SAME critical that rewrites it. The non-coupled arms read their
+        // dispersion from the thread-local `specs_use` (synced just below); the
+        // coupled cell-coupling path has no spec view, so without this snapshot
+        // it would read the shared `arms[k].phi` lock-free during the Newton
+        // solve while a concurrent cell's prep_at_grid rewrites it -- the
+        // gridded beta precision (`phi.grid.pos`) race behind gcol33/tulpaObs#42.
+        std::vector<double> coupled_phi(coupled_arms.size(), 0.0);
         {
             TULPA_PROFILE_PHASE(PHASE_PREP);
             #ifdef _OPENMP
@@ -2088,8 +2096,12 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             {
                 if (prep_at_grid) prep_at_grid(k_grid);
                 specs_use.sync_dispersion(arms);
+                for (std::size_t kk = 0; kk < coupled_arms.size(); ++kk)
+                    coupled_phi[kk] = arms[coupled_arms[kk]].phi;
             }
         }
+        const double* coupled_phi_ptr =
+            coupled_arms.empty() ? nullptr : coupled_phi.data();
 
         for (const auto& b : blocks) {
             TULPA_PROFILE_PHASE(PHASE_PREP);
@@ -2173,7 +2185,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                     finalize ? CurvatureMode::Observed : step_curvature;
                 scatter_cell_coupling_sparse_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                    arms, parsed, etas, blocks, k_grid, grad, H, cm, grad_only
+                    arms, parsed, etas, blocks, k_grid, grad, H, cm, grad_only,
+                    coupled_phi_ptr
                 );
             }
             for (const auto& b : blocks) {
@@ -2217,7 +2230,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 [&](const std::vector<Rcpp::NumericVector>& e) {
                     return eval_cell_coupling_log_lik(
                         *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
-                        arms, e
+                        arms, e, coupled_phi_ptr
                     );
                 };
         }

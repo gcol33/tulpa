@@ -325,13 +325,21 @@ inline void scatter_arm_obs_joint_multi(
 // trivial way to keep the line-search objective consistent with the
 // scatter -- caching the scatter's derivatives across line-search
 // rejects is a B.2 micro-opt if the spec evaluate is expensive).
+// `phi_override` (optional, length n_coupled): per-coupled-arm dispersion to use
+// in place of the shared `arms[k].phi`. The threaded sparse outer-grid driver
+// passes a per-thread snapshot taken under the phi-sync critical, because the
+// gridded coupled-arm dispersion (e.g. the beta precision on `phi.grid.pos`) is
+// rewritten in `arms` per cell by a concurrent thread's `prep_at_grid`; reading
+// the shared `arms[k].phi` lock-free here would race it (gcol33/tulpaObs#42).
+// nullptr keeps the direct `arms[k].phi` read for the serial / dense callers.
 inline double eval_cell_coupling_log_lik(
     const CellCouplingSpec&                       spec,
     const std::vector<int>&                       coupled_arms,
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
     int                                           n_cells,
     const std::vector<JointArm>&                  arms,
-    const std::vector<Rcpp::NumericVector>&       etas
+    const std::vector<Rcpp::NumericVector>&       etas,
+    const double*                                 phi_override = nullptr
 ) {
     const int n_coupled = (int)coupled_arms.size();
     if (n_coupled == 0 || n_cells == 0) return 0.0;
@@ -349,7 +357,7 @@ inline double eval_cell_coupling_log_lik(
         arm_n_trials_ptr[kk] = arms[k].n_trials.size()> 0 ? INTEGER(arms[k].n_trials)   : nullptr;
         family_holder[kk]    = arms[k].family;
         arm_family_ptr[kk]   = family_holder[kk].c_str();
-        arm_phi_vec[kk]      = arms[k].phi;
+        arm_phi_vec[kk]      = phi_override ? phi_override[kk] : arms[k].phi;
     }
 
     std::vector<int>            arm_row_count(n_coupled);
@@ -548,7 +556,8 @@ inline void scatter_cell_coupling_branch_impl(
     ScatterRowFn                                  scatter_row,
     ScatterCrossFn                                scatter_cross,
     CurvatureMode                                 curvature = CurvatureMode::Observed,
-    bool                                          grad_only = false
+    bool                                          grad_only = false,
+    const double*                                 phi_override = nullptr
 ) {
     const int n_coupled = (int)coupled_arms.size();
     const int B         = (int)blocks.size();
@@ -584,7 +593,7 @@ inline void scatter_cell_coupling_branch_impl(
         arm_n_trials_ptr[kk] = arms[k].n_trials.size()> 0 ? INTEGER(arms[k].n_trials)   : nullptr;
         family_holder[kk]    = arms[k].family;
         arm_family_ptr[kk]   = family_holder[kk].c_str();
-        arm_phi_vec[kk]      = arms[k].phi;
+        arm_phi_vec[kk]      = phi_override ? phi_override[kk] : arms[k].phi;
     }
 
     // Per-cell scratch (row counts + row pointer arrays + derivative
@@ -750,14 +759,15 @@ inline void scatter_cell_coupling_dense_branch(
     int                                           k_grid,
     DenseVec&                                     grad,
     DenseMat&                                     H,
-    CurvatureMode                                 curvature = CurvatureMode::Observed
+    CurvatureMode                                 curvature = CurvatureMode::Observed,
+    const double*                                 phi_override = nullptr
 ) {
     scatter_cell_coupling_branch_impl(
         spec, coupled_arms, cell_rows, n_cells,
         arms, parsed, etas, blocks, k_grid, grad, H,
         scatter_one_arm_row_dense,
         scatter_cross_chain_dense,
-        curvature
+        curvature, /*grad_only=*/false, phi_override
     );
 }
 
@@ -779,14 +789,15 @@ inline void scatter_cell_coupling_sparse_branch(
     DenseVec&                                     grad,
     SparseHessianBuilder&                         H,
     CurvatureMode                                 curvature = CurvatureMode::Observed,
-    bool                                          grad_only = false
+    bool                                          grad_only = false,
+    const double*                                 phi_override = nullptr
 ) {
     scatter_cell_coupling_branch_impl(
         spec, coupled_arms, cell_rows, n_cells,
         arms, parsed, etas, blocks, k_grid, grad, H,
         scatter_one_arm_row_sparse,
         scatter_cross_chain_sparse,
-        curvature, grad_only
+        curvature, grad_only, phi_override
     );
 }
 
