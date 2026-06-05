@@ -1,10 +1,12 @@
 inline GPSolver parse_gp_solver(const std::string& s) {
-  if (s == "auto") return GPSolver::AUTO;
-  if (s == "cholesky") return GPSolver::CHOLESKY;
-  if (s == "cg") return GPSolver::CG;
-  if (s == "pcg") return GPSolver::PCG;
-  if (s == "gpu") return GPSolver::GPU;
-  return GPSolver::AUTO;
+  static const tulpa::EnumEntry<GPSolver> table[] = {
+      {"auto", GPSolver::AUTO},
+      {"cholesky", GPSolver::CHOLESKY},
+      {"cg", GPSolver::CG},
+      {"pcg", GPSolver::PCG},
+      {"gpu", GPSolver::GPU}
+  };
+  return tulpa::parse_enum(s, table, GPSolver::AUTO);
 }
 
 // -----------------------------------------------------------------------------

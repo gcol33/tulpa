@@ -13,6 +13,7 @@
 #include "hmc_gp_cg.h"  // Iterative CG/PCG solvers (dense_cg_solve, dense_pcg_solve)
 #include "tulpa/gp_data.h"
 #include "tulpa/types.h"
+#include "pc_prior.h"  // tulpa::pc_prior_log_sigma2 (used by hmc_gp_log_lik.h)
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -33,13 +34,15 @@ using tulpa_svc::compute_cov;
 
 // Parse sampler string to enum
 inline MSGPSampler parse_msgp_sampler(const std::string& s) {
-  if (s == "noncentered" || s == "auto") return MSGPSampler::NONCENTERED;
-  if (s == "centered") return MSGPSampler::CENTERED;
-  if (s == "interweaved") return MSGPSampler::INTERWEAVED;
-  if (s == "adaptive") return MSGPSampler::ADAPTIVE;
-  if (s == "riemannian") return MSGPSampler::RIEMANNIAN;
-  if (s == "lbfgs") return MSGPSampler::LBFGS;
-  return MSGPSampler::NONCENTERED;  // Default fallback
+  static const tulpa::EnumEntry<MSGPSampler> table[] = {
+      {"noncentered", MSGPSampler::NONCENTERED}, {"auto", MSGPSampler::NONCENTERED},
+      {"centered", MSGPSampler::CENTERED},
+      {"interweaved", MSGPSampler::INTERWEAVED},
+      {"adaptive", MSGPSampler::ADAPTIVE},
+      {"riemannian", MSGPSampler::RIEMANNIAN},
+      {"lbfgs", MSGPSampler::LBFGS}
+  };
+  return tulpa::parse_enum(s, table, MSGPSampler::NONCENTERED);
 }
 
 #include "hmc_gp_lbfgs.h"

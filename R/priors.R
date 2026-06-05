@@ -101,6 +101,19 @@ validate_prior <- function(prior, name) {
   if (value <= 0) stop(sprintf("%s must be positive", name), call. = FALSE)
 }
 
+# Constructor for the elementary tulpa_prior objects: validate the
+# positive-constrained parameters, then box the distribution name and its
+# parameters with the standard two-level class. Single source of truth for the
+# simple prior_*() constructors; priors carrying derived fields (e.g.
+# prior_pc()'s rate) build their object directly.
+.make_prior <- function(distribution, params, positive = character()) {
+  for (nm in positive) .assert_positive(params[[nm]], nm)
+  structure(
+    c(list(distribution = distribution), params),
+    class = c(paste0("tulpa_prior_", distribution), "tulpa_prior")
+  )
+}
+
 
 #' Normal prior
 #'
@@ -118,15 +131,7 @@ validate_prior <- function(prior, name) {
 #'
 #' @export
 prior_normal <- function(mean = 0, sd = 2.5) {
-  .assert_positive(sd, "sd")
-  structure(
-    list(
-      distribution = "normal",
-      mean = mean,
-      sd = sd
-    ),
-    class = c("tulpa_prior_normal", "tulpa_prior")
-  )
+  .make_prior("normal", list(mean = mean, sd = sd), positive = "sd")
 }
 
 
@@ -144,14 +149,7 @@ prior_normal <- function(mean = 0, sd = 2.5) {
 #'
 #' @export
 prior_half_normal <- function(sd = 1) {
-  .assert_positive(sd, "sd")
-  structure(
-    list(
-      distribution = "half_normal",
-      sd = sd
-    ),
-    class = c("tulpa_prior_half_normal", "tulpa_prior")
-  )
+  .make_prior("half_normal", list(sd = sd), positive = "sd")
 }
 
 
@@ -170,14 +168,7 @@ prior_half_normal <- function(sd = 1) {
 #'
 #' @export
 prior_half_cauchy <- function(scale = 2.5) {
-  .assert_positive(scale, "scale")
-  structure(
-    list(
-      distribution = "half_cauchy",
-      scale = scale
-    ),
-    class = c("tulpa_prior_half_cauchy", "tulpa_prior")
-  )
+  .make_prior("half_cauchy", list(scale = scale), positive = "scale")
 }
 
 
@@ -200,16 +191,8 @@ prior_half_cauchy <- function(scale = 2.5) {
 #'
 #' @export
 prior_gamma <- function(shape = 2, rate = 0.1) {
-  .assert_positive(shape, "shape")
-  .assert_positive(rate, "rate")
-  structure(
-    list(
-      distribution = "gamma",
-      shape = shape,
-      rate = rate
-    ),
-    class = c("tulpa_prior_gamma", "tulpa_prior")
-  )
+  .make_prior("gamma", list(shape = shape, rate = rate),
+              positive = c("shape", "rate"))
 }
 
 
@@ -227,14 +210,7 @@ prior_gamma <- function(shape = 2, rate = 0.1) {
 #'
 #' @export
 prior_exponential <- function(rate = 1) {
-  .assert_positive(rate, "rate")
-  structure(
-    list(
-      distribution = "exponential",
-      rate = rate
-    ),
-    class = c("tulpa_prior_exponential", "tulpa_prior")
-  )
+  .make_prior("exponential", list(rate = rate), positive = "rate")
 }
 
 
@@ -261,16 +237,8 @@ prior_exponential <- function(rate = 1) {
 #'
 #' @export
 prior_beta <- function(alpha = 1, beta = 1) {
-  .assert_positive(alpha, "alpha")
-  .assert_positive(beta, "beta")
-  structure(
-    list(
-      distribution = "beta",
-      alpha = alpha,
-      beta = beta
-    ),
-    class = c("tulpa_prior_beta", "tulpa_prior")
-  )
+  .make_prior("beta", list(alpha = alpha, beta = beta),
+              positive = c("alpha", "beta"))
 }
 
 

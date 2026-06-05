@@ -12,6 +12,7 @@
 // Use canonical type definitions from exported headers
 #include "tulpa/temporal_data.h"
 #include "tulpa/types.h"
+#include "pc_prior.h"
 
 namespace tulpa_temporal_gp {
 
@@ -240,9 +241,7 @@ inline double temporal_gp_log_lik(
 
 // Log prior for temporal variance (PC prior style)
 inline double log_prior_sigma2_temporal_pc(double sigma2, double U, double alpha) {
-  double rate = -std::log(alpha) / U;
-  double sigma = std::sqrt(sigma2);
-  return std::log(rate) - rate * sigma - std::log(2.0 * sigma);
+  return tulpa::pc_prior_log_sigma2(sigma2, U, alpha);
 }
 
 // Log prior for temporal range (uniform or PC)
@@ -280,11 +279,13 @@ inline void temporal_gp_gradient_f(
 
 // Parse covariance type from string
 inline TemporalCovType parse_temporal_cov_type(const std::string& cov_str) {
-  if (cov_str == "exponential") return TemporalCovType::EXPONENTIAL;
-  if (cov_str == "matern") return TemporalCovType::MATERN;
-  if (cov_str == "gaussian") return TemporalCovType::GAUSSIAN;
-  if (cov_str == "periodic") return TemporalCovType::PERIODIC;
-  return TemporalCovType::EXPONENTIAL;  // Default
+  static const tulpa::EnumEntry<TemporalCovType> table[] = {
+      {"exponential", TemporalCovType::EXPONENTIAL},
+      {"matern", TemporalCovType::MATERN},
+      {"gaussian", TemporalCovType::GAUSSIAN},
+      {"periodic", TemporalCovType::PERIODIC}
+  };
+  return tulpa::parse_enum(cov_str, table, TemporalCovType::EXPONENTIAL);
 }
 
 // -----------------------------------------------------------------------------

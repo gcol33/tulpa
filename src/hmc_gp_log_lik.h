@@ -305,12 +305,7 @@ inline double multiscale_gp_log_lik(
 // Log prior for spatial variance (PC prior style)
 // P(sigma > U) = alpha => sigma ~ Exponential(rate = -log(alpha)/U)
 inline double log_prior_sigma2_pc(double sigma2, double U, double alpha) {
-  double rate = -std::log(alpha) / U;
-  double sigma = std::sqrt(sigma2);
-  // Exponential prior on sigma, transform to sigma2
-  // p(sigma) = rate * exp(-rate * sigma)
-  // Jacobian: d(sigma)/d(sigma2) = 1/(2*sigma)
-  return std::log(rate) - rate * sigma - std::log(2.0 * sigma);
+  return tulpa::pc_prior_log_sigma2(sigma2, U, alpha);
 }
 
 // Log prior for range parameter (uniform on log scale within bounds)

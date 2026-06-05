@@ -9,6 +9,7 @@
 #include <cmath>
 #include <string>
 #include "hmc_temporal.h"  // For temporal functions (RW1, RW2, AR1)
+#include "pc_prior.h"
 
 namespace tulpa_temporal {
 
@@ -220,9 +221,7 @@ inline void compute_temporal_eta(
 
 // PC prior for temporal variance (favor simpler models with smaller variance)
 inline double log_prior_sigma2_temporal_pc(double sigma2, double U, double alpha) {
-  double rate = -std::log(alpha) / U;
-  double sigma = std::sqrt(sigma2);
-  return std::log(rate) - rate * sigma - std::log(2.0 * sigma);
+  return tulpa::pc_prior_log_sigma2(sigma2, U, alpha);
 }
 
 // Prior for AR1 rho: Beta(a, b) on (rho + 1) / 2

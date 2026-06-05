@@ -222,11 +222,13 @@ inline void rw2_gradient(
 
 // Parse temporal structure type from string
 inline TemporalType parse_tvc_structure(const std::string& struct_str) {
-  if (struct_str == "rw1") return TemporalType::RW1;
-  if (struct_str == "rw2") return TemporalType::RW2;
-  if (struct_str == "ar1") return TemporalType::AR1;
-  if (struct_str == "iid") return TemporalType::IID;
-  return TemporalType::RW1;  // Default
+  static const tulpa::EnumEntry<TemporalType> table[] = {
+      {"rw1", TemporalType::RW1},
+      {"rw2", TemporalType::RW2},
+      {"ar1", TemporalType::AR1},
+      {"iid", TemporalType::IID}
+  };
+  return tulpa::parse_enum(struct_str, table, TemporalType::RW1);
 }
 
 } // namespace tulpa_tvc
