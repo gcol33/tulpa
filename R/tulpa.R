@@ -197,37 +197,48 @@
 }
 
 
-# Convert a validated RW1 temporal spec into the areal ICAR prior block the
-# nested driver integrates. An RW1 random walk on T ordered time points is an
-# intrinsic CAR on a 1D chain: time t neighbours t-1 and t+1 (and t=T neighbours
-# t=1 when cyclic), so the chain adjacency's ICAR precision Q = diag(n_nb) - W is
-# exactly the RW1 precision. The per-observation time index becomes spatial_idx.
-# This reuses adjacency_to_csr_tulpa() and the icar nested kernel -- the same
-# tested path the areal spatial field takes.
+# Convert a validated temporal spec (rw1 / rw2 / ar1) into the nested-Laplace
+# temporal prior block. The block format is the one the single-block registry
+# (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
+# converter (.nl_block_spec_for_cpp) both consume: `type` selects the temporal
+# Q-builder, the per-observation time index becomes `temporal_idx`, and the
+# registry fills the tau (and AR1 rho) grids. The same block drives both the
+# lone-field temporal kernel (cpp_nested_laplace_temporal) and the temporal half
+# of a spatio-temporal joint prior (a LatentBlock stacked on the spatial block).
+# RW1 penalises first differences (the intrinsic CAR on a 1D chain), RW2 second
+# differences, and AR1 carries a free correlation -- all three share the tested
+# temporal kernel rather than a per-type path.
 .temporal_spec_to_nl_prior <- function(temporal) {
-  T <- temporal$n_times
-  if (is.null(T) || T < 2L) {
+  n_times <- temporal$n_times
+  if (is.null(n_times) || n_times < 2L) {
     stop("Internal: temporal spec is unvalidated (n_times missing). tulpa() ",
          "validates it via validate_temporal().", call. = FALSE)
   }
-  W <- matrix(0, T, T)
-  if (isTRUE(temporal$cyclic)) {
-    for (t in seq_len(T)) {
-      nx <- if (t == T) 1L else t + 1L
-      W[t, nx] <- 1; W[nx, t] <- 1
-    }
-  } else {
-    for (t in seq_len(T - 1L)) { W[t, t + 1L] <- 1; W[t + 1L, t] <- 1 }
+  type <- tolower(temporal$type %||% "")
+  if (!type %in% c("rw1", "rw2", "ar1")) {
+    stop("tulpa() routes temporal types rw1, rw2, ar1 through nested Laplace; ",
+         "got '", type, "'.", call. = FALSE)
   }
-  csr <- adjacency_to_csr_tulpa(W)
-  list(
-    type            = "icar",
-    spatial_idx     = as.integer(temporal$time_index),
-    n_spatial_units = as.integer(T),
-    adj_row_ptr     = as.integer(csr$row_ptr),
-    adj_col_idx     = as.integer(csr$col_idx),
-    n_neighbors     = as.integer(csr$n_neighbors)
+  # Panel (grouped) data: a separate walk per group, all sharing one tau (and one
+  # AR1 rho). validate_temporal() resolved n_groups + the per-obs group_index;
+  # flatten (group, time) into the block's 1-based node (group-1)*n_times + time
+  # so the G chains occupy contiguous, disconnected blocks. A single walk is the
+  # n_groups == 1 case (the flattened index reduces to time_index).
+  n_groups <- as.integer(temporal$n_groups %||% 1L)
+  if (n_groups > 1L) {
+    g_idx <- as.integer(temporal$group_index)
+    temporal_idx <- (g_idx - 1L) * as.integer(n_times) + as.integer(temporal$time_index)
+  } else {
+    temporal_idx <- as.integer(temporal$time_index)
+  }
+  out <- list(
+    type         = type,
+    temporal_idx = temporal_idx,
+    n_times      = as.integer(n_times),
+    n_groups     = n_groups
   )
+  if (type == "rw1") out$cyclic <- isTRUE(temporal$cyclic)
+  out
 }
 
 
@@ -249,16 +260,20 @@
         backend, backend), call. = FALSE)
     }
     # The nested driver integrates the hyperparameters of latent prior blocks
-    # and/or one field. A spatial(col) field becomes an areal prior block
-    # (.spatial_spec_to_nl_prior); a temporal RW1 field becomes the same areal
-    # block over its time chain (.temporal_spec_to_nl_prior); latent(...) terms
-    # are blocks already. tulpa() forbids combining a spatial and a temporal
-    # field, so at most one field block is present here. The field alone routes
-    # the single-block path; with latent terms they form a multi-block prior.
-    spatial_block  <- if (!is.null(spatial))  .spatial_spec_to_nl_prior(spatial)   else NULL
-    temporal_block <- if (!is.null(temporal)) .temporal_spec_to_nl_prior(temporal) else NULL
-    field_block <- spatial_block %||% temporal_block
-    if (is.null(field_block) && length(latent_blocks) == 0L) {
+    # and/or field(s). A spatial(col) field becomes an areal / continuous prior
+    # block (.spatial_spec_to_nl_prior); a temporal field becomes a temporal
+    # block (.temporal_spec_to_nl_prior); latent(...) terms are blocks already.
+    # The blocks stack into one prior: a single field alone routes the
+    # single-block path, while a spatial + temporal field (additive space-time)
+    # or any field with latent terms forms a multi-block prior the joint driver
+    # integrates -- every obs touches each block, so they are Laplace-marginalised
+    # jointly (the spatio-temporal cross term is assembled from each block's idx).
+    field_blocks <- c(
+      if (!is.null(spatial))  list(.spatial_spec_to_nl_prior(spatial))   else list(),
+      if (!is.null(temporal)) list(.temporal_spec_to_nl_prior(temporal)) else list()
+    )
+    all_blocks <- c(field_blocks, latent_blocks)
+    if (length(all_blocks) == 0L) {
       stop("Backend 'nested_laplace' needs at least one `latent(...)` block, a ",
            "spatial(col) field, or a temporal field. For a plain GLMM use mode = ",
            "'laplace' / 'mala' / 'auto'.", call. = FALSE)
@@ -268,13 +283,9 @@
               "path; it is ignored. Call tulpa_nested_laplace() directly if you ",
               "need a fixed-effect prior here.", call. = FALSE)
     }
-    if (is.null(field_block)) {
-      prior <- .latent_blocks_to_prior(latent_blocks)   # latent-only (unchanged)
-    } else if (length(latent_blocks) == 0L) {
-      prior <- field_block                              # single field block
-    } else {
-      prior <- c(list(field_block), latent_blocks)      # multi-block (field + latent)
-    }
+    # A length-1 list routes the single-block path; length > 1 the multi-block
+    # joint path (both are handled by tulpa_nested_laplace()).
+    prior <- if (length(all_blocks) == 1L) all_blocks[[1L]] else all_blocks
     # The nested driver carries a single iid random-intercept natively via
     # re_idx / n_re_groups / sigma_re (conditioned on, like the other tulpa()
     # backends). Richer RE structure should be modelled as an `iid` latent
@@ -669,7 +680,11 @@
 #'   * `mode = "gibbs"` routes the areal `icar`/`bym2` cases through the binomial
 #'     Polya-Gamma samplers (Tier 1 exact); `mode = "auto"` picks this for a
 #'     binomial `icar`/`bym2` field.
-#' @param temporal Reserved: temporal terms are not yet routed through `tulpa()`.
+#' @param temporal Optional temporal field spec ([temporal_rw1()],
+#'   [temporal_rw2()], or [temporal_ar1()]), integrated by nested Laplace. A
+#'   plain field routes the single-block temporal kernel; a `group_var` panel
+#'   spec fits a separate walk per group sharing one hyperparameter; combined
+#'   with an areal `spatial` field it forms an additive space-time joint prior.
 #' @param control Optional list of backend tuning arguments (e.g. `n_iter`,
 #'   `warmup`, `epsilon` for `mala`; `n_draws` for `pathfinder`).
 #' @param ... Reserved for future use.
@@ -818,13 +833,17 @@ tulpa <- function(formula, data,
     }
   }
 
-  # Temporal field. A temporal_rw1() spec carries its own time_var (like a
-  # continuous spatial spec carries its coordinates), so no temporal(col) term is
-  # used. An RW1 temporal effect is an intrinsic CAR on a 1D chain (a ring when
-  # cyclic): its precision is exactly the chain ICAR precision, so it integrates
-  # through the same nested-Laplace areal path as an ICAR field. RW2/AR1, panel
-  # (grouped) temporal effects, and temporal combined with a spatial field are
-  # not yet front-door wired; surface that rather than drop terms.
+  # Temporal field. A temporal_rw1() / temporal_rw2() / temporal_ar1() spec
+  # carries its own time_var (like a continuous spatial spec carries its
+  # coordinates), so no temporal(col) term is used. All three integrate through
+  # the nested-Laplace temporal kernel: RW1 penalises first differences (the
+  # intrinsic CAR on a 1D chain, a ring when cyclic), RW2 second differences, and
+  # AR1 carries a free correlation. A temporal field alongside a nested-wired
+  # spatial field (areal or gp/nngp/hsgp) forms an additive space-time prior the
+  # joint driver integrates as a [spatial, temporal] block stack. SPDE / RSR
+  # spatial fields run their own single-field integrators and cannot host a
+  # temporal block through the front door yet; surface that rather than drop
+  # terms.
   temporal_spec <- temporal
   has_temporal  <- !is.null(parsed$temporal_var) || !is.null(temporal_spec)
   if (has_temporal) {
@@ -837,17 +856,29 @@ tulpa <- function(formula, data,
       stop("`temporal=` must be a temporal_rw1() / temporal_rw2() / temporal_ar1() ",
            "spec object.", call. = FALSE)
     }
-    if (!identical(temporal_spec$type, "rw1")) {
-      stop("Only temporal_rw1() is routed through tulpa() so far; for '",
+    if (!tolower(temporal_spec$type %||% "") %in% c("rw1", "rw2", "ar1")) {
+      stop("tulpa() routes temporal_rw1() / temporal_rw2() / temporal_ar1(); for '",
            temporal_spec$type, "' call the temporal fitter directly.", call. = FALSE)
     }
-    if (!is.null(temporal_spec$group_var)) {
-      stop("Grouped (panel) temporal effects are not yet routed through tulpa(); ",
-           "drop `group_var`.", call. = FALSE)
+    # Panel (grouped) temporal: a separate walk per group sharing one tau, routed
+    # as a single grouped temporal block through cpp_nested_laplace_temporal. The
+    # multi-block joint path does not carry the per-group temporal layout yet, so
+    # panel must be the only latent structure -- reject it alongside a spatial or
+    # latent block rather than silently fit one chain over the flattened nodes.
+    if (!is.null(temporal_spec$group_var) && (has_spatial || has_latent)) {
+      stop("A grouped (panel) temporal field cannot be combined with a spatial ",
+           "or latent(...) field through tulpa() yet (the joint path has no ",
+           "per-group temporal layout). Fit the panel temporal field on its own.",
+           call. = FALSE)
     }
-    if (has_spatial) {
-      stop("A temporal field together with a spatial field is not yet supported ",
-           "through tulpa(); fit one field at a time for now.", call. = FALSE)
+    if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_AREAL) {
+      stop("A temporal field can accompany an areal (icar/car/bym2/car_proper) ",
+           "spatial field through the joint nested-Laplace path; the '",
+           spatial_type, "' field is fit by its own integrator (continuous ",
+           "gp/nngp/hsgp and SPDE space-time kernels exist but are not front-door ",
+           "wired yet; RSR is sampler-only) and cannot host a temporal block ",
+           "through tulpa() yet. Fit one field at a time, or use an areal field ",
+           "for space-time.", call. = FALSE)
     }
     temporal_spec <- validate_temporal(temporal_spec, data)
   }
@@ -917,15 +948,21 @@ tulpa <- function(formula, data,
     sel$reason <- "SPDE spatial field; nested-Laplace over (range, sigma) via fit_spde()"
   }
 
-  # A temporal RW1 field is an ICAR chain; the nested-Laplace areal path
-  # integrates it. Every selection routes a temporal field there (the conditional
-  # mode = "laplace" is not wired for temporal yet), mirroring the spatial-field
-  # redirect.
+  # A temporal field (rw1/rw2/ar1) integrates through the nested-Laplace temporal
+  # kernel; with a spatial field present it joins a [spatial, temporal] joint
+  # prior. Every selection routes a temporal field there (the conditional mode =
+  # "laplace" is not wired for temporal yet), mirroring and superseding the
+  # spatial-field redirect above when both fields are present.
   if (has_temporal) {
     sel$backend <- "nested_laplace"
     ti <- get_backend_tier("nested_laplace")
     sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
-    sel$reason <- "temporal RW1 field; nested-Laplace integration (ICAR chain)"
+    sel$reason <- if (has_spatial) {
+      sprintf("%s spatial field + temporal %s field; joint nested-Laplace integration",
+              spatial_type, temporal_spec$type)
+    } else {
+      sprintf("temporal %s field; nested-Laplace integration", temporal_spec$type)
+    }
   }
 
   assert_backend_reachable(sel$backend)

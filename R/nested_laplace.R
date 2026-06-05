@@ -522,7 +522,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       temporal_type = "rw1",
       tau_grid      = as.numeric(p$tau_grid),
       rho_grid      = numeric(0),
-      cyclic        = isTRUE(p$cyclic)
+      cyclic        = isTRUE(p$cyclic),
+      n_groups      = as.integer(p$n_groups %||% 1L)
     ),
     theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
   ),
@@ -539,7 +540,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       temporal_type = "rw2",
       tau_grid      = as.numeric(p$tau_grid),
       rho_grid      = numeric(0),
-      cyclic        = FALSE
+      cyclic        = FALSE,
+      n_groups      = as.integer(p$n_groups %||% 1L)
     ),
     theta = function(p) list(grid = as.numeric(p$tau_grid), names = "tau")
   ),
@@ -561,7 +563,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       temporal_type = "ar1",
       tau_grid      = as.numeric(p$tau_grid),
       rho_grid      = as.numeric(p$rho_grid),
-      cyclic        = FALSE
+      cyclic        = FALSE,
+      n_groups      = as.integer(p$n_groups %||% 1L)
     ),
     theta = function(p) list(
       grid  = cbind(tau = p$tau_grid, rho = p$rho_grid),

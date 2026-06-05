@@ -569,22 +569,41 @@ A handful of rules of thumb for everyday use.
 
 ### What is wired, and what is not yet
 
-The front door through `tulpa()` carries `temporal_rw1()`. Three close relatives
-exist as specs and raise a clear error when passed to `tulpa()`, pointing you at
-the direct fitters in the package.
+The front door through `tulpa()` carries all three temporal priors. `temporal_rw2()`
+penalizes second differences for a smoother trend than RW1:
 
-```{r rw2-error, error = TRUE}
-tulpa(y ~ x, data = df, family = "binomial",
-      temporal = temporal_rw2("time"), mode = "auto")
+```{r rw2}
+fit_rw2 <- tulpa(y ~ x, data = df, family = "binomial",
+                 temporal = temporal_rw2("time"), mode = "auto")
+coef(fit_rw2)
 ```
 
-The autoregressive process `temporal_ar1()` errors the same way; it is a
-stationary, full-rank alternative with an estimated correlation parameter rather
-than an intrinsic walk. Panel trends through `group_var=` (a separate walk per
-site) and a temporal field combined with a spatial field are likewise not yet
-front-door wired and report it rather than dropping the term. For those cases the
-direct temporal fitters remain available, and the nested driver already carries
-RW1/RW2 registry blocks for later extension.
+`temporal_ar1()` is a stationary, full-rank alternative with an estimated
+correlation parameter rather than an intrinsic walk. Panel trends through
+`group_var=` fit a separate walk per group sharing one hyperparameter, and a
+temporal field combined with an **areal** (`icar`/`car`/`bym2`/`car_proper`)
+spatial field forms an additive space-time joint prior over the
+`[spatial, temporal]` block stack:
+
+```{r ar1-panel, eval = FALSE}
+# AR1 temporal trend
+tulpa(y ~ x, data = df, family = "binomial",
+      temporal = temporal_ar1("time"), mode = "auto")
+
+# Panel: one walk per site, shared smoothness
+tulpa(y ~ x, data = panel_df, family = "binomial",
+      temporal = temporal_rw1("time", group_var = "site"), mode = "auto")
+
+# Additive space-time
+tulpa(y ~ x + spatial(region), data = st_df, family = "binomial",
+      spatial = list(type = "icar", adjacency = W),
+      temporal = temporal_rw1("time"), mode = "auto")
+```
+
+Still off the front door: a panel temporal field alongside a spatial or
+`latent()` block, and continuous (`gp`/`nngp`/`hsgp`) or SPDE space-time. Those
+report a clear error rather than dropping the term; the dedicated `cpp_nested_laplace_st_*`
+kernels exist for later wiring.
 
 ## See also
 

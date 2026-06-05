@@ -774,92 +774,128 @@ struct IndexedPriorOps {
         add_prior_sparse;
 };
 
-// RW1 — 1D τ grid; cyclic flag closes the chain.
+// Panel (grouped) temporal: a separate walk per group, all sharing one tau
+// (and one rho for AR1). The G groups occupy contiguous blocks of n_times each
+// at [start + g*n_times, ...), so every per-chain precision / log-prior /
+// pattern builder runs once per group with the chains never connected across a
+// group boundary. n_groups == 1 is the single-walk case (one call). The total
+// prior pseudo-rank is the per-group rank summed over groups, which the
+// log_prior_* helpers deliver block-by-block; identifiability against the
+// intercept is the single global mean (a lone null direction once the
+// likelihood pins the per-group level differences), pinned by the block's
+// global center -- see make_temporal_latent_block.
+
+// RW1 — 1D τ grid; cyclic flag closes each group's chain.
 inline IndexedPriorOps make_rw1_ops(
-    int start, int n_units,
+    int start, int n_groups, int n_times,
     const Rcpp::NumericVector& tau_grid,
     bool cyclic
 ) {
     IndexedPriorOps ops;
     ops.prep = [](int) { return true; };
-    ops.add_prior = [start, n_units, &tau_grid, cyclic]
+    ops.add_prior = [start, n_groups, n_times, &tau_grid, cyclic]
                     (tulpa::DenseVec& grad, tulpa::DenseMat& H,
                      const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw1_precision(grad, H, x, start, n_units, tau_grid[k], cyclic);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_rw1_precision(grad, H, x, start + g * n_times, n_times,
+                                      tau_grid[k], cyclic);
     };
-    ops.log_prior = [start, n_units, &tau_grid, cyclic]
+    ops.log_prior = [start, n_groups, n_times, &tau_grid, cyclic]
                     (const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_rw1(x, start, n_units, tau_grid[k], cyclic);
+        double lp = 0.0;
+        for (int g = 0; g < n_groups; g++)
+            lp += tulpa::log_prior_rw1(x, start + g * n_times, n_times,
+                                        tau_grid[k], cyclic);
+        return lp;
     };
-    ops.add_prior_pattern = [start, n_units, cyclic]
+    ops.add_prior_pattern = [start, n_groups, n_times, cyclic]
                             (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_rw1_pattern(out, start, n_units, cyclic);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_rw1_pattern(out, start + g * n_times, n_times, cyclic);
     };
-    ops.add_prior_sparse = [start, n_units, &tau_grid, cyclic]
+    ops.add_prior_sparse = [start, n_groups, n_times, &tau_grid, cyclic]
                            (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                             const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw1_precision_sparse(grad, H, x, start, n_units,
-                                          tau_grid[k], cyclic);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_rw1_precision_sparse(grad, H, x, start + g * n_times,
+                                             n_times, tau_grid[k], cyclic);
     };
     return ops;
 }
 
 // RW2 — 1D τ grid; no cyclic flag (the RW2 implementation ignores it).
 inline IndexedPriorOps make_rw2_ops(
-    int start, int n_units,
+    int start, int n_groups, int n_times,
     const Rcpp::NumericVector& tau_grid
 ) {
     IndexedPriorOps ops;
     ops.prep = [](int) { return true; };
-    ops.add_prior = [start, n_units, &tau_grid]
+    ops.add_prior = [start, n_groups, n_times, &tau_grid]
                     (tulpa::DenseVec& grad, tulpa::DenseMat& H,
                      const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw2_precision(grad, H, x, start, n_units, tau_grid[k], false);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_rw2_precision(grad, H, x, start + g * n_times, n_times,
+                                      tau_grid[k], false);
     };
-    ops.log_prior = [start, n_units, &tau_grid]
+    ops.log_prior = [start, n_groups, n_times, &tau_grid]
                     (const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_rw2(x, start, n_units, tau_grid[k], false);
+        double lp = 0.0;
+        for (int g = 0; g < n_groups; g++)
+            lp += tulpa::log_prior_rw2(x, start + g * n_times, n_times,
+                                        tau_grid[k], false);
+        return lp;
     };
-    ops.add_prior_pattern = [start, n_units]
+    ops.add_prior_pattern = [start, n_groups, n_times]
                             (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_rw2_pattern(out, start, n_units, /*cyclic=*/false);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_rw2_pattern(out, start + g * n_times, n_times,
+                                    /*cyclic=*/false);
     };
-    ops.add_prior_sparse = [start, n_units, &tau_grid]
+    ops.add_prior_sparse = [start, n_groups, n_times, &tau_grid]
                            (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                             const Rcpp::NumericVector& x, int k) {
-        tulpa::add_rw2_precision_sparse(grad, H, x, start, n_units,
-                                          tau_grid[k], false);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_rw2_precision_sparse(grad, H, x, start + g * n_times,
+                                             n_times, tau_grid[k], false);
     };
     return ops;
 }
 
-// AR1 — 2D (τ, ρ) grid.
+// AR1 — 2D (τ, ρ) grid. AR1 is proper (full rank) so each group's chain needs
+// no constraint, but the per-group loop is identical to RW1/RW2.
 inline IndexedPriorOps make_ar1_ops(
-    int start, int n_units,
+    int start, int n_groups, int n_times,
     const Rcpp::NumericVector& tau_grid,
     const Rcpp::NumericVector& rho_grid
 ) {
     IndexedPriorOps ops;
     ops.prep = [](int) { return true; };
-    ops.add_prior = [start, n_units, &tau_grid, &rho_grid]
+    ops.add_prior = [start, n_groups, n_times, &tau_grid, &rho_grid]
                     (tulpa::DenseVec& grad, tulpa::DenseMat& H,
                      const Rcpp::NumericVector& x, int k) {
-        tulpa::add_ar1_precision(grad, H, x, start, n_units,
-                                  tau_grid[k], rho_grid[k]);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_ar1_precision(grad, H, x, start + g * n_times, n_times,
+                                      tau_grid[k], rho_grid[k]);
     };
-    ops.log_prior = [start, n_units, &tau_grid, &rho_grid]
+    ops.log_prior = [start, n_groups, n_times, &tau_grid, &rho_grid]
                     (const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_ar1(x, start, n_units, tau_grid[k], rho_grid[k]);
+        double lp = 0.0;
+        for (int g = 0; g < n_groups; g++)
+            lp += tulpa::log_prior_ar1(x, start + g * n_times, n_times,
+                                        tau_grid[k], rho_grid[k]);
+        return lp;
     };
-    ops.add_prior_pattern = [start, n_units]
+    ops.add_prior_pattern = [start, n_groups, n_times]
                             (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_ar1_pattern(out, start, n_units);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_ar1_pattern(out, start + g * n_times, n_times);
     };
-    ops.add_prior_sparse = [start, n_units, &tau_grid, &rho_grid]
+    ops.add_prior_sparse = [start, n_groups, n_times, &tau_grid, &rho_grid]
                            (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                             const Rcpp::NumericVector& x, int k) {
-        tulpa::add_ar1_precision_sparse(grad, H, x, start, n_units,
-                                          tau_grid[k], rho_grid[k]);
+        for (int g = 0; g < n_groups; g++)
+            tulpa::add_ar1_precision_sparse(grad, H, x, start + g * n_times,
+                                             n_times, tau_grid[k], rho_grid[k]);
     };
     return ops;
 }
@@ -872,23 +908,23 @@ inline IndexedPriorOps make_ar1_ops(
 // RW1 (RW2 ignores it, matching make_rw2_ops).
 inline IndexedPriorOps make_temporal_ops(
     const std::string& temporal_type,
-    int start, int n_units,
+    int start, int n_groups, int n_times,
     const Rcpp::NumericVector& tau_grid,
     const Rcpp::NumericVector& rho_grid,
     bool cyclic
 ) {
     if (temporal_type == "rw1") {
-        return make_rw1_ops(start, n_units, tau_grid, cyclic);
+        return make_rw1_ops(start, n_groups, n_times, tau_grid, cyclic);
     }
     if (temporal_type == "rw2") {
-        return make_rw2_ops(start, n_units, tau_grid);
+        return make_rw2_ops(start, n_groups, n_times, tau_grid);
     }
     if (temporal_type == "ar1") {
         if (rho_grid.size() != tau_grid.size()) {
             Rcpp::stop("ar1 temporal prior requires rho_temporal_grid of the "
                        "same length as tau_temporal_grid");
         }
-        return make_ar1_ops(start, n_units, tau_grid, rho_grid);
+        return make_ar1_ops(start, n_groups, n_times, tau_grid, rho_grid);
     }
     Rcpp::stop("unknown temporal_type '%s' (expected 'rw1', 'rw2', or 'ar1')",
                temporal_type.c_str());
@@ -899,19 +935,26 @@ inline IndexedPriorOps make_temporal_ops(
 // centering, and ALL prior callbacks (dense add_prior / log_prior + the sparse
 // add_prior_pattern / add_prior_sparse the joint-sparse driver uses). Shared by
 // the temporal-only entry and every spatio-temporal entry (the temporal half of
-// the [spatial, temporal] block stack). Lifetime: the callbacks capture
-// temporal_idx / tau_grid / rho_grid by reference -- the caller keeps them alive
-// across the outer-grid solve.
+// the [spatial, temporal] block stack). For panel (grouped) data the block
+// spans n_groups * n_times nodes -- one chain per group -- and the per-chain
+// ops loop over the groups (the chains stay disconnected); a lone single walk is
+// the n_groups == 1 case. The center is the single GLOBAL mean: the per-group
+// rank deficiency is carried by the prior pseudo-determinant (log_prior summed
+// over groups), and the likelihood pins the per-group level differences, so only
+// the one overall level confounds the intercept and needs centering. Lifetime:
+// the callbacks capture temporal_idx / tau_grid / rho_grid by reference -- the
+// caller keeps them alive across the outer-grid solve.
 inline tulpa::LatentBlock make_temporal_latent_block(
-    int start, int n_units,
+    int start, int n_groups, int n_times,
     const Rcpp::IntegerVector& temporal_idx,
     const std::string& temporal_type,
     const Rcpp::NumericVector& tau_grid,
     const Rcpp::NumericVector& rho_grid,
     bool cyclic
 ) {
-    IndexedPriorOps ops_t = make_temporal_ops(temporal_type, start, n_units,
-                                              tau_grid, rho_grid, cyclic);
+    const int n_units = n_groups * n_times;
+    IndexedPriorOps ops_t = make_temporal_ops(temporal_type, start, n_groups,
+                                              n_times, tau_grid, rho_grid, cyclic);
     tulpa::LatentBlock block;
     block.start = start;
     block.size  = n_units;
@@ -1017,8 +1060,9 @@ inline Rcpp::List run_st_spatial_kernel(
     const int N = y.size();
     const int p = X.ncol();
     const int t_start = p + n_re_groups + spatial_latent_dim;
+    // Space-time front door is single-walk temporal (no panel grouping yet).
     blocks.push_back(make_temporal_latent_block(
-        t_start, n_times, temporal_idx, temporal_type,
+        t_start, /*n_groups=*/1, n_times, temporal_idx, temporal_type,
         tau_temporal_grid, rho_t, cyclic));
     return run_indexed_st_nested_laplace_joint(
         n_grid, y, n_trials, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -1062,8 +1106,10 @@ inline Rcpp::NumericVector nl_unwrap_rho_temporal(
 // kernel at runtime through the same make_temporal_ops registry the ST entries
 // use, so rw1 / rw2 / ar1 share one entry / shim / ABI typedef instead of
 // three. tau_grid drives all kernels; rho_grid is the ar1 lag-1 grid (empty for
-// rw1 / rw2); cyclic closes the rw1 chain (ignored by rw2 / ar1).
-//   Latent: [beta (p)] [re (n_re_groups)] [w_temporal (n_times)].
+// rw1 / rw2); cyclic closes the rw1 chain (ignored by rw2 / ar1). `n_groups > 1`
+// is panel (grouped) data: a separate walk per group sharing one tau (one rho
+// for ar1), with temporal_idx the flattened 1-based node (group-1)*n_times+time.
+//   Latent: [beta (p)] [re (n_re_groups)] [w_temporal (n_groups*n_times)].
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_temporal(
@@ -1074,6 +1120,7 @@ Rcpp::List cpp_nested_laplace_temporal(
     std::string temporal_type,
     Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic,
     std::string family, double phi = 1.0,
+    int n_groups = 1,
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
@@ -1085,16 +1132,18 @@ Rcpp::List cpp_nested_laplace_temporal(
     int temporal_start = p + n_re_groups;
 
     // One temporal LatentBlock from the shared factory (rw1 / rw2 / ar1 selected
-    // at runtime); its callbacks close over tau_grid / rho_grid / temporal_idx,
-    // which this frame keeps alive across the run_multi_block call below.
+    // at runtime; n_groups walks for panel data); its callbacks close over
+    // tau_grid / rho_grid / temporal_idx, which this frame keeps alive across the
+    // run_multi_block call below.
     std::vector<tulpa::LatentBlock> blocks{ make_temporal_latent_block(
-        temporal_start, n_times, temporal_idx, temporal_type,
+        temporal_start, n_groups, n_times, temporal_idx, temporal_type,
         tau_grid, rho_grid, cyclic) };
 
     tulpa::Fingerprint sfp;
     sfp.fold_str("temporal");
     sfp.fold_str(temporal_type);
     sfp.fold_pod(n_times);
+    sfp.fold_pod(n_groups);
     sfp.fold_pod(cyclic);
     if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
                                       (std::size_t)temporal_idx.size() * sizeof(int));

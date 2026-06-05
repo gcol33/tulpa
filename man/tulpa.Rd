@@ -71,7 +71,11 @@ Polya-Gamma samplers (Tier 1 exact); \code{mode = "auto"} picks this for a
 binomial \code{icar}/\code{bym2} field.
 }}
 
-\item{temporal}{Reserved: temporal terms are not yet routed through \code{tulpa()}.}
+\item{temporal}{Optional temporal field spec (\code{\link[=temporal_rw1]{temporal_rw1()}},
+\code{\link[=temporal_rw2]{temporal_rw2()}}, or \code{\link[=temporal_ar1]{temporal_ar1()}}), integrated by nested Laplace. A
+plain field routes the single-block temporal kernel; a \code{group_var} panel
+spec fits a separate walk per group sharing one hyperparameter; combined
+with an areal \code{spatial} field it forms an additive space-time joint prior.}
 
 \item{control}{Optional list of backend tuning arguments (e.g. \code{n_iter},
 \code{warmup}, \code{epsilon} for \code{mala}; \code{n_draws} for \code{pathfinder}).}

@@ -270,7 +270,7 @@ extern "C" void tulpa_nested_laplace_temporal_impl(
                 in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
                 tv, n_times, std::string(temporal_type ? temporal_type : "rw1"),
                 tg, rg, (cyclic != 0),
-                in.fam, phi, max_iter, tol, n_threads,
+                in.fam, phi, /*n_groups=*/1, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
 }

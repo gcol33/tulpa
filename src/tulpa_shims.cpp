@@ -114,6 +114,7 @@ Rcpp::List cpp_nested_laplace_temporal(
     std::string temporal_type,
     Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic,
     std::string family, double phi,
+    int n_groups,
     int max_iter, double tol, int n_threads,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable,
     bool store_Q,

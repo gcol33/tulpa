@@ -636,8 +636,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_temporal
-Rcpp::List cpp_nested_laplace_temporal(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector temporal_idx, int n_times, std::string temporal_type, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path);
-RcppExport SEXP _tulpa_cpp_nested_laplace_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP temporal_typeSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP) {
+Rcpp::List cpp_nested_laplace_temporal(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector temporal_idx, int n_times, std::string temporal_type, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic, std::string family, double phi, int n_groups, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path);
+RcppExport SEXP _tulpa_cpp_nested_laplace_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP temporal_typeSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP n_groupsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -655,13 +655,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type n_groups(n_groupsSEXP);
     Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
     Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
     Rcpp::traits::input_parameter< std::string >::type checkpoint_path(checkpoint_pathSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_temporal(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path));
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_temporal(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi, n_groups, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2701,7 +2702,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_car_proper, 21},
     {"_tulpa_cpp_nested_laplace_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_nngp, 24},
     {"_tulpa_cpp_nested_laplace_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_hsgp, 18},
-    {"_tulpa_cpp_nested_laplace_temporal", (DL_FUNC) &_tulpa_cpp_nested_laplace_temporal, 20},
+    {"_tulpa_cpp_nested_laplace_temporal", (DL_FUNC) &_tulpa_cpp_nested_laplace_temporal, 21},
     {"_tulpa_cpp_nested_laplace_st_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_icar, 27},
     {"_tulpa_cpp_nested_laplace_st_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_car_proper, 28},
     {"_tulpa_cpp_nested_laplace_st_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_bym2, 29},
