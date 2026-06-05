@@ -25,6 +25,23 @@
 
 namespace tulpa {
 
+// Extract an optional offset() vector from a Nullable<NumericVector> into a
+// std::vector<double>, validating its length against N. A null argument yields
+// an empty vector (treated as "no offset" by the eta assemblers). Single source
+// of truth for the offset marshalling shared by the single-point Laplace and
+// ModelData-sampler R exports.
+inline std::vector<double> as_offset_vec(
+    const Rcpp::Nullable<Rcpp::NumericVector>& offset_nullable, int N
+) {
+    if (offset_nullable.isNull()) return {};
+    Rcpp::NumericVector o(offset_nullable);
+    if ((int)o.size() != N) {
+        Rcpp::stop("offset length (%d) must equal the number of observations (%d).",
+                   (int)o.size(), N);
+    }
+    return std::vector<double>(o.begin(), o.end());
+}
+
 // Spec-solver inputs for a single-process built-in-family fit with an optional
 // single iid RE term, kept alive together: data borrows spec & resp (and resp
 // borrows the response arrays), so the whole struct must outlive the solve.
@@ -48,7 +65,10 @@ struct SpecFamilyInputs {
 // `y` aliases the caller's NumericVector (no copy): resp.y points into it, so it
 // must outlive the solve. re_group_1based is the per-obs 1-based RE index (length
 // N when n_re_groups > 0, else empty). weights (length N) is optional per-obs
-// likelihood weight, borrowed.
+// likelihood weight, borrowed. offset (length N) is an optional fixed additive
+// term on the linear predictor (eta = offset + X beta + ...), copied into the
+// single process's ProcessData::offset and read by compute_eta_spec /
+// precompute_generic_fixed_eta; nullptr leaves it empty (treated as zero).
 inline void build_spec_family_inputs(
     SpecFamilyInputs& in,
     const Rcpp::NumericVector& y,
@@ -58,7 +78,8 @@ inline void build_spec_family_inputs(
     int n_re_groups, double sigma_re,
     const std::string& family, double phi, double sigma_beta,
     int n_block_latent,
-    const double* weights = nullptr
+    const double* weights = nullptr,
+    const double* offset = nullptr
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -70,6 +91,7 @@ inline void build_spec_family_inputs(
     for (int i = 0; i < N; i++)
         for (int j = 0; j < p; j++)
             proc.X_flat[(size_t)i * p + j] = X(i, j);
+    if (offset != nullptr) proc.offset.assign(offset, offset + N);
 
     in.spec          = builtin_family_spec(family);
     in.n_trials.assign(n_trials.begin(), n_trials.end());

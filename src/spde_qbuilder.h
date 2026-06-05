@@ -246,11 +246,12 @@ void run_spde_laplace(
     int max_iter, double tol, int n_threads,
     const Rcpp::NumericVector& x_init,
     SparseCholeskySolver* shared_solver,
+    const double* offset,
     F callback
 ) {
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
         for (int i = 0; i < N; i++) {
-            eta[i] = 0.0;
+            eta[i] = offset ? offset[i] : 0.0;
             for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
             for (const auto& ae : A_rows[i]) {
                 eta[i] += ae.weight * x[mesh_start + ae.mesh_idx];

@@ -16,7 +16,8 @@ dispatch_laplace_spatial(
   phi,
   max_iter,
   tol,
-  n_threads
+  n_threads,
+  offset = NULL
 )
 }
 \description{

@@ -95,7 +95,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
     int vi_variant = 3,
     int vi_mc_samples = 10,
     int vi_max_iter = 10000,
-    int vi_n_draws = 2000
+    int vi_n_draws = 2000,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     // Argument groups (kept out of the signature so Rcpp::compileAttributes does
     // not fold the comments into the generated wrapper):
@@ -113,9 +114,11 @@ Rcpp::List cpp_tulpa_sample_glmm(
     // scaffold (no RE: empty re_group, n_re_groups = 0).
     tulpa::SpecFamilyInputs in;
     std::vector<int> no_re;
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_spec_family_inputs(
         in, y, n_trials, X, no_re, /*n_re_groups=*/0, /*sigma_re=*/1.0,
-        family, phi, sigma_beta, /*n_block_latent=*/0);
+        family, phi, sigma_beta, /*n_block_latent=*/0,
+        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
     const int D = in.layout.total_params;   // == p for the no-RE fixed-effect path
     std::vector<double> init(D, 0.0);
 

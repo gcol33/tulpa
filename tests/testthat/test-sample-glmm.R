@@ -84,9 +84,9 @@ test_that("draws_kind contract holds through tulpa(mode = ...)", {
   expect_true(is.null(mcmc_diagnostics(fit_iid)))
 })
 
-# Random-effect / spatial / offset models are routed away from the fixed-effect
-# samplers rather than silently dropping the structure.
-test_that("RE and offset models are rejected with guidance", {
+# Random-effect / spatial models are routed away from the fixed-effect samplers
+# rather than silently dropping the structure; offset() is threaded through.
+test_that("RE models are rejected with guidance; offset() is supported", {
   set.seed(404)
   n <- 200L
   d <- data.frame(y = rbinom(n, 1L, 0.4), x = rnorm(n),
@@ -96,7 +96,42 @@ test_that("RE and offset models are rejected with guidance", {
   expect_match(conditionMessage(err_re), "random-effect")
   expect_match(conditionMessage(err_re), "mala")
 
-  err_off <- expect_error(
-    tulpa(y ~ x + offset(o), d, family = "binomial", mode = "ess"))
-  expect_match(conditionMessage(err_off), "offset")
+  # offset() now threads into the sampler's linear predictor (gcol33/tulpa#72)
+  # instead of erroring.
+  fit_off <- tulpa(y ~ x + offset(o), d, family = "binomial", mode = "ess",
+                   control = list(n_iter = 400L, warmup = 200L))
+  expect_false(is.null(fit_off$draws))
+  expect_equal(ncol(fit_off$draws), 2L)
+})
+
+# offset() reaches the kernel's linear predictor: a log-exposure offset on a
+# Poisson rate model recovers the same fixed effects as glm(offset = ...).
+test_that("the sampler recovers fixed effects under a log-exposure offset (gcol33/tulpa#72)", {
+  skip_on_cran()
+  skip_if_fast()
+  set.seed(505)
+  n <- 800L; x <- rnorm(n); X <- cbind(1, x)
+  expo <- runif(n, 0.5, 3); off <- log(expo)
+  y <- rpois(n, expo * exp(0.4 + 0.7 * x))
+  fit <- tulpa_sample_glmm(
+    as.numeric(y), rep(1L, n), X, "poisson", "hmc", offset = off,
+    control = list(n_iter = 1500L, warmup = 750L, n_chains = 2L, seed = 7L))
+  mle <- unname(coef(glm(y ~ x + offset(off), family = poisson)))
+  expect_lt(max(abs(unname(fit$means) - mle)), 0.10)
+})
+
+# offset = 0 must reproduce the no-offset draws bit-for-bit at a fixed seed: the
+# linear predictors are identical, so the deterministic chain is identical.
+test_that("offset = 0 reproduces the no-offset sampler draws exactly (gcol33/tulpa#72)", {
+  skip_on_cran()
+  skip_if_fast()
+  set.seed(606)
+  n <- 300L; x <- rnorm(n); X <- cbind(1, x)
+  y <- rbinom(n, 1L, plogis(0.2 + 0.6 * x))
+  ctrl <- list(n_iter = 600L, warmup = 300L, n_chains = 1L, seed = 9L)
+  a <- tulpa_sample_glmm(as.numeric(y), rep(1L, n), X, "binomial", "hmc",
+                         offset = NULL, control = ctrl)
+  b <- tulpa_sample_glmm(as.numeric(y), rep(1L, n), X, "binomial", "hmc",
+                         offset = rep(0, n), control = ctrl)
+  expect_equal(b$draws, a$draws, tolerance = 1e-10)
 })

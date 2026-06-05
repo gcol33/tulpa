@@ -10,6 +10,7 @@
 #include "laplace_temporal_priors.h"
 #include "linalg_fast.h"
 #include "gpu_nngp_laplace.h"
+#include "laplace_spec_fit.h"   // as_offset_vec (offset marshalling)
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -39,7 +40,8 @@ LaplaceResult laplace_mode_gp(
     int n_spatial, int nn,
     double sigma2_gp, double phi_gp, int cov_type,
     const std::string& family, double phi,
-    int max_iter, double tol, int n_threads
+    int max_iter, double tol, int n_threads,
+    const double* offset = nullptr
 ) {
     int N = y.size();
     int p = X.ncol();
@@ -49,7 +51,7 @@ LaplaceResult laplace_mode_gp(
 
     auto compute_eta = [&](const NumericVector& x, NumericVector& eta) {
         for (int i = 0; i < N; i++) {
-            eta[i] = 0.0;
+            eta[i] = offset ? offset[i] : 0.0;
             for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
             if (n_re_groups > 0) {
                 int g = (int)re_idx[i] - 1;
@@ -219,13 +221,16 @@ Rcpp::List cpp_laplace_fit_gp(
     int n_spatial, int nn,
     double sigma2_gp, double phi_gp, int cov_type,
     std::string family, double phi = 1.0,
-    int max_iter = 100, double tol = 1e-6, int n_threads = 1
+    int max_iter = 100, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, y.size());
     tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
         y, n, X, re_idx, n_re_groups, sigma_re,
         coords, nn_idx, nn_dist, nn_order, n_spatial, nn,
         sigma2_gp, phi_gp, cov_type,
-        family, phi, max_iter, tol, n_threads
+        family, phi, max_iter, tol, n_threads,
+        offset.empty() ? nullptr : offset.data()
     );
     return tulpa::laplace_result_to_list(result);
 }

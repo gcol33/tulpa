@@ -103,6 +103,33 @@ test_that("mode = laplace routes a spatial field through tulpa_laplace", {
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.35)
 })
 
+test_that("mode = laplace threads offset() through a spatial field (gcol33/tulpa#72)", {
+  skip_on_cran()
+  skip_if_fast()
+  s  <- sim_areal_binomial()
+  d  <- s$data
+  sp <- list(type = "icar", adjacency = s$W)
+  cc <- 0.5
+  base <- tulpa(y ~ x + spatial(region), data = d, family = "binomial",
+                n_trials = d$ntrials, spatial = sp, mode = "laplace")
+
+  d0 <- d; d0$o <- 0
+  zero <- tulpa(y ~ x + spatial(region) + offset(o), data = d0,
+                family = "binomial", n_trials = d$ntrials, spatial = sp,
+                mode = "laplace")
+  # offset = 0 reproduces the no-offset spatial Laplace fit exactly.
+  expect_equal(zero$mode, base$mode, tolerance = 1e-8)
+
+  dc <- d; dc$o <- cc
+  con <- tulpa(y ~ x + spatial(region) + offset(o), data = dc,
+               family = "binomial", n_trials = d$ntrials, spatial = sp,
+               mode = "laplace")
+  # A constant offset c is absorbed by the intercept (shifts by -c); the slope
+  # and centered field are unchanged to the weak intercept-prior tolerance.
+  expect_equal(con$mode[1], base$mode[1] - cc, tolerance = 1e-2)
+  expect_equal(con$mode[2], base$mode[2], tolerance = 1e-2)
+})
+
 test_that("front door rejects malformed spatial specifications", {
   s <- sim_areal_binomial(reps = 1L)
 

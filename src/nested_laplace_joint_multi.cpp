@@ -1490,7 +1490,7 @@ Rcpp::List cpp_test_joint_logpost_grad(
             d_eff[b] = s * blocks[b].d_fac(k_grid);
         }
         for (int i = 0; i < N_k; i++) {
-            double e = 0.0;
+            double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
             for (int j = 0; j < p_k; j++) e += pa.X(i, j) * x[bstart + j];
             if (n_re_k > 0) {
                 int g = static_cast<int>(pa.re_idx[i]) - 1;
@@ -1752,7 +1752,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                     if(n_threads_inner_eff > 1)
                 #endif
                 for (int i = 0; i < N_k; i++) {
-                    double e = 0.0;
+                    double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
                     for (int j = 0; j < p_k; j++) e += pa.X(i, j) * x[bstart + j];
                     if (n_re_k > 0) {
                         int g = static_cast<int>(pa.re_idx[i]) - 1;

@@ -55,7 +55,7 @@ Rcpp::List cpp_spde_laplace_gradient(
     tulpa::run_spde_laplace(
         y, n_trials, X, N, p, n_mesh, mesh_start, n_x,
         a_rows, qb, family, phi,
-        max_iter, tol, n_threads, x_init, &solver,
+        max_iter, tol, n_threads, x_init, &solver, /*offset=*/nullptr,
         [&](const tulpa::LaplaceResult& res) { inner_result = res; }
     );
 

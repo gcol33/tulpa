@@ -21,7 +21,8 @@ fit_spde(
   max_iter = 100L,
   tol = 1e-06,
   n_threads = 1L,
-  checkpoint = NULL
+  checkpoint = NULL,
+  offset = NULL
 )
 }
 \arguments{
@@ -81,6 +82,9 @@ each one extra batched SPDE marginal evaluation.}
 cell is appended to \code{path}; a \code{resume = TRUE} run loads the finished cells
 and re-solves only the rest, so a killed or rebooted fit resumes instead of
 restarting. \code{resume = FALSE} starts a fresh file. Default \code{NULL} (off).}
+
+\item{offset}{Optional fixed additive term on the linear predictor
+(\verb{eta = offset + X beta + A w}), length \code{length(y)}; \code{NULL} -> no offset.}
 }
 \value{
 A list with:

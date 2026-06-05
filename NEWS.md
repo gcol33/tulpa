@@ -2,6 +2,20 @@
 
 ## 0.0.9 (2026-06-03)
 
+* feat(offset): thread `offset()` terms through the SPDE, spatial-Laplace, and
+  ModelData-sampler paths of `tulpa()` (gcol33/tulpa#72). A fixed log-exposure /
+  log-effort offset (the standard way to model rates) now enters the linear
+  predictor `eta = offset + X beta + field` on every fitter, where it was
+  previously honoured only on the non-spatial GLMM / EM paths and hard-errored
+  on the rest. The offset is carried as the per-process `ProcessData::offset`
+  (areal ICAR/CAR/BYM2 + NNGP Laplace and all seven sampler kernels --
+  hmc/ess/sghmc/sgld/mclmc/smc/vi -- which already consumed it via
+  `compute_eta_spec` / `precompute_generic_fixed_eta`), as a per-arm
+  `ParsedArm::offset` in the nested-Laplace joint engine (the nested SPDE path),
+  and as a raw additive vector in the single-point SPDE kernel. The three
+  `tulpa()` guards are removed; `fit_spde()` and `tulpa_sample_glmm()` gain an
+  `offset` argument.
+
 * fix(spde): gate fractional Matern smoothness (`nu`) instead of silently
   fitting a mis-specified field (gcol33/tulpa#71). The wired rational assembly
   builds `Q = tau^2 sum_k w_k (L + r_k C)' C^{-1} (L + r_k C)`, whose spectral

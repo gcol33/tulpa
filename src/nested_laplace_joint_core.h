@@ -39,6 +39,10 @@ struct ParsedArm {
     // weak scalar default (back-compatible).
     Rcpp::NumericVector beta_prior_mean;
     Rcpp::NumericVector beta_prior_prec;
+    // Optional per-observation fixed offset on this arm's linear predictor
+    // (eta = offset + X beta + RE + blocks). Length N_arm when set; empty ->
+    // no offset (treated as zero). Read by every joint compute_eta site.
+    Rcpp::NumericVector offset;
 };
 
 // Parse the R-side arms_list into ParsedArm + JointArm vectors and assign
@@ -90,12 +94,22 @@ inline int parse_joint_arms(
                            k + 1, (int)pa.beta_prior_prec.size(), pa.p);
             }
         }
+        // Optional per-observation fixed offset on the linear predictor. Length
+        // must match this arm's N (validated after arms_out[k].N is set below).
+        if (a.containsElementNamed("offset") &&
+            !Rf_isNull(a["offset"])) {
+            pa.offset = Rcpp::as<Rcpp::NumericVector>(a["offset"]);
+        }
 
         arms_out[k].y        = Rcpp::as<Rcpp::NumericVector>(a["y"]);
         arms_out[k].n_trials = Rcpp::as<Rcpp::IntegerVector>(a["n_trials"]);
         arms_out[k].family   = Rcpp::as<std::string>(a["family"]);
         arms_out[k].phi      = Rcpp::as<double>(a["phi"]);
         arms_out[k].N        = (int)arms_out[k].y.size();
+        if (pa.offset.size() != 0 && (int)pa.offset.size() != arms_out[k].N) {
+            Rcpp::stop("Arm %d: length(offset) (%d) != N (%d).",
+                       k + 1, (int)pa.offset.size(), arms_out[k].N);
+        }
         // Per-arm field coefficient (default 1.0). R side parses the user-
         // facing `field_coef` into the resolved scalar `field_coef_const`
         // before calling. See R/nested_laplace_joint_helpers.R's

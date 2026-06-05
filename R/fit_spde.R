@@ -44,6 +44,8 @@
 #'   cell is appended to `path`; a `resume = TRUE` run loads the finished cells
 #'   and re-solves only the rest, so a killed or rebooted fit resumes instead of
 #'   restarting. `resume = FALSE` starts a fresh file. Default `NULL` (off).
+#' @param offset Optional fixed additive term on the linear predictor
+#'   (`eta = offset + X beta + A w`), length `length(y)`; `NULL` -> no offset.
 #'
 #' @return A list with:
 #'   \itemize{
@@ -65,13 +67,21 @@ fit_spde <- function(y, X, spatial,
                      n_grid = 5L, phi = 1.0,
                      diagnose_k = TRUE, k_samples = 200L,
                      max_iter = 100L, tol = 1e-6, n_threads = 1L,
-                     checkpoint = NULL) {
+                     checkpoint = NULL, offset = NULL) {
 
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }
 
   method <- match.arg(method)
+
+  if (!is.null(offset)) {
+    offset <- as.numeric(offset)
+    if (length(offset) != length(y)) {
+      stop(sprintf("length(offset) (%d) must equal length(y) (%d).",
+                   length(offset), length(y)), call. = FALSE)
+    }
+  }
 
   # Grid-cell checkpoint/resume (gcol33/tulpa#50). `checkpoint = list(path =,
   # resume =)` appends each solved (range, sigma) cell to `path`; a resume loads
@@ -112,7 +122,8 @@ fit_spde <- function(y, X, spatial,
       nu = sp$nu,
       family = family, phi = phi,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      checkpoint_path = .ckpt$path
+      checkpoint_path = .ckpt$path,
+      offset_nullable = offset
     )
     res
   }
@@ -129,7 +140,7 @@ fit_spde <- function(y, X, spatial,
                                      spatial = sp, family = family, phi = phi,
                                      range = r, sigma = s,
                                      max_iter = max_iter, tol = tol,
-                                     n_threads = n_threads
+                                     n_threads = n_threads, offset = offset
                                    )
                                  },
                                  sp = sp, spatial = spatial,
@@ -143,7 +154,8 @@ fit_spde <- function(y, X, spatial,
       y = y, n_trials = n_trials, X = X, spatial = sp,
       family = family, phi = phi,
       range = range, sigma = sigma,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      offset = offset
     )
 
     p <- ncol(X)

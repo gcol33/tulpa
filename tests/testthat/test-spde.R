@@ -462,3 +462,65 @@ test_that("fit_spde and dispatch_laplace_spatial agree on the same problem", {
   expect_equal(via_dispatch$log_marginal, via_fit_spde$log_marginal,
                tolerance = 1e-10)
 })
+
+# --- offset() threading through the SPDE Laplace paths (gcol33/tulpa#72) -------
+
+test_that("fit_spde threads offset() into the field linear predictor (gcol33/tulpa#72)", {
+  ss  <- make_synthetic_spde_spec(n_obs = 60, seed = 11)
+  X   <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
+  set.seed(11)
+  # Poisson counts with a real per-observation log-exposure offset.
+  off <- log(runif(ss$n_obs, 0.5, 2))
+  y   <- rpois(ss$n_obs, exp(0.3 + off))
+  r   <- ss$spec$prior_range[1]; s <- ss$spec$prior_sigma[1]
+  fit <- function(o) fit_spde(
+    y = y, X = X, spatial = ss$spec, family = "poisson",
+    n_trials = rep(1L, ss$n_obs), range = r, sigma = s,
+    nested_laplace = FALSE, max_iter = 200L, tol = 1e-12, offset = o)
+
+  base <- fit(NULL)
+  zero <- fit(rep(0, ss$n_obs))
+  # offset = 0 reproduces the no-offset fit exactly (no corruption of eta).
+  expect_equal(zero$mode, base$mode, tolerance = 1e-10)
+  expect_equal(zero$log_marginal, base$log_marginal, tolerance = 1e-10)
+  # A non-trivial offset moves the latent mode -- it is not silently dropped.
+  shifted <- fit(off)
+  expect_gt(max(abs(shifted$mode - base$mode)), 1e-3)
+})
+
+test_that("fit_spde absorbs a constant offset into the intercept (gcol33/tulpa#72)", {
+  ss <- make_synthetic_spde_spec(n_obs = 60, seed = 12)
+  X  <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
+  set.seed(12)
+  y  <- rpois(ss$n_obs, exp(0.4))
+  r  <- ss$spec$prior_range[1]; s <- ss$spec$prior_sigma[1]
+  cc <- 0.5
+  fit <- function(o) fit_spde(
+    y = y, X = X, spatial = ss$spec, family = "poisson",
+    n_trials = rep(1L, ss$n_obs), range = r, sigma = s,
+    nested_laplace = FALSE, max_iter = 300L, tol = 1e-12, offset = o)
+
+  base <- fit(NULL)
+  con  <- fit(rep(cc, ss$n_obs))
+  # eta = c + b0 + field is invariant under (b0 -> b0 - c): the fitted intercept
+  # shifts by -c, the centered field and log-marginal unchanged to the weak
+  # intercept-prior tolerance.
+  expect_equal(con$beta[1], base$beta[1] - cc, tolerance = 1e-3)
+  expect_equal(con$spatial_effects, base$spatial_effects, tolerance = 1e-3)
+  expect_equal(con$log_marginal, base$log_marginal, tolerance = 1e-2)
+})
+
+test_that("fit_spde nested integrates offset (offset = 0 == no offset) (gcol33/tulpa#72)", {
+  ss <- make_synthetic_spde_spec(n_obs = 50, seed = 13)
+  X  <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
+  set.seed(13)
+  y  <- rpois(ss$n_obs, exp(0.3))
+  fit <- function(o) fit_spde(
+    y = y, X = X, spatial = ss$spec, family = "poisson",
+    n_trials = rep(1L, ss$n_obs), method = "grid", n_grid = 3L,
+    diagnose_k = FALSE, offset = o)
+
+  base <- fit(NULL)
+  zero <- fit(rep(0, ss$n_obs))
+  expect_equal(zero$log_marginal, base$log_marginal, tolerance = 1e-8)
+})

@@ -135,7 +135,7 @@ tulpa_laplace <- function(y, n_trials, X,
     }
     result <- dispatch_laplace_spatial(
       y, n_trials, X, re_idx, n_re_groups, sigma_re,
-      spatial, family, phi, max_iter, tol, n_threads
+      spatial, family, phi, max_iter, tol, n_threads, offset = offset
     )
   } else {
     # All non-spatial paths: use cpp_laplace_fit_multi_re
@@ -445,9 +445,10 @@ tulpa_laplace <- function(y, n_trials, X,
 #' @keywords internal
 dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
                                      sigma_re, spatial, family, phi,
-                                     max_iter, tol, n_threads) {
+                                     max_iter, tol, n_threads, offset = NULL) {
 
   spatial_type <- spatial$type
+  off_arg <- if (is.null(offset)) NULL else as.numeric(offset)
 
   if (spatial_type %in% c("icar", "car")) {
     adj <- spatial$adjacency
@@ -465,7 +466,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       tau_spatial = 1.0,
       family = family, phi = phi,
       max_iter = as.integer(max_iter), tol = tol,
-      n_threads = as.integer(n_threads)
+      n_threads = as.integer(n_threads),
+      offset_nullable = off_arg
     )
   } else if (spatial_type == "bym2") {
     adj <- spatial$adjacency
@@ -484,7 +486,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       scale_factor = spatial$scale_factor %||% 1.0,
       family = family, phi = phi,
       max_iter = as.integer(max_iter), tol = tol,
-      n_threads = as.integer(n_threads)
+      n_threads = as.integer(n_threads),
+      offset_nullable = off_arg
     )
   } else if (spatial_type == "spde") {
     # SPDE Laplace at fixed hyperparameters (uses spec's prior modes).
@@ -497,7 +500,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       y = y, n_trials = n_trials, X = X, spatial = spatial,
       family = family, phi = phi,
       range = NULL, sigma = NULL,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      offset = offset
     )
   } else if (spatial_type == "gp") {
     # NNGP Laplace at fixed hyperparameters. Like SPDE: an additional iid RE
@@ -512,7 +516,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       y = y, n_trials = n_trials, X = X, spatial = spatial,
       family = family, phi = phi,
       sigma2_gp = NULL, phi_gp = NULL,
-      max_iter = max_iter, tol = tol, n_threads = n_threads
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      offset = offset
     )
   } else {
     stop(sprintf("Spatial type '%s' not yet supported in Laplace", spatial_type),
@@ -546,7 +551,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 laplace_spde_at <- function(y, n_trials, X, spatial,
                              family = "binomial", phi = 1.0,
                              range = NULL, sigma = NULL,
-                             max_iter = 100L, tol = 1e-6, n_threads = 1L) {
+                             max_iter = 100L, tol = 1e-6, n_threads = 1L,
+                             offset = NULL) {
   if (is.null(range)) range <- spatial$prior_range[1]
   if (is.null(sigma)) sigma <- spatial$prior_sigma[1]
 
@@ -568,7 +574,8 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
     max_iter = as.integer(max_iter), tol = tol,
     n_threads = as.integer(n_threads),
     rational_poles_nullable = if (!rat$is_integer) rat$poles else NULL,
-    rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL
+    rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL,
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
   )
 
   result$range <- range
@@ -630,7 +637,8 @@ gp_cov_type_for_laplace <- function(spatial) {
 laplace_gp_at <- function(y, n_trials, X, spatial,
                            family = "binomial", phi = 1.0,
                            sigma2_gp = NULL, phi_gp = NULL,
-                           max_iter = 100L, tol = 1e-6, n_threads = 1L) {
+                           max_iter = 100L, tol = 1e-6, n_threads = 1L,
+                           offset = NULL) {
   if (is.null(spatial$neighbor_info)) {
     stop("spatial_gp() spec is unvalidated (neighbor_info is NULL). ",
          "Call validate_gp(spatial, data) first, or fit through tulpa() ",
@@ -671,7 +679,8 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
     phi = phi,
     max_iter = as.integer(max_iter),
     tol = tol,
-    n_threads = as.integer(n_threads)
+    n_threads = as.integer(n_threads),
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
   )
 
   result$sigma2_gp <- sigma2_gp

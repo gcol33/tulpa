@@ -42,7 +42,8 @@ Rcpp::List cpp_laplace_fit_spatial(
     Rcpp::IntegerVector n_neighbors, double tau_spatial,
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     // Fixed effects + optional iid RE + a single ICAR latent block, through the
     // unified spec solver (the family-enum laplace_mode_spatial was retired in
@@ -58,10 +59,13 @@ Rcpp::List cpp_laplace_fit_spatial(
     }
     const int block_start = p + (has_re ? n_re_groups : 0);
 
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/100.0, /*n_block_latent=*/n_spatial_units);
+        /*sigma_beta=*/100.0, /*n_block_latent=*/n_spatial_units,
+        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
 
     tulpa::LatentBlock block;
     block.start = block_start;
@@ -108,7 +112,8 @@ Rcpp::List cpp_laplace_fit_bym2(
     Rcpp::IntegerVector n_neighbors,
     double sigma_spatial, double rho, double scale_factor,
     std::string family, double phi = 1.0,
-    int max_iter = 100, double tol = 1e-6, int n_threads = 1
+    int max_iter = 100, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     // Fixed effects + optional iid RE + BYM2's two latent blocks (phi:
     // ICAR-structured & centered, theta: IID) through the unified spec solver
@@ -125,10 +130,13 @@ Rcpp::List cpp_laplace_fit_bym2(
     const int phi_start   = p + (has_re ? n_re_groups : 0);
     const int theta_start = phi_start + n_spatial_units;
 
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/100.0, /*n_block_latent=*/2 * n_spatial_units);
+        /*sigma_beta=*/100.0, /*n_block_latent=*/2 * n_spatial_units,
+        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
 
     // phi block: ICAR-structured, d = sigma * sqrt(rho) * scale_factor, centered.
     tulpa::LatentBlock phi_block;

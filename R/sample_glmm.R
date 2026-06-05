@@ -30,6 +30,8 @@
 #' @param backend One of `"hmc"`, `"ess"`, `"sghmc"`, `"sgld"`, `"mclmc"`,
 #'   `"smc"`, `"vi"`.
 #' @param phi Dispersion/precision passed to the family (held fixed).
+#' @param offset Optional fixed additive term on the linear predictor
+#'   (`eta = offset + X beta`), length `length(y)`; `NULL` -> no offset.
 #' @param fixed_names Optional fixed-effect names for the draw columns.
 #' @param control List of kernel tuning knobs (`n_iter`, `warmup`, `seed`,
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
@@ -41,6 +43,7 @@
 #'   apply.
 #' @keywords internal
 tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
+                              offset = NULL,
                               fixed_names = NULL, control = list()) {
   if (is.null(.FAMILY_OPS[[family]])) {
     stop(sprintf("Unknown family '%s'. Supported: %s.",
@@ -48,6 +51,13 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
   }
   X <- as.matrix(X)
   N <- length(y)
+  if (!is.null(offset)) {
+    offset <- as.numeric(offset)
+    if (length(offset) != N) {
+      stop(sprintf("length(offset) (%d) must equal length(y) (%d).",
+                   length(offset), N), call. = FALSE)
+    }
+  }
   n_iter  <- control$n_iter %||% 2000L
   warmup  <- control$warmup %||% (n_iter %/% 2L)
 
@@ -77,7 +87,8 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     vi_variant    = as.integer(control$vi_variant %||% 3L),
     vi_mc_samples = as.integer(control$vi_mc_samples %||% 10L),
     vi_max_iter   = as.integer(control$vi_max_iter %||% 10000L),
-    vi_n_draws    = as.integer(control$n_draws %||% 2000L)
+    vi_n_draws    = as.integer(control$n_draws %||% 2000L),
+    offset        = offset
   )
 
   nm <- fixed_names %||% colnames(X) %||% paste0("beta", seq_len(ncol(X)))

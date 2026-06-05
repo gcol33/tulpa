@@ -283,7 +283,8 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable,
     Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable,
     bool store_Q,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 );
 
 // ============================================================================

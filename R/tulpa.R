@@ -318,8 +318,8 @@
   if (input == "spde") {
     # Continuous Matern SPDE field, nested-Laplace integrated over (range, sigma)
     # by fit_spde() (its own CCD / grid engine). fit_spde() takes the design
-    # bundle (y, X) plus the self-contained SPDE spec; it has no RE / latent /
-    # beta_prior / offset support, so reject those loudly rather than drop them.
+    # bundle (y, X, offset) plus the self-contained SPDE spec; it has no RE /
+    # latent / beta_prior support, so reject those loudly rather than drop them.
     if (length(latent_blocks) > 0L) {
       stop("An SPDE spatial field cannot be combined with latent(...) blocks ",
            "through tulpa(); fit_spde() integrates a single Matern field. Drop ",
@@ -334,10 +334,6 @@
     if (!is.null(beta_prior)) {
       stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses a ",
            "built-in weak fixed-effect prior.", call. = FALSE)
-    }
-    if (!is.null(bundle$offset)) {
-      stop("offset() terms are not yet supported on the SPDE path through tulpa().",
-           call. = FALSE)
     }
     if (!family %in% c("binomial", "poisson", "neg_binomial_2")) {
       stop(sprintf(
@@ -359,7 +355,8 @@
       phi            = phi,
       max_iter       = control$max_iter %||% 100L,
       tol            = control$tol %||% 1e-6,
-      n_threads      = control$n_threads %||% 1L
+      n_threads      = control$n_threads %||% 1L,
+      offset         = bundle$offset
     ))
   }
 
@@ -416,8 +413,9 @@
         # which dispatches on spatial$type (icar/car/bym2/spde/gp). At most one
         # random-intercept (1 | g) term may ride alongside the field -- the
         # spatial solvers consume a single RE block (re_list[[1]]); richer RE
-        # structure is not supported here. beta_prior / offset are not threaded
-        # through the spatial solvers, so reject them loudly rather than drop.
+        # structure is not supported here. An offset() is threaded into the
+        # field's linear predictor; beta_prior is not threaded through the
+        # spatial solvers, so reject it loudly rather than drop.
         re <- bundle$re_terms %||% list()
         if (length(re) > 1L || (length(re) == 1L && (re[[1]]$n_coefs %||% 1L) != 1L)) {
           stop("Spatial Laplace supports at most one random-intercept (1 | g) ",
@@ -430,14 +428,11 @@
                "`beta_prior`, or use a sampler for a custom prior under a field.",
                call. = FALSE)
         }
-        if (!is.null(bundle$offset)) {
-          stop("offset() terms are not yet supported on the spatial Laplace ",
-               "path through tulpa().", call. = FALSE)
-        }
         return(list(
           y = bundle$y, n_trials = n_trials, X = bundle$X,
           re_list = .bundle_to_re_list(bundle, sigma_re),
-          family = family, phi = phi, spatial = spatial
+          family = family, phi = phi, spatial = spatial,
+          offset = bundle$offset
         ))
       }
       return(list(
@@ -554,8 +549,9 @@
   if (input == "modeldata") {
     # The model-agnostic ModelData sampler kernels (hmc/ess/sghmc/sgld/mclmc/
     # smc/vi) fit a fixed-effect GLM via tulpa_sample_glmm(). They build the
-    # ModelData themselves; random-effect, spatial, and latent structure are
-    # not threaded through this path. Random-effect models have a clean home on
+    # ModelData themselves; an offset() is threaded into the linear predictor,
+    # but random-effect, spatial, and latent structure are not threaded through
+    # this path. Random-effect models have a clean home on
     # the conditional R-closure logpost backends (mode = "mala"/"pathfinder"/
     # "imh_laplace"), which condition on sigma_re; route the user there rather
     # than silently dropping the term.
@@ -574,10 +570,6 @@
         "'structured' / 'nested_laplace') for an integrated field."), backend),
         call. = FALSE)
     }
-    if (!is.null(bundle$offset)) {
-      stop(sprintf("Backend '%s' does not yet support offset() terms.", backend),
-           call. = FALSE)
-    }
     return(list(
       y           = bundle$y,
       n_trials    = n_trials %||% rep(1L, bundle$n_obs),
@@ -585,6 +577,7 @@
       family      = family,
       backend     = backend,
       phi         = phi,
+      offset      = bundle$offset,
       fixed_names = bundle$fixed_names,
       control     = control
     ))

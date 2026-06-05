@@ -9,6 +9,7 @@
 // scatter), removing the previous bespoke pattern/scatter/log_prior path.
 
 #include "spde_qbuilder.h"
+#include "laplace_spec_fit.h"   // as_offset_vec (offset marshalling)
 #include "sparse_hessian.h"
 #include "nested_laplace_grid.h"
 #include "laplace_re_priors.h"
@@ -41,12 +42,16 @@ Rcpp::List cpp_laplace_fit_spde(
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
     int n_x = p + n_mesh;
     int mesh_start = p;
+
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    const double* off_ptr = offset.empty() ? nullptr : offset.data();
 
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull()) {
@@ -108,7 +113,7 @@ Rcpp::List cpp_laplace_fit_spde(
 
         auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
             for (int i = 0; i < N; i++) {
-                eta[i] = 0.0;
+                eta[i] = off_ptr ? off_ptr[i] : 0.0;
                 for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
                 for (const auto& ae : a_rows[i])
                     eta[i] += ae.weight * x[mesh_start + ae.mesh_idx];
@@ -190,7 +195,7 @@ Rcpp::List cpp_laplace_fit_spde(
     tulpa::run_spde_laplace(
         y, n_trials, X, N, p, n_mesh, mesh_start, n_x,
         a_rows, qb, family, phi,
-        max_iter, tol, n_threads, x_init, nullptr,
+        max_iter, tol, n_threads, x_init, nullptr, off_ptr,
         [&](const tulpa::LaplaceResult& res) {
             out = Rcpp::List::create(
                 Rcpp::Named("mode") = res.mode,
@@ -234,7 +239,8 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue,
     bool store_Q = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -279,6 +285,13 @@ Rcpp::List cpp_nested_laplace_spde(
         pa.tau_re      = (n_re_groups > 0)
                          ? 1.0 / (sigma_re * sigma_re + 1e-10)
                          : 0.0;
+        if (offset_nullable.isNotNull()) {
+            Rcpp::NumericVector off(offset_nullable);
+            if ((int)off.size() != N)
+                Rcpp::stop("length(offset) (%d) must equal n_obs (%d).",
+                           (int)off.size(), N);
+            pa.offset = off;
+        }
     }
 
     std::vector<tulpa::JointArm> arms(1);

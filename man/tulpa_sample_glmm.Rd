@@ -11,6 +11,7 @@ tulpa_sample_glmm(
   family,
   backend,
   phi = 1,
+  offset = NULL,
   fixed_names = NULL,
   control = list()
 )
@@ -28,6 +29,9 @@ tulpa_sample_glmm(
 \code{"smc"}, \code{"vi"}.}
 
 \item{phi}{Dispersion/precision passed to the family (held fixed).}
+
+\item{offset}{Optional fixed additive term on the linear predictor
+(\verb{eta = offset + X beta}), length \code{length(y)}; \code{NULL} -> no offset.}
 
 \item{fixed_names}{Optional fixed-effect names for the draw columns.}
 

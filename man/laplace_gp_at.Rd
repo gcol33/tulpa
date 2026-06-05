@@ -15,7 +15,8 @@ laplace_gp_at(
   phi_gp = NULL,
   max_iter = 100L,
   tol = 1e-06,
-  n_threads = 1L
+  n_threads = 1L,
+  offset = NULL
 )
 }
 \arguments{
