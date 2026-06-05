@@ -425,61 +425,30 @@ svc <- function(object, terms = NULL, summary = FALSE,
 #' @export
 svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
                            probs = c(0.025, 0.5, 0.975), ...) {
-
-  # Check if model has SVCs
-  if (is.null(object$svc) || !inherits(object$svc, "tulpa_svc")) {
-    stop("Model was not fitted with spatially-varying coefficients.\n",
-         "Use `svc` argument in tulpa() to specify SVCs.", call. = FALSE)
-  }
-
-  svc_info <- object$svc
-  n_obs <- svc_info$n_obs
-  n_svc <- svc_info$n_svc
-  svc_names <- svc_info$svc_names
-
-  # Get SVC draws from model
-  svc_draws <- object$.internal$svc_draws
-
-  if (is.null(svc_draws)) {
-    stop("SVC draws not found in model output", call. = FALSE)
-  }
-
-  # Subset terms if requested
-  if (!is.null(terms)) {
-    if (is.numeric(terms)) {
-      term_idx <- terms
-    } else if (is.character(terms)) {
-      term_idx <- match(terms, svc_names)
-      if (any(is.na(term_idx))) {
-        stop("Terms not found: ", paste(terms[is.na(term_idx)], collapse = ", "),
-             call. = FALSE)
-      }
-    } else {
-      stop("`terms` must be numeric or character", call. = FALSE)
+  .extract_varying_coef(
+    object, terms, summary, probs,
+    slot = "svc",
+    info_class = "tulpa_svc",
+    not_fitted_msg = paste0(
+      "Model was not fitted with spatially-varying coefficients.\n",
+      "Use `svc` argument in tulpa() to specify SVCs."),
+    draws_field = "svc_draws",
+    names_field = "svc_names",
+    build_result = function(info, draws, term_names) {
+      structure(
+        list(
+          draws = draws,
+          coords = info$coords_matrix,
+          term_names = term_names,
+          n_obs = info$n_obs,
+          n_svc = length(term_names),
+          n_draws = dim(draws)[1],
+          cov = info$cov
+        ),
+        class = "tulpa_svc_posterior"
+      )
     }
-    svc_draws <- svc_draws[, , term_idx, drop = FALSE]
-    svc_names <- svc_names[term_idx]
-    n_svc <- length(term_idx)
-  }
-
-  result <- structure(
-    list(
-      draws = svc_draws,
-      coords = svc_info$coords_matrix,
-      term_names = svc_names,
-      n_obs = n_obs,
-      n_svc = n_svc,
-      n_draws = dim(svc_draws)[1],
-      cov = svc_info$cov
-    ),
-    class = "tulpa_svc_posterior"
   )
-
-  if (summary) {
-    return(summary(result, probs = probs))
-  }
-
-  result
 }
 
 

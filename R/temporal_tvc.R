@@ -306,61 +306,30 @@ tvc <- function(object, terms = NULL, summary = FALSE,
 #' @export
 tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
                            probs = c(0.025, 0.5, 0.975), ...) {
-
-  # Check if model has TVCs
-  if (is.null(object$tvc) || !inherits(object$tvc, "tulpa_tvc")) {
-    stop("Model was not fitted with temporally-varying coefficients.\n",
-         "Use `tvc` argument in tulpa() to specify TVCs.", call. = FALSE)
-  }
-
-  tvc_info <- object$tvc
-  n_times <- tvc_info$n_times
-  n_tvc <- tvc_info$n_tvc
-  tvc_names <- tvc_info$tvc_names
-
-  # Get TVC draws from model
-  tvc_draws <- object$.internal$tvc_draws
-
-  if (is.null(tvc_draws)) {
-    stop("TVC draws not found in model output", call. = FALSE)
-  }
-
-  # Subset terms if requested
-  if (!is.null(terms)) {
-    if (is.numeric(terms)) {
-      term_idx <- terms
-    } else if (is.character(terms)) {
-      term_idx <- match(terms, tvc_names)
-      if (any(is.na(term_idx))) {
-        stop("Terms not found: ", paste(terms[is.na(term_idx)], collapse = ", "),
-             call. = FALSE)
-      }
-    } else {
-      stop("`terms` must be numeric or character", call. = FALSE)
+  .extract_varying_coef(
+    object, terms, summary, probs,
+    slot = "tvc",
+    info_class = "tulpa_tvc",
+    not_fitted_msg = paste0(
+      "Model was not fitted with temporally-varying coefficients.\n",
+      "Use `tvc` argument in tulpa() to specify TVCs."),
+    draws_field = "tvc_draws",
+    names_field = "tvc_names",
+    build_result = function(info, draws, term_names) {
+      structure(
+        list(
+          draws = draws,
+          time_levels = info$time_levels,
+          term_names = term_names,
+          n_times = info$n_times,
+          n_tvc = length(term_names),
+          n_draws = dim(draws)[1],
+          structure = info$structure
+        ),
+        class = "tulpa_tvc_posterior"
+      )
     }
-    tvc_draws <- tvc_draws[, , term_idx, drop = FALSE]
-    tvc_names <- tvc_names[term_idx]
-    n_tvc <- length(term_idx)
-  }
-
-  result <- structure(
-    list(
-      draws = tvc_draws,
-      time_levels = tvc_info$time_levels,
-      term_names = tvc_names,
-      n_times = n_times,
-      n_tvc = n_tvc,
-      n_draws = dim(tvc_draws)[1],
-      structure = tvc_info$structure
-    ),
-    class = "tulpa_tvc_posterior"
   )
-
-  if (summary) {
-    return(summary(result, probs = probs))
-  }
-
-  result
 }
 
 

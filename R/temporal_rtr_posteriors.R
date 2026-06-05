@@ -83,24 +83,7 @@ validate_rtr <- function(temporal, data, formula) {
 #' @return Projection matrix (n x n)
 #' @keywords internal
 compute_rtr_projection <- function(X) {
-  n <- nrow(X)
-  p <- ncol(X)
-
-  if (p >= n) {
-    warning("More covariates than observations; RTR may not be effective",
-            call. = FALSE)
-  }
-
-  # QR decomposition is more numerically stable than direct inverse
-  qr_X <- qr(X)
-
-  # P_X = Q %*% Q' where Q is orthonormal basis for col(X)
-  Q <- qr.Q(qr_X)
-
-  # P_perp = I - Q %*% Q'
-  P_perp <- diag(n) - Q %*% t(Q)
-
-  P_perp
+  .orthogonal_complement_projection(X, "RTR")
 }
 
 
