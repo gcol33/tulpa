@@ -113,7 +113,7 @@ static void tulpa_run_nuts_generic_impl(
 // ============================================================================
 static void tulpa_run_nuts_chains_impl(
     const tulpa::ModelData* data,
-    const tulpa::ParamLayout* /*layout*/,
+    const tulpa::ParamLayout* layout,
     const double* init,
     int n_params,
     int n_chains,
@@ -149,7 +149,9 @@ static void tulpa_run_nuts_chains_impl(
         0,                // L=0 → NUTS
         n_chains, seed, verbose != 0, max_treedepth,
         tulpa::MassMatrixType::DIAG, adapt_delta,
-        0                 // riemannian=off
+        0,                // riemannian=off
+        "",               // checkpoint_path
+        layout            // honour the caller's layout (gcol33/tulpa#70)
     );
 
     for (int c = 0; c < n_chains; c++) {

@@ -132,7 +132,13 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     MassMatrixType metric_type = MassMatrixType::DIAG,
     double adapt_delta = -1.0,
     int riemannian = -1,
-    const std::string& checkpoint_path = ""
+    const std::string& checkpoint_path = "",
+    // Optional caller-supplied layout (gcol33/tulpa#70). When non-null it is used
+    // verbatim instead of compute_param_layout(data), so a model fitting through
+    // a FullGradFn with a hand-built ParamLayout (total_params set, no processes)
+    // gets the correct parameter count -- the single-chain runner already honours
+    // the passed layout; this brings the multi-chain runner in line.
+    const ParamLayout* layout_override = nullptr
 );
 
 // =====================================================================

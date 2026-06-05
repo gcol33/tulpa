@@ -45,9 +45,15 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     MassMatrixType metric_type,
     double adapt_delta,
     int riemannian,
-    const std::string& checkpoint_path
+    const std::string& checkpoint_path,
+    const ParamLayout* layout_override
 ) {
-  ParamLayout layout = compute_param_layout(data);
+  // Honour a caller-supplied layout (gcol33/tulpa#70): a FullGradFn model carries
+  // a minimal ModelData (total_params set by hand, no processes), so recomputing
+  // here would size the chains' position buffers wrong and overrun. The
+  // single-chain runner already threads the passed layout through.
+  ParamLayout layout = layout_override ? *layout_override
+                                       : compute_param_layout(data);
 
   static const std::vector<double> kNoMetric;
   auto metric_for = [&](int c) -> const std::vector<double>& {
