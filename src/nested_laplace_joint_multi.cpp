@@ -183,6 +183,21 @@ inline std::function<double(int, int)> make_field_coef_arm_scale_fn(
 //   * 2 (icar) or 3 (bym2, car_proper) per-block axes
 // For non-copy blocks, the standard single-arm parameterization is used
 // (tau on the prior, no arm_scale, axes as in the single-arm registry).
+// Per-outer-thread slot index for grid-cell-local caches written in block.prep
+// and read in block.log_prior. The joint grid driver runs block.prep lock-free
+// across n_threads_outer, so a single shared cache would let one thread's prep
+// clobber another thread's in-flight log_prior read (gcol33/tulpaObs#42). prep
+// and log_prior of a given cell run on the same outer thread, so a per-thread
+// slot keyed on the OpenMP thread id is race-free. Bounds-guarded so an
+// over-subscribed outer-thread count can never index out of range.
+static inline int nl_grid_slot(int n_slots) {
+    int t = 0;
+#ifdef _OPENMP
+    t = omp_get_thread_num();
+#endif
+    return (t >= 0 && t < n_slots) ? t : 0;
+}
+
 int build_joint_blocks_from_spec(
     const Rcpp::List& bs,
     const Rcpp::NumericMatrix& theta_grid,
@@ -446,7 +461,18 @@ int build_joint_blocks_from_spec(
         auto adj_rp_v = std::make_shared<std::vector<int>>(adj_rp.begin(), adj_rp.end());
         auto adj_ci_v = std::make_shared<std::vector<int>>(adj_ci.begin(), adj_ci.end());
         auto n_nbr_v  = std::make_shared<std::vector<int>>(n_nbr.begin(),  n_nbr.end());
-        auto log_det_Q_rho = std::make_shared<double>(0.0);
+        // Per-outer-thread log|Q(rho)| cache (gcol33/tulpaObs#42): block.prep
+        // runs lock-free in the parallel joint grid driver, so a shared scalar
+        // would race a concurrent cell's log_prior read. One slot per outer
+        // thread; prep and log_prior of a cell share that thread's slot.
+        const int log_det_slots =
+#ifdef _OPENMP
+            std::max(omp_get_max_threads(), 1);
+#else
+            1;
+#endif
+        auto log_det_Q_rho =
+            std::make_shared<std::vector<double>>(log_det_slots, 0.0);
 
         tulpa::LatentBlock block;
         block.start = start;
@@ -467,8 +493,10 @@ int build_joint_blocks_from_spec(
                 double rho_car = theta_grid(k_grid, axis_rho_car);
                 std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
                     size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_car);
-                *log_det_Q_rho = tulpa_car_proper::car_log_det(size, Qmat);
-                return std::isfinite(*log_det_Q_rho);
+                double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
+                (*log_det_Q_rho)[nl_grid_slot(
+                    static_cast<int>(log_det_Q_rho->size()))] = ld_val;
+                return std::isfinite(ld_val);
             };
             block.add_prior = [start, size, axis_rho_car, theta_grid,
                                 adj_rp, adj_ci, n_nbr](
@@ -494,7 +522,9 @@ int build_joint_blocks_from_spec(
                 const Rcpp::NumericVector& x, int k_grid) -> double {
                 return tulpa::log_prior_car_proper(
                     x, start, size, /*tau=*/1.0,
-                    theta_grid(k_grid, axis_rho_car), *log_det_Q_rho,
+                    theta_grid(k_grid, axis_rho_car),
+                    (*log_det_Q_rho)[nl_grid_slot(
+                        static_cast<int>(log_det_Q_rho->size()))],
                     adj_rp, adj_ci, n_nbr);
             };
             // Proper CAR has full-rank Q; no centering.
@@ -509,8 +539,10 @@ int build_joint_blocks_from_spec(
                 double rho_car = theta_grid(k_grid, axis_rho_car);
                 std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
                     size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_car);
-                *log_det_Q_rho = tulpa_car_proper::car_log_det(size, Qmat);
-                return std::isfinite(*log_det_Q_rho);
+                double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
+                (*log_det_Q_rho)[nl_grid_slot(
+                    static_cast<int>(log_det_Q_rho->size()))] = ld_val;
+                return std::isfinite(ld_val);
             };
             block.add_prior = [start, size, axis_tau, axis_rho_car, theta_grid,
                                 adj_rp, adj_ci, n_nbr](
@@ -536,7 +568,9 @@ int build_joint_blocks_from_spec(
                 const Rcpp::NumericVector& x, int k_grid) -> double {
                 return tulpa::log_prior_car_proper(
                     x, start, size, theta_grid(k_grid, axis_tau),
-                    theta_grid(k_grid, axis_rho_car), *log_det_Q_rho,
+                    theta_grid(k_grid, axis_rho_car),
+                    (*log_det_Q_rho)[nl_grid_slot(
+                        static_cast<int>(log_det_Q_rho->size()))],
                     adj_rp, adj_ci, n_nbr);
             };
             block.center = [start, size](Rcpp::NumericVector& x) -> double {
@@ -1654,16 +1688,27 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // Per-outer-thread Newton scratch + CHOLMOD solver pool. The solver pool
     // lives inside run_nested_laplace_grid (one per outer thread); scratch
     // pool lives here because it's joint-shaped (per-arm etas).
-    int n_outer = std::max(1, n_threads_outer);
+    //
+    // The dense joint path runs the outer grid SERIALLY (gcol33/tulpaObs#42).
+    // Unlike the sparse path it does not replicate the arm specs / dispersion
+    // per outer thread, so a parallel outer grid here would race on the shared
+    // `specs` (sync_dispersion rewriting arm.phi) and on the coupled arms'
+    // arm.phi read lock-free during the solve. Dense fits are small by
+    // construction (n_x < SPARSE_THRESHOLD), so each cell solve is cheap and a
+    // serial outer grid costs little; the inner per-observation eta reduction
+    // still parallelises across n.threads.
+    int n_outer = 1;
     if (progress) progress->set_width(n_outer);
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
     for (auto& s : scratch_pool) s.allocate(n_x, arms);
 
     // Resolve each arm to a spec view ONCE for the whole grid: built-in family
     // arms materialize a builtin_family_spec + response, model-supplied arms
-    // borrow their spec. Read-only after build, so it is shared safely across
-    // the parallel outer-grid threads. The scatter and the joint log-lik read
-    // every arm only through these views (dev_notes/plans/clean_migration.md Phase L / L4).
+    // borrow their spec. sync_dispersion mutates this per cell (the phi-grid
+    // axis), so it is NOT read-only; the dense path runs the outer grid serially
+    // (n_outer = 1 above) so the single shared `specs` is touched by one thread
+    // at a time. The scatter and the joint log-lik read every arm only through
+    // these views (dev_notes/plans/clean_migration.md Phase L / L4).
     JointArmSpecs specs = build_joint_arm_specs(arms);
 
     // One cheap-pass specs view per outer worker slot. The cheap screen may run
