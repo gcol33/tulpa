@@ -1,5 +1,22 @@
 # tulpa NEWS
 
+## 0.0.10 (2026-06-05)
+
+* Fix a data race in the threaded sparse joint outer-grid nested-Laplace driver
+  (`run_multi_block_nested_laplace_joint_sparse_impl`). The cell-coupling
+  (coupled) arm's per-cell dispersion was read lock-free from the shared `arms`
+  during the inner Newton solve while a concurrent grid cell's `prep_at_grid`
+  rewrote it under the `nl_sparse_phi` critical -- every other arm already read
+  a thread-local snapshot, but the coupled arm did not. On a gridded coupled-arm
+  dispersion (e.g. the beta-cover precision on the phi axis) this corrupted
+  per-cell values across `n_threads_outer > 1`, causing wrong log-marginals /
+  non-convergence and the intermittent native crashes reported downstream
+  (gcol33/tulpaObs#42). Now the coupled arms' dispersion is snapshotted under the
+  same critical and read via a `phi_override` in the coupled scatter / log-lik;
+  serial and dense callers pass `nullptr` and are byte-unchanged. Verified: a
+  220-region BYM2 beta-cover fit is identical serial vs `n_threads_outer = 6` to
+  ~1e-10.
+
 ## 0.0.9 (2026-06-03)
 
 * feat(offset): thread `offset()` terms through the SPDE, spatial-Laplace, and
