@@ -325,7 +325,8 @@ tulpa_laplace <- function(y, n_trials, X,
           mode = result$mode, X = X, spatial = spatial,
           family = family, phi = phi,
           n_trials = n_trials, weights = weights,
-          range_val = range_val, sigma_val = sigma_val
+          range_val = range_val, sigma_val = sigma_val,
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
         ),
         error = function(e) {
           warning("Marginal H_beta (SPDE Schur) failed: ", conditionMessage(e),
@@ -341,7 +342,8 @@ tulpa_laplace <- function(y, n_trials, X,
           mode = result$mode, X = X, spatial = spatial,
           family = family, phi = phi,
           n_trials = n_trials, weights = weights,
-          sigma2_gp = sigma2_val, phi_gp = phi_gp_val
+          sigma2_gp = sigma2_val, phi_gp = phi_gp_val,
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
         ),
         error = function(e) {
           warning("Marginal H_beta (NNGP Schur) failed: ", conditionMessage(e),
@@ -490,32 +492,25 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       offset_nullable = off_arg
     )
   } else if (spatial_type == "spde") {
-    # SPDE Laplace at fixed hyperparameters (uses spec's prior modes).
+    # SPDE Laplace at fixed hyperparameters (uses spec's prior modes), with an
+    # optional iid RE block threaded into the [beta, re, w_mesh] latent layout.
     # Nested integration over (range, sigma) is opt-in via fit_spde().
-    if (!is.null(re_idx) && length(re_idx) > 0 && n_re_groups > 1L) {
-      stop("SPDE Laplace does not yet support an additional iid RE block. ",
-           "Drop the RE list or use HMC.", call. = FALSE)
-    }
     laplace_spde_at(
       y = y, n_trials = n_trials, X = X, spatial = spatial,
       family = family, phi = phi,
       range = NULL, sigma = NULL,
+      re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
       offset = offset
     )
   } else if (spatial_type == "gp") {
-    # NNGP Laplace at fixed hyperparameters. Like SPDE: an additional iid RE
-    # block is not currently supported in this branch — cpp_laplace_fit_gp's
-    # n_re_groups > 0 path is exercised by HMC, but here we route only the
-    # spatial-only case.
-    if (!is.null(re_idx) && length(re_idx) > 0 && n_re_groups > 1L) {
-      stop("NNGP Laplace does not yet support an additional iid RE block. ",
-           "Drop the RE list or use HMC.", call. = FALSE)
-    }
+    # NNGP Laplace at fixed hyperparameters, with an optional iid RE block
+    # threaded into cpp_laplace_fit_gp's [beta, re, w_gp] latent layout.
     laplace_gp_at(
       y = y, n_trials = n_trials, X = X, spatial = spatial,
       family = family, phi = phi,
       sigma2_gp = NULL, phi_gp = NULL,
+      re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
       offset = offset
     )
@@ -551,6 +546,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 laplace_spde_at <- function(y, n_trials, X, spatial,
                              family = "binomial", phi = 1.0,
                              range = NULL, sigma = NULL,
+                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                              max_iter = 100L, tol = 1e-6, n_threads = 1L,
                              offset = NULL) {
   if (is.null(range)) range <- spatial$prior_range[1]
@@ -561,10 +557,16 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
   alpha <- as.integer(round(spatial$nu)) + 1L
   rat <- rational_spde_coefficients(spatial$nu)
 
+  # iid RE block laid out between beta and the mesh field. No RE -> zero dims.
+  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
+
   result <- cpp_laplace_fit_spde(
     y = as.numeric(y),
     n_trials = as.integer(n_trials %||% rep(1L, length(y))),
     X = as.matrix(X),
+    re_idx = as.numeric(re_idx),
+    n_re_groups = as.integer(n_re_groups),
+    sigma_re = sigma_re,
     A_x = spatial$A_x, A_i = spatial$A_i, A_p = spatial$A_p,
     n_obs = length(y), n_mesh = spatial$n_mesh,
     C0_diag = spatial$C0_diag,
@@ -637,6 +639,7 @@ gp_cov_type_for_laplace <- function(spatial) {
 laplace_gp_at <- function(y, n_trials, X, spatial,
                            family = "binomial", phi = 1.0,
                            sigma2_gp = NULL, phi_gp = NULL,
+                           re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                            max_iter = 100L, tol = 1e-6, n_threads = 1L,
                            offset = NULL) {
   if (is.null(spatial$neighbor_info)) {
@@ -656,16 +659,17 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
   # convention in test-gpu-nngp.R. spatial_gp() stores order_idx as 1-based.
   nn_order_0 <- as.integer((ni$nn_order %||% seq_len(n_spatial)) - 1L)
 
-  # The spatial-only case has no separate iid RE block; pass dummy re_idx.
-  re_idx <- rep(0.0, length(y))
+  # iid RE block laid out between beta and the GP field (cpp_laplace_fit_gp's
+  # n_re_groups > 0 path). No RE -> zero dims, dummy re_idx.
+  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
 
   result <- cpp_laplace_fit_gp(
     y = as.numeric(y),
     n = as.integer(n_trials %||% rep(1L, length(y))),
     X = as.matrix(X),
-    re_idx = re_idx,
-    n_re_groups = 0L,
-    sigma_re = 1.0,
+    re_idx = as.numeric(re_idx),
+    n_re_groups = as.integer(n_re_groups),
+    sigma_re = sigma_re,
     coords = as.matrix(spatial$unique_coords),
     nn_idx = as.matrix(ni$nn_idx),
     nn_dist = as.matrix(ni$nn_dist),

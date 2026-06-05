@@ -32,6 +32,7 @@
 Rcpp::List cpp_laplace_fit_spde(
     Rcpp::NumericVector y, Rcpp::IntegerVector n_trials,
     Rcpp::NumericMatrix X,
+    Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re,
     Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p,
     int n_obs, int n_mesh,
     Rcpp::NumericVector C0_diag,
@@ -47,8 +48,15 @@ Rcpp::List cpp_laplace_fit_spde(
 ) {
     int N = n_obs;
     int p = X.ncol();
-    int n_x = p + n_mesh;
-    int mesh_start = p;
+    // Layout [beta (p), re (n_re_groups), w_mesh (n_mesh)], matching the
+    // nested SPDE entry (cpp_nested_laplace_spde).
+    int n_x = p + n_re_groups + n_mesh;
+    int mesh_start = p + n_re_groups;
+    if (n_re_groups > 0 && (int)re_idx.size() != N)
+        Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d).",
+                   (int)re_idx.size(), N);
+    const double tau_re = (n_re_groups > 0)
+                          ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
 
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     const double* off_ptr = offset.empty() ? nullptr : offset.data();
@@ -86,6 +94,10 @@ Rcpp::List cpp_laplace_fit_spde(
             for (int j2 = j1; j2 < p; j2++)
                 pattern.push_back({j2, j1});
 
+        // RE diagonal (likelihood + prior)
+        for (int g = 0; g < n_re_groups; g++)
+            pattern.push_back({p + g, p + g});
+
         // Q pattern (mesh×mesh block, shifted by mesh_start)
         for (int col = 0; col < n_mesh; col++) {
             for (int idx = qb.Q_p[col]; idx < qb.Q_p[col + 1]; idx++) {
@@ -94,12 +106,20 @@ Rcpp::List cpp_laplace_fit_spde(
             }
         }
 
-        // A pattern: for each obs, its A row connects beta to mesh nodes
+        // A pattern: for each obs, its A row connects beta (and its RE group)
+        // to mesh nodes.
         for (int i = 0; i < N; i++) {
+            int g = (n_re_groups > 0) ? (int)re_idx[i] - 1 : -1;
+            if (!(g >= 0 && g < n_re_groups)) g = -1;
+            // RE×beta cross (re index p+g > j, so lower triangle)
+            if (g >= 0)
+                for (int j = 0; j < p; j++) pattern.push_back({p + g, j});
             for (const auto& ae : a_rows[i]) {
                 int m_idx = mesh_start + ae.mesh_idx;
                 // Beta×mesh cross
                 for (int j = 0; j < p; j++) pattern.push_back({m_idx, j});
+                // RE×mesh cross (mesh index > re index p+g)
+                if (g >= 0) pattern.push_back({m_idx, p + g});
                 // Mesh×mesh from A'diag(h)A (pairs within same obs triangle)
                 for (const auto& ae2 : a_rows[i]) {
                     int m_idx2 = mesh_start + ae2.mesh_idx;
@@ -111,10 +131,18 @@ Rcpp::List cpp_laplace_fit_spde(
         tulpa::SparseHessianBuilder H_builder;
         H_builder.init(n_x, pattern);
 
+        auto re_group = [&](int i) -> int {
+            if (n_re_groups <= 0) return -1;
+            int g = (int)re_idx[i] - 1;
+            return (g >= 0 && g < n_re_groups) ? g : -1;
+        };
+
         auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
             for (int i = 0; i < N; i++) {
                 eta[i] = off_ptr ? off_ptr[i] : 0.0;
                 for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
+                int g = re_group(i);
+                if (g >= 0) eta[i] += x[p + g];
                 for (const auto& ae : a_rows[i])
                     eta[i] += ae.weight * x[mesh_start + ae.mesh_idx];
             }
@@ -129,6 +157,14 @@ Rcpp::List cpp_laplace_fit_spde(
                     for (int k = 0; k <= j; k++)
                         H.add(j, k, gh.neg_hess * X(i, j) * X(i, k));
                 }
+                int g = re_group(i);
+                if (g >= 0) {
+                    int re_i = p + g;
+                    grad[re_i] += gh.grad;
+                    H.add(re_i, re_i, gh.neg_hess);
+                    for (int j = 0; j < p; j++)
+                        H.add(re_i, j, gh.neg_hess * X(i, j));
+                }
                 const auto& row = a_rows[i];
                 for (size_t s1 = 0; s1 < row.size(); s1++) {
                     int idx1 = mesh_start + row[s1].mesh_idx;
@@ -137,6 +173,8 @@ Rcpp::List cpp_laplace_fit_spde(
                     H.add(idx1, idx1, gh.neg_hess * a1 * a1);
                     for (int j = 0; j < p; j++)
                         H.add(idx1, j, gh.neg_hess * X(i, j) * a1);
+                    if (g >= 0)
+                        H.add(idx1, p + g, gh.neg_hess * a1);
                     for (size_t s2 = s1 + 1; s2 < row.size(); s2++) {
                         int idx2 = mesh_start + row[s2].mesh_idx;
                         H.add(std::max(idx1, idx2), std::min(idx1, idx2),
@@ -158,6 +196,10 @@ Rcpp::List cpp_laplace_fit_spde(
             }
             double tau_beta = 1e-4;
             for (int j = 0; j < p; j++) { grad[j] -= tau_beta * x[j]; H.add(j, j, tau_beta); }
+            for (int g = 0; g < n_re_groups; g++) {
+                grad[p + g] -= tau_re * x[p + g];
+                H.add(p + g, p + g, tau_re);
+            }
         };
 
         auto center = [&](Rcpp::NumericVector& x) {
@@ -170,6 +212,7 @@ Rcpp::List cpp_laplace_fit_spde(
                 for (int qidx = qb.Q_p[col]; qidx < qb.Q_p[col + 1]; qidx++)
                     qf += x[mesh_start + qb.Q_i[qidx]] * qb.Q_x[qidx] * x[mesh_start + col];
             }
+            for (int g = 0; g < n_re_groups; g++) qf += tau_re * x[p + g] * x[p + g];
             return -0.5 * qf;
         };
 
@@ -205,7 +248,8 @@ Rcpp::List cpp_laplace_fit_spde(
                 Rcpp::Named("converged") = res.converged,
                 Rcpp::Named("Q_nnz") = qb.nnz()
             );
-        }
+        },
+        re_idx, n_re_groups, sigma_re
     );
     return out;
 }

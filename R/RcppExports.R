@@ -245,8 +245,8 @@ cpp_selected_inversion_diagonal <- function(Q_x, Q_i, Q_p, n) {
     .Call(`_tulpa_cpp_selected_inversion_diagonal`, Q_x, Q_i, Q_p, n)
 }
 
-cpp_laplace_fit_spde <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi = 1.0, alpha = 2L, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, offset_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_spde`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable)
+cpp_laplace_fit_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi = 1.0, alpha = 2L, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, offset_nullable = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable)
 }
 
 cpp_nested_laplace_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu = 1.0, family = "gaussian", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, store_Q = FALSE, checkpoint_path = "", offset_nullable = NULL) {

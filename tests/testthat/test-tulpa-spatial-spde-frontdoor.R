@@ -58,6 +58,23 @@ test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
   }
 })
 
+test_that("mode = laplace fits an SPDE field alongside a (1 | g) RE term (issue #74)", {
+  skip_if_not_installed("fmesher")
+  s <- make_spde_panel()
+  d <- s$data
+  d$g <- factor(rep_len(seq_len(8L), nrow(d)))
+
+  fit <- suppressWarnings(suppressMessages(tulpa(
+    y ~ x + (1 | g), data = d, family = "poisson",
+    spatial = s$spec, mode = "laplace"
+  )))
+
+  expect_s3_class(fit, "tulpa_fit")
+  # Latent mode is [beta (2), re (8 groups), w_mesh (n_mesh)].
+  expect_length(fit$mode, 2L + 8L + s$spec$n_mesh)
+  expect_lt(abs(fit$mode[2] - s$beta[2]), 0.35)   # slope recovers under the RE block
+})
+
 test_that("structured and auto route an SPDE field to the spde backend", {
   skip_on_cran()
   skip_if_fast()

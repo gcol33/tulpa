@@ -58,21 +58,24 @@ test_that("dispatch_laplace_spatial routes GP specs (no longer errors)", {
   }
 })
 
-test_that("NNGP Laplace rejects an additional iid RE block with a clear error", {
+test_that("NNGP Laplace threads an additional iid RE block (issue #74)", {
   ss <- make_synthetic_gp_spec()
   X  <- matrix(1.0, ss$n_obs, 1)
+  set.seed(7)
   y  <- rbinom(ss$n_obs, 1, 0.5)
+  n_re <- 3L
+  re_idx <- sample.int(n_re, ss$n_obs, replace = TRUE)
 
-  expect_error(
-    dispatch_laplace_spatial(
-      y = y, n_trials = rep(1L, ss$n_obs), X = X,
-      re_idx = sample.int(3, ss$n_obs, replace = TRUE),
-      n_re_groups = 3L, sigma_re = 1.0,
-      spatial = ss$spec, family = "binomial", phi = 1.0,
-      max_iter = 5L, tol = 1e-3, n_threads = 1L
-    ),
-    "does not yet support an additional iid RE block"
+  fit <- dispatch_laplace_spatial(
+    y = y, n_trials = rep(1L, ss$n_obs), X = X,
+    re_idx = re_idx, n_re_groups = n_re, sigma_re = 1.0,
+    spatial = ss$spec, family = "binomial", phi = 1.0,
+    max_iter = 50L, tol = 1e-6, n_threads = 1L
   )
+
+  # Latent layout [beta (p), re (n_re), w_gp (n_spatial)].
+  expect_length(fit$mode, ncol(X) + n_re + ss$spec$n_spatial)
+  expect_true(is.finite(fit$log_marginal))
 })
 
 test_that("laplace_gp_at refuses an unvalidated spec with a clear error", {

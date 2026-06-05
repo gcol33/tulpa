@@ -65,6 +65,24 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.3)   # slope
 })
 
+test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74)", {
+  s <- sim_gp_binomial(n_loc = 50L, reps = 3L)
+  d <- s$data
+  d$g <- factor(rep_len(seq_len(6L), nrow(d)))
+
+  fit <- suppressMessages(tulpa(
+    y ~ x + (1 | g), data = d, family = "binomial", n_trials = d$ntrials,
+    spatial = spatial_gp(~ lon + lat, nn = 8L), mode = "laplace"
+  ))
+
+  expect_s3_class(fit, "tulpa_fit")
+  # Latent mode is [beta (2), re (6 groups), w_gp (n_loc)]; the RE block is
+  # present, so the fixed-effect slope still recovers.
+  expect_length(fit$mode, 2L + 6L + s$n_loc)
+  beta <- fit$mode[seq_len(2L)]
+  expect_lt(abs(beta[2] - s$beta[2]), 0.35)        # slope
+})
+
 test_that("structured and auto route an NNGP field to nested_laplace", {
   skip_on_cran()
   skip_if_fast()

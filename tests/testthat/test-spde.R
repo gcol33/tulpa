@@ -54,6 +54,7 @@ test_that("SPDE Laplace fits binomial model on fmesher mesh", {
     y = as.integer(y),
     n_trials = as.integer(rep(1L, n_obs)),
     X = X,
+    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
     A_x = A_csc@x,
     A_i = A_csc@i,
     A_p = A_csc@p,
@@ -117,6 +118,7 @@ test_that("SPDE Laplace works with Poisson family", {
     y = as.integer(y),
     n_trials = as.integer(rep(1L, n_obs)),
     X = X,
+    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
     A_x = A@x, A_i = A@i, A_p = A@p,
     n_obs = n_obs, n_mesh = mesh$n,
     C0_diag = C0_diag,
@@ -160,6 +162,7 @@ test_that("SPDE scales to 500+ mesh nodes with sparse Q", {
     result <- cpp_laplace_fit_spde(
       y = as.integer(y), n_trials = as.integer(rep(1L, n_obs)),
       X = X,
+      re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
       A_x = A@x, A_i = A@i, A_p = A@p,
       n_obs = n_obs, n_mesh = n_mesh,
       C0_diag = C0_diag,
@@ -398,21 +401,103 @@ test_that("dispatch_laplace_spatial routes SPDE specs (no longer errors)", {
   }
 })
 
-test_that("SPDE Laplace rejects an additional iid RE block with a clear error", {
+test_that("SPDE Laplace threads an additional iid RE block (issue #74)", {
   ss <- make_synthetic_spde_spec()
   X <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
+  set.seed(7)
+  y <- rbinom(ss$n_obs, 1, 0.5)
+  n_re <- 3L
+  re_idx <- sample.int(n_re, ss$n_obs, replace = TRUE)
+
+  fit <- dispatch_laplace_spatial(
+    y = y, n_trials = rep(1L, ss$n_obs), X = X,
+    re_idx = re_idx, n_re_groups = n_re, sigma_re = 1.0,
+    spatial = ss$spec, family = "binomial", phi = 1.0,
+    max_iter = 50L, tol = 1e-6, n_threads = 1L
+  )
+
+  # Latent layout [beta (p), re (n_re), w_mesh (n_mesh)].
+  expect_length(fit$mode, ncol(X) + n_re + ss$spec$n_mesh)
+  expect_true(is.finite(fit$log_marginal))
+})
+
+test_that("tulpa_laplace(spde + iid RE) returns a marginal H_beta (issue #74)", {
+  ss <- make_synthetic_spde_spec(n_obs = 60)
+  set.seed(11)
+  X <- cbind(1, rnorm(ss$n_obs))
+  n_re <- 4L
+  re_idx <- sample.int(n_re, ss$n_obs, replace = TRUE)
   y <- rbinom(ss$n_obs, 1, 0.5)
 
-  expect_error(
-    dispatch_laplace_spatial(
-      y = y, n_trials = rep(1L, ss$n_obs), X = X,
-      re_idx = sample.int(3, ss$n_obs, replace = TRUE),
-      n_re_groups = 3L, sigma_re = 1.0,
-      spatial = ss$spec, family = "binomial", phi = 1.0,
-      max_iter = 5L, tol = 1e-3, n_threads = 1L
-    ),
-    "does not yet support an additional iid RE block"
+  fit <- tulpa_laplace(
+    y = y, n_trials = rep(1L, ss$n_obs), X = X,
+    re_list = list(list(idx = re_idx, n_groups = n_re, sigma = 1.0)),
+    family = "binomial",
+    spatial = ss$spec,
+    max_iter = 50L, tol = 1e-6, n_threads = 1L,
+    return_hessian = TRUE
   )
+
+  expect_length(fit$mode, ncol(X) + n_re + ss$spec$n_mesh)
+  expect_true(is.finite(fit$log_marginal))
+  # Schur marginal precision folds the RE columns out alongside the field.
+  expect_false(is.null(fit$H_beta))
+  expect_equal(dim(fit$H_beta), c(ncol(X), ncol(X)))
+  expect_true(all(is.finite(fit$H_beta)))
+})
+
+test_that("SPDE+RE collapses to the spatial-only fit as sigma_re -> 0 (issue #74)", {
+  # With the RE prior precision sent to infinity the iid block is pinned at 0,
+  # so beta and the mesh field must match the n_re_groups = 0 fit exactly. This
+  # pins the [beta, re, w_mesh] layout: a mis-sliced field or a leaked RE
+  # coupling would shift beta / the field away from the spatial-only solution.
+  ss <- make_synthetic_spde_spec(n_obs = 60)
+  set.seed(3)
+  X <- cbind(1, rnorm(ss$n_obs))
+  y <- rbinom(ss$n_obs, 1, 0.5)
+  n_re <- 5L
+  re_idx <- sample.int(n_re, ss$n_obs, replace = TRUE)
+  p <- ncol(X)
+
+  base <- dispatch_laplace_spatial(
+    y, rep(1L, ss$n_obs), X, NULL, 0L, 1.0,
+    ss$spec, "binomial", 1.0, 200L, 1e-10, 1L
+  )
+  tiny <- dispatch_laplace_spatial(
+    y, rep(1L, ss$n_obs), X, re_idx, n_re, 1e-4,
+    ss$spec, "binomial", 1.0, 200L, 1e-10, 1L
+  )
+
+  expect_equal(tiny$mode[seq_len(p)], base$mode[seq_len(p)], tolerance = 1e-4)
+  expect_lt(max(abs(tiny$mode[p + seq_len(n_re)])), 1e-2)
+  expect_equal(tiny$mode[p + n_re + seq_len(ss$spec$n_mesh)],
+               base$mode[p + seq_len(ss$spec$n_mesh)], tolerance = 1e-3)
+})
+
+test_that("SPDE Laplace recovers an iid RE block under the field (issue #74)", {
+  skip_on_cran()
+  ss <- make_synthetic_spde_spec(n_obs = 600)
+  set.seed(202)
+  n_re   <- 10L
+  # Centre the true group effects: the iid RE block has a zero-mean prior, so a
+  # non-zero sample mean would be absorbed by the global intercept and confound
+  # its recovery (the intercept and the RE mean are not separately identified).
+  u_true <- rnorm(n_re, 0, 0.9)
+  u_true <- u_true - mean(u_true)
+  re_idx <- rep(seq_len(n_re), length.out = ss$n_obs)
+  b0     <- 0.2
+  eta    <- b0 + u_true[re_idx]
+  y      <- rbinom(ss$n_obs, 1, plogis(eta))
+  X      <- matrix(1.0, ss$n_obs, 1)
+
+  fit <- dispatch_laplace_spatial(
+    y, rep(1L, ss$n_obs), X, re_idx, n_re, 0.9,
+    ss$spec, "binomial", 1.0, 200L, 1e-9, 1L
+  )
+
+  blup <- fit$mode[ncol(X) + seq_len(n_re)]
+  expect_gt(cor(blup, u_true), 0.7)
+  expect_lt(abs(fit$mode[1] - b0), 0.5)
 })
 
 test_that("tulpa_laplace(spatial = spatial_spde_custom(...)) runs end-to-end", {

@@ -252,6 +252,7 @@ test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
   tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma_w)
   res_l <- cpp_laplace_fit_spde(
     y = y, n_trials = rep(1L, n_obs), X = X,
+    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
     A_x = spec$A_x, A_i = spec$A_i, A_p = spec$A_p,
     n_obs = n_obs, n_mesh = spec$n_mesh,
     C0_diag = spec$C0_diag,

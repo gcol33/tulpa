@@ -207,77 +207,115 @@ NULL
 }
 
 
+#' n_obs x n_re_groups indicator design for an iid RE block.
+#'
+#' `re_idx` is the 1-based per-observation group index. Observations whose
+#' group falls outside `1:n_re_groups` contribute no RE column, matching the
+#' `g >= 0 && g < n_re_groups` guard in the C++ kernels.
+#'
+#' @keywords internal
+.re_design <- function(re_idx, n_re_groups, n_obs) {
+  if (n_re_groups <= 0L) {
+    return(Matrix::sparseMatrix(i = integer(0), j = integer(0), x = numeric(0),
+                                dims = c(n_obs, 0L)))
+  }
+  g  <- as.integer(re_idx)
+  ok <- which(g >= 1L & g <= n_re_groups)
+  Matrix::sparseMatrix(i = ok, j = g[ok], x = 1.0,
+                       dims = c(n_obs, as.integer(n_re_groups)))
+}
+
+
+#' Schur complement of the latent block out of the joint Hessian.
+#'
+#' Given the fixed-effect design `X`, the combined latent design `D` (the iid
+#' RE indicator block stacked with the spatial-field design), the latent prior
+#' precision `Q_latent`, and the GLM weights `W`, returns the marginal fixed-
+#' effect precision `H_beta = X'WX - (X'WD) (D'WD + Q_latent)^{-1} (X'WD)'`.
+#' Shared by the SPDE and NNGP marginal-SE paths (issue #16).
+#'
+#' @keywords internal
+.schur_H_beta <- function(X, D, Q_latent, W) {
+  D    <- as(D, "CsparseMatrix")
+  WX   <- W * X
+  WD   <- as(W * D, "CsparseMatrix")
+  XtWX <- crossprod(X, WX)
+  XtWD <- as.matrix(Matrix::crossprod(X, WD))
+  DtWD <- Matrix::crossprod(D, WD)
+
+  P_uu <- Matrix::forceSymmetric(DtWD + Q_latent)
+  R    <- Matrix::Cholesky(P_uu, LDL = FALSE, perm = TRUE)
+  sol  <- Matrix::solve(R, t(XtWD), system = "A")
+  H    <- as.matrix(XtWX) - XtWD %*% as.matrix(sol)
+  (H + t(H)) / 2
+}
+
+
+# Both marginal functions take the optional iid RE block so an SPDE / NNGP fit
+# carrying one slices its [beta, re, field] mode correctly and Schurs the RE
+# columns out of the joint Hessian alongside the field (issue #74). With
+# n_re_groups = 0 the RE design is empty and the result is the field-only Schur.
+
 #' @keywords internal
 .marginal_H_beta_gp <- function(mode, X, spatial, family, phi,
                                 n_trials, weights = NULL,
-                                sigma2_gp, phi_gp) {
+                                sigma2_gp, phi_gp,
+                                re_idx = NULL, n_re_groups = 0L,
+                                sigma_re = 1.0) {
   p         <- ncol(X)
   n_obs     <- nrow(X)
   n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
 
   beta <- mode[seq_len(p)]
-  w    <- mode[p + seq_len(n_spatial)]
+  u    <- mode[p + seq_len(n_re_groups + n_spatial)]
 
-  Z <- .nngp_design_Z(spatial, n_obs)
+  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
+  Z_field <- .nngp_design_Z(spatial, n_obs)
+  D       <- cbind(D_re, Z_field)
 
-  eta <- as.numeric(X %*% beta) + as.numeric(Z %*% w)
+  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
   if (!is.null(weights)) W <- W * weights
 
-  Q_u <- .nngp_precision_Q(spatial, sigma2_gp, phi_gp)
+  tau_re   <- 1 / (sigma_re^2 + 1e-10)
+  Q_latent <- Matrix::bdiag(
+    Matrix::Diagonal(n_re_groups, x = tau_re),
+    .nngp_precision_Q(spatial, sigma2_gp, phi_gp)
+  )
 
-  WX   <- W * X
-  WZ   <- as(W * Z, "CsparseMatrix")
-  XtWX <- crossprod(X, WX)
-  XtWZ <- as.matrix(Matrix::crossprod(X, WZ))
-  ZtWZ <- Matrix::crossprod(Z, WZ)
-
-  P_uu <- Matrix::forceSymmetric(ZtWZ + Q_u)
-
-  R   <- Matrix::Cholesky(P_uu, LDL = FALSE, perm = TRUE)
-  sol <- Matrix::solve(R, t(XtWZ), system = "A")
-  H   <- as.matrix(XtWX) - XtWZ %*% as.matrix(sol)
-  H   <- (H + t(H)) / 2
-
-  H
+  .schur_H_beta(X, D, Q_latent, W)
 }
 
 
 #' @keywords internal
 .marginal_H_beta_spde <- function(mode, X, spatial, family, phi,
                                   n_trials, weights = NULL,
-                                  range_val, sigma_val) {
+                                  range_val, sigma_val,
+                                  re_idx = NULL, n_re_groups = 0L,
+                                  sigma_re = 1.0) {
   p      <- ncol(X)
+  n_obs  <- nrow(X)
   n_mesh <- spatial$n_mesh
   beta   <- mode[seq_len(p)]
-  w      <- mode[p + seq_len(n_mesh)]
+  u      <- mode[p + seq_len(n_re_groups + n_mesh)]
 
-  A <- as(spatial$A, "CsparseMatrix")
+  A       <- as(spatial$A, "CsparseMatrix")
+  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
+  D       <- cbind(D_re, A)
 
-  # eta at the mode: X β + A w
-  eta <- as.numeric(X %*% beta) + as.numeric(A %*% w)
+  # eta at the mode: X β + D_re u_re + A w
+  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
   if (!is.null(weights)) W <- W * weights
 
   # Q_spde at the (range, sigma) used in the fit
   kappa    <- sqrt(8 * spatial$nu) / range_val
   tau_spde <- 1 / (sqrt(4 * pi) * kappa * sigma_val)
-  Q_u      <- .spde_precision_Q(spatial, kappa, tau_spde)
+  tau_re   <- 1 / (sigma_re^2 + 1e-10)
+  Q_latent <- Matrix::bdiag(
+    Matrix::Diagonal(n_re_groups, x = tau_re),
+    .spde_precision_Q(spatial, kappa, tau_spde)
+  )
 
-  # Joint Hessian blocks at the mode
-  WX   <- W * X
-  WA   <- as(W * A, "CsparseMatrix")
-  XtWX <- crossprod(X, WX)
-  XtWA <- as.matrix(Matrix::crossprod(X, WA))   # p x n_mesh
-  AtWA <- Matrix::crossprod(A, WA)              # n_mesh x n_mesh
-
-  P_uu <- Matrix::forceSymmetric(AtWA + Q_u)
-
-  # Schur: H_β^marg = X'WX - (X'WA) P_uu^{-1} (X'WA)'
-  R   <- Matrix::Cholesky(P_uu, LDL = FALSE, perm = TRUE)
-  sol <- Matrix::solve(R, t(XtWA), system = "A")   # n_mesh x p
-  H   <- as.matrix(XtWX) - XtWA %*% as.matrix(sol)
-  H   <- (H + t(H)) / 2
-
-  H
+  .schur_H_beta(X, D, Q_latent, W)
 }

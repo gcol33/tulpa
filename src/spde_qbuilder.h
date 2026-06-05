@@ -237,6 +237,12 @@ inline ARows build_A_rows(int N, int n_mesh,
 // Shared SPDE Laplace runner (used by single-fit and nested)
 // =====================================================================
 
+// `re_idx` / `n_re_groups` / `sigma_re` carry an optional iid random-effect
+// block laid out between the fixed effects and the mesh field, matching the
+// nested SPDE layout [beta (p), re (n_re_groups), w_mesh (n_mesh)]. The caller
+// passes mesh_start = p + n_re_groups and n_x = p + n_re_groups + n_mesh. The
+// defaults reproduce the spatial-only case, so callers that carry no RE block
+// (implicit_diff) need no change.
 template<typename F>
 void run_spde_laplace(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
@@ -247,12 +253,24 @@ void run_spde_laplace(
     const Rcpp::NumericVector& x_init,
     SparseCholeskySolver* shared_solver,
     const double* offset,
-    F callback
+    F callback,
+    const Rcpp::NumericVector& re_idx = Rcpp::NumericVector(),
+    int n_re_groups = 0, double sigma_re = 1.0
 ) {
+    const double tau_re = (n_re_groups > 0)
+                          ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
+    auto re_group = [&](int i) -> int {
+        if (n_re_groups <= 0) return -1;
+        int g = (int)re_idx[i] - 1;
+        return (g >= 0 && g < n_re_groups) ? g : -1;
+    };
+
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
         for (int i = 0; i < N; i++) {
             eta[i] = offset ? offset[i] : 0.0;
             for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
+            int g = re_group(i);
+            if (g >= 0) eta[i] += x[p + g];
             for (const auto& ae : A_rows[i]) {
                 eta[i] += ae.weight * x[mesh_start + ae.mesh_idx];
             }
@@ -267,6 +285,17 @@ void run_spde_laplace(
                 grad[j] += gh.grad * X(i, j);
                 for (int k = 0; k < p; k++) H[j][k] += gh.neg_hess * X(i, j) * X(i, k);
             }
+            int g = re_group(i);
+            if (g >= 0) {
+                int re_i = p + g;
+                grad[re_i] += gh.grad;
+                H[re_i][re_i] += gh.neg_hess;
+                for (int j = 0; j < p; j++) {
+                    double c = gh.neg_hess * X(i, j);
+                    H[re_i][j] += c;
+                    H[j][re_i] += c;
+                }
+            }
             const auto& row = A_rows[i];
             for (size_t s1 = 0; s1 < row.size(); s1++) {
                 int idx1 = mesh_start + row[s1].mesh_idx;
@@ -276,6 +305,12 @@ void run_spde_laplace(
                 for (int j = 0; j < p; j++) {
                     H[j][idx1] += gh.neg_hess * X(i, j) * a1;
                     H[idx1][j] += gh.neg_hess * X(i, j) * a1;
+                }
+                if (g >= 0) {
+                    int re_i = p + g;
+                    double c = gh.neg_hess * a1;
+                    H[re_i][idx1] += c;
+                    H[idx1][re_i] += c;
                 }
                 for (size_t s2 = s1 + 1; s2 < row.size(); s2++) {
                     int idx2 = mesh_start + row[s2].mesh_idx;
@@ -295,6 +330,10 @@ void run_spde_laplace(
         }
         double tau_beta = 1e-4;
         for (int j = 0; j < p; j++) { grad[j] -= tau_beta * x[j]; H[j][j] += tau_beta; }
+        for (int g = 0; g < n_re_groups; g++) {
+            grad[p + g] -= tau_re * x[p + g];
+            H[p + g][p + g] += tau_re;
+        }
     };
 
     auto center = [&](Rcpp::NumericVector& x) {
@@ -308,6 +347,7 @@ void run_spde_laplace(
                 qf += x[mesh_start + qb.Q_i[qidx]] * qb.Q_x[qidx] * x[mesh_start + j];
             }
         }
+        for (int g = 0; g < n_re_groups; g++) qf += tau_re * x[p + g] * x[p + g];
         return -0.5 * qf;
     };
 
