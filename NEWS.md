@@ -2,6 +2,21 @@
 
 ## 0.0.9 (2026-06-03)
 
+* fix(spde): gate fractional Matern smoothness (`nu`) instead of silently
+  fitting a mis-specified field (gcol33/tulpa#71). The wired rational assembly
+  builds `Q = tau^2 sum_k w_k (L + r_k C)' C^{-1} (L + r_k C)`, whose spectral
+  symbol `tau^2 sum_k w_k (l + r_k)^2` is a single quadratic in `l` for any
+  number of poles -- so no choice of poles/weights recovers a fractional
+  `alpha`; the construction collapses to an `alpha = 2` field regardless of the
+  coefficients (verified to machine precision). The coefficient generator
+  (`rational_spde_coefficients()`) previously returned a self-derived
+  log-uniform approximation while documenting the published BRASIL / Bolin et
+  al. (2023) method. `spatial_spde()` / `spatial_spde_custom()` now require an
+  integer `nu` (0, 1, 2, ...) -- the exact FEM construction -- and reject
+  fractional `nu` with a clear error across every fit path (Laplace, nested,
+  NUTS, joint). A faithful rational SPDE precision assembly remains tracked
+  under gcol33/tulpa#71.
+
 * perf(nested-laplace-joint): budget the replicated per-outer-thread state
   (the sparse-Hessian builders + numeric factor) against detected physical RAM
   instead of a fixed 2 GB cap (gcol33/tulpa#64). The old cap clamped the outer

@@ -20,7 +20,9 @@ spatial_spde_custom(
 
 \item{A}{Projection matrix (n_obs x n_mesh sparse matrix, e.g. from \code{fmesher::fm_basis()}).}
 
-\item{nu}{Matern smoothness parameter. Default 1.}
+\item{nu}{Matern smoothness parameter. Must be a non-negative integer
+(0, 1, 2, ...). Default 1. Fractional \code{nu} is not yet supported -- see
+gcol33/tulpa#71.}
 
 \item{prior_range}{Prior for the spatial range. Default \code{c(0.5, 0.5)}.}
 

@@ -289,9 +289,11 @@ apply_rsr_projection <- function(w, P_perp) {
 #' @param max_edge Maximum edge length for mesh refinement. A single value
 #'   or `c(inner, outer)`.
 #' @param cutoff Minimum distance between mesh vertices. Default 0.
-#' @param nu Matern smoothness parameter. Default 1 (exponential covariance).
-#'   Currently only integer values supported; fractional smoothness via
-#'   rational SPDE is planned.
+#' @param nu Matern smoothness parameter. Must be a non-negative integer
+#'   (0, 1, 2, ...); the operator order `alpha = nu + 1` is then integer and the
+#'   field is assembled exactly. Default 1. Fractional `nu` (a rational SPDE
+#'   approximation) is not yet supported and raises an error -- see
+#'   [rational_spde_coefficients()] and gcol33/tulpa#71.
 #' @param prior_range Prior for the spatial range. A numeric vector `c(U, alpha)`
 #'   where P(range < U) = alpha. Default `c(0.5, 0.5)`.
 #' @param prior_sigma Prior for the marginal standard deviation. A numeric vector
@@ -311,6 +313,8 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
                          nu = 1,
                          prior_range = c(0.5, 0.5),
                          prior_sigma = c(1, 0.5)) {
+
+  .validate_spde_nu(nu)
 
   # Resolve coordinates
   if (inherits(coords, "formula")) {
@@ -377,7 +381,9 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
 #' @param C Mass matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$c0`).
 #' @param G Stiffness matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$g1`).
 #' @param A Projection matrix (n_obs x n_mesh sparse matrix, e.g. from `fmesher::fm_basis()`).
-#' @param nu Matern smoothness parameter. Default 1.
+#' @param nu Matern smoothness parameter. Must be a non-negative integer
+#'   (0, 1, 2, ...). Default 1. Fractional `nu` is not yet supported -- see
+#'   gcol33/tulpa#71.
 #' @param prior_range Prior for the spatial range. Default `c(0.5, 0.5)`.
 #' @param prior_sigma Prior for the marginal standard deviation. Default `c(1, 0.5)`.
 #'
@@ -387,6 +393,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
 spatial_spde_custom <- function(C, G, A, nu = 1,
                                 prior_range = c(0.5, 0.5),
                                 prior_sigma = c(1, 0.5)) {
+  .validate_spde_nu(nu)
   if (!inherits(C, "Matrix")) C <- as(C, "CsparseMatrix")
   if (!inherits(G, "Matrix")) G <- as(G, "CsparseMatrix")
   if (!inherits(A, "Matrix")) A <- as(A, "CsparseMatrix")

@@ -1,88 +1,87 @@
-#' Compute Rational Approximation Coefficients for Fractional SPDE
+#' Rational Approximation Coefficients for Fractional SPDE (integer-only)
 #'
-#' Computes poles and weights for the rational approximation of x^(-beta)
-#' where beta = alpha/2 = (nu + 1)/2 in 2D. Uses the partial fraction
-#' decomposition of the best rational approximation.
+#' Returns the FEM construction descriptor for an SPDE Matern field of operator
+#' order `alpha = nu + 1` (in 2D). For integer `nu` the construction is exact and
+#' no rational approximation is needed; fractional `nu` is not supported and
+#' raises an error (see Details).
 #'
-#' @param nu Matérn smoothness parameter (can be fractional, e.g. 0.5, 1.5, 2.5)
-#' @param m Order of the rational approximation. Default 2.
-#'   Higher m gives better accuracy but more expensive Q computation.
-#' @param lambda_range Approximate eigenvalue range of the FEM operator.
-#'   Default c(1e-4, 1e4). Only matters for numerical precision of
-#'   the approximation, not the result.
+#' @param nu Matern smoothness parameter. Must be a non-negative integer
+#'   (0, 1, 2, ...).
+#' @param m Reserved for a future rational implementation; ignored.
+#' @param lambda_range Reserved for a future rational implementation; ignored.
 #'
 #' @return A list with:
 #'   \itemize{
-#'     \item `poles`: vector of m pole values
-#'     \item `weights`: vector of m weight values
-#'     \item `alpha`: the operator order (nu + 1 in 2D)
-#'     \item `beta`: the fractional power (alpha/2)
-#'     \item `m`: approximation order
+#'     \item `poles`: empty (no rational poles for integer `nu`)
+#'     \item `weights`: empty
+#'     \item `alpha`: the operator order (`nu + 1` in 2D)
+#'     \item `beta`: `alpha / 2`
+#'     \item `m`: 0
+#'     \item `is_integer`: `TRUE`
 #'   }
 #'
 #' @details
-#' For integer nu (0, 1, 2, ...), the standard SPDE construction is exact
-#' and this function is not needed. For fractional nu (e.g. 0.5, 1.5),
-#' this computes the coefficients for the rational SPDE approach
-#' (Bolin, Simas & Xiong, 2023).
+#' For integer `nu` (0, 1, 2, ...) the operator order `alpha = nu + 1` is an
+#' integer and the precision is assembled directly from integer powers of the
+#' FEM operator `L = kappa^2 C + G` -- an exact construction.
 #'
-#' The rational approximation writes
-#' `x^(-beta) ~= sum_k w_k / (x + r_k)`, which translates to the precision
-#' `Q ~= tau^2 * sum_k w_k * (L + r_k*C)' * C^{-1} * (L + r_k*C)`, where
-#' `L = kappa^2 * C + G` is the FEM operator.
+#' Fractional `nu` is **not supported**. A faithful fractional field requires a
+#' rational approximation of `x^(-alpha/2)` whose partial-fraction coefficients
+#' assemble a precision with spectral symbol proportional to `l^alpha` (l the
+#' generalized eigenvalue of `L` relative to `C`). The assembly currently wired
+#' through the SPDE kernels,
+#' `Q = tau^2 * sum_k w_k (L + r_k C)' C^{-1} (L + r_k C)`, has symbol
+#' `tau^2 * sum_k w_k (l + r_k)^2`, which is a single quadratic in `l` for any
+#' number of poles and therefore can only represent an `alpha = 2` field -- no
+#' choice of poles/weights recovers fractional smoothness. Rather than return
+#' coefficients that silently feed a mis-specified field, fractional `nu` errors.
+#' Tracking a faithful rational SPDE assembly: gcol33/tulpa#71.
 #'
 #' @references
 #' Bolin, D., Simas, A.B. & Xiong, J. (2023). Rational SPDE approach for
 #' Gaussian random fields with general smoothness. Journal of the Royal
-#' Statistical Society Series B.
+#' Statistical Society Series B. (The reference construction a future
+#' fractional implementation should follow.)
 #'
 #' @keywords internal
 rational_spde_coefficients <- function(nu, m = 2, lambda_range = c(1e-4, 1e4)) {
+  .validate_spde_nu(nu)
+
   alpha <- nu + 1  # d/2 = 1 in 2D
   beta <- alpha / 2
 
-  # For integer alpha (nu = 0, 1, 2, ...), direct construction — no rational approx needed
-  if (abs(alpha - round(alpha)) < 1e-10) {
-    return(list(
-      poles = numeric(0),
-      weights = numeric(0),
-      alpha = alpha,
-      beta = beta,
-      m = 0,
-      is_integer = TRUE
-    ))
-  }
-
-  # Compute poles and weights via log-uniform spacing
-  # This is a simplified version of the BRASIL algorithm.
-  # For production use, the exact coefficients from Bolin et al. 2023
-  # would give optimal approximation.
-  #
-  # The m-point Gauss-Jacobi quadrature for the integral representation:
-  #   x^(-beta) = sin(pi*beta)/pi * integral_0^inf t^(-beta)/(x+t) dt
-  #
-  # Using log-uniform spacing on [lambda_min, lambda_max]:
-  log_lam <- seq(log(lambda_range[1]), log(lambda_range[2]), length.out = m + 2)
-  log_lam <- log_lam[2:(m + 1)]  # interior points
-
-  poles <- exp(log_lam)
-
-  # Weights from the integral representation
-  # sin(pi*beta)/pi * t^(-beta) * dt (in log space: dt = t * d(log t))
-  d_log_t <- diff(seq(log(lambda_range[1]), log(lambda_range[2]), length.out = m + 2))[1]
-  weights <- sin(pi * beta) / pi * poles^(1 - beta) * d_log_t
-
-  # Normalize so that the approximation matches x^(-beta) at x = 1
-  # sum(w_k / (1 + r_k)) should equal 1
-  approx_at_1 <- sum(weights / (1 + poles))
-  weights <- weights / approx_at_1
-
   list(
-    poles = poles,
-    weights = weights,
+    poles = numeric(0),
+    weights = numeric(0),
     alpha = alpha,
     beta = beta,
-    m = m,
-    is_integer = FALSE
+    m = 0,
+    is_integer = TRUE
   )
+}
+
+#' Validate the SPDE smoothness parameter
+#'
+#' Fractional `nu` is rejected because the wired rational assembly collapses to
+#' an integer `alpha = 2` field (see [rational_spde_coefficients()] Details and
+#' gcol33/tulpa#71). Integer `nu` (0, 1, 2, ...) is exact.
+#'
+#' @param nu Candidate smoothness parameter.
+#' @return Invisibly `TRUE`; raises an error on a non-integer `nu`.
+#' @keywords internal
+.validate_spde_nu <- function(nu) {
+  if (!is.numeric(nu) || length(nu) != 1L || !is.finite(nu)) {
+    stop("SPDE `nu` must be a single finite number.", call. = FALSE)
+  }
+  alpha <- nu + 1
+  if (abs(alpha - round(alpha)) > 1e-10 || nu < 0) {
+    stop(sprintf(
+      paste0(
+        "Fractional SPDE smoothness (nu = %g) is not yet supported. The wired ",
+        "rational assembly collapses to an integer alpha = 2 field, so it ",
+        "cannot represent fractional smoothness (see gcol33/tulpa#71). Use an ",
+        "integer nu (0, 1, 2, ...) for an exact FEM construction."),
+      nu), call. = FALSE)
+  }
+  invisible(TRUE)
 }

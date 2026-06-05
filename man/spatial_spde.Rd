@@ -32,9 +32,11 @@ or \code{c(inner, outer)}.}
 
 \item{cutoff}{Minimum distance between mesh vertices. Default 0.}
 
-\item{nu}{Matern smoothness parameter. Default 1 (exponential covariance).
-Currently only integer values supported; fractional smoothness via
-rational SPDE is planned.}
+\item{nu}{Matern smoothness parameter. Must be a non-negative integer
+(0, 1, 2, ...); the operator order \code{alpha = nu + 1} is then integer and the
+field is assembled exactly. Default 1. Fractional \code{nu} (a rational SPDE
+approximation) is not yet supported and raises an error -- see
+\code{\link[=rational_spde_coefficients]{rational_spde_coefficients()}} and gcol33/tulpa#71.}
 
 \item{prior_range}{Prior for the spatial range. A numeric vector \code{c(U, alpha)}
 where P(range < U) = alpha. Default \code{c(0.5, 0.5)}.}

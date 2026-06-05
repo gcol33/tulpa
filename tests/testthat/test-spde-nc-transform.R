@@ -99,12 +99,13 @@ test_that("SPDE NC transform: rational adjoint matches finite differences", {
   n   <- fem$n_mesh
   expect_true(n >= 8)
 
-  # Fractional nu -> rational SPDE coefficients (Bolin et al. 2023).
-  # nu = 0.5 gives alpha = 1.5; the helper picks m = 2 poles by default.
+  # Exercise the rational NC-transform autodiff path with synthetic poles and
+  # weights. This verifies the AD (arena reverse-mode vs finite differences) of
+  # the rational kernel, independent of any statistical meaning of the
+  # coefficients (fractional nu itself is gated, gcol33/tulpa#71); kappa/tau
+  # below use nu = 0.5 only to set a length scale.
   nu  <- 0.5
-  rat <- rational_spde_coefficients(nu)
-  expect_false(rat$is_integer)
-  expect_gte(length(rat$poles), 1L)
+  rat <- list(poles = c(0.5, 5.0), weights = c(0.6, 0.4))
 
   range_true <- 0.4
   sigma_true <- 1.0
@@ -208,9 +209,11 @@ test_that("SPDE NC transform: rational forward-mode tangent matches FD", {
   n   <- fem$n_mesh
   expect_true(n >= 8)
 
+  # Synthetic poles/weights to exercise the rational forward-mode AD path; the
+  # check is on the autodiff, not the statistics (fractional nu is gated,
+  # gcol33/tulpa#71).
   nu  <- 0.5
-  rat <- rational_spde_coefficients(nu)
-  expect_false(rat$is_integer)
+  rat <- list(poles = c(0.5, 5.0), weights = c(0.6, 0.4))
 
   range_true <- 0.4
   sigma_true <- 1.0
