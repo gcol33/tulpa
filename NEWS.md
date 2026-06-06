@@ -1,5 +1,23 @@
 # tulpa NEWS
 
+## 0.0.12 (2026-06-06)
+
+* feat(progress): unified iteration progress + ETA across every fitting loop
+  -- the C++ outer grids (nested-Laplace, joint, sparse SPDE), the NUTS
+  sampler, and the R-side EM loop (gcol33/tulpaObs#43). Two independently
+  gated channels: a console bar (the noisy TTY channel) and a heartbeat file
+  written whenever `progress.file` is set, the robust liveness signal for
+  detached runs where an Rcout flush does not survive the stdout buffer.
+  `GridProgress` gains `emit_console` + `unit`; an R-level
+  `.tulpa_iter_progress()` mirrors the same `<done> <total> <elapsed_s>
+  <eta_s>` wire format so a detached reader sees one file regardless of which
+  loop produced it. NUTS ticks a shared reporter across chains (the console
+  line self-suppresses inside the OpenMP region, the heartbeat file is the
+  parallel channel). The nested-Laplace console default flips ON; inner
+  refinement / EM / CCD-probe call sites pass `progress = FALSE` so only the
+  top-level fit ticks.
+* docs(api): document `tulpa_profile()`, the inner sparse-Laplace phase timer.
+
 ## 0.0.11 (2026-06-06)
 
 * feat(samplers): thread random-effect, areal-spatial, and temporal latent
