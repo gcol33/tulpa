@@ -31,13 +31,22 @@ test_that("tulpa() routes through a sampler (logpost) backend", {
   expect_equal(fit$inference_tier, 1L)
 })
 
-test_that("tulpa() routes a random-effect model away from the fixed-effect samplers", {
-  # The ModelData sampler backends (ess/sghmc/.../hmc) fit fixed-effect GLMs;
-  # a random-effect model is routed to the conditional logpost backends.
+test_that("tulpa(mode = 'ess') samples a random-effect model jointly (gcol33/tulpa#75)", {
+  # The ModelData sampler kernels (ess/hmc/sghmc/...) pack random effects into
+  # the latent layout and sample the variance component jointly with the latent
+  # and fixed effects -- they are not fixed-effect-only GLMs. ESS only declines
+  # the structured spatial / temporal precision (its isotropic proposal cannot
+  # carry it; see test-sample-glmm-structure.R); a plain (1 | g) term is sampled.
   d <- make_pois_re()
-  err <- expect_error(tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "ess"))
-  expect_match(conditionMessage(err), "random-effect")
-  expect_match(conditionMessage(err), "mala")
+  fit <- suppressWarnings(
+    tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "ess",
+          control = list(n_iter = 300L, warmup = 150L)))
+  expect_s3_class(fit, "tulpa_fit")
+  expect_equal(fit$backend, "ess")
+  expect_equal(fit$inference_tier, 1L)
+  # The RE variance is sampled (full Bayes), not conditioned away.
+  expect_true("log_sigma_re" %in% fit$param_names)
+  expect_true(all(is.finite(fit$means)))
 })
 
 test_that("tulpa(mode = 'ess'/'hmc') fits a fixed-effect GLM end to end", {
