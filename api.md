@@ -107,6 +107,21 @@ Residual / GOF: `moran_i()`, `durbin_watson()`, `tulpa_variogram()`,
 Derived effects: `spatialRange()`, `temporalCorr()`, `getSVCSamples()`,
 `postHocLM()`.
 
+## Profiling
+
+`tulpa_profile(expr)` times the inner sparse-Laplace solve one phase at a time
+and returns a data frame (`phase`, `seconds`, `calls`, `ms_per_call`, `share`,
+ordered by time; the fit is attached as `attr(, "value")`). It resets the
+process-global phase accumulator, forces `expr`, then reads it back, so the
+times cover the whole fit including the parallel outer-grid worker threads.
+Phases: `pattern_build`, `prep`, `eta`, `scatter` (per-obs likelihood + Hessian
+assembly), `analyze`, `factorize` (numeric Cholesky), `solve`, `line_search`,
+`log_det`, `log_lik_prior`. Use it to settle whether a joint `occu_cover()` /
+`cover()` fit is bound by the assembly scatter or the Cholesky factorize. The
+raw accumulator is reachable as `cpp_profile_reset()` / `cpp_profile_read()`
+(microseconds + call counts per phase); the C++ instrumentation site is
+`TULPA_PROFILE_PHASE(idx)` from `laplace_profile.h`.
+
 ## Pooling and utilities
 
 `rubins_pool()` (multiple-imputation pooling), `tulpa_draws_array()`
