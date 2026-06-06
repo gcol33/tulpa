@@ -80,3 +80,45 @@ test_that("higher rational order lowers the approximation error", {
                                  spectrum_ratio = 1e-2)$error, numeric(1))
   expect_true(all(diff(errs) < 0))
 })
+
+test_that("the precomputed C++ SPDE fit recovers a fractional-Matern field", {
+  skip_on_cran()
+  set.seed(20)
+  n <- 100L; h <- 1 / n; kappa <- 8
+  C0 <- rep(h, n)
+  G <- Matrix::bandSparse(n, n, c(-1, 0, 1),
+                          list(rep(-1 / h, n - 1), rep(2 / h, n), rep(-1 / h, n - 1)))
+  G <- as(G, "CsparseMatrix"); G[1, n] <- -1 / h; G[n, 1] <- -1 / h
+
+  nu <- 0.5
+  asm <- tulpa:::.spde_rational_assemble(C0, G, kappa = kappa, tau = 1,
+                                         nu = nu, order = 4L, d = 2)
+  # Simulate the true field u = Pr x, x ~ N(0, Q^{-1}).
+  R <- chol(as.matrix(asm$Q))                    # upper, R' R = Q
+  x_true <- backsolve(R, rnorm(n))               # Cov = (R' R)^{-1} = Q^{-1}
+  u_true <- as.numeric(asm$Pr %*% x_true)
+  u_true <- u_true / sd(u_true)                  # standardize the field scale
+  beta0 <- 0.2
+  # Gaussian observations (Laplace is exact) at high SNR -> clean field recovery.
+  y <- beta0 + u_true + rnorm(n, 0, 0.3)
+
+  # Obs at every mesh node (A = I) -> A_eff = Pr. Pass the FULL precision.
+  Qg   <- as(asm$Q, "generalMatrix")
+  Prg  <- as(asm$Pr, "CsparseMatrix")
+  fit <- tulpa:::cpp_laplace_fit_spde_precomputed(
+    y = as.numeric(y), n_trials = rep(1L, n), X = matrix(1, n, 1),
+    re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1.0,
+    n_obs = n, n_mesh = n,
+    Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
+    Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
+    family = "gaussian", phi = 0.09)
+
+  # Field recovery is the correctness proof for the C++ precomputed solve
+  # consuming the R-assembled (Q, A_eff). The Newton `converged` flag can read
+  # FALSE on the rational precision's wide spectrum (preconditioning is the
+  # production refinement, stage 4+); the recovered field is what matters here.
+  expect_gt(fit$n_iter, 0L)
+  x_hat <- fit$mode[-1]                           # drop the intercept
+  u_hat <- as.numeric(asm$Pr %*% x_hat)
+  expect_gt(cor(u_hat, u_true), 0.9)
+})

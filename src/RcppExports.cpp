@@ -1494,6 +1494,37 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_laplace_fit_spde_precomputed
+Rcpp::List cpp_laplace_fit_spde_precomputed(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, int n_obs, int n_mesh, Rcpp::IntegerVector Q_p, Rcpp::IntegerVector Q_i, Rcpp::NumericVector Q_x, Rcpp::NumericVector Aeff_x, Rcpp::IntegerVector Aeff_i, Rcpp::IntegerVector Aeff_p, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
+RcppExport SEXP _tulpa_cpp_laplace_fit_spde_precomputed(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP Q_pSEXP, SEXP Q_iSEXP, SEXP Q_xSEXP, SEXP Aeff_xSEXP, SEXP Aeff_iSEXP, SEXP Aeff_pSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP offset_nullableSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< int >::type n_obs(n_obsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_mesh(n_meshSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type Q_p(Q_pSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type Q_i(Q_iSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type Q_x(Q_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type Aeff_x(Aeff_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type Aeff_i(Aeff_iSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type Aeff_p(Aeff_pSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_spde_precomputed(y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_nested_laplace_spde
 Rcpp::List cpp_nested_laplace_spde(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, Rcpp::NumericVector range_grid, Rcpp::NumericVector sigma_grid, double nu, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, bool store_Q, std::string checkpoint_path, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
 RcppExport SEXP _tulpa_cpp_nested_laplace_spde(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP range_gridSEXP, SEXP sigma_gridSEXP, SEXP nuSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP offset_nullableSEXP) {
@@ -2798,6 +2829,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
     {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 27},
+    {"_tulpa_cpp_laplace_fit_spde_precomputed", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde_precomputed, 21},
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 29},
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
     {"_tulpa_cpp_register_test_separable_bernoulli_coupling", (DL_FUNC) &_tulpa_cpp_register_test_separable_bernoulli_coupling, 0},

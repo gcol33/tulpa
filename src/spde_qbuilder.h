@@ -255,7 +255,8 @@ void run_spde_laplace(
     const double* offset,
     F callback,
     const Rcpp::NumericVector& re_idx = Rcpp::NumericVector(),
-    int n_re_groups = 0, double sigma_re = 1.0
+    int n_re_groups = 0, double sigma_re = 1.0,
+    bool center_mesh = true
 ) {
     const double tau_re = (n_re_groups > 0)
                           ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
@@ -336,8 +337,12 @@ void run_spde_laplace(
         }
     };
 
+    // Integer-alpha field is sum-to-zero centred for intercept identifiability;
+    // the rational path's latent is the auxiliary weights x (field u = Pr x),
+    // which must NOT be centred -- the proper SPDE prior (kappa^2 > 0) already
+    // identifies the constant mode.
     auto center = [&](Rcpp::NumericVector& x) {
-        center_effects(x, mesh_start, n_mesh);
+        if (center_mesh) center_effects(x, mesh_start, n_mesh);
     };
 
     auto log_prior = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector&) {
