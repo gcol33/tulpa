@@ -12,6 +12,10 @@
 #include <omp.h>
 #endif
 
+#include <memory>
+
+#include <tulpa/nested_progress.h>
+
 #include "hmc_progress.h"
 #include "hmc_sampler.h"
 #include "hmc_chain_checkpoint.h"
@@ -19,6 +23,32 @@
 namespace tulpa_hmc {
 
 // g_gradient_mode is declared in hmc_sampler_decls.h.
+
+// Active NUTS progress reporter (gcol33/tulpaObs#43). Declared in
+// hmc_sampler_decls.h; see there for the contract.
+::tulpa_progress::GridProgress* g_active_grid_progress = nullptr;
+
+std::unique_ptr<::tulpa_progress::GridProgress> make_nuts_progress(int total, int width) {
+  SEXP optS = Rf_GetOption1(Rf_install("tulpa.nl_progress"));
+  if (optS == R_NilValue || TYPEOF(optS) != VECSXP) return nullptr;
+  Rcpp::List opt(optS);
+  bool on = opt.containsElementNamed("progress") &&
+            Rcpp::as<bool>(opt["progress"]);
+  std::string file = opt.containsElementNamed("progress_file")
+                       ? Rcpp::as<std::string>(opt["progress_file"])
+                       : std::string();
+  int every = opt.containsElementNamed("progress_every")
+                ? Rcpp::as<int>(opt["progress_every"]) : 0;
+  double throttle = opt.containsElementNamed("progress_throttle")
+                      ? Rcpp::as<double>(opt["progress_throttle"]) : 2.0;
+  if (!on && file.empty()) return nullptr;
+  std::unique_ptr<::tulpa_progress::GridProgress> gp(
+      new ::tulpa_progress::GridProgress("nuts", total, every, throttle,
+                                         file, /*emit_console=*/on,
+                                         /*unit=*/"iter"));
+  gp->set_width(width > 0 ? width : 1);
+  return gp;
+}
 
 // =====================================================================
 // Pure-C++ across-chain core (OpenMP). Per-chain initial position and
@@ -110,6 +140,17 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     }
   }
 
+  // Shared NUTS progress reporter for this across-chain run (gcol33/tulpaObs#43).
+  // Built on the main thread (reads the scoped option); each chain ticks the
+  // same pointer under an omp critical inside run_hmc_chain_cpp. Console output
+  // auto-suppresses in the parallel region (the heartbeat file is the
+  // parallel/detached channel); a single serial chain keeps the console bar.
+  std::unique_ptr<::tulpa_progress::GridProgress> shared_progress;
+  if (!g_active_grid_progress) {
+    shared_progress = make_nuts_progress(n_iter * n_chains, n_chains);
+    if (shared_progress) g_active_grid_progress = shared_progress.get();
+  }
+
   // Thread-safe autodiff: each chain creates its own tape via TapeScope (RAII),
   // so all gradient modes (N, A, A_t, H) run in parallel.
 #ifdef _OPENMP
@@ -145,6 +186,11 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     if (ckpt) ckpt->save(c, cpp_results[c]);
   }
 #endif
+
+  if (shared_progress) {
+    g_active_grid_progress->finish();
+    g_active_grid_progress = nullptr;
+  }
 
   if (verbose && n_chains > 1) {
     // Verbose was disabled during the parallel run; report per-chain now.

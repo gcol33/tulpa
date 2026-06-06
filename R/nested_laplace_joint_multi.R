@@ -788,7 +788,7 @@
         with_quiet_opts <- function(expr) {
             op <- options(
                 tulpa.nl_checkpoint = list(path = "", resume = TRUE),
-                tulpa.nl_progress   = .nl_progress_args(list()))
+                tulpa.nl_progress   = .nl_progress_args(list(progress = FALSE)))
             on.exit(options(op), add = TRUE)
             force(expr)
         }

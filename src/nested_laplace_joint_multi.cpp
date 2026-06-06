@@ -1193,11 +1193,16 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         (step_curvature_mode == 1) ? tulpa::CurvatureMode::Expected
                                    : tulpa::CurvatureMode::Observed;
 
+    // Build the reporter when either channel is wanted: the console line under
+    // `progress` (the verbose/TTY channel), or the heartbeat file whenever
+    // `progress_file` is set. A detached fit (progress = false) with a
+    // progress_file still gets its file ETA -- the channel it exists for
+    // (gcol33/tulpaObs#43).
     std::unique_ptr<tulpa_progress::GridProgress> gp;
-    if (progress) {
+    if (progress || !progress_file.empty()) {
         gp.reset(new tulpa_progress::GridProgress(
             "nested-laplace-joint", n_grid, progress_every, progress_throttle,
-            progress_file));
+            progress_file, /*emit_console=*/progress));
     }
 
     // Grid-cell checkpoint/resume (gcol33/tulpa#50). Built only when the R

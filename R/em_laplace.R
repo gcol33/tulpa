@@ -482,6 +482,11 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
   iter <- 0L
   delta <- Inf
 
+  # Outer-grid-style progress + ETA for the EM iterations (gcol33/tulpaObs#43).
+  # ON by default; reads the scoped `tulpa.nl_progress` option. ETA is the
+  # upper bound to max_iter and is finalised by .prog$finish() on convergence.
+  .prog <- .tulpa_iter_progress("em-laplace", max_iter, unit = "iter")
+
   for (iter in seq_len(max_iter)) {
     # ---- E-step ----
     e_result <- e_step(fits, ...)
@@ -545,6 +550,8 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     history <- rbind(history,
                      data.frame(iter = iter, delta = delta))
 
+    .prog$tick()
+
     if (verbose) {
       cat(sprintf("  EM iter %d: delta = %.6g\n", iter, delta))
     }
@@ -557,6 +564,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
       break
     }
   }
+  .prog$finish()
 
   result <- list(
     fits       = fits,

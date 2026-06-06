@@ -736,7 +736,7 @@ tulpa_nested_laplace_joint <- function(responses,
 # through the polymorphic backend interface. Option unset -> progress = FALSE.
 .cpp_joint_multi <- function(...) {
   p <- getOption("tulpa.nl_progress", NULL)
-  if (is.null(p)) p <- .nl_progress_args(list())
+  if (is.null(p)) p <- .nl_progress_args(list(progress = FALSE))
   cp <- getOption("tulpa.nl_checkpoint", NULL)
   checkpoint_path <- if (is.list(cp)) as.character(cp$path) else ""
   do.call(cpp_nested_laplace_joint_multi,

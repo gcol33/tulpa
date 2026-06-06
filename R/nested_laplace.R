@@ -1255,7 +1255,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 
 .nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL,
-                               progress = .nl_progress_args(list())) {
+                               progress = .nl_progress_args(list(progress = FALSE))) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.
   # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
   # the canonical "one obs per latent slot" case has N == n_latent and the
@@ -1527,10 +1527,12 @@ prior_from_spec <- function(spec, data) {
 }
 
 # Normalize the outer-grid progress knobs from a `control` list into the four
-# scalars the C++ entry points accept. Off by default; `progress = TRUE` turns
-# on the flushed cell-k/n_grid + ETA reporter (see the GridProgress reporter in
+# scalars the C++ entry points accept. On by default; `progress = FALSE` turns
+# off the flushed cell-k/n_grid + ETA reporter (see the GridProgress reporter in
 # inst/include/tulpa/nested_progress.h and gcol33/tulpa#45). `progress.file`
 # adds a heartbeat file for detached runs where Rcout flushing is unreliable.
+# The inner refinement / EM / CCD-probe call sites pass `progress = FALSE`
+# explicitly so only the top-level fit ticks.
 .nl_progress_args <- function(control) {
   # Control keys win; otherwise fall back to the scoped `tulpa.nl_progress`
   # option a caller (e.g. tulpaObs) may have set for a whole fit, so progress
@@ -1543,7 +1545,7 @@ prior_from_spec <- function(spec, data) {
     if (is.list(opt)) return(opt)
   }
   list(
-    progress          = isTRUE(control$progress),
+    progress          = isTRUE(control$progress %||% TRUE),
     progress_every    = as.integer(control$progress.every    %||% 0L),
     progress_throttle = as.numeric(control$progress.throttle %||% 2),
     progress_file     = as.character(control$progress.file    %||% "")

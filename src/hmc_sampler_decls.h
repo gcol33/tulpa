@@ -6,12 +6,18 @@
 #ifndef TULPA_HMC_SAMPLER_DECLS_H
 #define TULPA_HMC_SAMPLER_DECLS_H
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "tulpa/types.h"
+
+// Forward declaration so the progress-reporter handles below can be declared
+// without pulling the full GridProgress header (tulpa/nested_progress.h) into
+// this widely-included fragment.
+namespace tulpa_progress { class GridProgress; }
 
 namespace tulpa_hmc {
 
@@ -85,6 +91,22 @@ inline const char* metric_name(MassMatrixType t) {
 extern GradientMode g_gradient_mode;
 void set_gradient_mode(GradientMode mode);
 GradientMode get_gradient_mode();
+
+// Active NUTS progress reporter + ETA (gcol33/tulpaObs#43). Set by the sampling
+// orchestrator on the main thread; ticked once per iteration by every
+// run_hmc_chain_cpp. Under the across-chain OpenMP region each chain ticks the
+// same pointer (serialised by an omp critical); the console line auto-suppresses
+// in parallel and the heartbeat file is the parallel/detached channel. nullptr
+// -> no progress. Defined in hmc_nuts_parallel.cpp.
+extern ::tulpa_progress::GridProgress* g_active_grid_progress;
+
+// Build a progress reporter for a NUTS run from the scoped `tulpa.nl_progress`
+// R option. MUST be called on the main thread (it reads an R option). Returns
+// nullptr when neither the console nor a heartbeat file is wanted. `total` is
+// the iteration denominator (n_iter, or n_iter*n_chains for an across-chain
+// run); `width` is the chain concurrency for the ETA. Defined in
+// hmc_nuts_parallel.cpp.
+std::unique_ptr<::tulpa_progress::GridProgress> make_nuts_progress(int total, int width);
 
 // Reset VecGradWorkspace cache (for new model fit)
 void reset_grad_workspace_cache();

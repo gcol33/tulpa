@@ -14,7 +14,15 @@
 #include <string>
 #include <vector>
 
+#include <memory>
+
 #include <Rcpp.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include <tulpa/nested_progress.h>
 
 #include "hmc_progress.h"
 #include "hmc_sampler.h"
@@ -46,6 +54,22 @@ HMCResultCpp run_hmc_chain_cpp(
 ) {
 #include "hmc_nuts_chain_setup.h"
 
+  // NUTS progress + ETA (gcol33/tulpaObs#43). A serial caller (single chain,
+  // not inside the across-chain OpenMP region) with no reporter already active
+  // builds its own from the scoped option; the across-chain core builds one
+  // shared reporter before its parallel region, so each chain here just ticks
+  // the already-active pointer. The R option is read only on the main thread
+  // (guarded by !omp_in_parallel()).
+  std::unique_ptr<::tulpa_progress::GridProgress> own_progress;
+  bool in_parallel = false;
+#ifdef _OPENMP
+  in_parallel = (omp_in_parallel() != 0);
+#endif
+  if (g_active_grid_progress == nullptr && !in_parallel) {
+    own_progress = make_nuts_progress(n_iter, 1);
+    if (own_progress) g_active_grid_progress = own_progress.get();
+  }
+
   for (int iter = 0; iter < n_iter; iter++) {
 #include "hmc_nuts_chain_iter_window.h"
 
@@ -54,8 +78,22 @@ HMCResultCpp run_hmc_chain_cpp(
 
 #include "hmc_nuts_chain_iter_store.h"
 
-    // Note: verbose output disabled in parallel - not thread-safe
-    // Progress will be reported after parallel region
+    // Note: verbose console output disabled in parallel - not thread-safe.
+    // The progress tick only touches a counter + clock + (throttled) file
+    // write, has no effect on the sampler RNG or state, and serialises across
+    // chains via the named critical; the console line self-suppresses in a
+    // parallel region (the heartbeat file is the across-chain channel).
+    if (g_active_grid_progress != nullptr) {
+#ifdef _OPENMP
+      #pragma omp critical(tulpa_nuts_progress)
+#endif
+      g_active_grid_progress->tick();
+    }
+  }
+
+  if (own_progress) {
+    g_active_grid_progress->finish();
+    g_active_grid_progress = nullptr;
   }
 
   result.epsilon = da.final_epsilon();

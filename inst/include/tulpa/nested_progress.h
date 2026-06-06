@@ -9,15 +9,23 @@
 // rather than a TTY (the normal case under Start-Process / nohup), so the log
 // shows only the pre-loop header until the process exits.
 //
-// GridProgress is the fix. It is opt-in (constructed only when the caller asks
-// for progress) and emits, every `every` cells or `throttle_s` seconds:
+// GridProgress is the fix. Its two channels are independently gated, because a
+// detached run (the case the file channel exists for) is exactly the case that
+// wants the console quiet:
 //   * a console line via Rcpp::Rcout + R_FlushConsole() -- best effort, for
-//     interactive/TTY runs; suppressed inside an OpenMP parallel region because
-//     the R print API is not worker-thread safe;
+//     interactive/TTY runs; emitted only when `emit_console` is set, and
+//     suppressed inside an OpenMP parallel region because the R print API is
+//     not worker-thread safe;
 //   * a heartbeat file, overwritten and fflush+fclose'd each tick, holding the
-//     machine-readable "<done> <total> <elapsed_s> <eta_s>". A file write
-//     survives stdout redirection where an Rcout flush does not, so the file is
-//     the robust signal for detached runs.
+//     machine-readable "<done> <total> <elapsed_s> <eta_s>". Written whenever
+//     `heartbeat_file` is non-empty, independent of `emit_console`. A file
+//     write survives stdout redirection where an Rcout flush does not, so the
+//     file is the robust signal for detached runs -- the configuration that
+//     also turns the console off.
+//
+// The caller constructs an instance when either channel is wanted
+// (emit_console || !heartbeat_file.empty()); a quiet console with a heartbeat
+// file is the headless default.
 //
 // One instance lives for the duration of a single grid run. tick() is called
 // once per completed outer cell; under OpenMP the caller must invoke tick()
@@ -57,14 +65,23 @@ public:
     // every          : emit after this many newly-completed cells (<= 0 -> time only).
     // throttle_s     : minimum seconds between emits (<= 0 -> cell-count only).
     // heartbeat_file : path overwritten each emit ("" -> no file).
+    // emit_console   : print the Rcout progress line (the noisy TTY channel).
+    //                  The heartbeat file is written regardless.
+    // unit           : noun for one completed step in the console line ("cells"
+    //                  for an outer grid, "iter" for an EM / NUTS loop). The
+    //                  heartbeat-file format is unit-independent.
     GridProgress(const std::string& label, int total,
                  int every, double throttle_s,
-                 const std::string& heartbeat_file)
+                 const std::string& heartbeat_file,
+                 bool emit_console = true,
+                 const std::string& unit = "cells")
         : label_(label),
           total_(total > 0 ? total : 0),
           every_(every),
           throttle_s_(throttle_s),
           file_(heartbeat_file),
+          emit_console_(emit_console),
+          unit_(unit),
           done_(0),
           last_emit_done_(0),
           width_(1),
@@ -130,24 +147,24 @@ private:
             }
         }
 
-        // Console line: only from the serial/master context. Rcpp::Rcout and
-        // R_FlushConsole touch the R print API, which is not safe to call from
-        // an OpenMP worker thread; the heartbeat file above is the parallel-run
-        // signal.
+        // Console line: only when requested (emit_console_), and only from the
+        // serial/master context. Rcpp::Rcout and R_FlushConsole touch the R
+        // print API, which is not safe to call from an OpenMP worker thread; the
+        // heartbeat file above is the parallel-run (and headless) signal.
         bool in_parallel = false;
 #ifdef _OPENMP
         in_parallel = (omp_in_parallel() != 0);
 #endif
-        if (!in_parallel) {
+        if (emit_console_ && !in_parallel) {
             int pct = (total_ > 0)
                           ? static_cast<int>(frac * 100.0 + 0.5) : 0;
             char line[256];
             std::snprintf(line, sizeof(line),
-                "[%s] %d/%d cells (%d%%) | elapsed %s | ETA ~%s | %.2fs/cell",
-                label_.c_str(), done_, total_, pct,
+                "[%s] %d/%d %s (%d%%) | elapsed %s | ETA ~%s | %.2fs/%s",
+                label_.c_str(), done_, total_, unit_.c_str(), pct,
                 format_secs(elapsed).c_str(),
                 (frac >= 1.0) ? "done" : format_secs(eta).c_str(),
-                per);
+                per, unit_.c_str());
             Rcpp::Rcout << line << "\n";
             Rcpp::Rcout.flush();
             R_FlushConsole();
@@ -162,6 +179,8 @@ private:
     int    every_;
     double throttle_s_;
     std::string file_;
+    bool   emit_console_;
+    std::string unit_;
     int    done_;
     int    last_emit_done_;
     int    width_;
