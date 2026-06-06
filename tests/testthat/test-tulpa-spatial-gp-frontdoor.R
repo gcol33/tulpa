@@ -138,7 +138,7 @@ test_that("an unrouted spatial type errors with guidance", {
     suppressMessages(tulpa(
       y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
       spatial = list(type = "multiscale"), mode = "nested_laplace")),
-    "not yet routed"
+    "Unknown spatial type"
   )
 })
 

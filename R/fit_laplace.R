@@ -214,7 +214,7 @@ tulpa_laplace <- function(y, n_trials, X,
   # invoked at the bottom of this function. NNGP marginal SE is still
   # outstanding (tracked under #16).
   is_spatial_field <- !is.null(spatial) &&
-    (identical(spatial$type, "spde") || identical(spatial$type, "gp"))
+    spatial$type %in% c("spde", "gp", "car_proper", "hsgp")
 
   # Compute Hessian for fixed-effect block if requested
   if (return_hessian && !is.null(result$mode) && !is_spatial_field) {
@@ -347,6 +347,38 @@ tulpa_laplace <- function(y, n_trials, X,
         ),
         error = function(e) {
           warning("Marginal H_beta (NNGP Schur) failed: ", conditionMessage(e),
+                  ". Returning H_beta = NULL.", call. = FALSE)
+          NULL
+        }
+      )
+    } else if (identical(spatial$type, "car_proper")) {
+      result$H_beta <- tryCatch(
+        .marginal_H_beta_car_proper(
+          mode = result$mode, X = X, spatial = spatial,
+          family = family, phi = phi,
+          n_trials = n_trials, weights = weights,
+          tau = result$tau %||% 1.0, rho = result$rho %||% 0.5,
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+        ),
+        error = function(e) {
+          warning("Marginal H_beta (CAR_proper Schur) failed: ",
+                  conditionMessage(e), ". Returning H_beta = NULL.", call. = FALSE)
+          NULL
+        }
+      )
+    } else if (identical(spatial$type, "hsgp")) {
+      result$H_beta <- tryCatch(
+        .marginal_H_beta_hsgp(
+          mode = result$mode, X = X, spatial = spatial,
+          family = family, phi = phi,
+          n_trials = n_trials, weights = weights,
+          phi_basis = result$phi_basis, lambda_eig = result$lambda_eig,
+          sigma2 = result$sigma2 %||% 1.0,
+          lengthscale = result$lengthscale %||% 1.0,
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+        ),
+        error = function(e) {
+          warning("Marginal H_beta (HSGP Schur) failed: ", conditionMessage(e),
                   ". Returning H_beta = NULL.", call. = FALSE)
           NULL
         }
@@ -510,6 +542,28 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       y = y, n_trials = n_trials, X = X, spatial = spatial,
       family = family, phi = phi,
       sigma2_gp = NULL, phi_gp = NULL,
+      re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      offset = offset
+    )
+  } else if (spatial_type == "car_proper") {
+    # Proper-CAR Laplace at a fixed (tau, rho), the conditional counterpart of
+    # the nested CAR_proper integrator (same make_car_proper_latent_blocks
+    # factory). tau / rho default from the spec; recorded on the result.
+    laplace_car_proper_at(
+      y = y, n_trials = n_trials, X = X, spatial = spatial,
+      family = family, phi = phi, tau = NULL, rho = NULL,
+      re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      offset = offset
+    )
+  } else if (spatial_type == "hsgp") {
+    # HSGP Laplace at a fixed (sigma2, lengthscale), the conditional counterpart
+    # of the nested HSGP integrator (same make_hsgp_block basis). Defaults from
+    # the spec; recorded on the result.
+    laplace_hsgp_at(
+      y = y, n_trials = n_trials, X = X, spatial = spatial,
+      family = family, phi = phi, sigma2 = NULL, lengthscale = NULL,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
       offset = offset
@@ -690,6 +744,98 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
   result$sigma2_gp <- sigma2_gp
   result$phi_gp <- phi_gp
   result$spatial <- spatial
+  result
+}
+
+
+#' Proper-CAR Laplace at given hyperparameters
+#'
+#' Single-point Laplace for a proper-CAR areal field at a fixed `(tau, rho)`,
+#' the conditional counterpart of the nested CAR_proper integrator. Reuses the
+#' shared `make_car_proper_latent_blocks` factory + dense spec solver via
+#' `cpp_laplace_fit_car_proper`, so the mode + log-marginal equal the nested
+#' kernel at that one grid cell. `tau` / `rho` default to the spec's fields (or
+#' `tau = 1`, `rho` = midpoint of the eigenvalue-derived `rho_bounds`) and are
+#' recorded on the result.
+#' @keywords internal
+laplace_car_proper_at <- function(y, n_trials, X, spatial,
+                                  family = "binomial", phi = 1.0,
+                                  tau = NULL, rho = NULL,
+                                  re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+                                  max_iter = 100L, tol = 1e-6, n_threads = 1L,
+                                  offset = NULL) {
+  adj <- spatial$adjacency
+  if (is.null(adj)) stop("car_proper spec needs an `adjacency`.", call. = FALSE)
+  n_units <- nrow(as.matrix(adj))
+  csr <- adjacency_to_csr_tulpa(adj)
+  # Exact extraction: `spatial$rho` would partial-match `rho_bounds` (length 2).
+  if (is.null(tau)) tau <- spatial[["tau"]] %||% 1.0
+  if (is.null(rho)) rho <- spatial[["rho"]] %||% mean(spatial[["rho_bounds"]] %||% c(0, 1))
+  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
+
+  result <- cpp_laplace_fit_car_proper(
+    y = as.numeric(y), n = as.integer(n_trials %||% rep(1L, length(y))),
+    X = as.matrix(X), re_idx = as.numeric(re_idx),
+    n_re_groups = as.integer(n_re_groups), sigma_re = sigma_re,
+    spatial_idx = as.integer(spatial$spatial_idx %||% seq_len(n_units)),
+    n_spatial_units = as.integer(n_units),
+    adj_row_ptr = as.integer(csr$row_ptr), adj_col_idx = as.integer(csr$col_idx),
+    n_neighbors = as.integer(csr$n_neighbors),
+    tau_spatial = as.numeric(tau), rho = as.numeric(rho),
+    family = family, phi = phi,
+    max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
+  )
+  result$tau <- tau
+  result$rho <- rho
+  result$spatial <- spatial
+  result
+}
+
+
+#' HSGP Laplace at given hyperparameters
+#'
+#' Single-point Laplace for a Hilbert-space GP field at a fixed
+#' `(sigma2, lengthscale)`, the conditional counterpart of the nested HSGP
+#' integrator. Reuses the shared `make_hsgp_block` factory + dense spec solver
+#' (DENSE_BASIS scatter) via `cpp_laplace_fit_hsgp`, so the mode equals the
+#' nested kernel at that one grid cell. `sigma2` / `lengthscale` default to the
+#' spec's fields (or `1`) and are recorded on the result.
+#' @keywords internal
+laplace_hsgp_at <- function(y, n_trials, X, spatial,
+                            family = "binomial", phi = 1.0,
+                            sigma2 = NULL, lengthscale = NULL,
+                            re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+                            max_iter = 100L, tol = 1e-6, n_threads = 1L,
+                            offset = NULL) {
+  cm <- spatial$coords_matrix
+  if (is.null(cm)) {
+    stop("spatial_hsgp() spec is unvalidated (coords_matrix is NULL). Call ",
+         "validate_hsgp(spatial, data) first, or fit through tulpa() which ",
+         "validates automatically.", call. = FALSE)
+  }
+  # Exact extraction: `spatial$c` would partial-match `coords_matrix`.
+  basis <- cpp_hsgp_basis_2d(as.matrix(cm), as.integer(spatial[["m"]]),
+                             as.numeric(spatial[["c"]]))
+  if (is.null(sigma2))      sigma2      <- spatial[["sigma2"]]      %||% 1.0
+  if (is.null(lengthscale)) lengthscale <- spatial[["lengthscale"]] %||% 1.0
+  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
+
+  result <- cpp_laplace_fit_hsgp(
+    y = as.numeric(y), n = as.integer(n_trials %||% rep(1L, length(y))),
+    X = as.matrix(X), re_idx = as.numeric(re_idx),
+    n_re_groups = as.integer(n_re_groups), sigma_re = sigma_re,
+    phi_basis = basis$phi_basis, lambda_eig = basis$lambda_eig,
+    sigma2 = as.numeric(sigma2), lengthscale = as.numeric(lengthscale),
+    family = family, phi = phi,
+    max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
+  )
+  result$sigma2      <- sigma2
+  result$lengthscale <- lengthscale
+  result$phi_basis   <- basis$phi_basis
+  result$lambda_eig  <- basis$lambda_eig
+  result$spatial     <- spatial
   result
 }
 

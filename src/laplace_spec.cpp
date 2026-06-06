@@ -474,6 +474,7 @@ inline void compute_eta_spec(
         // with barycentric weights read from obs_indices.
         double blk_eff = 0.0;
         std::vector<std::pair<int,double>> blk_multi;
+        std::vector<double> blk_basis;
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*L.blocks)[b];
             if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
@@ -485,6 +486,17 @@ inline void compute_eta_spec(
                                  * params[L.block_param_start[b] + l - 1];
                     }
                 }
+            } else if (blk.contrib_kind == BlockContribKind::DENSE_BASIS) {
+                // Every block coefficient is touched by obs i with weight
+                // basis_eval(i)[l] (HSGP folds sqrt(S_l) into the weight). The
+                // block's prior is added separately in scatter_spec / log_prior.
+                const int sz = L.block_size[b];
+                blk_basis.assign(sz, 0.0);
+                blk.basis_eval(i, /*k_arm=*/0, blk_basis.data());
+                const double* xp = &params[L.block_param_start[b]];
+                double acc = 0.0;
+                for (int l = 0; l < sz; l++) acc += blk_basis[l] * xp[l];
+                blk_eff += d_fac_cache[b] * acc;
             } else {
                 int l = blk.idx(i, /*k_arm=*/0);
                 if (l >= 1 && l <= L.block_size[b]) {
@@ -566,6 +578,7 @@ inline void scatter_spec(
     // many-to-one SPDE projection and the one-to-one areal index share a path.
     std::vector<std::pair<int,double>> blk_contrib;
     std::vector<std::pair<int,double>> blk_multi_scratch;
+    std::vector<double> blk_basis_scratch;
 
     for (int i = 0; i < N; i++) {
         std::fill(grad_eta.begin(), grad_eta.end(), 0.0);
@@ -784,6 +797,20 @@ inline void scatter_spec(
                                 L.block_latent_offset[b] + l - 1,
                                 d_b * nw.second);
                         }
+                    }
+                } else if (blk.contrib_kind == BlockContribKind::DENSE_BASIS) {
+                    // Obs i touches every block coefficient l with weight
+                    // basis_eval(i)[l]; the block x beta / RE / block scatter
+                    // below walks the resulting contribution list, so the dense
+                    // rank-N data fill shares the indexed path (the O(size^2)
+                    // block x block inner loop is the intended dense update).
+                    const int sz = L.block_size[b];
+                    blk_basis_scratch.assign(sz, 0.0);
+                    blk.basis_eval(i, /*k_arm=*/0, blk_basis_scratch.data());
+                    const int off = L.block_latent_offset[b];
+                    for (int l = 0; l < sz; l++) {
+                        const double w = blk_basis_scratch[l];
+                        if (w != 0.0) blk_contrib.emplace_back(off + l, d_b * w);
                     }
                 } else {
                     int l = blk.idx(i, /*k_arm=*/0);

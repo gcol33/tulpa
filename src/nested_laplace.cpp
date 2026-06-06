@@ -36,6 +36,7 @@
 #include "gpu_nngp_laplace.h"
 #include "hmc_hsgp_kernels.h"  // Eigen-free spectral density only
 #include "hsgp_block_factory.h"             // make_hsgp_block
+#include "laplace_spec_fit.h"               // build_spec_family_inputs + laplace_mode_spec_dense_solve
 #include "nngp_block_factory.h"             // make_nngp_block
 #include "sparse_hessian.h"     // SparseHessianBuilder + laplace_newton_solve_sparse
 #include <Rcpp.h>
@@ -468,6 +469,66 @@ Rcpp::List cpp_nested_laplace_car_proper(
     return out;
 }
 
+// Fixed-hyperparameter (single-point) proper-CAR Laplace. The conditional
+// counterpart of cpp_nested_laplace_car_proper: it reuses the SAME
+// make_car_proper_latent_blocks factory at a one-cell (tau, rho) grid and the
+// shared dense spec solver, so the mode + log-marginal equal the nested kernel
+// evaluated at that single grid cell. Routed from dispatch_laplace_spatial /
+// tulpa_laplace(spatial = list(type = "car_proper", ...)).
+// [[Rcpp::export]]
+Rcpp::List cpp_laplace_fit_car_proper(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::IntegerVector spatial_idx, int n_spatial_units,
+    Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx,
+    Rcpp::IntegerVector n_neighbors,
+    double tau_spatial, double rho,
+    std::string family, double phi = 1.0,
+    int max_iter = 100, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+) {
+    const int N = y.size();
+    const int p = X.ncol();
+    const bool has_re = n_re_groups > 0;
+    std::vector<int> re_group;
+    if (has_re) {
+        re_group.resize(N);
+        for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
+    }
+    const int block_start = p + (has_re ? n_re_groups : 0);
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+
+    // One-cell (tau, rho) grids; make_car_proper_latent_blocks captures them by
+    // reference (and runs the log|D - rho W| determinant in block.prep), so they
+    // must outlive the solve.
+    Rcpp::NumericVector tau_grid = Rcpp::NumericVector::create(tau_spatial);
+    Rcpp::NumericVector rho_grid = Rcpp::NumericVector::create(rho);
+    std::vector<tulpa::LatentBlock> blocks = make_car_proper_latent_blocks(
+        block_start, n_spatial_units, spatial_idx, tau_grid, rho_grid,
+        adj_row_ptr, adj_col_idx, n_neighbors);
+
+    tulpa::SpecFamilyInputs in;
+    tulpa::build_spec_family_inputs(
+        in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
+        /*sigma_beta=*/100.0, /*n_block_latent=*/n_spatial_units,
+        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
+
+    std::vector<double> params(in.layout.total_params, 0.0);
+    if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (x_init_nullable.isNotNull()) {
+        Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
+        const int n_lat = block_start + n_spatial_units;
+        for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
+    }
+
+    tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
+        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
+        &blocks, /*k_grid=*/0);
+    return tulpa::laplace_result_to_list(res);
+}
+
 // =====================================================================
 // Nested Laplace: single-block temporal (rw1 / rw2 / ar1)
 //
@@ -735,6 +796,74 @@ Rcpp::List cpp_nested_laplace_hsgp(
     out["sigma2_grid"]      = sigma2_grid;
     out["lengthscale_grid"] = lengthscale_grid;
     return out;
+}
+
+// Fixed-hyperparameter (single-point) HSGP Laplace. The conditional counterpart
+// of cpp_nested_laplace_hsgp: it reuses the SAME make_hsgp_block factory at a
+// one-row (log sigma2, log lengthscale) grid and the shared dense spec solver
+// (which now scatters DENSE_BASIS blocks), so the mode + log-marginal equal the
+// nested kernel evaluated at that single grid cell. Routed from
+// dispatch_laplace_spatial / tulpa_laplace(spatial = spatial_hsgp(...)).
+// [[Rcpp::export]]
+Rcpp::List cpp_laplace_fit_hsgp(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
+    int n_re_groups, double sigma_re,
+    Rcpp::NumericMatrix phi_basis, Rcpp::NumericVector lambda_eig,
+    double sigma2, double lengthscale,
+    std::string family, double phi = 1.0,
+    int max_iter = 100, double tol = 1e-6, int n_threads = 1,
+    Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+) {
+    const int N = y.size();
+    const int p = X.ncol();
+    const int M = phi_basis.ncol();
+    if (phi_basis.nrow() != N)
+        Rcpp::stop("phi_basis must have N rows (one per observation)");
+    if (lambda_eig.size() != M)
+        Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
+    const bool has_re = n_re_groups > 0;
+    std::vector<int> re_group;
+    if (has_re) {
+        re_group.resize(N);
+        for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
+    }
+    const int block_start = p + (has_re ? n_re_groups : 0);
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+
+    // One-row (log sigma2, log lengthscale) grid; make_hsgp_block reads the
+    // amplitude / lengthscale from theta_grid(k, axis) in block.prep, so the row
+    // must outlive the solve.
+    Rcpp::NumericMatrix theta_grid(1, 2);
+    theta_grid(0, 0) = std::log(sigma2);
+    theta_grid(0, 1) = std::log(lengthscale);
+    Rcpp::List phi_per_arm = Rcpp::List::create(phi_basis);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_hsgp_block(
+        block_start, M, phi_per_arm, n_obs_per_arm, /*n_arms=*/1,
+        /*block_index=*/0, lambda_eig,
+        /*axis_log_sigma2=*/0, /*axis_log_ell=*/1, theta_grid));
+
+    tulpa::SpecFamilyInputs in;
+    tulpa::build_spec_family_inputs(
+        in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
+        /*sigma_beta=*/100.0, /*n_block_latent=*/M,
+        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
+
+    std::vector<double> params(in.layout.total_params, 0.0);
+    if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (x_init_nullable.isNotNull()) {
+        Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
+        const int n_lat = block_start + M;
+        for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
+    }
+
+    tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
+        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
+        &blocks, /*k_grid=*/0);
+    return tulpa::laplace_result_to_list(res);
 }
 
 // =====================================================================

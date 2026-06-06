@@ -125,12 +125,20 @@ cpp_nested_laplace_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re
     .Call(`_tulpa_cpp_nested_laplace_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
 }
 
+cpp_laplace_fit_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rho, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rho, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable)
+}
+
 cpp_nested_laplace_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
     .Call(`_tulpa_cpp_nested_laplace_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
 }
 
 cpp_nested_laplace_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
     .Call(`_tulpa_cpp_nested_laplace_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
+}
+
+cpp_laplace_fit_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2, lengthscale, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2, lengthscale, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable)
 }
 
 cpp_nested_laplace_temporal <- function(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi = 1.0, n_groups = 1L, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {

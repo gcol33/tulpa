@@ -178,7 +178,19 @@ inline LatentBlock make_hsgp_block(
     };
 
     // add_prior_pattern left empty.
-    // add_prior left empty: HSGP forces the sparse path.
+    // Dense prior on beta is N(0, I): identity precision, matching
+    // add_prior_sparse value-for-value (latent_block.h: both must agree). Used
+    // by the dense spec solver (laplace_mode_spec_dense_solve), e.g. the
+    // single-point cpp_laplace_fit_hsgp fixed-hyper fit.
+    block.add_prior = [start, m_total](
+        DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x, int /*k_grid*/
+    ) {
+        for (int j = 0; j < m_total; j++) {
+            int idx = start + j;
+            grad[idx] -= x[idx];
+            H[idx][idx] += 1.0;
+        }
+    };
 
     block.log_prior = [start, m_total](
         const Rcpp::NumericVector& x, int /*k_grid*/

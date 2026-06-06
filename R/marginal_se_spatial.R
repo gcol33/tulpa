@@ -319,3 +319,90 @@ NULL
 
   .schur_H_beta(X, D, Q_latent, W)
 }
+
+
+# --- Proper-CAR precision + marginal H_beta -------------------------------
+
+#' Proper-CAR precision Q = tau * (D - rho W) at fixed (tau, rho).
+#'
+#' D is the diagonal degree matrix (neighbour counts) and W the adjacency, so
+#' Q has the same nonzero structure as the ICAR precision with rho scaling the
+#' off-diagonals. Matches `tulpa::add_car_proper_prior` / the nested CAR_proper
+#' precision builder.
+#'
+#' @keywords internal
+.car_proper_precision_Q <- function(spatial, tau, rho) {
+  W   <- as(Matrix::Matrix(as.matrix(spatial$adjacency), sparse = TRUE),
+            "CsparseMatrix")
+  deg <- Matrix::rowSums(W)
+  Matrix::forceSymmetric(tau * (Matrix::Diagonal(nrow(W), deg) - rho * W))
+}
+
+#' @keywords internal
+.marginal_H_beta_car_proper <- function(mode, X, spatial, family, phi,
+                                        n_trials, weights = NULL,
+                                        tau, rho,
+                                        re_idx = NULL, n_re_groups = 0L,
+                                        sigma_re = 1.0) {
+  p       <- ncol(X)
+  n_obs   <- nrow(X)
+  n_units <- nrow(as.matrix(spatial$adjacency))
+
+  beta <- mode[seq_len(p)]
+  u    <- mode[p + seq_len(n_re_groups + n_units)]
+
+  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
+  Z_field <- .nngp_design_Z(spatial, n_obs)   # obs -> areal unit indicator
+  D       <- cbind(D_re, Z_field)
+
+  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
+  W   <- glmm_weights(eta, family, n_trials, phi)
+  if (!is.null(weights)) W <- W * weights
+
+  tau_re   <- 1 / (sigma_re^2 + 1e-10)
+  Q_latent <- Matrix::bdiag(
+    Matrix::Diagonal(n_re_groups, x = tau_re),
+    .car_proper_precision_Q(spatial, tau, rho)
+  )
+
+  .schur_H_beta(X, D, Q_latent, W)
+}
+
+
+# --- HSGP marginal H_beta -------------------------------------------------
+
+#' @keywords internal
+.marginal_H_beta_hsgp <- function(mode, X, spatial, family, phi,
+                                  n_trials, weights = NULL,
+                                  phi_basis, lambda_eig, sigma2, lengthscale,
+                                  re_idx = NULL, n_re_groups = 0L,
+                                  sigma_re = 1.0) {
+  p     <- ncol(X)
+  n_obs <- nrow(X)
+  M     <- ncol(phi_basis)
+
+  beta <- mode[seq_len(p)]
+  u    <- mode[p + seq_len(n_re_groups + M)]
+
+  # The latent coefficients carry an N(0, I) prior; the spectral density
+  # sqrt(S_j) is folded into the design (matching make_hsgp_block.basis_eval /
+  # .prep: S_j = sigma2 * sqrt(2 pi) * ell * exp(-0.5 ell^2 lambda_j)).
+  S    <- sigma2 * sqrt(2 * pi) * lengthscale *
+          exp(-0.5 * lengthscale^2 * lambda_eig)
+  PhiS <- sweep(phi_basis, 2, sqrt(pmax(S, 0)), `*`)
+
+  D_re <- .re_design(re_idx, n_re_groups, n_obs)
+  D    <- cbind(D_re, Matrix::Matrix(PhiS, sparse = TRUE))
+
+  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
+  W   <- glmm_weights(eta, family, n_trials, phi)
+  if (!is.null(weights)) W <- W * weights
+
+  tau_re   <- 1 / (sigma_re^2 + 1e-10)
+  Q_latent <- Matrix::bdiag(
+    Matrix::Diagonal(n_re_groups, x = tau_re),
+    Matrix::Diagonal(M, x = 1.0)
+  )
+
+  .schur_H_beta(X, D, Q_latent, W)
+}

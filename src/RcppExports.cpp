@@ -573,6 +573,36 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_laplace_fit_car_proper
+Rcpp::List cpp_laplace_fit_car_proper(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double tau_spatial, double rho, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
+RcppExport SEXP _tulpa_cpp_laplace_fit_car_proper(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_spatialSEXP, SEXP rhoSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP offset_nullableSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type spatial_idx(spatial_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_spatial_units(n_spatial_unitsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_neighbors(n_neighborsSEXP);
+    Rcpp::traits::input_parameter< double >::type tau_spatial(tau_spatialSEXP);
+    Rcpp::traits::input_parameter< double >::type rho(rhoSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_car_proper(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rho, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_nested_laplace_nngp
 Rcpp::List cpp_nested_laplace_nngp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, Rcpp::NumericVector sigma2_grid, Rcpp::NumericVector phi_gp_grid, int cov_type, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path);
 RcppExport SEXP _tulpa_cpp_nested_laplace_nngp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2_gridSEXP, SEXP phi_gp_gridSEXP, SEXP cov_typeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP) {
@@ -632,6 +662,33 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type store_Q(store_QSEXP);
     Rcpp::traits::input_parameter< std::string >::type checkpoint_path(checkpoint_pathSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_hsgp(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_laplace_fit_hsgp
+Rcpp::List cpp_laplace_fit_hsgp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix phi_basis, Rcpp::NumericVector lambda_eig, double sigma2, double lengthscale, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
+RcppExport SEXP _tulpa_cpp_laplace_fit_hsgp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP phi_basisSEXP, SEXP lambda_eigSEXP, SEXP sigma2SEXP, SEXP lengthscaleSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP offset_nullableSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type re_idx(re_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_re_groups(n_re_groupsSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_re(sigma_reSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type phi_basis(phi_basisSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type lambda_eig(lambda_eigSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type lengthscale(lengthscaleSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type max_iter(max_iterSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type x_init_nullable(x_init_nullableSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_hsgp(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2, lengthscale, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -2708,8 +2765,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 20},
     {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 22},
     {"_tulpa_cpp_nested_laplace_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_car_proper, 21},
+    {"_tulpa_cpp_laplace_fit_car_proper", (DL_FUNC) &_tulpa_cpp_laplace_fit_car_proper, 20},
     {"_tulpa_cpp_nested_laplace_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_nngp, 24},
     {"_tulpa_cpp_nested_laplace_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_hsgp, 18},
+    {"_tulpa_cpp_laplace_fit_hsgp", (DL_FUNC) &_tulpa_cpp_laplace_fit_hsgp, 17},
     {"_tulpa_cpp_nested_laplace_temporal", (DL_FUNC) &_tulpa_cpp_nested_laplace_temporal, 21},
     {"_tulpa_cpp_nested_laplace_st_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_icar, 27},
     {"_tulpa_cpp_nested_laplace_st_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_car_proper, 28},
