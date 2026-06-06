@@ -1,5 +1,17 @@
 # tulpa NEWS
 
+## 0.0.14 (2026-06-06)
+
+* refactor: remove structural duplication flagged by a code-rot scan, with no
+  change in behavior. `.is_multi_block_prior` is now a single predicate (the
+  byte-identical `_joint` copy is dropped); the spatially- and
+  temporally-varying-coefficient `print`/`summary` methods delegate to shared
+  `.print_varying_coef` / `.summary_varying_coef` helpers; the column-major
+  matrix builder is one `template` over the element type (NumericMatrix vs
+  IntegerMatrix); and the internal CAR-proper and PC-variance log-prior helpers
+  follow the dominant `log_prior_*` naming (`log_prior_car_proper`,
+  `log_prior_sigma2_pc`), retiring a dead wrapper.
+
 ## 0.0.13 (2026-06-06)
 
 * fix(check): clears every `R CMD check --as-cran` ERROR and WARNING. The
