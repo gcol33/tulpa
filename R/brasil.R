@@ -198,3 +198,68 @@
     error    = res$error          # rational approximation error of x^{-beta_rem}
   )
 }
+
+
+# Assemble the fractional rational-SPDE precision Q and shift Pr from FEM
+# matrices (gcol33/tulpa#71, stage 3; gated reference implementation -- this is
+# the R oracle the C++ port (src/spde_qbuilder.h) must reproduce, NOT a wired
+# fit path). `C0` is the lumped-mass diagonal, `G` the stiffness, `kappa`/`tau`
+# the SPDE hyperparameters. Returns Q (sparse precision of the latent weights x),
+# Pr (sparse; field u = Pr x), and the rational roots. Per the rSPDE construction
+# (Bolin & Kirchner 2020), L is normalized by its largest generalized eigenvalue
+# (estimated by a few power iterations on CiL) so the rational approximation acts
+# on the [l_min/l_max, 1] spectrum.
+.spde_rational_assemble <- function(C0, G, kappa, tau, nu, order = 4L,
+                                    d = 2, l_max = NULL, spectrum_ratio = NULL) {
+  n <- length(C0)
+  Ci <- Matrix::Diagonal(n, 1 / C0)
+  Cm <- Matrix::Diagonal(n, C0)
+  I  <- Matrix::Diagonal(n)
+  L  <- kappa^2 * Cm + G
+  CiL <- Ci %*% L
+
+  # Largest generalized eigenvalue of CiL via power iteration (for the spectrum
+  # normalization); l_min from kappa^2 (the smallest L eigenvalue relative to C).
+  if (is.null(l_max)) {
+    # Broad-spectrum deterministic start: the constant vector is the SMALLEST
+    # eigenvector of CiL (G annihilates it, leaving kappa^2), so a constant
+    # start converges to kappa^2, not the largest eigenvalue. sin(1:n) carries
+    # high-frequency content (the largest eigenvalue sits at the top mode).
+    v <- sin(seq_len(n)); v <- v / sqrt(sum(v^2))
+    for (it in seq_len(100L)) {
+      v <- as.numeric(CiL %*% v); nv <- sqrt(sum(v^2)); if (nv == 0) break
+      v <- v / nv
+    }
+    l_max <- as.numeric(sum(v * as.numeric(CiL %*% v)))
+  }
+  if (is.null(spectrum_ratio)) spectrum_ratio <- min(kappa^2 / l_max, 0.5)
+
+  alpha <- nu + d / 2
+  beta  <- alpha / 2
+  rr <- .spde_rational_roots(order, beta, spectrum_ratio)
+
+  # Work on the normalized operator CiLn = CiL / l_max so the (1 - l r) factors
+  # use l in [spectrum_ratio, 1]. The l_max scaling folds into kappa/tau-level
+  # constants; the field shape (the part #71 fixes) is l_max-invariant.
+  CiLn <- CiL / l_max
+
+  # Pl = C (CiLn)^{m_beta-1} prod(I - CiLn rb);  Pr = prod(I - CiLn rc).
+  # Each factor (I - CiLn r) is divided by max(1, |r|) so Pl / Pr keep O(1)
+  # entries (a near-zero pole gives a large r and would otherwise blow the
+  # conditioning of Q = Pl' Ci Pl). The discarded per-factor scalars rescale Q
+  # and the field by a constant that is reabsorbed by the (sigma, tau)
+  # marginal-variance normalization, so the field SHAPE -- the Matern density
+  # this fixes -- is unchanged.
+  fac <- function(r) (I - CiLn * r) / max(1, abs(r))
+  Pl <- Cm
+  if (rr$m_beta > 1L) for (i in seq_len(rr$m_beta - 1L)) Pl <- Pl %*% CiLn
+  for (rb in rr$rb) Pl <- Pl %*% fac(rb)
+  Pr <- I
+  for (rc in rr$rc) Pr <- Pr %*% fac(rc)
+  Pr <- (1 / tau) * Pr
+
+  Q <- Matrix::forceSymmetric(Matrix::t(Pl) %*% Ci %*% Pl)
+  list(Q = as(Q, "CsparseMatrix"), Pr = as(Pr, "CsparseMatrix"),
+       Pl = as(Pl, "CsparseMatrix"), roots = rr, l_max = l_max,
+       spectrum_ratio = spectrum_ratio)
+}

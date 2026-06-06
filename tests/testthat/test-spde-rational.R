@@ -41,6 +41,39 @@ test_that("rational-SPDE root counts and structure follow the rSPDE convention",
   expect_true(all(is.finite(rr$rb)) && all(is.finite(rr$rc)))
 })
 
+test_that("the assembled precision yields a Matern field covariance", {
+  # 1D periodic (circulant) FEM: C0 = h, G = (1/h) circ(2, -1, ..., -1). The
+  # implied covariance Pr Q^{-1} Pr' shares the Fourier eigenbasis with L, so its
+  # spectrum must track the Matern density l^{-2 beta}.
+  n <- 128L; h <- 1 / n; kappa <- 6
+  C0 <- rep(h, n)
+  G <- Matrix::bandSparse(n, n, c(-1, 0, 1),
+                          list(rep(-1 / h, n - 1), rep(2 / h, n), rep(-1 / h, n - 1)))
+  G <- as(G, "CsparseMatrix"); G[1, n] <- -1 / h; G[n, 1] <- -1 / h
+  l <- kappa^2 + (2 - 2 * cos(2 * pi * (0:(n - 1)) / n)) / h^2   # eigenvalues of CiL
+
+  for (nu in c(0.5, 1.5)) {
+    asm <- tulpa:::.spde_rational_assemble(C0, G, kappa = kappa, tau = 1,
+                                           nu = nu, order = 4L, d = 2)
+    # Q is a valid (PD, symmetric) sparse precision (relative PSD tolerance:
+    # the spectrum spans many orders of magnitude).
+    expect_true(Matrix::isSymmetric(asm$Q))
+    ev <- eigen(as.matrix(asm$Q), symmetric = TRUE, only.values = TRUE)$values
+    expect_gt(min(ev), -1e-8 * max(ev))
+    # Per-mode field variance from the assembled Pl / Pr directly (no inverse):
+    # Pl, Pr are circulant, so their Fourier eigenvalues are the FFT of the first
+    # row, and the field-mode variance is |eig_Pr|^2 / (|eig_Pl|^2 / C0). This
+    # must track the Matern density l^{-2 beta}.
+    ePl <- Mod(fft(as.numeric(asm$Pl[1, ])))
+    ePr <- Mod(fft(as.numeric(asm$Pr[1, ])))
+    Qk  <- ePl^2 / C0[1]
+    var_mode <- ePr^2 / Qk
+    beta <- (nu + 2 / 2) / 2
+    target <- (l / asm$l_max)^(-2 * beta)
+    expect_gt(cor(log(var_mode), log(target)), 0.999)
+  }
+})
+
 test_that("higher rational order lowers the approximation error", {
   errs <- vapply(2:5, function(m)
     tulpa:::.spde_rational_roots(order = m, beta = 0.75,
