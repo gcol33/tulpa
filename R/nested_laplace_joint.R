@@ -516,7 +516,7 @@ tulpa_nested_laplace_joint <- function(responses,
         }
     }
 
-    if (.is_multi_block_prior_joint(prior)) {
+    if (.is_multi_block_prior(prior)) {
         return(.joint_dispatch_multi(
             responses = responses, prior_list = prior, copy = copy,
             phi_grid = phi_grid,

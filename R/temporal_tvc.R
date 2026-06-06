@@ -340,15 +340,12 @@ tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
 #'
 #' @export
 print.tulpa_tvc_posterior <- function(x, ...) {
-  cat("Temporally-varying coefficient posterior\n")
-  cat("========================================\n\n")
-  cat("Terms:", paste(x$term_names, collapse = ", "), "\n")
-  cat("Time points:", x$n_times, "\n")
-  cat("Posterior draws:", x$n_draws, "\n")
-  cat("Structure:", x$structure, "\n")
-  cat("\nUse summary() for posterior summaries\n")
-  cat("Use plot() for temporal visualization\n")
-  invisible(x)
+  .print_varying_coef(
+    x, "Temporally-varying",
+    axis_label = "Time points", axis_value = x$n_times,
+    meta_label = "Structure", meta_value = x$structure,
+    viz = "temporal"
+  )
 }
 
 
@@ -360,37 +357,15 @@ print.tulpa_tvc_posterior <- function(x, ...) {
 #'
 #' @export
 summary.tulpa_tvc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
-
-  n_times <- object$n_times
-  n_tvc <- object$n_tvc
-  draws <- object$draws
-
-  results <- list()
-
-  for (j in seq_len(n_tvc)) {
-    term_draws <- draws[, , j]
-
-    summaries <- data.frame(
-      time_idx = seq_len(n_times),
+  .summary_varying_coef(
+    object, probs,
+    n_terms = object$n_tvc,
+    lead_cols = function(j) data.frame(
+      time_idx = seq_len(object$n_times),
       time = object$time_levels,
-      term = object$term_names[j],
-      mean = colMeans(term_draws),
-      sd = apply(term_draws, 2, sd),
-      t(apply(term_draws, 2, quantile, probs = probs))
-    )
-    names(summaries)[6:ncol(summaries)] <- paste0("q", probs * 100)
-    rownames(summaries) <- NULL
-
-    results[[j]] <- summaries
-  }
-
-  result <- do.call(rbind, results)
-
-  structure(
-    result,
-    n_draws = object$n_draws,
-    term_names = object$term_names,
-    class = c("tulpa_tvc_summary", "data.frame")
+      term = object$term_names[j]
+    ),
+    summary_class = "tulpa_tvc_summary"
   )
 }
 

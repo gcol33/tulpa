@@ -302,12 +302,6 @@ inline double multiscale_gp_log_lik(
 // Priors for GP hyperparameters
 // -----------------------------------------------------------------------------
 
-// Log prior for spatial variance (PC prior style)
-// P(sigma > U) = alpha => sigma ~ Exponential(rate = -log(alpha)/U)
-inline double log_prior_sigma2_pc(double sigma2, double U, double alpha) {
-  return tulpa::pc_prior_log_sigma2(sigma2, U, alpha);
-}
-
 // Log prior for range parameter (uniform on log scale within bounds)
 inline double log_prior_phi_uniform(double phi, double lower, double upper) {
   if (phi < lower || phi > upper) return -INFINITY;

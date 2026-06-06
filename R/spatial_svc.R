@@ -460,38 +460,16 @@ svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
 #'
 #' @export
 summary.tulpa_svc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
-
-  n_obs <- object$n_obs
-  n_svc <- object$n_svc
-  draws <- object$draws
-
-  results <- list()
-
-  for (j in seq_len(n_svc)) {
-    term_draws <- draws[, , j]
-
-    summaries <- data.frame(
-      obs = seq_len(n_obs),
+  .summary_varying_coef(
+    object, probs,
+    n_terms = object$n_svc,
+    lead_cols = function(j) data.frame(
+      obs = seq_len(object$n_obs),
       term = object$term_names[j],
       coord_1 = object$coords[, 1],
-      coord_2 = object$coords[, 2],
-      mean = colMeans(term_draws),
-      sd = apply(term_draws, 2, sd),
-      t(apply(term_draws, 2, quantile, probs = probs))
-    )
-    names(summaries)[7:ncol(summaries)] <- paste0("q", probs * 100)
-    rownames(summaries) <- NULL
-
-    results[[j]] <- summaries
-  }
-
-  result <- do.call(rbind, results)
-
-  structure(
-    result,
-    n_draws = object$n_draws,
-    term_names = object$term_names,
-    class = c("tulpa_svc_summary", "data.frame")
+      coord_2 = object$coords[, 2]
+    ),
+    summary_class = "tulpa_svc_summary"
   )
 }
 
@@ -503,15 +481,12 @@ summary.tulpa_svc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ..
 #'
 #' @export
 print.tulpa_svc_posterior <- function(x, ...) {
-  cat("Spatially-varying coefficient posterior\n")
-  cat("=======================================\n\n")
-  cat("Terms:", paste(x$term_names, collapse = ", "), "\n")
-  cat("Locations:", x$n_obs, "\n")
-  cat("Posterior draws:", x$n_draws, "\n")
-  cat("Covariance function:", x$cov, "\n")
-  cat("\nUse summary() for posterior summaries\n")
-  cat("Use plot() for spatial visualization\n")
-  invisible(x)
+  .print_varying_coef(
+    x, "Spatially-varying",
+    axis_label = "Locations", axis_value = x$n_obs,
+    meta_label = "Covariance function", meta_value = x$cov,
+    viz = "spatial"
+  )
 }
 
 

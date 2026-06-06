@@ -18,7 +18,7 @@
 # the single-species comparison so both hit a byte-identical outer grid.
 # @keywords internal
 .tulpa_nl_joint_marshal <- function(responses, prior, copy = NULL) {
-  prior_list <- if (.is_multi_block_prior_joint(prior)) prior else list(prior)
+  prior_list <- if (.is_multi_block_prior(prior)) prior else list(prior)
   n_arms <- length(responses)
   arms <- lapply(seq_along(responses),
                  function(k) .normalise_joint_arm_multi(responses[[k]], k))

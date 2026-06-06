@@ -294,7 +294,7 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
 ) {
     Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
     Rcpp::NumericMatrix  cm = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
-    Rcpp::IntegerMatrix  nim = build_int_matrix_colmajor(nn_idx_flat, n_spatial, nn);
+    Rcpp::IntegerMatrix  nim = build_matrix_colmajor(nn_idx_flat, n_spatial, nn);
     Rcpp::NumericMatrix  ndm = build_matrix_colmajor(nn_dist_flat, n_spatial, nn);
     Rcpp::IntegerVector  nord(nn_order, nn_order + n_spatial);
     Rcpp::NumericVector  s2g(sigma2_grid,  sigma2_grid  + n_grid);
@@ -535,7 +535,7 @@ extern "C" void tulpa_nested_laplace_st_nngp_impl(
 ) {
     Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
     Rcpp::NumericMatrix  cm  = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
-    Rcpp::IntegerMatrix  nim = build_int_matrix_colmajor(nn_idx_flat, n_spatial, nn);
+    Rcpp::IntegerMatrix  nim = build_matrix_colmajor(nn_idx_flat, n_spatial, nn);
     Rcpp::NumericMatrix  ndm = build_matrix_colmajor(nn_dist_flat, n_spatial, nn);
     Rcpp::IntegerVector  nord(nn_order, nn_order + n_spatial);
     Rcpp::IntegerVector  tv (temporal_idx, temporal_idx + N);

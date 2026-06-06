@@ -13,7 +13,7 @@ namespace tulpa {
 // exponential prior on sigma = sqrt(sigma2) with rate -log(alpha)/U (so that
 // P(sigma > U) = alpha) and transforms to sigma2 via the Jacobian
 // d(sigma)/d(sigma2) = 1/(2*sigma).
-inline double pc_prior_log_sigma2(double sigma2, double U, double alpha) {
+inline double log_prior_sigma2_pc(double sigma2, double U, double alpha) {
   double rate = -std::log(alpha) / U;
   double sigma = std::sqrt(sigma2);
   return std::log(rate) - rate * sigma - std::log(2.0 * sigma);

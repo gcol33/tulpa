@@ -14,15 +14,6 @@
 # car_proper), temporal (rw1 / rw2 / ar1), and unstructured (iid) blocks
 # (gcol33/tulpa#76). See dev_notes/plan_multi_block_joint.md.
 
-# Multi-block detection. Same shape as the single-arm side: a list whose
-# elements are themselves named lists carrying a `type` field, and whose
-# top-level entry does NOT carry a `type` (which would mark a single-block
-# prior).
-.is_multi_block_prior_joint <- function(p) {
-    is.list(p) && is.null(p$type) && length(p) > 0 &&
-        all(vapply(p, function(x) is.list(x) && !is.null(x$type), logical(1)))
-}
-
 # Validate one arm spec for the multi-block path. Same shape as
 # `.normalise_joint_arm` *except* `spatial_idx` is no longer required at
 # the arm level — per-arm idx vectors live inside each block spec instead.

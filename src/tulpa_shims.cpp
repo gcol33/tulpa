@@ -293,26 +293,17 @@ Rcpp::List cpp_nested_laplace_spde(
 // ============================================================================
 namespace {
 
-// Build a column-major Rcpp::NumericMatrix from a flat caller buffer.
-inline Rcpp::NumericMatrix build_matrix_colmajor(
-    const double* X_flat, int N, int p
+// Build a column-major Rcpp matrix from a flat caller buffer. The element type
+// selects the Rcpp matrix kind: double -> NumericMatrix, int -> IntegerMatrix.
+template <typename T>
+inline Rcpp::Matrix<Rcpp::traits::r_sexptype_traits<T>::rtype> build_matrix_colmajor(
+    const T* X_flat, int N, int p
 ) {
-    Rcpp::NumericMatrix X(N, p);
+    Rcpp::Matrix<Rcpp::traits::r_sexptype_traits<T>::rtype> X(N, p);
     if (N > 0 && p > 0 && X_flat) {
-        std::memcpy(&X[0], X_flat, sizeof(double) * (size_t)N * (size_t)p);
+        std::memcpy(&X[0], X_flat, sizeof(T) * (size_t)N * (size_t)p);
     }
     return X;
-}
-
-// Build a column-major Rcpp::IntegerMatrix from a flat caller buffer.
-inline Rcpp::IntegerMatrix build_int_matrix_colmajor(
-    const int* M_flat, int N, int p
-) {
-    Rcpp::IntegerMatrix M(N, p);
-    if (N > 0 && p > 0 && M_flat) {
-        std::memcpy(&M[0], M_flat, sizeof(int) * (size_t)N * (size_t)p);
-    }
-    return M;
 }
 
 // Copy an Rcpp::NumericMatrix (column-major) into a row-major raw buffer.

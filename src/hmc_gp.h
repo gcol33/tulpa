@@ -13,7 +13,7 @@
 #include "hmc_gp_cg.h"  // Iterative CG/PCG solvers (dense_cg_solve, dense_pcg_solve)
 #include "tulpa/gp_data.h"
 #include "tulpa/types.h"
-#include "pc_prior.h"  // tulpa::pc_prior_log_sigma2 (used by hmc_gp_log_lik.h)
+#include "pc_prior.h"  // tulpa::log_prior_sigma2_pc
 
 #ifdef _OPENMP
 #include <omp.h>

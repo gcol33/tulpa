@@ -241,7 +241,7 @@ inline double temporal_gp_log_lik(
 
 // Log prior for temporal variance (PC prior style)
 inline double log_prior_sigma2_temporal_pc(double sigma2, double U, double alpha) {
-  return tulpa::pc_prior_log_sigma2(sigma2, U, alpha);
+  return tulpa::log_prior_sigma2_pc(sigma2, U, alpha);
 }
 
 // Log prior for temporal range (uniform or PC)

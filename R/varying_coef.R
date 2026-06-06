@@ -44,3 +44,51 @@
 
   result
 }
+
+# Shared print for svc/tvc posteriors. The two methods differ only in the
+# title, the per-axis count line, the meta line, and the visualization word.
+.print_varying_coef <- function(x, kind, axis_label, axis_value,
+                                meta_label, meta_value, viz) {
+  title <- paste0(kind, " coefficient posterior")
+  cat(title, "\n", sep = "")
+  cat(strrep("=", nchar(title)), "\n\n", sep = "")
+  cat("Terms:", paste(x$term_names, collapse = ", "), "\n")
+  cat(paste0(axis_label, ":"), axis_value, "\n")
+  cat("Posterior draws:", x$n_draws, "\n")
+  cat(paste0(meta_label, ":"), meta_value, "\n")
+  cat("\nUse summary() for posterior summaries\n")
+  cat("Use plot() for", viz, "visualization\n")
+  invisible(x)
+}
+
+# Shared summary for svc/tvc posteriors. `lead_cols(j)` returns the
+# variant-specific identifier columns (obs + coords for svc, time index +
+# levels for tvc); mean / sd / quantile columns are appended identically.
+.summary_varying_coef <- function(object, probs, n_terms, lead_cols,
+                                  summary_class) {
+  draws <- object$draws
+
+  results <- lapply(seq_len(n_terms), function(j) {
+    term_draws <- draws[, , j]
+    lead <- lead_cols(j)
+    stats <- data.frame(
+      mean = colMeans(term_draws),
+      sd = apply(term_draws, 2, sd),
+      t(apply(term_draws, 2, quantile, probs = probs))
+    )
+    summaries <- cbind(lead, stats)
+    q_start <- ncol(lead) + 3L
+    names(summaries)[q_start:ncol(summaries)] <- paste0("q", probs * 100)
+    rownames(summaries) <- NULL
+    summaries
+  })
+
+  result <- do.call(rbind, results)
+
+  structure(
+    result,
+    n_draws = object$n_draws,
+    term_names = object$term_names,
+    class = c(summary_class, "data.frame")
+  )
+}

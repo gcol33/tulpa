@@ -158,7 +158,7 @@ inline double car_quadratic_form(
 // Compute log-prior for proper CAR: p(phi | tau, rho)
 // p(phi | tau, rho) propto |Q|^{1/2} exp(-0.5 * tau * phi' Q phi)
 // where Q = D - rho * W
-inline double car_proper_log_prior(
+inline double log_prior_car_proper(
     const double* phi,
     int n,
     const std::vector<int>& adj_row_ptr,
@@ -186,7 +186,7 @@ inline double car_proper_log_prior(
 
 // Simplified version that assumes Q is positive definite and pre-computes
 // the log-determinant for efficiency
-inline double car_proper_log_prior_fast(
+inline double log_prior_car_proper_fast(
     const double* phi,
     int n,
     const std::vector<int>& adj_row_ptr,
@@ -282,11 +282,11 @@ inline double car_proper_gradient_rho(
   double rho_plus = std::min(rho + epsilon, upper - epsilon);
   double rho_minus = std::max(rho - epsilon, lower + epsilon);
 
-  double ll_plus = car_proper_log_prior(phi, n, adj_row_ptr, adj_col_idx,
+  double ll_plus = log_prior_car_proper(phi, n, adj_row_ptr, adj_col_idx,
                                          n_neighbors, tau, rho_plus) +
                    log_prior_rho(rho_plus, lower, upper, a, b);
 
-  double ll_minus = car_proper_log_prior(phi, n, adj_row_ptr, adj_col_idx,
+  double ll_minus = log_prior_car_proper(phi, n, adj_row_ptr, adj_col_idx,
                                           n_neighbors, tau, rho_minus) +
                     log_prior_rho(rho_minus, lower, upper, a, b);
 

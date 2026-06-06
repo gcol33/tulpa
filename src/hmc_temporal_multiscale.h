@@ -221,7 +221,7 @@ inline void compute_temporal_eta(
 
 // PC prior for temporal variance (favor simpler models with smaller variance)
 inline double log_prior_sigma2_temporal_pc(double sigma2, double U, double alpha) {
-  return tulpa::pc_prior_log_sigma2(sigma2, U, alpha);
+  return tulpa::log_prior_sigma2_pc(sigma2, U, alpha);
 }
 
 // Prior for AR1 rho: Beta(a, b) on (rho + 1) / 2
