@@ -40,7 +40,7 @@ enum PhaseIdx : int {
     PHASE_ANALYZE       = 4,  // one-time symbolic Cholesky (first iter only)
     PHASE_FACTORIZE     = 5,  // per-iter numeric Cholesky factorize
     PHASE_SOLVE         = 6,  // per-iter triangular solve
-    PHASE_LINE_SEARCH   = 7,  // per-iter step_halving_update (incl re-eta)
+    PHASE_LINE_SEARCH   = 7,  // per-iter line_search_backtrack (incl re-eta)
     PHASE_LOG_DET       = 8,  // final-pass log_determinant
     PHASE_LOG_LIK_PRIOR = 9,  // final-pass log_lik + log_prior + center
     PHASE_COUNT         = 10

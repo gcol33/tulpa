@@ -13,7 +13,7 @@
 //   - compute_log_prior_joint(x, etas): joint log p(x | theta).
 //   - center_effects_fn(x): post-step centering of structured blocks.
 //
-// The Newton loop, Cholesky dispatch, step halving, log_det and final
+// The Newton loop, Cholesky dispatch, line search, log_det and final
 // log-marginal machinery are identical to the single-arm path — they
 // operate on the joint (g, H, x) without caring how many arms contributed.
 
@@ -382,9 +382,10 @@ LaplaceResult laplace_newton_solve_joint_ll(
             obj_valid = true;
         }
 
-        double step_scale = step_halving_update(
-            x, scratch.delta, n_x, obj_current, eval_objective, obj_current,
-            scratch.x_try
+        double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
+        double step_scale = line_search_backtrack(
+            x, scratch.delta, n_x, obj_current, slope, eval_objective,
+            obj_current, scratch.x_try
         );
 
         result.n_iter = iter + 1;

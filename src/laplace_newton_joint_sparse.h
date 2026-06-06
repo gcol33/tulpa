@@ -310,9 +310,10 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
 
         double step_scale;
         { TULPA_PROFILE_PHASE(PHASE_LINE_SEARCH);
-          step_scale = step_halving_update(
-              x, scratch.delta, n_x, obj_current, eval_objective, obj_current,
-              scratch.x_try
+          double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
+          step_scale = line_search_backtrack(
+              x, scratch.delta, n_x, obj_current, slope, eval_objective,
+              obj_current, scratch.x_try
           ); }
 
         result.n_iter = iter + 1;

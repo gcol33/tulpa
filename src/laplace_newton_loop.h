@@ -60,31 +60,60 @@ inline double eval_penalized_log_lik(
                                      eta_scratch);
 }
 
-// Step halving: try x + step_scale*delta, halve until objective recovers or
-// MAX_HALVING is reached. Updates x in place. obj_out receives the accepted
-// objective value. Returns the accepted step_scale.
+// Backtracking line search with safeguarded quadratic interpolation. Maximizes
+// the penalized log-posterior along the Newton direction `delta`. The full step
+// (step_scale = 1) is always tried first, so a well-conditioned solve near the
+// mode takes the full Newton step and keeps quadratic convergence -- fits that
+// accept the full step are bit-for-bit unchanged from the pure-halving path.
+//
+// On an overshoot (objective decreases), the next trial step is the maximizer of
+// the quadratic that interpolates the objective and its directional derivative
+// `slope = grad . delta` (>= 0 on an ascent direction) at step 0 together with
+// the failed trial value (Nocedal & Wright, Numerical Optimization, sec. 3.5):
+//   q(a) = obj_old + slope a + c a^2,  c = (obj_try - obj_old - slope*step)/step^2
+//   a*   = slope step^2 / (2 (obj_old + slope step - obj_try)).
+// The interpolated step is safeguarded to [0.1, 0.5] x the current step so one
+// backtrack lands on or near the line optimum where fixed halving needs several.
+// Falls back to halving when the direction is not ascent (slope <= 0) or the
+// model is degenerate / non-finite. Acceptance is monotone (objective non-
+// decreasing) and each trial step is <= 0.5 x the previous, so the converged
+// mode and the MAX_HALVING trial cap are identical to the pure-halving path;
+// only the trial sequence inside a backtrack differs.
 //
 // `x_try_scratch` is a caller-owned NumericVector of length n_x used as the
-// step-trial buffer. Reused across halvings AND across Newton iterations.
+// step-trial buffer. Reused across trials AND across Newton iterations.
+// `n_evals_out`, if non-null, accumulates the number of objective evaluations
+// (line-search instrumentation; production callers pass nullptr).
 template<typename EvalObj>
-inline double step_halving_update(
+inline double line_search_backtrack(
     Rcpp::NumericVector& x,
     const std::vector<double>& delta,
-    int n_x, double obj_old,
+    int n_x, double obj_old, double slope,
     EvalObj eval_obj,
     double& obj_out,
-    Rcpp::NumericVector& x_try_scratch
+    Rcpp::NumericVector& x_try_scratch,
+    int* n_evals_out = nullptr
 ) {
     double step_scale = 1.0;
     for (int half = 0; half <= MAX_HALVING; half++) {
         for (int j = 0; j < n_x; j++) x_try_scratch[j] = x[j] + step_scale * delta[j];
         double obj_try = eval_obj(x_try_scratch);
+        if (n_evals_out) ++(*n_evals_out);
         if (obj_try >= obj_old - 1e-8 || half == MAX_HALVING) {
             for (int j = 0; j < n_x; j++) x[j] = x_try_scratch[j];
             obj_out = obj_try;
             return step_scale;
         }
-        step_scale *= 0.5;
+        double next = 0.5 * step_scale;  // halving fallback
+        if (slope > 0.0 && std::isfinite(obj_try)) {
+            double denom = 2.0 * (obj_old + slope * step_scale - obj_try);
+            if (denom > 0.0) {
+                double a  = slope * step_scale * step_scale / denom;
+                double lo = 0.1 * step_scale, hi = 0.5 * step_scale;
+                next = std::min(std::max(a, lo), hi);
+            }
+        }
+        step_scale = next;
     }
     obj_out = obj_old;  // unreachable: MAX_HALVING branch above always accepts.
     return 1.0;

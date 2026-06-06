@@ -348,8 +348,10 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                         arms, parsed, blocks, kg, d_fac_cache, wbuf, s);
                 };
                 if (!obj_valid[s]) { obj[s] = eval_obj(st[s].x); obj_valid[s] = true; }
-                double step = step_halving_update(st[s].x, st[s].delta, n_x,
-                                                  obj[s], eval_obj, obj[s], st[s].x_try);
+                double slope = newton_decrement(grad, st[s].delta, n_x);
+                double step = line_search_backtrack(st[s].x, st[s].delta, n_x,
+                                                    obj[s], slope, eval_obj,
+                                                    obj[s], st[s].x_try);
                 n_iter[s][kg] = iter + 1;
                 if (newton_converged(st[s].delta, grad, step, n_x, tol, conv_state[s]))
                     converged[s] = true;

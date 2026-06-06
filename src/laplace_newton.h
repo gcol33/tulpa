@@ -7,7 +7,7 @@
 #include "laplace_cholesky.h"
 #include "laplace_cholesky_dispatch.h"  // dispatch_factor_solve, dispatch_factor_log_det
 #include "laplace_family_link.h"
-#include "laplace_newton_loop.h"        // eval_*, step_halving_update, finalize_log_marginal
+#include "laplace_newton_loop.h"        // eval_*, line_search_backtrack, finalize_log_marginal
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
@@ -155,9 +155,10 @@ LaplaceResult laplace_newton_solve_ll(
             obj_valid = true;
         }
 
-        double step_scale = step_halving_update(
-            x, scratch.delta, n_x, obj_current, eval_objective, obj_current,
-            scratch.x_try
+        double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
+        double step_scale = line_search_backtrack(
+            x, scratch.delta, n_x, obj_current, slope, eval_objective,
+            obj_current, scratch.x_try
         );
 
         result.n_iter = iter + 1;

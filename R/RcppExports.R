@@ -89,6 +89,10 @@ cpp_laplace_fit_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial
     .Call(`_tulpa_cpp_laplace_fit_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads, offset_nullable)
 }
 
+cpp_line_search_probe <- function(slope, c) {
+    .Call(`_tulpa_cpp_line_search_probe`, slope, c)
+}
+
 cpp_profile_reset <- function() {
     invisible(.Call(`_tulpa_cpp_profile_reset`))
 }

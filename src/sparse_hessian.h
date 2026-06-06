@@ -12,7 +12,7 @@
 #define TULPA_SPARSE_HESSIAN_H
 
 #include "laplace_newton.h"        // NewtonScratch (shared with dense solver)
-#include "laplace_newton_loop.h"   // shared eval_*, step_halving_update, finalize_log_marginal
+#include "laplace_newton_loop.h"   // shared eval_*, line_search_backtrack, finalize_log_marginal
 #include "laplace_profile.h"
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -361,8 +361,9 @@ LaplaceResult laplace_newton_solve_sparse(
         { TULPA_PROFILE_PHASE(PHASE_LINE_SEARCH);
           obj_old = eval_obj(x);
           double obj_unused = 0.0;
-          step_scale = step_halving_update(
-              x, delta, n_x, obj_old, eval_obj, obj_unused, scratch.x_try
+          double slope = newton_decrement(grad, delta, n_x);
+          step_scale = line_search_backtrack(
+              x, delta, n_x, obj_old, slope, eval_obj, obj_unused, scratch.x_try
           ); }
 
         result.n_iter = iter + 1;

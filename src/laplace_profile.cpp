@@ -3,7 +3,9 @@
 // See laplace_profile.h for the underlying mechanism.
 
 #include "laplace_profile.h"
+#include "laplace_newton_loop.h"   // line_search_backtrack (probe)
 #include <Rcpp.h>
+#include <vector>
 
 // Phase names keyed by PhaseIdx in laplace_profile.h. Keep in sync.
 static const char* const kPhaseNames[] = {
@@ -22,6 +24,32 @@ static_assert(
     sizeof(kPhaseNames) / sizeof(kPhaseNames[0]) == tulpa::PHASE_COUNT,
     "kPhaseNames must match PhaseIdx ordering in laplace_profile.h"
 );
+
+// Line-search probe: drive the shared backtracking line search on a 1-D
+// quadratic phi(a) = slope*a + c*a^2 (obj_old = 0) along delta = 1 from x = 0,
+// and report the accepted step plus the number of objective evaluations. Lets
+// tests exercise the interpolation backtrack directly: for an overshoot
+// (c < 0 with phi(1) < 0) the line optimum is a* = -slope/(2c), and one
+// safeguarded interpolation should land within [0.1, 0.5] of it in far fewer
+// sweeps than fixed halving.
+// [[Rcpp::export]]
+Rcpp::List cpp_line_search_probe(double slope, double c) {
+    Rcpp::NumericVector x(1, 0.0), x_try(1, 0.0);
+    std::vector<double> delta(1, 1.0);
+    double obj_old = 0.0, obj_out = 0.0;
+    int n_evals = 0;
+    auto eval_obj = [&](const Rcpp::NumericVector& xv) -> double {
+        const double a = xv[0];
+        return slope * a + c * a * a;
+    };
+    double step = tulpa::line_search_backtrack(
+        x, delta, 1, obj_old, slope, eval_obj, obj_out, x_try, &n_evals);
+    return Rcpp::List::create(
+        Rcpp::Named("step")    = step,
+        Rcpp::Named("obj")     = obj_out,
+        Rcpp::Named("n_evals") = n_evals
+    );
+}
 
 // [[Rcpp::export]]
 void cpp_profile_reset() {
