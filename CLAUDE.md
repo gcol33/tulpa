@@ -1,6 +1,6 @@
 # TULPA — Template Unified Latent Process Architecture
 
-General-purpose Bayesian hierarchical modelling engine (v0.0.2). Engine
+General-purpose Bayesian hierarchical modelling engine (v0.0.14). Engine
 extracted from numdenom, which has since been renamed tulpaRatio.
 
 ## Architecture
@@ -9,13 +9,13 @@ The hub of a `tulpa*` package ecosystem. The engine owns inference, latent
 structure, and the C++ interface; model packages plug an observation
 likelihood in via `LikelihoodSpec` and inherit the rest.
 
-- **tulpa** (engine, 0.0.2) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
+- **tulpa** (engine, 0.0.14) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
 - **tulpaRatio** (1.3.0) — ratio, rate, and proportion models (renamed from numdenom).
-- **tulpaObs** (0.0.1) — occupancy, N-mixture, and detection models.
+- **tulpaObs** (0.0.18) — occupancy, N-mixture, and detection models.
 - **tulpaGlmm** (0.0.0.9000) — generalized linear mixed models.
-- **tulpaMesh** (0.1.1) — constrained Delaunay meshes for SPDE fields (an engine dependency, not a consumer).
+- **tulpaMesh** (0.1.2) — constrained Delaunay meshes for SPDE fields (an engine dependency, not a consumer).
 
-Consumers depend on the engine via `Imports: tulpa (>= 0.0.2)` +
+Consumers depend on the engine via `Imports: tulpa (>= 0.0.13)` +
 `LinkingTo: tulpa` and plug likelihoods in through `LikelihoodSpec`
 (see `inst/include/tulpa/likelihood.h`).
 
@@ -46,7 +46,7 @@ debias, or outer integration), not as standalone alternatives.
 2. **Gradient progression N→A→A_r→H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
 3. **Runtime gradient verification**: Before NUTS sampling, verify active gradient against numerical.
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
-5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions.
+5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions. Conventions that keep this single-sourced: log-prior helpers are named `log_prior_*` (e.g. `log_prior_car_proper`, `log_prior_sigma2_pc`); the column-major Rcpp matrix builder `build_matrix_colmajor` is one template over the element type; the spatially-/temporally-varying-coefficient `print`/`summary` methods delegate to `.print_varying_coef` / `.summary_varying_coef` in `R/varying_coef.R`; and multi-block prior detection is the single `.is_multi_block_prior` predicate.
 6. **Statistical args vs `control` knobs**: front-door fitters (`tulpa()`, `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`) carry only statistical arguments in their signature; all perf / numerical / tuning knobs live in a single `control = list()` (e.g. `control$re_cov`, `n_threads`, `max_iter`, `tol`, `adaptive_grid`, `prune`, `integration`, ...). Pre-release: no deprecation shims -- moved knobs hard-error.
 
 ## C++ Interface
