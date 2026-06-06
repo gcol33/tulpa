@@ -32,11 +32,13 @@ or \code{c(inner, outer)}.}
 
 \item{cutoff}{Minimum distance between mesh vertices. Default 0.}
 
-\item{nu}{Matern smoothness parameter. Must be a non-negative integer
-(0, 1, 2, ...); the operator order \code{alpha = nu + 1} is then integer and the
-field is assembled exactly. Default 1. Fractional \code{nu} (a rational SPDE
-approximation) is not yet supported and raises an error -- see
-\code{\link[=rational_spde_coefficients]{rational_spde_coefficients()}} and gcol33/tulpa#71.}
+\item{nu}{Matern smoothness parameter. A non-negative number. Integer \code{nu}
+(0, 1, 2, ...) gives an exact FEM construction (operator order
+\code{alpha = nu + 1}). Fractional \code{nu} (e.g. 0.5, 1.5) uses the operator-based
+rational SPDE approximation with BRASIL best-rational coefficients
+(Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter
+\code{fit_spde()} (single-point and nested over range/sigma). NUTS and analytic
+marginal SEs remain integer-only (gcol33/tulpa#71). Default 1.}
 
 \item{prior_range}{Prior for the spatial range. A numeric vector \code{c(U, alpha)}
 where P(range < U) = alpha. Default \code{c(0.5, 0.5)}.}

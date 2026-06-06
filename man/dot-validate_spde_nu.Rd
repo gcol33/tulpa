@@ -10,11 +10,11 @@
 \item{nu}{Candidate smoothness parameter.}
 }
 \value{
-Invisibly \code{TRUE}; raises an error on a non-integer \code{nu}.
+Invisibly \code{TRUE}; raises an error on an invalid \code{nu}.
 }
 \description{
-Fractional \code{nu} is rejected because the wired rational assembly collapses to
-an integer \code{alpha = 2} field (see \code{\link[=rational_spde_coefficients]{rational_spde_coefficients()}} Details and
-gcol33/tulpa#71). Integer \code{nu} (0, 1, 2, ...) is exact.
+\code{nu} must be a single finite non-negative number. Integer \code{nu} (0, 1, 2, ...)
+gives an exact FEM construction; fractional \code{nu} uses the rational SPDE
+approximation (see \code{\link[=rational_spde_coefficients]{rational_spde_coefficients()}} and gcol33/tulpa#71).
 }
 \keyword{internal}

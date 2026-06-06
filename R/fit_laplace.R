@@ -606,6 +606,20 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
   if (is.null(range)) range <- spatial$prior_range[1]
   if (is.null(sigma)) sigma <- spatial$prior_sigma[1]
 
+  # Fractional nu: the operator-based rational SPDE (Bolin & Kirchner 2020) with
+  # BRASIL coefficients (gcol33/tulpa#71). Assembled in R (the validated oracle)
+  # and solved by the precomputed C++ fit; the integer branch below is the exact
+  # FEM construction.
+  if (.spde_nu_is_fractional(spatial$nu)) {
+    return(.spde_laplace_fractional_at(
+      y = y, n_trials = n_trials, X = X, spatial = spatial,
+      family = family, phi = phi, range = range, sigma = sigma,
+      re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+      max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset,
+      order = spatial$rational_order %||% 2L
+    ))
+  }
+
   kappa <- sqrt(8 * spatial$nu) / range
   tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
   alpha <- as.integer(round(spatial$nu)) + 1L

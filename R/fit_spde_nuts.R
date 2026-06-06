@@ -96,6 +96,12 @@ tulpa_nuts_spde <- function(y, X, spatial,
          "(see `spatial_spde()` / `spatial_spde_custom()`).",
          call. = FALSE)
   }
+  if (.spde_nu_is_fractional(spatial$nu)) {
+    stop("NUTS for a fractional-nu SPDE is not yet supported (gcol33/tulpa#71): ",
+         "the operator-based rational field is wired through the Laplace fitter ",
+         "(`fit_spde()`), not the NUTS sampler. Use an integer nu for NUTS, or ",
+         "`fit_spde()` for fractional nu.", call. = FALSE)
+  }
 
   y <- as.numeric(y)
   N <- length(y)

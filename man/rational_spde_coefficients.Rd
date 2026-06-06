@@ -2,56 +2,62 @@
 % Please edit documentation in R/rational_spde.R
 \name{rational_spde_coefficients}
 \alias{rational_spde_coefficients}
-\title{Rational Approximation Coefficients for Fractional SPDE (integer-only)}
+\title{Rational Approximation Coefficients for a Fractional SPDE}
 \usage{
-rational_spde_coefficients(nu, m = 2, lambda_range = c(1e-04, 10000))
+rational_spde_coefficients(nu, m = 4L, lambda_range = c(1e-04, 10000))
 }
 \arguments{
-\item{nu}{Matern smoothness parameter. Must be a non-negative integer
-(0, 1, 2, ...).}
+\item{nu}{Matern smoothness parameter. A non-negative number; may be
+fractional (e.g. 0.5, 1.5, 2.5).}
 
-\item{m}{Reserved for a future rational implementation; ignored.}
+\item{m}{Rational approximation order (number of numerator / denominator
+factors) used for fractional \code{nu}. Higher \code{m} lowers the approximation
+error of the field's spectral density. Default 4.}
 
-\item{lambda_range}{Reserved for a future rational implementation; ignored.}
+\item{lambda_range}{The generalized-eigenvalue spectrum \code{c(l_min, l_max)} of
+the FEM operator \verb{CiL = C^\{-1\}(kappa^2 C + G)} over which the rational
+approximation is fitted. The approximation acts on the normalized interval
+\verb{[l_min / l_max, 1]}. Used for fractional \code{nu} only.}
 }
 \value{
-A list with:
-\itemize{
-\item \code{poles}: empty (no rational poles for integer \code{nu})
-\item \code{weights}: empty
-\item \code{alpha}: the operator order (\code{nu + 1} in 2D)
-\item \code{beta}: \code{alpha / 2}
-\item \code{m}: 0
-\item \code{is_integer}: \code{TRUE}
-}
+For integer \code{nu}, a list with \code{is_integer = TRUE}, the operator order
+\code{alpha}, \code{beta = alpha / 2}, \code{m = 0}, and empty \code{poles} / \code{weights}. For
+fractional \code{nu}, a list with \code{is_integer = FALSE}, \code{alpha}, \code{beta}, the
+rSPDE roots \code{rb} (denominator factors, drive \code{Pl}) and \code{rc} (numerator
+factors, drive \code{Pr}), the integer power \code{m_beta}, the remaining fractional
+exponent \code{beta_rem}, the scale constant \code{scale}, the rational order \code{m}, and
+the approximation \code{error}.
 }
 \description{
-Returns the FEM construction descriptor for an SPDE Matern field of operator
-order \code{alpha = nu + 1} (in 2D). For integer \code{nu} the construction is exact and
-no rational approximation is needed; fractional \code{nu} is not supported and
-raises an error (see Details).
+Returns the coefficient descriptor for an SPDE Matern field of operator order
+\code{alpha = nu + 1} (in 2D). For integer \code{nu} the construction is exact and no
+rational approximation is needed. For fractional \code{nu} it returns the
+rational-SPDE roots from the BRASIL best-rational approximation (see Details).
 }
 \details{
 For integer \code{nu} (0, 1, 2, ...) the operator order \code{alpha = nu + 1} is an
 integer and the precision is assembled directly from integer powers of the
 FEM operator \verb{L = kappa^2 C + G} -- an exact construction.
 
-Fractional \code{nu} is \strong{not supported}. A faithful fractional field requires a
-rational approximation of \code{x^(-alpha/2)} whose partial-fraction coefficients
-assemble a precision with spectral symbol proportional to \code{l^alpha} (l the
-generalized eigenvalue of \code{L} relative to \code{C}). The assembly currently wired
-through the SPDE kernels,
-\verb{Q = tau^2 * sum_k w_k (L + r_k C)' C^\{-1\} (L + r_k C)}, has symbol
-\verb{tau^2 * sum_k w_k (l + r_k)^2}, which is a single quadratic in \code{l} for any
-number of poles and therefore can only represent an \code{alpha = 2} field -- no
-choice of poles/weights recovers fractional smoothness. Rather than return
-coefficients that silently feed a mis-specified field, fractional \code{nu} errors.
-Tracking a faithful rational SPDE assembly: gcol33/tulpa#71.
+For fractional \code{nu} the field uses the operator-based rational SPDE
+approximation (Bolin & Kirchner 2020). With \code{beta = alpha / 2} and
+\code{m_beta = max(1, floor(beta))}, the field-mode variance of the assembled
+precision \verb{Q = Pl' C^\{-1\} Pl} (field \verb{u = Pr x}, \code{x ~ N(0, Q^{-1})}) tracks
+the Matern spectral density \verb{l^\{-2 beta\}} when
+\verb{prod(1 - l rc) / (l^\{m_beta - 1\} prod(1 - l rb))} approximates \code{l^{-beta_rem}}
+on the scaled spectrum, \code{beta_rem = beta - (m_beta - 1)}. The roots come from
+the degree-\verb{(m, m)} best uniform (minimax) rational approximation of
+\code{x^{-beta_rem}}, computed by the BRASIL algorithm (Hofreither 2021); its
+numerator zeros map to \code{rc = 1 / zero} and denominator poles to \code{rb = 1 / pole}.
+The field assembly from these roots is \code{\link[=.spde_rational_assemble]{.spde_rational_assemble()}}; it is
+validated against the Matern spectral density in \code{test-spde-rational.R}.
 }
 \references{
-Bolin, D., Simas, A.B. & Xiong, J. (2023). Rational SPDE approach for
-Gaussian random fields with general smoothness. Journal of the Royal
-Statistical Society Series B. (The reference construction a future
-fractional implementation should follow.)
+Bolin, D. & Kirchner, K. (2020). The rational SPDE approach for Gaussian
+random fields with general smoothness. Journal of Computational and Graphical
+Statistics, 29(2), 274-285.
+
+Hofreither, C. (2021). An algorithm for best rational approximation based on
+barycentric rational interpolation. Numerical Algorithms, 88, 365-388.
 }
 \keyword{internal}

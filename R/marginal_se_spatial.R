@@ -55,17 +55,14 @@ NULL
       Q   <- tau2 * (k4 * Cmat + 2 * k2 * G1 + G2)
     }
   } else {
-    # Fractional alpha — weighted sum of shifted alpha=2 terms
-    G2 <- G1 %*% CinvDiag %*% G1
-    Q  <- Matrix::sparseMatrix(
-      i = integer(0), j = integer(0), x = numeric(0),
-      dims = c(n_mesh, n_mesh)
-    )
-    for (j in seq_along(rat$poles)) {
-      k2s <- k2 + rat$poles[j]
-      k4s <- k2s * k2s
-      Q <- Q + tau2 * rat$weights[j] * (k4s * Cmat + 2 * k2s * G1 + G2)
-    }
+    # Fractional alpha: the operator-based rational field (gcol33/tulpa#71) does
+    # NOT have a shifted-alpha=2 precision; its precision is Q = Pl' C^{-1} Pl
+    # from the rational roots (see .spde_rational_assemble). This analytic
+    # marginal-SE path covers only the integer construction; fractional-nu field
+    # SEs go through the assembly-based fit, not this rebuild.
+    stop("Analytic SPDE marginal SEs are integer-nu only (gcol33/tulpa#71). ",
+         "For fractional nu, the rational field SEs are not yet wired through ",
+         "this path.", call. = FALSE)
   }
 
   if (any(is_orph)) {

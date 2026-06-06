@@ -109,7 +109,35 @@ fit_spde <- function(y, X, spatial,
   no_re_n_groups  <- 0L
   no_re_sigma     <- 1.0
 
+  # Fractional nu integrates the operator-based rational SPDE (gcol33/tulpa#71):
+  # each (range, sigma) cell assembles its own (Q, A_eff) via the validated R
+  # oracle and is solved by the precomputed C++ fit, with 0.5 log|Q| folded into
+  # the per-cell marginal (done inside .spde_laplace_fractional_at). The outer
+  # CCD / grid integrators are reused unchanged -- they read only $log_marginal
+  # and $n_iter. The cpp grid-cell checkpoint is integer-path only.
+  is_frac   <- .spde_nu_is_fractional(sp$nu)
+  order_rat <- sp$rational_order %||% 2L
+  if (is_frac && nzchar(.ckpt$path)) {
+    warning("Grid-cell checkpointing is not supported for fractional nu; ",
+            "the fractional SPDE grid runs without it.", call. = FALSE)
+  }
+
   spde_log_marginal <- function(range_vec, sigma_vec) {
+    if (is_frac) {
+      K  <- length(range_vec)
+      lm <- numeric(K); ni <- integer(K)
+      for (k in seq_len(K)) {
+        f <- .spde_nested_logmarginal_at(
+          spatial = sp, range = range_vec[k], sigma = sigma_vec[k],
+          y = y, X = X, family = family, phi = phi, n_trials = n_trials,
+          order = order_rat, max_iter = max_iter, tol = tol,
+          n_threads = n_threads, offset = offset
+        )
+        lm[k] <- f$log_marginal
+        ni[k] <- f$n_iter
+      }
+      return(list(log_marginal = lm, n_iter = ni))
+    }
     res <- cpp_nested_laplace_spde(
       y = y, n_trials = n_trials, X = X,
       re_idx = no_re_idx, n_re_groups = no_re_n_groups,
