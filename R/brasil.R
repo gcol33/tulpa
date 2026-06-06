@@ -157,3 +157,44 @@
   }
   list(br = br, converged = converged, error = max_err, deviation = deviation)
 }
+
+
+# Rational-SPDE coefficients (gcol33/tulpa#71, stage 2; gated -- not yet wired
+# into a fitter). For a Matern field of operator order alpha = nu + d/2 with
+# beta = alpha / 2, the rSPDE operator-based construction
+# (Bolin & Kirchner 2020) assembles
+#   Pl = C (CiL)^{m_beta-1} prod_i (I - CiL * rb_i),   m_beta = max(1, floor(beta))
+#   Pr =                    prod_i (I - CiL * rc_i)
+#   Q  = Pl' Ci Pl,   x ~ N(0, Q^{-1}),   u = Pr x
+# whose field-mode variance (in the C-inner-product eigenbasis, CiL phi = l phi)
+# is [prod(1 - l rc)]^2 / [l^{2(m_beta-1)} prod(1 - l rb)^2]. Matching the Matern
+# spectral density l^{-2 beta} requires
+#   prod(1 - l rc) / [l^{m_beta-1} prod(1 - l rb)] ~ l^{-beta},
+# i.e. a rational approximation of l^{-beta_rem} (beta_rem = beta - (m_beta-1)) on
+# the scaled spectrum. BRASIL gives the best such (m, m) rational; its zeros map
+# to rc (= 1/zero) and poles to rb (= 1/pole), with a scale constant. Validated
+# against the Matern spectral density in test-spde-rational.R.
+#
+# `spectrum_ratio` = l_min / l_max of CiL (the generalized eigenvalues); the
+# approximation interval is [spectrum_ratio, 1] on the L / l_max-normalized axis.
+.spde_rational_roots <- function(order, beta, spectrum_ratio, tol = 1e-7) {
+  if (order < 1L) stop("rational order must be >= 1.", call. = FALSE)
+  if (!(spectrum_ratio > 0 && spectrum_ratio < 1)) {
+    stop("spectrum_ratio must be in (0, 1).", call. = FALSE)
+  }
+  m_beta <- max(1L, as.integer(floor(beta)))
+  beta_rem <- beta - (m_beta - 1)
+  res <- .brasil(function(x) x^(-beta_rem), c(spectrum_ratio, 1), order, tol = tol)
+  zr <- .bary_zeros(res$br)
+  pr <- .bary_poles(res$br)
+  xm <- (spectrum_ratio + 1) / 2
+  scale <- .bary_eval(res$br, xm) * prod(xm - pr) / prod(xm - zr)
+  list(
+    rb       = 1 / pr,            # denominator factors -> Pl
+    rc       = 1 / zr,            # numerator factors   -> Pr
+    scale    = scale,
+    m_beta   = m_beta,
+    beta_rem = beta_rem,
+    error    = res$error          # rational approximation error of x^{-beta_rem}
+  )
+}
