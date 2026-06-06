@@ -236,6 +236,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     const int refresh = (hessian_refresh > 1) ? hessian_refresh : 1;
     const bool reuse_enabled = (refresh > 1) && (pd_mode == JointPDMode::LM);
     bool have_factor = false;
+    NewtonConvState conv_state;
 
     for (int iter = 0; iter < max_iter; iter++) {
         { TULPA_PROFILE_PHASE(PHASE_ETA);
@@ -315,7 +316,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
           ); }
 
         result.n_iter = iter + 1;
-        if (max_abs_step(scratch.delta, step_scale, n_x) < tol) {
+        if (newton_converged(scratch.delta, scratch.grad, step_scale, n_x, tol,
+                             conv_state)) {
             result.converged = true;
             break;
         }

@@ -302,6 +302,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         std::vector<bool> converged(B, false);
         std::vector<double> obj(B, -1e300);
         std::vector<bool> obj_valid(B, false);
+        std::vector<NewtonConvState> conv_state(B);
 
         for (int iter = 0; iter < max_iter; iter++) {
             // 1. compute per-species etas into wbuf (species-major).
@@ -350,7 +351,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 double step = step_halving_update(st[s].x, st[s].delta, n_x,
                                                   obj[s], eval_obj, obj[s], st[s].x_try);
                 n_iter[s][kg] = iter + 1;
-                if (max_abs_step(st[s].delta, step, n_x) < tol) converged[s] = true;
+                if (newton_converged(st[s].delta, grad, step, n_x, tol, conv_state[s]))
+                    converged[s] = true;
             }
             bool all_conv = true;
             for (int s = 0; s < B; s++) if (!converged[s]) { all_conv = false; break; }

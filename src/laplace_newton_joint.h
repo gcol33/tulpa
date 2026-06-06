@@ -359,6 +359,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
 
     double obj_current = -1e300;
     bool obj_valid = false;
+    NewtonConvState conv_state;
 
     for (int iter = 0; iter < max_iter; iter++) {
         compute_eta_joint(x, scratch.etas);
@@ -387,7 +388,8 @@ LaplaceResult laplace_newton_solve_joint_ll(
         );
 
         result.n_iter = iter + 1;
-        if (max_abs_step(scratch.delta, step_scale, n_x) < tol) {
+        if (newton_converged(scratch.delta, scratch.grad, step_scale, n_x, tol,
+                             conv_state)) {
             result.converged = true;
             break;
         }

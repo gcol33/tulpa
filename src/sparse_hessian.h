@@ -298,6 +298,7 @@ LaplaceResult laplace_newton_solve_sparse(
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& solver = shared_solver ? *shared_solver : local_solver;
+    NewtonConvState conv_state;
 
     for (int iter = 0; iter < max_iter; iter++) {
         { TULPA_PROFILE_PHASE(PHASE_ETA);
@@ -365,7 +366,7 @@ LaplaceResult laplace_newton_solve_sparse(
           ); }
 
         result.n_iter = iter + 1;
-        if (max_abs_step(delta, step_scale, n_x) < tol) {
+        if (newton_converged(delta, grad, step_scale, n_x, tol, conv_state)) {
             result.converged = true;
             break;
         }

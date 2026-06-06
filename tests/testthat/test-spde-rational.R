@@ -113,11 +113,13 @@ test_that("the precomputed C++ SPDE fit recovers a fractional-Matern field", {
     Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
     family = "gaussian", phi = 0.09)
 
-  # Field recovery is the correctness proof for the C++ precomputed solve
-  # consuming the R-assembled (Q, A_eff). The Newton `converged` flag can read
-  # FALSE on the rational precision's wide spectrum (preconditioning is the
-  # production refinement, stage 4+); the recovered field is what matters here.
-  expect_gt(fit$n_iter, 0L)
+  # The rational precision Q = Pl' Ci Pl squares cond(Pl), so the combined
+  # Hessian is extremely ill-conditioned (cond ~ 1e13) and the Cholesky solve
+  # loses enough digits that the step-norm criterion thrashes under step
+  # halving. The affine-invariant stalled-decrement path in newton_converged()
+  # detects that the mode has been found to the conditioning limit, so the fit
+  # converges; the recovered field is the correctness proof.
+  expect_true(fit$converged)
   x_hat <- fit$mode[-1]                           # drop the intercept
   u_hat <- as.numeric(asm$Pr %*% x_hat)
   expect_gt(cor(u_hat, u_true), 0.9)

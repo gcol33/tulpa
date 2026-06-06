@@ -15,6 +15,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace tulpa {
@@ -89,13 +90,69 @@ inline double step_halving_update(
     return 1.0;
 }
 
-// Maximum |step_scale * delta_j| - used as the Newton convergence criterion.
+// Maximum |step_scale * delta_j|. The historic Newton convergence criterion:
+// the largest absolute coordinate of the taken step. Scale-dependent, so it is
+// inflated when H is ill-conditioned (see newton_converged below).
 inline double max_abs_step(const std::vector<double>& delta, double step_scale, int n_x) {
     double m = 0.0;
     for (int j = 0; j < n_x; j++) {
         m = std::max(m, std::abs(step_scale * delta[j]));
     }
     return m;
+}
+
+// Newton decrement lambda^2 = grad' H^{-1} grad = grad . delta, the predicted
+// increase of the (concave) log-posterior from the full Newton step. It is the
+// affine-invariant measure of distance to the mode (Boyd & Vandenberghe,
+// Convex Optimization, sec. 9.5.1): unlike max|delta| it is unaffected by a
+// linear reparameterization, hence by the conditioning of H. Non-negative since
+// H is PD.
+inline double newton_decrement(const std::vector<double>& grad,
+                               const std::vector<double>& delta, int n_x) {
+    double d = 0.0;
+    for (int j = 0; j < n_x; j++) d += grad[j] * delta[j];
+    return d;
+}
+
+// Near-mode gate and patience for the stalled-decrement convergence path below.
+// The gate (predicted objective gain < 1e-6) marks "essentially at a mode"; the
+// patience is how many consecutive non-halving iterations past the gate count as
+// a conditioning-limited stall rather than ongoing progress.
+inline constexpr double NEWTON_NEARMODE_GATE  = 1e-6;
+inline constexpr int    NEWTON_STALL_PATIENCE = 5;
+
+// Per-solve state for the Newton convergence test (decrement history). One
+// instance lives for the duration of a single Newton solve; the batch solver
+// keeps one per stream.
+struct NewtonConvState {
+    double prev_decrement = std::numeric_limits<double>::infinity();
+    int    stalled = 0;
+};
+
+// Newton convergence test, the single source of truth for every solver. Two
+// paths:
+//   1. max|delta| < tol -- the historic step criterion. On a well-conditioned
+//      solve this fires exactly when it always did, so those fits are unchanged.
+//   2. a stalled decrement -- the affine-invariant rescue for an ill-conditioned
+//      H (a high-order rational SPDE precision Q = Pl' Ci Pl, which squares
+//      cond(Pl); a near-singular GMRF). There the Cholesky solve loses too many
+//      digits for the step to ever fall below tol, and step halving thrashes,
+//      yet the mode is found. We declare convergence only once the decrement is
+//      near-mode (< gate) AND has failed to halve for `patience` straight
+//      iterations -- the signature of a solve that has extracted all the
+//      accuracy its conditioning allows. A well-conditioned fit trips path 1 the
+//      moment it crosses the gate, so its stall counter never reaches patience;
+//      path 2 cannot preempt it.
+inline bool newton_converged(const std::vector<double>& delta,
+                             const std::vector<double>& grad,
+                             double step_scale, int n_x, double tol,
+                             NewtonConvState& st) {
+    if (max_abs_step(delta, step_scale, n_x) < tol) return true;
+    double dec = newton_decrement(grad, delta, n_x);
+    bool improved = dec < st.prev_decrement * 0.5;
+    st.prev_decrement = dec;
+    if (dec >= NEWTON_NEARMODE_GATE || improved) { st.stalled = 0; return false; }
+    return ++st.stalled >= NEWTON_STALL_PATIENCE;
 }
 
 // Laplace log-marginal: log_lik + log_prior - 0.5 log|H| + 0.5 n log(2 pi).
