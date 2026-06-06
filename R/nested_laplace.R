@@ -443,6 +443,30 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     )
   ),
 
+  iid = list(
+    # Unstructured (iid) Gaussian latent, integrated over a single sigma axis.
+    # Multi-block-only: there is no single-arm iid kernel (a lone iid field is a
+    # plain random intercept). Reached via .nl_dispatch_multi -- the C++
+    # build_blocks_from_spec builds the block with d_fac(k) = sigma_k and an
+    # N(0, 1) prior. A one-point sigma_grid conditions the field at a FIXED
+    # sigma (an EM-estimated random-effect term on a nested block carries its
+    # own grid this way; see .fit_block_via_nested_laplace).
+    cpp_fn = NULL,
+    defaults = function(p, a) {
+      if (is.null(p$sigma_grid)) {
+        p$sigma_grid <- exp(seq(log(0.1), log(3), length.out = 5))
+      }
+      p
+    },
+    pack = function(p) stop(
+      "iid is only supported inside a multi-block latent prior on the ",
+      "nested-Laplace path. Pass it as one element of a block list to ",
+      "tulpa_nested_laplace(prior = list(...), ...).",
+      call. = FALSE
+    ),
+    theta = function(p) list(grid = as.numeric(p$sigma_grid), names = "sigma")
+  ),
+
   hsgp = list(
     cpp_fn = "cpp_nested_laplace_hsgp",
     defaults = function(p, a) {

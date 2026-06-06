@@ -202,25 +202,56 @@
     block$n_trials
   }
 
+  # RE terms. The first term rides the kernel's built-in iid RE slot
+  # (re_idx / n_re_groups / sigma_re); any further terms (e.g. crossed site +
+  # year intercepts on one arm) become fixed-sigma `iid` latent blocks appended
+  # to the prior. An iid block with a one-point sigma_grid has d_fac = sigma
+  # constant, so it conditions on the term's current (EM-estimated) sigma
+  # exactly like the built-in slot -- the latent stack becomes
+  # [beta | RE_1 | <field block(s)> | RE_2 | ... | RE_K]. Each EM iteration
+  # rebuilds the blocks at the updated per-term sigma. Single-term models keep
+  # the built-in-only path (byte-identical to before). Random *slopes* on a
+  # nested block stay unsupported here (gcol33/tulpa#28); only intercept terms
+  # (n_coefs == 1) route this way.
   re_idx <- 0L
   n_re_groups <- 0L
   sigma_re <- 1.0
+  extra_re_blocks <- list()
   if (!is.null(block$re_list) && length(block$re_list) > 0L) {
-    if (length(block$re_list) > 1L) {
-      stop("Multi-term `re_list` on a nested-Laplace block is not yet ",
-           "supported. Use a single RE term or fold additional RE ",
-           "structure into the multi-block `prior`.", call. = FALSE)
+    nc <- vapply(block$re_list, function(r) as.integer(r$n_coefs %||% 1L),
+                 integer(1))
+    if (any(nc > 1L)) {
+      stop("Random slopes (correlated / uncorrelated `(x | g)`) on a ",
+           "nested-Laplace block are not supported (gcol33/tulpa#28). ",
+           "All RE terms on a nested block must be random intercepts.",
+           call. = FALSE)
     }
     re_idx      <- as.integer(block$re_list[[1]]$idx)
     n_re_groups <- as.integer(block$re_list[[1]]$n_groups)
     sigma_re    <- as.numeric(block$re_list[[1]]$sigma)
+    if (length(block$re_list) > 1L) {
+      extra_re_blocks <- lapply(block$re_list[-1L], function(r) list(
+        type       = "iid",
+        obs_idx    = as.integer(r$idx),
+        n_units    = as.integer(r$n_groups),
+        sigma_grid = as.numeric(r$sigma)   # one-point grid -> fixed sigma
+      ))
+    }
+  }
+
+  # Compose the prior. A single field block stays single-block; extra RE terms
+  # promote it to a multi-block list [field, iid_2, ..., iid_K].
+  prior <- block$prior
+  if (length(extra_re_blocks) > 0L) {
+    field_blocks <- if (!is.null(prior$type)) list(prior) else prior
+    prior <- c(field_blocks, extra_re_blocks)
   }
 
   args <- list(
     y           = block$y,
     n_trials    = n_trials,
     X           = block$X,
-    prior       = block$prior,
+    prior       = prior,
     re_idx      = re_idx,
     n_re_groups = n_re_groups,
     sigma_re    = sigma_re,
