@@ -2,6 +2,13 @@
 // GPU acceleration for GP computations
 // Supports CUDA (NVIDIA) and OpenCL (cross-platform)
 //
+// STATUS (gcol33/tulpa#77): opt-in roadmap backend. CPU is the default and only
+// active path; the CUDA primitives (gpu_cuda.h) are compiled in only under
+// TULPA_ENABLE_CUDA and are not yet dispatched to by any sampler. The
+// CUDA-disabled definitions below are deliberate CPU-fallback stubs (so the
+// header always compiles), and OpenCL is a placeholder. Kept as roadmap surface
+// for the GPU dispatch path; see gpu_cuda.h for the batched-Cholesky targets.
+//
 // Uses RUNTIME detection - works even if user installs CUDA/OpenCL after
 // installing tulpa. No recompilation needed.
 //
