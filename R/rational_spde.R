@@ -38,7 +38,7 @@
 #' the degree-`(m, m)` best uniform (minimax) rational approximation of
 #' `x^{-beta_rem}`, computed by the BRASIL algorithm (Hofreither 2021); its
 #' numerator zeros map to `rc = 1 / zero` and denominator poles to `rb = 1 / pole`.
-#' The field assembly from these roots is [.spde_rational_assemble()]; it is
+#' The field assembly from these roots is `.spde_rational_assemble()`; it is
 #' validated against the Matern spectral density in `test-spde-rational.R`.
 #'
 #' @references
@@ -141,7 +141,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 .SPDE_VARNORM_NPROBE <- 100L
 .SPDE_VARNORM_SEED   <- 20240601L
 
-#' Mean marginal variance of the rSPDE field u = Pr x, x ~ N(0, Q^{-1})
+#' Mean marginal variance of the rSPDE field u = Pr x, x ~ N(0, Q^-1)
 #'
 #' Estimates `mean_i [Pr Q^{-1} Pr']_ii = tr(Pr Q^{-1} Pr') / n` by Hutchinson
 #' probing: for `z ~ N(0, I)`, `a = Pr' z`, `Q v = a`, then `E[a' v] = tr(...)`.
@@ -177,7 +177,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' NUTS, marginal SEs). Maps `(range, sigma)` to the SPDE hyperparameters
 #' `kappa = sqrt(8 nu) / range`, builds the latent precision `Q = Pl' C^{-1} Pl`
 #' and field shift `Pr` (field `u = Pr x`) from the validated R oracle
-#' [.spde_rational_assemble()], then **normalizes the field to marginal variance
+#' `.spde_rational_assemble()`, then **normalizes the field to marginal variance
 #' `sigma^2`**. The rational construction is correct in spectral shape but its
 #' overall scale carries kappa-dependent constants (the `l_max` normalization,
 #' the per-factor conditioning rescalings); without the variance normalization
@@ -271,7 +271,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' determinants are individually corrupted by the rational precision's wide
 #' spectrum (cond ~ 1e16) in a range-dependent way -- so range is unidentifiable
 #' from it. This computes the same marginal through the matrix-determinant lemma:
-#'   log|Q| - log|H| = -log|I + W^{1/2} (X X'/tau_beta + A_eff Q^{-1} A_eff') W^{1/2}|,
+#'   log|Q| - log|H| = -log|I + W^(1/2) (X X'/tau_beta + A_eff Q^-1 A_eff') W^(1/2)|,
 #' an `n_obs x n_obs` determinant of `I + PSD` that is well-conditioned. The cross
 #' term `A_eff Q^{-1} A_eff' = (A_eff Pl^{-1}) C (A_eff Pl^{-1})'` is formed
 #' through the operator factor `Pl` (condition number the square root of `Q`'s),

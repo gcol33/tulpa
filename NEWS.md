@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.13 (2026-06-06)
+
+* fix(check): clears every `R CMD check --as-cran` ERROR and WARNING. The
+  joint-NUTS fractional-nu test now asserts the rejection at the fit call --
+  the spec constructor accepts fractional nu since the rational SPDE landed
+  (gcol33/tulpa#71); the performance-core test drops an assertion comparing a
+  hardware core count against the OpenMP-capped thread limit. Rd: a dangling
+  `\link` and lost-brace math in the rational-SPDE docs are fixed; NAMESPACE
+  gains `importFrom(utils, flush.console)` / `importFrom(stats, vcov)`; the
+  `tulpa_sample_glmm()` offset is passed by its full name (`offset_nullable`).
+* fix(build): the Windows precompiled header now rebuilds when `Makevars.win`
+  changes, so a `.gch` left from an earlier flag set is no longer silently
+  rejected ("created and used with differing settings") and re-parsed in every
+  translation unit -- restoring the PCH speedup (cold compile ~70s -> ~61s).
+
 ## 0.0.12 (2026-06-06)
 
 * feat(progress): unified iteration progress + ETA across every fitting loop

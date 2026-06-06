@@ -24,7 +24,7 @@ Shared by every fractional-\code{nu} fit path (Laplace single-point, nested,
 NUTS, marginal SEs). Maps \verb{(range, sigma)} to the SPDE hyperparameters
 \verb{kappa = sqrt(8 nu) / range}, builds the latent precision \verb{Q = Pl' C^\{-1\} Pl}
 and field shift \code{Pr} (field \verb{u = Pr x}) from the validated R oracle
-\code{\link[=.spde_rational_assemble]{.spde_rational_assemble()}}, then \strong{normalizes the field to marginal variance
+\code{.spde_rational_assemble()}, then \strong{normalizes the field to marginal variance
 \code{sigma^2}}. The rational construction is correct in spectral shape but its
 overall scale carries kappa-dependent constants (the \code{l_max} normalization,
 the per-factor conditioning rescalings); without the variance normalization

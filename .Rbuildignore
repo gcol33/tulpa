@@ -10,6 +10,8 @@
 ^CLAUDE\.md$
 ^api\.md$
 ^\.claude$
+^claude$
+^check-.*\.log$
 ^\.code-review-graph$
 ^\.vscode$
 ^\.lintr$

@@ -2,7 +2,7 @@
 % Please edit documentation in R/rational_spde.R
 \name{.spde_mean_marginal_var}
 \alias{.spde_mean_marginal_var}
-\title{Mean marginal variance of the rSPDE field u = Pr x, x ~ N(0, Q^{-1})}
+\title{Mean marginal variance of the rSPDE field u = Pr x, x ~ N(0, Q^-1)}
 \usage{
 .spde_mean_marginal_var(Q, Pr, C0, n_probe = .SPDE_VARNORM_NPROBE)
 }

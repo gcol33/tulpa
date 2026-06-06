@@ -13,7 +13,13 @@ PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)
 # guarded -include tulpa_pch.h in PKG_CPPFLAGS is a no-op while building the
 # header itself. -Winvalid-pch downgrades a flag mismatch to a warning plus a
 # normal compile, so a stale or rejected .gch never breaks the build.
-tulpa_pch.h.gch: tulpa_pch.h
+#
+# Depend on Makevars.win: a .gch left over from a build under different flags is
+# rejected by GCC ("created and used with differing settings"), silently
+# disabling the PCH for every TU. Listing this file as a prerequisite rebuilds
+# the .gch whenever the flag set here changes, so the consuming compiles always
+# see a .gch made with the current flags.
+tulpa_pch.h.gch: tulpa_pch.h Makevars.win
 	$(CXX) $(ALL_CPPFLAGS) $(ALL_CXXFLAGS) -x c++-header tulpa_pch.h -o tulpa_pch.h.gch
 
 $(OBJECTS): tulpa_pch.h.gch

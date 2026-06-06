@@ -354,18 +354,22 @@ test_that("joint NUTS round-trip: output structure matches contract", {
 })
 
 # ---------------------------------------------------------------------------
-# Fractional alpha (fractional nu) is gated: the wired rational assembly
-# collapses to an integer alpha = 2 field, so it cannot represent fractional
-# smoothness (gcol33/tulpa#71). The spec constructor rejects fractional nu.
+# Fractional alpha (fractional nu) builds a valid spec now that the operator-
+# based rational SPDE is wired through fit_spde() (gcol33/tulpa#71). The NUTS
+# sampler stays integer-only, so the rejection lives at the fit call.
 # ---------------------------------------------------------------------------
 test_that("fractional nu is rejected for the joint-NUTS SPDE path (gcol33/tulpa#71)", {
   skip_if_not_installed("fmesher")
   set.seed(2026)
   coords <- cbind(runif(40), runif(40))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.30, 0.7), cutoff = 0.15,
+                                nu = 0.5)
+  y <- rnorm(40)
+  X <- matrix(1.0, nrow = 40, ncol = 1)
   expect_error(
-    helper_make_spde_spec(coords, max_edge = c(0.30, 0.7), cutoff = 0.15,
-                          nu = 0.5),
-    "Fractional SPDE"
+    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
+                    joint = TRUE, n_iter = 50L, n_warmup = 25L),
+    "fractional"
   )
 })
 

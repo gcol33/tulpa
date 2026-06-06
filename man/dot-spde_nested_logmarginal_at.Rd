@@ -29,7 +29,7 @@ The precision-space Laplace marginal needs \verb{0.5(log|Q| - log|H|)}, whose tw
 determinants are individually corrupted by the rational precision's wide
 spectrum (cond ~ 1e16) in a range-dependent way -- so range is unidentifiable
 from it. This computes the same marginal through the matrix-determinant lemma:
-log|Q| - log|H| = -log|I + W^{1/2} (X X'/tau_beta + A_eff Q^{-1} A_eff') W^{1/2}|,
+log|Q| - log|H| = -log|I + W^(1/2) (X X'/tau_beta + A_eff Q^-1 A_eff') W^(1/2)|,
 an \verb{n_obs x n_obs} determinant of \code{I + PSD} that is well-conditioned. The cross
 term \verb{A_eff Q^\{-1\} A_eff' = (A_eff Pl^\{-1\}) C (A_eff Pl^\{-1\})'} is formed
 through the operator factor \code{Pl} (condition number the square root of \code{Q}'s),

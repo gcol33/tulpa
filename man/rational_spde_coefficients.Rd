@@ -49,7 +49,7 @@ on the scaled spectrum, \code{beta_rem = beta - (m_beta - 1)}. The roots come fr
 the degree-\verb{(m, m)} best uniform (minimax) rational approximation of
 \code{x^{-beta_rem}}, computed by the BRASIL algorithm (Hofreither 2021); its
 numerator zeros map to \code{rc = 1 / zero} and denominator poles to \code{rb = 1 / pole}.
-The field assembly from these roots is \code{\link[=.spde_rational_assemble]{.spde_rational_assemble()}}; it is
+The field assembly from these roots is \code{.spde_rational_assemble()}; it is
 validated against the Matern spectral density in \code{test-spde-rational.R}.
 }
 \references{

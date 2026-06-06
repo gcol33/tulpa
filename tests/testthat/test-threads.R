@@ -7,8 +7,11 @@ test_that("performance-core count is a sane value or NA", {
     if (is.na(pc)) {
         succeed()  # topology unresolved (off Windows) -- caller falls back
     } else {
-        expect_true(pc >= 1L)
-        expect_true(pc <= cpp_get_max_threads())
+        # A hardware-topology count read directly from the OS, so it is bounded
+        # by physical cores, not the OpenMP/R runtime cap: under `--as-cran`
+        # cpp_get_max_threads() is throttled to 2 while the true P-core count is
+        # not, so comparing the two is a category error. Sane absolute bound only.
+        expect_true(pc >= 1L && pc <= 1024L)
     }
 })
 
