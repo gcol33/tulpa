@@ -294,6 +294,31 @@ NULL
   n_obs  <- nrow(X)
   n_mesh <- spatial$n_mesh
   beta   <- mode[seq_len(p)]
+  tau_re <- 1 / (sigma_re^2 + 1e-10)
+
+  # Fractional nu: the operator-based rational field (gcol33/tulpa#71; #85). The
+  # latent is the auxiliary weight vector x ~ N(0, Q_rat^{-1}) on the non-orphan
+  # submesh, with obs -> latent map A_eff = A Pr; the field is u = Pr x. The
+  # marginal-beta Schur is parameterisation-invariant, so it runs on (A_eff,
+  # Q_rat) exactly as the integer path runs on (A, Q_spde). eta at the mode reads
+  # off the field-space mesh block (A w = A_eff x), so W needs no x.
+  if (.spde_nu_is_fractional(spatial$nu)) {
+    order <- spatial$rational_order %||% 2L
+    asm   <- .spde_assemble_at(spatial, range_val, sigma_val, order = order)
+    A_full     <- as(spatial$A, "CsparseMatrix")
+    D_re       <- .re_design(re_idx, n_re_groups, n_obs)
+    u_re       <- if (n_re_groups > 0L) mode[p + seq_len(n_re_groups)] else numeric(0)
+    field_full <- mode[p + n_re_groups + seq_len(n_mesh)]
+    eta <- as.numeric(X %*% beta) +
+           (if (n_re_groups > 0L) as.numeric(D_re %*% u_re) else 0) +
+           as.numeric(A_full %*% field_full)
+    W <- glmm_weights(eta, family, n_trials, phi)
+    if (!is.null(weights)) W <- W * weights
+    Q_latent <- Matrix::bdiag(Matrix::Diagonal(n_re_groups, x = tau_re), asm$Q)
+    D        <- cbind(D_re, asm$A_eff)
+    return(.schur_H_beta(X, D, Q_latent, W))
+  }
+
   u      <- mode[p + seq_len(n_re_groups + n_mesh)]
 
   A       <- as(spatial$A, "CsparseMatrix")
@@ -308,7 +333,6 @@ NULL
   # Q_spde at the (range, sigma) used in the fit
   kappa    <- sqrt(8 * spatial$nu) / range_val
   tau_spde <- 1 / (sqrt(4 * pi) * kappa * sigma_val)
-  tau_re   <- 1 / (sigma_re^2 + 1e-10)
   Q_latent <- Matrix::bdiag(
     Matrix::Diagonal(n_re_groups, x = tau_re),
     .spde_precision_Q(spatial, kappa, tau_spde)

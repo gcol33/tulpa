@@ -246,6 +246,61 @@ test_that("tulpa_laplace returns finite PD H_beta for SPDE (#16)", {
   expect_null(fit_noH$H_beta)
 })
 
+test_that("tulpa_laplace returns marginal H_beta for a fractional-nu SPDE (#85)", {
+  skip_if_not_installed("tulpaMesh")
+
+  set.seed(7)
+  n      <- 200
+  coords <- cbind(runif(n), runif(n))
+  X      <- cbind(1, rnorm(n), rnorm(n))
+  beta_true <- c(0.3, -0.6, 1.0)
+  d <- as.matrix(dist(coords))
+  w_true <- as.numeric(t(chol(exp(-d / 0.25) + diag(1e-6, n))) %*% rnorm(n))
+  eta <- as.numeric(X %*% beta_true) + 0.7 * w_true
+  y   <- rbinom(n, 1, plogis(eta))
+
+  mesh    <- tulpaMesh::tulpa_mesh(coords, max_edge = c(0.1, 0.3), cutoff = 0.03)
+  # nu = 0.5 -> alpha = 1.5 (fractional, the rational SPDE path).
+  spatial <- spatial_spde(coords, mesh = mesh, nu = 0.5,
+                          prior_range = c(0.25, 0.5), prior_sigma = c(1.0, 0.5))
+  expect_true(tulpa:::.spde_nu_is_fractional(spatial$nu))
+
+  fit <- tulpa_laplace(y = y, n_trials = rep(1L, n), X = X,
+                       family = "binomial", spatial = spatial,
+                       max_iter = 100L, tol = 1e-6, return_hessian = TRUE)
+
+  expect_false(is.null(fit$H_beta))
+  expect_equal(dim(fit$H_beta), c(ncol(X), ncol(X)))
+  expect_true(all(is.finite(fit$H_beta)) && isSymmetric(fit$H_beta, tol = 1e-8))
+  ev <- eigen(fit$H_beta, symmetric = TRUE, only.values = TRUE)$values
+  expect_true(all(ev > 0))
+  sd <- sqrt(diag(solve(fit$H_beta)))
+  expect_true(all(is.finite(sd) & sd > 0 & sd < 5))
+
+  # Strong wiring check: fit$H_beta must equal the Schur marginal precision of an
+  # INDEPENDENTLY assembled joint Hessian over (beta, auxiliary field x), built
+  # from the rational assembly at the fitted (range, sigma). The marginal beta
+  # covariance solve(H_beta) must match the beta-block of the full joint
+  # posterior covariance.
+  p <- ncol(X)
+  asm   <- tulpa:::.spde_assemble_at(spatial, fit$range, fit$sigma,
+                                     order = spatial$rational_order %||% 2L)
+  A_full  <- as(spatial$A, "CsparseMatrix")
+  beta_h  <- fit$mode[seq_len(p)]
+  field_h <- fit$mode[p + seq_len(spatial$n_mesh)]
+  eta_h   <- as.numeric(X %*% beta_h) + as.numeric(A_full %*% field_h)
+  W       <- tulpa:::glmm_weights(eta_h, "binomial", rep(1L, n), 1.0)
+  D       <- as(asm$A_eff, "CsparseMatrix")
+  XtWX <- crossprod(X, W * X)
+  XtWD <- as.matrix(Matrix::crossprod(X, W * D))
+  DtWD <- Matrix::crossprod(D, W * D)
+  P_uu <- as.matrix(Matrix::forceSymmetric(DtWD + asm$Q))
+  full <- rbind(cbind(as.matrix(XtWX), XtWD),
+                cbind(t(XtWD),         P_uu))
+  beta_cov_full <- solve(full)[seq_len(p), seq_len(p)]
+  expect_equal(unname(solve(fit$H_beta)), unname(beta_cov_full), tolerance = 1e-5)
+})
+
 # =====================================================================
 # Nested Laplace for SPDE: 2D grid over (range, sigma)
 # =====================================================================
