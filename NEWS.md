@@ -1,5 +1,11 @@
 # tulpa NEWS
 
+## 0.0.16 (2026-06-07)
+
+* Tagged release of the grouped beta sufficient-statistic joint interface
+  (`slog_y` / `slog_1my`, added in 0.0.15) so consumer packages can pin a
+  released engine; consumed by tulpaObs `aggregate.pos`. No engine code change.
+
 ## 0.0.15 (2026-06-07)
 
 * feat(laplace): the joint nested-Laplace engine accepts optional grouped beta
