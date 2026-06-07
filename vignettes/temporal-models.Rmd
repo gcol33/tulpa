@@ -67,12 +67,14 @@ path: write down the model, simulate a known trend, fit, check the recovery,
 read the uncertainty honestly, predict, and compare against a model with no
 time term.
 
-A note on scope before we start. The front-door route through `tulpa()`
-currently carries the first-order random walk, `temporal_rw1()`. The second-order
-walk, the autoregressive process, panel (per-group) trends, and a temporal field
-sitting alongside a spatial field each raise a clean error and point you at the
-direct fitters. The closing section says what each of those is for. Everything
-shown here runs on `temporal_rw1()`.
+A note on scope before we start. The front-door route through `tulpa()` carries
+the first- and second-order random walks and the autoregressive process,
+`temporal_rw1()`, `temporal_rw2()`, and `temporal_ar1()`. A panel (per-group)
+trend runs through the same door, and a temporal field can sit beside an areal
+(ICAR, BYM2, CAR) spatial field. Pairing a panel trend with a spatial field, or a
+temporal field with a continuous (GP, NNGP, HSGP) or SPDE spatial field, raises a
+clean error and points you at the direct fitters. The main example below uses
+`temporal_rw1()`; the closing section runs the others.
 
 ## The model
 
@@ -482,18 +484,19 @@ c(no_temporal = as.numeric(logLik(m_nt)), temporal = evidence_temporal)
 
 The temporal model carries substantially higher evidence, matching the fact that
 a trend really was in the data. `compare_models()` ranks fits by a shared
-criterion and runs on base fits.
+criterion, reading each one's `logLik()`.
 
 ```{r compare}
 cmp <- compare_models(no_temporal = m_nt,
-                      temporal = m_nt,
+                      temporal = fit,
                       criterion = "loglik")
-cmp[cmp$model == "no_temporal", ]
+cmp
 ```
 
-On a nested fit `compare_models()` and `logLik()` expand to the per-grid vector,
-so for a single headline number the log-sum-exp evidence above is the clean
-summary to quote alongside the non-temporal `logLik()`.
+On the nested temporal fit `logLik()` returns the integrated evidence, the
+log-sum-exp of `$log_marginal` computed above, so `compare_models()` carries one
+row per model and reproduces the manual comparison alongside the non-temporal
+`logLik()`.
 
 A word on what this comparison settles. The marginal likelihood already
 integrates over the walk and its smoothing precision, so it charges the temporal

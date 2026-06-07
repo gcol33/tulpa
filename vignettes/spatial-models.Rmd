@@ -488,13 +488,12 @@ the field is not rewarded for free. It has to pay for its parameters
 through the integration and still come out ahead, which guards against the
 overfitting that a raw goodness-of-fit comparison would invite.
 
-`compare_models()` ranks base fits by `criterion = "loglik"` and is handy
-when both sides report a scalar log-likelihood. On a nested fit it expands
-to one row per grid point rather than collapsing to the integrated
-evidence, so for the areal-versus-flat question the log-sum-exp above is
-the cleaner read. The same comparison runs for two spatial models, an ICAR
-against a BYM2 for instance, by taking the log-sum-exp of each fit's
-`$log_marginal` and differencing.
+`compare_models()` ranks fits by `criterion = "loglik"`, reading each fit's
+`logLik()`. On a nested fit `logLik()` returns the integrated evidence, the
+log-sum-exp of `$log_marginal` shown above, so `compare_models()` reports one row
+per model and the areal-versus-flat ranking matches the manual differencing. The
+same comparison runs for two spatial models, an ICAR against a BYM2 for instance,
+by taking the log-sum-exp of each fit's `$log_marginal` and differencing.
 
 ## Practical guidance
 
@@ -512,8 +511,9 @@ actionable.
 
 - **Check the graph is connected.** A field on a disconnected adjacency
   splits into independent pieces, each pinned to its own floating level,
-  and the intercept can no longer anchor them jointly. `is_connected(W)`
-  flags this before you fit.
+  and the intercept can no longer anchor them jointly. The number of zero
+  eigenvalues of the graph Laplacian `diag(rowSums(W)) - W` counts the
+  connected components; more than one means the graph is split.
 
 - **Read slopes, never the intercept, under ICAR.** The intercept
   confounds with the field level and its standard error runs to the

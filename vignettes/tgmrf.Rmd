@@ -520,9 +520,9 @@ outer layers all drive the same inner Laplace solve.
 INLA's `cgeneric` interface moves the precision factory to a C function,
 which is faster than `rgeneric` but still has no autodiff and still
 supports the Laplace tier only: there is no exact-MCMC support for a
-`cgeneric` block. The forthcoming `tgmrf_cpp()` constructor (noted below)
-is the closer analog on the speed axis, but it keeps the full-tier reach
-that `cgeneric` lacks.
+`cgeneric` block. The `tgmrf_cpp()` constructor (noted below) is the closer
+analog on the speed axis, and it keeps the full-tier reach that `cgeneric`
+lacks.
 
 Stan takes the opposite approach: you write the entire model in its DSL,
 which is then parsed and compiled to autodiffable C++. That gives exact
@@ -534,8 +534,8 @@ Gaussian-latent ones a Laplace approximation would handle cheaply.
 TMB is the closest analog: you write a templated C++ snippet and get
 autodiff through CppAD, with a Laplace approximation over the random
 effects. The `tgmrf()` R path is lighter (no C++, closed-form latent
-score from $Q$ rather than autodiff) and the planned `tgmrf_cpp()` path
-is the direct counterpart for hot inner loops. The distinguishing move
+score from $Q$ rather than autodiff) and the `tgmrf_cpp()` path is the
+direct counterpart for hot inner loops. The distinguishing move
 across all four comparisons is tulpa's nested-approximation-plus-debias
 design: the structured tier gives a cheap Laplace answer, and the same
 block escalates to an exact-tier correction when the diagnostic says the
@@ -548,16 +548,19 @@ approximation is biased, without rewriting anything.
 - No autodiff. Hyperparameter gradients are finite-difference.
 - No C++. The R closure path reaches every tier.
 
-The forthcoming `tgmrf_cpp()` constructor will offer a templated-C++
-backend with the same S3 contract for cases where the R-to-C boundary on
-`Q(theta)` becomes the bottleneck (large `n_latent`, hot CCD grids).
-The user-visible API does not change; the same downstream consumers
-(formula parser, inference layers, methods) treat the two paths
-identically.
+The `tgmrf_cpp()` constructor offers a templated-C++ backend with the
+same S3 contract for cases where the R-to-C boundary on `Q(theta)` becomes
+the bottleneck (large `n_latent`, hot CCD grids). It takes a `.cpp` file
+that defines the `Q`, `mu`, and log-prior kernels as templated C++ and
+registers them through the `TULPA_REGISTER_TGMRF` macro;
+`inst/examples/tgmrf_periodic_ar1.cpp` is a worked example. The
+user-visible API does not change; the same downstream consumers (formula
+parser, inference layers, methods) treat the two paths identically.
 
 ## See also
 
 - `?tgmrf`: constructor reference.
+- `?tgmrf_cpp`: compiled-C++ backend with the same S3 contract.
 - `?tulpa_nested_laplace`: Tier-2 grid integrator.
 - `?tulpa_tgmrf_imh`, `?tulpa_tgmrf_nuts`, `?tulpa_tgmrf_vi`: adapter family.
 - `inst/examples/tgmrf_periodic_ar1.R`: runnable script form of this vignette.
