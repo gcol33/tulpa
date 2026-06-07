@@ -38,10 +38,12 @@ public:
     // fields too large to densify (see icar_s2z_densify). Each entry is the
     // dense rank-1 `coef * 1_block 1_block'` on indices [start, start+n) that
     // the adjacency sparsity pattern cannot hold. The sparse Newton solvers
-    // fold them into the Newton step (Sherman-Morrison / Woodbury) and the
-    // Laplace log-det (matrix-determinant lemma) from the factor of the stored
-    // Hessian, so the result matches the dense full-11' path without storing
-    // 11'. Cleared each zero(); typically length 1 (one spatial field).
+    // fold them into the Newton step (Sherman-Morrison / Woodbury) from the
+    // factor of the stored Hessian, and into the Laplace log-det by factoring
+    // the well-conditioned `H + sum_k coef_k 1_k 1_k'` directly
+    // (s2z_log_det_direct), so the result matches the dense full-11' path
+    // without storing 11'. Cleared each zero(); typically length 1 (one
+    // spatial field).
     struct S2ZRank1 { int start; int n; double coef; };
     std::vector<S2ZRank1> s2z_rank1;
     void add_s2z_rank1(int start, int n, double coef) {
@@ -162,21 +164,27 @@ public:
     }
 };
 
-// Fold the registered sum-to-zero rank-1 penalties into a solve already taken
-// against the factor of A (the stored Hessian, WITHOUT the 11' terms). On entry
-// `delta` = A^{-1} grad; on return delta solves (A + sum_k c_k 1_k 1_k') x = grad
-// (Woodbury) and, if `log_det` is non-null (entry value log|A|), it receives
-// log|A + sum_k c_k 1_k 1_k'| (matrix-determinant lemma). One reuse-solve per
-// penalty against the cached factor; K = #penalties is the count of intrinsic
-// fields too large to densify (typically 1). Returns false on a non-finite
-// solve (caller keeps the uncorrected delta). The capacitance
-//   Cap = D^{-1} + U' A^{-1} U      (D = diag(coef), U = [1_block_k])
-// is SPD; a tiny dense Cholesky solves it and yields log|I + D U'A^{-1}U| =
-// sum_k log(coef_k) + log|Cap|.
+// Fold the registered sum-to-zero rank-1 penalties into a Newton STEP already
+// taken against the factor of A (the stored Hessian, WITHOUT the 11' terms). On
+// entry `delta` = A^{-1} grad; on return delta solves
+// (A + sum_k c_k 1_k 1_k') x = grad (Woodbury). One reuse-solve per penalty
+// against the cached factor; K = #penalties is the count of intrinsic fields too
+// large to densify (typically 1). Returns false on a non-finite solve (caller
+// keeps the uncorrected delta).
+//
+// The capacitance  Cap = D^{-1} + U' A^{-1} U  (D = diag(coef), U = [1_block_k])
+// is SPD; a tiny dense Cholesky solves it. This handles the STEP only. The
+// log-determinant is NOT computed here: the matrix-determinant-lemma form
+// log|A| + log|Cap| is a (-large)+(+large) cancellation along the constant
+// direction (A pins it only through LAPLACE_UNIFORM_RIDGE, so 1'A^{-1}1 ~ 1/ridge
+// and log|A| ~ log(ridge)). The step is unaffected (it is the Woodbury solution,
+// not a determinant), so it stays exact; the determinant is obtained separately
+// from a direct factorization of the well-conditioned A + UDU' (see
+// s2z_log_det_direct).
 inline bool apply_s2z_rank1_correction(
     SparseCholeskySolver& solver, int n_x,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-    double* delta, double* log_det
+    double* delta
 ) {
     const int K = static_cast<int>(r1.size());
     if (K == 0) return true;
@@ -242,13 +250,78 @@ inline bool apply_s2z_rank1_correction(
         for (int i = 0; i < n_x; ++i)
             delta[i] -= y[k] * W[k][i];
 
-    // log|A + UDU'| = log|A| + log|D| + log|Cap| = log|A| + sum log(coef) + 2 sum log L_ii.
-    if (log_det) {
-        double add = 0.0;
-        for (int k = 0; k < K; ++k) add += std::log(r1[k].coef) + 2.0 * std::log(L[k * K + k]);
-        *log_det += add;
-    }
     return true;
+}
+
+// Cancellation-free log-determinant for the sum-to-zero rank-1 penalties.
+//
+// Target: log|B|, B = A + sum_k coef_k 1_k 1_k', where A is the stored sparse
+// Hessian (lower-triangle CSC in `A_builder`, already carrying
+// LAPLACE_UNIFORM_RIDGE on its diagonal) and 1_k is the indicator of field block
+// k on [start_k, start_k + n_k).
+//
+// Identity: log|B| is read directly from a Cholesky factor of B itself, the same
+// well-conditioned matrix the dense densify path factors. This is exact and
+// cancellation-free because the constant direction the penalty pins is held in B
+// by coef_k 1_k 1_k' (an O(1) eigenvalue), not by the 1e-10 ridge that holds it
+// in A. The matrix-determinant-lemma form log|A| + log|D^{-1} + U'A^{-1}U| is
+// algebraically equal but numerically a (-large)+(+large) cancellation, because
+// each pinned direction sits at the ridge in A (1'A^{-1}1 ~ 1/ridge,
+// log|A| ~ log(ridge)). Factoring B directly never forms A^{-1} along 1, so no
+// catastrophic subtraction occurs.
+//
+// B's pattern = A's pattern with each block k densified to its full lower
+// triangle (where coef_k 1_k 1_k' has support). One symbolic+numeric
+// factorization per call; called once per grid cell. Returns log|B| on success.
+// On any failure (allocation, non-PD) returns `fallback` (the bare log|A| the
+// caller already holds) so the marginal stays finite.
+inline double s2z_log_det_direct(
+    const SparseHessianBuilder& A_builder,
+    const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+    double fallback
+) {
+    const int K = static_cast<int>(r1.size());
+    if (K == 0) return fallback;
+    const int n_x = A_builder.n;
+
+    // Assemble B = A + sum_k coef_k 1_k 1_k' in a fresh builder. The pattern is
+    // A's nonzeros plus each block's full lower triangle (the only entries the
+    // dense 1_k 1_k' touches), so the factor sees the same matrix the dense
+    // densify path stores.
+    std::vector<std::pair<int,int>> pattern;
+    pattern.reserve(A_builder.nnz);
+    for (int j = 0; j < n_x; ++j)
+        for (int p = A_builder.col_ptr[j]; p < A_builder.col_ptr[j + 1]; ++p)
+            pattern.emplace_back(A_builder.row_idx[p], j);
+    for (int k = 0; k < K; ++k) {
+        const int s = r1[k].start, nk = r1[k].n;
+        for (int i = 0; i < nk; ++i)
+            for (int j = 0; j <= i; ++j)
+                pattern.emplace_back(s + i, s + j);
+    }
+
+    SparseHessianBuilder B_builder;
+    B_builder.init(n_x, pattern);
+    B_builder.zero();
+    // Scatter A's stored values (lower triangle CSC).
+    for (int j = 0; j < n_x; ++j)
+        for (int p = A_builder.col_ptr[j]; p < A_builder.col_ptr[j + 1]; ++p)
+            B_builder.add(A_builder.row_idx[p], j, A_builder.values[p]);
+    // Add the dense rank-1 blocks coef_k 1_k 1_k' (lower triangle once each).
+    for (int k = 0; k < K; ++k) {
+        const int s = r1[k].start, nk = r1[k].n;
+        const double c = r1[k].coef;
+        for (int i = 0; i < nk; ++i)
+            for (int j = 0; j <= i; ++j)
+                B_builder.add(s + i, s + j, c);
+    }
+
+    SparseCholeskySolver B_solver;
+    cholmod_sparse B_cholmod = B_builder.as_cholmod(&B_solver.common());
+    B_solver.analyze(&B_cholmod);
+    if (!B_solver.factorize(&B_cholmod)) return fallback;
+    const double ld = B_solver.log_determinant();
+    return std::isfinite(ld) ? ld : fallback;
 }
 
 // =====================================================================
@@ -334,7 +407,7 @@ LaplaceResult laplace_newton_solve_sparse(
             { TULPA_PROFILE_PHASE(PHASE_SOLVE);
               solver.solve(grad.data(), delta.data(), n_x);
               apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
-                                         delta.data(), nullptr); }
+                                         delta.data()); }
             solve_ok = true;
             for (int j = 0; j < n_x; j++) {
                 if (!std::isfinite(delta[j])) { solve_ok = false; break; }
@@ -398,11 +471,11 @@ LaplaceResult laplace_newton_solve_sparse(
     if (final_fact_ok) {
         TULPA_PROFILE_PHASE(PHASE_LOG_DET);
         result.log_det_Q = solver.log_determinant();
-        // Fold the sum-to-zero rank-1 penalties into log|H| (det lemma). The
-        // delta arg is unused for the log-det (b = 0 -> no step change).
-        std::vector<double> s2z_scratch(n_x, 0.0);
-        apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
-                                   s2z_scratch.data(), &result.log_det_Q);
+        // Fold the sum-to-zero rank-1 penalties into log|H| by factoring the
+        // well-conditioned H + sum_k coef_k 1_k 1_k' directly (cancellation-free;
+        // see s2z_log_det_direct). Matches the dense full-11' path.
+        result.log_det_Q = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
+                                              result.log_det_Q);
     }
 
     double log_lik, log_prior;

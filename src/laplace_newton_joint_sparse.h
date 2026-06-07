@@ -38,6 +38,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #ifdef _OPENMP
@@ -288,7 +289,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
           // rank-1 is registered), so it has no factor to reuse.
           if (solve_ok && pd_mode == JointPDMode::LM)
               apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
-                                         scratch.delta.data(), nullptr);
+                                         scratch.delta.data());
         }
 
         if (!solve_ok) {
@@ -339,16 +340,33 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // PD-enforced final factorize so log_det is defined even when the mode sits
     // at an indefinite point (the delta is discarded here; we only need the
     // conditioned log-determinant for the log-marginal).
+    //
+    // Sum-to-zero rank-1 fields take the direct route: log|H + sum_k coef_k 1_k
+    // 1_k'| is read from a factor of that well-conditioned matrix (the constant
+    // direction is pinned by the rank-1 block, so it is PD on the base ridge and
+    // never triggers LM ridge escalation). This must be computed from the
+    // freshly-scattered base-ridge H, BEFORE joint_pd_step_solve mutates the
+    // diagonal: with the rank-1 left off the stored H, the constant direction of
+    // H is unpinned and joint_pd_step_solve escalates the ridge to factor it,
+    // which would inflate the determinant. Factoring H + 1 1' directly matches
+    // the dense full-1 1' path. LM only (the PSD path densifies the small
+    // Hessian and registers no rank-1).
+    const bool s2z_direct =
+        (pd_mode == JointPDMode::LM) && !H_builder.s2z_rank1.empty();
+    const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
+    double s2z_log_det = S2Z_NA;
+    if (s2z_direct) {
+        TULPA_PROFILE_PHASE(PHASE_LOG_DET);
+        s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
+                                         /*fallback=*/S2Z_NA);
+    }
     { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
       joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
                           scratch.grad.data(), scratch.delta.data(),
-                          &result.log_det_Q);
-      // Fold the sum-to-zero rank-1 penalties into log|H| (det lemma) so the
-      // sparse log-marginal matches the dense full-11' path. LM only (the PSD
-      // path has no reusable factor; it is small-n_x / densified anyway).
-      if (pd_mode == JointPDMode::LM)
-          apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
-                                     scratch.delta.data(), &result.log_det_Q); }
+                          &result.log_det_Q); }
+    // Prefer the cancellation-free direct factor; keep the PD-enforced value only
+    // if the direct factor was non-PD (NaN fallback).
+    if (s2z_direct && std::isfinite(s2z_log_det)) result.log_det_Q = s2z_log_det;
 
     double log_lik, log_prior;
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
