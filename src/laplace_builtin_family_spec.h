@@ -32,6 +32,12 @@ struct BuiltinFamilyResponse {
     std::string family;              // resolved against laplace_family_link.h
     double phi = 1.0;                // dispersion / precision / size
     const double* weights = nullptr; // [N] per-obs likelihood weights, or null (=> 1)
+    // Grouped beta sufficient statistics (gcol33/tulpaObs#49). When non-null and
+    // family == "beta", row i is an exact collapse of n_trials[i] exchangeable
+    // beta observations sharing this row's linear predictor; slog_y[i] = sum
+    // log(y), slog_1my[i] = sum log(1-y). Null => ungrouped per-obs path.
+    const double* slog_y = nullptr;
+    const double* slog_1my = nullptr;
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
@@ -43,6 +49,10 @@ inline double builtin_family_ll_double(
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
+    if (r->slog_y && r->family == "beta") {
+        return log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt,
+                                    eta[0], r->phi);
+    }
     return log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi);
 }
 
@@ -62,7 +72,9 @@ inline void builtin_family_eta_weights(
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
-    const GradHess gh = grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi);
+    const GradHess gh = (r->slog_y && r->family == "beta")
+        ? grad_hess_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
+        : grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi);
     const double w = r->weights ? r->weights[i] : 1.0;
     grad_eta[0]     = w * gh.grad;
     neg_hess_eta[0] = w * gh.neg_hess;

@@ -186,6 +186,17 @@
         stop("Arm ", k, ": length(n_trials) (", length(a$n_trials),
              ") must equal length(y) (", N, ").", call. = FALSE)
     }
+    # Optional grouped beta sufficient statistics (gcol33/tulpaObs#49): when
+    # present, n_trials is the per-row group count and (slog_y, slog_1my) the
+    # within-group sum of log(y) / log(1-y); the built-in beta spec reads them.
+    if (!is.null(a$slog_y)) {
+        a$slog_y   <- as.numeric(a$slog_y)
+        a$slog_1my <- as.numeric(a$slog_1my)
+        if (length(a$slog_y) != N || length(a$slog_1my) != N) {
+            stop("Arm ", k, ": length(slog_y)/length(slog_1my) must equal ",
+                 "length(y) (", N, ").", call. = FALSE)
+        }
+    }
     a$re_idx <- if (is.null(a$re_idx)) rep(0, N) else as.numeric(a$re_idx)
     if (length(a$re_idx) != N) {
         stop("Arm ", k, ": length(re_idx) (", length(a$re_idx),

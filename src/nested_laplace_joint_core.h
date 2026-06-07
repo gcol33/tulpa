@@ -106,6 +106,18 @@ inline int parse_joint_arms(
         arms_out[k].family   = Rcpp::as<std::string>(a["family"]);
         arms_out[k].phi      = Rcpp::as<double>(a["phi"]);
         arms_out[k].N        = (int)arms_out[k].y.size();
+        // Optional grouped beta sufficient statistics (gcol33/tulpaObs#49). When
+        // supplied they must match this arm's N and carry n_trials as the group
+        // count; the built-in beta spec then reads (n_trials, slog_y, slog_1my).
+        if (a.containsElementNamed("slog_y") && !Rf_isNull(a["slog_y"])) {
+            arms_out[k].slog_y   = Rcpp::as<Rcpp::NumericVector>(a["slog_y"]);
+            arms_out[k].slog_1my = Rcpp::as<Rcpp::NumericVector>(a["slog_1my"]);
+            if ((int)arms_out[k].slog_y.size()   != arms_out[k].N ||
+                (int)arms_out[k].slog_1my.size() != arms_out[k].N) {
+                Rcpp::stop("Arm %d: length(slog_y)/length(slog_1my) must equal "
+                           "length(y) (%d).", k + 1, arms_out[k].N);
+            }
+        }
         if (pa.offset.size() != 0 && (int)pa.offset.size() != arms_out[k].N) {
             Rcpp::stop("Arm %d: length(offset) (%d) != N (%d).",
                        k + 1, (int)pa.offset.size(), arms_out[k].N);

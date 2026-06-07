@@ -46,6 +46,12 @@ struct JointArm {
     std::string         family;    // built-in family (ignored when spec != null)
     double              phi;        // built-in dispersion (ignored when spec)
     int                 N;
+    // Grouped beta sufficient statistics (gcol33/tulpaObs#49). Optional; when
+    // present (and family == "beta") row i collapses n_trials[i] exchangeable
+    // beta obs sharing this row's linear predictor, with slog_y[i] = sum log(y)
+    // and slog_1my[i] = sum log(1-y). Empty => ungrouped per-obs path.
+    Rcpp::NumericVector slog_y;
+    Rcpp::NumericVector slog_1my;
     // Per-arm field coefficient: multiplied into the field amplitude this
     // arm sees on each shared latent block (sigma_arm = field_coef * sigma).
     // Default 1.0 = donor behaviour (existing non-copy arms). `0.0` means
@@ -167,6 +173,8 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             r.N        = a.N;
             r.family   = a.family;
             r.phi      = a.phi;
+            r.slog_y   = (a.slog_y.size()   > 0) ? REAL(a.slog_y)   : nullptr;
+            r.slog_1my = (a.slog_1my.size() > 0) ? REAL(a.slog_1my) : nullptr;
             s.builtin_responses.push_back(r);
             s.views[k] = ArmSpecView{
                 &s.builtin_specs.back(), &s.builtin_responses.back(),

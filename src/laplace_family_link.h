@@ -241,6 +241,36 @@ inline double log_lik_for_family(
     return log_lik_mu(y, mu, phi, fl.family, n_trials);
 }
 
+// Grouped beta sufficient statistics. A set of n exchangeable Beta(mu*phi,
+// (1-mu)*phi) observations sharing the SAME linear predictor (hence the same mu)
+// enters the likelihood only through (n, sum log y, sum log(1-y)) -- the beta
+// log-density is linear in log(y) and log(1-y). Collapsing them to one row
+// carrying those sufficient statistics leaves the log-likelihood, gradient and
+// (Fisher) Hessian pointwise unchanged. With n = 1, slog_y = log(y),
+// slog_1my = log(1-y) these reduce exactly to the per-observation beta branch of
+// log_lik_mu / grad_hess_for_family (same mu clamps), so the ungrouped path is
+// byte-identical. See dev_notes/beta_likelihood.md.
+inline double log_lik_beta_grouped(double slog_y, double slog_1my, int n,
+                                   double eta, double phi) {
+    double mu = linkinv(eta, "logit");
+    mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
+    double a = mu * phi;
+    double b = (1.0 - mu) * phi;
+    return (a - 1.0) * slog_y + (b - 1.0) * slog_1my
+           + (double)n * (R::lgammafn(phi) - R::lgammafn(a) - R::lgammafn(b));
+}
+
+inline GradHess grad_hess_beta_grouped(double slog_y, double slog_1my, int n,
+                                       double eta, double phi) {
+    double mu  = linkinv(eta, "logit");
+    double dmu = mu_eta(eta, "logit");
+    mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+    double mu_star = R::digamma(mu * phi) - R::digamma((1.0 - mu) * phi);
+    double g_mu = phi * ((slog_y - slog_1my) - (double)n * mu_star);
+    double V = variance_fn(mu, phi, "beta", 1);
+    return { g_mu * dmu, (double)n * dmu * dmu / V };
+}
+
 inline double compute_total_log_lik(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericVector& eta, int N,
