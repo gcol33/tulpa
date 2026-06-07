@@ -1,5 +1,18 @@
 # tulpa NEWS
 
+## 0.0.17 (2026-06-07)
+
+* docs(vignettes): correctness pass against the current API. Corrected the
+  nested-fit `logLik()` / `compare_models()` description (a nested fit returns the
+  integrated-evidence scalar, not a per-grid vector) in the spatial and temporal
+  vignettes, refreshed the stale temporal front-door scope note (rw1/rw2/ar1 plus
+  panel and areal space-time are all wired), replaced an unexported
+  `is_connected()` reference with a base-R graph-Laplacian connectivity check, and
+  moved `tgmrf_cpp()` from a "forthcoming" framing to its shipped present-tense
+  description.
+* build: drop the precompiled-header mechanism; each translation unit parses
+  RcppEigen directly.
+
 ## 0.0.16 (2026-06-07)
 
 * Tagged release of the grouped beta sufficient-statistic joint interface
