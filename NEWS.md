@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.15 (2026-06-07)
+
+* feat(laplace): the joint nested-Laplace engine accepts optional grouped beta
+  sufficient statistics on a built-in `beta` arm. When an arm carries `slog_y` /
+  `slog_1my` (the within-group sums of `log(y)` and `log(1 - y)`, with
+  `n_trials` the per-row group count), a row collapses `n` exchangeable beta
+  observations sharing one linear predictor into a single row. The beta
+  log-density is linear in `log(y)` and `log(1 - y)`, so the log-likelihood,
+  gradient and Fisher Hessian are pointwise unchanged and the aggregated fit is
+  byte-identical to the per-observation path (`n = 1` reduces exactly to the
+  ungrouped branch). Read by the single-block and multi-arm joint drivers; the
+  shared `log_lik_beta_grouped` / `grad_hess_beta_grouped` helpers in
+  `laplace_family_link.h` are the single source. This is the engine backing for
+  tulpaObs's `aggregate.pos` cover-arm reduction (gcol33/tulpaObs#49).
+
 ## 0.0.14 (2026-06-06)
 
 * refactor: remove structural duplication flagged by a code-rot scan, with no
