@@ -224,7 +224,9 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     double log_tau_init      = 0.0,
     Rcpp::Nullable<Rcpp::NumericVector> Q_precomp_x = R_NilValue,
     Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_i = R_NilValue,
-    Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_p = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_p = R_NilValue,
+    bool noncenter = true,
+    int mass_matrix = 0
 ) {
     const int N = y_r.size();
     const int p = X_r.ncol();
@@ -461,6 +463,15 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     sm.prior_sigma_0     = prior_sigma_0;
     sm.prior_sigma_alpha = prior_sigma_alpha;
 
+    // Fixed-hyper non-centering (gcol33/tulpa#87). When on, the field block
+    // in params is the white-noise auxiliary z; the field v = L^{-T} z is
+    // computed from the cached fixed Q each evaluation. Same target density
+    // as the centered fixed-hyper path, but the isotropic z block lets the
+    // diagonal NUTS metric traverse the beta/field ridge that otherwise
+    // under-disperses the marginal beta posterior. Orthogonal to
+    // joint_hypers (which has its own intrinsic non-centering).
+    sm.nc_fixed = (!joint_hypers && noncenter);
+
     ParamLayout layout = tulpa_hmc::compute_param_layout(data);
     int n_params = layout.total_params;
 
@@ -476,6 +487,21 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         init[layout.log_tau_spde_idx]   = log_tau_init;
     }
 
+    // Metric. DIAG (0, default) suits a well-conditioned field; DENSE (1)
+    // captures the beta/field cross-curvature that a diagonal metric cannot,
+    // which matters for an ill-conditioned latent block (e.g. the rational
+    // fractional-nu Q, whose near-null direction otherwise leaves the
+    // intercept marginal under-dispersed -- gcol33/tulpa#87). BLOCK_DIAG (2)
+    // and AUTO (3) round out the run_hmc_chain_cpp options. The R wrapper
+    // resolves the default per field structure.
+    tulpa::MassMatrixType metric;
+    switch (mass_matrix) {
+        case 1:  metric = tulpa::MassMatrixType::DENSE;      break;
+        case 2:  metric = tulpa::MassMatrixType::BLOCK_DIAG; break;
+        case 3:  metric = tulpa::MassMatrixType::AUTO;       break;
+        default: metric = tulpa::MassMatrixType::DIAG;       break;
+    }
+
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
         init, data, layout,
         n_iter, n_warmup,
@@ -484,7 +510,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         static_cast<unsigned int>(seed),
         verbose,
         max_treedepth,
-        tulpa::MassMatrixType::DIAG,
+        metric,
         adapt_delta,
         0,                                  // riemannian off
         std::vector<double>{}
@@ -499,10 +525,11 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         }
     }
 
-    // Column names. In joint mode the SPDE block is z (non-centered), in
-    // legacy mode it is w directly. The transformed w (joint mode) lives
-    // in a separate w_draws matrix below.
-    const std::string spde_block_name = joint_hypers ? "z" : "w";
+    // Column names. In non-centered modes (joint OR fixed-hyper #87) the
+    // SPDE block is z; in the centered legacy mode it is w directly. The
+    // transformed field lives in a separate w_draws matrix below.
+    const bool noncentered = joint_hypers || data.spde_data.nc_fixed;
+    const std::string spde_block_name = noncentered ? "z" : "w";
     Rcpp::CharacterVector col_names(n_params);
     for (int j = 0; j < p; j++) {
         col_names[j] = "beta[" + std::to_string(j + 1) + "]";
@@ -552,48 +579,63 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         Rcpp::Named("joint_hypers") = joint_hypers
     );
 
-    if (joint_hypers) {
-        constexpr double k_pi = 3.14159265358979323846;
-        // Use the caller-supplied nu when present (correct for fractional
-        // cases); fall back to alpha - 1 only when nu was left unset.
-        const double nu_used     = (nu > 0.0) ? nu
-                                              : static_cast<double>(alpha) - 1.0;
-        const double sqrt_8nu    = std::sqrt(8.0 * nu_used);
-        const double sqrt_4pi    = std::sqrt(4.0 * k_pi);
-
+    if (noncentered) {
+        // Transform the z block to the field v = L^{-T} z per draw. Shared by
+        // joint-NUTS (Q rebuilt per draw from the sampled hypers) and the
+        // fixed-hyper #87 path (Q fixed); apply_spde_nc_transform_double
+        // dispatches on data.spde_data.nc_fixed internally.
         Rcpp::NumericMatrix w_draws(n_sample, n_mesh);
-        Rcpp::NumericVector range_draws(n_sample);
-        Rcpp::NumericVector sigma_draws(n_sample);
-        Rcpp::NumericVector kappa_draws(n_sample);
-        Rcpp::NumericVector tau_draws(n_sample);
-
         std::vector<double> params_row(n_params);
         std::vector<double> w_out;
-        for (int s = 0; s < n_sample; s++) {
-            for (int j = 0; j < n_params; j++) params_row[j] = draws(s, j);
-            tulpa::apply_spde_nc_transform_double(params_row, data, layout, w_out);
-            for (int m = 0; m < n_mesh; m++) w_draws(s, m) = w_out[m];
 
-            const double lk = params_row[layout.log_kappa_spde_idx];
-            const double lt = params_row[layout.log_tau_spde_idx];
-            const double k_s = std::exp(lk);
-            const double t_s = std::exp(lt);
-            kappa_draws[s] = k_s;
-            tau_draws[s]   = t_s;
-            range_draws[s] = sqrt_8nu / k_s;
-            sigma_draws[s] = 1.0 / (sqrt_4pi * k_s * t_s);
+        if (joint_hypers) {
+            constexpr double k_pi = 3.14159265358979323846;
+            // Use the caller-supplied nu when present (correct for fractional
+            // cases); fall back to alpha - 1 only when nu was left unset.
+            const double nu_used  = (nu > 0.0) ? nu
+                                               : static_cast<double>(alpha) - 1.0;
+            const double sqrt_8nu = std::sqrt(8.0 * nu_used);
+            const double sqrt_4pi = std::sqrt(4.0 * k_pi);
+
+            Rcpp::NumericVector range_draws(n_sample);
+            Rcpp::NumericVector sigma_draws(n_sample);
+            Rcpp::NumericVector kappa_draws(n_sample);
+            Rcpp::NumericVector tau_draws(n_sample);
+
+            for (int s = 0; s < n_sample; s++) {
+                for (int j = 0; j < n_params; j++) params_row[j] = draws(s, j);
+                tulpa::apply_spde_nc_transform_double(params_row, data, layout, w_out);
+                for (int m = 0; m < n_mesh; m++) w_draws(s, m) = w_out[m];
+
+                const double lk = params_row[layout.log_kappa_spde_idx];
+                const double lt = params_row[layout.log_tau_spde_idx];
+                const double k_s = std::exp(lk);
+                const double t_s = std::exp(lt);
+                kappa_draws[s] = k_s;
+                tau_draws[s]   = t_s;
+                range_draws[s] = sqrt_8nu / k_s;
+                sigma_draws[s] = 1.0 / (sqrt_4pi * k_s * t_s);
+            }
+
+            out["range_draws"] = range_draws;
+            out["sigma_draws"] = sigma_draws;
+            out["kappa_draws"] = kappa_draws;
+            out["tau_draws"]   = tau_draws;
+        } else {
+            // Fixed-hyper non-centering: just the z -> v map; hypers are fixed.
+            for (int s = 0; s < n_sample; s++) {
+                for (int j = 0; j < n_params; j++) params_row[j] = draws(s, j);
+                tulpa::apply_spde_nc_transform_double(params_row, data, layout, w_out);
+                for (int m = 0; m < n_mesh; m++) w_draws(s, m) = w_out[m];
+            }
         }
+
         Rcpp::CharacterVector w_names(n_mesh);
         for (int m = 0; m < n_mesh; m++) {
             w_names[m] = "w[" + std::to_string(m + 1) + "]";
         }
         Rcpp::colnames(w_draws) = w_names;
-
-        out["w_draws"]     = w_draws;
-        out["range_draws"] = range_draws;
-        out["sigma_draws"] = sigma_draws;
-        out["kappa_draws"] = kappa_draws;
-        out["tau_draws"]   = tau_draws;
+        out["w_draws"] = w_draws;
     }
 
     return out;

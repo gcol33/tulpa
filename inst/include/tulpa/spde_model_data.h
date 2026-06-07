@@ -73,6 +73,19 @@ struct SpdeModelData {
     // backward-compat with the legacy fixed-hyper inner-Laplace callers.
     bool joint_hypers = false;
 
+    // Fixed-hyper non-centered parameterization. When true (and
+    // joint_hypers == false), params[spde_w_start..spde_w_end) holds the
+    // white-noise auxiliary z rather than the field directly; the structured
+    // HMC path computes the field v = L^{-T} z from the cached fixed Q (the
+    // Q_p/Q_i/Q_x triple below) on every evaluation. The target density is
+    // identical to the centered fixed-hyper parameterization up to the
+    // constant z->v Jacobian and log|Q|/2 (both constant under fixed
+    // (kappa, tau), both dropped), but the field block becomes isotropic a
+    // priori so the diagonal NUTS metric no longer under-traverses the
+    // beta/field ridge (gcol33/tulpa#87). Orthogonal to joint_hypers: at
+    // most one of the two is true.
+    bool nc_fixed = false;
+
     // ----- PC prior anchors (joint-NUTS only) -----
     // Fuglstad et al. 2019 (JASA) PC prior on (range, sigma):
     //   P(range < prior_range_0)  = prior_range_alpha

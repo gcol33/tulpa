@@ -20,6 +20,8 @@ tulpa_nuts_spde(
   sigma_beta = 10,
   log_phi_prior_sd = 3,
   log_phi_init = 0,
+  noncenter = TRUE,
+  mass_matrix = c("auto", "diag", "dense", "block_diag"),
   n_iter = 2000L,
   n_warmup = 1000L,
   max_treedepth = 10L,
@@ -84,6 +86,25 @@ family-specific:
 }}
 
 \item{log_phi_init}{Starting value for \code{log(phi)}.}
+
+\item{noncenter}{Fixed-hyper mode only (\code{joint = FALSE}). When \code{TRUE}
+(default) the mesh field is sampled in a non-centered parameterisation:
+the field block is a white-noise auxiliary \code{z} and the field is
+\verb{v = L^\{-T\} z} with \verb{L L' = Q} at the fixed \verb{(range, sigma)}. This is the
+same target density as the centered field (the \code{z -> v} Jacobian and
+\verb{log|Q|/2} are constant under fixed hypers and cancel) and isotropises the
+field block a priori, which matches the parameterisation the joint path
+already uses. Set \code{FALSE} to sample the field directly (centered). Ignored
+when \code{joint = TRUE} (the joint path is always non-centered).}
+
+\item{mass_matrix}{NUTS metric. \code{"auto"} (default) picks a dense metric when
+the parameter count is small enough (\verb{<= 200}) and a diagonal metric
+otherwise. A dense metric captures the fixed-effect / field cross-curvature
+a diagonal metric misses; this is what corrects the intercept marginal,
+which a diagonal metric under-disperses for an ill-conditioned latent block
+such as the rational fractional-nu precision (its near-null direction
+confounds the intercept with the field, gcol33/tulpa#87). \code{"diag"},
+\code{"dense"}, \code{"block_diag"} force the choice.}
 
 \item{n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose}{Standard
 NUTS controls.}

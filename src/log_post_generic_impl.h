@@ -129,23 +129,20 @@ static T initialize_generic_state(
         log_post = log_post + priors::compute_spde_hyper_prior<T>(
             params, data, layout);
 
-        // Joint-NUTS only: compute w = L^{-T}(theta) z from the z block
-        // sitting in params[spde_w_start..spde_w_end). compute_spde_prior
-        // wrote -0.5 sum(z^2) to log_post and left spde_w empty; the eta
+        // Non-centered modes (joint-NUTS or fixed-hyper #87): compute the
+        // field w = L^{-T} z from the z block sitting in
+        // params[spde_w_start..spde_w_end). compute_spde_prior wrote
+        // -0.5 sum(z^2) to log_post and left spde_w empty; the eta
         // accumulator below multiplies w through the projection A, so we
         // need state.spde_w populated with w (not z) before the obs loop.
-        // The Jacobian from z to w cancels exactly against log|Q(theta)|/2
-        // through the (a.ii) adjoint — no explicit log-det term is added
-        // here.
+        // Joint: the z->w Jacobian cancels log|Q(theta)|/2 through the
+        // (a.ii) adjoint. Fixed-hyper: both are constant and dropped.
         //
         // Dispatch is statically resolved on the AD type. Three flavours:
         //   double      : forward-only.
         //   arena::Var  : reverse-mode AD via custom_backward.
-        //   fwd::Dual   : forward-mode AD via the closed-form tangent
-        //                 dw = L^{-T}(dz - Phi(M)^T z). Used as an exact
-        //                 alternative to central differences when verifying
-        //                 the reverse-mode gradient.
-        if (data.spde_data.joint_hypers) {
+        //   fwd::Dual   : forward-mode AD via the closed-form tangent.
+        if (data.spde_data.joint_hypers || data.spde_data.nc_fixed) {
             if constexpr (std::is_same_v<T, double>) {
                 apply_spde_nc_transform_double(
                     params, data, layout, state.spde_w);

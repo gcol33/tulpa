@@ -89,9 +89,13 @@
       -0.5 * ((y - eta)^2 / phi + log(2 * pi * phi))
     },
     score = function(eta, y, n_trials, phi) (y - eta) / phi,
-    # Laplace working weight matches the historical `glmm_weights` convention
-    # (gaussian dispersion folded in elsewhere), i.e. unit weight.
-    weight = function(eta, n_trials, phi) rep(1, length(eta))
+    # Laplace/IRLS working weight = -d^2 log-lik / d eta^2 = 1/phi (phi is the
+    # residual variance). The dispersion MUST enter here: the marginal-SE Schur
+    # (.marginal_H_beta_*) and the dense H_beta path are the only callers, and
+    # both need the dispersion-correct curvature. A unit weight here treats phi
+    # as 1 and inflates the gaussian fixed-effect SEs by sqrt(1/phi)
+    # (gcol33/tulpa#87).
+    weight = function(eta, n_trials, phi) rep(1 / phi, length(eta))
   ),
 
   beta = list(

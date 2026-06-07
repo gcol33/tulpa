@@ -92,6 +92,76 @@ void SpdeNcTransform::init(int n,
     }
 }
 
+void SpdeNcTransform::init_fixed(const std::vector<int>&    Q_p,
+                                 const std::vector<int>&    Q_i,
+                                 const std::vector<double>& Q_x,
+                                 int                        n)
+{
+    n_mesh = n;
+    if (static_cast<int>(Q_p.size()) != n + 1) {
+        throw std::runtime_error("SpdeNcTransform::init_fixed: Q_p length "
+                                 "must be n_mesh + 1");
+    }
+    last_Q = SpMat(n, n);
+    std::vector<Eigen::Triplet<double>> trips;
+    trips.reserve(Q_x.size());
+    for (int j = 0; j < n; j++) {
+        for (int idx = Q_p[j]; idx < Q_p[j + 1]; idx++) {
+            trips.emplace_back(Q_i[idx], j, Q_x[idx]);
+        }
+    }
+    last_Q.setFromTriplets(trips.begin(), trips.end());
+    last_Q.makeCompressed();
+
+    llt.compute(last_Q);
+    if (llt.info() != Eigen::Success) {
+        throw std::runtime_error("SpdeNcTransform::init_fixed: Cholesky "
+                                 "failed (Q not PD)");
+    }
+    factored   = true;
+    fixed_mode = true;
+}
+
+Eigen::VectorXd SpdeNcTransform::forward_fixed(const Eigen::VectorXd& z) const
+{
+    if (!factored) {
+        throw std::runtime_error("SpdeNcTransform::forward_fixed without "
+                                 "init_fixed");
+    }
+    if (z.size() != n_mesh) throw std::runtime_error("z size mismatch");
+    SpMat L = llt.matrixL();
+    return L.transpose().template triangularView<Eigen::Upper>().solve(z);
+}
+
+void SpdeNcTransform::backward_fixed(const Eigen::VectorXd& dv,
+                                     Eigen::VectorXd&       dz_out) const
+{
+    if (!factored) {
+        throw std::runtime_error("SpdeNcTransform::backward_fixed without "
+                                 "init_fixed");
+    }
+    SpMat L = llt.matrixL();
+    dz_out = L.template triangularView<Eigen::Lower>().solve(dv);
+}
+
+void SpdeNcTransform::forward_fixed_with_tangent(
+    const Eigen::VectorXd& z,
+    const Eigen::VectorXd& dz,
+    Eigen::VectorXd&       v_out,
+    Eigen::VectorXd&       dv_out) const
+{
+    if (!factored) {
+        throw std::runtime_error("SpdeNcTransform::forward_fixed_with_tangent "
+                                 "without init_fixed");
+    }
+    // Fixed (kappa, tau): the map is the constant linear v = L^{-T} z, so the
+    // tangent is dv = L^{-T} dz (no M = L^{-1} dQ L^{-T} term).
+    SpMat L = llt.matrixL();
+    auto U = L.transpose().template triangularView<Eigen::Upper>();
+    v_out  = U.solve(z);
+    dv_out = U.solve(dz);
+}
+
 SpdeNcTransform::SpMat SpdeNcTransform::build_K(double kappa) const {
     return build_K_shifted(kappa * kappa);
 }
@@ -373,6 +443,47 @@ std::vector<arena::Var> spde_nc_transform_arena(
         w[i].idx_   = out_indices[i];
     }
     return w;
+}
+
+std::vector<arena::Var> spde_nc_transform_fixed_arena(
+    arena::Arena*                  ar,
+    const std::vector<arena::Var>& z,
+    SpdeNcTransform&               transform
+) {
+    const int n = static_cast<int>(z.size());
+
+    Eigen::VectorXd z_eig(n);
+    for (int i = 0; i < n; i++) z_eig[i] = z[i].val();
+
+    Eigen::VectorXd v_eig = transform.forward_fixed(z_eig);
+
+    std::vector<int32_t> input_indices(n);
+    for (int i = 0; i < n; i++) input_indices[i] = z[i].idx_;
+
+    std::vector<double> output_values(v_eig.data(), v_eig.data() + n);
+
+    auto cb = [&transform, n](
+        const double* /*input_vals*/,  int /*n_in*/,
+        const double* /*output_vals*/, int /*n_out*/,
+        const double* output_adjs,
+        double*       input_adjs
+    ) {
+        Eigen::VectorXd dv(n);
+        for (int i = 0; i < n; i++) dv[i] = output_adjs[i];
+        Eigen::VectorXd dz;
+        transform.backward_fixed(dv, dz);
+        for (int i = 0; i < n; i++) input_adjs[i] = dz[i];
+    };
+
+    std::vector<int32_t> out_indices;
+    ar->add_custom_backward(input_indices, output_values, cb, out_indices);
+
+    std::vector<arena::Var> v(n);
+    for (int i = 0; i < n; i++) {
+        v[i].arena_ = ar;
+        v[i].idx_   = out_indices[i];
+    }
+    return v;
 }
 
 } // namespace tulpa

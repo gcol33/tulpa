@@ -54,6 +54,23 @@
 #'   * `beta`: `phi` is the Beta precision (sampled jointly)
 #'   * `poisson`, `binomial`: `log_phi` is held tight and ignored downstream.
 #' @param log_phi_init Starting value for `log(phi)`.
+#' @param noncenter Fixed-hyper mode only (`joint = FALSE`). When `TRUE`
+#'   (default) the mesh field is sampled in a non-centered parameterisation:
+#'   the field block is a white-noise auxiliary `z` and the field is
+#'   `v = L^{-T} z` with `L L' = Q` at the fixed `(range, sigma)`. This is the
+#'   same target density as the centered field (the `z -> v` Jacobian and
+#'   `log|Q|/2` are constant under fixed hypers and cancel) and isotropises the
+#'   field block a priori, which matches the parameterisation the joint path
+#'   already uses. Set `FALSE` to sample the field directly (centered). Ignored
+#'   when `joint = TRUE` (the joint path is always non-centered).
+#' @param mass_matrix NUTS metric. `"auto"` (default) picks a dense metric when
+#'   the parameter count is small enough (`<= 200`) and a diagonal metric
+#'   otherwise. A dense metric captures the fixed-effect / field cross-curvature
+#'   a diagonal metric misses; this is what corrects the intercept marginal,
+#'   which a diagonal metric under-disperses for an ill-conditioned latent block
+#'   such as the rational fractional-nu precision (its near-null direction
+#'   confounds the intercept with the field, gcol33/tulpa#87). `"diag"`,
+#'   `"dense"`, `"block_diag"` force the choice.
 #' @param n_iter,n_warmup,max_treedepth,adapt_delta,seed,verbose Standard
 #'   NUTS controls.
 #'
@@ -83,6 +100,9 @@ tulpa_nuts_spde <- function(y, X, spatial,
                             sigma_beta       = 10,
                             log_phi_prior_sd = 3,
                             log_phi_init     = 0,
+                            noncenter        = TRUE,
+                            mass_matrix      = c("auto", "diag", "dense",
+                                                 "block_diag"),
                             n_iter           = 2000L,
                             n_warmup         = 1000L,
                             max_treedepth    = 10L,
@@ -90,7 +110,8 @@ tulpa_nuts_spde <- function(y, X, spatial,
                             seed             = 42L,
                             verbose          = FALSE) {
 
-  family <- match.arg(family)
+  family      <- match.arg(family)
+  mass_matrix <- match.arg(mass_matrix)
   if (!inherits(spatial, "tulpa_spatial") || !identical(spatial$type, "spde")) {
     stop("`spatial` must be an SPDE tulpa_spatial object ",
          "(see `spatial_spde()` / `spatial_spde_custom()`).",
@@ -231,6 +252,17 @@ tulpa_nuts_spde <- function(y, X, spatial,
     Q_pre_x <- Qg@x; Q_pre_i <- Qg@i; Q_pre_p <- Qg@p
   }
 
+  # Resolve the metric (after n_mesh_use is final). "auto" -> dense below the
+  # DENSE_MAX_PARAMS = 200 ceiling (captures beta/field cross-curvature, #87),
+  # diagonal above it. n_params = p + field block + log_phi (+2 hyper slots
+  # when joint).
+  mass_code <- switch(mass_matrix, diag = 0L, dense = 1L, block_diag = 2L,
+                      auto = -1L)
+  if (mass_code == -1L) {
+    n_params  <- ncol(X) + n_mesh_use + 1L + if (joint) 2L else 0L
+    mass_code <- if (n_params <= 200L) 1L else 0L
+  }
+
   res <- cpp_tulpa_fit_spde_nuts(
     y_r              = y,
     n_trials_r       = n_trials,
@@ -271,7 +303,11 @@ tulpa_nuts_spde <- function(y, X, spatial,
     log_tau_init      = log_tau_init_v,
     Q_precomp_x       = Q_pre_x,
     Q_precomp_i       = Q_pre_i,
-    Q_precomp_p       = Q_pre_p
+    Q_precomp_p       = Q_pre_p,
+    # Non-centering is a fixed-hyper option; the joint path is intrinsically
+    # non-centered, so this flag only takes effect when joint = FALSE.
+    noncenter         = isTRUE(noncenter) && !joint,
+    mass_matrix       = mass_code
   )
 
   res$range   <- range
@@ -279,14 +315,18 @@ tulpa_nuts_spde <- function(y, X, spatial,
   res$spatial <- spatial
   res$joint   <- joint
 
-  # Fractional fixed-hyper: the sampled "w" columns are the auxiliary weights x
-  # on the submesh; reconstruct the field u = Pr x and scatter to the full mesh
-  # (orphan nodes carry zero field), so `field_draws` is comparable to the
-  # integer path's field draws.
+  # Fractional fixed-hyper: the auxiliary weights x on the submesh are either
+  # the sampled block (centered) or the transformed field v = L^{-T} z exposed
+  # as `w_draws` (non-centered, #87). Reconstruct the field u = Pr x and
+  # scatter to the full mesh (orphan nodes carry zero field), so `field_draws`
+  # is comparable to the integer path's field draws.
   if (frac_fixed_hyper) {
-    p_cols  <- res$p
-    w_cols  <- p_cols + seq_len(n_mesh_use)
-    x_draws <- res$draws[, w_cols, drop = FALSE]
+    if (!is.null(res$w_draws)) {
+      x_draws <- res$w_draws
+    } else {
+      w_cols  <- res$p + seq_len(n_mesh_use)
+      x_draws <- res$draws[, w_cols, drop = FALSE]
+    }
     Pr      <- frac_asm$Pr
     field_sub <- as.matrix(Pr %*% t(x_draws))            # n_sub x n_sample
     field_full <- matrix(0, nrow(res$draws), spatial$n_mesh)
@@ -295,6 +335,13 @@ tulpa_nuts_spde <- function(y, X, spatial,
     res$field_draws <- field_full
     res$keep        <- frac_asm$keep
     res$rational    <- TRUE
+  } else if (!is.null(res$w_draws) && !joint) {
+    # Integer fixed-hyper non-centered: the transformed field v = L^{-T} z is
+    # the mesh field directly. Expose it as field_draws for parity with the
+    # fractional path (the raw `draws` block is z).
+    field_full <- res$w_draws
+    colnames(field_full) <- paste0("u[", seq_len(spatial$n_mesh), "]")
+    res$field_draws <- field_full
   }
 
   # phi summary on the natural scale, for families that sample it. The

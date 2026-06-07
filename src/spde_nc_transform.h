@@ -90,6 +90,7 @@ public:
                           // Rational: tau^2 sum_k w_k K_k D K_k.
     SolverT llt;
     bool    factored = false;
+    bool    fixed_mode = false;  // set by init_fixed(); see gcol33/tulpa#87.
 
     void init(int n,
               const std::vector<double>& C0_d,
@@ -98,6 +99,29 @@ public:
               const std::vector<int>&    G1_p,
               const std::vector<double>& poles   = {},
               const std::vector<double>& weights = {});
+
+    // Fixed-hyper non-centered setup (gcol33/tulpa#87). Factors a directly
+    // supplied precision Q (CSC, full-symmetric storage — the lower triangle
+    // is read) once and caches L. No FEM rebuild, no hyper adjoint: the
+    // transform is the constant linear map v = L^{-T} z. Works uniformly for
+    // the integer SpdeQBuilder Q and the fractional precomputed (rational)
+    // Q, since both arrive on SpdeModelData::Q_{p,i,x}.
+    void init_fixed(const std::vector<int>&    Q_p,
+                    const std::vector<int>&    Q_i,
+                    const std::vector<double>& Q_x,
+                    int                        n);
+
+    // Fixed-mode forward / adjoint / tangent (no kappa/tau, no hyper grads).
+    //   forward_fixed:               v   = L^{-T} z
+    //   backward_fixed:              dz  = L^{-1} dv
+    //   forward_fixed_with_tangent:  v   = L^{-T} z, dv = L^{-T} dz
+    Eigen::VectorXd forward_fixed(const Eigen::VectorXd& z) const;
+    void backward_fixed(const Eigen::VectorXd& dv,
+                        Eigen::VectorXd&       dz_out) const;
+    void forward_fixed_with_tangent(const Eigen::VectorXd& z,
+                                    const Eigen::VectorXd& dz,
+                                    Eigen::VectorXd&       v_out,
+                                    Eigen::VectorXd&       dv_out) const;
 
     bool is_rational() const { return !poles_.empty(); }
 
@@ -157,6 +181,16 @@ std::vector<arena::Var> spde_nc_transform_arena(
     const std::vector<arena::Var>& z,
     const arena::Var&              log_kappa,
     const arena::Var&              log_tau,
+    SpdeNcTransform&               transform
+);
+
+// Fixed-hyper arena hook (gcol33/tulpa#87). Registers a custom_backward
+// block with inputs [z[0..n-1]] and outputs [v[0..n-1]] = L^{-T} z. The
+// backward callback computes dz = L^{-1} dv only — there are no hyper slots.
+// `transform` is captured by reference and must outlive the backward sweep.
+std::vector<arena::Var> spde_nc_transform_fixed_arena(
+    arena::Arena*                  ar,
+    const std::vector<arena::Var>& z,
     SpdeNcTransform&               transform
 );
 

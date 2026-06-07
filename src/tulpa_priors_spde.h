@@ -60,11 +60,14 @@ T compute_spde_prior(const std::vector<T>& params, const ModelData& data,
     const int  n_mesh = spde.n_mesh;
     const int  w0     = layout.spde_w_start;
 
-    if (spde.joint_hypers) {
-        // Joint-NUTS: params[w0..) is z. Unit Gaussian prior on z; no Q
-        // involvement and no Jacobian term. spde_w_out is left empty —
-        // initialize_generic_state computes w = L^{-T}(theta) z and fills
-        // state.spde_w before the eta accumulator runs.
+    if (spde.joint_hypers || spde.nc_fixed) {
+        // Non-centered (joint-NUTS or fixed-hyper #87): params[w0..) is z.
+        // Unit Gaussian prior on z; no Q involvement and no Jacobian term.
+        // spde_w_out is left empty — log_post_generic_impl computes the field
+        // v = L^{-T} z and fills state.spde_w before the eta accumulator runs.
+        // Under fixed hypers the z->v Jacobian and log|Q|/2 are both constant
+        // and drop, so -0.5 z'z is the centered prior -0.5 v'Q v up to that
+        // dropped constant.
         spde_w_out.clear();
         T qf = T(0.0);
         for (int j = 0; j < n_mesh; j++) {

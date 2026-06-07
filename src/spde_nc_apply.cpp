@@ -27,11 +27,19 @@ inline SpdeNcTransform& ensure_transform(const ModelData& data) {
     auto& sm = data.spde_data;
     if (!sm.nc_transform) {
         auto t = std::make_shared<SpdeNcTransform>();
-        // Pass rational poles/weights when present (fractional nu); empty
-        // vectors take the integer alpha=2 fast path. The cache lives for
-        // the chain's lifetime, so this dispatch is paid once.
-        t->init(sm.n_mesh, sm.C0_diag, sm.G1_x, sm.G1_i, sm.G1_p,
-                sm.rational_poles, sm.rational_weights);
+        if (sm.nc_fixed) {
+            // Fixed-hyper non-centering (gcol33/tulpa#87): factor the cached
+            // fixed Q directly. Uniform over integer (SpdeQBuilder) and
+            // fractional (precomputed rational) Q, since both land on Q_{p,i,x}.
+            t->init_fixed(sm.Q_p, sm.Q_i, sm.Q_x, sm.n_mesh);
+        } else {
+            // Joint-NUTS: rebuild Q from FEM per evaluation. Pass rational
+            // poles/weights when present (fractional nu); empty vectors take
+            // the integer alpha=2 fast path. The cache lives for the chain's
+            // lifetime, so this dispatch is paid once.
+            t->init(sm.n_mesh, sm.C0_diag, sm.G1_x, sm.G1_i, sm.G1_p,
+                    sm.rational_poles, sm.rational_weights);
+        }
         sm.nc_transform = std::move(t);
     }
     return *sm.nc_transform;
@@ -53,12 +61,21 @@ void apply_spde_nc_transform_double(
     Eigen::VectorXd z(n_mesh);
     for (int j = 0; j < n_mesh; j++) z[j] = params[w0 + j];
 
+    spde_w_out.resize(n_mesh);
+
+    if (data.spde_data.nc_fixed) {
+        // Fixed-hyper non-centering: v = L^{-T} z with L fixed; no Cholesky
+        // can fail here (Q was factored once in init_fixed).
+        Eigen::VectorXd v = tx.forward_fixed(z);
+        for (int j = 0; j < n_mesh; j++) spde_w_out[j] = v[j];
+        return;
+    }
+
     const double log_kappa = params[layout.log_kappa_spde_idx];
     const double log_tau   = params[layout.log_tau_spde_idx];
     const double kappa     = std::exp(log_kappa);
     const double tau       = std::exp(log_tau);
 
-    spde_w_out.resize(n_mesh);
     try {
         Eigen::VectorXd w = tx.forward(z, kappa, tau);
         for (int j = 0; j < n_mesh; j++) spde_w_out[j] = w[j];
@@ -90,14 +107,24 @@ void apply_spde_nc_transform_fwd(
         dz[j] = params[w0 + j].grad;
     }
 
+    spde_w_out.resize(n_mesh);
+
+    if (data.spde_data.nc_fixed) {
+        // Fixed-hyper non-centering: v = L^{-T} z, dv = L^{-T} dz.
+        Eigen::VectorXd v, dv;
+        tx.forward_fixed_with_tangent(z, dz, v, dv);
+        for (int j = 0; j < n_mesh; j++) {
+            spde_w_out[j] = ::fwd::Dual(v[j], dv[j]);
+        }
+        return;
+    }
+
     const double log_kappa  = params[layout.log_kappa_spde_idx].val;
     const double log_tau    = params[layout.log_tau_spde_idx ].val;
     const double dlog_kappa = params[layout.log_kappa_spde_idx].grad;
     const double dlog_tau   = params[layout.log_tau_spde_idx ].grad;
     const double kappa      = std::exp(log_kappa);
     const double tau        = std::exp(log_tau);
-
-    spde_w_out.resize(n_mesh);
 
     try {
         Eigen::VectorXd w, dw;
@@ -137,6 +164,13 @@ void apply_spde_nc_transform_arena(
     // The arena is encoded on every Var; params is guaranteed non-empty
     // here because the SPDE block contributes at least one z slot.
     arena::Arena* ar = params[w0].arena_;
+
+    if (data.spde_data.nc_fixed) {
+        // Fixed-hyper non-centering: v = L^{-T} z with fixed L; no hyper
+        // slots, and the factorization in init_fixed cannot fail here.
+        spde_w_out = spde_nc_transform_fixed_arena(ar, z, tx);
+        return;
+    }
 
     try {
         spde_w_out = spde_nc_transform_arena(

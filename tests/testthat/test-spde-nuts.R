@@ -276,6 +276,50 @@ test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
   expect_lt(abs(beta_n[2] - beta_l[2]), 0.05)
 })
 
+test_that("non-centered fixed-hyper NUTS calibrates beta SD to the Laplace SE (#87)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+
+  set.seed(2026)
+  n_obs <- 200
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec <- helper_make_spde_spec(coords, max_edge = c(0.2, 0.5), cutoff = 0.08)
+
+  beta0 <- 0.5; beta1 <- -0.8; sigma_obs <- 0.3
+  range_true <- 0.4; sigma_w <- 0.5
+  x_cov <- runif(n_obs, -1, 1); X <- cbind(1, x_cov)
+  w_true <- rnorm(spec$n_mesh, 0, 0.4); w_true <- w_true - mean(w_true)
+  eta <- beta0 + beta1 * x_cov + as.numeric(spec$A %*% w_true)
+  y   <- eta + rnorm(n_obs, 0, sigma_obs)
+
+  # Non-centered (the default) decorrelates beta from the mesh field, so the
+  # sampler traverses the beta/field ridge #87 identified. The marginal beta SD
+  # should now track the exact Gaussian Laplace marginal-SE (Schur complement),
+  # not the under-dispersed value the direct-field path produced at a short
+  # budget.
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec, family = "gaussian",
+    range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
+    noncenter = TRUE, n_iter = 1500L, n_warmup = 800L, seed = 7L)
+  sd_n <- apply(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE], 2L, sd)
+  expect_lt(sum(fit$divergent), 0.05 * length(fit$divergent))
+
+  lap <- laplace_spde_at(
+    y = y, n_trials = rep(1L, n_obs), X = X, spatial = spec,
+    family = "gaussian", phi = sigma_obs^2,
+    range = range_true, sigma = sigma_w, max_iter = 100L, tol = 1e-6)
+  Hb <- tulpa:::.marginal_H_beta_spde(
+    mode = lap$mode, X = X, spatial = spec, family = "gaussian",
+    phi = sigma_obs^2, n_trials = rep(1L, n_obs),
+    range_val = range_true, sigma_val = sigma_w)
+  se_lap <- sqrt(diag(solve(as.matrix(Hb))))
+
+  # Calibrated, not under-dispersed: the NUTS SD is within 30% of the exact SE
+  # on both coefficients (a 5-8% gap at this budget, with MCSE margin).
+  expect_lt(abs(sd_n[1] - se_lap[1]) / se_lap[1], 0.30)
+  expect_lt(abs(sd_n[2] - se_lap[2]) / se_lap[2], 0.30)
+})
+
 test_that("tulpa_nuts_spde fixed-hyper fractional nu recovers + matches Laplace (#85)", {
   skip_if_not_installed("fmesher")
 
@@ -318,12 +362,11 @@ test_that("tulpa_nuts_spde fixed-hyper fractional nu recovers + matches Laplace 
 
   # Cross-check the beta MODE against the fractional Laplace fit at the SAME
   # fixed (range, sigma) -- the same convention as the integer NUTS-vs-Laplace
-  # test above. Only the mode is compared, not the posterior SD: the NUTS
-  # additionally integrates the field and log_phi, so its marginal beta SD does
-  # not equal the Laplace conditional marginal-SE (the integer path shows the
-  # same gap -- it is a property of the SPDE model, not the rational wiring; the
-  # Laplace rational SE is validated in its own right by the Schur identity in
-  # test-spde.R).
+  # test above. The marginal beta SD is calibrated separately on the integer
+  # path by the non-centered #87 test (the non-centered reparameterization
+  # decorrelates beta from the field; the rational path shares that transform
+  # via init_fixed). The Laplace rational SE is validated in its own right by
+  # the Schur identity in test-spde.R.
   lap <- tulpa:::laplace_spde_at(
     y = y, n_trials = rep(1L, n_obs), X = X, spatial = spec,
     family = "gaussian", phi = sigma_obs^2,
