@@ -275,3 +275,59 @@ test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
   expect_lt(abs(beta_n[1] - beta_l[1]), 0.15)
   expect_lt(abs(beta_n[2] - beta_l[2]), 0.05)
 })
+
+test_that("tulpa_nuts_spde fixed-hyper fractional nu recovers + matches Laplace (#85)", {
+  skip_if_not_installed("fmesher")
+
+  set.seed(404)
+  n_obs  <- 200
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  # nu = 0.5 -> alpha = 1.5: the operator-based rational SPDE field.
+  spec   <- helper_make_spde_spec(coords, max_edge = c(0.2, 0.5),
+                                  cutoff = 0.08, nu = 0.5)
+  expect_true(tulpa:::.spde_nu_is_fractional(spec$nu))
+
+  beta0 <- 0.4; beta1 <- -0.7; sigma_obs <- 0.3
+  range_true <- 0.4; sigma_w <- 0.5
+  x_cov <- runif(n_obs, -1, 1); X <- cbind(1, x_cov)
+  w_true <- rnorm(spec$n_mesh, 0, 0.4); w_true <- w_true - mean(w_true)
+  eta <- beta0 + beta1 * x_cov + as.numeric(spec$A %*% w_true)
+  y   <- eta + rnorm(n_obs, 0, sigma_obs)
+
+  # Joint-hyper fractional NUTS stays gated.
+  expect_error(
+    tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
+                    joint = TRUE, n_iter = 10L, n_warmup = 5L),
+    "fractional")
+
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec, family = "gaussian",
+    range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
+    n_iter = 800L, n_warmup = 400L, seed = 404L)
+
+  expect_true(isTRUE(fit$rational))
+  beta_post <- colMeans(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE])
+  expect_lt(abs(beta_post[1] - beta0), 0.25)
+  expect_lt(abs(beta_post[2] - beta1), 0.20)
+  expect_true(mean(fit$accept_prob) > 0.4)
+  expect_true(sum(fit$divergent) < 0.10 * length(fit$divergent))
+
+  # Field draws reconstructed to the full mesh (u = Pr x).
+  expect_equal(ncol(fit$field_draws), spec$n_mesh)
+  expect_true(all(is.finite(colMeans(fit$field_draws))))
+
+  # Cross-check the beta MODE against the fractional Laplace fit at the SAME
+  # fixed (range, sigma) -- the same convention as the integer NUTS-vs-Laplace
+  # test above. Only the mode is compared, not the posterior SD: the NUTS
+  # additionally integrates the field and log_phi, so its marginal beta SD does
+  # not equal the Laplace conditional marginal-SE (the integer path shows the
+  # same gap -- it is a property of the SPDE model, not the rational wiring; the
+  # Laplace rational SE is validated in its own right by the Schur identity in
+  # test-spde.R).
+  lap <- tulpa:::laplace_spde_at(
+    y = y, n_trials = rep(1L, n_obs), X = X, spatial = spec,
+    family = "gaussian", phi = sigma_obs^2,
+    range = range_true, sigma = sigma_w, max_iter = 100L, tol = 1e-6)
+  lap_beta <- lap$mode[seq_len(ncol(X))]
+  expect_lt(max(abs(beta_post - lap_beta)), 0.12)
+})

@@ -156,13 +156,25 @@ test_that("fractional nested fit_spde recovers range on a 2D mesh -- Gaussian", 
   expect_lt(fit$nested$sigma_mean, sigma_true * 1.6)
 })
 
-test_that("fractional nu is gated in NUTS and analytic marginal SEs", {
+test_that("fractional nu: fixed-hyper NUTS runs, joint NUTS gated, analytic-Q SE gated", {
   spec <- .frac_1d_spec(n = 40L, nu = 0.5)
+  # Joint-over-hypers fractional NUTS stays gated -- the rational roots are not
+  # differentiable in kappa (gcol33/tulpa#85).
   expect_error(
     tulpa_nuts_spde(y = rnorm(40), X = matrix(1, 40, 1), spatial = spec,
-                    family = "gaussian"),
+                    family = "gaussian", joint = TRUE),
     "fractional"
   )
+  # Fixed-hyper fractional NUTS now runs: the rational precision Q is precomputed
+  # in R and passed to the sampler (#85).
+  set.seed(1)
+  fit <- tulpa_nuts_spde(y = rnorm(40), X = matrix(1, 40, 1), spatial = spec,
+                         family = "gaussian", n_iter = 60L, n_warmup = 30L)
+  expect_true(isTRUE(fit$rational))
+  expect_true(is.matrix(fit$draws))
+  # The analytic integer-Q rebuild helper stays integer-only: the fractional
+  # marginal SE goes through the rational assembly (.spde_assemble_at), not this
+  # shifted-alpha rebuild.
   expect_error(
     tulpa:::.spde_precision_Q(spec, kappa = 5, tau_spde = 1),
     "integer-nu only"

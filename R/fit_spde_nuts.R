@@ -96,11 +96,22 @@ tulpa_nuts_spde <- function(y, X, spatial,
          "(see `spatial_spde()` / `spatial_spde_custom()`).",
          call. = FALSE)
   }
+  # Fractional nu uses the operator-based rational field (BRASIL roots, #71).
+  # The fixed-hyper sampler (joint = FALSE) precomputes the rational precision
+  # Q = Pl' C^{-1} Pl in R (.spde_assemble_at) and samples the auxiliary weights
+  # x ~ N(0, Q^{-1}); the field is u = Pr x. Joint-over-hypers fractional NUTS
+  # stays gated -- the rational roots are not differentiable in kappa, so the
+  # non-centered z -> w transform has no fractional analogue.
+  frac_fixed_hyper <- FALSE
   if (.spde_nu_is_fractional(spatial$nu)) {
-    stop("NUTS for a fractional-nu SPDE is not yet supported (gcol33/tulpa#71; #85): ",
-         "the operator-based rational field is wired through the Laplace fitter ",
-         "(`fit_spde()`), not the NUTS sampler. Use an integer nu for NUTS, or ",
-         "`fit_spde()` for fractional nu.", call. = FALSE)
+    if (isTRUE(joint)) {
+      stop("Joint-hyper NUTS for a fractional-nu SPDE is not supported ",
+           "(gcol33/tulpa#85): the rational roots are not differentiable in ",
+           "kappa. Use joint = FALSE (fixed range/sigma) for fractional NUTS, ",
+           "the nested-Laplace path over (range, sigma) for full hyper ",
+           "integration, or an integer nu for joint NUTS.", call. = FALSE)
+    }
+    frac_fixed_hyper <- TRUE
   }
 
   y <- as.numeric(y)
@@ -193,19 +204,46 @@ tulpa_nuts_spde <- function(y, X, spatial,
   if (is.null(n_trials)) n_trials <- rep(1L, N)
   n_trials <- as.integer(n_trials)
 
+  # Fractional fixed-hyper: assemble the rational precision Q and rational
+  # observation map A_eff = A Pr at (range, sigma) on the non-orphan submesh, and
+  # pass them precomputed (the legacy poles/weights QBuilder cannot reproduce the
+  # BRASIL field). The sampler then draws the auxiliary weights x (named "w") of
+  # length n_sub; the field u = Pr x is reconstructed below. Integer / joint runs
+  # keep the FEM construction.
+  A_x_use <- spatial$A_x; A_i_use <- spatial$A_i; A_p_use <- spatial$A_p
+  n_mesh_use <- spatial$n_mesh
+  C0_use <- spatial$C0_diag
+  G1_x_use <- spatial$G1_x; G1_i_use <- spatial$G1_i; G1_p_use <- spatial$G1_p
+  Q_pre_x <- NULL; Q_pre_i <- NULL; Q_pre_p <- NULL
+  frac_asm <- NULL
+  if (frac_fixed_hyper) {
+    order    <- spatial$rational_order %||% 2L
+    frac_asm <- .spde_assemble_at(spatial, range, sigma, order = order)
+    n_sub    <- length(frac_asm$keep)
+    Aeff     <- as(frac_asm$A_eff, "CsparseMatrix")
+    Qg       <- as(frac_asm$Q, "CsparseMatrix")
+    fem      <- .spde_fem_matrices(spatial)
+    Gk       <- as(fem$G[frac_asm$keep, frac_asm$keep, drop = FALSE], "CsparseMatrix")
+    A_x_use <- Aeff@x; A_i_use <- Aeff@i; A_p_use <- Aeff@p
+    n_mesh_use <- n_sub
+    C0_use  <- as.numeric(spatial$C0_diag)[frac_asm$keep]
+    G1_x_use <- Gk@x; G1_i_use <- Gk@i; G1_p_use <- Gk@p
+    Q_pre_x <- Qg@x; Q_pre_i <- Qg@i; Q_pre_p <- Qg@p
+  }
+
   res <- cpp_tulpa_fit_spde_nuts(
     y_r              = y,
     n_trials_r       = n_trials,
     X_r              = X,
-    A_x              = spatial$A_x,
-    A_i              = spatial$A_i,
-    A_p              = spatial$A_p,
+    A_x              = A_x_use,
+    A_i              = A_i_use,
+    A_p              = A_p_use,
     n_obs            = N,
-    n_mesh           = spatial$n_mesh,
-    C0_diag          = spatial$C0_diag,
-    G1_x             = spatial$G1_x,
-    G1_i             = spatial$G1_i,
-    G1_p             = spatial$G1_p,
+    n_mesh           = n_mesh_use,
+    C0_diag          = C0_use,
+    G1_x             = G1_x_use,
+    G1_i             = G1_i_use,
+    G1_p             = G1_p_use,
     kappa            = kappa,
     tau_spde         = tau_spde,
     family           = family,
@@ -220,25 +258,44 @@ tulpa_nuts_spde <- function(y, X, spatial,
     adapt_delta      = adapt_delta,
     seed             = as.integer(seed),
     verbose          = isTRUE(verbose),
-    # Rational poles/weights are passed in both modes when nu is
-    # fractional. The fixed-hyper Laplace path uses them to rebuild Q
-    # at the outer grid points; the joint-NUTS path uses them inside
-    # SpdeNcTransform on every gradient call.
-    rational_poles_nullable   = if (!rat$is_integer) rat$poles   else NULL,
-    rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL,
+    # Rational poles/weights feed the legacy integer-mesh joint path only; the
+    # fractional fixed-hyper path passes Q precomputed (Q_precomp_*) instead.
+    rational_poles_nullable   = if (!rat$is_integer && !frac_fixed_hyper) rat$poles   else NULL,
+    rational_weights_nullable = if (!rat$is_integer && !frac_fixed_hyper) rat$weights else NULL,
     joint_hypers      = joint,
     prior_range_0     = prior_range_0,
     prior_range_alpha = prior_range_alpha,
     prior_sigma_0     = prior_sigma_0,
     prior_sigma_alpha = prior_sigma_alpha,
     log_kappa_init    = log_kappa_init_v,
-    log_tau_init      = log_tau_init_v
+    log_tau_init      = log_tau_init_v,
+    Q_precomp_x       = Q_pre_x,
+    Q_precomp_i       = Q_pre_i,
+    Q_precomp_p       = Q_pre_p
   )
 
   res$range   <- range
   res$sigma   <- sigma
   res$spatial <- spatial
   res$joint   <- joint
+
+  # Fractional fixed-hyper: the sampled "w" columns are the auxiliary weights x
+  # on the submesh; reconstruct the field u = Pr x and scatter to the full mesh
+  # (orphan nodes carry zero field), so `field_draws` is comparable to the
+  # integer path's field draws.
+  if (frac_fixed_hyper) {
+    p_cols  <- res$p
+    w_cols  <- p_cols + seq_len(n_mesh_use)
+    x_draws <- res$draws[, w_cols, drop = FALSE]
+    Pr      <- frac_asm$Pr
+    field_sub <- as.matrix(Pr %*% t(x_draws))            # n_sub x n_sample
+    field_full <- matrix(0, nrow(res$draws), spatial$n_mesh)
+    field_full[, frac_asm$keep] <- t(field_sub)
+    colnames(field_full) <- paste0("u[", seq_len(spatial$n_mesh), "]")
+    res$field_draws <- field_full
+    res$keep        <- frac_asm$keep
+    res$rational    <- TRUE
+  }
 
   # phi summary on the natural scale, for families that sample it. The
   # meaning of phi is family-specific: residual SD (gaussian), shape

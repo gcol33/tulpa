@@ -221,7 +221,10 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     double prior_sigma_0     = -1.0,
     double prior_sigma_alpha = -1.0,
     double log_kappa_init    = 0.0,
-    double log_tau_init      = 0.0
+    double log_tau_init      = 0.0,
+    Rcpp::Nullable<Rcpp::NumericVector> Q_precomp_x = R_NilValue,
+    Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_i = R_NilValue,
+    Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_p = R_NilValue
 ) {
     const int N = y_r.size();
     const int p = X_r.ncol();
@@ -315,7 +318,20 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
                        "and of equal length.");
         }
     }
-    if (!joint_hypers) {
+    // Precomputed-Q path (fractional-nu fixed-hyper, gcol33/tulpa#85): the
+    // current operator-based rational field (BRASIL roots, #71) assembles its
+    // precision Q = Pl' C^{-1} Pl in R (.spde_assemble_at), which the stale
+    // poles/weights QBuilder rebuild cannot reproduce. When the caller passes
+    // the precomputed Q (and A carries the rational A_eff = A Pr), use it
+    // directly: the sampler then draws the auxiliary weights x ~ N(0, Q^{-1})
+    // with eta = X beta + A_eff x, the field being u = Pr x (mapped back in R).
+    const bool use_precomp_Q = Q_precomp_x.isNotNull() &&
+                               Q_precomp_i.isNotNull() && Q_precomp_p.isNotNull();
+    if (use_precomp_Q && joint_hypers) {
+        Rcpp::stop("Precomputed Q is a fixed-hyper path; joint_hypers must be "
+                   "FALSE (the rational roots are not differentiable in kappa).");
+    }
+    if (!joint_hypers && !use_precomp_Q) {
         qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
         if (use_rational) {
             qb.rebuild_rational(kappa, tau_spde, rat_poles, rat_weights);
@@ -414,9 +430,17 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     sm.G1_p.assign(G1_p.begin(), G1_p.end());
     sm.a_rows   = std::move(a_rows);
     if (!joint_hypers) {
-        sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
-        sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
-        sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
+        if (use_precomp_Q) {
+            Rcpp::NumericVector qx(Q_precomp_x);
+            Rcpp::IntegerVector qi(Q_precomp_i), qp(Q_precomp_p);
+            sm.Q_x.assign(qx.begin(), qx.end());
+            sm.Q_i.assign(qi.begin(), qi.end());
+            sm.Q_p.assign(qp.begin(), qp.end());
+        } else {
+            sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
+            sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
+            sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());
+        }
     }
     // Rational coefficients are needed in both modes: fixed-hyper Laplace
     // uses them to rebuild Q at each outer-grid point, and joint-NUTS uses
