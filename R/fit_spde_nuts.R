@@ -242,7 +242,12 @@ tulpa_nuts_spde <- function(y, X, spatial,
     frac_asm <- .spde_assemble_at(spatial, range, sigma, order = order)
     n_sub    <- length(frac_asm$keep)
     Aeff     <- as(frac_asm$A_eff, "CsparseMatrix")
-    Qg       <- as(frac_asm$Q, "CsparseMatrix")
+    # Full both-triangle storage: .spde_assemble_at returns Q as a symmetric
+    # dsCMatrix (one stored triangle), but the C++ SPDE prior loop sums over
+    # stored CSC entries and assumes full symmetric storage (it matches the
+    # SpdeQBuilder convention). Coerce to generalMatrix so both triangles are
+    # passed, as the Laplace path already does (gcol33/tulpa#87).
+    Qg       <- as(frac_asm$Q, "generalMatrix")
     fem      <- .spde_fem_matrices(spatial)
     Gk       <- as(fem$G[frac_asm$keep, frac_asm$keep, drop = FALSE], "CsparseMatrix")
     A_x_use <- Aeff@x; A_i_use <- Aeff@i; A_p_use <- Aeff@p

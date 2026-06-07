@@ -374,3 +374,50 @@ test_that("tulpa_nuts_spde fixed-hyper fractional nu recovers + matches Laplace 
   lap_beta <- lap$mode[seq_len(ncol(X))]
   expect_lt(max(abs(beta_post - lap_beta)), 0.12)
 })
+
+test_that("fractional-nu fixed-hyper NUTS calibrates beta SD to the Laplace SE (#87)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+
+  # Companion to the integer-path #87 SD-calibration test above, on the rational
+  # (fractional nu) field. The bug #87 closed here was a Q-storage one: the
+  # fractional precomp path passed the assembled precision as a one-triangle
+  # symmetric dsCMatrix, but the C++ CSC prior loop sums stored entries assuming
+  # full both-triangle storage, so half the off-diagonals were dropped and the
+  # prior was too tight -> the marginal beta SD collapsed (~0.04 vs ~0.15). The
+  # mode-only #85 test could not see it; only an SD assertion does.
+  set.seed(303)
+  n_obs  <- 200
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  spec   <- helper_make_spde_spec(coords, max_edge = c(0.45, 0.9),
+                                  cutoff = 0.18, nu = 0.5)
+  expect_true(tulpa:::.spde_nu_is_fractional(spec$nu))
+
+  beta0 <- 0.2; beta1 <- 0.6; sigma_obs <- 0.4
+  range_true <- 0.45; sigma_w <- 0.45
+  x_cov <- runif(n_obs, -2, 2); X <- cbind(1, x_cov)
+  w_true <- rnorm(spec$n_mesh, 0, 0.3); w_true <- w_true - mean(w_true)
+  eta <- beta0 + beta1 * x_cov + as.numeric(spec$A %*% w_true)
+  y   <- eta + rnorm(n_obs, 0, sigma_obs)
+
+  fit <- tulpa_nuts_spde(
+    y = y, X = X, spatial = spec, family = "gaussian",
+    range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
+    noncenter = TRUE, n_iter = 1500L, n_warmup = 800L, seed = 11L)
+  sd_n <- apply(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE], 2L, sd)
+  expect_lt(sum(fit$divergent), 0.05 * length(fit$divergent))
+
+  lap <- tulpa:::laplace_spde_at(
+    y = y, n_trials = rep(1L, n_obs), X = X, spatial = spec,
+    family = "gaussian", phi = sigma_obs^2,
+    range = range_true, sigma = sigma_w, max_iter = 100L, tol = 1e-6)
+  Hb <- tulpa:::.marginal_H_beta_spde(
+    mode = lap$mode, X = X, spatial = spec, family = "gaussian",
+    phi = sigma_obs^2, n_trials = rep(1L, n_obs),
+    range_val = range_true, sigma_val = sigma_w)
+  se_lap <- sqrt(diag(solve(as.matrix(Hb))))
+
+  # Calibrated, not under-dispersed: pre-fix the intercept SD ratio was ~0.28.
+  expect_lt(abs(sd_n[1] - se_lap[1]) / se_lap[1], 0.30)
+  expect_lt(abs(sd_n[2] - se_lap[2]) / se_lap[2], 0.30)
+})
