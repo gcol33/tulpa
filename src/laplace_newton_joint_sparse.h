@@ -58,6 +58,11 @@ struct NewtonScratchJointSparse {
     DenseVec  grad;              // size n_x, zeroed per iter
     std::vector<double> delta;   // size n_x, written by sparse solve
 
+    // Pattern-invariant cache for the final-pass s2z log-determinant, reused
+    // across all outer-grid cells this scratch solves. Built lazily on first
+    // use (no s2z field -> never touched). See S2ZLogDetCache.
+    S2ZLogDetCache s2z_log_det_cache;
+
     void allocate(int n_x, const std::vector<JointArm>& arms) {
         x      = Rcpp::NumericVector(n_x, 0.0);
         x_try  = Rcpp::NumericVector(n_x, 0.0);
@@ -358,7 +363,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     if (s2z_direct) {
         TULPA_PROFILE_PHASE(PHASE_LOG_DET);
         s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
-                                         /*fallback=*/S2Z_NA);
+                                         /*fallback=*/S2Z_NA,
+                                         &scratch.s2z_log_det_cache);
     }
     { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
       joint_pd_step_solve(H_builder, solver, n_x, pd_mode,

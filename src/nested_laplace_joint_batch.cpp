@@ -51,6 +51,11 @@ struct SpeciesState {
     DenseVec delta;
     DenseCholeskyScratch chol;
     SparseCholeskySolver sparse;
+    // Pattern-invariant cache for this species' final-pass s2z log-determinant,
+    // reused across all grid cells. All B species share one pattern, but each
+    // owns its own builder + solver, so the cache is per-species. Built lazily
+    // on first use. See S2ZLogDetCache.
+    S2ZLogDetCache s2z_log_det_cache;
 
     void allocate(int n_x, const std::vector<JointArm>& arms, bool use_sparse) {
         x = Rcpp::NumericVector(n_x, 0.0);
@@ -481,7 +486,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
                 double s2z_log_det = S2Z_NA;
                 if (!H.s2z_rank1.empty()) {
-                    s2z_log_det = s2z_log_det_direct(H, H.s2z_rank1, S2Z_NA);
+                    s2z_log_det = s2z_log_det_direct(H, H.s2z_rank1, S2Z_NA,
+                                                     &st[s].s2z_log_det_cache);
                 }
                 joint_pd_step_solve(H, st[s].sparse, n_x, JointPDMode::LM,
                                     grad.data(), st[s].delta.data(), &log_det);
