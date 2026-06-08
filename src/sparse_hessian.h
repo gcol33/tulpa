@@ -19,6 +19,8 @@
 #include <vector>
 #include <map>
 #include <cmath>
+#include <cstdlib>
+#include <algorithm>
 
 namespace tulpa {
 
@@ -379,6 +381,309 @@ inline void build_s2z_log_det_cache(
 // and read log|B|. Without a cache the same work is done statelessly. Returns
 // log|B| on success. On any failure (allocation, non-PD) returns `fallback` (the
 // bare log|A| the caller already holds) so the marginal stays finite.
+// Small dense SPD Cholesky (row-major), for the K x K capacitance and the
+// n_s x n_s Schur complement in the block-Schur log-determinant / solve.
+struct SmallChol {
+    int m = 0;
+    std::vector<double> L;   // lower-triangle row-major
+    bool ok = false;
+    void factor(const std::vector<double>& M, int m_) {
+        m = m_; L.assign((std::size_t) m * m, 0.0); ok = true;
+        for (int i = 0; i < m; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                double s = M[(std::size_t) i * m + j];
+                for (int p = 0; p < j; ++p) s -= L[(std::size_t) i*m+p] * L[(std::size_t) j*m+p];
+                if (i == j) {
+                    if (s <= 0.0) { ok = false; return; }
+                    L[(std::size_t) i*m+i] = std::sqrt(s);
+                } else {
+                    L[(std::size_t) i*m+j] = s / L[(std::size_t) j*m+j];
+                }
+            }
+        }
+    }
+    void solve(const double* b, double* x) const {     // L L' x = b
+        std::vector<double> y(m);
+        for (int i = 0; i < m; ++i) {
+            double s = b[i];
+            for (int p = 0; p < i; ++p) s -= L[(std::size_t) i*m+p] * y[p];
+            y[i] = s / L[(std::size_t) i*m+i];
+        }
+        for (int i = m - 1; i >= 0; --i) {
+            double s = y[i];
+            for (int p = i + 1; p < m; ++p) s -= L[(std::size_t) p*m+i] * x[p];
+            x[i] = s / L[(std::size_t) i*m+i];
+        }
+    }
+    double logdet() const {
+        double d = 0.0;
+        for (int i = 0; i < m; ++i) d += 2.0 * std::log(L[(std::size_t) i*m+i]);
+        return d;
+    }
+};
+
+// Pattern-invariant cache for s2z_block_schur, reused across outer-grid cells and
+// (in the batched driver) across species sharing one design + s2z layout. Mirrors
+// S2ZLogDetCache: the field/scalar partition, the A_FF sparsity pattern and its
+// symbolic CHOLMOD factor, and the per-A-nonzero scatter destinations are fixed
+// across a fit; only values change, so each call re-scatters + numerically
+// re-factorizes. Validity keyed on n_x, A's nnz, and the s2z block layout.
+struct S2ZBlockSchurCache {
+    bool built = false;
+    int  n_x = -1, a_nnz = -1, nf = 0, ns = 0;
+    std::vector<std::pair<int,int>> block_layout;
+    std::vector<int> floc, sloc;       // n_x: local field / scalar index, -1 otherwise
+    std::vector<int> dest_kind;        // per A nonzero: 0=field-field, 1=scalar-scalar, 2=field-scalar
+    std::vector<int> dest_a, dest_b;   // primary dest index; symmetric A_ss index (kind 1 off-diag) else -1
+    SparseHessianBuilder aff;          // A_FF pattern + values (zeroed/scattered per call)
+    SparseCholeskySolver aff_solver;   // symbolic factor once, numeric per call
+
+    bool matches(const SparseHessianBuilder& A,
+                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1) const {
+        if (!built || n_x != A.n || a_nnz != A.nnz) return false;
+        if (block_layout.size() != r1.size()) return false;
+        for (std::size_t k = 0; k < r1.size(); ++k)
+            if (block_layout[k].first != r1[k].start || block_layout[k].second != r1[k].n)
+                return false;
+        return true;
+    }
+};
+
+// (Re)build the pattern-invariant block-Schur cache: field/scalar partition, the
+// A_FF CSC pattern + its symbolic factor, and each A nonzero's scatter target.
+inline void build_s2z_block_schur_cache(
+    const SparseHessianBuilder& A,
+    const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+    S2ZBlockSchurCache& cache
+) {
+    const int n_x = A.n;
+    const int K = static_cast<int>(r1.size());
+    cache.floc.assign(n_x, -1);
+    cache.sloc.assign(n_x, -1);
+    int nf = 0;
+    for (int g = 0; g < n_x; ++g) {
+        bool isf = false;
+        for (int k = 0; k < K; ++k)
+            if (g >= r1[k].start && g < r1[k].start + r1[k].n) { isf = true; break; }
+        if (isf) cache.floc[g] = nf++;
+    }
+    int ns = 0;
+    for (int g = 0; g < n_x; ++g) if (cache.floc[g] < 0) cache.sloc[g] = ns++;
+    cache.nf = nf; cache.ns = ns;
+
+    std::vector<std::pair<int,int>> ffpat;
+    cache.dest_kind.assign(A.nnz, 0);
+    cache.dest_a.assign(A.nnz, -1);
+    cache.dest_b.assign(A.nnz, -1);
+    int t = 0;
+    for (int c = 0; c < n_x; ++c)
+        for (int p = A.col_ptr[c]; p < A.col_ptr[c + 1]; ++p, ++t) {
+            const int r = A.row_idx[p];
+            const int fr = cache.floc[r], fc = cache.floc[c], sr = cache.sloc[r], sc = cache.sloc[c];
+            if (fr >= 0 && fc >= 0)      { cache.dest_kind[t] = 0; ffpat.emplace_back(fr, fc); }
+            else if (sr >= 0 && sc >= 0) { cache.dest_kind[t] = 1; cache.dest_a[t] = sr*ns+sc;
+                                           cache.dest_b[t] = (sr != sc) ? sc*ns+sr : -1; }
+            else if (fr >= 0 && sc >= 0) { cache.dest_kind[t] = 2; cache.dest_a[t] = fr*ns + sc; }
+            else                          { cache.dest_kind[t] = 2; cache.dest_a[t] = fc*ns + sr; }
+        }
+    cache.aff.init(nf, ffpat);
+    // Resolve field-field value slots now the A_FF pattern (entry_map) exists.
+    t = 0;
+    for (int c = 0; c < n_x; ++c)
+        for (int p = A.col_ptr[c]; p < A.col_ptr[c + 1]; ++p, ++t)
+            if (cache.dest_kind[t] == 0)
+                cache.dest_a[t] = cache.aff.lookup(cache.floc[A.row_idx[p]], cache.floc[c]);
+
+    cache.aff_solver.reset();
+    cholmod_sparse view = cache.aff.as_cholmod(&cache.aff_solver.common());
+    cache.aff_solver.analyze(&view);
+
+    cache.n_x = n_x; cache.a_nnz = A.nnz;
+    cache.block_layout.clear(); cache.block_layout.reserve(K);
+    for (int k = 0; k < K; ++k) cache.block_layout.emplace_back(r1[k].start, r1[k].n);
+    cache.built = true;
+}
+
+// Block-Schur log-determinant for B = A + sum_k coef_k 1_k 1_k'. Partitions the
+// latent into the field indices F (the union of the s2z block ranges) and the
+// scalar complement S (intercepts, betas, REs). Factors the sparse field
+// sub-block A_FF (PD -- pinned off the constant by per-cell data curvature at low
+// tau and by the ICAR at high tau, verified across the grid), folds the K rank-1
+// pins via the matrix-determinant lemma, and closes the field<->scalar coupling
+// with a small dense Schur complement:
+//   log|B| = log|A_FF| + log|C| + log|C^-1 + U' A_FF^-1 U|      (= log|B_FF|)
+//          + log|A_ss - A_sf B_FF^-1 A_fs|.                     (Schur, n_s x n_s)
+// U = [1_k] in local field coords, C = diag(coef_k). All sparse + O(K^3) +
+// O(n_s^3); no dense field block, no uniform ridge. Exact and well-conditioned:
+// A_FF is PD, so U'A_FF^-1 U is bounded -- the ef208f0 cancellation needs the
+// UNPINNED full A, which this never factors. Returns `fallback` on any non-PD /
+// allocation failure.
+inline bool s2z_block_schur(
+    const SparseHessianBuilder& A,
+    const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+    const double* grad,        // n_x gradient, or nullptr for determinant only
+    double* delta,             // n_x Newton step B^-1 grad output, or nullptr
+    double* logdet_out,        // log|B| output, or nullptr
+    S2ZBlockSchurCache* cache = nullptr
+) {
+    const int K = static_cast<int>(r1.size());
+    if (K == 0) return false;
+    const int n_x = A.n;
+
+    S2ZBlockSchurCache local_cache;
+    S2ZBlockSchurCache& cc = cache ? *cache : local_cache;
+    if (!cc.matches(A, r1)) build_s2z_block_schur_cache(A, r1, cc);
+    const int nf = cc.nf, ns = cc.ns;
+    const std::vector<int>& floc = cc.floc;
+    const std::vector<int>& sloc = cc.sloc;
+
+    // Scatter A's values into the cached A_FF pattern + dense A_ss / A_fs via the
+    // precomputed per-nonzero destinations (no membership recompute, no re-sort).
+    cc.aff.zero();
+    double* __restrict__ affv = cc.aff.values.data();
+    std::vector<double> Ass((std::size_t) ns * ns, 0.0);
+    std::vector<double> Afs((std::size_t) nf * ns, 0.0);
+    {
+        int t = 0;
+        for (int c = 0; c < n_x; ++c)
+            for (int p = A.col_ptr[c]; p < A.col_ptr[c + 1]; ++p, ++t) {
+                const double v = A.values[p];
+                const int a = cc.dest_a[t];
+                switch (cc.dest_kind[t]) {
+                    case 0:  if (a >= 0) affv[a] += v; break;
+                    case 1:  Ass[a] += v; if (cc.dest_b[t] >= 0) Ass[cc.dest_b[t]] += v; break;
+                    default: Afs[a] += v; break;
+                }
+            }
+    }
+
+    cholmod_sparse vff = cc.aff.as_cholmod(&cc.aff_solver.common());
+    if (!cc.aff_solver.analyzed()) cc.aff_solver.analyze(&vff);
+    if (!cc.aff_solver.factorize(&vff)) return false;   // A_FF indefinite -> caller falls back to LM
+    const double logAFF = cc.aff_solver.log_determinant();
+    SparseCholeskySolver& sf = cc.aff_solver;
+
+    // W = A_FF^-1 U (U = [1_k] local). cap = C^-1 + U'A_FF^-1 U (K x K, SPD).
+    std::vector<std::vector<double>> W(K, std::vector<double>(nf, 0.0));
+    {
+        std::vector<double> uk(nf, 0.0);
+        for (int k = 0; k < K; ++k) {
+            std::fill(uk.begin(), uk.end(), 0.0);
+            for (int i = 0; i < r1[k].n; ++i) uk[floc[r1[k].start + i]] = 1.0;
+            sf.solve(uk.data(), W[k].data(), nf);
+        }
+    }
+    std::vector<double> cap((std::size_t) K * K, 0.0);
+    for (int a = 0; a < K; ++a)
+        for (int b = 0; b < K; ++b) {
+            double m = 0.0;   // 1_a' W_b
+            for (int i = 0; i < r1[a].n; ++i) m += W[b][floc[r1[a].start + i]];
+            cap[(std::size_t) a*K + b] = m + (a == b ? 1.0 / r1[a].coef : 0.0);
+        }
+    SmallChol capL; capL.factor(cap, K);
+    if (!capL.ok) return false;
+    double logC = 0.0;
+    for (int k = 0; k < K; ++k) logC += std::log(r1[k].coef);
+    const double logBFF = logAFF + logC + capL.logdet();
+
+    // Schur S = A_ss - A_sf B_FF^-1 A_fs, with B_FF^-1 y = A_FF^-1 y - W cap^-1 (W'y).
+    // Z[j] = B_FF^-1 A_fs[:,j] is reused for the step's field back-substitution.
+    std::vector<std::vector<double>> Z(ns, std::vector<double>(nf, 0.0));
+    std::vector<double> S = Ass;
+    {
+        std::vector<double> col(nf), ainv(nf), wty(K), capy(K);
+        for (int j = 0; j < ns; ++j) {
+            for (int i = 0; i < nf; ++i) col[i] = Afs[(std::size_t) i*ns + j];
+            sf.solve(col.data(), ainv.data(), nf);                 // A_FF^-1 A_fs[:,j]
+            for (int k = 0; k < K; ++k) {                           // W' col = U' A_FF^-1 col
+                double s = 0.0;
+                for (int i = 0; i < nf; ++i) s += W[k][i] * col[i];
+                wty[k] = s;
+            }
+            capL.solve(wty.data(), capy.data());
+            for (int i = 0; i < nf; ++i) {
+                double corr = 0.0;
+                for (int k = 0; k < K; ++k) corr += W[k][i] * capy[k];
+                Z[j][i] = ainv[i] - corr;
+            }
+        }
+        for (int i = 0; i < ns; ++i)
+            for (int j = 0; j < ns; ++j) {
+                double m = 0.0;                                    // A_fs[:,i]' Z[j]
+                for (int t = 0; t < nf; ++t) m += Afs[(std::size_t) t*ns + i] * Z[j][t];
+                S[(std::size_t) i*ns + j] -= m;
+            }
+    }
+    SmallChol SL;
+    double logS = 0.0;
+    if (ns > 0) {
+        SL.factor(S, ns);
+        if (!SL.ok) return false;
+        logS = SL.logdet();
+    }
+    if (logdet_out) {
+        const double ld = logBFF + logS;
+        if (!std::isfinite(ld)) return false;
+        *logdet_out = ld;
+    }
+
+    // Step: delta = B^-1 grad via block elimination.
+    //   bf_g = B_FF^-1 g_f ;  S s = g_s - A_fs' bf_g ;  f = bf_g - sum_j Z[j] s_j.
+    if (grad && delta) {
+        std::vector<double> gf(nf, 0.0), gs(ns, 0.0);
+        for (int g = 0; g < n_x; ++g) {
+            if (floc[g] >= 0) gf[floc[g]] = grad[g];
+            else              gs[sloc[g]] = grad[g];
+        }
+        std::vector<double> ainv(nf, 0.0), bf_g(nf, 0.0), wty(K), capy(K);
+        sf.solve(gf.data(), ainv.data(), nf);
+        for (int k = 0; k < K; ++k) {
+            double s = 0.0;
+            for (int i = 0; i < nf; ++i) s += W[k][i] * gf[i];
+            wty[k] = s;
+        }
+        capL.solve(wty.data(), capy.data());
+        for (int i = 0; i < nf; ++i) {
+            double corr = 0.0;
+            for (int k = 0; k < K; ++k) corr += W[k][i] * capy[k];
+            bf_g[i] = ainv[i] - corr;
+        }
+        std::vector<double> svec(ns, 0.0);
+        if (ns > 0) {
+            std::vector<double> rhs(ns, 0.0);
+            for (int j = 0; j < ns; ++j) {
+                double m = 0.0;
+                for (int t = 0; t < nf; ++t) m += Afs[(std::size_t) t*ns + j] * bf_g[t];
+                rhs[j] = gs[j] - m;
+            }
+            SL.solve(rhs.data(), svec.data());
+        }
+        for (int g = 0; g < n_x; ++g) {
+            if (floc[g] >= 0) {
+                const int i = floc[g];
+                double acc = bf_g[i];
+                for (int j = 0; j < ns; ++j) acc -= Z[j][i] * svec[j];
+                delta[g] = acc;
+            } else {
+                delta[g] = svec[sloc[g]];
+            }
+        }
+        for (int g = 0; g < n_x; ++g) if (!std::isfinite(delta[g])) return false;
+    }
+    return true;
+}
+
+// Determinant-only convenience wrapper over s2z_block_schur.
+inline double s2z_log_det_block_schur(
+    const SparseHessianBuilder& A,
+    const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+    double fallback,
+    S2ZBlockSchurCache* cache = nullptr
+) {
+    double ld;
+    return s2z_block_schur(A, r1, nullptr, nullptr, &ld, cache) ? ld : fallback;
+}
+
 inline double s2z_log_det_direct(
     const SparseHessianBuilder& A_builder,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,

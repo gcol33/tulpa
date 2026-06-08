@@ -509,6 +509,10 @@ cpp_test_spde_nc_transform_fwd <- function(C0_diag, G1_x, G1_i, G1_p, z_init, lo
     .Call(`_tulpa_cpp_test_spde_nc_transform_fwd`, C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps, poles_nullable, weights_nullable)
 }
 
+cpp_test_s2z_block_schur <- function(A, pin_start, pin_n, pin_coef, grad) {
+    .Call(`_tulpa_cpp_test_s2z_block_schur`, A, pin_start, pin_n, pin_coef, grad)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

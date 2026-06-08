@@ -1,5 +1,27 @@
 # tulpa NEWS
 
+## 0.0.21 (2026-06-08)
+
+* perf/fix(nested-laplace): the sparse sum-to-zero large-field inner solve now
+  takes the exact block-Schur Newton step instead of escalating a
+  Levenberg-Marquardt ridge until the pinned Hessian factors. For
+  `B = A + sum_k coef_k 1_k 1_k'` (the intrinsic field plus its sum-to-zero
+  rank-1 pins) the field sub-block `A_FF` is factored once, the pins fold via the
+  matrix-determinant lemma, and the field<->scalar coupling closes with a small
+  dense Schur complement -- the true Newton step with no perturbing ridge, so the
+  inner iteration converges quadratically and no longer drops ill-conditioned
+  high-`(sigma, alpha)` grid cells to `-Inf` (gcol33/tulpa#69). The Laplace
+  log-determinant uses the same partition (`log|B| = log|B_FF| + log|Schur|`),
+  which never factors the unpinned near-singular full matrix and so avoids the
+  matrix-determinant-lemma cancellation along the constant direction. The single-
+  species sparse oracle and the fused batched multi-response driver
+  (`run_multi_block_nested_laplace_joint_batch`) route their inner step through
+  one shared `s2z_newton_step`, so they stay bit-identical per species; the LM
+  ridge + Woodbury path remains the fallback when `A_FF` or the Schur complement
+  is indefinite far from the mode. Validated bit-identical (batched vs single,
+  `max|dmode| = max|dlogmarg| = max|dQ| = 0` at a 412-cell field) and locked by a
+  direct block-Schur-vs-dense-LLT log-determinant + step unit test.
+
 ## 0.0.20 (2026-06-08)
 
 * feat(spatial): `spatial(graph, formula = ~ 1 + time || cell)` declares areal

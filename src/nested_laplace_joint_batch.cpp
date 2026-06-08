@@ -57,6 +57,10 @@ struct SpeciesState {
     // on first use. See S2ZLogDetCache.
     S2ZLogDetCache s2z_log_det_cache;
 
+    // Pattern-invariant cache for the block-Schur inner step + log-determinant on
+    // the s2z large-field path (per species: own A_FF builder + symbolic factor).
+    S2ZBlockSchurCache s2z_block_schur_cache;
+
     void allocate(int n_x, const std::vector<JointArm>& arms, bool use_sparse) {
         x = Rcpp::NumericVector(n_x, 0.0);
         x_try = Rcpp::NumericVector(n_x, 0.0);
@@ -230,24 +234,21 @@ inline void add_species_priors_sparse(
     H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 }
 
-// One PD-enforced sparse Newton step for one species: factor H (base ridge
-// applied), solve H delta = grad, then fold the sum-to-zero rank-1 penalties
-// into the step (Woodbury). Identical step to the single-species sparse oracle:
-// joint_pd_step_solve in LM mode + apply_s2z_rank1_correction. Returns the
-// solver's success flag.
+// One sparse Newton step for one species: the exact block-Schur step on the
+// sum-to-zero large-field path (true Newton, quadratic convergence), else the LM
+// escalating-ridge step + Woodbury. Identical step to the single-species sparse
+// oracle (both route through s2z_newton_step). Returns the success flag.
 inline bool species_sparse_step(
     SparseHessianBuilder&  H,
     SparseCholeskySolver&  solver,
     int                    n_x,
     const DenseVec&        grad,
-    DenseVec&              delta
+    DenseVec&              delta,
+    S2ZBlockSchurCache&    bs_cache
 ) {
-    bool ok = joint_pd_step_solve(H, solver, n_x, JointPDMode::LM,
-                                  grad.data(), delta.data(), nullptr);
-    if (ok) {
-        apply_s2z_rank1_correction(solver, n_x, H.s2z_rank1, delta.data());
-    }
-    return ok;
+    bool used_block_schur = false;
+    return s2z_newton_step(H, solver, n_x, JointPDMode::LM,
+                           grad.data(), delta.data(), used_block_schur, &bs_cache);
 }
 
 } // anonymous namespace
@@ -414,7 +415,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 if (use_sparse) {
                     SparseHessianBuilder& H = H_sparse_per_sp[s];
                     add_species_priors_sparse(H, grad, st[s].x, blocks, parsed, kg);
-                    ok = species_sparse_step(H, st[s].sparse, n_x, grad, st[s].delta);
+                    ok = species_sparse_step(H, st[s].sparse, n_x, grad, st[s].delta,
+                                             st[s].s2z_block_schur_cache);
                 } else {
                     DenseMat& H = H_per_sp[s];
                     for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, st[s].x, kg);
@@ -486,8 +488,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
                 double s2z_log_det = S2Z_NA;
                 if (!H.s2z_rank1.empty()) {
-                    s2z_log_det = s2z_log_det_direct(H, H.s2z_rank1, S2Z_NA,
-                                                     &st[s].s2z_log_det_cache);
+                    s2z_log_det = s2z_log_det_block_schur(H, H.s2z_rank1, S2Z_NA,
+                                                          &st[s].s2z_block_schur_cache);
+                    if (!std::isfinite(s2z_log_det))
+                        s2z_log_det = s2z_log_det_direct(H, H.s2z_rank1, S2Z_NA,
+                                                         &st[s].s2z_log_det_cache);
                 }
                 joint_pd_step_solve(H, st[s].sparse, n_x, JointPDMode::LM,
                                     grad.data(), st[s].delta.data(), &log_det);

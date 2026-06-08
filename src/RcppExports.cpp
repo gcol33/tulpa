@@ -2334,6 +2334,21 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_s2z_block_schur
+List cpp_test_s2z_block_schur(NumericMatrix A, IntegerVector pin_start, IntegerVector pin_n, NumericVector pin_coef, NumericVector grad);
+RcppExport SEXP _tulpa_cpp_test_s2z_block_schur(SEXP ASEXP, SEXP pin_startSEXP, SEXP pin_nSEXP, SEXP pin_coefSEXP, SEXP gradSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericMatrix >::type A(ASEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type pin_start(pin_startSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type pin_n(pin_nSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type pin_coef(pin_coefSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type grad(gradSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_s2z_block_schur(A, pin_start, pin_n, pin_coef, grad));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -2909,6 +2924,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_arena_custom_backward", (DL_FUNC) &_tulpa_cpp_test_arena_custom_backward, 2},
     {"_tulpa_cpp_test_spde_nc_transform_grad", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_grad, 10},
     {"_tulpa_cpp_test_spde_nc_transform_fwd", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_fwd, 10},
+    {"_tulpa_cpp_test_s2z_block_schur", (DL_FUNC) &_tulpa_cpp_test_s2z_block_schur, 5},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

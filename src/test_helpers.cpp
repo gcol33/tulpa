@@ -2,6 +2,7 @@
 // Rcpp wrappers to expose internal C++ functions for unit testing
 
 #include <Rcpp.h>
+#include <RcppEigen.h>
 #include <cmath>
 #include <vector>
 #include <random>
@@ -11,6 +12,7 @@
 #include "laplace_core.h"
 #include "pg_binomial.h"
 #include "hmc_gp.h"
+#include "sparse_hessian.h"
 
 using namespace Rcpp;
 
@@ -1283,5 +1285,96 @@ List cpp_test_spde_nc_transform_fwd(
     _["w"]      = NumericVector(w_baseline.data(), w_baseline.data() + n),
     _["dw_fwd"] = dw_fwd,
     _["dw_fd"]  = dw_fd
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sum-to-zero block-Schur log-determinant + Newton step (gcol33/tulpa#69)
+// ---------------------------------------------------------------------------
+//
+// Drives the exact block-Schur path (s2z_block_schur / s2z_log_det_block_schur)
+// for B = A + sum_k coef_k 1_k 1_k' on a caller-supplied symmetric PD `A` and a
+// set of rank-1 sum-to-zero pins, and returns three independent computations of
+// log|B| plus the step error against a dense reference:
+//   * ld_block_schur  -- s2z_log_det_block_schur (the path under test);
+//   * ld_direct       -- s2z_log_det_direct (the CHOLMOD full-(A+11') reference,
+//                        itself validated dense-11'-vs-rank1 in ef208f0);
+//   * ld_dense        -- an independent Eigen LLT factorization of dense B;
+//   * max_dstep       -- max|delta_block_schur - B^{-1} grad| (Eigen LLT solve).
+// `A` is read as a full symmetric matrix; its lower-triangle nonzeros seed the
+// SparseHessianBuilder pattern. Field membership is the union of the pin ranges.
+//
+// [[Rcpp::export]]
+List cpp_test_s2z_block_schur(
+    NumericMatrix A,
+    IntegerVector pin_start,   // 0-based start of each rank-1 pin
+    IntegerVector pin_n,       // length of each pin
+    NumericVector pin_coef,    // coef of each pin
+    NumericVector grad
+) {
+  const int n = A.nrow();
+  const int K = pin_start.size();
+
+  // Pattern + scatter from the lower-triangle nonzeros of A.
+  std::vector<std::pair<int,int>> pattern;
+  for (int c = 0; c < n; ++c)
+    for (int r = c; r < n; ++r)
+      if (A(r, c) != 0.0) pattern.push_back({r, c});
+
+  tulpa::SparseHessianBuilder H;
+  H.init(n, pattern);
+  H.zero();
+  for (int c = 0; c < n; ++c)
+    for (int r = c; r < n; ++r)
+      if (A(r, c) != 0.0) H.add(r, c, A(r, c));
+  for (int k = 0; k < K; ++k)
+    H.add_s2z_rank1(pin_start[k], pin_n[k], pin_coef[k]);
+
+  // Path under test: log-det (determinant-only wrapper) and the step.
+  const double ld_block_schur =
+      tulpa::s2z_log_det_block_schur(H, H.s2z_rank1, NA_REAL);
+  const double ld_direct =
+      tulpa::s2z_log_det_direct(H, H.s2z_rank1, NA_REAL, nullptr);
+
+  std::vector<double> g(grad.begin(), grad.end());
+  std::vector<double> delta_bs(n, 0.0);
+  double ld_bs_step = NA_REAL;
+  const bool ok =
+      tulpa::s2z_block_schur(H, H.s2z_rank1, g.data(), delta_bs.data(), &ld_bs_step);
+
+  // Independent dense reference: B = A + sum_k coef_k 1_k 1_k', Eigen LLT.
+  Eigen::MatrixXd B(n, n);
+  for (int i = 0; i < n; ++i)
+    for (int j = 0; j < n; ++j) B(i, j) = A(i, j);
+  for (int k = 0; k < K; ++k) {
+    const int s = pin_start[k], m = pin_n[k];
+    const double cf = pin_coef[k];
+    for (int i = s; i < s + m; ++i)
+      for (int j = s; j < s + m; ++j) B(i, j) += cf;
+  }
+  Eigen::LLT<Eigen::MatrixXd> llt(B);
+  double ld_dense = NA_REAL;
+  double max_dstep = NA_REAL;
+  if (llt.info() == Eigen::Success) {
+    const Eigen::MatrixXd& L = llt.matrixL();
+    double ld = 0.0;
+    for (int i = 0; i < n; ++i) ld += 2.0 * std::log(L(i, i));
+    ld_dense = ld;
+    Eigen::VectorXd gv(n);
+    for (int i = 0; i < n; ++i) gv[i] = grad[i];
+    const Eigen::VectorXd dd = llt.solve(gv);
+    double md = 0.0;
+    for (int i = 0; i < n; ++i)
+      md = std::max(md, std::fabs(delta_bs[i] - dd[i]));
+    max_dstep = md;
+  }
+
+  return List::create(
+    _["ld_block_schur"]      = ld_block_schur,
+    _["ld_direct"]           = ld_direct,
+    _["ld_dense"]            = ld_dense,
+    _["ld_block_schur_step"] = ld_bs_step,
+    _["ok"]                  = ok,
+    _["max_dstep"]           = max_dstep
   );
 }
