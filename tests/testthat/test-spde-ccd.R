@@ -97,16 +97,23 @@ test_that("fit_spde(method='ccd') matches grid integration on shared mode", {
                     method = "grid", n_grid = 7L)
 
   expect_identical(fit_g$nested$method, "grid")
-  # Both posterior means must be finite. When CCD does not fall back to
-  # grid, posterior means should agree to within ~1 decade on log-scale
-  # (CCD is 9 nodes, grid is 49 — different integration rules).
   expect_true(all(is.finite(c(fit_c$nested$range_mean,
                               fit_c$nested$sigma_mean,
                               fit_g$nested$range_mean,
                               fit_g$nested$sigma_mean))))
   if (identical(fit_c$nested$method, "ccd")) {
-    expect_lt(abs(log(fit_c$nested$range_mean) - log(fit_g$nested$range_mean)), 1.0)
-    expect_lt(abs(log(fit_c$nested$sigma_mean) - log(fit_g$nested$sigma_mean)), 1.0)
+    # Compare an axis only where the grid mode is interior to the grid span.
+    # The grid box is fixed at prior_mode * [0.3, 3]; when the SPDE marginal is
+    # only weakly identified in an axis its mode lands on the box edge, so the
+    # grid integrates a censored region and is not a valid reference for the
+    # wider, mode-centred CCD design. On interior axes the 9-node CCD and the
+    # 49-node grid should agree to within ~1 decade on the log scale.
+    g_interior <- function(best, grid)
+      best > min(grid) * (1 + 1e-6) && best < max(grid) * (1 - 1e-6)
+    if (g_interior(fit_g$nested$range_best, fit_g$nested$range_grid))
+      expect_lt(abs(log(fit_c$nested$range_mean) - log(fit_g$nested$range_mean)), 1.0)
+    if (g_interior(fit_g$nested$sigma_best, fit_g$nested$sigma_grid))
+      expect_lt(abs(log(fit_c$nested$sigma_mean) - log(fit_g$nested$sigma_mean)), 1.0)
   }
 })
 
@@ -129,4 +136,30 @@ test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
   off <- suppressWarnings(
     fit_spde(y, X, d$spec, family = "poisson", method = "ccd", diagnose_k = FALSE))
   expect_true(is.na(off$pareto_k))                  # gated off
+})
+
+test_that("fit_spde_nested_ccd builds the CCD design at a clean interior mode", {
+  # A textbook-concave log-marginal in (log range, log sigma) with an interior
+  # maximum; combined with the PC prior, obj has a clean interior minimum, so
+  # the precision optimHess(obj) is PD and the CCD design must engage rather
+  # than fall back to the rectangular grid. Drives the integrator directly so
+  # the branch is exercised without depending on a particular mesh/data
+  # realisation landing interior.
+  r0 <- 0.3; s0 <- 0.6
+  spde_log_marginal <- function(r, s) {
+    lm <- -0.5 * ((log(r) - log(r0))^2 / 0.25 + (log(s) - log(s0))^2 / 0.25)
+    list(log_marginal = lm, n_iter = rep(5L, length(r)))
+  }
+  fit_spde_single <- function(range, sigma)
+    list(mode = NULL, beta = NULL, spatial_effects = NULL, log_det_Q = NA_real_)
+  sp <- list(prior_range = c(0.3, 0.5), prior_sigma = c(0.6, 0.05))
+
+  res <- fit_spde_nested_ccd(spde_log_marginal, fit_spde_single, sp,
+                             spatial = list(), diagnose_k = FALSE)
+
+  expect_identical(res$nested$method, "ccd")
+  expect_equal(res$nested$n_points, 9L)
+  expect_equal(sum(res$nested$weights), 1, tolerance = 1e-8)
+  expect_true(is.finite(res$range) && res$range > 0)
+  expect_true(is.finite(res$sigma) && res$sigma > 0)
 })

@@ -182,14 +182,13 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   range_hat <- exp(theta_hat[1])
   sigma_hat <- exp(theta_hat[2])
 
-  # Local Hessian via stats::optimHess (central differences). On the
-  # log-scale, -H gives the precision of the Gaussian approximation to
-  # p(theta | y); we want its Cholesky to scale the CCD design.
+  # Local Hessian via stats::optimHess (central differences). obj is the
+  # negative log-posterior, so its Hessian at the mode is the precision of
+  # the Gaussian approximation to p(theta | y); the Cholesky of its inverse
+  # scales the CCD design.
   H <- stats::optimHess(par = theta_hat, fn = obj)
-  neg_H <- -H
-  # Force symmetry, then ensure PD by ridging up if needed.
-  neg_H <- 0.5 * (neg_H + t(neg_H))
-  ev <- eigen(neg_H, symmetric = TRUE, only.values = TRUE)$values
+  prec <- 0.5 * (H + t(H))   # symmetrise before the conditioning check
+  ev <- eigen(prec, symmetric = TRUE, only.values = TRUE)$values
   # Reject degenerate Hessians: if the smallest eigenvalue is essentially
   # zero relative to the largest, the posterior is too flat for a CCD
   # design to wrap. Quadratic-rule integration would put nodes at extreme
@@ -202,7 +201,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
                                 diagnose_k = diagnose_k, k_samples = k_samples))
   }
-  sigma_post <- tryCatch(solve(neg_H), error = function(e) NULL)
+  sigma_post <- tryCatch(solve(prec), error = function(e) NULL)
   if (is.null(sigma_post)) {
     warning("nested-Laplace Hessian inverse failed; ",
             "falling back to the rectangular grid.")
