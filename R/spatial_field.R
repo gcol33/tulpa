@@ -36,8 +36,12 @@
 #'   the single bar `|` would request correlated fields (a multivariate CAR)
 #'   and is not yet implemented.
 #' @param proper Logical; `FALSE` (default) builds intrinsic CAR (ICAR /
-#'   Besag) fields with the sum-to-zero constraint. `TRUE` (proper CAR with an
-#'   estimated spatial autocorrelation) is reserved for a future release.
+#'   Besag) fields with the sum-to-zero constraint (`rho` fixed at 1). `TRUE`
+#'   builds proper CAR fields, each with its own precision `Q = D - rho_car W`
+#'   and the spatial autocorrelation `rho_car` estimated from the data (one
+#'   `(sigma, rho_car)` pair per field). `summary()` and `print()` report the
+#'   per-field `rho_car`. Independent (`||`) only; correlated proper CAR (a
+#'   single `|` with `proper = TRUE`) is a separate model.
 #' @param shared Optional shared-effect handle, passed through to the field
 #'   blocks (see the model docs). Default `NULL` (shared).
 #' @param by Reserved. A future replicated-CAR argument that would build an
@@ -133,11 +137,6 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
          "slopes, e.g. ~ 1 + time || cell.", call. = FALSE)
   }
 
-  if (isTRUE(proper)) {
-    stop("Proper CAR varying-coefficient fields (proper = TRUE) are not wired ",
-         "yet; use the default intrinsic CAR (proper = FALSE).", call. = FALSE)
-  }
-
   structure(
     list(
       type          = "car_field",
@@ -214,17 +213,22 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
 # format tulpa_nested_laplace_joint() consumes: one block per design column,
 # each carrying the per-arm spatial_idx and (for non-intercept columns) the
 # per-arm svc_weight. Built for a single response arm; the per-arm lists are
-# length 1.
+# length 1. `proper = TRUE` builds `car_proper` blocks carrying the
+# eigenvalue-derived `rho_bounds` (so the registry derives a (tau, rho_car)
+# outer grid and rho_car is estimated per field); `proper = FALSE` builds
+# intrinsic `icar` blocks (rho fixed at 1).
 .spatial_field_blocks <- function(spec, data) {
   adj <- as.matrix(spec$adjacency)
   csr <- adjacency_to_csr_tulpa(adj)
   n_units <- nrow(adj)
   idx <- .resolve_unit_index(data[[spec$group_var]], spec$group_var, n_units)
   cols <- .spatial_field_columns(spec, data)
+  proper <- isTRUE(spec$proper)
+  rho_bounds <- if (proper) compute_car_rho_bounds(adj) else NULL
 
   lapply(cols, function(col) {
     blk <- list(
-      type            = "icar",
+      type            = if (proper) "car_proper" else "icar",
       name            = paste(spec$group_var, col$name, sep = "."),
       n_spatial_units = as.integer(n_units),
       adj_row_ptr     = as.integer(csr$row_ptr),
@@ -232,6 +236,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
       n_neighbors     = as.integer(csr$n_neighbors),
       spatial_idx     = list(as.integer(idx))
     )
+    if (proper) blk$rho_bounds <- as.numeric(rho_bounds)
     if (!col$is_intercept) {
       blk$svc_weight <- list(as.numeric(col$weight))
     }
@@ -342,6 +347,26 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   })
   names(spatial_fields) <- block_names
 
+  # Per-field hyperparameter posteriors, marginalized over the outer grid: the
+  # field amplitude sigma = 1/sqrt(tau) and (for proper CAR) the spatial
+  # autocorrelation rho_car. Each is a derived quantity evaluated per grid cell
+  # then weighted-quantiled (never a plug-in of the modal hyperparameter). The
+  # outer-grid axes are named `b<block>.tau` / `b<block>.rho`.
+  tg <- jfit$theta_grid
+  spatial_field_hypers <- lapply(seq_along(blocks), function(b) {
+    prefix  <- paste0("b", b, ".")
+    tau_col <- paste0(prefix, "tau")
+    rho_col <- paste0(prefix, "rho")
+    has_col <- function(nm) !is.null(tg) && nm %in% colnames(tg)
+    sigma <- if (has_col(tau_col))
+      .nl_wtd_quantile(1 / sqrt(tg[, tau_col]), w, c(0.025, 0.5, 0.975)) else NULL
+    rho_car <- if (has_col(rho_col))
+      .nl_wtd_quantile(tg[, rho_col], w, c(0.025, 0.5, 0.975)) else NULL
+    list(name = block_names[b], structure = blocks[[b]]$type,
+         sigma = sigma, rho_car = rho_car)
+  })
+  names(spatial_field_hypers) <- block_names
+
   # Fixed-effect posterior draws (for coef/summary). Mixture-sample the latent
   # then slice the per-arm beta block.
   beta_cols <- beta_start + seq_len(p)
@@ -357,6 +382,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   fit$param_names <- colnames(bundle$X)
   fit$spatial_fields <- spatial_fields
   fit$spatial_field_names <- block_names
+  fit$spatial_field_hypers <- spatial_field_hypers
   fit$inference_mode <- "laplace"
   fit$inference_tier <- 2L
   fit$backend <- "spatial_field_nested_laplace"
@@ -372,6 +398,32 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   fit$model_matrix <- bundle$X
   class(fit) <- c("tulpa_spatial_field_fit", "tulpa_fit", oldClass(fit))
   fit
+}
+
+
+#' @export
+print.tulpa_spatial_field_fit <- function(x, ...) {
+  cat("tulpa fit: inline spatial() varying-coefficient field(s)\n")
+  cat("  N =", x$N, " fixed effects =", length(x$means), "\n\n")
+  cat("Fixed effects (posterior mean):\n")
+  print(round(x$means, 4))
+  hy <- x$spatial_field_hypers
+  if (length(hy)) {
+    cat("\nSpatial fields:\n")
+    for (h in hy) {
+      struct <- if (identical(h$structure, "car_proper")) "proper CAR" else "ICAR"
+      cat(sprintf("  %s [%s]\n", h$name, struct))
+      if (!is.null(h$sigma)) {
+        cat(sprintf("    sigma    %.3f  (95%% CI %.3f, %.3f)\n",
+                    h$sigma[2L], h$sigma[1L], h$sigma[3L]))
+      }
+      if (!is.null(h$rho_car)) {
+        cat(sprintf("    rho_car  %.3f  (95%% CI %.3f, %.3f)\n",
+                    h$rho_car[2L], h$rho_car[1L], h$rho_car[3L]))
+      }
+    }
+  }
+  invisible(x)
 }
 
 

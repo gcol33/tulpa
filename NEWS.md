@@ -1,5 +1,22 @@
 # tulpa NEWS
 
+## 0.0.22 (2026-06-08)
+
+* feat(spatial): `spatial(graph, ~ ... || cell, proper = TRUE)` builds proper
+  CAR varying-coefficient fields, where each field's precision is
+  `Q = D - rho_car W` with the spatial autocorrelation `rho_car` estimated from
+  the data instead of the intrinsic `rho = 1` (#90). Each field stays
+  independent (`||`) but gains its own `(sigma, rho_car)` pair, so the per-field
+  outer grid is 2D (the `car_proper` registry derives the `(tau, rho_car)` axes
+  from the eigenvalue interval of `D^-1 W`); two proper fields give 4 axes and
+  CCD engages automatically. `print()` reports each field's structure (`ICAR`
+  vs `proper CAR`) plus the marginalized `sigma` and `rho_car` (median + 95% CI,
+  each a derived quantity weighted-quantiled over the outer grid, never a
+  plug-in of the modal hyperparameter); `fit$spatial_field_hypers` exposes them.
+  `proper = FALSE` (default) is unchanged (intrinsic ICAR, `rho` fixed at 1). A
+  single `|` with `proper = TRUE` (correlated proper CAR) remains a separate
+  model.
+
 ## 0.0.21 (2026-06-08)
 
 * perf/fix(nested-laplace): the sparse sum-to-zero large-field inner solve now

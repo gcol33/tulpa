@@ -21,8 +21,12 @@ the single bar \code{|} would request correlated fields (a multivariate CAR)
 and is not yet implemented.}
 
 \item{proper}{Logical; \code{FALSE} (default) builds intrinsic CAR (ICAR /
-Besag) fields with the sum-to-zero constraint. \code{TRUE} (proper CAR with an
-estimated spatial autocorrelation) is reserved for a future release.}
+Besag) fields with the sum-to-zero constraint (\code{rho} fixed at 1). \code{TRUE}
+builds proper CAR fields, each with its own precision \verb{Q = D - rho_car W}
+and the spatial autocorrelation \code{rho_car} estimated from the data (one
+\verb{(sigma, rho_car)} pair per field). \code{summary()} and \code{print()} report the
+per-field \code{rho_car}. Independent (\code{||}) only; correlated proper CAR (a
+single \code{|} with \code{proper = TRUE}) is a separate model.}
 
 \item{shared}{Optional shared-effect handle, passed through to the field
 blocks (see the model docs). Default \code{NULL} (shared).}

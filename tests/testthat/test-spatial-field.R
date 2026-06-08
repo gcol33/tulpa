@@ -89,9 +89,10 @@ test_that("spatial() enforces the bar grammar", {
   # by= is reserved.
   expect_error(spatial(graph = adj, formula = ~ 1 || cell, by = quote(hab)),
                "not implemented")
-  # proper CAR is reserved.
-  expect_error(spatial(graph = adj, formula = ~ 1 || cell, proper = TRUE),
-               "not wired")
+  # proper CAR is now wired (independent fields with estimated rho_car); see
+  # test-spatial-proper-car.R. It constructs without error.
+  expect_s3_class(spatial(graph = adj, formula = ~ 1 || cell, proper = TRUE),
+                  "tulpa_spatial_field")
   # Non-square / non-symmetric graphs are rejected.
   expect_error(spatial(graph = matrix(0, 3, 4), formula = ~ 1 || cell),
                "square")
