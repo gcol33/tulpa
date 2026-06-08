@@ -41,6 +41,16 @@ A \code{tulpa_temporal_posterior} object
 Extract posterior distributions of temporal effects from a fitted tulpa
 model with temporal specification.
 }
+\details{
+\code{temporal()} is overloaded. Given a fitted model it is the accessor described
+here. Given a one-sided formula (or a named \verb{formula =} / \verb{structure =}
+argument) it is instead the inline varying-coefficient field constructor used
+in a \code{tulpa()} model formula, the temporal mirror of \code{\link[=spatial]{spatial()}}:
+\code{temporal(formula = ~ 1 + x || time, structure = "rw1")} declares a smooth
+temporal level (the intercept column) plus a temporally varying slope on each
+covariate column. \code{structure} is one of \code{"rw1"} (default), \code{"rw2"}, or
+\code{"ar1"}; only the double bar \code{||} (independent fields) is supported.
+}
 \examples{
 \dontrun{
 # Fit model with multi-scale temporal effects (not run - experimental)

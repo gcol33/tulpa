@@ -306,6 +306,14 @@
             n_times      = as.integer(p$n_times)
         )
         if (type == "rw1") out$cyclic <- isTRUE(p$cyclic)
+        # Optional per-arm per-row design weight (temporal SVC). Parallel to the
+        # areal branch: the field's contribution to arm k row i is row-scaled by
+        # svc_weight[[k]][i] (eta_i += svc_weight[[k]][i] * amplitude *
+        # f[time_i]), used for a temporally varying slope on a covariate column.
+        if (!is.null(p$svc_weight)) {
+            out$svc_weight <- .multi_block_svc_weight(
+                p$svc_weight, temporal_idx, n_arms, block_index)
+        }
         out
     } else if (type == "iid") {
         if (is.null(p$obs_idx)) {

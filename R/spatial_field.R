@@ -159,8 +159,9 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
 
 # Conceptual field labels from the bar LHS, without needing the data. Factor
 # covariates expand to several model.matrix columns at fit time; this lists the
-# model terms (one entry per term), which is what print shows.
-.spatial_field_term_labels <- function(spec) {
+# model terms (one entry per term), which is what print shows. Shared by the
+# spatial and temporal inline-field constructors (the bar grammar is identical).
+.bar_field_term_labels <- function(spec) {
   lhs_form <- stats::as.formula(call("~", spec$lhs), env = spec$env)
   tt <- stats::terms(lhs_form)
   labs <- attr(tt, "term.labels")
@@ -172,8 +173,9 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
 # column: name, the per-observation weight (the column itself), and whether it
 # is the intercept (all-ones) column. This is the single source of the
 # "one field per design column, weighted by it" rule -- the intercept is just
-# the ones column, so there is no separate weighted vs unweighted path.
-.spatial_field_columns <- function(spec, data) {
+# the ones column, so there is no separate weighted vs unweighted path. Shared
+# by spatial() and temporal(); `fname` only flavours the error messages.
+.bar_field_columns <- function(spec, data, fname = "spatial") {
   lhs_form <- stats::as.formula(call("~", spec$lhs), env = spec$env)
   N <- nrow(data)
   tt <- stats::terms(lhs_form)
@@ -181,7 +183,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
 
   if (length(all.vars(lhs_form)) == 0L) {
     if (!has_int) {
-      stop("spatial() `formula` has no terms.", call. = FALSE)
+      stop(fname, "() `formula` has no terms.", call. = FALSE)
     }
     return(list(list(name = "Intercept", weight = rep(1.0, N),
                      is_intercept = TRUE)))
@@ -190,8 +192,8 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   mf <- stats::model.frame(lhs_form, data = data, na.action = stats::na.pass)
   mm <- stats::model.matrix(tt, mf)
   if (nrow(mm) != N) {
-    stop("spatial() design expansion produced ", nrow(mm), " row(s) but data ",
-         "has ", N, "; check for NA in the spatial() covariate(s).",
+    stop(fname, "() design expansion produced ", nrow(mm), " row(s) but data ",
+         "has ", N, "; check for NA in the ", fname, "() covariate(s).",
          call. = FALSE)
   }
   cols <- colnames(mm)
@@ -199,7 +201,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
     nm <- cols[[j]]
     is_int <- identical(nm, "(Intercept)")
     if (anyNA(mm[, j])) {
-      stop("spatial() covariate column '", nm, "' has NA value(s).",
+      stop(fname, "() covariate column '", nm, "' has NA value(s).",
            call. = FALSE)
     }
     list(name = if (is_int) "Intercept" else nm,
@@ -222,7 +224,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   csr <- adjacency_to_csr_tulpa(adj)
   n_units <- nrow(adj)
   idx <- .resolve_unit_index(data[[spec$group_var]], spec$group_var, n_units)
-  cols <- .spatial_field_columns(spec, data)
+  cols <- .bar_field_columns(spec, data, fname = "spatial")
   proper <- isTRUE(spec$proper)
   rho_bounds <- if (proper) compute_car_rho_bounds(adj) else NULL
 
@@ -242,6 +244,120 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
     }
     blk
   })
+}
+
+
+# Shared fit engine for an inline bar field (spatial or temporal). Given the
+# already-built block list (icar / car_proper / rw1 / rw2 / ar1, each optionally
+# carrying a per-row svc_weight), fit the one-arm joint nested-Laplace model and
+# return the pieces both wrappers assemble into a tulpa_fit: the joint fit, the
+# per-field weighted-mode posterior means, the per-field hyperparameter
+# summaries, and the fixed-effect draws. The hyperparameter summaries are
+# generic over the outer-grid axes: sigma = 1/sqrt(tau) from the `b<b>.tau`
+# axis, and (when present) the second axis `b<b>.rho` -- which the caller labels
+# rho_car (CAR) or the AR1 rho (temporal). Each is a derived quantity evaluated
+# per grid cell then weighted-quantiled, never a plug-in of the modal value.
+.bar_field_fit_core <- function(blocks, block_names, bundle, parsed, family,
+                                phi, n_trials, sigma_re, control,
+                                arm_spatial_idx = NULL) {
+  N <- bundle$n_obs
+
+  # Single random intercept (1 | g) is conditioned on at sigma_re, as on the
+  # other front-door nested paths; richer RE structure is out of scope here.
+  re <- bundle$re_terms %||% list()
+  re_idx <- rep(0L, N)
+  n_re_groups <- 0L
+  sigma_re_scalar <- 1.0
+  if (length(re) > 0L) {
+    if (length(re) > 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
+      stop("Inline bar fields support at most one random-intercept term ",
+           "(1 | g) alongside the field(s). Model richer random effects ",
+           "separately.", call. = FALSE)
+    }
+    re_idx <- as.integer(re[[1]]$group_idx)
+    n_re_groups <- as.integer(re[[1]]$n_groups)
+    sigma_re_scalar <- if (is.null(sigma_re)) 1.0 else sigma_re[1]
+  }
+
+  arm <- list(
+    y           = bundle$y,
+    n_trials    = n_trials %||% rep(1L, N),
+    X           = bundle$X,
+    re_idx      = re_idx,
+    n_re_groups = n_re_groups,
+    sigma_re    = sigma_re_scalar,
+    family      = family,
+    phi         = phi
+  )
+  # Spatial fields pin the arm's spatial_idx (legacy-kernel compatibility);
+  # temporal fields carry their index on the block and leave the arm placeholder.
+  if (!is.null(arm_spatial_idx)) arm$spatial_idx <- arm_spatial_idx
+
+  ctrl <- control %||% list()
+  ctrl$store_Q <- TRUE
+  ctrl$progress <- ctrl$progress %||% FALSE
+  # Two or more fields make the tensor outer grid blow up multiplicatively;
+  # CCD is the engine's recommended path for k >= 2 outer axes (same posterior,
+  # polynomial node count). A single field keeps the driver's default grid.
+  if (length(blocks) >= 2L) {
+    ctrl$integration <- ctrl$integration %||% "ccd"
+  }
+  n_draws <- as.integer(ctrl$n_draws %||% 1000L)
+  ctrl$n_draws <- NULL
+
+  jfit <- withCallingHandlers(
+    tulpa_nested_laplace_joint(
+      responses = stats::setNames(list(arm), parsed$response %||% "y"),
+      prior     = blocks,
+      copy      = NULL,
+      control   = ctrl
+    ),
+    warning = function(w) {
+      if (grepl("multi-block grid has", conditionMessage(w), fixed = TRUE)) {
+        invokeRestart("muffleWarning")
+      }
+    }
+  )
+
+  al <- jfit$arm_layout
+  p <- ncol(bundle$X)
+  beta_start <- if (!is.null(al$beta_start)) al$beta_start[1L] else 0L
+  field_starts <- al$field_starts
+  w <- jfit$weights
+
+  # Weighted-mode posterior mean of each field (sum_k w_k m_k restricted to the
+  # field's latent block).
+  fields <- lapply(seq_along(blocks), function(b) {
+    n_u <- blocks[[b]]$n_spatial_units %||% blocks[[b]]$n_times
+    cols <- field_starts[b] + seq_len(n_u)
+    list(name = block_names[b],
+         mean = as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE])))
+  })
+  names(fields) <- block_names
+
+  tg <- jfit$theta_grid
+  hypers <- lapply(seq_along(blocks), function(b) {
+    prefix  <- paste0("b", b, ".")
+    has_col <- function(nm) !is.null(tg) && nm %in% colnames(tg)
+    sigma <- if (has_col(paste0(prefix, "tau")))
+      .nl_wtd_quantile(1 / sqrt(tg[, paste0(prefix, "tau")]), w,
+                       c(0.025, 0.5, 0.975)) else NULL
+    rho <- if (has_col(paste0(prefix, "rho")))
+      .nl_wtd_quantile(tg[, paste0(prefix, "rho")], w,
+                       c(0.025, 0.5, 0.975)) else NULL
+    list(name = block_names[b], structure = blocks[[b]]$type,
+         sigma = sigma, rho = rho)
+  })
+  names(hypers) <- block_names
+
+  # Fixed-effect posterior draws (for coef/summary). Mixture-sample the latent
+  # then slice the per-arm beta block.
+  beta_cols <- beta_start + seq_len(p)
+  draws_full <- tulpa_posterior_draws(jfit, idx = NULL, n = n_draws)
+  beta_draws <- draws_full[, beta_cols, drop = FALSE]
+  colnames(beta_draws) <- colnames(bundle$X)
+
+  list(jfit = jfit, fields = fields, hypers = hypers, beta_draws = beta_draws)
 }
 
 
@@ -265,122 +381,30 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   }
 
   specs <- parsed$spatial_field_blocks
-  N <- bundle$n_obs
-
-  # Single random intercept (1 | g) is conditioned on at sigma_re, as on the
-  # other front-door nested paths; richer RE structure is out of scope here.
-  re <- bundle$re_terms %||% list()
-  re_idx <- rep(0L, N)
-  n_re_groups <- 0L
-  sigma_re_scalar <- 1.0
-  if (length(re) > 0L) {
-    if (length(re) > 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
-      stop("Inline spatial() fields support at most one random-intercept term ",
-           "(1 | g) alongside the spatial field(s). Model richer random ",
-           "effects separately.", call. = FALSE)
-    }
-    re_idx <- as.integer(re[[1]]$group_idx)
-    n_re_groups <- as.integer(re[[1]]$n_groups)
-    sigma_re_scalar <- if (is.null(sigma_re)) 1.0 else sigma_re[1]
-  }
-
   blocks <- unlist(lapply(specs, .spatial_field_blocks, data = data),
                    recursive = FALSE)
   block_names <- vapply(blocks, function(b) b$name, character(1))
 
-  first_idx <- blocks[[1L]]$spatial_idx[[1L]]
-  arm <- list(
-    y           = bundle$y,
-    n_trials    = n_trials %||% rep(1L, N),
-    X           = bundle$X,
-    re_idx      = re_idx,
-    n_re_groups = n_re_groups,
-    sigma_re    = sigma_re_scalar,
-    spatial_idx = first_idx,
-    family      = family,
-    phi         = phi
-  )
+  core <- .bar_field_fit_core(
+    blocks = blocks, block_names = block_names, bundle = bundle,
+    parsed = parsed, family = family, phi = phi, n_trials = n_trials,
+    sigma_re = sigma_re, control = control,
+    arm_spatial_idx = blocks[[1L]]$spatial_idx[[1L]])
+  jfit <- core$jfit
 
-  ctrl <- control %||% list()
-  ctrl$store_Q <- TRUE
-  ctrl$progress <- ctrl$progress %||% FALSE
-  # Two or more fields make the tensor outer grid blow up multiplicatively;
-  # CCD is the engine's recommended path for k >= 2 outer axes (same posterior,
-  # polynomial node count). A single field keeps the driver's default grid.
-  if (length(blocks) >= 2L) {
-    ctrl$integration <- ctrl$integration %||% "ccd"
-  }
-  n_draws <- as.integer(ctrl$n_draws %||% 1000L)
-  ctrl$n_draws <- NULL
-
-  # The tensor outer grid's cell count is an intended property of the field
-  # count (shown by print.tulpa_spatial_field); muffle only that specific
-  # grid-size notice -- CCD cannot engage below three axes, so its advice does
-  # not apply to the common intercept-plus-one-slope case. Other warnings pass.
-  jfit <- withCallingHandlers(
-    tulpa_nested_laplace_joint(
-      responses = stats::setNames(list(arm), parsed$response %||% "y"),
-      prior     = blocks,
-      copy      = NULL,
-      control   = ctrl
-    ),
-    warning = function(w) {
-      if (grepl("multi-block grid has", conditionMessage(w), fixed = TRUE)) {
-        invokeRestart("muffleWarning")
-      }
-    }
-  )
-
-  al <- jfit$arm_layout
-  p <- ncol(bundle$X)
-  beta_start <- if (!is.null(al$beta_start)) al$beta_start[1L] else 0L
-  field_starts <- al$field_starts
-
-  # Weighted-mode posterior mean of each CAR field (sum_k w_k m_k restricted to
-  # the field's latent block) -- the deterministic field summary.
-  w <- jfit$weights
-  spatial_fields <- lapply(seq_along(blocks), function(b) {
-    n_u <- blocks[[b]]$n_spatial_units
-    cols <- field_starts[b] + seq_len(n_u)
-    list(name = block_names[b],
-         mean = as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE])))
-  })
-  names(spatial_fields) <- block_names
-
-  # Per-field hyperparameter posteriors, marginalized over the outer grid: the
-  # field amplitude sigma = 1/sqrt(tau) and (for proper CAR) the spatial
-  # autocorrelation rho_car. Each is a derived quantity evaluated per grid cell
-  # then weighted-quantiled (never a plug-in of the modal hyperparameter). The
-  # outer-grid axes are named `b<block>.tau` / `b<block>.rho`.
-  tg <- jfit$theta_grid
-  spatial_field_hypers <- lapply(seq_along(blocks), function(b) {
-    prefix  <- paste0("b", b, ".")
-    tau_col <- paste0(prefix, "tau")
-    rho_col <- paste0(prefix, "rho")
-    has_col <- function(nm) !is.null(tg) && nm %in% colnames(tg)
-    sigma <- if (has_col(tau_col))
-      .nl_wtd_quantile(1 / sqrt(tg[, tau_col]), w, c(0.025, 0.5, 0.975)) else NULL
-    rho_car <- if (has_col(rho_col))
-      .nl_wtd_quantile(tg[, rho_col], w, c(0.025, 0.5, 0.975)) else NULL
-    list(name = block_names[b], structure = blocks[[b]]$type,
-         sigma = sigma, rho_car = rho_car)
-  })
+  # The second outer axis of a CAR field is the spatial autocorrelation rho_car.
+  spatial_field_hypers <- lapply(core$hypers, function(h)
+    list(name = h$name, structure = h$structure,
+         sigma = h$sigma, rho_car = h$rho))
   names(spatial_field_hypers) <- block_names
-
-  # Fixed-effect posterior draws (for coef/summary). Mixture-sample the latent
-  # then slice the per-arm beta block.
-  beta_cols <- beta_start + seq_len(p)
-  draws_full <- tulpa_posterior_draws(jfit, idx = NULL, n = n_draws)
-  beta_draws <- draws_full[, beta_cols, drop = FALSE]
-  colnames(beta_draws) <- colnames(bundle$X)
 
   layout <- .tulpa_param_layout(bundle)
   fit <- jfit
-  fit$draws <- beta_draws
+  fit$draws <- core$beta_draws
   fit$draws_kind <- "iid"
-  fit$means <- colMeans(beta_draws)
+  fit$means <- colMeans(core$beta_draws)
   fit$param_names <- colnames(bundle$X)
-  fit$spatial_fields <- spatial_fields
+  fit$spatial_fields <- core$fields
   fit$spatial_field_names <- block_names
   fit$spatial_field_hypers <- spatial_field_hypers
   fit$inference_mode <- "laplace"
@@ -394,7 +418,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   fit$n_fixed <- layout$n_fixed
   fit$fixed_names <- layout$fixed_names
   fit$re_layout <- layout$re_layout
-  fit$N <- N
+  fit$N <- bundle$n_obs
   fit$model_matrix <- bundle$X
   class(fit) <- c("tulpa_spatial_field_fit", "tulpa_fit", oldClass(fit))
   fit
@@ -436,7 +460,7 @@ print.tulpa_spatial_field <- function(x, ...) {
   cat("Graph node index:", x$group_var, "\n")
   cat("Fields:", if (x$correlated) "correlated" else "independent",
       "(|| -> separate precision per coefficient)\n")
-  labs <- .spatial_field_term_labels(x)
+  labs <- .bar_field_term_labels(x)
   cat("Expands to", length(labs), "CAR field(s) (one per design-matrix column):\n")
   for (lab in labs) {
     cat("  ", x$group_var, ".", lab, "\n", sep = "")

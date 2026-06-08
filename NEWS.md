@@ -1,5 +1,27 @@
 # tulpa NEWS
 
+## 0.0.23 (2026-06-08)
+
+* feat(temporal): `temporal(formula = ~ 1 + x || time, structure = "rw1")`
+  declares inline temporally varying-coefficient fields in a `tulpa()` model
+  formula, the temporal mirror of `spatial()` (#91). The bar's right-hand side
+  names the time index; the left-hand side expands (via `model.matrix`) into one
+  temporal field per design column -- the intercept column is a smooth temporal
+  level, a covariate column is a temporally varying slope on it
+  (`eta_i += x_i * f(time_i)`). `structure` selects the temporal GMRF: `"rw1"`
+  (default), `"rw2"`, or `"ar1"` (which estimates its own correlation `rho`).
+  `||` (independent fields) only; a single `|` (correlated) is reserved (the
+  temporal counterpart of the spatial MCAR). `print()` and
+  `fit$temporal_field_hypers` report each field's structure, `sigma`, and (ar1)
+  `rho`. The `temporal()` accessor on a fitted model and the bare `temporal(col)`
+  naming term are unchanged -- the constructor is reached only when `temporal()`
+  is given a formula.
+* The temporal nested-Laplace blocks (`rw1` / `rw2` / `ar1`) now carry the per-
+  row design weight (`svc_weight`) that the areal blocks already had, so a
+  covariate column scales the field per observation. The spatial and temporal
+  inline-field fitters share one engine (`.bar_field_fit_core`) and one bar
+  column-expansion helper, so the two paths cannot drift.
+
 ## 0.0.22 (2026-06-08)
 
 * feat(spatial): `spatial(graph, ~ ... || cell, proper = TRUE)` builds proper

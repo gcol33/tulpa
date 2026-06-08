@@ -237,6 +237,23 @@ no_special_terms <- function(term, fname, pred = NULL) {
              logical(1)))
 }
 
+# Distinguish the two `temporal(...)` forms (the temporal mirror of
+# .is_spatial_field_call). The inline varying-coefficient field constructor is
+# signalled by a named `formula =` / `structure =` argument, or a one-sided
+# formula (`~ ...`) argument given positionally; it evaluates to a
+# tulpa_temporal_field. A bare `temporal(col)` naming term (one bare column
+# name) is left to the temporal-naming path.
+.is_temporal_field_call <- function(cl) {
+  args <- as.list(cl)[-1L]
+  nm <- names(args)
+  if (!is.null(nm) && any(nzchar(nm) & nm %in% c("formula", "structure"))) {
+    return(TRUE)
+  }
+  any(vapply(args,
+             function(a) is.call(a) && identical(a[[1L]], as.name("~")),
+             logical(1)))
+}
+
 # Extract the single bare column name from a special term, e.g. spatial(region).
 # At most one such term is allowed; it must wrap exactly one bare name.
 .special_term_var <- function(calls, fname) {
@@ -511,6 +528,33 @@ tulpa_parse_formula <- function(formula) {
     if (is.null(rhs)) rhs <- 1
   }
 
+  # Inline temporal varying-coefficient fields: temporal(formula = ~ ... || time,
+  # structure = ) calls. Extracted and stripped BEFORE bar parsing for the same
+  # reason as the spatial fields -- the field's own `|| time` bar must not be
+  # read as a model random effect by findbars().
+  temporal_field_blocks <- list()
+  tf_calls <- find_special_terms(rhs, "temporal", .is_temporal_field_call)
+  for (tc in tf_calls) {
+    blk <- tryCatch(
+      eval(tc, envir = formula_env),
+      error = function(e) {
+        stop("Failed to evaluate inline temporal() field term `",
+             paste(deparse(tc), collapse = ""),
+             "`: ", conditionMessage(e), call. = FALSE)
+      }
+    )
+    if (!inherits(blk, "tulpa_temporal_field")) {
+      stop("An inline temporal(formula = ) term must evaluate to a ",
+           "tulpa_temporal_field object; got class ",
+           paste(class(blk), collapse = "/"), ".", call. = FALSE)
+    }
+    temporal_field_blocks[[length(temporal_field_blocks) + 1L]] <- blk
+  }
+  if (length(temporal_field_blocks) > 0L) {
+    rhs <- no_special_terms(rhs, "temporal", .is_temporal_field_call)
+    if (is.null(rhs)) rhs <- 1
+  }
+
   bars <- findbars(rhs)
 
   random_effects <- list()
@@ -578,6 +622,8 @@ tulpa_parse_formula <- function(formula) {
       n_latent_blocks = length(latent_blocks),
       spatial_field_blocks   = spatial_field_blocks,
       n_spatial_field_blocks = length(spatial_field_blocks),
+      temporal_field_blocks   = temporal_field_blocks,
+      n_temporal_field_blocks = length(temporal_field_blocks),
       spatial_var     = spatial_var,
       temporal_var    = temporal_var,
       original        = formula

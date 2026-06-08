@@ -804,6 +804,17 @@ tulpa <- function(formula, data,
                                     sys.call()))
   }
 
+  # Inline temporal varying-coefficient field(s): temporal(formula = ~ ... ||
+  # time, structure = ). The temporal mirror of the spatial-field path -- each
+  # bar term expands to independent rw1 / rw2 / ar1 blocks (slope columns
+  # carrying a per-row weight) and is fit through the same single-arm joint
+  # nested-Laplace path.
+  if ((parsed$n_temporal_field_blocks %||% 0L) > 0L) {
+    return(.tulpa_fit_temporal_field(parsed, bundle, data, family, mode, phi,
+                                     sigma_re, n_trials, control, formula,
+                                     sys.call()))
+  }
+
   # Spatial field. The structure arrives via the `spatial=` argument; how it is
   # addressed depends on the field family:
   #  * Areal (icar/car/bym2/car_proper): a `spatial(col)` term names the

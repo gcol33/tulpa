@@ -607,6 +607,10 @@ int build_joint_blocks_from_spec(
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
                                             "temporal_idx", block_index);
+        // Optional per-arm per-row design weight (temporal varying coefficient):
+        // eta_i += svc_weight[[k]][i] * amplitude * f[time_i]. The areal
+        // analogue of the icar/bym2/car_proper svc_weight; unset => uniform 1.
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
         block.d_fac = [](int) -> double { return 1.0; };
 
         // Copy block: unit-precision prior (tau = 1) with the per-arm
@@ -693,6 +697,9 @@ int build_joint_blocks_from_spec(
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
                                             "temporal_idx", block_index);
+        // Optional per-arm per-row design weight (temporal varying coefficient),
+        // as for rw1/rw2 above; unset => uniform 1.
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
         block.d_fac = [](int) -> double { return 1.0; };
 
         // Copy block: unit-precision prior (tau = 1), per-arm amplitude on

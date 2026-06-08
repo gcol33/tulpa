@@ -109,6 +109,16 @@ apply_rtr_projection <- function(f, P_perp) {
 #' Extract posterior distributions of temporal effects from a fitted tulpa
 #' model with temporal specification.
 #'
+#' @details
+#' `temporal()` is overloaded. Given a fitted model it is the accessor described
+#' here. Given a one-sided formula (or a named `formula =` / `structure =`
+#' argument) it is instead the inline varying-coefficient field constructor used
+#' in a `tulpa()` model formula, the temporal mirror of [spatial()]:
+#' `temporal(formula = ~ 1 + x || time, structure = "rw1")` declares a smooth
+#' temporal level (the intercept column) plus a temporally varying slope on each
+#' covariate column. `structure` is one of `"rw1"` (default), `"rw2"`, or
+#' `"ar1"`; only the double bar `||` (independent fields) is supported.
+#'
 #' @param object A `tulpa_fit` object fitted with `temporal` argument
 #' @param component Which component to extract for multi-scale models:
 #'   `"all"` (default), `"trend"`, `"seasonal"`, or `"short_term"`.
@@ -148,6 +158,17 @@ apply_rtr_projection <- function(f, P_perp) {
 #' @export
 temporal <- function(object, component = "all", summary = FALSE,
                      probs = c(0.025, 0.5, 0.975), ...) {
+  # Overloaded: with a formula first argument (or a named `formula =` /
+  # `structure =`), `temporal()` is the inline varying-coefficient field
+  # constructor used in a tulpa() model formula -- temporal(formula = ~ 1 + x ||
+  # time, structure = "rw1") -- mirroring spatial(). Otherwise it is the
+  # temporal-posterior accessor on a fitted model (temporal(fit)).
+  if (!missing(object) && inherits(object, "formula")) {
+    return(.temporal_field_spec(object, ...))
+  }
+  if (missing(object)) {
+    return(.temporal_field_spec(...))
+  }
   UseMethod("temporal")
 }
 
