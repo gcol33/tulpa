@@ -1,5 +1,18 @@
 # tulpa NEWS
 
+## 0.0.26 (2026-06-08)
+
+* fix(spatial): `fit_spde(method = "ccd")` now actually runs the central-
+  composite design. `fit_spde_nested_ccd()` took `optimHess()` of the negative
+  log-posterior -- already the positive-definite precision of the Laplace
+  approximation -- and then negated it, so the degeneracy guard rejected every
+  usable mode and the integrator fell back to the rectangular grid on all
+  inputs. The negation is removed; the precision is used directly to orient the
+  design. `method = "ccd"` is the `fit_spde()` default, so fits over an
+  identified SPDE hyperparameter posterior now use the 9-node mode-centred
+  design instead of the 25-node grid. A weakly-identified axis still falls back
+  to the grid via the existing mode and Hessian guards (gcol33/tulpa#92).
+
 ## 0.0.25 (2026-06-08)
 
 * feat(spatial): the correlated areal field (separable MCAR,
