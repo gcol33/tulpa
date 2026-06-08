@@ -1,5 +1,30 @@
 # tulpa NEWS
 
+## 0.0.25 (2026-06-08)
+
+* feat(spatial): the correlated areal field (separable MCAR,
+  `spatial(graph, ~ ... | cell)`) now integrates its cross-covariance `Sigma`
+  on a **mode-centred central-composite design** over the log-Cholesky
+  coordinates, the same outer-integration recipe `tulpa_re_cov_nested()` uses
+  for random-effect covariances. The log-Cholesky coordinates (`log L_ii` on
+  the diagonal, raw strict-lower `L_ij`) are already unconstrained on all of R,
+  so they enter the joint CCD as identity axes: the integrator mode-finds the
+  marginal-likelihood mode in `Sigma`-space, orients the design by the Cholesky
+  of the posterior covariance, and weights with the corrected R-INLA design
+  weights -- no new mode-find or CCD code, the existing joint CCD machinery
+  drives it. This replaces the fixed log-Cholesky tensor that could land on the
+  nearest node and miss a sharp likelihood mode, and scales to general `p` at a
+  polynomial node count (`1 + 2k + 2^k` for `k = p(p+1)/2` axes) where the fixed
+  tensor was exponential (p = 3 is 77 nodes vs ~1700 cells; p >= 4 no longer
+  overruns the grid cap). When the cross-correlation is weakly identified the
+  outer curvature is ill-conditioned and the CCD declines back to the fixed
+  log-Cholesky tensor, the correct net there. The outer Pareto-k accuracy
+  diagnostic (`fit$pareto_k`) is now reported for MCAR fits (it was `NA` while
+  the fit declined the CCD); a high k-hat on a small-group, weakly-identified
+  cross-correlation is a correct signal, not a defect. Recovers the fields and
+  every cross-correlation `rho_ij` with covering CIs at p = 2 and p = 3
+  (test-spatial-mcar.R).
+
 ## 0.0.24 (2026-06-08)
 
 * feat(spatial): `spatial(graph, ~ 1 + x | cell)` (a single bar `|`) builds

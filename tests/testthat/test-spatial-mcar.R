@@ -76,6 +76,12 @@ test_that("MCAR recovers the correlated fields and Sigma vs simulated truth", {
 
     expect_s3_class(fit, "tulpa_spatial_field_fit")
     expect_true(isTRUE(fit$correlated))
+    # Strong, well-identified data: the outer Sigma grid is the mode-centred CCD
+    # over the log-Cholesky coordinates (1 + 2*3 + 2^3 = 15 nodes for p = 2), not
+    # the fixed log-Cholesky tensor -- the documented follow-up. The outer
+    # Pareto-k is then scored (was NA when the fit declined the CCD).
+    expect_identical(fit$integration, "ccd")
+    expect_false(is.na(fit$pareto_k))
     u_hat <- fit$spatial_fields[["cell.Intercept"]]$mean
     s_hat <- fit$spatial_fields[["cell.x"]]$mean
     cor_u <- c(cor_u, abs(cor(u_hat, fld$u)))
@@ -93,6 +99,54 @@ test_that("MCAR recovers the correlated fields and Sigma vs simulated truth", {
   # marginalized CI covers the truth in the majority of seeds.
   expect_gt(median(rho_med), 0.3)
   expect_gte(sum(rho_cover), 2L)
+})
+
+test_that("MCAR mode-centred CCD scales to p = 3 (general p > 2)", {
+  skip_on_cran()
+  skip_if_fast()
+  set.seed(3)
+  nx <- ny <- 8L
+  adj <- .mcar_grid_adj(nx, ny)
+  n_s <- nx * ny
+  # Lower Cholesky factor of the 3-field cross-covariance; Sigma = L L'.
+  L3 <- matrix(c(1.0,  0.0, 0.0,
+                 0.4,  0.8, 0.0,
+                 -0.2, 0.3, 0.7), 3, 3, byrow = TRUE)
+  Sigma3 <- L3 %*% t(L3)
+  R3 <- cov2cor(Sigma3)
+
+  # Three correlated near-intrinsic CAR fields via the LMC factorization.
+  Qp <- diag(rowSums(adj)) - 0.99 * adj
+  U  <- chol(Qp)
+  Z  <- sapply(1:3, function(k) { z <- backsolve(U, rnorm(n_s)); z - mean(z) })
+  Fl <- Z %*% t(L3)
+  Fl <- apply(Fl, 2L, function(col) col - mean(col))
+
+  cell <- rep(seq_len(n_s), each = 30L)
+  N <- length(cell)
+  x1 <- rnorm(N); x2 <- rnorm(N)
+  eta <- 0.2 + Fl[cell, 1] + x1 * Fl[cell, 2] + x2 * Fl[cell, 3]
+  y <- rnorm(N, eta, 0.4)
+
+  fit <- suppressWarnings(tulpa(
+    y ~ spatial(graph = adj, formula = ~ 1 + x1 + x2 | cell),
+    data = data.frame(y = y, x1 = x1, x2 = x2, cell = cell),
+    family = "gaussian", mode = "laplace", control = list(n_draws = 200L)))
+
+  expect_s3_class(fit, "tulpa_spatial_field_fit")
+  # CCD over the 6 log-Cholesky axes -- a polynomial node count where the fixed
+  # tensor would be thousands of cells.
+  expect_identical(fit$integration, "ccd")
+  expect_identical(ncol(fit$theta_grid), 6L)
+  # All three cross-correlations recover with a CI covering the truth.
+  for (ij in list(c(1L, 2L), c(1L, 3L), c(2L, 3L))) {
+    nm <- sprintf("rho_%d%d", ij[1L], ij[2L])
+    q  <- fit$mcar_summary[[nm]]$q
+    rho_true <- R3[ij[1L], ij[2L]]
+    expect_true(q[1L] <= rho_true && rho_true <= q[3L],
+                info = sprintf("%s CI (%.3f, %.3f) should cover %.3f",
+                               nm, q[1L], q[3L], rho_true))
+  }
 })
 
 test_that("MCAR fit print reports the Sigma cross-covariance (rho)", {

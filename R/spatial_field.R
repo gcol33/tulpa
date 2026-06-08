@@ -321,7 +321,14 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   # Two or more fields make the tensor outer grid blow up multiplicatively;
   # CCD is the engine's recommended path for k >= 2 outer axes (same posterior,
   # polynomial node count). A single field keeps the driver's default grid.
-  if (length(blocks) >= 2L) {
+  # A coupled MCAR block is a single block but carries p(p+1)/2 >= 3 outer axes
+  # (the log-Cholesky coordinates of Sigma), so it requests CCD too: the joint
+  # mode-centred CCD then places the Sigma grid at the marginal-likelihood mode
+  # (the fix for a sharp likelihood landing between fixed nodes) and scales to
+  # general p, declining back to the fixed log-Cholesky tensor only when the
+  # outer curvature is ill-conditioned (a weakly-identified cross-correlation).
+  is_mcar_block <- length(blocks) == 1L && identical(blocks[[1L]]$type, "mcar")
+  if (length(blocks) >= 2L || is_mcar_block) {
     ctrl$integration <- ctrl$integration %||% "ccd"
   }
   n_draws <- as.integer(ctrl$n_draws %||% 1000L)

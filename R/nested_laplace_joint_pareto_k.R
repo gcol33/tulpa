@@ -57,7 +57,13 @@
 #   * `rho_car` is the proper-CAR correlation on the adjacency eigenvalue
 #     interval; decline.
 #   * `alpha` is the unbounded copy coefficient; identity.
+#   * `mcar` axes are the log-Cholesky coordinates of Sigma = L L' (log L_ii on
+#     the diagonal, raw strict-lower L_ij), already unconstrained on all of R,
+#     so every axis is identity (zero Jacobian). This is what lets the joint CCD
+#     mode-centre the Sigma grid (and the outer Pareto-k score it) rather than
+#     decline to the fixed log-Cholesky tensor.
 .joint_pareto_block_tags <- function(type, axes) {
+    if (identical(type, "mcar")) return(rep("identity", length(axes)))
     tag_one <- function(a) {
         if (a == "alpha") return("identity")
         if (a == "rho") return(if (identical(type, "bym2")) "logit01" else NA_character_)
