@@ -1,5 +1,22 @@
 # tulpa NEWS
 
+## 0.0.18 (2026-06-08)
+
+* feat(spde): fractional-nu SPDE fields gain a fixed-hyperparameter NUTS path
+  (#85, #87). The rational (BRASIL) approximation is sampled with the
+  hyperparameters held fixed and the latent field non-centered, marginal
+  fixed-effect standard errors are reported, and the precompute path passes the
+  full both-triangle precision `Q` on the fractional NUTS route (#87).
+* fix(numerics): the s2z rank-1 log-determinant no longer cancels catastrophically
+  for fields above 256 nodes. The matrix-determinant-lemma update lost ~2.7 nats
+  to cancellation at `n_x > 256`; the log-determinant structure is now cached
+  across grid cells and species, restoring the densify-vs-rank-1 log-marginal
+  equivalence (guarded downstream by tulpaObs).
+* perf(laplace): the fused batched occu_cover scatter is sparse-native and
+  bit-identical to the dense path.
+* test(joint): the coupled-cell path composes a shared field with a per-group
+  random effect (#86).
+
 ## 0.0.17 (2026-06-07)
 
 * docs(vignettes): correctness pass against the current API. Corrected the
