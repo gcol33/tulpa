@@ -446,9 +446,17 @@ inline int build_cell_rows_from_arms(
 // `H_row * outer(chain, chain)` into the joint H; the cross-arm scatter
 // writes `Hkl * (chain_k outer chain_l + transpose)` for a (k_row, l_row)
 // pair given the spec's `arm_cross_hess[kk][ll][j*Nl + m]`.
+// Chain-entry block group, matching the block order the per-row sparse/dense
+// scatter loops process (beta, then RE, then latent). Used by the batched
+// within-row slot cache to reproduce the per-row helper's exact multiply
+// association (same-group pair: (H_row * w_a) * w_b; cross-group pair, where the
+// earlier block owns the oracle's outer loop: (H_row * w_b) * w_a).
+enum ChainGroup : int { CHAIN_BETA = 0, CHAIN_RE = 1, CHAIN_LATENT = 2 };
+
 struct ArmRowChainEntry {
     int    idx;  // global index into the joint latent vector
     double w;    // chain weight: X(j, a) for beta, 1.0 for RE, d_eff for latent
+    int    grp;  // ChainGroup: beta / RE / latent (block-iteration order)
 };
 
 // Resolve the eta -> joint-vector chain for arm `pa` row `j` at grid point
@@ -466,12 +474,12 @@ inline void build_arm_row_chain(
 ) {
     out_chain.clear();
     for (int a = 0; a < pa.p; a++) {
-        out_chain.push_back({pa.beta_start + a, pa.X(j, a)});
+        out_chain.push_back({pa.beta_start + a, pa.X(j, a), CHAIN_BETA});
     }
     if (pa.n_re_groups > 0) {
         int gi = static_cast<int>(pa.re_idx[j]) - 1;
         if (gi >= 0 && gi < pa.n_re_groups) {
-            out_chain.push_back({pa.re_start + gi, 1.0});
+            out_chain.push_back({pa.re_start + gi, 1.0, CHAIN_RE});
         }
     }
     const int B = static_cast<int>(blocks.size());
@@ -482,7 +490,7 @@ inline void build_arm_row_chain(
         if (l_b > 0 && l_b <= blocks[b].size) {
             double w = d_eff_cache[b] * block_row_weight(blocks[b], j, k_arm);
             if (w == 0.0) continue;
-            out_chain.push_back({blocks[b].start + l_b - 1, w});
+            out_chain.push_back({blocks[b].start + l_b - 1, w, CHAIN_LATENT});
         }
     }
 }
