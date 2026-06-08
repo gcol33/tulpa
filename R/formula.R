@@ -175,34 +175,66 @@ no_latent_terms <- function(term) {
 # ----------------------------------------------------------------------------
 
 # Collect all `fname(...)` calls on the rhs (fname = "spatial" / "temporal").
-find_special_terms <- function(term, fname) {
+# `pred` optionally selects which matched-name calls to own: a `fname(...)`
+# call is always treated atomically (a special term is never recursed into),
+# and `pred(call)` decides whether THIS finder owns it. `pred = NULL` owns
+# every `fname(...)` call (the original behaviour). This is how the two
+# meanings of `spatial(...)` -- the inline field constructor and the bare
+# `spatial(col)` naming term -- share one walker.
+find_special_terms <- function(term, fname, pred = NULL) {
   if (is.name(term) || !is.language(term)) return(NULL)
-  if (is.call(term) && identical(term[[1]], as.name(fname))) return(list(term))
-  if (identical(term[[1]], as.name("("))) return(find_special_terms(term[[2]], fname))
-  if (length(term) == 2L) return(find_special_terms(term[[2]], fname))
-  c(find_special_terms(term[[2]], fname), find_special_terms(term[[3]], fname))
+  if (is.call(term) && identical(term[[1]], as.name(fname))) {
+    if (is.null(pred) || isTRUE(pred(term))) return(list(term))
+    return(NULL)
+  }
+  if (identical(term[[1]], as.name("("))) return(find_special_terms(term[[2]], fname, pred))
+  if (length(term) == 2L) return(find_special_terms(term[[2]], fname, pred))
+  c(find_special_terms(term[[2]], fname, pred),
+    find_special_terms(term[[3]], fname, pred))
 }
 
-# Rewrite the rhs with all `fname(...)` calls removed (NULL if nothing remains).
-no_special_terms <- function(term, fname) {
+# Rewrite the rhs with the `fname(...)` calls this caller owns removed (NULL if
+# nothing remains). `pred` mirrors find_special_terms: a matched-name call is
+# atomic -- stripped when owned, kept verbatim (never recursed into) when not.
+no_special_terms <- function(term, fname, pred = NULL) {
   if (is.name(term) || !is.language(term)) return(term)
-  if (is.call(term) && identical(term[[1]], as.name(fname))) return(NULL)
+  if (is.call(term) && identical(term[[1]], as.name(fname))) {
+    if (is.null(pred) || isTRUE(pred(term))) return(NULL)
+    return(term)
+  }
   if (identical(term[[1]], as.name("("))) {
-    inner <- no_special_terms(term[[2]], fname)
+    inner <- no_special_terms(term[[2]], fname, pred)
     if (is.null(inner)) return(NULL)
     return(call("(", inner))
   }
   if (length(term) == 2L) {
-    nb <- no_special_terms(term[[2]], fname)
+    nb <- no_special_terms(term[[2]], fname, pred)
     if (is.null(nb)) return(NULL)
     return(call(deparse(term[[1]]), nb))
   }
-  nb_left  <- no_special_terms(term[[2]], fname)
-  nb_right <- no_special_terms(term[[3]], fname)
+  nb_left  <- no_special_terms(term[[2]], fname, pred)
+  nb_right <- no_special_terms(term[[3]], fname, pred)
   if (is.null(nb_left) && is.null(nb_right)) return(NULL)
   if (is.null(nb_left))  return(nb_right)
   if (is.null(nb_right)) return(nb_left)
   call(deparse(term[[1]]), nb_left, nb_right)
+}
+
+# Distinguish the two `spatial(...)` forms. The inline varying-coefficient field
+# constructor is signalled by a named `graph =` / `formula =` argument, or a
+# one-sided formula (`~ ...`) argument given positionally; it is evaluated to a
+# tulpa_spatial_field. Everything else -- a bare `spatial(col)` naming term or a
+# malformed old-form call -- is left to the areal-naming path, which validates
+# and errors on it as before.
+.is_spatial_field_call <- function(cl) {
+  args <- as.list(cl)[-1L]
+  nm <- names(args)
+  if (!is.null(nm) && any(nzchar(nm) & nm %in% c("graph", "formula"))) {
+    return(TRUE)
+  }
+  any(vapply(args,
+             function(a) is.call(a) && identical(a[[1L]], as.name("~")),
+             logical(1)))
 }
 
 # Extract the single bare column name from a special term, e.g. spatial(region).
@@ -451,6 +483,34 @@ tulpa_parse_formula <- function(formula) {
   }
   response <- if (is.null(response_expr)) NULL else paste(deparse(response_expr, width.cutoff = 500L), collapse = "")
 
+  # Inline areal varying-coefficient fields: spatial(graph = , formula =
+  # ~ ... || cell) calls carrying named args. Extracted and stripped BEFORE bar
+  # parsing, because the field's own `|| cell` bar lives inside the call and
+  # must not be read as a model random effect by findbars(). Like latent(...),
+  # the whole call is evaluated to an object (a tulpa_spatial_field).
+  spatial_field_blocks <- list()
+  sf_calls <- find_special_terms(rhs, "spatial", .is_spatial_field_call)
+  for (sc in sf_calls) {
+    blk <- tryCatch(
+      eval(sc, envir = formula_env),
+      error = function(e) {
+        stop("Failed to evaluate inline spatial() field term `",
+             paste(deparse(sc), collapse = ""),
+             "`: ", conditionMessage(e), call. = FALSE)
+      }
+    )
+    if (!inherits(blk, "tulpa_spatial_field")) {
+      stop("An inline spatial(graph = , formula = ) term must evaluate to a ",
+           "tulpa_spatial_field object; got class ",
+           paste(class(blk), collapse = "/"), ".", call. = FALSE)
+    }
+    spatial_field_blocks[[length(spatial_field_blocks) + 1L]] <- blk
+  }
+  if (length(spatial_field_blocks) > 0L) {
+    rhs <- no_special_terms(rhs, "spatial", .is_spatial_field_call)
+    if (is.null(rhs)) rhs <- 1
+  }
+
   bars <- findbars(rhs)
 
   random_effects <- list()
@@ -516,6 +576,8 @@ tulpa_parse_formula <- function(formula) {
       n_re_terms      = length(random_effects),
       latent_blocks   = latent_blocks,
       n_latent_blocks = length(latent_blocks),
+      spatial_field_blocks   = spatial_field_blocks,
+      n_spatial_field_blocks = length(spatial_field_blocks),
       spatial_var     = spatial_var,
       temporal_var    = temporal_var,
       original        = formula

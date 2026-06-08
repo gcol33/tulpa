@@ -1,5 +1,28 @@
 # tulpa NEWS
 
+## 0.0.20 (2026-06-08)
+
+* feat(spatial): `spatial(graph, formula = ~ 1 + time || cell)` declares areal
+  varying-coefficient fields inline in a `tulpa()` model formula, the way a
+  random-effect bar is written. The bar's left-hand side expands (via
+  `model.matrix`) into one independent CAR / Besag field per design column: the
+  intercept column is the spatial intercept field `u_cell`, a covariate column
+  is a spatially varying slope on it (a per-region trend `time * s_cell`). The
+  intercept is just the all-ones column, so the unweighted and weighted cases
+  share one path; factors, `I(time^2)`, and splines expand for free. Each field
+  carries the sum-to-zero constraint and its own precision (independent fields).
+  A single response is fit through the single-arm joint nested-Laplace path,
+  which threads the per-row design weight (`svc_weight`), and `summary()` /
+  `coef()` report the marginalized fixed effects; the per-field posterior means
+  are on `fit$spatial_fields`.
+* The bar grammar is strict: `||` (independent fields) only -- a single `|`
+  (correlated fields, a multivariate CAR) errors as not-yet-implemented, as do
+  nested (`a / b`) or interaction grouping (the grouping must be a single
+  graph-node index; add ordinary nested random effects such as `(1 | site)`
+  separately), a missing bar, `by =` (reserved for replicated CAR), and
+  `proper = TRUE` (reserved). The bare `spatial(col)` areal-naming term and the
+  `spatial =` constructor path are unchanged.
+
 ## 0.0.19 (2026-06-08)
 
 * feat(progress): the nested-Laplace outer-grid progress line now shows the

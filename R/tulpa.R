@@ -794,6 +794,16 @@ tulpa <- function(formula, data,
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
 
+  # Inline areal varying-coefficient field(s): spatial(graph = , formula =
+  # ~ ... || cell). Each bar term expands to independent CAR blocks (one per
+  # design column, slope columns carrying a per-row weight) and is fit through
+  # the single-arm joint nested-Laplace path, which threads that weight.
+  if ((parsed$n_spatial_field_blocks %||% 0L) > 0L) {
+    return(.tulpa_fit_spatial_field(parsed, bundle, data, family, mode, phi,
+                                    sigma_re, n_trials, control, formula,
+                                    sys.call()))
+  }
+
   # Spatial field. The structure arrives via the `spatial=` argument; how it is
   # addressed depends on the field family:
   #  * Areal (icar/car/bym2/car_proper): a `spatial(col)` term names the

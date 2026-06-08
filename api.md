@@ -21,6 +21,7 @@ grouped below by which layer they occupy.
 | `tulpa()` | Formula front door. Parses `y ~ x + latent(...) + (1 \| g)`, selects a tier/backend (auto or explicit), fits. |
 | `tulpa_parse_formula()`, `find_latent_terms()`, `no_latent_terms()` | Formula parsing / latent-term extraction. |
 | `findbars()`, `nobars()`, `parse_bar_term()` | `lme4`-style random-effect bar parsing (`(1 + x \| g)`). |
+| `spatial()` | Inline areal varying-coefficient field, written in the model formula like a bar: `spatial(graph, ~ 1 + time \|\| cell)`. The bar LHS expands to one independent CAR / Besag field per design column (intercept field + per-region slopes); `\|\|` only (a single `\|` / MCAR, nesting, and `by=` are reserved). Distinct from the bare `spatial(col)` areal-naming term and the `spatial =` constructors below. |
 | `latent()`, `latent_factor()`, `latent_factors()` | Wrap a latent prior block / latent-factor model for use in a formula. |
 | `inference_mode_info()` | Inspect the backend registry (tiers, inputs, selection rules). |
 
@@ -71,7 +72,8 @@ The typical hot path for Gaussian-latent workloads.
 
 Spatial: `spatial_bym2()`, `spatial_car()`, `spatial_car_proper()`, `spatial_gp()`,
 `spatial_hsgp()`, `spatial_multiscale()`, `spatial_rsr()`, `spatial_spde()`,
-`spatial_spde_custom()`, `spatial_svc()`.
+`spatial_spde_custom()`, `spatial_svc()`. Inline areal varying-coefficient
+fields use `spatial()` (front door, above), the areal analogue of `spatial_svc()`.
 Temporal: `temporal_ar1()`, `temporal_gp()`, `temporal_multiscale()`,
 `temporal_rw1()`, `temporal_rw2()`, `temporal_tvc()`.
 Space-time / varying coefficients: `spatiotemporal()`, `spatiotemporal_gp()`,
