@@ -105,9 +105,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   }
 
   rhs <- formula[[2]]
-  is_bar <- is.call(rhs) &&
-    (identical(rhs[[1]], as.name("|")) || identical(rhs[[1]], as.name("||")))
-  if (!is_bar) {
+  if (!.is_bar_call(rhs)) {
     stop("spatial() `formula` must carry a grouping bar naming the graph ",
          "node, e.g. ~ 1 + time || cell. Use the double bar || for ",
          "independent fields.", call. = FALSE)
@@ -210,6 +208,97 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
          weight = as.numeric(mm[, j]),
          is_intercept = is_int)
   })
+}
+
+
+#' Expand a varying-coefficient bar into per-column field specs
+#'
+#' @description
+#' Expand the left-hand side of an \pkg{lme4}-style varying-coefficient bar
+#' (`~ 1 + w || node`) against a data frame into one descriptor per design
+#' matrix column. This is the same expansion [spatial()] and the inline
+#' `temporal()` field constructor use internally to turn a bar into one CAR /
+#' temporal field per design column, exposed so a downstream package can reuse
+#' the one implementation rather than re-parsing the bar grammar.
+#'
+#' The bar's right-hand side names the node index (the graph node for a spatial
+#' field, the time index for a temporal field); it is not expanded but is
+#' returned as the `node` attribute. The left-hand side is expanded with
+#' [stats::model.matrix()]: the intercept column (`1`) is the unweighted
+#' (all-ones) field, and each covariate column is a varying coefficient whose
+#' per-observation weight is that column's design value (`0 +` drops the
+#' intercept).
+#'
+#' @param formula A one-sided formula carrying a single grouping bar, e.g.
+#'   `~ 1 + w || cell`. Use [tulpa_is_spatial_bar()] to test first. The
+#'   right-hand side must be a single bare column naming the node index;
+#'   nesting (`a / b`), interaction (`a:b`), or expression grouping is rejected.
+#' @param data A data frame whose columns the bar left-hand side and the node
+#'   index refer to. The per-column weight vectors are evaluated against it, so
+#'   they have `nrow(data)` entries.
+#'
+#' @return A list with one element per design-matrix column, each a list:
+#'   \describe{
+#'     \item{`column_name`}{character; `"Intercept"` for the intercept column,
+#'       otherwise the [model.matrix()] column name (e.g. `"w"`).}
+#'     \item{`weight`}{a numeric vector of length `nrow(data)` for a covariate
+#'       column (the per-observation design value scaling that field), or `NULL`
+#'       for the intercept column (which is the all-ones, unweighted field).}
+#'     \item{`is_intercept`}{logical; `TRUE` for the intercept column.}
+#'   }
+#'   The list carries two attributes: `node` (character, the node-index column
+#'   named by the bar right-hand side) and `correlated` (logical, `TRUE` for a
+#'   single `|`, `FALSE` for a double `||`).
+#'
+#' @seealso [tulpa_is_spatial_bar()] for the recognizer, [spatial()] for the
+#'   inline areal field constructor that consumes this expansion.
+#'
+#' @examples
+#' d <- data.frame(cell = rep(1:5, each = 4), w = rnorm(20))
+#'
+#' # Intercept plus a varying slope on w
+#' specs <- tulpa_bar_field_specs(~ 1 + w || cell, d)
+#' length(specs)                 # 2
+#' specs[[1]]$column_name        # "Intercept"
+#' is.null(specs[[1]]$weight)    # TRUE (unweighted field)
+#' specs[[2]]$column_name        # "w"
+#' identical(specs[[2]]$weight, d$w)  # TRUE
+#' attr(specs, "node")           # "cell"
+#'
+#' @export
+tulpa_bar_field_specs <- function(formula, data) {
+  if (!inherits(formula, "formula") || length(formula) != 2L) {
+    stop("`formula` must be a one-sided formula carrying a grouping bar, e.g. ",
+         "~ 1 + w || cell.", call. = FALSE)
+  }
+  rhs <- formula[[2L]]
+  if (!.is_bar_call(rhs)) {
+    stop("`formula` must carry a grouping bar naming the node index, e.g. ",
+         "~ 1 + w || cell.", call. = FALSE)
+  }
+
+  specs <- parse_bar_term(rhs)
+  if (length(specs) != 1L) {
+    stop("Nested grouping is not supported. The grouping variable must be a ",
+         "single node-index column, e.g. ~ ... || cell.", call. = FALSE)
+  }
+  spec1 <- specs[[1L]]
+  if (!is.null(spec1$group_expr) || length(spec1$group_vars) != 1L) {
+    stop("The bar grouping must be a single bare node-index column (e.g. ",
+         "|| cell), not an interaction or expression.", call. = FALSE)
+  }
+
+  spec <- list(lhs = rhs[[2L]], env = environment(formula))
+  cols <- .bar_field_columns(spec, data, fname = "tulpa_bar_field_specs")
+
+  out <- lapply(cols, function(col) {
+    list(column_name  = col$name,
+         weight       = if (col$is_intercept) NULL else col$weight,
+         is_intercept = col$is_intercept)
+  })
+  attr(out, "node") <- spec1$group_vars[[1L]]
+  attr(out, "correlated") <- isTRUE(spec1$correlated)
+  out
 }
 
 

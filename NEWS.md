@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.27 (2026-06-09)
+
+* feat(formula): the varying-coefficient bar column-expansion is now public.
+  `tulpa_bar_field_specs(~ 1 + w || node, data)` expands an lme4-style bar into
+  one spec per design-matrix column -- `(column_name, weight, is_intercept)`,
+  where the intercept column is the unweighted (all-ones) field and each
+  covariate column carries its per-observation design value as the field weight.
+  `tulpa_is_spatial_bar()` recognizes such a bar. Both surface the single
+  expansion `spatial()` and the inline `temporal()` field constructor already
+  use internally (the one bar column-expansion helper the two paths share), so a
+  downstream package can offer a one-term spatial / temporal bar without
+  re-parsing the `~ 1 + w || node` grammar. `spatial()` and the temporal field
+  constructor are refactored onto the shared bar recognizer so the engine and
+  any consumer cannot drift (gcol33/tulpa#93).
+
 ## 0.0.26 (2026-06-08)
 
 * fix(spatial): `fit_spde(method = "ccd")` now actually runs the central-

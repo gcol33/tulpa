@@ -271,6 +271,54 @@ no_special_terms <- function(term, fname, pred = NULL) {
 }
 
 # ============================================================================
+# Bar recognizer: is a language object (or a one-sided formula's RHS) a
+# grouping bar `lhs | rhs` / `lhs || rhs`? Shared by spatial(),
+# .temporal_field_spec(), and tulpa_bar_field_specs() so the three paths read
+# the same grammar.
+# ============================================================================
+
+# Is `x` a `|` or `||` call?
+.is_bar_call <- function(x) {
+  is.call(x) &&
+    (identical(x[[1]], as.name("|")) || identical(x[[1]], as.name("||")))
+}
+
+#' Recognize an inline varying-coefficient bar
+#'
+#' @description
+#' Test whether a one-sided formula carries a single varying-coefficient
+#' grouping bar of the form `~ 1 + w || node` (independent fields, `||`) or
+#' `~ 1 + w | node` (correlated fields, `|`). This is the same grammar
+#' [spatial()] and the inline `temporal()` field constructor accept, and the
+#' grammar [tulpa_bar_field_specs()] expands. A downstream package can use it to
+#' branch on "is this term a spatial / temporal varying-coefficient bar?" before
+#' calling [tulpa_bar_field_specs()].
+#'
+#' @param x A one-sided formula (e.g. `~ 1 + w || node`) or the bar language
+#'   object itself (`quote(1 + w || node)`).
+#'
+#' @return A single logical: `TRUE` when `x` is (or wraps) a `|` / `||` bar,
+#'   `FALSE` otherwise (a plain formula such as `~ 1 + w`, a non-bar term, or a
+#'   non-formula / non-language input).
+#'
+#' @seealso [tulpa_bar_field_specs()] for expanding the bar into per-column
+#'   field specs.
+#'
+#' @examples
+#' tulpa_is_spatial_bar(~ 1 + w || cell)   # TRUE
+#' tulpa_is_spatial_bar(~ 1 + w | cell)    # TRUE (correlated)
+#' tulpa_is_spatial_bar(~ 1 + w)           # FALSE (no bar)
+#'
+#' @export
+tulpa_is_spatial_bar <- function(x) {
+  if (inherits(x, "formula")) {
+    if (length(x) != 2L) return(FALSE)
+    x <- x[[2L]]
+  }
+  .is_bar_call(x)
+}
+
+# ============================================================================
 # Bar term parsing: structured RE specification with || expansion
 # ============================================================================
 

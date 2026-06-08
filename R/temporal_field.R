@@ -31,9 +31,7 @@
   }
 
   rhs <- formula[[2]]
-  is_bar <- is.call(rhs) &&
-    (identical(rhs[[1]], as.name("|")) || identical(rhs[[1]], as.name("||")))
-  if (!is_bar) {
+  if (!.is_bar_call(rhs)) {
     stop("temporal() `formula` must carry a grouping bar naming the time ",
          "index, e.g. ~ 1 + x || time. Use the double bar || for independent ",
          "fields.", call. = FALSE)
