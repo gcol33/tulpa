@@ -513,6 +513,10 @@ cpp_test_s2z_block_schur <- function(A, pin_start, pin_n, pin_coef, grad) {
     .Call(`_tulpa_cpp_test_s2z_block_schur`, A, pin_start, pin_n, pin_coef, grad)
 }
 
+cpp_test_mcar_prior <- function(theta_logchol, p, n, adj_rp, adj_ci, nnbr, x) {
+    .Call(`_tulpa_cpp_test_mcar_prior`, theta_logchol, p, n, adj_rp, adj_ci, nnbr, x)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

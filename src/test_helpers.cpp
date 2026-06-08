@@ -13,6 +13,7 @@
 #include "pg_binomial.h"
 #include "hmc_gp.h"
 #include "sparse_hessian.h"
+#include "mcar_block_factory.h"
 
 using namespace Rcpp;
 
@@ -1376,5 +1377,68 @@ List cpp_test_s2z_block_schur(
     _["ld_block_schur_step"] = ld_bs_step,
     _["ok"]                  = ok,
     _["max_dstep"]           = max_dstep
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MCAR prior assembly: Sigma^-1 (x) Q + gradient + log-prior (gcol33/tulpa#89)
+// ---------------------------------------------------------------------------
+//
+// Drives the MCAR block's add_prior_sparse + log_prior at one log-Cholesky
+// coordinate so an R test can check them against the direct algebra:
+//   * the assembled prior Hessian (densified) should equal kronecker(Sigma^-1, Q);
+//   * grad should equal -kronecker(Sigma^-1, Q) x  minus the per-field sum-to-
+//     zero pin gradient;
+//   * log_prior should equal the closed form, incl. the Sigma-dependent
+//     normalizer 0.5 (n-1) log|Sigma^-1|.
+// `theta_logchol` is the p(p+1)/2 log-Cholesky vector; the adjacency is CSR.
+//
+// [[Rcpp::export]]
+List cpp_test_mcar_prior(
+    NumericVector theta_logchol, int p, int n,
+    IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr,
+    NumericVector x
+) {
+  const int m = p * (p + 1) / 2;
+  NumericMatrix tg(1, m);
+  for (int t = 0; t < m; ++t) tg(0, t) = theta_logchol[t];
+
+  std::vector<Rcpp::IntegerVector> cell_idx;                 // unused by the prior
+  std::vector<std::vector<Rcpp::NumericVector>> field_weight;
+  tulpa::LatentBlock blk = tulpa::make_mcar_block(
+      /*start=*/0, n, p, /*axis0=*/0, tg, cell_idx, field_weight,
+      adj_rp, adj_ci, nnbr);
+
+  const int n_x = p * n;
+  std::vector<std::pair<int,int>> pat;
+  blk.add_prior_pattern(pat);
+  tulpa::SparseHessianBuilder H;
+  H.init(n_x, pat);
+  H.zero();
+  tulpa::DenseVec grad(n_x, 0.0);
+  blk.add_prior_sparse(H, grad, x, 0);
+  const double lp = blk.log_prior(x, 0);
+
+  NumericMatrix Hd(n_x, n_x);
+  for (int c = 0; c < n_x; ++c)
+    for (int pp = H.col_ptr[c]; pp < H.col_ptr[c + 1]; ++pp) {
+      const int r = H.row_idx[pp];
+      const double v = H.values[pp];
+      Hd(r, c) += v;
+      if (r != c) Hd(c, r) += v;
+    }
+
+  std::vector<double> Sinv; double log_det_Sigma;
+  tulpa::mcar_sigma_inv_from_logchol(theta_logchol.begin(), p, Sinv, log_det_Sigma);
+  NumericMatrix Sinv_m(p, p);
+  for (int a = 0; a < p; ++a)
+    for (int b = 0; b < p; ++b) Sinv_m(a, b) = Sinv[(std::size_t) a * p + b];
+
+  return List::create(
+    _["H"]             = Hd,
+    _["grad"]          = NumericVector(grad.begin(), grad.end()),
+    _["log_prior"]     = lp,
+    _["Sinv"]          = Sinv_m,
+    _["log_det_Sigma"] = log_det_Sigma
   );
 }

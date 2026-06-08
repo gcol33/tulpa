@@ -32,9 +32,11 @@
 #'   [stats::model.matrix()] into one CAR field per column (`1` = intercept
 #'   field; a covariate = spatially varying slope on it; `0 +` drops the
 #'   intercept). The right-hand side must be a single bare column naming the
-#'   graph node. Only the double bar `||` (independent fields) is supported;
-#'   the single bar `|` would request correlated fields (a multivariate CAR)
-#'   and is not yet implemented.
+#'   graph node. The double bar `||` builds independent fields (each its own
+#'   precision); a single bar `|` builds correlated fields -- a separable
+#'   multivariate CAR where the per-cell coefficient vector shares a
+#'   cross-covariance `Sigma` (covariance `Sigma (x) Q^-1`), so the
+#'   intercept-slope correlation `rho` is shared across the graph.
 #' @param proper Logical; `FALSE` (default) builds intrinsic CAR (ICAR /
 #'   Besag) fields with the sum-to-zero constraint (`rho` fixed at 1). `TRUE`
 #'   builds proper CAR fields, each with its own precision `Q = D - rho_car W`
@@ -125,11 +127,11 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
          "(e.g. || cell), not an interaction or expression.", call. = FALSE)
   }
 
-  if (isTRUE(spec1$correlated)) {
-    stop("Correlated areal varying coefficients (a multivariate CAR) are not ",
-         "implemented yet; use the double bar || for independent fields, e.g. ",
-         "~ 1 + time || cell. A single | would couple the fields through a ",
-         "shared covariance, which is a separate model.", call. = FALSE)
+  if (isTRUE(spec1$correlated) && isTRUE(proper)) {
+    stop("Correlated proper CAR (a single | with proper = TRUE) is not in ",
+         "scope. Use `|` with the default intrinsic CAR (proper = FALSE) for a ",
+         "separable MCAR, or `||` with proper = TRUE for independent proper ",
+         "fields.", call. = FALSE)
   }
 
   if (!isTRUE(spec1$has_intercept) && length(spec1$slope_terms) == 0L) {
@@ -145,7 +147,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
       lhs           = rhs[[2L]],
       has_intercept = isTRUE(spec1$has_intercept),
       slope_terms   = spec1$slope_terms,
-      correlated    = FALSE,
+      correlated    = isTRUE(spec1$correlated),
       proper        = isTRUE(proper),
       shared        = shared,
       n_spatial     = nrow(graph),
@@ -227,6 +229,26 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   cols <- .bar_field_columns(spec, data, fname = "spatial")
   proper <- isTRUE(spec$proper)
   rho_bounds <- if (proper) compute_car_rho_bounds(adj) else NULL
+
+  # Correlated (single | ): one coupled separable-MCAR block over the p design
+  # columns sharing Sigma (x) Q^-1. The p design columns become the fields; each
+  # carries its column as the per-row design weight (the intercept's is ones).
+  if (isTRUE(spec$correlated)) {
+    field_names <- vapply(cols, function(col)
+      paste(spec$group_var, col$name, sep = "."), character(1))
+    return(list(list(
+      type            = "mcar",
+      name            = spec$group_var,
+      n_spatial_units = as.integer(n_units),
+      n_fields        = length(cols),
+      adj_row_ptr     = as.integer(csr$row_ptr),
+      adj_col_idx     = as.integer(csr$col_idx),
+      n_neighbors     = as.integer(csr$n_neighbors),
+      spatial_idx     = list(as.integer(idx)),
+      field_weight    = lapply(cols, function(col) list(as.numeric(col$weight))),
+      field_names     = field_names
+    )))
+  }
 
   lapply(cols, function(col) {
     blk <- list(
@@ -383,20 +405,60 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   specs <- parsed$spatial_field_blocks
   blocks <- unlist(lapply(specs, .spatial_field_blocks, data = data),
                    recursive = FALSE)
-  block_names <- vapply(blocks, function(b) b$name, character(1))
+  is_mcar <- length(blocks) == 1L && identical(blocks[[1L]]$type, "mcar")
+  block_names <- if (is_mcar) blocks[[1L]]$field_names
+                 else vapply(blocks, function(b) b$name, character(1))
 
   core <- .bar_field_fit_core(
-    blocks = blocks, block_names = block_names, bundle = bundle,
-    parsed = parsed, family = family, phi = phi, n_trials = n_trials,
-    sigma_re = sigma_re, control = control,
+    blocks = blocks,
+    block_names = if (is_mcar) blocks[[1L]]$name else block_names,
+    bundle = bundle, parsed = parsed, family = family, phi = phi,
+    n_trials = n_trials, sigma_re = sigma_re, control = control,
     arm_spatial_idx = blocks[[1L]]$spatial_idx[[1L]])
   jfit <- core$jfit
 
-  # The second outer axis of a CAR field is the spatial autocorrelation rho_car.
-  spatial_field_hypers <- lapply(core$hypers, function(h)
-    list(name = h$name, structure = h$structure,
-         sigma = h$sigma, rho_car = h$rho))
-  names(spatial_field_hypers) <- block_names
+  if (is_mcar) {
+    mb <- blocks[[1L]]
+    p_fields <- mb$n_fields
+    n_units  <- mb$n_spatial_units
+    w  <- jfit$weights
+    tg <- jfit$theta_grid
+    fs <- jfit$arm_layout$field_starts[1L]
+    # p field posterior means (weighted mode), one per design column, sliced from
+    # the coupled p * n_units latent block (field-major layout).
+    spatial_fields <- lapply(seq_len(p_fields), function(a) {
+      cols <- fs + (a - 1L) * n_units + seq_len(n_units)
+      list(name = mb$field_names[a],
+           mean = as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE])))
+    })
+    names(spatial_fields) <- mb$field_names
+    # Sigma derived quantities, marginalized over the log-Cholesky outer grid:
+    # reconstruct Sigma per grid cell, derive (sigma_a, rho_ab), weighted-
+    # quantile each (the marginalize-derived-quantities rule). Reuses the
+    # RE-covariance log-Cholesky -> Sigma and derived-matrix helpers.
+    m <- p_fields * (p_fields + 1L) / 2L
+    axis_nm <- character(m); tt <- 1L
+    for (j in seq_len(p_fields)) for (i in j:p_fields) {
+      axis_nm[tt] <- sprintf("b1.L%d%d", i, j); tt <- tt + 1L
+    }
+    Sig_list <- lapply(seq_len(nrow(tg)), function(k) {
+      L <- .re_logchol_to_L(as.numeric(tg[k, axis_nm]), p_fields)
+      L %*% t(L)
+    })
+    D <- .re_cov_derived_matrix(Sig_list, p_fields, full = TRUE)
+    mcar_summary <- lapply(colnames(D), function(cn)
+      list(name = cn, q = .nl_wtd_quantile(D[, cn], w, c(0.025, 0.5, 0.975))))
+    names(mcar_summary) <- colnames(D)
+    spatial_field_hypers <- NULL
+  } else {
+    spatial_fields <- core$fields
+    # The second outer axis of a CAR field is the spatial autocorrelation rho_car.
+    spatial_field_hypers <- lapply(core$hypers, function(h)
+      list(name = h$name, structure = h$structure,
+           sigma = h$sigma, rho_car = h$rho))
+    names(spatial_field_hypers) <- block_names
+    mcar_summary <- NULL
+  }
 
   layout <- .tulpa_param_layout(bundle)
   fit <- jfit
@@ -404,9 +466,11 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
   fit$draws_kind <- "iid"
   fit$means <- colMeans(core$beta_draws)
   fit$param_names <- colnames(bundle$X)
-  fit$spatial_fields <- core$fields
+  fit$spatial_fields <- spatial_fields
   fit$spatial_field_names <- block_names
   fit$spatial_field_hypers <- spatial_field_hypers
+  fit$mcar_summary <- mcar_summary
+  fit$correlated <- is_mcar
   fit$inference_mode <- "laplace"
   fit$inference_tier <- 2L
   fit$backend <- "spatial_field_nested_laplace"
@@ -431,19 +495,29 @@ print.tulpa_spatial_field_fit <- function(x, ...) {
   cat("  N =", x$N, " fixed effects =", length(x$means), "\n\n")
   cat("Fixed effects (posterior mean):\n")
   print(round(x$means, 4))
-  hy <- x$spatial_field_hypers
-  if (length(hy)) {
-    cat("\nSpatial fields:\n")
-    for (h in hy) {
-      struct <- if (identical(h$structure, "car_proper")) "proper CAR" else "ICAR"
-      cat(sprintf("  %s [%s]\n", h$name, struct))
-      if (!is.null(h$sigma)) {
-        cat(sprintf("    sigma    %.3f  (95%% CI %.3f, %.3f)\n",
-                    h$sigma[2L], h$sigma[1L], h$sigma[3L]))
-      }
-      if (!is.null(h$rho_car)) {
-        cat(sprintf("    rho_car  %.3f  (95%% CI %.3f, %.3f)\n",
-                    h$rho_car[2L], h$rho_car[1L], h$rho_car[3L]))
+  if (isTRUE(x$correlated) && length(x$mcar_summary)) {
+    cat("\nCorrelated areal fields (separable MCAR):\n")
+    cat("  ", paste(x$spatial_field_names, collapse = ", "), "\n", sep = "")
+    cat("  Cross-covariance Sigma (marginalized over the grid):\n")
+    for (h in x$mcar_summary) {
+      cat(sprintf("    %-8s %.3f  (95%% CI %.3f, %.3f)\n",
+                  h$name, h$q[2L], h$q[1L], h$q[3L]))
+    }
+  } else {
+    hy <- x$spatial_field_hypers
+    if (length(hy)) {
+      cat("\nSpatial fields:\n")
+      for (h in hy) {
+        struct <- if (identical(h$structure, "car_proper")) "proper CAR" else "ICAR"
+        cat(sprintf("  %s [%s]\n", h$name, struct))
+        if (!is.null(h$sigma)) {
+          cat(sprintf("    sigma    %.3f  (95%% CI %.3f, %.3f)\n",
+                      h$sigma[2L], h$sigma[1L], h$sigma[3L]))
+        }
+        if (!is.null(h$rho_car)) {
+          cat(sprintf("    rho_car  %.3f  (95%% CI %.3f, %.3f)\n",
+                      h$rho_car[2L], h$rho_car[1L], h$rho_car[3L]))
+        }
       }
     }
   }

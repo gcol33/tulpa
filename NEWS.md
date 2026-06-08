@@ -1,5 +1,29 @@
 # tulpa NEWS
 
+## 0.0.24 (2026-06-08)
+
+* feat(spatial): `spatial(graph, ~ 1 + x | cell)` (a single bar `|`) builds
+  correlated areal varying-coefficient fields -- a separable multivariate CAR
+  (MCAR) where the per-cell coefficient vector shares a cross-covariance
+  `Sigma`, with joint latent covariance `Sigma (x) Q^-1` (#89). One coupled
+  block over the `p` fields assembles the Kronecker precision `Sigma^-1 (x) Q`
+  in the inner Laplace solve (the `p` per-field sum-to-zero constants are pinned
+  and folded by the block-Schur path), with the `p` design columns entering the
+  linear predictor as `eta_i += sum_c X_{ic} u^{(c)}_{cell_i}` via an
+  INDEXED_MULTI block. The outer grid integrates over `Sigma` in log-Cholesky
+  coordinates; the cross-field correlation `rho` and the per-field `sigma`s are
+  derived quantities, reconstructed per grid cell and weighted-quantiled (the
+  marginalize-derived-quantities rule). `print()` and `fit$mcar_summary` report
+  the marginalized `Sigma` (`sigma_1`, `sigma_2`, `rho_12`, ... with 95% CIs).
+  Recovers the fields and `rho` vs simulated truth with CI coverage
+  (test-spatial-mcar.R); the `Sigma^-1 (x) Q` assembly, gradient, and log-prior
+  (incl. the `(n-1) log|Sigma^-1|` normalizer) are locked by a direct algebra
+  check against `kronecker(Sigma^-1, Q)` (test-mcar-prior.R). The single bar `|`
+  no longer errors. A single `|` with `proper = TRUE` (correlated proper CAR) is
+  out of scope and errors. Tested for `p = 2` (the headline intercept-plus-slope
+  case); general `p > 2` fits through the same path with a coarser raw
+  log-Cholesky grid.
+
 ## 0.0.23 (2026-06-08)
 
 * feat(temporal): `temporal(formula = ~ 1 + x || time, structure = "rw1")`

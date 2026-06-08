@@ -16,9 +16,11 @@ nodes per coefficient.}
 \code{\link[stats:model.matrix]{stats::model.matrix()}} into one CAR field per column (\code{1} = intercept
 field; a covariate = spatially varying slope on it; \verb{0 +} drops the
 intercept). The right-hand side must be a single bare column naming the
-graph node. Only the double bar \code{||} (independent fields) is supported;
-the single bar \code{|} would request correlated fields (a multivariate CAR)
-and is not yet implemented.}
+graph node. The double bar \code{||} builds independent fields (each its own
+precision); a single bar \code{|} builds correlated fields -- a separable
+multivariate CAR where the per-cell coefficient vector shares a
+cross-covariance \code{Sigma} (covariance \verb{Sigma (x) Q^-1}), so the
+intercept-slope correlation \code{rho} is shared across the graph.}
 
 \item{proper}{Logical; \code{FALSE} (default) builds intrinsic CAR (ICAR /
 Besag) fields with the sum-to-zero constraint (\code{rho} fixed at 1). \code{TRUE}

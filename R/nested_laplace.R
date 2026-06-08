@@ -293,6 +293,45 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   n_neighbors     = as.integer(p$n_neighbors)
 )
 
+# Default outer grid for a p-field separable MCAR, returned in column-major
+# lower-triangle log-Cholesky coordinates of Sigma = L L' (the columns the
+# integrator reads). For the common p = 2 case the nodes are placed in the
+# interpretable (sigma_1, sigma_2, rho) space -- with nodes AT sensible
+# correlation values -- and converted to log-Cholesky, so the rho axis is
+# covered evenly (raw log-Cholesky off-diagonal nodes map to awkward, uneven
+# correlations and can miss the mode under sharp likelihoods). For p > 2 a raw
+# log-Cholesky tensor is used (coarser; the off-diagonal correlations are not
+# separately interpretable), to be refined in a later release.
+.mcar_default_logchol_grid <- function(p) {
+  if (p == 2L) {
+    sig <- c(0.4, 0.7, 1.1, 1.7)
+    rho <- c(-0.8, -0.4, 0, 0.4, 0.7, 0.9)
+    g <- expand.grid(s1 = sig, s2 = sig, rho = rho,
+                     KEEP.OUT.ATTRS = FALSE)
+    # Sigma = [[s1^2, rho s1 s2], [rho s1 s2, s2^2]] -> lower Cholesky L:
+    # L11 = s1, L21 = rho s2, L22 = s2 sqrt(1 - rho^2).
+    out <- cbind(L11 = log(g$s1),
+                 L21 = g$rho * g$s2,
+                 L22 = log(g$s2 * sqrt(1 - g$rho^2)))
+    colnames(out) <- c("L11", "L21", "L22")
+    return(out)
+  }
+  diag_nodes <- log(c(0.4, 0.8, 1.5, 2.5))
+  off_nodes  <- c(-1.2, 0.0, 1.2)
+  m <- p * (p + 1L) / 2L
+  axes <- vector("list", m)
+  nm <- character(m)
+  t <- 1L
+  for (j in seq_len(p)) for (i in j:p) {
+    axes[[t]] <- if (i == j) diag_nodes else off_nodes
+    nm[t] <- sprintf("L%d%d", i, j)
+    t <- t + 1L
+  }
+  g <- as.matrix(do.call(expand.grid, c(axes, list(KEEP.OUT.ATTRS = FALSE))))
+  colnames(g) <- nm
+  g
+}
+
 .NL_REGISTRY <- list(
   icar = list(
     cpp_fn = "cpp_nested_laplace_icar",
@@ -354,6 +393,27 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       grid  = cbind(tau = p$tau_grid, rho = p$rho_grid),
       names = c("tau", "rho")
     )
+  ),
+
+  mcar = list(
+    # Separable multivariate CAR (p coupled areal fields sharing Sigma (x) Q^-1).
+    # Multi-block-only (like iid): the coupled inner solve lives in the joint
+    # driver. The outer axes are the p(p+1)/2 log-Cholesky coordinates of Sigma.
+    cpp_fn = NULL,
+    defaults = function(p, a) {
+      if (is.null(p$logchol_grid)) {
+        p$logchol_grid <- .mcar_default_logchol_grid(as.integer(p$n_fields))
+      }
+      p
+    },
+    pack = function(p) stop(
+      "MCAR is only supported inside a multi-block prior (a coupled areal ",
+      "field declared by spatial(graph, ~ ... | cell)).", call. = FALSE
+    ),
+    theta = function(p) {
+      g <- p$logchol_grid
+      list(grid = g, names = colnames(g))
+    }
   ),
 
   nngp = list(

@@ -67,6 +67,7 @@
 #include "hsgp_block_factory.h"
 #include "hsgp_mo_block_factory.h"
 #include "latent_factor_block_factory.h"
+#include "mcar_block_factory.h"
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
 #include "hmc_car_proper.h"
@@ -310,6 +311,43 @@ int build_joint_blocks_from_spec(
         };
         blocks.push_back(block);
         return start + size;
+    }
+
+    if (type == "mcar") {
+        // Separable multivariate CAR: p areal fields sharing Sigma (x) Q^-1.
+        // One coupled block spanning p*n latent; the p(p+1)/2 log-Cholesky axes
+        // of Sigma are integrated by the outer grid.
+        if (is_copy_block) {
+            Rcpp::stop("Block %d: copy semantics are not supported for MCAR.",
+                       block_index + 1);
+        }
+        const int n = Rcpp::as<int>(bs["n_spatial_units"]);
+        const int p = Rcpp::as<int>(bs["n_fields"]);
+        require_axes(p * (p + 1) / 2);
+        Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
+        Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
+        Rcpp::IntegerVector nnbr   = bs["n_neighbors"];
+        Rcpp::List ci_list = bs["spatial_idx"];     // length n_arms
+        Rcpp::List fw_list = bs["field_weight"];     // length p, each n_arms
+        std::vector<Rcpp::IntegerVector> cell_idx;
+        cell_idx.reserve(n_arms);
+        for (int k = 0; k < n_arms; ++k)
+            cell_idx.push_back(Rcpp::as<Rcpp::IntegerVector>(ci_list[k]));
+        std::vector<std::vector<Rcpp::NumericVector>> field_weight;
+        field_weight.reserve(p);
+        for (int a = 0; a < p; ++a) {
+            Rcpp::List per_arm = fw_list[a];
+            std::vector<Rcpp::NumericVector> v;
+            v.reserve(n_arms);
+            for (int k = 0; k < n_arms; ++k)
+                v.push_back(Rcpp::as<Rcpp::NumericVector>(per_arm[k]));
+            field_weight.push_back(std::move(v));
+        }
+        const int start = latent_offset;
+        blocks.push_back(tulpa::make_mcar_block(
+            start, n, p, axis0, theta_grid, std::move(cell_idx),
+            std::move(field_weight), adj_rp, adj_ci, nnbr));
+        return start + p * n;
     }
 
     if (type == "bym2") {

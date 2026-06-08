@@ -292,6 +292,37 @@
                 p$svc_weight, spatial_idx, n_arms, block_index)
         }
         out
+    } else if (type == "mcar") {
+        # Separable multivariate CAR: p coupled areal fields sharing Sigma (x)
+        # Q^-1. One block over p * n_spatial_units latent. spatial_idx is the
+        # per-arm 1-based cell index (shared by all fields); field_weight is the
+        # per-field design column (the intercept's is all-ones, a covariate
+        # column is the per-row value) -- outer length p, inner length n_arms.
+        if (is.null(p$spatial_idx)) {
+            stop("Block ", block_index, " (type 'mcar'): `spatial_idx` is ",
+                 "required as a list of length n_arms.", call. = FALSE)
+        }
+        spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
+                                                  block_index, "spatial_idx")
+        n_fields <- as.integer(p$n_fields)
+        if (is.null(p$field_weight) || length(p$field_weight) != n_fields) {
+            stop("Block ", block_index, " (type 'mcar'): `field_weight` must be ",
+                 "a list of length n_fields (", n_fields, ").", call. = FALSE)
+        }
+        field_weight <- lapply(seq_len(n_fields), function(a) {
+            .multi_block_svc_weight(p$field_weight[[a]], spatial_idx, n_arms,
+                                    block_index)
+        })
+        list(
+            type            = "mcar",
+            spatial_idx     = spatial_idx,
+            n_spatial_units = as.integer(p$n_spatial_units),
+            n_fields        = n_fields,
+            adj_row_ptr     = as.integer(p$adj_row_ptr),
+            adj_col_idx     = as.integer(p$adj_col_idx),
+            n_neighbors     = as.integer(p$n_neighbors),
+            field_weight    = field_weight
+        )
     } else if (type %in% c("rw1", "rw2", "ar1")) {
         if (is.null(p$temporal_idx)) {
             stop("Block ", block_index, " (type '", type, "'): ",
@@ -1115,6 +1146,13 @@
             # Multi-output HSGP stores K * M coefficients in output-major
             # order: beta_{k, m} at offset k * M + m. K = n_arms.
             block_size[b] <- n_arms * n_units
+        } else if (type == "mcar") {
+            # Separable MCAR stores p coupled fields field-major: field a at
+            # offset a * n_units within the block (size p * n_units).
+            block_size[b]     <- as.integer(prepared[[b]]$n_fields) * n_units
+            field_starts      <- c(field_starts, cur)
+            field_block_types <- c(field_block_types, "mcar")
+            if (is.null(phi_start)) phi_start <- cur
         } else {
             block_size[b] <- n_units
             if (type %in% c("icar", "car_proper")) {

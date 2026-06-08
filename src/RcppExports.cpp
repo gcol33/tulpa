@@ -2349,6 +2349,23 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_mcar_prior
+List cpp_test_mcar_prior(NumericVector theta_logchol, int p, int n, IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr, NumericVector x);
+RcppExport SEXP _tulpa_cpp_test_mcar_prior(SEXP theta_logcholSEXP, SEXP pSEXP, SEXP nSEXP, SEXP adj_rpSEXP, SEXP adj_ciSEXP, SEXP nnbrSEXP, SEXP xSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericVector >::type theta_logchol(theta_logcholSEXP);
+    Rcpp::traits::input_parameter< int >::type p(pSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type adj_rp(adj_rpSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type adj_ci(adj_ciSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type nnbr(nnbrSEXP);
+    Rcpp::traits::input_parameter< NumericVector >::type x(xSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_mcar_prior(theta_logchol, p, n, adj_rp, adj_ci, nnbr, x));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -2925,6 +2942,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_spde_nc_transform_grad", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_grad, 10},
     {"_tulpa_cpp_test_spde_nc_transform_fwd", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_fwd, 10},
     {"_tulpa_cpp_test_s2z_block_schur", (DL_FUNC) &_tulpa_cpp_test_s2z_block_schur, 5},
+    {"_tulpa_cpp_test_mcar_prior", (DL_FUNC) &_tulpa_cpp_test_mcar_prior, 7},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

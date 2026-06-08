@@ -32,7 +32,7 @@ test_that("spatial() builds a field spec and expands one CAR block per column", 
   expect_identical(as.integer(f$n_spatial), 10L)
 
   d <- data.frame(cell = rep(1:10, each = 4), time = rnorm(40))
-  cols <- tulpa:::.spatial_field_columns(f, d)
+  cols <- tulpa:::.bar_field_columns(f, d)
   expect_length(cols, 2L)
   expect_identical(cols[[1]]$name, "Intercept")
   expect_true(cols[[1]]$is_intercept)
@@ -57,12 +57,12 @@ test_that("spatial() intercept-only and slope-only expand correctly", {
   d <- data.frame(cell = rep(1:6, each = 3), time = rnorm(18))
 
   f_int <- spatial(graph = adj, formula = ~ 1 || cell)
-  ci <- tulpa:::.spatial_field_columns(f_int, d)
+  ci <- tulpa:::.bar_field_columns(f_int, d)
   expect_length(ci, 1L)
   expect_true(ci[[1]]$is_intercept)
 
   f_slope <- spatial(graph = adj, formula = ~ 0 + time || cell)
-  cs <- tulpa:::.spatial_field_columns(f_slope, d)
+  cs <- tulpa:::.bar_field_columns(f_slope, d)
   expect_length(cs, 1L)
   expect_identical(cs[[1]]$name, "time")
   expect_false(cs[[1]]$is_intercept)
@@ -74,9 +74,9 @@ test_that("spatial() intercept-only and slope-only expand correctly", {
 
 test_that("spatial() enforces the bar grammar", {
   adj <- .chain_adj_field(8L)
-  # Single bar | requests correlated fields (MCAR) -> not implemented.
-  expect_error(spatial(graph = adj, formula = ~ 1 + time | cell),
-               "Correlated")
+  # Single bar | now builds correlated fields (separable MCAR); see
+  # test-spatial-mcar.R. It constructs without error.
+  expect_true(spatial(graph = adj, formula = ~ 1 + time | cell)$correlated)
   # Nested grouping is rejected.
   expect_error(spatial(graph = adj, formula = ~ 1 || cell / site),
                "Nested grouping")
