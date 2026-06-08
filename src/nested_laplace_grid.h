@@ -187,6 +187,13 @@ inline Rcpp::List run_nested_laplace_grid(
         return out;
     }
 
+    // The realised outer width is the driver's own property: every caller hands
+    // it the concurrency it will actually run at (n_outer, already clamped by
+    // the sparse path's memory budget). Stamp it on the reporter here, once, so
+    // the ETA projects over the parallel grid rather than the serial pilot rate
+    // and the console line shows the active outer-thread count (gcol33/tulpa#88).
+    if (progress) progress->set_width(n_threads_outer);
+
     // Stage results in POD containers; merge to Rcpp slots after parallelism.
     std::vector<LaplaceResult> cell_results(n_grid);
 

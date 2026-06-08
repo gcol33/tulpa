@@ -1752,7 +1752,6 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // serial outer grid costs little; the inner per-observation eta reduction
     // still parallelises across n.threads.
     int n_outer = 1;
-    if (progress) progress->set_width(n_outer);
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
     for (auto& s : scratch_pool) s.allocate(n_x, arms);
 
@@ -2088,10 +2087,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         if (n_outer > max_builders) n_outer = max_builders;
     }
 
-    // The progress ETA needs the realised outer width (after the memory clamp)
-    // so it projects the remaining cells over the parallel grid, not the serial
-    // pilot rate (tulpa#64).
-    if (progress) progress->set_width(n_outer);
+    // n_outer is now the realised outer width (after the memory clamp); it is
+    // forwarded to run_nested_laplace_grid, which stamps it on the reporter for
+    // the parallel-grid ETA and the "| N threads" console suffix (tulpa#64,
+    // tulpa#88).
     H_builders.resize(n_outer);
     for (int t = 1; t < n_outer; t++) {
         TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);

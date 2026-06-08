@@ -29,16 +29,21 @@
 
 # Build a progress reporter for a counted R loop. `total` is the iteration
 # denominator (e.g. max_iter for EM); `unit` names one step in the console line
-# ("iter", "species", ...). Returns a list of two closures:
+# ("iter", "species", ...). `threads` is the active outer-thread count: when
+# > 1 it is appended to the console line as "| N threads" so the parallelism is
+# visible live and in detached-run logs (gcol33/tulpa#88); a serial loop leaves
+# it at 1 and the field is omitted, mirroring the C++ GridProgress reporter.
+# Returns a list of two closures:
 #   tick()   -- call once per completed step;
 #   finish() -- call once after the loop (force a final 100%/heartbeat emit).
 # When no channel is wanted both are zero-overhead no-ops.
-.tulpa_iter_progress <- function(label, total, unit = "iter") {
+.tulpa_iter_progress <- function(label, total, unit = "iter", threads = 1L) {
   opt <- getOption("tulpa.nl_progress", NULL)
   on       <- isTRUE(opt$progress)
   file     <- if (is.character(opt$progress_file)) opt$progress_file else ""
   every    <- if (length(opt$progress_every))    as.integer(opt$progress_every) else 0L
   throttle <- if (length(opt$progress_throttle)) as.numeric(opt$progress_throttle) else 2
+  threads  <- if (length(threads)) as.integer(threads)[1] else 1L
 
   if (!on && !nzchar(file)) {
     return(list(tick = function() invisible(NULL),
@@ -71,11 +76,12 @@
     }
     if (on) {
       pct <- if (total > 0) round(frac * 100) else 0
-      cat(sprintf("[%s] %d/%d %s (%d%%) | elapsed %s | ETA ~%s | %.2fs/%s\n",
+      thr <- if (isTRUE(threads > 1L)) sprintf(" | %d threads", threads) else ""
+      cat(sprintf("[%s] %d/%d %s (%d%%) | elapsed %s | ETA ~%s | %.2fs/%s%s\n",
                   label, done, total, unit, pct,
                   .tulpa_progress_format_secs(elapsed),
                   if (frac >= 1) "done" else .tulpa_progress_format_secs(eta),
-                  per, unit))
+                  per, unit, thr))
       flush.console()
     }
     last <<- now

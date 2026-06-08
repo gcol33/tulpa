@@ -1,5 +1,19 @@
 # tulpa NEWS
 
+## 0.0.19 (2026-06-08)
+
+* feat(progress): the nested-Laplace outer-grid progress line now shows the
+  active outer-thread count, e.g. `... | 0.06s/cells | 28 threads`, whenever the
+  grid runs more than one cell at once, so "ran on N cores" is a property of the
+  fit log itself rather than something to read out separately (#88). The count
+  is the realised outer width stamped on the reporter by `run_nested_laplace_grid`
+  (after the sparse path's memory clamp), so it covers every model routing
+  through the joint engine -- the cover hurdle and `occu_cover()` included -- plus
+  the parallel NUTS sampler, which reports its concurrent-chain count the same
+  way. The mirrored R-side reporter (`.tulpa_iter_progress()`) gains an optional
+  `threads` argument carrying the same field. Serial loops leave the count at 1
+  and omit the field; their lines are byte-for-byte unchanged.
+
 ## 0.0.18 (2026-06-08)
 
 * feat(spde): fractional-nu SPDE fields gain a fixed-hyperparameter NUTS path

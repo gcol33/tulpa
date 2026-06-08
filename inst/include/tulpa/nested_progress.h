@@ -97,7 +97,9 @@ public:
     // remaining cells run `width` at a time; extrapolating the serial pilot
     // rate across every remaining cell over-states the wall-clock by ~`width`x
     // (a 21-min pilot on a 48-cell grid projects to ~16 h instead of the real
-    // ~1.5 h). Defaults to 1 (the serial path, unchanged).
+    // ~1.5 h). It also drives the "| N threads" console suffix when > 1, so the
+    // active outer-thread count is visible in the line (gcol33/tulpa#88).
+    // Defaults to 1 (the serial path, unchanged: no suffix).
     void set_width(int width) { width_ = (width > 0) ? width : 1; }
 
     // One completed outer cell. Under OpenMP, call from a critical section.
@@ -158,13 +160,21 @@ private:
         if (emit_console_ && !in_parallel) {
             int pct = (total_ > 0)
                           ? static_cast<int>(frac * 100.0 + 0.5) : 0;
-            char line[256];
+            // Outer concurrency suffix: width_ is the realised number of units
+            // run at once (outer grid cells per nested-Laplace wave, parallel
+            // chains for NUTS), set via set_width(). Shown only when > 1 so a
+            // serial loop's line is unchanged and "ran on N cores" becomes a
+            // property of the log itself (gcol33/tulpa#88).
+            char thr[32] = "";
+            if (width_ > 1)
+                std::snprintf(thr, sizeof(thr), " | %d threads", width_);
+            char line[288];
             std::snprintf(line, sizeof(line),
-                "[%s] %d/%d %s (%d%%) | elapsed %s | ETA ~%s | %.2fs/%s",
+                "[%s] %d/%d %s (%d%%) | elapsed %s | ETA ~%s | %.2fs/%s%s",
                 label_.c_str(), done_, total_, unit_.c_str(), pct,
                 format_secs(elapsed).c_str(),
                 (frac >= 1.0) ? "done" : format_secs(eta).c_str(),
-                per, unit_.c_str());
+                per, unit_.c_str(), thr);
             Rcpp::Rcout << line << "\n";
             Rcpp::Rcout.flush();
             R_FlushConsole();
