@@ -126,11 +126,16 @@
     block_type <- tolower(prior_list[[block_zero + 1L]]$type)
     # Copy (alpha-coupling) is supported on any block whose amplitude is a
     # single scalar the donor / copy arms scale independently: areal spatial
-    # (icar / bym2 / car_proper), temporal (rw1 / rw2 / ar1), and unstructured
-    # (iid). Blocks whose per-arm scaling lives elsewhere (lf via lambda,
-    # hsgp_mo via Sigma) or whose precision is precomputed (tgmrf) do not take
-    # a copy (gcol33/tulpa#76).
-    copy_types <- c("icar", "bym2", "car_proper", "rw1", "rw2", "ar1", "iid")
+    # (icar / bym2 / car_proper), temporal (rw1 / rw2 / ar1), unstructured
+    # (iid), and the separable correlated areal field (mcar). For mcar the copy
+    # scales the WHOLE correlated (intercept, slope) field by one alpha onto the
+    # copy arm (the cross-arm transfer); the free cross-covariance Sigma stays
+    # the within-arm covariance among the fields, integrated over the outer grid
+    # (gcol33/tulpaObs#64). Blocks whose per-arm scaling lives elsewhere (lf via
+    # lambda, hsgp_mo via Sigma) or whose precision is precomputed (tgmrf) do
+    # not take a copy (gcol33/tulpa#76).
+    copy_types <- c("icar", "bym2", "car_proper", "rw1", "rw2", "ar1", "iid",
+                    "mcar")
     if (!block_type %in% copy_types) {
         stop("`copy$block` points at type '", block_type, "'. Copy semantics ",
              "are supported on types (",
@@ -199,6 +204,25 @@
 .joint_block_axis_grid <- function(p, is_copy, alpha_grid,
                                     block_index) {
     type <- tolower(p$type)
+    if (is_copy && type == "mcar") {
+        # Copied correlated areal field (gcol33/tulpaObs#64): the block's own
+        # axes are the p(p+1)/2 log-Cholesky coordinates of Sigma (the within-arm
+        # covariance among the fields); the copy appends ONE trailing `alpha`
+        # axis carrying the cross-arm copy amplitude. The kernel reads the
+        # log-Cholesky axes at axis0 and alpha at axis0 + p(p+1)/2 (the last
+        # column), so alpha MUST be appended last. Sigma stays a free outer-grid
+        # quantity (NOT a copy-materialized sigma_occ/sigma_pos pair); alpha is
+        # applied directly via arm_scale, not multiplied by a sigma.
+        base <- .nl_block_axis_grid(p)
+        bg   <- base$grid
+        ag   <- as.numeric(alpha_grid)
+        idx  <- expand.grid(b = seq_len(nrow(bg)), a = seq_along(ag),
+                            KEEP.OUT.ATTRS = FALSE)
+        grid <- cbind(bg[idx$b, , drop = FALSE], alpha = ag[idx$a])
+        colnames(grid) <- c(colnames(bg), "alpha")
+        return(list(grid = as.matrix(grid), names = colnames(grid),
+                    prepared = base$prepared))
+    }
     if (is_copy) {
         sigma_axis <- p$sigma_grid
         if (is.null(sigma_axis)) {
@@ -606,6 +630,12 @@
         bare_b  <- sub("^b[0-9]+\\.", "", colnames(cpp_grid)[cols_b])
         i_sigma <- match("sigma", bare_b)
         i_alpha <- match("alpha", bare_b)
+        # A copied correlated field (mcar, gcol33/tulpaObs#64) has no scalar
+        # `sigma` axis -- its amplitude lives in the free Sigma (the log-Cholesky
+        # axes), and the copy applies alpha directly via arm_scale (NOT
+        # sigma_occ = sigma / sigma_pos = alpha*sigma). The alpha column passes
+        # through to the kernel unchanged; the log-Cholesky axes pass through too.
+        if (is.na(i_sigma) && !is.na(i_alpha)) next
         if (is.na(i_sigma) || is.na(i_alpha)) {
             stop(".joint_multi_cpp_grid: copy block missing 'sigma' or 'alpha' axis.",
                  call. = FALSE)

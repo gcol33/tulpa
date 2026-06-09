@@ -106,13 +106,24 @@ inline void mcar_apply_Q(
 //   field_weight : per-field, per-arm design column (X_{ia}); outer length p,
 //                  inner length n_arms. field_weight[a][k][i] = X_{ia} on arm k.
 //   adjacency    : CSR (adj_rp, adj_ci, nnbr), 0-based.
+//   copy_arm     : 0-based arm index that receives a scaled COPY of the whole
+//                  correlated field, or -1 for no copy. The natural-parameter
+//                  field IS the latent, so a copy arm sees the same (u_1,...,u_p)
+//                  scaled by a single amplitude alpha (read from theta_grid at
+//                  axis_alpha); donor arms see the field at amplitude 1. The free
+//                  cross-covariance Sigma stays a property of the donor field
+//                  integrated over the outer grid (alpha is the cross-ARM transfer,
+//                  Sigma is the within-ARM covariance among the fields).
+//   axis_alpha   : theta_grid column holding the per-cell copy coefficient alpha
+//                  (used only when copy_arm >= 0).
 inline LatentBlock make_mcar_block(
     int start, int n, int p, int axis0,
     const Rcpp::NumericMatrix& theta_grid,
     std::vector<Rcpp::IntegerVector> cell_idx,
     std::vector<std::vector<Rcpp::NumericVector>> field_weight,
     Rcpp::IntegerVector adj_rp, Rcpp::IntegerVector adj_ci,
-    Rcpp::IntegerVector nnbr
+    Rcpp::IntegerVector nnbr,
+    int copy_arm = -1, int axis_alpha = -1
 ) {
     const int m = p * (p + 1) / 2;
     (void) m;
@@ -123,6 +134,20 @@ inline LatentBlock make_mcar_block(
     block.contrib_kind = BlockContribKind::INDEXED_MULTI;
     block.prior_kind   = PriorFillKind::ADJACENCY;
     block.d_fac = [](int) -> double { return 1.0; };
+
+    // Cross-arm copy coupling (INLA copy=): donor arms see the field at
+    // amplitude 1; the copy arm scales the whole correlated field by alpha read
+    // off the outer grid. The per-field weights X_{ia} stay in obs_indices (they
+    // are grid-invariant and cached at fit-time); the per-grid amplitude rides on
+    // arm_scale, the one per-arm scalar the eta accumulator / scatter apply to an
+    // INDEXED_MULTI block's contribution. Empty arm_scale (copy_arm < 0) is
+    // byte-identical to the single-arm MCAR.
+    if (copy_arm >= 0) {
+        block.arm_scale = [copy_arm, axis_alpha, theta_grid](
+            int k_arm, int k_grid) -> double {
+            return (k_arm == copy_arm) ? theta_grid(k_grid, axis_alpha) : 1.0;
+        };
+    }
 
     // eta_i += sum_a X_{ia} u_a[cell_i]: obs i touches the p field slots
     // {a*n + cell_i} (1-based block-local) with weights X_{ia}.

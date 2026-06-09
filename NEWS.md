@@ -1,5 +1,24 @@
 # tulpa NEWS
 
+## 0.0.28 (2026-06-09)
+
+* feat(spatial): the separable-MCAR areal block can now be COPIED across arms in
+  the joint multi-block driver. A correlated `(intercept, slope)` field sharing a
+  free cross-covariance `Sigma (x) Q^-1` (the within-arm covariance among the
+  fields) is copied onto a second linear predictor with one estimated amplitude
+  `alpha` (the cross-arm transfer): the donor arm sees the natural-parameter
+  field at amplitude 1, the copy arm at `alpha`, with `alpha` integrated over the
+  outer grid as a trailing axis alongside the `Sigma` log-Cholesky coordinates.
+  `copy = list(arm =, block =, alpha_grid =)` now accepts a `type = "mcar"`
+  block; the copy amplitude rides on the block's `arm_scale` (the natural-
+  parameter field stays the latent, so a single per-arm scalar carries the whole
+  correlated field). Previously MCAR rejected copy semantics. This is the engine
+  half of the cover-hurdle correlated-field consumer (gcol33/tulpaObs#64). The
+  single-arm MCAR path and every existing copy block are byte-identical
+  (no copy = empty `arm_scale`). Recovers `Sigma` (both SDs + the cross-
+  correlation) and the copy `alpha` against simulated truth
+  (test-nested-laplace-joint-multi-copy.R).
+
 ## 0.0.27 (2026-06-09)
 
 * feat(formula): the varying-coefficient bar column-expansion is now public.

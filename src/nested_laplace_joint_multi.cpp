@@ -316,14 +316,15 @@ int build_joint_blocks_from_spec(
     if (type == "mcar") {
         // Separable multivariate CAR: p areal fields sharing Sigma (x) Q^-1.
         // One coupled block spanning p*n latent; the p(p+1)/2 log-Cholesky axes
-        // of Sigma are integrated by the outer grid.
-        if (is_copy_block) {
-            Rcpp::stop("Block %d: copy semantics are not supported for MCAR.",
-                       block_index + 1);
-        }
+        // of Sigma are integrated by the outer grid. A copy block (the cover
+        // hurdle's correlated field shared onto the positive arm) appends one
+        // trailing `alpha` axis: the whole correlated field is copied to the
+        // copy arm scaled by alpha (the cross-arm transfer), while Sigma (the
+        // within-arm covariance among the fields) stays integrated as above.
         const int n = Rcpp::as<int>(bs["n_spatial_units"]);
         const int p = Rcpp::as<int>(bs["n_fields"]);
-        require_axes(p * (p + 1) / 2);
+        const int m = p * (p + 1) / 2;
+        require_axes(is_copy_block ? m + 1 : m);
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector nnbr   = bs["n_neighbors"];
@@ -344,9 +345,11 @@ int build_joint_blocks_from_spec(
             field_weight.push_back(std::move(v));
         }
         const int start = latent_offset;
+        const int axis_alpha = is_copy_block ? axis0 + m : -1;
         blocks.push_back(tulpa::make_mcar_block(
             start, n, p, axis0, theta_grid, std::move(cell_idx),
-            std::move(field_weight), adj_rp, adj_ci, nnbr));
+            std::move(field_weight), adj_rp, adj_ci, nnbr,
+            is_copy_block ? copy_arm : -1, axis_alpha));
         return start + p * n;
     }
 

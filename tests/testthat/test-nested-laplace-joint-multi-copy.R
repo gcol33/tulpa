@@ -356,3 +356,96 @@ test_that("copy on an unsupported block type (lf) errors", {
         "supported on types"
     )
 })
+
+# Correlated separable-MCAR block copied across arms (gcol33/tulpaObs#64). The
+# (intercept, slope) pair shares a free 2x2 Sigma; the WHOLE correlated field is
+# copied onto arm 2 with one amplitude alpha. Recovers Sigma (both SDs + the
+# cross-correlation) and the copy alpha.
+.mcar_grid_adj_copy <- function(nx, ny) {
+    n <- nx * ny; W <- matrix(0L, n, n); id <- function(i, j) (j - 1L) * nx + i
+    for (i in seq_len(nx)) for (j in seq_len(ny)) {
+        if (i < nx) { a <- id(i, j); b <- id(i + 1L, j); W[a, b] <- W[b, a] <- 1L }
+        if (j < ny) { a <- id(i, j); b <- id(i, j + 1L); W[a, b] <- W[b, a] <- 1L }
+    }
+    W
+}
+
+test_that("joint multi-block recovers a COPIED correlated MCAR block (Sigma + alpha)", {
+    skip_on_cran()
+    set.seed(11)
+    nx <- ny <- 9L
+    adj <- .mcar_grid_adj_copy(nx, ny)
+    n_s <- nx * ny
+    csr <- list(adj_row_ptr = NULL)
+    nbr <- lapply(seq_len(n_s), function(i) which(adj[i, ] != 0) - 1L)
+    nn  <- vapply(nbr, length, integer(1))
+    adj_rp <- as.integer(c(0L, cumsum(nn)))
+    adj_ci <- as.integer(unlist(nbr))
+
+    sig_u <- 1.0; sig_s <- 0.7; rho <- 0.5; alpha_true <- 1.4
+    Sigma <- matrix(c(sig_u^2, rho * sig_u * sig_s,
+                      rho * sig_u * sig_s, sig_s^2), 2, 2)
+    Qp <- diag(rowSums(adj)) - 0.99 * adj; U <- chol(Qp)
+    z1 <- backsolve(U, rnorm(n_s)); z1 <- z1 - mean(z1)
+    z2 <- backsolve(U, rnorm(n_s)); z2 <- z2 - mean(z2)
+    L  <- t(chol(Sigma))
+    u <- L[1, 1] * z1; u <- u - mean(u)
+    s <- L[2, 1] * z1 + L[2, 2] * z2; s <- s - mean(s)
+
+    n_per <- 30L; cell <- rep(seq_len(n_s), each = n_per); N <- length(cell)
+    x1 <- rnorm(N); x2 <- rnorm(N)
+    eta1 <- 0.3 + u[cell] + x1 * s[cell]
+    eta2 <- -0.2 + alpha_true * (u[cell] + x2 * s[cell])
+    y1 <- rnorm(N, eta1, 0.4); y2 <- rnorm(N, eta2, 0.4)
+
+    arm1 <- list(y = y1, X = cbind(1, x1), family = "gaussian", phi = 0.4)
+    arm2 <- list(y = y2, X = cbind(1, x2), family = "gaussian", phi = 0.4)
+    mcar_block <- list(
+        type = "mcar", n_spatial_units = n_s, n_fields = 2L,
+        adj_row_ptr = adj_rp, adj_col_idx = adj_ci, n_neighbors = as.integer(nn),
+        spatial_idx = list(as.integer(cell), as.integer(cell)),
+        field_weight = list(list(rep(1, N), rep(1, N)),
+                            list(as.numeric(x1), as.numeric(x2))))
+    fit <- suppressWarnings(tulpa_nested_laplace_joint(
+        responses = list(a = arm1, b = arm2),
+        prior = list(mcar_block),
+        copy = list(arm = "b", block = 1L,
+                    alpha_grid = c(0, exp(seq(log(0.3), log(3), length.out = 6)))),
+        phi_grid = list(a = exp(seq(log(0.2), log(0.8), length.out = 4)),
+                        b = exp(seq(log(0.2), log(0.8), length.out = 4))),
+        control = list(max_iter = 60L, tol = 1e-6, integration = "ccd",
+                       store_Q = TRUE, progress = FALSE)))
+
+    expect_identical(fit$integration, "ccd")
+    expect_true("b1.alpha" %in% colnames(fit$theta_grid))
+
+    w <- fit$weights; fin <- is.finite(w) & w > 0
+    tg <- fit$theta_grid[fin, , drop = FALSE]; w <- w[fin]; w <- w / sum(w)
+    logchol_to_L <- function(theta, p) {
+        Lm <- matrix(0, p, p); idx <- 1L
+        for (j in seq_len(p)) for (i in j:p) {
+            Lm[i, j] <- if (i == j) exp(theta[idx]) else theta[idx]; idx <- idx + 1L
+        }
+        Lm
+    }
+    axis_nm <- c("b1.L11", "b1.L21", "b1.L22")
+    sd_u <- sd_s <- rho_hat <- numeric(nrow(tg))
+    for (k in seq_len(nrow(tg))) {
+        Lk <- logchol_to_L(as.numeric(tg[k, axis_nm]), 2L); Sk <- Lk %*% t(Lk)
+        sds <- sqrt(diag(Sk)); sd_u[k] <- sds[1]; sd_s[k] <- sds[2]
+        rho_hat[k] <- Sk[1, 2] / (sds[1] * sds[2])
+    }
+    expect_lt(abs(sum(w * sd_u) - sig_u) / sig_u, 0.25)
+    expect_lt(abs(sum(w * sd_s) - sig_s) / sig_s, 0.25)
+    expect_gt(sum(w * rho_hat), 0.25)
+    expect_lt(abs(sum(w * tg[, "b1.alpha"]) - alpha_true) / alpha_true, 0.30)
+
+    # Field recovery: posterior-mean fields track the simulated truth.
+    fs <- fit$arm_layout$field_starts[1L]
+    u_hat <- as.numeric(crossprod(fit$weights,
+                                  fit$modes[, fs + seq_len(n_s), drop = FALSE]))
+    s_hat <- as.numeric(crossprod(fit$weights,
+                                  fit$modes[, fs + n_s + seq_len(n_s), drop = FALSE]))
+    expect_gt(abs(cor(u_hat, u)), 0.9)
+    expect_gt(abs(cor(s_hat, s)), 0.9)
+})
