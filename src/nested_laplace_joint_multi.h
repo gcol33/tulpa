@@ -66,6 +66,57 @@ inline double block_row_weight(const LatentBlock& blk, int i, int k_arm) {
     return blk.row_weight ? blk.row_weight(i, k_arm) : 1.0;
 }
 
+// Resolve the active (latent index, chain weight) entries one arm row contributes
+// through the prior blocks, for the block kinds the coupled per-cell scatter
+// supports:
+//   * INDEXED_SINGLE -- one latent dof per row (an areal/ICAR field, optionally
+//     SVC-weighted via `row_weight`);
+//   * INDEXED_MULTI  -- several latent dofs per row (a separable-MCAR block's p
+//     coupled fields, weights carried in `obs_indices`).
+// `d_eff_cache[b]` is the per-block arm_scale * d_fac amplitude (a zero entry
+// skips the block). Entries are APPENDED to out_idx / out_w (the caller clears
+// them). Single source of truth for the active-latent resolution used by both
+// `scatter_one_arm_row_{dense,sparse}` (gradient + Hessian) and
+// `build_arm_row_chain` (cross-arm Hessian chain). DENSE_BASIS / BILINEAR_FACTOR
+// are not coupled-scatter kinds (no coupled family uses them) and are skipped.
+inline void collect_coupled_row_latents(
+    int                              i,
+    int                              k_arm,
+    const std::vector<LatentBlock>&  blocks,
+    const std::vector<double>&       d_eff_cache,
+    std::vector<int>&                out_idx,
+    std::vector<double>&             out_w
+) {
+    static thread_local std::vector<std::pair<int,double>> multi_scratch;
+    const int B = static_cast<int>(blocks.size());
+    for (int b = 0; b < B; b++) {
+        if (d_eff_cache[b] == 0.0) continue;
+        const LatentBlock& blk = blocks[b];
+        if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+            if (!blk.obs_indices) continue;
+            blk.obs_indices(i, k_arm, multi_scratch);
+            for (const auto& jw : multi_scratch) {
+                const int l = jw.first;
+                if (l > 0 && l <= blk.size) {
+                    const double w = d_eff_cache[b] * jw.second;
+                    if (w == 0.0) continue;
+                    out_idx.push_back(blk.start + l - 1);
+                    out_w.push_back(w);
+                }
+            }
+        } else {  // INDEXED_SINGLE (the one-dof-per-row coupled-scatter kind)
+            if (!blk.idx) continue;
+            const int l_b = blk.idx(i, k_arm);
+            if (l_b > 0 && l_b <= blk.size) {
+                const double w = d_eff_cache[b] * block_row_weight(blk, i, k_arm);
+                if (w == 0.0) continue;
+                out_idx.push_back(blk.start + l_b - 1);
+                out_w.push_back(w);
+            }
+        }
+    }
+}
+
 // Scatter the gradient and Fisher curvature of ONE row of arm k_arm
 // (per-obs path: row = obs index i; per-cell path: row = a row from a
 // coupled cell's CellDerivs) into the joint (grad, H). Single source of
@@ -104,22 +155,15 @@ inline void scatter_one_arm_row_dense(
         if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
     }
 
-    // Resolve active blocks for row i. -1 from idx means "this row
-    // doesn't see this block" (e.g. an obs with no spatial unit). A
-    // block with d_eff == 0 (field_coef = 0 arm, or rho = 0 BYM2
-    // phi-component, etc.) contributes nothing and is skipped.
+    // Resolve active latent dofs for row i (INDEXED_SINGLE one-per-row +
+    // INDEXED_MULTI several-per-row). -1 / out-of-range from a block means "this
+    // row doesn't see this block"; a block with d_eff == 0 (field_coef = 0 arm,
+    // rho = 0 BYM2 phi-component, etc.) is skipped. Shared resolver so the
+    // gradient/Hessian scatter and the cross-arm chain see the same dofs.
+    (void) B;
     active_idx.clear();
     active_d.clear();
-    for (int b = 0; b < B; b++) {
-        if (d_eff_cache[b] == 0.0) continue;
-        int l_b = blocks[b].idx(i, k_arm);
-        if (l_b > 0 && l_b <= blocks[b].size) {
-            double w = d_eff_cache[b] * block_row_weight(blocks[b], i, k_arm);
-            if (w == 0.0) continue;
-            active_idx.push_back(blocks[b].start + l_b - 1);
-            active_d.push_back(w);
-        }
-    }
+    collect_coupled_row_latents(i, k_arm, blocks, d_eff_cache, active_idx, active_d);
     const int A = static_cast<int>(active_idx.size());
 
     // β block: gradient + diagonal-block Hessian + cross with RE and
@@ -163,9 +207,10 @@ inline void scatter_one_arm_row_dense(
 }
 
 // Sparse-builder analogue of scatter_one_arm_row_dense. Scope matches the
-// dense helper: INDEXED_SINGLE blocks only (the per-cell branch contract;
-// the per-obs sparse scatter has its own optimized fast path that
-// additionally handles DENSE_BASIS / INDEXED_MULTI / BILINEAR_FACTOR).
+// dense helper: INDEXED_SINGLE and INDEXED_MULTI blocks (resolved by
+// collect_coupled_row_latents); DENSE_BASIS / BILINEAR_FACTOR are handled only
+// by the per-obs sparse scatter's own optimized fast path, not the coupled
+// per-cell branch.
 //
 // Lower-triangle writes only -- H.add() normalizes (row, col) to
 // (max, min) internally, so a single call covers both directions of an
@@ -196,19 +241,10 @@ inline void scatter_one_arm_row_sparse(
         if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
     }
 
+    (void) B;
     active_idx.clear();
     active_d.clear();
-    for (int b = 0; b < B; b++) {
-        if (d_eff_cache[b] == 0.0) continue;
-        if (!blocks[b].idx) continue;
-        int l_b = blocks[b].idx(i, k_arm);
-        if (l_b > 0 && l_b <= blocks[b].size) {
-            double w = d_eff_cache[b] * block_row_weight(blocks[b], i, k_arm);
-            if (w == 0.0) continue;
-            active_idx.push_back(blocks[b].start + l_b - 1);
-            active_d.push_back(w);
-        }
-    }
+    collect_coupled_row_latents(i, k_arm, blocks, d_eff_cache, active_idx, active_d);
     const int A = static_cast<int>(active_idx.size());
 
     // beta block: gradient + lower-triangle beta/beta + beta/RE + beta/active.
@@ -461,9 +497,9 @@ struct ArmRowChainEntry {
 
 // Resolve the eta -> joint-vector chain for arm `pa` row `j` at grid point
 // `k_grid`. Matches the contract of `scatter_one_arm_row_{dense,sparse}`
-// (INDEXED_SINGLE blocks only); the entries are exactly the joint dofs
-// that the per-row helper would write nonzero contributions for in its
-// `H_row * outer(chain, chain)` term.
+// (INDEXED_SINGLE + INDEXED_MULTI blocks, via collect_coupled_row_latents); the
+// entries are exactly the joint dofs that the per-row helper would write nonzero
+// contributions for in its `H_row * outer(chain, chain)` term.
 inline void build_arm_row_chain(
     int                              j,
     const ParsedArm&                 pa,
@@ -482,16 +518,16 @@ inline void build_arm_row_chain(
             out_chain.push_back({pa.re_start + gi, 1.0, CHAIN_RE});
         }
     }
-    const int B = static_cast<int>(blocks.size());
-    for (int b = 0; b < B; b++) {
-        if (d_eff_cache[b] == 0.0) continue;
-        if (!blocks[b].idx) continue;
-        int l_b = blocks[b].idx(j, k_arm);
-        if (l_b > 0 && l_b <= blocks[b].size) {
-            double w = d_eff_cache[b] * block_row_weight(blocks[b], j, k_arm);
-            if (w == 0.0) continue;
-            out_chain.push_back({blocks[b].start + l_b - 1, w, CHAIN_LATENT});
-        }
+    // Active latent dofs (INDEXED_SINGLE + INDEXED_MULTI), via the shared
+    // resolver so the chain matches the (idx, weight) entries the gradient /
+    // Hessian scatter writes for this row.
+    static thread_local std::vector<int>    lat_idx;
+    static thread_local std::vector<double> lat_w;
+    lat_idx.clear();
+    lat_w.clear();
+    collect_coupled_row_latents(j, k_arm, blocks, d_eff_cache, lat_idx, lat_w);
+    for (std::size_t t = 0; t < lat_idx.size(); ++t) {
+        out_chain.push_back({lat_idx[t], lat_w[t], CHAIN_LATENT});
     }
 }
 

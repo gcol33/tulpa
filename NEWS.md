@@ -2,6 +2,17 @@
 
 ## 0.0.29 (in development)
 
+* fix(joint): the coupled cell-coupling per-cell scatter now handles
+  `INDEXED_MULTI` prior blocks (a separable-MCAR block's several latent dofs per
+  row), not only `INDEXED_SINGLE`. Previously `scatter_one_arm_row_{dense,sparse}`
+  and `build_arm_row_chain` resolved a row's active latent dofs through
+  `block.idx` alone, so a multi-field block (e.g. a free-Sigma MCAR field) coupled
+  onto a `coupled = TRUE` arm received no gradient/Hessian from the cell-coupling
+  likelihood and stayed pinned at its prior mean. The active-latent resolution is
+  now a single `collect_coupled_row_latents()` helper shared by all three, so the
+  free-Sigma MCAR field couples through the joint occupancy mixture (consumed by
+  tulpaObs `occu_cover()`'s correlated `|` spatial bar). `INDEXED_SINGLE` coupled
+  fits (the areal / SVC trend path) are byte-identical.
 * feat(spatial): `spatial()` gains a `by =` argument for replicated CAR -- one
   independent copy of the whole varying-coefficient field per level of a factor,
   with the hyperparameters shared across levels (`INLA`'s `replicate =` /
