@@ -86,9 +86,12 @@ test_that("spatial() enforces the bar grammar", {
   # A bar is required.
   expect_error(spatial(graph = adj, formula = ~ 1 + time),
                "grouping bar")
-  # by= is reserved.
-  expect_error(spatial(graph = adj, formula = ~ 1 || cell, by = quote(hab)),
-               "not implemented")
+  # by= builds a replicated-CAR field (see test-spatial-field-by.R); it
+  # constructs and records the replication factor as a column name.
+  f_by <- spatial(graph = adj, formula = ~ 1 || cell, by = hab)
+  expect_identical(f_by$by_var, "hab")
+  expect_identical(spatial(graph = adj, formula = ~ 1 || cell,
+                           by = "hab")$by_var, "hab")
   # proper CAR is now wired (independent fields with estimated rho_car); see
   # test-spatial-proper-car.R. It constructs without error.
   expect_s3_class(spatial(graph = adj, formula = ~ 1 || cell, proper = TRUE),

@@ -116,6 +116,15 @@ inline void mcar_apply_Q(
 //                  Sigma is the within-ARM covariance among the fields).
 //   axis_alpha   : theta_grid column holding the per-cell copy coefficient alpha
 //                  (used only when copy_arm >= 0).
+//   n_components : number of disjoint, equal-size, contiguous connected
+//                  components in the (per-field) graph: 1 for an ordinary
+//                  connected graph (the default, byte-identical to the
+//                  single-component path); L for a replicated MCAR over the
+//                  block-diagonal I_L (x) Q (the `by =` replicated CAR). Q then
+//                  has rank (n - L) per field, so its constant null space is
+//                  L-dimensional per field: each field is pinned by L
+//                  sum-to-zero penalties (one per component) and the
+//                  Sigma-normalizer uses (n - L) instead of (n - 1).
 inline LatentBlock make_mcar_block(
     int start, int n, int p, int axis0,
     const Rcpp::NumericMatrix& theta_grid,
@@ -123,10 +132,12 @@ inline LatentBlock make_mcar_block(
     std::vector<std::vector<Rcpp::NumericVector>> field_weight,
     Rcpp::IntegerVector adj_rp, Rcpp::IntegerVector adj_ci,
     Rcpp::IntegerVector nnbr,
-    int copy_arm = -1, int axis_alpha = -1
+    int copy_arm = -1, int axis_alpha = -1, int n_components = 1
 ) {
     const int m = p * (p + 1) / 2;
     (void) m;
+    const int L = (n_components > 1) ? n_components : 1;
+    const int csize = n / L;
 
     LatentBlock block;
     block.start = start;
@@ -169,7 +180,7 @@ inline LatentBlock make_mcar_block(
     // from theta_grid(k, .) here (cheap, p x p) so the closure holds no mutable
     // state and is safe across the parallel outer grid.
     block.add_prior_sparse = [start, n, p, axis0, theta_grid,
-                               adj_rp, adj_ci, nnbr](
+                               adj_rp, adj_ci, nnbr, L, csize](
         SparseHessianBuilder& H, DenseVec& grad,
         const Rcpp::NumericVector& x, int k_grid
     ) {
@@ -213,13 +224,19 @@ inline LatentBlock make_mcar_block(
                 }
             }
         }
-        // Per-field sum-to-zero pins (constant null space of Q): exact gradient
-        // + rank-1 11' registered for the block-Schur fold (gcol33/tulpa#69).
+        // Per-field, per-component sum-to-zero pins (constant null space of Q is
+        // L-dimensional per field when the graph has L components): exact
+        // gradient + one rank-1 11' per (field, component), registered for the
+        // block-Schur fold (gcol33/tulpa#69).
         for (int a = 0; a < p; ++a) {
-            double s = 0.0;
-            for (int i = 0; i < n; ++i) s += x[start + a * n + i];
-            for (int i = 0; i < n; ++i) grad[start + a * n + i] -= MCAR_SUM2ZERO_TAU * s;
-            H.add_s2z_rank1(start + a * n, n, MCAR_SUM2ZERO_TAU);
+            const int fstart = start + a * n;
+            for (int c = 0; c < L; ++c) {
+                const int cstart = fstart + c * csize;
+                double s = 0.0;
+                for (int i = 0; i < csize; ++i) s += x[cstart + i];
+                for (int i = 0; i < csize; ++i) grad[cstart + i] -= MCAR_SUM2ZERO_TAU * s;
+                H.add_s2z_rank1(cstart, csize, MCAR_SUM2ZERO_TAU);
+            }
         }
     };
 
@@ -243,12 +260,14 @@ inline LatentBlock make_mcar_block(
         }
     };
 
-    // log p(u | Sigma): -0.5 u'Pu - 0.5 SUM2ZERO sum_a (sum u_a)^2
-    //   + 0.5 (n-1) log|Sigma^-1|  - 0.5 p (n-1) log(2 pi).
+    // log p(u | Sigma): -0.5 u'Pu - 0.5 SUM2ZERO sum_a sum_c (sum_{i in c} u_a)^2
+    //   + 0.5 (n-L) log|Sigma^-1|  - 0.5 p (n-L) log(2 pi).
     // The constant p logpdet(Q) term (Sigma-independent) is dropped, mirroring
-    // log_prior_icar; the Sigma-dependent (n-1) log|Sigma^-1| is exact.
+    // log_prior_icar; the Sigma-dependent (n-L) log|Sigma^-1| is exact (P =
+    // Sigma^-1 (x) Q has rank p(n-L) when Q has L components: logpdet(P) =
+    // (n-L) log|Sigma^-1| + p logpdet(Q)).
     block.log_prior = [start, n, p, axis0, theta_grid,
-                       adj_rp, adj_ci, nnbr](
+                       adj_rp, adj_ci, nnbr, L, csize](
         const Rcpp::NumericVector& x, int k_grid
     ) -> double {
         std::vector<double> Sinv; double log_det_Sigma;
@@ -269,24 +288,33 @@ inline LatentBlock make_mcar_block(
             }
         double pin = 0.0;
         for (int a = 0; a < p; ++a) {
-            double s = 0.0;
-            for (int i = 0; i < n; ++i) s += x[start + a * n + i];
-            pin += s * s;
+            const int fstart = start + a * n;
+            for (int c = 0; c < L; ++c) {
+                double s = 0.0;
+                for (int i = 0; i < csize; ++i) s += x[fstart + c * csize + i];
+                pin += s * s;
+            }
         }
         const double log_det_Sinv = -log_det_Sigma;
         return -0.5 * quad - 0.5 * MCAR_SUM2ZERO_TAU * pin
-               + 0.5 * (n - 1) * log_det_Sinv
-               - 0.5 * p * (n - 1) * std::log(2.0 * M_PI);
+               + 0.5 * (n - L) * log_det_Sinv
+               - 0.5 * p * (n - L) * std::log(2.0 * M_PI);
     };
 
-    // Center each field to sum-to-zero after each Newton step (belt-and-braces
-    // with the pins; the per-field constant is unidentified by the prior).
-    block.center = [start, n, p](Rcpp::NumericVector& x) -> double {
+    // Center each (field, component) to sum-to-zero after each Newton step
+    // (belt-and-braces with the pins; the per-field-per-component constant is
+    // unidentified by the prior). Returns 0 (no arm-intercept compensation): the
+    // pins drive each removed mean to ~0, so eta is preserved to that order.
+    block.center = [start, n, p, L, csize](Rcpp::NumericVector& x) -> double {
         for (int a = 0; a < p; ++a) {
-            double s = 0.0;
-            for (int i = 0; i < n; ++i) s += x[start + a * n + i];
-            const double mean = s / n;
-            for (int i = 0; i < n; ++i) x[start + a * n + i] -= mean;
+            const int fstart = start + a * n;
+            for (int c = 0; c < L; ++c) {
+                const int cstart = fstart + c * csize;
+                double s = 0.0;
+                for (int i = 0; i < csize; ++i) s += x[cstart + i];
+                const double mean = s / csize;
+                for (int i = 0; i < csize; ++i) x[cstart + i] -= mean;
+            }
         }
         return 0.0;
     };

@@ -14,6 +14,7 @@
 #include "hmc_gp.h"
 #include "sparse_hessian.h"
 #include "mcar_block_factory.h"
+#include "laplace_spatial_priors.h"
 
 using namespace Rcpp;
 
@@ -1393,11 +1394,26 @@ List cpp_test_s2z_block_schur(
 //     normalizer 0.5 (n-1) log|Sigma^-1|.
 // `theta_logchol` is the p(p+1)/2 log-Cholesky vector; the adjacency is CSR.
 //
+// Direct driver of the intrinsic-ICAR log-prior (laplace_spatial_priors.cpp),
+// exposing the `n_components` parameter so a test can assert the per-component
+// rank-deficiency invariant: for a block-diagonal I_L (x) Q graph the log-prior
+// equals the sum of the L independent single-component log-priors (the (n - L)
+// normalizer and the per-component sum-to-zero penalty). Spatial start is 0.
+// [[Rcpp::export]]
+double cpp_test_log_prior_icar(
+    NumericVector x, int n, double tau,
+    IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr,
+    int n_components = 1
+) {
+  return tulpa::log_prior_icar(x, /*spatial_start=*/0, n, tau,
+                                adj_rp, adj_ci, nnbr, n_components);
+}
+
 // [[Rcpp::export]]
 List cpp_test_mcar_prior(
     NumericVector theta_logchol, int p, int n,
     IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr,
-    NumericVector x
+    NumericVector x, int n_components = 1
 ) {
   const int m = p * (p + 1) / 2;
   NumericMatrix tg(1, m);
@@ -1407,7 +1423,7 @@ List cpp_test_mcar_prior(
   std::vector<std::vector<Rcpp::NumericVector>> field_weight;
   tulpa::LatentBlock blk = tulpa::make_mcar_block(
       /*start=*/0, n, p, /*axis0=*/0, tg, cell_idx, field_weight,
-      adj_rp, adj_ci, nnbr);
+      adj_rp, adj_ci, nnbr, /*copy_arm=*/-1, /*axis_alpha=*/-1, n_components);
 
   const int n_x = p * n;
   std::vector<std::pair<int,int>> pat;

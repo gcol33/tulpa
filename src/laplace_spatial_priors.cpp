@@ -120,73 +120,101 @@ inline double field_sum(const NumericVector& x, int start, int n) {
     return s;
 }
 
+// Visit each of an intrinsic field's `n_components` disjoint, equal-size,
+// contiguous connected components, calling comp(comp_start_absolute,
+// comp_size). A connected graph has one component spanning [start, start + n)
+// (n_components <= 1, byte-identical to the historical single-component path);
+// a replicated field over the block-diagonal I_L (x) Q has L equal-size
+// components (the `by =` replicated CAR). The single source of the per-component
+// loop so the gradient, Hessian, pattern and log-prior treat the null space
+// identically.
+template <typename F>
+inline void for_each_icar_component(int start, int n, int n_components, F&& comp) {
+    const int L = (n_components > 1) ? n_components : 1;
+    const int csize = n / L;
+    for (int c = 0; c < L; c++) comp(start + c * csize, csize);
+}
+
 } // anonymous namespace
 
 void add_icar_prior(
     DenseVec& grad, DenseMat& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors
+    const IntegerVector& n_neighbors, int n_components
 ) {
-    // ICAR = CAR(rho = 1).
+    // ICAR = CAR(rho = 1). The quadratic form is over the whole (block-diagonal
+    // for a replicated field) graph; the CSR already carries the per-component
+    // edge structure, so no per-component handling is needed here.
     add_car_grad_hess(grad, H, x, spatial_start, n_spatial_units,
                       tau_spatial, /*rho=*/1.0,
                       adj_row_ptr, adj_col_idx, n_neighbors);
-    // Sum-to-zero constraint (exact rank-1 11' on the dense Hessian).
-    double s = field_sum(x, spatial_start, n_spatial_units);
-    for (int i = 0; i < n_spatial_units; i++) {
-        grad[spatial_start + i] -= SUM2ZERO_TAU * s;
-        for (int j = 0; j < n_spatial_units; j++)
-            H[spatial_start + i][spatial_start + j] += SUM2ZERO_TAU;
-    }
+    // One sum-to-zero penalty per connected component (exact rank-1 11' on the
+    // dense Hessian, within the component's diagonal block).
+    for_each_icar_component(spatial_start, n_spatial_units, n_components,
+        [&](int cstart, int csize) {
+            double s = field_sum(x, cstart, csize);
+            for (int i = 0; i < csize; i++) {
+                grad[cstart + i] -= SUM2ZERO_TAU * s;
+                for (int j = 0; j < csize; j++)
+                    H[cstart + i][cstart + j] += SUM2ZERO_TAU;
+            }
+        });
 }
 
 void add_icar_prior_sparse(
     DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors
+    const IntegerVector& n_neighbors, int n_components
 ) {
     add_car_grad_hess_sparse(grad, H, x, spatial_start, n_spatial_units,
                               tau_spatial, /*rho=*/1.0,
                               adj_row_ptr, adj_col_idx, n_neighbors);
-    // Sum-to-zero constraint: -0.5 SUM2ZERO_TAU (sum phi)^2, Hessian SUM2ZERO_TAU 11'.
-    // The exact gradient is always added. The rank-1 11' Hessian is handled by
-    // field size (see icar_s2z_densify): a densified field block (laid out by
-    // add_icar_pattern) stores the full 11' exactly, matching the dense
-    // add_icar_prior; a large field leaves the off-diagonals off the stored
-    // Hessian and keeps only the in-pattern diagonal for a stable step (the
-    // rank-1 log-det / step correction is applied at solve time).
-    const double s = field_sum(x, spatial_start, n_spatial_units);
-    for (int i = 0; i < n_spatial_units; i++)
-        grad[spatial_start + i] -= SUM2ZERO_TAU * s;
-    if (icar_s2z_densify(n_spatial_units)) {
-        // Full 11' into the dense field block; each lower-triangle slot once
-        // (CHOLMOD stype=-1 reads it as the symmetric entry).
-        for (int i = 0; i < n_spatial_units; i++)
-            for (int j = 0; j <= i; j++)
-                H.add(spatial_start + i, spatial_start + j, SUM2ZERO_TAU);
-    } else {
-        // Large field: leave the off-diagonals off the adjacency pattern and
-        // register the rank-1 11' for the solver to fold in at solve time
-        // (Sherman-Morrison step + matrix-determinant-lemma log-det). Nothing
-        // is added to the stored Hessian here; the exact gradient above already
-        // pins the field mean during the Newton iteration.
-        H.add_s2z_rank1(spatial_start, n_spatial_units, SUM2ZERO_TAU);
-    }
+    // One sum-to-zero penalty per connected component:
+    // -0.5 SUM2ZERO_TAU sum_c (sum_{i in c} phi_i)^2, Hessian SUM2ZERO_TAU 11'
+    // per component block. The exact gradient is always added. The rank-1 11'
+    // Hessian is handled by per-component field size (see icar_s2z_densify): a
+    // densified component block (laid out by add_icar_pattern) stores the full
+    // 11' exactly; a large component leaves the off-diagonals off the stored
+    // Hessian and registers a per-component rank-1 11' for the solver to fold in
+    // at solve time (Sherman-Morrison step + matrix-determinant-lemma log-det).
+    for_each_icar_component(spatial_start, n_spatial_units, n_components,
+        [&](int cstart, int csize) {
+            const double s = field_sum(x, cstart, csize);
+            for (int i = 0; i < csize; i++)
+                grad[cstart + i] -= SUM2ZERO_TAU * s;
+            if (icar_s2z_densify(csize)) {
+                for (int i = 0; i < csize; i++)
+                    for (int j = 0; j <= i; j++)
+                        H.add(cstart + i, cstart + j, SUM2ZERO_TAU);
+            } else {
+                H.add_s2z_rank1(cstart, csize, SUM2ZERO_TAU);
+            }
+        });
 }
 
 void add_icar_pattern(
     std::vector<std::pair<int,int>>& out,
     int spatial_start, int n_spatial_units,
-    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx
+    const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
+    int n_components
 ) {
-    if (icar_s2z_densify(n_spatial_units)) {
-        // Dense lower-triangle field block so the sum-to-zero 11' fits exactly.
-        for (int i = 0; i < n_spatial_units; i++)
-            for (int j = 0; j <= i; j++)
-                out.emplace_back(spatial_start + i, spatial_start + j);
+    const int L = (n_components > 1) ? n_components : 1;
+    if (icar_s2z_densify(n_spatial_units / L)) {
+        // Dense lower-triangle block per component so each component's
+        // sum-to-zero 11' fits exactly.
+        for_each_icar_component(spatial_start, n_spatial_units, n_components,
+            [&](int cstart, int csize) {
+                for (int i = 0; i < csize; i++)
+                    for (int j = 0; j <= i; j++)
+                        out.emplace_back(cstart + i, cstart + j);
+            });
     } else {
+        // The adjacency edges over the whole (block-diagonal) graph already
+        // contain only within-component edges, so the plain adjacency pattern
+        // covers every component; the per-component rank-1 11' is folded at
+        // solve time (off the stored pattern).
         add_car_pattern(out, spatial_start, n_spatial_units,
                         adj_row_ptr, adj_col_idx);
     }
@@ -196,28 +224,38 @@ double log_prior_icar_structured(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors
+    const IntegerVector& n_neighbors, int n_components
 ) {
     double quad_form = car_quadratic_form(
         x, spatial_start, n_spatial_units, /*rho=*/1.0,
         adj_row_ptr, adj_col_idx, n_neighbors);
-    double s = field_sum(x, spatial_start, n_spatial_units);
-    // -0.5 tau phi'Q phi (the intrinsic quadratic) and the sum-to-zero penalty
-    // that pins the constant null-space (matches add_icar_prior's gradient).
-    return -0.5 * tau_spatial * quad_form - 0.5 * SUM2ZERO_TAU * s * s;
+    // One sum-to-zero penalty per connected component (matches the gradient in
+    // add_icar_prior[_sparse]): sum_c (sum_{i in c} phi_i)^2.
+    double s2z = 0.0;
+    for_each_icar_component(spatial_start, n_spatial_units, n_components,
+        [&](int cstart, int csize) {
+            double s = field_sum(x, cstart, csize);
+            s2z += s * s;
+        });
+    // -0.5 tau phi'Q phi (the intrinsic quadratic) and the per-component
+    // sum-to-zero penalty that pins the constant null-space.
+    return -0.5 * tau_spatial * quad_form - 0.5 * SUM2ZERO_TAU * s2z;
 }
 
 double log_prior_icar(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors
+    const IntegerVector& n_neighbors, int n_components
 ) {
-    // ICAR is rank-deficient: only (n - 1) eigenvalues contribute to log|tau Q|.
+    // ICAR is rank-deficient: Q over a graph with `n_components` connected
+    // components has rank (n - n_components), so only that many eigenvalues
+    // contribute to log|tau Q| (one constant null direction per component).
     return log_prior_icar_structured(x, spatial_start, n_spatial_units,
                                      tau_spatial, adj_row_ptr, adj_col_idx,
-                                     n_neighbors)
-         + 0.5 * (n_spatial_units - 1) * std::log(tau_spatial / (2.0 * M_PI));
+                                     n_neighbors, n_components)
+         + 0.5 * (n_spatial_units - n_components)
+               * std::log(tau_spatial / (2.0 * M_PI));
 }
 
 void add_car_proper_prior(

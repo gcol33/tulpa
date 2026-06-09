@@ -46,9 +46,18 @@
 #'   single `|` with `proper = TRUE`) is a separate model.
 #' @param shared Optional shared-effect handle, passed through to the field
 #'   blocks (see the model docs). Default `NULL` (shared).
-#' @param by Reserved. A future replicated-CAR argument that would build an
-#'   independent copy of the whole field for each level of a factor. Not yet
-#'   implemented; passing it errors.
+#' @param by Optional replicated-CAR factor: a bare column name (or a string)
+#'   naming a factor in the model data. With `L` levels it builds one
+#'   independent copy of the whole field per level -- the field over the
+#'   block-diagonal Kronecker graph `I_L (x) Q` (`L` disjoint copies of the
+#'   graph) -- with the hyperparameters shared across levels (one `Sigma` for
+#'   `|`; one `(sigma[, rho_car])` for `||`). This is `INLA`'s `replicate =` /
+#'   `mgcv`'s `s(cell, by = ...)` generalised to the varying-coefficient bar,
+#'   and is orthogonal to the bar character: `|` / `||` sets the covariance
+#'   among the coefficient columns within a field, while `by` sets how many
+#'   independent replicates of the whole field exist. Default `NULL` (one
+#'   field). Correlated proper CAR (`|` with `proper = TRUE`) stays out of scope
+#'   with or without `by`.
 #'
 #' @return A `tulpa_spatial_field` object describing the field(s). It is
 #'   expanded into one CAR block per design column at fit time, when the data
@@ -78,10 +87,17 @@
 spatial <- function(graph, formula, proper = FALSE, shared = NULL,
                     by = NULL) {
 
-  if (!is.null(by)) {
-    stop("`by =` (replicated CAR -- one independent field per factor level) ",
-         "is not implemented yet. Fit one spatial() field per level by hand, ",
-         "or wait for the replicated-CAR feature.", call. = FALSE)
+  # Capture `by` as a column name without evaluating it: in a model formula the
+  # spatial() call is evaluated in the formula environment (not the data), so a
+  # bare `by = habitat` must be deparsed to a name and resolved against the data
+  # at fit time, exactly as the bar's group_var is.
+  by_var <- NULL
+  if (!missing(by)) {
+    by_expr <- substitute(by)
+    if (!is.null(by_expr)) {
+      by_var <- if (is.character(by_expr)) as.character(by_expr)
+                else deparse(by_expr)
+    }
   }
 
   if (missing(graph) || (!is.matrix(graph) && !inherits(graph, "Matrix"))) {
@@ -148,6 +164,7 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
       correlated    = isTRUE(spec1$correlated),
       proper        = isTRUE(proper),
       shared        = shared,
+      by_var        = by_var,
       n_spatial     = nrow(graph),
       formula       = formula,
       env           = environment(formula)
@@ -302,6 +319,103 @@ tulpa_bar_field_specs <- function(formula, data) {
 }
 
 
+# Replicate a graph + per-observation node index across the levels of a `by`
+# factor: build the block-diagonal Kronecker adjacency I_L (x) Q (L disjoint
+# copies of the graph) and offset each observation's node into its level's copy
+# (`node + (level - 1) * n_nodes`). Because the result is one graph with one
+# precision, the L replicate fields are independent (no edges across levels) and
+# share the hyperparameters -- the outer integration grid stays one axis. The
+# single source of the replication remap, shared by .spatial_field_blocks() and
+# the exported tulpa_bar_field_replicate(). L == 1 returns the graph untouched,
+# so a single-level `by` is byte-identical to the no-`by` field.
+.bar_field_replicate <- function(adjacency, node_idx, by_values) {
+  f <- factor(by_values)
+  if (anyNA(f)) {
+    stop("spatial() `by` column has missing value(s).", call. = FALSE)
+  }
+  L <- nlevels(f)
+  n <- nrow(adjacency)
+  level <- as.integer(f)
+  adj_rep <- if (L == 1L) {
+    adjacency
+  } else {
+    as.matrix(Matrix::bdiag(
+      rep(list(Matrix::Matrix(adjacency, sparse = TRUE)), L)))
+  }
+  list(adjacency = adj_rep,
+       index     = node_idx + (level - 1L) * n,
+       n_levels  = L,
+       n_nodes   = n,
+       levels    = levels(f))
+}
+
+
+#' Replicate an areal graph across the levels of a factor (replicated CAR)
+#'
+#' @description
+#' Build the block-diagonal Kronecker graph `I_L (x) Q` and the level-offset
+#' node index for a replicated areal field: one independent copy of the graph
+#' per level of a `by` factor, all sharing one precision. This is the
+#' graph-side counterpart to [tulpa_bar_field_specs()] -- that helper expands
+#' the coefficient columns and is graph-agnostic, while replication needs the
+#' graph, so it is a sibling rather than a new argument. A downstream package
+#' composes the two (column expansion x replication) from the one
+#' implementation rather than re-deriving the Kronecker remap.
+#'
+#' @param adjacency Symmetric adjacency matrix of the base graph
+#'   (`[n_node x n_node]`, dense or sparse).
+#' @param node Integer vector of 1-based graph-node indices, one per
+#'   observation (the resolved bar right-hand side).
+#' @param by A vector of the same length as `node` giving each observation's
+#'   replication level; coerced to a factor. With `L` distinct levels the field
+#'   is replicated `L` times.
+#'
+#' @return A list:
+#'   \describe{
+#'     \item{`adjacency`}{the `[L*n_node x L*n_node]` block-diagonal Kronecker
+#'       adjacency `I_L (x) Q` (the base graph for `L == 1`).}
+#'     \item{`index`}{integer vector, one per observation: the node index
+#'       offset into its level's copy (`node + (level - 1) * n_node`).}
+#'     \item{`n_levels`}{the number of replication levels `L`.}
+#'     \item{`n_nodes`}{the base graph node count `n_node`.}
+#'     \item{`levels`}{the factor levels of `by`, in replicate order.}
+#'   }
+#'
+#' @seealso [tulpa_bar_field_specs()] for the coefficient-column expansion,
+#'   [spatial()] for the inline areal field constructor whose `by =` argument
+#'   this powers.
+#'
+#' @examples
+#' adj <- matrix(0, 4, 4)
+#' for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
+#' node <- rep(1:4, times = 2)
+#' lev  <- rep(c("a", "b"), each = 4)
+#' rep_info <- tulpa_bar_field_replicate(adj, node, lev)
+#' dim(rep_info$adjacency)   # 8 x 8 (I_2 (x) Q)
+#' rep_info$index            # level b nodes offset by 4
+#'
+#' @export
+tulpa_bar_field_replicate <- function(adjacency, node, by) {
+  if ((!is.matrix(adjacency) && !inherits(adjacency, "Matrix"))) {
+    stop("`adjacency` must be an adjacency matrix.", call. = FALSE)
+  }
+  adj <- as.matrix(adjacency)
+  if (nrow(adj) != ncol(adj)) {
+    stop("`adjacency` must be square.", call. = FALSE)
+  }
+  node <- as.integer(node)
+  if (length(node) != length(by)) {
+    stop("`node` and `by` must have the same length (one entry per ",
+         "observation).", call. = FALSE)
+  }
+  if (anyNA(node) || min(node) < 1L || max(node) > nrow(adj)) {
+    stop("`node` must be 1-based indices into the adjacency graph (1..",
+         nrow(adj), ").", call. = FALSE)
+  }
+  .bar_field_replicate(adj, node, by)
+}
+
+
 # Expand a spatial-field spec + data into a list of areal CAR blocks in the
 # format tulpa_nested_laplace_joint() consumes: one block per design column,
 # each carrying the per-arm spatial_idx and (for non-intercept columns) the
@@ -311,13 +425,35 @@ tulpa_bar_field_specs <- function(formula, data) {
 # outer grid and rho_car is estimated per field); `proper = FALSE` builds
 # intrinsic `icar` blocks (rho fixed at 1).
 .spatial_field_blocks <- function(spec, data) {
-  adj <- as.matrix(spec$adjacency)
-  csr <- adjacency_to_csr_tulpa(adj)
-  n_units <- nrow(adj)
+  base_adj <- as.matrix(spec$adjacency)
+  n_units <- nrow(base_adj)
   idx <- .resolve_unit_index(data[[spec$group_var]], spec$group_var, n_units)
-  cols <- .bar_field_columns(spec, data, fname = "spatial")
   proper <- isTRUE(spec$proper)
-  rho_bounds <- if (proper) compute_car_rho_bounds(adj) else NULL
+  # rho_car bounds come from the base graph's eigenvalue interval of D^-1 W;
+  # block-diagonal replication leaves the spectrum unchanged (L identical
+  # blocks), so derive them once from the base graph rather than the larger
+  # replicated adjacency.
+  rho_bounds <- if (proper) compute_car_rho_bounds(base_adj) else NULL
+
+  # Replicated CAR: build the field over I_L (x) Q, offsetting each observation's
+  # node into its `by`-level copy. One precision is shared across levels (it is
+  # one graph), so the outer grid stays one axis.
+  adj <- base_adj
+  n_comp <- 1L
+  if (!is.null(spec$by_var)) {
+    if (is.null(data[[spec$by_var]])) {
+      stop("spatial() `by` column '", spec$by_var,
+           "' not found in the data.", call. = FALSE)
+    }
+    rep_info <- .bar_field_replicate(base_adj, idx, data[[spec$by_var]])
+    adj <- rep_info$adjacency
+    idx <- rep_info$index
+    n_units <- rep_info$n_levels * rep_info$n_nodes
+    n_comp <- rep_info$n_levels
+  }
+
+  csr <- adjacency_to_csr_tulpa(adj)
+  cols <- .bar_field_columns(spec, data, fname = "spatial")
 
   # Correlated (single | ): one coupled separable-MCAR block over the p design
   # columns sharing Sigma (x) Q^-1. The p design columns become the fields; each
@@ -325,7 +461,7 @@ tulpa_bar_field_specs <- function(formula, data) {
   if (isTRUE(spec$correlated)) {
     field_names <- vapply(cols, function(col)
       paste(spec$group_var, col$name, sep = "."), character(1))
-    return(list(list(
+    blk <- list(
       type            = "mcar",
       name            = spec$group_var,
       n_spatial_units = as.integer(n_units),
@@ -336,7 +472,11 @@ tulpa_bar_field_specs <- function(formula, data) {
       spatial_idx     = list(as.integer(idx)),
       field_weight    = lapply(cols, function(col) list(as.numeric(col$weight))),
       field_names     = field_names
-    )))
+    )
+    # Replicated MCAR: L equal-size components per field (the engine pins each
+    # per component and uses (n - L) in the Sigma normalizer).
+    if (n_comp > 1L) blk$n_components <- as.integer(n_comp)
+    return(list(blk))
   }
 
   lapply(cols, function(col) {
@@ -350,6 +490,10 @@ tulpa_bar_field_specs <- function(formula, data) {
       spatial_idx     = list(as.integer(idx))
     )
     if (proper) blk$rho_bounds <- as.numeric(rho_bounds)
+    # Intrinsic ICAR replication is component-aware in the engine; proper CAR is
+    # full rank, so it needs no per-component treatment (correct over the
+    # block-diagonal graph as is).
+    if (!proper && n_comp > 1L) blk$n_components <- as.integer(n_comp)
     if (!col$is_intercept) {
       blk$svc_weight <- list(as.numeric(col$weight))
     }
@@ -628,6 +772,10 @@ print.tulpa_spatial_field <- function(x, ...) {
   cat("Structure:", if (x$proper) "proper CAR" else "ICAR (Besag)", "\n")
   cat("Graph nodes:", x$n_spatial, "\n")
   cat("Graph node index:", x$group_var, "\n")
+  if (!is.null(x$by_var)) {
+    cat("Replicated by:", x$by_var,
+        "(one independent copy of the field per level, shared hyperparameters)\n")
+  }
   cat("Fields:", if (x$correlated) "correlated" else "independent",
       "(|| -> separate precision per coefficient)\n")
   labs <- .bar_field_term_labels(x)

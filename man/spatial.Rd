@@ -33,9 +33,18 @@ single \code{|} with \code{proper = TRUE}) is a separate model.}
 \item{shared}{Optional shared-effect handle, passed through to the field
 blocks (see the model docs). Default \code{NULL} (shared).}
 
-\item{by}{Reserved. A future replicated-CAR argument that would build an
-independent copy of the whole field for each level of a factor. Not yet
-implemented; passing it errors.}
+\item{by}{Optional replicated-CAR factor: a bare column name (or a string)
+naming a factor in the model data. With \code{L} levels it builds one
+independent copy of the whole field per level -- the field over the
+block-diagonal Kronecker graph \verb{I_L (x) Q} (\code{L} disjoint copies of the
+graph) -- with the hyperparameters shared across levels (one \code{Sigma} for
+\code{|}; one \code{(sigma[, rho_car])} for \code{||}). This is \code{INLA}'s \verb{replicate =} /
+\code{mgcv}'s \code{s(cell, by = ...)} generalised to the varying-coefficient bar,
+and is orthogonal to the bar character: \code{|} / \code{||} sets the covariance
+among the coefficient columns within a field, while \code{by} sets how many
+independent replicates of the whole field exist. Default \code{NULL} (one
+field). Correlated proper CAR (\code{|} with \code{proper = TRUE}) stays out of scope
+with or without \code{by}.}
 }
 \value{
 A \code{tulpa_spatial_field} object describing the field(s). It is

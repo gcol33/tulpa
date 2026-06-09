@@ -1,5 +1,30 @@
 # tulpa NEWS
 
+## 0.0.29 (in development)
+
+* feat(spatial): `spatial()` gains a `by =` argument for replicated CAR -- one
+  independent copy of the whole varying-coefficient field per level of a factor,
+  with the hyperparameters shared across levels (`INLA`'s `replicate =` /
+  `mgcv`'s `s(cell, by = ...)`, generalised to the bar). It is orthogonal to the
+  bar character: `|` / `||` sets the covariance among the coefficient columns
+  within a field, while `by` sets how many replicates exist. A `by` factor with
+  `L` levels builds the field over the block-diagonal Kronecker graph
+  `I_L (x) Q` (`L` disjoint copies, the node index offset into each level's
+  copy), so the replicates are independent and share one precision -- the outer
+  integration grid stays one axis. Supported for `||` and `|` (intrinsic) and
+  `||` + `proper = TRUE`; `|` + `proper` stays out of scope, with or without
+  `by`. The new `tulpa_bar_field_replicate()` exposes the Kronecker remap for
+  consumer packages (the graph-side sibling of `tulpa_bar_field_specs()`).
+* fix(spatial): the intrinsic-CAR kernels (ICAR and the separable MCAR) are now
+  connected-component aware. The rank-deficiency treatment -- the sum-to-zero
+  null-space pin and the `(n - 1)` log-determinant normaliser -- assumed a single
+  connected graph; over a disconnected graph (the `L`-component block-diagonal
+  field a replicated CAR builds) the field constant of each component is its own
+  null direction. The kernels now apply one sum-to-zero pin per component and
+  normalise with `(n - n_components)`, so a block-diagonal `L`-component
+  log-prior equals the sum of the `L` independent single-component log-priors.
+  A connected graph is the `n_components = 1` case, byte-identical to before.
+
 ## 0.0.28 (2026-06-09)
 
 * feat(spatial): the separable-MCAR areal block can now be COPIED across arms in

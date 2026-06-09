@@ -315,6 +315,12 @@
             out$svc_weight <- .multi_block_svc_weight(
                 p$svc_weight, spatial_idx, n_arms, block_index)
         }
+        # Replicated CAR (`by =`): number of disjoint equal-size components in the
+        # block-diagonal graph (the intrinsic ICAR kernel pins each per component
+        # and uses (n - L) in its rank-deficiency normalizer). Absent = connected.
+        if (!is.null(p$n_components)) {
+            out$n_components <- as.integer(p$n_components)
+        }
         out
     } else if (type == "mcar") {
         # Separable multivariate CAR: p coupled areal fields sharing Sigma (x)
@@ -337,7 +343,7 @@
             .multi_block_svc_weight(p$field_weight[[a]], spatial_idx, n_arms,
                                     block_index)
         })
-        list(
+        out <- list(
             type            = "mcar",
             spatial_idx     = spatial_idx,
             n_spatial_units = as.integer(p$n_spatial_units),
@@ -347,6 +353,11 @@
             n_neighbors     = as.integer(p$n_neighbors),
             field_weight    = field_weight
         )
+        # Replicated MCAR (`by =`): L equal-size components per field.
+        if (!is.null(p$n_components)) {
+            out$n_components <- as.integer(p$n_components)
+        }
+        out
     } else if (type %in% c("rw1", "rw2", "ar1")) {
         if (is.null(p$temporal_idx)) {
             stop("Block ", block_index, " (type '", type, "'): ",

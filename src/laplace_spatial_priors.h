@@ -24,18 +24,26 @@ namespace tulpa {
 // helpers below need the full type, and they live in the .cpp.
 class SparseHessianBuilder;
 
+// `n_components` is the number of disjoint, equal-size, contiguous connected
+// components in the field's graph: 1 for an ordinary connected graph (the
+// default, byte-identical to the historical single-component path); L for a
+// replicated field over the block-diagonal Kronecker graph I_L (x) Q (the
+// `by =` replicated CAR), where each of the L copies is its own component. The
+// quadratic form is over the whole (block-diagonal) graph as before; only the
+// intrinsic null-space treatment is per component -- one sum-to-zero penalty
+// per component, and the rank-deficiency normalizer uses (n - n_components).
 void add_icar_prior(
     DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors
+    const Rcpp::IntegerVector& n_neighbors, int n_components = 1
 );
 
 void add_icar_prior_sparse(
     DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors
+    const Rcpp::IntegerVector& n_neighbors, int n_components = 1
 );
 
 // The intrinsic-ICAR sum-to-zero penalty has a dense rank-1 (1 1') Hessian that
@@ -73,14 +81,15 @@ inline bool icar_s2z_densify(int n_spatial_units) {
 void add_icar_pattern(
     std::vector<std::pair<int,int>>& out,
     int spatial_start, int n_spatial_units,
-    const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx
+    const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
+    int n_components = 1
 );
 
 double log_prior_icar(
     const Rcpp::NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors
+    const Rcpp::IntegerVector& n_neighbors, int n_components = 1
 );
 
 // Structured intrinsic (ICAR, rank-deficient) field log-prior contribution,
@@ -94,7 +103,7 @@ double log_prior_icar_structured(
     const Rcpp::NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const Rcpp::IntegerVector& adj_row_ptr, const Rcpp::IntegerVector& adj_col_idx,
-    const Rcpp::IntegerVector& n_neighbors
+    const Rcpp::IntegerVector& n_neighbors, int n_components = 1
 );
 
 void add_car_proper_prior(
