@@ -111,6 +111,37 @@ public:
     // Force a final emit (100% line + heartbeat) at the end of the grid.
     void finish() { maybe_emit(true); }
 
+    // Announce a one-off setup phase that runs BEFORE the cell loop (e.g. the
+    // sparsity-pattern build of a wide joint field, which can take seconds at
+    // EVA scale). tick() only fires per completed cell, so without this the
+    // console and the heartbeat file are silent through the whole pre-grid
+    // setup and the fit looks hung (gcol33/tulpa#96). Emits the console line
+    // when enabled and, if a heartbeat file is configured, writes a 0/total
+    // record so a detached reader sees liveness instead of an empty file.
+    // Leaves done_ / the emit cadence untouched. Call from the serial setup
+    // context (the R print API is not OpenMP-worker safe).
+    void note(const std::string& phase) {
+        auto now = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration<double>(now - start_).count();
+        if (!file_.empty()) {
+            std::FILE* f = std::fopen(file_.c_str(), "w");
+            if (f) {
+                std::fprintf(f, "%d %d %.1f %.1f\n", 0, total_, elapsed, 0.0);
+                std::fflush(f);
+                std::fclose(f);
+            }
+        }
+        bool in_parallel = false;
+#ifdef _OPENMP
+        in_parallel = (omp_in_parallel() != 0);
+#endif
+        if (emit_console_ && !in_parallel) {
+            Rcpp::Rcout << "[" << label_ << "] " << phase << "\n";
+            Rcpp::Rcout.flush();
+            R_FlushConsole();
+        }
+    }
+
 private:
     void maybe_emit(bool force) {
         auto now = std::chrono::steady_clock::now();

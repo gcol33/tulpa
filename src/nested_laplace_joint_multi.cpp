@@ -2118,22 +2118,34 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // path exactly (one pool slot, used by every cell).
     int n_outer = std::max(1, n_threads_outer);
 
-    // Build the shared pattern into slot 0 first, size a memory guard from its
-    // nnz, then clamp the thread count so the replicated builders stay bounded.
-    // Each builder copies the pattern's row_idx + values + entry_map; at
-    // n_sites ~ 10^6 a per-thread copy is large, so a very wide field falls back
-    // to fewer outer threads rather than exhausting memory.
+    // Build the joint Hessian sparsity pattern + scatter index cache ONCE into
+    // slot 0, size a memory guard from its nnz, clamp the outer width, then
+    // REPLICATE slot 0 across every remaining full-solve and cheap-pass slot by
+    // copy. The pattern enumeration + dedup is the dominant pre-grid cost at EVA
+    // scale and was previously redone for every outer thread AND every cheap
+    // worker -- 2 x n_outer full rebuilds, all serial, so a wide coupled field
+    // (e.g. occu_cover's 3-arm cell-coupled fields) spent minutes
+    // single-threaded before the parallel grid even started (gcol33/tulpa#96).
+    // The pattern is fit-level invariant; a builder copy shares the read-only
+    // entry_map (shared_ptr, O(1)) and deep-copies only the per-thread CSC
+    // arrays + the mutable `values`, so the copies cost a memcpy rather than a
+    // re-enumeration. The scatter cache's flat slots are identical across
+    // builders sharing the pattern, so it too is built once and copied,
+    // re-pointed at the owning builder.
     std::vector<SparseHessianBuilder> H_builders(1);
+    if (progress) progress->note("preparing joint Hessian sparsity pattern");
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
       build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builders[0], coupled_arms); }
     {
         const size_t nnz = H_builders[0].values.size();
-        // Per-thread working set, dominated by the replicated builder: its
-        // row_idx(int) + values(double) + a std::map node (~48 B) per nonzero.
-        // Add a numeric-factor allowance (~16 B per nonzero, doubled for typical
-        // sparse fill-in) for the CHOLMOD factor each concurrent solve carries;
-        // the Newton scratch / arm specs are O(n_x) and negligible beside nnz.
-        const size_t per_builder = nnz * (sizeof(int) + sizeof(double) + 48);
+        // Per-thread working set after the build-once + copy refactor: each
+        // builder's own row_idx(int) + values(double) CSC arrays, plus a
+        // numeric-factor allowance (~16 B per nonzero, doubled for typical
+        // sparse fill-in) for the CHOLMOD factor each concurrent solve carries.
+        // The entry_map (~48 B per nonzero) is now stored ONCE and shared across
+        // every builder (gcol33/tulpa#96), so it no longer scales the per-thread
+        // budget; the Newton scratch / arm specs are O(n_x) and negligible.
+        const size_t per_builder = nnz * (sizeof(int) + sizeof(double));
         const size_t per_factor  = nnz * 2 * sizeof(double);
         const size_t per_thread  = per_builder + per_factor + 1;
         // Budget the per-thread working set against detected physical RAM so a
@@ -2154,13 +2166,21 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // n_outer is now the realised outer width (after the memory clamp); it is
     // forwarded to run_nested_laplace_grid, which stamps it on the reporter for
     // the parallel-grid ETA and the "| N threads" console suffix (tulpa#64,
-    // tulpa#88).
+    // tulpa#88). Resize BEFORE building the slot-0 cache so &H_builders[0] is its
+    // final address when the cache (validity-keyed on the builder pointer) and
+    // the copies bind to it.
     H_builders.resize(n_outer);
-    for (int t = 1; t < n_outer; t++) {
-        TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-        build_joint_hessian_pattern(parsed, arms, blocks, n_x,
-                                    H_builders[t], coupled_arms);
-    }
+
+    // Per-thread scatter index cache (validity keyed on the owning builder's H
+    // pointer). Built once against slot 0, then copied + re-pointed below.
+    std::vector<ScatterIndexCache> idx_caches(n_outer);
+    { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
+      build_scatter_index_cache(parsed, arms, blocks, H_builders[0], idx_caches[0]);
+      for (int t = 1; t < n_outer; t++) {
+          H_builders[t] = H_builders[0];     // shares the read-only pattern
+          idx_caches[t] = idx_caches[0];
+          idx_caches[t].cache_H_ptr = static_cast<const void*>(&H_builders[t]);
+      } }
 
     std::vector<NewtonScratchJointSparse> scratches(n_outer);
     for (auto& s : scratches) s.allocate(n_x, arms);
@@ -2173,13 +2193,6 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     std::vector<JointArmSpecs> specs_pool(n_outer);
     for (auto& sp : specs_pool) build_joint_arm_specs_into(arms, sp);
 
-    // Per-thread scatter index cache (validity keyed on the owning builder's H
-    // pointer) and DENSE_BASIS scratch.
-    std::vector<ScatterIndexCache> idx_caches(n_outer);
-    { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      for (int t = 0; t < n_outer; t++)
-          build_scatter_index_cache(parsed, arms, blocks,
-                                    H_builders[t], idx_caches[t]); }
     std::vector<std::vector<DenseBasisScratch>> db_buffers_pool(n_outer);
     for (auto& d : db_buffers_pool)
         d.assign(static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
@@ -2189,7 +2202,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // concurrently (gcol33/tulpa#68); CHOLMOD's cholmod_common and the builder /
     // scratch state are not thread-safe, so each worker owns its own set. The
     // pool is reserved for the cheap pass (temporally disjoint from the full
-    // per-thread pool used by the inner Newton on survivors).
+    // per-thread pool used by the inner Newton on survivors). The builders +
+    // caches are copies of slot 0 (same shared pattern), re-pointed at the
+    // owning cheap builder; only the scratch / specs / dense-basis buffers are
+    // genuinely per-worker.
     const int n_cheap_workers = std::max(1, n_outer);
     std::vector<SparseHessianBuilder> cheap_builders(n_cheap_workers);
     std::vector<NewtonScratchJointSparse> cheap_scratches(n_cheap_workers);
@@ -2200,12 +2216,12 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_cheap_workers);
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
       for (int w = 0; w < n_cheap_workers; w++) {
-          build_joint_hessian_pattern(parsed, arms, blocks, n_x,
-                                      cheap_builders[w], coupled_arms);
+          cheap_builders[w] = H_builders[0];     // shares the read-only pattern
+          idx_caches_cheap[w] = idx_caches[0];
+          idx_caches_cheap[w].cache_H_ptr =
+              static_cast<const void*>(&cheap_builders[w]);
           cheap_scratches[w].allocate(n_x, arms);
           build_joint_arm_specs_into(arms, cheap_specs_pool[w]);
-          build_scatter_index_cache(parsed, arms, blocks,
-                                    cheap_builders[w], idx_caches_cheap[w]);
           db_buffers_cheap_pool[w].assign(
               static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
       } }

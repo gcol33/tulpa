@@ -331,3 +331,31 @@ test_that("coupled field + per-group RE: the RE variance component is integrated
     expect_true(all(est[, "field"] > 0 & is.finite(est[, "field"])))
     expect_equal(mean(est[, "field_only"]), sigma_w, tolerance = 0.20)
 })
+
+test_that("build-once + copy: parallel outer grid matches serial (sparse coupled, #96)", {
+    # gcol33/tulpa#96: the sparse joint driver now builds the Hessian pattern +
+    # scatter cache ONCE and replicates them across the outer-thread and
+    # cheap-pass slots by copy (shared read-only entry_map). With
+    # n_threads_outer > 1 the copy loops run and every outer thread solves
+    # against a COPIED builder/cache; the result must be bit-for-bit identical to
+    # the single-builder serial path.
+    cpp_register_test_bivariate_gaussian_coupling(
+        lam00 = 2.0, lam11 = 1.5, lam01 = 0.7)
+    d <- setup_bivariate_data(seed = 23L, n_s = 16L)
+
+    fit_outer <- function(nthr) tulpa_nested_laplace_joint(
+        responses = list(a = build_arm_biv(d, d$y0),
+                         b = build_arm_biv(d, d$y1)),
+        prior     = prior_spec_biv(d),
+        cell_coupling = "test_bivariate_gaussian",
+        control   = list(max_iter = 80L, tol = 1e-11, force_sparse = TRUE,
+                         diagnose_k = FALSE, n_threads_outer = nthr))
+
+    serial <- fit_outer(1L)
+    par2   <- fit_outer(2L)
+
+    expect_equal(par2$log_marginal, serial$log_marginal, tolerance = 1e-10)
+    expect_equal(par2$modes,        serial$modes,        tolerance = 1e-10)
+    expect_equal(par2$theta_mean,   serial$theta_mean,   tolerance = 1e-10)
+    expect_equal(par2$theta_sd,     serial$theta_sd,     tolerance = 1e-10)
+})

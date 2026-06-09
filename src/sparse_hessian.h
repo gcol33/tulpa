@@ -18,6 +18,7 @@
 #include <Rcpp.h>
 #include <vector>
 #include <map>
+#include <memory>
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
@@ -32,9 +33,21 @@ public:
     std::vector<double> values;     // CSC values (zeroed each iteration)
     int nnz;
 
-    // Map from (row, col) to flat index in values array
-    // For lower triangle only (symmetric, stype=-1)
-    std::map<std::pair<int,int>, int> entry_map;
+    // Map from (row, col) to flat index in values array, for lower triangle
+    // only (symmetric, stype=-1).
+    //
+    // Held by shared_ptr-to-const because the map is fit-level immutable: it is
+    // populated once in init() and only read thereafter (add() / lookup()). The
+    // sparse joint driver replicates one builder across every outer thread (and
+    // the cheap-pass workers); a deep copy of this map at n_sites ~ 10^6 is both
+    // the dominant pre-grid time cost and ~4x the memory of the CSC arrays
+    // (~48 B per std::map node vs 12 B per nonzero). Sharing it makes a builder
+    // copy O(1) in the map and stores the pattern once for the whole fit
+    // (gcol33/tulpa#96). A copied builder gets its own mutable `values` (deep
+    // copied) but shares this read-only map; concurrent const lookups across
+    // builders are safe since nothing reassigns it after init().
+    using EntryMap = std::map<std::pair<int,int>, int>;
+    std::shared_ptr<const EntryMap> entry_map;
 
     // Sum-to-zero rank-1 penalties registered by the scatter for intrinsic
     // fields too large to densify (see icar_s2z_densify). Each entry is the
@@ -83,6 +96,11 @@ public:
                       return a.col < b.col || (a.col == b.col && a.row < b.row);
                   });
 
+        // Build the (row, col) -> flat-index map locally, then publish it as a
+        // shared-to-const pattern (see the entry_map declaration). `sorted` is
+        // ordered by (col, row), the map's own key order is (row, col); the
+        // ordering only affects map-build cost, not correctness.
+        auto local_map = std::make_shared<EntryMap>();
         int cur_col = 0;
         for (int e = 0; e < nnz; e++) {
             while (cur_col <= sorted[e].col) {
@@ -90,12 +108,13 @@ public:
                 cur_col++;
             }
             row_idx[e] = sorted[e].row;
-            entry_map[{sorted[e].row, sorted[e].col}] = e;
+            (*local_map)[{sorted[e].row, sorted[e].col}] = e;
         }
         while (cur_col <= n) {
             col_ptr[cur_col] = nnz;
             cur_col++;
         }
+        entry_map = std::move(local_map);
     }
 
     // Zero all values (call at start of each Newton iteration)
@@ -125,8 +144,8 @@ public:
     void add(int row, int col, double val) {
         int lo = std::min(row, col);
         int hi = std::max(row, col);
-        auto it = entry_map.find({hi, lo});
-        if (it != entry_map.end()) {
+        auto it = entry_map->find({hi, lo});
+        if (it != entry_map->end()) {
             values[it->second] += val;
         }
     }
@@ -140,8 +159,8 @@ public:
     int lookup(int row, int col) const {
         int lo = std::min(row, col);
         int hi = std::max(row, col);
-        auto it = entry_map.find({hi, lo});
-        return (it == entry_map.end()) ? -1 : it->second;
+        auto it = entry_map->find({hi, lo});
+        return (it == entry_map->end()) ? -1 : it->second;
     }
 
     // Create a cholmod_sparse view (does NOT allocate — reuses internal arrays).
