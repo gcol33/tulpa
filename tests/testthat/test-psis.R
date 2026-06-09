@@ -87,6 +87,62 @@ test_that("the IS cores decline before evaluating the target below the floor", {
   expect_identical(hit_b, 0L)
 })
 
+test_that(".nested_grid_radius_cap is the scaled max whitened grid radius", {
+  # gcol33/tulpa#94: the cap is .K_DIAG_SUPPORT_RADIUS_MULT times the largest
+  # whitened distance || L^{-1} (node - u_hat) || over the grid nodes.
+  set.seed(101)
+  d <- 3L
+  u_hat <- c(0.5, -1, 2)
+  A  <- matrix(rnorm(d * d), d)
+  Su <- crossprod(A) + diag(d)                          # SPD
+  L  <- t(chol(Su))
+  # Place nodes at KNOWN whitened radii: node_k = u_hat + L %*% z_k.
+  Zn <- rbind(c(1, 0, 0), c(0, 2, 0), c(0, 0, 1.5), c(1, 1, 1))
+  u_grid <- t(apply(Zn, 1, function(z) u_hat + as.numeric(L %*% z)))
+  cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
+  expect_equal(cap, max(sqrt(rowSums(Zn^2))) * .K_DIAG_SUPPORT_RADIUS_MULT,
+               tolerance = 1e-10)
+})
+
+test_that(".nested_is_pareto_k skips draws beyond radius_cap (cost bound)", {
+  # gcol33/tulpa#94: a finite radius_cap excludes deep-extrapolation draws
+  # WITHOUT an inner solve, bounding the diagnostic cost; radius_cap = Inf
+  # reproduces the unrestricted path exactly.
+  d <- 2L; u_hat <- c(0, 0); L_scale <- diag(d)
+  rows_seen <- 0L
+  tgt <- function(U) { rows_seen <<- rows_seen + nrow(U); rep(0, nrow(U)) }
+
+  # Z ~ N(0, I_2): ||z||^2 ~ chi^2_2. Cap radius 2 keeps z2 <= 4, i.e. a
+  # fraction pchisq(4, 2) = 1 - exp(-2) ~ 0.865 of the draws.
+  set.seed(303)
+  kd <- .nested_is_pareto_k(u_hat, L_scale, tgt, n_samples = 2000L,
+                            radius_cap = 2)
+  expect_lt(rows_seen, 2000L)                  # the deep tail was skipped
+  expect_gt(rows_seen, 0.70 * 2000L)           # the bulk was retained
+  expect_equal(kd$n_eval, rows_seen)           # every retained draw had finite target
+  expect_true(is.finite(kd$pareto_k))
+
+  rows_seen <- 0L
+  set.seed(303)
+  kd_inf <- .nested_is_pareto_k(u_hat, L_scale, tgt, n_samples = 2000L,
+                                radius_cap = Inf)
+  expect_equal(rows_seen, 2000L)               # Inf cap == evaluate every draw
+})
+
+test_that(".nested_is_pareto_k declines without solving when radius_cap is too tight", {
+  # When fewer than .PSIS_MIN_EVAL draws fall within support, the core returns
+  # NA WITHOUT paying any inner solve (the floor check precedes log_target).
+  d <- 2L; u_hat <- c(0, 0); L_scale <- diag(d)
+  hit <- 0L
+  tgt <- function(U) { hit <<- hit + nrow(U); rep(0, nrow(U)) }
+  set.seed(404)
+  kd <- .nested_is_pareto_k(u_hat, L_scale, tgt, n_samples = 1000L,
+                            radius_cap = 0.01)            # ~0 draws survive
+  expect_true(is.na(kd$pareto_k))
+  expect_lt(kd$n_eval, .PSIS_MIN_EVAL)
+  expect_identical(hit, 0L)                               # no inner solve paid
+})
+
 test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws", {
   skip_on_cran()
   skip_if_fast()

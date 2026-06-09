@@ -212,9 +212,15 @@
         lm + log_jac
     }
 
+    # Skip the inner re-solve on draws that fall outside the grid's whitened
+    # coverage radius -- the deep-extrapolation tail where the inner Newton
+    # stalls at EVA scale (gcol33/tulpa#94). See .nested_grid_radius_cap.
+    radius_cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
+
     has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
     old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-    kd <- tryCatch(.nested_is_pareto_k(u_hat, L, lt, n_samples),
+    kd <- tryCatch(.nested_is_pareto_k(u_hat, L, lt, n_samples,
+                                       radius_cap = radius_cap),
                    error = function(e) NULL)
     if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
     if (is.null(kd)) return(list(pareto_k = NA_real_, is_ess = NA_real_))

@@ -23,6 +23,41 @@
 # (gcol33/tulpa#51).
 .PSIS_MIN_EVAL <- 25L
 
+# Whitened-radius envelope for the outer Pareto-k importance draws
+# (gcol33/tulpa#94). The outer integrator placed its grid to cover the
+# hyperparameter posterior; a proposal draw far outside that node cloud is a
+# deep extrapolation the integration never represented AND -- at EVA scale --
+# exactly where the inner Newton stalls toward max_iter, so those draws
+# dominate the diagnostic's wall time (~50x the grid integration) while
+# carrying negligible target mass. They sit in the LEFT tail of the importance
+# ratio (target ~ 0), immaterial to the right-tail GPD fit the k-hat reads, so
+# excluding them bounds the diagnostic cost without moving the k-hat. The cap is
+# `.K_DIAG_SUPPORT_RADIUS_MULT` times the largest whitened grid-node radius:
+# a generous envelope (twice the covered radius) that retains essentially every
+# draw in the well-behaved case -- where the proposal mass sits within the grid
+# -- and skips only the deep-extrapolation stalls. Scope: the k-hat then
+# certifies the Gaussian-proposal-over-grid approximation the draws are actually
+# synthesised from; grid-width adequacy (target mass beyond the grid) is a
+# separate concern.
+.K_DIAG_SUPPORT_RADIUS_MULT <- 2.0
+
+# Compute the whitened-radius cap from the integration grid. `u_grid` is the
+# K x d grid in the proposal's own (unconstrained) coordinate, `u_hat` the
+# proposal centre, `L` the lower-Cholesky factor of the proposal covariance
+# (L L' = Sigma). Each grid node's whitened distance from u_hat is
+# || L^{-1} (u_grid[k] - u_hat) ||, in the SAME metric as a draw's whitened
+# radius ||z|| (the proposal draws U = u_hat + L z, so z = L^{-1}(U - u_hat)).
+# Returns Inf (keep every draw) on a degenerate solve.
+.nested_grid_radius_cap <- function(u_grid, u_hat, L) {
+  cen <- sweep(u_grid, 2L, u_hat)
+  w   <- tryCatch(forwardsolve(L, t(cen)), error = function(e) NULL)
+  if (is.null(w)) return(Inf)
+  r2  <- colSums(w * w)
+  r2  <- r2[is.finite(r2)]
+  if (length(r2) == 0L) return(Inf)
+  sqrt(max(r2)) * .K_DIAG_SUPPORT_RADIUS_MULT
+}
+
 # Log-sum-exp, numerically stabilized.
 .tulpa_logsumexp <- function(x) {
   m <- max(x)
@@ -163,7 +198,7 @@ tulpa_psis <- function(log_ratios) {
 # The proposal's normalizing constant is common to all draws and drops under
 # PSIS, leaving the quadratic 0.5||z||^2.
 .nested_is_pareto_k <- function(theta_hat, L_scale, log_target_batched,
-                                n_samples = 200L) {
+                                n_samples = 200L, radius_cap = Inf) {
   d <- length(theta_hat)
   n_samples <- as.integer(n_samples)
   if (n_samples < .PSIS_MIN_EVAL) {                          # cannot reach the floor
@@ -171,11 +206,28 @@ tulpa_psis <- function(log_ratios) {
   }
   Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
   U <- sweep(Z %*% t(L_scale), 2L, theta_hat, `+`)           # S x d ~ N(theta_hat, .)
-  lt <- log_target_batched(U)
-  if (length(lt) != n_samples) {
+  z2 <- rowSums(Z^2)                                         # squared whitened radius
+
+  # Restrict the inner re-solves to draws within `radius_cap` of the proposal
+  # centre (whitened metric). A draw beyond it is a deep extrapolation past the
+  # grid's coverage where the inner Newton stalls; it carries negligible target
+  # mass (left tail of the ratio, immaterial to the right-tail GPD fit) so it is
+  # assigned -Inf without an inner solve, bounding the diagnostic cost without
+  # moving the k-hat (gcol33/tulpa#94). radius_cap = Inf keeps every draw, i.e.
+  # the unrestricted behaviour.
+  in_supp <- if (is.finite(radius_cap)) z2 <= radius_cap * radius_cap
+             else rep(TRUE, n_samples)
+  n_in <- sum(in_supp)
+  if (n_in < .PSIS_MIN_EVAL) {                               # too few within support
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_in))
+  }
+
+  lr <- rep(-Inf, n_samples)
+  lt <- log_target_batched(U[in_supp, , drop = FALSE])
+  if (length(lt) != n_in) {
     return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
   }
-  lr <- lt + 0.5 * rowSums(Z^2)                              # target - log q (up to const)
+  lr[in_supp] <- lt + 0.5 * z2[in_supp]                      # target - log q (up to const)
   n_eval <- sum(is.finite(lr))
   if (n_eval < .PSIS_MIN_EVAL) {
     return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
@@ -205,5 +257,6 @@ tulpa_psis <- function(log_ratios) {
     if (length(lm) != nrow(U)) return(rep(NA_real_, nrow(U)))
     lm + rowSums(U)                                          # + log|d theta / d u|
   }
-  .nested_is_pareto_k(u_hat, L, lt, n_samples)
+  radius_cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
+  .nested_is_pareto_k(u_hat, L, lt, n_samples, radius_cap = radius_cap)
 }
