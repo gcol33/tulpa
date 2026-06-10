@@ -1,6 +1,20 @@
 # tulpa NEWS
 
-## 0.0.29 (2026-06-10)
+## 0.0.30 (2026-06-10)
+
+* feat(spatial): the single-arm multi-block nested-Laplace driver now honours a
+  per-observation design weight on an areal (icar) block, exposed as an optional
+  `svc_weight` field in the block spec. When present, observation i's eta
+  contribution is `svc_weight[i] * z[spatial_idx[i]]` rather than
+  `z[spatial_idx[i]]` -- a spatially-varying coefficient (the areal
+  `f(cell, weight, ...)`), the single-arm analogue of the `row_weight` the joint
+  multi-arm driver already carries. The weight enters at one layer (the
+  block-local weight resolved alongside the node index); the gradient inherits it
+  and the block Hessian its square through the chain rule, in `compute_eta_spec`
+  / `scatter_spec` and the `fitted_eta` / predictive-variance reconstruction. A
+  block without `svc_weight` is byte-identical to before. This lets a standalone
+  occupancy fit carry a cell-indexed varying-coefficient field (consumed by
+  tulpaObs `occu()`'s spatial bar).
 
 * fix(joint): the coupled cell-coupling per-cell scatter now handles
   `INDEXED_MULTI` prior blocks (a separable-MCAR block's several latent dofs per

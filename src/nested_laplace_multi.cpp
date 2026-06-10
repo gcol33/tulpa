@@ -79,11 +79,29 @@ int build_blocks_from_spec(
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
         int start = latent_offset;
 
+        // Optional per-row design weight (spatially-varying coefficient): when
+        // present, obs i's eta contribution is weight[i] * z[idx(i)] rather than
+        // z[idx(i)], the areal f(cell, weight, ...) of an SVC field. Absent ->
+        // uniform weight 1 (byte-identical to the plain intercept field). Read
+        // into an owning std::shared_ptr<vector<double>> so the row_weight
+        // closure carries no Rcpp object across the (copied) LatentBlock.
+        std::shared_ptr<std::vector<double>> svc_w;
+        if (bs.containsElementNamed("svc_weight") &&
+            !Rf_isNull(bs["svc_weight"])) {
+            Rcpp::NumericVector w = bs["svc_weight"];
+            svc_w = std::make_shared<std::vector<double>>(w.begin(), w.end());
+        }
+
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
         block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
+        if (svc_w) {
+            block.row_weight = [svc_w](int i, int /*k_arm*/) {
+                return (*svc_w)[i];
+            };
+        }
         block.add_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int k) {

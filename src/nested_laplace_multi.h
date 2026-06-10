@@ -267,7 +267,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
                     } else {
                         int l = blocks[b].idx(i, /*k_arm=*/0);
                         if (l > 0 && l <= blocks[b].size) {
-                            a[blocks[b].start + l - 1] += d_fac_cache[b];
+                            double w = blocks[b].row_weight
+                                       ? blocks[b].row_weight(i, /*k_arm=*/0)
+                                       : 1.0;
+                            a[blocks[b].start + l - 1] += d_fac_cache[b] * w;
                         }
                     }
                 }
@@ -364,7 +367,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
                     } else {
                         int l = blocks[b].idx(i, /*k_arm=*/0);
                         if (l > 0 && l <= blocks[b].size) {
-                            e += dfac[b] * modes(k, blocks[b].start + l - 1);
+                            double w = blocks[b].row_weight
+                                       ? blocks[b].row_weight(i, /*k_arm=*/0)
+                                       : 1.0;
+                            e += dfac[b] * w * modes(k, blocks[b].start + l - 1);
                         }
                     }
                 }

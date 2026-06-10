@@ -500,7 +500,14 @@ inline void compute_eta_spec(
             } else {
                 int l = blk.idx(i, /*k_arm=*/0);
                 if (l >= 1 && l <= L.block_size[b]) {
-                    blk_eff += d_fac_cache[b] * params[L.block_param_start[b] + l - 1];
+                    // Per-row design weight (SVC field): weight[i] * z[idx]. The
+                    // joint multi-arm driver already carries this; mirror it on
+                    // the single-arm spec path so an areal varying-coefficient
+                    // field (e.g. a spatial trend) enters eta correctly. Empty
+                    // row_weight -> 1.0 (byte-identical to a plain field).
+                    double w = blk.row_weight ? blk.row_weight(i, /*k_arm=*/0) : 1.0;
+                    blk_eff += d_fac_cache[b] * w
+                             * params[L.block_param_start[b] + l - 1];
                 }
             }
         }
@@ -815,8 +822,16 @@ inline void scatter_spec(
                 } else {
                     int l = blk.idx(i, /*k_arm=*/0);
                     if (l >= 1 && l <= L.block_size[b]) {
+                        // Per-row design weight (SVC field): the contribution
+                        // weight is d_fac * weight[i], so grad scales by weight
+                        // and the block x block Hessian by weight^2 through the
+                        // chain rule (a_c folds the weight at exactly one layer,
+                        // matching the joint multi-arm scatter). Empty
+                        // row_weight -> 1.0 (byte-identical to a plain field).
+                        double w = blk.row_weight ? blk.row_weight(i, /*k_arm=*/0)
+                                                  : 1.0;
                         blk_contrib.emplace_back(
-                            L.block_latent_offset[b] + l - 1, d_b);
+                            L.block_latent_offset[b] + l - 1, d_b * w);
                     }
                 }
             }

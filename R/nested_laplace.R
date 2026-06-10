@@ -24,7 +24,10 @@
 #'   `type` one of \{"icar", "bym2", "car_proper", "rw1", "rw2", "ar1"\}.
 #'   Type-specific fields:
 #'   * icar:  `spatial_idx`, `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
-#'           `n_neighbors` (CSR adjacency, 0-based); optional `tau_grid`.
+#'           `n_neighbors` (CSR adjacency, 0-based); optional `tau_grid`;
+#'           optional `svc_weight` (one weight per observation) to make it a
+#'           spatially-varying coefficient whose eta contribution is
+#'           `svc_weight[i] * z[spatial_idx[i]]` rather than `z[spatial_idx[i]]`.
 #'   * bym2:  same adjacency; `scale_factor`; optional `sigma_grid`, `rho_grid`.
 #'   * car_proper: same adjacency; optional `tau_grid`, `rho_grid`,
 #'           `rho_bounds = c(lower, upper)` (defaults to (0, 1)).
@@ -1145,6 +1148,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     )
     if (type == "bym2") {
       out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
+    }
+    # Optional per-observation design weight: an areal varying-coefficient
+    # (SVC) field whose eta contribution is svc_weight[i] * z[spatial_idx[i]].
+    # The icar block builder reads it as LatentBlock::row_weight. Only icar
+    # carries it on this path; absent -> a plain intercept field.
+    if (type == "icar" && !is.null(p$svc_weight)) {
+      out$svc_weight <- as.numeric(p$svc_weight)
     }
     out
   } else if (type %in% c("rw1", "rw2", "ar1")) {
