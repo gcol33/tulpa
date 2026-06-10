@@ -1,6 +1,6 @@
 # tulpa NEWS
 
-## 0.0.29 (in development)
+## 0.0.29 (2026-06-10)
 
 * fix(joint): the coupled cell-coupling per-cell scatter now handles
   `INDEXED_MULTI` prior blocks (a separable-MCAR block's several latent dofs per
