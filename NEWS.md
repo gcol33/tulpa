@@ -1,5 +1,24 @@
 # tulpa NEWS
 
+## 0.0.31 (2026-06-12)
+
+* fix(laplace): `tulpa_laplace(..., weights=)` now scales the log-likelihood by
+  the per-observation weight, matching the already-weighted score and Fisher
+  Hessian (#108). The Newton globalization backtracks on the log-likelihood, so a
+  weighted-optimal step was judged against an unweighted objective, halved toward
+  zero, and stalled -- any non-uniform weighting returned a non-converged mode
+  shrunk toward the prior. The fix is a no-op when weights are absent or uniform
+  (every unweighted path is byte-identical); weighted gaussian / binomial fits now
+  match `lm()` / `glm(weights=)` to ~1e-5. `test-laplace-weights.R` locks it in.
+* perf(nested-laplace-joint): when the outer grid has fewer cells than the outer
+  thread pool, the surplus threads are now handed to the inner per-observation
+  solve via nested OpenMP instead of idling (#107). A shared
+  `joint_inner_thread_budget()` splits the pool so `outer_used * inner <= n_outer`
+  (never oversubscribed) and is a no-op when the grid saturates the pool. Verified
+  result-invariant (theta means byte-identical) with a ~1.12x single-fit speedup on
+  a 4-cell surplus grid; `test-nested-laplace-joint-threading.R` locks in the
+  invariance.
+
 ## 0.0.30 (2026-06-10)
 
 * refactor(spde): the fractional rSPDE Laplace marginal moves from R to C++
