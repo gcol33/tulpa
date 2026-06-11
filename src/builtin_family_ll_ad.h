@@ -54,21 +54,25 @@ inline T builtin_family_ll_ad(
     const int    nt = r->n_trials ? r->n_trials[i] : 1;
     const double phi = r->phi;
     const std::string& fam = r->family;
+    // Per-obs likelihood weight, matching builtin_family_ll_double / the score /
+    // Fisher Hessian so the potential and its gradient stay consistent under a
+    // weighted likelihood (gcol33/tulpa#108). A no-op when weights are absent.
+    const double w = r->weights ? r->weights[i] : 1.0;
 
     if (fam == "poisson") {
-        return log_lik_poisson((int)yv, safe_exp(eta[0]));
+        return T(w) * log_lik_poisson((int)yv, safe_exp(eta[0]));
     }
     if (fam == "binomial") {
-        return log_lik_binomial((int)yv, nt, inv_logit(eta[0]));
+        return T(w) * log_lik_binomial((int)yv, nt, inv_logit(eta[0]));
     }
     if (fam == "neg_binomial_2") {
-        return log_lik_negbin((int)yv, safe_exp(eta[0]), T(phi));
+        return T(w) * log_lik_negbin((int)yv, safe_exp(eta[0]), T(phi));
     }
     if (fam == "gaussian") {
         // Identity link: y ~ N(eta, phi^2). phi is the residual SD (held fixed).
         T resid = T(yv) - eta[0];
-        return T(-0.5 * std::log(2.0 * M_PI * phi * phi))
-             - resid * resid * T(1.0 / (2.0 * phi * phi));
+        return T(w) * (T(-0.5 * std::log(2.0 * M_PI * phi * phi))
+             - resid * resid * T(1.0 / (2.0 * phi * phi)));
     }
     Rcpp::stop("builtin_family_ll_ad: AD likelihood only covers gaussian / "
                "poisson / binomial(logit) / neg_binomial_2; got '%s'.", fam.c_str());

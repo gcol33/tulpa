@@ -49,21 +49,24 @@ inline double builtin_family_ll_double(
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
-    if (r->slog_y && r->family == "beta") {
-        return log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt,
-                                    eta[0], r->phi);
-    }
-    return log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi);
+    const double w = r->weights ? r->weights[i] : 1.0;
+    const double ll = (r->slog_y && r->family == "beta")
+        ? log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
+        : log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi);
+    // Weight the log-lik by the SAME per-obs factor the score / Fisher Hessian
+    // carry (builtin_family_eta_weights), so the Newton line search optimizes the
+    // weighted objective its step direction is built from. Without this the
+    // backtracking search judges a weighted step against the unweighted log-lik
+    // and stalls (gcol33/tulpa#108). A no-op when weights are absent (w == 1).
+    return w * ll;
 }
 
 // EtaWeightsFn: per-obs eta-space score + Fisher working weight. n_processes
 // is 1, so grad_eta / neg_hess_eta are scalars. A per-obs likelihood weight w_i
-// scales both the score and the Fisher information, reproducing the
-// `gh.grad *= w_i; gh.neg_hess *= w_i` convention of the retired family-enum
-// multi-RE solver (the EM M-step's E-step responsibilities enter here). The
-// log-likelihood (ll_double) is left unweighted to match that solver exactly --
-// the mode is the only quantity the EM engine reads back, and it is fixed by
-// the weighted score/Hessian alone.
+// scales both the score and the Fisher information (`gh.grad *= w_i;
+// gh.neg_hess *= w_i`); builtin_family_ll_double / builtin_family_ll_ad scale
+// the value by the same w_i, so the line search optimizes the same weighted
+// objective the step is built from (gcol33/tulpa#108).
 inline void builtin_family_eta_weights(
     int i, const double* eta, double /*logit_zi*/, double /*logit_oi*/,
     const std::vector<double>& /*params*/, const ModelData& /*data*/,
