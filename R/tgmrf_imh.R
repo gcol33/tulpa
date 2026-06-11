@@ -15,9 +15,7 @@
 #' `(beta, z, theta)` rather than the Laplace-marginalized `theta` (requires a
 #' C++-backend block, see [tgmrf_cpp()]).
 #'
-#' This replaces the former `tulpa_tgmrf_imh()` / `_nuts()` / `_vi()` /
-#' `_nuts_joint()` family -- the inference method is an argument, not a parallel
-#' verb.
+#' The inference method is an argument, not a parallel verb.
 #'
 #' @param y,n_trials,X Response, binomial trial counts (or `NULL`), and the
 #' fixed-effect design matrix.

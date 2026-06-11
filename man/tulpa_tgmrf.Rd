@@ -62,9 +62,7 @@ independence-Metropolis bias correction over \code{theta} (the
 C++-backend block, see \code{\link[=tgmrf_cpp]{tgmrf_cpp()}}).
 }
 
-This replaces the former \code{tulpa_tgmrf_imh()} / \verb{_nuts()} / \verb{_vi()} /
-\verb{_nuts_joint()} family -- the inference method is an argument, not a parallel
-verb.
+The inference method is an argument, not a parallel verb.
 }
 \seealso{
 \code{\link[=tgmrf]{tgmrf()}} for the block, \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} for the compiled-block form.
