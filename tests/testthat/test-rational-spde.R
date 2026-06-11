@@ -91,7 +91,7 @@ test_that("fractional single-point Laplace recovers the field", {
   X <- matrix(1, n, 1)
 
   fit <- tulpa:::laplace_spde_at(y = y, n_trials = rep(1L, n), X = X, spatial = spec,
-                                 family = "gaussian", phi = 0.05,
+                                 family = "gaussian", phi = sqrt(0.05),
                                  range = 0.15, sigma = 1.0)
   u_hat <- fit$mode[-1]                      # mesh block is field-space
   expect_gt(cor(u_hat, u_true), 0.9)
@@ -112,7 +112,7 @@ test_that("fractional nested fit_spde recovers (range, sigma) -- Gaussian", {
   y <- 0.5 + u_true + rnorm(n, 0, sqrt(0.05))
   X <- matrix(1, n, 1)
 
-  fit <- fit_spde(y = y, X = X, spatial = spec, family = "gaussian", phi = 0.05,
+  fit <- fit_spde(y = y, X = X, spatial = spec, family = "gaussian", phi = sqrt(0.05),
                   method = "grid", n_grid = 9L, diagnose_k = FALSE)
   # The nested marginal must be peaked near the truth (interior, not boundary).
   expect_gt(fit$nested$range_mean, range_true * 0.5)
@@ -143,7 +143,7 @@ test_that("fractional nested fit_spde recovers range on a 2D mesh -- Gaussian", 
   y <- 0.0 + u + rnorm(np, 0, 0.3)
   X <- matrix(1, np, 1)
 
-  fit <- fit_spde(y = y, X = X, spatial = spec, family = "gaussian", phi = 0.09,
+  fit <- fit_spde(y = y, X = X, spatial = spec, family = "gaussian", phi = 0.3,
                   method = "grid", n_grid = 9L, diagnose_k = FALSE)
   # Range estimate must be interior to the grid (the old broken path pegged it)
   # and recover near the truth.

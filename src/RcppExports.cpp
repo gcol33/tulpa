@@ -1469,6 +1469,28 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_spde_fractional_logmarginal
+double cpp_spde_fractional_logmarginal(const Eigen::Map<Eigen::VectorXd> y, const Eigen::Map<Eigen::MatrixXd> X, const Eigen::Map<Eigen::SparseMatrix<double>> A_eff, const Eigen::Map<Eigen::SparseMatrix<double>> Pl, const Eigen::Map<Eigen::VectorXd> C0sub, std::string family, double phi, const Eigen::Map<Eigen::VectorXd> beta_hat, const Eigen::Map<Eigen::VectorXd> x_hat, Rcpp::IntegerVector n_trials, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, double tau_beta);
+RcppExport SEXP _tulpa_cpp_spde_fractional_logmarginal(SEXP ySEXP, SEXP XSEXP, SEXP A_effSEXP, SEXP PlSEXP, SEXP C0subSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP beta_hatSEXP, SEXP x_hatSEXP, SEXP n_trialsSEXP, SEXP offset_nullableSEXP, SEXP tau_betaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::VectorXd> >::type y(ySEXP);
+    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::MatrixXd> >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::SparseMatrix<double>> >::type A_eff(A_effSEXP);
+    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::SparseMatrix<double>> >::type Pl(PlSEXP);
+    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::VectorXd> >::type C0sub(C0subSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::VectorXd> >::type beta_hat(beta_hatSEXP);
+    Rcpp::traits::input_parameter< const Eigen::Map<Eigen::VectorXd> >::type x_hat(x_hatSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
+    Rcpp::traits::input_parameter< double >::type tau_beta(tau_betaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_spde_fractional_logmarginal(y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable, tau_beta));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_laplace_fit_spde
 Rcpp::List cpp_laplace_fit_spde(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double kappa, double tau_spde, std::string family, double phi, int alpha, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
 RcppExport SEXP _tulpa_cpp_laplace_fit_spde(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP kappaSEXP, SEXP tau_spdeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP alphaSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP rational_poles_nullableSEXP, SEXP rational_weights_nullableSEXP, SEXP offset_nullableSEXP) {
@@ -2896,6 +2918,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
+    {"_tulpa_cpp_spde_fractional_logmarginal", (DL_FUNC) &_tulpa_cpp_spde_fractional_logmarginal, 12},
     {"_tulpa_cpp_laplace_fit_spde", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde, 27},
     {"_tulpa_cpp_laplace_fit_spde_precomputed", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde_precomputed, 21},
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 29},

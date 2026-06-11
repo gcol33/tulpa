@@ -257,6 +257,10 @@ cpp_selected_inversion_diagonal <- function(Q_x, Q_i, Q_p, n) {
     .Call(`_tulpa_cpp_selected_inversion_diagonal`, Q_x, Q_i, Q_p, n)
 }
 
+cpp_spde_fractional_logmarginal <- function(y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable = NULL, tau_beta = 1e-4) {
+    .Call(`_tulpa_cpp_spde_fractional_logmarginal`, y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable, tau_beta)
+}
+
 cpp_laplace_fit_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi = 1.0, alpha = 2L, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, offset_nullable = NULL) {
     .Call(`_tulpa_cpp_laplace_fit_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable)
 }

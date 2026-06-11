@@ -2,6 +2,16 @@
 
 ## 0.0.30 (2026-06-10)
 
+* refactor(spde): the fractional rSPDE Laplace marginal moves from R to C++
+  (`cpp_spde_fractional_logmarginal`, Eigen). The well-conditioned `B` /
+  matrix-determinant-lemma method -- built through the operator factor `Pl`
+  (cond = sqrt cond(Q)), never an explicit ill-conditioned `Q` inverse -- is
+  preserved: a direct precision-space marginal drifts by O(10) nats at large range
+  where cond(Q) ~ 1e10+, mis-identifying range. `.spde_nested_logmarginal_at` and
+  the single-point `.spde_laplace_fractional_at` delegate to it; the R det-lemma /
+  closed-form / family-weight code is removed. Reproduces the former R marginal to
+  ~1e-10. The gaussian fractional `phi` is now the residual SD (variance `phi^2`),
+  consistent with the integer path (was the variance).
 * fix(spde): the nested-Laplace `(range, sigma)` marginal now carries the GMRF
   prior normalizer `0.5 log|Q(theta)|` (#98). It was dropped on the integer-alpha
   SPDE path -- the Occam term that bends the marginal down at large `sigma` -- so

@@ -241,115 +241,69 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
   )
 }
 
-# Per-observation GLM working weight w = -d^2 log p(y|eta) / d eta^2 at eta, and
-# the log-likelihood, for the families the stable fractional-SPDE marginal
-# supports. `phi` is the Gaussian residual variance / negbin reciprocal size.
-.spde_family_wll <- function(family, y, eta, n_trials, phi) {
-  if (family == "gaussian") {
-    w  <- rep(1 / phi, length(y))
-    ll <- sum(stats::dnorm(y, eta, sqrt(phi), log = TRUE))
-  } else if (family == "poisson") {
-    lam <- exp(eta)
-    w   <- lam
-    ll  <- sum(stats::dpois(y, lam, log = TRUE))
-  } else if (family == "binomial") {
-    p  <- stats::plogis(eta)
-    w  <- n_trials * p * (1 - p)
-    ll <- sum(stats::dbinom(y, n_trials, p, log = TRUE))
-  } else {
-    stop(sprintf(
-      "Fractional-nu nested SPDE integration supports family in {gaussian, ",
-      "poisson, binomial}; got '%s'. Supply explicit (range, sigma) for a ",
-      "single-point fit, or use an integer nu.", family), call. = FALSE)
-  }
-  list(w = w, loglik = ll)
-}
-
 #' Numerically stable Laplace log-marginal for a fractional rSPDE at (range, sigma)
 #'
-#' The precision-space Laplace marginal needs `0.5(log|Q| - log|H|)`, whose two
-#' determinants are individually corrupted by the rational precision's wide
-#' spectrum (cond ~ 1e16) in a range-dependent way -- so range is unidentifiable
-#' from it. This computes the same marginal through the matrix-determinant lemma:
-#'   log|Q| - log|H| = -log|I + W^(1/2) (X X'/tau_beta + A_eff Q^-1 A_eff') W^(1/2)|,
-#' an `n_obs x n_obs` determinant of `I + PSD` that is well-conditioned. The cross
-#' term `A_eff Q^{-1} A_eff' = (A_eff Pl^{-1}) C (A_eff Pl^{-1})'` is formed
-#' through the operator factor `Pl` (condition number the square root of `Q`'s),
-#' so no ill-conditioned `Q` inverse is ever taken. The mode comes from the
-#' precomputed C++ fit (accurate despite the conditioning); only the determinant
-#' term is recomputed here.
+#' Delegates the well-conditioned `B` / matrix-determinant-lemma marginal to C++
+#' (`cpp_spde_fractional_logmarginal()`). The precision-space `0.5(log|Q| - log|H|)`
+#' is corrupted in a range-dependent way by the rational precision's wide spectrum
+#' (cond(Q) ~ 1e13+), so the marginal is formed through the obs-space
+#' `B = (A_eff Pl^{-1}) C (A_eff Pl^{-1})' + X X'/tau_beta`, built through the
+#' operator factor `Pl` (cond = sqrt cond(Q)), never an explicit `Q` inverse.
+#' Gaussian is the exact conjugate marginal; non-gaussian uses the det-lemma at the
+#' precomputed Laplace mode. `phi` is the Gaussian residual SD (variance `phi^2`),
+#' consistent with the integer path and the engine family convention.
 #'
 #' @return A list with `log_marginal`, `n_iter`, `converged`, and the assembly.
 #' @keywords internal
 .spde_nested_logmarginal_at <- function(spatial, range, sigma, y, X, family, phi,
                                         n_trials, order, max_iter, tol, n_threads,
                                         offset, tau_beta = 1e-4) {
-  n   <- length(y)
-  p   <- ncol(X)
-  asm <- .spde_assemble_at(spatial, range, sigma, order = order)
+  n     <- length(y)
+  p     <- ncol(X)
+  asm   <- .spde_assemble_at(spatial, range, sigma, order = order)
   n_sub <- length(asm$keep)
-  C0sub <- as.numeric(spatial$C0_diag)[asm$keep]
 
-  # B_field = A_eff Q^{-1} A_eff' = (A_eff Pl^{-1}) C (A_eff Pl^{-1})', formed
-  # through Pl (cond = sqrt cond(Q)) so the wide rational spectrum is never
-  # inverted. V_lat = X X'/tau_beta + B_field is the latent contribution to the
-  # observation covariance (vague beta prior matching the precomputed fit). An
-  # extreme grid cell (very small range -> very rough field) can push Pl past the
-  # solver's singularity threshold; that cell is hopeless and gets -Inf (zero
-  # nested weight) rather than crashing the grid.
-  Mt <- tryCatch(as.matrix(Matrix::solve(asm$Pl, Matrix::t(asm$A_eff))),
-                 error = function(e) NULL)
-  if (is.null(Mt)) {
-    return(list(log_marginal = -Inf, n_iter = 0L, converged = FALSE, asm = asm))
+  # Non-gaussian needs the Laplace mode (beta, auxiliary weights x); gaussian is
+  # the exact conjugate marginal and needs none. A failed inner fit / factor gives
+  # -Inf (zero nested weight) rather than crashing the grid.
+  beta_hat  <- numeric(p)
+  x_hat     <- numeric(n_sub)
+  n_iter    <- 1L
+  converged <- TRUE
+  if (family != "gaussian") {
+    Qg  <- as(asm$Q, "generalMatrix")
+    fit <- tryCatch(cpp_laplace_fit_spde_precomputed(
+      y = as.numeric(y), n_trials = as.integer(n_trials),
+      X = as.matrix(X), re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1.0,
+      n_obs = n, n_mesh = n_sub,
+      Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
+      Aeff_x = asm$A_eff@x, Aeff_i = asm$A_eff@i, Aeff_p = asm$A_eff@p,
+      family = family, phi = phi,
+      max_iter = as.integer(max_iter), tol = tol,
+      n_threads = as.integer(n_threads),
+      offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)),
+      error = function(e) NULL)
+    if (is.null(fit)) {
+      return(list(log_marginal = -Inf, n_iter = 0L, converged = FALSE, asm = asm))
+    }
+    beta_hat  <- fit$mode[seq_len(p)]
+    x_hat     <- fit$mode[(p + 1L):(p + n_sub)]
+    n_iter    <- fit$n_iter
+    converged <- isTRUE(fit$converged)
   }
-  B   <- crossprod(Mt, C0sub * Mt)                                # n_obs x n_obs
-  if (p > 0) B <- B + tcrossprod(X) / tau_beta
-  off <- if (is.null(offset)) 0 else as.numeric(offset)
 
-  if (family == "gaussian") {
-    # Exact closed-form marginal: y - offset ~ N(0, V), V = V_lat + phi I.
-    V  <- B + diag(phi, n)
-    ch <- tryCatch(chol((V + t(V)) / 2), error = function(e) NULL)
-    if (is.null(ch)) return(list(log_marginal = -Inf, n_iter = 1L, converged = FALSE))
-    r  <- y - off
-    lm <- -sum(log(diag(ch))) - 0.5 * sum(backsolve(ch, r, transpose = TRUE)^2)
-    return(list(log_marginal = lm, n_iter = 1L, converged = TRUE, asm = asm))
-  }
-
-  # Non-Gaussian: Laplace marginal at the precomputed mode, with the
-  # determinant ratio log|Q| - log|H| = -log|I + W^{1/2} V_lat W^{1/2}| (matrix
-  # determinant lemma) computed from the well-conditioned B above. The prior
-  # quadratic uses the Pl matvec x'Qx = ||C^{-1/2} Pl x||^2 (no inverse).
-  Qg  <- as(asm$Q, "generalMatrix")
-  fit <- cpp_laplace_fit_spde_precomputed(
-    y = as.numeric(y), n_trials = as.integer(n_trials),
-    X = as.matrix(X), re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1.0,
-    n_obs = n, n_mesh = n_sub,
-    Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
-    Aeff_x = asm$A_eff@x, Aeff_i = asm$A_eff@i, Aeff_p = asm$A_eff@p,
+  lm <- tryCatch(cpp_spde_fractional_logmarginal(
+    y = as.numeric(y), X = as.matrix(X),
+    A_eff = asm$A_eff, Pl = asm$Pl,
+    C0sub = as.numeric(spatial$C0_diag)[asm$keep],
     family = family, phi = phi,
-    max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
-  )
-  beta_hat <- fit$mode[seq_len(p)]
-  x_hat    <- fit$mode[(p + 1L):(p + n_sub)]
-  eta_hat  <- as.numeric(X %*% beta_hat + asm$A_eff %*% x_hat) + off
+    beta_hat = as.numeric(beta_hat), x_hat = as.numeric(x_hat),
+    n_trials = as.integer(n_trials),
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
+    tau_beta = tau_beta),
+    error = function(e) -Inf)
 
-  wll  <- .spde_family_wll(family, y, eta_hat, n_trials, phi)
-  Plx  <- as.numeric(asm$Pl %*% x_hat)
-  quad <- tau_beta * sum(beta_hat^2) + sum(Plx^2 / C0sub)
-  sw   <- sqrt(wll$w)
-  Gm   <- diag(n) + (sw %o% sw) * B
-  ch   <- tryCatch(chol(Gm), error = function(e) NULL)
-  if (is.null(ch)) return(list(log_marginal = -Inf, n_iter = fit$n_iter,
-                               converged = FALSE, asm = asm, fit = fit))
-  logdet_term <- 2 * sum(log(diag(ch)))
-
-  list(
-    log_marginal = wll$loglik - 0.5 * quad - 0.5 * logdet_term,
-    n_iter = fit$n_iter, converged = isTRUE(fit$converged),
-    asm = asm, fit = fit, beta = beta_hat, x = x_hat
-  )
+  list(log_marginal = lm, n_iter = n_iter, converged = converged, asm = asm)
 }
 
 #' Fractional rSPDE single-point Laplace fit at a fixed (range, sigma)
@@ -359,9 +313,10 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' the precomputed C++ solve, whose latent is the auxiliary weights `x`; the
 #' returned `mode` mesh block is mapped back to the field `u = Pr x` so every
 #' downstream consumer reads field-space mesh effects exactly as on the integer
-#' path. The precomputed C++ solve adds the prior normalizer `0.5 log|Q|`, so the
-#' returned log-marginal is complete and comparable across the nested
-#' `(range, sigma)` grid.
+#' path. The log-marginal is the well-conditioned `B` / determinant-lemma marginal
+#' (`cpp_spde_fractional_logmarginal()`) for the RE-free case (comparable across
+#' the `(range, sigma)` grid); a fit with an iid RE block keeps the precomputed
+#' precision-space marginal.
 #'
 #' @keywords internal
 .spde_laplace_fractional_at <- function(y, n_trials, X, spatial,
@@ -391,16 +346,31 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
   )
 
-  # The prior normalizer 0.5 log|Q(theta)| is added inside the precomputed C++
-  # solve (spde_run_single_fit -> SpdeQLogDet), so result$log_marginal is already
-  # the complete single-fit marginal -- no R-side fold.
-
   # Rebuild the mode in the FULL mesh layout, field-space: the fit ran on the
   # non-orphan submesh, so map the auxiliary weights x to the field u = Pr x and
   # scatter into the kept nodes (orphan nodes carry zero field), matching the
   # integer path's [beta, re, field(n_mesh)] layout for downstream consumers.
   ms       <- ncol(X) + as.integer(n_re_groups)
   x_mesh   <- result$mode[(ms + 1L):(ms + n_sub)]
+
+  # Recompute the single-fit log-marginal through the well-conditioned C++
+  # B / determinant-lemma (cpp_spde_fractional_logmarginal), not the precomputed
+  # fit's direct precision-space marginal (whose log|Q| / log|H| lose digits on
+  # the rational precision's wide spectrum). The det-lemma marginal has no RE
+  # term, so a fit carrying an iid RE block keeps the precomputed marginal.
+  if (n_re_groups == 0L) {
+    result$log_marginal <- tryCatch(cpp_spde_fractional_logmarginal(
+      y = as.numeric(y), X = as.matrix(X),
+      A_eff = asm$A_eff, Pl = asm$Pl,
+      C0sub = as.numeric(spatial$C0_diag)[asm$keep],
+      family = family, phi = phi,
+      beta_hat = as.numeric(result$mode[seq_len(ncol(X))]),
+      x_hat = as.numeric(x_mesh),
+      n_trials = as.integer(n_trials %||% rep(1L, length(y))),
+      offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)),
+      error = function(e) result$log_marginal)
+  }
+
   field_full <- numeric(spatial$n_mesh)
   field_full[asm$keep] <- as.numeric(asm$Pr %*% x_mesh)
   result$mode <- c(result$mode[seq_len(ms)], field_full)

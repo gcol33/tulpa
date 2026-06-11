@@ -25,16 +25,14 @@
 A list with \code{log_marginal}, \code{n_iter}, \code{converged}, and the assembly.
 }
 \description{
-The precision-space Laplace marginal needs \verb{0.5(log|Q| - log|H|)}, whose two
-determinants are individually corrupted by the rational precision's wide
-spectrum (cond ~ 1e16) in a range-dependent way -- so range is unidentifiable
-from it. This computes the same marginal through the matrix-determinant lemma:
-log|Q| - log|H| = -log|I + W^(1/2) (X X'/tau_beta + A_eff Q^-1 A_eff') W^(1/2)|,
-an \verb{n_obs x n_obs} determinant of \code{I + PSD} that is well-conditioned. The cross
-term \verb{A_eff Q^\{-1\} A_eff' = (A_eff Pl^\{-1\}) C (A_eff Pl^\{-1\})'} is formed
-through the operator factor \code{Pl} (condition number the square root of \code{Q}'s),
-so no ill-conditioned \code{Q} inverse is ever taken. The mode comes from the
-precomputed C++ fit (accurate despite the conditioning); only the determinant
-term is recomputed here.
+Delegates the well-conditioned \code{B} / matrix-determinant-lemma marginal to C++
+(\code{cpp_spde_fractional_logmarginal()}). The precision-space \verb{0.5(log|Q| - log|H|)}
+is corrupted in a range-dependent way by the rational precision's wide spectrum
+(cond(Q) ~ 1e13+), so the marginal is formed through the obs-space
+\verb{B = (A_eff Pl^\{-1\}) C (A_eff Pl^\{-1\})' + X X'/tau_beta}, built through the
+operator factor \code{Pl} (cond = sqrt cond(Q)), never an explicit \code{Q} inverse.
+Gaussian is the exact conjugate marginal; non-gaussian uses the det-lemma at the
+precomputed Laplace mode. \code{phi} is the Gaussian residual SD (variance \verb{phi^2}),
+consistent with the integer path and the engine family convention.
 }
 \keyword{internal}

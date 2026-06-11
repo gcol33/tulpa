@@ -29,8 +29,9 @@ The fractional counterpart of the integer \code{cpp_laplace_fit_spde} branch in
 the precomputed C++ solve, whose latent is the auxiliary weights \code{x}; the
 returned \code{mode} mesh block is mapped back to the field \verb{u = Pr x} so every
 downstream consumer reads field-space mesh effects exactly as on the integer
-path. The precomputed C++ solve adds the prior normalizer \verb{0.5 log|Q|}, so the
-returned log-marginal is complete and comparable across the nested
-\verb{(range, sigma)} grid.
+path. The log-marginal is the well-conditioned \code{B} / determinant-lemma marginal
+(\code{cpp_spde_fractional_logmarginal()}) for the RE-free case (comparable across
+the \verb{(range, sigma)} grid); a fit with an iid RE block keeps the precomputed
+precision-space marginal.
 }
 \keyword{internal}
