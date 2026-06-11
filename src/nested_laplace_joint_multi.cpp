@@ -86,6 +86,45 @@
 
 namespace {
 
+// Inner-thread budget for the joint nested-Laplace grid solve (gcol33/tulpa#107).
+//
+// The outer grid runs one cell per thread across `n_outer` workers. When the
+// grid has fewer cells than the outer pool the surplus threads would idle --
+// the long-pole (mode-region) cells finish single-threaded while the freed
+// outer threads sit unused. Hand that surplus to the inner per-observation
+// reduction (nested OpenMP) instead. The split is budget-respecting:
+// outer_used * inner <= n_outer, so the total never exceeds the outer pool (no
+// oversubscription), and it collapses to inner = 1 -- the previous behaviour --
+// whenever the grid saturates the pool (n_grid >= n_outer). With outer
+// parallelism off (n_outer <= 1) the pure inner path runs the caller's
+// `n_threads`. Results are unchanged up to the floating-point summation order
+// of the inner reduction (the documented threading invariant).
+inline int joint_inner_thread_budget(int n_outer, int n_grid, int n_threads) {
+    if (n_outer <= 1) return std::max(1, n_threads);     // outer off: pure inner
+    const int outer_used = std::min(std::max(n_grid, 1), n_outer);
+    return std::max(1, n_outer / outer_used);            // floor: total <= n_outer
+}
+
+// RAII enable of one extra OpenMP nesting level for the duration of a nested
+// (outer grid x inner reduction) solve, restoring the prior limit on scope exit
+// so the global setting is not left changed for unrelated regions. A no-op when
+// `enable` is false or OpenMP is absent (gcol33/tulpa#107).
+struct NestedOmpLevels {
+#ifdef _OPENMP
+    int prev_;
+    bool active_;
+    explicit NestedOmpLevels(bool enable)
+        : prev_(omp_get_max_active_levels()), active_(enable && prev_ < 2) {
+        if (active_) omp_set_max_active_levels(2);
+    }
+    ~NestedOmpLevels() { if (active_) omp_set_max_active_levels(prev_); }
+#else
+    explicit NestedOmpLevels(bool) {}
+#endif
+    NestedOmpLevels(const NestedOmpLevels&) = delete;
+    NestedOmpLevels& operator=(const NestedOmpLevels&) = delete;
+};
+
 // Build a per-arm idx closure from an Rcpp::List of per-arm IntegerVectors.
 // The closure captures cached IntegerVectors so per-grid-point eta evaluation
 // doesn't re-resolve the list each call.
@@ -1837,9 +1876,11 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     std::vector<JointArmSpecs> cheap_specs_pool(n_cheap_workers);
     for (auto& cs : cheap_specs_pool) cs = build_joint_arm_specs(arms);
 
-    // Force inner OpenMP to single-thread when the outer grid is parallel —
-    // see run_multi_block_nested_laplace for the rationale.
-    int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
+    // Inner-thread budget: single-thread when the outer grid saturates the
+    // thread pool, but hand any surplus (grid smaller than the pool) to the
+    // inner reduction via nested OpenMP so the long-pole cells are not solved
+    // single-threaded while freed outer threads idle (gcol33/tulpa#107).
+    int n_threads_inner_eff = joint_inner_thread_budget(n_outer, n_grid, n_threads);
 
     // Inner implementation: takes max_iter as a parameter so the cheap-pass
     // path can call this with max_iter=1 for a one-Newton-step screen at the
@@ -2065,6 +2106,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             &cheap_scratches[worker], /*cheap_worker=*/worker);
     };
 
+    // Permit one nested OpenMP level for the grid solve only when the inner
+    // reduction will use surplus threads; restored on return (gcol33/tulpa#107).
+    NestedOmpLevels nested_levels(n_outer > 1 && n_threads_inner_eff > 1);
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         tile_ids, tile_pilot_cells,
@@ -2226,9 +2270,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
               static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
       } }
 
-    // Inner OpenMP collapses to a single thread when the outer grid is parallel
-    // (the dense driver does the same); nested parallelism would oversubscribe.
-    const int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
+    // Inner-thread budget: surplus outer threads (grid smaller than the pool)
+    // are handed to the inner reduction via nested OpenMP; the split stays
+    // within the outer budget so it never oversubscribes (gcol33/tulpa#107).
+    const int n_threads_inner_eff = joint_inner_thread_budget(n_outer, n_grid, n_threads);
 
     auto solve_at_theta_impl = [&](int k_grid,
                                    const std::vector<double>& prev_mode,
@@ -2442,6 +2487,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             n_steps, /*use_cheap_scratch=*/true, /*cheap_worker=*/worker);
     };
 
+    // Permit one nested OpenMP level for the grid solve only when the inner
+    // reduction will use surplus threads; restored on return (gcol33/tulpa#107).
+    NestedOmpLevels nested_levels(n_outer > 1 && n_threads_inner_eff > 1);
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes,
         /*n_outer=*/n_outer,
