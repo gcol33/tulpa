@@ -3,37 +3,142 @@
 # These operate on residuals or fit objects — not model-specific.
 # ============================================================================
 
-#' Compare models by information criteria
-#' @param ... Named fit objects (must have `$log_prob` or support `logLik()`).
-#' @param criterion `"waic"` or `"loglik"`.
-#' @return Data frame with model comparison statistics.
-#' @export
-compare_models <- function(..., criterion = c("waic", "loglik")) {
-  criterion <- match.arg(criterion)
-  models <- list(...)
-  if (is.null(names(models))) names(models) <- paste0("model", seq_along(models))
+# Assign default model<N> names to an unnamed / partially-named `list(...)`.
+.name_models <- function(models) {
+  nm <- names(models)
+  auto <- paste0("model", seq_along(models))
+  names(models) <- if (is.null(nm)) auto else ifelse(nzchar(nm), nm, auto)
+  models
+}
 
+# A fit's [n_draws x n_obs] pointwise log-likelihood, or NULL when it carries
+# none (a deterministic / point fit). Wraps the erroring extractor.
+.compare_fit_loglik <- function(fit) {
+  tryCatch(.tulpa_fit_loglik(fit), error = function(e) NULL)
+}
+
+# Per-model criterion summary (elpd, its SE, the effective number of parameters,
+# and the pointwise elpd vector for SE-of-difference / stacking). Computed
+# natively from the pointwise log-likelihood via tulpa_criteria() + tulpa_psis();
+# falls back to a model-supplied WAIC (fit$waic_fn) when there are no pointwise
+# draws, and to all-NA when neither is available -- so the comparison degrades
+# gracefully to one row per model rather than erroring.
+.model_criterion <- function(fit, criterion) {
+  na <- list(elpd = NA_real_, se_elpd = NA_real_, p_eff = NA_real_,
+             elpd_pw = NULL)
+  ll <- .compare_fit_loglik(fit)
+  if (!is.null(ll)) {
+    cr <- tulpa_criteria(ll, criteria = criterion, pointwise = TRUE)
+    if (criterion == "loo")
+      return(list(elpd = cr$elpd_loo, se_elpd = cr$se_elpd_loo,
+                  p_eff = cr$p_loo, elpd_pw = cr$pointwise$elpd_loo))
+    return(list(elpd = cr$elpd_waic, se_elpd = cr$se_elpd_waic,
+                p_eff = cr$p_waic, elpd_pw = cr$pointwise$elpd_waic))
+  }
+  if (criterion == "waic" && !is.null(fit$waic_fn)) {
+    w <- tryCatch(fit$waic_fn(fit), error = function(e) NULL)
+    if (!is.null(w))
+      return(list(elpd = -0.5 * w$waic, se_elpd = NA_real_,
+                  p_eff = w$p_waic %||% NA_real_, elpd_pw = NULL))
+  }
+  na
+}
+
+#' Compare models by information criteria
+#'
+#' @description
+#' Rank fitted models best-first by an information criterion. `"waic"` and
+#' `"loo"` use the native pointwise log-likelihood layer ([tulpa_criteria()] /
+#' [tulpa_psis()]) -- WAIC and PSIS-LOO respectively, computed from each fit's
+#' `[n_draws x n_obs]` pointwise log-likelihood (`fit$draws$log_lik`), with no
+#' `loo` package dependency. `"loglik"` returns the (integrated) joint
+#' log-likelihood with the parameter count. A fit carrying no pointwise
+#' log-likelihood (a deterministic / point approximation) yields `NA` criterion
+#' columns rather than an error, so the table always has one row per model.
+#'
+#' @param ... Named `tulpa_fit` objects.
+#' @param criterion `"waic"` (default), `"loo"`, or `"loglik"`.
+#' @return A data frame. For `"loglik"`: `model`, `n_params`, `logLik`. For
+#' `"waic"` / `"loo"` (ranked best-first): `model`, `elpd`, `se_elpd`,
+#' `p_eff`, `ic` (`-2 * elpd`), `delta` (elpd gap to the best model),
+#' `se_diff` (SE of that pointwise elpd difference), and `weight` (the
+#' Akaike-style weight on the criterion).
+#' @seealso [modelAverage()] for model-averaged predictions, [tulpa_criteria()]
+#' and [tulpa_psis()] for the native criteria layer.
+#' @export
+compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
+  criterion <- match.arg(criterion)
+  models <- .name_models(list(...))
+
+  if (criterion == "loglik") {
   rows <- lapply(names(models), function(nm) {
     fit <- models[[nm]]
     ll <- tryCatch(as.numeric(logLik(fit)), error = function(e) NA_real_)
     n_par <- fit$n_params %||% fit$n_fixed %||%
       (if (is.matrix(fit$draws)) ncol(fit$draws) else NA_integer_)
-    row <- data.frame(model = nm, n_params = n_par, logLik = ll,
+      data.frame(model = nm, n_params = n_par, logLik = ll,
                       stringsAsFactors = FALSE)
-    if (criterion == "waic" && !is.null(fit$waic_fn)) {
-      w <- tryCatch(fit$waic_fn(fit), error = function(e) NULL)
-      row$WAIC <- if (!is.null(w)) w$waic else NA_real_
-      row$p_waic <- if (!is.null(w)) w$p_waic else NA_real_
-    }
-    row
   })
-  result <- do.call(rbind, rows)
-  if ("WAIC" %in% names(result) && !all(is.na(result$WAIC))) {
-    result$delta <- result$WAIC - min(result$WAIC, na.rm = TRUE)
-    rel <- exp(-0.5 * result$delta)
-    result$weight <- rel / sum(rel, na.rm = TRUE)
+    return(do.call(rbind, rows))
   }
-  result
+
+  per     <- lapply(models, .model_criterion, criterion = criterion)
+  elpd    <- vapply(per, `[[`, numeric(1), "elpd")
+  se_elpd <- vapply(per, `[[`, numeric(1), "se_elpd")
+  p_eff   <- vapply(per, `[[`, numeric(1), "p_eff")
+  elpd_pw <- lapply(per, `[[`, "elpd_pw")
+
+  ord  <- order(elpd, decreasing = TRUE, na.last = TRUE)
+  best <- ord[1]
+  delta   <- elpd - elpd[best]
+  se_diff <- vapply(seq_along(models), function(k) {
+    if (k == best || is.null(elpd_pw[[k]]) || is.null(elpd_pw[[best]]))
+      return(NA_real_)
+    dd <- elpd_pw[[k]] - elpd_pw[[best]]
+    sqrt(length(dd) * stats::var(dd))
+  }, numeric(1))
+  rel <- exp(0.5 * delta)                       # delta <= 0 -> Akaike weight on elpd
+  weight <- rel / sum(rel, na.rm = TRUE)
+
+  out <- data.frame(model = names(models), elpd = elpd, se_elpd = se_elpd,
+                    p_eff = p_eff, ic = -2 * elpd, delta = delta,
+                    se_diff = se_diff, weight = weight,
+                    row.names = NULL, stringsAsFactors = FALSE)
+  out[ord, , drop = FALSE]
+}
+
+# Native stacking weights (Yao, Vehtari, Simpson & Gelman 2018): the
+# simplex-constrained model combination maximizing the leave-one-out stacked log
+# predictive score, parameterized by a softmax of K-1 free coordinates so the
+# optimization is unconstrained. `lpd` is the [n_obs x n_models] pointwise elpd.
+# No `loo` dependency (gcol33/tulpa#103).
+.tulpa_stacking_weights <- function(lpd) {
+  K <- ncol(lpd)
+  if (K == 1L) return(1)
+  m <- apply(lpd, 1L, max)
+  E <- exp(lpd - m)                             # exp(lpd_ik - max_k); + m_i drops out
+  neg_score <- function(par) {
+    a <- c(0, par); w <- exp(a - max(a)); w <- w / sum(w)
+    -sum(log(pmax(as.numeric(E %*% w), 1e-300)))
+  }
+  opt <- stats::optim(rep(0, K - 1L), neg_score, method = "BFGS")
+  a <- c(0, opt$par); w <- exp(a - max(a)); w / sum(w)
+}
+
+# Native pseudo-BMA / pseudo-BMA+ weights (Yao et al. 2018): a softmax of the
+# per-model summed elpd; `bb = TRUE` (pseudo-BMA+) averages that softmax over
+# Bayesian-bootstrap (Dirichlet(1)) reweightings of the observations to propagate
+# the elpd's sampling uncertainty.
+.tulpa_pbma_weights <- function(lpd, bb = FALSE, n_boot = 1000L) {
+  K <- ncol(lpd); N <- nrow(lpd)
+  softmax <- function(v) { e <- exp(v - max(v)); e / sum(e) }
+  if (!bb) return(softmax(colSums(lpd)))
+  W <- matrix(0, n_boot, K)
+  for (b in seq_len(n_boot)) {
+    g <- stats::rexp(N); g <- N * g / sum(g)    # Dirichlet(1,...,1) * N
+    W[b, ] <- softmax(colSums(lpd * g))
+  }
+  colMeans(W)
 }
 
 #' Extract spatial range and variance from a fitted spatial model
@@ -253,23 +358,57 @@ postHocLM <- function(formula, data, weights = NULL,
 
 
 #' Model-averaged predictions
-#' @param ... Named fit objects.
-#' @param criterion `"waic"` (default).
-#' @param fitted_fn Function to extract fitted values from a fit (default: `fitted`).
-#' @return List with averaged predictions and weights.
+#'
+#' @description
+#' Combine fitted values from several models using native model weights computed
+#' from the pointwise PSIS-LOO (or WAIC) elpd via [tulpa_psis()] -- no `loo`
+#' package dependency. `"loo"` / `"waic"` give stacking weights (the
+#' simplex-optimal predictive combination); `"pbma"` / `"pbma+"` give
+#' pseudo-BMA(+) weights. Every model must carry an `[n_draws x n_obs]` pointwise
+#' log-likelihood (`fit$draws$log_lik`) over the same observations.
+#'
+#' @param ... Named `tulpa_fit` objects fitted to the same observations.
+#' @param weights `"loo"` (stacking, default), `"waic"`, `"pbma"`, or `"pbma+"`.
+#' @param fitted_fn Function extracting a length-`n_obs` fitted vector from a fit
+#' (default [fitted()]).
+#' @return A list with `averaged` (the weighted fitted vector), `weights` (the
+#' named model weights), and `comparison` (the [compare_models()] table).
+#' @seealso [compare_models()].
+#' @references Yao, Vehtari, Simpson & Gelman (2018). Using stacking to average
+#' Bayesian predictive distributions. \emph{Bayesian Analysis} 13(3):917-1007.
 #' @export
-modelAverage <- function(..., criterion = "waic", fitted_fn = fitted) {
-  models <- list(...)
-  if (is.null(names(models))) names(models) <- paste0("model", seq_along(models))
-  comp <- compare_models(..., criterion = criterion)
-  weights <- if ("weight" %in% names(comp)) comp$weight else rep(1/length(models), length(models))
-  names(weights) <- comp$model
+modelAverage <- function(..., weights = c("loo", "waic", "pbma", "pbma+"),
+                         fitted_fn = fitted) {
+  weights <- match.arg(weights)
+  models  <- .name_models(list(...))
+  crit    <- if (weights == "waic") "waic" else "loo"
+
+  pw <- lapply(models, function(fit) {
+    ll <- .compare_fit_loglik(fit)
+    if (is.null(ll))
+      stop("Model averaging needs every fit's pointwise log-likelihood ",
+           "(fit$draws$log_lik); a model without it cannot be weighted.",
+           call. = FALSE)
+    cr <- tulpa_criteria(ll, criteria = crit, pointwise = TRUE)
+    if (crit == "loo") cr$pointwise$elpd_loo else cr$pointwise$elpd_waic
+  })
+  if (length(unique(vapply(pw, length, integer(1)))) != 1L)
+    stop("All models must be fitted to the same observations ",
+         "(pointwise log-likelihoods differ in length).", call. = FALSE)
+  lpd <- do.call(cbind, pw)                     # [n_obs x n_models]
+
+  w <- switch(weights,
+              loo     = .tulpa_stacking_weights(lpd),
+              waic    = .tulpa_stacking_weights(lpd),
+              pbma    = .tulpa_pbma_weights(lpd, bb = FALSE),
+              `pbma+` = .tulpa_pbma_weights(lpd, bb = TRUE))
+  names(w) <- names(models)
 
   fits <- lapply(models, fitted_fn)
-  # Average first element of each fitted result
   first_vals <- lapply(fits, function(f) if (is.list(f)) f[[1]] else f)
   n <- length(first_vals[[1]])
   avg <- numeric(n)
-  for (k in seq_along(models)) avg <- avg + weights[k] * first_vals[[k]]
-  list(averaged = avg, weights = weights, comparison = comp)
+  for (k in seq_along(models)) avg <- avg + w[k] * first_vals[[k]]
+  list(averaged = avg, weights = w,
+       comparison = compare_models(..., criterion = crit))
 }

@@ -22,7 +22,7 @@ spatial_spde_custom(
 
 \item{nu}{Matern smoothness parameter. A non-negative number; integer values
 give the exact FEM construction, fractional values the BRASIL rational SPDE
-approximation (supported by \code{fit_spde()}; gcol33/tulpa#71). Default 1.}
+approximation (supported by \code{fit_spde()};). Default 1.}
 
 \item{prior_range}{Prior for the spatial range. Default \code{c(0.5, 0.5)}.}
 

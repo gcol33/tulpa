@@ -51,11 +51,9 @@ and naming it on this arm.
 At most one arm may declare a hyperparam-driven
 axis in the first ship (the cover hurdle and
 occu_cover both need only one). Shared axes
-across multiple arms are deferred.
-The legacy \code{copy = list(arm, alpha_grid)} argument
-is a back-compat shim that desugars to
-\code{responses[[X]]$field_coef = list(name = "alpha", grid = G)} -- use one or the other, not both on
-the same arm.
+across multiple arms are deferred. A single-block
+copy coefficient is declared here, on the arm --
+not through a separate \code{copy} argument.
 }}
 
 \item{prior}{A list describing the shared latent prior block. Required
@@ -72,30 +70,16 @@ in \verb{[0.1, 3]}).
 (default \code{c(0.5, 0.8, 0.95, 0.99)}).
 }}
 
-\item{copy}{Optional list controlling the copy arm (back-compat shim;
-prefer per-arm \code{responses[[X]]$field_coef}):
-\itemize{
-\item \code{arm}        — name (or 1-based index) of the copy arm.
-\item \code{alpha_grid} — numeric grid for the copy coefficient \eqn{\alpha};
-the copy arm's field amplitude at each cell is
-\eqn{\alpha \cdot \sigma}. Default
-\code{c(0, exp(seq(log(0.1), log(3), length.out = 5)))}.
-When \code{NULL} (default), no copy scaling is applied — all arms share
-the donor \code{sigma_grid} axis and \eqn{\alpha = 1} implicitly.
-\code{copy} is now a back-compat shim for the per-arm \code{field_coef} spec:
-\code{copy = list(arm = X, alpha_grid = G)} desugars to
-\code{responses[[X]]$field_coef = list(name = "alpha", grid = G)} at entry,
-and the rest of the driver reads only \code{field_coef} thereafter
-(gcol33/tulpa#32). The multi-block path still consumes \code{copy$block}
-to pick the copy block; for single-block fits, leave \code{copy = NULL}
-and put the spec on the arm. On the multi-block path \code{copy} may also
-be an unnamed list of such specs — \code{list(list(arm, block, alpha_grid), ...)} — coupling N distinct shared latent fields, each onto its own
-arm with its own \eqn{\alpha} axis, integrated over the product outer
-grid. Each spec must name a distinct block. The copy block may be any
-of \code{icar} / \code{bym2} / \code{car_proper} / \code{rw1} / \code{rw2} / \code{ar1} / \code{iid}
-(gcol33/tulpa#76); blocks with their own per-arm scaling (\code{lf},
-\code{hsgp_mo}) or a precomputed precision (\code{tgmrf}) do not take a copy.
-}}
+\item{copy}{Multi-block copy specification (multi-block \code{prior} only). For a
+single-block fit there is no \code{copy} argument: declare the copy coefficient
+on the arm via \code{responses[[X]]$field_coef = list(name = "alpha", grid = G)}.
+On the multi-block path \code{copy} is an unnamed list of specs --
+\code{list(list(arm, block, alpha_grid),...)} -- coupling N distinct shared
+latent fields, each onto its own arm with its own \eqn{\alpha} axis,
+integrated over the product outer grid. Each spec must name a distinct
+block. The copy block may be any of \code{icar} / \code{bym2} / \code{car_proper} / \code{rw1}
+/ \code{rw2} / \code{ar1} / \code{iid}; blocks with their own per-arm scaling (\code{lf},
+\code{hsgp_mo}) or a precomputed precision (\code{tgmrf}) do not take a copy.}
 
 \item{phi_grid}{Optional list specifying per-arm dispersion axes on the
 outer grid. Accepts either a named list (keys = arm names) or a
@@ -136,7 +120,7 @@ donor field amplitude \eqn{\sigma} and on the copy coefficient
 calibrated by \code{P(theta > U) = alpha}. Closed-form density
 \code{lambda * exp(-lambda * theta)} with \code{lambda = -log(alpha)/U}.
 Drop-in for the weakly-identified small-\code{n_pos} regime
-(gcol33/tulpa#22). Pick \code{U} at the upper end of plausible values
+. Pick \code{U} at the upper end of plausible values
 so the prior shrinks the tail without biasing the modal cell when
 the data identifies it: default-friendly choice on \eqn{\sigma} is
 \code{c(U = 1.0, alpha = 0.01)} (donor amplitude); on the dimensionless
@@ -166,7 +150,7 @@ own \verb{src/} and register it from \verb{R_init_<pkg>} via the
 \code{tulpa_register_cell_coupling} C callable; the R driver validates the
 name against the registry and the inner Newton routes the per-cell
 contribution through \code{evaluate_cell()} when the spec couples at least
-one arm. (gcol33/tulpa#32 Change 2b.)}
+one arm.}
 
 \item{control}{Optional list of perf/numerical tuning knobs (statistical
 arguments stay top-level), following the \code{control} convention of
@@ -369,7 +353,7 @@ Latent: \code{phi (n_s)} with \code{Q = D - rho_car * W}.
 Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
 land under Phase 3.
 }
-\section{(sigma, alpha) parameterization (gcol33/tulpa#22)}{
+\section{(sigma, alpha) parameterization}{
 
 Each arm's linear predictor reads
 \deqn{\eta_{arm} = X_{arm} \beta_{arm} + \sigma_{arm} \cdot z_s,}

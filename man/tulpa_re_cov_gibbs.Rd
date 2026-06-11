@@ -12,7 +12,7 @@ tulpa_re_cov_gibbs(
   family = "binomial",
   phi = 1,
   n_iter = 2000L,
-  n_burnin = 1000L,
+  warmup = 1000L,
   thin = 1L,
   prior_df = NULL,
   prior_scale = NULL,
@@ -36,10 +36,10 @@ diagonal one; defaults to \code{TRUE}). An optional \code{label} / \code{group_v
 the block. Any supplied \code{L} / \code{cov} / \code{sigma} is ignored -- \code{Sigma} is what
 this function samples.}
 
-\item{n_iter}{Number of recorded post-burn-in sweeps (default 2000).}
+\item{n_iter}{Number of recorded post-warmup sweeps (default 2000).}
 
-\item{n_burnin}{Burn-in sweeps, used for proposal-scale adaptation (default
-1000).}
+\item{warmup}{Warmup (burn-in) sweeps, used for proposal-scale adaptation
+(default 1000).}
 
 \item{thin}{Keep every \code{thin}-th recorded sweep (default 1).}
 
@@ -114,6 +114,11 @@ For \code{family = "gaussian"} the response is already conditionally Gaussian, s
 there is no Laplace bias to remove; \code{phi} (the residual variance) is treated
 as known. The sampler still runs and is useful as a reference / for \code{Sigma}
 uncertainty.
+}
+\references{
+Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
+based on vines and extended onion method. \emph{Journal of Multivariate
+Analysis} 100(9):1989-2001.
 }
 \seealso{
 \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} for the grid-integration (summary-bias) fix;

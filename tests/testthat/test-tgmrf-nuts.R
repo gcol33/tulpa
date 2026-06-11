@@ -43,14 +43,14 @@ test_that("tulpa_tgmrf_nuts runs end-to-end and returns sensible posterior momen
   y <- rpois(n, exp(0.2 + z))
   blk <- make_nuts_ar1_block(n)
 
-  fit <- tulpa_tgmrf_nuts(
+  fit <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "nuts",
     n_iter = 150L, warmup = 75L,
     max_depth = 4L
   )
 
-  expect_s3_class(fit, "tulpa_tgmrf_nuts")
+  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws), 2L)
   expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))
@@ -78,9 +78,9 @@ test_that("NUTS and IMH on the same tgmrf agree on posterior means up to MC erro
     family = "poisson",
     n_iter = 1500L, warmup = 500L
   )
-  fit_nuts <- tulpa_tgmrf_nuts(
+  fit_nuts <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "nuts",
     n_iter = 200L, warmup = 100L,
     max_depth = 4L
   )

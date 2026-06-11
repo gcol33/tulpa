@@ -4,16 +4,31 @@
 \alias{compare_models}
 \title{Compare models by information criteria}
 \usage{
-compare_models(..., criterion = c("waic", "loglik"))
+compare_models(..., criterion = c("waic", "loo", "loglik"))
 }
 \arguments{
-\item{...}{Named fit objects (must have \verb{$log_prob} or support \code{logLik()}).}
+\item{...}{Named \code{tulpa_fit} objects.}
 
-\item{criterion}{\code{"waic"} or \code{"loglik"}.}
+\item{criterion}{\code{"waic"} (default), \code{"loo"}, or \code{"loglik"}.}
 }
 \value{
-Data frame with model comparison statistics.
+A data frame. For \code{"loglik"}: \code{model}, \code{n_params}, \code{logLik}. For
+\code{"waic"} / \code{"loo"} (ranked best-first): \code{model}, \code{elpd}, \code{se_elpd},
+\code{p_eff}, \code{ic} (\code{-2 * elpd}), \code{delta} (elpd gap to the best model),
+\code{se_diff} (SE of that pointwise elpd difference), and \code{weight} (the
+Akaike-style weight on the criterion).
 }
 \description{
-Compare models by information criteria
+Rank fitted models best-first by an information criterion. \code{"waic"} and
+\code{"loo"} use the native pointwise log-likelihood layer (\code{\link[=tulpa_criteria]{tulpa_criteria()}} /
+\code{\link[=tulpa_psis]{tulpa_psis()}}) -- WAIC and PSIS-LOO respectively, computed from each fit's
+\verb{[n_draws x n_obs]} pointwise log-likelihood (\code{fit$draws$log_lik}), with no
+\code{loo} package dependency. \code{"loglik"} returns the (integrated) joint
+log-likelihood with the parameter count. A fit carrying no pointwise
+log-likelihood (a deterministic / point approximation) yields \code{NA} criterion
+columns rather than an error, so the table always has one row per model.
+}
+\seealso{
+\code{\link[=modelAverage]{modelAverage()}} for model-averaged predictions, \code{\link[=tulpa_criteria]{tulpa_criteria()}}
+and \code{\link[=tulpa_psis]{tulpa_psis()}} for the native criteria layer.
 }

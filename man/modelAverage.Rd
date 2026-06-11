@@ -4,18 +4,36 @@
 \alias{modelAverage}
 \title{Model-averaged predictions}
 \usage{
-modelAverage(..., criterion = "waic", fitted_fn = fitted)
+modelAverage(
+  ...,
+  weights = c("loo", "waic", "pbma", "pbma+"),
+  fitted_fn = fitted
+)
 }
 \arguments{
-\item{...}{Named fit objects.}
+\item{...}{Named \code{tulpa_fit} objects fitted to the same observations.}
 
-\item{criterion}{\code{"waic"} (default).}
+\item{weights}{\code{"loo"} (stacking, default), \code{"waic"}, \code{"pbma"}, or \code{"pbma+"}.}
 
-\item{fitted_fn}{Function to extract fitted values from a fit (default: \code{fitted}).}
+\item{fitted_fn}{Function extracting a length-\code{n_obs} fitted vector from a fit
+(default \code{\link[=fitted]{fitted()}}).}
 }
 \value{
-List with averaged predictions and weights.
+A list with \code{averaged} (the weighted fitted vector), \code{weights} (the
+named model weights), and \code{comparison} (the \code{\link[=compare_models]{compare_models()}} table).
 }
 \description{
-Model-averaged predictions
+Combine fitted values from several models using native model weights computed
+from the pointwise PSIS-LOO (or WAIC) elpd via \code{\link[=tulpa_psis]{tulpa_psis()}} -- no \code{loo}
+package dependency. \code{"loo"} / \code{"waic"} give stacking weights (the
+simplex-optimal predictive combination); \code{"pbma"} / \code{"pbma+"} give
+pseudo-BMA(+) weights. Every model must carry an \verb{[n_draws x n_obs]} pointwise
+log-likelihood (\code{fit$draws$log_lik}) over the same observations.
+}
+\references{
+Yao, Vehtari, Simpson & Gelman (2018). Using stacking to average
+Bayesian predictive distributions. \emph{Bayesian Analysis} 13(3):917-1007.
+}
+\seealso{
+\code{\link[=compare_models]{compare_models()}}.
 }

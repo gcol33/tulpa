@@ -90,7 +90,7 @@ possibly with mutated dispersion / shape / precision fields (e.g.
 \code{fits[[k]]$phi}). Use this to update non-eta parameters that fall out of
 the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
 Gaussian sigma). When \code{NULL} (default), behavior is unchanged. See
-\code{gcol33/tulpa#4}.}
+.}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, applied to
 every block fit via \code{\link[=tulpa_laplace]{tulpa_laplace()}} (i.e. blocks without a \code{prior}
@@ -130,5 +130,5 @@ submodel data from weights). Each M-step submodel block is fit
 independently via \code{\link[=tulpa_laplace]{tulpa_laplace()}}; the engine reads \code{family} and
 \code{offset} per block so heterogeneous-family mixtures (e.g. a binomial
 zero submodel + poisson positive submodel for a hurdle model) work
-without engine changes. See \code{gcol33/tulpa#3}.
+without engine changes.
 }

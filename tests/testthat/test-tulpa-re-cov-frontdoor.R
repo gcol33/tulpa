@@ -60,7 +60,7 @@ test_that("control$re_cov='gibbs' routes to the exact Sigma debias", {
   d <- make_corr_re_data()
   fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "binomial",
                mode = "laplace",
-               control = list(re_cov = "gibbs", n_iter = 500L, n_burnin = 250L,
+               control = list(re_cov = "gibbs", n_iter = 500L, warmup = 250L,
                               seed = 1L))
   expect_equal(fit$backend, "re_cov_gibbs")
   expect_equal(fit$inference_tier, 1L)
@@ -148,7 +148,7 @@ test_that("multi-term routes to the Gibbs debias via control$re_cov", {
   d <- make_multi_re_data(seed = 8L, G = 30L, H = 18L, npg = 12L)
   fit <- tulpa(y ~ x + (1 + x | g) + (1 | h), data = d, family = "binomial",
                mode = "laplace",
-               control = list(re_cov = "gibbs", n_iter = 400L, n_burnin = 200L,
+               control = list(re_cov = "gibbs", n_iter = 400L, warmup = 200L,
                               seed = 1L))
   expect_equal(fit$backend, "re_cov_gibbs")
   expect_equal(fit$inference_tier, 1L)

@@ -23,7 +23,7 @@
 #' 3. Wrap the result with tgmrf-specific metadata + block hyperparameter
 #'    names.
 #'
-#' @inheritParams tulpa_tgmrf_imh
+#' @inheritParams.tgmrf_fit_imh
 #' @param n_draws Number of variational draws to return (default 1000).
 #' @param max_lbfgs L-BFGS iteration cap (default 100).
 #' @param lbfgs_tol L-BFGS gradient-norm tolerance (default 1e-6).
@@ -43,8 +43,8 @@
 #'   parallel quasi-Newton variational inference. JMLR 23(306):1-49.
 #' @seealso [tulpa_tgmrf_imh()] (Tier 1 MH), [tulpa_tgmrf_nuts()]
 #'   (Tier 1 NUTS), [pathfinder()] (underlying VI engine).
-#' @export
-tulpa_tgmrf_vi <- function(y, n_trials, X, block,
+#' @noRd
+.tgmrf_fit_vi <- function(y, n_trials, X, block,
                            family = "binomial",
                            phi = 1.0,
                            re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
@@ -150,6 +150,5 @@ tulpa_tgmrf_vi <- function(y, n_trials, X, block,
     inference_tier = 2L,
     backend        = "tgmrf_vi"
   )
-  class(fit) <- c("tulpa_tgmrf_vi", "tulpa_fit")
-  fit
+  .finalize_fit(fit, draws_kind = "iid", extra_class = "tulpa_tgmrf")
 }

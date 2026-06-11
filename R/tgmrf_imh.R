@@ -1,3 +1,73 @@
+#' Fit a custom tgmrf latent block
+#'
+#' @description
+#' One front door for inference over a user-defined [tgmrf()] latent block's
+#' hyperparameter vector `theta`. `mode` selects the inference engine, all of
+#' which share the same Laplace body for `(beta, z) | theta`:
+#'
+#' * `"imh"` (default) -- Tier-1 exact MCMC: the Laplace body plus an
+#' independence-Metropolis bias correction over `theta` (the
+#' "Laplace + MH debias" composition).
+#' * `"nuts"` -- Tier-1 exact MCMC: NUTS over the marginal `theta` posterior.
+#' * `"vi"` -- Tier-2 structured: a single-path Pathfinder Gaussian fit of the
+#' `theta` posterior (no bias correction).
+#' * `"nuts_joint"` -- Tier-1 exact MCMC sampling the FULL joint
+#' `(beta, z, theta)` rather than the Laplace-marginalized `theta` (requires a
+#' C++-backend block, see [tgmrf_cpp()]).
+#'
+#' This replaces the former `tulpa_tgmrf_imh()` / `_nuts()` / `_vi()` /
+#' `_nuts_joint()` family -- the inference method is an argument, not a parallel
+#' verb.
+#'
+#' @param y,n_trials,X Response, binomial trial counts (or `NULL`), and the
+#' fixed-effect design matrix.
+#' @param block A [tgmrf()] latent block.
+#' @param family,phi Observation family and its dispersion.
+#' @param re_idx,n_re_groups,sigma_re Optional scalar random-intercept structure.
+#' @param mode Inference engine: `"imh"`, `"nuts"`, `"vi"`, or `"nuts_joint"`.
+#' @param control A list of numerical / tuning knobs for the chosen `mode`
+#' (e.g. `n_iter`, `warmup`, `thin`, `scale` for `"imh"`; `epsilon`,
+#' `max_depth`, `target_accept` for the NUTS modes; `n_draws`, `max_lbfgs`,
+#' `lbfgs_tol` for `"vi"`; plus the shared `pilot_axis_points`, `max_iter`,
+#' `tol`, `n_threads`, `verbose`). An unknown knob for the chosen `mode`
+#' errors rather than being silently ignored.
+#' @param ... Individual `control` knobs may also be passed directly by name;
+#' they are merged into `control` (a named argument here wins over the same
+#' name inside `control`).
+#' @return A `tulpa_tgmrf` / `tulpa_fit` object; `$backend` and `$mode` record
+#' the engine used.
+#' @seealso [tgmrf()] for the block, [tgmrf_cpp()] for the compiled-block form.
+#' @export
+tulpa_tgmrf <- function(y, n_trials, X, block,
+                        family = "binomial", phi = 1.0,
+                        re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+                        mode = c("imh", "nuts", "vi", "nuts_joint"),
+                        control = list(), ...) {
+  mode <- match.arg(mode)
+  if (!is.list(control)) stop("`control` must be a list.", call. = FALSE)
+  impl <- switch(mode,
+                 imh        = .tgmrf_fit_imh,
+                 nuts       = .tgmrf_fit_nuts,
+                 vi         = .tgmrf_fit_vi,
+                 nuts_joint = .tgmrf_fit_nuts_joint)
+  base  <- list(y = y, n_trials = n_trials, X = X, block = block,
+                family = family, phi = phi, re_idx = re_idx,
+                n_re_groups = n_re_groups, sigma_re = sigma_re)
+  knobs <- utils::modifyList(control, list(...))
+  # The knobs carry the per-mode numerical settings; reject names the chosen
+  # mode's fitter does not accept so a typo is not silently dropped.
+  allowed <- setdiff(names(formals(impl)), names(base))
+  bad <- setdiff(names(knobs), allowed)
+  if (length(bad)) {
+    stop(sprintf("Unknown control knob(s) for mode = '%s': %s.\n  Allowed: %s.",
+                 mode, paste(bad, collapse = ", "),
+                 paste(allowed, collapse = ", ")), call. = FALSE)
+  }
+  fit <- do.call(impl, c(base, knobs))
+  fit$mode <- mode
+  fit
+}
+
 #' IMH-Laplace MCMC over a tgmrf block's hyperparameters
 #'
 #' @description
@@ -57,8 +127,8 @@
 #'
 #' @seealso [tulpa_nested_laplace()] for the grid-only Laplace,
 #'   [imh_laplace()] for the generic MH wrapper.
-#' @export
-tulpa_tgmrf_imh <- function(y, n_trials, X, block,
+#' @noRd
+.tgmrf_fit_imh <- function(y, n_trials, X, block,
                             family = "binomial",
                             phi = 1.0,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
@@ -199,6 +269,5 @@ tulpa_tgmrf_imh <- function(y, n_trials, X, block,
     inference_tier = 1L,
     backend        = "tgmrf_imh"
   )
-  class(fit) <- c("tulpa_tgmrf_imh", "tulpa_fit")
-  fit
+  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf")
 }

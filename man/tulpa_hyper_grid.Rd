@@ -95,7 +95,7 @@ all axes have \code{log_prior = NULL}.
 warning when no cell carries finite mass).
 \item \code{theta_mean}, \code{theta_sd} -- named numeric vectors; weighted posterior
 mean and SD per axis. SDs refit via the 3-point Laplace-at-mode
-parabola where possible (gcol33/tulpa#20).
+parabola where possible.
 \item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} -- named numeric vectors;
 weighted-quantile median and 2.5 / 97.5\\% empirical CI per axis
 (the recommended summary for right-skewed scale-like axes).

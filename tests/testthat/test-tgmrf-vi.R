@@ -37,13 +37,13 @@ test_that("tulpa_tgmrf_vi returns Gaussian draws with sensible moments", {
   y <- rpois(n, exp(0.2 + z))
   blk <- make_vi_ar1_block(n)
 
-  fit <- tulpa_tgmrf_vi(
+  fit <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "vi",
     n_draws = 500L
   )
 
-  expect_s3_class(fit, "tulpa_tgmrf_vi")
+  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws), 2L)
   expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))
@@ -73,14 +73,14 @@ test_that("VI mode and IMH posterior mean agree up to the structured-tier gap", 
   y <- rpois(n, exp(0.3 + z))
   blk <- make_vi_ar1_block(n)
 
-  fit_imh <- tulpa_tgmrf_imh(
+  fit_imh <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "imh",
     n_iter = 1500L, warmup = 500L
   )
-  fit_vi <- tulpa_tgmrf_vi(
+  fit_vi <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "vi",
     n_draws = 800L
   )
 
@@ -93,11 +93,11 @@ test_that("VI mode and IMH posterior mean agree up to the structured-tier gap", 
 
 test_that("tulpa_tgmrf_vi rejects non-tgmrf block argument", {
   expect_error(
-    tulpa_tgmrf_vi(
+    tulpa_tgmrf(
       y = 1:5, n_trials = rep(1L, 5L),
       X = matrix(1, 5L, 1L),
       block = list(),
-      family = "poisson"
+      family = "poisson", mode = "vi"
     ),
     "tgmrf"
   )

@@ -1,6 +1,6 @@
 #' Marginal fixed-effect Hessian for spatial-field Laplace fits
 #'
-#' Closes the SE gap surfaced in issue #16: the single-arm Laplace path
+#' Closes the SE gap surfaced in: the single-arm Laplace path
 #' previously returned `H_beta = NULL` for SPDE and NNGP because the raw
 #' fixed-effect block of the joint Hessian gives the *conditional*
 #' precision on \eqn{\beta \mid u^*}, which under-states uncertainty.
@@ -229,7 +229,7 @@ NULL
 #' RE indicator block stacked with the spatial-field design), the latent prior
 #' precision `Q_latent`, and the GLM weights `W`, returns the marginal fixed-
 #' effect precision `H_beta = X'WX - (X'WD) (D'WD + Q_latent)^{-1} (X'WD)'`.
-#' Shared by the SPDE and NNGP marginal-SE paths (issue #16).
+#' Shared by the SPDE and NNGP marginal-SE paths.
 #'
 #' @keywords internal
 .schur_H_beta <- function(X, D, Q_latent, W) {

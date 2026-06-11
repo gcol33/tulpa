@@ -50,9 +50,12 @@
     n_neighbors = adj$n_neighbors, sigma_grid = c(0.5, 1.0)
   )
   list(
-    responses = list(occ = arm_occ, pos = arm_pos),
-    prior     = prior,
-    copy      = list(arm = "pos", alpha_grid = c(0.5, 1.0))
+    responses = list(
+      occ = arm_occ,
+      pos = modifyList(arm_pos, list(
+        field_coef = list(name = "alpha", grid = c(0.5, 1.0))))
+    ),
+    prior     = prior
   )
 }
 

@@ -87,10 +87,8 @@ tulpa_laplace <- function(y, n_trials, X,
   # Normalize the optional fixed-effect prior to length-p mean / sd vectors.
   bp <- .normalize_beta_prior(beta_prior, n_fixed)
 
+  .validate_family_phi(family, phi)
   if (identical(family, "beta")) {
-    if (!is.numeric(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0) {
-      stop("`phi` must be a positive scalar for family = 'beta'.", call. = FALSE)
-    }
     yfin <- y[is.finite(y)]
     if (length(yfin) && (min(yfin) <= 0 || max(yfin) >= 1)) {
       stop("family = 'beta' requires y strictly in (0, 1); got range [",
@@ -386,7 +384,8 @@ tulpa_laplace <- function(y, n_trials, X,
     }
   }
 
-  result
+  .finalize_fit(result, backend = "laplace",
+                n_fixed = n_fixed, fixed_names = colnames(X))
 }
 
 
@@ -1023,7 +1022,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       re_group = as.integer(re_group), n_re_groups = as.integer(n_re_groups),
       spatial_group = areal$spatial_group, n_spatial_units = areal$n_spatial_units,
       adj_list = areal$adj_list, n_neighbors = areal$n_neighbors,
-      n_iter = as.integer(iter), n_warmup = as.integer(warmup),
+      n_iter = as.integer(n_iter), n_warmup = as.integer(warmup),
       thin = as.integer(thin),
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_re_scale,
       prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
@@ -1211,7 +1210,7 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0) {
 #' @param group Integer vector of group indices (1-based)
 #' @param n_groups Number of groups
 #' @param family Character: "binomial" or "neg_binomial_2"
-#' @param iter Total iterations
+#' @param n_iter Total iterations
 #' @param warmup Warmup iterations
 #' @param prior_beta_sd Prior SD for betas
 #' @param prior_sigma_scale Prior scale for RE sigma
@@ -1243,7 +1242,7 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0) {
 #' @export
 tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         family = "binomial",
-                        iter = 2000L, warmup = 1000L,
+                        n_iter = 2000L, warmup = 1000L,
                         prior_beta_sd = 10.0, prior_sigma_scale = 2.5,
                         spatial = NULL, temporal = NULL,
                         verbose = TRUE, n_threads = 1L) {
@@ -1262,7 +1261,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       y = y, n_trials = if (is.null(n_trials)) rep(1L, length(y)) else n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       spatial = spatial, family = family,
-      iter = iter, warmup = warmup,
+      iter = n_iter, warmup = warmup,
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_scale,
       verbose = verbose, n_threads = n_threads
     ))
@@ -1272,7 +1271,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       y = y, n_trials = if (is.null(n_trials)) rep(1L, length(y)) else n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       temporal = temporal, family = family,
-      iter = iter, warmup = warmup,
+      iter = n_iter, warmup = warmup,
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_scale,
       verbose = verbose, n_threads = n_threads
     ))
@@ -1282,7 +1281,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
     cpp_pg_binomial_gibbs(
       y = as.numeric(y), n = as.integer(n_trials), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),
-      n_iter = as.integer(iter), n_warmup = as.integer(warmup),
+      n_iter = as.integer(n_iter), n_warmup = as.integer(warmup),
       thin = 1L,
       prior_beta_sd = prior_beta_sd,
       prior_sigma_scale = prior_sigma_scale,
@@ -1293,7 +1292,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
     cpp_pg_negbin_gibbs(
       y = as.numeric(y), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),
-      n_iter = as.integer(iter), n_warmup = as.integer(warmup),
+      n_iter = as.integer(n_iter), n_warmup = as.integer(warmup),
       thin = 1L,
       prior_beta_sd = prior_beta_sd,
       prior_sigma_scale = prior_sigma_scale,

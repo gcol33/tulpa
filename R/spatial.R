@@ -101,10 +101,8 @@ NULL
 #'   data = df,
 #'   family = tulpa_poisson_gamma(),
 #'   spatial = spatial_car(adj, level = "group", group_var = "site"),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
+#'   mode = "hmc",
+#'   control = list(n_iter = 200, warmup = 100)
 #' )
 #'
 #' # Proper CAR model (estimate spatial autocorrelation)
@@ -114,10 +112,8 @@ NULL
 #'   family = tulpa_poisson_gamma(),
 #'   spatial = spatial_car(adj, level = "group", group_var = "site",
 #'                         proper = TRUE),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
+#'   mode = "hmc",
+#'   control = list(n_iter = 200, warmup = 100)
 #' )
 #'
 #' # Extract rho from proper CAR

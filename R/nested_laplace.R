@@ -92,6 +92,10 @@
 #'   likelihood (a scaled Bernoulli, with the latent occupancy state integrated
 #'   out) through this. Multi-block `prior` only. Default `NULL` (use `family`).
 #'
+#' @references
+#' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+#' Gaussian models by using integrated nested Laplace approximations.
+#' \emph{JRSS-B} 71(2):319-392.
 #' @keywords internal
 #' @export
 tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
@@ -194,8 +198,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
-    class(res) <- c("tulpa_nested_laplace", "list")
-    return(res)
+    return(.finalize_fit(res, backend = "nested_laplace",
+                         extra_class = c("tulpa_nested_laplace", "list")))
   }
 
   if (!is.null(likelihood)) {
@@ -224,8 +228,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tm$mark("diagnostics")
   res$prior <- prior
   res$timing <- tm$timing()
-  class(res) <- c("tulpa_nested_laplace", "list")
-  res
+  .finalize_fit(res, backend = "nested_laplace",
+                extra_class = c("tulpa_nested_laplace", "list"))
 }
 
 # Positive-scale hyperparameter grid fields: one log-transform unconstrains

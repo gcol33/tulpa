@@ -45,7 +45,8 @@ build_icar_joint_fit <- function(nr = 4L, nc = 4L, sigma_grid = c(0.5, 1.0),
         occ = list(y = y1, n_trials = rep(1L, n_s), X = X1,
                    spatial_idx = seq_len(n_s), family = "binomial"),
         cover = list(y = y2, n_trials = rep(1L, n_s), X = X2,
-                     spatial_idx = seq_len(n_s), family = "gaussian")
+                     spatial_idx = seq_len(n_s), family = "gaussian",
+                     field_coef = list(name = "alpha", grid = alpha_grid))
     )
     prior <- list(type = "icar", n_spatial_units = n_s,
                   adj_row_ptr = adj_row_ptr, adj_col_idx = adj_col_idx,
@@ -53,7 +54,6 @@ build_icar_joint_fit <- function(nr = 4L, nc = 4L, sigma_grid = c(0.5, 1.0),
 
     fit <- tulpa_nested_laplace_joint(
         responses = responses, prior = prior,
-        copy = list(arm = "cover", alpha_grid = alpha_grid),
         control = list(store_Q = TRUE, diagnose_k = FALSE)
     )
     fit$.n_s <- n_s

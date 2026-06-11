@@ -11,6 +11,6 @@ Given the fixed-effect design \code{X}, the combined latent design \code{D} (the
 RE indicator block stacked with the spatial-field design), the latent prior
 precision \code{Q_latent}, and the GLM weights \code{W}, returns the marginal fixed-
 effect precision \verb{H_beta = X'WX - (X'WD) (D'WD + Q_latent)^\{-1\} (X'WD)'}.
-Shared by the SPDE and NNGP marginal-SE paths (issue #16).
+Shared by the SPDE and NNGP marginal-SE paths.
 }
 \keyword{internal}

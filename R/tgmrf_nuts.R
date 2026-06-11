@@ -16,7 +16,7 @@
 #' diagonal; warmup performs a simple Robbins-Monro adaptation toward
 #' the target acceptance.
 #'
-#' @inheritParams tulpa_tgmrf_imh
+#' @inheritParams.tgmrf_fit_imh
 #' @param epsilon Initial leapfrog step size. Default is `0.2 / sqrt(theta_dim)`.
 #' @param max_depth Maximum NUTS tree depth (`2^max_depth` leapfrog steps
 #'   per draw at the limit). Default 6.
@@ -43,8 +43,8 @@
 #' @references Hoffman & Gelman (2014). The No-U-Turn Sampler. JMLR
 #'   15:1593-1623.
 #' @seealso [tulpa_tgmrf_imh()] for the independence-MH counterpart.
-#' @export
-tulpa_tgmrf_nuts <- function(y, n_trials, X, block,
+#' @noRd
+.tgmrf_fit_nuts <- function(y, n_trials, X, block,
                              family = "binomial",
                              phi = 1.0,
                              re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
@@ -325,6 +325,5 @@ tulpa_tgmrf_nuts <- function(y, n_trials, X, block,
     inference_tier = 1L,
     backend        = "tgmrf_nuts"
   )
-  class(fit) <- c("tulpa_tgmrf_nuts", "tulpa_fit")
-  fit
+  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf")
 }

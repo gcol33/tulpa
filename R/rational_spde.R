@@ -83,7 +83,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #'
 #' `nu` must be a single finite non-negative number. Integer `nu` (0, 1, 2, ...)
 #' gives an exact FEM construction; fractional `nu` uses the rational SPDE
-#' approximation (see [rational_spde_coefficients()] and gcol33/tulpa#71).
+#' approximation (see [rational_spde_coefficients()]).
 #'
 #' @param nu Candidate smoothness parameter.
 #' @return Invisibly `TRUE`; raises an error on an invalid `nu`.

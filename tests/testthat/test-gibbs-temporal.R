@@ -30,7 +30,7 @@ test_that("tulpa_gibbs(temporal = rw1 trend) recovers the slope on simulated dat
   fit <- tulpa_gibbs(
     y = y, n_trials = ntr, X = X, group = rep(1L, N), n_groups = 0L,
     family = "binomial", temporal = spec,
-    iter = 3000L, warmup = 1500L, verbose = FALSE
+    n_iter = 3000L, warmup = 1500L, verbose = FALSE
   )
 
   expect_true(all(c("beta", "trend", "sigma_trend") %in% names(fit)))
@@ -53,7 +53,7 @@ test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+tempor
     tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
                 X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
                 family = "binomial", temporal = spec_rw2,
-                iter = 50L, warmup = 25L, verbose = FALSE),
+                n_iter = 50L, warmup = 25L, verbose = FALSE),
     "rw2"
   )
 
@@ -65,7 +65,7 @@ test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+tempor
     tulpa_gibbs(y = rpois(n, 2), n_trials = rep(1L, n),
                 X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
                 family = "poisson", temporal = spec_rw1,
-                iter = 50L, warmup = 25L, verbose = FALSE),
+                n_iter = 50L, warmup = 25L, verbose = FALSE),
     "binomial"
   )
 
@@ -77,7 +77,7 @@ test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+tempor
                 spatial = list(type = "icar", adjacency = W,
                                spatial_idx = seq_len(n)),
                 temporal = spec_rw1,
-                iter = 50L, warmup = 25L, verbose = FALSE),
+                n_iter = 50L, warmup = 25L, verbose = FALSE),
     "Combined spatial \\+ temporal"
   )
 })

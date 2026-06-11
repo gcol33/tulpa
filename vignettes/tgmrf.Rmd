@@ -218,9 +218,9 @@ Gaussian at the optimum. Same tier as the nested-Laplace posterior but
 gives you a full covariance matrix rather than a discrete grid.
 
 ```{r vi}
-fit_vi <- tulpa_tgmrf_vi(
+fit_vi <- tulpa_tgmrf(
   y = y, n_trials = rep(1L, n), X = X, block = blk,
-  family  = "poisson",
+  family  = "poisson", mode = "vi",
   n_draws = 800L
 )
 fit_vi$mode_theta
@@ -234,9 +234,9 @@ independence-MH bias correction. The VI fit makes a near-optimal
 proposal: high acceptance, low MC error.
 
 ```{r imh}
-fit_imh <- tulpa_tgmrf_imh(
+fit_imh <- tulpa_tgmrf(
   y = y, n_trials = rep(1L, n), X = X, block = blk,
-  family = "poisson",
+  family = "poisson", mode = "imh",
   n_iter = 1200L, warmup = 400L
 )
 fit_imh$means
@@ -251,9 +251,9 @@ For higher-dim `theta` (5+), the gradient-based sibling
 the posterior is multi-modal or strongly non-Gaussian.
 
 ```{r nuts, eval = FALSE}
-fit_nuts <- tulpa_tgmrf_nuts(
+fit_nuts <- tulpa_tgmrf(
   y = y, n_trials = rep(1L, n), X = X, block = blk,
-  family    = "poisson",
+  family    = "poisson", mode = "nuts",
   n_iter    = 200L, warmup = 100L,
   max_depth = 4L
 )

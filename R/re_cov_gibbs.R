@@ -145,9 +145,9 @@
 #'   diagonal one; defaults to `TRUE`). An optional `label` / `group_var` names
 #'   the block. Any supplied `L` / `cov` / `sigma` is ignored -- `Sigma` is what
 #'   this function samples.
-#' @param n_iter Number of recorded post-burn-in sweeps (default 2000).
-#' @param n_burnin Burn-in sweeps, used for proposal-scale adaptation (default
-#'   1000).
+#' @param n_iter Number of recorded post-warmup sweeps (default 2000).
+#' @param warmup Warmup (burn-in) sweeps, used for proposal-scale adaptation
+#' (default 1000).
 #' @param thin Keep every `thin`-th recorded sweep (default 1).
 #' @param prior_df Inverse-Wishart prior degrees of freedom. Applied to every
 #'   correlated block (default `n_coefs + 1`, the minimal proper choice) and as
@@ -179,10 +179,14 @@
 #' @seealso [tulpa_re_cov_nested()] for the grid-integration (summary-bias) fix;
 #'   [tulpa_laplace()] for the pilot solve and per-group covariance blocks.
 #'
+#' @references
+#' Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
+#' based on vines and extended onion method. \emph{Journal of Multivariate
+#' Analysis} 100(9):1989-2001.
 #' @export
 tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
                                family = "binomial", phi = 1.0,
-                               n_iter = 2000L, n_burnin = 1000L, thin = 1L,
+                               n_iter = 2000L, warmup = 1000L, thin = 1L,
                                prior_df = NULL, prior_scale = NULL,
                                beta_prior_mean = 0, beta_prior_sd = 100,
                                seed = NULL,
@@ -287,7 +291,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     y = as.numeric(y), n_trials = as.numeric(n_trials),
     X = as.matrix(X), blocks = blocks,
     beta0 = as.numeric(beta), L_beta = as.matrix(L_beta),
-    n_iter = as.integer(n_iter), n_burnin = as.integer(n_burnin),
+    n_iter = as.integer(n_iter), n_burnin = as.integer(warmup),
     thin = as.integer(thin),
     beta_prior_mean = as.numeric(bmean), beta_prior_sd = as.numeric(bsd)
   )
@@ -309,7 +313,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   # plain list of matrices (matching the Sigma_mean matrix-vs-list convention).
   Sigma_draws_out <- if (M == 1L) lapply(Sigma_draws, `[[`, 1L) else Sigma_draws
 
-  list(
+  .finalize_fit(list(
     posterior   = summ$posterior,
     Sigma_mean  = summ$Sigma_mean,
     Sigma_draws = Sigma_draws_out,
@@ -328,5 +332,5 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     n_blocks    = M,
     n_coefs     = vapply(layout, `[[`, integer(1), "nc"),
     prior       = priors
-  )
+  ), backend = "re_cov_gibbs", n_fixed = p, fixed_names = beta_names)
 }

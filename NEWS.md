@@ -24,6 +24,56 @@
   the fractional path's R-side fold is removed accordingly. Exposed and fixed a
   latent gap where the SPDE CCD refit returned a `NULL` `beta` (the mode was never
   split into fixed effects / field), now done once in `laplace_spde_at()`.
+* fix(diagnostics): the outer Pareto-k radius cap no longer biases k-hat
+  downward in the heavy-tail regime it exists to flag (#100). When the importance
+  log-ratio is still rising at the cap boundary (the target is heavier-tailed than
+  the Gaussian proposal) the dropped far-radius draws are folded back in, so the
+  GPD fits the genuine uncapped tail; a flat/light tail leaves the cost cap in
+  force. The re-cov path's no-cap choice is documented as consistent in
+  correctness.
+* fix(s3): every exported front-door fitter (`tulpa_re_cov_nested` / `_gibbs`,
+  `tulpa_laplace`, `fit_spde`, `tulpa_nested_laplace[_joint]`, `tulpa_tgmrf`)
+  routes its return through a shared `.finalize_fit()` so a directly-called fit
+  carries the same `tulpa_fit` class, fixed-effect layout, and explicit
+  `draws_kind` provenance tag as a `tulpa()`-dispatched one. The chain-vs-iid
+  diagnostic gate no longer computes a vacuous Rhat on a directly-called iid fit
+  (#102).
+* fix(validate): `tulpa()` now validates `phi > 0` for every dispersion-carrying
+  family (not just beta) and rejects non-integer / negative `y` for count
+  families at the front door; the `inverse` / `1mu2` links clamp `eta` off their
+  singularities (#104).
+* refactor: removed the single-block `copy=` back-compat shim from
+  `tulpa_nested_laplace_joint()` (declare the copy coefficient on the arm via
+  `field_coef`, #105); consolidated the comparison / averaging verbs to native
+  PSIS-backed `compare_models()` / `modelAverage()` (stacking + pseudo-BMA, no
+  `loo` dependency -- `loo` moved to Suggests), and the four `tulpa_tgmrf_*`
+  fitters into one `tulpa_tgmrf(mode=)`; standardized RE-Gibbs / PG-Gibbs
+  iteration arguments on `n_iter` + `warmup` (#103).
+* test: parameter-recovery / CI-coverage gates on the deterministic Tier-2 hot
+  paths -- nested-Laplace spatial hyperparameters (ICAR/BYM2/CAR_proper/NNGP/HSGP,
+  #97), the Pareto-k diagnostic's discriminating power on real engine output
+  (#99), and the assembled generic-NUTS and VI estimators (#101). The SPDE
+  cross-integrator test (#98) makes explicit that the deterministic `fit_spde`
+  CCD path does NOT recover `(range, sigma)` (the Laplace-marginalized SPDE
+  likelihood is prior-dominated in both); only the Tier-1 NUTS-joint path does.
+* docs: runnable `\examples` and method `@references` on the front doors,
+  `inst/CITATION`, internal issue tokens stripped from rendered help, and stale
+  version / example strings refreshed (#106).
+
+* feat(frontdoor): `mode = "agq"` now reaches the adaptive Gauss-Hermite
+  quadrature fitter through `tulpa()`. A single random-intercept `(1 | g)` model
+  with a `binomial` / `poisson` / `gaussian` family routes to `agq_fit()`, with
+  `control$n_quad` (default 7; `1` recovers Laplace) selecting the quadrature
+  order and `phi` mapped to the gaussian residual sd. The front-door fit equals a
+  direct `agq_fit()` call. Previously the backend was registered but the design
+  dispatch fell through to a "reachable but not yet wired" error. Random slopes,
+  multiple RE terms, other families, and a `beta_prior` (AGQ is a
+  marginal-likelihood fit) are rejected with guidance.
+* fix(methods): the generic fixed-effect accessors (`coef`, `summary`, `confint`,
+  `vcov`) now read a Gaussian fit's full-parameter `$cov` when it carries no
+  draws, grid moments, or `$H_beta` (the AGQ shape), and `.fixed_draws_mat()`
+  treats a zero-row `$draws` matrix as "no draws" rather than empty draws. Fits
+  with real draws / grid moments / `H_beta` are unaffected.
 * feat(spatial): the single-arm multi-block nested-Laplace driver now honours a
   per-observation design weight on an areal (icar) block, exposed as an optional
   `svc_weight` field in the block spec. When present, observation i's eta

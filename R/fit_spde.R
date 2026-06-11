@@ -40,7 +40,7 @@
 #' @param tol Newton convergence tolerance. Default 1e-6.
 #' @param n_threads OpenMP threads. Default 1.
 #' @param checkpoint Optional grid-cell checkpoint/resume spec
-#'   (gcol33/tulpa#50), `list(path = , resume = )`. Each solved `(range, sigma)`
+#', `list(path =, resume =)`. Each solved `(range, sigma)`
 #'   cell is appended to `path`; a `resume = TRUE` run loads the finished cells
 #'   and re-solves only the rest, so a killed or rebooted fit resumes instead of
 #'   restarting. `resume = FALSE` starts a fresh file. Default `NULL` (off).
@@ -58,6 +58,13 @@
 #'     \item `nested`: nested Laplace results (if used)
 #'   }
 #'
+#' @references
+#' Lindgren, Rue & Lindstrom (2011). An explicit link between Gaussian fields
+#' and Gaussian Markov random fields: the stochastic partial differential
+#' equation approach. \emph{JRSS-B} 73(4):423-498.
+#' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+#' Gaussian models by using integrated nested Laplace approximations.
+#' \emph{JRSS-B} 71(2):319-392.
 #' @export
 fit_spde <- function(y, X, spatial,
                      family = "binomial", n_trials = NULL,

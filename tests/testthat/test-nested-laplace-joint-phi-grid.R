@@ -113,9 +113,12 @@ test_that("phi_grid on gaussian copy arm recovers true residual SD", {
 
     phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))
     fit <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos,
+                             list(field_coef = list(name = "alpha", grid = 1)))
+        ),
         prior     = prior,
-        copy      = list(arm = "pos", alpha_grid = 1),
         phi_grid  = list(pos = phi_axis)
     )
 
@@ -178,9 +181,12 @@ test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", 
 
     phi_axis <- exp(seq(log(0.1), log(1.2), length.out = 9))
     fit <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos,
+                             list(field_coef = list(name = "alpha", grid = 1)))
+        ),
         prior     = prior,
-        copy      = list(arm = "pos", alpha_grid = 1),
         phi_grid  = list(pos = phi_axis)
     )
 
@@ -239,14 +245,20 @@ test_that("lognormal == gaussian(log y) at any (sigma, rho, alpha, phi)", {
     )
 
     fit_ln <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos_ln),
-        prior     = prior,
-        copy      = list(arm = "pos", alpha_grid = 1)
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos_ln,
+                             list(field_coef = list(name = "alpha", grid = 1)))
+        ),
+        prior     = prior
     )
     fit_gn <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos_gn),
-        prior     = prior,
-        copy      = list(arm = "pos", alpha_grid = 1)
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos_gn,
+                             list(field_coef = list(name = "alpha", grid = 1)))
+        ),
+        prior     = prior
     )
 
     # log p_lognormal(y|eta,phi) = log p_gaussian(log y|eta,phi) - log(y).
@@ -315,9 +327,12 @@ test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks
     # Laplace-at-mode SD lifting theta_sd above a collapsed var-of-means
     # floor (gcol33/tulpa#20).
     fit <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(
+                field_coef = list(name = "alpha", grid = c(0.5, 1, 1.5))))
+        ),
         prior     = prior,
-        copy      = list(arm = "pos", alpha_grid = c(0.5, 1, 1.5)),
         phi_grid  = list(pos = phi_axis),
         control = list(adaptive_grid = FALSE,
                        var_of_means_consistency = FALSE)

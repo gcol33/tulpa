@@ -46,7 +46,7 @@
 #' `target_accept = 0.8` (higher than the default 0.65 for plain NUTS
 #' because \eqn{(\beta, z, \theta)} typically has dimension \eqn{\ge 50}).
 #'
-#' @inheritParams tulpa_tgmrf_nuts
+#' @inheritParams.tgmrf_fit_nuts
 #' @param block A tgmrf block with `backend == "cpp"`. R-closure blocks are
 #'   rejected with an error pointing to [tgmrf_cpp()] or
 #'   [tulpa_tgmrf_nuts()].
@@ -84,8 +84,8 @@
 #' @seealso [tulpa_tgmrf_nuts()] for the marginal-theta NUTS;
 #'   [tulpa_tgmrf_imh()] for the IMH composition; [tgmrf_cpp()] for the
 #'   C++-backend block constructor.
-#' @export
-tulpa_tgmrf_nuts_joint <- function(y, n_trials, X, block,
+#' @noRd
+.tgmrf_fit_nuts_joint <- function(y, n_trials, X, block,
                                    family = "binomial",
                                    phi = 1.0,
                                    re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
@@ -278,6 +278,5 @@ tulpa_tgmrf_nuts_joint <- function(y, n_trials, X, block,
     inference_tier = 1L,
     backend        = "tgmrf_nuts_joint"
   )
-  class(fit) <- c("tulpa_tgmrf_nuts_joint", "tulpa_fit")
-  fit
+  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf")
 }

@@ -89,9 +89,12 @@ test_that(".tulpa_iter_progress omits the threads field when serial", {
 
   capture.output(
     fit <- tulpa_nested_laplace_joint(
-      responses = list(occ = arm_occ, pos = arm_pos),
+      responses = list(
+        occ = arm_occ,
+        pos = modifyList(arm_pos, list(
+          field_coef = list(name = "alpha", grid = c(0.5, 1.0, 1.5))))
+      ),
       prior = prior,
-      copy  = list(arm = "pos", alpha_grid = c(0.5, 1.0, 1.5)),
       control = list(force_sparse = TRUE,
                      n_threads_outer = n_threads_outer,
                      var_of_means_consistency = FALSE,

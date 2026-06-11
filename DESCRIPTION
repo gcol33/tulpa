@@ -19,7 +19,6 @@ Depends:
     R (>= 4.1.0)
 Imports:
     Rcpp (>= 1.0.12),
-    loo (>= 2.7.0),
     Matrix,
     tulpaMesh (>= 0.1.2),
     stats,
@@ -35,6 +34,7 @@ Suggests:
     knitr,
     rmarkdown,
     posterior (>= 1.5.0),
+    loo (>= 2.7.0),
     MASS,
     betareg,
     fmesher,

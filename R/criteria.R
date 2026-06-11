@@ -113,7 +113,7 @@ tulpa_loglik <- function(x, n_obs = NULL, n_draws = NULL) {
 #' 27(5):1413-1432. Watanabe (2010). Spiegelhalter et al. (2002). Geisser &
 #' Eddy (1979).
 #' @seealso [tulpa_psis()] for the smoothing core, [tulpa_pit()] for the
-#'   probability-integral-transform companion, [tulpa_compare()] for
+#' probability-integral-transform companion, [compare_models()] for
 #'   model comparison.
 #' @export
 tulpa_criteria <- function(log_lik,

@@ -67,7 +67,8 @@
 # Laplace tier, which carries no draws.
 #' @keywords internal
 .fixed_draws_mat <- function(object) {
-  if (is.matrix(object$draws) && ncol(object$draws) >= 1L) {
+  if (is.matrix(object$draws) && nrow(object$draws) >= 1L &&
+      ncol(object$draws) >= 1L) {
     p <- min(object$n_fixed %||% ncol(object$draws), ncol(object$draws))
     return(object$draws[, seq_len(p), drop = FALSE])
   }
@@ -193,6 +194,25 @@
     ))
   }
 
+  # Gaussian fit carrying the full-parameter covariance directly (e.g. AGQ,
+  # whose inverse observed information is $cov rather than a precision $H_beta):
+  # the fixed-effect block of $cov gives real SEs without draws or H_beta.
+  est_all <- object$mode %||% object$means
+  if (!is.null(est_all) && is.matrix(object$cov) && !anyNA(object$cov)) {
+    p   <- object$n_fixed %||% length(est_all)
+    idx <- seq_len(p)
+    est <- as.numeric(est_all)[idx]
+    se  <- sqrt(pmax(diag(object$cov)[idx], 0))
+    z   <- stats::qnorm(1 - a)
+    nm  <- (object$fixed_names %||% object$param_names %||%
+              names(est_all) %||% paste0("beta", idx))[idx]
+    return(data.frame(
+      term = nm, estimate = est, std.error = se,
+      conf.low = est - z * se, conf.high = est + z * se,
+      row.names = NULL, stringsAsFactors = FALSE
+    ))
+  }
+
   if (!is.null(object$means)) {
     est <- as.numeric(object$means)
     nm  <- object$param_names %||% names(object$means) %||%
@@ -205,7 +225,7 @@
   }
 
   stop("Cannot summarize this tulpa_fit: it carries no $draws, $mode/$H_beta, ",
-       "or $means.", call. = FALSE)
+       "$cov, or $means.", call. = FALSE)
 }
 
 
@@ -280,8 +300,11 @@ vcov.tulpa_fit <- function(object, ...) {
   } else if (!is.null(object$H_beta)) {
     p <- object$n_fixed %||% nrow(object$H_beta)
     V <- solve(object$H_beta)[seq_len(p), seq_len(p), drop = FALSE]
+  } else if (is.matrix(object$cov) && !anyNA(object$cov)) {
+    p <- object$n_fixed %||% nrow(object$cov)
+    V <- object$cov[seq_len(p), seq_len(p), drop = FALSE]
   } else {
-    stop("No posterior draws, grid moments, or H_beta available for vcov().",
+    stop("No posterior draws, grid moments, H_beta, or cov available for vcov().",
          call. = FALSE)
   }
   nm <- (object$fixed_names %||% object$param_names)[seq_len(ncol(V))]

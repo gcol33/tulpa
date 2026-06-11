@@ -81,9 +81,12 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
         sigma_grid = sigma_grid
     )
     fit_legacy <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior_single,
-        copy = list(arm = "pos", alpha_grid = alpha_grid)
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(
+                field_coef = list(name = "alpha", grid = alpha_grid)))
+        ),
+        prior = prior_single
     )
 
     # Multi-block path (length-1 ICAR block, copy on the spatial block).

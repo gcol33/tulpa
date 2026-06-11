@@ -145,7 +145,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.0.2")
+pak::pak("gcol33/tulpa@v0.0.30")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (declared in `Remotes:`). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
@@ -180,7 +180,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.0.2},
+  note   = {R package version 0.0.30},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```

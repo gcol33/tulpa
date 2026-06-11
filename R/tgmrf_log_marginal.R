@@ -1,5 +1,5 @@
 # Shared `log_marginal(theta)` builder for the tgmrf hyperparameter adapters
-# (tulpa_tgmrf_imh / tulpa_tgmrf_vi / tulpa_tgmrf_nuts).
+# (tulpa_tgmrf(mode = "imh" / "vi" / "nuts")).
 #
 # All three integrate the same Laplace body for (beta, z) | theta and differ
 # only in how they explore theta-space (FD Hessian + IMH, Pathfinder L-BFGS,
@@ -21,7 +21,7 @@
 #                   theta mapped to -Inf so the caller retreats from the
 #                   infeasible region.
 #
-# `bounds_lo` / `bounds_hi` NULL  -> no wall (local FD use in tulpa_tgmrf_imh,
+# `bounds_lo` / `bounds_hi` NULL  -> no wall (local FD use in mode = "imh",
 # whose +/- fd_step steps stay near the interior mode).
 .tgmrf_make_log_marginal <- function(y, n_trials, X, block, obs_idx,
                                      re_idx, n_re_groups, sigma_re,

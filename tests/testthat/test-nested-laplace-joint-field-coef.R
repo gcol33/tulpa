@@ -10,15 +10,15 @@
 #                                  hyperparam.
 #   * field_coef = list(name=, grid=) -- embedded axis declaration.
 #
-# The legacy `copy = list(arm, alpha_grid)` API desugars to
-# `responses[[X]]$field_coef = list(name = "alpha", grid = G)`, so every
-# existing call shape continues to work byte-identically.
+# The single-block copy coefficient is declared on the arm via `field_coef`;
+# the separate `copy =` argument is multi-block only (the single-block shim was
+# removed -- pre-release: no back-compat shims).
 #
 # This file covers:
 #   (1) field_coef = 0 on arm 2 reproduces an independent single-arm fit
 #       (arm 2 sees no spatial field; arm 1 still does).
-#   (2) field_coef = "alpha" on arm 2 (explicit) matches the legacy
-#       `copy = list(arm, alpha_grid)` call (within numerical tolerance).
+#   (2) field_coef = list(name = "alpha", grid = ) runs, and the removed
+#       single-block `copy =` shim now errors.
 #   (3) A 3-arm fit with (1, 0, 0.5) constants runs end-to-end and
 #       recovers per-arm slopes.
 
@@ -152,7 +152,7 @@ test_that("field_coef = 0 on arm 2 matches a no-field independent fit", {
 # 2. field_coef = "alpha" matches the legacy `copy = ...` call                 #
 # --------------------------------------------------------------------------- #
 
-test_that("field_coef = list(name='alpha', grid=) matches legacy copy=", {
+test_that("field_coef = list(name='alpha', grid=) runs; single-block copy= errors", {
     sim <- .fc_simulate_joint_icar(N = 400, n_s = 40, sigma = 0.6,
                                     alpha_true = 1.0, seed = 99)
     adj <- .fc_chain_adj(sim$n_s)
@@ -179,30 +179,26 @@ test_that("field_coef = list(name='alpha', grid=) matches legacy copy=", {
         sigma_grid = c(0.3, 0.7, 1.4)
     )
 
-    # New API: declare the hyperparam coefficient on the arm itself.
+    # The copy coefficient is declared on the arm itself.
     arm_pos_new <- arm_pos
     arm_pos_new$field_coef <- list(name = "alpha", grid = alpha_grid)
     fit_new <- tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos_new),
         prior = prior
     )
+    expect_s3_class(fit_new, "tulpa_nested_laplace_joint")
+    expect_true("alpha" %in% colnames(fit_new$theta_grid))
 
-    # Legacy API: the `copy = list(arm, alpha_grid)` shim.
-    fit_legacy <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior,
-        copy = list(arm = "pos", alpha_grid = alpha_grid)
+    # The single-block `copy =` back-compat shim was removed (pre-release: no
+    # shims). Passing it now errors, pointing at the per-arm field_coef spec.
+    expect_error(
+        tulpa_nested_laplace_joint(
+            responses = list(occ = arm_occ, pos = arm_pos),
+            prior = prior,
+            copy = list(arm = "pos", alpha_grid = alpha_grid)
+        ),
+        "field_coef"
     )
-
-    # Same theta grids cell-by-cell (desugaring is byte-identical at the
-    # grid construction step).
-    expect_equal(fit_new$theta_grid, fit_legacy$theta_grid)
-    # Same log_marginal cell-by-cell (kernel sees an identical theta_grid
-    # and identical arms; tolerance is numerical noise).
-    expect_equal(fit_new$log_marginal, fit_legacy$log_marginal,
-                 tolerance = 1e-8)
-    # Same modes (Newton converges to the same MAP).
-    expect_equal(fit_new$modes, fit_legacy$modes, tolerance = 1e-8)
 })
 
 

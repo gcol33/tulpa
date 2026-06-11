@@ -17,7 +17,7 @@
 #' Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
 #' land under Phase 3.
 #'
-#' @section (sigma, alpha) parameterization (gcol33/tulpa#22):
+#' @section (sigma, alpha) parameterization:
 #' Each arm's linear predictor reads
 #' \deqn{\eta_{arm} = X_{arm} \beta_{arm} + \sigma_{arm} \cdot z_s,}
 #' where \eqn{z_s} is a unit-precision latent (ICAR(tau=1) for ICAR/BYM2,
@@ -67,12 +67,9 @@
 #'                     At most one arm may declare a hyperparam-driven
 #'                     axis in the first ship (the cover hurdle and
 #'                     occu_cover both need only one). Shared axes
-#'                     across multiple arms are deferred.
-#'                     The legacy `copy = list(arm, alpha_grid)` argument
-#'                     is a back-compat shim that desugars to
-#'                     `responses[[X]]$field_coef = list(name = "alpha",
-#'                     grid = G)` -- use one or the other, not both on
-#'                     the same arm.
+#' across multiple arms are deferred. A single-block
+#' copy coefficient is declared here, on the arm --
+#' not through a separate `copy` argument.
 #'
 #' @param prior A list describing the shared latent prior block. Required
 #'   field `type`. Backend-specific fields:
@@ -86,28 +83,15 @@
 #'   * **car_proper**: same as icar plus `rho_car_grid`
 #'     (default `c(0.5, 0.8, 0.95, 0.99)`).
 #'
-#' @param copy Optional list controlling the copy arm (back-compat shim;
-#'   prefer per-arm `responses[[X]]$field_coef`):
-#'   * `arm`        — name (or 1-based index) of the copy arm.
-#'   * `alpha_grid` — numeric grid for the copy coefficient \eqn{\alpha};
-#'                    the copy arm's field amplitude at each cell is
-#'                    \eqn{\alpha \cdot \sigma}. Default
-#'                    `c(0, exp(seq(log(0.1), log(3), length.out = 5)))`.
-#'   When `NULL` (default), no copy scaling is applied — all arms share
-#'   the donor `sigma_grid` axis and \eqn{\alpha = 1} implicitly.
-#'   `copy` is now a back-compat shim for the per-arm `field_coef` spec:
-#'   `copy = list(arm = X, alpha_grid = G)` desugars to
-#'   `responses[[X]]$field_coef = list(name = "alpha", grid = G)` at entry,
-#'   and the rest of the driver reads only `field_coef` thereafter
-#'   (gcol33/tulpa#32). The multi-block path still consumes `copy$block`
-#'   to pick the copy block; for single-block fits, leave `copy = NULL`
-#'   and put the spec on the arm. On the multi-block path `copy` may also
-#'   be an unnamed list of such specs — `list(list(arm, block, alpha_grid),
-#'   ...)` — coupling N distinct shared latent fields, each onto its own
-#'   arm with its own \eqn{\alpha} axis, integrated over the product outer
-#'   grid. Each spec must name a distinct block. The copy block may be any
-#'   of `icar` / `bym2` / `car_proper` / `rw1` / `rw2` / `ar1` / `iid`
-#'   (gcol33/tulpa#76); blocks with their own per-arm scaling (`lf`,
+#' @param copy Multi-block copy specification (multi-block `prior` only). For a
+#' single-block fit there is no `copy` argument: declare the copy coefficient
+#' on the arm via `responses[[X]]$field_coef = list(name = "alpha", grid = G)`.
+#' On the multi-block path `copy` is an unnamed list of specs --
+#' `list(list(arm, block, alpha_grid),...)` -- coupling N distinct shared
+#' latent fields, each onto its own arm with its own \eqn{\alpha} axis,
+#' integrated over the product outer grid. Each spec must name a distinct
+#' block. The copy block may be any of `icar` / `bym2` / `car_proper` / `rw1`
+#' / `rw2` / `ar1` / `iid`; blocks with their own per-arm scaling (`lf`,
 #'   `hsgp_mo`) or a precomputed precision (`tgmrf`) do not take a copy.
 #'
 #' @param phi_grid Optional list specifying per-arm dispersion axes on the
@@ -144,7 +128,7 @@
 #'     calibrated by `P(theta > U) = alpha`. Closed-form density
 #'     `lambda * exp(-lambda * theta)` with `lambda = -log(alpha)/U`.
 #'     Drop-in for the weakly-identified small-`n_pos` regime
-#'     (gcol33/tulpa#22). Pick `U` at the upper end of plausible values
+#'. Pick `U` at the upper end of plausible values
 #'     so the prior shrinks the tail without biasing the modal cell when
 #'     the data identifies it: default-friendly choice on \eqn{\sigma} is
 #'     `c(U = 1.0, alpha = 0.01)` (donor amplitude); on the dimensionless
@@ -173,7 +157,7 @@
 #'   `tulpa_register_cell_coupling` C callable; the R driver validates the
 #'   name against the registry and the inner Newton routes the per-cell
 #'   contribution through `evaluate_cell()` when the spec couples at least
-#'   one arm. (gcol33/tulpa#32 Change 2b.)
+#' one arm.
 #'
 #' @param control Optional list of perf/numerical tuning knobs (statistical
 #'   arguments stay top-level), following the `control` convention of
@@ -486,12 +470,6 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`prior` must be a list with a `type` field, or a list of block specs.",
              call. = FALSE)
     }
-    # Back-compat shim: `copy = list(arm = X, alpha_grid = G)` desugars to
-    # `responses[[X]]$field_coef = list(name = "alpha", grid = G)`. After this
-    # rewrite, the rest of the driver only reads `responses[[k]]$field_coef`.
-    # The legacy `copy` argument is still echoed onto the result for callers
-    # that read it back.
-    responses <- .desugar_copy_to_field_coef(responses, copy)
     # Parse user-specified regularizing hyperpriors on (sigma, alpha) once,
     # at the entry point. Validation errors raised here surface to the user
     # without going through the multi-block / single-block fork.
@@ -534,6 +512,13 @@ tulpa_nested_laplace_joint <- function(responses,
             timer = tm
         ))
     }
+    if (!is.null(copy)) {
+        stop("`copy` is not used on the single-block ",
+             "tulpa_nested_laplace_joint() path. Declare the copy coefficient on ",
+             "the arm itself: field_coef = list(name = \"alpha\", grid = <grid>). ",
+             "(`copy` remains a multi-block argument -- a list of block specs, ",
+             "each naming a distinct copy block.)", call. = FALSE)
+    }
     if (is.null(prior$type)) {
         stop("`prior` must be a list with a `type` field, or a list of block specs.",
              call. = FALSE)
@@ -555,7 +540,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # `.resolve_copy` reads the per-arm `field_coef_axis` / `field_coef_const`
     # populated by `.normalise_joint_arm`; pass the normalised `arms` rather
     # than the raw `responses` list.
-    cp <- .resolve_copy(copy, arms, prior, type)
+    cp <- .resolve_copy(arms, prior, type)
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)
@@ -725,8 +710,9 @@ tulpa_nested_laplace_joint <- function(responses,
                                          k_samples  = k_samples)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
-    class(res) <- c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")
-    res
+    .finalize_fit(res, backend = "nested_laplace_joint",
+                  extra_class = c("tulpa_nested_laplace_joint",
+                                  "tulpa_nested_laplace", "list"))
 }
 
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid

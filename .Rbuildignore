@@ -19,6 +19,7 @@
 ^dev_scripts$
 ^experimental$
 ^.*\.tar\.gz$
+^.*\.Rcheck$
 ^src/GRADIENT_COVERAGE\.md$
 ^src/.*\.gch$
 ^tgmrf\.html$

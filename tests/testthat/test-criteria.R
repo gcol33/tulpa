@@ -96,14 +96,61 @@ test_that("randomized PIT interpolates between the CDF limits", {
   expect_true(all(pit <= colMeans(Fu) + 1e-9))
 })
 
-test_that("waic.tulpa_fit / loo.tulpa_fit route through tulpa_criteria", {
+test_that("compare_models computes native WAIC / LOO from a fit's pointwise log-lik", {
   skip_if_not_installed("loo")
-  d <- make_loglik()
-  fit <- structure(list(draws = list(log_lik = d$ll)), class = "tulpa_fit")
-  w <- waic.tulpa_fit(fit)
-  expect_s3_class(w, "waic")
-  expect_equal(w$estimates["waic", "Estimate"],
-               loo::waic(d$ll)$estimates["waic", "Estimate"], tolerance = 1e-8)
-  l <- loo.tulpa_fit(fit)
-  expect_s3_class(l, "psis_loo")
+  d1 <- make_loglik(seed = 1L)
+  d2 <- make_loglik(seed = 2L)
+  d2$ll <- d2$ll + 0.1                              # a slightly better fit
+  fit1 <- structure(list(draws = list(log_lik = d1$ll)), class = "tulpa_fit")
+  fit2 <- structure(list(draws = list(log_lik = d2$ll)), class = "tulpa_fit")
+
+  cmp_loo <- compare_models(a = fit1, b = fit2, criterion = "loo")
+  expect_equal(nrow(cmp_loo), 2L)
+  expect_true(all(c("elpd", "se_elpd", "ic", "delta", "weight") %in% names(cmp_loo)))
+  expect_equal(cmp_loo$delta[1], 0)                 # best model first, delta 0
+  # elpd matches loo::loo on the same pointwise matrix.
+  el <- setNames(cmp_loo$elpd, cmp_loo$model)
+  expect_equal(el[["a"]], suppressWarnings(loo::loo(d1$ll, r_eff = NA))$
+                 estimates["elpd_loo", "Estimate"], tolerance = 1e-8)
+
+  cmp_waic <- compare_models(a = fit1, b = fit2, criterion = "waic")
+  ew <- setNames(cmp_waic$elpd, cmp_waic$model)
+  expect_equal(ew[["a"]], loo::waic(d1$ll)$estimates["elpd_waic", "Estimate"],
+               tolerance = 1e-8)
+})
+
+test_that("modelAverage stacking weights reproduce loo::stacking_weights", {
+  skip_if_not_installed("loo")
+  d1 <- make_loglik(seed = 1L); d2 <- make_loglik(seed = 2L)
+  fit1 <- structure(list(draws = list(log_lik = d1$ll), fitted = rep(0, d1$N)),
+                    class = "tulpa_fit")
+  fit2 <- structure(list(draws = list(log_lik = d2$ll), fitted = rep(1, d2$N)),
+                    class = "tulpa_fit")
+  fitted_fn <- function(f) f$fitted
+
+  avg <- modelAverage(a = fit1, b = fit2, weights = "loo", fitted_fn = fitted_fn)
+  expect_equal(sum(avg$weights), 1, tolerance = 1e-6)
+
+  # Cross-check the stacking weights against loo on the same pointwise elpd.
+  lpd <- cbind(
+    suppressWarnings(loo::loo(d1$ll, r_eff = NA))$pointwise[, "elpd_loo"],
+    suppressWarnings(loo::loo(d2$ll, r_eff = NA))$pointwise[, "elpd_loo"])
+  ref <- as.numeric(loo::stacking_weights(lpd))
+  expect_equal(unname(avg$weights), ref, tolerance = 1e-3)
+})
+
+test_that("modelAverage pseudo-BMA weights reproduce loo::pseudobma_weights", {
+  skip_if_not_installed("loo")
+  d1 <- make_loglik(seed = 1L); d2 <- make_loglik(seed = 2L)
+  fit1 <- structure(list(draws = list(log_lik = d1$ll), fitted = rep(0, d1$N)),
+                    class = "tulpa_fit")
+  fit2 <- structure(list(draws = list(log_lik = d2$ll), fitted = rep(1, d2$N)),
+                    class = "tulpa_fit")
+  avg <- modelAverage(a = fit1, b = fit2, weights = "pbma",
+                      fitted_fn = function(f) f$fitted)
+  lpd <- cbind(
+    suppressWarnings(loo::loo(d1$ll, r_eff = NA))$pointwise[, "elpd_loo"],
+    suppressWarnings(loo::loo(d2$ll, r_eff = NA))$pointwise[, "elpd_loo"])
+  ref <- as.numeric(loo::pseudobma_weights(lpd, BB = FALSE))
+  expect_equal(unname(avg$weights), ref, tolerance = 1e-6)
 })

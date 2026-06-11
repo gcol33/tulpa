@@ -138,6 +138,22 @@ on the dedicated nested-Laplace / SPDE / Polya-Gamma paths.
 }
 }
 
+\examples{
+\donttest{
+set.seed(1)
+n <- 200L
+g <- sample(letters[1:12], n, replace = TRUE)
+d <- data.frame(
+  y = rbinom(n, 1, plogis(-0.3 + 0.6 * rnorm(n))),
+  x = rnorm(n),
+  g = g
+)
+# Random-intercept logistic GLMM, Laplace tier.
+fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
+coef(fit)
+summary(fit)
+}
+}
 \seealso{
 \code{\link[=inference_mode_info]{inference_mode_info()}}, \code{\link[=tulpa_laplace]{tulpa_laplace()}}, \code{\link[=mala]{mala()}}, \code{\link[=pathfinder]{pathfinder()}}
 }

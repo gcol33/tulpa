@@ -81,7 +81,7 @@ test_that("correlated random slopes: logpost path works, Laplace path integrates
                     "Sigma_11", "Sigma_12", "Sigma_22"))
   # the exact debias is reachable via control$re_cov
   fit3 <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",
-                control = list(re_cov = "gibbs", n_iter = 400L, n_burnin = 200L,
+                control = list(re_cov = "gibbs", n_iter = 400L, warmup = 200L,
                                seed = 1L))
   expect_equal(fit3$backend, "re_cov_gibbs")
 })

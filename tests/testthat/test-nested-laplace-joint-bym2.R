@@ -95,9 +95,12 @@ test_that("joint BYM2 with alpha = 0 leaves beta_occ unchanged from single-arm",
     )
 
     fit_joint <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior,
-        copy = list(arm = "pos", alpha_grid = 0)
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos,
+                             list(field_coef = list(name = "alpha", grid = 0)))
+        ),
+        prior = prior
     )
     expect_s3_class(fit_joint, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit_joint$log_marginal)))
@@ -158,10 +161,12 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
     )
 
     fit <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior,
-        copy = list(arm = "pos",
-                    alpha_grid = c(0, 0.5, 1.0, 1.5))
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(
+                field_coef = list(name = "alpha", grid = c(0, 0.5, 1.0, 1.5))))
+        ),
+        prior = prior
     )
     expect_s3_class(fit, "tulpa_nested_laplace_joint")
     expect_true(all(is.finite(fit$log_marginal)))
@@ -227,9 +232,12 @@ test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true 
 
     alpha_grid <- c(0, 0.5, 1.0, 1.5)
     fit <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior,
-        copy = list(arm = "pos", alpha_grid = alpha_grid)
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(
+                field_coef = list(name = "alpha", grid = alpha_grid)))
+        ),
+        prior = prior
     )
 
     # sigma pinned at 0.6, alpha_true = 1. The centering-bug regression is

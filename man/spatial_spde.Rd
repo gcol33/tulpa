@@ -38,7 +38,7 @@ or \code{c(inner, outer)}.}
 rational SPDE approximation with BRASIL best-rational coefficients
 (Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter
 \code{fit_spde()} (single-point and nested over range/sigma). NUTS and analytic
-marginal SEs remain integer-only (gcol33/tulpa#71). Default 1.}
+marginal SEs remain integer-only. Default 1.}
 
 \item{prior_range}{Prior for the spatial range. A numeric vector \code{c(U, alpha)}
 where P(range < U) = alpha. Default \code{c(0.5, 0.5)}.}

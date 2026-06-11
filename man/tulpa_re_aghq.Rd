@@ -156,3 +156,11 @@ Scope: one shared grouping factor across all RE terms (the per-group integral
 factorizes). The total RE dimension per group should be small (the quadrature
 grid is \code{n_quad^dim}).
 }
+\references{
+Pinheiro & Bates (1995). Approximations to the log-likelihood function in
+the nonlinear mixed-effects model. \emph{Journal of Computational and
+Graphical Statistics} 4(1):12-35.
+Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
+based on vines and extended onion method. \emph{Journal of Multivariate
+Analysis} 100(9):1989-2001.
+}

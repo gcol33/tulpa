@@ -78,7 +78,7 @@ each one extra batched SPDE marginal evaluation.}
 \item{n_threads}{OpenMP threads. Default 1.}
 
 \item{checkpoint}{Optional grid-cell checkpoint/resume spec
-(gcol33/tulpa#50), \code{list(path = , resume = )}. Each solved \verb{(range, sigma)}
+, \code{list(path =, resume =)}. Each solved \verb{(range, sigma)}
 cell is appended to \code{path}; a \code{resume = TRUE} run loads the finished cells
 and re-solves only the rest, so a killed or rebooted fit resumes instead of
 restarting. \code{resume = FALSE} starts a fresh file. Default \code{NULL} (off).}
@@ -102,4 +102,12 @@ importance-sampling ESS (\code{NA} when \code{diagnose_k = FALSE})
 Fits a GLM with a Matérn spatial field via the SPDE approach.
 Uses CHOLMOD sparse solver with optional nested Laplace for
 hyperparameter integration.
+}
+\references{
+Lindgren, Rue & Lindstrom (2011). An explicit link between Gaussian fields
+and Gaussian Markov random fields: the stochastic partial differential
+equation approach. \emph{JRSS-B} 73(4):423-498.
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+\emph{JRSS-B} 71(2):319-392.
 }

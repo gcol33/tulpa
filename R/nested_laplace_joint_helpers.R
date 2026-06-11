@@ -298,54 +298,6 @@
          "character name, or `list(name = , grid = )`.", call. = FALSE)
 }
 
-# Apply the back-compat `copy = list(arm, alpha_grid)` shim by rewriting
-# `responses[[X]]$field_coef = list(name = "alpha", grid = alpha_grid)`
-# before any further processing. Returns the (possibly modified) responses
-# list. Errors when both `copy` and an explicit `field_coef` on the same
-# arm are present (ambiguous).
-#
-# Non-destructive on `copy`: the legacy `copy` argument is still echoed onto
-# the result for callers that read it back, and the multi-block path's
-# `.resolve_copy_multi()` continues to read `copy$arm` / `copy$block` for
-# block targeting. The desugaring only ensures the chosen arm carries the
-# matching `field_coef` so the kernel boundary reads a single source of truth.
-.desugar_copy_to_field_coef <- function(responses, copy) {
-    if (is.null(copy)) return(responses)
-    # A list-of-specs copy (multi-block: N coupled fields) carries its alpha
-    # axes on each copy block, not via per-arm field_coef. The per-block
-    # resolver (`.resolve_copy_multi`) reads it directly; no desugaring.
-    if (.is_copy_spec_list(copy)) return(responses)
-    arm_id <- copy$arm
-    if (is.null(arm_id)) {
-        stop("`copy$arm` must be a name or 1-based index.", call. = FALSE)
-    }
-    nm <- names(responses)
-    if (is.character(arm_id)) {
-        if (is.null(nm) || !arm_id %in% nm) {
-            stop("`copy$arm` = '", arm_id, "' not found in names(responses).",
-                 call. = FALSE)
-        }
-        k <- match(arm_id, nm)
-    } else {
-        k <- as.integer(arm_id)
-        if (k < 1L || k > length(responses)) {
-            stop("`copy$arm` index out of range.", call. = FALSE)
-        }
-    }
-    if (!is.null(responses[[k]]$field_coef)) {
-        stop("Arm ", k, ": both `copy` and `field_coef` are set. `copy` is a ",
-             "back-compat shim for `field_coef = list(name = \"alpha\", grid = )`; ",
-             "use only one.", call. = FALSE)
-    }
-    alpha_grid <- if (!is.null(copy$alpha_grid)) {
-        as.numeric(copy$alpha_grid)
-    } else {
-        c(0, exp(seq(log(0.1), log(3), length.out = 5)))
-    }
-    responses[[k]]$field_coef <- list(name = "alpha", grid = alpha_grid)
-    responses
-}
-
 # Resolve the per-arm field_coef structure on a normalised arms list into
 # the kernel-facing pieces used by the joint dispatcher:
 #   * has_axis        logical -- is there any hyperparam axis declared?
@@ -394,22 +346,20 @@
 }
 
 # Decide which arm (if any) is the copy arm and what the alpha grid is.
-# Single-block path; `copy$alpha_grid` is the outer-grid axis on the copy
-# coefficient.
+# Single-block path: the copy coefficient's outer-grid axis lives on the arm
+# that declares it.
 #
 # Source of truth: `arms` already carries the resolved per-arm `field_coef_axis`
-# / `field_coef_const` after `.normalise_joint_arm` + `.desugar_copy_to_field_coef`.
-# When any arm declared a hyperparam axis, the resolved axis arm + grid are
-# returned as the kernel-facing copy spec. The legacy `copy` argument is no
-# longer consulted here -- the entry-point shim rewrote it onto the responses
-# list before this is reached.
+# / `field_coef_const` from `.normalise_joint_arm`. When any arm declared a
+# hyperparam axis, the resolved axis arm + grid are returned as the kernel-facing
+# copy spec.
 #
 # `field_coef_const` carries the per-arm constant multipliers (default 1 for
 # every arm). Arms with `field_coef = 0` get const 0; arms with `field_coef =
 # c` get c. These multipliers ride alongside any hyperparam axis on the same
 # arm (axis multiplied by const), so they are returned to the caller and
 # threaded down to the kernel via `arms[k].field_coef` (see the C++ side).
-.resolve_copy <- function(copy, responses, prior, type) {
+.resolve_copy <- function(responses, prior, type) {
     n_arms <- length(responses)
     consts <- vapply(responses, function(a) {
         if (is.null(a$field_coef_const)) 1.0 else as.numeric(a$field_coef_const)

@@ -63,6 +63,6 @@ Eddy (1979).
 }
 \seealso{
 \code{\link[=tulpa_psis]{tulpa_psis()}} for the smoothing core, \code{\link[=tulpa_pit]{tulpa_pit()}} for the
-probability-integral-transform companion, \code{\link[=tulpa_compare]{tulpa_compare()}} for
+probability-integral-transform companion, \code{\link[=compare_models]{compare_models()}} for
 model comparison.
 }

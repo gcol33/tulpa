@@ -62,6 +62,14 @@
     )
 }
 
+# As .jpk_arms but declares the copy coefficient on the positive arm via its
+# per-arm field_coef axis (the single-block copy spec).
+.jpk_arms_alpha <- function(sim, grid) {
+    a <- .jpk_arms(sim)
+    a$pos$field_coef <- list(name = "alpha", grid = grid)
+    a
+}
+
 # --------------------------------------------------------------------------- #
 # (1) Recovery direction through the joint transform driver                   #
 # --------------------------------------------------------------------------- #
@@ -130,8 +138,7 @@ test_that("joint ICAR copy fit reports a finite outer Pareto-k-hat", {
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.7, 1.1))
     fit <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior,
-        copy = list(arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5)),
+        responses = .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5)), prior = prior,
         control = list(k_samples = 150L))
     # (sigma -> log, alpha -> identity): both transformable, so k-hat is a
     # finite data-dependent reading. The value is not asserted (a small-n
@@ -154,8 +161,7 @@ test_that("joint BYM2 copy fit reports a finite k-hat (log + logit + identity)",
                   n_neighbors = adj$n_neighbors, scale_factor = 1.0,
                   sigma_grid = c(0.4, 0.8), rho_grid = c(0.3, 0.7))
     fit <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior,
-        copy = list(arm = "pos", alpha_grid = c(0.5, 1.0, 1.5)),
+        responses = .jpk_arms_alpha(sim, c(0.5, 1.0, 1.5)), prior = prior,
         control = list(k_samples = 150L))
     # Exercises all three transforms together: sigma (log), rho (logit on the
     # BYM2 mixing weight), alpha (identity).
@@ -178,8 +184,7 @@ test_that("joint CAR_proper copy fit declines k-hat to quad-ESS", {
                   n_neighbors = adj$n_neighbors,
                   sigma_grid = c(0.5, 1.0), rho_car_grid = c(0.5, 0.9))
     fit <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior,
-        copy = list(arm = "pos", alpha_grid = c(0.5, 1.0)),
+        responses = .jpk_arms_alpha(sim, c(0.5, 1.0)), prior = prior,
         control = list(k_samples = 100L))
     # rho_car support is the adjacency eigenvalue interval -> declined, not
     # guessed. The quad-ESS fallback (weights) is still available downstream.
@@ -309,8 +314,7 @@ test_that("diagnose_k does not perturb the global RNG state", {
     set.seed(123)
     s0 <- .Random.seed
     invisible(tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior,
-        copy = list(arm = "pos", alpha_grid = c(0.5, 1.0, 1.5)),
+        responses = .jpk_arms_alpha(sim, c(0.5, 1.0, 1.5)), prior = prior,
         control = list(diagnose_k = TRUE, k_samples = 100L)))
     expect_identical(.Random.seed, s0)
 })

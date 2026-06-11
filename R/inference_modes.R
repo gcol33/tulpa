@@ -469,17 +469,58 @@ tulpa_dispatch <- function(mode,
   if (is.list(fit)) {
     fit$inference_mode <- fit$inference_mode %||% sel$mode
     fit$inference_tier <- fit$inference_tier %||% sel$tier
-    fit$backend <- fit$backend %||% sel$backend
     fit$selection_reason <- fit$selection_reason %||% sel$reason
-    fit$draws_kind <- fit$draws_kind %||% BACKEND_REGISTRY[[sel$backend]]$emits
-    # Guarantee a consistent return type: lower-level fitters (e.g.
-    # tulpa_laplace) return a bare result list for model packages to wrap;
-    # through dispatch the inference contract -- including the class -- must be
-    # visible, so tag any unclassed result as a tulpa_fit.
-    if (!inherits(fit, "tulpa_fit")) {
-      class(fit) <- c(oldClass(fit), "tulpa_fit")
-    }
+    fit <- .finalize_fit(fit, backend = sel$backend)
   }
+  fit
+}
+
+
+#' Attach the standard `tulpa_fit` contract to a fitter's result.
+#'
+#' Every exported front-door fitter routes its return value through this helper,
+#' so a directly-called fitter and a `tulpa()`-dispatched one yield the same
+#' enriched object: the `tulpa_fit` class (so the generic S3 methods --
+#' `coef` / `summary` / `vcov` / `confint` / `tidy` / `glance` / `ranef` --
+#' dispatch), the fixed-effect layout (`n_fixed` / `fixed_names` / `param_names`,
+#' which the `.fit_fixed_table` summary path reads), and an explicit
+#' posterior-provenance tag (`draws_kind`) the chain-vs-iid diagnostic gate
+#' (`.tulpa_draws_kind()`) reads to decide whether Rhat/ESS apply. Each field is
+#' filled only when the fitter did not already set it, so a fitter that knows
+#' better wins and the helper is idempotent under `tulpa_dispatch()`.
+#'
+#' `draws_kind` precedence is: a value already on the fit, then the explicit
+#' `draws_kind` argument, then the registry `emits` property for `backend`.
+#' Backends that are not registry keys (the `tgmrf_*` fitters) must pass
+#' `draws_kind` explicitly, since their `emits` cannot be looked up.
+#'
+#' @param fit The fitter result (a list); returned unchanged if not a list.
+#' @param backend Backend key (sets `$backend`; supplies the default
+#'   `draws_kind` via the registry `emits` property when it is a registry key).
+#' @param draws_kind Explicit `"chain"` / `"iid"` / `"point"` tag; used when the
+#'   backend is absent from `BACKEND_REGISTRY` or to override the registry.
+#' @param n_fixed,fixed_names,param_names Fixed-effect layout, each filled only
+#'   when the fitter left it unset.
+#' @param extra_class Subclass(es) to prepend before `tulpa_fit`.
+#' @return The enriched fit, classed `c(extra_class, ..., "tulpa_fit")`.
+#' @keywords internal
+.finalize_fit <- function(fit, backend = NULL, draws_kind = NULL,
+                          n_fixed = NULL, fixed_names = NULL,
+                          param_names = NULL, extra_class = NULL) {
+  if (!is.list(fit)) return(fit)
+
+  if (!is.null(backend)) fit$backend <- fit$backend %||% backend
+  reg <- if (!is.null(fit$backend)) BACKEND_REGISTRY[[fit$backend]] else NULL
+  fit$draws_kind <- fit$draws_kind %||% draws_kind %||% reg$emits
+
+  if (!is.null(n_fixed))     fit$n_fixed     <- fit$n_fixed     %||% n_fixed
+  if (!is.null(fixed_names)) fit$fixed_names <- fit$fixed_names %||% fixed_names
+  if (!is.null(param_names)) fit$param_names <- fit$param_names %||% param_names
+
+  cls <- oldClass(fit)
+  if (!is.null(extra_class)) cls <- c(setdiff(extra_class, cls), cls)
+  if (!("tulpa_fit" %in% cls)) cls <- c(cls, "tulpa_fit")
+  class(fit) <- cls
   fit
 }
 

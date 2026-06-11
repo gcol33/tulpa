@@ -410,7 +410,7 @@
       # re_cov_gibbs: exact Metropolis-within-Gibbs debias.
       return(c(common, list(
         n_iter          = control$n_iter %||% 2000L,
-        n_burnin        = control$n_burnin %||% control$warmup %||% 1000L,
+        warmup          = control$warmup %||% 1000L,
         prior_df        = control$prior_df,
         prior_scale     = control$prior_scale,
         beta_prior_mean = beta_prior$mean %||% 0,
@@ -503,11 +503,55 @@
         n_groups = n_groups,
         family = family,
         spatial = spatial,
-        iter = control$iter %||% control$n_iter %||% 2000L,
+        n_iter = control$n_iter %||% 2000L,
         warmup = control$warmup %||% 1000L,
         prior_beta_sd = beta_prior$sd %||% 10.0,
         prior_sigma_scale = control$prior_sigma_scale %||% 2.5,
         verbose = FALSE
+      ))
+    }
+    if (backend == "agq") {
+      # Adaptive Gauss-Hermite quadrature: one intercept-only random-effect term,
+      # families binomial / poisson / gaussian (the lme4::glmer(nAGQ=) scope).
+      # n_quad = 1 is the joint Laplace; higher quadrature reduces the
+      # small-cluster variance attenuation. agq_fit() optimizes the marginal
+      # likelihood and estimates the RE sd, so no sigma_re is conditioned on.
+      re <- bundle$re_terms %||% list()
+      if (length(re) != 1L || (re[[1]]$n_coefs %||% 1L) != 1L ||
+          !isTRUE(re[[1]]$has_intercept)) {
+        stop("AGQ (mode = 'agq') supports exactly one random-intercept term ",
+             "(a single `(1 | g)`). For random slopes or multiple terms use ",
+             "mode = 'laplace' (RE-covariance integration), or call agq_fit() ",
+             "directly.", call. = FALSE)
+      }
+      if (!family %in% c("binomial", "poisson", "gaussian")) {
+        stop(sprintf(paste0(
+          "AGQ supports family 'binomial', 'poisson', or 'gaussian'; got '%s'. ",
+          "Use mode = 'laplace' or a sampler for other families."), family),
+          call. = FALSE)
+      }
+      if (!is.null(beta_prior)) {
+        stop("`beta_prior` is not supported on the AGQ path; agq_fit() is a ",
+             "marginal-likelihood fit with no fixed-effect prior. Drop ",
+             "`beta_prior`, or use mode = 'laplace' for a Gaussian prior.",
+             call. = FALSE)
+      }
+      # phi is the residual variance for gaussian; sigma_eps is its sd (binomial
+      # / poisson ignore it). control$sigma_eps overrides.
+      return(list(
+        y          = bundle$y,
+        X          = bundle$X,
+        group      = as.integer(re[[1]]$group_idx),
+        n_groups   = re[[1]]$n_groups,
+        family     = family,
+        n_trials   = n_trials,
+        sigma_eps  = control$sigma_eps %||% (if (!is.null(phi)) sqrt(phi) else 1.0),
+        n_quad     = control$n_quad %||% 7L,
+        beta_init  = control$beta_init,
+        sigma_init = control$sigma_init %||% 1.0,
+        max_iter   = control$max_iter %||% 200L,
+        tol        = control$tol %||% 1e-6,
+        verbose    = control$verbose %||% FALSE
       ))
     }
     stop(sprintf(
@@ -771,6 +815,21 @@
 #'   `formula`, and `family`.
 #'
 #' @seealso [inference_mode_info()], [tulpa_laplace()], [mala()], [pathfinder()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' n <- 200L
+#' g <- sample(letters[1:12], n, replace = TRUE)
+#' d <- data.frame(
+#'   y = rbinom(n, 1, plogis(-0.3 + 0.6 * rnorm(n))),
+#'   x = rnorm(n),
+#'   g = g
+#' )
+#' # Random-intercept logistic GLMM, Laplace tier.
+#' fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
+#' coef(fit)
+#' summary(fit)
+#' }
 #' @export
 tulpa <- function(formula, data,
                   family = "gaussian",
@@ -787,9 +846,11 @@ tulpa <- function(formula, data,
     stop(sprintf("Unknown family '%s'. Supported: %s.",
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)
   }
+  .validate_family_phi(family, phi)
 
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
+  .validate_family_counts(family, bundle$y)
   K <- length(bundle$re_terms %||% list())
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
@@ -1070,11 +1131,11 @@ tulpa <- function(formula, data,
   assert_backend_reachable(sel$backend)
 
   # Conditional backends (everything except the sigma-sampling Gibbs, the
-  # Sigma-integrating re_cov backends, and the ModelData samplers that draw the
-  # RE sd jointly) need one RE sd per term to condition on; resolve/recycle it
-  # after the backend is known so the others do not emit a misleading
-  # "conditioning" message.
-  if (K > 0L && !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs") &&
+  # Sigma-integrating re_cov backends, the marginal-likelihood AGQ fit that
+  # estimates the RE sd, and the ModelData samplers that draw the RE sd jointly)
+  # need one RE sd per term to condition on; resolve/recycle it after the backend
+  # is known so the others do not emit a misleading "conditioning" message.
+  if (K > 0L && !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "agq") &&
       BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)

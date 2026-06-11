@@ -82,14 +82,14 @@ test_that("tulpa_tgmrf_nuts_joint runs end-to-end on a periodic-AR1 sim", {
   X <- matrix(1, nrow = n, ncol = 1L)
   y <- rpois(n, exp(0.4 + z))
 
-  fit <- tulpa_tgmrf_nuts_joint(
+  fit <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "nuts_joint",
     n_iter = 150L, warmup = 75L, max_depth = 5L,
     seed = 42L
   )
 
-  expect_s3_class(fit, "tulpa_tgmrf_nuts_joint")
+  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws_theta), 2L)
   expect_equal(colnames(fit$draws_theta), c("log_sigma", "atanh_rho"))
@@ -142,15 +142,15 @@ test_that("joint NUTS and outer-theta NUTS agree on theta means within MC error"
   X <- matrix(1, nrow = n, ncol = 1L)
   y <- rpois(n, exp(0.3 + z))
 
-  fit_outer <- tulpa_tgmrf_nuts(
+  fit_outer <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk_r,
-    family = "poisson",
+    family = "poisson", mode = "nuts",
     n_iter = 200L, warmup = 100L, max_depth = 4L
   )
 
-  fit_joint <- tulpa_tgmrf_nuts_joint(
+  fit_joint <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk_cpp,
-    family = "poisson",
+    family = "poisson", mode = "nuts_joint",
     n_iter = 200L, warmup = 100L, max_depth = 5L,
     seed = 1234L
   )
@@ -175,9 +175,9 @@ test_that("tulpa_tgmrf_nuts_joint refuses R-closure tgmrf blocks", {
   y <- rpois(n, exp(0.2))
 
   expect_error(
-    tulpa_tgmrf_nuts_joint(
+    tulpa_tgmrf(
       y = y, n_trials = rep(1L, n), X = X, block = blk_r,
-      family = "poisson",
+      family = "poisson", mode = "nuts_joint",
       n_iter = 10L, warmup = 5L
     ),
     regexp = "tgmrf_cpp"

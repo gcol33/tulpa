@@ -43,7 +43,7 @@ test_that("tulpa_re_cov_gibbs returns a well-formed posterior", {
   re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
   res <- tulpa_re_cov_gibbs(d$y, rep(1L, d$N), d$X, re_term,
                             family = "binomial",
-                            n_iter = 1500L, n_burnin = 800L, seed = 11L)
+                            n_iter = 1500L, warmup = 800L, seed = 11L)
 
   expect_equal(res$n_kept, 1500L)
   expect_length(res$Sigma_draws, 1500L)
@@ -82,7 +82,7 @@ test_that("Gibbs debias recovers Sigma with covering intervals", {
     re_term <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
     res <- tulpa_re_cov_gibbs(d$y, rep(1L, d$N), d$X, re_term,
                               family = "binomial",
-                              n_iter = 1500L, n_burnin = 800L,
+                              n_iter = 1500L, warmup = 800L,
                               seed = 500L + s)
     for (nm in names(truth)) {
       row <- res$posterior[res$posterior$parameter == nm, ]
@@ -116,7 +116,7 @@ test_that("Gibbs samples a diagonal (uncorrelated) block exactly", {
 
   rt <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = Z, correlated = FALSE)
   res <- tulpa_re_cov_gibbs(y, rep(1L, N), X, rt, family = "binomial",
-                            n_iter = 1500L, n_burnin = 800L, seed = 12L)
+                            n_iter = 1500L, warmup = 800L, seed = 12L)
 
   # diagonal: no correlation parameter; off-diagonal Sigma identically zero
   expect_setequal(res$posterior$parameter,
@@ -151,7 +151,7 @@ test_that("Gibbs samples several terms jointly", {
     list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h")
   )
   res <- tulpa_re_cov_gibbs(y, rep(1L, N), X, re_terms, family = "binomial",
-                            n_iter = 1000L, n_burnin = 600L, seed = 13L)
+                            n_iter = 1000L, warmup = 600L, seed = 13L)
 
   expect_equal(res$n_blocks, 2L)
   expect_setequal(res$posterior$parameter,

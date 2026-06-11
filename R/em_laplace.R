@@ -338,7 +338,7 @@
 #' independently via [tulpa_laplace()]; the engine reads `family` and
 #' `offset` per block so heterogeneous-family mixtures (e.g. a binomial
 #' zero submodel + poisson positive submodel for a hurdle model) work
-#' without engine changes. See `gcol33/tulpa#3`.
+#' without engine changes.
 #'
 #' @param e_step Callback: `function(fits, ...) -> list(weights = numeric, ...)`.
 #'   Called once per EM iteration with the current per-submodel
@@ -394,7 +394,7 @@
 #'   `fits[[k]]$phi`). Use this to update non-eta parameters that fall out of
 #'   the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
 #'   Gaussian sigma). When `NULL` (default), behavior is unchanged. See
-#'   `gcol33/tulpa#4`.
+#'.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, applied to
 #'   every block fit via [tulpa_laplace()] (i.e. blocks without a `prior`
 #'   field). `NULL` (default) keeps the weak built-in prior. Otherwise a list

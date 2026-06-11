@@ -33,13 +33,13 @@ test_that("tulpa_tgmrf_imh produces finite draws + healthy acceptance", {
   y <- rpois(n, exp(0.2 + z))
   blk <- make_ar1_tgmrf_imh(n)
 
-  fit <- tulpa_tgmrf_imh(
+  fit <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "imh",
     n_iter = 400L, warmup = 200L,
     pilot_axis_points = 5L
   )
-  expect_s3_class(fit, "tulpa_tgmrf_imh")
+  expect_s3_class(fit, "tulpa_tgmrf")
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(ncol(fit$draws), 2L)
   expect_equal(colnames(fit$draws), c("log_tau", "atanh_rho"))
@@ -70,9 +70,9 @@ test_that("tulpa_tgmrf_imh posterior means agree with grid Laplace within MC err
     prior = blk, family = "poisson",
     control = list(max_iter = 80L, tol = 1e-8)
   )
-  fit <- tulpa_tgmrf_imh(
+  fit <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "imh",
     n_iter = 1500L, warmup = 500L,
     pilot_axis_points = 5L
   )

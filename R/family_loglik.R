@@ -129,6 +129,69 @@
 family_names <- function() names(.FAMILY_OPS)
 
 
+# Families carrying a dispersion / precision parameter `phi` that enters the
+# likelihood, score, and working weight. A non-positive `phi` makes the variance
+# / log-density singular (gaussian: r^2 / (2 phi^2); gamma: lgamma(phi)), so it
+# must be validated at the front door rather than flowing into a NaN log-lik
+# (gcol33/tulpa#104). The `*_<link>` suffix forms (e.g. "gamma_inverse") share
+# the base family's dispersion, so membership is tested on the prefix.
+.PHI_FAMILIES <- c("gaussian", "gamma", "neg_binomial_2", "negative_binomial",
+                   "inverse_gaussian", "beta")
+
+# Count families whose likelihood is defined only at non-negative integer `y`.
+# The C++ kernels cast the response to `int` (laplace_family_link.h /
+# laplace_likelihoods.h), silently flooring a continuous response into a biased
+# log-likelihood, so a non-integer `y` is rejected at the front door.
+.COUNT_FAMILIES <- c("poisson", "binomial", "neg_binomial_2", "negative_binomial")
+
+# Base family of a `family` / `family_<link>` code (the part before the link
+# suffix), so a custom link form validates against the same rules.
+.family_base <- function(family) {
+  if (!is.character(family) || length(family) != 1L) return(NA_character_)
+  for (fam in unique(c(.PHI_FAMILIES, .COUNT_FAMILIES, family_names()))) {
+    if (identical(family, fam) ||
+        startsWith(family, paste0(fam, "_"))) return(fam)
+  }
+  family
+}
+
+#' Validate the dispersion parameter `phi` for a family.
+#'
+#' Errors when `family` carries a dispersion / precision parameter and `phi` is
+#' not a positive finite scalar. A no-op for families without dispersion
+#' (binomial, poisson) and for unknown / model-package families. Shared by the
+#' [tulpa()] front door and [tulpa_laplace()] so the rule lives in one place
+#'.
+#' @keywords internal
+.validate_family_phi <- function(family, phi) {
+  if (!(.family_base(family) %in% .PHI_FAMILIES)) return(invisible(TRUE))
+  if (!is.numeric(phi) || length(phi) != 1L || !is.finite(phi) || phi <= 0) {
+    stop(sprintf("`phi` must be a positive finite scalar for family = '%s'.",
+                 family), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+#' Validate the response `y` for a count family.
+#'
+#' Errors when `family` is a count family and `y` carries negative or
+#' non-integer values, which the integer-casting kernels would silently floor
+#' into a biased likelihood. A no-op for continuous families.
+#' @keywords internal
+.validate_family_counts <- function(family, y) {
+  if (!(.family_base(family) %in% .COUNT_FAMILIES)) return(invisible(TRUE))
+  yf <- y[is.finite(y)]
+  if (length(yf) && (any(yf < 0) || any(yf != round(yf)))) {
+    stop(sprintf(paste0(
+      "family = '%s' requires non-negative integer counts in `y`; got negative ",
+      "or non-integer values. The likelihood casts `y` to an integer, which ",
+      "would silently floor a continuous response into a biased log-likelihood."),
+      family), call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+
 #' Look up a family's operation set, with a clear error for unknown families.
 #' @keywords internal
 .family_ops <- function(family) {

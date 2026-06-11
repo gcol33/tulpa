@@ -11,7 +11,7 @@ tulpa_gibbs(
   group,
   n_groups,
   family = "binomial",
-  iter = 2000L,
+  n_iter = 2000L,
   warmup = 1000L,
   prior_beta_sd = 10,
   prior_sigma_scale = 2.5,
@@ -34,7 +34,7 @@ tulpa_gibbs(
 
 \item{family}{Character: "binomial" or "neg_binomial_2"}
 
-\item{iter}{Total iterations}
+\item{n_iter}{Total iterations}
 
 \item{warmup}{Warmup iterations}
 

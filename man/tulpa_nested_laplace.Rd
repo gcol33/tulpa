@@ -133,4 +133,9 @@ in the eigenvalue interval (1/lambda_min, 1/lambda_max) of
 entry, rebuilds Q via SPDE Q-builder).
 }
 }
+\references{
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+\emph{JRSS-B} 71(2):319-392.
+}
 \keyword{internal}

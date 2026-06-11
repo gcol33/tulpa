@@ -60,10 +60,21 @@ inline FamilyLink parse_family_link(const std::string& code) {
     return fl;
 }
 
+// Floor for links whose inverse is singular at eta <= 0 (inverse: 1/eta;
+// 1mu2: 1/sqrt(eta)). The mean of the families using these links is positive,
+// so eta is clamped to a small positive value rather than producing Inf/NaN
+// from 1/eta or sqrt of a negative argument when Newton's unconstrained eta
+// crosses zero -- the analogue of the safe_exp guard the log link already uses
+// (gcol33/tulpa#104).
+inline double safe_pos_eta(double eta) {
+    constexpr double kEtaFloor = 1e-10;
+    return eta < kEtaFloor ? kEtaFloor : eta;
+}
+
 inline double linkinv(double eta, const std::string& link) {
     if (link == "identity") return eta;
     if (link == "log") return tulpa_linalg::safe_exp(eta);
-    if (link == "inverse") return 1.0 / eta;
+    if (link == "inverse") return 1.0 / safe_pos_eta(eta);
     if (link == "logit") {
         if (eta > 0) return 1.0 / (1.0 + std::exp(-eta));
         double e = std::exp(eta);
@@ -73,14 +84,14 @@ inline double linkinv(double eta, const std::string& link) {
     if (link == "cauchit") return 0.5 + std::atan(eta) / M_PI;
     if (link == "cloglog") return 1.0 - std::exp(-std::exp(eta));
     if (link == "sqrt") return eta * eta;
-    if (link == "1mu2") return 1.0 / std::sqrt(eta);
+    if (link == "1mu2") return 1.0 / std::sqrt(safe_pos_eta(eta));
     return tulpa_linalg::safe_exp(eta);
 }
 
 inline double mu_eta(double eta, const std::string& link) {
     if (link == "identity") return 1.0;
     if (link == "log") return tulpa_linalg::safe_exp(eta);
-    if (link == "inverse") return -1.0 / (eta * eta);
+    if (link == "inverse") { double e = safe_pos_eta(eta); return -1.0 / (e * e); }
     if (link == "logit") {
         double p;
         if (eta > 0) {
@@ -96,7 +107,7 @@ inline double mu_eta(double eta, const std::string& link) {
     if (link == "cauchit") return 1.0 / (M_PI * (1.0 + eta * eta));
     if (link == "cloglog") return std::exp(eta - std::exp(eta));
     if (link == "sqrt") return 2.0 * eta;
-    if (link == "1mu2") return -0.5 / (eta * std::sqrt(eta));
+    if (link == "1mu2") { double e = safe_pos_eta(eta); return -0.5 / (e * std::sqrt(e)); }
     return tulpa_linalg::safe_exp(eta);
 }
 

@@ -99,10 +99,12 @@
         rho_grid   = c(0.5, 0.7, 0.9)
     )
     tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(field_coef = list(
+                name = "alpha", grid = c(0, 0.4, 0.7, 1.0, 1.4, 2.0))))
+        ),
         prior     = prior,
-        copy      = list(arm = "pos",
-                          alpha_grid = c(0, 0.4, 0.7, 1.0, 1.4, 2.0)),
         prior_alpha   = prior_alpha,
         control = list(adaptive_grid = FALSE)
     )
@@ -217,10 +219,12 @@ test_that("alpha = 0 grid cell is not zeroed by the prior", {
         rho_grid   = c(0.5, 0.7, 0.9)
     )
     fit <- tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(field_coef = list(
+                name = "alpha", grid = c(0, 0.5, 1.0, 1.5, 2.0))))
+        ),
         prior     = prior,
-        copy      = list(arm = "pos",
-                          alpha_grid = c(0, 0.5, 1.0, 1.5, 2.0)),
         prior_alpha     = list("pc.prec", c(1.0, 0.01)),
         control = list(adaptive_grid = FALSE)
     )

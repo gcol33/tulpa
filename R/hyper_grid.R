@@ -189,7 +189,7 @@
 #'     warning when no cell carries finite mass).
 #'   * `theta_mean`, `theta_sd` -- named numeric vectors; weighted posterior
 #'     mean and SD per axis. SDs refit via the 3-point Laplace-at-mode
-#'     parabola where possible (gcol33/tulpa#20).
+#' parabola where possible.
 #'   * `theta_median`, `theta_ci_lo`, `theta_ci_hi` -- named numeric vectors;
 #'     weighted-quantile median and 2.5 / 97.5\% empirical CI per axis
 #'     (the recommended summary for right-skewed scale-like axes).

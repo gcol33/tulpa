@@ -120,6 +120,13 @@
 #'   `n_quad`, `lkj_eta`, and `converged`. Returns `NULL` if the RE terms do not
 #'   share one grouping factor or the optimum is not usable (caller keeps its
 #'   prior fit).
+#' @references
+#' Pinheiro & Bates (1995). Approximations to the log-likelihood function in
+#' the nonlinear mixed-effects model. \emph{Journal of Computational and
+#' Graphical Statistics} 4(1):12-35.
+#' Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
+#' based on vines and extended onion method. \emph{Journal of Multivariate
+#' Analysis} 100(9):1989-2001.
 #' @export
 tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                           make_site = NULL, make_group = NULL, oracle = NULL,

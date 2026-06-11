@@ -15,6 +15,6 @@ Invisibly \code{TRUE}; raises an error on an invalid \code{nu}.
 \description{
 \code{nu} must be a single finite non-negative number. Integer \code{nu} (0, 1, 2, ...)
 gives an exact FEM construction; fractional \code{nu} uses the rational SPDE
-approximation (see \code{\link[=rational_spde_coefficients]{rational_spde_coefficients()}} and gcol33/tulpa#71).
+approximation (see \code{\link[=rational_spde_coefficients]{rational_spde_coefficients()}}).
 }
 \keyword{internal}

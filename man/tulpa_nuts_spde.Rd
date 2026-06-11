@@ -103,7 +103,7 @@ otherwise. A dense metric captures the fixed-effect / field cross-curvature
 a diagonal metric misses; this is what corrects the intercept marginal,
 which a diagonal metric under-disperses for an ill-conditioned latent block
 such as the rational fractional-nu precision (its near-null direction
-confounds the intercept with the field, gcol33/tulpa#87). \code{"diag"},
+confounds the intercept with the field,). \code{"diag"},
 \code{"dense"}, \code{"block_diag"} force the choice.}
 
 \item{n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose}{Standard

@@ -1113,10 +1113,10 @@
                                         k_samples  = k_samples)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
-    class(res) <- c("tulpa_nested_laplace_joint_multi",
+    .finalize_fit(res, backend = "nested_laplace_joint",
+                  extra_class = c("tulpa_nested_laplace_joint_multi",
                     "tulpa_nested_laplace_joint",
-                    "tulpa_nested_laplace", "list")
-    res
+                                  "tulpa_nested_laplace", "list"))
 }
 
 # Latent-vector layout for the multi-block joint result. Mirrors the

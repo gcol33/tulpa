@@ -295,7 +295,7 @@ apply_rsr_projection <- function(w, P_perp) {
 #'   rational SPDE approximation with BRASIL best-rational coefficients
 #'   (Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter
 #'   `fit_spde()` (single-point and nested over range/sigma). NUTS and analytic
-#'   marginal SEs remain integer-only (gcol33/tulpa#71). Default 1.
+#' marginal SEs remain integer-only. Default 1.
 #' @param prior_range Prior for the spatial range. A numeric vector `c(U, alpha)`
 #'   where P(range < U) = alpha. Default `c(0.5, 0.5)`.
 #' @param prior_sigma Prior for the marginal standard deviation. A numeric vector
@@ -385,7 +385,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
 #' @param A Projection matrix (n_obs x n_mesh sparse matrix, e.g. from `fmesher::fm_basis()`).
 #' @param nu Matern smoothness parameter. A non-negative number; integer values
 #'   give the exact FEM construction, fractional values the BRASIL rational SPDE
-#'   approximation (supported by `fit_spde()`; gcol33/tulpa#71). Default 1.
+#' approximation (supported by `fit_spde()`;). Default 1.
 #' @param prior_range Prior for the spatial range. Default `c(0.5, 0.5)`.
 #' @param prior_sigma Prior for the marginal standard deviation. Default `c(1, 0.5)`.
 #'

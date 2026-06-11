@@ -90,7 +90,7 @@ hyperparameters, returned as \code{pareto_k}.}
 
 \item{max_iter, tol, n_threads}{Inner-solve controls (see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).}
 
-\item{checkpoint}{Optional node checkpoint/resume spec (gcol33/tulpa#50),
+\item{checkpoint}{Optional node checkpoint/resume spec,
 \code{list(path = , resume = )}. Each completed CCD / grid node (one inner
 Laplace solve) is cached to \code{path}; a \code{resume = TRUE} run loads the finished
 nodes and re-solves only the rest. \code{resume = FALSE} starts fresh. A file

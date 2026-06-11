@@ -77,9 +77,12 @@
     # disable here so the cell-count book-keeping in test 2 reflects the
     # adaptive_grid path alone.
     tulpa_nested_laplace_joint(
-        responses = list(occ = arm_occ, pos = arm_pos),
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(
+                field_coef = list(name = "alpha", grid = alpha_grid)))
+        ),
         prior = prior,
-        copy = list(arm = "pos", alpha_grid = alpha_grid),
         control = list(adaptive_grid = adaptive_grid,
                        var_of_means_consistency = FALSE)
     )

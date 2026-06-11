@@ -530,7 +530,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #' @param k_samples Number of importance draws for the `diagnose_k` estimate
 #'   (default 200).
 #' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
-#' @param checkpoint Optional node checkpoint/resume spec (gcol33/tulpa#50),
+#' @param checkpoint Optional node checkpoint/resume spec,
 #'   `list(path = , resume = )`. Each completed CCD / grid node (one inner
 #'   Laplace solve) is cached to `path`; a `resume = TRUE` run loads the finished
 #'   nodes and re-solves only the rest. `resume = FALSE` starts fresh. A file
@@ -864,7 +864,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
   }
 
-  list(
+  .finalize_fit(list(
     posterior   = posterior,
     map         = map,
     Sigma_mean  = summ$Sigma_mean,
@@ -888,5 +888,5 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     layout      = layout,
     n_blocks    = length(layout),
     n_coefs     = vapply(layout, `[[`, integer(1), "nc")
-  )
+  ), backend = "re_cov_nested", n_fixed = p_fix, fixed_names = beta_names)
 }
