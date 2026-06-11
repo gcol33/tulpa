@@ -256,7 +256,7 @@ void run_spde_laplace(
     F callback,
     const Rcpp::NumericVector& re_idx = Rcpp::NumericVector(),
     int n_re_groups = 0, double sigma_re = 1.0,
-    bool center_mesh = true
+    bool center_mesh = true, double prior_lognorm = 0.0
 ) {
     const double tau_re = (n_re_groups > 0)
                           ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
@@ -353,7 +353,10 @@ void run_spde_laplace(
             }
         }
         for (int g = 0; g < n_re_groups; g++) qf += tau_re * x[p + g] * x[p + g];
-        return -0.5 * qf;
+        // prior_lognorm = 0.5 log|Q(theta)|: the SPDE prior normalizer, supplied
+        // by the caller (constant in x). Required whenever this fit's
+        // log_marginal is compared across (range, sigma); see spde_logdet.h.
+        return prior_lognorm - 0.5 * qf;
     };
 
     LaplaceResult result = laplace_newton_solve(

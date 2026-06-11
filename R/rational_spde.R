@@ -359,9 +359,9 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' the precomputed C++ solve, whose latent is the auxiliary weights `x`; the
 #' returned `mode` mesh block is mapped back to the field `u = Pr x` so every
 #' downstream consumer reads field-space mesh effects exactly as on the integer
-#' path. The single-fit log-marginal is completed with `0.5 log|Q|` (the prior
-#' normalizer the conditional solve omits) so values are comparable across the
-#' nested `(range, sigma)` grid.
+#' path. The precomputed C++ solve adds the prior normalizer `0.5 log|Q|`, so the
+#' returned log-marginal is complete and comparable across the nested
+#' `(range, sigma)` grid.
 #'
 #' @keywords internal
 .spde_laplace_fractional_at <- function(y, n_trials, X, spatial,
@@ -391,10 +391,9 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
   )
 
-  # Complete the conditional log-marginal with the prior normalizer 0.5 log|Q|,
-  # which varies with (kappa, tau) across the grid (the constant -0.5 n log 2pi
-  # is grid-invariant and irrelevant to the nested weights).
-  result$log_marginal <- result$log_marginal + 0.5 * asm$logdet_Q
+  # The prior normalizer 0.5 log|Q(theta)| is added inside the precomputed C++
+  # solve (spde_run_single_fit -> SpdeQLogDet), so result$log_marginal is already
+  # the complete single-fit marginal -- no R-side fold.
 
   # Rebuild the mode in the FULL mesh layout, field-space: the fit ran on the
   # non-orphan submesh, so map the auxiliary weights x to the field u = Pr x and

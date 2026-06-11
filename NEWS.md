@@ -2,6 +2,18 @@
 
 ## 0.0.30 (2026-06-10)
 
+* fix(spde): the nested-Laplace `(range, sigma)` marginal now carries the GMRF
+  prior normalizer `0.5 log|Q(theta)|` (#98). It was dropped on the integer-alpha
+  SPDE path -- the Occam term that bends the marginal down at large `sigma` -- so
+  `fit_spde()` (and the `tulpa(..., spatial = spatial_spde())` front door) railed
+  `sigma` to the prior boundary and collapsed `range`, while the Tier-1 NUTS-joint
+  path recovered. The two integrators now agree: on a true 0.35/0.80 field the CCD
+  weighted means recover `range ~ 0.38`, `sigma ~ 0.76` (matching NUTS), validated
+  by a new multi-seed recovery + CI-coverage gate in `test-spde-ccd.R`. The
+  normalizer is single-sourced in C++ (`src/spde_logdet.h`, a CHOLMOD log|Q|);
+  the fractional path's R-side fold is removed accordingly. Exposed and fixed a
+  latent gap where the SPDE CCD refit returned a `NULL` `beta` (the mode was never
+  split into fixed effects / field), now done once in `laplace_spde_at()`.
 * feat(spatial): the single-arm multi-block nested-Laplace driver now honours a
   per-observation design weight on an areal (icar) block, exposed as an optional
   `svc_weight` field in the block spec. When present, observation i's eta

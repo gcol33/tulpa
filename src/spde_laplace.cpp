@@ -9,6 +9,7 @@
 // scatter), removing the previous bespoke pattern/scatter/log_prior path.
 
 #include "spde_qbuilder.h"
+#include "spde_logdet.h"        // SpdeQLogDet (0.5 log|Q| prior normalizer)
 #include "laplace_spec_fit.h"   // as_offset_vec (offset marshalling)
 #include "sparse_hessian.h"
 #include "nested_laplace_grid.h"
@@ -46,6 +47,17 @@ static Rcpp::List spde_run_single_fit(
     const double tau_re = (n_re_groups > 0)
                           ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
     Rcpp::List out;
+
+    // Prior normalizer 0.5 log|Q(theta)|. A constant in the latent solve (it
+    // does not move the mode or the SEs), but required for this fit's
+    // log_marginal to be a proper marginal when compared across (range, sigma)
+    // -- e.g. the CCD mode-find's final refit and fixed-hyper model comparison.
+    // See spde_logdet.h.
+    double half_ldQ = 0.0;
+    {
+        tulpa::SpdeQLogDet qld;
+        if (!qld.half_logdet(qb, half_ldQ)) half_ldQ = 0.0;
+    }
 
     if (n_x >= tulpa::SPARSE_THRESHOLD) {
         std::vector<std::pair<int,int>> pattern;
@@ -149,7 +161,7 @@ static Rcpp::List spde_run_single_fit(
                 for (int qidx = qb.Q_p[col]; qidx < qb.Q_p[col + 1]; qidx++)
                     qf += x[mesh_start + qb.Q_i[qidx]] * qb.Q_x[qidx] * x[mesh_start + col];
             for (int g = 0; g < n_re_groups; g++) qf += tau_re * x[p + g] * x[p + g];
-            return -0.5 * qf;
+            return half_ldQ - 0.5 * qf;
         };
 
         tulpa::LaplaceResult res = tulpa::laplace_newton_solve_sparse(
@@ -177,7 +189,7 @@ static Rcpp::List spde_run_single_fit(
                 Rcpp::Named("converged") = res.converged,
                 Rcpp::Named("Q_nnz") = qb.nnz());
         },
-        re_idx, n_re_groups, sigma_re, center_mesh);
+        re_idx, n_re_groups, sigma_re, center_mesh, half_ldQ);
     return out;
 }
 

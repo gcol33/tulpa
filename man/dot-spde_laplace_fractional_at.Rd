@@ -29,8 +29,8 @@ The fractional counterpart of the integer \code{cpp_laplace_fit_spde} branch in
 the precomputed C++ solve, whose latent is the auxiliary weights \code{x}; the
 returned \code{mode} mesh block is mapped back to the field \verb{u = Pr x} so every
 downstream consumer reads field-space mesh effects exactly as on the integer
-path. The single-fit log-marginal is completed with \verb{0.5 log|Q|} (the prior
-normalizer the conditional solve omits) so values are comparable across the
-nested \verb{(range, sigma)} grid.
+path. The precomputed C++ solve adds the prior normalizer \verb{0.5 log|Q|}, so the
+returned log-marginal is complete and comparable across the nested
+\verb{(range, sigma)} grid.
 }
 \keyword{internal}

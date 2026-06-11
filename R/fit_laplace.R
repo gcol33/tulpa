@@ -609,48 +609,58 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
   # Fractional nu: the operator-based rational SPDE (Bolin & Kirchner 2020) with
   # BRASIL coefficients (gcol33/tulpa#71). Assembled in R (the validated oracle)
   # and solved by the precomputed C++ fit; the integer branch below is the exact
-  # FEM construction.
+  # FEM construction. Both branches return the same [beta (p), re (n_re_groups),
+  # mesh (n_mesh)] mode layout, so the beta / spatial_effects split is shared.
   if (.spde_nu_is_fractional(spatial$nu)) {
-    return(.spde_laplace_fractional_at(
+    result <- .spde_laplace_fractional_at(
       y = y, n_trials = n_trials, X = X, spatial = spatial,
       family = family, phi = phi, range = range, sigma = sigma,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset,
       order = spatial$rational_order %||% 2L
-    ))
+    )
+  } else {
+    kappa <- sqrt(8 * spatial$nu) / range
+    tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
+    alpha <- as.integer(round(spatial$nu)) + 1L
+    rat <- rational_spde_coefficients(spatial$nu)
+
+    # iid RE block laid out between beta and the mesh field. No RE -> zero dims.
+    if (is.null(re_idx)) re_idx <- rep(0L, length(y))
+
+    result <- cpp_laplace_fit_spde(
+      y = as.numeric(y),
+      n_trials = as.integer(n_trials %||% rep(1L, length(y))),
+      X = as.matrix(X),
+      re_idx = as.numeric(re_idx),
+      n_re_groups = as.integer(n_re_groups),
+      sigma_re = sigma_re,
+      A_x = spatial$A_x, A_i = spatial$A_i, A_p = spatial$A_p,
+      n_obs = length(y), n_mesh = spatial$n_mesh,
+      C0_diag = spatial$C0_diag,
+      G1_x = spatial$G1_x, G1_i = spatial$G1_i, G1_p = spatial$G1_p,
+      kappa = kappa, tau_spde = tau_spde,
+      family = family, phi = phi, alpha = alpha,
+      max_iter = as.integer(max_iter), tol = tol,
+      n_threads = as.integer(n_threads),
+      rational_poles_nullable = if (!rat$is_integer) rat$poles else NULL,
+      rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL,
+      offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
+    )
+
+    result$range <- range
+    result$sigma <- sigma
+    result$spatial <- spatial
   }
 
-  kappa <- sqrt(8 * spatial$nu) / range
-  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
-  alpha <- as.integer(round(spatial$nu)) + 1L
-  rat <- rational_spde_coefficients(spatial$nu)
-
-  # iid RE block laid out between beta and the mesh field. No RE -> zero dims.
-  if (is.null(re_idx)) re_idx <- rep(0L, length(y))
-
-  result <- cpp_laplace_fit_spde(
-    y = as.numeric(y),
-    n_trials = as.integer(n_trials %||% rep(1L, length(y))),
-    X = as.matrix(X),
-    re_idx = as.numeric(re_idx),
-    n_re_groups = as.integer(n_re_groups),
-    sigma_re = sigma_re,
-    A_x = spatial$A_x, A_i = spatial$A_i, A_p = spatial$A_p,
-    n_obs = length(y), n_mesh = spatial$n_mesh,
-    C0_diag = spatial$C0_diag,
-    G1_x = spatial$G1_x, G1_i = spatial$G1_i, G1_p = spatial$G1_p,
-    kappa = kappa, tau_spde = tau_spde,
-    family = family, phi = phi, alpha = alpha,
-    max_iter = as.integer(max_iter), tol = tol,
-    n_threads = as.integer(n_threads),
-    rational_poles_nullable = if (!rat$is_integer) rat$poles else NULL,
-    rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL,
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
-  )
-
-  result$range <- range
-  result$sigma <- sigma
-  result$spatial <- spatial
+  # Split the mode into fixed effects and the mesh field so every caller (the
+  # fit_spde single-point branch and the nested CCD refit) reads beta /
+  # spatial_effects directly instead of re-slicing the mode.
+  p <- ncol(X)
+  mesh_start <- p + as.integer(n_re_groups)
+  result$beta <- result$mode[seq_len(p)]
+  result$spatial_effects <-
+    result$mode[(mesh_start + 1L):(mesh_start + spatial$n_mesh)]
   result
 }
 

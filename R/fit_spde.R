@@ -156,12 +156,12 @@ fit_spde <- function(y, X, spatial,
     res
   }
 
-  if (nested_laplace && (is.null(range) || is.null(sigma))) {
+  fit <- if (nested_laplace && (is.null(range) || is.null(sigma))) {
     if (method == "grid") {
-      return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial,
-                                  diagnose_k = diagnose_k, k_samples = k_samples))
+      fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial,
+                           diagnose_k = diagnose_k, k_samples = k_samples)
     } else {
-      return(fit_spde_nested_ccd(spde_log_marginal,
+      fit_spde_nested_ccd(spde_log_marginal,
                                  fit_spde_single = function(r, s) {
                                    laplace_spde_at(
                                      y = y, n_trials = n_trials, X = X,
@@ -172,7 +172,7 @@ fit_spde <- function(y, X, spatial,
                                    )
                                  },
                                  sp = sp, spatial = spatial,
-                                 diagnose_k = diagnose_k, k_samples = k_samples))
+                          diagnose_k = diagnose_k, k_samples = k_samples)
     }
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---
@@ -186,11 +186,10 @@ fit_spde <- function(y, X, spatial,
       offset = offset
     )
 
-    p <- ncol(X)
     list(
       mode = result$mode,
-      beta = result$mode[1:p],
-      spatial_effects = result$mode[(p + 1):(p + sp$n_mesh)],
+      beta = result$beta,
+      spatial_effects = result$spatial_effects,
       log_det_Q = result$log_det_Q,
       log_marginal = result$log_marginal,
       n_iter = result$n_iter,
@@ -201,4 +200,7 @@ fit_spde <- function(y, X, spatial,
       nested = NULL
     )
   }
+
+  .finalize_fit(fit, backend = "spde",
+                n_fixed = ncol(X), fixed_names = colnames(X))
 }

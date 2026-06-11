@@ -7,9 +7,10 @@
 #           lambda_r = -U_r * log(1 - alpha_r).
 #   sigma:  exponential, p(s) = lambda_s * exp(-lambda_s * s),
 #           lambda_s = -log(alpha_s) / U_s.
-# C++ cpp_nested_laplace_spde returns only the marginal likelihood; we add
-# this prior here so the joint surface integrated by CCD / grid is a
-# proper posterior with an interior mode in well-identified problems.
+# C++ cpp_nested_laplace_spde returns the marginal likelihood (with the GMRF
+# prior normalizer 0.5 log|Q(theta)| folded in, so it is already interior-peaked
+# in well-identified problems); we add this PC prior here to form the joint
+# posterior the CCD / grid integrates.
 pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
   U_r <- prior_range[1]; alpha_r <- prior_range[2]
   U_s <- prior_sigma[1]; alpha_s <- prior_sigma[2]

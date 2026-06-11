@@ -37,6 +37,7 @@
 #include "laplace_re_priors.h"           // center_effects
 #include "sparse_hessian.h"
 #include "spde_qbuilder.h"               // SpdeQBuilder, ARows, build_A_rows
+#include "spde_logdet.h"                 // SpdeQLogDet (0.5 log|Q| normalizer)
 #include <Rcpp.h>
 #include <memory>
 #include <utility>
@@ -95,6 +96,13 @@ inline LatentBlock make_spde_block(
     auto qb = std::make_shared<SpdeQBuilder>();
     qb->init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
 
+    // Prior normalizer 0.5 log|Q(theta)| recomputed per outer cell in prep().
+    // Shared scalar is safe: the SPDE nested driver runs outer cells serially
+    // (cpp_nested_laplace_spde passes n_threads_outer = 1), the same assumption
+    // qb->rebuild() already relies on. log_prior reads it at the cell's mode.
+    auto qld       = std::make_shared<SpdeQLogDet>();
+    auto half_ldQ  = std::make_shared<double>(0.0);
+
     // alpha = nu + d/2 with d = 2.
     const int alpha = static_cast<int>(std::round(nu)) + 1;
 
@@ -126,8 +134,11 @@ inline LatentBlock make_spde_block(
 
     // idx left empty — INDEXED_MULTI uses obs_indices, not idx.
 
-    // Per outer-grid cell: rebuild Q values for the cell's (range, sigma).
-    block.prep = [qb, axis_range, axis_sigma, theta_grid,
+    // Per outer-grid cell: rebuild Q values for the cell's (range, sigma) and
+    // recompute the prior normalizer 0.5 log|Q(theta)| consumed by log_prior.
+    // A non-PD cell returns false (infeasible -> log_marginal = -inf), matching
+    // the proper-CAR PD gate.
+    block.prep = [qb, qld, half_ldQ, axis_range, axis_sigma, theta_grid,
                    nu, alpha, use_rational,
                    rational_poles, rational_weights](int k_grid) -> bool {
         double range = theta_grid(k_grid, axis_range);
@@ -140,7 +151,7 @@ inline LatentBlock make_spde_block(
         } else {
             qb->rebuild(kappa, tau, alpha);
         }
-        return true;
+        return qld->half_logdet(*qb, *half_ldQ);
     };
 
     // Pattern: every Q nonzero contributes a lower-triangle entry in the
@@ -197,7 +208,7 @@ inline LatentBlock make_spde_block(
         }
     };
 
-    block.log_prior = [start, n_mesh, qb](
+    block.log_prior = [start, n_mesh, qb, half_ldQ](
         const Rcpp::NumericVector& x, int /*k_grid*/
     ) -> double {
         double qf = 0.0;
@@ -207,10 +218,12 @@ inline LatentBlock make_spde_block(
                 qf += x[start + qb->Q_i[idx]] * qb->Q_x[idx] * x_col;
             }
         }
-        // Drop the log|Q|/2 normalizer — it is folded into the Laplace
-        // log-marginal via the Hessian's log-determinant. Matches the
-        // existing standalone driver's log_prior in spde_laplace.cpp.
-        return -0.5 * qf;
+        // log p(x|theta) = 0.5 log|Q(theta)| - 0.5 x'Qx (the theta-independent
+        // -(n/2) log(2 pi) is dropped). 0.5 log|Q| is the prior normalizer set
+        // by prep() each cell; it is the Occam term that makes the (range,sigma)
+        // marginal interior-peaked rather than monotone in sigma. It is NOT
+        // absorbed by the Laplace Hessian log-determinant (H = Q + A'WA != Q).
+        return *half_ldQ - 0.5 * qf;
     };
 
     block.center = [start, n_mesh](Rcpp::NumericVector& x) -> double {
