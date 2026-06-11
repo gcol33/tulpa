@@ -88,7 +88,6 @@ tulpa_laplace <- function(y, n_trials, X,
   bp <- .normalize_beta_prior(beta_prior, n_fixed)
 
   .validate_family_phi(family, phi)
-  .validate_family_counts(family, y)
   if (identical(family, "beta")) {
     yfin <- y[is.finite(y)]
     if (length(yfin) && (min(yfin) <= 0 || max(yfin) >= 1)) {

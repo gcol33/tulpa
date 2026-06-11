@@ -56,15 +56,9 @@ test_that("tulpa() rejects non-integer y for a poisson fit", {
   expect_s3_class(fit, "tulpa_fit")
 })
 
-test_that("tulpa_laplace() rejects non-integer counts at the direct-call door", {
-  set.seed(3)
-  n <- 30
-  X <- cbind(1, rnorm(n))
-  expect_error(
-    tulpa_laplace(y = c(1.5, rpois(n - 1, 2)), n_trials = rep(1L, n), X = X,
-                  family = "poisson"),
-    "integer")
-  fit <- tulpa_laplace(y = rpois(n, 2), n_trials = rep(1L, n), X = X,
-                       family = "poisson")
-  expect_type(fit, "list")
-})
+# NOTE: the integer-count check lives at the tulpa() front door, NOT in
+# tulpa_laplace(). tulpa_laplace() is the engine the EM driver calls per block,
+# and the documented EM M-step encodes E-step weights as a CONTINUOUS
+# pseudo-binomial response (y in [0, 1]); a count check there would reject that
+# legitimate internal usage. So the rule is enforced only where the response is
+# user-supplied count data (tulpa()).

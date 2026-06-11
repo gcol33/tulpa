@@ -86,3 +86,87 @@ test_that("Tier-3 VI recovers the well-identified slope", {
   expect_lt(abs(mean(slope) - beta_true[2]), 0.20)   # slope recovers vs truth
 })
 
+
+# --------------------------------------------------------------------------- #
+# (3) EM+Laplace + MI/Gibbs corrections: recovery, bias reduction, and the       #
+# latent-state variance the raw EM conditions away.                              #
+# Model: a single-season occupancy model with KNOWN detection. Sites have        #
+# occupancy psi_i = plogis(b0 + b1 x_i); a site is detected on >= 1 of J visits   #
+# with per-visit probability p. The E-step posterior-weights latent occupancy at #
+# the zero-detection sites; the M-step fits the occupancy submodel with the      #
+# E-step weight as the binomial RESPONSE (the documented pseudo-binomial         #
+# encoding -- no fractional `weights` argument, so this path is unaffected by    #
+# gcol33/tulpa#108). The raw Laplace M-step conditions on the soft weights, so   #
+# it under-counts occupancy at the zero-detection sites and leaves the intercept #
+# biased (and the CI carries no latent-occupancy uncertainty, V_between == 0).   #
+# MI/Gibbs draw the hard occupancy states and pool via Rubin: V_between > 0 and   #
+# the pooled intercept moves back toward truth -- the bias reduction the         #
+# corrections exist for.                                                         #
+# --------------------------------------------------------------------------- #
+
+test_that("EM+Laplace occupancy recovery; MI/Gibbs reduce intercept bias", {
+  skip_on_cran()
+  skip_if_fast()
+
+  b0 <- 0.2; b1 <- -0.8; p_det <- 0.45; J <- 4L; G <- 500L
+  q0 <- (1 - p_det)^J                             # P(0 detections | occupied)
+
+  sim_occ <- function(seed) {
+    set.seed(seed); x <- rnorm(G)
+    z <- rbinom(G, 1L, plogis(b0 + b1 * x))
+    h <- ifelse(z == 1L, rbinom(G, J, p_det), 0L) # detections out of J visits
+    list(x = x, h = h)
+  }
+  em_occ <- function(d, correction = "none") {
+    X <- cbind(1, d$x)
+    e_step <- function(fits, ...) {
+      psi <- if (length(fits) == 0L) rep(0.5, G)
+             else plogis(as.numeric(X %*% fits$psi$mode))
+      w <- ifelse(d$h > 0L, 1, psi * q0 / (psi * q0 + (1 - psi)))
+      list(weights = as.numeric(w))
+    }
+    m_step_encode <- function(weights, ...) list(
+      psi = list(y = weights, n_trials = rep(1L, G), X = X, family = "binomial")
+    )
+    tulpa_em_laplace(e_step, m_step_encode, correction = correction,
+                     max_iter = 200L, tol = 1e-6, damping = 0,
+                     n_imputations = 20L, n_gibbs = 12L, verbose = FALSE)
+  }
+
+  n_seed <- 8L
+  raw_b0 <- raw_b1 <- numeric(n_seed)
+  mi_b0  <- mi_b1  <- mi_vb  <- numeric(n_seed)
+  gi_b0  <- gi_b1  <- gi_vb  <- numeric(n_seed)
+  for (s in seq_len(n_seed)) {
+    d  <- sim_occ(50L + s)
+    nm <- em_occ(d, "none")$fits$psi$mode
+    mi <- em_occ(d, "mi"); gi <- em_occ(d, "gibbs")
+    raw_b0[s] <- nm[1];               raw_b1[s] <- nm[2]
+    mi_b0[s]  <- mi$pooled$psi$mean[1]; mi_b1[s] <- mi$pooled$psi$mean[2]
+    gi_b0[s]  <- gi$pooled$psi$mean[1]; gi_b1[s] <- gi$pooled$psi$mean[2]
+    mi_vb[s]  <- mi$pooled$psi$V_between[1]
+    gi_vb[s]  <- gi$pooled$psi$V_between[1]
+  }
+
+  # (a) the well-identified slope is recovered on the raw EM path.
+  expect_lt(abs(stats::median(raw_b1) - b1), 0.30)
+
+  # (b) MI/Gibbs recover the intercept that the raw EM leaves biased.
+  expect_lt(abs(stats::median(mi_b0) - b0), 0.15)
+  expect_lt(abs(stats::median(gi_b0) - b0), 0.15)
+  expect_lt(abs(stats::median(mi_b1) - b1), 0.25)
+  expect_lt(abs(stats::median(gi_b1) - b1), 0.25)
+
+  # (c) the corrections reduce the raw EM's intercept bias.
+  raw_err <- stats::median(abs(raw_b0 - b0))
+  expect_lt(stats::median(abs(mi_b0 - b0)), raw_err)
+  expect_lt(stats::median(abs(gi_b0 - b0)), raw_err)
+
+  # (d) the corrections carry a strictly positive between-imputation variance --
+  # the latent-occupancy uncertainty the raw Laplace EM conditions away
+  # (V_between == 0 there), the basis for the corrected CI's coverage >= raw EM.
+  expect_true(all(mi_vb >= 0) && all(gi_vb >= 0))
+  expect_gt(stats::median(mi_vb), 0)
+  expect_gt(stats::median(gi_vb), 0)
+})
+
