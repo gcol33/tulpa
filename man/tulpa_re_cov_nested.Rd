@@ -162,6 +162,29 @@ exact change-of-variables Jacobian. Supply a custom \code{log_prior_theta} funct
 to override it (then \code{prior_sigma} / \code{eta} are ignored); it must act on the
 full stacked parameter vector.
 }
+\examples{
+\donttest{
+set.seed(1)
+G <- 20L; per <- 12L; n <- G * per
+grp <- rep(seq_len(G), each = per); x <- rnorm(n)
+b <- cbind(rnorm(G, 0, 0.7), rnorm(G, 0, 0.5))     # random intercept + slope
+eta <- -0.2 + 0.5 * x + b[grp, 1] + b[grp, 2] * x
+y <- rbinom(n, 1L, plogis(eta))
+re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
+                correlated = TRUE)
+fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
+                           family = "binomial")
+fit$Sigma_mean        # marginalized RE covariance
+}
+}
+\references{
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+\emph{JRSS-B} 71(2):319-392.
+Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
+based on vines and extended onion method. \emph{Journal of Multivariate
+Analysis} 100(9):1989-2001.
+}
 \seealso{
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the inner solve; \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for
 the analogous outer integration over spatial / temporal prior

@@ -154,6 +154,13 @@ coef(fit)
 summary(fit)
 }
 }
+\references{
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+\emph{JRSS-B} 71(2):319-392.
+Hoffman & Gelman (2014). The No-U-Turn Sampler: adaptively setting path
+lengths in Hamiltonian Monte Carlo. \emph{JMLR} 15(47):1593-1623.
+}
 \seealso{
 \code{\link[=inference_mode_info]{inference_mode_info()}}, \code{\link[=tulpa_laplace]{tulpa_laplace()}}, \code{\link[=mala]{mala()}}, \code{\link[=pathfinder]{pathfinder()}}
 }

@@ -103,6 +103,25 @@ Fits a GLM with a Matérn spatial field via the SPDE approach.
 Uses CHOLMOD sparse solver with optional nested Laplace for
 hyperparameter integration.
 }
+\examples{
+\donttest{
+if (requireNamespace("fmesher", quietly = TRUE)) {
+  set.seed(1)
+  n <- 200L
+  coords <- cbind(runif(n), runif(n))
+  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.15, 0.4), cutoff = 0.05)
+  fem  <- fmesher::fm_fem(mesh)
+  A    <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
+  spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1,
+                              prior_range = c(0.3, 0.5), prior_sigma = c(0.6, 0.05))
+  w <- as.numeric(rnorm(spec$n_mesh, 0, 0.6)); w <- w - mean(w)
+  x <- rnorm(n)
+  y <- rpois(n, exp(2.0 + 0.5 * x + as.numeric(spec$A \%*\% w)))
+  fit <- fit_spde(y = y, X = cbind(1, x), spatial = spec, family = "poisson")
+  fit$nested$range_mean
+}
+}
+}
 \references{
 Lindgren, Rue & Lindstrom (2011). An explicit link between Gaussian fields
 and Gaussian Markov random fields: the stochastic partial differential

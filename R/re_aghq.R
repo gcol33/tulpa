@@ -127,6 +127,31 @@
 #' Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
 #' based on vines and extended onion method. \emph{Journal of Multivariate
 #' Analysis} 100(9):1989-2001.
+#' @examples
+#' \donttest{
+#' # A per-row-separable binomial GLMM marginal supplied through `make_site`.
+#' l1pe <- function(x) ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))
+#' make_binom_site <- function(X, y, nt) function(theta) {
+#'   eta_fixed <- as.numeric(X %*% theta)
+#'   list(eta_re = eta_fixed,
+#'        deriv = function(rows, eta) {
+#'          p <- plogis(eta)
+#'          list(logL = y[rows] * eta - nt[rows] * l1pe(eta),
+#'               d1 = y[rows] - nt[rows] * p, d2 = -nt[rows] * p * (1 - p))
+#'        },
+#'        lmat = function(rows, ETA) y[rows] * ETA - nt[rows] * l1pe(ETA))
+#' }
+#' set.seed(1)
+#' ng <- 30L; npg <- 8L; n <- ng * npg
+#' g <- rep(seq_len(ng), each = npg); x <- rnorm(n)
+#' X <- cbind(1, x); nt <- rep(3L, n); u <- rnorm(ng, 0, 0.9)
+#' y <- rbinom(n, nt, plogis(0.3 + 0.7 * x + u[g]))
+#' fit <- tulpa_re_aghq(theta0 = c(0, 0),
+#'                      re_terms = list(list(idx = g, n_groups = ng, n_coefs = 1L)),
+#'                      Sigma0 = list(matrix(0.25, 1, 1)),
+#'                      make_site = make_binom_site(X, y, nt), n_obs = n, n_quad = 5L)
+#' sqrt(fit$Sigma_list[[1]][1, 1])     # adaptive-GHQ RE standard deviation
+#' }
 #' @export
 tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                           make_site = NULL, make_group = NULL, oracle = NULL,

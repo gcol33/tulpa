@@ -370,6 +370,34 @@ weakly-identified ratio at small \code{n_pos} and lets a regularizing
 hyperprior land on \eqn{\alpha} directly.
 }
 
+\examples{
+\donttest{
+set.seed(1)
+S <- 25L                                   # shared spatial units (chain graph)
+nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+nn <- lengths(nb)
+field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+mk_arm <- function(m, fam) {
+  si <- sample(S, m, replace = TRUE); x <- rnorm(m)
+  lin <- 0.2 + 0.5 * x + 0.8 * field[si]
+  y <- if (fam == "binomial") rbinom(m, 1L, plogis(lin)) else lin + rnorm(m, 0, 0.5)
+  list(y = as.numeric(y), n_trials = rep(1L, m), X = cbind(1, x),
+       spatial_idx = si, family = fam, phi = if (fam == "gaussian") 0.5 else 1)
+}
+prior <- list(type = "icar", n_spatial_units = S,
+              adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+              n_neighbors = nn, sigma_grid = c(0.3, 0.7, 1.4))
+fit <- tulpa_nested_laplace_joint(
+  responses = list(occ = mk_arm(200L, "binomial"), pos = mk_arm(200L, "gaussian")),
+  prior = prior)
+fit$theta_mean        # shared field amplitude, integrated across both arms
+}
+}
+\references{
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+\emph{JRSS-B} 71(2):319-392.
+}
 \seealso{
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the single-arm engine.
 }

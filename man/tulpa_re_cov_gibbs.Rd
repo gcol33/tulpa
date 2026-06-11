@@ -115,6 +115,21 @@ there is no Laplace bias to remove; \code{phi} (the residual variance) is treate
 as known. The sampler still runs and is useful as a reference / for \code{Sigma}
 uncertainty.
 }
+\examples{
+\donttest{
+set.seed(1)
+G <- 20L; per <- 12L; n <- G * per
+grp <- rep(seq_len(G), each = per); x <- rnorm(n)
+b <- cbind(rnorm(G, 0, 0.7), rnorm(G, 0, 0.5))     # random intercept + slope
+eta <- -0.2 + 0.5 * x + b[grp, 1] + b[grp, 2] * x
+y <- rbinom(n, 1L, plogis(eta))
+re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
+                correlated = TRUE)
+fit <- tulpa_re_cov_gibbs(y, rep(1L, n), cbind(1, x), re_term,
+                          family = "binomial", n_iter = 300L, warmup = 150L)
+fit$Sigma_mean        # exact-debias RE covariance posterior mean
+}
+}
 \references{
 Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
 based on vines and extended onion method. \emph{Journal of Multivariate

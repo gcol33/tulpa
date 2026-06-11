@@ -38,26 +38,16 @@ Compares observed data to replicated data from the posterior predictive
 distribution.
 }
 \examples{
-# pp_check requires a fitted model with posterior predictive draws
-# See tulpa() examples for fitting models
-
+# pp_check is a generic; model packages (e.g. tulpaObs, tulpaRatio) provide
+# the posterior-predictive method for their fits.
 \dontrun{
-# Simulate data and fit model (slow, not run on CRAN)
 set.seed(123)
-n <- 50
-df <- data.frame(
-  count = rnbinom(n, size = 5, mu = 15),
-  total = rnbinom(n, size = 8, mu = 100),
-  x = rnorm(n),
-  site = factor(rep(1:10, each = 5))
-)
-fit <- tulpa(
-  count | total ~ x + (1 | site),
-  data = df,
-  family = tulpa_negbin_negbin(),
-  iter = 200, warmup = 100, chains = 1
-)
-# Density overlay (requires bayesplot package)
+n <- 200L
+df <- data.frame(y = rpois(n, 5), x = rnorm(n),
+                 site = factor(rep(1:10, each = 20)))
+fit <- tulpa(y ~ x + (1 | site), data = df, family = "poisson",
+             mode = "hmc", control = list(n_iter = 500, warmup = 250))
+# Density overlay (dispatches to the model package's pp_check method).
 # pp_check(fit, type = "dens_overlay")
 }
 

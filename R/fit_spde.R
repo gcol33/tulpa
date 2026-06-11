@@ -65,6 +65,24 @@
 #' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
 #' Gaussian models by using integrated nested Laplace approximations.
 #' \emph{JRSS-B} 71(2):319-392.
+#' @examples
+#' \donttest{
+#' if (requireNamespace("fmesher", quietly = TRUE)) {
+#'   set.seed(1)
+#'   n <- 200L
+#'   coords <- cbind(runif(n), runif(n))
+#'   mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.15, 0.4), cutoff = 0.05)
+#'   fem  <- fmesher::fm_fem(mesh)
+#'   A    <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
+#'   spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1,
+#'                               prior_range = c(0.3, 0.5), prior_sigma = c(0.6, 0.05))
+#'   w <- as.numeric(rnorm(spec$n_mesh, 0, 0.6)); w <- w - mean(w)
+#'   x <- rnorm(n)
+#'   y <- rpois(n, exp(2.0 + 0.5 * x + as.numeric(spec$A %*% w)))
+#'   fit <- fit_spde(y = y, X = cbind(1, x), spatial = spec, family = "poisson")
+#'   fit$nested$range_mean
+#' }
+#' }
 #' @export
 fit_spde <- function(y, X, spatial,
                      family = "binomial", n_trials = NULL,
