@@ -16,6 +16,8 @@
   forms the full block (the betas-only callers). Numerically identical to the
   former dense path on the read sub-blocks (`test-joint-inner-vcov.R`).
 
+## 0.0.32 (2026-06-12)
+
 * refactor(linalg): the small-dense lower-Cholesky factorization, triangular
   solves, log-determinant, and NNGP conditional (kriging) moments are now a
   single `linalg_fast.h` core (`chol_factor_lower` / `chol_forward_solve` /
