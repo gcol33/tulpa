@@ -98,47 +98,16 @@ inline void nngp_conditional_laplace(
         }
     }
 
-    // Small Cholesky for neighbor covariance matrix
-    std::vector<double> L(n_neighbors * n_neighbors, 0.0);
-    for (int j = 0; j < n_neighbors; j++) {
-        for (int k = 0; k <= j; k++) {
-            double sum = C_mat[j * n_neighbors + k];
-            for (int m = 0; m < k; m++) {
-                sum -= L[j * n_neighbors + m] * L[k * n_neighbors + m];
-            }
-            if (j == k) {
-                L[j * n_neighbors + j] = std::sqrt(std::max(1e-10, sum));
-            } else {
-                L[j * n_neighbors + k] = sum / L[k * n_neighbors + k];
-            }
-        }
-    }
-
-    std::vector<double> y_solve(n_neighbors);
-    for (int j = 0; j < n_neighbors; j++) {
-        double sum = c_vec[j];
-        for (int k = 0; k < j; k++) sum -= L[j * n_neighbors + k] * y_solve[k];
-        y_solve[j] = sum / L[j * n_neighbors + j];
-    }
-
-    std::vector<double> alpha(n_neighbors);
-    for (int j = n_neighbors - 1; j >= 0; j--) {
-        double sum = y_solve[j];
-        for (int k = j + 1; k < n_neighbors; k++) sum -= L[k * n_neighbors + j] * alpha[k];
-        alpha[j] = sum / L[j * n_neighbors + j];
-    }
-
-    cond_mean = 0.0;
+    // Gather neighbor values in c_vec order, then shared factor/solve core
+    std::vector<double> w_nb(n_neighbors);
     for (int j = 0; j < n_neighbors; j++) {
         int nn_orig = nn_order[nn_idx(i, j) - 1];
-        cond_mean += alpha[j] * w[nn_orig];
+        w_nb[j] = w[nn_orig];
     }
-
-    double c_Cinv_c = 0.0;
-    for (int j = 0; j < n_neighbors; j++) {
-        c_Cinv_c += c_vec[j] * alpha[j];
-    }
-    cond_var = std::max(1e-10, sigma2 - c_Cinv_c);
+    tulpa_linalg::nngp_conditional_moments(
+        C_mat.data(), c_vec.data(), w_nb.data(), n_neighbors, sigma2,
+        tulpa_linalg::kCholJitter, tulpa_linalg::kCholJitter,
+        cond_mean, cond_var);
 }
 
 } // namespace tulpa

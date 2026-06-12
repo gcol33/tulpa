@@ -17,6 +17,7 @@
 
 #include <vector>
 #include <cmath>
+#include "linalg_fast.h"  // shared small-dense Cholesky core
 
 namespace tulpa_car_proper {
 
@@ -95,30 +96,12 @@ inline double car_log_det(
     int n,
     const std::vector<double>& Q
 ) {
-  // Cholesky decomposition: Q = L * L^T
+  // Cholesky decomposition: Q = L * L^T (PD-check mode: jitter < 0)
   std::vector<double> L(n * n, 0.0);
-
-  for (int j = 0; j < n; j++) {
-    for (int k = 0; k <= j; k++) {
-      double sum = Q[j * n + k];
-      for (int m = 0; m < k; m++) {
-        sum -= L[j * n + m] * L[k * n + m];
-      }
-      if (j == k) {
-        if (sum <= 0) return -INFINITY;  // Not positive definite
-        L[j * n + j] = std::sqrt(sum);
-      } else {
-        L[j * n + k] = sum / L[k * n + k];
-      }
-    }
+  if (!tulpa_linalg::chol_factor_lower(Q.data(), L.data(), n, n, -1.0)) {
+    return -INFINITY;  // Not positive definite
   }
-
-  // log|Q| = 2 * sum(log(L_ii))
-  double log_det = 0.0;
-  for (int i = 0; i < n; i++) {
-    log_det += std::log(L[i * n + i]);
-  }
-  return 2.0 * log_det;
+  return tulpa_linalg::chol_log_det(L.data(), n, n);
 }
 
 // Compute quadratic form phi' Q phi
@@ -318,31 +301,14 @@ inline bool car_proper_log_det_and_grad_rho(
   std::vector<double> Q = compute_car_precision(n, adj_row_ptr, adj_col_idx,
                                                  n_neighbors, rho);
 
-  // In-place Cholesky: Q = L * L^T, lower triangle stored in Q (row-major).
-  // Use a fresh L matrix to avoid clobbering Q (we still need W structure
-  // but W lives in adj_*, not Q).
+  // Cholesky Q = L * L^T (PD-check mode: jitter < 0). A fresh L matrix —
+  // the solves below need the unclobbered factor.
   std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
-  for (int j = 0; j < n; j++) {
-    for (int k = 0; k <= j; k++) {
-      double sum = Q[j * n + k];
-      for (int m = 0; m < k; m++) {
-        sum -= L[j * n + m] * L[k * n + m];
-      }
-      if (j == k) {
-        if (sum <= 0.0) return false;  // not PD
-        L[j * n + j] = std::sqrt(sum);
-      } else {
-        L[j * n + k] = sum / L[k * n + k];
-      }
-    }
+  if (!tulpa_linalg::chol_factor_lower(Q.data(), L.data(), n, n, -1.0)) {
+    return false;  // not PD
   }
 
-  // log|Q| = 2 * sum(log(L_ii))
-  double log_det = 0.0;
-  for (int i = 0; i < n; i++) {
-    log_det += std::log(L[i * n + i]);
-  }
-  log_det *= 2.0;
+  double log_det = tulpa_linalg::chol_log_det(L.data(), n, n);
 
   // tr(Q^{-1} W) = sum_{i~j} (Q^{-1})_{ij}.
   // Compute the full inverse via L * L^T = Q  =>  Q^{-1} = L^{-T} L^{-1}.
@@ -354,19 +320,10 @@ inline bool car_proper_log_det_and_grad_rho(
   std::vector<double> col(n);
   std::vector<double> Qinv(static_cast<size_t>(n) * n, 0.0);
   for (int k = 0; k < n; k++) {
-    // forward solve L y = e_k
+    // forward solve L y = e_k, then back solve L^T x = y (both in place)
     for (int i = 0; i < n; i++) col[i] = (i == k) ? 1.0 : 0.0;
-    for (int i = 0; i < n; i++) {
-      double s = col[i];
-      for (int j = 0; j < i; j++) s -= L[i * n + j] * col[j];
-      col[i] = s / L[i * n + i];
-    }
-    // back solve L^T x = y (in place)
-    for (int i = n - 1; i >= 0; i--) {
-      double s = col[i];
-      for (int j = i + 1; j < n; j++) s -= L[j * n + i] * col[j];
-      col[i] = s / L[i * n + i];
-    }
+    tulpa_linalg::chol_forward_solve(L.data(), n, n, col.data(), col.data());
+    tulpa_linalg::chol_back_solve(L.data(), n, n, col.data(), col.data());
     // Store column k of Q^{-1}
     for (int i = 0; i < n; i++) Qinv[i * n + k] = col[i];
   }

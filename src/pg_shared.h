@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <vector>
 
+#include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
+
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -96,72 +98,37 @@ inline void pg_nngp_conditional(
     }
   }
 
-  // Cholesky of C
-  std::vector<double> L(n_neighbors * n_neighbors, 0.0);
-  for (int j = 0; j < n_neighbors; j++) {
-    for (int k = 0; k <= j; k++) {
-      double sum = C_mat[j * n_neighbors + k];
-      for (int m = 0; m < k; m++) {
-        sum -= L[j * n_neighbors + m] * L[k * n_neighbors + m];
-      }
-      if (j == k) {
-        L[j * n_neighbors + j] = std::sqrt(std::max(1e-10, sum));
-      } else {
-        L[j * n_neighbors + k] = sum / L[k * n_neighbors + k];
-      }
-    }
-  }
-
-  // Solve L * y_sol = c_vec
-  std::vector<double> y_sol(n_neighbors);
-  for (int j = 0; j < n_neighbors; j++) {
-    double sum = c_vec[j];
-    for (int k = 0; k < j; k++) {
-      sum -= L[j * n_neighbors + k] * y_sol[k];
-    }
-    y_sol[j] = sum / L[j * n_neighbors + j];
-  }
-
-  // Solve L^T * alpha = y_sol
-  std::vector<double> alpha(n_neighbors);
-  for (int j = n_neighbors - 1; j >= 0; j--) {
-    double sum = y_sol[j];
-    for (int k = j + 1; k < n_neighbors; k++) {
-      sum -= L[k * n_neighbors + j] * alpha[k];
-    }
-    alpha[j] = sum / L[j * n_neighbors + j];
-  }
-
-  cond_mean = 0.0;
+  // Gather neighbor values in c_vec order, then shared factor/solve core
+  std::vector<double> w_nb(n_neighbors);
   for (int j = 0; j < n_neighbors; j++) {
     int nn_orig = nn_order[nn_idx(i, j) - 1];
-    cond_mean += alpha[j] * w[nn_orig];
+    w_nb[j] = w[nn_orig];
   }
-
-  double c_Cinv_c = 0.0;
-  for (int j = 0; j < n_neighbors; j++) {
-    c_Cinv_c += c_vec[j] * alpha[j];
-  }
-  cond_var = std::max(1e-10, sigma2 - c_Cinv_c);
+  tulpa_linalg::nngp_conditional_moments(
+      C_mat.data(), c_vec.data(), w_nb.data(), n_neighbors, sigma2,
+      tulpa_linalg::kCholJitter, tulpa_linalg::kCholJitter,
+      cond_mean, cond_var);
 }
 
 // Cholesky decomposition (lower triangular) for small dense matrices
 // Used in PG Gibbs samplers for posterior sampling of beta
 inline Rcpp::NumericMatrix chol_decomp_pg(const Rcpp::NumericMatrix& A) {
   int n = A.nrow();
+  // Row-major staging: NumericMatrix is column-major, the shared kernel
+  // indexes A[i * n + j]; the matrix is symmetric so the copy is layout-safe.
+  std::vector<double> A_flat(static_cast<size_t>(n) * n);
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < n; j++) {
+      A_flat[static_cast<size_t>(i) * n + j] = A(i, j);
+    }
+  }
+  std::vector<double> L_flat(static_cast<size_t>(n) * n, 0.0);
+  tulpa_linalg::chol_factor_lower(A_flat.data(), L_flat.data(), n, n,
+                                  tulpa_linalg::kCholJitter);
   Rcpp::NumericMatrix L(n, n);
-
   for (int i = 0; i < n; i++) {
     for (int j = 0; j <= i; j++) {
-      double sum = 0.0;
-      for (int k = 0; k < j; k++) {
-        sum += L(i, k) * L(j, k);
-      }
-      if (i == j) {
-        L(i, j) = std::sqrt(std::max(A(i, i) - sum, 1e-10));
-      } else {
-        L(i, j) = (A(i, j) - sum) / L(j, j);
-      }
+      L(i, j) = L_flat[static_cast<size_t>(i) * n + j];
     }
   }
   return L;

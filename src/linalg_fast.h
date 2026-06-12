@@ -18,6 +18,120 @@
 namespace tulpa_linalg {
 
 // ============================================================================
+// Small dense Cholesky (single source for the per-location NNGP /
+// CAR / GP kernels; all hand-rolled copies route through these)
+// ============================================================================
+
+// Default jitter floor for Cholesky pivots. Per-site overrides (e.g. the
+// SVC kernel's 1e-6) are passed explicitly so divergence is a deliberate
+// argument, not a drifted literal.
+constexpr double kCholJitter = 1e-10;
+
+// Lower-Cholesky factorization of the leading n x n block of an
+// ld-strided dense SPD matrix (A[i * ld + j]). With jitter >= 0 the
+// diagonal pivots are floored at `jitter`. With jitter < 0 the
+// factorization runs in PD-check mode: returns false on a non-positive
+// pivot instead of flooring. Supports in-place use (L == A); the upper
+// triangle of L is left untouched, so callers wanting zeros there must
+// pass a zero-initialized L.
+inline bool chol_factor_lower(const double* A, double* L, int n, int ld,
+                              double jitter) {
+  for (int j = 0; j < n; j++) {
+    for (int k = 0; k <= j; k++) {
+      double sum = A[j * ld + k];
+      for (int m = 0; m < k; m++) {
+        sum -= L[j * ld + m] * L[k * ld + m];
+      }
+      if (j == k) {
+        if (jitter < 0.0) {
+          if (sum <= 0.0) return false;  // Not positive definite
+          L[j * ld + j] = std::sqrt(sum);
+        } else {
+          L[j * ld + j] = std::sqrt(std::max(jitter, sum));
+        }
+      } else {
+        L[j * ld + k] = sum / L[k * ld + k];
+      }
+    }
+  }
+  return true;
+}
+
+// Forward substitution: solve L y = b for lower-triangular L.
+inline void chol_forward_solve(const double* L, int n, int ld,
+                               const double* b, double* y) {
+  for (int i = 0; i < n; i++) {
+    double sum = b[i];
+    for (int j = 0; j < i; j++) {
+      sum -= L[i * ld + j] * y[j];
+    }
+    y[i] = sum / L[i * ld + i];
+  }
+}
+
+// Back substitution: solve L' x = y for lower-triangular L.
+inline void chol_back_solve(const double* L, int n, int ld,
+                            const double* y, double* x) {
+  for (int i = n - 1; i >= 0; i--) {
+    double sum = y[i];
+    for (int j = i + 1; j < n; j++) {
+      sum -= L[j * ld + i] * x[j];
+    }
+    x[i] = sum / L[i * ld + i];
+  }
+}
+
+// log|A| = 2 * sum(log(L_ii)) from a Cholesky factor.
+inline double chol_log_det(const double* L, int n, int ld) {
+  double log_det = 0.0;
+  for (int i = 0; i < n; i++) {
+    log_det += std::log(L[i * ld + i]);
+  }
+  return 2.0 * log_det;
+}
+
+// NNGP kriging moments from an already-factored neighbor covariance:
+// cond_mean = c' C^{-1} w_nb, cond_var = max(var_floor, sigma2 - c' C^{-1} c).
+// `w_nb` holds the neighbor values gathered in the same order as `c_vec`.
+// If `alpha_out` is non-null the kriging weights C^{-1} c are written there
+// (length n).
+inline void nngp_moments_from_chol(const double* L, int n, int ld,
+                                   const double* c_vec, const double* w_nb,
+                                   double sigma2, double var_floor,
+                                   double& cond_mean, double& cond_var,
+                                   double* alpha_out = nullptr) {
+  std::vector<double> y(n), alpha_local;
+  double* alpha = alpha_out;
+  if (!alpha) {
+    alpha_local.resize(n);
+    alpha = alpha_local.data();
+  }
+  chol_forward_solve(L, n, ld, c_vec, y.data());
+  chol_back_solve(L, n, ld, y.data(), alpha);
+
+  double cm = 0.0;
+  double c_Cinv_c = 0.0;
+  for (int j = 0; j < n; j++) {
+    cm += alpha[j] * w_nb[j];
+    c_Cinv_c += c_vec[j] * alpha[j];
+  }
+  cond_mean = cm;
+  cond_var = std::max(var_floor, sigma2 - c_Cinv_c);
+}
+
+// Full NNGP conditional-moments core: factorize the neighbor covariance
+// C (n x n), then compute the kriging moments against c_vec / w_nb.
+inline void nngp_conditional_moments(const double* C, const double* c_vec,
+                                     const double* w_nb, int n, double sigma2,
+                                     double jitter, double var_floor,
+                                     double& cond_mean, double& cond_var) {
+  std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
+  chol_factor_lower(C, L.data(), n, n, jitter);
+  nngp_moments_from_chol(L.data(), n, n, c_vec, w_nb, sigma2, var_floor,
+                         cond_mean, cond_var);
+}
+
+// ============================================================================
 // Vector operations (SIMD-friendly)
 // ============================================================================
 

@@ -7,6 +7,7 @@
 #define TULPA_GPU_NNGP_LAPLACE_H
 
 #include "gpu_cuda.h"
+#include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>
@@ -119,22 +120,16 @@ inline void batch_nngp_scatter(
     }
 
     if (!chol_ok) {
-        // CPU Cholesky per matrix
+        // CPU Cholesky per matrix: shared core, in-place on the nn-strided
+        // n_nb×n_nb block; zero the upper triangle afterwards as the GPU
+        // path does.
         for (int b = 0; b < batch_size; b++) {
             auto& L = C_mats[b];
             int n_nb = locs[b].n_nb;
-            // In-place Cholesky (only n_nb×n_nb block)
+            tulpa_linalg::chol_factor_lower(L.data(), L.data(), n_nb, nn,
+                                            tulpa_linalg::kCholJitter);
             for (int j = 0; j < n_nb; j++) {
-                for (int k = 0; k <= j; k++) {
-                    double sum = L[j * nn + k];
-                    for (int m = 0; m < k; m++) sum -= L[j * nn + m] * L[k * nn + m];
-                    if (j == k) {
-                        L[j * nn + j] = std::sqrt(std::max(1e-10, sum));
-                    } else {
-                        L[j * nn + k] = sum / L[k * nn + k];
-                        L[k * nn + j] = 0.0;  // zero upper triangle
-                    }
-                }
+                for (int k = j + 1; k < n_nb; k++) L[j * nn + k] = 0.0;
             }
         }
     }
@@ -147,37 +142,22 @@ inline void batch_nngp_scatter(
         int obs_idx = locs[b].obs_idx;
         int nngp_idx = locs[b].nngp_idx;
 
-        // Forward solve: L y = c
-        std::vector<double> y(n_nb);
-        for (int j = 0; j < n_nb; j++) {
-            double sum = c[j];
-            for (int k = 0; k < j; k++) sum -= L[j * nn + k] * y[k];
-            y[j] = sum / L[j * nn + j];
-        }
-
-        // Back solve: L' alpha = y
-        std::vector<double> alpha(n_nb);
-        for (int j = n_nb - 1; j >= 0; j--) {
-            double sum = y[j];
-            for (int k = j + 1; k < n_nb; k++) sum -= L[k * nn + j] * alpha[k];
-            alpha[j] = sum / L[j * nn + j];
-        }
-
-        // Conditional mean: alpha' * w_neighbors
-        double cm = 0.0;
+        // Gather neighbor values (0 for inactive/out-of-range slots: they
+        // then contribute nothing to the conditional mean)
+        std::vector<double> w_nb(n_nb, 0.0);
         for (int j = 0; j < n_nb; j++) {
             int nn_val = nn_idx(nngp_idx, j);
             if (nn_val <= 0 || nn_val > n_spatial) continue;
             int nn_orig = nn_order[nn_val - 1];
             if (nn_orig < 0 || nn_orig >= n_spatial) continue;
-            cm += alpha[j] * w[nn_orig];
+            w_nb[j] = w[nn_orig];
         }
-        cond_mean_out[obs_idx] = cm;
 
-        // Conditional variance: sigma2 - c' alpha
-        double c_alpha = 0.0;
-        for (int j = 0; j < n_nb; j++) c_alpha += c[j] * alpha[j];
-        cond_var_out[obs_idx] = std::max(1e-10, sigma2 - c_alpha);
+        std::vector<double> alpha(n_nb);
+        tulpa_linalg::nngp_moments_from_chol(
+            L.data(), n_nb, nn, c.data(), w_nb.data(), sigma2,
+            tulpa_linalg::kCholJitter,
+            cond_mean_out[obs_idx], cond_var_out[obs_idx], alpha.data());
 
         if (alpha_out) {
             double* row = alpha_out->data() + static_cast<size_t>(nngp_idx) * nn;

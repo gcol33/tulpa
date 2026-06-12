@@ -9,6 +9,7 @@
 #include <cmath>
 #include "hmc_temporal.h"
 #include "hmc_svc.h"
+#include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
 
 // Use canonical type definitions from exported headers
 #include "tulpa/st_data.h"
@@ -413,54 +414,17 @@ inline double st_gp_nngp_log_lik(
       }
     }
 
-    // Cholesky decomposition
-    std::vector<double> L(n_neighbors * n_neighbors, 0.0);
-    for (int j = 0; j < n_neighbors; j++) {
-      for (int k = 0; k <= j; k++) {
-        double sum = C_mat[j * n_neighbors + k];
-        for (int m = 0; m < k; m++) {
-          sum -= L[j * n_neighbors + m] * L[k * n_neighbors + m];
-        }
-        if (j == k) {
-          L[j * n_neighbors + j] = std::sqrt(std::max(1e-10, sum));
-        } else {
-          L[j * n_neighbors + k] = sum / L[k * n_neighbors + k];
-        }
-      }
-    }
-
-    // Solve L * y = c_vec
-    std::vector<double> y(n_neighbors);
-    for (int j = 0; j < n_neighbors; j++) {
-      double sum = c_vec[j];
-      for (int k = 0; k < j; k++) {
-        sum -= L[j * n_neighbors + k] * y[k];
-      }
-      y[j] = sum / L[j * n_neighbors + j];
-    }
-
-    // Solve L^T * alpha = y
-    std::vector<double> alpha(n_neighbors);
-    for (int j = n_neighbors - 1; j >= 0; j--) {
-      double sum = y[j];
-      for (int k = j + 1; k < n_neighbors; k++) {
-        sum -= L[k * n_neighbors + j] * alpha[k];
-      }
-      alpha[j] = sum / L[j * n_neighbors + j];
-    }
-
-    // Conditional mean and variance
-    double cond_mean = 0.0;
+    // Gather neighbor values in c_vec order, then shared factor/solve core
+    std::vector<double> w_nb(n_neighbors);
     for (int j = 0; j < n_neighbors; j++) {
       int nn_orig_idx = st_data.nn_order[st_data.nn_idx[i * nn + j] - 1];
-      cond_mean += alpha[j] * w[nn_orig_idx];
+      w_nb[j] = w[nn_orig_idx];
     }
-
-    double c_Cinv_c = 0.0;
-    for (int j = 0; j < n_neighbors; j++) {
-      c_Cinv_c += c_vec[j] * alpha[j];
-    }
-    double cond_var = std::max(1e-10, sigma2 - c_Cinv_c);
+    double cond_mean, cond_var;
+    tulpa_linalg::nngp_conditional_moments(
+        C_mat.data(), c_vec.data(), w_nb.data(), n_neighbors, sigma2,
+        tulpa_linalg::kCholJitter, tulpa_linalg::kCholJitter,
+        cond_mean, cond_var);
 
     // Log-likelihood contribution
     double resid = w[obs_idx] - cond_mean;

@@ -13,6 +13,7 @@
 #include "tulpa/temporal_data.h"
 #include "tulpa/types.h"
 #include "pc_prior.h"
+#include "linalg_fast.h"  // shared small-dense Cholesky core
 
 namespace tulpa_temporal_gp {
 
@@ -171,40 +172,19 @@ inline double temporal_gp_log_lik_direct(
     K[i * N + i] += 1e-8;
   }
 
-  // Cholesky decomposition: K = L * L^T
+  // Cholesky decomposition: K = L * L^T (shared core)
   std::vector<double> L(N * N, 0.0);
-  for (int j = 0; j < N; j++) {
-    for (int k = 0; k <= j; k++) {
-      double sum = K[j * N + k];
-      for (int m = 0; m < k; m++) {
-        sum -= L[j * N + m] * L[k * N + m];
-      }
-      if (j == k) {
-        L[j * N + j] = std::sqrt(std::max(1e-10, sum));
-      } else {
-        L[j * N + k] = sum / L[k * N + k];
-      }
-    }
-  }
+  tulpa_linalg::chol_factor_lower(K.data(), L.data(), N, N,
+                                  tulpa_linalg::kCholJitter);
 
   // Solve L * y = f (forward substitution)
   std::vector<double> y(N);
-  for (int j = 0; j < N; j++) {
-    double sum = f[j];
-    for (int k = 0; k < j; k++) {
-      sum -= L[j * N + k] * y[k];
-    }
-    y[j] = sum / L[j * N + j];
-  }
+  tulpa_linalg::chol_forward_solve(L.data(), N, N, f.data(), y.data());
 
   // Log-likelihood: -0.5 * (N * log(2*pi) + log|K| + f' K^{-1} f)
   // log|K| = 2 * sum(log(L_ii))
   // f' K^{-1} f = y' y
-  double log_det = 0.0;
-  for (int j = 0; j < N; j++) {
-    log_det += std::log(L[j * N + j]);
-  }
-  log_det *= 2.0;
+  double log_det = tulpa_linalg::chol_log_det(L.data(), N, N);
 
   double quad = 0.0;
   for (int j = 0; j < N; j++) {
