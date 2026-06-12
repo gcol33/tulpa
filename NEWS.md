@@ -1,6 +1,20 @@
 # tulpa NEWS
 
-## 0.0.32 (2026-06-12)
+## 0.0.33 (2026-06-12)
+
+* perf(nested-laplace-joint): the joint post-grid inner-covariance extraction is
+  now a single parallel C++ primitive, `cpp_joint_inner_vcov_blocks`
+  (`src/joint_inner_vcov.{h,cpp}`), replacing the serial-R per-cell
+  `solve(Qk, E)` over ~`n_betas + n_field` right-hand sides (gcol33/tulpa#112,
+  #113; gcol33/tulpaObs#93). For the field-marginal summary it solves only the
+  `n_dense` fixed-effect columns of `Qk^-1` (the betas block and the betas x
+  field cross, exact) and recovers the field marginal variances from one
+  Takahashi selected-inversion pass (`selected_inversion_diagonal`,
+  `sparse_cholesky.h`); the field x field off-diagonal -- read by neither the SD
+  summary nor the `Q_k`-direct predict path -- is not formed. Cells run
+  concurrently over the supplied thread budget. A `field_marginal = FALSE` mode
+  forms the full block (the betas-only callers). Numerically identical to the
+  former dense path on the read sub-blocks (`test-joint-inner-vcov.R`).
 
 * refactor(linalg): the small-dense lower-Cholesky factorization, triangular
   solves, log-determinant, and NNGP conditional (kriging) moments are now a

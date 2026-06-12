@@ -226,6 +226,25 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_joint_inner_vcov_blocks
+Rcpp::List cpp_joint_inner_vcov_blocks(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector idx, int n_dense, Rcpp::List A_cols_list, bool field_marginal, int n_threads);
+RcppExport SEXP _tulpa_cpp_joint_inner_vcov_blocks(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP idxSEXP, SEXP n_denseSEXP, SEXP A_cols_listSEXP, SEXP field_marginalSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_p_per_grid(Q_p_per_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_i_per_grid(Q_i_per_gridSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type Q_x_per_grid(Q_x_per_gridSEXP);
+    Rcpp::traits::input_parameter< int >::type n_x(n_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type idx(idxSEXP);
+    Rcpp::traits::input_parameter< int >::type n_dense(n_denseSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type A_cols_list(A_cols_listSEXP);
+    Rcpp::traits::input_parameter< bool >::type field_marginal(field_marginalSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_joint_inner_vcov_blocks(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_laplace_fit
 Rcpp::List cpp_laplace_fit(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, std::string family, double phi, int max_iter, double tol, int n_threads);
 RcppExport SEXP _tulpa_cpp_laplace_fit(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP) {
@@ -2870,6 +2889,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
+    {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 9},
     {"_tulpa_cpp_laplace_fit", (DL_FUNC) &_tulpa_cpp_laplace_fit, 11},
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 19},
     {"_tulpa_cpp_laplace_sample", (DL_FUNC) &_tulpa_cpp_laplace_sample, 3},
