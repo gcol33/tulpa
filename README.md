@@ -1,5 +1,7 @@
 # tulpa
 
+> Small exact engines for scientific computing in R.
+
 *Bayesian models without the full sampling bill*
 
 [![Lifecycle: experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
