@@ -202,14 +202,14 @@ bool extract_inner_vcov_block_cell(
 //                returned diagonal-only (off-diagonal 0).
 // A_cols_list  : list of 1-based latent-index vectors, one per sum-to-zero
 //                constraint group (empty list => unconstrained).
-// field_marginal : cheap recipe (TRUE) vs full p x p block (FALSE).
+// field_marginal : cheap recipe (TRUE, the default) vs full p x p block (FALSE).
 // Returns a list of length n_grid: each element NULL or a p x p NumericMatrix.
 //
 // [[Rcpp::export]]
 Rcpp::List cpp_joint_inner_vcov_blocks(
     Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid,
     int n_x, Rcpp::IntegerVector idx, int n_dense,
-    Rcpp::List A_cols_list, bool field_marginal, int n_threads
+    Rcpp::List A_cols_list, bool field_marginal = true, int n_threads = 1
 ) {
     const int n_grid = Q_p_per_grid.size();
     const int p = idx.size();
