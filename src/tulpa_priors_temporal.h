@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "hmc_temporal.h"  // single-source RW1/RW2/AR1 kernels
 
 namespace tulpa {
 namespace priors {
@@ -150,18 +151,12 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
             log_post = log_post + log_prior_gamma(log_tau, data.tau_temporal_shape, data.tau_temporal_rate);
 
             if (data.temporal_type == TemporalType::RW1) {
-                // RW1: sum of (phi[t] - phi[t-1])^2
+                // RW1: sum of (phi[t] - phi[t-1])^2 per group
                 T quad_form = T(0.0);
                 for (int g = 0; g < data.n_temporal_groups; g++) {
-                    for (int t = 1; t < T_times; t++) {
-                        T diff = phi_temporal[g * T_times + t] - phi_temporal[g * T_times + t - 1];
-                        quad_form = quad_form + diff * diff;
-                    }
-                    // Cyclic: add wrap-around edge (phi[0] - phi[T-1])
-                    if (data.temporal_cyclic) {
-                        T diff_cyclic = phi_temporal[g * T_times] - phi_temporal[g * T_times + T_times - 1];
-                        quad_form = quad_form + diff_cyclic * diff_cyclic;
-                    }
+                    quad_form = quad_form + tulpa_temporal::rw1_quadratic_form(
+                        phi_temporal.data() + g * T_times, T_times,
+                        data.temporal_cyclic);
                 }
                 // Rank: T for cyclic, T-1 for non-cyclic
                 int rank_rw1 = data.temporal_cyclic ? T_times : T_times - 1;
@@ -169,25 +164,12 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
 
             } else if (data.temporal_type == TemporalType::RW2) {
-                // RW2: sum of (phi[t] - 2*phi[t-1] + phi[t-2])^2
+                // RW2: sum of (phi[t] - 2*phi[t-1] + phi[t-2])^2 per group
                 T quad_form = T(0.0);
                 for (int g = 0; g < data.n_temporal_groups; g++) {
-                    for (int t = 2; t < T_times; t++) {
-                        T diff = phi_temporal[g * T_times + t]
-                               - T(2.0) * phi_temporal[g * T_times + t - 1]
-                               + phi_temporal[g * T_times + t - 2];
-                        quad_form = quad_form + diff * diff;
-                    }
-                    // Cyclic: add wrap-around second-order differences
-                    if (data.temporal_cyclic && T_times >= 3) {
-                        T d2_a = phi_temporal[g * T_times + T_times - 2]
-                               - T(2.0) * phi_temporal[g * T_times + T_times - 1]
-                               + phi_temporal[g * T_times];
-                        T d2_b = phi_temporal[g * T_times + T_times - 1]
-                               - T(2.0) * phi_temporal[g * T_times]
-                               + phi_temporal[g * T_times + 1];
-                        quad_form = quad_form + d2_a * d2_a + d2_b * d2_b;
-                    }
+                    quad_form = quad_form + tulpa_temporal::rw2_quadratic_form(
+                        phi_temporal.data() + g * T_times, T_times,
+                        data.temporal_cyclic);
                 }
                 // Rank: T for cyclic, T-2 for non-cyclic
                 int rank_rw2 = data.temporal_cyclic ? T_times : T_times - 2;
@@ -199,23 +181,10 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 // Uniform(0,1) prior on rho with logit Jacobian: log(rho) + log(1-rho)
                 log_post = log_post + safe_log(rho_ar1_out) + safe_log(T(1.0) - rho_ar1_out);
 
-                T sigma2_ar1 = T(1.0) / tau_temporal_out;
-                T one_minus_rho2 = T(1.0) - rho_ar1_out * rho_ar1_out;
-
                 for (int g = 0; g < data.n_temporal_groups; g++) {
-                    // First time point: phi[0] ~ N(0, sigma^2/(1-rho^2))
-                    T var_stationary = sigma2_ar1 / one_minus_rho2;
-                    log_post = log_post - T(0.5) * phi_temporal[g * T_times] * phi_temporal[g * T_times] / var_stationary;
-                    // Normalization: -0.5 * log(2*pi*var_stationary)
-                    log_post = log_post - T(0.5) * safe_log(T(2.0 * M_PI) * var_stationary);
-
-                    // Subsequent: phi[t] | phi[t-1] ~ N(rho*phi[t-1], sigma^2)
-                    T log_norm_cond = T(-0.5) * safe_log(T(2.0 * M_PI) * sigma2_ar1);
-                    for (int t = 1; t < T_times; t++) {
-                        T resid = phi_temporal[g * T_times + t] - rho_ar1_out * phi_temporal[g * T_times + t - 1];
-                        log_post = log_post - T(0.5) * tau_temporal_out * resid * resid;
-                        log_post = log_post + log_norm_cond;
-                    }
+                    log_post = log_post + tulpa_temporal::ar1_log_density(
+                        phi_temporal.data() + g * T_times, T_times,
+                        rho_ar1_out, tau_temporal_out);
                 }
             }
         }

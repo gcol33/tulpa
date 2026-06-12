@@ -52,11 +52,7 @@ inline void rw1_grad_w(const double* w, int n_times, double tau, double* grad_w)
 // d/d(log_tau) = 0.5 * (T-1) - 0.5 * tau * quad + log_tau_jacobian
 //              = 0.5 * (T-1) - 0.5 * quad * tau  (Jacobian cancels in chain rule)
 inline double rw1_grad_log_tau(const double* w, int n_times, double tau) {
-    double quad = 0.0;
-    for (int t = 1; t < n_times; t++) {
-        double diff = w[t] - w[t-1];
-        quad += diff * diff;
-    }
+    double quad = rw1_quadratic_form(w, n_times, false);
     // d/d(log_tau) = 0.5*(T-1) - 0.5*tau*quad + tau (Jacobian: d tau / d log_tau = tau)
     // But we want d log_post / d log_tau, which includes Jacobian automatically in computation
     return 0.5 * (n_times - 1) - 0.5 * tau * quad;
@@ -110,11 +106,7 @@ inline void rw2_grad_w(const double* w, int n_times, double tau, double* grad_w,
 }
 
 inline double rw2_grad_log_tau(const double* w, int n_times, double tau) {
-    double quad = 0.0;
-    for (int t = 2; t < n_times; t++) {
-        double d = w[t] - 2.0 * w[t-1] + w[t-2];
-        quad += d * d;
-    }
+    double quad = rw2_quadratic_form(w, n_times, false);
     return 0.5 * (n_times - 2) - 0.5 * tau * quad;
 }
 

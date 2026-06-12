@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
 
 namespace tulpa {
 namespace priors {
@@ -19,6 +20,70 @@ using namespace math;
 // ============================================================================
 // 11. Spatiotemporal interaction prior
 // ============================================================================
+
+// Kronecker (Q_s (x) Q_t) quadratic form for a Type-IV interaction:
+// sum_s n_neigh[s] * q_t(delta_s) - 2 * sum_{s<s2 adjacent} q_t(delta_s, delta_s2)
+// where q_t is the RW1/RW2 temporal (cross) quadratic form. Shared by the
+// non-centered (tau-free, on z) and centered (on delta) Type-IV paths.
+template<typename T>
+T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
+                             int S, int T_st)
+{
+    const auto& st = data.spatiotemporal_data;
+    T total = T(0.0);
+    for (int s = 0; s < S; s++) {
+        const T* d_s = delta.data() + s * T_st;
+        T quad_s = T(0.0);
+        if (st.temporal_type == TemporalType::RW1) {
+            quad_s = tulpa_temporal::rw1_quadratic_form(d_s, T_st, false);
+        } else if (st.temporal_type == TemporalType::RW2) {
+            quad_s = tulpa_temporal::rw2_quadratic_form(d_s, T_st, false);
+        }
+        int n_neigh = st.n_neighbors.empty() ? 0 : st.n_neighbors[s];
+        total = total + T(n_neigh) * quad_s;
+
+        if (!st.adj_row_ptr.empty()) {
+            int row_start_s = st.adj_row_ptr[s];
+            int row_end_s = st.adj_row_ptr[s + 1];
+            for (int jj = row_start_s; jj < row_end_s; jj++) {
+                int s2 = st.adj_col_idx[jj] - 1;
+                if (s2 > s) {
+                    const T* d_s2 = delta.data() + s2 * T_st;
+                    T cross = T(0.0);
+                    if (st.temporal_type == TemporalType::RW1) {
+                        cross = tulpa_temporal::rw1_cross_form(d_s, d_s2, T_st);
+                    } else if (st.temporal_type == TemporalType::RW2) {
+                        cross = tulpa_temporal::rw2_cross_form(d_s, d_s2, T_st);
+                    }
+                    total = total - T(2.0) * cross;
+                }
+            }
+        }
+    }
+    return total;
+}
+
+// Soft sum-to-zero on the S x T_st interaction: squared row and column sums.
+template<typename T>
+T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st)
+{
+    T sum_s = T(0.0), sum_t = T(0.0);
+    for (int s = 0; s < S; s++) {
+        T row_sum = T(0.0);
+        for (int t = 0; t < T_st; t++) {
+            row_sum = row_sum + delta[s * T_st + t];
+        }
+        sum_s = sum_s + row_sum * row_sum;
+    }
+    for (int t = 0; t < T_st; t++) {
+        T col_sum = T(0.0);
+        for (int s = 0; s < S; s++) {
+            col_sum = col_sum + delta[s * T_st + t];
+        }
+        sum_t = sum_t + col_sum * col_sum;
+    }
+    return T(-0.5) * T(0.001) * (sum_s + sum_t);
+}
 
 template<typename T>
 T compute_st_prior(const std::vector<T>& params, const ModelData& data,
@@ -97,60 +162,7 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
             // NC prior: -0.5 * z^T (Q_s ⊗ Q_t) z  (tau-free GMRF)
             // Type IV Kronecker quadratic form on z (with tau=1)
-            // Compute per-spatial-unit temporal GMRF quadratic form
-            T nc_quad = T(0.0);
-            for (int s = 0; s < S; s++) {
-                // Extract temporal series for this spatial unit
-                // Apply spatial neighbor structure
-                T spatial_quad_s = T(0.0);
-                if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                    for (int t = 1; t < T_st; t++) {
-                        T diff = st_delta[s * T_st + t] - st_delta[s * T_st + t - 1];
-                        spatial_quad_s = spatial_quad_s + diff * diff;
-                    }
-                } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                    for (int t = 2; t < T_st; t++) {
-                        T d2 = st_delta[s * T_st + t]
-                             - T(2.0) * st_delta[s * T_st + t - 1]
-                             + st_delta[s * T_st + t - 2];
-                        spatial_quad_s = spatial_quad_s + d2 * d2;
-                    }
-                }
-                // Now multiply by spatial structure (neighbor weights)
-                int n_neigh = data.spatiotemporal_data.n_neighbors.empty() ? 0
-                    : data.spatiotemporal_data.n_neighbors[s];
-                nc_quad = nc_quad + T(n_neigh) * spatial_quad_s;
-                // Off-diagonal: -2 * (neighbor pairs)
-                if (!data.spatiotemporal_data.adj_row_ptr.empty()) {
-                    int row_start_s = data.spatiotemporal_data.adj_row_ptr[s];
-                    int row_end_s = data.spatiotemporal_data.adj_row_ptr[s + 1];
-                    for (int jj = row_start_s; jj < row_end_s; jj++) {
-                        int s2 = data.spatiotemporal_data.adj_col_idx[jj] - 1;
-                        if (s2 > s) {
-                            // Temporal quadratic form between units s and s2
-                            T cross = T(0.0);
-                            if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                                for (int t = 1; t < T_st; t++) {
-                                    T diff_s = st_delta[s * T_st + t] - st_delta[s * T_st + t - 1];
-                                    T diff_s2 = st_delta[s2 * T_st + t] - st_delta[s2 * T_st + t - 1];
-                                    cross = cross + diff_s * diff_s2;
-                                }
-                            } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                                for (int t = 2; t < T_st; t++) {
-                                    T d2_s = st_delta[s * T_st + t]
-                                           - T(2.0) * st_delta[s * T_st + t - 1]
-                                           + st_delta[s * T_st + t - 2];
-                                    T d2_s2 = st_delta[s2 * T_st + t]
-                                            - T(2.0) * st_delta[s2 * T_st + t - 1]
-                                            + st_delta[s2 * T_st + t - 2];
-                                    cross = cross + d2_s * d2_s2;
-                                }
-                            }
-                            nc_quad = nc_quad - T(2.0) * cross;
-                        }
-                    }
-                }
-            }
+            T nc_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st);
             log_post = log_post - T(0.5) * nc_quad;
 
             // Rank term with actual tau and Jacobian correction
@@ -162,22 +174,7 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             log_post = log_post + T(0.5 * (total_rank - ST_total)) * safe_log(tau_st);
 
             // Sum-to-zero on reconstructed delta
-            T sum_s = T(0.0), sum_t = T(0.0);
-            for (int s = 0; s < S; s++) {
-                T row_sum = T(0.0);
-                for (int t = 0; t < T_st; t++) {
-                    row_sum = row_sum + st_delta_nc[s * T_st + t];
-                }
-                sum_s = sum_s + row_sum * row_sum;
-            }
-            for (int t = 0; t < T_st; t++) {
-                T col_sum = T(0.0);
-                for (int s = 0; s < S; s++) {
-                    col_sum = col_sum + st_delta_nc[s * T_st + t];
-                }
-                sum_t = sum_t + col_sum * col_sum;
-            }
-            log_post = log_post - T(0.5) * T(0.001) * (sum_s + sum_t);
+            log_post = log_post + st_sum_to_zero_penalty(st_delta_nc, S, T_st);
 
             // Replace st_delta with reconstructed delta for observation loop
             st_delta = std::move(st_delta_nc);
@@ -212,17 +209,11 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 // GMRF quadratic form: -0.5 * prec_j * delta_j' Q_t delta_j
                 T qf = T(0.0);
                 if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                    for (int t = 1; t < T_st; t++) {
-                        T diff = st_delta[j * T_st + t] - st_delta[j * T_st + t - 1];
-                        qf = qf + diff * diff;
-                    }
+                    qf = tulpa_temporal::rw1_quadratic_form(
+                        st_delta.data() + j * T_st, T_st, false);
                 } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                    for (int t = 2; t < T_st; t++) {
-                        T d2 = st_delta[j * T_st + t]
-                             - T(2.0) * st_delta[j * T_st + t - 1]
-                             + st_delta[j * T_st + t - 2];
-                        qf = qf + d2 * d2;
-                    }
+                    qf = tulpa_temporal::rw2_quadratic_form(
+                        st_delta.data() + j * T_st, T_st, false);
                 }
                 log_post = log_post + T(0.5 * rank_t) * safe_log(prec_j)
                          - T(0.5) * prec_j * qf;
@@ -246,37 +237,18 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
             } else if (data.spatiotemporal_data.type == STType::TYPE_II) {
                 // Structured time at each location
+                bool st_cyclic = data.spatiotemporal_data.temporal_cyclic;
                 for (int s = 0; s < S; s++) {
-                    T quad = T(0.0);
                     if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                        for (int t = 1; t < T_st; t++) {
-                            T diff = st_delta[s * T_st + t] - st_delta[s * T_st + t - 1];
-                            quad = quad + diff * diff;
-                        }
-                        if (data.spatiotemporal_data.temporal_cyclic) {
-                            T diff_c = st_delta[s * T_st] - st_delta[s * T_st + T_st - 1];
-                            quad = quad + diff_c * diff_c;
-                        }
-                        int rank = data.spatiotemporal_data.temporal_cyclic ? T_st : T_st - 1;
+                        T quad = tulpa_temporal::rw1_quadratic_form(
+                            st_delta.data() + s * T_st, T_st, st_cyclic);
+                        int rank = st_cyclic ? T_st : T_st - 1;
                         log_post = log_post + T(0.5 * rank) * safe_log(tau_st)
                                  - T(0.5) * tau_st * quad;
                     } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                        for (int t = 2; t < T_st; t++) {
-                            T d2 = st_delta[s * T_st + t]
-                                 - T(2.0) * st_delta[s * T_st + t - 1]
-                                 + st_delta[s * T_st + t - 2];
-                            quad = quad + d2 * d2;
-                        }
-                        if (data.spatiotemporal_data.temporal_cyclic && T_st >= 3) {
-                            T d2_a = st_delta[s * T_st + T_st - 2]
-                                   - T(2.0) * st_delta[s * T_st + T_st - 1]
-                                   + st_delta[s * T_st];
-                            T d2_b = st_delta[s * T_st + T_st - 1]
-                                   - T(2.0) * st_delta[s * T_st]
-                                   + st_delta[s * T_st + 1];
-                            quad = quad + d2_a * d2_a + d2_b * d2_b;
-                        }
-                        int rank = data.spatiotemporal_data.temporal_cyclic ? T_st : T_st - 2;
+                        T quad = tulpa_temporal::rw2_quadratic_form(
+                            st_delta.data() + s * T_st, T_st, st_cyclic);
+                        int rank = st_cyclic ? T_st : T_st - 2;
                         log_post = log_post + T(0.5 * rank) * safe_log(tau_st)
                                  - T(0.5) * tau_st * quad;
                     }
@@ -311,56 +283,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
             } else if (data.spatiotemporal_data.type == STType::TYPE_IV) {
                 // Kronecker: Q_delta = Q_s ⊗ Q_t
-                // Compute using per-spatial-unit temporal GMRF
-                for (int s = 0; s < S; s++) {
-                    T spatial_quad_s = T(0.0);
-                    if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                        for (int t = 1; t < T_st; t++) {
-                            T diff = st_delta[s * T_st + t] - st_delta[s * T_st + t - 1];
-                            spatial_quad_s = spatial_quad_s + diff * diff;
-                        }
-                    } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                        for (int t = 2; t < T_st; t++) {
-                            T d2 = st_delta[s * T_st + t]
-                                 - T(2.0) * st_delta[s * T_st + t - 1]
-                                 + st_delta[s * T_st + t - 2];
-                            spatial_quad_s = spatial_quad_s + d2 * d2;
-                        }
-                    }
-                    int n_neigh = data.spatiotemporal_data.n_neighbors.empty() ? 0
-                        : data.spatiotemporal_data.n_neighbors[s];
-                    T weighted_quad = T(n_neigh) * spatial_quad_s;
-
-                    if (!data.spatiotemporal_data.adj_row_ptr.empty()) {
-                        int row_start_s = data.spatiotemporal_data.adj_row_ptr[s];
-                        int row_end_s = data.spatiotemporal_data.adj_row_ptr[s + 1];
-                        for (int jj = row_start_s; jj < row_end_s; jj++) {
-                            int s2 = data.spatiotemporal_data.adj_col_idx[jj] - 1;
-                            if (s2 > s) {
-                                T cross = T(0.0);
-                                if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                                    for (int t = 1; t < T_st; t++) {
-                                        T diff_s_t = st_delta[s * T_st + t] - st_delta[s * T_st + t - 1];
-                                        T diff_s2_t = st_delta[s2 * T_st + t] - st_delta[s2 * T_st + t - 1];
-                                        cross = cross + diff_s_t * diff_s2_t;
-                                    }
-                                } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                                    for (int t = 2; t < T_st; t++) {
-                                        T d2_s = st_delta[s * T_st + t]
-                                               - T(2.0) * st_delta[s * T_st + t - 1]
-                                               + st_delta[s * T_st + t - 2];
-                                        T d2_s2 = st_delta[s2 * T_st + t]
-                                                - T(2.0) * st_delta[s2 * T_st + t - 1]
-                                                + st_delta[s2 * T_st + t - 2];
-                                        cross = cross + d2_s * d2_s2;
-                                    }
-                                }
-                                weighted_quad = weighted_quad - T(2.0) * cross;
-                            }
-                        }
-                    }
-                    log_post = log_post - T(0.5) * tau_st * weighted_quad;
-                }
+                T kron_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st);
+                log_post = log_post - T(0.5) * tau_st * kron_quad;
                 // Rank terms
                 int rank_space = S - 1;
                 int rank_time = (data.spatiotemporal_data.temporal_type == TemporalType::RW1) ? (T_st - 1) : (T_st - 2);
@@ -370,22 +294,7 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             }
 
             // Soft sum-to-zero constraint
-            T sum_s = T(0.0), sum_t = T(0.0);
-            for (int s = 0; s < S; s++) {
-                T row_sum = T(0.0);
-                for (int t = 0; t < T_st; t++) {
-                    row_sum = row_sum + st_delta[s * T_st + t];
-                }
-                sum_s = sum_s + row_sum * row_sum;
-            }
-            for (int t = 0; t < T_st; t++) {
-                T col_sum = T(0.0);
-                for (int s = 0; s < S; s++) {
-                    col_sum = col_sum + st_delta[s * T_st + t];
-                }
-                sum_t = sum_t + col_sum * col_sum;
-            }
-            log_post = log_post - T(0.5) * T(0.001) * (sum_s + sum_t);
+            log_post = log_post + st_sum_to_zero_penalty(st_delta, S, T_st);
         }
     }
 

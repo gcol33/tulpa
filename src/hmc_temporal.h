@@ -18,103 +18,119 @@
 // Use canonical type definitions from exported headers
 #include "tulpa/temporal_data.h"
 #include "tulpa/types.h"
+#include "autodiff_utils.h"  // safe_log for the templated kernels
 
 namespace tulpa_temporal {
 
 using tulpa::TemporalType;
 using tulpa::TemporalData;
 using tulpa::MultiscaleTemporalData;
+using tulpa::math::safe_log;
 
 // =====================================================================
-// RW1 precision matrix quadratic form
+// RW1 / RW2 quadratic forms and AR1 log-density (single source)
 // =====================================================================
+//
+// Templated over the scalar type: double for the plain sampler, the
+// autodiff types (ad::Var, fwd::Dual, arena::Var) for gradient modes.
+// Pointer-based so strided per-group callers pass `phi + g * T_len`.
+
+// Sum of products of first differences of two series. With a == b this
+// is the acyclic part of phi' Q_RW1 phi; with a != b it is the
+// off-diagonal temporal term of a Kronecker (Q_s (x) Q_t) prior.
+template <typename T>
+inline T rw1_cross_form(const T* a, const T* b, int T_len) {
+  T quad = T(0.0);
+  for (int t = 1; t < T_len; t++) {
+    quad = quad + (a[t] - a[t - 1]) * (b[t] - b[t - 1]);
+  }
+  return quad;
+}
 
 // Compute phi' Q_RW1 phi for RW1 prior
 // Q_RW1 is the first-order random walk precision matrix
-inline double rw1_quadratic_form(
-    const double* phi,
-    int T,
+template <typename T>
+inline T rw1_quadratic_form(
+    const T* phi,
+    int T_len,
     bool cyclic
 ) {
-  double quad = 0.0;
-
-  // Sum of squared differences
-  for (int t = 0; t < T - 1; t++) {
-    double diff = phi[t + 1] - phi[t];
-    quad += diff * diff;
-  }
+  T quad = rw1_cross_form(phi, phi, T_len);
 
   // Cyclic: add edge from T to 1
-  if (cyclic) {
-    double diff = phi[0] - phi[T - 1];
-    quad += diff * diff;
+  if (cyclic && T_len > 1) {
+    T diff = phi[0] - phi[T_len - 1];
+    quad = quad + diff * diff;
   }
 
   return quad;
 }
 
-// =====================================================================
-// RW2 precision matrix quadratic form
-// =====================================================================
+// Sum of products of second differences of two series (acyclic part of
+// the RW2 quadratic / Kronecker cross term).
+template <typename T>
+inline T rw2_cross_form(const T* a, const T* b, int T_len) {
+  T quad = T(0.0);
+  for (int t = 2; t < T_len; t++) {
+    T d2_a = a[t] - T(2.0) * a[t - 1] + a[t - 2];
+    T d2_b = b[t] - T(2.0) * b[t - 1] + b[t - 2];
+    quad = quad + d2_a * d2_b;
+  }
+  return quad;
+}
 
 // Compute phi' Q_RW2 phi for RW2 prior
 // Q_RW2 penalizes second differences (curvature)
-inline double rw2_quadratic_form(
-    const double* phi,
-    int T,
+template <typename T>
+inline T rw2_quadratic_form(
+    const T* phi,
+    int T_len,
     bool cyclic
 ) {
-  if (T < 3) return 0.0;
+  if (T_len < 3) return T(0.0);
 
-  double quad = 0.0;
-
-  // Sum of squared second differences
-  for (int t = 0; t < T - 2; t++) {
-    double diff2 = phi[t] - 2.0 * phi[t + 1] + phi[t + 2];
-    quad += diff2 * diff2;
-  }
+  T quad = rw2_cross_form(phi, phi, T_len);
 
   // Cyclic: wrap around
-  if (cyclic && T >= 3) {
-    // t = T-2
-    double diff2_1 = phi[T - 2] - 2.0 * phi[T - 1] + phi[0];
-    quad += diff2_1 * diff2_1;
-    // t = T-1
-    double diff2_2 = phi[T - 1] - 2.0 * phi[0] + phi[1];
-    quad += diff2_2 * diff2_2;
+  if (cyclic) {
+    T diff2_1 = phi[T_len - 2] - T(2.0) * phi[T_len - 1] + phi[0];
+    quad = quad + diff2_1 * diff2_1;
+    T diff2_2 = phi[T_len - 1] - T(2.0) * phi[0] + phi[1];
+    quad = quad + diff2_2 * diff2_2;
   }
 
   return quad;
 }
-
-// =====================================================================
-// AR1 log-density
-// =====================================================================
 
 // Compute log-density for AR1 process
 // phi[t] | phi[t-1] ~ N(rho * phi[t-1], sigma^2)
 // Marginal variance: sigma^2 / (1 - rho^2)
-inline double ar1_log_density(
-    const double* phi,
-    int T,
-    double rho,
-    double tau  // precision = 1/sigma^2
+// `stationary_eps` regularizes the stationary-precision denominator
+// tau * (1 - rho^2): 0 keeps the exact density, a small positive value
+// keeps it (and its gradient) finite as |rho| -> 1.
+template <typename T>
+inline T ar1_log_density(
+    const T* phi,
+    int T_len,
+    const T& rho,
+    const T& tau,  // precision = 1/sigma^2
+    double stationary_eps = 0.0
 ) {
-  if (T < 2) return 0.0;
+  if (T_len < 2) return T(0.0);
 
-  double log_dens = 0.0;
+  T log_dens = T(0.0);
 
   // First observation: phi[0] ~ N(0, sigma^2 / (1 - rho^2))
-  double marginal_var = 1.0 / (tau * (1.0 - rho * rho));
-  log_dens -= 0.5 * phi[0] * phi[0] / marginal_var;
-  log_dens -= 0.5 * std::log(2.0 * M_PI * marginal_var);
+  T marginal_var = T(1.0) / (tau * (T(1.0) - rho * rho) + T(stationary_eps));
+  log_dens = log_dens - T(0.5) * phi[0] * phi[0] / marginal_var;
+  log_dens = log_dens - T(0.5) * safe_log(T(2.0 * M_PI) * marginal_var);
 
   // Conditional: phi[t] | phi[t-1] ~ N(rho * phi[t-1], sigma^2)
-  double sigma2 = 1.0 / tau;
-  for (int t = 1; t < T; t++) {
-    double resid = phi[t] - rho * phi[t - 1];
-    log_dens -= 0.5 * resid * resid / sigma2;
-    log_dens -= 0.5 * std::log(2.0 * M_PI * sigma2);
+  T sigma2 = T(1.0) / tau;
+  for (int t = 1; t < T_len; t++) {
+    T resid = phi[t] - rho * phi[t - 1];
+    log_dens = log_dens - T(0.5) * resid * resid / sigma2;
+    log_dens = log_dens - T(0.5) * safe_log(T(2.0 * M_PI) * sigma2);
   }
 
   return log_dens;

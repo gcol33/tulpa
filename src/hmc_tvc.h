@@ -20,75 +20,81 @@ using tulpa::TVCData;
 using tulpa_temporal::rw1_quadratic_form;
 using tulpa_temporal::rw2_quadratic_form;
 using tulpa_temporal::ar1_log_density;
+using tulpa::math::safe_log;
 
 // -----------------------------------------------------------------------------
 // TVC log-prior
 // -----------------------------------------------------------------------------
 
-// Compute log-prior for a single TVC term's temporal trajectory
+// Compute log-prior for a single TVC term's temporal trajectory.
+// Templated over the scalar type (double for evaluation, autodiff types
+// for gradients).
 // w: temporal trajectory (length n_times)
 // tau: precision parameter
 // rho: AR1 correlation (only used if structure == AR1)
-inline double tvc_term_log_prior(
-    const double* w,
+template <typename T>
+inline T tvc_term_log_prior(
+    const T* w,
     int n_times,
     TemporalType structure,
-    double tau,
-    double rho = 0.0
+    const T& tau,
+    const T& rho,
+    bool cyclic = false
 ) {
-  double log_prior = 0.0;
+  T log_prior = T(0.0);
 
   if (structure == TemporalType::RW1) {
-    double quad = rw1_quadratic_form(w, n_times, false);
-    int rank = n_times - 1;
-    log_prior += 0.5 * rank * std::log(tau);
-    log_prior -= 0.5 * tau * quad;
+    T quad = rw1_quadratic_form(w, n_times, cyclic);
+    int rank = cyclic ? n_times : (n_times - 1);
+    log_prior = log_prior + T(0.5 * rank) * safe_log(tau);
+    log_prior = log_prior - T(0.5) * tau * quad;
 
   } else if (structure == TemporalType::RW2) {
-    double quad = rw2_quadratic_form(w, n_times, false);
-    int rank = n_times - 2;
-    log_prior += 0.5 * rank * std::log(tau);
-    log_prior -= 0.5 * tau * quad;
+    T quad = rw2_quadratic_form(w, n_times, cyclic);
+    int rank = cyclic ? n_times : (n_times - 2);
+    log_prior = log_prior + T(0.5 * rank) * safe_log(tau);
+    log_prior = log_prior - T(0.5) * tau * quad;
 
   } else if (structure == TemporalType::AR1) {
-    log_prior += ar1_log_density(w, n_times, rho, tau);
+    log_prior = log_prior + ar1_log_density(w, n_times, rho, tau, 1e-10);
 
   } else if (structure == TemporalType::IID) {
     // IID: independent N(0, 1/tau) for each time point
-    log_prior += 0.5 * n_times * std::log(tau);
-    double quad = 0.0;
+    log_prior = log_prior + T(0.5 * n_times) * safe_log(tau);
+    T quad = T(0.0);
     for (int t = 0; t < n_times; t++) {
-      quad += w[t] * w[t];
+      quad = quad + w[t] * w[t];
     }
-    log_prior -= 0.5 * tau * quad;
+    log_prior = log_prior - T(0.5) * tau * quad;
   }
 
   return log_prior;
 }
 
 // Compute log-prior for all TVC terms
-// w_flat: all TVC values (n_times * n_tvc * n_groups, flattened)
+// w_flat: all TVC values (n_groups * n_tvc * n_times, flattened)
 // tau: vector of precisions (length n_tvc)
 // rho: vector of AR1 correlations (length n_tvc, only for AR1)
-inline double tvc_log_prior(
-    const std::vector<double>& w_flat,
+template <typename T>
+inline T tvc_log_prior(
+    const std::vector<T>& w_flat,
     const TVCData& tvc_data,
-    const std::vector<double>& tau,
-    const std::vector<double>& rho
+    const std::vector<T>& tau,
+    const std::vector<T>& rho
 ) {
   int n_times = tvc_data.n_times;
   int n_tvc = tvc_data.n_tvc;
   int n_groups = tvc_data.n_groups;
 
-  double log_prior = 0.0;
+  T log_prior = T(0.0);
 
-  // Layout: w_flat[g * n_tvc * n_times + j * n_times + t]
+  // Layout: w_flat[(g * n_tvc + j) * n_times + t]
   for (int g = 0; g < n_groups; g++) {
     for (int j = 0; j < n_tvc; j++) {
-      const double* w_jg = &w_flat[(g * n_tvc + j) * n_times];
-      double rho_j = (tvc_data.structure == TemporalType::AR1) ? rho[j] : 0.0;
-      log_prior += tvc_term_log_prior(w_jg, n_times, tvc_data.structure,
-                                       tau[j], rho_j);
+      const T* w_jg = w_flat.data() + (g * n_tvc + j) * n_times;
+      T rho_j = (tvc_data.structure == TemporalType::AR1) ? rho[j] : T(0.0);
+      log_prior = log_prior + tvc_term_log_prior(
+          w_jg, n_times, tvc_data.structure, tau[j], rho_j, tvc_data.cyclic);
     }
   }
 
@@ -100,27 +106,28 @@ inline double tvc_log_prior(
 // -----------------------------------------------------------------------------
 
 // Compute TVC contribution to linear predictor for all observations
-// eta_tvc[i] = sum_j X_tvc[i,j] * w[time_index[i], j, group_index[i]]
+// eta_tvc[i] = sum_j X_tvc[i,j] * w[group_index[i], j, time_index[i]]
+template <typename T>
 inline void compute_tvc_eta(
-    const std::vector<double>& w_flat,  // n_groups * n_tvc * n_times
+    const std::vector<T>& w_flat,  // n_groups * n_tvc * n_times
     const TVCData& tvc_data,
-    std::vector<double>& eta_tvc         // Output: length n_obs
+    std::vector<T>& eta_tvc         // Output: length n_obs
 ) {
   int N = tvc_data.n_obs;
   int n_times = tvc_data.n_times;
   int n_tvc = tvc_data.n_tvc;
 
-  std::fill(eta_tvc.begin(), eta_tvc.end(), 0.0);
+  eta_tvc.assign(N, T(0.0));
 
   for (int i = 0; i < N; i++) {
     int t = tvc_data.time_index[i] - 1;  // 0-based
     int g = tvc_data.group_index[i] - 1;  // 0-based
 
     for (int j = 0; j < n_tvc; j++) {
-      // w_flat layout: [g * n_tvc * n_times + j * n_times + t]
-      double w_ijg = w_flat[(g * n_tvc + j) * n_times + t];
+      // w_flat layout: [(g * n_tvc + j) * n_times + t]
+      T w_jgt = w_flat[(g * n_tvc + j) * n_times + t];
       double x_ij = tvc_data.X_tvc[i * n_tvc + j];
-      eta_tvc[i] += x_ij * w_ijg;
+      eta_tvc[i] = eta_tvc[i] + T(x_ij) * w_jgt;
     }
   }
 }
@@ -130,8 +137,9 @@ inline void compute_tvc_eta(
 // -----------------------------------------------------------------------------
 
 // Apply soft sum-to-zero constraint to TVC (for each term and group)
-inline double tvc_sum_to_zero_penalty(
-    const std::vector<double>& w_flat,
+template <typename T>
+inline T tvc_sum_to_zero_penalty(
+    const std::vector<T>& w_flat,
     const TVCData& tvc_data,
     double lambda = 0.001
 ) {
@@ -139,15 +147,15 @@ inline double tvc_sum_to_zero_penalty(
   int n_tvc = tvc_data.n_tvc;
   int n_groups = tvc_data.n_groups;
 
-  double penalty = 0.0;
+  T penalty = T(0.0);
 
   for (int g = 0; g < n_groups; g++) {
     for (int j = 0; j < n_tvc; j++) {
-      double sum = 0.0;
+      T sum = T(0.0);
       for (int t = 0; t < n_times; t++) {
-        sum += w_flat[(g * n_tvc + j) * n_times + t];
+        sum = sum + w_flat[(g * n_tvc + j) * n_times + t];
       }
-      penalty -= 0.5 * lambda * sum * sum;
+      penalty = penalty - T(0.5 * lambda) * sum * sum;
     }
   }
 

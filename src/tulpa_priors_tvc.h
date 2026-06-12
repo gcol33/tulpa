@@ -10,7 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
-#include "hmc_tvc_autodiff.h"
+#include "hmc_tvc.h"
 
 namespace tulpa {
 namespace priors {
@@ -71,18 +71,18 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
         }
 
         // TVC temporal prior (RW1, RW2, or AR1)
-        log_post = log_post + tulpa_tvc_ad::tvc_log_prior(
+        log_post = log_post + tulpa_tvc::tvc_log_prior(
             tvc_w_flat, data.tvc_data, tvc_tau, tvc_rho
         );
 
         // Soft sum-to-zero constraint for identifiability
-        log_post = log_post + tulpa_tvc_ad::tvc_sum_to_zero_penalty(
+        log_post = log_post + tulpa_tvc::tvc_sum_to_zero_penalty(
             tvc_w_flat, data.tvc_data, 0.001
         );
 
         // Precompute TVC contribution to linear predictor
         tvc_eta.resize(n_obs, T(0.0));
-        tulpa_tvc_ad::compute_tvc_eta(tvc_w_flat, data.tvc_data, tvc_eta);
+        tulpa_tvc::compute_tvc_eta(tvc_w_flat, data.tvc_data, tvc_eta);
     }
 
     return log_post;

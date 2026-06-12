@@ -10,7 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
-#include "hmc_temporal_multiscale_autodiff.h"
+#include "hmc_temporal_multiscale.h"
 
 namespace tulpa {
 namespace priors {
@@ -50,7 +50,7 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
             }
 
             // PC prior on sigma2_trend + Jacobian for log transform
-            log_post = log_post + tulpa_multiscale_ad::log_prior_sigma2_temporal_pc(
+            log_post = log_post + tulpa_temporal::log_prior_sigma2_temporal_pc(
                 ms_sigma2_trend, data.ms_sigma2_trend_prior_U, data.ms_sigma2_trend_prior_alpha);
             log_post = log_post + log_sigma2_trend;  // Jacobian
         }
@@ -67,7 +67,7 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
             }
 
             // PC prior on sigma2_seasonal + Jacobian
-            log_post = log_post + tulpa_multiscale_ad::log_prior_sigma2_temporal_pc(
+            log_post = log_post + tulpa_temporal::log_prior_sigma2_temporal_pc(
                 ms_sigma2_seasonal, data.ms_sigma2_seasonal_prior_U, data.ms_sigma2_seasonal_prior_alpha);
             log_post = log_post + log_sigma2_seasonal;  // Jacobian
         }
@@ -84,7 +84,7 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
             }
 
             // PC prior on sigma2_short + Jacobian
-            log_post = log_post + tulpa_multiscale_ad::log_prior_sigma2_temporal_pc(
+            log_post = log_post + tulpa_temporal::log_prior_sigma2_temporal_pc(
                 ms_sigma2_short, data.ms_sigma2_short_prior_U, data.ms_sigma2_short_prior_alpha);
             log_post = log_post + log_sigma2_short;  // Jacobian
 
@@ -102,13 +102,13 @@ T compute_multiscale_temporal_prior(const std::vector<T>& params, const ModelDat
         }
 
         // GMRF log-likelihood for all components
-        log_post = log_post + tulpa_multiscale_ad::multiscale_temporal_log_lik(
+        log_post = log_post + tulpa_temporal::multiscale_temporal_log_lik(
             ms_trend, ms_seasonal, ms_short_term,
             ms_sigma2_trend, ms_sigma2_seasonal, ms_sigma2_short, ms_rho_short,
             ms_data);
 
         // Precompute multiscale temporal contribution to linear predictor
-        tulpa_multiscale_ad::compute_temporal_eta(
+        tulpa_temporal::compute_temporal_eta(
             ms_trend, ms_seasonal, ms_short_term, ms_data, ms_temporal_eta);
     }
 
