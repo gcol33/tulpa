@@ -1,5 +1,28 @@
 # tulpa NEWS
 
+## 0.0.32 (2026-06-12)
+
+* refactor(linalg): the small-dense lower-Cholesky factorization, triangular
+  solves, log-determinant, and NNGP conditional (kriging) moments are now a
+  single `linalg_fast.h` core (`chol_factor_lower` / `chol_forward_solve` /
+  `chol_back_solve` / `chol_log_det` / `nngp_conditional_moments`), replacing 8
+  hand-rolled copies across the Laplace, PG-Gibbs, SVC, spatiotemporal,
+  temporal-GP, GPU-fallback, and proper-CAR paths (#109). The default `1e-10`
+  pivot jitter is named `kCholJitter`; the SVC kernel's `1e-6` is now an explicit
+  argument rather than a drifted literal. Behavior-preserving.
+* refactor(temporal): the RW1/RW2 quadratic and cross forms and the AR1
+  log-density are single templated kernels shared by the double, autodiff, and
+  generic-sampler paths (TVC and multiscale-temporal included), replacing three
+  drifted implementations (#110). Where the copies disagreed the merged kernel
+  keeps the live generic-sampler behavior (cyclic honored, AR1 stationary guard
+  `1e-10`); the dead `*_autodiff.h` twins are removed. Numerics shift at most at
+  the `1e-10` / ULP level (AR1 stationary term, summation order).
+* refactor(joint): `.normalise_joint_arm()` and `.normalise_joint_arm_multi()`
+  delegate to a shared `.normalise_joint_arm_core()`, collapsing ~50 duplicated
+  lines of arm-spec validation (#111). The single-block path still requires an
+  arm-level `spatial_idx`; the multi-block path still fills a zero placeholder --
+  the only behavioral split, now an explicit policy argument.
+
 ## 0.0.31 (2026-06-12)
 
 * fix(laplace): `tulpa_laplace(..., weights=)` now scales the log-likelihood by
