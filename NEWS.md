@@ -15,6 +15,21 @@
   concurrently over the supplied thread budget. A `field_marginal = FALSE` mode
   forms the full block (the betas-only callers). Numerically identical to the
   former dense path on the read sub-blocks (`test-joint-inner-vcov.R`).
+* perf(nested-laplace-joint): the cell-coupling per-cell scatter
+  (`scatter_cell_coupling_branch_impl`, `src/nested_laplace_joint_multi.h`) gained
+  an optional per-arm rank-1 self-cross descriptor on `CellDerivs`
+  (`arm_cross_rank1_coef` / `arm_cross_rank1_vec`, `inst/include/tulpa/cell_coupling.h`).
+  When a coupled arm's (k, k) off-diagonal cross-Hessian is the symmetric rank-1
+  `a v v^T` -- every cross-row second derivative factoring through one scalar, as
+  in tulpaObs's all-undetected occupancy mixture -- the kernel collapses it to a
+  single `a u u^T` in joint-dof space (`u = sum_r v[r] chain(row_r)`, accumulated
+  by `accumulate_self_rank1_u` and scattered by `scatter_self_rank1_{dense,sparse}`)
+  instead of the O(rc^2) dense `arm_cross_hess[k][k]` loop, dropping the scatter
+  from O(sum rc^2) to O(sum rc) (gcol33/tulpaObs#94). Single-response path
+  (`n_batch_ == 1`) only; cross-arm blocks and the dense `arm_cross_hess` path are
+  unchanged, and the spec folds the rank-1's own diagonal into
+  `arm_neg_hess_diag` so the assembled Hessian matches the dense path to machine
+  precision.
 
 ## 0.0.32 (2026-06-12)
 

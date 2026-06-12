@@ -304,6 +304,30 @@ struct CellDerivs {
     // fields and any existing field offsets unchanged.
     bool grad_only = false;
 
+    // Optional per-arm rank-1 self-cross descriptor (gcol33/tulpaObs#94). When
+    // a coupled arm k's (k, k) off-diagonal cross-Hessian is exactly the
+    // symmetric rank-1 a * v v^T -- every cross-row second derivative factoring
+    // through one scalar, as in the all-undetected occupancy mixture whose
+    // density depends on the arm's rows only through the scalar
+    // P0 = prod_v (1 - p_v) -- a spec MAY declare it here instead of filling the
+    // dense arm_cross_hess[k][k] block. The spec sets
+    //     arm_cross_rank1_coef[k] = a          (0 keeps the dense path)
+    //     arm_cross_rank1_vec[k]  = v          (length n_rows_in_arm(k))
+    // and folds the rank-1's own diagonal into arm_neg_hess_diag[k] (storing the
+    // true diagonal minus a * v[r]^2). The kernel scatters the term as one
+    // a * u u^T in joint-dof space (u = sum_r v[r] * chain(row_r)) instead of the
+    // O(rc^2) dense arm_cross_hess[k][k] loop, collapsing the all-undetected
+    // scatter from O(sum rc^2) to O(sum rc). Only the (k, k) self block is
+    // rank-1-eligible; cross-arm (k != l) blocks always use arm_cross_hess. The
+    // kernel honours the descriptor only on the single-response path
+    // (n_batch_ == 1); a batched spec keeps the dense arm_cross_hess path.
+    // Buffers are kernel-provided writable scratch (arm_cross_rank1_coef
+    // pre-zeroed length n_arms; arm_cross_rank1_vec[k] a writable rc_k buffer);
+    // nullptr keeps the dense path, so a spec that does not implement this is
+    // unaffected. Appended last to keep existing field offsets unchanged.
+    double*        arm_cross_rank1_coef = nullptr;  // [n_arms], 0 = dense path
+    double* const* arm_cross_rank1_vec  = nullptr;  // [n_arms] -> [rc_k]
+
     int n_arms() const { return n_arms_; }
     int n_batch() const { return n_batch_; }
     int n_rows_in_arm(int k) const { return arm_row_count[k]; }

@@ -45,6 +45,7 @@
 #include "sparse_hessian.h"
 #include "tulpa/cell_coupling.h"
 #include <Rcpp.h>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -576,6 +577,98 @@ inline void scatter_cross_chain_sparse(
     }
 }
 
+// ============================================================================
+// Rank-1 self-cross fast path (gcol33/tulpaObs#94).
+//
+// When a coupled arm's (k, k) off-diagonal cross-Hessian is the symmetric
+// rank-1 `coef * v v^T` over the cell's rows (the all-undetected occupancy
+// mixture: the density depends on the rows only through the scalar
+// P0 = prod(1 - p), so every cross-row second derivative factors through it),
+// the whole block collapses in joint-dof space to a single `coef * u u^T` with
+//     u = sum_r v[r] * chain(row_r),
+// because each row's eta is linear in the joint dofs (chain(row_r)). The spec
+// folds the term's own eta-diagonal `coef * v[r]^2` into arm_neg_hess_diag, so
+// the full u u^T (including its dof-diagonal) is scattered here. This replaces
+// the O(rc^2) dense arm_cross_hess[k][k] loop with O(rc) chain accumulation +
+// one small outer product over the (few) joint dofs the arm's rows touch --
+// the same dof pairs the dense path would write, so the joint Hessian pattern
+// already covers them.
+// ============================================================================
+
+// Accumulate u = sum_r vrow[r] * chain(row_r) for arm k's `rc` rows, merged so
+// each joint dof appears once. `chain_scratch` is reused per row; the merged
+// (idx, weight) entries land in `u_out`.
+inline void accumulate_self_rank1_u(
+    const double*                    vrow,
+    int                              rc,
+    const int*                       rows,
+    const ParsedArm&                 pa,
+    int                              k_arm,
+    const std::vector<LatentBlock>&  blocks,
+    const std::vector<double>&       d_eff_cache,
+    std::vector<ArmRowChainEntry>&   chain_scratch,
+    std::vector<ArmRowChainEntry>&   u_out
+) {
+    u_out.clear();
+    for (int r = 0; r < rc; r++) {
+        const double vr = vrow[r];
+        if (vr == 0.0) continue;
+        build_arm_row_chain(rows[r], pa, k_arm, blocks, d_eff_cache, chain_scratch);
+        for (const auto& e : chain_scratch) {
+            u_out.push_back({e.idx, vr * e.w, e.grp});
+        }
+    }
+    if (u_out.empty()) return;
+    std::sort(u_out.begin(), u_out.end(),
+              [](const ArmRowChainEntry& a, const ArmRowChainEntry& b) {
+                  return a.idx < b.idx;
+              });
+    std::size_t w = 0;
+    for (std::size_t r = 1; r < u_out.size(); r++) {
+        if (u_out[r].idx == u_out[w].idx) {
+            u_out[w].w += u_out[r].w;
+        } else {
+            ++w;
+            u_out[w] = u_out[r];
+        }
+    }
+    u_out.resize(w + 1);
+}
+
+// Scatter the symmetric rank-1 `coef * u u^T` (dense). Writes every (a, b)
+// cell once with coef * u_a * u_b -- both triangles plus the diagonal -- to
+// match the dense symmetric storage the per-obs scatter uses.
+inline void scatter_self_rank1_dense(
+    double                                coef,
+    const std::vector<ArmRowChainEntry>&  u,
+    DenseMat&                             H
+) {
+    if (coef == 0.0) return;
+    for (const auto& ea : u) {
+        for (const auto& eb : u) {
+            H[ea.idx][eb.idx] += coef * ea.w * eb.w;
+        }
+    }
+}
+
+// Scatter the symmetric rank-1 `coef * u u^T` (sparse, lower triangle). `u`
+// has unique dof indices (merged by accumulate_self_rank1_u), so the
+// `idx >= idx` guard writes each lower-triangle cell exactly once.
+inline void scatter_self_rank1_sparse(
+    double                                coef,
+    const std::vector<ArmRowChainEntry>&  u,
+    SparseHessianBuilder&                 H
+) {
+    if (coef == 0.0) return;
+    for (const auto& ea : u) {
+        for (const auto& eb : u) {
+            if (ea.idx >= eb.idx) {
+                H.add(ea.idx, eb.idx, coef * ea.w * eb.w);
+            }
+        }
+    }
+}
+
 // Per-cell scatter branch. Walks cells, dispatches to
 // `spec->evaluate_cell()`, and scatters per-arm row derivatives via the
 // caller-supplied per-row helper (`scatter_one_arm_row_dense` or
@@ -584,7 +677,8 @@ inline void scatter_cross_chain_sparse(
 // cell iteration, view construction, per-cell cross_hess buffer
 // allocation, and per-arm bookkeeping; dense/sparse share everything
 // except the H container and the two helpers.
-template <typename HType, typename ScatterRowFn, typename ScatterCrossFn>
+template <typename HType, typename ScatterRowFn, typename ScatterCrossFn,
+          typename ScatterSymRank1Fn>
 inline void scatter_cell_coupling_branch_impl(
     const CellCouplingSpec&                       spec,
     const std::vector<int>&                       coupled_arms,
@@ -599,6 +693,7 @@ inline void scatter_cell_coupling_branch_impl(
     HType&                                        H,
     ScatterRowFn                                  scatter_row,
     ScatterCrossFn                                scatter_cross,
+    ScatterSymRank1Fn                             scatter_symrank1,
     CurvatureMode                                 curvature = CurvatureMode::Observed,
     bool                                          grad_only = false,
     const double*                                 phi_override = nullptr
@@ -664,6 +759,18 @@ inline void scatter_cell_coupling_branch_impl(
         cross_hess_outer[kk] = cross_hess_ptr_inner[kk].data();
     }
 
+    // Per-cell rank-1 self-cross descriptor scratch (gcol33/tulpaObs#94). A
+    // coupled arm may declare its (kk, kk) off-diagonal cross block as one
+    // symmetric rank-1 coef * v v^T instead of the dense cross_hess_buf[kk][kk];
+    // the kernel collapses it to one coef * u u^T in dof space below. coef
+    // is re-zeroed per cell (0 = dense path); the rc_k weight buffer is grown
+    // monotonically alongside arm_grad_buf.
+    std::vector<double>              rank1_coef(n_coupled, 0.0);
+    std::vector<std::vector<double>> rank1_vec_buf(n_coupled);
+    std::vector<double*>             rank1_vec_ptr(n_coupled, nullptr);
+    std::vector<ArmRowChainEntry>    rank1_u_scratch;
+    rank1_u_scratch.reserve(64);
+
     // Per-row chain scratch reused across rows / pairs.
     std::vector<int>    active_idx;
     std::vector<double> active_d;
@@ -690,6 +797,14 @@ inline void scatter_cell_coupling_branch_impl(
             }
             arm_grad_ptr[kk]          = arm_grad_buf[kk].data();
             arm_neg_hess_diag_ptr[kk] = arm_neg_hess_diag_buf[kk].data();
+
+            // Rank-1 self-cross descriptor: re-zero the coefficient (the spec
+            // sets it only when it declares the (kk, kk) block rank-1) and grow
+            // the rc_k weight buffer. Its contents are only read when the spec
+            // sets the coefficient, in which case the spec writes all rc rows.
+            rank1_coef[kk] = 0.0;
+            if ((int)rank1_vec_buf[kk].size() < rc) rank1_vec_buf[kk].assign(rc, 0.0);
+            rank1_vec_ptr[kk] = rank1_vec_buf[kk].data();
         }
 
         // Cross-arm Hessian buffers: allocate one J_kk * J_ll slab per
@@ -729,13 +844,15 @@ inline void scatter_cell_coupling_branch_impl(
         y_view.n_arms_         = n_coupled;
 
         CellDerivs out;
-        out.arm_grad           = arm_grad_ptr.data();
-        out.arm_neg_hess_diag  = arm_neg_hess_diag_ptr.data();
-        out.arm_cross_hess     = cross_hess_outer.data();
-        out.arm_row_count      = arm_row_count.data();
-        out.n_arms_            = n_coupled;
-        out.curvature          = curvature;
-        out.grad_only          = grad_only;
+        out.arm_grad             = arm_grad_ptr.data();
+        out.arm_neg_hess_diag    = arm_neg_hess_diag_ptr.data();
+        out.arm_cross_hess       = cross_hess_outer.data();
+        out.arm_row_count        = arm_row_count.data();
+        out.n_arms_              = n_coupled;
+        out.curvature            = curvature;
+        out.grad_only            = grad_only;
+        out.arm_cross_rank1_coef = rank1_coef.data();
+        out.arm_cross_rank1_vec  = rank1_vec_ptr.data();
 
         spec.evaluate_cell(c, etas_view, y_view, out);
 
@@ -755,17 +872,40 @@ inline void scatter_cell_coupling_branch_impl(
             }
         }
 
-        // Cross-arm Hessian scatter. For each (kk, ll) pair with kk <= ll,
-        // walk rows of arm kk x arm ll. Same-arm (kk == ll) skips the
-        // j == m diagonal (already in arm_neg_hess_diag) and reads only
-        // off-diagonal entries. Pure curvature with no gradient contribution,
-        // so a grad-only step (cached-factor reuse) skips it entirely.
+        // Cross-arm Hessian scatter. Pure curvature with no gradient
+        // contribution, so a grad-only step (cached-factor reuse) skips it.
+        // The self block (kk, kk) takes the rank-1 fast path when the spec
+        // declared one (gcol33/tulpaObs#94: one coef * u u^T over the arm's
+        // joint dofs, the all-undetected occupancy mixture); otherwise it walks
+        // the dense off-diagonal. Cross blocks (kk < ll) are always dense.
         if (!grad_only) {
             for (int kk = 0; kk < n_coupled; kk++) {
                 int k     = coupled_arms[kk];
                 int rc_k  = arm_row_count[kk];
                 const int* rows_k = arm_rows_ptr[kk];
-                for (int ll = kk; ll < n_coupled; ll++) {
+
+                // Self block (kk, kk).
+                if (rank1_coef[kk] != 0.0) {
+                    accumulate_self_rank1_u(
+                        rank1_vec_ptr[kk], rc_k, rows_k, parsed[k], k, blocks,
+                        d_eff_per_arm[kk], chain_k_scratch, rank1_u_scratch);
+                    scatter_symrank1(rank1_coef[kk], rank1_u_scratch, H);
+                } else if (const double* ch = cross_hess_ptr_inner[kk][kk]) {
+                    for (int j = 0; j < rc_k; j++) {
+                        build_arm_row_chain(rows_k[j], parsed[k], k, blocks,
+                                            d_eff_per_arm[kk], chain_k_scratch);
+                        for (int m = j + 1; m < rc_k; m++) {
+                            double Hkl = ch[(std::size_t)j * rc_k + m];
+                            if (Hkl == 0.0) continue;
+                            build_arm_row_chain(rows_k[m], parsed[k], k, blocks,
+                                                d_eff_per_arm[kk], chain_l_scratch);
+                            scatter_cross(Hkl, chain_k_scratch, chain_l_scratch, H);
+                        }
+                    }
+                }
+
+                // Cross blocks (kk, ll), ll > kk: always dense.
+                for (int ll = kk + 1; ll < n_coupled; ll++) {
                     const double* ch = cross_hess_ptr_inner[kk][ll];
                     if (!ch) continue;
                     int l     = coupled_arms[ll];
@@ -774,8 +914,7 @@ inline void scatter_cell_coupling_branch_impl(
                     for (int j = 0; j < rc_k; j++) {
                         build_arm_row_chain(rows_k[j], parsed[k], k, blocks,
                                             d_eff_per_arm[kk], chain_k_scratch);
-                        int m_start = (kk == ll) ? (j + 1) : 0;
-                        for (int m = m_start; m < rc_l; m++) {
+                        for (int m = 0; m < rc_l; m++) {
                             double Hkl = ch[(std::size_t)j * rc_l + m];
                             if (Hkl == 0.0) continue;
                             build_arm_row_chain(rows_l[m], parsed[l], l, blocks,
@@ -811,6 +950,7 @@ inline void scatter_cell_coupling_dense_branch(
         arms, parsed, etas, blocks, k_grid, grad, H,
         scatter_one_arm_row_dense,
         scatter_cross_chain_dense,
+        scatter_self_rank1_dense,
         curvature, /*grad_only=*/false, phi_override
     );
 }
@@ -841,6 +981,7 @@ inline void scatter_cell_coupling_sparse_branch(
         arms, parsed, etas, blocks, k_grid, grad, H,
         scatter_one_arm_row_sparse,
         scatter_cross_chain_sparse,
+        scatter_self_rank1_sparse,
         curvature, grad_only, phi_override
     );
 }
