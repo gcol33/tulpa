@@ -14,67 +14,13 @@
 # car_proper), temporal (rw1 / rw2 / ar1), and unstructured (iid) blocks
 # (gcol33/tulpa#76). See dev_notes/plan_multi_block_joint.md.
 
-# Validate one arm spec for the multi-block path. Same shape as
+# Validate one arm spec for the multi-block path. Same core as
 # `.normalise_joint_arm` *except* `spatial_idx` is no longer required at
-# the arm level — per-arm idx vectors live inside each block spec instead.
-# A trailing `spatial_idx = integer(0)` placeholder is set so the existing
-# JointArm packaging path doesn't complain.
+# the arm level — per-arm idx vectors live inside each block spec instead,
+# and a missing spatial_idx gets a length-N placeholder of zeros so the
+# existing JointArm packaging path doesn't complain.
 .normalise_joint_arm_multi <- function(a, k) {
-    if (!is.list(a)) {
-        stop("Arm ", k, ": expected a list of arm spec fields.", call. = FALSE)
-    }
-    must_have <- c("y", "X", "family")
-    missing <- setdiff(must_have, names(a))
-    if (length(missing)) {
-        stop("Arm ", k, ": missing fields ",
-             paste(shQuote(missing), collapse = ", "), ".", call. = FALSE)
-    }
-    N <- length(a$y)
-    a$y <- as.numeric(a$y)
-    if (!is.matrix(a$X)) {
-        stop("Arm ", k, ": `X` must be a numeric matrix.", call. = FALSE)
-    }
-    if (nrow(a$X) != N) {
-        stop("Arm ", k, ": nrow(X) (", nrow(a$X), ") must equal length(y) (",
-             N, ").", call. = FALSE)
-    }
-    # spatial_idx is OPTIONAL in multi-block (per-arm idx lives on the block).
-    # The legacy joint kernels still reach into parsed[k_arm].spatial_idx, but
-    # the multi-block kernel does NOT, so a length-N placeholder of zeros is
-    # safe -- it shuts up parse_joint_arms' length check without contributing
-    # to eta.
-    a$spatial_idx <- if (is.null(a$spatial_idx)) rep(0L, N)
-                     else as.integer(a$spatial_idx)
-    if (length(a$spatial_idx) != N) {
-        stop("Arm ", k, ": length(spatial_idx) (", length(a$spatial_idx),
-             ") must equal length(y) (", N, ").", call. = FALSE)
-    }
-    a$n_trials <- if (is.null(a$n_trials)) rep(1L, N) else as.integer(a$n_trials)
-    if (length(a$n_trials) != N) {
-        stop("Arm ", k, ": length(n_trials) (", length(a$n_trials),
-             ") must equal length(y) (", N, ").", call. = FALSE)
-    }
-    # Optional grouped beta sufficient statistics (gcol33/tulpaObs#49).
-    if (!is.null(a$slog_y)) {
-        a$slog_y   <- as.numeric(a$slog_y)
-        a$slog_1my <- as.numeric(a$slog_1my)
-        if (length(a$slog_y) != N || length(a$slog_1my) != N) {
-            stop("Arm ", k, ": length(slog_y)/length(slog_1my) must equal ",
-                 "length(y) (", N, ").", call. = FALSE)
-        }
-    }
-    a$re_idx <- if (is.null(a$re_idx)) rep(0, N) else as.numeric(a$re_idx)
-    if (length(a$re_idx) != N) {
-        stop("Arm ", k, ": length(re_idx) (", length(a$re_idx),
-             ") must equal length(y) (", N, ").", call. = FALSE)
-    }
-    a$n_re_groups <- as.integer(a$n_re_groups %||% 0L)
-    a$sigma_re    <- as.numeric(a$sigma_re %||% 1.0)
-    a$family      <- as.character(a$family)
-    a$phi         <- as.numeric(a$phi %||% 1.0)
-    a <- .normalise_arm_field_coef(a, k)
-    a <- .normalise_arm_cell_coupling(a, k, N)
-    a
+    .normalise_joint_arm_core(a, k, spatial_idx = "optional")
 }
 
 # Detect whether `copy` is a LIST of copy specs (one coupled field each)

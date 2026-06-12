@@ -156,12 +156,20 @@
     out
 }
 
-# Validate one arm spec and fill in defaults.
-.normalise_joint_arm <- function(a, k) {
+# Validate one arm spec and fill in defaults. `spatial_idx` selects the
+# policy for the arm-level spatial index: "required" (single-block path:
+# a mandatory field) or "optional" (multi-block path: per-arm idx vectors
+# live inside each block spec, so a missing spatial_idx gets a length-N
+# placeholder of zeros -- it satisfies parse_joint_arms' length check
+# without contributing to eta).
+.normalise_joint_arm_core <- function(a, k,
+                                      spatial_idx = c("required", "optional")) {
+    spatial_idx <- match.arg(spatial_idx)
     if (!is.list(a)) {
         stop("Arm ", k, ": expected a list of arm spec fields.", call. = FALSE)
     }
-    must_have <- c("y", "X", "spatial_idx", "family")
+    must_have <- if (spatial_idx == "required") c("y", "X", "spatial_idx", "family")
+                 else c("y", "X", "family")
     missing <- setdiff(must_have, names(a))
     if (length(missing)) {
         stop("Arm ", k, ": missing fields ", paste(shQuote(missing), collapse = ", "),
@@ -175,6 +183,9 @@
     if (nrow(a$X) != N) {
         stop("Arm ", k, ": nrow(X) (", nrow(a$X), ") must equal length(y) (",
              N, ").", call. = FALSE)
+    }
+    if (spatial_idx == "optional" && is.null(a$spatial_idx)) {
+        a$spatial_idx <- rep(0L, N)
     }
     if (length(a$spatial_idx) != N) {
         stop("Arm ", k, ": length(spatial_idx) (", length(a$spatial_idx),
@@ -209,6 +220,12 @@
     a <- .normalise_arm_field_coef(a, k)
     a <- .normalise_arm_cell_coupling(a, k, N)
     a
+}
+
+# Validate one arm spec and fill in defaults (single-block path:
+# arm-level `spatial_idx` is required).
+.normalise_joint_arm <- function(a, k) {
+    .normalise_joint_arm_core(a, k, spatial_idx = "required")
 }
 
 # Parse per-arm `coupled` / `cell_obs_map`. When `coupled` is TRUE, the
