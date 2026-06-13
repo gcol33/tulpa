@@ -1,7 +1,5 @@
 # tulpa
 
-> Small exact engines for scientific computing in R.
-
 *Bayesian models without the full sampling bill*
 
 [![Lifecycle: experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
@@ -125,7 +123,7 @@ Posterior-predictive checks (`pp_check`, `check_model`), residual tests (`pit_re
 `tulpa` ships the engine. Observation likelihoods live in companion packages that link against it via `LinkingTo: tulpa`. A model package supplies a templated `LikelihoodSpec` and a small amount of data encoding; the spatial, temporal, prior, and inference machinery comes from `tulpa`.
 
 - [tulpaObs](https://github.com/gcol33/tulpaObs) — single-season, dynamic, community, integrated, and JSDM occupancy; abundance; distance sampling; removal; false-positive occupancy; and hurdle-Beta cover.
-- `tulpaRatio` (in progress) — ratio models (numerator / denominator likelihoods on shared spatial fields).
+- `tulpaRatio` — ratio, rate, and proportion models (numerator / denominator likelihoods on shared latent fields). Release pending.
 
 ## Custom latent blocks
 
@@ -147,7 +145,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.0.30")
+pak::pak("gcol33/tulpa@v0.0.34")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (declared in `Remotes:`). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
@@ -182,7 +180,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.0.30},
+  note   = {R package version 0.0.34},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```
