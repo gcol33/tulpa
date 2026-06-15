@@ -30,9 +30,9 @@ fit$selection_reason
 
 The fit is a `tulpa_fit` object with generic accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`mcmc_diagnostics`, `check_model`, `pp_check`).
 
-## Tiers encode correctness, not the hot path
+## Tiers encode correctness
 
-Inference is organised so the tier you pick states the guarantee you get, not which code path is fastest. Tier 1 is exact MCMC; Tier 2 is Laplace with optional Tier-1 debiasing; Tier 3 is variational. `mode = "auto"` chooses between Tier 1 and Tier 2 and records its reasoning on `fit$selection_reason`. Tier 3 is never selected silently.
+Each tier names a correctness guarantee; which code path runs fastest depends on the model and the data. Tier 1 is exact MCMC; Tier 2 is Laplace with optional Tier-1 debiasing; Tier 3 is variational. `mode = "auto"` chooses between Tier 1 and Tier 2 and records its reasoning on `fit$selection_reason`. Tier 3 is opt-in.
 
 |        | Nested approximation                      | Exact-MCMC correction                   |
 |--------|-------------------------------------------|-----------------------------------------|
@@ -84,7 +84,7 @@ fit <- tulpa(
 
 ## Random-effect covariances as inferred quantities
 
-For random-slope terms the engine treats the covariance `Sigma` itself as the inferred quantity rather than a point estimate — the nested-approximation + debias philosophy applied to a free `Sigma`. Three routes are available, and all summarise derived quantities (`sigma_i`, `rho_ij`) by marginalising the joint posterior:
+For random-slope terms the engine infers the full posterior of the covariance `Sigma` itself — the nested-approximation + debias philosophy applied to a free `Sigma`. Three routes are available, and all summarise derived quantities (`sigma_i`, `rho_ij`) by marginalising the joint posterior:
 
 - `tulpa_re_cov_nested()` — nested-Laplace integration over `Sigma` in log-Cholesky coordinates.
 - `tulpa_re_cov_gibbs()` — exact debias via Metropolis-within-Gibbs with conjugate inverse-Wishart draws.
@@ -106,7 +106,7 @@ fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson", mode = "laplace")
 
 ## Diagnostics
 
-Rhat (improved rank-normalised / folded split-Rhat, Vehtari et al. 2021), bulk/tail ESS, and MCSE are implemented natively and reproduce `posterior` to ~1e-12, so downstream packages call `tulpa::mcmc_diagnostics()` rather than re-deriving them.
+Rhat (improved rank-normalised / folded split-Rhat, Vehtari et al. 2021), bulk/tail ESS, and MCSE are implemented natively and reproduce `posterior` to ~1e-12, so downstream packages call `tulpa::mcmc_diagnostics()` directly.
 
 ```r
 summary(fit)
@@ -157,7 +157,7 @@ pak::pak("gcol33/tulpa@v0.0.34")
 
 ## Status
 
-Experimental — expect breaking changes. The C++ ABI version (`TULPA_ABI_VERSION` in `inst/include/tulpa/model_data.h`) is checked at runtime, so a mismatch between `tulpa` and a model package fails with a readable error instead of a segfault.
+Experimental — expect breaking changes. The C++ ABI version (`TULPA_ABI_VERSION` in `inst/include/tulpa/model_data.h`) is checked at runtime, so a mismatch between `tulpa` and a model package is caught at load and reported with a readable error.
 
 ## Support
 
