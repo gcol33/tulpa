@@ -1,5 +1,11 @@
 # tulpa NEWS
 
+## 0.0.37 (2026-06-16)
+
+* build: the `tulpaMesh` dependency floor is raised to `tulpaMesh (>= 0.1.3)`,
+  locking it to the current tulpaMesh release. The `Remotes` install reference was
+  already `gcol33/tulpaMesh@v0.1.3`.
+
 ## 0.0.36 (2026-06-16)
 
 * Maintenance release. No user-facing changes; the version is bumped to keep the
