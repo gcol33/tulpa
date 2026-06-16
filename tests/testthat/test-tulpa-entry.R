@@ -12,6 +12,7 @@ make_pois_re <- function(seed = 1, ng = 8L, per = 10L) {
 }
 
 test_that("tulpa() routes a random-intercept GLMM through the Laplace path", {
+  skip_on_cran()
   d <- make_pois_re()
   fit <- tulpa(y ~ x + (1 | g), d, family = "poisson",
                mode = "laplace", sigma_re = 0.6)
@@ -23,6 +24,7 @@ test_that("tulpa() routes a random-intercept GLMM through the Laplace path", {
 })
 
 test_that("tulpa() routes through a sampler (logpost) backend", {
+  skip_if_not_slow()
   d <- make_pois_re()
   fit <- tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "mala",
                sigma_re = 0.6, control = list(n_iter = 400L, warmup = 200L))
@@ -32,6 +34,7 @@ test_that("tulpa() routes through a sampler (logpost) backend", {
 })
 
 test_that("tulpa(mode = 'ess') samples a random-effect model jointly (gcol33/tulpa#75)", {
+  skip_if_not_slow()
   # The ModelData sampler kernels (ess/hmc/sghmc/...) pack random effects into
   # the latent layout and sample the variance component jointly with the latent
   # and fixed effects -- they are not fixed-effect-only GLMs. ESS only declines
@@ -51,7 +54,6 @@ test_that("tulpa(mode = 'ess') samples a random-effect model jointly (gcol33/tul
 
 test_that("tulpa(mode = 'ess'/'hmc') fits a fixed-effect GLM end to end", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(3)
   n <- 400L; x <- rnorm(n)
   d <- data.frame(y = rbinom(n, 1L, plogis(-0.3 + 0.8 * x)), x = x)
@@ -65,6 +67,7 @@ test_that("tulpa(mode = 'ess'/'hmc') fits a fixed-effect GLM end to end", {
 })
 
 test_that("correlated random slopes: logpost path works, Laplace path integrates Sigma", {
+  skip_if_not_slow()
   d <- make_pois_re(seed = 2)
   # logpost path handles slopes (builder is general)
   fit <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "mala",
@@ -87,6 +90,7 @@ test_that("correlated random slopes: logpost path works, Laplace path integrates
 })
 
 test_that("tulpa() fits a single random slope (0 + x | g) on the Laplace path", {
+  skip_on_cran()
   set.seed(91L)
   G <- 40L; npg <- 12L; N <- G * npg
   g <- rep(seq_len(G), each = npg); x <- rnorm(N)
@@ -105,6 +109,7 @@ test_that("tulpa() fits a single random slope (0 + x | g) on the Laplace path", 
 
 
 test_that("tulpa() validates family and defaults sigma_re with a message", {
+  skip_on_cran()
   d <- make_pois_re()
   expect_error(tulpa(y ~ x + (1 | g), d, family = "weibull"), "Unknown family")
   expect_message(
@@ -114,6 +119,7 @@ test_that("tulpa() validates family and defaults sigma_re with a message", {
 })
 
 test_that("tulpa() handles a no-RE model on the design path", {
+  skip_on_cran()
   set.seed(5)
   d <- data.frame(y = rpois(120, exp(0.4 + 0.3 * rnorm(120))), x = rnorm(120))
   fit <- tulpa(y ~ x, d, family = "poisson", mode = "laplace")
@@ -122,6 +128,7 @@ test_that("tulpa() handles a no-RE model on the design path", {
 })
 
 test_that("tulpa() routes through imh_laplace (Laplace proposal + MH)", {
+  skip_if_not_slow()
   d <- make_pois_re()
   fit <- tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "imh_laplace",
                sigma_re = 0.6, control = list(n_iter = 400L, warmup = 200L))
@@ -143,6 +150,7 @@ make_binom_re <- function(seed = 3, ng = 8L, per = 12L, nt = 10L) {
 }
 
 test_that("tulpa() routes a binomial random-intercept model through Gibbs", {
+  skip_if_not_slow()
   s <- make_binom_re()
   fit <- tulpa(y ~ x + (1 | g), s$d, family = "binomial", mode = "gibbs",
                n_trials = s$nt, control = list(iter = 400L, warmup = 200L))

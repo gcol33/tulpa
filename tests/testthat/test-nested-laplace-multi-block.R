@@ -156,8 +156,7 @@ fit_one_seed <- function(d) {
 }
 
 test_that("multi-block (BYM2 + AR1 + IID) recovers hyperparameters", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   if (!isTRUE(as.logical(Sys.getenv("TULPA_SLOW_TESTS", "false")))) {
     skip("Slow 30-seed recovery test. Set TULPA_SLOW_TESTS=true to run, or use dev_notes/run_multi_block_recovery.R for verbose output.")
   }

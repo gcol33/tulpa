@@ -15,7 +15,6 @@
 #   (3) Validation errors: n_latent < 2 raises a clean error.
 
 skip_on_cran()
-skip_if_fast()
 
 .sim_lf <- function(seed = 41L, n_s = 30L, N1 = 200L, N2 = 200L,
                      lambda_true = c(1.0, 1.5),

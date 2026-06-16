@@ -28,8 +28,7 @@
 }
 
 test_that("BYM2 PG-Gibbs recovers a structured-dominated rho", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
 
   S <- 40L
   reps <- 8L          # observations per spatial unit
@@ -73,8 +72,7 @@ test_that("BYM2 PG-Gibbs recovers a structured-dominated rho", {
 })
 
 test_that("update_rho_bym2 linear term tracks the data-fit direction", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
 
   # Direct check of the rho conditional shape: with sufficient statistics
   # that favour a particular u, the log-posterior including the linear term

@@ -7,8 +7,7 @@
 # Posterior-mean fixed effects from every backend land near the glm MLE on a
 # fixed-effect binomial GLM (the MLE is the right reference at a weak prior).
 test_that("every sampler backend recovers the binomial-GLM fixed effects", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(101)
   n <- 800L
   x1 <- rnorm(n); x2 <- rnorm(n)
@@ -41,8 +40,7 @@ test_that("every sampler backend recovers the binomial-GLM fixed effects", {
 
 # Poisson + Gaussian through NUTS, to exercise the family scaffold beyond binomial.
 test_that("NUTS recovers poisson and gaussian fixed effects", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(202)
   n <- 800L; x <- rnorm(n); X <- cbind(1, x)
 
@@ -64,8 +62,7 @@ test_that("NUTS recovers poisson and gaussian fixed effects", {
 # The draws-kind contract: chain backends emit MCMC chains (Rhat/ESS apply),
 # iid backends emit particles/variational draws (the diagnostics gate withholds).
 test_that("draws_kind contract holds through tulpa(mode = ...)", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(303)
   n <- 400L; x <- rnorm(n)
   d <- data.frame(y = rbinom(n, 1L, plogis(0.2 + 0.7 * x)), x = x)
@@ -87,8 +84,7 @@ test_that("draws_kind contract holds through tulpa(mode = ...)", {
 # Random-effect models now thread through the ModelData samplers (gcol33/tulpa#75)
 # instead of being routed away; offset() is threaded through too.
 test_that("RE models thread through the sampler; offset() is supported", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(404)
   G <- 18L; n_per <- 16L; N <- G * n_per
   g <- rep(seq_len(G), each = n_per); x <- rnorm(N)
@@ -115,8 +111,7 @@ test_that("RE models thread through the sampler; offset() is supported", {
 # offset() reaches the kernel's linear predictor: a log-exposure offset on a
 # Poisson rate model recovers the same fixed effects as glm(offset = ...).
 test_that("the sampler recovers fixed effects under a log-exposure offset (gcol33/tulpa#72)", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(505)
   n <- 800L; x <- rnorm(n); X <- cbind(1, x)
   expo <- runif(n, 0.5, 3); off <- log(expo)
@@ -131,8 +126,7 @@ test_that("the sampler recovers fixed effects under a log-exposure offset (gcol3
 # offset = 0 must reproduce the no-offset draws bit-for-bit at a fixed seed: the
 # linear predictors are identical, so the deterministic chain is identical.
 test_that("offset = 0 reproduces the no-offset sampler draws exactly (gcol33/tulpa#72)", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(606)
   n <- 300L; x <- rnorm(n); X <- cbind(1, x)
   y <- rbinom(n, 1L, plogis(0.2 + 0.6 * x))

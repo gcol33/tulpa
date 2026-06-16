@@ -3,8 +3,7 @@
 # of the gibbs-spatial front-door work (dev_notes/plan_gibbs_spatial_frontdoor.md).
 
 test_that("tulpa_gibbs(temporal = rw1 trend) recovers the slope on simulated data", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(7)
   Tt   <- 40L
   reps <- 8L

@@ -62,7 +62,6 @@ build_icar_joint_fit <- function(nr = 4L, nc = 4L, sigma_grid = c(0.5, 1.0),
 
 test_that("store_Q = FALSE gives a clear error", {
     skip_on_cran()
-    skip_if_fast()
     set.seed(1)
     adj_list <- make_grid_adjacency(3L, 3L)
     n_s <- length(adj_list)
@@ -85,7 +84,6 @@ test_that("store_Q = FALSE gives a clear error", {
 
 test_that("mixture draws reproduce the law-of-total-covariance mean + Sigma", {
     skip_on_cran()
-    skip_if_fast()
     fit <- build_icar_joint_fit()
     # focus on the fixed effects + a few field cells (a representative idx)
     layout <- fit$arm_layout
@@ -114,7 +112,6 @@ test_that("mixture draws reproduce the law-of-total-covariance mean + Sigma", {
 
 test_that("constrained field draws satisfy the sum-to-zero constraint", {
     skip_on_cran()
-    skip_if_fast()
     # single-cell grid (sigma length 1, no copy) => degenerate ESS = 1 mixture,
     # which isolates the kriging constraint from between-cell mode spread.
     set.seed(7)
@@ -149,7 +146,6 @@ test_that("constrained field draws satisfy the sum-to-zero constraint", {
 
 test_that("degenerate single-cell grid draws N(m_1, V_1)", {
     skip_on_cran()
-    skip_if_fast()
     fit <- build_icar_joint_fit(sigma_grid = 1.0, alpha_grid = 0.6)
     expect_equal(length(fit$weights), 1L)
 
@@ -168,7 +164,6 @@ test_that("degenerate single-cell grid draws N(m_1, V_1)", {
 
 test_that("idx = NULL returns the full latent vector", {
     skip_on_cran()
-    skip_if_fast()
     fit <- build_icar_joint_fit()
     draws <- tulpa_posterior_draws(fit, n = 50L)
     expect_equal(ncol(draws), fit$Q_csc_n)
@@ -177,7 +172,6 @@ test_that("idx = NULL returns the full latent vector", {
 
 test_that("BYM2 draws satisfy both phi and theta sum-to-zero constraints", {
     skip_on_cran()
-    skip_if_fast()
     set.seed(21)
     adj_list <- make_grid_adjacency(5L, 5L)
     n_s <- length(adj_list)
@@ -212,7 +206,6 @@ test_that("BYM2 draws satisfy both phi and theta sum-to-zero constraints", {
 
 test_that("multi-block joint fit samples through inherited dispatch", {
     skip_on_cran()
-    skip_if_fast()
     set.seed(202)
     adj_list <- make_grid_adjacency(5L, 5L)
     n_s <- length(adj_list)
@@ -277,7 +270,6 @@ test_that("a non-converged (NaN log_marginal) cell does not poison the weights",
 
 test_that("posterior draws survive a grid with a non-converged cell", {
     skip_on_cran()
-    skip_if_fast()
     fit <- build_icar_joint_fit()
     # Inject a NaN log_marginal cell (a non-converged inner Newton) and recompute
     # the integration weights the way the fitter does: the sampler must still

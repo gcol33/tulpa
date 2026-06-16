@@ -4,6 +4,7 @@
 
 test_that("SPDE Laplace fits binomial model on fmesher mesh", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   set.seed(42)
   n_obs <- 200
@@ -93,6 +94,7 @@ test_that("SPDE Laplace fits binomial model on fmesher mesh", {
 
 test_that("SPDE Laplace works with Poisson family", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   set.seed(123)
   n_obs <- 150
@@ -135,6 +137,7 @@ test_that("SPDE Laplace works with Poisson family", {
 
 test_that("SPDE scales to 500+ mesh nodes with sparse Q", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   set.seed(99)
   n_obs <- 500
@@ -195,6 +198,7 @@ test_that("SPDE scales to 500+ mesh nodes with sparse Q", {
 
 test_that("tulpa_laplace returns finite PD H_beta for SPDE (#16)", {
   skip_if_not_installed("tulpaMesh")
+  skip_on_cran()
 
   set.seed(42)
   n      <- 200
@@ -248,6 +252,7 @@ test_that("tulpa_laplace returns finite PD H_beta for SPDE (#16)", {
 
 test_that("tulpa_laplace returns marginal H_beta for a fractional-nu SPDE (#85)", {
   skip_if_not_installed("tulpaMesh")
+  skip_on_cran()
 
   set.seed(7)
   n      <- 200
@@ -307,6 +312,7 @@ test_that("tulpa_laplace returns marginal H_beta for a fractional-nu SPDE (#85)"
 
 test_that("nested Laplace SPDE runs with 2D hyperparameter grid", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   set.seed(42)
   n_obs <- 200
@@ -356,6 +362,7 @@ test_that("nested Laplace SPDE runs with 2D hyperparameter grid", {
 
 test_that("nested Laplace SPDE warm-start reduces iterations", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   set.seed(42)
   n_obs <- 150
@@ -457,6 +464,7 @@ test_that("dispatch_laplace_spatial routes SPDE specs (no longer errors)", {
 })
 
 test_that("SPDE Laplace threads an additional iid RE block (issue #74)", {
+  skip_on_cran()
   ss <- make_synthetic_spde_spec()
   X <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
   set.seed(7)
@@ -477,6 +485,7 @@ test_that("SPDE Laplace threads an additional iid RE block (issue #74)", {
 })
 
 test_that("tulpa_laplace(spde + iid RE) returns a marginal H_beta (issue #74)", {
+  skip_on_cran()
   ss <- make_synthetic_spde_spec(n_obs = 60)
   set.seed(11)
   X <- cbind(1, rnorm(ss$n_obs))
@@ -502,6 +511,7 @@ test_that("tulpa_laplace(spde + iid RE) returns a marginal H_beta (issue #74)", 
 })
 
 test_that("SPDE+RE collapses to the spatial-only fit as sigma_re -> 0 (issue #74)", {
+  skip_on_cran()
   # With the RE prior precision sent to infinity the iid block is pinned at 0,
   # so beta and the mesh field must match the n_re_groups = 0 fit exactly. This
   # pins the [beta, re, w_mesh] layout: a mis-sliced field or a leaked RE
@@ -556,6 +566,7 @@ test_that("SPDE Laplace recovers an iid RE block under the field (issue #74)", {
 })
 
 test_that("tulpa_laplace(spatial = spatial_spde_custom(...)) runs end-to-end", {
+  skip_on_cran()
   ss <- make_synthetic_spde_spec(n_obs = 50)
   X <- cbind(1, rnorm(ss$n_obs))
   y <- rbinom(ss$n_obs, 1, 0.5)
@@ -579,6 +590,7 @@ test_that("tulpa_laplace(spatial = spatial_spde_custom(...)) runs end-to-end", {
 })
 
 test_that("fit_spde and dispatch_laplace_spatial agree on the same problem", {
+  skip_on_cran()
   ss <- make_synthetic_spde_spec(n_obs = 40)
   X <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
   y <- rbinom(ss$n_obs, 1, 0.5)
@@ -606,6 +618,7 @@ test_that("fit_spde and dispatch_laplace_spatial agree on the same problem", {
 # --- offset() threading through the SPDE Laplace paths (gcol33/tulpa#72) -------
 
 test_that("fit_spde threads offset() into the field linear predictor (gcol33/tulpa#72)", {
+  skip_on_cran()
   ss  <- make_synthetic_spde_spec(n_obs = 60, seed = 11)
   X   <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
   set.seed(11)
@@ -629,6 +642,7 @@ test_that("fit_spde threads offset() into the field linear predictor (gcol33/tul
 })
 
 test_that("fit_spde absorbs a constant offset into the intercept (gcol33/tulpa#72)", {
+  skip_on_cran()
   ss <- make_synthetic_spde_spec(n_obs = 60, seed = 12)
   X  <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
   set.seed(12)
@@ -651,6 +665,7 @@ test_that("fit_spde absorbs a constant offset into the intercept (gcol33/tulpa#7
 })
 
 test_that("fit_spde nested integrates offset (offset = 0 == no offset) (gcol33/tulpa#72)", {
+  skip_on_cran()
   ss <- make_synthetic_spde_spec(n_obs = 50, seed = 13)
   X  <- matrix(1.0, nrow = ss$n_obs, ncol = 1)
   set.seed(13)

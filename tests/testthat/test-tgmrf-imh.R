@@ -26,6 +26,7 @@ make_ar1_tgmrf_imh <- function(n) {
 }
 
 test_that("tulpa_tgmrf_imh produces finite draws + healthy acceptance", {
+  skip_if_not_slow()
   set.seed(101)
   n <- 30L
   z <- as.numeric(arima.sim(list(ar = 0.5), n = n, sd = 1))
@@ -54,6 +55,7 @@ test_that("tulpa_tgmrf_imh produces finite draws + healthy acceptance", {
 })
 
 test_that("tulpa_tgmrf_imh posterior means agree with grid Laplace within MC error", {
+  skip_if_not_slow()
   # Same data fed to grid Laplace and to IMH-Laplace. Because IMH targets
   # exactly p(theta | y) = log_marginal(theta) + log_pi(theta) — the same
   # quantity the grid integrates — the posterior means must agree up to

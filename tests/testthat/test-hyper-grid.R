@@ -107,7 +107,6 @@ test_that("auto-wrapping accepts plain list specs", {
 # -----------------------------------------------------------------------------
 test_that("hyperparameter recovery on Gaussian likelihood", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(7L)
   n <- 400L; p <- 3L
   X <- cbind(1, matrix(rnorm(n * (p - 1L)), n, p - 1L))

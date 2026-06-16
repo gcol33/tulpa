@@ -202,8 +202,7 @@ assert_recovery <- function(reps,
 # tier because n_seeds = 3 makes coverage rate a coarse estimator.
 # ---------------------------------------------------------------------------
 test_that("joint NUTS recovers (range, sigma, beta) -- slim tier", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   skip_if_not_installed("fmesher")
   skip_if_not_installed("Matrix")
 
@@ -261,8 +260,7 @@ test_that("joint NUTS recovers (range, sigma, beta) -- slim tier", {
 #     'testthat::test_file("tests/testthat/test-spde-nuts-joint.R")'
 # ---------------------------------------------------------------------------
 test_that("joint NUTS recovers (range, sigma, beta) -- full tier", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   skip_if_not_installed("fmesher")
   skip_if_not_installed("Matrix")
   if (!identical(Sys.getenv("TULPA_FULL_RECOVERY"), "true")) {
@@ -316,6 +314,7 @@ test_that("joint NUTS recovers (range, sigma, beta) -- full tier", {
 
 test_that("joint NUTS round-trip: output structure matches contract", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
   set.seed(42)
   n_obs  <- 80
   coords <- cbind(runif(n_obs), runif(n_obs))

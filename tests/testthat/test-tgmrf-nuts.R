@@ -14,8 +14,7 @@
 # CI lean.
 # ---------------------------------------------------------------------------
 
-skip_on_cran()
-skip_if_fast()
+skip_if_not_slow()
 
 make_nuts_ar1_block <- function(n) {
   tgmrf(

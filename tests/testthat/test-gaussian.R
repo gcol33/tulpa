@@ -1,4 +1,5 @@
 test_that("tulpa_gaussian fits a simple linear model", {
+  skip_if_not_slow()
   set.seed(123)
   n <- 200
   x <- rnorm(n)
@@ -23,6 +24,7 @@ test_that("tulpa_gaussian fits a simple linear model", {
 })
 
 test_that("tulpa_gaussian handles intercept-only model", {
+  skip_if_not_slow()
   set.seed(456)
   n <- 100
   y <- rnorm(n, mean = 5, sd = 1)
@@ -38,6 +40,7 @@ test_that("tulpa_gaussian handles intercept-only model", {
 })
 
 test_that("print.tulpa_fit works", {
+  skip_if_not_slow()
   set.seed(789)
   df <- data.frame(y = rnorm(50), x = rnorm(50))
   fit <- tulpa_gaussian(y ~ x, data = df, iter = 500, warmup = 250,

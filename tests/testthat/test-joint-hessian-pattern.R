@@ -10,7 +10,6 @@
 # so every assertion below works on the lower triangle.
 
 skip_on_cran()
-skip_if_fast()
 
 .pattern_to_lower_set <- function(pat) {
     # Convert CSC (col_ptr, row_idx) to a set of (row, col) integer pairs

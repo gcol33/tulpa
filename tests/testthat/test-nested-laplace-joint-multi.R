@@ -35,6 +35,7 @@ source(test_path("test-sparse-cholesky.R"), local = TRUE)
 # --------------------------------------------------------------------------- #
 
 test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
+    skip_on_cran()
     set.seed(31)
     n_s <- 20
     N1 <- 150L
@@ -144,6 +145,7 @@ test_that("joint multi-block (1 x ICAR copy) matches joint ICAR cell-by-cell", {
 # --------------------------------------------------------------------------- #
 
 test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
+    skip_on_cran()
     set.seed(11)
     n_sites <- 16L
     n_years <- 6L

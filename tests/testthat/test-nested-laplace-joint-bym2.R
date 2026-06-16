@@ -71,6 +71,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("joint BYM2 with alpha = 0 leaves beta_occ unchanged from single-arm", {
+    skip_on_cran()
     sim <- .simulate_joint(N = 300, n_s = 30, alpha_true = 0.0, seed = 42)
     adj <- .chain_adj(sim$n_s)
 
@@ -135,6 +136,7 @@ test_that("joint BYM2 with alpha = 0 leaves beta_occ unchanged from single-arm",
 # --------------------------------------------------------------------------- #
 
 test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
+    skip_on_cran()
     sim <- .simulate_joint(N = 400, n_s = 40, sigma = 0.6, rho = 0.7,
                            alpha_true = 1.0, seed = 99)
     adj <- .chain_adj(sim$n_s)
@@ -200,6 +202,7 @@ test_that("joint BYM2 recovers per-arm betas and locates the alpha mode", {
 # invariant under the centering.
 
 test_that("joint BYM2 with gaussian copy arm prefers alpha = alpha_true at true phi", {
+    skip_on_cran()
     sim <- .simulate_joint(N = 300, n_s = 25,
                             sigma = 0.6, rho = 0.7,
                             alpha_true = 1.0, sd_pos = 0.3, seed = 50101)

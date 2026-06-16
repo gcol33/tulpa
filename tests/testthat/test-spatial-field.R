@@ -133,7 +133,6 @@ test_that("the bare spatial(col) areal-naming path still parses", {
 
 test_that("spatial() recovers the intercept and slope CAR fields", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(1)
 
   n_s <- 30L

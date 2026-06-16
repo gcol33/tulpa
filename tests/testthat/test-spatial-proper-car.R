@@ -62,7 +62,6 @@ test_that("proper-CAR field spec prints its structure", {
 
 test_that("spatial(proper = TRUE) recovers the field and a high rho_car", {
   skip_on_cran()
-  skip_if_fast()
 
   nx <- ny <- 10L
   adj <- .grid_adj(nx, ny)
@@ -106,7 +105,6 @@ test_that("spatial(proper = TRUE) recovers the field and a high rho_car", {
 
 test_that("proper-CAR fit print reports rho_car per field", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(11)
   nx <- ny <- 8L
   adj <- .grid_adj(nx, ny)

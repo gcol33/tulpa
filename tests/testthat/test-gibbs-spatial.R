@@ -6,8 +6,7 @@
 # rook_adj() lives in helper-spatial.R (shared with test-tulpa-spatial-frontdoor.R).
 
 test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(42)
   nr <- nc <- 7L
   W <- rook_adj(nr, nc)
@@ -51,8 +50,7 @@ test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data"
 })
 
 test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(71)
   nr <- nc <- 7L
   W <- rook_adj(nr, nc)
@@ -115,8 +113,7 @@ test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {
 })
 
 test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(11)
   nr <- nc <- 7L
   W <- rook_adj(nr, nc)
@@ -149,8 +146,7 @@ test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data",
 })
 
 test_that("tulpa_gibbs(spatial = gp) recovers fixed effects (one obs per location)", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(202)
   side <- 8L
   g <- expand.grid(lon = seq(0, 1, length.out = side),
@@ -195,8 +191,7 @@ test_that("tulpa_gibbs(spatial = gp) recovers fixed effects (one obs per locatio
 })
 
 test_that("tulpa_gibbs(spatial = multiscale_gp) recovers fixed effects", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(303)
   side <- 8L
   g <- expand.grid(lon = seq(0, 1, length.out = side),
@@ -261,8 +256,7 @@ test_that("dispatch_gibbs_spatial rejects non-binomial and unwired types", {
 })
 
 test_that("continuous Gibbs samplers reject repeated-location designs", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(99)
   coords <- as.matrix(expand.grid(lon = 1:5, lat = 1:5))
   # Two observations per location -> no obs->loc map, must error.

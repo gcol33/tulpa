@@ -59,6 +59,7 @@ prior_spec <- function(d) {
 }
 
 test_that("per-cell branch matches per-obs path: mode and log-marginal", {
+    skip_if_not_slow()
     cpp_register_test_separable_bernoulli_coupling()
     expect_true(cpp_cell_coupling_registry_has("test_separable_bernoulli"))
 
@@ -92,6 +93,7 @@ test_that("per-cell branch matches per-obs path: mode and log-marginal", {
 })
 
 test_that("fisher step-curvature reproduces the observed-Hessian fit (Bernoulli is curvature-invariant)", {
+    skip_if_not_slow()
     # The single-arm Bernoulli per-cell spec writes the canonical-link Fisher
     # weight p(1-p) as its curvature, so observed == expected information
     # cell-by-cell (no latent mixture, no missing-information term).
@@ -134,6 +136,7 @@ test_that("kernel rejects coupled = TRUE with the separable default spec", {
 })
 
 test_that("sparse per-cell branch matches dense per-obs baseline (B.2)", {
+    skip_if_not_slow()
     cpp_register_test_separable_bernoulli_coupling()
     d <- setup_test_data(seed = 5L)
 
@@ -166,6 +169,7 @@ test_that("sparse per-cell branch matches dense per-obs baseline (B.2)", {
 })
 
 test_that("sparse separable default stays byte-identical under cell_coupling", {
+    skip_if_not_slow()
     d <- setup_test_data(seed = 6L)
 
     res_sparse <- tulpa_nested_laplace_joint(
@@ -203,6 +207,7 @@ test_that("kernel rejects spec arm_ids() that disagree with arms' coupled flags"
 })
 
 test_that("rank-1 (Woodbury) sum-to-zero matches the dense full-11' path", {
+    skip_if_not_slow()
     # The intrinsic-ICAR sum-to-zero penalty has a dense rank-1 (1 1') Hessian.
     # A field up to S2Z_DENSIFY_MAX densifies its block and stores 1 1' exactly;
     # a larger field folds it in at solve time (Sherman-Morrison step + the

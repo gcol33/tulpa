@@ -72,6 +72,7 @@ test_that("cpp_profile_reset zeroes every phase", {
 })
 
 test_that("the sparse joint solver records scatter and factorize separately", {
+  skip_on_cran()
   inp <- .profile_joint_inputs()
 
   cpp_profile_reset()
@@ -94,6 +95,7 @@ test_that("the sparse joint solver records scatter and factorize separately", {
 })
 
 test_that("tulpa_profile returns the phase split and carries the fit", {
+  skip_on_cran()
   inp <- .profile_joint_inputs()
 
   p <- tulpa_profile(
@@ -118,6 +120,7 @@ test_that("tulpa_profile returns the phase split and carries the fit", {
 })
 
 test_that("tulpa_profile resets between runs (no carry-over)", {
+  skip_on_cran()
   inp <- .profile_joint_inputs()
 
   p1 <- tulpa_profile(

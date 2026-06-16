@@ -22,6 +22,7 @@ l1pe <- function(x) ifelse(x > 0, x + log1p(exp(-x)), log1p(exp(x)))   # log(1+e
 # ---- make_group == make_site on a shared single-arm problem ------------------
 
 test_that("make_group reproduces make_site on a single-arm Poisson random intercept", {
+  skip_on_cran()
   set.seed(1)
   ng <- 40L; ni <- 8L
   grp <- rep(seq_len(ng), each = ni); n <- ng * ni
@@ -74,6 +75,7 @@ test_that("make_group reproduces make_site on a single-arm Poisson random interc
 })
 
 test_that("make_group reproduces make_site on a correlated random slope (d = 2)", {
+  skip_on_cran()
   # Binomial GLMM (bounded, numerically stable at d = 2) with a correlated
   # (1 + x | g) block -- the same family/structure test-re-aghq.R validates for
   # make_site. The equivalence holds for any likelihood; binomial avoids the

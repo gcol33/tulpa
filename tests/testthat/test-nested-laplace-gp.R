@@ -74,6 +74,7 @@ make_nngp_dataset <- function(n_spatial = 60L, beta0 = -0.3,
 }
 
 test_that("nested_laplace NNGP runs on a 2D (sigma2, phi_gp) grid", {
+  skip_on_cran()
   d <- make_nngp_dataset(n_spatial = 60L, sigma2 = 0.6, phi_gp = 0.3)
   nb <- make_nngp_neighbors(d$coords, n_neighbors = 8L)
 
@@ -101,6 +102,7 @@ test_that("nested_laplace NNGP runs on a 2D (sigma2, phi_gp) grid", {
 })
 
 test_that("tulpa_nested_laplace() routes a nngp prior through the dispatch", {
+  skip_on_cran()
   d <- make_nngp_dataset(n_spatial = 50L)
   nb <- make_nngp_neighbors(d$coords, n_neighbors = 6L)
 
@@ -157,6 +159,7 @@ make_hsgp_basis_2d <- function(coords, m_per_dim = 5L, c = 1.5) {
 }
 
 test_that("nested_laplace HSGP runs on a 2D (sigma2, lengthscale) grid", {
+  skip_on_cran()
   set.seed(7)
   N <- 80
   obs_coords <- cbind(runif(N), runif(N))
@@ -185,6 +188,7 @@ test_that("nested_laplace HSGP runs on a 2D (sigma2, lengthscale) grid", {
 })
 
 test_that("tulpa_nested_laplace() routes a hsgp prior through the dispatch", {
+  skip_on_cran()
   set.seed(11)
   N <- 60
   obs_coords <- cbind(runif(N), runif(N))

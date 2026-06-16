@@ -12,7 +12,6 @@
 #     actual shape and is NOT covered by the dense parallel test.
 
 skip_on_cran()
-skip_if_fast()
 
 .spar_chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),

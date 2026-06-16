@@ -94,6 +94,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("adaptive_grid = FALSE leaves grid and result unchanged", {
+    skip_on_cran()
     sim <- .simulate_joint_icar_strong(seed = 6)
     fit <- .fit_joint_icar(sim, alpha_grid = c(0.2, 0.4, 0.6),
                             adaptive_grid = FALSE)
@@ -109,6 +110,7 @@ test_that("adaptive_grid = FALSE leaves grid and result unchanged", {
 # --------------------------------------------------------------------------- #
 
 test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
+    skip_on_cran()
     sim <- .simulate_joint_icar_strong(seed = 6)
     fit_F <- .fit_joint_icar(sim, alpha_grid = c(0.2, 0.4, 0.6),
                               adaptive_grid = FALSE)
@@ -150,6 +152,7 @@ test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
 # --------------------------------------------------------------------------- #
 
 test_that("adaptive_grid = TRUE leaves grid alone when boundary is empty", {
+    skip_on_cran()
     sim <- .simulate_joint_icar_strong(seed = 6)
     # Wide grid: well past alpha_true = 2.0 (boundary near 4 has
     # negligible weight under any seed of this simulator).

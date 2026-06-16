@@ -14,8 +14,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("generic NUTS recovers (beta, sigma_re) with calibrated CIs", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
 
   beta_true <- c(0.3, -0.6); sigma_re_true <- 0.8; sigma_obs <- 0.5
   G <- 20L; per <- 18L; n <- G * per
@@ -68,8 +67,7 @@ test_that("generic NUTS recovers (beta, sigma_re) with calibrated CIs", {
 # --------------------------------------------------------------------------- #
 
 test_that("Tier-3 VI recovers the well-identified slope", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   beta_true <- c(0.3, -0.6); sigma_re_true <- 0.8; sigma_obs <- 0.5
   G <- 20L; per <- 18L; n <- G * per
   slope <- numeric(6L)
@@ -105,8 +103,7 @@ test_that("Tier-3 VI recovers the well-identified slope", {
 # --------------------------------------------------------------------------- #
 
 test_that("EM+Laplace occupancy recovery; MI/Gibbs reduce intercept bias", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
 
   b0 <- 0.2; b1 <- -0.8; p_det <- 0.45; J <- 4L; G <- 500L
   q0 <- (1 - p_det)^J                             # P(0 detections | occupied)

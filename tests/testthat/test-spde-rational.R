@@ -11,6 +11,7 @@ spde_mode_eigs <- function(n = 200L, kappa = 7) {
 }
 
 test_that("rational-SPDE roots reproduce the Matern spectral density l^{-2 beta}", {
+  skip_on_cran()
   l <- spde_mode_eigs()
   lf <- l / max(l)                                # L / l_max-normalized axis
   ratio <- min(l) / max(l)
@@ -31,6 +32,7 @@ test_that("rational-SPDE roots reproduce the Matern spectral density l^{-2 beta}
 })
 
 test_that("rational-SPDE root counts and structure follow the rSPDE convention", {
+  skip_on_cran()
   rr <- tulpa:::.spde_rational_roots(order = 3L, beta = 0.75, spectrum_ratio = 1e-3)
   expect_length(rr$rb, 3L)            # balanced (m, m): m denominator factors
   expect_length(rr$rc, 3L)            # m numerator factors
@@ -42,6 +44,7 @@ test_that("rational-SPDE root counts and structure follow the rSPDE convention",
 })
 
 test_that("the assembled precision yields a Matern field covariance", {
+  skip_on_cran()
   # 1D periodic (circulant) FEM: C0 = h, G = (1/h) circ(2, -1, ..., -1). The
   # implied covariance Pr Q^{-1} Pr' shares the Fourier eigenbasis with L, so its
   # spectrum must track the Matern density l^{-2 beta}.
@@ -75,6 +78,7 @@ test_that("the assembled precision yields a Matern field covariance", {
 })
 
 test_that("higher rational order lowers the approximation error", {
+  skip_on_cran()
   errs <- vapply(2:5, function(m)
     tulpa:::.spde_rational_roots(order = m, beta = 0.75,
                                  spectrum_ratio = 1e-2)$error, numeric(1))

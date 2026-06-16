@@ -74,6 +74,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("joint ICAR with alpha = 0 leaves beta_occ unchanged from single-arm", {
+    skip_on_cran()
     sim <- .simulate_joint_icar(N = 300, n_s = 30, alpha_true = 0.0, seed = 42)
     adj <- .chain_adj(sim$n_s)
 
@@ -135,6 +136,7 @@ test_that("joint ICAR with alpha = 0 leaves beta_occ unchanged from single-arm",
 # --------------------------------------------------------------------------- #
 
 test_that("joint ICAR recovers per-arm betas and locates the alpha mode", {
+    skip_on_cran()
     sim <- .simulate_joint_icar(N = 400, n_s = 40, sigma = 0.6,
                                  alpha_true = 1.0, seed = 99)
     adj <- .chain_adj(sim$n_s)

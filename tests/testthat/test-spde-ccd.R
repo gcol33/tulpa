@@ -33,6 +33,7 @@ helper_make_spde_for_ccd <- function(n_obs, range_true, sigma_true, seed = 1L,
 
 test_that("fit_spde(method='ccd') returns a usable nested-Laplace result", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   # Poisson with reasonably high counts plus tight PC priors keep the
   # joint posterior over (range, sigma) well-defined. The CCD path
@@ -57,6 +58,7 @@ test_that("fit_spde(method='ccd') returns a usable nested-Laplace result", {
 
 test_that("fit_spde(method='ccd') falls back to grid on degenerate data", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   set.seed(42)
   n_obs <- 100
@@ -82,6 +84,7 @@ test_that("fit_spde(method='ccd') falls back to grid on degenerate data", {
 
 test_that("fit_spde(method='ccd') matches grid integration on shared mode", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
 
   d <- helper_make_spde_for_ccd(n_obs = 300, range_true = 0.3,
                                  sigma_true = 0.5, seed = 5L,
@@ -118,6 +121,7 @@ test_that("fit_spde(method='ccd') matches grid integration on shared mode", {
 
 test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
   d <- helper_make_spde_for_ccd(n_obs = 250, range_true = 0.3, sigma_true = 0.6,
                                 seed = 11L, prior_sigma = c(0.6, 0.05))
   y <- rpois(length(d$eta), lambda = exp(2.0 + d$eta))
@@ -213,7 +217,6 @@ test_that("fit_spde_nested_ccd builds the CCD design at a clean interior mode", 
 
 test_that("SPDE CCD recovers (range, sigma) on a genuine field (#98)", {
   skip_on_cran()
-  skip_if_fast()
   skip_if_not_installed("fmesher")
   skip_if_not_installed("Matrix")
 

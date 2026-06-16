@@ -35,6 +35,7 @@ test_that(".validate_family_counts rejects non-integer / negative counts", {
 })
 
 test_that("tulpa() rejects phi <= 0 for a gaussian fit", {
+  skip_on_cran()
   set.seed(1)
   d <- data.frame(y = rnorm(40), x = rnorm(40))
   expect_error(
@@ -46,6 +47,7 @@ test_that("tulpa() rejects phi <= 0 for a gaussian fit", {
 })
 
 test_that("tulpa() rejects non-integer y for a poisson fit", {
+  skip_on_cran()
   set.seed(2)
   d_bad  <- data.frame(y = c(1.5, 2, 3, 4, 5, 6), x = rnorm(6))
   expect_error(

@@ -80,6 +80,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("field_coef = 0 on arm 2 matches a no-field independent fit", {
+    skip_on_cran()
     sim <- .fc_simulate_joint_icar(N = 300, n_s = 30, alpha_true = 0.0,
                                     seed = 42)
     adj <- .fc_chain_adj(sim$n_s)
@@ -153,6 +154,7 @@ test_that("field_coef = 0 on arm 2 matches a no-field independent fit", {
 # --------------------------------------------------------------------------- #
 
 test_that("field_coef = list(name='alpha', grid=) runs; single-block copy= errors", {
+    skip_on_cran()
     sim <- .fc_simulate_joint_icar(N = 400, n_s = 40, sigma = 0.6,
                                     alpha_true = 1.0, seed = 99)
     adj <- .fc_chain_adj(sim$n_s)
@@ -207,6 +209,7 @@ test_that("field_coef = list(name='alpha', grid=) runs; single-block copy= error
 # --------------------------------------------------------------------------- #
 
 test_that("3-arm (field_coef = 1, 0, 0.5) runs and recovers betas", {
+    skip_on_cran()
     set.seed(11)
     n_s <- 30L
     N   <- 300L

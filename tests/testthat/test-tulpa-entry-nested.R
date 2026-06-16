@@ -159,7 +159,6 @@ test_that("nested_laplace and nested_laplace_joint are registered Tier 2", {
 # routing layer end-to-end. Slow (multi-seed Laplace fits) -> off CRAN.
 test_that("tulpa(latent(...)) recovers beta across seeds", {
   skip_on_cran()
-  skip_if_fast()
   n        <- 60L
   b0_true  <- 0.2
   b1_true  <- 0.4

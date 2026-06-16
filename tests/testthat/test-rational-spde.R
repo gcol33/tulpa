@@ -11,6 +11,7 @@ test_that("rational_spde_coefficients returns integer flag for integer nu", {
 })
 
 test_that("rational_spde_coefficients returns BRASIL roots for fractional nu", {
+  skip_on_cran()
   # gcol33/tulpa#71: the documented method. Fractional nu returns the rSPDE
   # rational roots from the BRASIL best-rational approximation, not the old
   # self-derived two-pole approximation.
@@ -37,6 +38,7 @@ test_that("spatial_spde accepts fractional nu (gcol33/tulpa#71)", {
 })
 
 test_that("fit_spde with nu = 0 runs without error", {
+  skip_on_cran()
   # nu=0 (alpha=1) is the first-order operator -- ill-conditioned, rarely used.
   set.seed(42)
   n_obs <- 80
@@ -49,6 +51,7 @@ test_that("fit_spde with nu = 0 runs without error", {
 })
 
 test_that("fit_spde works with nu = 1 (alpha = 2, standard)", {
+  skip_on_cran()
   set.seed(42)
   n_obs <- 80
   coords <- cbind(runif(n_obs), runif(n_obs))
@@ -157,6 +160,7 @@ test_that("fractional nested fit_spde recovers range on a 2D mesh -- Gaussian", 
 })
 
 test_that("fractional nu: fixed-hyper NUTS runs, joint NUTS gated, analytic-Q SE gated", {
+  skip_if_not_slow()
   spec <- .frac_1d_spec(n = 40L, nu = 0.5)
   # Joint-over-hypers fractional NUTS stays gated -- the rational roots are not
   # differentiable in kappa (gcol33/tulpa#85).
@@ -182,6 +186,7 @@ test_that("fractional nu: fixed-hyper NUTS runs, joint NUTS gated, analytic-Q SE
 })
 
 test_that("different integer nu values produce different log-marginals", {
+  skip_on_cran()
   set.seed(42)
   n_obs <- 100
   coords <- cbind(runif(n_obs), runif(n_obs))

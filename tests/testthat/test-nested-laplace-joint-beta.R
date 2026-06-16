@@ -60,6 +60,7 @@
 }
 
 test_that("joint BYM2 with beta-positive arm runs and recovers betas", {
+    skip_on_cran()
     sim <- .simulate_joint_beta(N = 500, n_s = 40, alpha_true = 1.0,
                                  phi_beta = 30.0, seed = 13)
     adj <- .chain_adj(sim$n_s)

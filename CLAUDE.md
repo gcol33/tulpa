@@ -68,6 +68,13 @@ devtools::load_all()
 devtools::check(args = "--no-manual")
 ```
 
+Test profiles (single source of truth `tests/testthat/helper-tiers.R`; tier table
+in `tests/testthat/README.md`): `devtools::test()` runs tiers 1 + 2 (structural +
+single-fit recovery); `Sys.setenv(TULPA_FAST = "1")` collapses to tier 1 only
+(every fit / sampler skips, whole suite in seconds, for plumbing iteration);
+`Sys.setenv(TULPA_SLOW_TESTS = "true")` adds tier 3 (samplers, multi-seed
+coverage). CRAN runs tier 1 only.
+
 **Release caveats** (the routine `check()` above does not catch these):
 
 - `--no-manual` skips the PDF reference manual, so Rd LaTeX errors stay

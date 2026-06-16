@@ -27,6 +27,7 @@ test_that("tulpa_nuts_spde rejects non-SPDE spatial spec", {
 
 test_that("tulpa_nuts_spde recovers gaussian SPDE on small mesh", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
 
   set.seed(2026)
   n_obs <- 200
@@ -71,6 +72,7 @@ test_that("tulpa_nuts_spde recovers gaussian SPDE on small mesh", {
 
 test_that("tulpa_nuts_spde poisson recovers intercept", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
 
   set.seed(7)
   n_obs <- 150
@@ -99,6 +101,7 @@ test_that("tulpa_nuts_spde poisson recovers intercept", {
 
 test_that("tulpa_nuts_spde gamma recovers intercept and shape", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
 
   set.seed(11)
   n_obs <- 200
@@ -132,6 +135,7 @@ test_that("tulpa_nuts_spde gamma recovers intercept and shape", {
 
 test_that("tulpa_nuts_spde neg_binomial_2 recovers intercept and size", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
 
   set.seed(13)
   n_obs <- 200
@@ -166,6 +170,7 @@ test_that("tulpa_nuts_spde neg_binomial_2 recovers intercept and size", {
 
 test_that("tulpa_nuts_spde beta recovers intercept and precision", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
 
   set.seed(17)
   n_obs <- 200
@@ -214,6 +219,7 @@ test_that("tulpa_nuts_spde rejects unsupported family", {
 
 test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
 
   set.seed(3)
   n_obs <- 250
@@ -278,7 +284,7 @@ test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
 
 test_that("non-centered fixed-hyper NUTS calibrates beta SD to the Laplace SE (#87)", {
   skip_if_not_installed("fmesher")
-  skip_on_cran()
+  skip_if_not_slow()
 
   set.seed(2026)
   n_obs <- 200
@@ -322,6 +328,7 @@ test_that("non-centered fixed-hyper NUTS calibrates beta SD to the Laplace SE (#
 
 test_that("tulpa_nuts_spde fixed-hyper fractional nu recovers + matches Laplace (#85)", {
   skip_if_not_installed("fmesher")
+  skip_if_not_slow()
 
   set.seed(404)
   n_obs  <- 200
@@ -377,7 +384,7 @@ test_that("tulpa_nuts_spde fixed-hyper fractional nu recovers + matches Laplace 
 
 test_that("fractional-nu fixed-hyper NUTS calibrates beta SD to the Laplace SE (#87)", {
   skip_if_not_installed("fmesher")
-  skip_on_cran()
+  skip_if_not_slow()
 
   # Companion to the integer-path #87 SD-calibration test above, on the rational
   # (fractional nu) field. The bug #87 closed here was a Q-storage one: the

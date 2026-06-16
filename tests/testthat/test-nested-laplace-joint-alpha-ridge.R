@@ -75,7 +75,6 @@
 
 test_that("(sigma, alpha) reparam removes the cover-arm ridge on small-n_pos BYM2 (gcol33/tulpa#22)", {
     skip_on_cran()
-    skip_if_fast()
     adj <- .chain_adj_ridge(25L)
     # 10 seeds are sufficient for the two assertions this test makes:
     #   * sigma is well-identified (per-seed sigma SD is small because

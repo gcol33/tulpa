@@ -96,7 +96,6 @@ test_that("verbose announces the engaged outer integrator at selection time (gco
 
 test_that("CCD matches a fine tensor grid in the tighter-posterior regime", {
     skip_on_cran()
-    skip_if_fast()
     # Larger N -> tighter, more Gaussian hyperparameter posterior, the regime
     # CCD is designed for (large spatial fields). CCD then reproduces the fine
     # tensor grid's posterior means for the well-identified field amplitude
@@ -200,7 +199,6 @@ test_that("CCD rides the latent axes and crosses an active phi tensor (gcol33/tu
 
 test_that("CCD x phi matches the tensor grid x phi in the tighter-posterior regime", {
     skip_on_cran()
-    skip_if_fast()
     sim <- .sim_joint_ccd(7L, N = 4000L, n_s = 40L)
     sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
     phi_axis <- exp(seq(log(0.3), log(0.8), length.out = 4))

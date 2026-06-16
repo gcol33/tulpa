@@ -8,8 +8,7 @@
 # Random intercepts (poisson) through NUTS: the slope, intercept, and the RE
 # standard deviation all recover, and the layout exposes log_sigma_re + b[G].
 test_that("NUTS recovers a poisson random-intercept model", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(1)
   G <- 25L; n_per <- 18L; N <- G * n_per
   group <- rep(seq_len(G), each = n_per)
@@ -38,8 +37,7 @@ test_that("NUTS recovers a poisson random-intercept model", {
 # only that they return a finite, correctly shaped full latent draw matrix and
 # recover the fixed-effect slope -- not the variance component.
 test_that("SMC and VI return finite full-latent draws on a binomial RE model", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(2)
   G <- 20L; n_per <- 20L; N <- G * n_per
   group <- rep(seq_len(G), each = n_per)
@@ -67,8 +65,7 @@ test_that("SMC and VI return finite full-latent draws on a binomial RE model", {
 # and the posterior-mean field tracks the simulated truth (positive correlation),
 # with log_tau_spatial sampled jointly.
 test_that("NUTS recovers a poisson ICAR spatial model", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(3)
   S <- 30L
   adj <- matrix(0, S, S)
@@ -101,8 +98,7 @@ test_that("NUTS recovers a poisson ICAR spatial model", {
 # Temporal AR1 field (gaussian) through NUTS: the covariate slope recovers and the
 # AR1 dependence parameter is sampled (logit_rho_ar1 present in the layout).
 test_that("NUTS recovers a gaussian temporal AR1 model", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(4)
   Tn <- 60L; rho <- 0.7; sdq <- 0.5
   ft <- numeric(Tn); ft[1] <- rnorm(1, 0, sdq / sqrt(1 - rho^2))
@@ -125,8 +121,7 @@ test_that("NUTS recovers a gaussian temporal AR1 model", {
 # carries the full latent layout (regression guard for the routing in
 # .tulpa_fitter_args + select_inference_mode).
 test_that("tulpa(mode = 'hmc') routes a random-intercept model through the sampler", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(5)
   G <- 18L; n_per <- 16L; N <- G * n_per
   g <- rep(seq_len(G), each = n_per); x <- rnorm(N)
@@ -147,7 +142,7 @@ test_that("tulpa(mode = 'hmc') routes a random-intercept model through the sampl
 # isotropic Gaussian-prior block cannot carry a graph-precision spatial / temporal
 # field, so a structured spatial or temporal spec is declined with guidance.
 test_that("ESS declines a structured spatial or temporal field", {
-  skip_on_cran()
+  skip_if_not_slow()
   set.seed(6)
   S <- 12L
   adj <- matrix(0, S, S)

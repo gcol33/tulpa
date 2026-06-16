@@ -39,6 +39,7 @@ make_ar1_tgmrf <- function(n, theta_grid_matrix, bounds = NULL) {
 }
 
 test_that("tgmrf AR1 matches built-in AR1 modes up to z-block recentering", {
+  skip_on_cran()
   # Both paths assemble the same Newton system (same Q, same likelihood)
   # and converge to the same MAP. Built-in AR1 then applies a sum-to-zero
   # *post-hoc* center_effects on the z block (a relabel that leaves the
@@ -101,6 +102,7 @@ test_that("tgmrf AR1 matches built-in AR1 modes up to z-block recentering", {
 })
 
 test_that("tgmrf AR1 recovers theta on a Poisson sim", {
+  skip_on_cran()
   set.seed(7)
   n <- 80L
   tau_true <- 2.0; rho_true <- 0.7
@@ -133,6 +135,7 @@ test_that("tgmrf AR1 recovers theta on a Poisson sim", {
 })
 
 test_that("tulpa_nested_laplace accepts a bare tgmrf object as prior", {
+  skip_on_cran()
   set.seed(11)
   n <- 30L
   z <- as.numeric(arima.sim(list(ar = 0.5), n = n, sd = 1))
@@ -160,6 +163,7 @@ test_that("tulpa_nested_laplace accepts a bare tgmrf object as prior", {
 })
 
 test_that("tgmrf inside a multi-block prior composes with an iid block", {
+  skip_on_cran()
   # Smoke check: tgmrf + iid on a Gaussian-latent Poisson sim. The joint
   # Cartesian grid is small (5 tgmrf cells * 3 sigma_iid points = 15) and
   # the goal here is purely to exercise the precompute -> joint-grid copy

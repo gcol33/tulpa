@@ -163,7 +163,6 @@ test_that("warm-start chain in C++ grid uses fewer total iterations", {
 
 test_that("C++ grid is faster than R loop (benchmark)", {
   skip_on_cran()
-  skip_if_fast()
 
   adj <- make_grid_adjacency(10, 10)  # 100 sites
   dat <- simulate_spatial_data(

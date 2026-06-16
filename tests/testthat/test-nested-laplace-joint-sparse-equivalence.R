@@ -14,7 +14,6 @@
 # when convergence stops early on either path.
 
 skip_on_cran()
-skip_if_fast()
 
 .chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),

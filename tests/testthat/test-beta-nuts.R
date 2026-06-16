@@ -24,6 +24,7 @@ test_that("tulpa_nuts_beta rejects bad prior SDs", {
 })
 
 test_that("tulpa_nuts_beta recovers parameters on simulated data", {
+  skip_if_not_slow()
   set.seed(2026)
   N <- 400
   x <- runif(N, -2, 2)
@@ -54,6 +55,7 @@ test_that("tulpa_nuts_beta recovers parameters on simulated data", {
 })
 
 test_that("tulpa_nuts_beta agrees with tulpa_laplace_beta in mean", {
+  skip_if_not_slow()
   set.seed(11)
   N <- 500
   x <- runif(N, -1.5, 1.5)

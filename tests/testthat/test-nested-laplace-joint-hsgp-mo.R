@@ -20,7 +20,6 @@
 #   (5) Validation errors: missing fields, K != 2.
 
 skip_on_cran()
-skip_if_fast()
 
 .hsgp_basis_2d_mo <- function(coords, m_per_dim = 4L, cscl = 1.5) {
     x <- coords[, 1]; y <- coords[, 2]

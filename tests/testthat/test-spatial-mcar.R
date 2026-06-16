@@ -47,7 +47,6 @@ test_that("spatial(~ ... | cell) builds one coupled MCAR block", {
 
 test_that("MCAR recovers the correlated fields and Sigma vs simulated truth", {
   skip_on_cran()
-  skip_if_fast()
 
   nx <- ny <- 10L
   adj <- .mcar_grid_adj(nx, ny)
@@ -103,7 +102,6 @@ test_that("MCAR recovers the correlated fields and Sigma vs simulated truth", {
 
 test_that("MCAR mode-centred CCD scales to p = 3 (general p > 2)", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(3)
   nx <- ny <- 8L
   adj <- .mcar_grid_adj(nx, ny)
@@ -151,7 +149,6 @@ test_that("MCAR mode-centred CCD scales to p = 3 (general p > 2)", {
 
 test_that("MCAR fit print reports the Sigma cross-covariance (rho)", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(11)
   adj <- .mcar_grid_adj(8L, 8L)
   n_s <- 64L

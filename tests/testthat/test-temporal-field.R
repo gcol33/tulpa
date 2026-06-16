@@ -70,7 +70,6 @@ test_that("the bare temporal(col) naming path still parses (accessor unaffected)
 
 test_that("temporal() recovers the level and the time-varying slope (rw1)", {
   skip_on_cran()
-  skip_if_fast()
 
   cors_lvl <- numeric(0)
   cors_slp <- numeric(0)
@@ -108,7 +107,6 @@ test_that("temporal() recovers the level and the time-varying slope (rw1)", {
 
 test_that("ignoring the per-row weight degrades the slope field", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(7)
   T <- 30L
   slp <- cumsum(rnorm(T)); slp <- slp - mean(slp)
@@ -129,7 +127,6 @@ test_that("ignoring the per-row weight degrades the slope field", {
 
 test_that("ar1 temporal field fits and reports rho", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(13)
   T <- 40L
   lvl <- as.numeric(arima.sim(list(ar = 0.7), n = T)); lvl <- lvl - mean(lvl)

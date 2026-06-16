@@ -130,8 +130,7 @@ test_that(".joint_pareto_k declines a fit carrying an unguessable axis", {
 # --------------------------------------------------------------------------- #
 
 test_that("joint ICAR copy fit reports a finite outer Pareto-k-hat", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     sim <- .jpk_sim(seed = 11)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
@@ -152,8 +151,7 @@ test_that("joint ICAR copy fit reports a finite outer Pareto-k-hat", {
 })
 
 test_that("joint BYM2 copy fit reports a finite k-hat (log + logit + identity)", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     sim <- .jpk_sim(seed = 21)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "bym2", n_spatial_units = adj$n_spatial_units,
@@ -175,8 +173,7 @@ test_that("joint BYM2 copy fit reports a finite k-hat (log + logit + identity)",
 # --------------------------------------------------------------------------- #
 
 test_that("joint CAR_proper copy fit declines k-hat to quad-ESS", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     sim <- .jpk_sim(seed = 31)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "car_proper", n_spatial_units = adj$n_spatial_units,
@@ -198,8 +195,7 @@ test_that("joint CAR_proper copy fit declines k-hat to quad-ESS", {
 # --------------------------------------------------------------------------- #
 
 test_that("joint multi-block (ICAR copy) reports a finite outer k-hat", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     sim <- .jpk_sim(seed = 41)
     adj <- .jpk_chain_adj(sim$n_s)
     prior_multi <- list(list(
@@ -222,8 +218,7 @@ test_that("joint multi-block (ICAR copy) reports a finite outer k-hat", {
 # --------------------------------------------------------------------------- #
 
 test_that("diagnose_k = FALSE skips k-hat and leaves modes unchanged", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     sim <- .jpk_sim(seed = 51)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
@@ -247,8 +242,7 @@ test_that("diagnose_k = FALSE skips k-hat and leaves modes unchanged", {
 })
 
 test_that("a sub-floor k_samples declines to NA without paying the solves", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     # gcol33/tulpa#51: k_samples below .PSIS_MIN_EVAL can never produce a usable
     # GPD fit, so the diagnostic must decline (NA) up front rather than run every
     # one of its inner solves and discard the result. The decline path costs no
@@ -274,8 +268,7 @@ test_that("a sub-floor k_samples declines to NA without paying the solves", {
 })
 
 test_that("warm-start + capped diagnostic iters leave the k-hat unchanged", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     # The cost bound (gcol33/tulpa#51) warm-starts each diagnostic solve from the
     # modal latent mode and caps its iterations. Converged draws keep their exact
     # log-marginal and only negligible-weight tail draws are truncated, so the
@@ -304,8 +297,7 @@ test_that("warm-start + capped diagnostic iters leave the k-hat unchanged", {
 })
 
 test_that("diagnose_k does not perturb the global RNG state", {
-    skip_on_cran()
-    skip_if_fast()
+    skip_if_not_slow()
     sim <- .jpk_sim(seed = 61)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,

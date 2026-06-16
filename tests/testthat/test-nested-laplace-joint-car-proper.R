@@ -62,6 +62,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("joint CAR_proper with alpha = 0 leaves beta_occ unchanged", {
+    skip_on_cran()
     sim <- .simulate_joint_car(N = 300, n_s = 30, alpha_true = 0.0, seed = 42)
     adj <- .chain_adj(sim$n_s)
 
@@ -121,6 +122,7 @@ test_that("joint CAR_proper with alpha = 0 leaves beta_occ unchanged", {
 # --------------------------------------------------------------------------- #
 
 test_that("joint CAR_proper recovers per-arm betas and locates the alpha mode", {
+    skip_on_cran()
     sim <- .simulate_joint_car(N = 400, n_s = 40, sigma = 0.6,
                                 alpha_true = 1.0, seed = 99)
     adj <- .chain_adj(sim$n_s)

@@ -21,7 +21,6 @@
 # sparse fields are empty; force_sparse = TRUE errors out explicitly).
 
 skip_on_cran()
-skip_if_fast()
 
 .chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),

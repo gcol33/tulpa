@@ -44,8 +44,7 @@ recov_sweep <- function(family, G, npg, n_seed, seed_off = 0L) {
 
 
 test_that("poisson small groups: variance components recover, intervals calibrated", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   n_seed <- 12L
   R <- recov_sweep("poisson", G = 60L, npg = 10L, n_seed = n_seed)
   # Variance components (the Bias-1 debias target) recover in small groups.
@@ -66,8 +65,7 @@ test_that("poisson small groups: variance components recover, intervals calibrat
 
 
 test_that("binomial identified: variance debias and rho recovery", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   n_seed <- 8L
   R <- recov_sweep("binomial", G = 60L, npg = 40L, n_seed = n_seed,
                    seed_off = 4000L)

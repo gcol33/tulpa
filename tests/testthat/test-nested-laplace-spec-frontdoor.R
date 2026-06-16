@@ -5,6 +5,7 @@
 # own (range, sigma) FEM integrator and declines with a redirect.
 
 test_that("areal spec routes through tulpa_nested_laplace()", {
+  skip_on_cran()
   set.seed(11)
   n <- 30L
   W <- matrix(0, n, n)
@@ -21,6 +22,7 @@ test_that("areal spec routes through tulpa_nested_laplace()", {
 })
 
 test_that("continuous gp/nngp spec routes through tulpa_nested_laplace()", {
+  skip_on_cran()
   set.seed(12)
   ng <- 40L
   coords <- cbind(runif(ng), runif(ng))
@@ -36,6 +38,7 @@ test_that("continuous gp/nngp spec routes through tulpa_nested_laplace()", {
 })
 
 test_that("continuous hsgp spec routes through tulpa_nested_laplace()", {
+  skip_on_cran()
   set.seed(13)
   ng <- 40L
   coords <- cbind(runif(ng), runif(ng))

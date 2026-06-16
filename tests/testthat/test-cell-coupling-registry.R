@@ -16,6 +16,7 @@ test_that("registry lookup returns FALSE on an unregistered name", {
 })
 
 test_that("tulpa_nested_laplace_joint() accepts cell_coupling = \"separable\" silently", {
+    skip_on_cran()
     # 2-arm cover-hurdle on a tiny synthetic ICAR (smoke test the
     # cell_coupling default; cover hurdle stays on the per-obs path because
     # the separable sentinel has arm_ids().empty()).

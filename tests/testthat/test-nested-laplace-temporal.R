@@ -21,6 +21,7 @@ simulate_temporal_binomial <- function(T = 30L, n_per_t = 5L,
 # =====================================================================
 
 test_that("nested_laplace RW1 returns interior-peaked log-marginal", {
+  skip_on_cran()
   d <- simulate_temporal_binomial()
   prior <- list(type = "rw1",
                 temporal_idx = d$time,
@@ -40,6 +41,7 @@ test_that("nested_laplace RW1 returns interior-peaked log-marginal", {
 })
 
 test_that("nested_laplace RW1 stores per-grid-point modes", {
+  skip_on_cran()
   d <- simulate_temporal_binomial(T = 20L, n_per_t = 4L)
   prior <- list(type = "rw1",
                 temporal_idx = d$time,
@@ -60,6 +62,7 @@ test_that("nested_laplace RW1 stores per-grid-point modes", {
 # =====================================================================
 
 test_that("nested_laplace RW2 produces a smoother trend than RW1 mode", {
+  skip_on_cran()
   d <- simulate_temporal_binomial(T = 30L, ar1_rho = 0.6)
   tg <- exp(seq(log(0.3), log(30), length.out = 9))
   prior_rw1 <- list(type = "rw1", temporal_idx = d$time,
@@ -91,6 +94,7 @@ test_that("nested_laplace RW2 produces a smoother trend than RW1 mode", {
 # =====================================================================
 
 test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", {
+  skip_on_cran()
   d <- simulate_temporal_binomial(T = 40L, n_per_t = 6L,
                                   ar1_rho = 0.85, sd = 0.5)
   g_tau <- exp(seq(log(0.5), log(20), length.out = 4))
@@ -113,6 +117,7 @@ test_that("nested_laplace AR1 recovers high autocorrelation in the simulation", 
 })
 
 test_that("nested_laplace accepts tulpa_temporal spec via spec= + data=", {
+  skip_on_cran()
   d <- simulate_temporal_binomial(T = 25L, ar1_rho = 0.7)
   df <- data.frame(year = d$time)
   spec <- temporal_ar1("year")
@@ -152,6 +157,7 @@ test_that("nested_laplace rejects spec + prior together", {
 })
 
 test_that("nested_laplace AR1 fills default grid when missing", {
+  skip_on_cran()
   d <- simulate_temporal_binomial(T = 20L, n_per_t = 4L)
   prior <- list(type = "ar1",
                 temporal_idx = d$time, n_times = d$T)

@@ -3,6 +3,7 @@
 source(test_path("test-sparse-cholesky.R"), local = TRUE)
 
 test_that("proper-CAR nested Laplace runs on a 2D grid", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)  # 25 sites
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -32,6 +33,7 @@ test_that("proper-CAR nested Laplace runs on a 2D grid", {
 })
 
 test_that("proper-CAR collapses to ICAR as rho -> 1", {
+  skip_on_cran()
   adj <- make_grid_adjacency(4, 4)
   dat <- simulate_spatial_data(
     n_sites = 16, n_obs_per_site = 8,
@@ -74,6 +76,7 @@ test_that("proper-CAR collapses to ICAR as rho -> 1", {
 })
 
 test_that("tulpa_nested_laplace() routes a car_proper prior to the new backend", {
+  skip_on_cran()
   adj <- make_grid_adjacency(4, 5)
   dat <- simulate_spatial_data(
     n_sites = 20, n_obs_per_site = 8,
@@ -102,6 +105,7 @@ test_that("tulpa_nested_laplace() routes a car_proper prior to the new backend",
 })
 
 test_that("tulpa_nested_laplace() accepts spatial_car_proper spec", {
+  skip_on_cran()
   adj <- make_grid_adjacency(4, 4)
   W <- matrix(0, 16, 16)
   # Reconstruct dense adjacency from CSR to feed spatial_car_proper

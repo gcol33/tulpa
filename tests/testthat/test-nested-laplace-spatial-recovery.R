@@ -100,7 +100,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("nested-Laplace CAR_proper recovers (tau, rho) with CI coverage", {
-  skip_on_cran()
+  skip_if_not_slow()
   S <- 49L; reps <- 16L
   adj <- .grid_adj(7, 7); W <- .csr_to_W(adj, S)
   tau_true <- 2.0; rho_true <- 0.85
@@ -141,7 +141,7 @@ test_that("nested-Laplace CAR_proper recovers (tau, rho) with CI coverage", {
 # --------------------------------------------------------------------------- #
 
 test_that("nested-Laplace ICAR precision moves inversely with the field amplitude", {
-  skip_on_cran()
+  skip_if_not_slow()
   S <- 40L; reps <- 12L; adj <- .chain_adj(S)
   sidx <- rep(seq_len(S), each = reps); N <- length(sidx)
   icar_tau <- function(amp, seed) {                       # icar axis is the precision tau
@@ -162,7 +162,7 @@ test_that("nested-Laplace ICAR precision moves inversely with the field amplitud
 })
 
 test_that("nested-Laplace BYM2 sigma tracks the field amplitude", {
-  skip_on_cran()
+  skip_if_not_slow()
   S <- 40L; reps <- 12L; adj <- .chain_adj(S)
   sidx <- rep(seq_len(S), each = reps); N <- length(sidx)
   bym2_sigma <- function(amp, seed) {
@@ -188,7 +188,7 @@ test_that("nested-Laplace BYM2 sigma tracks the field amplitude", {
 # --------------------------------------------------------------------------- #
 
 test_that("nested-Laplace NNGP marginalized CI covers (sigma2, phi_gp)", {
-  skip_on_cran()
+  skip_if_not_slow()
   sigma2_true <- 0.8; phi_true <- 0.35
   s2_grid <- exp(seq(log(0.2), log(2.0), length.out = 6))
   pg_grid <- exp(seq(log(0.12), log(0.9), length.out = 6))
@@ -214,7 +214,7 @@ test_that("nested-Laplace NNGP marginalized CI covers (sigma2, phi_gp)", {
 })
 
 test_that("nested-Laplace HSGP marginalized sigma2 CI covers the truth", {
-  skip_on_cran()
+  skip_if_not_slow()
   N <- 90L; sigma2_true <- 0.8; ell <- 0.3
   s2_vals <- exp(seq(log(0.1), log(2.5), length.out = 6))
   ell_vals <- c(0.15, 0.30, 0.50, 0.15, 0.30, 0.50)

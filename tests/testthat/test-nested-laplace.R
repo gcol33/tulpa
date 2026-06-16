@@ -9,6 +9,7 @@ source(test_path("test-sparse-cholesky.R"), local = TRUE)
 # =====================================================================
 
 test_that("hot-start reduces Newton iterations vs cold start", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)  # 25 sites (dense path)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -40,6 +41,7 @@ test_that("hot-start reduces Newton iterations vs cold start", {
 })
 
 test_that("hot-start works across nearby tau values", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -93,6 +95,7 @@ icar_prior <- function(adj, n_sites, tau_grid = NULL) {
 }
 
 test_that("nested_laplace dispatches ICAR with explicit grid", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -120,6 +123,7 @@ test_that("nested_laplace dispatches ICAR with explicit grid", {
 })
 
 test_that("nested_laplace ICAR uses default grid when none supplied", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -139,6 +143,7 @@ test_that("nested_laplace ICAR uses default grid when none supplied", {
 })
 
 test_that("warm-start chain reduces inner iterations across grid", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,

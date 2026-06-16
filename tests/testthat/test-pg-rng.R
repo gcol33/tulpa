@@ -18,8 +18,7 @@ pg1_var_exact <- function(z) {
 }
 
 test_that("cpp_rpg1 recovers the closed-form PG(1, z) mean and variance", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(20260530)
 
   N <- 200000
@@ -48,8 +47,7 @@ test_that("cpp_rpg1 recovers the closed-form PG(1, z) mean and variance", {
 })
 
 test_that("cpp_rpg recovers PG(b, z) mean for exact and approx paths", {
-  skip_on_cran()
-  skip_if_fast()
+  skip_if_not_slow()
   set.seed(7)
 
   N <- 100000

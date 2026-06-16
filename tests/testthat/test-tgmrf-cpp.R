@@ -58,7 +58,6 @@ make_periodic_ar1_r <- function(n, init,
 
 test_that("tgmrf_cpp() compiles, registers, and fits a periodic-AR1 sim", {
   skip_on_cran()
-  skip_if_fast()
   cpp_file <- .tgmrf_cpp_example_path()
 
   # kN = 80 in the .cpp.
@@ -107,7 +106,6 @@ test_that("tgmrf_cpp() compiles, registers, and fits a periodic-AR1 sim", {
 
 test_that("tgmrf_cpp() and tgmrf() agree to numerical tol on the same fit", {
   skip_on_cran()
-  skip_if_fast()
   cpp_file <- .tgmrf_cpp_example_path()
 
   n <- 80L

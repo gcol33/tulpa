@@ -32,7 +32,6 @@
 # alpha posterior off-grid (e.g. axis-swap in the kernel) will trip these.
 
 skip_on_cran()
-skip_if_fast()
 
 .phase1_chain_adj <- function(n_s) {
     nbr <- lapply(seq_len(n_s),

@@ -18,6 +18,7 @@ icar_prior <- function(adj, n_sites, tau_grid = NULL) {
 }
 
 test_that("keep_grid_hessians exposes per-grid H_beta and modes", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,
@@ -60,6 +61,7 @@ test_that("keep_grid_hessians exposes per-grid H_beta and modes", {
 })
 
 test_that("default keep_grid_hessians = FALSE leaves return list unchanged", {
+  skip_on_cran()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
     n_sites = 25, n_obs_per_site = 10,

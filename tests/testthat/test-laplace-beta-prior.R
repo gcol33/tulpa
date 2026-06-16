@@ -30,6 +30,7 @@ fit_beta <- function(d, beta_prior = NULL) {
 
 
 test_that("beta_prior = NULL reproduces the explicit weak prior N(0, 100^2)", {
+  skip_on_cran()
   d <- sim_logit()
   b_default <- fit_beta(d, NULL)
   b_weak    <- fit_beta(d, list(mean = 0, sd = 100))
@@ -39,6 +40,7 @@ test_that("beta_prior = NULL reproduces the explicit weak prior N(0, 100^2)", {
 
 
 test_that("weak prior recovers glm() coefficients", {
+  skip_on_cran()
   d <- sim_logit(n = 800L)
   b_tulpa <- fit_beta(d, list(mean = 0, sd = 100))
   g <- glm(d$y ~ d$X[, -1], family = binomial())
@@ -50,6 +52,7 @@ test_that("weak prior recovers glm() coefficients", {
 
 
 test_that("weak prior recovers the data-generating coefficients", {
+  skip_on_cran()
   d <- sim_logit(n = 2000L, beta = c(0.3, -1.0, 0.7), seed = 7L)
   b <- fit_beta(d, list(mean = 0, sd = 100))
   expect_equal(b, d$beta, tolerance = 0.15)
@@ -57,6 +60,7 @@ test_that("weak prior recovers the data-generating coefficients", {
 
 
 test_that("tightening the prior shrinks the MAP monotonically toward 0", {
+  skip_on_cran()
   d <- sim_logit()
   # Posterior precision = prior precision + likelihood info, so |beta| toward
   # the mean is monotone non-increasing as sd shrinks.
@@ -72,6 +76,7 @@ test_that("tightening the prior shrinks the MAP monotonically toward 0", {
 
 
 test_that("a very tight prior pulls the MAP toward a non-zero prior mean", {
+  skip_on_cran()
   d <- sim_logit(n = 1500L)
   target <- 2.0
   b_tight <- fit_beta(d, list(mean = target, sd = 0.01))
@@ -80,6 +85,7 @@ test_that("a very tight prior pulls the MAP toward a non-zero prior mean", {
 
 
 test_that("per-coefficient sd shrinks the targeted column far more than others", {
+  skip_on_cran()
   d <- sim_logit(n = 1500L)
   b_weak <- fit_beta(d, list(mean = 0, sd = 100))
   # Shrink only the second coefficient (first slope) hard.
@@ -104,6 +110,7 @@ test_that("beta_prior validation rejects malformed input", {
 
 
 test_that("sd = +Inf is a no-op penalty: MAP equals the unpenalized MLE", {
+  skip_on_cran()
   d <- sim_logit(n = 800L)
   # Precision 1 / Inf^2 = 0 on every coefficient -> no penalty at all. With no
   # spurious latent the Laplace mode is exactly the logistic MLE.
@@ -114,6 +121,7 @@ test_that("sd = +Inf is a no-op penalty: MAP equals the unpenalized MLE", {
 
 
 test_that("per-coefficient sd = Inf leaves only the finite-sd columns penalized", {
+  skip_on_cran()
   d <- sim_logit(n = 1500L)
   b_weak <- fit_beta(d, list(mean = 0, sd = 100))
   # Inf on cols 1 and 3 (no penalty), tight on col 2 -> only col 2 shrinks; the

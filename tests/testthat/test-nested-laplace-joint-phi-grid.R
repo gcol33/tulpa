@@ -81,6 +81,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("phi_grid on gaussian copy arm recovers true residual SD", {
+    skip_on_cran()
     sd_pos_true <- 0.3
     sim <- .simulate_joint_pg(N = 500, n_s = 30,
                               sigma = 0.6, rho = 0.7,
@@ -148,6 +149,7 @@ test_that("phi_grid on gaussian copy arm recovers true residual SD", {
 # --------------------------------------------------------------------------- #
 
 test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", {
+    skip_on_cran()
     sd_pos_true <- 0.4  # SD on the log scale
     sim <- .simulate_joint_pg(N = 500, n_s = 30,
                               sigma = 0.6, rho = 0.7,
@@ -212,6 +214,7 @@ test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", 
 # --------------------------------------------------------------------------- #
 
 test_that("lognormal == gaussian(log y) at any (sigma, rho, alpha, phi)", {
+    skip_on_cran()
     sim <- .simulate_joint_pg(N = 300, n_s = 25,
                               sigma = 0.6, rho = 0.7,
                               alpha_true = 1.0, sd_pos = 0.35,
@@ -289,6 +292,7 @@ test_that("lognormal == gaussian(log y) at any (sigma, rho, alpha, phi)", {
 # --------------------------------------------------------------------------- #
 
 test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks", {
+    skip_on_cran()
     sd_pos_true <- 0.3
     sim <- .simulate_joint_pg(N = 400, n_s = 25,
                               sigma = 0.6, rho = 0.7,

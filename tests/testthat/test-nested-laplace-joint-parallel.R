@@ -142,7 +142,6 @@
 
 test_that("multi-block SPARSE path parallel matches serial across seeds", {
     skip_on_cran()
-    skip_if_fast()
     skip_if_not(parallel::detectCores() >= 2L,
                 "needs multi-core to exercise the parallel sparse path")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
@@ -166,7 +165,6 @@ test_that("multi-block SPARSE path parallel matches serial across seeds", {
 
 test_that("joint BYM2 parallel path matches serial across seeds", {
     skip_on_cran()
-    skip_if_fast()
     skip_if_not(parallel::detectCores() >= 2L,
                 "needs multi-core to exercise the parallel path")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
@@ -210,7 +208,6 @@ test_that("joint BYM2 tile_warm path matches no-tile path across seeds", {
     # must match the no-tile path at this problem size where both Newton
     # paths converge cleanly inside `max_iter`.
     skip_on_cran()
-    skip_if_fast()
     skip_if_not(parallel::detectCores() >= 2L,
                 "needs multi-core to exercise tile_warm")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
@@ -252,7 +249,6 @@ test_that("joint BYM2 tile_warm path matches no-tile path across seeds", {
 
 test_that("tile_warm is a no-op when n_threads_outer == 1", {
     skip_on_cran()
-    skip_if_fast()
     # Serial path: tile metadata is ignored by run_nested_laplace_grid, so
     # tile_warm = TRUE vs FALSE must produce identical results. Guards
     # against accidental tile-path activation outside the parallel branch.

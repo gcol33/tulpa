@@ -33,7 +33,6 @@ make_spde_panel <- function(n_obs = 250L, range_true = 0.3, sigma_true = 0.6,
 
 test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
   skip_on_cran()
-  skip_if_fast()
   skip_if_not_installed("fmesher")
   s <- make_spde_panel()
   fit <- suppressWarnings(suppressMessages(tulpa(
@@ -60,6 +59,7 @@ test_that("mode = nested_laplace integrates an SPDE field through tulpa()", {
 
 test_that("mode = laplace fits an SPDE field alongside a (1 | g) RE term (issue #74)", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
   s <- make_spde_panel()
   d <- s$data
   d$g <- factor(rep_len(seq_len(8L), nrow(d)))
@@ -77,7 +77,6 @@ test_that("mode = laplace fits an SPDE field alongside a (1 | g) RE term (issue 
 
 test_that("structured and auto route an SPDE field to the spde backend", {
   skip_on_cran()
-  skip_if_fast()
   skip_if_not_installed("fmesher")
   s <- make_spde_panel(n_obs = 150L, seed = 3L)
   for (m in c("structured", "auto")) {
@@ -92,6 +91,7 @@ test_that("structured and auto route an SPDE field to the spde backend", {
 
 test_that("the SPDE front-door route is numerically identical to a direct fit_spde()", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
   s <- make_spde_panel(n_obs = 150L, seed = 7L)
   via <- suppressWarnings(suppressMessages(tulpa(
     y ~ x, data = s$data, family = "poisson", spatial = s$spec,
@@ -114,6 +114,7 @@ test_that("the SPDE front-door route is numerically identical to a direct fit_sp
 
 test_that("mode = laplace conditions an SPDE field at fixed hyperparameters", {
   skip_if_not_installed("fmesher")
+  skip_on_cran()
   s <- make_spde_panel(n_obs = 120L, seed = 9L)
   fit <- suppressWarnings(suppressMessages(tulpa(
     y ~ x, data = s$data, family = "poisson", spatial = s$spec, mode = "laplace"

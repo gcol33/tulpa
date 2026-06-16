@@ -49,6 +49,7 @@ test_that("print.tulpa_spatial works for SPDE", {
 })
 
 test_that("fit_spde works with fixed hyperparameters", {
+  skip_on_cran()
   set.seed(42)
   n_obs <- 100
   coords <- cbind(runif(n_obs), runif(n_obs))
@@ -401,6 +402,7 @@ test_that("ParamLayout: hyper slot ordering is mesh-size invariant", {
 })
 
 test_that("fit_spde works with nested Laplace", {
+  skip_on_cran()
   set.seed(42)
   n_obs <- 100
   coords <- cbind(runif(n_obs), runif(n_obs))

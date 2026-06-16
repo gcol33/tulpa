@@ -115,7 +115,6 @@ test_that("agq registers in Tier 2 (Structured)", {
 
 test_that("agq_fit fixed-effect CIs achieve near-nominal coverage", {
   skip_on_cran()
-  skip_if_fast()
   # Coverage gate on the shared marginal-Hessian SE path (the same path
   # tulpa_re_aghq / tulpa_nmix_laplace_re report SEs from). 95% Wald CIs for the
   # fixed effects should cover truth at >= 85% over >= 20 seeds (the

@@ -13,6 +13,7 @@ ring_adj <- function(n) {
 }
 
 test_that("CAR_proper single-point == nested kernel at one (tau, rho) cell", {
+  skip_on_cran()
   set.seed(7)
   n <- 24L
   W <- ring_adj(n)
@@ -35,6 +36,7 @@ test_that("CAR_proper single-point == nested kernel at one (tau, rho) cell", {
 })
 
 test_that("HSGP single-point matches nested mode and a brute-force Laplace", {
+  skip_on_cran()
   set.seed(8)
   ng <- 50L
   coords <- cbind(runif(ng), runif(ng))
@@ -69,6 +71,7 @@ test_that("HSGP single-point matches nested mode and a brute-force Laplace", {
 })
 
 test_that("tulpa_laplace routes a proper-CAR spec with a PD marginal H_beta", {
+  skip_on_cran()
   set.seed(3)
   n <- 28L
   W <- ring_adj(n)
@@ -85,6 +88,7 @@ test_that("tulpa_laplace routes a proper-CAR spec with a PD marginal H_beta", {
 })
 
 test_that("tulpa_laplace routes an HSGP spec with a PD marginal H_beta", {
+  skip_on_cran()
   set.seed(5)
   ng <- 60L
   coords <- cbind(runif(ng), runif(ng))

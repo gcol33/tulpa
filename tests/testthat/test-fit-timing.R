@@ -58,6 +58,7 @@ test_that(".timing_summary_line matches the issue's one-line format", {
 }
 
 test_that("tulpa_nested_laplace attaches a wall-clock timing breakdown", {
+  skip_on_cran()
   set.seed(11)
   n_s <- 20L
   adj <- .timing_chain_adj(n_s)
@@ -92,6 +93,7 @@ test_that("tulpa_nested_laplace attaches a wall-clock timing breakdown", {
 })
 
 test_that("print.tulpa_nested_laplace surfaces the one-line timing summary", {
+  skip_on_cran()
   set.seed(12)
   n_s <- 16L
   adj <- .timing_chain_adj(n_s)
@@ -117,6 +119,7 @@ test_that("print.tulpa_nested_laplace surfaces the one-line timing summary", {
 })
 
 test_that("joint nested-Laplace fit carries the timing breakdown", {
+  skip_on_cran()
   set.seed(13)
   n_s <- 24L
   adj <- .timing_chain_adj(n_s)

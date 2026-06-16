@@ -243,7 +243,6 @@ test_that("a by column missing from the data errors at fit time", {
 
 test_that("by recovers L independent per-level fields sharing sigma", {
   skip_on_cran()
-  skip_if_fast()
   set.seed(3)
 
   n_s <- 14L

@@ -11,6 +11,7 @@ make_temporal_data <- function(seed, Tt = 24L, m = 25L, b1 = 0.9) {
 }
 
 test_that("temporal_rw1 routes through tulpa() and recovers the fixed slope", {
+  skip_on_cran()
   d <- make_temporal_data(11)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   fit <- tulpa(y ~ x, data = d$df, family = "binomial",
@@ -26,6 +27,7 @@ test_that("temporal_rw1 routes through tulpa() and recovers the fixed slope", {
 })
 
 test_that("temporal_rw1 works for a gaussian response", {
+  skip_on_cran()
   d <- make_temporal_data(12)
   d$df$y <- -0.2 + d$b1 * d$df$x + d$ftrue[d$time] + rnorm(nrow(d$df), 0, 0.7)
   fit <- tulpa(y ~ x, data = d$df, family = "gaussian",
@@ -34,6 +36,7 @@ test_that("temporal_rw1 works for a gaussian response", {
 })
 
 test_that("nested temporal fit reports a marginalized fixed-effect SE", {
+  skip_on_cran()
   d <- make_temporal_data(14)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   fit <- tulpa(y ~ x, data = d$df, family = "binomial",
@@ -51,6 +54,7 @@ test_that("nested temporal fit reports a marginalized fixed-effect SE", {
 })
 
 test_that("nested-fit slope CI covers the truth at roughly nominal rate", {
+  skip_if_not_slow()
   hits <- 0L
   for (i in seq_len(15)) {
     d <- make_temporal_data(200 + i)
@@ -64,6 +68,7 @@ test_that("nested-fit slope CI covers the truth at roughly nominal rate", {
 })
 
 test_that("logLik and compare_models return one scalar row per nested fit", {
+  skip_on_cran()
   d <- make_temporal_data(15)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   f_t <- tulpa(y ~ x, data = d$df, family = "binomial",
@@ -78,6 +83,7 @@ test_that("logLik and compare_models return one scalar row per nested fit", {
 
 # RW2 / AR1 route through the native nested-Laplace temporal kernel (issue #73).
 test_that("temporal_rw2 routes through tulpa() and recovers the fixed slope", {
+  skip_on_cran()
   d <- make_temporal_data(21)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   fit <- tulpa(y ~ x, data = d$df, family = "binomial",
@@ -88,6 +94,7 @@ test_that("temporal_rw2 routes through tulpa() and recovers the fixed slope", {
 })
 
 test_that("temporal_ar1 routes through tulpa() and recovers the fixed slope", {
+  skip_on_cran()
   d <- make_temporal_data(31)
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   fit <- tulpa(y ~ x, data = d$df, family = "binomial",
@@ -100,6 +107,7 @@ test_that("temporal_ar1 routes through tulpa() and recovers the fixed slope", {
 # Additive areal spatial + temporal (space-time) routes through the joint
 # multi-block nested-Laplace path (issue #73).
 test_that("areal spatial + temporal rw1 routes through the joint nested path", {
+  skip_on_cran()
   set.seed(7)
   K <- 12L; Tt <- 10L; m <- 6L
   W <- matrix(0, K, K)
@@ -129,6 +137,7 @@ test_that("areal spatial + temporal rw1 routes through the joint nested path", {
 
 # Panel (grouped) temporal: a separate walk per group sharing one tau (issue #73).
 test_that("grouped (panel) temporal routes through tulpa()", {
+  skip_on_cran()
   set.seed(101)
   G <- 4L; Tt <- 16L; m <- 6L
   shapes <- sapply(seq_len(G), function(g)
@@ -169,6 +178,7 @@ test_that("panel-fit slope CI covers the truth at roughly nominal rate", {
 })
 
 test_that("grouped temporal with one group is identical to the ungrouped fit", {
+  skip_on_cran()
   # n_groups == 1 is the degenerate panel case: the flattened node index reduces
   # to the time index and the grouped C++ path must reproduce the single walk
   # bit-for-bit. Guards the panel generalisation against drift.

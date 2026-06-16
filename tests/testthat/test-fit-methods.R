@@ -18,6 +18,7 @@ make_re_data <- function(seed, n = 400L, b0 = 0.5, b1 = 1.2,
 }
 
 test_that("Laplace fit supports the full S3 method contract", {
+  skip_on_cran()
   d <- make_re_data(42)
   fit <- tulpa(y ~ x + (1 | g), data = d$df, family = "gaussian",
                mode = "laplace", sigma_re = 0.6, phi = 0.7)
@@ -54,6 +55,7 @@ test_that("Laplace fit supports the full S3 method contract", {
 })
 
 test_that("Laplace fit recovers the fixed-effect slope", {
+  skip_on_cran()
   # The intercept absorbs the sample mean of the random intercepts, so test the
   # slope (clean) and average the intercept over several RE realizations.
   slopes <- numeric(5); intercepts <- numeric(5)
@@ -70,6 +72,7 @@ test_that("Laplace fit recovers the fixed-effect slope", {
 })
 
 test_that("Laplace credible intervals cover the truth at roughly nominal rate", {
+  skip_if_not_slow()
   hits_slope <- 0L
   n_rep <- 20L
   for (i in seq_len(n_rep)) {
@@ -84,6 +87,7 @@ test_that("Laplace credible intervals cover the truth at roughly nominal rate", 
 })
 
 test_that("predict and fitted work on a Laplace fit", {
+  skip_on_cran()
   d <- make_re_data(11)
   fit <- tulpa(y ~ x + (1 | g), data = d$df, family = "gaussian",
                mode = "laplace", sigma_re = 0.6, phi = 0.7)
@@ -107,6 +111,7 @@ test_that("predict and fitted work on a Laplace fit", {
 })
 
 test_that("predict response scale respects the family range (binomial)", {
+  skip_on_cran()
   d <- make_re_data(13)
   eta <- -0.3 + 1.0 * d$df$x + d$u[d$df$g]
   d$df$y <- rbinom(nrow(d$df), 1, plogis(eta))
@@ -119,6 +124,7 @@ test_that("predict response scale respects the family range (binomial)", {
 })
 
 test_that("mode = 'auto' selects an R-reachable backend on a plain model", {
+  skip_on_cran()
   d <- make_re_data(23)
   # Plain (no spatial/latent/temporal) small model: auto must not resolve to a
   # C-ABI-only backend that errors at dispatch.
@@ -130,6 +136,7 @@ test_that("mode = 'auto' selects an R-reachable backend on a plain model", {
 })
 
 test_that("Gibbs fit (draws in $beta/$re) supports the contract", {
+  skip_if_not_slow()
   d <- make_re_data(17)
   eta <- -0.3 + 1.0 * d$df$x + d$u[d$df$g]
   d$df$y <- rbinom(nrow(d$df), 1, plogis(eta))
@@ -148,6 +155,7 @@ test_that("Gibbs fit (draws in $beta/$re) supports the contract", {
 })
 
 test_that("sampler fit reports named fixed effects and separate random effects", {
+  skip_if_not_slow()
   d <- make_re_data(7)
   eta <- -0.3 + 1.0 * d$df$x + d$u[d$df$g]
   d$df$y <- rbinom(nrow(d$df), 1, plogis(eta))

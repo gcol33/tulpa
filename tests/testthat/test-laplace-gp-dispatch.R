@@ -59,6 +59,7 @@ test_that("dispatch_laplace_spatial routes GP specs (no longer errors)", {
 })
 
 test_that("NNGP Laplace threads an additional iid RE block (issue #74)", {
+  skip_on_cran()
   ss <- make_synthetic_gp_spec()
   X  <- matrix(1.0, ss$n_obs, 1)
   set.seed(7)
@@ -104,6 +105,7 @@ test_that("gp_cov_type_for_laplace maps cov + nu correctly", {
 })
 
 test_that("tulpa_laplace(spatial = spatial_gp(...)) runs end-to-end", {
+  skip_on_cran()
   ss <- make_synthetic_gp_spec(n_obs = 80)
   set.seed(101)
   X  <- cbind(1, rnorm(ss$n_obs))
@@ -135,6 +137,7 @@ test_that("tulpa_laplace(spatial = spatial_gp(...)) runs end-to-end", {
 })
 
 test_that("tulpa_laplace(spatial = spatial_gp(...)) converges on the sparse path", {
+  skip_on_cran()
   # n_x = p + n_spatial must clear SPARSE_THRESHOLD (200) so we route through
   # the CHOLMOD sparse Newton path. Earlier the NNGP precision scatter
   # double-counted off-diagonals between neighbours (storage is lower-triangle

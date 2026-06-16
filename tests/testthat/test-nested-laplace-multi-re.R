@@ -38,6 +38,7 @@ make_block <- function(seed = 11) {
 }
 
 test_that("a two-term re_list on a nested block fits and recovers all effects", {
+  skip_on_cran()
   s <- make_block()
   fit <- tulpa:::.fit_block_via_nested_laplace(s$block, n_threads = 1L)
   p <- 1L; n_site <- s$truth$n_site; n_units <- s$truth$n_units
@@ -53,6 +54,7 @@ test_that("a two-term re_list on a nested block fits and recovers all effects", 
 })
 
 test_that("single-term re_list is byte-identical to the built-in-only path", {
+  skip_on_cran()
   s <- make_block()
   b1 <- s$block; b1$re_list <- s$block$re_list[1]
   fit_via_block <- tulpa:::.fit_block_via_nested_laplace(b1, n_threads = 1L)

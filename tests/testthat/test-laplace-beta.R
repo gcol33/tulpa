@@ -18,6 +18,7 @@ test_that("tulpa_laplace(family='beta') rejects y outside (0, 1)", {
 })
 
 test_that("tulpa_laplace_beta recovers parameters on simulated data", {
+  skip_on_cran()
   set.seed(2026)
   N <- 400
   x <- runif(N, -2, 2)
@@ -38,6 +39,7 @@ test_that("tulpa_laplace_beta recovers parameters on simulated data", {
 
 test_that("tulpa_laplace_beta matches betareg to high precision", {
   skip_if_not_installed("betareg")
+  skip_on_cran()
 
   set.seed(11)
   N <- 500
@@ -57,6 +59,7 @@ test_that("tulpa_laplace_beta matches betareg to high precision", {
 })
 
 test_that("tulpa_laplace(family='beta') handles a random intercept", {
+  skip_on_cran()
   set.seed(7)
   N <- 600
   G <- 20

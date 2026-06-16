@@ -3,6 +3,7 @@
 # These exercise the algorithm directly; it is not yet wired into any fitter.
 
 test_that("BRASIL converges to an equioscillating minimax approximation of x^beta", {
+  skip_on_cran()
   for (cfg in list(list(b = 0.5, iv = c(1, 100), m = 3),
                    list(b = 0.5, iv = c(0.5, 50), m = 4),
                    list(b = 0.25, iv = c(1, 1000), m = 4),
@@ -20,6 +21,7 @@ test_that("BRASIL converges to an equioscillating minimax approximation of x^bet
 })
 
 test_that("BRASIL error decreases as the rational degree grows", {
+  skip_on_cran()
   f <- function(x) x^0.5
   iv <- c(1, 100)
   errs <- vapply(2:5, function(m) tulpa:::.brasil(f, iv, m, tol = 1e-6)$error,
@@ -28,6 +30,7 @@ test_that("BRASIL error decreases as the rational degree grows", {
 })
 
 test_that("BRASIL zeros and poles are real, negative, and reconstruct the rational", {
+  skip_on_cran()
   f <- function(x) x^0.5
   iv <- c(0.5, 50)
   res <- tulpa:::.brasil(f, iv, 4, tol = 1e-6)
