@@ -1,5 +1,10 @@
 # tulpa NEWS
 
+## 0.0.36 (2026-06-16)
+
+* Maintenance release. No user-facing changes; the version is bumped to keep the
+  tulpa and tulpaObs release tags in step.
+
 ## 0.0.35 (2026-06-16)
 
 * test(tiers): the test suite is now organized into three explicit cost tiers,
