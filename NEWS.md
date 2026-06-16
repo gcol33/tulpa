@@ -1,5 +1,18 @@
 # tulpa NEWS
 
+## 0.0.35 (2026-06-16)
+
+* test(tiers): the test suite is now organized into three explicit cost tiers,
+  single-sourced in `tests/testthat/helper-tiers.R`: tier 1 structural (ungated,
+  runs on CRAN), tier 2 recovery (`skip_on_cran()`), tier 3 full samplers and
+  coverage (`skip_if_not_slow()`). About 100 test files were re-gated and a tier
+  table added in `tests/testthat/README.md`.
+* test(tiers): `TULPA_FAST=1` is a fast smoke profile folded into both tier
+  gates, collapsing the suite to the tier-1 structural tests only (heavy fits and
+  samplers reported as skips, never dropped) for sub-minute plumbing iteration.
+  The default and CRAN runs are unchanged.
+* build: bump `LinkingTo: gcol33/tulpaMesh` to `v0.1.3`.
+
 ## 0.0.34 (2026-06-12)
 
 * feat(nested-laplace-joint): `cpp_joint_inner_vcov_blocks` now defaults
