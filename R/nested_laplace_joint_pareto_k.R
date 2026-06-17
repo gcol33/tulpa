@@ -200,6 +200,44 @@
         identity = list(theta = u, log_jac = rep(0, length(u))))
 }
 
+# Laplace-at-mode covariance of the joint hyperparameter posterior, from a
+# finite-difference Hessian of the outer target at the modal grid cell
+# (gcol33/tulpa#116). The importance proposal for the outer Pareto-k is normally
+# the grid-weighted covariance; when the posterior is sharp the (tensor) grid
+# concentrates on too few cells to estimate it, and the residual far-cell weight
+# yields a degenerate covariance and a spurious k-hat. The CCD integrator
+# sidesteps this by carrying its own mode-Hessian proposal, but the tensor path
+# has none -- so reconstruct it here by differencing the same inner re-solve the
+# k-hat already calls. Reuses the CCD stencil / conditioning helpers (single
+# source of truth with `.joint_ccd_grid`). `u_center` is the modal cell in the
+# unconstrained coordinate; `col_names` labels the physical theta columns the
+# re-solve expects. Returns a d x d covariance, or NULL when the curvature is
+# degenerate (the caller then keeps the grid-weighted estimate).
+.joint_pareto_mode_cov <- function(u_center, tags, col_names,
+                                   refit_log_marginal, d, h = 0.1) {
+    target <- function(U) {
+        theta_mat <- matrix(0, nrow(U), d)
+        log_jac   <- numeric(nrow(U))
+        for (j in seq_len(d)) {
+            iv <- .joint_pareto_inv(tags[j], U[, j])
+            theta_mat[, j] <- iv$theta
+            log_jac <- log_jac + iv$log_jac
+        }
+        colnames(theta_mat) <- col_names
+        lm <- refit_log_marginal(theta_mat)
+        if (length(lm) != nrow(U)) return(rep(-Inf, nrow(U)))
+        lm + log_jac
+    }
+    st <- tryCatch(.joint_ccd_fd_stencil(u_center, target, rep(h, d)),
+                   error = function(e) NULL)
+    if (is.null(st) || any(!is.finite(st$hess))) return(NULL)
+    if (!.joint_ccd_outer_hess_ok(st$hess)) return(NULL)
+    neg_H <- -0.5 * (st$hess + t(st$hess))                # precision at the mode
+    cov   <- tryCatch(solve(neg_H), error = function(e) NULL)
+    if (is.null(cov) || any(!is.finite(cov))) return(NULL)
+    (cov + t(cov)) / 2
+}
+
 # Shared outer Pareto-k-hat driver for a joint nested-Laplace result.
 #
 # Fits a Gaussian proposal to the joint hyperparameter posterior in the
@@ -214,12 +252,25 @@
 # PSIS, so only the quadratic enters (handled inside `.nested_is_pareto_k`).
 # Runs with the RNG restored so the fit's draws are bit-for-bit unchanged.
 #
+# `proposal` (gcol33/tulpa#116) optionally supplies a pre-built Gaussian over a
+# subset of the hyperparameter axes -- the CCD integrator's mode-Hessian
+# proposal `list(u_hat, L_scale, tags, cols)`, in the SAME per-axis unconstrained
+# coordinate as this path (shared `.joint_pareto_axis_tags`). When present and
+# consistent, its covariance replaces the grid-weighted estimate over the axes
+# it spans (block-diagonal: the remaining, independently tensor-crossed phi axes
+# keep their grid-weighted spread). The grid-weighted covariance is the spread of
+# the integration nodes, so it collapses to ~0 when the posterior is sharp and
+# the grid concentrates on ~1 cell -- where the analytic-curvature scale is still
+# well defined and the k-hat then certifies the outer Gaussian summary (the
+# reported Wald SEs) instead of declining with the grid.
+#
 # Returns list(pareto_k, is_ess): both NA when the fit declines (an axis with
 # unguessable support, a degenerate proposal covariance, or too few finite
 # importance draws), in which case the diagnostic layer reports quad-ESS.
-.joint_pareto_k <- function(res, refit_log_marginal, n_samples = 200L) {
+.joint_pareto_k <- function(res, refit_log_marginal, n_samples = 200L,
+                            proposal = NULL) {
     tags <- .joint_pareto_axis_tags(res)
-    if (is.null(tags)) return(list(pareto_k = NA_real_, is_ess = NA_real_))
+    if (is.null(tags)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
 
     # Decline before any inner solve when the sample budget cannot reach the
     # GPD-fit floor (gcol33/tulpa#51): a sub-floor `n_samples` would run every
@@ -227,13 +278,13 @@
     # short-circuits, but catching it here too keeps the costly forward/inverse
     # transform + proposal fit off the table.
     if (as.integer(n_samples) < .PSIS_MIN_EVAL) {
-        return(list(pareto_k = NA_real_, is_ess = NA_real_))
+        return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
     }
 
     tg <- res$theta_grid
     w  <- res$weights
     if (is.null(w) || length(w) != nrow(tg) || !is.finite(sum(w)) || sum(w) <= 0) {
-        return(list(pareto_k = NA_real_, is_ess = NA_real_))
+        return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
     }
     cn <- colnames(tg)
     d  <- ncol(tg)
@@ -242,12 +293,70 @@
     for (j in seq_len(d)) {
         u_grid[, j] <- .joint_pareto_fwd(tags[j], as.numeric(tg[, j]))
     }
-    if (any(!is.finite(u_grid))) return(list(pareto_k = NA_real_, is_ess = NA_real_))
+    if (any(!is.finite(u_grid))) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
 
     u_hat <- as.numeric(crossprod(w, u_grid))
     cen   <- sweep(u_grid, 2L, u_hat)
     Su    <- crossprod(cen * w, cen)
     Su    <- (Su + t(Su)) / 2
+
+    # Splice the CCD mode-Hessian proposal over the latent axes it spans
+    # (gcol33/tulpa#116). The grid-weighted `Su` above is the spread of the
+    # integration nodes; a sharp hyperparameter posterior concentrates the grid
+    # on ~1 cell, collapsing `Su` toward 0 and leaving the proposal degenerate
+    # even though the fit is fine. The CCD integrator already built a Gaussian
+    # from the analytic curvature at the outer mode (and placed its design with
+    # it); reuse that covariance here. The block is independent of the
+    # tensor-crossed phi axes, so the override is block-diagonal: Hessian
+    # covariance on the CCD axes, grid-weighted covariance retained on the rest.
+    proposal_source   <- "grid_moment"
+    used_mode_hessian <- FALSE
+    if (is.list(proposal) && is.numeric(proposal$u_hat) &&
+        is.matrix(proposal$L_scale) &&
+        length(proposal$u_hat) == nrow(proposal$L_scale) &&
+        nrow(proposal$L_scale) == ncol(proposal$L_scale)) {
+        cols <- proposal$cols %||% seq_along(proposal$u_hat)
+        consistent <- length(cols) == length(proposal$u_hat) &&
+            all(is.finite(cols)) && min(cols) >= 1L && max(cols) <= d &&
+            (is.null(proposal$tags) || identical(tags[cols], proposal$tags)) &&
+            all(is.finite(proposal$u_hat)) && all(is.finite(proposal$L_scale))
+        if (consistent) {
+            Sig <- proposal$L_scale %*% t(proposal$L_scale)
+            u_hat[cols]    <- proposal$u_hat
+            Su[cols, ]     <- 0
+            Su[, cols]     <- 0
+            Su[cols, cols] <- Sig
+            Su             <- (Su + t(Su)) / 2
+            used_mode_hessian <- TRUE
+        }
+    }
+
+    # Tensor-grid collapse fallback (gcol33/tulpa#116). With no CCD mode-Hessian
+    # proposal to splice, a sharp posterior concentrates the integration weight
+    # on too few cells to estimate a d-dim covariance: the effective grid ESS
+    # drops to <= d, the grid-weighted `Su` is driven by negligible-weight far
+    # cells, and the resulting proposal yields a spurious k-hat. Reconstruct the
+    # Laplace-at-mode covariance from a finite-difference Hessian of the outer
+    # target at the modal cell -- well defined precisely when the posterior is
+    # sharp -- so the k-hat certifies the outer Gaussian summary instead of the
+    # collapsed grid. A degenerate Hessian leaves the grid estimate in place.
+    if (!used_mode_hessian) {
+        wn    <- w / sum(w)
+        ess_w <- 1 / sum(wn^2)
+        if (is.finite(ess_w) && ess_w <= d) {
+            u_mode <- as.numeric(u_grid[which.max(w), ])
+            cov_h  <- .joint_pareto_mode_cov(u_mode, tags, cn,
+                                             refit_log_marginal, d)
+            if (!is.null(cov_h)) {
+                u_hat <- u_mode
+                Su    <- cov_h
+                proposal_source   <- "mode_hessian"
+                used_mode_hessian <- TRUE
+            }
+        }
+    } else {
+        proposal_source <- "mode_hessian"
+    }
 
     # Axes the grid pins to a single value (e.g. a copy `alpha` fixed at 0, or a
     # one-point dispersion axis) carry zero weighted variance, leaving Su rank
@@ -259,10 +368,10 @@
     ax_var  <- diag(Su)
     var_tol <- 1e-10 * max(ax_var, 0)
     vary    <- which(ax_var > var_tol)
-    if (length(vary) == 0L) return(list(pareto_k = NA_real_, is_ess = NA_real_))
+    if (length(vary) == 0L) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
     Su_v <- Su[vary, vary, drop = FALSE]
     L_v  <- tryCatch(t(chol(Su_v)), error = function(e) NULL)
-    if (is.null(L_v)) return(list(pareto_k = NA_real_, is_ess = NA_real_))
+    if (is.null(L_v)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
     u_hat_v <- u_hat[vary]
 
     lt <- function(U_v) {
@@ -295,8 +404,8 @@
                                        radius_cap = radius_cap),
                    error = function(e) NULL)
     if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
-    if (is.null(kd)) return(list(pareto_k = NA_real_, is_ess = NA_real_))
-    list(pareto_k = kd$pareto_k, is_ess = kd$is_ess)
+    if (is.null(kd)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
+    list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, proposal_source = proposal_source)
 }
 
 # Single-block joint wrapper. Reuses the driver's already-built generic
@@ -317,6 +426,7 @@
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
+    res$pareto_k_proposal_source <- NA_character_
     if (!isTRUE(diagnose_k)) return(res)
 
     warm      <- .joint_modal_mode(res)
@@ -338,5 +448,6 @@
     kd <- .joint_pareto_k(res, refit, k_samples)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
+    res$pareto_k_proposal_source <- kd$proposal_source
     res
 }

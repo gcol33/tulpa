@@ -721,10 +721,11 @@
                                          max_iter, tol, n_threads,
                                          force_sparse, cell_coupling,
                                          diagnose_k = TRUE, k_samples = 200L,
-                                         n_threads_outer = 1L) {
+                                         n_threads_outer = 1L, proposal = NULL) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
+    res$pareto_k_proposal_source <- NA_character_
     if (!isTRUE(diagnose_k)) return(res)
 
     warm_mode  <- .joint_modal_mode(res)
@@ -757,9 +758,10 @@
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                             fn_sigma, fn_alpha)
     }
-    kd <- .joint_pareto_k(res, refit, k_samples)
+    kd <- .joint_pareto_k(res, refit, k_samples, proposal = proposal)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
+    res$pareto_k_proposal_source <- kd$proposal_source
     res
 }
 
@@ -845,6 +847,12 @@
     phi_grid_per_arm_list <- NULL
     integration_used      <- "grid"
     joint_grid            <- NULL
+    # Mode-Hessian outer proposal (gcol33/tulpa#116). Set only when the CCD
+    # integrator engages: its Gaussian (centre `u_hat`, scale `L_scale` from the
+    # analytic curvature at the outer mode) drives the outer Pareto-k so the
+    # diagnostic stays defined when the hyperparameter posterior is sharp and the
+    # grid concentrates on ~1 cell (where the grid-weighted covariance collapses).
+    ccd_proposal          <- NULL
 
     ccd_requested <- .joint_ccd_engage(integration, d_axes)
     use_ccd <- ccd_requested
@@ -931,6 +939,14 @@
             joint_grid       <- ccd$grid
             dnode            <- ccd$dnode
             integration_used <- "ccd"
+            # The CCD axes are exactly the leading latent-block columns of
+            # joint_grid (axis_names, in order); phi crosses as a separate
+            # tensor on top. Carry the mode-Hessian Gaussian over those axes for
+            # the outer Pareto-k (gcol33/tulpa#116).
+            ccd_proposal <- list(u_hat   = ccd$u_hat,
+                                 L_scale = ccd$L_scale,
+                                 tags    = ccd$tags,
+                                 cols    = seq_len(d_axes))
         }
     }
 
@@ -1113,7 +1129,8 @@
                                         force_sparse, cell_coupling,
                                         diagnose_k = diagnose_k,
                                         k_samples  = k_samples,
-                                        n_threads_outer = k_to)
+                                        n_threads_outer = k_to,
+                                        proposal = ccd_proposal)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

@@ -331,6 +331,13 @@ see the \code{diagnose_k} control knob). \code{pareto_k < 0.7} indicates the
 nested integration is reliable; \verb{>= 0.7} that the (skewed / heavy-
 tailed) hyperparameter posterior is misfit by the Gaussian grid and
 the fit should escalate to an exact debias.
+\item \code{pareto_k_proposal_source} — how the outer importance proposal the
+\eqn{\hat{k}} scores was built: \code{"mode_hessian"} from the Laplace
+curvature at the hyperparameter mode (the CCD design's, or a
+finite-difference Hessian when a sharp posterior collapses the grid),
+or \code{"grid_moment"} from the grid-weighted covariance. \code{NA} when the
+diagnostic is off or declines. The mode-Hessian source keeps the
+\eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.

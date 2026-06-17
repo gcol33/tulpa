@@ -1,5 +1,37 @@
 # tulpa NEWS
 
+## 0.0.41 (2026-06-18)
+
+* Mode-Hessian outer Pareto-k proposal for the joint nested-Laplace backend
+  (gcol33/tulpa#116). The outer `pareto_k` diagnostic built its importance
+  proposal from the grid-weighted covariance of the integration nodes; when the
+  hyperparameter posterior is sharp the grid concentrates on ~1 cell, the
+  grid-weighted covariance is then driven by negligible-weight far cells, and the
+  too-narrow proposal yields a spurious high k-hat even though the fit is fine.
+  The proposal is now built from a mode Hessian, on both integration paths.
+    * **CCD path.** The integrator already places its design from the analytic
+      curvature at the outer mode; that Gaussian (`u_hat`, `L_scale`) is captured
+      and spliced into the Pareto-k driver over the axes it spans, block-diagonal
+      with the grid-weighted spread on the independently tensor-crossed phi axes.
+    * **Tensor path.** When the grid collapses (effective grid ESS `<= d`) and no
+      CCD proposal exists, the Laplace-at-mode covariance is reconstructed from a
+      finite-difference Hessian of the outer target at the modal cell (reusing the
+      CCD stencil / conditioning helpers). Degenerate or ridged curvature falls
+      back gracefully to the grid estimate.
+    * New return field `pareto_k_proposal_source` in
+      `{"mode_hessian", "grid_moment", NA}` (documented on
+      `tulpa_nested_laplace_joint`) flags which regime a fit is in.
+    * Known boundary: on a genuinely ridged outer posterior (a weakly-identified
+      copy `alpha`) there is no PD Hessian along the ridge, so the FD Hessian
+      declines and the path reports a `grid_moment` k. A ridge gives a wide
+      proposal and hence a low k, so the spurious-high-k failure does not arise
+      there; a principled diagnostic for non-Gaussian hyperparameter posteriors
+      is left as future work.
+    * A matched proposal is a byte-exact no-op on well-resolved grids, so the
+      diagnostic is unchanged where it already worked. Decisive before/after on a
+      well-conditioned tensor collapse (quad-ESS = 1.00): `grid_moment` k = 0.895
+      (unreliable) -> `mode_hessian` k = 0.543 (reliable).
+
 ## 0.0.40 (2026-06-17)
 
 * Outer-grid progress reporter (`tulpa_progress::GridProgress`, the
