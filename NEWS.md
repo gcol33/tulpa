@@ -1,5 +1,30 @@
 # tulpa NEWS
 
+## 0.0.42 (2026-06-18)
+
+* Faster joint nested-Laplace outer Pareto-k diagnostic (gcol33/tulpa#118).
+  Profiling the joint occu_cover diagnostic showed the dominant cost is the
+  per-Newton-iteration Hessian/gradient scatter (the beta cover arm's
+  per-observation digamma/trigamma curvature fill, 73-83%), not the sparse
+  Cholesky factorize (8-12%). Two changes attack that without moving the k-hat:
+    * **Shamanskii (chord) factor reuse on the re-solves** (`.K_DIAG_REFRESH`):
+      the diagnostic's inner re-solves run with `inner_refresh = 4`, so off-factor
+      steps re-apply the cached factor to a refreshed gradient and scatter
+      `grad_only` (skipping the curvature fill). The final mode-pass always
+      re-factorizes with the true Hessian, so the converged log-marginal -- and
+      thus the k-hat -- is unchanged; only the path to the mode uses a stale
+      curvature, which the diagnostic (no per-draw SEs) does not need.
+    * **Near-neighbour chain ordering of the importance batch**
+      (`.joint_is_chain_order` / `.joint_is_solve_reordered`): the serial
+      outer-grid driver warm-starts each cell from the previous cell's converged
+      mode, so the random-order proposal draws were each starting from a
+      random-neighbour mode (8-16 inner-Newton steps/draw). The batch is re-ordered
+      into a standardised near-neighbour chain seeded at the modal cell
+      (`.joint_modal_theta`), so each draw corrects only the small drift from its
+      neighbour; the result is un-permuted before the PSIS layer, which is
+      unaffected. The per-cell parallel path warm-starts from the pilot mode, so
+      the order is then immaterial.
+
 ## 0.0.41 (2026-06-18)
 
 * Mode-Hessian outer Pareto-k proposal for the joint nested-Laplace backend

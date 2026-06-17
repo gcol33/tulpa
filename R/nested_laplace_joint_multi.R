@@ -728,11 +728,17 @@
     res$pareto_k_proposal_source <- NA_character_
     if (!isTRUE(diagnose_k)) return(res)
 
-    warm_mode  <- .joint_modal_mode(res)
-    k_max_iter <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
-    n_to       <- as.integer(n_threads_outer)
+    warm_mode   <- .joint_modal_mode(res)
+    modal_theta <- .joint_modal_theta(res)
+    k_max_iter  <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
+    n_to        <- as.integer(n_threads_outer)
+    knobs       <- .kdiag_knobs()
 
-    refit <- function(theta_mat) {
+    # One kernel call over the (re-ordered) importance batch. Shamanskii reuse
+    # makes the off-factor steps scatter grad-only, attacking the dominant
+    # per-iteration Hessian-fill cost; loosened inner tol cuts intrinsic Newton
+    # steps (gcol33/tulpa#118).
+    solve_fn <- function(theta_mat) {
         cpp_grid <- .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp)
         phi_ppa  <- .joint_multi_phi_per_arm(theta_mat, arm_names)
         r <- .cpp_joint_multi(
@@ -743,7 +749,7 @@
             theta_grid   = cpp_grid,
             axis_offsets = axis_offsets,
             max_iter     = as.integer(k_max_iter),
-            tol          = as.numeric(tol),
+            tol          = max(knobs$tol, as.numeric(tol)),
             n_threads    = as.integer(n_threads),
             x_init_nullable = warm_mode,
             store_Q      = FALSE,
@@ -753,11 +759,19 @@
             tile_pilot_cells = NULL,
             prune_tol       = 0.0,
             force_sparse    = isTRUE(force_sparse),
-            cell_coupling_name = as.character(cell_coupling)
+            cell_coupling_name = as.character(cell_coupling),
+            inner_refresh   = knobs$refresh
         )
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                             fn_sigma, fn_alpha)
     }
+    # Re-order the batch into a near-neighbour chain so the serial outer-grid
+    # driver's previous-cell warm start is a genuine near neighbour, cutting
+    # inner-Newton steps/draw; the per-cell parallel path warm-starts from the
+    # pilot mode regardless, so the order is then immaterial (gcol33/tulpa#118).
+    refit <- if (knobs$reorder)
+        function(theta_mat) .joint_is_solve_reordered(theta_mat, modal_theta, solve_fn)
+    else solve_fn
     kd <- .joint_pareto_k(res, refit, k_samples, proposal = proposal)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess

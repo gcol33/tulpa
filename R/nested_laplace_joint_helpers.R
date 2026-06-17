@@ -516,12 +516,23 @@
                                   step_curvature_mode = 0L,
                                   inner_refresh = 1L) {
     function(new_cells, warm_start = NULL, store_extras = FALSE,
-             max_iter_override = NULL, n_threads_outer = 1L) {
+             max_iter_override = NULL, n_threads_outer = 1L,
+             inner_refresh_override = NULL, tol_override = NULL) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
         mi <- if (is.null(max_iter_override)) max_iter
               else as.integer(max_iter_override)
+        # Per-call Shamanskii reuse override for the outer Pareto-k diagnostic
+        # (gcol33/tulpa#118): the diagnostic re-solves only need the converged
+        # log-marginal, so they run with factor reuse (grad-only scatter on the
+        # off-factor steps) even when the fit itself keeps refresh = 1.
+        ir <- if (is.null(inner_refresh_override)) inner_refresh
+              else as.integer(inner_refresh_override)
+        # Per-call inner-tol override for the diagnostic (gcol33/tulpa#118):
+        # loosened to .K_DIAG_TOL since the Laplace log-marginal error is
+        # O(tol^2). Never tighter than the fit's own tol.
+        tl <- if (is.null(tol_override)) tol else max(as.numeric(tol_override), tol)
         # The refinement / consistency passes call serially (n_threads_outer
         # left at 1) and chain warm-starts cell-to-cell; the outer Pareto-k
         # re-evaluation passes its whole importance batch in one call with
@@ -530,7 +541,7 @@
         # the IS batch is not a per-axis alpha lattice, so there is no tile
         # structure for the three-tier warm-start to exploit.
         res_x <- backend$call_kernel(arms, prior, cp, new_grids,
-                                      mi, tol, n_threads,
+                                      mi, tl, n_threads,
                                       slice_x_init, isTRUE(store_Q),
                                       arm_names = arm_names,
                                       n_threads_outer = as.integer(n_threads_outer),
@@ -538,7 +549,7 @@
                                       cell_coupling = cell_coupling,
                                       hessian_pd_mode = hessian_pd_mode,
                                       step_curvature_mode = step_curvature_mode,
-                                      inner_refresh = inner_refresh)
+                                      inner_refresh = ir)
         extras <- NULL
         if (isTRUE(store_extras)) {
             n <- nrow(new_cells)

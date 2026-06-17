@@ -23,6 +23,120 @@
 # moving the k-hat. The effective cap is `min(max_iter, .K_DIAG_MAX_ITER)`.
 .K_DIAG_MAX_ITER <- 25L
 
+# Shamanskii (chord) factor-reuse interval for the diagnostic re-solves
+# (gcol33/tulpa#118). Profiling the joint occu_cover diagnostic showed the
+# dominant cost is NOT the sparse Cholesky factorize (~8-12%, flat ~0.5 ms up to
+# ~1100 cells) but the per-Newton-iteration Hessian/gradient SCATTER (73-83%) --
+# the beta cover arm's per-observation digamma/trigamma curvature fill, paid on
+# every step of every importance draw. With `inner_refresh = m > 1` a reuse
+# iteration re-applies the cached factor to a refreshed gradient AND scatters
+# `grad_only` (the solver skips the curvature fill), so reuse attacks the
+# scatter cost, not just the factorize. The final mode-pass always re-factorizes
+# with the true Hessian, so the log-marginal -- and thus the k-hat -- is
+# unchanged; only the path to the mode uses a stale curvature. The diagnostic
+# only needs the converged log-marginal (no per-draw SEs), so the stale-curvature
+# path is harmless here even where the fit itself keeps refresh = 1.
+.K_DIAG_REFRESH <- 4L
+
+# Loosened inner-Newton convergence tolerance for the diagnostic re-solves
+# (gcol33/tulpa#118). Profiling showed a large share of the per-draw Newton
+# steps is intrinsic convergence to the FIT's tol (~1e-6), not warm-start drift
+# -- and the diagnostic does not need that accuracy. The Laplace log-marginal
+# error from stopping at gradient norm ~ t is O(t^2) (the mode sits at a
+# near-stationary point, so the objective is flat there), immaterial to the
+# tail-shape k-hat the diagnostic reports. A 1e-4 inner tol therefore cuts the
+# step count with no measurable k-hat shift (verified vs the 1e-6 path), and
+# composes with the near-neighbour warm start + Shamanskii reuse. Never TIGHTER
+# than the fit's own tol (a fit run looser than this keeps its own).
+.K_DIAG_TOL <- 1e-4
+
+# Resolve the diagnostic's speed knobs (gcol33/tulpa#118). The fast values are
+# the defaults; each is overridable via an option so a power user (or a test)
+# can request the byte-for-byte "exact" diagnostic -- refresh = 1, the fit's own
+# tol, no batch re-order -- and confirm the fast path's k-hat matches it.
+#   tulpa.kdiag.refresh : Shamanskii reuse interval (default .K_DIAG_REFRESH; 1 disables)
+#   tulpa.kdiag.tol     : inner-Newton tol floor    (default .K_DIAG_TOL)
+#   tulpa.kdiag.reorder : near-neighbour chain order (default TRUE)
+.kdiag_knobs <- function() {
+    list(
+        refresh = as.integer(getOption("tulpa.kdiag.refresh", .K_DIAG_REFRESH)),
+        tol     = as.numeric(getOption("tulpa.kdiag.tol",     .K_DIAG_TOL)),
+        reorder = isTRUE(getOption("tulpa.kdiag.reorder", TRUE))
+    )
+}
+
+# Greedy nearest-neighbour visiting order for the importance batch
+# (gcol33/tulpa#118). The diagnostic's `k_samples` draws come off the Gaussian
+# proposal in random order; the serial outer-grid driver warm-starts each cell
+# from the PREVIOUS cell's converged mode, so a random order means every draw
+# starts from a random-neighbour mode and the inner Newton pays many steps
+# (measured 8-16/draw). Re-ordering the batch into a near-neighbour chain (each
+# draw adjacent to a close one in hyperparameter space) makes the chained
+# warm-start a genuine near-neighbour, so the inner Newton corrects only the
+# small drift between adjacent draws -- the same principle the lattice grid
+# already uses (flat-order chaining along its fastest axis). Columns are
+# standardised so axes of different scale weigh equally; the chain is seeded at
+# the draw nearest `center` (the modal grid cell, where the broadcast warm mode
+# is the converged mode). O(S^2 d) -- trivial at S ~ 200. Returns a permutation
+# of `seq_len(nrow(theta_mat))`.
+.joint_is_chain_order <- function(theta_mat, center = NULL) {
+    S <- nrow(theta_mat)
+    d <- ncol(theta_mat)
+    if (S <= 2L) return(seq_len(S))
+    sds <- apply(theta_mat, 2L, stats::sd)
+    sds[!is.finite(sds) | sds <= 0] <- 1
+    Z <- sweep(theta_mat, 2L, sds, `/`)              # S x d, standardised
+    tZ <- t(Z)                                        # d x S for column ops
+    c0 <- if (!is.null(center) && length(center) == d) as.numeric(center) / sds
+          else colMeans(Z)
+    start <- which.min(colSums((tZ - c0)^2))
+    visited <- logical(S)
+    ord <- integer(S)
+    cur <- start
+    for (i in seq_len(S)) {
+        ord[i] <- cur
+        visited[cur] <- TRUE
+        if (i == S) break
+        dvec <- colSums((tZ - Z[cur, ])^2)
+        dvec[visited] <- Inf
+        cur <- which.min(dvec)
+    }
+    ord
+}
+
+# Run an importance-batch solve through the near-neighbour chain order, then
+# restore the caller's row order (gcol33/tulpa#118). `solve_fn(theta_mat)`
+# returns one log-marginal per row of its argument (the existing refit closure,
+# baked hyperprior included); this wrapper feeds it the re-ordered batch and
+# un-permutes the result, so the chained warm-start sees near neighbours while
+# the PSIS layer above is unaffected. A length mismatch (kernel failure) is
+# passed through verbatim for the caller's own guard.
+.joint_is_solve_reordered <- function(theta_mat, center, solve_fn) {
+    S <- nrow(theta_mat)
+    if (S <= 2L) return(solve_fn(theta_mat))
+    ord    <- .joint_is_chain_order(theta_mat, center)
+    lm_ord <- solve_fn(theta_mat[ord, , drop = FALSE])
+    if (length(lm_ord) != S) return(lm_ord)
+    out <- numeric(S)
+    out[ord] <- lm_ord
+    out
+}
+
+# Modal grid cell in user-facing theta space, the chain seed for
+# .joint_is_solve_reordered: the same highest-weight cell whose converged latent
+# mode .joint_modal_mode broadcasts as the warm start, so the re-ordered batch's
+# first cell sits where that warm mode is exact. Returns NULL when the grid /
+# weights are unusable (caller falls back to centroid seeding).
+.joint_modal_theta <- function(res) {
+    tg <- res$theta_grid
+    w  <- res$weights
+    if (is.null(tg) || !is.matrix(tg) || is.null(w) ||
+        length(w) != nrow(tg) || !any(is.finite(w))) {
+        return(NULL)
+    }
+    as.numeric(tg[which.max(w), ])
+}
+
 # Modal-cell latent mode for warm-starting the diagnostic solves: the converged
 # inner mode at the highest-weight grid cell. Broadcast as the `x_init` for
 # every re-evaluation draw (the bulk of the importance weight sits near the
@@ -429,15 +543,22 @@
     res$pareto_k_proposal_source <- NA_character_
     if (!isTRUE(diagnose_k)) return(res)
 
-    warm      <- .joint_modal_mode(res)
-    warm_arg  <- if (is.null(warm)) NULL else list(mode = warm)
-    k_max_iter <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
-    n_to       <- as.integer(n_threads_outer)
+    warm        <- .joint_modal_mode(res)
+    warm_arg    <- if (is.null(warm)) NULL else list(mode = warm)
+    modal_theta <- .joint_modal_theta(res)
+    k_max_iter  <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
+    n_to        <- as.integer(n_threads_outer)
+    knobs       <- .kdiag_knobs()
 
-    refit <- function(theta_mat) {
+    # One kernel call over the (re-ordered) importance batch, with Shamanskii
+    # factor reuse so the off-factor steps scatter grad-only -- the dominant
+    # per-iteration cost on the beta cover arm (gcol33/tulpa#118).
+    solve_fn <- function(theta_mat) {
         r  <- kernel_fn(theta_mat, warm_start = warm_arg,
                         max_iter_override = k_max_iter,
-                        n_threads_outer = n_to)
+                        n_threads_outer = n_to,
+                        inner_refresh_override = knobs$refresh,
+                        tol_override = knobs$tol)
         lm <- r$log_marginal
         if (!is.null(hp_fn)) {
             hp <- hp_fn(theta_mat)
@@ -445,6 +566,12 @@
         }
         lm
     }
+    # Near-neighbour chain order so the serial driver's previous-cell warm start
+    # is a genuine near neighbour, cutting inner-Newton steps/draw
+    # (gcol33/tulpa#118).
+    refit <- if (knobs$reorder)
+        function(theta_mat) .joint_is_solve_reordered(theta_mat, modal_theta, solve_fn)
+    else solve_fn
     kd <- .joint_pareto_k(res, refit, k_samples)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
