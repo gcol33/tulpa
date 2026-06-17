@@ -1,5 +1,38 @@
 # tulpa NEWS
 
+## 0.0.43 (2026-06-18)
+
+* Joint nested-Laplace outer Pareto-k: the collapsed-grid mode-Hessian rescue
+  (gcol33/tulpa#116) now engages when a hyperparameter axis is pinned
+  (gcol33/tulpa#117). When the integration grid concentrates (`ess_grid <= d`)
+  the diagnostic reconstructs a Laplace-at-mode Gaussian proposal from a
+  finite-difference Hessian of the outer target. Previously it differenced over
+  **all** `d` axes, so a pinned axis (zero weighted variance: a `copy()` `alpha`
+  fixed at 0, or a one-point dispersion grid) made the FD Hessian singular, the
+  conditioning guard rejected it, and the k fell back to the `grid_moment`
+  proposal #116 was meant to supersede -- which can be spuriously high and label
+  an otherwise-fine fit "unreliable". `.joint_pareto_mode_cov()` now restricts
+  the stencil to the varying axes (the same `var_tol` set the proposal build
+  uses, factored into the shared `.joint_pareto_vary_axes()`) and embeds the
+  inverse curvature block-diagonally, pinning the zero-variance axes at `u_hat`.
+  Excluding a pinned axis from the curvature is exact, not an approximation.
+  Affected any joint `occu_cover` fit with an uncoupled (no-`copy()`) cover arm
+  plus a concentrated hyperparameter posterior.
+
+* Per-cell warm start for the outer Pareto-k re-solves (gcol33/tulpa#118
+  follow-up). Each importance draw's inner solve now starts from the converged
+  latent mode of its NEAREST integration cell (`.joint_nearest_grid_mode`,
+  threaded through `cpp_nested_laplace_joint_multi(x_init_per_cell=)` and the
+  grid driver) instead of the single broadcast modal mode. Unlike the 0.0.42
+  near-neighbour re-order -- which only helps the serial chain -- this also warms
+  the PARALLEL pilot-mode path, so a threaded diagnostic (`n.threads.outer > 1`)
+  gets it too: on a real EVA occu_cover fit (402 cells, beta) the per-cell warm
+  cuts the parallel diagnostic a further ~1.5x on top of threading. The k-hat is
+  byte-stable (each draw converges to the same mode regardless of start;
+  validated == the broadcast-mode path and `loo::psis`). Knob
+  `tulpa.kdiag.percell` (default TRUE; falls back to the re-order, then the
+  broadcast mode, when grid modes are unavailable).
+
 ## 0.0.42 (2026-06-18)
 
 * Faster joint nested-Laplace outer Pareto-k diagnostic (gcol33/tulpa#118).
@@ -24,6 +57,17 @@
       neighbour; the result is un-permuted before the PSIS layer, which is
       unaffected. The per-cell parallel path warm-starts from the pilot mode, so
       the order is then immaterial.
+    * **Loosened inner-Newton tol on the re-solves** (`.K_DIAG_TOL = 1e-4`): a
+      large share of the per-draw steps was intrinsic convergence to the fit's
+      own tol (~1e-6), which the diagnostic does not need -- the Laplace
+      log-marginal error from stopping at gradient norm `t` is O(t^2),
+      immaterial to the tail-shape k-hat. Never tighter than the fit's tol.
+  Combined, the three cut the diagnostic 3-4x on the beta arm with the k-hat
+  byte-stable (validated vs `loo::psis` / `posterior::pareto_khat` on real EVA
+  occu_cover importance ratios: identical to 4 decimals). Each is overridable
+  via `tulpa.kdiag.refresh` / `tulpa.kdiag.tol` / `tulpa.kdiag.reorder` for the
+  byte-for-byte exact diagnostic, and `tulpa.kdiag.capture` exposes the importance
+  log-ratios for an external cross-check.
 
 ## 0.0.41 (2026-06-18)
 

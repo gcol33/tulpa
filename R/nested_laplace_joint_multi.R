@@ -734,11 +734,12 @@
     n_to        <- as.integer(n_threads_outer)
     knobs       <- .kdiag_knobs()
 
-    # One kernel call over the (re-ordered) importance batch. Shamanskii reuse
-    # makes the off-factor steps scatter grad-only, attacking the dominant
-    # per-iteration Hessian-fill cost; loosened inner tol cuts intrinsic Newton
-    # steps (gcol33/tulpa#118).
-    solve_fn <- function(theta_mat) {
+    # One kernel call over the importance batch. Shamanskii reuse makes the
+    # off-factor steps scatter grad-only (attacks the dominant per-iteration
+    # Hessian fill); loosened inner tol cuts intrinsic Newton steps; per-cell
+    # warm start (`x_init_per_cell`, an [S x n_x] matrix or NULL) starts each
+    # draw from its nearest grid mode in BOTH serial and parallel (gcol33/tulpa#118).
+    solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
         cpp_grid <- .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp)
         phi_ppa  <- .joint_multi_phi_per_arm(theta_mat, arm_names)
         r <- .cpp_joint_multi(
@@ -760,18 +761,16 @@
             prune_tol       = 0.0,
             force_sparse    = isTRUE(force_sparse),
             cell_coupling_name = as.character(cell_coupling),
-            inner_refresh   = knobs$refresh
+            inner_refresh   = knobs$refresh,
+            x_init_per_cell = x_init_per_cell
         )
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                             fn_sigma, fn_alpha)
     }
-    # Re-order the batch into a near-neighbour chain so the serial outer-grid
-    # driver's previous-cell warm start is a genuine near neighbour, cutting
-    # inner-Newton steps/draw; the per-cell parallel path warm-starts from the
-    # pilot mode regardless, so the order is then immaterial (gcol33/tulpa#118).
-    refit <- if (knobs$reorder)
-        function(theta_mat) .joint_is_solve_reordered(theta_mat, modal_theta, solve_fn)
-    else solve_fn
+    # Per-cell warm start (nearest grid mode, serial + parallel) when modes are
+    # stored; else near-neighbour chain re-order; else plain broadcast
+    # (gcol33/tulpa#118).
+    refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     kd <- .joint_pareto_k(res, refit, k_samples, proposal = proposal)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess

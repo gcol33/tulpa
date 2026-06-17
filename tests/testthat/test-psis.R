@@ -20,6 +20,89 @@ test_that("tulpa_psis reproduces loo::psis pareto_k", {
   }
 })
 
+# --------------------------------------------------------------------------- #
+# Fast outer Pareto-k diagnostic helpers (gcol33/tulpa#118): near-neighbour     #
+# batch ordering + the speed knobs. Pure-R, no fitting.                         #
+# --------------------------------------------------------------------------- #
+
+test_that(".joint_is_chain_order is a permutation seeded near the centre", {
+  set.seed(11)
+  X <- matrix(rnorm(200 * 3), 200, 3)
+  center <- c(5, 5, 5)                                   # far corner
+  ord <- tulpa:::.joint_is_chain_order(X, center)
+  expect_setequal(ord, seq_len(nrow(X)))                 # a genuine permutation
+  # First visited row is the one nearest `center` in standardised space.
+  sds <- apply(X, 2L, sd); Z <- sweep(X, 2L, sds, `/`)
+  expect_equal(ord[1], which.min(colSums((t(Z) - center / sds)^2)))
+  # Consecutive standardised steps are short relative to a random order.
+  step_len <- function(o) mean(sqrt(rowSums((Z[o[-1], ] - Z[o[-length(o)], ])^2)))
+  expect_lt(step_len(ord), step_len(sample(nrow(X))))
+  # Degenerate sizes pass through.
+  expect_identical(tulpa:::.joint_is_chain_order(X[1:2, , drop = FALSE]), 1:2)
+})
+
+test_that(".joint_is_solve_reordered restores the caller's row order", {
+  X <- matrix(rnorm(60 * 2), 60, 2)
+  # solve_fn returns a per-row signature (row sum) so we can check un-permutation.
+  solve_fn <- function(m) rowSums(m)
+  out <- tulpa:::.joint_is_solve_reordered(X, center = c(0, 0), solve_fn)
+  expect_equal(out, rowSums(X))                          # back in original order
+  # A length mismatch (kernel failure) is passed through verbatim.
+  bad <- tulpa:::.joint_is_solve_reordered(X, c(0, 0), function(m) numeric(0))
+  expect_length(bad, 0L)
+})
+
+test_that(".kdiag_knobs defaults to the fast path and honours overrides", {
+  d <- tulpa:::.kdiag_knobs()
+  expect_identical(d$refresh, tulpa:::.K_DIAG_REFRESH)
+  expect_identical(d$tol,     tulpa:::.K_DIAG_TOL)
+  expect_true(d$reorder)
+  expect_true(d$percell)
+  withr::local_options(tulpa.kdiag.refresh = 1L, tulpa.kdiag.tol = 0,
+                       tulpa.kdiag.reorder = FALSE, tulpa.kdiag.percell = FALSE)
+  e <- tulpa:::.kdiag_knobs()
+  expect_identical(e$refresh, 1L)
+  expect_identical(e$tol, 0)
+  expect_false(e$reorder)
+  expect_false(e$percell)
+})
+
+test_that(".joint_nearest_grid_mode picks each draw's nearest grid cell mode", {
+  # 3 grid cells at theta = 1, 5, 9 (1-D), with modes a fixed function of the
+  # cell so the picked row is identifiable.
+  res <- list(theta_grid = matrix(c(1, 5, 9), ncol = 1),
+              modes = rbind(c(10, 10), c(50, 50), c(90, 90)))
+  draws <- matrix(c(0.8, 4.6, 9.3, 5.2), ncol = 1)   # nearest: 1, 5, 9, 5
+  W <- tulpa:::.joint_nearest_grid_mode(draws, res)
+  expect_equal(dim(W), c(4L, 2L))
+  expect_equal(W[, 1], c(10, 50, 90, 50))
+  # Declines (NULL) when modes are missing or mis-shaped -> caller broadcasts.
+  expect_null(tulpa:::.joint_nearest_grid_mode(draws, list(theta_grid = res$theta_grid)))
+  expect_false(tulpa:::.joint_has_grid_modes(list(theta_grid = res$theta_grid)))
+  expect_true(tulpa:::.joint_has_grid_modes(res))
+})
+
+test_that(".joint_make_diag_refit selects per-cell warm when modes are present", {
+  res <- list(theta_grid = matrix(c(1, 5, 9), ncol = 1),
+              modes = rbind(c(10, 10), c(50, 50), c(90, 90)))
+  seen <- NULL
+  solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
+    seen <<- x_init_per_cell           # capture what the strategy passed down
+    rowSums(theta_mat)
+  }
+  knobs <- list(refresh = 4L, tol = 1e-4, reorder = TRUE, percell = TRUE)
+  refit <- tulpa:::.joint_make_diag_refit(res, solve_fn, c(5), knobs)
+  out <- refit(matrix(c(0.8, 4.6, 9.3), ncol = 1))
+  expect_equal(out, c(0.8, 4.6, 9.3))   # row order preserved (no re-order)
+  expect_equal(dim(seen), c(3L, 2L))    # per-cell warm matrix was passed
+  # No modes -> falls back to the re-order strategy (no per-cell matrix).
+  seen <- NULL
+  refit2 <- tulpa:::.joint_make_diag_refit(list(theta_grid = res$theta_grid),
+                                           solve_fn, c(5), knobs)
+  invisible(refit2(matrix(c(0.8, 4.6, 9.3, 5.0), ncol = 1)))
+  expect_null(seen)
+})
+
 test_that("pareto_k separates light from heavy tails; is_ess is bounded", {
   set.seed(1)
   light <- tulpa_psis(rnorm(3000))

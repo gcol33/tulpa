@@ -61,8 +61,70 @@
     list(
         refresh = as.integer(getOption("tulpa.kdiag.refresh", .K_DIAG_REFRESH)),
         tol     = as.numeric(getOption("tulpa.kdiag.tol",     .K_DIAG_TOL)),
-        reorder = isTRUE(getOption("tulpa.kdiag.reorder", TRUE))
+        reorder = isTRUE(getOption("tulpa.kdiag.reorder", TRUE)),
+        # Per-cell warm start: each importance draw's inner re-solve starts from
+        # the converged latent mode of its NEAREST integration cell instead of
+        # the single broadcast modal mode (gcol33/tulpa#118). Strictly better
+        # than the chain re-order AND works in the parallel pilot-mode path, so
+        # it supersedes the re-order when stored grid modes are available.
+        percell = isTRUE(getOption("tulpa.kdiag.percell", TRUE))
     )
+}
+
+# Per-draw nearest-grid-mode warm start (gcol33/tulpa#118). For each row of
+# `theta_mat` (importance draws in user-facing theta space), find the nearest
+# integration-grid cell in STANDARDISED theta space and return that cell's
+# stored converged latent mode. The `[nrow(theta_mat) x n_x]` result is consumed
+# by the kernel row-aligned as the per-cell warm start, so a draw starts from a
+# near-mode rather than the single broadcast modal mode -- and the parallel
+# pilot-mode path benefits too. Returns NULL when modes / grid are unavailable or
+# shaped wrong (caller falls back to the broadcast mode + chain re-order).
+.joint_nearest_grid_mode <- function(theta_mat, res) {
+    tg    <- res$theta_grid
+    modes <- res$modes
+    if (is.null(tg) || !is.matrix(tg) || is.null(modes) || !is.matrix(modes)) {
+        return(NULL)
+    }
+    if (nrow(modes) != nrow(tg)) return(NULL)
+    d <- ncol(tg)
+    if (is.null(dim(theta_mat)) || ncol(theta_mat) != d) return(NULL)
+    sds <- apply(tg, 2L, stats::sd)
+    sds[!is.finite(sds) | sds <= 0] <- 1
+    Gt <- t(sweep(tg, 2L, sds, `/`))                # d x K standardised grid
+    Q  <- sweep(theta_mat, 2L, sds, `/`)            # S x d standardised draws
+    idx <- vapply(seq_len(nrow(Q)), function(s) {
+        which.min(colSums((Gt - Q[s, ])^2))
+    }, integer(1))
+    modes[idx, , drop = FALSE]
+}
+
+# Are per-cell grid modes available to drive the nearest-grid-mode warm start?
+.joint_has_grid_modes <- function(res) {
+    tg <- res$theta_grid
+    m  <- res$modes
+    is.matrix(tg) && is.matrix(m) && nrow(m) == nrow(tg) && nrow(m) >= 1L
+}
+
+# Build the diagnostic re-evaluation closure (gcol33/tulpa#118), choosing the
+# warm-start strategy by knob + availability, single source for both the single-
+# and multi-block paths. `solve_fn(theta_mat, x_init_per_cell = NULL)` round-trips
+# a batch through the kernel (baked hyperprior included).
+#   1. per-cell  : each draw warm-started from its nearest stored grid mode
+#                  (best; serial AND parallel). Default when modes are stored.
+#   2. re-order  : near-neighbour chain so the serial driver's previous-cell
+#                  warm start is a near neighbour (no per-cell modes).
+#   3. plain     : single broadcast modal mode (both knobs off).
+.joint_make_diag_refit <- function(res, solve_fn, modal_theta, knobs) {
+    if (isTRUE(knobs$percell) && .joint_has_grid_modes(res)) {
+        function(theta_mat) {
+            wpc <- .joint_nearest_grid_mode(theta_mat, res)
+            solve_fn(theta_mat, x_init_per_cell = wpc)   # NULL -> broadcast
+        }
+    } else if (isTRUE(knobs$reorder)) {
+        function(theta_mat) .joint_is_solve_reordered(theta_mat, modal_theta, solve_fn)
+    } else {
+        function(theta_mat) solve_fn(theta_mat)
+    }
 }
 
 # Greedy nearest-neighbour visiting order for the importance batch
@@ -314,6 +376,39 @@
         identity = list(theta = u, log_jac = rep(0, length(u))))
 }
 
+# Axes carrying posterior spread under a hyperparameter covariance: those with
+# non-negligible variance. The importance proposal is built only over these and
+# holds the zero-variance axes fixed at their mean -- a copy `alpha` pinned at 0
+# or a one-point dispersion grid leaves the covariance rank deficient, so the
+# proposal Cholesky would otherwise be undefined (gcol33/tulpa#114). `cov` is a
+# hyperparameter covariance in the unconstrained coordinate. Returns the varying
+# indices.
+.joint_pareto_vary_axes <- function(cov) {
+    ax_var  <- diag(cov)
+    var_tol <- 1e-10 * max(ax_var, 0)
+    which(ax_var > var_tol)
+}
+
+# Axes the integration GRID offers more than one value along -- the axes that
+# CAN carry posterior spread, regardless of how the weight concentrates
+# (gcol33/tulpa#117). The collapsed-grid mode-Hessian fallback differences the
+# outer target only over these, holding the rest fixed. Unlike
+# .joint_pareto_vary_axes, which reads a covariance, this reads the grid layout:
+# a covariance cannot tell a genuinely pinned axis (one grid value) from a
+# multi-valued one merely collapsed by a sharp posterior (a delta weight zeros
+# the weighted variance of every axis, including ones whose FD curvature the
+# rescue must still recover). An axis with a single distinct grid value is
+# pinned (a copy alpha fixed at 0, a one-point dispersion grid); its FD curvature
+# is zero, so a full-axis stencil would be singular. Reads the spread of the raw
+# grid values (unweighted), so it is invariant to the weight concentration that
+# triggers the fallback in the first place. Returns the varying indices.
+.joint_pareto_grid_vary_axes <- function(theta_grid) {
+    ax_var <- apply(theta_grid, 2L, stats::var)
+    ax_var[!is.finite(ax_var)] <- 0
+    var_tol <- 1e-10 * max(ax_var, 0)
+    which(ax_var > var_tol)
+}
+
 # Laplace-at-mode covariance of the joint hyperparameter posterior, from a
 # finite-difference Hessian of the outer target at the modal grid cell
 # (gcol33/tulpa#116). The importance proposal for the outer Pareto-k is normally
@@ -325,10 +420,26 @@
 # k-hat already calls. Reuses the CCD stencil / conditioning helpers (single
 # source of truth with `.joint_ccd_grid`). `u_center` is the modal cell in the
 # unconstrained coordinate; `col_names` labels the physical theta columns the
-# re-solve expects. Returns a d x d covariance, or NULL when the curvature is
-# degenerate (the caller then keeps the grid-weighted estimate).
+# re-solve expects.
+#
+# `vary` (gcol33/tulpa#117) restricts the FD stencil to the axes carrying
+# posterior spread, holding the pinned axes (single grid value: a copy `alpha`
+# fixed at 0, a one-point dispersion grid) fixed at `u_center`. A
+# full-`d` stencil is singular along a pinned axis, so without this the Hessian
+# is rejected and the fallback the rescue targets never engages. Excluding a
+# pinned axis from the curvature is exact (it carries no posterior spread), not
+# an approximation; the returned covariance is the inverse over `vary` embedded
+# block-diagonally into a full `d x d` with zeros on the pinned rows / cols, so
+# the caller's downstream varying-axis logic recovers the same set. Returns
+# NULL when the varying-axis curvature is degenerate (the caller then keeps the
+# grid-weighted estimate) or when every axis is pinned.
 .joint_pareto_mode_cov <- function(u_center, tags, col_names,
-                                   refit_log_marginal, d, h = 0.1) {
+                                   refit_log_marginal, d, vary = NULL,
+                                   h = 0.1) {
+    if (is.null(vary)) vary <- seq_len(d)
+    if (length(vary) == 0L) return(NULL)
+
+    # Full-d outer target: back-transform + summed per-axis log-Jacobian.
     target <- function(U) {
         theta_mat <- matrix(0, nrow(U), d)
         log_jac   <- numeric(nrow(U))
@@ -342,14 +453,26 @@
         if (length(lm) != nrow(U)) return(rep(-Inf, nrow(U)))
         lm + log_jac
     }
-    st <- tryCatch(.joint_ccd_fd_stencil(u_center, target, rep(h, d)),
+    # Reduced target over the varying axes: embed an [S x |vary|] block into the
+    # full d-space at u_center (pinned axes held fixed), then call the full
+    # target. The stencil thus differences only the varying subspace.
+    target_v <- function(Uv) {
+        U <- matrix(u_center, nrow(Uv), d, byrow = TRUE)
+        U[, vary] <- Uv
+        target(U)
+    }
+    st <- tryCatch(.joint_ccd_fd_stencil(u_center[vary], target_v,
+                                         rep(h, length(vary))),
                    error = function(e) NULL)
     if (is.null(st) || any(!is.finite(st$hess))) return(NULL)
     if (!.joint_ccd_outer_hess_ok(st$hess)) return(NULL)
     neg_H <- -0.5 * (st$hess + t(st$hess))                # precision at the mode
-    cov   <- tryCatch(solve(neg_H), error = function(e) NULL)
-    if (is.null(cov) || any(!is.finite(cov))) return(NULL)
-    (cov + t(cov)) / 2
+    cov_v <- tryCatch(solve(neg_H), error = function(e) NULL)
+    if (is.null(cov_v) || any(!is.finite(cov_v))) return(NULL)
+
+    cov <- matrix(0, d, d)
+    cov[vary, vary] <- (cov_v + t(cov_v)) / 2             # pinned rows/cols zero
+    cov
 }
 
 # Shared outer Pareto-k-hat driver for a joint nested-Laplace result.
@@ -458,9 +581,19 @@
         wn    <- w / sum(w)
         ess_w <- 1 / sum(wn^2)
         if (is.finite(ess_w) && ess_w <= d) {
+            # Restrict the FD mode-Hessian to the axes the grid leaves varying;
+            # a pinned axis (single grid value -> zero FD curvature) would make
+            # the full-axis stencil singular and the fallback bail to grid_moment
+            # (gcol33/tulpa#117). Detected from the GRID layout, not the weighted
+            # covariance: at this collapse the weight concentrates on ~1 cell, so
+            # the weighted variance of every axis is ~0 and cannot separate a
+            # truly pinned axis from a multi-valued one whose curvature the rescue
+            # must still recover.
+            vary_g <- .joint_pareto_grid_vary_axes(tg)
             u_mode <- as.numeric(u_grid[which.max(w), ])
             cov_h  <- .joint_pareto_mode_cov(u_mode, tags, cn,
-                                             refit_log_marginal, d)
+                                             refit_log_marginal, d,
+                                             vary = vary_g)
             if (!is.null(cov_h)) {
                 u_hat <- u_mode
                 Su    <- cov_h
@@ -479,9 +612,7 @@
     # u_hat and is built only on the varying axes -- the k-hat then diagnoses
     # the proposal over the axes that actually carry posterior uncertainty,
     # rather than declining the whole fit (gcol33/tulpa#114).
-    ax_var  <- diag(Su)
-    var_tol <- 1e-10 * max(ax_var, 0)
-    vary    <- which(ax_var > var_tol)
+    vary <- .joint_pareto_vary_axes(Su)
     if (length(vary) == 0L) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
     Su_v <- Su[vary, vary, drop = FALSE]
     L_v  <- tryCatch(t(chol(Su_v)), error = function(e) NULL)
@@ -550,15 +681,17 @@
     n_to        <- as.integer(n_threads_outer)
     knobs       <- .kdiag_knobs()
 
-    # One kernel call over the (re-ordered) importance batch, with Shamanskii
-    # factor reuse so the off-factor steps scatter grad-only -- the dominant
-    # per-iteration cost on the beta cover arm (gcol33/tulpa#118).
-    solve_fn <- function(theta_mat) {
+    # One kernel call over the importance batch, with Shamanskii factor reuse
+    # (off-factor steps scatter grad-only) + per-cell warm start, both attacking
+    # the dominant per-iteration scatter cost on the beta cover arm
+    # (gcol33/tulpa#118). `x_init_per_cell` is an [S x n_x] warm matrix or NULL.
+    solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
         r  <- kernel_fn(theta_mat, warm_start = warm_arg,
                         max_iter_override = k_max_iter,
                         n_threads_outer = n_to,
                         inner_refresh_override = knobs$refresh,
-                        tol_override = knobs$tol)
+                        tol_override = knobs$tol,
+                        x_init_per_cell = x_init_per_cell)
         lm <- r$log_marginal
         if (!is.null(hp_fn)) {
             hp <- hp_fn(theta_mat)
@@ -566,12 +699,11 @@
         }
         lm
     }
-    # Near-neighbour chain order so the serial driver's previous-cell warm start
-    # is a genuine near neighbour, cutting inner-Newton steps/draw
-    # (gcol33/tulpa#118).
-    refit <- if (knobs$reorder)
-        function(theta_mat) .joint_is_solve_reordered(theta_mat, modal_theta, solve_fn)
-    else solve_fn
+    # Per-cell warm start (each draw from its nearest stored grid mode) is the
+    # best start and works in serial AND parallel; it supersedes the chain
+    # re-order. Fall back to the near-neighbour chain re-order when modes are
+    # unavailable, else the plain broadcast warm (gcol33/tulpa#118).
+    refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     kd <- .joint_pareto_k(res, refit, k_samples)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess

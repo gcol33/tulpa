@@ -1205,7 +1205,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     int                 progress_every = 0,
     double              progress_throttle = 0.0,
     std::string         progress_file = "",
-    std::string         checkpoint_path = ""
+    std::string         checkpoint_path = "",
+    Rcpp::Nullable<Rcpp::NumericMatrix> x_init_per_cell = R_NilValue
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -1288,6 +1289,20 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull()) {
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
+    }
+
+    // Optional per-cell warm-start matrix (gcol33/tulpa#118): an R [n_grid x n_x]
+    // matrix flattened ROW-MAJOR for the grid driver (row k = cell k's warm
+    // start). Unwrapped here (never hand a Nullable to a header); the driver
+    // validates the size against n_grid * n_x and no-ops on a mismatch.
+    std::vector<double> x_init_per_cell_vec;
+    if (x_init_per_cell.isNotNull()) {
+        Rcpp::NumericMatrix M(x_init_per_cell);
+        const int nr = M.nrow(), nc = M.ncol();
+        x_init_per_cell_vec.resize(static_cast<size_t>(nr) * nc);
+        for (int k = 0; k < nr; k++)
+            for (int j = 0; j < nc; j++)
+                x_init_per_cell_vec[static_cast<size_t>(k) * nc + j] = M(k, j);
     }
 
     std::vector<int> tile_ids_vec;
@@ -1415,7 +1430,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         step_curvature,
         inner_refresh,
         gp.get(),
-        ckpt.get()
+        ckpt.get(),
+        x_init_per_cell_vec
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
@@ -1806,7 +1822,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     CurvatureMode                    step_curvature,
     int                              hessian_refresh,
     tulpa_progress::GridProgress*    progress,
-    GridCheckpoint*                  checkpoint) {
+    GridCheckpoint*                  checkpoint,
+    const std::vector<double>&       x_init_per_cell) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -1879,7 +1896,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             prep_at_grid, tile_ids, tile_pilot_cells, prune_tol,
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
             step_curvature, hessian_refresh, n_threads_outer, progress,
-            checkpoint
+            checkpoint, x_init_per_cell
         );
     }
 
@@ -2153,7 +2170,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         tile_ids, tile_pilot_cells,
-        cheap_eval, prune_tol, progress, checkpoint
+        cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell
     );
 }
 
@@ -2182,7 +2199,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     int                              hessian_refresh,
     int                              n_threads_outer,
     tulpa_progress::GridProgress*    progress,
-    GridCheckpoint*                  checkpoint
+    GridCheckpoint*                  checkpoint,
+    const std::vector<double>&       x_init_per_cell
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2535,6 +2553,6 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, n_x, solve_at_theta, x_init, store_modes,
         /*n_outer=*/n_outer,
         tile_ids, tile_pilot_cells,
-        cheap_eval, prune_tol, progress, checkpoint
+        cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell
     );
 }

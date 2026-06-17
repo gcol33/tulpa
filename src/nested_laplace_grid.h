@@ -159,7 +159,8 @@ inline Rcpp::List run_nested_laplace_grid(
     CheapEval cheap_eval = CheapEval{},
     double prune_tol = 0.0,
     tulpa_progress::GridProgress* progress = nullptr,
-    GridCheckpoint* ckpt = nullptr
+    GridCheckpoint* ckpt = nullptr,
+    const std::vector<double>& x_init_per_cell = std::vector<double>()
 ) {
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
@@ -201,6 +202,24 @@ inline Rcpp::List run_nested_laplace_grid(
     if (x_init.size() == n_x) {
         x_init_vec.assign(x_init.begin(), x_init.end());
     }
+
+    // Optional PER-CELL warm start (gcol33/tulpa#118): a flat row-major
+    // n_grid x n_x matrix where row k warm-starts cell k's inner solve. When
+    // present it OVERRIDES the chained / pilot / tile warm start in every path,
+    // so each cell starts from its own near-mode (the outer Pareto-k diagnostic
+    // passes each importance draw the converged mode of its nearest integration
+    // cell -- a far better start than the single broadcast modal mode, and one
+    // the parallel pilot-mode path cannot otherwise exploit). Empty (default)
+    // reproduces the prior behaviour exactly. `pc_warm(k, fallback)` returns the
+    // per-cell row when present, else binds the contextual fallback with no copy.
+    const bool has_pc =
+        (static_cast<long long>(x_init_per_cell.size()) ==
+         static_cast<long long>(n_grid) * n_x);
+    auto pc_row = [&](int k) {
+        return std::vector<double>(
+            x_init_per_cell.begin() + static_cast<size_t>(k) * n_x,
+            x_init_per_cell.begin() + static_cast<size_t>(k + 1) * n_x);
+    };
 
     // Checkpoint preload (gcol33/tulpa#50). A cell whose hyperparameter
     // coordinate was completed in a prior pass / killed run is filled straight
@@ -250,8 +269,11 @@ inline Rcpp::List run_nested_laplace_grid(
         // resumed pilot is read from the checkpoint instead of re-solved.
         if (!ckpt_done[k_pilot]) {
             SparseCholeskySolver pilot_solver;
+            std::vector<double> pilot_pc;
+            if (has_pc) pilot_pc = pc_row(k_pilot);
             cell_results[k_pilot] =
-                solve_at_theta(k_pilot, x_init_vec, &pilot_solver);
+                solve_at_theta(k_pilot, has_pc ? pilot_pc : x_init_vec,
+                               &pilot_solver);
             record(k_pilot);
             if (progress) progress->tick();  // first solved cell
         }
@@ -457,6 +479,7 @@ inline Rcpp::List run_nested_laplace_grid(
             // discounted from the progress total; do it here.
             if (progress && n_loaded) progress->set_total(n_grid - n_loaded);
             std::vector<double> prev_mode = x_init_vec;
+            std::vector<double> warm_pc;
             for (int k = 0; k < n_grid; k++) {
                 // A loaded cell is already in cell_results; chain its stored
                 // mode as the next warm-start and skip the solve.
@@ -464,13 +487,16 @@ inline Rcpp::List run_nested_laplace_grid(
                     prev_mode = cell_results[k].mode;
                     continue;
                 }
-                cell_results[k] = solve_at_theta(k, prev_mode, &solver);
+                if (has_pc) warm_pc = pc_row(k);
+                cell_results[k] = solve_at_theta(
+                    k, has_pc ? warm_pc : prev_mode, &solver);
                 record(k);
-                prev_mode = cell_results[k].mode;
+                if (!has_pc) prev_mode = cell_results[k].mode;
                 if (progress) progress->tick();
             }
         } else {
             std::vector<double> prev_mode = pilot_mode;
+            std::vector<double> warm_pc;
             // Iterate in original cell order, starting from cell 0; pilot,
             // pruned, and loaded cells are skipped (already filled above).
             for (int k = 0; k < n_grid; k++) {
@@ -483,9 +509,11 @@ inline Rcpp::List run_nested_laplace_grid(
                     prev_mode = cell_results[k].mode;
                     continue;
                 }
-                cell_results[k] = solve_at_theta(k, prev_mode, &solver);
+                if (has_pc) warm_pc = pc_row(k);
+                cell_results[k] = solve_at_theta(
+                    k, has_pc ? warm_pc : prev_mode, &solver);
                 record(k);
-                prev_mode = cell_results[k].mode;
+                if (!has_pc) prev_mode = cell_results[k].mode;
                 if (progress) progress->tick();
             }
         }
@@ -524,7 +552,10 @@ inline Rcpp::List run_nested_laplace_grid(
                 int tid = 0;
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
-                cell_results[k] = solve_at_theta(k, pilot_mode, solver);
+                std::vector<double> warm_pc;
+                if (has_pc) warm_pc = pc_row(k);
+                cell_results[k] = solve_at_theta(
+                    k, has_pc ? warm_pc : pilot_mode, solver);
                 record(k);
                 if (progress) {
                     #ifdef _OPENMP
@@ -580,7 +611,10 @@ inline Rcpp::List run_nested_laplace_grid(
                 int tid = 0;
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
-                cell_results[k] = solve_at_theta(k, pilot_mode, solver);
+                std::vector<double> warm_pc;
+                if (has_pc) warm_pc = pc_row(k);
+                cell_results[k] = solve_at_theta(
+                    k, has_pc ? warm_pc : pilot_mode, solver);
                 record(k);
                 // Tile-pilot mode is the Tier-3 warm-start; if the cell
                 // diverged, fall back to the global pilot mode so we don't
@@ -615,10 +649,13 @@ inline Rcpp::List run_nested_laplace_grid(
                 int tid = 0;
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
+                std::vector<double> warm_pc;
+                if (has_pc) warm_pc = pc_row(k);
                 const std::vector<double>& warm =
-                    (t >= 0 && t < n_tiles && !tile_modes[t].empty())
-                    ? tile_modes[t]
-                    : pilot_mode;
+                    has_pc ? warm_pc
+                    : ((t >= 0 && t < n_tiles && !tile_modes[t].empty())
+                       ? tile_modes[t]
+                       : pilot_mode);
                 cell_results[k] = solve_at_theta(k, warm, solver);
                 record(k);
                 if (progress) {

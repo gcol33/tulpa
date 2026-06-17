@@ -58,6 +58,114 @@ test_that("a collapsed grid with degenerate curvature declines to NA", {
     expect_true(is.na(kd$proposal_source))
 })
 
+# A collapsed grid carrying pinned axes (gcol33/tulpa#117). Mirrors the Abies
+# occu_cover repro: two icar blocks each (sigma -> log, alpha -> identity) plus a
+# trailing phi_pos dispersion axis. The two `alpha` axes are pinned at 0 (no
+# copy on the cover arm) and `phi_pos` collapses to one grid value, so 3 of 5
+# axes carry zero weighted variance. Weight is sharp but not a delta, so the
+# sigma axes keep nonzero variance while the pinned axes stay exactly zero;
+# ess_grid <= d triggers the #116 fallback.
+.pk_pinned_res <- function() {
+    tg <- as.matrix(expand.grid(`b1.sigma` = c(0.8, 1.0, 1.2),
+                                `b1.alpha` = 0,
+                                `b2.sigma` = c(0.25, 0.35, 0.50),
+                                `b2.alpha` = 0,
+                                `phi_pos`  = 1.0))
+    centre <- which(abs(tg[, "b1.sigma"] - 1.0)  < 1e-9 &
+                    abs(tg[, "b2.sigma"] - 0.35) < 1e-9)
+    sig1lo <- which(abs(tg[, "b1.sigma"] - 0.8)  < 1e-9 &
+                    abs(tg[, "b2.sigma"] - 0.35) < 1e-9)
+    sig1hi <- which(abs(tg[, "b1.sigma"] - 1.2)  < 1e-9 &
+                    abs(tg[, "b2.sigma"] - 0.35) < 1e-9)
+    sig2lo <- which(abs(tg[, "b1.sigma"] - 1.0)  < 1e-9 &
+                    abs(tg[, "b2.sigma"] - 0.25) < 1e-9)
+    sig2hi <- which(abs(tg[, "b1.sigma"] - 1.0)  < 1e-9 &
+                    abs(tg[, "b2.sigma"] - 0.50) < 1e-9)
+    w <- rep(0, nrow(tg))
+    w[centre] <- 0.8
+    w[c(sig1lo, sig1hi, sig2lo, sig2hi)] <- 0.05         # spread on sigma axes only
+    list(theta_grid = tg, weights = w,
+         axis_offsets = c(0L, 2L, 4L),
+         blocks = list(list(type = "icar"), list(type = "icar")))
+}
+
+# Smooth Gaussian inner log-marginal in the two log-sigma coordinates (cols 1 &
+# 3); independent of the pinned alpha / phi axes.
+.pk_refit_pinned <- function(u_hat, s = c(0.20, 0.25)) {
+    function(theta_mat) {
+        u1 <- log(theta_mat[, "b1.sigma"]); u3 <- log(theta_mat[, "b2.sigma"])
+        -0.5 * ((u1 - u_hat[1])^2 / s[1]^2 + (u3 - u_hat[2])^2 / s[2]^2)
+    }
+}
+
+test_that("a collapsed grid with pinned axes recovers k from the varying-axis FD Hessian", {
+    # Before gcol33/tulpa#117 the full-d FD Hessian is singular on the 3 pinned
+    # axes, so the fallback bailed to grid_moment. Restricting the stencil to the
+    # varying sigma axes makes it well conditioned -> mode_hessian with finite k.
+    res   <- .pk_pinned_res()
+    wn    <- res$weights / sum(res$weights)
+    expect_lt(1 / sum(wn^2), ncol(res$theta_grid))       # ess_grid <= d
+    u_hat <- c(log(1.0), log(0.35))
+    kd <- tulpa:::.joint_pareto_k(res, .pk_refit_pinned(u_hat), n_samples = 200L,
+                                  proposal = NULL)
+    expect_false(is.na(kd$pareto_k))
+    expect_identical(kd$proposal_source, "mode_hessian")
+    expect_true(is.finite(kd$is_ess) && kd$is_ess > 0)
+    expect_lt(kd$pareto_k, 0.7)             # Gaussian target under Gaussian proposal
+})
+
+test_that("a delta-weight collapse with pinned axes still recovers k (grid-layout detection)", {
+    # The extreme of gcol33/tulpa#117: weight on exactly one cell (ess_grid = 1),
+    # so the weighted variance of EVERY axis is zero. Weighted-variance detection
+    # (the literal #114 set) would then drop the varying sigma axes too and
+    # decline to NA; grid-layout detection keeps the multi-valued sigma axes and
+    # recovers their FD curvature while still pinning the single-valued alpha/phi.
+    res <- .pk_pinned_res()
+    res$weights <- rep(0, nrow(res$theta_grid))
+    centre <- which(abs(res$theta_grid[, "b1.sigma"] - 1.0)  < 1e-9 &
+                    abs(res$theta_grid[, "b2.sigma"] - 0.35) < 1e-9)
+    res$weights[centre] <- 1
+    expect_equal(1 / sum(res$weights^2), 1)              # exact delta collapse
+    u_hat <- c(log(1.0), log(0.35))
+    kd <- tulpa:::.joint_pareto_k(res, .pk_refit_pinned(u_hat), n_samples = 200L,
+                                  proposal = NULL)
+    expect_false(is.na(kd$pareto_k))
+    expect_identical(kd$proposal_source, "mode_hessian")
+    expect_lt(kd$pareto_k, 0.7)
+})
+
+test_that(".joint_pareto_grid_vary_axes reads the grid layout, not the weights", {
+    # Single-valued columns are pinned; multi-valued ones vary, independent of any
+    # weight concentration (gcol33/tulpa#117).
+    tg <- as.matrix(expand.grid(`b1.sigma` = c(0.8, 1.0, 1.2), `b1.alpha` = 0,
+                                `b2.sigma` = c(0.25, 0.35), `phi_pos` = 1.0))
+    expect_equal(unname(tulpa:::.joint_pareto_grid_vary_axes(tg)), c(1L, 3L))
+})
+
+test_that(".joint_pareto_mode_cov restricts to the varying axes and zeros the pinned ones", {
+    # Direct unit on the helper: a 3-axis target Gaussian in axes 1 & 3, axis 2
+    # pinned. The returned covariance is the inverse curvature on {1, 3} embedded
+    # block-diagonally, zero on the pinned row/col.
+    cn   <- c("b1.sigma", "b1.alpha", "b2.sigma")
+    tags <- c("log", "identity", "log")
+    s    <- c(0.20, 0.30)
+    refit <- function(theta_mat) {
+        u1 <- log(theta_mat[, 1]); u3 <- log(theta_mat[, 3])
+        -0.5 * ((u1 - log(1.0))^2 / s[1]^2 + (u3 - log(0.4))^2 / s[2]^2)
+    }
+    u_center <- c(log(1.0), 0, log(0.4))
+    cov <- tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L,
+                                          vary = c(1L, 3L))
+    expect_false(is.null(cov))
+    expect_equal(dim(cov), c(3L, 3L))
+    expect_equal(cov[2, ], rep(0, 3))                    # pinned row zero
+    expect_equal(cov[, 2], rep(0, 3))                    # pinned col zero
+    expect_equal(diag(cov)[c(1, 3)], s^2, tolerance = 1e-2)   # recovers curvature
+    # Full-d stencil (no vary) is singular on the pinned axis -> NULL, the
+    # pre-#117 behaviour the fix routes around.
+    expect_null(tulpa:::.joint_pareto_mode_cov(u_center, tags, cn, refit, d = 3L))
+})
+
 # --------------------------------------------------------------------------- #
 # CCD mode-Hessian proposal splice                                            #
 # --------------------------------------------------------------------------- #

@@ -35,7 +35,8 @@
                                 cell_coupling = "separable",
                                 hessian_pd_mode = 0L,
                                 step_curvature_mode = 0L,
-                                inner_refresh = 1L) {
+                                inner_refresh = 1L,
+                                x_init_per_cell = NULL) {
             .joint_call_kernel_via_multi("bym2", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
@@ -46,7 +47,8 @@
                                           cell_coupling = cell_coupling,
                                           hessian_pd_mode = hessian_pd_mode,
                                           step_curvature_mode = step_curvature_mode,
-                                          inner_refresh = inner_refresh)
+                                          inner_refresh = inner_refresh,
+                                          x_init_per_cell = x_init_per_cell)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -78,7 +80,8 @@
                                 cell_coupling = "separable",
                                 hessian_pd_mode = 0L,
                                 step_curvature_mode = 0L,
-                                inner_refresh = 1L) {
+                                inner_refresh = 1L,
+                                x_init_per_cell = NULL) {
             .joint_call_kernel_via_multi("icar", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
@@ -89,7 +92,8 @@
                                           cell_coupling = cell_coupling,
                                           hessian_pd_mode = hessian_pd_mode,
                                           step_curvature_mode = step_curvature_mode,
-                                          inner_refresh = inner_refresh)
+                                          inner_refresh = inner_refresh,
+                                          x_init_per_cell = x_init_per_cell)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -121,7 +125,8 @@
                                 cell_coupling = "separable",
                                 hessian_pd_mode = 0L,
                                 step_curvature_mode = 0L,
-                                inner_refresh = 1L) {
+                                inner_refresh = 1L,
+                                x_init_per_cell = NULL) {
             .joint_call_kernel_via_multi("car_proper", arms, prior, cp, grids,
                                           max_iter, tol, n_threads,
                                           x_init, store_Q, arm_names,
@@ -132,7 +137,8 @@
                                           cell_coupling = cell_coupling,
                                           hessian_pd_mode = hessian_pd_mode,
                                           step_curvature_mode = step_curvature_mode,
-                                          inner_refresh = inner_refresh)
+                                          inner_refresh = inner_refresh,
+                                          x_init_per_cell = x_init_per_cell)
         },
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
@@ -185,7 +191,8 @@
                                           cell_coupling = "separable",
                                           hessian_pd_mode = 0L,
                                           step_curvature_mode = 0L,
-                                          inner_refresh = 1L) {
+                                          inner_refresh = 1L,
+                                          x_init_per_cell = NULL) {
     n_arms <- length(arms)
     spi <- lapply(arms, function(a) as.integer(a$spatial_idx))
 
@@ -288,7 +295,8 @@
         cell_coupling_name = as.character(cell_coupling),
         hessian_pd_mode = as.integer(hessian_pd_mode),
         step_curvature_mode = as.integer(step_curvature_mode),
-        inner_refresh = as.integer(inner_refresh)
+        inner_refresh = as.integer(inner_refresh),
+        x_init_per_cell = x_init_per_cell
     )
     # Strip the C++-side theta_grid / axis_offsets — the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare

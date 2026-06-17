@@ -1394,7 +1394,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     int                              hessian_refresh = 1,
     int                              n_threads_outer = 1,
     tulpa_progress::GridProgress*    progress = nullptr,
-    GridCheckpoint*                  checkpoint = nullptr
+    GridCheckpoint*                  checkpoint = nullptr,
+    const std::vector<double>&       x_init_per_cell = std::vector<double>()
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1430,7 +1431,8 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     CurvatureMode                    step_curvature = CurvatureMode::Observed,
     int                              hessian_refresh = 1,
     tulpa_progress::GridProgress*    progress = nullptr,
-    GridCheckpoint*                  checkpoint = nullptr
+    GridCheckpoint*                  checkpoint = nullptr,
+    const std::vector<double>&       x_init_per_cell = std::vector<double>()
 );
 
 } // namespace tulpa

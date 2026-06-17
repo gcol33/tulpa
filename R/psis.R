@@ -184,6 +184,12 @@ tulpa_psis <- function(log_ratios) {
   if (n_eval < .PSIS_MIN_EVAL) {
     return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
   }
+  # Validation aperture: when `tulpa.kdiag.capture` holds an environment, stash
+  # the finite importance log-ratios so an external check can recompute the same
+  # k-hat with loo / posterior on the actual engine output. Off by default, zero
+  # overhead when unset.
+  cap <- getOption("tulpa.kdiag.capture", NULL)
+  if (is.environment(cap)) cap$lr <- lr[is.finite(lr)]
   ps <- tulpa_psis(lr)
   list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
 }
@@ -262,6 +268,12 @@ tulpa_psis <- function(log_ratios) {
   if (n_eval < .PSIS_MIN_EVAL) {
     return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
   }
+  # Validation aperture: when `tulpa.kdiag.capture` holds an environment, stash
+  # the finite importance log-ratios so an external check can recompute the same
+  # k-hat with loo / posterior on the actual engine output. Off by default, zero
+  # overhead when unset.
+  cap <- getOption("tulpa.kdiag.capture", NULL)
+  if (is.environment(cap)) cap$lr <- lr[is.finite(lr)]
   ps <- tulpa_psis(lr)
   list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
 }
