@@ -1458,3 +1458,55 @@ List cpp_test_mcar_prior(
     _["log_det_Sigma"] = log_det_Sigma
   );
 }
+
+// Direct algebra check for the MIID block (mcar with Q = I): the precision must
+// be Sigma^-1 (x) I_n exactly, with the matching gradient (no sum-to-zero pin,
+// P is full rank) and log-prior (Sigma-dependent normalizer 0.5 n log|Sigma^-1|,
+// full n not n - 1) (gcol33/tulpa#114).
+// [[Rcpp::export]]
+List cpp_test_miid_prior(
+    NumericVector theta_logchol, int p, int n, NumericVector x
+) {
+  const int m = p * (p + 1) / 2;
+  NumericMatrix tg(1, m);
+  for (int t = 0; t < m; ++t) tg(0, t) = theta_logchol[t];
+
+  std::vector<Rcpp::IntegerVector> group_idx;               // unused by the prior
+  std::vector<std::vector<Rcpp::NumericVector>> field_weight;
+  tulpa::LatentBlock blk = tulpa::make_miid_block(
+      /*start=*/0, n, p, /*axis0=*/0, tg, group_idx, field_weight,
+      /*copy_arm=*/-1, /*axis_alpha=*/-1);
+
+  const int n_x = p * n;
+  std::vector<std::pair<int,int>> pat;
+  blk.add_prior_pattern(pat);
+  tulpa::SparseHessianBuilder H;
+  H.init(n_x, pat);
+  H.zero();
+  tulpa::DenseVec grad(n_x, 0.0);
+  blk.add_prior_sparse(H, grad, x, 0);
+  const double lp = blk.log_prior(x, 0);
+
+  NumericMatrix Hd(n_x, n_x);
+  for (int c = 0; c < n_x; ++c)
+    for (int pp = H.col_ptr[c]; pp < H.col_ptr[c + 1]; ++pp) {
+      const int r = H.row_idx[pp];
+      const double v = H.values[pp];
+      Hd(r, c) += v;
+      if (r != c) Hd(c, r) += v;
+    }
+
+  std::vector<double> Sinv; double log_det_Sigma;
+  tulpa::mcar_sigma_inv_from_logchol(theta_logchol.begin(), p, Sinv, log_det_Sigma);
+  NumericMatrix Sinv_m(p, p);
+  for (int a = 0; a < p; ++a)
+    for (int b = 0; b < p; ++b) Sinv_m(a, b) = Sinv[(std::size_t) a * p + b];
+
+  return List::create(
+    _["H"]             = Hd,
+    _["grad"]          = NumericVector(grad.begin(), grad.end()),
+    _["log_prior"]     = lp,
+    _["Sinv"]          = Sinv_m,
+    _["log_det_Sigma"] = log_det_Sigma
+  );
+}

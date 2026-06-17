@@ -40,6 +40,56 @@
     m
 }
 
+# Outer-thread width for the diagnostic's importance batch.
+#
+# The batch is `k_samples` INDEPENDENT inner re-solves run after the grid
+# integration has finished, so every core the fit used is free. Each point is
+# solved single-threaded: once the batch saturates the outer pool the inner
+# reduction collapses to one thread (joint_inner_thread_budget, n_grid >=
+# n_outer), so the per-point log-marginal -- and thus the k-hat -- is identical
+# to the serial path regardless of how many run concurrently. Widening the outer
+# pool is therefore a pure wall-clock speedup with an unchanged diagnostic.
+#
+# `k_threads` resolves the width:
+#   * NULL (default) -- follow the fit's own thread grant: the larger of
+#     `n_threads_outer` and the inner `n_threads`. A serial fit keeps a serial
+#     diagnostic (no surprise oversubscription when the caller is itself forking
+#     per-species fits across cores), while a threaded fit gets a free parallel
+#     diagnostic. The inner threads are re-purposed here because the batch's
+#     independent points parallelise better across the outer loop than the
+#     per-observation reduction does.
+#   * "auto" -- the physical performance-core count (.tulpa_perf_cores(),
+#     hybrid-CPU aware), floored at the thread grant. For a single serial fit
+#     that wants the diagnostic on every core with one setting. Capped at 2 under
+#     R CMD check so examples / tests honour the CRAN core limit.
+#   * an integer >= 1 -- that exact width (1 forces serial).
+# Always capped at `k_samples` (no point holding more threads than draws).
+.tulpa_pareto_k_threads <- function(n_threads_outer, n_threads, k_samples,
+                                    k_threads = NULL) {
+    ks         <- max(1L, as.integer(k_samples))
+    auto_grant <- max(1L, as.integer(n_threads_outer), as.integer(n_threads))
+
+    if (is.null(k_threads)) {
+        w <- auto_grant
+    } else if (is.character(k_threads) && length(k_threads) == 1L &&
+               identical(tolower(k_threads), "auto")) {
+        cores <- .tulpa_perf_cores()
+        if (is.na(cores) || cores < 1L) cores <- auto_grant
+        chk <- Sys.getenv("_R_CHECK_LIMIT_CORES_", "")
+        if (nzchar(chk) && !(tolower(chk) %in% c("false", "0")))
+            cores <- min(cores, 2L)
+        w <- max(auto_grant, cores)
+    } else {
+        kt <- suppressWarnings(as.integer(k_threads))
+        if (length(kt) != 1L || is.na(kt) || kt < 1L) {
+            stop("`control$k_threads` must be a single integer >= 1, or \"auto\".",
+                 call. = FALSE)
+        }
+        w <- kt
+    }
+    as.integer(min(w, ks))
+}
+
 # Positive-scale axes integrated on the log scale (theta = exp(u), Jacobian
 # d theta / d u = theta, log-Jacobian u). Per-arm dispersion axes carry the
 # `phi_` prefix and join this set by name.
@@ -63,7 +113,10 @@
 #     mode-centre the Sigma grid (and the outer Pareto-k score it) rather than
 #     decline to the fixed log-Cholesky tensor.
 .joint_pareto_block_tags <- function(type, axes) {
-    if (identical(type, "mcar")) return(rep("identity", length(axes)))
+    # mcar / miid axes are the log-Cholesky coordinates of Sigma = L L' (log L_ii
+    # on the diagonal, raw strict-lower L_ij), unconstrained on all of R, so
+    # every axis is identity (zero Jacobian).
+    if (type %in% c("mcar", "miid")) return(rep("identity", length(axes)))
     tag_one <- function(a) {
         if (a == "alpha") return("identity")
         if (a == "rho") return(if (identical(type, "bym2")) "logit01" else NA_character_)

@@ -1,5 +1,39 @@
 # tulpa NEWS
 
+## 0.0.39 (2026-06-17)
+
+* Joint nested-Laplace multi-block driver: two random-effect capabilities for
+  random **slopes** on an observation arm (gcol33/tulpa#114), so a downstream
+  consumer can fit correlated and uncorrelated slopes, not just intercepts.
+    * An optional per-row design weight (`svc_weight`) on the `iid` block,
+      mirroring the areal / temporal SVC path: the field's contribution to arm
+      `k` row `i` is row-scaled by `svc_weight[[k]][i]`
+      (`eta_i += svc_weight[[k]][i] * sigma * u[obs_idx_i]`). An uncorrelated
+      slope `(0 + x | g)` / `(x || g)` is then one weighted `iid` block per
+      coefficient, each with its own `sigma` axis. Unset `svc_weight` is
+      byte-identical to the plain random-intercept `iid` block.
+    * A new multivariate-IID block, `type = "miid"`: the non-spatial sibling of
+      `mcar` with `Q = I`. Per group `g` a coefficient vector
+      `b_g ~ N(0, Sigma)` (block dim `n_fields = 1 + n_slopes`), with the free
+      cross-coefficient `Sigma` integrated over the same `p(p+1)/2` log-Cholesky
+      outer-grid axes as `mcar`. The precision `Sigma^-1 (x) I` is full rank, so
+      (unlike `mcar`) there is no sum-to-zero pinning and the normalizer carries
+      the full `n` (`n log|Sigma^-1|`). This expresses a correlated random slope
+      `(1 + x | g)`. Copy (`alpha`) semantics compose as for `mcar`. A `miid`
+      block with `n_fields = 1` is the centered counterpart of the scalar `iid`
+      block (Laplace-invariant). Direct-algebra prior assembly
+      (`Sigma^-1 (x) I`, gradient, log-prior) and parameter recovery are tested
+      (`test-miid-prior.R`, `test-miid-recovery.R`). The shared MCAR/MIID obs
+      scatter and copy `arm_scale` are single-sourced in `mcar_block_factory.h`.
+
+* `control$k_threads`: outer-thread width for the joint nested-Laplace fit's
+  Pareto-k diagnostic importance batch. The `k_samples` re-solves run after the
+  grid (every core free), each solved single-threaded once the batch saturates
+  the pool, so widening the pool is a bit-identical wall-clock speedup with an
+  unchanged k-hat. `NULL` (default) follows the fit's own thread grant, `"auto"`
+  uses the physical performance-core count (capped at 2 under R CMD check), and
+  an integer pins the width.
+
 ## 0.0.38 (2026-06-17)
 
 * `laplace_diagnostics()`: a front-door diagnostic for deterministic

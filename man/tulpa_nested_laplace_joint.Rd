@@ -271,6 +271,18 @@ draws are unchanged. A fit carrying an axis whose support is not safely
 known (CAR_proper's \code{rho_car}) declines to the quadrature-ESS fallback
 (\code{pareto_k = NA}) rather than apply a guessed transform. \code{FALSE} skips
 the diagnostic (\code{pareto_k = NA}).
+\item \code{k_threads} (\code{NULL}) -- outer-thread width for the diagnostic's
+importance batch. The \code{k_samples} re-solves are independent and run after
+the grid (every core free), each solved single-threaded once the batch
+saturates the pool, so widening it is a bit-identical wall-clock speedup
+(the k-hat is unchanged). \code{NULL} follows the fit's own thread grant -- the
+larger of \code{n_threads_outer} and the inner \code{n_threads} -- so a serial fit
+keeps a serial diagnostic (no oversubscription when the caller is itself
+parallelising per-species fits) while a threaded fit gets a free parallel
+diagnostic. \code{"auto"} uses the physical performance-core count (capped at 2
+under R CMD check) for a single serial fit that wants the diagnostic on
+every core with one setting; an integer pins the width (\code{1L} forces
+serial). Always capped at \code{k_samples}.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and

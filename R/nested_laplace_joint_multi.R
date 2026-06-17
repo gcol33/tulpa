@@ -81,7 +81,7 @@
     # lambda, hsgp_mo via Sigma) or whose precision is precomputed (tgmrf) do
     # not take a copy (gcol33/tulpa#76).
     copy_types <- c("icar", "bym2", "car_proper", "rw1", "rw2", "ar1", "iid",
-                    "mcar")
+                    "mcar", "miid")
     if (!block_type %in% copy_types) {
         stop("`copy$block` points at type '", block_type, "'. Copy semantics ",
              "are supported on types (",
@@ -150,10 +150,11 @@
 .joint_block_axis_grid <- function(p, is_copy, alpha_grid,
                                     block_index) {
     type <- tolower(p$type)
-    if (is_copy && type == "mcar") {
-        # Copied correlated areal field (gcol33/tulpaObs#64): the block's own
-        # axes are the p(p+1)/2 log-Cholesky coordinates of Sigma (the within-arm
-        # covariance among the fields); the copy appends ONE trailing `alpha`
+    if (is_copy && type %in% c("mcar", "miid")) {
+        # Copied correlated field (mcar: areal; miid: per-group RE) -- the
+        # block's own axes are the p(p+1)/2 log-Cholesky coordinates of Sigma
+        # (the within-arm covariance among the fields); the copy appends ONE
+        # trailing `alpha`
         # axis carrying the cross-arm copy amplitude. The kernel reads the
         # log-Cholesky axes at axis0 and alpha at axis0 + p(p+1)/2 (the last
         # column), so alpha MUST be appended last. Sigma stays a free outer-grid
@@ -335,10 +336,54 @@
         }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx")
-        list(
+        out <- list(
             type    = "iid",
             obs_idx = obs_idx,
             n_units = as.integer(p$n_units)
+        )
+        # Optional per-arm per-row design weight (random slope on a covariate
+        # column). When set, the field's contribution to arm k row i is
+        # row-scaled by svc_weight[[k]][i]:
+        #   eta_i += svc_weight[[k]][i] * sigma * u[obs_idx_i].
+        # Parallel to the areal / temporal SVC branches: a list of length n_arms,
+        # each a numeric vector matching that arm's obs count (the per-arm obs_idx
+        # length). Composes multiplicatively with copy `arm_scale`. An
+        # uncorrelated slope (x || g) / (0 + x | g) is one weighted iid block per
+        # coefficient, each with its own sigma axis (gcol33/tulpa#114).
+        if (!is.null(p$svc_weight)) {
+            out$svc_weight <- .multi_block_svc_weight(
+                p$svc_weight, obs_idx, n_arms, block_index)
+        }
+        out
+    } else if (type == "miid") {
+        # Multivariate IID (gcol33/tulpa#114): p coupled per-group coefficient
+        # fields sharing a free Sigma (the Q = I sibling of mcar). One block over
+        # p * n_groups latent. `obs_idx` is the per-arm 1-based grouping index
+        # (the mcar `spatial_idx` role); `field_weight` is the per-coefficient
+        # design column (intercept all-ones, slope = covariate) -- outer length
+        # n_fields, inner length n_arms. Expresses a correlated random slope
+        # (1 + x | g): n_fields = 1 + n_slopes.
+        if (is.null(p$obs_idx)) {
+            stop("Block ", block_index, " (type 'miid'): `obs_idx` is ",
+                 "required as a list of length n_arms.", call. = FALSE)
+        }
+        obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
+                                              block_index, "obs_idx")
+        n_fields <- as.integer(p$n_fields)
+        if (is.null(p$field_weight) || length(p$field_weight) != n_fields) {
+            stop("Block ", block_index, " (type 'miid'): `field_weight` must be ",
+                 "a list of length n_fields (", n_fields, ").", call. = FALSE)
+        }
+        field_weight <- lapply(seq_len(n_fields), function(a) {
+            .multi_block_svc_weight(p$field_weight[[a]], obs_idx, n_arms,
+                                    block_index)
+        })
+        list(
+            type         = "miid",
+            obs_idx      = obs_idx,
+            n_groups     = as.integer(p$n_groups),
+            n_fields     = n_fields,
+            field_weight = field_weight
         )
     } else if (type == "tgmrf") {
         # User-supplied GMRF: per-grid CSC Q + logdet + log p(theta).
@@ -735,6 +780,7 @@
                                   cell_coupling = "separable",
                                   diagnose_k = TRUE,
                                   k_samples = 200L,
+                                  pareto_k_threads = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   timer = NULL) {
@@ -1055,6 +1101,11 @@
     # hyperparameters via the shared cpp-grid / phi / hyperprior helpers and
     # PSIS-smooth. Declines (NA -> quad-ESS) when a block carries an axis with
     # unguessable support (CAR_proper's rho_car, a non-BYM2 rho, ...).
+    # The diagnostic's importance batch runs across `pareto_k_threads` (resolved
+    # by the top-level caller from control$k_threads; NULL only on a direct call,
+    # where it follows this fit's own thread grant). gcol33/tulpa#117.
+    k_to <- pareto_k_threads %||%
+        .tulpa_pareto_k_threads(n_threads_outer, n_threads, k_samples, NULL)
     res <- .joint_attach_pareto_k_multi(res, arms, cp, blocks_spec,
                                         axis_offsets, B, arm_names,
                                         fn_sigma, fn_alpha,
@@ -1062,7 +1113,7 @@
                                         force_sparse, cell_coupling,
                                         diagnose_k = diagnose_k,
                                         k_samples  = k_samples,
-                                        n_threads_outer = n_threads_outer)
+                                        n_threads_outer = k_to)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",
@@ -1119,6 +1170,7 @@
         n_units <- prepared[[b]]$n_spatial_units %||%
                    prepared[[b]]$n_times         %||%
                    prepared[[b]]$n_units         %||%
+                   prepared[[b]]$n_groups        %||%
                    prepared[[b]]$n_latent        %||%
                    prepared[[b]]$n_mesh          %||%
                    prepared[[b]]$m_total         %||% 0L
@@ -1146,6 +1198,12 @@
             field_starts      <- c(field_starts, cur)
             field_block_types <- c(field_block_types, "mcar")
             if (is.null(phi_start)) phi_start <- cur
+        } else if (type == "miid") {
+            # Multivariate IID stores p coupled per-group coefficient fields
+            # field-major: field a at offset a * n_groups within the block
+            # (size p * n_groups). A per-group RE, not a spatial field, so it
+            # does not register a field_start / phi_start alias.
+            block_size[b] <- as.integer(prepared[[b]]$n_fields) * n_units
         } else {
             block_size[b] <- n_units
             if (type %in% c("icar", "car_proper")) {

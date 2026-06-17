@@ -96,6 +96,46 @@ inline void mcar_apply_Q(
     }
 }
 
+// Shared INDEXED_MULTI obs->field scatter for a multivariate field block
+// (mcar / miid): obs i in arm k contributes eta_i += sum_a X_{ia} u_a[idx_i],
+// touching the p field slots {a*n + idx_i} (1-based block-local) with the
+// per-field design weights X_{ia} (intercept all-ones, covariate per-row). The
+// grouping `idx` is the per-arm 1-based unit index -- cell for mcar, group for
+// miid; a 0 / out-of-range index skips the obs.
+inline std::function<void(int, int, std::vector<std::pair<int,double>>&)>
+mv_field_obs_indices(
+    std::vector<Rcpp::IntegerVector> idx,
+    std::vector<std::vector<Rcpp::NumericVector>> field_weight,
+    int n, int p
+) {
+    return [idx, field_weight, n, p](
+        int i, int k_arm, std::vector<std::pair<int,double>>& out
+    ) {
+        out.clear();
+        const Rcpp::IntegerVector& gi = idx[k_arm];
+        if (i < 0 || i >= gi.size()) return;
+        const int cell = gi[i];                 // 1-based; 0 => skip
+        if (cell < 1 || cell > n) return;
+        out.reserve(p);
+        for (int a = 0; a < p; ++a)
+            out.emplace_back(a * n + cell, field_weight[a][k_arm][i]);
+    };
+}
+
+// Shared cross-arm copy amplitude for a multivariate field block (mcar / miid):
+// donor arms see the field at amplitude 1; the copy arm scales the whole
+// correlated (intercept, slope) field by one alpha read off the outer grid at
+// axis_alpha (the cross-arm transfer). The free cross-covariance Sigma stays a
+// within-arm property of the donor field integrated over the outer grid. Empty
+// arm_scale (copy_arm < 0) is byte-identical to the single-arm field.
+inline std::function<double(int, int)>
+mv_field_copy_arm_scale(int copy_arm, int axis_alpha,
+                        const Rcpp::NumericMatrix& theta_grid) {
+    return [copy_arm, axis_alpha, theta_grid](int k_arm, int k_grid) -> double {
+        return (k_arm == copy_arm) ? theta_grid(k_grid, axis_alpha) : 1.0;
+    };
+}
+
 // Construct the MCAR LatentBlock.
 //   start        : latent offset of the p*n field block.
 //   n            : n_spatial_units (cells).
@@ -153,27 +193,13 @@ inline LatentBlock make_mcar_block(
     // arm_scale, the one per-arm scalar the eta accumulator / scatter apply to an
     // INDEXED_MULTI block's contribution. Empty arm_scale (copy_arm < 0) is
     // byte-identical to the single-arm MCAR.
-    if (copy_arm >= 0) {
-        block.arm_scale = [copy_arm, axis_alpha, theta_grid](
-            int k_arm, int k_grid) -> double {
-            return (k_arm == copy_arm) ? theta_grid(k_grid, axis_alpha) : 1.0;
-        };
-    }
+    if (copy_arm >= 0)
+        block.arm_scale = mv_field_copy_arm_scale(copy_arm, axis_alpha, theta_grid);
 
     // eta_i += sum_a X_{ia} u_a[cell_i]: obs i touches the p field slots
     // {a*n + cell_i} (1-based block-local) with weights X_{ia}.
-    block.obs_indices = [cell_idx, field_weight, n, p](
-        int i, int k_arm, std::vector<std::pair<int,double>>& out
-    ) {
-        out.clear();
-        const Rcpp::IntegerVector& ci = cell_idx[k_arm];
-        if (i < 0 || i >= ci.size()) return;
-        const int cell = ci[i];                 // 1-based; 0 => skip
-        if (cell < 1 || cell > n) return;
-        out.reserve(p);
-        for (int a = 0; a < p; ++a)
-            out.emplace_back(a * n + cell, field_weight[a][k_arm][i]);
-    };
+    block.obs_indices = mv_field_obs_indices(std::move(cell_idx),
+                                             std::move(field_weight), n, p);
 
     // Sparse prior scatter: P = Sigma^-1 (x) Q, grad += -P x, plus p sum-to-zero
     // pins (gradient + rank-1, folded by the solver). Sigma^-1 is recomputed
@@ -319,6 +345,125 @@ inline LatentBlock make_mcar_block(
         return 0.0;
     };
 
+    return block;
+}
+
+// Construct the multivariate-IID (MIID) LatentBlock: the non-spatial sibling of
+// make_mcar_block with Q = I (identity in place of D - W). Per group g a
+// coefficient vector b_g ~ N(0, Sigma) (block dim p = n_coefs), with the free
+// cross-covariance Sigma integrated over the same p(p+1)/2 log-Cholesky outer-
+// grid axes as MCAR. The joint latent (u_1, ..., u_p) over n groups has
+// precision
+//   P = Sigma^-1 (x) I_n,
+// which is FULL RANK -- so, unlike MCAR, there is no constant null space, no
+// sum-to-zero pinning, and no centering (a proper N(0, Sigma) prior, like the
+// scalar iid block). The only Sigma-dependent normalizer is n log|Sigma^-1|
+// (vs MCAR's (n - L) log|Sigma^-1|, which drops the L-dim per-field null space).
+// This expresses a CORRELATED random slope (1 + x | g): p = 1 + n_slopes
+// coefficients per group sharing a free covariance, integrated as a derived
+// quantity over the outer grid. A p = 1 block is a proper random intercept
+// N(0, sigma^2); it is the centered-parameterization counterpart of the scalar
+// iid block (eta += u, u ~ N(0, sigma^2) vs eta += sigma * u, u ~ N(0, 1)) --
+// the same model, Laplace-invariant under that affine reparameterization.
+//
+//   start        : latent offset of the p*n block (n = n_groups).
+//   n            : n_groups.
+//   p            : n_coefs (block dim).
+//   axis0        : first log-Cholesky axis column in theta_grid; the block reads
+//                  p(p+1)/2 consecutive columns there.
+//   group_idx    : per-arm 1-based group index (the MCAR cell_idx role).
+//   field_weight : per-coefficient, per-arm design column X_{ia} (intercept
+//                  all-ones, slope = covariate); outer length p, inner n_arms.
+//   copy_arm     : 0-based arm receiving a scaled COPY of the whole field, or -1.
+//   axis_alpha   : theta_grid column holding the copy coefficient alpha (used
+//                  only when copy_arm >= 0).
+inline LatentBlock make_miid_block(
+    int start, int n, int p, int axis0,
+    const Rcpp::NumericMatrix& theta_grid,
+    std::vector<Rcpp::IntegerVector> group_idx,
+    std::vector<std::vector<Rcpp::NumericVector>> field_weight,
+    int copy_arm = -1, int axis_alpha = -1
+) {
+    LatentBlock block;
+    block.start = start;
+    block.size  = p * n;
+    block.contrib_kind = BlockContribKind::INDEXED_MULTI;
+    block.prior_kind   = PriorFillKind::ADJACENCY;   // within-group field couples
+    block.d_fac = [](int) -> double { return 1.0; };
+
+    if (copy_arm >= 0)
+        block.arm_scale = mv_field_copy_arm_scale(copy_arm, axis_alpha, theta_grid);
+
+    block.obs_indices = mv_field_obs_indices(std::move(group_idx),
+                                             std::move(field_weight), n, p);
+
+    // Sparse prior scatter: P = Sigma^-1 (x) I_n. grad += -P x; Hessian is the
+    // p x p Sigma^-1 coupling among the fields replicated across the n groups
+    // (cell-diagonal, no neighbor entries). Full rank => no sum-to-zero pins.
+    block.add_prior_sparse = [start, n, p, axis0, theta_grid](
+        SparseHessianBuilder& H, DenseVec& grad,
+        const Rcpp::NumericVector& x, int k_grid
+    ) {
+        std::vector<double> Sinv; double log_det_Sigma;
+        {
+            std::vector<double> th(p * (p + 1) / 2);
+            for (int t = 0; t < (int) th.size(); ++t) th[t] = theta_grid(k_grid, axis0 + t);
+            mcar_sigma_inv_from_logchol(th.data(), p, Sinv, log_det_Sigma);
+        }
+        // grad[a*n+i] += -sum_b Sinv[a,b] x[b*n+i].
+        for (int a = 0; a < p; ++a)
+            for (int i = 0; i < n; ++i) {
+                double g = 0.0;
+                for (int b = 0; b < p; ++b)
+                    g += Sinv[(std::size_t) a * p + b] * x[start + b * n + i];
+                grad[start + a * n + i] += -g;
+            }
+        // Hessian P = Sigma^-1 (x) I, lower triangle (a >= b), cell-diagonal.
+        for (int a = 0; a < p; ++a)
+            for (int b = 0; b <= a; ++b) {
+                const double coef = Sinv[(std::size_t) a * p + b];
+                const int oa = start + a * n, ob = start + b * n;
+                for (int i = 0; i < n; ++i) H.add(oa + i, ob + i, coef);
+            }
+    };
+
+    // Sparsity pattern: the cell-diagonal nonzeros of P (a >= b). The a == b
+    // diagonal is always present via the data fill; emitting it here too is
+    // harmless (the builder coalesces duplicate coordinates), matching MCAR.
+    block.add_prior_pattern = [start, n, p](std::vector<std::pair<int,int>>& out) {
+        for (int a = 0; a < p; ++a)
+            for (int b = 0; b <= a; ++b) {
+                const int oa = start + a * n, ob = start + b * n;
+                for (int i = 0; i < n; ++i) out.emplace_back(oa + i, ob + i);
+            }
+    };
+
+    // log p(u | Sigma): -0.5 u'Pu + 0.5 n log|Sigma^-1| - 0.5 p n log(2 pi).
+    // No null space (P full rank) => no pin term and the full n (not n - L)
+    // multiplies log|Sigma^-1|.
+    block.log_prior = [start, n, p, axis0, theta_grid](
+        const Rcpp::NumericVector& x, int k_grid
+    ) -> double {
+        std::vector<double> Sinv; double log_det_Sigma;
+        {
+            std::vector<double> th(p * (p + 1) / 2);
+            for (int t = 0; t < (int) th.size(); ++t) th[t] = theta_grid(k_grid, axis0 + t);
+            mcar_sigma_inv_from_logchol(th.data(), p, Sinv, log_det_Sigma);
+        }
+        double quad = 0.0;          // u'Pu = sum_{a,b} Sinv[a,b] sum_i u_{a,i} u_{b,i}
+        for (int a = 0; a < p; ++a)
+            for (int b = 0; b < p; ++b) {
+                double xa_xb = 0.0;
+                for (int i = 0; i < n; ++i)
+                    xa_xb += x[start + a * n + i] * x[start + b * n + i];
+                quad += Sinv[(std::size_t) a * p + b] * xa_xb;
+            }
+        const double log_det_Sinv = -log_det_Sigma;
+        return -0.5 * quad + 0.5 * n * log_det_Sinv
+               - 0.5 * p * n * std::log(2.0 * M_PI);
+    };
+
+    // No center (proper prior, anchored by the per-arm intercepts) and no prep.
     return block;
 }
 

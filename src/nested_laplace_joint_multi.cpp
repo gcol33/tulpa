@@ -863,6 +863,11 @@ int build_joint_blocks_from_spec(
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(obs_idx_list, n_arms,
                                             "obs_idx", block_index);
+        // Optional per-arm per-row design weight (random slope on a covariate
+        // column): eta_i += svc_weight[k][i] * d_fac * arm_scale * u[obs_idx_i].
+        // Mirrors the icar / rw1 SVC path; unset => weight 1, byte-identical to
+        // the plain random-intercept iid block (gcol33/tulpa#114).
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
 
         // Copy block: the unit-precision prior is unchanged (an IID field is
         // already N(0, I)); the per-arm amplitude (donor: sigma, copy:
@@ -916,6 +921,42 @@ int build_joint_blocks_from_spec(
         // IID is anchored by the global per-arm intercepts; no centering.
         blocks.push_back(block);
         return start + size;
+    }
+
+    if (type == "miid") {
+        // Multivariate IID (gcol33/tulpa#114): p coupled per-group coefficient
+        // fields sharing a free cross-covariance Sigma -- the Q = I sibling of
+        // mcar. One block over p * n_groups latent; the p(p+1)/2 log-Cholesky
+        // axes of Sigma are integrated by the outer grid. A copy block appends
+        // one trailing `alpha` axis (the whole correlated (intercept, slope)
+        // field copied onto the copy arm scaled by alpha; Sigma stays the
+        // within-arm covariance among the coefficients).
+        const int n = Rcpp::as<int>(bs["n_groups"]);
+        const int p = Rcpp::as<int>(bs["n_fields"]);
+        const int m = p * (p + 1) / 2;
+        require_axes(is_copy_block ? m + 1 : m);
+        Rcpp::List gi_list = bs["obs_idx"];          // length n_arms (grouping)
+        Rcpp::List fw_list = bs["field_weight"];      // length p, each n_arms
+        std::vector<Rcpp::IntegerVector> group_idx;
+        group_idx.reserve(n_arms);
+        for (int k = 0; k < n_arms; ++k)
+            group_idx.push_back(Rcpp::as<Rcpp::IntegerVector>(gi_list[k]));
+        std::vector<std::vector<Rcpp::NumericVector>> field_weight;
+        field_weight.reserve(p);
+        for (int a = 0; a < p; ++a) {
+            Rcpp::List per_arm = fw_list[a];
+            std::vector<Rcpp::NumericVector> v;
+            v.reserve(n_arms);
+            for (int k = 0; k < n_arms; ++k)
+                v.push_back(Rcpp::as<Rcpp::NumericVector>(per_arm[k]));
+            field_weight.push_back(std::move(v));
+        }
+        const int start = latent_offset;
+        const int axis_alpha = is_copy_block ? axis0 + m : -1;
+        blocks.push_back(tulpa::make_miid_block(
+            start, n, p, axis0, theta_grid, std::move(group_idx),
+            std::move(field_weight), is_copy_block ? copy_arm : -1, axis_alpha));
+        return start + p * n;
     }
 
     if (type == "tgmrf") {

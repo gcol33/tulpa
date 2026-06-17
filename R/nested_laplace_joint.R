@@ -280,6 +280,18 @@
 #'     known (CAR_proper's `rho_car`) declines to the quadrature-ESS fallback
 #'     (`pareto_k = NA`) rather than apply a guessed transform. `FALSE` skips
 #'     the diagnostic (`pareto_k = NA`).
+#'   * `k_threads` (`NULL`) -- outer-thread width for the diagnostic's
+#'     importance batch. The `k_samples` re-solves are independent and run after
+#'     the grid (every core free), each solved single-threaded once the batch
+#'     saturates the pool, so widening it is a bit-identical wall-clock speedup
+#'     (the k-hat is unchanged). `NULL` follows the fit's own thread grant -- the
+#'     larger of `n_threads_outer` and the inner `n_threads` -- so a serial fit
+#'     keeps a serial diagnostic (no oversubscription when the caller is itself
+#'     parallelising per-species fits) while a threaded fit gets a free parallel
+#'     diagnostic. `"auto"` uses the physical performance-core count (capped at 2
+#'     under R CMD check) for a single serial fit that wants the diagnostic on
+#'     every core with one setting; an integer pins the width (`1L` forces
+#'     serial). Always capped at `k_samples`.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -423,6 +435,16 @@ tulpa_nested_laplace_joint <- function(responses,
     # fit's draws are unchanged whether or not it runs.
     diagnose_k                <- control$diagnose_k %||% TRUE
     k_samples                 <- control$k_samples %||% 200L
+    # Outer-thread width for the diagnostic's importance batch (gcol33/tulpa#117).
+    # The `k_samples` re-solves are independent and run after the grid (all cores
+    # free), each solved single-threaded, so widening this pool is a bit-identical
+    # wall-clock speedup. `NULL` (default) follows the fit's thread grant; "auto"
+    # uses the performance cores; an integer pins the width. Resolved once here and
+    # threaded into both the single- and multi-block diagnostic attach.
+    k_threads                 <- control$k_threads
+    pareto_k_threads          <- .tulpa_pareto_k_threads(n_threads_outer,
+                                                         n_threads, k_samples,
+                                                         k_threads)
     # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). A CCD
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
@@ -533,6 +555,7 @@ tulpa_nested_laplace_joint <- function(responses,
             force_sparse = force_sparse,
             cell_coupling = cell_coupling,
             diagnose_k = diagnose_k, k_samples = k_samples,
+            pareto_k_threads = pareto_k_threads,
             inner_refresh = inner_refresh,
             integration = integration,
             timer = tm
@@ -734,7 +757,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                          max_iter   = max_iter,
                                          diagnose_k = diagnose_k,
                                          k_samples  = k_samples,
-                                         n_threads_outer = n_threads_outer)
+                                         n_threads_outer = pareto_k_threads)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

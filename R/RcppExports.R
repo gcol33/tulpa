@@ -529,6 +529,10 @@ cpp_test_mcar_prior <- function(theta_logchol, p, n, adj_rp, adj_ci, nnbr, x, n_
     .Call(`_tulpa_cpp_test_mcar_prior`, theta_logchol, p, n, adj_rp, adj_ci, nnbr, x, n_components)
 }
 
+cpp_test_miid_prior <- function(theta_logchol, p, n, x) {
+    .Call(`_tulpa_cpp_test_miid_prior`, theta_logchol, p, n, x)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

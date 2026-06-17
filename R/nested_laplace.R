@@ -439,6 +439,31 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     }
   ),
 
+  miid = list(
+    # Multivariate IID (gcol33/tulpa#114): p coupled per-group coefficient
+    # fields sharing a free Sigma -- the non-spatial sibling of mcar (Q = I, so
+    # no graph). Multi-block-only (like mcar / iid): the coupled inner solve
+    # lives in the joint driver. The outer axes are the same p(p+1)/2
+    # log-Cholesky coordinates of Sigma; only the per-field precision (I vs
+    # D - W) differs, which does not change the outer grid, so the default grid
+    # is reused from mcar.
+    cpp_fn = NULL,
+    defaults = function(p, a) {
+      if (is.null(p$logchol_grid)) {
+        p$logchol_grid <- .mcar_default_logchol_grid(as.integer(p$n_fields))
+      }
+      p
+    },
+    pack = function(p) stop(
+      "miid is only supported inside a multi-block prior (a correlated ",
+      "random-slope term, e.g. (1 + x | group)).", call. = FALSE
+    ),
+    theta = function(p) {
+      g <- p$logchol_grid
+      list(grid = g, names = colnames(g))
+    }
+  ),
+
   nngp = list(
     cpp_fn = "cpp_nested_laplace_nngp",
     defaults = function(p, a) {
