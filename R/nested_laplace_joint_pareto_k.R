@@ -195,31 +195,50 @@
     cen   <- sweep(u_grid, 2L, u_hat)
     Su    <- crossprod(cen * w, cen)
     Su    <- (Su + t(Su)) / 2
-    L <- tryCatch(t(chol(Su)), error = function(e) NULL)
-    if (is.null(L)) return(list(pareto_k = NA_real_, is_ess = NA_real_))
 
-    lt <- function(U) {
-        theta_mat <- matrix(0, nrow(U), ncol(U))
-        log_jac   <- numeric(nrow(U))
-        for (j in seq_len(ncol(U))) {
+    # Axes the grid pins to a single value (e.g. a copy `alpha` fixed at 0, or a
+    # one-point dispersion axis) carry zero weighted variance, leaving Su rank
+    # deficient and its Cholesky undefined. The hyperparameter posterior has no
+    # spread along such an axis, so the importance proposal holds it fixed at
+    # u_hat and is built only on the varying axes -- the k-hat then diagnoses
+    # the proposal over the axes that actually carry posterior uncertainty,
+    # rather than declining the whole fit (gcol33/tulpa#114).
+    ax_var  <- diag(Su)
+    var_tol <- 1e-10 * max(ax_var, 0)
+    vary    <- which(ax_var > var_tol)
+    if (length(vary) == 0L) return(list(pareto_k = NA_real_, is_ess = NA_real_))
+    Su_v <- Su[vary, vary, drop = FALSE]
+    L_v  <- tryCatch(t(chol(Su_v)), error = function(e) NULL)
+    if (is.null(L_v)) return(list(pareto_k = NA_real_, is_ess = NA_real_))
+    u_hat_v <- u_hat[vary]
+
+    lt <- function(U_v) {
+        S <- nrow(U_v)
+        U <- matrix(u_hat, S, d, byrow = TRUE)   # pinned axes at their u_hat
+        U[, vary] <- U_v
+        theta_mat <- matrix(0, S, d)
+        log_jac   <- numeric(S)
+        for (j in seq_len(d)) {
             iv <- .joint_pareto_inv(tags[j], U[, j])
             theta_mat[, j] <- iv$theta
             log_jac <- log_jac + iv$log_jac
         }
         colnames(theta_mat) <- cn
         lm <- refit_log_marginal(theta_mat)
-        if (length(lm) != nrow(U)) return(rep(-Inf, nrow(U)))
+        if (length(lm) != S) return(rep(-Inf, S))
         lm + log_jac
     }
 
     # Skip the inner re-solve on draws that fall outside the grid's whitened
     # coverage radius -- the deep-extrapolation tail where the inner Newton
-    # stalls at EVA scale (gcol33/tulpa#94). See .nested_grid_radius_cap.
-    radius_cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
+    # stalls at EVA scale (gcol33/tulpa#94). See .nested_grid_radius_cap. The
+    # radius is measured on the varying-axis subspace the proposal spans.
+    radius_cap <- .nested_grid_radius_cap(u_grid[, vary, drop = FALSE],
+                                          u_hat_v, L_v)
 
     has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
     old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-    kd <- tryCatch(.nested_is_pareto_k(u_hat, L, lt, n_samples,
+    kd <- tryCatch(.nested_is_pareto_k(u_hat_v, L_v, lt, n_samples,
                                        radius_cap = radius_cap),
                    error = function(e) NULL)
     if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
@@ -233,12 +252,15 @@
 # baked-hyperprior closure) as the re-evaluation path, so no kernel-call
 # machinery is duplicated. The diagnostic solves are warm-started from the
 # modal latent mode and capped at `.K_DIAG_MAX_ITER` (gcol33/tulpa#51), the
-# same cost bound as the multi-block path. Attaches `pareto_k` /
-# `pareto_k_is_ess` / `pareto_k_scope`; with `diagnose_k = FALSE` the fields
-# are present but NA.
+# same cost bound as the multi-block path. The whole importance batch is
+# re-solved in one `kernel_fn` call with `n_threads_outer` so the independent
+# re-solves run concurrently across cores rather than one-at-a-time using all
+# inner threads. Attaches `pareto_k` / `pareto_k_is_ess` / `pareto_k_scope`;
+# with `diagnose_k = FALSE` the fields are present but NA.
 .joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
                                           max_iter = 50L,
-                                          diagnose_k = TRUE, k_samples = 200L) {
+                                          diagnose_k = TRUE, k_samples = 200L,
+                                          n_threads_outer = 1L) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -247,10 +269,12 @@
     warm      <- .joint_modal_mode(res)
     warm_arg  <- if (is.null(warm)) NULL else list(mode = warm)
     k_max_iter <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
+    n_to       <- as.integer(n_threads_outer)
 
     refit <- function(theta_mat) {
         r  <- kernel_fn(theta_mat, warm_start = warm_arg,
-                        max_iter_override = k_max_iter)
+                        max_iter_override = k_max_iter,
+                        n_threads_outer = n_to)
         lm <- r$log_marginal
         if (!is.null(hp_fn)) {
             hp <- hp_fn(theta_mat)

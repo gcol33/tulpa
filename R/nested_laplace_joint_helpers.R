@@ -516,16 +516,25 @@
                                   step_curvature_mode = 0L,
                                   inner_refresh = 1L) {
     function(new_cells, warm_start = NULL, store_extras = FALSE,
-             max_iter_override = NULL) {
+             max_iter_override = NULL, n_threads_outer = 1L) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
         mi <- if (is.null(max_iter_override)) max_iter
               else as.integer(max_iter_override)
+        # The refinement / consistency passes call serially (n_threads_outer
+        # left at 1) and chain warm-starts cell-to-cell; the outer Pareto-k
+        # re-evaluation passes its whole importance batch in one call with
+        # n_threads_outer > 1 so the independent re-solves run concurrently,
+        # each warm-started from the broadcast modal mode. Tiling is left off:
+        # the IS batch is not a per-axis alpha lattice, so there is no tile
+        # structure for the three-tier warm-start to exploit.
         res_x <- backend$call_kernel(arms, prior, cp, new_grids,
                                       mi, tol, n_threads,
                                       slice_x_init, isTRUE(store_Q),
                                       arm_names = arm_names,
+                                      n_threads_outer = as.integer(n_threads_outer),
+                                      tile_warm = FALSE,
                                       cell_coupling = cell_coupling,
                                       hessian_pd_mode = hessian_pd_mode,
                                       step_curvature_mode = step_curvature_mode,

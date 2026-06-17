@@ -247,13 +247,18 @@ test_that("chain diagnostics are withheld on a non-chain (approximation) fit", {
   iid   <- structure(list(draws = draws, backend = "nested_laplace"),
                      class = "tulpa_fit")
 
-  # chain fit: a real per-parameter table; i.i.d. fit: NULL, not a vacuous
-  # Rhat ~ 1 / ESS ~ n table that would read as a clean convergence pass.
+  # chain fit: a real chain Rhat / ESS table. i.i.d. fit: the PSIS reliability
+  # table (a `laplace_diagnostics`), NOT a chain table -- so a reader cannot
+  # mistake the vacuous Rhat ~ 1 / ESS ~ n of i.i.d. draws for a convergence
+  # pass; the headline there is the approximation k-hat, not chain mixing.
   d_chain <- mcmc_diagnostics(chain)
   expect_s3_class(d_chain, "data.frame")
+  expect_false(inherits(d_chain, "laplace_diagnostics"))
   expect_true(all(c("rhat", "ess_bulk") %in% names(d_chain)))
-  expect_message(d_iid <- mcmc_diagnostics(iid), "not an MCMC chain")
-  expect_null(d_iid)
+  d_iid <- mcmc_diagnostics(iid)
+  expect_s3_class(d_iid, "laplace_diagnostics")
+  expect_equal(nrow(d_iid), 2L)
+  expect_true("pareto_k" %in% names(attributes(d_iid)))
 
   # check_diagnostics: a real verdict on the chain, NA ("not applicable") on iid.
   expect_false(is.na(check_diagnostics(chain, quiet = TRUE)))

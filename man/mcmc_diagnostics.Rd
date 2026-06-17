@@ -43,11 +43,14 @@ any number of chains. The estimators follow Vehtari et al. (2021) and
 reproduce the corresponding \code{posterior} functions.
 }
 \details{
-Returns \code{NULL} (with a message) for a fit whose draws are not an MCMC chain
--- an i.i.d. / approximation fit such as nested Laplace, VI, or SMC -- where
-Rhat is vacuous and ESS equals the draw count by construction. Provenance is
-read from \verb{$draws_kind} (or the backend's registry \code{emits} property); assess
-those fits with the approximation/coverage diagnostics instead.
+For a fit whose draws are not an MCMC chain -- an i.i.d. / approximation fit
+such as nested Laplace, VI, or SMC, where the between-chain Rhat is vacuous
+and ESS equals the draw count by construction -- this dispatches to
+\code{\link[=laplace_diagnostics]{laplace_diagnostics()}}, returning the PSIS approximation-reliability table
+(the "did the approximation work" diagnostic) rather than chain mixing.
+Provenance is read from \verb{$draws_kind} (or the backend's registry \code{emits}
+property). Pass a \code{point} fit (a mode + covariance, no sample) and the
+function returns \code{NULL} with a message.
 }
 \references{
 Vehtari, Gelman, Simpson, Carpenter & Burkner (2021).

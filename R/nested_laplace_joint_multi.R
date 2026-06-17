@@ -656,8 +656,11 @@
 # Multi-block joint outer Pareto-k-hat. Builds the re-evaluation closure
 # (round-trips a sampled user-facing `joint_grid` through the SAME kernel via
 # the shared cpp-grid / phi / hyperprior helpers) and defers to the
-# block-type-aware driver `.joint_pareto_k`. n_threads_outer = 1 / no tiling
-# on the re-eval path, so no tile-partition reconstruction is needed.
+# block-type-aware driver `.joint_pareto_k`. The whole importance batch is
+# re-solved in one kernel call across `n_threads_outer`, so the independent
+# re-solves run concurrently across cores rather than one-at-a-time using all
+# inner threads. No tiling on the re-eval path (the IS batch is not a per-axis
+# alpha lattice), so no tile-partition reconstruction is needed.
 #
 # The diagnostic solves are bounded (gcol33/tulpa#51): each is warm-started
 # from the modal cell's converged latent mode (the bulk of the importance
@@ -672,7 +675,8 @@
                                          fn_sigma, fn_alpha,
                                          max_iter, tol, n_threads,
                                          force_sparse, cell_coupling,
-                                         diagnose_k = TRUE, k_samples = 200L) {
+                                         diagnose_k = TRUE, k_samples = 200L,
+                                         n_threads_outer = 1L) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -680,6 +684,7 @@
 
     warm_mode  <- .joint_modal_mode(res)
     k_max_iter <- min(as.integer(max_iter), .K_DIAG_MAX_ITER)
+    n_to       <- as.integer(n_threads_outer)
 
     refit <- function(theta_mat) {
         cpp_grid <- .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp)
@@ -697,7 +702,7 @@
             x_init_nullable = warm_mode,
             store_Q      = FALSE,
             phi_grid_per_arm = phi_ppa,
-            n_threads_outer = 1L,
+            n_threads_outer = n_to,
             tile_ids        = NULL,
             tile_pilot_cells = NULL,
             prune_tol       = 0.0,
@@ -1056,7 +1061,8 @@
                                         max_iter, tol, n_threads,
                                         force_sparse, cell_coupling,
                                         diagnose_k = diagnose_k,
-                                        k_samples  = k_samples)
+                                        k_samples  = k_samples,
+                                        n_threads_outer = n_threads_outer)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

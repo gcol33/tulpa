@@ -224,15 +224,15 @@ test_that("diagnose_k = FALSE skips k-hat and leaves modes unchanged", {
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
-    cp <- list(arm = "pos", alpha_grid = c(0.5, 1.0, 1.5))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0, 1.5))
 
     off <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior, copy = cp,
+        responses = arms, prior = prior,
         control = list(diagnose_k = FALSE))
     expect_true(is.na(off$pareto_k))                 # gated off
 
     on <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior, copy = cp,
+        responses = arms, prior = prior,
         control = list(diagnose_k = TRUE, k_samples = 120L))
     expect_true(is.finite(on$pareto_k))
     # The inner solve is deterministic and the k-hat draws restore the RNG, so
@@ -252,17 +252,17 @@ test_that("a sub-floor k_samples declines to NA without paying the solves", {
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
-    cp <- list(arm = "pos", alpha_grid = c(0.5, 1.0, 1.5))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0, 1.5))
 
     fit <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior, copy = cp,
+        responses = arms, prior = prior,
         control = list(diagnose_k = TRUE, k_samples = 20L))
     expect_lt(20L, tulpa:::.PSIS_MIN_EVAL)
     expect_true(is.na(fit$pareto_k))
     expect_true(is.na(fit$pareto_k_is_ess))
     # The fit itself is unaffected.
     off <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior, copy = cp,
+        responses = arms, prior = prior,
         control = list(diagnose_k = FALSE))
     expect_equal(fit$log_marginal, off$log_marginal)
 })
@@ -279,21 +279,82 @@ test_that("warm-start + capped diagnostic iters leave the k-hat unchanged", {
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.8, 1.2))
-    cp <- list(arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5))
+    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
     ctrl <- list(diagnose_k = TRUE, k_samples = 200L, max_iter = 80L,
                  adaptive_grid = FALSE)
 
     capped <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior, copy = cp, control = ctrl)
+        responses = arms, prior = prior, control = ctrl)
 
     old <- tulpa:::.K_DIAG_MAX_ITER
     assignInNamespace(".K_DIAG_MAX_ITER", 10000L, ns = "tulpa")
     on.exit(assignInNamespace(".K_DIAG_MAX_ITER", old, ns = "tulpa"), add = TRUE)
     uncapped <- tulpa_nested_laplace_joint(
-        responses = .jpk_arms(sim), prior = prior, copy = cp, control = ctrl)
+        responses = arms, prior = prior, control = ctrl)
 
     expect_true(is.finite(capped$pareto_k))
     expect_equal(capped$pareto_k, uncapped$pareto_k, tolerance = 1e-3)
+})
+
+test_that("parallel diagnostic IS re-solves leave the k-hat unchanged (single-block)", {
+    skip_on_cran()
+    skip_if_not(parallel::detectCores() >= 2L,
+                "needs multi-core to exercise the parallel diagnostic path")
+    # The outer Pareto-k re-evaluates the inner joint marginal at each importance
+    # draw. Those re-solves are independent, so the diagnostic dispatches the
+    # whole batch across `n_threads_outer` (warm-started from the broadcast modal
+    # mode) instead of one-at-a-time. The converged per-draw log-marginal is
+    # warm-start- and thread-count-independent, so the k-hat must match the serial
+    # diagnostic to numerical noise (same RNG seed for the IS draws).
+    n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
+    sim <- .jpk_sim(seed = 83)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.8, 1.2))
+    ctrl <- function(n_to) list(diagnose_k = TRUE, k_samples = 200L,
+                                n_threads = 1L, n_threads_outer = n_to,
+                                adaptive_grid = FALSE,
+                                var_of_means_consistency = FALSE)
+    serial   <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5)), prior = prior,
+        control = ctrl(1L))
+    parallel <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5)), prior = prior,
+        control = ctrl(n_outer))
+    expect_true(is.finite(serial$pareto_k))
+    expect_equal(parallel$pareto_k, serial$pareto_k, tolerance = 1e-3)
+    expect_equal(parallel$pareto_k_is_ess, serial$pareto_k_is_ess,
+                 tolerance = 1e-3 * max(1, abs(serial$pareto_k_is_ess)))
+})
+
+test_that("parallel diagnostic IS re-solves leave the k-hat unchanged (multi-block)", {
+    skip_on_cran()
+    skip_if_not(parallel::detectCores() >= 2L,
+                "needs multi-core to exercise the parallel diagnostic path")
+    n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
+    sim <- .jpk_sim(seed = 87)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior_multi <- list(list(
+        type = "icar", n_spatial_units = adj$n_spatial_units,
+        adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+        n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.8),
+        spatial_idx = list(sim$spatial_idx, sim$spi_pos)))
+    cp <- list(block = 1, arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5))
+    ctrl <- function(n_to) list(diagnose_k = TRUE, k_samples = 200L,
+                                integration = "grid",
+                                n_threads = 1L, n_threads_outer = n_to,
+                                var_of_means_consistency = FALSE)
+    serial   <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms(sim), prior = prior_multi, copy = cp,
+        control = ctrl(1L))
+    parallel <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms(sim), prior = prior_multi, copy = cp,
+        control = ctrl(n_outer))
+    expect_true(is.finite(serial$pareto_k))
+    expect_equal(parallel$pareto_k, serial$pareto_k, tolerance = 1e-3)
+    expect_equal(parallel$pareto_k_is_ess, serial$pareto_k_is_ess,
+                 tolerance = 1e-3 * max(1, abs(serial$pareto_k_is_ess)))
 })
 
 test_that("diagnose_k does not perturb the global RNG state", {

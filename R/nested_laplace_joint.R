@@ -733,7 +733,8 @@ tulpa_nested_laplace_joint <- function(responses,
     res <- .joint_attach_pareto_k_single(res, kernel_fn, hp_fn,
                                          max_iter   = max_iter,
                                          diagnose_k = diagnose_k,
-                                         k_samples  = k_samples)
+                                         k_samples  = k_samples,
+                                         n_threads_outer = n_threads_outer)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

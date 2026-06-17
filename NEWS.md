@@ -1,5 +1,27 @@
 # tulpa NEWS
 
+## 0.0.38 (2026-06-17)
+
+* `laplace_diagnostics()`: a front-door diagnostic for deterministic
+  (i.i.d.-draw) nested-Laplace fits, the class `mcmc_diagnostics()` declines to
+  treat as MCMC. It returns a per-parameter table (posterior mean / sd, plus the
+  i.i.d.-draw bulk / tail effective sample size and split-Rhat of the draws,
+  labelled as Monte-Carlo diagnostics rather than chain mixing) and attaches the
+  reliability headline as attributes and a `summary` row: the PSIS Pareto-k-hat
+  of the outer hyperparameter integration scored against the exact inner-Laplace
+  marginal (Vehtari et al. 2024; Yao et al. 2018), and the grid quadrature
+  effective sample size `ess_grid = 1 / sum(w_k^2)`. `mcmc_diagnostics()` now
+  dispatches an i.i.d.-draw fit to `laplace_diagnostics()`.
+
+* Pareto-k diagnostic on the joint engine: the importance-sampling proposal is
+  now built on the grid axes that actually vary, so an outer grid that pins an
+  axis (for example `alpha.grid = 0`) no longer yields a singular `chol(Su)` that
+  silently skips the diagnostic; the k-hat is computed on the remaining axes.
+
+* Speed: the per-sample marginal re-solves of the Pareto-k diagnostic refit now
+  honour `n_threads_outer` (previously hardcoded to one thread), giving a
+  5.8-7.7x speedup on `diagnose.k = TRUE` fits with k-hat unchanged.
+
 ## 0.0.37 (2026-06-16)
 
 * build: the `tulpaMesh` dependency floor is raised to `tulpaMesh (>= 0.1.3)`,

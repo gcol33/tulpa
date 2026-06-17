@@ -14,6 +14,7 @@ dev_notes/
 dev_scripts/
 experimental/
 tmp_lib/
+_*.R
 .code-review-graph/
 .claude/
 claude/

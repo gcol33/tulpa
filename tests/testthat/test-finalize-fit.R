@@ -53,10 +53,12 @@ test_that("directly-called tulpa_laplace() is classed and provenance-tagged", {
   expect_equal(fit$n_fixed, 2L)
   expect_equal(fit$fixed_names, c("(Intercept)", "x"))
 
-  # Provenance gate: Laplace emits iid draws, so chain diagnostics are withheld
-  # (NULL) rather than reporting a vacuous single-chain Rhat.
+  # Provenance gate: Laplace emits iid draws, so mcmc_diagnostics() returns the
+  # approximation-reliability table (a `laplace_diagnostics`), not a chain Rhat
+  # table that would read as a vacuous single-chain convergence pass.
   expect_equal(fit$draws_kind, "iid")
-  expect_null(suppressMessages(mcmc_diagnostics(fit)))
+  d <- suppressMessages(mcmc_diagnostics(fit))
+  expect_s3_class(d, "laplace_diagnostics")
 })
 
 test_that("directly-called VI fit does not fake a convergence pass", {
@@ -87,6 +89,6 @@ test_that("directly-called VI fit does not fake a convergence pass", {
 
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$draws_kind, "iid")
-  # The exact false-convergence-pass the provenance gate prevents.
-  expect_null(suppressMessages(mcmc_diagnostics(fit)))
+  # An iid VI fit routes to the reliability table, not a chain Rhat pass.
+  expect_s3_class(suppressMessages(mcmc_diagnostics(fit)), "laplace_diagnostics")
 })

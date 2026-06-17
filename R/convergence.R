@@ -242,6 +242,9 @@
 # `tulpa_dispatch`) or derived from the backend's registry `emits` property.
 
 # Posterior representation kind: "chain", "iid", "point", or NA when unknown.
+# A model-package wrapper (e.g. a tobs_fit) may leave its own `draws_kind`
+# unset while carrying a nested-Laplace `joint_fit` that stamps the kind; that
+# inner tag is read when the top-level tag and backend give no answer.
 .tulpa_draws_kind <- function(fit) {
   k <- fit$draws_kind
   if (!is.null(k)) return(k)
@@ -249,6 +252,8 @@
   if (!is.null(b) && !is.null(BACKEND_REGISTRY[[b]])) {
     return(BACKEND_REGISTRY[[b]]$emits %||% NA_character_)
   }
+  jk <- fit$joint_fit$draws_kind
+  if (!is.null(jk)) return(jk)
   NA_character_
 }
 
@@ -388,11 +393,14 @@ get_draws_array <- function(fit) list(draws = tulpa_draws_array(fit))
 #' any number of chains. The estimators follow Vehtari et al. (2021) and
 #' reproduce the corresponding `posterior` functions.
 #'
-#' Returns `NULL` (with a message) for a fit whose draws are not an MCMC chain
-#' -- an i.i.d. / approximation fit such as nested Laplace, VI, or SMC -- where
-#' Rhat is vacuous and ESS equals the draw count by construction. Provenance is
-#' read from `$draws_kind` (or the backend's registry `emits` property); assess
-#' those fits with the approximation/coverage diagnostics instead.
+#' For a fit whose draws are not an MCMC chain -- an i.i.d. / approximation fit
+#' such as nested Laplace, VI, or SMC, where the between-chain Rhat is vacuous
+#' and ESS equals the draw count by construction -- this dispatches to
+#' [laplace_diagnostics()], returning the PSIS approximation-reliability table
+#' (the "did the approximation work" diagnostic) rather than chain mixing.
+#' Provenance is read from `$draws_kind` (or the backend's registry `emits`
+#' property). Pass a `point` fit (a mode + covariance, no sample) and the
+#' function returns `NULL` with a message.
 #'
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`. Multiple
 #'   chains are recognised from a 3D `[iter, chain, param]` draws array, a
@@ -420,8 +428,13 @@ mcmc_diagnostics <- function(fit, pars = NULL,
                              probs = c(0.05, 0.95)) {
   measures <- match.arg(measures, names(.tulpa_diag_measures), several.ok = TRUE)
   if (!.tulpa_is_chain(fit)) {
-    message(.tulpa_non_chain_msg(fit))
-    return(NULL)
+    # A point fit (mode + covariance) carries no sample to diagnose; an i.i.d.
+    # approximation fit dispatches to the PSIS reliability table.
+    if (identical(.tulpa_draws_kind(fit), "point")) {
+      message(.tulpa_non_chain_msg(fit))
+      return(NULL)
+    }
+    return(laplace_diagnostics(fit, pars = pars))
   }
   chain_list <- .tulpa_chain_list(fit)
   if (is.null(chain_list) || nrow(chain_list[[1L]]) < 4L) return(NULL)
