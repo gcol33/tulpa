@@ -12,10 +12,13 @@
 // GridProgress is the fix. Its two channels are independently gated, because a
 // detached run (the case the file channel exists for) is exactly the case that
 // wants the console quiet:
-//   * a console line via Rcpp::Rcout + R_FlushConsole() -- best effort, for
-//     interactive/TTY runs; emitted only when `emit_console` is set, and
-//     suppressed inside an OpenMP parallel region because the R print API is
-//     not worker-thread safe;
+//   * a console line via Rcpp::Rcout + R_FlushConsole() -- emitted when
+//     `emit_console` is set. Inside an OpenMP parallel region only the master
+//     thread (thread 0, which is the R main thread) emits; worker threads never
+//     touch the R print API (not worker-thread safe) and only update the
+//     counter + heartbeat file. So the console advances newline by newline as
+//     the master completes cells, rather than freezing at the serial pilot
+//     until finish() (gcol33/tulpa#115);
 //   * a heartbeat file, overwritten and fflush+fclose'd each tick, holding the
 //     machine-readable "<done> <total> <elapsed_s> <eta_s>". Written whenever
 //     `heartbeat_file` is non-empty, independent of `emit_console`. A file
@@ -86,20 +89,22 @@ public:
           last_emit_done_(0),
           width_(1),
           start_(std::chrono::steady_clock::now()),
-          last_(start_) {}
+          last_(start_),
+          last_console_(start_),
+          last_console_done_(0),
+          pilot_elapsed_(-1.0) {}
 
     // Revise the denominator (e.g. after cheap-pass pruning drops cells from
     // the full-solve set). done_ is left untouched.
     void set_total(int total) { if (total > 0) total_ = total; }
 
     // Outer-grid concurrency: how many cells run at once in the parallel
-    // region. The ETA needs it because the pilot cell runs serially and the
-    // remaining cells run `width` at a time; extrapolating the serial pilot
-    // rate across every remaining cell over-states the wall-clock by ~`width`x
-    // (a 21-min pilot on a 48-cell grid projects to ~16 h instead of the real
-    // ~1.5 h). It also drives the "| N threads" console suffix when > 1, so the
-    // active outer-thread count is visible in the line (gcol33/tulpa#88).
-    // Defaults to 1 (the serial path, unchanged: no suffix).
+    // region. Used for the "| N threads" console suffix when > 1, so the active
+    // outer-thread count is visible in the line (gcol33/tulpa#88), and as the
+    // wave width for the pilot-only ETA lower bound before any parallel cell has
+    // completed (see maybe_emit). Once parallel cells finish, the ETA rests on
+    // their realised throughput, which already folds the width in. Defaults to 1
+    // (the serial path: no suffix, plain extrapolation).
     void set_width(int width) { width_ = (width > 0) ? width : 1; }
 
     // One completed outer cell. Under OpenMP, call from a critical section.
@@ -145,50 +150,100 @@ public:
 private:
     void maybe_emit(bool force) {
         auto now = std::chrono::steady_clock::now();
-        double since = std::chrono::duration<double>(now - last_).count();
+        double elapsed = std::chrono::duration<double>(now - start_).count();
+        // The first completed cell is the serial pilot under the parallel path
+        // (a cheap, warm, central grid point); record its wall time once so the
+        // ETA below can measure the realised parallel throughput net of it.
+        if (pilot_elapsed_ < 0.0 && done_ >= 1) pilot_elapsed_ = elapsed;
+
         bool first    = (done_ == 1);
         bool by_cells = (every_ > 0) && (done_ - last_emit_done_ >= every_);
-        bool by_time  = (throttle_s_ > 0.0) && (since >= throttle_s_);
-        if (!force && !first && !by_cells && !by_time) return;
+        double since_file = std::chrono::duration<double>(now - last_).count();
+        bool by_time  = (throttle_s_ > 0.0) && (since_file >= throttle_s_);
+        bool do_file  = force || first || by_cells || by_time;
 
-        double elapsed = std::chrono::duration<double>(now - start_).count();
-        double frac = (total_ > 0) ? static_cast<double>(done_) / total_ : 0.0;
-        // ETA from the per-cell *wall* time, estimated from completed waves
-        // rather than completed cells: one serial pilot wave plus (done-1)/width
-        // parallel waves. Remaining cells finish ceil((total-done)/width) waves
-        // ahead. At width == 1 this is exactly the old serial extrapolation
-        // (waves == done, eta == elapsed*(1-frac)/frac); at width > 1 it stops
-        // the serial pilot rate from inflating the projection across the
-        // parallel grid, and it stays correct once parallel throughput is
-        // reached (`per` below is the serial-equivalent per-cell wall time).
-        double w = static_cast<double>(width_ > 0 ? width_ : 1);
-        double waves_done = 1.0 + (done_ - 1.0) / w;            // >= 1 for done >= 1
-        double per = (waves_done > 0.0) ? elapsed / waves_done : 0.0;
-        double remaining_waves =
-            (total_ > done_) ? std::ceil((total_ - done_) / w) : 0.0;
-        double eta = (frac < 1.0) ? remaining_waves * per : 0.0;
-
-        // Heartbeat file: reliable across stdout redirection. Overwrite +
-        // fflush + fclose each tick so a detached reader always sees the
-        // latest "<done> <total> <elapsed_s> <eta_s>".
-        if (!file_.empty()) {
-            std::FILE* f = std::fopen(file_.c_str(), "w");
-            if (f) {
-                std::fprintf(f, "%d %d %.1f %.1f\n", done_, total_, elapsed, eta);
-                std::fflush(f);
-                std::fclose(f);
-            }
-        }
-
-        // Console line: only when requested (emit_console_), and only from the
-        // serial/master context. Rcpp::Rcout and R_FlushConsole touch the R
-        // print API, which is not safe to call from an OpenMP worker thread; the
-        // heartbeat file above is the parallel-run (and headless) signal.
+        // The console emits only from the serial/master context: Rcpp::Rcout and
+        // R_FlushConsole touch the R print API, safe on the R main thread but not
+        // on an OpenMP worker. Inside the outer-grid parallel region the master
+        // thread (thread 0 == the R main thread) still emits, so a detached /
+        // redirected run shows the line advancing instead of frozen at the pilot
+        // (gcol33/tulpa#115). Its cadence rides a SEPARATE clock so that worker
+        // ticks updating the heartbeat file do not keep resetting the throttle
+        // window out from under the master and starve the console.
         bool in_parallel = false;
+        bool is_master   = true;
 #ifdef _OPENMP
         in_parallel = (omp_in_parallel() != 0);
+        is_master   = (omp_get_thread_num() == 0);
 #endif
-        if (emit_console_ && !in_parallel) {
+        double since_console =
+            std::chrono::duration<double>(now - last_console_).count();
+        bool console_by_time  = (throttle_s_ > 0.0) && (since_console >= throttle_s_);
+        bool console_by_cells = (every_ > 0) && (done_ - last_console_done_ >= every_);
+        bool do_console = emit_console_ && (!in_parallel || is_master) &&
+                          (force || first || console_by_time || console_by_cells);
+
+        if (!do_file && !do_console) return;
+
+        double frac = (total_ > 0) ? static_cast<double>(done_) / total_ : 0.0;
+
+        // ETA from the realised per-cell *wall* time of completed cells, not the
+        // serial pilot. The pilot is the central grid cell, solved serially and
+        // warm; the parallel cells are extreme-hyperparameter, need more inner
+        // Newton steps, and run under memory-bandwidth contention, so each costs
+        // well more than the pilot. Projecting the pilot rate across the grid
+        // under-states the wall clock by roughly that ratio (gcol33/tulpa#115).
+        //   * once >= 1 cell beyond the pilot has finished, `per` is the mean
+        //     wall time per post-pilot cell (elapsed-since-pilot over cells-
+        //     since-pilot) -- the throughput the remaining cells actually run
+        //     at, the width already folded in -- and the ETA is a point estimate;
+        //   * until then only the cheap pilot is timed, so the projection
+        //     (ceil(remaining / width) pilot-cost waves) is a LOWER bound, shown
+        //     as "ETA >=" so it is not read as a point estimate.
+        // At width == 1 (serial) the post-pilot mean equals the per-cell time and
+        // this reduces to the plain serial extrapolation.
+        double per;
+        double eta;
+        bool   eta_is_lower_bound;
+        double post_done    = static_cast<double>(done_) - 1.0;
+        double post_elapsed = elapsed - pilot_elapsed_;
+        if (frac >= 1.0) {
+            per = (done_ > 0) ? elapsed / done_ : 0.0;
+            eta = 0.0;
+            eta_is_lower_bound = false;
+        } else if (post_done >= 1.0 && post_elapsed > 1e-9) {
+            per = post_elapsed / post_done;
+            eta = (total_ - done_) * per;
+            eta_is_lower_bound = false;
+        } else {
+            double w = static_cast<double>(width_ > 0 ? width_ : 1);
+            per = (done_ > 0) ? elapsed / done_ : 0.0;
+            double remaining_waves =
+                (total_ > done_) ? std::ceil((total_ - done_) / w) : 0.0;
+            eta = remaining_waves * per;
+            eta_is_lower_bound = true;
+        }
+
+        // Heartbeat file: reliable across stdout redirection. Overwrite +
+        // fflush + fclose each tick so a detached reader always sees the latest
+        // "<done> <total> <elapsed_s> <eta_s>". The wire format is unchanged
+        // (four numbers); the lower-bound vs point-estimate distinction is a
+        // console-only annotation so existing readers keep parsing.
+        if (do_file) {
+            if (!file_.empty()) {
+                std::FILE* f = std::fopen(file_.c_str(), "w");
+                if (f) {
+                    std::fprintf(f, "%d %d %.1f %.1f\n",
+                                 done_, total_, elapsed, eta);
+                    std::fflush(f);
+                    std::fclose(f);
+                }
+            }
+            last_ = now;
+            last_emit_done_ = done_;
+        }
+
+        if (do_console) {
             int pct = (total_ > 0)
                           ? static_cast<int>(frac * 100.0 + 0.5) : 0;
             // Outer concurrency suffix: width_ is the realised number of units
@@ -199,20 +254,20 @@ private:
             char thr[32] = "";
             if (width_ > 1)
                 std::snprintf(thr, sizeof(thr), " | %d threads", width_);
-            char line[288];
+            char line[300];
             std::snprintf(line, sizeof(line),
-                "[%s] %d/%d %s (%d%%) | elapsed %s | ETA ~%s | %.2fs/%s%s",
+                "[%s] %d/%d %s (%d%%) | elapsed %s | ETA %s%s | %.2fs/%s%s",
                 label_.c_str(), done_, total_, unit_.c_str(), pct,
                 format_secs(elapsed).c_str(),
+                (frac >= 1.0) ? "" : (eta_is_lower_bound ? ">=" : "~"),
                 (frac >= 1.0) ? "done" : format_secs(eta).c_str(),
                 per, unit_.c_str(), thr);
             Rcpp::Rcout << line << "\n";
             Rcpp::Rcout.flush();
             R_FlushConsole();
+            last_console_ = now;
+            last_console_done_ = done_;
         }
-
-        last_ = now;
-        last_emit_done_ = done_;
     }
 
     std::string label_;
@@ -227,6 +282,9 @@ private:
     int    width_;
     std::chrono::steady_clock::time_point start_;
     std::chrono::steady_clock::time_point last_;
+    std::chrono::steady_clock::time_point last_console_;
+    int    last_console_done_;
+    double pilot_elapsed_;
 };
 
 }  // namespace tulpa_progress

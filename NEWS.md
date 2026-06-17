@@ -1,6 +1,32 @@
 # tulpa NEWS
 
-## 0.0.39 (2026-06-17)
+## 0.0.40 (2026-06-17)
+
+* Outer-grid progress reporter (`tulpa_progress::GridProgress`, the
+  nested-Laplace grid and parallel NUTS sampler): two fixes for long detached /
+  redirected runs (gcol33/tulpa#115).
+    * **ETA from realised throughput, not the serial pilot.** The ETA used to
+      project the central, warm, serial pilot cell's per-cell rate across the
+      whole grid. The parallel cells are extreme-hyperparameter, take more inner
+      Newton steps, and run under memory-bandwidth contention, so each costs
+      well more than the pilot -- the projection ran badly optimistic
+      (observed ~10x low). It now rests on the mean wall time of completed
+      POST-pilot cells (the throughput the remaining cells actually run at, the
+      outer width already folded in). While only the pilot has been timed the
+      projection is shown as a lower bound (`ETA >=`) rather than a point
+      estimate (`ETA ~`), and the printed `s/cells` tracks the running average.
+      At width 1 (serial) this reduces to the plain extrapolation.
+    * **Live console in a detached parallel run.** The console line used to
+      freeze at the serial pilot (`1/N`) because every parallel tick suppressed
+      the console (worker threads must not touch the R print API), leaving only
+      the heartbeat file advancing. The master thread (thread 0, the R main
+      thread) now emits the newline-terminated line from inside the parallel
+      region on its own throttle clock, so a redirected log shows the grid
+      advancing cell by cell. Worker threads still only update the counter and
+      heartbeat file; the heartbeat-file wire format
+      (`<done> <total> <elapsed_s> <eta_s>`) is unchanged, so existing readers
+      keep parsing.
+
 
 * Joint nested-Laplace multi-block driver: two random-effect capabilities for
   random **slopes** on an observation arm (gcol33/tulpa#114), so a downstream
