@@ -1,5 +1,35 @@
 # tulpa NEWS
 
+## 0.0.46 (2026-06-18)
+
+* Joint nested-Laplace outer Pareto-k: grid-mixture (basin) importance proposal
+  (gcol33/tulpa#121). The engine represents the hyperparameter posterior as the
+  weighted integration grid and draws hyperparameters from it (a grid cell
+  proportional to its weight, then that cell's latent Laplace), never from a
+  single continuous Gaussian. The diagnostic, however, scored a single
+  grid-moment Gaussian fit to the grid's mean and covariance. On a skewed or
+  multi-node hyperparameter posterior, which the grid covers through its nodes,
+  that symmetric Gaussian underweights the off-mode mass: importance draws
+  landing there carry runaway weights and the k-hat reads unreliable even though
+  the grid representation, and the per-cell estimates drawn from it, are fine.
+  The spread-tensor `grid_moment` path now also scores the proposal the engine
+  actually samples, a defensive mixture of local Gaussian bumps at the grid cells
+  mixed by the grid weights (`proposal_source = "grid_mixture"`); each bump's
+  per-axis SD is `getOption("tulpa.kdiag.mix_bw", 0.5)` times the largest grid gap
+  on that axis. Because that mixture is confined to the grid, it is adopted only
+  when the grid actually covers the posterior (the grid-moment Gaussian's
+  importance weight stays inside the mixture's coverage hull) and it lowers the
+  k-hat: a target tail beyond the grid keeps the single Gaussian's higher k so the
+  grid-width deficiency is still flagged, a near-collapsed grid keeps the
+  moment-matched Gaussian, and no fit that already read usable can regress. A true
+  delta collapse still uses the finite-difference mode-Hessian and a supplied CCD
+  mode-Hessian proposal still uses the single Gaussian, both unchanged. The fit,
+  its per-cell estimates and coefficients are untouched; only the reliability
+  diagnostic changes. On a real EVA-scale occu_cover fit whose occupancy field-SD
+  posterior is right-skewed the reported k-hat goes from a seed lottery (0.10 to
+  0.81, peaks flagged unreliable) to a stable usable band (max ~0.47 across seeds,
+  median ~0.16) with a roughly two-fold higher importance-sampling effective size.
+
 ## 0.0.45 (2026-06-18)
 
 * `tulpa_criteria()` gains a `group` argument that sets the LOO unit explicitly

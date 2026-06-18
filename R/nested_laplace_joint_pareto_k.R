@@ -29,6 +29,56 @@
 # reaches the usable band, so a proposal that already fits pays a single pass.
 .K_DIAG_MM_MAX <- 5L
 
+# Usable-band threshold for the outer Pareto-k-hat (Vehtari, Simpson, Gelman,
+# Yao & Gabry 2024): at or below this the proposal can be reliably corrected to
+# the target, above it cannot. Single source for the moment-matching early-stop.
+.K_DIAG_USABLE <- 0.7
+
+# Grid-mixture (basin) proposal for the outer Pareto-k on a spread tensor grid
+# (gcol33/tulpa#121). The nested-Laplace engine represents the hyperparameter
+# posterior as the WEIGHTED INTEGRATION GRID and draws hyperparameters from it (a
+# grid cell ~ its weight, then that cell's latent Laplace), never from one
+# continuous Gaussian. Scoring the outer Pareto-k against a single grid-moment
+# Gaussian therefore validates a proposal the engine does not sample: on a skewed
+# or multi-node hyperparameter posterior (which the grid covers through its
+# nodes) the symmetric Gaussian underweights the off-mode mass, importance draws
+# that land there carry runaway weights, and the k-hat reads unreliable even
+# though the grid representation is fine. The faithful proposal is a defensive
+# mixture of local Gaussian bumps centred at the grid cells and mixed by the grid
+# weights, the smoothed form of what the integrator actually represents; it
+# covers the skew by construction, so the weights stay bounded. Each bump's
+# per-axis SD is `.K_DIAG_MIX_BW` times the largest adjacent grid gap on that
+# axis (the scale over which that axis is resolved); cells below
+# `.K_DIAG_MIX_FLOOR` of the peak weight are dropped. The bandwidth is
+# overridable via `getOption("tulpa.kdiag.mix_bw")`.
+.K_DIAG_MIX_BW    <- 0.5
+.K_DIAG_MIX_FLOOR <- 1e-3
+
+# Minimum importance draws for the grid-mixture k-hat (gcol33/tulpa#121). The
+# production `k_samples` (200) is tuned for the single-Gaussian + moment-matching
+# path; the mixture's GPD tail-shape k-hat needs a longer tail to be stable across
+# seeds (at 200 it swings, at ~600 it settles). The extra draws are one cheap
+# batch -- they stay near the grid cells, so no inner Newton stalls. Overridable
+# via `getOption("tulpa.kdiag.mix_samples")`.
+.K_DIAG_MIX_SAMPLES <- 600L
+
+# Grid-coverage tolerance for adopting the grid-mixture over the single Gaussian
+# (gcol33/tulpa#121). The mixture is confined to the grid's coordinate hull, so it
+# cannot detect a target tail BEYOND the grid; the single Gaussian, whose tails
+# extend past the grid, can. The dispatcher therefore adopts the mixture only when
+# the single Gaussian's importance weight is essentially all INSIDE the grid hull
+# (the grid covers the posterior, so the high single-Gaussian k-hat is a within-
+# grid shape mismatch the mixture corrects): at most this fraction of the weight
+# may sit outside. Above it the grid is too narrow, and the single Gaussian's
+# higher k-hat is kept so that grid-width deficiency is still flagged. The "hull"
+# is the kept-cell node range EXPANDED by `.K_DIAG_HULL_PAD` bump SDs per axis,
+# i.e. the mixture's actual coverage: its edge bumps reach ~3 SD past the outer
+# node, so a draw that far out is still covered (a near-edge dip below the lowest
+# node is not "beyond the grid"); only mass past the bumps' reach counts as
+# uncovered.
+.K_DIAG_HULL_TOL <- 0.02
+.K_DIAG_HULL_PAD <- 3
+
 # Shamanskii (chord) factor-reuse interval for the diagnostic re-solves
 # (gcol33/tulpa#118). Profiling the joint occu_cover diagnostic showed the
 # dominant cost is NOT the sparse Cholesky factorize (~8-12%, flat ~0.5 ms up to
@@ -586,7 +636,33 @@
     }
 
     list(tags = tags, u_grid = u_grid, u_hat = u_hat, Su = Su, cn = cn, d = d,
-         proposal_source = proposal_source)
+         w = w, proposal_source = proposal_source)
+}
+
+# The outer target on the varying subspace `vary`: embed an [S x |vary|] block
+# into the full d-space at `u_hat` (axes outside `vary` held at their posterior
+# mean), back-transform each axis to user-facing theta with its log-Jacobian,
+# and call the inner re-solve. Shared by the single-Gaussian scorer
+# (.joint_pareto_score) and the grid-mixture scorer (.joint_pareto_score_mixture)
+# so both evaluate the identical target (gcol33/tulpa#121).
+.joint_pareto_make_lt <- function(prep, vary, refit_log_marginal) {
+    u_hat <- prep$u_hat; tags <- prep$tags; cn <- prep$cn; d <- prep$d
+    function(U_v) {
+        S <- nrow(U_v)
+        U <- matrix(u_hat, S, d, byrow = TRUE)
+        U[, vary] <- U_v
+        theta_mat <- matrix(0, S, d)
+        log_jac   <- numeric(S)
+        for (j in seq_len(d)) {
+            iv <- .joint_pareto_inv(tags[j], U[, j])
+            theta_mat[, j] <- iv$theta
+            log_jac <- log_jac + iv$log_jac
+        }
+        colnames(theta_mat) <- cn
+        lm <- refit_log_marginal(theta_mat)
+        if (length(lm) != S) return(rep(-Inf, S))
+        lm + log_jac
+    }
 }
 
 # Score the outer Pareto-k over a chosen set of varying axes `vary`, holding the
@@ -626,37 +702,29 @@
     if (is.null(L_v)) return(NULL)
     u_hat_v <- u_hat[vary]
 
-    lt <- function(U_v) {
-        S <- nrow(U_v)
-        U <- matrix(u_hat, S, d, byrow = TRUE)   # axes outside `vary` at u_hat
-        U[, vary] <- U_v
-        theta_mat <- matrix(0, S, d)
-        log_jac   <- numeric(S)
-        for (j in seq_len(d)) {
-            iv <- .joint_pareto_inv(tags[j], U[, j])
-            theta_mat[, j] <- iv$theta
-            log_jac <- log_jac + iv$log_jac
-        }
-        colnames(theta_mat) <- cn
-        lm <- refit_log_marginal(theta_mat)
-        if (length(lm) != S) return(rep(-Inf, S))
-        lm + log_jac
-    }
+    lt <- .joint_pareto_make_lt(prep, vary, refit_log_marginal)
 
     u_grid_v <- u_grid[, vary, drop = FALSE]
     prop_u  <- u_hat_v
     prop_L  <- L_v
     best    <- NULL
     refined <- FALSE
+    gm_U <- NULL; gm_lw <- NULL          # first-pass (grid-moment) draws + weights
     for (iter in seq_len(.K_DIAG_MM_MAX)) {
         rc <- .nested_grid_radius_cap(u_grid_v, prop_u, prop_L)
         kd <- tryCatch(.nested_is_pareto_k(prop_u, prop_L, lt, n_samples,
                                            radius_cap = rc, return_draws = TRUE),
                        error = function(e) NULL)
         if (is.null(kd) || !is.finite(kd$pareto_k)) break
+        # The first pass is the canonical grid-moment Gaussian -- its draws span
+        # the actual posterior spread (not the moment-matching-widened proposal,
+        # which scatters seed-dependently). The dispatcher's grid-coverage check
+        # reads these so its decision is stable across RNG seeds (gcol33/tulpa#121).
+        if (iter == 1L) { gm_U <- kd$U; gm_lw <- kd$log_weights }
         if (is.null(best) || kd$pareto_k < best$pareto_k)
-            best <- list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, refined = refined)
-        if (kd$pareto_k <= 0.7 || iter == .K_DIAG_MM_MAX) break
+            best <- list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, refined = refined,
+                         U = kd$U, log_weights = kd$log_weights)
+        if (kd$pareto_k <= .K_DIAG_USABLE || iter == .K_DIAG_MM_MAX) break
         wts <- exp(kd$log_weights); sw <- sum(wts)
         if (!is.finite(sw) || sw <= 0 || nrow(kd$U) < length(prop_u) + 1L) break
         wts   <- wts / sw
@@ -667,7 +735,165 @@
         if (is.null(Lw)) break
         prop_u <- mu_w; prop_L <- Lw; refined <- TRUE
     }
+    if (!is.null(best)) { best$gm_U <- gm_U; best$gm_lw <- gm_lw }
     best
+}
+
+# Grid-mixture (basin) outer Pareto-k scorer (gcol33/tulpa#121). Scores the
+# diagnostic against the proposal the engine ACTUALLY samples hyperparameters
+# from: a defensive mixture q(u) = sum_k w_k N(u_k, diag(s^2)) of local Gaussian
+# bumps at the integration-grid cells `u_k` (projected onto `vary`), mixed by the
+# grid weights `w_k`. This covers a skewed or multi-node hyperparameter posterior
+# by construction (the single grid-moment Gaussian cannot), so the importance
+# weights stay bounded and the k-hat reflects the grid representation's fidelity
+# rather than a Gaussian's mismatch to a skewed marginal. Per-axis bump SD is
+# `bw * (largest adjacent grid gap on that axis)`, falling back to the
+# grid-weighted SD where an axis keeps a single distinct value. Draws at least
+# `.K_DIAG_MIX_SAMPLES` points (the production k_samples is tuned for the
+# single-Gaussian + moment-matching path; the mixture's tail-shape k-hat needs a
+# longer tail to be stable across seeds, and the extra draws are one cheap batch
+# with no inner Newton stalls since they stay near the grid). Returns
+# list(pareto_k, is_ess, refined = FALSE, s, lo, hi) -- `s` the per-axis bump SD
+# and `lo` / `hi` the kept-cell node range on `vary`, which the dispatcher uses to
+# bound the mixture's coverage -- or NULL to fall back to the single-Gaussian
+# scorer (fewer than two distinct weighted cells -- not actually spread -- or too
+# few finite importance draws). Like .joint_pareto_score it does NOT manage the
+# RNG (the driver saves / restores it once around all scoring).
+.joint_pareto_score_mixture <- function(prep, vary, refit_log_marginal, n_samples) {
+    if (length(vary) == 0L) return(NULL)
+    w <- prep$w
+    if (is.null(w) || !any(is.finite(w)) || sum(w) <= 0) return(NULL)
+    cu   <- prep$u_grid[, vary, drop = FALSE]
+    keep <- is.finite(w) & w >= .K_DIAG_MIX_FLOOR * max(w)
+    cu   <- cu[keep, , drop = FALSE]
+    wk   <- w[keep]
+    if (nrow(cu) < 2L) return(NULL)
+
+    # Collapse cells that coincide on the `vary` axes (a pinned axis dropped here
+    # can repeat a varying-axis point across its values): sum their weights so
+    # each mixture component is a distinct varying-subspace cell.
+    key <- apply(round(cu, 10L), 1L, paste, collapse = "\r")
+    if (anyDuplicated(key)) {
+        first <- !duplicated(key)
+        wk    <- as.numeric(tapply(wk, factor(key, levels = key[first]), sum))
+        cu    <- cu[first, , drop = FALSE]
+    }
+    K <- nrow(cu); p <- ncol(cu)
+    if (K < 2L) return(NULL)
+    wk <- wk / sum(wk)
+
+    bw   <- as.numeric(getOption("tulpa.kdiag.mix_bw", .K_DIAG_MIX_BW))
+    sdax <- sqrt(pmax(diag(prep$Su[vary, vary, drop = FALSE]), 0))
+    # Bump SD from the FULL grid's node spacing on each axis (the grid's actual
+    # resolution), NOT the floor-surviving cells: when the posterior weight
+    # concentrates on one node of an axis only that cell survives the floor, and a
+    # gap from the kept cells alone would collapse to a degenerate near-zero width
+    # (a spike the single-Gaussian's near-mode draws then read as "uncovered").
+    full_v <- prep$u_grid[, vary, drop = FALSE]
+    gap  <- vapply(seq_len(p), function(j) {
+        u <- sort(unique(full_v[, j])); if (length(u) < 2L) NA_real_ else max(diff(u))
+    }, numeric(1))
+    s   <- bw * gap
+    bad <- !is.finite(s) | s <= 0
+    s[bad] <- (bw * sdax)[bad]
+    s[!is.finite(s) | s <= 0] <- 1e-3
+
+    n_mix <- max(as.integer(n_samples),
+                 as.integer(getOption("tulpa.kdiag.mix_samples", .K_DIAG_MIX_SAMPLES)))
+    lt   <- .joint_pareto_make_lt(prep, vary, refit_log_marginal)
+    comp <- sample.int(K, n_mix, replace = TRUE, prob = wk)
+    U_v  <- cu[comp, , drop = FALSE] +
+            sweep(matrix(stats::rnorm(n_mix * p), n_mix, p), 2L, s, `*`)
+
+    # log q(u) up to the per-component-common diagonal normalizer (the SAME `s`
+    # for every component, so it cancels under PSIS): logsumexp over components of
+    # log w_k - 0.5 sum_j ((u_j - u_kj) / s_j)^2.
+    tcu  <- t(cu)
+    logq <- vapply(seq_len(n_mix), function(i) {
+        q <- log(wk) - 0.5 * colSums(((tcu - U_v[i, ]) / s)^2)
+        m <- max(q); if (!is.finite(m)) return(-Inf)
+        m + log(sum(exp(q - m)))
+    }, numeric(1))
+
+    ltv <- lt(U_v)
+    if (length(ltv) != n_mix) return(NULL)
+    lr  <- ltv - logq
+    fin <- is.finite(lr)
+    if (sum(fin) < .PSIS_MIN_EVAL) return(NULL)
+    ps <- tulpa_psis(lr[fin])
+    if (!is.finite(ps$pareto_k)) return(NULL)
+    list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, refined = FALSE,
+         s = s, lo = apply(cu, 2L, min), hi = apply(cu, 2L, max))
+}
+
+# Fraction of the single-Gaussian importance weight that falls OUTSIDE the
+# mixture's coverage hull (gcol33/tulpa#121). `U` are the proposal's importance
+# draws on the varying subspace, `log_weights` their PSIS-smoothed (normalized)
+# log weights, `lo` / `hi` the per-axis coverage bounds (the kept-cell node range
+# expanded by a few bump SDs -- the mixture's actual reach). A draw is outside if
+# any axis falls beyond [lo, hi]. The WEIGHT (not count) outside measures how much
+# target mass sits beyond what the mixture covers: small => the grid covers the
+# posterior (a high single-Gaussian k-hat is then a within-grid shape mismatch the
+# mixture can fix); large => the grid is too narrow and the single Gaussian's
+# k-hat must stand. Returns NA when draws / weights are unavailable.
+.joint_pareto_hull_weight <- function(U, log_weights, lo, hi) {
+    if (is.null(U) || is.null(log_weights) || !is.matrix(U) || nrow(U) == 0L ||
+        length(log_weights) != nrow(U)) return(NA_real_)
+    outside <- logical(nrow(U))
+    for (j in seq_len(ncol(U))) outside <- outside | (U[, j] < lo[j]) | (U[, j] > hi[j])
+    w <- exp(log_weights - max(log_weights))
+    sw <- sum(w)
+    if (!is.finite(sw) || sw <= 0) return(NA_real_)
+    sum(w[outside]) / sw
+}
+
+# Dispatch the outer Pareto-k scoring to the right proposal (gcol33/tulpa#121).
+# Always scores the single-Gaussian proposal (the grid-moment / mode-Hessian / CCD
+# Gaussian with moment-matching refinement), whose tails extend beyond the grid so
+# it detects a target heavier than the grid represents (the grid-width signal). On
+# a spread-tensor `grid_moment` grid it ALSO scores the grid-mixture proposal --
+# the faithful representation of what the engine samples (a local bump at each grid
+# cell, mixed by the grid weights), which covers a skewed / multi-node posterior
+# the single Gaussian underweights WITHIN the grid. The mixture covers only the
+# grid (its bumps reach a few SDs past the outer nodes), so it is adopted only when
+# (1) the single Gaussian's importance weight is essentially all inside that
+# coverage hull -- the grid covers the posterior, so a high single-Gaussian k-hat
+# is a within-grid shape mismatch -- AND (2) the mixture gives a lower k-hat.
+# Otherwise the single Gaussian stands: a target tail beyond the grid keeps its
+# (higher) k-hat so the grid-width deficiency is flagged, and a near-collapsed grid
+# (where the mixture's few bumps cover worse) keeps the moment-matched Gaussian. A
+# true delta collapse and a supplied CCD proposal are not `grid_moment`, so only
+# the single Gaussian is scored. Returns list(best, source) or NULL. Shared by the
+# joint k and the per-arm k.
+.joint_pareto_score_dispatch <- function(prep, vary, refit_log_marginal, n_samples) {
+    g     <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples)
+    g_src <- if (!is.null(g) && isTRUE(g$refined)) "moment_matched"
+             else prep$proposal_source
+    g_out <- if (is.null(g)) NULL else list(best = g, source = g_src)
+
+    if (!identical(prep$proposal_source, "grid_moment")) return(g_out)
+    mix <- .joint_pareto_score_mixture(prep, vary, refit_log_marginal, n_samples)
+    if (is.null(mix)) return(g_out)
+    if (is.null(g))   return(list(best = mix, source = "grid_mixture"))
+
+    # The mixture's coverage hull: the kept-cell node range expanded by a few bump
+    # SDs (its edge bumps reach that far past the outer nodes). A grid-moment draw
+    # beyond this is mass the mixture genuinely cannot see. The check reads the
+    # first-pass GRID-MOMENT draws (`gm_U`), whose spread is the posterior's, so
+    # the decision does not depend on how the moment-matching happened to widen the
+    # proposal on a given seed.
+    gm_U  <- g$gm_U %||% g$U
+    gm_lw <- g$gm_lw %||% g$log_weights
+    out_frac <- .joint_pareto_hull_weight(
+        gm_U, gm_lw,
+        mix$lo - .K_DIAG_HULL_PAD * mix$s, mix$hi + .K_DIAG_HULL_PAD * mix$s)
+    covered  <- is.finite(out_frac) && out_frac <= .K_DIAG_HULL_TOL
+    # Adopt the mixture only when the grid covers the posterior AND the mixture
+    # gives a lower k-hat, so the reported reliability can only improve over the
+    # single Gaussian -- never regress a fit that already read usable.
+    better   <- is.finite(mix$pareto_k) && is.finite(g$pareto_k) &&
+                mix$pareto_k < g$pareto_k
+    if (covered && better) list(best = mix, source = "grid_mixture") else g_out
 }
 
 # Shared outer Pareto-k-hat driver for a joint nested-Laplace result. Prepares
@@ -700,19 +926,18 @@
     # deficient and its Cholesky undefined. The importance proposal holds them
     # fixed at u_hat and is built only on the varying axes (gcol33/tulpa#114).
     vary  <- .joint_pareto_vary_axes(prep$Su)
-    joint <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples)
+    joint <- .joint_pareto_score_dispatch(prep, vary, refit_log_marginal, n_samples)
     if (is.null(joint)) return(na_out)
-    src <- if (isTRUE(joint$refined)) "moment_matched" else prep$proposal_source
-    out <- list(pareto_k = joint$pareto_k, is_ess = joint$is_ess,
-                proposal_source = src)
+    out <- list(pareto_k = joint$best$pareto_k, is_ess = joint$best$is_ess,
+                proposal_source = joint$source)
 
     if (!is.null(arm_axes) && length(arm_axes) > 0L) {
         pa <- lapply(arm_axes, function(ax) {
             v <- intersect(vary, as.integer(ax))
             s <- if (length(v) == 0L) NULL else
-                .joint_pareto_score(prep, v, refit_log_marginal, n_samples)
+                .joint_pareto_score_dispatch(prep, v, refit_log_marginal, n_samples)
             if (is.null(s)) c(NA_real_, NA_real_)
-            else c(s$pareto_k, s$is_ess)
+            else c(s$best$pareto_k, s$best$is_ess)
         })
         out$by_arm_k      <- vapply(pa, function(z) z[[1L]], numeric(1))
         out$by_arm_is_ess <- vapply(pa, function(z) z[[2L]], numeric(1))

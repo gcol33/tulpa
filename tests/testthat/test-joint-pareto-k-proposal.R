@@ -98,13 +98,13 @@ test_that("a collapsed grid with degenerate curvature declines to NA", {
     }
 }
 
-test_that("a partial collapse with pinned axes keeps the grid-moment proposal", {
+test_that("a partial collapse with pinned axes recovers a usable k-hat", {
     # ess_grid <= d but the two sigma axes still carry weighted spread (only the
-    # alpha + phi axes are pinned): the grid-weighted Su is the actual posterior
-    # spread, so it is kept and the pinned axes are held fixed (gcol33/tulpa#119).
-    # The FD mode-Hessian is reserved for a TRUE delta collapse (no weighted
-    # spread on any axis); engaging it here would use the local mode curvature,
-    # which over-widens a non-Gaussian outer marginal.
+    # alpha + phi axes are pinned). The grid is spread, so the scorer considers
+    # both the single grid-moment Gaussian and the grid-mixture proposal and keeps
+    # whichever covers best (gcol33/tulpa#121); the FD mode-Hessian is reserved
+    # for a true delta collapse (gcol33/tulpa#119). The inner target here is
+    # Gaussian on the sigma axes, so either proposal gives a usable k-hat.
     res   <- .pk_pinned_res()
     wn    <- res$weights / sum(res$weights)
     expect_lt(1 / sum(wn^2), ncol(res$theta_grid))       # ess_grid <= d
@@ -113,9 +113,8 @@ test_that("a partial collapse with pinned axes keeps the grid-moment proposal", 
     kd <- tulpa:::.joint_pareto_k(res, .pk_refit_pinned(u_hat), n_samples = 200L,
                                   proposal = NULL)
     expect_false(is.na(kd$pareto_k))
-    # Grid-moment, or its moment-matching refinement -- NOT the FD mode-Hessian,
-    # which is reserved for a true delta collapse (gcol33/tulpa#119).
-    expect_true(kd$proposal_source %in% c("grid_moment", "moment_matched"))
+    expect_true(kd$proposal_source %in%
+                c("grid_moment", "moment_matched", "grid_mixture"))
     expect_true(is.finite(kd$is_ess) && kd$is_ess > 0)
     expect_lt(kd$pareto_k, 0.7)
 })
@@ -205,10 +204,13 @@ test_that("an inconsistent proposal is ignored (identical to no proposal)", {
 # Well-resolved grid: a matched proposal is a no-op                           #
 # --------------------------------------------------------------------------- #
 
-test_that("a proposal matching the grid covariance is a byte-exact no-op", {
-    # On a well-resolved grid (effective ESS > d, so no FD fallback) a proposal
-    # whose mean/covariance equal the grid-weighted estimate must not move the
-    # k-hat under a fixed seed.
+test_that("a well-resolved grid scores deterministically; a supplied proposal routes to the single Gaussian", {
+    # On a well-resolved spread grid (effective ESS > d) the scorer considers the
+    # single grid-moment Gaussian and the grid mixture and keeps the better-
+    # covering one (gcol33/tulpa#121). For a Gaussian inner target the single
+    # Gaussian is near-exact, so it typically wins on ESS; either way the result
+    # is deterministic under a fixed seed and usable. A SUPPLIED consistent
+    # proposal (e.g. a CCD mode-Hessian) routes to the single-Gaussian scorer.
     tg <- as.matrix(expand.grid(`b1.sigma` = c(0.55, 0.75, 1.0, 1.35, 1.8),
                                 `b1.rho`   = c(0.2, 0.35, 0.5, 0.65, 0.8)))
     colnames(tg) <- c("b1.sigma", "b1.rho")
@@ -218,22 +220,62 @@ test_that("a proposal matching the grid covariance is a byte-exact no-op", {
     w  <- exp(lm - max(lm)); w <- w / sum(w)
     res <- list(theta_grid = tg, weights = w,
                 axis_offsets = c(0L, 2L), blocks = list(list(type = "bym2")))
-    expect_gt(1 / sum(w^2), ncol(tg))        # not collapsed -> grid path, no FD
+    expect_gt(1 / sum(w^2), ncol(tg))        # not collapsed
     refit <- .pk_refit(u_hat0, s)
 
+    # NULL proposal -> ESS-selected proposal, deterministic under a fixed seed.
+    set.seed(42); k1 <- tulpa:::.joint_pareto_k(res, refit, 400L, NULL)
+    set.seed(42); k2 <- tulpa:::.joint_pareto_k(res, refit, 400L, NULL)
+    expect_true(k1$proposal_source %in% c("grid_moment", "moment_matched", "grid_mixture"))
+    expect_false(is.na(k1$pareto_k))
+    expect_equal(k2$pareto_k, k1$pareto_k)
+    expect_equal(k2$is_ess,   k1$is_ess)
+    expect_lt(k1$pareto_k, 0.7)              # Gaussian target, well covered
+
+    # A supplied consistent proposal routes to the single-Gaussian scorer.
     u_grid <- cbind(u1, u2)
     u_hat  <- as.numeric(crossprod(w, u_grid))
     cen    <- sweep(u_grid, 2L, u_hat)
     Su     <- crossprod(cen * w, cen); Su <- (Su + t(Su)) / 2
     prop   <- list(u_hat = u_hat, L_scale = t(chol(Su)),
                    tags = c("log", "logit01"), cols = 1:2)
+    set.seed(42); k_sup <- tulpa:::.joint_pareto_k(res, refit, 400L, prop)
+    expect_identical(k_sup$proposal_source, "mode_hessian")
+    expect_false(is.na(k_sup$pareto_k))
+    expect_lt(k_sup$pareto_k, 0.7)
+})
 
-    set.seed(42); k_grid <- tulpa:::.joint_pareto_k(res, refit, 400L, NULL)
-    set.seed(42); k_hess <- tulpa:::.joint_pareto_k(res, refit, 400L, prop)
-    expect_false(is.na(k_grid$pareto_k))
-    expect_identical(k_grid$proposal_source, "grid_moment")
-    expect_equal(k_hess$pareto_k, k_grid$pareto_k)
-    expect_equal(k_hess$is_ess,   k_grid$is_ess)
+test_that("the grid-mixture proposal beats the single Gaussian on a skewed grid", {
+    # The fix's core invariant (gcol33/tulpa#121): when the hyperparameter
+    # posterior is right-skewed in the unconstrained coordinate but the grid spans
+    # its support, a single symmetric Gaussian proposal underweights the heavy
+    # shoulder (high k-hat); the grid mixture covers the skew through its nodes, so
+    # the same fit gets a usable k-hat. The grid here extends well past the skew
+    # tail, so the deficiency is a WITHIN-grid shape mismatch, not a too-narrow
+    # grid. The integration weights are the unnormalised posterior at the nodes, so
+    # the mixture built from them tracks the skew by construction.
+    sig <- exp(seq(log(0.25), log(35), length.out = 25))  # spans past the skew tail
+    tg  <- matrix(sig, ncol = 1L, dimnames = list(NULL, "b1.sigma"))
+    m <- log(1.1); sL <- 0.30; sR <- 0.95                 # split-normal in u = log sigma
+    skew_u <- function(u) ifelse(u <= m, -0.5 * ((u - m) / sL)^2,
+                                         -0.5 * ((u - m) / sR)^2)
+    w   <- exp(skew_u(log(sig))); w <- w / sum(w)
+    res <- list(theta_grid = tg, weights = w,
+                axis_offsets = c(0L, 1L), blocks = list(list(type = "bym2")))
+    refit <- function(theta_mat) skew_u(log(theta_mat[, 1]))
+
+    prep <- tulpa:::.joint_pareto_prepare(res, refit, 600L, NULL)
+    expect_identical(prep$proposal_source, "grid_moment")
+    vary <- tulpa:::.joint_pareto_vary_axes(prep$Su)
+    set.seed(1); g <- tulpa:::.joint_pareto_score(prep, vary, refit, 600L)
+    set.seed(1); mx <- tulpa:::.joint_pareto_score_mixture(prep, vary, refit, 600L)
+    expect_false(is.null(mx))
+    expect_lt(mx$pareto_k, g$pareto_k)       # mixture improves the tail shape
+    expect_lt(mx$pareto_k, 0.7)              # ... into the usable band
+    expect_gt(mx$is_ess, g$is_ess)           # ... with a better effective sample
+
+    set.seed(1); kd <- tulpa:::.joint_pareto_k(res, refit, 600L, NULL)
+    expect_identical(kd$proposal_source, "grid_mixture")
 })
 
 # --------------------------------------------------------------------------- #
@@ -383,10 +425,13 @@ test_that("a collapsed tensor fit recovers a usable k-hat (grid-moment + moment 
     expect_identical(fit$integration, "grid")
     expect_lt(1 / sum(wn^2), ncol(fit$theta_grid))   # grid genuinely collapsed
     # Partial collapse (the sigma / alpha axes still carry weighted spread): the
-    # grid-moment proposal is kept, and moment matching refines it when its k-hat
-    # lands in the unreliable band (gcol33/tulpa#119). Either source yields a
-    # usable k-hat; the FD mode-Hessian is reserved for a true delta collapse.
-    expect_true(fit$pareto_k_proposal_source %in% c("grid_moment", "moment_matched"))
+    # grid is spread, so the faithful proposal is the grid mixture
+    # (gcol33/tulpa#121). The single-Gaussian sources (grid_moment, its
+    # moment-matching refinement) remain valid where the mixture cannot form;
+    # the FD mode-Hessian is reserved for a true delta collapse. Any of these
+    # yields a usable k-hat.
+    expect_true(fit$pareto_k_proposal_source %in%
+                c("grid_mixture", "grid_moment", "moment_matched"))
     expect_true(is.finite(fit$pareto_k))
     expect_lt(fit$pareto_k, 0.7)
 })
