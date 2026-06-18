@@ -23,6 +23,12 @@
 # moving the k-hat. The effective cap is `min(max_iter, .K_DIAG_MAX_ITER)`.
 .K_DIAG_MAX_ITER <- 25L
 
+# Maximum moment-matching refinement passes for the outer Pareto-k proposal
+# (gcol33/tulpa#119). Each pass re-estimates the proposal from the PSIS-weighted
+# moments of its own draws and re-scores; iteration stops early once the k-hat
+# reaches the usable band, so a proposal that already fits pays a single pass.
+.K_DIAG_MM_MAX <- 5L
+
 # Shamanskii (chord) factor-reuse interval for the diagnostic re-solves
 # (gcol33/tulpa#118). Profiling the joint occu_cover diagnostic showed the
 # dominant cost is NOT the sparse Cholesky factorize (~8-12%, flat ~0.5 ms up to
@@ -568,40 +574,34 @@
         }
     }
 
-    # Tensor-grid collapse fallback (gcol33/tulpa#116). With no CCD mode-Hessian
-    # proposal to splice, a sharp posterior concentrates the integration weight
-    # on too few cells to estimate a d-dim covariance: the effective grid ESS
-    # drops to <= d, the grid-weighted `Su` is driven by negligible-weight far
-    # cells, and the resulting proposal yields a spurious k-hat. Reconstruct the
-    # Laplace-at-mode covariance from a finite-difference Hessian of the outer
-    # target at the modal cell -- well defined precisely when the posterior is
-    # sharp -- so the k-hat certifies the outer Gaussian summary instead of the
-    # collapsed grid. A degenerate Hessian leaves the grid estimate in place.
-    if (!used_mode_hessian) {
-        wn    <- w / sum(w)
-        ess_w <- 1 / sum(wn^2)
-        if (is.finite(ess_w) && ess_w <= d) {
-            # Restrict the FD mode-Hessian to the axes the grid leaves varying;
-            # a pinned axis (single grid value -> zero FD curvature) would make
-            # the full-axis stencil singular and the fallback bail to grid_moment
-            # (gcol33/tulpa#117). Detected from the GRID layout, not the weighted
-            # covariance: at this collapse the weight concentrates on ~1 cell, so
-            # the weighted variance of every axis is ~0 and cannot separate a
-            # truly pinned axis from a multi-valued one whose curvature the rescue
-            # must still recover.
-            vary_g <- .joint_pareto_grid_vary_axes(tg)
-            u_mode <- as.numeric(u_grid[which.max(w), ])
-            cov_h  <- .joint_pareto_mode_cov(u_mode, tags, cn,
-                                             refit_log_marginal, d,
-                                             vary = vary_g)
-            if (!is.null(cov_h)) {
-                u_hat <- u_mode
-                Su    <- cov_h
-                proposal_source   <- "mode_hessian"
-                used_mode_hessian <- TRUE
-            }
+    # Delta-collapse fallback (gcol33/tulpa#116, #117, #119). When the grid
+    # weight concentrates on a single cell the grid-weighted `Su` is exactly zero
+    # on every axis: no axis carries posterior spread, so the proposal covariance
+    # cannot be estimated from the nodes. Reconstruct a Laplace-at-mode covariance
+    # from a finite-difference Hessian of the outer target at the modal cell,
+    # restricted to the grid-layout-varying axes (a single-value axis -- a copy
+    # `alpha` fixed at 0, a one-point dispersion grid -- has zero FD curvature and
+    # would make the full-axis stencil singular). This engages ONLY at genuine
+    # degeneracy (no grid-weighted spread on any axis). When ANY axis still
+    # carries weighted spread, the grid-weighted `Su` is the actual posterior
+    # spread and is kept: the FD mode curvature is the LOCAL curvature at the
+    # mode, which on a non-Gaussian outer marginal (flat-topped, sharper
+    # drop-off) over-widens the proposal and scatters importance draws to extreme
+    # hyperparameters where the inner Laplace log-marginal inflates, so a single
+    # draw dominates the weights (k-hat -> large, IS-ESS -> 1) even though the
+    # integration is well resolved on that axis.
+    if (!used_mode_hessian && length(.joint_pareto_vary_axes(Su)) == 0L) {
+        vary_g <- .joint_pareto_grid_vary_axes(tg)
+        u_mode <- as.numeric(u_grid[which.max(w), ])
+        cov_h  <- .joint_pareto_mode_cov(u_mode, tags, cn,
+                                         refit_log_marginal, d, vary = vary_g)
+        if (!is.null(cov_h)) {
+            u_hat <- u_mode
+            Su    <- cov_h
+            proposal_source   <- "mode_hessian"
+            used_mode_hessian <- TRUE
         }
-    } else {
+    } else if (used_mode_hessian) {
         proposal_source <- "mode_hessian"
     }
 
@@ -636,21 +636,53 @@
         lm + log_jac
     }
 
-    # Skip the inner re-solve on draws that fall outside the grid's whitened
-    # coverage radius -- the deep-extrapolation tail where the inner Newton
-    # stalls at EVA scale (gcol33/tulpa#94). See .nested_grid_radius_cap. The
-    # radius is measured on the varying-axis subspace the proposal spans.
-    radius_cap <- .nested_grid_radius_cap(u_grid[, vary, drop = FALSE],
-                                          u_hat_v, L_v)
+    u_grid_v <- u_grid[, vary, drop = FALSE]
 
+    # Importance-sampling k-hat with moment-matching refinement (gcol33/tulpa#119,
+    # after Paananen, Piironen, Burkner & Vehtari 2021, Stat. Comput. 31:16). The
+    # initial proposal is the integration-node covariance (or the mode-Hessian /
+    # CCD curvature). When the grid is sharply concentrated that covariance is
+    # estimated from few effective cells and can mis-scale the proposal -- too
+    # wide scatters draws to extreme hyperparameters where the inner Laplace
+    # log-marginal inflates, too narrow leaves the target tail uncovered -- so the
+    # k-hat reads unreliable even though the fit is fine. Re-estimate the proposal
+    # from the PSIS-smoothed importance-weighted moments of its own draws and
+    # re-score, keeping the lowest-k-hat proposal; the smoothed weights bound any
+    # single draw's influence, so a sharp posterior is matched in a couple of
+    # passes. Iteration stops once the k-hat reaches the usable band (<= 0.7); a
+    # proposal that already fits pays a single pass. The per-pass radius cap
+    # (gcol33/tulpa#94) is recomputed for the current proposal so the
+    # grid-coverage envelope follows it. The fit's RNG is restored at the end so
+    # the posterior draws are bit-for-bit unchanged.
     has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
     old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-    kd <- tryCatch(.nested_is_pareto_k(u_hat_v, L_v, lt, n_samples,
-                                       radius_cap = radius_cap),
-                   error = function(e) NULL)
+    prop_u  <- u_hat_v
+    prop_L  <- L_v
+    best    <- NULL
+    refined <- FALSE
+    for (iter in seq_len(.K_DIAG_MM_MAX)) {
+        rc <- .nested_grid_radius_cap(u_grid_v, prop_u, prop_L)
+        kd <- tryCatch(.nested_is_pareto_k(prop_u, prop_L, lt, n_samples,
+                                           radius_cap = rc, return_draws = TRUE),
+                       error = function(e) NULL)
+        if (is.null(kd) || !is.finite(kd$pareto_k)) break
+        if (is.null(best) || kd$pareto_k < best$pareto_k)
+            best <- list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, refined = refined)
+        if (kd$pareto_k <= 0.7 || iter == .K_DIAG_MM_MAX) break
+        wts <- exp(kd$log_weights); sw <- sum(wts)
+        if (!is.finite(sw) || sw <= 0 || nrow(kd$U) < length(prop_u) + 1L) break
+        wts   <- wts / sw
+        mu_w  <- as.numeric(crossprod(wts, kd$U))
+        cen   <- sweep(kd$U, 2L, mu_w)
+        Sig_w <- crossprod(cen * wts, cen); Sig_w <- (Sig_w + t(Sig_w)) / 2
+        Lw    <- tryCatch(t(chol(Sig_w)), error = function(e) NULL)
+        if (is.null(Lw)) break
+        prop_u <- mu_w; prop_L <- Lw; refined <- TRUE
+    }
     if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
-    if (is.null(kd)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
-    list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, proposal_source = proposal_source)
+    if (is.null(best)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
+    src <- if (isTRUE(best$refined)) "moment_matched" else proposal_source
+    list(pareto_k = best$pareto_k, is_ess = best$is_ess, proposal_source = src)
 }
 
 # Single-block joint wrapper. Reuses the driver's already-built generic

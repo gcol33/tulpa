@@ -118,6 +118,18 @@ inline int parse_joint_arms(
                            "length(y) (%d).", k + 1, arms_out[k].N);
             }
         }
+        // Optional interval-censored Gaussian bounds (ordinal cover). When
+        // supplied they must match this arm's N; the built-in interval_gaussian
+        // spec then reads (lower, upper) instead of the point response y.
+        if (a.containsElementNamed("lower") && !Rf_isNull(a["lower"])) {
+            arms_out[k].lower = Rcpp::as<Rcpp::NumericVector>(a["lower"]);
+            arms_out[k].upper = Rcpp::as<Rcpp::NumericVector>(a["upper"]);
+            if ((int)arms_out[k].lower.size() != arms_out[k].N ||
+                (int)arms_out[k].upper.size() != arms_out[k].N) {
+                Rcpp::stop("Arm %d: length(lower)/length(upper) must equal "
+                           "length(y) (%d).", k + 1, arms_out[k].N);
+            }
+        }
         if (pa.offset.size() != 0 && (int)pa.offset.size() != arms_out[k].N) {
             Rcpp::stop("Arm %d: length(offset) (%d) != N (%d).",
                        k + 1, (int)pa.offset.size(), arms_out[k].N);

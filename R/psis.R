@@ -212,7 +212,8 @@ tulpa_psis <- function(log_ratios) {
 # The proposal's normalizing constant is common to all draws and drops under
 # PSIS, leaving the quadratic 0.5||z||^2.
 .nested_is_pareto_k <- function(theta_hat, L_scale, log_target_batched,
-                                n_samples = 200L, radius_cap = Inf) {
+                                n_samples = 200L, radius_cap = Inf,
+                                return_draws = FALSE) {
   d <- length(theta_hat)
   n_samples <- as.integer(n_samples)
   if (n_samples < .PSIS_MIN_EVAL) {                          # cannot reach the floor
@@ -275,7 +276,16 @@ tulpa_psis <- function(log_ratios) {
   cap <- getOption("tulpa.kdiag.capture", NULL)
   if (is.environment(cap)) cap$lr <- lr[is.finite(lr)]
   ps <- tulpa_psis(lr)
-  list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
+  out <- list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
+  # The evaluated draws and their PSIS-smoothed log weights, same order
+  # (tulpa_psis keeps the finite entries in place), so a caller can re-estimate
+  # the proposal from the importance-weighted moments (moment-matching IS).
+  if (return_draws) {
+    fin <- is.finite(lr)
+    out$U <- U[fin, , drop = FALSE]
+    out$log_weights <- ps$log_weights
+  }
+  out
 }
 
 # One-sided test that the importance log-ratio RISES with the squared whitened

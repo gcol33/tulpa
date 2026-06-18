@@ -136,7 +136,7 @@ family_names <- function() names(.FAMILY_OPS)
 # (gcol33/tulpa#104). The `*_<link>` suffix forms (e.g. "gamma_inverse") share
 # the base family's dispersion, so membership is tested on the prefix.
 .PHI_FAMILIES <- c("gaussian", "gamma", "neg_binomial_2", "negative_binomial",
-                   "inverse_gaussian", "beta")
+                   "inverse_gaussian", "beta", "interval_gaussian")
 
 # Count families whose likelihood is defined only at non-negative integer `y`.
 # The C++ kernels cast the response to `int` (laplace_family_link.h /

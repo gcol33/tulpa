@@ -208,6 +208,26 @@
                  "length(y) (", N, ").", call. = FALSE)
         }
     }
+    # Optional interval-censored Gaussian bounds (family == "interval_gaussian"):
+    # row i records the latent value fell in (lower[i], upper[i]] on the predictor
+    # scale, with -Inf / +Inf the open outer classes. The built-in interval spec
+    # reads (lower, upper) in place of the point response y.
+    if (!is.null(a$lower) || !is.null(a$upper)) {
+        if (is.null(a$lower) || is.null(a$upper)) {
+            stop("Arm ", k, ": `lower` and `upper` must be supplied together.",
+                 call. = FALSE)
+        }
+        a$lower <- as.numeric(a$lower)
+        a$upper <- as.numeric(a$upper)
+        if (length(a$lower) != N || length(a$upper) != N) {
+            stop("Arm ", k, ": length(lower)/length(upper) must equal ",
+                 "length(y) (", N, ").", call. = FALSE)
+        }
+        if (any(is.na(a$lower)) || any(is.na(a$upper)) || any(a$lower >= a$upper)) {
+            stop("Arm ", k, ": each `lower` must be finite-or-(-Inf), non-NA, ",
+                 "and strictly below its `upper`.", call. = FALSE)
+        }
+    }
     a$re_idx <- if (is.null(a$re_idx)) rep(0, N) else as.numeric(a$re_idx)
     if (length(a$re_idx) != N) {
         stop("Arm ", k, ": length(re_idx) (", length(a$re_idx),

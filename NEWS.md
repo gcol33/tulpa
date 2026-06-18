@@ -1,5 +1,42 @@
 # tulpa NEWS
 
+## 0.0.44 (2026-06-18)
+
+* New built-in `interval_gaussian` family: an interval-censored Gaussian latent
+  (an ordered probit with KNOWN thresholds). The latent value is
+  `Normal(eta, sigma^2)` and the observation records only that it fell in the
+  half-open interval `(lower, upper]` on the linear-predictor scale, with
+  `-Inf` / `+Inf` the open outer classes. The log-density is the class
+  probability MASS, `log(Phi((upper - eta)/sigma) - Phi((lower - eta)/sigma))`
+  -- a genuine PMF over classes with no change-of-variable Jacobian, so the
+  score is comparable across arms. The mass is differenced in the accurate tail
+  to avoid catastrophic cancellation, and `P(eta)` is log-concave so the
+  analytic `-d2 logP/d eta2 >= 0` needs no Fisher fallback. The family is read
+  through `tulpa_nested_laplace_joint()` (`family = "interval_gaussian"`, with
+  per-arm `lower` / `upper` in place of the point response `y`); it backs
+  tulpaObs's `cover(positive = "ordinal")` Braun-Blanquet cover arm. The kernel
+  is FD-gradient tested via the internal `cpp_interval_gaussian_terms()`
+  (`test-interval-gaussian.R`).
+
+* Joint nested-Laplace outer Pareto-k: the importance-sampling proposal now
+  carries an optional moment-matching refinement (gcol33/tulpa#119, after
+  Paananen, Piironen, Burkner & Vehtari 2021). When the integration grid is
+  sharply concentrated the node-covariance proposal can mis-scale -- too wide
+  scatters draws to extreme hyperparameters where the inner Laplace log-marginal
+  inflates, too narrow leaves the target tail uncovered -- so the k-hat reads
+  unreliable even on a fine fit. The proposal is now re-estimated from the
+  PSIS-smoothed importance-weighted moments of its own draws and re-scored, up
+  to a few passes, keeping the lowest-k-hat proposal and stopping early once the
+  k-hat reaches the usable band (`<= 0.7`); the smoothed weights bound any single
+  draw's influence so a sharp posterior is matched in a couple of passes
+  (`proposal_source = "moment_matched"`). The fit's RNG is restored so the
+  posterior draws are bit-for-bit unchanged. The collapsed-grid FD mode-Hessian
+  rescue (gcol33/tulpa#116, #117) is now reserved for a TRUE delta collapse (no
+  grid-weighted spread on ANY axis); a partial collapse where some axis still
+  carries weighted spread keeps the grid-moment proposal and lets moment matching
+  refine it, rather than over-widening the proposal with the local mode curvature
+  of a non-Gaussian outer marginal.
+
 ## 0.0.43 (2026-06-18)
 
 * Joint nested-Laplace outer Pareto-k: the collapsed-grid mode-Hessian rescue

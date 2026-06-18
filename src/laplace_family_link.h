@@ -282,6 +282,82 @@ inline GradHess grad_hess_beta_grouped(double slog_y, double slog_1my, int n,
     return { g_mu * dmu, (double)n * dmu * dmu / V };
 }
 
+// Interval-censored Gaussian latent (ordered-probit with KNOWN thresholds). The
+// latent value is Normal(eta, sigma^2) and the observation records only that it
+// fell in the half-open interval (lower, upper]; lower = -Inf / upper = +Inf are
+// the open outer classes. With phi = sigma this is the discrete-class sibling of
+// the gaussian arm: the log-density is the probability MASS of the observed
+// class, P = Phi((upper - eta)/sigma) - Phi((lower - eta)/sigma), so the score is
+// a genuine PMF over classes with no change-of-variable Jacobian. P(eta) is
+// log-concave in eta (a convolution of the interval indicator with a log-concave
+// density, Prekopa), so -d2 logP/d eta2 >= 0 and Newton needs no Fisher fallback.
+//
+//   d logP/d eta = (phi(zl) - phi(zu)) / (sigma * P)
+//   -d2 logP/d eta2 = g^2 - (zl phi(zl) - zu phi(zu)) / (sigma^2 P)
+//
+// with zl = (lower - eta)/sigma, zu = (upper - eta)/sigma, phi the standard
+// normal density (0 at +/-Inf, as is z phi(z)). The mass P is differenced in the
+// accurate tail to avoid catastrophic cancellation when eta sits far from the
+// class. See dev_notes/interval_gaussian_likelihood.md.
+struct IntervalGaussian {
+    double ll;        // log P
+    double grad;      // d logP / d eta
+    double neg_hess;  // -d2 logP / d eta2  (>= 0)
+};
+
+inline IntervalGaussian interval_gaussian_core(double lower, double upper,
+                                               double eta, double sigma) {
+    const double inv_s = 1.0 / sigma;
+    const bool lo_open = !R_finite(lower);   // -Inf
+    const bool hi_open = !R_finite(upper);   // +Inf
+    const double zl = lo_open ? R_NegInf : (lower - eta) * inv_s;
+    const double zu = hi_open ? R_PosInf : (upper - eta) * inv_s;
+
+    // Mass P = Phi(zu) - Phi(zl), differenced in the accurate tail.
+    double P;
+    if (lo_open && hi_open) {
+        P = 1.0;
+    } else if (lo_open) {
+        P = R::pnorm(zu, 0.0, 1.0, 1, 0);              // Phi(zu)
+    } else if (hi_open) {
+        P = R::pnorm(zl, 0.0, 1.0, 0, 0);              // 1 - Phi(zl)
+    } else if (zu <= 0.0) {
+        P = R::pnorm(zu, 0.0, 1.0, 1, 0) - R::pnorm(zl, 0.0, 1.0, 1, 0);
+    } else if (zl >= 0.0) {
+        P = R::pnorm(zl, 0.0, 1.0, 0, 0) - R::pnorm(zu, 0.0, 1.0, 0, 0);
+    } else {
+        P = R::pnorm(zu, 0.0, 1.0, 1, 0) - R::pnorm(zl, 0.0, 1.0, 1, 0);
+    }
+    const double Psafe = P > 1e-300 ? P : 1e-300;
+
+    const double pl = lo_open ? 0.0 : R::dnorm(zl, 0.0, 1.0, 0);
+    const double pu = hi_open ? 0.0 : R::dnorm(zu, 0.0, 1.0, 0);
+    // z * phi(z) -> 0 as |z| -> Inf. Guard the Inf * 0 = NaN that arises when a
+    // FINITE bound sits far from eta: zl / zu overflow to +/-Inf while the
+    // density underflows to 0. The analytic limit of the product is 0.
+    const double zpl = (lo_open || pl == 0.0 || !R_finite(zl)) ? 0.0 : zl * pl;
+    const double zpu = (hi_open || pu == 0.0 || !R_finite(zu)) ? 0.0 : zu * pu;
+
+    const double Pprime = (pl - pu) * inv_s;                       // dP/d eta
+    const double Pdd    = (zpl - zpu) * inv_s * inv_s;             // d2P/d eta2
+    const double g  = Pprime / Psafe;
+    double nh = g * g - Pdd / Psafe;
+    if (nh < 1e-12) nh = 1e-12;   // log-concave; guard roundoff at the flat tail
+
+    return { std::log(Psafe), g, nh };
+}
+
+inline double log_lik_interval_gaussian(double lower, double upper,
+                                        double eta, double sigma) {
+    return interval_gaussian_core(lower, upper, eta, sigma).ll;
+}
+
+inline GradHess grad_hess_interval_gaussian(double lower, double upper,
+                                            double eta, double sigma) {
+    const IntervalGaussian r = interval_gaussian_core(lower, upper, eta, sigma);
+    return { r.grad, r.neg_hess };
+}
+
 inline double compute_total_log_lik(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericVector& eta, int N,

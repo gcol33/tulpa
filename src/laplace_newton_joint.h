@@ -52,6 +52,12 @@ struct JointArm {
     // and slog_1my[i] = sum log(1-y). Empty => ungrouped per-obs path.
     Rcpp::NumericVector slog_y;
     Rcpp::NumericVector slog_1my;
+    // Interval-censored Gaussian bounds (gcol33/tulpaObs ordinal cover). Optional;
+    // when present (and family == "interval_gaussian") row i records the latent
+    // value fell in (lower[i], upper[i]] on the predictor scale, with +/-Inf the
+    // open outer classes. Empty => not an interval arm.
+    Rcpp::NumericVector lower;
+    Rcpp::NumericVector upper;
     // Per-arm field coefficient: multiplied into the field amplitude this
     // arm sees on each shared latent block (sigma_arm = field_coef * sigma).
     // Default 1.0 = donor behaviour (existing non-copy arms). `0.0` means
@@ -175,6 +181,8 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             r.phi      = a.phi;
             r.slog_y   = (a.slog_y.size()   > 0) ? REAL(a.slog_y)   : nullptr;
             r.slog_1my = (a.slog_1my.size() > 0) ? REAL(a.slog_1my) : nullptr;
+            r.lower    = (a.lower.size()    > 0) ? REAL(a.lower)    : nullptr;
+            r.upper    = (a.upper.size()    > 0) ? REAL(a.upper)    : nullptr;
             s.builtin_responses.push_back(r);
             s.views[k] = ArmSpecView{
                 &s.builtin_specs.back(), &s.builtin_responses.back(),

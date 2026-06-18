@@ -226,6 +226,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_interval_gaussian_terms
+Rcpp::NumericVector cpp_interval_gaussian_terms(double lower, double upper, double eta, double sigma);
+RcppExport SEXP _tulpa_cpp_interval_gaussian_terms(SEXP lowerSEXP, SEXP upperSEXP, SEXP etaSEXP, SEXP sigmaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type lower(lowerSEXP);
+    Rcpp::traits::input_parameter< double >::type upper(upperSEXP);
+    Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma(sigmaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_interval_gaussian_terms(lower, upper, eta, sigma));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_joint_inner_vcov_blocks
 Rcpp::List cpp_joint_inner_vcov_blocks(Rcpp::List Q_p_per_grid, Rcpp::List Q_i_per_grid, Rcpp::List Q_x_per_grid, int n_x, Rcpp::IntegerVector idx, int n_dense, Rcpp::List A_cols_list, bool field_marginal, int n_threads);
 RcppExport SEXP _tulpa_cpp_joint_inner_vcov_blocks(SEXP Q_p_per_gridSEXP, SEXP Q_i_per_gridSEXP, SEXP Q_x_per_gridSEXP, SEXP n_xSEXP, SEXP idxSEXP, SEXP n_denseSEXP, SEXP A_cols_listSEXP, SEXP field_marginalSEXP, SEXP n_threadsSEXP) {
@@ -2904,6 +2918,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
+    {"_tulpa_cpp_interval_gaussian_terms", (DL_FUNC) &_tulpa_cpp_interval_gaussian_terms, 4},
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 9},
     {"_tulpa_cpp_laplace_fit", (DL_FUNC) &_tulpa_cpp_laplace_fit, 11},
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 19},

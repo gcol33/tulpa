@@ -65,6 +65,10 @@ cpp_spde_laplace_gradient <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_me
     .Call(`_tulpa_cpp_spde_laplace_gradient`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu, family, phi, max_iter, tol, n_threads, x_init_nullable)
 }
 
+cpp_interval_gaussian_terms <- function(lower, upper, eta, sigma) {
+    .Call(`_tulpa_cpp_interval_gaussian_terms`, lower, upper, eta, sigma)
+}
+
 cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads)
 }

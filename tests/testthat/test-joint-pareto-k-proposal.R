@@ -98,20 +98,26 @@ test_that("a collapsed grid with degenerate curvature declines to NA", {
     }
 }
 
-test_that("a collapsed grid with pinned axes recovers k from the varying-axis FD Hessian", {
-    # Before gcol33/tulpa#117 the full-d FD Hessian is singular on the 3 pinned
-    # axes, so the fallback bailed to grid_moment. Restricting the stencil to the
-    # varying sigma axes makes it well conditioned -> mode_hessian with finite k.
+test_that("a partial collapse with pinned axes keeps the grid-moment proposal", {
+    # ess_grid <= d but the two sigma axes still carry weighted spread (only the
+    # alpha + phi axes are pinned): the grid-weighted Su is the actual posterior
+    # spread, so it is kept and the pinned axes are held fixed (gcol33/tulpa#119).
+    # The FD mode-Hessian is reserved for a TRUE delta collapse (no weighted
+    # spread on any axis); engaging it here would use the local mode curvature,
+    # which over-widens a non-Gaussian outer marginal.
     res   <- .pk_pinned_res()
     wn    <- res$weights / sum(res$weights)
     expect_lt(1 / sum(wn^2), ncol(res$theta_grid))       # ess_grid <= d
     u_hat <- c(log(1.0), log(0.35))
+    set.seed(1)
     kd <- tulpa:::.joint_pareto_k(res, .pk_refit_pinned(u_hat), n_samples = 200L,
                                   proposal = NULL)
     expect_false(is.na(kd$pareto_k))
-    expect_identical(kd$proposal_source, "mode_hessian")
+    # Grid-moment, or its moment-matching refinement -- NOT the FD mode-Hessian,
+    # which is reserved for a true delta collapse (gcol33/tulpa#119).
+    expect_true(kd$proposal_source %in% c("grid_moment", "moment_matched"))
     expect_true(is.finite(kd$is_ess) && kd$is_ess > 0)
-    expect_lt(kd$pareto_k, 0.7)             # Gaussian target under Gaussian proposal
+    expect_lt(kd$pareto_k, 0.7)
 })
 
 test_that("a delta-weight collapse with pinned axes still recovers k (grid-layout detection)", {
@@ -284,7 +290,7 @@ test_that("a multi-block CCD fit sources the k-hat from the mode Hessian", {
     expect_gt(fit$pareto_k_is_ess, 0)
 })
 
-test_that("a collapsed tensor fit recovers the k-hat via the FD Hessian", {
+test_that("a collapsed tensor fit recovers a usable k-hat (grid-moment + moment matching)", {
     skip_if_not_slow()
     set.seed(12)
     N <- 4000L; n_s <- 40L
@@ -315,6 +321,11 @@ test_that("a collapsed tensor fit recovers the k-hat via the FD Hessian", {
     wn <- fit$weights / sum(fit$weights)
     expect_identical(fit$integration, "grid")
     expect_lt(1 / sum(wn^2), ncol(fit$theta_grid))   # grid genuinely collapsed
-    expect_identical(fit$pareto_k_proposal_source, "mode_hessian")
+    # Partial collapse (the sigma / alpha axes still carry weighted spread): the
+    # grid-moment proposal is kept, and moment matching refines it when its k-hat
+    # lands in the unreliable band (gcol33/tulpa#119). Either source yields a
+    # usable k-hat; the FD mode-Hessian is reserved for a true delta collapse.
+    expect_true(fit$pareto_k_proposal_source %in% c("grid_moment", "moment_matched"))
     expect_true(is.finite(fit$pareto_k))
+    expect_lt(fit$pareto_k, 0.7)
 })

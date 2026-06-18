@@ -38,6 +38,12 @@ struct BuiltinFamilyResponse {
     // log(y), slog_1my[i] = sum log(1-y). Null => ungrouped per-obs path.
     const double* slog_y = nullptr;
     const double* slog_1my = nullptr;
+    // Interval-censored Gaussian bounds (interval_gaussian family). When non-null
+    // and family == "interval_gaussian", row i records that the latent value fell
+    // in (lower[i], upper[i]] on the linear-predictor scale; -Inf / +Inf are the
+    // open outer classes and phi is the latent SD. Null => not an interval arm.
+    const double* lower = nullptr;
+    const double* upper = nullptr;
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
@@ -50,7 +56,10 @@ inline double builtin_family_ll_double(
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const double w = r->weights ? r->weights[i] : 1.0;
-    const double ll = (r->slog_y && r->family == "beta")
+    const double ll =
+        (r->lower && r->family == "interval_gaussian")
+        ? log_lik_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
+        : (r->slog_y && r->family == "beta")
         ? log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
         : log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi);
     // Weight the log-lik by the SAME per-obs factor the score / Fisher Hessian
@@ -75,7 +84,10 @@ inline void builtin_family_eta_weights(
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
-    const GradHess gh = (r->slog_y && r->family == "beta")
+    const GradHess gh =
+        (r->lower && r->family == "interval_gaussian")
+        ? grad_hess_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
+        : (r->slog_y && r->family == "beta")
         ? grad_hess_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
         : grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi);
     const double w = r->weights ? r->weights[i] : 1.0;
