@@ -87,6 +87,18 @@ tulpa_loglik <- function(x, n_obs = NULL, n_draws = NULL) {
 #' @param criteria Which criteria to compute. Any of `"waic"`, `"loo"`,
 #'   `"cpo"`, `"lpml"`, `"dic"`. `"loo"`, `"cpo"`, and `"lpml"` share the single
 #'   PSIS pass; `"dic"` additionally needs `loglik_at_mean`.
+#' @param group Optional length-`n_obs` grouping (an integer / factor /
+#'   character vector). The LOO unit is **one column of `log_lik`**: with
+#'   `group = NULL` (the default) every column is its own fold (leave-one-row-out,
+#'   e.g. per plot / per visit) and the result is byte-identical to the
+#'   ungrouped call. When supplied, the per-draw pointwise log-likelihoods are
+#'   summed within group to a `[n_draws x n_groups]` matrix **before** PSIS, so
+#'   each fold is a whole group (leave-one-group-out cross-validation, LOGO-CV).
+#'   Use it to switch the estimand from per-row to per-group LOO -- e.g. on a
+#'   cell-compressed hierarchical fit, leave out a whole cell rather than one of
+#'   its rows. WAIC's variance term, `lppd`, `elpd_loo`, `cpo` and `pareto_k`
+#'   are all computed on the grouped matrix. DIC is a plug-in deviance over all
+#'   observations and is unaffected by `group`.
 #' @param loglik_at_mean Optional length-`n_obs` vector of pointwise
 #'   log-likelihoods evaluated at the posterior mean of the parameters, supplied
 #'   by the caller (the model package knows the parameterization). Required for
@@ -107,6 +119,14 @@ tulpa_loglik <- function(x, n_obs = NULL, n_draws = NULL) {
 #' `p_waic_i > 0.4` (the `loo` heuristic for an unreliable WAIC), and the
 #' PSIS-LOO `elpd_loo` is the more stable figure to report when that count is
 #' non-trivial.
+#'
+#' The LOO unit is whatever **one column of `log_lik`** holds. If the consumer
+#' built the matrix with one column per row (plot / visit), the default is
+#' per-row LOO; if a column already carries a whole group's compressed
+#' likelihood, leaving it out drops that group and `pareto_k` can blow up by
+#' construction. The `group` argument makes the unit explicit: supply it to
+#' aggregate columns into folds and report leave-one-group-out CV (LOGO-CV)
+#' instead, a different and deliberate estimand.
 #' @references
 #' Vehtari, Gelman & Gabry (2017). Practical Bayesian model evaluation using
 #' leave-one-out cross-validation and WAIC. \emph{Statistics and Computing}
@@ -119,6 +139,7 @@ tulpa_loglik <- function(x, n_obs = NULL, n_draws = NULL) {
 tulpa_criteria <- function(log_lik,
                            criteria = c("waic", "loo", "cpo", "lpml", "dic"),
                            loglik_at_mean = NULL,
+                           group = NULL,
                            chunk_size = NULL,
                            pointwise = FALSE) {
   criteria <- match.arg(criteria, several.ok = TRUE)
@@ -141,16 +162,50 @@ tulpa_criteria <- function(log_lik,
   }
   chunk_size <- as.integer(min(max(1L, chunk_size), N))
 
-  lppd_i  <- if (need_lppd) numeric(N) else NULL
-  pwaic_i <- if (want_waic) numeric(N) else NULL
-  eloo_i  <- if (want_loo)  numeric(N) else NULL
-  pk_i    <- if (want_loo)  rep(NA_real_, N) else NULL
+  # Optional leave-one-group-out folding (LOGO-CV). A column of `log_lik` is the
+  # LOO unit; `group` collapses columns into folds by summing the per-draw
+  # pointwise log-likelihoods within group (the group's joint conditional
+  # log-likelihood given each draw) to a [S x n_groups] matrix BEFORE PSIS. The
+  # grouping pass streams over the (possibly EVA-scale) input once and never
+  # materializes it; the grouped matrix is bounded by n_groups << n_obs, so the
+  # downstream reductions run on it directly. The reduction code below is the
+  # single source of truth -- it operates on `red` / `n_fold`, which is the raw
+  # input ungrouped and the small grouped matrix otherwise.
+  glabels <- NULL
+  if (is.null(group)) {
+    red    <- ll
+    n_fold <- N
+  } else {
+    if (length(group) != N) {
+      stop("`group` must have length n_obs = ", N, "; got ", length(group),
+           ".", call. = FALSE)
+    }
+    gf      <- factor(group)
+    g_id    <- as.integer(gf)
+    glabels <- levels(gf)
+    n_fold  <- nlevels(gf)
+    if (n_fold < 1L) stop("`group` has no usable levels.", call. = FALSE)
+    G <- matrix(0, S, n_fold)
+    for (st in seq.int(1L, N, by = chunk_size)) {
+      cols <- st:min(st + chunk_size - 1L, N)
+      B    <- ll$get(cols)                  # [S x length(cols)]
+      gc   <- g_id[cols]
+      for (jj in seq_along(cols)) G[, gc[jj]] <- G[, gc[jj]] + B[, jj]
+    }
+    red    <- tulpa_loglik(G)
+    chunk_size <- n_fold
+  }
+
+  lppd_i  <- if (need_lppd) numeric(n_fold) else NULL
+  pwaic_i <- if (want_waic) numeric(n_fold) else NULL
+  eloo_i  <- if (want_loo)  numeric(n_fold) else NULL
+  pk_i    <- if (want_loo)  rep(NA_real_, n_fold) else NULL
   draw_ll_sum <- if (want_dic) numeric(S) else NULL
 
-  starts <- seq.int(1L, N, by = chunk_size)
+  starts <- seq.int(1L, n_fold, by = chunk_size)
   for (st in starts) {
-    cols <- st:min(st + chunk_size - 1L, N)
-    B <- ll$get(cols)                       # [S x length(cols)]
+    cols <- st:min(st + chunk_size - 1L, n_fold)
+    B <- red$get(cols)                      # [S x length(cols)]
     if (need_lppd) lppd_i[cols] <- .criteria_col_lse(B) - log(S)
     if (want_waic) pwaic_i[cols] <- .criteria_col_var(B)
     if (want_dic)  draw_ll_sum <- draw_ll_sum + rowSums(B)
@@ -168,6 +223,7 @@ tulpa_criteria <- function(log_lik,
 
   out <- list(n_draws = S, n_obs = N,
               criteria = criteria, has_loglik_at_mean = !is.null(loglik_at_mean))
+  if (!is.null(group)) out$n_groups <- n_fold
 
   if (want_waic) {
     elpd_waic_i <- lppd_i - pwaic_i
@@ -175,8 +231,8 @@ tulpa_criteria <- function(log_lik,
     out$p_waic <- sum(pwaic_i)
     out$elpd_waic <- sum(elpd_waic_i)
     out$waic <- -2 * out$elpd_waic
-    out$se_elpd_waic <- sqrt(N * stats::var(elpd_waic_i))
-    out$se_p_waic <- sqrt(N * stats::var(pwaic_i))
+    out$se_elpd_waic <- sqrt(n_fold * stats::var(elpd_waic_i))
+    out$se_p_waic <- sqrt(n_fold * stats::var(pwaic_i))
     out$se_waic <- 2 * out$se_elpd_waic
     out$n_high_p_waic <- sum(pwaic_i > 0.4)
   }
@@ -185,7 +241,7 @@ tulpa_criteria <- function(log_lik,
     out$elpd_loo <- sum(eloo_i)
     out$p_loo <- sum(lppd_i) - out$elpd_loo
     out$looic <- -2 * out$elpd_loo
-    out$se_elpd_loo <- sqrt(N * stats::var(eloo_i))
+    out$se_elpd_loo <- sqrt(n_fold * stats::var(eloo_i))
     out$se_looic <- 2 * out$se_elpd_loo
     out$pareto_k <- pk_i
     out$n_high_k <- sum(pk_i >= 0.7, na.rm = TRUE)
@@ -212,7 +268,8 @@ tulpa_criteria <- function(log_lik,
   }
 
   if (isTRUE(pointwise)) {
-    pw <- data.frame(obs = seq_len(N))
+    pw <- if (is.null(group)) data.frame(obs = seq_len(n_fold))
+          else data.frame(group = glabels)
     if (need_lppd) pw$lppd <- lppd_i
     if (want_waic) {
       pw$elpd_waic <- lppd_i - pwaic_i
@@ -233,8 +290,14 @@ tulpa_criteria <- function(log_lik,
 
 #' @export
 print.tulpa_criteria <- function(x, digits = 1, ...) {
-  cat(sprintf("tulpa model criteria  (%d draws x %d observations)\n",
-              x$n_draws, x$n_obs))
+  if (is.null(x$n_groups)) {
+    cat(sprintf("tulpa model criteria  (%d draws x %d observations)\n",
+                x$n_draws, x$n_obs))
+  } else {
+    cat(sprintf(paste0("tulpa model criteria  (%d draws x %d observations",
+                       " in %d leave-one-group-out folds)\n"),
+                x$n_draws, x$n_obs, x$n_groups))
+  }
   fmt <- function(est, se) {
     if (is.null(est) || is.na(est)) return("        NA")
     if (is.null(se) || is.na(se)) return(sprintf("%10.*f", digits, est))

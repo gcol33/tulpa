@@ -72,6 +72,56 @@ test_that("streaming over column blocks equals the materialized matrix", {
   expect_equal(streamed$dic, full$dic, tolerance = 1e-12)
 })
 
+test_that("group = NULL is byte-identical to the ungrouped call", {
+  d <- make_loglik(N = 40L)
+  base <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
+                         pointwise = TRUE)
+  same <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
+                         group = NULL, pointwise = TRUE)
+  expect_identical(base$n_obs, same$n_obs)
+  expect_null(same$n_groups)
+  expect_equal(same$waic, base$waic, tolerance = 0)
+  expect_equal(same$elpd_loo, base$elpd_loo, tolerance = 0)
+  expect_equal(same$pointwise$pareto_k, base$pointwise$pareto_k, tolerance = 0)
+})
+
+test_that("grouped LOGO-CV equals criteria on the hand-aggregated matrix", {
+  d <- make_loglik(N = 60L, seed = 7L)
+  # 60 columns -> 12 groups of 5 (each column is one observation within a cell).
+  group <- rep(seq_len(12L), each = 5L)
+  grouped <- tulpa_criteria(d$ll, criteria = c("waic", "loo", "cpo", "lpml"),
+                            group = group, pointwise = TRUE)
+  # Hand-aggregate: a fold's joint conditional log-lik is the within-group sum.
+  G <- sapply(split(seq_len(60L), group), function(cols) rowSums(d$ll[, cols, drop = FALSE]))
+  ref <- tulpa_criteria(G, criteria = c("waic", "loo", "cpo", "lpml"),
+                        pointwise = TRUE)
+  expect_equal(grouped$n_groups, 12L)
+  expect_equal(grouped$n_obs, 60L)
+  expect_equal(grouped$waic, ref$waic, tolerance = 1e-12)
+  expect_equal(grouped$elpd_loo, ref$elpd_loo, tolerance = 1e-12)
+  expect_equal(grouped$se_elpd_loo, ref$se_elpd_loo, tolerance = 1e-12)
+  expect_equal(grouped$pointwise$pareto_k, ref$pointwise$pareto_k, tolerance = 1e-12)
+  expect_equal(nrow(grouped$pointwise), 12L)
+})
+
+test_that("grouped LOO streams over column blocks identically", {
+  d <- make_loglik(N = 57L, seed = 9L)
+  group <- ((seq_len(57L) - 1L) %% 9L) + 1L      # 9 interleaved groups
+  full <- tulpa_criteria(d$ll, criteria = c("waic", "loo"), group = group)
+  gen <- function(cols) d$ll[, cols, drop = FALSE]
+  streamed <- tulpa_criteria(
+    tulpa_loglik(gen, n_obs = d$N, n_draws = d$S),
+    criteria = c("waic", "loo"), group = group, chunk_size = 4L)
+  expect_equal(streamed$waic, full$waic, tolerance = 1e-12)
+  expect_equal(streamed$elpd_loo, full$elpd_loo, tolerance = 1e-12)
+})
+
+test_that("group must match n_obs", {
+  d <- make_loglik(N = 20L)
+  expect_error(tulpa_criteria(d$ll, criteria = "loo", group = rep(1L, 19L)),
+               "length n_obs")
+})
+
 test_that("tulpa_loglik requires dimensions for a generator", {
   expect_error(tulpa_loglik(function(cols) NULL), "n_obs")
 })

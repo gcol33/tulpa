@@ -481,53 +481,33 @@
     cov
 }
 
-# Shared outer Pareto-k-hat driver for a joint nested-Laplace result.
-#
-# Fits a Gaussian proposal to the joint hyperparameter posterior in the
-# per-axis unconstrained coordinate `u` (weighted mean + covariance over the
-# integration grid, the analogue of `.nested_grid_pareto_k` generalised to
-# mixed support), draws `n_samples` from it, re-evaluates the inner joint
-# marginal at the back-transformed grid via `refit_log_marginal` (a closure
-# that round-trips an `S x d` user-facing theta matrix through the SAME joint
-# kernel the integrator used and returns the per-cell log-marginal WITH the
-# baked hyperprior), adds the summed per-axis log-Jacobian, and PSIS-smooths.
-# The proposal's normalizing constant is common to every draw and drops under
-# PSIS, so only the quadratic enters (handled inside `.nested_is_pareto_k`).
-# Runs with the RNG restored so the fit's draws are bit-for-bit unchanged.
-#
-# `proposal` (gcol33/tulpa#116) optionally supplies a pre-built Gaussian over a
-# subset of the hyperparameter axes -- the CCD integrator's mode-Hessian
-# proposal `list(u_hat, L_scale, tags, cols)`, in the SAME per-axis unconstrained
-# coordinate as this path (shared `.joint_pareto_axis_tags`). When present and
-# consistent, its covariance replaces the grid-weighted estimate over the axes
-# it spans (block-diagonal: the remaining, independently tensor-crossed phi axes
-# keep their grid-weighted spread). The grid-weighted covariance is the spread of
-# the integration nodes, so it collapses to ~0 when the posterior is sharp and
-# the grid concentrates on ~1 cell -- where the analytic-curvature scale is still
-# well defined and the k-hat then certifies the outer Gaussian summary (the
-# reported Wald SEs) instead of declining with the grid.
-#
-# Returns list(pareto_k, is_ess): both NA when the fit declines (an axis with
-# unguessable support, a degenerate proposal covariance, or too few finite
-# importance draws), in which case the diagnostic layer reports quad-ESS.
-.joint_pareto_k <- function(res, refit_log_marginal, n_samples = 200L,
-                            proposal = NULL) {
+# Shared preparation for the outer Pareto-k-hat of a joint nested-Laplace
+# result. Fits a Gaussian proposal to the joint hyperparameter posterior in the
+# per-axis unconstrained coordinate `u` (weighted mean `u_hat` + covariance `Su`
+# over the integration grid, the analogue of `.nested_grid_pareto_k` generalised
+# to mixed support), splices the CCD mode-Hessian `proposal` (gcol33/tulpa#116)
+# over the axes it spans, and engages the delta-collapse FD rescue
+# (gcol33/tulpa#116, #117, #119). Returns the proposal summary the scorer draws
+# from, or NULL to DECLINE (an axis with unguessable support, an unusable grid /
+# weight vector, a sub-floor sample budget). The joint k and the opt-in per-arm
+# k (gcol33/tulpa#120) score this SAME (u_hat, Su) summary, differing only in
+# which axes are allowed to vary -- so the grid build, proposal splice and rescue
+# are computed once here.
+.joint_pareto_prepare <- function(res, refit_log_marginal, n_samples, proposal) {
     tags <- .joint_pareto_axis_tags(res)
-    if (is.null(tags)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
+    if (is.null(tags)) return(NULL)
 
     # Decline before any inner solve when the sample budget cannot reach the
     # GPD-fit floor (gcol33/tulpa#51): a sub-floor `n_samples` would run every
     # one of its solves and then discard the result as NA. The shared core
     # short-circuits, but catching it here too keeps the costly forward/inverse
     # transform + proposal fit off the table.
-    if (as.integer(n_samples) < .PSIS_MIN_EVAL) {
-        return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
-    }
+    if (as.integer(n_samples) < .PSIS_MIN_EVAL) return(NULL)
 
     tg <- res$theta_grid
     w  <- res$weights
     if (is.null(w) || length(w) != nrow(tg) || !is.finite(sum(w)) || sum(w) <= 0) {
-        return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
+        return(NULL)
     }
     cn <- colnames(tg)
     d  <- ncol(tg)
@@ -536,7 +516,7 @@
     for (j in seq_len(d)) {
         u_grid[, j] <- .joint_pareto_fwd(tags[j], as.numeric(tg[, j]))
     }
-    if (any(!is.finite(u_grid))) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
+    if (any(!is.finite(u_grid))) return(NULL)
 
     u_hat <- as.numeric(crossprod(w, u_grid))
     cen   <- sweep(u_grid, 2L, u_hat)
@@ -605,23 +585,50 @@
         proposal_source <- "mode_hessian"
     }
 
-    # Axes the grid pins to a single value (e.g. a copy `alpha` fixed at 0, or a
-    # one-point dispersion axis) carry zero weighted variance, leaving Su rank
-    # deficient and its Cholesky undefined. The hyperparameter posterior has no
-    # spread along such an axis, so the importance proposal holds it fixed at
-    # u_hat and is built only on the varying axes -- the k-hat then diagnoses
-    # the proposal over the axes that actually carry posterior uncertainty,
-    # rather than declining the whole fit (gcol33/tulpa#114).
-    vary <- .joint_pareto_vary_axes(Su)
-    if (length(vary) == 0L) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
+    list(tags = tags, u_grid = u_grid, u_hat = u_hat, Su = Su, cn = cn, d = d,
+         proposal_source = proposal_source)
+}
+
+# Score the outer Pareto-k over a chosen set of varying axes `vary`, holding the
+# rest fixed at `u_hat`. The shared scorer behind both the joint k (all
+# genuinely-varying axes) and the per-arm k (one arm's axes; gcol33/tulpa#120).
+# `prep` is the `.joint_pareto_prepare` summary, `refit_log_marginal` the inner
+# re-solve closure (round-trips an `S x d` user-facing theta matrix through the
+# SAME joint kernel the integrator used, returning the per-cell log-marginal WITH
+# the baked hyperprior). The proposal's normalizing constant is common to every
+# draw and drops under PSIS, so only the quadratic enters (handled inside
+# `.nested_is_pareto_k`). Does NOT manage the RNG -- the driver saves / restores
+# it once around all scoring so the fit's draws are bit-for-bit unchanged.
+#
+# Importance-sampling k-hat with moment-matching refinement (gcol33/tulpa#119,
+# after Paananen, Piironen, Burkner & Vehtari 2021, Stat. Comput. 31:16). The
+# initial proposal is the integration-node covariance (or the mode-Hessian / CCD
+# curvature). When the grid is sharply concentrated that covariance is estimated
+# from few effective cells and can mis-scale the proposal -- too wide scatters
+# draws to extreme hyperparameters where the inner Laplace log-marginal inflates,
+# too narrow leaves the target tail uncovered -- so the k-hat reads unreliable
+# even though the fit is fine. Re-estimate the proposal from the PSIS-smoothed
+# importance-weighted moments of its own draws and re-score, keeping the
+# lowest-k-hat proposal; the smoothed weights bound any single draw's influence,
+# so a sharp posterior is matched in a couple of passes. Iteration stops once the
+# k-hat reaches the usable band (<= 0.7); a proposal that already fits pays a
+# single pass. The per-pass radius cap (gcol33/tulpa#94) is recomputed for the
+# current proposal so the grid-coverage envelope follows it. Returns
+# list(pareto_k, is_ess, refined) or NULL (empty / rank-deficient `vary`, no
+# finite importance draw).
+.joint_pareto_score <- function(prep, vary, refit_log_marginal, n_samples) {
+    if (length(vary) == 0L) return(NULL)
+    Su <- prep$Su; u_hat <- prep$u_hat; u_grid <- prep$u_grid
+    tags <- prep$tags; cn <- prep$cn; d <- prep$d
+
     Su_v <- Su[vary, vary, drop = FALSE]
     L_v  <- tryCatch(t(chol(Su_v)), error = function(e) NULL)
-    if (is.null(L_v)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
+    if (is.null(L_v)) return(NULL)
     u_hat_v <- u_hat[vary]
 
     lt <- function(U_v) {
         S <- nrow(U_v)
-        U <- matrix(u_hat, S, d, byrow = TRUE)   # pinned axes at their u_hat
+        U <- matrix(u_hat, S, d, byrow = TRUE)   # axes outside `vary` at u_hat
         U[, vary] <- U_v
         theta_mat <- matrix(0, S, d)
         log_jac   <- numeric(S)
@@ -637,25 +644,6 @@
     }
 
     u_grid_v <- u_grid[, vary, drop = FALSE]
-
-    # Importance-sampling k-hat with moment-matching refinement (gcol33/tulpa#119,
-    # after Paananen, Piironen, Burkner & Vehtari 2021, Stat. Comput. 31:16). The
-    # initial proposal is the integration-node covariance (or the mode-Hessian /
-    # CCD curvature). When the grid is sharply concentrated that covariance is
-    # estimated from few effective cells and can mis-scale the proposal -- too
-    # wide scatters draws to extreme hyperparameters where the inner Laplace
-    # log-marginal inflates, too narrow leaves the target tail uncovered -- so the
-    # k-hat reads unreliable even though the fit is fine. Re-estimate the proposal
-    # from the PSIS-smoothed importance-weighted moments of its own draws and
-    # re-score, keeping the lowest-k-hat proposal; the smoothed weights bound any
-    # single draw's influence, so a sharp posterior is matched in a couple of
-    # passes. Iteration stops once the k-hat reaches the usable band (<= 0.7); a
-    # proposal that already fits pays a single pass. The per-pass radius cap
-    # (gcol33/tulpa#94) is recomputed for the current proposal so the
-    # grid-coverage envelope follows it. The fit's RNG is restored at the end so
-    # the posterior draws are bit-for-bit unchanged.
-    has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-    old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
     prop_u  <- u_hat_v
     prop_L  <- L_v
     best    <- NULL
@@ -679,10 +667,164 @@
         if (is.null(Lw)) break
         prop_u <- mu_w; prop_L <- Lw; refined <- TRUE
     }
-    if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
-    if (is.null(best)) return(list(pareto_k = NA_real_, is_ess = NA_real_, proposal_source = NA_character_))
-    src <- if (isTRUE(best$refined)) "moment_matched" else proposal_source
-    list(pareto_k = best$pareto_k, is_ess = best$is_ess, proposal_source = src)
+    best
+}
+
+# Shared outer Pareto-k-hat driver for a joint nested-Laplace result. Prepares
+# the proposal summary once, scores the joint k over every genuinely-varying
+# axis, and -- when `arm_axes` is supplied (gcol33/tulpa#120) -- additionally
+# scores a k restricted to each arm's hyperparameter axes (the rest held at the
+# posterior mean `u_hat`). Runs all scoring with the RNG restored at the end so
+# the fit's draws are bit-for-bit unchanged.
+#
+# Returns list(pareto_k, is_ess, proposal_source): all NA / NA-source when the
+# fit declines (an axis with unguessable support, a degenerate proposal
+# covariance, or too few finite importance draws), in which case the diagnostic
+# layer reports quad-ESS. With `arm_axes`, also `by_arm_k` / `by_arm_is_ess`
+# (named numeric over the arms) -- a per-arm k of NA means that arm carries no
+# genuinely-varying axis.
+.joint_pareto_k <- function(res, refit_log_marginal, n_samples = 200L,
+                            proposal = NULL, arm_axes = NULL) {
+    na_out <- list(pareto_k = NA_real_, is_ess = NA_real_,
+                   proposal_source = NA_character_)
+    prep <- .joint_pareto_prepare(res, refit_log_marginal, n_samples, proposal)
+    if (is.null(prep)) return(na_out)
+
+    has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+    old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+    on.exit(if (!is.null(old_seed))
+                assign(".Random.seed", old_seed, envir = .GlobalEnv))
+
+    # Axes the grid pins to a single value (e.g. a copy `alpha` fixed at 0, or a
+    # one-point dispersion axis) carry zero weighted variance, leaving Su rank
+    # deficient and its Cholesky undefined. The importance proposal holds them
+    # fixed at u_hat and is built only on the varying axes (gcol33/tulpa#114).
+    vary  <- .joint_pareto_vary_axes(prep$Su)
+    joint <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples)
+    if (is.null(joint)) return(na_out)
+    src <- if (isTRUE(joint$refined)) "moment_matched" else prep$proposal_source
+    out <- list(pareto_k = joint$pareto_k, is_ess = joint$is_ess,
+                proposal_source = src)
+
+    if (!is.null(arm_axes) && length(arm_axes) > 0L) {
+        pa <- lapply(arm_axes, function(ax) {
+            v <- intersect(vary, as.integer(ax))
+            s <- if (length(v) == 0L) NULL else
+                .joint_pareto_score(prep, v, refit_log_marginal, n_samples)
+            if (is.null(s)) c(NA_real_, NA_real_)
+            else c(s$pareto_k, s$is_ess)
+        })
+        out$by_arm_k      <- vapply(pa, function(z) z[[1L]], numeric(1))
+        out$by_arm_is_ess <- vapply(pa, function(z) z[[2L]], numeric(1))
+        names(out$by_arm_k)      <- names(arm_axes)
+        names(out$by_arm_is_ess) <- names(arm_axes)
+    }
+    out
+}
+
+# Which arms does a latent block load on? A block enters arm `a`'s linear
+# predictor iff its per-arm index for `a` is non-empty. The per-arm index lives
+# under one of `obs_idx` / `spatial_idx` / `temporal_idx` on the (prepared)
+# block spec -- a length-n_arms list (one integer vector per arm; an empty entry
+# means the block does not load that arm) or a single vector replicated across
+# every arm. A block with no per-arm index field loads on all arms. Returns a
+# length-n_arms logical (gcol33/tulpa#120).
+.joint_block_arms <- function(block, n_arms) {
+    for (fld in c("spatial_idx", "temporal_idx", "obs_idx")) {
+        idx <- block[[fld]]
+        if (is.null(idx)) next
+        if (is.list(idx) && length(idx) == n_arms) {
+            return(vapply(idx, function(v) length(v) > 0L, logical(1)))
+        }
+        return(rep(TRUE, n_arms))            # single vector -> shared by all arms
+    }
+    rep(TRUE, n_arms)
+}
+
+# Map each joint hyperparameter axis (theta_grid column) to the arm(s) whose
+# linear predictor it enters, for the opt-in per-arm outer Pareto-k
+# (gcol33/tulpa#120). Returns a named list arm_name -> integer column indices, or
+# NULL to DECLINE (single-block layout, < 2 arms, or fewer than two arms with any
+# axis) so the per-arm diagnostic is simply withheld rather than reporting a
+# mis-attributed k -- the same decline-rather-than-guess stance the joint axis
+# tags take.
+#
+# Axis attribution:
+#   * a latent block's axes -> the arms the block loads on (`.joint_block_arms`),
+#     so a field shared across arms contributes to each arm it enters;
+#   * a copy block's `alpha` (the cross-arm copy coefficient) -> the recipient
+#     arm only, since it measures how strongly that arm reads the donor field;
+#   * a trailing `phi_<arm>` dispersion column -> that arm, by name suffix.
+.joint_pareto_arm_axes <- function(res) {
+    tg <- res$theta_grid
+    if (is.null(tg) || !is.matrix(tg) || ncol(tg) == 0L) return(NULL)
+    # Per-arm decomposition is defined for the multi-block layout (b<b>. axis
+    # names + axis_offsets + blocks). The single-block joint shares one field
+    # across arms, so decline rather than mis-attribute its axes.
+    if (is.null(res$axis_offsets) || is.null(res$blocks)) return(NULL)
+    cn <- colnames(tg)
+    n_arms <- res$arm_layout$n_arms %||% length(res$responses)
+    if (is.null(n_arms) || n_arms < 2L) return(NULL)
+    arm_names <- names(res$responses)
+    if (is.null(arm_names) || length(arm_names) != n_arms) {
+        arm_names <- paste0("arm", seq_len(n_arms))
+    }
+
+    ao <- as.integer(res$axis_offsets)
+    B  <- length(res$blocks)
+    if (length(ao) < B + 1L) return(NULL)
+
+    # Resolve copy (donor block -> recipient arm) to attribute each copy `alpha`
+    # to its recipient arm. Decline-safe: an unresolvable copy just leaves alpha
+    # attributed to the arms its donor block loads on.
+    cp <- tryCatch(.resolve_copy_multi(res$copy, res$responses, res$prior),
+                   error = function(e) NULL)
+    copy_blocks <- if (!is.null(cp) && isTRUE(cp$has_copy))
+        as.integer(cp$copy_blocks_zero) + 1L else integer(0)
+    copy_arms   <- if (!is.null(cp) && isTRUE(cp$has_copy))
+        as.integer(cp$copy_arms_zero)   + 1L else integer(0)
+
+    arm_cols <- replicate(n_arms, integer(0), simplify = FALSE)
+    names(arm_cols) <- arm_names
+    bare <- function(idx) sub("^b[0-9]+\\.", "", cn[idx])
+
+    for (b in seq_len(B)) {
+        if (ao[b + 1L] <= ao[b]) next                     # block carries no axis
+        cols  <- (ao[b] + 1L):ao[b + 1L]
+        loads <- .joint_block_arms(res$blocks[[b]], n_arms)
+        pos   <- match(b, copy_blocks)
+        recip <- if (!is.na(pos)) copy_arms[pos] else NA_integer_
+        if (!is.na(recip)) loads[recip] <- TRUE           # recipient reads the field
+        bc <- bare(cols)
+        for (k in seq_along(cols)) {
+            if (identical(bc[k], "alpha") && !is.na(recip)) {
+                arm_cols[[recip]] <- c(arm_cols[[recip]], cols[k])
+            } else {
+                for (a in which(loads)) arm_cols[[a]] <- c(arm_cols[[a]], cols[k])
+            }
+        }
+    }
+    # Trailing per-arm dispersion columns by name suffix.
+    for (a in seq_len(n_arms)) {
+        pc <- which(cn == paste0("phi_", arm_names[a]))
+        if (length(pc)) arm_cols[[a]] <- c(arm_cols[[a]], pc)
+    }
+    arm_cols <- lapply(arm_cols, function(v) sort(unique(v)))
+    keep <- vapply(arm_cols, length, integer(1)) > 0L
+    if (sum(keep) < 2L) return(NULL)
+    arm_cols[keep]
+}
+
+# Attach the opt-in per-arm outer Pareto-k to a joint result (gcol33/tulpa#120).
+# No-op when the driver computed no per-arm k (diagnostic off, single-block
+# layout, or a declined per-arm map). Single source for both attach paths.
+.joint_attach_by_arm_k <- function(res, kd) {
+    if (is.null(kd$by_arm_k)) return(res)
+    res$pareto_k_by_arm        <- kd$by_arm_k
+    res$pareto_k_by_arm_is_ess <- kd$by_arm_is_ess
+    res$pareto_k_by_arm_scope  <-
+        "per-arm hyperparameter axes (other arms fixed at posterior mean)"
+    res
 }
 
 # Single-block joint wrapper. Reuses the driver's already-built generic
@@ -699,7 +841,8 @@
 .joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
                                           max_iter = 50L,
                                           diagnose_k = TRUE, k_samples = 200L,
-                                          n_threads_outer = 1L) {
+                                          n_threads_outer = 1L,
+                                          pareto_k_by_arm = FALSE) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -736,9 +879,11 @@
     # re-order. Fall back to the near-neighbour chain re-order when modes are
     # unavailable, else the plain broadcast warm (gcol33/tulpa#118).
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
-    kd <- .joint_pareto_k(res, refit, k_samples)
+    arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
+    kd <- .joint_pareto_k(res, refit, k_samples, arm_axes = arm_axes)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res <- .joint_attach_by_arm_k(res, kd)
     res
 }

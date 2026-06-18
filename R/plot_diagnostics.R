@@ -1037,6 +1037,21 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
         recommendations <- c(recommendations, sprintf(
           "Pareto k-hat = %.2f (< 0.7): nested approximation is reliable.", k_hat))
       }
+      # Opt-in per-arm k-hat (gcol33/tulpa#120): localises which arm's
+      # hyperparameter axes drive a tail-heavy joint k.
+      bak <- fit$pareto_k_by_arm
+      if (!is.null(bak) && length(bak) > 0L) {
+        result$pareto_k_by_arm <- bak
+        nm <- names(bak) %||% paste0("arm", seq_along(bak))
+        parts <- vapply(seq_along(bak), function(i)
+          sprintf("%s %s", nm[i],
+                  if (is.finite(bak[i])) sprintf("%.2f", bak[i]) else "NA"),
+          character(1))
+        recommendations <- c(recommendations, sprintf(
+          "Per-arm Pareto k-hat (%s): %s.",
+          fit$pareto_k_by_arm_scope %||% "other arms fixed at posterior mean",
+          paste(parts, collapse = ", ")))
+      }
     } else {
       w <- fit$weights
       if (!is.null(w) && length(w) > 1L && is.finite(sum(w))) {

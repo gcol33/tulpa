@@ -249,6 +249,67 @@ test_that("a proposal matching the grid covariance is a byte-exact no-op", {
          n_neighbors = as.integer(nn), n_spatial_units = n_s)
 }
 
+# --------------------------------------------------------------------------- #
+# Opt-in per-arm outer Pareto-k (gcol33/tulpa#120)                            #
+# --------------------------------------------------------------------------- #
+
+# A separable two-block, two-arm result: block 1 (b1.sigma, b1.alpha) loads the
+# occ arm, block 2 (b2.sigma, b2.alpha) loads the pos arm, and a trailing
+# phi_pos dispersion axis belongs to pos. No copy (alpha pinned at 0), so each
+# block's axes are attributed to the single arm it loads.
+.pk_arm_res <- function() {
+    res <- .pk_pinned_res()
+    res$responses  <- list(occ = list(), pos = list())
+    res$arm_layout <- list(n_arms = 2L)
+    res$blocks <- list(
+        list(type = "icar", spatial_idx = list(1:5, integer(0))),   # occ only
+        list(type = "icar", spatial_idx = list(integer(0), 1:5)))    # pos only
+    res$copy <- NULL
+    res$prior <- res$blocks
+    res
+}
+
+test_that(".joint_pareto_arm_axes maps block + phi columns to arms", {
+    res <- .pk_arm_res()
+    ax  <- tulpa:::.joint_pareto_arm_axes(res)
+    expect_named(ax, c("occ", "pos"))
+    expect_equal(ax$occ, c(1L, 2L))            # b1.sigma, b1.alpha
+    expect_equal(ax$pos, c(3L, 4L, 5L))        # b2.sigma, b2.alpha, phi_pos
+})
+
+test_that(".joint_pareto_arm_axes declines on the single-block layout", {
+    # No axis_offsets / blocks -> one shared field across arms -> decline rather
+    # than mis-attribute (the single-block joint path).
+    res <- list(theta_grid = matrix(1, 1, 2,
+                                    dimnames = list(NULL, c("sigma", "alpha"))),
+                weights = 1, responses = list(occ = list(), pos = list()))
+    expect_null(tulpa:::.joint_pareto_arm_axes(res))
+})
+
+test_that("per-arm k is reported and leaves the joint k bit-identical", {
+    res   <- .pk_arm_res()
+    u_hat <- c(log(1.0), log(0.35))
+    refit <- .pk_refit_pinned(u_hat)
+    ax    <- tulpa:::.joint_pareto_arm_axes(res)
+
+    set.seed(3)
+    k_arm   <- tulpa:::.joint_pareto_k(res, refit, n_samples = 200L,
+                                       proposal = NULL, arm_axes = ax)
+    set.seed(3)
+    k_joint <- tulpa:::.joint_pareto_k(res, refit, n_samples = 200L,
+                                       proposal = NULL)
+
+    # The joint k is scored first from the same seed -> unchanged by the opt-in.
+    expect_equal(k_arm$pareto_k, k_joint$pareto_k)
+    expect_equal(k_arm$is_ess,   k_joint$is_ess)
+    expect_null(k_joint$by_arm_k)
+
+    expect_named(k_arm$by_arm_k, c("occ", "pos"))
+    expect_true(all(is.finite(k_arm$by_arm_k)))
+    expect_true(all(k_arm$by_arm_k < 0.7))     # each arm: 1-axis Gaussian target
+    expect_named(k_arm$by_arm_is_ess, c("occ", "pos"))
+})
+
 test_that("a multi-block CCD fit sources the k-hat from the mode Hessian", {
     skip_if_not_slow()
     set.seed(31)
@@ -328,4 +389,54 @@ test_that("a collapsed tensor fit recovers a usable k-hat (grid-moment + moment 
     expect_true(fit$pareto_k_proposal_source %in% c("grid_moment", "moment_matched"))
     expect_true(is.finite(fit$pareto_k))
     expect_lt(fit$pareto_k, 0.7)
+})
+
+test_that("diagnose_k = 'by_arm' adds per-arm k and leaves the joint k unchanged", {
+    skip_if_not_slow()
+    set.seed(31)
+    N <- 800L; nA <- 40L; nB <- 30L
+    iA <- sample.int(nA, N, TRUE); iB <- sample.int(nB, N, TRUE)
+    pA <- { r <- cumsum(rnorm(nA, 0, 1.1 / sqrt(nA))); r - mean(r) }
+    pB <- { r <- cumsum(rnorm(nB, 0, 0.9 / sqrt(nB))); r - mean(r) }
+    x <- rnorm(N); Xo <- cbind(1, x)
+    oc <- rbinom(N, 1, plogis(as.numeric(Xo %*% c(-0.3, 0.5)) + pA[iA] + pB[iB]))
+    ip <- oc == 1L; Xp <- Xo[ip, , drop = FALSE]; iAp <- iA[ip]; iBp <- iB[ip]
+    yp <- rnorm(sum(ip),
+                as.numeric(Xp %*% c(0.2, -0.4)) + 1.2 * pA[iAp] + 0.8 * pB[iBp], 0.5)
+    aA <- .pkp_adj(nA); aB <- .pkp_adj(nB)
+    arms <- list(
+        occ = list(y = as.numeric(oc), n_trials = rep(1L, N), X = Xo,
+                   spatial_idx = as.integer(iA), re_idx = rep(0, N),
+                   n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
+        pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
+                   spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
+                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.5))
+    prior <- list(
+        list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
+             adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,
+             sigma_grid = c(0.4, 0.8, 1.2, 1.6),
+             spatial_idx = list(as.integer(iA), as.integer(iAp))),
+        list(type = "icar", n_spatial_units = nB, adj_row_ptr = aB$adj_row_ptr,
+             adj_col_idx = aB$adj_col_idx, n_neighbors = aB$n_neighbors,
+             sigma_grid = c(0.3, 0.7, 1.1),
+             spatial_idx = list(as.integer(iB), as.integer(iBp))))
+    cp <- list(list(block = 1, arm = "pos", alpha_grid = c(0, 0.6, 1.2, 1.8)),
+               list(block = 2, arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5)))
+    ctrl <- list(integration = "ccd", k_samples = 200L,
+                 var_of_means_consistency = FALSE)
+
+    fit_def <- tulpa_nested_laplace_joint(
+        responses = arms, prior = prior, copy = cp,
+        control = modifyList(ctrl, list(diagnose_k = TRUE)))
+    fit_arm <- tulpa_nested_laplace_joint(
+        responses = arms, prior = prior, copy = cp,
+        control = modifyList(ctrl, list(diagnose_k = "by_arm")))
+
+    # The default fit reports no per-arm k; the opt-in adds it without moving the
+    # joint k (the diagnostic is RNG-restored and the joint k is scored first).
+    expect_null(fit_def$pareto_k_by_arm)
+    expect_equal(fit_arm$pareto_k, fit_def$pareto_k)
+    expect_named(fit_arm$pareto_k_by_arm, c("occ", "pos"))
+    expect_true(all(is.finite(fit_arm$pareto_k_by_arm)))
+    expect_match(fit_arm$pareto_k_by_arm_scope, "per-arm")
 })

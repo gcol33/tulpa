@@ -1,5 +1,38 @@
 # tulpa NEWS
 
+## 0.0.45 (2026-06-18)
+
+* `tulpa_criteria()` gains a `group` argument that sets the LOO unit explicitly
+  (gcol33/tulpa#118). A column of `log_lik` is the leave-one-out fold; with
+  `group = NULL` (the default) the result is byte-identical to before
+  (leave-one-row-out, e.g. per plot / per visit). When supplied, the per-draw
+  pointwise log-likelihoods are summed within group to a `[n_draws x n_groups]`
+  matrix *before* PSIS, so each fold is a whole group (leave-one-group-out
+  cross-validation, LOGO-CV) -- e.g. leave out a whole cell rather than one of
+  its rows. The grouping streams over the (possibly EVA-scale) input once and
+  never materialises it; `lppd`, `p_waic`, `elpd_loo`, `cpo` and `pareto_k` are
+  all computed on the grouped matrix and the standard-error multipliers follow
+  the fold count. DIC is a plug-in deviance over all observations and is
+  unaffected. The result reports `n_groups` and prints the fold count, and the
+  pointwise data frame is keyed by `group`.
+
+* Joint nested-Laplace outer Pareto-k: opt-in per-arm reporting
+  (gcol33/tulpa#120). `control$diagnose_k = "by_arm"` computes, in addition to
+  the single joint k over the whole hyperparameter posterior, a k-hat restricted
+  to each arm's hyperparameter axes (the other arms held at their posterior
+  mean), so a tail-heavy joint k can be localised to one arm rather than reported
+  as one pooled number. Each axis is attributed to the arm(s) whose linear
+  predictor it enters -- a latent block's axes to the arms the block loads on, a
+  copy coefficient `alpha` to the recipient arm, a `phi_<arm>` dispersion axis to
+  that arm -- reusing the same proposal-build + moment-matching + PSIS path as
+  the joint k over the arm's axis subspace. Reported in `pareto_k_by_arm` (named
+  by arm) with `pareto_k_by_arm_is_ess` / `pareto_k_by_arm_scope`, surfaced in
+  `diagnostic_summary()`. OFF by default: the joint k stays the default behaviour
+  and cost, and is bit-for-bit unchanged by the opt-in (it is scored first, and
+  the diagnostic is RNG-restored). Defined for the multi-block layout with two or
+  more arms; the single-block shared-field layout declines rather than
+  mis-attribute its axes.
+
 ## 0.0.44 (2026-06-18)
 
 * New built-in `interval_gaussian` family: an interval-censored Gaussian latent

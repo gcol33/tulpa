@@ -279,7 +279,12 @@
 #'     draws are unchanged. A fit carrying an axis whose support is not safely
 #'     known (CAR_proper's `rho_car`) declines to the quadrature-ESS fallback
 #'     (`pareto_k = NA`) rather than apply a guessed transform. `FALSE` skips
-#'     the diagnostic (`pareto_k = NA`).
+#'     the diagnostic (`pareto_k = NA`). `"by_arm"` additionally computes a
+#'     k-hat restricted to each arm's hyperparameter axes (the other arms held
+#'     at their posterior mean), reported in `pareto_k_by_arm`, to localise
+#'     which arm drives a tail-heavy joint k; the joint k itself is unchanged.
+#'     Per-arm k is defined for the multi-block layout with two or more arms and
+#'     declines (no `pareto_k_by_arm`) for the single-block shared-field layout.
 #'   * `k_threads` (`NULL`) -- outer-thread width for the diagnostic's
 #'     importance batch. The `k_samples` re-solves are independent and run after
 #'     the grid (every core free), each solved single-threaded once the batch
@@ -345,6 +350,12 @@
 #'      or `"grid_moment"` from the grid-weighted covariance. `NA` when the
 #'      diagnostic is off or declines. The mode-Hessian source keeps the
 #'      \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
+#'   * `pareto_k_by_arm`, `pareto_k_by_arm_is_ess`, `pareto_k_by_arm_scope` —
+#'      present only with `control$diagnose_k = "by_arm"` (gcol33/tulpa#120).
+#'      Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
+#'      hyperparameter axes, the other arms held at their posterior mean, so a
+#'      tail-heavy joint k can be localised to one arm. A per-arm entry is `NA`
+#'      when that arm carries no varying axis.
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -439,8 +450,14 @@ tulpa_nested_laplace_joint <- function(responses,
     # importance-samples the joint hyperparameter posterior against the
     # Gaussian proposal the integrator fits; `k_samples` (default 200) is the
     # number of draws, each one extra inner joint solve. RNG-restored, so the
-    # fit's draws are unchanged whether or not it runs.
-    diagnose_k                <- control$diagnose_k %||% TRUE
+    # fit's draws are unchanged whether or not it runs. `diagnose_k = "by_arm"`
+    # additionally computes a k-hat restricted to each arm's hyperparameter axes
+    # (other arms held at their posterior mean), to localise which arm drives a
+    # tail-heavy joint k (gcol33/tulpa#120); the joint k is unchanged and stays
+    # the default.
+    diagnose_k_raw            <- control$diagnose_k %||% TRUE
+    pareto_k_by_arm           <- identical(diagnose_k_raw, "by_arm")
+    diagnose_k                <- pareto_k_by_arm || isTRUE(diagnose_k_raw)
     k_samples                 <- control$k_samples %||% 200L
     # Outer-thread width for the diagnostic's importance batch (gcol33/tulpa#117).
     # The `k_samples` re-solves are independent and run after the grid (all cores
@@ -562,6 +579,7 @@ tulpa_nested_laplace_joint <- function(responses,
             force_sparse = force_sparse,
             cell_coupling = cell_coupling,
             diagnose_k = diagnose_k, k_samples = k_samples,
+            pareto_k_by_arm = pareto_k_by_arm,
             pareto_k_threads = pareto_k_threads,
             inner_refresh = inner_refresh,
             integration = integration,
@@ -764,7 +782,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                          max_iter   = max_iter,
                                          diagnose_k = diagnose_k,
                                          k_samples  = k_samples,
-                                         n_threads_outer = pareto_k_threads)
+                                         n_threads_outer = pareto_k_threads,
+                                         pareto_k_by_arm = pareto_k_by_arm)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

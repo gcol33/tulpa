@@ -270,7 +270,12 @@ extra inner joint solve; the draw is RNG-restored so the fit's modes /
 draws are unchanged. A fit carrying an axis whose support is not safely
 known (CAR_proper's \code{rho_car}) declines to the quadrature-ESS fallback
 (\code{pareto_k = NA}) rather than apply a guessed transform. \code{FALSE} skips
-the diagnostic (\code{pareto_k = NA}).
+the diagnostic (\code{pareto_k = NA}). \code{"by_arm"} additionally computes a
+k-hat restricted to each arm's hyperparameter axes (the other arms held
+at their posterior mean), reported in \code{pareto_k_by_arm}, to localise
+which arm drives a tail-heavy joint k; the joint k itself is unchanged.
+Per-arm k is defined for the multi-block layout with two or more arms and
+declines (no \code{pareto_k_by_arm}) for the single-block shared-field layout.
 \item \code{k_threads} (\code{NULL}) -- outer-thread width for the diagnostic's
 importance batch. The \code{k_samples} re-solves are independent and run after
 the grid (every core free), each solved single-threaded once the batch
@@ -338,6 +343,12 @@ finite-difference Hessian when a sharp posterior collapses the grid),
 or \code{"grid_moment"} from the grid-weighted covariance. \code{NA} when the
 diagnostic is off or declines. The mode-Hessian source keeps the
 \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
+\item \code{pareto_k_by_arm}, \code{pareto_k_by_arm_is_ess}, \code{pareto_k_by_arm_scope} —
+present only with \code{control$diagnose_k = "by_arm"} (gcol33/tulpa#120).
+Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
+hyperparameter axes, the other arms held at their posterior mean, so a
+tail-heavy joint k can be localised to one arm. A per-arm entry is \code{NA}
+when that arm carries no varying axis.
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.

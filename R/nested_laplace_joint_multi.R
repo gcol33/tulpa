@@ -721,7 +721,8 @@
                                          max_iter, tol, n_threads,
                                          force_sparse, cell_coupling,
                                          diagnose_k = TRUE, k_samples = 200L,
-                                         n_threads_outer = 1L, proposal = NULL) {
+                                         n_threads_outer = 1L, proposal = NULL,
+                                         pareto_k_by_arm = FALSE) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -771,10 +772,13 @@
     # stored; else near-neighbour chain re-order; else plain broadcast
     # (gcol33/tulpa#118).
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
-    kd <- .joint_pareto_k(res, refit, k_samples, proposal = proposal)
+    arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
+    kd <- .joint_pareto_k(res, refit, k_samples, proposal = proposal,
+                          arm_axes = arm_axes)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res <- .joint_attach_by_arm_k(res, kd)
     res
 }
 
@@ -795,6 +799,7 @@
                                   cell_coupling = "separable",
                                   diagnose_k = TRUE,
                                   k_samples = 200L,
+                                  pareto_k_by_arm = FALSE,
                                   pareto_k_threads = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
@@ -1143,7 +1148,8 @@
                                         diagnose_k = diagnose_k,
                                         k_samples  = k_samples,
                                         n_threads_outer = k_to,
-                                        proposal = ccd_proposal)
+                                        proposal = ccd_proposal,
+                                        pareto_k_by_arm = pareto_k_by_arm)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

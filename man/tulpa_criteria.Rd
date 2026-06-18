@@ -8,6 +8,7 @@ tulpa_criteria(
   log_lik,
   criteria = c("waic", "loo", "cpo", "lpml", "dic"),
   loglik_at_mean = NULL,
+  group = NULL,
   chunk_size = NULL,
   pointwise = FALSE
 )
@@ -24,6 +25,19 @@ PSIS pass; \code{"dic"} additionally needs \code{loglik_at_mean}.}
 log-likelihoods evaluated at the posterior mean of the parameters, supplied
 by the caller (the model package knows the parameterization). Required for
 DIC's plug-in deviance; without it the DIC fields are \code{NA}.}
+
+\item{group}{Optional length-\code{n_obs} grouping (an integer / factor /
+character vector). The LOO unit is \strong{one column of \code{log_lik}}: with
+\code{group = NULL} (the default) every column is its own fold (leave-one-row-out,
+e.g. per plot / per visit) and the result is byte-identical to the
+ungrouped call. When supplied, the per-draw pointwise log-likelihoods are
+summed within group to a \verb{[n_draws x n_groups]} matrix \strong{before} PSIS, so
+each fold is a whole group (leave-one-group-out cross-validation, LOGO-CV).
+Use it to switch the estimand from per-row to per-group LOO -- e.g. on a
+cell-compressed hierarchical fit, leave out a whole cell rather than one of
+its rows. WAIC's variance term, \code{lppd}, \code{elpd_loo}, \code{cpo} and \code{pareto_k}
+are all computed on the grouped matrix. DIC is a plug-in deviance over all
+observations and is unaffected by \code{group}.}
 
 \item{chunk_size}{Number of observation columns to process per block. The
 default streams the whole matrix at once when materialized, else picks a
@@ -54,6 +68,14 @@ counts; the result records \code{n_draws} and the count of observations with
 \code{p_waic_i > 0.4} (the \code{loo} heuristic for an unreliable WAIC), and the
 PSIS-LOO \code{elpd_loo} is the more stable figure to report when that count is
 non-trivial.
+
+The LOO unit is whatever \strong{one column of \code{log_lik}} holds. If the consumer
+built the matrix with one column per row (plot / visit), the default is
+per-row LOO; if a column already carries a whole group's compressed
+likelihood, leaving it out drops that group and \code{pareto_k} can blow up by
+construction. The \code{group} argument makes the unit explicit: supply it to
+aggregate columns into folds and report leave-one-group-out CV (LOGO-CV)
+instead, a different and deliberate estimand.
 }
 \references{
 Vehtari, Gelman & Gabry (2017). Practical Bayesian model evaluation using
