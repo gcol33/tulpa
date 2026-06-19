@@ -35,16 +35,17 @@
 # reported k while it bounds the worst-case selection to ~4 evaluations.
 .K_DIAG_MM_MAX <- 3L
 
-# Usable-band threshold for the outer Pareto-k-hat (Vehtari, Simpson, Gelman,
-# Yao & Gabry 2024): at or below this the proposal can be reliably corrected to
-# the target, above it cannot. Single source for the moment-matching early-stop.
+# Internal proposal-loop threshold for the moment-matching early-stop: a proposal
+# whose k-hat is at or below this is good enough to stop refining (Vehtari,
+# Simpson, Gelman, Yao & Gabry 2024 usable band). This is a fixed loop control,
+# distinct from the REPORTED reliability bands, which are sample-size dependent
+# (`.ps_conf_bands` in R/psis.R, gcol33/tulpa#128).
 .K_DIAG_USABLE <- 0.7
 
-# Lower reliability-band boundary (gcol33/tulpa#124). The outer Pareto-k-hat is
-# classified into three bands -- good (`< .K_DIAG_GOOD`), ok
-# (`[.K_DIAG_GOOD, .K_DIAG_USABLE)`), unreliable (`>= .K_DIAG_USABLE`) -- and the
-# batched diagnostic reports whether the median +/- 2*MCSE interval lies within a
-# single band. The two boundaries are .K_DIAG_GOOD and .K_DIAG_USABLE.
+# Internal proposal-loop threshold for the grid-mixture skip (gcol33/tulpa#126): a
+# single-Gaussian k-hat below this is already good, so the mixture rescue (which
+# can only LOWER an inflated k) is skipped. A fixed loop control, distinct from
+# the reported sample-size-dependent bands (`.ps_conf_bands` in R/psis.R).
 .K_DIAG_GOOD <- 0.5
 
 # Grid-mixture (basin) proposal for the outer Pareto-k on a spread tensor grid
@@ -731,8 +732,8 @@
         if (is.null(best) || kd$pareto_k < best$pareto_k)
             # `prop_u` / `prop_L` are the proposal that PRODUCED this `kd` (the
             # moment-matching update at the loop foot is for the NEXT pass), so the
-            # stored proposal is consistent with `best$pareto_k` and a batched
-            # re-score can evaluate the same converged proposal (gcol33/tulpa#126).
+            # stored proposal stays consistent with `best$pareto_k` and the
+            # bootstrap re-fits the GPD on this same converged proposal's ratios.
             best <- list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, refined = refined,
                          U = kd$U, log_weights = kd$log_weights, lr = kd$lr,
                          prop_u = prop_u, prop_L = prop_L)
@@ -977,7 +978,7 @@
 .joint_pareto_k <- function(res, refit_log_marginal, n_samples = 500L,
                             proposal = NULL, arm_axes = NULL,
                             k_bootstrap = 1000L, k_tail_points = NULL,
-                            k_conf_bands = c(0.5, 0.7)) {
+                            k_conf_bands = NULL) {
     na_out <- list(pareto_k = NA_real_, is_ess = NA_real_,
                    proposal_source = NA_character_)
     prep <- .joint_pareto_prepare(res, refit_log_marginal, n_samples, proposal)
@@ -1230,7 +1231,7 @@
                                           pareto_k_by_arm = FALSE,
                                           k_bootstrap = 1000L,
                                           k_tail_points = NULL,
-                                          k_conf_bands = c(0.5, 0.7)) {
+                                          k_conf_bands = NULL) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"

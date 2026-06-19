@@ -316,10 +316,14 @@
 #'     drags body ratios into the tail lowers variance but biases the k-hat). The
 #'     used and requested counts are reported in `pareto_k_tail_points` /
 #'     `pareto_k_tail_points_requested`.
-#'   * `k_conf_bands` (`c(0.5, 0.7)`) -- the reliability-band boundaries (strictly
-#'     increasing) defining the intervals \eqn{(-\infty, 0.5]}, \eqn{(0.5, 0.7]},
-#'     \eqn{(0.7, \infty)} = good / ok / unreliable, against which the bootstrap CI
-#'     is tested for `pareto_k_band_confident`.
+#'   * `k_conf_bands` (`NULL`) -- the reliability-band boundaries the bootstrap CI
+#'     is tested against for `pareto_k_band_confident`. `NULL` (default) uses the
+#'     sample-size-dependent boundaries \eqn{c(0.5, \min(1 - 1/\log_{10} S, 0.7))}
+#'     at the realised draw count \eqn{S} (Vehtari et al. 2024): the good cut is
+#'     0.5 and the usable cut tightens below 0.7 for small \eqn{S} (about 0.565 at
+#'     \eqn{S = 200}, reaching 0.7 only past \eqn{S \approx 2154}). Supply a
+#'     strictly-increasing numeric vector to fix the boundaries instead, e.g.
+#'     `c(0.5, 0.7)` for the size-independent good / ok / unreliable split.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -526,7 +530,9 @@ tulpa_nested_laplace_joint <- function(responses,
     # that, NOT `k_bootstrap`). `k_tail_points` (NULL = the automatic PSIS rule) is
     # an expert tail-threshold control, capped at the 20%-of-draws ceiling.
     # `k_conf_bands` are the reliability-band boundaries the bootstrap CI is tested
-    # against for `pareto_k_band_confident`.
+    # against for `pareto_k_band_confident`; NULL (default) uses the
+    # sample-size-dependent boundaries c(0.5, min(1 - 1/log10(S), 0.7)) at the
+    # realised draw count S (gcol33/tulpa#128).
     k_bootstrap               <- control$k_bootstrap %||% 1000L
     if (length(k_bootstrap) != 1L || is.na(k_bootstrap) ||
         k_bootstrap != round(k_bootstrap) || k_bootstrap < 0L) {
@@ -541,11 +547,12 @@ tulpa_nested_laplace_joint <- function(responses,
                  call. = FALSE)
         }
     }
-    k_conf_bands              <- control$k_conf_bands %||% c(0.5, 0.7)
-    if (!is.numeric(k_conf_bands) || anyNA(k_conf_bands) || length(k_conf_bands) < 1L ||
-        is.unsorted(k_conf_bands, strictly = TRUE)) {
-        stop("`control$k_conf_bands` must be a strictly increasing numeric vector.",
-             call. = FALSE)
+    k_conf_bands              <- control$k_conf_bands
+    if (!is.null(k_conf_bands) &&
+        (!is.numeric(k_conf_bands) || anyNA(k_conf_bands) || length(k_conf_bands) < 1L ||
+         is.unsorted(k_conf_bands, strictly = TRUE))) {
+        stop("`control$k_conf_bands` must be NULL (the sample-size-dependent ",
+             "default) or a strictly increasing numeric vector.", call. = FALSE)
     }
     # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). A CCD
     # places a central-composite design around the joint hyperparameter mode --

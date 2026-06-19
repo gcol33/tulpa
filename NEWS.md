@@ -1,5 +1,24 @@
 # tulpa NEWS
 
+## 0.0.51 (2026-06-20)
+
+* Outer Pareto-k reliability bands are now sample-size dependent (gcol33/tulpa#128).
+  The usable upper boundary is `min(1 - 1/log10(S), 0.7)` for `S` importance draws
+  (Vehtari et al. 2024; matches loo's `ps_khat_threshold`): about 0.565 at the
+  small-S end (`S = 200`), reaching the fixed 0.7 cap only past `S` ~ 2154. The
+  good cut stays at 0.5. `pareto_k_band_confident` now tests the bootstrap CI
+  against `c(0.5, min(1 - 1/log10(S), 0.7))` at the realised draw count, so a
+  k-hat near the upper band at a modest `diagnose_draws` is correctly read as
+  not-yet-usable rather than acceptable. `control$k_conf_bands` defaults to `NULL`
+  (the size-dependent bands); pass a strictly-increasing vector (e.g.
+  `c(0.5, 0.7)`) to fix the boundaries. New vignette section and the helpers
+  `.ps_khat_threshold` / `.ps_conf_bands`.
+* Known issue (gcol33/tulpa#130): for a hyperparameter posterior heavier or wider
+  than the integration grid, moment matching can widen the diagnostic proposal
+  past the grid and under-report the outer Pareto-k (reading it usable when the
+  grid is in fact too narrow). A fix that bounds the refinement to the grid is
+  tracked; the bad-case recovery test is skipped meanwhile.
+
 ## 0.0.50 (2026-06-19)
 
 * Joint nested-Laplace outer Pareto-k: replaced the adaptive batched reporting

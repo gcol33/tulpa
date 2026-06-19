@@ -307,10 +307,14 @@ so the fit stays an extreme tail; it is NOT a precision knob (a request that
 drags body ratios into the tail lowers variance but biases the k-hat). The
 used and requested counts are reported in \code{pareto_k_tail_points} /
 \code{pareto_k_tail_points_requested}.
-\item \code{k_conf_bands} (\code{c(0.5, 0.7)}) -- the reliability-band boundaries (strictly
-increasing) defining the intervals \eqn{(-\infty, 0.5]}, \eqn{(0.5, 0.7]},
-\eqn{(0.7, \infty)} = good / ok / unreliable, against which the bootstrap CI
-is tested for \code{pareto_k_band_confident}.
+\item \code{k_conf_bands} (\code{NULL}) -- the reliability-band boundaries the bootstrap CI
+is tested against for \code{pareto_k_band_confident}. \code{NULL} (default) uses the
+sample-size-dependent boundaries \eqn{c(0.5, \min(1 - 1/\log_{10} S, 0.7))}
+at the realised draw count \eqn{S} (Vehtari et al. 2024): the good cut is
+0.5 and the usable cut tightens below 0.7 for small \eqn{S} (about 0.565 at
+\eqn{S = 200}, reaching 0.7 only past \eqn{S \approx 2154}). Supply a
+strictly-increasing numeric vector to fix the boundaries instead, e.g.
+\code{c(0.5, 0.7)} for the size-independent good / ok / unreliable split.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and

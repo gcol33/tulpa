@@ -133,6 +133,25 @@
   !is.na(bl) && !is.na(bh) && bl == bh
 }
 
+# Sample-size-dependent usable reliability boundary for the outer Pareto-k-hat
+# (Vehtari, Simpson, Gelman, Yao & Gabry 2024; the loo `ps_khat_threshold` rule).
+# In the finite-mean band the importance-sampling estimate converges only as
+# S^(k-1), so a smaller draw count `S` tolerates a smaller k: the usable boundary
+# tightens below 0.7 for small `S` and reaches the bias-driven 0.7 cap only past
+# S ~ 2154 (1 - 1/log10(S) = 0.7). At S = 200 it is ~0.565. `S` is the realised
+# number of finite importance evaluations.
+.ps_khat_threshold <- function(S) min(1 - 1 / log10(S), 0.7)
+
+# Default reliability-band boundaries at draw count `S`: the good (finite-variance)
+# cut 0.5 plus the sample-size-dependent usable cut from `.ps_khat_threshold`. When
+# the usable cut is at or below 0.5 (very small `S`) good and ok are not separable,
+# so a single usable boundary (reliable / unreliable) is returned. The result is
+# the `bands` vector `.k_band_b` / `.within_one_band_b` classify against.
+.ps_conf_bands <- function(S) {
+  usable <- .ps_khat_threshold(S)
+  if (usable > 0.5) c(0.5, usable) else usable
+}
+
 # Bootstrap + closed-form uncertainty of the outer Pareto-k-hat from ONE batch of
 # importance log-ratios (gcol33/tulpa#127). The k-hat is a GPD shape fit to the
 # upper tail of `lr`; its sampling uncertainty GIVEN the proposal is estimated by
@@ -145,11 +164,13 @@
 # SE, reported as a cross-check (the Zhang-Stephens estimator's SE differs
 # slightly, so the bootstrap is primary). `band_confident` is TRUE iff the
 # bootstrap [ci_low, ci_high] lies within one reliability band (`conf_bands`), the
-# honest form when the bootstrap distribution is skewed. Returns the point k, its
-# IS-ESS, the tail size used, the bootstrap SE / 95% CI, the formula SE, and the
-# band-confidence flag.
+# honest form when the bootstrap distribution is skewed. `conf_bands = NULL`
+# (default) uses the sample-size-dependent boundaries `.ps_conf_bands(S)` at the
+# realised draw count `S`; pass an explicit strictly-increasing vector to fix the
+# boundaries instead. Returns the point k, its IS-ESS, the tail size used, the
+# bootstrap SE / 95% CI, the formula SE, and the band-confidence flag.
 .tulpa_psis_k_uncertainty <- function(lr, tail_points = NULL, n_boot = 1000L,
-                                      conf_bands = c(0.5, 0.7)) {
+                                      conf_bands = NULL) {
   lr   <- lr[is.finite(lr)]
   S    <- length(lr)
   base <- tulpa_psis(lr, tail_points = tail_points)
@@ -159,6 +180,7 @@
                se_boot = NA_real_, ci_low = NA_real_, ci_high = NA_real_,
                se_formula = NA_real_, band_confident = NA)
   if (!is.finite(k) || S < .PSIS_MIN_EVAL) return(out)
+  if (is.null(conf_bands)) conf_bands <- .ps_conf_bands(S)
   nb <- max(0L, as.integer(n_boot))
   if (nb >= 2L) {
     ks <- vapply(seq_len(nb), function(b) {
@@ -185,8 +207,10 @@
 #' returns the Pareto shape diagnostic `pareto_k` together with the smoothed
 #' (normalized) log weights and their importance-sampling effective sample
 #' size. `pareto_k` estimates the number of finite moments of the raw weight
-#' distribution: `< 0.5` is good, `0.5-0.7` acceptable, `>= 0.7` indicates the
-#' proposal cannot be reliably corrected to the target.
+#' distribution: `< 0.5` is good (finite variance). The usable upper boundary is
+#' sample-size dependent, `min(1 - 1/log10(S), 0.7)` for `S` draws (Vehtari et al.
+#' 2024): about 0.565 at `S = 200`, reaching the 0.7 cap only past `S` ~ 2154.
+#' Above it the proposal cannot be reliably corrected to the target.
 #'
 #' @param log_ratios Numeric vector of (unnormalized) log importance ratios
 #'   `log p_target(x) - log q_proposal(x)` evaluated at draws `x ~ q`.

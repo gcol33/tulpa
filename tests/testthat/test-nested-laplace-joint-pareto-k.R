@@ -497,6 +497,50 @@ test_that(".tulpa_psis_k_uncertainty returns well-formed bootstrap + formula fie
     expect_true(is.na(u0$se_boot))
 })
 
+# --------------------------------------------------------------------------- #
+# Sample-size-dependent reliability boundary (gcol33/tulpa#128)                #
+# --------------------------------------------------------------------------- #
+
+test_that(".ps_khat_threshold is the sample-size-dependent usable boundary", {
+    expect_equal(.ps_khat_threshold(100), 0.5, tolerance = 1e-9)
+    expect_equal(.ps_khat_threshold(200), 1 - 1 / log10(200), tolerance = 1e-12)
+    expect_equal(round(.ps_khat_threshold(200), 4), 0.5654)
+    # Cap at 0.7: 1 - 1/log10(S) = 0.7 at S ~ 2154, and the cap binds above it.
+    expect_equal(.ps_khat_threshold(2154), 0.7, tolerance = 1e-3)
+    expect_equal(.ps_khat_threshold(10000), 0.7)
+    expect_lt(.ps_khat_threshold(200), 0.7)            # tighter than the fixed cap
+})
+
+test_that(".ps_conf_bands keeps the good cut at 0.5 with a size-dependent usable cut", {
+    b200 <- .ps_conf_bands(200)
+    expect_length(b200, 2L)
+    expect_identical(b200[1L], 0.5)
+    expect_equal(b200[2L], .ps_khat_threshold(200))
+    # Very small S: the usable cut drops below 0.5, so a single reliable cut.
+    bsmall <- .ps_conf_bands(50)
+    expect_length(bsmall, 1L)
+    expect_lt(bsmall, 0.5)
+})
+
+test_that("the size-dependent boundary changes the band verdict vs fixed c(0.5, 0.7)", {
+    # A bootstrap interval [0.55, 0.62] at S = 200 crosses the size-dependent usable
+    # cut (~0.565), so it is NOT confidently in one band; under the fixed ok band
+    # (0.5, 0.7] it would read confident. The size-dependent default is stricter.
+    bands_s <- .ps_conf_bands(200)
+    expect_false(.within_one_band_b(0.55, 0.62, bands_s))
+    expect_true(.within_one_band_b(0.55, 0.62, c(0.5, 0.7)))
+})
+
+test_that(".tulpa_psis_k_uncertainty defaults conf_bands to the size-dependent bands", {
+    set.seed(321)
+    lr <- 0.5 * rnorm(300L)^2
+    S  <- sum(is.finite(lr))
+    set.seed(7); a <- .tulpa_psis_k_uncertainty(lr, n_boot = 400L, conf_bands = NULL)
+    set.seed(7); b <- .tulpa_psis_k_uncertainty(lr, n_boot = 400L,
+                                                conf_bands = .ps_conf_bands(S))
+    expect_identical(a$band_confident, b$band_confident)
+})
+
 test_that(".joint_pareto_k reports bootstrap uncertainty end to end (cover fixture)", {
     res <- .jpk_cover_res()
     set.seed(415)

@@ -29,8 +29,10 @@ order statistics of a generalized-Pareto fit to their upper tail, and
 returns the Pareto shape diagnostic \code{pareto_k} together with the smoothed
 (normalized) log weights and their importance-sampling effective sample
 size. \code{pareto_k} estimates the number of finite moments of the raw weight
-distribution: \verb{< 0.5} is good, \code{0.5-0.7} acceptable, \verb{>= 0.7} indicates the
-proposal cannot be reliably corrected to the target.
+distribution: \verb{< 0.5} is good (finite variance). The usable upper boundary is
+sample-size dependent, \code{min(1 - 1/log10(S), 0.7)} for \code{S} draws (Vehtari et al.
+2024): about 0.565 at \code{S = 200}, reaching the 0.7 cap only past \code{S} ~ 2154.
+Above it the proposal cannot be reliably corrected to the target.
 }
 \references{
 Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed

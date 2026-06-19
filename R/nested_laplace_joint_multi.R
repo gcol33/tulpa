@@ -724,7 +724,7 @@
                                          n_threads_outer = 1L, proposal = NULL,
                                          pareto_k_by_arm = FALSE,
                                          k_bootstrap = 1000L, k_tail_points = NULL,
-                                         k_conf_bands = c(0.5, 0.7)) {
+                                         k_conf_bands = NULL) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -807,7 +807,7 @@
                                   pareto_k_threads = NULL,
                                   k_bootstrap = 1000L,
                                   k_tail_points = NULL,
-                                  k_conf_bands = c(0.5, 0.7),
+                                  k_conf_bands = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   timer = NULL) {
