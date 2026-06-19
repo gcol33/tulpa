@@ -32,6 +32,10 @@
   borderline k is reported with its honest (wide) CI rather than chased to false
   precision; for a tighter estimate, raise `diagnose_draws`. `tulpa_psis()` gains
   a `tail_points` argument and returns `tail_len`.
+* New vignette `reliability-pareto-k`: what the outer Pareto-k certifies (the
+  integration, not the posterior), the reliability bands and their
+  draw-count-dependent usable boundary `min(1 - 1/log10(S), 0.7)`, the bootstrap
+  band-confidence flag, and the reliability ladder from reporting to debiasing.
 
 ## 0.0.49 (2026-06-19)
 
