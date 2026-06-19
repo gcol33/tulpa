@@ -269,71 +269,57 @@
 #'     default `control$hessian = "lm"` curvature; the dense small-`n_x` path
 #'     re-factorizes a cheap Hessian and ignores it. `2L`-`4L` is a good range
 #'     for a slow beta arm.
-#'   * `diagnose_k` (`TRUE`), `k_samples` (`200L`) -- compute the outer
-#'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the
-#'     joint hyperparameter posterior against the Gaussian proposal the
-#'     integrator fits (mixed per-axis transforms: `log` for positive scales,
-#'     logit for the BYM2 mixing weight, identity for the copy coefficient
-#'     \eqn{\alpha}). `k_samples` is the number of importance draws, each one
-#'     extra inner joint solve; the draw is RNG-restored so the fit's modes /
-#'     draws are unchanged. A fit carrying an axis whose support is not safely
-#'     known (CAR_proper's `rho_car`) declines to the quadrature-ESS fallback
-#'     (`pareto_k = NA`) rather than apply a guessed transform. `FALSE` skips
-#'     the diagnostic (`pareto_k = NA`). `"by_arm"` additionally computes a
-#'     k-hat restricted to each arm's hyperparameter axes (the other arms held
-#'     at their posterior mean), reported in `pareto_k_by_arm`, to localise
-#'     which arm drives a tail-heavy joint k; the joint k itself is unchanged.
-#'     Per-arm k is defined for the multi-block layout with two or more arms and
-#'     declines (no `pareto_k_by_arm`) for the single-block shared-field layout.
-#'   * `k_threads` (`NULL`) -- outer-thread width for the diagnostic's
-#'     importance batch. The `k_samples` re-solves are independent and run after
-#'     the grid (every core free), each solved single-threaded once the batch
-#'     saturates the pool, so widening it is a bit-identical wall-clock speedup
-#'     (the k-hat is unchanged). `NULL` follows the fit's own thread grant -- the
-#'     larger of `n_threads_outer` and the inner `n_threads` -- so a serial fit
-#'     keeps a serial diagnostic (no oversubscription when the caller is itself
-#'     parallelising per-species fits) while a threaded fit gets a free parallel
-#'     diagnostic. `"auto"` uses the physical performance-core count (capped at 2
-#'     under R CMD check) for a single serial fit that wants the diagnostic on
-#'     every core with one setting; an integer pins the width (`1L` forces
-#'     serial). Always capped at `k_samples`.
-#'   * `k_batches` (`1L`) -- batched outer Pareto-\eqn{\hat{k}} reporting. The
-#'     k-hat is a noisy estimator (a generalized-Pareto shape fit to the upper
-#'     tail of one batch of importance weights, with real Monte Carlo error),
-#'     so a single value can mislead near a reliability-band boundary. With
-#'     `k_batches > 1` the diagnostic evaluates the CHOSEN proposal's k over that
-#'     many independent importance batches and reports `pareto_k` as the MEDIAN,
-#'     its Monte Carlo standard error `pareto_k_mcse = sd(ks) / sqrt(B)`, the
-#'     band-resolution flag `pareto_k_band_confident` (TRUE iff
-#'     `pareto_k +/- 2 * pareto_k_mcse` lies within one reliability band, i.e.
-#'     does not cross 0.5 or 0.7), and the secondary observed `pareto_k_lo` /
-#'     `pareto_k_hi` range (and the same for the per-arm k); the reliability band
-#'     is classified off the median. The MCSE shrinks as `1/sqrt(B)`, unlike the
-#'     min/max range, which WIDENS with `B`; it is the Monte Carlo uncertainty of
-#'     the PSIS k-hat across independent importance samples -- not a posterior
-#'     credible interval, and not a coverage-calibrated CI; the per-cell estimates
-#'     and coefficients do not move. `1/sqrt(B)` reduces the seed-to-seed VARIANCE,
-#'     not the GPD k-hat's small-sample BIAS (which the PSIS prior shrinks toward
-#'     0.5, slightly optimistic near 0.7); that bias is bounded by the draws per
-#'     batch (`k_samples`), so keep `k_samples >= 200` and use `B` for the variance
-#'     and stopping decision. Default `1L` is off and byte-identical to the
-#'     single-value behaviour and cost; `> 1` costs `k_batches` times the scoring
-#'     (gated behind the already opt-in diagnostic).
-#'   * `k_adapt` (`FALSE`) -- adaptive batch count. With `k_adapt = TRUE` the
-#'     diagnostic starts at `k_batches` batches (which then defaults to `4L`
-#'     rather than the off sentinel) and adds batches until
-#'     `pareto_k_band_confident` becomes TRUE OR the `k_batches_max` cap is
-#'     reached, then reports the same batched fields. A fit on the wrong side of a
-#'     band boundary keeps sampling until the good / ok / unreliable verdict
-#'     resolves; a fit whose true k sits ON a boundary (whose interval always
-#'     straddles) stops at the cap with the honest `pareto_k_band_confident =
-#'     FALSE`, so the cap is both a cost bound and the correct classification for
-#'     an on-the-line fit. The seed pool is drawn for the cap, so the adaptive run
-#'     is a reproducible prefix of the full-cap run. `k_batches` must be `>= 2`
-#'     when `k_adapt = TRUE` (an MCSE needs at least two batches).
-#'   * `k_batches_max` (`k_batches`, or `max(k_batches, 20L)` when `k_adapt`) --
-#'     the cap for the adaptive batch count. Ignored when `k_adapt = FALSE`. Must
-#'     be a single integer `>= k_batches`.
+#'   * `diagnose_k` (`TRUE`), `diagnose_draws` (`500L`) -- compute the outer
+#'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
+#'     hyperparameter posterior against the proposal the integrator fits (mixed
+#'     per-axis transforms: `log` for positive scales, logit for the BYM2 mixing
+#'     weight, identity for the copy coefficient \eqn{\alpha}). `diagnose_draws`
+#'     is the number of importance draws, each one an extra inner joint solve, and
+#'     is the diagnostic's precision knob: a tighter k-hat needs MORE actual tail
+#'     ratios, so increase `diagnose_draws` (not `k_bootstrap`). The draws are
+#'     RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
+#'     axis whose support is not safely known (CAR_proper's `rho_car`) declines to
+#'     the quadrature-ESS fallback (`pareto_k = NA`). `FALSE` skips the diagnostic.
+#'     `"by_arm"` additionally computes a k-hat restricted to each arm's
+#'     hyperparameter axes (the other arms held at their posterior mean), reported
+#'     in `pareto_k_by_arm`, to localise which arm drives a tail-heavy joint k; the
+#'     joint k itself is unchanged. Per-arm k is defined for the multi-block layout
+#'     with two or more arms and declines for the single-block shared-field layout.
+#'     The legacy `k_samples` name is accepted as an alias for `diagnose_draws`.
+#'   * `k_threads` (`NULL`) -- outer-thread width for the diagnostic's importance
+#'     batch. The `diagnose_draws` re-solves are independent and run after the grid
+#'     (every core free), each solved single-threaded once the batch saturates the
+#'     pool, so widening it is a bit-identical wall-clock speedup (the k-hat is
+#'     unchanged). `NULL` follows the fit's own thread grant -- the larger of
+#'     `n_threads_outer` and the inner `n_threads` -- so a serial fit keeps a serial
+#'     diagnostic while a threaded fit gets a free parallel one. `"auto"` uses the
+#'     physical performance-core count (capped at 2 under R CMD check); an integer
+#'     pins the width (`1L` forces serial). Always capped at `diagnose_draws`.
+#'   * `k_bootstrap` (`1000L`) -- bootstrap replicates for the outer
+#'     Pareto-\eqn{\hat{k}} uncertainty. The k-hat is a single fixed number for a
+#'     fit + proposal; its sampling uncertainty GIVEN the proposal is estimated by
+#'     resampling the diagnostic's raw importance log-ratios with replacement and
+#'     re-fitting the GPD tail `k_bootstrap` times (no new inner solves). Reports
+#'     `pareto_k_se_boot` (bootstrap SE), `pareto_k_ci_low` / `pareto_k_ci_high`
+#'     (the 2.5\% / 97.5\% bootstrap quantiles), `pareto_k_se_formula` (the
+#'     closed-form GPD-shape MLE asymptotic SE \eqn{(1 + k)/\sqrt{M}}, a
+#'     cross-check), and `pareto_k_band_confident` (TRUE iff the bootstrap CI lies
+#'     within one reliability band). The bootstrap measures how UNSTABLE the
+#'     current tail estimate is; it cannot create tail information. Increase
+#'     `diagnose_draws`, not `k_bootstrap`, to obtain more tail information. `0L`
+#'     skips it (point k-hat only). The per-arm k carries the same fields.
+#'   * `k_tail_points` (`NULL`) -- number of upper-tail order statistics for the
+#'     GPD fit. `NULL` uses the automatic PSIS rule
+#'     \eqn{\lceil\min(0.2 N, 3\sqrt{N})\rceil}. An explicit value is an EXPERT
+#'     tail-threshold control, capped at the 20\%-of-draws ceiling (with a warning)
+#'     so the fit stays an extreme tail; it is NOT a precision knob (a request that
+#'     drags body ratios into the tail lowers variance but biases the k-hat). The
+#'     used and requested counts are reported in `pareto_k_tail_points` /
+#'     `pareto_k_tail_points_requested`.
+#'   * `k_conf_bands` (`c(0.5, 0.7)`) -- the reliability-band boundaries (strictly
+#'     increasing) defining the intervals \eqn{(-\infty, 0.5]}, \eqn{(0.5, 0.7]},
+#'     \eqn{(0.7, \infty)} = good / ok / unreliable, against which the bootstrap CI
+#'     is tested for `pareto_k_band_confident`.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -387,26 +373,30 @@
 #'      or `"grid_moment"` from the grid-weighted covariance. `NA` when the
 #'      diagnostic is off or declines. The mode-Hessian source keeps the
 #'      \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
-#'   * `pareto_k_mcse`, `pareto_k_band_confident`, `pareto_k_lo`, `pareto_k_hi`,
-#'      `pareto_k_n_batches` — present only with batching on (`control$k_batches >
-#'      1` or `control$k_adapt = TRUE`; gcol33/tulpa#123, #124). `pareto_k_mcse`
-#'      is the Monte Carlo standard error of the estimate (`sd(ks) / sqrt(B)`,
-#'      `NA` with a single finite batch); `pareto_k_band_confident` is TRUE iff
-#'      `pareto_k +/- 2 * pareto_k_mcse` lies within one reliability band (`NA`
-#'      when the MCSE is undefined). `pareto_k_lo` / `pareto_k_hi` are the
-#'      secondary observed min/max range over the batches (`pareto_k` itself is
-#'      the median) and `pareto_k_n_batches` the count of finite batches. The MCSE
-#'      and range are the Monte Carlo spread of the PSIS estimator, not a
-#'      posterior credible interval.
+#'   * `pareto_k_se_boot`, `pareto_k_ci_low`, `pareto_k_ci_high`,
+#'      `pareto_k_se_formula`, `pareto_k_tail_points`,
+#'      `pareto_k_tail_points_requested`, `pareto_k_band_confident` — the outer
+#'      Pareto-\eqn{\hat{k}} uncertainty (gcol33/tulpa#127), present whenever the
+#'      diagnostic ran. `pareto_k_se_boot` is the bootstrap SE of the k-hat and
+#'      `pareto_k_ci_low` / `pareto_k_ci_high` its 2.5\% / 97.5\% bootstrap
+#'      quantiles -- the estimator's sampling spread GIVEN the proposal, not a
+#'      posterior credible interval; `pareto_k_se_formula` is the closed-form
+#'      GPD-shape MLE asymptotic SE cross-check. `pareto_k_tail_points` is the GPD
+#'      tail size used and `pareto_k_tail_points_requested` the `k_tail_points`
+#'      request (`NA` when automatic). `pareto_k_band_confident` is TRUE iff the
+#'      bootstrap CI lies within one reliability band, `NA` when the bootstrap was
+#'      off or could not fit. `diagnose_draws` and `diagnose_cost_ratio` (the
+#'      diagnostic's draw budget and its wall-clock cost relative to the fit) are
+#'      attached at the top level.
 #'   * `pareto_k_by_arm`, `pareto_k_by_arm_is_ess`, `pareto_k_by_arm_scope` —
 #'      present only with `control$diagnose_k = "by_arm"` (gcol33/tulpa#120).
 #'      Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 #'      hyperparameter axes, the other arms held at their posterior mean, so a
 #'      tail-heavy joint k can be localised to one arm. A per-arm entry is `NA`
-#'      when that arm carries no varying axis. With batching on the per-arm k is
-#'      the batch median (over the same number of batches the joint loop settled
-#'      on) and carries its own `pareto_k_by_arm_lo` / `pareto_k_by_arm_hi` range,
-#'      `pareto_k_by_arm_mcse` and `pareto_k_by_arm_band_confident`.
+#'      when that arm carries no varying axis. Each arm carries its own bootstrap
+#'      uncertainty: `pareto_k_by_arm_se_boot`, `pareto_k_by_arm_ci_low` /
+#'      `pareto_k_by_arm_ci_high`, `pareto_k_by_arm_se_formula`,
+#'      `pareto_k_by_arm_tail_points` and `pareto_k_by_arm_band_confident`.
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -498,10 +488,10 @@ tulpa_nested_laplace_joint <- function(responses,
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
     force_sparse              <- control$force_sparse %||% FALSE
     # Outer Pareto-k-hat accuracy diagnostic. `diagnose_k` (default TRUE)
-    # importance-samples the joint hyperparameter posterior against the
-    # Gaussian proposal the integrator fits; `k_samples` (default 200) is the
-    # number of draws, each one extra inner joint solve. RNG-restored, so the
-    # fit's draws are unchanged whether or not it runs. `diagnose_k = "by_arm"`
+    # importance-samples the joint hyperparameter posterior against the proposal
+    # the integrator fits; `diagnose_draws` (default 500) is the number of draws,
+    # each one extra inner joint solve. RNG-restored, so the fit's draws are
+    # unchanged whether or not it runs. `diagnose_k = "by_arm"`
     # additionally computes a k-hat restricted to each arm's hyperparameter axes
     # (other arms held at their posterior mean), to localise which arm drives a
     # tail-heavy joint k (gcol33/tulpa#120); the joint k is unchanged and stays
@@ -509,52 +499,54 @@ tulpa_nested_laplace_joint <- function(responses,
     diagnose_k_raw            <- control$diagnose_k %||% TRUE
     pareto_k_by_arm           <- identical(diagnose_k_raw, "by_arm")
     diagnose_k                <- pareto_k_by_arm || isTRUE(diagnose_k_raw)
-    k_samples                 <- control$k_samples %||% 200L
+    # Diagnostic importance-draw budget (gcol33/tulpa#127). `diagnose_draws` is the
+    # single precision knob: the outer Pareto-k is scored ONCE over this many
+    # importance draws, and a tighter k needs MORE actual tail ratios, i.e. a larger
+    # `diagnose_draws`. The legacy `k_samples` name is accepted as an alias.
+    diagnose_draws            <- control$diagnose_draws %||% control$k_samples %||% 500L
+    if (length(diagnose_draws) != 1L || is.na(diagnose_draws) ||
+        diagnose_draws != round(diagnose_draws) || diagnose_draws < 1L) {
+        stop("`control$diagnose_draws` must be a single integer >= 1.", call. = FALSE)
+    }
+    diagnose_draws            <- as.integer(diagnose_draws)
     # Outer-thread width for the diagnostic's importance batch (gcol33/tulpa#117).
-    # The `k_samples` re-solves are independent and run after the grid (all cores
-    # free), each solved single-threaded, so widening this pool is a bit-identical
-    # wall-clock speedup. `NULL` (default) follows the fit's thread grant; "auto"
-    # uses the performance cores; an integer pins the width. Resolved once here and
-    # threaded into both the single- and multi-block diagnostic attach.
+    # The `diagnose_draws` re-solves are independent and run after the grid (all
+    # cores free), each solved single-threaded, so widening this pool is a
+    # bit-identical wall-clock speedup. `NULL` (default) follows the fit's thread
+    # grant; "auto" uses the performance cores; an integer pins the width.
     k_threads                 <- control$k_threads
     pareto_k_threads          <- .tulpa_pareto_k_threads(n_threads_outer,
-                                                         n_threads, k_samples,
+                                                         n_threads, diagnose_draws,
                                                          k_threads)
-    # Batched outer Pareto-k (gcol33/tulpa#123). `k_batches` (default 1L = OFF,
-    # byte-identical single-value behaviour and cost) reports the k-hat as the
-    # MEDIAN over that many independent importance batches plus the observed
-    # min/max range -- the Monte Carlo spread of the noisy GPD-tail PSIS estimator
-    # (NOT a posterior CI). Cost is k_batches x the scoring, gated behind the
-    # already opt-in / slow diagnostic.
-    # Adaptive batched outer Pareto-k (gcol33/tulpa#124). `k_adapt = TRUE` makes
-    # the batch count adaptive: starting at `k_batches` (which then defaults to a
-    # small start rather than the off sentinel 1), add batches until the
-    # reliability band resolves (median +/- 2*MCSE within one band) or the
-    # `k_batches_max` cap. The cap turns an irreducibly on-the-line fit (true k ~ a
-    # band boundary) into the honest `pareto_k_band_confident = FALSE` rather than
-    # an unbounded loop. An MCSE needs >= 2 batches, so the adaptive start must be
-    # >= 2.
-    k_adapt                   <- isTRUE(control$k_adapt)
-    k_batches                 <- control$k_batches %||%
-        (if (k_adapt) .K_ADAPT_START else 1L)
-    if (length(k_batches) != 1L || is.na(k_batches) ||
-        k_batches != round(k_batches) || k_batches < 1L) {
-        stop("`control$k_batches` must be a single integer >= 1.", call. = FALSE)
+    # Bootstrap outer Pareto-k uncertainty (gcol33/tulpa#127). The chosen proposal
+    # is scored once; the k-hat's sampling uncertainty is then estimated by
+    # bootstrapping its raw importance log-ratios -- `k_bootstrap` replicates, each
+    # re-fitting the GPD tail, NO new inner solves. The bootstrap reports how
+    # UNSTABLE the current estimate is, not a tighter k (raise `diagnose_draws` for
+    # that, NOT `k_bootstrap`). `k_tail_points` (NULL = the automatic PSIS rule) is
+    # an expert tail-threshold control, capped at the 20%-of-draws ceiling.
+    # `k_conf_bands` are the reliability-band boundaries the bootstrap CI is tested
+    # against for `pareto_k_band_confident`.
+    k_bootstrap               <- control$k_bootstrap %||% 1000L
+    if (length(k_bootstrap) != 1L || is.na(k_bootstrap) ||
+        k_bootstrap != round(k_bootstrap) || k_bootstrap < 0L) {
+        stop("`control$k_bootstrap` must be a single integer >= 0.", call. = FALSE)
     }
-    k_batches                 <- as.integer(k_batches)
-    if (k_adapt && k_batches < 2L) {
-        stop("`control$k_batches` (the adaptive start) must be >= 2 when ",
-             "`control$k_adapt = TRUE` (an MCSE needs at least two batches).",
+    k_bootstrap               <- as.integer(k_bootstrap)
+    k_tail_points             <- control$k_tail_points
+    if (!is.null(k_tail_points)) {
+        k_tail_points <- suppressWarnings(as.integer(k_tail_points))
+        if (length(k_tail_points) != 1L || is.na(k_tail_points) || k_tail_points < 1L) {
+            stop("`control$k_tail_points` must be a single positive integer, or NULL.",
+                 call. = FALSE)
+        }
+    }
+    k_conf_bands              <- control$k_conf_bands %||% c(0.5, 0.7)
+    if (!is.numeric(k_conf_bands) || anyNA(k_conf_bands) || length(k_conf_bands) < 1L ||
+        is.unsorted(k_conf_bands, strictly = TRUE)) {
+        stop("`control$k_conf_bands` must be a strictly increasing numeric vector.",
              call. = FALSE)
     }
-    k_batches_max             <- control$k_batches_max %||%
-        (if (k_adapt) max(k_batches, .K_ADAPT_CAP) else k_batches)
-    if (length(k_batches_max) != 1L || is.na(k_batches_max) ||
-        k_batches_max != round(k_batches_max) || k_batches_max < k_batches) {
-        stop("`control$k_batches_max` must be a single integer >= `k_batches`.",
-             call. = FALSE)
-    }
-    k_batches_max             <- as.integer(k_batches_max)
     # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). A CCD
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
@@ -664,12 +656,12 @@ tulpa_nested_laplace_joint <- function(responses,
             x_init = x_init, verbose = verbose, store_Q = store_Q,
             force_sparse = force_sparse,
             cell_coupling = cell_coupling,
-            diagnose_k = diagnose_k, k_samples = k_samples,
+            diagnose_k = diagnose_k, diagnose_draws = diagnose_draws,
             pareto_k_by_arm = pareto_k_by_arm,
             pareto_k_threads = pareto_k_threads,
-            k_batches = k_batches,
-            k_adapt = k_adapt,
-            k_batches_max = k_batches_max,
+            k_bootstrap = k_bootstrap,
+            k_tail_points = k_tail_points,
+            k_conf_bands = k_conf_bands,
             inner_refresh = inner_refresh,
             integration = integration,
             timer = tm
@@ -870,14 +862,15 @@ tulpa_nested_laplace_joint <- function(responses,
     res <- .joint_attach_pareto_k_single(res, kernel_fn, hp_fn,
                                          max_iter   = max_iter,
                                          diagnose_k = diagnose_k,
-                                         k_samples  = k_samples,
+                                         diagnose_draws = diagnose_draws,
                                          n_threads_outer = pareto_k_threads,
                                          pareto_k_by_arm = pareto_k_by_arm,
-                                         k_batches = k_batches,
-                                         k_adapt = k_adapt,
-                                         k_batches_max = k_batches_max)
+                                         k_bootstrap = k_bootstrap,
+                                         k_tail_points = k_tail_points,
+                                         k_conf_bands = k_conf_bands)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
+    res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",
                   extra_class = c("tulpa_nested_laplace_joint",
                                   "tulpa_nested_laplace", "list"))

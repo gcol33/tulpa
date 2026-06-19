@@ -4,17 +4,24 @@
 \alias{tulpa_psis}
 \title{Pareto-smoothed importance sampling}
 \usage{
-tulpa_psis(log_ratios)
+tulpa_psis(log_ratios, tail_points = NULL)
 }
 \arguments{
 \item{log_ratios}{Numeric vector of (unnormalized) log importance ratios
 \verb{log p_target(x) - log q_proposal(x)} evaluated at draws \code{x ~ q}.}
+
+\item{tail_points}{Number of upper-tail order statistics for the
+generalized-Pareto fit, or \code{NULL} (default) for the automatic PSIS rule
+\code{ceil(min(0.2 * S, 3 * sqrt(S)))}. An explicit value is an expert
+tail-threshold control, capped at \code{floor(0.2 * S)} (with a warning) so the
+fit stays an extreme tail; it is NOT a precision knob (raise the draw count
+for a tighter shape estimate).}
 }
 \value{
 A list with \code{pareto_k} (the tail shape, \code{NA} if the sample is too
 small to fit), \code{is_ess} (importance-sampling effective sample size,
-\code{1 / sum(w^2)} on the normalized smoothed weights), and \code{log_weights}
-(the normalized smoothed log weights).
+\code{1 / sum(w^2)} on the normalized smoothed weights), \code{log_weights}
+(the normalized smoothed log weights), and \code{tail_len} (the tail size used).
 }
 \description{
 Smooths a set of importance ratios by replacing the largest weights with the

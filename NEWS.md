@@ -1,5 +1,38 @@
 # tulpa NEWS
 
+## 0.0.50 (2026-06-19)
+
+* Joint nested-Laplace outer Pareto-k: replaced the adaptive batched reporting
+  (#123/#124) with a single-batch + bootstrap uncertainty (gcol33/tulpa#127). The
+  batched/adaptive design could not honour a sane cost budget: one importance
+  batch costs about one fit (each draw is an off-grid Laplace re-solve), so
+  growing the batch count to resolve a borderline k drove the diagnostic to 10-30x
+  the fit. The chosen proposal is now scored ONCE over `control$diagnose_draws`
+  importance draws, and the k-hat's sampling uncertainty is estimated by
+  bootstrapping its raw importance log-ratios (`control$k_bootstrap` replicates,
+  re-fitting the GPD tail; no new inner solves). New control / output:
+    - `diagnose_draws` (default `500L`; legacy `k_samples` accepted as an alias) is
+      the precision knob -- a tighter k needs MORE actual tail ratios, so raise it,
+      NOT `k_bootstrap`. The bootstrap only quantifies how unstable the current
+      estimate is; it cannot create tail information.
+    - `pareto_k_se_boot`, `pareto_k_ci_low` / `pareto_k_ci_high` (2.5% / 97.5%
+      bootstrap quantiles), `pareto_k_se_formula` (the closed-form GPD-shape MLE
+      asymptotic SE `(1 + k) / sqrt(M)`, a cross-check), and
+      `pareto_k_band_confident` (TRUE iff the bootstrap CI lies within one
+      reliability band).
+    - `k_tail_points` (default `NULL` = the automatic PSIS rule
+      `ceil(min(0.2 N, 3 sqrt(N)))`) is an EXPERT tail-threshold control, capped at
+      the 20%-of-draws ceiling with a warning; the used / requested counts are
+      reported in `pareto_k_tail_points` / `pareto_k_tail_points_requested`.
+    - `k_conf_bands` (default `c(0.5, 0.7)`) sets the reliability-band boundaries,
+      with intervals `(-Inf, 0.5] (0.5, 0.7] (0.7, Inf)`.
+    - `diagnose_cost_ratio` (and `diagnose_draws`) attached at the top level: the
+      diagnostic's wall-clock cost relative to the fit it certifies.
+  The per-arm k (`diagnose_k = "by_arm"`) carries the matching per-arm fields. A
+  borderline k is reported with its honest (wide) CI rather than chased to false
+  precision; for a tighter estimate, raise `diagnose_draws`. `tulpa_psis()` gains
+  a `tail_points` argument and returns `tail_len`.
+
 ## 0.0.49 (2026-06-19)
 
 * Joint nested-Laplace outer Pareto-k: adaptive batched reporting with a proper

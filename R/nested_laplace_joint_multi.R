@@ -720,11 +720,11 @@
                                          fn_sigma, fn_alpha,
                                          max_iter, tol, n_threads,
                                          force_sparse, cell_coupling,
-                                         diagnose_k = TRUE, k_samples = 200L,
+                                         diagnose_k = TRUE, diagnose_draws = 500L,
                                          n_threads_outer = 1L, proposal = NULL,
                                          pareto_k_by_arm = FALSE,
-                                         k_batches = 1L, k_adapt = FALSE,
-                                         k_batches_max = k_batches) {
+                                         k_bootstrap = 1000L, k_tail_points = NULL,
+                                         k_conf_bands = c(0.5, 0.7)) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -775,13 +775,13 @@
     # (gcol33/tulpa#118).
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
-    kd <- .joint_pareto_k(res, refit, k_samples, proposal = proposal,
-                          arm_axes = arm_axes, k_batches = k_batches,
-                          k_adapt = k_adapt, k_batches_max = k_batches_max)
+    kd <- .joint_pareto_k(res, refit, diagnose_draws, proposal = proposal,
+                          arm_axes = arm_axes, k_bootstrap = k_bootstrap,
+                          k_tail_points = k_tail_points, k_conf_bands = k_conf_bands)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
-    res <- .joint_attach_batch_k(res, kd)
+    res <- .joint_attach_pareto_k_uncertainty(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)
     res
 }
@@ -802,12 +802,12 @@
                                   force_sparse = FALSE,
                                   cell_coupling = "separable",
                                   diagnose_k = TRUE,
-                                  k_samples = 200L,
+                                  diagnose_draws = 500L,
                                   pareto_k_by_arm = FALSE,
                                   pareto_k_threads = NULL,
-                                  k_batches = 1L,
-                                  k_adapt = FALSE,
-                                  k_batches_max = k_batches,
+                                  k_bootstrap = 1000L,
+                                  k_tail_points = NULL,
+                                  k_conf_bands = c(0.5, 0.7),
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   timer = NULL) {
@@ -1146,22 +1146,23 @@
     # by the top-level caller from control$k_threads; NULL only on a direct call,
     # where it follows this fit's own thread grant). gcol33/tulpa#117.
     k_to <- pareto_k_threads %||%
-        .tulpa_pareto_k_threads(n_threads_outer, n_threads, k_samples, NULL)
+        .tulpa_pareto_k_threads(n_threads_outer, n_threads, diagnose_draws, NULL)
     res <- .joint_attach_pareto_k_multi(res, arms, cp, blocks_spec,
                                         axis_offsets, B, arm_names,
                                         fn_sigma, fn_alpha,
                                         max_iter, tol, n_threads,
                                         force_sparse, cell_coupling,
                                         diagnose_k = diagnose_k,
-                                        k_samples  = k_samples,
+                                        diagnose_draws = diagnose_draws,
                                         n_threads_outer = k_to,
                                         proposal = ccd_proposal,
                                         pareto_k_by_arm = pareto_k_by_arm,
-                                        k_batches = k_batches,
-                                        k_adapt = k_adapt,
-                                        k_batches_max = k_batches_max)
+                                        k_bootstrap = k_bootstrap,
+                                        k_tail_points = k_tail_points,
+                                        k_conf_bands = k_conf_bands)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
+    res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",
                   extra_class = c("tulpa_nested_laplace_joint_multi",
                     "tulpa_nested_laplace_joint",

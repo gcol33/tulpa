@@ -260,70 +260,57 @@ few extra inner iterations. Applies to the sparse joint path with the
 default \code{control$hessian = "lm"} curvature; the dense small-\code{n_x} path
 re-factorizes a cheap Hessian and ignores it. \code{2L}-\code{4L} is a good range
 for a slow beta arm.
-\item \code{diagnose_k} (\code{TRUE}), \code{k_samples} (\code{200L}) -- compute the outer
-Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the
-joint hyperparameter posterior against the Gaussian proposal the
-integrator fits (mixed per-axis transforms: \code{log} for positive scales,
-logit for the BYM2 mixing weight, identity for the copy coefficient
-\eqn{\alpha}). \code{k_samples} is the number of importance draws, each one
-extra inner joint solve; the draw is RNG-restored so the fit's modes /
-draws are unchanged. A fit carrying an axis whose support is not safely
-known (CAR_proper's \code{rho_car}) declines to the quadrature-ESS fallback
-(\code{pareto_k = NA}) rather than apply a guessed transform. \code{FALSE} skips
-the diagnostic (\code{pareto_k = NA}). \code{"by_arm"} additionally computes a
-k-hat restricted to each arm's hyperparameter axes (the other arms held
-at their posterior mean), reported in \code{pareto_k_by_arm}, to localise
-which arm drives a tail-heavy joint k; the joint k itself is unchanged.
-Per-arm k is defined for the multi-block layout with two or more arms and
-declines (no \code{pareto_k_by_arm}) for the single-block shared-field layout.
-\item \code{k_threads} (\code{NULL}) -- outer-thread width for the diagnostic's
-importance batch. The \code{k_samples} re-solves are independent and run after
-the grid (every core free), each solved single-threaded once the batch
-saturates the pool, so widening it is a bit-identical wall-clock speedup
-(the k-hat is unchanged). \code{NULL} follows the fit's own thread grant -- the
-larger of \code{n_threads_outer} and the inner \code{n_threads} -- so a serial fit
-keeps a serial diagnostic (no oversubscription when the caller is itself
-parallelising per-species fits) while a threaded fit gets a free parallel
-diagnostic. \code{"auto"} uses the physical performance-core count (capped at 2
-under R CMD check) for a single serial fit that wants the diagnostic on
-every core with one setting; an integer pins the width (\code{1L} forces
-serial). Always capped at \code{k_samples}.
-\item \code{k_batches} (\code{1L}) -- batched outer Pareto-\eqn{\hat{k}} reporting. The
-k-hat is a noisy estimator (a generalized-Pareto shape fit to the upper
-tail of one batch of importance weights, with real Monte Carlo error),
-so a single value can mislead near a reliability-band boundary. With
-\code{k_batches > 1} the diagnostic evaluates the CHOSEN proposal's k over that
-many independent importance batches and reports \code{pareto_k} as the MEDIAN,
-its Monte Carlo standard error \code{pareto_k_mcse = sd(ks) / sqrt(B)}, the
-band-resolution flag \code{pareto_k_band_confident} (TRUE iff
-\verb{pareto_k +/- 2 * pareto_k_mcse} lies within one reliability band, i.e.
-does not cross 0.5 or 0.7), and the secondary observed \code{pareto_k_lo} /
-\code{pareto_k_hi} range (and the same for the per-arm k); the reliability band
-is classified off the median. The MCSE shrinks as \code{1/sqrt(B)}, unlike the
-min/max range, which WIDENS with \code{B}; it is the Monte Carlo uncertainty of
-the PSIS k-hat across independent importance samples -- not a posterior
-credible interval, and not a coverage-calibrated CI; the per-cell estimates
-and coefficients do not move. \code{1/sqrt(B)} reduces the seed-to-seed VARIANCE,
-not the GPD k-hat's small-sample BIAS (which the PSIS prior shrinks toward
-0.5, slightly optimistic near 0.7); that bias is bounded by the draws per
-batch (\code{k_samples}), so keep \code{k_samples >= 200} and use \code{B} for the variance
-and stopping decision. Default \code{1L} is off and byte-identical to the
-single-value behaviour and cost; \verb{> 1} costs \code{k_batches} times the scoring
-(gated behind the already opt-in diagnostic).
-\item \code{k_adapt} (\code{FALSE}) -- adaptive batch count. With \code{k_adapt = TRUE} the
-diagnostic starts at \code{k_batches} batches (which then defaults to \code{4L}
-rather than the off sentinel) and adds batches until
-\code{pareto_k_band_confident} becomes TRUE OR the \code{k_batches_max} cap is
-reached, then reports the same batched fields. A fit on the wrong side of a
-band boundary keeps sampling until the good / ok / unreliable verdict
-resolves; a fit whose true k sits ON a boundary (whose interval always
-straddles) stops at the cap with the honest \code{pareto_k_band_confident = FALSE}, so the cap is both a cost bound and the correct classification for
-an on-the-line fit. The seed pool is drawn for the cap, so the adaptive run
-is a reproducible prefix of the full-cap run. \code{k_batches} must be \verb{>= 2}
-when \code{k_adapt = TRUE} (an MCSE needs at least two batches).
-\item \code{k_batches_max} (\code{k_batches}, or \code{max(k_batches, 20L)} when \code{k_adapt}) --
-the cap for the adaptive batch count. Ignored when \code{k_adapt = FALSE}. Must
-be a single integer \verb{>= k_batches}.
+\item \code{diagnose_k} (\code{TRUE}), \code{diagnose_draws} (\code{500L}) -- compute the outer
+Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
+hyperparameter posterior against the proposal the integrator fits (mixed
+per-axis transforms: \code{log} for positive scales, logit for the BYM2 mixing
+weight, identity for the copy coefficient \eqn{\alpha}). \code{diagnose_draws}
+is the number of importance draws, each one an extra inner joint solve, and
+is the diagnostic's precision knob: a tighter k-hat needs MORE actual tail
+ratios, so increase \code{diagnose_draws} (not \code{k_bootstrap}). The draws are
+RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
+axis whose support is not safely known (CAR_proper's \code{rho_car}) declines to
+the quadrature-ESS fallback (\code{pareto_k = NA}). \code{FALSE} skips the diagnostic.
+\code{"by_arm"} additionally computes a k-hat restricted to each arm's
+hyperparameter axes (the other arms held at their posterior mean), reported
+in \code{pareto_k_by_arm}, to localise which arm drives a tail-heavy joint k; the
+joint k itself is unchanged. Per-arm k is defined for the multi-block layout
+with two or more arms and declines for the single-block shared-field layout.
+The legacy \code{k_samples} name is accepted as an alias for \code{diagnose_draws}.
+\item \code{k_threads} (\code{NULL}) -- outer-thread width for the diagnostic's importance
+batch. The \code{diagnose_draws} re-solves are independent and run after the grid
+(every core free), each solved single-threaded once the batch saturates the
+pool, so widening it is a bit-identical wall-clock speedup (the k-hat is
+unchanged). \code{NULL} follows the fit's own thread grant -- the larger of
+\code{n_threads_outer} and the inner \code{n_threads} -- so a serial fit keeps a serial
+diagnostic while a threaded fit gets a free parallel one. \code{"auto"} uses the
+physical performance-core count (capped at 2 under R CMD check); an integer
+pins the width (\code{1L} forces serial). Always capped at \code{diagnose_draws}.
+\item \code{k_bootstrap} (\code{1000L}) -- bootstrap replicates for the outer
+Pareto-\eqn{\hat{k}} uncertainty. The k-hat is a single fixed number for a
+fit + proposal; its sampling uncertainty GIVEN the proposal is estimated by
+resampling the diagnostic's raw importance log-ratios with replacement and
+re-fitting the GPD tail \code{k_bootstrap} times (no new inner solves). Reports
+\code{pareto_k_se_boot} (bootstrap SE), \code{pareto_k_ci_low} / \code{pareto_k_ci_high}
+(the 2.5\\% / 97.5\\% bootstrap quantiles), \code{pareto_k_se_formula} (the
+closed-form GPD-shape MLE asymptotic SE \eqn{(1 + k)/\sqrt{M}}, a
+cross-check), and \code{pareto_k_band_confident} (TRUE iff the bootstrap CI lies
+within one reliability band). The bootstrap measures how UNSTABLE the
+current tail estimate is; it cannot create tail information. Increase
+\code{diagnose_draws}, not \code{k_bootstrap}, to obtain more tail information. \code{0L}
+skips it (point k-hat only). The per-arm k carries the same fields.
+\item \code{k_tail_points} (\code{NULL}) -- number of upper-tail order statistics for the
+GPD fit. \code{NULL} uses the automatic PSIS rule
+\eqn{\lceil\min(0.2 N, 3\sqrt{N})\rceil}. An explicit value is an EXPERT
+tail-threshold control, capped at the 20\\%-of-draws ceiling (with a warning)
+so the fit stays an extreme tail; it is NOT a precision knob (a request that
+drags body ratios into the tail lowers variance but biases the k-hat). The
+used and requested counts are reported in \code{pareto_k_tail_points} /
+\code{pareto_k_tail_points_requested}.
+\item \code{k_conf_bands} (\code{c(0.5, 0.7)}) -- the reliability-band boundaries (strictly
+increasing) defining the intervals \eqn{(-\infty, 0.5]}, \eqn{(0.5, 0.7]},
+\eqn{(0.7, \infty)} = good / ok / unreliable, against which the bootstrap CI
+is tested for \code{pareto_k_band_confident}.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and
@@ -379,25 +366,30 @@ finite-difference Hessian when a sharp posterior collapses the grid),
 or \code{"grid_moment"} from the grid-weighted covariance. \code{NA} when the
 diagnostic is off or declines. The mode-Hessian source keeps the
 \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
-\item \code{pareto_k_mcse}, \code{pareto_k_band_confident}, \code{pareto_k_lo}, \code{pareto_k_hi},
-\code{pareto_k_n_batches} — present only with batching on (\code{control$k_batches > 1} or \code{control$k_adapt = TRUE}; gcol33/tulpa#123, #124). \code{pareto_k_mcse}
-is the Monte Carlo standard error of the estimate (\code{sd(ks) / sqrt(B)},
-\code{NA} with a single finite batch); \code{pareto_k_band_confident} is TRUE iff
-\verb{pareto_k +/- 2 * pareto_k_mcse} lies within one reliability band (\code{NA}
-when the MCSE is undefined). \code{pareto_k_lo} / \code{pareto_k_hi} are the
-secondary observed min/max range over the batches (\code{pareto_k} itself is
-the median) and \code{pareto_k_n_batches} the count of finite batches. The MCSE
-and range are the Monte Carlo spread of the PSIS estimator, not a
-posterior credible interval.
+\item \code{pareto_k_se_boot}, \code{pareto_k_ci_low}, \code{pareto_k_ci_high},
+\code{pareto_k_se_formula}, \code{pareto_k_tail_points},
+\code{pareto_k_tail_points_requested}, \code{pareto_k_band_confident} — the outer
+Pareto-\eqn{\hat{k}} uncertainty (gcol33/tulpa#127), present whenever the
+diagnostic ran. \code{pareto_k_se_boot} is the bootstrap SE of the k-hat and
+\code{pareto_k_ci_low} / \code{pareto_k_ci_high} its 2.5\\% / 97.5\\% bootstrap
+quantiles -- the estimator's sampling spread GIVEN the proposal, not a
+posterior credible interval; \code{pareto_k_se_formula} is the closed-form
+GPD-shape MLE asymptotic SE cross-check. \code{pareto_k_tail_points} is the GPD
+tail size used and \code{pareto_k_tail_points_requested} the \code{k_tail_points}
+request (\code{NA} when automatic). \code{pareto_k_band_confident} is TRUE iff the
+bootstrap CI lies within one reliability band, \code{NA} when the bootstrap was
+off or could not fit. \code{diagnose_draws} and \code{diagnose_cost_ratio} (the
+diagnostic's draw budget and its wall-clock cost relative to the fit) are
+attached at the top level.
 \item \code{pareto_k_by_arm}, \code{pareto_k_by_arm_is_ess}, \code{pareto_k_by_arm_scope} —
 present only with \code{control$diagnose_k = "by_arm"} (gcol33/tulpa#120).
 Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 hyperparameter axes, the other arms held at their posterior mean, so a
 tail-heavy joint k can be localised to one arm. A per-arm entry is \code{NA}
-when that arm carries no varying axis. With batching on the per-arm k is
-the batch median (over the same number of batches the joint loop settled
-on) and carries its own \code{pareto_k_by_arm_lo} / \code{pareto_k_by_arm_hi} range,
-\code{pareto_k_by_arm_mcse} and \code{pareto_k_by_arm_band_confident}.
+when that arm carries no varying axis. Each arm carries its own bootstrap
+uncertainty: \code{pareto_k_by_arm_se_boot}, \code{pareto_k_by_arm_ci_low} /
+\code{pareto_k_by_arm_ci_high}, \code{pareto_k_by_arm_se_formula},
+\code{pareto_k_by_arm_tail_points} and \code{pareto_k_by_arm_band_confident}.
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.

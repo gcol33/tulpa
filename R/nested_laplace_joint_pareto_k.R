@@ -41,16 +41,6 @@
 # single band. The two boundaries are .K_DIAG_GOOD and .K_DIAG_USABLE.
 .K_DIAG_GOOD <- 0.5
 
-# Adaptive batched outer Pareto-k defaults (gcol33/tulpa#124). When
-# `control$k_adapt = TRUE` and the start / cap are not named, the diagnostic
-# starts at .K_ADAPT_START batches and adds batches until the reliability band
-# resolves (median +/- 2*MCSE within one band) or the .K_ADAPT_CAP cap. The start
-# must be >= 2 for an MCSE to exist; the cap turns an irreducibly on-the-line fit
-# (true k ~ a band boundary, whose interval always straddles) into the honest
-# `band_confident = FALSE` output rather than an unbounded loop.
-.K_ADAPT_START <- 4L
-.K_ADAPT_CAP   <- 20L
-
 # Grid-mixture (basin) proposal for the outer Pareto-k on a spread tensor grid
 # (gcol33/tulpa#121). The nested-Laplace engine represents the hyperparameter
 # posterior as the WEIGHTED INTEGRATION GRID and draws hyperparameters from it (a
@@ -70,14 +60,6 @@
 # overridable via `getOption("tulpa.kdiag.mix_bw")`.
 .K_DIAG_MIX_BW    <- 0.5
 .K_DIAG_MIX_FLOOR <- 1e-3
-
-# Minimum importance draws for the grid-mixture k-hat (gcol33/tulpa#121). The
-# production `k_samples` (200) is tuned for the single-Gaussian + moment-matching
-# path; the mixture's GPD tail-shape k-hat needs a longer tail to be stable across
-# seeds (at 200 it swings, at ~600 it settles). The extra draws are one cheap
-# batch -- they stay near the grid cells, so no inner Newton stalls. Overridable
-# via `getOption("tulpa.kdiag.mix_samples")`.
-.K_DIAG_MIX_SAMPLES <- 600L
 
 # Grid-coverage tolerance for adopting the grid-mixture over the single Gaussian
 # (gcol33/tulpa#121). The mixture is confined to the grid's coordinate hull, so it
@@ -709,7 +691,8 @@
 # current proposal so the grid-coverage envelope follows it. Returns
 # list(pareto_k, is_ess, refined) or NULL (empty / rank-deficient `vary`, no
 # finite importance draw).
-.joint_pareto_score <- function(prep, vary, refit_log_marginal, n_samples) {
+.joint_pareto_score <- function(prep, vary, refit_log_marginal, n_samples,
+                                tail_points = NULL) {
     if (length(vary) == 0L) return(NULL)
     Su <- prep$Su; u_hat <- prep$u_hat; u_grid <- prep$u_grid
     tags <- prep$tags; cn <- prep$cn; d <- prep$d
@@ -730,7 +713,8 @@
     for (iter in seq_len(.K_DIAG_MM_MAX)) {
         rc <- .nested_grid_radius_cap(u_grid_v, prop_u, prop_L)
         kd <- tryCatch(.nested_is_pareto_k(prop_u, prop_L, lt, n_samples,
-                                           radius_cap = rc, return_draws = TRUE),
+                                           radius_cap = rc, return_draws = TRUE,
+                                           tail_points = tail_points),
                        error = function(e) NULL)
         if (is.null(kd) || !is.finite(kd$pareto_k)) break
         # The first pass is the canonical grid-moment Gaussian -- its draws span
@@ -739,8 +723,13 @@
         # reads these so its decision is stable across RNG seeds (gcol33/tulpa#121).
         if (iter == 1L) { gm_U <- kd$U; gm_lw <- kd$log_weights }
         if (is.null(best) || kd$pareto_k < best$pareto_k)
+            # `prop_u` / `prop_L` are the proposal that PRODUCED this `kd` (the
+            # moment-matching update at the loop foot is for the NEXT pass), so the
+            # stored proposal is consistent with `best$pareto_k` and a batched
+            # re-score can evaluate the same converged proposal (gcol33/tulpa#126).
             best <- list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, refined = refined,
-                         U = kd$U, log_weights = kd$log_weights)
+                         U = kd$U, log_weights = kd$log_weights, lr = kd$lr,
+                         prop_u = prop_u, prop_L = prop_L)
         if (kd$pareto_k <= .K_DIAG_USABLE || iter == .K_DIAG_MM_MAX) break
         wts <- exp(kd$log_weights); sw <- sum(wts)
         if (!is.finite(sw) || sw <= 0 || nrow(kd$U) < length(prop_u) + 1L) break
@@ -765,18 +754,20 @@
 # weights stay bounded and the k-hat reflects the grid representation's fidelity
 # rather than a Gaussian's mismatch to a skewed marginal. Per-axis bump SD is
 # `bw * (largest adjacent grid gap on that axis)`, falling back to the
-# grid-weighted SD where an axis keeps a single distinct value. Draws at least
-# `.K_DIAG_MIX_SAMPLES` points (the production k_samples is tuned for the
-# single-Gaussian + moment-matching path; the mixture's tail-shape k-hat needs a
-# longer tail to be stable across seeds, and the extra draws are one cheap batch
-# with no inner Newton stalls since they stay near the grid). Returns
-# list(pareto_k, is_ess, refined = FALSE, s, lo, hi) -- `s` the per-axis bump SD
-# and `lo` / `hi` the kept-cell node range on `vary`, which the dispatcher uses to
+# grid-weighted SD where an axis keeps a single distinct value. Draws `n_samples`
+# (= `diagnose_draws`) points, the single user-facing precision knob: the
+# mixture's tail-shape k-hat needs a long enough tail to be stable, so raise
+# `diagnose_draws` for a tighter estimate. The draws stay near the grid cells, so
+# no inner Newton stalls. Returns
+# list(pareto_k, is_ess, refined = FALSE, lr, s, lo, hi) -- `lr` the raw finite
+# importance log-ratios (for the k bootstrap), `s` the per-axis bump SD and
+# `lo` / `hi` the kept-cell node range on `vary`, which the dispatcher uses to
 # bound the mixture's coverage -- or NULL to fall back to the single-Gaussian
 # scorer (fewer than two distinct weighted cells -- not actually spread -- or too
 # few finite importance draws). Like .joint_pareto_score it does NOT manage the
 # RNG (the driver saves / restores it once around all scoring).
-.joint_pareto_score_mixture <- function(prep, vary, refit_log_marginal, n_samples) {
+.joint_pareto_score_mixture <- function(prep, vary, refit_log_marginal, n_samples,
+                                        tail_points = NULL) {
     if (length(vary) == 0L) return(NULL)
     w <- prep$w
     if (is.null(w) || !any(is.finite(w)) || sum(w) <= 0) return(NULL)
@@ -815,8 +806,7 @@
     s[bad] <- (bw * sdax)[bad]
     s[!is.finite(s) | s <= 0] <- 1e-3
 
-    n_mix <- max(as.integer(n_samples),
-                 as.integer(getOption("tulpa.kdiag.mix_samples", .K_DIAG_MIX_SAMPLES)))
+    n_mix <- as.integer(n_samples)
     lt   <- .joint_pareto_make_lt(prep, vary, refit_log_marginal)
     comp <- sample.int(K, n_mix, replace = TRUE, prob = wk)
     U_v  <- cu[comp, , drop = FALSE] +
@@ -837,10 +827,10 @@
     lr  <- ltv - logq
     fin <- is.finite(lr)
     if (sum(fin) < .PSIS_MIN_EVAL) return(NULL)
-    ps <- tulpa_psis(lr[fin])
+    ps <- tulpa_psis(lr[fin], tail_points = tail_points)
     if (!is.finite(ps$pareto_k)) return(NULL)
     list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, refined = FALSE,
-         s = s, lo = apply(cu, 2L, min), hi = apply(cu, 2L, max))
+         lr = lr[fin], s = s, lo = apply(cu, 2L, min), hi = apply(cu, 2L, max))
 }
 
 # Fraction of the single-Gaussian importance weight that falls OUTSIDE the
@@ -882,14 +872,26 @@
 # true delta collapse and a supplied CCD proposal are not `grid_moment`, so only
 # the single Gaussian is scored. Returns list(best, source) or NULL. Shared by the
 # joint k and the per-arm k.
-.joint_pareto_score_dispatch <- function(prep, vary, refit_log_marginal, n_samples) {
-    g     <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples)
+.joint_pareto_score_dispatch <- function(prep, vary, refit_log_marginal, n_samples,
+                                         tail_points = NULL) {
+    g     <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples,
+                                 tail_points = tail_points)
     g_src <- if (!is.null(g) && isTRUE(g$refined)) "moment_matched"
              else prep$proposal_source
     g_out <- if (is.null(g)) NULL else list(best = g, source = g_src)
 
     if (!identical(prep$proposal_source, "grid_moment")) return(g_out)
-    mix <- .joint_pareto_score_mixture(prep, vary, refit_log_marginal, n_samples)
+    # The grid-mixture (gcol33/tulpa#121) rescues a single-Gaussian k-hat inflated
+    # by a within-grid skew mismatch -- it can only LOWER the reading. When the
+    # single Gaussian already sits in the good band the reliability verdict cannot
+    # improve, so skip its `diagnose_draws`-draw evaluation, the dominant
+    # diagnostic cost on a well-behaved fit (gcol33/tulpa#126). The rescue still
+    # runs for any single-Gaussian k in the ok / unreliable band, where the
+    # mixture can upgrade the verdict.
+    if (!is.null(g) && is.finite(g$pareto_k) && g$pareto_k < .K_DIAG_GOOD)
+        return(g_out)
+    mix <- .joint_pareto_score_mixture(prep, vary, refit_log_marginal, n_samples,
+                                       tail_points = tail_points)
     if (is.null(mix)) return(g_out)
     if (is.null(g))   return(list(best = mix, source = "grid_mixture"))
 
@@ -913,109 +915,29 @@
     if (covered && better) list(best = mix, source = "grid_mixture") else g_out
 }
 
-# Re-score the proposal the dispatcher already CHOSE, once (gcol33/tulpa#123).
-# The single-vs-mixture selection is made on the canonical pass and fixed here as
-# `source`, so a batched re-score evaluates the SAME proposal and the source never
-# flips across batches: "grid_mixture" re-runs the mixture scorer, anything else
-# (grid_moment / moment_matched / mode_hessian) re-runs the single-Gaussian scorer
-# (moment matching included). Returns c(pareto_k, is_ess), NA on a failed batch.
-.joint_pareto_rescore <- function(prep, vary, refit_log_marginal, n_samples,
-                                  source) {
-    s <- if (identical(source, "grid_mixture"))
-        .joint_pareto_score_mixture(prep, vary, refit_log_marginal, n_samples)
-    else
-        .joint_pareto_score(prep, vary, refit_log_marginal, n_samples)
-    if (is.null(s) || !is.finite(s$pareto_k)) return(c(NA_real_, NA_real_))
-    c(s$pareto_k, s$is_ess)
-}
-
-# Reliability band of a single outer Pareto-k-hat (gcol33/tulpa#124): 0 (good,
-# `< .K_DIAG_GOOD`), 1 (ok, `[.K_DIAG_GOOD, .K_DIAG_USABLE)`), 2 (unreliable,
-# `>= .K_DIAG_USABLE`). NA for a non-finite k. The two boundaries are the single
-# source .K_DIAG_GOOD / .K_DIAG_USABLE.
-.k_band <- function(k) {
-    if (!is.finite(k)) return(NA_integer_)
-    if (k < .K_DIAG_GOOD) 0L else if (k < .K_DIAG_USABLE) 1L else 2L
-}
-
-# Does the interval [lo, hi] lie within a SINGLE reliability band -- i.e. it does
-# not cross 0.5 or 0.7 (gcol33/tulpa#124)? The band-resolution test behind
-# `band_confident`: a +/- 2*MCSE interval that stays in one band has resolved the
-# good / ok / unreliable verdict; one that straddles a boundary has not. Returns
-# FALSE for any non-finite endpoint.
-.within_one_band <- function(lo, hi) {
-    bl <- .k_band(lo); bh <- .k_band(hi)
-    !is.na(bl) && !is.na(bh) && bl == bh
-}
-
-# Aggregate a vector of per-batch k-hats (+ IS-ESS) into the batched reporting
-# summary (gcol33/tulpa#123, #124). The true outer Pareto-k is a single fixed
-# number for a given fit and proposal, so all batch-to-batch variation is
-# ESTIMATOR sampling error: report the point estimate as the median (robust to an
-# occasional heavy-tail batch) and its Monte Carlo standard error as
-# `pareto_k_mcse = sd(ks) / sqrt(B)` (the median's own SE is ~1.25x this), which
-# shrinks as 1/sqrt(B) -- unlike the min/max range, which WIDENS with B and so
-# cannot signal convergence. `band_confident` is TRUE iff median +/- 2*MCSE lies
-# within one reliability band (good / ok / unreliable). The min/max `pareto_k_lo`
-# / `pareto_k_hi` are kept as a secondary observed range. `n_batches` is the
-# finite-batch count; `n_used` the number of batches actually run (>= n_batches
-# when some failed), which the adaptive loop and the per-arm pass read to stay in
-# lock-step. Returns NULL when no batch was finite. NB: 1/sqrt(B) reduces the
-# seed-to-seed VARIANCE, not the GPD k-hat's small-sample BIAS (controlled by the
-# draws per batch, `k_samples`); keep k_samples >= 200 to bound that bias.
-.k_batch_summary <- function(ks, esss) {
-    fin <- is.finite(ks)
-    if (!any(fin)) return(NULL)
-    kk      <- ks[fin]
-    B       <- length(kk)
-    med     <- stats::median(kk)
-    mcse    <- if (B > 1L) stats::sd(kk) / sqrt(B) else NA_real_
-    ess_fin <- esss[is.finite(esss)]
-    list(pareto_k       = med,
-         pareto_k_lo    = min(kk),
-         pareto_k_hi    = max(kk),
-         pareto_k_mcse  = mcse,
-         pareto_k_band_confident =
-             if (is.finite(mcse)) .within_one_band(med - 2 * mcse, med + 2 * mcse)
-             else NA,
-         is_ess         = if (length(ess_fin)) stats::median(ess_fin) else NA_real_,
-         n_batches      = B,
-         n_used         = length(ks))
-}
-
-# Run independent importance batches and aggregate to the .k_batch_summary
-# reporting fields (gcol33/tulpa#123, #124). `score_one()` re-scores the CHOSEN
-# proposal once (the single-vs-mixture selection is fixed on the canonical pass),
-# called under a deterministic per-batch seed (`seeds[b]`) so the aggregate is
-# reproducible; the proposal-scoring spread is the Monte Carlo uncertainty of the
-# PSIS k-hat across independent importance samples, NOT a posterior credible
-# interval -- the fit's per-cell estimates and coefficients do not move.
-#
-# `seeds` is the full seed pool (its length is the batch cap). Non-adaptive
-# (`adapt = FALSE`, default): runs every seed. Adaptive (`adapt = TRUE`): runs at
-# least `start` batches, then stops at the first B >= start whose median +/-
-# 2*MCSE lies within one reliability band (`band_confident`), else exhausts the
-# cap -- which is the honest output for a fit whose true k sits ON a band boundary
-# (the interval always straddles, so it never becomes confident). The adaptive run
-# is a prefix of the full-cap run for the same entry RNG state, so it is
-# reproducible. Returns the summary over the finite batches, or NULL when none was
-# finite.
-.joint_pareto_batch_stats <- function(score_one, seeds, start = length(seeds),
-                                      adapt = FALSE) {
-    nb   <- length(seeds)
-    ks   <- rep(NA_real_, nb)
-    esss <- rep(NA_real_, nb)
-    for (b in seq_len(nb)) {
-        set.seed(seeds[b])
-        r <- score_one()
-        ks[b]   <- r[[1L]]
-        esss[b] <- r[[2L]]
-        if (adapt && b >= start) {
-            s <- .k_batch_summary(ks[seq_len(b)], esss[seq_len(b)])
-            if (!is.null(s) && isTRUE(s$pareto_k_band_confident)) return(s)
-        }
+# Bootstrap + closed-form uncertainty of a CHOSEN proposal's outer Pareto-k-hat
+# (gcol33/tulpa#127). `best` is the proposal the dispatcher selected, carrying its
+# raw finite importance log-ratios `lr`. The k-hat is a single fixed number for
+# this fit + proposal; its sampling uncertainty GIVEN the proposal is estimated by
+# resampling those SAME ratios with replacement and re-fitting the GPD tail at the
+# same `tail_points` (`k_bootstrap` replicates), which is free -- no new inner
+# solves -- and estimator-agnostic. Bootstrap measures how UNSTABLE the current
+# tail estimate is; it cannot create tail information. A tighter k needs more
+# ACTUAL tail ratios, i.e. a larger `diagnose_draws`, NOT a larger `k_bootstrap`.
+# Returns the point k, IS-ESS, tail size used, bootstrap SE / 95% CI, closed-form
+# (GPD-shape MLE asymptotic) SE cross-check, and the band-confidence flag (the
+# bootstrap CI within one reliability band). Falls back to the scoring-pass point
+# k with NA uncertainty when no ratios were captured.
+.joint_pareto_uncertainty <- function(best, tail_points, n_boot, conf_bands) {
+    if (is.null(best) || is.null(best$lr) || !length(best$lr)) {
+        return(list(pareto_k = if (is.null(best)) NA_real_ else best$pareto_k %||% NA_real_,
+                    is_ess = if (is.null(best)) NA_real_ else best$is_ess %||% NA_real_,
+                    tail_points = NA_integer_, se_boot = NA_real_,
+                    ci_low = NA_real_, ci_high = NA_real_,
+                    se_formula = NA_real_, band_confident = NA))
     }
-    .k_batch_summary(ks, esss)
+    .tulpa_psis_k_uncertainty(best$lr, tail_points = tail_points,
+                              n_boot = n_boot, conf_bands = conf_bands)
 }
 
 # Shared outer Pareto-k-hat driver for a joint nested-Laplace result. Prepares
@@ -1025,131 +947,103 @@
 # posterior mean `u_hat`). Runs all scoring with the RNG restored at the end so
 # the fit's draws are bit-for-bit unchanged.
 #
-# `k_batches` (gcol33/tulpa#123, default 1 = OFF, byte-identical to the prior
-# single-value behaviour and cost) reports the k-hat as the MEDIAN over that many
-# independent importance batches plus the Monte Carlo standard error
-# `pareto_k_mcse = sd(ks)/sqrt(B)`, the band-resolution flag
-# `pareto_k_band_confident` (median +/- 2*MCSE within one reliability band), and
-# the secondary observed min/max range. The canonical pass fixes the proposal
-# once; each batch re-scores that SAME proposal under a deterministic seed drawn
-# up front from the restored RNG state.
+# Uncertainty (gcol33/tulpa#127). The canonical pass scores the chosen proposal
+# ONCE over `n_samples` (= `diagnose_draws`) importance draws and returns its raw
+# finite log-ratios; the k-hat's sampling uncertainty is then estimated by
+# bootstrapping those ratios (`k_bootstrap` replicates, re-fitting the GPD tail at
+# the resolved `tail_points`), which adds NO inner solves. `diagnose_draws` is the
+# precision knob (more actual tail ratios => tighter k); `k_bootstrap` only
+# quantifies the current estimate's instability and cannot create tail
+# information. `k_tail_points` (NULL = the automatic PSIS rule) is an expert
+# tail-threshold control, capped at the 20%-of-draws ceiling with one warning. The
+# per-arm pass scores + bootstraps each arm the same way.
 #
-# `k_adapt` (gcol33/tulpa#124, default FALSE) makes the batch count adaptive:
-# starting at `k_batches` batches, add batches until `band_confident` OR the
-# `k_batches_max` cap, so a fit on the wrong side of a band boundary keeps
-# sampling until the verdict resolves while one ON the boundary stops at the cap
-# with the honest `band_confident = FALSE`. The seed pool is drawn for the cap, so
-# the adaptive run is a reproducible prefix of the full-cap run. The per-arm pass
-# runs the SAME number of batches the joint loop settled on (no separate per-arm
-# adaptivity), so the per-arm range is comparable to the joint one.
-#
-# Returns list(pareto_k, is_ess, proposal_source): all NA / NA-source when the
-# fit declines (an axis with unguessable support, a degenerate proposal
-# covariance, or too few finite importance draws), in which case the diagnostic
-# layer reports quad-ESS. With batching on (`k_batches > 1` or `k_adapt`), also
-# `pareto_k_lo` / `pareto_k_hi` / `pareto_k_mcse` / `pareto_k_band_confident` /
-# `pareto_k_n_batches` (the band is classified off the median). With `arm_axes`,
-# also `by_arm_k` / `by_arm_is_ess` (named numeric over the arms; a per-arm k of
-# NA means that arm carries no genuinely-varying axis), plus `by_arm_k_lo` /
-# `by_arm_k_hi` / `by_arm_k_mcse` / `by_arm_band_confident` when batched.
-.joint_pareto_k <- function(res, refit_log_marginal, n_samples = 200L,
-                            proposal = NULL, arm_axes = NULL, k_batches = 1L,
-                            k_adapt = FALSE, k_batches_max = k_batches) {
+# Returns list(pareto_k, is_ess, proposal_source): all NA / NA-source when the fit
+# declines (an axis with unguessable support, a degenerate proposal covariance, or
+# too few finite importance draws), in which case the diagnostic layer reports
+# quad-ESS. Otherwise also `pareto_k_se_boot` / `pareto_k_ci_low` /
+# `pareto_k_ci_high` / `pareto_k_se_formula` / `pareto_k_tail_points` /
+# `pareto_k_tail_points_requested` / `pareto_k_band_confident`. With `arm_axes`,
+# also `by_arm_k` / `by_arm_is_ess` (named over the arms; NA where an arm carries
+# no genuinely-varying axis) plus per-arm `by_arm_se_boot` / `by_arm_ci_low` /
+# `by_arm_ci_high` / `by_arm_se_formula` / `by_arm_tail_points` /
+# `by_arm_band_confident`.
+.joint_pareto_k <- function(res, refit_log_marginal, n_samples = 500L,
+                            proposal = NULL, arm_axes = NULL,
+                            k_bootstrap = 1000L, k_tail_points = NULL,
+                            k_conf_bands = c(0.5, 0.7)) {
     na_out <- list(pareto_k = NA_real_, is_ess = NA_real_,
                    proposal_source = NA_character_)
     prep <- .joint_pareto_prepare(res, refit_log_marginal, n_samples, proposal)
     if (is.null(prep)) return(na_out)
+
+    # Resolve the GPD tail-size request once (gcol33/tulpa#127): an explicit
+    # `k_tail_points` beyond the 20%-of-draws ceiling is capped, with a single
+    # user-facing warning HERE so the per-replicate bootstrap re-fits stay silent.
+    tp_req <- if (is.null(k_tail_points)) NA_integer_ else as.integer(k_tail_points)
+    if (is.finite(tp_req)) {
+        cap <- as.integer(floor(0.2 * as.integer(n_samples)))
+        if (tp_req > cap) {
+            warning(sprintf(paste0(
+                "k_tail_points = %d exceeds the 20%% PSIS tail cap; using %d ",
+                "instead. Increase diagnose_draws, not k_bootstrap, to obtain ",
+                "more tail information."), tp_req, cap), call. = FALSE)
+        }
+    }
 
     has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
     old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
     on.exit(if (!is.null(old_seed))
                 assign(".Random.seed", old_seed, envir = .GlobalEnv))
 
-    # Adaptive needs >= 2 start batches for an MCSE to exist (clamped here as a
-    # backstop; the front door validates and errors). The seed pool is the cap.
-    nb_start <- max(1L, as.integer(k_batches))
-    adapt    <- isTRUE(k_adapt)
-    if (adapt) nb_start <- max(2L, nb_start)
-    nb_cap   <- if (adapt) max(nb_start, as.integer(k_batches_max)) else nb_start
-    batched  <- nb_cap > 1L
-    n_arm    <- if (!is.null(arm_axes)) length(arm_axes) else 0L
-
-    # Draw all per-batch seeds up front from the restored RNG state, BEFORE any
-    # scoring consumes the stream, so they depend only on the fit's saved seed and
-    # the diagnostic is reproducible (gcol33/tulpa#123). Off (nb_cap = 1) draws
-    # none, keeping the byte-identical single-value path. Adaptive draws the full
-    # cap pool, so an early-stopped run reuses the same leading seeds.
-    seeds_joint <- if (batched) sample.int(.Machine$integer.max, nb_cap) else NULL
-    seeds_arm   <- if (batched && n_arm > 0L)
-        matrix(sample.int(.Machine$integer.max, nb_cap * n_arm), nb_cap, n_arm) else NULL
+    n_arm <- if (!is.null(arm_axes)) length(arm_axes) else 0L
 
     # Axes the grid pins to a single value (e.g. a copy `alpha` fixed at 0, or a
     # one-point dispersion axis) carry zero weighted variance, leaving Su rank
     # deficient and its Cholesky undefined. The importance proposal holds them
     # fixed at u_hat and is built only on the varying axes (gcol33/tulpa#114).
     vary  <- .joint_pareto_vary_axes(prep$Su)
-    # Canonical pass: selects the proposal (single-Gaussian vs grid-mixture) once,
-    # so a batched re-score scores the SAME proposal (no per-batch source flip).
-    joint <- .joint_pareto_score_dispatch(prep, vary, refit_log_marginal, n_samples)
+    joint <- .joint_pareto_score_dispatch(prep, vary, refit_log_marginal,
+                                          n_samples, tail_points = k_tail_points)
     if (is.null(joint)) return(na_out)
-    out <- list(pareto_k = joint$best$pareto_k, is_ess = joint$best$is_ess,
-                proposal_source = joint$source)
 
-    # Number of batches the joint loop actually ran (the per-arm pass matches it,
-    # so joint + per-arm ranges are over the same B). Defaults to the cap; the
-    # adaptive early-stop lowers it.
-    n_used_joint <- nb_cap
-    if (batched) {
-        bs <- .joint_pareto_batch_stats(
-            function() .joint_pareto_rescore(prep, vary, refit_log_marginal,
-                                             n_samples, joint$source),
-            seeds_joint, start = nb_start, adapt = adapt)
-        if (!is.null(bs)) {
-            out$pareto_k                <- bs$pareto_k    # band classified off median
-            out$is_ess                  <- bs$is_ess
-            out$pareto_k_lo             <- bs$pareto_k_lo
-            out$pareto_k_hi             <- bs$pareto_k_hi
-            out$pareto_k_mcse           <- bs$pareto_k_mcse
-            out$pareto_k_band_confident <- bs$pareto_k_band_confident
-            out$pareto_k_n_batches      <- bs$n_batches
-            n_used_joint                <- bs$n_used
-        }
-    }
+    ju  <- .joint_pareto_uncertainty(joint$best, k_tail_points, k_bootstrap,
+                                     k_conf_bands)
+    out <- list(pareto_k = ju$pareto_k, is_ess = ju$is_ess,
+                proposal_source = joint$source,
+                pareto_k_se_boot               = ju$se_boot,
+                pareto_k_ci_low                = ju$ci_low,
+                pareto_k_ci_high               = ju$ci_high,
+                pareto_k_se_formula            = ju$se_formula,
+                pareto_k_tail_points           = ju$tail_points,
+                pareto_k_tail_points_requested = tp_req,
+                pareto_k_band_confident        = ju$band_confident)
 
     if (n_arm > 0L) {
         pa <- lapply(seq_len(n_arm), function(a) {
             v <- intersect(vary, as.integer(arm_axes[[a]]))
-            none <- list(k = NA_real_, ess = NA_real_, lo = NA_real_, hi = NA_real_,
-                         mcse = NA_real_, conf = NA)
+            none <- list(k = NA_real_, ess = NA_real_, se = NA_real_,
+                         lo = NA_real_, hi = NA_real_, sef = NA_real_,
+                         tp = NA_integer_, conf = NA)
             if (length(v) == 0L) return(none)
-            s <- .joint_pareto_score_dispatch(prep, v, refit_log_marginal, n_samples)
+            s <- .joint_pareto_score_dispatch(prep, v, refit_log_marginal,
+                                              n_samples, tail_points = k_tail_points)
             if (is.null(s)) return(none)
-            base <- list(k = s$best$pareto_k, ess = s$best$is_ess,
-                         lo = NA_real_, hi = NA_real_, mcse = NA_real_, conf = NA)
-            if (!batched) return(base)
-            # Match the joint loop's batch count (non-adaptive over its seed
-            # prefix) so the per-arm range covers the same B as the joint range.
-            ba <- .joint_pareto_batch_stats(
-                function() .joint_pareto_rescore(prep, v, refit_log_marginal,
-                                                 n_samples, s$source),
-                seeds_arm[seq_len(n_used_joint), a], adapt = FALSE)
-            if (is.null(ba)) return(base)
-            list(k = ba$pareto_k, ess = ba$is_ess, lo = ba$pareto_k_lo,
-                 hi = ba$pareto_k_hi, mcse = ba$pareto_k_mcse,
-                 conf = ba$pareto_k_band_confident)
+            u <- .joint_pareto_uncertainty(s$best, k_tail_points, k_bootstrap,
+                                           k_conf_bands)
+            list(k = u$pareto_k, ess = u$is_ess, se = u$se_boot, lo = u$ci_low,
+                 hi = u$ci_high, sef = u$se_formula, tp = u$tail_points,
+                 conf = u$band_confident)
         })
-        out$by_arm_k      <- stats::setNames(vapply(pa, function(z) z$k, numeric(1)),
-                                             names(arm_axes))
-        out$by_arm_is_ess <- stats::setNames(vapply(pa, function(z) z$ess, numeric(1)),
-                                             names(arm_axes))
-        if (batched) {
-            nm <- names(arm_axes)
-            out$by_arm_k_lo   <- stats::setNames(vapply(pa, function(z) z$lo, numeric(1)), nm)
-            out$by_arm_k_hi   <- stats::setNames(vapply(pa, function(z) z$hi, numeric(1)), nm)
-            out$by_arm_k_mcse <- stats::setNames(vapply(pa, function(z) z$mcse, numeric(1)), nm)
-            out$by_arm_band_confident <-
-                stats::setNames(vapply(pa, function(z) z$conf, logical(1)), nm)
-        }
+        nm <- names(arm_axes)
+        out$by_arm_k           <- stats::setNames(vapply(pa, function(z) z$k,   numeric(1)), nm)
+        out$by_arm_is_ess      <- stats::setNames(vapply(pa, function(z) z$ess, numeric(1)), nm)
+        out$by_arm_se_boot     <- stats::setNames(vapply(pa, function(z) z$se,  numeric(1)), nm)
+        out$by_arm_ci_low      <- stats::setNames(vapply(pa, function(z) z$lo,  numeric(1)), nm)
+        out$by_arm_ci_high     <- stats::setNames(vapply(pa, function(z) z$hi,  numeric(1)), nm)
+        out$by_arm_se_formula  <- stats::setNames(vapply(pa, function(z) z$sef, numeric(1)), nm)
+        out$by_arm_tail_points <- stats::setNames(vapply(pa, function(z) as.integer(z$tp), integer(1)), nm)
+        out$by_arm_band_confident <- stats::setNames(vapply(pa, function(z) z$conf, logical(1)), nm)
     }
     out
 }
@@ -1249,38 +1143,66 @@
 
 # Attach the opt-in per-arm outer Pareto-k to a joint result (gcol33/tulpa#120).
 # No-op when the driver computed no per-arm k (diagnostic off, single-block
-# layout, or a declined per-arm map). Single source for both attach paths. When
-# the joint k was batched (gcol33/tulpa#123, #124) the per-arm k is the median
-# over batches and carries its own min/max range (`*_lo` / `*_hi`), Monte Carlo
-# SE (`*_mcse`) and band-confidence flag (`*_band_confident`).
+# layout, or a declined per-arm map). Single source for both attach paths. Each
+# arm carries its own bootstrap SE (`*_se_boot`), 95% CI (`*_ci_low` / `*_ci_high`),
+# closed-form SE (`*_se_formula`), tail size (`*_tail_points`) and band-confidence
+# flag (`*_band_confident`), the per-arm analogue of the joint uncertainty
+# (gcol33/tulpa#127).
 .joint_attach_by_arm_k <- function(res, kd) {
     if (is.null(kd$by_arm_k)) return(res)
     res$pareto_k_by_arm        <- kd$by_arm_k
     res$pareto_k_by_arm_is_ess <- kd$by_arm_is_ess
     res$pareto_k_by_arm_scope  <-
         "per-arm hyperparameter axes (other arms fixed at posterior mean)"
-    if (!is.null(kd$by_arm_k_lo)) {
-        res$pareto_k_by_arm_lo             <- kd$by_arm_k_lo
-        res$pareto_k_by_arm_hi             <- kd$by_arm_k_hi
-        res$pareto_k_by_arm_mcse           <- kd$by_arm_k_mcse
-        res$pareto_k_by_arm_band_confident <- kd$by_arm_band_confident
-    }
+    res$pareto_k_by_arm_se_boot        <- kd$by_arm_se_boot
+    res$pareto_k_by_arm_ci_low         <- kd$by_arm_ci_low
+    res$pareto_k_by_arm_ci_high        <- kd$by_arm_ci_high
+    res$pareto_k_by_arm_se_formula     <- kd$by_arm_se_formula
+    res$pareto_k_by_arm_tail_points    <- kd$by_arm_tail_points
+    res$pareto_k_by_arm_band_confident <- kd$by_arm_band_confident
     res
 }
 
-# Attach the batched outer Pareto-k spread to a joint result (gcol33/tulpa#123,
-# #124). No-op when batching was off (`k_batches = 1` and not adaptive), so the
-# single-value output shape and cost are unchanged. The reported `pareto_k` is
-# already the batch median; `pareto_k_mcse` is the Monte Carlo SE of the estimate
-# and `pareto_k_band_confident` whether median +/- 2*MCSE resolves to one
-# reliability band. The min/max range is a secondary QA field, not a posterior CI.
-.joint_attach_batch_k <- function(res, kd) {
-    if (is.null(kd$pareto_k_n_batches)) return(res)
-    res$pareto_k_lo             <- kd$pareto_k_lo
-    res$pareto_k_hi             <- kd$pareto_k_hi
-    res$pareto_k_mcse           <- kd$pareto_k_mcse
-    res$pareto_k_band_confident <- kd$pareto_k_band_confident
-    res$pareto_k_n_batches      <- kd$pareto_k_n_batches
+# Attach the bootstrap + closed-form outer Pareto-k uncertainty to a joint result
+# (gcol33/tulpa#127). `pareto_k_se_boot` / `pareto_k_ci_low` / `pareto_k_ci_high`
+# are the bootstrap SE and 95% CI of the k-hat -- its sampling uncertainty GIVEN
+# the proposal, NOT a posterior CI; `pareto_k_se_formula` the GPD-shape MLE
+# asymptotic SE cross-check; `pareto_k_tail_points` the tail size used (the request
+# in `pareto_k_tail_points_requested`); `pareto_k_band_confident` whether the
+# bootstrap CI lies within one reliability band. No-op when the diagnostic declined
+# (the uncertainty fields are absent from `kd`).
+.joint_attach_pareto_k_uncertainty <- function(res, kd) {
+    if (is.null(kd$pareto_k_tail_points) && is.null(kd$pareto_k_se_boot)) return(res)
+    res$pareto_k_se_boot               <- kd$pareto_k_se_boot
+    res$pareto_k_ci_low                <- kd$pareto_k_ci_low
+    res$pareto_k_ci_high               <- kd$pareto_k_ci_high
+    res$pareto_k_se_formula            <- kd$pareto_k_se_formula
+    res$pareto_k_tail_points           <- kd$pareto_k_tail_points
+    res$pareto_k_tail_points_requested <- kd$pareto_k_tail_points_requested
+    res$pareto_k_band_confident        <- kd$pareto_k_band_confident
+    res
+}
+
+# Attach the diagnostic's draw budget and wall-clock cost ratio (gcol33/tulpa#127).
+# `diagnose_cost_ratio` = diagnostic seconds / fit seconds (the latter excluding the
+# diagnostic), read from the fit timer's "diagnostics" bucket vs the rest, so a
+# caller can see how expensive the outer Pareto-k diagnostic was relative to the fit
+# it certifies (the design target is roughly 1-3x). `diagnose_draws` records the
+# importance-draw budget actually used. Both NA when the diagnostic was off or the
+# timing is unavailable. Called by both the single- and multi-block drivers after
+# `res$timing` is set.
+.joint_attach_diagnose_cost <- function(res, diagnose_k, diagnose_draws) {
+    res$diagnose_draws <- if (isTRUE(diagnose_k)) as.integer(diagnose_draws)
+                          else NA_integer_
+    ratio <- NA_real_
+    tmg <- res$timing
+    if (isTRUE(diagnose_k) && is.numeric(tmg) && !is.null(names(tmg)) &&
+        all(c("total", "diagnostics") %in% names(tmg))) {
+        diag_s <- tmg[["diagnostics"]]
+        fit_s  <- tmg[["total"]] - diag_s
+        if (is.finite(diag_s) && is.finite(fit_s) && fit_s > 0) ratio <- diag_s / fit_s
+    }
+    res$diagnose_cost_ratio <- ratio
     res
 }
 
@@ -1297,11 +1219,12 @@
 # with `diagnose_k = FALSE` the fields are present but NA.
 .joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
                                           max_iter = 50L,
-                                          diagnose_k = TRUE, k_samples = 200L,
+                                          diagnose_k = TRUE, diagnose_draws = 500L,
                                           n_threads_outer = 1L,
                                           pareto_k_by_arm = FALSE,
-                                          k_batches = 1L, k_adapt = FALSE,
-                                          k_batches_max = k_batches) {
+                                          k_bootstrap = 1000L,
+                                          k_tail_points = NULL,
+                                          k_conf_bands = c(0.5, 0.7)) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -1339,13 +1262,13 @@
     # unavailable, else the plain broadcast warm (gcol33/tulpa#118).
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
-    kd <- .joint_pareto_k(res, refit, k_samples, arm_axes = arm_axes,
-                          k_batches = k_batches, k_adapt = k_adapt,
-                          k_batches_max = k_batches_max)
+    kd <- .joint_pareto_k(res, refit, diagnose_draws, arm_axes = arm_axes,
+                          k_bootstrap = k_bootstrap, k_tail_points = k_tail_points,
+                          k_conf_bands = k_conf_bands)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
-    res <- .joint_attach_batch_k(res, kd)
+    res <- .joint_attach_pareto_k_uncertainty(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)
     res
 }

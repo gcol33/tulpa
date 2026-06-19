@@ -96,6 +96,88 @@
   list(k = k, sigma = sigma)
 }
 
+# Number of upper-tail order statistics for the GPD fit (gcol33/tulpa#127).
+# `NULL` => the automatic PSIS rule ceil(min(0.2*S, 3*sqrt(S))) (the r_eff = 1
+# form, appropriate for near-independent diagnostic draws). An explicit request is
+# an EXPERT tail-threshold control, capped DEFENSIVELY at floor(0.2*S) -- the 20%-
+# of-sample ceiling that keeps the fit an extreme tail (a request beyond it drags
+# body ratios into the tail: lower variance but a BIASED k-hat and a falsely
+# reassuring CI). This cap is SILENT; the user-facing warning (with the requested
+# vs used counts) is raised once by the diagnostic driver, not per bootstrap
+# replicate. `tail_points` is not a precision knob; the draw count `S` is.
+.psis_tail_len <- function(S, tail_points = NULL) {
+  if (is.null(tail_points)) {
+    return(as.integer(ceiling(min(0.2 * S, 3 * sqrt(S)))))
+  }
+  req <- suppressWarnings(as.integer(tail_points))
+  if (length(req) != 1L || is.na(req) || req < 1L) {
+    stop("`tail_points` must be a single positive integer, or NULL.",
+         call. = FALSE)
+  }
+  min(req, as.integer(floor(0.2 * S)))
+}
+
+# Reliability band index of a k-hat under configurable boundaries `bands` (sorted
+# ascending, e.g. c(0.5, 0.7) -> intervals (-Inf, 0.5] / (0.5, 0.7] / (0.7, Inf)
+# = 0 / 1 / 2). A boundary value falls in the LOWER interval (strict `>`), so
+# k = 0.5 is "good" and k = 0.7 is "ok". NA for a non-finite k.
+.k_band_b <- function(k, bands) {
+  if (!is.finite(k)) return(NA_integer_)
+  as.integer(sum(k > bands))
+}
+
+# Does the interval [lo, hi] lie within a SINGLE reliability band (does not cross
+# any boundary in `bands`)? FALSE for any non-finite endpoint.
+.within_one_band_b <- function(lo, hi, bands) {
+  bl <- .k_band_b(lo, bands); bh <- .k_band_b(hi, bands)
+  !is.na(bl) && !is.na(bh) && bl == bh
+}
+
+# Bootstrap + closed-form uncertainty of the outer Pareto-k-hat from ONE batch of
+# importance log-ratios (gcol33/tulpa#127). The k-hat is a GPD shape fit to the
+# upper tail of `lr`; its sampling uncertainty GIVEN the proposal is estimated by
+# resampling the SAME ratios with replacement and refitting `n_boot` times. This
+# is free (no new inner solves) and estimator-agnostic (it resamples whatever
+# k-hat tulpa_psis computes). Bootstrap cannot create tail information: it reports
+# how UNSTABLE the current tail estimate is, not a tighter k -- a tighter k needs
+# more ACTUAL tail ratios (raise the draw count). The closed-form
+# `se_formula = (1 + k) / sqrt(M)` (M = tail_len) is the GPD shape MLE asymptotic
+# SE, reported as a cross-check (the Zhang-Stephens estimator's SE differs
+# slightly, so the bootstrap is primary). `band_confident` is TRUE iff the
+# bootstrap [ci_low, ci_high] lies within one reliability band (`conf_bands`), the
+# honest form when the bootstrap distribution is skewed. Returns the point k, its
+# IS-ESS, the tail size used, the bootstrap SE / 95% CI, the formula SE, and the
+# band-confidence flag.
+.tulpa_psis_k_uncertainty <- function(lr, tail_points = NULL, n_boot = 1000L,
+                                      conf_bands = c(0.5, 0.7)) {
+  lr   <- lr[is.finite(lr)]
+  S    <- length(lr)
+  base <- tulpa_psis(lr, tail_points = tail_points)
+  k    <- base$pareto_k
+  M    <- base$tail_len
+  out  <- list(pareto_k = k, is_ess = base$is_ess, tail_points = M,
+               se_boot = NA_real_, ci_low = NA_real_, ci_high = NA_real_,
+               se_formula = NA_real_, band_confident = NA)
+  if (!is.finite(k) || S < .PSIS_MIN_EVAL) return(out)
+  nb <- max(0L, as.integer(n_boot))
+  if (nb >= 2L) {
+    ks <- vapply(seq_len(nb), function(b) {
+      tulpa_psis(lr[sample.int(S, S, replace = TRUE)],
+                 tail_points = tail_points)$pareto_k
+    }, numeric(1))
+    ks <- ks[is.finite(ks)]
+    if (length(ks) >= 2L) {
+      out$se_boot <- stats::sd(ks)
+      qs          <- stats::quantile(ks, c(0.025, 0.975), names = FALSE, type = 7)
+      out$ci_low  <- qs[1L]
+      out$ci_high <- qs[2L]
+      out$band_confident <- .within_one_band_b(qs[1L], qs[2L], conf_bands)
+    }
+  }
+  if (is.finite(M) && M > 0L) out$se_formula <- (1 + max(k, 0)) / sqrt(M)
+  out
+}
+
 #' Pareto-smoothed importance sampling
 #'
 #' Smooths a set of importance ratios by replacing the largest weights with the
@@ -108,23 +190,30 @@
 #'
 #' @param log_ratios Numeric vector of (unnormalized) log importance ratios
 #'   `log p_target(x) - log q_proposal(x)` evaluated at draws `x ~ q`.
+#' @param tail_points Number of upper-tail order statistics for the
+#'   generalized-Pareto fit, or `NULL` (default) for the automatic PSIS rule
+#'   `ceil(min(0.2 * S, 3 * sqrt(S)))`. An explicit value is an expert
+#'   tail-threshold control, capped at `floor(0.2 * S)` (with a warning) so the
+#'   fit stays an extreme tail; it is NOT a precision knob (raise the draw count
+#'   for a tighter shape estimate).
 #' @return A list with `pareto_k` (the tail shape, `NA` if the sample is too
 #'   small to fit), `is_ess` (importance-sampling effective sample size,
-#'   `1 / sum(w^2)` on the normalized smoothed weights), and `log_weights`
-#'   (the normalized smoothed log weights).
+#'   `1 / sum(w^2)` on the normalized smoothed weights), `log_weights`
+#'   (the normalized smoothed log weights), and `tail_len` (the tail size used).
 #' @references Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
 #'   importance sampling. \emph{JMLR} 25(72):1-58.
 #' @seealso [mcmc_diagnostics()] for the MCMC-chain counterpart.
 #' @export
-tulpa_psis <- function(log_ratios) {
+tulpa_psis <- function(log_ratios, tail_points = NULL) {
   log_ratios <- log_ratios[is.finite(log_ratios)]
   S <- length(log_ratios)
   if (S < 5L) {
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, log_weights = numeric(0)))
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, log_weights = numeric(0),
+                tail_len = 0L))
   }
 
   lw <- log_ratios - max(log_ratios)                   # stabilize
-  tail_len <- as.integer(ceiling(min(0.2 * S, 3 * sqrt(S))))
+  tail_len <- .psis_tail_len(S, tail_points)
   k_hat <- NA_real_
 
   if (tail_len >= 5L && S >= 25L) {
@@ -145,7 +234,8 @@ tulpa_psis <- function(log_ratios) {
 
   lw <- lw - .tulpa_logsumexp(lw)                      # normalize
   w  <- exp(lw)
-  list(pareto_k = k_hat, is_ess = 1 / sum(w^2), log_weights = lw)
+  list(pareto_k = k_hat, is_ess = 1 / sum(w^2), log_weights = lw,
+       tail_len = tail_len)
 }
 
 # Outer (hyperparameter) Pareto-k-hat for a nested-Laplace fit. Monte-Carlo
@@ -213,7 +303,7 @@ tulpa_psis <- function(log_ratios) {
 # PSIS, leaving the quadratic 0.5||z||^2.
 .nested_is_pareto_k <- function(theta_hat, L_scale, log_target_batched,
                                 n_samples = 200L, radius_cap = Inf,
-                                return_draws = FALSE) {
+                                return_draws = FALSE, tail_points = NULL) {
   d <- length(theta_hat)
   n_samples <- as.integer(n_samples)
   if (n_samples < .PSIS_MIN_EVAL) {                          # cannot reach the floor
@@ -275,7 +365,7 @@ tulpa_psis <- function(log_ratios) {
   # overhead when unset.
   cap <- getOption("tulpa.kdiag.capture", NULL)
   if (is.environment(cap)) cap$lr <- lr[is.finite(lr)]
-  ps <- tulpa_psis(lr)
+  ps <- tulpa_psis(lr, tail_points = tail_points)
   out <- list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
   # The evaluated draws and their PSIS-smoothed log weights, same order
   # (tulpa_psis keeps the finite entries in place), so a caller can re-estimate
@@ -284,6 +374,7 @@ tulpa_psis <- function(log_ratios) {
     fin <- is.finite(lr)
     out$U <- U[fin, , drop = FALSE]
     out$log_weights <- ps$log_weights
+    out$lr <- lr[fin]                                  # raw ratios for the k bootstrap
   }
   out
 }
