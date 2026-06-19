@@ -228,6 +228,21 @@
                  "and strictly below its `upper`.", call. = FALSE)
         }
     }
+    # Optional upper-truncated Gaussian ceiling (family == "truncated_gaussian"):
+    # row i's latent log-response is truncated to <= trunc_upper[i] on the predictor
+    # scale; +Inf => no truncation on that row. The built-in truncated spec reads
+    # (y, trunc_upper).
+    if (!is.null(a$trunc_upper)) {
+        a$trunc_upper <- as.numeric(a$trunc_upper)
+        if (length(a$trunc_upper) != N) {
+            stop("Arm ", k, ": length(trunc_upper) (", length(a$trunc_upper),
+                 ") must equal length(y) (", N, ").", call. = FALSE)
+        }
+        if (any(is.na(a$trunc_upper))) {
+            stop("Arm ", k, ": `trunc_upper` must be non-NA (use +Inf for an ",
+                 "untruncated row).", call. = FALSE)
+        }
+    }
     a$re_idx <- if (is.null(a$re_idx)) rep(0, N) else as.numeric(a$re_idx)
     if (length(a$re_idx) != N) {
         stop("Arm ", k, ": length(re_idx) (", length(a$re_idx),

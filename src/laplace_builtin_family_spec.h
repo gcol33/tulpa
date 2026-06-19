@@ -44,6 +44,12 @@ struct BuiltinFamilyResponse {
     // open outer classes and phi is the latent SD. Null => not an interval arm.
     const double* lower = nullptr;
     const double* upper = nullptr;
+    // Upper-truncated Gaussian ceiling (truncated_gaussian family, gcol33/tulpa#122).
+    // When non-null and family == "truncated_gaussian", row i's latent log-response
+    // is Normal(eta, phi^2) truncated to <= trunc_upper[i] on the predictor scale
+    // (+Inf => no truncation). The point response y[i] is still read (the density is
+    // evaluated at it); only the upper bound is added. Null => not a truncated arm.
+    const double* trunc_upper = nullptr;
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
@@ -57,7 +63,9 @@ inline double builtin_family_ll_double(
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const double w = r->weights ? r->weights[i] : 1.0;
     const double ll =
-        (r->lower && r->family == "interval_gaussian")
+        (r->trunc_upper && r->family == "truncated_gaussian")
+        ? log_lik_truncated_gaussian(r->y[i], r->trunc_upper[i], eta[0], r->phi)
+        : (r->lower && r->family == "interval_gaussian")
         ? log_lik_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
         ? log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
@@ -85,7 +93,9 @@ inline void builtin_family_eta_weights(
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const GradHess gh =
-        (r->lower && r->family == "interval_gaussian")
+        (r->trunc_upper && r->family == "truncated_gaussian")
+        ? grad_hess_truncated_gaussian(r->y[i], r->trunc_upper[i], eta[0], r->phi)
+        : (r->lower && r->family == "interval_gaussian")
         ? grad_hess_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
         ? grad_hess_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)

@@ -130,6 +130,17 @@ inline int parse_joint_arms(
                            "length(y) (%d).", k + 1, arms_out[k].N);
             }
         }
+        // Optional upper-truncated Gaussian ceiling (truncated lognormal cover,
+        // gcol33/tulpa#122). When supplied it must match this arm's N; the built-in
+        // truncated_gaussian spec reads (y, trunc_upper). +Inf entries => no
+        // truncation on that row.
+        if (a.containsElementNamed("trunc_upper") && !Rf_isNull(a["trunc_upper"])) {
+            arms_out[k].trunc_upper = Rcpp::as<Rcpp::NumericVector>(a["trunc_upper"]);
+            if ((int)arms_out[k].trunc_upper.size() != arms_out[k].N) {
+                Rcpp::stop("Arm %d: length(trunc_upper) must equal "
+                           "length(y) (%d).", k + 1, arms_out[k].N);
+            }
+        }
         if (pa.offset.size() != 0 && (int)pa.offset.size() != arms_out[k].N) {
             Rcpp::stop("Arm %d: length(offset) (%d) != N (%d).",
                        k + 1, (int)pa.offset.size(), arms_out[k].N);

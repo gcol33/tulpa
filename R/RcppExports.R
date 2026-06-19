@@ -125,6 +125,10 @@ cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warm
     .Call(`_tulpa_cpp_mclmc_test`, mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted)
 }
 
+cpp_multinomial_logit_terms <- function(eta, cls) {
+    .Call(`_tulpa_cpp_multinomial_logit_terms`, eta, cls)
+}
+
 cpp_nested_laplace_icar <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
     .Call(`_tulpa_cpp_nested_laplace_icar`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
 }
@@ -579,6 +583,10 @@ cpp_tgmrf_eval <- function(id, theta) {
 
 cpp_tgmrf_eval_mu <- function(id, theta) {
     .Call(`_tulpa_cpp_tgmrf_eval_mu`, id, theta)
+}
+
+cpp_truncated_gaussian_terms <- function(y, upper, eta, sigma) {
+    .Call(`_tulpa_cpp_truncated_gaussian_terms`, y, upper, eta, sigma)
 }
 
 cpp_tulpa_fit_beta_nuts <- function(y_r, X_r, sigma_beta = 10.0, log_phi_prior_sd = 3.0, log_phi_init = 0.0, n_iter = 2000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 42L, verbose = FALSE) {

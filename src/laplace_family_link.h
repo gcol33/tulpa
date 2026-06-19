@@ -358,6 +358,75 @@ inline GradHess grad_hess_interval_gaussian(double lower, double upper,
     return { r.grad, r.neg_hess };
 }
 
+// Upper-truncated Gaussian latent (gcol33/tulpa#122). The latent response is
+// Normal(eta, sigma^2) CONDITIONED on y <= u, a known upper bound on the response
+// scale (+Inf => no truncation). This is a truncated GAUSSIAN: it operates on the
+// response it is given, exactly as the plain gaussian family does, so a consumer
+// gets a truncated-LOGNORMAL by feeding it log(cover) with u = log(ceiling) (the
+// same way the cover hurdle already fits its lognormal arm with family="gaussian"
+// on log-cover; the -log y Jacobian is the consumer's, added outside the engine).
+// It is the continuous-density counterpart of interval_gaussian: the interval
+// family scores the probability MASS of a censored class, this scores a truncated
+// DENSITY -- the Gaussian density divided by the retained mass Phi((u - eta)/sigma).
+// Distinct objects: truncation conditions the sampling law, censoring records an
+// interval.
+//
+//   z = (y - eta)/sigma, a = (u - eta)/sigma, lambda = phi(a)/Phi(a)
+//   ll            = -0.5 log(2 pi sigma^2) - 0.5 z^2 - log Phi(a)
+//   d logf/d eta  = (z + lambda) / sigma
+//   -d2/d eta2    = (1 - lambda (a + lambda)) / sigma^2
+//
+// As u -> +Inf (a -> +Inf, lambda -> 0) this reduces EXACTLY to the gaussian arm.
+// 0 < lambda(a + lambda) < 1 for finite a (the truncated-normal variance factor),
+// so -d2 logf/d eta2 > 0 and Newton needs no Fisher fallback -- the same
+// log-concavity interval_gaussian relies on. lambda is formed in log space so it
+// stays finite in deep truncation (a -> -Inf, predicted mean far above the
+// bound); the curvature is floored at the flat far tail, mirroring
+// interval_gaussian_core. See dev_notes/truncated_gaussian_likelihood.md.
+struct TruncatedGaussian {
+    double ll;        // log density of the truncated Gaussian (no response Jacobian)
+    double grad;      // d logf / d eta
+    double neg_hess;  // -d2 logf / d eta2  (>= 0)
+};
+
+inline TruncatedGaussian truncated_gaussian_core(double y, double u_upper,
+                                                 double eta, double sigma) {
+    const double inv_s = 1.0 / sigma;
+    const double z = (y - eta) * inv_s;
+
+    double a, logPhi_a, lambda;
+    if (!R_finite(u_upper)) {            // +Inf bound => untruncated gaussian
+        a = R_PosInf;
+        logPhi_a = 0.0;
+        lambda   = 0.0;
+    } else {
+        a = (u_upper - eta) * inv_s;
+        logPhi_a = R::pnorm(a, 0.0, 1.0, 1, 1);                   // log Phi(a)
+        lambda   = std::exp(R::dnorm(a, 0.0, 1.0, 1) - logPhi_a); // phi(a)/Phi(a), stable
+    }
+
+    const double ll = -0.5 * std::log(2.0 * M_PI * sigma * sigma)
+                      - 0.5 * z * z - logPhi_a;
+    const double grad = (z + lambda) * inv_s;
+    // lambda * (a + lambda): guard the 0 * Inf at a = +Inf (lambda = 0 there).
+    const double curv_term = (lambda == 0.0) ? 0.0 : lambda * (a + lambda);
+    double nh = (1.0 - curv_term) * inv_s * inv_s;
+    if (nh < 1e-12) nh = 1e-12;   // log-concave; guard roundoff at the flat tail
+
+    return { ll, grad, nh };
+}
+
+inline double log_lik_truncated_gaussian(double y, double u_upper,
+                                         double eta, double sigma) {
+    return truncated_gaussian_core(y, u_upper, eta, sigma).ll;
+}
+
+inline GradHess grad_hess_truncated_gaussian(double y, double u_upper,
+                                             double eta, double sigma) {
+    const TruncatedGaussian r = truncated_gaussian_core(y, u_upper, eta, sigma);
+    return { r.grad, r.neg_hess };
+}
+
 inline double compute_total_log_lik(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericVector& eta, int N,

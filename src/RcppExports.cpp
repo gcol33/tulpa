@@ -525,6 +525,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_multinomial_logit_terms
+Rcpp::List cpp_multinomial_logit_terms(Rcpp::NumericVector eta, int cls);
+RcppExport SEXP _tulpa_cpp_multinomial_logit_terms(SEXP etaSEXP, SEXP clsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< int >::type cls(clsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_multinomial_logit_terms(eta, cls));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_nested_laplace_icar
 Rcpp::List cpp_nested_laplace_icar(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path);
 RcppExport SEXP _tulpa_cpp_nested_laplace_icar(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP) {
@@ -2608,6 +2620,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_truncated_gaussian_terms
+Rcpp::NumericVector cpp_truncated_gaussian_terms(double y, double upper, double eta, double sigma);
+RcppExport SEXP _tulpa_cpp_truncated_gaussian_terms(SEXP ySEXP, SEXP upperSEXP, SEXP etaSEXP, SEXP sigmaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type y(ySEXP);
+    Rcpp::traits::input_parameter< double >::type upper(upperSEXP);
+    Rcpp::traits::input_parameter< double >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma(sigmaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_truncated_gaussian_terms(y, upper, eta, sigma));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_fit_beta_nuts
 Rcpp::List cpp_tulpa_fit_beta_nuts(Rcpp::NumericVector y_r, Rcpp::NumericMatrix X_r, double sigma_beta, double log_phi_prior_sd, double log_phi_init, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, bool verbose);
 RcppExport SEXP _tulpa_cpp_tulpa_fit_beta_nuts(SEXP y_rSEXP, SEXP X_rSEXP, SEXP sigma_betaSEXP, SEXP log_phi_prior_sdSEXP, SEXP log_phi_initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP verboseSEXP) {
@@ -2933,6 +2959,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 17},
     {"_tulpa_cpp_laplace_spec_test_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_multi_re, 8},
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
+    {"_tulpa_cpp_multinomial_logit_terms", (DL_FUNC) &_tulpa_cpp_multinomial_logit_terms, 2},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 20},
     {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 22},
     {"_tulpa_cpp_nested_laplace_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_car_proper, 21},
@@ -3047,6 +3074,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tgmrf_registry_size", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_size, 0},
     {"_tulpa_cpp_tgmrf_eval", (DL_FUNC) &_tulpa_cpp_tgmrf_eval, 2},
     {"_tulpa_cpp_tgmrf_eval_mu", (DL_FUNC) &_tulpa_cpp_tgmrf_eval_mu, 2},
+    {"_tulpa_cpp_truncated_gaussian_terms", (DL_FUNC) &_tulpa_cpp_truncated_gaussian_terms, 4},
     {"_tulpa_cpp_tulpa_fit_beta_nuts", (DL_FUNC) &_tulpa_cpp_tulpa_fit_beta_nuts, 11},
     {"_tulpa_cpp_tulpa_fit_gaussian", (DL_FUNC) &_tulpa_cpp_tulpa_fit_gaussian, 8},
     {"_tulpa_cpp_tulpa_fit_generic", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic, 11},
