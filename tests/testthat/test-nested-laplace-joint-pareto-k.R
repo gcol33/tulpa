@@ -371,3 +371,138 @@ test_that("diagnose_k does not perturb the global RNG state", {
         control = list(diagnose_k = TRUE, k_samples = 100L)))
     expect_identical(.Random.seed, s0)
 })
+
+# --------------------------------------------------------------------------- #
+# (5) Batched outer Pareto-k: median + Monte Carlo range (gcol33/tulpa#123)    #
+# --------------------------------------------------------------------------- #
+# The k-hat is a noisy GPD-tail estimator; control$k_batches > 1 reports its
+# median over independent importance batches plus the observed min/max range.
+# Off (k_batches = 1) is byte-identical to the prior single-value path. The
+# constructed single-axis res + analytic refit (as in section 1) exercises the
+# batching driver directly, fast, with a known proposal-covers target.
+
+.jpk_cover_res <- function() {
+    sg <- exp(seq(-3, 3, length.out = 61))
+    lw <- stats::dnorm(log(sg), 0, 1.2, log = TRUE)
+    w  <- exp(lw - max(lw)); w <- w / sum(w)
+    list(theta_grid = matrix(sg, ncol = 1, dimnames = list(NULL, "sigma")),
+         weights = w, prior = list(type = "icar"))
+}
+# lt -> N(0, 0.8^2): target narrower than the grid-moment proposal (low k).
+.jpk_cover_refit <- function(tm) { u <- log(tm[, "sigma"]); -0.5 * (u / 0.8)^2 - u }
+
+test_that("k_batches = 1 is byte-identical to the single-value path (no range fields)", {
+    res <- .jpk_cover_res()
+    set.seed(404)
+    a <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 2000L)
+    set.seed(404)
+    b <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 2000L, k_batches = 1L)
+    expect_identical(a, b)
+    expect_null(a$pareto_k_lo)
+    expect_null(a$pareto_k_hi)
+    expect_null(a$pareto_k_n_batches)
+})
+
+test_that("k_batches > 1 reports a median k-hat inside its observed range", {
+    res <- .jpk_cover_res()
+    set.seed(405)
+    kb <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 400L, k_batches = 6L)
+    expect_equal(kb$pareto_k_n_batches, 6L)
+    expect_true(is.finite(kb$pareto_k))
+    expect_true(is.finite(kb$is_ess) && kb$is_ess > 0)
+    expect_lte(kb$pareto_k_lo, kb$pareto_k)        # band classified off the median
+    expect_lte(kb$pareto_k, kb$pareto_k_hi)
+    expect_lte(kb$pareto_k_lo, kb$pareto_k_hi)
+    # The covering target keeps every batch usable.
+    expect_lt(kb$pareto_k_hi, 0.7)
+})
+
+test_that("the batched k-hat is reproducible (seeds drawn from the restored state)", {
+    res <- .jpk_cover_res()
+    set.seed(406)
+    k1 <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 400L, k_batches = 5L)
+    # No set.seed between calls: .joint_pareto_k restores the RNG on exit, so the
+    # second call sees the identical entry state and derives the same per-batch
+    # seeds.
+    k2 <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 400L, k_batches = 5L)
+    expect_identical(k1$pareto_k, k2$pareto_k)
+    expect_identical(k1$pareto_k_lo, k2$pareto_k_lo)
+    expect_identical(k1$pareto_k_hi, k2$pareto_k_hi)
+})
+
+test_that("control$k_batches reports the batched median + range end to end", {
+    skip_if_not_slow()
+    sim <- .jpk_sim(seed = 91)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.7, 1.1))
+    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
+    fit <- tulpa_nested_laplace_joint(
+        responses = arms, prior = prior,
+        control = list(k_samples = 120L, k_batches = 5L))
+    expect_equal(fit$pareto_k_n_batches, 5L)
+    expect_true(is.finite(fit$pareto_k))
+    expect_lte(fit$pareto_k_lo, fit$pareto_k)
+    expect_lte(fit$pareto_k, fit$pareto_k_hi)
+    # The default (k_batches = 1) attaches no range fields.
+    base <- tulpa_nested_laplace_joint(
+        responses = arms, prior = prior, control = list(k_samples = 120L))
+    expect_null(base$pareto_k_n_batches)
+    expect_null(base$pareto_k_lo)
+})
+
+test_that("k_batches batches the per-arm k too (multi-block by_arm)", {
+    skip_if_not_slow()
+    sim <- .jpk_sim(seed = 92)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior_multi <- list(list(
+        type = "icar", n_spatial_units = adj$n_spatial_units,
+        adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+        n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.8),
+        spatial_idx = list(sim$spatial_idx, sim$spi_pos)))
+    cp <- list(block = 1, arm = "pos", alpha_grid = c(0, 0.5, 1.0, 1.5))
+    fit <- tulpa_nested_laplace_joint(
+        responses = .jpk_arms(sim), prior = prior_multi, copy = cp,
+        control = list(diagnose_k = "by_arm", integration = "grid",
+                       k_samples = 120L, k_batches = 5L))
+    expect_false(is.null(fit$pareto_k_by_arm))
+    expect_false(is.null(fit$pareto_k_by_arm_lo))
+    expect_false(is.null(fit$pareto_k_by_arm_hi))
+    ok <- is.finite(fit$pareto_k_by_arm)
+    expect_true(any(ok))
+    expect_true(all(fit$pareto_k_by_arm_lo[ok] <= fit$pareto_k_by_arm[ok] + 1e-12))
+    expect_true(all(fit$pareto_k_by_arm[ok] <= fit$pareto_k_by_arm_hi[ok] + 1e-12))
+})
+
+test_that("batched diagnostic does not perturb the global RNG state", {
+    skip_if_not_slow()
+    sim <- .jpk_sim(seed = 93)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    set.seed(321)
+    s0 <- .Random.seed
+    invisible(tulpa_nested_laplace_joint(
+        responses = .jpk_arms_alpha(sim, c(0.5, 1.0, 1.5)), prior = prior,
+        control = list(k_samples = 100L, k_batches = 4L)))
+    expect_identical(.Random.seed, s0)
+})
+
+test_that("control$k_batches rejects a non-integer / sub-1 value", {
+    sim <- .jpk_sim(seed = 94)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+                                   control = list(k_batches = 0L)),
+        "k_batches")
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+                                   control = list(k_batches = 2.5)),
+        "k_batches")
+})

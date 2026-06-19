@@ -896,6 +896,51 @@
     if (covered && better) list(best = mix, source = "grid_mixture") else g_out
 }
 
+# Re-score the proposal the dispatcher already CHOSE, once (gcol33/tulpa#123).
+# The single-vs-mixture selection is made on the canonical pass and fixed here as
+# `source`, so a batched re-score evaluates the SAME proposal and the source never
+# flips across batches: "grid_mixture" re-runs the mixture scorer, anything else
+# (grid_moment / moment_matched / mode_hessian) re-runs the single-Gaussian scorer
+# (moment matching included). Returns c(pareto_k, is_ess), NA on a failed batch.
+.joint_pareto_rescore <- function(prep, vary, refit_log_marginal, n_samples,
+                                  source) {
+    s <- if (identical(source, "grid_mixture"))
+        .joint_pareto_score_mixture(prep, vary, refit_log_marginal, n_samples)
+    else
+        .joint_pareto_score(prep, vary, refit_log_marginal, n_samples)
+    if (is.null(s) || !is.finite(s$pareto_k)) return(c(NA_real_, NA_real_))
+    c(s$pareto_k, s$is_ess)
+}
+
+# Median k-hat + observed min/max range + IS-ESS over independent importance
+# batches (gcol33/tulpa#123). `score_one()` re-scores the chosen proposal once; it
+# is called under a deterministic per-batch seed (`seeds[b]`) so the aggregate is
+# reproducible. The spread is the MONTE CARLO uncertainty of the PSIS k-hat
+# estimator across independent importance samples -- NOT a posterior credible
+# interval, and NOT a coverage-calibrated CI; the fit's per-cell estimates and
+# coefficients do not move. The median is robust to the occasional heavy-tail
+# batch that inflates the mean. Returns list(pareto_k, pareto_k_lo, pareto_k_hi,
+# is_ess, n_batches) over the finite batches, or NULL when none was finite.
+.joint_pareto_batch_stats <- function(score_one, seeds) {
+    nb   <- length(seeds)
+    ks   <- rep(NA_real_, nb)
+    esss <- rep(NA_real_, nb)
+    for (b in seq_len(nb)) {
+        set.seed(seeds[b])
+        r <- score_one()
+        ks[b]   <- r[[1L]]
+        esss[b] <- r[[2L]]
+    }
+    fin <- is.finite(ks)
+    if (!any(fin)) return(NULL)
+    ess_fin <- esss[is.finite(esss)]
+    list(pareto_k    = stats::median(ks[fin]),
+         pareto_k_lo  = min(ks[fin]),
+         pareto_k_hi  = max(ks[fin]),
+         is_ess       = if (length(ess_fin)) stats::median(ess_fin) else NA_real_,
+         n_batches    = sum(fin))
+}
+
 # Shared outer Pareto-k-hat driver for a joint nested-Laplace result. Prepares
 # the proposal summary once, scores the joint k over every genuinely-varying
 # axis, and -- when `arm_axes` is supplied (gcol33/tulpa#120) -- additionally
@@ -903,14 +948,24 @@
 # posterior mean `u_hat`). Runs all scoring with the RNG restored at the end so
 # the fit's draws are bit-for-bit unchanged.
 #
+# `k_batches` (gcol33/tulpa#123, default 1 = OFF, byte-identical to the prior
+# single-value behaviour and cost) reports the k-hat as the MEDIAN over that many
+# independent importance batches plus the observed min/max range -- the Monte
+# Carlo spread of the (noisy GPD-tail) PSIS estimator, most decision-relevant near
+# a reliability-band boundary. The canonical pass fixes the proposal once; each
+# batch re-scores that SAME proposal under a deterministic seed drawn up front
+# from the restored RNG state.
+#
 # Returns list(pareto_k, is_ess, proposal_source): all NA / NA-source when the
 # fit declines (an axis with unguessable support, a degenerate proposal
 # covariance, or too few finite importance draws), in which case the diagnostic
-# layer reports quad-ESS. With `arm_axes`, also `by_arm_k` / `by_arm_is_ess`
-# (named numeric over the arms) -- a per-arm k of NA means that arm carries no
-# genuinely-varying axis.
+# layer reports quad-ESS. With `k_batches > 1`, also `pareto_k_lo` /
+# `pareto_k_hi` / `pareto_k_n_batches` (the band is classified off the median).
+# With `arm_axes`, also `by_arm_k` / `by_arm_is_ess` (named numeric over the arms;
+# a per-arm k of NA means that arm carries no genuinely-varying axis), plus
+# `by_arm_k_lo` / `by_arm_k_hi` when batched.
 .joint_pareto_k <- function(res, refit_log_marginal, n_samples = 200L,
-                            proposal = NULL, arm_axes = NULL) {
+                            proposal = NULL, arm_axes = NULL, k_batches = 1L) {
     na_out <- list(pareto_k = NA_real_, is_ess = NA_real_,
                    proposal_source = NA_character_)
     prep <- .joint_pareto_prepare(res, refit_log_marginal, n_samples, proposal)
@@ -921,28 +976,71 @@
     on.exit(if (!is.null(old_seed))
                 assign(".Random.seed", old_seed, envir = .GlobalEnv))
 
+    nb     <- max(1L, as.integer(k_batches))
+    n_arm  <- if (!is.null(arm_axes)) length(arm_axes) else 0L
+
+    # Draw all per-batch seeds up front from the restored RNG state, BEFORE any
+    # scoring consumes the stream, so they depend only on the fit's saved seed and
+    # the diagnostic is reproducible (gcol33/tulpa#123). Off (nb = 1) draws none,
+    # keeping the byte-identical single-value path.
+    seeds_joint <- if (nb > 1L) sample.int(.Machine$integer.max, nb) else NULL
+    seeds_arm   <- if (nb > 1L && n_arm > 0L)
+        matrix(sample.int(.Machine$integer.max, nb * n_arm), nb, n_arm) else NULL
+
     # Axes the grid pins to a single value (e.g. a copy `alpha` fixed at 0, or a
     # one-point dispersion axis) carry zero weighted variance, leaving Su rank
     # deficient and its Cholesky undefined. The importance proposal holds them
     # fixed at u_hat and is built only on the varying axes (gcol33/tulpa#114).
     vary  <- .joint_pareto_vary_axes(prep$Su)
+    # Canonical pass: selects the proposal (single-Gaussian vs grid-mixture) once,
+    # so a batched re-score scores the SAME proposal (no per-batch source flip).
     joint <- .joint_pareto_score_dispatch(prep, vary, refit_log_marginal, n_samples)
     if (is.null(joint)) return(na_out)
     out <- list(pareto_k = joint$best$pareto_k, is_ess = joint$best$is_ess,
                 proposal_source = joint$source)
 
-    if (!is.null(arm_axes) && length(arm_axes) > 0L) {
-        pa <- lapply(arm_axes, function(ax) {
-            v <- intersect(vary, as.integer(ax))
-            s <- if (length(v) == 0L) NULL else
-                .joint_pareto_score_dispatch(prep, v, refit_log_marginal, n_samples)
-            if (is.null(s)) c(NA_real_, NA_real_)
-            else c(s$best$pareto_k, s$best$is_ess)
+    if (nb > 1L) {
+        bs <- .joint_pareto_batch_stats(
+            function() .joint_pareto_rescore(prep, vary, refit_log_marginal,
+                                             n_samples, joint$source),
+            seeds_joint)
+        if (!is.null(bs)) {
+            out$pareto_k           <- bs$pareto_k        # band classified off median
+            out$is_ess             <- bs$is_ess
+            out$pareto_k_lo        <- bs$pareto_k_lo
+            out$pareto_k_hi        <- bs$pareto_k_hi
+            out$pareto_k_n_batches <- bs$n_batches
+        }
+    }
+
+    if (n_arm > 0L) {
+        pa <- lapply(seq_len(n_arm), function(a) {
+            v <- intersect(vary, as.integer(arm_axes[[a]]))
+            none <- list(k = NA_real_, ess = NA_real_, lo = NA_real_, hi = NA_real_)
+            if (length(v) == 0L) return(none)
+            s <- .joint_pareto_score_dispatch(prep, v, refit_log_marginal, n_samples)
+            if (is.null(s)) return(none)
+            base <- list(k = s$best$pareto_k, ess = s$best$is_ess,
+                         lo = NA_real_, hi = NA_real_)
+            if (nb <= 1L) return(base)
+            ba <- .joint_pareto_batch_stats(
+                function() .joint_pareto_rescore(prep, v, refit_log_marginal,
+                                                 n_samples, s$source),
+                seeds_arm[, a])
+            if (is.null(ba)) return(base)
+            list(k = ba$pareto_k, ess = ba$is_ess, lo = ba$pareto_k_lo,
+                 hi = ba$pareto_k_hi)
         })
-        out$by_arm_k      <- vapply(pa, function(z) z[[1L]], numeric(1))
-        out$by_arm_is_ess <- vapply(pa, function(z) z[[2L]], numeric(1))
+        out$by_arm_k      <- vapply(pa, function(z) z$k,   numeric(1))
+        out$by_arm_is_ess <- vapply(pa, function(z) z$ess, numeric(1))
         names(out$by_arm_k)      <- names(arm_axes)
         names(out$by_arm_is_ess) <- names(arm_axes)
+        if (nb > 1L) {
+            out$by_arm_k_lo <- stats::setNames(vapply(pa, function(z) z$lo, numeric(1)),
+                                               names(arm_axes))
+            out$by_arm_k_hi <- stats::setNames(vapply(pa, function(z) z$hi, numeric(1)),
+                                               names(arm_axes))
+        }
     }
     out
 }
@@ -1042,13 +1140,31 @@
 
 # Attach the opt-in per-arm outer Pareto-k to a joint result (gcol33/tulpa#120).
 # No-op when the driver computed no per-arm k (diagnostic off, single-block
-# layout, or a declined per-arm map). Single source for both attach paths.
+# layout, or a declined per-arm map). Single source for both attach paths. When
+# the joint k was batched (gcol33/tulpa#123) the per-arm k is the median over
+# batches and carries its own min/max range (`*_lo` / `*_hi`).
 .joint_attach_by_arm_k <- function(res, kd) {
     if (is.null(kd$by_arm_k)) return(res)
     res$pareto_k_by_arm        <- kd$by_arm_k
     res$pareto_k_by_arm_is_ess <- kd$by_arm_is_ess
     res$pareto_k_by_arm_scope  <-
         "per-arm hyperparameter axes (other arms fixed at posterior mean)"
+    if (!is.null(kd$by_arm_k_lo)) {
+        res$pareto_k_by_arm_lo <- kd$by_arm_k_lo
+        res$pareto_k_by_arm_hi <- kd$by_arm_k_hi
+    }
+    res
+}
+
+# Attach the batched outer Pareto-k spread to a joint result (gcol33/tulpa#123).
+# No-op when batching was off (`k_batches = 1`), so the single-value output shape
+# and cost are unchanged. The reported `pareto_k` is already the batch median; the
+# range is the Monte Carlo spread of the PSIS estimator, not a posterior CI.
+.joint_attach_batch_k <- function(res, kd) {
+    if (is.null(kd$pareto_k_n_batches)) return(res)
+    res$pareto_k_lo        <- kd$pareto_k_lo
+    res$pareto_k_hi        <- kd$pareto_k_hi
+    res$pareto_k_n_batches <- kd$pareto_k_n_batches
     res
 }
 
@@ -1067,7 +1183,8 @@
                                           max_iter = 50L,
                                           diagnose_k = TRUE, k_samples = 200L,
                                           n_threads_outer = 1L,
-                                          pareto_k_by_arm = FALSE) {
+                                          pareto_k_by_arm = FALSE,
+                                          k_batches = 1L) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -1105,10 +1222,12 @@
     # unavailable, else the plain broadcast warm (gcol33/tulpa#118).
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
-    kd <- .joint_pareto_k(res, refit, k_samples, arm_axes = arm_axes)
+    kd <- .joint_pareto_k(res, refit, k_samples, arm_axes = arm_axes,
+                          k_batches = k_batches)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res <- .joint_attach_batch_k(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)
     res
 }

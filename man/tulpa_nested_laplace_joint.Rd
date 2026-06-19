@@ -288,6 +288,21 @@ diagnostic. \code{"auto"} uses the physical performance-core count (capped at 2
 under R CMD check) for a single serial fit that wants the diagnostic on
 every core with one setting; an integer pins the width (\code{1L} forces
 serial). Always capped at \code{k_samples}.
+\item \code{k_batches} (\code{1L}) -- batched outer Pareto-\eqn{\hat{k}} reporting. The
+k-hat is a noisy estimator (a generalized-Pareto shape fit to the upper
+tail of one batch of importance weights, with real Monte Carlo error),
+so a single value can mislead near a reliability-band boundary. With
+\code{k_batches > 1} the diagnostic evaluates the CHOSEN proposal's k over that
+many independent importance batches and reports \code{pareto_k} as the MEDIAN
+plus the observed \code{pareto_k_lo} / \code{pareto_k_hi} range (and the same for the
+per-arm k); the reliability band is classified off the median. The spread
+is the Monte Carlo uncertainty of the PSIS k-hat across independent
+importance samples -- not a posterior credible interval, and not a
+coverage-calibrated CI; the per-cell estimates and coefficients do not
+move. Default \code{1L} is off and byte-identical to the single-value behaviour
+and cost; \verb{> 1} costs \code{k_batches} times the scoring (gated behind the
+already opt-in diagnostic). A handful of batches (5--10) gives an honest
+min/max range; a quantile-based CI would need many more.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and
@@ -343,12 +358,20 @@ finite-difference Hessian when a sharp posterior collapses the grid),
 or \code{"grid_moment"} from the grid-weighted covariance. \code{NA} when the
 diagnostic is off or declines. The mode-Hessian source keeps the
 \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
+\item \code{pareto_k_lo}, \code{pareto_k_hi}, \code{pareto_k_n_batches} — present only with
+\code{control$k_batches > 1} (gcol33/tulpa#123). The observed min/max range of
+the outer Pareto-\eqn{\hat{k}} over the independent importance batches
+(\code{pareto_k} itself is then the median) and the count of finite batches.
+The range is the Monte Carlo spread of the PSIS estimator, not a posterior
+credible interval.
 \item \code{pareto_k_by_arm}, \code{pareto_k_by_arm_is_ess}, \code{pareto_k_by_arm_scope} —
 present only with \code{control$diagnose_k = "by_arm"} (gcol33/tulpa#120).
 Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 hyperparameter axes, the other arms held at their posterior mean, so a
 tail-heavy joint k can be localised to one arm. A per-arm entry is \code{NA}
-when that arm carries no varying axis.
+when that arm carries no varying axis. With \code{control$k_batches > 1} the
+per-arm k is the batch median and carries its own \code{pareto_k_by_arm_lo} /
+\code{pareto_k_by_arm_hi} range.
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.

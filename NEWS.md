@@ -1,5 +1,30 @@
 # tulpa NEWS
 
+## 0.0.48 (2026-06-19)
+
+* Joint nested-Laplace outer Pareto-k: opt-in batched reporting
+  (gcol33/tulpa#123). The outer k-hat is a noisy estimator -- a generalized
+  Pareto shape fit to the upper tail of one batch of importance weights, with
+  real Monte Carlo error that shrinks only slowly with the draw count -- so a
+  single reported value is seed-dependent and can mislead near a reliability-band
+  boundary (`< 0.5` good, `0.5-0.7` ok, `>= 0.7` unreliable). The new
+  `control$k_batches` (default `1L` = OFF, byte-identical to the prior
+  single-value behaviour and cost) evaluates the CHOSEN proposal's k over that
+  many independent importance batches and reports `pareto_k` as the MEDIAN plus
+  the observed `pareto_k_lo` / `pareto_k_hi` range and `pareto_k_n_batches`; the
+  reliability band is classified off the median. The opt-in per-arm k
+  (gcol33/tulpa#120) is batched the same way (`pareto_k_by_arm_lo` /
+  `pareto_k_by_arm_hi`). The proposal SELECTION (single Gaussian vs grid-mixture,
+  gcol33/tulpa#121) is made once on the canonical pass so every batch scores the
+  SAME proposal (no per-batch source flip); per-batch seeds are drawn up front
+  from the restored RNG state, so the diagnostic stays reproducible and the fit's
+  draws are bit-for-bit unchanged. The spread is the Monte Carlo uncertainty of
+  the PSIS k-hat across independent importance samples -- NOT a posterior credible
+  interval and NOT a coverage-calibrated CI; the per-cell estimates and
+  coefficients do not move. Cost is `k_batches` times the scoring, gated behind
+  the already opt-in / slow diagnostic; a handful of batches (5-10) gives an
+  honest min/max range.
+
 ## 0.0.47 (2026-06-19)
 
 * New built-in `truncated_gaussian` family (gcol33/tulpa#122): an

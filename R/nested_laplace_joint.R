@@ -297,6 +297,21 @@
 #'     under R CMD check) for a single serial fit that wants the diagnostic on
 #'     every core with one setting; an integer pins the width (`1L` forces
 #'     serial). Always capped at `k_samples`.
+#'   * `k_batches` (`1L`) -- batched outer Pareto-\eqn{\hat{k}} reporting. The
+#'     k-hat is a noisy estimator (a generalized-Pareto shape fit to the upper
+#'     tail of one batch of importance weights, with real Monte Carlo error),
+#'     so a single value can mislead near a reliability-band boundary. With
+#'     `k_batches > 1` the diagnostic evaluates the CHOSEN proposal's k over that
+#'     many independent importance batches and reports `pareto_k` as the MEDIAN
+#'     plus the observed `pareto_k_lo` / `pareto_k_hi` range (and the same for the
+#'     per-arm k); the reliability band is classified off the median. The spread
+#'     is the Monte Carlo uncertainty of the PSIS k-hat across independent
+#'     importance samples -- not a posterior credible interval, and not a
+#'     coverage-calibrated CI; the per-cell estimates and coefficients do not
+#'     move. Default `1L` is off and byte-identical to the single-value behaviour
+#'     and cost; `> 1` costs `k_batches` times the scoring (gated behind the
+#'     already opt-in diagnostic). A handful of batches (5--10) gives an honest
+#'     min/max range; a quantile-based CI would need many more.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -350,12 +365,20 @@
 #'      or `"grid_moment"` from the grid-weighted covariance. `NA` when the
 #'      diagnostic is off or declines. The mode-Hessian source keeps the
 #'      \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
+#'   * `pareto_k_lo`, `pareto_k_hi`, `pareto_k_n_batches` — present only with
+#'      `control$k_batches > 1` (gcol33/tulpa#123). The observed min/max range of
+#'      the outer Pareto-\eqn{\hat{k}} over the independent importance batches
+#'      (`pareto_k` itself is then the median) and the count of finite batches.
+#'      The range is the Monte Carlo spread of the PSIS estimator, not a posterior
+#'      credible interval.
 #'   * `pareto_k_by_arm`, `pareto_k_by_arm_is_ess`, `pareto_k_by_arm_scope` —
 #'      present only with `control$diagnose_k = "by_arm"` (gcol33/tulpa#120).
 #'      Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 #'      hyperparameter axes, the other arms held at their posterior mean, so a
 #'      tail-heavy joint k can be localised to one arm. A per-arm entry is `NA`
-#'      when that arm carries no varying axis.
+#'      when that arm carries no varying axis. With `control$k_batches > 1` the
+#'      per-arm k is the batch median and carries its own `pareto_k_by_arm_lo` /
+#'      `pareto_k_by_arm_hi` range.
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -469,6 +492,18 @@ tulpa_nested_laplace_joint <- function(responses,
     pareto_k_threads          <- .tulpa_pareto_k_threads(n_threads_outer,
                                                          n_threads, k_samples,
                                                          k_threads)
+    # Batched outer Pareto-k (gcol33/tulpa#123). `k_batches` (default 1L = OFF,
+    # byte-identical single-value behaviour and cost) reports the k-hat as the
+    # MEDIAN over that many independent importance batches plus the observed
+    # min/max range -- the Monte Carlo spread of the noisy GPD-tail PSIS estimator
+    # (NOT a posterior CI). Cost is k_batches x the scoring, gated behind the
+    # already opt-in / slow diagnostic.
+    k_batches                 <- control$k_batches %||% 1L
+    if (length(k_batches) != 1L || is.na(k_batches) ||
+        k_batches != round(k_batches) || k_batches < 1L) {
+        stop("`control$k_batches` must be a single integer >= 1.", call. = FALSE)
+    }
+    k_batches                 <- as.integer(k_batches)
     # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). A CCD
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
@@ -581,6 +616,7 @@ tulpa_nested_laplace_joint <- function(responses,
             diagnose_k = diagnose_k, k_samples = k_samples,
             pareto_k_by_arm = pareto_k_by_arm,
             pareto_k_threads = pareto_k_threads,
+            k_batches = k_batches,
             inner_refresh = inner_refresh,
             integration = integration,
             timer = tm
@@ -783,7 +819,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                          diagnose_k = diagnose_k,
                                          k_samples  = k_samples,
                                          n_threads_outer = pareto_k_threads,
-                                         pareto_k_by_arm = pareto_k_by_arm)
+                                         pareto_k_by_arm = pareto_k_by_arm,
+                                         k_batches = k_batches)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",
