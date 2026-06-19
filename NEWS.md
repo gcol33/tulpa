@@ -1,5 +1,36 @@
 # tulpa NEWS
 
+## 0.0.49 (2026-06-19)
+
+* Joint nested-Laplace outer Pareto-k: adaptive batched reporting with a proper
+  Monte Carlo standard error and a band-resolution flag (gcol33/tulpa#124). The
+  true outer k-hat is a single fixed number for a given fit and proposal, so all
+  batch-to-batch variation is estimator sampling error -- min/max conflates a
+  good/bad seed with too few iterations and WIDENS with the batch count `B`, so it
+  cannot signal convergence. The batched diagnostic (`control$k_batches > 1`) now
+  reports, alongside the median `pareto_k`:
+    - `pareto_k_mcse` = `sd(batch k-hats) / sqrt(B)`, the Monte Carlo standard
+      error of the estimate (shrinks as `1/sqrt(B)`);
+    - `pareto_k_band_confident` = `TRUE` iff `pareto_k +/- 2 * pareto_k_mcse` lies
+      within one reliability band (does not cross 0.5 or 0.7);
+    - `pareto_k_n_batches` and the secondary observed `pareto_k_lo` / `pareto_k_hi`
+      range (kept as QA fields).
+  The per-arm k (`diagnose_k = "by_arm"`) carries the same fields
+  (`pareto_k_by_arm_mcse`, `pareto_k_by_arm_band_confident`), over the same number
+  of batches the joint loop settled on.
+* New opt-in adaptive mode `control$k_adapt = TRUE`: starting at `k_batches`
+  batches (defaulting to `4L` rather than the off sentinel), the diagnostic adds
+  batches until `pareto_k_band_confident` becomes `TRUE` or the
+  `control$k_batches_max` cap (default `20L`) is reached. A fit on the wrong side
+  of a band boundary keeps sampling until the good/ok/unreliable verdict resolves;
+  a fit whose true k sits ON a boundary (whose interval always straddles) stops at
+  the cap with the honest `band_confident = FALSE`, so the cap is both a cost
+  bound and the correct classification for an on-the-line fit. The seed pool is
+  drawn for the cap, so an adaptive run is a reproducible prefix of the full-cap
+  run. `k_batches` must be `>= 2` when `k_adapt = TRUE` (an MCSE needs at least
+  two batches). The `1/sqrt(B)` rule reduces the seed-to-seed variance, not the
+  GPD k-hat's small-sample bias (controlled by `k_samples`, kept `>= 200`).
+
 ## 0.0.48 (2026-06-19)
 
 * Joint nested-Laplace outer Pareto-k: opt-in batched reporting

@@ -723,7 +723,8 @@
                                          diagnose_k = TRUE, k_samples = 200L,
                                          n_threads_outer = 1L, proposal = NULL,
                                          pareto_k_by_arm = FALSE,
-                                         k_batches = 1L) {
+                                         k_batches = 1L, k_adapt = FALSE,
+                                         k_batches_max = k_batches) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -775,7 +776,8 @@
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
     kd <- .joint_pareto_k(res, refit, k_samples, proposal = proposal,
-                          arm_axes = arm_axes, k_batches = k_batches)
+                          arm_axes = arm_axes, k_batches = k_batches,
+                          k_adapt = k_adapt, k_batches_max = k_batches_max)
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
@@ -804,6 +806,8 @@
                                   pareto_k_by_arm = FALSE,
                                   pareto_k_threads = NULL,
                                   k_batches = 1L,
+                                  k_adapt = FALSE,
+                                  k_batches_max = k_batches,
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   timer = NULL) {
@@ -1153,7 +1157,9 @@
                                         n_threads_outer = k_to,
                                         proposal = ccd_proposal,
                                         pareto_k_by_arm = pareto_k_by_arm,
-                                        k_batches = k_batches)
+                                        k_batches = k_batches,
+                                        k_adapt = k_adapt,
+                                        k_batches_max = k_batches_max)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

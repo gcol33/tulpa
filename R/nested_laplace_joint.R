@@ -302,16 +302,38 @@
 #'     tail of one batch of importance weights, with real Monte Carlo error),
 #'     so a single value can mislead near a reliability-band boundary. With
 #'     `k_batches > 1` the diagnostic evaluates the CHOSEN proposal's k over that
-#'     many independent importance batches and reports `pareto_k` as the MEDIAN
-#'     plus the observed `pareto_k_lo` / `pareto_k_hi` range (and the same for the
-#'     per-arm k); the reliability band is classified off the median. The spread
-#'     is the Monte Carlo uncertainty of the PSIS k-hat across independent
-#'     importance samples -- not a posterior credible interval, and not a
-#'     coverage-calibrated CI; the per-cell estimates and coefficients do not
-#'     move. Default `1L` is off and byte-identical to the single-value behaviour
-#'     and cost; `> 1` costs `k_batches` times the scoring (gated behind the
-#'     already opt-in diagnostic). A handful of batches (5--10) gives an honest
-#'     min/max range; a quantile-based CI would need many more.
+#'     many independent importance batches and reports `pareto_k` as the MEDIAN,
+#'     its Monte Carlo standard error `pareto_k_mcse = sd(ks) / sqrt(B)`, the
+#'     band-resolution flag `pareto_k_band_confident` (TRUE iff
+#'     `pareto_k +/- 2 * pareto_k_mcse` lies within one reliability band, i.e.
+#'     does not cross 0.5 or 0.7), and the secondary observed `pareto_k_lo` /
+#'     `pareto_k_hi` range (and the same for the per-arm k); the reliability band
+#'     is classified off the median. The MCSE shrinks as `1/sqrt(B)`, unlike the
+#'     min/max range, which WIDENS with `B`; it is the Monte Carlo uncertainty of
+#'     the PSIS k-hat across independent importance samples -- not a posterior
+#'     credible interval, and not a coverage-calibrated CI; the per-cell estimates
+#'     and coefficients do not move. `1/sqrt(B)` reduces the seed-to-seed VARIANCE,
+#'     not the GPD k-hat's small-sample BIAS (which the PSIS prior shrinks toward
+#'     0.5, slightly optimistic near 0.7); that bias is bounded by the draws per
+#'     batch (`k_samples`), so keep `k_samples >= 200` and use `B` for the variance
+#'     and stopping decision. Default `1L` is off and byte-identical to the
+#'     single-value behaviour and cost; `> 1` costs `k_batches` times the scoring
+#'     (gated behind the already opt-in diagnostic).
+#'   * `k_adapt` (`FALSE`) -- adaptive batch count. With `k_adapt = TRUE` the
+#'     diagnostic starts at `k_batches` batches (which then defaults to `4L`
+#'     rather than the off sentinel) and adds batches until
+#'     `pareto_k_band_confident` becomes TRUE OR the `k_batches_max` cap is
+#'     reached, then reports the same batched fields. A fit on the wrong side of a
+#'     band boundary keeps sampling until the good / ok / unreliable verdict
+#'     resolves; a fit whose true k sits ON a boundary (whose interval always
+#'     straddles) stops at the cap with the honest `pareto_k_band_confident =
+#'     FALSE`, so the cap is both a cost bound and the correct classification for
+#'     an on-the-line fit. The seed pool is drawn for the cap, so the adaptive run
+#'     is a reproducible prefix of the full-cap run. `k_batches` must be `>= 2`
+#'     when `k_adapt = TRUE` (an MCSE needs at least two batches).
+#'   * `k_batches_max` (`k_batches`, or `max(k_batches, 20L)` when `k_adapt`) --
+#'     the cap for the adaptive batch count. Ignored when `k_adapt = FALSE`. Must
+#'     be a single integer `>= k_batches`.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -365,20 +387,26 @@
 #'      or `"grid_moment"` from the grid-weighted covariance. `NA` when the
 #'      diagnostic is off or declines. The mode-Hessian source keeps the
 #'      \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
-#'   * `pareto_k_lo`, `pareto_k_hi`, `pareto_k_n_batches` — present only with
-#'      `control$k_batches > 1` (gcol33/tulpa#123). The observed min/max range of
-#'      the outer Pareto-\eqn{\hat{k}} over the independent importance batches
-#'      (`pareto_k` itself is then the median) and the count of finite batches.
-#'      The range is the Monte Carlo spread of the PSIS estimator, not a posterior
-#'      credible interval.
+#'   * `pareto_k_mcse`, `pareto_k_band_confident`, `pareto_k_lo`, `pareto_k_hi`,
+#'      `pareto_k_n_batches` — present only with batching on (`control$k_batches >
+#'      1` or `control$k_adapt = TRUE`; gcol33/tulpa#123, #124). `pareto_k_mcse`
+#'      is the Monte Carlo standard error of the estimate (`sd(ks) / sqrt(B)`,
+#'      `NA` with a single finite batch); `pareto_k_band_confident` is TRUE iff
+#'      `pareto_k +/- 2 * pareto_k_mcse` lies within one reliability band (`NA`
+#'      when the MCSE is undefined). `pareto_k_lo` / `pareto_k_hi` are the
+#'      secondary observed min/max range over the batches (`pareto_k` itself is
+#'      the median) and `pareto_k_n_batches` the count of finite batches. The MCSE
+#'      and range are the Monte Carlo spread of the PSIS estimator, not a
+#'      posterior credible interval.
 #'   * `pareto_k_by_arm`, `pareto_k_by_arm_is_ess`, `pareto_k_by_arm_scope` —
 #'      present only with `control$diagnose_k = "by_arm"` (gcol33/tulpa#120).
 #'      Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 #'      hyperparameter axes, the other arms held at their posterior mean, so a
 #'      tail-heavy joint k can be localised to one arm. A per-arm entry is `NA`
-#'      when that arm carries no varying axis. With `control$k_batches > 1` the
-#'      per-arm k is the batch median and carries its own `pareto_k_by_arm_lo` /
-#'      `pareto_k_by_arm_hi` range.
+#'      when that arm carries no varying axis. With batching on the per-arm k is
+#'      the batch median (over the same number of batches the joint loop settled
+#'      on) and carries its own `pareto_k_by_arm_lo` / `pareto_k_by_arm_hi` range,
+#'      `pareto_k_by_arm_mcse` and `pareto_k_by_arm_band_confident`.
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -498,12 +526,35 @@ tulpa_nested_laplace_joint <- function(responses,
     # min/max range -- the Monte Carlo spread of the noisy GPD-tail PSIS estimator
     # (NOT a posterior CI). Cost is k_batches x the scoring, gated behind the
     # already opt-in / slow diagnostic.
-    k_batches                 <- control$k_batches %||% 1L
+    # Adaptive batched outer Pareto-k (gcol33/tulpa#124). `k_adapt = TRUE` makes
+    # the batch count adaptive: starting at `k_batches` (which then defaults to a
+    # small start rather than the off sentinel 1), add batches until the
+    # reliability band resolves (median +/- 2*MCSE within one band) or the
+    # `k_batches_max` cap. The cap turns an irreducibly on-the-line fit (true k ~ a
+    # band boundary) into the honest `pareto_k_band_confident = FALSE` rather than
+    # an unbounded loop. An MCSE needs >= 2 batches, so the adaptive start must be
+    # >= 2.
+    k_adapt                   <- isTRUE(control$k_adapt)
+    k_batches                 <- control$k_batches %||%
+        (if (k_adapt) .K_ADAPT_START else 1L)
     if (length(k_batches) != 1L || is.na(k_batches) ||
         k_batches != round(k_batches) || k_batches < 1L) {
         stop("`control$k_batches` must be a single integer >= 1.", call. = FALSE)
     }
     k_batches                 <- as.integer(k_batches)
+    if (k_adapt && k_batches < 2L) {
+        stop("`control$k_batches` (the adaptive start) must be >= 2 when ",
+             "`control$k_adapt = TRUE` (an MCSE needs at least two batches).",
+             call. = FALSE)
+    }
+    k_batches_max             <- control$k_batches_max %||%
+        (if (k_adapt) max(k_batches, .K_ADAPT_CAP) else k_batches)
+    if (length(k_batches_max) != 1L || is.na(k_batches_max) ||
+        k_batches_max != round(k_batches_max) || k_batches_max < k_batches) {
+        stop("`control$k_batches_max` must be a single integer >= `k_batches`.",
+             call. = FALSE)
+    }
+    k_batches_max             <- as.integer(k_batches_max)
     # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). A CCD
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
@@ -617,6 +668,8 @@ tulpa_nested_laplace_joint <- function(responses,
             pareto_k_by_arm = pareto_k_by_arm,
             pareto_k_threads = pareto_k_threads,
             k_batches = k_batches,
+            k_adapt = k_adapt,
+            k_batches_max = k_batches_max,
             inner_refresh = inner_refresh,
             integration = integration,
             timer = tm
@@ -820,7 +873,9 @@ tulpa_nested_laplace_joint <- function(responses,
                                          k_samples  = k_samples,
                                          n_threads_outer = pareto_k_threads,
                                          pareto_k_by_arm = pareto_k_by_arm,
-                                         k_batches = k_batches)
+                                         k_batches = k_batches,
+                                         k_adapt = k_adapt,
+                                         k_batches_max = k_batches_max)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     .finalize_fit(res, backend = "nested_laplace_joint",

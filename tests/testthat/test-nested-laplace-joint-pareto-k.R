@@ -469,10 +469,14 @@ test_that("k_batches batches the per-arm k too (multi-block by_arm)", {
     expect_false(is.null(fit$pareto_k_by_arm))
     expect_false(is.null(fit$pareto_k_by_arm_lo))
     expect_false(is.null(fit$pareto_k_by_arm_hi))
+    expect_false(is.null(fit$pareto_k_by_arm_mcse))
+    expect_false(is.null(fit$pareto_k_by_arm_band_confident))
+    expect_true(is.logical(fit$pareto_k_by_arm_band_confident))
     ok <- is.finite(fit$pareto_k_by_arm)
     expect_true(any(ok))
     expect_true(all(fit$pareto_k_by_arm_lo[ok] <= fit$pareto_k_by_arm[ok] + 1e-12))
     expect_true(all(fit$pareto_k_by_arm[ok] <= fit$pareto_k_by_arm_hi[ok] + 1e-12))
+    expect_true(all(fit$pareto_k_by_arm_mcse[ok] >= 0 | is.na(fit$pareto_k_by_arm_mcse[ok])))
 })
 
 test_that("batched diagnostic does not perturb the global RNG state", {
@@ -505,4 +509,129 @@ test_that("control$k_batches rejects a non-integer / sub-1 value", {
         tulpa_nested_laplace_joint(responses = arms, prior = prior,
                                    control = list(k_batches = 2.5)),
         "k_batches")
+})
+
+# --------------------------------------------------------------------------- #
+# (6) Adaptive batched outer Pareto-k: MCSE + band confidence (gcol33/tulpa#124)#
+# --------------------------------------------------------------------------- #
+# The true outer Pareto-k is a single fixed number, so batch-to-batch variation
+# is estimator sampling error: report the median, its MCSE = sd(ks)/sqrt(B), and
+# a band-resolution flag (median +/- 2*MCSE within one reliability band), and
+# (opt-in) sample adaptively until the band resolves or a cap.
+
+test_that(".k_band / .within_one_band classify the reliability bands", {
+    expect_identical(.k_band(0.30), 0L)               # good
+    expect_identical(.k_band(0.60), 1L)               # ok
+    expect_identical(.k_band(0.80), 2L)               # unreliable
+    expect_identical(.k_band(0.50), 1L)               # boundary belongs to ok
+    expect_identical(.k_band(NA_real_), NA_integer_)
+    expect_true(.within_one_band(0.20, 0.45))         # both good
+    expect_true(.within_one_band(0.55, 0.65))         # both ok
+    expect_false(.within_one_band(0.45, 0.55))        # crosses 0.5
+    expect_false(.within_one_band(0.65, 0.75))        # crosses 0.7
+    expect_false(.within_one_band(NA_real_, 0.30))    # non-finite endpoint
+})
+
+test_that(".joint_pareto_batch_stats adapts to band resolution, then the cap", {
+    # Drive the adaptive runner with a deterministic per-batch sequence (RNG is
+    # irrelevant to the closure), isolating the stopping logic from the IS layer.
+    old <- if (exists(".Random.seed", envir = .GlobalEnv)) .Random.seed else NULL
+    on.exit(if (!is.null(old)) assign(".Random.seed", old, envir = .GlobalEnv))
+    seq_src <- function(vals) { i <- 0L; function() { i <<- i + 1L; c(vals[i], 100) } }
+    seeds <- seq_len(10L)
+
+    # A tight cluster deep in the good band: median +/- 2*MCSE stays under 0.5, so
+    # the band resolves at the start (3) and the loop stops there.
+    good <- .joint_pareto_batch_stats(
+        seq_src(c(0.30, 0.32, 0.28, rep(0.30, 7L))), seeds, start = 3L, adapt = TRUE)
+    expect_identical(good$n_batches, 3L)
+    expect_true(isTRUE(good$pareto_k_band_confident))
+
+    # On-the-line: a symmetric pair of outliers pins the median exactly on the 0.5
+    # boundary with a non-zero MCSE, so [median - 2*MCSE, median + 2*MCSE] always
+    # straddles 0.5. The band never resolves -> the loop runs to the cap and
+    # reports the honest band_confident = FALSE.
+    straddle <- .joint_pareto_batch_stats(
+        seq_src(c(0.40, 0.60, rep(0.50, 8L))), seeds, start = 3L, adapt = TRUE)
+    expect_identical(straddle$n_batches, 10L)
+    expect_false(isTRUE(straddle$pareto_k_band_confident))
+})
+
+test_that("k_batches > 1 reports an MCSE and a band-confidence flag", {
+    res <- .jpk_cover_res()
+    set.seed(415)
+    kb <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 800L, k_batches = 8L)
+    expect_equal(kb$pareto_k_n_batches, 8L)
+    expect_true(is.finite(kb$pareto_k_mcse) && kb$pareto_k_mcse >= 0)
+    # MCSE = sd(ks)/sqrt(B) cannot exceed the observed full range.
+    expect_lte(kb$pareto_k_mcse, kb$pareto_k_hi - kb$pareto_k_lo + 1e-9)
+    expect_true(is.logical(kb$pareto_k_band_confident))
+    # The covering target keeps every batch deep in the good band, so the band
+    # resolves: confident, median in band 0.
+    expect_true(isTRUE(kb$pareto_k_band_confident))
+    expect_identical(.k_band(kb$pareto_k), 0L)
+})
+
+test_that("k_adapt stops early once the band is resolved (covering target)", {
+    res <- .jpk_cover_res()
+    set.seed(416)
+    ad <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 800L,
+                          k_batches = 2L, k_adapt = TRUE, k_batches_max = 20L)
+    expect_true(isTRUE(ad$pareto_k_band_confident))
+    expect_gte(ad$pareto_k_n_batches, 2L)
+    expect_lt(ad$pareto_k_n_batches, 20L)             # resolved before the cap
+    expect_true(is.finite(ad$pareto_k_mcse))
+})
+
+test_that("the adaptive batched k-hat is reproducible (RNG restored on exit)", {
+    res <- .jpk_cover_res()
+    set.seed(417)
+    a <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 600L,
+                         k_batches = 2L, k_adapt = TRUE, k_batches_max = 12L)
+    # No set.seed between: .joint_pareto_k restores the entry RNG state, so the
+    # second call derives the identical seed pool and stops at the same batch.
+    b <- .joint_pareto_k(res, .jpk_cover_refit, n_samples = 600L,
+                         k_batches = 2L, k_adapt = TRUE, k_batches_max = 12L)
+    expect_identical(a$pareto_k, b$pareto_k)
+    expect_identical(a$pareto_k_n_batches, b$pareto_k_n_batches)
+    expect_identical(a$pareto_k_mcse, b$pareto_k_mcse)
+    expect_identical(a$pareto_k_band_confident, b$pareto_k_band_confident)
+})
+
+test_that("control$k_adapt validation: start >= 2 and cap >= start", {
+    sim <- .jpk_sim(seed = 95)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+            control = list(k_adapt = TRUE, k_batches = 1L)),
+        "k_batches")
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+            control = list(k_batches = 5L, k_batches_max = 3L)),
+        "k_batches_max")
+})
+
+test_that("control$k_adapt reports the band-confidence flag end to end", {
+    skip_if_not_slow()
+    sim <- .jpk_sim(seed = 96)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.7, 1.1))
+    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
+    fit <- tulpa_nested_laplace_joint(
+        responses = arms, prior = prior,
+        control = list(k_samples = 150L, k_adapt = TRUE, k_batches = 3L,
+                       k_batches_max = 12L))
+    expect_true(is.finite(fit$pareto_k))
+    expect_false(is.null(fit$pareto_k_n_batches))
+    expect_gte(fit$pareto_k_n_batches, 3L)
+    expect_lte(fit$pareto_k_n_batches, 12L)
+    expect_true(is.logical(fit$pareto_k_band_confident))
+    expect_lte(fit$pareto_k_lo, fit$pareto_k)
+    expect_lte(fit$pareto_k, fit$pareto_k_hi)
 })
