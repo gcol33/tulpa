@@ -27,7 +27,13 @@
 # (gcol33/tulpa#119). Each pass re-estimates the proposal from the PSIS-weighted
 # moments of its own draws and re-scores; iteration stops early once the k-hat
 # reaches the usable band, so a proposal that already fits pays a single pass.
-.K_DIAG_MM_MAX <- 5L
+# Capped at 3 to bound the diagnostic cost (gcol33/tulpa#127): each pass is a full
+# `diagnose_draws` importance batch, so an unbounded refinement multiplies the
+# selection cost. A proposal still above the usable band after 3 passes keeps its
+# best-of-3 single-Gaussian k-hat, and on a spread grid the grid-mixture (scored
+# once after) is the faithful proposal adopted anyway, so the cap does not move the
+# reported k while it bounds the worst-case selection to ~4 evaluations.
+.K_DIAG_MM_MAX <- 3L
 
 # Usable-band threshold for the outer Pareto-k-hat (Vehtari, Simpson, Gelman,
 # Yao & Gabry 2024): at or below this the proposal can be reliably corrected to
