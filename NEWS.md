@@ -1,5 +1,33 @@
 # tulpa NEWS
 
+## 0.0.47 (2026-06-19)
+
+* New built-in `truncated_gaussian` family (gcol33/tulpa#122): an
+  upper-truncated Gaussian latent, the bounded-support sibling of the
+  `lognormal` arm. On the natural scale it is an upper-truncated lognormal --
+  a positive response known to lie below a ceiling, modelled as a Gaussian on
+  the log-response conditioned on `log y <= u` for a per-row bound `u`
+  (`+Inf` => no truncation). The likelihood is the Gaussian density divided by
+  the retained mass `Phi((u - eta)/sigma)`, the continuous-density counterpart
+  of the `interval_gaussian` (ordinal) family. It is log-concave in `eta` so
+  the inner Newton needs no Fisher fallback, and reduces exactly to the
+  `gaussian` arm as `u -> +Inf`. Wired through the joint nested-Laplace path
+  via a per-arm `trunc_upper` ceiling (`src/laplace_family_link.h`,
+  `src/laplace_builtin_family_spec.h`, `R/nested_laplace_joint_helpers.R`).
+  FD gradient/Hessian, deep-truncation stability, the lognormal reduction, and
+  truncated-normal moment identities are checked in
+  `test-truncated-gaussian.R`.
+
+* New baseline-category multinomial-logit kernel (`src/multinomial_logit.h`,
+  gcol33/tulpaObs#106): a nominal (unordered) K-class likelihood with K-1
+  coupled linear predictors sharing the softmax denominator. The per-observation
+  negative Hessian is the full (K-1)x(K-1) multinomial information
+  (`diag(p) - p p'`), positive semidefinite for any `eta`, so the inner Newton
+  needs no Fisher fallback; the softmax is formed overflow-safe. This is the
+  engine primitive backing tulpaObs's `occu_categorical()` positive arm. FD
+  gradient/Hessian, the PSD data-free information identity, and overflow safety
+  are checked in `test-multinomial-logit.R`.
+
 ## 0.0.46 (2026-06-18)
 
 * Joint nested-Laplace outer Pareto-k: grid-mixture (basin) importance proposal
