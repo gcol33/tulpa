@@ -283,18 +283,22 @@ confidently met; when it is not, the fit reports the band it did reach
 (`k_quality_best`) and the reason (`k_quality_reason`), and the request is a
 target rather than a promise the output quietly pretends to keep.
 
-`k_quality` reports and budgets; the escalation that *acts* on a shortfall is the
-next step. Spending draws iteratively until the band resolves, and a `k_refine`
-rung that promotes the basin grid-mixture to real integration nodes when the
-grid is the limit, are tracked in gcol33/tulpa#131. Until then, raise
-`diagnose_draws` to resolve a borderline band, or escalate to an exact debias
-when the grid itself is too narrow, following the ladder above.
+When the first fit does not reach the requested band, `k_quality` climbs the
+ladder for you. It doubles `diagnose_draws` each round to resolve a borderline
+band, and with `control$k_refine = "mixture"` it refines the integration grid
+(`adaptive_grid`) on the final round when more draws alone are not enough,
+re-fitting and re-diagnosing up to `control$k_max_rounds` times;
+`k_quality_rounds` records how many rounds it used. The request stays a target,
+not a promise: if the budget is spent without confirming the band, the fit
+reports the band it reached and the reason, and the next step is an exact debias
+(a Gibbs or gradient-sampler correction) as the ladder above describes.
 
 ## See also
 
 - `tulpa_nested_laplace_joint()` documents the full `control` surface for the
-  diagnostic: `k_quality`, `diagnose_k`, `diagnose_draws`, `k_bootstrap`,
-  `k_tail_points`, `k_conf_bands`, and `k_threads`.
+  diagnostic: `k_quality`, `k_refine`, `k_max_rounds`, `diagnose_k`,
+  `diagnose_draws`, `k_bootstrap`, `k_tail_points`, `k_conf_bands`, and
+  `k_threads`.
 - `tulpa_psis()` is the native Pareto-smoothed importance-sampling core the
   diagnostic is built on, callable directly on a vector of log importance
   ratios.

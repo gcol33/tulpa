@@ -277,10 +277,20 @@
 #'     (to `800L` / `2000L`, unless you set it) so the bootstrap CI can resolve it.
 #'     `"none"` disables the diagnostic. The fit carries an honest verdict --
 #'     `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
-#'     `k_quality_reason` -- and never silently downgrades: if the requested band
-#'     is not confidently met it reports the band actually reached and why. The
-#'     adaptive draw-escalation loop and the integration-refinement rung
-#'     (`k_refine`) are tracked in gcol33/tulpa#131.
+#'     `k_quality_reason`, `k_quality_rounds` -- and never silently downgrades: if
+#'     the requested band is not confidently met it reports the band actually
+#'     reached and why. For `"ok"` / `"good"`, when the first fit does not reach
+#'     the band the engine escalates: it doubles `diagnose_draws` each round and,
+#'     with `k_refine = "mixture"`, refines the integration grid on the final
+#'     round, re-fitting and re-diagnosing up to `k_max_rounds` times.
+#'   * `k_refine` (`"none"`) -- the integration-refinement rung for `k_quality`
+#'     `"ok"` / `"good"`. `"mixture"` re-fits with adaptive grid refinement
+#'     (`adaptive_grid`) on the final escalation round when more draws alone have
+#'     not resolved the band, so a too-coarse / too-narrow grid is widened where
+#'     the importance weight concentrates. `"none"` escalates draws only.
+#'   * `k_max_rounds` (`2L`) -- the escalation round budget for `k_quality`
+#'     `"ok"` / `"good"`: the maximum number of re-fits after the first. `0L`
+#'     disables escalation (single-shot, the band is reported but not chased).
 #'   * `diagnose_k` (`TRUE`), `diagnose_draws` (`500L`) -- compute the outer
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
 #'     hyperparameter posterior against the proposal the integrator fits (mixed
@@ -414,13 +424,15 @@
 #'      `pareto_k_by_arm_ci_high`, `pareto_k_by_arm_se_formula`,
 #'      `pareto_k_by_arm_tail_points` and `pareto_k_by_arm_band_confident`.
 #'   * `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
-#'      `k_quality_reason` — the reliability verdict for the `control$k_quality`
-#'      intent (gcol33/tulpa#129). `k_quality_requested` echoes the intent;
-#'      `k_quality_best` is the band actually achieved (`"good"` / `"ok"` /
-#'      `"unreliable"`, or `"uncertain"` when the bootstrap CI crosses a boundary);
-#'      `k_quality_reached` is `TRUE`/`FALSE` for an `"ok"` / `"good"` target
-#'      (`NA` for `"report"` / `"none"`), never silently downgraded; and
-#'      `k_quality_reason` records why it stopped.
+#'      `k_quality_reason`, `k_quality_rounds` — the reliability verdict for the
+#'      `control$k_quality` intent (gcol33/tulpa#129, #131). `k_quality_requested`
+#'      echoes the intent; `k_quality_best` is the band actually achieved
+#'      (`"good"` / `"ok"` / `"unreliable"`, or `"uncertain"` when the bootstrap CI
+#'      crosses a boundary); `k_quality_reached` is `TRUE`/`FALSE` for an `"ok"` /
+#'      `"good"` target (`NA` for `"report"` / `"none"`), never silently
+#'      downgraded; `k_quality_reason` records why it stopped; and
+#'      `k_quality_rounds` is the number of escalation re-fits performed (`0` when
+#'      the first fit sufficed or escalation was off).
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -471,6 +483,70 @@ tulpa_nested_laplace_joint <- function(responses,
                                        prior_alpha = NULL,
                                        cell_coupling = "separable",
                                        control = list()) {
+    # k_quality reliability front door + escalation (gcol33/tulpa#129, #131). The
+    # single fit lives in .tulpa_nl_joint_once(); this wrapper resolves the
+    # reliability intent, attaches the honest verdict (for BOTH the single- and
+    # multi-block paths), and -- for "ok" / "good" -- climbs the reliability ladder:
+    # spend more draws each round, then (with k_refine = "mixture") refine the
+    # integration grid, re-fitting + re-diagnosing until the requested band is
+    # confidently reached or the round budget is hit. Never silently downgrades.
+    k_quality <- control$k_quality %||% "report"
+    if (!is.character(k_quality) || length(k_quality) != 1L ||
+        !k_quality %in% c("none", "report", "ok", "good")) {
+        stop("`control$k_quality` must be one of \"none\", \"report\", \"ok\", \"good\".",
+             call. = FALSE)
+    }
+    k_refine <- control$k_refine %||% "none"
+    if (!is.character(k_refine) || length(k_refine) != 1L ||
+        !k_refine %in% c("none", "mixture")) {
+        stop("`control$k_refine` must be \"none\" or \"mixture\".", call. = FALSE)
+    }
+    k_max_rounds <- control$k_max_rounds %||% 2L
+    if (length(k_max_rounds) != 1L || is.na(k_max_rounds) ||
+        k_max_rounds != round(k_max_rounds) || k_max_rounds < 0L) {
+        stop("`control$k_max_rounds` must be a single integer >= 0.", call. = FALSE)
+    }
+    k_max_rounds <- as.integer(k_max_rounds)
+    k_conf_bands <- control$k_conf_bands
+    diag_raw     <- control$diagnose_k %||% TRUE
+    diagnose_k   <- (identical(diag_raw, "by_arm") || isTRUE(diag_raw)) &&
+                    !identical(k_quality, "none")
+
+    attach_q <- function(res)
+        .joint_attach_k_quality(res, k_quality, diagnose_k,
+                                res$diagnose_draws %||% NA_integer_, k_conf_bands)
+
+    ctrl <- control
+    res  <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
+                                          prior_sigma, prior_alpha, cell_coupling, ctrl))
+    res$k_quality_rounds <- 0L
+
+    if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) && k_max_rounds > 0L) {
+        round <- 0L
+        while (!isTRUE(res$k_quality_reached) && round < k_max_rounds) {
+            round <- round + 1L
+            cur <- res$diagnose_draws %||% 500L
+            if (!is.finite(cur)) cur <- 500L
+            ctrl$diagnose_draws <- as.integer(cur * 2L)
+            # Spend draws first; refine the integration grid only on the final
+            # budgeted round, when more draws alone did not resolve the band.
+            if (round == k_max_rounds && identical(k_refine, "mixture"))
+                ctrl$adaptive_grid <- TRUE
+            res <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
+                                                 prior_sigma, prior_alpha,
+                                                 cell_coupling, ctrl))
+            res$k_quality_rounds <- round
+        }
+        if (!isTRUE(res$k_quality_reached) && round >= k_max_rounds)
+            res$k_quality_reason <-
+                "requested band not confirmed within the k_max_rounds escalation budget"
+    }
+    res
+}
+
+.tulpa_nl_joint_once <- function(responses, prior, copy = NULL, phi_grid = NULL,
+                                 prior_sigma = NULL, prior_alpha = NULL,
+                                 cell_coupling = "separable", control = list()) {
     tm <- .tulpa_timer()                               # gcol33/tulpa#48
     # Resolve and validate the cell-coupling spec name against the C++
     # registry (separable default is auto-registered on first touch). The
@@ -520,13 +596,11 @@ tulpa_nested_laplace_joint <- function(responses,
     # (other arms held at their posterior mean), to localise which arm drives a
     # tail-heavy joint k (gcol33/tulpa#120); the joint k is unchanged and stays
     # the default.
-    # k_quality reliability intent (gcol33/tulpa#129): a single statement of the
-    # reliability the fit should report. "report" (default) computes the diagnostic
-    # and reports the achieved band; "ok" / "good" additionally name a TARGET band
-    # (the k-hat confidently usable / good) and raise the default draw budget so the
-    # bootstrap CI can resolve it, with an honest reached / best / reason verdict
-    # attached; "none" disables the diagnostic. The adaptive draw-escalation loop
-    # and the integration-refinement rung are tracked separately (gcol33/tulpa#131).
+    # k_quality (gcol33/tulpa#129) within ONE fit: "none" disables the diagnostic,
+    # and "ok" / "good" raise the default draw budget so the bootstrap CI can
+    # resolve the requested band. The verdict quartet, the band classification, and
+    # the multi-round escalation (gcol33/tulpa#131) live in the front-door wrapper
+    # tulpa_nested_laplace_joint(), which drives this single-fit engine.
     k_quality                 <- control$k_quality %||% "report"
     if (!is.character(k_quality) || length(k_quality) != 1L ||
         !k_quality %in% c("none", "report", "ok", "good")) {
@@ -918,8 +992,6 @@ tulpa_nested_laplace_joint <- function(responses,
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
-    res <- .joint_attach_k_quality(res, k_quality, diagnose_k, diagnose_draws,
-                                   k_conf_bands)
     .finalize_fit(res, backend = "nested_laplace_joint",
                   extra_class = c("tulpa_nested_laplace_joint",
                                   "tulpa_nested_laplace", "list"))

@@ -664,15 +664,56 @@ test_that("k_quality reports an honest reached / best / reason quartet", {
     expect_true(rep_fit$k_quality_best %in%
                 c("good", "ok", "unreliable", "uncertain"))
 
+    # k_max_rounds = 0 keeps it single-shot (no escalation re-fits) for a fast,
+    # deterministic check of the verdict.
     good_fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
-                  control = list(k_quality = "good"))
+                  control = list(k_quality = "good", k_max_rounds = 0L))
     expect_identical(good_fit$k_quality_requested, "good")
     expect_true(is.logical(good_fit$k_quality_reached) &&
                 !is.na(good_fit$k_quality_reached))
     expect_true(nzchar(good_fit$k_quality_reason))
     # "good" raised the default draw budget (diagnose_draws not set by the caller).
     expect_identical(good_fit$diagnose_draws, 2000L)
+    expect_identical(good_fit$k_quality_rounds, 0L)     # escalation disabled
     # When the target is reached, the achieved band must be the good band.
     if (isTRUE(good_fit$k_quality_reached))
         expect_identical(good_fit$k_quality_best, "good")
+})
+
+test_that("control$k_refine / k_max_rounds validation (gcol33/tulpa#131)", {
+    sim <- .jpk_sim(seed = 95)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+            control = list(k_refine = "bogus")), "k_refine")
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+            control = list(k_max_rounds = -1L)), "k_max_rounds")
+})
+
+test_that("k_quality escalation re-fits and records the rounds used (gcol33/tulpa#131)", {
+    skip_if_not_slow()
+    sim <- .jpk_sim(seed = 96)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.7, 1.1))
+    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
+    # A "good" target that the first fit may miss: escalation runs up to the
+    # round budget, doubling diagnose_draws, and records how many rounds it used.
+    fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+             control = list(k_quality = "good", diagnose_draws = 200L,
+                            k_max_rounds = 2L))
+    expect_true(is.numeric(fit$k_quality_rounds))
+    expect_true(fit$k_quality_rounds >= 0L && fit$k_quality_rounds <= 2L)
+    # If it escalated, the draw budget grew from the 200 start by doubling.
+    if (fit$k_quality_rounds > 0L)
+        expect_gte(fit$diagnose_draws, 400L)
+    # Reached implies the band is confidently met.
+    if (isTRUE(fit$k_quality_reached))
+        expect_true(fit$k_quality_best %in% c("good"))
 })

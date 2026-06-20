@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.54 (2026-06-20)
+
+* `control$k_quality` now climbs the reliability ladder (gcol33/tulpa#131). When
+  an `"ok"` / `"good"` target is not confidently reached on the first fit, the
+  engine escalates: it doubles `diagnose_draws` each round and, with the new
+  `control$k_refine = "mixture"`, refines the integration grid (`adaptive_grid`)
+  on the final round when more draws alone do not resolve the band, re-fitting and
+  re-diagnosing up to `control$k_max_rounds` (default `2`) times. `k_quality_rounds`
+  reports how many re-fits were used, and the verdict stays honest -- the request
+  is a target, not a promise. The k_quality verdict (`k_quality_requested` /
+  `reached` / `best` / `reason` / `rounds`) is now attached for BOTH the single-
+  and multi-block paths (previously single-block only). The single fit is factored
+  into an internal engine driven by the escalation front door, with no change to
+  the fit itself for the default `k_quality = "report"`.
+
 ## 0.0.53 (2026-06-20)
 
 * Fixed: the outer Pareto-k no longer under-reports when the hyperparameter
