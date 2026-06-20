@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.53 (2026-06-20)
+
+* Fixed: the outer Pareto-k no longer under-reports when the hyperparameter
+  posterior is heavier or wider than the integration grid (gcol33/tulpa#130). The
+  moment-matching refinement could widen the single-Gaussian proposal past the
+  grid and report a deceptively low k -- a target the grid cannot cover read
+  ~0.39 ("good") instead of ~0.76 ("unreliable"), exactly the grid-width
+  deficiency the diagnostic exists to flag. The dispatcher now compares the grid
+  mixture (the faithful within-grid proposal) against the GRID-MOMENT k rather
+  than the moment-matching-refined one, so a refinement that lowers k only by
+  escaping the grid can no longer win. A near-collapsed grid, where the mixture is
+  degenerate and does not improve on the grid-moment proposal, still keeps the
+  moment-matched Gaussian, so the collapsed-grid path (gcol33/tulpa#117) is
+  unaffected. The skipped bad-case recovery test is restored.
+
 ## 0.0.52 (2026-06-20)
 
 * New `control$k_quality` reliability front door for the joint nested-Laplace

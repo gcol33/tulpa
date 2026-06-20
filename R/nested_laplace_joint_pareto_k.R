@@ -715,8 +715,8 @@
     prop_u  <- u_hat_v
     prop_L  <- L_v
     best    <- NULL
+    gm_full <- NULL                      # first-pass (grid-moment) result
     refined <- FALSE
-    gm_U <- NULL; gm_lw <- NULL          # first-pass (grid-moment) draws + weights
     for (iter in seq_len(.K_DIAG_MM_MAX)) {
         rc <- .nested_grid_radius_cap(u_grid_v, prop_u, prop_L)
         kd <- tryCatch(.nested_is_pareto_k(prop_u, prop_L, lt, n_samples,
@@ -724,19 +724,19 @@
                                            tail_points = tail_points),
                        error = function(e) NULL)
         if (is.null(kd) || !is.finite(kd$pareto_k)) break
-        # The first pass is the canonical grid-moment Gaussian -- its draws span
-        # the actual posterior spread (not the moment-matching-widened proposal,
-        # which scatters seed-dependently). The dispatcher's grid-coverage check
-        # reads these so its decision is stable across RNG seeds (gcol33/tulpa#121).
-        if (iter == 1L) { gm_U <- kd$U; gm_lw <- kd$log_weights }
-        if (is.null(best) || kd$pareto_k < best$pareto_k)
-            # `prop_u` / `prop_L` are the proposal that PRODUCED this `kd` (the
-            # moment-matching update at the loop foot is for the NEXT pass), so the
-            # stored proposal stays consistent with `best$pareto_k` and the
-            # bootstrap re-fits the GPD on this same converged proposal's ratios.
-            best <- list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, refined = refined,
-                         U = kd$U, log_weights = kd$log_weights, lr = kd$lr,
-                         prop_u = prop_u, prop_L = prop_L)
+        cand <- list(pareto_k = kd$pareto_k, is_ess = kd$is_ess, refined = refined,
+                     U = kd$U, log_weights = kd$log_weights, lr = kd$lr,
+                     prop_u = prop_u, prop_L = prop_L)
+        # The first pass is the canonical grid-moment Gaussian -- its draws span the
+        # actual posterior spread (not the moment-matching-widened proposal, which
+        # scatters seed-dependently). The dispatcher reads it for the grid-coverage
+        # check and the escaped-grid guard, so the decision is stable across RNG
+        # seeds (gcol33/tulpa#121, #130).
+        if (iter == 1L) gm_full <- cand
+        # `prop_u` / `prop_L` are the proposal that PRODUCED this `kd`, so the stored
+        # proposal stays consistent with `best$pareto_k` and the bootstrap re-fits
+        # the GPD on this same converged proposal's ratios.
+        if (is.null(best) || kd$pareto_k < best$pareto_k) best <- cand
         if (kd$pareto_k <= .K_DIAG_USABLE || iter == .K_DIAG_MM_MAX) break
         wts <- exp(kd$log_weights); sw <- sum(wts)
         if (!is.finite(sw) || sw <= 0 || nrow(kd$U) < length(prop_u) + 1L) break
@@ -748,7 +748,11 @@
         if (is.null(Lw)) break
         prop_u <- mu_w; prop_L <- Lw; refined <- TRUE
     }
-    if (!is.null(best)) { best$gm_U <- gm_U; best$gm_lw <- gm_lw }
+    if (!is.null(best)) {
+        best$gm    <- gm_full
+        best$gm_U  <- if (!is.null(gm_full)) gm_full$U else NULL
+        best$gm_lw <- if (!is.null(gm_full)) gm_full$log_weights else NULL
+    }
     best
 }
 
@@ -888,38 +892,46 @@
     g_out <- if (is.null(g)) NULL else list(best = g, source = g_src)
 
     if (!identical(prep$proposal_source, "grid_moment")) return(g_out)
-    # The grid-mixture (gcol33/tulpa#121) rescues a single-Gaussian k-hat inflated
-    # by a within-grid skew mismatch -- it can only LOWER the reading. When the
-    # single Gaussian already sits in the good band the reliability verdict cannot
-    # improve, so skip its `diagnose_draws`-draw evaluation, the dominant
-    # diagnostic cost on a well-behaved fit (gcol33/tulpa#126). The rescue still
-    # runs for any single-Gaussian k in the ok / unreliable band, where the
-    # mixture can upgrade the verdict.
-    if (!is.null(g) && is.finite(g$pareto_k) && g$pareto_k < .K_DIAG_GOOD)
-        return(g_out)
+    gm     <- g$gm %||% g
+    gm_k   <- if (is.list(gm)) gm$pareto_k %||% NA_real_ else NA_real_
+    gm_out <- if (is.list(gm)) list(best = gm, source = "grid_moment") else g_out
+
+    # #126 skip judged on the GRID-MOMENT k (what the engine samples), not the
+    # moment-matching-widened single Gaussian (gcol33/tulpa#130): when the
+    # grid-moment proposal is already good the verdict cannot improve, so skip the
+    # mixture's `diagnose_draws`-draw evaluation. The rescue still runs for any
+    # grid-moment k in the ok / unreliable band.
+    if (is.finite(gm_k) && gm_k < .K_DIAG_GOOD) return(g_out)
+
     mix <- .joint_pareto_score_mixture(prep, vary, refit_log_marginal, n_samples,
                                        tail_points = tail_points)
-    if (is.null(mix)) return(g_out)
+    if (is.null(mix)) return(gm_out)
     if (is.null(g))   return(list(best = mix, source = "grid_mixture"))
 
     # The mixture's coverage hull: the kept-cell node range expanded by a few bump
-    # SDs (its edge bumps reach that far past the outer nodes). A grid-moment draw
-    # beyond this is mass the mixture genuinely cannot see. The check reads the
-    # first-pass GRID-MOMENT draws (`gm_U`), whose spread is the posterior's, so
-    # the decision does not depend on how the moment-matching happened to widen the
-    # proposal on a given seed.
+    # SDs. The check reads the first-pass GRID-MOMENT draws (`gm_U`), whose spread
+    # is the posterior's, so the decision does not depend on how moment matching
+    # happened to widen the single Gaussian on a given seed.
     gm_U  <- g$gm_U %||% g$U
     gm_lw <- g$gm_lw %||% g$log_weights
     out_frac <- .joint_pareto_hull_weight(
         gm_U, gm_lw,
         mix$lo - .K_DIAG_HULL_PAD * mix$s, mix$hi + .K_DIAG_HULL_PAD * mix$s)
     covered  <- is.finite(out_frac) && out_frac <= .K_DIAG_HULL_TOL
-    # Adopt the mixture only when the grid covers the posterior AND the mixture
-    # gives a lower k-hat, so the reported reliability can only improve over the
-    # single Gaussian -- never regress a fit that already read usable.
-    better   <- is.finite(mix$pareto_k) && is.finite(g$pareto_k) &&
-                mix$pareto_k < g$pareto_k
-    if (covered && better) list(best = mix, source = "grid_mixture") else g_out
+
+    # Compare the mixture to the GRID-MOMENT single Gaussian (`gm_k`), not the
+    # moment-matching-refined one (gcol33/tulpa#130): a refined k that dropped below
+    # the mixture only by widening the single Gaussian past the grid is not a
+    # faithful within-grid reading, so it must not win. Adopt the mixture (the
+    # faithful within-grid proposal) when the grid covers the posterior AND the
+    # mixture IMPROVES on the grid-moment proposal. A mixture that does NOT improve
+    # on it is degenerate -- a near-collapsed grid (gcol33/tulpa#117) where the few
+    # bumps cover worse than the moment-matched Gaussian -- so the moment-matched
+    # single Gaussian stands. For a target heavier / wider than the grid (#130) the
+    # mixture is confined to the grid and reads unreliable, correctly flagging the
+    # grid-width deficiency the escaped single Gaussian masked.
+    improves <- is.finite(mix$pareto_k) && is.finite(gm_k) && mix$pareto_k < gm_k
+    if (covered && improves) list(best = mix, source = "grid_mixture") else g_out
 }
 
 # Bootstrap + closed-form uncertainty of a CHOSEN proposal's outer Pareto-k-hat
