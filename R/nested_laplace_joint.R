@@ -269,6 +269,18 @@
 #'     default `control$hessian = "lm"` curvature; the dense small-`n_x` path
 #'     re-factorizes a cheap Hessian and ignores it. `2L`-`4L` is a good range
 #'     for a slow beta arm.
+#'   * `k_quality` (`"report"`) -- the reliability intent for the outer
+#'     Pareto-\eqn{\hat{k}}, a single statement of how reliable the fit should be.
+#'     `"report"` (default) computes the diagnostic and reports the achieved band.
+#'     `"ok"` / `"good"` additionally name a TARGET band (the \eqn{\hat{k}}
+#'     confidently usable, resp. good) and raise the default `diagnose_draws`
+#'     (to `800L` / `2000L`, unless you set it) so the bootstrap CI can resolve it.
+#'     `"none"` disables the diagnostic. The fit carries an honest verdict --
+#'     `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
+#'     `k_quality_reason` -- and never silently downgrades: if the requested band
+#'     is not confidently met it reports the band actually reached and why. The
+#'     adaptive draw-escalation loop and the integration-refinement rung
+#'     (`k_refine`) are tracked in gcol33/tulpa#131.
 #'   * `diagnose_k` (`TRUE`), `diagnose_draws` (`500L`) -- compute the outer
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
 #'     hyperparameter posterior against the proposal the integrator fits (mixed
@@ -401,6 +413,14 @@
 #'      uncertainty: `pareto_k_by_arm_se_boot`, `pareto_k_by_arm_ci_low` /
 #'      `pareto_k_by_arm_ci_high`, `pareto_k_by_arm_se_formula`,
 #'      `pareto_k_by_arm_tail_points` and `pareto_k_by_arm_band_confident`.
+#'   * `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
+#'      `k_quality_reason` — the reliability verdict for the `control$k_quality`
+#'      intent (gcol33/tulpa#129). `k_quality_requested` echoes the intent;
+#'      `k_quality_best` is the band actually achieved (`"good"` / `"ok"` /
+#'      `"unreliable"`, or `"uncertain"` when the bootstrap CI crosses a boundary);
+#'      `k_quality_reached` is `TRUE`/`FALSE` for an `"ok"` / `"good"` target
+#'      (`NA` for `"report"` / `"none"`), never silently downgraded; and
+#'      `k_quality_reason` records why it stopped.
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -500,19 +520,39 @@ tulpa_nested_laplace_joint <- function(responses,
     # (other arms held at their posterior mean), to localise which arm drives a
     # tail-heavy joint k (gcol33/tulpa#120); the joint k is unchanged and stays
     # the default.
+    # k_quality reliability intent (gcol33/tulpa#129): a single statement of the
+    # reliability the fit should report. "report" (default) computes the diagnostic
+    # and reports the achieved band; "ok" / "good" additionally name a TARGET band
+    # (the k-hat confidently usable / good) and raise the default draw budget so the
+    # bootstrap CI can resolve it, with an honest reached / best / reason verdict
+    # attached; "none" disables the diagnostic. The adaptive draw-escalation loop
+    # and the integration-refinement rung are tracked separately (gcol33/tulpa#131).
+    k_quality                 <- control$k_quality %||% "report"
+    if (!is.character(k_quality) || length(k_quality) != 1L ||
+        !k_quality %in% c("none", "report", "ok", "good")) {
+        stop("`control$k_quality` must be one of \"none\", \"report\", \"ok\", \"good\".",
+             call. = FALSE)
+    }
     diagnose_k_raw            <- control$diagnose_k %||% TRUE
     pareto_k_by_arm           <- identical(diagnose_k_raw, "by_arm")
-    diagnose_k                <- pareto_k_by_arm || isTRUE(diagnose_k_raw)
+    diagnose_k                <- (pareto_k_by_arm || isTRUE(diagnose_k_raw)) &&
+                                 !identical(k_quality, "none")
     # Diagnostic importance-draw budget (gcol33/tulpa#127). `diagnose_draws` is the
     # single precision knob: the outer Pareto-k is scored ONCE over this many
     # importance draws, and a tighter k needs MORE actual tail ratios, i.e. a larger
     # `diagnose_draws`. The legacy `k_samples` name is accepted as an alias.
-    diagnose_draws            <- control$diagnose_draws %||% control$k_samples %||% 500L
+    diagnose_draws_user       <- control$diagnose_draws %||% control$k_samples
+    diagnose_draws            <- diagnose_draws_user %||% 500L
     if (length(diagnose_draws) != 1L || is.na(diagnose_draws) ||
         diagnose_draws != round(diagnose_draws) || diagnose_draws < 1L) {
         stop("`control$diagnose_draws` must be a single integer >= 1.", call. = FALSE)
     }
     diagnose_draws            <- as.integer(diagnose_draws)
+    # k_quality "ok" / "good" raise the default draw budget so the bootstrap CI can
+    # resolve the requested band (a tighter CI needs more actual tail ratios); an
+    # explicit `diagnose_draws` / `k_samples` is always respected (gcol33/tulpa#129).
+    if (is.null(diagnose_draws_user) && k_quality %in% c("ok", "good"))
+        diagnose_draws <- if (identical(k_quality, "good")) 2000L else 800L
     # Outer-thread width for the diagnostic's importance batch (gcol33/tulpa#117).
     # The `diagnose_draws` re-solves are independent and run after the grid (all
     # cores free), each solved single-threaded, so widening this pool is a
@@ -878,6 +918,8 @@ tulpa_nested_laplace_joint <- function(responses,
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
+    res <- .joint_attach_k_quality(res, k_quality, diagnose_k, diagnose_draws,
+                                   k_conf_bands)
     .finalize_fit(res, backend = "nested_laplace_joint",
                   extra_class = c("tulpa_nested_laplace_joint",
                                   "tulpa_nested_laplace", "list"))

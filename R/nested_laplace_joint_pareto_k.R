@@ -1213,6 +1213,56 @@
     res
 }
 
+# Attach the k_quality reliability verdict (gcol33/tulpa#129). Reads the outer
+# Pareto-k point estimate, its bootstrap band-confidence flag, and the reliability
+# bands the diagnostic used, and reports an honest reached / best / reason quartet
+# against the requested quality intent. NEVER silently downgrades: when the fit
+# cannot confidently meet the requested band it returns the band it did reach plus
+# the reason it fell short. `conf_bands` is the resolved override (NULL -> the
+# sample-size-dependent default at `diagnose_draws`). Called for both the single-
+# and multi-block paths after the diagnostic fields are attached.
+.joint_attach_k_quality <- function(res, k_quality, diagnose_k, diagnose_draws,
+                                    conf_bands = NULL) {
+    res$k_quality_requested <- k_quality
+    res$k_quality_reached   <- NA
+    res$k_quality_best      <- NA_character_
+    res$k_quality_reason    <- NA_character_
+
+    if (identical(k_quality, "none") || !isTRUE(diagnose_k)) {
+        res$k_quality_reason <- if (identical(k_quality, "none")) "diagnostic disabled"
+                                else "diagnostic not run"
+        return(res)
+    }
+    k <- res$pareto_k
+    if (!is.finite(k)) {
+        res$k_quality_reason <- "k-hat unavailable (diagnostic declined)"
+        return(res)
+    }
+    bands  <- if (is.null(conf_bands)) .ps_conf_bands(as.integer(diagnose_draws))
+              else conf_bands
+    labels <- if (length(bands) >= 2L) c("good", "ok", "unreliable")
+              else c("reliable", "unreliable")
+    conf   <- isTRUE(res$pareto_k_band_confident)
+    bi     <- .k_band_b(k, bands)                       # 0 = best band, increasing
+    res$k_quality_best <- if (conf) labels[min(bi + 1L, length(labels))] else "uncertain"
+
+    if (identical(k_quality, "report")) {
+        res$k_quality_reason <- "report only (no target band requested)"
+        return(res)
+    }
+    # "good" requires the confident band to be the best (index 0); "ok" allows the
+    # best or the next (index <= 1, the usable band).
+    target  <- if (identical(k_quality, "good")) 0L else 1L
+    reached <- conf && bi <= target
+    res$k_quality_reached <- reached
+    res$k_quality_reason  <-
+        if (reached) "requested band reached"
+        else if (!conf)
+            "k-hat interval crosses a band boundary; raise diagnose_draws or refine (gcol33/tulpa#131)"
+        else "k-hat confidently outside the requested band; the integration is genuinely less reliable"
+    res
+}
+
 # Single-block joint wrapper. Reuses the driver's already-built generic
 # `kernel_fn` (the closure refinement passes drive, which round-trips a
 # user-facing cell matrix through `backend$call_kernel`) and `hp_fn` (the

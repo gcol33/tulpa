@@ -615,3 +615,64 @@ test_that("control end to end carries the bootstrap uncertainty fields", {
     expect_identical(fit$diagnose_draws, 300L)
     expect_true(is.na(fit$diagnose_cost_ratio) || fit$diagnose_cost_ratio >= 0)
 })
+
+# --------------------------------------------------------------------------- #
+# k_quality reliability front door (gcol33/tulpa#129)                          #
+# --------------------------------------------------------------------------- #
+
+test_that("control$k_quality validation rejects unknown levels", {
+    sim <- .jpk_sim(seed = 95)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
+    expect_error(
+        tulpa_nested_laplace_joint(responses = arms, prior = prior,
+            control = list(k_quality = "great")), "k_quality")
+})
+
+test_that("k_quality = none disables the diagnostic and reports no verdict", {
+    skip_if_not_slow()
+    sim <- .jpk_sim(seed = 97)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
+    fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+                                      control = list(k_quality = "none"))
+    expect_identical(fit$k_quality_requested, "none")
+    expect_true(is.na(fit$pareto_k))                  # diagnostic was disabled
+    expect_true(is.na(fit$k_quality_reached))
+    expect_match(fit$k_quality_reason, "disabled")
+})
+
+test_that("k_quality reports an honest reached / best / reason quartet", {
+    skip_if_not_slow()
+    sim <- .jpk_sim(seed = 96)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.7, 1.1))
+    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
+
+    rep_fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+                  control = list(k_quality = "report", diagnose_draws = 300L))
+    expect_identical(rep_fit$k_quality_requested, "report")
+    expect_true(is.na(rep_fit$k_quality_reached))     # no target band
+    expect_true(rep_fit$k_quality_best %in%
+                c("good", "ok", "unreliable", "uncertain"))
+
+    good_fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+                  control = list(k_quality = "good"))
+    expect_identical(good_fit$k_quality_requested, "good")
+    expect_true(is.logical(good_fit$k_quality_reached) &&
+                !is.na(good_fit$k_quality_reached))
+    expect_true(nzchar(good_fit$k_quality_reason))
+    # "good" raised the default draw budget (diagnose_draws not set by the caller).
+    expect_identical(good_fit$diagnose_draws, 2000L)
+    # When the target is reached, the achieved band must be the good band.
+    if (isTRUE(good_fit$k_quality_reached))
+        expect_identical(good_fit$k_quality_best, "good")
+})

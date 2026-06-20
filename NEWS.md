@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.52 (2026-06-20)
+
+* New `control$k_quality` reliability front door for the joint nested-Laplace
+  outer Pareto-k (gcol33/tulpa#129). A single statement of the reliability the fit
+  should report: `"report"` (default) computes the diagnostic and reports the
+  achieved band; `"ok"` / `"good"` name a target band (the k-hat confidently
+  usable, resp. good) and raise the default `diagnose_draws` (to `800L` / `2000L`,
+  unless `diagnose_draws` / `k_samples` is set) so the bootstrap CI can resolve
+  it; `"none"` disables the diagnostic. The fit carries an honest verdict --
+  `k_quality_requested`, `k_quality_reached`, `k_quality_best`, `k_quality_reason`
+  -- and never silently downgrades: if the requested band is not confidently met
+  it reports the band actually reached and why. The adaptive draw-escalation loop
+  and the integration-refinement rung (`k_refine`) are tracked in
+  gcol33/tulpa#131. The reliability vignette covers the new front door.
+
 ## 0.0.51 (2026-06-20)
 
 * Outer Pareto-k reliability bands are now sample-size dependent (gcol33/tulpa#128).

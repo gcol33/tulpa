@@ -74,16 +74,17 @@ mk_arm <- function(m, fam) {
 
 prior <- list(type = "icar", n_spatial_units = S,
               adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
-              n_neighbors = nn, sigma_grid = c(0.3, 0.7, 1.4))
+              n_neighbors = nn, sigma_grid = seq(0.2, 1.6, length.out = 7))
 ```
 
 Fit the two arms together. The diagnostic runs by default, so the k-hat comes
 back on the fitted object with no extra request.
 
 ```{r fit}
+resp <- list(occ = mk_arm(200L, "binomial"),
+             pos = mk_arm(200L, "gaussian"))
 fit <- tulpa_nested_laplace_joint(
-  responses = list(occ = mk_arm(200L, "binomial"),
-                   pos = mk_arm(200L, "gaussian")),
+  responses = resp,
   prior     = prior,
   control   = list(diagnose_draws = 400L))
 
@@ -204,8 +205,7 @@ model with more draws and read the interval again.
 
 ```{r more-draws}
 fit_hi <- tulpa_nested_laplace_joint(
-  responses = list(occ = mk_arm(200L, "binomial"),
-                   pos = mk_arm(200L, "gaussian")),
+  responses = resp,
   prior     = prior,
   control   = list(diagnose_draws = 1500L))
 
@@ -254,41 +254,47 @@ the rungs. The companion escalation for a random-effect covariance fit is shown
 in the inference-modes vignette, where a k-hat past the boundary routes the fit
 to `control = list(re_cov = "gibbs")` and an exact inverse-Wishart draw.
 
-## Where this is heading
+## Naming a reliability target
 
-The ladder is currently driven by reading the flag and choosing the next rung
-by hand. A forthcoming front door collapses it to a single statement of intent.
-You name the reliability you require, and the engine climbs the ladder for you,
-stopping when the validated k-hat interval is confidently inside the band you
-asked for or reporting plainly that it could not get there.
+The ladder so far is driven by reading the flag and choosing the next rung by
+hand. `control$k_quality` collapses the report-and-judge step into a single
+statement of intent: you name the reliability you require, the engine sets the
+draw budget for it, and the fit carries an honest verdict.
 
-```{r roadmap, eval = FALSE}
-fit <- tulpa_nested_laplace_joint(
-  responses = arms, prior = prior,
-  control = list(
-    k_quality = "good",      # require a confident good band, not a lucky point
-    k_refine  = "mixture"    # refine the integration when the band falls short
-  ))
+```{r k-quality}
+fit_q <- tulpa_nested_laplace_joint(
+  responses = resp,
+  prior     = prior,
+  control   = list(k_quality = "good"))
 
-fit$k_quality_requested      # "good"
-fit$k_quality_reached        # TRUE or FALSE, never silently downgraded
-fit$k_quality_best           # the band actually achieved, e.g. "ok"
-fit$k_quality_reason         # why it stopped: resolved, cap, or budget
+c(requested = fit_q$k_quality_requested,
+  reached   = fit_q$k_quality_reached,
+  best      = fit_q$k_quality_best,
+  draws     = fit_q$diagnose_draws)
+fit_q$k_quality_reason
 ```
 
-The contract is that the request is a target, not a promise. `k_quality =
-"good"` means accept a fit only when the k-hat interval is confidently below
-the good boundary; `k_quality = "ok"` lowers the bar to the usable boundary.
-When the engine reaches the requested band it says so, and when it cannot it
-returns the best band it did reach with the reason it stopped, rather than
-handing back a fit that quietly fell short. The same honesty the band-confidence
-flag already enforces, applied to the whole loop.
+`k_quality = "good"` requires the k-hat interval to sit confidently in the good
+band and raises the default `diagnose_draws` so the bootstrap CI can resolve it;
+`"ok"` lowers the target to the usable band; `"report"` (the default) computes
+the diagnostic without a target; `"none"` turns it off. The verdict is the
+honest part. `k_quality_reached` is `TRUE` only when the requested band is
+confidently met; when it is not, the fit reports the band it did reach
+(`k_quality_best`) and the reason (`k_quality_reason`), and the request is a
+target rather than a promise the output quietly pretends to keep.
+
+`k_quality` reports and budgets; the escalation that *acts* on a shortfall is the
+next step. Spending draws iteratively until the band resolves, and a `k_refine`
+rung that promotes the basin grid-mixture to real integration nodes when the
+grid is the limit, are tracked in gcol33/tulpa#131. Until then, raise
+`diagnose_draws` to resolve a borderline band, or escalate to an exact debias
+when the grid itself is too narrow, following the ladder above.
 
 ## See also
 
 - `tulpa_nested_laplace_joint()` documents the full `control` surface for the
-  diagnostic: `diagnose_k`, `diagnose_draws`, `k_bootstrap`, `k_tail_points`,
-  `k_conf_bands`, and `k_threads`.
+  diagnostic: `k_quality`, `diagnose_k`, `diagnose_draws`, `k_bootstrap`,
+  `k_tail_points`, `k_conf_bands`, and `k_threads`.
 - `tulpa_psis()` is the native Pareto-smoothed importance-sampling core the
   diagnostic is built on, callable directly on a vector of log importance
   ratios.

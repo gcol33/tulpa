@@ -260,6 +260,18 @@ few extra inner iterations. Applies to the sparse joint path with the
 default \code{control$hessian = "lm"} curvature; the dense small-\code{n_x} path
 re-factorizes a cheap Hessian and ignores it. \code{2L}-\code{4L} is a good range
 for a slow beta arm.
+\item \code{k_quality} (\code{"report"}) -- the reliability intent for the outer
+Pareto-\eqn{\hat{k}}, a single statement of how reliable the fit should be.
+\code{"report"} (default) computes the diagnostic and reports the achieved band.
+\code{"ok"} / \code{"good"} additionally name a TARGET band (the \eqn{\hat{k}}
+confidently usable, resp. good) and raise the default \code{diagnose_draws}
+(to \code{800L} / \code{2000L}, unless you set it) so the bootstrap CI can resolve it.
+\code{"none"} disables the diagnostic. The fit carries an honest verdict --
+\code{k_quality_requested}, \code{k_quality_reached}, \code{k_quality_best},
+\code{k_quality_reason} -- and never silently downgrades: if the requested band
+is not confidently met it reports the band actually reached and why. The
+adaptive draw-escalation loop and the integration-refinement rung
+(\code{k_refine}) are tracked in gcol33/tulpa#131.
 \item \code{diagnose_k} (\code{TRUE}), \code{diagnose_draws} (\code{500L}) -- compute the outer
 Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
 hyperparameter posterior against the proposal the integrator fits (mixed
@@ -394,6 +406,14 @@ when that arm carries no varying axis. Each arm carries its own bootstrap
 uncertainty: \code{pareto_k_by_arm_se_boot}, \code{pareto_k_by_arm_ci_low} /
 \code{pareto_k_by_arm_ci_high}, \code{pareto_k_by_arm_se_formula},
 \code{pareto_k_by_arm_tail_points} and \code{pareto_k_by_arm_band_confident}.
+\item \code{k_quality_requested}, \code{k_quality_reached}, \code{k_quality_best},
+\code{k_quality_reason} — the reliability verdict for the \code{control$k_quality}
+intent (gcol33/tulpa#129). \code{k_quality_requested} echoes the intent;
+\code{k_quality_best} is the band actually achieved (\code{"good"} / \code{"ok"} /
+\code{"unreliable"}, or \code{"uncertain"} when the bootstrap CI crosses a boundary);
+\code{k_quality_reached} is \code{TRUE}/\code{FALSE} for an \code{"ok"} / \code{"good"} target
+(\code{NA} for \code{"report"} / \code{"none"}), never silently downgraded; and
+\code{k_quality_reason} records why it stopped.
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.
