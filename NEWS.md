@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.56 (2026-06-21)
+
+* `k_quality` escalation is now driven by adaptive integration-grid refinement
+  rather than diagnostic-draw doubling (gcol33/tulpa#131). When the outer
+  Pareto-k is bad the integration grid does not faithfully represent the
+  hyperparameter posterior, so each escalation round now REFINES THE GRID
+  (`adaptive_grid` boundary extension / interior densification, one more pass per
+  round) and re-diagnoses, driven by the bad k, until the band is reached or the
+  round budget is spent. Doubling `diagnose_draws` only re-scores the same grid,
+  so it is no longer the escalation lever; `diagnose_draws` stays the separate
+  knob that sharpens the k ESTIMATE (still auto-raised for `"ok"` / `"good"` so
+  the bootstrap CI resolves).
+* `control$k_refine` value `"mixture"` is renamed to `"grid"` (it refines the
+  integration grid), and the default for `k_quality = "ok"` / `"good"` changes
+  from `"none"` to `"grid"`: asking for a reliable band now chases it by
+  refining. `k_refine = "none"` opts out (the band is reported but not chased).
+* The #130 dispatcher invariant -- a grid-width deficiency stays unreliable and
+  the reported k is never the moment-matched single Gaussian's optimistic value
+  -- is now pinned by a direct unit test, not only indirectly via the band
+  threshold.
+
 ## 0.0.55 (2026-06-21)
 
 * The outer Pareto-k proposal refinement (moment matching, gcol33/tulpa#119) is

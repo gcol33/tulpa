@@ -283,15 +283,19 @@ confidently met; when it is not, the fit reports the band it did reach
 (`k_quality_best`) and the reason (`k_quality_reason`), and the request is a
 target rather than a promise the output quietly pretends to keep.
 
-When the first fit does not reach the requested band, `k_quality` climbs the
-ladder for you. It doubles `diagnose_draws` each round to resolve a borderline
-band, and with `control$k_refine = "mixture"` it refines the integration grid
-(`adaptive_grid`) on the final round when more draws alone are not enough,
-re-fitting and re-diagnosing up to `control$k_max_rounds` times;
-`k_quality_rounds` records how many rounds it used. The request stays a target,
-not a promise: if the budget is spent without confirming the band, the fit
-reports the band it reached and the reason, and the next step is an exact debias
-(a Gibbs or gradient-sampler correction) as the ladder above describes.
+When the first fit does not reach the requested band, `k_quality` chases it by
+refining the integration grid, driven by the bad k. A bad outer k means the grid
+does not faithfully represent the hyperparameter posterior, usually because the
+posterior mass spills past the grid bounds; so with `control$k_refine = "grid"`
+(the default for `"ok"` / `"good"`) each round widens and densifies the grid
+where that mass escapes (`adaptive_grid`), re-fits, and re-diagnoses, up to
+`control$k_max_rounds` times, with each round allowed one more refinement pass
+than the last. `k_quality_rounds` records how many rounds it used. `diagnose_draws`
+is the separate knob that sharpens the k estimate; it is not the escalation lever,
+since more draws only re-score the same grid. The request stays a target, not a
+promise: if the budget is spent without confirming the band, the fit reports the
+band it reached and the reason, and the next step is an exact debias (a Gibbs or
+gradient-sampler correction) as the ladder above describes.
 
 ## See also
 

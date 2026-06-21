@@ -271,16 +271,21 @@ confidently usable, resp. good) and raise the default \code{diagnose_draws}
 \code{k_quality_reason}, \code{k_quality_rounds} -- and never silently downgrades: if
 the requested band is not confidently met it reports the band actually
 reached and why. For \code{"ok"} / \code{"good"}, when the first fit does not reach
-the band the engine escalates: it doubles \code{diagnose_draws} each round and,
-with \code{k_refine = "mixture"}, refines the integration grid on the final
-round, re-fitting and re-diagnosing up to \code{k_max_rounds} times.
-\item \code{k_refine} (\code{"none"}) -- the integration-refinement rung for \code{k_quality}
-\code{"ok"} / \code{"good"}. \code{"mixture"} re-fits with adaptive grid refinement
-(\code{adaptive_grid}) on the final escalation round when more draws alone have
-not resolved the band, so a too-coarse / too-narrow grid is widened where
-the importance weight concentrates. \code{"none"} escalates draws only.
-\item \code{k_max_rounds} (\code{2L}) -- the escalation round budget for \code{k_quality}
-\code{"ok"} / \code{"good"}: the maximum number of re-fits after the first. \code{0L}
+the band the engine escalates by REFINING THE INTEGRATION GRID, driven by
+the bad \eqn{\hat{k}} (see \code{k_refine}): each round widens / densifies the
+grid where the posterior mass escapes its current bounds and re-diagnoses,
+up to \code{k_max_rounds} times. This is the actual fix for a grid-width
+deficiency; \code{diagnose_draws} is the separate knob that sharpens the
+\eqn{\hat{k}} ESTIMATE and is not escalated here.
+\item \code{k_refine} (\code{"grid"}) -- the integration-refinement rung for \code{k_quality}
+\code{"ok"} / \code{"good"}. \code{"grid"} (default) re-fits with adaptive grid refinement
+(\code{adaptive_grid}) each escalation round, driven by the bad \eqn{\hat{k}}, so
+a too-coarse / too-narrow grid is widened / densified where the importance
+weight concentrates until the band is reached or the budget is spent.
+\code{"none"} disables refinement: the band is reported but not chased.
+\item \code{k_max_rounds} (\code{2L}) -- the grid-refinement round budget for \code{k_quality}
+\code{"ok"} / \code{"good"}: the maximum number of refine-and-re-fit rounds after the
+first fit. Each round allows one more refinement pass than the last. \code{0L}
 disables escalation (single-shot, the band is reported but not chased).
 \item \code{diagnose_k} (\code{TRUE}), \code{diagnose_draws} (\code{500L}) -- compute the outer
 Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint

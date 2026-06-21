@@ -278,6 +278,61 @@ test_that("the grid-mixture proposal beats the single Gaussian on a skewed grid"
     expect_identical(kd$proposal_source, "grid_mixture")
 })
 
+test_that("a grid-width deficiency stays unreliable: the reported k is never the moment-matched Gaussian (gcol33/tulpa#130)", {
+    # The dispatcher's load-bearing #130 invariant, pinned DIRECTLY rather than
+    # only via expect_gte(pareto_k, 0.7). Construction: a spread grid (-3..3, 61
+    # cells) whose integration weights are a NARROW Gaussian (sd 0.5 in log-sigma)
+    # but whose true outer target is a much WIDER Gaussian (sd 3). The grid cannot
+    # represent the target's spread -- a genuine grid-width deficiency.
+    #
+    # Moment matching the single-Gaussian proposal to the importance-weighted draws
+    # WIDENS it toward the target, so the MM-refined single Gaussian reads in the
+    # good band. If the dispatcher reported THAT it would mask the deficiency. The
+    # invariant: the adopted / reported k must come from the faithful within-grid
+    # representation (grid-moment / grid-mixture), stay unreliable, and never be the
+    # moment-matched Gaussian's optimistic value -- regardless of how many MM passes
+    # the cost backstop (.K_DIAG_MM_MAX) allows.
+    sg  <- exp(seq(-3, 3, length.out = 61))
+    w   <- { e <- exp(stats::dnorm(log(sg), 0, 0.5, log = TRUE)); e / sum(e) }
+    res <- list(theta_grid = matrix(sg, ncol = 1, dimnames = list(NULL, "sigma")),
+                weights = w, prior = list(type = "icar"))
+    refit_wide <- function(tm) { u <- log(tm[, "sigma"]); -0.5 * (u / 3)^2 - u }
+
+    prep <- tulpa:::.joint_pareto_prepare(res, refit_wide, 4000L, NULL)
+    expect_identical(prep$proposal_source, "grid_moment")     # a spread grid
+    vary <- tulpa:::.joint_pareto_vary_axes(prep$Su)
+
+    set.seed(203)
+    g <- tulpa:::.joint_pareto_score(prep, vary, refit_wide, 4000L)
+    # The grid-moment proposal -- the engine's faithful single-Gaussian summary of
+    # what it integrates over -- is unreliable: the grid is too narrow.
+    expect_gte(g$gm$pareto_k, 0.7)
+    # ... yet moment matching widens the Gaussian into the good band. This is the
+    # trap: the optimistic value EXISTS and is materially below the grid-moment k.
+    expect_true(isTRUE(g$refined))
+    expect_lt(g$pareto_k, 0.6)
+    expect_lt(g$pareto_k, g$gm$pareto_k - 0.2)
+
+    # The dispatched verdict: adopt the faithful within-grid proposal, stay
+    # unreliable, and NOT report the moment-matched Gaussian.
+    set.seed(203)
+    disp <- tulpa:::.joint_pareto_score_dispatch(prep, vary, refit_wide, 4000L)
+    expect_identical(disp$source, "grid_mixture")
+    expect_false(identical(disp$source, "moment_matched"))
+    expect_gte(disp$best$pareto_k, 0.7)
+    # The reported k is the faithful mixture's, well above the moment-matched
+    # Gaussian's optimistic value -- the masking is refused.
+    expect_gt(disp$best$pareto_k, g$pareto_k)
+
+    # End to end through the public scorer: same verdict, unreliable band.
+    set.seed(203)
+    kd <- tulpa:::.joint_pareto_k(res, refit_wide, n_samples = 4000L)
+    expect_identical(kd$proposal_source, "grid_mixture")
+    expect_false(identical(kd$proposal_source, "moment_matched"))
+    expect_gte(kd$pareto_k, 0.7)
+    expect_identical(tulpa:::.tulpa_khat_band(kd$pareto_k), "unreliable")
+})
+
 # --------------------------------------------------------------------------- #
 # End-to-end: CCD engages, and a forced tensor grid collapses                 #
 # --------------------------------------------------------------------------- #

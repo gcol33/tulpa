@@ -280,16 +280,21 @@
 #'     `k_quality_reason`, `k_quality_rounds` -- and never silently downgrades: if
 #'     the requested band is not confidently met it reports the band actually
 #'     reached and why. For `"ok"` / `"good"`, when the first fit does not reach
-#'     the band the engine escalates: it doubles `diagnose_draws` each round and,
-#'     with `k_refine = "mixture"`, refines the integration grid on the final
-#'     round, re-fitting and re-diagnosing up to `k_max_rounds` times.
-#'   * `k_refine` (`"none"`) -- the integration-refinement rung for `k_quality`
-#'     `"ok"` / `"good"`. `"mixture"` re-fits with adaptive grid refinement
-#'     (`adaptive_grid`) on the final escalation round when more draws alone have
-#'     not resolved the band, so a too-coarse / too-narrow grid is widened where
-#'     the importance weight concentrates. `"none"` escalates draws only.
-#'   * `k_max_rounds` (`2L`) -- the escalation round budget for `k_quality`
-#'     `"ok"` / `"good"`: the maximum number of re-fits after the first. `0L`
+#'     the band the engine escalates by REFINING THE INTEGRATION GRID, driven by
+#'     the bad \eqn{\hat{k}} (see `k_refine`): each round widens / densifies the
+#'     grid where the posterior mass escapes its current bounds and re-diagnoses,
+#'     up to `k_max_rounds` times. This is the actual fix for a grid-width
+#'     deficiency; `diagnose_draws` is the separate knob that sharpens the
+#'     \eqn{\hat{k}} ESTIMATE and is not escalated here.
+#'   * `k_refine` (`"grid"`) -- the integration-refinement rung for `k_quality`
+#'     `"ok"` / `"good"`. `"grid"` (default) re-fits with adaptive grid refinement
+#'     (`adaptive_grid`) each escalation round, driven by the bad \eqn{\hat{k}}, so
+#'     a too-coarse / too-narrow grid is widened / densified where the importance
+#'     weight concentrates until the band is reached or the budget is spent.
+#'     `"none"` disables refinement: the band is reported but not chased.
+#'   * `k_max_rounds` (`2L`) -- the grid-refinement round budget for `k_quality`
+#'     `"ok"` / `"good"`: the maximum number of refine-and-re-fit rounds after the
+#'     first fit. Each round allows one more refinement pass than the last. `0L`
 #'     disables escalation (single-shot, the band is reported but not chased).
 #'   * `diagnose_k` (`TRUE`), `diagnose_draws` (`500L`) -- compute the outer
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
@@ -486,20 +491,22 @@ tulpa_nested_laplace_joint <- function(responses,
     # k_quality reliability front door + escalation (gcol33/tulpa#129, #131). The
     # single fit lives in .tulpa_nl_joint_once(); this wrapper resolves the
     # reliability intent, attaches the honest verdict (for BOTH the single- and
-    # multi-block paths), and -- for "ok" / "good" -- climbs the reliability ladder:
-    # spend more draws each round, then (with k_refine = "mixture") refine the
-    # integration grid, re-fitting + re-diagnosing until the requested band is
-    # confidently reached or the round budget is hit. Never silently downgrades.
+    # multi-block paths), and -- for "ok" / "good" -- chases the band by REFINING
+    # THE INTEGRATION GRID, driven by the bad outer k (with k_refine = "grid"):
+    # each round widens / densifies the grid where the posterior mass escapes its
+    # bounds, re-fits + re-diagnoses, until the requested band is confidently
+    # reached or the round budget is hit. diagnose_draws is the separate
+    # estimate-precision knob, not an escalation lever. Never silently downgrades.
     k_quality <- control$k_quality %||% "report"
     if (!is.character(k_quality) || length(k_quality) != 1L ||
         !k_quality %in% c("none", "report", "ok", "good")) {
         stop("`control$k_quality` must be one of \"none\", \"report\", \"ok\", \"good\".",
              call. = FALSE)
     }
-    k_refine <- control$k_refine %||% "none"
+    k_refine <- control$k_refine %||% "grid"
     if (!is.character(k_refine) || length(k_refine) != 1L ||
-        !k_refine %in% c("none", "mixture")) {
-        stop("`control$k_refine` must be \"none\" or \"mixture\".", call. = FALSE)
+        !k_refine %in% c("none", "grid")) {
+        stop("`control$k_refine` must be \"none\" or \"grid\".", call. = FALSE)
     }
     k_max_rounds <- control$k_max_rounds %||% 2L
     if (length(k_max_rounds) != 1L || is.na(k_max_rounds) ||
@@ -521,25 +528,42 @@ tulpa_nested_laplace_joint <- function(responses,
                                           prior_sigma, prior_alpha, cell_coupling, ctrl))
     res$k_quality_rounds <- 0L
 
-    if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) && k_max_rounds > 0L) {
+    if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
+        k_max_rounds > 0L && identical(k_refine, "grid")) {
+        # A bad outer k means the integration grid does not faithfully represent
+        # the hyperparameter posterior -- typically a grid whose bounds the
+        # posterior mass escapes (gcol33/tulpa#130). The response is to REFINE THE
+        # GRID and re-integrate, driven by the bad k: each round runs the adaptive
+        # boundary-extension / interior-densification pass (R/hyper_grid_refine.R)
+        # where the integrand mass piles at an edge, then re-diagnoses, until the
+        # requested band is confidently reached or the round budget is spent. Each
+        # round allows one more refinement pass (a pass extends from the previous
+        # pass's boundary), so the widening is genuinely recursive in the bad-k
+        # direction. Raising diagnose_draws would only sharpen the SAME k against
+        # the SAME grid, never widen it, so it is NOT the escalation lever here --
+        # it stays the separate estimate-precision knob (control$diagnose_draws).
+        ctrl$adaptive_grid <- TRUE
         round <- 0L
         while (!isTRUE(res$k_quality_reached) && round < k_max_rounds) {
             round <- round + 1L
-            cur <- res$diagnose_draws %||% 500L
-            if (!is.finite(cur)) cur <- 500L
-            ctrl$diagnose_draws <- as.integer(cur * 2L)
-            # Spend draws first; refine the integration grid only on the final
-            # budgeted round, when more draws alone did not resolve the band.
-            if (round == k_max_rounds && identical(k_refine, "mixture"))
-                ctrl$adaptive_grid <- TRUE
+            ctrl$adaptive_grid_max_passes <- round
             res <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
                                                  prior_sigma, prior_alpha,
                                                  cell_coupling, ctrl))
             res$k_quality_rounds <- round
+            if (!isTRUE(res$k_quality_reached) && is.null(res$adaptive_grid_info)) {
+                # The adaptive pass found no boundary mass to extend (the grid
+                # already spans the posterior's support), so further rounds cannot
+                # move the k: the bad k is not a grid-width deficiency.
+                res$k_quality_reason <- paste0(
+                    "grid refinement found no boundary mass to extend; ",
+                    "the bad k is not a grid-width deficiency")
+                break
+            }
         }
         if (!isTRUE(res$k_quality_reached) && round >= k_max_rounds)
             res$k_quality_reason <-
-                "requested band not confirmed within the k_max_rounds escalation budget"
+                "requested band not confirmed within the k_max_rounds grid-refinement budget"
     }
     res
 }

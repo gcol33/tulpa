@@ -695,25 +695,38 @@ test_that("control$k_refine / k_max_rounds validation (gcol33/tulpa#131)", {
             control = list(k_max_rounds = -1L)), "k_max_rounds")
 })
 
-test_that("k_quality escalation re-fits and records the rounds used (gcol33/tulpa#131)", {
+test_that("k_refine = 'grid' refines the integration grid driven by bad k and lowers the outer k (gcol33/tulpa#131)", {
     skip_if_not_slow()
-    sim <- .jpk_sim(seed = 96)
+    # A grid that sits below the field's posterior support: the first fit does not
+    # reach the good band, so the k_quality ladder must REFINE THE INTEGRATION GRID
+    # (not spend more diagnostic draws) and re-integrate, driven by the bad k.
+    sim <- .jpk_sim(seed = 21, sigma = 1.2)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
-                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.7, 1.1))
-    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
-    # A "good" target that the first fit may miss: escalation runs up to the
-    # round budget, doubling diagnose_draws, and records how many rounds it used.
-    fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
-             control = list(k_quality = "good", diagnose_draws = 200L,
-                            k_max_rounds = 2L))
-    expect_true(is.numeric(fit$k_quality_rounds))
-    expect_true(fit$k_quality_rounds >= 0L && fit$k_quality_rounds <= 2L)
-    # If it escalated, the draw budget grew from the 200 start by doubling.
-    if (fit$k_quality_rounds > 0L)
-        expect_gte(fit$diagnose_draws, 400L)
-    # Reached implies the band is confidently met.
-    if (isTRUE(fit$k_quality_reached))
-        expect_true(fit$k_quality_best %in% c("good"))
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.2, 0.35, 0.5))
+    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0))
+    ctrl <- list(k_quality = "good", diagnose_draws = 800L, k_max_rounds = 3L)
+
+    # k_refine = "none": the band is reported but not chased -- no escalation, the
+    # grid is left untouched (k_quality_rounds stays 0).
+    fit0 <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+              control = modifyList(ctrl, list(k_refine = "none")))
+    expect_identical(fit0$k_quality_rounds, 0L)
+    base_cells <- nrow(fit0$theta_grid)
+
+    # k_refine = "grid" (the default): the bad k drives integration-grid
+    # refinement, re-fitting and re-diagnosing until the band is reached.
+    fit1 <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+              control = modifyList(ctrl, list(k_refine = "grid")))
+    expect_gte(fit1$k_quality_rounds, 1L)              # escalation ran
+    expect_false(is.null(fit1$adaptive_grid_info))     # the grid was refined ...
+    expect_gt(nrow(fit1$theta_grid), base_cells)       # ... by adding cells
+
+    # diagnose_draws is identical across the two fits (set, not auto-raised), so the
+    # k improvement is the refined grid's, not the diagnostic's: the separation the
+    # feature is built on. Here it crosses into the good band.
+    expect_lt(fit1$pareto_k, fit0$pareto_k)
+    expect_true(isTRUE(fit1$k_quality_reached))
+    expect_identical(fit1$k_quality_best, "good")
 })
