@@ -25,15 +25,16 @@
 
 # Maximum moment-matching refinement passes for the outer Pareto-k proposal
 # (gcol33/tulpa#119). Each pass re-estimates the proposal from the PSIS-weighted
-# moments of its own draws and re-scores; iteration stops early once the k-hat
-# reaches the usable band, so a proposal that already fits pays a single pass.
-# Capped at 3 to bound the diagnostic cost (gcol33/tulpa#127): each pass is a full
-# `diagnose_draws` importance batch, so an unbounded refinement multiplies the
-# selection cost. A proposal still above the usable band after 3 passes keeps its
-# best-of-3 single-Gaussian k-hat, and on a spread grid the grid-mixture (scored
-# once after) is the faithful proposal adopted anyway, so the cap does not move the
-# reported k while it bounds the worst-case selection to ~4 evaluations.
-.K_DIAG_MM_MAX <- 3L
+# moments of its own draws and re-scores, keeping the lowest-k-hat proposal.
+# Proposal refinement is a separate step from the bare diagnostic and is NOT under
+# the diagnostic's cost target, so the cap is generous: a backstop against a
+# runaway loop, not a cost throttle (the earlier cap of 3 in #127 was a cost
+# throttle, lifted here). The loop self-limits well below this on a typical fit --
+# it stops as soon as the k-hat reaches the usable band (a proposal that already
+# fits pays a single pass) OR a refined pass fails to improve on the one it was
+# estimated from -- so the extra budget is spent only on a stubborn k still above
+# the usable band and still falling, which is exactly where more passes help.
+.K_DIAG_MM_MAX <- 8L
 
 # Internal proposal-loop threshold for the moment-matching early-stop: a proposal
 # whose k-hat is at or below this is good enough to stop refining (Vehtari,
@@ -717,6 +718,7 @@
     best    <- NULL
     gm_full <- NULL                      # first-pass (grid-moment) result
     refined <- FALSE
+    prev_k  <- Inf                       # k-hat of the proposal each pass refines from
     for (iter in seq_len(.K_DIAG_MM_MAX)) {
         rc <- .nested_grid_radius_cap(u_grid_v, prop_u, prop_L)
         kd <- tryCatch(.nested_is_pareto_k(prop_u, prop_L, lt, n_samples,
@@ -738,6 +740,13 @@
         # the GPD on this same converged proposal's ratios.
         if (is.null(best) || kd$pareto_k < best$pareto_k) best <- cand
         if (kd$pareto_k <= .K_DIAG_USABLE || iter == .K_DIAG_MM_MAX) break
+        # Stop refining once a pass no longer improves on the proposal it was
+        # estimated from: moment matching has converged (or started to drift on the
+        # seed-dependent widening), so further passes only spend budget without
+        # lowering k. This keeps the generous .K_DIAG_MM_MAX a safe backstop -- a
+        # stubborn k that is still falling keeps refining; a plateaued one stops.
+        if (kd$pareto_k >= prev_k) break
+        prev_k <- kd$pareto_k
         wts <- exp(kd$log_weights); sw <- sum(wts)
         if (!is.finite(sw) || sw <= 0 || nrow(kd$U) < length(prop_u) + 1L) break
         wts   <- wts / sw

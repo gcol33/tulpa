@@ -1,5 +1,18 @@
 # tulpa NEWS
 
+## 0.0.55 (2026-06-21)
+
+* The outer Pareto-k proposal refinement (moment matching, gcol33/tulpa#119) is
+  allowed more passes. Proposal refinement is a separate step from the bare
+  diagnostic and is not under the diagnostic's cost target, so the moment-matching
+  cap `.K_DIAG_MM_MAX` is raised from `3` (a cost throttle added in #127) to `8`,
+  a runaway-loop backstop rather than a budget. The loop self-limits well below the
+  cap: it still stops as soon as the k-hat reaches the usable band, and now also
+  stops once a refined pass no longer improves on the proposal it was estimated
+  from, so the extra passes are spent only on a stubborn k that is still above the
+  usable band and still falling. A fit that already fits, or one whose moment
+  matching has plateaued, pays the same as before.
+
 ## 0.0.54 (2026-06-20)
 
 * `control$k_quality` now climbs the reliability ladder (gcol33/tulpa#131). When
