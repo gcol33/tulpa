@@ -29,6 +29,9 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
   parameterization <- match.arg(parameterization)
 
   # Validate adjacency matrix
+  if (inherits(adjacency, "tulpa_adjacency")) {
+    adjacency <- adjacency$adjacency
+  }
   if (!is.matrix(adjacency) && !inherits(adjacency, "Matrix")) {
     stop("`adjacency` must be a matrix", call. = FALSE)
   }
@@ -347,6 +350,9 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
   parameterization <- match.arg(parameterization)
 
   # Validate adjacency matrix
+  if (inherits(adjacency, "tulpa_adjacency")) {
+    adjacency <- adjacency$adjacency
+  }
   if (!is.matrix(adjacency) && !inherits(adjacency, "Matrix")) {
     stop("`adjacency` must be a matrix", call. = FALSE)
   }

@@ -1,5 +1,54 @@
 # tulpa NEWS
 
+## 0.0.59 (2026-06-22)
+
+* New `adjacency()` front door builds the symmetric graph that `spatial()` and
+  `spatial_car()` consume, so areal models no longer need a hand-coded
+  adjacency matrix. It is one generic that dispatches on the layout: a
+  `data.frame` of cell centroids (queen / rook contiguity over the inferred
+  lattice, no extra dependency), an `sf` polygon layer (shared-boundary
+  contiguity via DE-9IM; queen = point or edge, rook = edge), and a raster
+  (a terra `SpatRaster` or a `stars` object) whose non-`NA` cells become the
+  nodes. It returns a printable `tulpa_adjacency` object carrying
+  the sparse 0/1 matrix (`$adjacency`), the per-node cell identifier (`$ids`),
+  the inferred cell size, and the node count -- the model still receives an
+  explicit `graph = g$adjacency`, so the graph stays inspectable before
+  fitting; nothing is guessed from coordinates silently.
+* `node_index(graph, ids)` maps original cell identifiers to 1-based node
+  indices by key, for remapping observation data (many rows per cell, different
+  row order) onto the graph without assuming row alignment.
+* `check_adjacency()` validates a hand-built matrix in one pass -- square,
+  symmetric, zero diagonal, 0/1 valued, isolated nodes, and matching unique
+  ids -- and `adjacency()` runs the same checks on the graphs it constructs.
+* `spatial()`, `spatial_car()`, and `spatial_bym2()` now accept a
+  `tulpa_adjacency` object directly (unwrapping its `$adjacency`), in addition
+  to a bare matrix.
+
+## 0.0.58 (2026-06-22)
+
+* Joint nested-Laplace CCD outer integration is now robust to a sharply-peaked,
+  ill-conditioned hyperparameter posterior -- the shape an occu_cover fit with an
+  observation-arm random effect produces, where a narrow field-SD axis sits at a
+  grid edge alongside a wide, weakly-identified axis. The CCD mode-find
+  (`.joint_ccd_grid`) keeps the grid-median seed with a fixed finite-difference
+  step as the default (capped at a few Newton rounds), and on a decline falls
+  forward to a pilot seed plus a per-axis calibrated step: a ridge-safe
+  coordinate-ascent sweep (`.joint_ccd_pilot_seed`) jumps each axis the
+  log-posterior clearly depends on to its highest-log-posterior grid value
+  (reaching a mode at a grid edge, which the median seed cannot; a flat
+  copy-amplitude axis keeps the median), and `.joint_ccd_calibrate_step` scales
+  the step per axis to span ~1 posterior sd (small on a sharp axis, wide on a
+  weakly-curved one, since one fixed step cannot resolve both). Well-conditioned
+  and sigma-alpha-ridge fits are unchanged (they engage on the default path);
+  previously a sharply-peaked posterior declined to the full tensor grid. A
+  recovery test pins the rescue.
+
+* The CCD mode-find's backtracking line search now evaluates all `max_halve`
+  step lengths in one batched call, so the candidates run across the outer-grid
+  threads rather than one full-field inner solve at a time. On a large field (an
+  expensive inner Laplace) the line search no longer serialises the mode-find;
+  the accepted step is the same the sequential backtrack would take.
+
 ## 0.0.57 (2026-06-22)
 
 * Joint nested-Laplace cell loop: a `CellCouplingSpec` can now declare, via the

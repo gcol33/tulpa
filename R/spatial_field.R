@@ -100,6 +100,9 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
     }
   }
 
+  if (!missing(graph) && inherits(graph, "tulpa_adjacency")) {
+    graph <- graph$adjacency
+  }
   if (missing(graph) || (!is.matrix(graph) && !inherits(graph, "Matrix"))) {
     stop("`graph` must be an adjacency matrix (the spatial graph).",
          call. = FALSE)
