@@ -1,5 +1,29 @@
 # tulpa NEWS
 
+## 0.0.60 (2026-06-23)
+
+* Joint nested-Laplace CCD outer integration is now robust to a sharply-peaked,
+  ill-conditioned hyperparameter posterior -- the shape a joint occu_cover fit
+  with an observation-arm random effect produces, where a narrow field-SD axis
+  sits at a grid edge alongside a wide, weakly-identified axis. The CCD mode-find
+  (`.joint_ccd_grid`) keeps the grid-median seed with a fixed finite-difference
+  step as the default and, when that declines, falls forward to a rescue that
+  warm-starts at the best latent grid cell (`.joint_ccd_grid_seed` evaluates the
+  latent Cartesian grid in one batched call and takes the joint argmax) and uses
+  a per-axis step calibrated to the local curvature (`.joint_ccd_calibrate_step`
+  spans ~1 posterior sd per axis: small on a sharp axis, wide on a weakly-curved
+  one, since one fixed step cannot resolve both). A ridge-safe coordinate-ascent
+  seed (`.joint_ccd_pilot_seed`) is the fallback when the latent grid is too large
+  to evaluate. Well-conditioned and sigma-alpha-ridge fits are unchanged (they
+  engage on the default path); previously a sharply-peaked posterior declined to
+  the full tensor grid. A recovery test pins the rescue.
+
+* The CCD mode-find's backtracking line search now evaluates all `max_halve`
+  step lengths in one batched call, so the candidates run across the outer-grid
+  threads rather than one full-field inner solve at a time. On a large field (an
+  expensive inner Laplace) the line search no longer serialises the mode-find;
+  the accepted step is the same the sequential backtrack would take.
+
 ## 0.0.59 (2026-06-22)
 
 * New `adjacency()` front door builds the symmetric graph that `spatial()` and
@@ -23,31 +47,6 @@
 * `spatial()`, `spatial_car()`, and `spatial_bym2()` now accept a
   `tulpa_adjacency` object directly (unwrapping its `$adjacency`), in addition
   to a bare matrix.
-
-## 0.0.58 (2026-06-22)
-
-* Joint nested-Laplace CCD outer integration is now robust to a sharply-peaked,
-  ill-conditioned hyperparameter posterior -- the shape an occu_cover fit with an
-  observation-arm random effect produces, where a narrow field-SD axis sits at a
-  grid edge alongside a wide, weakly-identified axis. The CCD mode-find
-  (`.joint_ccd_grid`) keeps the grid-median seed with a fixed finite-difference
-  step as the default (capped at a few Newton rounds), and on a decline falls
-  forward to a pilot seed plus a per-axis calibrated step: a ridge-safe
-  coordinate-ascent sweep (`.joint_ccd_pilot_seed`) jumps each axis the
-  log-posterior clearly depends on to its highest-log-posterior grid value
-  (reaching a mode at a grid edge, which the median seed cannot; a flat
-  copy-amplitude axis keeps the median), and `.joint_ccd_calibrate_step` scales
-  the step per axis to span ~1 posterior sd (small on a sharp axis, wide on a
-  weakly-curved one, since one fixed step cannot resolve both). Well-conditioned
-  and sigma-alpha-ridge fits are unchanged (they engage on the default path);
-  previously a sharply-peaked posterior declined to the full tensor grid. A
-  recovery test pins the rescue.
-
-* The CCD mode-find's backtracking line search now evaluates all `max_halve`
-  step lengths in one batched call, so the candidates run across the outer-grid
-  threads rather than one full-field inner solve at a time. On a large field (an
-  expensive inner Laplace) the line search no longer serialises the mode-find;
-  the accepted step is the same the sequential backtrack would take.
 
 ## 0.0.57 (2026-06-22)
 

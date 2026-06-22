@@ -89,6 +89,78 @@
     list(f0 = as.numeric(f0), grad = g, hess = H)
 }
 
+# Per-axis finite-difference step calibrated to each axis's local curvature, so
+# the stencil spans ~1 posterior sd on every axis. An ill-conditioned outer
+# posterior mixes sharp axes (a narrow field SD: a coarse step straddles the peak
+# and reads low curvature) with wide / weakly-curved axes (a fine step's second
+# difference is swamped by the inner marginal's small non-smoothness); one fixed
+# step cannot serve both. From `h0`, each round sets h_j to ~1 sd where the
+# curvature is concave and widens it toward `h_max` where it is not (the signal
+# sits below the noise floor), settling in a few rounds. Returns the per-axis
+# step. `span` is the per-axis box width (the supplied grid's u-range).
+.joint_ccd_calibrate_step <- function(u, eval1, span, h0 = 0.1,
+                                      h_min = 1e-3, rounds = 4L) {
+    d     <- length(u)
+    h_max <- pmin(0.6, pmax(0.5 * span, h0))
+    h     <- rep(h0, d)
+    for (it in seq_len(rounds)) {
+        st <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h), error = function(e) NULL)
+        if (is.null(st) || any(!is.finite(diag(st$hess)))) break
+        dH    <- diag(st$hess)
+        neg   <- dH < -1e-8
+        h_new <- h
+        h_new[neg]  <- 1 / sqrt(-dH[neg])               # concave: span ~1 sd
+        h_new[!neg] <- pmin(2 * h[!neg], h_max[!neg])   # below noise floor: widen
+        h_new <- pmin(pmax(h_new, h_min), h_max)
+        if (max(abs(h_new - h)) < 0.05 * h0) { h <- h_new; break }
+        h <- h_new
+    }
+    h
+}
+
+# Coordinate-ascent pilot seed: one sweep that jumps each axis to its
+# highest-log-posterior supplied grid value (the others held at the running
+# best). A sharply-peaked outer posterior whose mode sits at a grid edge needs a
+# seed near the peak: from the grid median a heavy-tailed inner marginal is
+# gently sloped and its curvature reads as a false ridge. An axis the
+# log-posterior barely depends on (an unidentified copy amplitude on a
+# sigma-alpha ridge) keeps the median -- moving it would seed onto the ridge --
+# so a jump is taken only when the axis's log-posterior range exceeds `min_gain`.
+# `u_vals` is the per-axis grid in u-space; `eval1` maps a [S x d] u-matrix to
+# log-posterior values.
+.joint_ccd_pilot_seed <- function(u0, u_vals, eval1, min_gain = 1) {
+    u <- u0
+    for (j in seq_along(u)) {
+        gv <- u_vals[[j]]
+        if (length(gv) < 2L) next
+        cand <- matrix(u, nrow = length(gv), ncol = length(u), byrow = TRUE)
+        cand[, j] <- gv
+        lp  <- eval1(cand)
+        fin <- is.finite(lp)
+        if (any(fin) && (max(lp[fin]) - min(lp[fin]) > min_gain))
+            u[j] <- gv[which.max(lp)]
+    }
+    u
+}
+
+# Joint-grid pilot seed: evaluate the full latent Cartesian grid in ONE batched
+# (parallel) call and return its joint argmax. This is a better mode-find seed
+# than the per-axis coordinate sweep when the axes are correlated -- it lands at
+# the actual joint peak, so the subsequent mode-find converges in a couple of
+# rounds rather than crawling. Capped at `max_pts` so it never rebuilds the dense
+# tensor CCD exists to avoid; above the cap (or on an all-failed eval) it falls
+# back to the coordinate-ascent sweep.
+.joint_ccd_grid_seed <- function(u0, u_vals, eval1, max_pts = 256L) {
+    n_pts <- prod(vapply(u_vals, length, integer(1)))
+    if (n_pts < 2L || n_pts > max_pts)
+        return(.joint_ccd_pilot_seed(u0, u_vals, eval1))
+    grid <- as.matrix(expand.grid(u_vals))
+    dimnames(grid) <- NULL
+    lp <- eval1(grid)
+    if (!any(is.finite(lp))) return(.joint_ccd_pilot_seed(u0, u_vals, eval1))
+    as.numeric(grid[which.max(lp), ])
+}
+
 # Negative-definite regularisation of a symmetric matrix: eigen-clip every
 # eigenvalue to <= -ridge so the log-posterior curvature gives an ascent
 # direction (and a usable Gaussian precision -H).
@@ -119,13 +191,14 @@
     min(ev) > rel_tol * mx
 }
 
-# Pull the inner latent mode of a single-cell `eval1` result out of its "modes"
+# Pull the inner latent mode of row `k` of an `eval1` result out of its "modes"
 # attribute (attached by the caller's eval_logpost), for warm-starting the next
-# probe. NULL when absent or non-finite.
-.joint_ccd_eval_mode <- function(f) {
+# probe. NULL when absent or non-finite. `k` selects the accepted candidate when
+# several were evaluated in one batched call.
+.joint_ccd_eval_mode <- function(f, k = 1L) {
     m <- attr(f, "modes")
-    if (is.null(m) || !is.matrix(m) || nrow(m) < 1L) return(NULL)
-    v <- as.numeric(m[1L, ])
+    if (is.null(m) || !is.matrix(m) || nrow(m) < k) return(NULL)
+    v <- as.numeric(m[k, ])
     if (any(!is.finite(v))) return(NULL)
     v
 }
@@ -146,7 +219,8 @@
 #     the post-mode-find guard would reach, minus the line search,
 #   * the Newton step is trust-clamped per coordinate so a near-singular Hessian
 #     cannot fling a candidate to an extreme hyperparameter, and
-#   * the backtracking line search is capped at `max_halve` halvings.
+#   * the backtracking line search is capped at `max_halve` halvings, all
+#     evaluated in one batched call so they run across the outer-grid threads.
 # An optional `on_accept(mode)` hook receives the inner latent mode at each
 # accepted point so the caller can advance its inner warm start (so probes near
 # the current iterate solve in a few Newton steps instead of cold from the
@@ -193,19 +267,24 @@
         # Hessian cannot send a candidate to an extreme hyperparameter where the
         # inner Newton needs many iterations (gcol33/tulpa#62).
         step <- pmax(pmin(step, trust), -trust)
-        # Backtracking line search, capped at `max_halve` halvings.
-        t_step   <- 1
-        u_try    <- u; f_try <- f_u; mode_try <- NULL
-        for (k_halve in seq_len(max_halve + 1L)) {
-            cand <- pmin(pmax(u + t_step * step, lower), upper)
-            fce  <- eval1(matrix(cand, nrow = 1L))
-            f_cand <- as.numeric(fce)
-            if (is.finite(f_cand) && f_cand >= f_u - 1e-8) {
-                u_try <- cand; f_try <- f_cand
-                mode_try <- .joint_ccd_eval_mode(fce)
-                break
-            }
-            t_step <- t_step / 2
+        # Backtracking line search over `max_halve` halvings, all evaluated in ONE
+        # batched call so the candidates fan out across the outer-grid threads:
+        # a serial probe per halving does not parallelise, and on an expensive
+        # inner solve (a full-field Laplace) the line search would otherwise
+        # dominate the mode-find. Accept the largest step that improves -- the
+        # same point a sequential backtrack would take.
+        t_steps <- 0.5 ^ (seq_len(max_halve + 1L) - 1L)
+        cands   <- t(vapply(t_steps, function(ts)
+                       pmin(pmax(u + ts * step, lower), upper), numeric(d)))
+        fce     <- eval1(cands)
+        f_cands <- as.numeric(fce)
+        u_try <- u; f_try <- f_u; mode_try <- NULL
+        acc <- which(is.finite(f_cands) & f_cands >= f_u - 1e-8)
+        if (length(acc)) {
+            k        <- acc[1L]                 # t_steps is descending: largest step
+            u_try    <- cands[k, ]
+            f_try    <- f_cands[k]
+            mode_try <- .joint_ccd_eval_mode(fce, k)
         }
         delta <- max(abs(u_try - u))
         u <- u_try; f_u <- f_try
@@ -280,48 +359,62 @@
         lp
     }
 
-    # Finite-difference step on the (unconstrained) u scale: large enough to
-    # average over the inner log-marginal's small non-smoothness, small enough
-    # to resolve the local curvature on log / logit / identity axes.
-    h_fd <- rep(0.1, d)
-
     on_accept <- if (is.null(set_warm)) NULL else function(mode) set_warm(mode)
-    mf <- .joint_ccd_modefind(u0, eval1, lower, upper, h_fd,
-                              trust = trust, on_accept = on_accept)
-    if (is.null(mf) || !identical(mf$status, "ok")) {
-        if (verbose) {
-            if (!is.null(mf) && identical(mf$status, "ridge")) {
-                message("tulpa CCD: outer log-posterior is flat / ridged at the ",
-                        "box centre (curvature ill-conditioned); using the ",
-                        "tensor grid.")
-            } else {
-                message("tulpa CCD: outer mode-find failed; using the tensor ",
-                        "grid.")
-            }
-        }
-        return(NULL)
-    }
-    u_hat <- mf$par
-    # A mode pinned to the (wide) box edge is a runaway / boundary-supported
-    # hyperparameter; the Gaussian CCD does not apply -> tensor grid.
-    eps_box <- 1e-3 * pmax(upper - lower, 1)
-    if (any(abs(u_hat - lower) < eps_box) || any(abs(u_hat - upper) < eps_box)) {
-        if (verbose) message("tulpa CCD: outer mode pinned to the axis box ",
-                             "(boundary-supported hyperparameter); using the ",
-                             "tensor grid.")
-        return(NULL)
+
+    # Mode-find from one seed / step, returning the validated Gaussian centre and
+    # curvature (u_hat, H) or a `reason` for declining: the mode bailed / ridged,
+    # ran to the (wide) box edge (a boundary-supported hyperparameter), or sits on
+    # a flat / indefinite curvature -- none of which define a usable Gaussian CCD
+    # scale (its nodes would land at extreme hyperparameters where the inner
+    # Newton fails).
+    try_modefind <- function(u_start, h_step, max_rounds = 30L) {
+        mf <- .joint_ccd_modefind(u_start, eval1, lower, upper, h_step,
+                                  trust = trust, on_accept = on_accept,
+                                  max_rounds = max_rounds)
+        if (is.null(mf) || !identical(mf$status, "ok"))
+            return(list(reason = if (!is.null(mf) && identical(mf$status, "ridge"))
+                                 "ridge" else "fail"))
+        u_hat   <- mf$par
+        eps_box <- 1e-3 * pmax(upper - lower, 1)
+        if (any(abs(u_hat - lower) < eps_box) || any(abs(u_hat - upper) < eps_box))
+            return(list(reason = "boundary"))
+        if (!.joint_ccd_outer_hess_ok(mf$hess))
+            return(list(reason = "degenerate"))
+        list(u_hat = u_hat, H = mf$hess)
     }
 
-    H <- mf$hess
-    # Hessian of the log-posterior is negative-definite at a mode; -H is the
-    # Gaussian precision. Reject a flat / indefinite curvature (CCD nodes would
-    # land at extreme hyperparameters where the inner Newton fails) -- same
-    # conditioning test as the centre pre-check (single source of truth).
-    if (!.joint_ccd_outer_hess_ok(H)) {
-        if (verbose) message("tulpa CCD: outer Hessian degenerate at the mode; ",
-                             "using the tensor grid.")
+    # Default: grid-median seed with a fixed step. A well-conditioned outer
+    # posterior reaches a usable Gaussian centre in a handful of Newton rounds,
+    # and a sigma-alpha copy ridge converges at once (a flat direction has ~0
+    # gradient, so its step is ~0): both engage here, unperturbed. The round cap
+    # escalates to the rescue when the median seed does not converge, rather than
+    # crawling the full budget across a gently-sloped tail.
+    #
+    # On a decline, the posterior is sharply peaked and ill-conditioned (a narrow
+    # field-SD axis at a grid edge beside a wide axis), which the grid median
+    # cannot characterise. The rescue warm-starts at the best latent grid cell
+    # (one batched, parallel evaluation -> joint argmax, already near the peak) and
+    # uses a per-axis step calibrated to the local curvature (a single fixed step
+    # cannot resolve a sharp field-SD axis beside a wide / weakly-curved one), then
+    # runs the mode-find to convergence from there.
+    got <- try_modefind(u0, rep(0.1, d), max_rounds = 8L)
+    if (is.null(got$u_hat)) {
+        u_seed <- .joint_ccd_grid_seed(u0, u_vals, eval1)
+        h_cal  <- .joint_ccd_calibrate_step(u_seed, eval1, span)
+        got    <- try_modefind(u_seed, h_cal)
+    }
+    if (is.null(got$u_hat)) {
+        if (verbose)
+            message("tulpa CCD: ", switch(got$reason %||% "fail",
+                ridge      = "outer log-posterior is flat / ridged (curvature ill-conditioned)",
+                boundary   = "outer mode pinned to the axis box (boundary-supported hyperparameter)",
+                degenerate = "outer Hessian degenerate at the mode",
+                             "outer mode-find failed"),
+                "; using the tensor grid.")
         return(NULL)
     }
+    u_hat <- got$u_hat
+    H     <- got$H
     neg_H <- -0.5 * (H + t(H))
     post_cov <- tryCatch(solve(neg_H), error = function(e) NULL)
     if (is.null(post_cov)) return(NULL)

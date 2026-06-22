@@ -156,3 +156,53 @@ test_that("on_accept receives the inner mode at each accepted point", {
     # The last accepted warm start tracks the converged outer mode (modes == u).
     expect_equal(got$modes[[length(got$modes)]], mf$par, tolerance = 1e-6)
 })
+
+test_that("ill-conditioned outer posterior: default declines, pilot + calibrated step rescues", {
+    # A sharply-peaked, ill-conditioned outer log-posterior in u-space, of the
+    # shape a joint occu_cover fit with an observation-arm random effect produces:
+    # a SHARP field-SD axis whose mode sits at a grid EDGE (u-sd ~0.006), a WIDE
+    # weakly-identified axis (u-sd ~0.5) and a second sharp axis, with heavy tails
+    # (a pseudo-Huber peak: quadratic core, linear tails) and the inner marginal's
+    # small non-smoothness. From the grid-median seed a single fixed step cannot
+    # characterise this -- it reads a false ridge -- but a per-axis step calibrated
+    # at a pilot seed on the peak can. This is the .joint_ccd_grid rescue path.
+    m    <- c(log(3), log(1), log(0.6))   # u-space modes; axis 1 at a grid edge
+    prec <- c(2.8e4, 4, 3.1e3)            # sharp, wide, sharp
+    w    <- c(0.05, 0.5, 0.05)            # pseudo-Huber core half-widths
+    tau  <- prec * w^2
+    ripple <- function(u) 0.08 * sum(sin(37 * u + c(0.3, 1.1, 2.0)))
+    eval1 <- function(U) { U <- matrix(U, ncol = 3)
+        apply(U, 1L, function(u)
+            -sum(tau * (sqrt(1 + ((u - m) / w)^2) - 1)) + ripple(u)) }
+
+    gp     <- list(c(.25, .5, 1.5, 3, 5), c(.25, .5, 1.5, 3, 5), c(.2, .6, 1.5))
+    u_vals <- lapply(gp, function(g) tulpa:::.joint_pareto_fwd("log", g))
+    span   <- pmax(vapply(u_vals, function(x) diff(range(x)), 0), 1e-3)
+    lower  <- vapply(u_vals, min, 0) - pmax(1.5 * span, .5)
+    upper  <- vapply(u_vals, max, 0) + pmax(1.5 * span, .5)
+    trust  <- pmax(span, .5)
+    u_med  <- vapply(u_vals, stats::median, 0)
+
+    # Default seed + fixed step declines (ridge, or a non-PD mode Hessian).
+    mf0 <- tulpa:::.joint_ccd_modefind(u_med, eval1, lower, upper, rep(0.1, 3),
+                                       trust = trust)
+    expect_false(identical(mf0$status, "ok") &&
+                 tulpa:::.joint_ccd_outer_hess_ok(mf0$hess))
+
+    # Pilot seed lands axis 1 at its grid-edge peak; the calibrated step is small
+    # on the sharp axes and large on the wide one.
+    u_pilot <- tulpa:::.joint_ccd_pilot_seed(u_med, u_vals, eval1)
+    expect_equal(u_pilot[1], log(3), tolerance = 1e-8)
+    h_cal <- tulpa:::.joint_ccd_calibrate_step(u_pilot, eval1, span)
+    expect_lt(h_cal[1], 0.03)        # sharp axis -> small step
+    expect_lt(h_cal[3], 0.05)        # sharp axis -> small step
+    expect_gt(h_cal[2], 0.2)         # wide axis  -> large step
+
+    # The rescue composition engages: ok status, PD Hessian, sharp modes recovered.
+    mf <- tulpa:::.joint_ccd_modefind(u_pilot, eval1, lower, upper, h_cal,
+                                      trust = trust)
+    expect_identical(mf$status, "ok")
+    expect_true(tulpa:::.joint_ccd_outer_hess_ok(mf$hess))
+    expect_equal(mf$par[1], m[1], tolerance = 0.05)
+    expect_equal(mf$par[3], m[3], tolerance = 0.05)
+})
