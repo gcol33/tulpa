@@ -1,5 +1,21 @@
 # tulpa NEWS
 
+## 0.0.57 (2026-06-22)
+
+* Joint nested-Laplace cell loop: a `CellCouplingSpec` can now declare, via the
+  new `dense_cross_pairs(n_coupled, rank1_self_supported)` virtual, which
+  `(kk, ll)` arm-pair cross-Hessian slabs it actually writes densely. The
+  single-response cell loop allocates a dense `rc_kk * rc_ll` slab only for those
+  pairs; every other pair keeps a `nullptr` buffer (the scatter already guards
+  null). This bounds a cell with `J` observations on a self-coupled arm to `O(J)`
+  rather than `O(J^2)`: a self block emitted through the rank-1 self-cross
+  descriptor, or a cross a factorising likelihood never writes, no longer
+  reserves a `J x J` slab. The default returns every pair, so a spec that does
+  not override it is unchanged; the change is numerically inert for the
+  `occu_cover` spec (the dropped slabs were allocated, zeroed, and never written
+  even before). Removes a `std::bad_alloc` on grids with a very high-visit cell
+  (e.g. an all-undetected cell with tens of thousands of plots).
+
 ## 0.0.56 (2026-06-21)
 
 * `k_quality` escalation is now driven by adaptive integration-grid refinement

@@ -781,6 +781,22 @@ inline void scatter_cell_coupling_branch_impl(
     chain_k_scratch.reserve(32);
     chain_l_scratch.reserve(32);
 
+    // Which (kk, ll) dense cross-Hessian slabs to allocate. The spec declares the
+    // pairs it actually writes densely; a self block it emits as the rank-1
+    // self-cross, or a cross it factorises to zero, is omitted, and its buffer
+    // stays nullptr (the scatter below already guards null). This is what bounds a
+    // cell with J observations on a self-coupled arm to O(J) rather than O(J^2):
+    // the dense rc_kk * rc_ll slab is never allocated for the omitted pairs. This
+    // is the single-response path, which supplies the rank-1 descriptor.
+    std::vector<std::vector<char>> alloc_pair(
+        n_coupled, std::vector<char>(n_coupled, 0));
+    for (const auto& pr :
+         spec.dense_cross_pairs(n_coupled, /*rank1_self_supported=*/true)) {
+        const int a = std::min(pr.first, pr.second);
+        const int b = std::max(pr.first, pr.second);
+        if (a >= 0 && b < n_coupled) alloc_pair[a][b] = 1;
+    }
+
     for (int c = 0; c < n_cells; c++) {
         for (int kk = 0; kk < n_coupled; kk++) {
             int rc = (int)cell_rows[kk][c].size();
@@ -813,6 +829,10 @@ inline void scatter_cell_coupling_branch_impl(
         for (int kk = 0; kk < n_coupled; kk++) {
             int rc_k = arm_row_count[kk];
             for (int ll = kk; ll < n_coupled; ll++) {
+                if (!alloc_pair[kk][ll]) {        // spec does not write this slab
+                    cross_hess_ptr_inner[kk][ll] = nullptr;
+                    continue;
+                }
                 int rc_l = arm_row_count[ll];
                 std::size_t n_pair = (std::size_t)rc_k * (std::size_t)rc_l;
                 auto& buf = cross_hess_buf[kk][ll];

@@ -64,6 +64,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tulpa {
@@ -388,6 +389,32 @@ struct CellCouplingSpec {
     // return true; R-closure bridges or specs that mutate scratch must
     // return false (the kernel then falls back to a serial cell loop).
     virtual bool thread_safe() const { return true; }
+
+    // Which (kk, ll) coupled-arm index pairs (kk <= ll, indices into the order
+    // returned by arm_ids()) this spec writes into the DENSE per-cell
+    // cross-Hessian buffer `out.arm_cross_hess[kk][ll]`. The joint cell loop
+    // allocates a dense rc_kk * rc_ll slab ONLY for these pairs; every other
+    // pair gets a nullptr buffer, which the spec must then leave untouched.
+    //
+    // This bounds a cell with J observations on a self-coupled arm to O(J)
+    // instead of O(J^2): a self pair (kk, kk) that the spec emits through the
+    // rank-1 self-cross descriptor (arm_cross_rank1_*) is simply omitted, and a
+    // cross pair the spec never writes (a factorising likelihood) is omitted too.
+    // `rank1_self_supported` is true when the calling engine supplies the rank-1
+    // descriptor (the single-response path); a spec that needs a dense self block
+    // when the rank-1 path is unavailable (e.g. batched) keys on this flag.
+    //
+    // The default returns every kk <= ll pair, i.e. the historical "allocate all"
+    // behaviour, so a spec that does not override this is unaffected. Declared
+    // last so the vtable slot is appended (existing slots keep their offsets).
+    virtual std::vector<std::pair<int, int>> dense_cross_pairs(
+            int n_coupled, bool /*rank1_self_supported*/) const {
+        std::vector<std::pair<int, int>> pairs;
+        for (int kk = 0; kk < n_coupled; kk++)
+            for (int ll = kk; ll < n_coupled; ll++)
+                pairs.emplace_back(kk, ll);
+        return pairs;
+    }
 };
 
 } // namespace tulpa
