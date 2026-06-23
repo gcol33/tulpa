@@ -810,6 +810,7 @@
                                   k_conf_bands = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
+                                  local_ccd = NULL,
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()                    # gcol33/tulpa#48
     integration <- match.arg(integration, c("auto", "ccd", "grid"))
@@ -1112,6 +1113,67 @@
     res$log_marginal <- .joint_multi_add_hp(res$log_marginal, joint_grid,
                                             axis_offsets, B, fn_sigma, fn_alpha)
 
+    # Local CCD refinement (gcol33/tulpa#64): replace a few high-weight, mutually
+    # non-adjacent tensor cells with small curvature-aware node clouds so a coarse
+    # base grid resolves the sharply-peaked directions without the k^d tensor
+    # blow-up. Engages only on the tensor path (the finite-difference curvature
+    # stencil needs axis neighbours), at >= 4 transformable latent axes, with no
+    # active phi grid. The node solves reuse the kernel through a quiet evaluator
+    # (checkpoint / progress stripped) warm-started per cell; refined cells carry
+    # partition-of-unity design weights so the total integration weight is
+    # conserved (no double-count).
+    local_ccd_info <- NULL
+    if (!is.null(local_ccd) && !use_ccd && !has_phi &&
+        .joint_local_ccd_engage(d_axes)) {
+        lc <- if (is.list(local_ccd)) local_ccd else list()
+        lc_max_cells <- as.integer(lc$max_cells %||% 8L)
+        lc_f0        <- as.numeric(lc$f0 %||% 1.1)
+        tags_lc <- .joint_ccd_axis_tags(axis_names, axis_offsets, prepared)
+        if (!is.null(tags_lc)) {
+            with_quiet_opts <- function(expr) {
+                op <- options(
+                    tulpa.nl_checkpoint = list(path = "", resume = TRUE),
+                    tulpa.nl_progress   = .nl_progress_args(list(progress = FALSE)))
+                on.exit(options(op), add = TRUE)
+                force(expr)
+            }
+            eval_nodes <- function(theta_mat, warm) {
+                xi <- if (!is.null(warm) && length(warm) && all(is.finite(warm)))
+                    as.numeric(warm) else x_init
+                r <- with_quiet_opts(.cpp_joint_multi(
+                    arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
+                    copy_blocks = as.integer(cp$copy_blocks_zero),
+                    blocks_spec = blocks_spec,
+                    theta_grid = .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp),
+                    axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
+                    tol = as.numeric(tol), n_threads = as.integer(n_threads),
+                    x_init_nullable = xi, store_Q = FALSE, phi_grid_per_arm = NULL,
+                    n_threads_outer = as.integer(n_threads_outer),
+                    tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0,
+                    force_sparse = isTRUE(force_sparse),
+                    cell_coupling_name = as.character(cell_coupling),
+                    inner_refresh = as.integer(inner_refresh)))
+                list(log_marginal = .joint_multi_add_hp(
+                         r$log_marginal, theta_mat, axis_offsets, B,
+                         fn_sigma, fn_alpha),
+                     modes = if (is.matrix(r$modes)) r$modes else NULL)
+            }
+            ref <- .joint_local_ccd_refine(
+                joint_grid = joint_grid, log_marginal = res$log_marginal,
+                modes = res$modes, dnode = dnode, latent_axes = axis_names,
+                tags = tags_lc, eval_nodes = eval_nodes,
+                max_cells = lc_max_cells, f0 = lc_f0, verbose = verbose)
+            if (!is.null(ref)) {
+                joint_grid       <- ref$joint_grid
+                res$log_marginal <- ref$log_marginal
+                res$modes        <- ref$modes
+                dnode            <- ref$dnode
+                local_ccd_info   <- ref$info
+            }
+        }
+        tm$mark("grid")
+    }
+
     res$theta_grid   <- joint_grid
     res$theta_names  <- colnames(joint_grid)
     res$axis_offsets <- axis_offsets
@@ -1120,10 +1182,14 @@
     # tensor grid `dnode` is NULL and this is the plain log-marginal softmax.
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode)
     is_ccd <- identical(integration_used, "ccd")
+    # Local CCD refinement also leaves a design-weighted (scattered) grid, so it
+    # takes the same moment / SD path as the global CCD: weighted moments over the
+    # design, no per-axis lattice SD refit.
+    is_design_weighted <- is_ccd || !is.null(local_ccd_info)
     res <- .joint_posterior_moments_multi(
         res, prepared, axis_offsets, joint_grid, cp,
-        int_weights = if (is_ccd) res$weights else NULL)
-    if (!is_ccd) {
+        int_weights = if (is_design_weighted) res$weights else NULL)
+    if (!is_design_weighted) {
         # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
         # modal cell (gcol33/tulpa#20). The 3-point grid-profile fit needs the
         # regular per-axis lattice; on the scattered CCD design the weighted
@@ -1137,6 +1203,7 @@
     res$responses     <- responses
     res$copy          <- copy
     res$cell_coupling <- cell_coupling
+    res$local_ccd_info <- local_ccd_info
     tm$mark("postproc")
     # Outer Pareto-k-hat: re-evaluate the inner joint marginal at sampled
     # hyperparameters via the shared cpp-grid / phi / hyperprior helpers and

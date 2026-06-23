@@ -1,5 +1,35 @@
 # tulpa NEWS
 
+## 0.0.61 (2026-06-23)
+
+* New `control$local_ccd` refines a multi-block tensor outer grid with local
+  central-composite-design node clouds (`R/nested_laplace_joint_ccd_local.R`):
+  a few high-weight, mutually non-adjacent interior cells are each replaced by a
+  small curvature-aware CCD design, so a coarse base grid resolves the
+  sharply-peaked hyperparameter directions without the `k^d` tensor blow-up. The
+  local curvature is a diagonal finite difference of the outer log-marginal over
+  each cell's own grid neighbours -- no mode-find, only the off-centre nodes are
+  new inner solves, warm-started from the cell's mode. Refined cells carry
+  partition-of-unity design weights, so the total integration weight is conserved
+  exactly (no double-count); the design scale is shrunk per cell so the cloud
+  fits the cell's Voronoi box (the local-Gaussian mass beyond it belongs to the
+  neighbouring cells, which carry their own mass). Engages only on the tensor
+  path at `>= 4` transformable latent axes with no active `phi_grid` -- the
+  regime where a uniformly fine tensor is `k^d`-expensive and grid densification
+  is the wrong tool; below it, the tensor grid is already dense and boundary /
+  interior grid refinement covers a too-narrow grid. The applied refinement is
+  summarised on the result as `$local_ccd_info`.
+
+* `control$k_refine` gains a `"ccd"` rung alongside `"grid"`. Under
+  `k_quality = "ok"` / `"good"`, a bad outer Pareto-k-hat now escalates by
+  refining high-weight cells with local CCD node clouds (forcing a tensor base so
+  the curvature stencil has axis neighbours), the right response when the grid is
+  too coarse to resolve a sharp direction rather than too narrow at the boundary.
+  Each round refines more cells; the verdict never silently downgrades and reports
+  when local CCD finds no peaked interior cell to act on. Recovery, weight
+  conservation, and the escalation path are pinned by
+  `test-nested-laplace-joint-ccd-local.R`.
+
 ## 0.0.60 (2026-06-23)
 
 * Joint nested-Laplace CCD outer integration is now robust to a sharply-peaked,

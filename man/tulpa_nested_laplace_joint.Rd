@@ -246,6 +246,23 @@ line at selection time (e.g. \verb{outer integration: CCD (4 latent axes, 25 nod
 so the auto switch to the CCD at \verb{>= 4} axes is never silent. The
 resolved integrator is also returned on the joint result as
 \verb{$integration}.
+\item \code{local_ccd} (\code{NULL}) -- local CCD refinement of a multi-block tensor grid.
+\code{TRUE} (defaults) or a \code{list(max_cells =, f0 =)} refines a few high-weight,
+mutually non-adjacent interior cells, replacing each with a small
+curvature-aware CCD node cloud so a coarse base grid resolves the
+sharply-peaked directions without the \code{k^d} tensor blow-up. The local
+curvature is a diagonal finite difference of the outer log-marginal over
+the cell's own grid neighbours (no mode-find; only the off-centre nodes are
+new solves), warm-started from the cell's inner mode; each refined cell's
+sub-nodes carry partition-of-unity design weights so the total integration
+weight is conserved (no double-count). \code{max_cells} (\code{8L}) caps the refined
+cells; \code{f0} (\code{1.1}) is the CCD radius. The design scale is shrunk per cell
+so the cloud fits the cell's Voronoi box (the local-Gaussian mass beyond it
+belongs to the neighbouring cells). Engages only on the tensor path (the
+curvature stencil needs axis neighbours), at \verb{>= 4} transformable latent
+axes, with no active \code{phi_grid}; otherwise it is a no-op. The applied
+refinement is summarised on the result as \verb{$local_ccd_info}. Also driven
+automatically by \code{k_refine = "ccd"}.
 \item \code{inner_refresh} (\code{1L}) -- inner-Newton Cholesky factor reuse interval
 (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 beta cover arm) the latent Hessian changes every inner iteration, so the
@@ -282,7 +299,13 @@ deficiency; \code{diagnose_draws} is the separate knob that sharpens the
 (\code{adaptive_grid}) each escalation round, driven by the bad \eqn{\hat{k}}, so
 a too-coarse / too-narrow grid is widened / densified where the importance
 weight concentrates until the band is reached or the budget is spent.
-\code{"none"} disables refinement: the band is reported but not chased.
+\code{"ccd"} instead refines a few high-weight, mutually non-adjacent interior
+cells with local curvature-aware CCD node clouds (see \code{local_ccd}), the
+right rung when the grid is too coarse to resolve a sharply-peaked
+direction rather than too narrow; it forces a tensor base grid (the
+curvature stencil needs axis neighbours) and engages only on the
+multi-block path at >= 4 transformable latent axes. \code{"none"} disables
+refinement: the band is reported but not chased.
 \item \code{k_max_rounds} (\code{2L}) -- the grid-refinement round budget for \code{k_quality}
 \code{"ok"} / \code{"good"}: the maximum number of refine-and-re-fit rounds after the
 first fit. Each round allows one more refinement pass than the last. \code{0L}
@@ -434,6 +457,11 @@ the first fit sufficed or escalation was off).
 \item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.
+\item \code{local_ccd_info} — when \code{local_ccd} engaged (or \code{k_refine = "ccd"}), a
+list with \code{n_cells_refined}, \code{n_nodes_added}, the refined \code{cells}, and the
+\code{n_cells_before} / \code{n_cells_after} grid sizes. NULL when local CCD was off
+or declined (single-block, \verb{< 4} axes, an active \code{phi_grid}, or no peaked
+interior cell).
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
 \code{prune_tol} — present only when \code{prune = TRUE} and the safety gate did
 not fall back. Cheap-pass log-marginals at every cell, a logical mask

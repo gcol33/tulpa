@@ -255,6 +255,23 @@
 #'     so the auto switch to the CCD at `>= 4` axes is never silent. The
 #'     resolved integrator is also returned on the joint result as
 #'     `$integration`.
+#'   * `local_ccd` (`NULL`) -- local CCD refinement of a multi-block tensor grid.
+#'     `TRUE` (defaults) or a `list(max_cells =, f0 =)` refines a few high-weight,
+#'     mutually non-adjacent interior cells, replacing each with a small
+#'     curvature-aware CCD node cloud so a coarse base grid resolves the
+#'     sharply-peaked directions without the `k^d` tensor blow-up. The local
+#'     curvature is a diagonal finite difference of the outer log-marginal over
+#'     the cell's own grid neighbours (no mode-find; only the off-centre nodes are
+#'     new solves), warm-started from the cell's inner mode; each refined cell's
+#'     sub-nodes carry partition-of-unity design weights so the total integration
+#'     weight is conserved (no double-count). `max_cells` (`8L`) caps the refined
+#'     cells; `f0` (`1.1`) is the CCD radius. The design scale is shrunk per cell
+#'     so the cloud fits the cell's Voronoi box (the local-Gaussian mass beyond it
+#'     belongs to the neighbouring cells). Engages only on the tensor path (the
+#'     curvature stencil needs axis neighbours), at `>= 4` transformable latent
+#'     axes, with no active `phi_grid`; otherwise it is a no-op. The applied
+#'     refinement is summarised on the result as `$local_ccd_info`. Also driven
+#'     automatically by `k_refine = "ccd"`.
 #'   * `inner_refresh` (`1L`) -- inner-Newton Cholesky factor reuse interval
 #'     (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 #'     beta cover arm) the latent Hessian changes every inner iteration, so the
@@ -291,7 +308,13 @@
 #'     (`adaptive_grid`) each escalation round, driven by the bad \eqn{\hat{k}}, so
 #'     a too-coarse / too-narrow grid is widened / densified where the importance
 #'     weight concentrates until the band is reached or the budget is spent.
-#'     `"none"` disables refinement: the band is reported but not chased.
+#'     `"ccd"` instead refines a few high-weight, mutually non-adjacent interior
+#'     cells with local curvature-aware CCD node clouds (see `local_ccd`), the
+#'     right rung when the grid is too coarse to resolve a sharply-peaked
+#'     direction rather than too narrow; it forces a tensor base grid (the
+#'     curvature stencil needs axis neighbours) and engages only on the
+#'     multi-block path at >= 4 transformable latent axes. `"none"` disables
+#'     refinement: the band is reported but not chased.
 #'   * `k_max_rounds` (`2L`) -- the grid-refinement round budget for `k_quality`
 #'     `"ok"` / `"good"`: the maximum number of refine-and-re-fit rounds after the
 #'     first fit. Each round allows one more refinement pass than the last. `0L`
@@ -441,6 +464,11 @@
 #'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
+#'   * `local_ccd_info` — when `local_ccd` engaged (or `k_refine = "ccd"`), a
+#'      list with `n_cells_refined`, `n_nodes_added`, the refined `cells`, and the
+#'      `n_cells_before` / `n_cells_after` grid sizes. NULL when local CCD was off
+#'      or declined (single-block, `< 4` axes, an active `phi_grid`, or no peaked
+#'      interior cell).
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
 #'      `prune_tol` — present only when `prune = TRUE` and the safety gate did
 #'      not fall back. Cheap-pass log-marginals at every cell, a logical mask
@@ -505,8 +533,8 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     k_refine <- control$k_refine %||% "grid"
     if (!is.character(k_refine) || length(k_refine) != 1L ||
-        !k_refine %in% c("none", "grid")) {
-        stop("`control$k_refine` must be \"none\" or \"grid\".", call. = FALSE)
+        !k_refine %in% c("none", "grid", "ccd")) {
+        stop("`control$k_refine` must be \"none\", \"grid\", or \"ccd\".", call. = FALSE)
     }
     k_max_rounds <- control$k_max_rounds %||% 2L
     if (length(k_max_rounds) != 1L || is.na(k_max_rounds) ||
@@ -529,41 +557,61 @@ tulpa_nested_laplace_joint <- function(responses,
     res$k_quality_rounds <- 0L
 
     if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
-        k_max_rounds > 0L && identical(k_refine, "grid")) {
+        k_max_rounds > 0L && k_refine %in% c("grid", "ccd")) {
         # A bad outer k means the integration grid does not faithfully represent
-        # the hyperparameter posterior -- typically a grid whose bounds the
-        # posterior mass escapes (gcol33/tulpa#130). The response is to REFINE THE
-        # GRID and re-integrate, driven by the bad k: each round runs the adaptive
-        # boundary-extension / interior-densification pass (R/hyper_grid_refine.R)
-        # where the integrand mass piles at an edge, then re-diagnoses, until the
-        # requested band is confidently reached or the round budget is spent. Each
-        # round allows one more refinement pass (a pass extends from the previous
-        # pass's boundary), so the widening is genuinely recursive in the bad-k
-        # direction. Raising diagnose_draws would only sharpen the SAME k against
-        # the SAME grid, never widen it, so it is NOT the escalation lever here --
-        # it stays the separate estimate-precision knob (control$diagnose_draws).
-        ctrl$adaptive_grid <- TRUE
+        # the hyperparameter posterior. Two refinement rungs, both driven by the
+        # bad k and re-diagnosed each round until the requested band is confidently
+        # reached or the round budget is spent (gcol33/tulpa#130, #131, #64):
+        #   * "grid" -- the grid's bounds let posterior mass escape: each round
+        #     runs the adaptive boundary-extension / interior-densification pass
+        #     (R/hyper_grid_refine.R) where the integrand mass piles at an edge,
+        #     one more pass per round (recursive in the bad-k direction).
+        #   * "ccd"  -- the grid is too coarse to resolve a sharply-peaked
+        #     direction: each round refines more high-weight, mutually
+        #     non-adjacent cells with local curvature-aware CCD node clouds
+        #     (R/nested_laplace_joint_ccd_local.R). A tensor base is forced (the
+        #     finite-difference curvature stencil needs axis neighbours).
+        # Raising diagnose_draws would only sharpen the SAME k against the SAME
+        # grid, never refine it, so it is NOT the escalation lever -- it stays the
+        # separate estimate-precision knob (control$diagnose_draws).
+        is_ccd_refine <- identical(k_refine, "ccd")
+        refined_field <- if (is_ccd_refine) "local_ccd_info" else "adaptive_grid_info"
+        if (is_ccd_refine) {
+            ctrl$integration <- "grid"
+            lc_base      <- if (is.list(control$local_ccd)) control$local_ccd else list()
+            lc_max_cells <- as.integer(lc_base$max_cells %||% 6L)
+        } else {
+            ctrl$adaptive_grid <- TRUE
+        }
         round <- 0L
         while (!isTRUE(res$k_quality_reached) && round < k_max_rounds) {
             round <- round + 1L
-            ctrl$adaptive_grid_max_passes <- round
+            if (is_ccd_refine) {
+                ctrl$local_ccd <- utils::modifyList(
+                    lc_base, list(max_cells = round * lc_max_cells))
+            } else {
+                ctrl$adaptive_grid_max_passes <- round
+            }
             res <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
                                                  prior_sigma, prior_alpha,
                                                  cell_coupling, ctrl))
             res$k_quality_rounds <- round
-            if (!isTRUE(res$k_quality_reached) && is.null(res$adaptive_grid_info)) {
-                # The adaptive pass found no boundary mass to extend (the grid
-                # already spans the posterior's support), so further rounds cannot
-                # move the k: the bad k is not a grid-width deficiency.
-                res$k_quality_reason <- paste0(
+            if (!isTRUE(res$k_quality_reached) && is.null(res[[refined_field]])) {
+                # The refiner found nothing to act on, so further rounds cannot
+                # move the k: the deficiency the chosen rung addresses is absent.
+                res$k_quality_reason <- if (is_ccd_refine) paste0(
+                    "local CCD found no peaked interior cell to refine (needs a ",
+                    ">= 4-axis multi-block tensor grid); the bad k is not a ",
+                    "coarse-grid resolution deficiency") else paste0(
                     "grid refinement found no boundary mass to extend; ",
                     "the bad k is not a grid-width deficiency")
                 break
             }
         }
         if (!isTRUE(res$k_quality_reached) && round >= k_max_rounds)
-            res$k_quality_reason <-
-                "requested band not confirmed within the k_max_rounds grid-refinement budget"
+            res$k_quality_reason <- sprintf(
+                "requested band not confirmed within the k_max_rounds %s budget",
+                if (is_ccd_refine) "local-CCD-refinement" else "grid-refinement")
     }
     res
 }
@@ -611,6 +659,19 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
     force_sparse              <- control$force_sparse %||% FALSE
+    # Local CCD refinement of the multi-block outer grid (gcol33/tulpa#64). A
+    # coarse tensor base grid is refined by a small curvature-aware node cloud on
+    # a few high-weight, mutually non-adjacent cells, so the base grid can stay
+    # coarse at moderate-to-high latent dimension where a uniformly fine tensor is
+    # k^d-expensive. `control$local_ccd` is TRUE (defaults) or a list(max_cells=,
+    # f0=); NULL (the default) keeps the unrefined grid. Engages only on the
+    # multi-block tensor path at >= 4 transformable latent axes with no active phi
+    # grid; the single-block path always integrates on the tensor grid unrefined.
+    local_ccd                 <- control$local_ccd
+    if (!is.null(local_ccd) && !isTRUE(local_ccd) && !is.list(local_ccd)) {
+        stop("`control$local_ccd` must be NULL, TRUE, or a list(max_cells=, f0=).",
+             call. = FALSE)
+    }
     # Outer Pareto-k-hat accuracy diagnostic. `diagnose_k` (default TRUE)
     # importance-samples the joint hyperparameter posterior against the proposal
     # the integrator fits; `diagnose_draws` (default 500) is the number of draws,
@@ -809,6 +870,7 @@ tulpa_nested_laplace_joint <- function(responses,
             k_conf_bands = k_conf_bands,
             inner_refresh = inner_refresh,
             integration = integration,
+            local_ccd = local_ccd,
             timer = tm
         ))
     }
