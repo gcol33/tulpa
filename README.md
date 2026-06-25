@@ -1,15 +1,15 @@
 # tulpa
 
-*Bayesian models without the full sampling bill*
+*hierarchical Bayesian models, approximated then corrected*
 
 [![Lifecycle: experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![R >= 4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://cran.r-project.org/)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/17)
 
-**A Bayesian hierarchical modelling engine that splits the posterior: deterministic approximation (Laplace, EP, VI, Pathfinder) on the well-behaved blocks, exact MCMC on the residual directions where the approximation is biased.**
+**A Bayesian hierarchical modelling engine that splits the posterior: a deterministic approximation (Laplace, EP, VI, Pathfinder) handles the well-behaved Gaussian-latent blocks, and exact MCMC corrects only the directions where that approximation is biased.** Autodiff, the samplers, and the spatial / temporal / covariance machinery are templated C++.
 
-INLA nests deterministic approximations for speed and applies no exact correction. Stan runs exact MCMC and pays the full sampling price on every block, including the many a Laplace approximation handles exactly. `tulpa` nests the approximation over the Gaussian-latent structure, then debiases only the directions where that approximation is wrong, so it keeps nested-approximation speed while recovering exact-MCMC calibration where it counts. Spatial fields, temporal effects, spatially varying coefficients, and free random-effect covariances are built in. Model packages supply an observation likelihood through a templated C++ interface and inherit the rest.
+Two established tools sit at opposite ends. INLA fits these models with fast deterministic approximations and applies no exact correction. Stan runs exact MCMC and pays the full sampling price on every block, including the many a deterministic approximation handles exactly. `tulpa` nests the approximation over the Gaussian-latent structure, then debiases only the directions where it is wrong — so it keeps nested-approximation speed while recovering exact-MCMC calibration where it counts.
 
 ```r
 library(tulpa)
@@ -17,42 +17,48 @@ library(tulpa)
 # A Poisson GLMM: counts with a site-level random intercept
 set.seed(1)
 site <- rep(seq_len(40), each = 5)
-b    <- rnorm(40, 0, 0.7)
 x    <- rnorm(200)
-y    <- rpois(200, exp(0.2 + 0.5 * x + b[site]))
+y    <- rpois(200, exp(0.2 + 0.5 * x + rnorm(40, 0, 0.7)[site]))
 d    <- data.frame(y, x, site = factor(site))
 
-# mode = "auto" picks a reliable Tier 1 / Tier 2 method and records why
 fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson")
+fit$selection_reason   # which method ran, and why it is trusted here
 summary(fit)
-fit$selection_reason
 ```
 
-The fit is a `tulpa_fit` object with generic accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`mcmc_diagnostics`, `check_model`, `pp_check`).
+`mode = "auto"` chooses a reliable method and records its reasoning on the fit — the dial neither INLA nor Stan hands you on a single object. The result is a `tulpa_fit` with the usual accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`mcmc_diagnostics`, `check_model`, `pp_check`).
+
+## One front door, every backend
+
+`tulpa()` is the only verb you need. The same call fits a plain GLMM, a spatial field, a temporal effect, or a free random-effect covariance; `mode` forces a specific backend when you want the exact check.
+
+```r
+# Let auto pick, and read its reasoning
+fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson")
+fit$selection_reason
+
+# Force exact MCMC where you want to verify the approximation
+fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson", mode = "mala")
+
+# Cheap deterministic fit, conditioning on a fixed hyperparameter
+fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson", mode = "laplace")
+```
 
 ## Tiers encode correctness
 
-Each tier names a correctness guarantee; which code path runs fastest depends on the model and the data. Tier 1 is exact MCMC; Tier 2 is Laplace with optional Tier-1 debiasing; Tier 3 is variational. `mode = "auto"` chooses between Tier 1 and Tier 2 and records its reasoning on `fit$selection_reason`. Tier 3 is opt-in.
+Each tier names a correctness guarantee; which code path runs fastest depends on the model and the data. `mode = "auto"` chooses between Tier 1 and Tier 2 and records why. Tier 3 is opt-in.
 
-|        | Nested approximation                      | Exact-MCMC correction                   |
-|--------|-------------------------------------------|-----------------------------------------|
-| INLA   | yes                                       | no — biased on non-Gaussian residuals   |
-| Stan   | no — pays the full price on every block   | yes                                     |
-| tulpa  | yes                                       | yes                                     |
+| Tier   | Guarantee        | Methods                                                   |
+|--------|------------------|----------------------------------------------------------|
+| Tier 1 | Exact MCMC       | HMC/NUTS, MALA, IMH-Laplace, Gibbs                        |
+| Tier 2 | Laplace          | Laplace, EM+Laplace, nested Laplace + CCD                 |
+| Tier 3 | Variational      | Variational inference, Pathfinder (opt-in)               |
 
-| Tier   | Methods                                                          |
-|--------|------------------------------------------------------------------|
-| Tier 1 | HMC/NUTS, MALA, IMH-Laplace, Gibbs (exact)                       |
-| Tier 2 | Laplace, EM+Laplace, nested Laplace + CCD (deterministic)        |
-| Tier 3 | Variational inference, Pathfinder (opt-in)                       |
-
-Correction layers — importance sampling and multiple-imputation / Gibbs debiasing — sit on top of the Tier-2 fit and pool through Rubin's rules. Canonical compositions, each named for the layer it adds:
+Correction layers — importance sampling and multiple-imputation / Gibbs debiasing — sit on top of a Tier-2 fit and pool through Rubin's rules. Each composition is named for the layer it adds:
 
 - **IMH-Laplace** — Laplace body, Metropolis–Hastings bias correction.
 - **Pathfinder** — L-BFGS mode, Gaussian fit, ELBO scoring.
 - **Nested Laplace + CCD** — inner Laplace, outer hyperparameter integration.
-
-This makes the engine useful for spatial and spatio-temporal regression (disease mapping, abundance, occupancy), hierarchical models with correlated random slopes and free covariances, and workflows where calibrated uncertainty matters as much as point estimates.
 
 ## Latent structure
 
@@ -82,31 +88,19 @@ fit <- tulpa(
 )
 ```
 
+This makes the engine useful for spatial and spatio-temporal regression (disease mapping, abundance, occupancy), hierarchical models with correlated random slopes and free covariances, and workflows where calibrated uncertainty matters as much as point estimates.
+
 ## Random-effect covariances as inferred quantities
 
-For random-slope terms the engine infers the full posterior of the covariance `Sigma` itself — the nested-approximation + debias philosophy applied to a free `Sigma`. Three routes are available, and all summarise derived quantities (`sigma_i`, `rho_ij`) by marginalising the joint posterior:
+For random-slope terms the engine infers the full posterior of the covariance `Sigma` itself — the approximation + debias philosophy applied to a free `Sigma`. Three routes, all summarising derived quantities (`sigma_i`, `rho_ij`) by marginalising the joint posterior rather than plugging in point estimates:
 
 - `tulpa_re_cov_nested()` — nested-Laplace integration over `Sigma` in log-Cholesky coordinates.
 - `tulpa_re_cov_gibbs()` — exact debias via Metropolis-within-Gibbs with conjugate inverse-Wishart draws.
 - `tulpa_re_aghq()` — deterministic debias via adaptive Gauss–Hermite quadrature.
 
-## Forcing a backend
-
-```r
-# Let auto pick, and read its reasoning
-fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson")
-fit$selection_reason
-
-# Exact MCMC
-fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson", mode = "mala")
-
-# Cheap deterministic fit conditioning on a fixed hyperparameter
-fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson", mode = "laplace")
-```
-
 ## Diagnostics
 
-Rhat (improved rank-normalised / folded split-Rhat, Vehtari et al. 2021), bulk/tail ESS, and MCSE are implemented natively and reproduce `posterior` to ~1e-12, so downstream packages call `tulpa::mcmc_diagnostics()` directly.
+Rhat (improved rank-normalised / folded split-Rhat, Vehtari et al. 2021), bulk/tail ESS, and MCSE are implemented natively and reproduce `posterior` to ~1e-12, so downstream packages call `tulpa::mcmc_diagnostics()` directly. For deterministic (non-chain) fits the engine reports Pareto-k̂ — the accuracy counterpart to Rhat — instead of withholding a vacuous convergence pass.
 
 ```r
 summary(fit)
@@ -120,14 +114,14 @@ Posterior-predictive checks (`pp_check`, `check_model`), residual tests (`pit_re
 
 ## Model packages
 
-`tulpa` ships the engine. Observation likelihoods live in companion packages that link against it via `LinkingTo: tulpa`. A model package supplies a templated `LikelihoodSpec` and a small amount of data encoding; the spatial, temporal, prior, and inference machinery comes from `tulpa`.
+`tulpa` ships the engine. Observation likelihoods live in companion packages that link against it via `LinkingTo: tulpa`: a model package supplies a templated `LikelihoodSpec` and a little data encoding, and inherits the spatial, temporal, prior, and inference machinery.
 
 - [tulpaObs](https://github.com/gcol33/tulpaObs) — single-season, dynamic, community, integrated, and JSDM occupancy; abundance; distance sampling; removal; false-positive occupancy; and hurdle-Beta cover.
 - `tulpaRatio` — ratio, rate, and proportion models (numerator / denominator likelihoods on shared latent fields). Release pending.
 
 ## Custom latent blocks
 
-User-supplied templated C++ snippets compile against `tulpa`'s autodiff types (`A`, `A_r`) and register as new latent structures. Because the snippet uses the same AD types as the built-in blocks, custom blocks work under every tier including NUTS, with full gradient flow through the user code. For a Gaussian GMRF block, `tgmrf()` offers a pure-R route: supply `Q(theta)` and `mu(theta)` as closures and the engine derives the closed-form score and Hessian numerically, with no DSL, parser, or codegen (`vignette("tgmrf", package = "tulpa")`).
+User-supplied templated C++ snippets compile against `tulpa`'s autodiff types (`A`, `A_r`) and register as new latent structures. Because the snippet uses the same AD types as the built-in blocks, custom blocks work under every tier including NUTS, with full gradient flow through the user code. For a Gaussian GMRF block, `tgmrf()` offers a pure-R route: supply `Q(theta)` and `mu(theta)` as closures and the engine derives the score and Hessian numerically, with no DSL, parser, or codegen (`vignette("tgmrf", package = "tulpa")`).
 
 | Interface        | Mechanism                              | Exact-MCMC support |
 |------------------|----------------------------------------|--------------------|
@@ -145,7 +139,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.0.34")
+pak::pak("gcol33/tulpa@v0.0.61")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (declared in `Remotes:`). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
@@ -180,7 +174,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.0.34},
+  note   = {R package version 0.0.61},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```
