@@ -148,6 +148,18 @@
 #'   `n_pos`. `prior_alpha` only applies when `copy` is active;
 #'   `prior_sigma` applies on any `sigma`-named axis.
 #'
+#' @param prior_phi Optional regularizing hyperprior on the per-arm
+#'   dispersion axes declared through `phi_grid` (e.g. a Beta precision on a
+#'   cover arm, a negbin dispersion, a Gaussian residual SD). Same families
+#'   as `prior_sigma` -- `NULL` (flat over the phi grid, default),
+#'   `list("pc.prec", c(U, alpha))`, or `list("half_normal", scale)`. A
+#'   single spec re-weights every `phi_<arm>` axis on the grid, the way
+#'   `prior_sigma` re-weights any sigma-named axis; with no `phi_grid` it is
+#'   a no-op. Without it the phi grid carries an implicit flat prior over its
+#'   bounds. The PC scale is the dispersion's own units (a precision for
+#'   `beta`, a size for `neg_binomial_2`), so pick `U` at the upper end of
+#'   plausible values.
+#'
 #' @param cell_coupling Character scalar naming a per-cell coupled likelihood
 #'   registered against tulpa's process-global registry (see
 #'   `src/cell_coupling_registry.h`). Defaults to `"separable"`, the arm-
@@ -514,6 +526,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                        phi_grid = NULL,
                                        prior_sigma = NULL,
                                        prior_alpha = NULL,
+                                       prior_phi = NULL,
                                        cell_coupling = "separable",
                                        control = list()) {
     # k_quality reliability front door + escalation (gcol33/tulpa#129, #131). The
@@ -553,7 +566,8 @@ tulpa_nested_laplace_joint <- function(responses,
 
     ctrl <- control
     res  <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
-                                          prior_sigma, prior_alpha, cell_coupling, ctrl))
+                                          prior_sigma, prior_alpha, prior_phi,
+                                          cell_coupling, ctrl))
     res$k_quality_rounds <- 0L
 
     if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
@@ -593,7 +607,7 @@ tulpa_nested_laplace_joint <- function(responses,
                 ctrl$adaptive_grid_max_passes <- round
             }
             res <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
-                                                 prior_sigma, prior_alpha,
+                                                 prior_sigma, prior_alpha, prior_phi,
                                                  cell_coupling, ctrl))
             res$k_quality_rounds <- round
             if (!isTRUE(res$k_quality_reached) && is.null(res[[refined_field]])) {
@@ -618,6 +632,7 @@ tulpa_nested_laplace_joint <- function(responses,
 
 .tulpa_nl_joint_once <- function(responses, prior, copy = NULL, phi_grid = NULL,
                                  prior_sigma = NULL, prior_alpha = NULL,
+                                 prior_phi = NULL,
                                  cell_coupling = "separable", control = list()) {
     tm <- .tulpa_timer()                               # gcol33/tulpa#48
     # Resolve and validate the cell-coupling spec name against the C++
@@ -831,6 +846,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # without going through the multi-block / single-block fork.
     fn_sigma <- .joint_parse_sigma_prior(prior_sigma, "prior_sigma")
     fn_alpha <- .joint_parse_sigma_prior(prior_alpha, "prior_alpha")
+    fn_phi   <- .joint_parse_sigma_prior(prior_phi,   "prior_phi")
 
     # Detect multi-block prior (list-of-blocks). Routed to a separate
     # dispatch path that builds vector<LatentBlock> on the joint side.
@@ -854,7 +870,7 @@ tulpa_nested_laplace_joint <- function(responses,
         return(.joint_dispatch_multi(
             responses = responses, prior_list = prior, copy = copy,
             phi_grid = phi_grid,
-            fn_sigma = fn_sigma, fn_alpha = fn_alpha,
+            fn_sigma = fn_sigma, fn_alpha = fn_alpha, fn_phi = fn_phi,
             max_iter = max_iter, tol = tol, n_threads = n_threads,
             n_threads_outer = n_threads_outer,
             tile_warm = tile_warm,
@@ -942,9 +958,9 @@ tulpa_nested_laplace_joint <- function(responses,
     # `.hyper_apply_axis_refinement`. The generic helper passes the new
     # cells as a numeric matrix, which `.joint_hp_vec_for_grids` already
     # accepts (see `R/nested_laplace_joint_hyperpriors.R`).
-    hp_fn <- if (is.null(fn_sigma) && is.null(fn_alpha)) NULL else {
+    hp_fn <- if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi)) NULL else {
         function(new_cells) {
-            .joint_hp_vec_for_grids(new_cells, fn_sigma, fn_alpha)
+            .joint_hp_vec_for_grids(new_cells, fn_sigma, fn_alpha, fn_phi)
         }
     }
     if (!is.null(hp_fn)) {

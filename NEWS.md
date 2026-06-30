@@ -1,5 +1,16 @@
 # tulpa NEWS
 
+## 0.0.62 (2026-06-30)
+
+* `tulpa_nested_laplace_joint()` gains `prior_phi`, a regularizing hyperprior on
+  the per-arm dispersion axes declared through `phi_grid` (a Beta precision, a
+  negbin size, a Gaussian residual SD). Mirrors `prior_sigma` / `prior_alpha`:
+  `NULL` (flat over the phi grid, default), `list("pc.prec", c(U, alpha))`, or
+  `list("half_normal", scale)`. A single spec re-weights every `phi_<arm>` axis
+  by its density at the kernel-call boundary, so refinement and Pareto-k passes
+  see the regularized posterior; with no `phi_grid` it is a no-op. Threads
+  through the single- and multi-block paths (gcol33/tulpa#139).
+
 ## 0.0.61 (2026-06-23)
 
 * New `control$local_ccd` refines a multi-block tensor outer grid with local

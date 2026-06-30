@@ -673,8 +673,9 @@
 # is baked on the first block carrying a (sigma, alpha) axis pair. Single
 # source of truth for the main dispatch and the Pareto-k re-evaluation.
 .joint_multi_add_hp <- function(log_marginal, joint_grid, axis_offsets, B,
-                                fn_sigma, fn_alpha) {
-    if (is.null(fn_sigma) && is.null(fn_alpha)) return(log_marginal)
+                                fn_sigma, fn_alpha, fn_phi = NULL) {
+    if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi))
+        return(log_marginal)
     view_map <- integer(0)
     for (b_idx in seq_len(B)) {
         cols_b  <- (axis_offsets[b_idx] + 1L):axis_offsets[b_idx + 1L]
@@ -688,10 +689,15 @@
             view_map["alpha"] <- cols_b[i_alpha]
         }
     }
-    if (length(view_map) == 0L) return(log_marginal)
-    view <- joint_grid[, view_map, drop = FALSE]
-    colnames(view) <- names(view_map)
-    hp <- .joint_hp_vec_for_grids(view, fn_sigma, fn_alpha)
+    # phi_<arm> dispersion axes are not block-prefixed; carry them straight
+    # through so a single `fn_phi` re-weights each on the joint grid.
+    phi_cols <- if (is.null(fn_phi)) character(0)
+                else grep("^phi_", colnames(joint_grid), value = TRUE)
+    if (length(view_map) == 0L && length(phi_cols) == 0L) return(log_marginal)
+    view <- joint_grid[, c(view_map, match(phi_cols, colnames(joint_grid))),
+                       drop = FALSE]
+    colnames(view) <- c(names(view_map), phi_cols)
+    hp <- .joint_hp_vec_for_grids(view, fn_sigma, fn_alpha, fn_phi)
     if (!is.null(hp) && length(hp) == length(log_marginal)) {
         log_marginal <- log_marginal + hp
     }
@@ -717,7 +723,7 @@
 # negligible-weight tail is truncated).
 .joint_attach_pareto_k_multi <- function(res, arms, cp, blocks_spec,
                                          axis_offsets, B, arm_names,
-                                         fn_sigma, fn_alpha,
+                                         fn_sigma, fn_alpha, fn_phi = NULL,
                                          max_iter, tol, n_threads,
                                          force_sparse, cell_coupling,
                                          diagnose_k = TRUE, diagnose_draws = 500L,
@@ -768,7 +774,7 @@
             x_init_per_cell = x_init_per_cell
         )
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
-                            fn_sigma, fn_alpha)
+                            fn_sigma, fn_alpha, fn_phi)
     }
     # Per-cell warm start (nearest grid mode, serial + parallel) when modes are
     # stored; else near-neighbour chain re-order; else plain broadcast
@@ -794,6 +800,7 @@
                                   phi_grid,
                                   fn_sigma = NULL,
                                   fn_alpha = NULL,
+                                  fn_phi = NULL,
                                   max_iter, tol, n_threads,
                                   x_init, verbose, store_Q,
                                   n_threads_outer = 1L,
@@ -941,7 +948,7 @@
                 cell_coupling_name = as.character(cell_coupling),
                 inner_refresh = as.integer(inner_refresh)))
             lp <- .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
-                                      fn_sigma, fn_alpha)
+                                      fn_sigma, fn_alpha, fn_phi)
             # Carry the inner latent modes so the CCD mode-find can advance the
             # warm start per accepted point (gcol33/tulpa#62).
             if (is.matrix(r$modes)) attr(lp, "modes") <- r$modes
@@ -1111,7 +1118,8 @@
     # (gcol33/tulpa#22). Multi-block has no in-package refinement passes,
     # so one apply at the kernel-call boundary suffices.
     res$log_marginal <- .joint_multi_add_hp(res$log_marginal, joint_grid,
-                                            axis_offsets, B, fn_sigma, fn_alpha)
+                                            axis_offsets, B, fn_sigma, fn_alpha,
+                                            fn_phi)
 
     # Local CCD refinement (gcol33/tulpa#64): replace a few high-weight, mutually
     # non-adjacent tensor cells with small curvature-aware node clouds so a coarse
@@ -1155,7 +1163,7 @@
                     inner_refresh = as.integer(inner_refresh)))
                 list(log_marginal = .joint_multi_add_hp(
                          r$log_marginal, theta_mat, axis_offsets, B,
-                         fn_sigma, fn_alpha),
+                         fn_sigma, fn_alpha, fn_phi),
                      modes = if (is.matrix(r$modes)) r$modes else NULL)
             }
             ref <- .joint_local_ccd_refine(
@@ -1216,7 +1224,7 @@
         .tulpa_pareto_k_threads(n_threads_outer, n_threads, diagnose_draws, NULL)
     res <- .joint_attach_pareto_k_multi(res, arms, cp, blocks_spec,
                                         axis_offsets, B, arm_names,
-                                        fn_sigma, fn_alpha,
+                                        fn_sigma, fn_alpha, fn_phi,
                                         max_iter, tol, n_threads,
                                         force_sparse, cell_coupling,
                                         diagnose_k = diagnose_k,

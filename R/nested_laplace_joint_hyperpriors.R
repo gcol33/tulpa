@@ -92,11 +92,15 @@
 }
 
 # Per-cell log-hyperprior contribution over a joint theta-grid. NULL fns
-# contribute zero. Sums independent priors on sigma (donor amplitude)
-# and alpha (copy coefficient). Cells missing either column (no-copy
-# paths skip the alpha term) get zero contribution from that prior.
-.joint_hp_vec_for_grids <- function(theta_grid, fn_sigma, fn_alpha) {
-    if (is.null(fn_sigma) && is.null(fn_alpha)) return(NULL)
+# contribute zero. Sums independent priors on sigma (donor amplitude),
+# alpha (copy coefficient) and phi (per-arm dispersion). Cells missing
+# either column (no-copy paths skip the alpha term; a constant-phi arm
+# carries no `phi_<arm>` axis) get zero contribution from that prior.
+# A single `fn_phi` re-weights every `phi_<arm>` axis on the grid, the
+# way `fn_sigma` re-weights any sigma-named axis.
+.joint_hp_vec_for_grids <- function(theta_grid, fn_sigma, fn_alpha,
+                                    fn_phi = NULL) {
+    if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi)) return(NULL)
     if (is.null(theta_grid) || !is.matrix(theta_grid)) return(NULL)
     n <- nrow(theta_grid)
     out <- numeric(n)
@@ -106,6 +110,11 @@
     }
     if (!is.null(fn_alpha) && "alpha" %in% cn) {
         out <- out + fn_alpha(as.numeric(theta_grid[, "alpha"]))
+    }
+    if (!is.null(fn_phi)) {
+        for (col in grep("^phi_", cn, value = TRUE)) {
+            out <- out + fn_phi(as.numeric(theta_grid[, col]))
+        }
     }
     out
 }

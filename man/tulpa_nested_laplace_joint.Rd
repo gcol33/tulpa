@@ -11,6 +11,7 @@ tulpa_nested_laplace_joint(
   phi_grid = NULL,
   prior_sigma = NULL,
   prior_alpha = NULL,
+  prior_phi = NULL,
   cell_coupling = "separable",
   control = list()
 )
@@ -140,6 +141,18 @@ essentially harmless -- the lever is tail-shrinkage at small
 \code{n_pos}. \code{prior_alpha} only applies when \code{copy} is active;
 \code{prior_sigma} applies on any \code{sigma}-named axis.
 }}
+
+\item{prior_phi}{Optional regularizing hyperprior on the per-arm
+dispersion axes declared through \code{phi_grid} (e.g. a Beta precision on a
+cover arm, a negbin dispersion, a Gaussian residual SD). Same families
+as \code{prior_sigma} -- \code{NULL} (flat over the phi grid, default),
+\code{list("pc.prec", c(U, alpha))}, or \code{list("half_normal", scale)}. A
+single spec re-weights every \verb{phi_<arm>} axis on the grid, the way
+\code{prior_sigma} re-weights any sigma-named axis; with no \code{phi_grid} it is
+a no-op. Without it the phi grid carries an implicit flat prior over its
+bounds. The PC scale is the dispersion's own units (a precision for
+\code{beta}, a size for \code{neg_binomial_2}), so pick \code{U} at the upper end of
+plausible values.}
 
 \item{cell_coupling}{Character scalar naming a per-cell coupled likelihood
 registered against tulpa's process-global registry (see
