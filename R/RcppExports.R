@@ -257,6 +257,14 @@ cpp_tulpa_psis <- function(log_ratios, tail_len) {
     .Call(`_tulpa_cpp_tulpa_psis`, log_ratios, tail_len)
 }
 
+cpp_psis_loo_pit <- function(ll, Fl, Fu, tail_len, n_threads) {
+    .Call(`_tulpa_cpp_psis_loo_pit`, ll, Fl, Fu, tail_len, n_threads)
+}
+
+cpp_tulpa_pit <- function(cdf_upper, cdf_lower, has_lower, jitter) {
+    .Call(`_tulpa_cpp_tulpa_pit`, cdf_upper, cdf_lower, has_lower, jitter)
+}
+
 cpp_glmm_oracle_make <- function(family, phi, y, n_trials, X, Z, idx, n_groups) {
     .Call(`_tulpa_cpp_glmm_oracle_make`, family, phi, y, n_trials, X, Z, idx, n_groups)
 }

@@ -353,20 +353,19 @@ print.tulpa_criteria <- function(x, digits = 1, ...) {
 #' @seealso [tulpa_criteria()]
 #' @export
 tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE) {
-  bar <- function(z) if (is.matrix(z)) colMeans(z) else as.numeric(z)
-  Fu <- bar(cdf)
-  N <- length(Fu)
+  # A vector CDF is one draw; treat it as a 1-row matrix so the kernel's
+  # column-mean recovers it. The randomization (runif) runs in cpp_tulpa_pit in
+  # the same index order, so results are unchanged under a fixed seed.
+  as_mat <- function(z) if (is.matrix(z)) z else matrix(as.numeric(z), 1L)
+  cdfm <- as_mat(cdf)
   if (!is.null(cdf_lower)) {
-    Fl <- bar(cdf_lower)
-    if (length(Fl) != N) {
+    clm <- as_mat(cdf_lower)
+    if (ncol(clm) != ncol(cdfm)) {
       stop("`cdf_lower` and `cdf` imply different numbers of observations.",
            call. = FALSE)
     }
-    U <- stats::runif(N)
-    pit <- Fl + U * (Fu - Fl)
+    cpp_tulpa_pit(cdfm, clm, TRUE, isTRUE(jitter))
   } else {
-    pit <- Fu
-    if (isTRUE(jitter)) pit <- pit + stats::runif(N, 0, 1e-6)
+    cpp_tulpa_pit(cdfm, matrix(0, 0L, 0L), FALSE, isTRUE(jitter))
   }
-  pmin(1, pmax(0, pit))
 }

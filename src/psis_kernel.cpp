@@ -13,6 +13,9 @@
 #include <numeric>
 #include <algorithm>
 #include <cmath>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using namespace Rcpp;
 
@@ -68,37 +71,30 @@ void gpd_fit(std::vector<double> x, double& k_out, double& sigma_out) {
   k_out = k;
 }
 
-}  // namespace
-
-// [[Rcpp::export]]
-Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len) {
-  const int S = log_ratios.size();               // R filtered finite, S >= 5
-  std::vector<double> lw(S);
+// Normalized smoothed PSIS log-weights for a finite log-ratio vector (S >= 5).
+// Fills `lw` (length S) and `k_hat`. Deterministic -- no RNG. Shared by
+// cpp_tulpa_psis and the LOO-PIT weighting.
+inline void psis_logweights(const double* lr, int S, int tail_len,
+                            std::vector<double>& lw, double& k_hat) {
+  lw.assign(S, 0.0);
   double mx = -std::numeric_limits<double>::infinity();
-  for (int i = 0; i < S; ++i) if (log_ratios[i] > mx) mx = log_ratios[i];
-  for (int i = 0; i < S; ++i) lw[i] = log_ratios[i] - mx;
-
-  double k_hat = NA_REAL;
+  for (int i = 0; i < S; ++i) if (lr[i] > mx) mx = lr[i];
+  for (int i = 0; i < S; ++i) lw[i] = lr[i] - mx;
+  k_hat = NA_REAL;
   if (tail_len >= 5 && S >= 25) {
-    std::vector<int> ord(S);
-    std::iota(ord.begin(), ord.end(), 0);
+    std::vector<int> ord(S); std::iota(ord.begin(), ord.end(), 0);
     std::stable_sort(ord.begin(), ord.end(),
-                     [&](int a, int b) { return lw[a] < lw[b]; });  // ascending
-    const int cut0 = S - tail_len;                 // first tail position
-    const double cutoff = lw[ord[cut0 - 1]];
-    const double exp_cut = std::exp(cutoff);
-
-    std::vector<double> exceed(tail_len);
-    int npos = 0;
+                     [&](int a, int b) { return lw[a] < lw[b]; });
+    const int cut0 = S - tail_len;
+    const double cutoff = lw[ord[cut0 - 1]]; const double exp_cut = std::exp(cutoff);
+    std::vector<double> exceed(tail_len); int npos = 0;
     for (int j = 0; j < tail_len; ++j) {
       exceed[j] = std::exp(lw[ord[cut0 + j]]) - exp_cut;
       if (exceed[j] > 0.0) ++npos;
     }
     if (npos >= 5) {
-      double kf, sf;
-      gpd_fit(exceed, kf, sf);
-      k_hat = kf;
-      double lwmax = *std::max_element(lw.begin(), lw.end());  // = 0 (shifted)
+      double kf, sf; gpd_fit(exceed, kf, sf); k_hat = kf;
+      double lwmax = *std::max_element(lw.begin(), lw.end());
       for (int j = 0; j < tail_len; ++j) {
         double pp = ((double) (j + 1) - 0.5) / tail_len;
         double sm = std::log(exp_cut + qgpd_one(pp, kf, sf));
@@ -107,19 +103,116 @@ Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len) {
       }
     }
   }
-
   double ls = logsumexp(lw);
+  for (int i = 0; i < S; ++i) lw[i] -= ls;
+}
+
+}  // namespace
+
+// [[Rcpp::export]]
+Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len) {
+  const int S = log_ratios.size();               // R filtered finite, S >= 5
+  std::vector<double> lw; double k_hat;
+  psis_logweights(log_ratios.begin(), S, tail_len, lw, k_hat);
   double sw2 = 0.0;
   Rcpp::NumericVector log_weights(S);
   for (int i = 0; i < S; ++i) {
-    lw[i] -= ls;
     log_weights[i] = lw[i];
-    double w = std::exp(lw[i]);
-    sw2 += w * w;
+    double w = std::exp(lw[i]); sw2 += w * w;
   }
   return Rcpp::List::create(
     Rcpp::Named("pareto_k")    = k_hat,
     Rcpp::Named("is_ess")      = 1.0 / sw2,
     Rcpp::Named("log_weights") = log_weights,
     Rcpp::Named("tail_len")    = tail_len);
+}
+
+// Leave-one-out randomized PIT from a pointwise log-likelihood `ll` [S x N] and
+// per-draw predictive-CDF limits `Fl` / `Fu` [S x N]. Per observation the PSIS
+// leave-one-out weights (from -ll[, i]) reweight the CDF limits; a column with
+// any non-finite ratio falls back to equal weights (matching the R driver). The
+// PSIS is deterministic, so the columns parallelise; the single uniform jitter
+// per observation is the only RNG and is drawn serially at the end in index
+// order (matching runif(N) in .tobs_loo_pit_from_limits). Byte-identical.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_psis_loo_pit(Rcpp::NumericMatrix ll, Rcpp::NumericMatrix Fl,
+                                     Rcpp::NumericMatrix Fu, int tail_len,
+                                     int n_threads) {
+  const int S = ll.nrow(), N = ll.ncol();
+  std::vector<double> fl_loo(N), fu_loo(N);
+  const double* pll = ll.begin(); const double* pfl = Fl.begin();
+  const double* pfu = Fu.begin();
+#ifdef _OPENMP
+  #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
+#endif
+  for (int i = 0; i < N; ++i) {
+    std::vector<double> lr(S); int nfin = 0;
+    for (int s = 0; s < S; ++s) {
+      lr[s] = -pll[(std::size_t) i * S + s];
+      if (std::isfinite(lr[s])) ++nfin;
+    }
+    double a = 0.0, b = 0.0;
+    if (nfin == S) {
+      std::vector<double> lw; double kh;
+      psis_logweights(lr.data(), S, tail_len, lw, kh);
+      for (int s = 0; s < S; ++s) {
+        double w = std::exp(lw[s]);
+        a += w * pfl[(std::size_t) i * S + s];
+        b += w * pfu[(std::size_t) i * S + s];
+      }
+    } else {
+      double w = 1.0 / S;
+      for (int s = 0; s < S; ++s) {
+        a += w * pfl[(std::size_t) i * S + s];
+        b += w * pfu[(std::size_t) i * S + s];
+      }
+    }
+    fl_loo[i] = a; fu_loo[i] = b;
+  }
+  Rcpp::RNGScope scope;
+  Rcpp::NumericVector pit(N);
+  for (int i = 0; i < N; ++i) {
+    double u = R::unif_rand();
+    double v = fl_loo[i] + u * (fu_loo[i] - fl_loo[i]);
+    pit[i] = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+  }
+  return pit;
+}
+
+// Randomized PIT from posterior predictive-CDF limits (tulpa_pit). `cdf_upper` /
+// `cdf_lower` are [S x N] draw matrices column-averaged to the per-observation
+// limits; with a lower limit the PIT is jittered uniformly across [Fl, Fu],
+// otherwise a tiny jitter breaks ties. The uniforms are drawn in index order,
+// matching runif(N) in the R body. Byte-identical.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_tulpa_pit(Rcpp::NumericMatrix cdf_upper,
+                                  Rcpp::NumericMatrix cdf_lower,
+                                  bool has_lower, bool jitter) {
+  const int S = cdf_upper.nrow(), N = cdf_upper.ncol();
+  std::vector<double> Fu(N);
+  for (int j = 0; j < N; ++j) {
+    double a = 0.0; for (int s = 0; s < S; ++s) a += cdf_upper(s, j);
+    Fu[j] = a / S;
+  }
+  Rcpp::RNGScope scope;
+  Rcpp::NumericVector pit(N);
+  if (has_lower) {
+    std::vector<double> Fl(N);
+    for (int j = 0; j < N; ++j) {
+      double a = 0.0; for (int s = 0; s < S; ++s) a += cdf_lower(s, j);
+      Fl[j] = a / S;
+    }
+    for (int j = 0; j < N; ++j) {
+      double u = R::unif_rand();
+      double v = Fl[j] + u * (Fu[j] - Fl[j]);
+      pit[j] = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+    }
+  } else {
+    for (int j = 0; j < N; ++j) {
+      double v = Fu[j];
+      if (jitter) v += R::unif_rand() * 1e-6;
+      pit[j] = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+    }
+  }
+  return pit;
 }

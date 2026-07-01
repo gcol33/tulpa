@@ -1,5 +1,14 @@
 # tulpa NEWS
 
+## 0.0.64 (2026-07-01)
+
+* `tulpa_pit()` runs in C++ (`cpp_tulpa_pit`), and the leave-one-out PIT
+  weighting is exposed as `cpp_psis_loo_pit` -- per-observation PSIS leave-one-out
+  weights (reusing the deterministic PSIS core) applied to predictive-CDF limits,
+  with the PSIS columns parallelised and the single uniform jitter drawn in index
+  order. Both draw from R's RNG stream in the same order as their former R
+  bodies, so results are byte-identical under a fixed seed (test-pit-cpp.R).
+
 ## 0.0.63 (2026-07-01)
 
 * `tulpa_psis()` runs its deterministic core -- the Zhang-Stephens generalized-

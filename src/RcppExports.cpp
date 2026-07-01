@@ -1457,6 +1457,35 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_psis_loo_pit
+Rcpp::NumericVector cpp_psis_loo_pit(Rcpp::NumericMatrix ll, Rcpp::NumericMatrix Fl, Rcpp::NumericMatrix Fu, int tail_len, int n_threads);
+RcppExport SEXP _tulpa_cpp_psis_loo_pit(SEXP llSEXP, SEXP FlSEXP, SEXP FuSEXP, SEXP tail_lenSEXP, SEXP n_threadsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type ll(llSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type Fl(FlSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type Fu(FuSEXP);
+    Rcpp::traits::input_parameter< int >::type tail_len(tail_lenSEXP);
+    Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_psis_loo_pit(ll, Fl, Fu, tail_len, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_tulpa_pit
+Rcpp::NumericVector cpp_tulpa_pit(Rcpp::NumericMatrix cdf_upper, Rcpp::NumericMatrix cdf_lower, bool has_lower, bool jitter);
+RcppExport SEXP _tulpa_cpp_tulpa_pit(SEXP cdf_upperSEXP, SEXP cdf_lowerSEXP, SEXP has_lowerSEXP, SEXP jitterSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type cdf_upper(cdf_upperSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type cdf_lower(cdf_lowerSEXP);
+    Rcpp::traits::input_parameter< bool >::type has_lower(has_lowerSEXP);
+    Rcpp::traits::input_parameter< bool >::type jitter(jitterSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_pit(cdf_upper, cdf_lower, has_lower, jitter));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_glmm_oracle_make
 SEXP cpp_glmm_oracle_make(std::string family, double phi, NumericVector y, NumericVector n_trials, NumericMatrix X, NumericMatrix Z, IntegerVector idx, int n_groups);
 RcppExport SEXP _tulpa_cpp_glmm_oracle_make(SEXP familySEXP, SEXP phiSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP ZSEXP, SEXP idxSEXP, SEXP n_groupsSEXP) {
@@ -3004,6 +3033,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_rpg1", (DL_FUNC) &_tulpa_cpp_rpg1, 1},
     {"_tulpa_cpp_rpg", (DL_FUNC) &_tulpa_cpp_rpg, 2},
     {"_tulpa_cpp_tulpa_psis", (DL_FUNC) &_tulpa_cpp_tulpa_psis, 2},
+    {"_tulpa_cpp_psis_loo_pit", (DL_FUNC) &_tulpa_cpp_psis_loo_pit, 5},
+    {"_tulpa_cpp_tulpa_pit", (DL_FUNC) &_tulpa_cpp_tulpa_pit, 4},
     {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 8},
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
