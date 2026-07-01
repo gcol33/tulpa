@@ -1,5 +1,16 @@
 # tulpa NEWS
 
+## 0.0.63 (2026-07-01)
+
+* `tulpa_psis()` runs its deterministic core -- the Zhang-Stephens generalized-
+  Pareto tail fit and the Pareto smoothing of the upper-tail log weights -- in a
+  C++ kernel (`cpp_tulpa_psis`). The R helpers `.tulpa_gpd_fit()` /
+  `.tulpa_qgpd()` are kept as the reference oracle (test-psis-cpp.R). The tail
+  size (with its expert-control cap and warning) stays in R, and the bootstrap
+  k-uncertainty still resamples with R's RNG, so results are unchanged and
+  reproducible; each per-observation LOO fit and each bootstrap refit is now the
+  C++ path. Byte-close to the former R body (~1e-12).
+
 ## 0.0.62 (2026-06-30)
 
 * `tulpa_nested_laplace_joint()` gains `prior_phi`, a regularizing hyperprior on

@@ -236,30 +236,12 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
                 tail_len = 0L))
   }
 
-  lw <- log_ratios - max(log_ratios)                   # stabilize
+  # The GPD tail fit + Pareto smoothing (the former body, now the C++ oracle
+  # .tulpa_gpd_fit / .tulpa_qgpd in test-psis.R) run in cpp_tulpa_psis. The tail
+  # size (with its expert-control cap / warning) stays in R; the bootstrap
+  # k-uncertainty resamples with R's RNG and calls this per refit.
   tail_len <- .psis_tail_len(S, tail_points)
-  k_hat <- NA_real_
-
-  if (tail_len >= 5L && S >= 25L) {
-    ord     <- order(lw)
-    cut_idx <- S - tail_len
-    cutoff  <- lw[ord[cut_idx]]                         # largest non-tail log weight
-    tail_ord <- ord[(cut_idx + 1L):S]                  # tail indices, ascending lw
-    exceed  <- exp(lw[tail_ord]) - exp(cutoff)         # exceedances over the threshold
-    if (sum(exceed > 0) >= 5L) {
-      fit   <- .tulpa_gpd_fit(exceed)
-      k_hat <- fit$k
-      pp    <- (seq_len(tail_len) - 0.5) / tail_len
-      smoothed <- log(exp(cutoff) + .tulpa_qgpd(pp, fit$k, fit$sigma))
-      smoothed <- pmin(smoothed, max(lw))              # cap at the largest raw weight
-      lw[tail_ord] <- smoothed                         # ascending <- ascending
-    }
-  }
-
-  lw <- lw - .tulpa_logsumexp(lw)                      # normalize
-  w  <- exp(lw)
-  list(pareto_k = k_hat, is_ess = 1 / sum(w^2), log_weights = lw,
-       tail_len = tail_len)
+  cpp_tulpa_psis(as.numeric(log_ratios), as.integer(tail_len))
 }
 
 # Outer (hyperparameter) Pareto-k-hat for a nested-Laplace fit. Monte-Carlo

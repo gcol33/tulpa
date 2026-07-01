@@ -1445,6 +1445,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_tulpa_psis
+Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len);
+RcppExport SEXP _tulpa_cpp_tulpa_psis(SEXP log_ratiosSEXP, SEXP tail_lenSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type log_ratios(log_ratiosSEXP);
+    Rcpp::traits::input_parameter< int >::type tail_len(tail_lenSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_psis(log_ratios, tail_len));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_glmm_oracle_make
 SEXP cpp_glmm_oracle_make(std::string family, double phi, NumericVector y, NumericVector n_trials, NumericMatrix X, NumericMatrix Z, IntegerVector idx, int n_groups);
 RcppExport SEXP _tulpa_cpp_glmm_oracle_make(SEXP familySEXP, SEXP phiSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP ZSEXP, SEXP idxSEXP, SEXP n_groupsSEXP) {
@@ -2991,6 +3003,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_pg_negbin_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs_spatial, 21},
     {"_tulpa_cpp_rpg1", (DL_FUNC) &_tulpa_cpp_rpg1, 1},
     {"_tulpa_cpp_rpg", (DL_FUNC) &_tulpa_cpp_rpg, 2},
+    {"_tulpa_cpp_tulpa_psis", (DL_FUNC) &_tulpa_cpp_tulpa_psis, 2},
     {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 8},
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},

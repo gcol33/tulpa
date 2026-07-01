@@ -253,6 +253,10 @@ cpp_rpg <- function(b, z) {
     .Call(`_tulpa_cpp_rpg`, b, z)
 }
 
+cpp_tulpa_psis <- function(log_ratios, tail_len) {
+    .Call(`_tulpa_cpp_tulpa_psis`, log_ratios, tail_len)
+}
+
 cpp_glmm_oracle_make <- function(family, phi, y, n_trials, X, Z, idx, n_groups) {
     .Call(`_tulpa_cpp_glmm_oracle_make`, family, phi, y, n_trials, X, Z, idx, n_groups)
 }
