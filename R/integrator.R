@@ -6,23 +6,29 @@
 #' Yoshida members from one triple-jump composition.
 #'
 #' The default, `"leapfrog"`, reproduces tulpa's historical trajectory step
-#' exactly. `"yoshida4"` is an order-4 scheme that samples reliably and takes
-#' three gradient evaluations per step.
+#' exactly.
 #'
-#' `"yoshida6"` and `"yoshida8"` are also available but experimental for NUTS.
-#' High-order composition integrators have a sharp step-size stability
-#' threshold, which the dual-averaging step-size adaptation targeting a fixed
-#' acceptance rate tends to push against. In practice `"yoshida6"` needs a high
-#' `adapt_delta` (0.95 or more) to sample well, and `"yoshida8"` often fails to
-#' adapt at all. They remain useful for fixed-step-size integration through the
-#' SIMP package directly. For sampling, prefer `"leapfrog"` or `"yoshida4"`.
+#' `"minerror2"` is a two-stage order-two scheme whose coefficient is tuned to
+#' cancel the leading energy error on a Gaussian target. Since mass adaptation
+#' drives a posterior toward an isotropic Gaussian, it conserves energy well
+#' near the adapted optimum and adapts to larger step sizes, at two gradient
+#' evaluations per step. It is the recommended choice when leapfrog's step size
+#' is limited by energy error on a near-Gaussian posterior.
+#'
+#' `"yoshida4"` is an order-4 scheme that also samples reliably (three gradient
+#' evaluations per step). `"yoshida6"` and `"yoshida8"` are available but
+#' experimental for NUTS: high-order composition integrators have a sharp
+#' step-size stability threshold that the dual-averaging adaptation pushes
+#' against, so `"yoshida6"` needs a high `adapt_delta` (0.95 or more) and
+#' `"yoshida8"` often fails to adapt. For sampling, prefer `"leapfrog"`,
+#' `"minerror2"`, or `"yoshida4"`.
 #'
 #' The choice is process-global (like the gradient mode): set it once before
 #' fitting. It is read on the main thread at the start of sampling.
 #'
-#' @param name Integrator name: `"leapfrog"` (default), `"yoshida4"`,
-#'   `"yoshida6"`, or `"yoshida8"`. Omit to query the current selection
-#'   without changing it.
+#' @param name Integrator name: `"leapfrog"` (default), `"minerror2"`,
+#'   `"yoshida4"`, `"yoshida6"`, or `"yoshida8"`. Omit to query the current
+#'   selection without changing it.
 #'
 #' @return If `name` is omitted, the current integrator name. If `name` is
 #'   given, the previous name is returned invisibly.

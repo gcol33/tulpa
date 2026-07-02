@@ -1,5 +1,15 @@
 # tulpa NEWS
 
+## 0.0.66 (2026-07-03)
+
+* `tulpa_integrator("minerror2")` selects the two-stage minimum-error
+  integrator from SIMP 0.2.0. Its coefficient cancels the leading energy error
+  on a Gaussian target, so near the mass-adapted optimum it conserves energy
+  well and adapts to larger step sizes without the stability cliff of the
+  high-order Yoshida schemes. It recovers with zero divergences on the
+  linear-Gaussian recovery test and is the recommended advanced integrator for
+  near-Gaussian posteriors. Requires `SIMP (>= 0.2.0)`.
+
 ## 0.0.65 (2026-07-03)
 
 * The HMC / NUTS trajectory integrator is now backed by the SIMP symplectic

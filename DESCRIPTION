@@ -1,6 +1,6 @@
 Package: tulpa
 Title: Template Unified Latent Process Architecture for Bayesian Hierarchical Models
-Version: 0.0.65
+Version: 0.0.66
 Authors@R:
     person("Gilles", "Colling", , "gilles.colling051@gmail.com", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0003-3070-6066"))
@@ -46,7 +46,7 @@ LinkingTo:
     Rcpp,
     RcppEigen,
     Matrix,
-    SIMP
+    SIMP (>= 0.2.0)
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Remotes:

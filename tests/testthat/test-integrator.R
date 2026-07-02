@@ -54,7 +54,7 @@ test_that("leapfrog and yoshida4 both recover a linear-Gaussian model", {
     y_r = y, X_r = X, n_iter = 800L, n_warmup = 500L,
     max_treedepth = 8L, adapt_delta = 0.8, seed = 42L, verbose = FALSE)
 
-  for (scheme in c("leapfrog", "yoshida4")) {
+  for (scheme in c("leapfrog", "minerror2", "yoshida4")) {
     tulpa_integrator(scheme)
     fit <- fit_one()
     beta_hat <- colMeans(fit$draws[, 1:2])

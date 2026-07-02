@@ -7,9 +7,9 @@
 tulpa_integrator(name)
 }
 \arguments{
-\item{name}{Integrator name: \code{"leapfrog"} (default), \code{"yoshida4"},
-\code{"yoshida6"}, or \code{"yoshida8"}. Omit to query the current selection
-without changing it.}
+\item{name}{Integrator name: \code{"leapfrog"} (default), \code{"minerror2"},
+\code{"yoshida4"}, \code{"yoshida6"}, or \code{"yoshida8"}. Omit to query the current
+selection without changing it.}
 }
 \value{
 If \code{name} is omitted, the current integrator name. If \code{name} is
@@ -23,16 +23,22 @@ Yoshida members from one triple-jump composition.
 }
 \details{
 The default, \code{"leapfrog"}, reproduces tulpa's historical trajectory step
-exactly. \code{"yoshida4"} is an order-4 scheme that samples reliably and takes
-three gradient evaluations per step.
+exactly.
 
-\code{"yoshida6"} and \code{"yoshida8"} are also available but experimental for NUTS.
-High-order composition integrators have a sharp step-size stability
-threshold, which the dual-averaging step-size adaptation targeting a fixed
-acceptance rate tends to push against. In practice \code{"yoshida6"} needs a high
-\code{adapt_delta} (0.95 or more) to sample well, and \code{"yoshida8"} often fails to
-adapt at all. They remain useful for fixed-step-size integration through the
-SIMP package directly. For sampling, prefer \code{"leapfrog"} or \code{"yoshida4"}.
+\code{"minerror2"} is a two-stage order-two scheme whose coefficient is tuned to
+cancel the leading energy error on a Gaussian target. Since mass adaptation
+drives a posterior toward an isotropic Gaussian, it conserves energy well
+near the adapted optimum and adapts to larger step sizes, at two gradient
+evaluations per step. It is the recommended choice when leapfrog's step size
+is limited by energy error on a near-Gaussian posterior.
+
+\code{"yoshida4"} is an order-4 scheme that also samples reliably (three gradient
+evaluations per step). \code{"yoshida6"} and \code{"yoshida8"} are available but
+experimental for NUTS: high-order composition integrators have a sharp
+step-size stability threshold that the dual-averaging adaptation pushes
+against, so \code{"yoshida6"} needs a high \code{adapt_delta} (0.95 or more) and
+\code{"yoshida8"} often fails to adapt. For sampling, prefer \code{"leapfrog"},
+\code{"minerror2"}, or \code{"yoshida4"}.
 
 The choice is process-global (like the gradient mode): set it once before
 fitting. It is read on the main thread at the start of sampling.
