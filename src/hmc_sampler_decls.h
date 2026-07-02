@@ -14,6 +14,8 @@
 #include "tulpa/param_layout.h"
 #include "tulpa/types.h"
 
+#include <simp/simp.h>  // symplectic integrator schemes (LinkingTo: SIMP)
+
 // Forward declaration so the progress-reporter handles below can be declared
 // without pulling the full GridProgress header (tulpa/nested_progress.h) into
 // this widely-included fragment.
@@ -91,6 +93,15 @@ inline const char* metric_name(MassMatrixType t) {
 extern GradientMode g_gradient_mode;
 void set_gradient_mode(GradientMode mode);
 GradientMode get_gradient_mode();
+
+// Active symplectic integrator for the HMC/NUTS trajectory. Set once on the
+// main thread (like g_gradient_mode) before sampling; read-only during. The
+// leapfrog steppers walk this scheme's op sequence, so leapfrog and the
+// higher-order Yoshida members share one integrator source of truth (SIMP).
+// Defined in simp_integrator.cpp.
+extern simp::Scheme g_integrator_scheme;
+void set_integrator_scheme(const std::string& name);
+const simp::Scheme& get_integrator_scheme();
 
 // Active NUTS progress reporter + ETA (gcol33/tulpaObs#43). Set by the sampling
 // orchestrator on the main thread; ticked once per iteration by every

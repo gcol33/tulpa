@@ -11,7 +11,15 @@ namespace tulpa_hmc {
 // Leapfrog integrator
 // =====================================================================
 
-// Unified leapfrog step: identity mass when inv_mass is nullptr
+// Unified leapfrog step: identity mass when inv_mass is nullptr.
+//
+// The step walks the active SIMP scheme's op sequence. A Kick recomputes the
+// gradient at the current position and advances momentum by the force
+// (grad = d(log_post)/dq); a Drift advances position (scaled by the inverse
+// mass if provided). The last Kick fuses log_prob, so its position -- the
+// trajectory endpoint -- carries the returned log_prob. For the default
+// leapfrog scheme (kick 1/2, drift 1, kick 1/2) this reduces to the classic
+// three-line velocity-Verlet step, coefficient for coefficient.
 LeapfrogResult leapfrog_step(
     const std::vector<double>& q,
     const std::vector<double>& p,
@@ -26,29 +34,36 @@ LeapfrogResult leapfrog_step(
   result.p = p;
   result.divergent = false;
 
+  const simp::Scheme& scheme = get_integrator_scheme();
+  int last_kick = -1;
+  for (int j = 0; j < static_cast<int>(scheme.ops.size()); j++) {
+    if (scheme.ops[j].first == simp::Op::Kick) last_kick = j;
+  }
+
   std::vector<double> grad(n);
 
-  // Half step for momentum
-  compute_gradient(result.q, data, layout, grad);
-  for (int i = 0; i < n; i++) {
-    result.p[i] += 0.5 * epsilon * grad[i];
-  }
-
-  // Full step for position (scaled by inverse mass if provided)
-  if (inv_mass) {
-    for (int i = 0; i < n; i++) {
-      result.q[i] += epsilon * inv_mass[i] * result.p[i];
+  for (int j = 0; j < static_cast<int>(scheme.ops.size()); j++) {
+    double c = scheme.ops[j].second * epsilon;
+    if (scheme.ops[j].first == simp::Op::Kick) {
+      if (j == last_kick) {
+        compute_gradient(result.q, data, layout, grad, &result.log_prob);
+      } else {
+        compute_gradient(result.q, data, layout, grad);
+      }
+      for (int i = 0; i < n; i++) {
+        result.p[i] += c * grad[i];
+      }
+    } else {
+      if (inv_mass) {
+        for (int i = 0; i < n; i++) {
+          result.q[i] += c * inv_mass[i] * result.p[i];
+        }
+      } else {
+        for (int i = 0; i < n; i++) {
+          result.q[i] += c * result.p[i];
+        }
+      }
     }
-  } else {
-    for (int i = 0; i < n; i++) {
-      result.q[i] += epsilon * result.p[i];
-    }
-  }
-
-  // Half step for momentum (fused gradient + log_prob)
-  compute_gradient(result.q, data, layout, grad, &result.log_prob);
-  for (int i = 0; i < n; i++) {
-    result.p[i] += 0.5 * epsilon * grad[i];
   }
 
   if (!std::isfinite(result.log_prob)) {

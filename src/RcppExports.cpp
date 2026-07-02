@@ -1527,6 +1527,27 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// tulpa_set_integrator_cpp
+std::string tulpa_set_integrator_cpp(std::string name);
+RcppExport SEXP _tulpa_tulpa_set_integrator_cpp(SEXP nameSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type name(nameSEXP);
+    rcpp_result_gen = Rcpp::wrap(tulpa_set_integrator_cpp(name));
+    return rcpp_result_gen;
+END_RCPP
+}
+// tulpa_get_integrator_cpp
+std::string tulpa_get_integrator_cpp();
+RcppExport SEXP _tulpa_tulpa_get_integrator_cpp() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(tulpa_get_integrator_cpp());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_smc_test
 Rcpp::List cpp_smc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, int n_particles, int n_mcmc_steps, int seed);
 RcppExport SEXP _tulpa_cpp_smc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP n_particlesSEXP, SEXP n_mcmc_stepsSEXP, SEXP seedSEXP) {
@@ -3037,6 +3058,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tulpa_pit", (DL_FUNC) &_tulpa_cpp_tulpa_pit, 4},
     {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 8},
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
+    {"_tulpa_tulpa_set_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_set_integrator_cpp, 1},
+    {"_tulpa_tulpa_get_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_get_integrator_cpp, 0},
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
     {"_tulpa_cpp_spde_fractional_logmarginal", (DL_FUNC) &_tulpa_cpp_spde_fractional_logmarginal, 12},

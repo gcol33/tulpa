@@ -82,8 +82,71 @@ bool nuts_check_uturn_fast(const double* q_minus, const double* q_plus,
   }
 }
 
-// In-place leapfrog step operating on a workspace slot
-// Mutates q, p, grad in the slot directly ? zero heap allocation
+// Drift: q += coeff * C * p, where C = M^{-1} carries the full mass structure
+// (identity / block-diagonal / diagonal / dense, plus precision and Kronecker
+// block corrections). Factored out of the leapfrog step so every scheme's
+// drift sub-steps reuse the same fused kernels. coeff is the scheme's drift
+// coefficient times the step size; for the default leapfrog it is exactly the
+// step size, so this reproduces the historical drift bit-for-bit.
+static inline void apply_drift(
+    double coeff, double* q, const double* p,
+    const DenseMassMatrix& mass, int n) {
+  if (!mass.adapted) {
+    tulpa_linalg::axpy(coeff, p, q, n);
+  } else if (mass.type == MassMatrixType::BLOCK_DIAG) {
+    tulpa_linalg::axpy_weighted(coeff, mass.inv_mass_diag.data(), p, q, n);
+    for (const auto& blk : mass.blocks) {
+      if (blk.adapted) {
+        double tmp[4];
+        blk.matvec(p, tmp);
+        for (int i = 0; i < blk.size; i++) {
+          q[blk.start + i] += coeff * (tmp[i] - mass.inv_mass_diag[blk.start + i] * p[blk.start + i]);
+        }
+      }
+    }
+  } else if (mass.type == MassMatrixType::DIAG) {
+    tulpa_linalg::axpy_weighted(coeff, mass.inv_mass_diag.data(), p, q, n);
+  } else {
+    if (n >= 16) {
+      Eigen::Map<const Eigen::MatrixXd> Am(mass.inv_mass_dense.data(), n, n);
+      Eigen::Map<const Eigen::VectorXd> pv(p, n);
+      Eigen::Map<Eigen::VectorXd> qv(q, n);
+      qv.noalias() += coeff * (Am.selfadjointView<Eigen::Lower>() * pv);
+    } else {
+      tulpa_linalg::axpy_matvec(coeff, mass.inv_mass_dense.data(), p, q, n);
+    }
+  }
+  if (mass.precision_block.active) {
+    const auto& pb = mass.precision_block;
+    std::vector<double> tmp(pb.size);
+    pb.matvec(p, tmp.data());
+    for (int i = 0; i < pb.size; i++) {
+      q[pb.start + i] -= coeff * mass.inv_mass_diag[pb.start + i] * p[pb.start + i];
+      q[pb.start + i] += coeff * tmp[i];
+    }
+  }
+  if (mass.kronecker_block.active) {
+    const auto& kb = mass.kronecker_block;
+    int ST = kb.S * kb.T;
+    std::vector<double> tmp(ST);
+    kb.matvec(p, tmp.data());
+    for (int i = 0; i < ST; i++) {
+      q[kb.start + i] -= coeff * mass.inv_mass_diag[kb.start + i] * p[kb.start + i];
+      q[kb.start + i] += coeff * tmp[i];
+    }
+  }
+}
+
+// In-place leapfrog step operating on a workspace slot.
+// Mutates q, p, grad in the slot directly -- zero heap allocation.
+//
+// Walks the active SIMP scheme's op sequence. The entry gradient is valid at
+// the current q (first-same-as-last from the previous step), so a Kick uses it
+// directly and only recomputes after an intervening Drift. Each recompute is
+// the fused gradient + log_prob pass. For the default leapfrog scheme this is
+// exactly half-kick, drift, recompute, half-kick -- the historical step,
+// coefficient for coefficient. Higher-order schemes add interior drift/kick
+// pairs (one extra gradient each) with no other change.
 LeapfrogInPlaceResult leapfrog_step_inplace(
     NUTSWorkspace& ws, int slot, double epsilon,
     const DenseMassMatrix& mass,
@@ -97,74 +160,34 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
   LeapfrogInPlaceResult result;
   result.divergent = false;
 
-  // Half step for momentum using current gradient
-  tulpa_linalg::axpy(0.5 * epsilon, grad, p, n);
+  const simp::Scheme& scheme = get_integrator_scheme();
+  bool grad_fresh = true;  // entry gradient is valid at the current q
 
-  // Full step for position: q += eps * C * p
-  if (!mass.adapted) {
-    // Identity mass: q += eps * p
-    tulpa_linalg::axpy(epsilon, p, q, n);
-  } else if (mass.type == MassMatrixType::BLOCK_DIAG) {
-    // Block-diagonal: diagonal for non-block params, dense for block params
-    // First pass: diagonal for all params
-    tulpa_linalg::axpy_weighted(epsilon, mass.inv_mass_diag.data(), p, q, n);
-    // Second pass: overwrite block params with dense contribution
-    for (const auto& blk : mass.blocks) {
-      if (blk.adapted) {
-        double tmp[4];
-        blk.matvec(p, tmp);
-        for (int i = 0; i < blk.size; i++) {
-          // Undo diagonal contribution, apply block contribution
-          q[blk.start + i] += epsilon * (tmp[i] - mass.inv_mass_diag[blk.start + i] * p[blk.start + i]);
-        }
+  for (const auto& op : scheme.ops) {
+    double c = op.second * epsilon;
+    if (op.first == simp::Op::Kick) {
+      if (!grad_fresh) {
+        std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
+        ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
+        std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
+        grad_fresh = true;
       }
-    }
-  } else if (mass.type == MassMatrixType::DIAG) {
-    // Diagonal: q[i] += eps * inv_mass[i] * p[i]
-    tulpa_linalg::axpy_weighted(epsilon, mass.inv_mass_diag.data(), p, q, n);
-  } else {
-    // Dense: q += eps * C * p  (Eigen BLAS for n>=16, scalar fallback below)
-    if (n >= 16) {
-      Eigen::Map<const Eigen::MatrixXd> Am(mass.inv_mass_dense.data(), n, n);
-      Eigen::Map<const Eigen::VectorXd> pv(p, n);
-      Eigen::Map<Eigen::VectorXd> qv(q, n);
-      qv.noalias() += epsilon * (Am.selfadjointView<Eigen::Lower>() * pv);
+      tulpa_linalg::axpy(c, grad, p, n);
     } else {
-      tulpa_linalg::axpy_matvec(epsilon, mass.inv_mass_dense.data(), p, q, n);
-    }
-  }
-  // Precision/Kronecker blocks: undo base contribution, apply block M^{-1}
-  if (mass.precision_block.active) {
-    const auto& pb = mass.precision_block;
-    std::vector<double> tmp(pb.size);
-    pb.matvec(p, tmp.data());
-    for (int i = 0; i < pb.size; i++) {
-      // Undo the diagonal (or dense) contribution that was already applied
-      q[pb.start + i] -= epsilon * mass.inv_mass_diag[pb.start + i] * p[pb.start + i];
-      // Apply precision block contribution
-      q[pb.start + i] += epsilon * tmp[i];
-    }
-  }
-  if (mass.kronecker_block.active) {
-    const auto& kb = mass.kronecker_block;
-    int ST = kb.S * kb.T;
-    std::vector<double> tmp(ST);
-    kb.matvec(p, tmp.data());
-    for (int i = 0; i < ST; i++) {
-      q[kb.start + i] -= epsilon * mass.inv_mass_diag[kb.start + i] * p[kb.start + i];
-      q[kb.start + i] += epsilon * tmp[i];
+      apply_drift(c, q, p, mass, n);
+      grad_fresh = false;
     }
   }
 
-  // Compute gradient + log_prob at new position (fused: single O(N) pass)
-  // Uses pre-resolved function pointer to skip 15+ branch dispatch per leapfrog step
-  std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
-  ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
-  std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
+  // Ensure the returned gradient + log_prob are at the trajectory endpoint.
+  // Our schemes end in a Kick, so this is already satisfied; the guard covers
+  // any drift-terminated scheme without disturbing the common case.
+  if (!grad_fresh) {
+    std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
+    ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
+    std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
+  }
   result.log_prob = ws.logp_at(slot);
-
-  // Half step for momentum using new gradient
-  tulpa_linalg::axpy(0.5 * epsilon, grad, p, n);
 
   // Divergence check (skip param scan if log_prob already non-finite)
   if (!std::isfinite(result.log_prob)) {

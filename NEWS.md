@@ -1,5 +1,22 @@
 # tulpa NEWS
 
+## 0.0.65 (2026-07-03)
+
+* The HMC / NUTS trajectory integrator is now backed by the SIMP symplectic
+  integrator library (`LinkingTo: SIMP`). Both leapfrog steppers (the in-place
+  NUTS step and the fixed-trajectory HMC step) walk a SIMP scheme's op
+  sequence with tulpa's own fused mass-matrix kernels, so the integrator
+  identity has a single source of truth while the hot path keeps its
+  specialised drift kernels. The default, leapfrog, is byte-identical to the
+  previous step (verified against the bit-for-bit chain checkpoint and the
+  existing NUTS recovery / reproducibility tests).
+* `tulpa_integrator()` selects the integrator process-wide: `"leapfrog"`
+  (default) or the higher-order `"yoshida4"` / `"yoshida6"` / `"yoshida8"`,
+  generated from leapfrog by SIMP's triple-jump composition. `"yoshida4"`
+  samples reliably; the higher orders are experimental for NUTS (a sharp
+  step-size stability threshold interacts poorly with dual-averaging
+  adaptation). See `?tulpa_integrator` and `test-integrator.R`.
+
 ## 0.0.64 (2026-07-01)
 
 * `tulpa_pit()` runs in C++ (`cpp_tulpa_pit`), and the leave-one-out PIT
