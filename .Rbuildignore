@@ -22,4 +22,5 @@
 ^.*\.Rcheck$
 ^src/GRADIENT_COVERAGE\.md$
 ^src/.*\.gch$
+^vendor_simp\.sh$
 ^tgmrf\.html$

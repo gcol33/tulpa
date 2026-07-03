@@ -1,5 +1,15 @@
 # tulpa NEWS
 
+## 0.0.67 (2026-07-03)
+
+* The SIMP integrator headers are now vendored into `src/simp/` (snapshot via
+  `vendor_simp.sh`) instead of pulled in through `LinkingTo: SIMP`. tulpa builds
+  self-contained -- no dependency on a non-CRAN package and no
+  `Additional_repositories` -- while SIMP (gcol33/SIMP) stays the upstream
+  development home for the integrator core. Re-run `vendor_simp.sh` to refresh
+  the snapshot after updating SIMP. No behaviour change: `tulpa_integrator()`
+  and the schemes are identical.
+
 ## 0.0.66 (2026-07-03)
 
 * `tulpa_integrator("minerror2")` selects the two-stage minimum-error

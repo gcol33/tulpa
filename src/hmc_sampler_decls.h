@@ -14,7 +14,8 @@
 #include "tulpa/param_layout.h"
 #include "tulpa/types.h"
 
-#include <simp/simp.h>  // symplectic integrator schemes (LinkingTo: SIMP)
+#include "simp/simp.h"  // symplectic integrator schemes, vendored from
+                        // gcol33/SIMP (see vendor_simp.sh)
 
 // Forward declaration so the progress-reporter handles below can be declared
 // without pulling the full GridProgress header (tulpa/nested_progress.h) into
