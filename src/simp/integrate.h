@@ -1,4 +1,4 @@
-// Vendored from gcol33/SIMP (a87642d) by vendor_simp.sh -- do not edit.
+// Vendored from gcol33/SIMP (cc1de1d) by vendor_simp.sh -- do not edit.
 // Upstream: SIMP inst/include/simp/integrate.h. Edit there and re-vendor.
 
 #ifndef SIMP_INTEGRATE_H

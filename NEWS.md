@@ -1,5 +1,17 @@
 # tulpa NEWS
 
+## 0.0.68 (2026-07-03)
+
+* Refreshed the vendored SIMP snapshot to 0.3.0, which adds the step-adapted
+  minimum-error integrators (an exact harmonic energy-error analysis picks the
+  multistage coefficient for a target's step band, from `omega_max * eps`), the
+  parametric `two_stage` / `three_stage` constructors, and a
+  multiple-time-stepping (RESPA) split-potential stepper. These ship in
+  `src/simp/` and are available for wiring into the NUTS integrator; the current
+  `tulpa_integrator()` schemes are unchanged. The integrator decls now include
+  only `simp/scheme.h`, so the new Eigen-heavy headers do not enter every
+  translation unit.
+
 ## 0.0.67 (2026-07-03)
 
 * The SIMP integrator headers are now vendored into `src/simp/` (snapshot via

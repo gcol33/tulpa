@@ -1,4 +1,4 @@
-// Vendored from gcol33/SIMP (a87642d) by vendor_simp.sh -- do not edit.
+// Vendored from gcol33/SIMP (cc1de1d) by vendor_simp.sh -- do not edit.
 // Upstream: SIMP inst/include/simp/scheme.h. Edit there and re-vendor.
 
 #ifndef SIMP_SCHEME_H
@@ -49,19 +49,38 @@ inline Scheme leapfrog() {
                 {{Op::Kick, 0.5}, {Op::Drift, 1.0}, {Op::Kick, 0.5}}};
 }
 
-// Two-stage order-two integrator, kick-drift-kick-drift-kick with kick weights
-// b, 1-2b, b and drift weights 1/2, 1/2. The free weight is fixed at
-// b = (3 - sqrt(5)) / 4 = 1 / (3 + sqrt(5)), the value that cancels the leading
-// energy-error term on a harmonic oscillator. A Gaussian target has harmonic
-// dynamics, and mass adaptation drives a target toward an isotropic Gaussian,
-// so this integrator carries almost no energy error near the adapted optimum
-// and admits large steps without the stability cliff of the high-order
-// composition schemes. It costs two force evaluations per step.
-inline Scheme minerror2() {
-  const double b = (3.0 - std::sqrt(5.0)) / 4.0;
-  return Scheme{"minerror2", 2,
+// Two-stage order-two integrator (two gradients per step),
+// kick-drift-kick-drift-kick with kick weights b, 1-2b, b and drift weights
+// 1/2, 1/2. The free weight b tunes the energy error; the palindrome makes the
+// step consistent and time reversible for any b. See minerror2() for the
+// Gaussian-optimal fixed choice and adapt.h for a step-size-adapted choice.
+inline Scheme two_stage(double b, const std::string& name = "two_stage") {
+  return Scheme{name, 2,
                 {{Op::Kick, b}, {Op::Drift, 0.5}, {Op::Kick, 1.0 - 2.0 * b},
                  {Op::Drift, 0.5}, {Op::Kick, b}}};
+}
+
+// Three-stage order-two integrator (three gradients per step),
+// kick-drift-kick-drift-kick-drift-kick with kick weights b, 1/2-b, 1/2-b, b
+// and drift weights a, 1-2a, a. The two free weights (b, a) leave enough slack
+// to keep the energy error small across a band of step sizes rather than at a
+// single one; see adapt.h.
+inline Scheme three_stage(double b, double a,
+                          const std::string& name = "three_stage") {
+  return Scheme{name, 2,
+                {{Op::Kick, b}, {Op::Drift, a}, {Op::Kick, 0.5 - b},
+                 {Op::Drift, 1.0 - 2.0 * a}, {Op::Kick, 0.5 - b},
+                 {Op::Drift, a}, {Op::Kick, b}}};
+}
+
+// Two-stage member with the free weight fixed at b = (3 - sqrt(5)) / 4, the
+// value that minimizes the leading energy-error term on a harmonic oscillator.
+// A Gaussian target has harmonic dynamics, and mass adaptation drives a target
+// toward an isotropic Gaussian, so near the adapted optimum this integrator
+// carries almost no energy error and admits large steps without the stability
+// cliff of the high-order composition schemes.
+inline Scheme minerror2() {
+  return two_stage((3.0 - std::sqrt(5.0)) / 4.0, "minerror2");
 }
 
 // Scale a scheme so one step covers a fraction w of the step size.

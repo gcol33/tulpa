@@ -14,8 +14,13 @@
 #include "tulpa/param_layout.h"
 #include "tulpa/types.h"
 
-#include "simp/simp.h"  // symplectic integrator schemes, vendored from
-                        // gcol33/SIMP (see vendor_simp.sh)
+#include "simp/scheme.h"  // symplectic integrator scheme registry, vendored
+                          // from gcol33/SIMP (see vendor_simp.sh). Only the
+                          // scheme ops are needed here; the NUTS loop applies
+                          // them itself. The step-adapted, harmonic-analysis,
+                          // and multiple-time-stepping headers ship in src/simp
+                          // too but are not pulled into this widely-included
+                          // decls header.
 
 // Forward declaration so the progress-reporter handles below can be declared
 // without pulling the full GridProgress header (tulpa/nested_progress.h) into
