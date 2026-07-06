@@ -65,6 +65,14 @@ double compute_adaptive_nu_max(
   const int p = static_cast<int>(q.size());
   if (p <= 0 || !(epsilon > 0.0) || !std::isfinite(epsilon)) return epsilon;
 
+  // The curvature estimate below builds a dense p x p Hessian (p + 1 gradient
+  // sweeps, O(p^2) storage), affordable only in the same regime as the dense
+  // mass matrix. Above that bound (spatial fields with thousands of latent
+  // cells) return epsilon: nu_max = epsilon is the well-adapted operating point
+  // (omega_max = 1, the floor below), so the scheme still resolves, without the
+  // dense allocation.
+  if (p > DENSE_MAX_PARAMS) return epsilon;
+
   // Local curvature C = -Hessian(log_post): symmetric, SPD near the mode.
   std::vector<double> H;
   compute_hessian_finite_diff(q, data, layout, H);

@@ -1,5 +1,17 @@
 # tulpa NEWS
 
+## 0.0.70 (2026-07-06)
+
+* `tulpa_integrator("adaptive2")` / `"adaptive3"` cap the warmup-end curvature
+  estimate at `DENSE_MAX_PARAMS` (200) parameters. Above that bound the
+  step-adapted coefficient resolves at the well-adapted operating point
+  (`nu_max = epsilon`, `omega_max = 1`) rather than building the dense `p x p`
+  finite-difference Hessian, matching the cap the dense mass matrix already
+  applies. A high-dimensional latent field (thousands of BYM2 / ICAR cells)
+  selecting an adaptive integrator no longer allocates an O(p^2) Hessian or runs
+  `p + 1` gradient sweeps at warmup end. Default leapfrog, the fixed schemes, and
+  any model at or below the bound are unchanged.
+
 ## 0.0.69 (2026-07-06)
 
 * `tulpa_integrator("adaptive2")` and `"adaptive3"` wire the SIMP step-adapted
