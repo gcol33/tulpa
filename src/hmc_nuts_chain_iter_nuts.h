@@ -519,6 +519,26 @@
             REprintf("  [METRIC] Warmup done: epsilon=%.6f, mass.type=%s, mass.adapted=%d\n",
                      epsilon, metric_name(mass.type), (int)mass.adapted);
           }
+
+          // Step-adapted integrator (gcol33/tulpa#51). With the mass matrix and
+          // step size settled, resolve the minimum-error multistage coefficient
+          // for this chain's operating band (0, nu_max]. nu_max follows from the
+          // adapted metric and the local curvature -- the
+          // nested-approximation-informs-the-sampler synthesis. Warmup ran the
+          // fixed placeholder (same stage count, so epsilon transfers); the
+          // sampling phase walks the resolved per-chain scheme.
+          if (get_integrator_adaptive() != IntegratorAdaptive::NONE) {
+            double nu_max = compute_adaptive_nu_max(q, data, layout, mass, epsilon);
+            if (get_integrator_adaptive() == IntegratorAdaptive::THREE_STAGE) {
+              nuts_ws.scheme = simp::three_stage_adaptive(nu_max);
+            } else {
+              nuts_ws.scheme = simp::two_stage_adaptive(nu_max);
+            }
+            if (verbose) {
+              REprintf("  [INTEGRATOR] Step-adapted %s: nu_max=%.4f, epsilon=%.6f\n",
+                       nuts_ws.scheme.name.c_str(), nu_max, epsilon);
+            }
+          }
           // Proactive SoftAbs at warmup?sampling transition (improvement #4):
           // Pre-compute SoftAbs metric so it's ready for retry attempts.
           // Do NOT override main mass/epsilon ? warmup-adapted values are better

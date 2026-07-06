@@ -55,6 +55,63 @@ void compute_hessian_finite_diff(
   }
 }
 
+double compute_adaptive_nu_max(
+    const std::vector<double>& q,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const DenseMassMatrix& mass,
+    double epsilon
+) {
+  const int p = static_cast<int>(q.size());
+  if (p <= 0 || !(epsilon > 0.0) || !std::isfinite(epsilon)) return epsilon;
+
+  // Local curvature C = -Hessian(log_post): symmetric, SPD near the mode.
+  std::vector<double> H;
+  compute_hessian_finite_diff(q, data, layout, H);
+  if (static_cast<int>(H.size()) != p * p) return epsilon;
+
+  // Power iteration on M^{-1} C. C and M^{-1} are both SPD, so their product is
+  // self-adjoint in the M inner product: real positive spectrum, spectral
+  // radius = lambda_max. Each step costs one C matvec (w = C x = -H x) and one
+  // M^{-1} matvec (mass.inv_mass_times_p), and ||M^{-1} C x|| with ||x|| = 1
+  // converges to lambda_max.
+  std::vector<double> x(p), w(p), y(p);
+  // Deterministic non-degenerate start (no RNG -> draws stay bit-identical).
+  for (int i = 0; i < p; ++i) x[i] = 1.0 + 0.01 * static_cast<double>(i);
+  double nrm = 0.0;
+  for (double v : x) nrm += v * v;
+  nrm = std::sqrt(nrm);
+  if (!(nrm > 0.0)) return epsilon;
+  for (double& v : x) v /= nrm;
+
+  double lambda = 0.0;
+  for (int it = 0; it < 100; ++it) {
+    for (int i = 0; i < p; ++i) {
+      double s = 0.0;
+      const double* col = &H[static_cast<size_t>(i) * p];  // H symmetric
+      for (int j = 0; j < p; ++j) s += col[j] * x[j];
+      w[i] = -s;  // C x = -H x
+    }
+    mass.inv_mass_times_p(w.data(), y.data());
+    double yn = 0.0;
+    for (double v : y) yn += v * v;
+    yn = std::sqrt(yn);
+    if (!(yn > 0.0) || !std::isfinite(yn)) return epsilon;
+    for (int i = 0; i < p; ++i) x[i] = y[i] / yn;
+    if (it > 5 && std::abs(yn - lambda) <= 1e-6 * yn) { lambda = yn; break; }
+    lambda = yn;
+  }
+  if (!(lambda > 0.0) || !std::isfinite(lambda)) return epsilon;
+
+  double nu_max = std::sqrt(lambda) * epsilon;
+  // Floor at epsilon (the well-adapted-metric value, omega_max = 1) and cap in
+  // the band where the multistage schemes stay stable and the energy-error
+  // objective is finite (leapfrog stability = 2; multistage a little beyond).
+  if (!std::isfinite(nu_max) || nu_max < epsilon) nu_max = epsilon;
+  if (nu_max > 3.0) nu_max = 3.0;
+  return nu_max;
+}
+
 bool compute_softabs_metric(
     const std::vector<double>& neg_hessian,
     int p,

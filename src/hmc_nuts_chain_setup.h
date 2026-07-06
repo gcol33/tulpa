@@ -243,6 +243,18 @@
   if (use_nuts) {
     nuts_ws.init(n_params, max_treedepth);
     nuts_ws.gradient_fn = resolve_gradient_fn(g_gradient_mode, data, layout);
+    // Start from the process-global integrator selection. For an adaptive
+    // selection this holds the fixed placeholder (same stage count as the
+    // resolved scheme); the step-adapted coefficient is set at warmup end.
+    nuts_ws.scheme = get_integrator_scheme();
+
+    // Multiple-time-stepping selection: resolve the prior-only ("fast") gradient
+    // once, alongside the full gradient, and record the inner-substep count.
+    nuts_ws.mts = get_integrator_mts();
+    nuts_ws.mts_m = get_mts_substeps();
+    if (nuts_ws.mts) {
+      nuts_ws.prior_gradient_fn = resolve_prior_gradient_fn(g_gradient_mode, data, layout);
+    }
     _nuts_p.resize(n_params);
     _nuts_q_proposal.resize(n_params);
     _nuts_grad_proposal.resize(n_params);

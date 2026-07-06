@@ -160,34 +160,79 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
   LeapfrogInPlaceResult result;
   result.divergent = false;
 
-  const simp::Scheme& scheme = get_integrator_scheme();
-  bool grad_fresh = true;  // entry gradient is valid at the current q
+  if (ws.mts) {
+    // Multiple-time-stepping (RESPA / Verlet-I) leaf. Force splits as
+    // F = F_slow + F_fast: F_fast is the stiff, cheap prior gradient (prior_
+    // gradient_fn, m inner substeps), F_slow the smooth, expensive likelihood
+    // gradient (grad_full - grad_prior, one full gradient per leaf). The step
+    // is symmetric, time reversible, and symplectic, so the NUTS tree / U-turn
+    // machinery is unchanged -- only the leaf's internal advance differs.
+    const int m = ws.mts_m > 0 ? ws.mts_m : 1;
+    const double half = 0.5 * epsilon;
+    const double inner = epsilon / static_cast<double>(m);
+    const double inner_half = 0.5 * inner;
+    double* gp = ws.mts_gp.data();
 
-  for (const auto& op : scheme.ops) {
-    double c = op.second * epsilon;
-    if (op.first == simp::Op::Kick) {
-      if (!grad_fresh) {
-        std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
-        ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
-        std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
-        grad_fresh = true;
-      }
-      tulpa_linalg::axpy(c, grad, p, n);
-    } else {
-      apply_drift(c, q, p, mass, n);
-      grad_fresh = false;
+    // Prior (fast) gradient at the entry position. The entry `grad` is the full
+    // gradient here (first-same-as-last from the previous leaf).
+    std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
+    ws.prior_gradient_fn(ws.params_buf, data, layout, ws.grad_buf, nullptr);
+    std::memcpy(gp, ws.grad_buf.data(), n * sizeof(double));
+
+    // Outer half kick with the slow force F_slow(q0) = grad_full - grad_prior.
+    for (int i = 0; i < n; i++) p[i] += half * (grad[i] - gp[i]);
+
+    // Inner leapfrog chain driven by the fast (prior) force.
+    for (int k = 0; k < m; k++) {
+      for (int i = 0; i < n; i++) p[i] += inner_half * gp[i];
+      apply_drift(inner, q, p, mass, n);
+      std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
+      ws.prior_gradient_fn(ws.params_buf, data, layout, ws.grad_buf, nullptr);
+      std::memcpy(gp, ws.grad_buf.data(), n * sizeof(double));
+      for (int i = 0; i < n; i++) p[i] += inner_half * gp[i];
     }
-  }
 
-  // Ensure the returned gradient + log_prob are at the trajectory endpoint.
-  // Our schemes end in a Kick, so this is already satisfied; the guard covers
-  // any drift-terminated scheme without disturbing the common case.
-  if (!grad_fresh) {
+    // Full gradient + log_prob at the endpoint (the one expensive evaluation per
+    // leaf); `grad` becomes grad_full(q_end) for the next leaf's FSAL. gp holds
+    // grad_prior(q_end) from the last inner substep.
     std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
     ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
     std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
+
+    // Outer half kick with the slow force F_slow(q_end).
+    for (int i = 0; i < n; i++) p[i] += half * (grad[i] - gp[i]);
+
+    result.log_prob = ws.logp_at(slot);
+  } else {
+    const simp::Scheme& scheme = ws.scheme;
+    bool grad_fresh = true;  // entry gradient is valid at the current q
+
+    for (const auto& op : scheme.ops) {
+      double c = op.second * epsilon;
+      if (op.first == simp::Op::Kick) {
+        if (!grad_fresh) {
+          std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
+          ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
+          std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
+          grad_fresh = true;
+        }
+        tulpa_linalg::axpy(c, grad, p, n);
+      } else {
+        apply_drift(c, q, p, mass, n);
+        grad_fresh = false;
+      }
+    }
+
+    // Ensure the returned gradient + log_prob are at the trajectory endpoint.
+    // Our schemes end in a Kick, so this is already satisfied; the guard covers
+    // any drift-terminated scheme without disturbing the common case.
+    if (!grad_fresh) {
+      std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
+      ws.gradient_fn(ws.params_buf, data, layout, ws.grad_buf, &ws.logp_at(slot));
+      std::memcpy(grad, ws.grad_buf.data(), n * sizeof(double));
+    }
+    result.log_prob = ws.logp_at(slot);
   }
-  result.log_prob = ws.logp_at(slot);
 
   // Divergence check (skip param scan if log_prob already non-finite)
   if (!std::isfinite(result.log_prob)) {

@@ -104,10 +104,32 @@ GradientMode get_gradient_mode();
 // main thread (like g_gradient_mode) before sampling; read-only during. The
 // leapfrog steppers walk this scheme's op sequence, so leapfrog and the
 // higher-order Yoshida members share one integrator source of truth (SIMP).
-// Defined in simp_integrator.cpp.
+// For an adaptive selection this holds the fixed placeholder scheme (same stage
+// count as the resolved coefficient) used during warmup and on the
+// fixed-trajectory HMC path. Defined in simp_integrator.cpp.
 extern simp::Scheme g_integrator_scheme;
-void set_integrator_scheme(const std::string& name);
+void set_integrator_scheme(const std::string& name, int mts_substeps = 4);
 const simp::Scheme& get_integrator_scheme();
+
+// Multiple-time-stepping (RESPA) selection. When set, each NUTS leaf splits the
+// stiff prior force (mts_substeps inner substeps) from the smooth likelihood
+// force (one full gradient per leaf); see the RESPA leaf in
+// hmc_nuts_optimized.cpp. Orthogonal to the scheme/adaptive selection.
+bool get_integrator_mts();
+int get_mts_substeps();
+
+// Adaptive integrator selection. When not NONE, each NUTS chain replaces its
+// per-chain scheme at warmup end with the step-size-adapted minimum-error
+// coefficient resolved from the adapted mass matrix and the local curvature
+// (see compute_adaptive_nu_max): the nested-approximation-informs-the-sampler
+// synthesis. TWO_STAGE / THREE_STAGE pick the two- or three-stage family.
+enum class IntegratorAdaptive { NONE, TWO_STAGE, THREE_STAGE };
+IntegratorAdaptive get_integrator_adaptive();
+
+// User-facing name of the current integrator selection ("leapfrog", "minerror2",
+// "yoshida4", "adaptive2", ...). Distinct from g_integrator_scheme.name, which
+// for an adaptive selection reports the resolved placeholder/coefficient.
+const std::string& get_integrator_name();
 
 // Active NUTS progress reporter + ETA (gcol33/tulpaObs#43). Set by the sampling
 // orchestrator on the main thread; ticked once per iteration by every
@@ -135,6 +157,20 @@ using GradientFn = void(*)(
 
 // Resolve the gradient function pointer once based on mode + model config
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout);
+
+// Prior-only gradient (skip_obs_loop = true): the "fast" force for the
+// multiple-time-stepping integrator. resolve_prior_gradient_fn mirrors
+// resolve_gradient_fn but never returns the hand-coded full-gradient hook
+// (which cannot yield a prior-only gradient) -- it picks the arena-AD prior
+// path when available, else central differences. Both variants match the
+// GradientFn signature. Defined in hmc_gradient_fallback.cpp / dispatch.
+GradientFn resolve_prior_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout);
+void compute_gradient_prior_numerical(
+    const std::vector<double>& params, const ModelData& data,
+    const ParamLayout& layout, std::vector<double>& grad, double* log_post_out = nullptr);
+void compute_gradient_prior_arena(
+    const std::vector<double>& params, const ModelData& data,
+    const ParamLayout& layout, std::vector<double>& grad, double* log_post_out = nullptr);
 
 // ModelData and ParamLayout are now defined in exported headers:
 //   inst/include/tulpa/model_data.h   (tulpa::ModelData)

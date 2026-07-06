@@ -1,6 +1,33 @@
 # tulpa NEWS
 
-## 0.0.68 (2026-07-03)
+## 0.0.69 (2026-07-06)
+
+* `tulpa_integrator("adaptive2")` and `"adaptive3"` wire the SIMP step-adapted
+  minimum-error integrators into NUTS. Each chain resolves its multistage
+  coefficient at the end of warmup for its own operating point: the coefficient
+  that minimizes the worst-case energy error over the band of dimensionless
+  steps `(0, nu_max]` the chain actually takes. `nu_max = omega_max * eps`
+  follows from the adapted mass matrix and the local posterior curvature
+  (`omega_max` is the square root of the largest eigenvalue of `M^{-1}` times the
+  curvature, found by power iteration on a warmup-end finite-difference Hessian),
+  so the integrator is tuned to the target rather than to a fixed compromise --
+  the nested-approximation-informs-the-sampler synthesis. The coefficient is
+  per-chain (carried on the NUTS workspace, not a shared global); warmup runs a
+  fixed placeholder of the same stage family so the dual-averaged step size
+  transfers. Default leapfrog and the fixed schemes are byte-for-byte unchanged.
+
+* `tulpa_integrator("mts", mts_substeps = )` wires the SIMP multiple-time-
+  stepping (RESPA) integrator into NUTS. The trajectory leaf splits the force
+  into a stiff but cheap prior part (the Gaussian latent structure, taken with
+  `mts_substeps` inner leapfrog substeps) and a smooth but expensive likelihood
+  part (one full gradient per leaf, as leapfrog pays), so a larger outer step
+  handles the stiff prior without evaluating the likelihood at the inner rate.
+  The split reuses the existing `skip_obs_loop` decomposition: a new prior-only
+  gradient path (arena-AD or central differences, folding in any model-package
+  prior) supplies the fast force, and `grad_full - grad_prior` is exactly the
+  likelihood gradient. The leaf stays symplectic and time reversible, so the
+  U-turn / tree machinery is unchanged. Helps most when the latent field is
+  stiff relative to a comparatively flat likelihood.
 
 * Refreshed the vendored SIMP snapshot to 0.3.0, which adds the step-adapted
   minimum-error integrators (an exact harmonic energy-error analysis picks the

@@ -273,8 +273,8 @@ cpp_re_cov_gibbs_sweep <- function(family, phi, y, n_trials, X, blocks, beta0, L
     .Call(`_tulpa_cpp_re_cov_gibbs_sweep`, family, phi, y, n_trials, X, blocks, beta0, L_beta, n_iter, n_burnin, thin, beta_prior_mean, beta_prior_sd)
 }
 
-tulpa_set_integrator_cpp <- function(name) {
-    .Call(`_tulpa_tulpa_set_integrator_cpp`, name)
+tulpa_set_integrator_cpp <- function(name, mts_substeps = 4L) {
+    .Call(`_tulpa_tulpa_set_integrator_cpp`, name, mts_substeps)
 }
 
 tulpa_get_integrator_cpp <- function() {

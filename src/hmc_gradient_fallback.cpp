@@ -100,6 +100,74 @@ void compute_gradient_generic_arena(
 }
 
 // =====================================================================
+// Prior-only gradient for multiple-time-stepping. The "fast" force is the
+// gradient of the prior + structural terms with the O(N) observation loop
+// skipped (skip_obs_loop = true): the stiff, cheap Gaussian-latent part. The
+// slow force is then grad_full - grad_prior = the observation-likelihood
+// gradient. Both the arena and the numerical variant fold in the optional
+// model-package prior (extra_prior / extra_prior_arena), matching the full
+// evaluators so grad_full - grad_prior is exactly the likelihood gradient.
+// =====================================================================
+
+void compute_gradient_prior_numerical(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out
+) {
+    auto log_prior_fn = [&](const std::vector<double>& p) -> double {
+        return tulpa::compute_log_post_generic_spec_double(
+            p, data, layout, /*skip_obs_loop=*/true);
+    };
+
+    double f0 = log_prior_fn(params);
+    if (log_post_out) *log_post_out = f0;
+
+    const double eps = 1e-6;
+    const int n = static_cast<int>(params.size());
+    grad.assign(n, 0.0);
+    std::vector<double> pw = params;
+
+    for (int j = 0; j < n; j++) {
+        pw[j] = params[j] + eps;
+        double fp = log_prior_fn(pw);
+        pw[j] = params[j] - eps;
+        double fm = log_prior_fn(pw);
+        pw[j] = params[j];
+        grad[j] = (fp - fm) / (2.0 * eps);
+    }
+}
+
+void compute_gradient_prior_arena(
+    const std::vector<double>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<double>& grad,
+    double* log_post_out
+) {
+    using namespace tulpa::arena;
+    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+
+    ArenaScope scope;
+    Arena* ar = scope.arena();
+    std::vector<Var> params_ar = make_vars(ar, params);
+
+    Var log_prior = tulpa::compute_log_post_generic<Var>(
+        params_ar, data, layout,
+        spec->ll_arena, data.model_response_data, /*skip_obs_loop=*/true);
+
+    if (spec->extra_prior_arena != nullptr) {
+        log_prior = log_prior + spec->extra_prior_arena(
+            params_ar, layout, data.model_response_data);
+    }
+
+    if (log_post_out) *log_post_out = log_prior.val();
+    log_prior.backward();
+    grad = get_adjoints(params_ar);
+}
+
+// =====================================================================
 // Runtime gradient check: compares the active gradient (from the
 // dispatcher) against compute_gradient_generic_numerical at the
 // start of warmup. Catches sign/scale bugs in hand-coded full-gradient

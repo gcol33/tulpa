@@ -4,12 +4,15 @@
 \alias{tulpa_integrator}
 \title{Select the symplectic integrator for HMC and NUTS}
 \usage{
-tulpa_integrator(name)
+tulpa_integrator(name, mts_substeps = 4L)
 }
 \arguments{
 \item{name}{Integrator name: \code{"leapfrog"} (default), \code{"minerror2"},
-\code{"yoshida4"}, \code{"yoshida6"}, or \code{"yoshida8"}. Omit to query the current
-selection without changing it.}
+\code{"adaptive2"}, \code{"adaptive3"}, \code{"mts"}, \code{"yoshida4"}, \code{"yoshida6"}, or
+\code{"yoshida8"}. Omit to query the current selection without changing it.}
+
+\item{mts_substeps}{Number of inner prior-force substeps per trajectory step
+for the \code{"mts"} integrator (default 4). Ignored by the other integrators.}
 }
 \value{
 If \code{name} is omitted, the current integrator name. If \code{name} is
@@ -39,6 +42,29 @@ step-size stability threshold that the dual-averaging adaptation pushes
 against, so \code{"yoshida6"} needs a high \code{adapt_delta} (0.95 or more) and
 \code{"yoshida8"} often fails to adapt. For sampling, prefer \code{"leapfrog"},
 \code{"minerror2"}, or \code{"yoshida4"}.
+
+\code{"adaptive2"} and \code{"adaptive3"} are step-adapted versions of the two- and
+three-stage schemes. Rather than fixing the coefficient in advance, each NUTS
+chain resolves it at the end of warmup for its own operating point: the
+coefficient that minimizes the worst-case energy error over the band of
+dimensionless steps the chain actually takes, read off from the adapted mass
+matrix and the local posterior curvature. Where \code{"minerror2"} is optimal only
+in the small-step limit, \code{"adaptive2"} tracks the chain's realised step band;
+\code{"adaptive3"} spends a third gradient per step to hold a small error over a
+wider band. Both run a fixed placeholder of the same stage family during
+warmup, so the dual-averaged step size carries over. Step-adaptation applies
+to NUTS (the default sampler); the fixed-trajectory HMC path uses the
+placeholder.
+
+\code{"mts"} is a multiple-time-stepping (RESPA) integrator. It splits the force
+into a stiff but cheap prior part -- the Gaussian latent structure -- and a
+smooth but expensive likelihood part. Each NUTS trajectory step takes
+\code{mts_substeps} inner leapfrog substeps against the prior force while
+evaluating the likelihood gradient only once, so the outer step can be larger
+without the stiff prior forcing it small. It pays one full gradient per step
+(as leapfrog does) plus \code{mts_substeps} cheap prior gradients, and helps most
+when the latent field is stiff relative to a comparatively flat likelihood.
+Like the other schemes it applies to NUTS.
 
 The choice is process-global (like the gradient mode): set it once before
 fitting. It is read on the main thread at the start of sampling.

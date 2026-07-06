@@ -18,6 +18,27 @@ test_that("tulpa_integrator gets, sets, and validates", {
   expect_identical(tulpa_integrator(), "leapfrog")
 })
 
+test_that("adaptive selections round-trip by their own name", {
+  old <- tulpa_integrator()
+  on.exit(tulpa_integrator(old), add = TRUE)
+
+  # The selection name is reported back (not the resolved placeholder), so a
+  # save/restore of the current integrator is faithful.
+  prev <- tulpa_integrator("adaptive2")
+  expect_identical(tulpa_integrator(), "adaptive2")
+  expect_identical(prev, old)
+
+  tulpa_integrator("adaptive3")
+  expect_identical(tulpa_integrator(), "adaptive3")
+
+  tulpa_integrator("mts", mts_substeps = 3L)
+  expect_identical(tulpa_integrator(), "mts")
+  expect_error(tulpa_integrator("mts", mts_substeps = 0L), "mts_substeps")
+
+  tulpa_integrator(old)
+  expect_identical(tulpa_integrator(), old)
+})
+
 test_that("leapfrog is the default and reproduces trajectories bit-for-bit", {
   skip_if_not_slow()
   old <- tulpa_integrator()
@@ -54,7 +75,7 @@ test_that("leapfrog and yoshida4 both recover a linear-Gaussian model", {
     y_r = y, X_r = X, n_iter = 800L, n_warmup = 500L,
     max_treedepth = 8L, adapt_delta = 0.8, seed = 42L, verbose = FALSE)
 
-  for (scheme in c("leapfrog", "minerror2", "yoshida4")) {
+  for (scheme in c("leapfrog", "minerror2", "adaptive2", "adaptive3", "mts", "yoshida4")) {
     tulpa_integrator(scheme)
     fit <- fit_one()
     beta_hat <- colMeans(fit$draws[, 1:2])

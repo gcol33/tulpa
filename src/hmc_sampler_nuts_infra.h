@@ -130,6 +130,25 @@ struct NUTSWorkspace {
   // Resolved gradient function pointer (set once, avoids per-call dispatch)
   GradientFn gradient_fn = nullptr;
 
+  // Active symplectic integrator for this chain's trajectory leaves. Set at
+  // chain setup from the process-global selection; when an adaptive integrator
+  // is selected it is replaced at warmup end by the step-size-adapted
+  // minimum-error scheme (simp::two_stage_adaptive / three_stage_adaptive at
+  // the resolved nu_max). The in-place leapfrog leaf walks this scheme's op
+  // sequence, so the coefficient is per-chain rather than a shared global.
+  simp::Scheme scheme = simp::leapfrog();
+
+  // Multiple-time-stepping (RESPA) leaf. When mts is set the leaf splits the
+  // force into a cheap stiff prior part (prior_gradient_fn, m inner substeps)
+  // and an expensive smooth likelihood part (one full gradient per leaf), so a
+  // larger outer step handles the stiff prior without paying the likelihood at
+  // the inner rate. prior_gradient_fn is resolved once at setup alongside
+  // gradient_fn. mts_gp / mts is scratch reused across leaves.
+  bool mts = false;
+  int mts_m = 4;
+  GradientFn prior_gradient_fn = nullptr;
+  std::vector<double> mts_gp;  // prior (fast) gradient scratch, length n
+
   // Contiguous pool: [slot][q|p|grad], each n doubles wide
   std::vector<double> pool;
   std::vector<double> log_probs;  // One per slot
@@ -184,6 +203,7 @@ struct NUTSWorkspace {
     params_buf.resize(np);
     grad_buf.resize(np);
     dense_scratch.resize(np);
+    mts_gp.resize(np);
     next_slot = TREE_START_SLOT;
     // Pre-allocate merge buffers: 4 per depth level
     merge_pool.resize(static_cast<size_t>(MERGE_BUFS_PER_DEPTH) * max_d * np, 0.0);

@@ -47,4 +47,30 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
     return &compute_gradient_generic_numerical;
 }
 
+// Prior-only counterpart used by the multiple-time-stepping leaf. The hand-coded
+// full-gradient hook (spec->gradient_fn) subsumes prior + likelihood and cannot
+// be split, so it is never chosen here: prefer the arena-AD prior path (same
+// availability rule as the full arena path), else central differences on the
+// prior-only log-post. Correctness matches resolve_gradient_fn -- both fold in
+// the optional model-package prior -- so grad_full - grad_prior is exactly the
+// observation-likelihood gradient.
+GradientFn resolve_prior_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
+    (void)layout;
+    if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
+        Rcpp::stop("tulpa: ModelData has n_processes == 0 — the generic "
+                   "LikelihoodSpec interface is required for the prior-only "
+                   "gradient path (multiple-time-stepping integrator).");
+    }
+
+    const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
+
+    if (mode != GradientMode::NUMERICAL &&
+        spec->ll_arena != nullptr &&
+        (spec->extra_prior == nullptr || spec->extra_prior_arena != nullptr)) {
+        return &compute_gradient_prior_arena;
+    }
+
+    return &compute_gradient_prior_numerical;
+}
+
 #endif // TULPA_HMC_GRADIENT_DISPATCH_H

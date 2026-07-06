@@ -56,6 +56,23 @@ double find_reasonable_epsilon_dense(
     const DenseMassMatrix& mass
 );
 
+// Largest dimensionless leapfrog step in play for the step-adapted integrator,
+// nu_max = omega_max * epsilon, where omega_max is the highest oscillation
+// frequency of the mass-preconditioned target: sqrt of the largest eigenvalue
+// of M^{-1} C, with C = -Hessian(log_post) the local curvature at q (SPD near
+// the mode) and M the adapted mass matrix. Computed once per chain at warmup
+// end via a finite-difference Hessian and power iteration on M^{-1} C (both
+// SPD, so the product has real positive spectrum). Returns epsilon -- the
+// well-adapted-metric limit (nu_max = eps) -- when the curvature is unavailable
+// or non-finite; clamps into the band where the schemes stay stable.
+double compute_adaptive_nu_max(
+    const std::vector<double>& q,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const DenseMassMatrix& mass,
+    double epsilon
+);
+
 // Run single HMC chain (C++ version - safe for parallel)
 // riemannian: -1=auto (retry divergences with SoftAbs for BYM2/ICAR),
 //              1=force on, 0=force off

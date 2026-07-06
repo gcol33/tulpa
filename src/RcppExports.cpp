@@ -1528,13 +1528,14 @@ BEGIN_RCPP
 END_RCPP
 }
 // tulpa_set_integrator_cpp
-std::string tulpa_set_integrator_cpp(std::string name);
-RcppExport SEXP _tulpa_tulpa_set_integrator_cpp(SEXP nameSEXP) {
+std::string tulpa_set_integrator_cpp(std::string name, int mts_substeps);
+RcppExport SEXP _tulpa_tulpa_set_integrator_cpp(SEXP nameSEXP, SEXP mts_substepsSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< std::string >::type name(nameSEXP);
-    rcpp_result_gen = Rcpp::wrap(tulpa_set_integrator_cpp(name));
+    Rcpp::traits::input_parameter< int >::type mts_substeps(mts_substepsSEXP);
+    rcpp_result_gen = Rcpp::wrap(tulpa_set_integrator_cpp(name, mts_substeps));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3058,7 +3059,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tulpa_pit", (DL_FUNC) &_tulpa_cpp_tulpa_pit, 4},
     {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 8},
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
-    {"_tulpa_tulpa_set_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_set_integrator_cpp, 1},
+    {"_tulpa_tulpa_set_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_set_integrator_cpp, 2},
     {"_tulpa_tulpa_get_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_get_integrator_cpp, 0},
     {"_tulpa_cpp_smc_test", (DL_FUNC) &_tulpa_cpp_smc_test, 5},
     {"_tulpa_cpp_selected_inversion_diagonal", (DL_FUNC) &_tulpa_cpp_selected_inversion_diagonal, 4},
