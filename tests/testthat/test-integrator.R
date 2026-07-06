@@ -60,6 +60,34 @@ test_that("leapfrog is the default and reproduces trajectories bit-for-bit", {
   expect_equal(sum(fit1$divergent), 0)
 })
 
+test_that("default leapfrog draws match a stored reference (guards integrator drift)", {
+  # The same-seed determinism above only proves the build reproduces itself. It
+  # does not catch a *change* to the default leapfrog stepper: a refactor that
+  # silently alters the trajectory still reproduces its own (new) draws. This
+  # test pins the draws to a committed snapshot, so any numeric change to the
+  # default path (the "byte-for-byte unchanged" NEWS claim) fails loudly.
+  skip_if_not_slow()
+  ref_path <- test_path("_ref", "leapfrog_ref.rds")
+  skip_if_not(file.exists(ref_path),
+              "no stored leapfrog reference (regenerate via tools/gen_leapfrog_ref.R)")
+  ref <- readRDS(ref_path)
+
+  old <- tulpa_integrator()
+  on.exit(tulpa_integrator(old), add = TRUE)
+  tulpa_integrator("leapfrog")
+
+  fit <- tulpa:::cpp_tulpa_fit_generic(
+    y_r = ref$y, X_r = ref$X, n_iter = ref$n_iter, n_warmup = ref$n_warmup,
+    max_treedepth = ref$max_treedepth, adapt_delta = ref$adapt_delta,
+    seed = ref$seed, verbose = FALSE)
+
+  # Byte-identical on the same build (the determinism test proves it); 1e-6
+  # tolerates cross-compiler FP reordering while still catching any real change
+  # to the leapfrog stepper, which moves draws by >> 1e-3.
+  expect_equal(dim(fit$draws), dim(ref$draws))
+  expect_equal(fit$draws, ref$draws, tolerance = 1e-6)
+})
+
 test_that("leapfrog and yoshida4 both recover a linear-Gaussian model", {
   skip_if_not_slow()
   old <- tulpa_integrator()

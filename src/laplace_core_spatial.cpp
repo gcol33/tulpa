@@ -43,7 +43,8 @@ Rcpp::List cpp_laplace_fit_spatial(
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    int force_sparse = 0
 ) {
     // Fixed effects + optional iid RE + a single ICAR latent block, through the
     // unified spec solver (the family-enum laplace_mode_spatial was retired in
@@ -98,7 +99,8 @@ Rcpp::List cpp_laplace_fit_spatial(
 
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0);
+        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr,
+        /*return_re_cov=*/false, /*sparse_override=*/force_sparse);
     return tulpa::laplace_result_to_list(res);
 }
 
@@ -113,7 +115,8 @@ Rcpp::List cpp_laplace_fit_bym2(
     double sigma_spatial, double rho, double scale_factor,
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    int force_sparse = 0
 ) {
     // Fixed effects + optional iid RE + BYM2's two latent blocks (phi:
     // ICAR-structured & centered, theta: IID) through the unified spec solver
@@ -195,6 +198,7 @@ Rcpp::List cpp_laplace_fit_bym2(
 
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0);
+        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr,
+        /*return_re_cov=*/false, /*sparse_override=*/force_sparse);
     return tulpa::laplace_result_to_list(res);
 }

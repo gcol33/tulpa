@@ -1123,7 +1123,8 @@ LaplaceResult spec_inner_solve(
     SparseCholeskySolver* solver,
     bool store_Q,
     const std::vector<std::pair<int, int>>* inv_block_layout,
-    const BetaPrior* beta_prior
+    const BetaPrior* beta_prior,
+    int sparse_override
 ) {
     const SpecLatentLayout L = build_latent_layout(data, layout, blocks);
     const int N = data.N;
@@ -1174,7 +1175,8 @@ LaplaceResult spec_inner_solve(
     return laplace_newton_solve_ll(
         n_eta, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
-        log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout
+        log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
+        sparse_override
     );
 }
 
@@ -1194,7 +1196,8 @@ LaplaceResult laplace_mode_spec_dense_solve(
     const std::vector<LatentBlock>* blocks,
     int k_grid,
     const BetaPrior* beta_prior,
-    bool return_re_cov
+    bool return_re_cov,
+    int sparse_override
 ) {
     if (data.n_processes < 1) {
         Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
@@ -1339,7 +1342,7 @@ LaplaceResult laplace_mode_spec_dense_solve(
         params_inout, scratch, &newton_solver,
         /*store_Q=*/false,
         return_re_cov ? &inv_block_layout : nullptr,
-        beta_prior
+        beta_prior, sparse_override
     );
     scatter_compacted_latent(L, res.mode.data(), params_inout);  // mode -> params latent
     return res;

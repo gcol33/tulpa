@@ -93,7 +93,8 @@ LaplaceResult laplace_newton_solve_ll(
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
     bool store_Q,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
+    int sparse_override = 0
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -108,7 +109,13 @@ LaplaceResult laplace_newton_solve_ll(
     } else {
         for (int j = 0; j < n_x; j++) x[j] = 0.0;
     }
-    bool use_sparse = (n_x >= SPARSE_THRESHOLD);
+    // sparse_override: 0 = auto (size threshold), >0 = force sparse, <0 = force
+    // dense. The override lets the test suite drive the same problem through both
+    // factorization paths for a byte-level dense == sparse equivalence gate,
+    // mirroring the joint path's force_sparse control.
+    bool use_sparse = (sparse_override == 0)
+                          ? (n_x >= SPARSE_THRESHOLD)
+                          : (sparse_override > 0);
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;

@@ -266,3 +266,68 @@ test_that("Poisson ICAR works with sparse Cholesky (400 sites)", {
   expect_true(is.finite(result$log_marginal))
   expect_equal(length(result$mode), 1L + 400L)
 })
+
+
+# =====================================================================
+# Test: byte-level dense == sparse on IDENTICAL data (single-response path)
+# =====================================================================
+# The dense and sparse factorizations solve the same Newton system, so on the
+# same problem they must agree to Cholesky quantization. The size threshold
+# picks one path per size, so the two must be forced to run on one data set:
+# force_sparse = -1 forces dense, +1 forces sparse. This is the single-response
+# analogue of the joint path's force_sparse equivalence gate
+# (test-nested-laplace-joint-sparse-equivalence.R); it is the check the #57
+# column-major footgun history most wants on this path.
+
+test_that("ICAR single-response: dense and sparse agree byte-level on identical data", {
+  adj <- make_grid_adjacency(15, 15)  # 225 sites -> n_x = 226 (auto-sparse)
+  dat <- simulate_spatial_data(
+    n_sites = 225, n_obs_per_site = 4,
+    beta0 = -0.3, tau_spatial = 2.5, adj = adj
+  )
+
+  fit_one <- function(fs) cpp_laplace_fit_spatial(
+    y = dat$y, n = dat$n_trials, X = dat$X,
+    re_idx = rep(0, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
+    spatial_idx = dat$spatial_idx, n_spatial_units = 225L,
+    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+    n_neighbors = adj$n_neighbors, tau_spatial = 2.5,
+    family = "binomial", phi = 1.0, max_iter = 100L, tol = 1e-8,
+    n_threads = 1L, force_sparse = fs
+  )
+  dense  <- fit_one(-1L)
+  sparse <- fit_one(1L)
+
+  expect_true(dense$converged)
+  expect_true(sparse$converged)
+  expect_equal(sparse$log_marginal, dense$log_marginal, tolerance = 1e-8)
+  expect_equal(sparse$log_det_Q,    dense$log_det_Q,    tolerance = 1e-8)
+  expect_equal(sparse$mode,         dense$mode,         tolerance = 1e-7)
+})
+
+test_that("BYM2 single-response: dense and sparse agree byte-level on identical data", {
+  adj <- make_grid_adjacency(15, 15)  # 225 sites -> n_x = 451 (auto-sparse)
+  dat <- simulate_spatial_data(
+    n_sites = 225, n_obs_per_site = 4,
+    beta0 = 0.1, tau_spatial = 3.0, adj = adj
+  )
+
+  fit_one <- function(fs) cpp_laplace_fit_bym2(
+    y = dat$y, n = dat$n_trials, X = dat$X,
+    re_idx = rep(0, length(dat$y)), n_re_groups = 0L, sigma_re = 1.0,
+    spatial_idx = dat$spatial_idx, n_spatial_units = 225L,
+    adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+    n_neighbors = adj$n_neighbors,
+    sigma_spatial = 0.5, rho = 0.7, scale_factor = 1.0,
+    family = "binomial", phi = 1.0, max_iter = 100L, tol = 1e-8,
+    n_threads = 1L, force_sparse = fs
+  )
+  dense  <- fit_one(-1L)
+  sparse <- fit_one(1L)
+
+  expect_true(dense$converged)
+  expect_true(sparse$converged)
+  expect_equal(sparse$log_marginal, dense$log_marginal, tolerance = 1e-8)
+  expect_equal(sparse$log_det_Q,    dense$log_det_Q,    tolerance = 1e-8)
+  expect_equal(sparse$mode,         dense$mode,         tolerance = 1e-7)
+})

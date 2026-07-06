@@ -55,7 +55,8 @@ LaplaceResult spec_inner_solve(
     SparseCholeskySolver* solver,
     bool store_Q,
     const std::vector<std::pair<int, int>>* inv_block_layout,
-    const BetaPrior* beta_prior = nullptr
+    const BetaPrior* beta_prior = nullptr,
+    int sparse_override = 0
 );
 
 // Result-returning standalone spec Laplace (defined in laplace_spec.cpp).
@@ -74,7 +75,8 @@ LaplaceResult laplace_mode_spec_dense_solve(
     const std::vector<LatentBlock>* blocks = nullptr,
     int k_grid = 0,
     const BetaPrior* beta_prior = nullptr,
-    bool return_re_cov = false
+    bool return_re_cov = false,
+    int sparse_override = 0
 );
 
 } // namespace tulpa

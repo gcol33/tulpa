@@ -1,5 +1,21 @@
 # tulpa NEWS
 
+## 0.0.71 (2026-07-06)
+
+* `cpp_laplace_fit_spatial()` and `cpp_laplace_fit_bym2()` gain a `force_sparse`
+  argument (0 = size threshold, 1 = force sparse, -1 = force dense) threaded to
+  the shared Newton solver. It lets the same problem run through both
+  factorization paths for a byte-level dense-vs-sparse equivalence gate on the
+  single-response path, the analogue of the joint path's `force_sparse` control.
+  Default behaviour (0) is unchanged.
+* Tests: a byte-level dense == sparse equivalence gate on the single-response
+  ICAR / BYM2 Laplace path (`test-sparse-cholesky.R`), a `tulpa_pit()`
+  calibration check (Uniform-under-correct-model, with a powered misspecification
+  counter-case, `test-pit-calibration.R`), and a stored-draws reference for the
+  default leapfrog integrator so a change to the stepper fails loudly rather than
+  silently reproducing its own new draws (`test-integrator.R`,
+  `tools/gen_leapfrog_ref.R`).
+
 ## 0.0.70 (2026-07-06)
 
 * `tulpa_integrator("adaptive2")` / `"adaptive3"` cap the warmup-end curvature
