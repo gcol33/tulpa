@@ -27,6 +27,14 @@
 #   Sys.setenv(TULPA_SLOW_TESTS = "true"); test()      # tiers 1 + 2 + 3  (full validation)
 #   R CMD check / CRAN                                 # tier 1 only
 #
+# RELEASE GATE. Tier 3 holds the recovery / coverage / sampler-calibration
+# evidence and is opt-in, so a routine test() or R CMD check runs plumbing only
+# -- a green routine check says nothing about unbiasedness or interval coverage.
+# Before any release or CRAN submission the full slow suite is a HARD gate, run
+# green alongside the win-builder r-devel pass:
+#
+#   Sys.setenv(TULPA_SLOW_TESTS = "true", NOT_CRAN = "true"); devtools::test()
+#
 # Put exactly one tier gate as the first line of any test_that() block whose cost
 # is a model fit or an MCMC sample; leave structural blocks ungated so CRAN still
 # exercises them. Fast mode rides the tier-2 / tier-3 gates, so a new fit placed
