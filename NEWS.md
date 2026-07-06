@@ -44,28 +44,28 @@
   fixed placeholder of the same stage family so the dual-averaged step size
   transfers. Default leapfrog and the fixed schemes are byte-for-byte unchanged.
 
-* `tulpa_integrator("mts", mts_substeps = )` wires the SIMP multiple-time-
-  stepping (RESPA) integrator into NUTS. The trajectory leaf splits the force
+* `tulpa_integrator("mts", mts_substeps = )` adds a multiple-time-stepping
+  (RESPA / Verlet-I) integrator to NUTS. The trajectory leaf splits the force
   into a stiff but cheap prior part (the Gaussian latent structure, taken with
   `mts_substeps` inner leapfrog substeps) and a smooth but expensive likelihood
   part (one full gradient per leaf, as leapfrog pays), so a larger outer step
   handles the stiff prior without evaluating the likelihood at the inner rate.
   The split reuses the existing `skip_obs_loop` decomposition: a new prior-only
   gradient path (arena-AD or central differences, folding in any model-package
-  prior) supplies the fast force, and `grad_full - grad_prior` is exactly the
-  likelihood gradient. The leaf stays symplectic and time reversible, so the
-  U-turn / tree machinery is unchanged. Helps most when the latent field is
-  stiff relative to a comparatively flat likelihood.
+  prior) supplies the fast force, and `grad_full - grad_prior` gives the slow
+  (likelihood) force -- exact when the full and prior gradients are additive,
+  which holds unless a model-package gradient hook alters the full gradient
+  non-additively. The leaf stays symplectic and time reversible, so the U-turn /
+  tree machinery is unchanged. Helps most when the latent field is stiff relative
+  to a comparatively flat likelihood.
 
-* Refreshed the vendored SIMP snapshot to 0.3.0, which adds the step-adapted
+* Refreshed the vendored SIMP snapshot, which adds the step-adapted
   minimum-error integrators (an exact harmonic energy-error analysis picks the
-  multistage coefficient for a target's step band, from `omega_max * eps`), the
-  parametric `two_stage` / `three_stage` constructors, and a
-  multiple-time-stepping (RESPA) split-potential stepper. These ship in
-  `src/simp/` and are available for wiring into the NUTS integrator; the current
-  `tulpa_integrator()` schemes are unchanged. The integrator decls now include
-  only `simp/scheme.h`, so the new Eigen-heavy headers do not enter every
-  translation unit.
+  multistage coefficient for a target's step band, from `omega_max * eps`) and
+  the parametric `two_stage` / `three_stage` constructors. These ship in
+  `src/simp/`; the fixed `tulpa_integrator()` schemes are unchanged. The
+  integrator decls now include only `simp/scheme.h`, so the Eigen-heavy headers
+  do not enter every translation unit.
 
 ## 0.0.67 (2026-07-03)
 
