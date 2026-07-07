@@ -32,7 +32,8 @@
 # Moments of the tilted distribution N(eta; mu, s2) * exp(loglik(eta; y)) over a
 # single site, via Gauss-Hermite quadrature. Returns Z (normalizer), the tilted
 # mean and variance. `gh` is the output of .gauss_hermite().
-.ep_tilted_moments <- function(mu, s2, y, family, phi, n_trials, gh) {
+.ep_tilted_moments <- function(mu, s2, y, family, phi, n_trials, gh,
+                               phi2 = NULL) {
   # Gaussian likelihood: the tilted distribution is exactly Gaussian, so use its
   # closed-form moments (EP is then exact, no quadrature error). phi = variance.
   # The tilted normalizer is the Gaussian convolution N(y; mu, s2 + phi).
@@ -46,7 +47,8 @@
   eta <- mu + sqrt(2) * sd * gh$x                 # change of variable
   wt  <- gh$w / sqrt(pi)
   ll  <- family_loglik(eta, rep(y, length(eta)), family,
-                       n_trials = rep(n_trials, length(eta)), phi = phi)
+                       n_trials = rep(n_trials, length(eta)), phi = phi,
+                       phi2 = phi2)
   lw  <- log(wt) + ll
   m   <- max(lw)
   ew  <- exp(lw - m)
@@ -73,6 +75,8 @@
 #' @param data A data frame.
 #' @param family Character family name (see [family_names()]).
 #' @param phi Dispersion / precision passed to the family (held fixed).
+#' @param phi2 Optional second dispersion (Student-t degrees of freedom for
+#'   `family = "t"`; default 4 when `NULL`).
 #' @param n_trials Binomial denominators (length `nrow(data)`), or `NULL` (= 1).
 #' @param beta_prior_sd SD of the mean-zero Gaussian prior on every coefficient
 #'   (default 10).
@@ -97,11 +101,13 @@
 #' }
 #' @export
 tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
-                     n_trials = NULL, beta_prior_sd = 10, control = list()) {
+                     phi2 = NULL, n_trials = NULL, beta_prior_sd = 10,
+                     control = list()) {
   if (is.null(.FAMILY_OPS[[family]])) {
     stop(sprintf("Unknown family '%s'. Supported: %s.",
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)
   }
+  if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   max_sweeps <- as.integer(control$max_sweeps %||% 50L)
   tol        <- control$tol %||% 1e-6
   damping    <- control$damping %||% 0.8
@@ -140,7 +146,8 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
       if (inv_cav <= 1e-10) next                   # skip ill-defined cavity
       s2_cav <- 1 / inv_cav
       mu_cav <- s2_cav * (mu / s2 - nu[i])
-      tm <- .ep_tilted_moments(mu_cav, s2_cav, y[i], family, phi, nt[i], gh)
+      tm <- .ep_tilted_moments(mu_cav, s2_cav, y[i], family, phi, nt[i], gh,
+                               phi2 = phi2)
       if (is.null(tm)) next
       tau_new <- 1 / tm$var - inv_cav
       nu_new  <- tm$mean / tm$var - mu_cav / s2_cav
@@ -184,7 +191,8 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
       if (inv_cav <= 1e-10) return(NA_real_)
       s2c <- 1 / inv_cav
       muc <- s2c * (mu / s2 - nu[i])
-      tm  <- .ep_tilted_moments(muc, s2c, y[i], family, phi, nt[i], gh)
+      tm  <- .ep_tilted_moments(muc, s2c, y[i], family, phi, nt[i], gh,
+                                phi2 = phi2)
       if (is.null(tm) || !is.finite(tm$logZ)) return(NA_real_)
       ci <- tm$logZ + 0.5 * log1p(tau[i] * s2c) -
         (muc / s2c + nu[i])^2 * s2 / 2 + muc^2 / (2 * s2c)

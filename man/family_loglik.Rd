@@ -4,7 +4,7 @@
 \alias{family_loglik}
 \title{Elementwise log-likelihood for a family.}
 \usage{
-family_loglik(eta, y, family, n_trials = NULL, phi = 1)
+family_loglik(eta, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
 Elementwise log-likelihood for a family.

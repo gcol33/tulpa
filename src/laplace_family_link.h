@@ -9,6 +9,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <string>
 
 #ifndef M_PI
@@ -17,9 +18,9 @@
 
 namespace tulpa {
 
-// Fixed degrees of freedom for the Student-t (robust) family. A single robust
-// default (configurable df would need a second dispersion channel through the
-// family-ops signature); nu = 4 is the common heavy-tailed drop-in for Gaussian.
+// Default degrees of freedom for the Student-t (robust) family, used when no
+// phi2 is supplied through the second dispersion channel; nu = 4 is the common
+// heavy-tailed drop-in for Gaussian.
 constexpr double kStudentTDf = 4.0;
 
 struct FamilyLink {
@@ -210,7 +211,8 @@ struct GradHess {
 
 inline GradHess grad_hess_for_family(
     double y, int n_trials, double eta,
-    const std::string& family, double phi
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
 ) {
     if (family == "binomial") {
         return {grad_log_lik_binomial((int)y, n_trials, eta),
@@ -240,12 +242,12 @@ inline GradHess grad_hess_for_family(
         return {grad, n * mu * (1.0 - mu) / D};
     }
     if (family == "t") {
-        // Student-t location-scale (identity link): y ~ eta + phi * t_nu, with the
-        // robust default nu = kStudentTDf and phi the scale. Score is exact; the
-        // working weight is the constant Fisher information (nu+1)/((nu+3) phi^2),
-        // which is positive and needs no Fisher fallback (unlike the redescending
-        // observed information of the heavy tails).
-        const double nu = kStudentTDf;
+        // Student-t location-scale (identity link): y ~ eta + phi * t_nu, with
+        // nu = phi2 (NaN => the robust default kStudentTDf) and phi the scale.
+        // Score is exact; the working weight is the constant Fisher information
+        // (nu+1)/((nu+3) phi^2), which is positive and needs no Fisher fallback
+        // (unlike the redescending observed information of the heavy tails).
+        const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
         double resid = y - eta;
         double grad = (nu + 1.0) * resid / (nu * phi * phi + resid * resid);
         return {grad, (nu + 1.0) / ((nu + 3.0) * phi * phi)};
@@ -267,7 +269,8 @@ inline GradHess grad_hess_for_family(
 
 inline double log_lik_for_family(
     double y, int n_trials, double eta,
-    const std::string& family, double phi
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
 ) {
     if (family == "binomial") return log_lik_binomial((int)y, n_trials, eta);
     if (family == "poisson") return log_lik_poisson((int)y, eta);
@@ -282,7 +285,7 @@ inline double log_lik_for_family(
              - R::lgammafn(a) - R::lgammafn(b) + R::lgammafn(a + b);
     }
     if (family == "t") {
-        const double nu = kStudentTDf;
+        const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
         double r = (y - eta) / phi;
         return R::lgammafn((nu + 1.0) / 2.0) - R::lgammafn(nu / 2.0)
              - 0.5 * std::log(nu * M_PI * phi * phi)

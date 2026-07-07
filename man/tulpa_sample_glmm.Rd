@@ -11,6 +11,7 @@ tulpa_sample_glmm(
   family,
   backend,
   phi = 1,
+  phi2 = NULL,
   offset = NULL,
   fixed_names = NULL,
   re_spec = NULL,
@@ -32,7 +33,13 @@ tulpa_sample_glmm(
 \item{backend}{One of \code{"hmc"}, \code{"ess"}, \code{"sghmc"}, \code{"sgld"}, \code{"mclmc"},
 \code{"smc"}, \code{"vi"}.}
 
-\item{phi}{Dispersion/precision passed to the family (held fixed).}
+\item{phi}{Dispersion/precision passed to the family (held fixed). The
+kernel parameterization: for \code{gaussian} / \code{lognormal} this is the residual
+SD (the \code{\link[=tulpa]{tulpa()}} front door passes \code{sqrt(phi)}, its \code{phi} being the
+variance); for \code{t} the scale.}
+
+\item{phi2}{Optional second dispersion: the Student-t degrees of freedom
+(\code{family = "t"}; default 4 when \code{NULL}).}
 
 \item{offset}{Optional fixed additive term on the linear predictor
 (\verb{eta = offset + X beta}), length \code{length(y)}; \code{NULL} -> no offset.}

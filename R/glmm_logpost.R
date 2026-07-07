@@ -44,6 +44,7 @@
 #'   (scalars, recycled). Default `list(mean = 0, sd = 2.5)`.
 #' @param weights Optional per-observation likelihood weights (length `n_obs`):
 #'   each row's log-likelihood and score contribution is scaled by its weight.
+#' @param phi2 Optional second dispersion (Student-t degrees of freedom).
 #'
 #' @return A list with:
 #'   * `log_posterior(theta)` -- scalar log-posterior (up to a constant).
@@ -56,7 +57,7 @@
 build_glmm_logpost <- function(bundle, family, sigma_re = NULL,
                                n_trials = NULL, phi = 1.0,
                                beta_prior = list(mean = 0, sd = 2.5),
-                               weights = NULL) {
+                               weights = NULL, phi2 = NULL) {
   if (is.null(.FAMILY_OPS[[family]])) {
     stop(sprintf("Unknown family '%s'. Supported: %s.",
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)
@@ -126,7 +127,7 @@ build_glmm_logpost <- function(bundle, family, sigma_re = NULL,
   log_posterior <- function(theta) {
     par <- unpack(theta)
     eta <- linear_predictor(par)
-    ll <- family_loglik(eta, y, family, n_trials, phi)
+    ll <- family_loglik(eta, y, family, n_trials, phi, phi2)
     ll <- if (is.null(weights)) sum(ll) else sum(weights * ll)
     lp_beta <- sum(stats::dnorm(par$beta, b_mean, b_sd, log = TRUE))
     lp_u <- 0
@@ -139,7 +140,7 @@ build_glmm_logpost <- function(bundle, family, sigma_re = NULL,
   grad_log_posterior <- function(theta) {
     par <- unpack(theta)
     eta <- linear_predictor(par)
-    s   <- family_score_eta(eta, y, family, n_trials, phi)
+    s   <- family_score_eta(eta, y, family, n_trials, phi, phi2)
     if (!is.null(weights)) s <- weights * s
 
     g_beta <- as.numeric(crossprod(X, s)) - (par$beta - b_mean) / (b_sd^2)

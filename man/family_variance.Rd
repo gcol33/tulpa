@@ -4,7 +4,7 @@
 \alias{family_variance}
 \title{Response variance Var(y | eta) for a family, elementwise.}
 \usage{
-family_variance(eta, family, n_trials = NULL, phi = 1)
+family_variance(eta, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
 Response variance Var(y | eta) for a family, elementwise.

@@ -41,7 +41,9 @@
 
 # --- family operations registry ----------------------------------------------
 # Fields per family:
-#   mean(eta)                     inverse link, clamped
+#   mean(eta, phi)                inverse link, clamped; phi reaches entries
+#                                 whose response mean depends on the dispersion
+#                                 (lognormal), the rest swallow it via `...`
 #   loglik(eta, y, n_trials, phi) elementwise log-density (full normalizer)
 #   score(eta, y, n_trials, phi)  elementwise d log-lik / d eta
 #   weight(eta, n_trials, phi)    Laplace/IRLS working weight (no y dependence)
@@ -49,6 +51,8 @@
 #   variance(eta, n_trials, phi)  response variance Var(y | eta), elementwise
 #   response_mean(eta, n_trials)  E[y | eta] on the response scale; only where
 #                                 it differs from mean() (trial-scaled families)
+# Families in .PHI2_FAMILIES additionally take a trailing `phi2` (the second
+# dispersion channel: Student-t df); the wrappers pass it only when supplied.
 
 .FAMILY_OPS <- list(
   binomial = list(
@@ -118,6 +122,26 @@
     variance = function(eta, n_trials, phi) {
       mu <- .mean_log(eta)
       mu + mu^2 / phi
+    }
+  ),
+
+  # Lognormal (identity link on the log scale), phi = log-scale VARIANCE
+  # (mirroring the gaussian entry; the SD-parameterized compiled kernels get
+  # sqrt(phi) at the front-door boundary). log(y) ~ N(eta, phi); the -log(y)
+  # Jacobian is part of the density. E[y] = exp(eta + phi/2).
+  lognormal = list(
+    mean = function(eta, phi = 1.0, ...) exp(eta + phi / 2),
+    loglik = function(eta, y, n_trials, phi) {
+      ly <- log(y)
+      -ly - 0.5 * log(2 * pi * phi) - (ly - eta)^2 / (2 * phi)
+    },
+    score = function(eta, y, n_trials, phi) (log(y) - eta) / phi,
+    weight = function(eta, n_trials, phi) rep(1 / phi, length(eta)),
+    sample = function(eta, n_trials, phi) {
+      stats::rlnorm(length(eta), meanlog = eta, sdlog = sqrt(phi))
+    },
+    variance = function(eta, n_trials, phi) {
+      (exp(phi) - 1) * exp(2 * eta + phi)
     }
   ),
 
@@ -256,39 +280,42 @@
     }
   ),
 
-  # Student-t location-scale (identity link), phi = scale, robust default
-  # df = .STUDENT_T_DF. Heavy-tailed drop-in for gaussian; the score is exact and
-  # the working weight is the constant Fisher information (nu+1)/((nu+3) phi^2).
-  # Mirrors the C++ `t` branch (kStudentTDf). Configurable df would need a second
-  # dispersion channel in the family-ops signature.
+  # Student-t location-scale (identity link), phi = scale, df = phi2 through
+  # the second dispersion channel (default .STUDENT_T_DF, the robust drop-in).
+  # The score is exact and the working weight is the constant Fisher
+  # information (nu+1)/((nu+3) phi^2). Mirrors the C++ `t` branch.
   t = list(
     mean = .mean_identity,
-    loglik = function(eta, y, n_trials, phi) {
-      nu <- .STUDENT_T_DF; r <- (y - eta) / phi
+    loglik = function(eta, y, n_trials, phi, phi2 = NULL) {
+      nu <- phi2 %||% .STUDENT_T_DF; r <- (y - eta) / phi
       lgamma((nu + 1) / 2) - lgamma(nu / 2) - 0.5 * log(nu * pi * phi^2) -
         0.5 * (nu + 1) * log1p(r^2 / nu)
     },
-    score = function(eta, y, n_trials, phi) {
-      nu <- .STUDENT_T_DF; resid <- y - eta
+    score = function(eta, y, n_trials, phi, phi2 = NULL) {
+      nu <- phi2 %||% .STUDENT_T_DF; resid <- y - eta
       (nu + 1) * resid / (nu * phi^2 + resid^2)
     },
-    weight = function(eta, n_trials, phi) {
-      nu <- .STUDENT_T_DF
+    weight = function(eta, n_trials, phi, phi2 = NULL) {
+      nu <- phi2 %||% .STUDENT_T_DF
       rep((nu + 1) / ((nu + 3) * phi^2), length(eta))
     },
-    sample = function(eta, n_trials, phi) {
-      eta + phi * stats::rt(length(eta), df = .STUDENT_T_DF)
+    sample = function(eta, n_trials, phi, phi2 = NULL) {
+      eta + phi * stats::rt(length(eta), df = phi2 %||% .STUDENT_T_DF)
     },
-    variance = function(eta, n_trials, phi) {
-      nu <- .STUDENT_T_DF
-      rep(phi^2 * nu / (nu - 2), length(eta))
+    variance = function(eta, n_trials, phi, phi2 = NULL) {
+      nu <- phi2 %||% .STUDENT_T_DF
+      rep(if (nu > 2) phi^2 * nu / (nu - 2) else Inf, length(eta))
     }
   )
 )
 
-# Robust default degrees of freedom for the Student-t family (matches the C++
-# kStudentTDf). Configurable df is deferred: the family-ops functions receive
-# only `phi`, so a second dispersion would need a signature change.
+# Families whose ops consume a second dispersion `phi2` (the Student-t degrees
+# of freedom; a future Tweedie's power). Everything else rejects a supplied
+# phi2 loudly rather than silently ignoring it.
+.PHI2_FAMILIES <- c("t")
+
+# Default degrees of freedom for the Student-t family (matches the C++
+# kStudentTDf), used when no `phi2` is supplied.
 .STUDENT_T_DF <- 4
 
 
@@ -303,8 +330,9 @@ family_names <- function() names(.FAMILY_OPS)
 # must be validated at the front door rather than flowing into a NaN log-lik
 # (gcol33/tulpa#104). The `*_<link>` suffix forms (e.g. "gamma_inverse") share
 # the base family's dispersion, so membership is tested on the prefix.
-.PHI_FAMILIES <- c("gaussian", "gamma", "neg_binomial_2", "negative_binomial",
-                   "inverse_gaussian", "beta", "beta_binomial", "t",
+.PHI_FAMILIES <- c("gaussian", "lognormal", "gamma", "neg_binomial_2",
+                   "negative_binomial", "inverse_gaussian", "beta",
+                   "beta_binomial", "t",
                    "interval_gaussian", "truncated_gaussian")
 
 # Count families whose likelihood is defined only at non-negative integer `y`.
@@ -376,60 +404,103 @@ family_names <- function() names(.FAMILY_OPS)
 }
 
 
-#' Inverse-link mean for a family.
+# Resolve a supplied second dispersion against the family: NULL passes, a
+# phi2-aware family gets it, anything else errors rather than silently
+# ignoring a parameter the user thought they set.
+.phi2_or_stop <- function(family, phi2) {
+  if (is.null(phi2)) return(NULL)
+  if (!.family_base(family) %in% .PHI2_FAMILIES) {
+    stop(sprintf(
+      "Family '%s' takes no second dispersion `phi2` (supported: %s).",
+      family, paste(.PHI2_FAMILIES, collapse = ", ")), call. = FALSE)
+  }
+  if (!is.numeric(phi2) || length(phi2) != 1L || !is.finite(phi2) || phi2 <= 0) {
+    stop("`phi2` must be a positive finite scalar.", call. = FALSE)
+  }
+  phi2
+}
+
+
+#' Inverse-link mean for a family. `phi` reaches entries whose response mean
+#' depends on the dispersion (lognormal); the others ignore it via `...`.
 #' @keywords internal
-family_mean <- function(eta, family) .family_ops(family)$mean(eta)
+family_mean <- function(eta, family, phi = 1.0) {
+  .family_ops(family)$mean(eta, phi)
+}
 
 
 #' Elementwise log-likelihood for a family.
 #' @keywords internal
-family_loglik <- function(eta, y, family, n_trials = NULL, phi = 1.0) {
-  .family_ops(family)$loglik(eta, y, n_trials, phi)
+family_loglik <- function(eta, y, family, n_trials = NULL, phi = 1.0,
+                          phi2 = NULL) {
+  ops <- .family_ops(family)
+  if (is.null(.phi2_or_stop(family, phi2))) {
+    return(ops$loglik(eta, y, n_trials, phi))
+  }
+  ops$loglik(eta, y, n_trials, phi, phi2)
 }
 
 
 #' Score (d log-likelihood / d eta), elementwise.
 #' @keywords internal
-family_score_eta <- function(eta, y, family, n_trials = NULL, phi = 1.0) {
-  .family_ops(family)$score(eta, y, n_trials, phi)
+family_score_eta <- function(eta, y, family, n_trials = NULL, phi = 1.0,
+                             phi2 = NULL) {
+  ops <- .family_ops(family)
+  if (is.null(.phi2_or_stop(family, phi2))) {
+    return(ops$score(eta, y, n_trials, phi))
+  }
+  ops$score(eta, y, n_trials, phi, phi2)
 }
 
 
 #' Laplace/IRLS working weight (-d^2 log-lik / d eta^2), elementwise.
 #' @keywords internal
-family_weight <- function(eta, family, n_trials = NULL, phi = 1.0) {
-  .family_ops(family)$weight(eta, n_trials, phi)
+family_weight <- function(eta, family, n_trials = NULL, phi = 1.0,
+                          phi2 = NULL) {
+  ops <- .family_ops(family)
+  if (is.null(.phi2_or_stop(family, phi2))) {
+    return(ops$weight(eta, n_trials, phi))
+  }
+  ops$weight(eta, n_trials, phi, phi2)
 }
 
 
 #' One response draw per element of `eta` (posterior predictive), elementwise.
 #' @keywords internal
-family_sample <- function(eta, family, n_trials = NULL, phi = 1.0) {
+family_sample <- function(eta, family, n_trials = NULL, phi = 1.0,
+                          phi2 = NULL) {
   ops <- .family_ops(family)
   if (is.null(ops$sample)) {
     stop(sprintf("Family '%s' has no sampling function registered.", family),
          call. = FALSE)
   }
-  ops$sample(eta, n_trials, phi)
+  if (is.null(.phi2_or_stop(family, phi2))) {
+    return(ops$sample(eta, n_trials, phi))
+  }
+  ops$sample(eta, n_trials, phi, phi2)
 }
 
 
 #' Response variance Var(y | eta) for a family, elementwise.
 #' @keywords internal
-family_variance <- function(eta, family, n_trials = NULL, phi = 1.0) {
+family_variance <- function(eta, family, n_trials = NULL, phi = 1.0,
+                            phi2 = NULL) {
   ops <- .family_ops(family)
   if (is.null(ops$variance)) {
     stop(sprintf("Family '%s' has no variance function registered.", family),
          call. = FALSE)
   }
-  ops$variance(eta, n_trials, phi)
+  if (is.null(.phi2_or_stop(family, phi2))) {
+    return(ops$variance(eta, n_trials, phi))
+  }
+  ops$variance(eta, n_trials, phi, phi2)
 }
 
 
 #' Response-scale mean of y given eta for a family (trial-scaled where relevant).
 #' @keywords internal
-family_response_mean <- function(eta, family, n_trials = NULL) {
+family_response_mean <- function(eta, family, n_trials = NULL, phi = 1.0) {
   ops <- .family_ops(family)
   if (!is.null(ops$response_mean)) return(ops$response_mean(eta, n_trials))
-  ops$mean(eta)
+  ops$mean(eta, phi)
 }

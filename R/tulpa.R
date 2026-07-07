@@ -249,7 +249,7 @@
                                n_trials, phi, beta_prior, control,
                                latent_blocks = list(), spatial = NULL,
                                temporal = NULL, weights = NULL,
-                               smoothers = list()) {
+                               phi2 = NULL, smoothers = list()) {
   input <- BACKEND_REGISTRY[[backend]]$input
 
   # Observation weights scale each row's log-likelihood. Supported where the
@@ -264,6 +264,24 @@
       "mode = 'laplace' (non-spatial) or a log-posterior sampler ",
       "('mala', 'imh_laplace', 'pathfinder')."), backend), call. = FALSE)
   }
+
+  # Second dispersion (Student-t df): threaded through the non-spatial Laplace
+  # kernel, the log-posterior builder, and the ModelData samplers.
+  if (!is.null(phi2) &&
+      !(input %in% c("logpost", "modeldata") ||
+        (backend == "laplace" && is.null(spatial)))) {
+    stop(sprintf(paste0(
+      "`phi2` is not supported by backend '%s'. Use mode = 'laplace' ",
+      "(non-spatial), a log-posterior sampler, or a ModelData sampler."),
+      backend), call. = FALSE)
+  }
+
+  # tulpa()'s `phi` for gaussian / lognormal is the residual VARIANCE (the
+  # R-side registry convention); the compiled kernels behind the nested /
+  # spde / modeldata backends parameterize by the residual SD. Convert once
+  # at this boundary (tulpa_laplace converts internally; the re_cov / agq
+  # paths already consume the variance).
+  phi_sd <- if (family %in% c("gaussian", "lognormal")) sqrt(phi) else phi
 
   if (input == "nested") {
     if (backend != "nested_laplace") {
@@ -336,7 +354,7 @@
       n_re_groups = n_re_groups,
       sigma_re    = sigma_re_scalar,
       family      = family,
-      phi         = phi,
+      phi         = phi_sd,
       control     = control
     ))
   }
@@ -376,7 +394,7 @@
       range          = NULL,
       sigma          = NULL,
       nested_laplace = TRUE,
-      phi            = phi,
+      phi            = phi_sd,
       offset         = bundle$offset,
       control        = list(
         method    = method,
@@ -470,7 +488,7 @@
       return(list(
         y = bundle$y, n_trials = n_trials, X = bundle$X,
         re_list = .bundle_to_re_list(bundle, sigma_re),
-        family = family, phi = phi,
+        family = family, phi = phi, phi2 = phi2,
         offset = bundle$offset, beta_prior = beta_prior,
         weights = weights
       ))
@@ -586,7 +604,7 @@
     m <- build_glmm_logpost(bundle, family, sigma_re = sigma_re,
                             n_trials = n_trials, phi = phi,
                             beta_prior = beta_prior %||% list(mean = 0, sd = 2.5),
-                            weights = weights)
+                            weights = weights, phi2 = phi2)
     if (backend == "mala") {
       return(list(
         log_posterior = m$log_posterior,
@@ -719,7 +737,8 @@
       X             = bundle$X,
       family        = family,
       backend       = backend,
-      phi           = phi,
+      phi           = phi_sd,
+      phi2          = phi2,
       offset        = bundle$offset,
       fixed_names   = bundle$fixed_names,
       re_spec       = re_spec,
@@ -804,7 +823,12 @@
 #'   the log-posterior samplers (`mala`, `imh_laplace`, `pathfinder`); other
 #'   backends reject weights loudly.
 #' @param phi Dispersion/precision passed to the family (residual variance for
-#'   gaussian, size for neg_binomial_2, precision for beta).
+#'   gaussian and lognormal, size for neg_binomial_2, precision for beta,
+#'   scale for t). The variance convention holds across every backend; the
+#'   SD-parameterized compiled kernels receive `sqrt(phi)` at the boundary.
+#' @param phi2 Optional second dispersion: the Student-t degrees of freedom
+#'   (`family = "t"`; default 4 when `NULL`). Supported on the non-spatial
+#'   Laplace path, the log-posterior samplers, and the ModelData samplers.
 #' @param beta_prior Optional `list(mean, sd)` Gaussian prior on the fixed
 #'   effects.
 #' @param spatial Optional spatial-field spec. How it is addressed depends on the
@@ -874,6 +898,7 @@ tulpa <- function(formula, data,
                   n_trials = NULL,
                   weights = NULL,
                   phi = 1.0,
+                  phi2 = NULL,
                   beta_prior = NULL,
                   spatial = NULL,
                   temporal = NULL,
@@ -884,6 +909,7 @@ tulpa <- function(formula, data,
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)
   }
   .validate_family_phi(family, phi)
+  if (!is.null(phi2)) .phi2_or_stop(family, phi2)
 
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
@@ -1246,7 +1272,7 @@ tulpa <- function(formula, data,
                              n_trials, phi, beta_prior, control,
                              latent_blocks = parsed$latent_blocks,
                              spatial = spatial_spec, temporal = temporal_spec,
-                             weights = weights,
+                             weights = weights, phi2 = phi2,
                              smoothers = lapply(smooth_specs, `[[`, "block"))
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
@@ -1289,6 +1315,7 @@ tulpa <- function(formula, data,
     # Named obs_weights: nested fits already carry grid `$weights`.
     fit$obs_weights  <- weights
     fit$phi          <- fit$phi %||% phi
+    fit$phi2         <- phi2
     fit$re_design    <- lapply(bundle$re_terms %||% list(), function(rt) {
       rt[c("group_idx", "has_intercept", "slope_matrix", "n_groups", "n_coefs")]
     })

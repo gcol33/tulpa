@@ -17,6 +17,7 @@
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "laplace_family_link.h"
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -50,6 +51,10 @@ struct BuiltinFamilyResponse {
     // (+Inf => no truncation). The point response y[i] is still read (the density is
     // evaluated at it); only the upper bound is added. Null => not a truncated arm.
     const double* trunc_upper = nullptr;
+    // Second dispersion channel: the Student-t degrees of freedom (and any
+    // future two-parameter family's extra parameter, e.g. the Tweedie power).
+    // NaN => the family's built-in default (kStudentTDf for "t").
+    double phi2 = std::numeric_limits<double>::quiet_NaN();
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
@@ -69,7 +74,7 @@ inline double builtin_family_ll_double(
         ? log_lik_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
         ? log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
-        : log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi);
+        : log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi, r->phi2);
     // Weight the log-lik by the SAME per-obs factor the score / Fisher Hessian
     // carry (builtin_family_eta_weights), so the Newton line search optimizes the
     // weighted objective its step direction is built from. Without this the
@@ -99,7 +104,7 @@ inline void builtin_family_eta_weights(
         ? grad_hess_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
         ? grad_hess_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
-        : grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi);
+        : grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi, r->phi2);
     const double w = r->weights ? r->weights[i] : 1.0;
     grad_eta[0]     = w * gh.grad;
     neg_hess_eta[0] = w * gh.neg_hess;

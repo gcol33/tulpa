@@ -9,6 +9,7 @@ tulpa_ep(
   data,
   family = "binomial",
   phi = 1,
+  phi2 = NULL,
   n_trials = NULL,
   beta_prior_sd = 10,
   control = list()
@@ -22,6 +23,9 @@ tulpa_ep(
 \item{family}{Character family name (see \code{\link[=family_names]{family_names()}}).}
 
 \item{phi}{Dispersion / precision passed to the family (held fixed).}
+
+\item{phi2}{Optional second dispersion (Student-t degrees of freedom for
+\code{family = "t"}; default 4 when \code{NULL}).}
 
 \item{n_trials}{Binomial denominators (length \code{nrow(data)}), or \code{NULL} (= 1).}
 

@@ -4,7 +4,7 @@
 \alias{family_response_mean}
 \title{Response-scale mean of y given eta for a family (trial-scaled where relevant).}
 \usage{
-family_response_mean(eta, family, n_trials = NULL)
+family_response_mean(eta, family, n_trials = NULL, phi = 1)
 }
 \description{
 Response-scale mean of y given eta for a family (trial-scaled where relevant).

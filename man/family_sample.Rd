@@ -4,7 +4,7 @@
 \alias{family_sample}
 \title{One response draw per element of \code{eta} (posterior predictive), elementwise.}
 \usage{
-family_sample(eta, family, n_trials = NULL, phi = 1)
+family_sample(eta, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
 One response draw per element of \code{eta} (posterior predictive), elementwise.

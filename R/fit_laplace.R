@@ -28,7 +28,12 @@
 #'     present these take precedence over `sigma`; the off-diagonal enters both
 #'     the joint Hessian (mode finding) and the marginal fixed-effect SE.
 #' @param family Character: `"binomial"`, `"poisson"`, `"neg_binomial_2"`, `"gaussian"`
-#' @param phi Dispersion parameter (neg_binomial_2 and gamma only)
+#' @param phi Dispersion parameter. For `gaussian` / `lognormal` this is the
+#'   residual VARIANCE (matching the R-side family registry and [tulpa()]);
+#'   the SD-parameterized compiled kernels receive `sqrt(phi)` internally.
+#'   For `neg_binomial_2` the size, `beta` the precision, `t` the scale.
+#' @param phi2 Optional second dispersion: the Student-t degrees of freedom
+#'   (`family = "t"`; default 4 when `NULL`). Non-spatial path only.
 #' @param spatial Optional spatial specification (tulpa_spatial object)
 #' @param weights Optional observation weights (numeric vector, length `length(y)`).
 #'   Scales each observation's likelihood contribution. `NULL` (default) uses 1.
@@ -70,6 +75,7 @@ tulpa_laplace <- function(y, n_trials, X,
                           re_list = list(),
                           family = "binomial",
                           phi = 1.0,
+                          phi2 = NULL,
                           spatial = NULL,
                           weights = NULL,
                           offset = NULL,
@@ -81,6 +87,20 @@ tulpa_laplace <- function(y, n_trials, X,
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
+
+  # tulpa_laplace's `phi` is the residual VARIANCE for gaussian / lognormal
+  # (the convention of the R-side registry, which builds H_beta below); the
+  # compiled kernels parameterize by the residual SD. Convert once here so the
+  # mode-finding and the Hessian describe the same model (the kernel used to
+  # receive the variance where it expected the SD).
+  phi_kernel <- if (family %in% c("gaussian", "lognormal")) sqrt(phi) else phi
+  if (!is.null(phi2)) {
+    .phi2_or_stop(family, phi2)
+    if (!is.null(spatial)) {
+      stop("`phi2` is not threaded through the spatial Laplace kernels; drop ",
+           "`phi2` or `spatial`.", call. = FALSE)
+    }
+  }
 
   # Validate
   stopifnot(is.numeric(y) || is.integer(y))
@@ -136,7 +156,7 @@ tulpa_laplace <- function(y, n_trials, X,
     }
     result <- dispatch_laplace_spatial(
       y, n_trials, X, re_idx, n_re_groups, sigma_re,
-      spatial, family, phi, max_iter, tol, n_threads, offset = offset
+      spatial, family, phi_kernel, max_iter, tol, n_threads, offset = offset
     )
   } else {
     # All non-spatial paths: use cpp_laplace_fit_multi_re
@@ -191,7 +211,7 @@ tulpa_laplace <- function(y, n_trials, X,
       re_ngroups = re_ngroups,
       re_sigma_list = re_sigma_list,
       family = family,
-      phi = phi,
+      phi = phi_kernel,
       max_iter = as.integer(max_iter),
       tol = tol,
       n_threads = as.integer(n_threads),
@@ -201,7 +221,8 @@ tulpa_laplace <- function(y, n_trials, X,
       offset = offset,
       beta_prior_mean = if (is.null(bp)) NULL else bp$mean,
       beta_prior_sd   = if (is.null(bp)) NULL else bp$sd,
-      return_re_cov   = isTRUE(return_re_cov)
+      return_re_cov   = isTRUE(return_re_cov),
+      phi2 = phi2 %||% NA_real_
     )
   }
 
@@ -244,7 +265,7 @@ tulpa_laplace <- function(y, n_trials, X,
     }
 
     # GLM weights
-    W <- glmm_weights(eta, family, n_trials, phi)
+    W <- glmm_weights(eta, family, n_trials, phi, phi2)
 
     # Apply observation weights
     if (!is.null(weights)) W <- W * weights

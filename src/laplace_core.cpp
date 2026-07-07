@@ -160,7 +160,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::Nullable<Rcpp::NumericVector> x_init = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> beta_prior_mean = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd = R_NilValue,
-    bool return_re_cov = false
+    bool return_re_cov = false,
+    double phi2 = NA_REAL
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
     // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
@@ -240,6 +241,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
     resp.N        = N;
     resp.family   = family;
     resp.phi      = phi;
+    resp.phi2     = phi2;   // NA_REAL is a NaN => family default (e.g. t df = 4)
     resp.weights  = w_ptr;
 
     tulpa::ModelData data;

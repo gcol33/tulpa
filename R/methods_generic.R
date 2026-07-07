@@ -531,7 +531,8 @@ fitted.tulpa_fit <- function(object, ...) {
          "tulpa().", call. = FALSE)
   }
   beta <- coef(object)
-  family_mean(as.numeric(X %*% beta[colnames(X)]), object$family)
+  family_mean(as.numeric(X %*% beta[colnames(X)]), object$family,
+              phi = object$phi %||% 1.0)
 }
 
 #' Predict at new covariate values (population level)
@@ -607,7 +608,9 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   }
 
   if (!se.fit) {
-    return(if (type == "response") family_mean(eta, object$family) else eta)
+    return(if (type == "response") {
+      family_mean(eta, object$family, phi = object$phi %||% 1.0)
+    } else eta)
   }
 
   V  <- vcov(object)
@@ -616,9 +619,10 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   lo <- eta - z * se
   hi <- eta + z * se
   if (type == "response") {
-    eta <- family_mean(eta, object$family)
-    lo  <- family_mean(lo, object$family)   # monotone inverse links: endpoints map through
-    hi  <- family_mean(hi, object$family)
+    ph  <- object$phi %||% 1.0
+    eta <- family_mean(eta, object$family, phi = ph)
+    lo  <- family_mean(lo, object$family, phi = ph)   # monotone inverse links: endpoints map through
+    hi  <- family_mean(hi, object$family, phi = ph)
   }
   data.frame(fit = eta, se.fit = se, lower = lo, upper = hi)
 }

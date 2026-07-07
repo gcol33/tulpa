@@ -107,7 +107,8 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
                        paste0("K-fold refit on fold ", k),
                        obs_w = object$obs_weights)
     pointwise[test] <- .cv_heldout_lpd(fit_k, data, test, y, nt, fam, phi,
-                                       paste0("Fold ", k))
+                                       paste0("Fold ", k),
+                                       phi2 = object$phi2)
   }
 
   elpd <- sum(pointwise)
@@ -151,7 +152,8 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 # Exact held-out log predictive density log 1/S sum_s p(y_i | eta_i^(s)) at
 # the rows `test`, under a training refit's fixed-effect posterior. Held-out
 # random-effect groups contribute at their prior mean (population level).
-.cv_heldout_lpd <- function(fit_k, data, test, y, nt, fam, phi, label) {
+.cv_heldout_lpd <- function(fit_k, data, test, y, nt, fam, phi, label,
+                            phi2 = NULL) {
   beta <- stats::coef(fit_k)
   Xte  <- .tulpa_fixed_design(fit_k, data[test, , drop = FALSE])
   miss <- setdiff(names(beta), colnames(Xte))
@@ -168,7 +170,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 
   yte <- y[test]; ntte <- nt[test]
   ll <- vapply(seq_len(ncol(eta)), function(s) {
-    family_loglik(eta[, s], yte, fam, n_trials = ntte, phi = phi)
+    family_loglik(eta[, s], yte, fam, n_trials = ntte, phi = phi, phi2 = phi2)
   }, numeric(length(test)))                    # [n_test x S]
   if (is.null(dim(ll))) ll <- matrix(ll, nrow = length(test))
 
@@ -202,7 +204,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
   ll  <- matrix(NA_real_, nrow(eta), ncol(eta))
   for (s in seq_len(nrow(eta))) {
     ll[s, ] <- family_loglik(eta[s, ], y, object$family,
-                             n_trials = nt, phi = phi)
+                             n_trials = nt, phi = phi, phi2 = object$phi2)
   }
   ll
 }
@@ -294,7 +296,8 @@ tulpa_reloo <- function(object, data, k_threshold = 0.7,
                        refit_env, paste0("reloo refit without observation ", i),
                        obs_w = object$obs_weights)
     pointwise[i] <- .cv_heldout_lpd(fit_i, data, i, y, nt, fam, phi,
-                                    paste0("Observation ", i))
+                                    paste0("Observation ", i),
+                                    phi2 = object$phi2)
   }
 
   elpd <- sum(pointwise)

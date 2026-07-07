@@ -71,9 +71,10 @@ bayes_R2.tulpa_fit <- function(object, ndraws = NULL, summary = TRUE,
 
   r2 <- vapply(seq_len(nrow(eta)), function(s) {
     e <- eta[s, ]
-    mu <- family_response_mean(e, fam, n_trials = n_trials)
+    mu <- family_response_mean(e, fam, n_trials = n_trials, phi = phi)
     var_fit <- stats::var(mu)
-    var_res <- mean(family_variance(e, fam, n_trials = n_trials, phi = phi))
+    var_res <- mean(family_variance(e, fam, n_trials = n_trials, phi = phi,
+                                    phi2 = object$phi2))
     var_fit / (var_fit + var_res)
   }, numeric(1))
 

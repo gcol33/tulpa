@@ -4,7 +4,7 @@
 \alias{family_score_eta}
 \title{Score (d log-likelihood / d eta), elementwise.}
 \usage{
-family_score_eta(eta, y, family, n_trials = NULL, phi = 1)
+family_score_eta(eta, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
 Score (d log-likelihood / d eta), elementwise.

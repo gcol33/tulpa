@@ -4,7 +4,7 @@
 \alias{glmm_weights}
 \title{Compute GLM working weights for Laplace Hessian}
 \usage{
-glmm_weights(eta, family, n_trials = NULL, phi = 1)
+glmm_weights(eta, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
 Thin wrapper over the family-ops registry (\code{\link[=family_weight]{family_weight()}}) so the weight

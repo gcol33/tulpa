@@ -135,8 +135,9 @@ test_that("family helpers validate names; glmm_weights stays permissive", {
   expect_error(family_loglik(0, 0, "weibull"), "Unknown family")
   expect_error(family_mean(0, "nope"), "Unknown family")
   expect_setequal(family_names(),
-                  c("binomial", "poisson", "neg_binomial_2", "gaussian", "beta",
-                    "gamma", "inverse_gaussian", "beta_binomial", "t"))
+                  c("binomial", "poisson", "neg_binomial_2", "lognormal",
+                    "gaussian", "beta", "gamma", "inverse_gaussian",
+                    "beta_binomial", "t"))
   # historical fallback: unknown family -> unit weights, no error
   expect_equal(glmm_weights(c(0, 1, 2), "weibull"), rep(1, 3))
 })

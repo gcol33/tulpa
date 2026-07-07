@@ -82,8 +82,8 @@ inline T builtin_family_ll_ad(
     }
     if (fam == "t") {
         // Student-t location-scale (identity link): y ~ eta + phi * t_nu,
-        // nu = kStudentTDf (robust default), phi the scale.
-        const double nu = kStudentTDf;
+        // nu = phi2 (NaN => the robust default kStudentTDf), phi the scale.
+        const double nu = std::isnan(r->phi2) ? kStudentTDf : r->phi2;
         T r = (T(yv) - eta[0]) * T(1.0 / phi);
         return T(w) * (T(std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0)
                          - 0.5 * std::log(nu * M_PI * phi * phi))

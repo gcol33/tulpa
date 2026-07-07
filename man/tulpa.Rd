@@ -13,6 +13,7 @@ tulpa(
   n_trials = NULL,
   weights = NULL,
   phi = 1,
+  phi2 = NULL,
   beta_prior = NULL,
   spatial = NULL,
   temporal = NULL,
@@ -47,7 +48,13 @@ the log-posterior samplers (\code{mala}, \code{imh_laplace}, \code{pathfinder});
 backends reject weights loudly.}
 
 \item{phi}{Dispersion/precision passed to the family (residual variance for
-gaussian, size for neg_binomial_2, precision for beta).}
+gaussian and lognormal, size for neg_binomial_2, precision for beta,
+scale for t). The variance convention holds across every backend; the
+SD-parameterized compiled kernels receive \code{sqrt(phi)} at the boundary.}
+
+\item{phi2}{Optional second dispersion: the Student-t degrees of freedom
+(\code{family = "t"}; default 4 when \code{NULL}). Supported on the non-spatial
+Laplace path, the log-posterior samplers, and the ModelData samplers.}
 
 \item{beta_prior}{Optional \code{list(mean, sd)} Gaussian prior on the fixed
 effects.}

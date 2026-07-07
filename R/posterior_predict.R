@@ -202,7 +202,8 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
   yrep <- matrix(NA_real_, nrow(eta), ncol(eta))
   for (s in seq_len(nrow(eta))) {
     yrep[s, ] <- family_sample(eta[s, ], object$family,
-                               n_trials = n_trials, phi = phi)
+                               n_trials = n_trials, phi = phi,
+                               phi2 = object$phi2)
   }
   yrep
 }

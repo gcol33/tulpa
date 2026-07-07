@@ -11,6 +11,7 @@ tulpa_laplace(
   re_list = list(),
   family = "binomial",
   phi = 1,
+  phi2 = NULL,
   spatial = NULL,
   weights = NULL,
   offset = NULL,
@@ -47,7 +48,13 @@ the joint Hessian (mode finding) and the marginal fixed-effect SE.
 
 \item{family}{Character: \code{"binomial"}, \code{"poisson"}, \code{"neg_binomial_2"}, \code{"gaussian"}}
 
-\item{phi}{Dispersion parameter (neg_binomial_2 and gamma only)}
+\item{phi}{Dispersion parameter. For \code{gaussian} / \code{lognormal} this is the
+residual VARIANCE (matching the R-side family registry and \code{\link[=tulpa]{tulpa()}});
+the SD-parameterized compiled kernels receive \code{sqrt(phi)} internally.
+For \code{neg_binomial_2} the size, \code{beta} the precision, \code{t} the scale.}
+
+\item{phi2}{Optional second dispersion: the Student-t degrees of freedom
+(\code{family = "t"}; default 4 when \code{NULL}). Non-spatial path only.}
 
 \item{spatial}{Optional spatial specification (tulpa_spatial object)}
 

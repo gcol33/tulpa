@@ -29,7 +29,12 @@
 #' @param family Character family name (see [family_names()]).
 #' @param backend One of `"hmc"`, `"ess"`, `"sghmc"`, `"sgld"`, `"mclmc"`,
 #'   `"smc"`, `"vi"`.
-#' @param phi Dispersion/precision passed to the family (held fixed).
+#' @param phi Dispersion/precision passed to the family (held fixed). The
+#'   kernel parameterization: for `gaussian` / `lognormal` this is the residual
+#'   SD (the [tulpa()] front door passes `sqrt(phi)`, its `phi` being the
+#'   variance); for `t` the scale.
+#' @param phi2 Optional second dispersion: the Student-t degrees of freedom
+#'   (`family = "t"`; default 4 when `NULL`).
 #' @param offset Optional fixed additive term on the linear predictor
 #'   (`eta = offset + X beta`), length `length(y)`; `NULL` -> no offset.
 #' @param fixed_names Optional fixed-effect names for the draw columns.
@@ -54,6 +59,7 @@
 #'   apply.
 #' @keywords internal
 tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
+                              phi2 = NULL,
                               offset = NULL, fixed_names = NULL,
                               re_spec = NULL, spatial_spec = NULL,
                               temporal_spec = NULL, sigma_re_scale = 2.5,
@@ -62,6 +68,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     stop(sprintf("Unknown family '%s'. Supported: %s.",
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)
   }
+  if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   X <- as.matrix(X)
   N <- length(y)
   if (!is.null(offset)) {
@@ -106,7 +113,8 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     spatial_spec  = spatial_spec,
     temporal_spec = temporal_spec,
     sigma_re_scale = as.numeric(sigma_re_scale),
-    fixed_names   = fixed_names %||% colnames(X)
+    fixed_names   = fixed_names %||% colnames(X),
+    phi2          = phi2 %||% NA_real_
   )
 
   # The C++ kernel names every column of the full parameter vector (fixed effects

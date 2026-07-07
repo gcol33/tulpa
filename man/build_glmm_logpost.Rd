@@ -11,7 +11,8 @@ build_glmm_logpost(
   n_trials = NULL,
   phi = 1,
   beta_prior = list(mean = 0, sd = 2.5),
-  weights = NULL
+  weights = NULL,
+  phi2 = NULL
 )
 }
 \arguments{
@@ -32,6 +33,8 @@ must equal \code{length(bundle$re_terms)}. Ignored when there are no RE terms.}
 
 \item{weights}{Optional per-observation likelihood weights (length \code{n_obs}):
 each row's log-likelihood and score contribution is scaled by its weight.}
+
+\item{phi2}{Optional second dispersion (Student-t degrees of freedom).}
 }
 \value{
 A list with:

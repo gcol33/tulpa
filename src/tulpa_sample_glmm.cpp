@@ -101,7 +101,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
     Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> temporal_spec = R_NilValue,
     double sigma_re_scale = 2.5,
-    Rcpp::Nullable<Rcpp::CharacterVector> fixed_names = R_NilValue
+    Rcpp::Nullable<Rcpp::CharacterVector> fixed_names = R_NilValue,
+    double phi2 = NA_REAL
 ) {
     // Argument groups (kept out of the signature so Rcpp::compileAttributes does
     // not fold the comments into the generated wrapper):
@@ -123,6 +124,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     tulpa::build_sampler_model_inputs(
         in, y, n_trials, X, family, phi, sigma_beta, offset, sigma_re_scale,
         re_spec, spatial_spec, temporal_spec);
+    in.resp.phi2 = phi2;   // NA_REAL is a NaN => family default (e.g. t df = 4)
     const int D = in.layout.total_params;
     std::vector<double> init(D, 0.0);
     Rcpp::CharacterVector cn = tulpa::sampler_param_names(in.data, in.layout, fixed_names);
