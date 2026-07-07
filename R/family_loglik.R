@@ -46,6 +46,9 @@
 #   score(eta, y, n_trials, phi)  elementwise d log-lik / d eta
 #   weight(eta, n_trials, phi)    Laplace/IRLS working weight (no y dependence)
 #   sample(eta, n_trials, phi)    one y draw per element (posterior predictive)
+#   variance(eta, n_trials, phi)  response variance Var(y | eta), elementwise
+#   response_mean(eta, n_trials)  E[y | eta] on the response scale; only where
+#                                 it differs from mean() (trial-scaled families)
 
 .FAMILY_OPS <- list(
   binomial = list(
@@ -67,6 +70,15 @@
     sample = function(eta, n_trials, phi) {
       n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       stats::rbinom(length(eta), size = n, prob = .mean_binomial(eta))
+    },
+    variance = function(eta, n_trials, phi) {
+      n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      mu <- .mean_binomial(eta)
+      n * mu * (1 - mu)
+    },
+    response_mean = function(eta, n_trials) {
+      n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      n * .mean_binomial(eta)
     }
   ),
 
@@ -80,7 +92,8 @@
     weight = function(eta, n_trials, phi) .mean_log(eta),
     sample = function(eta, n_trials, phi) {
       stats::rpois(length(eta), .mean_log(eta))
-    }
+    },
+    variance = function(eta, n_trials, phi) .mean_log(eta)
   ),
 
   neg_binomial_2 = list(
@@ -101,6 +114,10 @@
     },
     sample = function(eta, n_trials, phi) {
       stats::rnbinom(length(eta), size = phi, mu = .mean_log(eta))
+    },
+    variance = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      mu + mu^2 / phi
     }
   ),
 
@@ -119,7 +136,8 @@
     weight = function(eta, n_trials, phi) rep(1 / phi, length(eta)),
     sample = function(eta, n_trials, phi) {
       stats::rnorm(length(eta), mean = eta, sd = sqrt(phi))
-    }
+    },
+    variance = function(eta, n_trials, phi) rep(phi, length(eta))
   ),
 
   beta = list(
@@ -147,6 +165,10 @@
     sample = function(eta, n_trials, phi) {
       mu <- .mean_beta(eta)
       stats::rbeta(length(eta), mu * phi, (1 - mu) * phi)
+    },
+    variance = function(eta, n_trials, phi) {
+      mu <- .mean_beta(eta)
+      mu * (1 - mu) / (phi + 1)
     }
   ),
 
@@ -167,7 +189,8 @@
     weight = function(eta, n_trials, phi) rep(phi, length(eta)),
     sample = function(eta, n_trials, phi) {
       stats::rgamma(length(eta), shape = phi, rate = phi / .mean_log(eta))
-    }
+    },
+    variance = function(eta, n_trials, phi) .mean_log(eta)^2 / phi
   ),
 
   # Inverse Gaussian (log link), phi = dispersion. Mean mu = exp(eta),
@@ -188,7 +211,8 @@
     },
     sample = function(eta, n_trials, phi) {
       .rinvgauss(length(eta), mu = .mean_log(eta), lambda = 1 / phi)
-    }
+    },
+    variance = function(eta, n_trials, phi) phi * .mean_log(eta)^3
   ),
 
   # Beta-binomial (logit link), phi = precision (a + b), n_trials = n.
@@ -220,6 +244,15 @@
       mu <- .mean_beta(eta)
       p  <- stats::rbeta(length(eta), mu * phi, (1 - mu) * phi)
       stats::rbinom(length(eta), size = n, prob = p)
+    },
+    variance = function(eta, n_trials, phi) {
+      n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      mu <- .mean_beta(eta)
+      n * mu * (1 - mu) * (1 + (n - 1) / (phi + 1))
+    },
+    response_mean = function(eta, n_trials) {
+      n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      n * .mean_beta(eta)
     }
   ),
 
@@ -245,6 +278,10 @@
     },
     sample = function(eta, n_trials, phi) {
       eta + phi * stats::rt(length(eta), df = .STUDENT_T_DF)
+    },
+    variance = function(eta, n_trials, phi) {
+      nu <- .STUDENT_T_DF
+      rep(phi^2 * nu / (nu - 2), length(eta))
     }
   )
 )
@@ -374,4 +411,25 @@ family_sample <- function(eta, family, n_trials = NULL, phi = 1.0) {
          call. = FALSE)
   }
   ops$sample(eta, n_trials, phi)
+}
+
+
+#' Response variance Var(y | eta) for a family, elementwise.
+#' @keywords internal
+family_variance <- function(eta, family, n_trials = NULL, phi = 1.0) {
+  ops <- .family_ops(family)
+  if (is.null(ops$variance)) {
+    stop(sprintf("Family '%s' has no variance function registered.", family),
+         call. = FALSE)
+  }
+  ops$variance(eta, n_trials, phi)
+}
+
+
+#' Response-scale mean of y given eta for a family (trial-scaled where relevant).
+#' @keywords internal
+family_response_mean <- function(eta, family, n_trials = NULL) {
+  ops <- .family_ops(family)
+  if (!is.null(ops$response_mean)) return(ops$response_mean(eta, n_trials))
+  ops$mean(eta)
 }
