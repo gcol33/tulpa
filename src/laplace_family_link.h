@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <vector>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -204,6 +205,45 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
     return (int)y * std::log(safe_mu) - safe_mu - R::lgammafn((int)y + 1.0);
 }
 
+// Tweedie compound Poisson-gamma log-density (1 < p < 2), log link upstream:
+// mean mu, dispersion phi, power p. Exact zero mass exp(-lambda); positive y
+// via the event-count series (Dunn & Smyth 2005), log-sum-exp'd from the
+// dominating index j_max = y^(2-p) / (phi (2-p)) until terms fall 37 nats
+// below the running peak. Mirrors .tweedie_loglik in R/family_loglik.R.
+inline double log_lik_tweedie(double y, double mu, double phi, double p) {
+    mu = std::max(mu, 1e-10);
+    const double lam = std::pow(mu, 2.0 - p) / (phi * (2.0 - p));
+    if (y < 0.0) return R_NegInf;
+    if (y <= 0.0) return -lam;
+    const double a  = (2.0 - p) / (p - 1.0);
+    const double b  = std::pow(mu, 1.0 - p) / (phi * (p - 1.0));
+    const double la = std::log(lam), lb = std::log(b), ly = std::log(y);
+    auto logterm = [&](double n) {
+        return n * la - R::lgammafn(n + 1.0) + n * a * lb
+             + (n * a - 1.0) * ly - R::lgammafn(n * a);
+    };
+    const double jmax = std::pow(y, 2.0 - p) / (phi * (2.0 - p));
+    const int n0 = std::max(1, (int)std::lround(jmax));
+    std::vector<double> terms;
+    double lmax = logterm((double)n0);
+    terms.push_back(lmax);
+    for (int n = n0 + 1; ; ++n) {
+        const double lt = logterm((double)n);
+        terms.push_back(lt);
+        if (lt > lmax) lmax = lt;
+        if (lt < lmax - 37.0) break;
+    }
+    for (int n = n0 - 1; n >= 1; --n) {
+        const double lt = logterm((double)n);
+        terms.push_back(lt);
+        if (lt > lmax) lmax = lt;
+        if (lt < lmax - 37.0) break;
+    }
+    double s = 0.0;
+    for (double lt : terms) s += std::exp(lt - lmax);
+    return lmax + std::log(s) - lam - b * y;
+}
+
 struct GradHess {
     double grad;
     double neg_hess;
@@ -252,6 +292,18 @@ inline GradHess grad_hess_for_family(
         double grad = (nu + 1.0) * resid / (nu * phi * phi + resid * resid);
         return {grad, (nu + 1.0) / ((nu + 3.0) * phi * phi)};
     }
+    if (family == "tweedie") {
+        // Compound Poisson-gamma (log link), phi2 = power p in (1, 2). EDM
+        // score through the log link, (y - mu)/(phi mu^(p-1)); expected
+        // Fisher weight mu^(2-p)/phi. Always positive, no fallback needed.
+        if (std::isnan(phi2)) {
+            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
+        }
+        const double p = phi2;
+        double mu = std::max(std::exp(eta), 1e-10);
+        return {(y - mu) / (phi * std::pow(mu, p - 1.0)),
+                std::pow(mu, 2.0 - p) / phi};
+    }
 
     FamilyLink fl = parse_family_link(family);
     double mu = linkinv(eta, fl.link);
@@ -290,6 +342,12 @@ inline double log_lik_for_family(
         return R::lgammafn((nu + 1.0) / 2.0) - R::lgammafn(nu / 2.0)
              - 0.5 * std::log(nu * M_PI * phi * phi)
              - 0.5 * (nu + 1.0) * std::log1p(r * r / nu);
+    }
+    if (family == "tweedie") {
+        if (std::isnan(phi2)) {
+            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
+        }
+        return log_lik_tweedie(y, std::exp(eta), phi, phi2);
     }
 
     FamilyLink fl = parse_family_link(family);

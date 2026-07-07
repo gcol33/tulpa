@@ -280,6 +280,48 @@
     }
   ),
 
+  # Tweedie compound Poisson-gamma (log link), 1 < p < 2: phi = dispersion,
+  # phi2 = power p (REQUIRED -- no silent default). Mean mu = exp(eta),
+  # variance phi * mu^p; exact zero mass exp(-lambda) with lambda =
+  # mu^(2-p) / (phi (2-p)). The positive-y density is the compound
+  # Poisson-gamma series (Dunn & Smyth 2005): N ~ Poisson(lambda) gamma
+  # events with shape a = (2-p)/(p-1) and rate b = mu^(1-p) / (phi (p-1)),
+  # log-sum-exp'd over N around its dominating term. The score and working
+  # weight are the exponential-dispersion closed forms ((y - mu)/(phi V(mu))
+  # through the log link), no series needed.
+  tweedie = list(
+    mean = .mean_log,
+    loglik = function(eta, y, n_trials, phi, phi2 = NULL) {
+      p <- .tweedie_power(phi2)
+      .tweedie_loglik(.mean_log(eta), y, phi, p)
+    },
+    score = function(eta, y, n_trials, phi, phi2 = NULL) {
+      p <- .tweedie_power(phi2)
+      mu <- .mean_log(eta)
+      (y - mu) / (phi * mu^(p - 1))
+    },
+    weight = function(eta, n_trials, phi, phi2 = NULL) {
+      p <- .tweedie_power(phi2)
+      .mean_log(eta)^(2 - p) / phi
+    },
+    sample = function(eta, n_trials, phi, phi2 = NULL) {
+      p  <- .tweedie_power(phi2)
+      mu <- .mean_log(eta)
+      lam <- mu^(2 - p) / (phi * (2 - p))
+      a   <- (2 - p) / (p - 1)
+      b   <- mu^(1 - p) / (phi * (p - 1))
+      n_ev <- stats::rpois(length(eta), lam)
+      out <- numeric(length(eta))
+      pos <- n_ev > 0
+      out[pos] <- stats::rgamma(sum(pos), shape = n_ev[pos] * a,
+                                rate = b[pos])
+      out
+    },
+    variance = function(eta, n_trials, phi, phi2 = NULL) {
+      phi * .mean_log(eta)^.tweedie_power(phi2)
+    }
+  ),
+
   # Student-t location-scale (identity link), phi = scale, df = phi2 through
   # the second dispersion channel (default .STUDENT_T_DF, the robust drop-in).
   # The score is exact and the working weight is the constant Fisher
@@ -310,9 +352,74 @@
 )
 
 # Families whose ops consume a second dispersion `phi2` (the Student-t degrees
-# of freedom; a future Tweedie's power). Everything else rejects a supplied
-# phi2 loudly rather than silently ignoring it.
-.PHI2_FAMILIES <- c("t")
+# of freedom; the Tweedie power). Everything else rejects a supplied phi2
+# loudly rather than silently ignoring it.
+.PHI2_FAMILIES <- c("t", "tweedie")
+
+# The Tweedie power. Required (a silently defaulted variance power would be a
+# statistical decision the user never made) and restricted to the compound
+# Poisson-gamma range.
+.tweedie_power <- function(phi2) {
+  if (is.null(phi2)) {
+    stop("family = 'tweedie' requires `phi2` (the variance power p, ",
+         "1 < p < 2).", call. = FALSE)
+  }
+  p <- as.numeric(phi2)
+  if (!is.finite(p) || p <= 1 || p >= 2) {
+    stop("The Tweedie power `phi2` must lie strictly in (1, 2); got ",
+         format(p), ".", call. = FALSE)
+  }
+  p
+}
+
+# Tweedie log-density at mean mu (vectorized over observations). y = 0 has the
+# exact Poisson-zero mass; y > 0 is the compound Poisson-gamma series
+# log-sum-exp'd over the event count N, expanding from the dominating index
+# j_max = y^(2-p) / (phi (2-p)) (Dunn & Smyth 2005) until terms fall 37 nats
+# below the running maximum.
+.tweedie_loglik <- function(mu, y, phi, p) {
+  mu  <- pmin(rep_len(mu, length(y)), 1e10)   # broadcast; clamp eta overflow
+  lam <- mu^(2 - p) / (phi * (2 - p))
+  a   <- (2 - p) / (p - 1)
+  b   <- mu^(1 - p) / (phi * (p - 1))
+  out <- numeric(length(y))
+  out[y < 0] <- -Inf                       # outside the support
+  zero <- y == 0
+  out[zero] <- -lam[zero]
+  for (i in which(y > 0)) {
+    jmax <- y[i]^(2 - p) / (phi * (2 - p))
+    out[i] <- .tweedie_logf_pos(y[i], lam[i], a, b[i], jmax)
+  }
+  out
+}
+
+.tweedie_logf_pos <- function(y, lam, a, b, jmax) {
+  logterm <- function(n) {
+    n * log(lam) - lgamma(n + 1) + n * a * log(b) +
+      (n * a - 1) * log(y) - lgamma(n * a)
+  }
+  n0 <- max(1L, as.integer(round(jmax)))
+  lt <- logterm(n0)
+  lmax <- lt; terms <- lt
+  # Expand upward then downward until 37 nats below the peak.
+  n <- n0
+  repeat {
+    n <- n + 1L
+    lt <- logterm(n)
+    terms <- c(terms, lt)
+    lmax <- max(lmax, lt)
+    if (lt < lmax - 37) break
+  }
+  n <- n0
+  while (n > 1L) {
+    n <- n - 1L
+    lt <- logterm(n)
+    terms <- c(terms, lt)
+    lmax <- max(lmax, lt)
+    if (lt < lmax - 37) break
+  }
+  lmax + log(sum(exp(terms - lmax))) - lam - b * y
+}
 
 # Default degrees of freedom for the Student-t family (matches the C++
 # kStudentTDf), used when no `phi2` is supplied.
@@ -332,7 +439,7 @@ family_names <- function() names(.FAMILY_OPS)
 # the base family's dispersion, so membership is tested on the prefix.
 .PHI_FAMILIES <- c("gaussian", "lognormal", "gamma", "neg_binomial_2",
                    "negative_binomial", "inverse_gaussian", "beta",
-                   "beta_binomial", "t",
+                   "beta_binomial", "t", "tweedie",
                    "interval_gaussian", "truncated_gaussian")
 
 # Count families whose likelihood is defined only at non-negative integer `y`.

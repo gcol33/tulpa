@@ -910,6 +910,8 @@ tulpa <- function(formula, data,
   }
   .validate_family_phi(family, phi)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
+  # Tweedie requires the power up front (and in (1, 2)); fail before fitting.
+  if (identical(family, "tweedie")) .tweedie_power(phi2)
 
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)

@@ -38,6 +38,7 @@ Suggests:
     loo (>= 2.7.0),
     MASS,
     betareg,
+    tweedie,
     fmesher,
     unmarked,
     patchwork,
