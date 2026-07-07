@@ -1195,8 +1195,18 @@ tulpa <- function(formula, data,
     fit$param_names <- fit$param_names %||% layout$param_names
     fit$re_layout   <- layout$re_layout
     fit$N           <- fit$N %||% bundle$n_obs
-    # Fixed-effect design for fitted()/predict(newdata = NULL).
+    # Fixed-effect design for fitted()/predict(newdata = NULL), plus the pieces
+    # posterior_predict() needs to rebuild the in-sample linear predictor and
+    # push it through the family sampler: offset, response, trials, dispersion,
+    # and the per-term RE row design (group index + slope columns).
     fit$model_matrix <- bundle$X
+    fit$offset       <- fit$offset %||% bundle$offset
+    fit$y            <- fit$y %||% bundle$y
+    fit$n_trials     <- fit$n_trials %||% n_trials
+    fit$phi          <- fit$phi %||% phi
+    fit$re_design    <- lapply(bundle$re_terms %||% list(), function(rt) {
+      rt[c("group_idx", "has_intercept", "slope_matrix", "n_groups", "n_coefs")]
+    })
   }
   fit
 }

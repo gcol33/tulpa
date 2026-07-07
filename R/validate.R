@@ -55,19 +55,27 @@ pp_check.tulpa_fit <- function(object, type = c("dens_overlay", "scatter", "inte
          "  install.packages('bayesplot')", call. = FALSE)
   }
 
-  # Check if posterior predictive draws are available
-  # Model packages provide y_rep in draws
-  if (is.null(object$draws$y_rep)) {
-    stop("Posterior predictive draws not available.\n",
-         "  pp_check requires models fitted with `predict = TRUE`.\n",
-         "  Re-fit with: predict = TRUE", call. = FALSE)
+  # Stored replicates (model packages put y_rep in a list-shaped $draws);
+  # otherwise generate them from the fit's own family via posterior_predict().
+  yrep <- if (is.list(object$draws) && !is.matrix(object$draws)) {
+    object$draws$y_rep
+  } else NULL
+  if (is.null(yrep)) {
+    yrep <- tryCatch(
+      posterior_predict(object, ndraws = max(ndraws, 100L)),
+      error = function(e) {
+        stop("Posterior predictive draws not available: ",
+             conditionMessage(e), call. = FALSE)
+      }
+    )
   }
 
-  # Extract posterior predictive draws
-  yrep <- object$draws$y_rep
-
   # Observed data
-  y <- object$.internal$hmc_data$y
+  y <- object$.internal$hmc_data$y %||% object$y
+  if (is.null(y)) {
+    stop("pp_check() needs the observed response; this fit stores no $y.",
+         call. = FALSE)
+  }
 
   pp_check_single(y, yrep, type, stat, ndraws, "", ...)
 }

@@ -29,12 +29,23 @@
   pmin(pmax(mu, 1e-7), 1 - 1e-7)
 }
 
+# Inverse-Gaussian sampler (Michael, Schucany & Haas 1976), parameterized to
+# match the `inverse_gaussian` loglik below: mean mu, shape lambda = 1 / phi.
+.rinvgauss <- function(n, mu, lambda) {
+  y <- stats::rnorm(n)^2
+  x <- mu + mu^2 * y / (2 * lambda) -
+    mu / (2 * lambda) * sqrt(4 * mu * lambda * y + mu^2 * y^2)
+  u <- stats::runif(n)
+  ifelse(u <= mu / (mu + x), x, mu^2 / x)
+}
+
 # --- family operations registry ----------------------------------------------
 # Fields per family:
 #   mean(eta)                     inverse link, clamped
 #   loglik(eta, y, n_trials, phi) elementwise log-density (full normalizer)
 #   score(eta, y, n_trials, phi)  elementwise d log-lik / d eta
 #   weight(eta, n_trials, phi)    Laplace/IRLS working weight (no y dependence)
+#   sample(eta, n_trials, phi)    one y draw per element (posterior predictive)
 
 .FAMILY_OPS <- list(
   binomial = list(
@@ -52,6 +63,10 @@
       n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       mu <- .mean_binomial(eta)
       n * mu * (1 - mu)
+    },
+    sample = function(eta, n_trials, phi) {
+      n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      stats::rbinom(length(eta), size = n, prob = .mean_binomial(eta))
     }
   ),
 
@@ -62,7 +77,10 @@
       y * log(mu) - mu - lgamma(y + 1)
     },
     score = function(eta, y, n_trials, phi) y - .mean_log(eta),
-    weight = function(eta, n_trials, phi) .mean_log(eta)
+    weight = function(eta, n_trials, phi) .mean_log(eta),
+    sample = function(eta, n_trials, phi) {
+      stats::rpois(length(eta), .mean_log(eta))
+    }
   ),
 
   neg_binomial_2 = list(
@@ -80,6 +98,9 @@
     weight = function(eta, n_trials, phi) {
       mu <- .mean_log(eta)
       mu * phi / (mu + phi)
+    },
+    sample = function(eta, n_trials, phi) {
+      stats::rnbinom(length(eta), size = phi, mu = .mean_log(eta))
     }
   ),
 
@@ -95,7 +116,10 @@
     # both need the dispersion-correct curvature. A unit weight here treats phi
     # as 1 and inflates the gaussian fixed-effect SEs by sqrt(1/phi)
     # (gcol33/tulpa#87).
-    weight = function(eta, n_trials, phi) rep(1 / phi, length(eta))
+    weight = function(eta, n_trials, phi) rep(1 / phi, length(eta)),
+    sample = function(eta, n_trials, phi) {
+      stats::rnorm(length(eta), mean = eta, sd = sqrt(phi))
+    }
   ),
 
   beta = list(
@@ -119,6 +143,10 @@
       dmu <- mu * (1 - mu)
       tg <- trigamma(mu * phi) + trigamma((1 - mu) * phi)
       phi * phi * tg * dmu * dmu
+    },
+    sample = function(eta, n_trials, phi) {
+      mu <- .mean_beta(eta)
+      stats::rbeta(length(eta), mu * phi, (1 - mu) * phi)
     }
   ),
 
@@ -136,7 +164,10 @@
       mu <- .mean_log(eta)
       phi * (y - mu) / mu
     },
-    weight = function(eta, n_trials, phi) rep(phi, length(eta))
+    weight = function(eta, n_trials, phi) rep(phi, length(eta)),
+    sample = function(eta, n_trials, phi) {
+      stats::rgamma(length(eta), shape = phi, rate = phi / .mean_log(eta))
+    }
   ),
 
   # Inverse Gaussian (log link), phi = dispersion. Mean mu = exp(eta),
@@ -154,6 +185,9 @@
     weight = function(eta, n_trials, phi) {
       mu <- .mean_log(eta)
       1 / (phi * mu)
+    },
+    sample = function(eta, n_trials, phi) {
+      .rinvgauss(length(eta), mu = .mean_log(eta), lambda = 1 / phi)
     }
   ),
 
@@ -180,6 +214,12 @@
       n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       mu <- .mean_beta(eta); D <- 1 + (n - 1) / (phi + 1)
       n * mu * (1 - mu) / D
+    },
+    sample = function(eta, n_trials, phi) {
+      n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      mu <- .mean_beta(eta)
+      p  <- stats::rbeta(length(eta), mu * phi, (1 - mu) * phi)
+      stats::rbinom(length(eta), size = n, prob = p)
     }
   ),
 
@@ -202,6 +242,9 @@
     weight = function(eta, n_trials, phi) {
       nu <- .STUDENT_T_DF
       rep((nu + 1) / ((nu + 3) * phi^2), length(eta))
+    },
+    sample = function(eta, n_trials, phi) {
+      eta + phi * stats::rt(length(eta), df = .STUDENT_T_DF)
     }
   )
 )
@@ -319,4 +362,16 @@ family_score_eta <- function(eta, y, family, n_trials = NULL, phi = 1.0) {
 #' @keywords internal
 family_weight <- function(eta, family, n_trials = NULL, phi = 1.0) {
   .family_ops(family)$weight(eta, n_trials, phi)
+}
+
+
+#' One response draw per element of `eta` (posterior predictive), elementwise.
+#' @keywords internal
+family_sample <- function(eta, family, n_trials = NULL, phi = 1.0) {
+  ops <- .family_ops(family)
+  if (is.null(ops$sample)) {
+    stop(sprintf("Family '%s' has no sampling function registered.", family),
+         call. = FALSE)
+  }
+  ops$sample(eta, n_trials, phi)
 }
