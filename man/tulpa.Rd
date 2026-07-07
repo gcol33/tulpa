@@ -28,7 +28,11 @@ random effects, and \code{offset(...)} terms are recognised.}
 \item{data}{A data frame.}
 
 \item{family}{Character family name: one of \code{\link[=family_names]{family_names()}}
-(\code{"binomial"}, \code{"poisson"}, \code{"neg_binomial_2"}, \code{"gaussian"}, \code{"beta"}).}
+(\code{"binomial"}, \code{"poisson"}, \code{"neg_binomial_2"}, \code{"gaussian"}, \code{"beta"},
+...), or a categorical response family -- \code{"multinomial"}
+(baseline-category logit via \code{\link[=tulpa_multinomial]{tulpa_multinomial()}}), \code{"ordinal"}
+(cumulative logit via \code{\link[=tulpa_ordinal]{tulpa_ordinal()}}), or \code{"ordinal_probit"}
+(cumulative probit). Categorical families take fixed-effect models only.}
 
 \item{mode}{Inference mode or backend. \code{"auto"} (default) picks the most
 reliable Tier 1/Tier 2 method expected to finish; a tier (\code{"exact"},

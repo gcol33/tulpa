@@ -24,8 +24,12 @@ training design (requires \verb{$model_matrix}).}
 \item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale).}
 
 \item{se.fit}{If \code{TRUE}, also return the link-scale standard error and
-credible bounds. Not supported together with an included SPDE field (the
-field posterior covariance is not propagated yet).}
+credible bounds. With an included SPDE field the SE propagates the joint
+(fixed-effect, field) posterior precision at the fitted hyperparameters
+-- including the cross term -- conditional on \verb{(range, sigma)} (a nested
+fit's hyperparameter-grid spread is not propagated, so the bound is
+mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
+fits only; other layouts decline with an explanation.}
 
 \item{level}{Credible-interval level (default 0.95).}
 

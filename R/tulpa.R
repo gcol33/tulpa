@@ -808,7 +808,11 @@
 #'   random effects, and `offset(...)` terms are recognised.
 #' @param data A data frame.
 #' @param family Character family name: one of [family_names()]
-#'   (`"binomial"`, `"poisson"`, `"neg_binomial_2"`, `"gaussian"`, `"beta"`).
+#'   (`"binomial"`, `"poisson"`, `"neg_binomial_2"`, `"gaussian"`, `"beta"`,
+#'   ...), or a categorical response family -- `"multinomial"`
+#'   (baseline-category logit via [tulpa_multinomial()]), `"ordinal"`
+#'   (cumulative logit via [tulpa_ordinal()]), or `"ordinal_probit"`
+#'   (cumulative probit). Categorical families take fixed-effect models only.
 #' @param mode Inference mode or backend. `"auto"` (default) picks the most
 #'   reliable Tier 1/Tier 2 method expected to finish; a tier (`"exact"`,
 #'   `"structured"`) or a backend name (`"laplace"`, `"mala"`, ...) forces it.
@@ -904,6 +908,45 @@ tulpa <- function(formula, data,
                   temporal = NULL,
                   control = list(),
                   ...) {
+  # Categorical responses are families, not separate verbs: the front door
+  # routes them to the multinomial / cumulative-link Laplace drivers. The link
+  # rides the family string ("ordinal_probit"), matching the engine's
+  # family_<link> convention. Fixed-effect models only for now -- latent
+  # structure under a categorical response is tracked engine work (C6).
+  if (family %in% c("multinomial", "ordinal", "ordinal_probit")) {
+    pf <- tulpa_parse_formula(formula)
+    if (pf$n_re_terms > 0L || pf$n_latent_blocks > 0L ||
+        (pf$n_smooth_terms %||% 0L) > 0L ||
+        (pf$n_spatial_field_blocks %||% 0L) > 0L ||
+        (pf$n_temporal_field_blocks %||% 0L) > 0L ||
+        !is.null(pf$spatial_var) || !is.null(pf$temporal_var) ||
+        !is.null(spatial) || !is.null(temporal) ||
+        !is.null(sigma_re) || !is.null(n_trials) || !is.null(weights) ||
+        !is.null(phi2)) {
+      stop(sprintf(paste0(
+        "family = '%s' supports fixed-effect models only through tulpa(); ",
+        "random effects, smoothers, and spatial / temporal structure are not ",
+        "wired for categorical responses yet."), family), call. = FALSE)
+    }
+    if (!mode %in% c("auto", "structured", "laplace")) {
+      stop(sprintf(paste0(
+        "family = '%s' is fit by its Laplace driver; mode = '%s' is not ",
+        "available. Use mode = 'auto'."), family, mode), call. = FALSE)
+    }
+    fit <- if (family == "multinomial") {
+      tulpa_multinomial(formula, data,
+                        beta_prior_sd = beta_prior$sd %||% 10,
+                        control = control)
+    } else {
+      tulpa_ordinal(formula, data,
+                    link = if (family == "ordinal_probit") "probit" else "logit",
+                    beta_prior_sd = beta_prior$sd %||% 10,
+                    control = control)
+    }
+    fit$call <- match.call()
+    return(fit)
+  }
+
   if (is.null(.FAMILY_OPS[[family]])) {
     stop(sprintf("Unknown family '%s'. Supported: %s.",
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)
