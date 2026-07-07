@@ -1,5 +1,59 @@
 # tulpa NEWS
 
+## 0.0.72 (2026-07-07)
+
+* New approximation-layer fitters:
+  - `tulpa_ep()`: Expectation Propagation for GLMs with a Gaussian coefficient
+    prior -- one Gaussian site per observation on the linear predictor, tilted
+    moments by Gauss-Hermite quadrature. Exact for a Gaussian likelihood;
+    matches marginal moments rather than mode curvature, so it is typically
+    more accurate than Laplace on skewed GLM likelihoods.
+  - `tulpa_multinomial()`: baseline-category (unordered K-class) multinomial
+    logistic regression as a Laplace fit driven by the validated native kernel
+    (`cpp_multinomial_logit_terms`) -- a joint Newton solve over the K-1
+    coefficient blocks, no engine change.
+  - `tulpa_ordinal()`: cumulative-logit / proportional-odds ordinal regression
+    (L-BFGS mode + Laplace); cutpoint ordering is guaranteed by the
+    log-increment reparameterization.
+* `tulpa_kfold()`: refit-based K-fold cross-validation, the exact counterpart
+  to PSIS-LOO in `tulpa_criteria()` for fits whose outer Pareto k-hat flags
+  importance sampling as unreliable. Fixed-effect / GLMM fits only --
+  subsetting observations would break a spatial or temporal field's structure,
+  so those are rejected loudly.
+* `tulpa_powerscale_sensitivity()`: power-scaling prior / likelihood
+  sensitivity (Kallioinen et al. 2024) by importance-reweighting the existing
+  draws through the native PSIS smoother -- no refits. The cumulative
+  Jensen-Shannon distance and its gradient reproduce the priorsense reference
+  implementation.
+* `temporal_ar2()`: exact stationary AR(2) temporal GMRF as a user-defined
+  latent block (`latent(temporal_ar2(time_idx))`) -- pentadiagonal precision
+  from the Yule-Walker autocovariances, with the PACF parameterization mapping
+  the open square bijectively onto the stationarity triangle.
+* New builtin families `gamma`, `inverse_gaussian`, `beta_binomial`, and
+  Student-`t` (fixed df = 4, matching the C++ `kStudentTDf`) in both the
+  R-closure family ops and the C++ AD path, so they run under Laplace and NUTS
+  alike (`test-family-ad-nuts.R`).
+* SPDE: `fit_spde()` gains `family = "gaussian"` (continuous-field
+  geostatistics; `phi` is the observation-noise SD), and `predict()` kriges a
+  fitted Matern field to arbitrary `newdata` coordinates by re-projecting the
+  posterior-mean mesh-node field through the spec's mesh (`include_field =
+  FALSE` gives the fixed-effect / population prediction).
+* API cleanup:
+  - `fit_spde()`, `tulpa_re_cov_nested()`, and `tulpa_re_cov_gibbs()` move
+    their perf / numerical knobs (`method`, `n_grid`, `integration`,
+    `n_per_axis`, `span`, `n_draws`, `seed`, `max_iter`, `tol`, `n_threads`,
+    `diagnose_k`, `k_samples`) into the single `control = list()`, matching
+    the front-door convention. Statistical arguments stay in the signature.
+  - snake_case renames (hard, no shims): `modelAverage` -> `model_average`,
+    `postHocLM` -> `post_hoc_lm`, `spatialRange` -> `spatial_range`,
+    `temporalCorr` -> `temporal_corr`. `getSVCSamples()` is removed -- use
+    `svc(fit, summary = TRUE)`. The internal formula helpers
+    `find_latent_terms`, `no_latent_terms`, and `parse_bar_term` are no longer
+    exported.
+* Internal reorganization: the nested-Laplace posterior-moment machinery moved
+  to `R/nested_laplace_moments.R`, and the Polya-Gamma Gibbs dispatch plus the
+  `tulpa_gibbs()` front door to `R/fit_gibbs.R`.
+
 ## 0.0.71 (2026-07-06)
 
 * `cpp_laplace_fit_spatial()` and `cpp_laplace_fit_bym2()` gain a `force_sparse`

@@ -276,7 +276,7 @@ test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws",
   rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
 
   fit <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             seed = 11L, k_samples = 200L)
+                             control = list(seed = 11L, k_samples = 200L))
   # k-hat is a finite, data-dependent reading (a sparse binary RE-covariance
   # posterior is skewed, so a HIGH k-hat here is a correct signal, not a bug --
   # the estimator's correctness is pinned by the loo-equivalence test above and
@@ -289,9 +289,10 @@ test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws",
 
   # diagnose_k must not perturb the fixed-effect draws (RNG state restored).
   off <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             seed = 11L, diagnose_k = FALSE)
+                             control = list(seed = 11L, diagnose_k = FALSE))
   on  <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
-                             seed = 11L, diagnose_k = TRUE, k_samples = 150L)
+                             control = list(seed = 11L, diagnose_k = TRUE,
+                                            k_samples = 150L))
   expect_true(is.na(off$pareto_k))
   expect_equal(off$draws, on$draws)
 })
@@ -375,7 +376,8 @@ test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fi
     rt  <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "gaussian",
-                        phi = 0.25, diagnose_k = TRUE, k_samples = 150L)$pareto_k
+                        phi = 0.25,
+                        control = list(diagnose_k = TRUE, k_samples = 150L))$pareto_k
   }
   # (b) Tiny binary groups: 25 groups x 3 binary obs each. The variance-component
   # posterior is strongly skewed (the IS ratio is heavy-tailed) -> high k-hat.
@@ -387,7 +389,7 @@ test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fi
     rt  <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "binomial",
-                        diagnose_k = TRUE, k_samples = 150L)$pareto_k
+                        control = list(diagnose_k = TRUE, k_samples = 150L))$pareto_k
   }
 
   ka <- vapply(1:5, function(s) k_well(100L + s), numeric(1))

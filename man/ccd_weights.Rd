@@ -32,4 +32,3 @@ exactly.
 \seealso{
 \code{\link[=ccd_grid]{ccd_grid()}}, \code{\link[=ccd_to_theta]{ccd_to_theta()}}.
 }
-\keyword{internal}

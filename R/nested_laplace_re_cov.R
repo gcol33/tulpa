@@ -494,12 +494,6 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'   defaults to `TRUE`). An optional `label` / `group_var` names the block in
 #'   the output. Any `L` / `cov` / `sigma` field is ignored -- `Sigma` is what
 #'   this function integrates over.
-#' @param integration Node layout: `"ccd"` (default, central-composite design,
-#'   scales to larger total parameter count) or `"grid"` (full tensor product).
-#' @param n_per_axis Points per parameter axis in the tensor grid (default 5);
-#'   used only when `integration = "grid"`.
-#' @param span Half-width of the tensor grid in posterior standard deviations
-#'   per whitened axis (default 3); used only when `integration = "grid"`.
 #' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
 #'   [re_cov_pc_lkj_prior()]): `prior_sigma = c(U, alpha)` with
 #'   `P(sigma_i > U) = alpha` (default `c(3, 0.05)`) and LKJ shape `eta`
@@ -519,23 +513,35 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'   factorize); with crossed RE terms `n_quad > 1` errors. When AGHQ is used the
 #'   fixed effects are integrated, so the reported fixed-effect posterior is the
 #'   marginal (ML-II) one rather than the joint-mode (PQL) estimate.
-#' @param n_draws Number of posterior draws of the fixed effects to synthesize
-#'   from the node mixture (default 2000), exposed as `draws` for the generic
-#'   `tulpa_fit` methods. The `Sigma` posterior is summarized exactly (weighted
-#'   node quantiles) in `posterior`, independent of `n_draws`.
-#' @param seed Optional integer seed for the fixed-effect draw synthesis.
-#' @param diagnose_k Logical. If `TRUE` (default), compute the outer Pareto
-#'   k-hat accuracy diagnostic for the Gaussian proposal over the
-#'   hyperparameters, returned as `pareto_k`.
-#' @param k_samples Number of importance draws for the `diagnose_k` estimate
-#'   (default 200).
-#' @param max_iter,tol,n_threads Inner-solve controls (see [tulpa_laplace()]).
-#' @param checkpoint Optional node checkpoint/resume spec,
-#'   `list(path = , resume = )`. Each completed CCD / grid node (one inner
-#'   Laplace solve) is cached to `path`; a `resume = TRUE` run loads the finished
-#'   nodes and re-solves only the rest. `resume = FALSE` starts fresh. A file
-#'   written for different data, layout, or grid is rejected (fingerprint
-#'   mismatch). Default `NULL` (off).
+#' @param control A named list of numerical / tuning knobs (statistical
+#'   arguments stay in the signature above). Recognized entries:
+#'   \itemize{
+#'     \item `integration`: node layout, `"ccd"` (default, central-composite
+#'       design, scales to larger total parameter count) or `"grid"` (full
+#'       tensor product).
+#'     \item `n_per_axis`: points per parameter axis in the tensor grid
+#'       (default 5); used only when `integration = "grid"`.
+#'     \item `span`: half-width of the tensor grid in posterior standard
+#'       deviations per whitened axis (default 3); grid only.
+#'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
+#'       node mixture (default 2000), exposed as `draws` for the generic
+#'       `tulpa_fit` methods. The `Sigma` posterior is summarized exactly
+#'       (weighted node quantiles) in `posterior`, independent of `n_draws`.
+#'     \item `seed`: optional integer seed for the fixed-effect draw synthesis.
+#'     \item `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
+#'       accuracy diagnostic for the Gaussian proposal over the hyperparameters,
+#'       returned as `pareto_k`.
+#'     \item `k_samples`: importance draws for the `diagnose_k` estimate
+#'       (default 200).
+#'     \item `max_iter`, `tol`, `n_threads`: inner-solve controls (see
+#'       [tulpa_laplace()]).
+#'     \item `checkpoint`: node checkpoint/resume spec `list(path = , resume = )`.
+#'       Each completed CCD / grid node (one inner Laplace solve) is cached to
+#'       `path`; a `resume = TRUE` run loads the finished nodes and re-solves
+#'       only the rest. `resume = FALSE` starts fresh. A file written for
+#'       different data, layout, or grid is rejected (fingerprint mismatch).
+#'       Default `NULL` (off).
+#'   }
 #'
 #' @return A list with:
 #'   - `posterior`: data frame with one row per parameter and columns `mean`,
@@ -580,16 +586,23 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #' @export
 tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 family = "binomial", phi = 1.0,
-                                integration = c("ccd", "grid"),
-                                n_per_axis = 5L, span = 3,
                                 prior_sigma = c(3, 0.05), eta = 2,
                                 log_prior_theta = NULL,
                                 beta_prior = NULL, n_quad = 1L,
-                                n_draws = 2000L, seed = NULL,
-                                diagnose_k = TRUE, k_samples = 200L,
-                                max_iter = 100L, tol = 1e-8, n_threads = 1L,
-                                checkpoint = NULL) {
-  integration <- match.arg(integration)
+                                control = list()) {
+  # Perf/numerical knobs live in `control = list()` (matching tulpa() /
+  # tulpa_nested_laplace()); the signature carries only statistical arguments.
+  integration <- match.arg(control$integration %||% "ccd", c("ccd", "grid"))
+  n_per_axis  <- as.integer(control$n_per_axis %||% 5L)
+  span        <- control$span %||% 3
+  n_draws     <- as.integer(control$n_draws %||% 2000L)
+  seed        <- control$seed
+  diagnose_k  <- isTRUE(control$diagnose_k %||% TRUE)
+  k_samples   <- as.integer(control$k_samples %||% 200L)
+  max_iter    <- as.integer(control$max_iter %||% 100L)
+  tol         <- control$tol %||% 1e-8
+  n_threads   <- as.integer(control$n_threads %||% 1L)
+  checkpoint  <- control$checkpoint
   n_quad <- as.integer(n_quad)
   if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
   if (!is.null(seed)) set.seed(as.integer(seed))

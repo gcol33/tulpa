@@ -606,7 +606,7 @@ test_that("fit_spde and dispatch_laplace_spatial agree on the same problem", {
     family = "binomial", n_trials = rep(1L, ss$n_obs),
     range = ss$spec$prior_range[1], sigma = ss$spec$prior_sigma[1],
     nested_laplace = FALSE,
-    max_iter = 50L, tol = 1e-6, n_threads = 1L
+    control = list(max_iter = 50L, tol = 1e-6, n_threads = 1L)
   )
 
   # Same kernel, same hyperparameters → identical mode and log_marginal.
@@ -629,7 +629,8 @@ test_that("fit_spde threads offset() into the field linear predictor (gcol33/tul
   fit <- function(o) fit_spde(
     y = y, X = X, spatial = ss$spec, family = "poisson",
     n_trials = rep(1L, ss$n_obs), range = r, sigma = s,
-    nested_laplace = FALSE, max_iter = 200L, tol = 1e-12, offset = o)
+    nested_laplace = FALSE, offset = o,
+    control = list(max_iter = 200L, tol = 1e-12))
 
   base <- fit(NULL)
   zero <- fit(rep(0, ss$n_obs))
@@ -652,7 +653,8 @@ test_that("fit_spde absorbs a constant offset into the intercept (gcol33/tulpa#7
   fit <- function(o) fit_spde(
     y = y, X = X, spatial = ss$spec, family = "poisson",
     n_trials = rep(1L, ss$n_obs), range = r, sigma = s,
-    nested_laplace = FALSE, max_iter = 300L, tol = 1e-12, offset = o)
+    nested_laplace = FALSE, offset = o,
+    control = list(max_iter = 300L, tol = 1e-12))
 
   base <- fit(NULL)
   con  <- fit(rep(cc, ss$n_obs))
@@ -672,8 +674,8 @@ test_that("fit_spde nested integrates offset (offset = 0 == no offset) (gcol33/t
   y  <- rpois(ss$n_obs, exp(0.3))
   fit <- function(o) fit_spde(
     y = y, X = X, spatial = ss$spec, family = "poisson",
-    n_trials = rep(1L, ss$n_obs), method = "grid", n_grid = 3L,
-    diagnose_k = FALSE, offset = o)
+    n_trials = rep(1L, ss$n_obs), offset = o,
+    control = list(method = "grid", n_grid = 3L, diagnose_k = FALSE))
 
   base <- fit(NULL)
   zero <- fit(rep(0, ss$n_obs))

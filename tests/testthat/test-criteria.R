@@ -169,7 +169,7 @@ test_that("compare_models computes native WAIC / LOO from a fit's pointwise log-
                tolerance = 1e-8)
 })
 
-test_that("modelAverage stacking weights reproduce loo::stacking_weights", {
+test_that("model_average stacking weights reproduce loo::stacking_weights", {
   skip_if_not_installed("loo")
   d1 <- make_loglik(seed = 1L); d2 <- make_loglik(seed = 2L)
   fit1 <- structure(list(draws = list(log_lik = d1$ll), fitted = rep(0, d1$N)),
@@ -178,7 +178,7 @@ test_that("modelAverage stacking weights reproduce loo::stacking_weights", {
                     class = "tulpa_fit")
   fitted_fn <- function(f) f$fitted
 
-  avg <- modelAverage(a = fit1, b = fit2, weights = "loo", fitted_fn = fitted_fn)
+  avg <- model_average(a = fit1, b = fit2, weights = "loo", fitted_fn = fitted_fn)
   expect_equal(sum(avg$weights), 1, tolerance = 1e-6)
 
   # Cross-check the stacking weights against loo on the same pointwise elpd.
@@ -189,14 +189,14 @@ test_that("modelAverage stacking weights reproduce loo::stacking_weights", {
   expect_equal(unname(avg$weights), ref, tolerance = 1e-3)
 })
 
-test_that("modelAverage pseudo-BMA weights reproduce loo::pseudobma_weights", {
+test_that("model_average pseudo-BMA weights reproduce loo::pseudobma_weights", {
   skip_if_not_installed("loo")
   d1 <- make_loglik(seed = 1L); d2 <- make_loglik(seed = 2L)
   fit1 <- structure(list(draws = list(log_lik = d1$ll), fitted = rep(0, d1$N)),
                     class = "tulpa_fit")
   fit2 <- structure(list(draws = list(log_lik = d2$ll), fitted = rep(1, d2$N)),
                     class = "tulpa_fit")
-  avg <- modelAverage(a = fit1, b = fit2, weights = "pbma",
+  avg <- model_average(a = fit1, b = fit2, weights = "pbma",
                       fitted_fn = function(f) f$fitted)
   lpd <- cbind(
     suppressWarnings(loo::loo(d1$ll, r_eff = NA))$pointwise[, "elpd_loo"],

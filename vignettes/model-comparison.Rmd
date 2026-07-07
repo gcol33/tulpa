@@ -524,17 +524,17 @@ comparison of structural specifications, the engine's marginal
 likelihood is the tool, and it needs nothing beyond the Laplace fit you
 already have.
 
-## modelAverage() for prediction
+## model_average() for prediction
 
 When no single model clearly wins, averaging their predictions can beat
-committing to one. `modelAverage()` takes named fits, computes a weight
+committing to one. `model_average()` takes named fits, computes a weight
 per model from the chosen criterion, and returns the weighted-average
 fitted values alongside the weights and the comparison table. The fitted
 values come from `fitted()` on each fit, so every candidate must carry
 its design matrix, which a `tulpa()` fit does.
 
 ```{r model-average}
-ma <- modelAverage(slope = m1, slope_re = m2, full = m3,
+ma <- model_average(slope = m1, slope_re = m2, full = m3,
                    criterion = "waic")
 ma$weights
 head(round(ma$averaged, 3))
@@ -542,11 +542,11 @@ head(round(ma$averaged, 3))
 
 The weighting deserves a plain statement. The weights here come out equal
 because the WAIC weight needs a pointwise log-likelihood, which a base
-engine fit does not carry, so `modelAverage()` falls back to a uniform
+engine fit does not carry, so `model_average()` falls back to a uniform
 split across the models. A uniform average is still a useful hedge when
 the candidates disagree, but it is not an evidence-weighted one. To
 weight by predictive accuracy, route the fits through a model package
-that populates the pointwise log-likelihood, and `modelAverage()` then
+that populates the pointwise log-likelihood, and `model_average()` then
 draws genuine WAIC weights from the same `compare_models()` it calls
 internally. The `averaged` vector is the per-observation blend you would
 use as a combined prediction; `ma$comparison` is the table the weights

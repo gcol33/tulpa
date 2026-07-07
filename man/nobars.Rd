@@ -16,4 +16,3 @@ A language object with all bar terms removed, or NULL if nothing remains
 Recursively rewrites the formula AST, removing any \code{|} or \code{||} nodes
 found inside parentheses. Returns the fixed-effects-only formula.
 }
-\keyword{internal}

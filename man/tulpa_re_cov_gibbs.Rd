@@ -11,17 +11,11 @@ tulpa_re_cov_gibbs(
   re_terms,
   family = "binomial",
   phi = 1,
-  n_iter = 2000L,
-  warmup = 1000L,
-  thin = 1L,
   prior_df = NULL,
   prior_scale = NULL,
   beta_prior_mean = 0,
   beta_prior_sd = 100,
-  seed = NULL,
-  max_iter = 100L,
-  tol = 1e-08,
-  n_threads = 1L
+  control = list()
 )
 }
 \arguments{
@@ -36,13 +30,6 @@ diagonal one; defaults to \code{TRUE}). An optional \code{label} / \code{group_v
 the block. Any supplied \code{L} / \code{cov} / \code{sigma} is ignored -- \code{Sigma} is what
 this function samples.}
 
-\item{n_iter}{Number of recorded post-warmup sweeps (default 2000).}
-
-\item{warmup}{Warmup (burn-in) sweeps, used for proposal-scale adaptation
-(default 1000).}
-
-\item{thin}{Keep every \code{thin}-th recorded sweep (default 1).}
-
 \item{prior_df}{Inverse-Wishart prior degrees of freedom. Applied to every
 correlated block (default \code{n_coefs + 1}, the minimal proper choice) and as
 the scalar inverse-gamma shape for every diagonal block (default 2). Must
@@ -55,9 +42,17 @@ default is used.}
 \item{beta_prior_mean, beta_prior_sd}{Gaussian fixed-effect prior (defaults
 \code{0} and \code{100}). Scalars are recycled to \code{ncol(X)}.}
 
-\item{seed}{Optional integer seed for reproducibility.}
-
-\item{max_iter, tol, n_threads}{Pilot-solve controls (see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).}
+\item{control}{A named list of numerical / tuning knobs (statistical
+arguments stay in the signature above). Recognized entries:
+\itemize{
+\item \code{n_iter}: recorded post-warmup sweeps (default 2000).
+\item \code{warmup}: warmup (burn-in) sweeps, used for proposal-scale
+adaptation (default 1000).
+\item \code{thin}: keep every \code{thin}-th recorded sweep (default 1).
+\item \code{seed}: optional integer seed for reproducibility.
+\item \code{max_iter}, \code{tol}, \code{n_threads}: pilot-solve controls (see
+\code{\link[=tulpa_laplace]{tulpa_laplace()}}).
+}}
 }
 \value{
 A list with:
@@ -126,7 +121,8 @@ y <- rbinom(n, 1L, plogis(eta))
 re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
                 correlated = TRUE)
 fit <- tulpa_re_cov_gibbs(y, rep(1L, n), cbind(1, x), re_term,
-                          family = "binomial", n_iter = 300L, warmup = 150L)
+                          family = "binomial",
+                          control = list(n_iter = 300L, warmup = 150L))
 fit$Sigma_mean        # exact-debias RE covariance posterior mean
 }
 }

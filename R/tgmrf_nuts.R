@@ -4,7 +4,7 @@
 #' No-U-Turn Sampler (Hoffman & Gelman 2014) over the user-defined
 #' hyperparameter vector `theta` of a [tgmrf()] block, with a finite-
 #' difference gradient on `log_marginal(theta)`. Same Tier 1
-#' (MCMC-corrected) composition as [tulpa_tgmrf_imh()] but the proposal
+#' (MCMC-corrected) composition as tulpa_tgmrf_imh() but the proposal
 #' uses gradient information through leapfrog integration, so mixing
 #' degrades more gracefully with `theta_dim` than independence-MH does.
 #'
@@ -36,13 +36,13 @@
 #'   * `tree_depth` — depth of the NUTS tree at each iteration.
 #'   * `epsilon` — final step size after warmup adaptation.
 #'   * `pilot`, `mode_theta`, `hessian_theta` — pilot diagnostics (same as
-#'     [tulpa_tgmrf_imh()]).
+#'     tulpa_tgmrf_imh()).
 #'   * `inference_mode`, `inference_tier`, `backend` —
 #'     `"exact"`, `1L`, `"tgmrf_nuts"`.
 #'
 #' @references Hoffman & Gelman (2014). The No-U-Turn Sampler. JMLR
 #'   15:1593-1623.
-#' @seealso [tulpa_tgmrf_imh()] for the independence-MH counterpart.
+#' @seealso tulpa_tgmrf_imh() for the independence-MH counterpart.
 #' @noRd
 .tgmrf_fit_nuts <- function(y, n_trials, X, block,
                              family = "binomial",

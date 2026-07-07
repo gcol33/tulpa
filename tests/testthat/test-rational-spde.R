@@ -116,7 +116,7 @@ test_that("fractional nested fit_spde recovers (range, sigma) -- Gaussian", {
   X <- matrix(1, n, 1)
 
   fit <- fit_spde(y = y, X = X, spatial = spec, family = "gaussian", phi = sqrt(0.05),
-                  method = "grid", n_grid = 9L, diagnose_k = FALSE)
+                  control = list(method = "grid", n_grid = 9L, diagnose_k = FALSE))
   # The nested marginal must be peaked near the truth (interior, not boundary).
   expect_gt(fit$nested$range_mean, range_true * 0.5)
   expect_lt(fit$nested$range_mean, range_true * 2.0)
@@ -147,7 +147,7 @@ test_that("fractional nested fit_spde recovers range on a 2D mesh -- Gaussian", 
   X <- matrix(1, np, 1)
 
   fit <- fit_spde(y = y, X = X, spatial = spec, family = "gaussian", phi = 0.3,
-                  method = "grid", n_grid = 9L, diagnose_k = FALSE)
+                  control = list(method = "grid", n_grid = 9L, diagnose_k = FALSE))
   # Range estimate must be interior to the grid (the old broken path pegged it)
   # and recover near the truth.
   rg <- sort(unique(fit$nested$range_grid))

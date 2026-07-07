@@ -76,7 +76,7 @@ inline void build_sampler_model_inputs(
     if (!offset.empty()) proc.offset.assign(offset.begin(), offset.end());
 
     // --- Built-in family spec; add the AD likelihood for analytic gradients
-    //     where the family/link is one of the four AD-covered closed forms. ---
+    //     where the family/link is one of the AD-covered closed forms. ---
     in.spec = builtin_family_spec(family);
     if (builtin_family_has_ad(family)) {
         in.spec.ll_arena = &builtin_family_ll_ad<tulpa::arena::Var>;

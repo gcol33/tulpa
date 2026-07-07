@@ -31,7 +31,8 @@ recov_sweep <- function(family, G, npg, n_seed, seed_off = 0L) {
     d  <- sim_recov(seed_off + s, family, G, npg)
     rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
     res <- tulpa_re_cov_gibbs(d$y, d$ntr, d$X, rt, family = family,
-                              n_iter = 1200L, warmup = 600L, seed = 300L + s)
+                              control = list(n_iter = 1200L, warmup = 600L,
+                                             seed = 300L + s))
     for (nm in names(truth)) {
       row <- res$posterior[res$posterior$parameter == nm, ]
       med[s, nm] <- row$median

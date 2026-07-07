@@ -63,7 +63,7 @@
 #' `p_eff`, `ic` (`-2 * elpd`), `delta` (elpd gap to the best model),
 #' `se_diff` (SE of that pointwise elpd difference), and `weight` (the
 #' Akaike-style weight on the criterion).
-#' @seealso [modelAverage()] for model-averaged predictions, [tulpa_criteria()]
+#' @seealso [model_average()] for model-averaged predictions, [tulpa_criteria()]
 #' and [tulpa_psis()] for the native criteria layer.
 #' @export
 compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
@@ -151,7 +151,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #' @return A data.frame with rows for each spatial hyperparameter and columns
 #'   `mean`, `sd`, `q025`, `q975`.
 #' @export
-spatialRange <- function(object, probs = c(0.025, 0.975)) {
+spatial_range <- function(object, probs = c(0.025, 0.975)) {
   draws <- object$draws
   cn <- colnames(draws)
 
@@ -219,7 +219,7 @@ spatialRange <- function(object, probs = c(0.025, 0.975)) {
 #' @param probs Quantile probabilities (default 0.025, 0.975).
 #' @return A data.frame with rows for each temporal hyperparameter.
 #' @export
-temporalCorr <- function(object, probs = c(0.025, 0.975)) {
+temporal_corr <- function(object, probs = c(0.025, 0.975)) {
   draws <- object$draws
   cn <- colnames(draws)
 
@@ -268,21 +268,6 @@ temporalCorr <- function(object, probs = c(0.025, 0.975)) {
 }
 
 
-#' Extract SVC posterior samples (convenience wrapper)
-#'
-#' Alias for `svc(object, summary = TRUE)`. Returns site-level
-#' spatially varying coefficient summaries.
-#'
-#' @param object A `tulpa_fit` object fitted with SVCs.
-#' @param terms Character vector of SVC term names to extract (default: all).
-#' @param probs Quantile probabilities (default 0.025, 0.5, 0.975).
-#' @return A `tulpa_svc_posterior` object.
-#' @export
-getSVCSamples <- function(object, terms = NULL, probs = c(0.025, 0.5, 0.975)) {
-  svc(object, terms = terms, summary = TRUE, probs = probs)
-}
-
-
 #' Fit a post-hoc linear model on estimated parameters
 #'
 #' Useful for exploring drivers of occupancy/detection/abundance variation
@@ -296,20 +281,35 @@ getSVCSamples <- function(object, terms = NULL, probs = c(0.025, 0.5, 0.975)) {
 #' @param probs Quantile probabilities for bootstrap CI (default 0.025, 0.975).
 #'
 #' @importFrom stats lm quantile
-#' @return A list of class `"postHocLM"` with:
+#' @return A list of class `"post_hoc_lm"` with:
 #'   \describe{
 #'     \item{summary}{data.frame of coefficient estimates and CIs}
 #'     \item{lm_fit}{the underlying `lm` object}
 #'     \item{boot_coefs}{matrix of bootstrap coefficient samples (if `n_boot > 0`)}
 #'     \item{R2}{R-squared from the fitted model}
 #'   }
+#' @examples
+#' # Explore drivers of per-site estimates after fitting a model.
+#' site <- data.frame(
+#'   psi_hat = c(0.2, 0.5, 0.8, 0.4, 0.6, 0.3),
+#'   se      = c(0.05, 0.04, 0.06, 0.05, 0.03, 0.05),
+#'   trait   = c(1.0, 2.5, 3.8, 1.9, 3.1, 1.2)
+#' )
+#' fit <- post_hoc_lm(psi_hat ~ trait, data = site,
+#'                    weights = 1 / site$se^2, n_boot = 200L)
+#' fit
 #' @export
-postHocLM <- function(formula, data, weights = NULL,
-                      n_boot = 1000L, probs = c(0.025, 0.975)) {
+post_hoc_lm <- function(formula, data, weights = NULL,
+                        n_boot = 1000L, probs = c(0.025, 0.975)) {
+  # lm() resolves a bare `weights` symbol in the formula's environment, not this
+  # function's, so a local weights vector is passed as a data column referenced
+  # by name in the model frame.
   lm_fit <- if (is.null(weights)) {
     lm(formula, data = data)
   } else {
-    lm(formula, data = data, weights = weights)
+    fit_data <- data
+    fit_data[[".phl_w"]] <- weights
+    lm(formula, data = fit_data, weights = .phl_w)
   }
 
   coefs <- summary(lm_fit)$coefficients
@@ -332,8 +332,12 @@ postHocLM <- function(formula, data, weights = NULL,
       boot_data <- data[idx, , drop = FALSE]
       boot_wts <- if (!is.null(weights)) weights[idx] else NULL
       boot_fit <- tryCatch(
-        if (is.null(boot_wts)) lm(formula, data = boot_data)
-        else lm(formula, data = boot_data, weights = boot_wts),
+        if (is.null(boot_wts)) {
+          lm(formula, data = boot_data)
+        } else {
+          boot_data[[".phl_w"]] <- boot_wts
+          lm(formula, data = boot_data, weights = .phl_w)
+        },
         error = function(e) NULL
       )
       if (!is.null(boot_fit)) boot_coefs[b, ] <- coef(boot_fit)
@@ -352,8 +356,16 @@ postHocLM <- function(formula, data, weights = NULL,
     boot_coefs = boot_coefs,
     R2 = summary(lm_fit)$r.squared
   )
-  class(out) <- "postHocLM"
+  class(out) <- "post_hoc_lm"
   out
+}
+
+#' @export
+print.post_hoc_lm <- function(x, ...) {
+  cat("Post-hoc linear model\n")
+  cat(sprintf("R-squared: %.3f\n\n", x$R2))
+  print(x$summary, row.names = FALSE, ...)
+  invisible(x)
 }
 
 
@@ -377,8 +389,8 @@ postHocLM <- function(formula, data, weights = NULL,
 #' @references Yao, Vehtari, Simpson & Gelman (2018). Using stacking to average
 #' Bayesian predictive distributions. \emph{Bayesian Analysis} 13(3):917-1007.
 #' @export
-modelAverage <- function(..., weights = c("loo", "waic", "pbma", "pbma+"),
-                         fitted_fn = fitted) {
+model_average <- function(..., weights = c("loo", "waic", "pbma", "pbma+"),
+                          fitted_fn = fitted) {
   weights <- match.arg(weights)
   models  <- .name_models(list(...))
   crit    <- if (weights == "waic") "waic" else "loo"

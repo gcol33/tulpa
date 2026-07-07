@@ -34,4 +34,3 @@ transform per component. \code{L} is typically a Cholesky factor of the
 negative Hessian inverse evaluated at the (working) mode \eqn{\hat\theta}
 — i.e. it scales \code{z} to one posterior standard deviation per axis.
 }
-\keyword{internal}

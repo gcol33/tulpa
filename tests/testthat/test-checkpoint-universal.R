@@ -78,7 +78,7 @@ test_that("RE-cov nested CCD checkpoint == un-checkpointed + resumes", {
   re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = Z)
   fit <- function(ck = NULL)
     tulpa_re_cov_nested(y, rep(1L, N), X, re_term, family = "binomial",
-                        diagnose_k = FALSE, checkpoint = ck)
+                        control = list(diagnose_k = FALSE, checkpoint = ck))
   path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
 
   f0 <- fit()
@@ -91,8 +91,8 @@ test_that("RE-cov nested CCD checkpoint == un-checkpointed + resumes", {
   y2 <- rbinom(N, 1L, plogis(eta + 0.6))
   expect_error(
     tulpa_re_cov_nested(y2, rep(1L, N), X, re_term, family = "binomial",
-                        diagnose_k = FALSE,
-                        checkpoint = list(path = path, resume = TRUE)),
+                        control = list(diagnose_k = FALSE,
+                                       checkpoint = list(path = path, resume = TRUE))),
     "fingerprint")
 })
 

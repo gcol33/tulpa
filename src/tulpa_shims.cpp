@@ -418,10 +418,6 @@ void tulpa_register_shims(DllInfo* dll) {
     R_RegisterCCallable("tulpa", "tulpa_nested_laplace_spde",
         (DL_FUNC)&tulpa_nested_laplace_spde_impl);
 
-    // tulpa_nested_laplace_joint_bym2 shim removed in Phase J-E -- the
-    // legacy single-block joint kernels were folded into the multi-block
-    // path. See R/nested_laplace_joint.R::.joint_call_kernel_via_multi.
-
     R_RegisterCCallable("tulpa", "tulpa_pg_binomial_gibbs",
         (DL_FUNC)&tulpa_pg_binomial_gibbs_impl);
     R_RegisterCCallable("tulpa", "tulpa_pg_negbin_gibbs",

@@ -346,9 +346,9 @@
       stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses a ",
            "built-in weak fixed-effect prior.", call. = FALSE)
     }
-    if (!family %in% c("binomial", "poisson", "neg_binomial_2")) {
+    if (!family %in% c("binomial", "poisson", "neg_binomial_2", "gaussian")) {
       stop(sprintf(
-        "SPDE supports family 'binomial', 'poisson', or 'neg_binomial_2'; got '%s'.",
+        "SPDE supports family 'binomial', 'poisson', 'neg_binomial_2', or 'gaussian'; got '%s'.",
         family), call. = FALSE)
     }
     method <- match.arg(control$method %||% "ccd", c("ccd", "grid"))
@@ -361,13 +361,15 @@
       range          = NULL,
       sigma          = NULL,
       nested_laplace = TRUE,
-      method         = method,
-      n_grid         = control$n_grid %||% 5L,
       phi            = phi,
-      max_iter       = control$max_iter %||% 100L,
-      tol            = control$tol %||% 1e-6,
-      n_threads      = control$n_threads %||% 1L,
-      offset         = bundle$offset
+      offset         = bundle$offset,
+      control        = list(
+        method    = method,
+        n_grid    = control$n_grid %||% 5L,
+        max_iter  = control$max_iter %||% 100L,
+        tol       = control$tol %||% 1e-6,
+        n_threads = control$n_threads %||% 1L
+      )
     ))
   }
 
@@ -398,24 +400,28 @@
       if (backend == "re_cov_nested") {
         return(c(common, list(
           beta_prior  = beta_prior,
-          integration = control$integration %||% "ccd",
           prior_sigma = control$prior_sigma %||% c(3, 0.05),
           eta         = control$eta %||% 2,
-          n_per_axis  = control$n_per_axis %||% 5L,
-          span        = control$span %||% 3,
-          n_draws     = control$n_draws %||% 2000L,
-          seed        = control$seed
+          control     = list(
+            integration = control$integration %||% "ccd",
+            n_per_axis  = control$n_per_axis %||% 5L,
+            span        = control$span %||% 3,
+            n_draws     = control$n_draws %||% 2000L,
+            seed        = control$seed
+          )
         )))
       }
       # re_cov_gibbs: exact Metropolis-within-Gibbs debias.
       return(c(common, list(
-        n_iter          = control$n_iter %||% 2000L,
-        warmup          = control$warmup %||% 1000L,
         prior_df        = control$prior_df,
         prior_scale     = control$prior_scale,
         beta_prior_mean = beta_prior$mean %||% 0,
         beta_prior_sd   = beta_prior$sd %||% 100,
-        seed            = control$seed
+        control         = list(
+          n_iter = control$n_iter %||% 2000L,
+          warmup = control$warmup %||% 1000L,
+          seed   = control$seed
+        )
       )))
     }
     if (backend == "laplace") {

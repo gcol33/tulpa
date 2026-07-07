@@ -8,12 +8,12 @@
 #' Gaussian is the variational posterior `q(theta)`. ELBO is computed by
 #' MC averaging over draws from `q`.
 #'
-#' This is the Tier-2 (structured) sibling of [tulpa_tgmrf_imh()] and
-#' [tulpa_tgmrf_nuts()]: same Laplace body for `(beta, z) | theta`, but
-#' the outer integration over `theta` is the L-BFGS Gaussian fit rather
-#' than MH or NUTS. No bias correction — the Gaussian fit *is* the
-#' approximation. Pair with [tulpa_tgmrf_imh()] for a Tier-1 upgrade
-#' (the VI fit is a perfect IMH proposal).
+#' This is the Tier-2 (structured) sibling of the tgmrf IMH and NUTS
+#' fitters: same Laplace body for `(beta, z) | theta`, but the outer
+#' integration over `theta` is the L-BFGS Gaussian fit rather than MH or
+#' NUTS. No bias correction — the Gaussian fit *is* the approximation.
+#' Pair with the tgmrf IMH fitter for a Tier-1 upgrade (the VI fit is a
+#' perfect IMH proposal).
 #'
 #' The implementation simply composes:
 #'
@@ -41,8 +41,8 @@
 #'
 #' @references Zhang, Carpenter, Gelman, Vehtari (2022). Pathfinder:
 #'   parallel quasi-Newton variational inference. JMLR 23(306):1-49.
-#' @seealso [tulpa_tgmrf_imh()] (Tier 1 MH), [tulpa_tgmrf_nuts()]
-#'   (Tier 1 NUTS), [pathfinder()] (underlying VI engine).
+#' @seealso the tgmrf IMH (Tier 1 MH) and NUTS (Tier 1 NUTS) fitters, and
+#'   [pathfinder()] (underlying VI engine).
 #' @noRd
 .tgmrf_fit_vi <- function(y, n_trials, X, block,
                            family = "binomial",

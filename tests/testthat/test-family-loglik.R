@@ -34,6 +34,35 @@ test_that("log-likelihoods match R reference densities", {
   expect_equal(family_loglik(eta, yb, "beta", phi = prec),
                dbeta(yb, mub * prec, (1 - mub) * prec, log = TRUE),
                tolerance = 1e-10)
+
+  # gamma (phi = shape), log link
+  sh <- 3.0; mug <- exp(eta); yga <- rgamma(length(eta), shape = sh, rate = sh / mug)
+  expect_equal(family_loglik(eta, yga, "gamma", phi = sh),
+               dgamma(yga, shape = sh, rate = sh / mug, log = TRUE),
+               tolerance = 1e-10)
+
+  # inverse_gaussian (phi = dispersion), log link
+  if (requireNamespace("statmod", quietly = TRUE)) {
+    disp <- 0.5; mui <- exp(eta)
+    yig <- statmod::rinvgauss(length(eta), mean = mui, dispersion = disp)
+    expect_equal(family_loglik(eta, yig, "inverse_gaussian", phi = disp),
+                 statmod::dinvgauss(yig, mean = mui, dispersion = disp, log = TRUE),
+                 tolerance = 1e-10)
+  }
+
+  # beta_binomial (phi = precision, n = trials): as phi -> Inf the intra-class
+  # correlation vanishes and it collapses to the binomial -- a non-circular check.
+  nn <- rep(15L, length(eta)); pb <- plogis(eta)
+  ybb <- rbinom(length(eta), nn, pb)
+  expect_equal(family_loglik(eta, ybb, "beta_binomial", n_trials = nn, phi = 1e7),
+               dbinom(ybb, nn, pb, log = TRUE), tolerance = 1e-2)
+
+  # Student-t location-scale (phi = scale, df fixed): matches base dt scaled by
+  # 1/phi (change of variable), a non-circular reference.
+  nu <- 4; sc <- 0.7; yt <- eta + sc * rt(length(eta), df = nu)
+  expect_equal(family_loglik(eta, yt, "t", phi = sc),
+               dt((yt - eta) / sc, df = nu, log = TRUE) - log(sc),
+               tolerance = 1e-10)
 })
 
 test_that("score equals the finite-difference gradient of the log-likelihood", {
@@ -65,6 +94,23 @@ test_that("score equals the finite-difference gradient of the log-likelihood", {
   yb <- c(0.15, 0.35, 0.55, 0.72, 0.85)
   expect_equal(family_score_eta(eta, yb, "beta", phi = 6),
                fd_score(eta, yb, "beta", phi = 6), tolerance = 1e-5)
+
+  yga <- c(0.4, 0.8, 1.2, 2.0, 3.1)
+  expect_equal(family_score_eta(eta, yga, "gamma", phi = 2.5),
+               fd_score(eta, yga, "gamma", phi = 2.5), tolerance = 1e-5)
+
+  yig <- c(0.5, 0.9, 1.3, 1.8, 2.4)
+  expect_equal(family_score_eta(eta, yig, "inverse_gaussian", phi = 0.6),
+               fd_score(eta, yig, "inverse_gaussian", phi = 0.6), tolerance = 1e-5)
+
+  nn <- rep(15L, length(eta)); ybb <- c(2, 5, 7, 10, 13)
+  expect_equal(family_score_eta(eta, ybb, "beta_binomial", n_trials = nn, phi = 6),
+               fd_score(eta, ybb, "beta_binomial", n_trials = nn, phi = 6),
+               tolerance = 1e-5)
+
+  yt <- c(-0.8, 0.1, 0.6, 1.4, 2.2)
+  expect_equal(family_score_eta(eta, yt, "t", phi = 0.9),
+               fd_score(eta, yt, "t", phi = 0.9), tolerance = 1e-5)
 })
 
 test_that("glmm_weights is unchanged by the registry refactor", {
@@ -89,7 +135,8 @@ test_that("family helpers validate names; glmm_weights stays permissive", {
   expect_error(family_loglik(0, 0, "weibull"), "Unknown family")
   expect_error(family_mean(0, "nope"), "Unknown family")
   expect_setequal(family_names(),
-                  c("binomial", "poisson", "neg_binomial_2", "gaussian", "beta"))
+                  c("binomial", "poisson", "neg_binomial_2", "gaussian", "beta",
+                    "gamma", "inverse_gaussian", "beta_binomial", "t"))
   # historical fallback: unknown family -> unit weights, no error
   expect_equal(glmm_weights(c(0, 1, 2), "weibull"), rep(1, 3))
 })

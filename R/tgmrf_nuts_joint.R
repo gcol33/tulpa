@@ -3,7 +3,7 @@
 #' @description
 #' No-U-Turn Sampler (Hoffman & Gelman 2014) running directly on the full
 #' joint vector \eqn{(\beta, z, \theta)} in C++. Unlike
-#' [tulpa_tgmrf_nuts()], which targets the marginal posterior
+#' tulpa_tgmrf_nuts(), which targets the marginal posterior
 #' \eqn{p(\theta\mid y)} via a finite-difference gradient on the inner
 #' Laplace log-marginal, this sampler integrates the joint posterior in one
 #' Hamiltonian system using closed-form gradients for \eqn{(\beta, z)} and a
@@ -14,8 +14,8 @@
 #' created via [tgmrf_cpp()]). Calling R for `Q(theta)` at every leapfrog
 #' step would dwarf any compute-time advantage the joint sampler has over
 #' the marginal-theta path. Users with R-closure blocks already have
-#' [tulpa_tgmrf_imh()] (independence-MH over theta) and
-#' [tulpa_tgmrf_nuts()] (outer-theta NUTS) as exact-MCMC options.
+#' tulpa_tgmrf_imh() (independence-MH over theta) and
+#' tulpa_tgmrf_nuts() (outer-theta NUTS) as exact-MCMC options.
 #'
 #' @details
 #' Math (mirroring `src/tgmrf_nuts.cpp`):
@@ -49,7 +49,7 @@
 #' @inheritParams.tgmrf_fit_nuts
 #' @param block A tgmrf block with `backend == "cpp"`. R-closure blocks are
 #'   rejected with an error pointing to [tgmrf_cpp()] or
-#'   [tulpa_tgmrf_nuts()].
+#'   tulpa_tgmrf_nuts().
 #' @param target_accept Target acceptance for dual-averaging step-size
 #'   adaptation. Default 0.8 (higher than plain NUTS's 0.65 because joint
 #'   dimensionality is large).
@@ -81,9 +81,8 @@
 #'
 #' @references Hoffman & Gelman (2014). The No-U-Turn Sampler. JMLR
 #'   15:1593-1623.
-#' @seealso [tulpa_tgmrf_nuts()] for the marginal-theta NUTS;
-#'   [tulpa_tgmrf_imh()] for the IMH composition; [tgmrf_cpp()] for the
-#'   C++-backend block constructor.
+#' @seealso the tgmrf marginal-theta NUTS and IMH-composition fitters, and
+#'   [tgmrf_cpp()] for the C++-backend block constructor.
 #' @noRd
 .tgmrf_fit_nuts_joint <- function(y, n_trials, X, block,
                                    family = "binomial",

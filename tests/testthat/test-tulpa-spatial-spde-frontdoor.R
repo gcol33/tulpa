@@ -102,7 +102,8 @@ test_that("the SPDE front-door route is numerically identical to a direct fit_sp
   # bit-for-bit (fit_spde() is deterministic: no RNG in the integration).
   X <- model.matrix(~ x, data = s$data)
   direct <- suppressWarnings(fit_spde(
-    y = s$data$y, X = X, spatial = s$spec, family = "poisson", method = "ccd"
+    y = s$data$y, X = X, spatial = s$spec, family = "poisson",
+    control = list(method = "ccd")
   ))
   expect_equal(via$nested$method, direct$nested$method)
   expect_equal(via$nested$range_mean, direct$nested$range_mean)
@@ -124,6 +125,30 @@ test_that("mode = laplace conditions an SPDE field at fixed hyperparameters", {
   expect_equal(fit$inference_tier, 2L)
   expect_null(fit$nested)
   expect_true(all(is.finite(fit$mode)))
+})
+
+test_that("the SPDE front door routes a gaussian (geostatistical) response to fit_spde()", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+  s <- make_spde_panel(n_obs = 150L, seed = 21L)
+  dat <- s$data
+  dat$yc <- as.numeric(scale(dat$y))     # a continuous response on the same design
+  via <- suppressWarnings(suppressMessages(tulpa(
+    yc ~ x, data = dat, family = "gaussian", spatial = s$spec,
+    mode = "nested_laplace"
+  )))
+  X <- model.matrix(~ x, data = dat)
+  direct <- suppressWarnings(fit_spde(
+    y = dat$yc, X = X, spatial = s$spec, family = "gaussian",
+    control = list(method = "ccd")
+  ))
+  # Continuous-field geostatistics: gaussian routes through the same fit_spde()
+  # engine, so the front door is numerically identical to a direct call.
+  expect_true(is.finite(via$nested$range_mean) && via$nested$range_mean > 0)
+  expect_true(is.finite(via$nested$sigma_mean) && via$nested$sigma_mean > 0)
+  expect_equal(via$nested$range_mean, direct$nested$range_mean)
+  expect_equal(via$nested$sigma_mean, direct$nested$sigma_mean)
+  expect_equal(via$beta, direct$beta)
 })
 
 test_that("an SPDE spec rejects a spatial(col) term, a bad dimension, RE, and a bad family", {
@@ -151,9 +176,11 @@ test_that("an SPDE spec rejects a spatial(col) term, a bad dimension, RE, and a 
                            spatial = s$spec, mode = "nested_laplace")),
     "random-effect term"
   )
-  # The SPDE kernel supports binomial / poisson / neg_binomial_2 only.
+  # The SPDE kernel supports binomial / poisson / neg_binomial_2 / gaussian; a
+  # valid family outside that set (beta, on a (0,1) response) is rejected.
+  d$p <- runif(nrow(d), 0.1, 0.9)
   expect_error(
-    suppressMessages(tulpa(y ~ x, data = d, family = "gaussian",
+    suppressMessages(tulpa(p ~ x, data = d, family = "beta",
                            spatial = s$spec, mode = "nested_laplace")),
     "SPDE supports family"
   )

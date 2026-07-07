@@ -11,7 +11,9 @@
 # polynomial), so no generalized-eigensolver dependency is needed.
 #
 # This is the coefficient engine for the fractional-SPDE rational approximation
-# (gcol33/tulpa#71); it is self-contained and not yet wired into any fitter.
+# (gcol33/tulpa#71): rational_spde_coefficients() calls it for fractional nu, and
+# fit_spde()'s fractional path (.spde_nested_logmarginal_at) consumes those
+# coefficients to fit and integrate a fractional Matern field.
 
 # Chebyshev nodes of the first kind, n points in [a, b].
 .cheb_nodes <- function(n, a, b) {

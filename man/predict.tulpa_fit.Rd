@@ -10,21 +10,28 @@
   type = c("link", "response"),
   se.fit = FALSE,
   level = 0.95,
+  include_field = TRUE,
   ...
 )
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object.}
 
-\item{newdata}{Data frame of covariates. If \code{NULL}, predicts at the training
-design (requires \verb{$model_matrix}).}
+\item{newdata}{Data frame of covariates (and, for an SPDE fit, the coordinate
+columns named in the spec's coordinate formula). If \code{NULL}, predicts at the
+training design (requires \verb{$model_matrix}).}
 
 \item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale).}
 
 \item{se.fit}{If \code{TRUE}, also return the link-scale standard error and
-credible bounds.}
+credible bounds. Not supported together with an included SPDE field (the
+field posterior covariance is not propagated yet).}
 
 \item{level}{Credible-interval level (default 0.95).}
+
+\item{include_field}{For an SPDE fit, add the kriged Matern field to the
+prediction (default \code{TRUE}). \code{FALSE} gives the fixed-effect (population)
+prediction. Ignored for non-SPDE fits.}
 
 \item{...}{Ignored.}
 }
@@ -34,8 +41,12 @@ frame with \code{fit}, \code{se.fit} (link scale), \code{lower}, \code{upper} on
 scale.
 }
 \description{
-Fixed-effect prediction: the linear predictor \verb{X beta} at \code{newdata}, on the
-link or response scale, with credible bounds from the fixed-effect
-covariance (\code{\link[=vcov]{vcov()}}). Random effects are held at zero (population-level
-prediction); add group effects from \code{\link[=ranef]{ranef()}} when needed.
+Prediction of the linear predictor at \code{newdata}, on the link or response
+scale. The fixed-effect part is \verb{X beta} with credible bounds from the
+fixed-effect covariance (\code{\link[=vcov]{vcov()}}). For a fit carrying an SPDE Matern field
+(\code{spatial_spde()}), the posterior-mean field is interpolated (kriged) to the
+\code{newdata} coordinates and added to the linear predictor by default, so
+\code{predict()} gives the conditional (location-specific) prediction. Ordinary
+random effects are held at zero (population level); add group effects from
+\code{\link[=ranef]{ranef()}} when needed.
 }

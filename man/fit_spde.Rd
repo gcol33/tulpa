@@ -13,16 +13,9 @@ fit_spde(
   range = NULL,
   sigma = NULL,
   nested_laplace = is.null(range) || is.null(sigma),
-  method = c("ccd", "grid"),
-  n_grid = 5L,
   phi = 1,
-  diagnose_k = TRUE,
-  k_samples = 200L,
-  max_iter = 100L,
-  tol = 1e-06,
-  n_threads = 1L,
-  checkpoint = NULL,
-  offset = NULL
+  offset = NULL,
+  control = list()
 )
 }
 \arguments{
@@ -33,7 +26,9 @@ fit_spde(
 \item{spatial}{A \code{tulpa_spatial} object from \code{\link[=spatial_spde]{spatial_spde()}} or
 \code{\link[=spatial_spde_custom]{spatial_spde_custom()}}.}
 
-\item{family}{Distribution family: \code{"binomial"}, \code{"poisson"}, or \code{"neg_binomial_2"}.}
+\item{family}{Distribution family: \code{"binomial"}, \code{"poisson"},
+\code{"neg_binomial_2"}, or \code{"gaussian"} (continuous-field geostatistics, with
+\code{phi} the observation-noise standard deviation).}
 
 \item{n_trials}{Integer vector of trial sizes (binomial only).}
 
@@ -45,46 +40,39 @@ integrate over range and sigma.}
 \item{nested_laplace}{Logical. If TRUE (default when range/sigma are NULL),
 use nested Laplace approximation over hyperparameters.}
 
-\item{method}{Hyperparameter integration backend when nested Laplace is
-active. One of:
-\itemize{
-\item \code{"ccd"} (default): central composite design centered on the
-joint posterior mode of (range, sigma), oriented by the local
-Hessian. Uses 9 design points instead of \code{n_grid^2}. Folds the
-PC priors from \code{spatial$prior_range} / \code{spatial$prior_sigma} into
-the integrated marginal posterior. Falls back to \code{"grid"} if the
-posterior surface is too flat for a Hessian-based design.
-\item \code{"grid"}: rectangular grid in \verb{log(range) x log(sigma)}
-around the prior modes (\code{n_grid} points per axis).
-}}
-
-\item{n_grid}{Number of grid points per hyperparameter dimension for
-\code{method = "grid"}. Ignored under \code{method = "ccd"}. Default 5.}
-
 \item{phi}{Dispersion parameter (negbin only).}
-
-\item{diagnose_k}{Logical. If TRUE (default), compute the outer
-Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
-sampling the joint \verb{(range, sigma)} posterior on the log scale against the
-Gaussian proposal that orients the integration. See \code{\link[=tulpa_psis]{tulpa_psis()}}.}
-
-\item{k_samples}{Number of importance draws for \code{diagnose_k}. Default 200,
-each one extra batched SPDE marginal evaluation.}
-
-\item{max_iter}{Maximum Newton iterations. Default 100.}
-
-\item{tol}{Newton convergence tolerance. Default 1e-6.}
-
-\item{n_threads}{OpenMP threads. Default 1.}
-
-\item{checkpoint}{Optional grid-cell checkpoint/resume spec
-, \code{list(path =, resume =)}. Each solved \verb{(range, sigma)}
-cell is appended to \code{path}; a \code{resume = TRUE} run loads the finished cells
-and re-solves only the rest, so a killed or rebooted fit resumes instead of
-restarting. \code{resume = FALSE} starts a fresh file. Default \code{NULL} (off).}
 
 \item{offset}{Optional fixed additive term on the linear predictor
 (\verb{eta = offset + X beta + A w}), length \code{length(y)}; \code{NULL} -> no offset.}
+
+\item{control}{A named list of numerical / tuning knobs (statistical
+arguments stay in the signature above). Recognized entries:
+\itemize{
+\item \code{method}: hyperparameter integration backend when nested Laplace is
+active. \code{"ccd"} (default) uses a central composite design centered on
+the joint posterior mode of \verb{(range, sigma)}, oriented by the local
+Hessian (9 design points instead of \code{n_grid^2}), folding the PC priors
+from \code{spatial$prior_range} / \code{spatial$prior_sigma} into the integrated
+marginal and falling back to \code{"grid"} if the surface is too flat for a
+Hessian-based design. \code{"grid"} uses a rectangular grid in
+\verb{log(range) x log(sigma)} around the prior modes.
+\item \code{n_grid}: grid points per hyperparameter dimension for
+\code{method = "grid"} (ignored under \code{"ccd"}). Default 5.
+\item \code{diagnose_k}: if TRUE (default), compute the outer
+Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
+sampling the joint \verb{(range, sigma)} posterior on the log scale against
+the Gaussian proposal that orients the integration. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
+\item \code{k_samples}: importance draws for \code{diagnose_k}. Default 200, each
+one extra batched SPDE marginal evaluation.
+\item \code{max_iter}: maximum Newton iterations. Default 100.
+\item \code{tol}: Newton convergence tolerance. Default 1e-6.
+\item \code{n_threads}: OpenMP threads. Default 1.
+\item \code{checkpoint}: grid-cell checkpoint/resume spec
+\code{list(path =, resume =)}. Each solved \verb{(range, sigma)} cell is appended
+to \code{path}; a \code{resume = TRUE} run loads the finished cells and re-solves
+only the rest, so a killed or rebooted fit resumes instead of
+restarting. \code{resume = FALSE} starts a fresh file. Default \code{NULL} (off).
+}}
 }
 \value{
 A list with:

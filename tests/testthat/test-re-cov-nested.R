@@ -33,7 +33,8 @@ test_that("tulpa_re_cov_nested returns a well-formed marginalized posterior", {
   # tensor grid is opt-in via integration = "grid": n_per_axis^k cells
   res_grid <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, re_term,
                                   family = "binomial",
-                                  integration = "grid", n_per_axis = 5L, span = 3)
+                                  control = list(integration = "grid",
+                                                 n_per_axis = 5L, span = 3))
   expect_equal(res_grid$n_grid, 5L^3L)
   expect_equal(sum(res_grid$weights), 1, tolerance = 1e-10)
 
@@ -167,7 +168,7 @@ test_that("tulpa_re_cov_nested integrates several terms as separate blocks", {
     list(idx = h, n_groups = H, n_coefs = 1L, correlated = FALSE, label = "h")
   )
   res <- tulpa_re_cov_nested(y, rep(1L, N), X, re_terms, family = "binomial",
-                             seed = 3L, n_draws = 300L)
+                             control = list(seed = 3L, n_draws = 300L))
 
   expect_equal(res$n_blocks, 2L)
   expect_equal(unname(res$n_coefs), c(2L, 1L))

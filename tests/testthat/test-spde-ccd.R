@@ -46,7 +46,7 @@ test_that("fit_spde(method='ccd') returns a usable nested-Laplace result", {
   X <- matrix(1, nrow = length(y), ncol = 1)
 
   fit <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", method = "ccd")
+    fit_spde(y, X, d$spec, family = "poisson", control = list(method = "ccd"))
   )
 
   expect_true(fit$nested$method %in% c("ccd", "grid"))
@@ -74,8 +74,8 @@ test_that("fit_spde(method='ccd') falls back to grid on degenerate data", {
 
   expect_warning(
     fit <- fit_spde(y, X, spec, family = "binomial",
-                    n_trials = rep(1L, n_obs), n_grid = 3L,
-                    method = "ccd"),
+                    n_trials = rep(1L, n_obs),
+                    control = list(n_grid = 3L, method = "ccd")),
     "rectangular grid"
   )
   expect_identical(fit$nested$method, "grid")
@@ -93,10 +93,10 @@ test_that("fit_spde(method='ccd') matches grid integration on shared mode", {
   X <- matrix(1, nrow = length(y), ncol = 1)
 
   fit_c <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", method = "ccd")
+    fit_spde(y, X, d$spec, family = "poisson", control = list(method = "ccd"))
   )
   fit_g <- fit_spde(y, X, d$spec, family = "poisson",
-                    method = "grid", n_grid = 7L)
+                    control = list(method = "grid", n_grid = 7L))
 
   expect_identical(fit_g$nested$method, "grid")
   expect_true(all(is.finite(c(fit_c$nested$range_mean,
@@ -128,7 +128,8 @@ test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
   X <- matrix(1, nrow = length(y), ncol = 1)
 
   fit <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", method = "ccd", k_samples = 150L))
+    fit_spde(y, X, d$spec, family = "poisson",
+             control = list(method = "ccd", k_samples = 150L)))
   # Both hyperparameters are positive (log transform), so k-hat is well-defined;
   # value is data-dependent -- assert plumbing + ESS range.
   expect_true(is.finite(fit$pareto_k))
@@ -137,7 +138,8 @@ test_that("fit_spde reports an outer Pareto-k-hat over (range, sigma)", {
   expect_equal(fit$pareto_k_scope, "outer (range, sigma) Gaussian proposal")
 
   off <- suppressWarnings(
-    fit_spde(y, X, d$spec, family = "poisson", method = "ccd", diagnose_k = FALSE))
+    fit_spde(y, X, d$spec, family = "poisson",
+             control = list(method = "ccd", diagnose_k = FALSE)))
   expect_true(is.na(off$pareto_k))                  # gated off
 })
 
@@ -245,8 +247,9 @@ test_that("SPDE CCD recovers (range, sigma) on a genuine field (#98)", {
     y  <- 1.0 + 0.5 * xc + as.numeric(spec$A %*% w) + rnorm(n_obs, 0, sigma_obs)
 
     fit <- suppressWarnings(fit_spde(y, X, spec, family = "gaussian",
-                                     phi = sigma_obs, method = "ccd",
-                                     diagnose_k = FALSE))
+                                     phi = sigma_obs,
+                                     control = list(method = "ccd",
+                                                    diagnose_k = FALSE)))
     rr[s] <- fit$nested$range_mean
     ss[s] <- fit$nested$sigma_mean
     used_ccd[s] <- identical(fit$nested$method, "ccd")

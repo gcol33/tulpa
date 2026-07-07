@@ -486,6 +486,33 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
   stats::model.matrix(tt, data = newdata)
 }
 
+# Project a fitted SPDE mesh-node field to arbitrary coordinates (kriging).
+# Reuses the FEM projector tulpaMesh builds for the observation coordinates, so
+# the field at new locations is A_new %*% w_hat with w_hat the posterior-mean
+# node field (`$spatial_effects`). Requires a mesh-backed spec built with a
+# coordinate formula; a custom C/G/A spec has no mesh to re-project through.
+#' @keywords internal
+.spde_field_at <- function(object, newdata) {
+  sp <- object$spatial
+  w  <- object$spatial_effects
+  if (is.null(sp$mesh) || is.null(sp$coord_formula)) {
+    stop("Spatial-field prediction at new coordinates needs an SPDE spec built ",
+         "with a mesh and a coordinate formula, e.g. spatial_spde(~ x + y, ",
+         "data); a custom C/G/A spec cannot project to new points. Pass ",
+         "include_field = FALSE for the fixed-effect (population) prediction.",
+         call. = FALSE)
+  }
+  vars <- all.vars(sp$coord_formula)
+  miss <- setdiff(vars, names(newdata))
+  if (length(miss)) {
+    stop("newdata is missing the coordinate column(s): ",
+         paste(miss, collapse = ", "), call. = FALSE)
+  }
+  coords <- cbind(newdata[[vars[1]]], newdata[[vars[2]]])
+  A_new  <- tulpaMesh::fem_matrices(sp$mesh, obs_coords = coords)$A
+  as.numeric(A_new %*% w)
+}
+
 #' Fitted values (population level)
 #'
 #' @description
@@ -510,18 +537,27 @@ fitted.tulpa_fit <- function(object, ...) {
 #' Predict at new covariate values (population level)
 #'
 #' @description
-#' Fixed-effect prediction: the linear predictor `X beta` at `newdata`, on the
-#' link or response scale, with credible bounds from the fixed-effect
-#' covariance ([vcov()]). Random effects are held at zero (population-level
-#' prediction); add group effects from [ranef()] when needed.
+#' Prediction of the linear predictor at `newdata`, on the link or response
+#' scale. The fixed-effect part is `X beta` with credible bounds from the
+#' fixed-effect covariance ([vcov()]). For a fit carrying an SPDE Matern field
+#' (`spatial_spde()`), the posterior-mean field is interpolated (kriged) to the
+#' `newdata` coordinates and added to the linear predictor by default, so
+#' `predict()` gives the conditional (location-specific) prediction. Ordinary
+#' random effects are held at zero (population level); add group effects from
+#' [ranef()] when needed.
 #'
 #' @param object A `tulpa_fit` object.
-#' @param newdata Data frame of covariates. If `NULL`, predicts at the training
-#'   design (requires `$model_matrix`).
+#' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate
+#'   columns named in the spec's coordinate formula). If `NULL`, predicts at the
+#'   training design (requires `$model_matrix`).
 #' @param type `"link"` (linear predictor) or `"response"` (mean scale).
 #' @param se.fit If `TRUE`, also return the link-scale standard error and
-#'   credible bounds.
+#'   credible bounds. Not supported together with an included SPDE field (the
+#'   field posterior covariance is not propagated yet).
 #' @param level Credible-interval level (default 0.95).
+#' @param include_field For an SPDE fit, add the kriged Matern field to the
+#'   prediction (default `TRUE`). `FALSE` gives the fixed-effect (population)
+#'   prediction. Ignored for non-SPDE fits.
 #' @param ... Ignored.
 #' @return If `se.fit = FALSE`, a numeric vector. If `se.fit = TRUE`, a data
 #'   frame with `fit`, `se.fit` (link scale), `lower`, `upper` on the requested
@@ -529,7 +565,8 @@ fitted.tulpa_fit <- function(object, ...) {
 #' @export
 predict.tulpa_fit <- function(object, newdata = NULL,
                               type = c("link", "response"),
-                              se.fit = FALSE, level = 0.95, ...) {
+                              se.fit = FALSE, level = 0.95,
+                              include_field = TRUE, ...) {
   type <- match.arg(type)
   beta <- coef(object)
 
@@ -546,6 +583,29 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   X <- X[, names(beta), drop = FALSE]
 
   eta <- as.numeric(X %*% beta)
+
+  # Kriged SPDE field. At training data (newdata = NULL) reuse the fitted
+  # projector; at new coordinates re-project the mesh-node field through the
+  # spec's mesh. Only mesh-backed SPDE fits carry a field here; every other fit
+  # leaves `eta` at the fixed-effect (population) prediction.
+  is_spde_field <- isTRUE(include_field) &&
+    identical(object$spatial$type, "spde") &&
+    !is.null(object$spatial_effects)
+  if (is_spde_field) {
+    fld <- if (is.null(newdata)) {
+      as.numeric(object$spatial$A %*% object$spatial_effects)
+    } else {
+      .spde_field_at(object, newdata)
+    }
+    if (se.fit) {
+      stop("se.fit = TRUE with the SPDE field included is not supported yet: ",
+           "the field posterior covariance is not propagated. Use ",
+           "include_field = FALSE for fixed-effect SEs, or se.fit = FALSE for ",
+           "the point kriging prediction.", call. = FALSE)
+    }
+    eta <- eta + fld
+  }
+
   if (!se.fit) {
     return(if (type == "response") family_mean(eta, object$family) else eta)
   }

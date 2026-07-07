@@ -8,44 +8,46 @@
 #' @param X Design matrix.
 #' @param spatial A `tulpa_spatial` object from [spatial_spde()] or
 #'   [spatial_spde_custom()].
-#' @param family Distribution family: `"binomial"`, `"poisson"`, or `"neg_binomial_2"`.
+#' @param family Distribution family: `"binomial"`, `"poisson"`,
+#'   `"neg_binomial_2"`, or `"gaussian"` (continuous-field geostatistics, with
+#'   `phi` the observation-noise standard deviation).
 #' @param n_trials Integer vector of trial sizes (binomial only).
 #' @param range Spatial range parameter. If NULL, uses nested Laplace to
 #'   integrate over range and sigma.
 #' @param sigma Marginal standard deviation. If NULL, uses nested Laplace.
 #' @param nested_laplace Logical. If TRUE (default when range/sigma are NULL),
 #'   use nested Laplace approximation over hyperparameters.
-#' @param method Hyperparameter integration backend when nested Laplace is
-#'   active. One of:
-#'   \itemize{
-#'     \item `"ccd"` (default): central composite design centered on the
-#'       joint posterior mode of (range, sigma), oriented by the local
-#'       Hessian. Uses 9 design points instead of `n_grid^2`. Folds the
-#'       PC priors from `spatial$prior_range` / `spatial$prior_sigma` into
-#'       the integrated marginal posterior. Falls back to `"grid"` if the
-#'       posterior surface is too flat for a Hessian-based design.
-#'     \item `"grid"`: rectangular grid in `log(range) x log(sigma)`
-#'       around the prior modes (`n_grid` points per axis).
-#'   }
-#' @param n_grid Number of grid points per hyperparameter dimension for
-#'   `method = "grid"`. Ignored under `method = "ccd"`. Default 5.
 #' @param phi Dispersion parameter (negbin only).
-#' @param diagnose_k Logical. If TRUE (default), compute the outer
-#'   Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
-#'   sampling the joint `(range, sigma)` posterior on the log scale against the
-#'   Gaussian proposal that orients the integration. See [tulpa_psis()].
-#' @param k_samples Number of importance draws for `diagnose_k`. Default 200,
-#'   each one extra batched SPDE marginal evaluation.
-#' @param max_iter Maximum Newton iterations. Default 100.
-#' @param tol Newton convergence tolerance. Default 1e-6.
-#' @param n_threads OpenMP threads. Default 1.
-#' @param checkpoint Optional grid-cell checkpoint/resume spec
-#', `list(path =, resume =)`. Each solved `(range, sigma)`
-#'   cell is appended to `path`; a `resume = TRUE` run loads the finished cells
-#'   and re-solves only the rest, so a killed or rebooted fit resumes instead of
-#'   restarting. `resume = FALSE` starts a fresh file. Default `NULL` (off).
 #' @param offset Optional fixed additive term on the linear predictor
 #'   (`eta = offset + X beta + A w`), length `length(y)`; `NULL` -> no offset.
+#' @param control A named list of numerical / tuning knobs (statistical
+#'   arguments stay in the signature above). Recognized entries:
+#'   \itemize{
+#'     \item `method`: hyperparameter integration backend when nested Laplace is
+#'       active. `"ccd"` (default) uses a central composite design centered on
+#'       the joint posterior mode of `(range, sigma)`, oriented by the local
+#'       Hessian (9 design points instead of `n_grid^2`), folding the PC priors
+#'       from `spatial$prior_range` / `spatial$prior_sigma` into the integrated
+#'       marginal and falling back to `"grid"` if the surface is too flat for a
+#'       Hessian-based design. `"grid"` uses a rectangular grid in
+#'       `log(range) x log(sigma)` around the prior modes.
+#'     \item `n_grid`: grid points per hyperparameter dimension for
+#'       `method = "grid"` (ignored under `"ccd"`). Default 5.
+#'     \item `diagnose_k`: if TRUE (default), compute the outer
+#'       Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
+#'       sampling the joint `(range, sigma)` posterior on the log scale against
+#'       the Gaussian proposal that orients the integration. See [tulpa_psis()].
+#'     \item `k_samples`: importance draws for `diagnose_k`. Default 200, each
+#'       one extra batched SPDE marginal evaluation.
+#'     \item `max_iter`: maximum Newton iterations. Default 100.
+#'     \item `tol`: Newton convergence tolerance. Default 1e-6.
+#'     \item `n_threads`: OpenMP threads. Default 1.
+#'     \item `checkpoint`: grid-cell checkpoint/resume spec
+#'       `list(path =, resume =)`. Each solved `(range, sigma)` cell is appended
+#'       to `path`; a `resume = TRUE` run loads the finished cells and re-solves
+#'       only the rest, so a killed or rebooted fit resumes instead of
+#'       restarting. `resume = FALSE` starts a fresh file. Default `NULL` (off).
+#'   }
 #'
 #' @return A list with:
 #'   \itemize{
@@ -88,17 +90,23 @@ fit_spde <- function(y, X, spatial,
                      family = "binomial", n_trials = NULL,
                      range = NULL, sigma = NULL,
                      nested_laplace = is.null(range) || is.null(sigma),
-                     method = c("ccd", "grid"),
-                     n_grid = 5L, phi = 1.0,
-                     diagnose_k = TRUE, k_samples = 200L,
-                     max_iter = 100L, tol = 1e-6, n_threads = 1L,
-                     checkpoint = NULL, offset = NULL) {
+                     phi = 1.0, offset = NULL,
+                     control = list()) {
 
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }
 
-  method <- match.arg(method)
+  # Perf/numerical knobs live in `control = list()` (matching tulpa() /
+  # tulpa_nested_laplace()); the signature carries only statistical arguments.
+  method     <- match.arg(control$method %||% "ccd", c("ccd", "grid"))
+  n_grid     <- as.integer(control$n_grid %||% 5L)
+  diagnose_k <- isTRUE(control$diagnose_k %||% TRUE)
+  k_samples  <- as.integer(control$k_samples %||% 200L)
+  max_iter   <- as.integer(control$max_iter %||% 100L)
+  tol        <- control$tol %||% 1e-6
+  n_threads  <- as.integer(control$n_threads %||% 1L)
+  checkpoint <- control$checkpoint
 
   if (!is.null(offset)) {
     offset <- as.numeric(offset)

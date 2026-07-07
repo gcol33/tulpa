@@ -120,8 +120,96 @@
       tg <- trigamma(mu * phi) + trigamma((1 - mu) * phi)
       phi * phi * tg * dmu * dmu
     }
+  ),
+
+  # Gamma (log link), phi = shape. Mean mu = exp(eta), variance mu^2 / phi.
+  # Mirrors laplace_family_link.h so the R-closure backends agree with the C++
+  # Laplace / ModelData-sampler path.
+  gamma = list(
+    mean = .mean_log,
+    loglik = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      phi * log(phi) - lgamma(phi) + (phi - 1) * log(y) -
+        phi * log(mu) - phi * y / mu
+    },
+    score = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      phi * (y - mu) / mu
+    },
+    weight = function(eta, n_trials, phi) rep(phi, length(eta))
+  ),
+
+  # Inverse Gaussian (log link), phi = dispersion. Mean mu = exp(eta),
+  # variance phi * mu^3.
+  inverse_gaussian = list(
+    mean = .mean_log,
+    loglik = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      -0.5 * log(2 * pi * phi * y^3) - (y - mu)^2 / (2 * phi * mu^2 * y)
+    },
+    score = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      (y - mu) / (phi * mu^2)
+    },
+    weight = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      1 / (phi * mu)
+    }
+  ),
+
+  # Beta-binomial (logit link), phi = precision (a + b), n_trials = n.
+  # mu = P(success) = a / (a + b); a = mu*phi, b = (1-mu)*phi. Overdispersed
+  # binomial: Var(y) = n mu(1-mu) [1 + (n-1)/(phi+1)]. The score is exact; the
+  # working weight is the moment-based Fisher weight n mu(1-mu) / D with the
+  # overdispersion factor D (matching grad_hess_for_family in the C++ path).
+  beta_binomial = list(
+    mean = .mean_beta,
+    loglik = function(eta, y, n_trials, phi) {
+      n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      mu <- .mean_beta(eta); a <- mu * phi; b <- (1 - mu) * phi
+      lchoose(n, y) + lgamma(y + a) + lgamma(n - y + b) - lgamma(n + a + b) -
+        lgamma(a) - lgamma(b) + lgamma(a + b)
+    },
+    score = function(eta, y, n_trials, phi) {
+      n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      mu <- .mean_beta(eta); a <- mu * phi; b <- (1 - mu) * phi
+      dmu <- mu * (1 - mu)
+      phi * (digamma(y + a) - digamma(a) - digamma(n - y + b) + digamma(b)) * dmu
+    },
+    weight = function(eta, n_trials, phi) {
+      n  <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
+      mu <- .mean_beta(eta); D <- 1 + (n - 1) / (phi + 1)
+      n * mu * (1 - mu) / D
+    }
+  ),
+
+  # Student-t location-scale (identity link), phi = scale, robust default
+  # df = .STUDENT_T_DF. Heavy-tailed drop-in for gaussian; the score is exact and
+  # the working weight is the constant Fisher information (nu+1)/((nu+3) phi^2).
+  # Mirrors the C++ `t` branch (kStudentTDf). Configurable df would need a second
+  # dispersion channel in the family-ops signature.
+  t = list(
+    mean = .mean_identity,
+    loglik = function(eta, y, n_trials, phi) {
+      nu <- .STUDENT_T_DF; r <- (y - eta) / phi
+      lgamma((nu + 1) / 2) - lgamma(nu / 2) - 0.5 * log(nu * pi * phi^2) -
+        0.5 * (nu + 1) * log1p(r^2 / nu)
+    },
+    score = function(eta, y, n_trials, phi) {
+      nu <- .STUDENT_T_DF; resid <- y - eta
+      (nu + 1) * resid / (nu * phi^2 + resid^2)
+    },
+    weight = function(eta, n_trials, phi) {
+      nu <- .STUDENT_T_DF
+      rep((nu + 1) / ((nu + 3) * phi^2), length(eta))
+    }
   )
 )
+
+# Robust default degrees of freedom for the Student-t family (matches the C++
+# kStudentTDf). Configurable df is deferred: the family-ops functions receive
+# only `phi`, so a second dispersion would need a signature change.
+.STUDENT_T_DF <- 4
 
 
 #' Supported R-level family names.
@@ -136,14 +224,15 @@ family_names <- function() names(.FAMILY_OPS)
 # (gcol33/tulpa#104). The `*_<link>` suffix forms (e.g. "gamma_inverse") share
 # the base family's dispersion, so membership is tested on the prefix.
 .PHI_FAMILIES <- c("gaussian", "gamma", "neg_binomial_2", "negative_binomial",
-                   "inverse_gaussian", "beta", "interval_gaussian",
-                   "truncated_gaussian")
+                   "inverse_gaussian", "beta", "beta_binomial", "t",
+                   "interval_gaussian", "truncated_gaussian")
 
 # Count families whose likelihood is defined only at non-negative integer `y`.
 # The C++ kernels cast the response to `int` (laplace_family_link.h /
 # laplace_likelihoods.h), silently flooring a continuous response into a biased
 # log-likelihood, so a non-integer `y` is rejected at the front door.
-.COUNT_FAMILIES <- c("poisson", "binomial", "neg_binomial_2", "negative_binomial")
+.COUNT_FAMILIES <- c("poisson", "binomial", "neg_binomial_2", "negative_binomial",
+                     "beta_binomial")
 
 # Base family of a `family` / `family_<link>` code (the part before the link
 # suffix), so a custom link form validates against the same rules.

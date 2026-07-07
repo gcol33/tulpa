@@ -29,6 +29,6 @@ log-likelihood (a deterministic / point approximation) yields \code{NA} criterio
 columns rather than an error, so the table always has one row per model.
 }
 \seealso{
-\code{\link[=modelAverage]{modelAverage()}} for model-averaged predictions, \code{\link[=tulpa_criteria]{tulpa_criteria()}}
+\code{\link[=model_average]{model_average()}} for model-averaged predictions, \code{\link[=tulpa_criteria]{tulpa_criteria()}}
 and \code{\link[=tulpa_psis]{tulpa_psis()}} for the native criteria layer.
 }

@@ -25,7 +25,6 @@ NULL
 #'
 #' @param term A language object (formula term)
 #' @return A list of language objects, each a `|` or `||` call
-#' @keywords internal
 #' @export
 findbars <- function(term) {
   if (is.name(term) || !is.language(term)) return(NULL)
@@ -56,7 +55,6 @@ findbars <- function(term) {
 #'
 #' @param term A language object (formula term)
 #' @return A language object with all bar terms removed, or NULL if nothing remains
-#' @keywords internal
 #' @export
 nobars <- function(term) {
   if (is.name(term) || !is.language(term)) return(term)
@@ -104,7 +102,6 @@ nobars <- function(term) {
 #' @param term A language object (formula term)
 #' @return A list of language objects, each a `latent(...)` call
 #' @keywords internal
-#' @export
 find_latent_terms <- function(term) {
   if (is.name(term) || !is.language(term)) return(NULL)
 
@@ -132,7 +129,6 @@ find_latent_terms <- function(term) {
 #' @return A language object with all `latent(...)` calls removed, or NULL
 #'   if nothing remains.
 #' @keywords internal
-#' @export
 no_latent_terms <- function(term) {
   if (is.name(term) || !is.language(term)) return(term)
 
@@ -347,7 +343,6 @@ tulpa_is_spatial_bar <- function(x) {
 #'   - `correlated`: logical (TRUE for `|`, FALSE for `||`)
 #'   - `original`: the original bar language object
 #' @keywords internal
-#' @export
 parse_bar_term <- function(bar_term) {
   stopifnot(is.call(bar_term))
 

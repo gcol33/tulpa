@@ -17,6 +17,11 @@
 
 namespace tulpa {
 
+// Fixed degrees of freedom for the Student-t (robust) family. A single robust
+// default (configurable df would need a second dispersion channel through the
+// family-ops signature); nu = 4 is the common heavy-tailed drop-in for Gaussian.
+constexpr double kStudentTDf = 4.0;
+
 struct FamilyLink {
     std::string family;
     std::string link;
@@ -219,6 +224,32 @@ inline GradHess grad_hess_for_family(
         return {grad_log_lik_negbin((int)y, eta, phi),
                 neg_hess_log_lik_negbin((int)y, eta, phi)};
     }
+    if (family == "beta_binomial") {
+        // Beta-binomial (logit link, mu = P(success), phi = precision a + b).
+        // Score is exact; the working weight is the moment-based Fisher weight
+        // n mu(1-mu) / D with the overdispersion factor D = 1 + (n-1)/(phi+1)
+        // (D -> 1 recovers the binomial weight as phi -> Inf). Always positive.
+        double mu = linkinv(eta, "logit");
+        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+        double a = mu * phi, b = (1.0 - mu) * phi;
+        double dmu = mu * (1.0 - mu);
+        double n = (double)n_trials;
+        double grad = phi * (R::digamma(y + a) - R::digamma(a)
+                             - R::digamma(n - y + b) + R::digamma(b)) * dmu;
+        double D = 1.0 + (n - 1.0) / (phi + 1.0);
+        return {grad, n * mu * (1.0 - mu) / D};
+    }
+    if (family == "t") {
+        // Student-t location-scale (identity link): y ~ eta + phi * t_nu, with the
+        // robust default nu = kStudentTDf and phi the scale. Score is exact; the
+        // working weight is the constant Fisher information (nu+1)/((nu+3) phi^2),
+        // which is positive and needs no Fisher fallback (unlike the redescending
+        // observed information of the heavy tails).
+        const double nu = kStudentTDf;
+        double resid = y - eta;
+        double grad = (nu + 1.0) * resid / (nu * phi * phi + resid * resid);
+        return {grad, (nu + 1.0) / ((nu + 3.0) * phi * phi)};
+    }
 
     FamilyLink fl = parse_family_link(family);
     double mu = linkinv(eta, fl.link);
@@ -241,6 +272,22 @@ inline double log_lik_for_family(
     if (family == "binomial") return log_lik_binomial((int)y, n_trials, eta);
     if (family == "poisson") return log_lik_poisson((int)y, eta);
     if (family == "neg_binomial_2") return log_lik_negbin((int)y, eta, phi);
+    if (family == "beta_binomial") {
+        double mu = linkinv(eta, "logit");
+        mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
+        double a = mu * phi, b = (1.0 - mu) * phi;
+        double n = (double)n_trials, yi = (double)(int)y;
+        return R::lchoose(n, yi)
+             + R::lgammafn(yi + a) + R::lgammafn(n - yi + b) - R::lgammafn(n + a + b)
+             - R::lgammafn(a) - R::lgammafn(b) + R::lgammafn(a + b);
+    }
+    if (family == "t") {
+        const double nu = kStudentTDf;
+        double r = (y - eta) / phi;
+        return R::lgammafn((nu + 1.0) / 2.0) - R::lgammafn(nu / 2.0)
+             - 0.5 * std::log(nu * M_PI * phi * phi)
+             - 0.5 * (nu + 1.0) * std::log1p(r * r / nu);
+    }
 
     FamilyLink fl = parse_family_link(family);
     double mu = linkinv(eta, fl.link);

@@ -11,22 +11,12 @@ tulpa_re_cov_nested(
   re_terms,
   family = "binomial",
   phi = 1,
-  integration = c("ccd", "grid"),
-  n_per_axis = 5L,
-  span = 3,
   prior_sigma = c(3, 0.05),
   eta = 2,
   log_prior_theta = NULL,
   beta_prior = NULL,
   n_quad = 1L,
-  n_draws = 2000L,
-  seed = NULL,
-  diagnose_k = TRUE,
-  k_samples = 200L,
-  max_iter = 100L,
-  tol = 1e-08,
-  n_threads = 1L,
-  checkpoint = NULL
+  control = list()
 )
 }
 \arguments{
@@ -41,15 +31,6 @@ term is a list with \code{idx} (1-based group index per observation),
 defaults to \code{TRUE}). An optional \code{label} / \code{group_var} names the block in
 the output. Any \code{L} / \code{cov} / \code{sigma} field is ignored -- \code{Sigma} is what
 this function integrates over.}
-
-\item{integration}{Node layout: \code{"ccd"} (default, central-composite design,
-scales to larger total parameter count) or \code{"grid"} (full tensor product).}
-
-\item{n_per_axis}{Points per parameter axis in the tensor grid (default 5);
-used only when \code{integration = "grid"}.}
-
-\item{span}{Half-width of the tensor grid in posterior standard deviations
-per whitened axis (default 3); used only when \code{integration = "grid"}.}
 
 \item{prior_sigma, eta}{Hyperparameters of the default PC + LKJ prior (see
 \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}): \code{prior_sigma = c(U, alpha)} with
@@ -74,28 +55,35 @@ factorize); with crossed RE terms \code{n_quad > 1} errors. When AGHQ is used th
 fixed effects are integrated, so the reported fixed-effect posterior is the
 marginal (ML-II) one rather than the joint-mode (PQL) estimate.}
 
-\item{n_draws}{Number of posterior draws of the fixed effects to synthesize
-from the node mixture (default 2000), exposed as \code{draws} for the generic
-\code{tulpa_fit} methods. The \code{Sigma} posterior is summarized exactly (weighted
-node quantiles) in \code{posterior}, independent of \code{n_draws}.}
-
-\item{seed}{Optional integer seed for the fixed-effect draw synthesis.}
-
-\item{diagnose_k}{Logical. If \code{TRUE} (default), compute the outer Pareto
-k-hat accuracy diagnostic for the Gaussian proposal over the
-hyperparameters, returned as \code{pareto_k}.}
-
-\item{k_samples}{Number of importance draws for the \code{diagnose_k} estimate
-(default 200).}
-
-\item{max_iter, tol, n_threads}{Inner-solve controls (see \code{\link[=tulpa_laplace]{tulpa_laplace()}}).}
-
-\item{checkpoint}{Optional node checkpoint/resume spec,
-\code{list(path = , resume = )}. Each completed CCD / grid node (one inner
-Laplace solve) is cached to \code{path}; a \code{resume = TRUE} run loads the finished
-nodes and re-solves only the rest. \code{resume = FALSE} starts fresh. A file
-written for different data, layout, or grid is rejected (fingerprint
-mismatch). Default \code{NULL} (off).}
+\item{control}{A named list of numerical / tuning knobs (statistical
+arguments stay in the signature above). Recognized entries:
+\itemize{
+\item \code{integration}: node layout, \code{"ccd"} (default, central-composite
+design, scales to larger total parameter count) or \code{"grid"} (full
+tensor product).
+\item \code{n_per_axis}: points per parameter axis in the tensor grid
+(default 5); used only when \code{integration = "grid"}.
+\item \code{span}: half-width of the tensor grid in posterior standard
+deviations per whitened axis (default 3); grid only.
+\item \code{n_draws}: posterior draws of the fixed effects synthesized from the
+node mixture (default 2000), exposed as \code{draws} for the generic
+\code{tulpa_fit} methods. The \code{Sigma} posterior is summarized exactly
+(weighted node quantiles) in \code{posterior}, independent of \code{n_draws}.
+\item \code{seed}: optional integer seed for the fixed-effect draw synthesis.
+\item \code{diagnose_k}: if \code{TRUE} (default), compute the outer Pareto k-hat
+accuracy diagnostic for the Gaussian proposal over the hyperparameters,
+returned as \code{pareto_k}.
+\item \code{k_samples}: importance draws for the \code{diagnose_k} estimate
+(default 200).
+\item \code{max_iter}, \code{tol}, \code{n_threads}: inner-solve controls (see
+\code{\link[=tulpa_laplace]{tulpa_laplace()}}).
+\item \code{checkpoint}: node checkpoint/resume spec \code{list(path = , resume = )}.
+Each completed CCD / grid node (one inner Laplace solve) is cached to
+\code{path}; a \code{resume = TRUE} run loads the finished nodes and re-solves
+only the rest. \code{resume = FALSE} starts fresh. A file written for
+different data, layout, or grid is rejected (fingerprint mismatch).
+Default \code{NULL} (off).
+}}
 }
 \value{
 A list with:

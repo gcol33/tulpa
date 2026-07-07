@@ -101,5 +101,8 @@ Finds the mode of the latent field (beta + random effects) and
 returns the Laplace-approximated marginal likelihood.
 
 This is the public API for model packages (tulpaGlmm, tulpaObs, etc.)
-to call tulpa's Laplace engine.
+to call tulpa's Laplace engine. As the low-level engine entry point (not a
+front-door fitter), it keeps its numerical controls (\code{max_iter}, \code{tol},
+\code{n_threads}, \code{return_hessian}) inline in the signature rather than in a
+\code{control} list, so callers assembling many solves pass them positionally.
 }

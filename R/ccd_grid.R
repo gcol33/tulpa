@@ -38,7 +38,6 @@
 #'   * `f_0`: the sphere radius used.
 #'
 #' @seealso [ccd_to_theta()] to map z-coordinates to physical theta.
-#' @keywords internal
 #' @export
 ccd_grid <- function(k, f_0 = sqrt(k)) {
   k <- as.integer(k)
@@ -120,7 +119,6 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #'
 #' @return Numeric matrix `[n_points x k]` of physical theta-values.
 #'
-#' @keywords internal
 #' @export
 ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
   if (!is.matrix(z)) stop("`z` must be a matrix.", call. = FALSE)
@@ -165,7 +163,6 @@ ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
 #'   point (the centre weight `w0` for the central point, `w` otherwise).
 #'
 #' @seealso [ccd_grid()], [ccd_to_theta()].
-#' @keywords internal
 #' @export
 ccd_weights <- function(ccd) {
   m  <- ncol(ccd$z)

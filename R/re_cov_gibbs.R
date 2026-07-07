@@ -145,10 +145,6 @@
 #'   diagonal one; defaults to `TRUE`). An optional `label` / `group_var` names
 #'   the block. Any supplied `L` / `cov` / `sigma` is ignored -- `Sigma` is what
 #'   this function samples.
-#' @param n_iter Number of recorded post-warmup sweeps (default 2000).
-#' @param warmup Warmup (burn-in) sweeps, used for proposal-scale adaptation
-#' (default 1000).
-#' @param thin Keep every `thin`-th recorded sweep (default 1).
 #' @param prior_df Inverse-Wishart prior degrees of freedom. Applied to every
 #'   correlated block (default `n_coefs + 1`, the minimal proper choice) and as
 #'   the scalar inverse-gamma shape for every diagonal block (default 2). Must
@@ -158,8 +154,17 @@
 #'   default is used.
 #' @param beta_prior_mean,beta_prior_sd Gaussian fixed-effect prior (defaults
 #'   `0` and `100`). Scalars are recycled to `ncol(X)`.
-#' @param seed Optional integer seed for reproducibility.
-#' @param max_iter,tol,n_threads Pilot-solve controls (see [tulpa_laplace()]).
+#' @param control A named list of numerical / tuning knobs (statistical
+#'   arguments stay in the signature above). Recognized entries:
+#'   \itemize{
+#'     \item `n_iter`: recorded post-warmup sweeps (default 2000).
+#'     \item `warmup`: warmup (burn-in) sweeps, used for proposal-scale
+#'       adaptation (default 1000).
+#'     \item `thin`: keep every `thin`-th recorded sweep (default 1).
+#'     \item `seed`: optional integer seed for reproducibility.
+#'     \item `max_iter`, `tol`, `n_threads`: pilot-solve controls (see
+#'       [tulpa_laplace()]).
+#'   }
 #'
 #' @return A list with:
 #'   - `posterior`: data frame with one row per parameter (`sigma_i`, `rho_ij`,
@@ -194,17 +199,25 @@
 #' re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
 #'                 correlated = TRUE)
 #' fit <- tulpa_re_cov_gibbs(y, rep(1L, n), cbind(1, x), re_term,
-#'                           family = "binomial", n_iter = 300L, warmup = 150L)
+#'                           family = "binomial",
+#'                           control = list(n_iter = 300L, warmup = 150L))
 #' fit$Sigma_mean        # exact-debias RE covariance posterior mean
 #' }
 #' @export
 tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
                                family = "binomial", phi = 1.0,
-                               n_iter = 2000L, warmup = 1000L, thin = 1L,
                                prior_df = NULL, prior_scale = NULL,
                                beta_prior_mean = 0, beta_prior_sd = 100,
-                               seed = NULL,
-                               max_iter = 100L, tol = 1e-8, n_threads = 1L) {
+                               control = list()) {
+  # Perf/numerical knobs live in `control = list()` (matching tulpa() /
+  # tulpa_nested_laplace()); the signature carries only statistical arguments.
+  n_iter    <- as.integer(control$n_iter %||% 2000L)
+  warmup    <- as.integer(control$warmup %||% 1000L)
+  thin      <- as.integer(control$thin %||% 1L)
+  seed      <- control$seed
+  max_iter  <- as.integer(control$max_iter %||% 100L)
+  tol       <- control$tol %||% 1e-8
+  n_threads <- as.integer(control$n_threads %||% 1L)
 
   if (!is.null(seed)) set.seed(as.integer(seed))
 

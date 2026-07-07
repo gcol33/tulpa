@@ -413,7 +413,7 @@ test_that("fit_spde works with nested Laplace", {
 
   result <- fit_spde(y, X, spec,
                      family = "binomial", n_trials = rep(1L, n_obs),
-                     method = "grid", n_grid = 3L)
+                     control = list(method = "grid", n_grid = 3L))
 
   expect_true(!is.null(result$nested))
   expect_true(result$nested$range_mean > 0)
