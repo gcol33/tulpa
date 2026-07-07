@@ -248,8 +248,21 @@
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
                                latent_blocks = list(), spatial = NULL,
-                               temporal = NULL) {
+                               temporal = NULL, weights = NULL) {
   input <- BACKEND_REGISTRY[[backend]]$input
+
+  # Observation weights scale each row's log-likelihood. Supported where the
+  # likelihood carries a per-obs multiplier today: the non-spatial Laplace
+  # kernel and the R log-posterior builder. Everything else refuses loudly
+  # rather than silently fitting unweighted.
+  if (!is.null(weights) &&
+      !(input == "logpost" ||
+        (backend == "laplace" && is.null(spatial)))) {
+    stop(sprintf(paste0(
+      "`weights` is not supported by backend '%s'. Weighted fits run through ",
+      "mode = 'laplace' (non-spatial) or a log-posterior sampler ",
+      "('mala', 'imh_laplace', 'pathfinder')."), backend), call. = FALSE)
+  }
 
   if (input == "nested") {
     if (backend != "nested_laplace") {
@@ -456,7 +469,8 @@
         y = bundle$y, n_trials = n_trials, X = bundle$X,
         re_list = .bundle_to_re_list(bundle, sigma_re),
         family = family, phi = phi,
-        offset = bundle$offset, beta_prior = beta_prior
+        offset = bundle$offset, beta_prior = beta_prior,
+        weights = weights
       ))
     }
     if (backend == "gibbs") {
@@ -569,7 +583,8 @@
   if (input == "logpost") {
     m <- build_glmm_logpost(bundle, family, sigma_re = sigma_re,
                             n_trials = n_trials, phi = phi,
-                            beta_prior = beta_prior %||% list(mean = 0, sd = 2.5))
+                            beta_prior = beta_prior %||% list(mean = 0, sd = 2.5),
+                            weights = weights)
     if (backend == "mala") {
       return(list(
         log_posterior = m$log_posterior,
@@ -779,6 +794,13 @@
 #' @param sigma_re Random-effect SDs to condition on: length 1 (recycled) or one
 #'   per RE term. Defaults to 1 per term with a message.
 #' @param n_trials Binomial denominators (length `nrow(data)`), or `NULL`.
+#' @param weights Optional observation weights (non-negative numeric vector,
+#'   length `nrow(data)`): each observation's log-likelihood contribution is
+#'   scaled by its weight (prior / frequency weights, e.g. survey weights or
+#'   aggregated-data counts -- a weight of 2 is equivalent to duplicating the
+#'   row). Supported on the non-spatial Laplace path (`mode = "laplace"`) and
+#'   the log-posterior samplers (`mala`, `imh_laplace`, `pathfinder`); other
+#'   backends reject weights loudly.
 #' @param phi Dispersion/precision passed to the family (residual variance for
 #'   gaussian, size for neg_binomial_2, precision for beta).
 #' @param beta_prior Optional `list(mean, sd)` Gaussian prior on the fixed
@@ -848,6 +870,7 @@ tulpa <- function(formula, data,
                   mode = "auto",
                   sigma_re = NULL,
                   n_trials = NULL,
+                  weights = NULL,
                   phi = 1.0,
                   beta_prior = NULL,
                   spatial = NULL,
@@ -863,6 +886,14 @@ tulpa <- function(formula, data,
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
   .validate_family_counts(family, bundle$y)
+  if (!is.null(weights)) {
+    weights <- as.numeric(weights)
+    if (length(weights) != bundle$n_obs || anyNA(weights) ||
+        any(!is.finite(weights)) || any(weights < 0)) {
+      stop("`weights` must be a non-negative finite numeric vector of length ",
+           "nrow(data) (", bundle$n_obs, ").", call. = FALSE)
+    }
+  }
   K <- length(bundle$re_terms %||% list())
 
   has_latent <- (parsed$n_latent_blocks %||% 0L) > 0L
@@ -872,6 +903,10 @@ tulpa <- function(formula, data,
   # design column, slope columns carrying a per-row weight) and is fit through
   # the single-arm joint nested-Laplace path, which threads that weight.
   if ((parsed$n_spatial_field_blocks %||% 0L) > 0L) {
+    if (!is.null(weights)) {
+      stop("`weights` is not supported on the inline spatial-field path.",
+           call. = FALSE)
+    }
     return(.tulpa_fit_spatial_field(parsed, bundle, data, family, mode, phi,
                                     sigma_re, n_trials, control, formula,
                                     sys.call()))
@@ -883,6 +918,10 @@ tulpa <- function(formula, data,
   # carrying a per-row weight) and is fit through the same single-arm joint
   # nested-Laplace path.
   if ((parsed$n_temporal_field_blocks %||% 0L) > 0L) {
+    if (!is.null(weights)) {
+      stop("`weights` is not supported on the inline temporal-field path.",
+           call. = FALSE)
+    }
     return(.tulpa_fit_temporal_field(parsed, bundle, data, family, mode, phi,
                                      sigma_re, n_trials, control, formula,
                                      sys.call()))
@@ -1164,7 +1203,8 @@ tulpa <- function(formula, data,
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                              n_trials, phi, beta_prior, control,
                              latent_blocks = parsed$latent_blocks,
-                             spatial = spatial_spec, temporal = temporal_spec)
+                             spatial = spatial_spec, temporal = temporal_spec,
+                             weights = weights)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(
@@ -1203,6 +1243,7 @@ tulpa <- function(formula, data,
     fit$offset       <- fit$offset %||% bundle$offset
     fit$y            <- fit$y %||% bundle$y
     fit$n_trials     <- fit$n_trials %||% n_trials
+    fit$weights      <- fit$weights %||% weights
     fit$phi          <- fit$phi %||% phi
     fit$re_design    <- lapply(bundle$re_terms %||% list(), function(rt) {
       rt[c("group_idx", "has_intercept", "slope_matrix", "n_groups", "n_coefs")]

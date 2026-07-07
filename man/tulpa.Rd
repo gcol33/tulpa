@@ -11,6 +11,7 @@ tulpa(
   mode = "auto",
   sigma_re = NULL,
   n_trials = NULL,
+  weights = NULL,
   phi = 1,
   beta_prior = NULL,
   spatial = NULL,
@@ -36,6 +37,14 @@ reliable Tier 1/Tier 2 method expected to finish; a tier (\code{"exact"},
 per RE term. Defaults to 1 per term with a message.}
 
 \item{n_trials}{Binomial denominators (length \code{nrow(data)}), or \code{NULL}.}
+
+\item{weights}{Optional observation weights (non-negative numeric vector,
+length \code{nrow(data)}): each observation's log-likelihood contribution is
+scaled by its weight (prior / frequency weights, e.g. survey weights or
+aggregated-data counts -- a weight of 2 is equivalent to duplicating the
+row). Supported on the non-spatial Laplace path (\code{mode = "laplace"}) and
+the log-posterior samplers (\code{mala}, \code{imh_laplace}, \code{pathfinder}); other
+backends reject weights loudly.}
 
 \item{phi}{Dispersion/precision passed to the family (residual variance for
 gaussian, size for neg_binomial_2, precision for beta).}

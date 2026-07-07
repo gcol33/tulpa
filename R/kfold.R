@@ -104,7 +104,8 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
     test  <- which(folds == k)
     train <- which(folds != k)
     fit_k <- .cv_refit(cl, data, train, nt, inject_trials, refit_env,
-                       paste0("K-fold refit on fold ", k))
+                       paste0("K-fold refit on fold ", k),
+                       obs_w = object$weights)
     pointwise[test] <- .cv_heldout_lpd(fit_k, data, test, y, nt, fam, phi,
                                        paste0("Fold ", k))
   }
@@ -130,13 +131,15 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 }
 
 # Refit the stored tulpa() call on a row subset of `data`. The training rows'
-# trial counts are injected as a literal so a stored `n_trials = <expr>`
-# argument (which would evaluate to the full-length vector) cannot misalign
-# against the subset data.
-.cv_refit <- function(cl, data, train, nt, inject_trials, env, label) {
+# trial counts and observation weights are injected as literals so a stored
+# `n_trials = <expr>` / `weights = <expr>` argument (which would evaluate to
+# the full-length vector) cannot misalign against the subset data.
+.cv_refit <- function(cl, data, train, nt, inject_trials, env, label,
+                      obs_w = NULL) {
   ccl <- cl
   ccl$data <- data[train, , drop = FALSE]
   if (inject_trials) ccl$n_trials <- nt[train]
+  if (!is.null(obs_w)) ccl$weights <- obs_w[train]
   tryCatch(eval(ccl, envir = env),
            error = function(e) {
              stop(label, " failed: ", conditionMessage(e), ". The stored ",
@@ -288,7 +291,8 @@ tulpa_reloo <- function(object, data, k_threshold = 0.7,
 
   for (i in flagged) {
     fit_i <- .cv_refit(cl, data, setdiff(seq_len(n), i), nt, inject_trials,
-                       refit_env, paste0("reloo refit without observation ", i))
+                       refit_env, paste0("reloo refit without observation ", i),
+                       obs_w = object$weights)
     pointwise[i] <- .cv_heldout_lpd(fit_i, data, i, y, nt, fam, phi,
                                     paste0("Observation ", i))
   }
