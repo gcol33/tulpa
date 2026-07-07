@@ -30,7 +30,7 @@ omit to compute the likelihood component only.}
 }
 \value{
 A data frame with one row per fixed-effect parameter and columns
-\code{variable}, \code{prior}, \code{likelihood}, \code{diagnosis}.
+\code{variable}, \code{prior}, \code{hyperparameter}, \code{likelihood}, \code{diagnosis}.
 }
 \description{
 Local power-scaling sensitivity (Kallioinen et al. 2024): how much each
@@ -41,9 +41,15 @@ refits), and the sensitivity is the gradient of the cumulative
 Jensen-Shannon distance between the base and power-scaled posteriors with
 respect to \code{log2(alpha)}.
 
-Values above \code{threshold} flag sensitivity. High on \strong{both} components
-indicates potential prior-data conflict; high prior with low likelihood
-indicates a strong prior / weak likelihood.
+Values above \code{threshold} flag sensitivity. High on \strong{both} the prior and
+likelihood components indicates potential prior-data conflict; high prior
+with low likelihood indicates a strong prior / weak likelihood.
+
+When the fit recorded per-draw hyperparameter log-prior values at
+draw-synthesis time (\verb{$hyper_log_prior_draws}, stored by the nested-Laplace
+mixture paths such as \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} and the \code{tulpa()} random-slope
+redirect), a \code{hyperparameter} column reports the power-scaling sensitivity
+of the hyperparameter prior by the same reweighting; \code{NA} otherwise.
 }
 \examples{
 \donttest{

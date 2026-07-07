@@ -393,7 +393,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # the node weights w summarize the joint Sigma posterior. Drawing node ~
 # Categorical(w) then beta ~ N(beta_k, Vb_k) yields an equal-weight sample of
 # the marginal fixed-effect posterior (the Sigma uncertainty is propagated
-# through the node mixture). Nodes with zero weight or a failed solve are dropped.
+# through the node mixture). Nodes with zero weight or a failed solve are
+# dropped. Returns the draws plus the per-draw node index (`picks`), so
+# node-level quantities (e.g. the hyperparameter log-prior for power-scaling)
+# can be aligned draw-by-draw.
 .re_cov_nested_beta_draws <- function(beta_nodes, beta_cov_nodes, w,
                                       n_draws, beta_names) {
   p  <- ncol(beta_nodes)
@@ -413,7 +416,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     out[d, ] <- beta_nodes[k, ] + as.numeric(Lb[[k]] %*% stats::rnorm(p))
   }
   colnames(out) <- beta_names %||% paste0("beta", seq_len(p))
-  out
+  list(draws = out, picks = picks)
 }
 
 # Per-block plug-in MAP summary (Sigma, sigma, rho) from the mode theta_hat.
@@ -829,6 +832,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # weight; the fixed-effect mode + marginal covariance feed the posterior-draw
   # synthesis. A failed / non-finite node keeps logm = -Inf (weight 0).
   logm           <- rep(-Inf, ng)
+  lp_theta_nodes <- rep(NA_real_, ng)   # hyperparameter log-prior per node
   Sig_node_list  <- vector("list", ng)
   beta_nodes     <- matrix(NA_real_, ng, p_fix)
   beta_cov_nodes <- vector("list", ng)
@@ -848,7 +852,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     }
     if (is.null(fit_i) || is.null(fit_i$mode) ||
         length(fit_i$log_marginal) != 1L || !is.finite(fit_i$log_marginal)) next
-    logm[i]            <- fit_i$log_marginal + log_prior_theta(th)
+    lp_theta_nodes[i]  <- log_prior_theta(th)
+    logm[i]            <- fit_i$log_marginal + lp_theta_nodes[i]
     beta_nodes[i, ]    <- fit_i$mode[seq_len(p_fix)]
     beta_cov_nodes[[i]] <-
       if (is.null(fit_i$H_beta)) NULL
@@ -868,8 +873,13 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
 
   # --- fixed-effect posterior from the node mixture -------------------------
   beta_names <- colnames(X) %||% paste0("beta", seq_len(p_fix))
-  draws <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
-                                     as.integer(n_draws), beta_names)
+  ds <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
+                                  as.integer(n_draws), beta_names)
+  draws <- ds$draws
+  # Per-draw hyperparameter log-prior (the node's log_prior_theta), aligned
+  # with the draw rows: the input power-scaling needs to reweight the
+  # hyperparameter prior (tulpa_powerscale_sensitivity).
+  hyper_lp_draws <- if (is.null(ds)) NULL else lp_theta_nodes[ds$picks]
   beta_mean <- if (is.null(draws)) {
     ok <- is.finite(rowSums(beta_nodes)) & w > 0
     if (any(ok)) colSums(w[ok] / sum(w[ok]) * beta_nodes[ok, , drop = FALSE])
@@ -904,6 +914,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     Sigma_mean  = summ$Sigma_mean,
     beta        = beta_mean,
     draws       = draws,
+    hyper_log_prior_draws = hyper_lp_draws,
     pareto_k    = pareto_k,
     pareto_k_is_ess = k_is_ess,
     pareto_k_scope  = "outer (hyperparameter) Gaussian proposal",

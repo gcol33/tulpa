@@ -11,9 +11,11 @@
 # Nguyen & Vreeken 2015; and R/powerscale_gradients.R for the gradient).
 #
 # Scope: the fixed-effect prior (a Gaussian `prior = list(mean, sd)` the fit
-# used) and the observation likelihood, on the fixed-effect linear predictor.
-# Hyperparameter-prior scaling is not covered (the fit stores no per-draw
-# hyperparameter log-prior).
+# used), the observation likelihood on the fixed-effect linear predictor, and
+# -- when the fit stores per-draw hyperparameter log-prior values
+# ($hyper_log_prior_draws, recorded at draw-synthesis time by the
+# nested-Laplace mixture paths) -- the hyperparameter prior via the same
+# reweighting.
 # ------------------------------------------------------------------------------
 
 # Cumulative Jensen-Shannon divergence CJS(P || Q) for two weighted ECDFs of the
@@ -71,12 +73,13 @@
 }
 
 # Fixed-effect posterior draws [S x p] with columns ordered by `bnm`. Uses a
-# fit's genuine draws when present; otherwise synthesizes from the (Laplace /
-# Gaussian) fixed-effect posterior N(coef, vcov) -- exact for a Laplace fit.
+# fit's genuine draws when present (genuine = TRUE, rows aligned with any
+# per-draw quantities the fit stores); otherwise synthesizes from the
+# (Laplace / Gaussian) fixed-effect posterior N(coef, vcov).
 .ps_fixed_draws <- function(fit, bnm, n_draws = 4000L) {
   dr <- tryCatch(posterior_sample(fit), error = function(e) NULL)
   if (is.matrix(dr) && all(bnm %in% colnames(dr)) && nrow(dr) > 1L) {
-    return(dr[, bnm, drop = FALSE])
+    return(list(B = dr[, bnm, drop = FALSE], genuine = TRUE))
   }
   mu <- stats::coef(fit)[bnm]
   V  <- stats::vcov(fit)
@@ -84,7 +87,8 @@
     stop("Power-scaling needs the fixed-effect posterior: the fit exposes ",
          "neither draws nor a usable coef()/vcov().", call. = FALSE)
   }
-  .ps_rmvnorm(n_draws, mu, V[bnm, bnm, drop = FALSE])
+  list(B = .ps_rmvnorm(n_draws, mu, V[bnm, bnm, drop = FALSE]),
+       genuine = FALSE)
 }
 
 # Per-draw total log-likelihood on the fixed-effect linear predictor.
@@ -121,9 +125,15 @@
 #' Jensen-Shannon distance between the base and power-scaled posteriors with
 #' respect to `log2(alpha)`.
 #'
-#' Values above `threshold` flag sensitivity. High on **both** components
-#' indicates potential prior-data conflict; high prior with low likelihood
-#' indicates a strong prior / weak likelihood.
+#' Values above `threshold` flag sensitivity. High on **both** the prior and
+#' likelihood components indicates potential prior-data conflict; high prior
+#' with low likelihood indicates a strong prior / weak likelihood.
+#'
+#' When the fit recorded per-draw hyperparameter log-prior values at
+#' draw-synthesis time (`$hyper_log_prior_draws`, stored by the nested-Laplace
+#' mixture paths such as [tulpa_re_cov_nested()] and the `tulpa()` random-slope
+#' redirect), a `hyperparameter` column reports the power-scaling sensitivity
+#' of the hyperparameter prior by the same reweighting; `NA` otherwise.
 #'
 #' @param fit A `tulpa_fit` fitted through [tulpa()] (fixed-effect / GLMM;
 #'   spatial / temporal-field fits are rejected).
@@ -136,7 +146,7 @@
 #' @param threshold Sensitivity flag threshold (default 0.05).
 #'
 #' @return A data frame with one row per fixed-effect parameter and columns
-#'   `variable`, `prior`, `likelihood`, `diagnosis`.
+#'   `variable`, `prior`, `hyperparameter`, `likelihood`, `diagnosis`.
 #'
 #' @references Kallioinen, Paananen, Buerkner & Vehtari (2024). Detecting and
 #'   diagnosing prior and likelihood sensitivity with power-scaling.
@@ -165,7 +175,8 @@ tulpa_powerscale_sensitivity <- function(fit, data, prior = NULL,
          "temporal-field fits.", call. = FALSE)
   }
   bnm <- names(stats::coef(fit))
-  B   <- .ps_fixed_draws(fit, bnm)
+  fd  <- .ps_fixed_draws(fit, bnm)
+  B   <- fd$B
   S   <- nrow(B)
   w_base <- rep(1 / S, S)
 
@@ -192,12 +203,24 @@ tulpa_powerscale_sensitivity <- function(fit, data, prior = NULL,
     prior_s <- rep(NA_real_, ncol(B))
   }
 
+  # Hyperparameter-prior component: available when the fit recorded the
+  # per-draw hyperparameter log-prior at draw-synthesis time (the
+  # nested-Laplace mixture paths). Requires the fit's own draws -- the
+  # synthesized-Gaussian fallback has no row alignment with them.
+  hyper_lp <- fit$hyper_log_prior_draws
+  hyper_s  <- rep(NA_real_, ncol(B))
+  if (!is.null(hyper_lp) && isTRUE(fd$genuine) && length(hyper_lp) == S &&
+      all(is.finite(hyper_lp))) {
+    hyper_s <- grad_for(hyper_lp)
+  }
+
   diagnosis <- ifelse(
     !is.na(prior_s) & prior_s >= threshold & lik_s >= threshold,
     "potential prior-data conflict",
     ifelse(!is.na(prior_s) & prior_s >= threshold & lik_s < threshold,
            "potential strong prior / weak likelihood", "-"))
 
-  data.frame(variable = bnm, prior = prior_s, likelihood = lik_s,
-             diagnosis = diagnosis, stringsAsFactors = FALSE, row.names = NULL)
+  data.frame(variable = bnm, prior = prior_s, hyperparameter = hyper_s,
+             likelihood = lik_s, diagnosis = diagnosis,
+             stringsAsFactors = FALSE, row.names = NULL)
 }

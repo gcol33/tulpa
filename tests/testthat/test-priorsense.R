@@ -31,6 +31,36 @@ test_that("power-scaling flags a tight conflicting prior as more sensitive", {
   expect_true(any(grepl("conflict", s_tight$diagnosis)))
 })
 
+test_that("hyperparameter-prior sensitivity reads the stored per-draw log-prior", {
+  skip_on_cran()
+  set.seed(9)
+  n <- 300L
+  g <- factor(rep(1:12, length.out = n))
+  b0 <- rnorm(12, 0, 0.8); b1 <- rnorm(12, 0, 0.5)
+  d <- data.frame(x = rnorm(n), g = g)
+  d$y <- rbinom(n, 1, plogis(0.2 + 0.6 * d$x +
+                             b0[as.integer(g)] + b1[as.integer(g)] * d$x))
+
+  # Random slopes route mode = "laplace" to the RE-covariance integrator,
+  # whose mixture draws now carry the per-draw hyperparameter log-prior.
+  fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "binomial",
+               mode = "laplace")
+  expect_false(is.null(fit$hyper_log_prior_draws))
+  expect_length(fit$hyper_log_prior_draws, nrow(fit$draws))
+  expect_true(all(is.finite(fit$hyper_log_prior_draws)))
+
+  s <- tulpa_powerscale_sensitivity(fit, d)
+  expect_true("hyperparameter" %in% names(s))
+  expect_true(all(is.finite(s$hyperparameter)))
+  expect_true(all(s$hyperparameter >= 0))
+
+  # A plain fixed-effect Laplace fit has no stored hyper log-prior -> NA.
+  d2 <- data.frame(x = rnorm(100)); d2$y <- rpois(100, exp(0.3 + 0.4 * d2$x))
+  fit2 <- tulpa(y ~ x, data = d2, family = "poisson", mode = "laplace")
+  s2 <- tulpa_powerscale_sensitivity(fit2, d2)
+  expect_true(all(is.na(s2$hyperparameter)))
+})
+
 test_that("power-scaling: likelihood-only mode and input guards", {
   skip_on_cran()
   set.seed(8)

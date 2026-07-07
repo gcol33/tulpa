@@ -357,6 +357,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
 
   # Fixed-effect posterior from extras_list.
   beta_mean_out <- NULL; beta_cov_out <- NULL; draws_out <- NULL
+  hyper_lp_out  <- NULL
   param_names   <- NULL
   if (combine != "none") {
     if (is.na(state$beta_dim)) {
@@ -398,13 +399,17 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
           if (n_draws > 0L) {
             beta_cov_list <- lapply(extras_list, function(e)
               if (is.null(e)) NULL else e$beta_cov)
-            draws_out <- .re_cov_nested_beta_draws(
+            ds <- .re_cov_nested_beta_draws(
               beta_nodes      = beta_mat,
               beta_cov_nodes  = beta_cov_list,
               w               = w_eff,
               n_draws         = as.integer(n_draws),
               beta_names      = state$beta_names
             )
+            draws_out <- ds$draws
+            # Per-draw hyperparameter log-prior at the drawn cell, for the
+            # input power-scaling (tulpa_powerscale_sensitivity).
+            if (!is.null(ds)) hyper_lp_out <- log_prior_cell[ds$picks]
           }
         }
       } else {
@@ -428,6 +433,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     beta           = beta_mean_out,
     beta_cov       = beta_cov_out,
     draws          = draws_out,
+    hyper_log_prior_draws = hyper_lp_out,
     means          = beta_mean_out,
     param_names    = param_names,
     process_info   = if (!is.null(param_names))
