@@ -34,6 +34,54 @@ test_that("adjacency.data.frame builds rook contiguity on a regular grid", {
   expect_equal(unname(g$cellsize[["y"]]), 1)
 })
 
+test_that("order extends the neighbourhood to higher rings (queen and rook)", {
+  grid <- expand.grid(x = 1:5, y = 1:5)          # centre cell (3,3) is interior
+  centre <- which(grid$x == 3 & grid$y == 3)
+
+  q1 <- adjacency(grid, type = "queen", order = 1)
+  q2 <- adjacency(grid, type = "queen", order = 2)
+  r2 <- adjacency(grid, type = "rook",  order = 2)
+
+  expect_true(Matrix::isSymmetric(q2$adjacency))
+  expect_equal(q2$order, 2L)
+  # queen order k: (2k+1)^2 - 1 neighbours -> 8 (k=1), 24 (k=2) at the interior
+  expect_equal(Matrix::rowSums(q1$adjacency)[centre], 8)
+  expect_equal(Matrix::rowSums(q2$adjacency)[centre], 24)
+  # rook order k: 2k(k+1) -> 12 at k=2
+  expect_equal(Matrix::rowSums(r2$adjacency)[centre], 12)
+  # order 1 is a strict subset of order 2
+  expect_true(all((q1$adjacency != 0) <= (q2$adjacency != 0)))
+
+  expect_error(adjacency(grid, order = 0), "positive integer")
+  expect_error(adjacency(grid, order = -1), "positive integer")
+})
+
+test_that("a custom symmetric stencil builds exactly that neighbourhood", {
+  grid <- expand.grid(x = 1:5, y = 1:5)
+  centre <- which(grid$x == 3 & grid$y == 3)
+  # horizontal-only neighbours (left + right), symmetric already
+  g <- adjacency(grid, offsets = list(c(1, 0), c(-1, 0)))
+  expect_true(Matrix::isSymmetric(g$adjacency))
+  expect_equal(g$type, "custom")
+  expect_true(is.na(g$order))
+  expect_equal(Matrix::rowSums(g$adjacency)[centre], 2)   # only left + right
+})
+
+test_that("an asymmetric custom stencil is symmetrized for the undirected field", {
+  grid <- expand.grid(x = 1:5, y = 1:5)
+  centre <- which(grid$x == 3 & grid$y == 3)
+  # up, left, right but not down -> not symmetric as given
+  expect_message(
+    g <- adjacency(grid, offsets = list(c(0, 1), c(-1, 0), c(1, 0))),
+    "symmetrized")
+  expect_true(Matrix::isSymmetric(g$adjacency))
+  # symmetrization folds the missing "down" back in -> up/down/left/right = 4
+  expect_equal(Matrix::rowSums(g$adjacency)[centre], 4)
+
+  expect_error(adjacency(grid, offsets = list(c(1, 0, 0))), "length 2")
+  expect_error(adjacency(grid, offsets = list(c(0, 0))), "no non-origin")
+})
+
 test_that("rook is a strict subset of queen on the same grid", {
   grid <- expand.grid(x = 1:4, y = 1:4)
   q <- adjacency(grid, type = "queen")$adjacency

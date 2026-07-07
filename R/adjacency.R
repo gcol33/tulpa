@@ -37,12 +37,31 @@
 #'   in row `i`; pass this column to [node_index()] to translate the observation
 #'   data's cell column into node indices. Default `NULL` uses the row position
 #'   (`1:n`) as the identifier.
-#' @param tolerance For grid / raster layouts, the neighbour distance cut-off as
-#'   a multiple of the inferred cell size: two cells are contiguous when their
-#'   centre distance is at most `tolerance * cellsize`, restricted to the
-#'   stencil `type` implies. The default `1.5` admits the diagonal queen
-#'   neighbour (distance `sqrt(2) * cellsize`) while excluding the next cell out;
-#'   raise it only for irregularly spaced centroids.
+#' @param order For grid / raster layouts, the neighbourhood order (ring count):
+#'   `order = 1` (default) is first-order contiguity (queen = 8 neighbours, rook
+#'   = 4); `order = k` extends the stencil to the k-th ring, so queen keeps every
+#'   cell within Chebyshev distance `k` (`(2k + 1)^2 - 1` neighbours: 8, 24, 48,
+#'   ... for `k = 1, 2, 3`) and rook every cell within Manhattan distance `k`
+#'   (`2k(k + 1)` neighbours: 4, 12, 24, ...). Any positive integer is allowed,
+#'   so the neighbourhood is fully settable. Ignored by the `sf` (polygon)
+#'   method, which is first-order contiguity only.
+#' @param tolerance For grid / raster layouts, the per-offset neighbour distance
+#'   cut-off as a multiple of the inferred cell size: a candidate at a lattice
+#'   offset is kept when its true centre distance is at most `tolerance` times
+#'   that offset's expected distance. The default `1.5` admits a snapped
+#'   neighbour while rejecting one much farther than its lattice slot implies;
+#'   raise it only for irregularly spaced centroids. Neighbourhood extent is set
+#'   by `order`, not by `tolerance`.
+#' @param offsets Advanced, grid / raster layouts only: a custom neighbour
+#'   stencil as a two-column integer matrix or a list of length-2 `c(dx, dy)`
+#'   lattice offsets (cell-step units, origin excluded). Supplying it overrides
+#'   `type` and `order` and builds exactly that stencil, so any neighbourhood is
+#'   expressible (anisotropic, ring-only, off-axis). An ICAR / CAR field is
+#'   *undirected*, so the graph must be symmetric: an asymmetric stencil (e.g.
+#'   `list(c(0, 1), c(-1, 0), c(1, 0))` = up / left / right but not down) is
+#'   symmetrized to an undirected graph, with a message, since a directed
+#'   neighbourhood cannot be represented by an undirected field. Default `NULL`
+#'   uses the `type` / `order` stencil.
 #' @param na_rm For raster layouts, drop cells whose value is `NA` before
 #'   building the graph (default `TRUE`), so the nodes are the cells that carry
 #'   data.
@@ -74,6 +93,12 @@
 #' g
 #' g$adjacency
 #'
+#' # Second-order (24-neighbour) queen contiguity: any order is settable
+#' g2 <- adjacency(grid, id = "cell", order = 2)
+#'
+#' # Advanced: a custom stencil (symmetrized for the undirected field)
+#' g3 <- adjacency(grid, id = "cell", offsets = list(c(1, 0), c(0, 1)))
+#'
 #' # Use it in a model: graph stays explicit and inspectable
 #' # spatial(graph = g$adjacency, formula = ~ 1 || cell_idx)
 #'
@@ -101,7 +126,8 @@ adjacency.default <- function(x, ...) {
 #' @export
 adjacency.data.frame <- function(x, type = c("queen", "rook"),
                                   x_coord = "x", y_coord = "y", id = NULL,
-                                  tolerance = 1.5, ...) {
+                                  order = 1L, tolerance = 1.5, offsets = NULL,
+                                  ...) {
   type <- match.arg(type)
   assert_columns_exist(c(x_coord, y_coord), x, role = "Coordinate")
   coords <- as.matrix(x[, c(x_coord, y_coord), drop = FALSE])
@@ -116,9 +142,12 @@ adjacency.data.frame <- function(x, type = c("queen", "rook"),
          call. = FALSE)
   }
 
-  built <- .lattice_adjacency(coords, type = type, tolerance = tolerance)
+  built <- .lattice_adjacency(coords, type = type, order = order,
+                              tolerance = tolerance, offsets = offsets)
   .new_tulpa_adjacency(built$W, ids = ids, cellsize = built$cellsize,
-                       type = type, coords = coords)
+                       type  = if (is.null(offsets)) type else "custom",
+                       coords = coords,
+                       order = if (is.null(offsets)) order else NA_integer_)
 }
 
 #' @rdname adjacency
@@ -151,7 +180,8 @@ adjacency.sf <- function(x, type = c("queen", "rook", "touches"),
 #' @rdname adjacency
 #' @export
 adjacency.SpatRaster <- function(x, type = c("queen", "rook"),
-                                 tolerance = 1.5, na_rm = TRUE, ...) {
+                                 order = 1L, tolerance = 1.5, offsets = NULL,
+                                 na_rm = TRUE, ...) {
   if (!requireNamespace("terra", quietly = TRUE)) {
     stop("Raster adjacency for a 'SpatRaster' needs the 'terra' package.",
          call. = FALSE)
@@ -166,15 +196,19 @@ adjacency.SpatRaster <- function(x, type = c("queen", "rook"),
     stop("Raster has no non-NA cells to build a graph over.", call. = FALSE)
   }
   xy <- terra::xyFromCell(x, cells)
-  built <- .lattice_adjacency(xy, type = type, tolerance = tolerance)
+  built <- .lattice_adjacency(xy, type = type, order = order,
+                              tolerance = tolerance, offsets = offsets)
   .new_tulpa_adjacency(built$W, ids = cells, cellsize = built$cellsize,
-                       type = type, coords = xy)
+                       type  = if (is.null(offsets)) type else "custom",
+                       coords = xy,
+                       order = if (is.null(offsets)) order else NA_integer_)
 }
 
 #' @rdname adjacency
 #' @export
 adjacency.stars <- function(x, type = c("queen", "rook"),
-                            tolerance = 1.5, na_rm = TRUE, ...) {
+                            order = 1L, tolerance = 1.5, offsets = NULL,
+                            na_rm = TRUE, ...) {
   if (!requireNamespace("stars", quietly = TRUE) ||
       !requireNamespace("sf", quietly = TRUE)) {
     stop("Raster adjacency for a 'stars' object needs the 'stars' and 'sf' ",
@@ -188,22 +222,74 @@ adjacency.stars <- function(x, type = c("queen", "rook"),
   if (nrow(xy) == 0L) {
     stop("Raster has no non-NA cells to build a graph over.", call. = FALSE)
   }
-  built <- .lattice_adjacency(xy, type = type, tolerance = tolerance)
+  built <- .lattice_adjacency(xy, type = type, order = order,
+                              tolerance = tolerance, offsets = offsets)
   .new_tulpa_adjacency(built$W, ids = seq_len(nrow(xy)),
-                       cellsize = built$cellsize, type = type, coords = xy)
+                       cellsize = built$cellsize,
+                       type  = if (is.null(offsets)) type else "custom",
+                       coords = xy,
+                       order = if (is.null(offsets)) order else NA_integer_)
 }
 
 
 # ---- shared lattice core -------------------------------------------------
 
+# Lattice-offset stencil for k-th order contiguity on a regular grid. queen keeps
+# every cell within Chebyshev distance `order` ((2k+1)^2 - 1 neighbours: 8, 24,
+# 48, ...); rook keeps every cell within Manhattan distance `order` (2k(k+1)
+# neighbours: 4, 12, 24, ...). order = 1 recovers the classic 8 / 4 stencils.
+# Returns a list of length-2 integer offset vectors, origin excluded.
+.stencil_offsets <- function(type, order) {
+  order <- as.integer(order)
+  if (length(order) != 1L || is.na(order) || order < 1L) {
+    stop("`order` must be a single positive integer (the neighbourhood ring ",
+         "count).", call. = FALSE)
+  }
+  grid <- expand.grid(dx = -order:order, dy = -order:order,
+                      KEEP.OUT.ATTRS = FALSE)
+  dx <- grid$dx; dy <- grid$dy
+  dist <- if (type == "rook") abs(dx) + abs(dy) else pmax(abs(dx), abs(dy))
+  keep <- dist >= 1L & dist <= order
+  Map(function(a, b) c(as.integer(a), as.integer(b)), dx[keep], dy[keep])
+}
+
+# Validate a user-supplied custom stencil (advanced `offsets` argument): a
+# two-column integer matrix or a list of length-2 c(dx, dy) lattice offsets.
+# Returns a list of integer length-2 vectors, origin dropped.
+.check_offsets <- function(offsets) {
+  if (is.matrix(offsets)) {
+    if (ncol(offsets) != 2L) {
+      stop("`offsets` matrix must have two columns (dx, dy).", call. = FALSE)
+    }
+    offsets <- lapply(seq_len(nrow(offsets)), function(i) offsets[i, ])
+  } else if (!is.list(offsets)) {
+    stop("`offsets` must be a two-column integer matrix or a list of length-2 ",
+         "c(dx, dy) vectors.", call. = FALSE)
+  }
+  offsets <- lapply(offsets, function(o) {
+    if (length(o) != 2L) {
+      stop("each `offsets` entry must be length 2 (dx, dy).", call. = FALSE)
+    }
+    oi <- as.integer(round(as.numeric(o)))
+    if (anyNA(oi)) stop("`offsets` has non-numeric / NA entries.", call. = FALSE)
+    oi
+  })
+  offsets <- offsets[vapply(offsets, function(o) !all(o == 0L), logical(1))]
+  if (!length(offsets)) {
+    stop("`offsets` has no non-origin entries.", call. = FALSE)
+  }
+  offsets
+}
+
 # Build queen / rook contiguity over centroids on a (near-)regular grid.
 # Snaps each centroid to an integer lattice index from the inferred per-axis
 # step, hashes (ix, iy) -> node for O(n) neighbour lookup, then for each node
-# tests the stencil `type` implies (4 axis-aligned offsets for rook, 8 for
-# queen) and keeps an edge when the true centre distance is within
-# `tolerance * cellsize`. Returns the symmetric 0/1 sparse W and the inferred
-# cell size. Single source for the data.frame and raster methods.
-.lattice_adjacency <- function(coords, type, tolerance) {
+# tests the stencil `type` and `order` imply (see .stencil_offsets) and keeps an
+# edge when the true centre distance is within `tolerance` of that offset's
+# expected distance. Returns the symmetric 0/1 sparse W and the inferred cell
+# size. Single source for the data.frame and raster methods.
+.lattice_adjacency <- function(coords, type, order = 1L, tolerance = 1.5,
+                               offsets = NULL) {
   if (!is.finite(tolerance) || tolerance <= 0) {
     stop("`tolerance` must be a positive finite scalar.", call. = FALSE)
   }
@@ -227,12 +313,8 @@ adjacency.stars <- function(x, type = c("queen", "rook"),
   key <- paste(ix, iy, sep = ",")
   node_of <- stats::setNames(seq_len(n), key)
 
-  offsets <- if (type == "rook") {
-    list(c(1L, 0L), c(-1L, 0L), c(0L, 1L), c(0L, -1L))
-  } else {
-    list(c(1L, 0L), c(-1L, 0L), c(0L, 1L), c(0L, -1L),
-         c(1L, 1L), c(1L, -1L), c(-1L, 1L), c(-1L, -1L))
-  }
+  custom  <- !is.null(offsets)
+  offsets <- if (custom) .check_offsets(offsets) else .stencil_offsets(type, order)
 
   from <- integer(0)
   to <- integer(0)
@@ -256,8 +338,26 @@ adjacency.stars <- function(x, type = c("queen", "rook"),
     to <- c(to, j_idx[keep])
   }
 
-  list(W = .adj_from_edges(from, to, n),
-       cellsize = c(x = cs_x, y = cs_y))
+  W <- .adj_from_edges(from, to, n)
+  # An ICAR / CAR field is undirected, so the graph must be symmetric. The built-
+  # in stencils come in +/- pairs and are already symmetric; a custom stencil may
+  # not be, so symmetrize it (union with the transpose) and report any reverse
+  # edges added -- a directed neighbourhood cannot be represented as an
+  # undirected field.
+  if (custom) {
+    n_before <- Matrix::nnzero(W)
+    W <- W + Matrix::t(W)
+    if (length(W@x)) W@x[] <- 1
+    n_added <- Matrix::nnzero(W) - n_before
+    if (n_added > 0L) {
+      message(sprintf(paste0(
+        "adjacency(): custom stencil was not symmetric; symmetrized to an ",
+        "undirected graph for the ICAR/CAR field (%d reverse edge(s) added). A ",
+        "directed neighbourhood cannot be represented by an undirected field."),
+        n_added))
+    }
+  }
+  list(W = W, cellsize = c(x = cs_x, y = cs_y))
 }
 
 # Infer the lattice step on one axis: the smallest positive gap between
@@ -307,7 +407,7 @@ adjacency.stars <- function(x, type = c("queen", "rook"),
   ids
 }
 
-.new_tulpa_adjacency <- function(W, ids, cellsize, type, coords) {
+.new_tulpa_adjacency <- function(W, ids, cellsize, type, coords, order = 1L) {
   report <- .validate_adjacency(W, ids = ids)
   if (!report$square || !report$symmetric || !report$zero_diag) {
     stop("Internal error: constructed adjacency is not a valid graph.",
@@ -325,6 +425,7 @@ adjacency.stars <- function(x, type = c("queen", "rook"),
          n         = nrow(W),
          cellsize  = cellsize,
          type      = type,
+         order     = as.integer(order),
          coords    = coords),
     class = c("tulpa_adjacency", "list"))
 }
@@ -495,8 +596,11 @@ check_adjacency <- function(adjacency, ids = NULL) {
 #' @export
 print.tulpa_adjacency <- function(x, ...) {
   cat("<tulpa_adjacency>\n")
+  ord <- x$order %||% 1L
+  contig <- if (isTRUE(ord > 1L)) sprintf("order-%d %s", ord, x$type) else
+    sprintf("%s", x$type)
   cat(sprintf("  nodes: %d  edges: %d  (%s contiguity)\n",
-              x$n, sum(Matrix::tril(x$adjacency) != 0), x$type))
+              x$n, sum(Matrix::tril(x$adjacency) != 0), contig))
   deg <- Matrix::rowSums(x$adjacency != 0)
   cat(sprintf("  neighbours per node: min %d, mean %.2f, max %d\n",
               min(deg), mean(deg), max(deg)))

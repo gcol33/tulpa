@@ -19,15 +19,33 @@ adjacency(x, ...)
   x_coord = "x",
   y_coord = "y",
   id = NULL,
+  order = 1L,
   tolerance = 1.5,
+  offsets = NULL,
   ...
 )
 
 \method{adjacency}{sf}(x, type = c("queen", "rook", "touches"), id = NULL, ...)
 
-\method{adjacency}{SpatRaster}(x, type = c("queen", "rook"), tolerance = 1.5, na_rm = TRUE, ...)
+\method{adjacency}{SpatRaster}(
+  x,
+  type = c("queen", "rook"),
+  order = 1L,
+  tolerance = 1.5,
+  offsets = NULL,
+  na_rm = TRUE,
+  ...
+)
 
-\method{adjacency}{stars}(x, type = c("queen", "rook"), tolerance = 1.5, na_rm = TRUE, ...)
+\method{adjacency}{stars}(
+  x,
+  type = c("queen", "rook"),
+  order = 1L,
+  tolerance = 1.5,
+  offsets = NULL,
+  na_rm = TRUE,
+  ...
+)
 }
 \arguments{
 \item{x}{The spatial layout: a \code{data.frame} of centroids, an \code{sf} polygon
@@ -48,12 +66,33 @@ in row \code{i}; pass this column to \code{\link[=node_index]{node_index()}} to 
 data's cell column into node indices. Default \code{NULL} uses the row position
 (\code{1:n}) as the identifier.}
 
-\item{tolerance}{For grid / raster layouts, the neighbour distance cut-off as
-a multiple of the inferred cell size: two cells are contiguous when their
-centre distance is at most \code{tolerance * cellsize}, restricted to the
-stencil \code{type} implies. The default \code{1.5} admits the diagonal queen
-neighbour (distance \code{sqrt(2) * cellsize}) while excluding the next cell out;
-raise it only for irregularly spaced centroids.}
+\item{order}{For grid / raster layouts, the neighbourhood order (ring count):
+\code{order = 1} (default) is first-order contiguity (queen = 8 neighbours, rook
+= 4); \code{order = k} extends the stencil to the k-th ring, so queen keeps every
+cell within Chebyshev distance \code{k} (\verb{(2k + 1)^2 - 1} neighbours: 8, 24, 48,
+... for \verb{k = 1, 2, 3}) and rook every cell within Manhattan distance \code{k}
+(\verb{2k(k + 1)} neighbours: 4, 12, 24, ...). Any positive integer is allowed,
+so the neighbourhood is fully settable. Ignored by the \code{sf} (polygon)
+method, which is first-order contiguity only.}
+
+\item{tolerance}{For grid / raster layouts, the per-offset neighbour distance
+cut-off as a multiple of the inferred cell size: a candidate at a lattice
+offset is kept when its true centre distance is at most \code{tolerance} times
+that offset's expected distance. The default \code{1.5} admits a snapped
+neighbour while rejecting one much farther than its lattice slot implies;
+raise it only for irregularly spaced centroids. Neighbourhood extent is set
+by \code{order}, not by \code{tolerance}.}
+
+\item{offsets}{Advanced, grid / raster layouts only: a custom neighbour
+stencil as a two-column integer matrix or a list of length-2 \code{c(dx, dy)}
+lattice offsets (cell-step units, origin excluded). Supplying it overrides
+\code{type} and \code{order} and builds exactly that stencil, so any neighbourhood is
+expressible (anisotropic, ring-only, off-axis). An ICAR / CAR field is
+\emph{undirected}, so the graph must be symmetric: an asymmetric stencil (e.g.
+\code{list(c(0, 1), c(-1, 0), c(1, 0))} = up / left / right but not down) is
+symmetrized to an undirected graph, with a message, since a directed
+neighbourhood cannot be represented by an undirected field. Default \code{NULL}
+uses the \code{type} / \code{order} stencil.}
 
 \item{na_rm}{For raster layouts, drop cells whose value is \code{NA} before
 building the graph (default \code{TRUE}), so the nodes are the cells that carry
@@ -106,6 +145,12 @@ g <- adjacency(grid, x_coord = "x", y_coord = "y", id = "cell",
                type = "queen")
 g
 g$adjacency
+
+# Second-order (24-neighbour) queen contiguity: any order is settable
+g2 <- adjacency(grid, id = "cell", order = 2)
+
+# Advanced: a custom stencil (symmetrized for the undirected field)
+g3 <- adjacency(grid, id = "cell", offsets = list(c(1, 0), c(0, 1)))
 
 # Use it in a model: graph stays explicit and inspectable
 # spatial(graph = g$adjacency, formula = ~ 1 || cell_idx)

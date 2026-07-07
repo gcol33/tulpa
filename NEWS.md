@@ -1,5 +1,18 @@
 # tulpa NEWS
 
+## 0.0.74 (2026-07-07)
+
+* `adjacency()` gains a settable neighbourhood. `order = k` extends the grid /
+  raster stencil to the k-th ring: queen keeps every cell within Chebyshev
+  distance `k` (`(2k+1)^2 - 1` neighbours: 8, 24, 48, ...), rook every cell
+  within Manhattan distance `k` (`2k(k+1)`: 4, 12, 24, ...). The advanced
+  `offsets` argument takes a custom stencil (a two-column integer matrix or a
+  list of `c(dx, dy)` lattice offsets) for any anisotropic / off-axis
+  neighbourhood; because an ICAR / CAR field is undirected, an asymmetric
+  stencil is symmetrized to an undirected graph with a message. `order = 1`
+  (default) and `offsets = NULL` reproduce the previous queen / rook graphs
+  byte-for-byte.
+
 ## 0.0.73 (2026-07-07)
 
 * Posterior prediction: `posterior_predict()` draws replicated responses from
