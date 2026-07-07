@@ -16,8 +16,10 @@ tulpa_kfold(object, data, K = 10L, folds = NULL, n_trials = NULL, seed = NULL)
 \item{folds}{Optional integer vector of fold ids, length \code{nrow(data)}; a
 random balanced partition is drawn when \code{NULL}.}
 
-\item{n_trials}{Optional held-out binomial denominators (length \code{nrow(data)});
-defaults to 1 (Bernoulli / single-trial).}
+\item{n_trials}{Optional binomial denominators (length \code{nrow(data)});
+defaults to the trials stored on the fit, else 1 (Bernoulli). Each fold's
+refit receives the training rows' trials, and the held-out density is
+scored at the test rows' trials.}
 
 \item{seed}{Optional seed for the random partition.}
 }
