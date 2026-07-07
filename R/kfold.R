@@ -105,7 +105,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
     train <- which(folds != k)
     fit_k <- .cv_refit(cl, data, train, nt, inject_trials, refit_env,
                        paste0("K-fold refit on fold ", k),
-                       obs_w = object$weights)
+                       obs_w = object$obs_weights)
     pointwise[test] <- .cv_heldout_lpd(fit_k, data, test, y, nt, fam, phi,
                                        paste0("Fold ", k))
   }
@@ -292,7 +292,7 @@ tulpa_reloo <- function(object, data, k_threshold = 0.7,
   for (i in flagged) {
     fit_i <- .cv_refit(cl, data, setdiff(seq_len(n), i), nt, inject_trials,
                        refit_env, paste0("reloo refit without observation ", i),
-                       obs_w = object$weights)
+                       obs_w = object$obs_weights)
     pointwise[i] <- .cv_heldout_lpd(fit_i, data, i, y, nt, fam, phi,
                                     paste0("Observation ", i))
   }

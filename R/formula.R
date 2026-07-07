@@ -598,6 +598,17 @@ tulpa_parse_formula <- function(formula) {
     if (is.null(rhs)) rhs <- 1
   }
 
+  # Covariate smoother terms: s(x, k = , structure = ) calls. Kept as
+  # unevaluated language (the covariate resolves against `data` at build time,
+  # see .smooth_block_from_call). Stripped BEFORE bar parsing: the bar / latent
+  # strippers rebuild the tree positionally and would drop named arguments
+  # (`s(x, k = 25)` -> `s(x, 25)`).
+  smooth_calls <- find_special_terms(rhs, "s") %||% list()
+  if (length(smooth_calls) > 0L) {
+    rhs <- no_special_terms(rhs, "s")
+    if (is.null(rhs)) rhs <- 1
+  }
+
   bars <- findbars(rhs)
 
   random_effects <- list()
@@ -667,6 +678,8 @@ tulpa_parse_formula <- function(formula) {
       n_spatial_field_blocks = length(spatial_field_blocks),
       temporal_field_blocks   = temporal_field_blocks,
       n_temporal_field_blocks = length(temporal_field_blocks),
+      smooth_calls    = smooth_calls,
+      n_smooth_terms  = length(smooth_calls),
       spatial_var     = spatial_var,
       temporal_var    = temporal_var,
       original        = formula

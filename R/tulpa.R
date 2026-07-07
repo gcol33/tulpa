@@ -248,7 +248,8 @@
 .tulpa_fitter_args <- function(backend, bundle, family, sigma_re,
                                n_trials, phi, beta_prior, control,
                                latent_blocks = list(), spatial = NULL,
-                               temporal = NULL, weights = NULL) {
+                               temporal = NULL, weights = NULL,
+                               smoothers = list()) {
   input <- BACKEND_REGISTRY[[backend]]$input
 
   # Observation weights scale each row's log-likelihood. Supported where the
@@ -283,13 +284,14 @@
     # jointly (the spatio-temporal cross term is assembled from each block's idx).
     field_blocks <- c(
       if (!is.null(spatial))  list(.spatial_spec_to_nl_prior(spatial))   else list(),
-      if (!is.null(temporal)) list(.temporal_spec_to_nl_prior(temporal)) else list()
+      if (!is.null(temporal)) list(.temporal_spec_to_nl_prior(temporal)) else list(),
+      smoothers
     )
     all_blocks <- c(field_blocks, latent_blocks)
     if (length(all_blocks) == 0L) {
-      stop("Backend 'nested_laplace' needs at least one `latent(...)` block, a ",
-           "spatial(col) field, or a temporal field. For a plain GLMM use mode = ",
-           "'laplace' / 'mala' / 'auto'.", call. = FALSE)
+      stop("Backend 'nested_laplace' needs at least one `latent(...)` block, ",
+           "s(...) smoother, spatial(col) field, or temporal field. For a ",
+           "plain GLMM use mode = 'laplace' / 'mala' / 'auto'.", call. = FALSE)
     }
     if (!is.null(beta_prior)) {
       warning("`beta_prior` is not threaded through tulpa()'s nested-Laplace ",
@@ -1093,6 +1095,28 @@ tulpa <- function(formula, data,
     temporal_spec <- validate_temporal(temporal_spec, data)
   }
 
+  # Covariate smoothers s(x): RW1/RW2 GMRF blocks over the binned covariate --
+  # the temporal-field construction with bins as nodes (R/smoother.R), riding
+  # the same nested-Laplace kernels (single block alone, the joint stack
+  # alongside an areal spatial or temporal field).
+  smooth_specs <- list()
+  if ((parsed$n_smooth_terms %||% 0L) > 0L) {
+    if (!is.null(temporal_spec) && !is.null(temporal_spec$group_var)) {
+      stop("A grouped (panel) temporal field cannot be combined with s(...) ",
+           "smoothers through tulpa() yet.", call. = FALSE)
+    }
+    if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_AREAL) {
+      stop("s(...) smoothers can accompany an areal (icar/car/bym2/car_proper) ",
+           "spatial field through the joint nested-Laplace path; the '",
+           spatial_type, "' field is fit by its own integrator and cannot ",
+           "host smoother blocks through tulpa() yet.", call. = FALSE)
+    }
+    smooth_specs <- lapply(parsed$smooth_calls, .smooth_block_from_call,
+                           data = data,
+                           env = environment(formula) %||% parent.frame())
+  }
+  has_smooth <- length(smooth_specs) > 0L
+
   fam_obj <- list(name = family, distribution = family)
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
@@ -1179,6 +1203,24 @@ tulpa <- function(formula, data,
     }
   }
 
+  # Covariate smoothers are temporal-shaped blocks and integrate through the
+  # same nested-Laplace kernels; redirect every selection there (mirroring the
+  # temporal redirect above). The ModelData samplers do not thread smoother
+  # blocks, so an explicitly chosen one errors rather than dropping the terms.
+  if (has_smooth && sel$backend != "nested_laplace") {
+    if (BACKEND_REGISTRY[[sel$backend]]$input == "modeldata") {
+      stop("s(...) smoothers are not threaded through the ModelData samplers; ",
+           "use mode = 'auto', 'structured', or 'nested_laplace'.",
+           call. = FALSE)
+    }
+    sel$backend <- "nested_laplace"
+    ti <- get_backend_tier("nested_laplace")
+    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
+    sel$reason <- sprintf(
+      "covariate smoother%s s(...); nested-Laplace integration",
+      if (length(smooth_specs) > 1L) "s" else "")
+  }
+
   assert_backend_reachable(sel$backend)
 
   # Conditional backends (everything except the sigma-sampling Gibbs, the
@@ -1204,7 +1246,8 @@ tulpa <- function(formula, data,
                              n_trials, phi, beta_prior, control,
                              latent_blocks = parsed$latent_blocks,
                              spatial = spatial_spec, temporal = temporal_spec,
-                             weights = weights)
+                             weights = weights,
+                             smoothers = lapply(smooth_specs, `[[`, "block"))
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(
@@ -1243,11 +1286,18 @@ tulpa <- function(formula, data,
     fit$offset       <- fit$offset %||% bundle$offset
     fit$y            <- fit$y %||% bundle$y
     fit$n_trials     <- fit$n_trials %||% n_trials
-    fit$weights      <- fit$weights %||% weights
+    # Named obs_weights: nested fits already carry grid `$weights`.
+    fit$obs_weights  <- weights
     fit$phi          <- fit$phi %||% phi
     fit$re_design    <- lapply(bundle$re_terms %||% list(), function(rt) {
       rt[c("group_idx", "has_intercept", "slope_matrix", "n_groups", "n_coefs")]
     })
+    # Smoother metadata for smooth_effects(): node locations plus the block
+    # sizes needed to index the latent tail of the per-grid modes.
+    if (length(smooth_specs) > 0L) {
+      fit$smooth_terms    <- lapply(smooth_specs, `[[`, "meta")
+      fit$n_latent_blocks <- parsed$n_latent_blocks %||% 0L
+    }
   }
   fit
 }
