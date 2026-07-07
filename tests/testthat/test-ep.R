@@ -32,6 +32,54 @@ test_that("EP is exact for a Gaussian likelihood (closed-form tilted moments)", 
   expect_true(fit$converged)
 })
 
+test_that("EP log-marginal equals the exact Gaussian evidence", {
+  set.seed(4)
+  n <- 50L; X <- cbind(1, rnorm(n))
+  sig2 <- 0.6; s0 <- 3
+  y <- as.numeric(X %*% c(0.4, -0.7)) + rnorm(n, 0, sqrt(sig2))
+  d <- data.frame(y = y, x = X[, 2])
+
+  fit <- tulpa_ep(y ~ x, data = d, family = "gaussian", phi = sig2,
+                  beta_prior_sd = s0)
+
+  # Exact evidence of the conjugate linear model: y ~ N(0, s0^2 X X' + sig2 I).
+  S <- s0^2 * tcrossprod(X) + diag(sig2, n)
+  cS <- chol(S)
+  logZ_exact <- -0.5 * n * log(2 * pi) - sum(log(diag(cS))) -
+    0.5 * sum(backsolve(cS, y, transpose = TRUE)^2)
+
+  expect_equal(fit$log_marginal, logZ_exact, tolerance = 1e-6)
+  # logLik() now reads it.
+  expect_equal(as.numeric(logLik(fit)), logZ_exact, tolerance = 1e-6)
+})
+
+test_that("EP log-marginal matches brute-force quadrature for a logistic GLM", {
+  skip_on_cran()
+  set.seed(5)
+  n <- 80L; x <- rnorm(n)
+  y <- rbinom(n, 1, plogis(-0.2 + 0.7 * x))
+  d <- data.frame(y = y, x = x)
+  s0 <- 2
+
+  fit <- tulpa_ep(y ~ x, data = d, family = "binomial", beta_prior_sd = s0)
+  expect_true(is.finite(fit$log_marginal))
+
+  # Brute-force 2-D quadrature over (b0, b1) of prod_i p(y_i | eta_i) N(b; 0, s0^2 I).
+  gr <- seq(-3, 3, length.out = 161)
+  h  <- gr[2] - gr[1]
+  X  <- cbind(1, x)
+  ll_grid <- outer(gr, gr, Vectorize(function(b0, b1) {
+    eta <- b0 + b1 * x
+    sum(tulpa:::family_loglik(eta, y, "binomial", n_trials = rep(1L, n))) +
+      sum(stats::dnorm(c(b0, b1), 0, s0, log = TRUE))
+  }))
+  m <- max(ll_grid)
+  logZ_quad <- m + log(sum(exp(ll_grid - m))) + 2 * log(h)
+
+  # EP's evidence approximation is accurate to a few hundredths of a nat here.
+  expect_equal(fit$log_marginal, logZ_quad, tolerance = 0.05)
+})
+
 test_that("EP recovers logistic-GLM coefficients", {
   skip_on_cran()
   set.seed(2)

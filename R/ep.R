@@ -35,10 +35,12 @@
 .ep_tilted_moments <- function(mu, s2, y, family, phi, n_trials, gh) {
   # Gaussian likelihood: the tilted distribution is exactly Gaussian, so use its
   # closed-form moments (EP is then exact, no quadrature error). phi = variance.
+  # The tilted normalizer is the Gaussian convolution N(y; mu, s2 + phi).
   if (family == "gaussian") {
     v  <- 1 / (1 / s2 + 1 / phi)
     m1 <- v * (mu / s2 + y / phi)
-    return(list(logZ = NA_real_, mean = m1, var = max(v, 1e-10)))
+    return(list(logZ = stats::dnorm(y, mu, sqrt(s2 + phi), log = TRUE),
+                mean = m1, var = max(v, 1e-10)))
   }
   sd <- sqrt(s2)
   eta <- mu + sqrt(2) * sd * gh$x                 # change of variable
@@ -156,11 +158,41 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
   pn <- colnames(X)
   names(m) <- pn; dimnames(V) <- list(pn, pn)
 
-  # The EP posterior mean / covariance is the deliverable. The EP normalizing
-  # constant (approximate marginal likelihood) is a separate multi-term formula
-  # (R&W eq. 3.73); it is not returned here rather than shipped only partially
-  # computed.
-  log_marginal <- NA_real_
+  # EP approximate marginal likelihood (R&W eq. 3.65 in the GLM site
+  # parameterization): Z_EP = int N(beta; 0, S0) prod_i ttilde_i(x_i' beta),
+  # with each site ttilde_i(eta) = exp(-tau_i eta^2/2 + nu_i eta + C_i). The
+  # Gaussian integral gives
+  #   log G = -1/2 log|S0| - 1/2 log|P| + 1/2 m' X' nu,   P = S0^-1 + X'TX,
+  # and each site constant C_i is fixed by matching the tilted normalizer
+  # Zhat_i = int q_cav(eta) p(y_i | eta) deta against the same integral of the
+  # site Gaussian, evaluated at the converged cavities:
+  #   C_i = log Zhat_i + 1/2 log(1 + tau_i s2_cav)
+  #         - (mu_cav / s2_cav + nu_i)^2 / (2 / s2_marg) + mu_cav^2 / (2 s2_cav)
+  # where 1/s2_marg = 1/s2_cav + tau_i. Exact for the gaussian family (equals
+  # the closed-form evidence of the conjugate linear model). NA when any cavity
+  # or tilted normalizer is unavailable -- never a partial sum.
+  log_marginal <- local({
+    b  <- as.numeric(crossprod(X, nu))
+    lg <- -p * log(beta_prior_sd) - sum(log(diag(chol(st$P)))) +
+      0.5 * sum(st$m * b)
+    csum <- 0
+    for (i in seq_len(n)) {
+      xi <- X[i, ]
+      s2 <- as.numeric(xi %*% (st$V %*% xi))
+      mu <- as.numeric(xi %*% st$m)
+      inv_cav <- 1 / s2 - tau[i]
+      if (inv_cav <= 1e-10) return(NA_real_)
+      s2c <- 1 / inv_cav
+      muc <- s2c * (mu / s2 - nu[i])
+      tm  <- .ep_tilted_moments(muc, s2c, y[i], family, phi, nt[i], gh)
+      if (is.null(tm) || !is.finite(tm$logZ)) return(NA_real_)
+      ci <- tm$logZ + 0.5 * log1p(tau[i] * s2c) -
+        (muc / s2c + nu[i])^2 * s2 / 2 + muc^2 / (2 * s2c)
+      if (!is.finite(ci)) return(NA_real_)
+      csum <- csum + ci
+    }
+    lg + csum
+  })
 
   if (!is.null(control$seed)) set.seed(as.integer(control$seed))
   draws <- .ps_rmvnorm(n_draws, m, V)
