@@ -486,15 +486,12 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
   stats::model.matrix(tt, data = newdata)
 }
 
-# Project a fitted SPDE mesh-node field to arbitrary coordinates (kriging).
-# Reuses the FEM projector tulpaMesh builds for the observation coordinates, so
-# the field at new locations is A_new %*% w_hat with w_hat the posterior-mean
-# node field (`$spatial_effects`). Requires a mesh-backed spec built with a
-# coordinate formula; a custom C/G/A spec has no mesh to re-project through.
+# FEM projector from the fitted SPDE mesh to arbitrary coordinates. Requires a
+# mesh-backed spec built with a coordinate formula; a custom C/G/A spec has no
+# mesh to re-project through.
 #' @keywords internal
-.spde_field_at <- function(object, newdata) {
+.spde_A_at <- function(object, newdata) {
   sp <- object$spatial
-  w  <- object$spatial_effects
   if (is.null(sp$mesh) || is.null(sp$coord_formula)) {
     stop("Spatial-field prediction at new coordinates needs an SPDE spec built ",
          "with a mesh and a coordinate formula, e.g. spatial_spde(~ x + y, ",
@@ -509,8 +506,91 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
          paste(miss, collapse = ", "), call. = FALSE)
   }
   coords <- cbind(newdata[[vars[1]]], newdata[[vars[2]]])
-  A_new  <- tulpaMesh::fem_matrices(sp$mesh, obs_coords = coords)$A
-  as.numeric(A_new %*% w)
+  tulpaMesh::fem_matrices(sp$mesh, obs_coords = coords)$A
+}
+
+# Project a fitted SPDE mesh-node field to arbitrary coordinates (kriging):
+# A_new %*% w_hat with w_hat the posterior-mean node field.
+#' @keywords internal
+.spde_field_at <- function(object, newdata) {
+  as.numeric(.spde_A_at(object, newdata) %*% object$spatial_effects)
+}
+
+# The variance-convention dispersion of an SPDE fit, for the R-side working
+# weights: a front-door tulpa() fit stores `$phi` (the variance); a direct
+# fit_spde() fit stores the kernel-convention `$phi_kernel` (gaussian /
+# lognormal: the residual SD).
+#' @keywords internal
+.spde_phi_variance <- function(object) {
+  if (!is.null(object$phi)) return(object$phi)
+  pk <- object$phi_kernel %||% 1.0
+  if (identical(object$family, "gaussian") ||
+      identical(object$family, "lognormal")) pk^2 else pk
+}
+
+# Linear-predictor SE at query points for an SPDE fit with the field included:
+# Var(x*' beta + a*' w) = c' H^{-1} c with c = [x*, a*] and H the joint
+# (beta, field) posterior precision at the fitted hyperparameters -- the
+# working-weight cross term X'WA, the field precision Q(range, sigma), and
+# the kernel's weak fixed-effect ridge (sigma_beta = 100). Conditional on the
+# hyperparameters: a nested fit's grid spread in (range, sigma) is not
+# propagated, so the SE is mildly optimistic when the hyperparameter posterior
+# is wide. Integer-nu, no-RE fits only; everything else declines loudly.
+#' @keywords internal
+.spde_linpred_se <- function(object, X_new, A_new) {
+  sp <- object$spatial
+  if (.spde_nu_is_fractional(sp$nu)) {
+    stop("field SE is not available for fractional-nu SPDE fits yet.",
+         call. = FALSE)
+  }
+  X <- object$model_matrix
+  if (is.null(X)) {
+    stop("field SE needs the training design ($model_matrix); fit through ",
+         "tulpa().", call. = FALSE)
+  }
+  p      <- ncol(X)
+  n_mesh <- sp$n_mesh
+  mode   <- object$mode
+  if (is.null(mode) || length(mode) != p + n_mesh) {
+    stop("field SE needs the joint (beta, field) mode with no extra ",
+         "random-effect block; this fit's latent layout does not match.",
+         call. = FALSE)
+  }
+  range_val <- object$range %||% object$nested$range_mean
+  sigma_val <- object$sigma %||% object$nested$sigma_mean
+  if (is.null(range_val) || is.null(sigma_val)) {
+    stop("field SE needs the fitted (range, sigma); none stored.",
+         call. = FALSE)
+  }
+
+  A    <- as(sp$A, "CsparseMatrix")
+  beta <- mode[seq_len(p)]
+  w    <- mode[p + seq_len(n_mesh)]
+  eta  <- as.numeric(X %*% beta) + as.numeric(A %*% w) +
+    (object$offset %||% 0)
+  W <- glmm_weights(eta, object$family, object$n_trials,
+                    .spde_phi_variance(object))
+
+  kappa    <- sqrt(8 * sp$nu) / range_val
+  tau_spde <- 1 / (sqrt(4 * pi) * kappa * sigma_val)
+  Q <- .spde_precision_Q(sp, kappa, tau_spde)
+
+  XtWX <- crossprod(X, W * X) + diag(1e-4, p)   # kernel ridge sigma_beta = 100
+  WA   <- W * A
+  AtWA <- Matrix::crossprod(A, WA)
+  XtWA <- Matrix::crossprod(Matrix::Matrix(X, sparse = TRUE), WA)
+  H <- rbind(
+    cbind(Matrix::Matrix(XtWX, sparse = TRUE), XtWA),
+    cbind(Matrix::t(XtWA), AtWA + Q)
+  )
+  Hc <- Matrix::Cholesky(Matrix::forceSymmetric(H), LDL = FALSE, perm = TRUE)
+
+  Cq <- rbind(
+    Matrix::t(Matrix::Matrix(X_new, sparse = TRUE)),
+    Matrix::t(as(A_new, "CsparseMatrix"))
+  )
+  V <- Matrix::solve(Hc, Cq, system = "A")
+  sqrt(pmax(Matrix::colSums(Cq * V), 0))
 }
 
 #' Fitted values (population level)
@@ -553,8 +633,12 @@ fitted.tulpa_fit <- function(object, ...) {
 #'   training design (requires `$model_matrix`).
 #' @param type `"link"` (linear predictor) or `"response"` (mean scale).
 #' @param se.fit If `TRUE`, also return the link-scale standard error and
-#'   credible bounds. Not supported together with an included SPDE field (the
-#'   field posterior covariance is not propagated yet).
+#'   credible bounds. With an included SPDE field the SE propagates the joint
+#'   (fixed-effect, field) posterior precision at the fitted hyperparameters
+#'   -- including the cross term -- conditional on `(range, sigma)` (a nested
+#'   fit's hyperparameter-grid spread is not propagated, so the bound is
+#'   mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
+#'   fits only; other layouts decline with an explanation.
 #' @param level Credible-interval level (default 0.95).
 #' @param include_field For an SPDE fit, add the kriged Matern field to the
 #'   prediction (default `TRUE`). `FALSE` gives the fixed-effect (population)
@@ -588,23 +672,20 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   # Kriged SPDE field. At training data (newdata = NULL) reuse the fitted
   # projector; at new coordinates re-project the mesh-node field through the
   # spec's mesh. Only mesh-backed SPDE fits carry a field here; every other fit
-  # leaves `eta` at the fixed-effect (population) prediction.
+  # leaves `eta` at the fixed-effect (population) prediction. With se.fit the
+  # joint (beta, field) posterior precision propagates the field uncertainty
+  # (see .spde_linpred_se).
   is_spde_field <- isTRUE(include_field) &&
     identical(object$spatial$type, "spde") &&
     !is.null(object$spatial_effects)
+  spde_se <- NULL
   if (is_spde_field) {
-    fld <- if (is.null(newdata)) {
-      as.numeric(object$spatial$A %*% object$spatial_effects)
-    } else {
-      .spde_field_at(object, newdata)
-    }
+    A_new <- if (is.null(newdata)) object$spatial$A
+             else .spde_A_at(object, newdata)
+    eta <- eta + as.numeric(A_new %*% object$spatial_effects)
     if (se.fit) {
-      stop("se.fit = TRUE with the SPDE field included is not supported yet: ",
-           "the field posterior covariance is not propagated. Use ",
-           "include_field = FALSE for fixed-effect SEs, or se.fit = FALSE for ",
-           "the point kriging prediction.", call. = FALSE)
+      spde_se <- .spde_linpred_se(object, X, A_new)
     }
-    eta <- eta + fld
   }
 
   if (!se.fit) {
@@ -613,8 +694,12 @@ predict.tulpa_fit <- function(object, newdata = NULL,
     } else eta)
   }
 
-  V  <- vcov(object)
-  se <- sqrt(pmax(rowSums((X %*% V) * X), 0))
+  se <- if (!is.null(spde_se)) {
+    spde_se
+  } else {
+    V <- vcov(object)
+    sqrt(pmax(rowSums((X %*% V) * X), 0))
+  }
   z  <- stats::qnorm(1 - (1 - level) / 2)
   lo <- eta - z * se
   hi <- eta + z * se

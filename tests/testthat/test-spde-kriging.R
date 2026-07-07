@@ -40,9 +40,59 @@ test_that("predict() kriges the SPDE Matern field to new coordinates", {
   nd <- data.frame(lon = 0.5, lat = 0.5, x = 0.1)
   expect_true(is.finite(predict(fit, newdata = nd, include_field = TRUE)))
 
-  # se.fit together with the field is refused (field covariance not propagated).
-  expect_error(predict(fit, newdata = nd, se.fit = TRUE),
-               "not supported")
+  # se.fit with the field included propagates the joint (beta, field)
+  # posterior precision (gcol33/tulpa C4).
+  pr <- predict(fit, newdata = nd, se.fit = TRUE)
+  expect_true(is.finite(pr$se.fit) && pr$se.fit > 0)
+  expect_true(pr$lower < pr$fit && pr$fit < pr$upper)
+})
+
+test_that("SPDE field SE matches the dense joint-precision oracle", {
+  skip_on_cran()
+  skip_if_not_installed("tulpaMesh")
+
+  set.seed(103)
+  n <- 150L
+  d <- data.frame(lon = runif(n), lat = runif(n), x = rnorm(n))
+  spec <- spatial_spde(~ lon + lat, data = d, max_edge = c(0.25, 0.5),
+                       cutoff = 0.06, nu = 1)
+  w <- as.numeric(rnorm(spec$n_mesh, 0, 0.5)); w <- w - mean(w)
+  d$y <- 1.5 + 0.4 * d$x + as.numeric(spec$A %*% w) + rnorm(n, 0, 0.5)
+
+  fit <- suppressWarnings(suppressMessages(tulpa(
+    y ~ x, data = d, family = "gaussian", spatial = spec, mode = "laplace",
+    phi = 0.25
+  )))
+  skip_if(is.null(fit$spatial_effects), "SPDE Laplace fit carries no field")
+
+  nd <- data.frame(lon = c(0.3, 0.9), lat = c(0.4, 0.95), x = c(0, 1))
+  pr <- predict(fit, newdata = nd, se.fit = TRUE)
+
+  # Dense oracle: gaussian likelihood, so the joint precision is exact.
+  # H = [[X'X/phi + 1e-4 I, X'A/phi], [A'X/phi, A'A/phi + Q]] at the fitted
+  # (range, sigma); Var(c'theta) = c' H^{-1} c.
+  X <- cbind(1, d$x)
+  A <- as.matrix(spec$A)
+  kappa <- sqrt(8 * spec$nu) / fit$range
+  tau_s <- 1 / (sqrt(4 * pi) * kappa * fit$sigma)
+  Q <- as.matrix(tulpa:::.spde_precision_Q(spec, kappa, tau_s))
+  phi <- 0.25
+  H <- rbind(
+    cbind(crossprod(X) / phi + diag(1e-4, 2), crossprod(X, A) / phi),
+    cbind(crossprod(A, X) / phi, crossprod(A) / phi + Q)
+  )
+  A_new <- as.matrix(tulpa:::.spde_A_at(fit, nd))
+  Cq <- rbind(t(cbind(1, nd$x)), t(A_new))        # (p + n_mesh) x 2
+  V  <- solve(H, Cq)
+  se_ref <- sqrt(colSums(Cq * V))
+  expect_equal(pr$se.fit, se_ref, tolerance = 1e-6)
+
+  # include_field = FALSE keeps the fixed-effect-only SE path. (No ordering
+  # assertion: the beta-field cross-covariance is negative under spatial
+  # confounding, so the joint SE can sit on either side of the beta-only SE.)
+  pr_pop <- predict(fit, newdata = nd, se.fit = TRUE, include_field = FALSE)
+  expect_true(all(is.finite(pr_pop$se.fit)))
+  expect_false(isTRUE(all.equal(pr$se.fit, pr_pop$se.fit)))
 })
 
 test_that("a custom (mesh-less) SPDE spec cannot krige to new coordinates", {

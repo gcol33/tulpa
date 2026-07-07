@@ -234,6 +234,11 @@ fit_spde <- function(y, X, spatial,
     )
   }
 
+  # Prediction support (predict.tulpa_fit se.fit): the family and the
+  # kernel-convention dispersion (gaussian/lognormal: residual SD -- the
+  # front-door tulpa() fit additionally carries $phi as the variance).
+  fit$family     <- fit$family %||% family
+  fit$phi_kernel <- phi
   .finalize_fit(fit, backend = "spde",
                 n_fixed = ncol(X), fixed_names = colnames(X))
 }
