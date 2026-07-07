@@ -1,5 +1,62 @@
 # tulpa NEWS
 
+## 0.0.73 (2026-07-07)
+
+* Posterior prediction: `posterior_predict()` draws replicated responses from
+  the posterior predictive (per-draw linear predictor -- fixed and random
+  effects jointly from the draws, or the Gaussian approximation on the
+  Laplace tier -- through new per-family sampling functions);
+  `simulate.tulpa_fit()` is the base-R alias, and `pp_check()` falls back to
+  generated replicates when the fit stores no `y_rep`.
+* Observation weights: `tulpa(weights =)` scales each row's log-likelihood on
+  the non-spatial Laplace path and the log-posterior samplers; other backends
+  refuse loudly. A weight of 2 reproduces the duplicated-row fit exactly.
+* Covariate smoothers: `y ~ s(x, k =, structure = "rw2"/"rw1")` puts an RW
+  GMRF over the binned covariate and integrates its smoothness
+  hyperparameter through the nested-Laplace temporal kernels (single block
+  alone; the joint multi-block stack alongside an areal spatial field,
+  temporal field, or a second smoother). `smooth_effects()` extracts the
+  fitted smooth at the nodes.
+* Second dispersion channel: `phi2` threads through the family registry, the
+  compiled kernels, and every fitter surface. The Student-t degrees of
+  freedom are now configurable (`family = "t"`, `phi2 = df`; default 4).
+* Gaussian dispersion unified: `tulpa()`'s `phi` is the residual VARIANCE for
+  gaussian/lognormal on every backend, as documented. Previously the
+  compiled kernels (Laplace, ModelData samplers) read it as the residual SD,
+  so `mode = "laplace"` and `mode = "mala"` fit different models at phi != 1;
+  the conversion now happens once at each R-to-kernel boundary. The direct
+  doors (`fit_spde()`, `tulpa_nested_laplace_joint()`, `tulpa_sample_glmm()`)
+  keep their documented SD parameterization.
+* New families: `lognormal` (variance convention, front-door fittable on the
+  Laplace and sampler tiers) and `tweedie` (compound Poisson-gamma, `phi2` =
+  power in (1, 2); Dunn-Smyth series density in R and the Laplace kernel,
+  pinned against `tweedie::dtweedie`).
+* Categorical responses through the front door: `tulpa(family =
+  "multinomial" / "ordinal" / "ordinal_probit")` routes to the Laplace
+  drivers; `tulpa_ordinal()` gains `link = "probit"` (pinned against
+  `MASS::polr`).
+* Model criticism: `bayes_R2()` (per-draw R^2 with model-based residual
+  variance from new per-family variance functions); `tulpa_reloo()`
+  (PSIS-LOO with exact refits at observations above the Pareto k-hat
+  threshold, sharing the kfold refit machinery); `tulpa_kfold()` now threads
+  stored `n_trials` / `weights` per training partition (previously a stored
+  `n_trials` expression evaluated full-length against the subset data).
+* Expectation Propagation returns its approximate marginal likelihood
+  (`log_marginal`, exact for gaussian), so EP fits enter model comparison via
+  `logLik()`.
+* Power-scaling sensitivity gains a `hyperparameter` column: the
+  nested-Laplace mixture paths record per-draw hyperparameter log-priors at
+  draw-synthesis time and `tulpa_powerscale_sensitivity()` reweights them.
+* SPDE kriging uncertainty: `predict(se.fit = TRUE)` with the field included
+  propagates the joint (fixed-effect, field) posterior precision at the
+  fitted `(range, sigma)`, including the cross term (integer-nu, no-RE fits).
+* Temporal AR(p): `temporal_ar(time_idx, p =)` generalizes `temporal_ar2()`
+  via the Levinson-Durbin PACF parameterization (always stationary) and the
+  exact Yule-Walker banded precision.
+* Boundary decision recorded: general censored/survival responses are
+  observation processes owned by model packages via `LikelihoodSpec`; the
+  engine keeps only the generic interval/truncated gaussian kernels.
+
 ## 0.0.72 (2026-07-07)
 
 * New approximation-layer fitters:

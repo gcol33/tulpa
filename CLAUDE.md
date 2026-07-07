@@ -106,6 +106,7 @@ tests/testthat/     — Unit and integration tests
 - Autodiff: arena, forward, tape
 - Latent structure: spatial, temporal, RE, SVC, TVC, ST, latent factors
 - ZI/OI parameter-layout hooks only (`ZIType` enum, `has_zi` / `has_oi`); the distribution-specific ZI likelihood math lives in model packages
+- Censoring/truncation KERNELS only: `interval_gaussian` / `truncated_gaussian` are generic per-observation likelihood arms that model packages compose. General censored / survival responses (right-censored gaussian/lognormal, Weibull/exponential AFT with a censoring indicator) are an observation process and belong to tulpaObs via `LikelihoodSpec`; the engine does not grow a censoring-indicator front door (decided 2026-07-07, closes the recurring todo item)
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary
 - Generic diagnostics: moran_i, durbin_watson, tulpa_variogram, compare_models, modelAverage
 - Generic plotting: trace, density, pairs plots of posterior draws
