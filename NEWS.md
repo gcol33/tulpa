@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.75 (2026-07-08)
+
+* SPDE field prediction standard errors (`predict(se.fit = TRUE)` with the field
+  included) are computed by a streaming C++ kernel (`cpp_spde_field_se`) that
+  factorizes the joint (beta, field) precision once and solves one query cell at
+  a time. The dense working set is `O(p + n_mesh)`, independent of the number of
+  query cells, so the per-cell SE over a large prediction grid holds a bounded
+  amount of memory. Numerical results are identical.
+
+* The sparse joint nested-Laplace driver shares one per-worker resource pool
+  (Hessian builder, scatter cache, Newton scratch, arm specs, dense-basis
+  buffers) across the cheap-screen and full-solve passes, which run in disjoint
+  phases. This halves the pre-grid setup working set at a given
+  `control$n_threads_outer`; fits are numerically identical.
+
 ## 0.0.74 (2026-07-07)
 
 * `adjacency()` gains a settable neighbourhood. `order = k` extends the grid /

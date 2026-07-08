@@ -58,8 +58,11 @@ skip_on_cran()
 }
 
 .ir_fit <- function(sim, prior, copy, inner_refresh) {
+    responses <- sim$responses
+    if (!is.null(copy))
+        responses[[copy$arm]]$field_coef <- list(name = "alpha", grid = copy$alpha_grid)
     tulpa_nested_laplace_joint(
-        responses = sim$responses, prior = prior, copy = copy,
+        responses = responses, prior = prior,
         control = list(max_iter = 50L, tol = 1e-8, n_threads = 1L,
                        verbose = FALSE, force_sparse = TRUE,
                        inner_refresh = inner_refresh)

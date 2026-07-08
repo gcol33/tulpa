@@ -289,6 +289,10 @@ cpp_selected_inversion_diagonal <- function(Q_x, Q_i, Q_p, n) {
     .Call(`_tulpa_cpp_selected_inversion_diagonal`, Q_x, Q_i, Q_p, n)
 }
 
+cpp_spde_field_se <- function(H, Cq) {
+    .Call(`_tulpa_cpp_spde_field_se`, H, Cq)
+}
+
 cpp_spde_fractional_logmarginal <- function(y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable = NULL, tau_beta = 1e-4) {
     .Call(`_tulpa_cpp_spde_fractional_logmarginal`, y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable, tau_beta)
 }

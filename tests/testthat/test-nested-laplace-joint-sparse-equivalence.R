@@ -96,15 +96,16 @@ test_that("sparse path matches dense on joint BYM2 with copy", {
              rho_grid   = c(0.7)),
         sim$adj
     )
-    copy_spec <- list(arm = "pos", alpha_grid = c(1.0, 1.2))
+    responses <- sim$responses
+    responses$pos$field_coef <- list(name = "alpha", grid = c(1.0, 1.2))
 
     fit_dense  <- tulpa_nested_laplace_joint(
-        responses = sim$responses, prior = prior, copy = copy_spec,
+        responses = responses, prior = prior,
         control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
                        force_sparse = FALSE)
     )
     fit_sparse <- tulpa_nested_laplace_joint(
-        responses = sim$responses, prior = prior, copy = copy_spec,
+        responses = responses, prior = prior,
         control = list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
                        force_sparse = TRUE)
     )

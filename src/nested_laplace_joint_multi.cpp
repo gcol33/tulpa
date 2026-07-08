@@ -2300,34 +2300,19 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     for (auto& d : db_buffers_pool)
         d.assign(static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
 
-    // Cheap-pass dedicated scratch / solver / builder / specs / caches, one set
-    // per outer worker slot. The cheap screen may run per-tile chains
-    // concurrently (gcol33/tulpa#68); CHOLMOD's cholmod_common and the builder /
-    // scratch state are not thread-safe, so each worker owns its own set. The
-    // pool is reserved for the cheap pass (temporally disjoint from the full
-    // per-thread pool used by the inner Newton on survivors). The builders +
-    // caches are copies of slot 0 (same shared pattern), re-pointed at the
-    // owning cheap builder; only the scratch / specs / dense-basis buffers are
-    // genuinely per-worker.
+    // Cheap-pass solver, one per outer worker slot. The cheap screen may run
+    // per-tile chains concurrently (gcol33/tulpa#68) and CHOLMOD's
+    // cholmod_common is not thread-safe, so each worker needs its own factor.
+    // The remaining per-worker state -- builder, scatter cache, Newton scratch,
+    // arm specs, dense-basis buffers -- is SHARED with the full per-thread pool
+    // above: the cheap screen and the full inner Newton are strictly disjoint in
+    // time (run_nested_laplace_grid softmax-prunes over the whole grid before
+    // any full solve), so worker `w` and thread `w` never touch slot `w` at
+    // once. Sharing halves the pre-grid working set -- the nnz-scaled builder +
+    // scatter cache dominate it -- at a fixed outer width, so a requested
+    // n_outer costs one replicated pool, not two (gcol33/tulpa#96 setup peak).
     const int n_cheap_workers = std::max(1, n_outer);
-    std::vector<SparseHessianBuilder> cheap_builders(n_cheap_workers);
-    std::vector<NewtonScratchJointSparse> cheap_scratches(n_cheap_workers);
     std::vector<SparseCholeskySolver> cheap_solvers(n_cheap_workers);
-    std::vector<JointArmSpecs> cheap_specs_pool(n_cheap_workers);
-    std::vector<ScatterIndexCache> idx_caches_cheap(n_cheap_workers);
-    std::vector<std::vector<DenseBasisScratch>> db_buffers_cheap_pool(
-        n_cheap_workers);
-    { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      for (int w = 0; w < n_cheap_workers; w++) {
-          cheap_builders[w] = H_builders[0];     // shares the read-only pattern
-          idx_caches_cheap[w] = idx_caches[0];
-          idx_caches_cheap[w].cache_H_ptr =
-              static_cast<const void*>(&cheap_builders[w]);
-          cheap_scratches[w].allocate(n_x, arms);
-          build_joint_arm_specs_into(arms, cheap_specs_pool[w]);
-          db_buffers_cheap_pool[w].assign(
-              static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
-      } }
 
     // Inner-thread budget: surplus outer threads (grid smaller than the pool)
     // are handed to the inner reduction via nested OpenMP; the split stays
@@ -2351,8 +2336,11 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         #endif
         if (tid < 0 || tid >= n_outer) tid = 0;
         if (cheap_worker < 0 || cheap_worker >= n_cheap_workers) cheap_worker = 0;
-        JointArmSpecs& specs_use =
-            use_cheap_scratch ? cheap_specs_pool[cheap_worker] : specs_pool[tid];
+        // Cheap screen and full solve are disjoint in time, so both index the
+        // single shared per-worker pool by this slot (cheap: worker id; full:
+        // omp thread id), each in [0, n_outer).
+        const int slot = use_cheap_scratch ? cheap_worker : tid;
+        JointArmSpecs& specs_use = specs_pool[slot];
 
         // phi-grid axis: prep_at_grid rewrites the SHARED `arms` dispersion for
         // this cell, then sync copies it into THIS thread's specs. Both run
@@ -2420,9 +2408,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // db_buffers is a reference into the lifted-out per-thread storage so
         // each (k_arm, b) cache survives across the outer-grid cells this
         // thread solves.
-        std::vector<DenseBasisScratch>&   db_buffers =
-            use_cheap_scratch ? db_buffers_cheap_pool[cheap_worker]
-                              : db_buffers_pool[tid];
+        std::vector<DenseBasisScratch>&   db_buffers = db_buffers_pool[slot];
 
         auto compute_eta_joint = [&](const Rcpp::NumericVector& x,
                                      std::vector<Rcpp::NumericVector>& etas) {
@@ -2431,11 +2417,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 d_eff, basis_scratch, multi_scratch);
         };
 
-        SparseHessianBuilder& H_use =
-            use_cheap_scratch ? cheap_builders[cheap_worker] : H_builders[tid];
-        const ScatterIndexCache* idx_cache_use =
-            use_cheap_scratch ? &idx_caches_cheap[cheap_worker]
-                              : &idx_caches[tid];
+        SparseHessianBuilder& H_use = H_builders[slot];
+        const ScatterIndexCache* idx_cache_use = &idx_caches[slot];
 
         // `finalize` selects the curvature for the coupled-cell scatter: the
         // inner Newton step uses `step_curvature` (Expected = Fisher scoring,
@@ -2503,8 +2486,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             return lp;
         };
 
-        NewtonScratchJointSparse& sc =
-            use_cheap_scratch ? cheap_scratches[cheap_worker] : scratches[tid];
+        NewtonScratchJointSparse& sc = scratches[slot];
         JointSpecLogLik joint_ll{&specs_use.views, n_threads_inner_eff};
         if (any_coupling) {
             joint_ll.skip_arm = &arm_is_coupled;

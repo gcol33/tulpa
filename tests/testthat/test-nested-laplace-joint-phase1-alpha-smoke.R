@@ -89,8 +89,6 @@ test_that("(sigma, alpha) reparam recovers sigma/alpha across alpha in {0, 1, 2}
                          rho_grid   = rho_grid),
                      adj,
                      list(scale_factor = 1.0))
-    copy_spec <- list(arm = "pos", alpha_grid = alpha_grid)
-
     sigma_true <- 0.6
     regimes <- list(
         list(name = "alpha=0", alpha_true = 0.0),
@@ -111,11 +109,11 @@ test_that("(sigma, alpha) reparam recovers sigma/alpha across alpha in {0, 1, 2}
                                      n_sites = n_sites, N1 = N1, N2 = N2,
                                      sigma_true = sigma_true,
                                      alpha_true = r$alpha_true)
+            sim$pos$field_coef <- list(name = "alpha", grid = alpha_grid)
             fit <- suppressWarnings(
                 tulpa_nested_laplace_joint(
                     responses = sim,
                     prior     = prior_tmpl,
-                    copy      = copy_spec,
                     control = list(adaptive_grid            = FALSE,
                                    var_of_means_consistency = FALSE,
                                    max_iter = 60L, tol = 1e-5)

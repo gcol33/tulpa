@@ -583,14 +583,20 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
     cbind(Matrix::Matrix(XtWX, sparse = TRUE), XtWA),
     cbind(Matrix::t(XtWA), AtWA + Q)
   )
-  Hc <- Matrix::Cholesky(Matrix::forceSymmetric(H), LDL = FALSE, perm = TRUE)
-
   Cq <- rbind(
     Matrix::t(Matrix::Matrix(X_new, sparse = TRUE)),
     Matrix::t(as(A_new, "CsparseMatrix"))
   )
-  V <- Matrix::solve(Hc, Cq, system = "A")
-  sqrt(pmax(Matrix::colSums(Cq * V), 0))
+  # Per-cell field SE sqrt(colSums(Cq (.) H^{-1} Cq)) is streamed column-by-
+  # column in C++ (cpp_spde_field_se): the joint precision is factorized once,
+  # then each query column is solved on its own, so the dense working set stays
+  # O(p + n_mesh) rather than the (p + n_mesh) x n_cells dense H^{-1} Cq a large
+  # prediction grid would otherwise form.
+  if (ncol(Cq) == 0L) return(numeric(0))
+  cpp_spde_field_se(
+    as(as(H,  "generalMatrix"), "CsparseMatrix"),
+    as(as(Cq, "generalMatrix"), "CsparseMatrix")
+  )
 }
 
 #' Fitted values (population level)

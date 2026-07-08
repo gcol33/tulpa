@@ -74,10 +74,10 @@
         sigma_grid = c(0.05, 0.2, 0.6, 1.5, 3.0),
         rho_grid   = c(0.1, 0.4, 0.7, 0.95)
     )
-    copy <- list(arm = "pos", alpha_grid = c(0.2, 0.6, 1.0, 1.5))
+    arm_pos$field_coef <- list(name = "alpha", grid = c(0.2, 0.6, 1.0, 1.5))
     tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior, copy = copy,
+        prior = prior,
         control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
                        prune = prune, prune_tol = prune_tol,
                        adaptive_grid = FALSE, var_of_means_consistency = FALSE,

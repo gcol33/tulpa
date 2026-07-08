@@ -53,10 +53,10 @@ skip_on_cran()
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, scale_factor = 1.0,
                   sigma_grid = c(0.3, 0.6, 1.0), rho_grid = c(0.3, 0.7, 0.9))
-    copy <- list(arm = "pos", alpha_grid = c(0.5, 1.0, 1.5))
+    arm_pos$field_coef <- list(name = "alpha", grid = c(0.5, 1.0, 1.5))
     tulpa_nested_laplace_joint(
         responses = list(occ = arm_occ, pos = arm_pos),
-        prior = prior, copy = copy, phi_grid = phi_grid,
+        prior = prior, phi_grid = phi_grid,
         control = list(n_threads = 1L, n_threads_outer = n_threads_outer,
                        force_sparse = TRUE, adaptive_grid = FALSE,
                        var_of_means_consistency = FALSE))
@@ -125,12 +125,12 @@ test_that("inner parallel scatter matches serial on a single outer cell", {
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = 1.0)  # 1 cell
-    copy <- list(arm = "pos", alpha_grid = 1.0)
+    arm_pos$field_coef <- list(name = "alpha", grid = 1.0)
 
     fit_inner <- function(nt) {
         tulpa_nested_laplace_joint(
             responses = list(occ = arm_occ, pos = arm_pos),
-            prior = prior, copy = copy,
+            prior = prior,
             control = list(n_threads = nt, force_sparse = TRUE,
                            adaptive_grid = FALSE))
     }
