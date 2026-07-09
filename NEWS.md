@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.76 (2026-07-10)
+
+* The coupled-cell scatter in the sparse joint nested-Laplace driver (the
+  `occu_cover()` hot loop, about 94% of runtime on a large fit) runs in parallel
+  when the outer hyperparameter grid is under-saturated: the tail of any grid,
+  small grids, or a many-core server where more outer threads are free than there
+  are active grid cells. Those idle team threads steal per-cell scatter chunks,
+  each accumulating into a private partial Hessian that is reduced in a fixed
+  chunk order, so no grid cell's scatter runs single-threaded while freed cores
+  sit idle. When the grid saturates the thread pool (the bulk of a large fit) the
+  scatter stays serial and byte-identical to before; only the under-saturated
+  cells chunk, and they stay within the thread-invariance tolerance (means agree
+  to about 1e-14 and are reproducible run to run via the fixed-order reduce). Set
+  `TULPA_GRID_WORKSTEAL=0` to force the serial scatter for exact reproducibility.
+
 ## 0.0.75 (2026-07-08)
 
 * SPDE field prediction standard errors (`predict(se.fit = TRUE)` with the field

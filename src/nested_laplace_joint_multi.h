@@ -46,8 +46,11 @@
 #include "tulpa/cell_coupling.h"
 #include <Rcpp.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
+#include <string>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -696,11 +699,18 @@ inline void scatter_cell_coupling_branch_impl(
     ScatterSymRank1Fn                             scatter_symrank1,
     CurvatureMode                                 curvature = CurvatureMode::Observed,
     bool                                          grad_only = false,
-    const double*                                 phi_override = nullptr
+    const double*                                 phi_override = nullptr,
+    int                                           c0 = 0,
+    int                                           c1 = -1
 ) {
     const int n_coupled = (int)coupled_arms.size();
     const int B         = (int)blocks.size();
     if (n_coupled == 0 || n_cells == 0) return;
+    // Cell range [c0, cend): the whole grid by default, a contiguous chunk when
+    // scatter_cell_coupling_sparse_branch splits the loop across worker tasks.
+    // The per-cell scratch below is all function-local, so distinct ranges run
+    // independently with no shared mutable state (the reduce is done by caller).
+    const int cend = (c1 < 0) ? n_cells : c1;
 
     // Per-arm d_eff cache (one entry per coupled arm × block).
     std::vector<std::vector<double>> d_eff_per_arm(n_coupled,
@@ -797,7 +807,7 @@ inline void scatter_cell_coupling_branch_impl(
         if (a >= 0 && b < n_coupled) alloc_pair[a][b] = 1;
     }
 
-    for (int c = 0; c < n_cells; c++) {
+    for (int c = c0; c < cend; c++) {
         for (int kk = 0; kk < n_coupled; kk++) {
             int rc = (int)cell_rows[kk][c].size();
             arm_row_count[kk] = rc;
@@ -994,16 +1004,93 @@ inline void scatter_cell_coupling_sparse_branch(
     SparseHessianBuilder&                         H,
     CurvatureMode                                 curvature = CurvatureMode::Observed,
     bool                                          grad_only = false,
-    const double*                                 phi_override = nullptr
+    const double*                                 phi_override = nullptr,
+    int                                           n_threads = 1
 ) {
-    scatter_cell_coupling_branch_impl(
-        spec, coupled_arms, cell_rows, n_cells,
-        arms, parsed, etas, blocks, k_grid, grad, H,
-        scatter_one_arm_row_sparse,
-        scatter_cross_chain_sparse,
-        scatter_self_rank1_sparse,
-        curvature, grad_only, phi_override
-    );
+    auto run_range = [&](DenseVec& g_out, SparseHessianBuilder& H_out,
+                         int lo, int hi) {
+        scatter_cell_coupling_branch_impl(
+            spec, coupled_arms, cell_rows, n_cells,
+            arms, parsed, etas, blocks, k_grid, g_out, H_out,
+            scatter_one_arm_row_sparse,
+            scatter_cross_chain_sparse,
+            scatter_self_rank1_sparse,
+            curvature, grad_only, phi_override, lo, hi);
+    };
+
+#ifdef _OPENMP
+    // Split the per-cell loop across worker tasks ONLY when there are idle team
+    // threads to steal them (omp_in_parallel: the outer grid's parallel-for is
+    // running, and its finished threads drain the task pool at the loop
+    // barrier), the spec permits concurrent evaluate_cell(), and the cell count
+    // is worth the per-chunk partial buffers. Otherwise fall through to the
+    // byte-identical serial pass. TULPA_GRID_WORKSTEAL=0 forces serial.
+    static const bool worksteal_enabled = []() {
+        const char* e = std::getenv("TULPA_GRID_WORKSTEAL");
+        return !(e != nullptr && e[0] == '0');
+    }();
+    const bool go_parallel =
+        worksteal_enabled && n_threads > 1 && n_cells >= 64 &&
+        spec.thread_safe() && omp_in_parallel();
+
+    if (go_parallel) {
+        const int C = n_threads;
+        const std::size_t nnz = H.values.size();
+        const std::size_t n_x = grad.size();
+        // Per-chunk partials: a copied builder shares H's read-only entry_map /
+        // pattern (gcol33/tulpa#96) but owns a zeroed values array; a zeroed
+        // gradient. Each chunk writes only its own partials, so no locks.
+        std::vector<SparseHessianBuilder> H_chunk;
+        H_chunk.reserve(C);
+        std::vector<DenseVec> g_chunk(C);
+        for (int c = 0; c < C; c++) {
+            H_chunk.push_back(H);
+            H_chunk[c].zero();
+            g_chunk[c].assign(n_x, 0.0);
+        }
+        // An exception escaping an omp task is undefined behaviour, so each task
+        // catches; the first failure's message is surfaced from the main thread
+        // after the taskgroup joins. evaluate_cell / the sparse scatter are
+        // exception-free in practice, so this never fires on the happy path.
+        std::atomic<bool> task_failed{false};
+        std::string       task_err;
+        #pragma omp taskgroup
+        {
+            for (int c = 0; c < C; c++) {
+                #pragma omp task default(shared) firstprivate(c)
+                {
+                    try {
+                        const int lo = (int)((long)c       * n_cells / C);
+                        const int hi = (int)((long)(c + 1) * n_cells / C);
+                        run_range(g_chunk[c], H_chunk[c], lo, hi);
+                    } catch (const std::exception& e) {
+                        if (!task_failed.exchange(true)) {
+                            #pragma omp critical(tulpa_coupling_task_err)
+                            task_err = e.what();
+                        }
+                    } catch (...) {
+                        task_failed.store(true);
+                    }
+                }
+            }
+        }
+        if (task_failed.load()) {
+            Rcpp::stop("coupled-cell scatter task failed: %s",
+                       task_err.empty() ? "unknown error" : task_err.c_str());
+        }
+        // Deterministic reduce in chunk order 0..C-1 (independent of which
+        // thread executed each chunk), so the result is run-to-run reproducible.
+        double* __restrict__ Hv = H.values.data();
+        for (int c = 0; c < C; c++) {
+            const double* __restrict__ hv = H_chunk[c].values.data();
+            for (std::size_t k = 0; k < nnz; k++) Hv[k] += hv[k];
+            const double* __restrict__ gv = g_chunk[c].data();
+            for (std::size_t j = 0; j < n_x; j++) grad[j] += gv[j];
+        }
+        return;
+    }
+#endif
+    run_range(grad, H, 0, n_cells);
 }
 
 // Sparse-builder analogue of scatter_arm_obs_joint_multi. Writes into a

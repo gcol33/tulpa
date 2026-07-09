@@ -73,6 +73,7 @@
 #include "hmc_car_proper.h"
 #include "sysmem.h"
 #include <Rcpp.h>
+#include <atomic>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -2319,6 +2320,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // within the outer budget so it never oversubscribes (gcol33/tulpa#107).
     const int n_threads_inner_eff = joint_inner_thread_budget(n_outer, n_grid, n_threads);
 
+    // Count of full per-cell solves currently in flight across the outer grid's
+    // parallel-for. Lets a cell in the UNDER-SATURATED tail (fewer cells left
+    // than team threads) hand the freed cores to its coupled-cell scatter, which
+    // dispatches them as stealable tasks (gcol33/tulpa#107 flatten). Zero when
+    // the outer loop runs serially (n_outer == 1); the static budget still
+    // governs the pure-inner path.
+    std::atomic<int> active_cells{0};
+
     auto solve_at_theta_impl = [&](int k_grid,
                                    const std::vector<double>& prev_mode,
                                    SparseCholeskySolver* shared_solver,
@@ -2341,6 +2350,36 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // omp thread id), each in [0, n_outer).
         const int slot = use_cheap_scratch ? cheap_worker : tid;
         JointArmSpecs& specs_use = specs_pool[slot];
+
+        // Dynamic inner-thread budget for the coupled-cell scatter. Floor at the
+        // static grid budget (1 whenever the outer grid saturates the pool, so
+        // the bulk stays byte-identical). In the outer parallel-for's tail --
+        // fewer active cells than team threads -- raise it to team/active so the
+        // freed threads steal this cell's scatter chunks. RAII-decrements on
+        // every exit path; skipped for the cheap screen (which runs its own sweep).
+        struct ActiveGuard {
+            std::atomic<int>* a;
+            ~ActiveGuard() { if (a) a->fetch_sub(1, std::memory_order_relaxed); }
+        } active_guard{nullptr};
+        int inner_budget = n_threads_inner_eff;
+        if (!use_cheap_scratch) {
+            const int act =
+                active_cells.fetch_add(1, std::memory_order_relaxed) + 1;
+            active_guard.a = &active_cells;
+            #ifdef _OPENMP
+            if (omp_in_parallel()) {
+                const int team = omp_get_num_threads();
+                // TULPA_COUPLING_FORCE_PARALLEL forces the chunked coupling
+                // scatter on EVERY cell (not just the tail) so tests can exercise
+                // the parallel reduce deterministically; production leaves it off.
+                static const bool force_par =
+                    (std::getenv("TULPA_COUPLING_FORCE_PARALLEL") != nullptr);
+                const int tail = force_par ? team : team / (act < 1 ? 1 : act);
+                if (tail > inner_budget) inner_budget = tail;
+                if (inner_budget > team) inner_budget = team;
+            }
+            #endif
+        }
 
         // phi-grid axis: prep_at_grid rewrites the SHARED `arms` dispersion for
         // this cell, then sync copies it into THIS thread's specs. Both run
@@ -2451,7 +2490,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 scatter_cell_coupling_sparse_branch(
                     *cell_coupling_spec, coupled_arms, cell_rows, n_cells,
                     arms, parsed, etas, blocks, k_grid, grad, H, cm, grad_only,
-                    coupled_phi_ptr
+                    coupled_phi_ptr, inner_budget
                 );
             }
             for (const auto& b : blocks) {
