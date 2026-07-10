@@ -15,6 +15,14 @@
   to about 1e-14 and are reproducible run to run via the fixed-order reduce). Set
   `TULPA_GRID_WORKSTEAL=0` to force the serial scatter for exact reproducibility.
 
+* The documented starting point for the PC prior on the copy coefficient
+  `alpha` is now `c(U = 8.0, alpha = 0.01)`. A sweep over prior strengths on the
+  alpha-recovery fixture showed the earlier `U = 2.0` recommendation over-shrinks
+  the copy coefficient below its truth and, through the `alpha * sigma` copy
+  axis, lifts the coupled donor amplitude `sigma` above its truth; `U = 8.0`
+  regularizes the tail without that bias. The sigma-pos-prior recovery test
+  asserts the retuned, measured behaviour.
+
 ## 0.0.75 (2026-07-08)
 
 * SPDE field prediction standard errors (`predict(se.fit = TRUE)` with the field

@@ -126,10 +126,11 @@ so the prior shrinks the tail without biasing the modal cell when
 the data identifies it: default-friendly choice on \eqn{\sigma} is
 \code{c(U = 1.0, alpha = 0.01)} (donor amplitude); on the dimensionless
 copy coefficient \eqn{\alpha} the recommended choice is
-\code{c(U = 2.0, alpha = 0.01)}. Choosing \code{U} smaller than truth on
-\eqn{\alpha} actively shrinks past the modal cell -- e.g. on
-a fixture with truth \eqn{\alpha = 1}, \code{c(U = 1.0, alpha = 0.01)}
-puts \code{P(alpha > 1) = 0.01} and pulls the posterior toward zero.
+\code{c(U = 8.0, alpha = 0.01)}. Too small a \code{U} over-shrinks the copy
+coefficient past the modal cell and, through the \code{alpha * sigma} copy
+axis, inflates the coupled donor amplitude \code{sigma} -- e.g. on a fixture
+with truth \eqn{\alpha = 1}, \code{c(U = 2.0, alpha = 0.01)} pulls the
+\eqn{\alpha} posterior below 1 and lifts \code{sigma} above its truth.
 \item \code{list("half_normal", scale)} -- half-normal with scale \code{scale > 0}.
 Sharper tail decay than PC; use when stronger regularization is
 desired and the truth is well inside the prior.
