@@ -15,6 +15,7 @@
 #include "sparse_hessian.h"
 #include "mcar_block_factory.h"
 #include "laplace_spatial_priors.h"
+#include "mem_budget.h"
 
 using namespace Rcpp;
 
@@ -1457,6 +1458,22 @@ List cpp_test_mcar_prior(
     _["Sinv"]          = Sinv_m,
     _["log_det_Sigma"] = log_det_Sigma
   );
+}
+
+// Expose the outer-grid memory-budget arithmetic (mem_budget.h) so the
+// "budget against free RAM, not installed" decision and the per-thread cap are
+// unit-testable without a running fit. Byte counts cross R as doubles.
+// [[Rcpp::export]]
+double cpp_test_outer_thread_mem_budget(double avail_bytes, double total_bytes) {
+  return static_cast<double>(tulpa::outer_thread_mem_budget(
+      static_cast<std::size_t>(avail_bytes),
+      static_cast<std::size_t>(total_bytes)));
+}
+
+// [[Rcpp::export]]
+int cpp_test_outer_thread_cap(double budget_bytes, double per_thread_bytes) {
+  return tulpa::outer_thread_cap(static_cast<std::size_t>(budget_bytes),
+                                 static_cast<std::size_t>(per_thread_bytes));
 }
 
 // Direct algebra check for the MIID block (mcar with Q = I): the precision must

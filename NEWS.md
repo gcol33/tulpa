@@ -1,5 +1,32 @@
 # tulpa NEWS
 
+## 0.0.77 (2026-07-10)
+
+* The outer-grid thread memory clamp in the sparse joint nested-Laplace driver
+  now budgets against the memory that is actually **free**, not the installed
+  total. The previous clamp (tulpa#64) reserved half of total RAM for the
+  replicated per-thread working set, which over-provisions on a loaded machine:
+  half of a 64 GB install is 32 GB even when only 30 GB is free and the rest is
+  already committed, so a wide fit (a fine-resolution SPDE field at many outer
+  threads) still spilled into swap or ran out of memory. The clamp now sizes the
+  per-thread pool at a safety fraction (0.6) of currently-available RAM, leaving
+  the remainder for the grid results, CHOLMOD fill-in, and OS headroom, and
+  falls back to half of total (then a fixed 2 GB) only when the platform memory
+  query is unavailable. The budget arithmetic is factored into `mem_budget.h`
+  (`outer_thread_mem_budget()`, `outer_thread_cap()`), single-sourced and
+  unit-tested.
+* When the clamp has to reduce the requested outer thread count it now emits an
+  R **warning** naming the old and new thread counts and the memory budget, so a
+  memory-driven slowdown is visible rather than silent. In the floor case -- a
+  single cell's working set larger than the whole budget -- it warns that the
+  fit runs best-effort at one thread and may page or run out of memory, and
+  points at the real remedies (a coarser grid/resolution, freeing RAM, or
+  `control$checkpoint` to make the run resumable) rather than crashing.
+* New platform memory queries `available_ram_bytes()` (Windows `ullAvailPhys`,
+  Linux `/proc/meminfo` `MemAvailable`, macOS Mach free + inactive pages)
+  alongside the existing `total_ram_bytes()`, exposed to R for diagnostics as
+  `cpp_available_ram_bytes()` / `cpp_total_ram_bytes()`.
+
 ## 0.0.76 (2026-07-10)
 
 * The coupled-cell scatter in the sparse joint nested-Laplace driver (the

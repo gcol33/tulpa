@@ -71,10 +71,12 @@
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
 #include "hmc_car_proper.h"
+#include "mem_budget.h"
 #include "sysmem.h"
 #include <Rcpp.h>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <string>
@@ -2252,19 +2254,55 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         const size_t per_builder = nnz * (sizeof(int) + sizeof(double));
         const size_t per_factor  = nnz * 2 * sizeof(double);
         const size_t per_thread  = per_builder + per_factor + 1;
-        // Budget the per-thread working set against detected physical RAM so a
-        // wide field still uses every requested outer thread on a machine with
-        // the memory for it, replacing the fixed 2 GB cap (tulpa#64). Half of
-        // RAM goes to the replicated per-thread state; the other half is left
-        // for the shared problem data, the grid results, and the OS. Fall back
-        // to the 2 GB cap only when the RAM query is unavailable.
-        const size_t ram = tulpa::total_ram_bytes();
-        const size_t budget = (ram > 0)
-            ? (ram / 2)                                     // 50% of total RAM
-            : static_cast<size_t>(2) * 1024 * 1024 * 1024;  // fallback: 2 GB
-        int max_builders =
-            static_cast<int>(std::max<size_t>(1, budget / per_thread));
+        // Budget the replicated per-thread working set against the memory that
+        // is actually FREE, not installed (tulpa#64 budgeted against total,
+        // which over-provisions on a loaded box -- 50% of a 64 GB machine is 32
+        // GB even when only 40 GB is free and 23 GB is already committed, so the
+        // grid still spilled into swap / OOM). A safety fraction of free RAM
+        // goes to the per-thread pool; the remainder is left for the grid
+        // results accumulating during the solve, CHOLMOD fill-in beyond the 2x
+        // nnz factor estimate, and OS headroom. Fall back to half of total, then
+        // a fixed 2 GB, when the queries are unavailable.
+        const size_t avail = tulpa::available_ram_bytes();
+        const size_t total = tulpa::total_ram_bytes();
+        const size_t budget = tulpa::outer_thread_mem_budget(avail, total);
+        const int requested_outer = n_outer;
+        const int max_builders = tulpa::outer_thread_cap(budget, per_thread);
         if (n_outer > max_builders) n_outer = max_builders;
+
+        // Surface the clamp so "do the best it can" is visible rather than a
+        // silent slowdown (or, in the floor case, an impending OOM). This runs
+        // in serial setup on the main R thread -- before any parallel region --
+        // so an R warning here is safe.
+        const double gb = 1024.0 * 1024.0 * 1024.0;
+        if (per_thread > budget) {
+            // Even a single outer thread's working set does not fit the budget:
+            // proceed best-effort at one thread, but it may swap. Point at the
+            // real remedies (coarser grid, checkpoint/resume).
+            char msg[512];
+            std::snprintf(msg, sizeof(msg),
+                "tulpa: this joint fit's per-cell working set is about %.1f GB, "
+                "larger than the memory budget (%.1f GB of %.1f GB free). Running "
+                "single-threaded and best-effort; the fit may page to disk or run "
+                "out of memory. Consider a coarser grid/resolution, freeing RAM, "
+                "or control$checkpoint to make the run resumable.",
+                static_cast<double>(per_thread) / gb,
+                static_cast<double>(budget) / gb,
+                static_cast<double>(avail) / gb);
+            Rcpp::warning(std::string(msg));
+        } else if (n_outer < requested_outer) {
+            char msg[512];
+            std::snprintf(msg, sizeof(msg),
+                "tulpa: reduced outer grid threads from %d to %d to fit the "
+                "memory budget (%.1f GB of %.1f GB free, ~%.2f GB per thread). "
+                "The fit runs fewer concurrent grid cells and takes longer; free "
+                "RAM or lower n_threads_outer to avoid the reduction.",
+                requested_outer, n_outer,
+                static_cast<double>(budget) / gb,
+                static_cast<double>(avail) / gb,
+                static_cast<double>(per_thread) / gb);
+            Rcpp::warning(std::string(msg));
+        }
     }
 
     // n_outer is now the realised outer width (after the memory clamp); it is

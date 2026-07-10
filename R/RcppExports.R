@@ -53,6 +53,14 @@ cpp_get_max_threads <- function() {
     .Call(`_tulpa_cpp_get_max_threads`)
 }
 
+cpp_total_ram_bytes <- function() {
+    .Call(`_tulpa_cpp_total_ram_bytes`)
+}
+
+cpp_available_ram_bytes <- function() {
+    .Call(`_tulpa_cpp_available_ram_bytes`)
+}
+
 cpp_performance_core_count <- function() {
     .Call(`_tulpa_cpp_performance_core_count`)
 }
@@ -559,6 +567,14 @@ cpp_test_log_prior_icar <- function(x, n, tau, adj_rp, adj_ci, nnbr, n_component
 
 cpp_test_mcar_prior <- function(theta_logchol, p, n, adj_rp, adj_ci, nnbr, x, n_components = 1L) {
     .Call(`_tulpa_cpp_test_mcar_prior`, theta_logchol, p, n, adj_rp, adj_ci, nnbr, x, n_components)
+}
+
+cpp_test_outer_thread_mem_budget <- function(avail_bytes, total_bytes) {
+    .Call(`_tulpa_cpp_test_outer_thread_mem_budget`, avail_bytes, total_bytes)
+}
+
+cpp_test_outer_thread_cap <- function(budget_bytes, per_thread_bytes) {
+    .Call(`_tulpa_cpp_test_outer_thread_cap`, budget_bytes, per_thread_bytes)
 }
 
 cpp_test_miid_prior <- function(theta_logchol, p, n, x) {

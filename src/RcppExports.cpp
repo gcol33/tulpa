@@ -172,6 +172,26 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_total_ram_bytes
+double cpp_total_ram_bytes();
+RcppExport SEXP _tulpa_cpp_total_ram_bytes() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_total_ram_bytes());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_available_ram_bytes
+double cpp_available_ram_bytes();
+RcppExport SEXP _tulpa_cpp_available_ram_bytes() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_available_ram_bytes());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_performance_core_count
 int cpp_performance_core_count();
 RcppExport SEXP _tulpa_cpp_performance_core_count() {
@@ -2530,6 +2550,30 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_outer_thread_mem_budget
+double cpp_test_outer_thread_mem_budget(double avail_bytes, double total_bytes);
+RcppExport SEXP _tulpa_cpp_test_outer_thread_mem_budget(SEXP avail_bytesSEXP, SEXP total_bytesSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type avail_bytes(avail_bytesSEXP);
+    Rcpp::traits::input_parameter< double >::type total_bytes(total_bytesSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_outer_thread_mem_budget(avail_bytes, total_bytes));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_outer_thread_cap
+int cpp_test_outer_thread_cap(double budget_bytes, double per_thread_bytes);
+RcppExport SEXP _tulpa_cpp_test_outer_thread_cap(SEXP budget_bytesSEXP, SEXP per_thread_bytesSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type budget_bytes(budget_bytesSEXP);
+    Rcpp::traits::input_parameter< double >::type per_thread_bytes(per_thread_bytesSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_outer_thread_cap(budget_bytes, per_thread_bytes));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_miid_prior
 List cpp_test_miid_prior(NumericVector theta_logchol, int p, int n, NumericVector x);
 RcppExport SEXP _tulpa_cpp_test_miid_prior(SEXP theta_logcholSEXP, SEXP pSEXP, SEXP nSEXP, SEXP xSEXP) {
@@ -3020,6 +3064,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
     {"_tulpa_cpp_get_max_threads", (DL_FUNC) &_tulpa_cpp_get_max_threads, 0},
+    {"_tulpa_cpp_total_ram_bytes", (DL_FUNC) &_tulpa_cpp_total_ram_bytes, 0},
+    {"_tulpa_cpp_available_ram_bytes", (DL_FUNC) &_tulpa_cpp_available_ram_bytes, 0},
     {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
@@ -3147,6 +3193,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_s2z_block_schur", (DL_FUNC) &_tulpa_cpp_test_s2z_block_schur, 5},
     {"_tulpa_cpp_test_log_prior_icar", (DL_FUNC) &_tulpa_cpp_test_log_prior_icar, 7},
     {"_tulpa_cpp_test_mcar_prior", (DL_FUNC) &_tulpa_cpp_test_mcar_prior, 8},
+    {"_tulpa_cpp_test_outer_thread_mem_budget", (DL_FUNC) &_tulpa_cpp_test_outer_thread_mem_budget, 2},
+    {"_tulpa_cpp_test_outer_thread_cap", (DL_FUNC) &_tulpa_cpp_test_outer_thread_cap, 2},
     {"_tulpa_cpp_test_miid_prior", (DL_FUNC) &_tulpa_cpp_test_miid_prior, 4},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
