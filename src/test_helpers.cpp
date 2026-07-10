@@ -13,6 +13,7 @@
 #include "pg_binomial.h"
 #include "hmc_gp.h"
 #include "sparse_hessian.h"
+#include "sparse_cholesky.h"
 #include "mcar_block_factory.h"
 #include "laplace_spatial_priors.h"
 #include "mem_budget.h"
@@ -1474,6 +1475,44 @@ double cpp_test_outer_thread_mem_budget(double avail_bytes, double total_bytes) 
 int cpp_test_outer_thread_cap(double budget_bytes, double per_thread_bytes) {
   return tulpa::outer_thread_cap(static_cast<std::size_t>(budget_bytes),
                                  static_cast<std::size_t>(per_thread_bytes));
+}
+
+// Measure the CHOLMOD factor bytes for a k-by-k 2D lattice GMRF precision
+// pattern (diagonal + 4-neighbour edges, lower triangle stype = -1) via the
+// same supernodal symbolic analyze the outer-grid memory clamp uses. Returns
+// the pattern nnz, the measured factor bytes, and the old flat 2x-nnz guess so
+// a test can confirm the measurement captures the superlinear 2D fill-in the
+// guess misses.
+// [[Rcpp::export]]
+List cpp_test_grid_factor_bytes(int k) {
+  const int n = k * k;
+  auto id = [k](int r, int c) { return r * k + c; };
+  std::vector<std::pair<int,int>> pat;
+  pat.reserve(static_cast<std::size_t>(n) * 3);
+  for (int r = 0; r < k; ++r) {
+    for (int c = 0; c < k; ++c) {
+      const int u = id(r, c);
+      pat.emplace_back(u, u);                          // diagonal
+      if (c + 1 < k) pat.emplace_back(u, id(r, c + 1));  // east edge
+      if (r + 1 < k) pat.emplace_back(u, id(r + 1, c));  // south edge
+    }
+  }
+  tulpa::SparseHessianBuilder H;
+  H.init(n, pat);   // dedups + normalises to lower triangle
+  H.zero();
+  const std::size_t nnz_Q = H.values.size();
+
+  tulpa::SparseCholeskySolver solver;
+  cholmod_sparse Hv = H.as_cholmod(&solver.common());
+  solver.analyze(&Hv);
+  const std::size_t factor_bytes = solver.analyzed_factor_bytes();
+
+  return List::create(
+    _["n"]            = n,
+    _["nnz_Q"]        = static_cast<double>(nnz_Q),
+    _["factor_bytes"] = static_cast<double>(factor_bytes),
+    _["old_guess"]    = static_cast<double>(nnz_Q) * 2.0 * sizeof(double)
+  );
 }
 
 // Direct algebra check for the MIID block (mcar with Q = I): the precision must

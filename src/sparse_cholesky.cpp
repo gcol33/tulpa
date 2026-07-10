@@ -124,6 +124,26 @@ bool SparseCholeskySolver::factorize(cholmod_sparse* A) {
     return factored_;
 }
 
+std::size_t SparseCholeskySolver::analyzed_factor_bytes() const {
+    if (!factor_) return 0;
+    const cholmod_factor* L = factor_;
+    if (L->is_super) {
+        // Supernodal: factorize() allocates L->x with xsize doubles; the
+        // integer supernode structure (s, plus super/pi/px of size nsuper+1)
+        // is already present from the symbolic analyze.
+        const std::size_t x_bytes = static_cast<std::size_t>(L->xsize) * sizeof(double);
+        const std::size_t s_bytes = static_cast<std::size_t>(L->ssize) * sizeof(int);
+        const std::size_t super_bytes =
+            3 * (static_cast<std::size_t>(L->nsuper) + 1) * sizeof(int);
+        return x_bytes + s_bytes + super_bytes;
+    }
+    // Simplicial: values + row indices + column pointers.
+    const std::size_t x_bytes = static_cast<std::size_t>(L->nzmax) * sizeof(double);
+    const std::size_t i_bytes = static_cast<std::size_t>(L->nzmax) * sizeof(int);
+    const std::size_t p_bytes = (static_cast<std::size_t>(L->n) + 1) * sizeof(int);
+    return x_bytes + i_bytes + p_bytes;
+}
+
 void SparseCholeskySolver::solve(const double* b, double* x, int n) {
     if (!factored_ || !factor_) {
         for (int i = 0; i < n; i++) x[i] = 0.0;

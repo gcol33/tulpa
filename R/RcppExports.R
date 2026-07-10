@@ -577,6 +577,10 @@ cpp_test_outer_thread_cap <- function(budget_bytes, per_thread_bytes) {
     .Call(`_tulpa_cpp_test_outer_thread_cap`, budget_bytes, per_thread_bytes)
 }
 
+cpp_test_grid_factor_bytes <- function(k) {
+    .Call(`_tulpa_cpp_test_grid_factor_bytes`, k)
+}
+
 cpp_test_miid_prior <- function(theta_logchol, p, n, x) {
     .Call(`_tulpa_cpp_test_miid_prior`, theta_logchol, p, n, x)
 }

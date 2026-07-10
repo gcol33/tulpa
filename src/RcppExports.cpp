@@ -2574,6 +2574,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_grid_factor_bytes
+List cpp_test_grid_factor_bytes(int k);
+RcppExport SEXP _tulpa_cpp_test_grid_factor_bytes(SEXP kSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type k(kSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_grid_factor_bytes(k));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_miid_prior
 List cpp_test_miid_prior(NumericVector theta_logchol, int p, int n, NumericVector x);
 RcppExport SEXP _tulpa_cpp_test_miid_prior(SEXP theta_logcholSEXP, SEXP pSEXP, SEXP nSEXP, SEXP xSEXP) {
@@ -3195,6 +3206,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_mcar_prior", (DL_FUNC) &_tulpa_cpp_test_mcar_prior, 8},
     {"_tulpa_cpp_test_outer_thread_mem_budget", (DL_FUNC) &_tulpa_cpp_test_outer_thread_mem_budget, 2},
     {"_tulpa_cpp_test_outer_thread_cap", (DL_FUNC) &_tulpa_cpp_test_outer_thread_cap, 2},
+    {"_tulpa_cpp_test_grid_factor_bytes", (DL_FUNC) &_tulpa_cpp_test_grid_factor_bytes, 1},
     {"_tulpa_cpp_test_miid_prior", (DL_FUNC) &_tulpa_cpp_test_miid_prior, 4},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},

@@ -2245,15 +2245,34 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     {
         const size_t nnz = H_builders[0].values.size();
         // Per-thread working set after the build-once + copy refactor: each
-        // builder's own row_idx(int) + values(double) CSC arrays, plus a
-        // numeric-factor allowance (~16 B per nonzero, doubled for typical
-        // sparse fill-in) for the CHOLMOD factor each concurrent solve carries.
-        // The entry_map (~48 B per nonzero) is now stored ONCE and shared across
-        // every builder (gcol33/tulpa#96), so it no longer scales the per-thread
-        // budget; the Newton scratch / arm specs are O(n_x) and negligible.
+        // builder's own row_idx(int) + values(double) CSC arrays, plus the
+        // CHOLMOD factor each concurrent solve carries. The entry_map (~48 B per
+        // nonzero) is stored ONCE and shared across every builder
+        // (gcol33/tulpa#96), so it no longer scales the per-thread budget.
         const size_t per_builder = nnz * (sizeof(int) + sizeof(double));
-        const size_t per_factor  = nnz * 2 * sizeof(double);
-        const size_t per_thread  = per_builder + per_factor + 1;
+        // Measure the factor the inner solve will actually allocate rather than
+        // guessing its fill-in: a one-time supernodal symbolic analyze of the
+        // joint Hessian pattern (the same as_cholmod view + supernodal
+        // cholmod_common the solve uses) yields the true L->x size. 2D-mesh
+        // Cholesky fill-in is superlinear (nnz(L) grows faster than nnz(Q)), so
+        // the previous flat 2x-nnz(Q) guess under-counted a fine SPDE field and
+        // let the clamp over-provision outer threads. The analyze is symbolic
+        // (no numeric values needed) and runs once in serial setup. Falls back
+        // to the 2x-nnz estimate only if the analyze produces no factor.
+        size_t per_factor;
+        {
+            SparseCholeskySolver sizing_solver;
+            cholmod_sparse Hv = H_builders[0].as_cholmod(&sizing_solver.common());
+            sizing_solver.analyze(&Hv);
+            per_factor = sizing_solver.analyzed_factor_bytes();
+            if (per_factor == 0) per_factor = nnz * 2 * sizeof(double);
+        }
+        // Per-thread Newton scratch is O(n_x): x / x_try / grad / delta (the
+        // per-arm eta buffers are O(sum N_k), bounded by the data). Small next
+        // to the factor for a wide field; counted conservatively so the estimate
+        // rounds up rather than down.
+        const size_t per_scratch = static_cast<size_t>(n_x) * 4 * sizeof(double);
+        const size_t per_thread  = per_builder + per_factor + per_scratch + 1;
         // Budget the replicated per-thread working set against the memory that
         // is actually FREE, not installed (tulpa#64 budgeted against total,
         // which over-provisions on a loaded box -- 50% of a 64 GB machine is 32

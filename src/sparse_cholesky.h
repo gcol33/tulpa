@@ -104,6 +104,16 @@ public:
     // Whether factorize() succeeded
     bool factored() const { return factored_; }
 
+    // Bytes the numeric Cholesky factor will occupy once factorize() runs, read
+    // from the analyzed symbolic factor -- no numeric factorization required.
+    // For a supernodal factor this is L->xsize doubles (the dense supernode
+    // values factorize() allocates) plus the persistent integer supernode
+    // structure; for a simplicial factor it is L->nzmax * (double + int) plus
+    // the column pointers. Returns 0 if analyze() has not produced a factor.
+    // Lets a memory budget size the per-solve factor from its true fill-in
+    // rather than a guessed multiple of nnz(A) (2D-mesh fill-in is superlinear).
+    std::size_t analyzed_factor_bytes() const;
+
     // Access the cholmod_common (for advanced use)
     cholmod_common& common() { return common_; }
 

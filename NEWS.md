@@ -15,6 +15,17 @@
   query is unavailable. The budget arithmetic is factored into `mem_budget.h`
   (`outer_thread_mem_budget()`, `outer_thread_cap()`), single-sourced and
   unit-tested.
+* The per-thread footprint the clamp budgets is now **measured**, not guessed.
+  The dominant term is the CHOLMOD factor each concurrent solve carries, and its
+  fill-in on a 2D SPDE mesh is superlinear, so the previous flat "2x nnz(Q)"
+  allowance under-counted a fine field (3.9x low at a 16x16 lattice, widening to
+  7x low by 96x96 -- and worse still at production resolution). The clamp now
+  runs a one-time supernodal symbolic analysis of the joint Hessian pattern (the
+  same `as_cholmod` view and supernodal `cholmod_common` the inner solve uses)
+  and reads the factor's true `L->xsize`, via the new
+  `SparseCholeskySolver::analyzed_factor_bytes()`; the analysis is symbolic (no
+  numeric values, runs once in serial setup) and falls back to the old estimate
+  only if it produces no factor. The O(n_x) Newton scratch is now counted too.
 * When the clamp has to reduce the requested outer thread count it now emits an
   R **warning** naming the old and new thread counts and the memory budget, so a
   memory-driven slowdown is visible rather than silent. In the floor case -- a
