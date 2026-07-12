@@ -297,13 +297,17 @@
 #'     refinement is summarised on the result as `$local_ccd_info`. Also driven
 #'     automatically by `k_refine = "ccd"`.
 #'   * `adaptive_grid_cutoff` (`10`), `adaptive_grid_stride` (`2L`),
-#'     `adaptive_grid_max_frac` (`0.75`) -- tuning for `integration =
-#'     "grid_adaptive"`. `adaptive_grid_cutoff` is the log-density keep / expand
-#'     radius from the peak (larger keeps more cells, closer to the dense tensor);
-#'     `adaptive_grid_stride` the coarse-seed subsample stride per axis;
-#'     `adaptive_grid_max_frac` the kept-fraction ceiling past which the builder
-#'     declines back to the dense tensor. Ignored by the other integrators. The
-#'     kept-cell / dense / solve counts are returned as `$adaptive_grid_info`.
+#'     `adaptive_grid_max_frac` (`0.75`), `adaptive_grid_min_cells` (`48`) --
+#'     tuning for `integration = "grid_adaptive"`. `adaptive_grid_cutoff` is the
+#'     log-density keep / expand radius from the peak (larger keeps more cells,
+#'     closer to the dense tensor); `adaptive_grid_stride` the coarse-seed
+#'     subsample stride per axis; `adaptive_grid_max_frac` the kept-fraction
+#'     ceiling past which the builder declines back to the dense tensor;
+#'     `adaptive_grid_min_cells` the smallest dense tensor worth the adaptive
+#'     machinery -- below it the builder declines BEFORE any inner solve (on a
+#'     small tensor the coarse seed is already most of the grid, so there is no
+#'     tail to skip). Ignored by the other integrators. The kept-cell / dense /
+#'     solve counts are returned as `$adaptive_grid_info`.
 #'   * `inner_refresh` (`1L`) -- inner-Newton Cholesky factor reuse interval
 #'     (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 #'     beta cover arm) the latent Hessian changes every inner iteration, so the
@@ -717,6 +721,7 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_cutoff           <- control$adaptive_grid_cutoff   %||% 10
     adaptive_stride           <- as.integer(control$adaptive_grid_stride %||% 2L)
     adaptive_max_frac         <- control$adaptive_grid_max_frac %||% 0.75
+    adaptive_min_cells        <- control$adaptive_grid_min_cells %||% 48
     # Outer Pareto-k-hat accuracy diagnostic. `diagnose_k` (default TRUE)
     # importance-samples the joint hyperparameter posterior against the proposal
     # the integrator fits; `diagnose_draws` (default 500) is the number of draws,
@@ -921,6 +926,7 @@ tulpa_nested_laplace_joint <- function(responses,
             adaptive_cutoff = adaptive_cutoff,
             adaptive_stride = adaptive_stride,
             adaptive_max_frac = adaptive_max_frac,
+            adaptive_min_cells = adaptive_min_cells,
             timer = tm
         ))
     }

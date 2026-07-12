@@ -129,12 +129,20 @@
 # (degenerate lattice, all-failed seed, or the max_frac cap).
 .joint_adaptive_flood <- function(axis_values, eval_fn, cutoff = 10,
                                   stride = 2L, max_frac = 0.75,
-                                  max_layers = 64L) {
+                                  min_dense = 48, max_layers = 64L) {
     D    <- length(axis_values)
     dims <- vapply(axis_values, length, integer(1))
     if (D == 0L || any(dims < 1L)) return(NULL)
     n_dense <- prod(as.numeric(dims))
     if (!is.finite(n_dense) || n_dense < 1) return(NULL)
+    # Small-tensor gate: on a grid this small the coarse seed is already a large
+    # fraction of the cells, so locating the mass costs about as much as just
+    # evaluating the whole tensor -- there is no tail worth skipping. Decline
+    # BEFORE any inner solve so the caller runs the dense tensor at zero adaptive
+    # overhead. (The dense path is where small outer grids belong; the adaptive
+    # lattice earns its keep only when the tensor is large enough that the mass
+    # sits in a small fraction of it.)
+    if (n_dense < min_dense) return(NULL)
     cap <- max(1L, floor(max_frac * n_dense))
 
     key_fn <- function(M) {
@@ -237,7 +245,7 @@
 # the dense tensor.
 .joint_adaptive_grid <- function(axis_values, col_names, eval_theta,
                                  cutoff = 10, stride = 2L, max_frac = 0.75,
-                                 verbose = FALSE) {
+                                 min_dense = 48, verbose = FALSE) {
     D <- length(axis_values)
     if (D == 0L) return(NULL)
     # Map integer lattice indices -> physical theta, then hand to eval_theta.
@@ -248,7 +256,8 @@
     }
     fl <- tryCatch(
         .joint_adaptive_flood(axis_values, eval_idx, cutoff = cutoff,
-                              stride = stride, max_frac = max_frac),
+                              stride = stride, max_frac = max_frac,
+                              min_dense = min_dense),
         error = function(e) NULL)
     if (is.null(fl)) return(NULL)
 

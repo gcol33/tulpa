@@ -821,6 +821,7 @@
                                   adaptive_cutoff = 10,
                                   adaptive_stride = 2L,
                                   adaptive_max_frac = 0.75,
+                                  adaptive_min_cells = 48,
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()                    # gcol33/tulpa#48
     integration <- match.arg(integration, c("auto", "ccd", "grid",
@@ -1068,10 +1069,11 @@
         }
 
         ad <- .joint_adaptive_grid(ad_axis_values, ad_col_names, eval_theta_ad,
-                                   cutoff   = adaptive_cutoff,
-                                   stride   = adaptive_stride,
-                                   max_frac = adaptive_max_frac,
-                                   verbose  = verbose)
+                                   cutoff    = adaptive_cutoff,
+                                   stride    = adaptive_stride,
+                                   max_frac  = adaptive_max_frac,
+                                   min_dense = adaptive_min_cells,
+                                   verbose   = verbose)
         if (!is.null(ad)) {
             joint_grid            <- ad$grid
             integration_used      <- "grid_adaptive"

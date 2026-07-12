@@ -121,7 +121,9 @@ test_that("grid_adaptive matches the dense tensor posterior", {
 test_that("grid_adaptive is reproducible run to run", {
     skip_on_cran()
     sim <- .sim_joint_ga(7L, N = 1200L, n_s = 45L)
-    sg <- c(0.3, 0.7, 1.2, 2.0, 3.0); rg <- c(0.2, 0.5, 0.8); ag <- c(0.3, 0.8, 1.5)
+    # 4 x 4 x 3 = 48 cells: at the min-cells floor so the flood is attempted,
+    # and reproducible whether it engages or (on this sim) declines to dense.
+    sg <- c(0.4, 0.9, 1.6, 2.8); rg <- c(0.2, 0.45, 0.65, 0.85); ag <- c(0.3, 0.8, 1.5)
     f1 <- .fit_ga(sim, "grid_adaptive", sg, rg, ag)
     f2 <- .fit_ga(sim, "grid_adaptive", sg, rg, ag)
     expect_equal(length(f1$log_marginal), length(f2$log_marginal))
@@ -164,19 +166,21 @@ test_that("grid_adaptive works at 2 latent axes (ICAR sigma + copy alpha)", {
     sim <- .sim_joint_ga(11L, N = 1400L, n_s = 48L)
     sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
     # ICAR block: sigma only (no rho) -> 2 latent axes with the copy alpha.
+    # 10 x 6 = 60 cells, above adaptive_grid_min_cells so the flood engages.
     blk <- list(type = "icar", spatial_idx = sp,
                 n_spatial_units = sim$adj$n_spatial_units,
                 adj_row_ptr = sim$adj$adj_row_ptr,
                 adj_col_idx = sim$adj$adj_col_idx,
                 n_neighbors = sim$adj$n_neighbors, scale_factor = 1.0,
-                sigma_grid = c(0.3, 0.6, 1.0, 1.6, 2.4, 3.5))
+                sigma_grid = exp(seq(log(0.3), log(3.5), length.out = 10)))
     ctrl <- list(integration = NULL, diagnose_k = FALSE,
                  var_of_means_consistency = FALSE)
     mk <- function(integ) tulpa_nested_laplace_joint(
         sim$responses, list(blk),
-        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2, 1.8)),
+        copy = list(arm = "pos", block = 1L,
+                    alpha_grid = c(0.3, 0.6, 0.9, 1.2, 1.5, 1.8)),
         control = utils::modifyList(ctrl, list(integration = integ)))
-    fit_dense <- mk("grid")
+    fit_dense <- suppressWarnings(mk("grid"))   # 60-cell dense reference (>50 notice)
     fit_adapt <- mk("grid_adaptive")
     expect_identical(fit_adapt$integration, "grid_adaptive")
     expect_lt(length(fit_adapt$log_marginal), length(fit_dense$log_marginal))
@@ -184,4 +188,20 @@ test_that("grid_adaptive works at 2 latent axes (ICAR sigma + copy alpha)", {
         expect_equal(fit_adapt$theta_mean[[nm]], fit_dense$theta_mean[[nm]],
                      tolerance = 0.03, info = paste("2-axis theta_mean", nm))
     }
+})
+
+test_that("grid_adaptive declines to the dense tensor on a small outer grid", {
+    skip_on_cran()
+    sim <- .sim_joint_ga(5L, N = 900L, n_s = 40L)
+    # 2 x 2 x 2 = 8 cells, well below adaptive_grid_min_cells (48): the builder
+    # must decline BEFORE any inner solve and hand back the dense tensor, so the
+    # small-grid case never pays the coarse-seed overhead.
+    fit <- .fit_ga(sim, "grid_adaptive", c(0.5, 1.5), c(0.4, 0.8), c(0.6, 1.2))
+    expect_identical(fit$integration, "grid")     # declined to the tensor
+    expect_null(fit$adaptive_grid_info)
+    expect_equal(length(fit$log_marginal), 2L * 2L * 2L)
+    # And the same fit forced dense is identical (decline is a pure no-op).
+    fit_grid <- .fit_ga(sim, "grid", c(0.5, 1.5), c(0.4, 0.8), c(0.6, 1.2))
+    expect_equal(sort(fit$log_marginal), sort(fit_grid$log_marginal),
+                 tolerance = 1e-10)
 })

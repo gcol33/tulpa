@@ -289,12 +289,17 @@ axes, with no active \code{phi_grid}; otherwise it is a no-op. The applied
 refinement is summarised on the result as \verb{$local_ccd_info}. Also driven
 automatically by \code{k_refine = "ccd"}.
 \item \code{adaptive_grid_cutoff} (\code{10}), \code{adaptive_grid_stride} (\code{2L}),
-\code{adaptive_grid_max_frac} (\code{0.75}) -- tuning for \code{integration = "grid_adaptive"}. \code{adaptive_grid_cutoff} is the log-density keep / expand
-radius from the peak (larger keeps more cells, closer to the dense tensor);
-\code{adaptive_grid_stride} the coarse-seed subsample stride per axis;
-\code{adaptive_grid_max_frac} the kept-fraction ceiling past which the builder
-declines back to the dense tensor. Ignored by the other integrators. The
-kept-cell / dense / solve counts are returned as \verb{$adaptive_grid_info}.
+\code{adaptive_grid_max_frac} (\code{0.75}), \code{adaptive_grid_min_cells} (\code{48}) --
+tuning for \code{integration = "grid_adaptive"}. \code{adaptive_grid_cutoff} is the
+log-density keep / expand radius from the peak (larger keeps more cells,
+closer to the dense tensor); \code{adaptive_grid_stride} the coarse-seed
+subsample stride per axis; \code{adaptive_grid_max_frac} the kept-fraction
+ceiling past which the builder declines back to the dense tensor;
+\code{adaptive_grid_min_cells} the smallest dense tensor worth the adaptive
+machinery -- below it the builder declines BEFORE any inner solve (on a
+small tensor the coarse seed is already most of the grid, so there is no
+tail to skip). Ignored by the other integrators. The kept-cell / dense /
+solve counts are returned as \verb{$adaptive_grid_info}.
 \item \code{inner_refresh} (\code{1L}) -- inner-Newton Cholesky factor reuse interval
 (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 beta cover arm) the latent Hessian changes every inner iteration, so the

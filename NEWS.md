@@ -1,5 +1,17 @@
 # tulpa NEWS
 
+## 0.0.79 (2026-07-12)
+
+* `integration = "grid_adaptive"` now declines to the dense tensor BEFORE any
+  inner solve when the outer grid is small (fewer than `control$adaptive_grid_min_cells`
+  cells, default 48), instead of paying a coarse-seed pass first. On a small
+  tensor the coarse seed is already most of the grid, so there is no tail worth
+  skipping; the guard means the adaptive integrator can never be slower than the
+  dense tensor on a small grid. Measured on the real MOTIVATE 25 km shared-trend
+  fit (a 22-cell outer grid), `grid_adaptive` and `grid` are now the same fit at
+  the same wall-clock. The adaptive integrator earns its speedup only on large
+  outer grids whose hyperparameter posterior concentrates.
+
 ## 0.0.78 (2026-07-12)
 
 * New outer-grid integrator `integration = "grid_adaptive"` for the multi-block
