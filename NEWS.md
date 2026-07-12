@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.78 (2026-07-12)
+
+* New outer-grid integrator `integration = "grid_adaptive"` for the multi-block
+  joint nested-Laplace driver, the low-dimensional companion to the CCD. It seeds
+  a coarse subsample of the hyperparameter tensor lattice (latent block axes and
+  phi axes together), floods outward from the posterior mode on the fine lattice,
+  and evaluates only the cells within a log-density cutoff of the peak. The kept
+  cells are a strict, uniform-weight subset of the dense tensor, so the posterior
+  matches the dense grid to that cutoff (each omitted cell carries dense-grid
+  weight `< exp(-cutoff)`) while evaluating far fewer inner solves when the
+  hyperparameter posterior concentrates -- the fine-grid regime where the mass
+  sits in a handful of cells. On a diffuse posterior it declines back to the dense
+  tensor after only the coarse seed, so it never costs accuracy. Tuned by
+  `control$adaptive_grid_cutoff` / `adaptive_grid_stride` / `adaptive_grid_max_frac`;
+  the kept-cell / dense / solve counts are returned as `$adaptive_grid_info`. The
+  main kernel call re-evaluates the selected cells with the full contract
+  (`store_Q`, phi tensor, tile warm start), so the fixed-effect and per-cell
+  posteriors are unchanged from the dense path. Fills the gap the CCD leaves at
+  `1 <= d <= 3` latent axes, where the CCD mode-find is not worth it but a dense
+  tensor still pays a full inner solve for every near-zero-weight cell.
+
 ## 0.0.77 (2026-07-10)
 
 * The outer-grid thread memory clamp in the sparse joint nested-Laplace driver

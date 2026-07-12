@@ -818,9 +818,13 @@
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   local_ccd = NULL,
+                                  adaptive_cutoff = 10,
+                                  adaptive_stride = 2L,
+                                  adaptive_max_frac = 0.75,
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()                    # gcol33/tulpa#48
-    integration <- match.arg(integration, c("auto", "ccd", "grid"))
+    integration <- match.arg(integration, c("auto", "ccd", "grid",
+                                             "grid_adaptive"))
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -856,6 +860,14 @@
         .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
     })
 
+    # Per-latent-axis fine grid values (sorted unique), shared by the CCD and the
+    # adaptive-lattice integrators to place / locate the outer nodes.
+    block_of_axis      <- rep(seq_len(B), times = axis_counts)
+    col_within         <- unlist(lapply(axis_counts, seq_len))
+    latent_axis_values <- lapply(seq_len(d_axes), function(j) {
+        sort(unique(as.numeric(block_grids[[block_of_axis[j]]][, col_within[j]])))
+    })
+
     # Per-arm dispersion overrides on the outer grid. A phi axis varies
     # independently of the latent-block axes, so it forms a Cartesian (tensor)
     # product with the latent grid -- whether that latent grid is the dense
@@ -880,6 +892,8 @@
     phi_grid_per_arm_list <- NULL
     integration_used      <- "grid"
     joint_grid            <- NULL
+    use_adaptive          <- FALSE
+    adaptive_info         <- NULL
     # Mode-Hessian outer proposal (gcol33/tulpa#116). Set only when the CCD
     # integrator engages: its Gaussian (centre `u_hat`, scale `L_scale` from the
     # analytic curvature at the outer mode) drives the outer Pareto-k so the
@@ -890,12 +904,7 @@
     ccd_requested <- .joint_ccd_engage(integration, d_axes)
     use_ccd <- ccd_requested
     if (use_ccd) {
-        block_of_axis <- rep(seq_len(B), times = axis_counts)
-        col_within    <- unlist(lapply(axis_counts, seq_len))
-        axis_values <- lapply(seq_len(d_axes), function(j) {
-            sort(unique(as.numeric(
-                block_grids[[block_of_axis[j]]][, col_within[j]])))
-        })
+        axis_values <- latent_axis_values
 
         # Warm latent mode for the mode-find / node solves: one solve at the
         # box-centre coordinate, broadcast as x_init so each subsequent inner
@@ -983,7 +992,98 @@
         }
     }
 
-    if (!use_ccd) {
+    # Adaptive lattice (nested_laplace_joint_adaptive.R): the low-dimensional
+    # companion to the CCD. It evaluates a coarse subsample of the full outer
+    # lattice (latent block axes AND phi axes together) to locate the posterior
+    # mass, then floods outward on the fine lattice keeping only the cells within
+    # a log-density cutoff of the peak -- so the far tail, which every dense cell
+    # still pays a full inner solve for, is never placed. The selected cells are
+    # a strict subset of the dense tensor at uniform lattice spacing, so the main
+    # kernel call below evaluates them with the full contract (store_Q, phi, tile
+    # warm start) and the integration weight stays the plain softmax (dnode NULL);
+    # the flood solves here are cheap grid selection (store_Q off, quiet). Declines
+    # to the dense tensor on a degenerate lattice or a diffuse posterior whose kept
+    # region rivals the dense grid.
+    if (!use_ccd && .joint_adaptive_engage(integration, d_axes)) {
+        if (has_phi) {
+            active_ad     <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
+            phi_axis_vals <- lapply(active_ad, function(v)
+                sort(unique(as.numeric(v))))
+            phi_cols_ad   <- paste0("phi_", names(active_ad))
+        } else {
+            phi_axis_vals <- list()
+            phi_cols_ad   <- character(0)
+        }
+        ad_axis_values <- c(latent_axis_values, phi_axis_vals)
+        ad_col_names   <- c(axis_names, phi_cols_ad)
+
+        # One warm centre solve, broadcast as x_init so each flood-selection solve
+        # converges in a few Newton steps rather than cold from the box centre.
+        ad_warm <- x_init
+        centre_theta <- matrix(
+            vapply(ad_axis_values, stats::median, numeric(1)), nrow = 1L,
+            dimnames = list(NULL, ad_col_names))
+        init_ad <- tryCatch(.joint_with_quiet_opts(.cpp_joint_multi(
+            arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
+            copy_blocks = as.integer(cp$copy_blocks_zero), blocks_spec = blocks_spec,
+            theta_grid = .joint_multi_cpp_grid(centre_theta, axis_offsets, B, cp),
+            axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
+            tol = as.numeric(tol), n_threads = as.integer(n_threads),
+            x_init_nullable = x_init, store_Q = FALSE,
+            phi_grid_per_arm = .joint_multi_phi_per_arm(centre_theta, arm_names),
+            n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL,
+            prune_tol = 0.0, force_sparse = isTRUE(force_sparse),
+            cell_coupling_name = as.character(cell_coupling),
+            inner_refresh = as.integer(inner_refresh))),
+            error = function(e) NULL)
+        if (!is.null(init_ad) && is.matrix(init_ad$modes) &&
+            nrow(init_ad$modes) >= 1L && is.finite(init_ad$log_marginal[1L])) {
+            m1 <- as.numeric(init_ad$modes[1L, ])
+            if (all(is.finite(m1))) ad_warm <- m1
+        }
+
+        # Grid-selection evaluator: physical theta (latent + phi columns) -> the
+        # inner joint log-marginal with the hyperprior baked in. store_Q off and
+        # quiet, since these solves only rank cells; the authoritative solve (with
+        # store_Q) is the main kernel call over the selected grid.
+        eval_theta_ad <- function(theta_mat) {
+            r <- .joint_with_quiet_opts(.cpp_joint_multi(
+                arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
+                copy_blocks = as.integer(cp$copy_blocks_zero),
+                blocks_spec = blocks_spec,
+                theta_grid = .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp),
+                axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
+                tol = as.numeric(tol), n_threads = as.integer(n_threads),
+                x_init_nullable = ad_warm, store_Q = FALSE,
+                phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
+                n_threads_outer = as.integer(n_threads_outer),
+                tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0,
+                force_sparse = isTRUE(force_sparse),
+                cell_coupling_name = as.character(cell_coupling),
+                inner_refresh = as.integer(inner_refresh)))
+            list(log_marginal = .joint_multi_add_hp(
+                     r$log_marginal, theta_mat, axis_offsets, B,
+                     fn_sigma, fn_alpha, fn_phi),
+                 modes = NULL)
+        }
+
+        ad <- .joint_adaptive_grid(ad_axis_values, ad_col_names, eval_theta_ad,
+                                   cutoff   = adaptive_cutoff,
+                                   stride   = adaptive_stride,
+                                   max_frac = adaptive_max_frac,
+                                   verbose  = verbose)
+        if (!is.null(ad)) {
+            joint_grid            <- ad$grid
+            integration_used      <- "grid_adaptive"
+            use_adaptive          <- TRUE
+            adaptive_info         <- ad$info
+            # phi columns are already part of the adaptive grid; extract them for
+            # the C++ call and skip the phi tensor cross below.
+            phi_grid_per_arm_list <- .joint_multi_phi_per_arm(joint_grid, arm_names)
+        }
+    }
+
+    if (!use_ccd && !use_adaptive) {
         # Cartesian product of per-block axis grids.
         row_counts <- vapply(block_grids, nrow, integer(1))
         idx <- do.call(expand.grid, lapply(row_counts, seq_len))
@@ -1019,7 +1119,7 @@
     # the latent node's quadrature weight; phi rides as a uniform tensor axis,
     # exactly as on the dense path. A phi axis tied to a latent-block axis is
     # not expressible here; fold it into the relevant block's own axis grid.
-    if (has_phi) {
+    if (has_phi && !use_adaptive) {
         active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
         phi_extra <- do.call(expand.grid,
                               c(active, list(KEEP.OUT.ATTRS = FALSE,
@@ -1043,7 +1143,7 @@
     # the single authoritative line, tied to integration_used, before the heavy
     # inner solves -- so a CCD engaged silently by axis count (or declined back
     # to the tensor on a ridge) is visible without reading fit$...$integration.
-    if (isTRUE(verbose)) {
+    if (isTRUE(verbose) && !use_adaptive) {
         n_phi_cells <- as.integer(round(nrow(joint_grid) / n_latent_cells))
         .joint_announce_integration(
             integration_used, d_axes, n_latent_cells, n_phi_cells,
@@ -1131,7 +1231,7 @@
     # partition-of-unity design weights so the total integration weight is
     # conserved (no double-count).
     local_ccd_info <- NULL
-    if (!is.null(local_ccd) && !use_ccd && !has_phi &&
+    if (!is.null(local_ccd) && !use_ccd && !use_adaptive && !has_phi &&
         .joint_local_ccd_engage(d_axes)) {
         lc <- if (is.list(local_ccd)) local_ccd else list()
         lc_max_cells <- as.integer(lc$max_cells %||% 8L)
@@ -1192,8 +1292,13 @@
     is_ccd <- identical(integration_used, "ccd")
     # Local CCD refinement also leaves a design-weighted (scattered) grid, so it
     # takes the same moment / SD path as the global CCD: weighted moments over the
-    # design, no per-axis lattice SD refit.
-    is_design_weighted <- is_ccd || !is.null(local_ccd_info)
+    # design, no per-axis lattice SD refit. The adaptive lattice is a mass-
+    # concentrated SUBSET of the tensor (gaps in the far tail), so its per-axis
+    # levels are not the regular full lattice the 3-point profile SD refit needs;
+    # and it is dense near the peak, so the weighted var-of-means over the kept
+    # cells is already the calibrated SD. It therefore takes the same weighted-
+    # moment path, not the lattice refit.
+    is_design_weighted <- is_ccd || !is.null(local_ccd_info) || use_adaptive
     res <- .joint_posterior_moments_multi(
         res, prepared, axis_offsets, joint_grid, cp,
         int_weights = if (is_design_weighted) res$weights else NULL)
@@ -1212,6 +1317,7 @@
     res$copy          <- copy
     res$cell_coupling <- cell_coupling
     res$local_ccd_info <- local_ccd_info
+    res$adaptive_grid_info <- adaptive_info
     tm$mark("postproc")
     # Outer Pareto-k-hat: re-evaluate the inner joint marginal at sampled
     # hyperparameters via the shared cpp-grid / phi / hyperprior helpers and

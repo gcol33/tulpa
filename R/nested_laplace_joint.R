@@ -256,10 +256,21 @@
 #'     where the tensor product's `k^d` blow-up bites hardest, and keeps the
 #'     cheaper, more ridge-robust tensor grid at `<= 3` axes; `"ccd"` lowers the
 #'     CCD threshold to `>= 3` axes; `"grid"` always forces the full tensor
-#'     product. The CCD auto-falls back to the tensor grid for an axis whose
-#'     support is not safely transformable (a CAR_proper `rho_car` or a non-BYM2
-#'     `rho`), or a flat / ridged / degenerate outer mode-find or Hessian; an
-#'     active `phi_grid` rides as a tensor axis crossed on top of the CCD.
+#'     product. `"grid_adaptive"` is the low-dimensional companion to the CCD:
+#'     it seeds a coarse subsample of the SAME tensor lattice (latent block axes
+#'     and phi axes together), floods outward from the posterior mode on the fine
+#'     lattice, and evaluates only the cells within a log-density cutoff of the
+#'     peak -- a strict, uniform-weight subset of the dense tensor, so its
+#'     posterior matches the dense grid to that cutoff at fewer inner solves when
+#'     the hyperparameter posterior concentrates (a sharply-identified field SD /
+#'     precision). It declines back to the dense tensor on a diffuse posterior
+#'     (kept region would rival the tensor) or a degenerate lattice, so it never
+#'     costs accuracy; tune it with `adaptive_grid_cutoff` / `adaptive_grid_stride`
+#'     / `adaptive_grid_max_frac`. The CCD auto-falls back to the tensor grid for
+#'     an axis whose support is not safely transformable (a CAR_proper `rho_car`
+#'     or a non-BYM2 `rho`), or a flat / ridged / degenerate outer mode-find or
+#'     Hessian; an active `phi_grid` rides as a tensor axis crossed on top of the
+#'     CCD.
 #'     Single-block joint priors always use the tensor grid. The CCD mode-find
 #'     runs cheap warm-started inner solves and does not write to the checkpoint
 #'     file. Under `verbose = TRUE` the engaged integrator is announced in one
@@ -285,6 +296,14 @@
 #'     axes, with no active `phi_grid`; otherwise it is a no-op. The applied
 #'     refinement is summarised on the result as `$local_ccd_info`. Also driven
 #'     automatically by `k_refine = "ccd"`.
+#'   * `adaptive_grid_cutoff` (`10`), `adaptive_grid_stride` (`2L`),
+#'     `adaptive_grid_max_frac` (`0.75`) -- tuning for `integration =
+#'     "grid_adaptive"`. `adaptive_grid_cutoff` is the log-density keep / expand
+#'     radius from the peak (larger keeps more cells, closer to the dense tensor);
+#'     `adaptive_grid_stride` the coarse-seed subsample stride per axis;
+#'     `adaptive_grid_max_frac` the kept-fraction ceiling past which the builder
+#'     declines back to the dense tensor. Ignored by the other integrators. The
+#'     kept-cell / dense / solve counts are returned as `$adaptive_grid_info`.
 #'   * `inner_refresh` (`1L`) -- inner-Newton Cholesky factor reuse interval
 #'     (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 #'     beta cover arm) the latent Hessian changes every inner iteration, so the
@@ -688,6 +707,16 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`control$local_ccd` must be NULL, TRUE, or a list(max_cells=, f0=).",
              call. = FALSE)
     }
+    # Adaptive-lattice integrator tuning (integration = "grid_adaptive", the
+    # low-dimensional multi-block companion to the CCD; see
+    # nested_laplace_joint_adaptive.R). `adaptive_grid_cutoff` is the log-density
+    # keep/expand radius from the peak (larger = closer to the dense tensor, fewer
+    # cells skipped); `adaptive_grid_stride` the coarse-seed subsample stride;
+    # `adaptive_grid_max_frac` the fraction of the dense grid past which the
+    # builder declines back to the tensor.
+    adaptive_cutoff           <- control$adaptive_grid_cutoff   %||% 10
+    adaptive_stride           <- as.integer(control$adaptive_grid_stride %||% 2L)
+    adaptive_max_frac         <- control$adaptive_grid_max_frac %||% 0.75
     # Outer Pareto-k-hat accuracy diagnostic. `diagnose_k` (default TRUE)
     # importance-samples the joint hyperparameter posterior against the proposal
     # the integrator fits; `diagnose_draws` (default 500) is the number of draws,
@@ -782,7 +811,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # tensor axis crossed on top of the CCD (gcol33/tulpa#61). Single-block joint
     # backends always use the tensor grid (CCD applies to the multi-block path).
     integration               <- match.arg(control$integration %||% "auto",
-                                            c("auto", "ccd", "grid"))
+                                            c("auto", "ccd", "grid",
+                                              "grid_adaptive"))
     # Inner-Newton curvature + PD enforcement for the (possibly indefinite)
     # joint mixture Hessian. "lm" (default) escalates a diagonal ridge until
     # CHOLMOD factorizes the observed Hessian; "psd" eigen-clamps the dense
@@ -888,6 +918,9 @@ tulpa_nested_laplace_joint <- function(responses,
             inner_refresh = inner_refresh,
             integration = integration,
             local_ccd = local_ccd,
+            adaptive_cutoff = adaptive_cutoff,
+            adaptive_stride = adaptive_stride,
+            adaptive_max_frac = adaptive_max_frac,
             timer = tm
         ))
     }

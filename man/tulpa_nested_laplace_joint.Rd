@@ -249,10 +249,21 @@ solves than the \code{d}-dimensional tensor product (\code{25} vs \code{81} at \
 where the tensor product's \code{k^d} blow-up bites hardest, and keeps the
 cheaper, more ridge-robust tensor grid at \verb{<= 3} axes; \code{"ccd"} lowers the
 CCD threshold to \verb{>= 3} axes; \code{"grid"} always forces the full tensor
-product. The CCD auto-falls back to the tensor grid for an axis whose
-support is not safely transformable (a CAR_proper \code{rho_car} or a non-BYM2
-\code{rho}), or a flat / ridged / degenerate outer mode-find or Hessian; an
-active \code{phi_grid} rides as a tensor axis crossed on top of the CCD.
+product. \code{"grid_adaptive"} is the low-dimensional companion to the CCD:
+it seeds a coarse subsample of the SAME tensor lattice (latent block axes
+and phi axes together), floods outward from the posterior mode on the fine
+lattice, and evaluates only the cells within a log-density cutoff of the
+peak -- a strict, uniform-weight subset of the dense tensor, so its
+posterior matches the dense grid to that cutoff at fewer inner solves when
+the hyperparameter posterior concentrates (a sharply-identified field SD /
+precision). It declines back to the dense tensor on a diffuse posterior
+(kept region would rival the tensor) or a degenerate lattice, so it never
+costs accuracy; tune it with \code{adaptive_grid_cutoff} / \code{adaptive_grid_stride}
+/ \code{adaptive_grid_max_frac}. The CCD auto-falls back to the tensor grid for
+an axis whose support is not safely transformable (a CAR_proper \code{rho_car}
+or a non-BYM2 \code{rho}), or a flat / ridged / degenerate outer mode-find or
+Hessian; an active \code{phi_grid} rides as a tensor axis crossed on top of the
+CCD.
 Single-block joint priors always use the tensor grid. The CCD mode-find
 runs cheap warm-started inner solves and does not write to the checkpoint
 file. Under \code{verbose = TRUE} the engaged integrator is announced in one
@@ -277,6 +288,13 @@ curvature stencil needs axis neighbours), at \verb{>= 4} transformable latent
 axes, with no active \code{phi_grid}; otherwise it is a no-op. The applied
 refinement is summarised on the result as \verb{$local_ccd_info}. Also driven
 automatically by \code{k_refine = "ccd"}.
+\item \code{adaptive_grid_cutoff} (\code{10}), \code{adaptive_grid_stride} (\code{2L}),
+\code{adaptive_grid_max_frac} (\code{0.75}) -- tuning for \code{integration = "grid_adaptive"}. \code{adaptive_grid_cutoff} is the log-density keep / expand
+radius from the peak (larger keeps more cells, closer to the dense tensor);
+\code{adaptive_grid_stride} the coarse-seed subsample stride per axis;
+\code{adaptive_grid_max_frac} the kept-fraction ceiling past which the builder
+declines back to the dense tensor. Ignored by the other integrators. The
+kept-cell / dense / solve counts are returned as \verb{$adaptive_grid_info}.
 \item \code{inner_refresh} (\code{1L}) -- inner-Newton Cholesky factor reuse interval
 (Shamanskii / chord method). For a non-quadratic positive arm (e.g. a
 beta cover arm) the latent Hessian changes every inner iteration, so the
