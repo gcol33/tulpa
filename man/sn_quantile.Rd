@@ -23,3 +23,4 @@ Inverse of the skew-normal CDF via Newton iteration on
 \code{\link[=sn_cdf]{sn_cdf()}} with a Brent-style bracket fallback when Newton fails to
 converge.
 }
+\keyword{internal}

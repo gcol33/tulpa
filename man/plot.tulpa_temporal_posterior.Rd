@@ -15,6 +15,11 @@
 
 \item{...}{Additional arguments passed to plotting functions}
 }
+\value{
+A \code{ggplot} object when ggplot2 is installed; otherwise \code{NULL}
+invisibly, after drawing a base-graphics plot. Called for the side effect
+of plotting the temporal-effect posterior.
+}
 \description{
 Plot method for tulpa_temporal_posterior
 }

@@ -20,3 +20,12 @@ Single-row data frame.
 \description{
 Model-level summary statistics (broom-compatible)
 }
+\examples{
+\donttest{
+set.seed(1)
+df <- data.frame(x = rnorm(100))
+df$y <- rpois(100, exp(0.3 * df$x))
+fit <- tulpa(y ~ x, data = df, family = "poisson")
+glance(fit)
+}
+}

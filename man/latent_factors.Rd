@@ -23,7 +23,7 @@ posterior draws.
 Extract latent factor posteriors from fit
 }
 \examples{
-\dontrun{
+\donttest{
 # After fitting with latent factors
 fit <- tulpa(
   count | total ~ x,

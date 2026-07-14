@@ -57,7 +57,7 @@ for (i in 1:9) {
 bym2 <- spatial_bym2(adj, level = "group", group_var = "region")
 print(bym2)
 
-\dontrun{
+\donttest{
 # Generate synthetic epidemiological data (not run - requires laplace backend)
 set.seed(456)
 n_regions <- 10

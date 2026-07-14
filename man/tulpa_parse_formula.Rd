@@ -27,7 +27,7 @@ original formula. Empty list when no \code{latent(...)} terms are present.
 \description{
 Decomposes a formula into fixed effects and random effects by walking
 the formula's abstract syntax tree. This is structural recursion with
-pattern matching on bar terms — no string manipulation.
+pattern matching on bar terms -- no string manipulation.
 }
 \examples{
 pf <- tulpa_parse_formula(y ~ x1 + x2 + (1 | group) + (x1 || site))

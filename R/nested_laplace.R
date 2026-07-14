@@ -79,7 +79,7 @@
 #'   (output of [temporal_rw1()], [temporal_rw2()], [temporal_ar1()],
 #'   [spatial_car()], [spatial_bym2()], etc.). When supplied alongside
 #'   `data`, the `prior` list is built automatically via
-#'   [prior_from_spec()] — pass either `prior` or `spec`, not both.
+#'   [prior_from_spec()] -- pass either `prior` or `spec`, not both.
 #' @param data Data frame used to validate `spec` and resolve
 #'   time/group/site indices. Required when `spec` is supplied.
 #' @param likelihood Optional model-supplied likelihood, replacing the built-in
@@ -306,7 +306,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #   2. Make sure cpp_nested_laplace_<variant> exists in RcppExports.
 # No changes needed to .nl_dispatch() or the public driver.
 
-# Areal CSR adjacency block — shared by icar/bym2/car_proper.
+# Areal CSR adjacency block -- shared by icar/bym2/car_proper.
 .nl_adj_args <- function(p) list(
   spatial_idx     = as.integer(p$spatial_idx),
   n_spatial_units = as.integer(p$n_spatial_units),
@@ -394,7 +394,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     defaults = function(p, a) {
       if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
         rb <- p$rho_bounds %||% c(0, 1)
-        # Margin in from the eigenvalue endpoints — Q goes singular at the
+        # Margin in from the eigenvalue endpoints -- Q goes singular at the
         # boundary, so anchoring the grid in (lower + eps, upper - eps) avoids
         # NaN log-determinants from the per-grid-point Cholesky.
         eps <- 0.05 * (rb[2] - rb[1])
@@ -603,7 +603,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # correlated latent fields share basis + eigenvalues, cross-output
     # coefficients live in Sigma. First ship: K = 2 with raw axes
     # (sigma_1, sigma_2, rho, ell) and the natural Cartesian product over
-    # paired per-axis grids. Multi-block-only — there is no single-arm
+    # paired per-axis grids. Multi-block-only -- there is no single-arm
     # version of multi-output HSGP.
     cpp_fn = NULL,
     defaults = function(p, a) {
@@ -846,7 +846,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #      Hessian H_beta = Sigma_{beta beta}^{-1}.
 #
 # Per-grid memory cost: O(p^2). The dominant compute is the sparse solve,
-# already required for the integrated log-marginal — so adding it here is
+# already required for the integrated log-marginal -- so adding it here is
 # essentially free.
 # ----------------------------------------------------------------------------
 .nl_attach_grid_hessians <- function(res, p_fixed) {

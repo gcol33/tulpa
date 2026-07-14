@@ -13,6 +13,11 @@
 
 \item{...}{Ignored}
 }
+\value{
+A \code{tulpa_svc_summary} data frame with one row per location and term,
+holding the observation index, term name, coordinates, and the posterior
+mean, SD, and requested quantiles of each spatially-varying coefficient.
+}
 \description{
 Summary method for tulpa_svc_posterior
 }

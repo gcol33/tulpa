@@ -77,6 +77,16 @@ construction. The \code{group} argument makes the unit explicit: supply it to
 aggregate columns into folds and report leave-one-group-out CV (LOGO-CV)
 instead, a different and deliberate estimand.
 }
+\examples{
+# A draws x observations log-likelihood matrix (here built directly;
+# in practice extracted from a fitted model's posterior draws).
+set.seed(1)
+y  <- rnorm(40)
+mu <- matrix(rnorm(200 * 40, sd = 0.2), 200, 40)
+ll <- dnorm(matrix(y, 200, 40, byrow = TRUE), mean = mu, log = TRUE)
+tulpa_criteria(ll)
+tulpa_criteria(ll, criteria = "waic", pointwise = TRUE)$pointwise[1:3, ]
+}
 \references{
 Vehtari, Gelman & Gabry (2017). Practical Bayesian model evaluation using
 leave-one-out cross-validation and WAIC. \emph{Statistics and Computing}

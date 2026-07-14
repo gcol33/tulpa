@@ -15,7 +15,7 @@ test_dispersion(
 \arguments{
 \item{object}{A fitted model with \code{simulate()} method}
 
-\item{observed}{Observed response vector (optional — extracted from fit)}
+\item{observed}{Observed response vector (optional -- extracted from fit)}
 
 \item{nsim}{Number of simulations (default 250)}
 

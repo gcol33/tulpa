@@ -29,3 +29,4 @@ Takes a parsed formula and data frame, and constructs:
 \item RE slope matrices (if applicable)
 }
 }
+\keyword{internal}

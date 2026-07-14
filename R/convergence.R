@@ -290,6 +290,14 @@
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
 #' @return The posterior draws matrix/array, or `NULL` if the fit carries none.
 #' @seealso [mcmc_draws()], [mcmc_diagnostics()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(80))
+#' df$y <- rpois(80, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson")
+#' dim(posterior_sample(fit))
+#' }
 #' @export
 posterior_sample <- function(fit) {
   fit$draws %||% fit$samples
@@ -422,6 +430,16 @@ get_draws_array <- function(fit) list(draws = tulpa_draws_array(fit))
 #'   assessing convergence of MCMC. \emph{Bayesian Analysis} 16(2):667-718.
 #' @seealso [tulpa_draws_array()], [plot_rhat()], [plot_ess()],
 #'   [diagnostic_summary()], [check_diagnostics()]
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' mcmc_diagnostics(fit)
+#' }
 #' @export
 mcmc_diagnostics <- function(fit, pars = NULL,
                              measures = c("rhat", "ess_bulk", "ess_tail"),

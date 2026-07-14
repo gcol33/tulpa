@@ -16,7 +16,7 @@ a no-op pass-through.
 \description{
 Wraps a user-defined latent block (currently a \code{\link[=tgmrf]{tgmrf()}} object) so the
 formula parser can recognise and route it to the inference layer. The
-call is structural — it is never executed at fit time. The parser
+call is structural -- it is never executed at fit time. The parser
 evaluates the inner expression in the formula's environment, removes
 the \code{latent(...)} term from the fixed-effects formula, and attaches the
 resulting object to \code{parsed$latent_blocks}.

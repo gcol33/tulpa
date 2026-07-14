@@ -116,7 +116,7 @@ tulpa_multinomial <- function(formula, data, beta_prior_sd = 10,
   bhat <- setNames(as.numeric(beta), pn)
   V <- chol2inv(ch); dimnames(V) <- list(pn, pn)
 
-  if (!is.null(control$seed)) set.seed(as.integer(control$seed))
+  .seed_scoped(control$seed)
   draws <- .ps_rmvnorm(n_draws, bhat, V)     # reuse the Cholesky sampler
 
   fit <- list(

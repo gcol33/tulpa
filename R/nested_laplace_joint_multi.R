@@ -16,7 +16,7 @@
 
 # Validate one arm spec for the multi-block path. Same core as
 # `.normalise_joint_arm` *except* `spatial_idx` is no longer required at
-# the arm level — per-arm idx vectors live inside each block spec instead,
+# the arm level -- per-arm idx vectors live inside each block spec instead,
 # and a missing spatial_idx gets a length-N placeholder of zeros so the
 # existing JointArm packaging path doesn't complain.
 .normalise_joint_arm_multi <- function(a, k) {
@@ -542,7 +542,7 @@
         # obs to a slot in the factor field `u` (length n_latent); the
         # per-arm loadings `lambda` (length n_arms) are part of the joint
         # latent vector and co-optimized by the inner Newton. No outer-
-        # grid axes — identifiability handled by tight Gaussian anchors
+        # grid axes -- identifiability handled by tight Gaussian anchors
         # on (u_1, lambda_1) inside the C++ factory.
         if (is.null(p$obs_idx) || is.null(p$n_latent)) {
             stop("Block ", block_index, " (type 'lf'): both `obs_idx` ",
@@ -600,7 +600,7 @@
 
 # Coerce a per-arm idx field into a length-n_arms list of integer vectors.
 # Accepts either a list (already per-arm) or a single vector (replicated
-# across arms; useful when every arm shares the same indexing — e.g. years
+# across arms; useful when every arm shares the same indexing -- e.g. years
 # 1..T mapped one-to-one).
 .multi_block_per_arm_idx <- function(idx, n_arms, block_index, field_name) {
     if (is.list(idx)) {
@@ -1503,7 +1503,7 @@
         sub <- joint_grid[, cols, drop = FALSE]
         block_mean <- as.numeric(crossprod(w, sub))
         block_sd   <- sqrt(pmax(0, as.numeric(crossprod(w, sub^2)) - block_mean^2))
-        # Strip the "b<N>." prefix on per-block moment names — block index
+        # Strip the "b<N>." prefix on per-block moment names -- block index
         # is implicit in the list position.
         bare_names <- sub("^b[0-9]+\\.", "", colnames(sub))
         names(block_mean) <- bare_names

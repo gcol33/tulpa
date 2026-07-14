@@ -19,6 +19,15 @@ chain, a nested-Laplace node mixture, or a variational sample all answer
 here. For the chain-only view used by convergence diagnostics, see
 \code{\link[=mcmc_draws]{mcmc_draws()}}.
 }
+\examples{
+\donttest{
+set.seed(1)
+df <- data.frame(x = rnorm(80))
+df$y <- rpois(80, exp(0.5 + 0.3 * df$x))
+fit <- tulpa(y ~ x, data = df, family = "poisson")
+dim(posterior_sample(fit))
+}
+}
 \seealso{
 \code{\link[=mcmc_draws]{mcmc_draws()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
 }

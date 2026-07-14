@@ -4,7 +4,7 @@
 #' Single-path Pathfinder (Zhang, Carpenter, Gelman, Vehtari 2022):
 #' run L-BFGS toward the posterior mode, fit a Gaussian at the optimum
 #' using the inverse-Hessian estimate, and report draws plus the ELBO.
-#' Cheap, derivative-only, embarrassingly parallel — meant as an HMC
+#' Cheap, derivative-only, embarrassingly parallel -- meant as an HMC
 #' warm-start, an initialiser for [imh_laplace()], or a quick
 #' sanity check on the Laplace approximation.
 #'
@@ -15,7 +15,7 @@
 #'
 #' @section Tier:
 #' Tier 2 (Structured). The output is a Gaussian approximation, not
-#' samples from the exact posterior — same epistemic class as
+#' samples from the exact posterior -- same epistemic class as
 #' [tulpa_laplace()]. Pair with [imh_laplace()] for an exact-tier
 #' upgrade.
 #'
@@ -47,24 +47,22 @@
 #' @references
 #' Zhang, L., Carpenter, B., Gelman, A., & Vehtari, A. (2022).
 #' Pathfinder: parallel quasi-Newton variational inference.
-#' *Journal of Machine Learning Research*, 23(306), 1–49.
+#' *Journal of Machine Learning Research*, 23(306), 1-49.
 #'
 #' @seealso [imh_laplace()] for an exact-tier MH using the Pathfinder
 #'   Gaussian as proposal; [bridge_sampling()] for marginal-likelihood
 #'   estimation on the resulting draws.
 #'
 #' @examples
-#' \dontrun{
-#'   # Toy: 2-D conjugate normal.
-#'   y <- c(0.5, -0.7)
-#'   log_post <- function(t) {
-#'     sum(dnorm(y, t, 1, log = TRUE)) +
-#'       sum(dnorm(t, 0, sqrt(10), log = TRUE))
-#'   }
-#'   pf <- pathfinder(log_post, init = c(0, 0), n_draws = 2000)
-#'   pf$mode      # near c(0.45, -0.64)
-#'   pf$elbo
+#' # Toy: 2-D conjugate normal.
+#' y <- c(0.5, -0.7)
+#' log_post <- function(t) {
+#'   sum(dnorm(y, t, 1, log = TRUE)) +
+#'     sum(dnorm(t, 0, sqrt(10), log = TRUE))
 #' }
+#' pf <- pathfinder(log_post, init = c(0, 0), n_draws = 2000)
+#' pf$mode      # near c(0.45, -0.64)
+#' pf$elbo
 #'
 #' @export
 pathfinder <- function(log_posterior,
@@ -108,7 +106,7 @@ pathfinder <- function(log_posterior,
 
   mode <- opt$par
   # opt$hessian is the Hessian of fn = -log_posterior, which equals
-  # the negative Hessian of log_posterior — exactly the precision
+  # the negative Hessian of log_posterior -- exactly the precision
   # matrix at the mode.
   H <- opt$hessian
   H <- 0.5 * (H + t(H))   # symmetrise

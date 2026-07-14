@@ -116,7 +116,7 @@ latent_factor(n_factors = 1, prior = prior_pc(U = 0.5, alpha = 0.01))
 # Numerator-only factor (not shared)
 latent_factor(n_factors = 1, shared = FALSE)
 
-\dontrun{
+\donttest{
 # Use in model fitting
 fit <- tulpa(
   species_count | total_count ~ habitat + (1 | site),

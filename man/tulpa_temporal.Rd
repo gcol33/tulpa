@@ -3,6 +3,12 @@
 \name{tulpa_temporal}
 \alias{tulpa_temporal}
 \title{Temporal structure specifications for tulpa}
+\value{
+The temporal constructors documented in this family
+(\code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}}, and the others) each
+return a \code{tulpa_temporal} specification object to pass to the \code{temporal}
+argument of \code{\link[=tulpa]{tulpa()}}.
+}
 \description{
 Functions to specify temporal random effects for tulpa models.
 Temporal effects are shared between processes by default,

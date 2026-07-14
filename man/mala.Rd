@@ -77,27 +77,25 @@ for high-dimensional Gaussians).
 \section{Tier}{
 
 Tier 1 (Exact). The MH step makes the chain asymptotically correct.
-Mixing depends on whether the gradient gives useful local geometry —
+Mixing depends on whether the gradient gives useful local geometry --
 poor for posteriors with very different scales across dimensions
 (use a preconditioner or HMC instead).
 }
 
 \examples{
-\dontrun{
-  log_post <- function(t) -0.5 * sum((t - c(1, 2))^2)
-  grad <- function(t) -(t - c(1, 2))
-  fit <- mala(log_post, grad, init = c(0, 0), n_iter = 4000)
-  colMeans(fit$draws)  # near c(1, 2)
-  fit$mean_accept      # should adapt toward 0.574
-}
+log_post <- function(t) -0.5 * sum((t - c(1, 2))^2)
+grad <- function(t) -(t - c(1, 2))
+fit <- mala(log_post, grad, init = c(0, 0), n_iter = 1000)
+colMeans(fit$draws)  # near c(1, 2)
+fit$mean_accept      # should adapt toward 0.574
 
 }
 \references{
 Roberts, G. O., & Tweedie, R. L. (1996). Exponential convergence of
 Langevin distributions and their discrete approximations.
-\emph{Bernoulli}, 2(4), 341–363.
+\emph{Bernoulli}, 2(4), 341-363.
 
 Roberts, G. O., & Rosenthal, J. S. (1998). Optimal scaling of
 discrete approximations to Langevin diffusions. \emph{JRSS B}, 60(1),
-255–268.
+255-268.
 }

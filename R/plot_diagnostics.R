@@ -51,7 +51,7 @@ theme_tulpa <- function() {
 #' # Diagnostic plots require a fitted tulpa model
 #' # See tulpa() examples for fitting models
 #'
-#' \dontrun{
+#' \donttest{
 #' # Fit a model (slow, not run on CRAN)
 #' set.seed(123)
 #' n <- 50
@@ -589,7 +589,6 @@ plot_pairs_base <- function(draws_df, pars, has_divergent, alpha) {
 #'
 #' @details
 #' Divergent transitions indicate regions of high posterior curvature that
-
 #' the sampler cannot efficiently explore. Common causes:
 #' - Very narrow funnels (hierarchical models)
 #' - Strong correlations
@@ -1095,6 +1094,9 @@ if (!quiet) {
 #' @param x A tulpa_diagnostic_summary object.
 #' @param ... Ignored.
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the diagnostic summary to the console.
+#'
 #' @export
 print.tulpa_diagnostic_summary <- function(x, ...) {
   # Status color (ANSI codes)
@@ -1372,6 +1374,9 @@ spectrum0_ar <- function(x) {
 #'
 #' @param x A tulpa_geweke object.
 #' @param ... Ignored.
+#'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the Geweke convergence diagnostic to the console.
 #'
 #' @export
 print.tulpa_geweke <- function(x, ...) {

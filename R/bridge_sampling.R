@@ -2,13 +2,13 @@
 #'
 #' @description
 #' Estimate the log marginal likelihood \eqn{\log Z = \log p(y)} from
-#' posterior draws via the Meng–Wong / Gronau bridge-sampling identity.
+#' posterior draws via the Meng-Wong / Gronau bridge-sampling identity.
 #' Useful for Bayes factors, model comparison, and as a sanity check on
 #' Laplace-approximated marginal likelihoods.
 #'
 #' The classical iterative scheme (Meng & Wong 1996; Gronau et al. 2017)
 #' is used with a multivariate-normal proposal fit to half of the
-#' posterior draws — the other half is used for the bridge ratio so the
+#' posterior draws -- the other half is used for the bridge ratio so the
 #' proposal is independent of the samples that score it. All
 #' computations are done in log-space via `logsumexp` for numerical
 #' stability.
@@ -38,32 +38,30 @@
 #'   * `log_marginal`: the bridge-sampling estimate of \eqn{\log Z}.
 #'   * `n_iter`: bridge iterations to convergence.
 #'   * `converged`: logical.
-#'   * `re_sd`: relative MSE estimate (Frühwirth-Schnatter 2004); a
+#'   * `re_sd`: relative MSE estimate (Fruehwirth-Schnatter 2004); a
 #'     rough quality check, smaller is better.
 #'   * `proposal`: the fitted proposal `list(mean, cov)`.
 #'
 #' @references
 #' Meng, X.-L., & Wong, W. H. (1996). Simulating ratios of normalizing
 #' constants via a simple identity: a theoretical exploration.
-#' *Statistica Sinica*, 6, 831–860.
+#' *Statistica Sinica*, 6, 831-860.
 #'
 #' Gronau, Q. F., Sarafoglou, A., Matzke, D., Ly, A., Boehm, U., Marsman,
 #' M., ... & Steingroever, H. (2017). A tutorial on bridge sampling.
-#' *Journal of Mathematical Psychology*, 81, 80–97.
+#' *Journal of Mathematical Psychology*, 81, 80-97.
 #'
 #' @examples
-#' \dontrun{
-#'   # Toy: marginal likelihood of N(theta | 0, 1) under Y = theta + eps,
-#'   # eps ~ N(0, 1), prior theta ~ N(0, 10). Closed-form available.
-#'   y <- 1.5
-#'   log_post <- function(theta) {
-#'     dnorm(y, theta, 1, log = TRUE) + dnorm(theta, 0, 10, log = TRUE)
-#'   }
-#'   draws <- matrix(rnorm(2000, mean = y * 100 / 101, sd = sqrt(100 / 101)),
-#'                   ncol = 1)
-#'   bs <- bridge_sampling(draws, log_post)
-#'   bs$log_marginal  # should match dnorm(y, 0, sqrt(101), log = TRUE)
+#' # Toy: marginal likelihood of N(theta | 0, 1) under Y = theta + eps,
+#' # eps ~ N(0, 1), prior theta ~ N(0, 10). Closed-form available.
+#' y <- 1.5
+#' log_post <- function(theta) {
+#'   dnorm(y, theta, 1, log = TRUE) + dnorm(theta, 0, 10, log = TRUE)
 #' }
+#' draws <- matrix(rnorm(2000, mean = y * 100 / 101, sd = sqrt(100 / 101)),
+#'                 ncol = 1)
+#' bs <- bridge_sampling(draws, log_post)
+#' bs$log_marginal  # should match dnorm(y, 0, sqrt(101), log = TRUE)
 #'
 #' @export
 bridge_sampling <- function(draws,
@@ -186,8 +184,8 @@ bridge_sampling <- function(draws,
     log_r <- log_r_new
   }
 
-  # Relative MSE (Frühwirth-Schnatter 2004 / bridgesampling::error_measures):
-  # an approximate variance check on log r. Small re_sd ⇒ stable estimate.
+  # Relative MSE (Fruehwirth-Schnatter 2004 / bridgesampling::error_measures):
+  # an approximate variance check on log r. Small re_sd => stable estimate.
   e2 <- exp(l2 - log_denom_j)
   re_sd <- sqrt(stats::var(e2) / N2) / mean(e2)
 

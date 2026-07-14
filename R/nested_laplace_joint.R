@@ -1,17 +1,17 @@
 #' Joint multi-likelihood nested Laplace approximation
 #'
 #' @description
-#' Outer-grid nested Laplace driver for *joint* models — multiple response
+#' Outer-grid nested Laplace driver for *joint* models -- multiple response
 #' arms sharing one latent prior block, parameterized as a per-arm field
 #' amplitude (sigma) on a unit-precision latent.
 #'
 #' Supported priors:
-#'  * `"bym2"`       — outer grid over `(sigma, rho [, alpha])`.
+#'  * `"bym2"`       -- outer grid over `(sigma, rho [, alpha])`.
 #'                     Latent: `phi (n_s) | theta (n_s)` with unit-precision
 #'                     ICAR + iid components.
-#'  * `"icar"`       — outer grid over `(sigma [, alpha])`.
+#'  * `"icar"`       -- outer grid over `(sigma [, alpha])`.
 #'                     Latent: `phi (n_s)` with unit-precision ICAR.
-#'  * `"car_proper"` — outer grid over `(sigma, rho_car [, alpha])`.
+#'  * `"car_proper"` -- outer grid over `(sigma, rho_car [, alpha])`.
 #'                     Latent: `phi (n_s)` with `Q = D - rho_car * W`.
 #'
 #' Other backends (NNGP, HSGP, RW1/2, AR1) follow the same interface and
@@ -33,25 +33,25 @@
 #' hyperprior land on \eqn{\alpha} directly.
 #'
 #' @param responses A named list of arm specs (length >= 1). Each arm:
-#'   * `y`           — numeric `[N_arm]` response.
-#'   * `n_trials`    — integer `[N_arm]` (use `rep(1L, N_arm)` for non-binomial).
-#'   * `X`           — numeric matrix `[N_arm x p_arm]` fixed-effects design.
-#'   * `spatial_idx` — integer `[N_arm]`, 1-based map obs -> spatial unit.
-#'   * `re_idx`      — optional numeric `[N_arm]` 1-based RE group index;
+#'   * `y`           -- numeric `[N_arm]` response.
+#'   * `n_trials`    -- integer `[N_arm]` (use `rep(1L, N_arm)` for non-binomial).
+#'   * `X`           -- numeric matrix `[N_arm x p_arm]` fixed-effects design.
+#'   * `spatial_idx` -- integer `[N_arm]`, 1-based map obs -> spatial unit.
+#'   * `re_idx`      -- optional numeric `[N_arm]` 1-based RE group index;
 #'                     defaults to `rep(0, N_arm)` (no RE).
-#'   * `n_re_groups` — optional integer (default `0L`).
-#'   * `sigma_re`    — optional numeric (default `1`); ignored when
+#'   * `n_re_groups` -- optional integer (default `0L`).
+#'   * `sigma_re`    -- optional numeric (default `1`); ignored when
 #'                     `n_re_groups == 0`.
-#'   * `family`      — one of `"binomial"`, `"gaussian"`, `"poisson"`,
+#'   * `family`      -- one of `"binomial"`, `"gaussian"`, `"poisson"`,
 #'                     `"neg_binomial_2"`, `"beta"`, `"lognormal"`,
 #'                     `"gamma"`, `"inverse_gaussian"`. For `"lognormal"`,
 #'                     `y` is on the natural scale and the linear
 #'                     predictor `eta = E[log y]` (identity link on the
 #'                     log scale); the `-log(y)` Jacobian is included in
 #'                     the kernel's `log_lik`.
-#'   * `phi`         — numeric dispersion (gaussian/lognormal residual
+#'   * `phi`         -- numeric dispersion (gaussian/lognormal residual
 #'                     SD, negbin size, beta precision); default `1`.
-#'   * `field_coef`  — optional per-arm field coefficient controlling
+#'   * `field_coef`  -- optional per-arm field coefficient controlling
 #'                     this arm's multiplier on the shared latent field's
 #'                     amplitude. One of:
 #'                     * numeric scalar (default `1`) -- constant
@@ -97,23 +97,23 @@
 #' @param phi_grid Optional list specifying per-arm dispersion axes on the
 #'   outer grid. Accepts either a named list (keys = arm names) or a
 #'   positional list of length `n_arms`. Each entry is one of:
-#'   * `NULL` or scalar — no axis for that arm; the kernel uses the
+#'   * `NULL` or scalar -- no axis for that arm; the kernel uses the
 #'     parse-time scalar `responses[[k]]$phi`.
-#'   * numeric vector of length > 1 — adds a new outer-grid axis
+#'   * numeric vector of length > 1 -- adds a new outer-grid axis
 #'     `phi_<arm>` taking those values; the kernel rewrites
 #'     `arms[k].phi` at each grid point before the inner Newton solve.
 #'
 #'   Family-specific interpretation of `arm$phi` (the parse-time scalar
 #'   and the grid values):
-#'   * `gaussian` — residual SD (variance is `phi^2`). Use `phi_grid` to
+#'   * `gaussian` -- residual SD (variance is `phi^2`). Use `phi_grid` to
 #'     estimate the residual SD as a hyperparameter instead of pinning
 #'     it pre-fit.
-#'   * `lognormal` — residual SD on the log scale; identical kernel
+#'   * `lognormal` -- residual SD on the log scale; identical kernel
 #'     parameterization as `gaussian` plus the `-log(y)` Jacobian.
-#'   * `neg_binomial_2` — dispersion (variance is `mu + mu^2/phi`).
-#'   * `beta` — precision (variance is `mu(1-mu)/(1+phi)`).
-#'   * `gamma`, `inverse_gaussian` — shape / dispersion.
-#'   * `binomial`, `poisson` — ignored.
+#'   * `neg_binomial_2` -- dispersion (variance is `mu + mu^2/phi`).
+#'   * `beta` -- precision (variance is `mu(1-mu)/(1+phi)`).
+#'   * `gamma`, `inverse_gaussian` -- shape / dispersion.
+#'   * `binomial`, `poisson` -- ignored.
 #'
 #'   Each `phi_<arm>` axis is appended to the Cartesian product and
 #'   varies slowest (within-spatial warm starts hold). The axis appears
@@ -425,38 +425,38 @@
 #'
 #' @return A list of class `c("tulpa_nested_laplace_joint",
 #'   "tulpa_nested_laplace", "list")` with:
-#'   * `theta_grid`, `theta_names` — outer-grid hyperparameter values
+#'   * `theta_grid`, `theta_names` -- outer-grid hyperparameter values
 #'     (includes the `alpha` axis when `copy` is set).
-#'   * `log_marginal`, `weights` — per-grid-point log-marginal and integration
+#'   * `log_marginal`, `weights` -- per-grid-point log-marginal and integration
 #'      weights (sum to 1).
-#'   * `theta_mean`, `theta_sd` — posterior moments per hyperparameter,
+#'   * `theta_mean`, `theta_sd` -- posterior moments per hyperparameter,
 #'      including `alpha` when `copy` is set.
-#'   * `theta_median`, `theta_ci_lo`, `theta_ci_hi` — weighted-quantile
+#'   * `theta_median`, `theta_ci_lo`, `theta_ci_hi` -- weighted-quantile
 #'      median and 2.5/97.5 empirical CI per hyperparameter axis (same
 #'      names as `theta_mean`). Recommended summary for right-skewed
 #'      scale-like axes (alpha at small n_pos, sigma/range/phi near
 #'      a boundary), where the posterior mean is pulled by the right
 #'      tail away from the bulk and `mean +/- 1.96 sd` mis-states the
 #'      uncertainty.
-#'   * `modes` — `[n_grid x n_x]` matrix of inner modes.
-#'   * `n_iter` — inner Newton iterations per grid point.
-#'   * `arm_layout` — list with per-arm `beta_start`, `re_start`,
+#'   * `modes` -- `[n_grid x n_x]` matrix of inner modes.
+#'   * `n_iter` -- inner Newton iterations per grid point.
+#'   * `arm_layout` -- list with per-arm `beta_start`, `re_start`,
 #'      spatial offset(s) and `n_x` for decoding modes.
-#'   * `prior`, `responses`, `copy` — echoed inputs.
-#'   * `timing` — named numeric of wall-clock seconds: `total` plus the
+#'   * `prior`, `responses`, `copy` -- echoed inputs.
+#'   * `timing` -- named numeric of wall-clock seconds: `total` plus the
 #'      `setup` (validation / encoding / grid construction), `grid` (inner
 #'      Laplace solves, including adaptive-refinement and consistency passes),
 #'      `postproc` (weight / moment / marginal assembly) and `diagnostics`
 #'      (outer Pareto-\eqn{\hat{k}}) phases. The `grid` phase is the one that
 #'      scales with grid size and core count. Surfaced one-line in `print`.
-#'   * `pareto_k`, `pareto_k_is_ess`, `pareto_k_scope` — outer
+#'   * `pareto_k`, `pareto_k_is_ess`, `pareto_k_scope` -- outer
 #'      Pareto-\eqn{\hat{k}} accuracy diagnostic and its importance-sampling
 #'      ESS (both `NA` when `control$diagnose_k = FALSE` or the fit declines;
 #'      see the `diagnose_k` control knob). `pareto_k < 0.7` indicates the
 #'      nested integration is reliable; `>= 0.7` that the (skewed / heavy-
 #'      tailed) hyperparameter posterior is misfit by the Gaussian grid and
 #'      the fit should escalate to an exact debias.
-#'   * `pareto_k_proposal_source` — how the outer importance proposal the
+#'   * `pareto_k_proposal_source` -- how the outer importance proposal the
 #'      \eqn{\hat{k}} scores was built: `"mode_hessian"` from the Laplace
 #'      curvature at the hyperparameter mode (the CCD design's, or a
 #'      finite-difference Hessian when a sharp posterior collapses the grid),
@@ -465,7 +465,7 @@
 #'      \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
 #'   * `pareto_k_se_boot`, `pareto_k_ci_low`, `pareto_k_ci_high`,
 #'      `pareto_k_se_formula`, `pareto_k_tail_points`,
-#'      `pareto_k_tail_points_requested`, `pareto_k_band_confident` — the outer
+#'      `pareto_k_tail_points_requested`, `pareto_k_band_confident` -- the outer
 #'      Pareto-\eqn{\hat{k}} uncertainty (gcol33/tulpa#127), present whenever the
 #'      diagnostic ran. `pareto_k_se_boot` is the bootstrap SE of the k-hat and
 #'      `pareto_k_ci_low` / `pareto_k_ci_high` its 2.5\% / 97.5\% bootstrap
@@ -478,7 +478,7 @@
 #'      off or could not fit. `diagnose_draws` and `diagnose_cost_ratio` (the
 #'      diagnostic's draw budget and its wall-clock cost relative to the fit) are
 #'      attached at the top level.
-#'   * `pareto_k_by_arm`, `pareto_k_by_arm_is_ess`, `pareto_k_by_arm_scope` —
+#'   * `pareto_k_by_arm`, `pareto_k_by_arm_is_ess`, `pareto_k_by_arm_scope` --
 #'      present only with `control$diagnose_k = "by_arm"` (gcol33/tulpa#120).
 #'      Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 #'      hyperparameter axes, the other arms held at their posterior mean, so a
@@ -488,7 +488,7 @@
 #'      `pareto_k_by_arm_ci_high`, `pareto_k_by_arm_se_formula`,
 #'      `pareto_k_by_arm_tail_points` and `pareto_k_by_arm_band_confident`.
 #'   * `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
-#'      `k_quality_reason`, `k_quality_rounds` — the reliability verdict for the
+#'      `k_quality_reason`, `k_quality_rounds` -- the reliability verdict for the
 #'      `control$k_quality` intent (gcol33/tulpa#129, #131). `k_quality_requested`
 #'      echoes the intent; `k_quality_best` is the band actually achieved
 #'      (`"good"` / `"ok"` / `"unreliable"`, or `"uncertain"` when the bootstrap CI
@@ -497,21 +497,21 @@
 #'      downgraded; `k_quality_reason` records why it stopped; and
 #'      `k_quality_rounds` is the number of escalation re-fits performed (`0` when
 #'      the first fit sufficed or escalation was off).
-#'   * `adaptive_grid_info` — when `adaptive_grid = TRUE`, a list with
+#'   * `adaptive_grid_info` -- when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
-#'   * `local_ccd_info` — when `local_ccd` engaged (or `k_refine = "ccd"`), a
+#'   * `local_ccd_info` -- when `local_ccd` engaged (or `k_refine = "ccd"`), a
 #'      list with `n_cells_refined`, `n_nodes_added`, the refined `cells`, and the
 #'      `n_cells_before` / `n_cells_after` grid sizes. NULL when local CCD was off
 #'      or declined (single-block, `< 4` axes, an active `phi_grid`, or no peaked
 #'      interior cell).
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
-#'      `prune_tol` — present only when `prune = TRUE` and the safety gate did
+#'      `prune_tol` -- present only when `prune = TRUE` and the safety gate did
 #'      not fall back. Cheap-pass log-marginals at every cell, a logical mask
 #'      of pruned cells, the pruned-cell count, and the threshold actually
 #'      applied. Pruned cells have `log_marginal = -Inf` so they get zero
 #'      weight under `.nl_normalise_weights_safe`.
-#'   * `prune_fallback_triggered`, `prune_fallback_reason` — present only when
+#'   * `prune_fallback_triggered`, `prune_fallback_reason` -- present only when
 #'      the safety gate fell back to the full grid. The returned fit is the
 #'      full-grid (unpruned) result; the reason string records which gate
 #'      condition tripped.
@@ -889,7 +889,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # Pruning toggle: the kernel takes prune_tol > 0 to mean "screen and
     # prune"; gate it here with the user-facing `prune` boolean so the toggle
     # composes cleanly (prune=FALSE always disables, prune=TRUE uses
-    # prune_tol). prune_tol must be in [0, 1) — clamp out-of-range to 0
+    # prune_tol). prune_tol must be in [0, 1) -- clamp out-of-range to 0
     # rather than erroring, because a zero tolerance is the safe no-op.
     if (!isTRUE(prune)) {
         prune_tol_eff <- 0.0

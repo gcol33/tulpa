@@ -38,6 +38,7 @@
 #'   * `f_0`: the sphere radius used.
 #'
 #' @seealso [ccd_to_theta()] to map z-coordinates to physical theta.
+#' @keywords internal
 #' @export
 ccd_grid <- function(k, f_0 = sqrt(k)) {
   k <- as.integer(k)
@@ -49,7 +50,7 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
   z_center <- matrix(0, nrow = 1L, ncol = k)
   kind <- "center"
 
-  # Axial points: ±f_0 along each coordinate axis.
+  # Axial points: +-f_0 along each coordinate axis.
   if (k >= 1L) {
     z_ax <- matrix(0, nrow = 2L * k, ncol = k)
     for (j in seq_len(k)) {
@@ -61,7 +62,7 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
     z_ax <- matrix(0, nrow = 0L, ncol = k)
   }
 
-  # Factorial points: corners of (±1)^k scaled so each corner has norm f_0.
+  # Factorial points: corners of (+-1)^k scaled so each corner has norm f_0.
   # For k <= 6 use the full 2^k design; for k >= 7 use a Resolution-V
   # half-fraction (defining word: product of all x_j == +1) so the
   # number of factorial points stays at 2^(k-1).
@@ -102,7 +103,7 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #' \eqn{\theta = \hat\theta + L \cdot z} with optional log-scale
 #' transform per component. `L` is typically a Cholesky factor of the
 #' negative Hessian inverse evaluated at the (working) mode \eqn{\hat\theta}
-#' — i.e. it scales `z` to one posterior standard deviation per axis.
+#' -- i.e. it scales `z` to one posterior standard deviation per axis.
 #'
 #' @param z Matrix `[n_points x k]` of standardised coordinates from
 #'   [ccd_grid()].
@@ -119,6 +120,7 @@ ccd_grid <- function(k, f_0 = sqrt(k)) {
 #'
 #' @return Numeric matrix `[n_points x k]` of physical theta-values.
 #'
+#' @keywords internal
 #' @export
 ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
   if (!is.matrix(z)) stop("`z` must be a matrix.", call. = FALSE)
@@ -163,6 +165,7 @@ ccd_to_theta <- function(z, theta_hat, L, log_scale = FALSE) {
 #'   point (the centre weight `w0` for the central point, `w` otherwise).
 #'
 #' @seealso [ccd_grid()], [ccd_to_theta()].
+#' @keywords internal
 #' @export
 ccd_weights <- function(ccd) {
   m  <- ncol(ccd$z)

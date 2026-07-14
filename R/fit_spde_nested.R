@@ -23,10 +23,10 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 # Nested-Laplace integration backends for fit_spde().
 #
 # Two methods are supported:
-#   * "grid" — rectangular grid in log(range) x log(sigma) around the
+#   * "grid" -- rectangular grid in log(range) x log(sigma) around the
 #     prior modes. Cheap, defensible, but burns most of its budget on
 #     points that the data have already ruled out.
-#   * "ccd"  — Central composite design centered on the joint posterior
+#   * "ccd"  -- Central composite design centered on the joint posterior
 #     mode of (range, sigma), oriented by the local Hessian. Mirrors
 #     R-INLA's hyperparameter integration recipe; for k = 2 it uses
 #     1 + 2*2 + 2^2 = 9 design points instead of n_grid^2 = 25 (default).

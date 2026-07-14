@@ -7,7 +7,7 @@
 #' the Laplace-approximated log-marginal over `phi`, then refits at the
 #' optimum to return betas and Hessian.
 #'
-#' The mean–precision parameterisation is `y ~ Beta(mu * phi, (1 - mu) * phi)`
+#' The mean-precision parameterisation is `y ~ Beta(mu * phi, (1 - mu) * phi)`
 #' with default logit link; `y` must be strictly in `(0, 1)`.
 #'
 #' @param y Response in `(0, 1)`.

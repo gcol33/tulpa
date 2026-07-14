@@ -10,6 +10,10 @@
 #' especially for clusters with few observations or non-Gaussian
 #' likelihoods.
 #'
+#' This is an engine block, not a front door: its tuning knobs
+#' (`max_iter`, `tol`, `n_quad`) sit in the signature rather than in a
+#' `control` list.
+#'
 #' Scoped to the `lme4::glmer(..., nAGQ = N)` use case: one intercept-
 #' only RE term, families `binomial`, `poisson`, or `gaussian`. For
 #' multi-RE or random-slope models, use [tulpa_laplace()] (Laplace at
@@ -17,7 +21,7 @@
 #'
 #' @section Tier:
 #' Tier 2 (Structured). AGQ is exact in the limit `n_quad -> infinity`
-#' but at finite `n_quad` it is a controlled approximation — same
+#' but at finite `n_quad` it is a controlled approximation -- same
 #' epistemic class as Laplace.
 #'
 #' @param y Response vector.
@@ -52,27 +56,25 @@
 #' @references
 #' Pinheiro, J. C., & Bates, D. M. (1995). Approximations to the
 #' log-likelihood function in the nonlinear mixed-effects model.
-#' *Journal of Computational and Graphical Statistics*, 4(1), 12–35.
+#' *Journal of Computational and Graphical Statistics*, 4(1), 12-35.
 #'
 #' @seealso [tulpa_laplace()] for the joint-mode Laplace path
 #'   (handles multi-RE and spatial structure).
 #'
 #' @examples
-#' \dontrun{
-#'   set.seed(1)
-#'   n_g <- 30; n_per <- 5; n <- n_g * n_per
-#'   group <- rep(seq_len(n_g), each = n_per)
-#'   x <- rnorm(n)
-#'   X <- cbind(1, x)
-#'   u <- rnorm(n_g, 0, 0.8)
-#'   eta <- 0.3 + 0.7 * x + u[group]
-#'   y <- rbinom(n, 1, plogis(eta))
+#' set.seed(1)
+#' n_g <- 20; n_per <- 5; n <- n_g * n_per
+#' group <- rep(seq_len(n_g), each = n_per)
+#' x <- rnorm(n)
+#' X <- cbind(1, x)
+#' u <- rnorm(n_g, 0, 0.8)
+#' eta <- 0.3 + 0.7 * x + u[group]
+#' y <- rbinom(n, 1, plogis(eta))
 #'
-#'   # Compare Laplace (n_quad = 1) and AGQ-7.
-#'   fit_lap <- agq_fit(y, X, group, family = "binomial", n_quad = 1)
-#'   fit_agq <- agq_fit(y, X, group, family = "binomial", n_quad = 7)
-#'   c(fit_lap$log_marginal, fit_agq$log_marginal)
-#' }
+#' # Compare Laplace (n_quad = 1) and AGQ-7.
+#' fit_lap <- agq_fit(y, X, group, family = "binomial", n_quad = 1)
+#' fit_agq <- agq_fit(y, X, group, family = "binomial", n_quad = 7)
+#' c(fit_lap$log_marginal, fit_agq$log_marginal)
 #'
 #' @export
 agq_fit <- function(y, X, group,
@@ -191,14 +193,14 @@ gauss_hermite_prob <- function(n) {
   if (n == 1L) return(list(nodes = 0, weights = 1))
   # Probabilist's Hermite three-term recurrence:
   #   z H_n = H_{n+1} + n H_{n-1}
-  # ⇒ symmetric tridiagonal Jacobi has α_k = 0, β_k = sqrt(k).
+  # => symmetric tridiagonal Jacobi has alpha_k = 0, beta_k = sqrt(k).
   beta <- sqrt(seq_len(n - 1L))
   Jm <- matrix(0, n, n)
   Jm[cbind(seq_len(n - 1L), seq_len(n - 1L) + 1L)] <- beta
   Jm[cbind(seq_len(n - 1L) + 1L, seq_len(n - 1L))] <- beta
   ev <- eigen(Jm, symmetric = TRUE)
   nodes <- ev$values
-  # First component squared of each eigenvector × ∫ weight = 1
+  # First component squared of each eigenvector x integral  weight = 1
   # (probabilist's measure normalises to 1).
   weights <- ev$vectors[1L, ]^2
   ord <- order(nodes)

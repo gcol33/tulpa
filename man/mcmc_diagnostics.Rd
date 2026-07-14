@@ -52,6 +52,17 @@ Provenance is read from \verb{$draws_kind} (or the backend's registry \code{emit
 property). Pass a \code{point} fit (a mode + covariance, no sample) and the
 function returns \code{NULL} with a message.
 }
+\examples{
+\donttest{
+set.seed(1)
+df <- data.frame(x = rnorm(60))
+df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+             control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+                            seed = 1L))
+mcmc_diagnostics(fit)
+}
+}
 \references{
 Vehtari, Gelman, Simpson, Carpenter & Burkner (2021).
 Rank-normalization, folding, and localization: an improved Rhat for

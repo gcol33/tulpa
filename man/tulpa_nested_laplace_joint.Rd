@@ -19,25 +19,25 @@ tulpa_nested_laplace_joint(
 \arguments{
 \item{responses}{A named list of arm specs (length >= 1). Each arm:
 \itemize{
-\item \code{y}           — numeric \verb{[N_arm]} response.
-\item \code{n_trials}    — integer \verb{[N_arm]} (use \code{rep(1L, N_arm)} for non-binomial).
-\item \code{X}           — numeric matrix \verb{[N_arm x p_arm]} fixed-effects design.
-\item \code{spatial_idx} — integer \verb{[N_arm]}, 1-based map obs -> spatial unit.
-\item \code{re_idx}      — optional numeric \verb{[N_arm]} 1-based RE group index;
+\item \code{y}           -- numeric \verb{[N_arm]} response.
+\item \code{n_trials}    -- integer \verb{[N_arm]} (use \code{rep(1L, N_arm)} for non-binomial).
+\item \code{X}           -- numeric matrix \verb{[N_arm x p_arm]} fixed-effects design.
+\item \code{spatial_idx} -- integer \verb{[N_arm]}, 1-based map obs -> spatial unit.
+\item \code{re_idx}      -- optional numeric \verb{[N_arm]} 1-based RE group index;
 defaults to \code{rep(0, N_arm)} (no RE).
-\item \code{n_re_groups} — optional integer (default \code{0L}).
-\item \code{sigma_re}    — optional numeric (default \code{1}); ignored when
+\item \code{n_re_groups} -- optional integer (default \code{0L}).
+\item \code{sigma_re}    -- optional numeric (default \code{1}); ignored when
 \code{n_re_groups == 0}.
-\item \code{family}      — one of \code{"binomial"}, \code{"gaussian"}, \code{"poisson"},
+\item \code{family}      -- one of \code{"binomial"}, \code{"gaussian"}, \code{"poisson"},
 \code{"neg_binomial_2"}, \code{"beta"}, \code{"lognormal"},
 \code{"gamma"}, \code{"inverse_gaussian"}. For \code{"lognormal"},
 \code{y} is on the natural scale and the linear
 predictor \verb{eta = E[log y]} (identity link on the
 log scale); the \code{-log(y)} Jacobian is included in
 the kernel's \code{log_lik}.
-\item \code{phi}         — numeric dispersion (gaussian/lognormal residual
+\item \code{phi}         -- numeric dispersion (gaussian/lognormal residual
 SD, negbin size, beta precision); default \code{1}.
-\item \code{field_coef}  — optional per-arm field coefficient controlling
+\item \code{field_coef}  -- optional per-arm field coefficient controlling
 this arm's multiplier on the shared latent field's
 amplitude. One of:
 * numeric scalar (default \code{1}) -- constant
@@ -86,9 +86,9 @@ block. The copy block may be any of \code{icar} / \code{bym2} / \code{car_proper
 outer grid. Accepts either a named list (keys = arm names) or a
 positional list of length \code{n_arms}. Each entry is one of:
 \itemize{
-\item \code{NULL} or scalar — no axis for that arm; the kernel uses the
+\item \code{NULL} or scalar -- no axis for that arm; the kernel uses the
 parse-time scalar \code{responses[[k]]$phi}.
-\item numeric vector of length > 1 — adds a new outer-grid axis
+\item numeric vector of length > 1 -- adds a new outer-grid axis
 \verb{phi_<arm>} taking those values; the kernel rewrites
 \verb{arms[k].phi} at each grid point before the inner Newton solve.
 }
@@ -96,15 +96,15 @@ parse-time scalar \code{responses[[k]]$phi}.
 Family-specific interpretation of \code{arm$phi} (the parse-time scalar
 and the grid values):
 \itemize{
-\item \code{gaussian} — residual SD (variance is \code{phi^2}). Use \code{phi_grid} to
+\item \code{gaussian} -- residual SD (variance is \code{phi^2}). Use \code{phi_grid} to
 estimate the residual SD as a hyperparameter instead of pinning
 it pre-fit.
-\item \code{lognormal} — residual SD on the log scale; identical kernel
+\item \code{lognormal} -- residual SD on the log scale; identical kernel
 parameterization as \code{gaussian} plus the \code{-log(y)} Jacobian.
-\item \code{neg_binomial_2} — dispersion (variance is \code{mu + mu^2/phi}).
-\item \code{beta} — precision (variance is \code{mu(1-mu)/(1+phi)}).
-\item \code{gamma}, \code{inverse_gaussian} — shape / dispersion.
-\item \code{binomial}, \code{poisson} — ignored.
+\item \code{neg_binomial_2} -- dispersion (variance is \code{mu + mu^2/phi}).
+\item \code{beta} -- precision (variance is \code{mu(1-mu)/(1+phi)}).
+\item \code{gamma}, \code{inverse_gaussian} -- shape / dispersion.
+\item \code{binomial}, \code{poisson} -- ignored.
 }
 
 Each \verb{phi_<arm>} axis is appended to the Cartesian product and
@@ -419,38 +419,38 @@ resumed onto a stale result.
 \value{
 A list of class \code{c("tulpa_nested_laplace_joint", "tulpa_nested_laplace", "list")} with:
 \itemize{
-\item \code{theta_grid}, \code{theta_names} — outer-grid hyperparameter values
+\item \code{theta_grid}, \code{theta_names} -- outer-grid hyperparameter values
 (includes the \code{alpha} axis when \code{copy} is set).
-\item \code{log_marginal}, \code{weights} — per-grid-point log-marginal and integration
+\item \code{log_marginal}, \code{weights} -- per-grid-point log-marginal and integration
 weights (sum to 1).
-\item \code{theta_mean}, \code{theta_sd} — posterior moments per hyperparameter,
+\item \code{theta_mean}, \code{theta_sd} -- posterior moments per hyperparameter,
 including \code{alpha} when \code{copy} is set.
-\item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} — weighted-quantile
+\item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} -- weighted-quantile
 median and 2.5/97.5 empirical CI per hyperparameter axis (same
 names as \code{theta_mean}). Recommended summary for right-skewed
 scale-like axes (alpha at small n_pos, sigma/range/phi near
 a boundary), where the posterior mean is pulled by the right
 tail away from the bulk and \verb{mean +/- 1.96 sd} mis-states the
 uncertainty.
-\item \code{modes} — \verb{[n_grid x n_x]} matrix of inner modes.
-\item \code{n_iter} — inner Newton iterations per grid point.
-\item \code{arm_layout} — list with per-arm \code{beta_start}, \code{re_start},
+\item \code{modes} -- \verb{[n_grid x n_x]} matrix of inner modes.
+\item \code{n_iter} -- inner Newton iterations per grid point.
+\item \code{arm_layout} -- list with per-arm \code{beta_start}, \code{re_start},
 spatial offset(s) and \code{n_x} for decoding modes.
-\item \code{prior}, \code{responses}, \code{copy} — echoed inputs.
-\item \code{timing} — named numeric of wall-clock seconds: \code{total} plus the
+\item \code{prior}, \code{responses}, \code{copy} -- echoed inputs.
+\item \code{timing} -- named numeric of wall-clock seconds: \code{total} plus the
 \code{setup} (validation / encoding / grid construction), \code{grid} (inner
 Laplace solves, including adaptive-refinement and consistency passes),
 \code{postproc} (weight / moment / marginal assembly) and \code{diagnostics}
 (outer Pareto-\eqn{\hat{k}}) phases. The \code{grid} phase is the one that
 scales with grid size and core count. Surfaced one-line in \code{print}.
-\item \code{pareto_k}, \code{pareto_k_is_ess}, \code{pareto_k_scope} — outer
+\item \code{pareto_k}, \code{pareto_k_is_ess}, \code{pareto_k_scope} -- outer
 Pareto-\eqn{\hat{k}} accuracy diagnostic and its importance-sampling
 ESS (both \code{NA} when \code{control$diagnose_k = FALSE} or the fit declines;
 see the \code{diagnose_k} control knob). \code{pareto_k < 0.7} indicates the
 nested integration is reliable; \verb{>= 0.7} that the (skewed / heavy-
 tailed) hyperparameter posterior is misfit by the Gaussian grid and
 the fit should escalate to an exact debias.
-\item \code{pareto_k_proposal_source} — how the outer importance proposal the
+\item \code{pareto_k_proposal_source} -- how the outer importance proposal the
 \eqn{\hat{k}} scores was built: \code{"mode_hessian"} from the Laplace
 curvature at the hyperparameter mode (the CCD design's, or a
 finite-difference Hessian when a sharp posterior collapses the grid),
@@ -459,7 +459,7 @@ diagnostic is off or declines. The mode-Hessian source keeps the
 \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
 \item \code{pareto_k_se_boot}, \code{pareto_k_ci_low}, \code{pareto_k_ci_high},
 \code{pareto_k_se_formula}, \code{pareto_k_tail_points},
-\code{pareto_k_tail_points_requested}, \code{pareto_k_band_confident} — the outer
+\code{pareto_k_tail_points_requested}, \code{pareto_k_band_confident} -- the outer
 Pareto-\eqn{\hat{k}} uncertainty (gcol33/tulpa#127), present whenever the
 diagnostic ran. \code{pareto_k_se_boot} is the bootstrap SE of the k-hat and
 \code{pareto_k_ci_low} / \code{pareto_k_ci_high} its 2.5\\% / 97.5\\% bootstrap
@@ -472,7 +472,7 @@ bootstrap CI lies within one reliability band, \code{NA} when the bootstrap was
 off or could not fit. \code{diagnose_draws} and \code{diagnose_cost_ratio} (the
 diagnostic's draw budget and its wall-clock cost relative to the fit) are
 attached at the top level.
-\item \code{pareto_k_by_arm}, \code{pareto_k_by_arm_is_ess}, \code{pareto_k_by_arm_scope} —
+\item \code{pareto_k_by_arm}, \code{pareto_k_by_arm_is_ess}, \code{pareto_k_by_arm_scope} --
 present only with \code{control$diagnose_k = "by_arm"} (gcol33/tulpa#120).
 Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 hyperparameter axes, the other arms held at their posterior mean, so a
@@ -482,7 +482,7 @@ uncertainty: \code{pareto_k_by_arm_se_boot}, \code{pareto_k_by_arm_ci_low} /
 \code{pareto_k_by_arm_ci_high}, \code{pareto_k_by_arm_se_formula},
 \code{pareto_k_by_arm_tail_points} and \code{pareto_k_by_arm_band_confident}.
 \item \code{k_quality_requested}, \code{k_quality_reached}, \code{k_quality_best},
-\code{k_quality_reason}, \code{k_quality_rounds} — the reliability verdict for the
+\code{k_quality_reason}, \code{k_quality_rounds} -- the reliability verdict for the
 \code{control$k_quality} intent (gcol33/tulpa#129, #131). \code{k_quality_requested}
 echoes the intent; \code{k_quality_best} is the band actually achieved
 (\code{"good"} / \code{"ok"} / \code{"unreliable"}, or \code{"uncertain"} when the bootstrap CI
@@ -491,39 +491,39 @@ crosses a boundary); \code{k_quality_reached} is \code{TRUE}/\code{FALSE} for an
 downgraded; \code{k_quality_reason} records why it stopped; and
 \code{k_quality_rounds} is the number of escalation re-fits performed (\code{0} when
 the first fit sufficed or escalation was off).
-\item \code{adaptive_grid_info} — when \code{adaptive_grid = TRUE}, a list with
+\item \code{adaptive_grid_info} -- when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.
-\item \code{local_ccd_info} — when \code{local_ccd} engaged (or \code{k_refine = "ccd"}), a
+\item \code{local_ccd_info} -- when \code{local_ccd} engaged (or \code{k_refine = "ccd"}), a
 list with \code{n_cells_refined}, \code{n_nodes_added}, the refined \code{cells}, and the
 \code{n_cells_before} / \code{n_cells_after} grid sizes. NULL when local CCD was off
 or declined (single-block, \verb{< 4} axes, an active \code{phi_grid}, or no peaked
 interior cell).
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
-\code{prune_tol} — present only when \code{prune = TRUE} and the safety gate did
+\code{prune_tol} -- present only when \code{prune = TRUE} and the safety gate did
 not fall back. Cheap-pass log-marginals at every cell, a logical mask
 of pruned cells, the pruned-cell count, and the threshold actually
 applied. Pruned cells have \code{log_marginal = -Inf} so they get zero
 weight under \code{.nl_normalise_weights_safe}.
-\item \code{prune_fallback_triggered}, \code{prune_fallback_reason} — present only when
+\item \code{prune_fallback_triggered}, \code{prune_fallback_reason} -- present only when
 the safety gate fell back to the full grid. The returned fit is the
 full-grid (unpruned) result; the reason string records which gate
 condition tripped.
 }
 }
 \description{
-Outer-grid nested Laplace driver for \emph{joint} models — multiple response
+Outer-grid nested Laplace driver for \emph{joint} models -- multiple response
 arms sharing one latent prior block, parameterized as a per-arm field
 amplitude (sigma) on a unit-precision latent.
 
 Supported priors:
 \itemize{
-\item \code{"bym2"}       — outer grid over \verb{(sigma, rho [, alpha])}.
+\item \code{"bym2"}       -- outer grid over \verb{(sigma, rho [, alpha])}.
 Latent: \code{phi (n_s) | theta (n_s)} with unit-precision
 ICAR + iid components.
-\item \code{"icar"}       — outer grid over \code{(sigma [, alpha])}.
+\item \code{"icar"}       -- outer grid over \code{(sigma [, alpha])}.
 Latent: \code{phi (n_s)} with unit-precision ICAR.
-\item \code{"car_proper"} — outer grid over \verb{(sigma, rho_car [, alpha])}.
+\item \code{"car_proper"} -- outer grid over \verb{(sigma, rho_car [, alpha])}.
 Latent: \code{phi (n_s)} with \code{Q = D - rho_car * W}.
 }
 

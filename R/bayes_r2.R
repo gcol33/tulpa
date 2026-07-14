@@ -53,16 +53,7 @@ bayes_R2.tulpa_fit <- function(object, ndraws = NULL, summary = TRUE,
     stop("bayes_R2() supports fits with a builtin character family.",
          call. = FALSE)
   }
-  if (!is.null(seed)) {
-    old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) {
-      get(".Random.seed", envir = .GlobalEnv)
-    } else NULL
-    set.seed(seed)
-    on.exit({
-      if (is.null(old_seed)) rm(".Random.seed", envir = .GlobalEnv)
-      else assign(".Random.seed", old_seed, envir = .GlobalEnv)
-    }, add = TRUE)
-  }
+  .seed_scoped(seed)
 
   eta <- .tulpa_eta_draws(object, ndraws = ndraws)
   n_trials <- object$n_trials

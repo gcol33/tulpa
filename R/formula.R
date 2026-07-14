@@ -2,8 +2,12 @@
 #'
 #' @description
 #' Parses mixed-model formulas by walking the formula's abstract syntax tree.
-#' R formulas are already parse trees — we do structural recursion to find
+#' R formulas are already parse trees -- we do structural recursion to find
 #' random effect terms (`|` nodes) and separate them from fixed effects.
+#'
+#' @return The formula helpers documented in this family return parsed-formula
+#'   structures (lists describing the fixed effects, random-effect terms, and
+#'   latent blocks); see each function's own help page.
 #'
 #' @name tulpa_formula
 NULL
@@ -25,6 +29,7 @@ NULL
 #'
 #' @param term A language object (formula term)
 #' @return A list of language objects, each a `|` or `||` call
+#' @keywords internal
 #' @export
 findbars <- function(term) {
   if (is.name(term) || !is.language(term)) return(NULL)
@@ -55,6 +60,7 @@ findbars <- function(term) {
 #'
 #' @param term A language object (formula term)
 #' @return A language object with all bar terms removed, or NULL if nothing remains
+#' @keywords internal
 #' @export
 nobars <- function(term) {
   if (is.name(term) || !is.language(term)) return(term)
@@ -422,7 +428,7 @@ resolve_group_rhs <- function(rhs) {
 
 #' Check if a formula term includes an implicit intercept
 #'
-#' Pattern-matches on the formula AST directly — no deparse/regex.
+#' Pattern-matches on the formula AST directly -- no deparse/regex.
 #'
 #' @param term A language object (LHS of a bar term)
 #' @return logical
@@ -508,7 +514,7 @@ format_re_lhs <- function(re) {
 #'
 #' Decomposes a formula into fixed effects and random effects by walking
 #' the formula's abstract syntax tree. This is structural recursion with
-#' pattern matching on bar terms — no string manipulation.
+#' pattern matching on bar terms -- no string manipulation.
 #'
 #' @param formula A formula object (e.g., `y ~ x + (1 | group)`)
 #' @return A list with:
@@ -704,6 +710,7 @@ tulpa_parse_formula <- function(formula) {
 #'   - `offset`: numeric vector or NULL
 #'   - `re_terms`: list of RE data structures (group indices, slope matrices)
 #'
+#' @keywords internal
 #' @export
 tulpa_build_model_data <- function(parsed, data) {
   stopifnot(inherits(parsed, "tulpa_parsed_formula"))

@@ -58,6 +58,7 @@
 #'   the six fields above).
 #'
 #' @seealso [tulpa_hyper_grid()].
+#' @keywords internal
 #' @export
 hyper_axis_spec <- function(name, grid, log_prior = NULL,
                             log_scale = FALSE, bounds = NULL,

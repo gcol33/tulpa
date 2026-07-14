@@ -24,7 +24,7 @@
 #'   * `beta`: strictly in `(0, 1)`
 #' @param X Fixed-effects design matrix.
 #' @param spatial A `tulpa_spatial` object from [spatial_spde()] /
-#'   [spatial_spde_custom()] — supplies the FEM matrices (C0, G1) and
+#'   [spatial_spde_custom()] -- supplies the FEM matrices (C0, G1) and
 #'   projection (A) plus the smoothness `nu`.
 #' @param family One of `"gaussian"`, `"poisson"`, `"binomial"`,
 #'   `"gamma"`, `"neg_binomial_2"`, `"beta"`.
@@ -186,7 +186,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     nu_used <- spatial$nu
     # Init at the PC prior median for each marginal, not at the tail
     # anchor (which deliberately sits deep in the prior's tail by
-    # construction — starting NUTS there triggers wild step-size adaptation).
+    # construction -- starting NUTS there triggers wild step-size adaptation).
     #
     # Marginal PC priors:
     #   pi(range) = (lambda_r/2) range^{-3/2} exp(-lambda_r * range^{-1/2})

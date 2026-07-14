@@ -40,7 +40,7 @@ distribution.
 \examples{
 # pp_check is a generic; model packages (e.g. tulpaObs, tulpaRatio) provide
 # the posterior-predictive method for their fits.
-\dontrun{
+\donttest{
 set.seed(123)
 n <- 200L
 df <- data.frame(y = rpois(n, 5), x = rnorm(n),

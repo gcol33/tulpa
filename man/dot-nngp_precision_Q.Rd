@@ -8,12 +8,12 @@
 }
 \description{
 Mirrors the algorithm in \code{src/gpu_nngp_laplace.h::batch_nngp_scatter} plus
-\code{apply_nngp_full_prior_dense} — for each Vecchia row i (in NNGP order):
+\code{apply_nngp_full_prior_dense} -- for each Vecchia row i (in NNGP order):
 \itemize{
 \item resolve conditioning set N(i) via \code{nn_idx} / \code{nn_order}
 \item form the n_nb x n_nb cov matrix C and the n_nb cov vector c
 \item solve C alpha = c
-\item v_i = sigma² - c' alpha
+\item v_i = sigma^2 - c' alpha
 \item beta_i is 1 at i and -alpha_k at each neighbor -> Lambda += beta_i beta_i' / v_i
 }
 }

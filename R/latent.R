@@ -5,6 +5,9 @@
 #' model processes. Latent factors are particularly useful
 #' when you suspect that both processes are driven by common unmeasured variables.
 #'
+#' @return The constructor documented in this family ([latent_factor()])
+#'   returns a `tulpa_latent` specification object for use in [tulpa()].
+#'
 #' @name tulpa_latent
 NULL
 
@@ -22,7 +25,6 @@ NULL
 #' @param prior Prior for factor standard deviations. Default is a PC prior
 #'   with P(sigma > 1) = 0.01, which shrinks toward simpler models.
 #' @param shared Logical; if TRUE (default), latent factors enter both
-
 #'   all process linear predictors identically. If FALSE,
 #'   factors only affect the first process.
 #' @param constraint Identifiability constraint for factors:
@@ -98,7 +100,7 @@ NULL
 #' # Numerator-only factor (not shared)
 #' latent_factor(n_factors = 1, shared = FALSE)
 #'
-#' \dontrun{
+#' \donttest{
 #' # Use in model fitting
 #' fit <- tulpa(
 #'   species_count | total_count ~ habitat + (1 | site),
@@ -167,6 +169,9 @@ latent_factor <- function(
 #'
 #' @param x A tulpa_latent object
 #' @param ... Ignored
+#'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the latent factor specification to the console.
 #'
 #' @export
 print.tulpa_latent <- function(x, ...) {
@@ -291,7 +296,7 @@ initialize_latent_params <- function(latent_info, seed = NULL) {
     return(numeric(0))
   }
 
-  if (!is.null(seed)) set.seed(seed)
+  .seed_scoped(seed)
 
   n_factors <- latent_info$n_factors
   n_obs <- latent_info$n_obs
@@ -332,7 +337,7 @@ initialize_latent_params <- function(latent_info, seed = NULL) {
 #'   posterior draws.
 #'
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' # After fitting with latent factors
 #' fit <- tulpa(
 #'   count | total ~ x,

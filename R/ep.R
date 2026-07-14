@@ -202,7 +202,7 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
     lg + csum
   })
 
-  if (!is.null(control$seed)) set.seed(as.integer(control$seed))
+  .seed_scoped(control$seed)
   draws <- .ps_rmvnorm(n_draws, m, V)
 
   fit <- list(

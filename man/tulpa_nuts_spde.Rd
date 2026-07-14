@@ -43,7 +43,7 @@ tulpa_nuts_spde(
 \item{X}{Fixed-effects design matrix.}
 
 \item{spatial}{A \code{tulpa_spatial} object from \code{\link[=spatial_spde]{spatial_spde()}} /
-\code{\link[=spatial_spde_custom]{spatial_spde_custom()}} — supplies the FEM matrices (C0, G1) and
+\code{\link[=spatial_spde_custom]{spatial_spde_custom()}} -- supplies the FEM matrices (C0, G1) and
 projection (A) plus the smoothness \code{nu}.}
 
 \item{family}{One of \code{"gaussian"}, \code{"poisson"}, \code{"binomial"},

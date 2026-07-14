@@ -1,6 +1,6 @@
 # ============================================================================
 # Generic spatial/temporal diagnostics and model comparison
-# These operate on residuals or fit objects — not model-specific.
+# These operate on residuals or fit objects -- not model-specific.
 # ============================================================================
 
 # Assign default model<N> names to an unnamed / partially-named `list(...)`.
@@ -65,6 +65,15 @@
 #' Akaike-style weight on the criterion).
 #' @seealso [model_average()] for model-averaged predictions, [tulpa_criteria()]
 #' and [tulpa_psis()] for the native criteria layer.
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(120))
+#' df$y <- rpois(120, exp(0.4 + 0.5 * df$x))
+#' f1 <- tulpa(y ~ x, data = df, family = "poisson")
+#' f2 <- tulpa(y ~ 1, data = df, family = "poisson")
+#' compare_models(full = f1, null = f2, criterion = "waic")
+#' }
 #' @export
 compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   criterion <- match.arg(criterion)
@@ -388,6 +397,18 @@ print.post_hoc_lm <- function(x, ...) {
 #' @seealso [compare_models()].
 #' @references Yao, Vehtari, Simpson & Gelman (2018). Using stacking to average
 #' Bayesian predictive distributions. \emph{Bayesian Analysis} 13(3):917-1007.
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(120))
+#' df$y <- rpois(120, exp(0.4 + 0.5 * df$x))
+#' f1 <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'             control = list(n_iter = 500L, warmup = 250L, seed = 1L))
+#' f2 <- tulpa(y ~ 1, data = df, family = "poisson", mode = "hmc",
+#'             control = list(n_iter = 500L, warmup = 250L, seed = 1L))
+#' ma <- model_average(full = f1, null = f2, weights = "waic")
+#' ma$weights
+#' }
 #' @export
 model_average <- function(..., weights = c("loo", "waic", "pbma", "pbma+"),
                           fitted_fn = fitted) {

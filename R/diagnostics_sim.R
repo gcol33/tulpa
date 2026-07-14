@@ -6,6 +6,10 @@
 #' with no external dependencies. They work with any model that provides
 #' `simulate()`, `fitted()`, and `residuals()` methods.
 #'
+#' @return The diagnostic functions documented in this family return their
+#'   individual results (a test-statistic object, a data frame of residuals, or
+#'   a `check_model` summary); see each function's own help page.
+#'
 #' @name tulpa_diagnostics
 NULL
 
@@ -41,9 +45,9 @@ pit_residuals <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
     obs <- observed
   } else {
     sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-    obs <- if (!is.null(observed)) observed else {
-      if (!is.null(object$.internal$fit_args$y)) object$.internal$fit_args$y
-      else stop("Cannot extract observed data. Provide `observed` argument.", call. = FALSE)
+    obs <- observed %||% object$y %||% object$.internal$fit_args$y
+    if (is.null(obs)) {
+      stop("Cannot extract observed data. Provide `observed` argument.", call. = FALSE)
     }
   }
 
@@ -54,7 +58,7 @@ pit_residuals <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
   upper <- rowMeans(sims <= obs)
 
   # Randomise between lower and upper for integer data
-  set.seed(seed + 1L)
+  .seed_scoped(seed + 1L)
   lower + runif(n) * (upper - lower)
 }
 
@@ -115,7 +119,7 @@ test_uniformity <- function(object, observed = NULL, nsim = 250L, seed = 123L,
 #' < 1 = underdispersion. Equivalent to `DHARMa::testDispersion()`.
 #'
 #' @param object A fitted model with `simulate()` method
-#' @param observed Observed response vector (optional — extracted from fit)
+#' @param observed Observed response vector (optional -- extracted from fit)
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
 #' @param alternative `"two.sided"`, `"greater"`, or `"less"`
@@ -128,7 +132,7 @@ test_dispersion <- function(object, observed = NULL, nsim = 250L, seed = 123L,
   alternative <- match.arg(alternative)
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- observed %||% object$.internal$fit_args$y
+  obs <- observed %||% object$y %||% object$.internal$fit_args$y
 
   var_obs <- var(obs)
   var_sim <- apply(sims, 2, var)
@@ -176,7 +180,7 @@ test_dispersion <- function(object, observed = NULL, nsim = 250L, seed = 123L,
 test_outliers <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- observed %||% object$.internal$fit_args$y
+  obs <- observed %||% object$y %||% object$.internal$fit_args$y
   N <- length(obs)
 
   sim_min <- apply(sims, 1, min)
@@ -211,7 +215,7 @@ test_outliers <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
 test_zero_inflation <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- observed %||% object$.internal$fit_args$y
+  obs <- observed %||% object$y %||% object$.internal$fit_args$y
 
   n_zero_obs <- sum(obs == 0)
   n_zero_sim <- colSums(sims == 0)
@@ -250,15 +254,21 @@ test_zero_inflation <- function(object, observed = NULL, nsim = 250L, seed = 123
 #' @param coords N x 2 coordinate matrix (required)
 #' @param weights Weight scheme: `"inverse"` or `"knn"`
 #' @param k Number of neighbours for knn (default 10)
-#' @param resid_type Residual type if extracting from model (default `"deviance"`)
+#' @param resid_type Residual type if extracting from model (default `"pearson"`)
 #' @param alternative `"two.sided"`, `"greater"`, or `"less"`
 #'
 #' @return An `htest` object with Moran's I, expected I, and p-value
 #'
+#' @examples
+#' set.seed(1)
+#' coords <- cbind(runif(50), runif(50))
+#' resid  <- rnorm(50)
+#' moran_i(resid, coords)
+#'
 #' @export
 moran_i <- function(object, coords,
                     weights = c("inverse", "knn"), k = 10L,
-                    resid_type = "deviance",
+                    resid_type = "pearson",
                     alternative = c("two.sided", "greater", "less")) {
   alternative <- match.arg(alternative)
   weights <- match.arg(weights)
@@ -387,13 +397,13 @@ durbin_watson <- function(object, alternative = c("two.sided", "greater", "less"
 #' @param coords N x 2 coordinate matrix (required)
 #' @param n_bins Number of distance bins (default 15)
 #' @param max_dist Maximum distance (default: half the maximum pairwise distance)
-#' @param resid_type Residual type if extracting from model (default `"deviance"`)
+#' @param resid_type Residual type if extracting from model (default `"pearson"`)
 #'
 #' @return A `tulpa_variogram` data.frame with columns `dist`, `gamma`, `n_pairs`
 #'
 #' @export
 tulpa_variogram <- function(object, coords, n_bins = 15L, max_dist = NULL,
-                            resid_type = "deviance") {
+                            resid_type = "pearson") {
 
   if (is.numeric(object) && is.null(dim(object))) {
     x <- object
@@ -441,7 +451,7 @@ plot.tulpa_variogram <- function(x, ...) {
 
 
 # ==============================================================================
-# checkModel — diagnostic panel plot
+# checkModel -- diagnostic panel plot
 # ==============================================================================
 
 #' Diagnostic panel plot
@@ -463,7 +473,7 @@ plot.tulpa_variogram <- function(x, ...) {
 check_model <- function(object, coords = NULL, nsim = 250L, seed = 123L) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- object$.internal$fit_args$y
+  obs <- object$y %||% object$.internal$fit_args$y
   pit <- pit_residuals(sims, observed = obs, nsim = nsim, seed = seed)
 
   has_coords <- !is.null(coords)

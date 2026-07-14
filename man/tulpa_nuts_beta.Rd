@@ -50,12 +50,12 @@ Default \code{0.8}.}
 \value{
 A list with:
 \itemize{
-\item \code{draws} — \verb{n_samples x (p + 1)} matrix of post-warmup draws,
+\item \code{draws} -- \verb{n_samples x (p + 1)} matrix of post-warmup draws,
 columns \verb{beta[1] ... beta[p], log_phi}.
-\item \code{means} — posterior means.
-\item \code{phi_summary} — posterior mean / median / quantiles of
+\item \code{means} -- posterior means.
+\item \code{phi_summary} -- posterior mean / median / quantiles of
 \code{phi = exp(log_phi)}.
-\item \code{accept_prob}, \code{divergent}, \code{treedepth}, \code{epsilon} — NUTS
+\item \code{accept_prob}, \code{divergent}, \code{treedepth}, \code{epsilon} -- NUTS
 diagnostics from the underlying chain.
 }
 }
@@ -68,7 +68,7 @@ over \code{phi}, replacing the Brent outer-opt in \code{\link[=tulpa_laplace_bet
 and the deterministic nested-Laplace grid that would otherwise
 integrate over the Beta dispersion.
 
-Mean–precision parameterisation, default logit link:
+Mean-precision parameterisation, default logit link:
 \code{y_i ~ Beta(mu_i * phi, (1 - mu_i) * phi)} with
 \code{mu_i = 1 / (1 + exp(-eta_i))} and \code{eta_i = X_i \%*\% beta}.
 }

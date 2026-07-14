@@ -3,6 +3,10 @@
 \name{tulpa_latent}
 \alias{tulpa_latent}
 \title{Latent Factor Specification for Unmeasured Confounders}
+\value{
+The constructor documented in this family (\code{\link[=latent_factor]{latent_factor()}})
+returns a \code{tulpa_latent} specification object for use in \code{\link[=tulpa]{tulpa()}}.
+}
 \description{
 Specify latent factors to capture shared unmeasured confounders between
 model processes. Latent factors are particularly useful

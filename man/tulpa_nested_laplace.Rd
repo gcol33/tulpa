@@ -48,7 +48,7 @@ spatially-varying coefficient whose eta contribution is
 (output of \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}},
 \code{\link[=spatial_car]{spatial_car()}}, \code{\link[=spatial_bym2]{spatial_bym2()}}, etc.). When supplied alongside
 \code{data}, the \code{prior} list is built automatically via
-\code{\link[=prior_from_spec]{prior_from_spec()}} — pass either \code{prior} or \code{spec}, not both.}
+\code{\link[=prior_from_spec]{prior_from_spec()}} -- pass either \code{prior} or \code{spec}, not both.}
 
 \item{data}{Data frame used to validate \code{spec} and resolve
 time/group/site indices. Required when \code{spec} is supplied.}

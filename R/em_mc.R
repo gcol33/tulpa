@@ -34,6 +34,10 @@
 #' accuracy as iterations progress (Booth-Hobert ascent-based MCEM),
 #' set `n_mc_growth > 1`.
 #'
+#' This is an engine block, not a front door: model packages call it
+#' programmatically, so its tuning knobs (`max_iter`, `tol`, `n_mc`)
+#' sit in the signature rather than in a `control` list.
+#'
 #' @section Tier:
 #' Inherits the tier of the inner M-step (Laplace => Tier 2). The
 #' Monte-Carlo E-step *itself* is exact in the limit `n_mc -> infinity`,
@@ -45,7 +49,7 @@
 #'   object of the same shape `m_step_encode` consumes (typically a
 #'   numeric vector of length `n_obs`, or a matrix `n_obs x K` for
 #'   K-class latent variables). On the first iteration `fits` is
-#'   `list()` — the callback should return draws from the prior.
+#'   `list()` -- the callback should return draws from the prior.
 #' @param m_step_encode Function `function(weights, ...) -> list of blocks`.
 #'   Identical to the contract used by [tulpa_em_laplace()]: each
 #'   block is a list with required fields `y`, `X`, `family`, and
@@ -65,24 +69,24 @@
 #' @param ... Forwarded to `e_step_sample` and `m_step_encode`.
 #'
 #' @return A list with:
-#'   * `pooled` — named list of pooled per-submodel summaries
+#'   * `pooled` -- named list of pooled per-submodel summaries
 #'     (`mean`, `se`, `V_within`, `V_between`, `V_total`); see
 #'     [rubins_pool()].
-#'   * `fits` — list of per-MC-draw fit lists from the *final*
+#'   * `fits` -- list of per-MC-draw fit lists from the *final*
 #'     iteration, each indexed by submodel name.
-#'   * `n_iter` — iterations actually run.
-#'   * `n_mc_final` — `n_mc` value used in the last iteration.
-#'   * `converged` — logical.
-#'   * `history` — `data.frame(iter, n_mc, delta)`.
+#'   * `n_iter` -- iterations actually run.
+#'   * `n_mc_final` -- `n_mc` value used in the last iteration.
+#'   * `converged` -- logical.
+#'   * `history` -- `data.frame(iter, n_mc, delta)`.
 #'
 #' @references
 #' Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation
 #' of the EM algorithm and the poor man's data augmentation algorithms.
-#' *Journal of the American Statistical Association*, 85(411), 699–704.
+#' *Journal of the American Statistical Association*, 85(411), 699-704.
 #'
 #' Booth, J. G., & Hobert, J. P. (1999). Maximizing generalized linear
 #' mixed model likelihoods with an automated Monte Carlo EM algorithm.
-#' *JRSS B*, 61(1), 265–285.
+#' *JRSS B*, 61(1), 265-285.
 #'
 #' @seealso [tulpa_em_laplace()] for the closed-form-weights variant,
 #'   [rubins_pool()] for the pooling rule.
@@ -160,7 +164,7 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
             sprintf("#%d (draw %d)", k, s)
           })
         fit <- .fit_em_block(blocks[[k]], n_threads = 1L)
-        # Pool over the fixed-effects block only — RE values aren't
+        # Pool over the fixed-effects block only -- RE values aren't
         # comparable across MC draws because RE indexing depends on the
         # encoded block, not the latent structure. Shared with em_correction.R.
         fits_s[[k]] <- .attach_beta_se(fit, n_fixed = ncol(blocks[[k]]$X))
@@ -181,13 +185,13 @@ tulpa_em_mc <- function(e_step_sample, m_step_encode,
                      data.frame(iter = iter, n_mc = n_mc_curr,
                                 delta = delta))
     if (verbose) {
-      cat(sprintf("  MCEM iter %d (n_mc = %d): delta = %.6g\n",
-                  iter, n_mc_curr, delta))
+      message(sprintf("  MCEM iter %d (n_mc = %d): delta = %.6g",
+                      iter, n_mc_curr, delta))
     }
     if (is.finite(delta) && delta < tol) {
       converged <- TRUE
-      if (verbose) cat(sprintf("  MCEM converged after %d iterations\n",
-                               iter))
+      if (verbose) message(sprintf("  MCEM converged after %d iterations",
+                                   iter))
       break
     }
 

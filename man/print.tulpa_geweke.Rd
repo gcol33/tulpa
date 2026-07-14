@@ -11,6 +11,10 @@
 
 \item{...}{Ignored.}
 }
+\value{
+The input \code{x}, returned invisibly. Called for the side effect of
+printing the Geweke convergence diagnostic to the console.
+}
 \description{
 Print method for Geweke test
 }

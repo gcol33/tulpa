@@ -34,7 +34,7 @@ Color coding:
 # Diagnostic plots require a fitted tulpa model
 # See tulpa() examples for fitting models
 
-\dontrun{
+\donttest{
 # Fit a model (slow, not run on CRAN)
 set.seed(123)
 n <- 50

@@ -17,7 +17,7 @@ tulpa_gibbs(
   prior_sigma_scale = 2.5,
   spatial = NULL,
   temporal = NULL,
-  verbose = TRUE,
+  verbose = FALSE,
   n_threads = 1L
 )
 }

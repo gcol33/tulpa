@@ -30,14 +30,14 @@
 #'   then discarded. Must satisfy `1 <= warmup < n_iter`. Default `n_iter %/% 2L`.
 #'
 #' @return A list with class `c("tulpa_tgmrf_nuts", "tulpa_fit")`:
-#'   * `draws`, `means`, `sds` — posterior draws of `theta` and moments.
-#'   * `mean_accept` — mean Metropolis acceptance probability across the
+#'   * `draws`, `means`, `sds` -- posterior draws of `theta` and moments.
+#'   * `mean_accept` -- mean Metropolis acceptance probability across the
 #'     post-warmup tree expansion steps.
-#'   * `tree_depth` — depth of the NUTS tree at each iteration.
-#'   * `epsilon` — final step size after warmup adaptation.
-#'   * `pilot`, `mode_theta`, `hessian_theta` — pilot diagnostics (same as
+#'   * `tree_depth` -- depth of the NUTS tree at each iteration.
+#'   * `epsilon` -- final step size after warmup adaptation.
+#'   * `pilot`, `mode_theta`, `hessian_theta` -- pilot diagnostics (same as
 #'     tulpa_tgmrf_imh()).
-#'   * `inference_mode`, `inference_tier`, `backend` —
+#'   * `inference_mode`, `inference_tier`, `backend` --
 #'     `"exact"`, `1L`, `"tgmrf_nuts"`.
 #'
 #' @references Hoffman & Gelman (2014). The No-U-Turn Sampler. JMLR
@@ -107,7 +107,7 @@
 
   # --- Closures: log_post and FD gradient on log_marginal -----------------
   # Shared builder (see .tgmrf_make_log_marginal): hard-wall bounds when the
-  # user supplied them — a leapfrog step that overshoots into the infeasible
+  # user supplied them -- a leapfrog step that overshoots into the infeasible
   # region returns -Inf and NUTS rejects via the slice variable. This stops
   # the chain from wandering to numerically-divergent theta where Q goes
   # singular and log|Q| has wide swings that the FD gradient can't track.

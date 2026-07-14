@@ -232,6 +232,9 @@ spatiotemporal <- function(spatial,
 #' @param x A tulpa_spatiotemporal object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the spatiotemporal interaction specification to the console.
+#'
 #' @export
 print.tulpa_spatiotemporal <- function(x, ...) {
   cat("tulpa Spatiotemporal Interaction Specification\n")
@@ -349,7 +352,7 @@ build_st_index <- function(st, data) {
   # Get spatial index for each observation
   if (isTRUE(st$spatial_is_hsgp)) {
     # HSGP-ST: no spatial grouping, spatial mapping via Phi basis matrix
-    s_idx <- rep(1L, N)  # placeholder — C++ uses Phi instead
+    s_idx <- rep(1L, N)  # placeholder -- C++ uses Phi instead
   } else if (!is.null(st$spatial$group_var)) {
     spatial_var <- st$spatial$group_var
     if (!(spatial_var %in% names(data))) {
@@ -469,7 +472,7 @@ prepare_spatial_precision <- function(spatial) {
   if (is.null(spatial)) return(NULL)
 
   if (inherits(spatial, "tulpa_hsgp")) {
-    # HSGP: no adjacency or neighbor structure needed — spatial precision is spectral
+    # HSGP: no adjacency or neighbor structure needed -- spatial precision is spectral
     return(list(
       type = "hsgp",
       n = spatial$m^2,
@@ -495,7 +498,7 @@ prepare_spatial_precision <- function(spatial) {
     adj <- as.matrix(spatial$adjacency)
     n <- nrow(adj)
 
-    # Build CSR format (0-based row_ptr, 1-based col_idx — C++ does -1)
+    # Build CSR format (0-based row_ptr, 1-based col_idx -- C++ does -1)
     row_ptr <- integer(n + 1)  # initialized to 0 (0-based CSR)
     col_idx <- integer(0)
 
@@ -711,6 +714,10 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 #' @param type Plot type: `"heatmap"` (default), `"time_series"`, or `"spatial_map"`
 #' @param ... Additional arguments passed to plotting functions
 #'
+#' @return A `ggplot` object when ggplot2 is installed; otherwise `NULL`
+#'   invisibly, after drawing a base-graphics plot. Called for the side effect
+#'   of visualizing the spatiotemporal interaction effects.
+#'
 #' @importFrom graphics image matplot
 #' @importFrom grDevices hcl.colors
 #'
@@ -817,7 +824,6 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 #'
 #' @details
 #' The non-separable covariance functions allow for more flexible space-time
-
 #' dependence:
 #'
 #' **Gneiting class:**
@@ -918,6 +924,9 @@ spatiotemporal_gp <- function(coords,
 #'
 #' @param x A tulpa_st_gp object
 #' @param ... Ignored
+#'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the non-separable spatiotemporal GP specification to the console.
 #'
 #' @export
 print.tulpa_st_gp <- function(x, ...) {

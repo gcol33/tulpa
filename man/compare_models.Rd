@@ -28,6 +28,16 @@ log-likelihood with the parameter count. A fit carrying no pointwise
 log-likelihood (a deterministic / point approximation) yields \code{NA} criterion
 columns rather than an error, so the table always has one row per model.
 }
+\examples{
+\donttest{
+set.seed(1)
+df <- data.frame(x = rnorm(120))
+df$y <- rpois(120, exp(0.4 + 0.5 * df$x))
+f1 <- tulpa(y ~ x, data = df, family = "poisson")
+f2 <- tulpa(y ~ 1, data = df, family = "poisson")
+compare_models(full = f1, null = f2, criterion = "waic")
+}
+}
 \seealso{
 \code{\link[=model_average]{model_average()}} for model-averaged predictions, \code{\link[=tulpa_criteria]{tulpa_criteria()}}
 and \code{\link[=tulpa_psis]{tulpa_psis()}} for the native criteria layer.

@@ -22,7 +22,7 @@ Must return a list of length \code{n_mc}, each element a weights
 object of the same shape \code{m_step_encode} consumes (typically a
 numeric vector of length \code{n_obs}, or a matrix \verb{n_obs x K} for
 K-class latent variables). On the first iteration \code{fits} is
-\code{list()} — the callback should return draws from the prior.}
+\code{list()} -- the callback should return draws from the prior.}
 
 \item{m_step_encode}{Function \verb{function(weights, ...) -> list of blocks}.
 Identical to the contract used by \code{\link[=tulpa_em_laplace]{tulpa_em_laplace()}}: each
@@ -52,15 +52,15 @@ default because Monte-Carlo noise floors the achievable precision.}
 \value{
 A list with:
 \itemize{
-\item \code{pooled} — named list of pooled per-submodel summaries
+\item \code{pooled} -- named list of pooled per-submodel summaries
 (\code{mean}, \code{se}, \code{V_within}, \code{V_between}, \code{V_total}); see
 \code{\link[=rubins_pool]{rubins_pool()}}.
-\item \code{fits} — list of per-MC-draw fit lists from the \emph{final}
+\item \code{fits} -- list of per-MC-draw fit lists from the \emph{final}
 iteration, each indexed by submodel name.
-\item \code{n_iter} — iterations actually run.
-\item \code{n_mc_final} — \code{n_mc} value used in the last iteration.
-\item \code{converged} — logical.
-\item \code{history} — \code{data.frame(iter, n_mc, delta)}.
+\item \code{n_iter} -- iterations actually run.
+\item \code{n_mc_final} -- \code{n_mc} value used in the last iteration.
+\item \code{converged} -- logical.
+\item \code{history} -- \code{data.frame(iter, n_mc, delta)}.
 }
 }
 \description{
@@ -76,6 +76,10 @@ Convergence criterion is the max relative change in \emph{pooled} M-step
 parameter estimates between iterations. To increase Monte-Carlo
 accuracy as iterations progress (Booth-Hobert ascent-based MCEM),
 set \code{n_mc_growth > 1}.
+
+This is an engine block, not a front door: model packages call it
+programmatically, so its tuning knobs (\code{max_iter}, \code{tol}, \code{n_mc})
+sit in the signature rather than in a \code{control} list.
 }
 \section{Tier}{
 
@@ -88,11 +92,11 @@ so as a \emph{full pipeline} MCEM is asymptotically Tier 1 if
 \references{
 Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation
 of the EM algorithm and the poor man's data augmentation algorithms.
-\emph{Journal of the American Statistical Association}, 85(411), 699–704.
+\emph{Journal of the American Statistical Association}, 85(411), 699-704.
 
 Booth, J. G., & Hobert, J. P. (1999). Maximizing generalized linear
 mixed model likelihoods with an automated Monte Carlo EM algorithm.
-\emph{JRSS B}, 61(1), 265–285.
+\emph{JRSS B}, 61(1), 265-285.
 }
 \seealso{
 \code{\link[=tulpa_em_laplace]{tulpa_em_laplace()}} for the closed-form-weights variant,

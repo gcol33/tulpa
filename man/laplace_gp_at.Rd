@@ -53,7 +53,7 @@ The raw \code{cpp_laplace_fit_gp} result list, augmented with
 Single-point Laplace approximation for a Matern/exponential GP spatial
 field at fixed (sigma2_gp, phi_gp). Used by \code{dispatch_laplace_spatial}
 when \code{spatial$type == "gp"}. The neighbor structure is read straight
-off the validated spec — call \code{validate_gp(spatial, data)} first if
+off the validated spec -- call \code{validate_gp(spatial, data)} first if
 constructing manually.
 }
 \keyword{internal}

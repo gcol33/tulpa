@@ -9,7 +9,7 @@ moran_i(
   coords,
   weights = c("inverse", "knn"),
   k = 10L,
-  resid_type = "deviance",
+  resid_type = "pearson",
   alternative = c("two.sided", "greater", "less")
 )
 }
@@ -22,7 +22,7 @@ moran_i(
 
 \item{k}{Number of neighbours for knn (default 10)}
 
-\item{resid_type}{Residual type if extracting from model (default \code{"deviance"})}
+\item{resid_type}{Residual type if extracting from model (default \code{"pearson"})}
 
 \item{alternative}{\code{"two.sided"}, \code{"greater"}, or \code{"less"}}
 }
@@ -33,4 +33,11 @@ An \code{htest} object with Moran's I, expected I, and p-value
 Tests whether residuals exhibit spatial structure after model fitting.
 Supports inverse-distance and k-nearest-neighbour weight matrices.
 No external dependencies (uses normal approximation for inference).
+}
+\examples{
+set.seed(1)
+coords <- cbind(runif(50), runif(50))
+resid  <- rnorm(50)
+moran_i(resid, coords)
+
 }

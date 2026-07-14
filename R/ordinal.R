@@ -116,7 +116,7 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
   V <- chol2inv(ch)
   pn <- c(colnames(X), names(cuts))
   dimnames(V) <- list(pn, pn)
-  if (!is.null(control$seed)) set.seed(as.integer(control$seed))
+  .seed_scoped(control$seed)
   draws <- .ps_rmvnorm(n_draws, setNames(par, pn), V)
 
   fit <- list(

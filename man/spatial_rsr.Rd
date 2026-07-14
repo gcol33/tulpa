@@ -56,7 +56,7 @@ rsr <- spatial_rsr(
 )
 print(rsr)
 
-\dontrun{
+\donttest{
 # Generate synthetic spatial data with confounding
 set.seed(404)
 n <- 50

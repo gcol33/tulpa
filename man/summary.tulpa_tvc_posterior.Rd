@@ -13,6 +13,11 @@
 
 \item{...}{Ignored}
 }
+\value{
+A \code{tulpa_tvc_summary} data frame with one row per time point and
+term, holding the posterior mean, SD, and requested quantiles of each
+temporally-varying coefficient.
+}
 \description{
 Summary method for tulpa_tvc_posterior
 }

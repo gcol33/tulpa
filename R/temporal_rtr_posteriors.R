@@ -24,6 +24,10 @@ temporal_rtr <- function(temporal, restrict_to) {
 #' @param x A tulpa_rtr object
 #' @param ... Passed to underlying print method
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the temporal specification and its restricted-temporal-regression
+#'   modifier to the console.
+#'
 #' @export
 print.tulpa_rtr <- function(x, ...) {
   # Print underlying temporal type
@@ -238,6 +242,9 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
 #' @param x A tulpa_temporal_posterior object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing a summary of the temporal-effect posterior to the console.
+#'
 #' @export
 print.tulpa_temporal_posterior <- function(x, ...) {
   cat("Temporal effect posterior\n")
@@ -269,6 +276,10 @@ print.tulpa_temporal_posterior <- function(x, ...) {
 #' @param object A tulpa_temporal_posterior object
 #' @param probs Quantiles to compute
 #' @param ... Ignored
+#'
+#' @return A `tulpa_temporal_summary` data frame with one row per time point
+#'   (per component for multi-scale fits), holding the posterior mean, SD, and
+#'   requested quantiles of the temporal effect.
 #'
 #' @export
 summary.tulpa_temporal_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
@@ -327,6 +338,10 @@ summary.tulpa_temporal_posterior <- function(object, probs = c(0.025, 0.5, 0.975
 #' @param component Which component to plot (for multi-scale). Default: first.
 #' @param type Plot type: "ribbon" (default) or "line"
 #' @param ... Additional arguments passed to plotting functions
+#'
+#' @return A `ggplot` object when ggplot2 is installed; otherwise `NULL`
+#'   invisibly, after drawing a base-graphics plot. Called for the side effect
+#'   of plotting the temporal-effect posterior.
 #'
 #' @export
 plot.tulpa_temporal_posterior <- function(x, component = NULL, type = "ribbon", ...) {

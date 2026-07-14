@@ -19,7 +19,7 @@
 #' @section Tier:
 #' Tier 1 (Exact). The MH accept/reject step makes the chain
 #' asymptotically correct under the standard MH conditions. Tier
-#' status does not depend on Laplace's quality — only its quality
+#' status does not depend on Laplace's quality -- only its quality
 #' affects efficiency.
 #'
 #' @param log_posterior Function `function(theta) -> numeric` returning
@@ -55,29 +55,27 @@
 #'   resulting draws.
 #'
 #' @examples
-#' \dontrun{
-#'   # Toy: Bernoulli logistic with one covariate.
-#'   set.seed(1)
-#'   n <- 200
-#'   x <- rnorm(n)
-#'   eta <- 0.3 + 1.2 * x
-#'   y <- rbinom(n, 1, plogis(eta))
-#'   X <- cbind(1, x)
+#' # Toy: Bernoulli logistic with one covariate.
+#' set.seed(1)
+#' n <- 100
+#' x <- rnorm(n)
+#' eta <- 0.3 + 1.2 * x
+#' y <- rbinom(n, 1, plogis(eta))
+#' X <- cbind(1, x)
 #'
-#'   lap <- tulpa_laplace(y, n_trials = rep(1L, n), X = X,
-#'                        family = "binomial")
+#' lap <- tulpa_laplace(y, n_trials = rep(1L, n), X = X,
+#'                      family = "binomial")
 #'
-#'   log_post <- function(beta) {
-#'     eta <- as.numeric(X %*% beta)
-#'     sum(y * eta - log1p(exp(eta))) +
-#'       sum(dnorm(beta, 0, 10, log = TRUE))
-#'   }
-#'
-#'   fit <- imh_laplace(log_post, mode = lap$mode[1:2],
-#'                      hessian = lap$H_beta, n_iter = 4000)
-#'   fit$mean_accept
-#'   colMeans(fit$draws)
+#' log_post <- function(beta) {
+#'   eta <- as.numeric(X %*% beta)
+#'   sum(y * eta - log1p(exp(eta))) +
+#'     sum(dnorm(beta, 0, 10, log = TRUE))
 #' }
+#'
+#' fit <- imh_laplace(log_post, mode = lap$mode[1:2],
+#'                    hessian = lap$H_beta, n_iter = 1000)
+#' fit$mean_accept
+#' colMeans(fit$draws)
 #'
 #' @export
 imh_laplace <- function(log_posterior,

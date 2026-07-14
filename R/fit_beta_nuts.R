@@ -9,7 +9,7 @@
 #' and the deterministic nested-Laplace grid that would otherwise
 #' integrate over the Beta dispersion.
 #'
-#' Mean–precision parameterisation, default logit link:
+#' Mean-precision parameterisation, default logit link:
 #' `y_i ~ Beta(mu_i * phi, (1 - mu_i) * phi)` with
 #' `mu_i = 1 / (1 + exp(-eta_i))` and `eta_i = X_i %*% beta`.
 #'
@@ -32,12 +32,12 @@
 #' @param verbose Print sampler progress.
 #'
 #' @return A list with:
-#'   * `draws` — `n_samples x (p + 1)` matrix of post-warmup draws,
+#'   * `draws` -- `n_samples x (p + 1)` matrix of post-warmup draws,
 #'     columns `beta[1] ... beta[p], log_phi`.
-#'   * `means` — posterior means.
-#'   * `phi_summary` — posterior mean / median / quantiles of
+#'   * `means` -- posterior means.
+#'   * `phi_summary` -- posterior mean / median / quantiles of
 #'     `phi = exp(log_phi)`.
-#'   * `accept_prob`, `divergent`, `treedepth`, `epsilon` — NUTS
+#'   * `accept_prob`, `divergent`, `treedepth`, `epsilon` -- NUTS
 #'     diagnostics from the underlying chain.
 #'
 #' @seealso [tulpa_laplace_beta()] for the Laplace + Brent point

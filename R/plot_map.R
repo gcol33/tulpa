@@ -35,7 +35,6 @@
 #' predictions from tulpa models. It handles:
 #'
 #' - Extracting predictions from tulpa_fit objects
-
 #' - Converting to appropriate spatial format (stars/sf)
 #' - Creating publication-quality maps with sensible defaults
 #' - Uncertainty visualization via credible interval width
@@ -54,7 +53,7 @@
 #' # plot_map requires a fitted spatial tulpa model
 #' # See spatial_car() examples for fitting spatial models
 #'
-#' \dontrun{
+#' \donttest{
 #' # Fit spatial model (slow, not run on CRAN)
 #' set.seed(123)
 #' n_sites <- 20

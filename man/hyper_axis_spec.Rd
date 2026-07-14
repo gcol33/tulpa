@@ -52,3 +52,4 @@ refinable flag) that the generic refinement / consistency passes need.
 \seealso{
 \code{\link[=tulpa_hyper_grid]{tulpa_hyper_grid()}}.
 }
+\keyword{internal}

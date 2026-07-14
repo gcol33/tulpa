@@ -94,6 +94,9 @@ temporal_tvc <- function(time_var,
 #' @param x A tulpa_tvc object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the temporally-varying-coefficient specification to the console.
+#'
 #' @export
 print.tulpa_tvc <- function(x, ...) {
   cat("tulpa temporally-varying coefficients\n")
@@ -338,6 +341,10 @@ tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
 #' @param x A tulpa_tvc_posterior object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing a summary of the temporally-varying-coefficient posterior to the
+#'   console.
+#'
 #' @export
 print.tulpa_tvc_posterior <- function(x, ...) {
   .print_varying_coef(
@@ -354,6 +361,10 @@ print.tulpa_tvc_posterior <- function(x, ...) {
 #' @param object A tulpa_tvc_posterior object
 #' @param probs Quantiles to compute
 #' @param ... Ignored
+#'
+#' @return A `tulpa_tvc_summary` data frame with one row per time point and
+#'   term, holding the posterior mean, SD, and requested quantiles of each
+#'   temporally-varying coefficient.
 #'
 #' @export
 summary.tulpa_tvc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
@@ -376,6 +387,10 @@ summary.tulpa_tvc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ..
 #' @param term Which term to plot (name or index). Default: first term.
 #' @param type Plot type: "ribbon" (default) or "line"
 #' @param ... Additional arguments passed to plotting functions
+#'
+#' @return A `ggplot` object when ggplot2 is installed; otherwise `NULL`
+#'   invisibly, after drawing a base-graphics plot. Called for the side effect
+#'   of plotting the selected temporally-varying coefficient.
 #'
 #' @export
 plot.tulpa_tvc_posterior <- function(x, term = 1, type = "ribbon", ...) {

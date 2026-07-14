@@ -124,7 +124,7 @@
     tg <- matrix(as.numeric(tg), ncol = 1L,
                  dimnames = list(NULL, "value"))
   }
-  # Empty grid (no outer-grid axes — e.g. an lf-only fit): nothing to
+  # Empty grid (no outer-grid axes -- e.g. an lf-only fit): nothing to
   # quantilize; return empty named vectors. paste0 recycles the prefix
   # past zero-length integers, so we guard ncol(tg) == 0 explicitly.
   if (ncol(tg) == 0L) {
@@ -288,7 +288,7 @@
     block_mean <- as.numeric(crossprod(w, sub))
     block_sd   <- sqrt(pmax(0, as.numeric(crossprod(w, sub^2)) - block_mean^2))
     # Use bare per-block axis names (e.g. "tau", "rho") instead of the
-    # joint-grid-prefixed "b<N>.tau" — the block index is already implicit
+    # joint-grid-prefixed "b<N>.tau" -- the block index is already implicit
     # in the list position.
     bare_names <- .nl_block_axis_grid(prepared[[b]])$names
     names(block_mean) <- bare_names

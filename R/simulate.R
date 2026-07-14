@@ -134,6 +134,8 @@ tulpa_simulate <- function(formula, family, data,
 #' Print method for tulpa_simulate
 #' @param x A tulpa_simulate object
 #' @param ... Ignored
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing a summary of the simulated datasets to the console.
 #' @export
 print.tulpa_simulate <- function(x, ...) {
   .print_draws_summary(x, "tulpa simulated datasets", "Sims:      ", x$n_sims)

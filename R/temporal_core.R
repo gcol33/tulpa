@@ -110,7 +110,7 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' # Create temporal RW2 specification
 #' temporal_rw2("year")
 #'
-#' \dontrun{
+#' \donttest{
 #' # Smooth temporal trend
 #' set.seed(126)
 #' df <- data.frame(
@@ -217,7 +217,7 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' temporal_ar1("year")
 #' temporal_ar1("year", group = "site")
 #'
-#' \dontrun{
+#' \donttest{
 #' # AR1 temporal correlation
 #' set.seed(127)
 #' df <- data.frame(
@@ -311,6 +311,9 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
 #'
 #' @param x A tulpa_temporal object
 #' @param ... Ignored
+#'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the temporal specification to the console.
 #'
 #' @export
 print.tulpa_temporal <- function(x, ...) {

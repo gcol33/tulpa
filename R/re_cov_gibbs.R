@@ -219,7 +219,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   tol       <- control$tol %||% 1e-8
   n_threads <- as.integer(control$n_threads %||% 1L)
 
-  if (!is.null(seed)) set.seed(as.integer(seed))
+  .seed_scoped(seed)
 
   re_terms <- .as_re_terms_list(re_terms)
   n_obs <- length(y)

@@ -298,7 +298,7 @@
         inner_refresh = as.integer(inner_refresh),
         x_init_per_cell = x_init_per_cell
     )
-    # Strip the C++-side theta_grid / axis_offsets — the backend's
+    # Strip the C++-side theta_grid / axis_offsets -- the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare
     # names in tulpa_nested_laplace_joint().
     res$theta_grid   <- NULL

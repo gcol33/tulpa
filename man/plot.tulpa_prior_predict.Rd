@@ -15,6 +15,11 @@
 
 \item{...}{Passed through.}
 }
+\value{
+A \code{ggplot} object (via bayesplot) when bayesplot is installed;
+otherwise \code{NULL} invisibly, after drawing a base-graphics overlay. Called
+for the density overlay of the prior predictive draws.
+}
 \description{
 Density overlay of prior predictive draws. Requires bayesplot; falls back to
 base graphics matplot of a subset of draws otherwise.

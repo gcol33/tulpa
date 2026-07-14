@@ -19,3 +19,28 @@ NULL
 # column post_hoc_lm() attaches to the model frame so lm() resolves it. None is a
 # tulpa symbol, so register them to keep R CMD check's global-variable analysis quiet.
 utils::globalVariables(c(".data", "ratio", ".phl_w"))
+
+# Scoped set.seed: seeds the RNG and restores the caller's RNG state when the
+# calling function exits, so a user-supplied `seed` does not clobber the
+# session RNG stream. No-op when `seed` is NULL. The on.exit restore is
+# registered in `envir` (the caller's frame), the base-R equivalent of
+# withr::defer().
+#' @keywords internal
+.seed_scoped <- function(seed, envir = parent.frame()) {
+  if (is.null(seed)) return(invisible(FALSE))
+  old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) {
+    get(".Random.seed", envir = .GlobalEnv)
+  } else NULL
+  restore <- function() {
+    if (is.null(old_seed)) {
+      if (exists(".Random.seed", envir = .GlobalEnv)) {
+        rm(".Random.seed", envir = .GlobalEnv)
+      }
+    } else {
+      assign(".Random.seed", old_seed, envir = .GlobalEnv)
+    }
+  }
+  do.call(on.exit, list(as.call(list(restore)), add = TRUE), envir = envir)
+  set.seed(as.integer(seed))
+  invisible(TRUE)
+}

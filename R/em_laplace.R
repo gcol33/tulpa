@@ -340,24 +340,28 @@
 #' zero submodel + poisson positive submodel for a hurdle model) work
 #' without engine changes.
 #'
+#' This is an engine block, not a front door: model packages call it
+#' programmatically, so its tuning knobs (`max_iter`, `tol`, `damping`)
+#' sit in the signature rather than in a `control` list.
+#'
 #' @param e_step Callback: `function(fits, ...) -> list(weights = numeric, ...)`.
 #'   Called once per EM iteration with the current per-submodel
 #'   [tulpa_laplace()] fits. Must return a list whose `weights` element
 #'   is the latent-variable posterior used by the next M-step.
 #' @param m_step_encode Callback: `function(weights, ...) -> list of blocks`.
 #'   Each block is itself a list with the following fields:
-#'   * `y` (numeric, required) — response.
-#'   * `X` (matrix, required) — fixed-effects design with `nrow(X) == length(y)`.
-#'   * `family` (character scalar, required) — one of `"binomial"`,
+#'   * `y` (numeric, required) -- response.
+#'   * `X` (matrix, required) -- fixed-effects design with `nrow(X) == length(y)`.
+#'   * `family` (character scalar, required) -- one of `"binomial"`,
 #'     `"poisson"`, `"gaussian"`, `"negbin"` / `"neg_binomial_2"`, `"gamma"`,
 #'     `"beta"`. Forwarded to [tulpa_laplace()] for that block.
-#'   * `n_trials` (numeric or `NULL`, optional; absent or `NULL` defaults to 1) —
+#'   * `n_trials` (numeric or `NULL`, optional; absent or `NULL` defaults to 1) --
 #'     binomial trial counts.
-#'   * `offset` (numeric or `NULL`, optional) — observation-level offset,
+#'   * `offset` (numeric or `NULL`, optional) -- observation-level offset,
 #'     length-matched to `y` when non-`NULL`.
-#'   * `phi` (numeric scalar, optional) — dispersion forwarded to
+#'   * `phi` (numeric scalar, optional) -- dispersion forwarded to
 #'     [tulpa_laplace()] (used by `negbin`, `gamma`).
-#'   * `re_list`, `spatial`, `weights` (optional) — forwarded as-is.
+#'   * `re_list`, `spatial`, `weights` (optional) -- forwarded as-is.
 #' @param spatial Optional default spatial spec. Currently unused by the
 #'   engine; pass a `spatial` field on each block instead. Reserved so the
 #'   API matches the published contract in CLAUDE.md.
@@ -393,8 +397,7 @@
 #'   possibly with mutated dispersion / shape / precision fields (e.g.
 #'   `fits[[k]]$phi`). Use this to update non-eta parameters that fall out of
 #'   the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
-#'   Gaussian sigma). When `NULL` (default), behavior is unchanged. See
-#'.
+#'   Gaussian sigma). When `NULL` (default), behavior is unchanged.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, applied to
 #'   every block fit via [tulpa_laplace()] (i.e. blocks without a `prior`
 #'   field). `NULL` (default) keeps the weak built-in prior. Otherwise a list
@@ -409,20 +412,49 @@
 #'
 #' @return A list with:
 #' \itemize{
-#'   \item `fits` — named list of [tulpa_laplace()] results, one per block.
-#'   \item `weights` — final E-step weights.
-#'   \item `n_iter` — number of EM iterations actually run.
-#'   \item `converged` — logical.
-#'   \item `history` — `data.frame(iter, delta)` of max relative parameter
+#'   \item `fits` -- named list of [tulpa_laplace()] results, one per block.
+#'   \item `weights` -- final E-step weights.
+#'   \item `n_iter` -- number of EM iterations actually run.
+#'   \item `converged` -- logical.
+#'   \item `history` -- `data.frame(iter, delta)` of max relative parameter
 #'     change per iteration.
-#'   \item `correction` — the resolved correction mode (`"none"`, `"mi"`,
+#'   \item `correction` -- the resolved correction mode (`"none"`, `"mi"`,
 #'     or `"gibbs"`).
-#'   \item `pooled` — present when `correction %in% c("mi", "gibbs")`.
+#'   \item `pooled` -- present when `correction %in% c("mi", "gibbs")`.
 #'     Named list of pooled per-submodel summaries from [rubins_pool()].
-#'   \item `draws` — present when `correction %in% c("mi", "gibbs")`.
+#'   \item `draws` -- present when `correction %in% c("mi", "gibbs")`.
 #'     List of per-draw fits with `beta` / `se` attached.
 #' }
 #'
+#' @examples
+#' \donttest{
+#' # Zero-inflated Poisson via EM: the E-step scores the posterior
+#' # probability that each zero is non-structural, the M-step encodes a
+#' # weighted binomial (occupancy) block and a Poisson (abundance) block.
+#' set.seed(1)
+#' n <- 200
+#' z <- rbinom(n, 1, 0.7)
+#' y <- rpois(n, 4) * z
+#' X <- cbind(1, rnorm(n))
+#'
+#' e_step <- function(fits, ...) {
+#'   if (!length(fits)) return(list(weights = pmax(as.numeric(y > 0), 0.5)))
+#'   psi <- plogis(drop(X %*% fits$occ$mode))
+#'   lam <- exp(drop(X %*% fits$abund$mode))
+#'   w <- ifelse(y > 0, 1, psi * exp(-lam) / (psi * exp(-lam) + (1 - psi)))
+#'   list(weights = w)
+#' }
+#' m_step_encode <- function(weights, ...) {
+#'   list(
+#'     occ   = list(y = weights, X = X, family = "binomial"),
+#'     abund = list(y = y, X = X, family = "poisson", weights = weights)
+#'   )
+#' }
+#'
+#' res <- tulpa_em_laplace(e_step, m_step_encode, verbose = FALSE)
+#' res$converged
+#' res$fits$abund$mode
+#' }
 #' @export
 tulpa_em_laplace <- function(e_step, m_step_encode,
                               spatial = NULL, re_list = list(),
@@ -553,13 +585,13 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     .prog$tick()
 
     if (verbose) {
-      cat(sprintf("  EM iter %d: delta = %.6g\n", iter, delta))
+      message(sprintf("  EM iter %d: delta = %.6g", iter, delta))
     }
 
     if (is.finite(delta) && delta < tol) {
       converged <- TRUE
       if (verbose) {
-        cat(sprintf("  EM converged after %d iterations\n", iter))
+        message(sprintf("  EM converged after %d iterations", iter))
       }
       break
     }
@@ -577,8 +609,8 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
 
   if (correction == "mi") {
     if (verbose) {
-      cat(sprintf("  Running MI correction with %d imputations\n",
-                  n_imputations))
+      message(sprintf("  Running MI correction with %d imputations",
+                      n_imputations))
     }
     mi <- .mi_correction(
       weights        = weights,
@@ -594,7 +626,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
     result$draws  <- mi$draws
   } else if (correction == "gibbs") {
     if (verbose) {
-      cat(sprintf("  Running Gibbs correction with %d steps\n", n_gibbs))
+      message(sprintf("  Running Gibbs correction with %d steps", n_gibbs))
     }
     gibbs <- .gibbs_correction(
       initial_fits   = fits,
@@ -621,7 +653,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
 # The callback receives the freshly assembled M-step fits, the current E-step
 # weights, and any extra arguments forwarded through `...`. It must return a
 # list with the same length and per-element names as the input. Per-element
-# shape is otherwise opaque to the engine — the callback owns the update rule.
+# shape is otherwise opaque to the engine -- the callback owns the update rule.
 # ============================================================================
 apply_m_step_extra <- function(m_step_extra, fits, weights, ...) {
   updated <- m_step_extra(fits = fits, weights = weights, ...)

@@ -9,7 +9,7 @@ tulpa_variogram(
   coords,
   n_bins = 15L,
   max_dist = NULL,
-  resid_type = "deviance"
+  resid_type = "pearson"
 )
 }
 \arguments{
@@ -21,7 +21,7 @@ tulpa_variogram(
 
 \item{max_dist}{Maximum distance (default: half the maximum pairwise distance)}
 
-\item{resid_type}{Residual type if extracting from model (default \code{"deviance"})}
+\item{resid_type}{Residual type if extracting from model (default \code{"pearson"})}
 }
 \value{
 A \code{tulpa_variogram} data.frame with columns \code{dist}, \code{gamma}, \code{n_pairs}

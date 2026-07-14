@@ -6,6 +6,11 @@
 #' which helps prevent bias from spatially-structured
 #' unmeasured confounders.
 #'
+#' @return The spatial constructors documented in this family
+#'   ([spatial_car()], [spatial_bym2()], [spatial_gp()], and the others) each
+#'   return a `tulpa_spatial` (or related) specification object to pass to the
+#'   `spatial` argument of [tulpa()].
+#'
 #' @name tulpa_spatial
 NULL
 

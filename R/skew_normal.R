@@ -72,6 +72,7 @@
 #'   or \code{NULL} if \code{|gamma| >= .SN_GAMMA_MAX}.
 #' @references Azzalini, A. (1985). A class of distributions which
 #'   includes the normal ones. \emph{Scand. J. Statist.} \strong{12}: 171-178.
+#' @keywords internal
 #' @export
 sn_match <- function(mu, sigma, gamma) {
   if (!is.numeric(sigma) || length(sigma) != 1L || sigma <= 0) {
@@ -114,6 +115,7 @@ sn_match <- function(mu, sigma, gamma) {
 #' @param sn Skew-normal parameter list from [sn_match()] with elements
 #'   \code{xi}, \code{omega}, \code{alpha}.
 #' @return Numeric vector of CDF values, same length as \code{q}.
+#' @keywords internal
 #' @export
 sn_cdf <- function(q, sn) {
   .check_sn(sn)
@@ -133,6 +135,7 @@ sn_cdf <- function(q, sn) {
 #' @param tol Absolute tolerance on the CDF residual (default \code{1e-10}).
 #' @param max_iter Maximum Newton iterations (default \code{60}).
 #' @return Numeric vector of quantiles, same length as \code{p}.
+#' @keywords internal
 #' @export
 sn_quantile <- function(p, sn, tol = 1e-10, max_iter = 60L) {
   .check_sn(sn)

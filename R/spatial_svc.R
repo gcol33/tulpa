@@ -135,6 +135,9 @@ spatial_svc <- function(coords,
 #' @param x A tulpa_svc object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the spatially-varying-coefficient specification to the console.
+#'
 #' @export
 print.tulpa_svc <- function(x, ...) {
   cat("tulpa spatially-varying coefficients\n")
@@ -458,6 +461,10 @@ svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
 #' @param probs Quantiles to compute
 #' @param ... Ignored
 #'
+#' @return A `tulpa_svc_summary` data frame with one row per location and term,
+#'   holding the observation index, term name, coordinates, and the posterior
+#'   mean, SD, and requested quantiles of each spatially-varying coefficient.
+#'
 #' @export
 summary.tulpa_svc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ...) {
   .summary_varying_coef(
@@ -479,6 +486,10 @@ summary.tulpa_svc_posterior <- function(object, probs = c(0.025, 0.5, 0.975), ..
 #' @param x A tulpa_svc_posterior object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing a summary of the spatially-varying-coefficient posterior to the
+#'   console.
+#'
 #' @export
 print.tulpa_svc_posterior <- function(x, ...) {
   .print_varying_coef(
@@ -496,6 +507,10 @@ print.tulpa_svc_posterior <- function(x, ...) {
 #' @param term Which term to plot (name or index). Default: first term.
 #' @param type Plot type: "mean" (default), "sd", or quantile (e.g., "q50")
 #' @param ... Additional arguments passed to plotting functions
+#'
+#' @return A `ggplot` object when ggplot2 is installed; otherwise `NULL`
+#'   invisibly, after drawing a base-graphics map. Called for the side effect of
+#'   mapping the selected spatially-varying coefficient.
 #'
 #' @export
 plot.tulpa_svc_posterior <- function(x, term = 1, type = "mean", ...) {

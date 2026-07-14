@@ -53,3 +53,4 @@ hyperparameters \eqn{\theta} via \code{\link[=ccd_to_theta]{ccd_to_theta()}}.
 \seealso{
 \code{\link[=ccd_to_theta]{ccd_to_theta()}} to map z-coordinates to physical theta.
 }
+\keyword{internal}

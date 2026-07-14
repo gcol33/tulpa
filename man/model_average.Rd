@@ -30,6 +30,19 @@ simplex-optimal predictive combination); \code{"pbma"} / \code{"pbma+"} give
 pseudo-BMA(+) weights. Every model must carry an \verb{[n_draws x n_obs]} pointwise
 log-likelihood (\code{fit$draws$log_lik}) over the same observations.
 }
+\examples{
+\donttest{
+set.seed(1)
+df <- data.frame(x = rnorm(120))
+df$y <- rpois(120, exp(0.4 + 0.5 * df$x))
+f1 <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+            control = list(n_iter = 500L, warmup = 250L, seed = 1L))
+f2 <- tulpa(y ~ 1, data = df, family = "poisson", mode = "hmc",
+            control = list(n_iter = 500L, warmup = 250L, seed = 1L))
+ma <- model_average(full = f1, null = f2, weights = "waic")
+ma$weights
+}
+}
 \references{
 Yao, Vehtari, Simpson & Gelman (2018). Using stacking to average
 Bayesian predictive distributions. \emph{Bayesian Analysis} 13(3):917-1007.

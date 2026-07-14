@@ -53,7 +53,7 @@ A list with class \code{tulpa_fit} carrying:
 Single-path Pathfinder (Zhang, Carpenter, Gelman, Vehtari 2022):
 run L-BFGS toward the posterior mode, fit a Gaussian at the optimum
 using the inverse-Hessian estimate, and report draws plus the ELBO.
-Cheap, derivative-only, embarrassingly parallel — meant as an HMC
+Cheap, derivative-only, embarrassingly parallel -- meant as an HMC
 warm-start, an initialiser for \code{\link[=imh_laplace]{imh_laplace()}}, or a quick
 sanity check on the Laplace approximation.
 
@@ -65,29 +65,27 @@ version is what most users want as a Laplace-equivalent diagnostic.
 \section{Tier}{
 
 Tier 2 (Structured). The output is a Gaussian approximation, not
-samples from the exact posterior — same epistemic class as
+samples from the exact posterior -- same epistemic class as
 \code{\link[=tulpa_laplace]{tulpa_laplace()}}. Pair with \code{\link[=imh_laplace]{imh_laplace()}} for an exact-tier
 upgrade.
 }
 
 \examples{
-\dontrun{
-  # Toy: 2-D conjugate normal.
-  y <- c(0.5, -0.7)
-  log_post <- function(t) {
-    sum(dnorm(y, t, 1, log = TRUE)) +
-      sum(dnorm(t, 0, sqrt(10), log = TRUE))
-  }
-  pf <- pathfinder(log_post, init = c(0, 0), n_draws = 2000)
-  pf$mode      # near c(0.45, -0.64)
-  pf$elbo
+# Toy: 2-D conjugate normal.
+y <- c(0.5, -0.7)
+log_post <- function(t) {
+  sum(dnorm(y, t, 1, log = TRUE)) +
+    sum(dnorm(t, 0, sqrt(10), log = TRUE))
 }
+pf <- pathfinder(log_post, init = c(0, 0), n_draws = 2000)
+pf$mode      # near c(0.45, -0.64)
+pf$elbo
 
 }
 \references{
 Zhang, L., Carpenter, B., Gelman, A., & Vehtari, A. (2022).
 Pathfinder: parallel quasi-Newton variational inference.
-\emph{Journal of Machine Learning Research}, 23(306), 1–49.
+\emph{Journal of Machine Learning Research}, 23(306), 1-49.
 }
 \seealso{
 \code{\link[=imh_laplace]{imh_laplace()}} for an exact-tier MH using the Pathfinder

@@ -17,7 +17,7 @@ tulpa_re_aghq(
   lkj_eta = 1,
   theta_prior_sd = Inf,
   gradient = c("fd", "analytic"),
-  maxit = 200L
+  max_iter = 200L
 )
 }
 \arguments{
@@ -101,7 +101,7 @@ exposing the theta-score) and \code{n_quad > 1}: being the gradient of the true
 marginal it omits the node-placement terms (\code{O} of the AGHQ truncation), so
 it agrees with the objective only as \code{n_quad} grows.}
 
-\item{maxit}{Optimizer iteration cap (default 200).}
+\item{max_iter}{Optimizer iteration cap (default 200).}
 }
 \value{
 A list with: \code{theta} (refined fixed parameters), \code{Sigma_list}
@@ -124,6 +124,10 @@ per-group conditional likelihood, so a custom marginal (e.g. a
 latent-state-integrated occupancy / detection likelihood, or the
 latent-abundance-integrated N-mixture marginal) refines through the same
 quadrature.
+
+This is an engine block, not a front door: model packages call it
+programmatically, so its tuning knobs (\code{max_iter}, \code{n_quad}, \code{keep})
+sit in the signature rather than in a \code{control} list.
 
 The engine is \strong{structure-agnostic}. It integrates the per-group marginal
 \deqn{M_g = \int \exp\{\ell_g(b_g)\}\, N(b_g; 0, \Sigma)\, db_g,}

@@ -15,6 +15,11 @@
 
 \item{...}{Additional arguments passed to plotting functions}
 }
+\value{
+A \code{ggplot} object when ggplot2 is installed; otherwise \code{NULL}
+invisibly, after drawing a base-graphics map. Called for the side effect of
+mapping the selected spatially-varying coefficient.
+}
 \description{
 Plot method for tulpa_svc_posterior
 }

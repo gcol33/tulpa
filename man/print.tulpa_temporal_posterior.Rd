@@ -11,6 +11,10 @@
 
 \item{...}{Ignored}
 }
+\value{
+The input \code{x}, returned invisibly. Called for the side effect of
+printing a summary of the temporal-effect posterior to the console.
+}
 \description{
 Print method for tulpa_temporal_posterior
 }

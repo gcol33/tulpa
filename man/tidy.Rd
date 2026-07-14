@@ -22,3 +22,12 @@ Data frame: term, estimate, std.error, conf.low, conf.high.
 \description{
 Tidy fixed-effect table (broom-compatible)
 }
+\examples{
+\donttest{
+set.seed(1)
+df <- data.frame(x = rnorm(100), g = factor(rep(1:10, 10)))
+df$y <- rpois(100, exp(0.3 * df$x))
+fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
+tidy(fit)
+}
+}

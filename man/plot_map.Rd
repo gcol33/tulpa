@@ -92,7 +92,7 @@ are also needed. Install with:
 # plot_map requires a fitted spatial tulpa model
 # See spatial_car() examples for fitting spatial models
 
-\dontrun{
+\donttest{
 # Fit spatial model (slow, not run on CRAN)
 set.seed(123)
 n_sites <- 20

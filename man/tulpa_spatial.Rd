@@ -3,6 +3,12 @@
 \name{tulpa_spatial}
 \alias{tulpa_spatial}
 \title{Spatial structure specifications for tulpa}
+\value{
+The spatial constructors documented in this family
+(\code{\link[=spatial_car]{spatial_car()}}, \code{\link[=spatial_bym2]{spatial_bym2()}}, \code{\link[=spatial_gp]{spatial_gp()}}, and the others) each
+return a \code{tulpa_spatial} (or related) specification object to pass to the
+\code{spatial} argument of \code{\link[=tulpa]{tulpa()}}.
+}
 \description{
 Functions to specify spatial random effects for tulpa models.
 Spatial effects are shared between processes by default,

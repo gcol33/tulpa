@@ -720,7 +720,7 @@ gp_cov_type_for_laplace <- function(spatial) {
 #' Single-point Laplace approximation for a Matern/exponential GP spatial
 #' field at fixed (sigma2_gp, phi_gp). Used by `dispatch_laplace_spatial`
 #' when `spatial$type == "gp"`. The neighbor structure is read straight
-#' off the validated spec — call `validate_gp(spatial, data)` first if
+#' off the validated spec -- call `validate_gp(spatial, data)` first if
 #' constructing manually.
 #'
 #' @param y Response vector.

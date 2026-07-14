@@ -134,7 +134,11 @@ covariance block, and any accompanying \code{(1 | g)} term is integrated as a 1x
 block (nothing is silently conditioned at \code{sigma_re = 1}). \code{mode = "laplace"}
 routes to the nested-Laplace \code{Sigma} integrator (\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}},
 CCD design + PC/LKJ prior); \code{control$re_cov = "gibbs"} switches to the exact
-Metropolis-within-Gibbs debias (\code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}}). Both also run on the
+Metropolis-within-Gibbs debias (\code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}}), and
+\code{control$re_cov = "aghq"} keeps the nested integrator but replaces the
+inner joint-Laplace marginal with adaptive Gauss-Hermite quadrature
+(\code{control$n_quad}, default 9 there; see \code{n_quad} in
+\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}). Both also run on the
 sampler path (\code{mode = "mala"} / \code{"pathfinder"}).
 \item \code{mode = "gibbs"} (Polya-Gamma) fits a single random-intercept model for
 \code{family = "binomial"} or \code{"neg_binomial_2"}, and \strong{samples} the RE sd

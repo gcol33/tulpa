@@ -144,6 +144,9 @@ if (solver == "gpu" && !cpp_gpu_available()) {
 #' @param x A tulpa_gp object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the Gaussian-process spatial specification to the console.
+#'
 #' @export
 print.tulpa_gp <- function(x, ...) {
   cat("tulpa Gaussian Process spatial specification\n")
@@ -234,7 +237,7 @@ print.tulpa_gp <- function(x, ...) {
 #' hsgp <- spatial_hsgp(~ lon + lat)
 #' print(hsgp)
 #'
-#' \dontrun{
+#' \donttest{
 #' # Generate synthetic spatial data
 #' set.seed(42)
 #' n <- 100
@@ -261,7 +264,7 @@ print.tulpa_gp <- function(x, ...) {
 #' }
 #'
 #' @references
-#' Riutort-Mayol, G., Bürkner, P. C., Andersen, M. R., Solin, A., & Vehtari, A.
+#' Riutort-Mayol, G., Buerkner, P. C., Andersen, M. R., Solin, A., & Vehtari, A.
 #' (2023). Practical Hilbert space approximate Bayesian Gaussian processes for
 #' probabilistic programming. Statistics and Computing, 33(1), 17.
 #'
@@ -330,6 +333,9 @@ spatial_hsgp <- function(coords,
 #'
 #' @param x A tulpa_hsgp object
 #' @param ... Ignored
+#'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the Hilbert-space GP spatial specification to the console.
 #'
 #' @export
 print.tulpa_hsgp <- function(x, ...) {
@@ -579,6 +585,9 @@ spatial_multiscale <- function(coords,
 #' @param x A tulpa_multiscale object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the multi-scale spatial specification to the console.
+#'
 #' @export
 print.tulpa_multiscale <- function(x, ...) {
   cat("tulpa Multi-Scale spatial specification\n")
@@ -731,7 +740,6 @@ validate_gp <- function(gp, data) {
 #' where:
 #' - \eqn{\beta} are global (non-spatial) coefficients
 #' - \eqn{\tilde{X}(s)} is the subset of covariates with SVCs
-
 #' - \eqn{w(s)} are spatially-varying adjustments at location s
 #'
 #' Each SVC follows an independent Gaussian process:

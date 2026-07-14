@@ -3,6 +3,11 @@
 \name{tulpa_diagnostics}
 \alias{tulpa_diagnostics}
 \title{Simulation-Based Diagnostics for tulpa Models}
+\value{
+The diagnostic functions documented in this family return their
+individual results (a test-statistic object, a data frame of residuals, or
+a \code{check_model} summary); see each function's own help page.
+}
 \description{
 Model-checking tools based on posterior predictive simulation.
 These are native R implementations equivalent to DHARMa's test suite,

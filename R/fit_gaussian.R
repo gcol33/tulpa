@@ -47,13 +47,3 @@ tulpa_gaussian <- function(formula, data, sigma_beta = 10, iter = 2000,
   fit
 }
 
-#' @export
-print.tulpa_fit <- function(x, ...) {
-  cat("tulpa fit\n")
-  cat("  N =", x$N, ", p =", x$p, "\n")
-  cat("  Samples:", x$n_samples, "\n\n")
-  cat("Posterior means:\n")
-  print(round(x$means, 4))
-  cat("\nsigma:", round(x$sigma, 4), "\n")
-  invisible(x)
-}

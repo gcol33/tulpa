@@ -241,6 +241,34 @@ coef.tulpa_fit <- function(object, ...) {
   stats::setNames(tab$estimate, tab$term)
 }
 
+# Compact fit display, robust across posterior shapes: reads only fields the
+# accessors above normalize, so sampler-, Laplace-, and nested-tier fits all
+# print without NA/NULL noise.
+#' @export
+print.tulpa_fit <- function(x, ...) {
+  header <- "tulpa fit"
+  if (!is.null(x$backend)) header <- paste0(header, "  (", x$backend, ")")
+  cat(header, "\n")
+  n_obs <- x$N %||% x$n_obs
+  if (!is.null(n_obs)) cat("  n_obs:", n_obs, "\n")
+  fd <- .fixed_draws_mat(x)
+  if (!is.null(fd)) cat("  posterior draws:", nrow(fd), "\n")
+  tab <- tryCatch(.fit_fixed_table(x), error = function(e) NULL)
+  if (!is.null(tab) && nrow(tab)) {
+    cat("\nFixed effects:\n")
+    print(data.frame(estimate  = round(tab$estimate, 4),
+                     std.error = round(tab$std.error, 4),
+                     row.names = tab$term))
+  } else if (!is.null(x$means)) {
+    cat("\nPosterior means:\n")
+    print(round(x$means, 4))
+  }
+  if (is.numeric(x$sigma) && length(x$sigma) == 1L) {
+    cat("\nsigma:", round(x$sigma, 4), "\n")
+  }
+  invisible(x)
+}
+
 #' Posterior summary of the fixed effects
 #'
 #' @param object A `tulpa_fit` object.
@@ -352,6 +380,14 @@ logLik.tulpa_fit <- function(object, ...) {
 #' @param conf.level Interval level (default 0.95).
 #' @param ... Ignored.
 #' @return Data frame: term, estimate, std.error, conf.low, conf.high.
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(100), g = factor(rep(1:10, 10)))
+#' df$y <- rpois(100, exp(0.3 * df$x))
+#' fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
+#' tidy(fit)
+#' }
 #' @export
 tidy <- function(x, ...) UseMethod("tidy")
 
@@ -366,6 +402,14 @@ tidy.tulpa_fit <- function(x, conf.level = 0.95, ...) {
 #' @param x A `tulpa_fit` object.
 #' @param ... Ignored.
 #' @return Single-row data frame.
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(100))
+#' df$y <- rpois(100, exp(0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson")
+#' glance(fit)
+#' }
 #' @export
 glance <- function(x, ...) UseMethod("glance")
 
@@ -389,6 +433,14 @@ glance.tulpa_fit <- function(x, ...) {
 #' @param ... Ignored.
 #' @return Data frame with one row per random-effect coefficient: term, group,
 #'   level, estimate, and (sampler tier only) sd and credible bounds.
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' df <- data.frame(x = rnorm(100), g = factor(rep(1:10, 10)))
+#' df$y <- rpois(100, exp(0.3 * df$x))
+#' fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
+#' ranef(fit)
+#' }
 #' @export
 ranef <- function(object, ...) UseMethod("ranef")
 
@@ -433,6 +485,8 @@ ranef.tulpa_fit <- function(object, ...) {
 #' @param type One of `"trace"`, `"density"`, `"pairs"`. The Laplace tier has no
 #'   draws, so it always shows the Gaussian densities of the fixed effects.
 #' @param ... Passed to plotting functions.
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   producing base-graphics plots of the fixed-effect posteriors.
 #' @export
 plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
   type <- match.arg(type)
@@ -619,6 +673,60 @@ fitted.tulpa_fit <- function(object, ...) {
   beta <- coef(object)
   family_mean(as.numeric(X %*% beta[colnames(X)]), object$family,
               phi = object$phi %||% 1.0)
+}
+
+#' Residuals from a tulpa fit
+#'
+#' @description
+#' Population-level residuals from the fixed-effect fitted mean: `"response"`
+#' is `y - E[y | eta]` on the response scale (trial-scaled for binomial,
+#' offset included); `"pearson"` additionally scales by the family standard
+#' deviation `sqrt(Var(y | eta))` at the fitted linear predictor. Random
+#' effects are held at zero, matching [fitted()].
+#'
+#' @param object A `tulpa_fit` object carrying `$y` and `$model_matrix`.
+#' @param type `"pearson"` (default) or `"response"`.
+#' @param ... Ignored.
+#' @return Numeric vector of length `nobs(object)`.
+#' @export
+residuals.tulpa_fit <- function(object, type = c("pearson", "response"), ...) {
+  type <- match.arg(type)
+  y <- object$y
+  if (is.null(y)) {
+    stop("residuals() needs the response ($y); refit with tulpa().",
+         call. = FALSE)
+  }
+  X <- object$model_matrix
+  if (is.null(X)) {
+    stop("residuals() needs the fixed-effect design ($model_matrix); refit ",
+         "with tulpa().", call. = FALSE)
+  }
+  beta <- coef(object)
+  eta  <- as.numeric(X %*% beta[colnames(X)]) + (object$offset %||% 0)
+  mu   <- family_response_mean(eta, object$family, n_trials = object$n_trials,
+                               phi = object$phi %||% 1.0)
+  r <- as.numeric(y) - mu
+  if (type == "pearson") {
+    v <- family_variance(eta, object$family, n_trials = object$n_trials,
+                         phi = object$phi %||% 1.0, phi2 = object$phi2)
+    r <- r / sqrt(pmax(v, .Machine$double.eps))
+  }
+  r
+}
+
+#' Number of observations in a tulpa fit
+#'
+#' @param object A `tulpa_fit` object.
+#' @param ... Ignored.
+#' @return Integer observation count.
+#' @export
+nobs.tulpa_fit <- function(object, ...) {
+  n <- object$N %||% (if (!is.null(object$y)) length(object$y) else NULL)
+  if (is.null(n)) {
+    stop("nobs() needs an observation count ($N or $y) on the fit.",
+         call. = FALSE)
+  }
+  as.integer(n)
 }
 
 #' Predict at new covariate values (population level)

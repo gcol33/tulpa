@@ -608,7 +608,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   checkpoint  <- control$checkpoint
   n_quad <- as.integer(n_quad)
   if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
-  if (!is.null(seed)) set.seed(as.integer(seed))
+  .seed_scoped(seed)
 
   re_terms <- .as_re_terms_list(re_terms)
   if (is.null(n_trials)) n_trials <- rep(1L, length(y))

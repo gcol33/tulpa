@@ -106,7 +106,7 @@ validate_spatial <- function(spatial, data) {
 #' )
 #' print(rsr)
 #'
-#' \dontrun{
+#' \donttest{
 #' # Generate synthetic spatial data with confounding
 #' set.seed(404)
 #' n <- 50
@@ -189,6 +189,10 @@ spatial_rsr <- function(spatial, restrict_to) {
 #'
 #' @param x A tulpa_rsr object
 #' @param ... Passed to underlying print method
+#'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the spatial specification and its restricted-spatial-regression
+#'   modifier to the console.
 #'
 #' @export
 print.tulpa_rsr <- function(x, ...) {

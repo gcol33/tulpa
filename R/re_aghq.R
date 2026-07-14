@@ -13,6 +13,10 @@
 #' latent-abundance-integrated N-mixture marginal) refines through the same
 #' quadrature.
 #'
+#' This is an engine block, not a front door: model packages call it
+#' programmatically, so its tuning knobs (`max_iter`, `n_quad`, `keep`)
+#' sit in the signature rather than in a `control` list.
+#'
 #' The engine is **structure-agnostic**. It integrates the per-group marginal
 #' \deqn{M_g = \int \exp\{\ell_g(b_g)\}\, N(b_g; 0, \Sigma)\, db_g,}
 #' where \eqn{b_g} is the group's random-effect vector (dimension
@@ -110,7 +114,7 @@
 #'   exposing the theta-score) and `n_quad > 1`: being the gradient of the true
 #'   marginal it omits the node-placement terms (`O` of the AGHQ truncation), so
 #'   it agrees with the objective only as `n_quad` grows.
-#' @param maxit Optimizer iteration cap (default 200).
+#' @param max_iter Optimizer iteration cap (default 200).
 #'
 #' @return A list with: `theta` (refined fixed parameters), `Sigma_list`
 #'   (refined per-term covariance), `blup` / `blup_var` (per-term `n_groups x
@@ -158,7 +162,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                           n_obs = NULL,
                           keep = NULL, n_quad = 9L, lkj_eta = 1,
                           theta_prior_sd = Inf, gradient = c("fd", "analytic"),
-                          maxit = 200L) {
+                          max_iter = 200L) {
   gradient <- match.arg(gradient)
   native <- !is.null(oracle)
   if (!native && (is.null(make_site) == is.null(make_group))) {
@@ -268,13 +272,13 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     fns <- .aghq_analytic_optim_fns(orc, nc_terms, full_vec, n_quad, lkj_eta,
                                     ridge = ridge, n_theta = n_theta)
     opt <- stats::optim(c(theta0, re_par0), fns$fn, fns$gr, method = "BFGS",
-                        hessian = TRUE, control = list(maxit = maxit, reltol = 1e-9))
+                        hessian = TRUE, control = list(maxit = max_iter, reltol = 1e-9))
   } else {
     negf <- function(par)
       -cpp_aghq_objective(par, orc, nc_terms, full_vec, as.integer(n_quad), lkj_eta) +
         ridge * sum(par[seq_len(n_theta)]^2)
     opt <- stats::optim(c(theta0, re_par0), negf, method = "BFGS", hessian = TRUE,
-                        control = list(maxit = maxit, reltol = 1e-9))
+                        control = list(maxit = max_iter, reltol = 1e-9))
   }
   V <- tryCatch(solve(opt$hessian), error = function(e) NULL)
   if (is.null(V) || any(!is.finite(opt$par))) return(NULL)

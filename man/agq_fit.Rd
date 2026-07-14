@@ -75,6 +75,10 @@ Laplace approximation; higher \code{n_quad} reduces approximation error,
 especially for clusters with few observations or non-Gaussian
 likelihoods.
 
+This is an engine block, not a front door: its tuning knobs
+(\code{max_iter}, \code{tol}, \code{n_quad}) sit in the signature rather than in a
+\code{control} list.
+
 Scoped to the \code{lme4::glmer(..., nAGQ = N)} use case: one intercept-
 only RE term, families \code{binomial}, \code{poisson}, or \code{gaussian}. For
 multi-RE or random-slope models, use \code{\link[=tulpa_laplace]{tulpa_laplace()}} (Laplace at
@@ -83,32 +87,30 @@ the joint mode) or HMC.
 \section{Tier}{
 
 Tier 2 (Structured). AGQ is exact in the limit \code{n_quad -> infinity}
-but at finite \code{n_quad} it is a controlled approximation — same
+but at finite \code{n_quad} it is a controlled approximation -- same
 epistemic class as Laplace.
 }
 
 \examples{
-\dontrun{
-  set.seed(1)
-  n_g <- 30; n_per <- 5; n <- n_g * n_per
-  group <- rep(seq_len(n_g), each = n_per)
-  x <- rnorm(n)
-  X <- cbind(1, x)
-  u <- rnorm(n_g, 0, 0.8)
-  eta <- 0.3 + 0.7 * x + u[group]
-  y <- rbinom(n, 1, plogis(eta))
+set.seed(1)
+n_g <- 20; n_per <- 5; n <- n_g * n_per
+group <- rep(seq_len(n_g), each = n_per)
+x <- rnorm(n)
+X <- cbind(1, x)
+u <- rnorm(n_g, 0, 0.8)
+eta <- 0.3 + 0.7 * x + u[group]
+y <- rbinom(n, 1, plogis(eta))
 
-  # Compare Laplace (n_quad = 1) and AGQ-7.
-  fit_lap <- agq_fit(y, X, group, family = "binomial", n_quad = 1)
-  fit_agq <- agq_fit(y, X, group, family = "binomial", n_quad = 7)
-  c(fit_lap$log_marginal, fit_agq$log_marginal)
-}
+# Compare Laplace (n_quad = 1) and AGQ-7.
+fit_lap <- agq_fit(y, X, group, family = "binomial", n_quad = 1)
+fit_agq <- agq_fit(y, X, group, family = "binomial", n_quad = 7)
+c(fit_lap$log_marginal, fit_agq$log_marginal)
 
 }
 \references{
 Pinheiro, J. C., & Bates, D. M. (1995). Approximations to the
 log-likelihood function in the nonlinear mixed-effects model.
-\emph{Journal of Computational and Graphical Statistics}, 4(1), 12–35.
+\emph{Journal of Computational and Graphical Statistics}, 4(1), 12-35.
 }
 \seealso{
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the joint-mode Laplace path

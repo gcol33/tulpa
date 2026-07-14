@@ -66,7 +66,7 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
     stop("Collapsed parameterization is not supported with proper CAR", call. = FALSE)
   }
 
-  # Compute eigenvalue bounds for proper CAR (needed for valid ρ range)
+  # Compute eigenvalue bounds for proper CAR (needed for valid rho range)
   rho_bounds <- NULL
   if (proper) {
     rho_bounds <- compute_car_rho_bounds(adjacency)
@@ -265,12 +265,12 @@ compute_car_rho_bounds <- function(adjacency) {
   eig <- eigen(D_inv_W, symmetric = FALSE, only.values = TRUE)$values
   eig_real <- Re(eig)
 
-  # Theoretical bounds: 1/λ_min < ρ < 1/λ_max
+  # Theoretical bounds: 1/lambda_min < rho < 1/lambda_max
   lambda_min <- min(eig_real)
   lambda_max <- max(eig_real)
 
   # For positive autocorrelation, restrict to (0, 1)
-  # The upper bound is typically 1/λ_max ≈ 1 for connected graphs
+  # The upper bound is typically 1/lambda_max ~= 1 for connected graphs
   lower <- max(0, 1 / lambda_max)
   upper <- min(1, 1 / lambda_min)
 
@@ -318,7 +318,7 @@ compute_car_rho_bounds <- function(adjacency) {
 #' bym2 <- spatial_bym2(adj, level = "group", group_var = "region")
 #' print(bym2)
 #'
-#' \dontrun{
+#' \donttest{
 #' # Generate synthetic epidemiological data (not run - requires laplace backend)
 #' set.seed(456)
 #' n_regions <- 10
@@ -451,6 +451,9 @@ compute_bym2_scale <- function(adjacency) {
 #'
 #' @param x A tulpa_spatial object
 #' @param ... Ignored
+#'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the spatial specification to the console.
 #'
 #' @export
 print.tulpa_spatial <- function(x, ...) {

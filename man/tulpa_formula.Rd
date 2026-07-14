@@ -3,8 +3,13 @@
 \name{tulpa_formula}
 \alias{tulpa_formula}
 \title{Formula parsing for tulpa models}
+\value{
+The formula helpers documented in this family return parsed-formula
+structures (lists describing the fixed effects, random-effect terms, and
+latent blocks); see each function's own help page.
+}
 \description{
 Parses mixed-model formulas by walking the formula's abstract syntax tree.
-R formulas are already parse trees — we do structural recursion to find
+R formulas are already parse trees -- we do structural recursion to find
 random effect terms (\code{|} nodes) and separate them from fixed effects.
 }

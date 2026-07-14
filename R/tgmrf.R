@@ -21,7 +21,7 @@
 #' user never writes gradient code. The Laplace inner step needs only
 #' `Q(theta)` and `mu(theta)` at numeric `theta`. NUTS and VI additionally
 #' use a forward finite-difference gradient on theta, costing `dim(theta)`
-#' extra `Q` calls per outer step — cheap for the typical `dim(theta) <= 5`.
+#' extra `Q` calls per outer step -- cheap for the typical `dim(theta) <= 5`.
 #'
 #' See `dev_notes/plans/generic-todo.md` for the full design rationale and the rollout phases.
 #'
@@ -30,7 +30,7 @@
 #'   be square and symmetric. Called once at registration with `theta = init`
 #'   to infer `n_latent` and capture the sparsity pattern.
 #' @param prior A function `function(theta)` returning a finite numeric
-#'   scalar — the log-prior density at `theta`.
+#'   scalar -- the log-prior density at `theta`.
 #' @param init Numeric vector of starting values for `theta`. Names, if
 #'   present, become the canonical theta names.
 #' @param mu Optional function `function(theta)` returning a numeric vector
@@ -43,19 +43,19 @@
 #'   to build the outer grid; unused by NUTS / VI.
 #' @param obs_idx Optional integer vector mapping each observation to a
 #'   latent slot in `[1, n_latent]`. If `NULL` (default), the fit-time
-#'   driver assumes `N == n_latent` and uses `seq_len(N)` — i.e. one
+#'   driver assumes `N == n_latent` and uses `seq_len(N)` -- i.e. one
 #'   observation per latent slot, in row order.
 #' @param name Optional character; cosmetic label used by `print()` /
 #'   `summary()`.
 #'
 #' @return An object of class `c("tgmrf", "tulpa_latent_block")` with
 #'   components:
-#'   * `Q`, `prior`, `mu` — the user closures (or `NULL` for `mu`).
-#'   * `init`, `theta_names`, `theta_dim` — hyperparameter metadata.
-#'   * `n_latent` — inferred from `Q(init)`.
-#'   * `pattern` — captured sparsity pattern as a `dgCMatrix` of 1s.
-#'   * `graph` — user-supplied pattern, validated against `pattern` if given.
-#'   * `bounds`, `name` — passed through.
+#'   * `Q`, `prior`, `mu` -- the user closures (or `NULL` for `mu`).
+#'   * `init`, `theta_names`, `theta_dim` -- hyperparameter metadata.
+#'   * `n_latent` -- inferred from `Q(init)`.
+#'   * `pattern` -- captured sparsity pattern as a `dgCMatrix` of 1s.
+#'   * `graph` -- user-supplied pattern, validated against `pattern` if given.
+#'   * `bounds`, `name` -- passed through.
 #'
 #' @examples
 #' # Periodic AR(1) block, wrap-around tridiagonal precision.
@@ -246,7 +246,7 @@ tgmrf <- function(Q, prior, init,
 #' @description
 #' Wraps a user-defined latent block (currently a [tgmrf()] object) so the
 #' formula parser can recognise and route it to the inference layer. The
-#' call is structural — it is never executed at fit time. The parser
+#' call is structural -- it is never executed at fit time. The parser
 #' evaluates the inner expression in the formula's environment, removes
 #' the `latent(...)` term from the fixed-effects formula, and attaches the
 #' resulting object to `parsed$latent_blocks`.

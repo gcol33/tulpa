@@ -49,7 +49,7 @@ NULL
       eps_ridge <- 1e-2
       Q <- tau2 * ((k2 + eps_ridge) * Cmat + G1)
     } else {
-      # alpha == 2 (the default, nu = 1): Q = tau² * (κ⁴C + 2κ²G + GC⁻¹G)
+      # alpha == 2 (the default, nu = 1): Q = tau^2 * (kappa^4C + 2kappa^2G + GC^-1G)
       k4  <- k2 * k2
       G2  <- G1 %*% CinvDiag %*% G1
       Q   <- tau2 * (k4 * Cmat + 2 * k2 * G1 + G2)
@@ -102,11 +102,11 @@ NULL
 #' Build NNGP precision Lambda = (I - A)' D^-1 (I - A) at given hyperparameters.
 #'
 #' Mirrors the algorithm in `src/gpu_nngp_laplace.h::batch_nngp_scatter` plus
-#' `apply_nngp_full_prior_dense` — for each Vecchia row i (in NNGP order):
+#' `apply_nngp_full_prior_dense` -- for each Vecchia row i (in NNGP order):
 #'   - resolve conditioning set N(i) via `nn_idx` / `nn_order`
 #'   - form the n_nb x n_nb cov matrix C and the n_nb cov vector c
 #'   - solve C alpha = c
-#'   - v_i = sigma² - c' alpha
+#'   - v_i = sigma^2 - c' alpha
 #'   - beta_i is 1 at i and -alpha_k at each neighbor -> Lambda += beta_i beta_i' / v_i
 #'
 #' Identifiers follow the C++ side: `nn_idx[i, k]` is a 1-based NNGP-order
@@ -325,7 +325,7 @@ NULL
   D_re    <- .re_design(re_idx, n_re_groups, n_obs)
   D       <- cbind(D_re, A)
 
-  # eta at the mode: X β + D_re u_re + A w
+  # eta at the mode: X beta + D_re u_re + A w
   eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
   if (!is.null(weights)) W <- W * weights

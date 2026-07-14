@@ -14,6 +14,10 @@ draws, so it always shows the Gaussian densities of the fixed effects.}
 
 \item{...}{Passed to plotting functions.}
 }
+\value{
+The input \code{x}, returned invisibly. Called for the side effect of
+producing base-graphics plots of the fixed-effect posteriors.
+}
 \description{
 Plot fixed-effect posteriors
 }

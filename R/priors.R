@@ -293,6 +293,9 @@ prior_pc <- function(U = 1, alpha = 0.01) {
 #' @param x A tulpa_priors object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the full prior specification to the console.
+#'
 #' @export
 print.tulpa_priors <- function(x, ...) {
   cat("tulpa prior specification\n")
@@ -326,6 +329,9 @@ print.tulpa_priors <- function(x, ...) {
 #' @param x A tulpa_prior object
 #' @param ... Ignored
 #'
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing the prior specification to the console.
+#'
 #' @export
 print.tulpa_prior <- function(x, ...) {
   print_prior(x, indent = "")
@@ -339,7 +345,7 @@ print.tulpa_prior <- function(x, ...) {
 #' Thin wrapper around `format()` for `tulpa_prior` objects. Each
 #' `prior_*()` constructor attaches a subclass (e.g. `tulpa_prior_normal`)
 #' so adding a new distribution is one new `format.tulpa_prior_<dist>()`
-#' method — no central if/else to extend.
+#' method -- no central if/else to extend.
 #'
 #' @param prior A tulpa_prior object
 #' @param indent Indentation string
@@ -433,19 +439,20 @@ format.tulpa_prior <- function(x, indent = "", ...) {
 #' # Defaults for all families (no family argument)
 #' priors_default()
 #'
-#' # Family-specific defaults take a family object from a model package
-#' # (e.g. tulpaRatio's tulpa_negbin_negbin()), so they are not run here.
-#' \dontrun{
-#' priors_default(tulpa_negbin_negbin())
-#' priors_default(tulpa_binomial())
+#' # Family-specific defaults take a tulpa_family object. Model packages
+#' # (e.g. tulpaRatio) register rich families; a minimal one is enough here.
+#' fam <- tulpa_family(
+#'   name = "poisson_gamma",
+#'   simulate_fn = function(eta, params, n_obs, ...) rpois(n_obs, exp(eta[[1]]))
+#' )
+#' priors_default(fam)
 #'
 #' # Including spatial parameters
-#' priors_default(tulpa_negbin_negbin(), spatial = TRUE)
+#' priors_default(fam, spatial = TRUE)
 #'
 #' # Use as a starting point for customization
-#' my_priors <- priors_default(tulpa_poisson_gamma())
+#' my_priors <- priors_default(fam)
 #' my_priors$beta <- prior_normal(0, 1)  # Tighter prior on fixed effects
-#' }
 #'
 #' @seealso [tulpa_priors()] for creating custom priors
 #'

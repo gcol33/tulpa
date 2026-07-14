@@ -3,6 +3,11 @@
 \name{tulpa_validate}
 \alias{tulpa_validate}
 \title{Posterior predictive checks for tulpa models}
+\value{
+The functions documented in this family return a \code{ggplot} object
+(\code{\link[=pp_check]{pp_check()}}) or a \code{tulpa_prior_predict} object (\code{\link[=prior_predict]{prior_predict()}}); see
+each function's own help page.
+}
 \description{
 Visual and numerical checks comparing observed data to posterior
 predictive distributions. Essential for assessing model fit.

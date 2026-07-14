@@ -825,6 +825,10 @@ validate_mode <- function(fit, expected_mode, error = TRUE) {
 #' Displays information about the inference modes available in tulpa,
 #' including their tiers, guarantees, and appropriate use cases.
 #'
+#' @return `NULL`, invisibly. Called for the side effect of printing the
+#'   available inference modes, their tiers, guarantees, and use cases to the
+#'   console.
+#'
 #' @export
 inference_mode_info <- function() {
   cat("tulpa Inference Modes\n")

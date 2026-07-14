@@ -368,7 +368,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         n_iter = 2000L, warmup = 1000L,
                         prior_beta_sd = 10.0, prior_sigma_scale = 2.5,
                         spatial = NULL, temporal = NULL,
-                        verbose = TRUE, n_threads = 1L) {
+                        verbose = FALSE, n_threads = 1L) {
 
   # Spatial / temporal field present: route to the matching Polya-Gamma Gibbs
   # sampler (the Gibbs analogue of tulpa_laplace(spatial = ...)). `group` /

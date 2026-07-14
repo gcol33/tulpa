@@ -225,7 +225,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     stop("`inner_fit` must be a function(hypers) -> list(log_marginal, ...).",
          call. = FALSE)
   }
-  if (!is.null(seed)) set.seed(as.integer(seed))
+  .seed_scoped(seed)
 
   specs <- .hyper_axis_specs_normalise(hyper_specs)
   axis_names <- vapply(specs, `[[`, character(1), "name")

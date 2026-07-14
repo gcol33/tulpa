@@ -13,6 +13,11 @@
 
 \item{...}{Ignored}
 }
+\value{
+A \code{tulpa_temporal_summary} data frame with one row per time point
+(per component for multi-scale fits), holding the posterior mean, SD, and
+requested quantiles of the temporal effect.
+}
 \description{
 Summary method for tulpa_temporal_posterior
 }

@@ -84,7 +84,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
   }
   nt <- .cv_trials(object, n_trials, n)
 
-  if (!is.null(seed)) set.seed(as.integer(seed))
+  .seed_scoped(seed)
   if (is.null(folds)) {
     folds <- sample(rep(seq_len(K), length.out = n))
   } else {

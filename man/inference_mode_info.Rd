@@ -6,6 +6,11 @@
 \usage{
 inference_mode_info()
 }
+\value{
+\code{NULL}, invisibly. Called for the side effect of printing the
+available inference modes, their tiers, guarantees, and use cases to the
+console.
+}
 \description{
 Displays information about the inference modes available in tulpa,
 including their tiers, guarantees, and appropriate use cases.

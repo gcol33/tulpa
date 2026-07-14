@@ -29,3 +29,4 @@ to direct-quadrature quantiles.
 Azzalini, A. (1985). A class of distributions which
 includes the normal ones. \emph{Scand. J. Statist.} \strong{12}: 171-178.
 }
+\keyword{internal}

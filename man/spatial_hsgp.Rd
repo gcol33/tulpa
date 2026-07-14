@@ -74,7 +74,7 @@ The hyperparameters are:
 hsgp <- spatial_hsgp(~ lon + lat)
 print(hsgp)
 
-\dontrun{
+\donttest{
 # Generate synthetic spatial data
 set.seed(42)
 n <- 100
@@ -102,7 +102,7 @@ summary(fit)
 
 }
 \references{
-Riutort-Mayol, G., Bürkner, P. C., Andersen, M. R., Solin, A., & Vehtari, A.
+Riutort-Mayol, G., Buerkner, P. C., Andersen, M. R., Solin, A., & Vehtari, A.
 (2023). Practical Hilbert space approximate Bayesian Gaussian processes for
 probabilistic programming. Statistics and Computing, 33(1), 17.
 }

@@ -1,6 +1,6 @@
 #' Fit a Spatial Model using SPDE Laplace Approximation
 #'
-#' Fits a GLM with a Matérn spatial field via the SPDE approach.
+#' Fits a GLM with a Matern spatial field via the SPDE approach.
 #' Uses CHOLMOD sparse solver with optional nested Laplace for
 #' hyperparameter integration.
 #'

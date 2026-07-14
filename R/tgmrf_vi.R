@@ -11,7 +11,7 @@
 #' This is the Tier-2 (structured) sibling of the tgmrf IMH and NUTS
 #' fitters: same Laplace body for `(beta, z) | theta`, but the outer
 #' integration over `theta` is the L-BFGS Gaussian fit rather than MH or
-#' NUTS. No bias correction — the Gaussian fit *is* the approximation.
+#' NUTS. No bias correction -- the Gaussian fit *is* the approximation.
 #' Pair with the tgmrf IMH fitter for a Tier-1 upgrade (the VI fit is a
 #' perfect IMH proposal).
 #'
@@ -29,14 +29,14 @@
 #' @param lbfgs_tol L-BFGS gradient-norm tolerance (default 1e-6).
 #'
 #' @return A list with class `c("tulpa_tgmrf_vi", "tulpa_fit")`:
-#'   * `draws` — `n_draws x theta_dim` matrix of variational draws.
-#'   * `means`, `sds` — variational moments.
-#'   * `mode_theta` — L-BFGS mode in `theta`.
-#'   * `cov` — variational covariance (`solve(-hessian)`).
-#'   * `elbo` — MC estimate of `E_q[log_marginal(theta) - log q(theta)]`.
-#'   * `pilot` — the pilot [tulpa_nested_laplace()] object.
-#'   * `converged` — logical, L-BFGS convergence flag.
-#'   * `inference_mode`, `inference_tier`, `backend` — `"structured"`,
+#'   * `draws` -- `n_draws x theta_dim` matrix of variational draws.
+#'   * `means`, `sds` -- variational moments.
+#'   * `mode_theta` -- L-BFGS mode in `theta`.
+#'   * `cov` -- variational covariance (`solve(-hessian)`).
+#'   * `elbo` -- MC estimate of `E_q[log_marginal(theta) - log q(theta)]`.
+#'   * `pilot` -- the pilot [tulpa_nested_laplace()] object.
+#'   * `converged` -- logical, L-BFGS convergence flag.
+#'   * `inference_mode`, `inference_tier`, `backend` -- `"structured"`,
 #'     `2L`, `"tgmrf_vi"`.
 #'
 #' @references Zhang, Carpenter, Gelman, Vehtari (2022). Pathfinder:

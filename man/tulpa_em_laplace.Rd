@@ -31,18 +31,18 @@ is the latent-variable posterior used by the next M-step.}
 \item{m_step_encode}{Callback: \verb{function(weights, ...) -> list of blocks}.
 Each block is itself a list with the following fields:
 \itemize{
-\item \code{y} (numeric, required) — response.
-\item \code{X} (matrix, required) — fixed-effects design with \code{nrow(X) == length(y)}.
-\item \code{family} (character scalar, required) — one of \code{"binomial"},
+\item \code{y} (numeric, required) -- response.
+\item \code{X} (matrix, required) -- fixed-effects design with \code{nrow(X) == length(y)}.
+\item \code{family} (character scalar, required) -- one of \code{"binomial"},
 \code{"poisson"}, \code{"gaussian"}, \code{"negbin"} / \code{"neg_binomial_2"}, \code{"gamma"},
 \code{"beta"}. Forwarded to \code{\link[=tulpa_laplace]{tulpa_laplace()}} for that block.
-\item \code{n_trials} (numeric or \code{NULL}, optional; absent or \code{NULL} defaults to 1) —
+\item \code{n_trials} (numeric or \code{NULL}, optional; absent or \code{NULL} defaults to 1) --
 binomial trial counts.
-\item \code{offset} (numeric or \code{NULL}, optional) — observation-level offset,
+\item \code{offset} (numeric or \code{NULL}, optional) -- observation-level offset,
 length-matched to \code{y} when non-\code{NULL}.
-\item \code{phi} (numeric scalar, optional) — dispersion forwarded to
+\item \code{phi} (numeric scalar, optional) -- dispersion forwarded to
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} (used by \code{negbin}, \code{gamma}).
-\item \code{re_list}, \code{spatial}, \code{weights} (optional) — forwarded as-is.
+\item \code{re_list}, \code{spatial}, \code{weights} (optional) -- forwarded as-is.
 }}
 
 \item{spatial}{Optional default spatial spec. Currently unused by the
@@ -89,8 +89,7 @@ MI/Gibbs to encode the block), and any extra arguments forwarded through
 possibly with mutated dispersion / shape / precision fields (e.g.
 \code{fits[[k]]$phi}). Use this to update non-eta parameters that fall out of
 the Laplace M-step (NB overdispersion, Gamma shape, Beta precision,
-Gaussian sigma). When \code{NULL} (default), behavior is unchanged. See
-.}
+Gaussian sigma). When \code{NULL} (default), behavior is unchanged.}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, applied to
 every block fit via \code{\link[=tulpa_laplace]{tulpa_laplace()}} (i.e. blocks without a \code{prior}
@@ -109,17 +108,17 @@ blocks differ in width; per-coefficient vectors belong on the block.}
 \value{
 A list with:
 \itemize{
-\item \code{fits} — named list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results, one per block.
-\item \code{weights} — final E-step weights.
-\item \code{n_iter} — number of EM iterations actually run.
-\item \code{converged} — logical.
-\item \code{history} — \code{data.frame(iter, delta)} of max relative parameter
+\item \code{fits} -- named list of \code{\link[=tulpa_laplace]{tulpa_laplace()}} results, one per block.
+\item \code{weights} -- final E-step weights.
+\item \code{n_iter} -- number of EM iterations actually run.
+\item \code{converged} -- logical.
+\item \code{history} -- \code{data.frame(iter, delta)} of max relative parameter
 change per iteration.
-\item \code{correction} — the resolved correction mode (\code{"none"}, \code{"mi"},
+\item \code{correction} -- the resolved correction mode (\code{"none"}, \code{"mi"},
 or \code{"gibbs"}).
-\item \code{pooled} — present when \code{correction \%in\% c("mi", "gibbs")}.
+\item \code{pooled} -- present when \code{correction \%in\% c("mi", "gibbs")}.
 Named list of pooled per-submodel summaries from \code{\link[=rubins_pool]{rubins_pool()}}.
-\item \code{draws} — present when \code{correction \%in\% c("mi", "gibbs")}.
+\item \code{draws} -- present when \code{correction \%in\% c("mi", "gibbs")}.
 List of per-draw fits with \code{beta} / \code{se} attached.
 }
 }
@@ -131,4 +130,39 @@ independently via \code{\link[=tulpa_laplace]{tulpa_laplace()}}; the engine read
 \code{offset} per block so heterogeneous-family mixtures (e.g. a binomial
 zero submodel + poisson positive submodel for a hurdle model) work
 without engine changes.
+}
+\details{
+This is an engine block, not a front door: model packages call it
+programmatically, so its tuning knobs (\code{max_iter}, \code{tol}, \code{damping})
+sit in the signature rather than in a \code{control} list.
+}
+\examples{
+\donttest{
+# Zero-inflated Poisson via EM: the E-step scores the posterior
+# probability that each zero is non-structural, the M-step encodes a
+# weighted binomial (occupancy) block and a Poisson (abundance) block.
+set.seed(1)
+n <- 200
+z <- rbinom(n, 1, 0.7)
+y <- rpois(n, 4) * z
+X <- cbind(1, rnorm(n))
+
+e_step <- function(fits, ...) {
+  if (!length(fits)) return(list(weights = pmax(as.numeric(y > 0), 0.5)))
+  psi <- plogis(drop(X \%*\% fits$occ$mode))
+  lam <- exp(drop(X \%*\% fits$abund$mode))
+  w <- ifelse(y > 0, 1, psi * exp(-lam) / (psi * exp(-lam) + (1 - psi)))
+  list(weights = w)
+}
+m_step_encode <- function(weights, ...) {
+  list(
+    occ   = list(y = weights, X = X, family = "binomial"),
+    abund = list(y = y, X = X, family = "poisson", weights = weights)
+  )
+}
+
+res <- tulpa_em_laplace(e_step, m_step_encode, verbose = FALSE)
+res$converged
+res$fits$abund$mode
+}
 }

@@ -22,7 +22,7 @@ be square and symmetric. Called once at registration with \code{theta = init}
 to infer \code{n_latent} and capture the sparsity pattern.}
 
 \item{prior}{A function \verb{function(theta)} returning a finite numeric
-scalar — the log-prior density at \code{theta}.}
+scalar -- the log-prior density at \code{theta}.}
 
 \item{init}{Numeric vector of starting values for \code{theta}. Names, if
 present, become the canonical theta names.}
@@ -40,7 +40,7 @@ to build the outer grid; unused by NUTS / VI.}
 
 \item{obs_idx}{Optional integer vector mapping each observation to a
 latent slot in \verb{[1, n_latent]}. If \code{NULL} (default), the fit-time
-driver assumes \code{N == n_latent} and uses \code{seq_len(N)} — i.e. one
+driver assumes \code{N == n_latent} and uses \code{seq_len(N)} -- i.e. one
 observation per latent slot, in row order.}
 
 \item{name}{Optional character; cosmetic label used by \code{print()} /
@@ -50,12 +50,12 @@ observation per latent slot, in row order.}
 An object of class \code{c("tgmrf", "tulpa_latent_block")} with
 components:
 \itemize{
-\item \code{Q}, \code{prior}, \code{mu} — the user closures (or \code{NULL} for \code{mu}).
-\item \code{init}, \code{theta_names}, \code{theta_dim} — hyperparameter metadata.
-\item \code{n_latent} — inferred from \code{Q(init)}.
-\item \code{pattern} — captured sparsity pattern as a \code{dgCMatrix} of 1s.
-\item \code{graph} — user-supplied pattern, validated against \code{pattern} if given.
-\item \code{bounds}, \code{name} — passed through.
+\item \code{Q}, \code{prior}, \code{mu} -- the user closures (or \code{NULL} for \code{mu}).
+\item \code{init}, \code{theta_names}, \code{theta_dim} -- hyperparameter metadata.
+\item \code{n_latent} -- inferred from \code{Q(init)}.
+\item \code{pattern} -- captured sparsity pattern as a \code{dgCMatrix} of 1s.
+\item \code{graph} -- user-supplied pattern, validated against \code{pattern} if given.
+\item \code{bounds}, \code{name} -- passed through.
 }
 }
 \description{
@@ -79,7 +79,7 @@ the gradient \code{-Q(z - mu)} and Hessian \code{-Q} wrt \code{z} are closed for
 user never writes gradient code. The Laplace inner step needs only
 \code{Q(theta)} and \code{mu(theta)} at numeric \code{theta}. NUTS and VI additionally
 use a forward finite-difference gradient on theta, costing \code{dim(theta)}
-extra \code{Q} calls per outer step — cheap for the typical \code{dim(theta) <= 5}.
+extra \code{Q} calls per outer step -- cheap for the typical \code{dim(theta) <= 5}.
 
 See \code{dev_notes/plans/generic-todo.md} for the full design rationale and the rollout phases.
 }

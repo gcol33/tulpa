@@ -42,20 +42,20 @@ A list with:
 \item \code{log_marginal}: the bridge-sampling estimate of \eqn{\log Z}.
 \item \code{n_iter}: bridge iterations to convergence.
 \item \code{converged}: logical.
-\item \code{re_sd}: relative MSE estimate (Frühwirth-Schnatter 2004); a
+\item \code{re_sd}: relative MSE estimate (Fruehwirth-Schnatter 2004); a
 rough quality check, smaller is better.
 \item \code{proposal}: the fitted proposal \code{list(mean, cov)}.
 }
 }
 \description{
 Estimate the log marginal likelihood \eqn{\log Z = \log p(y)} from
-posterior draws via the Meng–Wong / Gronau bridge-sampling identity.
+posterior draws via the Meng-Wong / Gronau bridge-sampling identity.
 Useful for Bayes factors, model comparison, and as a sanity check on
 Laplace-approximated marginal likelihoods.
 
 The classical iterative scheme (Meng & Wong 1996; Gronau et al. 2017)
 is used with a multivariate-normal proposal fit to half of the
-posterior draws — the other half is used for the bridge ratio so the
+posterior draws -- the other half is used for the bridge ratio so the
 proposal is independent of the samples that score it. All
 computations are done in log-space via \code{logsumexp} for numerical
 stability.
@@ -69,26 +69,24 @@ a sampling backend, so it does not appear in the
 }
 
 \examples{
-\dontrun{
-  # Toy: marginal likelihood of N(theta | 0, 1) under Y = theta + eps,
-  # eps ~ N(0, 1), prior theta ~ N(0, 10). Closed-form available.
-  y <- 1.5
-  log_post <- function(theta) {
-    dnorm(y, theta, 1, log = TRUE) + dnorm(theta, 0, 10, log = TRUE)
-  }
-  draws <- matrix(rnorm(2000, mean = y * 100 / 101, sd = sqrt(100 / 101)),
-                  ncol = 1)
-  bs <- bridge_sampling(draws, log_post)
-  bs$log_marginal  # should match dnorm(y, 0, sqrt(101), log = TRUE)
+# Toy: marginal likelihood of N(theta | 0, 1) under Y = theta + eps,
+# eps ~ N(0, 1), prior theta ~ N(0, 10). Closed-form available.
+y <- 1.5
+log_post <- function(theta) {
+  dnorm(y, theta, 1, log = TRUE) + dnorm(theta, 0, 10, log = TRUE)
 }
+draws <- matrix(rnorm(2000, mean = y * 100 / 101, sd = sqrt(100 / 101)),
+                ncol = 1)
+bs <- bridge_sampling(draws, log_post)
+bs$log_marginal  # should match dnorm(y, 0, sqrt(101), log = TRUE)
 
 }
 \references{
 Meng, X.-L., & Wong, W. H. (1996). Simulating ratios of normalizing
 constants via a simple identity: a theoretical exploration.
-\emph{Statistica Sinica}, 6, 831–860.
+\emph{Statistica Sinica}, 6, 831-860.
 
 Gronau, Q. F., Sarafoglou, A., Matzke, D., Ly, A., Boehm, U., Marsman,
 M., ... & Steingroever, H. (2017). A tutorial on bridge sampling.
-\emph{Journal of Mathematical Psychology}, 81, 80–97.
+\emph{Journal of Mathematical Psychology}, 81, 80-97.
 }

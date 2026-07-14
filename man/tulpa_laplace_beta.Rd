@@ -52,6 +52,6 @@ and neg_binomial_2); this wrapper does an outer 1-D optimisation of
 the Laplace-approximated log-marginal over \code{phi}, then refits at the
 optimum to return betas and Hessian.
 
-The mean–precision parameterisation is \code{y ~ Beta(mu * phi, (1 - mu) * phi)}
+The mean-precision parameterisation is \code{y ~ Beta(mu * phi, (1 - mu) * phi)}
 with default logit link; \code{y} must be strictly in \verb{(0, 1)}.
 }

@@ -4,6 +4,10 @@
 #' Visual and numerical checks comparing observed data to posterior
 #' predictive distributions. Essential for assessing model fit.
 #'
+#' @return The functions documented in this family return a `ggplot` object
+#'   ([pp_check()]) or a `tulpa_prior_predict` object ([prior_predict()]); see
+#'   each function's own help page.
+#'
 #' @name tulpa_validate
 NULL
 
@@ -26,7 +30,7 @@ NULL
 #' @examples
 #' # pp_check is a generic; model packages (e.g. tulpaObs, tulpaRatio) provide
 #' # the posterior-predictive method for their fits.
-#' \dontrun{
+#' \donttest{
 #' set.seed(123)
 #' n <- 200L
 #' df <- data.frame(y = rpois(n, 5), x = rnorm(n),
@@ -220,6 +224,8 @@ prior_predict <- function(formula, family, data,
 #'
 #' @param x A tulpa_prior_predict object
 #' @param ... Ignored
+#' @return The input `x`, returned invisibly. Called for the side effect of
+#'   printing a summary of the prior predictive draws to the console.
 #' @export
 print.tulpa_prior_predict <- function(x, ...) {
   .print_draws_summary(x, "tulpa prior predictive draws", "Draws:     ", x$n_draws)
@@ -236,6 +242,9 @@ print.tulpa_prior_predict <- function(x, ...) {
 #' @param process Process index or name (multi-process families)
 #' @param max_draws Maximum draws to overlay. Default 50.
 #' @param ... Passed through.
+#' @return A `ggplot` object (via bayesplot) when bayesplot is installed;
+#'   otherwise `NULL` invisibly, after drawing a base-graphics overlay. Called
+#'   for the density overlay of the prior predictive draws.
 #' @export
 plot.tulpa_prior_predict <- function(x, process = 1L, max_draws = 50L, ...) {
 
@@ -276,7 +285,9 @@ plot.tulpa_prior_predict <- function(x, process = 1L, max_draws = 50L, ...) {
 }
 
 # Extract the [n_draws x n_obs] pointwise log-likelihood from a tulpa_fit:
-# the combined `log_lik`, or the sum of the two-process num/denom components.
+# the combined `log_lik`, the sum of the two-process num/denom components, or
+# -- for engine fits with a builtin character family and a stored response --
+# computed from the linear-predictor posterior draws and the family registry.
 .tulpa_fit_loglik <- function(x) {
   if (is.list(x$draws) && !is.matrix(x$draws)) {
     ll <- x$draws$log_lik
@@ -286,6 +297,20 @@ plot.tulpa_prior_predict <- function(x, process = 1L, max_draws = 50L, ...) {
     if (!is.null(ll_num) && !is.null(ll_denom)) return(ll_num + ll_denom)
     if (!is.null(ll_num)) return(ll_num)
     if (!is.null(ll_denom)) return(ll_denom)
+  }
+  if (!is.null(x$y) && is.character(x$family) && length(x$family) == 1L) {
+    eta <- tryCatch(.tulpa_eta_draws(x), error = function(e) NULL)
+    if (!is.null(eta)) {
+      n_obs <- ncol(eta)
+      S <- nrow(eta)
+      Y <- matrix(as.numeric(x$y), S, n_obs, byrow = TRUE)
+      nt <- x$n_trials %||% 1
+      NT <- matrix(as.numeric(nt), S, n_obs, byrow = TRUE)
+      ll <- family_loglik(eta, Y, x$family, n_trials = NT,
+                          phi = x$phi %||% 1.0, phi2 = x$phi2)
+      dim(ll) <- dim(eta)
+      return(ll)
+    }
   }
   stop("Log-likelihood not found in model output.", call. = FALSE)
 }

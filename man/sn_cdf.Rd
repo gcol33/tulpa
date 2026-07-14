@@ -22,3 +22,4 @@ where \eqn{z = (q - \xi) / \omega} and \eqn{T} is Owen's T function.
 Owen's T is evaluated by base R numerical quadrature; no extra
 dependencies are required.
 }
+\keyword{internal}

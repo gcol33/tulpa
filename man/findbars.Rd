@@ -16,3 +16,4 @@ A list of language objects, each a \code{|} or \code{||} call
 Recursively walks the formula AST and collects all \code{|} and \code{||} nodes
 found inside parentheses. These are the random effect specifications.
 }
+\keyword{internal}

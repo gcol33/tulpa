@@ -3,10 +3,10 @@
 #
 # Two routines, both run after EM convergence:
 #
-#   * MI    — draw `n_imputations` independent hard z's from the converged
+#   * MI    -- draw `n_imputations` independent hard z's from the converged
 #             posterior weights P(z|y, theta_hat), refit each, pool via
 #             Rubin's rules.
-#   * Gibbs — warm-started Markov chain z|theta -> theta|z. Each step draws
+#   * Gibbs -- warm-started Markov chain z|theta -> theta|z. Each step draws
 #             z from a fresh E-step run on the current fits, then refits.
 #             Pooled via Rubin's rules.
 #
@@ -36,11 +36,11 @@
 
 # ----------------------------------------------------------------------------
 # Attach (beta, se) to a single block fit so it can be consumed by
-# rubins_pool(). Pooling is over the fixed-effects block only — RE values
+# rubins_pool(). Pooling is over the fixed-effects block only -- RE values
 # are nuisance and aren't comparable across draws (the RE encoding depends
 # on the assembled block, not the latent variable).
 #
-# Shared with em_mc.R — kept in this file because both correction paths
+# Shared with em_mc.R -- kept in this file because both correction paths
 # and MCEM build their per-draw pool input the same way.
 # ----------------------------------------------------------------------------
 .attach_beta_se <- function(fit, n_fixed) {
@@ -70,7 +70,7 @@
 
 # ----------------------------------------------------------------------------
 # Fit one draw: encode + per-block validate + Laplace fit + attach (beta, se).
-# `weights` here is the *user's weights object* (hard z, or continuous —
+# `weights` here is the *user's weights object* (hard z, or continuous --
 # this helper doesn't care, m_step_encode handles both forms).
 # ----------------------------------------------------------------------------
 .fit_one_draw <- function(weights, m_step_encode, label_prefix = "",

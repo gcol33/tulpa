@@ -431,10 +431,18 @@
         X = bundle$X, re_terms = re_terms, family = family, phi = phi
       )
       if (backend == "re_cov_nested") {
+        # `control$re_cov = "aghq"` is the nested integrator with an AGHQ inner
+        # marginal: n_quad defaults to 9 there, to the plain joint Laplace (1)
+        # otherwise. An explicit control$n_quad always wins.
+        re_cov_method <- match.arg(control$re_cov %||% "nested",
+                                   c("nested", "gibbs", "aghq"))
+        n_quad <- as.integer(control$n_quad %||%
+                               (if (re_cov_method == "aghq") 9L else 1L))
         return(c(common, list(
           beta_prior  = beta_prior,
           prior_sigma = control$prior_sigma %||% c(3, 0.05),
           eta         = control$eta %||% 2,
+          n_quad      = n_quad,
           control     = list(
             integration = control$integration %||% "ccd",
             n_per_axis  = control$n_per_axis %||% 5L,
@@ -781,7 +789,11 @@
 #'   block (nothing is silently conditioned at `sigma_re = 1`). `mode = "laplace"`
 #'   routes to the nested-Laplace `Sigma` integrator ([tulpa_re_cov_nested()],
 #'   CCD design + PC/LKJ prior); `control$re_cov = "gibbs"` switches to the exact
-#'   Metropolis-within-Gibbs debias ([tulpa_re_cov_gibbs()]). Both also run on the
+#'   Metropolis-within-Gibbs debias ([tulpa_re_cov_gibbs()]), and
+#'   `control$re_cov = "aghq"` keeps the nested integrator but replaces the
+#'   inner joint-Laplace marginal with adaptive Gauss-Hermite quadrature
+#'   (`control$n_quad`, default 9 there; see `n_quad` in
+#'   [tulpa_re_cov_nested()]). Both also run on the
 #'   sampler path (`mode = "mala"` / `"pathfinder"`).
 #' * `mode = "gibbs"` (Polya-Gamma) fits a single random-intercept model for
 #'   `family = "binomial"` or `"neg_binomial_2"`, and **samples** the RE sd
@@ -1216,8 +1228,10 @@ tulpa <- function(formula, data,
   # a full Sigma, uncorrelated `(... || g)` terms a diagonal one, and any
   # accompanying `(1 | g)` term a 1x1 block), so nothing is silently conditioned
   # at sigma_re = 1. `control$re_cov = "gibbs"` switches to the exact
-  # Metropolis-within-Gibbs debias. Plain random-intercept-only models (no
-  # slopes) keep the scalar-sigma_re design path via .bundle_to_re_list.
+  # Metropolis-within-Gibbs debias; `control$re_cov = "aghq"` keeps the nested
+  # integrator with an AGHQ inner marginal (n_quad defaults to 9 there). Plain
+  # random-intercept-only models (no slopes) keep the scalar-sigma_re design
+  # path via .bundle_to_re_list.
   re_terms <- bundle$re_terms %||% list()
   has_slope <- length(re_terms) > 0L &&
     any(vapply(re_terms, function(rt) (rt$n_coefs %||% 1L) > 1L, logical(1)))
@@ -1228,7 +1242,7 @@ tulpa <- function(formula, data,
   }
   if (sel$backend == "laplace" && has_slope) {
     re_cov_method <- match.arg(control$re_cov %||% "nested",
-                               c("nested", "gibbs"))
+                               c("nested", "gibbs", "aghq"))
     sel$backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
     ti <- get_backend_tier(sel$backend)
     sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name

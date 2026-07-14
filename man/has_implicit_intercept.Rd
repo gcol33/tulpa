@@ -13,6 +13,6 @@ has_implicit_intercept(term)
 logical
 }
 \description{
-Pattern-matches on the formula AST directly — no deparse/regex.
+Pattern-matches on the formula AST directly -- no deparse/regex.
 }
 \keyword{internal}

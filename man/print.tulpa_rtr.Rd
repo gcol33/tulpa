@@ -11,6 +11,11 @@
 
 \item{...}{Passed to underlying print method}
 }
+\value{
+The input \code{x}, returned invisibly. Called for the side effect of
+printing the temporal specification and its restricted-temporal-regression
+modifier to the console.
+}
 \description{
 Print method for tulpa_rtr (temporal)
 }

@@ -44,7 +44,7 @@
 
 # Build the `phi_grid_per_arm` argument for the C++ kernels from a
 # Cartesian-product `grids` list and arm names. Returns a list of length
-# `n_arms`: entry k is either `NULL` (no phi axis for that arm — kernel
+# `n_arms`: entry k is either `NULL` (no phi axis for that arm -- kernel
 # uses the parse-time scalar phi) or a NumericVector of length n_grid
 # matching the flat outer-grid size. Phi columns in `grids` follow the
 # `phi_<arm_name>` convention produced by `.joint_cartesian`.
@@ -64,7 +64,7 @@
 # Compute a tile partition for the outer-grid loop's three-tier warm-start
 # (Phase 2 of the speedup plan, dev_notes/speedup.md). A tile groups all
 # outer-grid cells that share every hyperparameter coordinate except the
-# copy coefficient alpha — for the joint copy block under the (sigma, alpha)
+# copy coefficient alpha -- for the joint copy block under the (sigma, alpha)
 # reparam, the shared latent prior Q and the donor-arm linear predictor are
 # tile-constant, so the joint mode varies smoothly across the alpha axis
 # within a tile. Using the tile's median-alpha cell as a warm-start for the
@@ -107,7 +107,7 @@
     tile_pilot_cells <- integer(n_tiles)
     for (t in seq_len(n_tiles) - 1L) {
         if (t == tile_of_global) {
-            # Global pilot doubles as this tile's pilot — no Tier-2 solve.
+            # Global pilot doubles as this tile's pilot -- no Tier-2 solve.
             tile_pilot_cells[t + 1L] <- k_global_pilot
             next
         }
@@ -450,13 +450,13 @@
 # cells from mode-tracked refinement on axis Y are pinned at modal
 # (non-Y) values; including them in axis X's marginal (X != Y) collapses
 # X to a point and shrinks Sd(X). Recompute mean/Sd for each column of
-# `theta_grid` using only cells that vary that column — cartesian cells
+# `theta_grid` using only cells that vary that column -- cartesian cells
 # (`refining_axis == ""`) plus same-axis slice cells.
 #
 # Joint theta_mean / theta_sd come from `.nl_posterior_moments` and are
 # left in place for axes with no foreign slice cells (the recompute is a
 # no-op there). The original `theta_mean` / `theta_sd` are overwritten
-# in place rather than augmented — downstream callers should read the
+# in place rather than augmented -- downstream callers should read the
 # axis marginal, not the cartesian-only joint moment.
 .joint_recalibrate_axis_moments <- function(res) {
     if (is.null(res$refining_axis) || all(res$refining_axis == "")) return(res)
