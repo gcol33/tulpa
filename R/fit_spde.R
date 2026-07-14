@@ -239,6 +239,46 @@ fit_spde <- function(y, X, spatial,
   # front-door tulpa() fit additionally carries $phi as the variance).
   fit$family     <- fit$family %||% family
   fit$phi_kernel <- phi
+
+  # Fixed-effect mode + marginal curvature so the generic accessors (coef /
+  # summary / confint / vcov / predict) work on a direct or auto-mode SPDE
+  # fit. The nested grid path stores no per-cell modes, so anchor one refit
+  # at the posterior-mean hyperparameters; H_beta is the field-marginal Schur
+  # complement (.marginal_H_beta_spde), the same block mode = "laplace"
+  # attaches.
+  if (is.null(fit$mode) && !is.null(fit$nested)) {
+    range_hy <- fit$nested$range_mean %||% fit$nested$range_best
+    sigma_hy <- fit$nested$sigma_mean %||% fit$nested$sigma_best
+    anchor <- laplace_spde_at(
+      y = y, n_trials = n_trials, X = X, spatial = sp,
+      family = family, phi = phi,
+      range = range_hy, sigma = sigma_hy,
+      max_iter = max_iter, tol = tol, n_threads = n_threads,
+      offset = offset
+    )
+    fit$mode            <- anchor$mode
+    fit$beta            <- fit$beta %||% anchor$beta
+    fit$spatial_effects <- fit$spatial_effects %||% anchor$spatial_effects
+    fit$range           <- fit$range %||% range_hy
+    fit$sigma           <- fit$sigma %||% sigma_hy
+  }
+  if (!is.null(fit$mode)) {
+    # glmm_weights follows the R-registry dispersion convention (variance
+    # for gaussian / lognormal); this door's `phi` is the kernel SD.
+    phi_w <- if (family %in% c("gaussian", "lognormal")) phi^2 else phi
+    range_hy <- fit$range %||% fit$nested$range_mean %||% fit$nested$range_best
+    sigma_hy <- fit$sigma %||% fit$nested$sigma_mean %||% fit$nested$sigma_best
+    fit$H_beta <- fit$H_beta %||% tryCatch(
+      .marginal_H_beta_spde(
+        mode = fit$mode, X = X, spatial = sp,
+        family = family, phi = phi_w,
+        n_trials = n_trials, offset = offset,
+        range_val = range_hy, sigma_val = sigma_hy
+      ),
+      error = function(e) NULL
+    )
+  }
+
   .finalize_fit(fit, backend = "spde",
                 n_fixed = ncol(X), fixed_names = colnames(X))
 }

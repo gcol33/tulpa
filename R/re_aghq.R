@@ -121,9 +121,9 @@
 #'   n_coefs` posterior mean / variance of the RE), `theta_cov` / `theta_se`
 #'   (fixed-parameter covariance / SE from the marginal Hessian), `log_marginal`
 #'   (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
-#'   `n_quad`, `lkj_eta`, and `converged`. Returns `NULL` if the RE terms do not
-#'   share one grouping factor or the optimum is not usable (caller keeps its
-#'   prior fit).
+#'   `n_quad`, `lkj_eta`, and `converged`. RE terms that do not share one
+#'   grouping factor are an input error and stop; a singular / non-finite
+#'   optimum warns and returns `NULL` (caller keeps its prior fit).
 #' @references
 #' Pinheiro & Bates (1995). Approximations to the log-likelihood function in
 #' the nonlinear mixed-effects model. \emph{Journal of Computational and
@@ -192,7 +192,12 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   ng   <- layout[[1L]]$n_groups
   same <- all(vapply(layout, function(b)
     identical(b$idx, idx1) && identical(b$n_groups, ng), logical(1)))
-  if (!same) return(NULL)
+  if (!same) {
+    stop("`re_terms` must share one grouping factor (identical `idx` / ",
+         "`n_groups` across terms): the per-group AGHQ integral factorizes ",
+         "only then. For multiple grouping factors use tulpa_re_cov_nested() ",
+         "or tulpa_re_cov_gibbs().", call. = FALSE)
+  }
 
   nc_terms <- vapply(layout, function(b) b$nc, integer(1))
   dtot     <- sum(nc_terms)
@@ -281,7 +286,12 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                         control = list(maxit = max_iter, reltol = 1e-9))
   }
   V <- tryCatch(solve(opt$hessian), error = function(e) NULL)
-  if (is.null(V) || any(!is.finite(opt$par))) return(NULL)
+  if (is.null(V) || any(!is.finite(opt$par))) {
+    warning("tulpa_re_aghq: the joint optimum is singular or non-finite ",
+            "(no usable exact-marginal Hessian); returning NULL.",
+            call. = FALSE)
+    return(NULL)
+  }
 
   theta_ref  <- opt$par[seq_len(n_theta)]
   L_list     <- .re_cov_theta_to_L_list(opt$par[-seq_len(n_theta)], layout)

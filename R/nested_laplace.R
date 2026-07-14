@@ -214,6 +214,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res$prior <- prior
     res$timing <- tm$timing()
     return(.finalize_fit(res, backend = "nested_laplace",
+                         n_fixed = p_fixed, fixed_names = colnames(X),
                          extra_class = c("tulpa_nested_laplace", "list")))
   }
 
@@ -244,6 +245,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res$prior <- prior
   res$timing <- tm$timing()
   .finalize_fit(res, backend = "nested_laplace",
+                n_fixed = p_fixed, fixed_names = colnames(X),
                 extra_class = c("tulpa_nested_laplace", "list"))
 }
 

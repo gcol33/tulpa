@@ -1346,10 +1346,26 @@
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
+    fixed <- .joint_fixed_layout(responses)
     .finalize_fit(res, backend = "nested_laplace_joint",
+                  n_fixed = fixed$n_fixed, fixed_names = fixed$names,
                   extra_class = c("tulpa_nested_laplace_joint_multi",
                     "tulpa_nested_laplace_joint",
                                   "tulpa_nested_laplace", "list"))
+}
+
+# Fixed-effect layout of a joint fit: the latent stacks all arm betas as a
+# contiguous prefix (see .joint_multi_layout), so the generic accessors can
+# slice coef/summary to the fixed effects instead of the full latent vector.
+.joint_fixed_layout <- function(responses) {
+    arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
+    nm <- unlist(lapply(seq_along(responses), function(k) {
+        X  <- responses[[k]]$X
+        cn <- colnames(X) %||% paste0("beta", seq_len(ncol(X)))
+        cn[!nzchar(cn)] <- paste0("beta", which(!nzchar(cn)))
+        paste(arm_names[k], cn, sep = ".")
+    }), use.names = FALSE)
+    list(n_fixed = length(nm), names = nm)
 }
 
 # Latent-vector layout for the multi-block joint result. Mirrors the

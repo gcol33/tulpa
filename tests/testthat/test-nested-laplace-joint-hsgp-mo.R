@@ -353,3 +353,17 @@ test_that("hsgp_mo joint fit is identical under n_threads_outer = 2 and 1", {
                  tolerance = 1e-10)
     expect_equal(fit_par$weights, fit_serial$weights, tolerance = 1e-10)
 })
+
+test_that("coef on a direct joint fit reports only the arm fixed effects", {
+    sim <- .sim_two_arm_mo(seed = 51L, N1 = 60L, N2 = 60L)
+    block <- .mo_block(sim, c(0.5, 1.0), c(0.5, 1.0), 0.0, 0.4)
+    fit <- tulpa_nested_laplace_joint(
+        responses = sim$responses, prior = list(block), copy = NULL,
+        control = list(max_iter = 30L, tol = 1e-6, n_threads = 1L,
+                       diagnose_k = FALSE)
+    )
+    # One intercept per arm -- not the full [betas, REs, K*M basis] latent.
+    cf <- coef(fit)
+    expect_length(cf, 2L)
+    expect_named(cf, c("occ.beta1", "pos.beta1"))
+})

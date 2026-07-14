@@ -1134,7 +1134,9 @@ tulpa_nested_laplace_joint <- function(responses,
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
+    fixed <- .joint_fixed_layout(responses)
     .finalize_fit(res, backend = "nested_laplace_joint",
+                  n_fixed = fixed$n_fixed, fixed_names = fixed$names,
                   extra_class = c("tulpa_nested_laplace_joint",
                                   "tulpa_nested_laplace", "list"))
 }

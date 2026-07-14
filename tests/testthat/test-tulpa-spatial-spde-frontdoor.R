@@ -185,3 +185,29 @@ test_that("an SPDE spec rejects a spatial(col) term, a bad dimension, RE, and a 
     "SPDE supports family"
   )
 })
+
+test_that("generic accessors work on an auto-mode SPDE fit (coef/vcov/confint/summary)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+  s <- make_spde_panel(n_obs = 150L, seed = 17L)
+  fit <- suppressWarnings(suppressMessages(tulpa(
+    y ~ x, data = s$data, family = "poisson", spatial = s$spec, mode = "auto"
+  )))
+  expect_equal(fit$backend, "spde")
+
+  # The nested SPDE return used to carry no mode/H_beta/means, so every
+  # coefficient-facing generic errored on the front-door route.
+  cf <- coef(fit)
+  expect_length(cf, 2L)
+  expect_lt(abs(unname(cf[2]) - s$beta[2]), 0.4)
+
+  V <- vcov(fit)
+  expect_equal(dim(V), c(2L, 2L))
+  expect_true(all(is.finite(diag(V))) && all(diag(V) > 0))
+
+  ci <- confint(fit)
+  expect_equal(nrow(ci), 2L)
+  expect_true(all(ci[, 1] < ci[, 2]))
+
+  expect_no_error(summary(fit))
+})

@@ -385,28 +385,25 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
     stop("Combined spatial + temporal Gibbs is not available; supply only one ",
          "of `spatial` / `temporal`.", call. = FALSE)
   }
-  if (!is.null(spatial)) {
-    return(dispatch_gibbs_spatial(
+  res <- if (!is.null(spatial)) {
+    dispatch_gibbs_spatial(
       y = y, n_trials = if (is.null(n_trials)) rep(1L, length(y)) else n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       spatial = spatial, family = family,
       iter = n_iter, warmup = warmup,
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_scale,
       verbose = verbose, n_threads = n_threads
-    ))
-  }
-  if (!is.null(temporal)) {
-    return(dispatch_gibbs_temporal(
+    )
+  } else if (!is.null(temporal)) {
+    dispatch_gibbs_temporal(
       y = y, n_trials = if (is.null(n_trials)) rep(1L, length(y)) else n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       temporal = temporal, family = family,
       iter = n_iter, warmup = warmup,
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_scale,
       verbose = verbose, n_threads = n_threads
-    ))
-  }
-
-  if (family == "binomial") {
+    )
+  } else if (family == "binomial") {
     cpp_pg_binomial_gibbs(
       y = as.numeric(y), n = as.integer(n_trials), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),
@@ -430,6 +427,16 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       n_threads = as.integer(n_threads)
     )
   } else {
-    stop(sprintf("Gibbs not available for family '%s'", family), call. = FALSE)
+    stop(sprintf(
+      "Gibbs not available for family '%s'. Supported: %s.",
+      family,
+      paste(c("binomial", "neg_binomial_2"), collapse = ", ")
+    ), call. = FALSE)
   }
+
+  # Finalize so direct callers get a real tulpa_fit (print/coef/summary
+  # dispatch) instead of the raw draw list; tulpa_dispatch re-finalizing the
+  # routed path is a no-op (every field fills with %||%).
+  .finalize_fit(res, backend = "gibbs",
+                n_fixed = ncol(X), fixed_names = colnames(X))
 }
