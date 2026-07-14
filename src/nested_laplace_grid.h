@@ -82,9 +82,11 @@
 #include "sparse_cholesky.h"
 #include <tulpa/nested_progress.h>
 #include <Rcpp.h>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -239,6 +241,39 @@ inline Rcpp::List run_nested_laplace_grid(
     }
     auto record = [&](int k) {
         if (ckpt && !ckpt_done[k]) ckpt->save(k, cell_results[k]);
+    };
+
+    // Exception barrier for the OpenMP cell loops below: an exception
+    // escaping a parallel-for body is undefined behaviour (std::terminate
+    // takes down the R session), so every worker body runs through
+    // guard_cell, which records the first failure message and stamps the
+    // cell infeasible; the main thread re-raises after each region.
+    std::atomic<bool> cell_failed{false};
+    std::string       cell_err;
+    auto stamp_failed_cell = [&](int k) {
+        LaplaceResult bad;
+        bad.log_marginal = -std::numeric_limits<double>::infinity();
+        bad.n_iter = 0;
+        bad.converged = false;
+        bad.log_det_Q = 0.0;
+        cell_results[k] = bad;
+    };
+    auto guard_cell = [&](int k, auto&& body) {
+        try {
+            body();
+        } catch (const std::exception& e) {
+            if (!cell_failed.exchange(true)) cell_err = e.what();
+            stamp_failed_cell(k);
+        } catch (...) {
+            cell_failed.exchange(true);
+            stamp_failed_cell(k);
+        }
+    };
+    auto raise_if_cell_failed = [&]() {
+        if (cell_failed.load()) {
+            Rcpp::stop("nested-Laplace grid cell failed: %s",
+                       cell_err.empty() ? "unknown error" : cell_err.c_str());
+        }
     };
 
     // Determine whether we need an explicit pilot pass. Required either by
@@ -406,22 +441,29 @@ inline Rcpp::List run_nested_laplace_grid(
                     int worker = 0;
                     #endif
                     int kp = tile_pilot_cells[t];
-                    std::vector<double> warm = tile_root_mode[t];
-                    for (int k : tile_cells[t]) {
-                        if (k == kp) continue;  // root screened in Phase A
-                        if (ckpt_done[k]) {
-                            use_loaded_for_chain(k, warm);
-                            continue;
+                    int k_guard = (kp >= 0 && kp < n_grid)
+                                  ? kp
+                                  : (tile_cells[t].empty() ? 0
+                                                            : tile_cells[t][0]);
+                    guard_cell(k_guard, [&] {
+                        std::vector<double> warm = tile_root_mode[t];
+                        for (int k : tile_cells[t]) {
+                            if (k == kp) continue;  // root screened in Phase A
+                            if (ckpt_done[k]) {
+                                use_loaded_for_chain(k, warm);
+                                continue;
+                            }
+                            LaplaceResult cr =
+                                cheap_eval(k, warm, CHEAP_SCREEN_ITERS, worker);
+                            cheap_lm[k] = cr.log_marginal;
+                            if (std::isfinite(cr.log_marginal) &&
+                                static_cast<int>(cr.mode.size()) == n_x) {
+                                warm = cr.mode;
+                            }
                         }
-                        LaplaceResult cr =
-                            cheap_eval(k, warm, CHEAP_SCREEN_ITERS, worker);
-                        cheap_lm[k] = cr.log_marginal;
-                        if (std::isfinite(cr.log_marginal) &&
-                            static_cast<int>(cr.mode.size()) == n_x) {
-                            warm = cr.mode;
-                        }
-                    }
+                    });
                 }
+                raise_if_cell_failed();
             }
 
             // Softmax over finite entries. Cells with non-finite cheap log-
@@ -552,11 +594,13 @@ inline Rcpp::List run_nested_laplace_grid(
                 int tid = 0;
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
-                std::vector<double> warm_pc;
-                if (has_pc) warm_pc = pc_row(k);
-                cell_results[k] = solve_at_theta(
-                    k, has_pc ? warm_pc : pilot_mode, solver);
-                record(k);
+                guard_cell(k, [&] {
+                    std::vector<double> warm_pc;
+                    if (has_pc) warm_pc = pc_row(k);
+                    cell_results[k] = solve_at_theta(
+                        k, has_pc ? warm_pc : pilot_mode, solver);
+                    record(k);
+                });
                 if (progress) {
                     #ifdef _OPENMP
                     #pragma omp critical(nl_grid_progress)
@@ -611,11 +655,13 @@ inline Rcpp::List run_nested_laplace_grid(
                 int tid = 0;
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
-                std::vector<double> warm_pc;
-                if (has_pc) warm_pc = pc_row(k);
-                cell_results[k] = solve_at_theta(
-                    k, has_pc ? warm_pc : pilot_mode, solver);
-                record(k);
+                guard_cell(k, [&] {
+                    std::vector<double> warm_pc;
+                    if (has_pc) warm_pc = pc_row(k);
+                    cell_results[k] = solve_at_theta(
+                        k, has_pc ? warm_pc : pilot_mode, solver);
+                    record(k);
+                });
                 // Tile-pilot mode is the Tier-3 warm-start; if the cell
                 // diverged, fall back to the global pilot mode so we don't
                 // propagate garbage to the rest of the tile.
@@ -629,6 +675,7 @@ inline Rcpp::List run_nested_laplace_grid(
                     progress->tick();
                 }
             }
+            raise_if_cell_failed();
 
             // Tier 3: every non-pilot cell warm-started from its tile
             // pilot (falling back to the global pilot when the tile pilot
@@ -649,15 +696,17 @@ inline Rcpp::List run_nested_laplace_grid(
                 int tid = 0;
                 #endif
                 SparseCholeskySolver* solver = solver_pool[tid].get();
-                std::vector<double> warm_pc;
-                if (has_pc) warm_pc = pc_row(k);
-                const std::vector<double>& warm =
-                    has_pc ? warm_pc
-                    : ((t >= 0 && t < n_tiles && !tile_modes[t].empty())
-                       ? tile_modes[t]
-                       : pilot_mode);
-                cell_results[k] = solve_at_theta(k, warm, solver);
-                record(k);
+                guard_cell(k, [&] {
+                    std::vector<double> warm_pc;
+                    if (has_pc) warm_pc = pc_row(k);
+                    const std::vector<double>& warm =
+                        has_pc ? warm_pc
+                        : ((t >= 0 && t < n_tiles && !tile_modes[t].empty())
+                           ? tile_modes[t]
+                           : pilot_mode);
+                    cell_results[k] = solve_at_theta(k, warm, solver);
+                    record(k);
+                });
                 if (progress) {
                     #ifdef _OPENMP
                     #pragma omp critical(nl_grid_progress)
@@ -666,6 +715,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 }
             }
         }
+        raise_if_cell_failed();
     }
 
     // -------- Merge POD results into the Rcpp output (single-threaded) --------

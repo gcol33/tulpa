@@ -122,9 +122,12 @@
   // Caller-supplied inv-mass diagonal (e.g. from a Laplace approximation).
   // Overrides any structural warm-start above. Subsequent mass adaptation
   // still runs and refines this starting point.
+  // A wrong-length init is silently ignored here; this fragment runs inside
+  // the parallel-chain region, where REprintf (R API) is not thread-safe.
+  // The verbose branch below reports the applied metric on serial runs.
   bool caller_inv_metric = (!inv_metric_init.empty()
                             && (int)inv_metric_init.size() == n_params);
-  if (!inv_metric_init.empty() && (int)inv_metric_init.size() != n_params) {
+  if (verbose && !inv_metric_init.empty() && !caller_inv_metric) {
     REprintf("  [WARMSTART] inv_metric_init length %d != n_params %d, ignoring\n",
              (int)inv_metric_init.size(), n_params);
   }

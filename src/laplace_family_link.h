@@ -540,6 +540,15 @@ inline double compute_total_log_lik(
     const Rcpp::NumericVector& eta, int N,
     const std::string& family, double phi, int n_threads
 ) {
+    // This entry carries no phi2, so tweedie (which requires the variance
+    // power) can never evaluate here: stop on the calling thread BEFORE the
+    // parallel region — the per-observation stop inside an omp reduction
+    // body would escape the structured block, which is std::terminate.
+    if (family == "tweedie") {
+        Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
+                   "route it through the LikelihoodSpec path, which carries "
+                   "phi2.");
+    }
     double log_lik = 0.0;
     #ifdef _OPENMP
     #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(n_threads > 0 ? n_threads : 1)

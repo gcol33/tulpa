@@ -3,7 +3,9 @@
 // run_hmc_parallel_chains:     thin Rcpp-returning wrapper over it.
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <string>
 #include <vector>
 
 #include <Rcpp.h>
@@ -155,15 +157,35 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   // so all gradient modes (N, A, A_t, H) run in parallel.
 #ifdef _OPENMP
   if (n_chains > 1) {
+    // Exception barrier: an exception escaping the omp for body (Rcpp::stop
+    // from the log-posterior, bad_alloc from per-chain buffers) is
+    // std::terminate. Each chain catches; the first message is re-raised
+    // from the main thread after the region.
+    std::atomic<bool> chain_failed{false};
+    std::string       chain_err;
     #pragma omp parallel for schedule(static) num_threads(n_chains)
     for (int c = 0; c < n_chains; c++) {
       if (done[c]) continue;
-      cpp_results[c] = run_hmc_chain_cpp(
-        q_init_per_chain[c], data, layout,
-        n_iter, n_warmup, L, c, seed, false, max_treedepth,
-        metric_type, adapt_delta, riemannian, metric_for(c)
-      );
-      if (ckpt) ckpt->save(c, cpp_results[c]);
+      try {
+        cpp_results[c] = run_hmc_chain_cpp(
+          q_init_per_chain[c], data, layout,
+          n_iter, n_warmup, L, c, seed, false, max_treedepth,
+          metric_type, adapt_delta, riemannian, metric_for(c)
+        );
+        if (ckpt) ckpt->save(c, cpp_results[c]);
+      } catch (const std::exception& e) {
+        if (!chain_failed.exchange(true)) chain_err = e.what();
+      } catch (...) {
+        chain_failed.exchange(true);
+      }
+    }
+    if (chain_failed.load()) {
+      if (shared_progress) {
+        g_active_grid_progress->finish();
+        g_active_grid_progress = nullptr;
+      }
+      Rcpp::stop("NUTS chain failed: %s",
+                 chain_err.empty() ? "unknown error" : chain_err.c_str());
     }
   } else {
     if (!done[0]) {

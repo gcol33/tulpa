@@ -277,8 +277,13 @@ inline double dcov_dphi_svc(double d, double phi, double cov_val, CovType cov_ty
   }
 }
 
-// Debug counter for SVC gradient diagnostics
-static int svc_debug_counter = 0;
+// SVC gradient diagnostics: compile-time-false like GP_DEBUG_BOUNDS /
+// GP_AUTODIFF_DEBUG. The gradient runs on parallel-chain workers, where
+// Rcpp::Rcout (R API) is not thread-safe and a file-static first-call
+// counter races; flip the macro locally for a serial debugging session.
+#ifndef SVC_GRADIENT_DEBUG
+#define SVC_GRADIENT_DEBUG false
+#endif
 
 // Fully analytical NNGP gradients for SVC - single pass, no redundant function calls
 // Complexity: O(N * nn²) - ~4x faster than numerical
@@ -291,7 +296,7 @@ inline void svc_nngp_gradients(
 ) {
   int N = svc_data.n_obs;
   int nn = svc_data.nn;
-  bool debug = (svc_debug_counter == 0);  // Only debug first call
+  const bool debug = SVC_GRADIENT_DEBUG;
 
   grads.grad_w.assign(N, 0.0);
   grads.grad_log_sigma2 = 0.0;
@@ -320,7 +325,6 @@ inline void svc_nngp_gradients(
     val_fail = true;
   }
   if (val_fail) {
-    svc_debug_counter++;
     return;
   }
 
@@ -333,7 +337,6 @@ inline void svc_nngp_gradients(
   int first_idx = svc_data.nn_order[0];
   if (first_idx < 0 || first_idx >= N) {
     if (debug) Rcpp::Rcout << "[SVC DEBUG] FAIL: first_idx=" << first_idx << " out of bounds [0," << N << ")\n";
-    svc_debug_counter++;
     return;
   }
   double w0 = w[first_idx];
@@ -476,9 +479,7 @@ inline void svc_nngp_gradients(
     grads.grad_log_phi += (dll_dv * dv_dphi + (-r / v) * dr_dphi) * phi;
   }
 
-  // Debug output for first call
   if (debug) {
-    // Compute gradient summary stats
     double sum_abs_grad_w = 0.0;
     for (int i = 0; i < N; i++) {
       sum_abs_grad_w += std::abs(grads.grad_w[i]);
@@ -486,7 +487,6 @@ inline void svc_nngp_gradients(
     Rcpp::Rcout << "[SVC DEBUG] Output: sum|grad_w|=" << sum_abs_grad_w
                 << ", grad_log_sigma2=" << grads.grad_log_sigma2
                 << ", grad_log_phi=" << grads.grad_log_phi << "\n";
-    svc_debug_counter++;
   }
 }
 
