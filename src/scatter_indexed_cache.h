@@ -53,6 +53,7 @@
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cstddef>
+#include <cstdlib>
 #include <vector>
 
 #ifdef _OPENMP
@@ -574,8 +575,17 @@ inline void scatter_arm_obs_indexed_cached(
         + ac.idx_act_act.size();
     const std::size_t reduce_ops =
         static_cast<std::size_t>(n_threads) * (nnz + n_x);
+    // Diagnostic override: TULPA_SCATTER_FORCE_PARALLEL=1 forces the parallel
+    // fill regardless of the cost guard. fill_ops omits the per-obs
+    // arm_grad_hess cost, so the guard can under-count an expensive mixture arm
+    // and stay serial; this override tests whether lifting the guard helps.
+    static const bool force_parallel = []() {
+        const char* e = std::getenv("TULPA_SCATTER_FORCE_PARALLEL");
+        return e != nullptr && e[0] == '1';
+    }();
     const bool go_parallel =
-        n_threads > 1 && arm.N >= 1000 && fill_ops > 2 * reduce_ops;
+        n_threads > 1 && arm.N >= 1000 &&
+        (force_parallel || fill_ops > 2 * reduce_ops);
 
     if (go_parallel) {
         const int T = n_threads;
