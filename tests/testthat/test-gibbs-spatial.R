@@ -271,3 +271,25 @@ test_that("continuous Gibbs samplers reject repeated-location designs", {
     "one observation per unique location"
   )
 })
+
+test_that("negbin areal ICAR Gibbs runs and returns the draw blocks", {
+  skip_on_cran()
+  set.seed(9)
+  n_units <- 12L
+  adj <- matrix(0, n_units, n_units)
+  for (i in 1:(n_units - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
+  n <- n_units * 6L
+  site <- rep(seq_len(n_units), each = 6L)
+  x <- rnorm(n)
+  y <- rnbinom(n, size = 5, mu = exp(1 + 0.3 * x))
+  fit <- tulpa:::dispatch_gibbs_spatial(
+    y = y, n_trials = rep(1L, n), X = cbind(1, x),
+    re_group = rep(0L, n), n_re_groups = 0L,
+    spatial = list(type = "icar", adjacency = adj, spatial_idx = site),
+    family = "neg_binomial_2",
+    iter = 200L, warmup = 100L)
+  expect_true(all(c("beta", "spatial", "tau", "r") %in% names(fit)))
+  expect_equal(nrow(fit$beta), 100L)
+  expect_equal(ncol(fit$spatial), n_units)
+  expect_true(all(is.finite(fit$beta)))
+})
