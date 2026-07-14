@@ -374,6 +374,18 @@ logLik.tulpa_fit <- function(object, ...) {
   ll
 }
 
+# The tidy / glance generics come from `generics` (the shared broom-ecosystem
+# home), re-exported here -- defining our own would mask broom's when both are
+# attached.
+
+#' @importFrom generics tidy
+#' @export
+generics::tidy
+
+#' @importFrom generics glance
+#' @export
+generics::glance
+
 #' Tidy fixed-effect table (broom-compatible)
 #'
 #' @param x A `tulpa_fit` object.
@@ -388,10 +400,6 @@ logLik.tulpa_fit <- function(object, ...) {
 #' fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
 #' tidy(fit)
 #' }
-#' @export
-tidy <- function(x, ...) UseMethod("tidy")
-
-#' @rdname tidy
 #' @export
 tidy.tulpa_fit <- function(x, conf.level = 0.95, ...) {
   .fit_fixed_table(x, level = conf.level)
@@ -410,10 +418,6 @@ tidy.tulpa_fit <- function(x, conf.level = 0.95, ...) {
 #' fit <- tulpa(y ~ x, data = df, family = "poisson")
 #' glance(fit)
 #' }
-#' @export
-glance <- function(x, ...) UseMethod("glance")
-
-#' @rdname glance
 #' @export
 glance.tulpa_fit <- function(x, ...) {
   data.frame(

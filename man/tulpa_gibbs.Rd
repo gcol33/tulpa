@@ -77,3 +77,10 @@ field draws when \code{spatial} is supplied)
 Public API for PG Gibbs sampling. Used by model packages for
 binomial and negative binomial GLMMs.
 }
+\details{
+For \code{family = "neg_binomial_2"} the Polya-Gamma weights are drawn
+at the exact real shape \code{PG(y + r, eta)} and the dispersion \code{r} is
+updated by a random-walk Metropolis-Hastings step on \code{log(r)} whose
+stationary support is bounded to \code{r} in \verb{[0.1, 500]}; data favouring a
+dispersion outside that range pile up at the boundary.
+}

@@ -100,12 +100,19 @@ with an areal \code{spatial} field it forms an additive space-time joint prior.}
 \item{control}{Optional list of backend tuning arguments (e.g. \code{n_iter},
 \code{warmup}, \code{epsilon} for \code{mala}; \code{n_draws} for \code{pathfinder}).}
 
-\item{...}{Reserved for future use.}
+\item{...}{Reserved for future statistical arguments. Nothing is read from
+it today, so any entry errors: a stray name here is a misspelled argument
+or a tuning knob that belongs in \code{control}.}
 }
 \value{
 A \code{tulpa_fit} object carrying the backend's output plus
 \code{inference_mode}, \code{inference_tier}, \code{backend}, \code{selection_reason},
-\code{formula}, and \code{family}.
+\code{formula}, and \code{family}. Two field-name conventions to know when
+reaching into the object directly (the generic accessors handle both):
+on nested-Laplace fits \verb{$weights} is the hyperparameter GRID weights;
+user observation weights are stored as \verb{$obs_weights}. \verb{$draws} is a
+draws matrix on engine fits, while model-package fits may carry a list
+(\verb{$y_rep}, \verb{$log_lik}) under the same name.
 }
 \description{
 Single entry point for fitting a Bayesian hierarchical model. \code{tulpa()}

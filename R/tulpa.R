@@ -890,7 +890,12 @@
 #'
 #' @return A `tulpa_fit` object carrying the backend's output plus
 #'   `inference_mode`, `inference_tier`, `backend`, `selection_reason`,
-#'   `formula`, and `family`.
+#'   `formula`, and `family`. Two field-name conventions to know when
+#'   reaching into the object directly (the generic accessors handle both):
+#'   on nested-Laplace fits `$weights` is the hyperparameter GRID weights;
+#'   user observation weights are stored as `$obs_weights`. `$draws` is a
+#'   draws matrix on engine fits, while model-package fits may carry a list
+#'   (`$y_rep`, `$log_lik`) under the same name.
 #'
 #' @seealso [inference_mode_info()], [tulpa_laplace()], [mala()], [pathfinder()]
 #' @examples

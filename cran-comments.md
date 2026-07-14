@@ -27,7 +27,9 @@
   experimental model classes (multiscale spatial, SVC, non-separable
   spatiotemporal, GP-temporal, TVC/RTR decompositions) whose fitting paths
   are exported for the companion model packages but not yet supported
-  end-to-end through the tulpa() front door, so the examples cannot run.
+  end-to-end through the tulpa() front door, or they require a likelihood
+  family from a companion model package that is not on CRAN
+  (tulpaRatio), so the examples cannot run.
 
 ## Downstream dependencies
 

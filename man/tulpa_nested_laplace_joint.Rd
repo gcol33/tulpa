@@ -318,7 +318,7 @@ for a slow beta arm.
 Pareto-\eqn{\hat{k}}, a single statement of how reliable the fit should be.
 \code{"report"} (default) computes the diagnostic and reports the achieved band.
 \code{"ok"} / \code{"good"} additionally name a TARGET band (the \eqn{\hat{k}}
-confidently usable, resp. good) and raise the default \code{diagnose_draws}
+confidently usable, resp. good) and raise the default \code{k_samples}
 (to \code{800L} / \code{2000L}, unless you set it) so the bootstrap CI can resolve it.
 \code{"none"} disables the diagnostic. The fit carries an honest verdict --
 \code{k_quality_requested}, \code{k_quality_reached}, \code{k_quality_best},
@@ -329,7 +329,7 @@ the band the engine escalates by REFINING THE INTEGRATION GRID, driven by
 the bad \eqn{\hat{k}} (see \code{k_refine}): each round widens / densifies the
 grid where the posterior mass escapes its current bounds and re-diagnoses,
 up to \code{k_max_rounds} times. This is the actual fix for a grid-width
-deficiency; \code{diagnose_draws} is the separate knob that sharpens the
+deficiency; \code{k_samples} is the separate knob that sharpens the
 \eqn{\hat{k}} ESTIMATE and is not escalated here.
 \item \code{k_refine} (\code{"grid"}) -- the integration-refinement rung for \code{k_quality}
 \code{"ok"} / \code{"good"}. \code{"grid"} (default) re-fits with adaptive grid refinement
@@ -347,14 +347,14 @@ refinement: the band is reported but not chased.
 \code{"ok"} / \code{"good"}: the maximum number of refine-and-re-fit rounds after the
 first fit. Each round allows one more refinement pass than the last. \code{0L}
 disables escalation (single-shot, the band is reported but not chased).
-\item \code{diagnose_k} (\code{TRUE}), \code{diagnose_draws} (\code{500L}) -- compute the outer
+\item \code{diagnose_k} (\code{TRUE}), \code{k_samples} (\code{500L}) -- compute the outer
 Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
 hyperparameter posterior against the proposal the integrator fits (mixed
 per-axis transforms: \code{log} for positive scales, logit for the BYM2 mixing
-weight, identity for the copy coefficient \eqn{\alpha}). \code{diagnose_draws}
+weight, identity for the copy coefficient \eqn{\alpha}). \code{k_samples}
 is the number of importance draws, each one an extra inner joint solve, and
 is the diagnostic's precision knob: a tighter k-hat needs MORE actual tail
-ratios, so increase \code{diagnose_draws} (not \code{k_bootstrap}). The draws are
+ratios, so increase \code{k_samples} (not \code{k_bootstrap}). The draws are
 RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
 axis whose support is not safely known (CAR_proper's \code{rho_car}) declines to
 the quadrature-ESS fallback (\code{pareto_k = NA}). \code{FALSE} skips the diagnostic.
@@ -363,16 +363,16 @@ hyperparameter axes (the other arms held at their posterior mean), reported
 in \code{pareto_k_by_arm}, to localise which arm drives a tail-heavy joint k; the
 joint k itself is unchanged. Per-arm k is defined for the multi-block layout
 with two or more arms and declines for the single-block shared-field layout.
-The legacy \code{k_samples} name is accepted as an alias for \code{diagnose_draws}.
+The legacy \code{k_samples} name is accepted as an alias for \code{k_samples}.
 \item \code{k_threads} (\code{NULL}) -- outer-thread width for the diagnostic's importance
-batch. The \code{diagnose_draws} re-solves are independent and run after the grid
+batch. The \code{k_samples} re-solves are independent and run after the grid
 (every core free), each solved single-threaded once the batch saturates the
 pool, so widening it is a bit-identical wall-clock speedup (the k-hat is
 unchanged). \code{NULL} follows the fit's own thread grant -- the larger of
 \code{n_threads_outer} and the inner \code{n_threads} -- so a serial fit keeps a serial
 diagnostic while a threaded fit gets a free parallel one. \code{"auto"} uses the
 physical performance-core count (capped at 2 under R CMD check); an integer
-pins the width (\code{1L} forces serial). Always capped at \code{diagnose_draws}.
+pins the width (\code{1L} forces serial). Always capped at \code{k_samples}.
 \item \code{k_bootstrap} (\code{1000L}) -- bootstrap replicates for the outer
 Pareto-\eqn{\hat{k}} uncertainty. The k-hat is a single fixed number for a
 fit + proposal; its sampling uncertainty GIVEN the proposal is estimated by
@@ -384,7 +384,7 @@ closed-form GPD-shape MLE asymptotic SE \eqn{(1 + k)/\sqrt{M}}, a
 cross-check), and \code{pareto_k_band_confident} (TRUE iff the bootstrap CI lies
 within one reliability band). The bootstrap measures how UNSTABLE the
 current tail estimate is; it cannot create tail information. Increase
-\code{diagnose_draws}, not \code{k_bootstrap}, to obtain more tail information. \code{0L}
+\code{k_samples}, not \code{k_bootstrap}, to obtain more tail information. \code{0L}
 skips it (point k-hat only). The per-arm k carries the same fields.
 \item \code{k_tail_points} (\code{NULL}) -- number of upper-tail order statistics for the
 GPD fit. \code{NULL} uses the automatic PSIS rule

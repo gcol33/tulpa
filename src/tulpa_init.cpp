@@ -29,7 +29,9 @@ static void fill_nuts_result_from_cpp(
     out->sampler[63] = '\0';
 
     int ns = hmc.n_sample;
-    out->samples = new double[ns * n_params];
+    // size_t products: int * int overflows (UB) before ~2.1e9 elements, which
+    // a large-latent multi-chain run can reach.
+    out->samples = new double[static_cast<std::size_t>(ns) * n_params];
     out->log_prob = new double[ns];
     out->accept_prob = new double[ns];
     out->divergent = new int[ns];
@@ -38,7 +40,7 @@ static void fill_nuts_result_from_cpp(
     for (int s = 0; s < ns; s++) {
         const double* row = hmc.sample_row(s);
         for (int j = 0; j < n_params; j++) {
-            out->samples[s * n_params + j] = row[j];
+            out->samples[static_cast<std::size_t>(s) * n_params + j] = row[j];
         }
         out->log_prob[s] = hmc.log_prob[s];
         out->accept_prob[s] = hmc.accept_prob[s];

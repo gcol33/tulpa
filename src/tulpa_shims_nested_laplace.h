@@ -9,6 +9,7 @@
 // are passed in by the caller and not echoed back through the shim.
 
 #include "shim_guard.h"
+#include <climits>
 
 namespace {
 
@@ -86,15 +87,27 @@ inline void copy_nested_laplace_result(
         result_out->Q_p_offsets = new int[n_grid + 1];
         result_out->Q_x_offsets = new int[n_grid + 1];
 
-        // First pass: collect per-grid nnz and build offset tables.
+        // First pass: collect per-grid nnz and build offset tables. The
+        // offset arrays are int (exported ABI), so accumulate in 64-bit and
+        // reject a grid whose flattened size would wrap instead of letting
+        // the int products overflow (UB).
         result_out->Q_p_offsets[0] = 0;
         result_out->Q_x_offsets[0] = 0;
+        long long x_run = 0;
         for (int k = 0; k < n_grid; k++) {
             Rcpp::NumericVector xv = Qx_list[k];
             int nnz_k = (int)xv.size();
-            result_out->Q_grid_nnz[k]      = nnz_k;
-            result_out->Q_p_offsets[k + 1] = (k + 1) * (Q_n + 1);
-            result_out->Q_x_offsets[k + 1] = result_out->Q_x_offsets[k] + nnz_k;
+            result_out->Q_grid_nnz[k] = nnz_k;
+            long long p_off = (static_cast<long long>(k) + 1) *
+                              (static_cast<long long>(Q_n) + 1);
+            x_run += nnz_k;
+            if (p_off > INT_MAX || x_run > INT_MAX) {
+                Rcpp::stop("store_Q grid too large: the flattened Q offsets "
+                           "exceed INT_MAX (n_grid = %d, Q_n = %d).",
+                           n_grid, Q_n);
+            }
+            result_out->Q_p_offsets[k + 1] = static_cast<int>(p_off);
+            result_out->Q_x_offsets[k + 1] = static_cast<int>(x_run);
         }
 
         int p_total = result_out->Q_p_offsets[n_grid];

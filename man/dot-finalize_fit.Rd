@@ -32,8 +32,11 @@ when the fitter left it unset.}
 The enriched fit, classed \code{c(extra_class, ..., "tulpa_fit")}.
 }
 \description{
-Every exported front-door fitter routes its return value through this helper,
-so a directly-called fitter and a \code{tulpa()}-dispatched one yield the same
+The dispatch layer and the fitters that return generic-accessor-facing
+objects route their return value through this helper (some special-purpose
+fitters -- the logpost samplers, tulpa_ep, the categorical drivers -- still
+stamp their class by hand), so a directly-called fitter and a
+\code{tulpa()}-dispatched one yield the same
 enriched object: the \code{tulpa_fit} class (so the generic S3 methods --
 \code{coef} / \code{summary} / \code{vcov} / \code{confint} / \code{tidy} / \code{glance} / \code{ranef} --
 dispatch), the fixed-effect layout (\code{n_fixed} / \code{fixed_names} / \code{param_names},

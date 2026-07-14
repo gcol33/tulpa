@@ -108,9 +108,9 @@ A list with: \code{theta} (refined fixed parameters), \code{Sigma_list}
 (refined per-term covariance), \code{blup} / \code{blup_var} (per-term \verb{n_groups x n_coefs} posterior mean / variance of the RE), \code{theta_cov} / \code{theta_se}
 (fixed-parameter covariance / SE from the marginal Hessian), \code{log_marginal}
 (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
-\code{n_quad}, \code{lkj_eta}, and \code{converged}. Returns \code{NULL} if the RE terms do not
-share one grouping factor or the optimum is not usable (caller keeps its
-prior fit).
+\code{n_quad}, \code{lkj_eta}, and \code{converged}. RE terms that do not share one
+grouping factor are an input error and stop; a singular / non-finite
+optimum warns and returns \code{NULL} (caller keeps its prior fit).
 }
 \description{
 Refines a generalized linear mixed model's fixed effects and random-effect

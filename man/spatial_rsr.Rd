@@ -74,7 +74,7 @@ fit <- tulpa(
   n_trials = rep(20L, nrow(df)),
   spatial = spatial_rsr(spatial_car(W, level = "obs"), restrict_to = ~ x),
   mode = "auto",
-  control = list(iter = 500L, warmup = 250L)
+  control = list(n_iter = 500L, warmup = 250L)
 )
 summary(fit)
 }

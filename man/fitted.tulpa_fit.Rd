@@ -15,7 +15,9 @@
 Numeric vector of fitted mean responses, length \code{nobs}.
 }
 \description{
-In-sample mean response from the fixed effects (\verb{E[y] = g^\{-1\}(X beta)}).
-Random effects are held at their prior mean of zero; group-level effects are
-in \code{\link[=ranef]{ranef()}}.
+In-sample mean response from the fixed effects and the observation offset
+(\verb{E[y] = g^\{-1\}(X beta + offset)}, trial-scaled for binomial). Random
+effects are held at their prior mean of zero; group-level effects are in
+\code{\link[=ranef]{ranef()}}. \code{y - fitted(object)} equals
+\code{residuals(object, type = "response")}.
 }

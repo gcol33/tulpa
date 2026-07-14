@@ -35,6 +35,9 @@ construction, so they say nothing about approximation bias.
 \item \code{"nested"}    : a design-matrix bundle plus one or more latent prior
 blocks (\code{latent(tgmrf(...))}), integrated over the block
 hyperparameters by the nested-Laplace driver.
+\item \code{"spde"}      : a design bundle plus a self-contained SPDE spec
+(mesh + FEM matrices); fit_spde()'s own CCD / grid
+hyperparameter engine.
 }
 \item \code{fitter}   -- name of the R function implementing the backend, or \code{NULL}
 when only a C++ kernel exists with no R entry point yet. Stored as a

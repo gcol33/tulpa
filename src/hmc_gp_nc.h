@@ -26,13 +26,17 @@ struct NNGPNCWorkspace {
     void init(int N_, int nn_) {
         if (N == N_ && nn == nn_) return;
         N = N_; nn = nn_;
-        w.resize(N);
-        sqrt_d.resize(N);
-        B_flat.assign(N * nn, 0.0);
-        B_n_nb.resize(N, 0);
-        nb_idx_flat.assign(N * nn, -1);
-        adj.resize(N, 0.0);
-        L_flat.assign(N * nn * nn, 0.0);
+        // size_t products: N * nn * nn as int overflows (UB) before the
+        // buffers themselves become infeasible.
+        const std::size_t Ns  = static_cast<std::size_t>(N);
+        const std::size_t nns = static_cast<std::size_t>(nn);
+        w.resize(Ns);
+        sqrt_d.resize(Ns);
+        B_flat.assign(Ns * nns, 0.0);
+        B_n_nb.resize(Ns, 0);
+        nb_idx_flat.assign(Ns * nns, -1);
+        adj.resize(Ns, 0.0);
+        L_flat.assign(Ns * nns * nns, 0.0);
     }
 };
 
