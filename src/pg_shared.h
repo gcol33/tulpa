@@ -205,11 +205,13 @@ inline void pg_gibbs_core_step(
     const Rcpp::IntegerVector& re_group,
     int n_re_groups,
     double prior_beta_sd,
-    double prior_sigma_re_scale
+    double prior_sigma_re_scale,
+    int n_threads = 1
 ) {
+    const int team = tulpa_omp_team_size_req(n_threads, N);
     // 1. Compute linear predictor
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) num_threads(team)
     #endif
     for (int i = 0; i < N; i++) {
         X_beta[i] = 0.0;
@@ -227,7 +229,7 @@ inline void pg_gibbs_core_step(
 
     // 3. Update beta
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) num_threads(team)
     #endif
     for (int i = 0; i < N; i++) {
         offset[i] = re_contrib[i] + spatial_contrib[i];
@@ -236,7 +238,7 @@ inline void pg_gibbs_core_step(
 
     // 4. Recompute X_beta
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) num_threads(team)
     #endif
     for (int i = 0; i < N; i++) {
         X_beta[i] = 0.0;
@@ -248,7 +250,7 @@ inline void pg_gibbs_core_step(
     // 5. Update random effects
     if (n_re_groups > 0) {
         #ifdef _OPENMP
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) num_threads(team)
         #endif
         for (int i = 0; i < N; i++) {
             offset[i] = X_beta[i] + spatial_contrib[i];
@@ -257,7 +259,7 @@ inline void pg_gibbs_core_step(
         sigma_re = update_sigma_halfcauchy(re, prior_sigma_re_scale);
 
         #ifdef _OPENMP
-        #pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static) num_threads(team)
         #endif
         for (int i = 0; i < N; i++) {
             re_contrib[i] = re[re_group[i] - 1];
@@ -277,6 +279,10 @@ inline void pg_gibbs_core_step(
 struct PgGibbsCommon {
   int N, p, n_re_groups, n_save;
   bool store_eta;
+  // Clamped team size for the per-obs regions: the caller's n_threads bounded
+  // by OMP_THREAD_LIMIT / max threads / N. Passed as a num_threads(...)
+  // clause instead of mutating the process-global OpenMP default.
+  int n_threads_team = 1;
 
   // Current chain state
   Rcpp::NumericVector beta, re;
@@ -313,9 +319,7 @@ struct PgGibbsCommon {
       sigma_re_draws(n_save_),
       eta_draws(store_eta_ ? n_save_ : 0, store_eta_ ? N : 0)
   {
-    #ifdef _OPENMP
-    if (n_threads > 0) omp_set_num_threads(n_threads);
-    #endif
+    n_threads_team = tulpa_omp_team_size_req(n_threads, N);
     for (int i = 0; i < N; i++) {
       kappa[i] = static_cast<double>(y[i]) - 0.5 * static_cast<double>(n_trials[i]);
     }

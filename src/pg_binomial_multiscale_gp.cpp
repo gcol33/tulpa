@@ -184,7 +184,7 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         combined_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
-        prior_beta_sd, prior_sigma_re_scale);
+        prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
 
     // 5. Update the local scale (field + sigma2 + phi), conditioning on the
     //    regional contribution. sum_resid uses the full current offset.

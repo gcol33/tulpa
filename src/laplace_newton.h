@@ -304,9 +304,8 @@ LaplaceResult laplace_newton_solve(
     if (x_init.size() == n_x) {
         x_init_vec.assign(x_init.begin(), x_init.end());
     }
-    #ifdef _OPENMP
-    if (n_threads > 0) omp_set_num_threads(n_threads);
-    #endif
+    // n_threads flows into laplace_newton_solve, which sizes its own
+    // regions; no process-global omp_set_num_threads here.
     return laplace_newton_solve(
         y, n_trials, family, phi, N, n_x,
         max_iter, tol, n_threads,

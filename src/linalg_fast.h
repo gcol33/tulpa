@@ -5,6 +5,7 @@
 #ifndef TULPA_LINALG_FAST_H
 #define TULPA_LINALG_FAST_H
 
+#include "omp_threads.h"
 #include <vector>
 #include <cmath>
 #include <cstring>
@@ -257,7 +258,8 @@ inline void matvec(const double* X_flat, const double* beta,
                    double* y, int N, int p) {
 
   #ifdef _OPENMP
-  #pragma omp parallel for schedule(static)
+  #pragma omp parallel for schedule(static) \
+      num_threads(tulpa_omp_team_size(N))
   #endif
   for (int i = 0; i < N; i++) {
     y[i] = dot_product(&X_flat[i * p], beta, p);
@@ -269,7 +271,8 @@ inline void matvec_add(const double* X_flat, const double* beta,
                        double* y, int N, int p) {
 
   #ifdef _OPENMP
-  #pragma omp parallel for schedule(static)
+  #pragma omp parallel for schedule(static) \
+      num_threads(tulpa_omp_team_size(N))
   #endif
   for (int i = 0; i < N; i++) {
     y[i] += dot_product(&X_flat[i * p], beta, p);
@@ -307,7 +310,8 @@ inline void compute_linear_predictors(
     double* eta_num, double* eta_denom, int N, int n_threads = 1) {
 
   #ifdef _OPENMP
-  #pragma omp parallel for schedule(static) num_threads(n_threads)
+  #pragma omp parallel for schedule(static) \
+      num_threads(tulpa_omp_team_size_req(n_threads, N))
   #endif
   for (int i = 0; i < N; i++) {
     eta_num[i] = dot_product(&X_num_flat[i * p_num], beta_num, p_num);
@@ -326,7 +330,8 @@ inline void sparse_matvec_csr(
     const double* x, double* y, int n_rows) {
 
   #ifdef _OPENMP
-  #pragma omp parallel for schedule(static)
+  #pragma omp parallel for schedule(static) \
+      num_threads(tulpa_omp_team_size(n_rows))
   #endif
   for (int i = 0; i < n_rows; i++) {
     double sum = 0.0;
@@ -726,7 +731,8 @@ inline auto make_se_kernel_matvec(
     const double inv_l2 = 1.0 / (lengthscale * lengthscale);
 
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) \
+        num_threads(tulpa_omp_team_size(N))
     #endif
     for (int i = 0; i < N; i++) {
       double sum = 0.0;

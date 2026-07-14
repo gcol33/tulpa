@@ -310,12 +310,7 @@ List pg_negbin_gibbs(
   int N = y.size();
   int p = X.ncol();
   int n_save = (n_iter - n_warmup) / thin;
-
-  #ifdef _OPENMP
-  if (n_threads > 0) {
-    omp_set_num_threads(n_threads);
-  }
-  #endif
+  const int team = tulpa_omp_team_size_req(n_threads, N);
 
   // Storage
   NumericMatrix beta_draws(n_save, p);
@@ -368,7 +363,7 @@ List pg_negbin_gibbs(
     // 1. Compute linear predictor
     // Clamp eta to [-15, 15] to prevent numerical instability
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) num_threads(team)
     #endif
     for (int i = 0; i < N; i++) {
       X_beta[i] = 0.0;
@@ -420,7 +415,7 @@ List pg_negbin_gibbs(
 
     // 6. Recompute X_beta
     #ifdef _OPENMP
-    #pragma omp parallel for schedule(static)
+    #pragma omp parallel for schedule(static) num_threads(team)
     #endif
     for (int i = 0; i < N; i++) {
       X_beta[i] = 0.0;
@@ -452,7 +447,7 @@ List pg_negbin_gibbs(
 
       // Recompute X_beta since beta[0] may have changed
       #ifdef _OPENMP
-      #pragma omp parallel for schedule(static)
+      #pragma omp parallel for schedule(static) num_threads(team)
       #endif
       for (int i = 0; i < N; i++) {
         X_beta[i] = 0.0;
@@ -570,12 +565,6 @@ List pg_negbin_negbin_gibbs(
   int p_num = X_num.ncol();
   int p_denom = X_denom.ncol();
   int n_save = (n_iter - n_warmup) / thin;
-
-  #ifdef _OPENMP
-  if (n_threads > 0) {
-    omp_set_num_threads(n_threads);
-  }
-  #endif
 
   // Storage
   NumericMatrix beta_num_draws(n_save, p_num);
@@ -825,12 +814,6 @@ List pg_negbin_gibbs_spatial(
   int N = y.size();
   int p = X.ncol();
   int n_save = (n_iter - n_warmup) / thin;
-
-  #ifdef _OPENMP
-  if (n_threads > 0) {
-    omp_set_num_threads(n_threads);
-  }
-  #endif
 
   // Storage
   NumericMatrix beta_draws(n_save, p);

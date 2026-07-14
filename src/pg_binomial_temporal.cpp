@@ -101,7 +101,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         temp_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
-        prior_beta_sd, prior_sigma_re_scale);
+        prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
 
     // 5. Update temporal effects
     for (int i = 0; i < N; i++) {
