@@ -3,6 +3,7 @@
 #include <string>
 #include <cstring>
 #include "hmc_sampler.h"
+#include "shim_guard.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/nuts_api.h"
 
@@ -77,6 +78,7 @@ static void tulpa_run_nuts_generic_impl(
     const double* inv_metric_diag,
     tulpa::NUTSResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     // Convert init to std::vector
     std::vector<double> q_init(init, init + n_params);
 
@@ -102,6 +104,7 @@ static void tulpa_run_nuts_generic_impl(
     );
 
     fill_nuts_result_from_cpp(result_out, hmc, n_params);
+    TULPA_SHIM_GUARD_END("tulpa_run_nuts_generic")
 }
 
 // ============================================================================
@@ -126,6 +129,7 @@ static void tulpa_run_nuts_chains_impl(
     const double* inv_metric_diag,
     tulpa::NUTSResult* results_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     // Per-chain init (chain-major rows).
     std::vector<std::vector<double>> q_init_per_chain(n_chains);
     for (int c = 0; c < n_chains; c++) {
@@ -157,6 +161,7 @@ static void tulpa_run_nuts_chains_impl(
     for (int c = 0; c < n_chains; c++) {
         fill_nuts_result_from_cpp(&results_out[c], chains[c], n_params);
     }
+    TULPA_SHIM_GUARD_END("tulpa_run_nuts_chains")
 }
 
 // ============================================================================
@@ -169,7 +174,9 @@ static void tulpa_compute_param_layout_impl(
     const tulpa::ModelData* data,
     tulpa::ParamLayout* layout_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     *layout_out = tulpa_hmc::compute_param_layout(*data);
+    TULPA_SHIM_GUARD_END("tulpa_compute_param_layout")
 }
 
 // ABI version — returns the version baked into this DLL
@@ -183,6 +190,7 @@ static int tulpa_get_abi_version_impl() {
 // 0 on a recognised mode, 1 if the string falls through to the AUTO default
 // (so a downstream caller can detect a typo and retry).
 static int tulpa_set_gradient_mode_str_impl(const char* mode_str) {
+    TULPA_SHIM_GUARD_BEGIN
     if (mode_str == nullptr) {
         tulpa_hmc::set_gradient_mode(tulpa::GradientMode::AUTO);
         return 1;
@@ -199,6 +207,8 @@ static int tulpa_set_gradient_mode_str_impl(const char* mode_str) {
         return 1;
     }
     return 0;
+    TULPA_SHIM_GUARD_END("tulpa_set_gradient_mode_str")
+    return 1;  // unreachable: the guard either returned or raised
 }
 
 // Defined in tulpa_shims.cpp — registers laplace / pg / vi / ess shims.

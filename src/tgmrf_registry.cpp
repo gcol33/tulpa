@@ -7,6 +7,7 @@
 // so the existing R_init_tulpa hook picks it up at DLL load.
 
 #include "tgmrf_registry.h"
+#include "shim_guard.h"
 
 #include <Rcpp.h>
 #include <R_ext/Rdynload.h>
@@ -67,8 +68,10 @@ int registry_size() {
 
 static void tulpa_register_tgmrf_impl(const char* id,
                                        const tulpa::tgmrf_backend::TgmrfSpec* spec) {
+    TULPA_SHIM_GUARD_BEGIN
     if (id == nullptr || spec == nullptr) return;
     tulpa::tgmrf_backend::register_spec(std::string(id), *spec);
+    TULPA_SHIM_GUARD_END("tulpa_register_tgmrf")
 }
 
 void tulpa_register_tgmrf_callables(DllInfo* dll) {

@@ -8,6 +8,7 @@
 
 #include "cell_coupling_registry.h"
 #include "cell_coupling_separable.h"
+#include "shim_guard.h"
 
 #include <Rcpp.h>
 #include <R_ext/Rdynload.h>
@@ -95,8 +96,10 @@ static void tulpa_register_cell_coupling_impl(
     const char* name,
     std::shared_ptr<tulpa::CellCouplingSpec> spec
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     if (name == nullptr || !spec) return;
     tulpa::register_cell_coupling(std::string(name), std::move(spec));
+    TULPA_SHIM_GUARD_END("tulpa_register_cell_coupling")
 }
 
 void tulpa_register_cell_coupling_callables(DllInfo* dll) {
