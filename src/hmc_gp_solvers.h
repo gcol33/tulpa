@@ -36,13 +36,13 @@ inline bool solve_neighbor_system(
 
   if (effective == GPSolver::CG || effective == GPSolver::PCG) {
     // CG path: copy the (top-left n_nb x n_nb) block of C into a row-major
-    // scratch buffer for the solver.
-    static thread_local std::vector<double> C_buf;
-    static thread_local std::vector<double> b_buf;
-    static thread_local std::vector<double> x_buf;
-    C_buf.resize(n_nb * n_nb);
-    b_buf.resize(n_nb);
-    x_buf.resize(n_nb);
+    // scratch buffer for the solver. Function-local buffers: the system is
+    // k x k with k <= nn (typically 10-20), so the allocation is negligible
+    // next to the solve, and lazily-initialized thread_local vectors inside
+    // an OpenMP region corrupt the heap under the mingw toolchain.
+    std::vector<double> C_buf((size_t)n_nb * n_nb);
+    std::vector<double> b_buf(n_nb);
+    std::vector<double> x_buf(n_nb);
     for (int j1 = 0; j1 < n_nb; j1++) {
       for (int j2 = 0; j2 < n_nb; j2++) {
         C_buf[j1 * n_nb + j2] = C_eigen(j1, j2);
@@ -81,12 +81,10 @@ inline bool solve_neighbor_system_second(
   GPSolver effective = cfg.effective_solver();
 
   if (effective == GPSolver::CG || effective == GPSolver::PCG) {
-    static thread_local std::vector<double> C_buf;
-    static thread_local std::vector<double> b_buf;
-    static thread_local std::vector<double> x_buf;
-    C_buf.resize(n_nb * n_nb);
-    b_buf.resize(n_nb);
-    x_buf.resize(n_nb);
+    // Function-local buffers for the same reason as solve_neighbor_system.
+    std::vector<double> C_buf((size_t)n_nb * n_nb);
+    std::vector<double> b_buf(n_nb);
+    std::vector<double> x_buf(n_nb);
     for (int j1 = 0; j1 < n_nb; j1++) {
       for (int j2 = 0; j2 < n_nb; j2++) {
         C_buf[j1 * n_nb + j2] = C_eigen(j1, j2);

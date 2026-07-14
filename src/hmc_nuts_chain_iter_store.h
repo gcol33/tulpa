@@ -4,7 +4,13 @@
       if (data.gp_parameterization == 1 && data.has_gp && layout.is_gp) {
           double sigma2_store = std::exp(q[layout.log_sigma2_gp_idx]);
           double phi_store = std::exp(q[layout.log_phi_gp_idx]);
-          static thread_local tulpa_gp::NNGPNCWorkspace nc_ws_store;
+          // POD-pointer TLS (constant init, no thread-atexit destructor): a
+          // lazily-initialized thread_local object here corrupts the heap
+          // under the mingw toolchain when chains run in parallel. The
+          // workspace intentionally leaks per thread.
+          static thread_local tulpa_gp::NNGPNCWorkspace* nc_ws_store_p = nullptr;
+          if (!nc_ws_store_p) nc_ws_store_p = new tulpa_gp::NNGPNCWorkspace();
+          tulpa_gp::NNGPNCWorkspace& nc_ws_store = *nc_ws_store_p;
           tulpa_gp::nngp_nc_forward(&q[layout.gp_w_start], sigma2_store, phi_store,
                                      data.gp_data, nc_ws_store);
           // Copy q, replace z with w

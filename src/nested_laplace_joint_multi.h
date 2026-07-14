@@ -91,7 +91,13 @@ inline void collect_coupled_row_latents(
     std::vector<int>&                out_idx,
     std::vector<double>&             out_w
 ) {
-    static thread_local std::vector<std::pair<int,double>> multi_scratch;
+    // Per-thread scratch via a constant-initialized POD pointer: a lazily
+    // dynamic-initialized `thread_local std::vector` inside an OpenMP region
+    // corrupts the heap under the mingw toolchain (init guard + thread-atexit
+    // destructor registration). The pointee intentionally leaks per thread.
+    static thread_local std::vector<std::pair<int,double>>* multi_scratch_p = nullptr;
+    if (!multi_scratch_p) multi_scratch_p = new std::vector<std::pair<int,double>>();
+    std::vector<std::pair<int,double>>& multi_scratch = *multi_scratch_p;
     const int B = static_cast<int>(blocks.size());
     for (int b = 0; b < B; b++) {
         if (d_eff_cache[b] == 0.0) continue;
@@ -524,9 +530,14 @@ inline void build_arm_row_chain(
     }
     // Active latent dofs (INDEXED_SINGLE + INDEXED_MULTI), via the shared
     // resolver so the chain matches the (idx, weight) entries the gradient /
-    // Hessian scatter writes for this row.
-    static thread_local std::vector<int>    lat_idx;
-    static thread_local std::vector<double> lat_w;
+    // Hessian scatter writes for this row. POD-pointer TLS for the same
+    // mingw/OpenMP reason as collect_coupled_row_latents' scratch.
+    static thread_local std::vector<int>*    lat_idx_p = nullptr;
+    static thread_local std::vector<double>* lat_w_p   = nullptr;
+    if (!lat_idx_p) lat_idx_p = new std::vector<int>();
+    if (!lat_w_p)   lat_w_p   = new std::vector<double>();
+    std::vector<int>&    lat_idx = *lat_idx_p;
+    std::vector<double>& lat_w   = *lat_w_p;
     lat_idx.clear();
     lat_w.clear();
     collect_coupled_row_latents(j, k_arm, blocks, d_eff_cache, lat_idx, lat_w);
