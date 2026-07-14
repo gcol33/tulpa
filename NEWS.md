@@ -4,6 +4,61 @@
 
 CRAN-preparation release.
 
+* FIX (statistical, Polya-Gamma Gibbs): the shared fixed-effect update drew
+  from `N(m, (L'L)^{-1})` instead of `N(m, (LL')^{-1})` -- a forward
+  substitution where the transpose back-substitution was required -- so every
+  PG Gibbs backend (binomial ICAR/BYM2/RSR/GP/multiscale/temporal, negbin,
+  the two-process negbin) sampled beta with the wrong covariance whenever
+  `p >= 2` and the design was correlated. Means were unaffected. Draw
+  covariance is now pinned against the asymptotic `glm` vcov in a regression
+  test.
+* FIX (statistical, Laplace SEs): the fixed-effect curvature `H_beta` (and
+  the RE / spatial-field Schur complements) evaluated the GLM weights at
+  `eta` WITHOUT the observation offset, so `vcov()` / SEs / `confint()`
+  described a different model on any non-gaussian offset fit (poisson probe:
+  link-scale SEs off ~2.3x). The offset now enters the Hessian eta on every
+  path.
+* FIX (statistical, negbin Gibbs): the PG augmentation `omega ~ PG(y + r,
+  eta)` rounded its real shape to an integer, biasing the chain worst at
+  zero counts with small `r`. New `rpg_real()` draws the exact real-shape
+  Polya-Gamma (truncated sum-of-gammas with tail-mean correction). Same
+  pass: the spatial negbin kernel's ICAR `tau` shape counts adjacency
+  components, its sum-to-zero centering absorbs the field mean into the
+  intercept (posterior-invariant), and all three negbin kernels share the
+  exact half-Cauchy auxiliary scheme for `sigma_re`.
+* FIX (concurrency): the hsgp / hsgp_mo / spde / nngp latent-block factories
+  kept one shared `prep`-rebuilt cache; under the joint driver's parallel
+  outer grid (`control$n_threads_outer > 1`) concurrent cells silently
+  solved at each other's hyperparameters. Per-cell state is now published
+  under the cell id (`NlCellCache`), safe under the coupled-cell scatter's
+  work-stealing tasks; joint and single-arm car_proper use the same cache.
+  Regression test: joint fit identical under `n_threads_outer = 2` and `1`.
+* Robustness (C++): exception barriers on the nested-Laplace grid's OpenMP
+  cell loops and the parallel NUTS chain loop (a worker exception was
+  `std::terminate`); the remaining six registered C callables carry the shim
+  exception guard; every OpenMP region is sized by an explicit
+  `num_threads(...)` clause through the `OMP_THREAD_LIMIT`-aware clamp and
+  the process-global `omp_set_num_threads()` mutations are gone; allocation
+  sizes compute in `size_t`.
+* API: every front door validates its `control` names against a canonical
+  whitelist (a misspelled knob was a silent no-op) and `tulpa()` errors on
+  stray `...` arguments (`familly = "poisson"` used to fit a gaussian). The
+  joint fitter's `diagnose_draws` knob is renamed to `k_samples`, the one
+  name every nested-Laplace fitter uses (hard rename, no alias).
+* API: front-door SPDE fits answer `coef` / `summary` / `confint` / `vcov` /
+  `predict` (the nested return now carries an anchored mode plus the
+  field-marginal `H_beta`); direct `tulpa_nested_laplace()` /
+  `tulpa_nested_laplace_joint()` fits slice `coef()` to the actual fixed
+  effects instead of relabelling the full latent vector; `tulpa_gibbs()`
+  returns a classed `tulpa_fit`; `fitted()` includes the offset and trial
+  scaling so `y - fitted(fit)` equals `residuals(fit, "response")`;
+  `tidy` / `glance` re-export the `generics` generics (no masking next to
+  broom).
+* The backend registry is the single source for per-backend family support
+  (spde gained its gaussian entry; the agq entry declares its three
+  families); `compare_models()` / `model_average()` on Laplace-tier fits are
+  deterministic (the Gaussian-synthesis draws behind the reconstructed
+  log-likelihood are seed-pinned and RNG-neutral).
 * FIX (heap corruption): lazily-initialized `thread_local` C++ objects inside
   OpenMP parallel regions corrupt the process heap under the mingw toolchain.
   One call to the NNGP CG/PCG solver (`spatial_gp(solver = "cg")`) was enough
