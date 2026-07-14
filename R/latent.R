@@ -100,12 +100,13 @@ NULL
 #' # Numerator-only factor (not shared)
 #' latent_factor(n_factors = 1, shared = FALSE)
 #'
-#' \donttest{
-#' # Use in model fitting
+#' \dontrun{
+#' # Use in model fitting through a ratio model package (tulpaRatio owns the
+#' # two-arm formula and the negbin/negbin ratio family):
 #' fit <- tulpa(
 #'   species_count | total_count ~ habitat + (1 | site),
 #'   data = df,
-#'   family = tulpa_negbin_negbin(),
+#'   family = tulpaRatio::tulpa_negbin_negbin(),
 #'   latent = latent_factor(n_factors = 2)
 #' )
 #' }
@@ -337,12 +338,13 @@ initialize_latent_params <- function(latent_info, seed = NULL) {
 #'   posterior draws.
 #'
 #' @examples
-#' \donttest{
-#' # After fitting with latent factors
+#' \dontrun{
+#' # After fitting a ratio model with latent factors (tulpaRatio owns the
+#' # two-arm formula and the negbin/negbin ratio family):
 #' fit <- tulpa(
 #'   count | total ~ x,
 #'   data = df,
-#'   family = tulpa_negbin_negbin(),
+#'   family = tulpaRatio::tulpa_negbin_negbin(),
 #'   latent = latent_factor(n_factors = 2)
 #' )
 #'

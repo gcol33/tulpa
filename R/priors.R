@@ -409,8 +409,9 @@ format.tulpa_prior <- function(x, indent = "", ...) {
 #' Useful for understanding what priors are applied before fitting
 #' and as a starting point for customization.
 #'
-#' @param family A tulpa family object (e.g., `tulpa_negbin_negbin()`).
-#'   If NULL (default), shows defaults for all families.
+#' @param family A tulpa family object (e.g. a ratio family constructor from
+#'   a model package such as tulpaRatio). If NULL (default), shows defaults
+#'   for all families.
 #' @param spatial Logical; if TRUE, include spatial priors. Default FALSE.
 #' @param temporal Logical; if TRUE, include temporal priors. Default FALSE.
 #'

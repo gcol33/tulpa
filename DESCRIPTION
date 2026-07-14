@@ -53,6 +53,7 @@ Suggests:
     fmesher,
     patchwork,
     stars,
+    statmod,
     withr
 LinkingTo:
     Rcpp,
