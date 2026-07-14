@@ -1,17 +1,23 @@
 citHeader("To cite the tulpa package in publications, use:")
 
+year <- sub("-.*", "", meta$Date)
+if (!length(year) || is.na(year) || !nzchar(year)) {
+  year <- format(Sys.Date(), "%Y")
+}
+note <- sprintf("R package version %s", meta$Version)
+
 bibentry(
   bibtype = "Manual",
   title   = "{tulpa}: Template Unified Latent Process Architecture for Bayesian Hierarchical Models",
   author  = person("Gilles", "Colling",
                    comment = c(ORCID = "0000-0003-3070-6066")),
-  year    = "2026",
-  note    = "R package version 0.0.30",
+  year    = year,
+  note    = note,
   url     = "https://github.com/gcol33/tulpa",
-  textVersion = paste(
-    "Colling, G. (2026).",
-    "tulpa: Template Unified Latent Process Architecture for Bayesian",
-    "Hierarchical Models. R package version 0.0.30.",
+  textVersion = paste0(
+    "Colling, G. (", year, "). ",
+    "tulpa: Template Unified Latent Process Architecture for Bayesian ",
+    "Hierarchical Models. ", note, ". ",
     "https://github.com/gcol33/tulpa"
   )
 )

@@ -22,5 +22,10 @@
 ^.*\.Rcheck$
 ^src/GRADIENT_COVERAGE\.md$
 ^src/.*\.gch$
+^src/.*\.o$
+^src/.*\.dll$
+^src/.*\.so$
+^todo\.md$
+^cran-comments\.md$
 ^vendor_simp\.sh$
 ^tgmrf\.html$

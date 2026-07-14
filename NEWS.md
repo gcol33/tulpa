@@ -1,5 +1,60 @@
 # tulpa NEWS
 
+## 0.1.0 (2026-07-14)
+
+CRAN-preparation release.
+
+* FIX (heap corruption): lazily-initialized `thread_local` C++ objects inside
+  OpenMP parallel regions corrupt the process heap under the mingw toolchain.
+  One call to the NNGP CG/PCG solver (`spatial_gp(solver = "cg")`) was enough
+  to crash the R session minutes later (Windows fail-fast 0xC0000374/09), and
+  the joint coupled-cell scatter / parallel-chain NC-GP storage carried the
+  same pattern -- the long-standing "OpenMP joint-parallel test heap-corrupts
+  under parallel testthat" instability. All four sites now use either
+  function-local buffers or constant-initialized POD-pointer TLS (the safe
+  pattern the autodiff arena already used). The full test suite completes in
+  a single process again.
+* Documentation: every exported Rd documents its return value; slow-but-runnable
+  examples moved from `\dontrun` to `\donttest` (`\dontrun` kept only on
+  experimental-path examples); new runnable examples for the core verbs
+  (`tulpa_criteria()`, `compare_models()`, `model_average()`,
+  `mcmc_diagnostics()`, `tidy()`, `glance()`, `ranef()`, `moran_i()`,
+  `posterior_sample()`, `tulpa_em_laplace()`); R sources and Rd are
+  ASCII-clean; plumbing exports (`ccd_grid()`, `hyper_axis_spec()`, `sn_*()`,
+  `findbars()`, ...) are `@keywords internal`.
+* New generics: `residuals.tulpa_fit` (`"pearson"` / `"response"`, computed
+  from the family registry) and `nobs.tulpa_fit`; `print.tulpa_fit` rewritten
+  to be shape-robust across the sampler / Laplace / nested tiers (it printed
+  Gaussian-only fields before).
+* WAIC / LOO on engine fits: when a fit does not carry `$draws$log_lik`, the
+  pointwise log-likelihood is computed from the linear-predictor posterior
+  draws and the family registry, so `compare_models()`, `model_average()` and
+  the criteria layer work on `tulpa()` fits from any tier.
+* Simulation diagnostics (`pit_residuals()`, `test_dispersion()`,
+  `test_outliers()`, `test_zero_inflation()`, ...) read the engine fit's
+  stored response (`$y`); the default residual type for `moran_i()` /
+  `durbin_watson()` is `"pearson"`, matching the new `residuals()` method.
+* RNG hygiene: user-supplied seeds are applied through a scoped helper that
+  restores `.Random.seed` when the fitter exits (9 fitters plus `bayes_R2()`),
+  so a seeded fit no longer clobbers the session RNG stream.
+* `control$re_cov = "aghq"`: random-slope fits can route the nested `Sigma`
+  integrator through the AGHQ inner marginal (`control$n_quad`, default 9
+  there).
+* `tulpa_re_aghq()`: `maxit` renamed `max_iter` (hard rename, no shim). The
+  EM drivers report progress via `message()` (suppressible); `tulpa_gibbs()`
+  is quiet by default.
+* Every `extern "C"` C-callable shim (the model-package ABI) now catches C++
+  exceptions at the boundary and converts them to R errors instead of
+  unwinding across the C ABI.
+* OpenMP team sizing honors `OMP_THREAD_LIMIT` via the shared
+  `tulpa_omp_team_size()` helper (CRAN 2-core test compliance).
+* DESCRIPTION: `Remotes` dropped (tulpaMesh is on CRAN), Description expanded
+  with method references (DOIs), `cph` role added; new `inst/WORDLIST`,
+  `inst/COPYRIGHTS`, and a `cleanup` script; `inst/CITATION` reads
+  `meta$Version`. Vendored `src/simp/` headers carry license lines.
+* Test suite: heavy fit / sampler blocks are `skip_on_cran()`-gated; vignette
+  sampler chunks shrunk to CRAN-friendly iteration counts.
+
 ## 0.0.79 (2026-07-12)
 
 * `integration = "grid_adaptive"` now declines to the dense tensor BEFORE any
