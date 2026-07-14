@@ -1,6 +1,7 @@
 # Pathfinder (single-path): L-BFGS + Gaussian fit + ELBO scoring.
 
 test_that("pathfinder recovers conjugate-normal mode and covariance", {
+  skip_on_cran()
   set.seed(201L)
   y <- c(0.6, -0.4)
   prior_var <- 10
@@ -25,6 +26,7 @@ test_that("pathfinder recovers conjugate-normal mode and covariance", {
 
 
 test_that("pathfinder ELBO is well-defined and finite", {
+  skip_on_cran()
   set.seed(202L)
   log_post <- function(theta) {
     sum(dnorm(theta, mean = c(1, 2), sd = 1, log = TRUE))
@@ -38,6 +40,7 @@ test_that("pathfinder ELBO is well-defined and finite", {
 
 
 test_that("pathfinder accepts user-supplied gradient", {
+  skip_on_cran()
   set.seed(203L)
   log_post <- function(theta) -0.5 * sum(theta^2)
   grad_log_post <- function(theta) -theta
@@ -69,6 +72,7 @@ test_that("pathfinder errors on non-finite init", {
 
 
 test_that("pathfinder fit works with generic methods", {
+  skip_on_cran()
   set.seed(204L)
   log_post <- function(theta) sum(dnorm(theta, log = TRUE))
   pf <- pathfinder(log_post, init = c(0, 0), n_draws = 500L)

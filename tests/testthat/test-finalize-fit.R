@@ -39,6 +39,7 @@ test_that(".finalize_fit attaches class, layout, and provenance", {
 })
 
 test_that("directly-called tulpa_laplace() is classed and provenance-tagged", {
+  skip_on_cran()
   set.seed(11)
   n <- 60L
   X <- cbind(1, rnorm(n))
@@ -62,6 +63,7 @@ test_that("directly-called tulpa_laplace() is classed and provenance-tagged", {
 })
 
 test_that("directly-called VI fit does not fake a convergence pass", {
+  skip_on_cran()
   skip_if_not(exists("tulpa_tgmrf"))
   set.seed(12)
   n <- 25L

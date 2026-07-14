@@ -26,6 +26,8 @@ gauss_gauss_truth <- function(mu_t, sigma_t, sigma_prior = 10) {
   list(mean = m_post, sd = sqrt(v_post), log_Z = sum(log_Z_per_dim))
 }
 
+skip_on_cran()
+
 test_that("SMC recovers Gaussian-Gaussian posterior moments and log Z (1-D)", {
   mu_t <- 2.5
   sigma_t <- 1.0

@@ -91,6 +91,7 @@ eta_coverage <- function(fit, eta_true, keep = NULL, level = 0.95) {
 }
 
 test_that("occupancy fit exposes calibrated fitted_eta / fitted_eta_var", {
+  skip_on_cran()
   d  <- sim_occu(seed = 21L)
   f  <- fit_occu(d)
   ng <- nrow(f$theta_grid)
@@ -107,6 +108,7 @@ test_that("occupancy fit exposes calibrated fitted_eta / fitted_eta_var", {
 })
 
 test_that("occupancy with det_prob == 1 reduces to a logit Bernoulli", {
+  skip_on_cran()
   d  <- sim_occu(seed = 22L)
   fo <- fit_occu(d, det_prob = rep(1, d$n_sites))
   fb <- fit_binom(d)
@@ -119,6 +121,7 @@ test_that("occupancy with det_prob == 1 reduces to a logit Bernoulli", {
 })
 
 test_that("occupancy recovers occupancy above the raw detection rate", {
+  skip_on_cran()
   d   <- sim_occu(seed = 23L, n_regions = 60L)
   f   <- fit_occu(d)
   mom <- post_eta_moments(f)
@@ -135,6 +138,7 @@ test_that("occupancy recovers occupancy above the raw detection rate", {
 })
 
 test_that("held-out (det_prob = 0) sites get finite prior-driven predictions", {
+  skip_on_cran()
   d <- sim_occu(seed = 24L)
   # Mark one site per region as unvisited: q = 0, no detection possible.
   held <- which(!duplicated(d$region))

@@ -13,6 +13,7 @@ test_that("Gauss-Hermite quadrature is accurate", {
 })
 
 test_that("EP is exact for a Gaussian likelihood (closed-form tilted moments)", {
+  skip_on_cran()
   set.seed(1)
   n <- 60L; X <- cbind(1, rnorm(n))
   beta <- c(0.5, -0.8); sig2 <- 0.7
@@ -33,6 +34,7 @@ test_that("EP is exact for a Gaussian likelihood (closed-form tilted moments)", 
 })
 
 test_that("EP log-marginal equals the exact Gaussian evidence", {
+  skip_on_cran()
   set.seed(4)
   n <- 50L; X <- cbind(1, rnorm(n))
   sig2 <- 0.6; s0 <- 3

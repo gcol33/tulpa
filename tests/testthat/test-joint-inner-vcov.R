@@ -132,7 +132,7 @@ test_that("multi-cell parallel run is identical to serial and per-cell", {
     n_x = jd1$n_x, idx = as.integer(idx), n_dense = jd1$p_d,
     A_cols_list = lapply(A_cols, as.integer), field_marginal = TRUE)
 
-  par <- do.call(cpp_joint_inner_vcov_blocks, c(args, list(n_threads = 4L)))
+  par <- do.call(cpp_joint_inner_vcov_blocks, c(args, list(n_threads = 2L)))
   ser <- do.call(cpp_joint_inner_vcov_blocks, c(args, list(n_threads = 1L)))
   expect_equal(par, ser)                                   # threading invariant
   pd <- seq_len(jd1$p_d)

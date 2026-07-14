@@ -9,6 +9,7 @@
 # Marginal: p(y) = N(y | 0, sqrt(101))
 
 test_that("bridge_sampling matches closed-form on conjugate normal", {
+  skip_on_cran()
   set.seed(42L)
   y <- 1.5
   prior_var <- 100
@@ -38,6 +39,7 @@ test_that("bridge_sampling matches closed-form on conjugate normal", {
 
 
 test_that("bridge_sampling handles 2-D conjugate Gaussian", {
+  skip_on_cran()
   set.seed(43L)
   # y | theta ~ N(theta, I_2),   theta ~ N(0, 10 * I_2)
   # Marginal: p(y) = product over dims.
@@ -80,6 +82,7 @@ test_that("bridge_sampling errors on non-function log_posterior", {
 
 
 test_that("bridge_sampling tolerates non-finite log-posterior on some draws", {
+  skip_on_cran()
   set.seed(44L)
   # Same toy as above but log_post returns -Inf on a small fraction
   # of draws (simulating out-of-support proposals).

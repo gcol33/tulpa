@@ -60,6 +60,7 @@ prior_spec_biv <- function(d) {
 }
 
 test_that("dense and sparse paths agree under non-zero cross_hess", {
+    skip_on_cran()
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.7
     )
@@ -99,6 +100,7 @@ test_that("dense and sparse paths agree under non-zero cross_hess", {
 })
 
 test_that("cross_hess scatter reduces to independent fits when lam01 = 0", {
+    skip_on_cran()
     # lam01 = 0 -> the joint density factorises into two independent
     # Gaussian likelihoods per arm; the coupled fit must agree with two
     # separate uncoupled fits on the same data (up to FP noise).
@@ -134,6 +136,7 @@ test_that("cross_hess scatter reduces to independent fits when lam01 = 0", {
 })
 
 test_that("fisher step-curvature retains the true Gaussian cross-Hessian", {
+    skip_on_cran()
     # The bivariate Gaussian spec's cross term lam01 is the genuine Fisher
     # off-diagonal -- a Gaussian's Hessian equals its precision, which equals
     # its Fisher information -- NOT a mixture missing-information term. Under
@@ -168,6 +171,7 @@ test_that("fisher step-curvature retains the true Gaussian cross-Hessian", {
 })
 
 test_that("opposite-sign cross_hess (lam01 < 0) still gives consistent dense/sparse", {
+    skip_on_cran()
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 3.0, lam11 = 2.0, lam01 = -1.1
     )
@@ -248,6 +252,7 @@ test_that("opposite-sign cross_hess (lam01 < 0) still gives consistent dense/spa
 }
 
 test_that("coupled field + per-group RE: dense and sparse paths agree (#86)", {
+    skip_on_cran()
     cpp_register_test_bivariate_gaussian_coupling(
         lam00 = 2.0, lam11 = 1.5, lam01 = 0.6)
     n_s <- 30L; n_g <- 6L
@@ -333,6 +338,7 @@ test_that("coupled field + per-group RE: the RE variance component is integrated
 })
 
 test_that("build-once + copy: parallel outer grid matches serial (sparse coupled, #96)", {
+    skip_on_cran()
     # gcol33/tulpa#96: the sparse joint driver now builds the Hessian pattern +
     # scatter cache ONCE and replicates them across the outer-thread and
     # cheap-pass slots by copy (shared read-only entry_map). With

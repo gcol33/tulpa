@@ -398,7 +398,7 @@ fit_lap <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
                  mode = "laplace", sigma_re = 0.6)
 fit_mala <- tulpa(y ~ x + (1 | g), data = df_b, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
-                  control = list(n_iter = 1500, warmup = 500))
+                  control = list(n_iter = 450, warmup = 150))
 ```
 
 The two tiers agree on the fixed effects to within their uncertainty, which

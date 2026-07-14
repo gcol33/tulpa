@@ -6,6 +6,7 @@
 #   4. Sensible errors on bad inputs
 
 test_that("imh_laplace recovers conjugate-normal posterior (1-D)", {
+  skip_on_cran()
   set.seed(101L)
   y <- 0.7
   prior_var <- 100
@@ -36,6 +37,7 @@ test_that("imh_laplace recovers conjugate-normal posterior (1-D)", {
 
 
 test_that("imh_laplace recovers 2-D conjugate posterior", {
+  skip_on_cran()
   set.seed(102L)
   y <- c(0.5, -0.8)
   post_var <- 10 / 11
@@ -66,6 +68,7 @@ test_that("imh_laplace registers in Tier 1 (Exact)", {
 
 
 test_that("imh_laplace fit works with generic S3 methods", {
+  skip_on_cran()
   set.seed(103L)
   log_post <- function(theta) {
     sum(dnorm(theta, mean = c(1, 2), sd = 1, log = TRUE))
@@ -112,6 +115,7 @@ test_that("imh_laplace flags low acceptance for non-Gaussian targets", {
   # Target = standard Cauchy. Laplace at the mode (0, info=1) is a poor
   # match. Acceptance should be noticeably below 1 — this is the
   # diagnostic value of imh_laplace: low accept = Laplace is biased.
+  skip_on_cran()
   set.seed(104L)
   log_post <- function(theta) dcauchy(theta, log = TRUE)
   fit <- imh_laplace(log_post, mode = 0, hessian = matrix(1, 1L, 1L),

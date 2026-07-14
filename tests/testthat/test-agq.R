@@ -15,6 +15,7 @@ test_that("gauss_hermite_prob nodes and weights are correct (n=3, 5)", {
 
 
 test_that("agq_fit recovers fixed-effect estimates on Bernoulli GLMM", {
+  skip_on_cran()
   set.seed(401L)
   n_g <- 40L
   n_per <- 8L
@@ -45,6 +46,7 @@ test_that("agq_fit recovers fixed-effect estimates on Bernoulli GLMM", {
 
 
 test_that("agq with n_quad=1 reproduces Laplace approximation", {
+  skip_on_cran()
   set.seed(402L)
   n_g <- 25L
   n_per <- 6L
@@ -71,6 +73,7 @@ test_that("agq with n_quad=1 reproduces Laplace approximation", {
 
 
 test_that("agq_fit handles Poisson GLMM", {
+  skip_on_cran()
   set.seed(403L)
   n_g <- 30L
   n_per <- 5L
@@ -88,6 +91,7 @@ test_that("agq_fit handles Poisson GLMM", {
 
 
 test_that("agq_fit handles Gaussian GLMM", {
+  skip_on_cran()
   set.seed(404L)
   n_g <- 30L
   n_per <- 6L

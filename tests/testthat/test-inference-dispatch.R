@@ -58,6 +58,7 @@ test_that("resolve_backend_fitter returns the real function for reachable backen
 })
 
 test_that("tulpa_dispatch routes to the chosen backend and stamps the contract", {
+  skip_on_cran()
   # mala consumes a log_posterior closure; a trivial isotropic Gaussian target.
   lp  <- function(theta) -0.5 * sum(theta^2)
   glp <- function(theta) -theta

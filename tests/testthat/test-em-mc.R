@@ -55,6 +55,7 @@ make_m_step_encode <- function(y) {
 
 
 test_that("tulpa_em_mc recovers mixture means on toy", {
+  skip_on_cran()
   set.seed(501L)
   d <- simulate_mixture(n = 300L, seed = 501L)
   res <- tulpa_em_mc(
@@ -78,6 +79,7 @@ test_that("tulpa_em_mc recovers mixture means on toy", {
 
 
 test_that("tulpa_em_mc respects n_mc_growth", {
+  skip_on_cran()
   d <- simulate_mixture(n = 100L, seed = 502L)
   res <- tulpa_em_mc(
     e_step_sample = make_e_step_sample(d$y),

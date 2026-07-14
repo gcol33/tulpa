@@ -19,6 +19,7 @@
 }
 
 test_that("joint multi-block recovers TWO coupled ICAR fields (list-of-specs copy)", {
+    skip_on_cran()
     set.seed(1)
     n_s <- 60L
     adj <- .chain_adj_copy(n_s)
@@ -153,6 +154,7 @@ test_that("duplicate copy block targets error", {
 })
 
 test_that("joint multi-block recovers a copied TEMPORAL (rw1) field", {
+    skip_on_cran()
     # gcol33/tulpa#76: copy (alpha-coupling) on a non-spatial block. A shared
     # smooth temporal trend f[t] is donated to arm1 at amplitude sigma and
     # copied onto arm2 at amplitude alpha * sigma.
@@ -214,6 +216,7 @@ test_that("joint multi-block recovers a copied TEMPORAL (rw1) field", {
 })
 
 test_that("joint multi-block recovers a copied TEMPORAL (ar1) field", {
+    skip_on_cran()
     # gcol33/tulpa#76: ar1 copy carries an extra rho axis, so the donor / copy
     # amplitude axes sit at (axis0, axis0 + 1) and rho moves to axis0 + 2.
     # Exercises that axis shift end-to-end.
@@ -277,6 +280,7 @@ test_that("joint multi-block recovers a copied TEMPORAL (ar1) field", {
 })
 
 test_that("joint multi-block recovers a copied IID field", {
+    skip_on_cran()
     # gcol33/tulpa#76: copy on an unstructured (iid) block. A shared per-group
     # random effect u[g] enters arm1 at amplitude sigma and arm2 at alpha*sigma.
     set.seed(13)

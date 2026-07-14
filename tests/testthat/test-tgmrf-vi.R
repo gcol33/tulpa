@@ -30,6 +30,7 @@ make_vi_ar1_block <- function(n) {
 }
 
 test_that("tulpa_tgmrf_vi returns Gaussian draws with sensible moments", {
+  skip_on_cran()
   set.seed(101)
   n <- 25L
   z <- as.numeric(arima.sim(list(ar = 0.5), n = n, sd = 1))

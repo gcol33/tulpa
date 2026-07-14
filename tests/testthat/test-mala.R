@@ -1,6 +1,7 @@
 # MALA: Metropolis-Adjusted Langevin Algorithm.
 
 test_that("mala recovers standard normal", {
+  skip_on_cran()
   set.seed(301L)
   log_post <- function(t) -0.5 * sum(t^2)
   grad <- function(t) -t
@@ -20,6 +21,7 @@ test_that("mala recovers standard normal", {
 
 
 test_that("mala dual-averaging adapts toward target acceptance", {
+  skip_on_cran()
   set.seed(302L)
   log_post <- function(t) -0.5 * sum(t^2)
   grad <- function(t) -t
@@ -39,6 +41,7 @@ test_that("mala dual-averaging adapts toward target acceptance", {
 
 
 test_that("mala recovers shifted Gaussian", {
+  skip_on_cran()
   set.seed(303L)
   mu_true <- c(2, -1, 0.5)
   log_post <- function(t) -0.5 * sum((t - mu_true)^2)
@@ -56,6 +59,7 @@ test_that("mala registers in Tier 1 (Exact)", {
 
 
 test_that("mala mass_diag preconditioner improves mixing on scaled target", {
+  skip_on_cran()
   # Target with very different per-dimension scales: SD = (1, 100).
   # With mass_diag = c(1, 100^2), the proposal is rescaled and mixes.
   set.seed(304L)
@@ -87,6 +91,7 @@ test_that("mala errors on non-finite init", {
 
 
 test_that("mala fit works with generic methods", {
+  skip_on_cran()
   set.seed(305L)
   log_post <- function(t) -0.5 * sum(t^2)
   grad <- function(t) -t

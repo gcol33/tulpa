@@ -252,7 +252,7 @@ samples, and the ELBO gauges how well the Gaussian fits.
 ```{r pathfinder-fit}
 fit_pf <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                 mode = "pathfinder", sigma_re = 0.6,
-                control = list(n_draws = 1000))
+                control = list(n_draws = 450))
 coef(fit_pf)
 fit_pf$elbo
 ```
@@ -274,7 +274,7 @@ step size adapts during warmup toward an acceptance rate near 0.574.
 ```{r mala-fit}
 fit_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
-                  control = list(n_iter = 1500, warmup = 500))
+                  control = list(n_iter = 450, warmup = 150))
 coef(fit_mala)
 fit_mala$mean_accept
 ```
@@ -298,7 +298,7 @@ Laplace was biased.
 ```{r imh-fit}
 fit_imh <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                  mode = "imh_laplace", sigma_re = 0.6,
-                 control = list(n_iter = 1500, warmup = 500))
+                 control = list(n_iter = 450, warmup = 150))
 coef(fit_imh)
 fit_imh$mean_accept
 ```
@@ -400,11 +400,11 @@ t_lap  <- system.time(
 t_mala <- system.time(
   f_mala <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "mala", sigma_re = 0.6,
-                  control = list(n_iter = 1500, warmup = 500)))[["elapsed"]]
+                  control = list(n_iter = 450, warmup = 150)))[["elapsed"]]
 t_pf   <- system.time(
   f_pf   <- tulpa(y ~ x + (1 | g), data = db, family = "binomial",
                   mode = "pathfinder", sigma_re = 0.6,
-                  control = list(n_draws = 1000)))[["elapsed"]]
+                  control = list(n_draws = 450)))[["elapsed"]]
 ```
 
 Collect the slope estimate, its standard error, the tier, and the elapsed
@@ -485,7 +485,7 @@ for when to depart from it.
   roughly 0.5, says the posterior is close to the Laplace Gaussian and the
   intervals are safe. An acceptance rate below about 0.1 says the posterior
   is far from Gaussian and the Laplace intervals are biased. The fit
-  earlier accepted around 0.86, which is a clean pass.
+  earlier accepted at a high rate, which is a clean pass.
 
 - **Move to `mode = "mala"` for exact moments at moderate dimension.** When
   the posterior is visibly non-Gaussian, when imh_laplace acceptance is

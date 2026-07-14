@@ -35,6 +35,7 @@ sim_ar1_pois <- function(seed, n, sigma = 0.8, rho = 0.6, b0 = 0.2, b1 = 0.4) {
 }
 
 test_that("tulpa() auto-selects nested_laplace when a latent block is present", {
+  skip_on_cran()
   d   <- sim_ar1_pois(101, 60L)
   blk <- make_ar1_block(60L)
   fit <- tulpa(y ~ x + latent(blk), d, family = "poisson", mode = "auto")
@@ -58,6 +59,7 @@ test_that("tulpa() auto-selects nested_laplace when a latent block is present", 
 })
 
 test_that("the formula route is numerically identical to a direct call", {
+  skip_on_cran()
   # The routing layer must add no math: same prior, same X, same family ->
   # bit-identical grid, log-marginal, and posterior moments.
   d   <- sim_ar1_pois(102, 60L)
@@ -78,6 +80,7 @@ test_that("the formula route is numerically identical to a direct call", {
 })
 
 test_that("a single random-intercept term threads through the nested path", {
+  skip_on_cran()
   set.seed(103)
   n <- 60L
   z <- numeric(n); z[1] <- rnorm(1, 0, 0.8)
