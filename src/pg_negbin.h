@@ -190,12 +190,6 @@ double update_r_negbin(
     double prior_rate
 );
 
-// Update sigma_re with half-Cauchy prior
-double update_sigma_re_negbin(
-    const Rcpp::NumericVector& re,
-    double scale
-);
-
 } // namespace tulpa
 
 #endif // TULPA_PG_NEGBIN_H

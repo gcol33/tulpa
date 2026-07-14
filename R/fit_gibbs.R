@@ -337,6 +337,12 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #' @param warmup Warmup iterations
 #' @param prior_beta_sd Prior SD for betas
 #' @param prior_sigma_scale Prior scale for RE sigma
+#' @details For `family = "neg_binomial_2"` the Polya-Gamma weights are drawn
+#'   at the exact real shape `PG(y + r, eta)` and the dispersion `r` is
+#'   updated by a random-walk Metropolis-Hastings step on `log(r)` whose
+#'   stationary support is bounded to `r` in `[0.1, 500]`; data favouring a
+#'   dispersion outside that range pile up at the boundary.
+#'
 #' @param spatial Optional spatial spec. When supplied the fit routes to the
 #'   matching spatial Polya-Gamma Gibbs sampler via [dispatch_gibbs_spatial()];
 #'   `group`/`n_groups` are the iid random-effect block carried alongside the

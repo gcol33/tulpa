@@ -261,6 +261,10 @@ cpp_rpg <- function(b, z) {
     .Call(`_tulpa_cpp_rpg`, b, z)
 }
 
+cpp_rpg_real <- function(b, z) {
+    .Call(`_tulpa_cpp_rpg_real`, b, z)
+}
+
 cpp_tulpa_psis <- function(log_ratios, tail_len) {
     .Call(`_tulpa_cpp_tulpa_psis`, log_ratios, tail_len)
 }

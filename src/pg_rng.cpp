@@ -190,6 +190,44 @@ double rpg_int(int b, double z) {
   return sum;
 }
 
+// Sample from PG(b, z) for real b > 0: the integer part is drawn by
+// rpg_int (Devroye / CLT), the fractional part by the truncated
+// sum-of-gammas representation (Polson, Scott & Windle 2013, eq. (6)):
+//   PG(b, z) = (1 / (2 pi^2)) * sum_{k >= 1} g_k / ((k - 1/2)^2 + z^2/(4 pi^2)),
+//   g_k ~ Gamma(b, 1) iid.
+// The series is truncated at RPG_GAMMA_TRUNC terms and the omitted tail is
+// replaced by its expectation, using the closed form
+//   sum_{k >= 1} 1 / ((k - 1/2)^2 + z^2/(4 pi^2)) = (pi^2 / z) tanh(z / 2)
+// (limit pi^2 / 2 at z = 0). The tail variance at 200 terms is O(b / K^3),
+// negligible against the retained series.
+static const int RPG_GAMMA_TRUNC = 200;
+
+double rpg_real(double b, double z) {
+  if (!(b > 0.0)) return 0.0;
+  double bi = std::floor(b);
+  double bf = b - bi;
+  double sum = 0.0;
+  if (bi >= 1.0) sum += rpg_int(static_cast<int>(bi), z);
+  if (bf > 1e-12) {
+    double az = std::abs(z);
+    double a2 = az * az / (4.0 * PI_SQ);
+    double series = 0.0;
+    double partial_inv = 0.0;
+    for (int k = 1; k <= RPG_GAMMA_TRUNC; k++) {
+      double km = k - 0.5;
+      double denom = km * km + a2;
+      series += R::rgamma(bf, 1.0) / denom;
+      partial_inv += 1.0 / denom;
+    }
+    double full_inv = (az < 1e-8)
+        ? HALF_PI_SQ
+        : (PI_SQ / az) * std::tanh(0.5 * az);
+    double tail_mean = bf * (full_inv - partial_inv);
+    sum += (series + tail_mean) / (2.0 * PI_SQ);
+  }
+  return sum;
+}
+
 // Vectorized PG(1, z)
 NumericVector rpg1_vec(NumericVector z) {
   int n = z.size();
@@ -232,4 +270,17 @@ Rcpp::NumericVector cpp_rpg1(Rcpp::NumericVector z) {
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_rpg(Rcpp::IntegerVector b, Rcpp::NumericVector z) {
   return tulpa::rpg_vec(b, z);
+}
+
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_rpg_real(Rcpp::NumericVector b, Rcpp::NumericVector z) {
+  int n = b.size();
+  if (z.size() != n) {
+    Rcpp::stop("b and z must have the same length");
+  }
+  Rcpp::NumericVector out(n);
+  for (int i = 0; i < n; i++) {
+    out[i] = tulpa::rpg_real(b[i], z[i]);
+  }
+  return out;
 }

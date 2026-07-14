@@ -1468,6 +1468,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_rpg_real
+Rcpp::NumericVector cpp_rpg_real(Rcpp::NumericVector b, Rcpp::NumericVector z);
+RcppExport SEXP _tulpa_cpp_rpg_real(SEXP bSEXP, SEXP zSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type b(bSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type z(zSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_rpg_real(b, z));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tulpa_psis
 Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len);
 RcppExport SEXP _tulpa_cpp_tulpa_psis(SEXP log_ratiosSEXP, SEXP tail_lenSEXP) {
@@ -3127,6 +3139,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_pg_negbin_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs_spatial, 21},
     {"_tulpa_cpp_rpg1", (DL_FUNC) &_tulpa_cpp_rpg1, 1},
     {"_tulpa_cpp_rpg", (DL_FUNC) &_tulpa_cpp_rpg, 2},
+    {"_tulpa_cpp_rpg_real", (DL_FUNC) &_tulpa_cpp_rpg_real, 2},
     {"_tulpa_cpp_tulpa_psis", (DL_FUNC) &_tulpa_cpp_tulpa_psis, 2},
     {"_tulpa_cpp_psis_loo_pit", (DL_FUNC) &_tulpa_cpp_psis_loo_pit, 5},
     {"_tulpa_cpp_tulpa_pit", (DL_FUNC) &_tulpa_cpp_tulpa_pit, 4},

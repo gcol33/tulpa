@@ -19,6 +19,11 @@ double rpg1(double z);
 // for large b.
 double rpg_int(int b, double z);
 
+// Sample from PG(b, z) for real b > 0. Integer part by rpg_int; fractional
+// part by the truncated sum-of-gammas representation with a tail-mean
+// correction (Polson, Scott & Windle 2013).
+double rpg_real(double b, double z);
+
 // Vectorized PG(1, z) sampler
 Rcpp::NumericVector rpg1_vec(Rcpp::NumericVector z);
 

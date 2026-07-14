@@ -1,12 +1,13 @@
 // pg_negbin.cpp
 // Pólya-Gamma Gibbs sampler for Negative Binomial models
-// Uses PG augmentation for the logit component and CRT for dispersion
+// PG augmentation for the logit component (omega ~ PG(y + r, eta), exact
+// real shape); dispersion r updated by random-walk Metropolis-Hastings on
+// log r against the marginal-of-omega NB likelihood.
 // Reference: Zhou et al. (2012) "Lognormal and Gamma Mixed Negative Binomial Regression"
 
 #include "pg_negbin.h"
 #include "pg_shared.h"
 #include "pg_rng.h"
-#include "crt_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -66,13 +67,6 @@ SigmaReState update_sigma_re_negbin_hc(
   return result;
 }
 
-// Simple version for backward compatibility — delegates to shared helper
-double update_sigma_re_negbin(
-    const NumericVector& re,
-    double scale
-) {
-  return tulpa::update_sigma_halfcauchy(re, scale);
-}
 
 // Center random effects (soft sum-to-zero constraint)
 // This prevents RE from absorbing intercept and inflating sigma_re
@@ -400,12 +394,12 @@ List pg_negbin_gibbs(
       kappa[i] = (y[i] - r) / 2.0;
     }
 
-    // 4. Sample omega ~ PG(y + r, eta)
-    // Note: y + r can be non-integer, but rpg works for integer part
-    // For fractional r, we approximate by rounding
+    // 4. Sample omega ~ PG(y + r, eta) at the exact (real) shape: rounding
+    // the shape changes the augmented joint, worst at zero counts with
+    // small r, where the conditional weight of every zero is off by up to
+    // a factor 2. rpg_real handles the fractional part exactly.
     for (int i = 0; i < N; i++) {
-      int b = static_cast<int>(std::round(y[i] + r));
-      omega[i] = rpg_int(std::max(1, b), eta[i]);
+      omega[i] = rpg_real(y[i] + r, eta[i]);
     }
 
     // 5. Update beta | omega, re, y
@@ -601,6 +595,7 @@ List pg_negbin_negbin_gibbs(
   NumericVector beta_denom(p_denom, 0.0);
   NumericVector re(n_groups, 0.0);
   double sigma_re = 1.0;
+  double sigma_aux = 2.0 * prior_sigma_scale * prior_sigma_scale;
   double r_num = r_num_init;
   double r_denom = r_denom_init;
 
@@ -740,8 +735,16 @@ List pg_negbin_negbin_gibbs(
         re[g] = R::rnorm(post_mean, std::sqrt(post_var));
       }
 
-      // Update sigma_re
-      sigma_re = update_sigma_re_negbin(re, prior_sigma_scale);
+      // Exact half-Cauchy via the auxiliary-variable scheme (one prior
+      // across all three negbin kernels).
+      SigmaReState sigma_state =
+          update_sigma_re_negbin_hc(re, prior_sigma_scale, sigma_aux);
+      if (!std::isnan(sigma_state.sigma_re) &&
+          !std::isinf(sigma_state.sigma_re) &&
+          sigma_state.sigma_re < 100.0) {
+        sigma_re = sigma_state.sigma_re;
+        sigma_aux = sigma_state.aux;
+      }
     }
 
     // Save draws
@@ -846,8 +849,39 @@ List pg_negbin_gibbs_spatial(
   NumericVector re(n_re_groups, 0.0);
   NumericVector spatial(n_spatial_units, 0.0);
   double sigma_re = 1.0;
+  double sigma_aux = 2.0 * prior_sigma_re_scale * prior_sigma_re_scale;
   double tau = 1.0;  // Spatial precision
   double r = r_init;
+
+  // Connected components of the adjacency graph (BFS). The ICAR pseudo-
+  // density is tau^{(S - k)/2} exp(-tau Q / 2) with k = number of graph
+  // components, so the tau posterior shape uses (S - k)/2; a disconnected
+  // adjacency (spatial(by=) replication makes this routine) with (S - 1)/2
+  // biases tau upward.
+  int n_components = 0;
+  {
+    std::vector<int> comp(n_spatial_units, -1);
+    std::vector<int> queue;
+    for (int s0 = 0; s0 < n_spatial_units; s0++) {
+      if (comp[s0] >= 0) continue;
+      comp[s0] = n_components;
+      queue.clear();
+      queue.push_back(s0);
+      while (!queue.empty()) {
+        int s = queue.back();
+        queue.pop_back();
+        IntegerVector neighbors = adj_list[s];
+        for (int j = 0; j < n_neighbors[s]; j++) {
+          int t = neighbors[j] - 1;
+          if (t >= 0 && t < n_spatial_units && comp[t] < 0) {
+            comp[t] = n_components;
+            queue.push_back(t);
+          }
+        }
+      }
+      n_components++;
+    }
+  }
 
   NumericVector omega(N, 1.0);
   NumericVector kappa(N);
@@ -876,10 +910,9 @@ List pg_negbin_gibbs_spatial(
       kappa[i] = (y[i] - r) / 2.0;
     }
 
-    // 2. Sample omega ~ PG(y + r, eta)
+    // 2. Sample omega ~ PG(y + r, eta) at the exact (real) shape.
     for (int i = 0; i < N; i++) {
-      int b = static_cast<int>(std::round(y[i] + r));
-      omega[i] = rpg_int(std::max(1, b), eta[i]);
+      omega[i] = rpg_real(y[i] + r, eta[i]);
     }
 
     // 3. Update beta
@@ -920,7 +953,16 @@ List pg_negbin_gibbs_spatial(
         re[g] = R::rnorm(post_mean, std::sqrt(post_var));
       }
 
-      sigma_re = update_sigma_re_negbin(re, prior_sigma_re_scale);
+      // Exact half-Cauchy via the auxiliary-variable scheme, matching the
+      // non-spatial negbin kernel (one prior, both kernels).
+      SigmaReState sigma_state =
+          update_sigma_re_negbin_hc(re, prior_sigma_re_scale, sigma_aux);
+      if (!std::isnan(sigma_state.sigma_re) &&
+          !std::isinf(sigma_state.sigma_re) &&
+          sigma_state.sigma_re < 100.0) {
+        sigma_re = sigma_state.sigma_re;
+        sigma_aux = sigma_state.aux;
+      }
 
       // Update re_contrib
       for (int i = 0; i < N; i++) {
@@ -967,7 +1009,10 @@ List pg_negbin_gibbs_spatial(
       spatial[s] = R::rnorm(post_mean, post_sd);
     }
 
-    // Center spatial effects (soft sum-to-zero constraint)
+    // Center spatial effects (sum-to-zero constraint along the ICAR's
+    // improper direction), absorbing the mean into the intercept so eta is
+    // unchanged and the move is exactly posterior-invariant — the same
+    // convention center_random_effects uses for the iid RE block.
     double spatial_mean = 0.0;
     for (int s = 0; s < n_spatial_units; s++) {
       spatial_mean += spatial[s];
@@ -976,11 +1021,18 @@ List pg_negbin_gibbs_spatial(
     for (int s = 0; s < n_spatial_units; s++) {
       spatial[s] -= spatial_mean;
     }
+    beta[0] += spatial_mean;
+    for (int i = 0; i < N; i++) {
+      X_beta[i] = 0.0;
+      for (int j = 0; j < p; j++) {
+        X_beta[i] += X(i, j) * beta[j];
+      }
+    }
 
     // Update tau (spatial precision)
     // Prior: tau ~ Gamma(shape, rate)
-    // Posterior: tau ~ Gamma(shape + (S-1)/2, rate + Q/2)
-    // where Q = sum over edges (phi_i - phi_j)^2 / 2
+    // Posterior: tau ~ Gamma(shape + (S - k)/2, rate + Q/2), k = number of
+    // adjacency components; Q = sum over edges (phi_i - phi_j)^2
     double Q = 0.0;
     for (int s = 0; s < n_spatial_units; s++) {
       IntegerVector neighbors = adj_list[s];
@@ -993,7 +1045,8 @@ List pg_negbin_gibbs_spatial(
       }
     }
 
-    double tau_shape = prior_tau_shape + (n_spatial_units - 1.0) / 2.0;
+    double tau_shape = prior_tau_shape
+        + (n_spatial_units - static_cast<double>(n_components)) / 2.0;
     double tau_rate = prior_tau_rate + Q / 2.0;
     tau = R::rgamma(tau_shape, 1.0 / tau_rate);
 
