@@ -8,6 +8,17 @@
   nm <- names(models)
   auto <- paste0("model", seq_along(models))
   names(models) <- if (is.null(nm)) auto else ifelse(nzchar(nm), nm, auto)
+  # A non-fit in `...` is almost always a mistyped option (e.g. passing
+  # `criterion =` to model_average(), whose option is `weights =`); reject it
+  # loudly rather than weight a character string as a candidate model.
+  for (k in seq_along(models)) {
+    if (is.atomic(models[[k]])) {
+      stop(sprintf(paste0("Argument `%s` is not a fitted model. Model-",
+                          "comparison options are named parameters (e.g. ",
+                          "`criterion` / `weights`), not `...` entries."),
+                   names(models)[k]), call. = FALSE)
+    }
+  }
   models
 }
 

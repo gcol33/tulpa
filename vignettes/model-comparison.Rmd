@@ -35,8 +35,9 @@ evidence, the quantity that automatically rewards a better fit and
 penalises wasted flexibility. This vignette walks through the criterion,
 builds a nested ladder of models on data with a known generating
 process, and reads the evidence as it climbs. It also says plainly where
-the marginal likelihood stops and where WAIC and LOO take over, because
-those two need machinery a base `tulpa()` fit does not carry.
+the marginal likelihood stops and where WAIC and LOO take over, and what
+the engine reconstructs behind the scenes to compute those two on a
+plain `tulpa()` fit.
 
 The plan is concrete. Simulate Gaussian data with an intercept, a slope,
 a group-level offset, and a second covariate that all genuinely shape
@@ -483,8 +484,8 @@ in a draws-by-observations matrix. From that matrix the loo package
 computes the expected log predictive density and its information
 criteria.
 
-The pointwise structure is the part the engine cannot supply on its own,
-and the reason is worth stating. WAIC estimates the out-of-sample
+The pointwise structure is the part a fit summary does not hold, and
+the reason is worth stating. WAIC estimates the out-of-sample
 predictive density by summing the log pointwise predictive density over
 observations and subtracting a variance-based penalty computed per
 observation. LOO approximates leave-one-out cross-validation by
@@ -497,23 +498,28 @@ the whole dataset; it has already integrated over the observations and
 the parameters together, so there is no per-observation, per-draw stack
 left to read.
 
-A base `tulpa()` fit does not carry that matrix. The Laplace tier stores
+A base `tulpa()` fit does not store that matrix. The Laplace tier stores
 a mode and a curvature, not a stack of draws, and even the sampler tiers
 store parameter draws rather than a per-observation log-likelihood. So
-the engine's `waic` and `loo` adapters have nothing to read on a plain
-fit, and they say so:
+an external tool that expects the stored matrix has nothing to read on a
+plain fit, and it says so:
 
 ```{r waic-needs, error = TRUE}
 loo::waic(b2)
 ```
 
-The message names the missing piece. It is a pointwise log-likelihood,
-the kind that only a full observation model produces. Model packages
-built on this engine, such as tulpaObs and tulpaRatio, sample the
-observation model and populate `$draws$log_lik`, plus `$draws$y_rep` for
-posterior predictive checks. On those fits, `waic()`, `loo()`, and
-`compare_models(..., criterion = "waic")` work directly. The matrix they
-read is right there.
+The message names the missing piece: a stored pointwise log-likelihood.
+Model packages built on this engine, such as tulpaObs and tulpaRatio,
+sample the observation model and populate `$draws$log_lik`, plus
+`$draws$y_rep` for posterior predictive checks, so external tools that
+read that matrix work on their fits directly. The engine's own criteria
+layer -- `compare_models(..., criterion = "waic")`, `tulpa_criteria()`,
+and `model_average()` -- goes one step further for fits with a builtin
+family: when the stored matrix is absent, it reconstructs the pointwise
+log-likelihood from the linear-predictor posterior draws and the family
+density, so WAIC and LOO comparison also work on plain `tulpa()` fits.
+For the Laplace tier those draws come from the Gaussian approximation at
+the mode, so the resulting WAIC inherits that approximation.
 
 The split is deliberate. The engine owns the structural model and scores
 it by evidence, which it can compute from the Laplace fit alone. The
@@ -535,22 +541,17 @@ its design matrix, which a `tulpa()` fit does.
 
 ```{r model-average}
 ma <- model_average(slope = m1, slope_re = m2, full = m3,
-                   criterion = "waic")
+                    weights = "waic")
 ma$weights
 head(round(ma$averaged, 3))
 ```
 
-The weighting deserves a plain statement. The weights here come out equal
-because the WAIC weight needs a pointwise log-likelihood, which a base
-engine fit does not carry, so `model_average()` falls back to a uniform
-split across the models. A uniform average is still a useful hedge when
-the candidates disagree, but it is not an evidence-weighted one. To
-weight by predictive accuracy, route the fits through a model package
-that populates the pointwise log-likelihood, and `model_average()` then
-draws genuine WAIC weights from the same `compare_models()` it calls
-internally. The `averaged` vector is the per-observation blend you would
-use as a combined prediction; `ma$comparison` is the table the weights
-were read from.
+The weights are genuine WAIC weights: `model_average()` reads the same
+pointwise log-likelihood the criteria layer reconstructs from each fit's
+linear-predictor draws, so predictive accuracy, not a uniform split,
+decides each model's share. The `averaged` vector is the per-observation
+blend you would use as a combined prediction; `ma$comparison` is the
+table the weights were read from.
 
 ## When comparison is not meaningful
 
