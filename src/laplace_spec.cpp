@@ -492,7 +492,7 @@ inline void compute_eta_spec(
                 // block's prior is added separately in scatter_spec / log_prior.
                 const int sz = L.block_size[b];
                 blk_basis.assign(sz, 0.0);
-                blk.basis_eval(i, /*k_arm=*/0, blk_basis.data());
+                blk.basis_eval(i, /*k_arm=*/0, k_grid, blk_basis.data());
                 const double* xp = &params[L.block_param_start[b]];
                 double acc = 0.0;
                 for (int l = 0; l < sz; l++) acc += blk_basis[l] * xp[l];
@@ -813,7 +813,8 @@ inline void scatter_spec(
                     // block x block inner loop is the intended dense update).
                     const int sz = L.block_size[b];
                     blk_basis_scratch.assign(sz, 0.0);
-                    blk.basis_eval(i, /*k_arm=*/0, blk_basis_scratch.data());
+                    blk.basis_eval(i, /*k_arm=*/0, k_grid,
+                                   blk_basis_scratch.data());
                     const int off = L.block_latent_offset[b];
                     for (int l = 0; l < sz; l++) {
                         const double w = blk_basis_scratch[l];

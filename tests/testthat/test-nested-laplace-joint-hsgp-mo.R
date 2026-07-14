@@ -319,3 +319,37 @@ test_that("hsgp_mo errors when n_arms != 2 (first-ship K = 2 restriction)", {
         "n_arms == 2"
     )
 })
+
+# --------------------------------------------------------------------------- #
+# (6) Parallel outer grid == serial (per-cell block state)                    #
+# --------------------------------------------------------------------------- #
+
+test_that("hsgp_mo joint fit is identical under n_threads_outer = 2 and 1", {
+    # The hsgp_mo block caches sqrt_S / Sigma_inv / log|Sigma| per outer-grid
+    # cell (prep -> basis_eval / add_prior_sparse / log_prior). With the outer
+    # grid running across 2 threads, every cell must still solve with its OWN
+    # hyperparameters -- a shared cache makes concurrent cells silently swap
+    # (sigma, rho, ell) and this equivalence breaks.
+    sim <- .sim_two_arm_mo(seed = 41L, sigma_1 = 0.8, sigma_2 = 0.8,
+                            rho = 0.3, ell = 0.5)
+    s1 <- c(0.5, 0.8, 1.2); s2 <- c(0.5, 1.0); rh <- c(-0.3, 0.0, 0.4)
+    ls <- c(0.3, 0.5)
+    gr <- expand.grid(s1 = s1, s2 = s2, rh = rh, ls = ls,
+                       KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+    block <- .mo_block(sim, gr$s1, gr$s2, gr$rh, gr$ls)
+
+    fit_serial <- tulpa_nested_laplace_joint(
+        responses = sim$responses, prior = list(block), copy = NULL,
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L,
+                       n_threads_outer = 1L, diagnose_k = FALSE)
+    )
+    fit_par <- tulpa_nested_laplace_joint(
+        responses = sim$responses, prior = list(block), copy = NULL,
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L,
+                       n_threads_outer = 2L, diagnose_k = FALSE)
+    )
+
+    expect_equal(fit_par$log_marginal, fit_serial$log_marginal,
+                 tolerance = 1e-10)
+    expect_equal(fit_par$weights, fit_serial$weights, tolerance = 1e-10)
+})

@@ -59,6 +59,7 @@
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
+#include "nl_cell_cache.h"
 #include "nested_laplace_checkpoint.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
@@ -230,20 +231,11 @@ inline std::function<double(int, int)> make_field_coef_arm_scale_fn(
 //   * 2 (icar) or 3 (bym2, car_proper) per-block axes
 // For non-copy blocks, the standard single-arm parameterization is used
 // (tau on the prior, no arm_scale, axes as in the single-arm registry).
-// Per-outer-thread slot index for grid-cell-local caches written in block.prep
-// and read in block.log_prior. The joint grid driver runs block.prep lock-free
-// across n_threads_outer, so a single shared cache would let one thread's prep
-// clobber another thread's in-flight log_prior read (gcol33/tulpaObs#42). prep
-// and log_prior of a given cell run on the same outer thread, so a per-thread
-// slot keyed on the OpenMP thread id is race-free. Bounds-guarded so an
-// over-subscribed outer-thread count can never index out of range.
-static inline int nl_grid_slot(int n_slots) {
-    int t = 0;
-#ifdef _OPENMP
-    t = omp_get_thread_num();
-#endif
-    return (t >= 0 && t < n_slots) ? t : 0;
-}
+// Grid-cell-local caches written in block.prep and read in block.log_prior /
+// basis_eval live in tulpa::NlCellCache (nl_cell_cache.h): the joint grid
+// driver runs block.prep lock-free across n_threads_outer and the coupled-
+// cell scatter's tasks can be stolen by other team threads, so state is
+// keyed by CELL id, not thread id (gcol33/tulpaObs#42).
 
 int build_joint_blocks_from_spec(
     const Rcpp::List& bs,
@@ -564,18 +556,13 @@ int build_joint_blocks_from_spec(
         auto adj_rp_v = std::make_shared<std::vector<int>>(adj_rp.begin(), adj_rp.end());
         auto adj_ci_v = std::make_shared<std::vector<int>>(adj_ci.begin(), adj_ci.end());
         auto n_nbr_v  = std::make_shared<std::vector<int>>(n_nbr.begin(),  n_nbr.end());
-        // Per-outer-thread log|Q(rho)| cache (gcol33/tulpaObs#42): block.prep
-        // runs lock-free in the parallel joint grid driver, so a shared scalar
-        // would race a concurrent cell's log_prior read. One slot per outer
-        // thread; prep and log_prior of a cell share that thread's slot.
-        const int log_det_slots =
-#ifdef _OPENMP
-            std::max(omp_get_max_threads(), 1);
-#else
-            1;
-#endif
+        // Per-cell log|Q(rho)| cache (gcol33/tulpaObs#42, nl_cell_cache.h):
+        // block.prep runs lock-free in the parallel joint grid driver, so a
+        // shared scalar would race a concurrent cell's log_prior read. prep
+        // publishes the cell's value; log_prior finds it by cell id, which
+        // stays correct even when the reader runs on a stolen-task thread.
         auto log_det_Q_rho =
-            std::make_shared<std::vector<double>>(log_det_slots, 0.0);
+            std::make_shared<tulpa::NlCellCache<double>>();
 
         tulpa::LatentBlock block;
         block.start = start;
@@ -597,8 +584,8 @@ int build_joint_blocks_from_spec(
                 std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
                     size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_car);
                 double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
-                (*log_det_Q_rho)[nl_grid_slot(
-                    static_cast<int>(log_det_Q_rho->size()))] = ld_val;
+                log_det_Q_rho->claim() = ld_val;
+                log_det_Q_rho->publish(k_grid);
                 return std::isfinite(ld_val);
             };
             block.add_prior = [start, size, axis_rho_car, theta_grid,
@@ -626,8 +613,7 @@ int build_joint_blocks_from_spec(
                 return tulpa::log_prior_car_proper(
                     x, start, size, /*tau=*/1.0,
                     theta_grid(k_grid, axis_rho_car),
-                    (*log_det_Q_rho)[nl_grid_slot(
-                        static_cast<int>(log_det_Q_rho->size()))],
+                    log_det_Q_rho->find(k_grid),
                     adj_rp, adj_ci, n_nbr);
             };
             // Proper CAR has full-rank Q; no centering.
@@ -643,8 +629,8 @@ int build_joint_blocks_from_spec(
                 std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
                     size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_car);
                 double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
-                (*log_det_Q_rho)[nl_grid_slot(
-                    static_cast<int>(log_det_Q_rho->size()))] = ld_val;
+                log_det_Q_rho->claim() = ld_val;
+                log_det_Q_rho->publish(k_grid);
                 return std::isfinite(ld_val);
             };
             block.add_prior = [start, size, axis_tau, axis_rho_car, theta_grid,
@@ -672,8 +658,7 @@ int build_joint_blocks_from_spec(
                 return tulpa::log_prior_car_proper(
                     x, start, size, theta_grid(k_grid, axis_tau),
                     theta_grid(k_grid, axis_rho_car),
-                    (*log_det_Q_rho)[nl_grid_slot(
-                        static_cast<int>(log_det_Q_rho->size()))],
+                    log_det_Q_rho->find(k_grid),
                     adj_rp, adj_ci, n_nbr);
             };
             block.center = [start, size](Rcpp::NumericVector& x) -> double {

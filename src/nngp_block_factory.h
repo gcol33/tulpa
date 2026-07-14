@@ -34,6 +34,7 @@
 
 #include "gpu_nngp_laplace.h"
 #include "latent_block.h"
+#include "nl_cell_cache.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -106,13 +107,17 @@ inline LatentBlock make_nngp_block(
         (*sidx_per_arm)[k] = sidx;
     }
 
-    // Per-cell NNGP state. cm is not used outside batch_nngp_scatter (the
-    // prior scatter recomputes the residual from w directly) but the
-    // function signature demands it.
-    auto alpha = std::make_shared<std::vector<double>>(
-        static_cast<size_t>(n_spatial) * nn, 0.0);
-    auto cv    = std::make_shared<std::vector<double>>(n_spatial, 0.0);
-    auto cm    = std::make_shared<std::vector<double>>(n_spatial, 0.0);
+    // Per-cell NNGP state (nl_cell_cache.h): (alpha, cv) are rebuilt by
+    // prep() per outer-grid cell and the joint driver runs cells
+    // concurrently, so they live in per-cell slots. cm is not used outside
+    // batch_nngp_scatter (the prior scatter recomputes the residual from w
+    // directly) but the function signature demands it.
+    struct NngpCellState {
+        std::vector<double> alpha;
+        std::vector<double> cv;
+        std::vector<double> cm;
+    };
+    auto cell_cache = std::make_shared<NlCellCache<NngpCellState>>();
 
     LatentBlock block;
     block.start = start;
@@ -130,17 +135,22 @@ inline LatentBlock make_nngp_block(
     // Rebuild (alpha, cv) for cell k. batch_nngp_scatter is well-defined on
     // w = 0 (alpha and cv are functions of (coords, nn_idx, nn_dist, sigma2,
     // phi_gp, cov_type) only; cm carries the w-dependence and we ignore it).
-    block.prep = [alpha, cv, cm, n_spatial, nn, cov_type, coords, nn_idx,
+    block.prep = [cell_cache, n_spatial, nn, cov_type, coords, nn_idx,
                    nn_dist, nn_order, axis_sigma2, axis_phi_gp,
                    theta_grid](int k_grid) -> bool {
         double sigma2 = theta_grid(k_grid, axis_sigma2);
         double phi_gp = theta_grid(k_grid, axis_phi_gp);
         if (!(sigma2 > 0.0) || !(phi_gp > 0.0)) return false;
+        auto& st = cell_cache->claim();
+        st.alpha.assign(static_cast<size_t>(n_spatial) * nn, 0.0);
+        st.cv.assign(n_spatial, 0.0);
+        st.cm.assign(n_spatial, 0.0);
         std::vector<double> w_zero(n_spatial, 0.0);
         bool gpu_used = false;
         batch_nngp_scatter(w_zero, n_spatial, nn, sigma2, phi_gp, cov_type,
                             coords, nn_idx, nn_dist, nn_order,
-                            *cm, *cv, gpu_used, alpha.get());
+                            st.cm, st.cv, gpu_used, &st.alpha);
+        cell_cache->publish(k_grid);
         return true;
     };
 
@@ -153,31 +163,33 @@ inline LatentBlock make_nngp_block(
                                           n_spatial, nn, start);
     };
 
-    block.add_prior_sparse = [alpha, cv, start, n_spatial, nn, nn_idx,
+    block.add_prior_sparse = [cell_cache, start, n_spatial, nn, nn_idx,
                                nn_order](
         SparseHessianBuilder& H, DenseVec& grad,
-        const Rcpp::NumericVector& x, int /*k_grid*/
+        const Rcpp::NumericVector& x, int k_grid
     ) {
+        const auto& st = cell_cache->find(k_grid);
         std::vector<double> w(n_spatial);
         for (int s = 0; s < n_spatial; s++) w[s] = x[start + s];
-        apply_nngp_full_prior_sparse(grad, H, w, *alpha, *cv,
+        apply_nngp_full_prior_sparse(grad, H, w, st.alpha, st.cv,
                                       nn_idx, nn_order, n_spatial, nn, start);
     };
 
-    block.log_prior = [alpha, cv, start, n_spatial, nn, nn_idx, nn_order](
-        const Rcpp::NumericVector& x, int /*k_grid*/
+    block.log_prior = [cell_cache, start, n_spatial, nn, nn_idx, nn_order](
+        const Rcpp::NumericVector& x, int k_grid
     ) -> double {
+        const auto& st = cell_cache->find(k_grid);
         // Conditional Gaussian log-density across the NNGP-ordered chain:
         //   log p(w_focal | w_neighbors) = -0.5*log(2*pi*cv_i)
         //                                  - 0.5*(w_focal - sum_k alpha_k * w_k)^2 / cv_i
         // summed over the n_spatial sites in nn_order. Matches the legacy
         // formula in cpp_nested_laplace_nngp.
         double lp = 0.0;
-        const double* alpha_data = (*alpha).data();
+        const double* alpha_data = st.alpha.data();
         for (int i_nngp = 0; i_nngp < n_spatial; i_nngp++) {
             int obs_focal = nn_order[i_nngp];
             if (obs_focal < 0 || obs_focal >= n_spatial) continue;
-            double v_i = (*cv)[obs_focal];
+            double v_i = st.cv[obs_focal];
             if (!(v_i > 0.0)) continue;
             double w_focal = x[start + obs_focal];
             double resid = w_focal;

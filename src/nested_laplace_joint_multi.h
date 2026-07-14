@@ -1236,7 +1236,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
                 const bool has_batch = static_cast<bool>(blk.dense_basis_batch);
                 if (!need_db_in_perobs && has_batch) continue;
 
-                blk.basis_eval(i, k_arm, basis_scratch.data());
+                blk.basis_eval(i, k_arm, k_grid, basis_scratch.data());
                 for (int j = 0; j < blk.size; j++) {
                     double w = basis_scratch[j] * d_eff;
                     if (w != 0.0) {
@@ -1388,8 +1388,8 @@ inline void scatter_arm_obs_joint_multi_sparse(
         for (int b = 0; b < B; b++) {
             if (kind_cache[b] != BlockContribKind::DENSE_BASIS) continue;
             if (!blocks[b].dense_basis_batch) continue;
-            scatter_dense_basis_block(blocks[b], k_arm, pa, arm, view, eta,
-                                       d_eff_cache[b], grad, H,
+            scatter_dense_basis_block(blocks[b], k_arm, k_grid, pa, arm, view,
+                                       eta, d_eff_cache[b], grad, H,
                                        db_buffers[static_cast<size_t>(k_arm) * B + b]);
         }
     }
@@ -1460,7 +1460,7 @@ inline void compute_eta_joint_sparse_dispatch(
                     if (static_cast<int>(basis_scratch.size()) < blk.size) {
                         basis_scratch.assign(blk.size, 0.0);
                     }
-                    blk.basis_eval(i, k_arm, basis_scratch.data());
+                    blk.basis_eval(i, k_arm, k_grid, basis_scratch.data());
                     double acc = 0.0;
                     for (int j = 0; j < blk.size; j++) {
                         acc += basis_scratch[j] * x[blk.start + j];

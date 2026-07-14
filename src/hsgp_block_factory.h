@@ -22,8 +22,9 @@
 //
 // Lifecycle:
 //   * `prep(k_grid)` reads (log_sigma2, log_ell) from theta_grid, computes
-//     sqrt_S[j] for j in 0..m_total and caches it in a shared vector.
-//     basis_eval and the sparse scatter consume the cached vector.
+//     sqrt_S[j] for j in 0..m_total and publishes it in a per-cell slot
+//     (nl_cell_cache.h). basis_eval and the sparse scatter read their cell's
+//     slot, so concurrent outer-grid cells never see each other's state.
 //   * The prior on beta is N(0, I) -> diagonal precision; prior_kind = NONE,
 //     no off-diagonal pattern entries.
 //
@@ -42,6 +43,7 @@
 
 #include "latent_block.h"
 #include "laplace_re_priors.h"  // center_effects (unused — HSGP doesn't center beta)
+#include "nl_cell_cache.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -106,8 +108,11 @@ inline LatentBlock make_hsgp_block(
     auto eig = std::make_shared<std::vector<double>>(
         eigenvalues.begin(), eigenvalues.end());
 
-    // sqrt_S cache — rebuilt by prep() at each outer-grid cell.
-    auto sqrt_S_cache = std::make_shared<std::vector<double>>(m_total, 0.0);
+    // sqrt_S — rebuilt by prep() at each outer-grid cell. Per-cell slot
+    // storage: the joint driver runs outer cells concurrently, so a single
+    // shared vector would let one cell's prep clobber another cell's
+    // in-flight basis_eval read.
+    auto sqrt_S_cache = std::make_shared<NlCellCache<std::vector<double>>>();
 
     LatentBlock block;
     block.start = start;
@@ -128,20 +133,22 @@ inline LatentBlock make_hsgp_block(
         if (!(sigma2 > 0.0) || !(ell > 0.0)) return false;
         const double pref = sigma2 * std::sqrt(2.0 * M_PI) * ell;
         const double e_coef = -0.5 * ell * ell;
-        auto& cache = *sqrt_S_cache;
+        auto& cache = sqrt_S_cache->claim();
+        cache.assign(m_total, 0.0);
         const auto& evs = *eig;
         for (int j = 0; j < m_total; j++) {
             double S_j = pref * std::exp(e_coef * evs[j]);
             cache[j] = std::sqrt(S_j > 0.0 ? S_j : 0.0);
         }
+        sqrt_S_cache->publish(k_grid);
         return true;
     };
 
     block.basis_eval = [phi_flat_per_arm, sqrt_S_cache, m_total](
-        int i, int k_arm, double* out
+        int i, int k_arm, int k_grid, double* out
     ) {
         const auto& flat = (*phi_flat_per_arm)[k_arm];
-        const auto& sS   = *sqrt_S_cache;
+        const auto& sS   = sqrt_S_cache->find(k_grid);
         const double* row = flat.data() + static_cast<size_t>(i) * m_total;
         for (int j = 0; j < m_total; j++) {
             out[j] = row[j] * sS[j];
@@ -149,15 +156,16 @@ inline LatentBlock make_hsgp_block(
     };
 
     // Batched view for the SYRK / GEMM scatter path (Stage 2.1).
-    // Raw Phi (cached at factory time) + sqrt_S (refreshed each prep).
+    // Raw Phi (cached at factory time) + cell k_grid's sqrt_S.
     // m_offset_in_block = 0 for single-output HSGP.
     auto n_obs_cache = std::make_shared<std::vector<int>>(
         n_obs_per_arm.begin(), n_obs_per_arm.end());
     block.dense_basis_batch = [phi_flat_per_arm, sqrt_S_cache, n_obs_cache,
-                                m_total](int k_arm) -> LatentBlock::DenseBasisBatch {
+                                m_total](int k_arm, int k_grid)
+        -> LatentBlock::DenseBasisBatch {
         LatentBlock::DenseBasisBatch b;
         b.data              = (*phi_flat_per_arm)[k_arm].data();
-        b.sqrt_S            = sqrt_S_cache->data();
+        b.sqrt_S            = sqrt_S_cache->find(k_grid).data();
         b.N_k               = (*n_obs_cache)[k_arm];
         b.m_per_arm         = m_total;
         b.m_offset_in_block = 0;

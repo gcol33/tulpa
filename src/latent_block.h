@@ -51,7 +51,7 @@ class SparseHessianBuilder;
 //   mesh nodes via barycentric interpolation; FEM-P2: more). Use
 //   `obs_indices(i, k_arm, out)` to fill (idx, weight) pairs.
 // - DENSE_BASIS: every block coefficient is touched by every obs (HSGP,
-//   HSGP-SVC, HSGP-MSGP). Use `basis_eval(i, k_arm, out)` to fill the
+//   HSGP-SVC, HSGP-MSGP). Use `basis_eval(i, k_arm, k_grid, out)` to fill the
 //   full `size`-vector of basis weights. Pattern builder bypasses per-
 //   obs enumeration and fills the full block × block sub-pattern
 //   unconditionally.
@@ -182,9 +182,13 @@ struct LatentBlock {
         obs_indices;
 
     // DENSE_BASIS only. Fill `out[0..size)` with the basis weights for obs i
-    // in arm k_arm. E.g. HSGP fills out[j] = Phi(s_i, j) * sqrt(S_j). Caller
-    // owns the buffer (sized to `size`); implementations write in place.
-    std::function<void(int /*i*/, int /*k_arm*/, double* /*out*/)>
+    // in arm k_arm at outer-grid cell k_grid. E.g. HSGP fills
+    // out[j] = Phi(s_i, j) * sqrt(S_j(theta_k_grid)). Caller owns the buffer
+    // (sized to `size`); implementations write in place. k_grid selects the
+    // per-cell state written by prep(k_grid) — the joint driver runs cells
+    // concurrently, so implementations must not read a single shared cache.
+    std::function<void(int /*i*/, int /*k_arm*/, int /*k_grid*/,
+                       double* /*out*/)>
         basis_eval;
 
     // DENSE_BASIS only. Batched view of the per-arm basis matrix for the
@@ -207,8 +211,10 @@ struct LatentBlock {
     //                       k_arm * m_per_arm (output-major layout).
     //
     // The scatter helper batches every obs across the arm in a single SYRK /
-    // GEMM call. The data and sqrt_S pointers are valid until the block's
-    // next `prep` call; the scatter must hold them only across one solve.
+    // GEMM call. The sqrt_S pointer refers to cell k_grid's state written by
+    // prep(k_grid); it stays valid for the duration of that cell's solve
+    // (per-cell slot storage), and the scatter must hold it only across one
+    // solve.
     //
     // Optional: when this callback is empty the per-obs `basis_eval` path is
     // used (current behavior pre-Stage 2.1). Both should agree on values.
@@ -219,7 +225,8 @@ struct LatentBlock {
         int           m_per_arm         = 0;
         int           m_offset_in_block = 0;
     };
-    std::function<DenseBasisBatch(int /*k_arm*/)> dense_basis_batch;
+    std::function<DenseBasisBatch(int /*k_arm*/, int /*k_grid*/)>
+        dense_basis_batch;
 
     // BILINEAR_FACTOR only. Return the pair (u_slot_global, lambda_slot_global)
     // for obs i in arm k_arm. Both indices are absolute (i.e. include the

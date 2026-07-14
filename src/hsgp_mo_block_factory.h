@@ -66,6 +66,7 @@
 #define TULPA_HSGP_MO_BLOCK_FACTORY_H
 
 #include "latent_block.h"
+#include "nl_cell_cache.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cmath>
@@ -139,10 +140,14 @@ inline LatentBlock make_hsgp_mo_block(
     auto eig = std::make_shared<std::vector<double>>(
         eigenvalues.begin(), eigenvalues.end());
 
-    // prep-refreshed caches.
-    auto sqrt_S_cache  = std::make_shared<std::vector<double>>(m_total, 0.0);
-    auto Sigma_inv     = std::make_shared<std::vector<double>>(K * K, 0.0);
-    auto log_det_Sigma = std::make_shared<double>(0.0);
+    // prep-refreshed per-cell state (nl_cell_cache.h): concurrent outer-grid
+    // cells each publish their own slot instead of sharing one buffer.
+    struct HsgpMoCellState {
+        std::vector<double> sqrt_S;
+        std::vector<double> Sigma_inv;
+        double              log_det_Sigma = 0.0;
+    };
+    auto cell_cache = std::make_shared<NlCellCache<HsgpMoCellState>>();
 
     const int size = K * m_total;
 
@@ -155,8 +160,7 @@ inline LatentBlock make_hsgp_mo_block(
     // arm_scale left empty (copy not supported on multi-output HSGP first ship).
     // idx / obs_indices left empty — DENSE_BASIS uses basis_eval.
 
-    block.prep = [sqrt_S_cache, eig, Sigma_inv, log_det_Sigma,
-                   m_total, K,
+    block.prep = [cell_cache, eig, m_total, K,
                    axis_sigma_1, axis_sigma_2, axis_rho, axis_ell,
                    theta_grid](int k_grid) -> bool {
         const double sigma_1 = theta_grid(k_grid, axis_sigma_1);
@@ -168,15 +172,17 @@ inline LatentBlock make_hsgp_mo_block(
         const double one_minus_rho2 = 1.0 - rho * rho;
         if (!(one_minus_rho2 > 0.0)) return false;
 
+        auto& st = cell_cache->claim();
+
         // sqrt_S — sigma absorbed into Sigma; basis spectral density carries
         // only the lengthscale.
         const double pref = std::sqrt(2.0 * M_PI) * ell;
         const double e_coef = -0.5 * ell * ell;
         const auto& evs = *eig;
-        auto& cache = *sqrt_S_cache;
+        st.sqrt_S.assign(m_total, 0.0);
         for (int m = 0; m < m_total; m++) {
             const double S_m = pref * std::exp(e_coef * evs[m]);
-            cache[m] = std::sqrt(S_m > 0.0 ? S_m : 0.0);
+            st.sqrt_S[m] = std::sqrt(S_m > 0.0 ? S_m : 0.0);
         }
 
         // Sigma_inv (K = 2 closed form).
@@ -184,7 +190,8 @@ inline LatentBlock make_hsgp_mo_block(
         //   Sigma_inv[0,0] = 1 / (sigma_1^2 * (1 - rho^2))
         //   Sigma_inv[1,1] = 1 / (sigma_2^2 * (1 - rho^2))
         //   Sigma_inv[0,1] = Sigma_inv[1,0] = -rho / (sigma_1 * sigma_2 * (1 - rho^2))
-        auto& Si = *Sigma_inv;
+        st.Sigma_inv.assign(static_cast<size_t>(K) * K, 0.0);
+        auto& Si = st.Sigma_inv;
         const double inv_omr2 = 1.0 / one_minus_rho2;
         Si[0 * K + 0] = inv_omr2 / (sigma_1 * sigma_1);
         Si[1 * K + 1] = inv_omr2 / (sigma_2 * sigma_2);
@@ -193,21 +200,22 @@ inline LatentBlock make_hsgp_mo_block(
 
         // log|Sigma| = log(sigma_1^2 * sigma_2^2 * (1 - rho^2))
         //            = 2*log(sigma_1) + 2*log(sigma_2) + log(1 - rho^2)
-        *log_det_Sigma = 2.0 * std::log(sigma_1)
-                         + 2.0 * std::log(sigma_2)
-                         + std::log(one_minus_rho2);
+        st.log_det_Sigma = 2.0 * std::log(sigma_1)
+                           + 2.0 * std::log(sigma_2)
+                           + std::log(one_minus_rho2);
+        cell_cache->publish(k_grid);
         return true;
     };
 
-    block.basis_eval = [phi_flat_per_arm, sqrt_S_cache,
+    block.basis_eval = [phi_flat_per_arm, cell_cache,
                          m_total, size](
-        int i, int k_arm, double* out
+        int i, int k_arm, int k_grid, double* out
     ) {
         // Output-major: write zeros over the full K*M buffer (callers do
         // not pre-zero), then fill the active arm's contiguous range.
         for (int j = 0; j < size; j++) out[j] = 0.0;
         const auto& flat = (*phi_flat_per_arm)[k_arm];
-        const auto& sS   = *sqrt_S_cache;
+        const auto& sS   = cell_cache->find(k_grid).sqrt_S;
         const double* row = flat.data() + static_cast<size_t>(i) * m_total;
         const int off = k_arm * m_total;
         for (int m = 0; m < m_total; m++) {
@@ -221,11 +229,12 @@ inline LatentBlock make_hsgp_mo_block(
     // separately via add_prior_sparse, not here.
     auto n_obs_cache = std::make_shared<std::vector<int>>(
         n_obs_per_arm.begin(), n_obs_per_arm.end());
-    block.dense_basis_batch = [phi_flat_per_arm, sqrt_S_cache, n_obs_cache,
-                                m_total](int k_arm) -> LatentBlock::DenseBasisBatch {
+    block.dense_basis_batch = [phi_flat_per_arm, cell_cache, n_obs_cache,
+                                m_total](int k_arm, int k_grid)
+        -> LatentBlock::DenseBasisBatch {
         LatentBlock::DenseBasisBatch b;
         b.data              = (*phi_flat_per_arm)[k_arm].data();
-        b.sqrt_S            = sqrt_S_cache->data();
+        b.sqrt_S            = cell_cache->find(k_grid).sqrt_S.data();
         b.N_k               = (*n_obs_cache)[k_arm];
         b.m_per_arm         = m_total;
         b.m_offset_in_block = k_arm * m_total;
@@ -248,11 +257,11 @@ inline LatentBlock make_hsgp_mo_block(
         }
     };
 
-    block.add_prior_sparse = [start, m_total, K, Sigma_inv](
+    block.add_prior_sparse = [start, m_total, K, cell_cache](
         SparseHessianBuilder& H, DenseVec& grad,
-        const Rcpp::NumericVector& x, int /*k_grid*/
+        const Rcpp::NumericVector& x, int k_grid
     ) {
-        const auto& Si = *Sigma_inv;
+        const auto& Si = cell_cache->find(k_grid).Sigma_inv;
         for (int m = 0; m < m_total; m++) {
             // grad[k1*M + m] -= sum_{k2} Sigma_inv[k1, k2] * beta_{k2, m}
             for (int k1 = 0; k1 < K; k1++) {
@@ -275,10 +284,11 @@ inline LatentBlock make_hsgp_mo_block(
         }
     };
 
-    block.log_prior = [start, m_total, K, Sigma_inv, log_det_Sigma](
-        const Rcpp::NumericVector& x, int /*k_grid*/
+    block.log_prior = [start, m_total, K, cell_cache](
+        const Rcpp::NumericVector& x, int k_grid
     ) -> double {
-        const auto& Si = *Sigma_inv;
+        const auto& st = cell_cache->find(k_grid);
+        const auto& Si = st.Sigma_inv;
         double quad = 0.0;
         for (int m = 0; m < m_total; m++) {
             for (int k1 = 0; k1 < K; k1++) {
@@ -291,7 +301,7 @@ inline LatentBlock make_hsgp_mo_block(
             }
         }
         double lp = -0.5 * quad
-                    - 0.5 * m_total * (*log_det_Sigma)
+                    - 0.5 * m_total * st.log_det_Sigma
                     - 0.5 * K * m_total * std::log(2.0 * M_PI);
         return lp;
     };

@@ -28,6 +28,7 @@
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
+#include "nl_cell_cache.h"
 #include "nested_laplace_grid.h"
 #include "nested_laplace_joint_core.h"      // ParsedArm / JointArm (single-arm joint setup)
 #include "nested_laplace_joint_multi.h"     // run_multi_block_nested_laplace_joint_sparse_impl
@@ -148,7 +149,11 @@ inline std::vector<tulpa::LatentBlock> make_car_proper_latent_blocks(
         adj_col_idx.begin(), adj_col_idx.end());
     auto n_nbr_v  = std::make_shared<std::vector<int>>(
         n_neighbors.begin(), n_neighbors.end());
-    auto log_det_Q_rho = std::make_shared<double>(0.0);
+    // Per-cell log|Q(rho)| (nl_cell_cache.h). The single-arm kernels run the
+    // outer grid serially today, but nothing at the type level prevents this
+    // block from meeting a parallel grid; cell-keyed state costs nothing and
+    // removes the hazard.
+    auto log_det_Q_rho = std::make_shared<tulpa::NlCellCache<double>>();
 
     tulpa::LatentBlock block;
     block.start = start;
@@ -159,8 +164,10 @@ inline std::vector<tulpa::LatentBlock> make_car_proper_latent_blocks(
                    log_det_Q_rho](int k) -> bool {
         std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
             n_units, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_grid[k]);
-        *log_det_Q_rho = tulpa_car_proper::car_log_det(n_units, Qmat);
-        return std::isfinite(*log_det_Q_rho);
+        double ld_val = tulpa_car_proper::car_log_det(n_units, Qmat);
+        log_det_Q_rho->claim() = ld_val;
+        log_det_Q_rho->publish(k);
+        return std::isfinite(ld_val);
     };
     block.add_prior = [start, n_units, &tau_grid, &rho_grid,
                        &adj_row_ptr, &adj_col_idx, &n_neighbors]
@@ -175,7 +182,7 @@ inline std::vector<tulpa::LatentBlock> make_car_proper_latent_blocks(
                       (const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_car_proper(x, start, n_units,
                                              tau_grid[k], rho_grid[k],
-                                             *log_det_Q_rho,
+                                             log_det_Q_rho->find(k),
                                              adj_row_ptr, adj_col_idx, n_neighbors);
     };
     block.center = [start, n_units](Rcpp::NumericVector& x) -> double {

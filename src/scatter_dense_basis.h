@@ -113,6 +113,7 @@ struct DenseBasisScratch {
 inline bool scatter_dense_basis_block(
     const LatentBlock&            blk,
     int                            k_arm,
+    int                            k_grid,
     const ParsedArm&               pa,
     const JointArm&                arm,
     const ArmSpecView&             view,
@@ -126,7 +127,8 @@ inline bool scatter_dense_basis_block(
     if (!blk.dense_basis_batch) return false;
     if (d_eff == 0.0) return true;  // nothing to scatter, but skip per-obs fallback
 
-    const LatentBlock::DenseBasisBatch batch = blk.dense_basis_batch(k_arm);
+    const LatentBlock::DenseBasisBatch batch =
+        blk.dense_basis_batch(k_arm, k_grid);
     if (batch.data == nullptr) return false;
 
     const int N_k       = batch.N_k;

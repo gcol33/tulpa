@@ -35,6 +35,7 @@
 
 #include "latent_block.h"
 #include "laplace_re_priors.h"           // center_effects
+#include "nl_cell_cache.h"
 #include "sparse_hessian.h"
 #include "spde_qbuilder.h"               // SpdeQBuilder, ARows, build_A_rows
 #include "spde_logdet.h"                 // SpdeQLogDet (0.5 log|Q| normalizer)
@@ -92,16 +93,25 @@ inline LatentBlock make_spde_block(
                                               A_x, A_i, A_p);
     }
 
-    // Shared QBuilder — pattern fixed at init, values rebuilt per outer cell.
+    // Template QBuilder — pattern built once at factory time. It seeds the
+    // per-cell slot copies below and serves the (immutable) pattern reads in
+    // add_prior_pattern.
     auto qb = std::make_shared<SpdeQBuilder>();
     qb->init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
 
-    // Prior normalizer 0.5 log|Q(theta)| recomputed per outer cell in prep().
-    // Shared scalar is safe: the SPDE nested driver runs outer cells serially
-    // (cpp_nested_laplace_spde passes n_threads_outer = 1), the same assumption
-    // qb->rebuild() already relies on. log_prior reads it at the cell's mode.
-    auto qld       = std::make_shared<SpdeQLogDet>();
-    auto half_ldQ  = std::make_shared<double>(0.0);
+    // Per-cell state (nl_cell_cache.h): Q values and the prior normalizer
+    // 0.5 log|Q(theta)| are rebuilt per outer cell by prep(), and the joint
+    // driver runs outer cells concurrently — a shared builder/scalar would
+    // let one cell's prep clobber another cell's in-flight Newton reads.
+    // Each slot copies the pattern-initialized template on first use; the
+    // CHOLMOD log-det state (symbolic factor) is per-slot too.
+    struct SpdeCellState {
+        SpdeQBuilder qb;
+        SpdeQLogDet  qld;
+        double       half_ldQ = 0.0;
+    };
+    auto cell_cache = std::make_shared<NlCellCache<SpdeCellState>>(
+        [qb](SpdeCellState& st) { st.qb = *qb; });
 
     // alpha = nu + d/2 with d = 2.
     const int alpha = static_cast<int>(std::round(nu)) + 1;
@@ -138,7 +148,7 @@ inline LatentBlock make_spde_block(
     // recompute the prior normalizer 0.5 log|Q(theta)| consumed by log_prior.
     // A non-PD cell returns false (infeasible -> log_marginal = -inf), matching
     // the proper-CAR PD gate.
-    block.prep = [qb, qld, half_ldQ, axis_range, axis_sigma, theta_grid,
+    block.prep = [cell_cache, axis_range, axis_sigma, theta_grid,
                    nu, alpha, use_rational,
                    rational_poles, rational_weights](int k_grid) -> bool {
         double range = theta_grid(k_grid, axis_range);
@@ -146,12 +156,15 @@ inline LatentBlock make_spde_block(
         if (!(range > 0.0) || !(sigma > 0.0)) return false;
         double kappa = std::sqrt(8.0 * nu) / range;
         double tau   = 1.0 / (std::sqrt(4.0 * M_PI) * kappa * sigma);
+        auto& st = cell_cache->claim();
         if (use_rational) {
-            qb->rebuild_rational(kappa, tau, rational_poles, rational_weights);
+            st.qb.rebuild_rational(kappa, tau, rational_poles, rational_weights);
         } else {
-            qb->rebuild(kappa, tau, alpha);
+            st.qb.rebuild(kappa, tau, alpha);
         }
-        return qld->half_logdet(*qb, *half_ldQ);
+        bool ok = st.qld.half_logdet(st.qb, st.half_ldQ);
+        if (ok) cell_cache->publish(k_grid);
+        return ok;
     };
 
     // Pattern: every Q nonzero contributes a lower-triangle entry in the
@@ -172,14 +185,15 @@ inline LatentBlock make_spde_block(
     // Sparse Q scatter. Mirrors the inline prior-Q block in
     // cpp_nested_laplace_spde (spde_laplace.cpp lines 402-410): gradient
     // uses the FULL Q (both triangles); H uses LOWER triangle only.
-    block.add_prior_sparse = [start, n_mesh, qb](
+    block.add_prior_sparse = [start, n_mesh, cell_cache](
         SparseHessianBuilder& H, DenseVec& grad,
-        const Rcpp::NumericVector& x, int /*k_grid*/
+        const Rcpp::NumericVector& x, int k_grid
     ) {
+        const SpdeQBuilder& q_cell = cell_cache->find(k_grid).qb;
         for (int col = 0; col < n_mesh; col++) {
-            for (int idx = qb->Q_p[col]; idx < qb->Q_p[col + 1]; idx++) {
-                int row = qb->Q_i[idx];
-                double q = qb->Q_x[idx];
+            for (int idx = q_cell.Q_p[col]; idx < q_cell.Q_p[col + 1]; idx++) {
+                int row = q_cell.Q_i[idx];
+                double q = q_cell.Q_x[idx];
                 grad[start + row] -= q * x[start + col];
                 if (row >= col) {
                     H.add(start + row, start + col, q);
@@ -194,28 +208,31 @@ inline LatentBlock make_spde_block(
     // the FULL Q (both triangles via the CSC), Hessian fills both triangles so
     // the caller's lower->upper symmetrise does not clobber it. Reads the same
     // qb->Q_x rebuilt by prep(), so there is one source of FEM assembly.
-    block.add_prior = [start, n_mesh, qb](
+    block.add_prior = [start, n_mesh, cell_cache](
         DenseVec& grad, DenseMat& H,
-        const Rcpp::NumericVector& x, int /*k_grid*/
+        const Rcpp::NumericVector& x, int k_grid
     ) {
+        const SpdeQBuilder& q_cell = cell_cache->find(k_grid).qb;
         for (int col = 0; col < n_mesh; col++) {
-            for (int idx = qb->Q_p[col]; idx < qb->Q_p[col + 1]; idx++) {
-                int row = qb->Q_i[idx];
-                double q = qb->Q_x[idx];
+            for (int idx = q_cell.Q_p[col]; idx < q_cell.Q_p[col + 1]; idx++) {
+                int row = q_cell.Q_i[idx];
+                double q = q_cell.Q_x[idx];
                 grad[start + row] -= q * x[start + col];
                 H[start + row][start + col] += q;
             }
         }
     };
 
-    block.log_prior = [start, n_mesh, qb, half_ldQ](
-        const Rcpp::NumericVector& x, int /*k_grid*/
+    block.log_prior = [start, n_mesh, cell_cache](
+        const Rcpp::NumericVector& x, int k_grid
     ) -> double {
+        const auto& st = cell_cache->find(k_grid);
+        const SpdeQBuilder& q_cell = st.qb;
         double qf = 0.0;
         for (int col = 0; col < n_mesh; col++) {
             double x_col = x[start + col];
-            for (int idx = qb->Q_p[col]; idx < qb->Q_p[col + 1]; idx++) {
-                qf += x[start + qb->Q_i[idx]] * qb->Q_x[idx] * x_col;
+            for (int idx = q_cell.Q_p[col]; idx < q_cell.Q_p[col + 1]; idx++) {
+                qf += x[start + q_cell.Q_i[idx]] * q_cell.Q_x[idx] * x_col;
             }
         }
         // log p(x|theta) = 0.5 log|Q(theta)| - 0.5 x'Qx (the theta-independent
@@ -223,7 +240,7 @@ inline LatentBlock make_spde_block(
         // by prep() each cell; it is the Occam term that makes the (range,sigma)
         // marginal interior-peaked rather than monotone in sigma. It is NOT
         // absorbed by the Laplace Hessian log-determinant (H = Q + A'WA != Q).
-        return *half_ldQ - 0.5 * qf;
+        return st.half_ldQ - 0.5 * qf;
     };
 
     block.center = [start, n_mesh](Rcpp::NumericVector& x) -> double {
