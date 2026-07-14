@@ -269,10 +269,13 @@ the registry `emits` property (`"chain"` / `"iid"` / `"point"`), orthogonal to
 `tier` (Tier-1 SMC emits `"iid"`; Tier-2 nested Laplace emits `"iid"`; Tier-3
 VI emits `"iid"`). `tulpa_dispatch()` stamps it onto `fit$draws_kind`, and
 `.tulpa_is_chain()` reads tag-then-registry, treating unknown as chain so
-untagged fits still work. On a non-chain fit `mcmc_diagnostics()` returns `NULL`
-with a message (Rhat is vacuous and ESS = n_draws by construction there),
-`check_diagnostics()` returns `NA` ("not applicable"), and the plot/summary
-layer withholds the panels rather than printing a vacuous convergence pass.
+untagged fits still work. On a non-chain fit `mcmc_diagnostics()` withholds
+Rhat/ESS (vacuous there: ESS = n_draws by construction) and dispatches to the
+approximation-reliability table (`laplace_diagnostics()`, the PSIS/quad-ESS
+view) — a point fit gets `NULL` with a message; `mcmc_draws()` is the
+chain-only view (`NULL` on any non-chain fit); `check_diagnostics()` returns
+`NA` ("not applicable"), and the plot/summary layer withholds the panels
+rather than printing a vacuous convergence pass.
 `posterior_sample(fit)` is the provenance-agnostic accessor for summaries;
 `mcmc_draws(fit)` is the chain-only view (`NULL` otherwise) the diagnostics
 gate on.
