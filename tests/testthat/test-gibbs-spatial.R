@@ -43,10 +43,14 @@ test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data"
   expect_equal(ncol(fit$spatial), n_units)
   expect_true(all(is.finite(fit$tau)))
 
-  # Recovery: posterior-mean fixed effects near truth.
+  # Recovery: posterior-mean fixed effects near truth, and the posterior-mean
+  # field tracks the simulated field (the identifiable within-mean structure;
+  # tau itself is graph-scaled so the field correlation is the truth check).
   beta_hat <- colMeans(fit$beta)
   expect_lt(abs(beta_hat[1] - beta_true[1]), 0.45)   # intercept
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)   # slope
+  field_hat <- colMeans(fit$spatial)
+  expect_gt(stats::cor(field_hat, phi_true - mean(phi_true)), 0.6)
 })
 
 test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", {
@@ -97,7 +101,11 @@ test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", 
   level_hat  <- beta_hat[1] + mean(colMeans(fit$spatial))
   level_true <- beta_true[1] + mean(phi_true)
   expect_lt(abs(level_hat - level_true), 0.45)
-  expect_gt(mean(fit$r), 1.5)                        # dispersion stays sane
+  # The centered field tracks the simulated field, and the dispersion
+  # posterior brackets the truth (r_true = 5) rather than merely staying sane.
+  field_hat <- colMeans(fit$spatial)
+  expect_gt(stats::cor(field_hat, phi_true - mean(phi_true)), 0.5)
+  expect_lt(abs(mean(fit$r) - r_true) / r_true, 0.6)
 })
 
 test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {

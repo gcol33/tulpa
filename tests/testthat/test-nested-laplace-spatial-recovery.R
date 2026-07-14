@@ -24,8 +24,9 @@
 #     weakly, so the check is that the marginalized (sigma2, range) CI COVERS the
 #     truth (calibration), not a tight point estimate.
 
-# Heavier multi-seed sweeps run only off-CRAN; a couple of seeds always run.
-.nlsr_n_seed <- function() if (isTRUE(as.logical(Sys.getenv("TULPA_SLOW_TESTS", "false")))) 16L else 8L
+# Seed budget for the multi-seed sweeps. Every caller sits behind
+# skip_if_not_slow(), so this always runs at the full tier-3 budget.
+.nlsr_n_seed <- function() 16L
 
 # ---- self-contained simulators / graph helpers ----------------------------
 .grid_adj <- function(nr, nc) {

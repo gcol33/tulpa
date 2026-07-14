@@ -5,7 +5,9 @@
 # averaging targeting acceptance ~0.9). Both run on a diagonal Gaussian where
 # posterior moments are exactly known.
 
-skip_if_not_installed("testthat")
+# Tier 2: cheap C++ recovery on closed-form targets, but still MCMC — CRAN
+# runs structural tests only (tier policy in helper-tiers.R).
+skip_on_cran()
 
 # Verify both samplers recover means/SDs of a standard 1-D Gaussian.
 test_that("unadjusted MCLMC recovers a 1-D Gaussian", {

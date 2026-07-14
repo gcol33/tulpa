@@ -137,3 +137,29 @@ test_that("offset = 0 reproduces the no-offset sampler draws exactly (gcol33/tul
                          offset = rep(0, n), control = ctrl)
   expect_equal(b$draws, a$draws, tolerance = 1e-10)
 })
+
+# VI is validated at mean level above; this quantifies its SPREAD. Mean-field
+# VI is known to under-disperse; the band makes that a measured property
+# instead of an unchecked one: posterior SDs within [0.4, 1.25] of the
+# asymptotic (glm) SE, so a broken ELBO (collapsed or exploded variances)
+# fails while the documented under-dispersion passes.
+test_that("VI posterior SDs sit in a quantified band around the asymptotic SE", {
+  skip_if_not_slow()
+  set.seed(303)
+  n <- 600L
+  x <- rnorm(n)
+  X <- cbind(1, x)
+  y <- rpois(n, exp(0.4 + 0.6 * x))
+  fit <- tulpa_sample_glmm(
+    y = as.numeric(y), n_trials = rep(1L, n), X = X,
+    family = "poisson", backend = "vi",
+    control = list(vi_max_iter = 8000L, n_draws = 4000L, seed = 17L))
+  ref <- glm(y ~ x, family = poisson)
+  se_ref <- unname(sqrt(diag(vcov(ref))))
+  expect_lt(max(abs(unname(fit$means) - unname(coef(ref)))), 0.15)
+  sd_fit <- apply(tulpa:::.fixed_draws_mat(fit), 2, stats::sd)[seq_along(se_ref)]
+  ratio  <- unname(sd_fit) / se_ref
+  expect_true(all(ratio > 0.4 & ratio < 1.25),
+              label = paste("VI sd / asymptotic se:",
+                            paste(round(ratio, 3), collapse = ", ")))
+})

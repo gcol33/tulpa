@@ -1,13 +1,14 @@
-# Item-5 recovery gate (in-suite, trimmed). Certifies that tulpa_re_cov_gibbs
-# recovers a known random-effect covariance with calibrated intervals.
-#
-# The authoritative gate -- N = 20 seeds, binomial AND poisson, small + identified
-# regimes, strict >= 85% coverage -- is dev_notes/recovery_gate.R (PASS). Here we
-# run a faster subset (fewer seeds, slightly looser floors) so the property is
-# guarded in CI without a multi-minute run. The variance-component debias is the
-# Bias-1 target; the intercept-slope correlation rho needs rich per-group designs
-# to be identified (dev_notes/binary_identifiability.R), so the binary rho check
-# uses the identified regime.
+# Item-5 recovery gate for tulpa_re_cov_gibbs. Certifies that the exact-target
+# Sigma debias recovers a known random-effect covariance with calibrated
+# intervals. Two layers, both tier 3:
+#   * trimmed sweeps (12- / 8-seed) -- the routine full-validation run;
+#   * the authoritative N = 20-seed strict gate (>= 85% coverage, 15% bias on
+#     the gated parameters, binomial + poisson, small + identified regimes) --
+#     the release gate, in-suite so it cannot rot against the API.
+# The variance-component debias is the Bias-1 target; the intercept-slope
+# correlation rho needs rich per-group designs to be identified
+# (dev_notes/binary_identifiability.R), so in the SMALL regimes rho is gated
+# on coverage only and its point recovery is gated in the identified regime.
 
 sim_recov <- function(seed, family, G, npg, ntr = 1L, beta = c(0, 0.3),
                       Sigma = matrix(c(0.7^2, 0.4 * 0.7 * 0.5,
@@ -60,7 +61,7 @@ test_that("poisson small groups: variance components recover, intervals calibrat
   # stays calibrated. Point recovery of rho is gated in the identified regime
   # (the binomial-npg=40 test below); see dev_notes/binary_identifiability.R.
   # Coverage of every parameter is not grossly miscalibrated (>= 9/12 = 75%);
-  # the strict >= 85% @ N >= 20 gate lives in dev_notes/recovery_gate.R.
+  # the strict >= 85% @ N = 20 gate is the release-gate test below.
   for (nm in names(R$truth)) expect_gte(R$cov[[nm]], 9L)
 })
 
@@ -77,4 +78,52 @@ test_that("binomial identified: variance debias and rho recovery", {
   expect_lt(abs(mean(R$med[, "rho_12"]) - 0.4) / 0.4, 0.20)
   # coverage of every parameter (>= 6/8)
   for (nm in names(R$truth)) expect_gte(R$cov[[nm]], 6L)
+})
+
+
+# ---------------------------------------------------------------------------
+# The authoritative N = 20-seed strict gate (formerly dev_notes/recovery_gate.R,
+# ported in-suite so it tracks the API). Gate criteria per regime:
+# |mean(median) - truth| / truth <= 0.15 on the gated parameters AND 95%-CI
+# coverage >= 85% on all parameters.
+# ---------------------------------------------------------------------------
+
+strict_gate <- function(R, n_seed, gate_bias, label) {
+  for (nm in names(R$truth)) {
+    cvg <- R$cov[[nm]] / n_seed
+    expect_gte(cvg, 0.85,
+               label = sprintf("%s %s coverage (%d/%d)", label, nm,
+                               R$cov[[nm]], n_seed))
+    if (nm %in% gate_bias) {
+      bias <- abs(mean(R$med[, nm]) - R$truth[[nm]]) / R$truth[[nm]]
+      expect_lte(bias, 0.15,
+                 label = sprintf("%s %s relative bias", label, nm))
+    }
+  }
+}
+
+test_that("strict N=20 gate: binomial small groups (variances gated, rho coverage)", {
+  skip_if_not_slow()
+  n_seed <- 20L
+  R <- recov_sweep("binomial", G = 60L, npg = 20L, n_seed = n_seed)
+  strict_gate(R, n_seed, gate_bias = c("sigma_1", "sigma_2"),
+              label = "binomial-small")
+})
+
+test_that("strict N=20 gate: poisson small groups (variances gated, rho coverage)", {
+  skip_if_not_slow()
+  n_seed <- 20L
+  R <- recov_sweep("poisson", G = 60L, npg = 10L, n_seed = n_seed,
+                   seed_off = 2000L)
+  strict_gate(R, n_seed, gate_bias = c("sigma_1", "sigma_2"),
+              label = "poisson-small")
+})
+
+test_that("strict N=20 gate: binomial identified (all three gated)", {
+  skip_if_not_slow()
+  n_seed <- 20L
+  R <- recov_sweep("binomial", G = 60L, npg = 40L, n_seed = n_seed,
+                   seed_off = 4000L)
+  strict_gate(R, n_seed, gate_bias = c("sigma_1", "sigma_2", "rho_12"),
+              label = "binomial-identified")
 })

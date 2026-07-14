@@ -13,13 +13,14 @@ test_that("tulpa_gaussian fits a simple linear model", {
   expect_equal(fit$n_samples, 1000)
   expect_equal(fit$p, 2)  # intercept + slope
 
-  # Check posterior means recover true values (within reasonable tolerance)
-  # True: intercept = 2, slope = 3, sigma = 0.5
-  expect_true(abs(fit$means["beta[1]"] - 2) < 0.5,
+  # Posterior means recover the truth. At n = 200 with sd = 0.5 the slope's
+  # sampling SE is ~0.035, so 0.15 is ~4 SE -- a real recovery bound, not a
+  # sanity bound.
+  expect_true(abs(fit$means["beta[1]"] - 2) < 0.15,
               label = "Intercept should be near 2")
-  expect_true(abs(fit$means["beta[2]"] - 3) < 0.5,
+  expect_true(abs(fit$means["beta[2]"] - 3) < 0.15,
               label = "Slope should be near 3")
-  expect_true(abs(fit$sigma - 0.5) < 0.3,
+  expect_true(abs(fit$sigma - 0.5) < 0.1,
               label = "Sigma should be near 0.5")
 })
 

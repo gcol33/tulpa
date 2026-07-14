@@ -35,6 +35,12 @@
 #
 #   Sys.setenv(TULPA_SLOW_TESTS = "true", NOT_CRAN = "true"); devtools::test()
 #
+# One tier above that sits TULPA_FULL_RECOVERY=true: multi-hour full-strength
+# sweeps (currently the joint SPDE NUTS 10-seed recovery in
+# test-spde-nuts-joint.R) that additionally require TULPA_SLOW_TESTS. Not part
+# of any routine profile; run before a release that touched the SPDE log-post /
+# PC prior / NC transform.
+#
 # Put exactly one tier gate as the first line of any test_that() block whose cost
 # is a model fit or an MCMC sample; leave structural blocks ungated so CRAN still
 # exercises them. Fast mode rides the tier-2 / tier-3 gates, so a new fit placed

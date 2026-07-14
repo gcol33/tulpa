@@ -169,9 +169,9 @@ test_that("joint CAR_proper recovers per-arm betas and locates the alpha mode", 
 
     # Looser bound than BYM2/ICAR: random-walk-simulated phi is a poor match
     # to proper-CAR's conditional structure on a 1D chain, so the inferred
-    # alpha can sit anywhere in the {0, 0.5, 1, 1.5} grid. The alpha=0
-    # reduction test above already pins down the kernel math; this is just
-    # a loose calibration check.
+    # alpha wanders within the {0, 0.5, 1, 1.5} grid. The alpha=0 reduction
+    # test above pins down the kernel math; this bound only has to exclude a
+    # collapse onto either grid edge (0 or 1.5+).
     alpha_mean <- fit$theta_mean[["alpha"]]
-    expect_lt(abs(alpha_mean - 1.0), 1.0)
+    expect_lt(abs(alpha_mean - 1.0), 0.75)
 })
