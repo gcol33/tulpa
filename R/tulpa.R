@@ -355,7 +355,10 @@
       sigma_re    = sigma_re_scalar,
       family      = family,
       phi         = phi_sd,
-      control     = control
+      # Forward only the keys the inner fitter reads: front-door-only knobs
+      # (grid shape, backend selection) were consumed above and would trip
+      # tulpa_nested_laplace()'s own whitelist.
+      control     = .control_subset(control, .CONTROL_KEYS$nested_laplace)
     ))
   }
 
@@ -759,7 +762,9 @@
       spatial_spec  = spatial_spec_arg,
       temporal_spec = temporal_spec_arg,
       sigma_re_scale = control$sigma_re_scale %||% 2.5,
-      control       = control
+      # Forward only the sampler's own knobs (sigma_re_scale etc. were
+      # consumed above).
+      control       = .control_subset(control, .CONTROL_KEYS$sample_glmm)
     ))
   }
 
@@ -975,12 +980,13 @@ tulpa <- function(formula, data,
     fit <- if (family == "multinomial") {
       tulpa_multinomial(formula, data,
                         beta_prior_sd = beta_prior$sd %||% 10,
-                        control = control)
+                        control = .control_subset(control,
+                                                  .CONTROL_KEYS$multinomial))
     } else {
       tulpa_ordinal(formula, data,
                     link = if (family == "ordinal_probit") "probit" else "logit",
                     beta_prior_sd = beta_prior$sd %||% 10,
-                    control = control)
+                    control = .control_subset(control, .CONTROL_KEYS$ordinal))
     }
     fit$call <- match.call()
     return(fit)

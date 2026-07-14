@@ -33,7 +33,7 @@ test_that("generic NUTS recovers (beta, sigma_re) with calibrated CIs", {
            rnorm(n, 0, sigma_obs)
     d   <- data.frame(y = y, x = x, g = grp)
     fit <- tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "hmc",
-                 control = list(n_iter = 700L, n_warmup = 350L, seed = s))
+                 control = list(n_iter = 700L, warmup = 350L, seed = s))
     dr  <- fit$draws
     b_hat[s, ] <- colMeans(dr[, c("(Intercept)", "x"), drop = FALSE])
     b_lo[s, ]  <- apply(dr[, c("(Intercept)", "x"), drop = FALSE], 2L,

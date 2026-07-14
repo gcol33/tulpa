@@ -7,6 +7,15 @@
 # what it (and every helper it forwards `control` to) actually reads;
 # `tulpa()`'s set is the union over the backends it can dispatch.
 
+# Subset a validated front-door control list to the keys an inner fitter
+# accepts, so wholesale forwarding does not carry front-door-only knobs
+# (grid shape, backend selection) into the inner fitter's narrower check.
+#' @keywords internal
+.control_subset <- function(control, allowed) {
+  if (is.null(control) || length(control) == 0L) return(list())
+  control[intersect(names(control), allowed)]
+}
+
 #' @keywords internal
 .check_control <- function(control, allowed, where) {
   if (is.null(control)) return(invisible(NULL))

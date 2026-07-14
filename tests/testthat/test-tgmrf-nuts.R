@@ -72,9 +72,9 @@ test_that("NUTS and IMH on the same tgmrf agree on posterior means up to MC erro
   y <- rpois(n, exp(0.3 + z))
   blk <- make_nuts_ar1_block(n)
 
-  fit_imh <- tulpa_tgmrf_imh(
+  fit_imh <- tulpa_tgmrf(
     y = y, n_trials = rep(1L, n), X = X, block = blk,
-    family = "poisson",
+    family = "poisson", mode = "imh",
     n_iter = 1500L, warmup = 500L
   )
   fit_nuts <- tulpa_tgmrf(
