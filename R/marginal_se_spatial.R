@@ -255,7 +255,7 @@ NULL
 
 #' @keywords internal
 .marginal_H_beta_gp <- function(mode, X, spatial, family, phi,
-                                n_trials, weights = NULL,
+                                n_trials, weights = NULL, offset = NULL,
                                 sigma2_gp, phi_gp,
                                 re_idx = NULL, n_re_groups = 0L,
                                 sigma_re = 1.0) {
@@ -270,7 +270,7 @@ NULL
   Z_field <- .nngp_design_Z(spatial, n_obs)
   D       <- cbind(D_re, Z_field)
 
-  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
+  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
   if (!is.null(weights)) W <- W * weights
 
@@ -286,7 +286,7 @@ NULL
 
 #' @keywords internal
 .marginal_H_beta_spde <- function(mode, X, spatial, family, phi,
-                                  n_trials, weights = NULL,
+                                  n_trials, weights = NULL, offset = NULL,
                                   range_val, sigma_val,
                                   re_idx = NULL, n_re_groups = 0L,
                                   sigma_re = 1.0) {
@@ -309,7 +309,7 @@ NULL
     D_re       <- .re_design(re_idx, n_re_groups, n_obs)
     u_re       <- if (n_re_groups > 0L) mode[p + seq_len(n_re_groups)] else numeric(0)
     field_full <- mode[p + n_re_groups + seq_len(n_mesh)]
-    eta <- as.numeric(X %*% beta) +
+    eta <- as.numeric(X %*% beta) + (offset %||% 0) +
            (if (n_re_groups > 0L) as.numeric(D_re %*% u_re) else 0) +
            as.numeric(A_full %*% field_full)
     W <- glmm_weights(eta, family, n_trials, phi)
@@ -325,8 +325,8 @@ NULL
   D_re    <- .re_design(re_idx, n_re_groups, n_obs)
   D       <- cbind(D_re, A)
 
-  # eta at the mode: X beta + D_re u_re + A w
-  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
+  # eta at the mode: X beta + offset + D_re u_re + A w
+  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
   if (!is.null(weights)) W <- W * weights
 
@@ -361,7 +361,7 @@ NULL
 
 #' @keywords internal
 .marginal_H_beta_car_proper <- function(mode, X, spatial, family, phi,
-                                        n_trials, weights = NULL,
+                                        n_trials, weights = NULL, offset = NULL,
                                         tau, rho,
                                         re_idx = NULL, n_re_groups = 0L,
                                         sigma_re = 1.0) {
@@ -376,7 +376,7 @@ NULL
   Z_field <- .nngp_design_Z(spatial, n_obs)   # obs -> areal unit indicator
   D       <- cbind(D_re, Z_field)
 
-  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
+  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
   if (!is.null(weights)) W <- W * weights
 
@@ -394,7 +394,7 @@ NULL
 
 #' @keywords internal
 .marginal_H_beta_hsgp <- function(mode, X, spatial, family, phi,
-                                  n_trials, weights = NULL,
+                                  n_trials, weights = NULL, offset = NULL,
                                   phi_basis, lambda_eig, sigma2, lengthscale,
                                   re_idx = NULL, n_re_groups = 0L,
                                   sigma_re = 1.0) {
@@ -415,7 +415,7 @@ NULL
   D_re <- .re_design(re_idx, n_re_groups, n_obs)
   D    <- cbind(D_re, Matrix::Matrix(PhiS, sparse = TRUE))
 
-  eta <- as.numeric(X %*% beta) + as.numeric(D %*% u)
+  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
   if (!is.null(weights)) W <- W * weights
 

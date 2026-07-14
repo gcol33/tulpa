@@ -244,23 +244,26 @@ tulpa_laplace <- function(y, n_trials, X,
     beta <- mode_vec[seq_len(n_fixed)]
     re_vals <- mode_vec[-seq_len(n_fixed)]
 
-    # Linear predictor at mode: eta = X*beta + sum_k Z_k %*% u_k. The mode
-    # stores term k as [g1_c1, g1_c2, ..., g2_c1, ...] (n_groups * n_coefs),
-    # so a slope term contributes Z_k[i, ] %*% u_{g(i)}, not just an intercept.
-    eta <- as.numeric(X %*% beta)
+    # Linear predictor at mode: eta = X*beta + offset + sum_k Z_k %*% u_k.
+    # The observation offset must enter here: for non-gaussian families the
+    # GLM weight W depends on eta, so omitting it curves H_beta at the wrong
+    # linear predictor. The mode stores term k as
+    # [g1_c1, g1_c2, ..., g2_c1, ...] (n_groups * n_coefs), so a slope term
+    # contributes Z_k[i, ] %*% u_{g(i)}, not just an intercept.
+    eta <- as.numeric(X %*% beta) + (offset %||% 0)
 
     if (length(re_list) > 0) {
-      offset <- 0L
+      lat_off <- 0L
       for (k in seq_along(re_list)) {
         r  <- re_list[[k]]
         nc <- r$n_coefs %||% 1L
         # Z is the term's design: a supplied Z (slopes, incl. a single
         # `(0 + x | g)`) or the intercept indicator (column of 1s) when absent.
         Zk <- r$Z %||% matrix(1, n_obs, 1L)
-        u_k <- re_vals[offset + seq_len(r$n_groups * nc)]
+        u_k <- re_vals[lat_off + seq_len(r$n_groups * nc)]
         u_mat <- matrix(u_k, ncol = nc, byrow = TRUE)   # row g = (c1, ..., cnc)
         eta <- eta + rowSums(Zk * u_mat[r$idx, , drop = FALSE])
-        offset <- offset + r$n_groups * nc
+        lat_off <- lat_off + r$n_groups * nc
       }
     }
 
@@ -346,7 +349,7 @@ tulpa_laplace <- function(y, n_trials, X,
         .marginal_H_beta_spde(
           mode = result$mode, X = X, spatial = spatial,
           family = family, phi = phi,
-          n_trials = n_trials, weights = weights,
+          n_trials = n_trials, weights = weights, offset = offset,
           range_val = range_val, sigma_val = sigma_val,
           re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
         ),
@@ -363,7 +366,7 @@ tulpa_laplace <- function(y, n_trials, X,
         .marginal_H_beta_gp(
           mode = result$mode, X = X, spatial = spatial,
           family = family, phi = phi,
-          n_trials = n_trials, weights = weights,
+          n_trials = n_trials, weights = weights, offset = offset,
           sigma2_gp = sigma2_val, phi_gp = phi_gp_val,
           re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
         ),
@@ -378,7 +381,7 @@ tulpa_laplace <- function(y, n_trials, X,
         .marginal_H_beta_car_proper(
           mode = result$mode, X = X, spatial = spatial,
           family = family, phi = phi,
-          n_trials = n_trials, weights = weights,
+          n_trials = n_trials, weights = weights, offset = offset,
           tau = result$tau %||% 1.0, rho = result$rho %||% 0.5,
           re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
         ),
@@ -393,7 +396,7 @@ tulpa_laplace <- function(y, n_trials, X,
         .marginal_H_beta_hsgp(
           mode = result$mode, X = X, spatial = spatial,
           family = family, phi = phi,
-          n_trials = n_trials, weights = weights,
+          n_trials = n_trials, weights = weights, offset = offset,
           phi_basis = result$phi_basis, lambda_eig = result$lambda_eig,
           sigma2 = result$sigma2 %||% 1.0,
           lengthscale = result$lengthscale %||% 1.0,
