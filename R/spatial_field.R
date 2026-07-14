@@ -587,7 +587,10 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   al <- jfit$arm_layout
   p <- ncol(bundle$X)
   beta_start <- if (!is.null(al$beta_start)) al$beta_start[1L] else 0L
-  field_starts <- al$field_starts
+  # Per-block latent offsets. `block_start` is aligned with `blocks` for every
+  # block type; the layout's `field_starts` registers only areal types (icar /
+  # car_proper / bym2 / mcar), so temporal blocks are absent from it.
+  field_starts <- al$block_start
   w <- jfit$weights
 
   # Weighted-mode posterior mean of each field (sum_k w_k m_k restricted to the

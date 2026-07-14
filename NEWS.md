@@ -14,9 +14,19 @@ CRAN-preparation release.
   function-local buffers or constant-initialized POD-pointer TLS (the safe
   pattern the autodiff arena already used). The full test suite completes in
   a single process again.
-* Documentation: every exported Rd documents its return value; slow-but-runnable
-  examples moved from `\dontrun` to `\donttest` (`\dontrun` kept only on
-  experimental-path examples); new runnable examples for the core verbs
+* FIX: inline `temporal(~ ... || time)` varying-coefficient fields reported
+  empty per-time field means (`fit$temporal_fields[[...]]$mean` had length 0):
+  the shared bar-field core read the joint layout's `field_starts`, which
+  registers only areal block types. It now reads the per-block `block_start`,
+  which is aligned for every block type.
+* Documentation: every exported Rd documents its return value; stale ratio-era
+  examples (two-arm formulas with `tulpa_poisson_gamma()` / `tulpa_binomial()`
+  and pre-`control` arguments) are rewritten as runnable single-response
+  engine examples (plot_rhat, spatial_bym2, spatial_hsgp, spatial_rsr,
+  temporal_rw2, temporal_ar1) or marked `\dontrun` with their tulpaRatio
+  provenance; all 318 Rd example sets now run clean including `\donttest`.
+  Slow-but-runnable examples moved from `\dontrun` to `\donttest` (`\dontrun`
+  kept only on experimental-path examples); new runnable examples for the core verbs
   (`tulpa_criteria()`, `compare_models()`, `model_average()`,
   `mcmc_diagnostics()`, `tidy()`, `glance()`, `ranef()`, `moran_i()`,
   `posterior_sample()`, `tulpa_em_laplace()`); R sources and Rd are

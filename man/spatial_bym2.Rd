@@ -58,23 +58,22 @@ bym2 <- spatial_bym2(adj, level = "group", group_var = "region")
 print(bym2)
 
 \donttest{
-# Generate synthetic epidemiological data (not run - requires laplace backend)
+# Disease mapping with BYM2 spatial smoothing
 set.seed(456)
 n_regions <- 10
 epi_data <- data.frame(
-  region = factor(1:n_regions),
-  age = rnorm(n_regions, 50, 10),
-  cases = rbinom(n_regions, size = 100, prob = 0.15),
-  population = rep(100L, n_regions)
+  region = factor(rep(1:n_regions, each = 4)),
+  age = rnorm(n_regions * 4, 50, 10)
 )
+epi_data$cases <- rbinom(nrow(epi_data), size = 100, prob = 0.15)
 
-# Disease mapping with BYM2 spatial smoothing
 fit <- tulpa(
-  cases | population ~ age,
+  cases ~ age + spatial(region),
   spatial = spatial_bym2(adj, level = "group", group_var = "region"),
   data = epi_data,
-  family = tulpa_binomial(),
-  backend = "laplace"
+  family = "binomial",
+  n_trials = rep(100L, nrow(epi_data)),
+  mode = "laplace"
 )
 summary(fit)
 }

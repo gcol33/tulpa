@@ -104,7 +104,7 @@ NULL
 #' fit_icar <- tulpa(
 #'   count | effort ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   spatial = spatial_car(adj, level = "group", group_var = "site"),
 #'   mode = "hmc",
 #'   control = list(n_iter = 200, warmup = 100)
@@ -114,7 +114,7 @@ NULL
 #' fit_car <- tulpa(
 #'   count | effort ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   spatial = spatial_car(adj, level = "group", group_var = "site",
 #'                         proper = TRUE),
 #'   mode = "hmc",

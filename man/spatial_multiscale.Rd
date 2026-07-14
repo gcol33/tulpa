@@ -115,7 +115,7 @@ df <- data.frame(
 fit <- tulpa(
   count | effort ~ depth + temp,
   data = df,
-  family = tulpa_poisson_gamma(),
+  family = tulpaRatio::tulpa_poisson_gamma(),
   spatial = spatial_multiscale(
     ~ lon + lat,
     range_local = c(0.1, 0.5),

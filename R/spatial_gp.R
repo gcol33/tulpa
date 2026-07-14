@@ -244,21 +244,17 @@ print.tulpa_gp <- function(x, ...) {
 #' df <- data.frame(
 #'   lon = runif(n, 0, 10),
 #'   lat = runif(n, 0, 10),
-#'   x = rnorm(n),
-#'   count = rpois(n, 25),
-#'   effort = rgamma(n, shape = 4, rate = 1)
+#'   x = rnorm(n)
 #' )
+#' df$count <- rpois(n, exp(1 + 0.4 * df$x + 0.5 * sin(df$lon)))
 #'
 #' # Fast spatial effect with HSGP (much faster than spatial_gp)
 #' fit <- tulpa(
-#'   count | effort ~ x,
+#'   count ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = "poisson",
 #'   spatial = spatial_hsgp(~ lon + lat, m = 6),
-#'   backend = "hmc",
-#'   iter = 500,
-#'   warmup = 250,
-#'   chains = 2
+#'   mode = "auto"
 #' )
 #' summary(fit)
 #' }
@@ -462,7 +458,7 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #' fit <- tulpa(
 #'   count | effort ~ depth + temp,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   spatial = spatial_multiscale(
 #'     ~ lon + lat,
 #'     range_local = c(0.1, 0.5),
@@ -780,7 +776,7 @@ validate_gp <- function(gp, data) {
 #' fit <- tulpa(
 #'   count | effort ~ depth,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   svc = spatial_svc(~ lon + lat, terms = 1),
 #'   iter = 200, warmup = 100, chains = 1
 #' )

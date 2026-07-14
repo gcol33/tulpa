@@ -143,7 +143,7 @@ df$effort <- rgamma(nrow(df), shape = 4, rate = 1)
 fit <- tulpa(
   count | effort ~ x,
   data = df,
-  family = tulpa_poisson_gamma(),
+  family = tulpaRatio::tulpa_poisson_gamma(),
   spatiotemporal = spatiotemporal(
     spatial = spatial_car(adj, level = "group", group_var = "region"),
     temporal = temporal_rw1("year"),

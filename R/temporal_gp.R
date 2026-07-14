@@ -339,7 +339,7 @@ validate_temporal_multiscale <- function(temporal, data) {
 #' fit <- tulpa(
 #'   count | effort ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   temporal = temporal_gp("time"),
 #'   iter = 200, warmup = 100, chains = 1
 #' )
@@ -614,7 +614,7 @@ validate_temporal_gp <- function(temporal, data) {
 #' fit <- tulpa(
 #'   count | effort ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   tvc = temporal_tvc("year", terms = 1),
 #'   backend = "hmc",
 #'   iter = 200,
@@ -627,7 +627,7 @@ validate_temporal_gp <- function(temporal, data) {
 #' fit2 <- tulpa(
 #'   count | effort ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   tvc = temporal_tvc("year", terms = c("(Intercept)", "x"), structure = "rw2"),
 #'   backend = "hmc",
 #'   iter = 200,

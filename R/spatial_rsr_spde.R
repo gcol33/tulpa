@@ -107,49 +107,26 @@ validate_spatial <- function(spatial, data) {
 #' print(rsr)
 #'
 #' \donttest{
-#' # Generate synthetic spatial data with confounding
+#' # Areal binomial data on a chain of regions, covariate spatially confounded
 #' set.seed(404)
-#' n <- 50
-#' lon <- runif(n, 0, 10)
-#' lat <- runif(n, 0, 10)
-#' # Make depth and temp spatially correlated
-#' df <- data.frame(
-#'   lon = lon,
-#'   lat = lat,
-#'   depth = lon/5 + rnorm(n, 0, 0.5),  # Correlated with lon
-#'   temp = lat/5 + rnorm(n, 0, 0.5),   # Correlated with lat
-#'   count = rpois(n, 25),
-#'   effort = rgamma(n, shape = 4, rate = 1)
-#' )
+#' n_regions <- 12
+#' W <- matrix(0, n_regions, n_regions)
+#' for (i in 1:(n_regions - 1)) W[i, i + 1] <- W[i + 1, i] <- 1
+#' df <- data.frame(region = factor(rep(1:n_regions, each = 5)))
+#' df$x <- as.integer(df$region) / 4 + rnorm(nrow(df), 0, 0.5)
+#' df$y <- rbinom(nrow(df), 20, plogis(-0.5 + 0.6 * df$x))
 #'
-#' # Standard GP (may have spatial confounding)
-#' fit1 <- tulpa(
-#'   count | effort ~ depth + temp,
+#' # RSR orthogonalises the spatial field to x, protecting its coefficient
+#' fit <- tulpa(
+#'   y ~ x + spatial(region),
 #'   data = df,
-#'   spatial = spatial_gp(~ lon + lat),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
+#'   family = "binomial",
+#'   n_trials = rep(20L, nrow(df)),
+#'   spatial = spatial_rsr(spatial_car(W, level = "obs"), restrict_to = ~ x),
+#'   mode = "auto",
+#'   control = list(iter = 500L, warmup = 250L)
 #' )
-#'
-#' # RSR to protect depth and temp coefficients
-#' fit2 <- tulpa(
-#'   count | effort ~ depth + temp,
-#'   data = df,
-#'   spatial = spatial_rsr(
-#'     spatial_gp(~ lon + lat),
-#'     restrict_to = ~ depth + temp
-#'   ),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
-#' )
-#'
-#' # Compare coefficient estimates
-#' summary(fit1)  # May be attenuated
-#' summary(fit2)  # Protected from spatial confounding
+#' summary(fit)
 #' }
 #'
 #' @references

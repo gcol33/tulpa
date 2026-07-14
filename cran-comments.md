@@ -16,6 +16,10 @@
 
 * The package contains a large compiled codebase (C++ inference kernels);
   installed size may exceed the default threshold on some platforms.
+* On Windows the build requires the assembler flag -Wa,-mbig-obj
+  (Makevars.win): several templated inference kernels exceed the default
+  COFF section limit. The flag is Windows-only and flagged as non-portable
+  by R CMD check; without it the package does not compile with Rtools.
 * Long-running model fits in examples are wrapped in \donttest{}; each
   retains a small runnable form where feasible. Recovery and sampler tests
   are skipped on CRAN via testthat gating and run in CI instead.

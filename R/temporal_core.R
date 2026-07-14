@@ -114,22 +114,20 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' # Smooth temporal trend
 #' set.seed(126)
 #' df <- data.frame(
-#'   year = rep(2008:2027, each = 2),
-#'   x = rnorm(40),
-#'   count = rpois(40, lambda = 25),
-#'   effort = rgamma(40, shape = 4, rate = 1)
+#'   year = rep(1:20, each = 4),
+#'   x = rnorm(80)
 #' )
+#' trend <- sin(seq(0, 2, length.out = 20))
+#' df$count <- rpois(80, exp(1 + 0.3 * df$x + trend[df$year]))
 #'
 #' fit <- tulpa(
-#'   count | effort ~ x,
+#'   count ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = "poisson",
 #'   temporal = temporal_rw2("year"),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
+#'   mode = "auto"
 #' )
+#' summary(fit)
 #' }
 #'
 #' @export
@@ -221,43 +219,20 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' # AR1 temporal correlation
 #' set.seed(127)
 #' df <- data.frame(
-#'   year = rep(2005:2024, each = 3),
-#'   x = rnorm(60),
-#'   count = rpois(60, lambda = 18),
-#'   effort = rgamma(60, shape = 3.5, rate = 1)
+#'   year = rep(1:20, each = 3),
+#'   x = rnorm(60)
 #' )
+#' f <- as.numeric(arima.sim(list(ar = 0.7), 20, sd = 0.4))
+#' df$count <- rpois(60, exp(1 + 0.3 * df$x + f[df$year]))
 #'
 #' fit <- tulpa(
-#'   count | effort ~ x,
+#'   count ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = "poisson",
 #'   temporal = temporal_ar1("year"),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
+#'   mode = "auto"
 #' )
-#'
-#' # Panel data with group-specific AR1
-#' set.seed(128)
-#' df_panel <- data.frame(
-#'   year = rep(2012:2027, each = 3),
-#'   site = rep(paste0("site", 1:3), times = 16),
-#'   x = rnorm(48),
-#'   count = rpois(48, lambda = 12),
-#'   effort = rgamma(48, shape = 2.5, rate = 1)
-#' )
-#'
-#' fit2 <- tulpa(
-#'   count | effort ~ x,
-#'   data = df_panel,
-#'   family = tulpa_poisson_gamma(),
-#'   temporal = temporal_ar1("year", group_var = "site"),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
-#' )
+#' summary(fit)
 #' }
 #'
 #' @export
@@ -645,7 +620,7 @@ build_ar1_precision <- function(T, rho, tau = 1) {
 #' fit <- tulpa(
 #'   count | effort ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   temporal = temporal_multiscale(
 #'     time_var = "month_id",
 #'     trend = "rw2",

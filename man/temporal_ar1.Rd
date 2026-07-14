@@ -49,43 +49,20 @@ temporal_ar1("year", group = "site")
 # AR1 temporal correlation
 set.seed(127)
 df <- data.frame(
-  year = rep(2005:2024, each = 3),
-  x = rnorm(60),
-  count = rpois(60, lambda = 18),
-  effort = rgamma(60, shape = 3.5, rate = 1)
+  year = rep(1:20, each = 3),
+  x = rnorm(60)
 )
+f <- as.numeric(arima.sim(list(ar = 0.7), 20, sd = 0.4))
+df$count <- rpois(60, exp(1 + 0.3 * df$x + f[df$year]))
 
 fit <- tulpa(
-  count | effort ~ x,
+  count ~ x,
   data = df,
-  family = tulpa_poisson_gamma(),
+  family = "poisson",
   temporal = temporal_ar1("year"),
-  backend = "hmc",
-  iter = 200,
-  warmup = 100,
-  chains = 1
+  mode = "auto"
 )
-
-# Panel data with group-specific AR1
-set.seed(128)
-df_panel <- data.frame(
-  year = rep(2012:2027, each = 3),
-  site = rep(paste0("site", 1:3), times = 16),
-  x = rnorm(48),
-  count = rpois(48, lambda = 12),
-  effort = rgamma(48, shape = 2.5, rate = 1)
-)
-
-fit2 <- tulpa(
-  count | effort ~ x,
-  data = df_panel,
-  family = tulpa_poisson_gamma(),
-  temporal = temporal_ar1("year", group_var = "site"),
-  backend = "hmc",
-  iter = 200,
-  warmup = 100,
-  chains = 1
-)
+summary(fit)
 }
 
 }

@@ -65,7 +65,7 @@ df <- data.frame(
 fit <- tulpa(
   count | effort ~ x,
   data = df,
-  family = tulpa_poisson_gamma(),
+  family = tulpaRatio::tulpa_poisson_gamma(),
   temporal = temporal_multiscale("year", trend = "rw2", seasonal = 12),
   iter = 200, warmup = 100, chains = 1
 )

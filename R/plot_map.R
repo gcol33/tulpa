@@ -53,8 +53,9 @@
 #' # plot_map requires a fitted spatial tulpa model
 #' # See spatial_car() examples for fitting spatial models
 #'
-#' \donttest{
-#' # Fit spatial model (slow, not run on CRAN)
+#' \dontrun{
+#' # Fit a spatial ratio model through a model package (tulpaRatio owns the
+#' # two-arm formula and the poisson/gamma ratio family):
 #' set.seed(123)
 #' n_sites <- 20
 #' n <- 60
@@ -72,9 +73,9 @@
 #' fit <- tulpa(
 #'   count | effort ~ elevation + (1 | site),
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   spatial = spatial_car(adj, group_var = "site"),
-#'   backend = "laplace"
+#'   mode = "laplace"
 #' )
 #' # plot_map(fit)  # requires ggplot2
 #' }

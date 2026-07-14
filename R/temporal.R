@@ -62,7 +62,7 @@ NULL
 #' fit <- tulpa(
 #'   count | effort ~ x,
 #'   data = df,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   temporal = temporal_rw1("year"),
 #'   backend = "hmc",
 #'   iter = 200,
@@ -83,7 +83,7 @@ NULL
 #' fit2 <- tulpa(
 #'   count | effort ~ x + (1 | site),
 #'   data = df_panel,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   temporal = temporal_rw1("year", group_var = "site"),
 #'   backend = "hmc",
 #'   iter = 200,
@@ -103,7 +103,7 @@ NULL
 #' fit3 <- tulpa(
 #'   count | effort ~ x,
 #'   data = df_monthly,
-#'   family = tulpa_poisson_gamma(),
+#'   family = tulpaRatio::tulpa_poisson_gamma(),
 #'   temporal = temporal_rw1("month", cyclic = TRUE),
 #'   backend = "hmc",
 #'   iter = 200,

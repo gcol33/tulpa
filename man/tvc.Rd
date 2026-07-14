@@ -48,7 +48,7 @@ df <- data.frame(
 fit <- tulpa(
   count | effort ~ x,
   data = df,
-  family = tulpa_poisson_gamma(),
+  family = tulpaRatio::tulpa_poisson_gamma(),
   tvc = temporal_tvc("year", terms = c(1, 2)),
   backend = "hmc",
   iter = 200,

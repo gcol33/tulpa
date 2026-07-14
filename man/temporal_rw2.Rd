@@ -45,22 +45,20 @@ temporal_rw2("year")
 # Smooth temporal trend
 set.seed(126)
 df <- data.frame(
-  year = rep(2008:2027, each = 2),
-  x = rnorm(40),
-  count = rpois(40, lambda = 25),
-  effort = rgamma(40, shape = 4, rate = 1)
+  year = rep(1:20, each = 4),
+  x = rnorm(80)
 )
+trend <- sin(seq(0, 2, length.out = 20))
+df$count <- rpois(80, exp(1 + 0.3 * df$x + trend[df$year]))
 
 fit <- tulpa(
-  count | effort ~ x,
+  count ~ x,
   data = df,
-  family = tulpa_poisson_gamma(),
+  family = "poisson",
   temporal = temporal_rw2("year"),
-  backend = "hmc",
-  iter = 200,
-  warmup = 100,
-  chains = 1
+  mode = "auto"
 )
+summary(fit)
 }
 
 }

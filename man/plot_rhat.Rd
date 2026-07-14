@@ -35,19 +35,13 @@ Color coding:
 # See tulpa() examples for fitting models
 
 \donttest{
-# Fit a model (slow, not run on CRAN)
 set.seed(123)
-n <- 50
-df <- data.frame(
-  count = rpois(n, lambda = 8),
-  effort = rgamma(n, shape = 4, rate = 1),
-  depth = rnorm(n),
-  site = factor(rep(1:10, each = 5))
-)
-fit <- tulpa(count | effort ~ depth + (1|site), data = df,
-             family = tulpa_poisson_gamma(),
-             iter = 200, warmup = 100, chains = 1)
-# plot_rhat(fit)
+df <- data.frame(x = rnorm(60))
+df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+             control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+                            seed = 1L))
+plot_rhat(fit)
 }
 
 }
