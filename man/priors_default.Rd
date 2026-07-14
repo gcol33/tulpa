@@ -7,8 +7,9 @@
 priors_default(family = NULL, spatial = FALSE, temporal = FALSE)
 }
 \arguments{
-\item{family}{A tulpa family object (e.g., \code{tulpa_negbin_negbin()}).
-If NULL (default), shows defaults for all families.}
+\item{family}{A tulpa family object (e.g. a ratio family constructor from
+a model package such as tulpaRatio). If NULL (default), shows defaults
+for all families.}
 
 \item{spatial}{Logical; if TRUE, include spatial priors. Default FALSE.}
 

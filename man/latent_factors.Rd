@@ -23,12 +23,13 @@ posterior draws.
 Extract latent factor posteriors from fit
 }
 \examples{
-\donttest{
-# After fitting with latent factors
+\dontrun{
+# After fitting a ratio model with latent factors (tulpaRatio owns the
+# two-arm formula and the negbin/negbin ratio family):
 fit <- tulpa(
   count | total ~ x,
   data = df,
-  family = tulpa_negbin_negbin(),
+  family = tulpaRatio::tulpa_negbin_negbin(),
   latent = latent_factor(n_factors = 2)
 )
 
