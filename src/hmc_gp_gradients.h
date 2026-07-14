@@ -2,6 +2,8 @@
 // Gradient computation for GP parameters (for HMC)
 // -----------------------------------------------------------------------------
 
+#include "omp_threads.h"
+
 // Struct to hold NNGP gradient results (for hand-coded gradients)
 struct NNGPGradients {
   std::vector<double> grad_w;         // Gradient w.r.t. spatial effects
@@ -38,10 +40,7 @@ inline void gp_nngp_gradient_w_analytical(
   grad_w[first_idx] = -w[first_idx] / sigma2;
 
   // Thread-local workspace setup
-  int n_threads = 1;
-  #ifdef _OPENMP
-  n_threads = std::max(1, std::min(omp_get_max_threads(), N - 1));
-  #endif
+  int n_threads = tulpa_omp_team_size(N - 1);
 
   std::vector<double> tl_grad_w(n_threads * N, 0.0);
 
@@ -198,10 +197,7 @@ inline void gp_nngp_gradients(
   grads.grad_log_sigma2 += 0.5 * (w0 * w0 / sigma2 - 1.0);
 
   // Thread-local workspace setup
-  int n_threads = 1;
-  #ifdef _OPENMP
-  n_threads = std::max(1, std::min(omp_get_max_threads(), N - 1));
-  #endif
+  int n_threads = tulpa_omp_team_size(N - 1);
 
   // Per-thread accumulators: grad_w[tid * N + k], sigma2[tid], phi[tid]
   std::vector<double> tl_grad_w(n_threads * N, 0.0);

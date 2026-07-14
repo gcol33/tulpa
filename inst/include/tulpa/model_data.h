@@ -15,10 +15,11 @@
 namespace tulpa {
 
 // ============================================================================
-// ABI version — pre-release, not yet maintained.
-// Will start tracking layout / shim-family changes here once the package
-// has its first tagged release. Until then this stays at 1; downstream
-// packages should be rebuilt against the current tulpa source.
+// ABI version — bump on ANY change to an exported struct layout or to the
+// registered-callable surface (added / removed / re-signed callables).
+// Downstream packages check this at first NUTS use via check_abi_version()
+// (<tulpa/nuts_api.h>) and must be rebuilt after a bump. Record every bump
+// in the changelog below so the layout <-> version invariant stays auditable.
 //
 // 20 -> 21: added `tulpa_register_tgmrf` registered C callable + the
 // process-global TgmrfSpec registry that backs `tgmrf_cpp()` (P7). New
@@ -76,6 +77,15 @@ namespace tulpa {
 // CellCouplingSpec's `evaluate_cell()` (gcol33/tulpa#32 Change 2b,
 // Layer B.1). Single-arm path; sparse twin + cross-arm Hessian land
 // with B.2 alongside tulpaObs `OccuCoverLognormalCoupling`.
+//
+// 30 -> 31: added the `CurvatureMode` enum + `CellDerivs.curvature` field
+// (<tulpa/cell_coupling.h>) backing `control$hessian = "fisher"`
+// (complete-data Fisher step curvature for the joint coupled Newton).
+// CellDerivs layout grew by one trailing field.
+//
+// 31 -> 32: joint nested-Laplace multi-copy / svc-areal coupling work
+// (JointArm surface growth in the joint solvers); precautionary bump for
+// consumers driving the coupling shims.
 // ============================================================================
 constexpr int TULPA_ABI_VERSION = 32;
 

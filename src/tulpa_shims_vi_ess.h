@@ -2,6 +2,8 @@
 // VI shim
 // ============================================================================
 
+#include "shim_guard.h"
+
 extern "C" void tulpa_fit_vi_impl(
     const tulpa::ModelData* data,
     const tulpa::ParamLayout* layout,
@@ -11,6 +13,7 @@ extern "C" void tulpa_fit_vi_impl(
     int n_init_mu,
     tulpa::VIShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     using tulpa::vi::VIConfig;
     using tulpa::vi::VIVariant;
 
@@ -89,6 +92,7 @@ extern "C" void tulpa_fit_vi_impl(
         result_out->elbo_history = new double[n];
         for (size_t i = 0; i < n; i++) result_out->elbo_history[i] = res.elbo_history[i];
     }
+    TULPA_SHIM_GUARD_END("tulpa_fit_vi")
 }
 
 // ============================================================================
@@ -103,6 +107,7 @@ extern "C" void tulpa_run_ess_sampler_impl(
     const tulpa::ESSShimConfig* shim_config,
     tulpa::ESSShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     std::vector<double> init(init_params, init_params + n_params);
 
     tulpa_ess::ESSConfig cfg;
@@ -146,5 +151,6 @@ extern "C" void tulpa_run_ess_sampler_impl(
         result_out->log_lik = new double[n];
         for (size_t i = 0; i < n; i++) result_out->log_lik[i] = res.log_lik[i];
     }
+    TULPA_SHIM_GUARD_END("tulpa_run_ess_sampler")
 }
 

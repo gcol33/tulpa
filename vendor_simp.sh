@@ -25,6 +25,7 @@ for f in "$src"/*.h; do
   {
     echo "// Vendored from gcol33/SIMP (${commit}) by vendor_simp.sh -- do not edit."
     echo "// Upstream: SIMP inst/include/simp/${base}. Edit there and re-vendor."
+    echo "// Copyright (c) 2026 Gilles Colling. MIT license (see inst/COPYRIGHTS)."
     echo ""
     cat "$f"
   } > "$dest/$base"

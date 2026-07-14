@@ -8,6 +8,8 @@
 // into the caller's NestedLaplaceShimResult. Backend-specific grid vectors
 // are passed in by the caller and not echoed back through the shim.
 
+#include "shim_guard.h"
+
 namespace {
 
 inline Rcpp::Nullable<Rcpp::NumericVector> wrap_x_init(
@@ -166,6 +168,7 @@ extern "C" void tulpa_nested_laplace_icar_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
@@ -180,6 +183,7 @@ extern "C" void tulpa_nested_laplace_icar_impl(
                 tg, in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_icar")
 }
 
 extern "C" void tulpa_nested_laplace_bym2_impl(
@@ -196,6 +200,7 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
@@ -212,6 +217,7 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_bym2")
 }
 
 extern "C" void tulpa_nested_laplace_car_proper_impl(
@@ -227,6 +233,7 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
@@ -242,6 +249,7 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
                 tg, rg, in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_car_proper")
 }
 
 extern "C" void tulpa_nested_laplace_temporal_impl(
@@ -257,6 +265,7 @@ extern "C" void tulpa_nested_laplace_temporal_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  tv(temporal_idx, temporal_idx + N);
     Rcpp::NumericVector  tg(tau_grid, tau_grid + n_grid);
     // rho_grid is consulted only by ar1; rw1 / rw2 pass nullptr -> empty.
@@ -273,6 +282,7 @@ extern "C" void tulpa_nested_laplace_temporal_impl(
                 in.fam, phi, /*n_groups=*/1, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_temporal")
 }
 
 extern "C" void tulpa_nested_laplace_nngp_impl(
@@ -292,6 +302,7 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
     Rcpp::NumericMatrix  cm = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
     Rcpp::IntegerMatrix  nim = build_matrix_colmajor(nn_idx_flat, n_spatial, nn);
@@ -310,6 +321,7 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_nngp")
 }
 
 extern "C" void tulpa_nested_laplace_hsgp_impl(
@@ -325,6 +337,7 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::NumericMatrix  pb = build_matrix_colmajor(phi_basis_flat, N, n_basis);
     Rcpp::NumericVector  le(lambda_eig, lambda_eig + n_basis);
     Rcpp::NumericVector  s2g(sigma2_grid,      sigma2_grid      + n_grid);
@@ -339,6 +352,7 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_hsgp")
 }
 
 // ============================================================================
@@ -367,6 +381,7 @@ extern "C" void tulpa_nested_laplace_st_icar_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
@@ -387,6 +402,7 @@ extern "C" void tulpa_nested_laplace_st_icar_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_icar")
 }
 
 // ---- CAR_proper ------------------------------------------------------------
@@ -407,6 +423,7 @@ extern "C" void tulpa_nested_laplace_st_car_proper_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
@@ -428,6 +445,7 @@ extern "C" void tulpa_nested_laplace_st_car_proper_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_car_proper")
 }
 
 // ---- BYM2 ------------------------------------------------------------------
@@ -449,6 +467,7 @@ extern "C" void tulpa_nested_laplace_st_bym2_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx, arp, aci, nn;
     marshal_adj(spatial_idx, N, adj_row_ptr, adj_col_idx, n_neighbors, n_spatial_units,
                 sidx, arp, aci, nn);
@@ -471,6 +490,7 @@ extern "C" void tulpa_nested_laplace_st_bym2_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_bym2")
 }
 
 // ---- HSGP ------------------------------------------------------------------
@@ -491,6 +511,7 @@ extern "C" void tulpa_nested_laplace_st_hsgp_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::NumericMatrix  pb = build_matrix_colmajor(phi_basis_flat, N, n_basis);
     Rcpp::NumericVector  le (lambda_eig, lambda_eig + n_basis);
     Rcpp::IntegerVector  tv (temporal_idx, temporal_idx + N);
@@ -511,6 +532,7 @@ extern "C" void tulpa_nested_laplace_st_hsgp_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_hsgp")
 }
 
 // ---- NNGP ------------------------------------------------------------------
@@ -533,6 +555,7 @@ extern "C" void tulpa_nested_laplace_st_nngp_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector  sidx(spatial_idx, spatial_idx + N);
     Rcpp::NumericMatrix  cm  = build_matrix_colmajor(coords_flat, n_spatial, coord_dim);
     Rcpp::IntegerMatrix  nim = build_matrix_colmajor(nn_idx_flat, n_spatial, nn);
@@ -557,6 +580,7 @@ extern "C" void tulpa_nested_laplace_st_nngp_impl(
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_nngp")
 }
 
 // ============================================================================
@@ -585,6 +609,7 @@ extern "C" void tulpa_nested_laplace_spde_impl(
     int store_Q,
     tulpa::NestedLaplaceShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     int A_nnz  = A_p  ? A_p [n_mesh] : 0;
     int G1_nnz = G1_p ? G1_p[n_mesh] : 0;
     Rcpp::NumericVector  axv(A_x, A_x + A_nnz);
@@ -617,6 +642,7 @@ extern "C" void tulpa_nested_laplace_spde_impl(
                 x0, poles_n, weights_n,
                 store_Q != 0);
         });
+    TULPA_SHIM_GUARD_END("tulpa_nested_laplace_spde")
 }
 
 // Joint multi-likelihood nested-Laplace C-ABI shim removed in Phase J-E.

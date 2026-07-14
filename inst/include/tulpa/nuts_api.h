@@ -12,6 +12,7 @@
 #ifndef TULPA_NUTS_API_H
 #define TULPA_NUTS_API_H
 
+#include <R_ext/Error.h>
 #include <R_ext/Rdynload.h>
 #include "model_data.h"
 #include "param_layout.h"

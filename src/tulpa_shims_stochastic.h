@@ -9,6 +9,8 @@
 // run_sgld_sampler, and copies the result into a flat
 // SGSamplerShimResult buffer.
 
+#include "shim_guard.h"
+
 namespace {
 
 inline void copy_sg_sampler_result(
@@ -63,6 +65,7 @@ extern "C" void tulpa_sghmc_fit_impl(
     int verbose,
     tulpa::SGSamplerShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     std::vector<double> q_init(init, init + n_params);
 
     tulpa_sghmc::SGHMCConfig cfg;
@@ -82,6 +85,7 @@ extern "C" void tulpa_sghmc_fit_impl(
 
     copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
                            res.success, res.error_msg, result_out);
+    TULPA_SHIM_GUARD_END("tulpa_sghmc_fit")
 }
 
 extern "C" void tulpa_sgld_fit_impl(
@@ -102,6 +106,7 @@ extern "C" void tulpa_sgld_fit_impl(
     int verbose,
     tulpa::SGSamplerShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     std::vector<double> q_init(init, init + n_params);
 
     tulpa_sghmc::SGLDConfig cfg;
@@ -122,6 +127,7 @@ extern "C" void tulpa_sgld_fit_impl(
 
     copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
                            res.success, res.error_msg, result_out);
+    TULPA_SHIM_GUARD_END("tulpa_sgld_fit")
 }
 
 // ============================================================================
@@ -148,6 +154,7 @@ extern "C" void tulpa_mclmc_fit_impl(
     int verbose,
     tulpa::SGSamplerShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     std::vector<double> q_init(init, init + n_params);
 
     tulpa_mclmc::MCLMCConfig cfg;
@@ -166,6 +173,7 @@ extern "C" void tulpa_mclmc_fit_impl(
 
     copy_sg_sampler_result(res.samples, res.log_lik, res.epsilon_history,
                            res.success, res.error_msg, result_out);
+    TULPA_SHIM_GUARD_END("tulpa_mclmc_fit")
 }
 
 // ============================================================================
@@ -192,6 +200,7 @@ extern "C" void tulpa_smc_fit_impl(
     int verbose,
     tulpa::SMCShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     std::vector<double> init_vec(init, init + n_params);
 
     tulpa::SMCConfig cfg;
@@ -233,4 +242,5 @@ extern "C" void tulpa_smc_fit_impl(
         result_out->log_weights = new double[W > 0 ? W : 1];
         for (int i = 0; i < W; i++) result_out->log_weights[i] = res.log_weights[i];
     }
+    TULPA_SHIM_GUARD_END("tulpa_smc_fit")
 }

@@ -1,6 +1,8 @@
 // =============================================================================
 // Non-centered NNGP parameterization
 // =============================================================================
+
+#include "omp_threads.h"
 // Instead of sampling w ~ NNGP(0, sigma2, phi) directly (centered),
 // sample z ~ N(0, I) and transform z -> w via the NNGP autoregressive structure:
 //   w[order[0]] = sqrt(sigma2) * z[0]
@@ -216,10 +218,7 @@ inline void nngp_nc_backward(
     grad_log_phi_jac = 0.0;
 
     // Thread-local workspace setup
-    int n_threads = 1;
-    #ifdef _OPENMP
-    n_threads = std::max(1, std::min(omp_get_max_threads(), N - 1));
-    #endif
+    int n_threads = tulpa_omp_team_size(N - 1);
 
     std::vector<double> tl_phi_lik(n_threads, 0.0);
     std::vector<double> tl_phi_jac(n_threads, 0.0);

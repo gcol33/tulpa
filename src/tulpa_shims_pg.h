@@ -2,6 +2,8 @@
 // PG shims
 // ============================================================================
 
+#include "shim_guard.h"
+
 namespace {
 
 inline void fill_pg_result(
@@ -75,6 +77,7 @@ extern "C" void tulpa_pg_binomial_gibbs_impl(
     int n_threads,
     tulpa::PGShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector yv(y, y + N_obs);
     Rcpp::IntegerVector nv(n_trials, n_trials + N_obs);
     Rcpp::NumericMatrix Xm = build_matrix_colmajor(X_flat, N_obs, p);
@@ -90,6 +93,7 @@ extern "C" void tulpa_pg_binomial_gibbs_impl(
     PutRNGstate();
 
     fill_pg_result(draws, N_obs, /*n_spatial_units=*/0, /*has_r=*/false, result_out);
+    TULPA_SHIM_GUARD_END("tulpa_pg_binomial_gibbs")
 }
 
 extern "C" void tulpa_pg_negbin_gibbs_impl(
@@ -111,6 +115,7 @@ extern "C" void tulpa_pg_negbin_gibbs_impl(
     int n_threads,
     tulpa::PGShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector yv(y, y + N_obs);
     Rcpp::NumericMatrix Xm = build_matrix_colmajor(X_flat, N_obs, p);
     Rcpp::IntegerVector gv(group, group + N_obs);
@@ -126,6 +131,7 @@ extern "C" void tulpa_pg_negbin_gibbs_impl(
     PutRNGstate();
 
     fill_pg_result(draws, N_obs, /*n_spatial_units=*/0, /*has_r=*/true, result_out);
+    TULPA_SHIM_GUARD_END("tulpa_pg_negbin_gibbs")
 }
 
 extern "C" void tulpa_pg_negbin_spatial_gibbs_impl(
@@ -154,6 +160,7 @@ extern "C" void tulpa_pg_negbin_spatial_gibbs_impl(
     int n_threads,
     tulpa::PGShimResult* result_out
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     Rcpp::IntegerVector yv(y, y + N_obs);
     Rcpp::NumericMatrix Xm = build_matrix_colmajor(X_flat, N_obs, p);
     Rcpp::IntegerVector reg(re_group, re_group + N_obs);
@@ -182,5 +189,6 @@ extern "C" void tulpa_pg_negbin_spatial_gibbs_impl(
     PutRNGstate();
 
     fill_pg_result(draws, N_obs, n_spatial_units, /*has_r=*/true, result_out);
+    TULPA_SHIM_GUARD_END("tulpa_pg_negbin_spatial_gibbs")
 }
 

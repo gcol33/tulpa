@@ -4,6 +4,8 @@
 // First cut: n_processes == 1 with at most one iid RE term.
 // ============================================================================
 
+#include "shim_guard.h"
+
 namespace tulpa {
 
 // Forward declaration: the GMRF-block parameters below are pointer-only at
@@ -50,6 +52,7 @@ extern "C" void tulpa_laplace_spec_dense_impl(
         return;
     }
 
+    TULPA_SHIM_GUARD_BEGIN
     std::vector<double> params(params_inout, params_inout + n_params);
     std::vector<int> re_idx;
     if (re_group != nullptr && n_re_group > 0) {
@@ -129,4 +132,5 @@ extern "C" void tulpa_laplace_spec_dense_impl(
     result_out->log_marginal = log_marginal;
     result_out->n_iter       = n_iter;
     result_out->converged    = converged;
+    TULPA_SHIM_GUARD_END("tulpa_laplace_spec_dense")
 }

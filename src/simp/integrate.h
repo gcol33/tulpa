@@ -1,5 +1,6 @@
 // Vendored from gcol33/SIMP (cc1de1d) by vendor_simp.sh -- do not edit.
 // Upstream: SIMP inst/include/simp/integrate.h. Edit there and re-vendor.
+// Copyright (c) 2026 Gilles Colling. MIT license (see inst/COPYRIGHTS).
 
 #ifndef SIMP_INTEGRATE_H
 #define SIMP_INTEGRATE_H

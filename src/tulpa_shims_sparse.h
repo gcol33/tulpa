@@ -7,6 +7,8 @@
 // over the caller's CSC arrays; nothing is copied or freed in the wrapper.
 // ============================================================================
 
+#include "shim_guard.h"
+
 namespace {
 
 inline cholmod_sparse make_cholmod_view(
@@ -36,13 +38,18 @@ inline cholmod_sparse make_cholmod_view(
 } // namespace
 
 extern "C" tulpa::sparse_chol_handle tulpa_sparse_chol_create_impl() {
+    TULPA_SHIM_GUARD_BEGIN
     return reinterpret_cast<tulpa::sparse_chol_handle>(
         new tulpa::SparseCholeskySolver());
+    TULPA_SHIM_GUARD_END("tulpa_sparse_chol_create")
+    return nullptr;
 }
 
 extern "C" void tulpa_sparse_chol_destroy_impl(tulpa::sparse_chol_handle handle) {
     if (!handle) return;
+    TULPA_SHIM_GUARD_BEGIN
     delete reinterpret_cast<tulpa::SparseCholeskySolver*>(handle);
+    TULPA_SHIM_GUARD_END("tulpa_sparse_chol_destroy")
 }
 
 extern "C" int tulpa_sparse_chol_analyze_impl(
@@ -54,10 +61,13 @@ extern "C" int tulpa_sparse_chol_analyze_impl(
     int nnz
 ) {
     if (!handle) return 0;
+    TULPA_SHIM_GUARD_BEGIN
     auto* solver = reinterpret_cast<tulpa::SparseCholeskySolver*>(handle);
     cholmod_sparse A = make_cholmod_view(n, col_ptr, row_idx, values, nnz);
     solver->analyze(&A);
     return solver->analyzed() ? 1 : 0;
+    TULPA_SHIM_GUARD_END("tulpa_sparse_chol_analyze")
+    return 0;
 }
 
 extern "C" int tulpa_sparse_chol_factorize_impl(
@@ -69,9 +79,12 @@ extern "C" int tulpa_sparse_chol_factorize_impl(
     int nnz
 ) {
     if (!handle) return 0;
+    TULPA_SHIM_GUARD_BEGIN
     auto* solver = reinterpret_cast<tulpa::SparseCholeskySolver*>(handle);
     cholmod_sparse A = make_cholmod_view(n, col_ptr, row_idx, values, nnz);
     return solver->factorize(&A) ? 1 : 0;
+    TULPA_SHIM_GUARD_END("tulpa_sparse_chol_factorize")
+    return 0;
 }
 
 extern "C" void tulpa_sparse_chol_solve_impl(
@@ -84,17 +97,22 @@ extern "C" void tulpa_sparse_chol_solve_impl(
         for (int i = 0; i < n; i++) x[i] = 0.0;
         return;
     }
+    TULPA_SHIM_GUARD_BEGIN
     auto* solver = reinterpret_cast<tulpa::SparseCholeskySolver*>(handle);
     solver->solve(b, x, n);
+    TULPA_SHIM_GUARD_END("tulpa_sparse_chol_solve")
 }
 
 extern "C" double tulpa_sparse_chol_log_det_impl(
     tulpa::sparse_chol_handle handle
 ) {
     if (!handle) return std::numeric_limits<double>::quiet_NaN();
+    TULPA_SHIM_GUARD_BEGIN
     auto* solver = reinterpret_cast<tulpa::SparseCholeskySolver*>(handle);
     if (!solver->factored()) return std::numeric_limits<double>::quiet_NaN();
     return solver->log_determinant();
+    TULPA_SHIM_GUARD_END("tulpa_sparse_chol_log_det")
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
 extern "C" int tulpa_sparse_chol_sel_inv_diag_impl(
@@ -103,11 +121,14 @@ extern "C" int tulpa_sparse_chol_sel_inv_diag_impl(
     int n
 ) {
     if (!handle || !diag_out) return 0;
+    TULPA_SHIM_GUARD_BEGIN
     auto* solver = reinterpret_cast<tulpa::SparseCholeskySolver*>(handle);
     std::vector<double> d = solver->selected_inversion_diagonal();
     if ((int)d.size() != n) return 0;
     for (int i = 0; i < n; i++) diag_out[i] = d[i];
     return 1;
+    TULPA_SHIM_GUARD_END("tulpa_sparse_chol_sel_inv_diag")
+    return 0;
 }
 
 // Pure free-function Takahashi: caller supplies L (lower-tri CSC) directly.
@@ -121,8 +142,11 @@ extern "C" int tulpa_takahashi_partial_inverse_dense_impl(
     double* Z_out
 ) {
     if (n <= 0 || !L_col_ptr || !L_row_idx || !L_values || !Z_out) return 0;
+    TULPA_SHIM_GUARD_BEGIN
     tulpa::takahashi_partial_inverse_dense(n, L_col_ptr, L_row_idx, L_values, Z_out);
     return 1;
+    TULPA_SHIM_GUARD_END("tulpa_takahashi_partial_inverse_dense")
+    return 0;
 }
 
 extern "C" double tulpa_stochastic_log_det_impl(
@@ -135,6 +159,7 @@ extern "C" double tulpa_stochastic_log_det_impl(
     int n_lanczos,
     unsigned int seed
 ) {
+    TULPA_SHIM_GUARD_BEGIN
     std::vector<int>    cp(col_ptr, col_ptr + n + 1);
     std::vector<int>    ri(row_idx, row_idx + nnz);
     std::vector<double> vv(values,  values  + nnz);
@@ -143,4 +168,6 @@ extern "C" double tulpa_stochastic_log_det_impl(
         n_probes  > 0 ? n_probes  : 30,
         n_lanczos > 0 ? n_lanczos : 50,
         seed);
+    TULPA_SHIM_GUARD_END("tulpa_stochastic_log_det")
+    return std::numeric_limits<double>::quiet_NaN();
 }
