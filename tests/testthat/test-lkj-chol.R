@@ -30,21 +30,19 @@ ref_build_L <- function(raw, n) {
   list(L = L, log_jac = log_jac, ok = ok)
 }
 
-# Reference LKJ density (matches the C++ formula, which already absorbs the
-# L -> R Jacobian; sigma prior is handled outside the helper).
+# Independent reference: the Stan lkj_corr_cholesky_lpdf, written in its
+# textbook 1-based form (unnormalized). The exponent (K - k + 2*eta - 2) on
+# log(L[k,k]) is det(R)^(eta-1) with the correlation -> Cholesky Jacobian
+# already folded in -- there is NO separate second Jacobian term. This is a
+# different algebraic expression from the C++ helper's
+# (eta - 1 + (n-k-1)/2)*2 form, so it cross-checks the code rather than copying
+# it; the two agree only if the helper carries exactly one Jacobian.
 ref_lkj_density <- function(L, eta) {
   n <- nrow(L)
   lp <- 0
   for (k in seq_len(n)) {
-    lp <- lp + (eta - 1 + (n - k) / 2) * 2 * log(L[k, k])
+    lp <- lp + (n - k + 2 * eta - 2) * log(L[k, k])
   }
-  for (k in seq_len(n)[-1]) {
-    lp <- lp + (n - k + 1) * log(L[k, k])
-  }
-  # Reconcile R's 1-based indexing vs the C++ 0-based formula:
-  # C++:   k = 0..n-1, factor (eta - 1 + (n-k-1)/2)
-  # R k1:  k1 = k+1, so n-k-1 = n-k1, and exponent has 2*log(L[k1, k1])
-  # Above expression already accounts for this.
   lp
 }
 
@@ -88,6 +86,52 @@ test_that("LKJ density matches reference formula", {
       cpp <- cpp_test_lkj_density(res$L, eta)
       ref <- ref_lkj_density(res$L, eta)
       expect_equal(cpp, ref, tolerance = 1e-12,
+                   info = sprintf("n=%d eta=%g", n, eta))
+    }
+  }
+})
+
+test_that("raw-space density is the LKJ(eta) pushforward (det(R)^(eta-1) * |dR/draw|)", {
+  # Ground-truth independent of the helper: the density on the raw parameters
+  # that induces R ~ LKJ(eta) is det(R)^(eta-1) times the Jacobian of the free
+  # correlations (strict lower triangle of R) with respect to raw. The helper's
+  # (LKJ-on-Cholesky) + (tanh Jacobian) must equal this up to an additive
+  # constant that depends only on (n, eta). A second, spurious Jacobian in the
+  # helper would break the constant-offset property below.
+  free_corr <- function(raw, n) {
+    res <- cpp_test_lkj_build_L(raw, n)
+    R <- res$L %*% t(res$L)
+    R[lower.tri(R)]
+  }
+  target_logp <- function(raw, n, eta) {
+    res <- cpp_test_lkj_build_L(raw, n)
+    R <- res$L %*% t(res$L)
+    J <- numDeriv_jacobian(function(r) free_corr(r, n), raw)
+    (eta - 1) * log(det(R)) + log(abs(det(J)))
+  }
+  # small self-contained central-difference Jacobian (no extra dependency)
+  numDeriv_jacobian <- function(f, x, h = 1e-6) {
+    m <- length(f(x)); p <- length(x)
+    J <- matrix(0, m, p)
+    for (j in seq_len(p)) {
+      xp <- x; xp[j] <- xp[j] + h
+      xm <- x; xm[j] <- xm[j] - h
+      J[, j] <- (f(xp) - f(xm)) / (2 * h)
+    }
+    J
+  }
+  set.seed(31L)
+  for (n in 2:4) {
+    for (eta in c(1.0, 2.0, 3.5)) {
+      n_raw <- n * (n - 1) / 2
+      raws <- lapply(1:5, function(i) rnorm(n_raw, 0, 0.3))
+      offsets <- vapply(raws, function(raw) {
+        helper <- cpp_test_lkj_density(cpp_test_lkj_build_L(raw, n)$L, eta) +
+          cpp_test_lkj_build_L(raw, n)$log_jac_tanh
+        helper - target_logp(raw, n, eta)
+      }, numeric(1))
+      # helper and the LKJ pushforward differ only by the normalizing constant
+      expect_equal(max(offsets) - min(offsets), 0, tolerance = 1e-5,
                    info = sprintf("n=%d eta=%g", n, eta))
     }
   }

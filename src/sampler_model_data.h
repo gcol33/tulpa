@@ -29,6 +29,7 @@
 #include "laplace_builtin_family_spec.h"  // builtin_family_spec / BuiltinFamilyResponse
 #include "builtin_family_ll_ad.h"         // builtin_family_ll_ad / builtin_family_has_ad
 #include "re_structure.h"                 // populate_re_structure
+#include "icar_kernel.h"                   // count_graph_components
 #include "hmc_sampler.h"                  // tulpa_hmc::compute_param_layout
 #include <Rcpp.h>
 #include <string>
@@ -144,6 +145,11 @@ inline void build_sampler_model_inputs(
         in.data.adj_row_ptr.assign(rp.begin(), rp.end());
         in.data.adj_col_idx.assign(ci.begin(), ci.end());
         in.data.n_neighbors.assign(nn.begin(), nn.end());
+        // Count connected components once so the ICAR/BYM2 rank normalizer uses
+        // the true intrinsic rank (S - k) rather than assuming a single graph.
+        in.data.n_spatial_components = tulpa::count_graph_components(
+            in.data.n_spatial_units, in.data.adj_row_ptr.data(),
+            in.data.adj_col_idx.data());
         if (stype == "icar") {
             in.data.spatial_type = SpatialType::ICAR;
         } else if (stype == "bym2") {

@@ -55,7 +55,12 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
 
             if (layout.is_ar1) {
                 T logit_rho = params[layout.logit_rho_ar1_idx];
-                rho_ar1_out = inv_logit(logit_rho);
+                // Map to (-1, 1): temporal_ar1() documents a Uniform(-1, 1)
+                // prior and build_ar1_precision() requires |rho| < 1, so the
+                // sampler must be able to reach negative autocorrelation.
+                // (The sibling ST/TVC AR1 code uses the same 2u - 1 map.)
+                T u_ar1 = inv_logit(logit_rho);
+                rho_ar1_out = T(2.0) * u_ar1 - T(1.0);
             }
         }
 
@@ -103,13 +108,14 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                     log_post = log_post - T(0.5) * phi_temporal[t] * phi_temporal[t];
                 }
 
-                // Jacobian of transform f = g(z, sigma2, phi):
-                // log|det(df/dz)| = T*log(sigma) + 0.5*sum_{t>=1} log(1 - rho_t^2) per group
-                T log_jac_per_group = T(T_times) * safe_log(sigma_t);
-                for (int t = 1; t < T_times; t++) {
-                    log_jac_per_group = log_jac_per_group + T(0.5) * log_one_minus_rho2_shared[t - 1];
-                }
-                log_post = log_post + T(data.n_temporal_groups) * log_jac_per_group;
+                // No z -> f Jacobian here: in the non-centered parameterization
+                // the sampled variable IS z with prior N(0, I) (added above), so
+                // the target is -0.5 z'z plus the likelihood at the reconstructed
+                // f. The centered branch below places the GP prior on f directly;
+                // the two are reparameterizations of the same posterior. Adding
+                // log|det(df/dz)| = T*log(sigma) + 0.5*sum log(1 - rho_t^2) here
+                // would inflate the GP amplitude by sigma^(G*T) and shrink the
+                // lengthscale.
 
                 // Forward transform z -> f: overwrite phi_temporal for use in obs loop
                 // f[0] = sigma * z[0]
@@ -178,8 +184,11 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
 
             } else if (data.temporal_type == TemporalType::AR1) {
                 // AR1: phi[t] | phi[t-1] ~ N(rho * phi[t-1], 1/tau)
-                // Uniform(0,1) prior on rho with logit Jacobian: log(rho) + log(1-rho)
-                log_post = log_post + safe_log(rho_ar1_out) + safe_log(T(1.0) - rho_ar1_out);
+                // Uniform(-1, 1) prior on rho via u = (rho + 1)/2 = inv_logit;
+                // the logit Jacobian for u is log(u) + log(1 - u) (the constant
+                // -log(2) from the Uniform(-1,1) density is dropped).
+                T u_ar1 = T(0.5) * (rho_ar1_out + T(1.0));
+                log_post = log_post + safe_log(u_ar1) + safe_log(T(1.0) - u_ar1);
 
                 for (int g = 0; g < data.n_temporal_groups; g++) {
                     log_post = log_post + tulpa_temporal::ar1_log_density(

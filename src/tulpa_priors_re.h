@@ -99,18 +99,19 @@ T compute_re_prior(const std::vector<T>& params, const ModelData& data,
                 // Tanh Jacobian
                 log_post = log_post + log_jac_tanh;
 
-                // LKJ(eta=2) prior: p(L) propto det(L*L')^(eta-1)
+                // LKJ(eta=2) prior on R = L L', expressed directly on the
+                // Cholesky factor. The exponent (2*eta - 2 + (n - k - 1)) on
+                // log L_kk is the complete Stan lkj_corr_cholesky_lpdf: it is
+                // det(R)^(eta-1) PLUS the exact correlation -> Cholesky Jacobian
+                // sum_k (n-k) log L_kk. Combined with the tanh raw -> L Jacobian
+                // above it is the full change of variables to raw space; adding
+                // a second Cholesky -> correlation Jacobian here would tilt the
+                // effective prior to LKJ(eta + 0.5) on a 2x2 block.
                 T eta_lkj = T(2.0);
                 for (int k = 0; k < n_coefs_t; k++) {
                     T L_kk = L_flat_t[k * n_coefs_t + k];
                     log_post = log_post + (eta_lkj - T(1.0)
                                + T((n_coefs_t - k - 1) / 2.0)) * T(2.0) * safe_log(L_kk);
-                }
-
-                // Jacobian for Cholesky -> correlation transformation
-                for (int k = 1; k < n_coefs_t; k++) {
-                    T L_kk = L_flat_t[k * n_coefs_t + k];
-                    log_post = log_post + T(n_coefs_t - k) * safe_log(L_kk);
                 }
             }
 

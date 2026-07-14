@@ -311,9 +311,11 @@ inline double log_prior_phi_uniform(double phi, double lower, double upper) {
 
 // Log prior for range with PC-style (favor larger ranges = simpler models)
 inline double log_prior_phi_pc(double phi, double U, double alpha) {
-  // P(phi < U) = alpha => 1/phi follows Exponential
+  // P(phi < U) = alpha with 1/phi ~ Exponential(rate): P(phi < U) =
+  // exp(-rate/U) = alpha, so rate = -log(alpha)/U (using log(1-alpha) here
+  // implements the opposite tail P(phi > U) = alpha).
   if (phi <= 0) return -INFINITY;
-  double rate = -std::log(1.0 - alpha) / U;
+  double rate = -std::log(alpha) / U;
   // Prior favors larger phi (simpler, smoother spatial structure)
   return std::log(rate) - rate / phi - 2.0 * std::log(phi);
 }

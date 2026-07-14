@@ -168,3 +168,40 @@ test_that("nested_laplace AR1 fills default grid when missing", {
   expect_true(all(is.finite(res$log_marginal)))
   expect_true(length(res$log_marginal) > 5L)
 })
+
+# =====================================================================
+# Intercept recovery (regression guard for the RW1/RW2 level-deletion bug)
+# =====================================================================
+# The intrinsic RW1/RW2 field has an unpenalized constant null space. If the
+# post-Newton centering discards the field mean instead of folding it into the
+# intercept, the whole level is deleted from the linear predictor and the
+# reported intercept collapses to ~0. This recovers the true intercept, so it
+# would have caught that bug (which the moments-only tests above did not).
+
+recover_intercept <- function(tspec, beta0, seed) {
+  set.seed(seed)
+  Tt <- 30L; reps <- 6L
+  f <- cumsum(rnorm(Tt, 0, 0.25)); f <- f - mean(f)
+  year <- rep(seq_len(Tt), each = reps)
+  y <- rpois(length(year), exp(beta0 + f[year]))
+  df <- data.frame(year = year, y = y)
+  fit <- tulpa(y ~ 1, data = df, family = "poisson",
+               temporal = tspec, mode = "laplace")
+  co <- coef(fit)
+  unname(co[grep("Interc|\\(Int", names(co))][1] %||% co[1])
+}
+
+test_that("RW1 temporal Laplace recovers the intercept (level not deleted)", {
+  skip_on_cran()
+  b0 <- 1.5
+  icpt <- recover_intercept(temporal_rw1("year"), b0, seed = 1L)
+  # Pre-fix this returned ~1e-12; the field swallowed the entire level.
+  expect_equal(icpt, b0, tolerance = 0.25)
+})
+
+test_that("RW2 temporal Laplace recovers the intercept (level not deleted)", {
+  skip_on_cran()
+  b0 <- 1.5
+  icpt <- recover_intercept(temporal_rw2("year"), b0, seed = 2L)
+  expect_equal(icpt, b0, tolerance = 0.25)
+})

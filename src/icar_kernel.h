@@ -14,7 +14,46 @@
 #ifndef TULPA_ICAR_KERNEL_H
 #define TULPA_ICAR_KERNEL_H
 
+#include <vector>
+
 namespace tulpa {
+
+// Number of connected components of the adjacency graph (CSR, 0-based
+// adj_col_idx). The ICAR precision D - W has rank S - k for k components (one
+// constant null direction per component), so the log|tau Q| normalizer uses
+// (S - k)/2, not (S - 1)/2; a disconnected graph (e.g. spatial(by=)
+// replication) otherwise biases tau upward. Matches the Laplace path's
+// n_components. Iterative DFS (an explicit stack, no recursion depth risk).
+// col_base is 0 for a 0-based adj_col_idx (the sampler ModelData adjacency) and
+// 1 for a 1-based one (the spatiotemporal adjacency).
+inline int count_graph_components(
+    int S, const int* adj_row_ptr, const int* adj_col_idx, int col_base = 0
+) {
+    if (S <= 0) return 0;
+    std::vector<int> seen(S, 0);
+    std::vector<int> stack;
+    int k = 0;
+    for (int s0 = 0; s0 < S; s0++) {
+        if (seen[s0]) continue;
+        seen[s0] = 1;
+        stack.clear();
+        stack.push_back(s0);
+        while (!stack.empty()) {
+            int s = stack.back();
+            stack.pop_back();
+            const int row_end = adj_row_ptr[s + 1];
+            for (int e = adj_row_ptr[s]; e < row_end; e++) {
+                int t = adj_col_idx[e] - col_base;
+                if (t >= 0 && t < S && !seen[t]) {
+                    seen[t] = 1;
+                    stack.push_back(t);
+                }
+            }
+        }
+        k++;
+    }
+    return k;
+}
 
 // (Q(rho) phi)[i] = n_neighbors[i] * phi[i] - rho * sum_{j ~ i} phi[j].
 inline double car_apply_row(

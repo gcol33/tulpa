@@ -86,8 +86,11 @@ namespace tulpa {
 // 31 -> 32: joint nested-Laplace multi-copy / svc-areal coupling work
 // (JointArm surface growth in the joint solvers); precautionary bump for
 // consumers driving the coupling shims.
+// 32 -> 33: n_spatial_components added to ModelData so the sampler ICAR/BYM2/ST
+// rank normalizer counts connected components (S - k), matching the Laplace
+// path, instead of assuming a single component (S - 1).
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 32;
+constexpr int TULPA_ABI_VERSION = 33;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -220,6 +223,11 @@ struct ModelData {
     std::vector<int> adj_col_idx;
     std::vector<int> n_neighbors;
     double bym2_scale_factor = 1.0;
+    // Connected components of the adjacency graph. The intrinsic (ICAR) rank is
+    // n_spatial_units - n_spatial_components; the sampler rank normalizer uses
+    // it so a disconnected graph does not bias tau. Computed at data-load;
+    // defaults to 1 (single component) when unset.
+    int n_spatial_components = 1;
 
     // Proper CAR rho bounds (eigenvalue-derived, default to (0, 1))
     // Only used when spatial_type == CAR_PROPER.

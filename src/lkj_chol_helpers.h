@@ -23,8 +23,11 @@
 // - Half-Cauchy(0, scale) on each sigma_c (handled outside this header).
 // - LKJ(eta) on R, written in raw-Cholesky coordinates as
 //     log p(L) = sum_k (eta - 1 + (n - k - 1)/2) * 2 * log(L[k, k])
-//                 + sum_{k>=1} (n - k) * log(L[k, k])     (L -> correlation Jacobian)
 //                 + sum_{i>j} log(sech^2(raw[i, j]))      (tanh Jacobian).
+//   The L[k,k] exponent is the complete Stan lkj_corr_cholesky_lpdf: it already
+//   folds the correlation -> Cholesky Jacobian sum_k (n-k) log L[k,k] into
+//   det(R)^(eta-1). Adding that Jacobian a second time tilts the effective
+//   prior to LKJ(eta + 0.5) on a 2x2 block.
 //
 // Gradient convention: all "_add" / "_grad_add" helpers are ADDITIVE — they
 // increment the caller's gradient buffer rather than overwriting it. Callers
@@ -71,18 +74,15 @@ inline bool build_L_from_raw(const double* raw, int n,
     return true;
 }
 
-// Log-density contribution from L diagonals: LKJ(eta) on R = L L^T plus the
-// L -> correlation Jacobian. Excludes the tanh Jacobian (handled by
+// Log-density contribution from L diagonals: the complete Stan
+// lkj_corr_cholesky_lpdf on R = L L^T (the L[k,k] exponent already includes the
+// correlation -> Cholesky Jacobian). Excludes the tanh Jacobian (handled by
 // build_L_from_raw via its log_jac_tanh out-param).
 inline double lkj_log_prior_density(const double* L_flat, int n, double eta) {
     double lp = 0.0;
     for (int k = 0; k < n; k++) {
         double L_kk = L_flat[k * n + k];
         lp += (eta - 1.0 + (n - k - 1) / 2.0) * 2.0 * std::log(L_kk);
-    }
-    for (int k = 1; k < n; k++) {
-        double L_kk = L_flat[k * n + k];
-        lp += (n - k) * std::log(L_kk);
     }
     return lp;
 }
@@ -99,11 +99,11 @@ inline void lkj_log_prior_grad_add(const double* raw, const double* L_flat, int 
             chol_idx++;
         }
     }
-    // LKJ + L->R Jacobian via L_kk chain rule:
+    // lkj_corr_cholesky_lpdf gradient via the L_kk chain rule:
     //   d log L[k,k] / d L[k,j] = -L[k,j] / L[k,k]^2,    d L[k,j] / d raw = sech^2(raw)
     for (int i = 1; i < n; i++) {
         double L_ii = L_flat[i * n + i];
-        double coef = (eta - 1.0 + (n - i - 1) / 2.0) * 2.0 + (n - i);
+        double coef = (eta - 1.0 + (n - i - 1) / 2.0) * 2.0;
         int chol_base = i * (i - 1) / 2;
         for (int j = 0; j < i; j++) {
             double L_ij = L_flat[i * n + j];

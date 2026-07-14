@@ -4,7 +4,8 @@
 # P(sigma > U_s) = alpha_s. Closed forms from Fuglstad et al. (2019):
 #   range:  exponential on r^{-d/2}, d = 2 -> rate lambda_r,
 #           p(r) = lambda_r * r^{-2} * exp(-lambda_r / r),
-#           lambda_r = -U_r * log(1 - alpha_r).
+#           so P(range < U_r) = exp(-lambda_r / U_r) = alpha_r gives
+#           lambda_r = -U_r * log(alpha_r).
 #   sigma:  exponential, p(s) = lambda_s * exp(-lambda_s * s),
 #           lambda_s = -log(alpha_s) / U_s.
 # C++ cpp_nested_laplace_spde returns the marginal likelihood (with the GMRF
@@ -14,7 +15,7 @@
 pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
   U_r <- prior_range[1]; alpha_r <- prior_range[2]
   U_s <- prior_sigma[1]; alpha_s <- prior_sigma[2]
-  lambda_r <- -U_r * log(1 - alpha_r)
+  lambda_r <- -U_r * log(alpha_r)
   lambda_s <- -log(alpha_s) / U_s
   log(lambda_r) - 2 * log(range) - lambda_r / range +
     log(lambda_s) - lambda_s * sigma

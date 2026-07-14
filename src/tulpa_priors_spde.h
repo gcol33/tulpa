@@ -156,13 +156,15 @@ T compute_spde_hyper_prior(const std::vector<T>& params,
     const double log_8nu   = std::log(eight_nu);
     const double log_4pi   = std::log(4.0 * k_pi);
 
+    // d = 2 range PC prior (P(range < range_0) = alpha): lambda_r =
+    // -log(alpha) * range_0, density lambda_r * range^{-2} * exp(-lambda_r/range).
+    // The earlier code used the d = 1 form (sqrt(range_0), range^{-3/2}); it kept
+    // the tail anchor but had the wrong penalization shape and disagreed with the
+    // dimensionally-correct R nested path (fit_spde_nested).
     const double lambda_r  = -std::log(spde.prior_range_alpha)
-                             * std::sqrt(spde.prior_range_0);
+                             * spde.prior_range_0;
     const double lambda_s  = -std::log(spde.prior_sigma_alpha)
                              / spde.prior_sigma_0;
-
-    // (8 nu)^{-1/4} so that range^{-1/2} = inv_quart_8nu * exp(0.5 log_kappa).
-    const double inv_quart_8nu = std::exp(-0.25 * log_8nu);
 
     const T log_kappa = params[layout.log_kappa_spde_idx];
     const T log_tau   = params[layout.log_tau_spde_idx];
@@ -170,12 +172,11 @@ T compute_spde_hyper_prior(const std::vector<T>& params,
     const T log_range = T(0.5 * log_8nu) - log_kappa;
     const T log_sigma = T(-0.5 * log_4pi) - log_kappa - log_tau;
 
-    // log pi(range) = log(lambda_r / 2) - 1.5 * log_range
-    //               - lambda_r * (8 nu)^{-1/4} * exp(0.5 * log_kappa)
+    // log pi(range) = log(lambda_r) - 2 * log_range - lambda_r / range  (d = 2)
     const T log_pi_range =
-          T(std::log(0.5 * lambda_r))
-        - T(1.5) * log_range
-        - T(lambda_r * inv_quart_8nu) * safe_exp(T(0.5) * log_kappa);
+          T(std::log(lambda_r))
+        - T(2.0) * log_range
+        - T(lambda_r) * safe_exp(-log_range);
 
     // log pi(sigma) = log(lambda_s) - lambda_s * exp(log_sigma)
     const T log_pi_sigma =

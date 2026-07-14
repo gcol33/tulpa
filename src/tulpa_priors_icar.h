@@ -98,9 +98,13 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
                     }
                 }
             }
+            // Rank of the ICAR precision is J - k for k connected components
+            // (one constant null direction per component). Using J - 1 on a
+            // disconnected graph (spatial(by=) replication) biases tau upward.
             int J = data.n_spatial_units;
+            int rank_icar = J - data.n_spatial_components;
             T log_tau_sp = params[layout.log_tau_spatial_idx];
-            log_post = log_post + T(0.5 * (J - 1)) * log_tau_sp - T(0.5) * tau_spatial_out * quad_form;
+            log_post = log_post + T(0.5 * rank_icar) * log_tau_sp - T(0.5) * tau_spatial_out * quad_form;
         }
     }
 

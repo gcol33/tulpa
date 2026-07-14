@@ -1155,7 +1155,19 @@ LaplaceResult spec_inner_solve(
     auto center_effects_fn = [&](Rcpp::NumericVector& x) {
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*blocks)[b];
-            if (blk.center) blk.center(x);   // mean offset discarded (intercept anchors)
+            if (!blk.center) continue;
+            double c_b = blk.center(x);
+            if (std::abs(c_b) < 1e-15) continue;
+            // Fold the removed field level into process 0's intercept so eta is
+            // preserved (compute_eta_spec enters the block only into process 0;
+            // mirrors center_joint in the joint driver). Without this an
+            // intrinsic block with an unpenalized constant null space (RW1/RW2)
+            // silently deletes the level from the linear predictor, so the
+            // reported intercept collapses to zero and the corrupted level
+            // leaks into the integrated log-marginal.
+            double d_fac = blk.d_fac ? blk.d_fac(k_grid) : 1.0;
+            if (L.beta_count[0] > 0)
+                x[L.latent_offset[0]] += d_fac * c_b;
         }
     };
     auto compute_log_prior = [&](const Rcpp::NumericVector& x,

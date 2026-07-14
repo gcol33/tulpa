@@ -11,6 +11,7 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
+#include "icar_kernel.h"   // count_graph_components (spatial rank)
 
 namespace tulpa {
 namespace priors {
@@ -96,12 +97,18 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
         T log_tau_st = params[layout.log_tau_st_idx];
         T tau_st = safe_exp(log_tau_st);
 
-        // PC prior on tau (exponential on sigma = 1/sqrt(tau))
+        // PC prior on sigma = 1/sqrt(tau), reparameterized to the sampled
+        // log_tau_st (log precision). Change of variables:
+        //   sigma = exp(-0.5 * log_tau)  ->  |dsigma/dlog_tau| = 0.5 * sigma,
+        //   log-Jacobian = log(0.5) + log(sigma) = -log(2) - 0.5 * log_tau.
+        // The earlier code added -log(2*sigma) + log_tau = -log(2) + 1.5*log_tau,
+        // an excess of +2*log_tau that tilted the prior by tau^2 toward large
+        // precision (interaction SD biased low). Cross-checks the HSGP-ST block
+        // below, which samples log-variance and correctly adds +0.5*log_sigma2.
         T sigma_st = T(1.0) / safe_sqrt(tau_st);
         T lambda_st = T(-std::log(data.st_sigma2_prior_alpha) / data.st_sigma2_prior_U);
         log_post = log_post + safe_log(lambda_st) - lambda_st * sigma_st
-                 - safe_log(T(2.0) * sigma_st);
-        log_post = log_post + log_tau_st;  // Jacobian for log transform
+                 - safe_log(T(2.0)) + safe_log(sigma_st);
 
         // AR1 rho parameter
         T rho_st = T(0.0);
@@ -255,8 +262,13 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 }
 
             } else if (data.spatiotemporal_data.type == STType::TYPE_III) {
-                // Structured space at each time point (ICAR)
-                int rank_s = S - 1;
+                // Structured space at each time point (ICAR). Rank S - k for k
+                // connected components (spatiotemporal adjacency is 1-based).
+                int k_s = data.spatiotemporal_data.adj_row_ptr.empty() ? 1
+                    : count_graph_components(
+                          S, data.spatiotemporal_data.adj_row_ptr.data(),
+                          data.spatiotemporal_data.adj_col_idx.data(), 1);
+                int rank_s = S - k_s;
                 for (int t = 0; t < T_st; t++) {
                     // Compute ICAR quadratic form for spatial field at time t
                     T quad = T(0.0);
@@ -285,8 +297,12 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 // Kronecker: Q_delta = Q_s ⊗ Q_t
                 T kron_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st);
                 log_post = log_post - T(0.5) * tau_st * kron_quad;
-                // Rank terms
-                int rank_space = S - 1;
+                // Rank terms (spatial rank S - k for k connected components).
+                int k_s = data.spatiotemporal_data.adj_row_ptr.empty() ? 1
+                    : count_graph_components(
+                          S, data.spatiotemporal_data.adj_row_ptr.data(),
+                          data.spatiotemporal_data.adj_col_idx.data(), 1);
+                int rank_space = S - k_s;
                 int rank_time = (data.spatiotemporal_data.temporal_type == TemporalType::RW1) ? (T_st - 1) : (T_st - 2);
                 if (data.spatiotemporal_data.temporal_cyclic) rank_time = T_st;
                 int total_rank = rank_space * rank_time;
