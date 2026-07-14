@@ -292,4 +292,10 @@ test_that("negbin areal ICAR Gibbs runs and returns the draw blocks", {
   expect_equal(nrow(fit$beta), 100L)
   expect_equal(ncol(fit$spatial), n_units)
   expect_true(all(is.finite(fit$beta)))
+
+  # Loose recovery on the simulated truth (beta = (1, 0.3)); the tight
+  # multi-seed gate is the slow-tier ICAR negbin test above.
+  beta_hat <- colMeans(fit$beta)
+  expect_lt(abs(beta_hat[1] - 1.0), 0.5)
+  expect_lt(abs(beta_hat[2] - 0.3), 0.4)
 })
