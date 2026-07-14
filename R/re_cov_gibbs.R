@@ -211,6 +211,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
                                control = list()) {
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
+  .check_control(control, .CONTROL_KEYS$re_cov_gibbs, "tulpa_re_cov_gibbs")
   n_iter    <- as.integer(control$n_iter %||% 2000L)
   warmup    <- as.integer(control$warmup %||% 1000L)
   thin      <- as.integer(control$thin %||% 1L)

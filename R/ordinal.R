@@ -67,6 +67,7 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
                           beta_prior_sd = 10, cut_prior_sd = 10,
                           control = list()) {
   link <- match.arg(link)
+  .check_control(control, .CONTROL_KEYS$ordinal, "tulpa_ordinal")
   pfun <- if (link == "probit") stats::pnorm else stats::plogis
   qfun <- if (link == "probit") stats::qnorm else stats::qlogis
   max_iter <- as.integer(control$max_iter %||% 200L)

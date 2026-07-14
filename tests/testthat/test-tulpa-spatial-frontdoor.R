@@ -37,7 +37,7 @@ test_that("tulpa(spatial = icar, mode = gibbs) recovers beta end-to-end", {
     n_trials = s$data$ntrials,
     spatial = list(type = "icar", adjacency = s$W),
     mode = "gibbs",
-    control = list(iter = 3000L, warmup = 1500L)
+    control = list(n_iter = 3000L, warmup = 1500L)
   )
   # Routing: the front door reached the ICAR Polya-Gamma sampler.
   expect_equal(fit$backend, "gibbs")
@@ -60,7 +60,7 @@ test_that("auto picks Gibbs for a binomial icar field", {
     n_trials = s$data$ntrials,
     spatial = list(type = "icar", adjacency = s$W),
     mode = "auto",
-    control = list(iter = 1500L, warmup = 750L)
+    control = list(n_iter = 1500L, warmup = 750L)
   )
   expect_equal(fit$backend, "gibbs")
   expect_equal(fit$inference_mode, "exact")
@@ -74,7 +74,7 @@ test_that("tulpa(spatial = bym2, mode = gibbs) wires through and returns field d
     n_trials = s$data$ntrials,
     spatial = list(type = "bym2", adjacency = s$W),
     mode = "gibbs",
-    control = list(iter = 1500L, warmup = 750L)
+    control = list(n_iter = 1500L, warmup = 750L)
   )
   expect_equal(fit$backend, "gibbs")
   expect_equal(ncol(fit$spatial), s$n_units)
@@ -187,7 +187,7 @@ test_that("tulpa() routes an RSR field to the binomial Gibbs sampler (auto)", {
     n_trials = s$data$ntrials,
     spatial = spatial_rsr(spatial_car(s$W, level = "obs"), restrict_to = ~ x),
     mode = "auto",
-    control = list(iter = 3000L, warmup = 1500L)
+    control = list(n_iter = 3000L, warmup = 1500L)
   )
   # Routing: auto picked the (Tier 1) RSR Polya-Gamma sampler, not nested/plain.
   expect_equal(fit$backend, "gibbs")
@@ -205,7 +205,7 @@ test_that("tulpa() rejects a non-binomial RSR field", {
   expect_error(
     tulpa(count ~ x + spatial(region), data = s$data, family = "poisson",
           spatial = spatial_rsr(spatial_car(s$W, level = "obs"), restrict_to = ~ x),
-          mode = "auto", control = list(iter = 50L, warmup = 25L)),
+          mode = "auto", control = list(n_iter = 50L, warmup = 25L)),
     "binomial"
   )
 })

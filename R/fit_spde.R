@@ -93,6 +93,7 @@ fit_spde <- function(y, X, spatial,
                      phi = 1.0, offset = NULL,
                      control = list()) {
 
+  .check_control(control, .CONTROL_KEYS$spde, "fit_spde")
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }

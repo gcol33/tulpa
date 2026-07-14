@@ -197,7 +197,7 @@ test_that("k_refine='ccd' escalation drives local CCD and reports an honest verd
     control = list(max_iter = 60L, tol = 1e-6, integration = "grid",
                    var_of_means_consistency = FALSE,
                    k_quality = "ok", k_refine = "ccd",
-                   diagnose_draws = 200L, k_max_rounds = 1L)))
+                   k_samples = 200L, k_max_rounds = 1L)))
 
   expect_identical(fit$k_quality_requested, "ok")
   expect_true(is.logical(fit$k_quality_reached))         # never NA for an "ok" target

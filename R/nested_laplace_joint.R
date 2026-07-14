@@ -326,7 +326,7 @@
 #'     Pareto-\eqn{\hat{k}}, a single statement of how reliable the fit should be.
 #'     `"report"` (default) computes the diagnostic and reports the achieved band.
 #'     `"ok"` / `"good"` additionally name a TARGET band (the \eqn{\hat{k}}
-#'     confidently usable, resp. good) and raise the default `diagnose_draws`
+#'     confidently usable, resp. good) and raise the default `k_samples`
 #'     (to `800L` / `2000L`, unless you set it) so the bootstrap CI can resolve it.
 #'     `"none"` disables the diagnostic. The fit carries an honest verdict --
 #'     `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
@@ -337,7 +337,7 @@
 #'     the bad \eqn{\hat{k}} (see `k_refine`): each round widens / densifies the
 #'     grid where the posterior mass escapes its current bounds and re-diagnoses,
 #'     up to `k_max_rounds` times. This is the actual fix for a grid-width
-#'     deficiency; `diagnose_draws` is the separate knob that sharpens the
+#'     deficiency; `k_samples` is the separate knob that sharpens the
 #'     \eqn{\hat{k}} ESTIMATE and is not escalated here.
 #'   * `k_refine` (`"grid"`) -- the integration-refinement rung for `k_quality`
 #'     `"ok"` / `"good"`. `"grid"` (default) re-fits with adaptive grid refinement
@@ -355,14 +355,14 @@
 #'     `"ok"` / `"good"`: the maximum number of refine-and-re-fit rounds after the
 #'     first fit. Each round allows one more refinement pass than the last. `0L`
 #'     disables escalation (single-shot, the band is reported but not chased).
-#'   * `diagnose_k` (`TRUE`), `diagnose_draws` (`500L`) -- compute the outer
+#'   * `diagnose_k` (`TRUE`), `k_samples` (`500L`) -- compute the outer
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
 #'     hyperparameter posterior against the proposal the integrator fits (mixed
 #'     per-axis transforms: `log` for positive scales, logit for the BYM2 mixing
-#'     weight, identity for the copy coefficient \eqn{\alpha}). `diagnose_draws`
+#'     weight, identity for the copy coefficient \eqn{\alpha}). `k_samples`
 #'     is the number of importance draws, each one an extra inner joint solve, and
 #'     is the diagnostic's precision knob: a tighter k-hat needs MORE actual tail
-#'     ratios, so increase `diagnose_draws` (not `k_bootstrap`). The draws are
+#'     ratios, so increase `k_samples` (not `k_bootstrap`). The draws are
 #'     RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
 #'     axis whose support is not safely known (CAR_proper's `rho_car`) declines to
 #'     the quadrature-ESS fallback (`pareto_k = NA`). `FALSE` skips the diagnostic.
@@ -371,16 +371,16 @@
 #'     in `pareto_k_by_arm`, to localise which arm drives a tail-heavy joint k; the
 #'     joint k itself is unchanged. Per-arm k is defined for the multi-block layout
 #'     with two or more arms and declines for the single-block shared-field layout.
-#'     The legacy `k_samples` name is accepted as an alias for `diagnose_draws`.
+#'     The legacy `k_samples` name is accepted as an alias for `k_samples`.
 #'   * `k_threads` (`NULL`) -- outer-thread width for the diagnostic's importance
-#'     batch. The `diagnose_draws` re-solves are independent and run after the grid
+#'     batch. The `k_samples` re-solves are independent and run after the grid
 #'     (every core free), each solved single-threaded once the batch saturates the
 #'     pool, so widening it is a bit-identical wall-clock speedup (the k-hat is
 #'     unchanged). `NULL` follows the fit's own thread grant -- the larger of
 #'     `n_threads_outer` and the inner `n_threads` -- so a serial fit keeps a serial
 #'     diagnostic while a threaded fit gets a free parallel one. `"auto"` uses the
 #'     physical performance-core count (capped at 2 under R CMD check); an integer
-#'     pins the width (`1L` forces serial). Always capped at `diagnose_draws`.
+#'     pins the width (`1L` forces serial). Always capped at `k_samples`.
 #'   * `k_bootstrap` (`1000L`) -- bootstrap replicates for the outer
 #'     Pareto-\eqn{\hat{k}} uncertainty. The k-hat is a single fixed number for a
 #'     fit + proposal; its sampling uncertainty GIVEN the proposal is estimated by
@@ -392,7 +392,7 @@
 #'     cross-check), and `pareto_k_band_confident` (TRUE iff the bootstrap CI lies
 #'     within one reliability band). The bootstrap measures how UNSTABLE the
 #'     current tail estimate is; it cannot create tail information. Increase
-#'     `diagnose_draws`, not `k_bootstrap`, to obtain more tail information. `0L`
+#'     `k_samples`, not `k_bootstrap`, to obtain more tail information. `0L`
 #'     skips it (point k-hat only). The per-arm k carries the same fields.
 #'   * `k_tail_points` (`NULL`) -- number of upper-tail order statistics for the
 #'     GPD fit. `NULL` uses the automatic PSIS rule
@@ -553,6 +553,15 @@ tulpa_nested_laplace_joint <- function(responses,
                                        prior_phi = NULL,
                                        cell_coupling = "separable",
                                        control = list()) {
+    # Renamed knob first (a targeted message beats the generic whitelist one),
+    # then the whitelist, both before any response validation so a bad knob is
+    # reported regardless of the rest of the call.
+    if (!is.null(control$diagnose_draws)) {
+        stop("`control$diagnose_draws` was renamed: use `control$k_samples` ",
+             "(the same knob on every nested-Laplace fitter).", call. = FALSE)
+    }
+    .check_control(control, .CONTROL_KEYS$nested_laplace_joint,
+                   "tulpa_nested_laplace_joint")
     # k_quality reliability front door + escalation (gcol33/tulpa#129, #131). The
     # single fit lives in .tulpa_nl_joint_once(); this wrapper resolves the
     # reliability intent, attaches the honest verdict (for BOTH the single- and
@@ -560,7 +569,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # THE INTEGRATION GRID, driven by the bad outer k (with k_refine = "grid"):
     # each round widens / densifies the grid where the posterior mass escapes its
     # bounds, re-fits + re-diagnoses, until the requested band is confidently
-    # reached or the round budget is hit. diagnose_draws is the separate
+    # reached or the round budget is hit. k_samples is the separate
     # estimate-precision knob, not an escalation lever. Never silently downgrades.
     k_quality <- control$k_quality %||% "report"
     if (!is.character(k_quality) || length(k_quality) != 1L ||
@@ -609,9 +618,9 @@ tulpa_nested_laplace_joint <- function(responses,
         #     non-adjacent cells with local curvature-aware CCD node clouds
         #     (R/nested_laplace_joint_ccd_local.R). A tensor base is forced (the
         #     finite-difference curvature stencil needs axis neighbours).
-        # Raising diagnose_draws would only sharpen the SAME k against the SAME
+        # Raising k_samples would only sharpen the SAME k against the SAME
         # grid, never refine it, so it is NOT the escalation lever -- it stays the
-        # separate estimate-precision knob (control$diagnose_draws).
+        # separate estimate-precision knob (control$k_samples).
         is_ccd_refine <- identical(k_refine, "ccd")
         refined_field <- if (is_ccd_refine) "local_ccd_info" else "adaptive_grid_info"
         if (is_ccd_refine) {
@@ -681,7 +690,8 @@ tulpa_nested_laplace_joint <- function(responses,
     }
 
     # Perf/numerical knobs live in `control = list()` (matching tulpa()); the
-    # top-level signature carries only statistical arguments.
+    # top-level signature carries only statistical arguments. Names were
+    # validated at the front of tulpa_nested_laplace_joint().
     max_iter                  <- control$max_iter %||% 50L
     tol                       <- control$tol %||% 1e-6
     n_threads                 <- .tulpa_inner_threads(control$n_threads %||% 1L,
@@ -724,7 +734,7 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_min_cells        <- control$adaptive_grid_min_cells %||% 48
     # Outer Pareto-k-hat accuracy diagnostic. `diagnose_k` (default TRUE)
     # importance-samples the joint hyperparameter posterior against the proposal
-    # the integrator fits; `diagnose_draws` (default 500) is the number of draws,
+    # the integrator fits; `k_samples` (default 500) is the number of draws,
     # each one extra inner joint solve. RNG-restored, so the fit's draws are
     # unchanged whether or not it runs. `diagnose_k = "by_arm"`
     # additionally computes a k-hat restricted to each arm's hyperparameter axes
@@ -746,20 +756,20 @@ tulpa_nested_laplace_joint <- function(responses,
     pareto_k_by_arm           <- identical(diagnose_k_raw, "by_arm")
     diagnose_k                <- (pareto_k_by_arm || isTRUE(diagnose_k_raw)) &&
                                  !identical(k_quality, "none")
-    # Diagnostic importance-draw budget (gcol33/tulpa#127). `diagnose_draws` is the
-    # single precision knob: the outer Pareto-k is scored ONCE over this many
-    # importance draws, and a tighter k needs MORE actual tail ratios, i.e. a larger
-    # `diagnose_draws`. The legacy `k_samples` name is accepted as an alias.
-    diagnose_draws_user       <- control$diagnose_draws %||% control$k_samples
+    # Diagnostic importance-draw budget (gcol33/tulpa#127). `k_samples` is the
+    # single precision knob -- the SAME name every nested-Laplace fitter uses:
+    # the outer Pareto-k is scored ONCE over this many importance draws, and a
+    # tighter k needs MORE actual tail ratios, i.e. a larger `k_samples`.
+    diagnose_draws_user       <- control$k_samples
     diagnose_draws            <- diagnose_draws_user %||% 500L
     if (length(diagnose_draws) != 1L || is.na(diagnose_draws) ||
         diagnose_draws != round(diagnose_draws) || diagnose_draws < 1L) {
-        stop("`control$diagnose_draws` must be a single integer >= 1.", call. = FALSE)
+        stop("`control$k_samples` must be a single integer >= 1.", call. = FALSE)
     }
     diagnose_draws            <- as.integer(diagnose_draws)
     # k_quality "ok" / "good" raise the default draw budget so the bootstrap CI can
     # resolve the requested band (a tighter CI needs more actual tail ratios); an
-    # explicit `diagnose_draws` / `k_samples` is always respected (gcol33/tulpa#129).
+    # explicit `k_samples` is always respected (gcol33/tulpa#129).
     if (is.null(diagnose_draws_user) && k_quality %in% c("ok", "good"))
         diagnose_draws <- if (identical(k_quality, "good")) 2000L else 800L
     # Outer-thread width for the diagnostic's importance batch (gcol33/tulpa#117).
@@ -775,7 +785,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # is scored once; the k-hat's sampling uncertainty is then estimated by
     # bootstrapping its raw importance log-ratios -- `k_bootstrap` replicates, each
     # re-fitting the GPD tail, NO new inner solves. The bootstrap reports how
-    # UNSTABLE the current estimate is, not a tighter k (raise `diagnose_draws` for
+    # UNSTABLE the current estimate is, not a tighter k (raise `k_samples` for
     # that, NOT `k_bootstrap`). `k_tail_points` (NULL = the automatic PSIS rule) is
     # an expert tail-threshold control, capped at the 20%-of-draws ceiling.
     # `k_conf_bands` are the reliability-band boundaries the bootstrap CI is tested

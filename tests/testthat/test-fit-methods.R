@@ -141,7 +141,7 @@ test_that("Gibbs fit (draws in $beta/$re) supports the contract", {
   eta <- -0.3 + 1.0 * d$df$x + d$u[d$df$g]
   d$df$y <- rbinom(nrow(d$df), 1, plogis(eta))
   fit <- tulpa(y ~ x + (1 | g), data = d$df, family = "binomial",
-               mode = "gibbs", control = list(iter = 800L, warmup = 400L))
+               mode = "gibbs", control = list(n_iter = 800L, warmup = 400L))
 
   cf <- coef(fit)
   expect_named(cf, c("(Intercept)", "x"))

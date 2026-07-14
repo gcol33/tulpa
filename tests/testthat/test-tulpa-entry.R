@@ -153,7 +153,7 @@ test_that("tulpa() routes a binomial random-intercept model through Gibbs", {
   skip_if_not_slow()
   s <- make_binom_re()
   fit <- tulpa(y ~ x + (1 | g), s$d, family = "binomial", mode = "gibbs",
-               n_trials = s$nt, control = list(iter = 400L, warmup = 200L))
+               n_trials = s$nt, control = list(n_iter = 400L, warmup = 200L))
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$backend, "gibbs")
   expect_equal(fit$inference_tier, 1L)

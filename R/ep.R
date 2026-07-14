@@ -103,6 +103,7 @@
 tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
                      phi2 = NULL, n_trials = NULL, beta_prior_sd = 10,
                      control = list()) {
+  .check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
   if (is.null(.FAMILY_OPS[[family]])) {
     stop(sprintf("Unknown family '%s'. Supported: %s.",
                  family, paste(family_names(), collapse = ", ")), call. = FALSE)

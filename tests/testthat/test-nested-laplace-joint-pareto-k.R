@@ -403,7 +403,7 @@ test_that("the bootstrap diagnostic carries the per-arm uncertainty (multi-block
     fit <- tulpa_nested_laplace_joint(
         responses = .jpk_arms(sim), prior = prior_multi, copy = cp,
         control = list(diagnose_k = "by_arm", integration = "grid",
-                       diagnose_draws = 200L, k_bootstrap = 300L))
+                       k_samples = 200L, k_bootstrap = 300L))
     expect_false(is.null(fit$pareto_k_by_arm))
     expect_false(is.null(fit$pareto_k_by_arm_se_boot))
     expect_false(is.null(fit$pareto_k_by_arm_ci_low))
@@ -427,7 +427,7 @@ test_that("the bootstrap diagnostic does not perturb the global RNG state", {
     s0 <- .Random.seed
     invisible(tulpa_nested_laplace_joint(
         responses = .jpk_arms_alpha(sim, c(0.5, 1.0, 1.5)), prior = prior,
-        control = list(diagnose_draws = 150L, k_bootstrap = 300L)))
+        control = list(k_samples = 150L, k_bootstrap = 300L)))
     expect_identical(.Random.seed, s0)
 })
 
@@ -436,7 +436,7 @@ test_that("the bootstrap diagnostic does not perturb the global RNG state", {
 # --------------------------------------------------------------------------- #
 # The k-hat is a single fixed number for a fit + proposal; its sampling
 # uncertainty is bootstrapped from ONE batch's raw importance log-ratios (no new
-# inner solves). diagnose_draws is the precision knob; k_tail_points an expert
+# inner solves). k_samples is the precision knob; k_tail_points an expert
 # tail-threshold guard; k_conf_bands configurable band boundaries.
 
 test_that(".psis_tail_len: automatic PSIS rule and the 20%-of-draws cap", {
@@ -607,7 +607,7 @@ test_that("control end to end carries the bootstrap uncertainty fields", {
     arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
     fit <- tulpa_nested_laplace_joint(
         responses = arms, prior = prior,
-        control = list(diagnose_draws = 300L, k_bootstrap = 400L))
+        control = list(k_samples = 300L, k_bootstrap = 400L))
     expect_true(is.finite(fit$pareto_k))
     expect_true(is.finite(fit$pareto_k_se_boot))
     expect_lte(fit$pareto_k_ci_low, fit$pareto_k_ci_high)
@@ -658,7 +658,7 @@ test_that("k_quality reports an honest reached / best / reason quartet", {
     arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0, 1.5))
 
     rep_fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
-                  control = list(k_quality = "report", diagnose_draws = 300L))
+                  control = list(k_quality = "report", k_samples = 300L))
     expect_identical(rep_fit$k_quality_requested, "report")
     expect_true(is.na(rep_fit$k_quality_reached))     # no target band
     expect_true(rep_fit$k_quality_best %in%
@@ -672,7 +672,7 @@ test_that("k_quality reports an honest reached / best / reason quartet", {
     expect_true(is.logical(good_fit$k_quality_reached) &&
                 !is.na(good_fit$k_quality_reached))
     expect_true(nzchar(good_fit$k_quality_reason))
-    # "good" raised the default draw budget (diagnose_draws not set by the caller).
+    # "good" raised the default draw budget (k_samples not set by the caller).
     expect_identical(good_fit$diagnose_draws, 2000L)
     expect_identical(good_fit$k_quality_rounds, 0L)     # escalation disabled
     # When the target is reached, the achieved band must be the good band.
@@ -706,7 +706,7 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = c(0.2, 0.35, 0.5))
     arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0))
-    ctrl <- list(k_quality = "good", diagnose_draws = 800L, k_max_rounds = 3L)
+    ctrl <- list(k_quality = "good", k_samples = 800L, k_max_rounds = 3L)
 
     # k_refine = "none": the band is reported but not chased -- no escalation, the
     # grid is left untouched (k_quality_rounds stays 0).
@@ -723,7 +723,7 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
     expect_false(is.null(fit1$adaptive_grid_info))     # the grid was refined ...
     expect_gt(nrow(fit1$theta_grid), base_cells)       # ... by adding cells
 
-    # diagnose_draws is identical across the two fits (set, not auto-raised), so the
+    # k_samples is identical across the two fits (set, not auto-raised), so the
     # k improvement is the refined grid's, not the diagnostic's: the separation the
     # feature is built on. Here it crosses into the good band.
     expect_lt(fit1$pareto_k, fit0$pareto_k)

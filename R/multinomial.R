@@ -48,6 +48,7 @@
 #' @export
 tulpa_multinomial <- function(formula, data, beta_prior_sd = 10,
                               control = list()) {
+  .check_control(control, .CONTROL_KEYS$multinomial, "tulpa_multinomial")
   max_iter <- as.integer(control$max_iter %||% 100L)
   tol      <- control$tol %||% 1e-8
   n_draws  <- as.integer(control$n_draws %||% 2000L)

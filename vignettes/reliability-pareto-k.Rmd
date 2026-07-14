@@ -86,7 +86,7 @@ resp <- list(occ = mk_arm(200L, "binomial"),
 fit <- tulpa_nested_laplace_joint(
   responses = resp,
   prior     = prior,
-  control   = list(diagnose_draws = 400L))
+  control   = list(k_samples = 400L))
 
 c(pareto_k = round(fit$pareto_k, 3),
   is_ess   = round(fit$pareto_k_is_ess, 1))
@@ -141,7 +141,7 @@ distribution converges, so the boundary below which the estimate can still be
 trusted tightens when there are few draws and relaxes toward `0.7` only when
 there are many. The usable boundary is `min(1 - 1/log10(S), 0.7)`, with `S` the
 number of importance draws (Vehtari, Simpson, Gelman, Yao and Gabry, 2024). The
-diagnostic draws `S = diagnose_draws` points, each one independent and drawn from
+diagnostic draws `S = k_samples` points, each one independent and drawn from
 a single Gaussian proposal, so the nominal draw count is the right `S` and the
 rule applies directly.
 
@@ -192,13 +192,13 @@ this fit is in". A point estimate of `0.45` with an interval spanning `0.3` to
 
 The bootstrap cannot invent tail information. It measures how unstable the
 current tail estimate is, given the draws in hand. To make the interval itself
-tighter you need more actual tail ratios, which means raising `diagnose_draws`,
+tighter you need more actual tail ratios, which means raising `k_samples`,
 not the bootstrap count.
 
 ## Tightening a borderline reading
 
 When the band is not confident the interval straddles a boundary, and the fix is
-more tail information. The precision knob is `diagnose_draws`: each draw is an
+more tail information. The precision knob is `k_samples`: each draw is an
 off-grid Laplace re-solve, and more of them give the generalized-Pareto fit more
 tail ratios, a tighter k-hat, and a narrower bootstrap interval. Refit the same
 model with more draws and read the interval again.
@@ -207,7 +207,7 @@ model with more draws and read the interval again.
 fit_hi <- tulpa_nested_laplace_joint(
   responses = resp,
   prior     = prior,
-  control   = list(diagnose_draws = 1500L))
+  control   = list(k_samples = 1500L))
 
 c(k              = round(fit_hi$pareto_k, 3),
   ci_low         = round(fit_hi$pareto_k_ci_low, 3),
@@ -215,7 +215,7 @@ c(k              = round(fit_hi$pareto_k, 3),
   band_confident = fit_hi$pareto_k_band_confident)
 ```
 
-Raising `diagnose_draws` is the lever for both halves of the reading at once. It
+Raising `k_samples` is the lever for both halves of the reading at once. It
 tightens the interval around the estimate, and because the usable boundary
 itself relaxes toward `0.7` as the draw count grows, it widens the band the
 estimate has to clear. Raising `k_bootstrap` does neither: it re-uses the tail
@@ -232,7 +232,7 @@ climb to the next.
 
 1. **Report.** Read `pareto_k` and `pareto_k_band_confident`. A confident good
    reading ends here: the integration is reliable and nothing more is needed.
-2. **Resolve the band.** When the band is not confident, raise `diagnose_draws`
+2. **Resolve the band.** When the band is not confident, raise `k_samples`
    to add tail information until the bootstrap interval clears a boundary, or
    until more draws stop moving it and the fit is genuinely on the line. This
    rung pins down which band you are in; it does not change the fit.
@@ -275,7 +275,7 @@ fit_q$k_quality_reason
 ```
 
 `k_quality = "good"` requires the k-hat interval to sit confidently in the good
-band and raises the default `diagnose_draws` so the bootstrap CI can resolve it;
+band and raises the default `k_samples` so the bootstrap CI can resolve it;
 `"ok"` lowers the target to the usable band; `"report"` (the default) computes
 the diagnostic without a target; `"none"` turns it off. The verdict is the
 honest part. `k_quality_reached` is `TRUE` only when the requested band is
@@ -290,7 +290,7 @@ posterior mass spills past the grid bounds; so with `control$k_refine = "grid"`
 (the default for `"ok"` / `"good"`) each round widens and densifies the grid
 where that mass escapes (`adaptive_grid`), re-fits, and re-diagnoses, up to
 `control$k_max_rounds` times, with each round allowed one more refinement pass
-than the last. `k_quality_rounds` records how many rounds it used. `diagnose_draws`
+than the last. `k_quality_rounds` records how many rounds it used. `k_samples`
 is the separate knob that sharpens the k estimate; it is not the escalation lever,
 since more draws only re-score the same grid. The request stays a target, not a
 promise: if the budget is spent without confirming the band, the fit reports the
@@ -301,7 +301,7 @@ gradient-sampler correction) as the ladder above describes.
 
 - `tulpa_nested_laplace_joint()` documents the full `control` surface for the
   diagnostic: `k_quality`, `k_refine`, `k_max_rounds`, `diagnose_k`,
-  `diagnose_draws`, `k_bootstrap`, `k_tail_points`, `k_conf_bands`, and
+  `k_samples`, `k_bootstrap`, `k_tail_points`, `k_conf_bands`, and
   `k_threads`.
 - `tulpa_psis()` is the native Pareto-smoothed importance-sampling core the
   diagnostic is built on, callable directly on a vector of log importance

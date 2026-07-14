@@ -878,7 +878,9 @@
 #'   with an areal `spatial` field it forms an additive space-time joint prior.
 #' @param control Optional list of backend tuning arguments (e.g. `n_iter`,
 #'   `warmup`, `epsilon` for `mala`; `n_draws` for `pathfinder`).
-#' @param ... Reserved for future use.
+#' @param ... Reserved for future statistical arguments. Nothing is read from
+#'   it today, so any entry errors: a stray name here is a misspelled argument
+#'   or a tuning knob that belongs in `control`.
 #'
 #' @return A `tulpa_fit` object carrying the backend's output plus
 #'   `inference_mode`, `inference_tier`, `backend`, `selection_reason`,
@@ -920,6 +922,20 @@ tulpa <- function(formula, data,
                   temporal = NULL,
                   control = list(),
                   ...) {
+  # `...` exists so future statistical arguments can be added without a
+  # signature break; nothing is read from it today, so a stray entry is a
+  # misspelled or misplaced argument (e.g. `familly =`, or a tuning knob that
+  # belongs in `control = list()`), not a silent no-op.
+  dots <- list(...)
+  if (length(dots)) {
+    nm <- names(dots) %||% rep("", length(dots))
+    nm[!nzchar(nm)] <- "<unnamed>"
+    stop(sprintf(
+      "unknown argument(s) to tulpa(): %s. Tuning knobs go in `control = list()`.",
+      paste(nm, collapse = ", ")), call. = FALSE)
+  }
+  .check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
+
   # Categorical responses are families, not separate verbs: the front door
   # routes them to the multinomial / cumulative-link Laplace drivers. The link
   # rides the family string ("ordinal_probit"), matching the engine's
