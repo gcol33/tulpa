@@ -49,11 +49,10 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
     if (length(lm) != length(r)) return(rep(-Inf, length(r)))
     lm + pc_prior_log_density(r, s, sp$prior_range, sp$prior_sigma)
   }
-  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-  kd <- tryCatch(.nested_is_pareto_k(theta_hat, L_scale, lt, n_samples),
-                 error = function(e) NULL)
-  if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+  kd <- .with_preserved_seed(
+    tryCatch(.nested_is_pareto_k(theta_hat, L_scale, lt, n_samples),
+             error = function(e) NULL)
+  )
   if (is.null(kd)) list(pareto_k = NA_real_, is_ess = NA_real_) else kd
 }
 

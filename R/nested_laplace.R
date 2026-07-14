@@ -292,12 +292,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     if (length(lm) != nrow(theta_mat)) rep(-Inf, nrow(theta_mat)) else lm
   }
 
-  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-  kd <- tryCatch(
+  kd <- .with_preserved_seed(tryCatch(
     .nested_grid_pareto_k(matrix(log(tg), ncol = 1L), res$weights, refit, n_samples),
-    error = function(e) NULL)
-  if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
+    error = function(e) NULL))
   if (!is.null(kd)) { res$pareto_k <- kd$pareto_k; res$pareto_k_is_ess <- kd$is_ess }
   res
 }

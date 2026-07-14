@@ -62,7 +62,8 @@
 # field are added; at `newdata` the prediction is population-level (fixed
 # effects only), matching predict().
 #' @keywords internal
-.tulpa_eta_draws <- function(object, newdata = NULL, ndraws = NULL) {
+.tulpa_eta_draws <- function(object, newdata = NULL, ndraws = NULL,
+                             synth_seed = NULL) {
   X <- if (is.null(newdata)) object$model_matrix
        else .tulpa_fixed_design(object, newdata)
   if (is.null(X)) {
@@ -88,6 +89,14 @@
     L <- tryCatch(chol(V), error = function(e) {
       chol(V + diag(1e-10 * max(diag(V), 1), nrow(V)))
     })
+    # `synth_seed` pins the Gaussian synthesis RNG-neutrally: read-only
+    # callers (the WAIC/LOO criteria layer) get identical draws on every
+    # call and leave the session stream untouched; predictive callers leave
+    # it NULL for fresh draws.
+    if (!is.null(synth_seed)) {
+      .preserve_seed_in_frame()
+      set.seed(as.integer(synth_seed))
+    }
     beta <- matrix(rep(mu, each = S), S) +
       matrix(stats::rnorm(S * length(mu)), S) %*% L
     colnames(beta) <- names(mu)
@@ -182,16 +191,7 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
     stop("posterior_predict() supports fits with a builtin character family; ",
          "model packages provide their own methods.", call. = FALSE)
   }
-  if (!is.null(seed)) {
-    old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) {
-      get(".Random.seed", envir = .GlobalEnv)
-    } else NULL
-    set.seed(seed)
-    on.exit({
-      if (is.null(old_seed)) rm(".Random.seed", envir = .GlobalEnv)
-      else assign(".Random.seed", old_seed, envir = .GlobalEnv)
-    }, add = TRUE)
-  }
+  .seed_scoped(seed)
 
   eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws)
   if (is.null(n_trials)) {

@@ -94,9 +94,13 @@ agq_fit <- function(y, X, group,
   storage.mode(X) <- "double"
   n_obs <- length(y)
   p <- ncol(X)
-  if (nrow(X) != n_obs) stop("nrow(X) != length(y).", call. = FALSE)
+  if (nrow(X) != n_obs) {
+    stop(sprintf("nrow(X) (%d) must equal length(y) (%d).",
+                 nrow(X), n_obs), call. = FALSE)
+  }
   if (length(group) != n_obs) {
-    stop("length(group) != length(y).", call. = FALSE)
+    stop(sprintf("length(group) (%d) must equal length(y) (%d).",
+                 length(group), n_obs), call. = FALSE)
   }
   group <- as.integer(group)
   if (any(group < 1L) || any(group > n_groups)) {

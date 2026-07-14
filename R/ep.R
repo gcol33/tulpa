@@ -104,10 +104,7 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
                      phi2 = NULL, n_trials = NULL, beta_prior_sd = 10,
                      control = list()) {
   .check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
-  if (is.null(.FAMILY_OPS[[family]])) {
-    stop(sprintf("Unknown family '%s'. Supported: %s.",
-                 family, paste(family_names(), collapse = ", ")), call. = FALSE)
-  }
+  .family_or_stop(family)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   max_sweeps <- as.integer(control$max_sweeps %||% 50L)
   tol        <- control$tol %||% 1e-6

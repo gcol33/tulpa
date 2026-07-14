@@ -44,3 +44,52 @@ utils::globalVariables(c(".data", "ratio", ".phl_w"))
   set.seed(as.integer(seed))
   invisible(TRUE)
 }
+
+# Snapshot the session RNG stream and restore it when `envir` (the caller's
+# frame by default) exits, so an internal randomized step (a Pareto-k
+# importance batch, a probe vector) leaves `.Random.seed` exactly as the
+# caller had it. The complement of `.seed_scoped`: that one also seeds.
+#' @keywords internal
+.preserve_seed_in_frame <- function(envir = parent.frame()) {
+  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+  restore <- function() {
+    if (is.null(old_seed)) {
+      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+        rm(".Random.seed", envir = .GlobalEnv)
+      }
+    } else {
+      assign(".Random.seed", old_seed, envir = .GlobalEnv)
+    }
+  }
+  do.call(on.exit, list(as.call(list(restore)), add = TRUE), envir = envir)
+  invisible(NULL)
+}
+
+# Expression form: evaluate `expr` RNG-neutrally.
+#' @keywords internal
+.with_preserved_seed <- function(expr) {
+  .preserve_seed_in_frame()
+  expr
+}
+
+# Evaluate `expr` and restore the caller's RNG stream afterwards, so an
+# internal randomized step (diagnostic importance draws, a probe matrix)
+# leaves the session RNG untouched. Complements .seed_scoped(): that one
+# seeds for the rest of the calling function, this one is RNG-neutral
+# around a single expression.
+#' @keywords internal
+.with_preserved_seed <- function(expr) {
+  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
+  on.exit({
+    if (is.null(old_seed)) {
+      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+        rm(".Random.seed", envir = .GlobalEnv)
+      }
+    } else {
+      assign(".Random.seed", old_seed, envir = .GlobalEnv)
+    }
+  }, add = TRUE)
+  expr
+}

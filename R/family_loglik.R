@@ -502,12 +502,23 @@ family_names <- function() names(.FAMILY_OPS)
 .family_ops <- function(family) {
   ops <- .FAMILY_OPS[[family]]
   if (is.null(ops)) {
-    stop(sprintf(
-      "Unknown family '%s'. Supported: %s.",
-      family, paste(family_names(), collapse = ", ")
-    ), call. = FALSE)
+    .family_or_stop(family)
   }
   ops
+}
+
+# Validate a family identifier against the registry (the one unknown-family
+# error, shared by every front door); returns the identifier invisibly.
+#' @keywords internal
+.family_or_stop <- function(family) {
+  if (!is.character(family) || length(family) != 1L ||
+      is.null(.FAMILY_OPS[[family]])) {
+    stop(sprintf(
+      "Unknown family '%s'. Supported: %s.",
+      as.character(family)[1L], paste(family_names(), collapse = ", ")
+    ), call. = FALSE)
+  }
+  invisible(family)
 }
 
 

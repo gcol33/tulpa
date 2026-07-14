@@ -656,9 +656,11 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
 #' Fitted values (population level)
 #'
 #' @description
-#' In-sample mean response from the fixed effects (`E[y] = g^{-1}(X beta)`).
-#' Random effects are held at their prior mean of zero; group-level effects are
-#' in [ranef()].
+#' In-sample mean response from the fixed effects and the observation offset
+#' (`E[y] = g^{-1}(X beta + offset)`, trial-scaled for binomial). Random
+#' effects are held at their prior mean of zero; group-level effects are in
+#' [ranef()]. `y - fitted(object)` equals
+#' `residuals(object, type = "response")`.
 #'
 #' @param object A `tulpa_fit` object (must carry `$model_matrix`).
 #' @param ... Ignored.
@@ -671,8 +673,9 @@ fitted.tulpa_fit <- function(object, ...) {
          "tulpa().", call. = FALSE)
   }
   beta <- coef(object)
-  family_mean(as.numeric(X %*% beta[colnames(X)]), object$family,
-              phi = object$phi %||% 1.0)
+  eta  <- as.numeric(X %*% beta[colnames(X)]) + (object$offset %||% 0)
+  family_response_mean(eta, object$family, n_trials = object$n_trials,
+                       phi = object$phi %||% 1.0)
 }
 
 #' Residuals from a tulpa fit

@@ -22,8 +22,15 @@ tulpa_gaussian <- function(formula, data, sigma_beta = 10, iter = 2000,
   y <- model.response(mf)
   X <- model.matrix(formula, data)
 
-  if (!is.numeric(y)) stop("Response must be numeric")
-  if (length(y) != nrow(X)) stop("Response and design matrix dimension mismatch")
+  if (!is.numeric(y)) {
+    stop("`formula` must name a numeric response for tulpa_gaussian().",
+         call. = FALSE)
+  }
+  if (length(y) != nrow(X)) {
+    stop(sprintf(
+      "length(y) (%d) must equal nrow(model.matrix) (%d).",
+      length(y), nrow(X)), call. = FALSE)
+  }
 
   # Fit via C++
   fit <- cpp_tulpa_fit_gaussian(

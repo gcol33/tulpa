@@ -99,8 +99,6 @@ pp_check_single <- function(y, yrep, type, stat, ndraws, title_suffix, ...) {
   if (type == "dens_overlay") {
     p <- bayesplot::ppc_dens_overlay(y, yrep, ...)
   } else if (type == "scatter") {
-    # Use mean of yrep for scatter
-    yrep_mean <- colMeans(yrep)
     p <- bayesplot::ppc_scatter_avg(y, yrep, ...)
   } else if (type == "intervals") {
     p <- bayesplot::ppc_intervals(y, yrep, ...)
@@ -160,19 +158,7 @@ prior_predict <- function(formula, family, data,
                           priors = NULL, n_draws = 100,
                           seed = NULL, ...) {
 
-  if (!is.null(seed)) {
-    old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) {
-      get(".Random.seed", envir = .GlobalEnv)
-    } else NULL
-    set.seed(seed)
-    on.exit({
-      if (is.null(old_seed)) {
-        rm(".Random.seed", envir = .GlobalEnv)
-      } else {
-        assign(".Random.seed", old_seed, envir = .GlobalEnv)
-      }
-    }, add = TRUE)
-  }
+  .seed_scoped(seed)
 
   validate_family(family)
   if (is.null(priors)) priors <- tulpa_priors()
@@ -299,7 +285,11 @@ plot.tulpa_prior_predict <- function(x, process = 1L, max_draws = 50L, ...) {
     if (!is.null(ll_denom)) return(ll_denom)
   }
   if (!is.null(x$y) && is.character(x$family) && length(x$family) == 1L) {
-    eta <- tryCatch(.tulpa_eta_draws(x), error = function(e) NULL)
+    # Fixed synth_seed: a criteria read (WAIC/LOO/model weights) must return
+    # the same numbers on every call and leave the session RNG untouched,
+    # even when the Gaussian-synthesis draw branch is taken.
+    eta <- tryCatch(.tulpa_eta_draws(x, synth_seed = 285603L),
+                    error = function(e) NULL)
     if (!is.null(eta)) {
       n_obs <- ncol(eta)
       S <- nrow(eta)

@@ -379,10 +379,11 @@
       stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses a ",
            "built-in weak fixed-effect prior.", call. = FALSE)
     }
-    if (!family %in% c("binomial", "poisson", "neg_binomial_2", "gaussian")) {
+    spde_fams <- BACKEND_REGISTRY$spde$families
+    if (!family %in% spde_fams) {
       stop(sprintf(
-        "SPDE supports family 'binomial', 'poisson', 'neg_binomial_2', or 'gaussian'; got '%s'.",
-        family), call. = FALSE)
+        "SPDE supports family %s; got '%s'.",
+        paste0("'", spde_fams, "'", collapse = ", "), family), call. = FALSE)
     }
     method <- match.arg(control$method %||% "ccd", c("ccd", "grid"))
     return(list(
@@ -518,17 +519,20 @@
              "richer RE structure, or call tulpa_gibbs() directly.",
              call. = FALSE)
       }
+      gibbs_fams <- BACKEND_REGISTRY$gibbs$families
       if (!is.null(spatial)) {
-        if (!family %in% c("binomial", "neg_binomial_2")) {
+        if (!family %in% gibbs_fams) {
           stop(sprintf(paste0(
-            "Spatial Gibbs supports family 'binomial' or 'neg_binomial_2'; got ",
+            "Spatial Gibbs supports family %s; got ",
             "'%s'. Use mode = 'laplace' for other families under a spatial field."),
-            family), call. = FALSE)
+            paste0("'", gibbs_fams, "'", collapse = ", "), family),
+            call. = FALSE)
         }
-      } else if (!family %in% c("binomial", "neg_binomial_2")) {
+      } else if (!family %in% gibbs_fams) {
         stop(sprintf(paste0(
-          "Gibbs (tulpa_gibbs) supports family 'binomial' or 'neg_binomial_2'; ",
-          "got '%s'. Use mode = 'laplace' or a logpost backend."), family),
+          "Gibbs (tulpa_gibbs) supports family %s; ",
+          "got '%s'. Use mode = 'laplace' or a logpost backend."),
+          paste0("'", gibbs_fams, "'", collapse = ", "), family),
           call. = FALSE)
       }
       if (!is.null(beta_prior$mean) && any(beta_prior$mean != 0)) {
@@ -572,10 +576,12 @@
              "mode = 'laplace' (RE-covariance integration), or call agq_fit() ",
              "directly.", call. = FALSE)
       }
-      if (!family %in% c("binomial", "poisson", "gaussian")) {
+      agq_fams <- BACKEND_REGISTRY$agq$families
+      if (!family %in% agq_fams) {
         stop(sprintf(paste0(
-          "AGQ supports family 'binomial', 'poisson', or 'gaussian'; got '%s'. ",
-          "Use mode = 'laplace' or a sampler for other families."), family),
+          "AGQ supports family %s; got '%s'. ",
+          "Use mode = 'laplace' or a sampler for other families."),
+          paste0("'", agq_fams, "'", collapse = ", "), family),
           call. = FALSE)
       }
       if (!is.null(beta_prior)) {
@@ -975,10 +981,7 @@ tulpa <- function(formula, data,
     return(fit)
   }
 
-  if (is.null(.FAMILY_OPS[[family]])) {
-    stop(sprintf("Unknown family '%s'. Supported: %s.",
-                 family, paste(family_names(), collapse = ", ")), call. = FALSE)
-  }
+  .family_or_stop(family)
   .validate_family_phi(family, phi)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   # Tweedie requires the power up front (and in (1, 2)); fail before fitting.
@@ -1259,12 +1262,10 @@ tulpa <- function(formula, data,
   if (sel$backend == "laplace" && has_slope) {
     re_cov_method <- match.arg(control$re_cov %||% "nested",
                                c("nested", "gibbs", "aghq"))
-    sel$backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
-    ti <- get_backend_tier(sel$backend)
-    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
-    sel$reason <- sprintf(
+    backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
+    sel <- .sel_redirect(sel, backend, sprintf(
       "random-slope term(s) present; RE covariance(s) integrated via %s (%d block(s))",
-      sel$backend, length(re_terms))
+      backend, length(re_terms)))
   }
 
   # SPDE carries its own nested-Laplace integration engine: fit_spde() rebuilds
@@ -1277,10 +1278,9 @@ tulpa <- function(formula, data,
   # mode = "laplace" stays on the fixed-hyperparameter tulpa_laplace path.
   if (sel$backend == "nested_laplace" &&
       identical(tolower(spatial_type %||% ""), "spde")) {
-    sel$backend <- "spde"
-    ti <- get_backend_tier("spde")
-    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
-    sel$reason <- "SPDE spatial field; nested-Laplace over (range, sigma) via fit_spde()"
+    sel <- .sel_redirect(
+      sel, "spde",
+      "SPDE spatial field; nested-Laplace over (range, sigma) via fit_spde()")
   }
 
   # A temporal field (rw1/rw2/ar1) integrates through the nested-Laplace temporal
@@ -1293,15 +1293,12 @@ tulpa <- function(formula, data,
   # directly (gcol33/tulpa#75), so it keeps its selection rather than being
   # redirected.
   if (has_temporal && BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
-    sel$backend <- "nested_laplace"
-    ti <- get_backend_tier("nested_laplace")
-    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
-    sel$reason <- if (has_spatial) {
+    sel <- .sel_redirect(sel, "nested_laplace", if (has_spatial) {
       sprintf("%s spatial field + temporal %s field; joint nested-Laplace integration",
               spatial_type, temporal_spec$type)
     } else {
       sprintf("temporal %s field; nested-Laplace integration", temporal_spec$type)
-    }
+    })
   }
 
   # Covariate smoothers are temporal-shaped blocks and integrate through the
@@ -1314,12 +1311,9 @@ tulpa <- function(formula, data,
            "use mode = 'auto', 'structured', or 'nested_laplace'.",
            call. = FALSE)
     }
-    sel$backend <- "nested_laplace"
-    ti <- get_backend_tier("nested_laplace")
-    sel$mode <- ti$mode; sel$tier <- ti$tier; sel$tier_name <- ti$name
-    sel$reason <- sprintf(
+    sel <- .sel_redirect(sel, "nested_laplace", sprintf(
       "covariate smoother%s s(...); nested-Laplace integration",
-      if (length(smooth_specs) > 1L) "s" else "")
+      if (length(smooth_specs) > 1L) "s" else ""))
   }
 
   assert_backend_reachable(sel$backend)

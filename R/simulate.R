@@ -53,19 +53,7 @@ tulpa_simulate <- function(formula, family, data,
                            theta = NULL, n_sims = 1L,
                            priors = NULL, seed = NULL, ...) {
 
-  if (!is.null(seed)) {
-    old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) {
-      get(".Random.seed", envir = .GlobalEnv)
-    } else NULL
-    set.seed(seed)
-    on.exit({
-      if (is.null(old_seed)) {
-        rm(".Random.seed", envir = .GlobalEnv)
-      } else {
-        assign(".Random.seed", old_seed, envir = .GlobalEnv)
-      }
-    }, add = TRUE)
-  }
+  .seed_scoped(seed)
 
   validate_family(family)
   n_sims <- as.integer(n_sims)

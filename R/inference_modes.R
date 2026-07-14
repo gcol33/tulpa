@@ -117,6 +117,9 @@ TIER_META <- list(
 #'     - `"nested"`    : a design-matrix bundle plus one or more latent prior
 #'                       blocks (`latent(tgmrf(...))`), integrated over the block
 #'                       hyperparameters by the nested-Laplace driver.
+#'     - `"spde"`      : a design bundle plus a self-contained SPDE spec
+#'                       (mesh + FEM matrices); fit_spde()'s own CCD / grid
+#'                       hyperparameter engine.
 #' * `fitter`   -- name of the R function implementing the backend, or `NULL`
 #'     when only a C++ kernel exists with no R entry point yet. Stored as a
 #'     *string* (not the function object) so the registry is independent of
@@ -159,7 +162,7 @@ BACKEND_REGISTRY <- list(
   gibbs = list(
     emits = "chain",
     tier = "exact", input = "design", fitter = "tulpa_gibbs",
-    families = c("binomial", "neg_binomial_2", "negative_binomial"),
+    families = c("binomial", "neg_binomial_2"),
     cabi = NULL,
     note = paste("Polya-Gamma Gibbs (binomial / negbin) via tulpa_gibbs();",
                  "base plus spatial (icar/bym2/rsr/gp/multiscale_gp) and temporal",
@@ -229,7 +232,8 @@ BACKEND_REGISTRY <- list(
   agq = list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "agq_fit",
-    families = NULL, cabi = NULL
+    families = c("binomial", "poisson", "gaussian"), cabi = NULL,
+    note = "Intercept-only adaptive Gauss-Hermite (the shared GLMM oracle)"
   ),
   nested_laplace = list(
     emits = "iid",
@@ -247,7 +251,7 @@ BACKEND_REGISTRY <- list(
   spde = list(
     emits = "iid",
     tier = "structured", input = "spde", fitter = "fit_spde",
-    families = c("binomial", "poisson", "neg_binomial_2"),
+    families = c("binomial", "poisson", "neg_binomial_2", "gaussian"),
     cabi = "cpp_nested_laplace_spde",
     note = paste("Continuous Matern SPDE field; nested-Laplace integration over",
                  "(range, sigma) via fit_spde(). Uses its own CCD / grid",
@@ -349,9 +353,22 @@ backend_supports_family <- function(backend, family) {
 
   fam_name <- family$name %||% ""
   fam_dist <- family$distribution %||% (family$numerator$distribution %||% "")
-  fam_name %in% supported || fam_dist %in% supported || fam_dist == "binomial"
+  fam_name %in% supported || fam_dist %in% supported
 }
 
+
+#' Redirect a backend selection: swap the backend and restamp mode / tier /
+#' tier name from the registry, recording the reason shown on the fit.
+#' @keywords internal
+.sel_redirect <- function(sel, backend, reason) {
+  sel$backend <- backend
+  ti <- get_backend_tier(backend)
+  sel$mode      <- ti$mode
+  sel$tier      <- ti$tier
+  sel$tier_name <- ti$name
+  sel$reason    <- reason
+  sel
+}
 
 #' Get tier for a backend
 #' @param backend Character string naming the backend
@@ -478,8 +495,11 @@ tulpa_dispatch <- function(mode,
 
 #' Attach the standard `tulpa_fit` contract to a fitter's result.
 #'
-#' Every exported front-door fitter routes its return value through this helper,
-#' so a directly-called fitter and a `tulpa()`-dispatched one yield the same
+#' The dispatch layer and the fitters that return generic-accessor-facing
+#' objects route their return value through this helper (some special-purpose
+#' fitters -- the logpost samplers, tulpa_ep, the categorical drivers -- still
+#' stamp their class by hand), so a directly-called fitter and a
+#' `tulpa()`-dispatched one yield the same
 #' enriched object: the `tulpa_fit` class (so the generic S3 methods --
 #' `coef` / `summary` / `vcov` / `confint` / `tidy` / `glance` / `ranef` --
 #' dispatch), the fixed-effect layout (`n_fixed` / `fixed_names` / `param_names`,
@@ -717,14 +737,13 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
-  # Default: Tier 1 (Exact). HMC is the most general kernel, but it is C-ABI
-  # only (model packages drive it through the C interface); from the R front
-  # door the reachable Tier-1 gradient sampler is MALA. Auto's contract is to
-  # never select a backend that cannot finish, so it defaults to MALA here
-  # rather than to an HMC backend that has no R fitter.
+  # Default: Tier 1 (Exact). Both MALA and NUTS (backend "hmc", via
+  # tulpa_sample_glmm) are reachable from the R front door; auto keeps MALA
+  # as the default gradient sampler for its lower per-iteration cost on the
+  # plain-GLM designs that reach this branch. mode = "exact" selects NUTS.
   return(list(
     mode = "exact", backend = "mala", tier = 1L, tier_name = "Exact",
-    reason = "default (gradient sampler; HMC kernel is model-package only)"
+    reason = "default (MALA gradient sampler; mode = 'exact' selects NUTS)"
   ))
 }
 

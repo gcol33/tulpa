@@ -1019,10 +1019,7 @@
         }
     }
 
-    has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-    old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-    on.exit(if (!is.null(old_seed))
-                assign(".Random.seed", old_seed, envir = .GlobalEnv))
+    .preserve_seed_in_frame()
 
     n_arm <- if (!is.null(arm_axes)) length(arm_axes) else 0L
 

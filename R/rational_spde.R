@@ -155,15 +155,10 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' @keywords internal
 .spde_mean_marginal_var <- function(Q, Pr, C0, n_probe = .SPDE_VARNORM_NPROBE) {
   n <- length(C0)
-  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-  set.seed(.SPDE_VARNORM_SEED)
-  Z <- matrix(stats::rnorm(n * n_probe), n, n_probe)
-  if (!is.null(old_seed)) {
-    assign(".Random.seed", old_seed, envir = .GlobalEnv)
-  } else {
-    rm(".Random.seed", envir = .GlobalEnv)
-  }
+  Z <- .with_preserved_seed({
+    set.seed(.SPDE_VARNORM_SEED)
+    matrix(stats::rnorm(n * n_probe), n, n_probe)
+  })
   Achol <- Matrix::Cholesky(Q, LDL = FALSE, perm = TRUE)
   Aprz  <- Matrix::crossprod(Pr, Z)            # a = Pr' z  (n x n_probe)
   V     <- Matrix::solve(Achol, Aprz)          # Q v = a

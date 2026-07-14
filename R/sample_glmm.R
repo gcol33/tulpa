@@ -65,10 +65,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               temporal_spec = NULL, sigma_re_scale = 2.5,
                               control = list()) {
   .check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
-  if (is.null(.FAMILY_OPS[[family]])) {
-    stop(sprintf("Unknown family '%s'. Supported: %s.",
-                 family, paste(family_names(), collapse = ", ")), call. = FALSE)
-  }
+  .family_or_stop(family)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   X <- as.matrix(X)
   N <- length(y)

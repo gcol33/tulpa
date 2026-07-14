@@ -897,16 +897,13 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # bit-for-bit unchanged whether or not the diagnostic is requested.
   pareto_k <- NA_real_; k_is_ess <- NA_real_
   if (isTRUE(diagnose_k) && k > 0L) {
-    has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-    old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-    kd <- tryCatch(
+    kd <- .with_preserved_seed(tryCatch(
       .nested_outer_pareto_k(
         log_target = function(th) inner_logmarg(.re_cov_theta_to_L_list(th, layout)) +
           log_prior_theta(th),
         theta_hat = theta_hat, L_scale = L_scale, n_samples = k_samples),
-      error = function(e) NULL)
+      error = function(e) NULL))
     if (!is.null(kd)) { pareto_k <- kd$pareto_k; k_is_ess <- kd$is_ess }
-    if (!is.null(old_seed)) assign(".Random.seed", old_seed, envir = .GlobalEnv)
   }
 
   .finalize_fit(list(

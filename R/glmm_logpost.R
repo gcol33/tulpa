@@ -58,10 +58,7 @@ build_glmm_logpost <- function(bundle, family, sigma_re = NULL,
                                n_trials = NULL, phi = 1.0,
                                beta_prior = list(mean = 0, sd = 2.5),
                                weights = NULL, phi2 = NULL) {
-  if (is.null(.FAMILY_OPS[[family]])) {
-    stop(sprintf("Unknown family '%s'. Supported: %s.",
-                 family, paste(family_names(), collapse = ", ")), call. = FALSE)
-  }
+  .family_or_stop(family)
 
   y       <- bundle$y
   X       <- bundle$X
