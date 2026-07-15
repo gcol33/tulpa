@@ -1,5 +1,66 @@
 # tulpa NEWS
 
+## 0.1.1 (2026-07-15)
+
+Third deep-audit pass: statistical, memory-safety, and backend-consistency
+fixes surfaced by a fan-out code audit.
+
+* FIX (statistical): RW1/RW2 single-block Laplace deleted the field's level --
+  the post-Newton centering discarded the field mean instead of folding it into
+  the intercept, so an intrinsic temporal fit reported an intercept of ~0.
+  `spec_inner_solve` now compensates process 0's intercept like the joint
+  driver; RW1/RW2 intercept recovery tests added.
+* FIX (statistical): the LKJ prior on correlated random slopes double-counted
+  the Cholesky -> correlation Jacobian (effective LKJ(2.5) not LKJ(2)); removed
+  the spurious term in `tulpa_priors_re.h` / `lkj_chol_helpers.h`. The test now
+  cross-checks the Stan Cholesky lpdf plus an independent
+  `det(R)^(eta-1) * |dR/draw|` pushforward.
+* FIX (statistical): the temporal-GP non-centered branch added a spurious
+  `z -> f` Jacobian (the NC target is `-0.5 z'z`); the spatiotemporal PC-prior
+  Jacobian had the wrong sign for the log-precision parameterization; the SPDE
+  range PC prior flipped its tail in the nested path and used the d=1 shape for a
+  2-D field in the NUTS path. All corrected to the d=2 Fuglstad et al. (2019)
+  form; the stale d=1 test reference is updated.
+* FIX (statistical): temporal AR(1) under NUTS was restricted to `rho` in (0,1);
+  it now maps to (-1,1) to match the documented Uniform(-1,1) prior and
+  `build_ar1_precision`.
+* FIX (statistical): the sampler ICAR/BYM2/ST rank normalizer counted a single
+  graph component; it now counts connected components (`S - k`) like the Laplace
+  path, via a shared `count_graph_components` helper (ABI 32 -> 33).
+* FIX (statistical): the single-point NNGP Laplace attached observation `i` to
+  field node `i`, mis-mapping and dropping observations when coordinates repeat
+  (`n_spatial < N`); it now uses the per-observation `obs_to_loc` map.
+* FIX (draws): BYM2 posterior draws constrained the unstructured `theta`
+  component to sum-to-zero (it has a proper N(0,1) prior and no centerer);
+  `tulpa_re_aghq()` reported `log_marginal` including the LKJ penalty; and a
+  nested-Laplace mixture node with a failed Cholesky became a zero-variance
+  point mass that deflated fixed-effect CIs. All corrected.
+* FIX (memory / concurrency): the nested-Laplace per-cell block cache could
+  collide worker threads onto one slot when `n_threads_outer` exceeded the
+  environment thread count (e.g. `OMP_NUM_THREADS=1` with `n_threads_outer > 1`),
+  corrupting the shared CHOLMOD factor; the outer width is now clamped. Also
+  fixed: an out-of-bounds write in the NNGP non-centered forward, a missing
+  exception barrier around a `tweedie` `Rcpp::stop` in a parallel region,
+  per-thread reduction buffers allocated inside a parallel region, and an
+  untrusted checkpoint record length driving a multi-GiB allocation.
+* FIX (joint driver): local-CCD refinement combined with `store_Q` left the
+  stored per-cell `Q` misaligned with the refined grid and crashed
+  `tulpa_posterior_draws`; local-CCD is now skipped when `store_Q` is set. The
+  `k_quality` grid-refinement verdict no longer over-claims on multi-block fits.
+* CHANGE (tiers): `sgld`, `sghmc`, and (unadjusted) `mclmc` are reclassified
+  from tier "exact" to "optimized" -- they carry discretization / minibatch
+  bias, so `mcmc_diagnostics()` no longer certifies them as exact and auto-mode
+  never selects them silently. `smc` stays exact.
+* FIX (single-source): `print.tulpa_spatial` was defined twice (the SPDE copy
+  shadowed the areal ICAR/CAR/BYM2 formatter); merged into one method. A dead
+  duplicate `.with_preserved_seed` was removed.
+* FIX (CRAN): `tulpaRatio` example blocks moved from `\donttest` to `\dontrun`;
+  `tools` declared in `Imports`; the `ggplot2` vignette chunks gated on
+  `requireNamespace()`.
+* FIX (unwired): the two-process negbin Polya-Gamma Gibbs kernel drew the
+  augmentation shape rounded to an integer; it now uses the exact real shape
+  (`rpg_real`), matching the single-process kernel.
+
 ## 0.1.0 (2026-07-14)
 
 CRAN-preparation release.
