@@ -69,3 +69,35 @@ test_that("binomial NNGP GP Gibbs recovers intercept, field, and sigma2", {
   expect_gt(mean(fit$sigma2_gp), 0.3)               # not railed
   expect_lt(mean(fit$sigma2_gp), 6)
 })
+
+test_that("binomial multiscale NNGP GP Gibbs recovers the total field", {
+  skip_on_cran()
+  set.seed(9)
+  N <- 80L; ntr <- 40L; b0 <- 0.2
+  coords <- cbind(runif(N), runif(N))
+  K <- exp(-as.matrix(dist(coords)) / 0.25)
+  f <- as.numeric(t(chol(K + 1e-8 * diag(N))) %*% rnorm(N)); f <- f - mean(f)
+  y <- rbinom(N, ntr, plogis(b0 + f)); X <- matrix(1, N, 1)
+  nl <- 8L; nr <- 12L
+  il <- compute_nngp_neighbors(coords, nl); ir <- compute_nngp_neighbors(coords, nr)
+
+  fit <- cpp_pg_binomial_gibbs_multiscale_gp(
+    y = as.integer(y), n = rep(ntr, N), X = X,
+    re_group = rep(0L, N), n_re_groups = 0L, coords = coords,
+    nn_idx_local = il$nn_idx, nn_dist_local = il$nn_dist,
+    nn_order_local = as.integer(il$nn_order - 1L), nn_local = nl,
+    nn_idx_regional = ir$nn_idx, nn_dist_regional = ir$nn_dist,
+    nn_order_regional = as.integer(ir$nn_order - 1L), nn_regional = nr,
+    n_spatial = N, sigma2_local_init = 0.5, phi_local_init = 0.15,
+    sigma2_regional_init = 0.5, phi_regional_init = 0.6, cov_type = 0L,
+    n_iter = 2000L, n_warmup = 1000L, thin = 1L, verbose = FALSE)
+
+  # The local + regional split is only weakly identified, but their sum (the
+  # total field) recovers and the intercept no longer diverges. Total variance
+  # (sigma2_local + sigma2_regional) is near the truth (1.0).
+  ftot <- colMeans(fit$w_local) + colMeans(fit$w_regional)
+  expect_lt(abs(mean(fit$beta[, 1]) - b0), 0.5)
+  expect_gt(stats::cor(ftot, f), 0.8)
+  expect_gt(mean(fit$sigma2_local) + mean(fit$sigma2_regional), 0.4)
+  expect_lt(mean(fit$sigma2_local) + mean(fit$sigma2_regional), 3)
+})

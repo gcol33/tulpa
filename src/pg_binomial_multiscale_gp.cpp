@@ -20,76 +20,9 @@ using namespace Rcpp;
 // Multiscale GP Gibbs sampler (local + regional components)
 // -----------------------------------------------------------------------------
 
-// One NNGP scale's Gibbs sweep, shared by the local and regional components
-// (principle #5 -- the two scales differ only in their neighbour structure and
-// hyperprior bounds). Updates the field `w` by sequential NNGP conditionals
-// (tulpa::pg_nngp_conditional -- the same kriging solve the single-scale sampler
-// uses, whose weights are bounded, unlike the previous raw covariance-weighted
-// sum that could diverge), then (sigma2, phi) by their NNGP-correct full
-// conditionals: sigma2 ~ InvGamma on the standardized quadratic form
-// sum_i (w_i - m_i)^2 / v0_i (m_i, v0_i evaluated at sigma2 = 1, exploiting that
-// the kriging mean is scale-invariant and cond_var scales linearly), and phi by
-// a log-random-walk MH on the proper NNGP log-density. `sum_omega` / `sum_resid`
-// are the Polya-Gamma likelihood aggregates for this scale (built by the caller
-// from the offset that holds the OTHER scale). Indexing follows
-// pg_nngp_conditional: `idx` is the ordered position, `nn_order[idx]` the
-// original location id.
-static inline void update_nngp_scale(
-    std::vector<double>& w, double& sigma2, double& phi, int cov_type,
-    const Rcpp::NumericMatrix& coords,
-    const Rcpp::IntegerMatrix& nn_idx, const Rcpp::NumericMatrix& nn_dist,
-    const Rcpp::IntegerVector& nn_order, int nn, int n_spatial,
-    const std::vector<double>& sum_omega, const std::vector<double>& sum_resid,
-    double prior_sigma_U, double prior_phi_lower, double prior_phi_upper
-) {
-  // 1. Field: sequential NNGP Gibbs update.
-  for (int idx = 0; idx < n_spatial; idx++) {
-    int obs_i = nn_order[idx];
-    double cm, cv;
-    tulpa::pg_nngp_conditional(idx, w, sigma2, phi, cov_type,
-                               coords, nn_idx, nn_dist, nn_order, nn, cm, cv);
-    double tau_prior = 1.0 / cv;
-    double tau_post  = tau_prior + sum_omega[obs_i];
-    double mean_post = (tau_prior * cm + sum_resid[obs_i]) / tau_post;
-    w[obs_i] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
-  }
-
-  // 2. sigma2 | w, phi ~ InvGamma(n/2 + 1, Q0/2 + prior_sigma_U), where the
-  //    phi-only quadratic form Q0 = sum_i (w_i - m_i)^2 / v0_i uses conditionals
-  //    at sigma2 = 1.
-  double Q0 = 0.0;
-  for (int idx = 0; idx < n_spatial; idx++) {
-    int obs_i = nn_order[idx];
-    double m0, v0;
-    tulpa::pg_nngp_conditional(idx, w, 1.0, phi, cov_type,
-                               coords, nn_idx, nn_dist, nn_order, nn, m0, v0);
-    double r = w[obs_i] - m0;
-    Q0 += r * r / v0;
-  }
-  double shape = 0.5 * n_spatial + 1.0;
-  double rate  = 0.5 * Q0 + prior_sigma_U;
-  sigma2 = 1.0 / R::rgamma(shape, 1.0 / rate);
-
-  // 3. phi: log-random-walk MH on the proper NNGP log-density.
-  double phi_prop = phi * tulpa_linalg::safe_exp(R::rnorm(0, 0.1));
-  if (std::isfinite(phi_prop) &&
-      phi_prop >= prior_phi_lower && phi_prop <= prior_phi_upper) {
-    double ll_curr = 0.0, ll_prop = 0.0;
-    for (int idx = 0; idx < n_spatial; idx++) {
-      int obs_i = nn_order[idx];
-      double cm_c, cv_c, cm_p, cv_p;
-      tulpa::pg_nngp_conditional(idx, w, sigma2, phi, cov_type,
-                                 coords, nn_idx, nn_dist, nn_order, nn, cm_c, cv_c);
-      tulpa::pg_nngp_conditional(idx, w, sigma2, phi_prop, cov_type,
-                                 coords, nn_idx, nn_dist, nn_order, nn, cm_p, cv_p);
-      double rc = w[obs_i] - cm_c, rp = w[obs_i] - cm_p;
-      ll_curr += -0.5 * std::log(cv_c) - 0.5 * rc * rc / cv_c;
-      ll_prop += -0.5 * std::log(cv_p) - 0.5 * rp * rp / cv_p;
-    }
-    double log_ratio = ll_prop - ll_curr + std::log(phi_prop / phi);
-    if (std::log(R::runif(0, 1)) < log_ratio) phi = phi_prop;
-  }
-}
+// update_nngp_scale (one NNGP scale's Gibbs sweep -- field, then the conjugate
+// sigma2 and the MH phi) is shared with the single-scale kernel and lives in
+// pg_shared.h (tulpa::update_nngp_scale); gcol33/tulpa#142 A2.
 
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
@@ -199,11 +132,20 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         sum_resid_local[i] += C.kappa[i] - C.omega[i] * C.offset[i];
       }
     }
-    update_nngp_scale(w_local, sigma2_local, phi_local, cov_type,
+    tulpa::update_nngp_scale(w_local, sigma2_local, phi_local, cov_type,
                       coords, nn_idx_local, nn_dist_local, nn_order_local,
                       nn_local, n_spatial, sum_omega_local, sum_resid_local,
                       prior_sigma_local_U, prior_phi_local_lower,
                       prior_phi_local_upper);
+    // Anchor the local field level into the intercept (both scales share the
+    // constant direction with the intercept; leaving it free lets them drift).
+    {
+      double m = 0.0;
+      for (int s = 0; s < n_spatial; s++) m += w_local[s];
+      m /= n_spatial;
+      for (int s = 0; s < n_spatial; s++) w_local[s] -= m;
+      C.beta[0] += m;
+    }
     for (int i = 0; i < N; i++) {
       if (i < n_spatial) local_contrib[i] = w_local[i];
     }
@@ -221,12 +163,19 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         sum_resid_regional[i] += C.kappa[i] - C.omega[i] * C.offset[i];
       }
     }
-    update_nngp_scale(w_regional, sigma2_regional, phi_regional, cov_type,
+    tulpa::update_nngp_scale(w_regional, sigma2_regional, phi_regional, cov_type,
                       coords, nn_idx_regional, nn_dist_regional,
                       nn_order_regional, nn_regional, n_spatial,
                       sum_omega_regional, sum_resid_regional,
                       prior_sigma_regional_U, prior_phi_regional_lower,
                       prior_phi_regional_upper);
+    {
+      double m = 0.0;
+      for (int s = 0; s < n_spatial; s++) m += w_regional[s];
+      m /= n_spatial;
+      for (int s = 0; s < n_spatial; s++) w_regional[s] -= m;
+      C.beta[0] += m;
+    }
     for (int i = 0; i < N; i++) {
       if (i < n_spatial) regional_contrib[i] = w_regional[i];
     }
