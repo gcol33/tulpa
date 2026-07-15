@@ -5,6 +5,18 @@
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
 
+* FIX: two out-of-bounds accesses in the analytic temporal gradient kernels --
+  `rw1_grad_w` read one past the end of `w` at a single time point, and
+  `rw2_grad_w` wrote one past the end of its second-difference buffer for fewer
+  than two. The sigma2-parameterized twins guarded both cases; the precision
+  twins, written separately, did not. The RW2 and AR1 gradients are now thin
+  wrappers over the canonical precision kernels (as RW1 already was), and the
+  AR1 `rho` gradient floors only the dividing `1 - rho^2` so it stays finite at
+  the stationarity boundary without biasing the stationary precision. New
+  `test-temporal-grad-equiv.R` pins the wrappers against the canonical kernels
+  and both against numerical derivatives of their priors -- neither header was
+  reached from a compiled translation unit, so nothing would previously have
+  caught a wrong wrapper (gcol33/tulpa#142 A7).
 * FIX: `control$hessian` was parsed and `match.arg`-validated on the
   multi-block joint nested-Laplace path and then never passed to the kernel, so
   `"psd"` and `"fisher"` silently ran as LM / observed curvature. The

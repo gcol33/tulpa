@@ -111,26 +111,11 @@ inline double rw1_cyclic_grad_log_sigma2(const double* phi, int n, double sigma2
 // RW2 gradients
 // =============================================================================
 
+// Same gradient as tulpa_tvc::rw2_grad_w with tau = 1/sigma2; this wrapper
+// exists so multiscale temporal callers can pass sigma2 directly, matching
+// rw1_grad_phi above.
 inline void rw2_grad_phi(const double* phi, int n, double sigma2, double* grad_phi) {
-    if (n < 3) {
-        for (int t = 0; t < n; t++) grad_phi[t] = 0.0;
-        return;
-    }
-
-    double inv_sigma2 = 1.0 / (sigma2 + 1e-10);
-
-    // RW2: log p = -0.5/sigma2 * sum_{t=2}^{n-1} (phi[t] - 2*phi[t-1] + phi[t-2])^2
-    // d/d(phi[k]) sums contributions from d[k] (coef=1), d[k+1] (coef=-2), d[k+2] (coef=1)
-    // Compute in-place using a sliding window of 3 second-differences
-    std::memset(grad_phi, 0, n * sizeof(double));
-
-    for (int t = 2; t < n; t++) {
-        double d_t = phi[t] - 2.0 * phi[t-1] + phi[t-2];
-        double neg_inv_d = -inv_sigma2 * d_t;
-        grad_phi[t]   += neg_inv_d;          // coef = 1
-        grad_phi[t-1] += neg_inv_d * (-2.0); // coef = -2
-        grad_phi[t-2] += neg_inv_d;          // coef = 1  (note: -inv*d * 1 = same sign reversal)
-    }
+    tulpa_tvc::rw2_grad_w(phi, n, 1.0 / (sigma2 + 1e-10), grad_phi);
 }
 
 inline double rw2_grad_log_sigma2(const double* phi, int n, double sigma2) {
@@ -148,30 +133,10 @@ inline double rw2_grad_log_sigma2(const double* phi, int n, double sigma2) {
 // AR1 gradients
 // =============================================================================
 
+// Same gradient as tulpa_tvc::ar1_grad_w with tau = 1/sigma2; wrapper so
+// multiscale temporal callers can pass sigma2 directly.
 inline void ar1_grad_phi(const double* phi, int n, double sigma2, double rho, double* grad_phi) {
-    double inv_sigma2 = 1.0 / (sigma2 + 1e-10);
-    double one_m_rho2 = 1.0 - rho * rho + 1e-10;
-    double inv_var_stationary = one_m_rho2 * inv_sigma2;
-
-    if (n == 1) {
-        grad_phi[0] = -inv_var_stationary * phi[0];
-        return;
-    }
-
-    // First time point
-    double resid_1 = phi[1] - rho * phi[0];
-    grad_phi[0] = -inv_var_stationary * phi[0] + inv_sigma2 * rho * resid_1;
-
-    // Interior time points
-    for (int t = 1; t < n - 1; t++) {
-        double resid_t = phi[t] - rho * phi[t-1];
-        double resid_tp1 = phi[t+1] - rho * phi[t];
-        grad_phi[t] = -inv_sigma2 * resid_t + inv_sigma2 * rho * resid_tp1;
-    }
-
-    // Last time point
-    double resid_T = phi[n-1] - rho * phi[n-2];
-    grad_phi[n-1] = -inv_sigma2 * resid_T;
+    tulpa_tvc::ar1_grad_w(phi, n, 1.0 / (sigma2 + 1e-10), rho, grad_phi);
 }
 
 inline double ar1_grad_log_sigma2(const double* phi, int n, double sigma2, double rho) {
@@ -194,34 +159,9 @@ inline double ar1_grad_log_sigma2(const double* phi, int n, double sigma2, doubl
     return grad;
 }
 
+// Same gradient as tulpa_tvc::ar1_grad_logit_rho with tau = 1/sigma2.
 inline double ar1_grad_logit_rho(const double* phi, int n, double sigma2, double rho) {
-    double inv_sigma2 = 1.0 / (sigma2 + 1e-10);
-    double one_m_rho2 = 1.0 - rho * rho + 1e-10;
-
-    // AR1 log-lik = -0.5*log(sigma2/(1-rho^2)) - 0.5*(1-rho^2)/sigma2 * phi[0]^2
-    //             + sum[-0.5*log(sigma2) - 0.5/sigma2 * (phi[t] - rho*phi[t-1])^2]
-    //
-    // d/d(rho) from normalization -0.5*log(sigma2/(1-rho^2)):
-    //   = -rho / (1 - rho^2)
-    double grad_rho = -rho / one_m_rho2;
-
-    // d/d(rho) from stationary quadratic -0.5*(1-rho^2)/sigma2 * phi[0]^2:
-    //   = rho * phi[0]^2 / sigma2
-    grad_rho += rho * inv_sigma2 * phi[0] * phi[0];
-
-    // d/d(rho) from AR terms: sum 1/sigma2 * (phi[t] - rho*phi[t-1]) * phi[t-1]
-    for (int t = 1; t < n; t++) {
-        double resid = phi[t] - rho * phi[t-1];
-        grad_rho += inv_sigma2 * resid * phi[t-1];
-    }
-
-    // Transform to logit_rho
-    // u = (rho + 1) / 2, logit_rho = logit(u)
-    // d(rho)/d(logit_rho) = 2 * u * (1-u)
-    double u = (rho + 1.0) / 2.0;
-    double d_rho_d_logit = 2.0 * u * (1.0 - u);
-
-    return grad_rho * d_rho_d_logit;
+    return tulpa_tvc::ar1_grad_logit_rho(phi, n, 1.0 / (sigma2 + 1e-10), rho);
 }
 
 // =============================================================================

@@ -1816,6 +1816,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_temporal_grad_equiv
+Rcpp::List cpp_test_temporal_grad_equiv(Rcpp::NumericVector w, double sigma2, double rho);
+RcppExport SEXP _tulpa_cpp_test_temporal_grad_equiv(SEXP wSEXP, SEXP sigma2SEXP, SEXP rhoSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type rho(rhoSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_temporal_grad_equiv(w, sigma2, rho));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_register_test_separable_bernoulli_coupling
 void cpp_register_test_separable_bernoulli_coupling();
 RcppExport SEXP _tulpa_cpp_register_test_separable_bernoulli_coupling() {
@@ -3216,6 +3229,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_spde_precomputed", (DL_FUNC) &_tulpa_cpp_laplace_fit_spde_precomputed, 21},
     {"_tulpa_cpp_nested_laplace_spde", (DL_FUNC) &_tulpa_cpp_nested_laplace_spde, 29},
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
+    {"_tulpa_cpp_test_temporal_grad_equiv", (DL_FUNC) &_tulpa_cpp_test_temporal_grad_equiv, 3},
     {"_tulpa_cpp_register_test_separable_bernoulli_coupling", (DL_FUNC) &_tulpa_cpp_register_test_separable_bernoulli_coupling, 0},
     {"_tulpa_cpp_register_test_bivariate_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_bivariate_gaussian_coupling, 3},
     {"_tulpa_cpp_test_leapfrog", (DL_FUNC) &_tulpa_cpp_test_leapfrog, 4},

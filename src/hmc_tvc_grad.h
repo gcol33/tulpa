@@ -38,6 +38,13 @@ struct TVCGradientWS {
 //           = -tau * (w[t] - w[t+1]) for t=0
 //           = -tau * (w[t] - w[t-1]) for t=T-1
 inline void rw1_grad_w(const double* w, int n_times, double tau, double* grad_w) {
+    // A single level has no increment, so the RW1 prior is flat in it. Without
+    // this guard the t == 0 branch below wins over t == n_times - 1 and reads
+    // w[1] past the end.
+    if (n_times < 2) {
+        for (int t = 0; t < n_times; t++) grad_w[t] = 0.0;
+        return;
+    }
     for (int t = 0; t < n_times; t++) {
         if (t == 0) {
             grad_w[t] = -tau * (w[0] - w[1]);
@@ -72,6 +79,13 @@ inline double rw1_grad_log_tau(const double* w, int n_times, double tau) {
 // So d/d(w[k]) = 2 * (d[k+2] * 1 - 2 * d[k+1] + d[k] * 1) if k >= 2
 inline void rw2_grad_w(const double* w, int n_times, double tau, double* grad_w,
                        double* d_buf = nullptr) {
+    // Fewer than three levels admit no second difference, so the RW2 prior is
+    // flat. Guarding here also keeps the d[0] / d[1] initialisation below from
+    // writing past a buffer sized n_times.
+    if (n_times < 3) {
+        for (int k = 0; k < n_times; k++) grad_w[k] = 0.0;
+        return;
+    }
     // Compute second differences (use pre-allocated buffer if provided)
     std::vector<double> d_local;
     double* d;
@@ -175,7 +189,11 @@ inline double ar1_grad_logit_rho(const double* w, int n_times, double tau, doubl
     // d log p / d rho from stationary distribution:
     // log p(w[0]) = 0.5*log(tau*(1-rho^2)) - 0.5*tau*(1-rho^2)*w[0]^2 + const
     // d/d(rho) = -rho/(1-rho^2) + tau*rho*w[0]^2
-    double grad_rho = tau * rho * w[0] * w[0] - rho / one_m_rho2;
+    // Floor the denominator only: 1-rho^2 -> 0 as rho -> +-1 makes this term
+    // diverge. The multiplicative uses above stay exact, so the floor does not
+    // bias the stationary precision.
+    double one_m_rho2_den = std::max(one_m_rho2, 1e-10);
+    double grad_rho = tau * rho * w[0] * w[0] - rho / one_m_rho2_den;
 
     // d log p / d rho from AR terms
     for (int t = 1; t < n_times; t++) {
