@@ -386,15 +386,7 @@ temporal_gp <- function(time_var,
     }
   }
 
-  # Warning for non-shared temporal effects
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared temporal GP effects (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether temporal effects should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("temporal GP effects")
 
   structure(
     list(

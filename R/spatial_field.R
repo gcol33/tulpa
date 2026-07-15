@@ -100,19 +100,12 @@ spatial <- function(graph, formula, proper = FALSE, shared = NULL,
     }
   }
 
-  if (!missing(graph) && inherits(graph, "tulpa_adjacency")) {
-    graph <- graph$adjacency
-  }
-  if (missing(graph) || (!is.matrix(graph) && !inherits(graph, "Matrix"))) {
+  if (missing(graph)) {
     stop("`graph` must be an adjacency matrix (the spatial graph).",
          call. = FALSE)
   }
-  if (nrow(graph) != ncol(graph)) {
-    stop("`graph` must be square.", call. = FALSE)
-  }
-  if (!isSymmetric(unname(as.matrix(graph)))) {
-    stop("`graph` must be symmetric.", call. = FALSE)
-  }
+  graph <- .validate_adjacency_arg(graph, "graph")
+  if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
   if (missing(formula) || !inherits(formula, "formula")) {
     stop("`formula` must be a one-sided formula with a grouping bar, e.g. ",

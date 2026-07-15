@@ -95,15 +95,7 @@ spatial_svc <- function(coords,
     }
   }
 
-  # Warning for non-shared SVCs
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared SVCs (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether spatially-varying effects should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("SVCs", "spatially-varying effects")
 
   structure(
     list(

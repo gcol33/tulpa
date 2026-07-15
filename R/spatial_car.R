@@ -28,22 +28,7 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
   level <- match.arg(level)
   parameterization <- match.arg(parameterization)
 
-  # Validate adjacency matrix
-  if (inherits(adjacency, "tulpa_adjacency")) {
-    adjacency <- adjacency$adjacency
-  }
-  if (!is.matrix(adjacency) && !inherits(adjacency, "Matrix")) {
-    stop("`adjacency` must be a matrix", call. = FALSE)
-  }
-
-  if (nrow(adjacency) != ncol(adjacency)) {
-    stop("`adjacency` must be square", call. = FALSE)
-  }
-
-  # Check symmetry
-  if (!isSymmetric(unname(as.matrix(adjacency)))) {
-    stop("`adjacency` must be symmetric", call. = FALSE)
-  }
+  adjacency <- .validate_adjacency_arg(adjacency, "adjacency")
 
   # Check for group_var if level = "group"
   if (level == "group" && is.null(group_var)) {
@@ -72,15 +57,7 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
     rho_bounds <- compute_car_rho_bounds(adjacency)
   }
 
-  # Warning for non-shared spatial effects
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared spatial effects (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether spatial effects should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
   structure(
     list(
@@ -348,21 +325,7 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
   level <- match.arg(level)
   parameterization <- match.arg(parameterization)
 
-  # Validate adjacency matrix
-  if (inherits(adjacency, "tulpa_adjacency")) {
-    adjacency <- adjacency$adjacency
-  }
-  if (!is.matrix(adjacency) && !inherits(adjacency, "Matrix")) {
-    stop("`adjacency` must be a matrix", call. = FALSE)
-  }
-
-  if (nrow(adjacency) != ncol(adjacency)) {
-    stop("`adjacency` must be square", call. = FALSE)
-  }
-
-  if (!isSymmetric(unname(as.matrix(adjacency)))) {
-    stop("`adjacency` must be symmetric", call. = FALSE)
-  }
+  adjacency <- .validate_adjacency_arg(adjacency, "adjacency")
 
   if (level == "group" && is.null(group_var)) {
     stop("`group_var` is required when level = 'group'", call. = FALSE)
@@ -384,15 +347,7 @@ spatial_bym2 <- function(adjacency, level = c("group", "obs"),
     scale_factor <- compute_bym2_scale(adjacency)
   }
 
-  # Warning for non-shared spatial effects
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared spatial effects (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether spatial effects should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
   structure(
     list(

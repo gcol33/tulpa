@@ -35,39 +35,14 @@
 temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
                          shared = NULL) {
 
-  # Accept either formula (~ time) or character string ("time")
-  if (inherits(time_var, "formula")) {
-    time_var <- all.vars(time_var)
-    if (length(time_var) != 1) {
-      stop("`time_var` formula must specify exactly 1 variable", call. = FALSE)
-    }
-  } else if (!is.character(time_var) || length(time_var) != 1) {
+  time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
+  if (is.null(time_var)) {
     stop("`time_var` must be a formula (~ time) or single character string",
          call. = FALSE)
   }
+  group_var <- .coerce_var_arg(group_var, "group_var")
 
-  # Accept either formula or character for group_var
-  if (!is.null(group_var)) {
-    if (inherits(group_var, "formula")) {
-      group_var <- all.vars(group_var)
-      if (length(group_var) != 1) {
-        stop("`group_var` formula must specify exactly 1 variable", call. = FALSE)
-      }
-    } else if (!is.character(group_var) || length(group_var) != 1) {
-      stop("`group_var` must be a formula or single character string",
-           call. = FALSE)
-    }
-  }
-
- # Warning for non-shared temporal effects
- if (isFALSE(shared)) {
-   warning(
-     "Non-shared temporal effects (shared = FALSE) means effects are not shared across processes.\n",
-     "Consider whether temporal effects should be shared between\n",
-     "processes if shared confounding structure is expected.",
-     call. = FALSE
-   )
- }
+  if (isFALSE(shared)) .warn_nonshared("temporal effects")
 
  structure(
    list(
@@ -134,39 +109,14 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
 temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
                          shared = NULL) {
 
-  # Accept either formula (~ time) or character string ("time")
-  if (inherits(time_var, "formula")) {
-    time_var <- all.vars(time_var)
-    if (length(time_var) != 1) {
-      stop("`time_var` formula must specify exactly 1 variable", call. = FALSE)
-    }
-  } else if (!is.character(time_var) || length(time_var) != 1) {
+  time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
+  if (is.null(time_var)) {
     stop("`time_var` must be a formula (~ time) or single character string",
          call. = FALSE)
   }
+  group_var <- .coerce_var_arg(group_var, "group_var")
 
-  # Accept either formula or character for group_var
-  if (!is.null(group_var)) {
-    if (inherits(group_var, "formula")) {
-      group_var <- all.vars(group_var)
-      if (length(group_var) != 1) {
-        stop("`group_var` formula must specify exactly 1 variable", call. = FALSE)
-      }
-    } else if (!is.character(group_var) || length(group_var) != 1) {
-      stop("`group_var` must be a formula or single character string",
-           call. = FALSE)
-    }
-  }
-
-  # Warning for non-shared temporal effects
- if (isFALSE(shared)) {
-   warning(
-     "Non-shared temporal effects (shared = FALSE) means effects are not shared across processes.\n",
-     "Consider whether temporal effects should be shared between\n",
-     "processes if shared confounding structure is expected.",
-     call. = FALSE
-   )
- }
+  if (isFALSE(shared)) .warn_nonshared("temporal effects")
 
  structure(
    list(
@@ -239,29 +189,13 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
                          rho_prior = NULL) {
 
-  # Accept either formula (~ time) or character string ("time")
-  if (inherits(time_var, "formula")) {
-    time_var <- all.vars(time_var)
-    if (length(time_var) != 1) {
-      stop("`time_var` formula must specify exactly 1 variable", call. = FALSE)
-    }
-  } else if (!is.character(time_var) || length(time_var) != 1) {
+  time_var <- .coerce_var_arg(time_var, "time_var", "~ time")
+  if (is.null(time_var)) {
     stop("`time_var` must be a formula (~ time) or single character string",
          call. = FALSE)
   }
-
-  # Accept either formula or character for group_var
-  if (!is.null(group_var)) {
-    if (inherits(group_var, "formula")) {
-      group_var <- all.vars(group_var)
-      if (length(group_var) != 1) {
-        stop("`group_var` formula must specify exactly 1 variable", call. = FALSE)
-      }
-    } else if (!is.character(group_var) || length(group_var) != 1) {
-      stop("`group_var` must be a formula or single character string",
-           call. = FALSE)
-    }
-  }
+  group_var <- .coerce_var_arg(group_var, "group_var")
+  if (isFALSE(shared)) .warn_nonshared("temporal effects")
 
   structure(
    list(

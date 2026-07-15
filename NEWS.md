@@ -5,6 +5,30 @@
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
 
+* FIX: `control$hessian` was parsed and `match.arg`-validated on the
+  multi-block joint nested-Laplace path and then never passed to the kernel, so
+  `"psd"` and `"fisher"` silently ran as LM / observed curvature. The
+  single-block path forwarded it correctly, so the setting worked or not
+  depending only on how many blocks the prior had. The seven `.cpp_joint_multi`
+  call sites now go through one fit-scoped factory
+  (`.joint_multi_call_factory`) that supplies the invariant arguments once, so
+  a per-fit setting cannot be honoured at one solve and dropped at another; each
+  site drops from ~19 arguments to a handful (gcol33/tulpa#142 A6).
+* FIX: `temporal_ar1()` and `spatial()` silently accepted `shared = FALSE`
+  while every sibling constructor warned about unshared confounding structure.
+  The warning was copied into 12 constructors, two of which had also drifted to
+  a shorter one-sentence form; all now call one `.warn_nonshared()` helper.
+* FIX: `spatial_car()`, `spatial_bym2()` and `spatial()` validated a raw
+  adjacency matrix only for squareness and exact symmetry -- strictly weaker
+  than the validator `adjacency()` / `check_adjacency()` already use. A graph
+  with self-loops, non-binary weights or isolated nodes was reported by
+  `check_adjacency()` and accepted silently by the constructors, which then
+  built an improper field. They now share `.validate_adjacency_arg()`, so the
+  same graph reports the same way whichever door it enters. This also stops the
+  constructors densifying a sparse graph to test symmetry (O(n^2) memory) and
+  accepts float-rounded symmetric matrices that `check_adjacency()` accepts.
+  New `test-field-constructor-shared.R` pins the cross-constructor consistency
+  (gcol33/tulpa#142 A8).
 * FIX: the Laplace binomial log-likelihood dropped the `lchoose(n, y)`
   normalizer, so it was not a true log-density: a binomial `logLik` / WAIC /
   cross-backend comparison was off by `sum(lchoose(n_i, y_i))` whenever

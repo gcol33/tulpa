@@ -105,15 +105,7 @@ if (solver == "gpu" && !cpp_gpu_available()) {
   }
   cg_maxiter <- as.integer(cg_maxiter)
 
-  # Warning for non-shared spatial effects
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared spatial effects (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether spatial effects should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
   structure(
     list(
@@ -298,15 +290,7 @@ spatial_hsgp <- function(coords,
     stop("`c` (boundary factor) must be >= 1", call. = FALSE)
   }
 
-  # Warning for non-shared spatial effects
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared spatial effects (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether spatial effects should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
   structure(
     list(
@@ -539,13 +523,7 @@ spatial_multiscale <- function(coords,
     stop("`nn_regional` must be a positive integer", call. = FALSE)
   }
 
-  # Warning for non-shared
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared multi-scale spatial effects (shared = FALSE) means effects are not shared across processes.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("multi-scale spatial effects")
 
   structure(
     list(

@@ -57,15 +57,7 @@ temporal_tvc <- function(time_var,
          call. = FALSE)
   }
 
-  # Warning for non-shared TVCs
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared TVCs (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether time-varying effects should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("TVCs", "time-varying effects")
 
   structure(
     list(

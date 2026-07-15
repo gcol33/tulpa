@@ -199,15 +199,7 @@ spatiotemporal <- function(spatial,
     }
   }
 
-  # Warning for non-shared effects
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared spatiotemporal effects (shared = FALSE) means effects are not shared across processes.\n",
-      "Consider whether space-time interactions should be shared between\n",
-      "processes if shared confounding structure is expected.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("spatiotemporal effects")
 
   structure(
     list(
@@ -889,13 +881,7 @@ spatiotemporal_gp <- function(coords,
   }
   nn <- as.integer(nn)
 
-  # Warning for non-shared
-  if (isFALSE(shared)) {
-    warning(
-      "Non-shared spatiotemporal GP effects (shared = FALSE) means effects are not shared across processes.",
-      call. = FALSE
-    )
-  }
+  if (isFALSE(shared)) .warn_nonshared("spatiotemporal GP effects")
 
   structure(
     list(

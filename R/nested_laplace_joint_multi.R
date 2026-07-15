@@ -721,11 +721,69 @@
 # carries negligible importance weight, so the cap bounds its cost without
 # moving the k-hat (converged draws keep their exact log-marginal; only the
 # negligible-weight tail is truncated).
-.joint_attach_pareto_k_multi <- function(res, arms, cp, blocks_spec,
+# Fit-scoped factory for the `.cpp_joint_multi` calls on this path (the CCD /
+# adaptive mode-find, the node solves, the authoritative solve, the local-CCD
+# refinement and the k-diagnostic re-solve). Everything invariant across those
+# solves is captured once, so a per-fit setting cannot be honoured at one call
+# site and silently dropped at another -- `control$hessian` was: it was parsed
+# and match.arg-validated, then never passed on this path at all, so "psd" /
+# "fisher" ran as LM/observed without a warning.
+#
+# The knobs a caller genuinely varies stay parameters. `max_iter` / `tol` /
+# `inner_refresh` take fit-scoped defaults but are overridable, because the
+# k-diagnostic deliberately re-solves with its own cheaper knobs.
+.joint_multi_call_factory <- function(arms, cp, blocks_spec, axis_offsets, B,
+                                      n_threads, force_sparse, cell_coupling,
+                                      hessian_pd_mode, step_curvature_mode,
+                                      max_iter, tol, inner_refresh) {
+    force(arms); force(cp); force(blocks_spec); force(axis_offsets); force(B)
+    force(n_threads); force(force_sparse); force(cell_coupling)
+    force(hessian_pd_mode); force(step_curvature_mode)
+    force(max_iter); force(tol); force(inner_refresh)
+
+    function(theta_mat,
+             x_init           = NULL,
+             store_Q          = FALSE,
+             phi_grid_per_arm = NULL,
+             n_threads_outer  = 1L,
+             tile_ids         = NULL,
+             tile_pilot_cells = NULL,
+             prune_tol        = 0.0,
+             x_init_per_cell  = NULL,
+             max_iter_        = NULL,
+             tol_             = NULL,
+             inner_refresh_   = NULL) {
+        .cpp_joint_multi(
+            arms_list           = arms,
+            copy_arms           = as.integer(cp$copy_arms_zero),
+            copy_blocks         = as.integer(cp$copy_blocks_zero),
+            blocks_spec         = blocks_spec,
+            theta_grid          = .joint_multi_cpp_grid(theta_mat, axis_offsets,
+                                                        B, cp),
+            axis_offsets        = axis_offsets,
+            max_iter            = as.integer(max_iter_ %||% max_iter),
+            tol                 = as.numeric(tol_ %||% tol),
+            n_threads           = as.integer(n_threads),
+            x_init_nullable     = x_init,
+            store_Q             = isTRUE(store_Q),
+            phi_grid_per_arm    = phi_grid_per_arm,
+            n_threads_outer     = as.integer(n_threads_outer),
+            tile_ids            = tile_ids,
+            tile_pilot_cells    = tile_pilot_cells,
+            prune_tol           = as.numeric(prune_tol),
+            force_sparse        = isTRUE(force_sparse),
+            cell_coupling_name  = as.character(cell_coupling),
+            hessian_pd_mode     = as.integer(hessian_pd_mode),
+            step_curvature_mode = as.integer(step_curvature_mode),
+            inner_refresh       = as.integer(inner_refresh_ %||% inner_refresh),
+            x_init_per_cell     = x_init_per_cell)
+    }
+}
+
+.joint_attach_pareto_k_multi <- function(res, call_kernel,
                                          axis_offsets, B, arm_names,
                                          fn_sigma, fn_alpha, fn_phi = NULL,
-                                         max_iter, tol, n_threads,
-                                         force_sparse, cell_coupling,
+                                         max_iter, tol,
                                          diagnose_k = TRUE, diagnose_draws = 500L,
                                          n_threads_outer = 1L, proposal = NULL,
                                          pareto_k_by_arm = FALSE,
@@ -749,30 +807,15 @@
     # warm start (`x_init_per_cell`, an [S x n_x] matrix or NULL) starts each
     # draw from its nearest grid mode in BOTH serial and parallel (gcol33/tulpa#118).
     solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
-        cpp_grid <- .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp)
-        phi_ppa  <- .joint_multi_phi_per_arm(theta_mat, arm_names)
-        r <- .cpp_joint_multi(
-            arms_list    = arms,
-            copy_arms    = as.integer(cp$copy_arms_zero),
-            copy_blocks  = as.integer(cp$copy_blocks_zero),
-            blocks_spec  = blocks_spec,
-            theta_grid   = cpp_grid,
-            axis_offsets = axis_offsets,
-            max_iter     = as.integer(k_max_iter),
-            tol          = max(knobs$tol, as.numeric(tol)),
-            n_threads    = as.integer(n_threads),
-            x_init_nullable = warm_mode,
-            store_Q      = FALSE,
-            phi_grid_per_arm = phi_ppa,
-            n_threads_outer = n_to,
-            tile_ids        = NULL,
-            tile_pilot_cells = NULL,
-            prune_tol       = 0.0,
-            force_sparse    = isTRUE(force_sparse),
-            cell_coupling_name = as.character(cell_coupling),
-            inner_refresh   = knobs$refresh,
-            x_init_per_cell = x_init_per_cell
-        )
+        r <- call_kernel(
+            theta_mat,
+            x_init           = warm_mode,
+            phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
+            n_threads_outer  = n_to,
+            x_init_per_cell  = x_init_per_cell,
+            max_iter_        = k_max_iter,
+            tol_             = max(knobs$tol, as.numeric(tol)),
+            inner_refresh_   = knobs$refresh)
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                             fn_sigma, fn_alpha, fn_phi)
     }
@@ -808,6 +851,8 @@
                                   prune_tol = 0.0,
                                   force_sparse = FALSE,
                                   cell_coupling = "separable",
+                                  hessian_pd_mode = 0L,
+                                  step_curvature_mode = 0L,
                                   diagnose_k = TRUE,
                                   diagnose_draws = 500L,
                                   pareto_k_by_arm = FALSE,
@@ -861,6 +906,17 @@
         .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
     })
 
+    # Every `.cpp_joint_multi` call on this path goes through this closure, so
+    # the fit-scoped settings are supplied once instead of at each of the seven
+    # solve sites.
+    call_kernel <- .joint_multi_call_factory(
+        arms = arms, cp = cp, blocks_spec = blocks_spec,
+        axis_offsets = axis_offsets, B = B, n_threads = n_threads,
+        force_sparse = force_sparse, cell_coupling = cell_coupling,
+        hessian_pd_mode = hessian_pd_mode,
+        step_curvature_mode = step_curvature_mode,
+        max_iter = max_iter, tol = tol, inner_refresh = inner_refresh)
+
     # Per-latent-axis fine grid values (sorted unique), shared by the CCD and the
     # adaptive-lattice integrators to place / locate the outer nodes.
     block_of_axis      <- rep(seq_len(B), times = axis_counts)
@@ -913,27 +969,10 @@
         # every CCD probe so they neither pollute the fit's checkpoint file nor
         # tick its progress bar.
         ccd_warm <- x_init
-        with_quiet_opts <- function(expr) {
-            op <- options(
-                tulpa.nl_checkpoint = list(path = "", resume = TRUE),
-                tulpa.nl_progress   = .nl_progress_args(list(progress = FALSE)))
-            on.exit(options(op), add = TRUE)
-            force(expr)
-        }
         centre_row <- matrix(vapply(axis_values, stats::median, numeric(1)),
                              nrow = 1L, dimnames = list(NULL, axis_names))
-        init_fit <- tryCatch(with_quiet_opts(.cpp_joint_multi(
-            arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
-            copy_blocks = as.integer(cp$copy_blocks_zero),
-            blocks_spec = blocks_spec,
-            theta_grid = .joint_multi_cpp_grid(centre_row, axis_offsets, B, cp),
-            axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
-            tol = as.numeric(tol), n_threads = as.integer(n_threads),
-            x_init_nullable = x_init, store_Q = FALSE, phi_grid_per_arm = NULL,
-            n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL,
-            prune_tol = 0.0, force_sparse = isTRUE(force_sparse),
-            cell_coupling_name = as.character(cell_coupling),
-            inner_refresh = as.integer(inner_refresh))),
+        init_fit <- tryCatch(.joint_with_quiet_opts(call_kernel(
+            centre_row, x_init = x_init)),
             error = function(e) NULL)
         if (!is.null(init_fit) && is.matrix(init_fit$modes) &&
             nrow(init_fit$modes) >= 1L &&
@@ -943,20 +982,9 @@
         }
 
         eval_logpost <- function(theta_mat) {
-            r <- with_quiet_opts(.cpp_joint_multi(
-                arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
-                copy_blocks = as.integer(cp$copy_blocks_zero),
-                blocks_spec = blocks_spec,
-                theta_grid = .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp),
-                axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
-                tol = as.numeric(tol), n_threads = as.integer(n_threads),
-                x_init_nullable = ccd_warm, store_Q = FALSE,
-                phi_grid_per_arm = NULL,
-                n_threads_outer = as.integer(n_threads_outer),
-                tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0,
-                force_sparse = isTRUE(force_sparse),
-                cell_coupling_name = as.character(cell_coupling),
-                inner_refresh = as.integer(inner_refresh)))
+            r <- .joint_with_quiet_opts(call_kernel(
+                theta_mat, x_init = ccd_warm,
+                n_threads_outer = n_threads_outer))
             lp <- .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                                       fn_sigma, fn_alpha, fn_phi)
             # Carry the inner latent modes so the CCD mode-find can advance the
@@ -1024,18 +1052,9 @@
         centre_theta <- matrix(
             vapply(ad_axis_values, stats::median, numeric(1)), nrow = 1L,
             dimnames = list(NULL, ad_col_names))
-        init_ad <- tryCatch(.joint_with_quiet_opts(.cpp_joint_multi(
-            arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
-            copy_blocks = as.integer(cp$copy_blocks_zero), blocks_spec = blocks_spec,
-            theta_grid = .joint_multi_cpp_grid(centre_theta, axis_offsets, B, cp),
-            axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
-            tol = as.numeric(tol), n_threads = as.integer(n_threads),
-            x_init_nullable = x_init, store_Q = FALSE,
-            phi_grid_per_arm = .joint_multi_phi_per_arm(centre_theta, arm_names),
-            n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL,
-            prune_tol = 0.0, force_sparse = isTRUE(force_sparse),
-            cell_coupling_name = as.character(cell_coupling),
-            inner_refresh = as.integer(inner_refresh))),
+        init_ad <- tryCatch(.joint_with_quiet_opts(call_kernel(
+            centre_theta, x_init = x_init,
+            phi_grid_per_arm = .joint_multi_phi_per_arm(centre_theta, arm_names))),
             error = function(e) NULL)
         if (!is.null(init_ad) && is.matrix(init_ad$modes) &&
             nrow(init_ad$modes) >= 1L && is.finite(init_ad$log_marginal[1L])) {
@@ -1048,20 +1067,10 @@
         # quiet, since these solves only rank cells; the authoritative solve (with
         # store_Q) is the main kernel call over the selected grid.
         eval_theta_ad <- function(theta_mat) {
-            r <- .joint_with_quiet_opts(.cpp_joint_multi(
-                arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
-                copy_blocks = as.integer(cp$copy_blocks_zero),
-                blocks_spec = blocks_spec,
-                theta_grid = .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp),
-                axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
-                tol = as.numeric(tol), n_threads = as.integer(n_threads),
-                x_init_nullable = ad_warm, store_Q = FALSE,
+            r <- .joint_with_quiet_opts(call_kernel(
+                theta_mat, x_init = ad_warm,
                 phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
-                n_threads_outer = as.integer(n_threads_outer),
-                tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0,
-                force_sparse = isTRUE(force_sparse),
-                cell_coupling_name = as.character(cell_coupling),
-                inner_refresh = as.integer(inner_refresh)))
+                n_threads_outer = n_threads_outer))
             list(log_marginal = .joint_multi_add_hp(
                      r$log_marginal, theta_mat, axis_offsets, B,
                      fn_sigma, fn_alpha, fn_phi),
@@ -1178,32 +1187,16 @@
         }
     }
 
-    # Build the C++-facing theta_grid (sigma_occ / sigma_pos materialised on
-    # each copy block from the user-facing (sigma, alpha) outer grid).
-    cpp_grid <- .joint_multi_cpp_grid(joint_grid, axis_offsets, B, cp)
-
     call_kernel_with_tol <- function(tol_prune) {
-        .cpp_joint_multi(
-            arms_list    = arms,
-            copy_arms    = as.integer(cp$copy_arms_zero),
-            copy_blocks  = as.integer(cp$copy_blocks_zero),
-            blocks_spec  = blocks_spec,
-            theta_grid   = cpp_grid,
-            axis_offsets = axis_offsets,
-            max_iter     = as.integer(max_iter),
-            tol          = as.numeric(tol),
-            n_threads    = as.integer(n_threads),
-            x_init_nullable = x_init,
-            store_Q      = isTRUE(store_Q),
+        call_kernel(
+            joint_grid,
+            x_init           = x_init,
+            store_Q          = store_Q,
             phi_grid_per_arm = phi_grid_per_arm_list,
-            n_threads_outer = as.integer(n_threads_outer),
-            tile_ids        = tile_partition$tile_ids,
+            n_threads_outer  = n_threads_outer,
+            tile_ids         = tile_partition$tile_ids,
             tile_pilot_cells = tile_partition$tile_pilot_cells,
-            prune_tol       = as.numeric(tol_prune),
-            force_sparse    = isTRUE(force_sparse),
-            cell_coupling_name = as.character(cell_coupling),
-            inner_refresh   = as.integer(inner_refresh)
-        )
+            prune_tol        = tol_prune)
     }
     tm$mark("setup")
     res <- call_kernel_with_tol(prune_tol)
@@ -1250,29 +1243,12 @@
         lc_f0        <- as.numeric(lc$f0 %||% 1.1)
         tags_lc <- .joint_ccd_axis_tags(axis_names, axis_offsets, prepared)
         if (!is.null(tags_lc)) {
-            with_quiet_opts <- function(expr) {
-                op <- options(
-                    tulpa.nl_checkpoint = list(path = "", resume = TRUE),
-                    tulpa.nl_progress   = .nl_progress_args(list(progress = FALSE)))
-                on.exit(options(op), add = TRUE)
-                force(expr)
-            }
             eval_nodes <- function(theta_mat, warm) {
                 xi <- if (!is.null(warm) && length(warm) && all(is.finite(warm)))
                     as.numeric(warm) else x_init
-                r <- with_quiet_opts(.cpp_joint_multi(
-                    arms_list = arms, copy_arms = as.integer(cp$copy_arms_zero),
-                    copy_blocks = as.integer(cp$copy_blocks_zero),
-                    blocks_spec = blocks_spec,
-                    theta_grid = .joint_multi_cpp_grid(theta_mat, axis_offsets, B, cp),
-                    axis_offsets = axis_offsets, max_iter = as.integer(max_iter),
-                    tol = as.numeric(tol), n_threads = as.integer(n_threads),
-                    x_init_nullable = xi, store_Q = FALSE, phi_grid_per_arm = NULL,
-                    n_threads_outer = as.integer(n_threads_outer),
-                    tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0,
-                    force_sparse = isTRUE(force_sparse),
-                    cell_coupling_name = as.character(cell_coupling),
-                    inner_refresh = as.integer(inner_refresh)))
+                r <- .joint_with_quiet_opts(call_kernel(
+                    theta_mat, x_init = xi,
+                    n_threads_outer = n_threads_outer))
                 list(log_marginal = .joint_multi_add_hp(
                          r$log_marginal, theta_mat, axis_offsets, B,
                          fn_sigma, fn_alpha, fn_phi),
@@ -1340,11 +1316,10 @@
     # where it follows this fit's own thread grant). gcol33/tulpa#117.
     k_to <- pareto_k_threads %||%
         .tulpa_pareto_k_threads(n_threads_outer, n_threads, diagnose_draws, NULL)
-    res <- .joint_attach_pareto_k_multi(res, arms, cp, blocks_spec,
+    res <- .joint_attach_pareto_k_multi(res, call_kernel,
                                         axis_offsets, B, arm_names,
                                         fn_sigma, fn_alpha, fn_phi,
-                                        max_iter, tol, n_threads,
-                                        force_sparse, cell_coupling,
+                                        max_iter, tol,
                                         diagnose_k = diagnose_k,
                                         diagnose_draws = diagnose_draws,
                                         n_threads_outer = k_to,
