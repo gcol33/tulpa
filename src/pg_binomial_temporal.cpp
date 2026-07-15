@@ -216,19 +216,48 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       double tau_short_val = 1.0 / (sigma_short * sigma_short);
 
       if (short_type == 1) {  // AR1
+        const double omr2 = 1.0 + rho_short * rho_short;
         for (int t = 0; t < n_short; t++) {
+          // Full conditional uses BOTH neighbours: interior t has prior
+          // precision tau*(1+rho^2), mean rho*(x_{t-1}+x_{t+1})/(1+rho^2); the
+          // endpoints keep the single available neighbour with precision tau.
+          // (Conditioning on the past only, as before, gives the wrong AR1
+          // stationary law.)
           double tau_prior, mean_prior;
-          if (t == 0) {
-            tau_prior = tau_short_val * (1.0 - rho_short * rho_short);
-            mean_prior = 0.0;
-          } else {
-            tau_prior = tau_short_val;
+          bool has_prev = (t > 0), has_next = (t < n_short - 1);
+          if (has_prev && has_next) {
+            tau_prior  = tau_short_val * omr2;
+            mean_prior = rho_short * (short_term[t - 1] + short_term[t + 1]) / omr2;
+          } else if (has_next) {          // first
+            tau_prior  = tau_short_val;
+            mean_prior = rho_short * short_term[t + 1];
+          } else {                        // last
+            tau_prior  = tau_short_val;
             mean_prior = rho_short * short_term[t - 1];
           }
-
           double tau_post = tau_prior + sum_omega_sh[t];
           double mean_post = (tau_prior * mean_prior + sum_resid_sh[t]) / tau_post;
           short_term[t] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
+        }
+
+        // Sample rho_short (previously fixed at rho_short_init and reported as a
+        // posterior). Reflected-normal RW MH with a Uniform(-1,1) prior; the AR1
+        // log-density in rho is 0.5*log(1-rho^2) - 0.5*tau*ss(rho).
+        auto ar1_ss = [&](double r) {
+          double s = short_term[0] * short_term[0] * (1.0 - r * r);
+          for (int t = 1; t < n_short; t++) {
+            double d = short_term[t] - r * short_term[t - 1];
+            s += d * d;
+          }
+          return s;
+        };
+        double rho_prop = rho_short + R::rnorm(0, 0.08);
+        if (rho_prop > -0.999 && rho_prop < 0.999) {
+          double lp_c = 0.5 * std::log(1.0 - rho_short * rho_short)
+                        - 0.5 * tau_short_val * ar1_ss(rho_short);
+          double lp_p = 0.5 * std::log(1.0 - rho_prop * rho_prop)
+                        - 0.5 * tau_short_val * ar1_ss(rho_prop);
+          if (std::log(R::runif(0, 1)) < lp_p - lp_c) rho_short = rho_prop;
         }
       } else {  // IID
         for (int t = 0; t < n_short; t++) {

@@ -101,3 +101,26 @@ test_that("binomial multiscale NNGP GP Gibbs recovers the total field", {
   expect_gt(mean(fit$sigma2_local) + mean(fit$sigma2_regional), 0.4)
   expect_lt(mean(fit$sigma2_local) + mean(fit$sigma2_regional), 3)
 })
+
+test_that("binomial temporal AR1 Gibbs recovers the field and samples rho", {
+  skip_on_cran()
+  set.seed(4)
+  Tt <- 40L; reps <- 25L; ntr <- 20L; b0 <- 0.1; rho_true <- 0.7
+  f <- as.numeric(arima.sim(list(ar = rho_true), Tt, sd = 0.5)); f <- f - mean(f)
+  tm <- rep(seq_len(Tt), each = reps)
+  y <- rbinom(length(tm), ntr, plogis(b0 + f[tm]))
+  X <- matrix(1, length(tm), 1)
+
+  fit <- cpp_pg_binomial_gibbs_temporal(
+    y = as.integer(y), n = rep(ntr, length(tm)), X = X,
+    re_group = rep(0L, length(tm)), n_re_groups = 0L,
+    time_idx = as.integer(tm), n_times = Tt,
+    seasonal_period = 0L, trend_type = 0L, short_type = 1L, rho_short_init = 0.5,
+    n_iter = 3000L, n_warmup = 1500L, thin = 1L, verbose = FALSE)
+
+  # Field recovers, and rho_short is now sampled (was fixed at its init and
+  # reported as a posterior) via the correct both-neighbour AR1 conditional.
+  expect_gt(stats::cor(colMeans(fit$short_term), f), 0.9)
+  expect_gt(stats::sd(fit$rho_short), 0.01)          # rho is sampled, not stuck
+  expect_lt(abs(mean(fit$rho_short) - rho_true), 0.25)
+})
