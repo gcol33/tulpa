@@ -1233,8 +1233,18 @@
     # partition-of-unity design weights so the total integration weight is
     # conserved (no double-count).
     local_ccd_info <- NULL
-    if (!is.null(local_ccd) && !use_ccd && !use_adaptive && !has_phi &&
-        .joint_local_ccd_engage(d_axes)) {
+    # Local-CCD refinement changes the outer grid but not the stored per-cell Q
+    # (nor the tile partition / phi tensor), so combining it with store_Q would
+    # leave a Q that no longer aligns with the refined grid and crash
+    # tulpa_posterior_draws. Keeping Q valid for draws takes precedence: skip
+    # the refinement when store_Q is on.
+    if (!is.null(local_ccd) && isTRUE(store_Q) && !use_ccd && !use_adaptive &&
+        !has_phi && .joint_local_ccd_engage(d_axes) && isTRUE(verbose)) {
+        message("tulpa joint: local-CCD refinement skipped (store_Q = TRUE); ",
+                "keeping the per-cell Q aligned with the grid for posterior draws.")
+    }
+    if (!is.null(local_ccd) && !isTRUE(store_Q) && !use_ccd && !use_adaptive &&
+        !has_phi && .joint_local_ccd_engage(d_axes)) {
         lc <- if (is.list(local_ccd)) local_ccd else list()
         lc_max_cells <- as.integer(lc$max_cells %||% 8L)
         lc_f0        <- as.numeric(lc$f0 %||% 1.1)

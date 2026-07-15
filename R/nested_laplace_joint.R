@@ -644,14 +644,23 @@ tulpa_nested_laplace_joint <- function(responses,
                                                  cell_coupling, ctrl))
             res$k_quality_rounds <- round
             if (!isTRUE(res$k_quality_reached) && is.null(res[[refined_field]])) {
-                # The refiner found nothing to act on, so further rounds cannot
-                # move the k: the deficiency the chosen rung addresses is absent.
+                # The refinement produced no info object, so further rounds add
+                # nothing. For the CCD rung this means no peaked interior cell
+                # was found. For the grid rung it means the grid was not extended
+                # this round -- either no boundary mass beyond the current width,
+                # or (on a multi-block fit) the boolean adaptive_grid rung does
+                # not engage the multi-block flood integrator, which is selected
+                # by control$integration = "grid_adaptive". So the message states
+                # what happened without asserting the bad k is definitely not a
+                # grid deficiency.
                 res$k_quality_reason <- if (is_ccd_refine) paste0(
                     "local CCD found no peaked interior cell to refine (needs a ",
                     ">= 4-axis multi-block tensor grid); the bad k is not a ",
                     "coarse-grid resolution deficiency") else paste0(
-                    "grid refinement found no boundary mass to extend; ",
-                    "the bad k is not a grid-width deficiency")
+                    "grid refinement did not extend the outer grid this round ",
+                    "(no boundary mass beyond the current width, or -- on a ",
+                    "multi-block fit -- set control$integration = \"grid_adaptive\" ",
+                    "to engage adaptive refinement)")
                 break
             }
         }
