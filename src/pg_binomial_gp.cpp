@@ -101,53 +101,35 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
       }
     }
 
-    // Update each GP effect in NNGP order
-    for (int idx = 0; idx < n_spatial; idx++) {
-      int obs_i = nn_order[idx];
+    // Field + (sigma2, phi) via the shared NNGP-correct scale update: the field
+    // by sequential NNGP conditionals, sigma2 by the conjugate InvGamma on the
+    // standardized quadratic form, phi by an MH on the proper NNGP log-density.
+    // The previous inline updates left sigma2 railing (w treated as iid, no NNGP
+    // structure and no normalizer) and phi doing a data-free random walk (its MH
+    // ratio carried no likelihood or prior). prior_sigma_gp_alpha is no longer
+    // used (the conjugate InvGamma uses prior_sigma_gp_U as its rate offset).
+    tulpa::update_nngp_scale(
+        w, sigma2_gp, phi_gp, cov_type, coords, nn_idx, nn_dist, nn_order,
+        nn, n_spatial, sum_omega_gp, sum_resid_gp,
+        prior_sigma_gp_U, prior_phi_lower, prior_phi_upper);
 
-      double cond_mean, cond_var;
-      tulpa::pg_nngp_conditional(idx, w, sigma2_gp, phi_gp, cov_type,
-                                 coords, nn_idx, nn_dist, nn_order, nn,
-                                 cond_mean, cond_var);
-
-      double tau_prior = 1.0 / cond_var;
-      double tau_lik = sum_omega_gp[obs_i];
-      double tau_post = tau_prior + tau_lik;
-      double mean_post = (tau_prior * cond_mean + sum_resid_gp[obs_i]) / tau_post;
-
-      w[obs_i] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
+    // Anchor the field level: the overall GP mean and the intercept are
+    // confounded (both shift eta by a constant), and under the NNGP sequential
+    // update that level is only weakly identified, so the pair drifts. Center
+    // the field and absorb the removed mean into the intercept -- eta is
+    // unchanged and the field/intercept no longer diverge.
+    {
+      double w_mean = 0.0;
+      for (int s = 0; s < n_spatial; s++) w_mean += w[s];
+      w_mean /= n_spatial;
+      for (int s = 0; s < n_spatial; s++) w[s] -= w_mean;
+      C.beta[0] += w_mean;
     }
 
     // Update GP contributions
     for (int i = 0; i < N; i++) {
       if (i < n_spatial) {
         gp_contrib[i] = w[i];
-      }
-    }
-
-    // 6. Update GP hyperparameters via MH
-    double sigma2_prop = tulpa_linalg::safe_exp(std::log(sigma2_gp) + R::rnorm(0, 0.1));
-    if (!std::isfinite(sigma2_prop) || sigma2_prop <= 0) sigma2_prop = sigma2_gp;
-    double log_prior_curr = -(-std::log(prior_sigma_gp_alpha) / prior_sigma_gp_U) * std::sqrt(sigma2_gp);
-    double log_prior_prop = -(-std::log(prior_sigma_gp_alpha) / prior_sigma_gp_U) * std::sqrt(sigma2_prop);
-
-    double log_lik_diff = 0.0;
-    for (int i = 0; i < n_spatial; i++) {
-      log_lik_diff += -0.5 * w[nn_order[i]] * w[nn_order[i]] / sigma2_prop;
-      log_lik_diff -= -0.5 * w[nn_order[i]] * w[nn_order[i]] / sigma2_gp;
-    }
-
-    double log_alpha = log_lik_diff + log_prior_prop - log_prior_curr +
-                       std::log(sigma2_prop) - std::log(sigma2_gp);
-    if (std::log(R::runif(0, 1)) < log_alpha) {
-      sigma2_gp = sigma2_prop;
-    }
-
-    double phi_prop = tulpa_linalg::safe_exp(std::log(phi_gp) + R::rnorm(0, 0.1));
-    if (std::isfinite(phi_prop) && phi_prop >= prior_phi_lower && phi_prop <= prior_phi_upper) {
-      double log_alpha_phi = std::log(phi_prop) - std::log(phi_gp);
-      if (std::log(R::runif(0, 1)) < log_alpha_phi) {
-        phi_gp = phi_prop;
       }
     }
 
