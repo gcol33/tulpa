@@ -22,6 +22,17 @@ anchors (see the last bullet).
   proper on `(0, inf)` and needs no bounding box -- the same shape the SPDE
   field has always used for `log_kappa`.
 
+* FIX: every NNGP fit whose locations carry replicates returned
+  `H_beta = NULL`, so all fixed-effect standard errors were lost -- degraded to
+  a warning rather than an error, and covered by a test that guarded its own
+  assertions behind `if (!is.null(fit$H_beta))`, which passes precisely when
+  the builder fails. The obs -> unit design read the map from `spatial_idx`,
+  the field an *areal* spec carries; a GP spec calls it `obs_to_loc`. Absent,
+  the map defaulted to `seq_len(n_obs)`, whose column index runs past
+  `n_spatial` as soon as one location holds more than one observation. The
+  helper now takes the map and the unit count from its caller, and rejects a
+  map that is missing, short, or out of range instead of defaulting.
+
 * FIX (statistical): `spatialRange()` reported the reciprocal of the range. It
   computed the effective range as `3 / phi`, commented as a decay parameter,
   but every kernel this engine ships is `exp(-d / phi)` (`cov_exponential`,
