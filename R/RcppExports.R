@@ -41,6 +41,18 @@ cpp_crt_mean <- function(y, r) {
     .Call(`_tulpa_cpp_crt_mean`, y, r)
 }
 
+cpp_family_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_terms`, y, n_trials, eta, family, phi, phi2)
+}
+
+cpp_glmm_elt_terms <- function(family, eta, y, n_trials, phi) {
+    .Call(`_tulpa_cpp_glmm_elt_terms`, family, eta, y, n_trials, phi)
+}
+
+cpp_test_laplace_gaussian <- function(y, eta, phi) {
+    .Call(`_tulpa_cpp_test_laplace_gaussian`, y, eta, phi)
+}
+
 cpp_gpu_available <- function() {
     .Call(`_tulpa_cpp_gpu_available`)
 }

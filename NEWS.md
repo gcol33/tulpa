@@ -5,6 +5,24 @@
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
 
+* FIX: the Laplace binomial log-likelihood dropped the `lchoose(n, y)`
+  normalizer, so it was not a true log-density: a binomial `logLik` / WAIC /
+  cross-backend comparison was off by `sum(lchoose(n_i, y_i))` whenever
+  `n > 1`, while the autodiff and GLMM-oracle paths (and `dbinom()`) kept it.
+  The term is eta-independent, so no mode, gradient or normalized grid weight
+  moves; only the reported absolute value changes. Bernoulli data (`n = 1`) is
+  unaffected.
+* New `test-family-cross-path.R` evaluates every per-family (loglik, grad,
+  curvature) kernel maintained in parallel -- the Laplace/Newton dispatch, the
+  compiled GLMM oracle, and the explicit triplets -- at a shared `(y, eta, phi)`
+  and pins them against each other and against R's own densities. It guards the
+  0.0.73 bug directly: `phi` is the residual SD in the Laplace kernels and the
+  residual VARIANCE in the GLMM oracle, bridged only by convention in R, so the
+  test asserts `glmm_elt(phi = s^2) == log_lik_for_family(phi = s)` and checks
+  that passing the wrong scale is actually detectable. Adds the three probes
+  that made this constructible (`cpp_family_terms`, `cpp_glmm_elt_terms`,
+  `cpp_test_laplace_gaussian` -- the gaussian triplet carrying the phi
+  convention previously had no callable surface) (gcol33/tulpa#142 A9).
 * FIX (statistical): the PC prior on the TVC log-precision carried an excess
   `+2*log_tau`, tilting the prior by `tau^2` toward large precision (improper as
   `tau -> Inf`) and biasing time-varying-coefficient SDs low -- coefficients were

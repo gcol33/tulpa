@@ -32,7 +32,12 @@ double log_lik_binomial(int y, int n, double eta) {
   } else {
     log_p = y * eta - n * std::log(1.0 + std::exp(eta));
   }
-  return log_p;
+  // lchoose is eta-independent, so it never moves the mode, the gradient, or a
+  // normalized grid weight. It is kept so this is a true log-density, matching
+  // dbinom(), the autodiff path and the GLMM oracle -- otherwise a binomial
+  // logLik / WAIC / cross-backend comparison is off by sum(lchoose(n_i, y_i))
+  // whenever n > 1. Evaluated once per fit, not inside the Newton loop.
+  return log_p + R::lchoose((double) n, (double) y);
 }
 
 double grad_log_lik_binomial(int y, int n, double eta) {

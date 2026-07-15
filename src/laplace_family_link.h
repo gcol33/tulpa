@@ -174,7 +174,10 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
     }
     if (family == "binomial") {
         double p = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
-        return (int)y * std::log(p) + (n_trials - (int)y) * std::log(1.0 - p);
+        // lchoose keeps this a true log-density, matching the poisson arm below
+        // (which keeps its lgamma(y+1)), dbinom(), and the other kernels.
+        return (int)y * std::log(p) + (n_trials - (int)y) * std::log(1.0 - p)
+               + R::lchoose((double) n_trials, y);
     }
     if (family == "poisson") {
         double safe_mu = std::max(mu, 1e-15);
