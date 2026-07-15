@@ -49,6 +49,23 @@ test_that("every PC-prior scale equals the base density plus a numerical Jacobia
   }
 })
 
+# Integration range per sampled coordinate. The linear coordinates run to +Inf,
+# where integrate()'s tail transformation handles the decay. The log coordinates
+# are bounded, because THIS HARNESS -- not the density -- breaks out there: it
+# maps x to sigma in R via exp(), which overflows to Inf past x ~ 709 and hands
+# the C++ an infinite sigma, whose log-scale Jacobian is then +Inf. The compiled
+# density is fine at any finite x (safe_exp() clamps at +-700, so the upper tail
+# is driven to zero and stays integrable). +-50 spans sigma from 2e-22 to 5e21,
+# which is the whole mass at this rate and far more than a posterior occupies.
+pc_range_of <- list(
+  sigma      = c(0, Inf),
+  log_sigma  = c(-50, 50),
+  sigma2     = c(0, Inf),
+  log_sigma2 = c(-50, 50),
+  tau        = c(0, Inf),
+  log_tau    = c(-50, 50)
+)
+
 test_that("each PC-prior scale integrates to one (a proper density)", {
   # A wrong Jacobian (the tvc/hsgp bugs) breaks normalization: the tvc form was
   # improper as tau -> Inf. Integrating on each coordinate catches that.
@@ -61,8 +78,8 @@ test_that("each PC-prior scale integrates to one (a proper density)", {
         exp(unname(cpp_pc_prior_scales(sigma, U, alpha)[[scale]]))
       }, numeric(1))
     }
-    lo <- if (grepl("^log", scale)) -Inf else 0
-    total <- stats::integrate(dens, lo, Inf, subdivisions = 500L,
+    rng <- pc_range_of[[scale]]
+    total <- stats::integrate(dens, rng[1L], rng[2L], subdivisions = 500L,
                               rel.tol = 1e-8)$value
     expect_equal(total, 1, tolerance = 1e-5, info = paste("scale:", scale))
   }

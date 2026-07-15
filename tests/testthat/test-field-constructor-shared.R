@@ -13,6 +13,21 @@ chain_W <- function(n) {
   W
 }
 
+# spatial_car() / spatial_bym2() default to level = "group", which requires
+# group_var; spatial() carries its grouping in the formula instead. The three
+# are compared at the same grouping so the comparison is about the shared
+# validation, not the signature.
+car  <- function(W, ...) spatial_car(W, group_var = "g", ...)
+bym2 <- function(W, ...) spatial_bym2(W, group_var = "g", ...)
+fld  <- function(W, ...) spatial(W, ~ 1 | g, ...)
+
+# A row of unit cells: rook adjacency on 1-D centroids is chain_W(n). Built
+# through the documented door, since adjacency() constructs a graph from
+# geometry and has no method for a bare matrix.
+chain_adjacency <- function(n) {
+  adjacency(data.frame(x = seq_len(n), y = 0), type = "rook")
+}
+
 test_that("every temporal constructor warns on shared = FALSE", {
   # temporal_ar1() silently accepted shared = FALSE while rw1/rw2 warned.
   for (f in list(temporal_rw1, temporal_rw2, temporal_ar1)) {
@@ -26,10 +41,10 @@ test_that("every temporal constructor warns on shared = FALSE", {
 
 test_that("every spatial constructor warns on shared = FALSE", {
   W <- chain_W(5)
-  expect_warning(spatial_car(W, shared = FALSE), "Non-shared spatial effects")
-  expect_warning(spatial_bym2(W, shared = FALSE), "Non-shared spatial effects")
+  expect_warning(car(W, shared = FALSE), "Non-shared spatial effects")
+  expect_warning(bym2(W, shared = FALSE), "Non-shared spatial effects")
   # spatial() silently accepted shared = FALSE.
-  expect_warning(spatial(W, ~ 1 | g, shared = FALSE), "Non-shared spatial effects")
+  expect_warning(fld(W, shared = FALSE), "Non-shared spatial effects")
 })
 
 test_that("every temporal constructor coerces formula and string alike", {
@@ -43,11 +58,7 @@ test_that("every temporal constructor coerces formula and string alike", {
 })
 
 test_that("the spatial constructors reject the same bad graphs", {
-  ctors <- list(
-    car  = function(W) spatial_car(W),
-    bym2 = function(W) spatial_bym2(W),
-    fld  = function(W) spatial(W, ~ 1 | g)
-  )
+  ctors <- list(car = car, bym2 = bym2, fld = fld)
   not_square <- matrix(0, 3, 4)
   asym <- chain_W(4); asym[1, 2] <- 0   # break symmetry on one side
 
@@ -62,11 +73,7 @@ test_that("the spatial constructors surface the same structural issues as check_
   # These were accepted silently: only check_adjacency() reported them, so a
   # raw matrix handed straight to a constructor built an improper field with
   # no warning.
-  ctors <- list(
-    car  = function(W) spatial_car(W),
-    bym2 = function(W) spatial_bym2(W),
-    fld  = function(W) spatial(W, ~ 1 | g)
-  )
+  ctors <- list(car = car, bym2 = bym2, fld = fld)
 
   isolated <- chain_W(5); isolated[4, 5] <- 0; isolated[5, 4] <- 0
   selfloop <- chain_W(5); diag(selfloop) <- 1
@@ -80,18 +87,25 @@ test_that("the spatial constructors surface the same structural issues as check_
 })
 
 test_that("a validated tulpa_adjacency passes the constructors without re-warning", {
-  W <- chain_W(5)
-  adj <- suppressWarnings(adjacency(W))
-  expect_silent(spatial_car(adj))
-  expect_silent(spatial_bym2(adj))
-  expect_silent(spatial(adj, ~ 1 | g))
+  # .validate_adjacency_arg() short-circuits on a tulpa_adjacency, so an object
+  # adjacency() already vetted must not be re-checked or re-warned about.
+  adj <- chain_adjacency(5)
+  expect_s3_class(adj, "tulpa_adjacency")
+  expect_equal(unname(as.matrix(adj$adjacency)), chain_W(5))
+  expect_silent(car(adj))
+  expect_silent(bym2(adj))
+  expect_silent(fld(adj))
 })
 
 test_that("a float-rounded symmetric graph is accepted, matching check_adjacency", {
   # The inline checks demanded exact symmetry via isSymmetric(), so a graph
-  # check_adjacency() accepts was rejected by the constructors.
+  # check_adjacency() accepts was rejected by the constructors. 1e-14 is inside
+  # the 1e-8 tolerance the validator uses, so the graph must be accepted rather
+  # than rejected on symmetry -- reaching the warning at all is the assertion.
+  # The same perturbation puts one entry off exactly 1, which check_adjacency()
+  # reports as a weighted graph as well, so the 0/1 warning is the two agreeing.
   W <- chain_W(5)
   W[1, 2] <- W[1, 2] + 1e-14
-  expect_silent(spatial_car(W))
-  expect_silent(spatial(W, ~ 1 | g))
+  expect_warning(car(W), "other than 0/1")
+  expect_warning(fld(W), "other than 0/1")
 })
