@@ -26,7 +26,8 @@ namespace tulpa {
       const Rcpp::IntegerVector& group,
       const Rcpp::List& adj_list,
       const Rcpp::IntegerVector& n_neighbors,
-      double tau
+      double tau,
+      double* removed_mean = nullptr
   );
 
   double update_tau_icar(

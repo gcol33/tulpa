@@ -36,7 +36,8 @@ NumericVector update_spatial_icar(
     const IntegerVector& group,
     const List& adj_list,
     const IntegerVector& n_neighbors,
-    double tau
+    double tau,
+    double* removed_mean
 ) {
   int N = kappa.size();
   int J = adj_list.size();  // Number of spatial units
@@ -88,7 +89,10 @@ NumericVector update_spatial_icar(
     phi[j] = R::rnorm(post_mean, std::sqrt(post_var));
   }
 
-  // Center the spatial effects (soft sum-to-zero)
+  // Center the spatial effects (sum-to-zero) and report the removed mean so the
+  // caller can absorb it into the intercept -- eta is then unchanged and the
+  // move is posterior-invariant (matching the negbin kernel). Discarding the
+  // mean instead lags the intercept behind the field each sweep and drives tau.
   double mean_phi = 0.0;
   for (int j = 0; j < J; j++) {
     mean_phi += phi[j];
@@ -98,6 +102,7 @@ NumericVector update_spatial_icar(
   for (int j = 0; j < J; j++) {
     phi[j] -= mean_phi;
   }
+  if (removed_mean) *removed_mean = mean_phi;
 
   return phi;
 }

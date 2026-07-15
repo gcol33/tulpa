@@ -34,7 +34,8 @@ Rcpp::NumericVector update_spatial_icar(
     const Rcpp::IntegerVector& group,       // Group index for each observation
     const Rcpp::List& adj_list,             // List of neighbor indices
     const Rcpp::IntegerVector& n_neighbors, // Number of neighbors per location
-    double tau
+    double tau,
+    double* removed_mean = nullptr          // out: the sum-to-zero mean removed
 );
 
 // Update spatial precision tau with gamma prior

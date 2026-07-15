@@ -330,7 +330,8 @@ namespace tulpa {
       const Rcpp::IntegerVector& group,
       const Rcpp::List& adj_list,
       const Rcpp::IntegerVector& n_neighbors,
-      double tau
+      double tau,
+      double* removed_mean = nullptr
   );
 
   double update_tau_icar(
@@ -404,7 +405,12 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     for (int i = 0; i < N; i++) {
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
-    phi = tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors, tau);
+    double icar_mean = 0.0;
+    phi = tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group,
+                                     adj_list, n_neighbors, tau, &icar_mean);
+    // Absorb the removed field level into the intercept so eta is unchanged
+    // (posterior-invariant); X's first column is the intercept.
+    C.beta[0] += icar_mean;
 
     // 7. Update tau (spatial precision)
     tau = tulpa::update_tau_icar(phi, adj_list, n_neighbors, prior_tau_shape, prior_tau_rate);
