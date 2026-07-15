@@ -88,7 +88,9 @@ NULL
 #'                           proper = TRUE)
 #' print(proper_car)
 #'
-#' \donttest{
+#' \dontrun{
+#' # Ratio-family (tulpaRatio) usage; not run here (tulpaRatio is not a
+#' # dependency of the engine).
 #' # Generate synthetic data with spatial structure
 #' set.seed(123)
 #' n_sites <- 10

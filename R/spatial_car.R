@@ -604,7 +604,9 @@ is_connected <- function(adjacency) {
 #' gp <- spatial_gp(~ lon + lat)
 #' print(gp)
 #'
-#' \donttest{
+#' \dontrun{
+#' # Ratio-family (tulpaRatio) usage; not run here (tulpaRatio is not a
+#' # dependency of the engine).
 #' # Generate synthetic spatial data
 #' set.seed(789)
 #' n <- 50

@@ -49,7 +49,9 @@ NULL
 #' temporal_rw1("year")
 #' temporal_rw1("month", cyclic = TRUE)
 #'
-#' \donttest{
+#' \dontrun{
+#' # Ratio-family (tulpaRatio) usage; not run here (tulpaRatio is not a
+#' # dependency of the engine).
 #' # Simple temporal trend
 #' set.seed(123)
 #' df <- data.frame(

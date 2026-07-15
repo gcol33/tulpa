@@ -18,6 +18,7 @@ set.seed(20260529)
 
 ```{r load, message = FALSE}
 library(tulpa)
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
 ## Why priors get their own object
@@ -523,7 +524,7 @@ and plotting the two `group_spread` distributions side by side shows the prior's
 effect at a glance. The wide PC prior pushes a long right tail onto the
 between-group spread; the tight default keeps it compact.
 
-```{r pc-pp-plot, message = FALSE, fig.alt = "Between-group spread under two PC priors on sigma"}
+```{r pc-pp-plot, message = FALSE, eval = has_ggplot, fig.alt = "Between-group spread under two PC priors on sigma"}
 library(ggplot2)
 sp <- rbind(
   data.frame(prior = "tight (U=1)", spread = group_spread(pp_tight)),
