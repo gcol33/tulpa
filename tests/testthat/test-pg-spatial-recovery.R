@@ -153,3 +153,30 @@ test_that("binomial BYM2 Gibbs recovers the total field, intercept, and sigma", 
   expect_gt(mean(fit$sigma_spatial), 0.6)
   expect_lt(mean(fit$sigma_spatial), 1.8)
 })
+
+test_that("binomial RSR Gibbs recovers the projected field, intercept, and tau", {
+  skip_on_cran()
+  set.seed(5)
+  n_s <- 30L; reps <- 20L; ntr <- 30L; b0 <- 0.15
+  adj <- chain_adj(n_s)
+  f <- cumsum(rnorm(n_s, 0, 0.35)); f <- f - mean(f)
+  unit <- rep(seq_len(n_s), each = reps)
+  y <- rbinom(length(unit), ntr, plogis(b0 + f[unit]))
+  X <- matrix(1, length(unit), 1)
+  P <- diag(n_s) - matrix(1 / n_s, n_s, n_s)   # P_perp: project out the intercept
+
+  fit <- cpp_pg_binomial_gibbs_rsr(
+    y = as.integer(y), n = rep(ntr, length(y)), X = X,
+    re_group = rep(0L, length(y)), n_re_groups = 0L,
+    spatial_group = as.integer(unit), n_spatial_units = n_s,
+    adj_list = adj$adj_list, n_neighbors = adj$n_neighbors,
+    rsr_projection = as.numeric(t(P)), rsr_n = n_s,
+    n_iter = 3000L, n_warmup = 1500L, thin = 1L, verbose = FALSE)
+
+  # Reuses the fixed ICAR field + tau (component-aware) updates; the projected
+  # field, intercept, and tau recover.
+  expect_gt(stats::cor(colMeans(fit$spatial), f), 0.9)
+  expect_lt(abs(mean(fit$beta[, 1]) - b0), 0.2)
+  expect_gt(mean(fit$tau), 3)
+  expect_lt(mean(fit$tau), 40)
+})
