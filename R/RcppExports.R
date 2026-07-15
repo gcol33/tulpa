@@ -93,8 +93,8 @@ cpp_laplace_sample <- function(mode, H, n_samples) {
     .Call(`_tulpa_cpp_laplace_sample`, mode, H, n_samples)
 }
 
-cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_gp`, y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable)
+cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, obs_to_loc_nullable = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_gp`, y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable, obs_to_loc_nullable)
 }
 
 cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL, force_sparse = 0L) {

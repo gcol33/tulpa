@@ -788,7 +788,11 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
     max_iter = as.integer(max_iter),
     tol = tol,
     n_threads = as.integer(n_threads),
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
+    # Per-obs 1-based location index so repeated coordinates share one field
+    # node (n_spatial unique locations < N). NULL keeps the identity map.
+    obs_to_loc_nullable = if (is.null(spatial$obs_to_loc)) NULL else
+      as.integer(spatial$obs_to_loc)
   )
 
   result$sigma2_gp <- sigma2_gp

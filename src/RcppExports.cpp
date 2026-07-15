@@ -344,8 +344,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_laplace_fit_gp
-Rcpp::List cpp_laplace_fit_gp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, double sigma2_gp, double phi_gp, int cov_type, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable);
-RcppExport SEXP _tulpa_cpp_laplace_fit_gp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2_gpSEXP, SEXP phi_gpSEXP, SEXP cov_typeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP offset_nullableSEXP) {
+Rcpp::List cpp_laplace_fit_gp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, double sigma2_gp, double phi_gp, int cov_type, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::IntegerVector> obs_to_loc_nullable);
+RcppExport SEXP _tulpa_cpp_laplace_fit_gp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2_gpSEXP, SEXP phi_gpSEXP, SEXP cov_typeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP offset_nullableSEXP, SEXP obs_to_loc_nullableSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -370,7 +370,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_gp(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type obs_to_loc_nullable(obs_to_loc_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_laplace_fit_gp(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable, obs_to_loc_nullable));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3097,7 +3098,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit", (DL_FUNC) &_tulpa_cpp_laplace_fit, 11},
     {"_tulpa_cpp_laplace_fit_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_fit_multi_re, 20},
     {"_tulpa_cpp_laplace_sample", (DL_FUNC) &_tulpa_cpp_laplace_sample, 3},
-    {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 21},
+    {"_tulpa_cpp_laplace_fit_gp", (DL_FUNC) &_tulpa_cpp_laplace_fit_gp, 22},
     {"_tulpa_cpp_laplace_fit_spatial", (DL_FUNC) &_tulpa_cpp_laplace_fit_spatial, 20},
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 21},
     {"_tulpa_cpp_line_search_probe", (DL_FUNC) &_tulpa_cpp_line_search_probe, 2},

@@ -41,7 +41,12 @@ LaplaceResult laplace_mode_gp(
     double sigma2_gp, double phi_gp, int cov_type,
     const std::string& family, double phi,
     int max_iter, double tol, int n_threads,
-    const double* offset = nullptr
+    const double* offset = nullptr,
+    // Per-observation 1-based location index (length N). nullptr = identity
+    // (obs i -> location i), the old behavior; a non-null map is required when
+    // coordinates repeat (n_spatial unique locations < N), so an observation is
+    // attached to its actual field node and later observations are not dropped.
+    const int* obs_to_loc = nullptr
 ) {
     int N = y.size();
     int p = X.ncol();
@@ -57,7 +62,8 @@ LaplaceResult laplace_mode_gp(
                 int g = (int)re_idx[i] - 1;
                 if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
             }
-            if (i < n_spatial) eta[i] += x[gp_start + i];
+            int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
+            if (loc >= 0 && loc < n_spatial) eta[i] += x[gp_start + loc];
         }
     };
 
@@ -135,8 +141,9 @@ LaplaceResult laplace_mode_gp(
                     }
                 }
                 // GP diagonal
-                if (i < n_spatial) {
-                    int gp_idx = gp_start + i;
+                int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
+                if (loc >= 0 && loc < n_spatial) {
+                    int gp_idx = gp_start + loc;
                     grad[gp_idx] += gh.grad;
                     H.add(gp_idx, gp_idx, gh.neg_hess);
                     // Cross with beta
@@ -179,9 +186,10 @@ LaplaceResult laplace_mode_gp(
         scatter_obs_grad_hess_base(y, n, X, re_idx, N, p, n_re_groups,
                                     eta, family, phi, grad, H, n_threads);
         for (int i = 0; i < N; i++) {
-            if (i >= n_spatial) continue;
+            int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
+            if (loc < 0 || loc >= n_spatial) continue;
             auto gh = grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-            int gp_idx = gp_start + i;
+            int gp_idx = gp_start + loc;
             grad[gp_idx] += gh.grad;
             H[gp_idx][gp_idx] += gh.neg_hess;
         }
@@ -222,15 +230,22 @@ Rcpp::List cpp_laplace_fit_gp(
     double sigma2_gp, double phi_gp, int cov_type,
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::IntegerVector> obs_to_loc_nullable = R_NilValue
 ) {
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, y.size());
+    std::vector<int> obs_to_loc;
+    if (obs_to_loc_nullable.isNotNull()) {
+        Rcpp::IntegerVector otl(obs_to_loc_nullable);
+        obs_to_loc.assign(otl.begin(), otl.end());
+    }
     tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
         y, n, X, re_idx, n_re_groups, sigma_re,
         coords, nn_idx, nn_dist, nn_order, n_spatial, nn,
         sigma2_gp, phi_gp, cov_type,
         family, phi, max_iter, tol, n_threads,
-        offset.empty() ? nullptr : offset.data()
+        offset.empty() ? nullptr : offset.data(),
+        obs_to_loc.empty() ? nullptr : obs_to_loc.data()
     );
     return tulpa::laplace_result_to_list(result);
 }

@@ -170,3 +170,31 @@ test_that("tulpa_laplace(spatial = spatial_gp(...)) converges on the sparse path
   expect_gt(max(abs(fit$mode[-seq_len(ncol(X))])), 1e-6)
   expect_lt(max(abs(fit$mode[seq_len(ncol(X))] - beta_true)), 0.6)
 })
+
+test_that("GP Laplace recovers the field with repeated coordinates (obs_to_loc)", {
+  skip_on_cran()
+  # Multiple observations share each unique location, so n_spatial < N and the
+  # single-point GP kernel must attach each obs to its field node via
+  # obs_to_loc. With the old identity map (obs i -> node i) later observations
+  # were dropped and the earlier ones mis-attached, so the field did not track
+  # truth.
+  set.seed(1)
+  n_loc <- 25L; reps <- 4L
+  coords_u <- cbind(runif(n_loc), runif(n_loc))
+  D <- as.matrix(dist(coords_u)); K <- exp(-D / 0.35)
+  f_u <- as.numeric(t(chol(K + 1e-6 * diag(n_loc))) %*% rnorm(n_loc))
+  f_u <- f_u - mean(f_u)
+  loc <- rep(seq_len(n_loc), each = reps)
+  coords <- coords_u[loc, , drop = FALSE]
+  y <- rpois(length(loc), exp(0.5 + f_u[loc]))
+  df <- data.frame(y = y, lon = coords[, 1], lat = coords[, 2])
+
+  fit <- tulpa(y ~ 1, data = df, family = "poisson",
+               spatial = spatial_gp(~ lon + lat), mode = "laplace")
+
+  # Field at the unique locations = trailing n_loc latent entries.
+  fhat <- tail(fit$mode, n_loc)
+  expect_length(fhat, n_loc)
+  expect_gt(stats::cor(fhat, f_u), 0.6)          # field tracks truth
+  expect_lt(abs(fit$mode[1] - 0.5), 0.3)          # intercept recovered
+})
