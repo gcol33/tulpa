@@ -180,6 +180,11 @@ void compute_gradient_prior_arena(
 ParamLayout compute_param_layout(const ModelData& data);
 int get_n_params(const ModelData& data);
 
+// Errors unless (U, alpha) is a usable PC range anchor, i.e. P(range < U) =
+// alpha with U > 0 and alpha in (0, 1). Called once per fit from
+// compute_param_layout for every NNGP block that carries a sampled range.
+void require_range_prior_anchors(double U, double alpha, const char* term);
+
 // =====================================================================
 // Log-posterior computation (with OpenMP parallelization)
 // =====================================================================

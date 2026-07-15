@@ -43,11 +43,10 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
             T logit_phi = params[layout.logit_phi_temporal_gp_idx];
             sigma2_temporal_gp_out = safe_exp(log_sigma2);
 
-            // Logit-bounded phi: phi = lower + range * sigmoid(logit_phi)
-            T sigmoid_phi = inv_logit(logit_phi);
-            double phi_lower_lp = data.temporal_gp_phi_prior_lower;
-            double phi_range_lp = data.temporal_gp_phi_prior_upper - phi_lower_lp;
-            phi_temporal_gp_out = T(phi_lower_lp) + T(phi_range_lp) * sigmoid_phi;
+            phi_temporal_gp_out = bounded_from_logit(
+                logit_phi,
+                data.temporal_gp_phi_prior_lower,
+                data.temporal_gp_phi_prior_upper);
         } else {
             // RW1/RW2/AR1: tau-based parameterization
             T log_tau = params[layout.log_tau_temporal_idx];
@@ -76,14 +75,14 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
             T log_sigma2 = params[layout.log_sigma2_temporal_gp_idx];
             log_post = log_post + log_sigma2;  // Jacobian for log transform
 
-            // Uniform prior on phi: logit-bounded parameterization guarantees bounds
-            // Jacobian: log(phi - lower) + log(upper - phi) - log(range)
-            double phi_lower_pr = data.temporal_gp_phi_prior_lower;
-            double phi_upper_pr = data.temporal_gp_phi_prior_upper;
-            double phi_range_pr = phi_upper_pr - phi_lower_pr;
-            log_post = log_post + safe_log(phi_temporal_gp_out - T(phi_lower_pr))
-                     + safe_log(T(phi_upper_pr) - phi_temporal_gp_out)
-                     - T(std::log(phi_range_pr));
+            // Uniform prior on phi over (lower, upper); the bounded map holds
+            // the interval, so only its Jacobian is contributed here. A 1D
+            // lengthscale would need the d = 1 PC density to move off Uniform,
+            // which pc_prior.h deliberately does not provide.
+            log_post = log_post + log_jacobian_bounded(
+                phi_temporal_gp_out,
+                data.temporal_gp_phi_prior_lower,
+                data.temporal_gp_phi_prior_upper);
 
             const bool use_nc = (data.temporal_gp_parameterization == 1);
 

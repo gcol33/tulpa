@@ -202,8 +202,9 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     # Transform to natural scale
     label <- cn[found[[nm]]]
     if (grepl("^log_phi_gp", label)) {
-      # GP decay parameter -> effective range = 3/phi (Matern)
-      vals <- 3 / exp(raw)
+      # phi is the range: every kernel is exp(-d / phi), so correlation decays
+      # to ~0.05 at d = -phi * log(0.05) ~= 3 * phi.
+      vals <- 3 * exp(raw)
       row_name <- sub("phi", "range", nm)
     } else if (grepl("^log_sigma2", label)) {
       vals <- sqrt(exp(raw))  # log_sigma2 -> sigma

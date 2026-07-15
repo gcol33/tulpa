@@ -284,6 +284,35 @@ inline T safe_tanh(const T& x) {
     return T(2.0) * inv_logit(T(2.0) * x) - T(1.0);
 }
 
+// Bounded parameterization for a hyperparameter confined to (lower, upper).
+//
+// The bound belongs in the map, not in a rejection: HMC integrates a smooth
+// density and needs a finite gradient everywhere it can step. Sampling the
+// quantity directly and returning -INFINITY outside the box leaves the
+// sampler no gradient to recover from, and every such step is reported as a
+// divergence. So the sampler carries an unconstrained u and the density is
+// evaluated at
+//
+//   phi = lower + (upper - lower) * inv_logit(u)
+//
+// which cannot leave the interval. The map contributes
+//
+//   dphi/du = (phi - lower) * (upper - phi) / (upper - lower)
+//
+// to the change of variables; log_jacobian_bounded returns its log. Callers
+// add it to whatever density they place on phi.
+template<typename T>
+inline T bounded_from_logit(const T& u, double lower, double upper) {
+    return T(lower) + T(upper - lower) * inv_logit(u);
+}
+
+template<typename T>
+inline T log_jacobian_bounded(const T& phi, double lower, double upper) {
+    return safe_log(phi - T(lower))
+         + safe_log(T(upper) - phi)
+         - T(std::log(upper - lower));
+}
+
 // log1p - double version
 template<typename T>
 inline typename std::enable_if<!is_autodiff<T>::value, T>::type

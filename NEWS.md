@@ -1,5 +1,64 @@
 # tulpa NEWS
 
+## 0.1.2 (2026-07-15)
+
+The sampled spatial range gets a real prior. **ABI break**
+(`TULPA_ABI_VERSION` 33 -> 34); downstream packages must rebuild, and any
+package placing a `gp()` / `svc()` NNGP block must now supply the range
+anchors (see the last bullet).
+
+* FIX (statistical): the GP and SVC NNGP paths placed a Uniform prior on the
+  spatial range `phi` behind a hard `return -INFINITY` outside
+  `(phi_prior_lower, phi_prior_upper)`. Two defects compounded
+  (gcol33/tulpa#144). The rejection sits inside an autodiff log-posterior, so
+  a step landing outside the box produced no usable gradient and NUTS reported
+  it as a divergence; and the `+ log_phi` Jacobian made the flat density in the
+  sampled `log_phi` a Uniform on `phi` itself, whose default `(0.01, 10)`
+  carries mean ~5. Under a weakly informative binary likelihood the posterior
+  collapsed onto that mean. Measured downstream on `occu() + svc()` with a
+  truth of `phi = 0.25` on unit-square coordinates: 72-83% of post-warmup draws
+  divergent and `phi` at ~4 across every seed (gcol33/tulpaObs#118). Both paths
+  now sample `log_phi` unconstrained under a PC prior on the range, which is
+  proper on `(0, inf)` and needs no bounding box -- the same shape the SPDE
+  field has always used for `log_kappa`.
+
+* FIX (statistical): `spatialRange()` reported the reciprocal of the range. It
+  computed the effective range as `3 / phi`, commented as a decay parameter,
+  but every kernel this engine ships is `exp(-d / phi)` (`cov_exponential`,
+  `cov_matern32`, `cov_gaussian`), so `phi` is the range and the effective
+  range is `-phi * log(0.05) ~= 3 * phi`. A fit at `phi = 0.25` was reported at
+  12 rather than 0.75.
+
+* FIX (statistical): the unwired `log_prior_phi_pc` set its rate to
+  `-log(alpha) / U` while its own derivation, `exp(-rate / U) = alpha`, gives
+  `-U * log(alpha)`, and it disagreed with both written PC range priors. It had
+  no call sites, so it never reached a fit; it is removed rather than wired.
+  `test-pc-prior.R` pins the contract it violated by integrating the density:
+  `P(range < U) = alpha`.
+
+* REFACTOR: the d = 2 PC range density now lives once, in `pc_prior.h`
+  alongside the PC scale densities, and the SPDE hyper-prior consumes it
+  instead of restating the closed form. `test-pc-prior.R` checks it against
+  `pc_prior_log_density()`, the independently written R twin the SPDE nested
+  path integrates against. The stale block comment in `tulpa_priors_spde.h`
+  still documenting the superseded d = 1 form is corrected.
+
+* REFACTOR: the logit-bounded parameterization (map + exact Jacobian) is
+  extracted from the temporal GP path into `bounded_from_logit()` /
+  `log_jacobian_bounded()` in `autodiff_utils.h`. Behaviour is unchanged; the
+  temporal range keeps its Uniform prior, since moving it off Uniform needs the
+  d = 1 PC density that `pc_prior.h` deliberately does not provide.
+
+* BREAKING: `ModelData` carries `gp_phi_prior_U` / `gp_phi_prior_alpha` and
+  `svc_phi_prior_U` / `svc_phi_prior_alpha` (encoding `P(range < U) = alpha`)
+  in place of the `_lower` / `_upper` bounds. They ship unset (`-1.0`) and
+  `compute_param_layout()` errors once, before sampling, on any NNGP block that
+  fails to set them -- matching the SPDE field's existing `prior_range`
+  contract. The engine does not default them: a silent default is a prior, and
+  an unanchored range under a weakly informative likelihood is precisely how
+  `phi` came to sit at the old Uniform's mean. The SVC HSGP path is unaffected;
+  it puts a `LogNormal(0, 1)` on an unbounded log-lengthscale and reads neither.
+
 ## 0.1.1 (2026-07-15)
 
 Third deep-audit pass: statistical, memory-safety, and backend-consistency

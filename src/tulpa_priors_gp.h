@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "pc_prior.h"
 #include "hmc_gp_autodiff.h"
 
 namespace tulpa {
@@ -39,13 +40,11 @@ T compute_gp_spatial_prior(const std::vector<T>& params, const ModelData& data,
             sigma2_gp, data.gp_sigma2_prior_U, data.gp_sigma2_prior_alpha);
         log_post = log_post + log_sigma2_gp;  // Jacobian
 
-        // Uniform prior on phi within bounds + Jacobian
-        double phi_val = get_value(phi_gp);
-        if (phi_val < data.gp_phi_prior_lower || phi_val > data.gp_phi_prior_upper) {
-            return T(-INFINITY);
-        }
-        log_post = log_post + tulpa_gp::log_prior_phi_uniform_t(
-            phi_gp, data.gp_phi_prior_lower, data.gp_phi_prior_upper);
+        // PC prior on the range + Jacobian for log transform. phi is sampled
+        // unconstrained on the log scale: the PC density is proper on
+        // (0, inf) and penalizes short ranges, so it needs no bounding box.
+        log_post = log_post + log_prior_range_pc_at_log(
+            log_phi_gp, data.gp_phi_prior_U, data.gp_phi_prior_alpha);
         log_post = log_post + log_phi_gp;  // Jacobian
 
         // Extract GP spatial effects w[0..n_gp-1]

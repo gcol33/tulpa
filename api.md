@@ -143,8 +143,9 @@ package `DESCRIPTION`.
 
 ## ABI contract
 
-`TULPA_ABI_VERSION` (currently **24**, in `model_data.h`) guards the binary
-interface. Bump it when any exported struct layout changes; new fields go in the
+`TULPA_ABI_VERSION` (defined in `model_data.h`, which is the value to read --
+restating it here is what let this page drift 10 versions behind) guards the
+binary interface. Bump it when any exported struct layout changes; new fields go in the
 stable sections, never before existing fields. tulpa registers
 `R_RegisterCCallable("tulpa", "tulpa_get_abi_version", ...)`, and model packages
 auto-check on first NUTS call -- a mismatch gives a clear error instead of a

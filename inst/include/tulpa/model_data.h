@@ -90,7 +90,7 @@ namespace tulpa {
 // rank normalizer counts connected components (S - k), matching the Laplace
 // path, instead of assuming a single component (S - 1).
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 33;
+constexpr int TULPA_ABI_VERSION = 34;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -243,8 +243,13 @@ struct ModelData {
     bool has_gp = false;
     double gp_sigma2_prior_U = 1.0;
     double gp_sigma2_prior_alpha = 0.01;
-    double gp_phi_prior_lower = 0.01;
-    double gp_phi_prior_upper = 10.0;
+    // PC prior on the range: P(phi < gp_phi_prior_U) = gp_phi_prior_alpha.
+    // phi is the range itself (every kernel is exp(-d / phi)), so the d = 2
+    // density in pc_prior.h applies to it directly. -1.0 means unset; the R
+    // layer requires the anchors rather than inventing them, matching the SPDE
+    // field's prior_range contract.
+    double gp_phi_prior_U = -1.0;
+    double gp_phi_prior_alpha = -1.0;
     int gp_parameterization = 1;        // 0=centered, 1=non-centered
 
     // Collapsed parameterization flags
@@ -295,8 +300,11 @@ struct ModelData {
     int svc_hsgp_m_per_dim = 6;
     double svc_hsgp_boundary_factor = 1.5;
     double svc_sigma2_prior_scale = 1.0;
-    double svc_phi_prior_lower = 0.01;
-    double svc_phi_prior_upper = 10.0;
+    // PC prior on the range, NNGP path only; see gp_phi_prior_U. The HSGP path
+    // reuses the same layout slot for an unbounded log-lengthscale under a
+    // LogNormal(0, 1) prior and does not read these.
+    double svc_phi_prior_U = -1.0;
+    double svc_phi_prior_alpha = -1.0;
 
     // ================================================================
     // TEMPORAL

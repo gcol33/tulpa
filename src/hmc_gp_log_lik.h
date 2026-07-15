@@ -298,24 +298,6 @@ inline double multiscale_gp_log_lik(
   return ll_local + ll_regional;
 }
 
-// -----------------------------------------------------------------------------
-// Priors for GP hyperparameters
-// -----------------------------------------------------------------------------
-
-// Log prior for range parameter (uniform on log scale within bounds)
-inline double log_prior_phi_uniform(double phi, double lower, double upper) {
-  if (phi < lower || phi > upper) return -INFINITY;
-  // Uniform on [lower, upper]
-  return -std::log(upper - lower);
-}
-
-// Log prior for range with PC-style (favor larger ranges = simpler models)
-inline double log_prior_phi_pc(double phi, double U, double alpha) {
-  // P(phi < U) = alpha with 1/phi ~ Exponential(rate): P(phi < U) =
-  // exp(-rate/U) = alpha, so rate = -log(alpha)/U (using log(1-alpha) here
-  // implements the opposite tail P(phi > U) = alpha).
-  if (phi <= 0) return -INFINITY;
-  double rate = -std::log(alpha) / U;
-  // Prior favors larger phi (simpler, smoother spatial structure)
-  return std::log(rate) - rate / phi - 2.0 * std::log(phi);
-}
+// The GP hyperparameter priors live in pc_prior.h (the PC densities, shared
+// with the SPDE field) and autodiff_utils.h (the bounded-phi map), so the
+// sampled coordinate and its density are defined in one place per quantity.

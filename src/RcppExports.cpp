@@ -1243,6 +1243,69 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_log_prior_range_pc
+Rcpp::NumericVector cpp_test_log_prior_range_pc(Rcpp::NumericVector range, double U, double alpha);
+RcppExport SEXP _tulpa_cpp_test_log_prior_range_pc(SEXP rangeSEXP, SEXP USEXP, SEXP alphaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type range(rangeSEXP);
+    Rcpp::traits::input_parameter< double >::type U(USEXP);
+    Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_log_prior_range_pc(range, U, alpha));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_log_prior_range_pc_at_log
+Rcpp::NumericVector cpp_test_log_prior_range_pc_at_log(Rcpp::NumericVector log_range, double U, double alpha);
+RcppExport SEXP _tulpa_cpp_test_log_prior_range_pc_at_log(SEXP log_rangeSEXP, SEXP USEXP, SEXP alphaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type log_range(log_rangeSEXP);
+    Rcpp::traits::input_parameter< double >::type U(USEXP);
+    Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_log_prior_range_pc_at_log(log_range, U, alpha));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_bounded_from_logit
+Rcpp::NumericVector cpp_test_bounded_from_logit(Rcpp::NumericVector u, double lower, double upper);
+RcppExport SEXP _tulpa_cpp_test_bounded_from_logit(SEXP uSEXP, SEXP lowerSEXP, SEXP upperSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type u(uSEXP);
+    Rcpp::traits::input_parameter< double >::type lower(lowerSEXP);
+    Rcpp::traits::input_parameter< double >::type upper(upperSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_bounded_from_logit(u, lower, upper));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_log_jacobian_bounded
+Rcpp::NumericVector cpp_test_log_jacobian_bounded(Rcpp::NumericVector phi, double lower, double upper);
+RcppExport SEXP _tulpa_cpp_test_log_jacobian_bounded(SEXP phiSEXP, SEXP lowerSEXP, SEXP upperSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type lower(lowerSEXP);
+    Rcpp::traits::input_parameter< double >::type upper(upperSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_log_jacobian_bounded(phi, lower, upper));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_gp_layout_anchor_check
+void cpp_test_gp_layout_anchor_check(double U, double alpha);
+RcppExport SEXP _tulpa_cpp_test_gp_layout_anchor_check(SEXP USEXP, SEXP alphaSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type U(USEXP);
+    Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
+    cpp_test_gp_layout_anchor_check(U, alpha);
+    return R_NilValue;
+END_RCPP
+}
 // cpp_pg_binomial_gibbs
 Rcpp::List cpp_pg_binomial_gibbs(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector group, int n_groups, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_scale, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP groupSEXP, SEXP n_groupsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_scaleSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
@@ -3271,6 +3334,11 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
     {"_tulpa_cpp_test_gp_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_gp_nngp_twins, 10},
     {"_tulpa_cpp_test_svc_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_svc_nngp_twins, 8},
+    {"_tulpa_cpp_test_log_prior_range_pc", (DL_FUNC) &_tulpa_cpp_test_log_prior_range_pc, 3},
+    {"_tulpa_cpp_test_log_prior_range_pc_at_log", (DL_FUNC) &_tulpa_cpp_test_log_prior_range_pc_at_log, 3},
+    {"_tulpa_cpp_test_bounded_from_logit", (DL_FUNC) &_tulpa_cpp_test_bounded_from_logit, 3},
+    {"_tulpa_cpp_test_log_jacobian_bounded", (DL_FUNC) &_tulpa_cpp_test_log_jacobian_bounded, 3},
+    {"_tulpa_cpp_test_gp_layout_anchor_check", (DL_FUNC) &_tulpa_cpp_test_gp_layout_anchor_check, 2},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 21},

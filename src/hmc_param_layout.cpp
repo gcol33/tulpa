@@ -6,6 +6,23 @@
 
 namespace tulpa_hmc {
 
+// The PC prior on a range is anchored by P(range < U) = alpha, which is a
+// modelling choice the engine will not make on a caller's behalf: a silent
+// default is a prior, and an unanchored range under a weakly informative
+// likelihood is what lets phi drift to wherever the default put its mass.
+// ModelData ships the anchors as -1.0 (unset), so a consumer that forgets to
+// set them fails here, once, before sampling -- rather than returning a fit
+// whose range came from the engine instead of the model.
+void require_range_prior_anchors(double U, double alpha, const char* term) {
+  if (!(U > 0.0) || !(alpha > 0.0) || !(alpha < 1.0)) {
+    Rcpp::stop("tulpa: %s() needs a PC prior on the range. Set "
+               "`%s_phi_prior_U` > 0 and `%s_phi_prior_alpha` in (0, 1) on "
+               "ModelData, encoding P(range < U) = alpha. The range is on the "
+               "scale of the coordinates (every kernel is exp(-d / phi)).",
+               term, term, term);
+  }
+}
+
 ParamLayout compute_param_layout(const ModelData& data) {
   ParamLayout layout;
   int idx = 0;
@@ -271,6 +288,8 @@ ParamLayout compute_param_layout(const ModelData& data) {
   layout.is_gp_collapsed = layout.is_gp && data.has_gp && data.gp_collapsed;
 
   if (layout.is_gp && data.has_gp) {
+    require_range_prior_anchors(data.gp_phi_prior_U, data.gp_phi_prior_alpha,
+                                "gp");
     layout.log_sigma2_gp_idx = idx++;
     layout.log_phi_gp_idx = idx++;
     if (!data.gp_collapsed) {
@@ -370,6 +389,13 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // SVC (Spatially-Varying Coefficients) parameters
   layout.has_svc = data.has_svc;
   if (layout.has_svc && data.svc_data.n_svc > 0) {
+    // The HSGP path puts a LogNormal(0, 1) on its log-lengthscale and never
+    // reads the range anchors, so only the NNGP path requires them.
+    if (!data.svc_is_hsgp) {
+      require_range_prior_anchors(data.svc_phi_prior_U,
+                                  data.svc_phi_prior_alpha, "svc");
+    }
+
     // Log sigma2 per SVC term (spatial variance)
     layout.log_sigma2_svc_start = idx;
     idx += data.svc_data.n_svc;

@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "pc_prior.h"
 #include "hmc_svc_autodiff.h"
 
 namespace tulpa {
@@ -87,17 +88,19 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 log_post = log_post + log_sigma2;
             }
 
-            // Extract phi (spatial range) parameters
+            // Extract phi (spatial range) parameters. Sampled unconstrained on
+            // the log scale under a PC prior on the range: the density is
+            // proper on (0, inf) and penalizes short ranges, so no bounding
+            // box is needed. phi is the range itself (every kernel is
+            // exp(-d / phi)), so the d = 2 density applies to it directly.
             std::vector<T> svc_phi(n_svc);
             for (int j = 0; j < n_svc; j++) {
                 T log_phi = params[layout.log_phi_svc_start + j];
                 svc_phi[j] = safe_exp(log_phi);
 
-                double phi_val = get_value(svc_phi[j]);
-                if (phi_val < data.svc_phi_prior_lower || phi_val > data.svc_phi_prior_upper) {
-                    return T(-INFINITY);
-                }
-                log_post = log_post + log_phi;
+                log_post = log_post + log_prior_range_pc_at_log(
+                    log_phi, data.svc_phi_prior_U, data.svc_phi_prior_alpha);
+                log_post = log_post + log_phi;  // Jacobian
             }
 
             // Extract SVC values

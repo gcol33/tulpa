@@ -278,16 +278,6 @@ T log_prior_sigma2_pc_t(const T& sigma2, double U, double alpha) {
     return tulpa::log_prior_sigma2_pc(sigma2, U, alpha);
 }
 
-// Uniform prior on phi within bounds
-template<typename T>
-T log_prior_phi_uniform_t(const T& phi, double lower, double upper) {
-    double phi_val = get_value(phi);
-    if (phi_val < lower || phi_val > upper) {
-        return T(-1e10);
-    }
-    return T(-std::log(upper - lower));
-}
-
 }  // namespace tulpa_gp
 
 #endif  // TULPA_HMC_GP_AUTODIFF_H

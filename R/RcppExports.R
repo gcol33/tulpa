@@ -241,6 +241,26 @@ cpp_test_svc_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_
     .Call(`_tulpa_cpp_test_svc_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type)
 }
 
+cpp_test_log_prior_range_pc <- function(range, U, alpha) {
+    .Call(`_tulpa_cpp_test_log_prior_range_pc`, range, U, alpha)
+}
+
+cpp_test_log_prior_range_pc_at_log <- function(log_range, U, alpha) {
+    .Call(`_tulpa_cpp_test_log_prior_range_pc_at_log`, log_range, U, alpha)
+}
+
+cpp_test_bounded_from_logit <- function(u, lower, upper) {
+    .Call(`_tulpa_cpp_test_bounded_from_logit`, u, lower, upper)
+}
+
+cpp_test_log_jacobian_bounded <- function(phi, lower, upper) {
+    .Call(`_tulpa_cpp_test_log_jacobian_bounded`, phi, lower, upper)
+}
+
+cpp_test_gp_layout_anchor_check <- function(U, alpha) {
+    invisible(.Call(`_tulpa_cpp_test_gp_layout_anchor_check`, U, alpha))
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }

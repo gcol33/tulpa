@@ -89,6 +89,50 @@ inline T log_prior_log_tau_pc(const T& log_tau, double U, double alpha) {
        - T(std::log(2.0)) - T(0.5) * log_tau;
 }
 
+// ---------------------------------------------------------------------------
+// PC prior on a Matern range, d = 2.
+//
+// Fuglstad et al. 2019 (JASA) "Constructing priors that penalize the
+// complexity of Gaussian random fields" places an exponential prior on
+// range^{-d/2}. For d = 2 that is
+//
+//   pi(range) = lambda * range^{-2} * exp(-lambda / range)
+//   lambda    = -log(alpha) * U,     so that P(range < U) = alpha
+//
+// Note the rate is -log(alpha) * U, NOT -log(alpha) / U: P(range < U) =
+// exp(-lambda / U) = alpha gives lambda = -U * log(alpha).
+//
+// Only the d = 2 form is provided, because that is the form verified against
+// the R nested path (pc_prior_log_density in fit_spde_nested.R). A 1D field
+// (a temporal GP lengthscale) needs the d = 1 density and a different rate
+// calibration; deriving it belongs with the paper open, not here.
+//
+// Both the SPDE field and the NNGP kernels this engine ships parameterize
+// distance as exp(-d / phi) (cov_exponential / cov_matern32 / cov_gaussian in
+// hmc_svc_autodiff.h), so the sampled phi is itself the range and this density
+// applies to it directly.
+
+// Exponential rate calibrated so that P(range < U) = alpha.
+inline double pc_range_rate(double U, double alpha) {
+  return -std::log(alpha) * U;
+}
+
+// Density on the range, evaluated from log(range). Carries no Jacobian: the
+// caller adds the one for its own sampled coordinate.
+template <typename T>
+inline T log_prior_range_pc_at_log(const T& log_range, double U, double alpha) {
+  const double lambda = pc_range_rate(U, alpha);
+  return T(std::log(lambda))
+       - T(2.0) * log_range
+       - T(lambda) * math::safe_exp(-log_range);
+}
+
+// Same density, from the range itself.
+template <typename T>
+inline T log_prior_range_pc(const T& range, double U, double alpha) {
+  return log_prior_range_pc_at_log(math::safe_log(range), U, alpha);
+}
+
 }  // namespace tulpa
 
 #endif  // TULPA_PC_PRIOR_H

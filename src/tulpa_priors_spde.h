@@ -40,6 +40,7 @@
 #include <cmath>
 #include <vector>
 #include "autodiff_utils.h"
+#include "pc_prior.h"
 
 namespace tulpa {
 namespace priors {
@@ -101,12 +102,10 @@ T compute_spde_prior(const std::vector<T>& params, const ModelData& data,
 
 // PC prior on (range, sigma) expressed directly in (log_kappa, log_tau).
 //
-// Fuglstad et al. 2019 (JASA) "Constructing priors that penalize the
-// complexity of Gaussian random fields":
-//   pi(range) = (lambda_r / 2) * range^{-3/2} * exp(-lambda_r * range^{-1/2})
-//   pi(sigma) = lambda_s * exp(-lambda_s * sigma)
-//   lambda_r  = -log(prior_range_alpha) * sqrt(prior_range_0)
-//   lambda_s  = -log(prior_sigma_alpha) / prior_sigma_0
+// The two PC densities themselves (Fuglstad et al. 2019, JASA, "Constructing
+// priors that penalize the complexity of Gaussian random fields") live in
+// pc_prior.h; this function contributes the SPDE-specific coordinate map and
+// its Jacobian.
 //
 // SPDE Matern map (nu = data.spde_data.nu, d = 2):
 //   range = sqrt(8 nu) / kappa            = sqrt(8 nu) * exp(-log_kappa)
@@ -124,9 +123,8 @@ T compute_spde_prior(const std::vector<T>& params, const ModelData& data,
 //   log p(log_kappa, log_tau) = log pi(range) + log pi(sigma)
 //                             + log_range + log_sigma
 //
-// The range^{-1/2} factor is computed as (8 nu)^{-1/4} * exp(0.5 log_kappa)
-// to avoid division-by-power-of-range under autodiff; likewise sigma is
-// evaluated via exp(log_sigma) instead of 1/(sqrt(4 pi) kappa tau).
+// Both densities are evaluated from log_range / log_sigma rather than from
+// range / sigma, so no power-of-range division is taped under autodiff.
 //
 // Returns T(0) when joint_hypers == false, when the layout has no hyper
 // slots, or when any of the four PC anchors is non-positive (improper
@@ -156,32 +154,17 @@ T compute_spde_hyper_prior(const std::vector<T>& params,
     const double log_8nu   = std::log(eight_nu);
     const double log_4pi   = std::log(4.0 * k_pi);
 
-    // d = 2 range PC prior (P(range < range_0) = alpha): lambda_r =
-    // -log(alpha) * range_0, density lambda_r * range^{-2} * exp(-lambda_r/range).
-    // The earlier code used the d = 1 form (sqrt(range_0), range^{-3/2}); it kept
-    // the tail anchor but had the wrong penalization shape and disagreed with the
-    // dimensionally-correct R nested path (fit_spde_nested).
-    const double lambda_r  = -std::log(spde.prior_range_alpha)
-                             * spde.prior_range_0;
-    const double lambda_s  = -std::log(spde.prior_sigma_alpha)
-                             / spde.prior_sigma_0;
-
     const T log_kappa = params[layout.log_kappa_spde_idx];
     const T log_tau   = params[layout.log_tau_spde_idx];
 
     const T log_range = T(0.5 * log_8nu) - log_kappa;
     const T log_sigma = T(-0.5 * log_4pi) - log_kappa - log_tau;
 
-    // log pi(range) = log(lambda_r) - 2 * log_range - lambda_r / range  (d = 2)
-    const T log_pi_range =
-          T(std::log(lambda_r))
-        - T(2.0) * log_range
-        - T(lambda_r) * safe_exp(-log_range);
+    const T log_pi_range = log_prior_range_pc_at_log(
+        log_range, spde.prior_range_0, spde.prior_range_alpha);
 
-    // log pi(sigma) = log(lambda_s) - lambda_s * exp(log_sigma)
-    const T log_pi_sigma =
-          T(std::log(lambda_s))
-        - T(lambda_s) * safe_exp(log_sigma);
+    const T log_pi_sigma = log_prior_sigma_pc(
+        safe_exp(log_sigma), spde.prior_sigma_0, spde.prior_sigma_alpha);
 
     // Joint density in (log_kappa, log_tau) = PC densities + log|J|.
     return log_pi_range + log_pi_sigma + log_range + log_sigma;
