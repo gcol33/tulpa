@@ -409,21 +409,5 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
   )
 }
 
-#' @export
-print.tulpa_spatial <- function(x, ...) {
-  if (!is.null(x$type) && x$type == "spde") {
-    cat("tulpa_spatial: SPDE (Matern, nu =", x$nu, ")\n")
-    cat("  Mesh nodes:", x$n_mesh, "\n")
-    if (!is.null(x$mesh)) {
-      cat("  Triangles: ", x$mesh$n_triangles, "\n")
-    }
-    if (!is.null(x$obs_coords)) {
-      cat("  Observations:", nrow(x$obs_coords), "\n")
-    }
-    cat("  Prior range: P(range <", x$prior_range[1], ") =", x$prior_range[2], "\n")
-    cat("  Prior sigma: P(sigma >", x$prior_sigma[1], ") =", x$prior_sigma[2], "\n")
-    invisible(x)
-  } else {
-    NextMethod()
-  }
-}
+# print.tulpa_spatial (including the SPDE branch) is defined once in
+# spatial_car.R so the areal ICAR/CAR/BYM2 formatter is not shadowed.

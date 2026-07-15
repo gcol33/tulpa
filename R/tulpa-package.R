@@ -66,13 +66,6 @@ utils::globalVariables(c(".data", "ratio", ".phl_w"))
   invisible(NULL)
 }
 
-# Expression form: evaluate `expr` RNG-neutrally.
-#' @keywords internal
-.with_preserved_seed <- function(expr) {
-  .preserve_seed_in_frame()
-  expr
-}
-
 # Evaluate `expr` and restore the caller's RNG stream afterwards, so an
 # internal randomized step (diagnostic importance draws, a probe matrix)
 # leaves the session RNG untouched. Complements .seed_scoped(): that one

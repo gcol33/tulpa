@@ -177,21 +177,27 @@ BACKEND_REGISTRY <- list(
                  "Metropolis-within-Gibbs debias of the RE covariance Sigma.",
                  "Auto-selected from the Laplace path with control$re_cov = 'gibbs'")
   ),
+  # SGHMC / SGLD carry discretization + minibatch bias at a fixed step size, and
+  # MCLMC's default is the UNADJUSTED sampler (mclmc_adjusted = 0), so none of
+  # the three targets the exact posterior: they are approximate MCMC, tier
+  # "optimized" (no general correctness guarantee, explicit opt-in). They still
+  # emit chains, so Rhat/ESS measure mixing -- but mixing does not certify the
+  # (biased) stationary distribution, which is exactly what "exact" would imply.
   sghmc = list(
     emits = "chain",
-    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_sghmc_fit"
   ),
   sgld = list(
     emits = "chain",
-    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_sgld_fit"
   ),
   mclmc = list(
     emits = "chain",
-    tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
+    tier = "optimized", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_mclmc_fit",
-    note = "Microcanonical Langevin Monte Carlo over a fixed-effect GLM"
+    note = "Microcanonical Langevin Monte Carlo over a fixed-effect GLM (unadjusted by default; approximate)"
   ),
   smc = list(
     emits = "iid",

@@ -296,9 +296,13 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   theta_ref  <- opt$par[seq_len(n_theta)]
   L_list     <- .re_cov_theta_to_L_list(opt$par[-seq_len(n_theta)], layout)
   Sigma_list <- lapply(L_list, tcrossprod)
-  # Pure AGHQ marginal at the optimum (no ridge), for callers reporting log-lik.
+  # Pure AGHQ marginal at the optimum, for callers reporting log-lik. Evaluate
+  # at lkj_eta = 1 (uniform LKJ) so the reported value excludes the (eta - 1)
+  # log|R| penalty as well as the ridge -- otherwise a fit with lkj_eta > 1
+  # carries a penalty term that differs across models and biases LRT / AIC
+  # comparisons. The optimization still used the caller's lkj_eta above.
   log_marginal <- cpp_aghq_objective(opt$par, orc, nc_terms, full_vec,
-                                     as.integer(n_quad), lkj_eta)
+                                     as.integer(n_quad), 1.0)
 
   # Per-group BLUPs + marginal variances at the optimum. The engine returns the
   # prior fallback for empty groups (mode 0, variance diag(Sigma)).

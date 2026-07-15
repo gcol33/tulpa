@@ -16,11 +16,17 @@ test_that("BACKEND_REGISTRY is the single source of truth for tiers", {
   expect_setequal(ALL_BACKENDS, names(BACKEND_REGISTRY))
 })
 
-test_that("mclmc and smc are registered as Tier 1 (Exact)", {
-  expect_true("mclmc" %in% INFERENCE_TIERS$exact$backends)
+test_that("smc is Tier 1 (exact); sgld/sghmc/mclmc are Tier 3 (approximate)", {
+  # SMC (properly resampled) targets the exact posterior. SGLD/SGHMC carry
+  # fixed-step + minibatch bias and MCLMC's default is unadjusted, so they are
+  # approximate MCMC -- tier "optimized", not "exact".
   expect_true("smc" %in% INFERENCE_TIERS$exact$backends)
-  expect_equal(get_backend_tier("mclmc")$tier, 1L)
   expect_equal(get_backend_tier("smc")$tier, 1L)
+  for (b in c("sgld", "sghmc", "mclmc")) {
+    expect_false(b %in% INFERENCE_TIERS$exact$backends)
+    expect_true(b %in% INFERENCE_TIERS$optimized$backends)
+    expect_equal(get_backend_tier(b)$tier, 3L)
+  }
 })
 
 test_that("get_backend_tier preserves its shape and errors on unknown", {

@@ -205,9 +205,13 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
             sz   <- if (is.na(b)) NA_integer_ else bsize[b]
             if (is.na(sz)) next
             if (type == "bym2") {
+                # Only the structured (ICAR) component phi is rank-deficient and
+                # sum-to-zero constrained (matching its inner-solve centerer).
+                # The unstructured theta has a proper N(0,1) prior and no
+                # centerer, so constraining it removes a genuine degree of
+                # freedom and under-disperses the field draws.
                 nu <- as.integer(sz / 2L)
                 cols[[length(cols) + 1L]] <- s0 + seq_len(nu)
-                cols[[length(cols) + 1L]] <- s0 + nu + seq_len(nu)
             } else {
                 cols[[length(cols) + 1L]] <- s0 + seq_len(as.integer(sz))
             }
@@ -215,16 +219,14 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
         return(cols)
     }
 
-    # Single-block: derive field extents from phi_start / theta_start.
+    # Single-block: derive field extents from phi_start / theta_start. Only the
+    # structured phi is constrained; theta_start marks the BYM2 unstructured
+    # component, which has a proper N(0,1) prior and is NOT sum-to-zero (see the
+    # multi-block branch above).
     if (!is.null(layout$phi_start)) {
         n_phi <- (layout$theta_start %||% n_x) - layout$phi_start
         if (n_phi > 0L) cols[[length(cols) + 1L]] <- layout$phi_start +
             seq_len(n_phi)
-    }
-    if (!is.null(layout$theta_start)) {
-        n_theta <- n_x - layout$theta_start
-        if (n_theta > 0L) cols[[length(cols) + 1L]] <- layout$theta_start +
-            seq_len(n_theta)
     }
     cols
 }

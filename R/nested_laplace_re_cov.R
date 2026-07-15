@@ -401,14 +401,22 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
                                       n_draws, beta_names) {
   p  <- ncol(beta_nodes)
   ok <- is.finite(w) & w > 0 & is.finite(rowSums(beta_nodes))
+  # Cholesky each usable node's fixed-effect covariance. A node whose covariance
+  # is missing or not factorizable (a weakly identified CCD corner with a
+  # near-singular H_beta) is DROPPED and its weight redistributed -- keeping it
+  # with a zero factor would make its full-weight draws a point mass at beta_k
+  # and understate the fixed-effect spread in confint()/vcov()/summary().
+  Lb <- vector("list", length(ok))
+  for (k in seq_along(ok)) {
+    if (!isTRUE(ok[k])) next
+    V <- beta_cov_nodes[[k]]
+    if (is.null(V) || any(!is.finite(V))) { ok[k] <- FALSE; next }
+    L <- tryCatch(t(chol((V + t(V)) / 2)), error = function(e) NULL)
+    if (is.null(L)) { ok[k] <- FALSE; next }
+    Lb[[k]] <- L
+  }
   if (!any(ok)) return(NULL)
   w2 <- w; w2[!ok] <- 0; w2 <- w2 / sum(w2)
-  Lb <- lapply(seq_along(w2), function(k) {
-    if (!isTRUE(ok[k])) return(matrix(0, p, p))
-    V <- beta_cov_nodes[[k]]
-    if (is.null(V) || any(!is.finite(V))) return(matrix(0, p, p))
-    tryCatch(t(chol((V + t(V)) / 2)), error = function(e) matrix(0, p, p))
-  })
   picks <- sample.int(length(w2), n_draws, replace = TRUE, prob = w2)
   out <- matrix(NA_real_, n_draws, p)
   for (d in seq_len(n_draws)) {

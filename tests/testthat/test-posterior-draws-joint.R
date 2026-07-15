@@ -170,7 +170,7 @@ test_that("idx = NULL returns the full latent vector", {
     expect_equal(colnames(draws)[1], "x1")
 })
 
-test_that("BYM2 draws satisfy both phi and theta sum-to-zero constraints", {
+test_that("BYM2 draws constrain the structured phi but not the unstructured theta", {
     skip_on_cran()
     set.seed(21)
     adj_list <- make_grid_adjacency(5L, 5L)
@@ -197,11 +197,12 @@ test_that("BYM2 draws satisfy both phi and theta sum-to-zero constraints", {
     draws <- tulpa_posterior_draws(fit, idx = c(phi_idx, theta_idx), n = 1500L)
     phi_sums   <- rowSums(draws[, seq_len(n_s), drop = FALSE])
     theta_sums <- rowSums(draws[, n_s + seq_len(n_s), drop = FALSE])
-    # both spatial sub-blocks are constrained sum-to-zero
+    # The structured (ICAR) phi is rank-deficient and sum-to-zero constrained.
     expect_lt(stats::sd(phi_sums), 1e-6)
-    expect_lt(stats::sd(theta_sums), 1e-6)
     expect_lt(max(abs(phi_sums)), 1e-4)
-    expect_lt(max(abs(theta_sums)), 1e-4)
+    # The unstructured theta has a proper N(0,1) prior and no centerer, so it is
+    # NOT constrained: its per-draw sum is a free Gaussian, not pinned to zero.
+    expect_gt(stats::sd(theta_sums), 1e-3)
 })
 
 test_that("multi-block joint fit samples through inherited dispatch", {
