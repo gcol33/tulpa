@@ -29,6 +29,14 @@ cpp_cell_coupling_registry_size <- function() {
     .Call(`_tulpa_cpp_cell_coupling_registry_size`)
 }
 
+cpp_test_compute_cov <- function(d, sigma2, phi, cov_type) {
+    .Call(`_tulpa_cpp_test_compute_cov`, d, sigma2, phi, cov_type)
+}
+
+cpp_test_dcov_dphi <- function(d, sigma2, phi, cov_type) {
+    .Call(`_tulpa_cpp_test_dcov_dphi`, d, sigma2, phi, cov_type)
+}
+
 cpp_sample_crt <- function(y, r) {
     .Call(`_tulpa_cpp_sample_crt`, y, r)
 }

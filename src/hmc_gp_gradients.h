@@ -148,21 +148,13 @@ inline void gp_nngp_gradient_w_analytical(
   }
 }
 
-// Covariance derivative w.r.t. phi: dk(d)/dphi
-inline double dcov_dphi(double d, double phi, double cov_val, tulpa_svc::CovType cov_type) {
-  if (d < 1e-10) return 0.0;
-  switch (cov_type) {
-    case tulpa_svc::CovType::EXPONENTIAL:
-      return cov_val * d / (phi * phi);
-    case tulpa_svc::CovType::MATERN: {
-      double u = 1.732050808 * d / phi;
-      return (1.0 + u > 1e-10) ? cov_val * u * u / (phi * (1.0 + u)) : 0.0;
-    }
-    case tulpa_svc::CovType::GAUSSIAN:
-      return cov_val * d * d / (phi * phi * phi);
-    default:
-      return cov_val * d / (phi * phi);
-  }
+// Covariance derivative w.r.t. phi: dk(d)/dphi. Delegates to the canonical
+// tulpa_svc::dcov_dphi_svc, which is the same math -- this copy had drifted and
+// was returning half the true Gaussian derivative (it dropped the factor of 2
+// in k*2*d^2/phi^3).
+inline double dcov_dphi(double d, double phi, double cov_val, double sigma2,
+                        tulpa_svc::CovType cov_type) {
+  return tulpa_svc::dcov_dphi_svc(d, phi, cov_val, sigma2, cov_type);
 }
 
 // Fully analytical NNGP gradients — Eigen LLT + OpenMP parallelized
@@ -254,7 +246,7 @@ inline void gp_nngp_gradients(
       for (int j = 0; j < n_nb; j++) {
         double d = gp_data.nn_dist[i * nn + j];
         c_eigen(j) = compute_cov(d, sigma2, phi, gp_data.cov_type);
-        dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), gp_data.cov_type);
+        dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, gp_data.cov_type);
       }
 
       // Validate neighbor indices
@@ -328,7 +320,8 @@ inline void gp_nngp_gradients(
       for (int j1 = 0; j1 < n_nb; j1++) {
         for (int j2 = j1 + 1; j2 < n_nb; j2++) {
           double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
-          double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), gp_data.cov_type);
+          double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
+                                   gp_data.cov_type);
           // Symmetric: accumulate both (j1,j2) and (j2,j1)
           alpha_dC_alpha += 2.0 * alpha_vec(j1) * dC_jk * alpha_vec(j2);
           alpha_dC_beta += alpha_vec(j1) * dC_jk * beta_vec(j2) +

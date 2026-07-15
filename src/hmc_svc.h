@@ -260,18 +260,37 @@ struct SVCGradients {
   double grad_log_phi;                // Gradient w.r.t. log(phi)
 };
 
-// Covariance derivative w.r.t. phi: dk(d)/dphi
-inline double dcov_dphi_svc(double d, double phi, double cov_val, CovType cov_type) {
+// Covariance derivative w.r.t. phi: dk(d)/dphi. Single source of truth for
+// every NNGP gradient path (SVC and GP); see dcov_dphi in hmc_gp_gradients.h,
+// which delegates here.
+//
+// sigma2 is needed for SPHERICAL alone: the other kernels' derivatives are
+// proportional to k(d), so they can be written from cov_val, but the spherical
+// polynomial's is not. It was previously omitted for that reason and fell
+// through to the exponential derivative -- the value used one kernel and its
+// gradient another.
+inline double dcov_dphi_svc(double d, double phi, double cov_val, double sigma2,
+                            CovType cov_type) {
   if (d < 1e-10) return 0.0;
   switch (cov_type) {
     case CovType::EXPONENTIAL:
+      // k = s2*exp(-d/phi) -> dk/dphi = k*d/phi^2
       return cov_val * d / (phi * phi);
     case CovType::MATERN: {
+      // k = s2*(1+u)*exp(-u), u = sqrt(3)*d/phi -> dk/dphi = k*u^2/(phi*(1+u))
       double u = 1.732050808 * d / phi;  // sqrt(3) * d / phi
       return (1.0 + u > 1e-10) ? cov_val * u * u / (phi * (1.0 + u)) : 0.0;
     }
     case CovType::GAUSSIAN:
+      // k = s2*exp(-(d/phi)^2) -> dk/dphi = k*2*d^2/phi^3
       return cov_val * 2.0 * d * d / (phi * phi * phi);
+    case CovType::SPHERICAL: {
+      // k = s2*(1 - 1.5r + 0.5r^3) for r = d/phi < 1, else 0 (and flat there)
+      // -> dk/dphi = s2 * 1.5 * r * (1 - r^2) / phi
+      if (d >= phi) return 0.0;
+      double r = d / phi;
+      return sigma2 * 1.5 * r * (1.0 - r * r) / phi;
+    }
     default:
       return cov_val * d / (phi * phi);
   }
@@ -367,7 +386,7 @@ inline void svc_nngp_gradients(
     for (int j = 0; j < n_nb; j++) {
       double d = svc_data.nn_dist[i * nn + j];
       c_vec[j] = compute_cov(d, sigma2, phi, svc_data.cov_type);
-      dc_vec[j] = dcov_dphi_svc(d, phi, c_vec[j], svc_data.cov_type);
+      dc_vec[j] = dcov_dphi_svc(d, phi, c_vec[j], sigma2, svc_data.cov_type);
     }
 
     // Build C_mat and get neighbor indices
@@ -467,7 +486,8 @@ inline void svc_nngp_gradients(
           double dx = svc_data.coords[nb_idx[j1] * 2] - svc_data.coords[nb_idx[j2] * 2];
           double dy = svc_data.coords[nb_idx[j1] * 2 + 1] - svc_data.coords[nb_idx[j2] * 2 + 1];
           double d12 = std::sqrt(dx*dx + dy*dy);
-          dC_jk = dcov_dphi_svc(d12, phi, C_mat[j1 * n_nb + j2], svc_data.cov_type);
+          dC_jk = dcov_dphi_svc(d12, phi, C_mat[j1 * n_nb + j2], sigma2,
+                                svc_data.cov_type);
         }
         alpha_dC_alpha += alpha[j1] * dC_jk * alpha[j2];
         alpha_dC_beta += alpha[j1] * dC_jk * beta[j2];

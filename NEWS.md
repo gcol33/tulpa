@@ -5,6 +5,22 @@
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
 
+* FIX (statistical): the GP NNGP gradient returned half the true derivative of
+  the gaussian covariance with respect to the range -- `dcov_dphi` in
+  `hmc_gp_gradients.h` dropped the factor of 2 in `k * 2*d^2/phi^3`. The SVC
+  copy of the same function had it. A `spatial_gp(cov = "gaussian")` HMC/NUTS
+  fit therefore explored the range on a mis-scaled gradient.
+* FIX (statistical): neither copy implemented the spherical range-derivative, so
+  `spatial_gp(cov = "spherical")` computed its covariance from the spherical
+  kernel and its gradient from the exponential one -- the value and its
+  derivative described different kernels. The spherical derivative is now
+  implemented (it needs `sigma2`, since unlike the others it is not proportional
+  to `k(d)`, which is why it had been left to fall through).
+* `dcov_dphi` is single-sourced: the GP copy delegates to the canonical
+  `tulpa_svc::dcov_dphi_svc`. New `test-cov-kernel.R` checks every covariance
+  type's range-derivative against a numerical derivative of the value function
+  it differentiates, so a copy cannot drift from its own kernel again
+  (gcol33/tulpa#142 A5).
 * FIX: two out-of-bounds accesses in the analytic temporal gradient kernels --
   `rw1_grad_w` read one past the end of `w` at a single time point, and
   `rw2_grad_w` wrote one past the end of its second-difference buffer for fewer

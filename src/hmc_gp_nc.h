@@ -272,7 +272,7 @@ inline void nngp_nc_backward(
             for (int j = 0; j < n_nb; j++) {
                 double d = gp_data.nn_dist[i * nn + j];
                 c_eigen(j) = compute_cov(d, sigma2, phi, gp_data.cov_type);
-                dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), gp_data.cov_type);
+                dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, gp_data.cov_type);
                 alpha_eigen(j) = ws.B_flat[i * nn + j];
             }
 
@@ -301,7 +301,8 @@ inline void nngp_nc_backward(
                 for (int j2 = 0; j2 < n_nb; j2++) {
                     if (j1 != j2) {
                         double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
-                        double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), gp_data.cov_type);
+                        double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
+                                                  gp_data.cov_type);
                         dC_alpha[j1] += dC_jk * alpha_eigen(j2);
                     }
                 }

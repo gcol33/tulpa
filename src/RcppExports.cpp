@@ -106,6 +106,34 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_compute_cov
+double cpp_test_compute_cov(double d, double sigma2, double phi, int cov_type);
+RcppExport SEXP _tulpa_cpp_test_compute_cov(SEXP dSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type d(dSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_compute_cov(d, sigma2, phi, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_dcov_dphi
+double cpp_test_dcov_dphi(double d, double sigma2, double phi, int cov_type);
+RcppExport SEXP _tulpa_cpp_test_dcov_dphi(SEXP dSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type d(dSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_dcov_dphi(d, sigma2, phi, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_sample_crt
 Rcpp::IntegerVector cpp_sample_crt(Rcpp::IntegerVector y, double r);
 RcppExport SEXP _tulpa_cpp_sample_crt(SEXP ySEXP, SEXP rSEXP) {
@@ -3152,6 +3180,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_flatten_3d_rowmajor", (DL_FUNC) &_tulpa_cpp_flatten_3d_rowmajor, 4},
     {"_tulpa_cpp_cell_coupling_registry_has", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_has, 1},
     {"_tulpa_cpp_cell_coupling_registry_size", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_size, 0},
+    {"_tulpa_cpp_test_compute_cov", (DL_FUNC) &_tulpa_cpp_test_compute_cov, 4},
+    {"_tulpa_cpp_test_dcov_dphi", (DL_FUNC) &_tulpa_cpp_test_dcov_dphi, 4},
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},
