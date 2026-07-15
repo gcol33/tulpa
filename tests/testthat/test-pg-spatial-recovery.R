@@ -124,3 +124,32 @@ test_that("binomial temporal AR1 Gibbs recovers the field and samples rho", {
   expect_gt(stats::sd(fit$rho_short), 0.01)          # rho is sampled, not stuck
   expect_lt(abs(mean(fit$rho_short) - rho_true), 0.25)
 })
+
+test_that("binomial BYM2 Gibbs recovers the total field, intercept, and sigma", {
+  skip_on_cran()
+  set.seed(3)
+  n_s <- 30L; reps <- 20L; ntr <- 30L; b0 <- -0.2
+  adj <- chain_adj(n_s)
+  phi_s <- cumsum(rnorm(n_s, 0, 0.4)); phi_s <- phi_s - mean(phi_s)
+  theta <- rnorm(n_s, 0, 0.5)
+  b_field <- (phi_s + theta); b_field <- b_field - mean(b_field)
+  unit <- rep(seq_len(n_s), each = reps)
+  y <- rbinom(length(unit), ntr, plogis(b0 + b_field[unit]))
+  X <- matrix(1, length(unit), 1)
+
+  fit <- cpp_pg_binomial_gibbs_bym2(
+    y = as.integer(y), n = rep(ntr, length(y)), X = X,
+    re_group = rep(0L, length(y)), n_re_groups = 0L,
+    spatial_group = as.integer(unit), n_spatial_units = n_s,
+    adj_list = adj$adj_list, n_neighbors = adj$n_neighbors, scale_factor = 1.0,
+    n_iter = 3000L, n_warmup = 1500L, thin = 1L, verbose = FALSE)
+
+  # The total field, intercept, and total SD recover after the conditional-mean
+  # fix (each component's update now removes only the OTHER component's
+  # contribution). The mixing rho (structured vs unstructured split) is
+  # inherently weakly identified in BYM2, so it is not asserted.
+  expect_gt(stats::cor(colMeans(fit$spatial), b_field), 0.9)
+  expect_lt(abs(mean(fit$beta[, 1]) - b0), 0.3)
+  expect_gt(mean(fit$sigma_spatial), 0.6)
+  expect_lt(mean(fit$sigma_spatial), 1.8)
+})

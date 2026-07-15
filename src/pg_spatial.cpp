@@ -214,9 +214,11 @@ NumericVector update_spatial_bym2(
   for (int i = 0; i < N; i++) {
     int g = group[i] - 1;
     sum_omega[g] += omega[i];
-    // Remove current contribution to get residual for updating
-    double current_u = sigma_spatial * (sqrt_rho * phi_scaled[g] * scale_factor + sqrt_1_rho * theta[g]);
-    sum_resid[g] += kappa[i] - omega[i] * (offset[i] + current_u);
+    // Residual for the phi_scaled update removes only theta's contribution (the
+    // OTHER component). Removing phi's own contribution too, as before, biases
+    // the conditional mean toward zero (an artificial anti-autocorrelation).
+    double theta_contrib = sigma_spatial * sqrt_1_rho * theta[g];
+    sum_resid[g] += kappa[i] - omega[i] * (offset[i] + theta_contrib);
   }
 
   // Update phi_scaled (structured component with ICAR prior)
@@ -264,9 +266,9 @@ NumericVector update_spatial_bym2(
   }
   for (int i = 0; i < N; i++) {
     int g = group[i] - 1;
+    // Residual for the theta update removes only phi's contribution.
     double phi_contrib = sigma_spatial * sqrt_rho * phi_scaled[g] * scale_factor;
-    double theta_contrib = sigma_spatial * sqrt_1_rho * theta[g];
-    sum_resid[g] += kappa[i] - omega[i] * (offset[i] + phi_contrib + theta_contrib);
+    sum_resid[g] += kappa[i] - omega[i] * (offset[i] + phi_contrib);
   }
 
   // Update theta (unstructured component with N(0,1) prior)
