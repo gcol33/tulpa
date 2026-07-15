@@ -5,6 +5,23 @@
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
 
+* FIX (statistical): the PC prior on the TVC log-precision carried an excess
+  `+2*log_tau`, tilting the prior by `tau^2` toward large precision (improper as
+  `tau -> Inf`) and biasing time-varying-coefficient SDs low -- coefficients were
+  over-smoothed toward constant. The identical error had been found and fixed in
+  the spatiotemporal block but was never propagated to the TVC copy.
+* FIX (statistical): the PC prior on the HSGP log-variance mixed two
+  change-of-variables conventions and lost `+log(sigma)`, leaving the density
+  flat (improper) at the origin and biasing the HSGP amplitude low. The same
+  applied to the HSGP-ST block.
+* The PC prior is now single-sourced for real: `pc_prior.h` is templated over the
+  autodiff types and provides the density on every scale a sampler parameterizes
+  (`sigma`, `log_sigma`, `sigma2`, `log_sigma2`, `tau`, `log_tau`), each derived
+  once from the base exponential plus its Jacobian. Every site delegates. The
+  header was previously `double`-only, which is why each autodiff path re-derived
+  the algebra by hand -- and why two of them got it wrong. New
+  `test-pc-prior-scales.R` pins each scale against the base density plus a
+  numerical Jacobian and checks each integrates to one (gcol33/tulpa#142 A4).
 * FIX (statistical): RW1/RW2 single-block Laplace deleted the field's level --
   the post-Newton centering discarded the field mean instead of folding it into
   the intercept, so an intrinsic temporal fit reported an intercept of ~0.

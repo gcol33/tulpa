@@ -12,6 +12,7 @@
 #include "autodiff_utils.h"
 #include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
 #include "icar_kernel.h"   // count_graph_components (spatial rank)
+#include "pc_prior.h"      // single-source PC prior on every sampled scale
 
 namespace tulpa {
 namespace priors {
@@ -97,18 +98,9 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
         T log_tau_st = params[layout.log_tau_st_idx];
         T tau_st = safe_exp(log_tau_st);
 
-        // PC prior on sigma = 1/sqrt(tau), reparameterized to the sampled
-        // log_tau_st (log precision). Change of variables:
-        //   sigma = exp(-0.5 * log_tau)  ->  |dsigma/dlog_tau| = 0.5 * sigma,
-        //   log-Jacobian = log(0.5) + log(sigma) = -log(2) - 0.5 * log_tau.
-        // The earlier code added -log(2*sigma) + log_tau = -log(2) + 1.5*log_tau,
-        // an excess of +2*log_tau that tilted the prior by tau^2 toward large
-        // precision (interaction SD biased low). Cross-checks the HSGP-ST block
-        // below, which samples log-variance and correctly adds +0.5*log_sigma2.
-        T sigma_st = T(1.0) / safe_sqrt(tau_st);
-        T lambda_st = T(-std::log(data.st_sigma2_prior_alpha) / data.st_sigma2_prior_U);
-        log_post = log_post + safe_log(lambda_st) - lambda_st * sigma_st
-                 - safe_log(T(2.0)) + safe_log(sigma_st);
+        // PC prior on sigma = 1/sqrt(tau), on the sampled log-precision scale.
+        log_post = log_post + log_prior_log_tau_pc(
+            log_tau_st, data.st_sigma2_prior_U, data.st_sigma2_prior_alpha);
 
         // AR1 rho parameter
         T rho_st = T(0.0);
@@ -194,9 +186,10 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             T sigma2_st_hsgp = safe_exp(params[layout.log_sigma2_st_hsgp_idx]);
             T lengthscale_st_hsgp = safe_exp(params[layout.log_lengthscale_st_hsgp_idx]);
 
-            // PC prior on sigma_st_hsgp: rate=4.6
-            T sigma_st_h = safe_sqrt(sigma2_st_hsgp);
-            log_post = log_post - T(4.6) * sigma_st_h + T(0.5) * params[layout.log_sigma2_st_hsgp_idx];
+            // PC prior on sigma_st_hsgp, on the sampled log-variance scale.
+            // P(sigma > 1) = 0.01.
+            log_post = log_post + log_prior_log_sigma2_pc(
+                params[layout.log_sigma2_st_hsgp_idx], 1.0, 0.01);
 
             // LogNormal(0,1) on lengthscale
             T log_ls_st = params[layout.log_lengthscale_st_hsgp_idx];

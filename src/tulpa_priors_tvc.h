@@ -11,6 +11,7 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "hmc_tvc.h"
+#include "pc_prior.h"
 
 namespace tulpa {
 namespace priors {
@@ -39,13 +40,9 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
             T log_tau = params[layout.log_tau_tvc_start + j];
             tvc_tau[j] = safe_exp(log_tau);
 
-            // PC prior on tau (exponential prior on sigma = 1/sqrt(tau))
-            // P(sigma > U) = alpha  =>  rate = -log(alpha) / U
-            T sigma_tvc = T(1.0) / safe_sqrt(tvc_tau[j]);
-            T rate_tvc = T(-std::log(0.01) / 1.0);  // P(sigma > 1) = 0.01
-            log_post = log_post + safe_log(rate_tvc) - rate_tvc * sigma_tvc
-                     - safe_log(T(2.0) * sigma_tvc);
-            log_post = log_post + log_tau;  // Jacobian for log transform
+            // PC prior on sigma = 1/sqrt(tau), on the sampled log-precision
+            // scale. P(sigma > 1) = 0.01.
+            log_post = log_post + log_prior_log_tau_pc(log_tau, 1.0, 0.01);
         }
 
         // Extract rho (AR1 correlation) parameters if AR1 structure

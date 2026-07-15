@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "pc_prior.h"
 
 namespace tulpa {
 namespace priors {
@@ -40,13 +41,9 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
             hsgp_beta[j] = params[layout.hsgp_beta_start + j];
         }
 
-        // PC prior on sigma: P(sigma > 1) = 0.01 -> rate = 4.6
-        // log p(sigma) = log(rate) - rate*sigma - log(2*sigma)
-        T sigma_hsgp = safe_sqrt(sigma2_hsgp);
-        T rate_sigma_hsgp = T(4.6);
-        log_post = log_post + safe_log(rate_sigma_hsgp) - rate_sigma_hsgp * sigma_hsgp
-                   - safe_log(T(2.0) * sigma_hsgp);
-        log_post = log_post + log_sigma2_hsgp * T(0.5);  // Jacobian: d(sigma)/d(log_sigma2)
+        // PC prior on sigma, on the sampled log-variance scale.
+        // P(sigma > 1) = 0.01.
+        log_post = log_post + log_prior_log_sigma2_pc(log_sigma2_hsgp, 1.0, 0.01);
 
         // LogNormal(0, 1) prior on lengthscale
         // log p(ell) = -0.5 * log(ell)^2  (Jacobian cancels)

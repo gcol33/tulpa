@@ -589,6 +589,10 @@ cpp_test_miid_prior <- function(theta_logchol, p, n, x) {
     .Call(`_tulpa_cpp_test_miid_prior`, theta_logchol, p, n, x)
 }
 
+cpp_pc_prior_scales <- function(sigma, U, alpha) {
+    .Call(`_tulpa_cpp_pc_prior_scales`, sigma, U, alpha)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

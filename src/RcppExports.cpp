@@ -2612,6 +2612,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_pc_prior_scales
+Rcpp::NumericVector cpp_pc_prior_scales(double sigma, double U, double alpha);
+RcppExport SEXP _tulpa_cpp_pc_prior_scales(SEXP sigmaSEXP, SEXP USEXP, SEXP alphaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type sigma(sigmaSEXP);
+    Rcpp::traits::input_parameter< double >::type U(USEXP);
+    Rcpp::traits::input_parameter< double >::type alpha(alphaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_pc_prior_scales(sigma, U, alpha));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -3222,6 +3235,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_outer_thread_cap", (DL_FUNC) &_tulpa_cpp_test_outer_thread_cap, 2},
     {"_tulpa_cpp_test_grid_factor_bytes", (DL_FUNC) &_tulpa_cpp_test_grid_factor_bytes, 1},
     {"_tulpa_cpp_test_miid_prior", (DL_FUNC) &_tulpa_cpp_test_miid_prior, 4},
+    {"_tulpa_cpp_pc_prior_scales", (DL_FUNC) &_tulpa_cpp_pc_prior_scales, 3},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

@@ -12,6 +12,7 @@
 #include "laplace_core.h"
 #include "pg_binomial.h"
 #include "hmc_gp.h"
+#include "pc_prior.h"
 #include "sparse_hessian.h"
 #include "sparse_cholesky.h"
 #include "mcar_block_factory.h"
@@ -1564,5 +1565,24 @@ List cpp_test_miid_prior(
     _["log_prior"]     = lp,
     _["Sinv"]          = Sinv_m,
     _["log_det_Sigma"] = log_det_Sigma
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PC-prior scales (gcol33/tulpa#142 A4). Exposes every parameterization of the
+// shared PC prior so a test can verify each against the base sigma-density plus
+// a numerical change-of-variables Jacobian.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_pc_prior_scales(double sigma, double U, double alpha) {
+  using namespace tulpa;
+  const double sigma2    = sigma * sigma;
+  const double tau       = 1.0 / sigma2;
+  return Rcpp::NumericVector::create(
+    Rcpp::_["sigma"]      = log_prior_sigma_pc<double>(sigma, U, alpha),
+    Rcpp::_["log_sigma"]  = log_prior_log_sigma_pc<double>(std::log(sigma), U, alpha),
+    Rcpp::_["sigma2"]     = log_prior_sigma2_pc<double>(sigma2, U, alpha),
+    Rcpp::_["log_sigma2"] = log_prior_log_sigma2_pc<double>(std::log(sigma2), U, alpha),
+    Rcpp::_["tau"]        = log_prior_tau_pc<double>(tau, U, alpha),
+    Rcpp::_["log_tau"]    = log_prior_log_tau_pc<double>(std::log(tau), U, alpha)
   );
 }

@@ -8,6 +8,7 @@
 #include <vector>
 #include <cmath>
 #include "hmc_temporal.h"  // Reuse RW1/RW2/AR1 implementations
+#include "pc_prior.h"      // single-source PC prior on every sampled scale
 
 // Use canonical type definitions from exported headers
 #include "tulpa/tvc_data.h"
@@ -169,11 +170,7 @@ inline T tvc_sum_to_zero_penalty(
 // Log prior for TVC precision (PC prior style)
 // Favors smaller variance = simpler (more constant) coefficients
 inline double log_prior_tau_pc(double tau, double U, double alpha) {
-  // sigma ~ Exponential(rate = -log(alpha)/U)
-  // tau = 1/sigma^2, apply Jacobian
-  double sigma = 1.0 / std::sqrt(tau);
-  double rate = -std::log(alpha) / U;
-  return std::log(rate) - rate * sigma - std::log(2.0 * sigma) - 2.0 * std::log(tau);
+  return tulpa::log_prior_tau_pc<double>(tau, U, alpha);
 }
 
 // Log prior for AR1 correlation

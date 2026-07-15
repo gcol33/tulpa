@@ -249,20 +249,6 @@ inline double iid_grad_log_sigma2(const double* phi, int n, double sigma2) {
 // PC prior gradient for sigma2 (on log_sigma2 scale)
 // =============================================================================
 
-// PC prior: log p(sigma) = log(rate) - rate * sigma - log(2*sigma)
-// where rate = -log(alpha) / U
-// d/d(log_sigma2) = d/d(sigma) * d(sigma)/d(log_sigma2)
-//                 = (-rate - 1/sigma) * (sigma / 2)
-//                 = -0.5 * rate * sigma - 0.5
-inline double pc_prior_grad_log_sigma2(double sigma2, double U, double alpha) {
-    double sigma = std::sqrt(sigma2 + 1e-10);
-    double rate = -std::log(alpha + 1e-10) / (U + 1e-10);
-    // d log_prior / d log_sigma2 = d log_prior / d sigma * d sigma / d log_sigma2
-    // d log_prior / d sigma = -rate - 1/sigma
-    // d sigma / d log_sigma2 = sigma / 2
-    return (-rate - 1.0 / sigma) * (sigma / 2.0);
-}
-
 // =============================================================================
 // Full multiscale temporal prior gradients
 // =============================================================================

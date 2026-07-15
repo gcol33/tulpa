@@ -211,9 +211,7 @@ inline void compute_temporal_eta(
 // PC prior for temporal variance (favor simpler models with smaller variance)
 template <typename T>
 inline T log_prior_sigma2_temporal_pc(const T& sigma2, double U, double alpha) {
-  T rate = T(-std::log(alpha) / U);
-  T sigma = safe_sqrt(sigma2);
-  return safe_log(rate) - rate * sigma - safe_log(T(2.0) * sigma);
+  return tulpa::log_prior_sigma2_pc(sigma2, U, alpha);
 }
 
 // Prior for AR1 rho: Beta(a, b) on (rho + 1) / 2

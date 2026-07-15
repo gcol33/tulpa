@@ -10,6 +10,7 @@
 #include "hmc_gp.h"
 #include "hmc_svc_autodiff.h"  // Canonical templated covariance functions
 #include "autodiff_utils.h"
+#include "pc_prior.h"          // single-source PC prior on every sampled scale
 
 namespace tulpa_gp {
 
@@ -309,11 +310,7 @@ T multiscale_gp_log_lik_t(
 // PC prior on sigma2: P(sigma > U) = alpha => sigma ~ Exp(rate = -log(alpha)/U)
 template<typename T>
 T log_prior_sigma2_pc_t(const T& sigma2, double U, double alpha) {
-    double rate = -std::log(alpha) / U;
-    T sigma = safe_sqrt(sigma2);
-    // p(sigma) = rate * exp(-rate * sigma)
-    // Jacobian: d(sigma)/d(sigma2) = 1/(2*sigma)
-    return T(std::log(rate)) - rate * sigma - safe_log(T(2.0) * sigma);
+    return tulpa::log_prior_sigma2_pc(sigma2, U, alpha);
 }
 
 // Uniform prior on phi within bounds
