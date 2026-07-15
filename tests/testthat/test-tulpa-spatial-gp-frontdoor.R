@@ -82,6 +82,34 @@ test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74
   expect_lt(abs(beta[2] - s$beta[2]), 0.35)        # slope
 })
 
+test_that("the NNGP marginal H_beta is built when locations carry replicates", {
+  # 150 observations over 50 locations. The Schur builder read the obs -> unit
+  # map from `spatial_idx`, which an areal spec carries and a GP spec does not;
+  # the GP spec calls it `obs_to_loc`. The missing field defaulted the map to
+  # seq_len(n_obs), whose column index runs past n_spatial the moment a location
+  # is replicated, so sparseMatrix() threw, the builder warned, and every
+  # fixed-effect SE came back NULL.
+  s <- sim_gp_binomial(n_loc = 50L, reps = 3L)
+  d <- s$data
+
+  fit <- suppressMessages(tulpa(
+    y ~ x, data = d, family = "binomial", n_trials = d$ntrials,
+    spatial = spatial_gp(~ lon + lat, nn = 8L), mode = "laplace"
+  ))
+
+  expect_false(is.null(fit$H_beta))
+  H <- as.matrix(fit$H_beta)
+  expect_equal(dim(H), c(2L, 2L))
+  expect_true(all(is.finite(H)))
+  # A marginal precision: symmetric positive definite, so it inverts to SEs.
+  expect_equal(H, t(H))
+  expect_true(all(eigen(H, symmetric = TRUE, only.values = TRUE)$values > 0))
+  se <- sqrt(diag(solve(H)))
+  expect_true(all(is.finite(se) & se > 0))
+  # The slope's band has to be informative enough to cover the truth.
+  expect_lt(abs(fit$mode[2L] - s$beta[2L]), 3 * se[2L])
+})
+
 test_that("structured and auto route an NNGP field to nested_laplace", {
   skip_on_cran()
   s <- sim_gp_binomial(n_loc = 40L, reps = 2L)

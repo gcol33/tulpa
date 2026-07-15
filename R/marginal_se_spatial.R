@@ -186,21 +186,43 @@ NULL
 
 # --- Schur complement for NNGP marginal H_beta ----------------------------
 
-#' Build a length-n_obs -> length-n_unique indicator design matrix Z.
+#' Build a length-n_obs -> length-n_units indicator design matrix Z.
 #'
-#' NNGP latent w lives on unique coordinates; each observation maps to one
-#' unique-coord slot via `spatial_idx`. So `Z[i, j]` = 1 iff observation i
-#' belongs to unique location j.
+#' The latent field lives on units -- unique coordinates for an NNGP field,
+#' adjacency units for an areal one -- and each observation belongs to exactly
+#' one, so `Z[i, j]` = 1 iff observation i sits on unit j.
 #'
+#' The map is passed in rather than read off the spec, because the two specs
+#' that reach here name it differently: a GP spec carries `obs_to_loc`, an areal
+#' spec carries `spatial_idx`. Reading one name served only one caller; for the
+#' other the field was absent, the map silently became `seq_len(n_obs)`, and the
+#' column index ran past `n_units` as soon as a location carried more than one
+#' observation.
+#'
+#' @param obs_to_unit Per-observation unit index, or empty for one observation
+#'   per unit.
 #' @keywords internal
-.nngp_design_Z <- function(spatial, n_obs) {
-  obs_to_unique <- spatial$spatial_idx %||% seq_len(n_obs)
-  Matrix::sparseMatrix(
-    i = seq_len(n_obs),
-    j = as.integer(obs_to_unique),
-    x = 1.0,
-    dims = c(n_obs, spatial$n_spatial %||% nrow(spatial$unique_coords))
-  )
+.field_design_Z <- function(obs_to_unit, n_units, n_obs) {
+  n_units <- as.integer(n_units)
+  if (length(obs_to_unit) == 0L) {
+    if (n_obs != n_units) {
+      stop("No observation -> unit map, but there are ", n_obs,
+           " observations over ", n_units, " units; the identity map only ",
+           "holds when they are equal.", call. = FALSE)
+    }
+    obs_to_unit <- seq_len(n_obs)
+  }
+  j <- as.integer(obs_to_unit)
+  if (length(j) != n_obs) {
+    stop("Observation -> unit map has length ", length(j), ", expected ",
+         n_obs, ".", call. = FALSE)
+  }
+  if (anyNA(j) || min(j) < 1L || max(j) > n_units) {
+    stop("Observation -> unit map indexes outside 1:", n_units, ".",
+         call. = FALSE)
+  }
+  Matrix::sparseMatrix(i = seq_len(n_obs), j = j, x = 1.0,
+                       dims = c(n_obs, n_units))
 }
 
 
@@ -267,7 +289,7 @@ NULL
   u    <- mode[p + seq_len(n_re_groups + n_spatial)]
 
   D_re    <- .re_design(re_idx, n_re_groups, n_obs)
-  Z_field <- .nngp_design_Z(spatial, n_obs)
+  Z_field <- .field_design_Z(spatial$obs_to_loc, n_spatial, n_obs)
   D       <- cbind(D_re, Z_field)
 
   eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
@@ -373,7 +395,7 @@ NULL
   u    <- mode[p + seq_len(n_re_groups + n_units)]
 
   D_re    <- .re_design(re_idx, n_re_groups, n_obs)
-  Z_field <- .nngp_design_Z(spatial, n_obs)   # obs -> areal unit indicator
+  Z_field <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)
   D       <- cbind(D_re, Z_field)
 
   eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)

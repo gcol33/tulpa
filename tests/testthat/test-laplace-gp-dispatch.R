@@ -126,14 +126,15 @@ test_that("tulpa_laplace(spatial = spatial_gp(...)) runs end-to-end", {
   expect_length(fit$mode, ncol(X) + ss$spec$n_spatial)
   expect_true(is.finite(fit$log_marginal))
   # Since issue #16: H_beta is the Schur'd marginal precision for NNGP via
-  # Q_nngp = (I-A)' D^{-1} (I-A). If the inner Newton converged the marginal
-  # is informative; on this fully-synthetic tiny problem we just confirm
-  # shape and finiteness — actual SE quality is exercised in
-  # dev_notes/test_issue16_nngp_se.R against tulpaObs end-to-end.
-  if (!is.null(fit$H_beta)) {
-    expect_equal(dim(fit$H_beta), c(ncol(X), ncol(X)))
-    expect_true(all(is.finite(fit$H_beta)))
-  }
+  # Q_nngp = (I-A)' D^{-1} (I-A). SE quality is exercised in
+  # dev_notes/test_issue16_nngp_se.R against tulpaObs end-to-end; here the
+  # property is that it is produced at all. This was guarded behind
+  # `if (!is.null(fit$H_beta))`, which asserts nothing in exactly the case
+  # worth catching: the builder degrades to a warning and a NULL, so the
+  # conditional turned a silent loss of every fixed-effect SE into a pass.
+  expect_false(is.null(fit$H_beta))
+  expect_equal(dim(fit$H_beta), c(ncol(X), ncol(X)))
+  expect_true(all(is.finite(fit$H_beta)))
 })
 
 test_that("tulpa_laplace(spatial = spatial_gp(...)) converges on the sparse path", {
