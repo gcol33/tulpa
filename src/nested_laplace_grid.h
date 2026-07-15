@@ -79,6 +79,7 @@
 
 #include "laplace_core.h"
 #include "nested_laplace_checkpoint.h"
+#include "omp_threads.h"          // tulpa_omp_team_size_req (cache-safe clamp)
 #include "sparse_cholesky.h"
 #include <tulpa/nested_progress.h>
 #include <Rcpp.h>
@@ -189,6 +190,17 @@ inline Rcpp::List run_nested_laplace_grid(
         if (store_modes) out["modes"] = all_modes;
         return out;
     }
+
+    // Clamp the outer width to the environment (OMP_NUM_THREADS via
+    // omp_get_max_threads(), OMP_THREAD_LIMIT) and the grid size before it is
+    // used. The per-cell block cache (NlCellCache) sizes its slot array from
+    // omp_get_max_threads(); a num_threads(n) clause is honored even when n
+    // exceeds that (e.g. OMP_NUM_THREADS=1 on a cluster with n_threads_outer >
+    // 1), which would map every excess worker onto slot 0 and corrupt the
+    // shared CHOLMOD factor. Clamping here keeps every thread id within the
+    // cache's slot count; the memory-budget clamp the caller applied still
+    // bounds it from above.
+    n_threads_outer = tulpa_omp_team_size_req(n_threads_outer, n_grid);
 
     // The realised outer width is the driver's own property: every caller hands
     // it the concurrency it will actually run at (n_outer, already clamped by

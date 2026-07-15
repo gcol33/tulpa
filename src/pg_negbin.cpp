@@ -617,10 +617,11 @@ List pg_negbin_negbin_gibbs(
       kappa_num[i] = (y_num[i] - r_num) / 2.0;
     }
 
-    // 2a. Sample omega_num ~ PG(y_num + r_num, eta_num)
+    // 2a. Sample omega_num ~ PG(y_num + r_num, eta_num) at the exact real
+    // shape (rounding the shape biases the augmented joint worst at zero
+    // counts with small r; matches the single-process kernel above).
     for (int i = 0; i < N; i++) {
-      int b = static_cast<int>(std::round(y_num[i] + r_num));
-      omega_num[i] = rpg_int(std::max(1, b), eta_num[i]);
+      omega_num[i] = rpg_real(y_num[i] + r_num, eta_num[i]);
     }
 
     // 3a. Update beta_num
@@ -656,10 +657,10 @@ List pg_negbin_negbin_gibbs(
       kappa_denom[i] = (y_denom[i] - r_denom) / 2.0;
     }
 
-    // 2b. Sample omega_denom ~ PG(y_denom + r_denom, eta_denom)
+    // 2b. Sample omega_denom ~ PG(y_denom + r_denom, eta_denom) at the exact
+    // real shape (see 2a).
     for (int i = 0; i < N; i++) {
-      int b = static_cast<int>(std::round(y_denom[i] + r_denom));
-      omega_denom[i] = rpg_int(std::max(1, b), eta_denom[i]);
+      omega_denom[i] = rpg_real(y_denom[i] + r_denom, eta_denom[i]);
     }
 
     // 3b. Update beta_denom

@@ -182,11 +182,17 @@ struct CkptReader {
         std::vector<T> v;
         std::uint64_t n = get<std::uint64_t>();
         if (!ok) return v;
-        if (p + n * sizeof(T) > end) { ok = false; return v; }
-        v.resize(n);
-        if (n) {
-            std::memcpy(v.data(), p, n * sizeof(T));
-            p += n * sizeof(T);
+        // Cap n against the bytes actually remaining BEFORE computing
+        // n * sizeof(T) (which could overflow a uint64 and wrap past the check)
+        // or resizing (a torn/corrupt length field would otherwise allocate
+        // gigabytes). A length that cannot fit is a truncated tail, not a value.
+        std::size_t remaining = static_cast<std::size_t>(end - p);
+        if (n > remaining / sizeof(T)) { ok = false; return v; }
+        std::size_t nn = static_cast<std::size_t>(n);
+        v.resize(nn);
+        if (nn) {
+            std::memcpy(v.data(), p, nn * sizeof(T));
+            p += nn * sizeof(T);
         }
         return v;
     }
@@ -295,16 +301,24 @@ private:
                        "or set checkpoint$resume = FALSE to start over.",
                        path_.c_str());
         }
+        // File size, so a torn/garbage record length cannot drive a multi-GiB
+        // string allocation before the short read is detected as a torn tail.
+        std::streampos after_hdr = in.tellg();
+        in.seekg(0, std::ios::end);
+        std::uintmax_t file_size = static_cast<std::uintmax_t>(in.tellg());
+        in.seekg(after_hdr);
         std::uintmax_t good_bytes = sizeof(MAGIC) + sizeof(stored_fp);
         while (true) {
             std::uint32_t key_len = 0, pay_len = 0;
             in.read(reinterpret_cast<char*>(&key_len), sizeof(key_len));
             if (!in) break;
+            if (key_len > file_size - static_cast<std::uintmax_t>(in.tellg())) break;
             std::string key(key_len, '\0');
             in.read(&key[0], key_len);
             if (!in) break;
             in.read(reinterpret_cast<char*>(&pay_len), sizeof(pay_len));
             if (!in) break;
+            if (pay_len > file_size - static_cast<std::uintmax_t>(in.tellg())) break;
             std::string payload(pay_len, '\0');
             in.read(&payload[0], pay_len);
             if (!in) break;

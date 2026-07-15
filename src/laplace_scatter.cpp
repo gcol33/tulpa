@@ -19,6 +19,15 @@ void scatter_obs_grad_hess_base(
     const NumericVector& eta, const std::string& family, double phi,
     DenseVec& grad, DenseMat& H, int n_threads
 ) {
+    // This entry carries no phi2, so tweedie (which needs the variance power)
+    // can never evaluate here: stop on the calling thread BEFORE the parallel
+    // region — a per-observation Rcpp::stop inside the structured block would
+    // escape it, which is std::terminate. Mirrors compute_total_log_lik.
+    if (family == "tweedie") {
+        Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
+                   "route it through the LikelihoodSpec path, which carries "
+                   "phi2.");
+    }
     #ifdef _OPENMP
     #pragma omp parallel num_threads(n_threads > 0 ? n_threads : 1)
     {

@@ -589,15 +589,23 @@ inline void scatter_arm_obs_indexed_cached(
 
     if (go_parallel) {
         const int T = n_threads;
-        std::vector<std::vector<double>> Hbuf(T), gbuf(T);
+        // Allocate every per-thread buffer BEFORE the parallel region: nnz can
+        // be large at scale and the sparse driver runs at the free-RAM ceiling,
+        // so a bad_alloc is a supported regime -- and one thrown inside an
+        // OpenMP structured block is std::terminate. Allocating serially here
+        // lets it unwind to the caller as a normal error.
+        std::vector<std::vector<double>> Hbuf(T), gbuf(T), wbuf(T);
+        for (int t = 0; t < T; t++) {
+            Hbuf[t].assign(nnz, 0.0);
+            gbuf[t].assign(n_x, 0.0);
+            wbuf[t].assign(w_sz, 0.0);
+        }
         #pragma omp parallel num_threads(T)
         {
             const int t = omp_get_thread_num();
             std::vector<double>& Hl = Hbuf[t];
             std::vector<double>& gl = gbuf[t];
-            Hl.assign(nnz, 0.0);
-            gl.assign(n_x, 0.0);
-            std::vector<double> w_buf(w_sz, 0.0);
+            std::vector<double>& w_buf = wbuf[t];
 
             #pragma omp for schedule(static)
             for (int i = 0; i < arm.N; i++) {

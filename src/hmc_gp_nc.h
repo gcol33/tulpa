@@ -60,17 +60,22 @@ inline void nngp_nc_forward(
     Eigen::VectorXd c_eigen(nn);
     Eigen::LLT<Eigen::MatrixXd> llt(nn);
 
-    // First observation: marginal N(0, sigma2)
+    // First observation: marginal N(0, sigma2). Guard the location index: a
+    // malformed nn_order (e.g. a 1-based ordering leaking through) would make
+    // ws.w[first_loc] / z[first_loc] an out-of-bounds access.
     int first_loc = gp_data.nn_order[0];
     ws.sqrt_d[0] = std::sqrt(sigma2);
-    ws.w[first_loc] = ws.sqrt_d[0] * z[first_loc];
     ws.B_n_nb[0] = 0;
+    if (first_loc >= 0 && first_loc < N) {
+        ws.w[first_loc] = ws.sqrt_d[0] * z[first_loc];
+    }
 
     for (int i = 1; i < N; i++) {
         int obs_loc = gp_data.nn_order[i];
         if (obs_loc < 0 || obs_loc >= N) {
+            // obs_loc is out of range; set only the i-indexed fields and skip
+            // the ws.w[obs_loc] / z[obs_loc] write (matches the gradient path).
             ws.sqrt_d[i] = std::sqrt(sigma2);
-            ws.w[obs_loc] = ws.sqrt_d[i] * z[obs_loc];
             ws.B_n_nb[i] = 0;
             continue;
         }
