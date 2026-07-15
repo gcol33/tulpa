@@ -57,9 +57,19 @@ fixes surfaced by a fan-out code audit.
 * FIX (CRAN): `tulpaRatio` example blocks moved from `\donttest` to `\dontrun`;
   `tools` declared in `Imports`; the `ggplot2` vignette chunks gated on
   `requireNamespace()`.
-* FIX (unwired): the two-process negbin Polya-Gamma Gibbs kernel drew the
-  augmentation shape rounded to an integer; it now uses the exact real shape
-  (`rpg_real`), matching the single-process kernel.
+* FIX (previously unwired PG kernels): the six binomial Polya-Gamma spatial /
+  temporal Gibbs kernels (ICAR, GP, multiscale GP, temporal AR1, BYM2, RSR) --
+  exported but not wired to a front door, and previously untested -- carried real
+  statistical defects. Fixed and validated with a new parameter-recovery suite
+  (`test-pg-spatial-recovery.R`): the ICAR tau shape now counts connected
+  components and the field mean is absorbed into the intercept; the single- and
+  multi-scale GP kernels use the NNGP-correct conjugate sigma2 and MH phi
+  (shared `update_nngp_scale`, DRY) with the field level anchored (they diverged
+  before -- sigma2 railed, phi did a data-free random walk); the temporal AR1
+  conditional now uses both neighbours and rho is sampled (it was frozen at its
+  init yet reported as a posterior); and the BYM2 component updates remove only
+  the other component's contribution. The two-process negbin kernel now draws the
+  exact real Polya-Gamma shape (`rpg_real`).
 
 ## 0.1.0 (2026-07-14)
 
