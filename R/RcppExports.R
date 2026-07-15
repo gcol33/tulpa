@@ -233,6 +233,14 @@ cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {
     .Call(`_tulpa_cpp_nested_laplace_test_occupancy_likelihood`, y, det_prob)
 }
 
+cpp_test_gp_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type) {
+    .Call(`_tulpa_cpp_test_gp_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type)
+}
+
+cpp_test_svc_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type) {
+    .Call(`_tulpa_cpp_test_svc_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type)
+}
+
 cpp_pg_binomial_gibbs <- function(y, n, X, group, n_groups, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_scale = 2.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs`, y, n, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, store_eta, verbose, n_threads)
 }

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include "autodiff_utils.h"
 #include "hmc_svc.h"  // For SVCData and CovType
+#include "nngp_cond.h"  // shared Vecchia conditional kernel (factor/krige/floor)
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -76,65 +77,26 @@ inline T compute_cov(double d, const T& sigma2, const T& phi, CovType cov_type) 
 // Templated Cholesky decomposition for small matrices
 // =============================================================================
 
-// Cholesky decomposition: A = L * L^T
-// Returns false if decomposition fails (matrix not positive definite)
-// Uses larger jitter (1e-5) for numerical stability in HMC
+// The SVC conditioning constants live in tulpa_svc (hmc_svc.h) so this autodiff
+// kernel and its double twin there read the same values.
+using tulpa_svc::kSvcJitter;
+using tulpa_svc::kSvcVarFloor;
+
+// Cholesky / triangular solves: thin aliases over the shared NNGP kernel, kept
+// so existing SVC call sites read unchanged.
 template<typename T>
 inline bool cholesky_decomp(const std::vector<T>& A, int n, std::vector<T>& L) {
-    L.assign(n * n, T(0.0));
-
-    // Pre-add diagonal jitter for numerical stability
-    // Increased to 1e-4 to reduce divergences in HMC
-    constexpr double JITTER = 1e-4;
-
-    for (int j = 0; j < n; j++) {
-        for (int k = 0; k <= j; k++) {
-            T sum = A[j * n + k];
-            // Add jitter to diagonal
-            if (j == k) {
-                sum = sum + T(JITTER);
-            }
-            for (int m = 0; m < k; m++) {
-                sum = sum - L[j * n + m] * L[k * n + m];
-            }
-            if (j == k) {
-                // Check for positive definiteness
-                if (get_value(sum) <= 1e-12) {
-                    return false;  // Matrix is not positive definite
-                }
-                L[j * n + j] = safe_sqrt(sum);
-            } else {
-                L[j * n + k] = sum / L[k * n + k];
-            }
-        }
-    }
-    return true;
+    return tulpa_nngp::chol_decomp(A, n, L, kSvcJitter);
 }
 
-// Solve L * y = b (forward substitution)
 template<typename T>
 inline void solve_lower(const std::vector<T>& L, int n, const std::vector<T>& b, std::vector<T>& y) {
-    y.resize(n);
-    for (int j = 0; j < n; j++) {
-        T sum = b[j];
-        for (int k = 0; k < j; k++) {
-            sum = sum - L[j * n + k] * y[k];
-        }
-        y[j] = sum / L[j * n + j];
-    }
+    tulpa_nngp::solve_lower(L, n, b, y);
 }
 
-// Solve L^T * x = y (backward substitution)
 template<typename T>
 inline void solve_upper(const std::vector<T>& L, int n, const std::vector<T>& y, std::vector<T>& x) {
-    x.resize(n);
-    for (int j = n - 1; j >= 0; j--) {
-        T sum = y[j];
-        for (int k = j + 1; k < n; k++) {
-            sum = sum - L[k * n + j] * x[k];
-        }
-        x[j] = sum / L[j * n + j];
-    }
+    tulpa_nngp::solve_upper(L, n, y, x);
 }
 
 // =============================================================================
@@ -213,51 +175,23 @@ T nngp_log_lik(
             }
         }
 
-        // Cholesky decomposition: C = L * L^T
-        std::vector<T> L;
-        if (!cholesky_decomp(C_mat, n_neighbors, L)) {
-            // Decomposition failed - return -infinity
-            return T(-INFINITY);
-        }
-
-        // Solve C * alpha = c_vec via L * L^T * alpha = c_vec
-        // First: L * y = c_vec
-        std::vector<T> y;
-        solve_lower(L, n_neighbors, c_vec, y);
-
-        // Second: L^T * alpha = y
-        std::vector<T> alpha;
-        solve_upper(L, n_neighbors, y, alpha);
-
-        // Conditional mean: mu_i = c^T * C^{-1} * w_{N(i)} = alpha^T * w_{N(i)}
-        T cond_mean = T(0.0);
+        // Gather the neighbour values in c_vec order, then the shared kernel:
+        // factor, krige, floor. The SVC constants blend at the floor to keep a
+        // little gradient (see kSvcJitter / kSvcVarFloor).
+        std::vector<T> w_nb(n_neighbors);
         for (int j = 0; j < n_neighbors; j++) {
             int nn_orig_idx = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];
-            cond_mean = cond_mean + alpha[j] * w[nn_orig_idx];
+            w_nb[j] = w[nn_orig_idx];
         }
-
-        // Conditional variance: var_i = sigma2 - c^T * C^{-1} * c
-        T c_Cinv_c = T(0.0);
-        for (int j = 0; j < n_neighbors; j++) {
-            c_Cinv_c = c_Cinv_c + c_vec[j] * alpha[j];
+        T cond_mean, cond_var;
+        if (!tulpa_nngp::cond_moments(C_mat, c_vec, w_nb, n_neighbors, sigma2,
+                                      kSvcJitter, kSvcVarFloor,
+                                      tulpa_nngp::VarFloor::Blend,
+                                      cond_mean, cond_var)) {
+            return T(-INFINITY);
         }
-        T cond_var = sigma2 - c_Cinv_c;
-
-        // Ensure positive variance with smooth transition for differentiability
-        // Use max(MIN_VAR, cond_var) but with smooth gradient near boundary
-        // Increased to 1e-4 to reduce HMC divergences
-        constexpr double MIN_VAR = 1e-4;
-        double cv_val = get_value(cond_var);
-
-        if (cv_val < MIN_VAR) {
-            // Blend smoothly: keep most of MIN_VAR but maintain some gradient information
-            cond_var = T(MIN_VAR * 0.99) + cond_var * T(0.01);
-        }
-
-        // Log-likelihood contribution
-        T resid = w[obs_idx] - cond_mean;
-        log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI) * cond_var);
-        log_lik = log_lik - T(0.5) * resid * resid / cond_var;
+        log_lik = log_lik + tulpa_nngp::cond_log_density(w[obs_idx], cond_mean,
+                                                         cond_var);
     }
 
     return log_lik;

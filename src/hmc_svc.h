@@ -13,6 +13,7 @@
 #include "tulpa/svc_data.h"
 #include "tulpa/types.h"
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
+#include "nngp_cond.h"    // shared Vecchia conditional kernel (factor/krige/floor)
 
 // Fallback definition of M_PI if not provided by <cmath>
 #ifndef M_PI
@@ -23,6 +24,15 @@ namespace tulpa_svc {
 
 using tulpa::CovType;
 using tulpa::SVCData;
+
+// Conditioning constants for the SVC NNGP kernel. The SVC kernel deliberately
+// runs a looser diagonal nugget / conditional-variance floor than the GP one
+// (kGpJitter / kGpVarFloor in hmc_gp_autodiff.h) to reduce HMC divergences on
+// near-duplicate coordinates. They live here so the double kernel below and its
+// autodiff twin in hmc_svc_autodiff.h read the SAME values: those two are the
+// same function and must agree, whatever the value is.
+constexpr double kSvcJitter = 1e-4;
+constexpr double kSvcVarFloor = 1e-4;
 
 // -----------------------------------------------------------------------------
 // Covariance functions
@@ -149,23 +159,27 @@ inline double nngp_log_lik(
       }
     }
 
-    // Gather neighbor values in c_vec order, then shared factor/solve core.
-    // This kernel uses a larger jitter / variance floor (1e-6) to prevent
-    // ill-conditioning on near-duplicate coordinates.
+    // Gather neighbor values in c_vec order, then the shared NNGP kernel at
+    // T = double. This is the double twin of tulpa_svc_ad::nngp_log_lik and must
+    // agree with it, so it takes the SAME constants (kSvcJitter / kSvcVarFloor,
+    // the deliberately looser SVC conditioning) and the same blended floor.
+    // #109 consolidated this function to jitter/var_floor = 1e-6, but it routed
+    // through a double-only core the AD twin could not use, so the twin kept
+    // 1e-4 and the two silently described different models.
     std::vector<double> w_nb(n_neighbors);
     for (int j = 0; j < n_neighbors; j++) {
       int nn_orig_idx = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];
       w_nb[j] = w[nn_orig_idx];
     }
     double cond_mean, cond_var;
-    tulpa_linalg::nngp_conditional_moments(
-        C_mat.data(), c_vec.data(), w_nb.data(), n_neighbors, sigma2,
-        /*jitter=*/1e-6, /*var_floor=*/1e-6, cond_mean, cond_var);
-
-    // Log-likelihood contribution
-    double resid = w[obs_idx] - cond_mean;
-    log_lik += -0.5 * std::log(2.0 * M_PI * cond_var) -
-               0.5 * resid * resid / cond_var;
+    if (!tulpa_nngp::cond_moments(C_mat, c_vec, w_nb, n_neighbors, sigma2,
+                                  kSvcJitter,
+                                  kSvcVarFloor,
+                                  tulpa_nngp::VarFloor::Blend,
+                                  cond_mean, cond_var)) {
+      return -INFINITY;
+    }
+    log_lik += tulpa_nngp::cond_log_density(w[obs_idx], cond_mean, cond_var);
   }
 
   return log_lik;

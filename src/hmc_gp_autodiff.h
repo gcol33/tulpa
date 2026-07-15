@@ -33,39 +33,20 @@ inline T compute_cov_t(double d, const T& sigma2, const T& phi,
 // =============================================================================
 
 // Cholesky decomposition: A = L * L^T
+// kGpJitter / kGpVarFloor come from hmc_gp.h, so this autodiff copy and the
+// double ones in hmc_gp_log_lik.h / hmc_gp_gradients.h read the SAME values.
+// The gradients are finite-differenced from the double log-likelihood, so the
+// copies must condition the neighbour covariance identically or the value and
+// the gradient describe different models.
+//
+// This copy used to add the jitter only to an already-degenerate pivot
+// (get_value(sum) < 1e-10), so on well-conditioned input it added none at all
+// while the double copies added kGpJitter to every diagonal.
+
 // Returns false if not positive definite
 template<typename T>
 inline bool cholesky_decompose_t(const std::vector<T>& A, int n, std::vector<T>& L) {
-    L.assign(n * n, T(0.0));
-
-    for (int j = 0; j < n; j++) {
-        T sum = A[j * n + j];
-        for (int k = 0; k < j; k++) {
-            sum = sum - L[j * n + k] * L[j * n + k];
-        }
-
-        // Check positive definiteness
-        if (get_value(sum) < 1e-10) {
-            // Add small jitter and try again
-            sum = sum + T(1e-8);
-            if (get_value(sum) < 1e-10) {
-                return false;
-            }
-        }
-
-        L[j * n + j] = safe_sqrt(sum);
-
-        // Off-diagonal elements
-        for (int i = j + 1; i < n; i++) {
-            T sum_ij = A[i * n + j];
-            for (int k = 0; k < j; k++) {
-                sum_ij = sum_ij - L[i * n + k] * L[j * n + k];
-            }
-            L[i * n + j] = sum_ij / L[j * n + j];
-        }
-    }
-
-    return true;
+    return tulpa_nngp::chol_decomp(A, n, L, kGpJitter);
 }
 
 // =============================================================================
@@ -199,23 +180,9 @@ T gp_nngp_log_lik_t(
             }
         }
 
-        // Cholesky decomposition
-        std::vector<T> L_small(n_neighbors * n_neighbors);
-        if (!cholesky_decompose_t(C_mat, n_neighbors, L_small)) {
-            return T(-1e10);  // Not positive definite
-        }
-
-        // Solve L * y = c_vec (forward substitution)
+        // Gather the neighbour values in c_vec order.
         std::vector<T> c_small(c_vec.begin(), c_vec.begin() + n_neighbors);
-        std::vector<T> y_small;
-        solve_lower(L_small, n_neighbors, c_small, y_small);
-
-        // Solve L^T * alpha = y (backward substitution)
-        std::vector<T> alpha_small;
-        solve_upper(L_small, n_neighbors, y_small, alpha_small);
-
-        // Conditional mean
-        T cond_mean = T(0.0);
+        std::vector<T> w_nb(n_neighbors);
         for (int j = 0; j < n_neighbors; j++) {
             int raw_nn_idx = gp_data.nn_idx[i * nn + j];
 
@@ -229,26 +196,24 @@ T gp_nngp_log_lik_t(
                 return T(-1e10);
             }
 
-            cond_mean = cond_mean + alpha_small[j] * w[nn_orig_idx];
+            w_nb[j] = w[nn_orig_idx];
         }
 
-        // Conditional variance: sigma2 - c^T * C^{-1} * c
-        T c_Cinv_c = T(0.0);
-        for (int j = 0; j < n_neighbors; j++) {
-            c_Cinv_c = c_Cinv_c + c_small[j] * alpha_small[j];
+        // Factor / krige / floor via the shared kernel, at the same constants
+        // the double GP path uses (kGpJitter on every diagonal, kGpVarFloor
+        // clamped). Those constants are the contract between this copy and
+        // gp_nngp_log_lik / gp_nngp_gradients: the gradients are
+        // finite-differenced from the double copy, so if the two condition the
+        // matrix differently they describe different models.
+        T cond_mean, cond_var;
+        if (!tulpa_nngp::cond_moments(C_mat, c_small, w_nb, n_neighbors, sigma2,
+                                      kGpJitter, kGpVarFloor,
+                                      tulpa_nngp::VarFloor::Clamp,
+                                      cond_mean, cond_var)) {
+            return T(-1e10);  // Not positive definite
         }
-        T cond_var = sigma2 - c_Cinv_c;
-
-        // Ensure positive variance
-        if (get_value(cond_var) < 1e-10) {
-            cond_var = T(1e-10);
-        }
-
-        // Log-likelihood contribution
-        T resid = w[obs_idx] - cond_mean;
-        log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI));
-        log_lik = log_lik - T(0.5) * safe_log(cond_var);
-        log_lik = log_lik - T(0.5) * resid * resid / cond_var;
+        log_lik = log_lik + tulpa_nngp::cond_log_density(w[obs_idx], cond_mean,
+                                                         cond_var);
     }
 
 #if AUTODIFF_DEBUG

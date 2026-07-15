@@ -108,7 +108,7 @@ inline void gp_nngp_gradient_w_analytical(
 
       // Build C_mat using cached distances (symmetric fill)
       for (int j1 = 0; j1 < n_nb; j1++) {
-        C_eigen(j1, j1) = sigma2 + 1e-8;
+        C_eigen(j1, j1) = sigma2 + kGpJitter;
         for (int j2 = j1 + 1; j2 < n_nb; j2++) {
           double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
           double cov_val = compute_cov(d12, sigma2, phi, gp_data.cov_type);
@@ -129,7 +129,7 @@ inline void gp_nngp_gradient_w_analytical(
       for (int j = 0; j < n_nb; j++) w_nb_eigen(j) = w[nb_idx[j]];
       double cond_mean = alpha_vec.head(n_nb).dot(w_nb_eigen.head(n_nb));
       double c_Cinv_c = c_eigen.head(n_nb).dot(alpha_vec.head(n_nb));
-      double cond_var = std::max(sigma2 - c_Cinv_c, 1e-10);
+      double cond_var = std::max(sigma2 - c_Cinv_c, kGpVarFloor);
       double resid = w[obs_idx] - cond_mean;
 
       // Gradient w.r.t. w
@@ -267,7 +267,7 @@ inline void gp_nngp_gradients(
 
       // Build C_mat using cached nn_neighbor_dist (symmetric fill, upper triangle only)
       for (int j1 = 0; j1 < n_nb; j1++) {
-        C_eigen(j1, j1) = sigma2 + 1e-8;  // Diagonal + jitter
+        C_eigen(j1, j1) = sigma2 + kGpJitter;  // Diagonal + jitter
         for (int j2 = j1 + 1; j2 < n_nb; j2++) {
           double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
           double cov_val = compute_cov(d12, sigma2, phi, gp_data.cov_type);
@@ -300,7 +300,7 @@ inline void gp_nngp_gradients(
       // Conditional mean and variance
       double mu = alpha_vec.head(n_nb).dot(w_nb_eigen.head(n_nb));
       double c_alpha = c_eigen.head(n_nb).dot(alpha_vec.head(n_nb));
-      double v = std::max(sigma2 - c_alpha, 1e-10);
+      double v = std::max(sigma2 - c_alpha, kGpVarFloor);
       double r = w[obs_idx] - mu;
 
       // Gradient w.r.t. w

@@ -5,6 +5,31 @@
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
 
+* FIX (statistical): the GP NNGP autodiff kernel and its double twin
+  conditioned the neighbour covariance differently -- the double copy added a
+  `1e-8` nugget to every diagonal, the autodiff copy added it only to an
+  already-degenerate pivot, so on well-conditioned data it added none at all.
+  The analytic GP gradients are finite-differenced from the double copy, so the
+  value and the gradient described different models on ordinary input, not just
+  degenerate input. (`hmc_gp_autodiff.h` carried a "known heisenbug with
+  autodiff" note.) Both twins now share one kernel and one pair of constants.
+* FIX: the SVC NNGP double kernel and its autodiff twin ran different
+  conditioning -- 1e-6 vs 1e-4. The 0.0.75 consolidation (#109) routed the double
+  kernel through a `double`-only core the autodiff twin could not use, so the
+  twin kept its own literals; and the function it consolidated has no callers,
+  while the live SVC path runs the autodiff one. Both now read
+  `tulpa_svc::kSvcJitter` / `kSvcVarFloor`, pinned at the live path's values, so
+  behaviour on the reachable path is unchanged.
+* The Vecchia/NNGP conditional (factor, krige, floor, accumulate) is now one
+  templated kernel in `nngp_cond.h`, shared by the SVC and GP kernels on both the
+  `double` and autodiff paths -- the previous shared core was `double`-only,
+  which is precisely why the autodiff copies were hand-written and drifted. The
+  per-kernel conditioning constants stay explicit arguments (the SVC kernel
+  deliberately runs looser than the GP one), but a kernel can no longer differ
+  from its own twin. New `test-nngp-twin.R` asserts each autodiff kernel,
+  instantiated at `T = double`, returns its double twin's value -- including on
+  near-duplicate coordinates, where the conditioning actually bites
+  (gcol33/tulpa#142 A3).
 * FIX (statistical): the GP NNGP gradient returned half the true derivative of
   the gaussian covariance with respect to the range -- `dcov_dphi` in
   `hmc_gp_gradients.h` dropped the factor of 2 in `k * 2*d^2/phi^3`. The SVC

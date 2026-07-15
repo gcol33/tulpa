@@ -32,6 +32,22 @@ using tulpa::GPSolver;
 using tulpa::GPSolverConfig;
 using tulpa_svc::compute_cov;
 
+// Conditioning constants for the GP NNGP kernels. Declared here, ahead of the
+// hmc_gp_* fragments this header stitches in, so the double log-likelihood, the
+// analytic gradients and the autodiff twin in hmc_gp_autodiff.h all read ONE
+// value. They are the contract between those copies: the gradients are
+// finite-differenced from the double log-likelihood, so if the copies condition
+// the neighbour covariance differently the value and the gradient describe
+// different models. (They did: the autodiff copy added its jitter only to an
+// already-degenerate pivot, so on well-conditioned input it added none while the
+// double copies added kGpJitter to every diagonal.)
+//
+// The GP kernel conditions more tightly than the SVC one (tulpa_svc::kSvcJitter
+// / kSvcVarFloor); that split is deliberate, and is why these are per-kernel
+// constants rather than a shared default.
+constexpr double kGpJitter = 1e-8;
+constexpr double kGpVarFloor = 1e-10;
+
 // Parse sampler string to enum
 inline MSGPSampler parse_msgp_sampler(const std::string& s) {
   static const tulpa::EnumEntry<MSGPSampler> table[] = {

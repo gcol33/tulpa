@@ -193,7 +193,7 @@ inline double gp_nngp_log_lik(
     // Add small jitter to diagonal for numerical stability — prevents
     // ill-conditioning when phi is very small or sigma2 is near zero.
     for (int j = 0; j < n_neighbors; j++) {
-      C_mat(j, j) += 1e-8;
+      C_mat(j, j) += kGpJitter;
     }
 
     if (!solve_neighbor_system(C_mat, n_neighbors, c_vec, alpha, llt,
@@ -236,7 +236,7 @@ inline double gp_nngp_log_lik(
     for (int j = 0; j < n_neighbors; j++) {
       c_Cinv_c += c_vec(j) * alpha(j);
     }
-    double cond_var = std::max(1e-10, sigma2 - c_Cinv_c);
+    double cond_var = std::max(kGpVarFloor, sigma2 - c_Cinv_c);
 
     // Log-likelihood contribution
     double resid = w[obs_idx] - cond_mean;

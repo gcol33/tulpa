@@ -1205,6 +1205,44 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_gp_nngp_twins
+Rcpp::NumericVector cpp_test_gp_nngp_twins(Rcpp::NumericVector w, double sigma2, double phi, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::NumericVector nn_neighbor_dist, Rcpp::IntegerVector nn_order, Rcpp::IntegerVector nn_order_inv, int cov_type);
+RcppExport SEXP _tulpa_cpp_test_gp_nngp_twins(SEXP wSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_neighbor_distSEXP, SEXP nn_orderSEXP, SEXP nn_order_invSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type nn_neighbor_dist(nn_neighbor_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order_inv(nn_order_invSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_gp_nngp_twins(w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_svc_nngp_twins
+Rcpp::NumericVector cpp_test_svc_nngp_twins(Rcpp::NumericVector w, double sigma2, double phi, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int cov_type);
+RcppExport SEXP _tulpa_cpp_test_svc_nngp_twins(SEXP wSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_svc_nngp_twins(w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_pg_binomial_gibbs
 Rcpp::List cpp_pg_binomial_gibbs(Rcpp::IntegerVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::IntegerVector group, int n_groups, int n_iter, int n_warmup, int thin, double prior_beta_sd, double prior_sigma_scale, bool store_eta, bool verbose, int n_threads);
 RcppExport SEXP _tulpa_cpp_pg_binomial_gibbs(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP groupSEXP, SEXP n_groupsSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP thinSEXP, SEXP prior_beta_sdSEXP, SEXP prior_sigma_scaleSEXP, SEXP store_etaSEXP, SEXP verboseSEXP, SEXP n_threadsSEXP) {
@@ -3231,6 +3269,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 8},
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 23},
     {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
+    {"_tulpa_cpp_test_gp_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_gp_nngp_twins, 10},
+    {"_tulpa_cpp_test_svc_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_svc_nngp_twins, 8},
     {"_tulpa_cpp_pg_binomial_gibbs", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs, 13},
     {"_tulpa_cpp_pg_binomial_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_spatial, 19},
     {"_tulpa_cpp_pg_binomial_gibbs_bym2", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_bym2, 21},
