@@ -135,9 +135,32 @@ double update_tau_icar(
     }
   }
 
+  // ICAR rank is J - k for k connected components (one constant null direction
+  // per component), so the shape is (J - k)/2, not (J - 1)/2. A disconnected
+  // adjacency (spatial(by=) replication makes this routine) otherwise biases
+  // tau upward. Component count by BFS on the (1-based) adjacency list, matching
+  // the negbin kernel's convention.
+  int k_comp = 0;
+  {
+    std::vector<int> seen(J, 0);
+    std::vector<int> stack;
+    for (int s0 = 0; s0 < J; s0++) {
+      if (seen[s0]) continue;
+      seen[s0] = 1; stack.clear(); stack.push_back(s0);
+      while (!stack.empty()) {
+        int s = stack.back(); stack.pop_back();
+        std::vector<int> nb = Rcpp::as<std::vector<int>>(adj_list[s]);
+        for (int e = 0; e < n_neighbors[s]; e++) {
+          int t = nb[e] - 1;
+          if (t >= 0 && t < J && !seen[t]) { seen[t] = 1; stack.push_back(t); }
+        }
+      }
+      k_comp++;
+    }
+  }
+
   // Posterior parameters
-  // Note: ICAR has rank J-1 (one constraint), so degrees of freedom is (J-1)/2
-  double post_shape = prior_shape + (J - 1.0) / 2.0;
+  double post_shape = prior_shape + (J - k_comp) / 2.0;
   double post_rate = prior_rate + quad_form / 2.0;
 
   return R::rgamma(post_shape, 1.0 / post_rate);
