@@ -707,8 +707,7 @@ gp_cov_type_for_laplace <- function(spatial) {
     if (isTRUE(all.equal(nu, 1.5))) return(1L)
     if (isTRUE(all.equal(nu, 2.5))) return(2L)
     stop("NNGP Laplace supports Matern with nu in {1.5, 2.5}; ",
-         "got nu = ", format(nu),
-         ". Use HMC (which supports general nu) or set nu = 1.5 / 2.5.",
+         "got nu = ", format(nu), ". Set nu = 1.5 or 2.5.",
          call. = FALSE)
   }
   stop(sprintf(

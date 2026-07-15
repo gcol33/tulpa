@@ -52,7 +52,13 @@ inline double cov_spherical(double d, double sigma2, double phi) {
   return sigma2 * (1.0 - 1.5 * r + 0.5 * r * r * r);
 }
 
-// Generic covariance function dispatcher
+// Generic covariance function dispatcher.
+//
+// NOTE: CovType::MATERN is fixed at smoothness nu = 3/2 -- this dispatch has no
+// nu argument. spatial_gp(cov = "matern", nu = ) accepts any positive nu and
+// the Laplace path honours nu in {1.5, 2.5} (gp_cov_type_for_laplace), so a
+// consumer filling GPData.cov_type from a user's nu must reject anything other
+// than 1.5 rather than let it be silently rounded to 3/2 here.
 inline double compute_cov(double d, double sigma2, double phi, CovType cov_type) {
   switch (cov_type) {
     case CovType::EXPONENTIAL:
