@@ -40,17 +40,24 @@ make_ar1_tgmrf <- function(n, theta_grid_matrix, bounds = NULL) {
 
 test_that("tgmrf AR1 matches built-in AR1 modes up to z-block recentering", {
   skip_on_cran()
-  # Both paths assemble the same Newton system (same Q, same likelihood)
-  # and converge to the same MAP. Built-in AR1 then applies a sum-to-zero
-  # *post-hoc* center_effects on the z block (a relabel that leaves the
-  # internal Newton state alone but shifts the reported z by -mean(z_MAP)
-  # without adjusting beta — see laplace_newton.h L112). tgmrf carries no
-  # `center` callback because user-defined Q is generally full-rank and a
-  # mean shift IS a real change there. The equivalence test therefore
-  # compares:
-  #   * beta exactly (the centering does not touch beta)
-  #   * z up to the mean-zero offset (subtract mean(z_tgmrf) and assert
-  #     pointwise match with z_builtin).
+  # Both paths assemble the same Newton system (same Q, same likelihood) and
+  # converge to the same MAP. Built-in AR1 then applies a sum-to-zero
+  # center_effects to the z block post-Newton, and folds the mean it removes
+  # into process 0's intercept, so the pair it reports is
+  #
+  #   (beta + mean(z_MAP),  z_MAP - mean(z_MAP))
+  #
+  # which carries the same eta as the tgmrf pair. Folding rather than
+  # discarding is the point of that centering: dropping the mean deleted an
+  # intrinsic field's level and reported an intercept of ~0 (3462a73). tgmrf
+  # carries no `center` callback -- user-defined Q is generally full rank, where
+  # a mean shift is a real change -- so it reports the uncentered pair.
+  #
+  # The two labelings are exact reparameterizations of one fit, so the
+  # equivalence to assert is the offset itself:
+  #   * beta up to the folded mean: beta_builtin == beta_tgmrf + mean(z_tgmrf)
+  #   * z up to the same offset:    z_builtin    == z_tgmrf - mean(z_tgmrf)
+  # Both hold to machine precision, and eta agrees between the paths at ~1e-16.
   set.seed(2026)
   n <- 25L
   tau_true <- 1.5; rho_true <- 0.6
@@ -90,15 +97,24 @@ test_that("tgmrf AR1 matches built-in AR1 modes up to z-block recentering", {
 
   expect_equal(dim(user$modes), dim(builtin$modes))
 
-  # beta: column 1 of each modes matrix.
-  expect_equal(user$modes[, 1], builtin$modes[, 1], tolerance = 1e-8)
+  # z columns: 2..n+1. The offset the built-in removes from z is the one it
+  # folds into beta, so both comparisons are driven by the same quantity.
+  z_cols  <- 2:(n + 1L)
+  user_z  <- user$modes[, z_cols, drop = FALSE]
+  z_offset <- rowMeans(user_z)
 
-  # z columns: 2..n+1. Subtract row-wise mean from tgmrf and compare.
-  z_cols <- 2:(n + 1L)
-  user_z <- user$modes[, z_cols, drop = FALSE]
-  user_z_centered <- user_z - rowMeans(user_z)
-  expect_equal(user_z_centered, builtin$modes[, z_cols, drop = FALSE],
+  # beta: column 1, up to the mean folded in by center_effects.
+  expect_equal(user$modes[, 1] + z_offset, builtin$modes[, 1],
+               tolerance = 1e-8)
+
+  expect_equal(user_z - z_offset, builtin$modes[, z_cols, drop = FALSE],
                tolerance = 1e-6, ignore_attr = TRUE)
+
+  # The labelings must describe one fit: eta is what has to agree, and it does
+  # so independently of how the level is split between beta and z.
+  eta_user    <- user$modes[, 1] + user_z
+  eta_builtin <- builtin$modes[, 1] + builtin$modes[, z_cols, drop = FALSE]
+  expect_equal(eta_user, eta_builtin, tolerance = 1e-8, ignore_attr = TRUE)
 })
 
 test_that("tgmrf AR1 recovers theta on a Poisson sim", {
