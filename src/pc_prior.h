@@ -133,6 +133,35 @@ inline T log_prior_range_pc(const T& range, double U, double alpha) {
   return log_prior_range_pc_at_log(math::safe_log(range), U, alpha);
 }
 
+// ---------------------------------------------------------------------------
+// Half-Cauchy scale prior
+// ---------------------------------------------------------------------------
+// Not a PC prior, but it lives here because it needs the same thing the scale
+// table above exists to supply: the density taken to the coordinate it is
+// sampled on. The unnormalized half-Cauchy(0, s) on the SD sigma is
+//
+//   log p(sigma) = -log(1 + sigma^2 / s^2)
+//
+// and the samplers that use it sample log_sigma2, where sigma =
+// exp(log_sigma2 / 2) and so log|dsigma/dlog_sigma2| = -log(2) +
+// 0.5 * log_sigma2. Applying the sigma2-row Jacobian (a full log_sigma2)
+// instead leaves the tail flat in log_sigma2 -- the density stops decaying as
+// sigma2 grows, so the prior is improper and the marginal SD is bounded only
+// by the likelihood. Included, the density integrates to the half-Cauchy
+// normalizer pi/2 (asserted in test-pc-prior.R).
+template <typename T>
+inline T log_prior_sigma_half_cauchy(const T& sigma, double scale) {
+  return -math::safe_log(T(1.0) + sigma * sigma / T(scale * scale));
+}
+
+// Same density, on the sampled log-variance coordinate.
+template <typename T>
+inline T log_prior_log_sigma2_half_cauchy(const T& log_sigma2, double scale) {
+  const T sigma = math::safe_exp(log_sigma2 * T(0.5));
+  return log_prior_sigma_half_cauchy(sigma, scale)
+       - T(std::log(2.0)) + T(0.5) * log_sigma2;
+}
+
 }  // namespace tulpa
 
 #endif  // TULPA_PC_PRIOR_H

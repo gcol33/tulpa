@@ -241,6 +241,10 @@ cpp_test_svc_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_
     .Call(`_tulpa_cpp_test_svc_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type)
 }
 
+cpp_test_log_prior_log_sigma2_half_cauchy <- function(log_sigma2, scale) {
+    .Call(`_tulpa_cpp_test_log_prior_log_sigma2_half_cauchy`, log_sigma2, scale)
+}
+
 cpp_test_log_prior_range_pc <- function(range, U, alpha) {
     .Call(`_tulpa_cpp_test_log_prior_range_pc`, range, U, alpha)
 }

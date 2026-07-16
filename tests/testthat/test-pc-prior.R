@@ -108,3 +108,39 @@ test_that("a GP/SVC NNGP block requires its range anchors", {
                "PC prior on the range")
   expect_silent(tulpa:::cpp_test_gp_layout_anchor_check(0.1, 0.05))
 })
+
+test_that("the SVC half-Cauchy scale prior is proper on the sampled scale", {
+  # The SVC block samples log_sigma2 and puts a half-Cauchy(0, scale) on the
+  # marginal SD. The density has to be carried to log_sigma2 with that
+  # coordinate's Jacobian; with the sigma2-row Jacobian instead the tail stops
+  # decaying and the prior integrates to infinity, so nothing bounds the
+  # marginal SD from above.
+  for (scale in c(0.5, 1.0, 2.5)) {
+    dens <- function(x) {
+      exp(tulpa:::cpp_test_log_prior_log_sigma2_half_cauchy(x, scale))
+    }
+
+    # Proper, and normalized to the half-Cauchy constant: substituting
+    # sigma = exp(x/2) into int_0^inf 1/(1 + sigma^2/s^2) dsigma gives
+    # s * pi/2 regardless of the coordinate it is integrated in.
+    total <- stats::integrate(dens, lower = -Inf, upper = Inf,
+                              rel.tol = 1e-10)$value
+    expect_equal(total, scale * pi / 2, tolerance = 1e-6)
+
+    # A flat tail would show up as mass growing linearly in the upper bound.
+    # Doubling the bound must leave the accumulated mass unchanged instead.
+    m80  <- stats::integrate(dens, lower = -80, upper = 80,  rel.tol = 1e-10)$value
+    m160 <- stats::integrate(dens, lower = -80, upper = 160, rel.tol = 1e-10)$value
+    expect_equal(m160, m80, tolerance = 1e-8)
+  }
+})
+
+test_that("the half-Cauchy density matches its definition on sigma", {
+  # The independently written twin: the density on sigma, transformed by hand.
+  scale <- 1.3
+  x <- c(-4, -1.5, 0, 0.8, 3.2)
+  sigma <- exp(x / 2)
+  twin <- -log(1 + sigma^2 / scale^2) - log(2) + 0.5 * x
+  expect_equal(tulpa:::cpp_test_log_prior_log_sigma2_half_cauchy(x, scale),
+               twin, tolerance = 1e-12)
+})

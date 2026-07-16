@@ -1243,6 +1243,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_log_prior_log_sigma2_half_cauchy
+Rcpp::NumericVector cpp_test_log_prior_log_sigma2_half_cauchy(Rcpp::NumericVector log_sigma2, double scale);
+RcppExport SEXP _tulpa_cpp_test_log_prior_log_sigma2_half_cauchy(SEXP log_sigma2SEXP, SEXP scaleSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type log_sigma2(log_sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type scale(scaleSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_log_prior_log_sigma2_half_cauchy(log_sigma2, scale));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_log_prior_range_pc
 Rcpp::NumericVector cpp_test_log_prior_range_pc(Rcpp::NumericVector range, double U, double alpha);
 RcppExport SEXP _tulpa_cpp_test_log_prior_range_pc(SEXP rangeSEXP, SEXP USEXP, SEXP alphaSEXP) {
@@ -3334,6 +3346,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
     {"_tulpa_cpp_test_gp_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_gp_nngp_twins, 10},
     {"_tulpa_cpp_test_svc_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_svc_nngp_twins, 8},
+    {"_tulpa_cpp_test_log_prior_log_sigma2_half_cauchy", (DL_FUNC) &_tulpa_cpp_test_log_prior_log_sigma2_half_cauchy, 2},
     {"_tulpa_cpp_test_log_prior_range_pc", (DL_FUNC) &_tulpa_cpp_test_log_prior_range_pc, 3},
     {"_tulpa_cpp_test_log_prior_range_pc_at_log", (DL_FUNC) &_tulpa_cpp_test_log_prior_range_pc_at_log, 3},
     {"_tulpa_cpp_test_bounded_from_logit", (DL_FUNC) &_tulpa_cpp_test_bounded_from_logit, 3},

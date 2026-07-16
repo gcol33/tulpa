@@ -82,10 +82,10 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 T log_sigma2 = params[layout.log_sigma2_svc_start + j];
                 svc_sigma2[j] = safe_exp(log_sigma2);
 
-                T sigma = safe_sqrt(svc_sigma2[j]);
-                double scale = data.svc_sigma2_prior_scale;
-                log_post = log_post - safe_log(T(1.0) + sigma * sigma / T(scale * scale));
-                log_post = log_post + log_sigma2;
+                // Half-Cauchy(0, scale) on the marginal SD, carried to the
+                // sampled log-variance coordinate by the shared helper.
+                log_post = log_post + log_prior_log_sigma2_half_cauchy(
+                    log_sigma2, data.svc_sigma2_prior_scale);
             }
 
             // Extract phi (spatial range) parameters. Sampled unconstrained on

@@ -22,6 +22,24 @@ anchors (see the last bullet).
   proper on `(0, inf)` and needs no bounding box -- the same shape the SPDE
   field has always used for `log_kappa`.
 
+* FIX (statistical): the SVC NNGP block's half-Cauchy prior on the marginal SD
+  was improper on the coordinate it is sampled on, so nothing bounded the SVC
+  marginal SD from above. The density is written on `sigma`
+  (`-log(1 + sigma^2 / scale^2)`) but carried to the sampled `log_sigma2` with
+  that coordinate's *variance*-row Jacobian (a full `log_sigma2`) rather than
+  its own (`-log(2) + 0.5 * log_sigma2`). The surplus `0.5 * log_sigma2` flattens
+  the tail exactly: `log p` tends to a constant as `sigma2` grows, so the mass
+  below a bound grows linearly in that bound instead of converging, and only the
+  likelihood pulled `sigma` back. The GP block was never affected -- its base
+  density (`log_prior_sigma2_pc_t`) is written on `sigma2`, so the full
+  `log_sigma2` is the right Jacobian there. Both scale priors now come from
+  named helpers in `pc_prior.h` (`log_prior_sigma_half_cauchy`,
+  `log_prior_log_sigma2_half_cauchy`) rather than being spelled out at the
+  sampling site, which is the failure mode that header exists to prevent.
+  `test-pc-prior.R` asserts the density integrates to the half-Cauchy
+  normalizer `scale * pi/2` and that doubling the integration bound leaves the
+  accumulated mass unchanged.
+
 * FIX: every NNGP fit whose locations carry replicates returned
   `H_beta = NULL`, so all fixed-effect standard errors were lost -- degraded to
   a warning rather than an error, and covered by a test that guarded its own
