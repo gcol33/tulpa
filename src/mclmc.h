@@ -426,6 +426,12 @@ inline MCLMCResult mamclmc_sample(
             std::copy(p_prop.begin(), p_prop.end(), p.begin());
             std::copy(grad_prop.begin(), grad_prop.end(), grad.begin());
             lp = lp_prop;
+        } else {
+            // Generalized-HMC / partial-refresh reversibility (Horowitz 1991;
+            // Neal 2011, sec. 5.3): flip the momentum on rejection so the
+            // leapfrog proposal followed by the Langevin refresh leaves the
+            // canonical distribution invariant.
+            for (int i = 0; i < dim; i++) p[i] = -p[i];
         }
 
         // Canonical Langevin refresh — preserves p ~ N(0, mass).

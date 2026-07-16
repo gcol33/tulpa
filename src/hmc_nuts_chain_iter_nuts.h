@@ -208,25 +208,33 @@
       if (divergent && !is_warmup && use_softabs_retry) {
         softabs_retries++;
 
-        // Compute fresh Hessian at current position (p+1 gradient evals)
-        std::vector<double> hessian_buf;
-        compute_hessian_finite_diff(q, data, layout, hessian_buf);
-        for (auto& v : hessian_buf) v = -v;  // Negate: -H = curvature
+        // Freeze the SoftAbs metric: compute the Hessian-based metric and its
+        // step size ONCE (at the first post-warmup divergence) and reuse it for
+        // every later rescue. Recomputing a position-dependent metric and
+        // re-tuning epsilon at each divergent q made the rescue kernel depend on
+        // the current state in a non-reversible way, biasing exactly the hard
+        // region it targets. A single frozen metric is a fixed alternative
+        // proposal (Riemannian in spirit, state-independent in practice).
+        bool metric_ok = softabs_metric_active;
+        if (!softabs_metric_active) {
+          std::vector<double> hessian_buf;
+          compute_hessian_finite_diff(q, data, layout, hessian_buf);
+          for (auto& v : hessian_buf) v = -v;  // Negate: -H = curvature
 
-        std::vector<double> G_inv_buf, L_G_inv_buf;
-        bool metric_ok = compute_softabs_metric(
-          hessian_buf, n_params, 1.0, G_inv_buf, L_G_inv_buf
-        );
+          std::vector<double> G_inv_buf, L_G_inv_buf;
+          metric_ok = compute_softabs_metric(
+            hessian_buf, n_params, 1.0, G_inv_buf, L_G_inv_buf
+          );
+          if (metric_ok) {
+            softabs_persistent_mass.set_from_metric(G_inv_buf, L_G_inv_buf);
+            softabs_persistent_eps = find_reasonable_epsilon_dense(
+              q, data, layout, rng, softabs_persistent_mass);
+            softabs_metric_active = true;
+          }
+        }
 
         if (metric_ok) {
-          // Update persistent SoftAbs metric for retry use only (improvement #2).
-          // Do NOT override main mass/epsilon ? warmup-adapted values work better
-          // for general trajectories. SoftAbs is rescue-only.
-          softabs_persistent_mass.set_from_metric(G_inv_buf, L_G_inv_buf);
-          double eps_base = find_reasonable_epsilon_dense(
-            q, data, layout, rng, softabs_persistent_mass);
-          softabs_persistent_eps = eps_base;
-          softabs_metric_active = true;
+          double eps_base = softabs_persistent_eps;
 
           // Multiple retry attempts (improvement #1): try up to 3 times
           // with halving step size each attempt

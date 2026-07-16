@@ -1,6 +1,6 @@
 # TULPA — Template Unified Latent Process Architecture
 
-General-purpose Bayesian hierarchical modelling engine (v0.0.17). Engine
+General-purpose Bayesian hierarchical modelling engine (v0.0.82). Engine
 extracted from numdenom, which has since been renamed tulpaRatio.
 
 ## Architecture
@@ -9,11 +9,11 @@ The hub of a `tulpa*` package ecosystem. The engine owns inference, latent
 structure, and the C++ interface; model packages plug an observation
 likelihood in via `LikelihoodSpec` and inherit the rest.
 
-- **tulpa** (engine, 0.0.17) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
+- **tulpa** (engine, 0.0.82) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
 - **tulpaRatio** (1.3.0) — ratio, rate, and proportion models (renamed from numdenom).
 - **tulpaObs** (0.0.22) — occupancy, N-mixture, and detection models.
 - **tulpaGlmm** (0.0.0.9000) — generalized linear mixed models.
-- **tulpaMesh** (0.1.2) — constrained Delaunay meshes for SPDE fields (an engine dependency, not a consumer).
+- **tulpaMesh** (>= 0.1.3) — constrained Delaunay meshes for SPDE fields (an engine dependency, not a consumer).
 
 Consumers depend on the engine via `Imports: tulpa (>= 0.0.13)` +
 `LinkingTo: tulpa` and plug likelihoods in through `LikelihoodSpec`
@@ -108,7 +108,7 @@ tests/testthat/     — Unit and integration tests
 - ZI/OI parameter-layout hooks only (`ZIType` enum, `has_zi` / `has_oi`); the distribution-specific ZI likelihood math lives in model packages
 - Censoring/truncation KERNELS only: `interval_gaussian` / `truncated_gaussian` are generic per-observation likelihood arms that model packages compose. General censored / survival responses (right-censored gaussian/lognormal, Weibull/exponential AFT with a censoring indicator) are an observation process and belong to tulpaObs via `LikelihoodSpec`; the engine does not grow a censoring-indicator front door (decided 2026-07-07, closes the recurring todo item)
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary
-- Generic diagnostics: moran_i, durbin_watson, tulpa_variogram, compare_models, modelAverage
+- Generic diagnostics: moran_i, durbin_watson, tulpa_variogram, compare_models, model_average
 - Generic plotting: trace, density, pairs plots of posterior draws
 - Rubin's rules pooling
 - Parameter back-transformation (logit → probability)
@@ -237,7 +237,7 @@ Plain random-intercept-only models keep the scalar-`sigma_re` design path.
 
 Implemented in `R/methods_generic.R` (`coef`, `confint`, `vcov`, `logLik`,
 `summary`, `plot`, `tidy`, `glance`, `ranef`), `R/diagnostics_generic.R`
-(`compare_models`, `modelAverage`, `spatialRange`, `temporalCorr`), and
+(`compare_models`, `model_average`, `spatial_range`, `temporal_corr`), and
 `R/diagnostics_sim.R` (`moran_i`, `durbin_watson`, `tulpa_variogram`,
 `pit_residuals`, `test_uniformity`, `test_dispersion`, `test_outliers`,
 `test_zero_inflation`, `check_model`).
@@ -401,7 +401,16 @@ tulpa's `R_init_tulpa` calls `M_cholmod_start` which requires Matrix's
 CHOLMOD stubs. Fixed by adding `@importFrom Matrix sparseMatrix` to
 `tulpa-package.R` so Matrix DLL loads before tulpa's init.
 
-## Extensibility: Custom Latent Blocks (design sketch)
+## Extensibility: Custom Latent Blocks
+
+This shipped. The real API is `tgmrf()` (R closures for `Q`/`mu`/`log_prior`)
+and `tgmrf_cpp()` (a user `.cpp` compiled via `sourceCpp` against
+`inst/include/tulpa/`, keyed by SHA256 + ABI), consumed as a block through
+`latent()` and fit at any tier via `tulpa_tgmrf(mode = "imh"/"nuts"/"vi"/"nuts_joint")`
+or on the nested-Laplace front door via `latent()`. See `?tgmrf_cpp`,
+`vignettes/tgmrf.Rmd`, and `inst/examples/`. The names below
+(`tulpa_custom_latent()`, `tulpa_fit(..., tier=)`) are the original sketch and
+never shipped under those spellings.
 
 For latent structures not provided by the engine (custom GMRFs, novel
 spatial priors, exotic temporal kernels), users supply a templated C++

@@ -186,7 +186,14 @@ struct LikelihoodSpec {
     // of finite differences over the full parameter vector. The signature
     // mirrors `extra_prior` but takes an arena::Var-vector view of params
     // and returns an arena::Var so the prior contribution flows into the
-    // backward pass. Append-only on LikelihoodSpec — no ABI bump.
+    // backward pass.
+    //
+    // WARNING: LikelihoodSpec is caller-allocated in a consumer package's src/
+    // and read by the engine, so any change to its layout (a new field, a
+    // reordering) MUST bump TULPA_ABI_VERSION -- otherwise a consumer compiled
+    // against the smaller struct is read past its end and check_abi_version()
+    // cannot catch it (the versions still match). This field is covered by the
+    // 33 -> 34 bump; do NOT append another field without bumping.
     arena::Var (*extra_prior_arena)(const std::vector<arena::Var>& params,
                                     const ParamLayout& layout,
                                     const void* model_data) = nullptr;

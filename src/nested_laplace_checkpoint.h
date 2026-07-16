@@ -104,8 +104,12 @@ inline std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
     int n_grid = grid_axes.empty() ? 0 : static_cast<int>(grid_axes[0].size());
     CellKeyBuilder kb(n_grid);
     for (const auto& ax : grid_axes) {
-        if (ax.size()) fp.fold(ax.begin(), (std::size_t)ax.size() * sizeof(double));
-        kb.add_axis(ax.begin());
+        // Skip a degenerate (empty) axis: rw1 / rw2 pass an empty rho_grid, and
+        // reading n_grid doubles from ax.begin() would run off the buffer.
+        if (ax.size()) {
+            fp.fold(ax.begin(), (std::size_t)ax.size() * sizeof(double));
+            kb.add_axis(ax.begin());
+        }
     }
     return std::unique_ptr<GridCheckpoint>(
         new GridCheckpoint(path, fp.value(), kb.take()));

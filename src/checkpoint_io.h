@@ -151,7 +151,13 @@ public:
         }
     }
 
-    void add_axis(const std::vector<double>& col) { add_axis(col.data(), 1); }
+    void add_axis(const std::vector<double>& col) {
+        // A degenerate (constant) axis carries no per-cell values -- e.g. rw1 /
+        // rw2 pass an empty rho_grid. It contributes nothing to the keys;
+        // reading n_grid doubles from an empty column would run off the buffer.
+        if (col.empty()) return;
+        add_axis(col.data(), 1);
+    }
 
     std::vector<std::string> take() { return std::move(keys_); }
 
