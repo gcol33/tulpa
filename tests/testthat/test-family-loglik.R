@@ -131,15 +131,16 @@ test_that("glmm_weights is unchanged by the registry refactor", {
   expect_equal(glmm_weights(eta, "beta", phi = 5), ref_beta, tolerance = 1e-12)
 })
 
-test_that("family helpers validate names; glmm_weights stays permissive", {
+test_that("family helpers validate names; glmm_weights errors on unknown family", {
   expect_error(family_loglik(0, 0, "weibull"), "Unknown family")
   expect_error(family_mean(0, "nope"), "Unknown family")
   expect_setequal(family_names(),
                   c("binomial", "poisson", "neg_binomial_2", "lognormal",
                     "gaussian", "beta", "gamma", "inverse_gaussian",
                     "beta_binomial", "tweedie", "t"))
-  # historical fallback: unknown family -> unit weights, no error
-  expect_equal(glmm_weights(c(0, 1, 2), "weibull"), rep(1, 3))
+  # An unknown family must error rather than silently returning unit weights,
+  # which would give wrong SEs for a misspelled family (gcol33/tulpa#152).
+  expect_error(glmm_weights(c(0, 1, 2), "weibull"), "unknown family")
 })
 
 test_that("family_mean applies the documented clamps", {
