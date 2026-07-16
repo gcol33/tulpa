@@ -112,8 +112,9 @@ test_that("tulpa_tgmrf_nuts_joint runs end-to-end on a periodic-AR1 sim", {
 
   # Posterior means in the (log_tau, atanh_rho) band consistent with the
   # sim: log_sigma_true = log(0.8) ~ -0.22; tanh(atanh_rho_mean) close to
-  # 0.7. Single-seed tolerance is loose; recovery tests with 30 seeds live
-  # in test-tgmrf-recovery.R.
+  # 0.7. This single-seed band is the ONLY truth-based check on the nuts_joint
+  # path; the 30-seed recovery in test-tgmrf-recovery.R fits
+  # tulpa_nested_laplace, not this sampler (gcol33/tulpa#155).
   expect_lt(abs(fit$means_theta[1] - log(sigma_true)), 1.0)
   expect_lt(abs(tanh(fit$means_theta[2]) - rho_true), 0.5)
 })

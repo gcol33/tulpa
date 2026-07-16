@@ -1,6 +1,8 @@
-# Recovery / regression test for the cell-coupling per-cell branch
+# Equivalence / regression test for the cell-coupling per-cell branch
 # (gcol33/tulpa#32 Layer B.1). Compares the per-cell branch's mode +
-# log-marginal to the existing per-obs scatter for the same data.
+# log-marginal to the existing per-obs scatter for the same data -- a
+# path-equivalence, NOT a truth-based recovery (the 8-seed sigma_u recovery
+# against simulated truth lives in test-cell-coupling-cross-hess.R).
 #
 # The test spec `TestSeparableBernoulliCoupling` reproduces single-arm
 # binomial (n_trials = 1) as a CellCouplingSpec with one row per cell,
