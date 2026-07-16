@@ -145,6 +145,9 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
       m /= n_spatial;
       for (int s = 0; s < n_spatial; s++) w_local[s] -= m;
       C.beta[0] += m;
+      // The intercept moved, so refresh the cached X*beta (intercept column is
+      // 1); otherwise the regional update's offset below is low by m this sweep.
+      for (int i = 0; i < N; i++) C.X_beta[i] += m;
     }
     for (int i = 0; i < N; i++) {
       if (i < n_spatial) local_contrib[i] = w_local[i];
