@@ -3113,16 +3113,6 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
-// tulpa_version
-std::string tulpa_version();
-RcppExport SEXP _tulpa_tulpa_version() {
-BEGIN_RCPP
-    Rcpp::RObject rcpp_result_gen;
-    Rcpp::RNGScope rcpp_rngScope_gen;
-    rcpp_result_gen = Rcpp::wrap(tulpa_version());
-    return rcpp_result_gen;
-END_RCPP
-}
 // cpp_tulpa_sample_glmm
 Rcpp::List cpp_tulpa_sample_glmm(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, std::string backend, double phi, double sigma_beta, int n_iter, int n_warmup, int seed, bool verbose, int n_chains, int max_treedepth, double adapt_delta, double epsilon, int L, int batch_size, double alpha, int mclmc_adjusted, int n_particles, int n_mcmc_steps, double ess_threshold, int vi_variant, int vi_mc_samples, int vi_max_iter, int vi_n_draws, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, double phi2);
 RcppExport SEXP _tulpa_cpp_tulpa_sample_glmm(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP backendSEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP verboseSEXP, SEXP n_chainsSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP epsilonSEXP, SEXP LSEXP, SEXP batch_sizeSEXP, SEXP alphaSEXP, SEXP mclmc_adjustedSEXP, SEXP n_particlesSEXP, SEXP n_mcmc_stepsSEXP, SEXP ess_thresholdSEXP, SEXP vi_variantSEXP, SEXP vi_mc_samplesSEXP, SEXP vi_max_iterSEXP, SEXP vi_n_drawsSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP phi2SEXP) {
@@ -3466,7 +3456,6 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tulpa_fit_generic_chains", (DL_FUNC) &_tulpa_cpp_tulpa_fit_generic_chains, 13},
     {"_tulpa_cpp_test_c_abi_resume_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_resume_roundtrip, 9},
     {"_tulpa_cpp_test_c_abi_chains_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_chains_roundtrip, 10},
-    {"_tulpa_tulpa_version", (DL_FUNC) &_tulpa_tulpa_version, 0},
     {"_tulpa_cpp_tulpa_sample_glmm", (DL_FUNC) &_tulpa_cpp_tulpa_sample_glmm, 33},
     {"_tulpa_cpp_spde_layout_probe", (DL_FUNC) &_tulpa_cpp_spde_layout_probe, 4},
     {"_tulpa_cpp_spde_prior_probe", (DL_FUNC) &_tulpa_cpp_spde_prior_probe, 9},

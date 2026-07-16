@@ -721,10 +721,6 @@ cpp_test_c_abi_chains_roundtrip <- function(y_r, X_r, n_chains = 3L, n_iter = 60
     .Call(`_tulpa_cpp_test_c_abi_chains_roundtrip`, y_r, X_r, n_chains, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init)
 }
 
-tulpa_version <- function() {
-    .Call(`_tulpa_tulpa_version`)
-}
-
 cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_tulpa_sample_glmm`, y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2)
 }

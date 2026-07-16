@@ -7,11 +7,6 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/nuts_api.h"
 
-// [[Rcpp::export]]
-std::string tulpa_version() {
-    return "0.1.0";
-}
-
 // ============================================================================
 // Copy one pure-C++ chain result into a flat NUTSResult (caller owns the
 // allocated buffers via free_buffers). Single source of truth shared by the
