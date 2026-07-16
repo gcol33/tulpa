@@ -1,3 +1,33 @@
+#' Restricted temporal regression (RTR)
+#'
+#' @description
+#' The temporal analogue of [spatial_rsr()]: constrain a temporal random effect
+#' to be orthogonal to a set of covariates, so a temporally smooth covariate does
+#' not have its fixed-effect coefficient attenuated by a confounded temporal
+#' field.
+#'
+#' @param temporal A `tulpa_temporal` specification (e.g. [temporal_rw1()],
+#'   [temporal_ar1()]).
+#' @param restrict_to A one-sided formula giving the covariate space the temporal
+#'   effect is made orthogonal to, e.g. `~ x`.
+#'
+#' @return The temporal specification with RTR enabled (class `tulpa_rtr`
+#'   prepended), for use in the `temporal =` argument of [tulpa()].
+#'
+#' @details
+#' RTR modifies the temporal random effect to be orthogonal to the fixed-effect
+#' design: \eqn{u_{RTR} = (I - P_X) u} where \eqn{P_X = X(X'X)^{-1}X'} projects
+#' onto the column space of the restricted covariates. Use it when a covariate is
+#' temporally smooth and its coefficient appears attenuated toward zero; avoid it
+#' when the temporal effect is itself the quantity of interest.
+#'
+#' @seealso [spatial_rsr()], [temporal_rw1()], [temporal_ar1()]
+#'
+#' @examples
+#' rtr <- temporal_rtr(temporal_rw1(), restrict_to = ~ x)
+#' print(rtr)
+#'
+#' @export
 temporal_rtr <- function(temporal, restrict_to) {
 
   if (!inherits(temporal, "tulpa_temporal")) {

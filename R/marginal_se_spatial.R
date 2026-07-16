@@ -429,8 +429,9 @@ NULL
 
   # The latent coefficients carry an N(0, I) prior; the spectral density
   # sqrt(S_j) is folded into the design (matching make_hsgp_block.basis_eval /
-  # .prep: S_j = sigma2 * sqrt(2 pi) * ell * exp(-0.5 ell^2 lambda_j)).
-  S    <- sigma2 * sqrt(2 * pi) * lengthscale *
+  # .prep). 2-D SE spectral density on the 2-D basis:
+  # S_j = sigma2 * (2 pi) * ell^2 * exp(-0.5 ell^2 lambda_j).
+  S    <- sigma2 * (2 * pi) * lengthscale^2 *
           exp(-0.5 * lengthscale^2 * lambda_eig)
   PhiS <- sweep(phi_basis, 2, sqrt(pmax(S, 0)), `*`)
 

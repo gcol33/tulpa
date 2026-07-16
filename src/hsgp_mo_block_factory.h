@@ -38,7 +38,7 @@
 // Lifecycle.
 //   prep(k_grid) reads (sigma_1, sigma_2, rho, ell) — raw, no log
 //   transform — from theta_grid and refreshes:
-//     * sqrt_S_norm_cache[m] = sqrt(sqrt(2*pi) * ell * exp(-0.5*ell^2*lambda_m))
+//     * sqrt_S_norm_cache[m] = sqrt((2*pi) * ell^2 * exp(-0.5*ell^2*lambda_m))
 //     * Sigma_inv (K x K row-major, closed form for K = 2)
 //     * log_det_Sigma scalar
 //   Returns false when sigma_1, sigma_2 <= 0, |rho| >= 1, or ell <= 0.
@@ -176,7 +176,7 @@ inline LatentBlock make_hsgp_mo_block(
 
         // sqrt_S — sigma absorbed into Sigma; basis spectral density carries
         // only the lengthscale.
-        const double pref = std::sqrt(2.0 * M_PI) * ell;
+        const double pref = (2.0 * M_PI) * ell * ell;
         const double e_coef = -0.5 * ell * ell;
         const auto& evs = *eig;
         st.sqrt_S.assign(m_total, 0.0);

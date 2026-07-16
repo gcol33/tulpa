@@ -8,7 +8,6 @@ glmm_weights(eta, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
 Thin wrapper over the family-ops registry (\code{\link[=family_weight]{family_weight()}}) so the weight
-formulas live in exactly one place (\code{R/family_loglik.R}). Unknown families
-fall back to unit weights, preserving the historical permissive behaviour.
+formulas live in exactly one place (\code{R/family_loglik.R}).
 }
 \keyword{internal}

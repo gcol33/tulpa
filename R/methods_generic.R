@@ -351,11 +351,15 @@ logLik.tulpa_fit <- function(object, ...) {
     mean(object$log_prob, na.rm = TRUE)
   } else if (!is.null(object$log_marginal)) {
     # A nested-Laplace fit stores one log-marginal per hyperparameter grid point;
-    # the integrated log evidence is the log-sum-exp over the grid. A single-point
-    # (e.g. conditional Laplace) marginal passes through unchanged. Non-finite
-    # cells (an inner Newton diverging in a grid corner returns +Inf / NaN) are
-    # dropped from the log-sum-exp, matching the finite-guarded weight grid;
-    # an unguarded max() would otherwise collapse the evidence to NaN.
+    # the integrated log evidence is the log-sum-exp over the grid. This assumes
+    # equal cell weights: exact for the tensor / uniform hyper-grid the generic
+    # driver builds, and an approximation for a design-weighted (CCD) grid, whose
+    # raw quadrature weights are not recoverable from the stored posterior
+    # weights. A single-point (e.g. conditional Laplace) marginal passes through
+    # unchanged. Non-finite cells (an inner Newton diverging in a grid corner
+    # returns +Inf / NaN) are dropped from the log-sum-exp, matching the
+    # finite-guarded weight grid; an unguarded max() would otherwise collapse
+    # the evidence to NaN.
     lm <- object$log_marginal
     lm <- lm[is.finite(lm)]
     if (length(lm) == 0L) {
@@ -541,7 +545,10 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
 .tulpa_fixed_design <- function(object, newdata) {
   parsed <- tulpa_parse_formula(object$formula)
   tt <- stats::delete.response(stats::terms(parsed$fixed_formula))
-  stats::model.matrix(tt, data = newdata)
+  mf <- stats::model.frame(tt, data = newdata, na.action = stats::na.pass)
+  X  <- stats::model.matrix(tt, mf)
+  attr(X, "offset") <- stats::model.offset(mf)
+  X
 }
 
 # FEM projector from the fitted SPDE mesh to arbitrary coordinates. Requires a
@@ -781,6 +788,9 @@ predict.tulpa_fit <- function(object, newdata = NULL,
     stop("predict() needs `newdata` (or a fit carrying $model_matrix).",
          call. = FALSE)
   }
+  # Observation offset, matching fitted()/residuals(): the fit's stored offset at
+  # the training design, or the offset() term re-evaluated on newdata.
+  off <- if (is.null(newdata)) (object$offset %||% 0) else (attr(X, "offset") %||% 0)
   miss <- setdiff(names(beta), colnames(X))
   if (length(miss)) {
     stop("newdata cannot reproduce fixed-effect column(s): ",
@@ -788,7 +798,7 @@ predict.tulpa_fit <- function(object, newdata = NULL,
   }
   X <- X[, names(beta), drop = FALSE]
 
-  eta <- as.numeric(X %*% beta)
+  eta <- as.numeric(X %*% beta) + off
 
   # Kriged SPDE field. At training data (newdata = NULL) reuse the fitted
   # projector; at new coordinates re-project the mesh-node field through the

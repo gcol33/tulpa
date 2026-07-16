@@ -89,6 +89,9 @@ namespace tulpa {
 // 32 -> 33: n_spatial_components added to ModelData so the sampler ICAR/BYM2/ST
 // rank normalizer counts connected components (S - k), matching the Laplace
 // path, instead of assuming a single component (S - 1).
+// 33 -> 34: added gp_phi_prior_U / gp_phi_prior_alpha and svc_phi_prior_U /
+// svc_phi_prior_alpha -- the PC range-prior anchors for the GP and SVC NNGP
+// paths (gcol33/tulpa#144), replacing the Uniform-behind-a-wall range prior.
 // ============================================================================
 constexpr int TULPA_ABI_VERSION = 34;
 
@@ -250,7 +253,12 @@ struct ModelData {
     // field's prior_range contract.
     double gp_phi_prior_U = -1.0;
     double gp_phi_prior_alpha = -1.0;
-    int gp_parameterization = 1;        // 0=centered, 1=non-centered
+    // 0 = centered (the spatial GP prior evaluates params directly as the field
+    // w; the stored draws must match). 1 = non-centered would forward-transform
+    // the stored draws as if params were z, but compute_gp_spatial_prior has no
+    // z -> w branch, so 1 corrupts every stored GP field draw. Default centered
+    // until a differentiable NC evaluator branch is restored.
+    int gp_parameterization = 0;        // 0=centered, 1=non-centered
 
     // Collapsed parameterization flags
     bool icar_collapsed = false;

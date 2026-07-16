@@ -58,7 +58,7 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
         // Phi and eigenvalues are double (precomputed data), but sigma2/lengthscale/beta are T
         hsgp_f.resize(data.N, T(0.0));
         for (int j = 0; j < m_total; j++) {
-            T S_j = sigma2_hsgp * T(std::sqrt(2.0 * M_PI)) * lengthscale_hsgp
+            T S_j = sigma2_hsgp * T(2.0 * M_PI) * lengthscale_hsgp * lengthscale_hsgp
                     * safe_exp(T(-0.5) * lengthscale_hsgp * lengthscale_hsgp
                                * T(data.hsgp_data.eigenvalues[j]));
             T scaled_beta_j = safe_sqrt(S_j) * hsgp_beta[j];

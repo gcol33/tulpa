@@ -120,9 +120,19 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
   .seed_scoped(control$seed)
   draws <- .ps_rmvnorm(n_draws, setNames(par, pn), V)
 
+  # The optimizer works in the unconstrained (c1, log-increment) space; map the
+  # cutpoint block of every draw to ordered cutpoints so the draws, means, and
+  # covariance the coefficient methods read are labelled in cutpoint space.
+  cut_cols <- (p + 1L):(p + K1)
+  draws[, cut_cols] <- t(apply(draws[, cut_cols, drop = FALSE], 1L,
+                               function(g) cumsum(c(g[1L], exp(g[-1L])))))
+  means <- setNames(c(beta, cuts), pn)
+  V_cut <- stats::cov(draws)
+  dimnames(V_cut) <- list(pn, pn)
+
   fit <- list(
-    coefficients = beta, cutpoints = cuts, vcov = V, draws = draws,
-    means = setNames(par, pn), param_names = pn,
+    coefficients = beta, cutpoints = cuts, vcov = V_cut, draws = draws,
+    means = means, param_names = pn,
     log_marginal = log_marginal, converged = opt$convergence == 0,
     levels = levels(y), n_classes = K, link = link,
     family = if (link == "probit") "ordinal_probit" else "ordinal",

@@ -19,13 +19,15 @@
 
 namespace tulpa_hsgp {
 
-// Spectral density of the squared-exponential kernel:
-//   S(ω) = σ² · √(2π) · ℓ · exp(-½ ℓ² ω²)
-// `omega_sq` is ω² (squared angular frequency / Laplacian eigenvalue).
+// Spectral density of the 2-D isotropic squared-exponential kernel:
+//   S(ω) = σ² · (2π) · ℓ² · exp(-½ ℓ² ω²)
+// The HSGP basis here is 2-D (eigenvalue ω² = ‖ω‖² = λ_j1 + λ_j2), so the
+// D-dimensional prefactor σ² · (2π)^{D/2} · ℓ^D is evaluated at D = 2; the
+// 1-D form σ² · √(2π) · ℓ mis-scales the field's marginal variance.
 inline double spectral_density_se(double omega_sq, double sigma2, double lengthscale) {
     double ell = lengthscale;
     double ell2 = ell * ell;
-    return sigma2 * std::sqrt(2.0 * M_PI) * ell * std::exp(-0.5 * ell2 * omega_sq);
+    return sigma2 * (2.0 * M_PI) * ell2 * std::exp(-0.5 * ell2 * omega_sq);
 }
 
 // dS/d(σ²) = S / σ²
@@ -33,11 +35,11 @@ inline double dS_dsigma2(double omega_sq, double sigma2, double lengthscale) {
     return spectral_density_se(omega_sq, sigma2, lengthscale) / sigma2;
 }
 
-// dS/d(ℓ) = S · (1/ℓ - ℓ ω²)
+// dS/d(ℓ) = S · (2/ℓ - ℓ ω²)   [D = 2: d/dℓ log(ℓ² exp(-½ ℓ² ω²)) = 2/ℓ - ℓ ω²]
 inline double dS_dlengthscale(double omega_sq, double sigma2, double lengthscale) {
     double S = spectral_density_se(omega_sq, sigma2, lengthscale);
     double ell = lengthscale;
-    return S * (1.0 / ell - ell * omega_sq);
+    return S * (2.0 / ell - ell * omega_sq);
 }
 
 // 1D Laplacian eigenfunction on [-L, L]:

@@ -239,8 +239,9 @@ inline void hsgp_compute_gradients_ws(
 
         ws.dsqrtS_dsigma2(j) = 0.5 * sqrt_S_safe / sigma2;
 
-        // dS/d(ell) = S * (1/ell - ell * omega_sq) — inline, no spectral_density_se() call
-        double dS_dell = S * (1.0 / lengthscale - lengthscale * omega_sq);
+        // dS/d(ell) = S * (2/ell - ell * omega_sq) — 2-D SE density; inline, no
+        // spectral_density_se() call
+        double dS_dell = S * (2.0 / lengthscale - lengthscale * omega_sq);
         ws.dsqrtS_dlengthscale(j) = 0.5 * dS_dell / sqrt_S_safe;
     }
 

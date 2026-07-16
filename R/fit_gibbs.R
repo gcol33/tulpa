@@ -312,11 +312,13 @@ dispatch_gibbs_temporal <- function(y, n_trials, X, re_group, n_re_groups,
 #' Compute GLM working weights for Laplace Hessian
 #'
 #' Thin wrapper over the family-ops registry ([family_weight()]) so the weight
-#' formulas live in exactly one place (`R/family_loglik.R`). Unknown families
-#' fall back to unit weights, preserving the historical permissive behaviour.
+#' formulas live in exactly one place (`R/family_loglik.R`).
 #' @keywords internal
 glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
-  if (is.null(.FAMILY_OPS[[family]])) return(rep(1, length(eta)))
+  if (is.null(.FAMILY_OPS[[family]])) {
+    stop("glmm_weights(): unknown family '", family, "'. Known families: ",
+         paste(names(.FAMILY_OPS), collapse = ", "), ".", call. = FALSE)
+  }
   as.numeric(family_weight(eta, family, n_trials, phi, phi2))
 }
 

@@ -703,29 +703,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     )
   ),
 
-  iid = list(
-    # Multi-block-only entry. No standalone `cpp_fn` -- IID with no other
-    # latent structure is just a Gaussian RE, served by the `n_re_groups`
-    # path of `tulpa_nested_laplace()`. This registry entry exists so that
-    # IID can appear as a block inside a multi-block prior (e.g. BYM2 +
-    # AR1 + IID-observer).
-    cpp_fn = NULL,
-    defaults = function(p, a) {
-      if (is.null(p$sigma_grid)) {
-        p$sigma_grid <- exp(seq(log(0.1), log(3), length.out = 5))
-      }
-      p
-    },
-    pack = function(p) stop(
-      "IID is only supported inside a multi-block prior. ",
-      "For a standalone Gaussian RE, use the `re_idx`/`n_re_groups` args ",
-      "of `tulpa_nested_laplace()`.", call. = FALSE
-    ),
-    theta = function(p) list(
-      grid = as.numeric(p$sigma_grid), names = "sigma"
-    )
-  ),
-
   lf = list(
     # Latent factor block (Stage 1.6a). F = 1 only. No outer-grid axes:
     # identifiability is handled by tight Gaussian anchors on (u_1,

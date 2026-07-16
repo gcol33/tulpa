@@ -202,7 +202,7 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
             for (int j = 0; j < M; j++) {
                 double omega_sq = data.st_hsgp_data.eigenvalues[j];
-                T S_j = sigma2_st_hsgp * T(std::sqrt(2.0 * M_PI)) * lengthscale_st_hsgp
+                T S_j = sigma2_st_hsgp * T(2.0 * M_PI) * lengthscale_st_hsgp * lengthscale_st_hsgp
                     * safe_exp(T(-0.5) * lengthscale_st_hsgp * lengthscale_st_hsgp * T(omega_sq));
                 T prec_j = tau_st / safe_max(S_j, T(1e-10));
 

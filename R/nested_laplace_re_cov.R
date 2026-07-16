@@ -869,9 +869,19 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       else tryCatch(solve(fit_i$H_beta), error = function(e) NULL)
   }
   # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
-  # evaluated joint exp(logm); log-sum-exp shift for stability.
-  lw <- log(dnode) + (logm - max(logm))
-  w  <- exp(lw); w <- w / sum(w)
+  # evaluated joint exp(logm); log-sum-exp shift for stability. Every failed /
+  # non-finite node carries logm = -Inf; if all nodes fail, max(logm) = -Inf
+  # would give NaN weights, so guard on the finite set and error loudly instead.
+  lw <- log(dnode) + logm
+  finite_lw <- lw[is.finite(lw)]
+  if (length(finite_lw) == 0L) {
+    stop("tulpa_re_cov_nested(): every integration node returned a non-finite ",
+         "log-marginal (all inner Laplace solves failed). Check the data, the ",
+         "hyperprior, and the Sigma initialisation.", call. = FALSE)
+  }
+  lw <- lw - max(finite_lw)
+  w  <- exp(lw); w[!is.finite(w)] <- 0
+  w  <- w / sum(w)
 
   # --- derived quantities, marginalized over the grid -----------------------
   summ <- .re_cov_derived_summary(Sig_node_list, w, layout)

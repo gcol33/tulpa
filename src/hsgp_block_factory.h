@@ -131,7 +131,7 @@ inline LatentBlock make_hsgp_block(
         double sigma2 = std::exp(log_sigma2);
         double ell    = std::exp(log_ell);
         if (!(sigma2 > 0.0) || !(ell > 0.0)) return false;
-        const double pref = sigma2 * std::sqrt(2.0 * M_PI) * ell;
+        const double pref = sigma2 * (2.0 * M_PI) * ell * ell;
         const double e_coef = -0.5 * ell * ell;
         auto& cache = sqrt_S_cache->claim();
         cache.assign(m_total, 0.0);

@@ -78,9 +78,15 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     pc_prior_log_density(grid$range, grid$sigma,
                          sp$prior_range, sp$prior_sigma)
 
+  if (!any(is.finite(log_post))) {
+    stop("fit_spde() nested grid: every hyperparameter cell returned a ",
+         "non-finite log-marginal. Check the mesh, the data, and the range / ",
+         "sigma PC priors.", call. = FALSE)
+  }
   best <- which.max(log_post)
-  log_max <- max(log_post)
+  log_max <- max(log_post[is.finite(log_post)])
   weights <- exp(log_post - log_max)
+  weights[!is.finite(weights)] <- 0
   weights <- weights / sum(weights)
 
   # Outer k-hat: no mode Hessian on the grid path, so fit the Gaussian proposal

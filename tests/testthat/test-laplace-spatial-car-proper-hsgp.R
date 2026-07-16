@@ -55,7 +55,7 @@ test_that("HSGP single-point matches nested mode and a brute-force Laplace", {
   expect_equal(as.numeric(sp$mode), as.numeric(ns$modes[1, ]), tolerance = 1e-7)
 
   # Brute-force Laplace log p(y | theta) at the fitted mode.
-  S <- sig2 * sqrt(2 * pi) * ell * exp(-0.5 * ell^2 * basis$lambda_eig)
+  S <- sig2 * (2 * pi) * ell^2 * exp(-0.5 * ell^2 * basis$lambda_eig)
   D <- cbind(X, sweep(basis$phi_basis, 2, sqrt(S), `*`))
   eta <- as.numeric(D %*% sp$mode); pr <- plogis(eta)
   fstar <- sum(dbinom(y, 1, pr, log = TRUE)) +

@@ -80,12 +80,12 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
                 T beta_regional_j = params[layout.gp_regional_start + j];
 
                 // Spectral density for local scale
-                T S_local_j = sigma2_local_h * T(std::sqrt(2.0 * M_PI)) * ls_local
+                T S_local_j = sigma2_local_h * T(2.0 * M_PI) * ls_local * ls_local
                     * safe_exp(T(-0.5) * ls_local * ls_local * T(omega_sq));
                 T scaled_local_j = safe_sqrt(S_local_j) * beta_local_j;
 
                 // Spectral density for regional scale
-                T S_regional_j = sigma2_regional_h * T(std::sqrt(2.0 * M_PI)) * ls_regional
+                T S_regional_j = sigma2_regional_h * T(2.0 * M_PI) * ls_regional * ls_regional
                     * safe_exp(T(-0.5) * ls_regional * ls_regional * T(omega_sq));
                 T scaled_regional_j = safe_sqrt(S_regional_j) * beta_regional_j;
 

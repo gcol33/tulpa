@@ -68,9 +68,9 @@ skip_on_cran()
     Z <- matrix(rnorm(2L * M), nrow = 2L)
     beta <- L %*% Z  # 2 x M, rows = outputs
 
-    # sqrt_S_norm uses sigma-free 1D-form spectral density (matches the
+    # sqrt_S_norm uses the sigma-free 2-D spectral density (matches the
     # factory). Multiply phi by sqrt_S elementwise before contracting.
-    pref <- sqrt(2 * pi) * ell
+    pref <- (2 * pi) * ell^2
     sqrt_S <- sqrt(pref * exp(-0.5 * ell^2 * lam))
 
     eta_lat_1 <- b1$phi %*% (sqrt_S * beta[1, ])

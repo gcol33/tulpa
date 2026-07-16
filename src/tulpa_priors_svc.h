@@ -61,7 +61,7 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
 
                     // Compute scaled beta: sqrt(S(eigenvalue_k, sigma2_j, ls_j)) * beta_jk
                     double omega_sq = data.svc_hsgp_data.eigenvalues[k];
-                    T S_k = sigma2_j * T(std::sqrt(2.0 * M_PI)) * ls_j *
+                    T S_k = sigma2_j * T(2.0 * M_PI) * ls_j * ls_j *
                             safe_exp(T(-0.5) * ls_j * ls_j * T(omega_sq));
                     T sqrt_S_k = safe_sqrt(S_k);
 
