@@ -1001,6 +1001,11 @@ inline double log_prior_latent(
         for (int j = 0; j < L.beta_count[k]; j++, bj++) {
             const double tau  = beta_prior ? beta_prior->tau_at(bj)  : tau_scalar;
             const double mean = beta_prior ? beta_prior->mean_at(bj) : 0.0;
+            // tau = 0 (sd = Inf) is a flat improper prior: no density and no
+            // normalizer. Skipping avoids 0.5*log(0) = -Inf poisoning both the
+            // log-marginal and the line-search objective (which would then
+            // accept every full Newton step, disabling the monotone safeguard).
+            if (tau == 0.0) continue;
             const double d = params[L.beta_start[k] + j] - mean;
             lp += -0.5 * tau * d * d + 0.5 * std::log(tau / (2.0 * M_PI));
         }

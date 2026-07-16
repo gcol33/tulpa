@@ -180,6 +180,10 @@ bool verify_gradient_runtime(
     double tol
 ) {
   std::vector<double> grad_active, grad_numerical;
+  // The consumer gradient contract (likelihood.h) is "grad is sized to
+  // params.size() and overwritten"; a hand-coded spec->gradient_fn that writes
+  // grad[i] without resizing would overflow an empty buffer, so pre-size it.
+  grad_active.assign(params.size(), 0.0);
   GradientFn active_fn = resolve_gradient_fn(g_gradient_mode, data, layout);
   active_fn(params, data, layout, grad_active, nullptr);
 

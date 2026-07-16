@@ -193,7 +193,10 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
         double diff = seasonal[s_next] - seasonal[s];
         ss += diff * diff;
       }
-      double shape = prior_sigma_seasonal_scale + 0.5 * n_seasonal;
+      // Cyclic (ring) RW1 with a sum-to-zero constraint has rank n_seasonal - 1
+      // (one constant null vector), so the GMRF adds 0.5*(n_seasonal - 1) to the
+      // inverse-gamma shape, not 0.5*n_seasonal.
+      double shape = prior_sigma_seasonal_scale + 0.5 * (n_seasonal - 1);
       double rate = prior_sigma_seasonal_scale + 0.5 * ss;
       sigma_seasonal = 1.0 / std::sqrt(R::rgamma(shape, 1.0 / rate));
     }

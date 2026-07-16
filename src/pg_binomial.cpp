@@ -57,10 +57,12 @@ List compute_posterior_normal(
     // Add prior precision to diagonal
     XWX(j, j) += prior_prec;
 
-    // X'W(kappa - offset)
+    // X'(kappa - omega*offset): algebraically omega*(kappa/omega - offset) but
+    // finite when omega[i] = 0 (a zero-trial row, where kappa[i] = 0 too and
+    // kappa/omega would be 0/0 = NaN).
     double sum_kappa = 0.0;
     for (int i = 0; i < n; i++) {
-      sum_kappa += X(i, j) * omega[i] * (kappa[i] / omega[i] - offset[i]);
+      sum_kappa += X(i, j) * (kappa[i] - omega[i] * offset[i]);
     }
     XWkappa[j] = sum_kappa;
   }

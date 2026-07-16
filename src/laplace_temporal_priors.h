@@ -35,11 +35,12 @@ inline double log_prior_rw1(
         double d = x[start_idx + t] - x[start_idx + t - 1];
         quad += d * d;
     }
+    // Both the path-graph (acyclic) and ring-graph (cyclic) RW1 precisions have
+    // exactly one null vector (the constant), so rank = n_times - 1 in both.
     int rank = n_times - 1;
     if (cyclic) {
         double d = x[start_idx] - x[start_idx + n_times - 1];
         quad += d * d;
-        rank = n_times;
     }
     return 0.5 * rank * std::log(tau / (2.0 * M_PI)) - 0.5 * tau * quad;
 }

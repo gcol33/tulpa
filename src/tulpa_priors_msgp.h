@@ -43,16 +43,21 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
             int m_total = data.msgp_hsgp_data.m_total;
 
             // PC priors on sigma for both scales
+            // PC (exponential) prior on sigma, sampled on x = log(sigma2). The
+            // change of variables is log|dsigma/dx| = 0.5*x - log2 (dsigma/dx =
+            // sigma/2), so the term is -log2 + 0.5*x; -log(2*sigma) would cancel
+            // the +log(sigma) and leave an extra 1/sigma. Matches the temporal
+            // PC prior form.
             T sigma_local = safe_sqrt(sigma2_local_h);
             double rate_local = -std::log(data.ms_sigma2_local_prior_alpha) / data.ms_sigma2_local_prior_U;
             log_post = log_post + T(std::log(rate_local)) - T(rate_local) * sigma_local
-                     - safe_log(T(2.0) * sigma_local);
+                     - T(std::log(2.0));
             log_post = log_post + log_sigma2_local * T(0.5);  // Jacobian
 
             T sigma_regional = safe_sqrt(sigma2_regional_h);
             double rate_regional = -std::log(data.ms_sigma2_regional_prior_alpha) / data.ms_sigma2_regional_prior_U;
             log_post = log_post + T(std::log(rate_regional)) - T(rate_regional) * sigma_regional
-                     - safe_log(T(2.0) * sigma_regional);
+                     - T(std::log(2.0));
             log_post = log_post + log_sigma2_regional * T(0.5);  // Jacobian
 
             // LogNormal priors on lengthscales (centered at scale-appropriate ranges)

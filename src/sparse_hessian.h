@@ -912,7 +912,13 @@ LaplaceResult laplace_newton_solve_sparse(
       log_lik = compute_total_log_lik(y, n_trials, scratch.eta, N, family, phi, n_threads);
       log_prior = compute_log_prior(x, scratch.eta); }
 
-    result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+    // A failed final factorize leaves no valid log|Q| (result.log_det_Q stays at
+    // its init 0); finalizing anyway would hand an ill-conditioned cell an
+    // inflated marginal that dominates the outer-grid weights. Drop it to -Inf
+    // (weight 0) instead, matching the joint sparse path's PD-failure handling.
+    result.log_marginal = final_fact_ok
+        ? finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x)
+        : -INFINITY;
 
     if (store_Q) {
         // H_builder already holds Q in CSC lower-triangle form (stype = -1).

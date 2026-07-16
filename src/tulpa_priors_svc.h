@@ -42,10 +42,10 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 T log_sigma2 = params[layout.log_sigma2_svc_start + j];
                 T sigma2_j = safe_exp(log_sigma2);
 
-                // PC prior on sigma
-                T sigma_j = safe_sqrt(sigma2_j);
-                double rate_sigma = 4.6;
-                log_post = log_post - rate_sigma * sigma_j + T(0.5) * log_sigma2;
+                // PC prior on sigma, on the sampled log(sigma2) scale. The bare
+                // -rate*sigma form dropped the log(rate) - log2 normalizer;
+                // route through the shared helper (P(sigma > 1) = 0.01).
+                log_post = log_post + log_prior_log_sigma2_pc(log_sigma2, 1.0, 0.01);
 
                 T log_ls = params[layout.log_phi_svc_start + j];
                 T ls_j = safe_exp(log_ls);
