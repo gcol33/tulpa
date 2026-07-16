@@ -51,6 +51,16 @@ namespace tulpa {
       double alpha,
       double beta
   );
+
+  double update_sigma_spatial_bym2(
+      const Rcpp::NumericVector& phi_scaled,
+      const Rcpp::NumericVector& theta,
+      double rho,
+      double scale_factor,
+      const Rcpp::NumericVector& sum_omega,
+      const Rcpp::NumericVector& sum_resid,
+      double prior_scale
+  );
 }
 
 // Binomial Gibbs sampler with random effects AND spatial effects (BYM2)
@@ -126,11 +136,9 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     u = tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors,
                                    phi_scaled, theta, sigma_spatial, rho, scale_factor);
 
-    // 7. Update sigma_spatial
-    sigma_spatial = tulpa::update_sigma_spatial(u, prior_sigma_spatial_scale);
-
-    // 8. Update rho (mixing proportion)
-    // Need to compute sum_omega and sum_resid for rho update
+    // Polya-Gamma sufficient statistics per spatial unit (offset excludes the
+    // spatial field u): the linear/quadratic data terms both the sigma and rho
+    // full conditionals flow through.
     Rcpp::NumericVector sum_omega_s(n_spatial_units, 0.0);
     Rcpp::NumericVector sum_resid_s(n_spatial_units, 0.0);
     for (int i = 0; i < N; i++) {
@@ -138,8 +146,26 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
       sum_omega_s[s] += C.omega[i];
       sum_resid_s[s] += C.kappa[i] - C.omega[i] * C.offset[i];
     }
+
+    // 7. Update sigma_spatial from its PG full conditional given the current rho
+    //    (a Gaussian in sigma via the standardized field), NOT the iid
+    //    half-Cauchy on the deterministic convolution u.
+    sigma_spatial = tulpa::update_sigma_spatial_bym2(
+        phi_scaled, theta, rho, scale_factor,
+        sum_omega_s, sum_resid_s, prior_sigma_spatial_scale);
+
+    // 8. Update rho (mixing proportion) at the just-updated sigma.
     rho = tulpa::update_rho_bym2(phi_scaled, theta, sigma_spatial, scale_factor,
                                   sum_omega_s, sum_resid_s, prior_rho_alpha, prior_rho_beta);
+
+    // Recompute the field at the updated (sigma, rho) so the stored draw and the
+    // next iteration's offset use the current scale and mixing weight.
+    {
+      double sr = std::sqrt(rho + 1e-10);
+      double s1 = std::sqrt(1.0 - rho + 1e-10);
+      for (int s = 0; s < n_spatial_units; s++)
+        u[s] = sigma_spatial * (sr * phi_scaled[s] * scale_factor + s1 * theta[s]);
+    }
 
     // Update spatial contributions (parallelized)
     #ifdef _OPENMP

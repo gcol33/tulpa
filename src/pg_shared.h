@@ -157,6 +157,26 @@ inline double update_sigma_halfcauchy(
   return std::sqrt(sigma_sq);
 }
 
+// Draw from N(mean, sd^2) truncated to (0, inf) (Robert 1995). Used for the
+// Gaussian full conditional of a positive scale parameter.
+inline double rtruncnorm_pos(double mean, double sd) {
+  double alpha = -mean / sd;   // lower truncation on the standardized scale
+  double z;
+  if (alpha <= 0.0) {
+    // Naive rejection from the standard normal.
+    do { z = R::norm_rand(); } while (z < alpha);
+  } else {
+    // One-sided tail: shifted-exponential proposal with acceptance.
+    double lam = 0.5 * (alpha + std::sqrt(alpha * alpha + 4.0));
+    while (true) {
+      double zp = alpha - std::log(R::unif_rand()) / lam;
+      double acc = std::exp(-0.5 * (zp - lam) * (zp - lam));
+      if (R::unif_rand() <= acc) { z = zp; break; }
+    }
+  }
+  return mean + sd * z;
+}
+
 // ============================================================================
 // Shared per-iteration core for PG Gibbs spatial samplers
 // Steps 1-5 are identical across ICAR, BYM2, and RSR variants:

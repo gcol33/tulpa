@@ -369,4 +369,44 @@ double update_rho_bym2(
   return rho_vals[n_grid - 1];
 }
 
+// Update sigma_spatial from its Polya-Gamma full conditional given the
+// standardized BYM2 field v_j = sqrt(rho)*phi_scaled_j*scale_factor +
+// sqrt(1-rho)*theta_j, where u_j = sigma * v_j. The convolution u is
+// deterministic in (phi_scaled, theta, sigma, rho), so sigma's conditional
+// flows through the likelihood (as the rho update does), NOT through an iid
+// half-Cauchy on u. The PG likelihood is Gaussian in sigma:
+//   exp(sigma * A - 0.5 * sigma^2 * B),  A = sum_j sum_resid_j v_j,
+//                                        B = sum_j sum_omega_j v_j^2.
+// A half-normal N+(0, scale^2) prior adds precision 1/scale^2 and mean 0, so
+// the posterior is N(A/(B + 1/scale^2), 1/(B + 1/scale^2)) truncated to
+// sigma > 0.
+double update_sigma_spatial_bym2(
+    const NumericVector& phi_scaled,
+    const NumericVector& theta,
+    double rho,
+    double scale_factor,
+    const NumericVector& sum_omega,
+    const NumericVector& sum_resid,
+    double prior_scale
+) {
+  int J = phi_scaled.size();
+  double sqrt_rho = std::sqrt(rho + 1e-10);
+  double sqrt_1_rho = std::sqrt(1.0 - rho + 1e-10);
+
+  double A = 0.0, B = 0.0;
+  for (int j = 0; j < J; j++) {
+    double v_j = sqrt_rho * phi_scaled[j] * scale_factor + sqrt_1_rho * theta[j];
+    A += sum_resid[j] * v_j;
+    B += sum_omega[j] * v_j * v_j;
+  }
+
+  double prior_prec = (prior_scale > 0.0) ? 1.0 / (prior_scale * prior_scale) : 0.0;
+  double post_prec = B + prior_prec;
+  if (post_prec <= 1e-12) post_prec = 1e-12;
+  double post_mean = A / post_prec;
+  double post_sd = 1.0 / std::sqrt(post_prec);
+
+  return rtruncnorm_pos(post_mean, post_sd);
+}
+
 } // namespace tulpa

@@ -97,6 +97,19 @@ double update_rho_bym2(
     double beta
 );
 
+// Update sigma_spatial from the BYM2 Polya-Gamma full conditional (Gaussian in
+// sigma via the standardized field), half-normal prior. Replaces the iid
+// half-Cauchy update on the deterministic convolution u.
+double update_sigma_spatial_bym2(
+    const Rcpp::NumericVector& phi_scaled,
+    const Rcpp::NumericVector& theta,
+    double rho,
+    double scale_factor,
+    const Rcpp::NumericVector& sum_omega,
+    const Rcpp::NumericVector& sum_resid,
+    double prior_scale
+);
+
 } // namespace tulpa
 
 #endif // TULPA_PG_SPATIAL_H
