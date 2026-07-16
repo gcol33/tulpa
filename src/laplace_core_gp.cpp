@@ -106,6 +106,21 @@ LaplaceResult laplace_mode_gp(
                 pattern.push_back({gp_idx, j});
         }
 
+        // Beta-RE and GP-RE cross terms, so the sparse observed information
+        // matches the dense path (scatter_obs_with_latent); without these the
+        // sparse log|Q| dropped the RE cross blocks and diverged from dense.
+        if (n_re_groups > 0) {
+            for (int g = 0; g < n_re_groups; g++)
+                for (int j = 0; j < p; j++)
+                    pattern.push_back({p + g, j});
+            for (int i = 0; i < N; i++) {
+                int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
+                int g = (int)re_idx[i] - 1;
+                if (loc >= 0 && loc < n_spatial && g >= 0 && g < n_re_groups)
+                    pattern.push_back({gp_start + loc, p + g});
+            }
+        }
+
         // GP diagonal (likelihood + prior)
         for (int s = 0; s < n_spatial; s++)
             pattern.push_back({gp_start + s, gp_start + s});
@@ -138,6 +153,10 @@ LaplaceResult laplace_mode_gp(
                     if (g >= 0 && g < n_re_groups) {
                         grad[p + g] += gh.grad;
                         H.add(p + g, p + g, gh.neg_hess);
+                        // Cross with beta
+                        for (int j = 0; j < p; j++) {
+                            H.add(p + g, j, gh.neg_hess * X(i, j));
+                        }
                     }
                 }
                 // GP diagonal
@@ -149,6 +168,13 @@ LaplaceResult laplace_mode_gp(
                     // Cross with beta
                     for (int j = 0; j < p; j++) {
                         H.add(gp_idx, j, gh.neg_hess * X(i, j));
+                    }
+                    // Cross with RE
+                    if (n_re_groups > 0) {
+                        int g = (int)re_idx[i] - 1;
+                        if (g >= 0 && g < n_re_groups) {
+                            H.add(gp_idx, p + g, gh.neg_hess);
+                        }
                     }
                 }
             }
@@ -181,18 +207,22 @@ LaplaceResult laplace_mode_gp(
     }
 
     // --- Dense Newton path for small n_spatial ---
+    // Per-obs GP effect index (or -1) with unit design coefficient; the shared
+    // scatter_obs_with_latent adds the base beta/RE curvature plus the GP
+    // diagonal and the GP x beta / GP x RE cross-Hessian blocks, so the dense
+    // log|Q| carries the full observed information instead of the GP diagonal
+    // alone (the previous loop dropped every GP cross block).
+    std::vector<int> gp_effect_idx(N);
+    for (int i = 0; i < N; i++) {
+        int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
+        gp_effect_idx[i] = (loc >= 0 && loc < n_spatial) ? (gp_start + loc) : -1;
+    }
+    std::vector<double> gp_d_factors(N, 1.0);
     auto scatter = [&](const NumericVector& x, const NumericVector& eta,
                        DenseVec& grad, DenseMat& H) {
-        scatter_obs_grad_hess_base(y, n, X, re_idx, N, p, n_re_groups,
-                                    eta, family, phi, grad, H, n_threads);
-        for (int i = 0; i < N; i++) {
-            int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
-            if (loc < 0 || loc >= n_spatial) continue;
-            auto gh = grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-            int gp_idx = gp_start + loc;
-            grad[gp_idx] += gh.grad;
-            H[gp_idx][gp_idx] += gh.neg_hess;
-        }
+        scatter_obs_with_latent(y, n, X, re_idx, N, p, n_re_groups,
+                                eta, family, phi, gp_effect_idx, gp_d_factors,
+                                grad, H, n_threads);
         std::vector<double> w(n_spatial);
         for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
         std::vector<double> cond_means, cond_vars, nngp_alpha;
