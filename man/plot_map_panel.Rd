@@ -19,8 +19,8 @@ plot_map_panel(x, newdata = NULL, ncol = 2, ...)
 A patchwork object (if patchwork is installed) or a list of ggplots.
 }
 \description{
-Create a multi-panel figure with ratio estimate and uncertainty maps
-side by side.
+Create a multi-panel figure with the fitted-value map and the
+prediction-uncertainty map side by side.
 }
 \examples{
 # See plot_map() examples for fitting a spatial model

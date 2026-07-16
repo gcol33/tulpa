@@ -29,11 +29,12 @@ containing predictions with coordinate columns.}
 named 'x'/'y', 'X'/'Y', 'lon'/'lat', 'longitude'/'latitude', or
 'Easting'/'Northing'). Required if \code{x} is a data frame.}
 
-\item{what}{What to plot: "ratio" (default), "numerator", "denominator",
-or "uncertainty".}
+\item{what}{What to plot: "fitted" (default, the response-scale point
+prediction) or "uncertainty" (the 95\% credible-interval width).}
 
-\item{summary}{Which summary statistic: "median" (default), "mean",
-"q2.5", "q97.5", or "sd".}
+\item{summary}{Which summary statistic for \code{what = "fitted"}: "median"
+(default) / "mean" (both the point prediction), "q2.5" / "q97.5" (the
+credible bounds), or "sd" (the link-scale standard error).}
 
 \item{newdata}{Optional data frame with prediction locations and covariates.
 If NULL and \code{x} is a tulpa_fit, uses fitted values at observed locations.}
@@ -62,9 +63,9 @@ If NULL, uses planar coordinates.}
 A ggplot2 object that can be further customized.
 }
 \description{
-Create publication-ready maps from tulpa spatial predictions. Supports
-plotting ratio estimates, uncertainty (credible interval width), and
-individual process predictions (numerator/denominator).
+Create publication-ready maps from a tulpa spatial fit: the fitted response
+surface or the prediction uncertainty (credible-interval width), on the
+response scale.
 }
 \details{
 This function provides a streamlined workflow for visualizing spatial
@@ -76,8 +77,8 @@ predictions from tulpa models. It handles:
 \item Uncertainty visualization via credible interval width
 }
 
-For custom maps or more control, extract predictions using \code{ratio()} or
-\code{predict()} and use ggplot2 directly with \code{geom_stars()} or \code{geom_sf()}.
+For custom maps or more control, extract predictions using \code{predict()} and
+use ggplot2 directly with \code{geom_stars()} or \code{geom_sf()}.
 }
 \section{Required packages}{
 
@@ -89,38 +90,35 @@ are also needed. Install with:
 }
 
 \examples{
-# plot_map requires a fitted spatial tulpa model
-# See spatial_car() examples for fitting spatial models
-
+# plot_map requires a fitted spatial tulpa model and ggplot2.
 \dontrun{
-# Fit a spatial ratio model through a model package (tulpaRatio owns the
-# two-arm formula and the poisson/gamma ratio family):
 set.seed(123)
 n_sites <- 20
-n <- 60
 df <- data.frame(
-  count = rpois(n, lambda = 8),
-  effort = rgamma(n, shape = 4, rate = 1),
-  elevation = rnorm(n),
-  site = factor(rep(1:n_sites, length.out = n)),
-  x = rep(runif(n_sites), length.out = n),
-  y = rep(runif(n_sites), length.out = n)
+  y = rbinom(n_sites, 20, 0.4),
+  elevation = rnorm(n_sites),
+  site = factor(seq_len(n_sites)),
+  lon = runif(n_sites),
+  lat = runif(n_sites)
 )
-# Create simple adjacency matrix
 adj <- matrix(0, n_sites, n_sites)
-for (i in 1:(n_sites-1)) adj[i, i+1] <- adj[i+1, i] <- 1
+for (i in 1:(n_sites - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
 fit <- tulpa(
-  count | effort ~ elevation + (1 | site),
+  y ~ elevation,
   data = df,
-  family = tulpaRatio::tulpa_poisson_gamma(),
+  family = "binomial",
+  n_trials = rep(20L, n_sites),
   spatial = spatial_car(adj, group_var = "site"),
   mode = "laplace"
 )
-# plot_map(fit)  # requires ggplot2
+# Areal (CAR/ICAR) fits carry no point coordinates, so pass `coords`:
+cc <- df[, c("lon", "lat")]
+plot_map(fit, coords = cc)                      # fitted response surface
+plot_map(fit, what = "uncertainty", coords = cc)
+plot_map_panel(fit, coords = cc)                # both side by side
 }
 
 }
 \seealso{
-\code{ratio()} for extracting ratio posteriors,
 \code{predict.tulpa_fit()} for predictions at new locations
 }

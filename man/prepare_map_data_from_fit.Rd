@@ -4,7 +4,7 @@
 \alias{prepare_map_data_from_fit}
 \title{Prepare map data from tulpa_fit object}
 \usage{
-prepare_map_data_from_fit(fit, what, summary, newdata)
+prepare_map_data_from_fit(fit, what, summary, newdata, coords = NULL)
 }
 \description{
 Prepare map data from tulpa_fit object

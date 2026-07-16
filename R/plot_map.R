@@ -1,19 +1,20 @@
 #' Plot spatial predictions as a map
 #'
 #' @description
-#' Create publication-ready maps from tulpa spatial predictions. Supports
-#' plotting ratio estimates, uncertainty (credible interval width), and
-#' individual process predictions (numerator/denominator).
+#' Create publication-ready maps from a tulpa spatial fit: the fitted response
+#' surface or the prediction uncertainty (credible-interval width), on the
+#' response scale.
 #'
 #' @param x A `tulpa_fit` object with spatial structure, or a data frame
 #'   containing predictions with coordinate columns.
 #' @param coords A data frame or matrix with spatial coordinates (columns
 #'   named 'x'/'y', 'X'/'Y', 'lon'/'lat', 'longitude'/'latitude', or
 #'   'Easting'/'Northing'). Required if `x` is a data frame.
-#' @param what What to plot: "ratio" (default), "numerator", "denominator",
-#'   or "uncertainty".
-#' @param summary Which summary statistic: "median" (default), "mean",
-#'   "q2.5", "q97.5", or "sd".
+#' @param what What to plot: "fitted" (default, the response-scale point
+#'   prediction) or "uncertainty" (the 95% credible-interval width).
+#' @param summary Which summary statistic for `what = "fitted"`: "median"
+#'   (default) / "mean" (both the point prediction), "q2.5" / "q97.5" (the
+#'   credible bounds), or "sd" (the link-scale standard error).
 #' @param newdata Optional data frame with prediction locations and covariates.
 #'   If NULL and `x` is a tulpa_fit, uses fitted values at observed locations.
 #' @param title Plot title. If NULL, auto-generated based on `what`.
@@ -39,8 +40,8 @@
 #' - Creating publication-quality maps with sensible defaults
 #' - Uncertainty visualization via credible interval width
 #'
-#' For custom maps or more control, extract predictions using `ratio()` or
-#' `predict()` and use ggplot2 directly with `geom_stars()` or `geom_sf()`.
+#' For custom maps or more control, extract predictions using `predict()` and
+#' use ggplot2 directly with `geom_stars()` or `geom_sf()`.
 #'
 #' @section Required packages:
 #' This function requires `ggplot2`. For raster-style maps, `stars` and `sf`
@@ -50,38 +51,35 @@
 #' ```
 #'
 #' @examples
-#' # plot_map requires a fitted spatial tulpa model
-#' # See spatial_car() examples for fitting spatial models
-#'
+#' # plot_map requires a fitted spatial tulpa model and ggplot2.
 #' \dontrun{
-#' # Fit a spatial ratio model through a model package (tulpaRatio owns the
-#' # two-arm formula and the poisson/gamma ratio family):
 #' set.seed(123)
 #' n_sites <- 20
-#' n <- 60
 #' df <- data.frame(
-#'   count = rpois(n, lambda = 8),
-#'   effort = rgamma(n, shape = 4, rate = 1),
-#'   elevation = rnorm(n),
-#'   site = factor(rep(1:n_sites, length.out = n)),
-#'   x = rep(runif(n_sites), length.out = n),
-#'   y = rep(runif(n_sites), length.out = n)
+#'   y = rbinom(n_sites, 20, 0.4),
+#'   elevation = rnorm(n_sites),
+#'   site = factor(seq_len(n_sites)),
+#'   lon = runif(n_sites),
+#'   lat = runif(n_sites)
 #' )
-#' # Create simple adjacency matrix
 #' adj <- matrix(0, n_sites, n_sites)
-#' for (i in 1:(n_sites-1)) adj[i, i+1] <- adj[i+1, i] <- 1
+#' for (i in 1:(n_sites - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
 #' fit <- tulpa(
-#'   count | effort ~ elevation + (1 | site),
+#'   y ~ elevation,
 #'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
+#'   family = "binomial",
+#'   n_trials = rep(20L, n_sites),
 #'   spatial = spatial_car(adj, group_var = "site"),
 #'   mode = "laplace"
 #' )
-#' # plot_map(fit)  # requires ggplot2
+#' # Areal (CAR/ICAR) fits carry no point coordinates, so pass `coords`:
+#' cc <- df[, c("lon", "lat")]
+#' plot_map(fit, coords = cc)                      # fitted response surface
+#' plot_map(fit, what = "uncertainty", coords = cc)
+#' plot_map_panel(fit, coords = cc)                # both side by side
 #' }
 #'
-#' @seealso \code{ratio()} for extracting ratio posteriors,
-#'   \code{predict.tulpa_fit()} for predictions at new locations
+#' @seealso \code{predict.tulpa_fit()} for predictions at new locations
 #'
 #' @export
 plot_map <- function(x,
@@ -112,8 +110,9 @@ plot_map <- function(x,
 
   # Extract predictions based on input type
   if (inherits(x, "tulpa_fit")) {
-    plot_data <- prepare_map_data_from_fit(x, what, summary, newdata)
-    obs_coords <- extract_coords_from_fit(x)
+    plot_data <- prepare_map_data_from_fit(x, what, summary, newdata, coords)
+    obs_coords <- if (!is.null(coords)) extract_coords(coords)
+                  else extract_coords_from_fit(x)
   } else if (is.data.frame(x)) {
     if (is.null(coords)) {
       stop("'coords' must be provided when 'x' is a data frame", call. = FALSE)
@@ -165,52 +164,36 @@ plot_map <- function(x,
 #' Prepare map data from tulpa_fit object
 #'
 #' @keywords internal
-prepare_map_data_from_fit <- function(fit, what, summary, newdata) {
+prepare_map_data_from_fit <- function(fit, what, summary, newdata, coords = NULL) {
 
+  # Response-scale prediction with credible bounds from the generic engine:
+  # data.frame(fit, se.fit, lower, upper). Includes the spatial field for a
+  # mesh-backed SPDE fit and the fixed-effect prediction otherwise. Coordinates
+  # come from `newdata`, then an explicit `coords`, then the fit itself (many
+  # areal fits, e.g. ICAR/CAR, carry no point coordinates -- pass `coords`).
   if (!is.null(newdata)) {
-    # Predictions at new locations
-    pred <- predict(fit, newdata = newdata, summary = TRUE)
+    pred   <- predict(fit, newdata = newdata, se.fit = TRUE, type = "response")
     coords <- extract_coords(newdata)
   } else {
-    # Fitted values at observed locations
-    coords <- extract_coords_from_fit(fit)
-
-    if (what == "ratio" || what == "uncertainty") {
-      r <- ratio(fit, summary = TRUE)
-      pred <- r
-    } else if (what == "numerator") {
-      pred <- fitted(fit, type = "numerator")
-    } else {
-      pred <- fitted(fit, type = "denominator")
-    }
+    pred   <- predict(fit, se.fit = TRUE, type = "response")
+    coords <- if (!is.null(coords)) extract_coords(coords)
+              else extract_coords_from_fit(fit)
+  }
+  if (is.null(coords)) {
+    stop("plot_map(): the fit carries no point coordinates; pass `coords` ",
+         "(a data frame / matrix of x-y locations, one row per observation).",
+         call. = FALSE)
   }
 
-  # Extract the appropriate summary statistic
-  if (what == "uncertainty") {
-    # CI width = q97.5 - q2.5
-    if ("q97.5" %in% names(pred) && "q2.5" %in% names(pred)) {
-      value <- pred$q97.5 - pred$q2.5
-    } else if ("q975" %in% names(pred) && "q025" %in% names(pred)) {
-      value <- pred$q975 - pred$q025
-    } else {
-      stop("Cannot compute uncertainty: quantiles not found in predictions",
-           call. = FALSE)
-    }
+  value <- if (what == "uncertainty") {
+    pred$upper - pred$lower           # 95% credible-interval width
   } else {
-    col_name <- switch(summary,
-      median = c("median", "q50", "q0.5"),
-      mean = "mean",
-      q2.5 = c("q2.5", "q025"),
-      q97.5 = c("q97.5", "q975"),
-      sd = "sd"
-    )
-    # Find matching column
-    matched <- intersect(col_name, names(pred))
-    if (length(matched) == 0) {
-      stop("Summary statistic '", summary, "' not found in predictions",
-           call. = FALSE)
-    }
-    value <- pred[[matched[1]]]
+    switch(summary,
+      median = pred$fit,              # point prediction (posterior mean)
+      mean   = pred$fit,
+      q2.5   = pred$lower,
+      q97.5  = pred$upper,
+      sd     = pred$se.fit)
   }
 
   data.frame(
@@ -463,8 +446,8 @@ get_palette_scale <- function(palette, na_color, legend_title, geom = "fill") {
 #' Plot multiple maps in a grid
 #'
 #' @description
-#' Create a multi-panel figure with ratio estimate and uncertainty maps
-#' side by side.
+#' Create a multi-panel figure with the fitted-value map and the
+#' prediction-uncertainty map side by side.
 #'
 #' @param x A `tulpa_fit` object with spatial structure.
 #' @param newdata Optional data frame with prediction locations.
@@ -481,8 +464,8 @@ get_palette_scale <- function(palette, na_color, legend_title, geom = "fill") {
 #' @export
 plot_map_panel <- function(x, newdata = NULL, ncol = 2, ...) {
 
-  p1 <- plot_map(x, what = "ratio", newdata = newdata,
-                 title = "Ratio Estimate", ...)
+  p1 <- plot_map(x, what = "fitted", newdata = newdata,
+                 title = "Fitted Values", ...)
   p2 <- plot_map(x, what = "uncertainty", newdata = newdata,
                  title = "Uncertainty (95% CI Width)", ...)
 
