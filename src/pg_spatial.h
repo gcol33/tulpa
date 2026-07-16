@@ -74,7 +74,8 @@ Rcpp::NumericVector update_spatial_bym2(
     Rcpp::NumericVector& theta,       // Input/output: unstructured component
     double sigma_spatial,             // Total spatial SD
     double rho,                       // Proportion of variance from structured component
-    double scale_factor               // BYM2 scaling factor (from eigenvalues)
+    double scale_factor,              // BYM2 scaling factor (from eigenvalues)
+    double* removed_mean = nullptr    // out: field level removed by centering phi
 );
 
 // Update sigma_spatial with half-Cauchy prior

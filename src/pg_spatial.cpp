@@ -198,7 +198,8 @@ NumericVector update_spatial_bym2(
     NumericVector& theta,       // Input/output: unstructured component
     double sigma_spatial,
     double rho,
-    double scale_factor
+    double scale_factor,
+    double* removed_mean        // out: field level removed by centering phi
 ) {
   int N = kappa.size();
   int J = adj_list.size();
@@ -250,7 +251,11 @@ NumericVector update_spatial_bym2(
     phi_scaled[j] = R::rnorm(post_mean_num / post_prec, std::sqrt(1.0 / post_prec));
   }
 
-  // Center phi_scaled
+  // Center phi_scaled (sum-to-zero on the structured component) and report the
+  // field level removed from u_j = sigma*(sqrt_rho*phi_scaled_j*scale + ...), so
+  // the caller can absorb it into the intercept -- eta is then unchanged and the
+  // move is posterior-invariant (matching the ICAR twin). Discarding it lags the
+  // intercept behind the field each sweep.
   double mean_phi = 0.0;
   for (int j = 0; j < J; j++) {
     mean_phi += phi_scaled[j];
@@ -259,6 +264,7 @@ NumericVector update_spatial_bym2(
   for (int j = 0; j < J; j++) {
     phi_scaled[j] -= mean_phi;
   }
+  if (removed_mean) *removed_mean = sigma_spatial * sqrt_rho * scale_factor * mean_phi;
 
   // Recompute residuals for theta update
   for (int j = 0; j < J; j++) {

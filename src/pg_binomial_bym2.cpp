@@ -33,7 +33,8 @@ namespace tulpa {
       Rcpp::NumericVector& theta,
       double sigma_spatial,
       double rho,
-      double scale_factor
+      double scale_factor,
+      double* removed_mean
   );
 
   double update_sigma_spatial(
@@ -133,8 +134,18 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     for (int i = 0; i < N; i++) {
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
+    double bym2_removed = 0.0;
     u = tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors,
-                                   phi_scaled, theta, sigma_spatial, rho, scale_factor);
+                                   phi_scaled, theta, sigma_spatial, rho, scale_factor,
+                                   &bym2_removed);
+    // Absorb the field level removed by centering phi into the intercept so eta
+    // is unchanged (posterior-invariant), and refresh the cached X_beta / offset
+    // that the sigma and rho conditionals below read.
+    C.beta[0] += bym2_removed;
+    for (int i = 0; i < N; i++) {
+      C.X_beta[i] += bym2_removed;
+      C.offset[i] = C.X_beta[i] + C.re_contrib[i];
+    }
 
     // Polya-Gamma sufficient statistics per spatial unit (offset excludes the
     // spatial field u): the linear/quadratic data terms both the sigma and rho
