@@ -24,16 +24,22 @@ sim_recov <- function(seed, family, G, npg, ntr = 1L, beta = c(0, 0.3),
 }
 
 # Fit `n_seed` data sets and return per-seed posterior medians + coverage counts.
-recov_sweep <- function(family, G, npg, n_seed, seed_off = 0L) {
+# `fitter` selects the RE-covariance backend: "gibbs" (the exact debias) or
+# "nested" (tulpa_re_cov_nested, the DEFAULT random-slope path).
+recov_sweep <- function(family, G, npg, n_seed, seed_off = 0L, fitter = "gibbs") {
   truth <- c(sigma_1 = 0.7, sigma_2 = 0.5, rho_12 = 0.4)
   med <- matrix(NA_real_, n_seed, 3, dimnames = list(NULL, names(truth)))
   cov <- setNames(integer(3), names(truth))
   for (s in seq_len(n_seed)) {
     d  <- sim_recov(seed_off + s, family, G, npg)
     rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
-    res <- tulpa_re_cov_gibbs(d$y, d$ntr, d$X, rt, family = family,
-                              control = list(n_iter = 1200L, warmup = 600L,
-                                             seed = 300L + s))
+    res <- if (fitter == "nested") {
+      tulpa_re_cov_nested(d$y, d$ntr, d$X, rt, family = family)
+    } else {
+      tulpa_re_cov_gibbs(d$y, d$ntr, d$X, rt, family = family,
+                         control = list(n_iter = 1200L, warmup = 600L,
+                                        seed = 300L + s))
+    }
     for (nm in names(truth)) {
       row <- res$posterior[res$posterior$parameter == nm, ]
       med[s, nm] <- row$median
@@ -126,4 +132,25 @@ test_that("strict N=20 gate: binomial identified (all three gated)", {
                    seed_off = 4000L)
   strict_gate(R, n_seed, gate_bias = c("sigma_1", "sigma_2", "rho_12"),
               label = "binomial-identified")
+})
+
+
+# The DEFAULT random-slope backend: tulpa() auto-selects tulpa_re_cov_nested for
+# a correlated (1 + x | g) term, but that path had only interval-containment
+# checks (no point-bias or coverage gate) while the gibbs sibling above carries
+# the strict N=20 gate. Close the gap on the path most users actually hit
+# (gcol33/tulpa#155). Poisson small groups, where the nested Laplace is
+# well-behaved; calibrated at bias < 15% and coverage >= 75% on the variance
+# components.
+test_that("nested backend recovers variance components with coverage (default path)", {
+  skip_if_not_slow()
+  n_seed <- 20L
+  R <- recov_sweep("poisson", G = 60L, npg = 12L, n_seed = n_seed,
+                   fitter = "nested")
+  for (nm in c("sigma_1", "sigma_2")) {
+    expect_lt(abs(mean(R$med[, nm]) - R$truth[[nm]]) / R$truth[[nm]], 0.15,
+              label = sprintf("nested %s relative bias", nm))
+    expect_gte(R$cov[[nm]] / n_seed, 0.75,
+               label = sprintf("nested %s coverage", nm))
+  }
 })
