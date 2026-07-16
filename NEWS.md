@@ -1,6 +1,6 @@
 # tulpa NEWS
 
-## 0.1.2 (2026-07-15)
+## 0.0.82 (2026-07-15)
 
 The sampled spatial range gets a real prior. **ABI break**
 (`TULPA_ABI_VERSION` 33 -> 34); downstream packages must rebuild, and any
@@ -88,7 +88,7 @@ anchors (see the last bullet).
   `phi` came to sit at the old Uniform's mean. The SVC HSGP path is unaffected;
   it puts a `LogNormal(0, 1)` on an unbounded log-lengthscale and reads neither.
 
-## 0.1.1 (2026-07-15)
+## 0.0.81 (2026-07-15)
 
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
@@ -271,7 +271,7 @@ fixes surfaced by a fan-out code audit.
   the other component's contribution. The two-process negbin kernel now draws the
   exact real Polya-Gamma shape (`rpg_real`).
 
-## 0.1.0 (2026-07-14)
+## 0.0.80 (2026-07-14)
 
 CRAN-preparation release.
 
