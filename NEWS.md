@@ -88,6 +88,15 @@ anchors (see the last bullet).
   `phi` came to sit at the old Uniform's mean. The SVC HSGP path is unaffected;
   it puts a `LogNormal(0, 1)` on an unbounded log-lengthscale and reads neither.
 
+* The internal `tulpa_version()` reads DESCRIPTION via
+  `utils::packageVersion()` instead of returning a version restated in C++. The
+  literal dated to the first commit and had never been updated, so it disagreed
+  with DESCRIPTION across the whole 0.0.x line; the test asserted the same
+  literal, which is why nothing caught it. The C++ entry point is removed rather
+  than kept in sync, and the test now reads DESCRIPTION directly.
+  `TULPA_ABI_VERSION` remains a compiled constant by design: it describes the
+  DLL a model package linked against, not the metadata beside it.
+
 ## 0.0.81 (2026-07-15)
 
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
