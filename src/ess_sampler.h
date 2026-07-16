@@ -281,18 +281,19 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
                    layout.temporal_start, layout.temporal_end);
     }
 
-    // GP spatial effects
+    // GP spatial effects: w ~ N(0, K(sigma2, phi)) with K the (NN)GP kernel
+    // covariance. The ESS Gaussian-prior block is isotropic N(0, scale^2 I) and
+    // cannot represent K -- an isotropic N(0, 1) ellipse combined with the full
+    // log-posterior target (which already carries the GP prior) samples the
+    // wrong distribution (extra N(0,1) factor, no kernel correlation). Error
+    // rather than sample silently wrong, matching the spatial / temporal blocks.
     if (layout.is_gp && layout.gp_w_end > layout.gp_w_start) {
-        GaussianPrior prior;
-        for (int j = layout.gp_w_start; j < layout.gp_w_end; j++) {
-            prior.param_indices.push_back(j);
-        }
-
-        int n = prior.param_indices.size();
-        prior.mean = Eigen::VectorXd::Zero(n);
-        prior.is_identity_cov = true;
-        prior.scale = 1.0;  // GP effects use kernel covariance
-        priors.push_back(prior);
+        Rcpp::stop("ESS prior builder: GP field block at indices [%d, %d) "
+                   "requires the kernel covariance K(sigma2, phi), which the "
+                   "isotropic ESS Gaussian-prior block cannot carry. Sample the "
+                   "GP field with the NUTS/Laplace GP path, not the legacy ESS "
+                   "sampler.",
+                   layout.gp_w_start, layout.gp_w_end);
     }
 
     // ZI coefficients: beta_zi ~ N(0, zi_prior_sd^2)

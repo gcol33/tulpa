@@ -212,8 +212,18 @@ inline SMCResult smc_sample(
         double ess = compute_ess(log_w);
         result.ess_history.push_back(ess);
 
-        // (c) Resample if ESS below threshold
-        if (ess < ess_target) {
+        // (c) Resample every step. After resampling the particles are equally
+        // weighted, which is exactly the assumption the equal-weight temperature
+        // search (find_next_temperature), the log-mean-weight Z increment above,
+        // and the uniform final weights below all rely on. Adaptive resampling
+        // (only when ess < target) would instead require carrying normalized
+        // weights across rounds and feeding them back into all three; the
+        // previous code skipped the resample but dropped the weights, returning
+        // a uniform-weight population that no longer targeted the tempered
+        // posterior. Resampling unconditionally is the consistent fix (Del Moral
+        // et al. 2006); the modest extra Monte Carlo variance is offset by the
+        // per-particle MCMC mutations that follow.
+        {
             auto ancestors = systematic_resample(weights, N, rng);
             auto old_particles = particles;
             auto old_log_liks = log_liks;
