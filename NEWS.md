@@ -1,5 +1,21 @@
 # tulpa NEWS
 
+## 0.0.84
+
+Checkpoint fix (#161).
+
+* **Diagnostic re-solve no longer aborts a resumable joint fit.** In a joint
+  nested-Laplace fit, the outer Pareto-k diagnostic re-solves the inner marginal
+  with its own cheaper solver knobs (`max_iter`, `tol`, `inner_refresh`). Those
+  knobs are part of the checkpoint fingerprint, so with `control$checkpoint` set
+  and `diagnose_k = TRUE` the diagnostic pass computed a fingerprint that did not
+  match the file the main outer grid had written, and the fit stopped with a
+  "fingerprint mismatch" error after the main grid had already completed. The
+  diagnostic solve now runs checkpoint-free (via the same quiet-options path the
+  CCD / adaptive probes already use), so only the main outer grid owns the
+  checkpoint. A resumed fit stays byte-identical to an uninterrupted one; fits
+  with `diagnose_k = FALSE` are unaffected.
+
 ## 0.0.83
 
 Front-door API convention cleanup (#156, fully closed) and the

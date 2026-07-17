@@ -233,6 +233,74 @@ test_that("checkpoint resume is equivalent on the sparse grid path", {
     .ck_expect_equiv(fit_plain, fit_resumed)
 })
 
+# gcol33/tulpa#161: the outer Pareto-k diagnostic re-solves the inner joint
+# marginal with its own cheaper knobs (capped max_iter, looser tol, factor-reuse
+# inner_refresh). Those knobs are part of the checkpoint fingerprint, so the
+# diagnostic's fingerprint legitimately differs from the main grid's. It must run
+# checkpoint-free rather than open the fit's checkpoint and abort with a
+# fingerprint mismatch AFTER the expensive main grid has already completed. The
+# main grid stays the sole owner of the checkpoint (byte-identical resume).
+
+test_that("diagnose_k fit with a checkpoint completes (single-block copy) [#161]", {
+    sim <- .ck_sim_joint(seed = 21L, alpha_true = 1.1)
+    prior <- c(list(type = "bym2", sigma_grid = c(0.4, 0.6, 0.8),
+                    rho_grid = c(0.4, 0.8)), sim$adj)
+    copy_spec <- list(arm = "pos", alpha_grid = c(0.9, 1.1, 1.3))
+    path <- tempfile(fileext = ".ckpt")
+    on.exit(unlink(path), add = TRUE)
+
+    # Pre-fix this aborts at the Pareto-k pass with "fingerprint mismatch" after
+    # the main grid; post-fix it completes with a finite result.
+    fit <- .ck_fit(sim, prior, copy = copy_spec,
+                   control = list(diagnose_k = TRUE,
+                                  checkpoint = list(path = path, resume = TRUE)))
+    expect_true(is.finite(fit$log_marginal[which.max(fit$weights)]))
+    expect_true(file.exists(path))
+
+    # The main grid still owns the checkpoint: a resume loads its completed cells
+    # and re-appends nothing (the diagnostic never wrote to the file), and the fit
+    # is equivalent to the first run.
+    sz <- file.size(path)
+    fit_re <- .ck_fit(sim, prior, copy = copy_spec,
+                      control = list(diagnose_k = TRUE,
+                                     checkpoint = list(path = path, resume = TRUE)))
+    expect_equal(file.size(path), sz,
+                 info = "resume re-appended cells (did the diagnostic pollute the ckpt?)")
+    .ck_expect_equiv(fit, fit_re)
+})
+
+test_that("diagnose_k fit with a checkpoint completes (multi-block copy) [#161]", {
+    sim <- .ck_sim_joint(seed = 22L, alpha_true = 1.0)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- list(type = "bym2", spatial_idx = sp,
+                n_spatial_units = sim$adj$n_spatial_units,
+                adj_row_ptr = sim$adj$adj_row_ptr,
+                adj_col_idx = sim$adj$adj_col_idx,
+                n_neighbors = sim$adj$n_neighbors, scale_factor = 1.0,
+                sigma_grid = c(0.4, 0.6, 0.8), rho_grid = c(0.4, 0.8))
+    copy_spec <- list(arm = "pos", block = 1L, alpha_grid = c(0.8, 1.0, 1.2))
+    path <- tempfile(fileext = ".ckpt")
+    on.exit(unlink(path), add = TRUE)
+
+    ctrl <- list(max_iter = 50L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+                 diagnose_k = TRUE, integration = "grid",
+                 checkpoint = list(path = path, resume = TRUE))
+    fit <- tulpa_nested_laplace_joint(sim$responses, list(blk), copy = copy_spec,
+                                      control = ctrl)
+    expect_true(all(is.finite(fit$theta_mean)))
+    expect_true(file.exists(path))
+
+    sz <- file.size(path)
+    fit_re <- tulpa_nested_laplace_joint(sim$responses, list(blk), copy = copy_spec,
+                                         control = ctrl)
+    expect_equal(file.size(path), sz,
+                 info = "resume re-appended cells (did the diagnostic pollute the ckpt?)")
+    expect_equal(as.numeric(fit_re$log_marginal), as.numeric(fit$log_marginal),
+                 tolerance = 1e-9)
+    expect_equal(as.numeric(fit_re$theta_mean), as.numeric(fit$theta_mean),
+                 tolerance = 1e-9)
+})
+
 test_that("control$checkpoint validates its argument", {
     sim <- .ck_sim_joint(seed = 18L)
     prior <- c(list(type = "icar", sigma_grid = c(0.5, 0.7)), sim$adj)

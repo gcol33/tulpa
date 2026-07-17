@@ -806,8 +806,12 @@
     # Hessian fill); loosened inner tol cuts intrinsic Newton steps; per-cell
     # warm start (`x_init_per_cell`, an [S x n_x] matrix or NULL) starts each
     # draw from its nearest grid mode in BOTH serial and parallel (gcol33/tulpa#118).
+    # The diagnostic re-solve runs with its own cheaper knobs (k_max_iter,
+    # knobs$tol / refresh), so its checkpoint fingerprint would differ from the
+    # main grid's; run it checkpoint-free so it neither collides with nor
+    # appends to the fit's checkpoint file (gcol33/tulpa#161).
     solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
-        r <- call_kernel(
+        r <- .joint_with_quiet_opts(call_kernel(
             theta_mat,
             x_init           = warm_mode,
             phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
@@ -815,7 +819,7 @@
             x_init_per_cell  = x_init_per_cell,
             max_iter_        = k_max_iter,
             tol_             = max(knobs$tol, as.numeric(tol)),
-            inner_refresh_   = knobs$refresh)
+            inner_refresh_   = knobs$refresh))
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                             fn_sigma, fn_alpha, fn_phi)
     }

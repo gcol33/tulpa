@@ -1317,13 +1317,17 @@
     # (off-factor steps scatter grad-only) + per-cell warm start, both attacking
     # the dominant per-iteration scatter cost on the beta cover arm
     # (gcol33/tulpa#118). `x_init_per_cell` is an [S x n_x] warm matrix or NULL.
+    # The diagnostic re-solve runs with its own cheaper knobs (k_max_iter,
+    # knobs$tol / refresh), so its checkpoint fingerprint would differ from the
+    # main grid's; run it checkpoint-free so it neither collides with nor
+    # appends to the fit's checkpoint file (gcol33/tulpa#161).
     solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
-        r  <- kernel_fn(theta_mat, warm_start = warm_arg,
+        r  <- .joint_with_quiet_opts(kernel_fn(theta_mat, warm_start = warm_arg,
                         max_iter_override = k_max_iter,
                         n_threads_outer = n_to,
                         inner_refresh_override = knobs$refresh,
                         tol_override = knobs$tol,
-                        x_init_per_cell = x_init_per_cell)
+                        x_init_per_cell = x_init_per_cell))
         lm <- r$log_marginal
         if (!is.null(hp_fn)) {
             hp <- hp_fn(theta_mat)
