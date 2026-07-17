@@ -22,6 +22,7 @@
 #include "re_cov_chol.h"
 #include <RcppEigen.h>
 #include <vector>
+#include <unordered_map>
 #include <cmath>
 #include <limits>
 
@@ -29,7 +30,11 @@ namespace tulpa {
 
 using RowMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
-// Tensor quadrature grid Q^d (probabilist's GHQ), precomputed once per fit.
+// Tensor quadrature grid (probabilist's GHQ), precomputed once per fit. Each axis
+// carries its own node count, so a heterogeneous stack of covariance blocks can
+// use fewer nodes on the cheap (scalar nuisance) blocks than on the correlated
+// coefficient blocks. `Q` is the node count of axis 0 (equal to every axis in
+// the uniform case).
 struct AghqGrid {
     int d = 0, Q = 0, n_nodes = 0;
     Eigen::MatrixXd Znodes;   // n_nodes x d (node coordinates)
@@ -37,29 +42,57 @@ struct AghqGrid {
     Eigen::VectorXd z2;       // n_nodes (sum of squared node coords)
 };
 
-inline AghqGrid aghq_build_grid(int d, int n_quad) {
-    GaussHermite gh = gauss_hermite_prob(n_quad);
-    const int Q = (int)gh.nodes.size();
+// Per-axis node counts from a per-block request. `nq_block` is either length 1
+// (broadcast to every block) or length blocks.size() (one node count per block);
+// every axis of block m gets nq_block[m]. This maps a per-covariance-block order
+// onto the flat axis layout the tensor grid iterates.
+inline std::vector<int> aghq_nq_per_axis(const std::vector<ReCovBlock>& blocks,
+                                         const std::vector<int>& nq_block) {
+    const bool broadcast = (nq_block.size() == 1);
+    std::vector<int> per_axis;
+    for (size_t mi = 0; mi < blocks.size(); ++mi) {
+        const int q = broadcast ? nq_block[0] : nq_block[mi];
+        for (int c = 0; c < blocks[mi].nc; ++c) per_axis.push_back(q);
+    }
+    return per_axis;
+}
+
+// Tensor grid from a per-axis node-count vector (length d). When every axis holds
+// the same count this reproduces the uniform Q^d grid byte-for-byte (same node
+// order, weights, z2); a scalar request routes here via a length-1 broadcast.
+inline AghqGrid aghq_build_grid(const std::vector<int>& nq_per_axis) {
+    const int d = (int)nq_per_axis.size();
+    std::unordered_map<int, GaussHermite> rules;   // one Golub-Welsch solve per distinct count
+    std::vector<const GaussHermite*> gh(d);
+    std::vector<Eigen::VectorXd> logwk(d);
+    std::vector<int> Qc(d);
     long n = 1;
-    for (int i = 0; i < d; ++i) n *= Q;
+    for (int c = 0; c < d; ++c) {
+        const int nq = nq_per_axis[c];
+        auto it = rules.find(nq);
+        if (it == rules.end()) it = rules.emplace(nq, gauss_hermite_prob(nq)).first;
+        gh[c]    = &it->second;
+        logwk[c] = it->second.weights.array().log();
+        Qc[c]    = (int)it->second.nodes.size();
+        n *= Qc[c];
+    }
     AghqGrid g;
-    g.d = d; g.Q = Q; g.n_nodes = (int)n;
+    g.d = d; g.Q = (d > 0 ? Qc[0] : 0); g.n_nodes = (int)n;
     g.Znodes.resize(n, d);
     g.logw.resize(n);
     g.z2.resize(n);
-    Eigen::VectorXd logwk = gh.weights.array().log();
     std::vector<int> idx(d, 0);                 // mixed radix, axis 0 fastest (expand.grid order)
     for (long r = 0; r < n; ++r) {
         double lw = 0.0, z2s = 0.0;
         for (int c = 0; c < d; ++c) {
-            const double z = gh.nodes(idx[c]);
+            const double z = gh[c]->nodes(idx[c]);
             g.Znodes(r, c) = z;
-            lw += logwk(idx[c]);
+            lw += logwk[c](idx[c]);
             z2s += z * z;
         }
         g.logw(r) = lw;
         g.z2(r) = z2s;
-        for (int c = 0; c < d; ++c) { if (++idx[c] < Q) break; idx[c] = 0; }
+        for (int c = 0; c < d; ++c) { if (++idx[c] < Qc[c]) break; idx[c] = 0; }
     }
     return g;
 }

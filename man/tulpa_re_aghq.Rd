@@ -75,7 +75,15 @@ for the \code{make_site} path; ignored for \code{make_group}.}
 (default all; \code{make_site} path only). Rows outside \code{keep} are dropped from
 every group.}
 
-\item{n_quad}{Quadrature nodes per RE dimension (default 9; \code{1} = Laplace).}
+\item{n_quad}{Quadrature nodes per RE dimension. Either a single integer
+(default 9; \code{1} = Laplace) broadcast to every covariance block, or an
+integer vector of length \code{length(re_terms)} giving a per-block node count.
+The tensor grid then uses \code{n_quad[b]} nodes along every dimension of block
+\code{b}, for \verb{prod_b n_quad[b]^(dim_b)} total nodes; a scalar reproduces the
+uniform grid exactly. Per-block orders let a heterogeneous stack spend fewer
+nodes on cheap scalar nuisance blocks than on the correlated coefficient
+blocks (e.g. \code{c(3, 3, 2, 2)} on blocks of dimension \verb{2, 2, 1, 1} gives
+\code{3^2 * 3^2 * 2 * 2 = 324} nodes rather than \code{3^6 = 729}).}
 
 \item{lkj_eta}{LKJ shape for an optional correlation penalty on each
 \emph{correlated} block (log-density \verb{(eta - 1) log det R}, maximized at

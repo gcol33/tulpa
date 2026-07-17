@@ -38,12 +38,15 @@ SEXP cpp_aghq_make_rclosure_oracle(Function builder, int n_groups, int d, int n_
 
 // AGHQ ML-II objective sum_g log M_g + LKJ at par = [theta ; log-Chol Sigma].
 // Returns a large finite penalty on a failed solve so stats::optim rejects it.
+// `n_quad` is per covariance block (length 1 broadcasts to every block, length
+// nc.size() gives each block its own node count); see aghq_nq_per_axis.
 // [[Rcpp::export]]
 double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc,
-                          LogicalVector full, int n_quad, double lkj_eta) {
+                          LogicalVector full, IntegerVector n_quad, double lkj_eta) {
     XPtr<REGroupOracle> orc(oracle);
     int d; std::vector<ReCovBlock> blocks = parse_blocks(nc, full, d);
-    AghqGrid grid = aghq_build_grid(d, n_quad);
+    std::vector<int> nqb(n_quad.begin(), n_quad.end());
+    AghqGrid grid = aghq_build_grid(aghq_nq_per_axis(blocks, nqb));
     Eigen::VectorXd pe(par.size());
     for (int i = 0; i < par.size(); ++i) pe(i) = par(i);
     AghqValueGrad r = aghq_objective_grad(*orc, pe, blocks, grid, lkj_eta, /*want_grad=*/false);
@@ -61,10 +64,11 @@ double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc,
 // cpp_aghq_objective. `ok = FALSE` flags a failed solve; `grad` is then zeroed.
 // [[Rcpp::export]]
 List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc,
-                             LogicalVector full, int n_quad, double lkj_eta) {
+                             LogicalVector full, IntegerVector n_quad, double lkj_eta) {
     XPtr<REGroupOracle> orc(oracle);
     int d; std::vector<ReCovBlock> blocks = parse_blocks(nc, full, d);
-    AghqGrid grid = aghq_build_grid(d, n_quad);
+    std::vector<int> nqb(n_quad.begin(), n_quad.end());
+    AghqGrid grid = aghq_build_grid(aghq_nq_per_axis(blocks, nqb));
     Eigen::VectorXd pe(par.size());
     for (int i = 0; i < par.size(); ++i) pe(i) = par(i);
     AghqValueGrad r = aghq_objective_grad(*orc, pe, blocks, grid, lkj_eta, /*want_grad=*/true);

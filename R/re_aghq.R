@@ -92,7 +92,15 @@
 #' @param keep Optional logical/integer mask of observations to include
 #'   (default all; `make_site` path only). Rows outside `keep` are dropped from
 #'   every group.
-#' @param n_quad Quadrature nodes per RE dimension (default 9; `1` = Laplace).
+#' @param n_quad Quadrature nodes per RE dimension. Either a single integer
+#'   (default 9; `1` = Laplace) broadcast to every covariance block, or an
+#'   integer vector of length `length(re_terms)` giving a per-block node count.
+#'   The tensor grid then uses `n_quad[b]` nodes along every dimension of block
+#'   `b`, for `prod_b n_quad[b]^(dim_b)` total nodes; a scalar reproduces the
+#'   uniform grid exactly. Per-block orders let a heterogeneous stack spend fewer
+#'   nodes on cheap scalar nuisance blocks than on the correlated coefficient
+#'   blocks (e.g. `c(3, 3, 2, 2)` on blocks of dimension `2, 2, 1, 1` gives
+#'   `3^2 * 3^2 * 2 * 2 = 324` nodes rather than `3^6 = 729`).
 #' @param lkj_eta LKJ shape for an optional correlation penalty on each
 #'   *correlated* block (log-density `(eta - 1) log det R`, maximized at
 #'   independence). `1` disables it; `> 1` regularizes a weakly-identified
@@ -203,6 +211,20 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   dtot     <- sum(nc_terms)
   coef_off <- cumsum(c(0L, nc_terms))
 
+  # Quadrature order: one scalar broadcast to every block, or one node count per
+  # covariance block (same order as `re_terms`). The compiled grid builder
+  # expands this to a per-dimension count, so a scalar reproduces the uniform
+  # tensor grid byte-for-byte.
+  n_quad <- as.integer(n_quad)
+  if (length(n_quad) != 1L && length(n_quad) != length(layout)) {
+    stop(sprintf(paste0("`n_quad` must be a single integer or one per RE block ",
+                        "(length 1 or %d); got length %d."),
+                 length(layout), length(n_quad)), call. = FALSE)
+  }
+  if (anyNA(n_quad) || any(n_quad < 1L)) {
+    stop("`n_quad` entries must be positive integers (>= 1).", call. = FALSE)
+  }
+
   # Fixed-parameter / RE-covariance parameter split. The RE block reuses tulpa's
   # log-Cholesky packing (.re_cov_theta_to_L_list); `theta` is everything else.
   re_par0 <- .re_cov_L_list_to_theta(lapply(Sigma0, .re_chol_spd), layout)
@@ -280,7 +302,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                         hessian = TRUE, control = list(maxit = max_iter, reltol = 1e-9))
   } else {
     negf <- function(par)
-      -cpp_aghq_objective(par, orc, nc_terms, full_vec, as.integer(n_quad), lkj_eta) +
+      -cpp_aghq_objective(par, orc, nc_terms, full_vec, n_quad, lkj_eta) +
         ridge * sum(par[seq_len(n_theta)]^2)
     opt <- stats::optim(c(theta0, re_par0), negf, method = "BFGS", hessian = TRUE,
                         control = list(maxit = max_iter, reltol = 1e-9))
@@ -302,7 +324,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   # carries a penalty term that differs across models and biases LRT / AIC
   # comparisons. The optimization still used the caller's lkj_eta above.
   log_marginal <- cpp_aghq_objective(opt$par, orc, nc_terms, full_vec,
-                                     as.integer(n_quad), 1.0)
+                                     n_quad, 1.0)
 
   # Per-group BLUPs + marginal variances at the optimum. The engine returns the
   # prior fallback for empty groups (mode 0, variance diag(Sigma)).
@@ -319,7 +341,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     theta_cov  = V[seq_len(n_theta), seq_len(n_theta), drop = FALSE],
     theta_se   = sqrt(pmax(diag(V)[seq_len(n_theta)], 0)),
     log_marginal = log_marginal,
-    n_quad     = as.integer(n_quad),
+    n_quad     = n_quad,
     lkj_eta    = lkj_eta,
     converged  = isTRUE(opt$convergence == 0L)
   )

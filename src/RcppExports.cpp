@@ -26,7 +26,7 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_aghq_objective
-double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full, int n_quad, double lkj_eta);
+double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full, IntegerVector n_quad, double lkj_eta);
 RcppExport SEXP _tulpa_cpp_aghq_objective(SEXP parSEXP, SEXP oracleSEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP n_quadSEXP, SEXP lkj_etaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -35,14 +35,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< SEXP >::type oracle(oracleSEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type nc(ncSEXP);
     Rcpp::traits::input_parameter< LogicalVector >::type full(fullSEXP);
-    Rcpp::traits::input_parameter< int >::type n_quad(n_quadSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type n_quad(n_quadSEXP);
     Rcpp::traits::input_parameter< double >::type lkj_eta(lkj_etaSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_aghq_objective(par, oracle, nc, full, n_quad, lkj_eta));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_aghq_objective_grad
-List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full, int n_quad, double lkj_eta);
+List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full, IntegerVector n_quad, double lkj_eta);
 RcppExport SEXP _tulpa_cpp_aghq_objective_grad(SEXP parSEXP, SEXP oracleSEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP n_quadSEXP, SEXP lkj_etaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
@@ -51,7 +51,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< SEXP >::type oracle(oracleSEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type nc(ncSEXP);
     Rcpp::traits::input_parameter< LogicalVector >::type full(fullSEXP);
-    Rcpp::traits::input_parameter< int >::type n_quad(n_quadSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type n_quad(n_quadSEXP);
     Rcpp::traits::input_parameter< double >::type lkj_eta(lkj_etaSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_aghq_objective_grad(par, oracle, nc, full, n_quad, lkj_eta));
     return rcpp_result_gen;
