@@ -1,0 +1,92 @@
+---
+title: "EM + Laplace for latent-variable models"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{EM + Laplace for latent-variable models}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## What the driver is for
+
+Some models have a latent variable that, once known, turns the fit into
+an ordinary weighted GLM: occupancy (was the site occupied?), N-mixture
+(what was the true count?), zero-inflation (is this a structural zero?).
+`tulpa_em_laplace()` is the generic engine for that pattern. It does not
+know your model -- you supply two callbacks and it runs the EM loop,
+solving each M-step submodel with `tulpa_laplace()` and checking
+convergence.
+
+This is deliberately an engine door: model packages such as **tulpaObs**
+build their occupancy and N-mixture fitters on top of it. The callbacks
+below are the whole contract.
+
+## The two callbacks
+
+`e_step(fits, ...)` receives the current per-submodel fits and returns
+the latent-variable posterior as weights:
+
+```{r estep, eval = FALSE}
+e_step <- function(fits, ...) {
+  # Use the current fits to compute the responsibility of each observation
+  # (e.g. the posterior probability that a zero is a Poisson zero, not a
+  # structural one). Return them as a `weights` element.
+  list(weights = responsibilities)
+}
+```
+
+`m_step_encode(weights, ...)` turns those weights into one or more
+weighted GLM submodels. Each block is a `list(y, n_trials, X, family,
+offset)`; the driver fits each with `tulpa_laplace()` and threads the
+per-block `family` and `offset` through automatically:
+
+```{r mstep, eval = FALSE}
+m_step_encode <- function(weights, ...) {
+  list(
+    lambda = list(y = counts, n_trials = 1L, X = X_abund,
+                  family = "poisson", offset = log(weights)),
+    pi     = list(y = z,      n_trials = 1L, X = X_zero,
+                  family = "binomial", offset = NULL)
+  )
+}
+```
+
+## Running it, and the bias correction
+
+```{r fit, eval = FALSE}
+fit <- tulpa_em_laplace(
+  e_step        = e_step,
+  m_step_encode = m_step_encode,
+  max_iter      = 30L,
+  tol           = 1e-4
+)
+fit$fits        # the converged per-submodel Laplace fits
+fit$n_iter
+fit$converged
+```
+
+The EM point estimate is fast but its standard errors ignore the
+uncertainty in the imputed latent variable. Two post-EM corrections
+restore it, pooled by Rubin's rules:
+
+```{r correct, eval = FALSE}
+# Multiple imputation: refit on several latent draws and pool.
+fit_mi <- tulpa_em_laplace(e_step, m_step_encode, correction = "mi")
+
+# Warm-started Gibbs from the EM mode, then pool.
+fit_gibbs <- tulpa_em_laplace(e_step, m_step_encode, correction = "gibbs")
+```
+
+An optional `beta_prior = list(mean, sd)` threads a Gaussian fixed-effect
+prior into every M-step block and into the correction refits, and
+`m_step_extra(fits, weights, ...)` updates non-linear-predictor
+parameters (dispersions, mixing weights) between the M- and E-steps. See
+`?tulpa_em_laplace`. For a Monte-Carlo E-step, use `tulpa_em_mc()`.
