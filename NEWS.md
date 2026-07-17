@@ -2,7 +2,17 @@
 
 ## 0.0.85
 
-Optional variance-component prior on the AGHQ path.
+Per-block quadrature order and an optional variance-component prior on the AGHQ
+path.
+
+* **`tulpa_re_aghq(n_quad = ...)`.** `n_quad` now accepts an integer vector of
+  length `length(re_terms)` giving a per-block node count, alongside the existing
+  single integer broadcast to every covariance block. The tensor grid then uses
+  `n_quad[b]` nodes along every dimension of block `b`
+  (`prod_b n_quad[b]^(dim_b)` total nodes); a scalar reproduces the uniform grid
+  exactly (byte-identical). Per-block orders let a heterogeneous stack spend fewer
+  nodes on cheap scalar nuisance blocks (a dispersion or zero-inflation random
+  effect) than on the correlated coefficient blocks. R-only, no ABI change.
 
 * **`tulpa_re_aghq(sigma_prior = ...)`.** A Penalized-Complexity prior on the
   marginal standard deviations of one or more random-effect covariance blocks,
