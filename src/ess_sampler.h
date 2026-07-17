@@ -82,8 +82,11 @@ struct GaussianPrior {
     Eigen::MatrixXd chol_cov;        // Cholesky of covariance (lower triangular)
     bool is_identity_cov;            // If true, use efficient identity sampling
     double scale;                    // For identity: prior is N(0, scale^2 * I)
+    int scale_param_idx;             // If >= 0, scale = exp(params[scale_param_idx])
+                                     // (a sampled log-SD, e.g. the RE log_sigma);
+                                     // refreshed each sweep so the ellipse tracks it.
 
-    GaussianPrior() : is_identity_cov(true), scale(1.0) {}
+    GaussianPrior() : is_identity_cov(true), scale(1.0), scale_param_idx(-1) {}
 };
 
 // ============================================================================
@@ -249,7 +252,16 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
         int n = prior.param_indices.size();
         prior.mean = Eigen::VectorXd::Zero(n);
         prior.is_identity_cov = true;
-        prior.scale = 1.0;  // Will be scaled by sigma_re during sampling
+        // The RE prior is N(0, sigma_re^2 I). sigma_re is sampled (log_sigma_re_idx),
+        // so bind the ellipse scale to it -- refreshed each sweep -- instead of the
+        // wrong fixed 1.0. Multi-term RE (distinct sigma per term) keeps the fixed
+        // fallback (a separate, pre-existing limitation).
+        if (layout.log_sigma_re_idx >= 0) {
+            prior.scale_param_idx = layout.log_sigma_re_idx;
+            prior.scale = 1.0;  // refreshed from the param before each ESS step
+        } else {
+            prior.scale = 1.0;
+        }
         priors.push_back(prior);
     }
 
@@ -566,22 +578,35 @@ inline ESSResult run_ess_sampler(
                 f(i) = params[prior.param_indices[i]];
             }
 
-            // Lambda to compute log-likelihood given block values
+            // Refresh the ellipse scale from the sampled log-SD when bound to a
+            // parameter (the RE block tracks sigma_re = exp(log_sigma_re)).
+            if (prior.scale_param_idx >= 0) {
+                prior.scale = std::exp(params[prior.scale_param_idx]);
+            }
+            const double blk_prec = 1.0 / (prior.scale * prior.scale);
+
+            // ESS slice target: the ellipse (nu ~ N(0, scale^2 I)) already carries
+            // THIS block's Gaussian prior, so the slice threshold must be the
+            // likelihood WITHOUT it -- i.e. the full log-posterior minus this
+            // block's -0.5 * ||f||^2 / scale^2 quadratic. Passing the full
+            // posterior double-counts the block prior (over-shrinkage); the
+            // normalizer is constant in f and cancels in the slice.
             auto log_lik_fn = [&](const Eigen::VectorXd& f_new) -> double {
-                // Temporarily update params
                 std::vector<double> params_temp = params;
                 for (int i = 0; i < block_size; i++) {
                     params_temp[prior.param_indices[i]] = f_new(i);
                 }
-                // Return log-posterior (which includes prior)
-                // For ESS, we need log-likelihood only (prior is handled by the algorithm)
-                // But since we use N(0, scale) prior, this is absorbed into ellipse
-                return compute_log_post_double(params_temp, data, layout);
+                double lp = compute_log_post_double(params_temp, data, layout);
+                return lp + 0.5 * blk_prec * f_new.squaredNorm();  // remove block prior
             };
 
-            // Perform ESS step
+            // Perform ESS step. The slice level must be this block's target at
+            // the current f, evaluated with the SAME log_lik_fn (block prior
+            // removed) and the current params (which already include earlier
+            // blocks' updates this sweep), so compute it directly.
             int n_evals = 0;
-            Eigen::VectorXd f_new = ess_step(f, prior, log_lik_fn, current_log_post, rng, n_evals);
+            double cur_block_loglik = log_lik_fn(f);
+            Eigen::VectorXd f_new = ess_step(f, prior, log_lik_fn, cur_block_loglik, rng, n_evals);
 
             // Update params
             for (int i = 0; i < block_size; i++) {
