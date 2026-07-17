@@ -92,8 +92,13 @@ namespace tulpa {
 // 33 -> 34: added gp_phi_prior_U / gp_phi_prior_alpha and svc_phi_prior_U /
 // svc_phi_prior_alpha -- the PC range-prior anchors for the GP and SVC NNGP
 // paths (gcol33/tulpa#144), replacing the Uniform-behind-a-wall range prior.
+// 34 -> 35: added car_adj_eigenvalues -- the eigenvalues of the symmetric
+// normalized adjacency D^{-1/2} W D^{-1/2}, precomputed so the generic-NUTS
+// CAR_proper log-prior evaluates the differentiable log-determinant
+// log|D - rho W| = const + sum_i log(1 - rho * mu_i) in closed form rather
+// than a per-gradient Cholesky (gcol33/tulpa#158c).
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 34;
+constexpr int TULPA_ABI_VERSION = 35;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -236,6 +241,12 @@ struct ModelData {
     // Only used when spatial_type == CAR_PROPER.
     double car_rho_lower = 0.0;
     double car_rho_upper = 1.0;
+    // Eigenvalues of the symmetric normalized adjacency D^{-1/2} W D^{-1/2}
+    // (same spectrum as D^{-1} W). The generic-NUTS CAR_proper log-prior uses
+    // them to evaluate the parameter-dependent part of the log-determinant,
+    // sum_i log(1 - rho * mu_i), in autodiff-friendly closed form. Empty unless
+    // spatial_type == CAR_PROPER on the sampler path.
+    std::vector<double> car_adj_eigenvalues;
 
     // Precision mass matrix data (precomputed from Q)
     std::vector<double> spatial_Q_inv;  // (Q + lambda*I)^{-1}, column-major [S x S]

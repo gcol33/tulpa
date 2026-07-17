@@ -261,6 +261,43 @@
 }
 
 
+# Pack a proper-CAR spec into the ModelData sampler's car_proper spatial_spec
+# (mode = "exact" areal NUTS). Q(rho) = D - rho W is full-rank, so the sampler
+# estimates rho jointly with tau and the field. The generic log-prior needs a
+# differentiable log|Q(rho)|; its parameter-dependent part is sum_i log(1 - rho
+# mu_i) with mu_i the eigenvalues of the symmetric normalized adjacency
+# D^{-1/2} W D^{-1/2}. These are fixed data (independent of rho / tau), so they
+# are computed once here -- reusing the same eigen-decomposition compute_car_-
+# rho_bounds() uses -- and the C++ prior only evaluates the closed-form sum.
+#' @keywords internal
+.car_proper_sampler_spec <- function(spatial) {
+  sp <- .spatial_spec_to_nl_prior(spatial)
+  adjm <- as.matrix(spatial$adjacency)
+  diag(adjm) <- 0
+  nnb <- rowSums(adjm != 0)
+  if (any(nnb == 0)) {
+    stop("Proper-CAR exact NUTS requires a connected adjacency (every unit has ",
+         ">= 1 neighbour); Q = D - rho W is singular at an isolated unit. Drop ",
+         "isolated units or use an ICAR / BYM2 field.", call. = FALSE)
+  }
+  dm <- 1 / sqrt(nnb)
+  Wn  <- adjm * outer(dm, dm)               # D^{-1/2} W D^{-1/2}, symmetric
+  eig <- eigen(Wn, symmetric = TRUE, only.values = TRUE)$values
+  rb  <- spatial$rho_bounds %||% compute_car_rho_bounds(spatial$adjacency)
+  list(
+    type            = "car_proper",
+    spatial_idx     = sp$spatial_idx,
+    n_spatial_units = sp$n_spatial_units,
+    adj_row_ptr     = sp$adj_row_ptr,
+    adj_col_idx     = sp$adj_col_idx,
+    n_neighbors     = sp$n_neighbors,
+    adj_eigenvalues = as.numeric(eig),
+    rho_lower       = as.numeric(rb["lower"]),
+    rho_upper       = as.numeric(rb["upper"])
+  )
+}
+
+
 # Convert a validated temporal spec (rw1 / rw2 / ar1) into the nested-Laplace
 # temporal prior block. The block format is the one the single-block registry
 # (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
@@ -807,14 +844,16 @@
       spatial_spec_arg <- .gp_sampler_spec(spatial)
     } else if (!is.null(spatial) && tolower(spatial$type %||% "") == "hsgp") {
       spatial_spec_arg <- .hsgp_sampler_spec(spatial)
+    } else if (!is.null(spatial) && tolower(spatial$type %||% "") == "car_proper") {
+      spatial_spec_arg <- .car_proper_sampler_spec(spatial)
     } else if (!is.null(spatial)) {
       sp <- .spatial_spec_to_nl_prior(spatial)
       if (!sp$type %in% c("icar", "bym2")) {
         stop(sprintf(paste0(
-          "Backend '%s' samples areal (icar / bym2) or continuous NNGP (gp / nngp)\n",
-          "spatial fields; the field type '%s' is not threaded through this path.\n",
-          "Use a nested-Laplace mode ('auto' / 'structured' / 'nested_laplace'), or\n",
-          "fit_spde() for SPDE."),
+          "Backend '%s' samples areal (icar / bym2 / car_proper) or continuous\n",
+          "GP / NNGP / HSGP spatial fields; the field type '%s' is not threaded\n",
+          "through this path. Use a nested-Laplace mode ('auto' / 'structured' /\n",
+          "'nested_laplace'), or fit_spde() for SPDE."),
           backend, sp$type), call. = FALSE)
       }
       spatial_spec_arg <- list(

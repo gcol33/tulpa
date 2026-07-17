@@ -207,6 +207,32 @@ inline void build_sampler_model_inputs(
             if (sp.containsElementNamed("sigma2_prior_alpha"))
                 in.data.gp_sigma2_prior_alpha =
                     Rcpp::as<double>(sp["sigma2_prior_alpha"]);
+        } else if (stype == "car_proper") {
+            // Proper CAR: Q(rho) = D - rho W, full-rank (PD) so the field mean
+            // is identified (no ICAR sum-to-zero). compute_param_layout keys
+            // the CAR block on spatial_type == CAR_PROPER, allocating log_tau,
+            // logit_rho_car and the n_spatial_units field. The generic-NUTS
+            // log-prior needs a differentiable log|Q(rho)|; the eigenvalues of
+            // the symmetric normalized adjacency (mu_i, precomputed in R since
+            // they are fixed data) turn it into sum_i log(1 - rho mu_i), which
+            // autodiff handles in closed form -- no per-gradient Cholesky.
+            Rcpp::IntegerVector sidx = Rcpp::as<Rcpp::IntegerVector>(sp["spatial_idx"]);
+            Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);
+            Rcpp::IntegerVector ci   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_col_idx"]);
+            Rcpp::IntegerVector nn   = Rcpp::as<Rcpp::IntegerVector>(sp["n_neighbors"]);
+            in.data.n_spatial_units = Rcpp::as<int>(sp["n_spatial_units"]);
+            in.data.spatial_group.assign(sidx.begin(), sidx.end());
+            in.data.adj_row_ptr.assign(rp.begin(), rp.end());
+            in.data.adj_col_idx.assign(ci.begin(), ci.end());
+            in.data.n_neighbors.assign(nn.begin(), nn.end());
+            in.data.n_spatial_components = tulpa::count_graph_components(
+                in.data.n_spatial_units, in.data.adj_row_ptr.data(),
+                in.data.adj_col_idx.data());
+            in.data.spatial_type = SpatialType::CAR_PROPER;
+            Rcpp::NumericVector eig = Rcpp::as<Rcpp::NumericVector>(sp["adj_eigenvalues"]);
+            in.data.car_adj_eigenvalues.assign(eig.begin(), eig.end());
+            in.data.car_rho_lower = Rcpp::as<double>(sp["rho_lower"]);
+            in.data.car_rho_upper = Rcpp::as<double>(sp["rho_upper"]);
         } else if (stype == "hsgp") {
             // Hilbert-space GP. compute_param_layout keys the HSGP block on
             // spatial_type == HSGP, allocating log_sigma2_hsgp /
@@ -231,7 +257,7 @@ inline void build_sampler_model_inputs(
         } else {
             Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
                        "supported on the sampler path (use 'icar'/'bym2'/"
-                       "'gp'/'nngp'/'hsgp').", stype.c_str());
+                       "'car_proper'/'gp'/'nngp'/'hsgp').", stype.c_str());
         }
     }
 
@@ -342,6 +368,8 @@ inline Rcpp::CharacterVector sampler_param_names(
                 set(j, "theta_spatial[" + std::to_string(++u) + "]");
         } else {
             set(layout.log_tau_spatial_idx, "log_tau_spatial");
+            if (layout.is_car_proper)
+                set(layout.logit_rho_car_idx, "logit_rho_car");
             int u = 0;
             for (int j = layout.spatial_start; j < layout.spatial_end; j++)
                 set(j, "phi_spatial[" + std::to_string(++u) + "]");

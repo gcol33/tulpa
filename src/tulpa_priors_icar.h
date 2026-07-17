@@ -78,6 +78,50 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             for (int s = 0; s < data.n_spatial_units; s++) {
                 log_post = log_post - T(0.5) * theta_bym2_out[s] * theta_bym2_out[s];
             }
+        } else if (layout.is_car_proper) {
+            // Proper CAR: Q(rho) = D - rho W is full-rank (PD), so no ICAR
+            // sum-to-zero constraint and the field mean is identified.
+            //   log p(phi | tau, rho) = 0.5 log|tau Q(rho)| - 0.5 tau phi'Q phi
+            // The parameter-dependent part of log|Q(rho)| is sum_i log(1 - rho
+            // mu_i) with mu_i the eigenvalues of the symmetric normalized
+            // adjacency (data.car_adj_eigenvalues, precomputed); the constant
+            // log|D| is dropped (it does not affect the posterior). This closed
+            // form is autodiff-differentiable in rho, unlike a per-eval Cholesky.
+            T log_tau = params[layout.log_tau_spatial_idx];
+            tau_spatial_out = safe_exp(log_tau);
+            log_post = log_post + log_prior_gamma(log_tau, data.tau_spatial_shape,
+                                                  data.tau_spatial_rate);
+
+            // rho in (car_rho_lower, car_rho_upper) via the logit map, with the
+            // Uniform-prior + logit Jacobian log p(logit_rho) = log u + log(1-u).
+            T logit_rho = params[layout.logit_rho_car_idx];
+            T u = T(1.0) / (T(1.0) + safe_exp(-logit_rho));
+            T rho = T(data.car_rho_lower)
+                  + (T(data.car_rho_upper) - T(data.car_rho_lower)) * u;
+            log_post = log_post + log(u) + log(T(1.0) - u);
+
+            // Quadratic form phi' Q(rho) phi = sum_i d_i phi_i^2
+            //   - 2 rho sum_{i~j, j>i} phi_i phi_j.
+            T quad_form = T(0.0);
+            for (int i = 0; i < data.n_spatial_units; i++) {
+                quad_form = quad_form
+                    + T(data.n_neighbors[i]) * phi_spatial_out[i] * phi_spatial_out[i];
+                int row_start = data.adj_row_ptr[i];
+                int row_end = data.adj_row_ptr[i + 1];
+                for (int k = row_start; k < row_end; k++) {
+                    int j = data.adj_col_idx[k];
+                    if (j > i)
+                        quad_form = quad_form
+                            - T(2.0) * rho * phi_spatial_out[i] * phi_spatial_out[j];
+                }
+            }
+
+            // 0.5 * (n log tau + sum_i log(1 - rho mu_i)) - 0.5 tau phi'Q phi.
+            T log_det = T(data.n_spatial_units) * log_tau;
+            for (std::size_t k = 0; k < data.car_adj_eigenvalues.size(); k++)
+                log_det = log_det
+                    + log(T(1.0) - rho * T(data.car_adj_eigenvalues[k]));
+            log_post = log_post + T(0.5) * log_det - T(0.5) * tau_spatial_out * quad_form;
         } else {
             T log_tau = params[layout.log_tau_spatial_idx];
             tau_spatial_out = safe_exp(log_tau);
