@@ -1,13 +1,11 @@
 test_that("tulpa_nuts_beta rejects y outside (0, 1)", {
   X <- cbind(1, runif(5))
   expect_error(
-    tulpa_nuts_beta(y = c(0, 0.2, 0.4, 0.6, 0.8), X = X, n_iter = 50L,
-                    n_warmup = 25L, seed = 1L),
+    tulpa_nuts_beta(y = c(0, 0.2, 0.4, 0.6, 0.8), X = X, control = list(n_iter = 50L, n_warmup = 25L, seed = 1L)),
     "strictly in"
   )
   expect_error(
-    tulpa_nuts_beta(y = c(0.1, 0.3, 0.5, 0.7, 1), X = X, n_iter = 50L,
-                    n_warmup = 25L, seed = 1L),
+    tulpa_nuts_beta(y = c(0.1, 0.3, 0.5, 0.7, 1), X = X, control = list(n_iter = 50L, n_warmup = 25L, seed = 1L)),
     "strictly in"
   )
 })
@@ -15,11 +13,11 @@ test_that("tulpa_nuts_beta rejects y outside (0, 1)", {
 test_that("tulpa_nuts_beta rejects bad prior SDs", {
   X <- cbind(1, runif(5))
   y <- c(0.1, 0.3, 0.5, 0.7, 0.9)
-  expect_error(tulpa_nuts_beta(y, X, sigma_beta = -1, n_iter = 50L,
-                               n_warmup = 25L, seed = 1L),
-               "sigma_beta")
-  expect_error(tulpa_nuts_beta(y, X, log_phi_prior_sd = 0, n_iter = 50L,
-                               n_warmup = 25L, seed = 1L),
+  expect_error(tulpa_nuts_beta(y, X, beta_prior = list(mean = 0, sd = -1),
+                               control = list(n_iter = 50L, n_warmup = 25L, seed = 1L)),
+               "positive scalar")
+  expect_error(tulpa_nuts_beta(y, X, log_phi_prior_sd = 0,
+                               control = list(n_iter = 50L, n_warmup = 25L, seed = 1L)),
                "log_phi_prior_sd")
 })
 
@@ -37,7 +35,7 @@ test_that("tulpa_nuts_beta recovers parameters on simulated data", {
 
   fit <- tulpa_nuts_beta(
     y = y, X = model.matrix(~ x),
-    n_iter = 1000L, n_warmup = 500L, seed = 2026L
+    control = list(n_iter = 1000L, n_warmup = 500L, seed = 2026L)
   )
 
   draws <- fit$draws
@@ -67,7 +65,7 @@ test_that("tulpa_nuts_beta agrees with tulpa_laplace_beta in mean", {
   X   <- model.matrix(~ x)
   fit_l <- tulpa_laplace_beta(y = y, X = X)
   fit_n <- tulpa_nuts_beta(y = y, X = X,
-                           n_iter = 1500L, n_warmup = 750L, seed = 11L)
+                           control = list(n_iter = 1500L, n_warmup = 750L, seed = 11L))
 
   beta_l <- fit_l$mode[1:2]
   beta_n <- colMeans(fit_n$draws[, c("beta[1]", "beta[2]")])

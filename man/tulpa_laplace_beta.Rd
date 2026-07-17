@@ -17,7 +17,9 @@ tulpa_laplace_beta(
   beta_prior = NULL,
   phi_init = NULL,
   phi_bounds = c(0.1, 10000),
-  outer_tol = 1e-04
+  outer_tol = 1e-04,
+  mode = c("laplace", "nuts"),
+  control = list()
 )
 }
 \arguments{
@@ -39,11 +41,23 @@ a method-of-moments warm start is used.}
 \code{phi} for the outer optimisation. Default \code{c(0.1, 1e4)}.}
 
 \item{outer_tol}{Tolerance for the outer optimisation. Default 1e-4.}
+
+\item{mode}{Inference method (the method is an argument, not a parallel
+verb): \code{"laplace"} (default) is the Laplace + Brent-over-\code{phi} point fit
+documented here; \code{"nuts"} delegates to \code{\link[=tulpa_nuts_beta]{tulpa_nuts_beta()}}, which samples
+\code{phi} jointly with the coefficients via NUTS. In \code{"nuts"} mode the
+Laplace-only arguments (\code{re_list}, \code{spatial}, \code{weights}, \code{offset},
+\code{phi_init}, \code{phi_bounds}, \code{outer_tol}) are not used, and NUTS knobs are
+passed via \code{control} (see \code{\link[=tulpa_nuts_beta]{tulpa_nuts_beta()}}).}
+
+\item{control}{Passed to \code{\link[=tulpa_nuts_beta]{tulpa_nuts_beta()}} when \code{mode = "nuts"} (ignored
+for \code{mode = "laplace"}).}
 }
 \value{
-The list returned by \code{\link[=tulpa_laplace]{tulpa_laplace()}} at the optimum,
-augmented with \code{phi} (the optimised precision) and
-\code{phi_log_marginal} (the optimisation trace, for diagnostics).
+For \code{mode = "laplace"}, the list returned by \code{\link[=tulpa_laplace]{tulpa_laplace()}} at the
+optimum, augmented with \code{phi} (the optimised precision) and
+\code{phi_log_marginal} (the optimisation trace). For \code{mode = "nuts"}, the draws
+object returned by \code{\link[=tulpa_nuts_beta]{tulpa_nuts_beta()}}.
 }
 \description{
 Thin wrapper around \code{\link[=tulpa_laplace]{tulpa_laplace()}} for \code{family = "beta"}. The

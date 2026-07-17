@@ -45,7 +45,9 @@
 #'   the hyper slots. Default to the value implied by the PC anchor's
 #'   `(r0, s0)` pair via `kappa = sqrt(8 nu) / r0`,
 #'   `tau = 1 / (sqrt(4 pi) * kappa * s0)`.
-#' @param sigma_beta Prior SD on each fixed-effect coefficient.
+#' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
+#'   (`mean = 0`) Gaussian on each coefficient with SD `sd` (default
+#'   `list(mean = 0, sd = 10)`).
 #' @param log_phi_prior_sd Prior SD on `log(phi)`. Role of `phi` is
 #'   family-specific:
 #'   * `gaussian`: `phi` is the residual SD (sampled jointly)
@@ -54,25 +56,17 @@
 #'   * `beta`: `phi` is the Beta precision (sampled jointly)
 #'   * `poisson`, `binomial`: `log_phi` is held tight and ignored downstream.
 #' @param log_phi_init Starting value for `log(phi)`.
-#' @param noncenter Fixed-hyper mode only (`joint = FALSE`). When `TRUE`
-#'   (default) the mesh field is sampled in a non-centered parameterisation:
-#'   the field block is a white-noise auxiliary `z` and the field is
-#'   `v = L^{-T} z` with `L L' = Q` at the fixed `(range, sigma)`. This is the
-#'   same target density as the centered field (the `z -> v` Jacobian and
-#'   `log|Q|/2` are constant under fixed hypers and cancel) and isotropises the
-#'   field block a priori, which matches the parameterisation the joint path
-#'   already uses. Set `FALSE` to sample the field directly (centered). Ignored
-#'   when `joint = TRUE` (the joint path is always non-centered).
-#' @param mass_matrix NUTS metric. `"auto"` (default) picks a dense metric when
-#'   the parameter count is small enough (`<= 200`) and a diagonal metric
-#'   otherwise. A dense metric captures the fixed-effect / field cross-curvature
-#'   a diagonal metric misses; this is what corrects the intercept marginal,
-#'   which a diagonal metric under-disperses for an ill-conditioned latent block
-#'   such as the rational fractional-nu precision (its near-null direction
-#' confounds the intercept with the field,). `"diag"`,
-#'   `"dense"`, `"block_diag"` force the choice.
-#' @param n_iter,n_warmup,max_treedepth,adapt_delta,seed,verbose Standard
-#'   NUTS controls.
+#' @param control A named list of numerical / sampler knobs (statistical
+#'   arguments stay in the signature): `n_iter` (default 2000), `n_warmup`
+#'   (default 1000), `max_treedepth` (default 10), `adapt_delta` (default 0.8),
+#'   `seed` (`NULL` draws from the session RNG), `verbose` (default FALSE),
+#'   `noncenter` (fixed-hyper only, default TRUE: sample the mesh field in a
+#'   non-centered `v = L^{-T} z` parameterisation -- the same target density,
+#'   a priori isotropised; ignored when `joint = TRUE`), and `mass_matrix`
+#'   (NUTS metric: `"auto"` (default) picks a dense metric at `<= 200`
+#'   parameters and diagonal above, capturing the fixed-effect / field
+#'   cross-curvature that corrects the intercept marginal; `"diag"`, `"dense"`,
+#'   `"block_diag"` force the choice).
 #'
 #' @return A list with `draws` (matrix `n_samples x n_params`), `means`,
 #'   `phi_summary` (where applicable), `accept_prob`, `divergent`,
@@ -103,21 +97,25 @@ tulpa_nuts_spde <- function(y, X, spatial,
                             prior_sigma      = NULL,
                             log_kappa_init   = NULL,
                             log_tau_init     = NULL,
-                            sigma_beta       = 10,
+                            beta_prior       = list(mean = 0, sd = 10),
                             log_phi_prior_sd = 3,
                             log_phi_init     = 0,
-                            noncenter        = TRUE,
-                            mass_matrix      = c("auto", "diag", "dense",
-                                                 "block_diag"),
-                            n_iter           = 2000L,
-                            n_warmup         = 1000L,
-                            max_treedepth    = 10L,
-                            adapt_delta      = 0.8,
-                            seed             = NULL,
-                            verbose          = FALSE) {
+                            control          = list()) {
 
+  .check_control(control, .CONTROL_KEYS$nuts_spde, "tulpa_nuts_spde")
   family      <- match.arg(family)
-  mass_matrix <- match.arg(mass_matrix)
+  sigma_beta  <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  # Perf / sampler knobs live in control (statistical args stay in the
+  # signature).
+  noncenter     <- isTRUE(control$noncenter %||% TRUE)
+  mass_matrix   <- match.arg(control$mass_matrix %||% "auto",
+                             c("auto", "diag", "dense", "block_diag"))
+  n_iter        <- as.integer(control$n_iter %||% 2000L)
+  n_warmup      <- as.integer(control$n_warmup %||% 1000L)
+  max_treedepth <- as.integer(control$max_treedepth %||% 10L)
+  adapt_delta   <- control$adapt_delta %||% 0.8
+  seed          <- control$seed
+  verbose       <- isTRUE(control$verbose)
   if (!inherits(spatial, "tulpa_spatial") || !identical(spatial$type, "spde")) {
     stop("`spatial` must be an SPDE tulpa_spatial object ",
          "(see `spatial_spde()` / `spatial_spde_custom()`).",

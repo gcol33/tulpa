@@ -7,15 +7,10 @@
 tulpa_nuts_beta(
   y,
   X,
-  sigma_beta = 10,
+  beta_prior = list(mean = 0, sd = 10),
   log_phi_prior_sd = 3,
   log_phi_init = 0,
-  n_iter = 2000L,
-  n_warmup = 1000L,
-  max_treedepth = 10L,
-  adapt_delta = 0.8,
-  seed = NULL,
-  verbose = FALSE
+  control = list()
 )
 }
 \arguments{
@@ -23,8 +18,9 @@ tulpa_nuts_beta(
 
 \item{X}{Fixed-effects design matrix.}
 
-\item{sigma_beta}{Prior SD on each fixed-effect coefficient
-(\code{beta_j ~ N(0, sigma_beta)}). Default \code{10}.}
+\item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
+(\code{mean = 0}) Gaussian on each coefficient with SD \code{sd} (default
+\code{list(mean = 0, sd = 10)}).}
 
 \item{log_phi_prior_sd}{Prior SD on \code{log(phi)}
 (\code{log_phi ~ N(0, log_phi_prior_sd)}). Default \code{3} (very weak;
@@ -34,19 +30,10 @@ covers \code{phi} from ~0.001 to ~1000 within +-2 SD).}
 (i.e. \code{phi = 1}); a method-of-moments warm start can speed warmup
 in highly concentrated regimes.}
 
-\item{n_iter}{Total NUTS iterations including warmup. Default \code{2000}.}
-
-\item{n_warmup}{Warmup iterations. Default \code{1000}.}
-
-\item{max_treedepth}{NUTS max tree depth. Default \code{10}.}
-
-\item{adapt_delta}{Target acceptance rate for dual averaging.
-Default \code{0.8}.}
-
-\item{seed}{RNG seed; \code{NULL} (default) draws one from the session RNG so
-\code{set.seed()} controls the fit (two default calls are then independent).}
-
-\item{verbose}{Print sampler progress.}
+\item{control}{A named list of numerical / sampler knobs (statistical
+arguments stay in the signature): \code{n_iter} (default 2000), \code{n_warmup}
+(default 1000), \code{max_treedepth} (default 10), \code{adapt_delta} (default 0.8),
+\code{seed} (\code{NULL} draws from the session RNG), \code{verbose} (default FALSE).}
 }
 \value{
 A list with:
@@ -80,7 +67,7 @@ X <- cbind(1, rnorm(n))
 mu <- plogis(X \%*\% c(0.2, 0.7)); phi <- 8
 y <- rbeta(n, mu * phi, (1 - mu) * phi)
 \donttest{
-fit <- tulpa_nuts_beta(y, X, n_iter = 500L, n_warmup = 250L)
+fit <- tulpa_nuts_beta(y, X, control = list(n_iter = 500L, n_warmup = 250L))
 colMeans(fit$draws)
 }
 }

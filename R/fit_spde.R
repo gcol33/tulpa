@@ -26,6 +26,13 @@
 #'   (conditioned) random-effect SD. The field and the RE block are Laplace-
 #'   marginalised jointly. `n_re_groups = 0` (default) is no RE term. Not
 #'   supported for a fractional-nu field.
+#' @param mode Inference method (the method is an argument, not a parallel
+#'   verb): `"laplace"` (default) is the nested-Laplace integration over
+#'   `(range, sigma)` documented here; `"nuts"` delegates to [tulpa_nuts_spde()]
+#'   for exact HMC over the field (and, unless both `range` and `sigma` are
+#'   fixed, the Matern hyperparameters). `mode = "nuts"` does not support an
+#'   `offset` or a random-effect term, and its sampler knobs pass via `control`
+#'   (see [tulpa_nuts_spde()]); it returns that sampler's draws object.
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
@@ -98,12 +105,33 @@ fit_spde <- function(y, X, spatial,
                      nested_laplace = is.null(range) || is.null(sigma),
                      phi = 1.0, offset = NULL,
                      re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+                     mode = c("laplace", "nuts"),
                      control = list()) {
 
-  .check_control(control, .CONTROL_KEYS$spde, "fit_spde")
+  mode <- match.arg(mode)
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }
+  if (mode == "nuts") {
+    # The inference method is an argument, not a parallel verb: delegate to the
+    # NUTS engine (tulpa_nuts_spde). The Laplace-path-only structure (an offset,
+    # a random-effect block) is unsupported there.
+    if (!is.null(offset)) {
+      stop("`offset` is not supported on mode = 'nuts' (Laplace-path only).",
+           call. = FALSE)
+    }
+    if (!is.null(re_idx) && n_re_groups > 0L) {
+      stop("A random-effect term is not supported on mode = 'nuts' for an SPDE ",
+           "field; use mode = 'laplace'.", call. = FALSE)
+    }
+    return(tulpa_nuts_spde(
+      y = as.numeric(y), X = as.matrix(X), spatial = spatial, family = family,
+      n_trials = n_trials,
+      joint = is.null(range) || is.null(sigma),
+      range = range, sigma = sigma,
+      control = control))
+  }
+  .check_control(control, .CONTROL_KEYS$spde, "fit_spde")
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.

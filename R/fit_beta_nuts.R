@@ -15,22 +15,19 @@
 #'
 #' @param y Response vector, strictly in `(0, 1)`.
 #' @param X Fixed-effects design matrix.
-#' @param sigma_beta Prior SD on each fixed-effect coefficient
-#'   (`beta_j ~ N(0, sigma_beta)`). Default `10`.
+#' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
+#'   (`mean = 0`) Gaussian on each coefficient with SD `sd` (default
+#'   `list(mean = 0, sd = 10)`).
 #' @param log_phi_prior_sd Prior SD on `log(phi)`
 #'   (`log_phi ~ N(0, log_phi_prior_sd)`). Default `3` (very weak;
 #'   covers `phi` from ~0.001 to ~1000 within +-2 SD).
 #' @param log_phi_init Starting value for `log(phi)`. Default `0`
 #'   (i.e. `phi = 1`); a method-of-moments warm start can speed warmup
 #'   in highly concentrated regimes.
-#' @param n_iter Total NUTS iterations including warmup. Default `2000`.
-#' @param n_warmup Warmup iterations. Default `1000`.
-#' @param max_treedepth NUTS max tree depth. Default `10`.
-#' @param adapt_delta Target acceptance rate for dual averaging.
-#'   Default `0.8`.
-#' @param seed RNG seed; `NULL` (default) draws one from the session RNG so
-#'   `set.seed()` controls the fit (two default calls are then independent).
-#' @param verbose Print sampler progress.
+#' @param control A named list of numerical / sampler knobs (statistical
+#'   arguments stay in the signature): `n_iter` (default 2000), `n_warmup`
+#'   (default 1000), `max_treedepth` (default 10), `adapt_delta` (default 0.8),
+#'   `seed` (`NULL` draws from the session RNG), `verbose` (default FALSE).
 #'
 #' @return A list with:
 #'   * `draws` -- `n_samples x (p + 1)` matrix of post-warmup draws,
@@ -51,31 +48,24 @@
 #' mu <- plogis(X %*% c(0.2, 0.7)); phi <- 8
 #' y <- rbeta(n, mu * phi, (1 - mu) * phi)
 #' \donttest{
-#' fit <- tulpa_nuts_beta(y, X, n_iter = 500L, n_warmup = 250L)
+#' fit <- tulpa_nuts_beta(y, X, control = list(n_iter = 500L, n_warmup = 250L))
 #' colMeans(fit$draws)
 #' }
 #' @export
 tulpa_nuts_beta <- function(y, X,
-                            sigma_beta       = 10,
+                            beta_prior       = list(mean = 0, sd = 10),
                             log_phi_prior_sd = 3,
                             log_phi_init     = 0,
-                            n_iter           = 2000L,
-                            n_warmup         = 1000L,
-                            max_treedepth    = 10L,
-                            adapt_delta      = 0.8,
-                            seed             = NULL,
-                            verbose          = FALSE) {
+                            control          = list()) {
 
+  .check_control(control, .CONTROL_KEYS$nuts_beta, "tulpa_nuts_beta")
   stopifnot(is.numeric(y), is.matrix(X), nrow(X) == length(y))
   if (any(!is.finite(y)) || min(y) <= 0 || max(y) >= 1) {
     stop("`y` must be strictly in (0, 1) for tulpa_nuts_beta(). ",
          "Use cover(positive = 'beta') for hurdle handling of 0/1.",
          call. = FALSE)
   }
-  if (!is.numeric(sigma_beta) || length(sigma_beta) != 1L ||
-      !is.finite(sigma_beta) || sigma_beta <= 0) {
-    stop("`sigma_beta` must be a positive scalar.", call. = FALSE)
-  }
+  sigma_beta <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   if (!is.numeric(log_phi_prior_sd) || length(log_phi_prior_sd) != 1L ||
       !is.finite(log_phi_prior_sd) || log_phi_prior_sd <= 0) {
     stop("`log_phi_prior_sd` must be a positive scalar.", call. = FALSE)
@@ -87,12 +77,12 @@ tulpa_nuts_beta <- function(y, X,
     sigma_beta       = sigma_beta,
     log_phi_prior_sd = log_phi_prior_sd,
     log_phi_init     = log_phi_init,
-    n_iter           = as.integer(n_iter),
-    n_warmup         = as.integer(n_warmup),
-    max_treedepth    = as.integer(max_treedepth),
-    adapt_delta      = adapt_delta,
-    seed             = as.integer(seed %||% sample.int(.Machine$integer.max, 1L)),
-    verbose          = isTRUE(verbose)
+    n_iter           = as.integer(control$n_iter %||% 2000L),
+    n_warmup         = as.integer(control$n_warmup %||% 1000L),
+    max_treedepth    = as.integer(control$max_treedepth %||% 10L),
+    adapt_delta      = control$adapt_delta %||% 0.8,
+    seed             = as.integer(control$seed %||% sample.int(.Machine$integer.max, 1L)),
+    verbose          = isTRUE(control$verbose)
   )
 
   log_phi_draws <- res$draws[, "log_phi"]

@@ -20,7 +20,7 @@ test_that("tulpa_nuts_spde rejects non-SPDE spatial spec", {
   expect_error(
     tulpa_nuts_spde(y = 1:5, X = cbind(1, 1:5),
                     spatial = list(type = "bym2"),
-                    n_iter = 50L, n_warmup = 25L),
+                    control = list(n_iter = 50L, n_warmup = 25L)),
     "SPDE tulpa_spatial"
   )
 })
@@ -57,7 +57,7 @@ test_that("tulpa_nuts_spde recovers gaussian SPDE on small mesh", {
     family = "gaussian",
     range = range_true, sigma = sigma_w,
     log_phi_init = log(sigma_obs),
-    n_iter = 800L, n_warmup = 400L, seed = 2026L
+    control = list(n_iter = 800L, n_warmup = 400L, seed = 2026L)
   )
 
   beta_post <- colMeans(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE])
@@ -91,7 +91,7 @@ test_that("tulpa_nuts_spde poisson recovers intercept", {
     y = y, X = X, spatial = spec,
     family = "poisson",
     range = 0.4, sigma = 0.4,
-    n_iter = 600L, n_warmup = 300L, seed = 7L
+    control = list(n_iter = 600L, n_warmup = 300L, seed = 7L)
   )
 
   beta_post <- mean(fit$draws[, "beta[1]"])
@@ -122,7 +122,7 @@ test_that("tulpa_nuts_spde gamma recovers intercept and shape", {
     family = "gamma",
     range = 0.4, sigma = 0.3,
     log_phi_init = log(shape_true),
-    n_iter = 600L, n_warmup = 300L, seed = 11L
+    control = list(n_iter = 600L, n_warmup = 300L, seed = 11L)
   )
 
   beta_post  <- mean(fit$draws[, "beta[1]"])
@@ -156,7 +156,7 @@ test_that("tulpa_nuts_spde neg_binomial_2 recovers intercept and size", {
     family = "neg_binomial_2",
     range = 0.4, sigma = 0.3,
     log_phi_init = log(size_true),
-    n_iter = 600L, n_warmup = 300L, seed = 13L
+    control = list(n_iter = 600L, n_warmup = 300L, seed = 13L)
   )
 
   beta_post <- mean(fit$draws[, "beta[1]"])
@@ -191,7 +191,7 @@ test_that("tulpa_nuts_spde beta recovers intercept and precision", {
     family = "beta",
     range = 0.4, sigma = 0.3,
     log_phi_init = log(phi_true),
-    n_iter = 600L, n_warmup = 300L, seed = 17L
+    control = list(n_iter = 600L, n_warmup = 300L, seed = 17L)
   )
 
   beta_post <- mean(fit$draws[, "beta[1]"])
@@ -212,7 +212,7 @@ test_that("tulpa_nuts_spde rejects unsupported family", {
   expect_error(
     tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "inverse_gaussian",
                     range = 0.3, sigma = 0.3,
-                    n_iter = 50L, n_warmup = 25L),
+                    control = list(n_iter = 50L, n_warmup = 25L)),
     "should be one of"  # match.arg() rejects before the C++ shim sees it
   )
 })
@@ -246,7 +246,7 @@ test_that("tulpa_nuts_spde gaussian beta posterior matches Laplace mode", {
     family = "gaussian",
     range = range_true, sigma = sigma_w,
     log_phi_init = log(sigma_obs),
-    n_iter = 800L, n_warmup = 400L, seed = 3L
+    control = list(n_iter = 800L, n_warmup = 400L, seed = 3L)
   )
   beta_n <- colMeans(fit_n$draws[, c("beta[1]", "beta[2]"), drop = FALSE])
 
@@ -306,7 +306,7 @@ test_that("non-centered fixed-hyper NUTS calibrates beta SD to the Laplace SE (#
   fit <- tulpa_nuts_spde(
     y = y, X = X, spatial = spec, family = "gaussian",
     range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
-    noncenter = TRUE, n_iter = 1500L, n_warmup = 800L, seed = 7L)
+    control = list(noncenter = TRUE, control = list(n_iter = 1500L, n_warmup = 800L, seed = 7L)))
   sd_n <- apply(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE], 2L, sd)
   expect_lt(sum(fit$divergent), 0.05 * length(fit$divergent))
 
@@ -348,13 +348,13 @@ test_that("tulpa_nuts_spde fixed-hyper fractional nu recovers + matches Laplace 
   # Joint-hyper fractional NUTS stays gated.
   expect_error(
     tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
-                    joint = TRUE, n_iter = 10L, n_warmup = 5L),
+                    joint = TRUE, control = list(n_iter = 10L, n_warmup = 5L)),
     "fractional")
 
   fit <- tulpa_nuts_spde(
     y = y, X = X, spatial = spec, family = "gaussian",
     range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
-    n_iter = 800L, n_warmup = 400L, seed = 404L)
+    control = list(n_iter = 800L, n_warmup = 400L, seed = 404L))
 
   expect_true(isTRUE(fit$rational))
   beta_post <- colMeans(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE])
@@ -410,7 +410,7 @@ test_that("fractional-nu fixed-hyper NUTS calibrates beta SD to the Laplace SE (
   fit <- tulpa_nuts_spde(
     y = y, X = X, spatial = spec, family = "gaussian",
     range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
-    noncenter = TRUE, n_iter = 1500L, n_warmup = 800L, seed = 11L)
+    control = list(noncenter = TRUE, control = list(n_iter = 1500L, n_warmup = 800L, seed = 11L)))
   sd_n <- apply(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE], 2L, sd)
   expect_lt(sum(fit$divergent), 0.05 * length(fit$divergent))
 

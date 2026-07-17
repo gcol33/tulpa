@@ -173,7 +173,7 @@ test_that("fractional nu: fixed-hyper NUTS runs, joint NUTS gated, analytic-Q SE
   # in R and passed to the sampler (#85).
   set.seed(1)
   fit <- tulpa_nuts_spde(y = rnorm(40), X = matrix(1, 40, 1), spatial = spec,
-                         family = "gaussian", n_iter = 60L, n_warmup = 30L)
+                         family = "gaussian", control = list(n_iter = 60L, n_warmup = 30L))
   expect_true(isTRUE(fit$rational))
   expect_true(is.matrix(fit$draws))
   # The analytic integer-Q rebuild helper stays integer-only: the fractional

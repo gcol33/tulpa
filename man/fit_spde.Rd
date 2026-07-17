@@ -18,6 +18,7 @@ fit_spde(
   re_idx = NULL,
   n_re_groups = 0L,
   sigma_re = 1,
+  mode = c("laplace", "nuts"),
   control = list()
 )
 }
@@ -54,6 +55,14 @@ use nested Laplace approximation over hyperparameters.}
 (conditioned) random-effect SD. The field and the RE block are Laplace-
 marginalised jointly. \code{n_re_groups = 0} (default) is no RE term. Not
 supported for a fractional-nu field.}
+
+\item{mode}{Inference method (the method is an argument, not a parallel
+verb): \code{"laplace"} (default) is the nested-Laplace integration over
+\verb{(range, sigma)} documented here; \code{"nuts"} delegates to \code{\link[=tulpa_nuts_spde]{tulpa_nuts_spde()}}
+for exact HMC over the field (and, unless both \code{range} and \code{sigma} are
+fixed, the Matern hyperparameters). \code{mode = "nuts"} does not support an
+\code{offset} or a random-effect term, and its sampler knobs pass via \code{control}
+(see \code{\link[=tulpa_nuts_spde]{tulpa_nuts_spde()}}); it returns that sampler's draws object.}
 
 \item{control}{A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above). Recognized entries:

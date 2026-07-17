@@ -24,10 +24,20 @@
 #' @param phi_bounds Numeric length-2 vector with lower/upper bounds on
 #'   `phi` for the outer optimisation. Default `c(0.1, 1e4)`.
 #' @param outer_tol Tolerance for the outer optimisation. Default 1e-4.
+#' @param mode Inference method (the method is an argument, not a parallel
+#'   verb): `"laplace"` (default) is the Laplace + Brent-over-`phi` point fit
+#'   documented here; `"nuts"` delegates to [tulpa_nuts_beta()], which samples
+#'   `phi` jointly with the coefficients via NUTS. In `"nuts"` mode the
+#'   Laplace-only arguments (`re_list`, `spatial`, `weights`, `offset`,
+#'   `phi_init`, `phi_bounds`, `outer_tol`) are not used, and NUTS knobs are
+#'   passed via `control` (see [tulpa_nuts_beta()]).
+#' @param control Passed to [tulpa_nuts_beta()] when `mode = "nuts"` (ignored
+#'   for `mode = "laplace"`).
 #'
-#' @return The list returned by [tulpa_laplace()] at the optimum,
-#'   augmented with `phi` (the optimised precision) and
-#'   `phi_log_marginal` (the optimisation trace, for diagnostics).
+#' @return For `mode = "laplace"`, the list returned by [tulpa_laplace()] at the
+#'   optimum, augmented with `phi` (the optimised precision) and
+#'   `phi_log_marginal` (the optimisation trace). For `mode = "nuts"`, the draws
+#'   object returned by [tulpa_nuts_beta()].
 #'
 #' @examples
 #' set.seed(1)
@@ -49,12 +59,30 @@ tulpa_laplace_beta <- function(y, X,
                                beta_prior = NULL,
                                phi_init   = NULL,
                                phi_bounds = c(0.1, 1e4),
-                               outer_tol  = 1e-4) {
+                               outer_tol  = 1e-4,
+                               mode       = c("laplace", "nuts"),
+                               control    = list()) {
 
+  mode <- match.arg(mode)
   stopifnot(is.numeric(y), is.matrix(X), nrow(X) == length(y))
   if (any(!is.finite(y)) || min(y) <= 0 || max(y) >= 1) {
     stop("`y` must be strictly in (0, 1) for tulpa_laplace_beta().",
          call. = FALSE)
+  }
+  if (mode == "nuts") {
+    # The inference method is an argument, not a parallel verb: delegate to the
+    # NUTS engine. The Laplace-only structure (RE / spatial / weights / offset /
+    # the phi outer-opt controls) has no place on the sampler path.
+    if (length(re_list) > 0L || !is.null(spatial) || !is.null(weights) ||
+        !is.null(offset)) {
+      stop("mode = 'nuts' fits a fixed-effect beta GLM: re_list / spatial / ",
+           "weights / offset are not supported (they are Laplace-path only).",
+           call. = FALSE)
+    }
+    return(tulpa_nuts_beta(
+      y = y, X = X,
+      beta_prior = beta_prior %||% list(mean = 0, sd = 10),
+      control = control))
   }
   if (length(phi_bounds) != 2L || phi_bounds[1] <= 0 ||
       phi_bounds[2] <= phi_bounds[1]) {

@@ -94,9 +94,8 @@ run_one_replicate <- function(seed, range_true, sigma_true, beta0_true,
     prior_range  = c(0.1, 0.05),
     prior_sigma  = c(3.0, 0.05),
     log_phi_init = log(sigma_obs_true),
-    n_iter       = n_iter, n_warmup = n_warmup,
-    adapt_delta  = adapt_delta,
-    seed         = as.integer(seed)
+    control = list(n_iter = n_iter, n_warmup = n_warmup,
+                   adapt_delta = adapt_delta, seed = as.integer(seed))
   )
 
   list(
@@ -330,7 +329,7 @@ test_that("joint NUTS round-trip: output structure matches contract", {
     y = y, X = X, spatial = spec,
     family = "gaussian",
     joint  = TRUE,
-    n_iter = 100L, n_warmup = 50L, seed = 1L
+    control = list(n_iter = 100L, n_warmup = 50L, seed = 1L)
   )
 
   expect_true(fit$joint_hypers)
@@ -367,7 +366,7 @@ test_that("fractional nu is rejected for the joint-NUTS SPDE path (gcol33/tulpa#
   X <- matrix(1.0, nrow = 40, ncol = 1)
   expect_error(
     tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
-                    joint = TRUE, n_iter = 50L, n_warmup = 25L),
+                    joint = TRUE, control = list(n_iter = 50L, n_warmup = 25L)),
     "fractional"
   )
 })
@@ -382,13 +381,13 @@ test_that("joint NUTS rejects PC anchors out of range", {
   expect_error(
     tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
                     joint = TRUE, prior_range = c(-0.1, 0.05),
-                    n_iter = 50L, n_warmup = 25L),
+                    control = list(n_iter = 50L, n_warmup = 25L)),
     "prior_range"
   )
   expect_error(
     tulpa_nuts_spde(y = y, X = X, spatial = spec, family = "gaussian",
                     joint = TRUE, prior_sigma = c(1.0, 1.5),
-                    n_iter = 50L, n_warmup = 25L),
+                    control = list(n_iter = 50L, n_warmup = 25L)),
     "prior_sigma"
   )
 })
