@@ -121,3 +121,27 @@ test_that("tgmrf periodic AR1 recovers theta across 30 seeds (median + coverage)
   expect_gte(cover_log_sigma, 0.60)
   expect_gte(cover_atanh_rho, 0.80)
 })
+
+
+# Direct truth-based recovery for the tgmrf IMH SAMPLER (not just the
+# sampler == grid equivalence): the sampler itself must recover theta
+# (gcol33/tulpa#155). Poisson periodic-AR1 at n = 60, median over 8 seeds.
+test_that("tgmrf IMH sampler recovers theta against a simulated truth", {
+  skip_if_not_slow()
+  n <- 60L; sigma_true <- 0.8; rho_true <- 0.6; beta_true <- 0.2
+  log_sigma_truth <- log(sigma_true); atanh_rho_truth <- atanh(rho_true)
+  n_seeds <- 8L
+  hat <- matrix(NA_real_, n_seeds, 2L,
+                dimnames = list(NULL, c("log_sigma", "atanh_rho")))
+  for (s in seq_len(n_seeds)) {
+    sim <- simulate_one(seed = 3000L + s, n = n, sigma_true = sigma_true,
+                        rho_true = rho_true, beta_true = beta_true)
+    blk <- make_recovery_ar1_block(n)
+    fit <- tulpa_tgmrf(y = sim$y, n_trials = rep(1L, n), X = sim$X, block = blk,
+                       family = "poisson", mode = "imh",
+                       n_iter = 1500L, warmup = 500L, pilot_axis_points = 5L)
+    hat[s, ] <- as.numeric(fit$means)
+  }
+  expect_lt(abs(stats::median(hat[, "log_sigma"]) - log_sigma_truth), 0.55)
+  expect_lt(abs(stats::median(hat[, "atanh_rho"]) - atanh_rho_truth), 0.60)
+})
