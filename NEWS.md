@@ -2,8 +2,10 @@
 
 ## 0.0.83 (development)
 
-Front-door API convention cleanup (#156, fully closed) and the first tranche
-of the missing-front-door features (#158). No ABI change.
+Front-door API convention cleanup (#156, fully closed) and the
+missing-front-door features (#158, fully closed). **ABI break**
+(`TULPA_ABI_VERSION` 34 -> 35) for the proper-CAR exact-NUTS eigenvalue
+log-determinant; downstream packages must rebuild.
 
 * **Unified fixed-effect prior.** `beta_prior = list(mean, sd)` is now the one
   interface across `tulpa_ep`, `tulpa_multinomial`, `tulpa_ordinal`,
@@ -52,6 +54,26 @@ of the missing-front-door features (#158). No ABI change.
   from consumer packages. Recovers both fields (cor > 0.85) on simulated data.
 * `latent_factor()` roxygen corrected: it is a ratio / multi-arm construct for
   consumer packages, not the single-response `tulpa()` front door (#158).
+* **Continuous / areal fields from the exact-NUTS front door** (#158):
+  `tulpa(spatial = <field>, mode = "exact")` now samples the latent field, its
+  variance, and (where present) its range / correlation jointly with Tier-1
+  NUTS for GP / NNGP (`spatial_gp()`), HSGP (`spatial_gp(approx = "hsgp")`), and
+  proper CAR (`spatial_car_proper()`), joining the SPDE exact path. The generic
+  ModelData sampler keys each block on `spatial_type`, so the field enters the
+  parameter vector (previously only the fixed effects were sampled). The
+  proper-CAR log-determinant `log|D - rho W|` is evaluated in the
+  autodiff-friendly closed form `sum_i log(1 - rho mu_i)` from the precomputed
+  adjacency eigenvalues, not a per-gradient Cholesky. Each field's NUTS
+  posterior-mean recovers the simulated truth and matches its nested-Laplace
+  counterpart (cor > 0.88).
+* **Spatially- and temporally-varying coefficients from the front door** (#158):
+  `tulpa(spatial = spatial_svc(...), mode = "exact")` and
+  `tulpa(temporal = temporal_tvc(...), mode = "exact")` fit NNGP spatially-
+  varying and RW1/RW2/AR1 temporally-varying coefficients, threaded into the
+  generic sampler via new `svc_spec` / `tvc_spec` inputs. Exact-only: a nested /
+  laplace / auto mode errors rather than silently dropping the varying field.
+  Recovers the varying-coefficient surface / trajectory on simulated data
+  (cor > 0.94).
 
 ## 0.0.82 (2026-07-15)
 
