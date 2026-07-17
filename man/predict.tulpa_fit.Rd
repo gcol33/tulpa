@@ -21,7 +21,11 @@
 columns named in the spec's coordinate formula). If \code{NULL}, predicts at the
 training design (requires \verb{$model_matrix}).}
 
-\item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale).}
+\item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale). For a
+binomial fit the \code{"response"} scale here is the per-trial success
+probability \code{g^{-1}(eta)} (there is no \code{n_trials} at \code{newdata}); this
+differs from \code{\link[=fitted]{fitted()}}, which returns the trial-scaled expected count at
+the training design.}
 
 \item{se.fit}{If \code{TRUE}, also return the link-scale standard error and
 credible bounds. With an included SPDE field the SE propagates the joint

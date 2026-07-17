@@ -884,7 +884,11 @@ nobs.tulpa_fit <- function(object, ...) {
 #' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate
 #'   columns named in the spec's coordinate formula). If `NULL`, predicts at the
 #'   training design (requires `$model_matrix`).
-#' @param type `"link"` (linear predictor) or `"response"` (mean scale).
+#' @param type `"link"` (linear predictor) or `"response"` (mean scale). For a
+#'   binomial fit the `"response"` scale here is the per-trial success
+#'   probability `g^{-1}(eta)` (there is no `n_trials` at `newdata`); this
+#'   differs from [fitted()], which returns the trial-scaled expected count at
+#'   the training design.
 #' @param se.fit If `TRUE`, also return the link-scale standard error and
 #'   credible bounds. With an included SPDE field the SE propagates the joint
 #'   (fixed-effect, field) posterior precision at the fitted hyperparameters

@@ -20,7 +20,7 @@
   tol,
   n_threads,
   offset,
-  order = 4L
+  order = 2L
 )
 }
 \description{

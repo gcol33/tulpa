@@ -377,11 +377,6 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   )
 }
 
-# Memoize cpp_aghq_objective_grad over `par`: returns an `eval_at(par)` that
-# recomputes only when `par` changes (stats::optim queries fn and gr separately,
-# usually at the same point, so one C++ group sweep serves both). The single
-# source of the analytic objective+gradient call -- shared by the full-par ML-II
-# optimizer (.aghq_analytic_optim_fns) and the fixed-Sigma beta profile in
 # Optional PC prior on the RE-block marginal SDs for the AGHQ joint optimizer.
 # `sigma_prior` is NULL (off), a `c(U, alpha)` pair (all blocks), or a list
 # `list(blocks = <int>, prior_sigma = c(U, alpha), eta = <lkj, optional>)` (named
@@ -438,6 +433,11 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     })
 }
 
+# Memoize cpp_aghq_objective_grad over `par`: returns an `eval_at(par)` that
+# recomputes only when `par` changes (stats::optim queries fn and gr separately,
+# usually at the same point, so one C++ group sweep serves both). The single
+# source of the analytic objective+gradient call -- shared by the full-par ML-II
+# optimizer (.aghq_analytic_optim_fns) and the fixed-Sigma beta profile in
 # tulpa_re_cov_nested(n_quad > 1).
 .aghq_grad_cache <- function(orc, nc_terms, full_vec, n_quad, lkj_eta) {
   cache <- new.env(parent = emptyenv()); cache$par <- NULL; cache$val <- NULL

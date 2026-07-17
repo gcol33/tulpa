@@ -178,9 +178,13 @@
   M    <- base$tail_len
   out  <- list(pareto_k = k, is_ess = base$is_ess, tail_points = M,
                se_boot = NA_real_, ci_low = NA_real_, ci_high = NA_real_,
-               se_formula = NA_real_, band_confident = NA)
+               se_formula = NA_real_, band_confident = NA, conf_bands = NULL)
   if (!is.finite(k) || S < .PSIS_MIN_EVAL) return(out)
   if (is.null(conf_bands)) conf_bands <- .ps_conf_bands(S)
+  # The bands actually used for band_confident (at the realised finite-draw
+  # count S) travel with the result so downstream band-index verdicts share the
+  # same boundaries rather than recomputing at a different draw count.
+  out$conf_bands <- conf_bands
   nb <- max(0L, as.integer(n_boot))
   if (nb >= 2L) {
     ks <- vapply(seq_len(nb), function(b) {

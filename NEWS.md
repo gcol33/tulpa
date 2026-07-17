@@ -53,6 +53,13 @@ Warnings and cleanups.
   `has_implicit_intercept()`, and a no-effect temporal-Gibbs selection gate were
   deleted; the proper-CAR `rho`-bounds eigenvalue roles were corrected (they were
   swapped, though the (0, 1) clamp masked it).
+* **Minor consistency fixes.** `predict(type = "response")` documents that a
+  binomial fit returns the per-trial probability (vs `fitted()`'s trial-scaled
+  count); the k-quality band index now shares the reliability bands the
+  band-confidence flag used (at the realised finite-draw count) rather than
+  recomputing them at the draw budget; the fractional-SPDE rational-order default
+  is single-sourced to 2; and two split-message errors and a couple of stale
+  comments were tidied.
 
 ## 0.0.85
 

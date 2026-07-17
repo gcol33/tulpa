@@ -306,8 +306,8 @@ validate_svc <- function(svc, data, X) {
 compute_nngp_neighbors <- function(coords, k) {
   N <- nrow(coords)
 
-  # Order observations (improves NNGP conditioning)
-  # Use maximum-minimum distance ordering for better numerical properties
+  # Order observations lexicographically by coordinate (a valid NNGP ordering
+  # that improves conditioning over the raw input order).
   order_idx <- order(coords[, 1], coords[, 2])
 
   # Reorder coordinates

@@ -825,10 +825,9 @@
         control    = .control_subset(control, .CONTROL_KEYS$ep)
       ))
     }
-    stop(sprintf(
-      "Backend '%s' is reachable but not yet wired through tulpa(). Call its\n",
-      backend),
-      "fitter directly (e.g. agq_fit()).", call. = FALSE)
+    stop(sprintf(paste0(
+      "Backend '%s' is reachable but not yet wired through tulpa(). Call its ",
+      "fitter directly (e.g. agq_fit())."), backend), call. = FALSE)
   }
 
   if (input == "logpost") {
@@ -867,10 +866,9 @@
         scale = control$scale %||% 1.0
       ))
     }
-    stop(sprintf(
-      "Backend '%s' is reachable but not yet wired through tulpa(). Call its\n",
-      backend),
-      "fitter directly.", call. = FALSE)
+    stop(sprintf(paste0(
+      "Backend '%s' is reachable but not yet wired through tulpa(). Call its ",
+      "fitter directly."), backend), call. = FALSE)
   }
 
   if (input == "modeldata") {

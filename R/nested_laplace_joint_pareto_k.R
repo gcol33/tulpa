@@ -962,7 +962,7 @@
                     is_ess = if (is.null(best)) NA_real_ else best$is_ess %||% NA_real_,
                     tail_points = NA_integer_, se_boot = NA_real_,
                     ci_low = NA_real_, ci_high = NA_real_,
-                    se_formula = NA_real_, band_confident = NA))
+                    se_formula = NA_real_, band_confident = NA, conf_bands = NULL))
     }
     .tulpa_psis_k_uncertainty(best$lr, tail_points = tail_points,
                               n_boot = n_boot, conf_bands = conf_bands)
@@ -1042,7 +1042,8 @@
                 pareto_k_se_formula            = ju$se_formula,
                 pareto_k_tail_points           = ju$tail_points,
                 pareto_k_tail_points_requested = tp_req,
-                pareto_k_band_confident        = ju$band_confident)
+                pareto_k_band_confident        = ju$band_confident,
+                pareto_k_conf_bands            = ju$conf_bands)
 
     if (n_arm > 0L) {
         pa <- lapply(seq_len(n_arm), function(a) {
@@ -1205,6 +1206,7 @@
     res$pareto_k_tail_points           <- kd$pareto_k_tail_points
     res$pareto_k_tail_points_requested <- kd$pareto_k_tail_points_requested
     res$pareto_k_band_confident        <- kd$pareto_k_band_confident
+    res$pareto_k_conf_bands            <- kd$pareto_k_conf_bands
     res
 }
 
@@ -1236,8 +1238,10 @@
 # bands the diagnostic used, and reports an honest reached / best / reason quartet
 # against the requested quality intent. NEVER silently downgrades: when the fit
 # cannot confidently meet the requested band it returns the band it did reach plus
-# the reason it fell short. `conf_bands` is the resolved override (NULL -> the
-# sample-size-dependent default at `diagnose_draws`). Called for both the single-
+# the reason it fell short. `conf_bands` is an explicit override; when NULL it uses
+# the bands the uncertainty pass recorded (`res$pareto_k_conf_bands`, at the
+# realised finite-draw count, matching the band-confidence flag), else the
+# sample-size-dependent default at `diagnose_draws`. Called for both the single-
 # and multi-block paths after the diagnostic fields are attached.
 .joint_attach_k_quality <- function(res, k_quality, diagnose_k, diagnose_draws,
                                     conf_bands = NULL) {
@@ -1256,8 +1260,11 @@
         res$k_quality_reason <- "k-hat unavailable (diagnostic declined)"
         return(res)
     }
-    bands  <- if (is.null(conf_bands)) .ps_conf_bands(as.integer(diagnose_draws))
-              else conf_bands
+    # Prefer the bands the uncertainty pass actually used (at the realised
+    # finite-draw count), so the band index and the band-confidence flag it is
+    # read against share one boundary set; fall back to the draw-budget default.
+    bands  <- if (!is.null(conf_bands)) conf_bands
+              else res$pareto_k_conf_bands %||% .ps_conf_bands(as.integer(diagnose_draws))
     labels <- if (length(bands) >= 2L) c("good", "ok", "unreliable")
               else c("reliable", "unreliable")
     conf   <- isTRUE(res$pareto_k_band_confident)

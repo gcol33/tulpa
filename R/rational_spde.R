@@ -318,7 +318,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
                                         family, phi, range, sigma,
                                         re_idx, n_re_groups, sigma_re,
                                         max_iter, tol, n_threads, offset,
-                                        order = 4L) {
+                                        order = 2L) {
   asm <- .spde_assemble_at(spatial, range, sigma, order = order)
   Qg  <- as(asm$Q, "generalMatrix")
   n_sub <- length(asm$keep)
