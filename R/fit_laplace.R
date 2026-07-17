@@ -871,7 +871,7 @@ laplace_hsgp_at <- function(y, n_trials, X, spatial,
                             offset = NULL) {
   cm <- spatial$coords_matrix
   if (is.null(cm)) {
-    stop("spatial_hsgp() spec is unvalidated (coords_matrix is NULL). Call ",
+    stop("spatial_gp(approx='hsgp') spec is unvalidated (coords_matrix is NULL). Call ",
          "validate_hsgp(spatial, data) first, or fit through tulpa() which ",
          "validates automatically.", call. = FALSE)
   }

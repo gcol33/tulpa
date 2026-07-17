@@ -6,9 +6,12 @@
 \usage{
 spatial_gp(
   coords,
+  approx = c("nngp", "hsgp"),
   cov = c("exponential", "matern", "gaussian", "spherical"),
   nu = 1.5,
   nn = 15,
+  m = 6,
+  c = 1.5,
   solver = c("auto", "cholesky", "cg", "pcg", "gpu"),
   cg_tol = 1e-06,
   cg_maxiter = 100,
@@ -21,12 +24,20 @@ spatial_gp(
 \item{coords}{A formula (\code{~ lon + lat}) or character vector of length 2
 naming the two coordinate variables in the data.}
 
-\item{cov}{Covariance function. One of \code{"exponential"}, \code{"matern"},
-\code{"gaussian"}, or \code{"spherical"}.}
+\item{approx}{GP approximation: \code{"nngp"} (default, a nearest-neighbour GP with
+the \code{cov} / \code{nu} / \code{nn} / \code{solver} arguments) or \code{"hsgp"} (a Hilbert-space
+basis GP with \code{m} functions per dimension and boundary factor \code{c}).}
+
+\item{cov}{Covariance function (NNGP only). One of \code{"exponential"},
+\code{"matern"}, \code{"gaussian"}, or \code{"spherical"}.}
 
 \item{nu}{Matern smoothness parameter. Used only when \code{cov = "matern"}.}
 
 \item{nn}{Number of nearest neighbours used in the NNGP approximation.}
+
+\item{m}{Number of HSGP basis functions per dimension (\code{approx = "hsgp"}).}
+
+\item{c}{HSGP boundary factor, \verb{>= 1} (\code{approx = "hsgp"}).}
 
 \item{solver}{Linear solver for the GP. One of \code{"auto"}, \code{"cholesky"},
 \code{"cg"}, \code{"pcg"}, or \code{"gpu"}. \code{"gpu"} falls back to \code{"pcg"} when CUDA

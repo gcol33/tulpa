@@ -46,7 +46,7 @@ test_that("continuous hsgp spec routes through tulpa_nested_laplace()", {
   y <- rbinom(ng, 1, plogis(fld))
   dg <- data.frame(lon = coords[, 1], lat = coords[, 2])
   fit <- tulpa_nested_laplace(y = y, n_trials = rep(1L, ng), X = matrix(1, ng, 1),
-                              spec = spatial_hsgp(~ lon + lat, m = 6, c = 1.5),
+                              spec = spatial_gp(approx = "hsgp", ~ lon + lat, m = 6, c = 1.5),
                               data = dg, family = "binomial")
   expect_s3_class(fit, "tulpa_nested_laplace")
   expect_setequal(names(fit$theta_mean), c("sigma2", "lengthscale"))

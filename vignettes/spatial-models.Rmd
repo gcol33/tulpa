@@ -556,7 +556,7 @@ continuous fields. Each takes its coordinates in the spec, so there is no
 - `spatial_gp(~ lon + lat)` fits a nearest-neighbour Gaussian process
   (NNGP), an exact GP thinned to each point's nearest neighbours so it
   scales to large data.
-- `spatial_hsgp(~ lon + lat)` fits a Hilbert-space approximate GP, a sum
+- `spatial_gp(~ lon + lat, approx = "hsgp")` fits a Hilbert-space approximate GP, a sum
   of basis functions that is fast for moderate ranges.
 - `spatial_spde(~ lon + lat, data)` fits a Matern field through the SPDE
   representation on a mesh, routed to the dedicated `spde` backend.

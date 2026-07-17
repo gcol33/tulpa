@@ -1,6 +1,6 @@
 # Continuous (NNGP/GP and HSGP) spatial nested routing through the tulpa() front
 # door (follow-up to the areal Increment 4, dev_notes/plan_gibbs_spatial_frontdoor.md).
-# A spatial_gp(~ lon + lat) / spatial_hsgp(~ lon + lat) spec carries the
+# A spatial_gp(~ lon + lat) / spatial_gp(approx = "hsgp", ~ lon + lat) spec carries the
 # coordinate columns -- there is NO spatial(col) term; observations are mapped to
 # locations from their coords. mode = "nested_laplace" / "structured" / "auto"
 # integrate the GP hyperparameters (NNGP: sigma2, phi_gp; HSGP: sigma2,
@@ -179,7 +179,7 @@ test_that("a bare list continuous spec is rejected with guidance", {
 })
 
 # --- HSGP (Hilbert-space GP) nested routing -----------------------------
-# A spatial_hsgp(~ lon + lat) spec routes through tulpa() exactly like the GP
+# A spatial_gp(approx = "hsgp", ~ lon + lat) spec routes through tulpa() exactly like the GP
 # path: coords address the field (no spatial(col) term), and the mode integrates
 # the (sigma2, lengthscale) hyperparameters via tulpa_nested_laplace(). The field
 # is a sum of Laplacian basis functions evaluated at every observation; the basis
@@ -193,7 +193,7 @@ test_that("mode = nested_laplace integrates an HSGP field through tulpa()", {
                        beta = c(-0.2, 0.6), seed = 21L)
   fit <- suppressMessages(tulpa(
     y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-    spatial = spatial_hsgp(~ lon + lat, m = 8L),
+    spatial = spatial_gp(approx = "hsgp", ~ lon + lat, m = 8L),
     mode = "nested_laplace",
     control = list(keep_grid_hessians = TRUE)
   ))
@@ -223,7 +223,7 @@ test_that("structured and auto route an HSGP field to nested_laplace", {
   for (m in c("structured", "auto")) {
     fit <- suppressMessages(tulpa(
       y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = spatial_hsgp(~ lon + lat, m = 6L), mode = m
+      spatial = spatial_gp(approx = "hsgp", ~ lon + lat, m = 6L), mode = m
     ))
     expect_equal(fit$backend, "nested_laplace", info = m)
     expect_equal(fit$inference_mode, "structured", info = m)
@@ -232,7 +232,7 @@ test_that("structured and auto route an HSGP field to nested_laplace", {
 
 test_that("the HSGP front-door route is numerically identical to a direct call", {
   s <- sim_gp_binomial(n_loc = 40L, reps = 2L)
-  spec <- spatial_hsgp(~ lon + lat, m = 6L)
+  spec <- spatial_gp(approx = "hsgp", ~ lon + lat, m = 6L)
   via <- suppressMessages(tulpa(
     y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
     spatial = spec, mode = "nested_laplace"
@@ -257,16 +257,16 @@ test_that("an HSGP spec rejects a spatial(col) term and a bare list", {
   expect_error(
     suppressMessages(tulpa(
       y ~ x + spatial(site), data = s$data, family = "binomial",
-      n_trials = s$data$ntrials, spatial = spatial_hsgp(~ lon + lat),
+      n_trials = s$data$ntrials, spatial = spatial_gp(approx = "hsgp", ~ lon + lat),
       mode = "nested_laplace")),
     "coordinate columns"
   )
-  # A bare list (type = "hsgp") is not a spatial_hsgp() spec.
+  # A bare list (type = "hsgp") is not a spatial_gp(approx = "hsgp", ) spec.
   expect_error(
     suppressMessages(tulpa(
       y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
       spatial = list(type = "hsgp"), mode = "nested_laplace")),
-    "spatial_hsgp"
+    "spatial_gp"
   )
 })
 

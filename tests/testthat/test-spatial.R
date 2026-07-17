@@ -13,8 +13,8 @@ test_that("spatial_bym2 creates valid specification", {
   expect_equal(spec$type, "bym2")
 })
 
-test_that("spatial_hsgp creates valid specification", {
-  spec <- spatial_hsgp(coords = ~ x + y, m = 10, c = 1.5)
+test_that("spatial_gp(approx=hsgp) creates valid specification", {
+  spec <- spatial_gp(approx = "hsgp", coords = ~ x + y, m = 10, c = 1.5)
   expect_s3_class(spec, "tulpa_spatial")
   expect_equal(spec$type, "hsgp")
   expect_equal(spec$m, 10)

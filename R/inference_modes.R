@@ -322,11 +322,11 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 
 # Continuous (coordinate-addressed) spatial field types the nested-Laplace
 # front door supports via the generic registry grid (tulpa_nested_laplace).
-# Addressed by coordinate columns in a spatial_gp() / spatial_hsgp() spec
+# Addressed by coordinate columns in a spatial_gp() / spatial_gp(approx = "hsgp", ) spec
 # (no spatial(col) term); tulpa() validates via validate_gp() to derive the
 # unique locations, the obs -> location map, and the NNGP neighbour structure.
 # spatial_gp() emits type "gp" (the nested kernel block is "nngp");
-# spatial_hsgp() emits type "hsgp" (the nested kernel block consumes a
+# spatial_gp(approx = "hsgp", ) emits type "hsgp" (the nested kernel block consumes a
 # Laplacian basis built by cpp_hsgp_basis_2d).
 .NL_FRONTDOOR_CONTINUOUS <- c("gp", "nngp", "hsgp")
 

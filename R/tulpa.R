@@ -152,7 +152,7 @@
     cm <- spatial$coords_matrix
     if (is.null(cm)) {
       stop("Internal: HSGP spatial spec is unvalidated (coords_matrix is NULL). ",
-           "tulpa() validates it via validate_hsgp(); pass spatial_hsgp(~x+y).",
+           "tulpa() validates it via validate_hsgp(); pass spatial_gp(~x+y, approx = 'hsgp').",
            call. = FALSE)
     }
     basis <- cpp_hsgp_basis_2d(as.matrix(cm), as.integer(spatial$m),
@@ -865,7 +865,7 @@
 #'     and `adjacency`, paired with a `spatial(col)` term in `formula` naming the
 #'     per-observation unit column. Term and spec must be supplied together.
 #'   * **Continuous** (`spatial_gp(~ lon + lat)` for an NNGP field,
-#'     `spatial_hsgp(~ lon + lat)` for a Hilbert-space GP, `spatial_spde(~ lon +
+#'     `spatial_gp(~ lon + lat, approx = 'hsgp')` for a Hilbert-space GP, `spatial_spde(~ lon +
 #'     lat, data)` for a Matern SPDE field): the spec object carries the
 #'     coordinate columns (the SPDE spec also carries the mesh + FEM matrices),
 #'     so **no** `spatial(col)` term is used -- observations are mapped to
@@ -1048,7 +1048,7 @@ tulpa <- function(formula, data,
   #  * Areal (icar/car/bym2/car_proper): a `spatial(col)` term names the
   #    per-observation unit column, resolved to a 1-based `spatial_idx` against
   #    the adjacency. Term and spec must appear together.
-  #  * Continuous gp/nngp/hsgp: a spatial_gp(~lon+lat) / spatial_hsgp(~lon+lat)
+  #  * Continuous gp/nngp/hsgp: a spatial_gp(~lon+lat) / spatial_gp(~lon+lat, approx="hsgp")
   #    spec carries the coordinate columns; obs -> location is derived from the
   #    coordinates, so NO spatial(col) term is used. validate_gp()/validate_hsgp()
   #    resolve the coordinate structure onto the spec.
@@ -1105,7 +1105,7 @@ tulpa <- function(formula, data,
         }
       } else if (sp_lc == "hsgp") {
         if (!inherits(spatial_spec, "tulpa_hsgp")) {
-          stop("An HSGP spatial field must be a spatial_hsgp(~ lon + lat) spec ",
+          stop("An HSGP spatial field must be a spatial_gp(~ lon + lat, approx = 'hsgp') spec ",
                "object (it carries the coordinate columns); got a bare list.",
                call. = FALSE)
         }

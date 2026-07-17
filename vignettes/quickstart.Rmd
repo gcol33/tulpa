@@ -529,8 +529,9 @@ near-flat prior and its standard error runs wide by design; read the slopes,
 which are identified, and treat the intercept as a nuisance level.
 
 Continuous fields use a coordinate spec instead of an adjacency:
-`spatial_gp(~ lon + lat)` for a nearest-neighbour GP, `spatial_hsgp(~ lon +
-lat)` for a Hilbert-space GP, `spatial_spde(~ lon + lat, data)` for a Matern
+`spatial_gp(~ lon + lat)` for a nearest-neighbour GP,
+`spatial_gp(~ lon + lat, approx = "hsgp")` for a Hilbert-space GP,
+`spatial_spde(~ lon + lat, data)` for a Matern
 SPDE solved on a mesh through `fit_spde()`. The spatial vignette walks
 through the areal path end to end, recovers a known field, integrates the
 smoothing precision rather than fixing it, and shows how the field's

@@ -96,7 +96,7 @@ test_that("tulpa_laplace routes an HSGP spec with a PD marginal H_beta", {
   y <- rbinom(ng, 1, plogis(0.2 + fld))
   X <- cbind(1, rnorm(ng))
   dh <- data.frame(lon = coords[, 1], lat = coords[, 2])
-  sp <- validate_hsgp(spatial_hsgp(~ lon + lat, m = 6, c = 1.5), dh)
+  sp <- validate_hsgp(spatial_gp(approx = "hsgp", ~ lon + lat, m = 6, c = 1.5), dh)
   fit <- tulpa_laplace(y = y, n_trials = rep(1L, ng), X = X, spatial = sp,
                        family = "binomial", return_hessian = TRUE)
   expect_true(fit$converged)

@@ -7,10 +7,15 @@
 #'
 #' @param coords A formula (`~ lon + lat`) or character vector of length 2
 #'   naming the two coordinate variables in the data.
-#' @param cov Covariance function. One of `"exponential"`, `"matern"`,
-#'   `"gaussian"`, or `"spherical"`.
+#' @param approx GP approximation: `"nngp"` (default, a nearest-neighbour GP with
+#'   the `cov` / `nu` / `nn` / `solver` arguments) or `"hsgp"` (a Hilbert-space
+#'   basis GP with `m` functions per dimension and boundary factor `c`).
+#' @param cov Covariance function (NNGP only). One of `"exponential"`,
+#'   `"matern"`, `"gaussian"`, or `"spherical"`.
 #' @param nu Matern smoothness parameter. Used only when `cov = "matern"`.
 #' @param nn Number of nearest neighbours used in the NNGP approximation.
+#' @param m Number of HSGP basis functions per dimension (`approx = "hsgp"`).
+#' @param c HSGP boundary factor, `>= 1` (`approx = "hsgp"`).
 #' @param solver Linear solver for the GP. One of `"auto"`, `"cholesky"`,
 #'   `"cg"`, `"pcg"`, or `"gpu"`. `"gpu"` falls back to `"pcg"` when CUDA
 #'   support is unavailable.
@@ -35,9 +40,12 @@
 #'
 #' @export
 spatial_gp <- function(coords,
+                       approx = c("nngp", "hsgp"),
                        cov = c("exponential", "matern", "gaussian", "spherical"),
                        nu = 1.5,
                        nn = 15,
+                       m = 6,
+                       c = 1.5,
                        solver = c("auto", "cholesky", "cg", "pcg", "gpu"),
                        cg_tol = 1e-6,
                        cg_maxiter = 100,
@@ -45,6 +53,7 @@ spatial_gp <- function(coords,
                        scale_coords = TRUE,
                        parameterization = c("centered", "noncentered", "collapsed")) {
 
+  approx <- match.arg(approx)
   cov <- match.arg(cov)
   solver <- match.arg(solver)
   parameterization <- match.arg(parameterization)
@@ -81,6 +90,25 @@ if (solver == "gpu" && !cpp_gpu_available()) {
   } else {
     stop("`coords` must be a formula (~ lon + lat) or character vector of length 2",
          call. = FALSE)
+  }
+
+  # Hilbert-space approximation: a basis-function GP with `m` functions per
+  # dimension and boundary factor `c` (the NNGP cov/nu/nn/solver args do not
+  # apply). Returns a tulpa_hsgp spec, formerly spatial_hsgp().
+  if (approx == "hsgp") {
+    if (!is.numeric(m) || length(m) != 1 || m < 3 || m > 50) {
+      stop("`m` must be an integer between 3 and 50", call. = FALSE)
+    }
+    m <- as.integer(m)
+    if (!is.numeric(c) || length(c) != 1 || c < 1) {
+      stop("`c` (boundary factor) must be >= 1", call. = FALSE)
+    }
+    if (isFALSE(shared)) .warn_nonshared("spatial effects")
+    return(structure(
+      list(type = "hsgp", coord_vars = coord_vars, m = m, c = c,
+           shared = shared, scale_coords = scale_coords,
+           n_obs = NULL, coords_matrix = NULL),
+      class = c("tulpa_hsgp", "tulpa_spatial", "list")))
   }
 
   # Validate nu for Matern
@@ -173,140 +201,6 @@ print.tulpa_gp <- function(x, ...) {
 }
 
 
-#' Hilbert Space Gaussian Process (HSGP) spatial structure
-#'
-#' @description
-#' Specify a Hilbert Space Gaussian Process approximation for spatial effects.
-#' HSGP approximates a GP using Laplacian eigenfunctions, providing O(N*M^2)
-#' complexity with analytical gradients instead of O(N*k^2) with numerical
-#' gradients for NNGP.
-#'
-#' This gives approximately 50x speedup over standard NNGP while maintaining
-#' high accuracy for smooth spatial fields.
-#'
-#' @param coords A one-sided formula specifying coordinate columns (e.g.,
-#'   `~ lon + lat`), or a character vector of length 2 with column names.
-#' @param m Number of basis functions per dimension. Total basis functions
-#'   will be m^2. Default 6. Higher values give better approximation but
-#'   slower computation. Recommended range: 5-15.
-#' @param c Boundary factor controlling domain extension beyond data range.
-#'   Default 1.5. The domain is extended to \eqn{(-cL, cL)} where L is half the
-#'   data range. Larger values improve approximation at boundaries.
-#' @param shared Logical; if TRUE (default), spatial effect enters both
-#'   all processes. Set to FALSE for process-specific spatial
-#'   effects (triggers warning about potential confounding).
-#' @param scale_coords Logical; if TRUE (default), coordinates are scaled to
-#'   unit variance before computing basis functions.
-#'
-#' @return A `tulpa_hsgp` object
-#'
-#' @details
-#' HSGP approximates a GP as:
-#'
-#' \deqn{f(x) = \sum_{j=1}^{M^2} \phi_j(x) \sqrt{S(\lambda_j)} \beta_j}
-#'
-#' where:
-#' - \eqn{\phi_j(x)} are Laplacian eigenfunctions (products of sines)
-#' - \eqn{S(\lambda_j)} is the spectral density of the squared exponential kernel
-#' - \eqn{\beta_j \sim N(0, 1)} are basis coefficients
-#'
-#' The hyperparameters are:
-#' - \eqn{\sigma^2}: marginal variance (PC prior: P(sigma > 1) = 0.01)
-#' - \eqn{\ell}: lengthscale (LogNormal(0, 1) prior)
-#'
-#' **Advantages over NNGP**:
-#' - Analytical gradients enable ~50x speedup
-#' - Simple parameter interpretation
-#' - Works well for smooth spatial fields
-#'
-#' **Limitations**:
-#' - Assumes squared exponential (smooth) covariance
-#' - Less accurate for rough fields (Matern with low nu)
-#' - Approximation quality depends on m and c choices
-#'
-#' @examples
-#' # Create HSGP spatial structure
-#' hsgp <- spatial_hsgp(~ lon + lat)
-#' print(hsgp)
-#'
-#' \donttest{
-#' # Generate synthetic spatial data
-#' set.seed(42)
-#' n <- 100
-#' df <- data.frame(
-#'   lon = runif(n, 0, 10),
-#'   lat = runif(n, 0, 10),
-#'   x = rnorm(n)
-#' )
-#' df$count <- rpois(n, exp(1 + 0.4 * df$x + 0.5 * sin(df$lon)))
-#'
-#' # Fast spatial effect with HSGP (much faster than spatial_gp)
-#' fit <- tulpa(
-#'   count ~ x,
-#'   data = df,
-#'   family = "poisson",
-#'   spatial = spatial_hsgp(~ lon + lat, m = 6),
-#'   mode = "auto"
-#' )
-#' summary(fit)
-#' }
-#'
-#' @references
-#' Riutort-Mayol, G., Buerkner, P. C., Andersen, M. R., Solin, A., & Vehtari, A.
-#' (2023). Practical Hilbert space approximate Bayesian Gaussian processes for
-#' probabilistic programming. Statistics and Computing, 33(1), 17.
-#'
-#' @seealso [spatial_gp()] for NNGP-based GP, [spatial_car()] for areal effects
-#'
-#' @export
-spatial_hsgp <- function(coords,
-                         m = 6,
-                         c = 1.5,
-                         shared = NULL,
-                         scale_coords = TRUE) {
-
-  # Parse coordinate specification
-  if (inherits(coords, "formula")) {
-    coord_vars <- all.vars(coords)
-    if (length(coord_vars) != 2) {
-      stop("`coords` formula must specify exactly 2 coordinate variables",
-           call. = FALSE)
-    }
-  } else if (is.character(coords) && length(coords) == 2) {
-    coord_vars <- coords
-  } else {
-    stop("`coords` must be a formula (~ lon + lat) or character vector of length 2",
-         call. = FALSE)
-  }
-
-  # Validate m
-  if (!is.numeric(m) || length(m) != 1 || m < 3 || m > 50) {
-    stop("`m` must be an integer between 3 and 50", call. = FALSE)
-  }
-  m <- as.integer(m)
-
-  # Validate c
-  if (!is.numeric(c) || length(c) != 1 || c < 1) {
-    stop("`c` (boundary factor) must be >= 1", call. = FALSE)
-  }
-
-  if (isFALSE(shared)) .warn_nonshared("spatial effects")
-
-  structure(
-    list(
-      type = "hsgp",
-      coord_vars = coord_vars,
-      m = m,
-      c = c,
-      shared = shared,
-      scale_coords = scale_coords,
-      # Filled in during validation
-      n_obs = NULL,
-      coords_matrix = NULL
-    ),
-    class = c("tulpa_hsgp", "tulpa_spatial", "list")
-  )
-}
 
 
 #' Print method for tulpa_hsgp
