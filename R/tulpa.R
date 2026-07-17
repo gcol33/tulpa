@@ -312,9 +312,10 @@
            "plain GLMM use mode = 'laplace' / 'mala' / 'auto'.", call. = FALSE)
     }
     if (!is.null(beta_prior)) {
-      warning("`beta_prior` is not threaded through tulpa()'s nested-Laplace ",
-              "path; it is ignored. Call tulpa_nested_laplace() directly if you ",
-              "need a fixed-effect prior here.", call. = FALSE)
+      stop("`beta_prior` is not threaded through tulpa()'s nested-Laplace path. ",
+           "Rather than silently drop it, this errors: call ",
+           "tulpa_nested_laplace() directly if you need a fixed-effect prior on ",
+           "this path.", call. = FALSE)
     }
     # A length-1 list routes the single-block path; length > 1 the multi-block
     # joint path (both are handled by tulpa_nested_laplace()).

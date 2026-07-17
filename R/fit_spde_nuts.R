@@ -113,7 +113,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
                             n_warmup         = 1000L,
                             max_treedepth    = 10L,
                             adapt_delta      = 0.8,
-                            seed             = 42L,
+                            seed             = NULL,
                             verbose          = FALSE) {
 
   family      <- match.arg(family)
@@ -299,7 +299,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     n_warmup         = as.integer(n_warmup),
     max_treedepth    = as.integer(max_treedepth),
     adapt_delta      = adapt_delta,
-    seed             = as.integer(seed),
+    seed             = as.integer(seed %||% sample.int(.Machine$integer.max, 1L)),
     verbose          = isTRUE(verbose),
     # Rational poles/weights feed the legacy integer-mesh joint path only; the
     # fractional fixed-hyper path passes Q precomputed (Q_precomp_*) instead.

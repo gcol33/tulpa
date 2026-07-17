@@ -10,13 +10,13 @@
 #' @param warmup Warmup iterations (default 1000)
 #' @param step_size HMC step size (default 0.05)
 #' @param n_leapfrog Number of leapfrog steps (default 10)
-#' @param seed Random seed (default 42)
+#' @param seed Random seed; `NULL` (default) draws one from the session RNG.
 #'
 #' @return A list with draws matrix, posterior means, and metadata
 #' @export
 tulpa_gaussian <- function(formula, data, sigma_beta = 10, iter = 2000,
                            warmup = 1000, step_size = 0.05, n_leapfrog = 10,
-                           seed = 42) {
+                           seed = NULL) {
   # Parse formula
   mf <- model.frame(formula, data)
   y <- model.response(mf)
@@ -41,7 +41,7 @@ tulpa_gaussian <- function(formula, data, sigma_beta = 10, iter = 2000,
     n_warmup = as.integer(warmup),
     step_size = step_size,
     n_leapfrog = as.integer(n_leapfrog),
-    seed = as.integer(seed)
+    seed = as.integer(seed %||% sample.int(.Machine$integer.max, 1L))
   )
 
   # Add sigma (not log_sigma) to means

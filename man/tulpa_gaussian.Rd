@@ -12,7 +12,7 @@ tulpa_gaussian(
   warmup = 1000,
   step_size = 0.05,
   n_leapfrog = 10,
-  seed = 42
+  seed = NULL
 )
 }
 \arguments{
@@ -30,7 +30,7 @@ tulpa_gaussian(
 
 \item{n_leapfrog}{Number of leapfrog steps (default 10)}
 
-\item{seed}{Random seed (default 42)}
+\item{seed}{Random seed; \code{NULL} (default) draws one from the session RNG.}
 }
 \value{
 A list with draws matrix, posterior means, and metadata

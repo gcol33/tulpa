@@ -14,7 +14,7 @@ tulpa_nuts_beta(
   n_warmup = 1000L,
   max_treedepth = 10L,
   adapt_delta = 0.8,
-  seed = 42L,
+  seed = NULL,
   verbose = FALSE
 )
 }
@@ -43,7 +43,8 @@ in highly concentrated regimes.}
 \item{adapt_delta}{Target acceptance rate for dual averaging.
 Default \code{0.8}.}
 
-\item{seed}{RNG seed.}
+\item{seed}{RNG seed; \code{NULL} (default) draws one from the session RNG so
+\code{set.seed()} controls the fit (two default calls are then independent).}
 
 \item{verbose}{Print sampler progress.}
 }

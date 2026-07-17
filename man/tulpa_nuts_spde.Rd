@@ -26,7 +26,7 @@ tulpa_nuts_spde(
   n_warmup = 1000L,
   max_treedepth = 10L,
   adapt_delta = 0.8,
-  seed = 42L,
+  seed = NULL,
   verbose = FALSE
 )
 }

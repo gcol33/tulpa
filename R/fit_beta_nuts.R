@@ -28,7 +28,8 @@
 #' @param max_treedepth NUTS max tree depth. Default `10`.
 #' @param adapt_delta Target acceptance rate for dual averaging.
 #'   Default `0.8`.
-#' @param seed RNG seed.
+#' @param seed RNG seed; `NULL` (default) draws one from the session RNG so
+#'   `set.seed()` controls the fit (two default calls are then independent).
 #' @param verbose Print sampler progress.
 #'
 #' @return A list with:
@@ -62,7 +63,7 @@ tulpa_nuts_beta <- function(y, X,
                             n_warmup         = 1000L,
                             max_treedepth    = 10L,
                             adapt_delta      = 0.8,
-                            seed             = 42L,
+                            seed             = NULL,
                             verbose          = FALSE) {
 
   stopifnot(is.numeric(y), is.matrix(X), nrow(X) == length(y))
@@ -90,7 +91,7 @@ tulpa_nuts_beta <- function(y, X,
     n_warmup         = as.integer(n_warmup),
     max_treedepth    = as.integer(max_treedepth),
     adapt_delta      = adapt_delta,
-    seed             = as.integer(seed),
+    seed             = as.integer(seed %||% sample.int(.Machine$integer.max, 1L)),
     verbose          = isTRUE(verbose)
   )
 
