@@ -33,6 +33,18 @@ of the missing-front-door features (#158). No ABI change.
 * **SPDE + random intercept** (#158): a single `(1 | g)` term now rides
   alongside a Matern SPDE field through `fit_spde()` and `tulpa()`
   (integer-nu, conditioned on `sigma_re`).
+* **`predict()` kriging for continuous fields** (#158): `predict()` now
+  interpolates the posterior-mean field to new coordinates for HSGP
+  (`spatial_gp(approx = "hsgp")`) and GP/NNGP (`spatial_gp()`) fits, not just
+  SPDE. Both are marginalised over the hyperparameter grid via new native
+  kernels (`cpp_hsgp_field_predict`, `cpp_gp_field_predict`); held-out recovery
+  cor > 0.9 against a known surface.
+* **FIX**: a `tulpa()` GP/NNGP nested-Laplace fit aborted with "'a' is
+  computationally singular" on ordinary data (Matrix's condition guard on the
+  ill-conditioned joint precision); the fixed-effect marginal-Hessian solve now
+  retries with a negligible jitter, so gp/nngp fits complete.
+* **Tier-1 exact SPDE from the front door** (#158): `tulpa(spatial = <spde>,
+  mode = "exact")` routes to NUTS over the Matern field + hyperparameters.
 * `latent_factor()` roxygen corrected: it is a ratio / multi-arm construct for
   consumer packages, not the single-response `tulpa()` front door (#158).
 
