@@ -48,7 +48,9 @@ The typical hot path for Gaussian-latent workloads.
 | `imh_laplace()` | IMH-Laplace: Laplace body + independence-MH bias correction. |
 | `agq_fit()` | Adaptive Gauss-Hermite quadrature fit. |
 | `fit_spde()` | SPDE continuous-spatial fit. |
-| `tulpa_nmix_laplace()`, `tulpa_nmix_laplace_icar()`, `tulpa_nmix_laplace_bym2()`, `tulpa_nmix_laplace_car_proper()` | N-mixture (abundance) Laplace fitters, plain + areal-spatial. |
+
+(N-mixture / occupancy Laplace fitters such as `nmix_laplace()` live in the
+consumer package tulpaObs, not the engine.)
 
 ## Tier 1 -- exact MCMC and debias
 
@@ -57,14 +59,14 @@ The typical hot path for Gaussian-latent workloads.
 | `tulpa_gibbs()` | Gibbs sampler. |
 | `tulpa_re_cov_gibbs()` | **Exact RE-covariance posterior**: Metropolis-within-Gibbs (MH on groups/`beta`, conjugate inverse-Wishart draw for `Sigma`). The debias counterpart to `tulpa_re_cov_nested()` for binary/low-count small groups. |
 | `tulpa_nuts_beta()`, `tulpa_nuts_spde()` | NUTS samplers. |
-| `tulpa_tgmrf_nuts()`, `tulpa_tgmrf_nuts_joint()`, `tulpa_tgmrf_imh()` | tgmrf samplers (NUTS / joint NUTS / IMH). |
+| `tulpa_tgmrf(mode = "nuts" / "nuts_joint" / "imh")` | tgmrf samplers (NUTS / joint NUTS / IMH). The method is an argument, not a parallel verb. |
 | `mala()` | MALA sampler. |
 
 ## Tier 3 / other approximations
 
 | Function | Purpose |
 |---|---|
-| `tulpa_tgmrf_vi()` | Variational inference for tgmrf blocks. |
+| `tulpa_tgmrf(mode = "vi")` | Variational inference for tgmrf blocks. |
 | `pathfinder()` | L-BFGS mode + Gaussian fit + ELBO scoring. |
 | `bridge_sampling()` | Marginal-likelihood estimation via bridge sampling. |
 
@@ -90,8 +92,11 @@ GMRF: `tgmrf()`, `tgmrf_cpp()`.
 
 Model packages inherit by setting `class = c("model_fit", "tulpa_fit")`.
 S3 methods: `coef`, `confint`, `vcov`, `logLik`, `summary`, `plot`, `print`,
-`tidy`, `glance`, `ranef`, `waic.tulpa_fit`, `loo.tulpa_fit`.
-Posterior-predictive: `pp_check()`, `prior_predict()`.
+`tidy`, `glance`, `ranef`, `predict`, `fitted`, `residuals`, `simulate`, `nobs`.
+Information criteria / cross-validation: `tulpa_criteria()` (WAIC / DIC / CPO /
+LPML / PSIS-LOO), `tulpa_kfold()`, `tulpa_reloo()`, `tulpa_psis()`, `bayes_R2()`,
+`tulpa_powerscale_sensitivity()`, `bridge_sampling()`.
+Posterior-predictive: `posterior_predict()`, `pp_check()`, `prior_predict()`.
 
 ## Diagnostics
 
@@ -101,13 +106,11 @@ Convergence (native, no `posterior`/`coda` dep): `mcmc_diagnostics()`,
 Plots: `plot_rhat()`, `plot_ess()`, `plot_acf()`, `plot_energy()`,
 `plot_divergences()`, `plot_pairs()`, `plot_diagnostics()`, `plot_map()`,
 `plot_map_panel()`.
-Model comparison: `compare_models()`, `tulpa_compare()`, `modelAverage()`,
-`tulpa_average()`.
+Model comparison: `compare_models()`, `model_average()` (stacking / pseudo-BMA).
 Residual / GOF: `moran_i()`, `durbin_watson()`, `tulpa_variogram()`,
 `pit_residuals()`, `test_uniformity()`, `test_dispersion()`, `test_outliers()`,
 `test_zero_inflation()`, `check_model()`.
-Derived effects: `spatialRange()`, `temporalCorr()`, `getSVCSamples()`,
-`postHocLM()`.
+Derived effects: `spatial_range()`, `temporal_corr()`, `post_hoc_lm()`.
 
 ## Profiling
 

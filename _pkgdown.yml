@@ -1,0 +1,96 @@
+url: https://gcol33.github.io/tulpa
+
+template:
+  bootstrap: 5
+
+figures:
+  dev: svglite
+  fig.ext: svg
+  bg: "#F5F6F8"
+
+reference:
+- title: Front door
+  desc: The main fitter and its inference-mode / prior helpers.
+  contents:
+  - tulpa
+  - inference_mode_info
+  - tulpa_priors
+- title: Tier 2 -- structured approximations
+  desc: Laplace, nested Laplace, and the free-Sigma random-effect backends.
+  contents:
+  - tulpa_nested_laplace
+  - tulpa_nested_laplace_joint
+  - tulpa_re_cov_nested
+  - tulpa_em_laplace
+  - tulpa_em_mc
+  - agq_fit
+  - fit_spde
+  - imh_laplace
+- title: Tier 1 -- exact MCMC and debias
+  contents:
+  - tulpa_gibbs
+  - tulpa_re_cov_gibbs
+  - tulpa_nuts_beta
+  - tulpa_nuts_spde
+  - tulpa_tgmrf
+  - tgmrf
+  - tgmrf_cpp
+  - mala
+- title: Other approximations
+  contents:
+  - pathfinder
+  - bridge_sampling
+- title: Latent structure
+  desc: Spatial, temporal, and varying-coefficient constructors.
+  contents:
+  - has_concept("spatial")
+  - has_concept("temporal")
+  - spatial_car
+  - spatial_bym2
+  - spatial_gp
+  - spatial_svc
+  - spatial_rsr
+  - spatial_spde
+  - temporal_rw1
+  - temporal_rw2
+  - temporal_ar1
+  - temporal_multiscale
+  - temporal_tvc
+  - temporal_rtr
+  - spatiotemporal
+  - svc
+  - tvc
+  - latent
+  - latent_factor
+  - adjacency
+- title: Methods, criteria, and prediction
+  contents:
+  - tulpa_criteria
+  - tulpa_kfold
+  - tulpa_reloo
+  - tulpa_psis
+  - bayes_R2
+  - tulpa_powerscale_sensitivity
+  - compare_models
+  - model_average
+  - posterior_predict
+  - pp_check
+  - prior_predict
+- title: Diagnostics
+  contents:
+  - mcmc_diagnostics
+  - check_diagnostics
+  - diagnostic_summary
+  - laplace_diagnostics
+  - geweke_test
+  - moran_i
+  - durbin_watson
+  - tulpa_variogram
+  - pit_residuals
+  - check_model
+  - spatial_range
+  - temporal_corr
+  - post_hoc_lm
+- title: internal
+  contents:
+  - lacks_concepts(c("spatial", "temporal"))
