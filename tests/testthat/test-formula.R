@@ -157,16 +157,6 @@ test_that("print.tulpa_parsed_formula works", {
 # P1.1: Edge cases that would break deparse+regex
 # ============================================================================
 
-test_that("has_implicit_intercept works on AST, not strings", {
-  # These are the cases that break regex: poly(), backticks, I()
-  expect_true(has_implicit_intercept(quote(x)))
-  expect_true(has_implicit_intercept(quote(1 + x)))
-  expect_true(has_implicit_intercept(quote(x + z)))
-  expect_false(has_implicit_intercept(quote(0 + x)))
-  expect_false(has_implicit_intercept(0))
-  expect_false(has_implicit_intercept(quote(-1 + x)))
-})
-
 test_that("formula parser handles poly(x, 2) in slopes", {
   set.seed(42)
   df <- data.frame(

@@ -151,24 +151,10 @@ inline HMCResult cpp_to_r_result(const HMCResultCpp& cpp_result, int n_params) {
 
 // NUTS helper function declarations
 double nuts_log_sum_exp(double a, double b);
-double nuts_compute_hamiltonian(double log_prob, const std::vector<double>& p,
-                                const std::vector<double>& inv_mass, int n);
-bool nuts_check_uturn(const std::vector<double>& q_minus, const std::vector<double>& q_plus,
-                      const std::vector<double>& p_minus, const std::vector<double>& p_plus,
-                      const std::vector<double>& inv_mass, int n);
-LeapfrogResultWithGrad leapfrog_step_with_grad(
-    const std::vector<double>& q, const std::vector<double>& p,
-    const std::vector<double>& grad,
-    double epsilon, const std::vector<double>& inv_mass,
-    bool use_mass, const ModelData& data, const ParamLayout& layout);
 // Optimized NUTS: zero-allocation in-place leapfrog + buffer pool tree building
 // Pointer-based Hamiltonian (no vector overhead)
 double nuts_compute_hamiltonian_fast(double log_prob, const double* p,
                                      const DenseMassMatrix& mass, int n);
-// Pointer-based U-turn check
-bool nuts_check_uturn_fast(const double* q_minus, const double* q_plus,
-                           const double* p_minus, const double* p_plus,
-                           const DenseMassMatrix& mass, double* scratch, int n);
 // In-place leapfrog step operating on workspace slot
 LeapfrogInPlaceResult leapfrog_step_inplace(
     NUTSWorkspace& ws, int slot, double epsilon,

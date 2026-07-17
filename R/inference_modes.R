@@ -716,13 +716,11 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   #    so use the conditional Laplace path that is.
   if (has_spatial && !is.null(spatial_type)) {
     fam_nm <- family$name %||% family$distribution %||% ""
-    # Gibbs supports: no temporal, TVC, or RW1/AR1 GMRF temporal.
-    has_tvc_only <- !is.null(temporal) && inherits(temporal, "tulpa_tvc")
-    has_gmrf_temporal <- !is.null(temporal) && inherits(temporal, "tulpa_temporal") &&
-                         !is.null(temporal$type) && temporal$type %in% c("rw1", "ar1")
-    gibbs_temporal_ok <- !has_temporal || has_tvc_only || has_gmrf_temporal
+    # A temporal field routes through the joint nested-Laplace path in tulpa()
+    # (the design-input Gibbs backend is redirected there), so Gibbs is reachable
+    # from auto only when there is no temporal field.
     if (spatial_type %in% c("icar", "bym2", "rsr") && identical(fam_nm, "binomial") &&
-        gibbs_temporal_ok) {
+        !has_temporal) {
       return(list(
         mode = "exact", backend = "gibbs", tier = 1L, tier_name = "Exact",
         reason = sprintf("%s spatial model (binomial Polya-Gamma Gibbs)", spatial_type)

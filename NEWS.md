@@ -39,6 +39,21 @@ Bug fixes from a whole-repo audit.
   neighbour gave a singular per-node covariance) rather than failing silently
   downstream.
 
+Warnings and cleanups.
+
+* **Silently-ignored arguments.** `tulpa()` now warns when `sigma_re` is passed
+  for a random-slope model (the covariance is integrated, not conditioned on a
+  scalar SD), and `spatial_multiscale()` surfaces its default range-prior bounds
+  when they are left unset.
+* **Dead code removed.** The unreachable non-centered AR1 gradient helpers (one
+  carried a wrong logit Jacobian), five unused NUTS helpers, the unwired
+  spatiotemporal-interaction helpers (`validate_spatiotemporal`,
+  `prepare_spatiotemporal_for_hmc`, `build_st_index`, and the two precision
+  builders -- superseded by `fit_st_nested()`), the internal
+  `has_implicit_intercept()`, and a no-effect temporal-Gibbs selection gate were
+  deleted; the proper-CAR `rho`-bounds eigenvalue roles were corrected (they were
+  swapped, though the (0, 1) clamp masked it).
+
 ## 0.0.85
 
 Per-block quadrature order and an optional variance-component prior on the AGHQ

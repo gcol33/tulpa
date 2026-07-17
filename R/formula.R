@@ -426,27 +426,6 @@ resolve_group_rhs <- function(rhs) {
   ))
 }
 
-#' Check if a formula term includes an implicit intercept
-#'
-#' Pattern-matches on the formula AST directly -- no deparse/regex.
-#'
-#' @param term A language object (LHS of a bar term)
-#' @return logical
-#' @keywords internal
-has_implicit_intercept <- function(term) {
-  if (is.numeric(term) && term == 0) return(FALSE)
-  if (!is.call(term) || length(term) != 3) return(TRUE)
-  op <- term[[1]]
-
-  if (identical(op, as.name("+")) && is.numeric(term[[2]]) && term[[2]] == 0) return(FALSE)
-  if (identical(op, as.name("+"))) {
-    lhs <- term[[2]]
-    if (is.call(lhs) && identical(lhs[[1]], as.name("-")) &&
-        length(lhs) == 2 && is.numeric(lhs[[2]]) && lhs[[2]] == 1) return(FALSE)
-  }
-  TRUE
-}
-
 #' Decompose the LHS of a bar term into intercept flag + slope language objects
 #'
 #' Walks the additive chain of the LHS and separates numeric intercept

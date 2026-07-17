@@ -1587,6 +1587,12 @@ tulpa <- function(formula, data,
     sel <- .sel_redirect(sel, backend, sprintf(
       "random-slope term(s) present; RE covariance(s) integrated via %s (%d block(s))",
       backend, length(re_terms)))
+    if (!is.null(sigma_re)) {
+      warning("`sigma_re` is ignored for random-slope model(s): the RE ",
+              "covariance is integrated, not conditioned on a scalar SD. Drop ",
+              "`sigma_re`, or use a random-intercept-only model to condition on ",
+              "it.", call. = FALSE)
+    }
   }
 
   # SPDE carries its own nested-Laplace integration engine: fit_spde() rebuilds

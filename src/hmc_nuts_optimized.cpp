@@ -22,66 +22,6 @@ double nuts_compute_hamiltonian_fast(double log_prob, const double* p,
   return -log_prob + mass.kinetic_energy(p);
 }
 
-// Pointer-based U-turn check
-// scratch: temporary buffer of size n (for dense matvec result)
-bool nuts_check_uturn_fast(const double* q_minus, const double* q_plus,
-                           const double* p_minus, const double* p_plus,
-                           const DenseMassMatrix& mass, double* scratch, int n) {
-  if (mass.type == MassMatrixType::BLOCK_DIAG && mass.adapted) {
-    // Block-diagonal: use inv_mass_times_p which handles blocks correctly
-    mass.inv_mass_times_p(p_plus, scratch);
-    double dot_fwd = 0.0;
-    for (int i = 0; i < n; i++) {
-      dot_fwd += (q_plus[i] - q_minus[i]) * scratch[i];
-    }
-    mass.inv_mass_times_p(p_minus, scratch);
-    double dot_bwd = 0.0;
-    for (int i = 0; i < n; i++) {
-      dot_bwd += (q_plus[i] - q_minus[i]) * scratch[i];
-    }
-    return (dot_fwd < 0.0) || (dot_bwd < 0.0);
-  } else if (mass.type == MassMatrixType::DIAG || !mass.adapted) {
-    // Diagonal path (fast, unrolled)
-    double dot_fwd = 0.0, dot_bwd = 0.0;
-    const double* inv_mass = mass.inv_mass_diag.data();
-    int i = 0;
-    for (; i + 3 < n; i += 4) {
-      double dq0 = q_plus[i]   - q_minus[i];
-      double dq1 = q_plus[i+1] - q_minus[i+1];
-      double dq2 = q_plus[i+2] - q_minus[i+2];
-      double dq3 = q_plus[i+3] - q_minus[i+3];
-      dot_fwd += dq0 * (inv_mass[i]   * p_plus[i])
-               + dq1 * (inv_mass[i+1] * p_plus[i+1])
-               + dq2 * (inv_mass[i+2] * p_plus[i+2])
-               + dq3 * (inv_mass[i+3] * p_plus[i+3]);
-      dot_bwd += dq0 * (inv_mass[i]   * p_minus[i])
-               + dq1 * (inv_mass[i+1] * p_minus[i+1])
-               + dq2 * (inv_mass[i+2] * p_minus[i+2])
-               + dq3 * (inv_mass[i+3] * p_minus[i+3]);
-    }
-    for (; i < n; i++) {
-      double dq = q_plus[i] - q_minus[i];
-      dot_fwd += dq * (inv_mass[i] * p_plus[i]);
-      dot_bwd += dq * (inv_mass[i] * p_minus[i]);
-    }
-    return (dot_fwd < 0.0) || (dot_bwd < 0.0);
-  } else {
-    // Dense path: compute (q+ - q-) . (C * p+) and (q+ - q-) . (C * p-)
-    // Use scratch for C * p
-    mass.inv_mass_times_p(p_plus, scratch);
-    double dot_fwd = 0.0;
-    for (int i = 0; i < n; i++) {
-      dot_fwd += (q_plus[i] - q_minus[i]) * scratch[i];
-    }
-    mass.inv_mass_times_p(p_minus, scratch);
-    double dot_bwd = 0.0;
-    for (int i = 0; i < n; i++) {
-      dot_bwd += (q_plus[i] - q_minus[i]) * scratch[i];
-    }
-    return (dot_fwd < 0.0) || (dot_bwd < 0.0);
-  }
-}
-
 // Drift: q += coeff * C * p, where C = M^{-1} carries the full mass structure
 // (identity / block-diagonal / diagonal / dense, plus precision and Kronecker
 // block corrections). Factored out of the leapfrog step so every scheme's

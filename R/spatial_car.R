@@ -246,10 +246,12 @@ compute_car_rho_bounds <- function(adjacency) {
   lambda_min <- min(eig_real)
   lambda_max <- max(eig_real)
 
-  # For positive autocorrelation, restrict to (0, 1)
-  # The upper bound is typically 1/lambda_max ~= 1 for connected graphs
-  lower <- max(0, 1 / lambda_max)
-  upper <- min(1, 1 / lambda_min)
+  # Theoretical interval is (1/lambda_min, 1/lambda_max); restrict to (0, 1)
+  # for positive-autocorrelation interpretability. For a connected graph
+  # D^-1 W is row-stochastic (lambda_max = 1, lambda_min < 0), so this resolves
+  # to (0, 1); a non-row-stochastic graph can give a tighter upper bound.
+  lower <- max(0, 1 / lambda_min)
+  upper <- min(1, 1 / lambda_max)
 
   # Ensure valid range
   if (lower >= upper) {

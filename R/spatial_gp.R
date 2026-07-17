@@ -390,6 +390,16 @@ spatial_multiscale <- function(coords,
     stop("Currently only 2 scales are supported", call. = FALSE)
   }
 
+  # The range-prior bounds set the scale separation and are unit-dependent;
+  # surface the defaults so an unset call does not silently anchor them.
+  if (missing(range_local) || missing(range_regional)) {
+    message(sprintf(paste0(
+      "spatial_multiscale(): using default range-prior bounds ",
+      "range_local = c(%g, %g), range_regional = c(%g, %g) (coordinate units). ",
+      "Set them to match your coordinate scale."),
+      range_local[1], range_local[2], range_regional[1], range_regional[2]))
+  }
+
   # Validate range specifications
   if (length(range_local) != 2 || range_local[1] >= range_local[2]) {
     stop("`range_local` must be c(lower, upper) with lower < upper", call. = FALSE)

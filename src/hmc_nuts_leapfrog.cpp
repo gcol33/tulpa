@@ -80,27 +80,4 @@ LeapfrogResult leapfrog_step(
   return result;
 }
 
-// =====================================================================
-// Find reasonable initial step size
-// =====================================================================
-
-// Compute diagonal mass matrix from gradient magnitudes
-std::vector<double> compute_diagonal_mass(
-    const std::vector<double>& q,
-    const ModelData& data,
-    const ParamLayout& layout
-) {
-  int n = q.size();
-  std::vector<double> grad(n);
-  compute_gradient(q, data, layout, grad);
-
-  std::vector<double> mass(n);
-  for (int i = 0; i < n; i++) {
-    double abs_grad = std::abs(grad[i]);
-    mass[i] = std::max(1.0, std::min(abs_grad, 1000.0));
-  }
-
-  return mass;
-}
-
 }  // namespace tulpa_hmc
