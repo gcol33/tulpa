@@ -1,0 +1,91 @@
+---
+title: "Random slopes and the free random-effect covariance"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Random slopes and the free random-effect covariance}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.width = 6, fig.height = 4)
+set.seed(20260716)
+```
+
+```{r load, message = FALSE}
+library(tulpa)
+```
+
+## The covariance is the quantity, not a nuisance
+
+A random-intercept model, `y ~ x + (1 | g)`, has a single variance
+component: how much the groups differ in their baseline. A random-slope
+model, `y ~ x + (1 + x | g)`, has three: the intercept variance, the
+slope variance, and the correlation between them. That correlation is
+often the scientific question -- do groups that start high also respond
+more steeply? -- so it should be *inferred*, with its own uncertainty,
+not fixed at a point estimate.
+
+`tulpa()` treats the whole random-effect covariance `Sigma` as the
+inferred object. When a term carries slopes it does not condition on a
+plug-in `Sigma`; it integrates over it.
+
+## Simulate a correlated random-slope data set
+
+```{r sim}
+G   <- 60L                 # groups
+npg <- 12L                 # observations per group
+N   <- G * npg
+grp <- rep(seq_len(G), each = npg)
+x   <- rnorm(N)
+
+# True Sigma: sd 0.7 (intercept), 0.5 (slope), correlation 0.4.
+Sigma <- matrix(c(0.7^2,            0.4 * 0.7 * 0.5,
+                  0.4 * 0.7 * 0.5,  0.5^2), 2)
+u <- t(t(chol(Sigma)) %*% matrix(rnorm(2 * G), 2))   # G x 2 group effects
+eta <- 0.2 + 0.5 * x + u[grp, 1] + u[grp, 2] * x
+y   <- rpois(N, exp(eta))
+d   <- data.frame(y = y, x = x, g = factor(grp))
+```
+
+## Fit: the covariance is integrated, not plugged in
+
+A `(1 + x | g)` term makes `tulpa()` route the Laplace path through the
+nested-Laplace integration over `Sigma` (`tulpa_re_cov_nested()`): a
+CCD grid in log-Cholesky coordinates, centred and rotated at the
+marginal-likelihood mode, with a weakly-informative PC + LKJ hyperprior.
+Each derived quantity -- the standard deviations `sigma_1`, `sigma_2`
+and the correlation `rho_12` -- is summarised *after* integration, as a
+weighted quantile of the joint posterior, so a skewed component is not
+collapsed to its mode.
+
+```{r fit}
+fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
+             mode = "laplace")
+fit$posterior[, c("parameter", "median", "ci_lo", "ci_hi")]
+```
+
+The posterior medians track the truth (`sigma_1 = 0.7`, `sigma_2 = 0.5`,
+`rho_12 = 0.4`), each with a credible interval rather than a bare number.
+
+## Exact debias for small, low-count groups
+
+The nested Laplace is fast and accurate when the per-group likelihood is
+close to Gaussian. For binary or low-count data in *small* groups the
+Laplace under-disperses `Sigma` -- it pulls the variance components low.
+The exact counterpart, a Metropolis-within-Gibbs sampler with a
+conjugate inverse-Wishart draw for `Sigma`, corrects that bias. Ask for
+it with `control$re_cov = "gibbs"`:
+
+```{r gibbs, eval = FALSE}
+fit_gibbs <- tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
+                   mode = "laplace",
+                   control = list(re_cov = "gibbs",
+                                  n_iter = 2000L, warmup = 1000L))
+```
+
+Both fits return the same accessors: `fit$posterior` holds the `Sigma`
+summary, and `coef(fit)` / `summary(fit)` report the fixed effects. The
+choice between them is the engine's design in miniature -- a cheap
+deterministic approximation, with an exact sampler available exactly
+where the approximation is biased.
