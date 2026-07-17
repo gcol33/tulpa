@@ -241,6 +241,14 @@ BACKEND_REGISTRY <- list(
     families = c("binomial", "poisson", "gaussian"), cabi = NULL,
     note = "Intercept-only adaptive Gauss-Hermite (the shared GLMM oracle)"
   ),
+  ep = list(
+    emits = "iid",
+    tier = "structured", input = "design", fitter = "ep_fit",
+    families = NULL, cabi = NULL,
+    note = paste("Expectation Propagation over a fixed-effect GLM with a",
+                 "mean-zero Gaussian coefficient prior; matches marginal moments",
+                 "(exact for a Gaussian likelihood), no random effects / fields")
+  ),
   nested_laplace = list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",

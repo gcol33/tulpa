@@ -612,6 +612,31 @@
         verbose    = control$verbose %||% FALSE
       ))
     }
+    if (backend == "ep") {
+      # Expectation Propagation: a fixed-effect GLM with a mean-zero Gaussian
+      # coefficient prior. No random effects, spatial field, latent block, or
+      # temporal structure -- EP places one Gaussian site per observation on the
+      # scalar linear predictor and has no latent-block machinery.
+      re <- bundle$re_terms %||% list()
+      if (length(re) > 0L || !is.null(spatial) || length(latent_blocks) > 0L ||
+          !is.null(temporal)) {
+        stop("EP (mode = 'ep') fits a fixed-effect GLM only: drop the ",
+             "random-effect / spatial / temporal / latent(...) term(s), or use ",
+             "mode = 'laplace' / 'mala' / 'auto'.", call. = FALSE)
+      }
+      # EP consumes the residual VARIANCE directly for gaussian (its tilted
+      # moments use phi = variance), matching tulpa()'s phi convention -- so pass
+      # phi, not the sd-converted phi_sd.
+      return(list(
+        y          = bundle$y,
+        X          = bundle$X,
+        family     = family,
+        phi        = phi %||% 1.0,
+        n_trials   = n_trials,
+        beta_prior = beta_prior %||% list(mean = 0, sd = 10),
+        control    = .control_subset(control, .CONTROL_KEYS$ep)
+      ))
+    }
     stop(sprintf(
       "Backend '%s' is reachable but not yet wired through tulpa(). Call its\n",
       backend),

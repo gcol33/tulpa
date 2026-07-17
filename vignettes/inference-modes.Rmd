@@ -382,9 +382,24 @@ The adaptive Gauss-Hermite quadrature backend, `agq`, integrates a
 random-intercept variance by quadrature and is callable through its fitter
 `agq_fit()` for the single-grouping case rather than through `tulpa()`.
 
-The seven R-callable backends span both exact tiers and the structured
-tier. The next section puts three of them on the same model so the trade
-between cost and guarantee is visible in numbers.
+### ep (Tier 2)
+
+Expectation Propagation approximates the posterior of a fixed-effect GLM by
+a Gaussian whose per-observation sites match the moments of the tilted
+distribution, rather than the mode curvature Laplace uses. It is exact when
+the likelihood is Gaussian and is typically more accurate than Laplace on a
+skewed GLM likelihood. EP fits fixed effects only (no random-effect,
+spatial, or latent structure); reach it with `mode = "ep"` or call
+`tulpa_ep()` directly.
+
+```{r ep-fit, eval = FALSE}
+fit_ep <- tulpa(y ~ x, data = d, family = "binomial", mode = "ep")
+coef(fit_ep)
+```
+
+The R-callable backends span both exact tiers and the structured tier. The
+next section puts three of them on the same model so the trade between cost
+and guarantee is visible in numbers.
 
 ## Cost versus guarantee
 

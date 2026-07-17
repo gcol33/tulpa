@@ -81,7 +81,7 @@
   # backend-selection and conditioning knobs.
   keys$tulpa <- sort(unique(c(
     keys$nested_laplace, keys$spde, keys$re_cov_nested, keys$re_cov_gibbs,
-    keys$sample_glmm,
+    keys$sample_glmm, keys$ep,
     c("re_cov", "n_quad", "prior_sigma", "eta", "prior_df", "prior_scale",
       "sigma_re_scale", "prior_sigma_scale", "sigma_init", "beta_init",
       "sigma_eps", "scale", "method")

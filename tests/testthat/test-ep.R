@@ -21,7 +21,7 @@ test_that("EP is exact for a Gaussian likelihood (closed-form tilted moments)", 
   d <- data.frame(y = y, x = X[, 2])
 
   fit <- tulpa_ep(y ~ x, data = d, family = "gaussian", phi = sig2,
-                  beta_prior_sd = 10)
+                  beta_prior = list(mean = 0, sd = 10))
 
   # Closed-form Gaussian posterior with prior N(0, 100 I).
   P0  <- diag(1 / 100, 2)
@@ -42,7 +42,7 @@ test_that("EP log-marginal equals the exact Gaussian evidence", {
   d <- data.frame(y = y, x = X[, 2])
 
   fit <- tulpa_ep(y ~ x, data = d, family = "gaussian", phi = sig2,
-                  beta_prior_sd = s0)
+                  beta_prior = list(mean = 0, sd = s0))
 
   # Exact evidence of the conjugate linear model: y ~ N(0, s0^2 X X' + sig2 I).
   S <- s0^2 * tcrossprod(X) + diag(sig2, n)
@@ -63,7 +63,8 @@ test_that("EP log-marginal matches brute-force quadrature for a logistic GLM", {
   d <- data.frame(y = y, x = x)
   s0 <- 2
 
-  fit <- tulpa_ep(y ~ x, data = d, family = "binomial", beta_prior_sd = s0)
+  fit <- tulpa_ep(y ~ x, data = d, family = "binomial",
+                  beta_prior = list(mean = 0, sd = s0))
   expect_true(is.finite(fit$log_marginal))
 
   # Brute-force 2-D quadrature over (b0, b1) of prod_i p(y_i | eta_i) N(b; 0, s0^2 I).
@@ -80,6 +81,37 @@ test_that("EP log-marginal matches brute-force quadrature for a logistic GLM", {
 
   # EP's evidence approximation is accurate to a few hundredths of a nat here.
   expect_equal(fit$log_marginal, logZ_quad, tolerance = 0.05)
+})
+
+test_that("EP is reachable as a registered backend via tulpa(mode = 'ep')", {
+  skip_on_cran()
+  set.seed(11)
+  n <- 400L; x <- rnorm(n)
+  y <- rbinom(n, 1, plogis(-0.2 + 0.7 * x))
+  d <- data.frame(y = y, x = x)
+
+  fit <- tulpa(y ~ x, data = d, family = "binomial", mode = "ep")
+  expect_s3_class(fit, "tulpa_ep")
+  expect_identical(fit$backend, "ep")
+  expect_equal(fit$inference_tier, 2L)
+  # Matches the direct fitter.
+  direct <- tulpa_ep(y ~ x, data = d, family = "binomial")
+  expect_equal(unname(coef(fit)), unname(coef(direct)), tolerance = 1e-8)
+})
+
+test_that("EP front door rejects random effects and a non-zero prior mean", {
+  skip_on_cran()
+  set.seed(12)
+  d <- data.frame(y = rbinom(50, 1, 0.5), x = rnorm(50), g = gl(5, 10))
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "ep"),
+    "fixed-effect GLM only"
+  )
+  expect_error(
+    tulpa_ep(y ~ x, data = d, family = "binomial",
+             beta_prior = list(mean = 1, sd = 10)),
+    "mean-zero"
+  )
 })
 
 test_that("EP recovers logistic-GLM coefficients", {

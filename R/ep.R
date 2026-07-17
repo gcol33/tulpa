@@ -78,8 +78,11 @@
 #' @param phi2 Optional second dispersion (Student-t degrees of freedom for
 #'   `family = "t"`; default 4 when `NULL`).
 #' @param n_trials Binomial denominators (length `nrow(data)`), or `NULL` (= 1).
-#' @param beta_prior_sd SD of the mean-zero Gaussian prior on every coefficient
-#'   (default 10).
+#' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
+#'   (`mean = 0`) Gaussian on every coefficient with SD `sd` (default
+#'   `list(mean = 0, sd = 10)`). EP's site parameterisation assumes a mean-zero
+#'   coefficient prior, so a non-zero `mean` errors -- use a sampler
+#'   (`mode = "mala"`) for a shifted prior.
 #' @param control List: `max_sweeps` (default 50), `tol` (default 1e-6),
 #'   `damping` (default 0.8), `n_quad` (Gauss-Hermite nodes, default 20),
 #'   `n_draws` (default 2000), `seed`.
@@ -101,8 +104,46 @@
 #' }
 #' @export
 tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
-                     phi2 = NULL, n_trials = NULL, beta_prior_sd = 10,
+                     phi2 = NULL, n_trials = NULL,
+                     beta_prior = list(mean = 0, sd = 10),
                      control = list()) {
+  .check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
+  mf <- stats::model.frame(formula, data)
+  y  <- as.numeric(stats::model.response(mf))
+  X  <- stats::model.matrix(stats::terms(mf), mf)
+  fit <- ep_fit(y = y, X = X, family = family, phi = phi, phi2 = phi2,
+                n_trials = n_trials, beta_prior = beta_prior, control = control)
+  fit$formula <- formula
+  fit
+}
+
+# Resolve a `beta_prior = list(mean, sd)` to the mean-zero SD EP consumes.
+# EP's site parameterisation is built for a mean-zero coefficient prior, so a
+# non-zero mean is rejected rather than silently centred.
+#' @keywords internal
+.ep_beta_prior_sd <- function(beta_prior, p) {
+  bp <- beta_prior %||% list(mean = 0, sd = 10)
+  m0 <- bp$mean %||% 0
+  sd <- bp$sd %||% 10
+  if (any(m0 != 0)) {
+    stop("tulpa_ep() supports only a mean-zero fixed-effect prior ",
+         "(`beta_prior$mean` must be 0); use a sampler (mode = 'mala') for a ",
+         "shifted prior.", call. = FALSE)
+  }
+  if (!is.numeric(sd) || any(!is.finite(sd)) || any(sd <= 0) ||
+      !(length(sd) == 1L || length(sd) == p)) {
+    stop("`beta_prior$sd` must be a positive scalar or length-p vector.",
+         call. = FALSE)
+  }
+  sd
+}
+
+# EP engine over a design bundle (y, X). The exported tulpa_ep() parses a
+# formula and calls this; the registry `ep` backend dispatches here directly.
+#' @keywords internal
+ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
+                   n_trials = NULL, beta_prior = list(mean = 0, sd = 10),
+                   control = list()) {
   .check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
   .family_or_stop(family)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
@@ -112,10 +153,10 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
   n_quad     <- as.integer(control$n_quad %||% 20L)
   n_draws    <- as.integer(control$n_draws %||% 2000L)
 
-  mf <- stats::model.frame(formula, data)
-  y  <- as.numeric(stats::model.response(mf))
-  X  <- stats::model.matrix(stats::terms(mf), mf)
+  y  <- as.numeric(y)
+  X  <- as.matrix(X)
   n  <- nrow(X); p <- ncol(X)
+  beta_prior_sd <- .ep_beta_prior_sd(beta_prior, p)
   nt <- if (is.null(n_trials)) rep(1L, n) else as.integer(n_trials)
   gh <- .gauss_hermite(n_quad)
 
@@ -205,8 +246,9 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
 
   fit <- list(
     coefficients = m, vcov = V, draws = draws, means = m, param_names = pn,
+    n_fixed = p, fixed_names = pn,
     log_marginal = log_marginal, converged = converged, n_sweeps = sweep,
-    family = family, formula = formula, model_matrix = X,
+    family = family, model_matrix = X,
     backend = "ep", inference_tier = 2L, inference_mode = "structured",
     draws_kind = "iid"
   )

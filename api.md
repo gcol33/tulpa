@@ -47,6 +47,7 @@ The typical hot path for Gaussian-latent workloads.
 | `tulpa_em_laplace()`, `tulpa_em_mc()` | Generic EM drivers (deterministic / Monte-Carlo E-step) with `correction = "mi"/"gibbs"` post-EM refits. |
 | `imh_laplace()` | IMH-Laplace: Laplace body + independence-MH bias correction. |
 | `agq_fit()` | Adaptive Gauss-Hermite quadrature fit. |
+| `tulpa_ep()` | Expectation Propagation for a fixed-effect GLM: one Gaussian site per observation, matching marginal moments (exact for a Gaussian likelihood). Reachable via `tulpa(mode = "ep")`. |
 | `fit_spde()` | SPDE continuous-spatial fit. |
 
 (N-mixture / occupancy Laplace fitters such as `nmix_laplace()` live in the
