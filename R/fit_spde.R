@@ -20,6 +20,12 @@
 #' @param phi Dispersion parameter (negbin only).
 #' @param offset Optional fixed additive term on the linear predictor
 #'   (`eta = offset + X beta + A w`), length `length(y)`; `NULL` -> no offset.
+#' @param re_idx,n_re_groups,sigma_re Optional single iid random-intercept
+#'   `(1 | g)` term alongside the Matern field: `re_idx` is a length-`length(y)`
+#'   1-based group index, `n_re_groups` the number of groups, and `sigma_re` the
+#'   (conditioned) random-effect SD. The field and the RE block are Laplace-
+#'   marginalised jointly. `n_re_groups = 0` (default) is no RE term. Not
+#'   supported for a fractional-nu field.
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
@@ -91,6 +97,7 @@ fit_spde <- function(y, X, spatial,
                      range = NULL, sigma = NULL,
                      nested_laplace = is.null(range) || is.null(sigma),
                      phi = 1.0, offset = NULL,
+                     re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                      control = list()) {
 
   .check_control(control, .CONTROL_KEYS$spde, "fit_spde")
@@ -137,11 +144,31 @@ fit_spde <- function(y, X, spatial,
   sp <- spatial  # shorthand
 
   # v10 nested-Laplace ABI requires re_idx / n_re_groups / sigma_re even when
-  # there is no formula-side RE term. Pin them here so every nested-Laplace
-  # call inside this function is consistent.
-  no_re_idx       <- rep(0L, n_obs)
-  no_re_n_groups  <- 0L
-  no_re_sigma     <- 1.0
+  # there is no formula-side RE term. A single iid random-intercept `(1 | g)`
+  # can ride alongside the Matern field, conditioned on `sigma_re` (like the
+  # areal spatial Laplace path); the whole latent block -- field + RE -- is
+  # Laplace-marginalised jointly inside the kernel. When there is no RE term
+  # these pin to the no-RE defaults so every nested-Laplace call is consistent.
+  has_re <- !is.null(re_idx) && n_re_groups > 0L
+  if (has_re) {
+    re_idx <- as.integer(re_idx)
+    if (length(re_idx) != n_obs) {
+      stop(sprintf("length(re_idx) (%d) must equal length(y) (%d).",
+                   length(re_idx), n_obs), call. = FALSE)
+    }
+    if (anyNA(re_idx) || min(re_idx) < 1L || max(re_idx) > n_re_groups) {
+      stop(sprintf(paste0("`re_idx` must be 1-based integers in ",
+                          "[1, n_re_groups = %d]; got range [%d, %d]."),
+                   n_re_groups, min(re_idx), max(re_idx)), call. = FALSE)
+    }
+    if (!is.numeric(sigma_re) || length(sigma_re) != 1L ||
+        !is.finite(sigma_re) || sigma_re <= 0) {
+      stop("`sigma_re` must be a positive scalar.", call. = FALSE)
+    }
+  }
+  no_re_idx       <- if (has_re) re_idx      else rep(0L, n_obs)
+  no_re_n_groups  <- if (has_re) as.integer(n_re_groups) else 0L
+  no_re_sigma     <- if (has_re) as.numeric(sigma_re)    else 1.0
 
   # Fractional nu integrates the operator-based rational SPDE (gcol33/tulpa#71):
   # each (range, sigma) cell assembles its own (Q, A_eff) via the validated R
@@ -151,6 +178,11 @@ fit_spde <- function(y, X, spatial,
   # and $n_iter. The cpp grid-cell checkpoint is integer-path only.
   is_frac   <- .spde_nu_is_fractional(sp$nu)
   order_rat <- sp$rational_order %||% 2L
+  if (is_frac && has_re) {
+    stop("A random-effect term alongside a fractional-nu SPDE field is not ",
+         "supported yet; use an integer nu, or drop the (1 | g) term.",
+         call. = FALSE)
+  }
   if (is_frac && nzchar(.ckpt$path)) {
     warning("Grid-cell checkpointing is not supported for fractional nu; ",
             "the fractional SPDE grid runs without it.", call. = FALSE)
@@ -202,7 +234,10 @@ fit_spde <- function(y, X, spatial,
                                      spatial = sp, family = family, phi = phi,
                                      range = r, sigma = s,
                                      max_iter = max_iter, tol = tol,
-                                     n_threads = n_threads, offset = offset
+                                     n_threads = n_threads, offset = offset,
+                                     re_idx = no_re_idx,
+                                     n_re_groups = no_re_n_groups,
+                                     sigma_re = no_re_sigma
                                    )
                                  },
                                  sp = sp, spatial = spatial,
@@ -217,7 +252,8 @@ fit_spde <- function(y, X, spatial,
       family = family, phi = phi,
       range = range, sigma = sigma,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset
+      offset = offset,
+      re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
     )
 
     list(
@@ -255,7 +291,8 @@ fit_spde <- function(y, X, spatial,
       family = family, phi = phi,
       range = range_hy, sigma = sigma_hy,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset
+      offset = offset,
+      re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
     )
     fit$mode            <- anchor$mode
     fit$beta            <- fit$beta %||% anchor$beta
@@ -274,7 +311,8 @@ fit_spde <- function(y, X, spatial,
         mode = fit$mode, X = X, spatial = sp,
         family = family, phi = phi_w,
         n_trials = n_trials, offset = offset,
-        range_val = range_hy, sigma_val = sigma_hy
+        range_val = range_hy, sigma_val = sigma_hy,
+        re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
       ),
       error = function(e) NULL
     )

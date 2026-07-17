@@ -15,6 +15,9 @@ fit_spde(
   nested_laplace = is.null(range) || is.null(sigma),
   phi = 1,
   offset = NULL,
+  re_idx = NULL,
+  n_re_groups = 0L,
+  sigma_re = 1,
   control = list()
 )
 }
@@ -44,6 +47,13 @@ use nested Laplace approximation over hyperparameters.}
 
 \item{offset}{Optional fixed additive term on the linear predictor
 (\verb{eta = offset + X beta + A w}), length \code{length(y)}; \code{NULL} -> no offset.}
+
+\item{re_idx, n_re_groups, sigma_re}{Optional single iid random-intercept
+\code{(1 | g)} term alongside the Matern field: \code{re_idx} is a length-\code{length(y)}
+1-based group index, \code{n_re_groups} the number of groups, and \code{sigma_re} the
+(conditioned) random-effect SD. The field and the RE block are Laplace-
+marginalised jointly. \code{n_re_groups = 0} (default) is no RE term. Not
+supported for a fractional-nu field.}
 
 \item{control}{A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above). Recognized entries:

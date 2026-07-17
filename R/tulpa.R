@@ -373,11 +373,22 @@
            "through tulpa(); fit_spde() integrates a single Matern field. Drop ",
            "the latent block(s).", call. = FALSE)
     }
+    # A single iid random-intercept `(1 | g)` can ride alongside the Matern
+    # field (conditioned on sigma_re, jointly Laplace-marginalised in the
+    # kernel). Random slopes / multiple terms are not supported on this path.
     re <- bundle$re_terms %||% list()
+    spde_re_idx <- NULL; spde_re_n <- 0L; spde_sigma_re <- 1.0
     if (length(re) > 0L) {
-      stop("The SPDE nested-Laplace path does not support an additional ",
-           "random-effect term yet; drop the (1 | g) term, or use mode = ",
-           "'exact' for a sampler under the field.", call. = FALSE)
+      if (length(re) > 1L || (re[[1]]$n_coefs %||% 1L) != 1L ||
+          !isTRUE(re[[1]]$has_intercept)) {
+        stop("The SPDE path supports at most one random-intercept `(1 | g)` ",
+             "term alongside the field; drop the extra / random-slope term(s), ",
+             "or use mode = 'exact' for a sampler under the field.",
+             call. = FALSE)
+      }
+      spde_re_idx   <- as.integer(re[[1]]$group_idx)
+      spde_re_n     <- as.integer(re[[1]]$n_groups)
+      spde_sigma_re <- sigma_re[1]
     }
     if (!is.null(beta_prior)) {
       stop("`beta_prior` is not supported on the SPDE path; fit_spde() uses a ",
@@ -401,6 +412,9 @@
       nested_laplace = TRUE,
       phi            = phi_sd,
       offset         = bundle$offset,
+      re_idx         = spde_re_idx,
+      n_re_groups    = spde_re_n,
+      sigma_re       = spde_sigma_re,
       control        = list(
         method    = method,
         n_grid    = control$n_grid %||% 5L,
