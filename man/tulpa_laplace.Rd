@@ -113,3 +113,12 @@ front-door fitter), it keeps its numerical controls (\code{max_iter}, \code{tol}
 \code{n_threads}, \code{return_hessian}) inline in the signature rather than in a
 \code{control} list, so callers assembling many solves pass them positionally.
 }
+\examples{
+set.seed(1)
+n <- 200L
+X <- cbind(1, rnorm(n))
+eta <- X \%*\% c(-0.3, 0.8)
+y <- rbinom(n, 1, plogis(eta))
+fit <- tulpa_laplace(y, rep(1L, n), X, family = "binomial")
+fit$mode          # posterior mode of the fixed effects
+}

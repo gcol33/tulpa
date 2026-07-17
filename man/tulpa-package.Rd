@@ -11,6 +11,7 @@ A general-purpose engine for fitting Bayesian hierarchical models with spatial f
 Useful links:
 \itemize{
   \item \url{https://github.com/gcol33/tulpa}
+  \item \url{https://gcol33.github.io/tulpa}
   \item Report bugs at \url{https://github.com/gcol33/tulpa/issues}
 }
 

@@ -39,6 +39,12 @@
 #'
 #' @seealso [tgmrf()] for the R-closure path; [latent()] for the formula
 #'   slot that consumes a `tgmrf` block.
+#' @examples
+#' \dontrun{
+#' # Compile a user latent block against tulpa's AD types; see
+#' # inst/examples/tgmrf_periodic_ar1.cpp for a complete block.
+#' blk <- tgmrf_cpp("my_block.cpp", id = "ar1", init = c(0, 0), graph = my_graph)
+#' }
 #' @export
 tgmrf_cpp <- function(cpp_file, id, init,
                       mu        = NULL,

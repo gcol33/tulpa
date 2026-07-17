@@ -28,6 +28,13 @@
 #'   call), and \code{share} (fraction of total timed seconds). The fit result
 #'   is attached as the \code{"value"} attribute.
 #'
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' n <- 200L; X <- cbind(1, rnorm(n))
+#' y <- rbinom(n, 1, plogis(X %*% c(0, 0.5)))
+#' tulpa_profile(tulpa_laplace(y, rep(1L, n), X, family = "binomial"))
+#' }
 #' @export
 tulpa_profile <- function(expr, sort = TRUE) {
     cpp_profile_reset()

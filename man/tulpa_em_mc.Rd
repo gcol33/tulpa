@@ -89,6 +89,15 @@ so as a \emph{full pipeline} MCEM is asymptotically Tier 1 if
 \code{e_step_sample} is exact.
 }
 
+\examples{
+\dontrun{
+# Monte-Carlo EM from two callbacks: e_step_sample() draws the latent
+# variables and m_step_encode() encodes the complete-data design for the inner
+# Laplace M-step (model packages such as tulpaObs supply these). See
+# ?tulpa_em_laplace for the deterministic-E-step analogue.
+fit <- tulpa_em_mc(e_step_sample, m_step_encode)
+}
+}
 \references{
 Wei, G. C. G., & Tanner, M. A. (1990). A Monte Carlo implementation
 of the EM algorithm and the poor man's data augmentation algorithms.

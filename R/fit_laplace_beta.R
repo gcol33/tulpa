@@ -29,6 +29,14 @@
 #'   augmented with `phi` (the optimised precision) and
 #'   `phi_log_marginal` (the optimisation trace, for diagnostics).
 #'
+#' @examples
+#' set.seed(1)
+#' n <- 200L
+#' X <- cbind(1, rnorm(n))
+#' mu <- plogis(X %*% c(0.2, 0.7)); phi <- 8
+#' y <- rbeta(n, mu * phi, (1 - mu) * phi)
+#' fit <- tulpa_laplace_beta(y, X)
+#' fit$mode
 #' @export
 tulpa_laplace_beta <- function(y, X,
                                re_list   = list(),

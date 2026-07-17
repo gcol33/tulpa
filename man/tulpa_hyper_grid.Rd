@@ -135,6 +135,14 @@ callback-driven entry point: downstream consumers (occupancy / N-mixture /
 cover hurdle families in tulpaObs, custom user families) drop in their own
 per-cell inner fit and get the outer integration for free.
 }
+\examples{
+\dontrun{
+# Integrate an inner fit over a hyperparameter grid: inner_fit(theta) returns
+# a per-cell fit and hyper_specs names the axes. tulpa_nested_laplace() is the
+# packaged driver built on this.
+res <- tulpa_hyper_grid(hyper_specs, inner_fit)
+}
+}
 \seealso{
 \code{\link[=hyper_axis_spec]{hyper_axis_spec()}} for the axis-spec constructor;
 \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} for the family-specific outer-grid

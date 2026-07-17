@@ -91,6 +91,14 @@
 #' @seealso [tulpa_em_laplace()] for the closed-form-weights variant,
 #'   [rubins_pool()] for the pooling rule.
 #'
+#' @examples
+#' \dontrun{
+#' # Monte-Carlo EM from two callbacks: e_step_sample() draws the latent
+#' # variables and m_step_encode() encodes the complete-data design for the inner
+#' # Laplace M-step (model packages such as tulpaObs supply these). See
+#' # ?tulpa_em_laplace for the deterministic-E-step analogue.
+#' fit <- tulpa_em_mc(e_step_sample, m_step_encode)
+#' }
 #' @export
 tulpa_em_mc <- function(e_step_sample, m_step_encode,
                         n_mc = 10L,

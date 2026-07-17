@@ -134,6 +134,13 @@ additional \code{w_draws}, \code{range_draws}, \code{sigma_draws}, \code{kappa_d
 \code{tau_draws} columns/vectors on top of the raw parameter draws.
 }
 }
+\examples{
+\dontrun{
+# SPDE-field NUTS. `spatial` is an SPDE spec built from a mesh, e.g.
+# spatial_spde(~ x + y, df). See fit_spde() for the Laplace analogue.
+fit <- tulpa_nuts_spde(y, X, spatial = spatial_spde(~ x + y, df))
+}
+}
 \seealso{
 \code{\link[=fit_spde]{fit_spde()}} for the Laplace counterpart and the nested-Laplace
 path over (range, sigma).

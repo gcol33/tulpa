@@ -72,6 +72,17 @@ Mean-precision parameterisation, default logit link:
 \code{y_i ~ Beta(mu_i * phi, (1 - mu_i) * phi)} with
 \code{mu_i = 1 / (1 + exp(-eta_i))} and \code{eta_i = X_i \%*\% beta}.
 }
+\examples{
+set.seed(1)
+n <- 150L
+X <- cbind(1, rnorm(n))
+mu <- plogis(X \%*\% c(0.2, 0.7)); phi <- 8
+y <- rbeta(n, mu * phi, (1 - mu) * phi)
+\donttest{
+fit <- tulpa_nuts_beta(y, X, n_iter = 500L, n_warmup = 250L)
+colMeans(fit$draws)
+}
+}
 \seealso{
 \code{\link[=tulpa_laplace_beta]{tulpa_laplace_beta()}} for the Laplace + Brent point
 estimate; \code{\link[=tulpa_laplace]{tulpa_laplace()}} for the underlying Laplace engine.

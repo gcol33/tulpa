@@ -84,3 +84,16 @@ updated by a random-walk Metropolis-Hastings step on \code{log(r)} whose
 stationary support is bounded to \code{r} in \verb{[0.1, 500]}; data favouring a
 dispersion outside that range pile up at the boundary.
 }
+\examples{
+set.seed(1)
+G <- 20L; npg <- 15L; n <- G * npg
+grp <- rep(seq_len(G), each = npg)
+X <- cbind(1, rnorm(n))
+b <- rnorm(G, 0, 0.6)
+y <- rbinom(n, 1, plogis(X \%*\% c(-0.2, 0.5) + b[grp]))
+\donttest{
+fit <- tulpa_gibbs(y, rep(1L, n), X, grp, G, family = "binomial",
+                   n_iter = 500L, warmup = 250L)
+colMeans(fit$beta)
+}
+}

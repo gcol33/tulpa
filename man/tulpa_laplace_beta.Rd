@@ -55,3 +55,12 @@ optimum to return betas and Hessian.
 The mean-precision parameterisation is \code{y ~ Beta(mu * phi, (1 - mu) * phi)}
 with default logit link; \code{y} must be strictly in \verb{(0, 1)}.
 }
+\examples{
+set.seed(1)
+n <- 200L
+X <- cbind(1, rnorm(n))
+mu <- plogis(X \%*\% c(0.2, 0.7)); phi <- 8
+y <- rbeta(n, mu * phi, (1 - mu) * phi)
+fit <- tulpa_laplace_beta(y, X)
+fit$mode
+}

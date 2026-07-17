@@ -85,6 +85,12 @@
 #' @seealso [fit_spde()] for the Laplace counterpart and the nested-Laplace
 #'   path over (range, sigma).
 #'
+#' @examples
+#' \dontrun{
+#' # SPDE-field NUTS. `spatial` is an SPDE spec built from a mesh, e.g.
+#' # spatial_spde(~ x + y, df). See fit_spde() for the Laplace analogue.
+#' fit <- tulpa_nuts_spde(y, X, spatial = spatial_spde(~ x + y, df))
+#' }
 #' @export
 tulpa_nuts_spde <- function(y, X, spatial,
                             family           = c("gaussian", "poisson", "binomial",

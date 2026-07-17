@@ -370,6 +370,18 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #' @return List with beta draws, RE draws, sigma_re draws (plus the spatial
 #'   field draws when `spatial` is supplied)
 #'
+#' @examples
+#' set.seed(1)
+#' G <- 20L; npg <- 15L; n <- G * npg
+#' grp <- rep(seq_len(G), each = npg)
+#' X <- cbind(1, rnorm(n))
+#' b <- rnorm(G, 0, 0.6)
+#' y <- rbinom(n, 1, plogis(X %*% c(-0.2, 0.5) + b[grp]))
+#' \donttest{
+#' fit <- tulpa_gibbs(y, rep(1L, n), X, grp, G, family = "binomial",
+#'                    n_iter = 500L, warmup = 250L)
+#' colMeans(fit$beta)
+#' }
 #' @export
 tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         family = "binomial",

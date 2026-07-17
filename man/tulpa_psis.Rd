@@ -34,6 +34,13 @@ sample-size dependent, \code{min(1 - 1/log10(S), 0.7)} for \code{S} draws (Vehta
 2024): about 0.565 at \code{S = 200}, reaching the 0.7 cap only past \code{S} ~ 2154.
 Above it the proposal cannot be reliably corrected to the target.
 }
+\examples{
+set.seed(1)
+# Well-behaved importance ratios: k-hat is small.
+ps <- tulpa_psis(rnorm(2000))
+ps$pareto_k
+ps$is_ess
+}
 \references{
 Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
 importance sampling. \emph{JMLR} 25(72):1-58.

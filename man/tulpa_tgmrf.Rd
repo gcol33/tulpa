@@ -64,6 +64,13 @@ C++-backend block, see \code{\link[=tgmrf_cpp]{tgmrf_cpp()}}).
 
 The inference method is an argument, not a parallel verb.
 }
+\examples{
+\dontrun{
+# `block` is a tgmrf latent block (from tgmrf() / tgmrf_cpp()); the inference
+# method is an argument, not a parallel verb. See vignette("tgmrf").
+fit <- tulpa_tgmrf(y, rep(1L, length(y)), X, block = blk, mode = "imh")
+}
+}
 \seealso{
 \code{\link[=tgmrf]{tgmrf()}} for the block, \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} for the compiled-block form.
 }

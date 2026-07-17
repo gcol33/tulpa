@@ -70,6 +70,14 @@
 #'   - `cov_blocks`: list of per-group posterior covariance matrices, one per
 #'     (RE term, group) in term-major then group order (if return_re_cov = TRUE)
 #'
+#' @examples
+#' set.seed(1)
+#' n <- 200L
+#' X <- cbind(1, rnorm(n))
+#' eta <- X %*% c(-0.3, 0.8)
+#' y <- rbinom(n, 1, plogis(eta))
+#' fit <- tulpa_laplace(y, rep(1L, n), X, family = "binomial")
+#' fit$mode          # posterior mode of the fixed effects
 #' @export
 tulpa_laplace <- function(y, n_trials, X,
                           re_list = list(),

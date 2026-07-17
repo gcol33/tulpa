@@ -212,6 +212,13 @@
 #' @seealso [hyper_axis_spec()] for the axis-spec constructor;
 #'   [tulpa_nested_laplace_joint()] for the family-specific outer-grid
 #'   driver that this helper generalises.
+#' @examples
+#' \dontrun{
+#' # Integrate an inner fit over a hyperparameter grid: inner_fit(theta) returns
+#' # a per-cell fit and hyper_specs names the axes. tulpa_nested_laplace() is the
+#' # packaged driver built on this.
+#' res <- tulpa_hyper_grid(hyper_specs, inner_fit)
+#' }
 #' @export
 tulpa_hyper_grid <- function(hyper_specs, inner_fit,
                              combine = c("law_of_total_cov",

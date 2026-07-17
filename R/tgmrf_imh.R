@@ -35,6 +35,12 @@
 #' @return A `tulpa_tgmrf` / `tulpa_fit` object; `$backend` and `$mode` record
 #' the engine used.
 #' @seealso [tgmrf()] for the block, [tgmrf_cpp()] for the compiled-block form.
+#' @examples
+#' \dontrun{
+#' # `block` is a tgmrf latent block (from tgmrf() / tgmrf_cpp()); the inference
+#' # method is an argument, not a parallel verb. See vignette("tgmrf").
+#' fit <- tulpa_tgmrf(y, rep(1L, length(y)), X, block = blk, mode = "imh")
+#' }
 #' @export
 tulpa_tgmrf <- function(y, n_trials, X, block,
                         family = "binomial", phi = 1.0,

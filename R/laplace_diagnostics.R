@@ -172,6 +172,13 @@
 #'   MCMC. \emph{Bayesian Analysis} 16(2):667-718.
 #' @seealso [mcmc_diagnostics()] (the chain counterpart, which dispatches here
 #'   for i.i.d. fits), [tulpa_psis()].
+#' @examples
+#' set.seed(1)
+#' n <- 200L; x <- rnorm(n)
+#' y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
+#' fit <- tulpa(y ~ x, data.frame(y = y, x = x), family = "binomial",
+#'              mode = "laplace")
+#' laplace_diagnostics(fit)
 #' @export
 laplace_diagnostics <- function(fit, pars = NULL) {
   draws <- fit$draws %||% fit$samples

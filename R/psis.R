@@ -227,6 +227,12 @@
 #' @references Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
 #'   importance sampling. \emph{JMLR} 25(72):1-58.
 #' @seealso [mcmc_diagnostics()] for the MCMC-chain counterpart.
+#' @examples
+#' set.seed(1)
+#' # Well-behaved importance ratios: k-hat is small.
+#' ps <- tulpa_psis(rnorm(2000))
+#' ps$pareto_k
+#' ps$is_ess
 #' @export
 tulpa_psis <- function(log_ratios, tail_points = NULL) {
   log_ratios <- log_ratios[is.finite(log_ratios)]

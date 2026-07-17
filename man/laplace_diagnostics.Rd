@@ -71,6 +71,14 @@ is evaluable only inside the C++ kernel, so a stored fit cannot reconstruct
 it. The grid quadrature reliability is the complementary stored-fit number.
 }
 
+\examples{
+set.seed(1)
+n <- 200L; x <- rnorm(n)
+y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
+fit <- tulpa(y ~ x, data.frame(y = y, x = x), family = "binomial",
+             mode = "laplace")
+laplace_diagnostics(fit)
+}
 \references{
 Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed importance
 sampling. \emph{JMLR} 25(72):1-58.

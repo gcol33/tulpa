@@ -59,6 +59,13 @@ The user \code{.cpp} file must include \verb{<tulpa/tgmrf.h>} and call the
 \code{TULPA_REGISTER_TGMRF(id, Q_fn, mu_fn, log_prior_fn)} macro once. See
 \code{inst/examples/tgmrf_periodic_ar1.cpp} for a worked example.
 }
+\examples{
+\dontrun{
+# Compile a user latent block against tulpa's AD types; see
+# inst/examples/tgmrf_periodic_ar1.cpp for a complete block.
+blk <- tgmrf_cpp("my_block.cpp", id = "ar1", init = c(0, 0), graph = my_graph)
+}
+}
 \seealso{
 \code{\link[=tgmrf]{tgmrf()}} for the R-closure path; \code{\link[=latent]{latent()}} for the formula
 slot that consumes a \code{tgmrf} block.
