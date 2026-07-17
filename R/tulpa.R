@@ -237,6 +237,30 @@
 }
 
 
+# Pack a validated tulpa_hsgp spec into the ModelData sampler's HSGP
+# spatial_spec (mode = "exact" continuous-field NUTS). The Laplacian basis is
+# built in C++ by setup_hsgp_2d (the single source of truth) from the validated
+# per-observation coordinate matrix, so only (coords, m, c) cross the boundary;
+# the field is evaluated per observation, no obs->location map. The PC prior on
+# sigma and LogNormal on lengthscale are hardcoded in compute_hsgp_spatial_prior
+# (no data-driven anchor needed, unlike the NNGP range prior).
+#' @keywords internal
+.hsgp_sampler_spec <- function(spatial) {
+  cm <- spatial$coords_matrix
+  if (is.null(cm)) {
+    stop("HSGP spatial spec is unvalidated (coords_matrix NULL). tulpa() ",
+         "validates it via validate_hsgp().", call. = FALSE)
+  }
+  cm <- as.matrix(cm)
+  list(
+    type   = "hsgp",
+    coords = matrix(as.numeric(cm), nrow(cm), 2),
+    m      = as.integer(spatial$m),
+    c      = as.numeric(spatial$c)
+  )
+}
+
+
 # Convert a validated temporal spec (rw1 / rw2 / ar1) into the nested-Laplace
 # temporal prior block. The block format is the one the single-block registry
 # (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
@@ -781,6 +805,8 @@
     spatial_spec_arg <- NULL
     if (!is.null(spatial) && tolower(spatial$type %||% "") %in% c("gp", "nngp")) {
       spatial_spec_arg <- .gp_sampler_spec(spatial)
+    } else if (!is.null(spatial) && tolower(spatial$type %||% "") == "hsgp") {
+      spatial_spec_arg <- .hsgp_sampler_spec(spatial)
     } else if (!is.null(spatial)) {
       sp <- .spatial_spec_to_nl_prior(spatial)
       if (!sp$type %in% c("icar", "bym2")) {

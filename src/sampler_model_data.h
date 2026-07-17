@@ -30,6 +30,7 @@
 #include "builtin_family_ll_ad.h"         // builtin_family_ll_ad / builtin_family_has_ad
 #include "re_structure.h"                 // populate_re_structure
 #include "icar_kernel.h"                   // count_graph_components
+#include "hmc_hsgp.h"                      // tulpa_hsgp::setup_hsgp_2d (HSGP basis)
 #include "hmc_sampler.h"                  // tulpa_hmc::compute_param_layout
 #include <Rcpp.h>
 #include <string>
@@ -206,10 +207,31 @@ inline void build_sampler_model_inputs(
             if (sp.containsElementNamed("sigma2_prior_alpha"))
                 in.data.gp_sigma2_prior_alpha =
                     Rcpp::as<double>(sp["sigma2_prior_alpha"]);
+        } else if (stype == "hsgp") {
+            // Hilbert-space GP. compute_param_layout keys the HSGP block on
+            // spatial_type == HSGP, allocating log_sigma2_hsgp /
+            // log_lengthscale_hsgp / m_total basis coefficients; the field is
+            // evaluated per observation (phi_flat[i, j] * scaled beta_j) so no
+            // obs->location map is needed. The Laplacian basis is built here by
+            // setup_hsgp_2d -- the single source of truth every HSGP path uses
+            // -- so the basis math is never duplicated in R.
+            in.data.spatial_type = SpatialType::HSGP;
+            Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
+            const int n_obs = coords.nrow();
+            std::vector<double> flat(2 * (std::size_t)n_obs);
+            for (int i = 0; i < n_obs; ++i) {
+                flat[2 * (std::size_t)i]     = coords(i, 0);
+                flat[2 * (std::size_t)i + 1] = coords(i, 1);
+            }
+            const int m    = Rcpp::as<int>(sp["m"]);
+            const double cc = Rcpp::as<double>(sp["c"]);
+            tulpa_hsgp::setup_hsgp_2d(flat, n_obs, m, cc, /*shared=*/true,
+                                      in.data.hsgp_data);
+            in.data.has_hsgp = true;
         } else {
             Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
                        "supported on the sampler path (use 'icar'/'bym2'/"
-                       "'gp'/'nngp').", stype.c_str());
+                       "'gp'/'nngp'/'hsgp').", stype.c_str());
         }
     }
 
@@ -342,6 +364,15 @@ inline Rcpp::CharacterVector sampler_param_names(
         int u = 0;
         for (int j = layout.gp_w_start; j < layout.gp_w_end; j++)
             set(j, "gp_w[" + std::to_string(++u) + "]");
+    }
+
+    // Hilbert-space GP field (m_total basis coefficients).
+    if (layout.is_hsgp) {
+        set(layout.log_sigma2_hsgp_idx, "log_sigma2_hsgp");
+        set(layout.log_lengthscale_hsgp_idx, "log_lengthscale_hsgp");
+        int u = 0;
+        for (int j = layout.hsgp_beta_start; j < layout.hsgp_beta_end; j++)
+            set(j, "hsgp_beta[" + std::to_string(++u) + "]");
     }
 
     return nm;
