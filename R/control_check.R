@@ -75,18 +75,32 @@
                     "epsilon", "L", "adapt_delta", "max_treedepth",
                     "n_draws", "alpha", "batch_size", "ess_threshold",
                     "n_particles", "n_mcmc_steps", "mclmc_adjusted",
-                    "sigma_beta", "vi_variant", "vi_mc_samples", "vi_max_iter")
+                    "vi_variant", "vi_mc_samples", "vi_max_iter")
   )
   # tulpa() dispatches across the nested / spde / re_cov / gibbs / agq /
   # sampler backends and forwards `control` wholesale on the nested and
   # modeldata routes, so its surface is the union plus its own
   # backend-selection and conditioning knobs.
-  keys$tulpa <- sort(unique(c(
+  # tulpa()'s control surface is the union of the backends it dispatches, minus
+  # the statistical hyperpriors -- those now ride the `re_prior` / `beta_prior`
+  # signature arguments (design principle 6: statistical args in the signature,
+  # tuning knobs in control). The re_cov_nested / re_cov_gibbs sets still list
+  # prior_sigma / eta / prior_df / prior_scale for their DIRECT callers; the
+  # union drops them so tulpa(control = list(prior_sigma = )) errors and points
+  # the user to re_prior.
+  .tulpa_hyperprior_keys <- c("prior_sigma", "eta", "prior_df", "prior_scale",
+                              "sigma_re_scale", "prior_sigma_scale")
+  keys$tulpa <- sort(unique(setdiff(c(
     keys$nested_laplace, keys$spde, keys$re_cov_nested, keys$re_cov_gibbs,
     keys$sample_glmm, keys$ep,
-    c("re_cov", "n_quad", "prior_sigma", "eta", "prior_df", "prior_scale",
-      "sigma_re_scale", "prior_sigma_scale", "sigma_init", "beta_init",
+    c("re_cov", "n_quad", "sigma_init", "beta_init",
       "sigma_eps", "scale", "method")
-  )))
+  ), .tulpa_hyperprior_keys)))
   keys
 })
+
+# Valid keys for the `re_prior = list()` statistical argument on tulpa(): the
+# random-effect / variance-component hyperpriors that used to hide in control.
+#' @keywords internal
+.RE_PRIOR_KEYS <- c("prior_sigma", "eta", "prior_df", "prior_scale",
+                    "prior_sigma_scale", "sigma_re_scale")

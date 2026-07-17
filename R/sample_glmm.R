@@ -63,6 +63,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               offset = NULL, fixed_names = NULL,
                               re_spec = NULL, spatial_spec = NULL,
                               temporal_spec = NULL, sigma_re_scale = 2.5,
+                              sigma_beta = 10.0,
                               control = list()) {
   .check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
   .family_or_stop(family)
@@ -86,7 +87,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     family     = family,
     backend    = backend,
     phi        = as.numeric(phi),
-    sigma_beta = control$sigma_beta %||% 10.0,
+    sigma_beta = as.numeric(sigma_beta),
     n_iter     = as.integer(n_iter),
     n_warmup   = as.integer(warmup),
     seed       = as.integer(control$seed %||% sample.int(.Machine$integer.max, 1L)),

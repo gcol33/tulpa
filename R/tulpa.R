@@ -249,7 +249,11 @@
                                n_trials, phi, beta_prior, control,
                                latent_blocks = list(), spatial = NULL,
                                temporal = NULL, weights = NULL,
-                               phi2 = NULL, smoothers = list()) {
+                               phi2 = NULL, smoothers = list(),
+                               re_prior = NULL) {
+  # Statistical random-effect / variance-component hyperpriors ride in a single
+  # `re_prior` list (a statistical argument), never in `control` (tuning only).
+  rp <- re_prior %||% list()
   input <- BACKEND_REGISTRY[[backend]]$input
 
   # Observation weights scale each row's log-likelihood. Supported where the
@@ -459,8 +463,8 @@
                                (if (re_cov_method == "aghq") 9L else 1L))
         return(c(common, list(
           beta_prior  = beta_prior,
-          prior_sigma = control$prior_sigma %||% c(3, 0.05),
-          eta         = control$eta %||% 2,
+          prior_sigma = rp$prior_sigma %||% c(3, 0.05),
+          eta         = rp$eta %||% 2,
           n_quad      = n_quad,
           control     = list(
             integration = control$integration %||% "ccd",
@@ -473,8 +477,8 @@
       }
       # re_cov_gibbs: exact Metropolis-within-Gibbs debias.
       return(c(common, list(
-        prior_df        = control$prior_df,
-        prior_scale     = control$prior_scale,
+        prior_df        = rp$prior_df,
+        prior_scale     = rp$prior_scale,
         beta_prior      = beta_prior %||% list(mean = 0, sd = 100),
         control         = list(
           n_iter = control$n_iter %||% 2000L,
@@ -570,7 +574,7 @@
         n_groups = n_groups,
         family = family,
         beta_prior = beta_prior %||% list(mean = 0, sd = 10),
-        prior_sigma_scale = control$prior_sigma_scale %||% 2.5,
+        prior_sigma_scale = rp$prior_sigma_scale %||% 2.5,
         spatial = spatial,
         control = list(
           n_iter    = control$n_iter %||% 2000L,
@@ -802,9 +806,12 @@
       re_spec       = re_spec,
       spatial_spec  = spatial_spec_arg,
       temporal_spec = temporal_spec_arg,
-      sigma_re_scale = control$sigma_re_scale %||% 2.5,
-      # Forward only the sampler's own knobs (sigma_re_scale etc. were
-      # consumed above).
+      sigma_re_scale = rp$sigma_re_scale %||% 2.5,
+      # The fixed-effect prior SD is the statistical `beta_prior` (mean-zero on
+      # this sampler path), not a control knob; inject it into the sampler's
+      # sigma_beta. Other perf knobs forward from control.
+      sigma_beta    = if (!is.null(beta_prior))
+                        .beta_prior_ridge_sd(beta_prior, 10) else 10.0,
       control       = .control_subset(control, .CONTROL_KEYS$sample_glmm)
     ))
   }
@@ -849,8 +856,8 @@
 #'   sampler path (`mode = "mala"` / `"pathfinder"`).
 #' * `mode = "gibbs"` (Polya-Gamma) fits a single random-intercept model for
 #'   `family = "binomial"` or `"neg_binomial_2"`, and **samples** the RE sd
-#'   rather than conditioning on `sigma_re`; tune it via `control$prior_sigma_scale`
-#'   and a mean-zero `beta_prior`.
+#'   rather than conditioning on `sigma_re`; tune it via
+#'   `re_prior$prior_sigma_scale` and a mean-zero `beta_prior`.
 #' * **Latent prior blocks** (`latent(tgmrf(...))`) route to the nested-Laplace
 #'   path (Tier 2), which integrates over the block hyperparameters. `mode =
 #'   "auto"` and `"structured"` select it automatically when latent blocks are
@@ -899,6 +906,15 @@
 #'   Laplace path, the log-posterior samplers, and the ModelData samplers.
 #' @param beta_prior Optional `list(mean, sd)` Gaussian prior on the fixed
 #'   effects.
+#' @param re_prior Optional `list()` of random-effect / variance-component
+#'   hyperpriors (statistical, so they live in the signature rather than in
+#'   `control`). Recognised entries, each consumed by the backend that needs it:
+#'   `prior_sigma` (PC-prior anchor `c(U, alpha)` on a free RE covariance SD,
+#'   `mode = "laplace"` random slopes), `eta` (LKJ concentration for a
+#'   correlated RE covariance), `prior_df` / `prior_scale` (inverse-Wishart on
+#'   the RE covariance, `control$re_cov = "gibbs"`), `prior_sigma_scale`
+#'   (half-Cauchy scale on the RE SD for `mode = "gibbs"`), and `sigma_re_scale`
+#'   (half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).
 #' @param spatial Optional spatial-field spec. How it is addressed depends on the
 #'   field family:
 #'   * **Areal** (`"icar"`, `"car"`, `"bym2"`, `"car_proper"`): a list with `type`
@@ -975,6 +991,7 @@ tulpa <- function(formula, data,
                   phi = 1.0,
                   phi2 = NULL,
                   beta_prior = NULL,
+                  re_prior = NULL,
                   spatial = NULL,
                   temporal = NULL,
                   control = list(),
@@ -992,6 +1009,7 @@ tulpa <- function(formula, data,
       paste(nm, collapse = ", ")), call. = FALSE)
   }
   .check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
+  .check_control(re_prior, .RE_PRIOR_KEYS, "tulpa (re_prior)")
 
   # Categorical responses are families, not separate verbs: the front door
   # routes them to the multinomial / cumulative-link Laplace drivers. The link
@@ -1394,7 +1412,8 @@ tulpa <- function(formula, data,
                              latent_blocks = parsed$latent_blocks,
                              spatial = spatial_spec, temporal = temporal_spec,
                              weights = weights, phi2 = phi2,
-                             smoothers = lapply(smooth_specs, `[[`, "block"))
+                             smoothers = lapply(smooth_specs, `[[`, "block"),
+                             re_prior = re_prior)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(

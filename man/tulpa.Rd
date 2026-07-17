@@ -15,6 +15,7 @@ tulpa(
   phi = 1,
   phi2 = NULL,
   beta_prior = NULL,
+  re_prior = NULL,
   spatial = NULL,
   temporal = NULL,
   control = list(),
@@ -62,6 +63,16 @@ Laplace path, the log-posterior samplers, and the ModelData samplers.}
 
 \item{beta_prior}{Optional \code{list(mean, sd)} Gaussian prior on the fixed
 effects.}
+
+\item{re_prior}{Optional \code{list()} of random-effect / variance-component
+hyperpriors (statistical, so they live in the signature rather than in
+\code{control}). Recognised entries, each consumed by the backend that needs it:
+\code{prior_sigma} (PC-prior anchor \code{c(U, alpha)} on a free RE covariance SD,
+\code{mode = "laplace"} random slopes), \code{eta} (LKJ concentration for a
+correlated RE covariance), \code{prior_df} / \code{prior_scale} (inverse-Wishart on
+the RE covariance, \code{control$re_cov = "gibbs"}), \code{prior_sigma_scale}
+(half-Cauchy scale on the RE SD for \code{mode = "gibbs"}), and \code{sigma_re_scale}
+(half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).}
 
 \item{spatial}{Optional spatial-field spec. How it is addressed depends on the
 field family:
@@ -149,8 +160,8 @@ inner joint-Laplace marginal with adaptive Gauss-Hermite quadrature
 sampler path (\code{mode = "mala"} / \code{"pathfinder"}).
 \item \code{mode = "gibbs"} (Polya-Gamma) fits a single random-intercept model for
 \code{family = "binomial"} or \code{"neg_binomial_2"}, and \strong{samples} the RE sd
-rather than conditioning on \code{sigma_re}; tune it via \code{control$prior_sigma_scale}
-and a mean-zero \code{beta_prior}.
+rather than conditioning on \code{sigma_re}; tune it via
+\code{re_prior$prior_sigma_scale} and a mean-zero \code{beta_prior}.
 \item \strong{Latent prior blocks} (\code{latent(tgmrf(...))}) route to the nested-Laplace
 path (Tier 2), which integrates over the block hyperparameters. \code{mode = "auto"} and \code{"structured"} select it automatically when latent blocks are
 present; \code{mode = "nested_laplace"} forces it. At most one random-intercept

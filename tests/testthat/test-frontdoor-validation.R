@@ -40,6 +40,29 @@ test_that("tulpa_em_laplace hard-errors on the ignored spatial/re_list (#156g)",
   )
 })
 
+test_that("statistical hyperpriors ride re_prior, not control (#156b)", {
+  set.seed(1)
+  d <- data.frame(y = rbinom(120, 1, 0.5), x = rnorm(120),
+                  g = factor(rep(1:12, 10)))
+  # A statistical hyperprior in control is now rejected...
+  expect_error(
+    tulpa(y ~ x + (1 + x | g), data = d, family = "binomial",
+          mode = "laplace", control = list(prior_sigma = c(2, 0.05))),
+    "Unknown control knob"
+  )
+  # ...and a misspelled re_prior key is caught rather than silently ignored.
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "binomial",
+          re_prior = list(pri_sigma = 1)),
+    "Unknown control knob"
+  )
+  # A valid re_prior is accepted on the re-covariance path.
+  fit <- tulpa(y ~ x + (1 + x | g), data = d, family = "binomial",
+               mode = "laplace", re_prior = list(prior_sigma = c(2, 0.05),
+                                                  eta = 3))
+  expect_identical(fit$backend, "re_cov_nested")
+})
+
 test_that("plot.tulpa_st_summary hard-errors on an unknown type (#156g)", {
   st <- structure(
     data.frame(s = rep(1:3, each = 2), t = rep(1:2, 3), mean = rnorm(6)),
