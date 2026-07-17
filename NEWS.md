@@ -65,7 +65,11 @@ Warnings and cleanups.
   snapshot/restore helpers share one snapshot + restore-closure factory; the
   outer Pareto-k importance core delegates to the batched core (identical draws);
   and the temporal-GP PC prior routes through the shared `pc_prior.h` form
-  instead of a hand-rolled Jacobian.
+  instead of a hand-rolled Jacobian. The GP and SVC NNGP analytic gradients now
+  share one Vecchia conditional-gradient assembler (`nngp_cond.h`; each keeps its
+  own solver and distance source), and the fast leapfrog drift carries the same
+  sparse-GMRF mass-block range override as `inv_mass_times_p()` so the integrator
+  and U-turn check cannot use different metrics.
 
 ## 0.0.85
 

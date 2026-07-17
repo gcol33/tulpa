@@ -3,6 +3,7 @@
 // -----------------------------------------------------------------------------
 
 #include "omp_threads.h"
+#include "nngp_cond.h"   // shared Vecchia conditional-gradient assembly
 
 // Struct to hold NNGP gradient results (for hand-coded gradients)
 struct NNGPGradients {
@@ -297,41 +298,26 @@ inline void gp_nngp_gradients(
         continue;
       }
 
-      // Conditional mean and variance
-      double mu = alpha_vec.head(n_nb).dot(w_nb_eigen.head(n_nb));
-      double c_alpha = c_eigen.head(n_nb).dot(alpha_vec.head(n_nb));
-      double v = std::max(sigma2 - c_alpha, kGpVarFloor);
-      double r = w[obs_idx] - mu;
-
-      // Gradient w.r.t. w
-      my_grad_w[obs_idx] += -r / v;
-      double r_over_v = r / v;
-      for (int j = 0; j < n_nb; j++) my_grad_w[nb_idx[j]] += alpha_vec(j) * r_over_v;
-
-      // Gradient w.r.t. sigma2
-      double dll_dv = 0.5 * (r * r / v - 1.0) / v;
-      tl_sigma2[tid] += dll_dv * (1.0 - c_alpha / sigma2) * sigma2;
-
-      // Gradient w.r.t. phi — cached distances, symmetric quadratic form
-      double alpha_dc = alpha_vec.head(n_nb).dot(dc_eigen.head(n_nb));
-      double dc_beta = dc_eigen.head(n_nb).dot(beta_vec);
-
-      double alpha_dC_alpha = 0.0, alpha_dC_beta = 0.0;
+      // Pairwise dC/dphi (row-major, zero diagonal) from the cached
+      // neighbour-neighbour distances, for the shared gradient assembler.
+      std::vector<double> dC(static_cast<std::size_t>(n_nb) * n_nb, 0.0);
       for (int j1 = 0; j1 < n_nb; j1++) {
         for (int j2 = j1 + 1; j2 < n_nb; j2++) {
           double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
           double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
                                    gp_data.cov_type);
-          // Symmetric: accumulate both (j1,j2) and (j2,j1)
-          alpha_dC_alpha += 2.0 * alpha_vec(j1) * dC_jk * alpha_vec(j2);
-          alpha_dC_beta += alpha_vec(j1) * dC_jk * beta_vec(j2) +
-                           alpha_vec(j2) * dC_jk * beta_vec(j1);
+          dC[j1 * n_nb + j2] = dC_jk;
+          dC[j2 * n_nb + j1] = dC_jk;
         }
       }
-
-      double dv_dphi = -2.0 * alpha_dc + alpha_dC_alpha;
-      double dr_dphi = -dc_beta + alpha_dC_beta;
-      tl_phi[tid] += (dll_dv * dv_dphi + (-r / v) * dr_dphi) * phi;
+      tulpa_nngp::VecchiaGrad g = tulpa_nngp::vecchia_cond_grad(
+          n_nb, alpha_vec.data(), beta_vec.data(), c_eigen.data(),
+          dc_eigen.data(), dC.data(), w_nb_eigen.data(), w[obs_idx],
+          sigma2, phi, kGpVarFloor);
+      my_grad_w[obs_idx] += g.grad_w_obs;
+      for (int j = 0; j < n_nb; j++) my_grad_w[nb_idx[j]] += alpha_vec(j) * g.r_over_v;
+      tl_sigma2[tid] += g.dlog_sigma2;
+      tl_phi[tid] += g.dlog_phi;
     }
   }
 

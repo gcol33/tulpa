@@ -478,45 +478,26 @@ inline void svc_nngp_gradients(
       beta[j] = (y2[j] - s) / L[j * n_nb + j];
     }
 
-    // Conditional mean and variance
-    double mu = 0.0, c_alpha = 0.0;
-    for (int j = 0; j < n_nb; j++) { mu += alpha[j] * w_nb[j]; c_alpha += c_vec[j] * alpha[j]; }
-    // Numerical stability: larger floor for conditional variance
-    double v = std::max(sigma2 - c_alpha, 1e-6);
-    double r = w[obs_idx] - mu;
-
-    // Gradient w.r.t. w
-    grads.grad_w[obs_idx] += -r / v;
-    for (int j = 0; j < n_nb; j++) grads.grad_w[nb_idx[j]] += alpha[j] * r / v;
-
-    // Gradient w.r.t. sigma2: dv/ds2 = 1 - c'α/s2
-    double dll_dv = 0.5 * (r * r / v - 1.0) / v;
-    grads.grad_log_sigma2 += dll_dv * (1.0 - c_alpha / sigma2) * sigma2;
-
-    // Gradient w.r.t. phi: compute quadratic forms on-the-fly
-    double alpha_dc = 0.0, dc_beta = 0.0;
-    for (int j = 0; j < n_nb; j++) { alpha_dc += alpha[j] * dc_vec[j]; dc_beta += dc_vec[j] * beta[j]; }
-
-    // alpha' * dC/dphi * alpha and alpha' * dC/dphi * beta (computed on-the-fly)
-    double alpha_dC_alpha = 0.0, alpha_dC_beta = 0.0;
+    // Pairwise dC/dphi (row-major, zero diagonal) from the neighbour
+    // coordinates, for the shared gradient assembler.
+    std::vector<double> dC(static_cast<std::size_t>(n_nb) * n_nb, 0.0);
     for (int j1 = 0; j1 < n_nb; j1++) {
       for (int j2 = 0; j2 < n_nb; j2++) {
-        double dC_jk = 0.0;
-        if (j1 != j2) {
-          double dx = svc_data.coords[nb_idx[j1] * 2] - svc_data.coords[nb_idx[j2] * 2];
-          double dy = svc_data.coords[nb_idx[j1] * 2 + 1] - svc_data.coords[nb_idx[j2] * 2 + 1];
-          double d12 = std::sqrt(dx*dx + dy*dy);
-          dC_jk = dcov_dphi_svc(d12, phi, C_mat[j1 * n_nb + j2], sigma2,
-                                svc_data.cov_type);
-        }
-        alpha_dC_alpha += alpha[j1] * dC_jk * alpha[j2];
-        alpha_dC_beta += alpha[j1] * dC_jk * beta[j2];
+        if (j1 == j2) continue;
+        double dx = svc_data.coords[nb_idx[j1] * 2] - svc_data.coords[nb_idx[j2] * 2];
+        double dy = svc_data.coords[nb_idx[j1] * 2 + 1] - svc_data.coords[nb_idx[j2] * 2 + 1];
+        double d12 = std::sqrt(dx * dx + dy * dy);
+        dC[j1 * n_nb + j2] = dcov_dphi_svc(d12, phi, C_mat[j1 * n_nb + j2],
+                                           sigma2, svc_data.cov_type);
       }
     }
-
-    double dv_dphi = -2.0 * alpha_dc + alpha_dC_alpha;
-    double dr_dphi = -dc_beta + alpha_dC_beta;
-    grads.grad_log_phi += (dll_dv * dv_dphi + (-r / v) * dr_dphi) * phi;
+    tulpa_nngp::VecchiaGrad g = tulpa_nngp::vecchia_cond_grad(
+        n_nb, alpha.data(), beta.data(), c_vec.data(), dc_vec.data(), dC.data(),
+        w_nb.data(), w[obs_idx], sigma2, phi, 1e-6);
+    grads.grad_w[obs_idx] += g.grad_w_obs;
+    for (int j = 0; j < n_nb; j++) grads.grad_w[nb_idx[j]] += alpha[j] * g.r_over_v;
+    grads.grad_log_sigma2 += g.dlog_sigma2;
+    grads.grad_log_phi += g.dlog_phi;
   }
 
   if (debug) {

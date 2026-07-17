@@ -75,6 +75,20 @@ static inline void apply_drift(
       q[kb.start + i] += coeff * tmp[i];
     }
   }
+  // Same range-override as inv_mass_times_p() for the ST_IV sparse-GMRF block, so
+  // the leapfrog drift and the U-turn p_sharp share one metric (the block is
+  // deactivated on the generic path today; this keeps them from diverging if it
+  // is ever factorized).
+  if (mass.sparse_gmrf.active && mass.sparse_gmrf.factorized) {
+    const auto& sg = mass.sparse_gmrf;
+    int ST = sg.S * sg.T;
+    std::vector<double> tmp(ST);
+    sg.inv_mass_matvec(p, tmp.data());
+    for (int i = 0; i < ST; i++) {
+      q[sg.start + i] -= coeff * mass.inv_mass_diag[sg.start + i] * p[sg.start + i];
+      q[sg.start + i] += coeff * tmp[i];
+    }
+  }
 }
 
 // In-place leapfrog step operating on a workspace slot.

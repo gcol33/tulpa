@@ -30,6 +30,7 @@
 
 #include <vector>
 #include <cmath>
+#include <algorithm>
 
 #include "autodiff_utils.h"
 
@@ -150,6 +151,62 @@ template <typename T>
 inline T marginal_log_density(const T& w_i, const T& sigma2) {
   return T(-0.5) * safe_log(T(2.0 * M_PI) * sigma2)
        - T(0.5) * w_i * w_i / sigma2;
+}
+
+// Per-location Vecchia conditional-gradient assembly (double path), shared by
+// the GP and SVC NNGP analytic gradients (gcol33/tulpa#142). The two differ only
+// in how they factorize C (Eigen LLT / CG vs a hand-rolled Cholesky) and how
+// they source the pairwise `dC/dphi` (a cached distance table vs recomputed
+// coordinates); the arithmetic below is identical, so each caller does its own
+// solve, builds `dC` (row-major n*n, zero diagonal), and calls this.
+//
+// Given the already-solved alpha = C^-1 c and beta = C^-1 w_nb, the
+// cross-covariance `c` and its phi-derivative `dc`, `dC`, the neighbour values
+// `w_nb` and the location's own `w_obs`, it returns the gradient of the Vecchia
+// conditional log-density on the log scale: add `grad_w_obs` to grad_w[obs], add
+// `alpha[j] * r_over_v` to each neighbour's grad_w, and add `dlog_sigma2` /
+// `dlog_phi` to the corresponding hyperparameter gradients.
+struct VecchiaGrad {
+  double grad_w_obs;
+  double r_over_v;
+  double dlog_sigma2;
+  double dlog_phi;
+};
+
+inline VecchiaGrad vecchia_cond_grad(
+    int n_nb, const double* alpha, const double* beta,
+    const double* c, const double* dc, const double* dC,
+    const double* w_nb, double w_obs, double sigma2, double phi,
+    double var_floor) {
+  double mu = 0.0, c_alpha = 0.0;
+  for (int j = 0; j < n_nb; j++) {
+    mu += alpha[j] * w_nb[j];
+    c_alpha += c[j] * alpha[j];
+  }
+  double v = std::max(sigma2 - c_alpha, var_floor);
+  double r = w_obs - mu;
+  double r_over_v = r / v;
+  double dll_dv = 0.5 * (r * r / v - 1.0) / v;
+  double dlog_sigma2 = dll_dv * (1.0 - c_alpha / sigma2) * sigma2;
+
+  double alpha_dc = 0.0, dc_beta = 0.0;
+  for (int j = 0; j < n_nb; j++) {
+    alpha_dc += alpha[j] * dc[j];
+    dc_beta += dc[j] * beta[j];
+  }
+  double alpha_dC_alpha = 0.0, alpha_dC_beta = 0.0;
+  for (int j1 = 0; j1 < n_nb; j1++) {
+    for (int j2 = 0; j2 < n_nb; j2++) {
+      double d = dC[j1 * n_nb + j2];
+      alpha_dC_alpha += alpha[j1] * d * alpha[j2];
+      alpha_dC_beta += alpha[j1] * d * beta[j2];
+    }
+  }
+  double dv_dphi = -2.0 * alpha_dc + alpha_dC_alpha;
+  double dr_dphi = -dc_beta + alpha_dC_beta;
+  double dlog_phi = (dll_dv * dv_dphi + (-r / v) * dr_dphi) * phi;
+
+  return { -r_over_v, r_over_v, dlog_sigma2, dlog_phi };
 }
 
 }  // namespace tulpa_nngp
