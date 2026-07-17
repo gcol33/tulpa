@@ -1,6 +1,6 @@
 # tulpa NEWS
 
-## 0.0.83 (development)
+## 0.0.83
 
 Front-door API convention cleanup (#156, fully closed) and the
 missing-front-door features (#158, fully closed). **ABI break**
