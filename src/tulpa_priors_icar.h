@@ -142,6 +142,15 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
                     }
                 }
             }
+            // Soft sum-to-zero constraint on ICAR phi. The precision has a
+            // constant null direction (per component) that is otherwise jointly
+            // unidentified with the intercept; pin it as the BYM2 branch and the
+            // Laplace path do, so exact-NUTS ICAR fits mix.
+            {
+                T phi_sum = T(0.0);
+                for (int s = 0; s < data.n_spatial_units; s++) phi_sum = phi_sum + phi_spatial_out[s];
+                log_post = log_post - T(0.5) * T(0.01) * phi_sum * phi_sum;
+            }
             // Rank of the ICAR precision is J - k for k connected components
             // (one constant null direction per component). Using J - 1 on a
             // disconnected graph (spatial(by=) replication) biases tau upward.

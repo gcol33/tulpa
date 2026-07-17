@@ -250,6 +250,18 @@ validate_svc <- function(svc, data, X) {
   # Compute nearest neighbors (NNGP only)
   approx <- svc$approx %||% "nngp"
   if (approx == "nngp") {
+    # The NNGP SVC field puts one effect per observation, so two rows sharing
+    # coordinates place a distance-0 point in a conditioning set -> correlation
+    # 1 -> a singular per-node covariance in the marginal-SE / kernel solve.
+    # Reject duplicates rather than fail silently downstream.
+    if (anyDuplicated(coords)) {
+      dup <- which(duplicated(coords) | duplicated(coords, fromLast = TRUE))
+      stop(sprintf(paste0(
+        "svc() with approx = 'nngp' requires distinct coordinates: %d row(s) ",
+        "share coordinates with another (first at row %d). Jitter or aggregate ",
+        "the duplicated locations before fitting."), length(dup), dup[1L]),
+        call. = FALSE)
+    }
     nn <- min(svc$nn, N - 1)
     neighbor_info <- compute_nngp_neighbors(coords, nn)
   } else {

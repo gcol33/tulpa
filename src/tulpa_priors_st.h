@@ -167,7 +167,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             // Rank term with actual tau and Jacobian correction
             int rank_space = S - 1;
             int rank_time = (data.spatiotemporal_data.temporal_type == TemporalType::RW1) ? (T_st - 1) : (T_st - 2);
-            if (data.spatiotemporal_data.temporal_cyclic) rank_time = T_st;
+            // Cyclic RW1/RW2 leave only the constant in the null space -> T-1.
+            if (data.spatiotemporal_data.temporal_cyclic) rank_time = T_st - 1;
             int total_rank = rank_space * rank_time;
             int ST_total = S * T_st;
             log_post = log_post + T(0.5 * (total_rank - ST_total)) * safe_log(tau_st);
@@ -198,7 +199,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             // Per-basis-function temporal GMRF prior
             int rank_t = (data.spatiotemporal_data.temporal_type == TemporalType::RW1) ? (T_st - 1) :
                          (data.spatiotemporal_data.temporal_type == TemporalType::RW2) ? (T_st - 2) : T_st;
-            if (data.spatiotemporal_data.temporal_cyclic) rank_t = T_st;
+            // Cyclic RW1/RW2 leave only the constant in the null space -> T-1.
+            if (data.spatiotemporal_data.temporal_cyclic) rank_t = T_st - 1;
 
             for (int j = 0; j < M; j++) {
                 double omega_sq = data.st_hsgp_data.eigenvalues[j];

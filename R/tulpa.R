@@ -1249,6 +1249,11 @@ tulpa <- function(formula, data,
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
   .validate_family_counts(family, bundle$y)
+  # The model is built with na.action = na.pass (prior_predict() allows an NA
+  # response), so tulpa() must reject non-finite fitting inputs itself: unlike
+  # glm()/lm() it does not drop incomplete cases, and an NA/NaN/Inf would flow
+  # silently into the C++ kernels as a NaN estimate.
+  .assert_finite_model_inputs(bundle$X, bundle$y)
   if (!is.null(weights)) {
     weights <- as.numeric(weights)
     if (length(weights) != bundle$n_obs || anyNA(weights) ||
@@ -1566,8 +1571,17 @@ tulpa <- function(formula, data,
          "through tulpa() yet. Use a random intercept (1 | g) alongside the ",
          "spatial term, or drop the spatial field.", call. = FALSE)
   }
-  if (sel$backend == "laplace" && has_slope) {
-    re_cov_method <- match.arg(control$re_cov %||% "nested",
+  # Random-slope terms have no scalar `sigma_re` to condition on: the RE
+  # covariance must be integrated. Every backend that would otherwise route
+  # through the scalar-`sigma_re` GLMM log-posterior (`build_glmm_logpost`
+  # applies one `sigma_re[k]` per term, dropping the intercept/slope
+  # correlation) is redirected to a covariance-integrating fitter. The
+  # deterministic Laplace mode integrates via nested Laplace; the sampler
+  # modes integrate via the exact Metropolis-within-Gibbs debias.
+  slope_scalar_backends <- c("laplace", "mala", "pathfinder", "imh_laplace")
+  if (has_slope && sel$backend %in% slope_scalar_backends) {
+    default_re_cov <- if (sel$backend == "laplace") "nested" else "gibbs"
+    re_cov_method <- match.arg(control$re_cov %||% default_re_cov,
                                c("nested", "gibbs", "aghq"))
     backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
     sel <- .sel_redirect(sel, backend, sprintf(

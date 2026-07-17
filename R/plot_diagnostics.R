@@ -309,6 +309,10 @@ plot_acf <- function(fit, pars = NULL, lags = 25, n_pars = 6) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
+  if (!.tulpa_is_chain(fit)) {
+    message(.tulpa_non_chain_msg(fit))
+    return(invisible(NULL))
+  }
 
   # Get draws
   draws <- fit$draws
@@ -463,7 +467,7 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
 
   # Add divergence indicator if available
   has_divergent <- FALSE
-  if (highlight_divergent && fit$backend == "hmc") {
+  if (highlight_divergent && (fit$backend %||% "") == "hmc") {
     div_idx <- fit$diagnostics$divergent_idx
     if (!is.null(div_idx) && length(div_idx) > 0) {
       draws_subset$divergent <- FALSE
@@ -600,7 +604,7 @@ plot_divergences <- function(fit, pars = NULL, type = c("parcoord", "scatter")) 
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
 
-  if (fit$backend != "hmc") {
+  if ((fit$backend %||% "") != "hmc") {
     message("Divergence plots only available for HMC backend")
     return(invisible(NULL))
   }
@@ -800,7 +804,7 @@ plot_energy <- function(fit) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
 
-  if (fit$backend != "hmc") {
+  if ((fit$backend %||% "") != "hmc") {
     message("Energy plots only available for HMC backend")
     return(invisible(NULL))
   }
@@ -1293,6 +1297,10 @@ plot_diagnostics <- function(fit, pars = NULL) {
 geweke_test <- function(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
+  }
+  if (!.tulpa_is_chain(fit)) {
+    message(.tulpa_non_chain_msg(fit))
+    return(invisible(NULL))
   }
 
   draws <- fit$draws

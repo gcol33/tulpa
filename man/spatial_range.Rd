@@ -13,7 +13,8 @@ spatial_range(object, probs = c(0.025, 0.975))
 }
 \value{
 A data.frame with rows for each spatial hyperparameter and columns
-\code{mean}, \code{sd}, \code{q025}, \code{q975}.
+\code{mean}, \code{sd}, and one quantile column per entry of \code{probs} (named from the
+probability, e.g. \code{q2.5}, \code{q97.5} for the defaults).
 }
 \description{
 Summarises posterior draws of spatial hyperparameters.

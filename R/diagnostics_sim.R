@@ -493,9 +493,9 @@ check_model <- function(object, coords = NULL, nsim = 250L, seed = 123L) {
 
   # Panel 2: Residuals vs fitted
   fv <- fitted(object)
-  r <- residuals(object, type = "deviance")
+  r <- residuals(object, type = "pearson")
   plot(fv, r,
-       xlab = "Fitted", ylab = "Deviance residuals",
+       xlab = "Fitted", ylab = "Pearson residuals",
        main = "Residuals vs Fitted",
        pch = 19, cex = 0.5, col = adjustcolor("black", 0.6))
   abline(h = 0, col = "red", lty = 2, lwd = 1.5)

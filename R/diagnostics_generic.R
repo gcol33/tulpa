@@ -117,7 +117,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
     dd <- elpd_pw[[k]] - elpd_pw[[best]]
     sqrt(length(dd) * stats::var(dd))
   }, numeric(1))
-  rel <- exp(0.5 * delta)                       # delta <= 0 -> Akaike weight on elpd
+  rel <- exp(delta)                             # delta <= 0 -> Akaike weight on elpd
   weight <- rel / sum(rel, na.rm = TRUE)
 
   out <- data.frame(model = names(models), elpd = elpd, se_elpd = se_elpd,
@@ -169,7 +169,8 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #' @param object A `tulpa_fit` object fitted with a spatial component.
 #' @param probs Quantile probabilities for the summary (default 0.025, 0.975).
 #' @return A data.frame with rows for each spatial hyperparameter and columns
-#'   `mean`, `sd`, `q025`, `q975`.
+#'   `mean`, `sd`, and one quantile column per entry of `probs` (named from the
+#'   probability, e.g. `q2.5`, `q97.5` for the defaults).
 #' @export
 spatial_range <- function(object, probs = c(0.025, 0.975)) {
   draws <- object$draws
@@ -223,11 +224,20 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
       row_name <- nm
     }
     qs <- quantile(vals, probs = probs)
-    data.frame(mean = mean(vals), sd = sd(vals),
-               q025 = qs[1], q975 = qs[2],
-               row.names = row_name, stringsAsFactors = FALSE)
+    out <- data.frame(mean = mean(vals), sd = sd(vals),
+                      row.names = row_name, stringsAsFactors = FALSE)
+    out[.quantile_colnames(probs)] <- as.list(qs)
+    out
   })
   do.call(rbind, rows)
+}
+
+# Column names for a set of quantile probabilities, e.g. c(0.025, 0.975) ->
+# c("q2.5", "q97.5"). Shared by spatial_range() and temporal_corr() so the
+# reported columns always match the requested `probs`.
+.quantile_colnames <- function(probs) {
+  pct <- sprintf("%.6f", probs * 100)
+  paste0("q", sub("\\.?0+$", "", pct))
 }
 
 
@@ -281,9 +291,10 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
       row_name <- nm
     }
     qs <- quantile(vals, probs = probs)
-    data.frame(mean = mean(vals), sd = sd(vals),
-               q025 = qs[1], q975 = qs[2],
-               row.names = row_name, stringsAsFactors = FALSE)
+    out <- data.frame(mean = mean(vals), sd = sd(vals),
+                      row.names = row_name, stringsAsFactors = FALSE)
+    out[.quantile_colnames(probs)] <- as.list(qs)
+    out
   })
   do.call(rbind, rows)
 }

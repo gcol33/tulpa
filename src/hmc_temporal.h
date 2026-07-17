@@ -262,14 +262,18 @@ inline double temporal_log_prior(
   if (type == TemporalType::RW1) {
     // RW1: p(phi|tau) propto tau^{(T-1)/2} exp(-0.5 * tau * phi' Q phi)
     double quad = rw1_quadratic_form(phi, T, cyclic);
-    int rank = cyclic ? T : T - 1;  // Rank of precision matrix
+    // Cyclic RW1 adds the wrap edge, so Q is the cycle-graph Laplacian: a
+    // single null direction (the constant), rank T-1 -- same as acyclic RW1.
+    int rank = T - 1;  // Rank of precision matrix
     log_prior += 0.5 * rank * std::log(tau);
     log_prior -= 0.5 * tau * quad;
 
   } else if (type == TemporalType::RW2) {
     // RW2: p(phi|tau) propto tau^{(T-2)/2} exp(-0.5 * tau * phi' Q phi)
     double quad = rw2_quadratic_form(phi, T, cyclic);
-    int rank = cyclic ? T : T - 2;  // Rank of precision matrix
+    // Cyclic RW2 annihilates only constants on a cycle (a linear ramp is not
+    // periodic), so rank T-1; acyclic RW2 also annihilates the ramp, rank T-2.
+    int rank = cyclic ? T - 1 : T - 2;  // Rank of precision matrix
     log_prior += 0.5 * rank * std::log(tau);
     log_prior -= 0.5 * tau * quad;
 

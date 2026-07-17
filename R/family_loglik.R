@@ -497,6 +497,45 @@ family_names <- function() names(.FAMILY_OPS)
 }
 
 
+#' Reject non-finite fitting inputs.
+#'
+#' The design is built with `na.action = na.pass`, so a missing predictor or
+#' response survives into `X` / `y`. tulpa() does not drop incomplete cases, so
+#' an NA/NaN/Inf would propagate into the C++ kernels as a NaN estimate. Fail
+#' loudly with the offending row instead.
+#' @keywords internal
+.assert_finite_model_inputs <- function(X, y) {
+  if (!is.null(X)) {
+    ok_row <- if (is.matrix(X)) .all_finite_rows(X) else is.finite(X)
+    if (!all(ok_row)) {
+      bad <- which(!ok_row)
+      stop(sprintf(paste0(
+        "Non-finite value(s) in the model matrix (%d row(s), first at row %d). ",
+        "tulpa() does not drop incomplete cases; remove or impute NA/NaN/Inf ",
+        "in the predictors before fitting."), length(bad), bad[1L]),
+        call. = FALSE)
+    }
+  }
+  if (!is.null(y)) {
+    bad <- which(!is.finite(as.numeric(y)))
+    if (length(bad)) {
+      stop(sprintf(paste0(
+        "Non-finite value(s) in the response (%d, first at row %d). Remove or ",
+        "impute NA/NaN/Inf in the response before fitting."),
+        length(bad), bad[1L]), call. = FALSE)
+    }
+  }
+  invisible(TRUE)
+}
+
+# Row-wise all-finite test for a numeric matrix.
+.all_finite_rows <- function(X) {
+  fin <- is.finite(X)
+  dim(fin) <- dim(X)
+  .rowSums(fin, nrow(X), ncol(X)) == ncol(X)
+}
+
+
 #' Look up a family's operation set, with a clear error for unknown families.
 #' @keywords internal
 .family_ops <- function(family) {

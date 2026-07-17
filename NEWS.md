@@ -1,5 +1,44 @@
 # tulpa NEWS
 
+## 0.0.86
+
+Bug fixes from a whole-repo audit.
+
+* **Random slopes on the sampler modes now integrate the RE covariance.**
+  `tulpa(y ~ (1 + x | g), mode = "mala" / "pathfinder" / "imh_laplace")`
+  previously fell through the covariance redirect (gated on the Laplace backend)
+  and fit the term with a single scalar `sigma_re` per block -- dropping the
+  intercept/slope correlation, forcing the SDs equal, and conditioning at
+  `sigma_re = 1`. These modes now route to the exact Metropolis-within-Gibbs
+  `Sigma` debias, matching the documented coverage.
+* **Cyclic RW1 / RW2 temporal (and spatiotemporal) rank normalizer.** The
+  cyclic branch used `rank = T`; a cycle-graph GMRF has a single null direction
+  (the constant), so the correct generalized-determinant rank is `T - 1` for
+  both RW1 and RW2. The old value biased the integrated / sampled precision
+  `tau` upward (oversmoothing), scaled by `S - 1` in Type-IV interactions.
+* **Plain-ICAR exact-NUTS prior** now adds the soft sum-to-zero pin the BYM2 and
+  Laplace paths already carry, so the constant field direction is no longer
+  jointly unidentified with the intercept.
+* **`compare_models()` weights.** The Akaike / pseudo-BMA weight on the elpd
+  scale used `exp(0.5 * delta)`; corrected to `exp(delta)` (weights were
+  systematically too uniform).
+* **`check_model()`** asked for `residuals(type = "deviance")`, which is not a
+  supported residual type and errored on the base fit; panel 2 now uses Pearson
+  residuals.
+* **Chain diagnostics on non-chain fits.** `geweke_test()` and `plot_acf()` now
+  respect the draws-provenance gate (they returned a vacuous "converged" result
+  on i.i.d. nested-Laplace / VI draws); `plot_pairs()`, `plot_divergences()`,
+  and `plot_energy()` no longer error when `$backend` is `NULL`.
+* **`spatial_range()` / `temporal_corr()`** named the quantile columns `q025` /
+  `q975` regardless of `probs`; the columns are now derived from `probs`
+  (e.g. `q2.5`, `q97.5`).
+* **Non-finite fitting inputs.** `tulpa()` now rejects NA/NaN/Inf in the
+  response or model matrix with the offending row, instead of letting a `NaN`
+  propagate silently into the kernels (the model is built with `na.pass`).
+* **`svc(approx = "nngp")`** now rejects duplicated coordinates (a distance-0
+  neighbour gave a singular per-node covariance) rather than failing silently
+  downstream.
+
 ## 0.0.85
 
 Per-block quadrature order and an optional variance-component prior on the AGHQ
