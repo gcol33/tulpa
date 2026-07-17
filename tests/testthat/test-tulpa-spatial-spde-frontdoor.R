@@ -169,12 +169,13 @@ test_that("an SPDE spec rejects a spatial(col) term, a bad dimension, RE, and a 
                            spatial = s$spec, mode = "nested_laplace")),
     "projector matrix A"
   )
-  # An additional random-effect term alongside the SPDE field is not supported.
+  # A single random-intercept `(1 | g)` alongside the SPDE field IS supported
+  # (see test-spde-re.R); a random SLOPE is not.
   d$g <- factor(rep(seq_len(5L), length.out = nrow(d)))
   expect_error(
-    suppressMessages(tulpa(y ~ x + (1 | g), data = d, family = "poisson",
+    suppressMessages(tulpa(y ~ x + (1 + x | g), data = d, family = "poisson",
                            spatial = s$spec, mode = "nested_laplace")),
-    "random-effect term"
+    "slope|random-intercept"
   )
   # The SPDE kernel supports binomial / poisson / neg_binomial_2 / gaussian; a
   # valid family outside that set (beta, on a (0,1) response) is rejected.
