@@ -67,6 +67,8 @@
     re_cov_gibbs = c("n_iter", "warmup", "thin", "seed", "max_iter", "tol",
                      "n_threads"),
     ep = c("max_sweeps", "tol", "damping", "n_quad", "n_draws", "seed"),
+    gaussian = c("iter", "warmup", "step_size", "n_leapfrog", "seed"),
+    gibbs = c("n_iter", "warmup", "thin", "seed", "verbose", "n_threads"),
     multinomial = c("max_iter", "tol", "n_draws", "seed"),
     ordinal = c("max_iter", "n_draws", "seed"),
     sample_glmm = c("n_iter", "warmup", "n_chains", "seed", "verbose",

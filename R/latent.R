@@ -6,7 +6,12 @@
 #' when you suspect that both processes are driven by common unmeasured variables.
 #'
 #' @return The constructor documented in this family ([latent_factor()])
-#'   returns a `tulpa_latent` specification object for use in [tulpa()].
+#'   returns a `tulpa_latent` specification object consumed by ratio /
+#'   multi-arm model packages built on tulpa (e.g. tulpaRatio), where the
+#'   shared factor enters two or more linear predictors and cancels in the
+#'   derived ratio. It is a multi-arm construct: the single-response [tulpa()]
+#'   front door does not read it (for an in-formula latent Gaussian block on a
+#'   single response, use `latent(tgmrf(...))`).
 #'
 #' @name tulpa_latent
 NULL
@@ -33,7 +38,10 @@ NULL
 #' @param scale Logical; if TRUE (default), factor loadings are standardized
 #'   to have unit variance before applying sigma.
 #'
-#' @return A `tulpa_latent` object for use in [tulpa()].
+#' @return A `tulpa_latent` object consumed by ratio / multi-arm model
+#'   packages built on tulpa (e.g. tulpaRatio); not read by the single-response
+#'   [tulpa()] front door (use `latent(tgmrf(...))` for a single-response
+#'   latent Gaussian block).
 #'
 #' @details
 #'
@@ -52,10 +60,11 @@ NULL
 #'
 #' ## Mathematical Model
 #'
-#' For observation i with K latent factors:
+#' For observation i with K latent factors, on each of two model arms
+#' (processes 1 and 2):
 #'
-#' \deqn{\eta^{num}_i = X^{num}_i \beta^{num} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
-#' \deqn{\eta^{denom}_i = X^{denom}_i \beta^{denom} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
+#' \deqn{\eta^{(1)}_i = X^{(1)}_i \beta^{(1)} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
+#' \deqn{\eta^{(2)}_i = X^{(2)}_i \beta^{(2)} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
 #'
 #' where:
 #' - \eqn{f_{ik} \sim N(0, 1)} are standardized factor scores
@@ -100,18 +109,13 @@ NULL
 #' # Numerator-only factor (not shared)
 #' latent_factor(n_factors = 1, shared = FALSE)
 #'
-#' \dontrun{
-#' # Use in model fitting through a ratio model package (tulpaRatio owns the
-#' # two-arm formula and the negbin/negbin ratio family):
-#' fit <- tulpa(
-#'   species_count | total_count ~ habitat + (1 | site),
-#'   data = df,
-#'   family = tulpaRatio::tulpa_negbin_negbin(),
-#'   latent = latent_factor(n_factors = 2)
-#' )
-#' }
+#' # The spec is consumed by a ratio / multi-arm model package (tulpaRatio owns
+#' # the two-arm `species | total ~ ...` formula and the negbin/negbin ratio
+#' # family); it is that package's fitter, not the single-response tulpa() front
+#' # door, that reads the `latent_factor()` object.
 #'
-#' @seealso [tulpa()] for model fitting, [prior_pc()] for prior specification
+#' @seealso [prior_pc()] for prior specification; `latent()` / [tgmrf()] for a
+#'   single-response in-formula latent Gaussian block
 #'
 #' @export
 latent_factor <- function(
@@ -339,14 +343,9 @@ initialize_latent_params <- function(latent_info, seed = NULL) {
 #'
 #' @examples
 #' \dontrun{
-#' # After fitting a ratio model with latent factors (tulpaRatio owns the
-#' # two-arm formula and the negbin/negbin ratio family):
-#' fit <- tulpa(
-#'   count | total ~ x,
-#'   data = df,
-#'   family = tulpaRatio::tulpa_negbin_negbin(),
-#'   latent = latent_factor(n_factors = 2)
-#' )
+#' # `fit` is a ratio / multi-arm model fitted with latent factors by a consumer
+#' # package (tulpaRatio owns the two-arm formula and the negbin/negbin ratio
+#' # family and reads the latent_factor() spec):
 #'
 #' # Get summary
 #' factors <- latent_factors(fit)

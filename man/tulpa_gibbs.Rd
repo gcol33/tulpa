@@ -11,14 +11,11 @@ tulpa_gibbs(
   group,
   n_groups,
   family = "binomial",
-  n_iter = 2000L,
-  warmup = 1000L,
-  prior_beta_sd = 10,
+  beta_prior = list(mean = 0, sd = 10),
   prior_sigma_scale = 2.5,
   spatial = NULL,
   temporal = NULL,
-  verbose = FALSE,
-  n_threads = 1L
+  control = list()
 )
 }
 \arguments{
@@ -34,13 +31,12 @@ tulpa_gibbs(
 
 \item{family}{Character: "binomial" or "neg_binomial_2"}
 
-\item{n_iter}{Total iterations}
+\item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
+(\code{mean = 0}) Gaussian on every coefficient with SD \code{sd} (default
+\code{list(mean = 0, sd = 10)}). The Polya-Gamma sampler uses a mean-zero prior,
+so a non-zero \code{mean} errors.}
 
-\item{warmup}{Warmup iterations}
-
-\item{prior_beta_sd}{Prior SD for betas}
-
-\item{prior_sigma_scale}{Prior scale for RE sigma}
+\item{prior_sigma_scale}{Prior scale for RE sigma (statistical; default 2.5).}
 
 \item{spatial}{Optional spatial spec. When supplied the fit routes to the
 matching spatial Polya-Gamma Gibbs sampler via \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}};
@@ -65,9 +61,11 @@ object. Routes to the multiscale temporal Polya-Gamma sampler via
 \code{\link[=dispatch_gibbs_temporal]{dispatch_gibbs_temporal()}} (binomial only; RW1 trend + cyclic seasonal +
 AR1/IID short-term). Cannot be combined with \code{spatial}.}
 
-\item{verbose}{Print progress}
-
-\item{n_threads}{Number of threads}
+\item{control}{A named list of numerical / tuning knobs (statistical
+arguments stay in the signature above): \code{n_iter} (default 2000), \code{warmup}
+(default 1000), \code{thin} (default 1), \code{seed} (\code{NULL} draws from the session
+RNG; the Polya-Gamma kernels use R's RNG, so a seed makes the fit
+reproducible), \code{verbose} (default FALSE), \code{n_threads} (default 1).}
 }
 \value{
 List with beta draws, RE draws, sigma_re draws (plus the spatial
@@ -93,7 +91,7 @@ b <- rnorm(G, 0, 0.6)
 y <- rbinom(n, 1, plogis(X \%*\% c(-0.2, 0.5) + b[grp]))
 \donttest{
 fit <- tulpa_gibbs(y, rep(1L, n), X, grp, G, family = "binomial",
-                   n_iter = 500L, warmup = 250L)
+                   control = list(n_iter = 500L, warmup = 250L))
 colMeans(fit$beta)
 }
 }

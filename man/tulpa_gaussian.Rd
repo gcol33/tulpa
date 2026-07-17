@@ -7,12 +7,8 @@
 tulpa_gaussian(
   formula,
   data,
-  sigma_beta = 10,
-  iter = 2000,
-  warmup = 1000,
-  step_size = 0.05,
-  n_leapfrog = 10,
-  seed = NULL
+  beta_prior = list(mean = 0, sd = 10),
+  control = list()
 )
 }
 \arguments{
@@ -20,17 +16,14 @@ tulpa_gaussian(
 
 \item{data}{A data frame}
 
-\item{sigma_beta}{Prior SD for regression coefficients (default 10)}
+\item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
+(\code{mean = 0}) Gaussian on every coefficient with SD \code{sd}
+(default \code{list(mean = 0, sd = 10)}).}
 
-\item{iter}{Total iterations (default 2000)}
-
-\item{warmup}{Warmup iterations (default 1000)}
-
-\item{step_size}{HMC step size (default 0.05)}
-
-\item{n_leapfrog}{Number of leapfrog steps (default 10)}
-
-\item{seed}{Random seed; \code{NULL} (default) draws one from the session RNG.}
+\item{control}{List of numerical / sampler knobs: \code{iter} (total iterations,
+default 2000), \code{warmup} (default 1000), \code{step_size} (HMC step size, default
+0.05), \code{n_leapfrog} (default 10), \code{seed} (\code{NULL} draws from the session
+RNG).}
 }
 \value{
 A list with draws matrix, posterior means, and metadata

@@ -470,6 +470,102 @@ tulpa_laplace <- function(y, n_trials, X,
 }
 
 
+#' Resolve a `beta_prior = list(mean, sd)` to a single ridge SD.
+#'
+#' For the fitters whose fixed-effect prior is a mean-zero Gaussian ridge with a
+#' scalar SD (EP, multinomial, ordinal): validates the unified `beta_prior`
+#' object, enforces a mean of 0, and returns the positive scalar SD. Keeps the
+#' shared prior interface (`beta_prior = list(mean, sd)`) while rejecting the
+#' options those fitters do not implement (a non-zero mean, a per-coefficient
+#' SD).
+#'
+#' @param beta_prior `list(mean, sd)`; `mean` must be 0, `sd` a positive scalar.
+#' @param default_sd SD used when `beta_prior` (or its `sd`) is `NULL`.
+#' @keywords internal
+.beta_prior_ridge_sd <- function(beta_prior, default_sd = 10) {
+  bp <- beta_prior %||% list(mean = 0, sd = default_sd)
+  if (!is.list(bp)) {
+    stop("`beta_prior` must be a list(mean = 0, sd = ).", call. = FALSE)
+  }
+  m0 <- bp$mean %||% 0
+  sd <- bp$sd %||% default_sd
+  if (any(m0 != 0)) {
+    stop("this fitter supports only a mean-zero fixed-effect prior ",
+         "(`beta_prior$mean` must be 0); use a sampler (mode = 'mala') for a ",
+         "shifted prior.", call. = FALSE)
+  }
+  if (!is.numeric(sd) || length(sd) != 1L || !is.finite(sd) || sd <= 0) {
+    stop("`beta_prior$sd` must be a positive scalar.", call. = FALSE)
+  }
+  sd
+}
+
+
+#' Validate a GLM design bundle (`y`, `X`, `n_trials`) at a fitter's front door.
+#'
+#' Shared by the flagship drivers (`tulpa_nested_laplace()`, `tulpa_gibbs()`, the
+#' `re_cov` fitters) so `nrow(X) == length(y)` and `length(n_trials) ==
+#' length(y)` are enforced in one place -- otherwise a mismatched `n_trials`
+#' (`as.integer(NULL)` -> `integer(0)`) reaches the C++ kernel silently.
+#'
+#' @param y,X Response vector and design matrix.
+#' @param n_trials Binomial denominators, or `NULL` (defaults to 1 per row).
+#' @param where Caller name for the error message.
+#' @return List `list(N, n_trials)` with `n_trials` coerced to a length-`N`
+#'   integer vector.
+#' @keywords internal
+.validate_glm_design <- function(y, X, n_trials, where) {
+  N <- length(y)
+  if (N == 0L) stop(where, ": `y` is empty.", call. = FALSE)
+  if (!is.matrix(X)) {
+    stop(where, ": `X` must be a numeric matrix.", call. = FALSE)
+  }
+  if (nrow(X) != N) {
+    stop(sprintf("%s: nrow(X) (%d) must equal length(y) (%d).",
+                 where, nrow(X), N), call. = FALSE)
+  }
+  n_trials <- if (is.null(n_trials)) rep(1L, N) else as.integer(n_trials)
+  if (length(n_trials) != N) {
+    stop(sprintf("%s: length(n_trials) (%d) must equal length(y) (%d).",
+                 where, length(n_trials), N), call. = FALSE)
+  }
+  if (anyNA(n_trials)) {
+    stop(where, ": `n_trials` must be non-NA integers.", call. = FALSE)
+  }
+  list(N = N, n_trials = n_trials)
+}
+
+
+#' Validate a 0-based/1-based random-effect index against its group count.
+#'
+#' `re_idx` addresses one grouping factor: `0` marks "no random effect" and
+#' `1..n_re_groups` a group. An out-of-range id would index out of bounds in the
+#' C++ kernel, so bound it in R.
+#'
+#' @param re_idx Per-observation group index (length `N`).
+#' @param n_re_groups Number of groups.
+#' @param N Expected length.
+#' @param where Caller name for the error message.
+#' @return `re_idx` coerced to an integer vector.
+#' @keywords internal
+.validate_re_idx <- function(re_idx, n_re_groups, N, where) {
+  if (length(re_idx) != N) {
+    stop(sprintf("%s: length(re_idx) (%d) must equal length(y) (%d).",
+                 where, length(re_idx), N), call. = FALSE)
+  }
+  ri <- as.integer(re_idx)
+  if (anyNA(ri)) {
+    stop(where, ": `re_idx` must be non-NA integers.", call. = FALSE)
+  }
+  if (min(ri) < 0L || max(ri) > n_re_groups) {
+    stop(sprintf(paste0("%s: `re_idx` values must be in [0, n_re_groups = %d] ",
+                        "(0 = no random effect); got range [%d, %d]."),
+                 where, n_re_groups, min(ri), max(ri)), call. = FALSE)
+  }
+  ri
+}
+
+
 #' Interpret an RE term's covariance specification
 #'
 #' Maps one `re_list` element to the two representations the Laplace path needs:

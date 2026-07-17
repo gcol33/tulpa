@@ -620,7 +620,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   .seed_scoped(seed)
 
   re_terms <- .as_re_terms_list(re_terms)
-  if (is.null(n_trials)) n_trials <- rep(1L, length(y))
+  if (!is.matrix(X)) X <- as.matrix(X)
+  vd <- .validate_glm_design(y, X, n_trials, "tulpa_re_cov_nested")
+  n_trials <- vd$n_trials
   layout <- .re_cov_block_layout(re_terms, length(y))
   k <- sum(vapply(layout, `[[`, integer(1), "k"))
   if (is.null(log_prior_theta)) {

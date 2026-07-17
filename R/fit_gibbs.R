@@ -335,10 +335,11 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #' @param group Integer vector of group indices (1-based)
 #' @param n_groups Number of groups
 #' @param family Character: "binomial" or "neg_binomial_2"
-#' @param n_iter Total iterations
-#' @param warmup Warmup iterations
-#' @param prior_beta_sd Prior SD for betas
-#' @param prior_sigma_scale Prior scale for RE sigma
+#' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
+#'   (`mean = 0`) Gaussian on every coefficient with SD `sd` (default
+#'   `list(mean = 0, sd = 10)`). The Polya-Gamma sampler uses a mean-zero prior,
+#'   so a non-zero `mean` errors.
+#' @param prior_sigma_scale Prior scale for RE sigma (statistical; default 2.5).
 #' @details For `family = "neg_binomial_2"` the Polya-Gamma weights are drawn
 #'   at the exact real shape `PG(y + r, eta)` and the dispersion `r` is
 #'   updated by a random-walk Metropolis-Hastings step on `log(r)` whose
@@ -364,8 +365,11 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #'   object. Routes to the multiscale temporal Polya-Gamma sampler via
 #'   [dispatch_gibbs_temporal()] (binomial only; RW1 trend + cyclic seasonal +
 #'   AR1/IID short-term). Cannot be combined with `spatial`.
-#' @param verbose Print progress
-#' @param n_threads Number of threads
+#' @param control A named list of numerical / tuning knobs (statistical
+#'   arguments stay in the signature above): `n_iter` (default 2000), `warmup`
+#'   (default 1000), `thin` (default 1), `seed` (`NULL` draws from the session
+#'   RNG; the Polya-Gamma kernels use R's RNG, so a seed makes the fit
+#'   reproducible), `verbose` (default FALSE), `n_threads` (default 1).
 #'
 #' @return List with beta draws, RE draws, sigma_re draws (plus the spatial
 #'   field draws when `spatial` is supplied)
@@ -379,16 +383,25 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #' y <- rbinom(n, 1, plogis(X %*% c(-0.2, 0.5) + b[grp]))
 #' \donttest{
 #' fit <- tulpa_gibbs(y, rep(1L, n), X, grp, G, family = "binomial",
-#'                    n_iter = 500L, warmup = 250L)
+#'                    control = list(n_iter = 500L, warmup = 250L))
 #' colMeans(fit$beta)
 #' }
 #' @export
 tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         family = "binomial",
-                        n_iter = 2000L, warmup = 1000L,
-                        prior_beta_sd = 10.0, prior_sigma_scale = 2.5,
+                        beta_prior = list(mean = 0, sd = 10),
+                        prior_sigma_scale = 2.5,
                         spatial = NULL, temporal = NULL,
-                        verbose = FALSE, n_threads = 1L) {
+                        control = list()) {
+
+  .check_control(control, .CONTROL_KEYS$gibbs, "tulpa_gibbs")
+  n_iter        <- as.integer(control$n_iter %||% 2000L)
+  warmup        <- as.integer(control$warmup %||% 1000L)
+  thin          <- as.integer(control$thin %||% 1L)
+  verbose       <- isTRUE(control$verbose)
+  n_threads     <- as.integer(control$n_threads %||% 1L)
+  prior_beta_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  .seed_scoped(control$seed)
 
   # Spatial / temporal field present: route to the matching Polya-Gamma Gibbs
   # sampler (the Gibbs analogue of tulpa_laplace(spatial = ...)). `group` /
@@ -399,9 +412,29 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
     stop("Combined spatial + temporal Gibbs is not available; supply only one ",
          "of `spatial` / `temporal`.", call. = FALSE)
   }
+
+  # Design validation (nrow(X) == length(y), n_trials length, group range) up
+  # front, so a mismatch fails in R with a clear message rather than indexing
+  # out of bounds in the Polya-Gamma kernel. neg_binomial_2 ignores n_trials.
+  ntr_in <- if (family == "binomial") n_trials else n_trials %||% rep(1L, length(y))
+  vd <- .validate_glm_design(y, X, ntr_in, "tulpa_gibbs")
+  if (length(group) != vd$N) {
+    stop(sprintf("tulpa_gibbs: length(group) (%d) must equal length(y) (%d).",
+                 length(group), vd$N), call. = FALSE)
+  }
+  # n_groups == 0 marks "no iid random-effect block" (the spatial-only front
+  # door passes a placeholder group of all 1s); only range-check a real block.
+  grp_i <- as.integer(group)
+  if (n_groups > 0L &&
+      (anyNA(grp_i) || min(grp_i) < 1L || max(grp_i) > n_groups)) {
+    stop(sprintf(paste0("tulpa_gibbs: `group` must be 1-based integers in ",
+                        "[1, n_groups = %d]; got range [%d, %d]."),
+                 n_groups, min(grp_i), max(grp_i)), call. = FALSE)
+  }
+
   res <- if (!is.null(spatial)) {
     dispatch_gibbs_spatial(
-      y = y, n_trials = if (is.null(n_trials)) rep(1L, length(y)) else n_trials,
+      y = y, n_trials = vd$n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       spatial = spatial, family = family,
       iter = n_iter, warmup = warmup,
@@ -410,7 +443,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
     )
   } else if (!is.null(temporal)) {
     dispatch_gibbs_temporal(
-      y = y, n_trials = if (is.null(n_trials)) rep(1L, length(y)) else n_trials,
+      y = y, n_trials = vd$n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       temporal = temporal, family = family,
       iter = n_iter, warmup = warmup,
@@ -419,10 +452,10 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
     )
   } else if (family == "binomial") {
     cpp_pg_binomial_gibbs(
-      y = as.numeric(y), n = as.integer(n_trials), X = X,
+      y = as.numeric(y), n = as.integer(vd$n_trials), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),
       n_iter = as.integer(n_iter), n_warmup = as.integer(warmup),
-      thin = 1L,
+      thin = thin,
       prior_beta_sd = prior_beta_sd,
       prior_sigma_scale = prior_sigma_scale,
       store_eta = FALSE, verbose = verbose,
@@ -433,7 +466,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       y = as.numeric(y), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),
       n_iter = as.integer(n_iter), n_warmup = as.integer(warmup),
-      thin = 1L,
+      thin = thin,
       prior_beta_sd = prior_beta_sd,
       prior_sigma_scale = prior_sigma_scale,
       prior_r_shape = 1.0, prior_r_rate = 0.1, r_init = 5.0,

@@ -5,18 +5,27 @@
 #'
 #' @param formula A formula (e.g., y ~ x1 + x2)
 #' @param data A data frame
-#' @param sigma_beta Prior SD for regression coefficients (default 10)
-#' @param iter Total iterations (default 2000)
-#' @param warmup Warmup iterations (default 1000)
-#' @param step_size HMC step size (default 0.05)
-#' @param n_leapfrog Number of leapfrog steps (default 10)
-#' @param seed Random seed; `NULL` (default) draws one from the session RNG.
+#' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
+#'   (`mean = 0`) Gaussian on every coefficient with SD `sd`
+#'   (default `list(mean = 0, sd = 10)`).
+#' @param control List of numerical / sampler knobs: `iter` (total iterations,
+#'   default 2000), `warmup` (default 1000), `step_size` (HMC step size, default
+#'   0.05), `n_leapfrog` (default 10), `seed` (`NULL` draws from the session
+#'   RNG).
 #'
 #' @return A list with draws matrix, posterior means, and metadata
 #' @export
-tulpa_gaussian <- function(formula, data, sigma_beta = 10, iter = 2000,
-                           warmup = 1000, step_size = 0.05, n_leapfrog = 10,
-                           seed = NULL) {
+tulpa_gaussian <- function(formula, data,
+                           beta_prior = list(mean = 0, sd = 10),
+                           control = list()) {
+  .check_control(control, .CONTROL_KEYS$gaussian, "tulpa_gaussian")
+  sigma_beta <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  iter       <- as.integer(control$iter %||% 2000L)
+  warmup     <- as.integer(control$warmup %||% 1000L)
+  step_size  <- control$step_size %||% 0.05
+  n_leapfrog <- as.integer(control$n_leapfrog %||% 10L)
+  seed       <- control$seed
+
   # Parse formula
   mf <- model.frame(formula, data)
   y <- model.response(mf)

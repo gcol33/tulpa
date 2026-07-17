@@ -6,8 +6,10 @@ test_that("tulpa_gaussian fits a simple linear model", {
   y <- 2 + 3 * x + rnorm(n, sd = 0.5)
   df <- data.frame(y = y, x = x)
 
-  fit <- tulpa_gaussian(y ~ x, data = df, iter = 2000, warmup = 1000,
-                        step_size = 0.02, n_leapfrog = 20, seed = 42)
+  fit <- tulpa_gaussian(y ~ x, data = df,
+                        control = list(iter = 2000, warmup = 1000,
+                                       step_size = 0.02, n_leapfrog = 20,
+                                       seed = 42))
 
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$n_samples, 1000)
@@ -31,8 +33,10 @@ test_that("tulpa_gaussian handles intercept-only model", {
   y <- rnorm(n, mean = 5, sd = 1)
   df <- data.frame(y = y)
 
-  fit <- tulpa_gaussian(y ~ 1, data = df, iter = 1500, warmup = 500,
-                        step_size = 0.05, n_leapfrog = 10, seed = 99)
+  fit <- tulpa_gaussian(y ~ 1, data = df,
+                        control = list(iter = 1500, warmup = 500,
+                                       step_size = 0.05, n_leapfrog = 10,
+                                       seed = 99))
 
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$p, 1)  # intercept only
@@ -44,7 +48,8 @@ test_that("print.tulpa_fit works", {
   skip_if_not_slow()
   set.seed(789)
   df <- data.frame(y = rnorm(50), x = rnorm(50))
-  fit <- tulpa_gaussian(y ~ x, data = df, iter = 500, warmup = 250,
-                        step_size = 0.05, n_leapfrog = 10)
+  fit <- tulpa_gaussian(y ~ x, data = df,
+                        control = list(iter = 500, warmup = 250,
+                                       step_size = 0.05, n_leapfrog = 10))
   expect_output(print(fit), "tulpa fit")
 })

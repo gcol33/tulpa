@@ -5,7 +5,12 @@
 \title{Latent Factor Specification for Unmeasured Confounders}
 \value{
 The constructor documented in this family (\code{\link[=latent_factor]{latent_factor()}})
-returns a \code{tulpa_latent} specification object for use in \code{\link[=tulpa]{tulpa()}}.
+returns a \code{tulpa_latent} specification object consumed by ratio /
+multi-arm model packages built on tulpa (e.g. tulpaRatio), where the
+shared factor enters two or more linear predictors and cancels in the
+derived ratio. It is a multi-arm construct: the single-response \code{\link[=tulpa]{tulpa()}}
+front door does not read it (for an in-formula latent Gaussian block on a
+single response, use \code{latent(tgmrf(...))}).
 }
 \description{
 Specify latent factors to capture shared unmeasured confounders between

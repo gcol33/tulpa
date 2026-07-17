@@ -34,7 +34,10 @@ factors only affect the first process.}
 to have unit variance before applying sigma.}
 }
 \value{
-A \code{tulpa_latent} object for use in \code{\link[=tulpa]{tulpa()}}.
+A \code{tulpa_latent} object consumed by ratio / multi-arm model
+packages built on tulpa (e.g. tulpaRatio); not read by the single-response
+\code{\link[=tulpa]{tulpa()}} front door (use \code{latent(tgmrf(...))} for a single-response
+latent Gaussian block).
 }
 \description{
 Define latent factors for capturing unmeasured shared structure between
@@ -60,10 +63,11 @@ confounders to be measured.
 
 \subsection{Mathematical Model}{
 
-For observation i with K latent factors:
+For observation i with K latent factors, on each of two model arms
+(processes 1 and 2):
 
-\deqn{\eta^{num}_i = X^{num}_i \beta^{num} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
-\deqn{\eta^{denom}_i = X^{denom}_i \beta^{denom} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
+\deqn{\eta^{(1)}_i = X^{(1)}_i \beta^{(1)} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
+\deqn{\eta^{(2)}_i = X^{(2)}_i \beta^{(2)} + \sum_{k=1}^{K} f_{ik} \sigma_k + \ldots}
 
 where:
 \itemize{
@@ -116,18 +120,13 @@ latent_factor(n_factors = 1, prior = prior_pc(U = 0.5, alpha = 0.01))
 # Numerator-only factor (not shared)
 latent_factor(n_factors = 1, shared = FALSE)
 
-\dontrun{
-# Use in model fitting through a ratio model package (tulpaRatio owns the
-# two-arm formula and the negbin/negbin ratio family):
-fit <- tulpa(
-  species_count | total_count ~ habitat + (1 | site),
-  data = df,
-  family = tulpaRatio::tulpa_negbin_negbin(),
-  latent = latent_factor(n_factors = 2)
-)
-}
+# The spec is consumed by a ratio / multi-arm model package (tulpaRatio owns
+# the two-arm `species | total ~ ...` formula and the negbin/negbin ratio
+# family); it is that package's fitter, not the single-response tulpa() front
+# door, that reads the `latent_factor()` object.
 
 }
 \seealso{
-\code{\link[=tulpa]{tulpa()}} for model fitting, \code{\link[=prior_pc]{prior_pc()}} for prior specification
+\code{\link[=prior_pc]{prior_pc()}} for prior specification; \code{latent()} / \code{\link[=tgmrf]{tgmrf()}} for a
+single-response in-formula latent Gaussian block
 }

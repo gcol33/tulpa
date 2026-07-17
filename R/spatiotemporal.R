@@ -710,7 +710,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 #'   invisibly, after drawing a base-graphics plot. Called for the side effect
 #'   of visualizing the spatiotemporal interaction effects.
 #'
-#' @importFrom graphics image matplot
+#' @importFrom graphics image matplot barplot abline
 #' @importFrom grDevices hcl.colors
 #'
 #' @export
@@ -784,6 +784,38 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
             xlab = "Time", ylab = "Interaction Effect",
             main = "Spatiotemporal Effects by Location", ...)
     abline(h = 0, lty = 2, col = "gray50")
+
+  } else if (type == "spatial_map") {
+    # The summary is indexed by spatial unit (s = 1..S) x time (t = 1..T) with
+    # no geographic coordinates, so "spatial_map" is the time-averaged effect
+    # profile over the spatial units, not a coordinate map.
+    mean_mat <- matrix(x$mean, nrow = S, ncol = T, byrow = FALSE)
+    spatial_mean <- rowMeans(mean_mat)
+
+    if (requireNamespace("ggplot2", quietly = TRUE)) {
+      df <- data.frame(s = seq_len(S), value = spatial_mean)
+      p <- ggplot2::ggplot(df, ggplot2::aes(x = .data$s, y = .data$value)) +
+        ggplot2::geom_col(fill = "steelblue") +
+        ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
+                            color = "gray50") +
+        ggplot2::labs(
+          title = "Time-averaged spatial effect",
+          x = "Spatial unit", y = "Mean interaction effect"
+        ) +
+        theme_tulpa()
+      return(p)
+    }
+
+    # Base R fallback
+    barplot(spatial_mean, names.arg = seq_len(S),
+            xlab = "Spatial unit", ylab = "Mean interaction effect",
+            main = "Time-averaged spatial effect", ...)
+    abline(h = 0, lty = 2, col = "gray50")
+
+  } else {
+    stop(sprintf(paste0(
+      "Unknown plot `type` = '%s'. Use 'heatmap', 'time_series', or ",
+      "'spatial_map'."), type), call. = FALSE)
   }
 
   invisible(NULL)

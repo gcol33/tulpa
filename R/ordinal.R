@@ -43,8 +43,11 @@
 #' @param data A data frame.
 #' @param link Cumulative link: `"logit"` (proportional odds, default) or
 #'   `"probit"`.
-#' @param beta_prior_sd,cut_prior_sd SDs of the mean-zero Gaussian ridge priors
-#'   on the coefficients and the cutpoint parameters (defaults 10 and 10).
+#' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
+#'   (`mean = 0`) Gaussian ridge on every coefficient with scalar SD `sd`
+#'   (default `list(mean = 0, sd = 10)`).
+#' @param cut_prior_sd SD of the mean-zero Gaussian ridge prior on the cutpoint
+#'   parameters (default 10).
 #' @param control List of numerical knobs: `max_iter` (default 200), `n_draws`
 #'   (default 2000), `seed`.
 #'
@@ -64,10 +67,12 @@
 #' }
 #' @export
 tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
-                          beta_prior_sd = 10, cut_prior_sd = 10,
+                          beta_prior = list(mean = 0, sd = 10),
+                          cut_prior_sd = 10,
                           control = list()) {
   link <- match.arg(link)
   .check_control(control, .CONTROL_KEYS$ordinal, "tulpa_ordinal")
+  beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   pfun <- if (link == "probit") stats::pnorm else stats::plogis
   qfun <- if (link == "probit") stats::qnorm else stats::qlogis
   max_iter <- as.integer(control$max_iter %||% 200L)

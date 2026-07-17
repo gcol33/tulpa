@@ -24,14 +24,9 @@ Extract latent factor posteriors from fit
 }
 \examples{
 \dontrun{
-# After fitting a ratio model with latent factors (tulpaRatio owns the
-# two-arm formula and the negbin/negbin ratio family):
-fit <- tulpa(
-  count | total ~ x,
-  data = df,
-  family = tulpaRatio::tulpa_negbin_negbin(),
-  latent = latent_factor(n_factors = 2)
-)
+# `fit` is a ratio / multi-arm model fitted with latent factors by a consumer
+# package (tulpaRatio owns the two-arm formula and the negbin/negbin ratio
+# family and reads the latent_factor() spec):
 
 # Get summary
 factors <- latent_factors(fit)

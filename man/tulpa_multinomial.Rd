@@ -4,7 +4,12 @@
 \alias{tulpa_multinomial}
 \title{Multinomial (nominal K-class) logistic regression via Laplace}
 \usage{
-tulpa_multinomial(formula, data, beta_prior_sd = 10, control = list())
+tulpa_multinomial(
+  formula,
+  data,
+  beta_prior = list(mean = 0, sd = 10),
+  control = list()
+)
 }
 \arguments{
 \item{formula}{Model formula; the response must be a factor (or coercible to
@@ -12,8 +17,10 @@ one) with >= 3 levels. The baseline is the last level.}
 
 \item{data}{A data frame.}
 
-\item{beta_prior_sd}{SD of the mean-zero Gaussian prior on every coefficient
-(ridge; default 10). A finite value keeps the mode finite under separation.}
+\item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
+(\code{mean = 0}) Gaussian ridge on every coefficient with scalar SD \code{sd}
+(default \code{list(mean = 0, sd = 10)}). A finite SD keeps the mode finite
+under separation.}
 
 \item{control}{List of numerical knobs: \code{max_iter} (default 100), \code{tol}
 (default 1e-8), \code{n_draws} (posterior draws, default 2000), \code{seed}.}

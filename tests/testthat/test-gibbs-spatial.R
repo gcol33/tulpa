@@ -34,7 +34,7 @@ test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data"
     y = y, n_trials = ntr, X = X, group = grp, n_groups = n_groups,
     family = "binomial",
     spatial = list(type = "icar", adjacency = W, spatial_idx = unit),
-    n_iter = 3000L, warmup = 1500L, verbose = FALSE
+    control = list(n_iter = 3000L, warmup = 1500L)
   )
 
   # Wiring: the ICAR sampler returns its universal + spatial draws.
@@ -82,7 +82,7 @@ test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", 
     y = y, n_trials = NULL, X = X, group = grp, n_groups = n_groups,
     family = "neg_binomial_2",
     spatial = list(type = "icar", adjacency = W, spatial_idx = unit),
-    n_iter = 3000L, warmup = 1500L, verbose = FALSE
+    control = list(n_iter = 3000L, warmup = 1500L)
   )
 
   # Wiring: the negbin ICAR sampler returns its universal + spatial + r draws.
@@ -139,7 +139,7 @@ test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data",
     y = y, n_trials = ntr, X = X, group = rep(1L, n), n_groups = 0L,
     family = "binomial",
     spatial = list(type = "rsr", adjacency = W, spatial_idx = seq_len(n)),
-    n_iter = 3000L, warmup = 1500L, verbose = FALSE
+    control = list(n_iter = 3000L, warmup = 1500L)
   )
 
   # Wiring: the RSR sampler returns raw + projected field draws plus tau.
@@ -181,7 +181,7 @@ test_that("tulpa_gibbs(spatial = gp) recovers fixed effects (one obs per locatio
   fit <- tulpa_gibbs(
     y = y, n_trials = ntr, X = X, group = rep(1L, n), n_groups = 0L,
     family = "binomial", spatial = sp,
-    n_iter = 3000L, warmup = 1500L, verbose = FALSE
+    control = list(n_iter = 3000L, warmup = 1500L)
   )
 
   expect_true(all(c("beta", "gp", "sigma2_gp", "phi_gp") %in% names(fit)))
@@ -226,7 +226,7 @@ test_that("tulpa_gibbs(spatial = multiscale_gp) recovers fixed effects", {
   fit <- tulpa_gibbs(
     y = y, n_trials = ntr, X = X, group = rep(1L, n), n_groups = 0L,
     family = "binomial", spatial = sp,
-    n_iter = 3000L, warmup = 1500L, verbose = FALSE
+    control = list(n_iter = 3000L, warmup = 1500L)
   )
 
   expect_true(all(c("beta", "w_local", "w_regional",
@@ -275,7 +275,7 @@ test_that("continuous Gibbs samplers reject repeated-location designs", {
     tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
                 X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
                 family = "binomial", spatial = sp,
-                n_iter = 100L, warmup = 50L, verbose = FALSE),
+                control = list(n_iter = 100L, warmup = 50L)),
     "one observation per unique location"
   )
 })

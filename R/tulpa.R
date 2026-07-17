@@ -461,8 +461,7 @@
       return(c(common, list(
         prior_df        = control$prior_df,
         prior_scale     = control$prior_scale,
-        beta_prior_mean = beta_prior$mean %||% 0,
-        beta_prior_sd   = beta_prior$sd %||% 100,
+        beta_prior      = beta_prior %||% list(mean = 0, sd = 100),
         control         = list(
           n_iter = control$n_iter %||% 2000L,
           warmup = control$warmup %||% 1000L,
@@ -539,10 +538,8 @@
           paste0("'", gibbs_fams, "'", collapse = ", "), family),
           call. = FALSE)
       }
-      if (!is.null(beta_prior$mean) && any(beta_prior$mean != 0)) {
-        warning("Gibbs uses a mean-zero Gaussian prior on the fixed effects; ",
-                "`beta_prior$mean` is ignored.", call. = FALSE)
-      }
+      # tulpa_gibbs enforces a mean-zero fixed-effect prior (the Polya-Gamma
+      # sampler is built for it); a non-zero beta_prior$mean errors there.
       # One `(1 | g)` -> that grouping; none -> a degenerate 0-group block that
       # the sampler treats as no iid RE (the spatial-only case).
       if (length(re) == 1L) {
@@ -558,12 +555,16 @@
         group = group,
         n_groups = n_groups,
         family = family,
-        spatial = spatial,
-        n_iter = control$n_iter %||% 2000L,
-        warmup = control$warmup %||% 1000L,
-        prior_beta_sd = beta_prior$sd %||% 10.0,
+        beta_prior = beta_prior %||% list(mean = 0, sd = 10),
         prior_sigma_scale = control$prior_sigma_scale %||% 2.5,
-        verbose = FALSE
+        spatial = spatial,
+        control = list(
+          n_iter    = control$n_iter %||% 2000L,
+          warmup    = control$warmup %||% 1000L,
+          thin      = control$thin %||% 1L,
+          seed      = control$seed,
+          n_threads = control$n_threads %||% 1L
+        )
       ))
     }
     if (backend == "agq") {
@@ -1005,13 +1006,13 @@ tulpa <- function(formula, data,
     }
     fit <- if (family == "multinomial") {
       tulpa_multinomial(formula, data,
-                        beta_prior_sd = beta_prior$sd %||% 10,
+                        beta_prior = beta_prior %||% list(mean = 0, sd = 10),
                         control = .control_subset(control,
                                                   .CONTROL_KEYS$multinomial))
     } else {
       tulpa_ordinal(formula, data,
                     link = if (family == "ordinal_probit") "probit" else "logit",
-                    beta_prior_sd = beta_prior$sd %||% 10,
+                    beta_prior = beta_prior %||% list(mean = 0, sd = 10),
                     control = .control_subset(control, .CONTROL_KEYS$ordinal))
     }
     fit$call <- match.call()

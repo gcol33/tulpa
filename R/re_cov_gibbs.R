@@ -152,8 +152,10 @@
 #' @param prior_scale Inverse-Wishart prior scale matrix. Used for a block when
 #'   its dimension matches (default `diag(n_coefs)`); otherwise the per-block
 #'   default is used.
-#' @param beta_prior_mean,beta_prior_sd Gaussian fixed-effect prior (defaults
-#'   `0` and `100`). Scalars are recycled to `ncol(X)`.
+#' @param beta_prior Gaussian fixed-effect prior as `list(mean, sd)` (default
+#'   `list(mean = 0, sd = 100)`, weak by design for the debias sampler). Scalar
+#'   `mean` / `sd` are recycled to `ncol(X)`; a length-`ncol(X)` vector sets a
+#'   per-coefficient prior.
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
@@ -207,7 +209,7 @@
 tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
                                family = "binomial", phi = 1.0,
                                prior_df = NULL, prior_scale = NULL,
-                               beta_prior_mean = 0, beta_prior_sd = 100,
+                               beta_prior = list(mean = 0, sd = 100),
                                control = list()) {
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
@@ -223,9 +225,11 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   .seed_scoped(seed)
 
   re_terms <- .as_re_terms_list(re_terms)
-  n_obs <- length(y)
-  p     <- ncol(X)
-  if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
+  if (!is.matrix(X)) X <- as.matrix(X)
+  vd <- .validate_glm_design(y, X, n_trials, "tulpa_re_cov_gibbs")
+  n_obs    <- vd$N
+  n_trials <- vd$n_trials
+  p        <- ncol(X)
   if (!family %in% c("binomial", "poisson", "gaussian",
                      "neg_binomial_2", "negbin")) {
     stop(sprintf("tulpa_re_cov_gibbs: unsupported family '%s'.", family),
@@ -234,17 +238,30 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   layout <- .re_cov_block_layout(re_terms, n_obs)
   M      <- length(layout)
 
+  # A user-supplied `prior_scale` applies to the block(s) whose covariance
+  # dimension it matches (the documented single-covariance case); other blocks
+  # keep the weakly-informative default. If it matches NO block it was silently
+  # ignored -- reject that rather than fit an unintended default.
+  if (!is.null(prior_scale)) {
+    ps_dim  <- dim(as.matrix(prior_scale))
+    ncoefs  <- vapply(layout, function(bl) as.integer(bl$nc), integer(1))
+    if (!any(ps_dim[1L] == ncoefs & ps_dim[2L] == ncoefs)) {
+      stop(sprintf(paste0(
+        "`prior_scale` is %d x %d but matches no random-effect block ",
+        "(block covariance dimension(s): %s); it would be silently ignored."),
+        ps_dim[1L], ps_dim[2L],
+        paste(sort(unique(ncoefs)), collapse = ", ")), call. = FALSE)
+    }
+  }
+
   # --- per-block conjugate priors -------------------------------------------
   priors <- lapply(layout, .re_gibbs_block_prior, prior_df = prior_df,
                    prior_scale = prior_scale)
 
   # --- fixed-effect prior ----------------------------------------------------
-  bmean <- if (length(beta_prior_mean) == 1L) rep(beta_prior_mean, p) else beta_prior_mean
-  bsd   <- if (length(beta_prior_sd)   == 1L) rep(beta_prior_sd,   p) else beta_prior_sd
-  if (length(bmean) != p || length(bsd) != p) {
-    stop("`beta_prior_mean` / `beta_prior_sd` must be length 1 or ncol(X).",
-         call. = FALSE)
-  }
+  bp    <- .normalize_beta_prior(beta_prior %||% list(mean = 0, sd = 100), p)
+  bmean <- bp$mean
+  bsd   <- bp$sd
 
   # --- pilot Laplace solve: starting values + proposal shapes ---------------
   # Sigma_m = I init for every block; mode gives beta and per-term b; H_beta and

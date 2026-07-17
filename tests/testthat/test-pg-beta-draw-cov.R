@@ -22,8 +22,8 @@ test_that("PG Gibbs beta draws have the conjugate posterior covariance", {
     y = y, n_trials = ntr, X = X,
     group = rep(1L, n), n_groups = 0L,
     family = "binomial",
-    n_iter = 5000L, warmup = 1000L,
-    prior_beta_sd = 10.0, verbose = FALSE
+    beta_prior = list(mean = 0, sd = 10),
+    control = list(n_iter = 5000L, warmup = 1000L)
   )
 
   draws <- fit$beta

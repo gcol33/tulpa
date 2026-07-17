@@ -362,10 +362,10 @@
 #'   * `phi` (numeric scalar, optional) -- dispersion forwarded to
 #'     [tulpa_laplace()] (used by `negbin`, `gamma`).
 #'   * `re_list`, `spatial`, `weights` (optional) -- forwarded as-is.
-#' @param spatial Optional default spatial spec. Currently unused by the
-#'   engine; pass a `spatial` field on each block instead. Reserved so the
-#'   API matches the published contract in CLAUDE.md.
-#' @param re_list Optional default RE list. Same status as `spatial`.
+#' @param spatial,re_list Not consumed at the driver level -- latent structure
+#'   is per-submodel, set as a `spatial` / `re_list` field on each block
+#'   `m_step_encode()` returns. Supplying either here is an error (rather than a
+#'   silent no-op).
 #' @param max_iter Maximum EM iterations.
 #' @param tol Convergence tolerance on max relative parameter change.
 #' @param damping EM damping factor in `[0, 1)`. With `damping = d`, the
@@ -499,6 +499,15 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
   }
   if (!is.function(m_step_encode)) {
     stop("`m_step_encode` must be a function", call. = FALSE)
+  }
+  # `spatial` / `re_list` are not read at the driver level: latent structure is
+  # per-submodel, supplied as a `spatial` / `re_list` field on each block the
+  # m_step_encode() callback returns. Passing them here would be silently
+  # ignored, so reject rather than drop (pre-release: no silent no-ops).
+  if (!is.null(spatial) || length(re_list) > 0L) {
+    stop("`spatial` / `re_list` are not consumed by tulpa_em_laplace(): set a ",
+         "`spatial` / `re_list` field on each block returned by ",
+         "`m_step_encode()` instead.", call. = FALSE)
   }
   damping <- as.numeric(damping)
   if (length(damping) != 1L || is.na(damping) ||

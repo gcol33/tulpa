@@ -45,11 +45,10 @@ length-matched to \code{y} when non-\code{NULL}.
 \item \code{re_list}, \code{spatial}, \code{weights} (optional) -- forwarded as-is.
 }}
 
-\item{spatial}{Optional default spatial spec. Currently unused by the
-engine; pass a \code{spatial} field on each block instead. Reserved so the
-API matches the published contract in CLAUDE.md.}
-
-\item{re_list}{Optional default RE list. Same status as \code{spatial}.}
+\item{spatial, re_list}{Not consumed at the driver level -- latent structure
+is per-submodel, set as a \code{spatial} / \code{re_list} field on each block
+\code{m_step_encode()} returns. Supplying either here is an error (rather than a
+silent no-op).}
 
 \item{max_iter}{Maximum EM iterations.}
 

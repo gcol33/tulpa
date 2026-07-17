@@ -117,27 +117,6 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
   fit
 }
 
-# Resolve a `beta_prior = list(mean, sd)` to the mean-zero SD EP consumes.
-# EP's site parameterisation is built for a mean-zero coefficient prior, so a
-# non-zero mean is rejected rather than silently centred.
-#' @keywords internal
-.ep_beta_prior_sd <- function(beta_prior, p) {
-  bp <- beta_prior %||% list(mean = 0, sd = 10)
-  m0 <- bp$mean %||% 0
-  sd <- bp$sd %||% 10
-  if (any(m0 != 0)) {
-    stop("tulpa_ep() supports only a mean-zero fixed-effect prior ",
-         "(`beta_prior$mean` must be 0); use a sampler (mode = 'mala') for a ",
-         "shifted prior.", call. = FALSE)
-  }
-  if (!is.numeric(sd) || any(!is.finite(sd)) || any(sd <= 0) ||
-      !(length(sd) == 1L || length(sd) == p)) {
-    stop("`beta_prior$sd` must be a positive scalar or length-p vector.",
-         call. = FALSE)
-  }
-  sd
-}
-
 # EP engine over a design bundle (y, X). The exported tulpa_ep() parses a
 # formula and calls this; the registry `ep` backend dispatches here directly.
 #' @keywords internal
@@ -156,7 +135,7 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
   y  <- as.numeric(y)
   X  <- as.matrix(X)
   n  <- nrow(X); p <- ncol(X)
-  beta_prior_sd <- .ep_beta_prior_sd(beta_prior, p)
+  beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   nt <- if (is.null(n_trials)) rep(1L, n) else as.integer(n_trials)
   gh <- .gauss_hermite(n_quad)
 

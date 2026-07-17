@@ -25,8 +25,10 @@
 #' @param formula Model formula; the response must be a factor (or coercible to
 #'   one) with >= 3 levels. The baseline is the last level.
 #' @param data A data frame.
-#' @param beta_prior_sd SD of the mean-zero Gaussian prior on every coefficient
-#'   (ridge; default 10). A finite value keeps the mode finite under separation.
+#' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
+#'   (`mean = 0`) Gaussian ridge on every coefficient with scalar SD `sd`
+#'   (default `list(mean = 0, sd = 10)`). A finite SD keeps the mode finite
+#'   under separation.
 #' @param control List of numerical knobs: `max_iter` (default 100), `tol`
 #'   (default 1e-8), `n_draws` (posterior draws, default 2000), `seed`.
 #'
@@ -46,9 +48,11 @@
 #' coef(fit)
 #' }
 #' @export
-tulpa_multinomial <- function(formula, data, beta_prior_sd = 10,
+tulpa_multinomial <- function(formula, data,
+                              beta_prior = list(mean = 0, sd = 10),
                               control = list()) {
   .check_control(control, .CONTROL_KEYS$multinomial, "tulpa_multinomial")
+  beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   max_iter <- as.integer(control$max_iter %||% 100L)
   tol      <- control$tol %||% 1e-8
   n_draws  <- as.integer(control$n_draws %||% 2000L)
