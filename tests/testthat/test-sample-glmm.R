@@ -111,6 +111,30 @@ test_that("RE models thread through the sampler; offset() is supported", {
   expect_equal(ncol(fit_off$draws), 2L)
 })
 
+# ESS random-effect recovery: the RE block previously used a unit ellipse and
+# the full posterior as its slice target, double-counting the RE prior and
+# shrinking sigma_re low (gcol33/tulpa#150). Multi-seed gate on the corrected
+# path (truth sigma_re = 0.7); the fix binds the ellipse to sigma_re and removes
+# the block prior from the slice target.
+test_that("ESS recovers the RE variance without double-prior shrinkage", {
+  skip_if_not_slow()
+  sig <- numeric(6)
+  for (s in seq_len(6)) {
+    set.seed(200 + s)
+    G <- 40L; npg <- 12L; N <- G * npg
+    grp <- rep(seq_len(G), each = npg); x <- rnorm(N)
+    b <- rnorm(G, 0, 0.7)
+    y <- rpois(N, exp(0.2 + 0.5 * x + b[grp]))
+    fit <- suppressMessages(tulpa(
+      y ~ x + (1 | g), data.frame(y = y, x = x, g = factor(grp)),
+      family = "poisson", mode = "ess",
+      control = list(n_iter = 1500L, warmup = 750L, seed = 7L)))
+    sig[s] <- exp(fit$means[["log_sigma_re"]])
+  }
+  # Mean recovered sigma_re within 20% of truth (was biased low pre-fix).
+  expect_lt(abs(mean(sig) - 0.7) / 0.7, 0.20)
+})
+
 # offset() reaches the kernel's linear predictor: a log-exposure offset on a
 # Poisson rate model recovers the same fixed effects as glm(offset = ...).
 test_that("the sampler recovers fixed effects under a log-exposure offset (gcol33/tulpa#72)", {
