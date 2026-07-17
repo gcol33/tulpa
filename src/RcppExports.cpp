@@ -214,6 +214,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_gp_field_predict
+Rcpp::NumericVector cpp_gp_field_predict(const Rcpp::NumericMatrix& new_coords, const Rcpp::NumericMatrix& unique_coords, const Rcpp::NumericMatrix& field_grid, const Rcpp::NumericVector& sigma2_grid, const Rcpp::NumericVector& phi_grid, const Rcpp::NumericVector& weights, int nn, int cov_type);
+RcppExport SEXP _tulpa_cpp_gp_field_predict(SEXP new_coordsSEXP, SEXP unique_coordsSEXP, SEXP field_gridSEXP, SEXP sigma2_gridSEXP, SEXP phi_gridSEXP, SEXP weightsSEXP, SEXP nnSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type new_coords(new_coordsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type unique_coords(unique_coordsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type field_grid(field_gridSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type sigma2_grid(sigma2_gridSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type phi_grid(phi_gridSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< int >::type nn(nnSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_gp_field_predict(new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_gpu_available
 bool cpp_gpu_available();
 RcppExport SEXP _tulpa_cpp_gpu_available() {
@@ -3309,6 +3327,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_terms", (DL_FUNC) &_tulpa_cpp_family_terms, 6},
     {"_tulpa_cpp_glmm_elt_terms", (DL_FUNC) &_tulpa_cpp_glmm_elt_terms, 5},
     {"_tulpa_cpp_test_laplace_gaussian", (DL_FUNC) &_tulpa_cpp_test_laplace_gaussian, 3},
+    {"_tulpa_cpp_gp_field_predict", (DL_FUNC) &_tulpa_cpp_gp_field_predict, 8},
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
     {"_tulpa_cpp_get_max_threads", (DL_FUNC) &_tulpa_cpp_get_max_threads, 0},

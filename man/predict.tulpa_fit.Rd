@@ -33,12 +33,12 @@ fits only; other layouts decline with an explanation.}
 
 \item{level}{Credible-interval level (default 0.95).}
 
-\item{include_field}{For a continuous-spatial fit (SPDE or HSGP), add the
-kriged field to the prediction (default \code{TRUE}). \code{FALSE} gives the
+\item{include_field}{For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
+add the kriged field to the prediction (default \code{TRUE}). \code{FALSE} gives the
 fixed-effect (population) prediction. Ignored for fits with no continuous
-field. For an HSGP fit the field is added to the point prediction but its
-uncertainty is not yet propagated into \code{se.fit} (the interval reflects the
-fixed-effect covariance only).}
+field. For an HSGP or GP/NNGP fit the field is added to the point
+prediction but its uncertainty is not yet propagated into \code{se.fit} (the
+interval reflects the fixed-effect covariance only).}
 
 \item{...}{Ignored.}
 }
@@ -53,11 +53,14 @@ scale. The fixed-effect part is \verb{X beta} with credible bounds from the
 fixed-effect covariance (\code{\link[=vcov]{vcov()}}). For a fit carrying a continuous spatial
 field, the posterior-mean field is interpolated (kriged) to the \code{newdata}
 coordinates and added to the linear predictor by default, so \code{predict()}
-gives the conditional (location-specific) prediction. Two field families are
-supported: an SPDE Matern field (\code{spatial_spde()}), projected through the
-mesh; and a Hilbert-space GP field (\code{spatial_gp(approx = "hsgp")}), where the
-Laplacian basis is re-evaluated at the new coordinates (with the training
-centring / boundary) and the field is marginalised over the hyperparameter
-grid. Ordinary random effects are held at zero (population level); add group
-effects from \code{\link[=ranef]{ranef()}} when needed.
+gives the conditional (location-specific) prediction. Three continuous field
+families are supported: an SPDE Matern field (\code{spatial_spde()}), projected
+through the mesh; a Hilbert-space GP field (\code{spatial_gp(approx = "hsgp")}),
+where the Laplacian basis is re-evaluated at the new coordinates (with the
+training centring / boundary); and a GP / NNGP field (\code{spatial_gp()}),
+interpolated by the NNGP conditional mean at each new location's nearest
+training locations. The HSGP and GP/NNGP fields are marginalised over the
+hyperparameter grid (not plugged in at the posterior mean). Ordinary random
+effects are held at zero (population level); add group effects from \code{\link[=ranef]{ranef()}}
+when needed.
 }

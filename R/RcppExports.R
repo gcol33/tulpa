@@ -61,6 +61,10 @@ cpp_test_laplace_gaussian <- function(y, eta, phi) {
     .Call(`_tulpa_cpp_test_laplace_gaussian`, y, eta, phi)
 }
 
+cpp_gp_field_predict <- function(new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type) {
+    .Call(`_tulpa_cpp_gp_field_predict`, new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type)
+}
+
 cpp_gpu_available <- function() {
     .Call(`_tulpa_cpp_gpu_available`)
 }
