@@ -305,9 +305,9 @@ struct KroneckerBlock {
     return qf;
   }
 
-  // Sample momentum: p ~ N(0, M) where M = Qs ⊗ Qt
-  // p = (Ls ⊗ Lt)^{-T} * z = vec(Ls^{-T} * Z * Lt^{-1})
-  // where Z is S×T standard normal
+  // Sample momentum: p ~ N(0, M) where M = Qs ⊗ Qt (mass = the precision).
+  // p = (Ls ⊗ Lt) z = vec(Ls Z Lt^T), so Var(p) = (Ls Ls^T)⊗(Lt Lt^T) = M.
+  // (The inverse form Ls^{-T} Z Lt^{-T} would give Var = M^{-1}.) Z is S×T std normal.
   void sample_momentum(double* p_full, std::mt19937& rng) const {
     std::normal_distribution<double> normal(0.0, 1.0);
     int ST = S * T;
@@ -321,16 +321,12 @@ struct KroneckerBlock {
     Eigen::Map<const Eigen::MatrixXd> Ltm(Lt.data(), T, T);
     Eigen::Map<Eigen::MatrixXd> Pm(pb, S, T);
 
-    // (Ls ⊗ Lt)^{-T} * z = vec(Ls^{-T} * Z * Lt^{-1})
-    // Step 1: solve Ls^T * tmp = Z  →  tmp = Ls^{-T} * Z
-    Eigen::MatrixXd tmp = Lsm.transpose().triangularView<Eigen::Upper>().solve(Zm);
-    // Step 2: solve tmp2 * Lt^T = tmp  →  tmp2 = tmp * Lt^{-T}
-    //   which is (Lt^{-T} * tmp^T)^T = (Lt * tmp^T)^{-T}
-    //   Actually: tmp2 * Lt^T = tmp → tmp2 = tmp * Lt^{-T}
-    //   Transpose: Lt^{-1} * tmp^T → solve Lt * Y = tmp^T → Y = Lt^{-1} * tmp^T
-    //   Then result = Y^T
-    Eigen::MatrixXd Y = Ltm.triangularView<Eigen::Lower>().solve(tmp.transpose());
-    Pm = Y.transpose();
+    // p = vec(Ls Z Lt^T): Ls, Lt are the lower Cholesky factors of Qs, Qt.
+    // Materialise the clean lower triangles (the stored upper parts are unused).
+    Eigen::MatrixXd Ls_L = Lsm.triangularView<Eigen::Lower>();
+    Eigen::MatrixXd Lt_L = Ltm.triangularView<Eigen::Lower>();
+    Eigen::MatrixXd tmp = Ls_L * Zm;          // Ls * Z  (S×T)
+    Pm.noalias() = tmp * Lt_L.transpose();    // (Ls Z) Lt^T  (S×T)
   }
 };
 
@@ -527,7 +523,7 @@ struct SparseGMRFBlock {
     return pv.dot(sol);
   }
 
-  // Sample momentum p ~ N(0, Q):  p = L^T * z where LL^T = Q
+  // Sample momentum p ~ N(0, Q) (mass = Q) where P Q P^T = L L^T.
   void sample_momentum(double* p_full, std::mt19937& rng) const {
     if (!factorized) return;
     int ST = S * T;
@@ -535,13 +531,12 @@ struct SparseGMRFBlock {
     Eigen::VectorXd z(ST);
     for (int i = 0; i < ST; i++) z[i] = normal(rng);
 
-    // P * Q * P^T = L * L^T  →  p ~ N(0, Q) needs p = P^T * L^T * P * z
-    // But simpler: p_perm = L^T * z ~ N(0, L^T L) = N(0, PQP^T)
-    // Then p = P^T * p_perm ~ N(0, P^T PQP^T P) = N(0, Q) ✓
+    // P Q P^T = L L^T  =>  Q = P^T L L^T P, so p = P^T L z gives
+    // Var(p) = P^T L L^T P = Q. (Using L^T here would give P^T L^T L P != Q.)
     auto perm = llt.permutationP();
     Eigen::SparseMatrix<double> L_mat = llt.matrixL();
-    Eigen::VectorXd p_perm = L_mat.transpose() * z;  // L^T * z
-    Eigen::VectorXd p_vec = perm.transpose() * p_perm;  // P^T * (L^T * z)
+    Eigen::VectorXd p_perm = L_mat * z;                 // L * z ~ N(0, L L^T)
+    Eigen::VectorXd p_vec = perm.transpose() * p_perm;  // P^T * (L * z)
     double* pb = p_full + start;
     std::memcpy(pb, p_vec.data(), ST * sizeof(double));
   }
