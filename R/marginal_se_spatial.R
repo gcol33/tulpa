@@ -55,7 +55,7 @@ NULL
       Q   <- tau2 * (k4 * Cmat + 2 * k2 * G1 + G2)
     }
   } else {
-    # Fractional alpha: the operator-based rational field (gcol33/tulpa#71) does
+    # Fractional alpha: the operator-based rational field does
     # NOT have a shifted-alpha=2 precision; its precision is Q = Pl' C^{-1} Pl
     # from the rational roots (see .spde_rational_assemble). This analytic
     # marginal-SE path covers only the integer construction; fractional-nu field
@@ -272,7 +272,7 @@ NULL
 
 # Both marginal functions take the optional iid RE block so an SPDE / NNGP fit
 # carrying one slices its [beta, re, field] mode correctly and Schurs the RE
-# columns out of the joint Hessian alongside the field (issue #74). With
+# columns out of the joint Hessian alongside the field. With
 # n_re_groups = 0 the RE design is empty and the result is the field-only Schur.
 
 #' @keywords internal
@@ -318,7 +318,7 @@ NULL
   beta   <- mode[seq_len(p)]
   tau_re <- 1 / (sigma_re^2 + 1e-10)
 
-  # Fractional nu: the operator-based rational field (gcol33/tulpa#71; #85). The
+  # Fractional nu: the operator-based rational field. The
   # latent is the auxiliary weight vector x ~ N(0, Q_rat^{-1}) on the non-orphan
   # submesh, with obs -> latent map A_eff = A Pr; the field is u = Pr x. The
   # marginal-beta Schur is parameterisation-invariant, so it runs on (A_eff,

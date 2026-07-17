@@ -4,12 +4,12 @@
 // cpp_nested_laplace_multi (single-arm).
 //
 // Any block in the list can be designated a "copy block" -- one of icar /
-// bym2 / car_proper / rw1 / rw2 / ar1 / iid (gcol33/tulpa#76; the alpha-scaled
+// bym2 / car_proper / rw1 / rw2 / ar1 / iid (the alpha-scaled
 // eta contribution does not depend on the field being spatial). The copy block
 // uses INLA `copy=` semantics: donor arms see one amplitude axis, the copy
 // arm sees a second. Other blocks are shared identically across arms.
 //
-// The R-side primary spec is (sigma, alpha) (gcol33/tulpa#22): sigma is the
+// The R-side primary spec is (sigma, alpha): sigma is the
 // donor amplitude axis and alpha is the direct copy coefficient, so the copy
 // arm's field amplitude is `alpha * sigma`. The R parser materializes the
 // per-arm scaling by passing `sigma` in the donor column and `alpha * sigma`
@@ -63,7 +63,7 @@
 #include "nested_laplace_checkpoint.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
-#include "nested_laplace_joint_batch.h"   // gcol33/tulpa#66 fused batched scatter (WIP)
+#include "nested_laplace_joint_batch.h"   // fused batched scatter (WIP)
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
 #include "hsgp_mo_block_factory.h"
@@ -90,7 +90,7 @@
 
 namespace {
 
-// Inner-thread budget for the joint nested-Laplace grid solve (gcol33/tulpa#107).
+// Inner-thread budget for the joint nested-Laplace grid solve.
 //
 // The outer grid runs one cell per thread across `n_outer` workers. When the
 // grid has fewer cells than the outer pool the surplus threads would idle --
@@ -112,7 +112,7 @@ inline int joint_inner_thread_budget(int n_outer, int n_grid, int n_threads) {
 // RAII enable of one extra OpenMP nesting level for the duration of a nested
 // (outer grid x inner reduction) solve, restoring the prior limit on scope exit
 // so the global setting is not left changed for unrelated regions. A no-op when
-// `enable` is false or OpenMP is absent (gcol33/tulpa#107).
+// `enable` is false or OpenMP is absent.
 struct NestedOmpLevels {
 #ifdef _OPENMP
     int prev_;
@@ -184,7 +184,7 @@ inline std::function<double(int, int)> make_per_arm_row_weight_fn(
 // Per-arm amplitude dispatch for a copy block. axis_donor and axis_copy are
 // column indices into theta_grid for this block's donor-arm and copy-arm
 // amplitude axes respectively (set up by the R-side parser). Under the
-// (sigma, alpha) reparameterization (gcol33/tulpa#22), the R side fills
+// (sigma, alpha) reparameterization, the R side fills
 // theta_grid[, axis_donor] = sigma and theta_grid[, axis_copy] = alpha*sigma
 // before calling this kernel.
 //
@@ -235,7 +235,7 @@ inline std::function<double(int, int)> make_field_coef_arm_scale_fn(
 // basis_eval live in tulpa::NlCellCache (nl_cell_cache.h): the joint grid
 // driver runs block.prep lock-free across n_threads_outer and the coupled-
 // cell scatter's tasks can be stolen by other team threads, so state is
-// keyed by CELL id, not thread id (gcol33/tulpaObs#42).
+// keyed by CELL id, not thread id.
 
 int build_joint_blocks_from_spec(
     const Rcpp::List& bs,
@@ -556,7 +556,7 @@ int build_joint_blocks_from_spec(
         auto adj_rp_v = std::make_shared<std::vector<int>>(adj_rp.begin(), adj_rp.end());
         auto adj_ci_v = std::make_shared<std::vector<int>>(adj_ci.begin(), adj_ci.end());
         auto n_nbr_v  = std::make_shared<std::vector<int>>(n_nbr.begin(),  n_nbr.end());
-        // Per-cell log|Q(rho)| cache (gcol33/tulpaObs#42, nl_cell_cache.h):
+        // Per-cell log|Q(rho)| cache (nl_cell_cache.h):
         // block.prep runs lock-free in the parallel joint grid driver, so a
         // shared scalar would race a concurrent cell's log_prior read. prep
         // publishes the cell's value; log_prior finds it by cell id, which
@@ -854,7 +854,7 @@ int build_joint_blocks_from_spec(
         // Optional per-arm per-row design weight (random slope on a covariate
         // column): eta_i += svc_weight[k][i] * d_fac * arm_scale * u[obs_idx_i].
         // Mirrors the icar / rw1 SVC path; unset => weight 1, byte-identical to
-        // the plain random-intercept iid block (gcol33/tulpa#114).
+        // the plain random-intercept iid block.
         block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
 
         // Copy block: the unit-precision prior is unchanged (an IID field is
@@ -912,7 +912,7 @@ int build_joint_blocks_from_spec(
     }
 
     if (type == "miid") {
-        // Multivariate IID (gcol33/tulpa#114): p coupled per-group coefficient
+        // Multivariate IID: p coupled per-group coefficient
         // fields sharing a free cross-covariance Sigma -- the Q = I sibling of
         // mcar. One block over p * n_groups latent; the p(p+1)/2 log-Cholesky
         // axes of Sigma are integrated by the outer grid. A copy block appends
@@ -1279,7 +1279,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
     }
 
-    // Optional per-cell warm-start matrix (gcol33/tulpa#118): an R [n_grid x n_x]
+    // Optional per-cell warm-start matrix: an R [n_grid x n_x]
     // matrix flattened ROW-MAJOR for the grid driver (row k = cell k's warm
     // start). Unwrapped here (never hand a Nullable to a header); the driver
     // validates the size against n_grid * n_x and no-ops on a mismatch.
@@ -1344,7 +1344,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     // `progress` (the verbose/TTY channel), or the heartbeat file whenever
     // `progress_file` is set. A detached fit (progress = false) with a
     // progress_file still gets its file ETA -- the channel it exists for
-    // (gcol33/tulpaObs#43).
+
     std::unique_ptr<tulpa_progress::GridProgress> gp;
     if (progress || !progress_file.empty()) {
         gp.reset(new tulpa_progress::GridProgress(
@@ -1352,7 +1352,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
             progress_file, /*emit_console=*/progress));
     }
 
-    // Grid-cell checkpoint/resume (gcol33/tulpa#50). Built only when the R
+    // Grid-cell checkpoint/resume. Built only when the R
     // front door supplied a path. The fingerprint folds in everything that
     // changes a cell's result given its hyperparameter coordinate -- the per-
     // arm responses + designs, the axis layout, and the solver settings -- so
@@ -1427,7 +1427,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
 }
 
 // ==========================================================================
-// Batched multi-response entry (gcol33/tulpa#66). Mirrors the setup above
+// Batched multi-response entry. Mirrors the setup above
 // (reusing parse_joint_arms + build_joint_blocks_from_spec, both in this TU)
 // then routes to the fused batched driver. y_batch[[k]] is a [N_k x B] matrix
 // (species columns) for data arms, R_NilValue for no-data arms (psi);
@@ -1892,7 +1892,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // lives inside run_nested_laplace_grid (one per outer thread); scratch
     // pool lives here because it's joint-shaped (per-arm etas).
     //
-    // The dense joint path runs the outer grid SERIALLY (gcol33/tulpaObs#42).
+    // The dense joint path runs the outer grid SERIALLY.
     // Unlike the sparse path it does not replicate the arm specs / dispersion
     // per outer thread, so a parallel outer grid here would race on the shared
     // `specs` (sync_dispersion rewriting arm.phi) and on the coupled arms'
@@ -1914,7 +1914,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     JointArmSpecs specs = build_joint_arm_specs(arms);
 
     // One cheap-pass specs view per outer worker slot. The cheap screen may run
-    // per-tile chains concurrently (gcol33/tulpa#68); sync_dispersion mutates
+    // per-tile chains concurrently; sync_dispersion mutates
     // the specs per cell (phi-grid axis), so each worker needs its own view to
     // avoid racing on the shared `specs`. Reserved for the cheap pass; the full
     // per-cell solve uses the shared read/synced `specs` on its own thread.
@@ -1925,7 +1925,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // Inner-thread budget: single-thread when the outer grid saturates the
     // thread pool, but hand any surplus (grid smaller than the pool) to the
     // inner reduction via nested OpenMP so the long-pole cells are not solved
-    // single-threaded while freed outer threads idle (gcol33/tulpa#107).
+    // single-threaded while freed outer threads idle.
     int n_threads_inner_eff = joint_inner_thread_budget(n_outer, n_grid, n_threads);
 
     // Inner implementation: takes max_iter as a parameter so the cheap-pass
@@ -2139,7 +2139,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // parallel region, so a dedicated solver + scratch per worker slot keep it
     // isolated from the parallel fan-out's pool (the pool's entries are
     // reserved for the inner Newton on survivors). One set per outer worker so
-    // the per-tile cheap chains can run concurrently (gcol33/tulpa#68); CHOLMOD's
+    // the per-tile cheap chains can run concurrently; CHOLMOD's
     // cholmod_common is not thread-safe.
     std::vector<SparseCholeskySolver> cheap_solvers(n_cheap_workers);
     std::vector<NewtonScratchJoint> cheap_scratches(n_cheap_workers);
@@ -2153,7 +2153,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     };
 
     // Permit one nested OpenMP level for the grid solve only when the inner
-    // reduction will use surplus threads; restored on return (gcol33/tulpa#107).
+    // reduction will use surplus threads; restored on return.
     NestedOmpLevels nested_levels(n_outer > 1 && n_threads_inner_eff > 1);
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
@@ -2216,7 +2216,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // scale and was previously redone for every outer thread AND every cheap
     // worker -- 2 x n_outer full rebuilds, all serial, so a wide coupled field
     // (e.g. occu_cover's 3-arm cell-coupled fields) spent minutes
-    // single-threaded before the parallel grid even started (gcol33/tulpa#96).
+    // single-threaded before the parallel grid even started.
     // The pattern is fit-level invariant; a builder copy shares the read-only
     // entry_map (shared_ptr, O(1)) and deep-copies only the per-thread CSC
     // arrays + the mutable `values`, so the copies cost a memcpy rather than a
@@ -2233,7 +2233,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // builder's own row_idx(int) + values(double) CSC arrays, plus the
         // CHOLMOD factor each concurrent solve carries. The entry_map (~48 B per
         // nonzero) is stored ONCE and shared across every builder
-        // (gcol33/tulpa#96), so it no longer scales the per-thread budget.
+        //, so it no longer scales the per-thread budget.
         const size_t per_builder = nnz * (sizeof(int) + sizeof(double));
         // Measure the factor the inner solve will actually allocate rather than
         // guessing its fill-in: a one-time supernodal symbolic analyze of the
@@ -2344,7 +2344,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         d.assign(static_cast<size_t>(n_arms) * B, DenseBasisScratch{});
 
     // Cheap-pass solver, one per outer worker slot. The cheap screen may run
-    // per-tile chains concurrently (gcol33/tulpa#68) and CHOLMOD's
+    // per-tile chains concurrently and CHOLMOD's
     // cholmod_common is not thread-safe, so each worker needs its own factor.
     // The remaining per-worker state -- builder, scatter cache, Newton scratch,
     // arm specs, dense-basis buffers -- is SHARED with the full per-thread pool
@@ -2353,19 +2353,19 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // any full solve), so worker `w` and thread `w` never touch slot `w` at
     // once. Sharing halves the pre-grid working set -- the nnz-scaled builder +
     // scatter cache dominate it -- at a fixed outer width, so a requested
-    // n_outer costs one replicated pool, not two (gcol33/tulpa#96 setup peak).
+    // n_outer costs one replicated pool, not two (setup peak).
     const int n_cheap_workers = std::max(1, n_outer);
     std::vector<SparseCholeskySolver> cheap_solvers(n_cheap_workers);
 
     // Inner-thread budget: surplus outer threads (grid smaller than the pool)
     // are handed to the inner reduction via nested OpenMP; the split stays
-    // within the outer budget so it never oversubscribes (gcol33/tulpa#107).
+    // within the outer budget so it never oversubscribes.
     const int n_threads_inner_eff = joint_inner_thread_budget(n_outer, n_grid, n_threads);
 
     // Count of full per-cell solves currently in flight across the outer grid's
     // parallel-for. Lets a cell in the UNDER-SATURATED tail (fewer cells left
     // than team threads) hand the freed cores to its coupled-cell scatter, which
-    // dispatches them as stealable tasks (gcol33/tulpa#107 flatten). Zero when
+    // dispatches them as stealable tasks (flatten). Zero when
     // the outer loop runs serially (n_outer == 1); the static budget still
     // governs the pure-inner path.
     std::atomic<int> active_cells{0};
@@ -2437,7 +2437,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // coupled cell-coupling path has no spec view, so without this snapshot
         // it would read the shared `arms[k].phi` lock-free during the Newton
         // solve while a concurrent cell's prep_at_grid rewrites it -- the
-        // gridded beta precision (`phi.grid.pos`) race behind gcol33/tulpaObs#42.
+        // gridded beta precision (`phi.grid.pos`) race behind.
         std::vector<double> coupled_phi(coupled_arms.size(), 0.0);
         {
             TULPA_PROFILE_PHASE(PHASE_PREP);
@@ -2610,7 +2610,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     };
 
     // Permit one nested OpenMP level for the grid solve only when the inner
-    // reduction will use surplus threads; restored on return (gcol33/tulpa#107).
+    // reduction will use surplus threads; restored on return.
     NestedOmpLevels nested_levels(n_outer > 1 && n_threads_inner_eff > 1);
     return run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes,

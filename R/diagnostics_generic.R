@@ -131,7 +131,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 # simplex-constrained model combination maximizing the leave-one-out stacked log
 # predictive score, parameterized by a softmax of K-1 free coordinates so the
 # optimization is unconstrained. `lpd` is the [n_obs x n_models] pointwise elpd.
-# No `loo` dependency (gcol33/tulpa#103).
+# No `loo` dependency.
 .tulpa_stacking_weights <- function(lpd) {
   K <- ncol(lpd)
   if (K == 1L) return(1)

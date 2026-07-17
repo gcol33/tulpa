@@ -1,5 +1,5 @@
 // hmc_chain_checkpoint.h
-// Per-chain checkpoint/resume for multi-chain NUTS/HMC (gcol33/tulpa#50).
+// Per-chain checkpoint/resume for multi-chain NUTS/HMC.
 //
 // The natural checkpoint boundary for the sampler is a whole chain: each chain
 // is run independently with its own (seed, chain_id), so its result is a

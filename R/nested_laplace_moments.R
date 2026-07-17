@@ -219,7 +219,7 @@
 # with the mode at an edge or wrong-signed curvature keep their var-of-
 # means SD. Grid-spacing-independent: fixes the symptom where a sharply
 # peaked marginal log-likelihood on a coarse grid collapses var-of-
-# means to ~0 and undercovers (gcol33/tulpa#20).
+# means to ~0 and undercovers.
 .nl_refit_axis_sd_laplace <- function(res, refining = NULL) {
   if (is.null(res$theta_grid) || is.null(res$log_marginal)) return(res)
   tg <- res$theta_grid

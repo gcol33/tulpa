@@ -1,4 +1,4 @@
-﻿// hmc_sampler_funcs.h
+// hmc_sampler_funcs.h
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc.
 // Sampler function declarations (leapfrog, find_reasonable_epsilon,
@@ -134,7 +134,7 @@ std::vector<HMCResult> run_hmc_parallel_chains(
 // inv_metric_per_chain: empty (all default) or length n_chains (entry c may
 // itself be empty). Together these let one call do a fresh fit (broadcast
 // init) or a warm-started resume (per-chain final_position + inv_metric,
-// n_warmup = 0). See gcol33/tulpa#30.
+// n_warmup = 0)..
 std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     const std::vector<std::vector<double>>& q_init_per_chain,
     const std::vector<std::vector<double>>& inv_metric_per_chain,
@@ -150,7 +150,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     double adapt_delta = -1.0,
     int riemannian = -1,
     const std::string& checkpoint_path = "",
-    // Optional caller-supplied layout (gcol33/tulpa#70). When non-null it is used
+    // Optional caller-supplied layout. When non-null it is used
     // verbatim instead of compute_param_layout(data), so a model fitting through
     // a FullGradFn with a hand-built ParamLayout (total_params set, no processes)
     // gets the correct parameter count -- the single-chain runner already honours

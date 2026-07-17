@@ -1,7 +1,7 @@
 // vi_sampler.cpp
 // Variational Inference dispatcher (mean-field / low-rank / full-rank).
 // The legacy ratio Rcpp entry points (cpp_vi_fit, cpp_vi_get_n_params) were
-// removed in Phase D of the tulpaRatio migration (gcol33/tulpa#15); VI is
+// removed in Phase D of the tulpaRatio migration; VI is
 // reached from downstream packages via the C-callable shim `tulpa_fit_vi`
 // (tulpa_shims_vi_ess.h) and the generic-layout LikelihoodSpec path.
 

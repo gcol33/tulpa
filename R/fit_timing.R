@@ -1,5 +1,5 @@
 # Wall-clock fit timing for the nested-Laplace front-door fitters
-# (gcol33/tulpa#48). A single source of truth shared by tulpa_nested_laplace(),
+#. A single source of truth shared by tulpa_nested_laplace,
 # tulpa_nested_laplace_joint(), and the multi-block joint dispatch, so every
 # fit carries `fit$timing` -- a named numeric of elapsed seconds -- without each
 # fitter re-deriving the bookkeeping.

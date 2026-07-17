@@ -1034,7 +1034,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
         recommendations <- c(recommendations, sprintf(
           "Pareto k-hat = %.2f (< 0.7): nested approximation is reliable.", k_hat))
       }
-      # Opt-in per-arm k-hat (gcol33/tulpa#120): localises which arm's
+      # Opt-in per-arm k-hat: localises which arm's
       # hyperparameter axes drive a tail-heavy joint k.
       bak <- fit$pareto_k_by_arm
       if (!is.null(bak) && length(bak) > 0L) {

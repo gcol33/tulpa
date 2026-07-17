@@ -509,7 +509,7 @@ Rcpp::List cpp_nested_laplace_multi(
     // `progress` (the verbose/TTY channel), or the heartbeat file whenever
     // `progress_file` is set. A detached fit (progress = false) with a
     // progress_file still gets its file ETA -- the channel it exists for
-    // (gcol33/tulpaObs#43).
+
     std::unique_ptr<tulpa_progress::GridProgress> gp;
     if (progress || !progress_file.empty()) {
         gp.reset(new tulpa_progress::GridProgress(
@@ -517,7 +517,7 @@ Rcpp::List cpp_nested_laplace_multi(
             progress_file, /*emit_console=*/progress));
     }
 
-    // Grid-cell checkpoint/resume (gcol33/tulpa#50). The fingerprint folds the
+    // Grid-cell checkpoint/resume. The fingerprint folds the
     // shared observation inputs, the solver settings, the axis layout, and the
     // full block spec (adjacency / coords / type strings, via fold_sexp) so a
     // resume onto a file written for any different input errors. Per-cell keys

@@ -1,6 +1,6 @@
 // family_terms_export.cpp
 // Per-observation (loglik, grad, curvature) probes for the family kernels that
-// are maintained in parallel (gcol33/tulpa#142 A9).
+// are maintained in parallel (A9).
 //
 // The same per-family math lives in several kernels because each serves a
 // different backend: laplace_family_link.h (the Laplace/Newton dispatch),

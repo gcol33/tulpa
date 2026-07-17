@@ -22,7 +22,7 @@ using namespace Rcpp;
 
 // update_nngp_scale (one NNGP scale's Gibbs sweep -- field, then the conjugate
 // sigma2 and the MH phi) is shared with the single-scale kernel and lives in
-// pg_shared.h (tulpa::update_nngp_scale); gcol33/tulpa#142 A2.
+// pg_shared.h (tulpa::update_nngp_scale) A2.
 
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(

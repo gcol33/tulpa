@@ -1,5 +1,5 @@
 # Adaptive tensor-lattice outer integration for the joint multi-block
-# nested-Laplace path (gcol33/tulpa, low-dimensional companion to the CCD).
+# nested-Laplace path (low-dimensional companion to the CCD).
 #
 # Part of the joint nested-Laplace driver; the public entry point
 # tulpa_nested_laplace_joint() lives in nested_laplace_joint.R, the outer-grid

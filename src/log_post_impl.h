@@ -1,6 +1,6 @@
 // log_post_impl.h
 // Templated log-posterior computation. Phase D simplification
-// (gcol33/tulpa#15): the only supported path is the generic
+//: the only supported path is the generic
 // LikelihoodSpec interface, so the template now just forwards to
 // the generic-spec evaluator for T = double and is a defensive no-op
 // for autodiff T (those callers should route through

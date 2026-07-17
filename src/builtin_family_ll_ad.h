@@ -64,7 +64,7 @@ inline T builtin_family_ll_ad(
     const std::string& fam = r->family;
     // Per-obs likelihood weight, matching builtin_family_ll_double / the score /
     // Fisher Hessian so the potential and its gradient stay consistent under a
-    // weighted likelihood (gcol33/tulpa#108). A no-op when weights are absent.
+    // weighted likelihood. A no-op when weights are absent.
     const double w = r->weights ? r->weights[i] : 1.0;
 
     if (fam == "poisson") {

@@ -72,7 +72,7 @@ inline FamilyLink parse_family_link(const std::string& code) {
 // so eta is clamped to a small positive value rather than producing Inf/NaN
 // from 1/eta or sqrt of a negative argument when Newton's unconstrained eta
 // crosses zero -- the analogue of the safe_exp guard the log link already uses
-// (gcol33/tulpa#104).
+
 inline double safe_pos_eta(double eta) {
     constexpr double kEtaFloor = 1e-10;
     return eta < kEtaFloor ? kEtaFloor : eta;
@@ -469,7 +469,7 @@ inline GradHess grad_hess_interval_gaussian(double lower, double upper,
     return { r.grad, r.neg_hess };
 }
 
-// Upper-truncated Gaussian latent (gcol33/tulpa#122). The latent response is
+// Upper-truncated Gaussian latent. The latent response is
 // Normal(eta, sigma^2) CONDITIONED on y <= u, a known upper bound on the response
 // scale (+Inf => no truncation). This is a truncated GAUSSIAN: it operates on the
 // response it is given, exactly as the plain gaussian family does, so a consumer

@@ -1,4 +1,4 @@
-# Batched multi-response joint nested-Laplace wrapper (gcol33/tulpa#66).
+# Batched multi-response joint nested-Laplace wrapper.
 #
 # Marshals `responses` + a list-or-single block `prior` to the batched C++ entry
 # `cpp_nested_laplace_joint_multi_batch`, mirroring `.joint_dispatch_multi`'s

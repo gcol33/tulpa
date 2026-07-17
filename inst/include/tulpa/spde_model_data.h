@@ -82,7 +82,7 @@ struct SpdeModelData {
     // constant z->v Jacobian and log|Q|/2 (both constant under fixed
     // (kappa, tau), both dropped), but the field block becomes isotropic a
     // priori so the diagonal NUTS metric no longer under-traverses the
-    // beta/field ridge (gcol33/tulpa#87). Orthogonal to joint_hypers: at
+    // beta/field ridge. Orthogonal to joint_hypers: at
     // most one of the two is true.
     bool nc_fixed = false;
 

@@ -1,6 +1,6 @@
 // cell_coupling.h
 // Public abstractions for *cell-coupled* per-cell likelihoods on the joint
-// nested-Laplace path (gcol33/tulpa#32 Change 2).
+// nested-Laplace path (Change 2).
 //
 // ============================================================================
 // Why this header exists
@@ -121,7 +121,7 @@ struct CellEtas {
 
     int n_arms_ = 0;
 
-    // Batched multi-response (gcol33/tulpa#66). When n_batch_ > 1 each arm's
+    // Batched multi-response. When n_batch_ > 1 each arm's
     // eta buffer holds B species' eta columns laid species-major:
     // arm_eta_ptr[k] + s * arm_eta_stride[k] is species s's column. The B=1
     // path leaves n_batch_ = 1 and arm_eta_stride = nullptr, so eta(k, j) and
@@ -188,7 +188,7 @@ struct CellResponse {
 
     int n_arms_ = 0;
 
-    // Batched multi-response (gcol33/tulpa#66). Mirrors CellEtas: arm_y[k] +
+    // Batched multi-response. Mirrors CellEtas: arm_y[k] +
     // s * arm_y_stride[k] is species s's response column; arm_phi_batch (when
     // set) carries per-species dispersion laid [k * n_batch_ + s]. B=1 leaves
     // both null and n_batch_ = 1, so y(k, j) / phi(k) are byte-identical.
@@ -277,7 +277,7 @@ struct CellDerivs {
 
     int n_arms_ = 0;
 
-    // Batched multi-response (gcol33/tulpa#66). When n_batch_ > 1 the kernel
+    // Batched multi-response. When n_batch_ > 1 the kernel
     // sizes arm_grad[k] / arm_neg_hess_diag[k] to rc * n_batch_ and the spec
     // writes species s's row j at index [s * rc + j] (species-major). The
     // cross buffers arm_cross_hess[k][l] are sized rc_k * rc_l * n_batch_ with
@@ -305,7 +305,7 @@ struct CellDerivs {
     // fields and any existing field offsets unchanged.
     bool grad_only = false;
 
-    // Optional per-arm rank-1 self-cross descriptor (gcol33/tulpaObs#94). When
+    // Optional per-arm rank-1 self-cross descriptor. When
     // a coupled arm k's (k, k) off-diagonal cross-Hessian is exactly the
     // symmetric rank-1 a * v v^T -- every cross-row second derivative factoring
     // through one scalar, as in the all-undetected occupancy mixture whose

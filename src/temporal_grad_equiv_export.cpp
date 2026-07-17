@@ -1,5 +1,5 @@
 // temporal_grad_equiv_export.cpp
-// Equivalence probe for the analytic temporal gradient kernels (gcol33/tulpa#142 A7).
+// Equivalence probe for the analytic temporal gradient kernels (A7).
 //
 // The RW1 / RW2 / AR1 gradients were written twice: tulpa_tvc::*_grad_w in the
 // precision (tau) parameterization, and tulpa_temporal_grad::*_grad_phi in the

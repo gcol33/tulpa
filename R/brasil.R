@@ -11,7 +11,7 @@
 # polynomial), so no generalized-eigensolver dependency is needed.
 #
 # This is the coefficient engine for the fractional-SPDE rational approximation
-# (gcol33/tulpa#71): rational_spde_coefficients() calls it for fractional nu, and
+#: rational_spde_coefficients calls it for fractional nu, and
 # fit_spde()'s fractional path (.spde_nested_logmarginal_at) consumes those
 # coefficients to fit and integrate a fractional Matern field.
 
@@ -161,7 +161,7 @@
 }
 
 
-# Rational-SPDE coefficients (gcol33/tulpa#71, stage 2; gated -- not yet wired
+# Rational-SPDE coefficients (stage 2; gated -- not yet wired
 # into a fitter). For a Matern field of operator order alpha = nu + d/2 with
 # beta = alpha / 2, the rSPDE operator-based construction
 # (Bolin & Kirchner 2020) assembles
@@ -203,7 +203,7 @@
 
 
 # Assemble the fractional rational-SPDE precision Q and shift Pr from FEM
-# matrices (gcol33/tulpa#71, stage 3; gated reference implementation -- this is
+# matrices (stage 3; gated reference implementation -- this is
 # the R oracle the C++ port (src/spde_qbuilder.h) must reproduce, NOT a wired
 # fit path). `C0` is the lumped-mass diagonal, `G` the stiffness, `kappa`/`tau`
 # the SPDE hyperparameters. Returns Q (sparse precision of the latent weights x),
@@ -242,7 +242,7 @@
 
   # Work on the normalized operator CiLn = CiL / l_max so the (1 - l r) factors
   # use l in [spectrum_ratio, 1]. The l_max scaling folds into kappa/tau-level
-  # constants; the field shape (the part #71 fixes) is l_max-invariant.
+  # constants; the field shape (the part it fixes) is l_max-invariant.
   CiLn <- CiL / l_max
 
   # Pl = C (CiLn)^{m_beta-1} prod(I - CiLn rb);  Pr = prod(I - CiLn rc).

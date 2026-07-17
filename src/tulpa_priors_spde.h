@@ -62,7 +62,7 @@ T compute_spde_prior(const std::vector<T>& params, const ModelData& data,
     const int  w0     = layout.spde_w_start;
 
     if (spde.joint_hypers || spde.nc_fixed) {
-        // Non-centered (joint-NUTS or fixed-hyper #87): params[w0..) is z.
+        // Non-centered (joint-NUTS or fixed-hyper): params[w0..) is z.
         // Unit Gaussian prior on z; no Q involvement and no Jacobian term.
         // spde_w_out is left empty — log_post_generic_impl computes the field
         // v = L^{-T} z and fills state.spde_w before the eta accumulator runs.

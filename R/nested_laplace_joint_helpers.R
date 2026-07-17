@@ -197,7 +197,7 @@
         stop("Arm ", k, ": length(n_trials) (", length(a$n_trials),
              ") must equal length(y) (", N, ").", call. = FALSE)
     }
-    # Optional grouped beta sufficient statistics (gcol33/tulpaObs#49): when
+    # Optional grouped beta sufficient statistics: when
     # present, n_trials is the per-row group count and (slog_y, slog_1my) the
     # within-group sum of log(y) / log(1-y); the built-in beta spec reads them.
     if (!is.null(a$slog_y)) {
@@ -487,7 +487,7 @@
 # mode alpha SD on its own axis. No bespoke helper.
 
 
-# Generic axis-spec adapter (gcol33/tulpa#33 Step 3).
+# Generic axis-spec adapter (Step 3).
 #
 # Builds the list of `hyper_axis_spec` objects the generic refinement / consistency
 # helpers (`R/hyper_grid_refine.R`) consume from the joint driver's paired-vector
@@ -560,12 +560,12 @@
         mi <- if (is.null(max_iter_override)) max_iter
               else as.integer(max_iter_override)
         # Per-call Shamanskii reuse override for the outer Pareto-k diagnostic
-        # (gcol33/tulpa#118): the diagnostic re-solves only need the converged
+        #: the diagnostic re-solves only need the converged
         # log-marginal, so they run with factor reuse (grad-only scatter on the
         # off-factor steps) even when the fit itself keeps refresh = 1.
         ir <- if (is.null(inner_refresh_override)) inner_refresh
               else as.integer(inner_refresh_override)
-        # Per-call inner-tol override for the diagnostic (gcol33/tulpa#118):
+        # Per-call inner-tol override for the diagnostic:
         # loosened to .K_DIAG_TOL since the Laplace log-marginal error is
         # O(tol^2). Never tighter than the fit's own tol.
         tl <- if (is.null(tol_override)) tol else max(as.numeric(tol_override), tol)

@@ -439,7 +439,7 @@ Rcpp::List cpp_tulpa_fit_generic(
     }
 
     // Optional warm-start inverse-mass diagonal (e.g. from a previous fit's
-    // inv_metric output, gcol33/tulpa#29). Empty -> structural warm-start.
+    // inv_metric output). Empty -> structural warm-start.
     std::vector<double> inv_metric_vec;
     if (inv_metric_init.isNotNull()) {
         Rcpp::NumericVector mv(inv_metric_init);
@@ -499,17 +499,17 @@ Rcpp::List cpp_tulpa_fit_generic(
         Rcpp::Named("treedepth") = Rcpp::wrap(result.treedepth),
         Rcpp::Named("sampler") = result.sampler.empty() ? "nuts" : result.sampler,
         Rcpp::Named("epsilon") = result.epsilon,
-        // Warm-start / resume outputs (gcol33/tulpa#29)
+        // Warm-start / resume outputs
         Rcpp::Named("inv_metric") = Rcpp::wrap(result.inv_metric_diag),
         Rcpp::Named("final_position") = Rcpp::wrap(result.final_position)
     );
 }
 
 // ============================================================================
-// Multi-chain generic NUTS (gcol33/tulpa#30).
+// Multi-chain generic NUTS.
 // Runs n_chains chains via tulpa's OpenMP across-chain core in one call and
 // returns draws stacked chain-major with a chain_id vector — the layout
-// tulpa::mcmc_diagnostics() consumes (#26) — plus per-chain epsilon, adapted
+// tulpa::mcmc_diagnostics consumes — plus per-chain epsilon, adapted
 // inverse-mass diagonal, and final position (for resume).
 //
 // `init` / `inv_metric_init`, when supplied, are [n_chains x n_params]
@@ -636,14 +636,14 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
         Rcpp::Named("treedepth") = treedepth,
         Rcpp::Named("sampler") = chains[0].sampler.empty() ? "nuts" : chains[0].sampler,
         Rcpp::Named("epsilon") = epsilon,
-        // Per-chain warm-start / resume outputs (gcol33/tulpa#29 + #30)
+        // Per-chain warm-start / resume outputs
         Rcpp::Named("inv_metric") = inv_metric,
         Rcpp::Named("final_position") = final_position
     );
 }
 
 // ============================================================================
-// C-ABI round-trip verifier for the resume outputs (gcol33/tulpa#29).
+// C-ABI round-trip verifier for the resume outputs.
 //
 // The Rcpp-wrapper paths (cpp_tulpa_fit_generic / *_chains) read inv_metric
 // and final_position directly off HMCResultCpp. Downstream packages instead
@@ -749,7 +749,7 @@ Rcpp::List cpp_test_c_abi_resume_roundtrip(
 }
 
 // ============================================================================
-// C-ABI round-trip verifier for the multi-chain runner (gcol33/tulpa#30).
+// C-ABI round-trip verifier for the multi-chain runner.
 //
 // Mirrors cpp_test_c_abi_resume_roundtrip but for tulpa_run_nuts_chains:
 // reaches the engine through tulpa::get_nuts_chains_fn() (R_GetCCallable),

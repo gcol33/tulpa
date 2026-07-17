@@ -1,5 +1,5 @@
 // multinomial_logit.h
-// Baseline-category multinomial logit kernel (gcol33/tulpaObs#106). A genuinely
+// Baseline-category multinomial logit kernel. A genuinely
 // NOMINAL (unordered) K-class response: class K is the baseline, the K-1 linear
 // predictors eta_1..eta_{K-1} are coupled through the softmax denominator. This is
 // a multi-process likelihood unit (n_processes = K-1), distinct from the

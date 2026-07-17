@@ -1,7 +1,7 @@
 // hmc_gradients.cpp
 // HMC backend gradient orchestrator.
 //
-// Phase D simplification (gcol33/tulpa#15): the legacy ratio H-mode
+// Phase D simplification: the legacy ratio H-mode
 // kernels (composite, vectorized, analytical, GP-collapsed,
 // ICAR-collapsed, HSGP/MSGP/SVC/TVC/ST/latent handcoded, autodiff
 // fallbacks) and their thread-local workspaces were deleted along

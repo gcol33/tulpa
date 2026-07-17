@@ -12,7 +12,7 @@
 #   * heartbeat file -- written whenever `progress_file` is non-empty,
 #     independent of `progress`. A file write survives a detached
 #     Start-Process / nohup stdout buffer where a console flush does not, so it
-#     is the only liveness signal on a headless box (gcol33/tulpaObs#43).
+# is the only liveness signal on a headless box.
 #
 # Config comes from the scoped `tulpa.nl_progress` option that tobs() sets from
 # control$progress[.every/.throttle/.file]; a fitter outside tobs() that wants
@@ -31,7 +31,7 @@
 # denominator (e.g. max_iter for EM); `unit` names one step in the console line
 # ("iter", "species", ...). `threads` is the active outer-thread count: when
 # > 1 it is appended to the console line as "| N threads" so the parallelism is
-# visible live and in detached-run logs (gcol33/tulpa#88); a serial loop leaves
+# visible live and in detached-run logs; a serial loop leaves
 # it at 1 and the field is omitted, mirroring the C++ GridProgress reporter.
 # Returns a list of two closures:
 #   tick()   -- call once per completed step;

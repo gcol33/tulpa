@@ -30,7 +30,7 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // ================================================================
   // GENERIC MULTI-PROCESS LAYOUT
   // ================================================================
-  // Phase D (gcol33/tulpa#15): the legacy ratio (n_processes == 0)
+  // Phase D: the legacy ratio (n_processes == 0)
   // branch was removed along with the cpp_hmc_fit entry point.
   if (data.n_processes == 0) {
     Rcpp::stop("tulpa: compute_param_layout requires n_processes > 0. "

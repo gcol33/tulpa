@@ -26,7 +26,7 @@ namespace tulpa_hmc {
 
 // g_gradient_mode is declared in hmc_sampler_decls.h.
 
-// Active NUTS progress reporter (gcol33/tulpaObs#43). Declared in
+// Active NUTS progress reporter. Declared in
 // hmc_sampler_decls.h; see there for the contract.
 ::tulpa_progress::GridProgress* g_active_grid_progress = nullptr;
 
@@ -57,7 +57,7 @@ std::unique_ptr<::tulpa_progress::GridProgress> make_nuts_progress(int total, in
 // per-chain initial inverse-mass diagonal, so it serves both a fresh fit
 // (caller broadcasts one init) and a warm-started resume (caller passes
 // each chain's final_position + inv_metric from a previous run, with
-// n_warmup = 0 — gcol33/tulpa#29 + #30). Returns the pure-C++ results
+// n_warmup = 0. Returns the pure-C++ results
 // (no Rcpp types), so it is safe to call from the C ABI as well.
 //
 // inv_metric_per_chain may be empty (all chains use the structural
@@ -80,7 +80,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     const std::string& checkpoint_path,
     const ParamLayout* layout_override
 ) {
-  // Honour a caller-supplied layout (gcol33/tulpa#70): a FullGradFn model carries
+  // Honour a caller-supplied layout: a FullGradFn model carries
   // a minimal ModelData (total_params set by hand, no processes), so recomputing
   // here would size the chains' position buffers wrong and overrun. The
   // single-chain runner already threads the passed layout through.
@@ -108,7 +108,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
 
   std::vector<HMCResultCpp> cpp_results(n_chains);
 
-  // Per-chain checkpoint/resume (gcol33/tulpa#50). A chain is the checkpoint
+  // Per-chain checkpoint/resume. A chain is the checkpoint
   // unit: deterministic in (seed, chain_id, data, settings), so a resumed chain
   // is bit-for-bit identical to the uninterrupted one. The fingerprint folds the
   // sampler settings, the seed, the per-chain init + metric, and the latent /
@@ -142,7 +142,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
     }
   }
 
-  // Shared NUTS progress reporter for this across-chain run (gcol33/tulpaObs#43).
+  // Shared NUTS progress reporter for this across-chain run.
   // Built on the main thread (reads the scoped option); each chain ticks the
   // same pointer under an omp critical inside run_hmc_chain_cpp. Console output
   // auto-suppresses in the parallel region (the heartbeat file is the

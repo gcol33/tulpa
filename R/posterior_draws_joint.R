@@ -1,5 +1,5 @@
 # Generic posterior sampler for the grid-integrated joint nested-Laplace
-# backend -- the inla.posterior.sample() analogue (gcol33/tulpa#44).
+# backend -- the inla.posterior.sample analogue.
 #
 # Given a joint fit and a latent index set, draw from the outer-grid MIXTURE
 #

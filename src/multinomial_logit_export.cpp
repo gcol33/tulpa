@@ -1,6 +1,6 @@
 // multinomial_logit_export.cpp
 // Internal Rcpp entry exposing the baseline-category multinomial logit kernel
-// (gcol33/tulpaObs#106) for unit / FD-gradient tests. Not user-facing; the family
+// for unit / FD-gradient tests. Not user-facing; the family
 // backs tulpaObs's categorical positive arm (occu_categorical / a categorical
 // hurdle). `eta` is length K-1 (the non-baseline class predictors); `cls` is the
 // observed class, 1-based in 1..K.

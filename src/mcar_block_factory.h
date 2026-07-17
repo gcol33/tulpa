@@ -1,6 +1,6 @@
 // mcar_block_factory.h
 // Separable multivariate CAR (MCAR) block for the joint nested-Laplace driver
-// (gcol33/tulpa#89). p areal fields over one graph share a cross-covariance
+//. p areal fields over one graph share a cross-covariance
 // Sigma: the joint latent (u_1, ..., u_p) over n cells has precision
 //   P = Sigma^-1 (x) Q,            Q = D - W   (intrinsic CAR, rho = 1).
 //
@@ -18,7 +18,7 @@
 // so the only Sigma-dependent normalizer is (n-1) log|Sigma^-1| = 2(n-1) sum_i
 // (log-Cholesky diagonal), a p x p quantity -- no large generalized determinant.
 // The p constant directions are pinned by p sum-to-zero rank-1 penalties (one
-// per field), folded by the sparse solver's block-Schur path (gcol33/tulpa#69).
+// per field), folded by the sparse solver's block-Schur path.
 
 #ifndef TULPA_MCAR_BLOCK_FACTORY_H
 #define TULPA_MCAR_BLOCK_FACTORY_H
@@ -253,7 +253,7 @@ inline LatentBlock make_mcar_block(
         // Per-field, per-component sum-to-zero pins (constant null space of Q is
         // L-dimensional per field when the graph has L components): exact
         // gradient + one rank-1 11' per (field, component), registered for the
-        // block-Schur fold (gcol33/tulpa#69).
+        // block-Schur fold.
         for (int a = 0; a < p; ++a) {
             const int fstart = start + a * n;
             for (int c = 0; c < L; ++c) {

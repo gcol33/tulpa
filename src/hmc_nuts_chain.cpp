@@ -57,7 +57,7 @@ HMCResultCpp run_hmc_chain_cpp(
 ) {
 #include "hmc_nuts_chain_setup.h"
 
-  // NUTS progress + ETA (gcol33/tulpaObs#43). A serial caller (single chain,
+  // NUTS progress + ETA. A serial caller (single chain,
   // not inside the across-chain OpenMP region) with no reporter already active
   // builds its own from the scoped option; the across-chain core builds one
   // shared reporter before its parallel region, so each chain here just ticks
@@ -101,7 +101,7 @@ HMCResultCpp run_hmc_chain_cpp(
 
   result.epsilon = da.final_epsilon();
 
-  // Warm-start / resume outputs (gcol33/tulpa#29): the adapted inverse-mass
+  // Warm-start / resume outputs: the adapted inverse-mass
   // diagonal and the final raw sampler position. `q` holds the last sampler
   // state in the sampling parameterization (z for NC GP, not the stored w);
   // resuming from it is what continues the trajectory.

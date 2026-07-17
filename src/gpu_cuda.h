@@ -2,7 +2,7 @@
 // CUDA implementation for GPU-accelerated GP computations
 // Uses dynamic loading - no CUDA SDK required at compile time
 //
-// STATUS (gcol33/tulpa#77): opt-in roadmap backend, not wired into a sampler.
+// STATUS: opt-in roadmap backend, not wired into a sampler.
 // The dynamic-loaded batched primitives below (cuda_batched_cholesky /
 // cuda_batched_trsv / cuda_batched_trsv_transpose) are complete and target the
 // batched dense Cholesky / triangular solves that dominate NNGP neighbour
@@ -10,7 +10,7 @@
 // (occu_cover). They are CPU-fallback-by-default and compiled in only under
 // TULPA_ENABLE_CUDA; no fitter dispatches to them yet. This is intentional
 // surface kept for the GPU dispatch path, NOT dead scaffolding -- the decision
-// (#77) is to keep it as roadmap. Wiring cuda_batched_cholesky into the batched
+// is to keep it as roadmap. Wiring cuda_batched_cholesky into the batched
 // Laplace inner solve behind a runtime capability check + CPU fallback is the
 // tracked follow-up.
 //

@@ -4,7 +4,7 @@
 // structure -- random effects (intercept / slopes / correlated / multi-term),
 // areal spatial fields (ICAR / BYM2), and temporal fields (RW1 / RW2 / AR1) --
 // through the same built-in-family spec scaffold the fixed-effect path uses
-// (gcol33/tulpa#75). The kernels need no change: they already sample the full
+//. The kernels need no change: they already sample the full
 // parameter vector compute_param_layout() lays out and score it through the
 // generic log-posterior (priors + hyperpriors all included), so populating the
 // ModelData and deriving the layout is the entire job.

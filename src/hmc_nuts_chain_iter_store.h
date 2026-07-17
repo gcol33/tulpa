@@ -32,7 +32,7 @@
       result.treedepth[sample_idx] = iter_treedepth;
 
       // Collapsed-spatial mode storage was deleted in Phase D
-      // (gcol33/tulpa#15) along with the icar_collapsed / gp_collapsed
+      // along with the icar_collapsed / gp_collapsed
       // kernels. Downstream packages on the generic LikelihoodSpec
       // path never set those flags.
 

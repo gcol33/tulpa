@@ -55,7 +55,7 @@ struct NUTSResult {
     double epsilon;        // Final adapted step size
     char sampler[64];      // Sampler name (e.g. "NUTS")
 
-    // Warm-start / resume outputs (ABI v23+, gcol33/tulpa#29). Both length
+    // Warm-start / resume outputs (ABI v23+). Both length
     // n_params; caller must free. Together with `epsilon` they capture the
     // adapted geometry and last sampler state, so a continued chain is
     //   init = final_position, inv_metric_diag = inv_metric_out, n_warmup = 0.
@@ -112,7 +112,7 @@ inline NUTSFn get_nuts_fn() {
 }
 
 // ============================================================================
-// Multi-chain NUTS (ABI v24+, gcol33/tulpa#30). Runs `n_chains` chains via
+// Multi-chain NUTS (ABI v24+). Runs `n_chains` chains via
 // tulpa's OpenMP across-chain runner in one call, so model packages stop
 // re-implementing chain orchestration (offset-seed loops / PSOCK clusters) in
 // R and get the engine's thread-parallel path for free.

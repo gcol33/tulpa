@@ -20,11 +20,11 @@
 # diagnostic with fewer finite evaluations declines to NA. A `n_samples` budget
 # under this floor can never clear it, so the IS cores short-circuit BEFORE
 # paying any inner solve rather than evaluate the whole budget and discard it
-# (gcol33/tulpa#51).
+
 .PSIS_MIN_EVAL <- 25L
 
 # Whitened-radius envelope for the outer Pareto-k importance draws
-# (gcol33/tulpa#94). The outer integrator placed its grid to cover the
+#. The outer integrator placed its grid to cover the
 # hyperparameter posterior; a proposal draw far outside that node cloud is a
 # deep extrapolation the integration never represented AND -- at EVA scale --
 # exactly where the inner Newton stalls toward max_iter, so those draws
@@ -96,7 +96,7 @@
   list(k = k, sigma = sigma)
 }
 
-# Number of upper-tail order statistics for the GPD fit (gcol33/tulpa#127).
+# Number of upper-tail order statistics for the GPD fit.
 # `NULL` => the automatic PSIS rule ceil(min(0.2*S, 3*sqrt(S))) (the r_eff = 1
 # form, appropriate for near-independent diagnostic draws). An explicit request is
 # an EXPERT tail-threshold control, capped DEFENSIVELY at floor(0.2*S) -- the 20%-
@@ -153,7 +153,7 @@
 }
 
 # Bootstrap + closed-form uncertainty of the outer Pareto-k-hat from ONE batch of
-# importance log-ratios (gcol33/tulpa#127). The k-hat is a GPD shape fit to the
+# importance log-ratios. The k-hat is a GPD shape fit to the
 # upper tail of `lr`; its sampling uncertainty GIVEN the proposal is estimated by
 # resampling the SAME ratios with replacement and refitting `n_boot` times. This
 # is free (no new inner solves) and estimator-agnostic (it resamples whatever
@@ -266,11 +266,11 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 #
 # This path applies NO radius cap (unlike the grid/joint `.nested_is_pareto_k`):
 # its inner solve is a dense `tulpa_laplace()` that converges in a handful of
-# Newton steps even at far-radius draws, so the EVA-scale stalls the #94 cap
+# Newton steps even at far-radius draws, so the EVA-scale stalls the cap
 # bounds do not arise here. Evaluating every draw is therefore both affordable
 # and the unbiased choice -- consistent in correctness with the grid/joint path,
 # whose cap now folds the far tail back in whenever it would matter
-# (gcol33/tulpa#100).
+
 .nested_outer_pareto_k <- function(log_target, theta_hat, L_scale,
                                    n_samples = 200L) {
   # The per-sample closure is the length-1 case of the batched target the shared
@@ -315,7 +315,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   U <- sweep(Z %*% t(L_scale), 2L, theta_hat, `+`)           # S x d ~ N(theta_hat, .)
   z2 <- rowSums(Z^2)                                         # squared whitened radius
 
-  # Cost bound (gcol33/tulpa#94): draws far past the grid's coverage stall the
+  # Cost bound: draws far past the grid's coverage stall the
   # inner Newton toward max_iter and dominate the diagnostic's wall time, so by
   # default only draws within `radius_cap` of the proposal centre (whitened
   # metric) are evaluated. The discarded draws are NOT a guaranteed left tail of
@@ -323,7 +323,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   # so a target HEAVIER than the Gaussian proposal makes lr RISE with z2 and the
   # far-radius draws carry the LARGEST ratios -- exactly the right-tail mass the
   # GPD k-hat reads. Dropping them would bias k-hat downward in the heavy-tail
-  # regime the diagnostic exists to flag (gcol33/tulpa#100). The escalation step
+  # regime the diagnostic exists to flag. The escalation step
   # below detects that regime and folds the dropped draws back in, so the cap
   # bounds cost only when it cannot bias the result. radius_cap = Inf keeps every
   # draw (the unrestricted re-cov path).
@@ -341,13 +341,13 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   }
   lr[in_supp] <- lt + 0.5 * z2[in_supp]                      # target - log q (up to const)
 
-  # Heavy-tail escalation (gcol33/tulpa#100): if the importance log-ratio is
+  # Heavy-tail escalation: if the importance log-ratio is
   # still rising at the cap boundary -- OLS slope of lr on z2 significantly
   # positive, i.e. the target is heavier-tailed than the proposal -- the radius
   # cap is clipping the right tail the k-hat depends on. Evaluate the dropped
   # draws and fold them in so the GPD fits the genuine uncapped tail. A flat or
   # negative slope (target no heavier than the proposal) leaves the cap in force,
-  # keeping the well-behaved case at #94's bounded cost.
+  # keeping the well-behaved case at its bounded cost.
   if (is.finite(radius_cap) && n_in < n_samples) {
     fin <- in_supp & is.finite(lr)
     if (sum(fin) >= .PSIS_MIN_EVAL && .lr_rises_with_radius(z2[fin], lr[fin])) {
@@ -384,7 +384,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # One-sided test that the importance log-ratio RISES with the squared whitened
 # radius `z2` AT THE CAP BOUNDARY -- the signal that the target is heavier-tailed
 # than the Gaussian proposal there, so the radius cap is clipping the right tail
-# the GPD k-hat reads (gcol33/tulpa#100). Because lr = log p_target + 0.5*z2, a
+# the GPD k-hat reads. Because lr = log p_target + 0.5*z2, a
 # Gaussian target c-times as wide as the proposal gives a constant slope
 # 0.5*(1 - 1/c) (>0 when heavier); a genuinely heavy (e.g. Student-t) target is
 # flat or falling in the bulk and only rises in the tail, so the GLOBAL slope is

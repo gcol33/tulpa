@@ -3,7 +3,7 @@
 // lognormal on the natural scale) per-observation kernel for unit / FD-gradient
 // tests. Not user-facing; the family is consumed through
 // tulpa_nested_laplace_joint() (family = "truncated_gaussian") and tulpaObs's
-// cover(positive = "lognormal_trunc"). See gcol33/tulpa#122.
+// cover(positive = "lognormal_trunc")..
 
 #include "laplace_family_link.h"
 #include <Rcpp.h>

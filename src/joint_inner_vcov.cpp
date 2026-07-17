@@ -1,6 +1,6 @@
 // joint_inner_vcov.cpp
 // Per-cell constrained inner-covariance block extraction for the joint
-// nested-Laplace post-grid step (gcol33/tulpa#112, #113; gcol33/tulpaObs#93).
+// nested-Laplace post-grid step.
 // See joint_inner_vcov.h and dev_notes/plans/joint_inner_vcov_selinv.md.
 
 #include "joint_inner_vcov.h"
@@ -192,7 +192,7 @@ bool extract_inner_vcov_block_cell(
 
 // Rcpp entry: per-cell constrained inner-covariance blocks over the outer grid,
 // parallel across cells. Single source for the joint post-grid SD/summary path
-// (gcol33/tulpa#113 selected inversion + gcol33/tulpaObs#93 parallelization).
+// (selected inversion + parallelization).
 //
 // Q_*_per_grid : per-cell lower-triangle CSC of Qk (Q_i 0-based rows), as the
 //                joint kernel stores them; a NULL / empty cell yields NULL.

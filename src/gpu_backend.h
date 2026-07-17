@@ -2,7 +2,7 @@
 // GPU acceleration for GP computations
 // Supports CUDA (NVIDIA) and OpenCL (cross-platform)
 //
-// STATUS (gcol33/tulpa#77): opt-in roadmap backend. CPU is the default and only
+// STATUS: opt-in roadmap backend. CPU is the default and only
 // active path; the CUDA primitives (gpu_cuda.h) are compiled in only under
 // TULPA_ENABLE_CUDA and are not yet dispatched to by any sampler. The
 // CUDA-disabled definitions below are deliberate CPU-fallback stubs (so the

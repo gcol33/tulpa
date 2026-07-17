@@ -307,7 +307,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // thread-local solver + scratch keep cheap_eval independent of the
     // parallel fan-out's pool.
     // One cheap solver + scratch per outer worker slot: the cheap screen may
-    // run per-tile chains concurrently (gcol33/tulpa#68), and CHOLMOD's
+    // run per-tile chains concurrently, and CHOLMOD's
     // cholmod_common is not thread-safe, so each worker needs its own. This
     // path passes no tile metadata, so the screen stays serial (worker 0), but
     // the pool keeps the CheapEval contract uniform across call sites.

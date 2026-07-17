@@ -1,6 +1,6 @@
 // joint_inner_vcov.h
 // Per-cell constrained inner-covariance block extraction for the joint
-// nested-Laplace post-grid step (gcol33/tulpa#112, #113; gcol33/tulpaObs#93).
+// nested-Laplace post-grid step.
 //
 // Given a grid cell's latent precision Qk (= H at the inner mode, sparse SPD,
 // lower-triangle CSC) and a latent index set idx = [dense | field], return the
@@ -23,7 +23,7 @@
 // The core takes POD inputs + a caller-owned SparseCholeskySolver (CHOLMOD
 // common is not thread-safe, so concurrent callers pass one solver per thread),
 // so the joint kernel can reuse the factor it already forms at its store_Q site
-// (#112) and the Rcpp entry can drive a parallel per-cell loop (#113, #93)
+// and the Rcpp entry can drive a parallel per-cell loop
 // through the same single source.
 
 #ifndef TULPA_JOINT_INNER_VCOV_H

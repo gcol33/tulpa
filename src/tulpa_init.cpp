@@ -43,7 +43,7 @@ static void fill_nuts_result_from_cpp(
         out->treedepth[s] = hmc.treedepth[s];
     }
 
-    // Warm-start / resume outputs (gcol33/tulpa#29). run_hmc_chain_cpp always
+    // Warm-start / resume outputs. run_hmc_chain_cpp always
     // sizes these to n_params; the bounds check is belt-and-braces so a short
     // vector defaults to the identity metric / origin rather than reading OOB.
     out->inv_metric_out = new double[n_params];
@@ -105,7 +105,7 @@ static void tulpa_run_nuts_generic_impl(
 }
 
 // ============================================================================
-// Registered C callable: tulpa_run_nuts_chains (gcol33/tulpa#30)
+// Registered C callable: tulpa_run_nuts_chains
 // Multi-chain across-chain OpenMP runner. `init` is chain-major
 // [n_chains * n_params]; `inv_metric_diag` is chain-major
 // [n_chains * n_params] or nullptr (structural default for all chains).
@@ -152,7 +152,7 @@ static void tulpa_run_nuts_chains_impl(
         tulpa::MassMatrixType::DIAG, adapt_delta,
         0,                // riemannian=off
         "",               // checkpoint_path
-        layout            // honour the caller's layout (gcol33/tulpa#70)
+        layout            // honour the caller's layout
     );
 
     for (int c = 0; c < n_chains; c++) {
@@ -219,7 +219,7 @@ void tulpa_register_tgmrf_callables(DllInfo* dll);
 // Defined in cell_coupling_registry.cpp — registers the
 // tulpa_register_cell_coupling C callable that user DLLs use to insert
 // CellCouplingSpec subclasses into tulpa's process-global registry at
-// load time (gcol33/tulpa#32 Change 2b).
+// load time (Change 2b).
 void tulpa_register_cell_coupling_callables(DllInfo* dll);
 
 // [[Rcpp::init]]

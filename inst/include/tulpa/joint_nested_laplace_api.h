@@ -19,7 +19,7 @@
 // flagged as the "copy" arm — it sees sigma_pos_k from a dedicated outer-
 // grid axis; all other arms see sigma_occ_k from the donor sigma axis.
 //
-// gcol33/tulpa#18: replaces the (sigma, alpha) parameterization where alpha
+//: replaces the (sigma, alpha) parameterization where alpha
 // scaled the copy arm's contribution to a shared sigma * z field. The old
 // parameterization produced a posterior ridge along constant alpha * sigma
 // at small n_pos because both arms' likelihoods anchored only the *product*

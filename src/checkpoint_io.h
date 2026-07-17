@@ -1,5 +1,5 @@
 // checkpoint_io.h
-// Generic content-addressed append-log checkpoint (gcol33/tulpa#50).
+// Generic content-addressed append-log checkpoint.
 //
 // The outer loop of a long fit -- a hyperparameter grid (nested Laplace), a
 // covariance-CCD node grid, or a set of independent MCMC chains -- is a list of

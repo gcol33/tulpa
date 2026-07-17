@@ -237,12 +237,12 @@ tulpa_laplace <- function(y, n_trials, X,
   # SPDE / NNGP Laplace return mode = c(beta, spatial_effects). The
   # fixed-effect block of the joint Hessian is the *conditional* precision
   # P(beta | u^*) and under-states uncertainty. For SPDE the marginal block
-  # is obtained by Schur complement on the joint Hessian (issue #16):
+  # is obtained by Schur complement on the joint Hessian:
   #   H_beta^marg = X'WX - X'WA (A'WA + Q_spde)^{-1} A'WX
   # The dense Z-Schur branch below handles every non-spatial-field path;
   # the SPDE-specific marginal lives in .marginal_H_beta_spde() and is
   # invoked at the bottom of this function. NNGP marginal SE is still
-  # outstanding (tracked under #16).
+  # outstanding.
   is_spatial_field <- !is.null(spatial) &&
     spatial$type %in% c("spde", "gp", "car_proper", "hsgp")
 
@@ -348,7 +348,7 @@ tulpa_laplace <- function(y, n_trials, X,
   }
 
   # Marginal H_beta for spatial-field Laplace via Schur on the joint Hessian.
-  # See .marginal_H_beta_spde() / .marginal_H_beta_gp() and issue #16.
+  # See .marginal_H_beta_spde() / .marginal_H_beta_gp().
   if (return_hessian && !is.null(result$mode) && !is.null(spatial)) {
     if (identical(spatial$type, "spde")) {
       range_val <- result$range %||% spatial$prior_range[1]
@@ -737,7 +737,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
   if (is.null(sigma)) sigma <- spatial$prior_sigma[1]
 
   # Fractional nu: the operator-based rational SPDE (Bolin & Kirchner 2020) with
-  # BRASIL coefficients (gcol33/tulpa#71). Assembled in R (the validated oracle)
+  # BRASIL coefficients. Assembled in R (the validated oracle)
   # and solved by the precomputed C++ fit; the integer branch below is the exact
   # FEM construction. Both branches return the same [beta (p), re (n_re_groups),
   # mesh (n_mesh)] mode layout, so the beta / spatial_effects split is shared.

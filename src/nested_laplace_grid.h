@@ -71,7 +71,7 @@
 //
 // Result post-processing (filling the Rcpp::List) happens single-threaded
 // after the parallel region. Per-cell LaplaceResult objects use only
-// std::vector storage (laplace_core.h:LaplaceResult after the gcol33/tulpa
+// std::vector storage (laplace_core.h:LaplaceResult after the
 // speedup refactor), so they are safe to populate across threads.
 
 #ifndef TULPA_NESTED_LAPLACE_GRID_H
@@ -206,7 +206,7 @@ inline Rcpp::List run_nested_laplace_grid(
     // it the concurrency it will actually run at (n_outer, already clamped by
     // the sparse path's memory budget). Stamp it on the reporter here, once, so
     // the ETA projects over the parallel grid rather than the serial pilot rate
-    // and the console line shows the active outer-thread count (gcol33/tulpa#88).
+    // and the console line shows the active outer-thread count.
     if (progress) progress->set_width(n_threads_outer);
 
     // Stage results in POD containers; merge to Rcpp slots after parallelism.
@@ -217,7 +217,7 @@ inline Rcpp::List run_nested_laplace_grid(
         x_init_vec.assign(x_init.begin(), x_init.end());
     }
 
-    // Optional PER-CELL warm start (gcol33/tulpa#118): a flat row-major
+    // Optional PER-CELL warm start: a flat row-major
     // n_grid x n_x matrix where row k warm-starts cell k's inner solve. When
     // present it OVERRIDES the chained / pilot / tile warm start in every path,
     // so each cell starts from its own near-mode (the outer Pareto-k diagnostic
@@ -235,7 +235,7 @@ inline Rcpp::List run_nested_laplace_grid(
             x_init_per_cell.begin() + static_cast<size_t>(k + 1) * n_x);
     };
 
-    // Checkpoint preload (gcol33/tulpa#50). A cell whose hyperparameter
+    // Checkpoint preload. A cell whose hyperparameter
     // coordinate was completed in a prior pass / killed run is filled straight
     // from disk and flagged done, so every solve site below skips it and the
     // warm-start chain reads its stored mode. `record(k)` appends a freshly
@@ -366,7 +366,7 @@ inline Rcpp::List run_nested_laplace_grid(
             // -- each tile groups cells whose donor-arm prior + design coincide
             // (only the copy/alpha axis varies), so within-tile chaining is at
             // least as near-neighbour as the global flat chain, while the tiles
-            // run concurrently on their own worker slots. (gcol33/tulpa#68)
+            // run concurrently on their own worker slots.
             const bool cheap_use_tiles =
                 (n_threads_outer > 1) &&
                 (static_cast<int>(tile_ids.size()) == n_grid) &&
@@ -403,7 +403,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 //     the tile's own outer-worker slot. Tiles group cells whose
                 //     only differing axis is the copy alpha, so within-tile
                 //     chaining from the central tile pilot is a genuine
-                //     near-neighbour warm-start. (gcol33/tulpa#68)
+                // near-neighbour warm-start.
                 // The tile partition (.joint_compute_tile_partition) covers
                 // every cell exactly once, so each cheap_lm[k] is written by a
                 // single thread (no race).

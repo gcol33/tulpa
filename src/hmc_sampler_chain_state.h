@@ -1,4 +1,4 @@
-﻿// hmc_sampler_chain_state.h
+// hmc_sampler_chain_state.h
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc.
 // ChainState, HMCResultCpp, HMCResult, cpp_to_r_result,
@@ -44,7 +44,7 @@ struct HMCResultCpp {
   int n_max_treedepth = 0;       // Count of iterations hitting max treedepth
   std::string sampler;           // Sampler name (e.g., "NUTS", "HMC", "NUTS->HMC(L=10)")
 
-  // Warm-start / resume outputs (gcol33/tulpa#29). Both length n_params after
+  // Warm-start / resume outputs. Both length n_params after
   // a completed run. `inv_metric_diag` is the adapted inverse-mass diagonal at
   // end of warmup; `final_position` is the last raw sampler state (sampling
   // parameterization, e.g. z for an NC GP, not the stored w transform). Feeding

@@ -121,7 +121,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             control = list()) {
 
   .check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
-  tm <- .tulpa_timer()                                   # gcol33/tulpa#48
+  tm <- .tulpa_timer()
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa()); the
   # top-level signature carries only statistical arguments.
@@ -133,7 +133,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% 200L)
 
-  # Grid-cell checkpoint/resume (gcol33/tulpa#50). `control$checkpoint =
+  # Grid-cell checkpoint/resume. `control$checkpoint =
   # list(path =, resume =)` makes every grid cell append to `path`; a resume
   # loads the finished cells and solves only the rest. A fresh (resume = FALSE)
   # run removes any stale file once here, before the first kernel call, so the
@@ -442,7 +442,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   ),
 
   miid = list(
-    # Multivariate IID (gcol33/tulpa#114): p coupled per-group coefficient
+    # Multivariate IID: p coupled per-group coefficient
     # fields sharing a free Sigma -- the non-spatial sibling of mcar (Q = I, so
     # no graph). Multi-block-only (like mcar / iid): the coupled inner solve
     # lives in the joint driver. The outer axes are the same p(p+1)/2
@@ -1329,7 +1329,7 @@ prior_from_spec <- function(spec, data) {
 # Normalize the outer-grid progress knobs from a `control` list into the four
 # scalars the C++ entry points accept. On by default; `progress = FALSE` turns
 # off the flushed cell-k/n_grid + ETA reporter (see the GridProgress reporter in
-# inst/include/tulpa/nested_progress.h and gcol33/tulpa#45). `progress.file`
+# inst/include/tulpa/nested_progress.h). `progress.file`
 # adds a heartbeat file for detached runs where Rcout flushing is unreliable.
 # The inner refinement / EM / CCD-probe call sites pass `progress = FALSE`
 # explicitly so only the top-level fit ticks.
@@ -1352,7 +1352,7 @@ prior_from_spec <- function(spec, data) {
   )
 }
 
-# Resolve the grid-cell checkpoint spec (gcol33/tulpa#50) to a normalized
+# Resolve the grid-cell checkpoint spec to a normalized
 # `list(path, resume)`. `control$checkpoint = list(path = , resume = TRUE)`
 # enables it; `resume = FALSE` starts over (the front door removes any prior
 # file before the first kernel call). Like `.nl_progress_args`, an absent

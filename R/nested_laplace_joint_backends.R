@@ -311,7 +311,7 @@
 # After a pruned kernel run, decide whether the kept set can be trusted. The
 # cheap screen ranks cells; the full inner Newton only ran on survivors. If
 # the screen's ranking disagrees with the full-solve ranking the prune may
-# have dropped the true posterior mode (gcol33/tulpa#43), so we WARN and fall
+# have dropped the true posterior mode, so we WARN and fall
 # back to the full grid rather than silently returning the pruned answer.
 #
 # Two triggers, either of which forces the fallback:

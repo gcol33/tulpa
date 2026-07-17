@@ -70,6 +70,12 @@ Warnings and cleanups.
   own solver and distance source), and the fast leapfrog drift carries the same
   sparse-GMRF mass-block range override as `inv_mass_times_p()` so the integrator
   and U-turn check cannot use different metrics.
+* **Meta-comments removed.** Issue-tracker references (`gcol33/tulpa#NNN` in all
+  forms, parenthetical `(#NNN)` lists, and bare issue numbers) and stale version
+  tokens ("Phase 1.3") were stripped from code comments and roxygen, keeping the
+  domain rationale. References inside error messages, `test_that()` labels, and
+  design-principle / improvement enumerations (`principle #5`, `improvement #1`)
+  were preserved.
 
 ## 0.0.85
 

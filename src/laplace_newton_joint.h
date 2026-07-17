@@ -46,19 +46,19 @@ struct JointArm {
     std::string         family;    // built-in family (ignored when spec != null)
     double              phi;        // built-in dispersion (ignored when spec)
     int                 N;
-    // Grouped beta sufficient statistics (gcol33/tulpaObs#49). Optional; when
+    // Grouped beta sufficient statistics. Optional; when
     // present (and family == "beta") row i collapses n_trials[i] exchangeable
     // beta obs sharing this row's linear predictor, with slog_y[i] = sum log(y)
     // and slog_1my[i] = sum log(1-y). Empty => ungrouped per-obs path.
     Rcpp::NumericVector slog_y;
     Rcpp::NumericVector slog_1my;
-    // Interval-censored Gaussian bounds (gcol33/tulpaObs ordinal cover). Optional;
+    // Interval-censored Gaussian bounds (tulpaObs ordinal cover). Optional;
     // when present (and family == "interval_gaussian") row i records the latent
     // value fell in (lower[i], upper[i]] on the predictor scale, with +/-Inf the
     // open outer classes. Empty => not an interval arm.
     Rcpp::NumericVector lower;
     Rcpp::NumericVector upper;
-    // Upper-truncated Gaussian ceiling (gcol33/tulpa#122). Optional; when present
+    // Upper-truncated Gaussian ceiling. Optional; when present
     // (and family == "truncated_gaussian") row i's latent log-response is truncated
     // to <= trunc_upper[i] on the predictor scale (+Inf => no truncation). The point
     // response y[i] is still read. Empty => not a truncated arm.
@@ -75,7 +75,7 @@ struct JointArm {
     // of `copy = list(arm, alpha_grid)` into `responses[[X]]$field_coef =
     // list(name = "alpha", grid = G)`.)
     double              field_coef = 1.0;
-    // Per-arm cell coupling (gcol33/tulpa#32 Change 2b).
+    // Per-arm cell coupling (Change 2b).
     //   coupled = true  -> the inner Newton skips this arm's per-obs scatter;
     //                      the CellCouplingSpec's evaluate_cell() writes its
     //                      gradient + (diagonal) Hessian contribution per cell,

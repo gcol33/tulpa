@@ -21,7 +21,7 @@
 # ----------------------------------------------------------------------------
 # Submodel block validator.
 #
-# Per gcol33/tulpa#3, each entry returned by m_step_encode MUST be a list
+# Each entry returned by m_step_encode MUST be a list
 # with these fields:
 #   - y        numeric                       (required)
 #   - X        matrix, nrow == length(y)     (required)
@@ -211,7 +211,7 @@
   # [beta | RE_1 | <field block(s)> | RE_2 | ... | RE_K]. Each EM iteration
   # rebuilds the blocks at the updated per-term sigma. Single-term models keep
   # the built-in-only path (byte-identical to before). Random *slopes* on a
-  # nested block stay unsupported here (gcol33/tulpa#28); only intercept terms
+  # nested block stay unsupported here; only intercept terms
   # (n_coefs == 1) route this way.
   re_idx <- 0L
   n_re_groups <- 0L
@@ -523,7 +523,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
   iter <- 0L
   delta <- Inf
 
-  # Outer-grid-style progress + ETA for the EM iterations (gcol33/tulpaObs#43).
+  # Outer-grid-style progress + ETA for the EM iterations.
   # ON by default; reads the scoped `tulpa.nl_progress` option. ETA is the
   # upper bound to max_iter and is finalised by .prog$finish() on convergence.
   .prog <- .tulpa_iter_progress("em-laplace", max_iter, unit = "iter")
@@ -657,7 +657,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
 
 
 # ============================================================================
-# Optional non-eta parameter update hook (gcol33/tulpa#4).
+# Optional non-eta parameter update hook.
 #
 # The callback receives the freshly assembled M-step fits, the current E-step
 # weights, and any extra arguments forwarded through `...`. It must return a

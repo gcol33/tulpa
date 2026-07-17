@@ -156,7 +156,7 @@
     # (.marginal_H_beta_*) and the dense H_beta path are the only callers, and
     # both need the dispersion-correct curvature. A unit weight here treats phi
     # as 1 and inflates the gaussian fixed-effect SEs by sqrt(1/phi)
-    # (gcol33/tulpa#87).
+
     weight = function(eta, n_trials, phi) rep(1 / phi, length(eta)),
     sample = function(eta, n_trials, phi) {
       stats::rnorm(length(eta), mean = eta, sd = sqrt(phi))
@@ -435,7 +435,7 @@ family_names <- function() names(.FAMILY_OPS)
 # likelihood, score, and working weight. A non-positive `phi` makes the variance
 # / log-density singular (gaussian: r^2 / (2 phi^2); gamma: lgamma(phi)), so it
 # must be validated at the front door rather than flowing into a NaN log-lik
-# (gcol33/tulpa#104). The `*_<link>` suffix forms (e.g. "gamma_inverse") share
+#. The `*_<link>` suffix forms (e.g. "gamma_inverse") share
 # the base family's dispersion, so membership is tested on the prefix.
 .PHI_FAMILIES <- c("gaussian", "lognormal", "gamma", "neg_binomial_2",
                    "negative_binomial", "inverse_gaussian", "beta",

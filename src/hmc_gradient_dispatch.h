@@ -1,7 +1,7 @@
 // hmc_gradient_dispatch.h
 // Gradient-mode dispatch policy for the HMC backend.
 //
-// Phase D simplification (gcol33/tulpa#15): the only supported entry path
+// Phase D simplification: the only supported entry path
 // is the generic LikelihoodSpec interface (`n_processes > 0` plus a
 // non-null `data.likelihood_spec`). Legacy ratio (n_processes == 0)
 // dispatch was removed along with the entry points that produced that

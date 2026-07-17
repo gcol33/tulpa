@@ -1,7 +1,7 @@
 // hmc_sampler.cpp
 // HMC/NUTS log-posterior orchestrators.
 //
-// Phase D simplification (gcol33/tulpa#15): the legacy ratio body of
+// Phase D simplification: the legacy ratio body of
 // compute_log_post (accumulate_log_prior_and_state + accumulate_obs_log_lik
 // + their fragments) was deleted along with the ratio entry points. The
 // only supported path is the generic LikelihoodSpec interface, which is

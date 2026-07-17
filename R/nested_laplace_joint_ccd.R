@@ -1,5 +1,5 @@
 # Central-composite-design (CCD) outer integration for the joint multi-block
-# nested-Laplace path (gcol33/tulpa#59).
+# nested-Laplace path.
 #
 # Part of the joint nested-Laplace driver; the public entry point
 # tulpa_nested_laplace_joint() lives in nested_laplace_joint.R, the tensor-grid
@@ -23,7 +23,7 @@
 # NULL to DECLINE CCD when any axis has unguessable support (CAR_proper's
 # rho_car, a non-BYM2 rho) -- the caller then falls back to the tensor grid.
 # Does the CCD engage at this transformable-axis count for this integration
-# mode (gcol33/tulpa#59)? "grid" never engages; "ccd" lowers the threshold to
+# mode? "grid" never engages; "ccd" lowers the threshold to
 # >= 3 axes (explicit opt-in); "auto" (the default) engages only at >= 4 axes,
 # where the tensor product's k^d blow-up bites hardest, and keeps the cheaper,
 # more ridge-robust tensor grid at <= 3 axes.
@@ -175,7 +175,7 @@
 # Is the outer log-posterior curvature well conditioned for a Gaussian CCD? The
 # CCD orients its nodes by the Cholesky of -H^-1, so -H (the precision) must be
 # positive-definite with no near-zero eigenvalue. A flat / indefinite curvature
-# (the sigma-alpha ridge of gcol33/tulpa#62, where only the per-arm sigma*alpha
+# (the sigma-alpha ridge, where only the per-arm sigma*alpha
 # product is identified) makes -H^-1 huge along the ridge, so the design nodes
 # land at extreme hyperparameters where the inner Newton fails. Single source of
 # truth for the centre pre-check (decline fast, before the line search) and the
@@ -212,7 +212,7 @@
 # breaks on).
 #
 # Three guards keep an ill-conditioned outer posterior (the sigma-alpha ridge of
-# gcol33/tulpa#62) from burning hours of full-field inner solves in the line
+#) from burning hours of full-field inner solves in the line
 # search:
 #   * the centre FD-Hessian is checked BEFORE the first line search; a ridge /
 #     flat curvature declines immediately (status "ridge") -- the same verdict
@@ -254,7 +254,7 @@
         H <- st$hess
         # Fast decline on a ridge / flat curvature: the centre Hessian already
         # tells us the Gaussian CCD scale is ill-defined, so bail BEFORE the
-        # expensive backtracking line search (gcol33/tulpa#62).
+        # expensive backtracking line search.
         if (iter == 1L && !.joint_ccd_outer_hess_ok(H)) {
             return(list(par = u, hess = H, value = f_u,
                         converged = FALSE, status = "ridge"))
@@ -265,7 +265,7 @@
         if (is.null(step) || any(!is.finite(step))) return(fail(u, H, f_u))
         # Trust-region clamp: bound each coordinate's step so a near-singular
         # Hessian cannot send a candidate to an extreme hyperparameter where the
-        # inner Newton needs many iterations (gcol33/tulpa#62).
+        # inner Newton needs many iterations.
         step <- pmax(pmin(step, trust), -trust)
         # Backtracking line search over `max_halve` halvings, all evaluated in ONE
         # batched call so the candidates fan out across the outer-grid threads:
@@ -332,7 +332,7 @@
     # Per-coordinate trust radius for the mode-find step: roughly the user's
     # supplied grid width, so the mode can traverse the box over a few rounds but
     # a single Newton step never leaps to an extreme hyperparameter where the
-    # inner Newton stalls (gcol33/tulpa#62).
+    # inner Newton stalls.
     trust  <- pmax(span, 0.5)
     # Degenerate axis (a single supplied value) carries no curvature; CCD
     # cannot orient a design across it -- fall back to the tensor grid.
@@ -354,7 +354,7 @@
         lp  <- as.numeric(out)
         lp[!is.finite(lp)] <- -1e10
         # Carry the inner latent modes through (single-row probes only) so the
-        # mode-find can advance the inner warm start (gcol33/tulpa#62).
+        # mode-find can advance the inner warm start.
         if (!is.null(md)) attr(lp, "modes") <- md
         lp
     }
@@ -437,7 +437,7 @@
 }
 
 # Announce the engaged outer integrator under verbose, at selection time
-# (gcol33/tulpa#63). One authoritative line tied to the resolved
+#. One authoritative line tied to the resolved
 # `integration_used`, so a consumer who omitted `integration` from the control
 # sees which integrator actually ran -- whether the CCD engaged, the tensor grid
 # was kept, or (on a ridged posterior) the CCD declined back to the tensor --

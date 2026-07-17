@@ -1,4 +1,4 @@
-# Reusable outer hyperparameter-grid integrator (gcol33/tulpa#33).
+# Reusable outer hyperparameter-grid integrator.
 #
 # `tulpa_hyper_grid()` is the generic counterpart of the per-family outer grids
 # in `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`, and
@@ -10,7 +10,7 @@
 #
 # Adaptive grid refinement and the var-of-means consistency pass live in the
 # generic spec-driven helpers in `R/hyper_grid_refine.R`. The same engine is
-# used by `tulpa_nested_laplace_joint()` (Step 3 of the #33 refactor) via a
+# used by `tulpa_nested_laplace_joint()` (Step 3 of the refactor) via a
 # per-driver `kernel_fn` closure -- hyper_grid wraps the user's `inner_fit`;
 # the joint driver wraps `backend$call_kernel`.
 

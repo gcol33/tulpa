@@ -121,7 +121,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
          "(see `spatial_spde()` / `spatial_spde_custom()`).",
          call. = FALSE)
   }
-  # Fractional nu uses the operator-based rational field (BRASIL roots, #71).
+  # Fractional nu uses the operator-based rational field (BRASIL roots).
   # The fixed-hyper sampler (joint = FALSE) precomputes the rational precision
   # Q = Pl' C^{-1} Pl in R (.spde_assemble_at) and samples the auxiliary weights
   # x ~ N(0, Q^{-1}); the field is u = Pr x. Joint-over-hypers fractional NUTS
@@ -250,7 +250,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     # dsCMatrix (one stored triangle), but the C++ SPDE prior loop sums over
     # stored CSC entries and assumes full symmetric storage (it matches the
     # SpdeQBuilder convention). Coerce to generalMatrix so both triangles are
-    # passed, as the Laplace path already does (gcol33/tulpa#87).
+    # passed, as the Laplace path already does.
     Qg       <- as(frac_asm$Q, "generalMatrix")
     fem      <- .spde_fem_matrices(spatial)
     Gk       <- as(fem$G[frac_asm$keep, frac_asm$keep, drop = FALSE], "CsparseMatrix")
@@ -262,7 +262,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
   }
 
   # Resolve the metric (after n_mesh_use is final). "auto" -> dense below the
-  # DENSE_MAX_PARAMS = 200 ceiling (captures beta/field cross-curvature, #87),
+  # DENSE_MAX_PARAMS = 200 ceiling (captures beta/field cross-curvature),
   # diagonal above it. n_params = p + field block + log_phi (+2 hyper slots
   # when joint).
   mass_code <- switch(mass_matrix, diag = 0L, dense = 1L, block_diag = 2L,
@@ -326,7 +326,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
 
   # Fractional fixed-hyper: the auxiliary weights x on the submesh are either
   # the sampled block (centered) or the transformed field v = L^{-T} z exposed
-  # as `w_draws` (non-centered, #87). Reconstruct the field u = Pr x and
+  # as `w_draws` (non-centered). Reconstruct the field u = Pr x and
   # scatter to the full mesh (orphan nodes carry zero field), so `field_draws`
   # is comparable to the integer path's field draws.
   if (frac_fixed_hyper) {

@@ -33,7 +33,7 @@ struct BuiltinFamilyResponse {
     std::string family;              // resolved against laplace_family_link.h
     double phi = 1.0;                // dispersion / precision / size
     const double* weights = nullptr; // [N] per-obs likelihood weights, or null (=> 1)
-    // Grouped beta sufficient statistics (gcol33/tulpaObs#49). When non-null and
+    // Grouped beta sufficient statistics. When non-null and
     // family == "beta", row i is an exact collapse of n_trials[i] exchangeable
     // beta observations sharing this row's linear predictor; slog_y[i] = sum
     // log(y), slog_1my[i] = sum log(1-y). Null => ungrouped per-obs path.
@@ -45,7 +45,7 @@ struct BuiltinFamilyResponse {
     // open outer classes and phi is the latent SD. Null => not an interval arm.
     const double* lower = nullptr;
     const double* upper = nullptr;
-    // Upper-truncated Gaussian ceiling (truncated_gaussian family, gcol33/tulpa#122).
+    // Upper-truncated Gaussian ceiling (truncated_gaussian family).
     // When non-null and family == "truncated_gaussian", row i's latent log-response
     // is Normal(eta, phi^2) truncated to <= trunc_upper[i] on the predictor scale
     // (+Inf => no truncation). The point response y[i] is still read (the density is
@@ -79,7 +79,7 @@ inline double builtin_family_ll_double(
     // carry (builtin_family_eta_weights), so the Newton line search optimizes the
     // weighted objective its step direction is built from. Without this the
     // backtracking search judges a weighted step against the unweighted log-lik
-    // and stalls (gcol33/tulpa#108). A no-op when weights are absent (w == 1).
+    // and stalls. A no-op when weights are absent (w == 1).
     return w * ll;
 }
 
@@ -88,7 +88,7 @@ inline double builtin_family_ll_double(
 // scales both the score and the Fisher information (`gh.grad *= w_i;
 // gh.neg_hess *= w_i`); builtin_family_ll_double / builtin_family_ll_ad scale
 // the value by the same w_i, so the line search optimizes the same weighted
-// objective the step is built from (gcol33/tulpa#108).
+// objective the step is built from.
 inline void builtin_family_eta_weights(
     int i, const double* eta, double /*logit_zi*/, double /*logit_oi*/,
     const std::vector<double>& /*params*/, const ModelData& /*data*/,

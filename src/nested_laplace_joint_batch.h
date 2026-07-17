@@ -1,6 +1,6 @@
 // nested_laplace_joint_batch.h
 // Batched (multi-response) fused inner-solve primitives for the joint
-// nested-Laplace cell-coupling path (gcol33/tulpa#66).
+// nested-Laplace cell-coupling path.
 //
 // The B species share one design (X / spatial_idx / cell_obs_map) and one
 // sparsity pattern; only the response y / y_pos and per-species dispersion
@@ -80,7 +80,7 @@ struct BatchArmBuffers {
 //     slot resolution is species-invariant: it is computed ONCE per cell from
 //     species 0's pattern and reused for every species, turning each
 //     per-species write from a std::map lookup into a flat values[slot] += .
-//     This per-cell slot sharing across species is the #69 scatter
+//     This per-cell slot sharing across species is the scatter
 //     amortization.
 //
 // The within-arm row Hessian is the lower triangle of H_row * outer(chain,
@@ -310,7 +310,7 @@ struct SparseScatterPolicy {
 // the (row, col) -> flat-slot resolution against the shared pattern) is computed
 // ONCE per cell and reused across all B species; only the per-species
 // derivative slice and its scatter into H_s depend on the species. This is the
-// #69 amortization: the bandwidth-bound evaluate, the design bookkeeping, and
+// Amortization: the bandwidth-bound evaluate, the design bookkeeping, and
 // the sparse slot lookups are paid once, not B times.
 //
 // `buf.etas` must already hold the current per-species etas (species-major).

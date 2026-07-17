@@ -18,7 +18,7 @@
 # Each block contributes its own parameters to the joint integration grid; a
 # single-term model is the length-1 case of the same path.
 
-# Node checkpoint/resume for the CCD / grid integration (gcol33/tulpa#50).
+# Node checkpoint/resume for the CCD / grid integration.
 # `checkpoint = list(path =, resume =)`. Nodes are deterministic given the
 # fingerprint (which folds the data, layout and the node grid), so each node is
 # keyed by its integer index. The store is a single RDS rewritten atomically
@@ -824,7 +824,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   theta_grid <- ccd_to_theta(z, theta_hat, L_scale)   # n_grid x k
   ng <- nrow(theta_grid)
 
-  # --- node checkpoint/resume (gcol33/tulpa#50) -----------------------------
+  # --- node checkpoint/resume -----------------------------
   # Each CCD / grid node is one full inner Laplace solve. `checkpoint =
   # list(path =, resume =)` caches each completed node so a killed run resumes.
   # The node grid is deterministic given the fingerprint (which includes

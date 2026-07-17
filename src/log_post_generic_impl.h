@@ -129,7 +129,7 @@ static T initialize_generic_state(
         log_post = log_post + priors::compute_spde_hyper_prior<T>(
             params, data, layout);
 
-        // Non-centered modes (joint-NUTS or fixed-hyper #87): compute the
+        // Non-centered modes (joint-NUTS or fixed-hyper): compute the
         // field w = L^{-T} z from the z block sitting in
         // params[spde_w_start..spde_w_end). compute_spde_prior wrote
         // -0.5 sum(z^2) to log_post and left spde_w empty; the eta

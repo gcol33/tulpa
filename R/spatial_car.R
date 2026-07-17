@@ -135,7 +135,7 @@ spatial_car_proper <- function(adjacency,
 #                                  factor levels reindex the cells and lose
 #                                  the user's cell identity).
 #
-# The fallback restriction is the original (pre-issue-#25) behavior, kept
+# The fallback restriction is the original behavior, kept
 # for backward compatibility with tests that pass factors covering every
 # cell. Users hitting the empty-cell case should switch to integer 1-based
 # indices or attach `rownames(adjacency)`.

@@ -1,5 +1,5 @@
 # Local central-composite-design refinement of the joint multi-block outer grid
-# (gcol33/tulpa#64).
+
 #
 # The global CCD (nested_laplace_joint_ccd.R) replaces the whole tensor grid with
 # one design oriented by a mode-find over the joint hyperparameter posterior.

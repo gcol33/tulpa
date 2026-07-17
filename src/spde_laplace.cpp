@@ -259,7 +259,7 @@ Rcpp::List cpp_laplace_fit_spde(
 
 // =====================================================================
 // Fractional SPDE single fit from a PRECOMPUTED rational precision + obs map
-// (gcol33/tulpa#71). The rational rSPDE construction makes the latent the
+//. The rational rSPDE construction makes the latent the
 // auxiliary weights x ~ N(0, Q^{-1}) with field u = Pr x, so the obs map is
 // A_eff = A Pr and the precision is Q = Pl' Ci Pl. Both are assembled in R
 // (.spde_rational_assemble, the validated oracle) and passed here as CSC; this
@@ -437,7 +437,7 @@ Rcpp::List cpp_nested_laplace_spde(
     if (x_init_nullable.isNotNull())
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
-    // Grid-cell checkpoint/resume (gcol33/tulpa#50). Structure fingerprint folds
+    // Grid-cell checkpoint/resume. Structure fingerprint folds
     // the SPDE FEM operators (A, C0, G1), nu, and any rational coefficients;
     // keys are the paired (range, sigma) grid coordinates.
     tulpa::Fingerprint sfp;

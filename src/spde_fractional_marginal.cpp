@@ -1,7 +1,7 @@
 // spde_fractional_marginal.cpp
 // Numerically stable Laplace log-marginal for a fractional rSPDE at a fixed
 // (range, sigma). The C++ counterpart of the former R implementation in
-// .spde_nested_logmarginal_at / .spde_family_wll (gcol33/tulpa, "no modelling
+// .spde_nested_logmarginal_at / .spde_family_wll ("no modelling
 // math in R").
 //
 // The precision-space Laplace marginal needs 0.5(log|Q| - log|H|), but the

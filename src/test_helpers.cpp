@@ -1294,7 +1294,7 @@ List cpp_test_spde_nc_transform_fwd(
 }
 
 // ---------------------------------------------------------------------------
-// Sum-to-zero block-Schur log-determinant + Newton step (gcol33/tulpa#69)
+// Sum-to-zero block-Schur log-determinant + Newton step
 // ---------------------------------------------------------------------------
 //
 // Drives the exact block-Schur path (s2z_block_schur / s2z_log_det_block_schur)
@@ -1385,7 +1385,7 @@ List cpp_test_s2z_block_schur(
 }
 
 // ---------------------------------------------------------------------------
-// MCAR prior assembly: Sigma^-1 (x) Q + gradient + log-prior (gcol33/tulpa#89)
+// MCAR prior assembly: Sigma^-1 (x) Q + gradient + log-prior
 // ---------------------------------------------------------------------------
 //
 // Drives the MCAR block's add_prior_sparse + log_prior at one log-Cholesky
@@ -1519,7 +1519,7 @@ List cpp_test_grid_factor_bytes(int k) {
 // Direct algebra check for the MIID block (mcar with Q = I): the precision must
 // be Sigma^-1 (x) I_n exactly, with the matching gradient (no sum-to-zero pin,
 // P is full rank) and log-prior (Sigma-dependent normalizer 0.5 n log|Sigma^-1|,
-// full n not n - 1) (gcol33/tulpa#114).
+// full n not n - 1).
 // [[Rcpp::export]]
 List cpp_test_miid_prior(
     NumericVector theta_logchol, int p, int n, NumericVector x
@@ -1569,7 +1569,7 @@ List cpp_test_miid_prior(
 }
 
 // ---------------------------------------------------------------------------
-// PC-prior scales (gcol33/tulpa#142 A4). Exposes every parameterization of the
+// PC-prior scales (A4). Exposes every parameterization of the
 // shared PC prior so a test can verify each against the base sigma-density plus
 // a numerical change-of-variables Jacobian.
 // [[Rcpp::export]]

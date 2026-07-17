@@ -1,4 +1,4 @@
-﻿// hmc_sampler_decls.h
+// hmc_sampler_decls.h
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc and aliases tulpa:: types into that namespace.
 // using-decls for tulpa:: types, enum parsers, ParamLayout / log-post /
@@ -131,7 +131,7 @@ IntegratorAdaptive get_integrator_adaptive();
 // for an adaptive selection reports the resolved placeholder/coefficient.
 const std::string& get_integrator_name();
 
-// Active NUTS progress reporter + ETA (gcol33/tulpaObs#43). Set by the sampling
+// Active NUTS progress reporter + ETA. Set by the sampling
 // orchestrator on the main thread; ticked once per iteration by every
 // run_hmc_chain_cpp. Under the across-chain OpenMP region each chain ticks the
 // same pointer (serialised by an omp critical); the console line auto-suppresses
@@ -201,7 +201,7 @@ double compute_log_post(
     const double* precomputed_tgp_log_prior = nullptr
 );
 
-// Separable prior + likelihood (gcol33/tulpa#6 prereq).
+// Separable prior + likelihood (prereq).
 // Contract: compute_log_post == compute_log_prior + compute_log_lik_only
 // to within numerical tolerance for any well-defined params.
 // SMC and other tempered samplers consume these as independent callables
@@ -231,7 +231,7 @@ void compute_gradient(
 // Generic (multi-process) gradient drivers used by the dispatch when the
 // model plugs a LikelihoodSpec. Defined in hmc_gradient_fallback.cpp.
 //
-// Phase D simplification (gcol33/tulpa#15): the legacy ratio
+// Phase D simplification: the legacy ratio
 // numerical / autodiff / arena / forward fallbacks and the full set
 // of H-mode specialized kernels (composite, hsgp, gp / gp_collapsed,
 // icar_collapsed, msgp, svc, tvc, st, temporal_gp, ms_temporal,

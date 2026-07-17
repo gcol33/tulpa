@@ -1,6 +1,6 @@
 // pc_prior_equiv_export.cpp
 // Probes for the d = 2 PC range prior and the bounded-parameter map
-// (gcol33/tulpa#144).
+
 //
 // The range density existed three times: the SPDE hyper-prior in
 // tulpa_priors_spde.h, the R nested path (pc_prior_log_density in

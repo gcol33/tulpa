@@ -1,5 +1,5 @@
 // nngp_cond.h
-// Shared Vecchia/NNGP conditional kernel (gcol33/tulpa#142 A3).
+// Shared Vecchia/NNGP conditional kernel (A3).
 //
 // The per-location NNGP conditional -- factor the neighbour covariance, krige
 // the conditional mean, floor the conditional variance, accumulate a Gaussian
@@ -9,13 +9,13 @@
 // and its own conditioning constants, and they had drifted apart.
 //
 // tulpa_linalg::nngp_conditional_moments already existed for this, but it is
-// double*-typed, so the AD copies could not use it and were skipped by the #109
-// consolidation -- which is why that pass landed on the (uncalled) double SVC
+// double*-typed, so the AD copies could not use it and were skipped by the
+// earlier consolidation -- which is why that pass landed on the (uncalled) double SVC
 // function while the live AD one kept its own literals.
 //
 // The conditioning policy is a deliberate per-kernel ARGUMENT, not a default:
 // the SVC kernel intentionally runs a looser jitter/floor than the GP one (see
-// hmc_svc.h and NEWS #109). What must NOT differ is a kernel from its own twin:
+// hmc_svc.h and the NEWS). What must NOT differ is a kernel from its own twin:
 // an AD copy and its double copy are the same function and must agree, or the
 // value and the finite-differenced gradient describe different models.
 //
@@ -154,7 +154,7 @@ inline T marginal_log_density(const T& w_i, const T& sigma2) {
 }
 
 // Per-location Vecchia conditional-gradient assembly (double path), shared by
-// the GP and SVC NNGP analytic gradients (gcol33/tulpa#142). The two differ only
+// the GP and SVC NNGP analytic gradients. The two differ only
 // in how they factorize C (Eigen LLT / CG vs a hand-rolled Cholesky) and how
 // they source the pairwise `dC/dphi` (a cached distance table vs recomputed
 // coordinates); the arithmetic below is identical, so each caller does its own

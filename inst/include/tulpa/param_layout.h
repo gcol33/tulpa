@@ -20,7 +20,7 @@ namespace tulpa {
 // extra_offset` when ZI is followed directly by model-specific extras.
 // This is by design — it does NOT mean the two blocks alias the same
 // slot. Downstream packages that consume tulpa's layout MUST treat
-// every `*_end` field as exclusive (see gcol33/tulpa#2).
+// every `*_end` field as exclusive.
 //
 // Sentinel: a block that is absent has `start == end == -1`.
 //

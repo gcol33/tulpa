@@ -90,7 +90,7 @@
 
       // Compute proposed Hamiltonian. After Phase D every caller is
       // generic LikelihoodSpec, so compute_log_post forwards to the
-      // generic-spec evaluator (gcol33/tulpa#15).
+      // generic-spec evaluator.
       double log_prob_prop = compute_log_post(q_prop, data, layout);
       double kinetic_prop = 0.0;
 

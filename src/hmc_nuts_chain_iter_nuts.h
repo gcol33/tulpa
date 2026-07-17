@@ -528,7 +528,7 @@
                      epsilon, metric_name(mass.type), (int)mass.adapted);
           }
 
-          // Step-adapted integrator (gcol33/tulpa#51). With the mass matrix and
+          // Step-adapted integrator. With the mass matrix and
           // step size settled, resolve the minimum-error multistage coefficient
           // for this chain's operating band (0, nu_max]. nu_max follows from the
           // adapted metric and the local curvature -- the

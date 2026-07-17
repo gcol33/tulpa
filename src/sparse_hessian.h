@@ -43,7 +43,7 @@ public:
     // the dominant pre-grid time cost and ~4x the memory of the CSC arrays
     // (~48 B per std::map node vs 12 B per nonzero). Sharing it makes a builder
     // copy O(1) in the map and stores the pattern once for the whole fit
-    // (gcol33/tulpa#96). A copied builder gets its own mutable `values` (deep
+    //. A copied builder gets its own mutable `values` (deep
     // copied) but shares this read-only map; concurrent const lookups across
     // builders are safe since nothing reassigns it after init().
     using EntryMap = std::map<std::pair<int,int>, int>;

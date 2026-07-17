@@ -5,7 +5,7 @@
 //   - g_gradient_mode  (global mode used by resolve_gradient_fn)
 //   - verify_gradient_runtime  (warmup-time gradient sanity check)
 //
-// Phase D simplification (gcol33/tulpa#15): the legacy ratio
+// Phase D simplification: the legacy ratio
 // compute_gradient_numerical / compute_gradient_autodiff / _arena /
 // _forward / compute_gradient_numerical_impl were deleted with the
 // H-mode kernels. The runtime check now finite-diffs against the

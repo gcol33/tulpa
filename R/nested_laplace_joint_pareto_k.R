@@ -13,10 +13,10 @@
 # transform + log-Jacobian; a fit carrying any axis whose support is not
 # safely known DECLINES to the quadrature-ESS fallback rather than apply a
 # guessed transform (never a wrong k-hat). This mirrors the generic path's
-# decline on a bounded `rho_grid` (gcol33/tulpa#42).
+# decline on a bounded `rho_grid`.
 
 # Capped inner-Newton budget for the outer Pareto-k diagnostic's re-evaluation
-# solves (gcol33/tulpa#51). Warm-started from the modal latent mode, a draw at a
+# solves. Warm-started from the modal latent mode, a draw at a
 # plausible hyperparameter converges in a few steps; a draw at an implausible
 # one (where the cold Newton would stall to the fit's full `max_iter`) carries
 # negligible importance weight, so capping it bounds the diagnostic cost without
@@ -24,11 +24,11 @@
 .K_DIAG_MAX_ITER <- 25L
 
 # Maximum moment-matching refinement passes for the outer Pareto-k proposal
-# (gcol33/tulpa#119). Each pass re-estimates the proposal from the PSIS-weighted
+#. Each pass re-estimates the proposal from the PSIS-weighted
 # moments of its own draws and re-scores, keeping the lowest-k-hat proposal.
 # Proposal refinement is a separate step from the bare diagnostic and is NOT under
 # the diagnostic's cost target, so the cap is generous: a backstop against a
-# runaway loop, not a cost throttle (the earlier cap of 3 in #127 was a cost
+# runaway loop, not a cost throttle (the earlier cap of 3 was a cost
 # throttle, lifted here). The loop self-limits well below this on a typical fit --
 # it stops as soon as the k-hat reaches the usable band (a proposal that already
 # fits pays a single pass) OR a refined pass fails to improve on the one it was
@@ -40,17 +40,17 @@
 # whose k-hat is at or below this is good enough to stop refining (Vehtari,
 # Simpson, Gelman, Yao & Gabry 2024 usable band). This is a fixed loop control,
 # distinct from the REPORTED reliability bands, which are sample-size dependent
-# (`.ps_conf_bands` in R/psis.R, gcol33/tulpa#128).
+# (`.ps_conf_bands` in R/psis.R).
 .K_DIAG_USABLE <- 0.7
 
-# Internal proposal-loop threshold for the grid-mixture skip (gcol33/tulpa#126): a
+# Internal proposal-loop threshold for the grid-mixture skip: a
 # single-Gaussian k-hat below this is already good, so the mixture rescue (which
 # can only LOWER an inflated k) is skipped. A fixed loop control, distinct from
 # the reported sample-size-dependent bands (`.ps_conf_bands` in R/psis.R).
 .K_DIAG_GOOD <- 0.5
 
 # Grid-mixture (basin) proposal for the outer Pareto-k on a spread tensor grid
-# (gcol33/tulpa#121). The nested-Laplace engine represents the hyperparameter
+#. The nested-Laplace engine represents the hyperparameter
 # posterior as the WEIGHTED INTEGRATION GRID and draws hyperparameters from it (a
 # grid cell ~ its weight, then that cell's latent Laplace), never from one
 # continuous Gaussian. Scoring the outer Pareto-k against a single grid-moment
@@ -70,7 +70,7 @@
 .K_DIAG_MIX_FLOOR <- 1e-3
 
 # Grid-coverage tolerance for adopting the grid-mixture over the single Gaussian
-# (gcol33/tulpa#121). The mixture is confined to the grid's coordinate hull, so it
+#. The mixture is confined to the grid's coordinate hull, so it
 # cannot detect a target tail BEYOND the grid; the single Gaussian, whose tails
 # extend past the grid, can. The dispatcher therefore adopts the mixture only when
 # the single Gaussian's importance weight is essentially all INSIDE the grid hull
@@ -87,7 +87,7 @@
 .K_DIAG_HULL_PAD <- 3
 
 # Shamanskii (chord) factor-reuse interval for the diagnostic re-solves
-# (gcol33/tulpa#118). Profiling the joint occu_cover diagnostic showed the
+#. Profiling the joint occu_cover diagnostic showed the
 # dominant cost is NOT the sparse Cholesky factorize (~8-12%, flat ~0.5 ms up to
 # ~1100 cells) but the per-Newton-iteration Hessian/gradient SCATTER (73-83%) --
 # the beta cover arm's per-observation digamma/trigamma curvature fill, paid on
@@ -102,7 +102,7 @@
 .K_DIAG_REFRESH <- 4L
 
 # Loosened inner-Newton convergence tolerance for the diagnostic re-solves
-# (gcol33/tulpa#118). Profiling showed a large share of the per-draw Newton
+#. Profiling showed a large share of the per-draw Newton
 # steps is intrinsic convergence to the FIT's tol (~1e-6), not warm-start drift
 # -- and the diagnostic does not need that accuracy. The Laplace log-marginal
 # error from stopping at gradient norm ~ t is O(t^2) (the mode sits at a
@@ -113,7 +113,7 @@
 # than the fit's own tol (a fit run looser than this keeps its own).
 .K_DIAG_TOL <- 1e-4
 
-# Resolve the diagnostic's speed knobs (gcol33/tulpa#118). The fast values are
+# Resolve the diagnostic's speed knobs. The fast values are
 # the defaults; each is overridable via an option so a power user (or a test)
 # can request the byte-for-byte "exact" diagnostic -- refresh = 1, the fit's own
 # tol, no batch re-order -- and confirm the fast path's k-hat matches it.
@@ -127,14 +127,14 @@
         reorder = isTRUE(getOption("tulpa.kdiag.reorder", TRUE)),
         # Per-cell warm start: each importance draw's inner re-solve starts from
         # the converged latent mode of its NEAREST integration cell instead of
-        # the single broadcast modal mode (gcol33/tulpa#118). Strictly better
+        # the single broadcast modal mode. Strictly better
         # than the chain re-order AND works in the parallel pilot-mode path, so
         # it supersedes the re-order when stored grid modes are available.
         percell = isTRUE(getOption("tulpa.kdiag.percell", TRUE))
     )
 }
 
-# Per-draw nearest-grid-mode warm start (gcol33/tulpa#118). For each row of
+# Per-draw nearest-grid-mode warm start. For each row of
 # `theta_mat` (importance draws in user-facing theta space), find the nearest
 # integration-grid cell in STANDARDISED theta space and return that cell's
 # stored converged latent mode. The `[nrow(theta_mat) x n_x]` result is consumed
@@ -168,7 +168,7 @@
     is.matrix(tg) && is.matrix(m) && nrow(m) == nrow(tg) && nrow(m) >= 1L
 }
 
-# Build the diagnostic re-evaluation closure (gcol33/tulpa#118), choosing the
+# Build the diagnostic re-evaluation closure, choosing the
 # warm-start strategy by knob + availability, single source for both the single-
 # and multi-block paths. `solve_fn(theta_mat, x_init_per_cell = NULL)` round-trips
 # a batch through the kernel (baked hyperprior included).
@@ -191,7 +191,7 @@
 }
 
 # Greedy nearest-neighbour visiting order for the importance batch
-# (gcol33/tulpa#118). The diagnostic's `k_samples` draws come off the Gaussian
+#. The diagnostic's `k_samples` draws come off the Gaussian
 # proposal in random order; the serial outer-grid driver warm-starts each cell
 # from the PREVIOUS cell's converged mode, so a random order means every draw
 # starts from a random-neighbour mode and the inner Newton pays many steps
@@ -230,7 +230,7 @@
 }
 
 # Run an importance-batch solve through the near-neighbour chain order, then
-# restore the caller's row order (gcol33/tulpa#118). `solve_fn(theta_mat)`
+# restore the caller's row order. `solve_fn(theta_mat)`
 # returns one log-marginal per row of its argument (the existing refit closure,
 # baked hyperprior included); this wrapper feeds it the re-ordered batch and
 # un-permutes the result, so the chained warm-start sees near neighbours while
@@ -443,7 +443,7 @@
 # non-negligible variance. The importance proposal is built only over these and
 # holds the zero-variance axes fixed at their mean -- a copy `alpha` pinned at 0
 # or a one-point dispersion grid leaves the covariance rank deficient, so the
-# proposal Cholesky would otherwise be undefined (gcol33/tulpa#114). `cov` is a
+# proposal Cholesky would otherwise be undefined. `cov` is a
 # hyperparameter covariance in the unconstrained coordinate. Returns the varying
 # indices.
 .joint_pareto_vary_axes <- function(cov) {
@@ -454,7 +454,7 @@
 
 # Axes the integration GRID offers more than one value along -- the axes that
 # CAN carry posterior spread, regardless of how the weight concentrates
-# (gcol33/tulpa#117). The collapsed-grid mode-Hessian fallback differences the
+#. The collapsed-grid mode-Hessian fallback differences the
 # outer target only over these, holding the rest fixed. Unlike
 # .joint_pareto_vary_axes, which reads a covariance, this reads the grid layout:
 # a covariance cannot tell a genuinely pinned axis (one grid value) from a
@@ -474,7 +474,7 @@
 
 # Laplace-at-mode covariance of the joint hyperparameter posterior, from a
 # finite-difference Hessian of the outer target at the modal grid cell
-# (gcol33/tulpa#116). The importance proposal for the outer Pareto-k is normally
+#. The importance proposal for the outer Pareto-k is normally
 # the grid-weighted covariance; when the posterior is sharp the (tensor) grid
 # concentrates on too few cells to estimate it, and the residual far-cell weight
 # yields a degenerate covariance and a spurious k-hat. The CCD integrator
@@ -485,7 +485,7 @@
 # unconstrained coordinate; `col_names` labels the physical theta columns the
 # re-solve expects.
 #
-# `vary` (gcol33/tulpa#117) restricts the FD stencil to the axes carrying
+# `vary` restricts the FD stencil to the axes carrying
 # posterior spread, holding the pinned axes (single grid value: a copy `alpha`
 # fixed at 0, a one-point dispersion grid) fixed at `u_center`. A
 # full-`d` stencil is singular along a pinned axis, so without this the Hessian
@@ -542,12 +542,12 @@
 # result. Fits a Gaussian proposal to the joint hyperparameter posterior in the
 # per-axis unconstrained coordinate `u` (weighted mean `u_hat` + covariance `Su`
 # over the integration grid, the analogue of `.nested_grid_pareto_k` generalised
-# to mixed support), splices the CCD mode-Hessian `proposal` (gcol33/tulpa#116)
+# to mixed support), splices the CCD mode-Hessian `proposal`
 # over the axes it spans, and engages the delta-collapse FD rescue
-# (gcol33/tulpa#116, #117, #119). Returns the proposal summary the scorer draws
+#. Returns the proposal summary the scorer draws
 # from, or NULL to DECLINE (an axis with unguessable support, an unusable grid /
 # weight vector, a sub-floor sample budget). The joint k and the opt-in per-arm
-# k (gcol33/tulpa#120) score this SAME (u_hat, Su) summary, differing only in
+# k score this SAME (u_hat, Su) summary, differing only in
 # which axes are allowed to vary -- so the grid build, proposal splice and rescue
 # are computed once here.
 .joint_pareto_prepare <- function(res, refit_log_marginal, n_samples, proposal) {
@@ -555,7 +555,7 @@
     if (is.null(tags)) return(NULL)
 
     # Decline before any inner solve when the sample budget cannot reach the
-    # GPD-fit floor (gcol33/tulpa#51): a sub-floor `n_samples` would run every
+    # GPD-fit floor: a sub-floor `n_samples` would run every
     # one of its solves and then discard the result as NA. The shared core
     # short-circuits, but catching it here too keeps the costly forward/inverse
     # transform + proposal fit off the table.
@@ -581,7 +581,7 @@
     Su    <- (Su + t(Su)) / 2
 
     # Splice the CCD mode-Hessian proposal over the latent axes it spans
-    # (gcol33/tulpa#116). The grid-weighted `Su` above is the spread of the
+    #. The grid-weighted `Su` above is the spread of the
     # integration nodes; a sharp hyperparameter posterior concentrates the grid
     # on ~1 cell, collapsing `Su` toward 0 and leaving the proposal degenerate
     # even though the fit is fine. The CCD integrator already built a Gaussian
@@ -611,7 +611,7 @@
         }
     }
 
-    # Delta-collapse fallback (gcol33/tulpa#116, #117, #119). When the grid
+    # Delta-collapse fallback. When the grid
     # weight concentrates on a single cell the grid-weighted `Su` is exactly zero
     # on every axis: no axis carries posterior spread, so the proposal covariance
     # cannot be estimated from the nodes. Reconstruct a Laplace-at-mode covariance
@@ -651,7 +651,7 @@
 # mean), back-transform each axis to user-facing theta with its log-Jacobian,
 # and call the inner re-solve. Shared by the single-Gaussian scorer
 # (.joint_pareto_score) and the grid-mixture scorer (.joint_pareto_score_mixture)
-# so both evaluate the identical target (gcol33/tulpa#121).
+# so both evaluate the identical target.
 .joint_pareto_make_lt <- function(prep, vary, refit_log_marginal) {
     u_hat <- prep$u_hat; tags <- prep$tags; cn <- prep$cn; d <- prep$d
     function(U_v) {
@@ -674,7 +674,7 @@
 
 # Score the outer Pareto-k over a chosen set of varying axes `vary`, holding the
 # rest fixed at `u_hat`. The shared scorer behind both the joint k (all
-# genuinely-varying axes) and the per-arm k (one arm's axes; gcol33/tulpa#120).
+# genuinely-varying axes) and the per-arm k (one arm's axes).
 # `prep` is the `.joint_pareto_prepare` summary, `refit_log_marginal` the inner
 # re-solve closure (round-trips an `S x d` user-facing theta matrix through the
 # SAME joint kernel the integrator used, returning the per-cell log-marginal WITH
@@ -683,7 +683,7 @@
 # `.nested_is_pareto_k`). Does NOT manage the RNG -- the driver saves / restores
 # it once around all scoring so the fit's draws are bit-for-bit unchanged.
 #
-# Importance-sampling k-hat with moment-matching refinement (gcol33/tulpa#119,
+# Importance-sampling k-hat with moment-matching refinement (
 # after Paananen, Piironen, Burkner & Vehtari 2021, Stat. Comput. 31:16). The
 # initial proposal is the integration-node covariance (or the mode-Hessian / CCD
 # curvature). When the grid is sharply concentrated that covariance is estimated
@@ -695,7 +695,7 @@
 # lowest-k-hat proposal; the smoothed weights bound any single draw's influence,
 # so a sharp posterior is matched in a couple of passes. Iteration stops once the
 # k-hat reaches the usable band (<= 0.7); a proposal that already fits pays a
-# single pass. The per-pass radius cap (gcol33/tulpa#94) is recomputed for the
+# single pass. The per-pass radius cap is recomputed for the
 # current proposal so the grid-coverage envelope follows it. Returns
 # list(pareto_k, is_ess, refined) or NULL (empty / rank-deficient `vary`, no
 # finite importance draw).
@@ -733,7 +733,7 @@
         # actual posterior spread (not the moment-matching-widened proposal, which
         # scatters seed-dependently). The dispatcher reads it for the grid-coverage
         # check and the escaped-grid guard, so the decision is stable across RNG
-        # seeds (gcol33/tulpa#121, #130).
+        # seeds.
         if (iter == 1L) gm_full <- cand
         # `prop_u` / `prop_L` are the proposal that PRODUCED this `kd`, so the stored
         # proposal stays consistent with `best$pareto_k` and the bootstrap re-fits
@@ -765,7 +765,7 @@
     best
 }
 
-# Grid-mixture (basin) outer Pareto-k scorer (gcol33/tulpa#121). Scores the
+# Grid-mixture (basin) outer Pareto-k scorer. Scores the
 # diagnostic against the proposal the engine ACTUALLY samples hyperparameters
 # from: a defensive mixture q(u) = sum_k w_k N(u_k, diag(s^2)) of local Gaussian
 # bumps at the integration-grid cells `u_k` (projected onto `vary`), mixed by the
@@ -854,7 +854,7 @@
 }
 
 # Fraction of the single-Gaussian importance weight that falls OUTSIDE the
-# mixture's coverage hull (gcol33/tulpa#121). `U` are the proposal's importance
+# mixture's coverage hull. `U` are the proposal's importance
 # draws on the varying subspace, `log_weights` their PSIS-smoothed (normalized)
 # log weights, `lo` / `hi` the per-axis coverage bounds (the kept-cell node range
 # expanded by a few bump SDs -- the mixture's actual reach). A draw is outside if
@@ -874,7 +874,7 @@
     sum(w[outside]) / sw
 }
 
-# Dispatch the outer Pareto-k scoring to the right proposal (gcol33/tulpa#121).
+# Dispatch the outer Pareto-k scoring to the right proposal.
 # Always scores the single-Gaussian proposal (the grid-moment / mode-Hessian / CCD
 # Gaussian with moment-matching refinement), whose tails extend beyond the grid so
 # it detects a target heavier than the grid represents (the grid-width signal). On
@@ -905,8 +905,8 @@
     gm_k   <- if (is.list(gm)) gm$pareto_k %||% NA_real_ else NA_real_
     gm_out <- if (is.list(gm)) list(best = gm, source = "grid_moment") else g_out
 
-    # #126 skip judged on the GRID-MOMENT k (what the engine samples), not the
-    # moment-matching-widened single Gaussian (gcol33/tulpa#130): when the
+    # The skip is judged on the GRID-MOMENT k (what the engine samples), not the
+    # moment-matching-widened single Gaussian: when the
     # grid-moment proposal is already good the verdict cannot improve, so skip the
     # mixture's `diagnose_draws`-draw evaluation. The rescue still runs for any
     # grid-moment k in the ok / unreliable band.
@@ -929,14 +929,14 @@
     covered  <- is.finite(out_frac) && out_frac <= .K_DIAG_HULL_TOL
 
     # Compare the mixture to the GRID-MOMENT single Gaussian (`gm_k`), not the
-    # moment-matching-refined one (gcol33/tulpa#130): a refined k that dropped below
+    # moment-matching-refined one: a refined k that dropped below
     # the mixture only by widening the single Gaussian past the grid is not a
     # faithful within-grid reading, so it must not win. Adopt the mixture (the
     # faithful within-grid proposal) when the grid covers the posterior AND the
     # mixture IMPROVES on the grid-moment proposal. A mixture that does NOT improve
-    # on it is degenerate -- a near-collapsed grid (gcol33/tulpa#117) where the few
+    # on it is degenerate -- a near-collapsed grid where the few
     # bumps cover worse than the moment-matched Gaussian -- so the moment-matched
-    # single Gaussian stands. For a target heavier / wider than the grid (#130) the
+    # single Gaussian stands. For a target heavier / wider than the grid the
     # mixture is confined to the grid and reads unreliable, correctly flagging the
     # grid-width deficiency the escaped single Gaussian masked.
     improves <- is.finite(mix$pareto_k) && is.finite(gm_k) && mix$pareto_k < gm_k
@@ -944,7 +944,7 @@
 }
 
 # Bootstrap + closed-form uncertainty of a CHOSEN proposal's outer Pareto-k-hat
-# (gcol33/tulpa#127). `best` is the proposal the dispatcher selected, carrying its
+#. `best` is the proposal the dispatcher selected, carrying its
 # raw finite importance log-ratios `lr`. The k-hat is a single fixed number for
 # this fit + proposal; its sampling uncertainty GIVEN the proposal is estimated by
 # resampling those SAME ratios with replacement and re-fitting the GPD tail at the
@@ -970,12 +970,12 @@
 
 # Shared outer Pareto-k-hat driver for a joint nested-Laplace result. Prepares
 # the proposal summary once, scores the joint k over every genuinely-varying
-# axis, and -- when `arm_axes` is supplied (gcol33/tulpa#120) -- additionally
+# axis, and -- when `arm_axes` is supplied -- additionally
 # scores a k restricted to each arm's hyperparameter axes (the rest held at the
 # posterior mean `u_hat`). Runs all scoring with the RNG restored at the end so
 # the fit's draws are bit-for-bit unchanged.
 #
-# Uncertainty (gcol33/tulpa#127). The canonical pass scores the chosen proposal
+# Uncertainty. The canonical pass scores the chosen proposal
 # ONCE over `n_samples` (= `diagnose_draws`) importance draws and returns its raw
 # finite log-ratios; the k-hat's sampling uncertainty is then estimated by
 # bootstrapping those ratios (`k_bootstrap` replicates, re-fitting the GPD tail at
@@ -1005,7 +1005,7 @@
     prep <- .joint_pareto_prepare(res, refit_log_marginal, n_samples, proposal)
     if (is.null(prep)) return(na_out)
 
-    # Resolve the GPD tail-size request once (gcol33/tulpa#127): an explicit
+    # Resolve the GPD tail-size request once: an explicit
     # `k_tail_points` beyond the 20%-of-draws ceiling is capped, with a single
     # user-facing warning HERE so the per-replicate bootstrap re-fits stay silent.
     tp_req <- if (is.null(k_tail_points)) NA_integer_ else as.integer(k_tail_points)
@@ -1026,7 +1026,7 @@
     # Axes the grid pins to a single value (e.g. a copy `alpha` fixed at 0, or a
     # one-point dispersion axis) carry zero weighted variance, leaving Su rank
     # deficient and its Cholesky undefined. The importance proposal holds them
-    # fixed at u_hat and is built only on the varying axes (gcol33/tulpa#114).
+    # fixed at u_hat and is built only on the varying axes.
     vary  <- .joint_pareto_vary_axes(prep$Su)
     joint <- .joint_pareto_score_dispatch(prep, vary, refit_log_marginal,
                                           n_samples, tail_points = k_tail_points)
@@ -1080,7 +1080,7 @@
 # block spec -- a length-n_arms list (one integer vector per arm; an empty entry
 # means the block does not load that arm) or a single vector replicated across
 # every arm. A block with no per-arm index field loads on all arms. Returns a
-# length-n_arms logical (gcol33/tulpa#120).
+# length-n_arms logical.
 .joint_block_arms <- function(block, n_arms) {
     for (fld in c("spatial_idx", "temporal_idx", "obs_idx")) {
         idx <- block[[fld]]
@@ -1095,7 +1095,7 @@
 
 # Map each joint hyperparameter axis (theta_grid column) to the arm(s) whose
 # linear predictor it enters, for the opt-in per-arm outer Pareto-k
-# (gcol33/tulpa#120). Returns a named list arm_name -> integer column indices, or
+#. Returns a named list arm_name -> integer column indices, or
 # NULL to DECLINE (single-block layout, < 2 arms, or fewer than two arms with any
 # axis) so the per-arm diagnostic is simply withheld rather than reporting a
 # mis-attributed k -- the same decline-rather-than-guess stance the joint axis
@@ -1167,13 +1167,13 @@
     arm_cols[keep]
 }
 
-# Attach the opt-in per-arm outer Pareto-k to a joint result (gcol33/tulpa#120).
+# Attach the opt-in per-arm outer Pareto-k to a joint result.
 # No-op when the driver computed no per-arm k (diagnostic off, single-block
 # layout, or a declined per-arm map). Single source for both attach paths. Each
 # arm carries its own bootstrap SE (`*_se_boot`), 95% CI (`*_ci_low` / `*_ci_high`),
 # closed-form SE (`*_se_formula`), tail size (`*_tail_points`) and band-confidence
 # flag (`*_band_confident`), the per-arm analogue of the joint uncertainty
-# (gcol33/tulpa#127).
+
 .joint_attach_by_arm_k <- function(res, kd) {
     if (is.null(kd$by_arm_k)) return(res)
     res$pareto_k_by_arm        <- kd$by_arm_k
@@ -1190,7 +1190,7 @@
 }
 
 # Attach the bootstrap + closed-form outer Pareto-k uncertainty to a joint result
-# (gcol33/tulpa#127). `pareto_k_se_boot` / `pareto_k_ci_low` / `pareto_k_ci_high`
+#. `pareto_k_se_boot` / `pareto_k_ci_low` / `pareto_k_ci_high`
 # are the bootstrap SE and 95% CI of the k-hat -- its sampling uncertainty GIVEN
 # the proposal, NOT a posterior CI; `pareto_k_se_formula` the GPD-shape MLE
 # asymptotic SE cross-check; `pareto_k_tail_points` the tail size used (the request
@@ -1210,7 +1210,7 @@
     res
 }
 
-# Attach the diagnostic's draw budget and wall-clock cost ratio (gcol33/tulpa#127).
+# Attach the diagnostic's draw budget and wall-clock cost ratio.
 # `diagnose_cost_ratio` = diagnostic seconds / fit seconds (the latter excluding the
 # diagnostic), read from the fit timer's "diagnostics" bucket vs the rest, so a
 # caller can see how expensive the outer Pareto-k diagnostic was relative to the fit
@@ -1233,7 +1233,7 @@
     res
 }
 
-# Attach the k_quality reliability verdict (gcol33/tulpa#129). Reads the outer
+# Attach the k_quality reliability verdict. Reads the outer
 # Pareto-k point estimate, its bootstrap band-confidence flag, and the reliability
 # bands the diagnostic used, and reports an honest reached / best / reason quartet
 # against the requested quality intent. NEVER silently downgrades: when the fit
@@ -1293,7 +1293,7 @@
 # user-facing cell matrix through `backend$call_kernel`) and `hp_fn` (the
 # baked-hyperprior closure) as the re-evaluation path, so no kernel-call
 # machinery is duplicated. The diagnostic solves are warm-started from the
-# modal latent mode and capped at `.K_DIAG_MAX_ITER` (gcol33/tulpa#51), the
+# modal latent mode and capped at `.K_DIAG_MAX_ITER`, the
 # same cost bound as the multi-block path. The whole importance batch is
 # re-solved in one `kernel_fn` call with `n_threads_outer` so the independent
 # re-solves run concurrently across cores rather than one-at-a-time using all
@@ -1323,11 +1323,11 @@
     # One kernel call over the importance batch, with Shamanskii factor reuse
     # (off-factor steps scatter grad-only) + per-cell warm start, both attacking
     # the dominant per-iteration scatter cost on the beta cover arm
-    # (gcol33/tulpa#118). `x_init_per_cell` is an [S x n_x] warm matrix or NULL.
+    #. `x_init_per_cell` is an [S x n_x] warm matrix or NULL.
     # The diagnostic re-solve runs with its own cheaper knobs (k_max_iter,
     # knobs$tol / refresh), so its checkpoint fingerprint would differ from the
     # main grid's; run it checkpoint-free so it neither collides with nor
-    # appends to the fit's checkpoint file (gcol33/tulpa#161).
+    # appends to the fit's checkpoint file.
     solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
         r  <- .joint_with_quiet_opts(kernel_fn(theta_mat, warm_start = warm_arg,
                         max_iter_override = k_max_iter,
@@ -1345,7 +1345,7 @@
     # Per-cell warm start (each draw from its nearest stored grid mode) is the
     # best start and works in serial AND parallel; it supersedes the chain
     # re-order. Fall back to the near-neighbour chain re-order when modes are
-    # unavailable, else the plain broadcast warm (gcol33/tulpa#118).
+    # unavailable, else the plain broadcast warm.
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
     kd <- .joint_pareto_k(res, refit, diagnose_draws, arm_axes = arm_axes,

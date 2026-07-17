@@ -1,8 +1,8 @@
 # sample_glmm.R
 # ------------------------------------------------------------------------------
 # Generic R front-door fitter for the model-agnostic sampler kernels that drive
-# a tulpa ModelData: NUTS (gcol33/tulpa#55) and ESS / SGHMC / SGLD / MCLMC / SMC
-# / VI (gcol33/tulpa#54). All seven share one C++ entry (cpp_tulpa_sample_glmm),
+# a tulpa ModelData: NUTS and ESS / SGHMC / SGLD / MCLMC / SMC
+# / VI. All seven share one C++ entry (cpp_tulpa_sample_glmm),
 # which builds the ModelData once through the built-in-family spec scaffold and
 # dispatches to the requested kernel. This R wrapper assembles that call from a
 # design-matrix bundle and returns a `tulpa_fit` carrying the backend's draws.

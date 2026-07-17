@@ -28,7 +28,7 @@ inline SpdeNcTransform& ensure_transform(const ModelData& data) {
     if (!sm.nc_transform) {
         auto t = std::make_shared<SpdeNcTransform>();
         if (sm.nc_fixed) {
-            // Fixed-hyper non-centering (gcol33/tulpa#87): factor the cached
+            // Fixed-hyper non-centering: factor the cached
             // fixed Q directly. Uniform over integer (SpdeQBuilder) and
             // fractional (precomputed rational) Q, since both land on Q_{p,i,x}.
             t->init_fixed(sm.Q_p, sm.Q_i, sm.Q_x, sm.n_mesh);

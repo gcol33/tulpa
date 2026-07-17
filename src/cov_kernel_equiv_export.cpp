@@ -1,6 +1,6 @@
 // cov_kernel_equiv_export.cpp
 // Probes for the isotropic covariance kernel and its phi-derivative
-// (gcol33/tulpa#142 A5).
+// (A5).
 //
 // dcov_dphi was written twice -- tulpa_svc::dcov_dphi_svc and a copy in
 // hmc_gp_gradients.h -- and the copies had drifted: the GP copy returned half

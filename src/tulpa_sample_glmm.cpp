@@ -1,13 +1,13 @@
 // tulpa_sample_glmm.cpp
 // ----------------------------------------------------------------------------
 // Generic GLMM front-door entry for the model-agnostic sampler kernels that
-// drive a tulpa ModelData (gcol33/tulpa#54, #55): NUTS, elliptical slice
+// drive a tulpa ModelData: NUTS, elliptical slice
 // sampling (ESS), SGHMC, SGLD, MCLMC, SMC, and VI. Every one consumes a tulpa
 // ModelData + ParamLayout, so a single entry builds that model once and
 // dispatches to the chosen kernel by name. No likelihood / link / layout logic
 // is duplicated.
 //
-// Latent structure (gcol33/tulpa#75): random effects (intercept / slopes /
+// Latent structure: random effects (intercept / slopes /
 // correlated / multi-term), areal spatial fields (ICAR / BYM2), and temporal
 // fields (RW1 / RW2 / AR1) are threaded through build_sampler_model_inputs(),
 // which populates the ModelData and derives the layout via compute_param_layout.

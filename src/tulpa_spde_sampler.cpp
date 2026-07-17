@@ -4,7 +4,7 @@
 // (kappa, tau_spde) and samples the (beta, w_mesh, log_phi) latent block
 // jointly via tulpa's full NUTS backend.
 //
-// Phase 1 architecture (gcol33/tulpa#b): the SPDE field is a first-class
+// The SPDE field is a first-class
 // SpatialType::SPDE — w_mesh lives in ParamLayout::spde_w_start..end and
 // the Q-prior + A-projection are wired into compute_log_post_generic via
 // tulpa_priors_spde.h and add_generic_spatial_effect. The likelihood
@@ -18,7 +18,7 @@
 //
 // Hyperparameter integration over (kappa, tau_spde) is left to an outer
 // loop (the existing nested-Laplace grid in cpp_nested_laplace_spde, or
-// a future joint-NUTS variant — gcol33/tulpa#a — that extends arena AD
+// a future joint-NUTS variant that extends arena AD
 // with a sparse-Cholesky adjoint). Within a single call, (kappa, tau)
 // are fixed; Q is built once and cached on ModelData::spde_data.
 
@@ -320,8 +320,8 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
                        "and of equal length.");
         }
     }
-    // Precomputed-Q path (fractional-nu fixed-hyper, gcol33/tulpa#85): the
-    // current operator-based rational field (BRASIL roots, #71) assembles its
+    // Precomputed-Q path (fractional-nu fixed-hyper): the
+    // current operator-based rational field (BRASIL roots) assembles its
     // precision Q = Pl' C^{-1} Pl in R (.spde_assemble_at), which the stale
     // poles/weights QBuilder rebuild cannot reproduce. When the caller passes
     // the precomputed Q (and A carries the rational A_eff = A Pr), use it
@@ -463,7 +463,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     sm.prior_sigma_0     = prior_sigma_0;
     sm.prior_sigma_alpha = prior_sigma_alpha;
 
-    // Fixed-hyper non-centering (gcol33/tulpa#87). When on, the field block
+    // Fixed-hyper non-centering. When on, the field block
     // in params is the white-noise auxiliary z; the field v = L^{-T} z is
     // computed from the cached fixed Q each evaluation. Same target density
     // as the centered fixed-hyper path, but the isotropic z block lets the
@@ -491,7 +491,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     // captures the beta/field cross-curvature that a diagonal metric cannot,
     // which matters for an ill-conditioned latent block (e.g. the rational
     // fractional-nu Q, whose near-null direction otherwise leaves the
-    // intercept marginal under-dispersed -- gcol33/tulpa#87). BLOCK_DIAG (2)
+    // intercept marginal under-dispersed --). BLOCK_DIAG (2)
     // and AUTO (3) round out the run_hmc_chain_cpp options. The R wrapper
     // resolves the default per field structure.
     tulpa::MassMatrixType metric;
@@ -525,7 +525,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         }
     }
 
-    // Column names. In non-centered modes (joint OR fixed-hyper #87) the
+    // Column names. In non-centered modes (joint OR fixed-hyper) the
     // SPDE block is z; in the centered legacy mode it is w directly. The
     // transformed field lives in a separate w_draws matrix below.
     const bool noncentered = joint_hypers || data.spde_data.nc_fixed;
@@ -582,7 +582,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     if (noncentered) {
         // Transform the z block to the field v = L^{-T} z per draw. Shared by
         // joint-NUTS (Q rebuilt per draw from the sampled hypers) and the
-        // fixed-hyper #87 path (Q fixed); apply_spde_nc_transform_double
+        // fixed-hyper path (Q fixed); apply_spde_nc_transform_double
         // dispatches on data.spde_data.nc_fixed internally.
         Rcpp::NumericMatrix w_draws(n_sample, n_mesh);
         std::vector<double> params_row(n_params);

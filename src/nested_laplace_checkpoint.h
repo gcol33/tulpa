@@ -1,5 +1,5 @@
 // nested_laplace_checkpoint.h
-// Grid-cell checkpoint/resume for the nested-Laplace outer grid (gcol33/tulpa#50).
+// Grid-cell checkpoint/resume for the nested-Laplace outer grid.
 //
 // The outer grid is the natural checkpoint boundary: each cell over the
 // hyperparameter coordinate is independent and produces a self-contained

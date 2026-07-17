@@ -152,7 +152,7 @@ fit_spde <- function(y, X, spatial,
     }
   }
 
-  # Grid-cell checkpoint/resume (gcol33/tulpa#50). `checkpoint = list(path =,
+  # Grid-cell checkpoint/resume. `checkpoint = list(path =,
   # resume =)` appends each solved (range, sigma) cell to `path`; a resume loads
   # finished cells and re-solves only the rest. The outer integrator
   # (CCD / grid) calls spde_log_marginal() many times across mode search and the
@@ -198,7 +198,7 @@ fit_spde <- function(y, X, spatial,
   no_re_n_groups  <- if (has_re) as.integer(n_re_groups) else 0L
   no_re_sigma     <- if (has_re) as.numeric(sigma_re)    else 1.0
 
-  # Fractional nu integrates the operator-based rational SPDE (gcol33/tulpa#71):
+  # Fractional nu integrates the operator-based rational SPDE:
   # each (range, sigma) cell assembles its own (Q, A_eff) via the validated R
   # oracle and is solved by the precomputed C++ fit, with 0.5 log|Q| folded into
   # the per-cell marginal (done inside .spde_laplace_fractional_at). The outer

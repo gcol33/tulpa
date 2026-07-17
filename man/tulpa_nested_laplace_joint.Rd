@@ -460,7 +460,7 @@ diagnostic is off or declines. The mode-Hessian source keeps the
 \item \code{pareto_k_se_boot}, \code{pareto_k_ci_low}, \code{pareto_k_ci_high},
 \code{pareto_k_se_formula}, \code{pareto_k_tail_points},
 \code{pareto_k_tail_points_requested}, \code{pareto_k_band_confident} -- the outer
-Pareto-\eqn{\hat{k}} uncertainty (gcol33/tulpa#127), present whenever the
+Pareto-\eqn{\hat{k}} uncertainty, present whenever the
 diagnostic ran. \code{pareto_k_se_boot} is the bootstrap SE of the k-hat and
 \code{pareto_k_ci_low} / \code{pareto_k_ci_high} its 2.5\\% / 97.5\\% bootstrap
 quantiles -- the estimator's sampling spread GIVEN the proposal, not a
@@ -473,7 +473,7 @@ off or could not fit. \code{diagnose_draws} and \code{diagnose_cost_ratio} (the
 diagnostic's draw budget and its wall-clock cost relative to the fit) are
 attached at the top level.
 \item \code{pareto_k_by_arm}, \code{pareto_k_by_arm_is_ess}, \code{pareto_k_by_arm_scope} --
-present only with \code{control$diagnose_k = "by_arm"} (gcol33/tulpa#120).
+present only with \code{control$diagnose_k = "by_arm"}.
 Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 hyperparameter axes, the other arms held at their posterior mean, so a
 tail-heavy joint k can be localised to one arm. A per-arm entry is \code{NA}
@@ -483,7 +483,7 @@ uncertainty: \code{pareto_k_by_arm_se_boot}, \code{pareto_k_by_arm_ci_low} /
 \code{pareto_k_by_arm_tail_points} and \code{pareto_k_by_arm_band_confident}.
 \item \code{k_quality_requested}, \code{k_quality_reached}, \code{k_quality_best},
 \code{k_quality_reason}, \code{k_quality_rounds} -- the reliability verdict for the
-\code{control$k_quality} intent (gcol33/tulpa#129, #131). \code{k_quality_requested}
+\code{control$k_quality} intent. \code{k_quality_requested}
 echoes the intent; \code{k_quality_best} is the band actually achieved
 (\code{"good"} / \code{"ok"} / \code{"unreliable"}, or \code{"uncertain"} when the bootstrap CI
 crosses a boundary); \code{k_quality_reached} is \code{TRUE}/\code{FALSE} for an \code{"ok"} /

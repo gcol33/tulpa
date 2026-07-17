@@ -10,7 +10,7 @@
 # shared nested-Laplace post-processing (weight normalisation, grid-Hessian
 # extraction for the fixed-effect marginal SE) and the generic tulpa_fit
 # accessors. Previously these kernels were reachable only from consumer packages
-# (gcol33/tulpa#158).
+
 # ------------------------------------------------------------------------------
 
 # Log-spaced positive grid, floored at 2 points.

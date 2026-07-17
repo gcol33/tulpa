@@ -106,7 +106,7 @@ inline int parse_joint_arms(
         arms_out[k].family   = Rcpp::as<std::string>(a["family"]);
         arms_out[k].phi      = Rcpp::as<double>(a["phi"]);
         arms_out[k].N        = (int)arms_out[k].y.size();
-        // Optional grouped beta sufficient statistics (gcol33/tulpaObs#49). When
+        // Optional grouped beta sufficient statistics. When
         // supplied they must match this arm's N and carry n_trials as the group
         // count; the built-in beta spec then reads (n_trials, slog_y, slog_1my).
         if (a.containsElementNamed("slog_y") && !Rf_isNull(a["slog_y"])) {
@@ -131,7 +131,7 @@ inline int parse_joint_arms(
             }
         }
         // Optional upper-truncated Gaussian ceiling (truncated lognormal cover,
-        // gcol33/tulpa#122). When supplied it must match this arm's N; the built-in
+        //). When supplied it must match this arm's N; the built-in
         // truncated_gaussian spec reads (y, trunc_upper). +Inf entries => no
         // truncation on that row.
         if (a.containsElementNamed("trunc_upper") && !Rf_isNull(a["trunc_upper"])) {
@@ -152,7 +152,7 @@ inline int parse_joint_arms(
         arms_out[k].field_coef = a.containsElementNamed("field_coef_const")
                                   ? Rcpp::as<double>(a["field_coef_const"])
                                   : 1.0;
-        // Per-arm cell coupling (gcol33/tulpa#32 Change 2b). When `coupled`
+        // Per-arm cell coupling (Change 2b). When `coupled`
         // is true, the inner Newton dispatches this arm's per-cell
         // contribution to the registered CellCouplingSpec instead of summing
         // per-obs through the family. `cell_obs_map` is 1-based; length is
@@ -258,7 +258,7 @@ inline void add_per_arm_beta_re_priors_sparse(
 // add_per_arm_beta_re_priors writes into the gradient. Without this the
 // gradient pulls beta toward the prior mean while the objective (likelihood
 // only) rejects the step, pinning beta at the unpenalized MLE -- which at the
-// occupancy psi-p boundary runs to +Inf (gcol33/tulpa, occu_cover coupling).
+// occupancy psi-p boundary runs to +Inf (occu_cover coupling).
 inline double log_prior_per_arm_re(const Rcpp::NumericVector& x,
                                     const std::vector<ParsedArm>& parsed) {
     constexpr double LOG_2PI = 1.8378770664093454835606594728112;

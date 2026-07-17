@@ -163,9 +163,9 @@ inline double nngp_log_lik(
     // T = double. This is the double twin of tulpa_svc_ad::nngp_log_lik and must
     // agree with it, so it takes the SAME constants (kSvcJitter / kSvcVarFloor,
     // the deliberately looser SVC conditioning) and the same blended floor.
-    // #109 consolidated this function to jitter/var_floor = 1e-6, but it routed
-    // through a double-only core the AD twin could not use, so the twin kept
-    // 1e-4 and the two silently described different models.
+    // An earlier consolidation set this function to jitter/var_floor = 1e-6, but
+    // that routed through a double-only core the AD twin could not use, so the
+    // twin kept 1e-4 and the two silently described different models.
     std::vector<double> w_nb(n_neighbors);
     for (int j = 0; j < n_neighbors; j++) {
       int nn_orig_idx = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];

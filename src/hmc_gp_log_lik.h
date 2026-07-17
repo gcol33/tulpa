@@ -181,7 +181,7 @@ inline double gp_nngp_log_lik(
         if (j1 == j2) {
           C_mat(j1, j2) = sigma2;
         } else {
-          // Phase 1.3: Use cached pairwise neighbor distances
+          // Use cached pairwise neighbor distances
           double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
           C_mat(j1, j2) = compute_cov(d12, sigma2, phi, gp_data.cov_type);
         }

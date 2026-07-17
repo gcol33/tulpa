@@ -12,7 +12,7 @@
 # std::vector<LatentBlock> on the joint side. Each block can be a copy
 # block; copy (alpha-coupling) is supported on areal spatial (icar / bym2 /
 # car_proper), temporal (rw1 / rw2 / ar1), and unstructured (iid) blocks
-# (gcol33/tulpa#76). See dev_notes/plan_multi_block_joint.md.
+#. See dev_notes/plan_multi_block_joint.md.
 
 # Validate one arm spec for the multi-block path. Same core as
 # `.normalise_joint_arm` *except* `spatial_idx` is no longer required at
@@ -77,9 +77,9 @@
     # scales the WHOLE correlated (intercept, slope) field by one alpha onto the
     # copy arm (the cross-arm transfer); the free cross-covariance Sigma stays
     # the within-arm covariance among the fields, integrated over the outer grid
-    # (gcol33/tulpaObs#64). Blocks whose per-arm scaling lives elsewhere (lf via
+    #. Blocks whose per-arm scaling lives elsewhere (lf via
     # lambda, hsgp_mo via Sigma) or whose precision is precomputed (tgmrf) do
-    # not take a copy (gcol33/tulpa#76).
+    # not take a copy.
     copy_types <- c("icar", "bym2", "car_proper", "rw1", "rw2", "ar1", "iid",
                     "mcar", "miid")
     if (!block_type %in% copy_types) {
@@ -182,7 +182,7 @@
         # correlation axis (rho / rho_car) must follow them. A unit-precision
         # block (icar / rw1 / rw2 / iid) has just (sigma, alpha); a block with a
         # second hyperparameter (bym2 rho, car_proper rho_car, ar1 rho) appends
-        # it (gcol33/tulpa#76).
+        # it.
         if (type %in% c("icar", "rw1", "rw2", "iid")) {
             gr <- expand.grid(sigma = sigma_axis,
                               alpha = alpha_grid,
@@ -349,14 +349,14 @@
         # each a numeric vector matching that arm's obs count (the per-arm obs_idx
         # length). Composes multiplicatively with copy `arm_scale`. An
         # uncorrelated slope (x || g) / (0 + x | g) is one weighted iid block per
-        # coefficient, each with its own sigma axis (gcol33/tulpa#114).
+        # coefficient, each with its own sigma axis.
         if (!is.null(p$svc_weight)) {
             out$svc_weight <- .multi_block_svc_weight(
                 p$svc_weight, obs_idx, n_arms, block_index)
         }
         out
     } else if (type == "miid") {
-        # Multivariate IID (gcol33/tulpa#114): p coupled per-group coefficient
+        # Multivariate IID: p coupled per-group coefficient
         # fields sharing a free Sigma (the Q = I sibling of mcar). One block over
         # p * n_groups latent. `obs_idx` is the per-arm 1-based grouping index
         # (the mcar `spatial_idx` role); `field_weight` is the per-coefficient
@@ -632,7 +632,7 @@
         bare_b  <- sub("^b[0-9]+\\.", "", colnames(cpp_grid)[cols_b])
         i_sigma <- match("sigma", bare_b)
         i_alpha <- match("alpha", bare_b)
-        # A copied correlated field (mcar, gcol33/tulpaObs#64) has no scalar
+        # A copied correlated field (mcar) has no scalar
         # `sigma` axis -- its amplitude lives in the free Sigma (the log-Cholesky
         # axes), and the copy applies alpha directly via arm_scale (NOT
         # sigma_occ = sigma / sigma_pos = alpha*sigma). The alpha column passes
@@ -713,7 +713,7 @@
 # inner threads. No tiling on the re-eval path (the IS batch is not a per-axis
 # alpha lattice), so no tile-partition reconstruction is needed.
 #
-# The diagnostic solves are bounded (gcol33/tulpa#51): each is warm-started
+# The diagnostic solves are bounded: each is warm-started
 # from the modal cell's converged latent mode (the bulk of the importance
 # weight sits near it, so those draws converge in a few Newton steps) and
 # capped at `.K_DIAG_MAX_ITER` iterations. A draw at an implausible
@@ -805,11 +805,11 @@
     # off-factor steps scatter grad-only (attacks the dominant per-iteration
     # Hessian fill); loosened inner tol cuts intrinsic Newton steps; per-cell
     # warm start (`x_init_per_cell`, an [S x n_x] matrix or NULL) starts each
-    # draw from its nearest grid mode in BOTH serial and parallel (gcol33/tulpa#118).
+    # draw from its nearest grid mode in BOTH serial and parallel.
     # The diagnostic re-solve runs with its own cheaper knobs (k_max_iter,
     # knobs$tol / refresh), so its checkpoint fingerprint would differ from the
     # main grid's; run it checkpoint-free so it neither collides with nor
-    # appends to the fit's checkpoint file (gcol33/tulpa#161).
+    # appends to the fit's checkpoint file.
     solve_fn <- function(theta_mat, x_init_per_cell = NULL) {
         r <- .joint_with_quiet_opts(call_kernel(
             theta_mat,
@@ -825,7 +825,7 @@
     }
     # Per-cell warm start (nearest grid mode, serial + parallel) when modes are
     # stored; else near-neighbour chain re-order; else plain broadcast
-    # (gcol33/tulpa#118).
+
     refit <- .joint_make_diag_refit(res, solve_fn, modal_theta, knobs)
     arm_axes <- if (isTRUE(pareto_k_by_arm)) .joint_pareto_arm_axes(res) else NULL
     kd <- .joint_pareto_k(res, refit, diagnose_draws, proposal = proposal,
@@ -872,7 +872,7 @@
                                   adaptive_max_frac = 0.75,
                                   adaptive_min_cells = 48,
                                   timer = NULL) {
-    tm <- timer %||% .tulpa_timer()                    # gcol33/tulpa#48
+    tm <- timer %||% .tulpa_timer()
     integration <- match.arg(integration, c("auto", "ccd", "grid",
                                              "grid_adaptive"))
     n_arms <- length(responses)
@@ -932,18 +932,18 @@
     # Per-arm dispersion overrides on the outer grid. A phi axis varies
     # independently of the latent-block axes, so it forms a Cartesian (tensor)
     # product with the latent grid -- whether that latent grid is the dense
-    # tensor or a CCD design (gcol33/tulpa#61). The cross is applied once,
+    # tensor or a CCD design. The cross is applied once,
     # below, to whichever latent grid was built.
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     has_phi  <- !is.null(phi_axes) &&
                 any(vapply(phi_axes, length, integer(1)) > 0L)
 
-    # Node placement for the LATENT axes. CCD (gcol33/tulpa#59) integrates on a
+    # Node placement for the LATENT axes. CCD integrates on a
     # central composite design around the joint hyperparameter mode; it declines
     # (-> tensor grid) for too few axes, an unguessable axis (CAR_proper rho_car
     # / non-BYM2 rho), or a degenerate / ridged outer mode-find / Hessian
-    # (gcol33/tulpa#62). An active phi axis no longer disables CCD
-    # (gcol33/tulpa#61): the CCD rides the latent axes and the phi tensor
+    #. An active phi axis no longer disables CCD
+    #: the CCD rides the latent axes and the phi tensor
     # crosses on top, with the CCD design weights replicated across phi cells.
     # Axis threshold: "auto" (the default) engages CCD only at d >= 4, where the
     # tensor blow-up bites hardest, and keeps the cheaper, ridge-robust tensor
@@ -955,7 +955,7 @@
     joint_grid            <- NULL
     use_adaptive          <- FALSE
     adaptive_info         <- NULL
-    # Mode-Hessian outer proposal (gcol33/tulpa#116). Set only when the CCD
+    # Mode-Hessian outer proposal. Set only when the CCD
     # integrator engages: its Gaussian (centre `u_hat`, scale `L_scale` from the
     # analytic curvature at the outer mode) drives the outer Pareto-k so the
     # diagnostic stays defined when the hyperparameter posterior is sharp and the
@@ -992,14 +992,14 @@
             lp <- .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                                       fn_sigma, fn_alpha, fn_phi)
             # Carry the inner latent modes so the CCD mode-find can advance the
-            # warm start per accepted point (gcol33/tulpa#62).
+            # warm start per accepted point.
             if (is.matrix(r$modes)) attr(lp, "modes") <- r$modes
             lp
         }
 
         # Advance the inner warm start to the latent mode at each accepted
         # mode-find point, so subsequent probes solve in a few Newton steps
-        # rather than cold from the box centre (gcol33/tulpa#62).
+        # rather than cold from the box centre.
         set_warm <- function(mode) {
             mode <- as.numeric(mode)
             if (length(mode) && all(is.finite(mode))) ccd_warm <<- mode
@@ -1017,7 +1017,7 @@
             # The CCD axes are exactly the leading latent-block columns of
             # joint_grid (axis_names, in order); phi crosses as a separate
             # tensor on top. Carry the mode-Hessian Gaussian over those axes for
-            # the outer Pareto-k (gcol33/tulpa#116).
+            # the outer Pareto-k.
             ccd_proposal <- list(u_hat   = ccd$u_hat,
                                  L_scale = ccd$L_scale,
                                  tags    = ccd$tags,
@@ -1129,7 +1129,7 @@
     # phi_grid (per-arm dispersion overrides on the outer grid): each phi axis
     # varies independently of the latent-block grid, so it forms a Cartesian
     # product with the latent grid -- the dense tensor or the CCD design alike
-    # (gcol33/tulpa#61). On the CCD path the per-node design weights `dnode`
+    #. On the CCD path the per-node design weights `dnode`
     # are replicated across the phi cells so each (latent node, phi cell) keeps
     # the latent node's quadrature weight; phi rides as a uniform tensor axis,
     # exactly as on the dense path. A phi axis tied to a latent-block axis is
@@ -1154,7 +1154,7 @@
         if (!is.null(dnode)) dnode <- dnode[joint_idx$joint]
     }
 
-    # Announce the engaged outer integrator at selection time (gcol33/tulpa#63):
+    # Announce the engaged outer integrator at selection time:
     # the single authoritative line, tied to integration_used, before the heavy
     # inner solves -- so a CCD engaged silently by axis count (or declined back
     # to the tensor on a ridge) is visible without reading fit$...$integration.
@@ -1204,7 +1204,7 @@
     }
     tm$mark("setup")
     res <- call_kernel_with_tol(prune_tol)
-    # Safety gate (gcol33/tulpa#43): fall back to the full grid when the
+    # Safety gate: fall back to the full grid when the
     # cheap-pass ranking is unreliable rather than silently returning a
     # pruned answer.
     if (as.numeric(prune_tol) > 0) {
@@ -1214,13 +1214,13 @@
     tm$mark("grid")
 
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
-    # (gcol33/tulpa#22). Multi-block has no in-package refinement passes,
+    #. Multi-block has no in-package refinement passes,
     # so one apply at the kernel-call boundary suffices.
     res$log_marginal <- .joint_multi_add_hp(res$log_marginal, joint_grid,
                                             axis_offsets, B, fn_sigma, fn_alpha,
                                             fn_phi)
 
-    # Local CCD refinement (gcol33/tulpa#64): replace a few high-weight, mutually
+    # Local CCD refinement: replace a few high-weight, mutually
     # non-adjacent tensor cells with small curvature-aware node clouds so a coarse
     # base grid resolves the sharply-peaked directions without the k^d tensor
     # blow-up. Engages only on the tensor path (the finite-difference curvature
@@ -1296,7 +1296,7 @@
         int_weights = if (is_design_weighted) res$weights else NULL)
     if (!is_design_weighted) {
         # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
-        # modal cell (gcol33/tulpa#20). The 3-point grid-profile fit needs the
+        # modal cell. The 3-point grid-profile fit needs the
         # regular per-axis lattice; on the scattered CCD design the weighted
         # var-of-means over the design IS the calibrated SD (the corrected
         # design weights reproduce the Gaussian moments), so it is kept as is.
@@ -1317,7 +1317,7 @@
     # unguessable support (CAR_proper's rho_car, a non-BYM2 rho, ...).
     # The diagnostic's importance batch runs across `pareto_k_threads` (resolved
     # by the top-level caller from control$k_threads; NULL only on a direct call,
-    # where it follows this fit's own thread grant). gcol33/tulpa#117.
+    # where it follows this fit's own thread grant)..
     k_to <- pareto_k_threads %||%
         .tulpa_pareto_k_threads(n_threads_outer, n_threads, diagnose_draws, NULL)
     res <- .joint_attach_pareto_k_multi(res, call_kernel,

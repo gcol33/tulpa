@@ -1,6 +1,6 @@
 // spde_nc_transform.h
 // Non-centered SPDE transform with sparse-Cholesky forward + reverse-mode
-// adjoint. Hosts the second leg of gcol33/tulpa#a (joint NUTS over hypers).
+// adjoint. Hosts the second leg of the joint NUTS over hypers.
 //
 // Setup. Q(kappa, tau) is the SPDE precision built from FEM matrices
 //   C0 (lumped mass, diagonal) and G1 (stiffness). Integer-alpha case
@@ -90,7 +90,7 @@ public:
                           // Rational: tau^2 sum_k w_k K_k D K_k.
     SolverT llt;
     bool    factored = false;
-    bool    fixed_mode = false;  // set by init_fixed(); see gcol33/tulpa#87.
+    bool    fixed_mode = false;  // set by init_fixed.
 
     void init(int n,
               const std::vector<double>& C0_d,
@@ -100,7 +100,7 @@ public:
               const std::vector<double>& poles   = {},
               const std::vector<double>& weights = {});
 
-    // Fixed-hyper non-centered setup (gcol33/tulpa#87). Factors a directly
+    // Fixed-hyper non-centered setup. Factors a directly
     // supplied precision Q (CSC, full-symmetric storage — the lower triangle
     // is read) once and caches L. No FEM rebuild, no hyper adjoint: the
     // transform is the constant linear map v = L^{-T} z. Works uniformly for
@@ -184,7 +184,7 @@ std::vector<arena::Var> spde_nc_transform_arena(
     SpdeNcTransform&               transform
 );
 
-// Fixed-hyper arena hook (gcol33/tulpa#87). Registers a custom_backward
+// Fixed-hyper arena hook. Registers a custom_backward
 // block with inputs [z[0..n-1]] and outputs [v[0..n-1]] = L^{-T} z. The
 // backward callback computes dz = L^{-1} dv only — there are no hyper slots.
 // `transform` is captured by reference and must outlive the backward sweep.

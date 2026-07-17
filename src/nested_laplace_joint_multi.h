@@ -341,7 +341,7 @@ inline void scatter_arm_obs_joint_multi(
 }
 
 // ============================================================================
-// Cell-coupling per-cell branch (dense path, gcol33/tulpa#32 Change 2b).
+// Cell-coupling per-cell branch (dense path Change 2b).
 //
 // When the joint fit registers a non-separable `CellCouplingSpec` (one
 // whose `arm_ids()` lists at least one arm), the per-obs scatter is
@@ -376,7 +376,7 @@ inline void scatter_arm_obs_joint_multi(
 // passes a per-thread snapshot taken under the phi-sync critical, because the
 // gridded coupled-arm dispersion (e.g. the beta precision on `phi.grid.pos`) is
 // rewritten in `arms` per cell by a concurrent thread's `prep_at_grid`; reading
-// the shared `arms[k].phi` lock-free here would race it (gcol33/tulpaObs#42).
+// the shared `arms[k].phi` lock-free here would race it.
 // nullptr keeps the direct `arms[k].phi` read for the serial / dense callers.
 inline double eval_cell_coupling_log_lik(
     const CellCouplingSpec&                       spec,
@@ -592,7 +592,7 @@ inline void scatter_cross_chain_sparse(
 }
 
 // ============================================================================
-// Rank-1 self-cross fast path (gcol33/tulpaObs#94).
+// Rank-1 self-cross fast path.
 //
 // When a coupled arm's (k, k) off-diagonal cross-Hessian is the symmetric
 // rank-1 `coef * v v^T` over the cell's rows (the all-undetected occupancy
@@ -780,7 +780,7 @@ inline void scatter_cell_coupling_branch_impl(
         cross_hess_outer[kk] = cross_hess_ptr_inner[kk].data();
     }
 
-    // Per-cell rank-1 self-cross descriptor scratch (gcol33/tulpaObs#94). A
+    // Per-cell rank-1 self-cross descriptor scratch. A
     // coupled arm may declare its (kk, kk) off-diagonal cross block as one
     // symmetric rank-1 coef * v v^T instead of the dense cross_hess_buf[kk][kk];
     // the kernel collapses it to one coef * u u^T in dof space below. coef
@@ -916,7 +916,7 @@ inline void scatter_cell_coupling_branch_impl(
         // Cross-arm Hessian scatter. Pure curvature with no gradient
         // contribution, so a grad-only step (cached-factor reuse) skips it.
         // The self block (kk, kk) takes the rank-1 fast path when the spec
-        // declared one (gcol33/tulpaObs#94: one coef * u u^T over the arm's
+        // declared one (: one coef * u u^T over the arm's
         // joint dofs, the all-undetected occupancy mixture); otherwise it walks
         // the dense off-diagonal. Cross blocks (kk < ll) are always dense.
         if (!grad_only) {
@@ -1049,7 +1049,7 @@ inline void scatter_cell_coupling_sparse_branch(
         const std::size_t nnz = H.values.size();
         const std::size_t n_x = grad.size();
         // Per-chunk partials: a copied builder shares H's read-only entry_map /
-        // pattern (gcol33/tulpa#96) but owns a zeroed values array; a zeroed
+        // pattern but owns a zeroed values array; a zeroed
         // gradient. Each chunk writes only its own partials, so no locks.
         std::vector<SparseHessianBuilder> H_chunk;
         H_chunk.reserve(C);

@@ -46,7 +46,7 @@
   if (use_nuts) {
     compute_gradient(q, data, layout, current_grad, &log_prob_current);
   } else {
-    // After Phase D (gcol33/tulpa#15) every caller is generic LikelihoodSpec
+    // After Phase D every caller is generic LikelihoodSpec
     // and compute_log_post forwards to compute_log_post_generic_spec_double,
     // so the legacy autodiff-vs-H log-post split is no longer needed.
     log_prob_current = compute_log_post(q, data, layout);

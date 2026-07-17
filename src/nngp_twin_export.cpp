@@ -1,5 +1,5 @@
 // nngp_twin_export.cpp
-// Twin-equivalence probes for the NNGP conditional kernels (gcol33/tulpa#142 A3).
+// Twin-equivalence probes for the NNGP conditional kernels (A3).
 //
 // Each NNGP log-likelihood exists twice: a hand-written `double` version and a
 // templated autodiff one. They are the same function -- the AD copy instantiated

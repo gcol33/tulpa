@@ -466,7 +466,7 @@
 #'   * `pareto_k_se_boot`, `pareto_k_ci_low`, `pareto_k_ci_high`,
 #'      `pareto_k_se_formula`, `pareto_k_tail_points`,
 #'      `pareto_k_tail_points_requested`, `pareto_k_band_confident` -- the outer
-#'      Pareto-\eqn{\hat{k}} uncertainty (gcol33/tulpa#127), present whenever the
+#' Pareto-\eqn{\hat{k}} uncertainty, present whenever the
 #'      diagnostic ran. `pareto_k_se_boot` is the bootstrap SE of the k-hat and
 #'      `pareto_k_ci_low` / `pareto_k_ci_high` its 2.5\% / 97.5\% bootstrap
 #'      quantiles -- the estimator's sampling spread GIVEN the proposal, not a
@@ -479,7 +479,7 @@
 #'      diagnostic's draw budget and its wall-clock cost relative to the fit) are
 #'      attached at the top level.
 #'   * `pareto_k_by_arm`, `pareto_k_by_arm_is_ess`, `pareto_k_by_arm_scope` --
-#'      present only with `control$diagnose_k = "by_arm"` (gcol33/tulpa#120).
+#' present only with `control$diagnose_k = "by_arm"`.
 #'      Named (by arm) outer Pareto-\eqn{\hat{k}} restricted to each arm's
 #'      hyperparameter axes, the other arms held at their posterior mean, so a
 #'      tail-heavy joint k can be localised to one arm. A per-arm entry is `NA`
@@ -489,7 +489,7 @@
 #'      `pareto_k_by_arm_tail_points` and `pareto_k_by_arm_band_confident`.
 #'   * `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
 #'      `k_quality_reason`, `k_quality_rounds` -- the reliability verdict for the
-#'      `control$k_quality` intent (gcol33/tulpa#129, #131). `k_quality_requested`
+#' `control$k_quality` intent. `k_quality_requested`
 #'      echoes the intent; `k_quality_best` is the band actually achieved
 #'      (`"good"` / `"ok"` / `"unreliable"`, or `"uncertain"` when the bootstrap CI
 #'      crosses a boundary); `k_quality_reached` is `TRUE`/`FALSE` for an `"ok"` /
@@ -562,7 +562,7 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     .check_control(control, .CONTROL_KEYS$nested_laplace_joint,
                    "tulpa_nested_laplace_joint")
-    # k_quality reliability front door + escalation (gcol33/tulpa#129, #131). The
+    # k_quality reliability front door + escalation. The
     # single fit lives in .tulpa_nl_joint_once(); this wrapper resolves the
     # reliability intent, attaches the honest verdict (for BOTH the single- and
     # multi-block paths), and -- for "ok" / "good" -- chases the band by REFINING
@@ -608,7 +608,7 @@ tulpa_nested_laplace_joint <- function(responses,
         # A bad outer k means the integration grid does not faithfully represent
         # the hyperparameter posterior. Two refinement rungs, both driven by the
         # bad k and re-diagnosed each round until the requested band is confidently
-        # reached or the round budget is spent (gcol33/tulpa#130, #131, #64):
+        # reached or the round budget is spent:
         #   * "grid" -- the grid's bounds let posterior mass escape: each round
         #     runs the adaptive boundary-extension / interior-densification pass
         #     (R/hyper_grid_refine.R) where the integrand mass piles at an edge,
@@ -676,12 +676,12 @@ tulpa_nested_laplace_joint <- function(responses,
                                  prior_sigma = NULL, prior_alpha = NULL,
                                  prior_phi = NULL,
                                  cell_coupling = "separable", control = list()) {
-    tm <- .tulpa_timer()                               # gcol33/tulpa#48
+    tm <- .tulpa_timer()
     # Resolve and validate the cell-coupling spec name against the C++
     # registry (separable default is auto-registered on first touch). The
     # resolved spec is held on the result but not yet routed through the
     # inner-Newton scatter -- the per-cell branch in
-    # scatter_arm_obs_joint_multi[_sparse] lands with Layer B of #32 Change 2.
+    # scatter_arm_obs_joint_multi[_sparse] lands with Layer B of Change 2.
     # In Layer A the default sentinel ("separable", arm_ids() empty) keeps
     # every existing joint fit on the per-obs path with no behavioural change.
     if (!is.character(cell_coupling) || length(cell_coupling) != 1L ||
@@ -717,7 +717,7 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
     force_sparse              <- control$force_sparse %||% FALSE
-    # Local CCD refinement of the multi-block outer grid (gcol33/tulpa#64). A
+    # Local CCD refinement of the multi-block outer grid. A
     # coarse tensor base grid is refined by a small curvature-aware node cloud on
     # a few high-weight, mutually non-adjacent cells, so the base grid can stay
     # coarse at moderate-to-high latent dimension where a uniformly fine tensor is
@@ -748,12 +748,12 @@ tulpa_nested_laplace_joint <- function(responses,
     # unchanged whether or not it runs. `diagnose_k = "by_arm"`
     # additionally computes a k-hat restricted to each arm's hyperparameter axes
     # (other arms held at their posterior mean), to localise which arm drives a
-    # tail-heavy joint k (gcol33/tulpa#120); the joint k is unchanged and stays
+    # tail-heavy joint k; the joint k is unchanged and stays
     # the default.
-    # k_quality (gcol33/tulpa#129) within ONE fit: "none" disables the diagnostic,
+    # k_quality within ONE fit: "none" disables the diagnostic,
     # and "ok" / "good" raise the default draw budget so the bootstrap CI can
     # resolve the requested band. The verdict quartet, the band classification, and
-    # the multi-round escalation (gcol33/tulpa#131) live in the front-door wrapper
+    # the multi-round escalation live in the front-door wrapper
     # tulpa_nested_laplace_joint(), which drives this single-fit engine.
     k_quality                 <- control$k_quality %||% "report"
     if (!is.character(k_quality) || length(k_quality) != 1L ||
@@ -765,7 +765,7 @@ tulpa_nested_laplace_joint <- function(responses,
     pareto_k_by_arm           <- identical(diagnose_k_raw, "by_arm")
     diagnose_k                <- (pareto_k_by_arm || isTRUE(diagnose_k_raw)) &&
                                  !identical(k_quality, "none")
-    # Diagnostic importance-draw budget (gcol33/tulpa#127). `k_samples` is the
+    # Diagnostic importance-draw budget. `k_samples` is the
     # single precision knob -- the SAME name every nested-Laplace fitter uses:
     # the outer Pareto-k is scored ONCE over this many importance draws, and a
     # tighter k needs MORE actual tail ratios, i.e. a larger `k_samples`.
@@ -778,10 +778,10 @@ tulpa_nested_laplace_joint <- function(responses,
     diagnose_draws            <- as.integer(diagnose_draws)
     # k_quality "ok" / "good" raise the default draw budget so the bootstrap CI can
     # resolve the requested band (a tighter CI needs more actual tail ratios); an
-    # explicit `k_samples` is always respected (gcol33/tulpa#129).
+    # explicit `k_samples` is always respected.
     if (is.null(diagnose_draws_user) && k_quality %in% c("ok", "good"))
         diagnose_draws <- if (identical(k_quality, "good")) 2000L else 800L
-    # Outer-thread width for the diagnostic's importance batch (gcol33/tulpa#117).
+    # Outer-thread width for the diagnostic's importance batch.
     # The `diagnose_draws` re-solves are independent and run after the grid (all
     # cores free), each solved single-threaded, so widening this pool is a
     # bit-identical wall-clock speedup. `NULL` (default) follows the fit's thread
@@ -790,7 +790,7 @@ tulpa_nested_laplace_joint <- function(responses,
     pareto_k_threads          <- .tulpa_pareto_k_threads(n_threads_outer,
                                                          n_threads, diagnose_draws,
                                                          k_threads)
-    # Bootstrap outer Pareto-k uncertainty (gcol33/tulpa#127). The chosen proposal
+    # Bootstrap outer Pareto-k uncertainty. The chosen proposal
     # is scored once; the k-hat's sampling uncertainty is then estimated by
     # bootstrapping its raw importance log-ratios -- `k_bootstrap` replicates, each
     # re-fitting the GPD tail, NO new inner solves. The bootstrap reports how
@@ -800,7 +800,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # `k_conf_bands` are the reliability-band boundaries the bootstrap CI is tested
     # against for `pareto_k_band_confident`; NULL (default) uses the
     # sample-size-dependent boundaries c(0.5, min(1 - 1/log10(S), 0.7)) at the
-    # realised draw count S (gcol33/tulpa#128).
+    # realised draw count S.
     k_bootstrap               <- control$k_bootstrap %||% 1000L
     if (length(k_bootstrap) != 1L || is.na(k_bootstrap) ||
         k_bootstrap != round(k_bootstrap) || k_bootstrap < 0L) {
@@ -822,7 +822,7 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`control$k_conf_bands` must be NULL (the sample-size-dependent ",
              "default) or a strictly increasing numeric vector.", call. = FALSE)
     }
-    # Outer-grid node layout for the multi-block path (gcol33/tulpa#59). A CCD
+    # Outer-grid node layout for the multi-block path. A CCD
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
     # "auto" (default) uses the CCD only where the tensor blow-up bites hardest,
@@ -831,8 +831,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # "ccd" lowers the threshold to >= 3 axes; "grid" always forces the tensor
     # product. The CCD auto-falls back to the tensor grid for an unguessable axis
     # (CAR_proper rho_car / non-BYM2 rho), a flat / ridged outer posterior, or a
-    # degenerate mode-find (gcol33/tulpa#62); an active phi grid rides as a
-    # tensor axis crossed on top of the CCD (gcol33/tulpa#61). Single-block joint
+    # degenerate mode-find; an active phi grid rides as a
+    # tensor axis crossed on top of the CCD. Single-block joint
     # backends always use the tensor grid (CCD applies to the multi-block path).
     integration               <- match.arg(control$integration %||% "auto",
                                             c("auto", "ccd", "grid",
@@ -852,7 +852,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # Inner-Newton Cholesky factor reuse (Shamanskii / chord method). For a
     # non-quadratic positive arm (e.g. beta cover) the latent Hessian changes
     # every inner iteration, so the plain Newton loop re-factorizes the sparse
-    # Cholesky on each step -- the dominant per-grid-cell cost (gcol33/tulpa#46).
+    # Cholesky on each step -- the dominant per-grid-cell cost.
     # `inner_refresh = m` re-factorizes only every m-th inner step and reuses
     # the cached factor in between; the gradient stays exact and each step is
     # line-search safeguarded, so the converged mode is unchanged and the final
@@ -866,7 +866,7 @@ tulpa_nested_laplace_joint <- function(responses,
              call. = FALSE)
     }
 
-    # Outer-grid progress (gcol33/tulpa#45). The cpp entry is reached through
+    # Outer-grid progress. The cpp entry is reached through
     # the polymorphic joint backends (`backend$call_kernel`) and the adaptive-
     # refinement closures, so the four progress knobs travel via a scoped
     # option rather than every backend signature; `.cpp_joint_multi` reads it at
@@ -874,7 +874,7 @@ tulpa_nested_laplace_joint <- function(responses,
     .op_progress <- options(tulpa.nl_progress = .nl_progress_args(control))
     on.exit(options(.op_progress), add = TRUE)
 
-    # Grid-cell checkpoint/resume (gcol33/tulpa#50). Threaded to the cpp
+    # Grid-cell checkpoint/resume. Threaded to the cpp
     # boundary via a scoped option, like progress, so every backend / adaptive-
     # refinement kernel call within this fit shares one checkpoint file. On a
     # fresh run (resume = FALSE) any prior file is removed once here, before the
@@ -1003,7 +1003,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # argmax disagrees with the full-solve argmax, or the kept posterior
     # collapses onto a cell the screen badly mis-estimated), warn and fall
     # back to the full grid rather than silently returning a pruned answer
-    # (gcol33/tulpa#43). A silently-wrong posterior must be impossible.
+    #. A silently-wrong posterior must be impossible.
     if (prune_tol_eff > 0) {
         res <- .joint_prune_safety_gate(
             res, resolve_full = function() call_kernel_with_tol(0.0))
@@ -1030,7 +1030,7 @@ tulpa_nested_laplace_joint <- function(responses,
         if (!is.null(hp_init)) res$log_marginal <- res$log_marginal + hp_init
     }
 
-    # --- generic-refinement glue (gcol33/tulpa#33 Step 3) -------------------
+    # --- generic-refinement glue (Step 3) -------------------
     # Adaptive grid + var-of-means consistency are now driven by the
     # axis-spec module in `R/hyper_grid_refine.R`. The joint driver builds:
     #   * `specs`     -- one hyper_axis_spec per outer-grid axis (log_scale /
@@ -1088,7 +1088,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res             <- .nl_posterior_moments(res, paste0("joint_", type))
     res             <- .joint_recalibrate_axis_moments(res)
     # Replace per-axis var-of-means SDs with Laplace-at-mode SDs where the
-    # 3-point parabolic fit at the modal cell succeeds (gcol33/tulpa#20).
+    # 3-point parabolic fit at the modal cell succeeds.
     res             <- .nl_refit_axis_sd_laplace(res)
     tm$mark("postproc")
 
@@ -1099,7 +1099,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # points at `theta_mean +/- k*theta_sd` to repopulate the Laplace
     # support; var-of-means on the merged grid converges to Laplace SD,
     # which lets downstream packages use the legacy `weights * theta_grid`
-    # pattern without reaching into `theta_sd` directly (gcol33/tulpa#21).
+    # pattern without reaching into `theta_sd` directly.
     if (isTRUE(var_of_means_consistency)) {
         consistency <- .hyper_consistency_pass(
             theta_grid    = theta_grid_M,
@@ -1163,7 +1163,7 @@ tulpa_nested_laplace_joint <- function(responses,
 }
 
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid
-# progress knobs (gcol33/tulpa#45) from the scoped `tulpa.nl_progress` option set
+# progress knobs from the scoped `tulpa.nl_progress` option set
 # by tulpa_nested_laplace_joint. Every backend / refinement call site routes
 # through here, so progress reaches the cpp entry without threading four scalars
 # through the polymorphic backend interface. Option unset -> progress = FALSE.

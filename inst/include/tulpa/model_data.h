@@ -26,11 +26,11 @@ namespace tulpa {
 // callable; existing layouts unchanged.
 //
 // 22 -> 23: appended `inv_metric_out` + `final_position` to NUTSResult
-// (gcol33/tulpa#29) so callers can resume / warm-start a chain. NUTSResult
+// so callers can resume / warm-start a chain. NUTSResult
 // layout grew (two trailing pointers); NUTSFn signature unchanged.
 //
 // 23 -> 24: added the `tulpa_run_nuts_chains` registered C callable
-// (multi-chain OpenMP across-chain runner, gcol33/tulpa#30). New callable
+// (multi-chain OpenMP across-chain runner). New callable
 // only; no struct layout change (NUTSResult / NUTSFn unchanged).
 //
 // 24 -> 25: collapsed the 15 spatio-temporal nested-Laplace callables
@@ -61,20 +61,20 @@ namespace tulpa {
 // donor / copy-arm dichotomy with a per-arm scalar coefficient, while the
 // existing `copy = list(arm, alpha_grid)` API desugars cleanly via
 // `responses[[X]]$field_coef = list(name = "alpha", grid = G)`. See
-// gcol33/tulpa#32 Change 1 and dev_notes/plans/n_arm_joint_engine.md.
+// Change 1 and dev_notes/plans/n_arm_joint_engine.md.
 //
 // 28 -> 29: added the `tulpa_register_cell_coupling` registered C callable
 // (signature `tulpa::RegisterCellCouplingFn` in <tulpa/cell_coupling.h>)
 // + the process-global CellCouplingSpec registry that backs the new
 // `tulpa_nested_laplace_joint(cell_coupling = "<name>")` argument
-// (gcol33/tulpa#32 Change 2b, Layer A). New callable + new R-side
+// (Change 2b, Layer A). New callable + new R-side
 // argument; no struct layout change. The inner-Newton per-cell branch
 // that actually drives a non-separable spec lands with Layer B.
 //
 // 29 -> 30: added `coupled` (bool) + `cell_obs_map` (IntegerVector) to
 // `JointArm` (src/laplace_newton_joint.h) and the inner-Newton dense
 // per-cell branch that dispatches coupled arms to the registered
-// CellCouplingSpec's `evaluate_cell()` (gcol33/tulpa#32 Change 2b,
+// CellCouplingSpec's `evaluate_cell` (Change 2b,
 // Layer B.1). Single-arm path; sparse twin + cross-arm Hessian land
 // with B.2 alongside tulpaObs `OccuCoverLognormalCoupling`.
 //
@@ -91,12 +91,12 @@ namespace tulpa {
 // path, instead of assuming a single component (S - 1).
 // 33 -> 34: added gp_phi_prior_U / gp_phi_prior_alpha and svc_phi_prior_U /
 // svc_phi_prior_alpha -- the PC range-prior anchors for the GP and SVC NNGP
-// paths (gcol33/tulpa#144), replacing the Uniform-behind-a-wall range prior.
+// paths, replacing the Uniform-behind-a-wall range prior.
 // 34 -> 35: added car_adj_eigenvalues -- the eigenvalues of the symmetric
 // normalized adjacency D^{-1/2} W D^{-1/2}, precomputed so the generic-NUTS
 // CAR_proper log-prior evaluates the differentiable log-determinant
 // log|D - rho W| = const + sum_i log(1 - rho * mu_i) in closed form rather
-// than a per-gradient Cholesky (gcol33/tulpa#158c).
+// than a per-gradient Cholesky (c).
 // ============================================================================
 constexpr int TULPA_ABI_VERSION = 35;
 
@@ -173,7 +173,7 @@ struct ModelData {
     // ================================================================
     // GENERIC MULTI-PROCESS INTERFACE
     // ================================================================
-    int n_processes = 0;  // Must be > 0 after Phase D (gcol33/tulpa#15).
+    int n_processes = 0;  // Must be > 0 after Phase D.
     std::vector<ProcessData> processes;
     void* model_response_data = nullptr;  // Opaque — owned by model package
     const void* likelihood_spec = nullptr; // Points to LikelihoodSpec (owned by caller)

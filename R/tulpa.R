@@ -874,7 +874,7 @@
   if (input == "modeldata") {
     # The model-agnostic ModelData sampler kernels (hmc/ess/sghmc/sgld/mclmc/
     # smc/vi) sample the full latent vector compute_param_layout() lays out
-    # (gcol33/tulpa#75). Random effects (intercept / slopes / correlated /
+    #. Random effects (intercept / slopes / correlated /
     # multi-term), an areal spatial field (ICAR / BYM2), and a temporal field
     # (RW1 / RW2 / AR1) are packed into per-block specs and threaded into the
     # ModelData builder; the kernels sample the variance-component
@@ -1615,7 +1615,7 @@ tulpa <- function(formula, data,
   # temporal yet), mirroring and superseding the spatial-field redirect above
   # when both fields are present. An explicitly chosen ModelData sampler backend
   # (hmc / ess / sghmc / sgld / mclmc / smc / vi) consumes the temporal field
-  # directly (gcol33/tulpa#75), so it keeps its selection rather than being
+  # directly, so it keeps its selection rather than being
   # redirected.
   if (has_temporal && BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     sel <- .sel_redirect(sel, "nested_laplace", if (has_spatial) {

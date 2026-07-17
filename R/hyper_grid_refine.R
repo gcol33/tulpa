@@ -1,4 +1,4 @@
-# Generic spec-driven outer-grid refinement (gcol33/tulpa#33, Step 2).
+# Generic spec-driven outer-grid refinement (Step 2).
 #
 # Port of the joint nested-Laplace refinement machinery in
 # `R/nested_laplace_joint_refine.R`, generalised so the axis metadata (log-

@@ -1,5 +1,5 @@
 # Inline temporal varying-coefficient fields: the temporal mirror of the
-# spatial() bar API (gcol33/tulpa#91). temporal(formula = ~ 1 + x || time,
+# spatial bar API. temporal(formula = ~ 1 + x || time,
 # structure = "rw1") declares a smooth temporal level (the intercept column) and
 # a temporally varying slope on each covariate column (eta_i += x_i * f(time_i)),
 # routed through the same single-arm joint nested-Laplace machinery as spatial().

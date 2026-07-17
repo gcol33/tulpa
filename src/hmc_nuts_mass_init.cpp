@@ -1,4 +1,4 @@
-﻿// hmc_nuts_mass_init.cpp
+// hmc_nuts_mass_init.cpp
 // Mass-matrix selection (AUTO / DIAG / DENSE), warm-start helpers.
 
 #include <algorithm>
@@ -245,7 +245,7 @@ MassMatrixConfig select_and_init_mass_matrix(
     }
     // Legacy ratio overdispersion pair (log_phi_num, log_phi_denom) used
     // to add a 2x2 block here; both indices moved into the LikelihoodSpec
-    // extra-parameter block in Phase D (gcol33/tulpa#15).
+    // extra-parameter block in Phase D.
 
     // If still no blocks found, fall back to DIAG
     if (block_specs.empty()) {

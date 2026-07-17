@@ -13,7 +13,7 @@
 // The default prior_sample is a Gaussian perturbation around `init` with
 // SD `cfg.prior_sigma` (default 1.0). This is a smoke-test default —
 // proper prior draws need per-prior closed-form samplers tulpa lacks
-// generically. Issue #6 follow-up.
+// generically.
 
 #ifndef TULPA_SMC_MODELDATA_H
 #define TULPA_SMC_MODELDATA_H
@@ -122,7 +122,7 @@ inline SMCDriverResult run_smc_sampler(
     }
 
     // Closures: prior + likelihood. Real factoring landed via
-    // gcol33/tulpa#6 prereq (tulpa_hmc::compute_log_prior /
+    // prereq (tulpa_hmc::compute_log_prior /
     // compute_log_lik_only in hmc_sampler.h). log_prior + log_lik_only
     // sums exactly to compute_log_post by construction.
     auto log_prior_fn = [&data, &layout](const std::vector<double>& theta) -> double {

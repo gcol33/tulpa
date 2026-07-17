@@ -1,5 +1,5 @@
 // nested_laplace_joint_batch.cpp
-// Batched (multi-response) joint nested-Laplace driver + entry (gcol33/tulpa#66).
+// Batched (multi-response) joint nested-Laplace driver + entry.
 //
 // The B species share one design + sparsity pattern; their latent systems are
 // independent (block-diagonal). This driver runs B per-species Newton solves

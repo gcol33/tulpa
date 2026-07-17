@@ -18,7 +18,7 @@
 //     touch the R print API (not worker-thread safe) and only update the
 //     counter + heartbeat file. So the console advances newline by newline as
 //     the master completes cells, rather than freezing at the serial pilot
-//     until finish() (gcol33/tulpa#115);
+// until finish;
 //   * a heartbeat file, overwritten and fflush+fclose'd each tick, holding the
 //     machine-readable "<done> <total> <elapsed_s> <eta_s>". Written whenever
 //     `heartbeat_file` is non-empty, independent of `emit_console`. A file
@@ -100,7 +100,7 @@ public:
 
     // Outer-grid concurrency: how many cells run at once in the parallel
     // region. Used for the "| N threads" console suffix when > 1, so the active
-    // outer-thread count is visible in the line (gcol33/tulpa#88), and as the
+    // outer-thread count is visible in the line, and as the
     // wave width for the pilot-only ETA lower bound before any parallel cell has
     // completed (see maybe_emit). Once parallel cells finish, the ETA rests on
     // their realised throughput, which already folds the width in. Defaults to 1
@@ -120,7 +120,7 @@ public:
     // sparsity-pattern build of a wide joint field, which can take seconds at
     // EVA scale). tick() only fires per completed cell, so without this the
     // console and the heartbeat file are silent through the whole pre-grid
-    // setup and the fit looks hung (gcol33/tulpa#96). Emits the console line
+    // setup and the fit looks hung. Emits the console line
     // when enabled and, if a heartbeat file is configured, writes a 0/total
     // record so a detached reader sees liveness instead of an empty file.
     // Leaves done_ / the emit cadence untouched. Call from the serial setup
@@ -167,7 +167,7 @@ private:
         // on an OpenMP worker. Inside the outer-grid parallel region the master
         // thread (thread 0 == the R main thread) still emits, so a detached /
         // redirected run shows the line advancing instead of frozen at the pilot
-        // (gcol33/tulpa#115). Its cadence rides a SEPARATE clock so that worker
+        //. Its cadence rides a SEPARATE clock so that worker
         // ticks updating the heartbeat file do not keep resetting the throttle
         // window out from under the master and starve the console.
         bool in_parallel = false;
@@ -192,7 +192,7 @@ private:
         // warm; the parallel cells are extreme-hyperparameter, need more inner
         // Newton steps, and run under memory-bandwidth contention, so each costs
         // well more than the pilot. Projecting the pilot rate across the grid
-        // under-states the wall clock by roughly that ratio (gcol33/tulpa#115).
+        // under-states the wall clock by roughly that ratio.
         //   * once >= 1 cell beyond the pilot has finished, `per` is the mean
         //     wall time per post-pilot cell (elapsed-since-pilot over cells-
         //     since-pilot) -- the throughput the remaining cells actually run
@@ -250,7 +250,7 @@ private:
             // run at once (outer grid cells per nested-Laplace wave, parallel
             // chains for NUTS), set via set_width(). Shown only when > 1 so a
             // serial loop's line is unchanged and "ran on N cores" becomes a
-            // property of the log itself (gcol33/tulpa#88).
+            // property of the log itself.
             char thr[32] = "";
             if (width_ > 1)
                 std::snprintf(thr, sizeof(thr), " | %d threads", width_);
