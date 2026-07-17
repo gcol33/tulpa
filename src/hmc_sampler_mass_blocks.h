@@ -187,8 +187,8 @@ struct PrecisionBlock {
 
   // M^{-1} = Q_reg_inv: (Q + lambda*I)^{-1}, column-major S×S
   std::vector<double> Q_inv;
-  // L_Q: Cholesky factor where L*L^T = Q + lambda*I, column-major S×S
-  // Used for momentum sampling: p_block = L^{-T} * z
+  // L_Q: Cholesky factor where L*L^T = Q + lambda*I = M, column-major S×S.
+  // Momentum has mass M, so p ~ N(0, M): p_block = L * z (Var = L L^T = M).
   std::vector<double> L_chol;
 
   void init(int s, int sz, const double* q_inv_data, const double* l_chol_data) {
@@ -217,7 +217,7 @@ struct PrecisionBlock {
     return pv.dot(M.selfadjointView<Eigen::Lower>() * pv);
   }
 
-  // Sample momentum for block: solve L^T * p = z (back-substitution)
+  // Sample momentum for block: p = L * z, so Var(p) = L L^T = M (mass = M).
   void sample_momentum(double* p_full, std::mt19937& rng) const {
     std::normal_distribution<double> normal(0.0, 1.0);
     std::vector<double> z(size);
@@ -226,7 +226,7 @@ struct PrecisionBlock {
     Eigen::Map<const Eigen::MatrixXd> L(L_chol.data(), size, size);
     Eigen::Map<const Eigen::VectorXd> zv(z.data(), size);
     Eigen::Map<Eigen::VectorXd> pv(pb, size);
-    pv.noalias() = L.transpose().triangularView<Eigen::Upper>().solve(zv);
+    pv.noalias() = L.triangularView<Eigen::Lower>() * zv;
   }
 };
 

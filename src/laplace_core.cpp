@@ -75,6 +75,12 @@ inline void nngp_conditional_laplace(
         cond_var = sigma2;
         return;
     }
+    // The positive neighbour indices are front-contiguous by construction; the
+    // loops below index columns 0..n_neighbors-1 as the neighbours. Guard an
+    // interior zero (a malformed neighbour row) that would index nn_order[-1].
+    for (int j = 0; j < n_neighbors; j++) {
+        if (nn_idx(i, j) <= 0) { cond_mean = 0.0; cond_var = sigma2; return; }
+    }
 
     std::vector<double> c_vec(n_neighbors);
     std::vector<double> C_mat(n_neighbors * n_neighbors);
