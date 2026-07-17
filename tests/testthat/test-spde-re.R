@@ -53,6 +53,21 @@ test_that("fit_spde() validates the RE index and rejects a fractional field", {
   )
 })
 
+test_that("tulpa(mode = 'exact') routes an SPDE field to NUTS (Tier 1)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+  d  <- make_spde_re(n = 150L, G = 5L)
+  df <- data.frame(y = d$y, x = d$x)
+  fit <- suppressWarnings(tulpa(
+    y ~ x, data = df, family = "poisson", spatial = d$spec, mode = "exact",
+    control = list(n_iter = 300L, n_warmup = 150L, seed = 5L)))
+  expect_equal(fit$inference_tier, 1L)
+  expect_identical(fit$draws_kind, "chain")
+  expect_false(is.null(fit$draws))
+  # The slope is recovered by the exact sampler.
+  expect_lt(abs(mean(fit$draws[, "beta[2]"]) - 0.8), 0.3)
+})
+
 test_that("tulpa() routes (1 | g) + an SPDE field to the spde backend", {
   skip_if_not_installed("fmesher")
   skip_on_cran()

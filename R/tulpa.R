@@ -1386,6 +1386,37 @@ tulpa <- function(formula, data,
       if (length(smooth_specs) > 1L) "s" else ""))
   }
 
+  # Tier-1 exact reference for a continuous SPDE field: the generic ModelData /
+  # logpost samplers do not carry the FEM Matern precision, so a Tier-1 mode
+  # (`mode = "exact"` / a Tier-1 sampler) under an SPDE field routes to the SPDE
+  # NUTS engine (tulpa_nuts_spde, via fit_spde(mode = "nuts")) -- the exact
+  # counterpart to the nested-Laplace SPDE path. Joint over the Matern
+  # hyperparameters (range, sigma are sampled).
+  if (identical(tolower(spatial_type %||% ""), "spde") && isTRUE(sel$tier == 1L)) {
+    if (length(bundle$re_terms %||% list()) > 0L) {
+      stop("An SPDE field with a random-effect term under a Tier-1 exact mode is ",
+           "not supported; use mode = 'laplace' / 'auto' (which support one ",
+           "`(1 | g)` term), or drop the RE term.", call. = FALSE)
+    }
+    fit <- fit_spde(
+      y = bundle$y, X = bundle$X, spatial = spatial_spec, family = family,
+      n_trials = n_trials, mode = "nuts",
+      control = .control_subset(control, .CONTROL_KEYS$nuts_spde))
+    fit$formula <- formula
+    fit$family <- family
+    fit$call <- match.call()
+    fit$inference_mode <- "exact"
+    fit$inference_tier <- 1L
+    fit$selection_reason <-
+      "SPDE field, Tier-1 mode: exact NUTS over the Matern field + hyperparameters"
+    fit$N <- fit$N %||% bundle$n_obs
+    fit$model_matrix <- fit$model_matrix %||% bundle$X
+    fit$y <- fit$y %||% bundle$y
+    return(.finalize_fit(fit, backend = "spde", draws_kind = "chain",
+                         n_fixed = ncol(bundle$X),
+                         fixed_names = colnames(bundle$X)))
+  }
+
   assert_backend_reachable(sel$backend)
 
   # Conditional backends (everything except the sigma-sampling Gibbs, the
