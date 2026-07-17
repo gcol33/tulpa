@@ -132,35 +132,84 @@ inline void build_sampler_model_inputs(
         }
     }
 
-    // --- Areal spatial field (ICAR / BYM2). ---
+    // --- Spatial field: areal (ICAR / BYM2) or continuous NNGP (gp / nngp). ---
     if (spatial_spec.isNotNull()) {
         Rcpp::List sp = Rcpp::as<Rcpp::List>(spatial_spec);
         std::string stype = Rcpp::as<std::string>(sp["type"]);
-        Rcpp::IntegerVector sidx = Rcpp::as<Rcpp::IntegerVector>(sp["spatial_idx"]);
-        Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);
-        Rcpp::IntegerVector ci   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_col_idx"]);
-        Rcpp::IntegerVector nn   = Rcpp::as<Rcpp::IntegerVector>(sp["n_neighbors"]);
-        in.data.n_spatial_units = Rcpp::as<int>(sp["n_spatial_units"]);
-        in.data.spatial_group.assign(sidx.begin(), sidx.end());
-        in.data.adj_row_ptr.assign(rp.begin(), rp.end());
-        in.data.adj_col_idx.assign(ci.begin(), ci.end());
-        in.data.n_neighbors.assign(nn.begin(), nn.end());
-        // Count connected components once so the ICAR/BYM2 rank normalizer uses
-        // the true intrinsic rank (S - k) rather than assuming a single graph.
-        in.data.n_spatial_components = tulpa::count_graph_components(
-            in.data.n_spatial_units, in.data.adj_row_ptr.data(),
-            in.data.adj_col_idx.data());
-        if (stype == "icar") {
-            in.data.spatial_type = SpatialType::ICAR;
-        } else if (stype == "bym2") {
-            in.data.spatial_type = SpatialType::BYM2;
-            in.data.bym2_scale_factor =
-                sp.containsElementNamed("scale_factor")
-                    ? Rcpp::as<double>(sp["scale_factor"]) : 1.0;
+        if (stype == "icar" || stype == "bym2") {
+            Rcpp::IntegerVector sidx = Rcpp::as<Rcpp::IntegerVector>(sp["spatial_idx"]);
+            Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);
+            Rcpp::IntegerVector ci   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_col_idx"]);
+            Rcpp::IntegerVector nn   = Rcpp::as<Rcpp::IntegerVector>(sp["n_neighbors"]);
+            in.data.n_spatial_units = Rcpp::as<int>(sp["n_spatial_units"]);
+            in.data.spatial_group.assign(sidx.begin(), sidx.end());
+            in.data.adj_row_ptr.assign(rp.begin(), rp.end());
+            in.data.adj_col_idx.assign(ci.begin(), ci.end());
+            in.data.n_neighbors.assign(nn.begin(), nn.end());
+            in.data.n_spatial_components = tulpa::count_graph_components(
+                in.data.n_spatial_units, in.data.adj_row_ptr.data(),
+                in.data.adj_col_idx.data());
+            if (stype == "icar") {
+                in.data.spatial_type = SpatialType::ICAR;
+            } else {
+                in.data.spatial_type = SpatialType::BYM2;
+                in.data.bym2_scale_factor =
+                    sp.containsElementNamed("scale_factor")
+                        ? Rcpp::as<double>(sp["scale_factor"]) : 1.0;
+            }
+        } else if (stype == "gp" || stype == "nngp") {
+            // Continuous single-scale NNGP field. compute_param_layout keys the
+            // GP block on spatial_type == GP (not just has_gp), then allocates
+            // log_sigma2_gp / log_phi_gp / the n_obs field. GPData conventions
+            // match the hmc_gp kernels: coords row-major; nn_idx / nn_dist
+            // row-major [n_loc x nn]; nn_neighbor_dist row-major [i, j1, j2] (the
+            // R layer aperms the [n_loc,nn,nn] array); nn_order 0-based; centred
+            // (gp_parameterization = 0) so the stored field draws stay valid.
+            in.data.spatial_type = SpatialType::GP;
+            auto& g = in.data.gp_data;
+            Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
+            const int n_loc = coords.nrow();
+            g.n_obs = n_loc;
+            g.nn = Rcpp::as<int>(sp["nn"]);
+            g.coords.resize(2 * (std::size_t)n_loc);
+            for (int i = 0; i < n_loc; ++i) {
+                g.coords[2 * (std::size_t)i]     = coords(i, 0);
+                g.coords[2 * (std::size_t)i + 1] = coords(i, 1);
+            }
+            Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sp["nn_idx"]);
+            Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sp["nn_dist"]);
+            g.nn_idx.resize((std::size_t)n_loc * g.nn);
+            g.nn_dist.resize((std::size_t)n_loc * g.nn);
+            for (int i = 0; i < n_loc; ++i)
+                for (int j = 0; j < g.nn; ++j) {
+                    g.nn_idx[(std::size_t)i * g.nn + j]  = nnix(i, j);
+                    g.nn_dist[(std::size_t)i * g.nn + j] = nnd(i, j);
+                }
+            Rcpp::NumericVector nnnd =
+                Rcpp::as<Rcpp::NumericVector>(sp["nn_neighbor_dist"]);
+            g.nn_neighbor_dist.assign(nnnd.begin(), nnnd.end());
+            Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sp["nn_order"]);
+            g.nn_order.assign(nord.begin(), nord.end());
+            Rcpp::IntegerVector nordi =
+                Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_inv"]);
+            g.nn_order_inv.assign(nordi.begin(), nordi.end());
+            Rcpp::IntegerVector otl = Rcpp::as<Rcpp::IntegerVector>(sp["obs_to_loc"]);
+            g.obs_to_loc.assign(otl.begin(), otl.end());
+            g.cov_type = static_cast<CovType>(Rcpp::as<int>(sp["cov_type"]));
+            g.nu = Rcpp::as<double>(sp["nu"]);
+            in.data.has_gp = true;
+            in.data.gp_parameterization = 0;
+            in.data.gp_phi_prior_U     = Rcpp::as<double>(sp["phi_prior_U"]);
+            in.data.gp_phi_prior_alpha = Rcpp::as<double>(sp["phi_prior_alpha"]);
+            if (sp.containsElementNamed("sigma2_prior_U"))
+                in.data.gp_sigma2_prior_U = Rcpp::as<double>(sp["sigma2_prior_U"]);
+            if (sp.containsElementNamed("sigma2_prior_alpha"))
+                in.data.gp_sigma2_prior_alpha =
+                    Rcpp::as<double>(sp["sigma2_prior_alpha"]);
         } else {
             Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
-                       "supported on the sampler path (use 'icar' or 'bym2').",
-                       stype.c_str());
+                       "supported on the sampler path (use 'icar'/'bym2'/"
+                       "'gp'/'nngp').", stype.c_str());
         }
     }
 
@@ -284,6 +333,15 @@ inline Rcpp::CharacterVector sampler_param_names(
         int u = 0;
         for (int j = layout.temporal_start; j < layout.temporal_end; j++)
             set(j, "phi_temporal[" + std::to_string(++u) + "]");
+    }
+
+    // Continuous GP / NNGP field (one column per unique location).
+    if (layout.is_gp) {
+        set(layout.log_sigma2_gp_idx, "log_sigma2_gp");
+        set(layout.log_phi_gp_idx, "log_phi_gp");
+        int u = 0;
+        for (int j = layout.gp_w_start; j < layout.gp_w_end; j++)
+            set(j, "gp_w[" + std::to_string(++u) + "]");
     }
 
     return nm;

@@ -197,6 +197,46 @@
 }
 
 
+# Pack a validated tulpa_gp (nngp) spec into the ModelData sampler's GP
+# spatial_spec (mode = "exact" continuous-field NUTS). The sampler's GP prior
+# requires a PC range anchor, which spatial_gp() does not expose, so a
+# weakly-informative data-driven default is derived here (P(range < U) = alpha,
+# U = median nearest-neighbour spacing). Index conventions match the hmc_gp
+# kernels: field at unique-location order, nn_order 0-based (validated ordering
+# is 1-based), nn_neighbor_dist row-major [i, j1, j2].
+#' @keywords internal
+.gp_sampler_spec <- function(spatial) {
+  ni <- spatial$neighbor_info
+  if (is.null(ni) || is.null(spatial$unique_coords)) {
+    stop("continuous spatial spec is unvalidated (neighbor_info / unique_coords ",
+         "NULL). tulpa() validates it via validate_gp().", call. = FALSE)
+  }
+  uc    <- as.matrix(spatial$unique_coords)
+  n_loc <- nrow(uc)
+  nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
+  pos_d <- ni$nn_dist[is.finite(ni$nn_dist) & ni$nn_dist > 0]
+  U     <- if (length(pos_d)) stats::median(pos_d) else 0.1
+  if (!is.finite(U) || U <= 0) U <- 0.1
+  list(
+    type             = "nngp",
+    coords           = matrix(as.numeric(uc), n_loc, 2),
+    nn               = nn,
+    nn_idx           = matrix(as.integer(ni$nn_idx), n_loc, nn),
+    nn_dist          = matrix(as.numeric(ni$nn_dist), n_loc, nn),
+    nn_neighbor_dist = as.numeric(aperm(ni$nn_neighbor_dist, c(3, 2, 1))),
+    nn_order         = as.integer(ni$nn_order) - 1L,
+    nn_order_inv     = as.integer(ni$nn_order_inv %||% seq_len(n_loc)) - 1L,
+    obs_to_loc       = as.integer(spatial$obs_to_loc) - 1L,
+    cov_type         = gp_cov_type_for_laplace(spatial),
+    nu               = as.numeric(spatial$nu %||% 1.5),
+    phi_prior_U      = as.numeric(U),
+    phi_prior_alpha  = 0.05,
+    sigma2_prior_U   = 2.0,
+    sigma2_prior_alpha = 0.05
+  )
+}
+
+
 # Convert a validated temporal spec (rw1 / rw2 / ar1) into the nested-Laplace
 # temporal prior block. The block format is the one the single-block registry
 # (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
@@ -739,13 +779,16 @@
     # CAR_proper, and SPDE fields are not threaded through this path (the generic
     # ESS Gaussian-prior block / the dedicated SPDE sampler own those).
     spatial_spec_arg <- NULL
-    if (!is.null(spatial)) {
+    if (!is.null(spatial) && tolower(spatial$type %||% "") %in% c("gp", "nngp")) {
+      spatial_spec_arg <- .gp_sampler_spec(spatial)
+    } else if (!is.null(spatial)) {
       sp <- .spatial_spec_to_nl_prior(spatial)
       if (!sp$type %in% c("icar", "bym2")) {
         stop(sprintf(paste0(
-          "Backend '%s' samples areal spatial fields (icar / bym2); the field\n",
-          "type '%s' is not threaded through this path. Use a nested-Laplace mode\n",
-          "('auto' / 'structured' / 'nested_laplace'), or fit_spde() for SPDE."),
+          "Backend '%s' samples areal (icar / bym2) or continuous NNGP (gp / nngp)\n",
+          "spatial fields; the field type '%s' is not threaded through this path.\n",
+          "Use a nested-Laplace mode ('auto' / 'structured' / 'nested_laplace'), or\n",
+          "fit_spde() for SPDE."),
           backend, sp$type), call. = FALSE)
       }
       spatial_spec_arg <- list(
