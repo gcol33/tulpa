@@ -1,5 +1,23 @@
 # tulpa NEWS
 
+## 0.0.85
+
+Optional variance-component prior on the AGHQ path.
+
+* **`tulpa_re_aghq(sigma_prior = ...)`.** A Penalized-Complexity prior on the
+  marginal standard deviations of one or more random-effect covariance blocks,
+  added to the ML-II objective (and hence the marginal Hessian). `NULL` (default)
+  is pure ML on the covariances, byte-identical to before. A `c(U, alpha)` pair
+  (`P(sigma_i > U) = alpha`, the `re_cov_pc_lkj_prior()` convention) applies to
+  every block, or `list(blocks = <indices>, prior_sigma = c(U, alpha))` to named
+  blocks only. Reuses the exact PC log-prior + Jacobian of `re_cov_pc_lkj_prior()`
+  (single source of truth), so the `+ log sigma` Jacobian repels `sigma -> 0` and
+  the `- lambda sigma` term caps inflation. A weakly-identified variance component
+  (e.g. a scalar dispersion / zero-inflation random effect at few groups) can
+  drift to the boundary and flatten the marginal Hessian; a weak PC prior adds
+  curvature there, keeping the joint optimum non-singular without materially
+  shifting an identified fit. R-only, no ABI change.
+
 ## 0.0.84
 
 Checkpoint fix (#161).

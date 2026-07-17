@@ -16,6 +16,7 @@ tulpa_re_aghq(
   n_quad = 9L,
   lkj_eta = 1,
   theta_prior_sd = Inf,
+  sigma_prior = NULL,
   gradient = c("fd", "analytic"),
   max_iter = 200L
 )
@@ -97,6 +98,21 @@ them rather than shrinking them.}
 objective and hence the marginal Hessian). \code{Inf} (default) is pure ML on
 \code{theta}; a large finite value (e.g. 100) is a weak ridge that stabilizes a
 weakly-identified fixed effect without materially shifting the estimate.}
+
+\item{sigma_prior}{Optional Penalized-Complexity prior on the marginal
+standard deviations of one or more RE covariance blocks, added to the
+objective (and hence the marginal Hessian). \code{NULL} (default) is pure ML on
+the covariances -- the refinement debiases the SDs rather than shrinking
+them. Otherwise a \code{c(U, alpha)} pair (\code{P(sigma_i > U) = alpha}, the same
+convention as \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}) applied to every block, or a list
+\verb{list(blocks = <integer indices>, prior_sigma = c(U, alpha))} applied to
+the named blocks only. Reuses the exact PC log-prior + Jacobian of
+\code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}. A weakly-identified variance component (e.g. a
+scalar dispersion / zero-inflation random effect at few groups) can drift to
+the boundary and flatten the marginal Hessian; a weak PC prior adds
+curvature there (the \verb{+ log sigma} Jacobian repels \code{sigma -> 0}, the
+\verb{- lambda sigma} term caps inflation), keeping the joint optimum non-singular
+without materially shifting an identified fit.}
 
 \item{gradient}{How \code{stats::optim} gets the gradient of the AGHQ objective.
 \code{"fd"} (default) lets \code{optim} finite-difference the objective -- correct at

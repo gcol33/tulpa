@@ -112,6 +112,20 @@
 #'   objective and hence the marginal Hessian). `Inf` (default) is pure ML on
 #'   `theta`; a large finite value (e.g. 100) is a weak ridge that stabilizes a
 #'   weakly-identified fixed effect without materially shifting the estimate.
+#' @param sigma_prior Optional Penalized-Complexity prior on the marginal
+#'   standard deviations of one or more RE covariance blocks, added to the
+#'   objective (and hence the marginal Hessian). `NULL` (default) is pure ML on
+#'   the covariances -- the refinement debiases the SDs rather than shrinking
+#'   them. Otherwise a `c(U, alpha)` pair (`P(sigma_i > U) = alpha`, the same
+#'   convention as [re_cov_pc_lkj_prior()]) applied to every block, or a list
+#'   `list(blocks = <integer indices>, prior_sigma = c(U, alpha))` applied to
+#'   the named blocks only. Reuses the exact PC log-prior + Jacobian of
+#'   [re_cov_pc_lkj_prior()]. A weakly-identified variance component (e.g. a
+#'   scalar dispersion / zero-inflation random effect at few groups) can drift to
+#'   the boundary and flatten the marginal Hessian; a weak PC prior adds
+#'   curvature there (the `+ log sigma` Jacobian repels `sigma -> 0`, the
+#'   `- lambda sigma` term caps inflation), keeping the joint optimum non-singular
+#'   without materially shifting an identified fit.
 #' @param gradient How `stats::optim` gets the gradient of the AGHQ objective.
 #'   `"fd"` (default) lets `optim` finite-difference the objective -- correct at
 #'   every `n_quad` and the only option for the R-closure (`make_site` /
@@ -169,7 +183,8 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                           make_site = NULL, make_group = NULL, oracle = NULL,
                           n_obs = NULL,
                           keep = NULL, n_quad = 9L, lkj_eta = 1,
-                          theta_prior_sd = Inf, gradient = c("fd", "analytic"),
+                          theta_prior_sd = Inf, sigma_prior = NULL,
+                          gradient = c("fd", "analytic"),
                           max_iter = 200L) {
   gradient <- match.arg(gradient)
   native <- !is.null(oracle)
@@ -295,15 +310,30 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
            else cpp_aghq_make_rclosure_oracle(build_oracle, ng, dtot, n_theta)
   ridge <- if (is.finite(theta_prior_sd)) 0.5 / theta_prior_sd^2 else 0
 
+  # Optional PC prior on the RE-block marginal SDs. It touches only the RE-
+  # covariance coordinates (the second `re_par` slice of `par`), so it enters the
+  # objective as `+ log p_sigma(re_par)` (we minimize the negative). The per-block
+  # log-prior + Jacobian is the shared .re_cov_block_logprior (single source of
+  # truth with re_cov_pc_lkj_prior / tulpa_re_cov_nested); its gradient is a
+  # central difference over the touched coordinates only (no oracle solve, so it
+  # is cheap). sigma_pen = NULL keeps the objective byte-identical.
+  sigma_pen <- .aghq_sigma_penalty(sigma_prior, layout, n_theta)
+
   if (gradient == "analytic") {
     fns <- .aghq_analytic_optim_fns(orc, nc_terms, full_vec, n_quad, lkj_eta,
                                     ridge = ridge, n_theta = n_theta)
+    if (!is.null(sigma_pen)) {
+      fn0 <- fns$fn; gr0 <- fns$gr
+      fns$fn <- function(par) fn0(par) - sigma_pen$val(par)
+      fns$gr <- function(par) gr0(par) - sigma_pen$grad(par)
+    }
     opt <- stats::optim(c(theta0, re_par0), fns$fn, fns$gr, method = "BFGS",
                         hessian = TRUE, control = list(maxit = max_iter, reltol = 1e-9))
   } else {
     negf <- function(par)
       -cpp_aghq_objective(par, orc, nc_terms, full_vec, n_quad, lkj_eta) +
-        ridge * sum(par[seq_len(n_theta)]^2)
+        ridge * sum(par[seq_len(n_theta)]^2) -
+        (if (is.null(sigma_pen)) 0 else sigma_pen$val(par))
     opt <- stats::optim(c(theta0, re_par0), negf, method = "BFGS", hessian = TRUE,
                         control = list(maxit = max_iter, reltol = 1e-9))
   }
@@ -352,6 +382,62 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
 # usually at the same point, so one C++ group sweep serves both). The single
 # source of the analytic objective+gradient call -- shared by the full-par ML-II
 # optimizer (.aghq_analytic_optim_fns) and the fixed-Sigma beta profile in
+# Optional PC prior on the RE-block marginal SDs for the AGHQ joint optimizer.
+# `sigma_prior` is NULL (off), a `c(U, alpha)` pair (all blocks), or a list
+# `list(blocks = <int>, prior_sigma = c(U, alpha), eta = <lkj, optional>)` (named
+# blocks). Returns NULL when off, else a `list(val, grad)` acting on the full
+# `par = c(theta, re_par)` vector: `val(par)` is the joint PC log-prior on the
+# targeted blocks' `re_par` slice (via the shared .re_cov_block_logprior, so the
+# PC + Jacobian algebra is the single source of truth), `grad(par)` its central-
+# difference gradient over the touched RE coordinates only (zero on theta and on
+# untargeted blocks). The prior depends on no oracle solve, so the FD gradient is
+# cheap and exact to O(h^2); mixing it with the analytic data-gradient is valid
+# (the total is data-score + prior-score).
+.aghq_sigma_penalty <- function(sigma_prior, layout, n_theta) {
+  if (is.null(sigma_prior)) return(NULL)
+  if (is.list(sigma_prior)) {
+    blks <- as.integer(sigma_prior$blocks %||% seq_along(layout))
+    psig <- sigma_prior$prior_sigma
+    eta_pc <- sigma_prior$eta %||% 1
+  } else {
+    blks <- seq_along(layout); psig <- sigma_prior; eta_pc <- 1
+  }
+  if (!is.numeric(psig) || length(psig) != 2L) {
+    stop("`sigma_prior` must be `c(U, alpha)` or a list with `prior_sigma = ",
+         "c(U, alpha)`.", call. = FALSE)
+  }
+  if (anyNA(blks) || any(blks < 1L) || any(blks > length(layout))) {
+    stop("`sigma_prior$blocks` must index the RE blocks (1..", length(layout),
+         ").", call. = FALSE)
+  }
+  ks  <- vapply(layout, `[[`, integer(1), "k")
+  off <- cumsum(c(0L, ks))
+  blk_fns <- lapply(seq_along(layout), function(m)
+    if (m %in% blks)
+      .re_cov_block_logprior(layout[[m]]$nc, layout[[m]]$full, psig, eta_pc)
+    else NULL)
+  touched <- unlist(lapply(which(!vapply(blk_fns, is.null, logical(1))),
+                           function(m) off[m] + seq_len(ks[m])), use.names = FALSE)
+  logprior_re <- function(rp) {
+    lp <- 0
+    for (m in seq_along(blk_fns)) if (!is.null(blk_fns[[m]]))
+      lp <- lp + blk_fns[[m]](rp[off[m] + seq_len(ks[m])])
+    lp
+  }
+  list(
+    val = function(par) logprior_re(par[-seq_len(n_theta)]),
+    grad = function(par) {
+      g  <- numeric(length(par))
+      rp <- par[-seq_len(n_theta)]; h <- 1e-5
+      for (j in touched) {
+        rpp <- rp; rpp[j] <- rpp[j] + h
+        rpm <- rp; rpm[j] <- rpm[j] - h
+        g[n_theta + j] <- (logprior_re(rpp) - logprior_re(rpm)) / (2 * h)
+      }
+      g
+    })
+}
+
 # tulpa_re_cov_nested(n_quad > 1).
 .aghq_grad_cache <- function(orc, nc_terms, full_vec, n_quad, lkj_eta) {
   cache <- new.env(parent = emptyenv()); cache$par <- NULL; cache$val <- NULL
