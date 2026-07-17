@@ -89,6 +89,10 @@ cpp_hsgp_basis_2d <- function(coords, m, c) {
     .Call(`_tulpa_cpp_hsgp_basis_2d`, coords, m, c)
 }
 
+cpp_hsgp_field_predict <- function(coords_train, coords_new, m, c, beta_grid, sigma2_grid, lengthscale_grid, weights) {
+    .Call(`_tulpa_cpp_hsgp_field_predict`, coords_train, coords_new, m, c, beta_grid, sigma2_grid, lengthscale_grid, weights)
+}
+
 cpp_spde_laplace_gradient <- function(y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu = 1.0, family = "binomial", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL) {
     .Call(`_tulpa_cpp_spde_laplace_gradient`, y, n_trials, X, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, log_range, log_sigma, nu, family, phi, max_iter, tol, n_threads, x_init_nullable)
 }

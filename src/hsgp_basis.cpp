@@ -71,3 +71,91 @@ Rcpp::List cpp_hsgp_basis_2d(const Rcpp::NumericMatrix& coords, int m, double c)
         Rcpp::_["lambda_eig"] = lambda_eig
     );
 }
+
+// Grid-marginalised HSGP field at new coordinates (predict() kriging).
+//
+// The HSGP field is f(x) = Phi(x) * (sqrt(S_k) .* beta_k), where beta_k is the
+// per-grid-cell latent (N(0, I) prior) at the cell's (sigma2, lengthscale) and
+// S_k is the spectral density at that cell. The posterior field marginalises
+// over the hyperparameter grid: f(x) = sum_k w_k * Phi(x) * (sqrt(S_k) .* beta_k)
+// (weighted, NOT a plug-in at the posterior-mean hyperparameters -- the
+// "marginalise derived quantities" rule). The basis at the new coordinates uses
+// the TRAINING centering / boundary (derived from coords_train + c), so it is
+// consistent with the fitted basis.
+//
+// coords_train : n_train x 2, the coordinates the field was fit on (fixes the
+//                centering + boundary L).
+// coords_new   : n_new x 2, prediction coordinates.
+// m, c         : HSGP basis functions per dimension and boundary factor.
+// beta_grid    : n_grid x M matrix of per-cell latent means (M = m * m).
+// sigma2_grid, lengthscale_grid, weights : length n_grid.
+//
+// Returns the length-n_new posterior-mean field.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_hsgp_field_predict(
+    const Rcpp::NumericMatrix& coords_train,
+    const Rcpp::NumericMatrix& coords_new,
+    int m, double c,
+    const Rcpp::NumericMatrix& beta_grid,
+    const Rcpp::NumericVector& sigma2_grid,
+    const Rcpp::NumericVector& lengthscale_grid,
+    const Rcpp::NumericVector& weights
+) {
+    if (coords_train.ncol() != 2 || coords_new.ncol() != 2) {
+        Rcpp::stop("cpp_hsgp_field_predict: coords must have exactly 2 columns.");
+    }
+    const int n_train = coords_train.nrow();
+    const int n_new   = coords_new.nrow();
+    const int M       = m * m;
+    const int n_grid  = beta_grid.nrow();
+    if (beta_grid.ncol() != M) {
+        Rcpp::stop("cpp_hsgp_field_predict: beta_grid must have m*m columns.");
+    }
+    if (sigma2_grid.size() != n_grid || lengthscale_grid.size() != n_grid ||
+        weights.size() != n_grid) {
+        Rcpp::stop("cpp_hsgp_field_predict: grid vectors must match nrow(beta_grid).");
+    }
+
+    // Training-consistent centering + boundary from the training extent.
+    std::vector<double> flat_train(2 * static_cast<std::size_t>(n_train));
+    for (int i = 0; i < n_train; ++i) {
+        flat_train[2 * i]     = coords_train(i, 0);
+        flat_train[2 * i + 1] = coords_train(i, 1);
+    }
+    double x_center, y_center, L1, L2;
+    tulpa_hsgp::hsgp_center_L_2d(flat_train, n_train, c, x_center, y_center, L1, L2);
+
+    // Basis at the new coordinates under that centering.
+    std::vector<double> flat_new(2 * static_cast<std::size_t>(n_new));
+    for (int i = 0; i < n_new; ++i) {
+        flat_new[2 * i]     = coords_new(i, 0);
+        flat_new[2 * i + 1] = coords_new(i, 1);
+    }
+    tulpa::HSGPData data;
+    tulpa_hsgp::hsgp_fill_basis_2d(flat_new, n_new, m, x_center, y_center,
+                                   L1, L2, /*shared=*/true, data);
+
+    // Accumulate sum_k w_k * Phi_new * (sqrt(S_k) .* beta_k).
+    Rcpp::NumericVector field(n_new, 0.0);
+    std::vector<double> scaled_beta(M);
+    std::vector<double> f_k;
+    for (int k = 0; k < n_grid; ++k) {
+        const double s2 = sigma2_grid[k];
+        const double ls = lengthscale_grid[k];
+        for (int j = 0; j < M; ++j) {
+            const double S = tulpa_hsgp::spectral_density_se(data.eigenvalues[j], s2, ls);
+            scaled_beta[j] = std::sqrt(S) * beta_grid(k, j);
+        }
+        // f_k = Phi_new * scaled_beta (reuse hsgp_evaluate's matvec convention).
+        f_k.assign(n_new, 0.0);
+        for (int i = 0; i < n_new; ++i) {
+            const double* phi_row = &data.phi_flat[static_cast<std::size_t>(i) * M];
+            double acc = 0.0;
+            for (int j = 0; j < M; ++j) acc += phi_row[j] * scaled_beta[j];
+            f_k[i] = acc;
+        }
+        const double w = weights[k];
+        for (int i = 0; i < n_new; ++i) field[i] += w * f_k[i];
+    }
+    return field;
+}

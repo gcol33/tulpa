@@ -287,6 +287,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_hsgp_field_predict
+Rcpp::NumericVector cpp_hsgp_field_predict(const Rcpp::NumericMatrix& coords_train, const Rcpp::NumericMatrix& coords_new, int m, double c, const Rcpp::NumericMatrix& beta_grid, const Rcpp::NumericVector& sigma2_grid, const Rcpp::NumericVector& lengthscale_grid, const Rcpp::NumericVector& weights);
+RcppExport SEXP _tulpa_cpp_hsgp_field_predict(SEXP coords_trainSEXP, SEXP coords_newSEXP, SEXP mSEXP, SEXP cSEXP, SEXP beta_gridSEXP, SEXP sigma2_gridSEXP, SEXP lengthscale_gridSEXP, SEXP weightsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type coords_train(coords_trainSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type coords_new(coords_newSEXP);
+    Rcpp::traits::input_parameter< int >::type m(mSEXP);
+    Rcpp::traits::input_parameter< double >::type c(cSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericMatrix& >::type beta_grid(beta_gridSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type sigma2_grid(sigma2_gridSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type lengthscale_grid(lengthscale_gridSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::NumericVector& >::type weights(weightsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_hsgp_field_predict(coords_train, coords_new, m, c, beta_grid, sigma2_grid, lengthscale_grid, weights));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_spde_laplace_gradient
 Rcpp::List cpp_spde_laplace_gradient(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p, int n_obs, int n_mesh, Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double log_range, double log_sigma, double nu, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable);
 RcppExport SEXP _tulpa_cpp_spde_laplace_gradient(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP A_xSEXP, SEXP A_iSEXP, SEXP A_pSEXP, SEXP n_obsSEXP, SEXP n_meshSEXP, SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP log_rangeSEXP, SEXP log_sigmaSEXP, SEXP nuSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP) {
@@ -3298,6 +3316,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_available_ram_bytes", (DL_FUNC) &_tulpa_cpp_available_ram_bytes, 0},
     {"_tulpa_cpp_performance_core_count", (DL_FUNC) &_tulpa_cpp_performance_core_count, 0},
     {"_tulpa_cpp_hsgp_basis_2d", (DL_FUNC) &_tulpa_cpp_hsgp_basis_2d, 3},
+    {"_tulpa_cpp_hsgp_field_predict", (DL_FUNC) &_tulpa_cpp_hsgp_field_predict, 8},
     {"_tulpa_cpp_spde_laplace_gradient", (DL_FUNC) &_tulpa_cpp_spde_laplace_gradient, 21},
     {"_tulpa_cpp_interval_gaussian_terms", (DL_FUNC) &_tulpa_cpp_interval_gaussian_terms, 4},
     {"_tulpa_cpp_joint_inner_vcov_blocks", (DL_FUNC) &_tulpa_cpp_joint_inner_vcov_blocks, 9},

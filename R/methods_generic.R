@@ -581,6 +581,63 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
   as.numeric(.spde_A_at(object, newdata) %*% object$spatial_effects)
 }
 
+# Krige a fitted HSGP field to coordinates (predict()). The field is
+# grid-marginalised in C++ (cpp_hsgp_field_predict): for each hyperparameter
+# grid cell the per-cell latent (modes tail) is spectral-scaled and projected
+# through the Laplacian basis evaluated at the new coordinates, then weighted by
+# the cell's posterior weight -- never a plug-in at the posterior mean. Returns
+# NULL (decline, leaving eta at the fixed-effect prediction) when the fit is not
+# a plain single-block HSGP nested fit (e.g. it carries an extra latent block),
+# so the caller can fall through cleanly.
+#' @keywords internal
+.hsgp_field_at <- function(object, newdata) {
+  sp <- object$spatial
+  if (is.null(sp) || !identical(sp$type, "hsgp") || is.null(object$modes) ||
+      is.null(object$weights) || is.null(object$sigma2_grid) ||
+      is.null(object$lengthscale_grid) || is.null(sp$coords_matrix)) {
+    return(NULL)
+  }
+  m       <- as.integer(sp[["m"]])
+  Mtot    <- m * m
+  p_fixed <- object$n_fixed %||% ncol(object$model_matrix)
+  modes   <- object$modes
+  # The HSGP basis coefficients are the latent block immediately after the fixed
+  # effects. Any additional latent tail (an iid RE) means this simple slice is
+  # not the field, so decline rather than mis-index.
+  if (ncol(modes) != p_fixed + Mtot) return(NULL)
+  beta_grid <- modes[, p_fixed + seq_len(Mtot), drop = FALSE]
+
+  coords_train <- as.matrix(sp$coords_matrix)
+  if (is.null(newdata)) {
+    coords_new <- coords_train
+  } else {
+    cv <- sp$coord_vars
+    miss <- setdiff(cv, names(newdata))
+    if (length(miss)) {
+      stop("newdata is missing the coordinate column(s): ",
+           paste(miss, collapse = ", "), call. = FALSE)
+    }
+    coords_new <- as.matrix(newdata[, cv, drop = FALSE])
+    # Reapply the training coordinate standardisation (scale() recorded the
+    # training centre / scale as attributes on coords_matrix) so the prediction
+    # basis matches the fitted one.
+    if (isTRUE(sp$scale_coords)) {
+      ctr <- attr(coords_train, "scaled:center")
+      scl <- attr(coords_train, "scaled:scale")
+      if (!is.null(ctr) && !is.null(scl)) {
+        coords_new <- sweep(sweep(coords_new, 2, ctr, "-"), 2, scl, "/")
+      }
+    }
+  }
+  # Strip attributes so the coords reach C++ as plain numeric matrices.
+  ct <- matrix(as.numeric(coords_train), nrow(coords_train), 2)
+  cn <- matrix(as.numeric(coords_new),   nrow(coords_new),   2)
+  as.numeric(cpp_hsgp_field_predict(
+    ct, cn, m, as.numeric(sp[["c"]]),
+    beta_grid, as.numeric(object$sigma2_grid),
+    as.numeric(object$lengthscale_grid), as.numeric(object$weights)))
+}
+
 # The variance-convention dispersion of an SPDE fit, for the R-side working
 # weights: a front-door tulpa() fit stores `$phi` (the variance); a direct
 # fit_spde() fit stores the kernel-convention `$phi_kernel` (gaussian /
@@ -748,12 +805,16 @@ nobs.tulpa_fit <- function(object, ...) {
 #' @description
 #' Prediction of the linear predictor at `newdata`, on the link or response
 #' scale. The fixed-effect part is `X beta` with credible bounds from the
-#' fixed-effect covariance ([vcov()]). For a fit carrying an SPDE Matern field
-#' (`spatial_spde()`), the posterior-mean field is interpolated (kriged) to the
-#' `newdata` coordinates and added to the linear predictor by default, so
-#' `predict()` gives the conditional (location-specific) prediction. Ordinary
-#' random effects are held at zero (population level); add group effects from
-#' [ranef()] when needed.
+#' fixed-effect covariance ([vcov()]). For a fit carrying a continuous spatial
+#' field, the posterior-mean field is interpolated (kriged) to the `newdata`
+#' coordinates and added to the linear predictor by default, so `predict()`
+#' gives the conditional (location-specific) prediction. Two field families are
+#' supported: an SPDE Matern field (`spatial_spde()`), projected through the
+#' mesh; and a Hilbert-space GP field (`spatial_gp(approx = "hsgp")`), where the
+#' Laplacian basis is re-evaluated at the new coordinates (with the training
+#' centring / boundary) and the field is marginalised over the hyperparameter
+#' grid. Ordinary random effects are held at zero (population level); add group
+#' effects from [ranef()] when needed.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate
@@ -768,9 +829,12 @@ nobs.tulpa_fit <- function(object, ...) {
 #'   mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
 #'   fits only; other layouts decline with an explanation.
 #' @param level Credible-interval level (default 0.95).
-#' @param include_field For an SPDE fit, add the kriged Matern field to the
-#'   prediction (default `TRUE`). `FALSE` gives the fixed-effect (population)
-#'   prediction. Ignored for non-SPDE fits.
+#' @param include_field For a continuous-spatial fit (SPDE or HSGP), add the
+#'   kriged field to the prediction (default `TRUE`). `FALSE` gives the
+#'   fixed-effect (population) prediction. Ignored for fits with no continuous
+#'   field. For an HSGP fit the field is added to the point prediction but its
+#'   uncertainty is not yet propagated into `se.fit` (the interval reflects the
+#'   fixed-effect covariance only).
 #' @param ... Ignored.
 #' @return If `se.fit = FALSE`, a numeric vector. If `se.fit = TRUE`, a data
 #'   frame with `fit`, `se.fit` (link scale), `lower`, `upper` on the requested
@@ -817,6 +881,16 @@ predict.tulpa_fit <- function(object, newdata = NULL,
     if (se.fit) {
       spde_se <- .spde_linpred_se(object, X, A_new)
     }
+  }
+
+  # Kriged HSGP field: add the grid-marginalised Laplacian-basis field at the
+  # prediction coordinates. Field-uncertainty SE propagation is not yet wired
+  # here (unlike SPDE), so with se.fit the interval reflects the fixed-effect
+  # covariance only -- the point prediction still includes the field.
+  if (isTRUE(include_field) && identical(object$spatial$type, "hsgp") &&
+      !is.null(object$modes)) {
+    hsgp_fld <- .hsgp_field_at(object, newdata)
+    if (!is.null(hsgp_fld)) eta <- eta + hsgp_fld
   }
 
   if (!se.fit) {

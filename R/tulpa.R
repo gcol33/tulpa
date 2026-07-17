@@ -1459,6 +1459,10 @@ tulpa <- function(formula, data,
     fit$re_design    <- lapply(bundle$re_terms %||% list(), function(rt) {
       rt[c("group_idx", "has_intercept", "slope_matrix", "n_groups", "n_coefs")]
     })
+    # Attach the validated spatial spec so predict() can krige the field to new
+    # coordinates (HSGP basis / GP-NNGP conditional mean). fit_spde already sets
+    # $spatial; the nested gp/nngp/hsgp path does not, so fill it here.
+    if (!is.null(spatial_spec)) fit$spatial <- fit$spatial %||% spatial_spec
     # Smoother metadata for smooth_effects(): node locations plus the block
     # sizes needed to index the latent tail of the per-grid modes.
     if (length(smooth_specs) > 0L) {
