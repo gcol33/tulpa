@@ -298,6 +298,74 @@
 }
 
 
+# Pack a validated tulpa_svc (NNGP spatially-varying coefficients) spec into the
+# ModelData sampler's svc_spec (mode = "exact" only). Each SVC term j carries an
+# NNGP field w_j(s); the generic log-post adds eta_i += sum_j X_svc[i,j] w_j(s_i).
+# X_svc is the design subset (the varying coefficients' columns) in row-major
+# [n_obs x n_svc]. NNGP conventions match the GP field (coords row-major; nn_idx
+# 1-based; nn_order 0-based); the SVC kernel derives neighbour-pair distances
+# from coords, so no nn_neighbor_dist. The PC range anchor spatial_svc() does not
+# expose is derived from the median nearest-neighbour spacing.
+#' @keywords internal
+.svc_sampler_spec <- function(spatial, X) {
+  ni <- spatial$neighbor_info
+  if (is.null(ni) || is.null(spatial$coords_matrix) || is.null(spatial$svc_indices)) {
+    stop("SVC spec is unvalidated (neighbor_info / coords_matrix / svc_indices ",
+         "NULL). tulpa() validates it via validate_svc().", call. = FALSE)
+  }
+  cm    <- as.matrix(spatial$coords_matrix)
+  n_obs <- nrow(cm)
+  nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
+  idx   <- as.integer(spatial$svc_indices)
+  Xs    <- as.matrix(X)[, idx, drop = FALSE]        # [n_obs x n_svc]
+  pos_d <- ni$nn_dist[is.finite(ni$nn_dist) & ni$nn_dist > 0]
+  U     <- if (length(pos_d)) stats::median(pos_d) else 0.1
+  if (!is.finite(U) || U <= 0) U <- 0.1
+  list(
+    coords          = matrix(as.numeric(cm), n_obs, 2),
+    n_svc           = length(idx),
+    nn              = nn,
+    nn_idx          = matrix(as.integer(ni$nn_idx), n_obs, nn),
+    nn_dist         = matrix(as.numeric(ni$nn_dist), n_obs, nn),
+    nn_order        = as.integer(ni$nn_order) - 1L,
+    nn_order_inv    = as.integer(ni$nn_order_inv %||% seq_len(n_obs)) - 1L,
+    svc_indices     = idx,
+    X_svc           = as.numeric(t(Xs)),            # row-major [n_obs x n_svc]
+    cov_type        = gp_cov_type_for_laplace(spatial),
+    phi_prior_U     = as.numeric(U),
+    phi_prior_alpha = 0.05
+  )
+}
+
+
+# Pack a validated tulpa_tvc (RW1 / RW2 / AR1 temporally-varying coefficients)
+# spec into the ModelData sampler's tvc_spec (mode = "exact" only). Each TVC term
+# j carries a temporal field w_j(g, t); the generic log-post adds
+# eta_i += sum_j X_tvc[i,j] w_j(g_i, t_i). X_tvc is row-major [n_obs x n_tvc].
+#' @keywords internal
+.tvc_sampler_spec <- function(temporal, X) {
+  st <- tolower(temporal$structure %||% "rw1")
+  if (!st %in% c("rw1", "rw2", "ar1")) {
+    stop("TVC exact NUTS supports structure 'rw1' / 'rw2' / 'ar1'; got '", st,
+         "'. The 'gp' temporal structure is not front-door wired.", call. = FALSE)
+  }
+  idx <- as.integer(temporal$tvc_indices)
+  Xt  <- as.matrix(X)[, idx, drop = FALSE]          # [n_obs x n_tvc]
+  n_groups <- as.integer(temporal$n_groups %||% 1L)
+  list(
+    n_times     = as.integer(temporal$n_times),
+    n_tvc       = length(idx),
+    n_groups    = n_groups,
+    time_index  = as.integer(temporal$time_index),
+    group_index = as.integer(temporal$group_index %||% rep(1L, nrow(as.matrix(X)))),
+    tvc_indices = idx,
+    X_tvc       = as.numeric(t(Xt)),                # row-major [n_obs x n_tvc]
+    structure   = st,
+    cyclic      = isTRUE(temporal$cyclic)
+  )
+}
+
+
 # Convert a validated temporal spec (rw1 / rw2 / ar1) into the nested-Laplace
 # temporal prior block. The block format is the one the single-block registry
 # (R/nested_laplace.R: `rw1` / `rw2` / `ar1` entries) and the multi-block
@@ -839,8 +907,13 @@
     # for the adjacency CSR + per-obs unit index; continuous (gp/nngp/hsgp),
     # CAR_proper, and SPDE fields are not threaded through this path (the generic
     # ESS Gaussian-prior block / the dedicated SPDE sampler own those).
+    # Spatially-varying coefficients ride the spatial= slot as their own sampler
+    # input (svc_spec), not the areal/field spatial_spec.
+    svc_spec_arg <- NULL
     spatial_spec_arg <- NULL
-    if (!is.null(spatial) && tolower(spatial$type %||% "") %in% c("gp", "nngp")) {
+    if (!is.null(spatial) && tolower(spatial$type %||% "") == "svc") {
+      svc_spec_arg <- .svc_sampler_spec(spatial, bundle$X)
+    } else if (!is.null(spatial) && tolower(spatial$type %||% "") %in% c("gp", "nngp")) {
       spatial_spec_arg <- .gp_sampler_spec(spatial)
     } else if (!is.null(spatial) && tolower(spatial$type %||% "") == "hsgp") {
       spatial_spec_arg <- .hsgp_sampler_spec(spatial)
@@ -871,7 +944,12 @@
     # within-group time index and the group index itself, so pass them
     # unflattened (not the nested block's combined node index).
     temporal_spec_arg <- NULL
-    if (!is.null(temporal)) {
+    tvc_spec_arg <- NULL
+    if (!is.null(temporal) && tolower(temporal$type %||% "") == "tvc") {
+      # Temporally-varying coefficients ride the temporal= slot as their own
+      # sampler input (tvc_spec), not the shared-field temporal_spec.
+      tvc_spec_arg <- .tvc_sampler_spec(temporal, bundle$X)
+    } else if (!is.null(temporal)) {
       ttype <- tolower(temporal$type %||% "")
       if (!ttype %in% c("rw1", "rw2", "ar1")) {
         stop(sprintf(paste0(
@@ -893,7 +971,8 @@
     # cannot carry the structured spatial / temporal precision; the gradient /
     # density kernels can. Redirect rather than fail deep in C++.
     if (backend == "ess" &&
-        (!is.null(spatial_spec_arg) || !is.null(temporal_spec_arg))) {
+        (!is.null(spatial_spec_arg) || !is.null(temporal_spec_arg) ||
+         !is.null(svc_spec_arg) || !is.null(tvc_spec_arg))) {
       stop(paste0(
         "Backend 'ess' samples latent Gaussian blocks with an isotropic prior\n",
         "and cannot carry the structured spatial / temporal precision. Use\n",
@@ -914,6 +993,8 @@
       re_spec       = re_spec,
       spatial_spec  = spatial_spec_arg,
       temporal_spec = temporal_spec_arg,
+      svc_spec      = svc_spec_arg,
+      tvc_spec      = tvc_spec_arg,
       sigma_re_scale = rp$sigma_re_scale %||% 2.5,
       # The fixed-effect prior SD is the statistical `beta_prior` (mean-zero on
       # this sampler path), not a control knob; inject it into the sampler's
@@ -1246,7 +1327,26 @@ tulpa <- function(formula, data,
       spatial_type <- "rsr"
       sp_lc <- "rsr"
     }
-    if (sp_lc %in% c(.NL_FRONTDOOR_CONTINUOUS, .NL_FRONTDOOR_SPDE)) {
+    if (sp_lc == "svc") {
+      # Spatially-varying coefficients: coordinate-addressed (coords from the
+      # spec, no spatial(col) term) and design-dependent (the varying columns
+      # are resolved against the model matrix). Exact-NUTS only -- there is no
+      # nested-Laplace SVC front door -- so validate_svc() needs the built X.
+      if (!is.null(parsed$spatial_var)) {
+        stop("A spatially-varying-coefficient field is addressed by its ",
+             "coordinate columns in the spec; drop the spatial(",
+             parsed$spatial_var, ") term.", call. = FALSE)
+      }
+      if (!inherits(spatial_spec, "tulpa_svc")) {
+        stop("A spatially-varying-coefficient field must be a ",
+             "spatial_svc(~ lon + lat, terms = ...) spec object.", call. = FALSE)
+      }
+      if (identical(tolower(spatial_spec$approx %||% "nngp"), "hsgp")) {
+        stop("HSGP-approximated SVC is not front-door wired yet; use ",
+             "spatial_svc(~ lon + lat, approx = 'nngp').", call. = FALSE)
+      }
+      spatial_spec <- validate_svc(spatial_spec, data, bundle$X)
+    } else if (sp_lc %in% c(.NL_FRONTDOOR_CONTINUOUS, .NL_FRONTDOOR_SPDE)) {
       # Coordinate-addressed field: coords come from the spec; no spatial(col)
       # term. gp/nngp/hsgp resolve their coordinate structure via validate_*()
       # (gp/nngp: unique_coords / obs_to_loc / neighbor_info; hsgp:
@@ -1346,8 +1446,19 @@ tulpa <- function(formula, data,
     }
     if (!inherits(temporal_spec, "tulpa_temporal")) {
       stop("`temporal=` must be a temporal_rw1() / temporal_rw2() / temporal_ar1() ",
-           "spec object.", call. = FALSE)
+           "or temporal_tvc() spec object.", call. = FALSE)
     }
+    if (identical(tolower(temporal_spec$type %||% ""), "tvc")) {
+      # Temporally-varying coefficients: design-dependent (the varying columns
+      # resolve against the model matrix) and exact-NUTS only. Validate against
+      # the built X; combine with fixed effects only for now.
+      if (has_spatial || has_latent) {
+        stop("A temporally-varying-coefficient field cannot be combined with a ",
+             "spatial or latent(...) field through tulpa() yet. Fit the TVC field ",
+             "on its own.", call. = FALSE)
+      }
+      temporal_spec <- validate_tvc(temporal_spec, data, bundle$X)
+    } else {
     if (!tolower(temporal_spec$type %||% "") %in% c("rw1", "rw2", "ar1")) {
       stop("tulpa() routes temporal_rw1() / temporal_rw2() / temporal_ar1(); for '",
            temporal_spec$type, "' call the temporal fitter directly.", call. = FALSE)
@@ -1373,6 +1484,7 @@ tulpa <- function(formula, data,
            "for space-time.", call. = FALSE)
     }
     temporal_spec <- validate_temporal(temporal_spec, data)
+    }
   }
 
   # Covariate smoothers s(x): RW1/RW2 GMRF blocks over the binned covariate --
@@ -1403,6 +1515,23 @@ tulpa <- function(formula, data,
     has_spatial = has_spatial, has_temporal = has_temporal, has_latent = has_latent,
     spatial_type = spatial_type, temporal = temporal_spec
   )
+
+  # Spatially- / temporally-varying coefficients are sampled only by the
+  # generic ModelData sampler (there is no nested-Laplace SVC/TVC front door),
+  # so they require a Tier-1 exact mode. A nested / Laplace mode would otherwise
+  # silently drop the varying-coefficient field -- fail loudly with guidance.
+  is_svc_fit <- identical(tolower(spatial_type %||% ""), "svc")
+  is_tvc_fit <- !is.null(temporal_spec) &&
+    identical(tolower(temporal_spec$type %||% ""), "tvc")
+  if ((is_svc_fit || is_tvc_fit) &&
+      (BACKEND_REGISTRY[[sel$backend]]$input %||% "") != "modeldata") {
+    stop(sprintf(paste0(
+      "%s coefficients are sampled by the exact ModelData NUTS backend; the\n",
+      "selected backend '%s' (mode = '%s') does not carry the varying-coefficient\n",
+      "field. Use mode = 'exact'."),
+      if (is_svc_fit) "Spatially-varying" else "Temporally-varying",
+      sel$backend, mode), call. = FALSE)
+  }
 
   # Latent prior blocks are consumed only by the nested-Laplace path. If the
   # user forced a non-nested backend (e.g. mode = "laplace" / "mala" / "exact"),

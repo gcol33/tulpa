@@ -63,7 +63,9 @@ inline void build_sampler_model_inputs(
     double sigma_re_scale,
     const Rcpp::Nullable<Rcpp::List>& re_spec,
     const Rcpp::Nullable<Rcpp::List>& spatial_spec,
-    const Rcpp::Nullable<Rcpp::List>& temporal_spec
+    const Rcpp::Nullable<Rcpp::List>& temporal_spec,
+    const Rcpp::Nullable<Rcpp::List>& svc_spec = R_NilValue,
+    const Rcpp::Nullable<Rcpp::List>& tvc_spec = R_NilValue
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -284,6 +286,82 @@ inline void build_sampler_model_inputs(
                         ttype.c_str());
     }
 
+    // --- Spatially-varying coefficients (NNGP). compute_param_layout keys the
+    //     SVC block on data.has_svc, allocating log_sigma2_svc / log_phi_svc /
+    //     the [n_svc x n_obs] fields; the generic log-post adds
+    //     eta_i += sum_j X_svc[i,j] * w_j(s_i). NNGP conventions match the GP
+    //     field (coords row-major; nn_idx 1-based; nn_order 0-based); the SVC
+    //     kernel derives neighbour-pair distances from coords, so no
+    //     nn_neighbor_dist is needed. ---
+    if (svc_spec.isNotNull()) {
+        Rcpp::List sv = Rcpp::as<Rcpp::List>(svc_spec);
+        auto& s = in.data.svc_data;
+        Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sv["coords"]);
+        const int n_obs = coords.nrow();
+        const int n_svc = Rcpp::as<int>(sv["n_svc"]);
+        s.n_obs = n_obs;
+        s.n_svc = n_svc;
+        s.nn = Rcpp::as<int>(sv["nn"]);
+        s.coords.resize(2 * (std::size_t)n_obs);
+        for (int i = 0; i < n_obs; ++i) {
+            s.coords[2 * (std::size_t)i]     = coords(i, 0);
+            s.coords[2 * (std::size_t)i + 1] = coords(i, 1);
+        }
+        Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sv["nn_idx"]);
+        Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sv["nn_dist"]);
+        s.nn_idx.resize((std::size_t)n_obs * s.nn);
+        s.nn_dist.resize((std::size_t)n_obs * s.nn);
+        for (int i = 0; i < n_obs; ++i)
+            for (int j = 0; j < s.nn; ++j) {
+                s.nn_idx[(std::size_t)i * s.nn + j]  = nnix(i, j);
+                s.nn_dist[(std::size_t)i * s.nn + j] = nnd(i, j);
+            }
+        Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order"]);
+        s.nn_order.assign(nord.begin(), nord.end());
+        Rcpp::IntegerVector nordi = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order_inv"]);
+        s.nn_order_inv.assign(nordi.begin(), nordi.end());
+        Rcpp::IntegerVector svci = Rcpp::as<Rcpp::IntegerVector>(sv["svc_indices"]);
+        s.svc_indices.assign(svci.begin(), svci.end());
+        Rcpp::NumericVector xsvc = Rcpp::as<Rcpp::NumericVector>(sv["X_svc"]);
+        s.X_svc.assign(xsvc.begin(), xsvc.end());   // row-major [n_obs x n_svc]
+        s.cov_type = static_cast<CovType>(Rcpp::as<int>(sv["cov_type"]));
+        in.data.has_svc = true;
+        in.data.svc_is_hsgp = false;
+        in.data.svc_phi_prior_U     = Rcpp::as<double>(sv["phi_prior_U"]);
+        in.data.svc_phi_prior_alpha = Rcpp::as<double>(sv["phi_prior_alpha"]);
+        if (sv.containsElementNamed("sigma2_prior_scale"))
+            in.data.svc_sigma2_prior_scale = Rcpp::as<double>(sv["sigma2_prior_scale"]);
+    }
+
+    // --- Temporally-varying coefficients (RW1 / RW2 / AR1). compute_param_layout
+    //     keys the TVC block on data.has_tvc, allocating log_tau_tvc, optional
+    //     logit_rho_tvc (AR1) and the [n_groups x n_tvc x n_times] fields; the
+    //     generic log-post adds eta_i += sum_j X_tvc[i,j] * w_j(g_i, t_i). ---
+    if (tvc_spec.isNotNull()) {
+        Rcpp::List tv = Rcpp::as<Rcpp::List>(tvc_spec);
+        auto& t = in.data.tvc_data;
+        t.n_obs   = N;
+        t.n_times = Rcpp::as<int>(tv["n_times"]);
+        t.n_tvc   = Rcpp::as<int>(tv["n_tvc"]);
+        t.n_groups = Rcpp::as<int>(tv["n_groups"]);
+        Rcpp::IntegerVector ti = Rcpp::as<Rcpp::IntegerVector>(tv["time_index"]);
+        t.time_index.assign(ti.begin(), ti.end());
+        Rcpp::IntegerVector gi = Rcpp::as<Rcpp::IntegerVector>(tv["group_index"]);
+        t.group_index.assign(gi.begin(), gi.end());
+        Rcpp::IntegerVector tvci = Rcpp::as<Rcpp::IntegerVector>(tv["tvc_indices"]);
+        t.tvc_indices.assign(tvci.begin(), tvci.end());
+        Rcpp::NumericVector xtvc = Rcpp::as<Rcpp::NumericVector>(tv["X_tvc"]);
+        t.X_tvc.assign(xtvc.begin(), xtvc.end());   // row-major [n_obs x n_tvc]
+        std::string st = Rcpp::as<std::string>(tv["structure"]);
+        if (st == "rw1")      t.structure = TemporalType::RW1;
+        else if (st == "rw2") t.structure = TemporalType::RW2;
+        else if (st == "ar1") t.structure = TemporalType::AR1;
+        else Rcpp::stop("build_sampler_model_inputs: TVC structure '%s' is not "
+                        "supported (use 'rw1'/'rw2'/'ar1').", st.c_str());
+        t.cyclic = tv.containsElementNamed("cyclic") && Rcpp::as<bool>(tv["cyclic"]);
+        in.data.has_tvc = true;
+    }
+
     in.layout = tulpa_hmc::compute_param_layout(in.data);
 }
 
@@ -401,6 +479,37 @@ inline Rcpp::CharacterVector sampler_param_names(
         int u = 0;
         for (int j = layout.hsgp_beta_start; j < layout.hsgp_beta_end; j++)
             set(j, "hsgp_beta[" + std::to_string(++u) + "]");
+    }
+
+    // Spatially-varying coefficients: per-term (sigma2, phi) hypers then the
+    // per-term NNGP field, laid out w_flat[j * n_obs + i].
+    if (layout.has_svc && data.svc_data.n_svc > 0) {
+        const int n_svc = data.svc_data.n_svc;
+        for (int j = 0; j < n_svc; j++) {
+            set(layout.log_sigma2_svc_start + j,
+                "log_sigma2_svc[" + std::to_string(j + 1) + "]");
+            set(layout.log_phi_svc_start + j,
+                "log_phi_svc[" + std::to_string(j + 1) + "]");
+        }
+        int u = 0;
+        for (int q = layout.svc_w_start; q < layout.svc_w_end; q++)
+            set(q, "svc_w[" + std::to_string(++u) + "]");
+    }
+
+    // Temporally-varying coefficients: per-term log_tau (+ logit_rho for AR1)
+    // then the per-group/term/time field.
+    if (layout.has_tvc && data.tvc_data.n_tvc > 0) {
+        const int n_tvc = data.tvc_data.n_tvc;
+        for (int j = 0; j < n_tvc; j++)
+            set(layout.log_tau_tvc_start + j,
+                "log_tau_tvc[" + std::to_string(j + 1) + "]");
+        if (layout.logit_rho_tvc_start >= 0)
+            for (int j = 0; j < n_tvc; j++)
+                set(layout.logit_rho_tvc_start + j,
+                    "logit_rho_tvc[" + std::to_string(j + 1) + "]");
+        int u = 0;
+        for (int q = layout.tvc_w_start; q < layout.tvc_w_end; q++)
+            set(q, "tvc_w[" + std::to_string(++u) + "]");
     }
 
     return nm;
