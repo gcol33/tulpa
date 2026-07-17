@@ -273,31 +273,17 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # (gcol33/tulpa#100).
 .nested_outer_pareto_k <- function(log_target, theta_hat, L_scale,
                                    n_samples = 200L) {
-  n_samples <- as.integer(n_samples)
-  if (n_samples < .PSIS_MIN_EVAL) {                    # cannot reach the floor
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
-  }
-  k <- length(theta_hat)
-  Z <- matrix(stats::rnorm(n_samples * k), n_samples, k)
-  lr <- vapply(seq_len(n_samples), function(s) {
-    th <- as.numeric(theta_hat + L_scale %*% Z[s, ])
-    lt <- log_target(th)
-    if (!is.finite(lt)) return(-Inf)
-    lt + 0.5 * sum(Z[s, ]^2)                           # - log q(theta), constants dropped
+  # The per-sample closure is the length-1 case of the batched target the shared
+  # core (.nested_is_pareto_k) drives; wrap it (non-finite -> -Inf, matching the
+  # old drop) and evaluate every draw (radius_cap = Inf). The sampling transform
+  # theta_hat + L_scale %*% Z[s, ] equals the core's Z %*% t(L_scale), so the
+  # draws -- and the k-hat -- are identical to the previous open-coded version.
+  batched <- function(Umat) vapply(seq_len(nrow(Umat)), function(i) {
+    lt <- log_target(Umat[i, ])
+    if (is.finite(lt)) lt else -Inf
   }, numeric(1))
-
-  n_eval <- sum(is.finite(lr))
-  if (n_eval < .PSIS_MIN_EVAL) {
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
-  }
-  # Validation aperture: when `tulpa.kdiag.capture` holds an environment, stash
-  # the finite importance log-ratios so an external check can recompute the same
-  # k-hat with loo / posterior on the actual engine output. Off by default, zero
-  # overhead when unset.
-  cap <- getOption("tulpa.kdiag.capture", NULL)
-  if (is.environment(cap)) cap$lr <- lr[is.finite(lr)]
-  ps <- tulpa_psis(lr)
-  list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
+  .nested_is_pareto_k(theta_hat, L_scale, batched,
+                      n_samples = n_samples, radius_cap = Inf)
 }
 
 # Outer Pareto-k-hat for a grid-integrated nested fit (the generic

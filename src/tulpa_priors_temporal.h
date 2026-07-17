@@ -68,12 +68,13 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
         if (layout.is_temporal_gp) {
             // Temporal GP: PC prior on sigma2, logit-bounded phi (lengthscale)
 
-            // PC prior on sigma2 (favor smaller variance)
-            double rate = -std::log(data.temporal_gp_sigma2_prior_alpha) / data.temporal_gp_sigma2_prior_U;
-            T sigma_gp = safe_sqrt(sigma2_temporal_gp_out);
-            log_post = log_post + T(std::log(rate)) - T(rate) * sigma_gp - safe_log(T(2.0) * sigma_gp);
-            T log_sigma2 = params[layout.log_sigma2_temporal_gp_idx];
-            log_post = log_post + log_sigma2;  // Jacobian for log transform
+            // PC prior on sigma2 (favor smaller variance), over the sampled
+            // log-variance -- the shared pc_prior.h form (base density + exact
+            // change-of-variables Jacobian), single-sourced.
+            log_post = log_post + log_prior_log_sigma2_pc(
+                params[layout.log_sigma2_temporal_gp_idx],
+                data.temporal_gp_sigma2_prior_U,
+                data.temporal_gp_sigma2_prior_alpha);
 
             // Uniform prior on phi over (lower, upper); the bounded map holds
             // the interval, so only its Jacobian is contributed here. A 1D

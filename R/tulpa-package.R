@@ -37,20 +37,34 @@ tulpa_version <- function() {
 # registered in `envir` (the caller's frame), the base-R equivalent of
 # withr::defer().
 #' @keywords internal
-.seed_scoped <- function(seed, envir = parent.frame()) {
-  if (is.null(seed)) return(invisible(FALSE))
-  old_seed <- if (exists(".Random.seed", envir = .GlobalEnv)) {
+# Snapshot the global RNG stream (`.Random.seed`), returning NULL when unset.
+# The single source the three seed helpers below share.
+.snapshot_seed <- function() {
+  if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
     get(".Random.seed", envir = .GlobalEnv)
   } else NULL
-  restore <- function() {
+}
+
+# A closure that restores the global RNG stream to `old_seed`, removing
+# `.Random.seed` when it was unset at snapshot time. `old_seed` is forced here so
+# the snapshot is captured now, not lazily inside the closure after the caller's
+# randomized step has already advanced the stream.
+.make_seed_restore <- function(old_seed) {
+  force(old_seed)
+  function() {
     if (is.null(old_seed)) {
-      if (exists(".Random.seed", envir = .GlobalEnv)) {
+      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
         rm(".Random.seed", envir = .GlobalEnv)
       }
     } else {
       assign(".Random.seed", old_seed, envir = .GlobalEnv)
     }
   }
+}
+
+.seed_scoped <- function(seed, envir = parent.frame()) {
+  if (is.null(seed)) return(invisible(FALSE))
+  restore <- .make_seed_restore(.snapshot_seed())
   do.call(on.exit, list(as.call(list(restore)), add = TRUE), envir = envir)
   set.seed(as.integer(seed))
   invisible(TRUE)
@@ -62,17 +76,7 @@ tulpa_version <- function() {
 # caller had it. The complement of `.seed_scoped`: that one also seeds.
 #' @keywords internal
 .preserve_seed_in_frame <- function(envir = parent.frame()) {
-  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-  restore <- function() {
-    if (is.null(old_seed)) {
-      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-        rm(".Random.seed", envir = .GlobalEnv)
-      }
-    } else {
-      assign(".Random.seed", old_seed, envir = .GlobalEnv)
-    }
-  }
+  restore <- .make_seed_restore(.snapshot_seed())
   do.call(on.exit, list(as.call(list(restore)), add = TRUE), envir = envir)
   invisible(NULL)
 }
@@ -84,16 +88,7 @@ tulpa_version <- function() {
 # around a single expression.
 #' @keywords internal
 .with_preserved_seed <- function(expr) {
-  has_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-  old_seed <- if (has_seed) get(".Random.seed", envir = .GlobalEnv) else NULL
-  on.exit({
-    if (is.null(old_seed)) {
-      if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-        rm(".Random.seed", envir = .GlobalEnv)
-      }
-    } else {
-      assign(".Random.seed", old_seed, envir = .GlobalEnv)
-    }
-  }, add = TRUE)
+  restore <- .make_seed_restore(.snapshot_seed())
+  on.exit(restore(), add = TRUE)
   expr
 }

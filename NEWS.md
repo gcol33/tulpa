@@ -60,6 +60,12 @@ Warnings and cleanups.
   recomputing them at the draw budget; the fractional-SPDE rational-order default
   is single-sourced to 2; and two split-message errors and a couple of stale
   comments were tidied.
+* **Duplicated computations single-sourced.** `spatial_range()` and
+  `temporal_corr()` now share one hyperparameter-summary scaffold; the three RNG
+  snapshot/restore helpers share one snapshot + restore-closure factory; the
+  outer Pareto-k importance core delegates to the batched core (identical draws);
+  and the temporal-GP PC prior routes through the shared `pc_prior.h` form
+  instead of a hand-rolled Jacobian.
 
 ## 0.0.85
 

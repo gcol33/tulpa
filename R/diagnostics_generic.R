@@ -173,63 +173,34 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #'   probability, e.g. `q2.5`, `q97.5` for the defaults).
 #' @export
 spatial_range <- function(object, probs = c(0.025, 0.975)) {
-  draws <- object$draws
-  cn <- colnames(draws)
-
-  # Map column name patterns to interpretable parameter names
   patterns <- c(
-    range = "log_phi_gp|log_phi_gp_local|phi_gp",
-    sigma = "log_sigma2_gp|log_sigma_bym2|log_tau_spatial",
-    rho   = "logit_rho_bym2",
-    sigma_local  = "log_sigma2_gp_local",
-    sigma_regional = "log_sigma2_gp_regional",
-    range_local  = "log_phi_gp_local",
-    range_regional = "log_phi_gp_regional"
+    range = "^(log_phi_gp|log_phi_gp_local|phi_gp)$",
+    sigma = "^(log_sigma2_gp|log_sigma_bym2|log_tau_spatial)$",
+    rho   = "^(logit_rho_bym2)$",
+    sigma_local  = "^(log_sigma2_gp_local)$",
+    sigma_regional = "^(log_sigma2_gp_regional)$",
+    range_local  = "^(log_phi_gp_local)$",
+    range_regional = "^(log_phi_gp_regional)$"
   )
-
-  found <- list()
-  for (nm in names(patterns)) {
-    idx <- grep(paste0("^(", patterns[nm], ")$"), cn)
-    if (length(idx) > 0) found[[nm]] <- idx[1]
-  }
-
-  if (length(found) == 0) {
-    stop("No spatial hyperparameters found. Is this a spatial model?", call. = FALSE)
-  }
-
-  # Build summary rows
-  rows <- lapply(names(found), function(nm) {
-    raw <- draws[, found[[nm]]]
-    # Transform to natural scale
-    label <- cn[found[[nm]]]
+  transform_fn <- function(nm, raw, label) {
     if (grepl("^log_phi_gp", label)) {
       # phi is the range: every kernel is exp(-d / phi), so correlation decays
       # to ~0.05 at d = -phi * log(0.05) ~= 3 * phi.
-      vals <- 3 * exp(raw)
-      row_name <- sub("phi", "range", nm)
+      list(vals = 3 * exp(raw), row = sub("phi", "range", nm))
     } else if (grepl("^log_sigma2", label)) {
-      vals <- sqrt(exp(raw))  # log_sigma2 -> sigma
-      row_name <- nm
+      list(vals = sqrt(exp(raw)), row = nm)            # log_sigma2 -> sigma
     } else if (grepl("^log_tau", label)) {
-      vals <- 1 / sqrt(exp(raw))  # log_tau -> sigma = 1/sqrt(tau)
-      row_name <- "sigma"
+      list(vals = 1 / sqrt(exp(raw)), row = "sigma")   # log_tau -> sigma = 1/sqrt(tau)
     } else if (grepl("^log_sigma", label)) {
-      vals <- exp(raw)  # log_sigma -> sigma
-      row_name <- nm
+      list(vals = exp(raw), row = nm)                  # log_sigma -> sigma
     } else if (grepl("^logit_rho", label)) {
-      vals <- 1 / (1 + exp(-raw))  # logit_rho -> rho
-      row_name <- nm
+      list(vals = 1 / (1 + exp(-raw)), row = nm)       # logit_rho -> rho
     } else {
-      vals <- raw
-      row_name <- nm
+      list(vals = raw, row = nm)
     }
-    qs <- quantile(vals, probs = probs)
-    out <- data.frame(mean = mean(vals), sd = sd(vals),
-                      row.names = row_name, stringsAsFactors = FALSE)
-    out[.quantile_colnames(probs)] <- as.list(qs)
-    out
-  })
-  do.call(rbind, rows)
+  }
+  .hyperparam_summary(object$draws, patterns, transform_fn, probs,
+                      "No spatial hyperparameters found. Is this a spatial model?")
 }
 
 # Column names for a set of quantile probabilities, e.g. c(0.025, 0.975) ->
@@ -238,6 +209,30 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 .quantile_colnames <- function(probs) {
   pct <- sprintf("%.6f", probs * 100)
   paste0("q", sub("\\.?0+$", "", pct))
+}
+
+# Shared scaffold for the spatial_range() / temporal_corr() hyperparameter
+# summaries: find the first draw column matching each anchored `patterns` entry,
+# map its draws to the natural scale via `transform_fn(nm, raw, label)` (returns
+# `list(vals, row)`), and stack the per-parameter mean / sd / `probs`-quantile
+# summaries. Errors with `empty_msg` when no hyperparameter column is present.
+.hyperparam_summary <- function(draws, patterns, transform_fn, probs, empty_msg) {
+  cn <- colnames(draws)
+  found <- list()
+  for (nm in names(patterns)) {
+    idx <- grep(patterns[[nm]], cn)
+    if (length(idx) > 0) found[[nm]] <- idx[1]
+  }
+  if (length(found) == 0) stop(empty_msg, call. = FALSE)
+  rows <- lapply(names(found), function(nm) {
+    tr  <- transform_fn(nm, draws[, found[[nm]]], cn[found[[nm]]])
+    qs  <- stats::quantile(tr$vals, probs = probs)
+    out <- data.frame(mean = mean(tr$vals), sd = stats::sd(tr$vals),
+                      row.names = tr$row, stringsAsFactors = FALSE)
+    out[.quantile_colnames(probs)] <- as.list(qs)
+    out
+  })
+  do.call(rbind, rows)
 }
 
 
@@ -251,52 +246,27 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 #' @return A data.frame with rows for each temporal hyperparameter.
 #' @export
 temporal_corr <- function(object, probs = c(0.025, 0.975)) {
-  draws <- object$draws
-  cn <- colnames(draws)
-
   patterns <- c(
     tau   = "^log_tau_temporal$",
     rho   = "^logit_rho_ar1$",
     sigma = "^log_sigma2_temporal_gp$",
     lengthscale = "^logit_phi_temporal_gp$"
   )
-
-  found <- list()
-  for (nm in names(patterns)) {
-    idx <- grep(patterns[nm], cn)
-    if (length(idx) > 0) found[[nm]] <- idx[1]
-  }
-
-  if (length(found) == 0) {
-    stop("No temporal hyperparameters found. Is this a temporal model?", call. = FALSE)
-  }
-
-  rows <- lapply(names(found), function(nm) {
-    raw <- draws[, found[[nm]]]
-    label <- cn[found[[nm]]]
+  transform_fn <- function(nm, raw, label) {
     if (nm == "tau") {
-      vals <- exp(raw)  # log_tau -> tau (precision)
-      row_name <- "precision"
+      list(vals = exp(raw), row = "precision")          # log_tau -> tau (precision)
     } else if (nm == "rho") {
-      vals <- 1 / (1 + exp(-raw))  # logit -> rho in (0,1)
-      row_name <- "rho_ar1"
+      list(vals = 1 / (1 + exp(-raw)), row = "rho_ar1") # logit -> rho in (0,1)
     } else if (nm == "sigma") {
-      vals <- sqrt(exp(raw))  # log_sigma2 -> sigma
-      row_name <- "sigma_temporal"
+      list(vals = sqrt(exp(raw)), row = "sigma_temporal")  # log_sigma2 -> sigma
     } else if (nm == "lengthscale") {
-      vals <- 1 / (1 + exp(-raw))  # logit -> (0,1) then scale
-      row_name <- "lengthscale"
+      list(vals = 1 / (1 + exp(-raw)), row = "lengthscale")
     } else {
-      vals <- raw
-      row_name <- nm
+      list(vals = raw, row = nm)
     }
-    qs <- quantile(vals, probs = probs)
-    out <- data.frame(mean = mean(vals), sd = sd(vals),
-                      row.names = row_name, stringsAsFactors = FALSE)
-    out[.quantile_colnames(probs)] <- as.list(qs)
-    out
-  })
-  do.call(rbind, rows)
+  }
+  .hyperparam_summary(object$draws, patterns, transform_fn, probs,
+                      "No temporal hyperparameters found. Is this a temporal model?")
 }
 
 
