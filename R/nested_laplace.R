@@ -859,7 +859,19 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     diag_L <- Matrix::diag(L)
     Qk <- L + Matrix::t(L) - Matrix::Diagonal(n_x, diag_L)
 
-    V <- as.matrix(Matrix::solve(Qk, E))
+    # V = Qk^{-1} E selects the fixed-effect columns of the joint inverse; its
+    # top p_fixed rows are the fixed-effect marginal covariance. A dense GP /
+    # NNGP field precision at close locations makes the joint precision
+    # ill-conditioned, which trips Matrix's condition-number guard. Retry with a
+    # negligible diagonal jitter (scaled to the precision) so the marginal-SE
+    # extraction stays available rather than aborting the whole fit.
+    V <- tryCatch(
+      as.matrix(Matrix::solve(Qk, E)),
+      error = function(e) {
+        jit <- 1e-8 * mean(Matrix::diag(Qk))
+        as.matrix(Matrix::solve(Qk + Matrix::Diagonal(n_x, jit), E))
+      }
+    )
     Sigma_bb <- V[seq_len(p_fixed), , drop = FALSE]
     grid_hessians[[k]] <- solve(Sigma_bb)
 
