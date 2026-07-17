@@ -45,6 +45,11 @@ of the missing-front-door features (#158). No ABI change.
   retries with a negligible jitter, so gp/nngp fits complete.
 * **Tier-1 exact SPDE from the front door** (#158): `tulpa(spatial = <spde>,
   mode = "exact")` routes to NUTS over the Matern field + hyperparameters.
+* **Spatiotemporal nested Laplace** (#158): new exported `fit_st_nested()` wires
+  the `cpp_nested_laplace_st_{icar,bym2,car_proper}` kernels (additive areal
+  field + rw1/rw2/ar1 temporal field, integrated jointly over the spatial /
+  temporal precisions and the ar1 autocorrelation), previously reachable only
+  from consumer packages. Recovers both fields (cor > 0.85) on simulated data.
 * `latent_factor()` roxygen corrected: it is a ratio / multi-arm construct for
   consumer packages, not the single-response `tulpa()` front door (#158).
 
