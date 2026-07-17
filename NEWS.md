@@ -1,5 +1,41 @@
 # tulpa NEWS
 
+## 0.0.83 (development)
+
+Front-door API convention cleanup (#156, fully closed) and the first tranche
+of the missing-front-door features (#158). No ABI change.
+
+* **Unified fixed-effect prior.** `beta_prior = list(mean, sd)` is now the one
+  interface across `tulpa_ep`, `tulpa_multinomial`, `tulpa_ordinal`,
+  `tulpa_gibbs`, `tulpa_gaussian`, `tulpa_re_cov_gibbs`, `tulpa_nuts_beta`, and
+  `tulpa_nuts_spde`, replacing the four names (`beta_prior_sd`, `sigma_beta`,
+  `prior_beta_sd`, `beta_prior_mean`/`_sd`) it had before.
+* **Statistical hyperpriors leave `control`.** New statistical `re_prior =
+  list()` argument on `tulpa()` carries the random-effect / variance-component
+  hyperpriors (`prior_sigma`, `eta`, `prior_df`, `prior_scale`,
+  `prior_sigma_scale`, `sigma_re_scale`); `sigma_beta` folds into `beta_prior`.
+  `tulpa(control = list(prior_sigma = ))` now errors and points at `re_prior`.
+* **Control doctrine.** `tulpa_gibbs`, `tulpa_gaussian`, `tulpa_nuts_beta`, and
+  `tulpa_nuts_spde` move their perf/sampler knobs into `control = list()`;
+  `tulpa_gibbs` threads `thin` and seeds via the session RNG.
+* **Inference as an argument.** `tulpa_laplace_beta(mode = "nuts")` and
+  `fit_spde(mode = "nuts")` delegate to the NUTS engines, folding the
+  `tulpa_nuts_beta` / `tulpa_nuts_spde` verb variants behind a `mode=` switch.
+* **Flagship input validation.** `tulpa_nested_laplace`, `tulpa_gibbs`, and the
+  two `re_cov` fitters now check `nrow(X) == length(y)`, `n_trials` length, and
+  `re_idx` / `group` range up front.
+* **Hard-error silently ignored inputs.** `tulpa_em_laplace()` rejects the
+  never-consumed `spatial=` / `re_list=`; `tulpa_re_cov_gibbs()` errors when a
+  `prior_scale` matches no RE block; `plot.tulpa_st_summary()` implements
+  `type = "spatial_map"` and errors on an unknown type.
+* **EP is a registered backend** (#158): `tulpa(mode = "ep")` fits a
+  fixed-effect GLM by Expectation Propagation (Tier 2 structured).
+* **SPDE + random intercept** (#158): a single `(1 | g)` term now rides
+  alongside a Matern SPDE field through `fit_spde()` and `tulpa()`
+  (integer-nu, conditioned on `sigma_re`).
+* `latent_factor()` roxygen corrected: it is a ratio / multi-arm construct for
+  consumer packages, not the single-response `tulpa()` front door (#158).
+
 ## 0.0.82 (2026-07-15)
 
 The sampled spatial range gets a real prior. **ABI break**
