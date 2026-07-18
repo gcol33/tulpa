@@ -95,7 +95,8 @@
   .tulpa_hyperprior_keys <- c("prior_sigma", "eta", "prior_df", "prior_scale",
                               "sigma_re_scale", "prior_sigma_scale")
   keys$tulpa <- sort(unique(setdiff(c(
-    keys$nested_laplace, keys$spde, keys$re_cov_nested, keys$re_cov_gibbs,
+    keys$nested_laplace, keys$nested_laplace_joint, keys$spde,
+    keys$re_cov_nested, keys$re_cov_gibbs,
     keys$sample_glmm, keys$ep, keys$nuts_spde,
     c("re_cov", "n_quad", "sigma_init", "beta_init",
       "sigma_eps", "scale", "method")

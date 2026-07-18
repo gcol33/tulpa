@@ -302,7 +302,7 @@ int build_blocks_from_spec(
         require_axes(1);
         int size = Rcpp::as<int>(bs["n_times"]);
         Rcpp::IntegerVector temporal_idx = bs["temporal_idx"];
-        bool cyclic = (type == "rw1") &&
+        bool cyclic = (type == "rw1" || type == "rw2") &&
                       bs.containsElementNamed("cyclic") &&
                       Rcpp::as<bool>(bs["cyclic"]);
         int start = latent_offset;
@@ -325,16 +325,16 @@ int build_blocks_from_spec(
                 return tulpa::log_prior_rw1(x, start, size, tau, cyclic);
             };
         } else {
-            block.add_prior = [start, size, axis0, theta_grid](
+            block.add_prior = [start, size, axis0, theta_grid, cyclic](
                 tulpa::DenseVec& grad, tulpa::DenseMat& H,
                 const Rcpp::NumericVector& x, int k) {
                 double tau = theta_grid(k, axis0);
-                tulpa::add_rw2_precision(grad, H, x, start, size, tau, false);
+                tulpa::add_rw2_precision(grad, H, x, start, size, tau, cyclic);
             };
-            block.log_prior = [start, size, axis0, theta_grid](
+            block.log_prior = [start, size, axis0, theta_grid, cyclic](
                 const Rcpp::NumericVector& x, int k) {
                 double tau = theta_grid(k, axis0);
-                return tulpa::log_prior_rw2(x, start, size, tau, false);
+                return tulpa::log_prior_rw2(x, start, size, tau, cyclic);
             };
         }
         block.center = [start, size](Rcpp::NumericVector& x) -> double {

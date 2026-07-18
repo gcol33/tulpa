@@ -345,7 +345,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # covered evenly (raw log-Cholesky off-diagonal nodes map to awkward, uneven
 # correlations and can miss the mode under sharp likelihoods). For p > 2 a raw
 # log-Cholesky tensor is used (coarser; the off-diagonal correlations are not
-# separately interpretable), to be refined in a later release.
+# separately interpretable).
 .mcar_default_logchol_grid <- function(p) {
   if (p == 2L) {
     sig <- c(0.4, 0.7, 1.1, 1.7)
@@ -1138,9 +1138,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 }
 
 # Soft cap on joint-grid cell count. CCD integration around a pilot mode is
-# the standard fix for k >= 3 blocks (see R/ccd_grid.R); plumbing the pilot
-# search into the multi-block driver is a follow-up. Until then, warn and
-# proceed -- the Cartesian outer integration is still correct, just slower.
+# the standard fix for k >= 3 blocks (see R/ccd_grid.R); the multi-block driver
+# uses the Cartesian outer integration, which is correct but scales
+# multiplicatively in the block count, so warn past the soft cap and proceed.
 .NL_MULTI_GRID_WARN <- 50L
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 

@@ -1,5 +1,74 @@
 # tulpa NEWS
 
+## 0.0.91
+
+Audit fixes (0.0.90 review, issues #218-#227).
+
+* **Cyclic RW2 dropped on the multi-block nested-Laplace path (#218).** A
+  `temporal_rw2(cyclic = TRUE)` block was honored on the single-block and
+  exact-NUTS paths but silently ignored once a second latent block routed the
+  fit through the multi-block driver: the wrap-around second-difference penalty
+  and the `T-1` (vs `T-2`) rank normalizer were hardcoded to the acyclic form.
+  The C++ multi driver and the joint-multi spec builder now thread `cyclic` for
+  RW2 as well as RW1.
+
+* **NNGP marginal-SE precision builder over-allocated (#219).** The triplet
+  accumulator pre-size squared the grand total of neighbour counts
+  (`sum(...)^2`) instead of the per-row `sum((...)^2)`, allocating
+  `O((n_spatial * nn)^2)` integers -- tens of GB at a few thousand locations, so
+  `summary()` / `vcov()` / `confint()` on an NNGP fit could OOM. The result was
+  always numerically correct; only the allocation was quadratic.
+
+* **`tulpa()` control surface omitted the joint keyset (#220).** Inline
+  `spatial()` / `temporal()` field fits route through the joint nested-Laplace
+  driver, but `tulpa()`'s control whitelist did not union its keys and the field
+  fitter forwarded the raw control unmasked. Legitimate joint knobs
+  (`adaptive_grid`, `prune`, ...) were rejected at the front door, and some
+  keys valid elsewhere hard-errored inside the joint driver. The union now
+  includes `nested_laplace_joint`, and the field fitter subsets control to the
+  joint keys like every other backend route.
+
+* **Outer Pareto-k target carried a spurious Jacobian on the single-block grid
+  path (#221).** The default positive-scale grid is geometric (uniform in
+  `u = log theta`) and the integrator weights it with plain
+  `softmax(log_marginal)` and no volume element, so `exp(log_marginal)` is
+  already the `u`-space posterior density. `.nested_grid_pareto_k` added a
+  `+ sum(u)` change-of-variables term to its importance target, tilting the
+  certified target away from the posterior the fit reports (a false reliable /
+  unreliable verdict; draws and moments were unaffected). The target now matches
+  the integrator and the SPDE Pareto-k path. The joint / multi-axis path is left
+  unchanged pending a per-axis treatment (its correlation axis uses a grid
+  uniform in the natural scale, which legitimately keeps its logit Jacobian).
+
+* **`auto` mode errored on SVC / TVC (#222).** With the default
+  `mode = "auto"`, a spatially- or temporally-varying-coefficient model fell to
+  a Laplace / size heuristic and then hit the varying-coefficient guard, which
+  only the exact ModelData NUTS backend clears. `auto_select_mode()` now routes
+  SVC / TVC to the exact backend so the default mode fits end to end.
+
+* **Gradient-check fallback leaked across fits (#223).** A failed warmup
+  gradient check flipped the process-global gradient mode to numerical and never
+  reset it, so every later fit in the session silently ran slower
+  central-difference gradients. The fallback is now scoped to a single fit
+  (restored on return), while a mode set explicitly via `set_gradient_mode()` is
+  preserved.
+
+* **`find_reasonable_epsilon` ignored the active integrator (#227).** The
+  warmup step-size seed always used a first-order leapfrog step regardless of the
+  selected scheme (yoshida4/6/8, minerror2, adaptive, mts). It now walks the
+  same SIMP op sequence the trajectory integrator uses, so the seed epsilon
+  matches the scheme's per-step energy error.
+
+* **Diagnostic and marginal-SE test coverage (#224, #225).** Added known-answer
+  tests for the generic `moran_i` / `durbin_watson` diagnostics (hand-computed,
+  plus `spdep` / `lmtest` cross-checks where installed), and a correctness test
+  pinning the continuous-spatial (NNGP) marginal fixed-effect SE against an exact
+  dense-GP penalized-IRLS Schur reference.
+
+* **Comment cleanup (#226).** Removed residual meta / status comments from the
+  sampler and autodiff sources and repaired truncated comment fragments in the
+  joint Pareto-k module.
+
 ## 0.0.90
 
 Audit fixes (0.0.89 review, issues #207-#217).

@@ -31,7 +31,12 @@ static inline double kinetic_energy_mass(
     return 0.5 * tulpa_linalg::norm_squared(p, n);
 }
 
-// Helper: single leapfrog step respecting mass matrix type
+// One integration step respecting the mass matrix type, walking the ACTIVE SIMP
+// scheme's op sequence (the same one the trajectory integrator leapfrog_step
+// walks) so the seed epsilon is calibrated for the scheme the sampler actually
+// uses -- yoshida4/6/8, minerror2, adaptive*, mts -- not a fixed first-order
+// leapfrog. leapfrog_step handles the identity/diagonal case; this variant adds
+// the dense-mass drift branch, so the two share one op-sequence contract.
 static inline LeapfrogResult leapfrog_for_epsilon(
     const std::vector<double>& q, const std::vector<double>& p,
     double epsilon, const ModelData& data, const ParamLayout& layout,
@@ -43,23 +48,34 @@ static inline LeapfrogResult leapfrog_for_epsilon(
     result.p = p;
     result.divergent = false;
 
-    std::vector<double> grad(n);
-    compute_gradient(result.q, data, layout, grad);
-    for (int i = 0; i < n; i++) result.p[i] += 0.5 * epsilon * grad[i];
-
-    // Full step for position: q += eps * M^{-1} * p
-    if (dense_mass) {
-        std::vector<double> Mp(n);
-        dense_mass->inv_mass_times_p(result.p.data(), Mp.data());
-        for (int i = 0; i < n; i++) result.q[i] += epsilon * Mp[i];
-    } else if (inv_mass) {
-        for (int i = 0; i < n; i++) result.q[i] += epsilon * inv_mass[i] * result.p[i];
-    } else {
-        for (int i = 0; i < n; i++) result.q[i] += epsilon * result.p[i];
+    const simp::Scheme& scheme = get_integrator_scheme();
+    int last_kick = -1;
+    for (int j = 0; j < static_cast<int>(scheme.ops.size()); j++) {
+        if (scheme.ops[j].first == simp::Op::Kick) last_kick = j;
     }
 
-    compute_gradient(result.q, data, layout, grad, &result.log_prob);
-    for (int i = 0; i < n; i++) result.p[i] += 0.5 * epsilon * grad[i];
+    std::vector<double> grad(n);
+    std::vector<double> Mp(n);
+    for (int j = 0; j < static_cast<int>(scheme.ops.size()); j++) {
+        double c = scheme.ops[j].second * epsilon;
+        if (scheme.ops[j].first == simp::Op::Kick) {
+            if (j == last_kick) {
+                compute_gradient(result.q, data, layout, grad, &result.log_prob);
+            } else {
+                compute_gradient(result.q, data, layout, grad);
+            }
+            for (int i = 0; i < n; i++) result.p[i] += c * grad[i];
+        } else {  // Drift: q += c * M^{-1} * p
+            if (dense_mass) {
+                dense_mass->inv_mass_times_p(result.p.data(), Mp.data());
+                for (int i = 0; i < n; i++) result.q[i] += c * Mp[i];
+            } else if (inv_mass) {
+                for (int i = 0; i < n; i++) result.q[i] += c * inv_mass[i] * result.p[i];
+            } else {
+                for (int i = 0; i < n; i++) result.q[i] += c * result.p[i];
+            }
+        }
+    }
 
     if (!std::isfinite(result.log_prob)) result.divergent = true;
     for (int i = 0; i < n; i++) {
@@ -102,14 +118,7 @@ double find_reasonable_epsilon_impl(
     double epsilon = 1.0;
     auto lf = leapfrog_for_epsilon(q, p, epsilon, data, layout, inv_mass_diag, mass_dense);
 
-    // For dense mass, leapfrog_for_epsilon may not compute log_prob correctly;
-    // recompute if needed
-    double lp_first = lf.log_prob;
-    if (mass_dense) {
-        std::vector<double> grad_tmp(n);
-        compute_gradient(lf.q, data, layout, grad_tmp, &lp_first);
-    }
-    double delta_H = (-lp_first + kinetic_energy_mass(lf.p.data(), n, inv_mass_diag, mass_dense)) - H_init;
+    double delta_H = (-lf.log_prob + kinetic_energy_mass(lf.p.data(), n, inv_mass_diag, mass_dense)) - H_init;
 
     int direction = (!std::isfinite(delta_H) || delta_H > std::log(2.0)) ? -1 : 1;
     for (int iter = 0; iter < 50; iter++) {
@@ -117,10 +126,6 @@ double find_reasonable_epsilon_impl(
         if (epsilon < 1e-10 || epsilon > 1e5) break;
         lf = leapfrog_for_epsilon(q, p, epsilon, data, layout, inv_mass_diag, mass_dense);
         double lp_try = lf.log_prob;
-        if (mass_dense) {
-            std::vector<double> grad_tmp(n);
-            compute_gradient(lf.q, data, layout, grad_tmp, &lp_try);
-        }
         if (!std::isfinite(lp_try)) { if (direction == 1) break; continue; }
         delta_H = (-lp_try + kinetic_energy_mass(lf.p.data(), n, inv_mass_diag, mass_dense)) - H_init;
         if (direction == 1 && (!std::isfinite(delta_H) || delta_H > std::log(2.0))) break;

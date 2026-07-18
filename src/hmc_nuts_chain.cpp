@@ -147,6 +147,10 @@ HMCResult run_hmc_chain(
     int riemannian,
     const std::vector<double>& inv_metric_init
 ) {
+  // Any fallback below is scoped to this fit; the entry mode is restored on
+  // return so it does not leak into the next fit.
+  GradientModeFitScope grad_mode_scope;
+
   // Runtime gradient check: compare active gradient function against numerical
   if (g_gradient_mode != GradientMode::NUMERICAL) {
     bool grad_ok = verify_gradient_runtime(q_init, data, layout, 1e-4);

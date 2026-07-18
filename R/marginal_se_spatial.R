@@ -125,7 +125,7 @@ NULL
   coords   <- as.matrix(spatial$unique_coords)
 
   # Triplet accumulator (pre-size: each row contributes (n_nb+1)^2 entries)
-  cap <- sum(rowSums(nn_idx > 0) + 1L)^2
+  cap <- sum((rowSums(nn_idx > 0) + 1L)^2)
   ii <- integer(cap); jj <- integer(cap); xx <- numeric(cap); pos <- 0L
 
   for (i_nngp in seq_len(n_spatial)) {

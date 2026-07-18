@@ -38,6 +38,6 @@
 
       sample_idx++;
     } else {
-      warmup_total_leapfrog += iter_n_leapfrog;  // TEMP: diagnostic
+      warmup_total_leapfrog += iter_n_leapfrog;  // summed over warmup (verbose)
     }
 

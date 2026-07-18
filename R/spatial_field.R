@@ -544,7 +544,13 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # temporal fields carry their index on the block and leave the arm placeholder.
   if (!is.null(arm_spatial_idx)) arm$spatial_idx <- arm_spatial_idx
 
-  ctrl <- control %||% list()
+  # `control` reaching here has passed tulpa()'s union whitelist, which is wider
+  # than the joint driver's set; n_draws is a field-fit knob read below and not
+  # forwarded, so capture it, then subset the rest to what the joint driver
+  # accepts (matching every other backend route in .tulpa_fitter_args()).
+  ctrl_in <- control %||% list()
+  n_draws <- as.integer(ctrl_in$n_draws %||% 1000L)
+  ctrl <- .control_subset(ctrl_in, .CONTROL_KEYS$nested_laplace_joint)
   ctrl$store_Q <- TRUE
   ctrl$progress <- ctrl$progress %||% FALSE
   # Two or more fields make the tensor outer grid blow up multiplicatively;
@@ -560,8 +566,6 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   if (length(blocks) >= 2L || is_mcar_block) {
     ctrl$integration <- ctrl$integration %||% "ccd"
   }
-  n_draws <- as.integer(ctrl$n_draws %||% 1000L)
-  ctrl$n_draws <- NULL
 
   jfit <- withCallingHandlers(
     tulpa_nested_laplace_joint(

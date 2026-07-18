@@ -24,7 +24,7 @@
 .K_DIAG_MAX_ITER <- 25L
 
 # Maximum moment-matching refinement passes for the outer Pareto-k proposal
-#. Each pass re-estimates the proposal from the PSIS-weighted
+# Each pass re-estimates the proposal from the PSIS-weighted
 # moments of its own draws and re-scores, keeping the lowest-k-hat proposal.
 # Proposal refinement is a separate step from the bare diagnostic and is NOT under
 # the diagnostic's cost target, so the cap is generous: a backstop against a
@@ -50,7 +50,7 @@
 .K_DIAG_GOOD <- 0.5
 
 # Grid-mixture (basin) proposal for the outer Pareto-k on a spread tensor grid
-#. The nested-Laplace engine represents the hyperparameter
+# The nested-Laplace engine represents the hyperparameter
 # posterior as the WEIGHTED INTEGRATION GRID and draws hyperparameters from it (a
 # grid cell ~ its weight, then that cell's latent Laplace), never from one
 # continuous Gaussian. Scoring the outer Pareto-k against a single grid-moment
@@ -70,7 +70,7 @@
 .K_DIAG_MIX_FLOOR <- 1e-3
 
 # Grid-coverage tolerance for adopting the grid-mixture over the single Gaussian
-#. The mixture is confined to the grid's coordinate hull, so it
+# The mixture is confined to the grid's coordinate hull, so it
 # cannot detect a target tail BEYOND the grid; the single Gaussian, whose tails
 # extend past the grid, can. The dispatcher therefore adopts the mixture only when
 # the single Gaussian's importance weight is essentially all INSIDE the grid hull
@@ -87,7 +87,7 @@
 .K_DIAG_HULL_PAD <- 3
 
 # Shamanskii (chord) factor-reuse interval for the diagnostic re-solves
-#. Profiling the joint occu_cover diagnostic showed the
+# Profiling the joint occu_cover diagnostic showed the
 # dominant cost is NOT the sparse Cholesky factorize (~8-12%, flat ~0.5 ms up to
 # ~1100 cells) but the per-Newton-iteration Hessian/gradient SCATTER (73-83%) --
 # the beta cover arm's per-observation digamma/trigamma curvature fill, paid on
@@ -102,7 +102,7 @@
 .K_DIAG_REFRESH <- 4L
 
 # Loosened inner-Newton convergence tolerance for the diagnostic re-solves
-#. Profiling showed a large share of the per-draw Newton
+# Profiling showed a large share of the per-draw Newton
 # steps is intrinsic convergence to the FIT's tol (~1e-6), not warm-start drift
 # -- and the diagnostic does not need that accuracy. The Laplace log-marginal
 # error from stopping at gradient norm ~ t is O(t^2) (the mode sits at a
@@ -191,7 +191,7 @@
 }
 
 # Greedy nearest-neighbour visiting order for the importance batch
-#. The diagnostic's `k_samples` draws come off the Gaussian
+# The diagnostic's `k_samples` draws come off the Gaussian
 # proposal in random order; the serial outer-grid driver warm-starts each cell
 # from the PREVIOUS cell's converged mode, so a random order means every draw
 # starts from a random-neighbour mode and the inner Newton pays many steps
@@ -454,7 +454,7 @@
 
 # Axes the integration GRID offers more than one value along -- the axes that
 # CAN carry posterior spread, regardless of how the weight concentrates
-#. The collapsed-grid mode-Hessian fallback differences the
+# The collapsed-grid mode-Hessian fallback differences the
 # outer target only over these, holding the rest fixed. Unlike
 # .joint_pareto_vary_axes, which reads a covariance, this reads the grid layout:
 # a covariance cannot tell a genuinely pinned axis (one grid value) from a
@@ -474,7 +474,7 @@
 
 # Laplace-at-mode covariance of the joint hyperparameter posterior, from a
 # finite-difference Hessian of the outer target at the modal grid cell
-#. The importance proposal for the outer Pareto-k is normally
+# The importance proposal for the outer Pareto-k is normally
 # the grid-weighted covariance; when the posterior is sharp the (tensor) grid
 # concentrates on too few cells to estimate it, and the residual far-cell weight
 # yields a degenerate covariance and a spurious k-hat. The CCD integrator
@@ -544,7 +544,7 @@
 # over the integration grid, the analogue of `.nested_grid_pareto_k` generalised
 # to mixed support), splices the CCD mode-Hessian `proposal`
 # over the axes it spans, and engages the delta-collapse FD rescue
-#. Returns the proposal summary the scorer draws
+# Returns the proposal summary the scorer draws
 # from, or NULL to DECLINE (an axis with unguessable support, an unusable grid /
 # weight vector, a sub-floor sample budget). The joint k and the opt-in per-arm
 # k score this SAME (u_hat, Su) summary, differing only in
@@ -581,7 +581,7 @@
     Su    <- (Su + t(Su)) / 2
 
     # Splice the CCD mode-Hessian proposal over the latent axes it spans
-    #. The grid-weighted `Su` above is the spread of the
+    # The grid-weighted `Su` above is the spread of the
     # integration nodes; a sharp hyperparameter posterior concentrates the grid
     # on ~1 cell, collapsing `Su` toward 0 and leaving the proposal degenerate
     # even though the fit is fine. The CCD integrator already built a Gaussian
@@ -944,7 +944,7 @@
 }
 
 # Bootstrap + closed-form uncertainty of a CHOSEN proposal's outer Pareto-k-hat
-#. `best` is the proposal the dispatcher selected, carrying its
+# `best` is the proposal the dispatcher selected, carrying its
 # raw finite importance log-ratios `lr`. The k-hat is a single fixed number for
 # this fit + proposal; its sampling uncertainty GIVEN the proposal is estimated by
 # resampling those SAME ratios with replacement and re-fitting the GPD tail at the
@@ -1095,7 +1095,7 @@
 
 # Map each joint hyperparameter axis (theta_grid column) to the arm(s) whose
 # linear predictor it enters, for the opt-in per-arm outer Pareto-k
-#. Returns a named list arm_name -> integer column indices, or
+# Returns a named list arm_name -> integer column indices, or
 # NULL to DECLINE (single-block layout, < 2 arms, or fewer than two arms with any
 # axis) so the per-arm diagnostic is simply withheld rather than reporting a
 # mis-attributed k -- the same decline-rather-than-guess stance the joint axis
@@ -1190,7 +1190,7 @@
 }
 
 # Attach the bootstrap + closed-form outer Pareto-k uncertainty to a joint result
-#. `pareto_k_se_boot` / `pareto_k_ci_low` / `pareto_k_ci_high`
+# `pareto_k_se_boot` / `pareto_k_ci_low` / `pareto_k_ci_high`
 # are the bootstrap SE and 95% CI of the k-hat -- its sampling uncertainty GIVEN
 # the proposal, NOT a posterior CI; `pareto_k_se_formula` the GPD-shape MLE
 # asymptotic SE cross-check; `pareto_k_tail_points` the tail size used (the request
@@ -1323,7 +1323,7 @@
     # One kernel call over the importance batch, with Shamanskii factor reuse
     # (off-factor steps scatter grad-only) + per-cell warm start, both attacking
     # the dominant per-iteration scatter cost on the beta cover arm
-    #. `x_init_per_cell` is an [S x n_x] warm matrix or NULL.
+    # `x_init_per_cell` is an [S x n_x] warm matrix or NULL.
     # The diagnostic re-solve runs with its own cheaper knobs (k_max_iter,
     # knobs$tol / refresh), so its checkpoint fingerprint would differ from the
     # main grid's; run it checkpoint-free so it neither collides with nor

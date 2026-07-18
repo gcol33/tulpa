@@ -94,6 +94,10 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
                : kNoMetric;
   };
 
+  // Any fallback below is scoped to this fit; the entry mode is restored on
+  // return so it does not leak into the next fit.
+  GradientModeFitScope grad_mode_scope;
+
   // Runtime gradient check on chain 0's init: compare the active gradient
   // against numerical BEFORE spawning parallel chains. Single-threaded here,
   // so the R API and g_gradient_mode mutation are safe; the decision then

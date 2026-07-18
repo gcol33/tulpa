@@ -26,6 +26,33 @@ test_that("svc requires an exact mode (nested/laplace refuse)", {
   )
 })
 
+test_that("auto mode routes SVC / TVC to the exact ModelData backend (#222)", {
+  sel_svc <- tulpa:::auto_select_mode(
+    family = list(name = "poisson"), n_obs = 100L,
+    has_spatial = TRUE, has_temporal = FALSE, has_latent = FALSE,
+    spatial_type = "svc")
+  expect_equal(sel_svc$mode, "exact")
+  expect_equal(tulpa:::BACKEND_REGISTRY[[sel_svc$backend]]$input, "modeldata")
+
+  sel_tvc <- tulpa:::auto_select_mode(
+    family = list(name = "poisson"), n_obs = 100L,
+    has_spatial = FALSE, has_temporal = TRUE, has_latent = FALSE,
+    temporal = list(type = "tvc"))
+  expect_equal(sel_tvc$mode, "exact")
+  expect_equal(tulpa:::BACKEND_REGISTRY[[sel_tvc$backend]]$input, "modeldata")
+})
+
+test_that("svc fits under the default (auto) mode without erroring (#222)", {
+  skip_if_not_slow()
+  s <- make_svc_pois(n = 40L)
+  # No mode = argument: the default "auto" must route to exact NUTS, not fall to
+  # a Laplace/size heuristic that the varying-coefficient guard rejects.
+  fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+               spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 5L),
+               control = list(n_iter = 120L, n_warmup = 60L, seed = 1L))
+  expect_true(any(grepl("^svc_w\\[", colnames(fit$draws))))
+})
+
 test_that("svc exact NUTS allocates the per-term field (structural)", {
   skip_if_not_slow()
   s <- make_svc_pois(n = 40L)

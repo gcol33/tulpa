@@ -289,11 +289,10 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # Outer Pareto-k-hat for a grid-integrated nested fit (the generic
 # `tulpa_nested_laplace` path), where the inner marginal is evaluated by a
 # BATCHED re-fit rather than a per-sample closure. Fits a Gaussian proposal to
-# the hyperparameter posterior in the unconstrained (log) coordinate `u`, draws
-# `n_samples`, re-fits the inner marginal at the back-transformed grid in ONE
-# call, and PSIS-smooths log p(theta(u)) + log|d theta / d u| - log q(u). The
-# integrator's unnormalized target is exp(log_marginal) in theta-space, so the
-# log-Jacobian `sum(u)` (for theta = exp(u)) enters the u-space target; the
+# the hyperparameter posterior in the proposal's coordinate, draws `n_samples`,
+# re-evaluates the target in ONE call, and PSIS-smooths log p_target - log q.
+# The caller supplies the target so it matches whatever density the integrator
+# actually weights (any change-of-variables Jacobian is the caller's job); the
 # proposal's normalizing constant is common to every draw and drops under PSIS.
 #
 # `theta_hat` / `L_scale` define the proposal N(theta_hat, L_scale L_scale')
@@ -414,13 +413,18 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   slope / se > t_crit
 }
 
-# Grid path whose integrator works in CONSTRAINED (positive) coordinates: fit
-# the Gaussian proposal to the grid posterior in the unconstrained `u = log`
-# coordinate and add the log-Jacobian `sum(u)` (theta = exp(u)) to the target.
-# `u_grid` is the K x d log-scale grid, `weights` the K integration weights,
+# Grid path for a single positive-scale axis whose default grid is geometric
+# (uniform in `u = log theta`, e.g. exp(seq(log a, log b))). The integrator
+# weights that grid with plain softmax(log_marginal) and applies NO volume
+# element (nested_laplace.R, "no user-scale volume element is applied"; the #179
+# CAR_proper recovery confirms adding one biases the scale posterior), so
+# exp(log_marginal) IS the unnormalized u-space posterior density. The Gaussian
+# proposal is fit to the grid posterior in that same `u` coordinate, so the
+# importance target is `log_marginal` with NO change-of-variables Jacobian --
+# matching the integrator's own weighting and the SPDE Pareto-k path. `u_grid`
+# is the K x d log-scale grid, `weights` the K integration weights,
 # `refit_log_marginal(theta_mat)` maps an S x d CONSTRAINED grid to its S inner
-# log-marginals. Restricted by the caller to all-positive-scale axes, so there
-# is no bounded-parameter (e.g. correlation) Jacobian to guess.
+# log-marginals. Restricted by the caller to a single all-positive-scale axis.
 .nested_grid_pareto_k <- function(u_grid, weights, refit_log_marginal,
                                   n_samples = 200L) {
   u_hat <- as.numeric(crossprod(weights, u_grid))            # weighted mean
@@ -433,7 +437,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   lt <- function(U) {
     lm <- refit_log_marginal(exp(U))
     if (length(lm) != nrow(U)) return(rep(NA_real_, nrow(U)))
-    lm + rowSums(U)                                          # + log|d theta / d u|
+    lm                                                       # already the u-space target
   }
   radius_cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
   .nested_is_pareto_k(u_hat, L, lt, n_samples, radius_cap = radius_cap)

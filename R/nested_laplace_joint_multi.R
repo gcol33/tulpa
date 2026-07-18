@@ -317,7 +317,7 @@
             temporal_idx = temporal_idx,
             n_times      = as.integer(p$n_times)
         )
-        if (type == "rw1") out$cyclic <- isTRUE(p$cyclic)
+        if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
         # Optional per-arm per-row design weight (temporal SVC). Parallel to the
         # areal branch: the field's contribution to arm k row i is row-scaled by
         # svc_weight[[k]][i] (eta_i += svc_weight[[k]][i] * amplitude *

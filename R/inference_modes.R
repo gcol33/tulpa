@@ -694,6 +694,21 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
+  # Spatially- / temporally-varying coefficients are carried only by the exact
+  # ModelData NUTS backend (`hmc`); there is no nested-Laplace SVC/TVC front
+  # door. Any other backend errors at the tulpa() varying-coefficient guard, so
+  # auto must pick the modeldata sampler directly rather than fall through to a
+  # Laplace/size heuristic that dispatch would reject.
+  if (identical(tolower(spatial_type %||% ""), "svc") ||
+      (!is.null(temporal) && identical(tolower(temporal$type %||% ""), "tvc"))) {
+    vc <- if (identical(tolower(spatial_type %||% ""), "svc"))
+      "spatially" else "temporally"
+    return(list(
+      mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
+      reason = sprintf("%s-varying coefficients (exact ModelData NUTS)", vc)
+    ))
+  }
+
   # Spatial latent Gaussian field. Like a latent block, its hyperparameter
   # (spatial precision / mixing) is integrated -- not conditioned at a fixed
   # scale, which is the explicit mode = "laplace". Three treatments, in

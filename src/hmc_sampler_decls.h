@@ -100,6 +100,20 @@ extern GradientMode g_gradient_mode;
 void set_gradient_mode(GradientMode mode);
 GradientMode get_gradient_mode();
 
+// Scopes a warmup gradient-check fallback to a single fit. A failed check flips
+// g_gradient_mode to NUMERICAL so every chain of THIS fit uses the safe path;
+// this guard restores the entry mode on scope exit so the fallback does not leak
+// into the next, unrelated fit (whose gradient may be correct). A mode the
+// caller set explicitly via set_gradient_mode is the entry value and is
+// therefore preserved.
+struct GradientModeFitScope {
+    GradientMode saved;
+    GradientModeFitScope() : saved(g_gradient_mode) {}
+    ~GradientModeFitScope() { g_gradient_mode = saved; }
+    GradientModeFitScope(const GradientModeFitScope&) = delete;
+    GradientModeFitScope& operator=(const GradientModeFitScope&) = delete;
+};
+
 // Active symplectic integrator for the HMC/NUTS trajectory. Set once on the
 // main thread (like g_gradient_mode) before sampling; read-only during. The
 // leapfrog steppers walk this scheme's op sequence, so leapfrog and the

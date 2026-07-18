@@ -299,9 +299,9 @@
     softabs_persistent_mass.init(n_params, MassMatrixType::DENSE);
   }
 
-  int warmup_total_leapfrog = 0;  // TEMP: diagnostic counter
-  // Note: warmup divergences are normal for DIAG models and resolve via dual
-  // averaging ? only final epsilon matters (checked at warmup end).
+  int warmup_total_leapfrog = 0;  // leapfrog steps summed over warmup (verbose)
+  // Warmup divergences are normal for DIAG models and resolve via dual
+  // averaging; only the final epsilon matters (checked at warmup end).
 
   if (verbose && layout.is_temporal_gp) {
     REprintf("  [MASS-WINDOWS] n_warmup=%d, windows=[", n_warmup);

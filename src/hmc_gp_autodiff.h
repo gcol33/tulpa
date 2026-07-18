@@ -37,11 +37,8 @@ inline T compute_cov_t(double d, const T& sigma2, const T& phi,
 // double ones in hmc_gp_log_lik.h / hmc_gp_gradients.h read the SAME values.
 // The gradients are finite-differenced from the double log-likelihood, so the
 // copies must condition the neighbour covariance identically or the value and
-// the gradient describe different models.
-//
-// This copy used to add the jitter only to an already-degenerate pivot
-// (get_value(sum) < 1e-10), so on well-conditioned input it added none at all
-// while the double copies added kGpJitter to every diagonal.
+// the gradient describe different models: kGpJitter is added to every diagonal
+// pivot, matching the double copies.
 
 // Returns false if not positive definite
 template<typename T>
