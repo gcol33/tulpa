@@ -281,6 +281,15 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   blocks <- if (is.list(prior) && is.null(prior$type)) prior else list(prior)
   if (length(blocks) != 1L) return(res)                      # multi-block: decline
   blk <- blocks[[1L]]
+  # A fit that relied on the default grid carries no `*_grid` field on the input
+  # prior, but the realised res$theta_grid is a valid single positive-scale axis
+  # regardless. Fill the type's defaults (the same ones .nl_dispatch applied) so
+  # eligibility keys on the actual grid, not on whether the user named it. A
+  # multi-axis type then exposes >1 grid field and still declines below.
+  spec <- .NL_REGISTRY[[type]]
+  if (!is.null(spec) && is.function(spec$defaults)) {
+    blk <- tryCatch(spec$defaults(blk, cargs), error = function(e) blk)
+  }
   gfs <- grep("_grid$", names(blk), value = TRUE)
   gfs <- gfs[vapply(gfs, function(f) is.numeric(blk[[f]]) && length(blk[[f]]) >= 2L,
                     logical(1))]
