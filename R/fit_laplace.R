@@ -244,7 +244,8 @@ tulpa_laplace <- function(y, n_trials, X,
   # invoked at the bottom of this function. NNGP marginal SE is still
   # outstanding.
   is_spatial_field <- !is.null(spatial) &&
-    spatial$type %in% c("spde", "gp", "car_proper", "hsgp")
+    spatial$type %in% c("spde", "gp", "car_proper", "hsgp",
+                        "icar", "car", "bym2")
 
   # Compute Hessian for fixed-effect block if requested
   if (return_hessian && !is.null(result$mode) && !is_spatial_field) {
@@ -395,6 +396,37 @@ tulpa_laplace <- function(y, n_trials, X,
         ),
         error = function(e) {
           warning("Marginal H_beta (CAR_proper Schur) failed: ",
+                  conditionMessage(e), ". Returning H_beta = NULL.", call. = FALSE)
+          NULL
+        }
+      )
+    } else if (spatial$type %in% c("icar", "car")) {
+      result$H_beta <- tryCatch(
+        .marginal_H_beta_icar(
+          mode = result$mode, X = X, spatial = spatial,
+          family = family, phi = phi,
+          n_trials = n_trials, weights = weights, offset = offset,
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+        ),
+        error = function(e) {
+          warning("Marginal H_beta (ICAR/CAR Schur) failed: ",
+                  conditionMessage(e), ". Returning H_beta = NULL.", call. = FALSE)
+          NULL
+        }
+      )
+    } else if (identical(spatial$type, "bym2")) {
+      # The conditional BYM2 kernel hardcodes sigma = 1, rho = 0.5; the marginal
+      # Schur is built at those same fixed hyperparameters.
+      result$H_beta <- tryCatch(
+        .marginal_H_beta_bym2(
+          mode = result$mode, X = X, spatial = spatial,
+          family = family, phi = phi,
+          n_trials = n_trials, weights = weights, offset = offset,
+          sigma_spatial = 1.0, rho = 0.5,
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+        ),
+        error = function(e) {
+          warning("Marginal H_beta (BYM2 Schur) failed: ",
                   conditionMessage(e), ". Returning H_beta = NULL.", call. = FALSE)
           NULL
         }

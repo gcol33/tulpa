@@ -412,6 +412,103 @@ NULL
 }
 
 
+# --- Intrinsic areal (ICAR / CAR / BYM2) precision + marginal H_beta -------
+
+#' Intrinsic ICAR structure matrix, regularized to full rank.
+#'
+#' `L = D - W` (degree minus adjacency, tau_spatial = 1), plus the rank-1
+#' sum-to-zero penalty `SUM2ZERO_TAU * 11'` (both = 1 over the single connected
+#' component) the ICAR kernel folds into the joint Hessian. This is exactly the
+#' field precision in the joint Hessian of the conditional Laplace fit, where
+#' the field enters the linear predictor with `d_fac = 1`. Matches
+#' `tulpa::log_prior_icar` / `add_icar_prior`.
+#'
+#' @keywords internal
+.icar_precision_Q <- function(spatial) {
+  W   <- as(Matrix::Matrix(as.matrix(spatial$adjacency), sparse = TRUE),
+            "CsparseMatrix")
+  n   <- nrow(W)
+  deg <- Matrix::rowSums(W)
+  L   <- Matrix::Diagonal(n, deg) - W
+  Matrix::forceSymmetric(L + Matrix::Matrix(1, n, n))
+}
+
+
+#' @keywords internal
+.marginal_H_beta_icar <- function(mode, X, spatial, family, phi,
+                                  n_trials, weights = NULL, offset = NULL,
+                                  re_idx = NULL, n_re_groups = 0L,
+                                  sigma_re = 1.0) {
+  p       <- ncol(X)
+  n_obs   <- nrow(X)
+  n_units <- nrow(as.matrix(spatial$adjacency))
+
+  beta <- mode[seq_len(p)]
+  u    <- mode[p + seq_len(n_re_groups + n_units)]
+
+  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
+  Z_field <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)   # d_fac = 1
+  D       <- cbind(D_re, Z_field)
+
+  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
+  W   <- glmm_weights(eta, family, n_trials, phi)
+  if (!is.null(weights)) W <- W * weights
+
+  tau_re   <- 1 / (sigma_re^2 + 1e-10)
+  Q_latent <- Matrix::bdiag(
+    Matrix::Diagonal(n_re_groups, x = tau_re),
+    .icar_precision_Q(spatial)
+  )
+
+  .schur_H_beta(X, D, Q_latent, W)
+}
+
+
+#' Marginal H_beta for a BYM2 field. The latent is the two-block
+#' `[phi (structured), theta (unstructured)]` convolution; each enters the
+#' linear predictor through the field indicator scaled by its `d_fac`
+#' (`sigma * sqrt(rho) * scale_factor` for phi, `sigma * sqrt(1 - rho)` for
+#' theta), with `phi ~ ICAR(L + 11')` and `theta ~ N(0, I)`. The conditional
+#' Laplace kernel hardcodes `sigma = 1`, `rho = 0.5`.
+#'
+#' @keywords internal
+.marginal_H_beta_bym2 <- function(mode, X, spatial, family, phi,
+                                  n_trials, weights = NULL, offset = NULL,
+                                  sigma_spatial = 1.0, rho = 0.5,
+                                  re_idx = NULL, n_re_groups = 0L,
+                                  sigma_re = 1.0) {
+  p            <- ncol(X)
+  n_obs        <- nrow(X)
+  n_units      <- nrow(as.matrix(spatial$adjacency))
+  scale_factor <- spatial$scale_factor %||% 1.0
+
+  beta <- mode[seq_len(p)]
+  # Layout: [beta, re, phi (structured), theta (unstructured)].
+  u    <- mode[p + seq_len(n_re_groups + 2L * n_units)]
+
+  d_phi   <- sigma_spatial * sqrt(rho + 1e-10) * scale_factor
+  d_theta <- sigma_spatial * sqrt(1 - rho + 1e-10)
+
+  Z_ind <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)
+  D_re  <- .re_design(re_idx, n_re_groups, n_obs)
+  # d_fac folded into the design; the prior stays on the raw phi / theta.
+  D     <- cbind(D_re, d_phi * Z_ind, d_theta * Z_ind)
+
+  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
+  W   <- glmm_weights(eta, family, n_trials, phi)
+  if (!is.null(weights)) W <- W * weights
+
+  tau_re   <- 1 / (sigma_re^2 + 1e-10)
+  Q_latent <- Matrix::bdiag(
+    Matrix::Diagonal(n_re_groups, x = tau_re),
+    .icar_precision_Q(spatial),            # phi: structured L + 11'
+    Matrix::Diagonal(n_units, x = 1.0)     # theta: iid
+  )
+
+  .schur_H_beta(X, D, Q_latent, W)
+}
+
+
 # --- HSGP marginal H_beta -------------------------------------------------
 
 #' @keywords internal
