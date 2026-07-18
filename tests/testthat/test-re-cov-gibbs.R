@@ -161,3 +161,36 @@ test_that("Gibbs samples several terms jointly", {
   hrow <- res$posterior[res$posterior$parameter == "h.sigma_1", ]
   expect_lt(abs(hrow$median - 0.6) / 0.6, 0.45)
 })
+
+
+# gcol33/tulpa#216: the debias must be shown as a DIFFERENTIAL, not asserted in
+# the abstract. On small binary groups (many groups, few 0/1 obs each) the
+# Laplace/nested body under-disperses the RE SD; the exact-conjugate Gibbs draw
+# of Sigma lifts it back toward truth. This fits the SAME data both ways and
+# asserts Gibbs sits above the nested estimate and closer to the true sigma.
+test_that("Gibbs lifts the under-dispersed nested sigma toward truth (small binary)", {
+  skip_on_cran()
+  skip_if_not_slow()
+  sigma_true <- 1.0
+  sim <- function(seed, G = 80L, npg = 3L) {
+    set.seed(seed); N <- G * npg; grp <- rep(seq_len(G), each = npg)
+    u <- rnorm(G, 0, sigma_true)
+    list(y = rbinom(N, 1, plogis(-0.2 + u[grp])),
+         X = matrix(1, N, 1), grp = grp, G = G, N = N)
+  }
+  ns <- 8L
+  nl_sig <- numeric(ns); gb_sig <- numeric(ns)
+  for (s in seq_len(ns)) {
+    d <- sim(s)
+    rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 1L, Z = matrix(1, d$N, 1))
+    nl <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial")
+    gb <- tulpa_re_cov_gibbs(d$y, rep(1L, d$N), d$X, list(rt), family = "binomial")
+    nl_sig[s] <- nl$posterior$mean[nl$posterior$parameter == "sigma_1"]
+    gb_sig[s] <- gb$posterior$mean[gb$posterior$parameter == "sigma_1"]
+  }
+  # the debias moves the estimate UP on the large majority of seeds ...
+  expect_gte(sum(gb_sig > nl_sig), ceiling(0.75 * ns))
+  # ... on aggregate, and lands closer to the true sigma than the nested body.
+  expect_gt(mean(gb_sig), mean(nl_sig))
+  expect_lt(abs(mean(gb_sig) - sigma_true), abs(mean(nl_sig) - sigma_true))
+})

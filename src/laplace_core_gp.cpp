@@ -269,6 +269,12 @@ Rcpp::List cpp_laplace_fit_gp(
         Rcpp::IntegerVector otl(obs_to_loc_nullable);
         obs_to_loc.assign(otl.begin(), otl.end());
     }
+    // The GP / NNGP Laplace path runs serially: the observation-scatter is the
+    // only OpenMP region here and its speedup is negligible (n_spatial is small
+    // and the Vecchia prior scatter that dominates is serial), while running it
+    // multi-threaded triggers a flaky heap corruption under the mingw OpenMP
+    // toolchain (gcol33/tulpa#217). Pin to one thread until that is root-caused.
+    n_threads = 1;
     tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
         y, n, X, re_idx, n_re_groups, sigma_re,
         coords, nn_idx, nn_dist, nn_order, n_spatial, nn,

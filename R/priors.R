@@ -427,8 +427,10 @@ format.tulpa_prior <- function(x, indent = "", ...) {
 #' - **Random effect SD (sigma)**: PC prior with P(sigma > 1) = 0.01 - favors
 #'   simpler models with smaller variance components.
 #'
-#' - **Overdispersion (phi)**: PC prior with P(phi > 10) = 0.01 - regularizes
-#'   toward Poisson (phi -> Inf means less overdispersion in NB2).
+#' - **Overdispersion (phi)**: PC prior with P(phi > 10) = 0.01 on the NB2 size
+#'   `phi` (larger `phi` is less overdispersion; `phi -> Inf` is the Poisson
+#'   limit). The default keeps `phi` finite, allowing overdispersion while
+#'   penalising extreme values.
 #'
 #' - **Temporal correlation (rho)**: Beta(2, 2) - symmetric prior centered
 #'   at 0.5, appropriate for AR(1) correlation.
@@ -482,7 +484,8 @@ priors_default <- function(family = NULL, spatial = FALSE, temporal = FALSE) {
 
     cat("Overdispersion (phi) [negbin/poisson_gamma only]:\n")
     cat("  PC prior: P(phi > 10) = 0.01\n")
-    cat("  Interpretation: Regularizes toward Poisson\n")
+    cat("  Interpretation: NB2 size; keeps phi finite (allows overdispersion),\n")
+    cat("                  phi -> Inf is the Poisson limit\n")
     cat("  Customization: prior_pc(U, alpha) or prior_gamma(shape, rate)\n\n")
 
     if (temporal) {

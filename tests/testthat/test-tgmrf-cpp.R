@@ -156,3 +156,45 @@ test_that("tgmrf_cpp() and tgmrf() agree to numerical tol on the same fit", {
   expect_equal(fit_c$modes,        fit_r$modes,        tolerance = 1e-6,
                ignore_attr = TRUE)
 })
+
+
+# gcol33/tulpa#216: the compiled tgmrf_cpp path must recover, not only match R on
+# a single fit. The block compiles once (cached by SHA256 + ABI); fitting several
+# seeds is cheap. Asserting cpp == R to 1e-6 on every seed makes the compiled path
+# inherit the R closure's verified 30-seed recovery (test-tgmrf-recovery.R), and
+# aggregating the cpp theta_mean confirms it actually recovers the truth.
+test_that("tgmrf_cpp() recovers theta across seeds and stays R-equivalent", {
+  skip_on_cran()
+  skip_if_not_slow()
+  cpp_file <- .tgmrf_cpp_example_path()
+  n <- 80L
+  sigma_true <- 0.8; rho_true <- 0.6
+  init <- c(log_sigma = 0, atanh_rho = atanh(0.5))
+  grid <- as.matrix(expand.grid(
+    log_sigma = seq(log(0.4), log(2.0), length.out = 9L),
+    atanh_rho = seq(atanh(0.1), atanh(0.85), length.out = 9L)
+  ))
+  blk_c <- tgmrf_cpp(cpp_file = cpp_file, id = "tgmrf_periodic_ar1",
+                     init = init, name = "periodic_ar1_cpp")
+  blk_c$theta_grid_built <- grid
+
+  n_seeds <- 12L
+  ls_hat <- numeric(n_seeds)
+  for (s in seq_len(n_seeds)) {
+    set.seed(2026L + s)
+    z <- as.numeric(arima.sim(list(ar = rho_true), n = n, sd = sigma_true * sqrt(1 - rho_true^2)))
+    z <- z - mean(z)
+    X <- matrix(1, nrow = n, ncol = 1L)
+    y <- rpois(n, exp(0.2 + z))
+    blk_r <- make_periodic_ar1_r(n, init, theta_grid = grid)
+    fit_c <- tulpa_nested_laplace(y, rep(1L, n), X, prior = blk_c, family = "poisson",
+                                  control = list(max_iter = 100L, tol = 1e-10))
+    fit_r <- tulpa_nested_laplace(y, rep(1L, n), X, prior = blk_r, family = "poisson",
+                                  control = list(max_iter = 100L, tol = 1e-10))
+    # cpp == R on every seed (transitive recovery)
+    expect_equal(fit_c$theta_mean, fit_r$theta_mean, tolerance = 1e-6, ignore_attr = TRUE)
+    ls_hat[s] <- fit_c$theta_mean[1]
+  }
+  # the compiled path recovers log(sigma) (median bias within the Poisson-AR1 band)
+  expect_lt(abs(stats::median(ls_hat) - log(sigma_true)), 0.5)
+})

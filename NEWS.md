@@ -45,19 +45,41 @@ Audit fixes (0.0.89 review, issues #207-#217).
   active thread-local tape; a zero-byte file at a checkpoint path is treated as
   fresh rather than a bad-magic error.
 
+* **GP / NNGP Laplace pinned to serial (#217).** Running the GP / NNGP Laplace
+  kernel multi-threaded triggered a flaky heap corruption under the mingw OpenMP
+  toolchain (a hard crash the second time it ran in a session). The
+  observation-scatter is the only OpenMP region there and its speedup is
+  negligible (small `n_spatial`, serial Vecchia prior scatter dominates), so the
+  kernel now runs on one thread; the crash is eliminated.
+
 * **Docs and internal single-sourcing (#213).** Removed the `tulpa_psis()`
-  `tail_points` "(with a warning)" doc that never fired; `.tulpa_param_layout()`
-  builds RE names through the single `.re_names_from_layout()` source; grammar
-  fix in `priors_default()`.
+  `tail_points` "(with a warning)" doc that never fired; corrected the default
+  `phi` PC-prior description to match its behaviour (`phi` is the NB2 size, so
+  the default keeps `phi` finite / allows overdispersion, with `phi -> Inf` the
+  Poisson limit); `.tulpa_param_layout()` builds RE names through the single
+  `.re_names_from_layout()` source; grammar fix in `priors_default()`.
+
+* **Front-door hyperparameter recovery + CI coverage (#214).** New
+  `test-hyperparameter-coverage.R` gates the hyperparameter posteriors of the
+  nested-Laplace paths against simulated truth with >= 20-seed CI-coverage
+  checks: temporal AR1 (rho, precision), proper CAR (sigma, rho), GP / NNGP
+  (sigma, range), HSGP (sigma), BYM2 (total spatial SD), and the free-Sigma
+  random-slope correlation. Previously only field shapes and fixed slopes were
+  recovered; the variance / range / correlation hyperparameters had no coverage
+  test.
 
 * **Test quality (#215, #216).** The SVC / TVC exact-NUTS front door gained a
   divergence guard and scale recovery (the configuration the #144 divergence bug
-  survived in). `test-gpu-nngp` was retitled to the path it exercises;
-  `test-hsgp-recovery` renamed to `test-hsgp-density-identity` (it is an analytic
-  identity, not a fit); the leapfrog-drift baseline now fails loudly if missing;
-  the inference-tier test checks every backend's tier; and the native
-  Rhat/ESS/MCSE reference tolerance was tightened from 1e-4 to 1e-12 (the
-  estimators match `posterior::` to ~8e-16).
+  survived in). The debias is now shown as a differential: on small binary
+  groups the exact Gibbs draw of Sigma lifts the under-dispersed nested sigma
+  toward truth. `tgmrf_cpp()` recovery is checked across seeds (cpp == R to 1e-6
+  per seed, inheriting the R closure's verified recovery). `test-gpu-nngp` was
+  retitled to the path it exercises; `test-hsgp-recovery` renamed to
+  `test-hsgp-density-identity` (it is an analytic identity, not a fit); the
+  leapfrog-drift baseline now fails loudly if missing; the inference-tier test
+  checks every backend's tier; and the native Rhat/ESS/MCSE reference tolerance
+  was tightened from 1e-4 to 1e-12 (the estimators match `posterior::` to
+  ~8e-16).
 
 ## 0.0.89
 

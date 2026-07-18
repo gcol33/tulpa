@@ -31,8 +31,10 @@ Default priors in tulpa follow these principles:
 coefficients roughly in [-5, 5] on the link scale.
 \item \strong{Random effect SD (sigma)}: PC prior with P(sigma > 1) = 0.01 - favors
 simpler models with smaller variance components.
-\item \strong{Overdispersion (phi)}: PC prior with P(phi > 10) = 0.01 - regularizes
-toward Poisson (phi -> Inf means less overdispersion in NB2).
+\item \strong{Overdispersion (phi)}: PC prior with P(phi > 10) = 0.01 on the NB2 size
+\code{phi} (larger \code{phi} is less overdispersion; \code{phi -> Inf} is the Poisson
+limit). The default keeps \code{phi} finite, allowing overdispersion while
+penalising extreme values.
 \item \strong{Temporal correlation (rho)}: Beta(2, 2) - symmetric prior centered
 at 0.5, appropriate for AR(1) correlation.
 \item \strong{Spatial mixing (rho_spatial)}: Beta(1, 1) = Uniform(0, 1) - no
