@@ -30,12 +30,24 @@ Audit fixes (0.0.88 review, issues #193-#206).
   default grid (not only when the user named it); a nested-prior EM block
   attaches a grid-marginalized `H_beta` so the MI / Gibbs correction reports a
   real pooled SE instead of NaN.
+* **Cross-tier hyperparameter summaries (#199).** `spatial_range()` /
+  `temporal_corr()` returned raw grid axes (tau, phi_gp, sigma2) on a
+  nested-Laplace fit but interpretable range / sigma / rho on a sampler fit. The
+  nested path now maps each axis to the same interpretable quantity, computed
+  per grid cell then weighted-summarized (sigma = 1/sqrt(tau) or sqrt(sigma2);
+  range = 3 * lengthscale).
 * **Generic diagnostics (#200, #205).** `plot_pairs()` selects fixed effects
   from `fit$fixed_names` (was hard-coded to ratio's `beta_num` / `beta_denom`);
   `plot_diagnostics()` guards an all-NA Rhat; NNGP neighbour builders no longer
-  index a non-existent row at `N == 1`.
-* **Cleanup (#206).** Issue tokens removed from user-facing `stop()` messages
-  and comments, a dead no-op and a duplicated MCSE body removed.
+  index a non-existent row at `N == 1`; `ranef()` no longer emits the field /
+  hyperparameter tail as random effects; `plot_acf()` / `geweke_test()` handle a
+  3-D `[iter, chain, param]` fit; `(x - 1 | g)` drops the intercept;
+  `spatial_multiscale()` `sampler` narrowed to the documented modes.
+* **Cleanup (#206).** Issue tokens and `dev_notes/` pointers removed from
+  user-facing `stop()` messages and comments, refactor-history narrative
+  reworded to describe current behavior, a dead no-op and a duplicated MCSE body
+  removed, and the multi-block CAR_proper log-det cache made cell-keyed
+  (`NlCellCache`) to match the single-block path.
 
 ## 0.0.88
 
