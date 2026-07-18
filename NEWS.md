@@ -1,5 +1,42 @@
 # tulpa NEWS
 
+## 0.0.89
+
+Audit fixes (0.0.88 review, issues #193-#206).
+
+* **Field-aware marginal SE for intrinsic areal fields (#196).** ICAR / CAR /
+  BYM2 conditional-Laplace fits computed `H_beta` in the dense-Hessian branch
+  that ignores the spatial field, so `summary()` / `vcov()` / `confint()`
+  reported fixed-effect SEs at the wrong linear predictor and without
+  marginalizing the field. Added `.marginal_H_beta_icar` / `_bym2` (field
+  precision `L + 11'`; the BYM2 two-block convolution), validated against an
+  independent penalized-IRLS reference (`test-marginal-se-areal.R`).
+* **Front-door `control` knobs no longer dropped (#194).** The spde /
+  re_cov_nested / re_cov_gibbs / gibbs branches hand-built the inner `control`
+  list, silently discarding valid knobs (`diagnose_k`, `k_samples`,
+  `checkpoint`, `n_threads`, ...); they now forward the validated subset.
+* **Random-slope guard single-sourced (#195).** A no-intercept single slope
+  `(0 + x | g)` was silently fit as a random intercept on the group-index-only
+  paths; `.is_scalar_re_intercept()` now gates AGQ / Gibbs / SPDE / nested-RE
+  consistently. Plain Laplace still fits it (carries the slope column as Z).
+* **ESS sampler bounds (#193, #201).** `n_save` floored while the store loop
+  fires `ceil(post / n_thin)` times (out-of-bounds write); multi-term RE with
+  distinct sigma now hard-errors instead of freezing the extra terms.
+* **Spatiotemporal summary labels (#197).** The `format = "summary"` (s, t)
+  index was t-fastest while draws are s-fastest, mispairing labels when S != T.
+* **Nested-Laplace diagnostics (#198, #203, #204).** `tulpa_hyper_grid`
+  refreshes the per-cell log-prior on the refined grid (was stale-length -> NA
+  into power-scaling); the single-block outer Pareto-k is computed on the
+  default grid (not only when the user named it); a nested-prior EM block
+  attaches a grid-marginalized `H_beta` so the MI / Gibbs correction reports a
+  real pooled SE instead of NaN.
+* **Generic diagnostics (#200, #205).** `plot_pairs()` selects fixed effects
+  from `fit$fixed_names` (was hard-coded to ratio's `beta_num` / `beta_denom`);
+  `plot_diagnostics()` guards an all-NA Rhat; NNGP neighbour builders no longer
+  index a non-existent row at `N == 1`.
+* **Cleanup (#206).** Issue tokens removed from user-facing `stop()` messages
+  and comments, a dead no-op and a duplicated MCSE body removed.
+
 ## 0.0.88
 
 * **SoftAbs divergence-retry invariance test (#189).** The post-warmup SoftAbs
