@@ -68,7 +68,7 @@ Correction layers — importance sampling and multiple-imputation / Gibbs debias
 | Temporal  | RW1, RW2, AR1, GP, multiscale                    |
 | Other     | Random effects, SVC, TVC, latent factors         |
 
-Spatial fields are specified through helpers (`spatial_bym2()`, `spatial_gp()`, `spatial_hsgp()`, `spatial_spde()`, …) and temporal structure through `temporal_rw1()`, `temporal_ar1()`, `temporal_gp()`, and friends.
+Spatial fields are specified through helpers (`spatial_bym2()`, `spatial_gp()`, `spatial_spde()`, …; the Hilbert-space GP is `spatial_gp(approx = "hsgp")`) and temporal structure through `temporal_rw1()`, `temporal_ar1()`, `temporal_gp()`, and friends.
 
 ```r
 # Areal BYM2 field: a spatial(unit) term plus the structure spec
@@ -139,7 +139,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.0.61")
+pak::pak("gcol33/tulpa@v0.0.89")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (declared in `Remotes:`). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
@@ -174,7 +174,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.0.61},
+  note   = {R package version 0.0.89},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```
