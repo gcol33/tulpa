@@ -175,10 +175,39 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   vapply(pr, function(b) tolower(b$type %||% ""), character(1))
 }
 
+# Natural-scale -> interpretable-quantity maps for the nested-Laplace grid axes,
+# so spatial_range() / temporal_corr() report the SAME quantity + row label at
+# Tier 2 (nested grid) as at Tier 1 (sampler draws). Each entry composes the
+# sampler's own log/logit -> interpretable transform with exp/expit, evaluated
+# on the natural-scale grid axis. The derived quantity is computed PER GRID CELL
+# and then weighted-summarized (marginalize the derived quantity, not the raw
+# axis). Spatial: tau (precision) -> sigma = 1/sqrt(tau); sigma2 -> sigma =
+# sqrt(sigma2); phi_gp / lengthscale (GP lengthscale) -> range = 3 * ell (the
+# distance at which exp(-d/ell) ~ 0.05). Temporal mirrors the temporal sampler
+# (tau reported as precision, ar1 rho, GP sigma / lengthscale).
+.SPATIAL_HYPER_TRANSFORM <- list(
+  tau         = list(name = "sigma", fn = function(v) 1 / sqrt(v)),
+  sigma2      = list(name = "sigma", fn = function(v) sqrt(v)),
+  phi_gp      = list(name = "range", fn = function(v) 3 * v),
+  lengthscale = list(name = "range", fn = function(v) 3 * v),
+  sigma       = list(name = "sigma", fn = function(v) v),
+  range       = list(name = "range", fn = function(v) v),
+  rho         = list(name = "rho",   fn = function(v) v)
+)
+.TEMPORAL_HYPER_TRANSFORM <- list(
+  tau         = list(name = "precision",      fn = function(v) v),
+  rho         = list(name = "rho_ar1",        fn = function(v) v),
+  sigma       = list(name = "sigma_temporal", fn = function(v) v),
+  lengthscale = list(name = "lengthscale",    fn = function(v) v)
+)
+
 # Weighted per-axis mean / sd / `probs`-quantile summary of a nested-Laplace
-# fit's hyperparameter posterior, read from the outer grid + weights (the axes
-# are already on their natural scale). NULL when the grid is not retained.
-.nested_hyper_summary <- function(object, probs) {
+# fit's hyperparameter posterior, read from the outer grid + weights. With
+# `transform` (an axis-name -> list(name, fn) map) each axis is mapped to its
+# interpretable quantity PER CELL before the weighted summary, and the row is
+# renamed; axes absent from the map are summarized raw. NULL when the grid is
+# not retained.
+.nested_hyper_summary <- function(object, probs, transform = NULL) {
   tg <- object$theta_grid
   w  <- object$weights
   if (is.null(tg) || is.null(w)) return(NULL)
@@ -190,11 +219,14 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   axes <- colnames(tg) %||% object$theta_names %||%
     paste0("theta", seq_len(ncol(tg)))
   rows <- lapply(seq_len(ncol(tg)), function(j) {
-    v  <- tg[, j]
+    v   <- tg[, j]
+    tr  <- if (!is.null(transform)) transform[[axes[j]]] else NULL
+    nm  <- axes[j]
+    if (!is.null(tr)) { v <- tr$fn(v); nm <- tr$name }   # marginalize derived
     m  <- sum(w * v)
     s  <- sqrt(max(0, sum(w * v^2) - m^2))
     qs <- .nl_wtd_quantile(v, w, probs)
-    out <- data.frame(mean = m, sd = s, row.names = axes[j],
+    out <- data.frame(mean = m, sd = s, row.names = nm,
                       stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)
     out
@@ -221,7 +253,8 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   if (!is.null(object$theta_grid)) {
     types <- .nested_block_types(object)
     if (length(types) && all(types %in% .SPATIAL_NL_TYPES)) {
-      s <- .nested_hyper_summary(object, probs)
+      s <- .nested_hyper_summary(object, probs,
+                                 transform = .SPATIAL_HYPER_TRANSFORM)
       if (!is.null(s)) return(s)
     }
   }
@@ -303,7 +336,8 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
   if (!is.null(object$theta_grid)) {
     types <- .nested_block_types(object)
     if (length(types) && all(types %in% .TEMPORAL_NL_TYPES)) {
-      s <- .nested_hyper_summary(object, probs)
+      s <- .nested_hyper_summary(object, probs,
+                                 transform = .TEMPORAL_HYPER_TRANSFORM)
       if (!is.null(s)) return(s)
     }
   }
