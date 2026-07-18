@@ -244,6 +244,19 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
     // Random effects: re ~ N(0, sigma_re^2)
     // Note: sigma_re is estimated, so we handle this specially
     if (layout.has_re && layout.re_end > layout.re_start) {
+        // Multi-term RE carries a distinct sigma per term, but the ESS prior
+        // block binds a SINGLE scale (log_sigma_re_idx) over the whole
+        // [re_start, re_end) span -- terms beyond the first would be frozen at
+        // the first term's sigma (or 1.0), silently dropping their shrinkage.
+        // Error rather than mis-sample, matching the structured-spatial block
+        // below.
+        if (layout.log_sigma_re_multi.size() > 1) {
+            Rcpp::stop("ESS prior builder: multiple random-effect terms with "
+                       "distinct sigma are not supported -- the ESS Gaussian "
+                       "prior block binds a single RE scale, so only the first "
+                       "term's sigma would be applied. Use a per-term sampler "
+                       "(NUTS / Gibbs) or a single RE term.");
+        }
         GaussianPrior prior;
         for (int j = layout.re_start; j < layout.re_end; j++) {
             prior.param_indices.push_back(j);
@@ -254,8 +267,7 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
         prior.is_identity_cov = true;
         // The RE prior is N(0, sigma_re^2 I). sigma_re is sampled (log_sigma_re_idx),
         // so bind the ellipse scale to it -- refreshed each sweep -- instead of the
-        // wrong fixed 1.0. Multi-term RE (distinct sigma per term) keeps the fixed
-        // fallback (a separate, pre-existing limitation).
+        // wrong fixed 1.0.
         if (layout.log_sigma_re_idx >= 0) {
             prior.scale_param_idx = layout.log_sigma_re_idx;
             prior.scale = 1.0;  // refreshed from the param before each ESS step

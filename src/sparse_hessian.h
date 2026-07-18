@@ -534,8 +534,8 @@ inline void build_s2z_block_schur_cache(
 //          + log|A_ss - A_sf B_FF^-1 A_fs|.                     (Schur, n_s x n_s)
 // U = [1_k] in local field coords, C = diag(coef_k). All sparse + O(K^3) +
 // O(n_s^3); no dense field block, no uniform ridge. Exact and well-conditioned:
-// A_FF is PD, so U'A_FF^-1 U is bounded -- the ef208f0 cancellation needs the
-// UNPINNED full A, which this never factors. Returns `fallback` on any non-PD /
+// A_FF is PD, so U'A_FF^-1 U is bounded -- the catastrophic cancellation would
+// need the UNPINNED full A, which this never factors. Returns `fallback` on any non-PD /
 // allocation failure.
 inline bool s2z_block_schur(
     const SparseHessianBuilder& A,

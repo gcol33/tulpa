@@ -1,6 +1,6 @@
 // tulpa_test_funnel.cpp
 // Test-only entry point: fit Neal's funnel through the production NUTS engine
-// with the SoftAbs divergence-retry kernel toggled on or off (gcol33/tulpa#189).
+// with the SoftAbs divergence-retry kernel toggled on or off.
 //
 // The post-warmup SoftAbs retry (hmc_nuts_chain_iter_nuts.h) is a
 // state-dependent kernel mixture: when the primary NUTS trajectory diverges it

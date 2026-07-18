@@ -175,7 +175,7 @@
 # Monte Carlo standard error of the posterior standard deviation.
 .tulpa_mcse_sd <- function(sims) {
   sc <- sims - mean(c(sims))
-  ess <- .tulpa_ess(.tulpa_split_chains(sc^2))
+  ess <- .tulpa_ess_sd(sims)                # same split-squared-centred ESS
   e_var <- mean(sc^2)
   var_var <- (mean(sc^4) - e_var^2) / ess
   sqrt(var_var / e_var / 4)

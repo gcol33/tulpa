@@ -286,7 +286,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         bool found = false;
         for (int c : coupled_arms) if (c == k) { found = true; break; }
         if (!found && arms[k].N > 0) {
-            Rcpp::stop("batched joint path (gcol33/tulpa#66) requires every "
+            Rcpp::stop("batched joint path requires every "
                        "data arm to be cell-coupled; arm %d is not.", k + 1);
         }
     }

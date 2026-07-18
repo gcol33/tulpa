@@ -33,9 +33,7 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // Phase D: the legacy ratio (n_processes == 0)
   // branch was removed along with the cpp_hmc_fit entry point.
   if (data.n_processes == 0) {
-    Rcpp::stop("tulpa: compute_param_layout requires n_processes > 0. "
-               "The legacy ratio path was removed in Phase D "
-               "(gcol33/tulpa#15).");
+    Rcpp::stop("tulpa: compute_param_layout requires n_processes > 0.");
   }
   layout.process_beta_start.resize(data.n_processes);
   layout.process_beta_count.resize(data.n_processes);

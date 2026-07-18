@@ -362,7 +362,7 @@ struct PgGibbsCommon {
 // quadratic form sum_i (w_i - m_i)^2 / v0_i (m_i, v0_i at sigma2 = 1, using that
 // the kriging mean is scale-invariant and cond_var scales linearly), and phi by
 // a log-random-walk MH on the proper NNGP log-density. Shared by the single- and
-// multi-scale binomial GP Gibbs kernels (/#143). `sum_omega` /
+// multi-scale binomial GP Gibbs kernels. `sum_omega` /
 // `sum_resid` are the Polya-Gamma likelihood aggregates for this scale.
 inline void update_nngp_scale(
     std::vector<double>& w, double& sigma2, double& phi, int cov_type,

@@ -17,7 +17,7 @@ NULL
 # helpers; `ratio` is the downstream model-package (tulpaRatio) accessor invoked by
 # prepare_map_data_from_fit when mapping a ratio fit; `.phl_w` names the weights
 # column post_hoc_lm() attaches to the model frame so lm() resolves it. None is a
-# tulpa symbol, so register them to keep R CMD check's global-variable analysis quiet.
+# tulpa symbol; register them as globals for the non-standard-evaluation sites above.
 utils::globalVariables(c(".data", "ratio", ".phl_w"))
 
 # The package version, read from the one place that defines it. A literal here

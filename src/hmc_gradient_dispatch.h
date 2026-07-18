@@ -15,10 +15,8 @@
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
     (void)layout;  // dispatcher is layout-agnostic after Phase D
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
-        Rcpp::stop("tulpa: ModelData has n_processes == 0 — the legacy ratio "
-                   "dispatch path was removed in Phase D of the tulpaRatio "
-                   "migration (gcol33/tulpa#15). Downstream packages must "
-                   "populate `n_processes > 0` and `data.likelihood_spec` "
+        Rcpp::stop("tulpa: ModelData has n_processes == 0. Downstream packages "
+                   "must populate `n_processes > 0` and `data.likelihood_spec` "
                    "via the generic LikelihoodSpec interface.");
     }
 

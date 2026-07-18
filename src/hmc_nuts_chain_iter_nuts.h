@@ -510,7 +510,6 @@
         if (sample_idx == nuts_probe_window - 1) {
           nuts_probing = false;  // Probe window complete
           if (nuts_probe_maxd >= (nuts_probe_window * 8 + 9) / 10) {
-            result.n_max_treedepth += 0;  // Already counted above
             if (verbose) {
               REprintf("  [NUTS] %d/%d initial sampling iterations hit max treedepth (%d). "
                        "Consider increasing max_treedepth or reparameterizing.\n",
