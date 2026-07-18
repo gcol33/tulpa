@@ -757,3 +757,7 @@ cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, 
     .Call(`_tulpa_cpp_tulpa_fit_spde_nuts`, y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, alpha, nu, sigma_beta, log_phi_prior_sd, log_phi_init, n_iter, n_warmup, max_treedepth, adapt_delta, seed, verbose, rational_poles_nullable, rational_weights_nullable, joint_hypers, prior_range_0, prior_range_alpha, prior_sigma_0, prior_sigma_alpha, log_kappa_init, log_tau_init, Q_precomp_x, Q_precomp_i, Q_precomp_p, noncenter, mass_matrix)
 }
 
+cpp_test_funnel_nuts <- function(K = 9L, gamma = 3.0, n_iter = 3000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, riemannian = 0L, verbose = FALSE) {
+    .Call(`_tulpa_cpp_test_funnel_nuts`, K, gamma, n_iter, n_warmup, max_treedepth, adapt_delta, seed, riemannian, verbose)
+}
+

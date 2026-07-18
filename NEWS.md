@@ -1,5 +1,19 @@
 # tulpa NEWS
 
+## 0.0.88
+
+* **SoftAbs divergence-retry invariance test (#189).** The post-warmup SoftAbs
+  retry re-runs a diverged NUTS trajectory under a frozen Hessian-based metric
+  and takes that proposal instead -- a state-dependent kernel mixture whose
+  target-invariance was argued but never tested. A new test-only entry point
+  (`cpp_test_funnel_nuts`, `src/tulpa_test_funnel.cpp`) fits Neal's funnel
+  through the exact production NUTS path with the retry forced on or off, and
+  `test-softabs-retry-invariance.R` checks that toggling the retry on removes
+  divergences without shifting the `v` marginal (seed-averaged paired
+  mean/sd/tail differences within tolerance over 10 seeds). Verdict:
+  invariance holds empirically -- 24-seed paired |t| < 0.4 on every summary,
+  divergences 735 -> 8, no posterior shift.
+
 ## 0.0.87
 
 Bug fixes and cleanups from a second whole-repo audit (issues #176-192).
