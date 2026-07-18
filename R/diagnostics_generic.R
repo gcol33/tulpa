@@ -207,7 +207,8 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 # interpretable quantity PER CELL before the weighted summary, and the row is
 # renamed; axes absent from the map are summarized raw. NULL when the grid is
 # not retained.
-.nested_hyper_summary <- function(object, probs, transform = NULL) {
+.nested_hyper_summary <- function(object, probs, transform = NULL,
+                                  keep_types = NULL) {
   tg <- object$theta_grid
   w  <- object$weights
   if (is.null(tg) || is.null(w)) return(NULL)
@@ -218,10 +219,25 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   }
   axes <- colnames(tg) %||% object$theta_names %||%
     paste0("theta", seq_len(ncol(tg)))
-  rows <- lapply(seq_len(ncol(tg)), function(j) {
+  # Multi-block joint grids prefix each axis with its block index
+  # (`b<idx>.<axis>`); map every axis to its block type so a mixed / spatiotemporal
+  # fit can be restricted to just the spatial (or temporal) axes. Bare (single-
+  # block) axis names have no prefix and belong to the sole block.
+  block_types <- .nested_block_types(object)
+  axis_block  <- suppressWarnings(as.integer(sub("^b([0-9]+)\\..*$", "\\1", axes)))
+  axis_kind   <- vapply(seq_along(axes), function(j) {
+    bi <- axis_block[j]
+    if (!is.na(bi) && bi >= 1L && bi <= length(block_types)) block_types[bi]
+    else if (length(block_types) >= 1L) block_types[1L] else NA_character_
+  }, character(1))
+  bare_axes <- sub("^b[0-9]+\\.", "", axes)
+  keep <- if (is.null(keep_types)) seq_along(axes)
+          else which(axis_kind %in% keep_types)
+  if (length(keep) == 0L) return(NULL)
+  rows <- lapply(keep, function(j) {
     v   <- tg[, j]
-    tr  <- if (!is.null(transform)) transform[[axes[j]]] else NULL
-    nm  <- axes[j]
+    tr  <- if (!is.null(transform)) transform[[bare_axes[j]]] else NULL
+    nm  <- bare_axes[j]
     if (!is.null(tr)) { v <- tr$fn(v); nm <- tr$name }   # marginalize derived
     m  <- sum(w * v)
     s  <- sqrt(max(0, sum(w * v^2) - m^2))
@@ -252,9 +268,10 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   # not as draw columns; summarize the grid for a pure-spatial nested fit.
   if (!is.null(object$theta_grid)) {
     types <- .nested_block_types(object)
-    if (length(types) && all(types %in% .SPATIAL_NL_TYPES)) {
+    if (length(types) && any(types %in% .SPATIAL_NL_TYPES)) {
       s <- .nested_hyper_summary(object, probs,
-                                 transform = .SPATIAL_HYPER_TRANSFORM)
+                                 transform = .SPATIAL_HYPER_TRANSFORM,
+                                 keep_types = .SPATIAL_NL_TYPES)
       if (!is.null(s)) return(s)
     }
   }
@@ -335,9 +352,10 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
   # not as draw columns; summarize the grid for a pure-temporal nested fit.
   if (!is.null(object$theta_grid)) {
     types <- .nested_block_types(object)
-    if (length(types) && all(types %in% .TEMPORAL_NL_TYPES)) {
+    if (length(types) && any(types %in% .TEMPORAL_NL_TYPES)) {
       s <- .nested_hyper_summary(object, probs,
-                                 transform = .TEMPORAL_HYPER_TRANSFORM)
+                                 transform = .TEMPORAL_HYPER_TRANSFORM,
+                                 keep_types = .TEMPORAL_NL_TYPES)
       if (!is.null(s)) return(s)
     }
   }

@@ -55,3 +55,19 @@ test_that("tvc exact NUTS recovers the varying-coefficient trajectory", {
   expect_gt(cor(total, 0.5 + s$walk), 0.8)
   expect_lt(abs(mean(total) - 0.5), 0.35)
 })
+
+test_that("tvc exact NUTS is divergence-free and recovers the trajectory scale (#215)", {
+  skip_if_not_slow()
+  s <- make_tvc_pois()
+  fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+               temporal = temporal_tvc("year", terms = ~ x - 1, structure = "rw1"),
+               mode = "exact",
+               control = list(n_iter = 350L, n_warmup = 175L, seed = 6L))
+  expect_lte(n_divergent(fit), ceiling(0.05 * nrow(fit$draws)))   # < 5% divergent
+  wcol <- grep("^tvc_w\\[", colnames(fit$draws))
+  sd_ratio <- sd(colMeans(fit$draws[, wcol, drop = FALSE])) / sd(s$walk)
+  expect_gt(sd_ratio, 0.4)
+  expect_lt(sd_ratio, 2.5)
+  tau <- mean(exp(fit$draws[, "log_tau_tvc[1]"]))
+  expect_true(is.finite(tau) && tau > 0)
+})

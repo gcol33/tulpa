@@ -296,7 +296,10 @@ moran_i <- function(object, coords,
     k <- min(k, N - 1L)
     W <- matrix(0, N, N)
     for (i in seq_len(N)) {
-      nn <- order(D[i, ])[2:(k + 1L)]
+      # Drop self explicitly rather than assuming the zero self-distance sorts
+      # first: a coincident coordinate (another point at distance 0) can outrank
+      # it, which would make a point its own neighbour and drop a true one.
+      nn <- setdiff(order(D[i, ]), i)[seq_len(k)]
       W[i, nn] <- 1
     }
     method_str <- sprintf("Moran's I (k=%d nearest neighbours)", k)

@@ -182,11 +182,14 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
 
             } else if (data.temporal_type == TemporalType::AR1) {
                 // AR1: phi[t] | phi[t-1] ~ N(rho * phi[t-1], 1/tau)
-                // Uniform(-1, 1) prior on rho via u = (rho + 1)/2 = inv_logit;
-                // the logit Jacobian for u is log(u) + log(1 - u) (the constant
-                // -log(2) from the Uniform(-1,1) density is dropped).
+                // Beta(a, b) prior on u = (rho + 1)/2 = inv_logit. In the
+                // sampler's unconstrained space the Beta density combines with
+                // the logit change-of-variables to a*log(u) + b*log(1-u); the
+                // default (a, b) = (1, 1) recovers the Uniform(-1, 1) prior.
                 T u_ar1 = T(0.5) * (rho_ar1_out + T(1.0));
-                log_post = log_post + safe_log(u_ar1) + safe_log(T(1.0) - u_ar1);
+                log_post = log_post
+                    + T(data.ar1_rho_prior_a) * safe_log(u_ar1)
+                    + T(data.ar1_rho_prior_b) * safe_log(T(1.0) - u_ar1);
 
                 for (int g = 0; g < data.n_temporal_groups; g++) {
                     log_post = log_post + tulpa_temporal::ar1_log_density(

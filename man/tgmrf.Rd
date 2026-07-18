@@ -80,8 +80,6 @@ user never writes gradient code. The Laplace inner step needs only
 \code{Q(theta)} and \code{mu(theta)} at numeric \code{theta}. NUTS and VI additionally
 use a forward finite-difference gradient on theta, costing \code{dim(theta)}
 extra \code{Q} calls per outer step -- cheap for the typical \code{dim(theta) <= 5}.
-
-See \code{dev_notes/plans/generic-todo.md} for the full design rationale and the rollout phases.
 }
 \examples{
 # Periodic AR(1) block, wrap-around tridiagonal precision.

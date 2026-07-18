@@ -4,6 +4,40 @@
 # validation, the draws lookup, and term subsetting are identical. This is the
 # single source of truth for both.
 #
+# Resolve requested SVC/TVC term labels to column indices of the fitted design
+# `coef_names`, given the model `data`. A label that names a design column
+# directly (numeric covariate, or an already-expanded contrast column) matches
+# as-is; a factor term is expanded through model.matrix so its treatment-contrast
+# columns (e.g. `habitatB`, `habitatC`) resolve, instead of a bare-name match
+# failing outright. `kind` ("SVC"/"TVC") only shapes the error message. Shared by
+# validate_svc() and validate_tvc().
+.resolve_varying_coef_columns <- function(term_labels, has_intercept, data,
+                                          coef_names, kind) {
+  idx <- integer(0)
+  if (has_intercept) {
+    ji <- match("(Intercept)", coef_names)
+    if (!is.na(ji)) idx <- c(idx, ji)
+  }
+  for (lbl in term_labels) {
+    j <- match(lbl, coef_names)
+    if (!is.na(j)) { idx <- c(idx, j); next }
+    # Expand a factor / non-column term to its treatment-contrast columns the
+    # same way the fitted design was built (intercept present, then dropped).
+    cols <- tryCatch(
+      colnames(stats::model.matrix(
+        stats::as.formula(paste0("~ ", lbl)), data))[-1L],
+      error = function(e) character(0))
+    jj <- match(cols, coef_names)
+    jj <- jj[!is.na(jj)]
+    if (length(jj) == 0L) {
+      stop(sprintf("%s terms not found in design matrix: %s", kind, lbl),
+           call. = FALSE)
+    }
+    idx <- c(idx, jj)
+  }
+  unique(idx)
+}
+
 # build_result(info, draws, term_names) constructs the variant-specific
 # posterior object from the (possibly subset) draws and names.
 .extract_varying_coef <- function(object, terms, summary, probs,

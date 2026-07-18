@@ -68,8 +68,11 @@ test_that("default leapfrog draws match a stored reference (guards integrator dr
   # default path (the "byte-for-byte unchanged" NEWS claim) fails loudly.
   skip_if_not_slow()
   ref_path <- test_path("_ref", "leapfrog_ref.rds")
-  skip_if_not(file.exists(ref_path),
-              "no stored leapfrog reference (regenerate via tools/gen_leapfrog_ref.R)")
+  # The reference is committed; a MISSING baseline must fail loudly rather than
+  # silently no-op (which would read as a passing drift guard while checking
+  # nothing). Regenerate via tools/gen_leapfrog_ref.R only on an intended change.
+  expect_true(file.exists(ref_path),
+              info = "stored leapfrog reference missing (tools/gen_leapfrog_ref.R)")
   ref <- readRDS(ref_path)
 
   old <- tulpa_integrator()

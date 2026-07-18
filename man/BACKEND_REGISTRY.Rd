@@ -9,8 +9,8 @@ BACKEND_REGISTRY
 \description{
 One entry per backend. Adding a backend is a single entry here; tier
 membership, family support, the input contract, and R-level reachability
-all derive from this list. Replaces the previously scattered per-tier
-\code{backends} vectors and the separate \code{BACKEND_FAMILY_SUPPORT} table.
+all derive from this list -- the single source of truth for per-tier
+\code{backends} and family support.
 
 Fields:
 \itemize{

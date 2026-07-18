@@ -234,6 +234,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   type <- tolower(prior$type)
   tm$mark("setup")
   res <- .nl_dispatch(type, cargs, prior)
+  res <- .nl_apply_ar1_rho_prior(res, type, prior)
   tm$mark("grid")
 
   # Integrate exp(log_marginal) over the outer grid. `log_marginal` is the
@@ -281,6 +282,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   blocks <- if (is.list(prior) && is.null(prior$type)) prior else list(prior)
   if (length(blocks) != 1L) return(res)                      # multi-block: decline
   blk <- blocks[[1L]]
+  # The multi-block dispatch does not carry a `type`, so resolve it from the block
+  # itself for the length-1 case (a single latent block wrapped in a list, or the
+  # model-supplied `likelihood` path). Without this the registry lookup below is
+  # `.NL_REGISTRY[[NULL]]`, an error rather than NULL.
+  type <- type %||% tolower(blk$type)
   # A fit that relied on the default grid carries no `*_grid` field on the input
   # prior, but the realised res$theta_grid is a valid single positive-scale axis
   # regardless. Fill the type's defaults (the same ones .nl_dispatch applied) so
@@ -798,6 +804,24 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   out$theta_grid  <- th$grid
   out$theta_names <- th$names
   out
+}
+
+# Reweight the AR1 nested-Laplace outer grid by a Beta(a, b) prior on
+# u = (rho + 1)/2. The inner marginal (log_prior_ar1) carries no rho prior, so an
+# equal-weight grid implies a uniform rho; adding the Beta log-density at each
+# natural-scale grid rho makes the outer integration honor `rho_prior`. There is
+# no logit Jacobian here -- that belongs to the sampler's unconstrained
+# parameterization, not the grid. Default Beta(1, 1) is uniform and a no-op.
+.nl_apply_ar1_rho_prior <- function(res, type, prior) {
+  if (type != "ar1" || is.null(prior$rho_prior)) return(res)
+  ab <- .ar1_rho_beta_ab(prior$rho_prior)
+  if (ab[1L] == 1 && ab[2L] == 1) return(res)
+  tg <- res$theta_grid
+  if (is.null(tg) || !is.matrix(tg) || !("rho" %in% colnames(tg))) return(res)
+  u  <- pmin(pmax(0.5 * (tg[, "rho"] + 1), 1e-12), 1 - 1e-12)
+  res$log_marginal <- res$log_marginal +
+    (ab[1L] - 1) * log(u) + (ab[2L] - 1) * log1p(-u)
+  res
 }
 
 # Default 1D log-spaced tau grid: a 9-point search over a wide precision range,

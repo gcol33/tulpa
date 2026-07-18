@@ -4,10 +4,9 @@
 \alias{marginal_se_spatial}
 \title{Marginal fixed-effect Hessian for spatial-field Laplace fits}
 \description{
-Closes the SE gap surfaced in: the single-arm Laplace path
-previously returned \code{H_beta = NULL} for SPDE and NNGP because the raw
-fixed-effect block of the joint Hessian gives the \emph{conditional}
-precision on \eqn{\beta \mid u^*}, which under-states uncertainty.
+The raw fixed-effect block of the joint Hessian gives the \emph{conditional}
+precision on \eqn{\beta \mid u^*}, which under-states uncertainty; this
+returns the marginal precision instead.
 }
 \details{
 The correct marginal precision comes from a Schur complement on the

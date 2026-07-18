@@ -226,7 +226,16 @@ public:
                   std::vector<std::string> keys)
         : path_(path), keys_(std::move(keys)) {
         std::ifstream in(path_, std::ios::binary);
+        // A zero-byte file at the path (an editor / AV artifact, or `touch`) is
+        // treated as fresh rather than errored on bad magic: an interrupted run
+        // cannot produce one, since the header is flushed on create.
+        bool has_content = false;
         if (in.good()) {
+            in.seekg(0, std::ios::end);
+            has_content = in.tellg() > 0;
+            in.seekg(0, std::ios::beg);
+        }
+        if (in.good() && has_content) {
             std::uintmax_t good_bytes = load_existing(in, fingerprint);
             in.close();
             // Drop any torn tail (a partial record from a killed write) by

@@ -142,7 +142,10 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   # whichever door it enters through.
   if (!report$zero_diag) {
     warning("`", arg, "` has non-zero diagonal entries (self-loops): ",
-            report$n_self, " node(s).", call. = FALSE)
+            report$n_self, " node(s); zeroing the diagonal. The graph is used ",
+            "as an off-diagonal adjacency; a self-loop would corrupt the ",
+            "ICAR/CAR precision.", call. = FALSE)
+    diag(x) <- 0
   }
   if (!report$binary) {
     warning("`", arg, "` has entries other than 0/1 (weighted graph).",

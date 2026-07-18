@@ -221,9 +221,9 @@
 #' @param tail_points Number of upper-tail order statistics for the
 #'   generalized-Pareto fit, or `NULL` (default) for the automatic PSIS rule
 #'   `ceil(min(0.2 * S, 3 * sqrt(S)))`. An explicit value is an expert
-#'   tail-threshold control, capped at `floor(0.2 * S)` (with a warning) so the
-#'   fit stays an extreme tail; it is NOT a precision knob (raise the draw count
-#'   for a tighter shape estimate).
+#'   tail-threshold control, capped at `floor(0.2 * S)` so the fit stays an
+#'   extreme tail; it is NOT a precision knob (raise the draw count for a tighter
+#'   shape estimate).
 #' @return A list with `pareto_k` (the tail shape, `NA` if the sample is too
 #'   small to fit), `is_ess` (importance-sampling effective sample size,
 #'   `1 / sum(w^2)` on the normalized smoothed weights), `log_weights`

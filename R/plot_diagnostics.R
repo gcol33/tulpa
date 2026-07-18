@@ -1028,7 +1028,12 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
   # backend computed it); fall back to the grid's quadrature effective sample
   # size for the C++ nested paths that store weights but no sampled k-hat yet.
   if (!.tulpa_is_chain(fit)) {
-    k_hat <- fit$pareto_k
+    # Model-package wrappers carry the nested pieces under `$joint_fit`; unwrap it
+    # the same way the shared reliability readers do
+    # (.tulpa_psis_reliability / .tulpa_grid_reliability) so the k-hat / weights
+    # surface here too, rather than falling through to the generic message.
+    jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+    k_hat <- jf$pareto_k
     if (!is.null(k_hat) && is.finite(k_hat)) {
       result$pareto_k <- k_hat
       if (k_hat >= 0.7) {
@@ -1036,14 +1041,14 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
         recommendations <- c(recommendations, sprintf(
           paste("Pareto k-hat = %.2f (>= 0.7): the %s is misfit by the nested",
                 "grid; the approximation is unreliable -- escalate (debias / MCMC)."),
-          k_hat, fit$pareto_k_scope %||% "hyperparameter posterior"))
+          k_hat, jf$pareto_k_scope %||% "hyperparameter posterior"))
       } else {
         recommendations <- c(recommendations, sprintf(
           "Pareto k-hat = %.2f (< 0.7): nested approximation is reliable.", k_hat))
       }
       # Opt-in per-arm k-hat: localises which arm's
       # hyperparameter axes drive a tail-heavy joint k.
-      bak <- fit$pareto_k_by_arm
+      bak <- jf$pareto_k_by_arm
       if (!is.null(bak) && length(bak) > 0L) {
         result$pareto_k_by_arm <- bak
         nm <- names(bak) %||% paste0("arm", seq_along(bak))
@@ -1053,11 +1058,11 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
           character(1))
         recommendations <- c(recommendations, sprintf(
           "Per-arm Pareto k-hat (%s): %s.",
-          fit$pareto_k_by_arm_scope %||% "other arms fixed at posterior mean",
+          jf$pareto_k_by_arm_scope %||% "other arms fixed at posterior mean",
           paste(parts, collapse = ", ")))
       }
     } else {
-      w <- fit$weights
+      w <- jf$weights
       if (!is.null(w) && length(w) > 1L && is.finite(sum(w))) {
         result$quad_ess <- sum(w)^2 / sum(w^2)
         recommendations <- c(recommendations, sprintf(
@@ -1489,6 +1494,13 @@ check_diagnostics <- function(fit, rhat_threshold = 1.01, ess_threshold = 400,
 
   issues <- character(0)
   diag <- tryCatch(mcmc_diagnostics(fit), error = function(e) NULL)
+  if (is.null(diag)) {
+    # A chain fit too short to diagnose (< 4 draws/chain) yields no Rhat/ESS;
+    # do not fall through to a spurious "checks passed" on divergences alone.
+    if (!quiet) message("Insufficient draws to assess convergence ",
+                        "(need >= 4 draws per chain); Rhat/ESS not computed.")
+    return(invisible(NA))
+  }
   if (!is.null(diag)) {
     main_pars <- select_main_params(diag$parameter)
     diag <- diag[diag$parameter %in% main_pars, , drop = FALSE]

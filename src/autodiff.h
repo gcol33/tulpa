@@ -110,6 +110,7 @@ public:
       tape = other.tape;
       prev_tape = other.prev_tape;
       other.tape = nullptr;
+      current_tape() = tape;   // adopt the moved-from scope's active tape
     }
     return *this;
   }

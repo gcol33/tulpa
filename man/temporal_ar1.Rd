@@ -18,9 +18,11 @@ grouping variable. When supplied, a separate random walk is fit per group;
 multi-process model. \code{NULL} (default) shares the effect; \code{FALSE} fits
 process-specific effects and emits a warning about unshared confounding.}
 
-\item{rho_prior}{Prior for the autocorrelation parameter. Default is
-\code{NULL} which uses a Uniform(-1, 1) prior. Can specify a Beta prior
-on (rho+1)/2 for more informative priors.}
+\item{rho_prior}{Prior for the AR(1) autocorrelation. Default \code{NULL} is a
+Uniform(-1, 1) prior. Supply a \code{prior_beta(alpha, beta)} to place a
+Beta(alpha, beta) prior on \code{u = (rho + 1)/2} for a more informative prior
+(e.g. \code{prior_beta(5, 2)} favours positive autocorrelation). Honoured on
+both the exact-sampler and nested-Laplace paths.}
 }
 \value{
 A \code{tulpa_temporal} object

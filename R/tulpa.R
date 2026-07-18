@@ -419,6 +419,11 @@
     n_groups     = n_groups
   )
   if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(temporal$cyclic)
+  # AR1 rho prior travels on the block; the outer nested-Laplace grid reweights
+  # by it (.nl_apply_ar1_rho_prior). NULL stays the default Uniform(-1, 1).
+  if (type == "ar1" && !is.null(temporal$rho_prior)) {
+    out$rho_prior <- temporal$rho_prior
+  }
   out
 }
 
@@ -950,6 +955,11 @@
         group_idx = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
         cyclic    = isTRUE(temporal$cyclic)
       )
+      if (ttype == "ar1") {
+        ab <- .ar1_rho_beta_ab(temporal$rho_prior)
+        temporal_spec_arg$rho_prior_a <- ab[1L]
+        temporal_spec_arg$rho_prior_b <- ab[2L]
+      }
     }
 
     # ESS samples Gaussian-prior latent blocks with an isotropic proposal, which

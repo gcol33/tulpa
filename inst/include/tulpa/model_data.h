@@ -97,8 +97,11 @@ namespace tulpa {
 // CAR_proper log-prior evaluates the differentiable log-determinant
 // log|D - rho W| = const + sum_i log(1 - rho * mu_i) in closed form rather
 // than a per-gradient Cholesky (c).
+// 35 -> 36: added ar1_rho_prior_a / ar1_rho_prior_b -- the Beta(a, b) prior on
+// u = (rho + 1)/2 for the AR1 autocorrelation, wiring temporal_ar1(rho_prior=).
+// Default (1, 1) reproduces the previous Uniform(-1, 1) prior.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 35;
+constexpr int TULPA_ABI_VERSION = 36;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -421,6 +424,11 @@ struct ModelData {
     double phi_prior_rate = 0.01;
     double tau_spatial_shape = 1.0;
     double tau_spatial_rate = 0.01;
+    // AR1 autocorrelation prior: a Beta(a, b) on u = (rho + 1)/2. The default
+    // (1, 1) is the Uniform(-1, 1) prior; the kernel adds a*log(u) + b*log(1-u)
+    // (the Beta density combined with the logit change-of-variables).
+    double ar1_rho_prior_a = 1.0;
+    double ar1_rho_prior_b = 1.0;
 
     // ================================================================
     // COMPUTATION

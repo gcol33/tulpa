@@ -26,7 +26,6 @@
     paste0("beta", seq_len(n_fixed))
 
   re_terms  <- bundle$re_terms %||% list()
-  re_names  <- character(0)
   re_layout <- vector("list", length(re_terms))
 
   for (k in seq_along(re_terms)) {
@@ -36,23 +35,15 @@
     if (length(coef_labels) == 0L) coef_labels <- "(Intercept)"
     gv   <- rt$group_var %||% paste0("g", k)
     levs <- rt$levels %||% as.character(seq_len(rt$n_groups %||% 0L))
-
-    nm <- character(0)
-    for (lev in levs) {
-      for (cl in coef_labels) {
-        nm <- c(nm, if (identical(cl, "(Intercept)")) {
-          sprintf("%s[%s]", gv, lev)
-        } else {
-          sprintf("%s.%s[%s]", gv, cl, lev)
-        })
-      }
-    }
-    re_names <- c(re_names, nm)
     re_layout[[k]] <- list(group_var = gv, levels = levs,
                            coef_labels = coef_labels,
                            n_groups = rt$n_groups %||% length(levs),
                            n_coefs = rt$n_coefs %||% length(coef_labels))
   }
+
+  # Single source for the RE coefficient labels (group-major, coef-within-group);
+  # ranef() reads the same helper off the layout it is handed.
+  re_names <- .re_names_from_layout(re_layout)
 
   list(n_fixed     = n_fixed,
        fixed_names = fixed_names,
@@ -507,6 +498,29 @@ ranef.tulpa_fit <- function(object, ...) {
       conf.high = apply(re, 2, stats::quantile, 0.975),
       row.names = NULL, stringsAsFactors = FALSE
     ))
+  }
+
+  # Nested-Laplace fit: the BLUPs are the RE tail of each grid cell's latent mode,
+  # grid-marginalized against the outer weights. Only emit when the tail width
+  # after the fixed block matches the RE layout exactly (else the tail is a latent
+  # field, not identifiable random effects -- same guard as the sampler branch).
+  # SE is left NA: the between-grid spread alone understates the posterior SD (it
+  # omits within-cell curvature), matching how the fixed table refuses a
+  # misleadingly small between-grid-only SE.
+  if (is.matrix(object$modes) && !is.null(object$weights)) {
+    p      <- object$n_fixed %||% 0L
+    M      <- object$modes
+    n_tail <- ncol(M) - p
+    if (n_tail > 0L && n_tail == length(re_names)) {
+      w   <- object$weights / sum(object$weights)
+      est <- as.numeric(crossprod(w, M[, (p + 1L):ncol(M), drop = FALSE]))
+      return(data.frame(
+        term = re_names, estimate = est,
+        sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+        row.names = NULL, stringsAsFactors = FALSE
+      ))
+    }
+    return(data.frame())
   }
 
   if (!is.null(object$mode) && length(object$mode) > n_fixed) {

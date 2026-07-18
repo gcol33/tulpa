@@ -197,32 +197,16 @@ validate_tvc <- function(tvc, data, X) {
     tvc_names <- coef_names[tvc_indices]
 
   } else if (tvc$terms_spec$type == "names") {
-    tvc_names <- tvc$terms_spec$names
-    tvc_indices <- match(tvc_names, coef_names)
-    if (any(is.na(tvc_indices))) {
-      missing <- tvc_names[is.na(tvc_indices)]
-      stop(sprintf("TVC terms not found in design matrix: %s",
-                   paste(missing, collapse = ", ")), call. = FALSE)
-    }
+    tvc_indices <- .resolve_varying_coef_columns(
+      tvc$terms_spec$names, has_intercept = FALSE, data, coef_names, "TVC")
+    tvc_names <- coef_names[tvc_indices]
 
   } else if (tvc$terms_spec$type == "formula") {
-    fmla <- tvc$terms_spec$formula
-    tt <- terms(fmla)
-    term_labels <- attr(tt, "term.labels")
-    has_intercept <- attr(tt, "intercept") == 1
-
-    tvc_names <- character(0)
-    if (has_intercept) {
-      tvc_names <- c(tvc_names, "(Intercept)")
-    }
-    tvc_names <- c(tvc_names, term_labels)
-
-    tvc_indices <- match(tvc_names, coef_names)
-    if (any(is.na(tvc_indices))) {
-      missing <- tvc_names[is.na(tvc_indices)]
-      stop(sprintf("TVC terms not found in design matrix: %s",
-                   paste(missing, collapse = ", ")), call. = FALSE)
-    }
+    tt <- terms(tvc$terms_spec$formula)
+    tvc_indices <- .resolve_varying_coef_columns(
+      attr(tt, "term.labels"), has_intercept = attr(tt, "intercept") == 1,
+      data, coef_names, "TVC")
+    tvc_names <- coef_names[tvc_indices]
   }
 
   tvc$n_tvc <- length(tvc_indices)

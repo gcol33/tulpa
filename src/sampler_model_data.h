@@ -277,6 +277,11 @@ inline void build_sampler_model_inputs(
         }
         in.data.temporal_cyclic =
             tp.containsElementNamed("cyclic") && Rcpp::as<bool>(tp["cyclic"]);
+        // AR1 rho prior: Beta(a, b) on u = (rho + 1)/2 (default (1, 1) = uniform).
+        if (tp.containsElementNamed("rho_prior_a"))
+            in.data.ar1_rho_prior_a = Rcpp::as<double>(tp["rho_prior_a"]);
+        if (tp.containsElementNamed("rho_prior_b"))
+            in.data.ar1_rho_prior_b = Rcpp::as<double>(tp["rho_prior_b"]);
         in.data.n_temporal_params = in.data.n_times * in.data.n_temporal_groups;
         if (ttype == "rw1")      in.data.temporal_type = TemporalType::RW1;
         else if (ttype == "rw2") in.data.temporal_type = TemporalType::RW2;

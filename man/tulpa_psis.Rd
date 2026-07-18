@@ -13,9 +13,9 @@ tulpa_psis(log_ratios, tail_points = NULL)
 \item{tail_points}{Number of upper-tail order statistics for the
 generalized-Pareto fit, or \code{NULL} (default) for the automatic PSIS rule
 \code{ceil(min(0.2 * S, 3 * sqrt(S)))}. An explicit value is an expert
-tail-threshold control, capped at \code{floor(0.2 * S)} (with a warning) so the
-fit stays an extreme tail; it is NOT a precision knob (raise the draw count
-for a tighter shape estimate).}
+tail-threshold control, capped at \code{floor(0.2 * S)} so the fit stays an
+extreme tail; it is NOT a precision knob (raise the draw count for a tighter
+shape estimate).}
 }
 \value{
 A list with \code{pareto_k} (the tail shape, \code{NA} if the sample is too

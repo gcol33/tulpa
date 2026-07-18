@@ -3,9 +3,10 @@
 # Tests the batched computation path regardless of GPU availability.
 # The GPU is optional — CPU fallback is always used if CUDA unavailable.
 
-test_that("batched NNGP produces same results as sequential for small problem", {
-  # This test verifies the batched computation matches the original sequential.
-  # Uses a small problem (100 locations) where both paths work.
+test_that("NNGP GP Laplace kernel fits a small binary spatial problem", {
+  # Exercises the Vecchia (nearest-neighbour) GP Laplace path end to end on a
+  # 100-location binary problem: the marginal is finite, the mode has the
+  # fixed-effect + per-location field length, and the inner Newton makes progress.
   set.seed(42)
   n_obs <- 100
   coords <- cbind(runif(n_obs), runif(n_obs))
@@ -43,7 +44,6 @@ test_that("batched NNGP produces same results as sequential for small problem", 
   )
 
   expect_true(is.finite(result$log_marginal))
-  expect_equal(length(result$mode), 1L + n_obs)
-  # Should converge or at least make progress
+  expect_equal(length(result$mode), 1L + n_obs)   # intercept + one field value / obs
   expect_true(result$n_iter > 0)
 })

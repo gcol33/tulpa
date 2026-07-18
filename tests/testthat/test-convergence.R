@@ -53,17 +53,17 @@ test_that("mcmc_diagnostics reproduces posterior rhat / ess / mcse", {
     nm <- dimnames(arr)[[3L]][p]
     row <- diag[diag$parameter == nm, ]
 
-    expect_equal(row$rhat,      posterior::rhat(x),      tolerance = 1e-4)
-    expect_equal(row$ess_bulk,  posterior::ess_bulk(x),  tolerance = 1e-4)
-    expect_equal(row$ess_tail,  posterior::ess_tail(x),  tolerance = 1e-4)
-    expect_equal(row$ess_mean,  posterior::ess_mean(x),  tolerance = 1e-4)
-    expect_equal(row$ess_sd,    posterior::ess_sd(x),    tolerance = 1e-4)
-    expect_equal(row$mcse_mean, posterior::mcse_mean(x), tolerance = 1e-4)
-    expect_equal(row$mcse_sd,   posterior::mcse_sd(x),   tolerance = 1e-4)
-    expect_equal(row$ess_q5,   posterior::ess_quantile(x, 0.05, names = FALSE),  tolerance = 1e-4)
-    expect_equal(row$ess_q95,  posterior::ess_quantile(x, 0.95, names = FALSE),  tolerance = 1e-4)
-    expect_equal(row$mcse_q5,  posterior::mcse_quantile(x, 0.05, names = FALSE), tolerance = 1e-4)
-    expect_equal(row$mcse_q95, posterior::mcse_quantile(x, 0.95, names = FALSE), tolerance = 1e-4)
+    expect_equal(row$rhat,      posterior::rhat(x),      tolerance = 1e-12)
+    expect_equal(row$ess_bulk,  posterior::ess_bulk(x),  tolerance = 1e-12)
+    expect_equal(row$ess_tail,  posterior::ess_tail(x),  tolerance = 1e-12)
+    expect_equal(row$ess_mean,  posterior::ess_mean(x),  tolerance = 1e-12)
+    expect_equal(row$ess_sd,    posterior::ess_sd(x),    tolerance = 1e-12)
+    expect_equal(row$mcse_mean, posterior::mcse_mean(x), tolerance = 1e-12)
+    expect_equal(row$mcse_sd,   posterior::mcse_sd(x),   tolerance = 1e-12)
+    expect_equal(row$ess_q5,   posterior::ess_quantile(x, 0.05, names = FALSE),  tolerance = 1e-12)
+    expect_equal(row$ess_q95,  posterior::ess_quantile(x, 0.95, names = FALSE),  tolerance = 1e-12)
+    expect_equal(row$mcse_q5,  posterior::mcse_quantile(x, 0.05, names = FALSE), tolerance = 1e-12)
+    expect_equal(row$mcse_q95, posterior::mcse_quantile(x, 0.95, names = FALSE), tolerance = 1e-12)
   }
 })
 
@@ -82,7 +82,7 @@ test_that("rhat takes the max of bulk and folded split-Rhat", {
   for (p in seq_len(dim(arr)[3L])) {
     nm <- dimnames(arr)[[3L]][p]
     expect_equal(diag$rhat[diag$parameter == nm],
-                 posterior::rhat(arr[, , p]), tolerance = 1e-4)
+                 posterior::rhat(arr[, , p]), tolerance = 1e-12)
   }
 })
 

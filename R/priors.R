@@ -500,7 +500,7 @@ priors_default <- function(family = NULL, spatial = FALSE, temporal = FALSE) {
     }
 
     cat("Family-specific notes:\n")
-    cat("  negbin_negbin: Uses phi for both all processes\n")
+    cat("  negbin_negbin: Uses phi for both processes\n")
     cat("  binomial: No overdispersion parameter (unless beta_binomial)\n")
     cat("  poisson_gamma: Uses phi for gamma shape parameter\n")
 

@@ -50,7 +50,7 @@ coefficient varies across the grid.
 declaration, equivalent to declaring the axis
 and naming it on this arm.
 At most one arm may declare a hyperparam-driven
-axis in the first ship (the cover hurdle and
+axis (the cover hurdle and
 occu_cover both need only one). Shared axes
 across multiple arms are deferred. A single-block
 copy coefficient is declared here, on the arm --
@@ -175,8 +175,8 @@ tolerance.
 \item \code{n_threads} (\code{1L}) -- inner-loop OpenMP threads (per-observation
 scatter, compute_eta, log-likelihood reduction). For typical joint
 workloads (\code{N} in the hundreds to a few thousand) inner parallelism is
-overhead-dominated (see \code{dev_notes/issue_body_adaptive_grid_cost.md});
-prefer \code{n_threads_outer}, which stacks better on many-core hardware.
+overhead-dominated; prefer \code{n_threads_outer}, which stacks better on
+many-core hardware.
 Capped at the physical performance-core count by default (see
 \code{n_threads_scatter}), as the inner per-observation loops oversubscribe a
 hybrid CPU's efficiency cores past that point.

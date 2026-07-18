@@ -145,9 +145,11 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
 #' autocorrelation parameter rho.
 #'
 #' @inheritParams temporal_rw1
-#' @param rho_prior Prior for the autocorrelation parameter. Default is
-#'   `NULL` which uses a Uniform(-1, 1) prior. Can specify a Beta prior
-#'   on (rho+1)/2 for more informative priors.
+#' @param rho_prior Prior for the AR(1) autocorrelation. Default `NULL` is a
+#'   Uniform(-1, 1) prior. Supply a `prior_beta(alpha, beta)` to place a
+#'   Beta(alpha, beta) prior on `u = (rho + 1)/2` for a more informative prior
+#'   (e.g. `prior_beta(5, 2)` favours positive autocorrelation). Honoured on
+#'   both the exact-sampler and nested-Laplace paths.
 #'
 #' @return A `tulpa_temporal` object
 #'
@@ -194,6 +196,11 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
   }
   group_var <- .coerce_var_arg(group_var, "group_var")
   if (isFALSE(shared)) .warn_nonshared("temporal effects")
+  if (!is.null(rho_prior) && !inherits(rho_prior, "tulpa_prior_beta")) {
+    stop("`rho_prior` must be a Beta prior (prior_beta(alpha, beta)) on ",
+         "u = (rho + 1)/2, or NULL for the default Uniform(-1, 1).",
+         call. = FALSE)
+  }
 
   structure(
    list(
@@ -210,6 +217,14 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
    ),
    class = c("tulpa_temporal", "list")
  )
+}
+
+# Beta(a, b) shape parameters for the AR1 rho prior on u = (rho + 1)/2. NULL (the
+# default) is the Uniform(-1, 1) prior = Beta(1, 1). Single source for the
+# sampler (ModelData ar1_rho_prior_a/b) and the nested-Laplace outer reweight.
+.ar1_rho_beta_ab <- function(rho_prior) {
+  if (is.null(rho_prior)) return(c(1, 1))
+  c(rho_prior$alpha, rho_prior$beta)
 }
 
 

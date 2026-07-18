@@ -96,8 +96,15 @@
   tfac <- factor(tvals, levels = levels_t)
   idx <- as.integer(tfac)
   n_times <- nlevels(tfac)
-  cols <- .bar_field_columns(spec, data, fname = "temporal")
   struct <- spec$structure
+  # Same minimum-length guard validate_temporal() enforces: an RW2 precision is
+  # rank-deficient below 3 time points, so reject up front rather than let a
+  # degenerate precision reach the kernel.
+  if (struct == "rw2" && n_times < 3) {
+    stop("RW2 requires at least 3 time points (got ", n_times,
+         "); use rw1 or ar1 for a shorter series.", call. = FALSE)
+  }
+  cols <- .bar_field_columns(spec, data, fname = "temporal")
 
   lapply(cols, function(col) {
     blk <- list(

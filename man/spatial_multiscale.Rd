@@ -18,8 +18,7 @@ spatial_multiscale(
   nn_regional = 30,
   shared = NULL,
   scale_coords = TRUE,
-  sampler = c("auto", "noncentered", "centered", "interweaved", "adaptive", "riemannian",
-    "lbfgs")
+  sampler = c("auto", "noncentered", "centered", "interweaved")
 )
 }
 \arguments{

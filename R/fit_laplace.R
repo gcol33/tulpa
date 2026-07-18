@@ -1039,6 +1039,7 @@ adjacency_to_csr_tulpa <- function(adj) {
   n_neighbors <- integer(n)
   for (i in seq_len(n)) {
     neighbors <- which(adj[i, ] != 0)
+    neighbors <- neighbors[neighbors != i]   # never list a node as its own neighbour
     n_neighbors[i] <- length(neighbors)
     col_idx <- c(col_idx, neighbors - 1L)
     row_ptr[i + 1] <- row_ptr[i] + length(neighbors)

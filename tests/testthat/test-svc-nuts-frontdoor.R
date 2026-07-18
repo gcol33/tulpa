@@ -52,3 +52,24 @@ test_that("svc exact NUTS recovers the varying-coefficient surface", {
   # its (non-zero) mean, so recovery is on the centred surface.
   expect_gt(cor(fm - mean(fm), s$bsurf - mean(s$bsurf)), 0.8)
 })
+
+test_that("svc exact NUTS is divergence-free and recovers the field scale (#144/#215)", {
+  skip_if_not_slow()
+  s <- make_svc_pois()
+  fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+               spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 8L),
+               mode = "exact",
+               control = list(n_iter = 350L, n_warmup = 175L, seed = 5L))
+  # The #144 regression surfaced as a divergence storm on this exact path, not a
+  # field-correlation drop -- so guard the divergences directly, the signal that
+  # test survived on.
+  expect_lte(n_divergent(fit), ceiling(0.05 * nrow(fit$draws)))   # < 5% divergent
+  # Scale recovery: the recovered SVC field SD tracks the true varying-slope SD,
+  # and the marginal SD hyperparameter is neither collapsed nor exploded.
+  wcol <- grep("^svc_w\\[", colnames(fit$draws))
+  sd_ratio <- sd(colMeans(fit$draws[, wcol, drop = FALSE])) / sd(s$bsurf)
+  expect_gt(sd_ratio, 0.4)
+  expect_lt(sd_ratio, 2.5)
+  sigma_svc <- mean(exp(0.5 * fit$draws[, "log_sigma2_svc[1]"]))
+  expect_true(is.finite(sigma_svc) && sigma_svc > 0.1)
+})

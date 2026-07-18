@@ -218,33 +218,16 @@ validate_svc <- function(svc, data, X) {
     svc_names <- coef_names[svc_indices]
 
   } else if (svc$terms_spec$type == "names") {
-    svc_names <- svc$terms_spec$names
-    svc_indices <- match(svc_names, coef_names)
-    if (any(is.na(svc_indices))) {
-      missing <- svc_names[is.na(svc_indices)]
-      stop(sprintf("SVC terms not found in design matrix: %s",
-                   paste(missing, collapse = ", ")), call. = FALSE)
-    }
+    svc_indices <- .resolve_varying_coef_columns(
+      svc$terms_spec$names, has_intercept = FALSE, data, coef_names, "SVC")
+    svc_names <- coef_names[svc_indices]
 
   } else if (svc$terms_spec$type == "formula") {
-    # Parse formula to get terms
-    fmla <- svc$terms_spec$formula
-    tt <- terms(fmla)
-    term_labels <- attr(tt, "term.labels")
-    has_intercept <- attr(tt, "intercept") == 1
-
-    svc_names <- character(0)
-    if (has_intercept) {
-      svc_names <- c(svc_names, "(Intercept)")
-    }
-    svc_names <- c(svc_names, term_labels)
-
-    svc_indices <- match(svc_names, coef_names)
-    if (any(is.na(svc_indices))) {
-      missing <- svc_names[is.na(svc_indices)]
-      stop(sprintf("SVC terms not found in design matrix: %s",
-                   paste(missing, collapse = ", ")), call. = FALSE)
-    }
+    tt <- terms(svc$terms_spec$formula)
+    svc_indices <- .resolve_varying_coef_columns(
+      attr(tt, "term.labels"), has_intercept = attr(tt, "intercept") == 1,
+      data, coef_names, "SVC")
+    svc_names <- coef_names[svc_indices]
   }
 
   # Compute nearest neighbors (NNGP only)
