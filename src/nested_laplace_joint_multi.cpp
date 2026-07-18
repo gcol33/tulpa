@@ -950,7 +950,7 @@ int build_joint_blocks_from_spec(
     if (type == "tgmrf") {
         if (is_copy_block) {
             Rcpp::stop("Block %d: copy semantics for tgmrf blocks are not "
-                       "supported (first ship: spatial copy only on icar / "
+                       "supported (spatial copy only on icar / "
                        "bym2 / car_proper).",
                        block_index + 1);
         }
@@ -981,7 +981,7 @@ int build_joint_blocks_from_spec(
     if (type == "hsgp") {
         if (is_copy_block) {
             Rcpp::stop("Block %d: copy semantics for HSGP blocks are not "
-                       "supported (first ship: spatial copy only on icar / "
+                       "supported (spatial copy only on icar / "
                        "bym2 / car_proper).",
                        block_index + 1);
         }
@@ -1018,7 +1018,7 @@ int build_joint_blocks_from_spec(
         }
         require_axes(4);  // (sigma_1, sigma_2, rho, ell)
         if (n_arms != 2) {
-            Rcpp::stop("Block %d (type 'hsgp_mo'): first ship requires "
+            Rcpp::stop("Block %d (type 'hsgp_mo'): requires "
                        "n_arms == 2 (got %d).",
                        block_index + 1, n_arms);
         }
@@ -1045,7 +1045,7 @@ int build_joint_blocks_from_spec(
     if (type == "spde") {
         if (is_copy_block) {
             Rcpp::stop("Block %d: copy semantics for SPDE blocks are not "
-                       "supported (first ship: spatial copy only on icar / "
+                       "supported (spatial copy only on icar / "
                        "bym2 / car_proper).",
                        block_index + 1);
         }
@@ -1088,7 +1088,7 @@ int build_joint_blocks_from_spec(
     if (type == "lf") {
         // Latent factor block (Stage 1.6a): u in R^n_latent shared across
         // arms, lambda in R^n_arms per-arm loadings, eta_i += u[obs_idx(i)] *
-        // lambda[k_arm]. F = 1 only in this first ship.
+        // lambda[k_arm]. F = 1 is the only supported case.
         if (is_copy_block) {
             Rcpp::stop("Block %d: copy semantics are not supported for "
                        "latent factor blocks (the factor field IS the "
@@ -1914,7 +1914,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // axis), so it is NOT read-only; the dense path runs the outer grid serially
     // (n_outer = 1 above) so the single shared `specs` is touched by one thread
     // at a time. The scatter and the joint log-lik read every arm only through
-    // these views (dev_notes/plans/clean_migration.md Phase L / L4).
+    // these views.
     JointArmSpecs specs = build_joint_arm_specs(arms);
 
     // One cheap-pass specs view per outer worker slot. The cheap screen may run

@@ -26,8 +26,6 @@
 // alpha * sigma. The new (sigma_occ, sigma_pos) axes are anchored
 // independently by their own arm's likelihood. alpha = sigma_pos / sigma_occ
 // is recovered post-hoc on the R side.
-//
-// See dev_notes/joint_nested_laplace.md for the full math derivation.
 
 #ifndef TULPA_JOINT_NESTED_LAPLACE_API_H
 #define TULPA_JOINT_NESTED_LAPLACE_API_H

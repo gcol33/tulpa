@@ -33,6 +33,7 @@
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
+#include "nl_cell_cache.h"
 #include "nested_laplace_multi.h"
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
@@ -202,11 +203,14 @@ int build_blocks_from_spec(
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
         int start = latent_offset;
 
-        // Cache CSR for the dense log-det helper.
+        // Cache CSR for the dense log-det helper. The rho-dependent log|Q| is
+        // cell-keyed (NlCellCache) so a parallel outer grid can never read one
+        // cell's prep() value into another cell's log_prior() -- matching the
+        // single-block CAR_proper path; cell-keyed state costs nothing.
         auto adj_rp_v = std::make_shared<std::vector<int>>(adj_rp.begin(), adj_rp.end());
         auto adj_ci_v = std::make_shared<std::vector<int>>(adj_ci.begin(), adj_ci.end());
         auto n_nbr_v  = std::make_shared<std::vector<int>>(n_nbr.begin(),  n_nbr.end());
-        auto log_det_Q_rho = std::make_shared<double>(0.0);
+        auto log_det_Q_rho = std::make_shared<tulpa::NlCellCache<double>>();
 
         tulpa::LatentBlock block;
         block.start = start;
@@ -218,8 +222,10 @@ int build_blocks_from_spec(
             double rho_k = theta_grid(k, axis0 + 1);
             std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
                 size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_k);
-            *log_det_Q_rho = tulpa_car_proper::car_log_det(size, Qmat);
-            return std::isfinite(*log_det_Q_rho);
+            double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
+            log_det_Q_rho->claim() = ld_val;
+            log_det_Q_rho->publish(k);
+            return std::isfinite(ld_val);
         };
         block.add_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
@@ -234,7 +240,7 @@ int build_blocks_from_spec(
             double tau = theta_grid(k, axis0);
             double rho = theta_grid(k, axis0 + 1);
             return tulpa::log_prior_car_proper(x, start, size, tau, rho,
-                                                 *log_det_Q_rho,
+                                                 log_det_Q_rho->find(k),
                                                  adj_rp, adj_ci, n_nbr);
         };
         block.center = [start, size](Rcpp::NumericVector& x) -> double {

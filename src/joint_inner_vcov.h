@@ -9,7 +9,7 @@
 //   block[D, F], block[F, D]  (betas x field cross: full)
 //   diag(block[F, F])      (field marginal variances)
 // with the field x field off-diagonal left at zero (never read by the summary
-// or the predict path; see dev_notes/plans/joint_inner_vcov_selinv.md).
+// or the predict path).
 //
 // The constrained block is
 //   C[idx,idx] - G' M^{-1} G,  C = Qk^{-1},  W = C A',  G = W[idx,:]',  M = A C A'

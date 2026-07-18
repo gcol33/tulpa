@@ -23,8 +23,6 @@
 #' use a forward finite-difference gradient on theta, costing `dim(theta)`
 #' extra `Q` calls per outer step -- cheap for the typical `dim(theta) <= 5`.
 #'
-#' See `dev_notes/plans/generic-todo.md` for the full design rationale and the rollout phases.
-#'
 #' @param Q A function `function(theta)` returning a sparse precision matrix
 #'   of class `Matrix::sparseMatrix` (typically `dgCMatrix`). The matrix must
 #'   be square and symmetric. Called once at registration with `theta = init`

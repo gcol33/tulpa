@@ -9,7 +9,7 @@
 // It is np-agnostic: the eta buffer is sized N * np and the helpers handle the
 // multi-process coupling internally, so the single-arm standalone caller, the
 // outer-grid driver, and the multi-process (np >= 2) spec entry all run the same
-// loop body -- a single source of truth (dev_notes/plans/clean_migration.md, Phase L). The
+// loop body -- a single source of truth. The
 // implementation lives in laplace_spec.cpp where the anonymous-namespace spec
 // helpers are visible.
 //

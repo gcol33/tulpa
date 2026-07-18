@@ -94,7 +94,7 @@ if (solver == "gpu" && !cpp_gpu_available()) {
 
   # Hilbert-space approximation: a basis-function GP with `m` functions per
   # dimension and boundary factor `c` (the NNGP cov/nu/nn/solver args do not
-  # apply). Returns a tulpa_hsgp spec, formerly spatial_hsgp().
+  # apply). Returns a tulpa_hsgp spec.
   if (approx == "hsgp") {
     if (!is.numeric(m) || length(m) != 1 || m < 3 || m > 50) {
       stop("`m` must be an integer between 3 and 50", call. = FALSE)

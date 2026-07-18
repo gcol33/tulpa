@@ -16,7 +16,7 @@
 //
 // Contrib kind: INDEXED_SINGLE (one block-local DOF per obs via obs_idx).
 // Prior fill: USER_CSC.
-// Copy semantics not supported (first ship gate).
+// Copy semantics not supported.
 
 #ifndef TULPA_TGMRF_BLOCK_FACTORY_H
 #define TULPA_TGMRF_BLOCK_FACTORY_H

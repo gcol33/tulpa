@@ -102,7 +102,7 @@ struct JointArm {
 // A resolved single-process likelihood for one joint arm: everything the spec
 // callbacks need, with stable storage owned by JointArmSpecs. The joint scatter
 // and log-lik read every arm only through this view, so the joint path has a
-// single spec-driven likelihood boundary (dev_notes/plans/clean_migration.md Phase L / L4).
+// single spec-driven likelihood boundary.
 struct ArmSpecView {
     const LikelihoodSpec*      spec          = nullptr;
     const void*                response_data = nullptr;

@@ -1,9 +1,8 @@
 // laplace_core.cpp
 // Core Laplace approximation engine for tulpa
-// Implements Laplace approximation for latent Gaussian models
-//
-// Feature 9 refactor: all model-specific Laplace functions consolidated
-// via laplace_newton_solve() template in laplace_newton.h.
+// Implements Laplace approximation for latent Gaussian models.
+// All model-specific Laplace functions run through the laplace_newton_solve()
+// template in laplace_newton.h.
 
 #include "laplace_core.h"
 #include "laplace_cholesky.h"

@@ -414,9 +414,8 @@ compute_bym2_scale <- function(adjacency) {
 #' @export
 print.tulpa_spatial <- function(x, ...) {
   # SPDE specs carry a different field set (Matern mesh) and print separately.
-  # Single method for every tulpa_spatial type: sourcing spatial_rsr_spde.R
-  # after this file used to redefine print.tulpa_spatial and shadow the areal
-  # branch below (its NextMethod() fell through to print.default).
+  # A single method handles every tulpa_spatial type here, so no other file
+  # redefines print.tulpa_spatial (which would shadow the areal branch below).
   if (!is.null(x$type) && x$type == "spde") {
     cat("tulpa_spatial: SPDE (Matern, nu =", x$nu, ")\n")
     cat("  Mesh nodes:", x$n_mesh, "\n")

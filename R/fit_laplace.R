@@ -99,8 +99,8 @@ tulpa_laplace <- function(y, n_trials, X,
   # tulpa_laplace's `phi` is the residual VARIANCE for gaussian / lognormal
   # (the convention of the R-side registry, which builds H_beta below); the
   # compiled kernels parameterize by the residual SD. Convert once here so the
-  # mode-finding and the Hessian describe the same model (the kernel used to
-  # receive the variance where it expected the SD).
+  # mode-finding and the Hessian describe the same model (the kernel expects the
+  # SD, not the variance).
   phi_kernel <- if (family %in% c("gaussian", "lognormal")) sqrt(phi) else phi
   if (!is.null(phi2)) {
     .phi2_or_stop(family, phi2)
@@ -151,8 +151,8 @@ tulpa_laplace <- function(y, n_trials, X,
       # kernels (laplace_mode_spatial / _bym2 / _rsr) all guard their RE block
       # with `if (n_re_groups > 0)` and size the latent vector as
       # p + n_re_groups + n_spatial_units, so 0 means zero RE dims. Injecting a
-      # 1-group sigma = 1 random intercept here (as we used to) adds a spurious
-      # latent that confounds with the fixed intercept -- inert at the MAP only
+      # 1-group sigma = 1 random intercept here would add a spurious latent that
+      # confounds with the fixed intercept -- inert at the MAP only
       # when the intercept is unpenalised, but it perturbs the joint Hessian /
       # marginal likelihood and would bias the intercept under a beta_prior.
       # Matches the SPDE (fit_spde.R) and GP (laplace_gp_at) no-RE convention.
@@ -171,8 +171,8 @@ tulpa_laplace <- function(y, n_trials, X,
     # (handles single RE, multiple RE, slopes, weights, offset)
     if (length(re_list) == 0) {
       # No random effects: fit a pure fixed-effects model (n_terms = 0 in the
-      # kernel, so the latent vector is beta only). A dummy 1-group RE used to
-      # be injected here, but a global random intercept (sigma = 1) confounds
+      # kernel, so the latent vector is beta only). No dummy 1-group RE is
+      # injected: a global random intercept (sigma = 1) would confound
       # with the fixed intercept once a `beta_prior` is active: the prior pulls
       # the penalised beta toward its mean while the unpenalised RE absorbs the
       # difference, biasing the fixed-effect MAP (the penalty's effective

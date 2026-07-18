@@ -129,7 +129,7 @@ inline double variance_fn(double mu, double phi, const std::string& family, int 
     if (family == "beta") {
         // Working variance: V s.t. dmu^2 / V = Fisher info per obs on eta.
         // Fisher info = phi^2 * (trigamma(mu*phi) + trigamma((1-mu)*phi)) * dmu^2
-        // (Ferrari & Cribari-Neto 2004); see dev_notes/beta_likelihood.md.
+        // (Ferrari & Cribari-Neto 2004).
         double tg = R::trigamma(mu * phi) + R::trigamma((1.0 - mu) * phi);
         return 1.0 / (phi * phi * tg);
     }
@@ -371,7 +371,7 @@ inline double log_lik_for_family(
 // (Fisher) Hessian pointwise unchanged. With n = 1, slog_y = log(y),
 // slog_1my = log(1-y) these reduce exactly to the per-observation beta branch of
 // log_lik_mu / grad_hess_for_family (same mu clamps), so the ungrouped path is
-// byte-identical. See dev_notes/beta_likelihood.md.
+// byte-identical.
 inline double log_lik_beta_grouped(double slog_y, double slog_1my, int n,
                                    double eta, double phi) {
     double mu = linkinv(eta, "logit");
@@ -409,7 +409,7 @@ inline GradHess grad_hess_beta_grouped(double slog_y, double slog_1my, int n,
 // with zl = (lower - eta)/sigma, zu = (upper - eta)/sigma, phi the standard
 // normal density (0 at +/-Inf, as is z phi(z)). The mass P is differenced in the
 // accurate tail to avoid catastrophic cancellation when eta sits far from the
-// class. See dev_notes/interval_gaussian_likelihood.md.
+// class.
 struct IntervalGaussian {
     double ll;        // log P
     double grad;      // d logP / d eta
@@ -493,7 +493,7 @@ inline GradHess grad_hess_interval_gaussian(double lower, double upper,
 // log-concavity interval_gaussian relies on. lambda is formed in log space so it
 // stays finite in deep truncation (a -> -Inf, predicted mean far above the
 // bound); the curvature is floored at the flat far tail, mirroring
-// interval_gaussian_core. See dev_notes/truncated_gaussian_likelihood.md.
+// interval_gaussian_core.
 struct TruncatedGaussian {
     double ll;        // log density of the truncated Gaussian (no response Jacobian)
     double grad;      // d logf / d eta

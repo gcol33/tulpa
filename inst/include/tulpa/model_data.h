@@ -60,8 +60,7 @@ namespace tulpa {
 // per-arm constant multiplier on its field amplitude. Replaces the binary
 // donor / copy-arm dichotomy with a per-arm scalar coefficient, while the
 // existing `copy = list(arm, alpha_grid)` API desugars cleanly via
-// `responses[[X]]$field_coef = list(name = "alpha", grid = G)`. See
-// Change 1 and dev_notes/plans/n_arm_joint_engine.md.
+// `responses[[X]]$field_coef = list(name = "alpha", grid = G)`.
 //
 // 28 -> 29: added the `tulpa_register_cell_coupling` registered C callable
 // (signature `tulpa::RegisterCellCouplingFn` in <tulpa/cell_coupling.h>)

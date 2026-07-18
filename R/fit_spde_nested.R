@@ -58,7 +58,7 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 }
 
 # ---------------------------------------------------------------------
-# Method = "grid": legacy rectangular grid, repaired to use the v10
+# Method = "grid": rectangular grid over the SPDE hyperparameters, on the
 # nested-Laplace ABI (re_idx / n_re_groups / sigma_re).
 # ---------------------------------------------------------------------
 fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,

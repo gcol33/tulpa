@@ -4,7 +4,7 @@
 // spec-driven Laplace likelihood.
 //
 // This is the single source of truth that lets the nested-Laplace kernels stop
-// hardcoding the family enum (see dev_notes/plans/clean_migration.md, Phase L) WITHOUT
+// hardcoding the family enum WITHOUT
 // duplicating the per-observation likelihood math: the spec callbacks delegate
 // straight to grad_hess_for_family / log_lik_for_family. The working weight is
 // the expected (Fisher) information those functions already return, which is

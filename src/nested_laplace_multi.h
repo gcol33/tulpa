@@ -155,8 +155,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
 
     // When the outer grid is parallel, force inner kernels to single-thread
     // OpenMP (compute_eta / scatter / log-lik reduction). Nested OpenMP at
-    // this problem size is overhead-dominated — see
-    // dev_notes/issue_body_adaptive_grid_cost.md for the empirical sweep.
+    // this problem size is overhead-dominated.
     int n_threads_inner_eff = (n_outer > 1) ? 1 : n_threads;
 
     // Per-cell per-row predictive variance of the linear predictor,

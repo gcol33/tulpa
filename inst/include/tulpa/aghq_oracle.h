@@ -8,7 +8,7 @@
 // interface; three outer drivers (ML-II optimize, deterministic-integrate,
 // stochastic-integrate / Gibbs) consume the same engine + oracle. A model
 // package supplies an oracle either natively (compiled, thread-safe) or through
-// the R-closure bridge (RClosureOracle, not thread-safe). See dev_notes/agq_plan.md.
+// the R-closure bridge (RClosureOracle, not thread-safe).
 //
 // Ownership across the R boundary mirrors nested_likelihood.h: the model package
 // heap-allocates one REGroupOracle subclass and hands tulpa an

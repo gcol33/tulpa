@@ -71,8 +71,8 @@
 //
 // Result post-processing (filling the Rcpp::List) happens single-threaded
 // after the parallel region. Per-cell LaplaceResult objects use only
-// std::vector storage (laplace_core.h:LaplaceResult after the
-// speedup refactor), so they are safe to populate across threads.
+// std::vector storage (laplace_core.h:LaplaceResult), so they are safe to
+// populate across threads.
 
 #ifndef TULPA_NESTED_LAPLACE_GRID_H
 #define TULPA_NESTED_LAPLACE_GRID_H
@@ -109,8 +109,8 @@ namespace tulpa {
 // Threading
 // ---------
 // n_threads_outer = 1 (default): serial loop with mode chaining
-//   (prev_mode <- res.mode after each cell). Bitwise compatible with the
-//   pre-refactor driver.
+//   (prev_mode <- res.mode after each cell). Bitwise identical to the
+//   serial mode-chained result.
 // n_threads_outer > 1: pilot solve at the centre cell first, then
 //   #pragma omp parallel for over all cells warm-started from the pilot mode.
 //   Pilot cell's result is reused (no double-solve).
@@ -523,7 +523,7 @@ inline Rcpp::List run_nested_laplace_grid(
     if (n_threads_outer <= 1) {
         // Serial path. Two sub-cases:
         //  - prune off, pilot off: classic mode-chained warm-start across
-        //    every cell. Bitwise compatible with the pre-refactor driver.
+        //    every cell.
         //  - prune on (need_pilot): pilot already solved; loop over the
         //    remaining cells warm-starting from the previous non-pruned
         //    cell's mode (chained across survivors only).

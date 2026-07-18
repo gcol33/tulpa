@@ -11,7 +11,7 @@
 //     f_k(s) = sum_m phi_m(s) * sqrt(S_norm(lambda_m, ell)) * beta_{k, m}
 //     (beta_{1,m}, ..., beta_{K,m}) ~ N(0, Sigma)    independently per m
 //
-//   Sigma is the K x K cross-output covariance. For K = 2 (first ship):
+//   Sigma is the K x K cross-output covariance. For K = 2 (the supported case):
 //     Sigma = [[sigma_1^2,            rho * sigma_1 * sigma_2],
 //              [rho * sigma_1 * sigma_2,  sigma_2^2          ]]
 //
@@ -44,7 +44,7 @@
 //   Returns false when sigma_1, sigma_2 <= 0, |rho| >= 1, or ell <= 0.
 //   The outer-grid driver short-circuits the cell to log_marginal = -inf.
 //
-// Axes (K = 2 first ship).
+// Axes (K = 2).
 //   (sigma_1, sigma_2, rho, ell)  — raw values; |rho| < 1, others > 0.
 //
 // Pattern over-fill note.
@@ -82,7 +82,7 @@ namespace tulpa {
 inline LatentBlock make_hsgp_mo_block(
     int                            start,
     int                            m_total,
-    int                            n_arms,            // K (first ship: must == 2)
+    int                            n_arms,            // K (must == 2)
     const Rcpp::List&              phi_per_arm,        // List of NumericMatrix
     const Rcpp::IntegerVector&     n_obs_per_arm,
     int                            block_index,
@@ -95,10 +95,10 @@ inline LatentBlock make_hsgp_mo_block(
 ) {
     const int K = n_arms;
     if (K != 2) {
-        Rcpp::stop("Block %d (type 'hsgp_mo'): first ship requires "
+        Rcpp::stop("Block %d (type 'hsgp_mo'): requires "
                    "n_arms == 2 (got %d). Multi-output HSGP with K > 2 "
-                   "needs an LKJ-cholesky correlation parameterization "
-                   "(deferred follow-up).",
+                   "needs an LKJ-cholesky correlation parameterization, "
+                   "which is not supported.",
                    block_index + 1, K);
     }
     if (eigenvalues.size() != m_total) {
@@ -156,7 +156,7 @@ inline LatentBlock make_hsgp_mo_block(
     block.contrib_kind = BlockContribKind::DENSE_BASIS;
     block.prior_kind   = PriorFillKind::DIAGONAL_LOWRANK;
     block.d_fac        = [](int) -> double { return 1.0; };
-    // arm_scale left empty (copy not supported on multi-output HSGP first ship).
+    // arm_scale left empty (copy not supported on multi-output HSGP).
     // idx / obs_indices left empty — DENSE_BASIS uses basis_eval.
 
     block.prep = [cell_cache, eig, m_total, K,

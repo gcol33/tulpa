@@ -4,8 +4,7 @@
 // The body of run_hmc_chain_cpp is assembled from function-body fragment
 // headers (hmc_nuts_chain_setup.h, hmc_nuts_chain_iter_*.h). Those
 // fragments are intentionally non-standalone: they reference locals
-// declared in run_hmc_chain_cpp's body. They will move into proper
-// helper functions in a follow-up refactor.
+// declared in run_hmc_chain_cpp's body.
 
 #include <algorithm>
 #include <cmath>

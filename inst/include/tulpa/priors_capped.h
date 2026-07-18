@@ -5,8 +5,7 @@
 // This file is the single source of truth.
 //
 // The capped Normal prior is what stabilized HMC NB on the bad seed
-// 1821108667 (610s slowdown without it) per
-// dev_notes/salvaged_logs/build_tulpa_capped_sd.log.
+// 1821108667 (610s slowdown without it).
 
 #ifndef TULPA_PRIORS_CAPPED_H
 #define TULPA_PRIORS_CAPPED_H

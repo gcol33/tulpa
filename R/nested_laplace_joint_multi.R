@@ -11,8 +11,7 @@
 # field). Routes to cpp_nested_laplace_joint_multi, which builds a
 # std::vector<LatentBlock> on the joint side. Each block can be a copy
 # block; copy (alpha-coupling) is supported on areal spatial (icar / bym2 /
-# car_proper), temporal (rw1 / rw2 / ar1), and unstructured (iid) blocks
-#. See dev_notes/plan_multi_block_joint.md.
+# car_proper), temporal (rw1 / rw2 / ar1), and unstructured (iid) blocks.
 
 # Validate one arm spec for the multi-block path. Same core as
 # `.normalise_joint_arm` *except* `spatial_idx` is no longer required at
@@ -479,10 +478,10 @@
             }
         }
         if (n_arms != 2L) {
-            stop("Block ", block_index, " (type 'hsgp_mo'): first ship ",
+            stop("Block ", block_index, " (type 'hsgp_mo'): ",
                  "requires n_arms == 2 (got ", n_arms, "). Multi-output HSGP ",
                  "with K > 2 needs an LKJ-cholesky correlation ",
-                 "parameterization on the outer grid (deferred follow-up).",
+                 "parameterization on the outer grid, which is not supported.",
                  call. = FALSE)
         }
         if (!is.list(p$phi) || length(p$phi) != n_arms) {
@@ -1166,8 +1165,8 @@
             declined = ccd_requested && !identical(integration_used, "ccd"))
     }
 
-    # Tile partition for the three-tier warm-start (Phase 2 of
-    # dev_notes/speedup.md). Tensor-grid-only: the scattered CCD design is not a
+    # Tile partition for the three-tier warm-start.
+    # Tensor-grid-only: the scattered CCD design is not a
     # per-axis lattice the alpha-tile reuse relies on. Tile axis = every
     # joint_grid column EXCEPT the copy block's alpha column. Built from the
     # *user-facing* (sigma, alpha) grid (before sigma_pos materialisation) so

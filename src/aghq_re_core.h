@@ -7,7 +7,7 @@
 // through REGroupOracle, so every structure (single-arm GLMM, multi-arm
 // N-mixture, R-closure bridge) shares this one implementation.
 //
-// Gradient (Fisher's identity; see dev_notes/agq_plan.md Section 4.3):
+// Gradient (Fisher's identity):
 //   d log M_g / d theta = sum_k wt_k * (data theta-score at node b_k)
 //   d/dSigma sum_g log M_g = 0.5 Q (sum_g R_g - G Sigma) Q,  R_g = sum_k wt_k b_k b_k'
 // mapped to log-Cholesky coords by recov_block_grad (re_cov_chol.h). No
@@ -111,8 +111,8 @@ struct AghqValueGrad {
 // the FD optimizer uses. want_grad = true additionally returns the analytic
 // gradient of the TRUE marginal (Fisher identity), which is consistent with the
 // computed objective only as n_quad grows (verified: matches FD to ~1e-6 at
-// n_quad=9, diverges at n_quad=1 where the Laplace curvature term is missing --
-// see dev_notes/agq_plan.md Section 4.3). Used for diagnostics / the future
+// n_quad=9, diverges at n_quad=1 where the Laplace curvature term is missing).
+// Used for diagnostics / the future
 // AD-exact-gradient optimizer; the A-C optimizer is FD over f.
 inline AghqValueGrad aghq_objective_grad(REGroupOracle& orc,
                                          const Eigen::VectorXd& par,

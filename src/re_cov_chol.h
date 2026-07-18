@@ -12,7 +12,7 @@
 // posterior 2nd moment), the gradient of sum_g log M_g w.r.t. the block's
 // log-Cholesky coordinates is the Frobenius contraction <2 S L, dL/dcoord>, plus
 // the LKJ penalty gradient. Setting S = 0 reproduces the EM stationary point
-// Sigma = (1/G) sum_g R_g (see dev_notes/agq_plan.md Section 4.3).
+// Sigma = (1/G) sum_g R_g.
 
 #ifndef TULPA_RE_COV_CHOL_H
 #define TULPA_RE_COV_CHOL_H

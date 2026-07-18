@@ -244,8 +244,8 @@
 
     phi_grid_per_arm <- .joint_phi_grid_per_arm(grids, arm_names)
 
-    # Tile partition for the three-tier warm-start (dev_notes/speedup.md
-    # Opt 2). Tile = unique (sigma, [rho/rho_car,] phi_<arm>...) per cell,
+    # Tile partition for the three-tier warm-start. Tile = unique
+    # (sigma, [rho/rho_car,] phi_<arm>...) per cell,
     # i.e. every axis except the copy coefficient alpha. The joint mode is
     # tile-constant on the donor arm (Q + design depend on (sigma, rho)),
     # so any non-alpha cell in the same tile gives a much better warm-

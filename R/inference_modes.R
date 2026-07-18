@@ -95,8 +95,8 @@ TIER_META <- list(
 #' @description
 #' One entry per backend. Adding a backend is a single entry here; tier
 #' membership, family support, the input contract, and R-level reachability
-#' all derive from this list. Replaces the previously scattered per-tier
-#' `backends` vectors and the separate `BACKEND_FAMILY_SUPPORT` table.
+#' all derive from this list -- the single source of truth for per-tier
+#' `backends` and family support.
 #'
 #' Fields:
 #' * `emits`    -- the kind of posterior representation the backend's draws
@@ -706,7 +706,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   #    deliberately routes those to the more general nested path below (their
   #    Gibbs samplers need one observation per location); they stay reachable via
   #    the explicit back door tulpa_gibbs(spatial=). auto must never pick a
-  #    backend that errors at dispatch (dev_notes/plan_gibbs_spatial_frontdoor.md).
+  #    backend that errors at dispatch.
   #  * areal (icar/car/bym2/car_proper), continuous gp/nngp/hsgp, and SPDE:
   #    nested Laplace (Tier 2) integrates the spatial hyperparameter through the
   #    tulpa() front door (.NL_FRONTDOOR_NESTED). The areal + gp/nngp/hsgp subset

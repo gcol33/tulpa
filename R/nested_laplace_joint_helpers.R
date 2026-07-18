@@ -61,8 +61,8 @@
     if (!any_active) NULL else out
 }
 
-# Compute a tile partition for the outer-grid loop's three-tier warm-start
-# (Phase 2 of the speedup plan, dev_notes/speedup.md). A tile groups all
+# Compute a tile partition for the outer-grid loop's three-tier warm-start.
+# A tile groups all
 # outer-grid cells that share every hyperparameter coordinate except the
 # copy coefficient alpha -- for the joint copy block under the (sigma, alpha)
 # reparam, the shared latent prior Q and the donor-arm linear predictor are
@@ -305,7 +305,7 @@
 #   * `field_coef_axis` NULL or list(name = , grid = ) -- when set, this arm
 #     declares a hyperparam-driven field coefficient. The driver maps that
 #     declaration to the existing `copy = list(arm, alpha_grid)` plumbing
-#     (at most one such axis is supported in the first ship).
+#     (at most one such axis is supported).
 .normalise_arm_field_coef <- function(a, k) {
     fc <- a$field_coef
     if (is.null(fc)) {
@@ -370,9 +370,9 @@
     axes <- lapply(arms, function(a) a$field_coef_axis)
     has_axis_per_arm <- !vapply(axes, is.null, logical(1))
     if (sum(has_axis_per_arm) > 1L) {
-        stop("At most one arm may declare a hyperparam `field_coef` axis ",
-             "(first ship). Got ", sum(has_axis_per_arm),
-             ". Multi-arm shared axes are deferred.", call. = FALSE)
+        stop("At most one arm may declare a hyperparam `field_coef` axis. Got ",
+             sum(has_axis_per_arm),
+             ". Multi-arm shared axes are not supported.", call. = FALSE)
     }
     if (any(has_axis_per_arm)) {
         k_axis  <- which(has_axis_per_arm)
@@ -419,8 +419,8 @@
     axes <- lapply(responses, function(a) a$field_coef_axis)
     has_axis_per_arm <- !vapply(axes, is.null, logical(1))
     if (sum(has_axis_per_arm) > 1L) {
-        stop("At most one arm may declare a hyperparam `field_coef` axis ",
-             "(first ship). Got ", sum(has_axis_per_arm), ".", call. = FALSE)
+        stop("At most one arm may declare a hyperparam `field_coef` axis. Got ",
+             sum(has_axis_per_arm), ".", call. = FALSE)
     }
     if (!any(has_axis_per_arm)) {
         return(list(has_copy = FALSE, copy_arm_zero = -1L,

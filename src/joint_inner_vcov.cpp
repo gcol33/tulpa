@@ -1,7 +1,7 @@
 // joint_inner_vcov.cpp
 // Per-cell constrained inner-covariance block extraction for the joint
 // nested-Laplace post-grid step.
-// See joint_inner_vcov.h and dev_notes/plans/joint_inner_vcov_selinv.md.
+// See joint_inner_vcov.h.
 
 #include "joint_inner_vcov.h"
 #include "linalg_fast.h"        // small-dense Cholesky for the k_constr M-solve

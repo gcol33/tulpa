@@ -54,8 +54,6 @@ adjacency_to_list_tulpa <- function(adj) {
 # location i (`gp_contrib[i] = w[i]` for `i < n_spatial`). So they require one
 # observation per unique location, in coordinate order. Surface that constraint
 # loudly rather than silently fitting the trailing observations with no field.
-# (Flagged for the post-recovery-net refactor that would add an obs->loc map;
-# see dev_notes/plan_gibbs_spatial_frontdoor.md.)
 .gp_gibbs_require_one_obs_per_loc <- function(spatial, n_obs, label) {
   n_spatial  <- spatial$n_spatial %||% nrow(spatial$unique_coords)
   obs_to_loc <- as.integer(spatial$obs_to_loc %||% seq_len(n_obs))
@@ -252,8 +250,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
     )))
   } else {
     stop("Spatial Gibbs not wired for type '", spatial_type, "'. Supported: ",
-         "icar, bym2, rsr, gp/nngp, multiscale_gp. ",
-         "See dev_notes/plan_gibbs_spatial_frontdoor.md.", call. = FALSE)
+         "icar, bym2, rsr, gp/nngp, multiscale_gp.", call. = FALSE)
   }
 }
 

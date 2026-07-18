@@ -13,7 +13,7 @@
 // in spec form; per-arm A_rows are materialized at factory time so per-obs
 // lookups in the eta/scatter loops are O(nnz_per_row).
 //
-// Not allowed as the copy block (first ship restriction inherited from
+// Not allowed as the copy block (restriction inherited from
 // nested_laplace_joint_multi.cpp file header: copy semantics for spatial
 // fields are gated to icar/bym2/car_proper).
 //

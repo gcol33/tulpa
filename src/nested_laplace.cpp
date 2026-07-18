@@ -357,13 +357,12 @@ Rcpp::List cpp_nested_laplace_icar(
 // BYM2 reparameterization: phi structured (ICAR) + theta IID,
 //   eta_s = sigma * (sqrt(rho) * scale_factor * phi + sqrt(1 - rho) * theta)
 //
-// Port note (Phase A5, plan_multi_block.md): this kernel routes through
-// run_multi_block_nested_laplace with phi and theta as two LatentBlocks.
-// The multi-block compute_eta accumulates `d_fac_b(k) * x[idx_b]` per block,
-// which re-associates the FP multiplication relative to the original
-// `sigma_k * (sqrt_rho * x * scale_factor + sqrt_1_rho * x)` factoring.
-// Result: log_marginal differs at ~1e-8 from pre-refactor (well below the
-// 1e-6 Newton tolerance). See dev_notes/refactor_notes_bym2.md.
+// This kernel routes through run_multi_block_nested_laplace with phi and theta
+// as two LatentBlocks. The multi-block compute_eta accumulates
+// `d_fac_b(k) * x[idx_b]` per block, which re-associates the FP multiplication
+// relative to the single-expression `sigma_k * (sqrt_rho * x * scale_factor +
+// sqrt_1_rho * x)` factoring, so log_marginal can differ at ~1e-8 (well below
+// the 1e-6 Newton tolerance).
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_bym2(
@@ -901,8 +900,8 @@ struct IndexedPriorOps {
                        const Rcpp::NumericVector&, int)> add_prior;
     std::function<double(const Rcpp::NumericVector&, int)> log_prior;
 
-    // Sparse-path fields (Stage 1.4b). Populated by all RW1/RW2/AR1 ops
-    // factories using the sparse twins added in 1.3a.
+    // Sparse-path fields. Populated by all RW1/RW2/AR1 ops factories using
+    // the sparse precision twins.
     std::function<void(std::vector<std::pair<int,int>>&)>
         add_prior_pattern;
     std::function<void(tulpa::SparseHessianBuilder&, tulpa::DenseVec&,

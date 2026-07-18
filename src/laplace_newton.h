@@ -78,7 +78,7 @@ struct NewtonScratch {
 // the loop carries no family knowledge: the family-enum mode finders pass a
 // FamilyLogLik (see the forwarding overload below) and the LikelihoodSpec path
 // passes a functor backed by spec.ll_double. This is the single Newton loop the
-// whole engine shares (dev_notes/plans/clean_migration.md, Phase L).
+// whole engine shares.
 template<typename ComputeEta, typename ScatterGradHess,
          typename CenterEffects, typename ComputeLogPrior, typename LogLik>
 LaplaceResult laplace_newton_solve_ll(
