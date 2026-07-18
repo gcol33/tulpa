@@ -1,5 +1,64 @@
 # tulpa NEWS
 
+## 0.0.90
+
+Audit fixes (0.0.89 review, issues #207-#217).
+
+* **Nested-Laplace crash on a length-1 multi-block prior (#207).** The outer
+  Pareto-k diagnostic was invoked with `type = NULL` on the multi-block path;
+  the single-block decline guard did not fire for a length-1 block list, so the
+  `.NL_REGISTRY[[NULL]]` lookup errored. A single latent block wrapped in a list
+  (the `tgmrf()` / custom-latent front door) or a single block with a
+  model-supplied `likelihood` (the tulpaObs consumer path) now resolves the type
+  from the block itself. Default-config crash on both paths.
+
+* **Self-loop adjacency corrupted the CAR/ICAR precision (#208).** A user
+  adjacency with a non-zero diagonal was fit on a self-referential `Q` after only
+  a warning. `.validate_adjacency_arg()` now zeroes the diagonal (the graph is an
+  off-diagonal adjacency everywhere downstream), and the CSR builder excludes a
+  node from its own neighbour list as defence in depth.
+
+* **`temporal_ar1(rho_prior = )` is now wired end to end (#209).** Supply a
+  `prior_beta(alpha, beta)` to place a Beta prior on `u = (rho + 1)/2`. The
+  compiled sampler kernel adds `a*log(u) + b*log(1-u)` (new ModelData
+  `ar1_rho_prior_a` / `ar1_rho_prior_b`, ABI 35 -> 36) and the nested-Laplace
+  outer grid is reweighted by the Beta density. Default `Beta(1, 1)` reproduces
+  the previous `Uniform(-1, 1)`. Previously the argument was accepted and
+  documented but silently ignored.
+
+* **Nested-Laplace fit accessors (#210).** `ranef()` now grid-marginalizes the
+  random-effect tail of a nested fit (was empty); `spatial_range()` /
+  `temporal_corr()` summarize the spatial / temporal axes of a mixed or
+  spatiotemporal nested fit instead of erroring on the `all(...)` type check; and
+  `diagnostic_summary()` unwraps a `$joint_fit` wrapper like the shared
+  reliability readers, so a model-package subclass surfaces its Pareto-k.
+
+* **Input-robustness fixes (#211).** SVC / TVC `terms = ~ f` / character
+  interfaces expand a factor covariate to its contrast columns (shared
+  `.resolve_varying_coef_columns()`) instead of failing a bare-name match; the
+  inline `temporal()` field enforces the RW2 >= 3 time-point guard;
+  `moran_i()` drops self explicitly under coincident coordinates; and
+  `check_diagnostics()` returns `NA` on a too-short chain rather than a spurious
+  "checks passed".
+
+* **C++ defensive fixes (#212).** `TapeScope` move-assignment re-points the
+  active thread-local tape; a zero-byte file at a checkpoint path is treated as
+  fresh rather than a bad-magic error.
+
+* **Docs and internal single-sourcing (#213).** Removed the `tulpa_psis()`
+  `tail_points` "(with a warning)" doc that never fired; `.tulpa_param_layout()`
+  builds RE names through the single `.re_names_from_layout()` source; grammar
+  fix in `priors_default()`.
+
+* **Test quality (#215, #216).** The SVC / TVC exact-NUTS front door gained a
+  divergence guard and scale recovery (the configuration the #144 divergence bug
+  survived in). `test-gpu-nngp` was retitled to the path it exercises;
+  `test-hsgp-recovery` renamed to `test-hsgp-density-identity` (it is an analytic
+  identity, not a fit); the leapfrog-drift baseline now fails loudly if missing;
+  the inference-tier test checks every backend's tier; and the native
+  Rhat/ESS/MCSE reference tolerance was tightened from 1e-4 to 1e-12 (the
+  estimators match `posterior::` to ~8e-16).
+
 ## 0.0.89
 
 Audit fixes (0.0.88 review, issues #193-#206).
