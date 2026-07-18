@@ -449,6 +449,10 @@ struct TreeNode {
     // Slice contribution and continue/stop flag
     int n_prime;
     bool s_prime;
+    // True if any leaf in this subtree diverged (leapfrog failure or the energy
+    // error exceeding max_dE). Distinct from !s_prime, which also fires on a
+    // U-turn -- a normal termination, not a divergence.
+    bool diverged;
     // Acceptance stats for DA
     double alpha;
     int n_alpha;
@@ -480,6 +484,7 @@ TreeNode build_tree(const JointState& st,
             out.log_post_prime = log_post;
             out.n_prime = 0;
             out.s_prime = false;
+            out.diverged = true;
             out.alpha = 0.0;
             out.n_alpha = 1;
             return out;
@@ -493,6 +498,7 @@ TreeNode build_tree(const JointState& st,
         out.log_post_prime = lf.log_post;
         out.n_prime = (log_u <= -H_new) ? 1 : 0;
         out.s_prime = (log_u < (max_dE - H_new));
+        out.diverged = !out.s_prime;  // leaf stop here == energy divergence
         double dH = H0 - H_new;
         out.alpha = (dH > 0) ? 1.0 : std::exp(dH);
         out.n_alpha = 1;
@@ -542,6 +548,7 @@ TreeNode build_tree(const JointState& st,
     out.n_prime = n_combined;
     out.s_prime = right.s_prime &&
                   no_uturn(out.q_minus, out.q_plus, out.r_minus, out.r_plus, M_inv);
+    out.diverged = left.diverged || right.diverged;
     out.alpha = left.alpha + right.alpha;
     out.n_alpha = left.n_alpha + right.n_alpha;
     return out;
@@ -743,6 +750,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
                     }
                 }
             }
+            if (bt.diverged) diverged = true;
             n_size += bt.n_prime;
             alpha_total += bt.alpha;
             n_alpha_total += bt.n_alpha;

@@ -60,7 +60,7 @@ NULL
     # from the rational roots (see .spde_rational_assemble). This analytic
     # marginal-SE path covers only the integer construction; fractional-nu field
     # SEs go through the assembly-based fit, not this rebuild.
-    stop("Analytic SPDE marginal SEs are integer-nu only (gcol33/tulpa#71; #85). ",
+    stop("Analytic SPDE marginal SEs are integer-nu only. ",
          "For fractional nu, the rational field SEs are not yet wired through ",
          "this path.", call. = FALSE)
   }

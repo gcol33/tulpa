@@ -46,13 +46,13 @@ inline T tvc_term_log_prior(
 
   if (structure == TemporalType::RW1) {
     T quad = rw1_quadratic_form(w, n_times, cyclic);
-    int rank = cyclic ? n_times : (n_times - 1);
+    int rank = tulpa_temporal::rw1_rank(n_times, cyclic);
     log_prior = log_prior + T(0.5 * rank) * safe_log(tau);
     log_prior = log_prior - T(0.5) * tau * quad;
 
   } else if (structure == TemporalType::RW2) {
     T quad = rw2_quadratic_form(w, n_times, cyclic);
-    int rank = cyclic ? n_times : (n_times - 2);
+    int rank = tulpa_temporal::rw2_rank(n_times, cyclic);
     log_prior = log_prior + T(0.5 * rank) * safe_log(tau);
     log_prior = log_prior - T(0.5) * tau * quad;
 

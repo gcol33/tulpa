@@ -434,13 +434,55 @@ validate_theta <- function(theta, built, family) {
 }
 
 
-# Pull a parameter draw from a fitted tulpa_fit object. Posterior draws are
-# expected on $draws$beta etc. (the layout used by tulpa NUTS / Laplace).
+# Pull a parameter draw from a fitted tulpa_fit object. Handles both the
+# multi-process named-list `$draws` (beta_<proc> / u_<proc>_<j>) and the
+# single-process layout-named matrix a tulpa() engine fit produces.
 #' @keywords internal
 theta_from_fit <- function(fit, sim_index, built, family) {
   draws <- fit$draws
   if (is.null(draws)) {
     stop("tulpa_fit has no $draws slot to simulate from", call. = FALSE)
+  }
+
+  # A tulpa() engine fit stores $draws as a layout-named matrix (columns
+  # beta[.], re[.], hyperparameters) for a single process, not the named-list
+  # layout the multi-process path below expects. Map its columns directly.
+  if (is.matrix(draws)) {
+    if (length(built) != 1L) {
+      stop("Simulating from a matrix-draws fit is supported only for a ",
+           "single-process model; call simulate() on the fit instead.",
+           call. = FALSE)
+    }
+    b1  <- built[[1L]]
+    cn  <- colnames(draws)
+    ridx <- ((sim_index - 1L) %% nrow(draws)) + 1L
+    row  <- draws[ridx, , drop = TRUE]
+    if (length(row) < b1$n_fixed) {
+      stop(sprintf("draws row has %d entries, expected >= %d fixed effects",
+                   length(row), b1$n_fixed), call. = FALSE)
+    }
+    beta1 <- as.numeric(row[seq_len(b1$n_fixed)])
+    re_cols <- if (!is.null(cn)) grep("^re\\[", cn) else integer(0)
+    re_vals <- if (length(re_cols)) as.numeric(row[re_cols]) else numeric(0)
+    u_blocks <- vector("list", length(b1$re_terms))
+    pos <- 0L
+    for (j in seq_along(b1$re_terms)) {
+      re <- b1$re_terms[[j]]
+      w  <- re$n_groups * re$n_coefs
+      vals <- if (pos + w <= length(re_vals)) re_vals[(pos + 1L):(pos + w)]
+              else rep(0, w)
+      u_blocks[[j]] <- matrix(vals, nrow = re$n_groups, ncol = re$n_coefs)
+      pos <- pos + w
+    }
+    extras <- list()
+    for (nm in names(family$extra_params)) {
+      extras[[nm]] <- if (!is.null(cn) && nm %in% cn) row[[nm]]
+                      else rprior(family$extra_params[[nm]], 1)
+    }
+    pn <- names(built)
+    return(list(beta = stats::setNames(list(beta1), pn),
+                u = stats::setNames(list(u_blocks), pn),
+                sigma = NULL, extras = extras))
   }
 
   pick_row <- function(mat) {

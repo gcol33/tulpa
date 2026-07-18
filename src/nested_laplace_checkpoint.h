@@ -71,8 +71,9 @@ using GridCheckpoint = CheckpointLog<LaplaceResult>;
 // temporal, the ST variants, nngp, hsgp). `struct_seed` is a per-kernel
 // fingerprint of everything NOT visible here -- the kernel tag plus its latent
 // structure (adjacency, coords / neighbour graph, temporal layout) -- folded by
-// the caller; this helper then folds the shared observation inputs and the grid
-// axes on top. Keys are the per-cell coordinate over `grid_axes` (each a
+// the caller; this helper then folds the shared observation inputs (y, X,
+// re_idx, ...) and the grid axes on top. Keys are the per-cell coordinate over
+// `grid_axes` (each a
 // length-n_grid column; multi-axis grids are pre-expanded to n_grid R-side).
 // Returns nullptr when `path` is empty, so a caller wires it unconditionally.
 inline std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
@@ -82,6 +83,7 @@ inline std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
     const Rcpp::NumericVector& y,
     const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericMatrix& X,
+    const Rcpp::NumericVector& re_idx,
     int n_re_groups, double sigma_re,
     const std::string& family, double phi,
     const std::vector<Rcpp::NumericVector>& grid_axes)
@@ -101,6 +103,10 @@ inline std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
     if (n_trials.size()) fp.fold(n_trials.begin(),
                                  (std::size_t)n_trials.size() * sizeof(int));
     if (X.size())        fp.fold(X.begin(), (std::size_t)X.size() * sizeof(double));
+    // The per-observation RE group assignment changes every cell's mode and
+    // log_marginal, so it fingerprints alongside n_re_groups (the count).
+    if (re_idx.size())   fp.fold(re_idx.begin(),
+                                 (std::size_t)re_idx.size() * sizeof(double));
     int n_grid = grid_axes.empty() ? 0 : static_cast<int>(grid_axes[0].size());
     CellKeyBuilder kb(n_grid);
     for (const auto& ax : grid_axes) {

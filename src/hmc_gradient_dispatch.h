@@ -24,6 +24,13 @@ GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const P
 
     const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
 
+    // Three distinct gradient sources exist: NUMERICAL (finite differences),
+    // the arena reverse-mode AD path, and a model package's hand-coded gradient.
+    // The AUTODIFF_FWD (forward) and AUTODIFF_TAPE (tape) modes are parsed for
+    // API stability but ship no separate kernel, so they resolve here to the
+    // same arena path as AUTODIFF_ARENA -- an explicit alias, not a silent
+    // substitution (see nuts_api.h). Only NUMERICAL selects a different source.
+
     // Hand-coded full gradient hook (FullGradFn): the model package ships a
     // tuned gradient that subsumes log-prior + log-likelihood. When set, it
     // wins regardless of the requested mode unless the user explicitly asks

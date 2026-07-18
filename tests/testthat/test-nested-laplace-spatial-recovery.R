@@ -105,8 +105,12 @@ test_that("nested-Laplace CAR_proper recovers (tau, rho) with CI coverage", {
   S <- 49L; reps <- 16L
   adj <- .grid_adj(7, 7); W <- .csr_to_W(adj, S)
   tau_true <- 2.0; rho_true <- 0.85
-  tau_grid <- exp(seq(log(0.5), log(8), length.out = 7))
-  rho_grid <- c(0.3, 0.5, 0.7, 0.85, 0.95)
+  # Pre-paired (tau, rho) integration grid: car_proper reads the two axes as
+  # already crossed (cbind), so cross them here rather than passing marginals.
+  .cargrid <- expand.grid(tau = exp(seq(log(0.5), log(8), length.out = 7)),
+                          rho = c(0.3, 0.5, 0.7, 0.85, 0.95))
+  tau_grid <- .cargrid$tau
+  rho_grid <- .cargrid$rho
 
   n_seed <- .nlsr_n_seed()
   tau_hat <- rho_hat <- field_cor <- numeric(n_seed)

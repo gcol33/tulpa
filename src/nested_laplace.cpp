@@ -335,7 +335,7 @@ Rcpp::List cpp_nested_laplace_icar(
     if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
                                      (std::size_t)adj_col_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid});
 
     Rcpp::List out = run_multi_block_nested_laplace(
@@ -399,7 +399,7 @@ Rcpp::List cpp_nested_laplace_bym2(
     if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
                                      (std::size_t)adj_col_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma_spatial_grid, rho_grid});
 
     Rcpp::List out = run_multi_block_nested_laplace(
@@ -459,7 +459,7 @@ Rcpp::List cpp_nested_laplace_car_proper(
     if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
                                      (std::size_t)adj_col_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
 
     Rcpp::List out = run_multi_block_nested_laplace(
@@ -654,7 +654,7 @@ Rcpp::List cpp_nested_laplace_nngp(
     if (spatial_idx.size()) sfp.fold(spatial_idx.begin(),
                                      (std::size_t)spatial_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma2_grid, phi_gp_grid});
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
@@ -781,7 +781,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
     if (lambda_eig.size()) sfp.fold(lambda_eig.begin(),
                                     (std::size_t)lambda_eig.size() * sizeof(double));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma2_grid, lengthscale_grid});
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
@@ -959,40 +959,39 @@ inline IndexedPriorOps make_rw1_ops(
     return ops;
 }
 
-// RW2 — 1D τ grid; no cyclic flag (the RW2 implementation ignores it).
+// RW2 — 1D τ grid, optional cyclic (ring) closure.
 inline IndexedPriorOps make_rw2_ops(
     int start, int n_groups, int n_times,
-    const Rcpp::NumericVector& tau_grid
+    const Rcpp::NumericVector& tau_grid, bool cyclic
 ) {
     IndexedPriorOps ops;
     ops.prep = [](int) { return true; };
-    ops.add_prior = [start, n_groups, n_times, &tau_grid]
+    ops.add_prior = [start, n_groups, n_times, &tau_grid, cyclic]
                     (tulpa::DenseVec& grad, tulpa::DenseMat& H,
                      const Rcpp::NumericVector& x, int k) {
         for (int g = 0; g < n_groups; g++)
             tulpa::add_rw2_precision(grad, H, x, start + g * n_times, n_times,
-                                      tau_grid[k], false);
+                                      tau_grid[k], cyclic);
     };
-    ops.log_prior = [start, n_groups, n_times, &tau_grid]
+    ops.log_prior = [start, n_groups, n_times, &tau_grid, cyclic]
                     (const Rcpp::NumericVector& x, int k) {
         double lp = 0.0;
         for (int g = 0; g < n_groups; g++)
             lp += tulpa::log_prior_rw2(x, start + g * n_times, n_times,
-                                        tau_grid[k], false);
+                                        tau_grid[k], cyclic);
         return lp;
     };
-    ops.add_prior_pattern = [start, n_groups, n_times]
+    ops.add_prior_pattern = [start, n_groups, n_times, cyclic]
                             (std::vector<std::pair<int,int>>& out) {
         for (int g = 0; g < n_groups; g++)
-            tulpa::add_rw2_pattern(out, start + g * n_times, n_times,
-                                    /*cyclic=*/false);
+            tulpa::add_rw2_pattern(out, start + g * n_times, n_times, cyclic);
     };
-    ops.add_prior_sparse = [start, n_groups, n_times, &tau_grid]
+    ops.add_prior_sparse = [start, n_groups, n_times, &tau_grid, cyclic]
                            (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                             const Rcpp::NumericVector& x, int k) {
         for (int g = 0; g < n_groups; g++)
             tulpa::add_rw2_precision_sparse(grad, H, x, start + g * n_times,
-                                             n_times, tau_grid[k], false);
+                                             n_times, tau_grid[k], cyclic);
     };
     return ops;
 }
@@ -1040,8 +1039,8 @@ inline IndexedPriorOps make_ar1_ops(
 // The temporal axis is uniform (tau, optional rho, optional cyclic), so one
 // registry keeps adding a temporal kernel O(1) -- a new kernel registers here
 // and is immediately available to every spatial family, with no new spatial x
-// temporal entry function. rho_grid is consulted only for AR1; cyclic only for
-// RW1 (RW2 ignores it, matching make_rw2_ops).
+// temporal entry function. rho_grid is consulted only for AR1; cyclic applies
+// to RW1 and RW2.
 inline IndexedPriorOps make_temporal_ops(
     const std::string& temporal_type,
     int start, int n_groups, int n_times,
@@ -1053,7 +1052,7 @@ inline IndexedPriorOps make_temporal_ops(
         return make_rw1_ops(start, n_groups, n_times, tau_grid, cyclic);
     }
     if (temporal_type == "rw2") {
-        return make_rw2_ops(start, n_groups, n_times, tau_grid);
+        return make_rw2_ops(start, n_groups, n_times, tau_grid, cyclic);
     }
     if (temporal_type == "ar1") {
         if (rho_grid.size() != tau_grid.size()) {
@@ -1284,7 +1283,7 @@ Rcpp::List cpp_nested_laplace_temporal(
     if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
                                       (std::size_t)temporal_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
 
     Rcpp::List out = run_multi_block_nested_laplace(
@@ -1349,7 +1348,7 @@ Rcpp::List cpp_nested_laplace_st_icar(
     if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
                                       (std::size_t)temporal_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {tau_spatial_grid, tau_temporal_grid, rho_t});
 
@@ -1414,7 +1413,7 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
                                       (std::size_t)temporal_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {tau_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
 
@@ -1484,7 +1483,7 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
                                       (std::size_t)temporal_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
 
@@ -1575,7 +1574,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
                                       (std::size_t)temporal_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid, rho_t});
 
@@ -1669,7 +1668,7 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
                                       (std::size_t)temporal_idx.size() * sizeof(int));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, rho_t});
 

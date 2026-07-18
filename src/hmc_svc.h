@@ -163,9 +163,6 @@ inline double nngp_log_lik(
     // T = double. This is the double twin of tulpa_svc_ad::nngp_log_lik and must
     // agree with it, so it takes the SAME constants (kSvcJitter / kSvcVarFloor,
     // the deliberately looser SVC conditioning) and the same blended floor.
-    // An earlier consolidation set this function to jitter/var_floor = 1e-6, but
-    // that routed through a double-only core the AD twin could not use, so the
-    // twin kept 1e-4 and the two silently described different models.
     std::vector<double> w_nb(n_neighbors);
     for (int j = 0; j < n_neighbors; j++) {
       int nn_orig_idx = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];
@@ -286,9 +283,7 @@ struct SVCGradients {
 //
 // sigma2 is needed for SPHERICAL alone: the other kernels' derivatives are
 // proportional to k(d), so they can be written from cov_val, but the spherical
-// polynomial's is not. It was previously omitted for that reason and fell
-// through to the exponential derivative -- the value used one kernel and its
-// gradient another.
+// polynomial's is not, so it takes sigma2 explicitly.
 inline double dcov_dphi_svc(double d, double phi, double cov_val, double sigma2,
                             CovType cov_type) {
   if (d < 1e-10) return 0.0;
@@ -444,8 +439,11 @@ inline void svc_nngp_gradients(
       double s = 0.0;
       for (int k = 0; k < j; k++) s += L[j * n_nb + k] * L[j * n_nb + k];
       double diag = C_mat[j * n_nb + j] - s;
-      // Numerical stability: larger minimum diagonal for better conditioning
-      L[j * n_nb + j] = (diag > 1e-6) ? std::sqrt(diag) : 1e-3;
+      // Floor the pivot at the shared SVC variance floor so this gradient
+      // Cholesky conditions the neighbour covariance the same way the value
+      // kernel (nngp_log_lik / cond_moments) does, rather than an ad-hoc floor.
+      L[j * n_nb + j] = (diag > kSvcVarFloor) ? std::sqrt(diag)
+                                              : std::sqrt(kSvcVarFloor);
       for (int k = j + 1; k < n_nb; k++) {
         double t = 0.0;
         for (int m = 0; m < j; m++) t += L[k * n_nb + m] * L[j * n_nb + m];

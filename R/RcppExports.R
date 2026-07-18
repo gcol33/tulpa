@@ -593,6 +593,10 @@ cpp_test_temporal_log_prior <- function(phi, type_str, tau, rho, cyclic) {
     .Call(`_tulpa_cpp_test_temporal_log_prior`, phi, type_str, tau, rho, cyclic)
 }
 
+cpp_test_temporal_rank <- function(type_str, T_len, cyclic) {
+    .Call(`_tulpa_cpp_test_temporal_rank`, type_str, T_len, cyclic)
+}
+
 cpp_test_sum_to_zero_penalty <- function(phi, lambda) {
     .Call(`_tulpa_cpp_test_sum_to_zero_penalty`, phi, lambda)
 }

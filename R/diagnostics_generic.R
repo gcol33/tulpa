@@ -161,10 +161,53 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   colMeans(W)
 }
 
+# Latent block types (lower-case) carried on a nested-Laplace fit's `$prior`,
+# whether a single block or a list of blocks. Used to route spatial_range() /
+# temporal_corr() to the grid-based hyperparameter posterior.
+.SPATIAL_NL_TYPES <- c("icar", "bym2", "car_proper", "gp", "nngp", "hsgp",
+                       "spde", "rsr", "rsr_spde")
+.TEMPORAL_NL_TYPES <- c("rw1", "rw2", "ar1", "iid", "seasonal")
+
+.nested_block_types <- function(object) {
+  pr <- object$prior
+  if (is.null(pr)) return(character(0))
+  if (!is.null(pr$type)) return(tolower(pr$type))
+  vapply(pr, function(b) tolower(b$type %||% ""), character(1))
+}
+
+# Weighted per-axis mean / sd / `probs`-quantile summary of a nested-Laplace
+# fit's hyperparameter posterior, read from the outer grid + weights (the axes
+# are already on their natural scale). NULL when the grid is not retained.
+.nested_hyper_summary <- function(object, probs) {
+  tg <- object$theta_grid
+  w  <- object$weights
+  if (is.null(tg) || is.null(w)) return(NULL)
+  w <- w / sum(w)
+  if (!is.matrix(tg)) {
+    tg <- matrix(tg, ncol = 1L,
+                 dimnames = list(NULL, object$theta_names %||% "theta"))
+  }
+  axes <- colnames(tg) %||% object$theta_names %||%
+    paste0("theta", seq_len(ncol(tg)))
+  rows <- lapply(seq_len(ncol(tg)), function(j) {
+    v  <- tg[, j]
+    m  <- sum(w * v)
+    s  <- sqrt(max(0, sum(w * v^2) - m^2))
+    qs <- .nl_wtd_quantile(v, w, probs)
+    out <- data.frame(mean = m, sd = s, row.names = axes[j],
+                      stringsAsFactors = FALSE)
+    out[.quantile_colnames(probs)] <- as.list(qs)
+    out
+  })
+  do.call(rbind, rows)
+}
+
 #' Extract spatial range and variance from a fitted spatial model
 #'
-#' Summarises posterior draws of spatial hyperparameters.
-#' Works with ICAR, BYM2, GP (NNGP), and SVC spatial types.
+#' Summarises the posterior of spatial hyperparameters. For sampler-tier fits
+#' this reads the raw hyperparameter draws; for a nested-Laplace spatial fit it
+#' summarises the outer hyperparameter grid. Works with ICAR, BYM2, GP (NNGP),
+#' CAR, SPDE, and SVC spatial types.
 #'
 #' @param object A `tulpa_fit` object fitted with a spatial component.
 #' @param probs Quantile probabilities for the summary (default 0.025, 0.975).
@@ -173,6 +216,15 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #'   probability, e.g. `q2.5`, `q97.5` for the defaults).
 #' @export
 spatial_range <- function(object, probs = c(0.025, 0.975)) {
+  # Nested-Laplace fits carry the hyperparameter posterior on the outer grid,
+  # not as draw columns; summarize the grid for a pure-spatial nested fit.
+  if (!is.null(object$theta_grid)) {
+    types <- .nested_block_types(object)
+    if (length(types) && all(types %in% .SPATIAL_NL_TYPES)) {
+      s <- .nested_hyper_summary(object, probs)
+      if (!is.null(s)) return(s)
+    }
+  }
   patterns <- c(
     range = "^(log_phi_gp|log_phi_gp_local|phi_gp)$",
     sigma = "^(log_sigma2_gp|log_sigma_bym2|log_tau_spatial)$",
@@ -246,6 +298,15 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
 #' @return A data.frame with rows for each temporal hyperparameter.
 #' @export
 temporal_corr <- function(object, probs = c(0.025, 0.975)) {
+  # Nested-Laplace fits carry the hyperparameter posterior on the outer grid,
+  # not as draw columns; summarize the grid for a pure-temporal nested fit.
+  if (!is.null(object$theta_grid)) {
+    types <- .nested_block_types(object)
+    if (length(types) && all(types %in% .TEMPORAL_NL_TYPES)) {
+      s <- .nested_hyper_summary(object, probs)
+      if (!is.null(s)) return(s)
+    }
+  }
   patterns <- c(
     tau   = "^log_tau_temporal$",
     rho   = "^logit_rho_ar1$",

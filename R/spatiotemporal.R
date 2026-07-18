@@ -339,11 +339,13 @@ spatiotemporal_effects.tulpa_fit <- function(object,
     return(result)
 
   } else if (format == "long") {
-    # Create long-format data frame
+    # Create long-format data frame. Each draw's row is stored s-fastest
+    # (matrix(nrow = S, ncol = T) column-major, as in the array format), so
+    # enumerate s before t to keep the labels aligned when S != T.
     result <- expand.grid(
       draw = seq_len(n_draws),
-      t = seq_len(T),
-      s = seq_len(S)
+      s = seq_len(S),
+      t = seq_len(T)
     )
     result$value <- as.vector(st_draws)
     result <- result[, c("s", "t", "draw", "value")]

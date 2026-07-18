@@ -1283,7 +1283,7 @@
     res$k_quality_reason  <-
         if (reached) "requested band reached"
         else if (!conf)
-            "k-hat interval crosses a band boundary; raise diagnose_draws or refine (gcol33/tulpa#131)"
+            "k-hat interval crosses a band boundary; raise diagnose_draws or refine the grid"
         else "k-hat confidently outside the requested band; the integration is genuinely less reliable"
     res
 }

@@ -47,7 +47,7 @@ inline double log_prior_rw1(
 
 inline double log_prior_rw2(
     const Rcpp::NumericVector& x, int start_idx, int n_times,
-    double tau, bool /*cyclic*/
+    double tau, bool cyclic
 ) {
     if (n_times < 3) return 0.0;
     double quad = 0.0;
@@ -55,7 +55,16 @@ inline double log_prior_rw2(
         double d = x[start_idx + t - 1] - 2.0 * x[start_idx + t] + x[start_idx + t + 1];
         quad += d * d;
     }
-    int rank = n_times - 2;
+    // On a cycle the second-difference operator annihilates only constants
+    // (a linear ramp is not periodic), so rank n-1; the wrap adds the two
+    // second differences centred at t = n-1 and t = 0.
+    int rank = cyclic ? n_times - 1 : n_times - 2;
+    if (cyclic) {
+        int i0 = start_idx, iL = start_idx + n_times - 1;
+        double d1 = x[iL - 1] - 2.0 * x[iL] + x[i0];      // centre n-1
+        double d2 = x[iL]     - 2.0 * x[i0] + x[i0 + 1];  // centre 0
+        quad += d1 * d1 + d2 * d2;
+    }
     return 0.5 * rank * std::log(tau / (2.0 * M_PI)) - 0.5 * tau * quad;
 }
 

@@ -222,7 +222,7 @@
                  integer(1))
     if (any(nc > 1L)) {
       stop("Random slopes (correlated / uncorrelated `(x | g)`) on a ",
-           "nested-Laplace block are not supported (gcol33/tulpa#28). ",
+           "nested-Laplace block are not supported. ",
            "All RE terms on a nested block must be random intercepts.",
            call. = FALSE)
     }

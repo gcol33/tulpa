@@ -244,13 +244,13 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                     if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
                         T quad = tulpa_temporal::rw1_quadratic_form(
                             st_delta.data() + s * T_st, T_st, st_cyclic);
-                        int rank = st_cyclic ? T_st : T_st - 1;
+                        int rank = tulpa_temporal::rw1_rank(T_st, st_cyclic);
                         log_post = log_post + T(0.5 * rank) * safe_log(tau_st)
                                  - T(0.5) * tau_st * quad;
                     } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
                         T quad = tulpa_temporal::rw2_quadratic_form(
                             st_delta.data() + s * T_st, T_st, st_cyclic);
-                        int rank = st_cyclic ? T_st : T_st - 2;
+                        int rank = tulpa_temporal::rw2_rank(T_st, st_cyclic);
                         log_post = log_post + T(0.5 * rank) * safe_log(tau_st)
                                  - T(0.5) * tau_st * quad;
                     }

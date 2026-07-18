@@ -171,10 +171,17 @@ inline NUTSChainsFn get_nuts_chains_fn() {
 // Accepted strings (case-sensitive, matching parse_gradient_mode in tulpa):
 //   "auto", "AUTO"                          — let the dispatcher pick
 //   "N", "numerical"                        — finite differences
-//   "A", "autodiff", "forward"              — forward-mode AD
 //   "A_r", "arena", "autodiff_arena"        — arena reverse-mode AD
-//   "A_t", "autodiff_tape"                  — tape reverse-mode AD
 //   "H", "handcoded", "analytical"          — hand-coded gradient
+//   "A", "autodiff", "forward"              — accepted; resolves to the arena
+//   "A_t", "autodiff_tape"                    reverse-mode AD path (no separate
+//                                             forward / tape kernel is shipped)
+//
+// The dispatcher exposes three distinct gradient sources -- numerical (N),
+// arena reverse-mode AD (A_r, the default AD path), and a model package's
+// hand-coded gradient (H). The forward (A) and tape (A_t) spellings are parsed
+// for API stability but currently alias A_r rather than selecting a separate
+// kernel; requesting them does not error.
 //
 // Returns 0 on success, non-zero on unrecognised mode (default "auto" stays).
 //
@@ -203,10 +210,13 @@ inline int set_gradient_mode_str(const char* mode_str) {
 // Function signature for compute_param_layout
 typedef void (*ComputeLayoutFn)(const ModelData* data, ParamLayout* layout_out);
 
-// Retrieve compute_param_layout from tulpa
+// Retrieve compute_param_layout from tulpa. compute_layout is typically a
+// consumer's first tulpa call and writes through a ParamLayout*, so it must
+// verify the ABI before any struct is exchanged, like the sibling getters.
 inline ComputeLayoutFn get_compute_layout_fn() {
     static ComputeLayoutFn fn = nullptr;
     if (!fn) {
+        check_abi_version();
         fn = (ComputeLayoutFn)R_GetCCallable("tulpa", "tulpa_compute_param_layout");
     }
     return fn;

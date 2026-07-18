@@ -353,13 +353,13 @@ logLik.tulpa_fit <- function(object, ...) {
     # A nested-Laplace fit stores one log-marginal per hyperparameter grid point;
     # the integrated log evidence is the log-sum-exp over the grid. This assumes
     # equal cell weights: exact for the tensor / uniform hyper-grid the generic
-    # driver builds, and an approximation for a design-weighted (CCD) grid, whose
-    # raw quadrature weights are not recoverable from the stored posterior
-    # weights. A single-point (e.g. conditional Laplace) marginal passes through
-    # unchanged. Non-finite cells (an inner Newton diverging in a grid corner
-    # returns +Inf / NaN) are dropped from the log-sum-exp, matching the
-    # finite-guarded weight grid; an unguarded max() would otherwise collapse
-    # the evidence to NaN.
+    # driver builds (the grid is laid out uniformly in the internal log-scale
+    # parameterization the marginal is computed on), and an approximation for a
+    # design-weighted (CCD) grid. A single-point (e.g. conditional Laplace)
+    # marginal passes through unchanged. Non-finite cells (an inner Newton
+    # diverging in a grid corner returns +Inf / NaN) are dropped from the
+    # log-sum-exp, matching the finite-guarded weight grid; an unguarded max()
+    # would otherwise collapse the evidence to NaN.
     lm <- object$log_marginal
     lm <- lm[is.finite(lm)]
     if (length(lm) == 0L) {
@@ -452,6 +452,23 @@ glance.tulpa_fit <- function(x, ...) {
 #' @export
 ranef <- function(object, ...) UseMethod("ranef")
 
+# Random-effect coefficient names implied by a fit's `re_layout` -- one per
+# (term, level, coef), matching the order the RE block is stored in: `g[level]`
+# for an intercept, `g.slope[level]` for a slope. The single source for the
+# labels ranef() attaches, independent of the sampler's full param_names.
+#' @keywords internal
+.re_names_from_layout <- function(layout) {
+  unlist(lapply(layout, function(rt) {
+    gv <- rt$group_var; levs <- rt$levels
+    cls <- rt$coef_labels %||% "(Intercept)"
+    unlist(lapply(levs, function(lev)
+      vapply(cls, function(cl)
+        if (identical(cl, "(Intercept)")) sprintf("%s[%s]", gv, lev)
+        else sprintf("%s.%s[%s]", gv, cl, lev),
+        character(1))))
+  }), use.names = FALSE) %||% character(0)
+}
+
 #' @rdname ranef
 #' @export
 ranef.tulpa_fit <- function(object, ...) {
@@ -459,12 +476,22 @@ ranef.tulpa_fit <- function(object, ...) {
   n_fixed <- object$n_fixed %||% 0L
   if (is.null(layout) || length(layout) == 0L) return(data.frame())
 
-  re_names <- (object$param_names %||% character(0))
-  re_names <- if (length(re_names) > n_fixed) re_names[-seq_len(n_fixed)] else character(0)
+  # Nice RE labels from the layout (not the sampler's full param_names, which
+  # also carries the latent field and variance-component hyperparameters).
+  re_names <- .re_names_from_layout(layout)
 
   re <- .re_draws_mat(object)
   if (!is.null(re)) {
-    nm <- re_names[seq_len(ncol(re))]
+    # Sampler-tier draws are [fixed, latent (field + RE), hyperparameters]; the
+    # RE coefficients are exactly the `re[...]`-named columns, so select those
+    # and drop the field / `log_sigma_re` / `L_re` columns that are not REs.
+    cn <- colnames(re)
+    re_cols <- if (!is.null(cn)) grep("^re\\[", cn) else integer(0)
+    if (length(re_cols) && length(re_cols) < ncol(re)) {
+      re <- re[, re_cols, drop = FALSE]
+    }
+    nm <- if (length(re_names) == ncol(re)) re_names else colnames(re) %||%
+      seq_len(ncol(re))
     return(data.frame(
       term = nm,
       estimate = colMeans(re),
@@ -477,7 +504,8 @@ ranef.tulpa_fit <- function(object, ...) {
 
   if (!is.null(object$mode) && length(object$mode) > n_fixed) {
     blups <- object$mode[(n_fixed + 1L):length(object$mode)]
-    nm <- re_names[seq_len(length(blups))]
+    nm <- if (length(re_names) == length(blups)) re_names
+          else re_names[seq_len(length(blups))]
     return(data.frame(
       term = nm, estimate = blups,
       sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,

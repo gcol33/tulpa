@@ -117,27 +117,6 @@ struct ScatterIndexCache {
     std::vector<ArmIndexedCache> arm;
 };
 
-namespace detail {
-
-// Column-major lower-triangle index (a1 >= a2):
-//   for a2 in [0, A_idx), for a1 in [a2, A_idx) -> position
-inline int col_major_lt_pos(int a1, int a2, int A_idx) {
-    // Sum of column heights for cols [0..a2): each col c has (A_idx - c) entries.
-    // Sum_{c=0..a2-1} (A_idx - c) = a2 * A_idx - a2*(a2-1)/2
-    return a2 * A_idx - a2 * (a2 - 1) / 2 + (a1 - a2);
-}
-
-inline int upper_diag_lt_pos(int j, int l) {
-    // Lower triangle of p_k x p_k with j >= l, column-major:
-    //   for l_outer in [0, p_k), for j_inner in [l_outer, p_k)
-    // pos = (l * p_k - l*(l-1)/2) + (j - l)
-    // Where ((l * p_k - l*(l-1)/2)) is sum of col heights for cols 0..l-1
-    return l * /*p_k unused — different layout chosen below*/ 0 + 0 + (j - l);
-    (void)j; (void)l;
-}
-
-} // namespace detail
-
 // Build the cache. Must be called AFTER `H_builder.init()` so the
 // entry_map has its final pattern. Inspects blocks: DENSE_BASIS sets
 // `any_dense_basis = true` and DB rows / columns are skipped (the per-

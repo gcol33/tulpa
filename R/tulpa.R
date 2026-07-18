@@ -406,7 +406,7 @@
     n_times      = as.integer(n_times),
     n_groups     = n_groups
   )
-  if (type == "rw1") out$cyclic <- isTRUE(temporal$cyclic)
+  if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(temporal$cyclic)
   out
 }
 
@@ -1585,12 +1585,16 @@ tulpa <- function(formula, data,
     sel <- .sel_redirect(sel, backend, sprintf(
       "random-slope term(s) present; RE covariance(s) integrated via %s (%d block(s))",
       backend, length(re_terms)))
-    if (!is.null(sigma_re)) {
-      warning("`sigma_re` is ignored for random-slope model(s): the RE ",
-              "covariance is integrated, not conditioned on a scalar SD. Drop ",
-              "`sigma_re`, or use a random-intercept-only model to condition on ",
-              "it.", call. = FALSE)
-    }
+  }
+  # Warn once whenever the fit integrates the RE covariance (whether reached via
+  # the redirect above or selected directly by name, e.g. mode = "re_cov_gibbs")
+  # and a scalar `sigma_re` was also supplied -- it is silently unused there.
+  if (has_slope && !is.null(sigma_re) &&
+      sel$backend %in% c("re_cov_nested", "re_cov_gibbs")) {
+    warning("`sigma_re` is ignored for random-slope model(s): the RE ",
+            "covariance is integrated, not conditioned on a scalar SD. Drop ",
+            "`sigma_re`, or use a random-intercept-only model to condition on ",
+            "it.", call. = FALSE)
   }
 
   # SPDE carries its own nested-Laplace integration engine: fit_spde() rebuilds

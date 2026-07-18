@@ -15,9 +15,6 @@
 //   Robnik, De Luca, Silverstein, Seljak (2023). "Microcanonical Hamiltonian
 //     Monte Carlo." JMLR.
 //   Robnik & Seljak (2024). "Controlled Hamiltonian Monte Carlo / MAMCLMC."
-//
-// Reconstructed 2026-04-27 from the surviving cpp test wrapper +
-// recovered tail of the original header (mid-file blocks were NUL-corrupt).
 
 #ifndef TULPA_MCLMC_H
 #define TULPA_MCLMC_H

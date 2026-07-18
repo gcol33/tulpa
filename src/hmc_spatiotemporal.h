@@ -74,11 +74,11 @@ inline double type_ii_log_prior(
     // Apply temporal prior
     if (temp_type == TemporalType::RW1) {
       double quad = tulpa_temporal::rw1_quadratic_form(delta_s.data(), T, cyclic);
-      int rank = cyclic ? T : T - 1;
+      int rank = tulpa_temporal::rw1_rank(T, cyclic);
       log_prior += 0.5 * rank * std::log(tau) - 0.5 * tau * quad;
     } else if (temp_type == TemporalType::RW2) {
       double quad = tulpa_temporal::rw2_quadratic_form(delta_s.data(), T, cyclic);
-      int rank = cyclic ? T : T - 2;
+      int rank = tulpa_temporal::rw2_rank(T, cyclic);
       log_prior += 0.5 * rank * std::log(tau) - 0.5 * tau * quad;
     }
     // AR1 would need rho parameter

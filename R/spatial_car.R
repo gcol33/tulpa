@@ -382,25 +382,25 @@ compute_bym2_scale <- function(adjacency) {
   adj <- as.matrix(adjacency)
   diag(adj) <- 0
 
-  # Number of neighbors for each area
-  n_neighbors <- rowSums(adj)
-
   # ICAR precision matrix: Q_ii = n_neighbors[i], Q_ij = -1 if neighbors
-  Q <- diag(n_neighbors) - adj
+  Q <- diag(rowSums(adj)) - adj
 
-  # Compute generalized inverse (Q is rank-deficient)
-  # Use eigendecomposition
+  # Moore-Penrose generalized inverse of the rank-deficient ICAR precision,
+  # Q^+ = V diag(1/lambda) V' over the non-null eigenpairs.
   eig <- eigen(Q, symmetric = TRUE)
+  nz  <- abs(eig$values) > 1e-10
+  V   <- eig$vectors[, nz, drop = FALSE]
+  lam <- eig$values[nz]
+  Qinv <- V %*% (t(V) / lam)
 
-  # Remove the zero eigenvalue (rank deficiency)
-  non_zero <- abs(eig$values) > 1e-10
-  lambda <- eig$values[non_zero]
-
-  # Geometric mean of non-zero eigenvalues
-  # This is the scaling factor following INLA convention
-  scale <- exp(mean(log(lambda)))
-
-  scale
+  # Riebler et al. (2016) / Sorbye-Rue generalized variance: the geometric mean
+  # of the marginal variances diag(Q^+). The BYM2 field enters the linear
+  # predictor as scale_factor * phi (phi ~ ICAR with these marginal variances),
+  # so returning 1 / sqrt(generalized variance) makes scale_factor * phi carry
+  # unit generalized marginal variance -- the rescaling that keeps the spatial
+  # fraction `rho` interpretable and sigma_total comparable across graphs.
+  gen_var <- exp(mean(log(diag(Qinv))))
+  1 / sqrt(gen_var)
 }
 
 #' Print method for tulpa_spatial

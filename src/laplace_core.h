@@ -1,5 +1,5 @@
 // laplace_core.h
-// Core Laplace approximation engine for ratiod
+// Core Laplace approximation engine for tulpa
 // Implements nested Laplace approximation for latent Gaussian models
 
 #ifndef TULPA_LAPLACE_CORE_H

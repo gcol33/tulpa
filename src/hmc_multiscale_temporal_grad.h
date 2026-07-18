@@ -104,7 +104,7 @@ inline double rw1_cyclic_grad_log_sigma2(const double* phi, int n, double sigma2
         double diff = phi[0] - phi[n-1];
         quad += diff * diff;
     }
-    return -0.5 * n + 0.5 * quad / (sigma2 + 1e-10);
+    return -0.5 * tulpa_temporal::rw1_rank(n, true) + 0.5 * quad / (sigma2 + 1e-10);
 }
 
 // =============================================================================

@@ -32,7 +32,7 @@
 #'   * car_proper: same adjacency; optional `tau_grid`, `rho_grid`,
 #'           `rho_bounds = c(lower, upper)` (defaults to (0, 1)).
 #'   * rw1/rw2: `temporal_idx` (1-based), `n_times`; optional `tau_grid`,
-#'             `cyclic` (rw1 only, default FALSE).
+#'             `cyclic` (default FALSE).
 #'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`.
 #' @param re_idx Optional 1-based RE group index per obs (defaults to no RE).
 #' @param n_re_groups RE group count (default 0).
@@ -236,7 +236,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_dispatch(type, cargs, prior)
   tm$mark("grid")
 
-  # Integrate: trapezoid for 1D, simple normalised exp for 2D scatter grids.
+  # Integrate exp(log_marginal) over the outer grid. `log_marginal` is the
+  # inner marginal in the internal (log-scale) hyperparameter parameterization
+  # the grid is laid out on, so the grid nodes are equally-weighted quadrature
+  # points and no user-scale volume element is applied -- adding one biases the
+  # scale-hyperparameter posterior (confirmed by CAR_proper (tau, rho) recovery).
   res$weights <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
   res <- .nl_posterior_moments(res, type)
   if (isTRUE(keep_grid_hessians)) {
@@ -361,7 +365,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   icar = list(
     cpp_fn = "cpp_nested_laplace_icar",
     defaults = function(p, a) {
-      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "icar")
+      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid()
       p
     },
     pack = function(p) c(.nl_adj_args(p), list(
@@ -395,19 +399,25 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   car_proper = list(
     cpp_fn = "cpp_nested_laplace_car_proper",
     defaults = function(p, a) {
-      if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
-        rb <- p$rho_bounds %||% c(0, 1)
-        # Margin in from the eigenvalue endpoints -- Q goes singular at the
-        # boundary, so anchoring the grid in (lower + eps, upper - eps) avoids
-        # NaN log-determinants from the per-grid-point Cholesky.
-        eps <- 0.05 * (rb[2] - rb[1])
-        lo <- rb[1] + eps
-        hi <- rb[2] - eps
-        g_tau <- exp(seq(log(0.3), log(30), length.out = 5))
-        g_rho <- seq(lo, hi, length.out = 5)
-        gr <- expand.grid(tau = g_tau, rho = g_rho)
-        p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
-      }
+      # `rho_car_grid` is the joint-API spelling of the correlation axis; accept
+      # it as an alias so a grid passed under either name is honoured.
+      p$rho_grid <- p$rho_grid %||% p$rho_car_grid
+      # Both axes supplied -> treat as the pre-paired integration grid (the
+      # theta builder pairs them with cbind), matching bym2 / ar1.
+      if (!is.null(p$tau_grid) && !is.null(p$rho_grid)) return(p)
+      # Otherwise default each missing axis independently and cross the two, so
+      # supplying only one axis keeps it instead of discarding it.
+      rb <- p$rho_bounds %||% c(0, 1)
+      # Margin in from the eigenvalue endpoints -- Q goes singular at the
+      # boundary, so anchoring the grid in (lower + eps, upper - eps) avoids
+      # NaN log-determinants from the per-grid-point Cholesky.
+      eps <- 0.05 * (rb[2] - rb[1])
+      g_tau <- if (is.null(p$tau_grid))
+        exp(seq(log(0.3), log(30), length.out = 5)) else sort(unique(p$tau_grid))
+      g_rho <- if (is.null(p$rho_grid))
+        seq(rb[1] + eps, rb[2] - eps, length.out = 5) else sort(unique(p$rho_grid))
+      gr <- expand.grid(tau = g_tau, rho = g_rho)
+      p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
       p
     },
     pack = function(p) c(.nl_adj_args(p), list(
@@ -647,7 +657,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   rw1 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
     defaults = function(p, a) {
-      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw1")
+      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid()
       p
     },
     pack = function(p) list(
@@ -665,7 +675,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   rw2 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
     defaults = function(p, a) {
-      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid(p, a, "rw2")
+      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid()
       p
     },
     pack = function(p) list(
@@ -781,9 +791,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   out
 }
 
-# Default 1D log-spaced tau grid, anchored on a 9-point search around an
-# educated centre. Coarse but unbiased across reasonable problems.
-.default_tau_grid <- function(prior, a, type) {
+# Default 1D log-spaced tau grid: a 9-point search over a wide precision range,
+# shared by the icar / rw1 / rw2 intrinsic-GMRF kernels.
+.default_tau_grid <- function() {
   exp(seq(log(0.3), log(30), length.out = 9))
 }
 
@@ -940,7 +950,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       temporal_idx = as.integer(p$temporal_idx),
       n_times      = as.integer(p$n_times)
     )
-    if (type == "rw1") out$cyclic <- isTRUE(p$cyclic)
+    if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
     out
   } else if (type == "iid") {
     list(
@@ -1265,7 +1275,7 @@ prior_from_spec <- function(spec, data) {
     temporal_idx = as.integer(spec$time_index),
     n_times = as.integer(spec$n_times)
   )
-  if (type == "rw1") out$cyclic <- isTRUE(spec$cyclic)
+  if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(spec$cyclic)
   out
 }
 

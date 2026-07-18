@@ -40,21 +40,26 @@ void add_rw2_precision(
     int start_idx, int n_times, double tau, bool cyclic
 ) {
     if (n_times < 3) return;
+    // One second-difference term (x[p] - 2 x[q] + x[r]) into grad and H.
+    auto add_term = [&](int p, int q, int r) {
+        double diff2 = x[p] - 2.0 * x[q] + x[r];
+        grad[p] -= tau * diff2;
+        grad[q] += 2.0 * tau * diff2;
+        grad[r] -= tau * diff2;
+        H[p][p] += tau;         H[q][q] += 4.0 * tau;   H[r][r] += tau;
+        H[p][q] -= 2.0 * tau;   H[q][p] -= 2.0 * tau;
+        H[q][r] -= 2.0 * tau;   H[r][q] -= 2.0 * tau;
+        H[p][r] += tau;         H[r][p] += tau;
+    };
     for (int t = 1; t < n_times - 1; t++) {
         int idx = start_idx + t;
-        double diff2 = x[idx - 1] - 2.0 * x[idx] + x[idx + 1];
-        grad[idx - 1] -= tau * diff2;
-        grad[idx] += 2.0 * tau * diff2;
-        grad[idx + 1] -= tau * diff2;
-        H[idx - 1][idx - 1] += tau;
-        H[idx][idx] += 4.0 * tau;
-        H[idx + 1][idx + 1] += tau;
-        H[idx - 1][idx] -= 2.0 * tau;
-        H[idx][idx - 1] -= 2.0 * tau;
-        H[idx][idx + 1] -= 2.0 * tau;
-        H[idx + 1][idx] -= 2.0 * tau;
-        H[idx - 1][idx + 1] += tau;
-        H[idx + 1][idx - 1] += tau;
+        add_term(idx - 1, idx, idx + 1);
+    }
+    if (cyclic) {
+        // Close the ring: centres at t = n-1 and t = 0 with wrapped neighbours.
+        int i0 = start_idx, iL = start_idx + n_times - 1;
+        add_term(iL - 1, iL, i0);
+        add_term(iL, i0, i0 + 1);
     }
 }
 
@@ -113,21 +118,31 @@ void add_rw1_precision_sparse(
 
 void add_rw2_precision_sparse(
     DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
-    int start_idx, int n_times, double tau, bool /*cyclic*/
+    int start_idx, int n_times, double tau, bool cyclic
 ) {
     if (n_times < 3) return;
+    // SparseHessianBuilder::add normalizes (row, col) to the lower triangle, so
+    // each unique off-diagonal edge is written once regardless of orientation.
+    auto add_term = [&](int p, int q, int r) {
+        double diff2 = x[p] - 2.0 * x[q] + x[r];
+        grad[p] -= tau * diff2;
+        grad[q] += 2.0 * tau * diff2;
+        grad[r] -= tau * diff2;
+        H.add(p, p, tau);
+        H.add(q, q, 4.0 * tau);
+        H.add(r, r, tau);
+        H.add(p, q, -2.0 * tau);
+        H.add(q, r, -2.0 * tau);
+        H.add(p, r, tau);
+    };
     for (int t = 1; t < n_times - 1; t++) {
         int idx = start_idx + t;
-        double diff2 = x[idx - 1] - 2.0 * x[idx] + x[idx + 1];
-        grad[idx - 1] -= tau * diff2;
-        grad[idx]     += 2.0 * tau * diff2;
-        grad[idx + 1] -= tau * diff2;
-        H.add(idx - 1, idx - 1, tau);
-        H.add(idx,     idx,     4.0 * tau);
-        H.add(idx + 1, idx + 1, tau);
-        H.add(idx,     idx - 1, -2.0 * tau);
-        H.add(idx + 1, idx,     -2.0 * tau);
-        H.add(idx + 1, idx - 1, tau);
+        add_term(idx - 1, idx, idx + 1);
+    }
+    if (cyclic) {
+        int i0 = start_idx, iL = start_idx + n_times - 1;
+        add_term(iL - 1, iL, i0);
+        add_term(iL, i0, i0 + 1);
     }
 }
 
@@ -166,7 +181,7 @@ void add_rw1_pattern(
 
 void add_rw2_pattern(
     std::vector<std::pair<int,int>>& out,
-    int start_idx, int n_times, bool /*cyclic*/
+    int start_idx, int n_times, bool cyclic
 ) {
     if (n_times < 3) return;
     for (int t = 1; t < n_times - 1; t++) {
@@ -174,6 +189,15 @@ void add_rw2_pattern(
         out.emplace_back(idx,     idx - 1);
         out.emplace_back(idx + 1, idx);
         out.emplace_back(idx + 1, idx - 1);
+    }
+    if (cyclic) {
+        // Off-diagonal edges the two ring-closing terms add (as (hi, lo)).
+        int i0 = start_idx, iL = start_idx + n_times - 1;
+        out.emplace_back(iL,     iL - 1);
+        out.emplace_back(iL,     i0);
+        out.emplace_back(iL - 1, i0);
+        out.emplace_back(i0 + 1, i0);
+        out.emplace_back(iL,     i0 + 1);
     }
 }
 

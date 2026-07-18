@@ -2622,6 +2622,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_temporal_rank
+int cpp_test_temporal_rank(std::string type_str, int T_len, bool cyclic);
+RcppExport SEXP _tulpa_cpp_test_temporal_rank(SEXP type_strSEXP, SEXP T_lenSEXP, SEXP cyclicSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type type_str(type_strSEXP);
+    Rcpp::traits::input_parameter< int >::type T_len(T_lenSEXP);
+    Rcpp::traits::input_parameter< bool >::type cyclic(cyclicSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_temporal_rank(type_str, T_len, cyclic));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_sum_to_zero_penalty
 double cpp_test_sum_to_zero_penalty(NumericVector phi, double lambda);
 RcppExport SEXP _tulpa_cpp_test_sum_to_zero_penalty(SEXP phiSEXP, SEXP lambdaSEXP) {
@@ -3462,6 +3475,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_rw2_quadratic_form", (DL_FUNC) &_tulpa_cpp_test_rw2_quadratic_form, 2},
     {"_tulpa_cpp_test_ar1_log_density", (DL_FUNC) &_tulpa_cpp_test_ar1_log_density, 3},
     {"_tulpa_cpp_test_temporal_log_prior", (DL_FUNC) &_tulpa_cpp_test_temporal_log_prior, 5},
+    {"_tulpa_cpp_test_temporal_rank", (DL_FUNC) &_tulpa_cpp_test_temporal_rank, 3},
     {"_tulpa_cpp_test_sum_to_zero_penalty", (DL_FUNC) &_tulpa_cpp_test_sum_to_zero_penalty, 2},
     {"_tulpa_cpp_test_parallel_dot_products", (DL_FUNC) &_tulpa_cpp_test_parallel_dot_products, 3},
     {"_tulpa_cpp_test_parallel_likelihood", (DL_FUNC) &_tulpa_cpp_test_parallel_likelihood, 3},

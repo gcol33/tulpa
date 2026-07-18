@@ -811,6 +811,17 @@ double cpp_test_temporal_log_prior(
   );
 }
 
+// Single-source intrinsic-GMRF rank normalizer (rw1_rank / rw2_rank), consumed
+// by both the production templated log-posterior (compute_temporal_prior) and
+// the double twin. Exposed so a test can pin the cyclic rank (T-1 for RW1 and
+// RW2) that both paths depend on.
+// [[Rcpp::export]]
+int cpp_test_temporal_rank(std::string type_str, int T_len, bool cyclic) {
+  if (type_str == "rw1") return tulpa_temporal::rw1_rank(T_len, cyclic);
+  if (type_str == "rw2") return tulpa_temporal::rw2_rank(T_len, cyclic);
+  return 0;
+}
+
 // [[Rcpp::export]]
 double cpp_test_sum_to_zero_penalty(NumericVector phi, double lambda) {
   return tulpa_temporal::sum_to_zero_penalty(phi.begin(), phi.size(), lambda);

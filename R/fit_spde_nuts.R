@@ -130,8 +130,8 @@ tulpa_nuts_spde <- function(y, X, spatial,
   frac_fixed_hyper <- FALSE
   if (.spde_nu_is_fractional(spatial$nu)) {
     if (isTRUE(joint)) {
-      stop("Joint-hyper NUTS for a fractional-nu SPDE is not supported ",
-           "(gcol33/tulpa#85): the rational roots are not differentiable in ",
+      stop("Joint-hyper NUTS for a fractional-nu SPDE is not supported: ",
+           "the rational roots are not differentiable in ",
            "kappa. Use joint = FALSE (fixed range/sigma) for fractional NUTS, ",
            "the nested-Laplace path over (range, sigma) for full hyper ",
            "integration, or an integer nu for joint NUTS.", call. = FALSE)

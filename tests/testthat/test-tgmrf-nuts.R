@@ -57,6 +57,12 @@ test_that("tulpa_tgmrf_nuts runs end-to-end and returns sensible posterior momen
   expect_gt(fit$mean_accept, 0.05)        # collapse guard
   expect_lt(fit$mean_accept, 0.999)       # not stuck
   expect_true(all(fit$tree_depth >= 1L))
+  # Energy divergences are tracked (previously never counted): a well-formed,
+  # per-draw logical vector plus a non-negative integer count within range.
+  expect_type(fit$divergent, "logical")
+  expect_length(fit$divergent, nrow(fit$draws))
+  expect_true(fit$n_divergent >= 0L && fit$n_divergent <= nrow(fit$draws))
+  expect_equal(fit$n_divergent, sum(fit$divergent))
   expect_equal(fit$inference_mode, "exact")
   expect_equal(fit$inference_tier, 1L)
   # Posterior means in the (log_tau, atanh_rho) band consistent with the sim.

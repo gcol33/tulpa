@@ -53,8 +53,7 @@
 //   output HSGP only K*M^2 + M*K*(K+1)/2 entries are actually populated
 //   by the data + prior. CHOLMOD sees the extra zeros as numerical noise;
 //   first-ship correctness is unaffected. Tighter pattern enumeration
-//   would route through MULTI_OUTPUT_BASIS (TODO if a downstream workload
-//   asks).
+//   would route through MULTI_OUTPUT_BASIS for a multi-output workload.
 //
 // First-ship scope.
 //   K = 2 only — the C++ factory hard-errors otherwise. The K > 2

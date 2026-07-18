@@ -1380,6 +1380,10 @@ Rcpp::List cpp_nested_laplace_joint_multi(
             fp.fold_pod(pa.p);
             fp.fold_pod(pa.n_re_groups);
             fp.fold_str(a.family);
+            // Per-observation RE group assignment changes each cell's mode /
+            // log_marginal, so fingerprint it alongside n_re_groups (the count).
+            if (pa.re_idx.size()) fp.fold(pa.re_idx.begin(),
+                                          (std::size_t)pa.re_idx.size() * sizeof(double));
             if (a.y.size())        fp.fold(a.y.begin(),
                                            (std::size_t)a.y.size() * sizeof(double));
             if (pa.X.size())       fp.fold(pa.X.begin(),
@@ -2259,10 +2263,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         const size_t per_scratch = static_cast<size_t>(n_x) * 4 * sizeof(double);
         const size_t per_thread  = per_builder + per_factor + per_scratch + 1;
         // Budget the replicated per-thread working set against the memory that
-        // is actually FREE, not installed (tulpa#64 budgeted against total,
-        // which over-provisions on a loaded box -- 50% of a 64 GB machine is 32
+        // is actually FREE, not installed: budgeting against total
+        // over-provisions on a loaded box -- 50% of a 64 GB machine is 32
         // GB even when only 40 GB is free and 23 GB is already committed, so the
-        // grid still spilled into swap / OOM). A safety fraction of free RAM
+        // grid still spilled into swap / OOM. A safety fraction of free RAM
         // goes to the per-thread pool; the remainder is left for the grid
         // results accumulating during the solve, CHOLMOD fill-in beyond the 2x
         // nnz factor estimate, and OS headroom. Fall back to half of total, then
@@ -2311,8 +2315,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
 
     // n_outer is now the realised outer width (after the memory clamp); it is
     // forwarded to run_nested_laplace_grid, which stamps it on the reporter for
-    // the parallel-grid ETA and the "| N threads" console suffix (tulpa#64,
-    // tulpa#88). Resize BEFORE building the slot-0 cache so &H_builders[0] is its
+    // the parallel-grid ETA and the "| N threads" console suffix. Resize
+    // BEFORE building the slot-0 cache so &H_builders[0] is its
     // final address when the cache (validity-keyed on the builder pointer) and
     // the copies bind to it.
     H_builders.resize(n_outer);

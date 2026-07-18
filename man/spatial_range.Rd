@@ -17,6 +17,8 @@ A data.frame with rows for each spatial hyperparameter and columns
 probability, e.g. \code{q2.5}, \code{q97.5} for the defaults).
 }
 \description{
-Summarises posterior draws of spatial hyperparameters.
-Works with ICAR, BYM2, GP (NNGP), and SVC spatial types.
+Summarises the posterior of spatial hyperparameters. For sampler-tier fits
+this reads the raw hyperparameter draws; for a nested-Laplace spatial fit it
+summarises the outer hyperparameter grid. Works with ICAR, BYM2, GP (NNGP),
+CAR, SPDE, and SVC spatial types.
 }

@@ -455,7 +455,7 @@ Rcpp::List cpp_nested_laplace_spde(
     if (!rat_poles.empty())   sfp.fold(rat_poles.data(),   rat_poles.size() * sizeof(double));
     if (!rat_weights.empty()) sfp.fold(rat_weights.data(), rat_weights.size() * sizeof(double));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n_trials, X,
+        checkpoint_path, sfp.value(), max_iter, tol, y, n_trials, X, re_idx,
         n_re_groups, sigma_re, family, phi, {range_grid, sigma_grid});
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(

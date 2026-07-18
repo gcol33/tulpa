@@ -38,9 +38,9 @@ inline T rw1_log_lik(
   T quad = rw1_quadratic_form(phi.data(), n, cyclic);
 
   // Normalizing constant (improper prior, omit for sampling)
-  int n_diffs = cyclic ? n : (n - 1);
+  int rank = tulpa_temporal::rw1_rank(n, cyclic);
   return T(-0.5) * quad / sigma2
-       - T(0.5 * n_diffs) * safe_log(T(2.0 * M_PI) * sigma2);
+       - T(0.5 * rank) * safe_log(T(2.0 * M_PI) * sigma2);
 }
 
 // -----------------------------------------------------------------------------
@@ -60,9 +60,9 @@ inline T rw2_log_lik(
   T quad = rw2_quadratic_form(phi.data(), n, cyclic);
 
   // Normalizing constant
-  int n_diffs = cyclic ? n : (n - 2);
+  int rank = tulpa_temporal::rw2_rank(n, cyclic);
   return T(-0.5) * quad / sigma2
-       - T(0.5 * n_diffs) * safe_log(T(2.0 * M_PI) * sigma2);
+       - T(0.5 * rank) * safe_log(T(2.0 * M_PI) * sigma2);
 }
 
 // -----------------------------------------------------------------------------

@@ -91,7 +91,8 @@ namespace tulpa {
 // path, instead of assuming a single component (S - 1).
 // 33 -> 34: added gp_phi_prior_U / gp_phi_prior_alpha and svc_phi_prior_U /
 // svc_phi_prior_alpha -- the PC range-prior anchors for the GP and SVC NNGP
-// paths, replacing the Uniform-behind-a-wall range prior.
+// paths, replacing the Uniform-behind-a-wall range prior. Also grew
+// LikelihoodSpec by extra_prior_arena (see likelihood.h).
 // 34 -> 35: added car_adj_eigenvalues -- the eigenvalues of the symmetric
 // normalized adjacency D^{-1/2} W D^{-1/2}, precomputed so the generic-NUTS
 // CAR_proper log-prior evaluates the differentiable log-determinant

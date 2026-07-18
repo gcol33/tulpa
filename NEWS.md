@@ -1,5 +1,60 @@
 # tulpa NEWS
 
+## 0.0.87
+
+Bug fixes and cleanups from a second whole-repo audit (issues #176-192).
+
+* **Cyclic RW1 / RW2 rank normalizer on the exact-NUTS, multiscale, TVC, and
+  spatiotemporal paths (#176).** The production templated log-posterior used
+  `rank = T` in the cyclic branch; a cycle-graph intrinsic GMRF has a single
+  null direction, so the rank is `T-1` for both RW1 and RW2. The 0.0.86 fix had
+  landed only on the double-precision twin. The rank is now single-sourced
+  through `tulpa_temporal::rw1_rank` / `rw2_rank`, consumed by every site.
+* **Cyclic RW2 now fits cyclically on the Laplace / nested-Laplace path (#177).**
+  The RW2 kernels dropped the `cyclic` flag and the front door only propagated
+  it for RW1, so `temporal_rw2(cyclic = TRUE)` silently fit a non-cyclic RW2.
+  The dense / sparse / pattern kernels now add the two ring-closing second
+  differences and the flag is threaded through the RW2 front door.
+* **`car_proper` nested grid (#178).** Supplying only one grid axis no longer
+  discards the other, and the correlation axis is accepted under both `rho_grid`
+  and the joint-API `rho_car_grid` spelling.
+* **Grid-checkpoint fingerprint folds the RE group assignment `re_idx` (#180)**
+  so a resume onto a checkpoint written for a different grouping errors instead
+  of loading stale cells.
+* **`get_compute_layout_fn()` verifies the ABI version (#181)** like the sibling
+  registered-callable getters, so an ABI-mismatched consumer gets a clear error
+  rather than silent memory corruption.
+* **tgmrf joint / outer NUTS count energy divergences (#182).** Divergences were
+  only flagged on a gradient-resync failure; a genuine energy divergence now
+  sets the flag, and the R adapter surfaces `divergent` / `n_divergent`.
+* **`ranef()` on sampler-tier fits (#183)** returns exactly the random-effect
+  coefficients (the `re[...]` draw columns), no longer re-including the latent
+  field and a spurious `log_sigma_re` row.
+* **BYM2 default scaling (#184).** `compute_bym2_scale()` now returns the
+  Riebler et al. (2016) generalized-variance factor `1 / sqrt(geomean(diag(Q^+)))`
+  instead of the geometric mean of the ICAR eigenvalues, so the spatial fraction
+  `rho` stays interpretable across graphs.
+* **`spatial_range()` / `temporal_corr()` (#186)** now summarise the outer
+  hyperparameter grid on a nested-Laplace fit rather than erroring on the
+  primary spatial / temporal fitting path.
+* **`sigma_re` ignored-argument warning (#187)** also fires when the covariance
+  backend is selected by name (`mode = "re_cov_*"`).
+* **`tulpa_simulate(theta = <engine fit>)` (#188)** consumes a single-process
+  matrix-draws fit instead of erroring.
+* Gradient-mode documentation reconciled with the dispatcher: `A` / `A_t` alias
+  the arena reverse-mode path rather than claiming separate kernels (#185).
+* Single-sourced the duplicated NUTS trajectory loop (primary + SoftAbs retry)
+  and aligned the SVC gradient Cholesky pivot floor with the value kernel (#190).
+* Removed dead code, stale rename artifacts, and leftover issue-tracker / history
+  comments; completed the ABI changelog (#191). Minor: `.default_tau_grid`
+  argument cleanup and the spatiotemporal long-format s/t ordering (#192).
+
+The nested-Laplace tensor-grid integrator was investigated (#179) and left
+unchanged: CAR_proper `(tau, rho)` parameter recovery confirms the marginal is
+already in the internal log-scale parameterization, so equal-weight grid
+integration is correctly calibrated and adding a user-scale Jacobian biases the
+scale posterior.
+
 ## 0.0.86
 
 Bug fixes from a whole-repo audit.

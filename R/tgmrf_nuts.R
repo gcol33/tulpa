@@ -169,7 +169,7 @@
           theta_plus  = theta, r_plus  = r, grad_plus  = grad,
           log_post_minus = log_post, log_post_plus = log_post,
           theta_prime = theta, log_post_prime = log_post,
-          n_prime = 0L, s_prime = FALSE,
+          n_prime = 0L, s_prime = FALSE, diverged = TRUE,
           alpha = 0, n_alpha = 1L
         ))
       }
@@ -182,6 +182,7 @@
         log_post_minus = step$log_post, log_post_plus = step$log_post,
         theta_prime = step$theta, log_post_prime = step$log_post,
         n_prime = n_prime, s_prime = isTRUE(s_prime),
+        diverged = !isTRUE(s_prime),        # leaf stop here == energy divergence
         alpha = min(1, exp(H0 - Hp)), n_alpha = 1L
       )
     } else {
@@ -221,6 +222,7 @@
         log_post_minus = log_post_minus, log_post_plus = log_post_plus,
         theta_prime = theta_prime, log_post_prime = log_post_prime,
         n_prime = n_combined, s_prime = s_combined,
+        diverged = isTRUE(left$diverged) || isTRUE(right$diverged),
         alpha = alpha_combined, n_alpha = n_alpha_combined
       )
     }
@@ -239,6 +241,7 @@
   draws_all  <- matrix(NA_real_, nrow = n_iter, ncol = d)
   tree_depth <- integer(n_iter)
   alpha_all  <- numeric(n_iter)
+  divergent_all <- logical(n_iter)
 
   log_eps <- log(epsilon)
 
@@ -281,6 +284,7 @@
       n <- n + bt$n_prime
       alpha_total <- alpha_total + bt$alpha
       n_alpha_total <- n_alpha_total + bt$n_alpha
+      if (isTRUE(bt$diverged)) divergent_all[t] <- TRUE
       s <- isTRUE(bt$s_prime) &&
         no_uturn(theta_minus, theta_plus, r_minus, r_plus)
       j <- j + 1L
@@ -317,6 +321,8 @@
     n_samples     = nrow(draws),
     mean_accept   = mean(alpha_all[keep]),
     tree_depth    = tree_depth[keep],
+    divergent     = divergent_all[keep],
+    n_divergent   = sum(divergent_all[keep]),
     epsilon       = exp(log_eps),
     pilot         = pilot,
     mode_theta    = theta_init,

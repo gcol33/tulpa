@@ -45,14 +45,7 @@ MassMatrixConfig select_and_init_mass_matrix(
   //
   // Only genuinely complex posteriors (correlated slopes, BYM2, GP, SVC) start
   // with DENSE, where the adapted covariance actually helps sampling efficiency
-  // enough to justify the O(n?) per-step cost.
-  //
-  // HISTORY:
-  // 2026-02-27: has_re/has_temporal in needs_dense ? 1.25s PG+RE (adapted dense)
-  // 2026-02-28: TVC gradient fix ? removed TVC
-  // 2026-03-03: Removed has_re/has_temporal ? DIAG + recovery. PG+RE: 0.8s
-  //   (identity dense, 22x faster per step). Adapted dense measured at 17.7s
-  //   due to O(n?) per-step cost for n=54.
+  // enough to justify the O(n^2) per-step cost.
   MassMatrixType effective_metric = metric_type;
   bool auto_selected_diag = false;
   // Block specs for BLOCK_DIAG: (start_index, block_size) pairs

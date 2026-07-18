@@ -55,8 +55,7 @@ temporal_rw1 <- function(time_var, group_var = NULL, cyclic = FALSE,
      n_times = NULL,
      n_groups = NULL,
      time_index = NULL,
-     group_index = NULL,
-     precision_structure = NULL
+     group_index = NULL
    ),
    class = c("tulpa_temporal", "list")
  )
@@ -128,8 +127,7 @@ temporal_rw2 <- function(time_var, group_var = NULL, cyclic = FALSE,
      n_times = NULL,
      n_groups = NULL,
      time_index = NULL,
-     group_index = NULL,
-     precision_structure = NULL
+     group_index = NULL
    ),
    class = c("tulpa_temporal", "list")
  )
@@ -208,8 +206,7 @@ temporal_ar1 <- function(time_var, group_var = NULL, shared = NULL,
      n_times = NULL,
      n_groups = NULL,
      time_index = NULL,
-     group_index = NULL,
-     precision_structure = NULL
+     group_index = NULL
    ),
    class = c("tulpa_temporal", "list")
  )
@@ -321,84 +318,5 @@ validate_temporal <- function(temporal, data) {
    temporal$n_temporal_params <- temporal$n_times
  }
 
- # Build precision structure
- temporal$precision_structure <- build_temporal_precision_structure(temporal)
-
  temporal
-}
-
-
-#' Build temporal precision matrix structure
-#'
-#' @param temporal Validated tulpa_temporal object
-#'
-#' @return List with precision matrix information
-#' @keywords internal
-build_temporal_precision_structure <- function(temporal) {
- T <- temporal$n_times
- cyclic <- temporal$cyclic
-
- if (temporal$type == "rw1") {
-   # RW1 precision matrix (tridiagonal)
-   # Q[t,t] = 2 (interior), 1 (boundary)
-   # Q[t,t-1] = Q[t,t+1] = -1
-
-   if (cyclic) {
-     # Cyclic: all diagonal = 2, wrap around
-     diag_vals <- rep(2, T)
-     off_diag <- rep(-1, T)  # Including wrap-around
-   } else {
-     # Non-cyclic: boundary diagonal = 1
-     diag_vals <- c(1, rep(2, T - 2), 1)
-     off_diag <- rep(-1, T - 1)
-   }
-
-   list(
-     type = "rw1",
-     T = T,
-     cyclic = cyclic,
-     diag = diag_vals,
-     off_diag = off_diag,
-     rank_deficiency = if (cyclic) 1 else 1  # Always rank T-1
-   )
-
- } else if (temporal$type == "rw2") {
-   # RW2 precision matrix (pentadiagonal)
-   # Second differences
-
-   if (cyclic) {
-     diag_vals <- rep(6, T)
-     off_diag_1 <- rep(-4, T)  # First off-diagonal
-     off_diag_2 <- rep(1, T)   # Second off-diagonal
-   } else {
-     # Non-cyclic boundary handling
-     diag_vals <- c(1, 5, rep(6, T - 4), 5, 1)
-     if (T == 3) diag_vals <- c(1, 2, 1)
-     if (T == 4) diag_vals <- c(1, 5, 5, 1)
-     off_diag_1 <- c(-2, rep(-4, T - 3), -2)
-     if (T == 3) off_diag_1 <- c(-2, -2)
-     off_diag_2 <- rep(1, T - 2)
-   }
-
-   list(
-     type = "rw2",
-     T = T,
-     cyclic = cyclic,
-     diag = diag_vals,
-     off_diag_1 = off_diag_1,
-     off_diag_2 = off_diag_2,
-     rank_deficiency = if (cyclic) 2 else 2  # Rank T-2
-   )
-
- } else if (temporal$type == "ar1") {
-   # AR1 precision matrix (tridiagonal, full rank)
-   # Depends on rho, so just store structure
-
-   list(
-     type = "ar1",
-     T = T,
-     # Full precision matrix constructed at runtime with rho
-     rank_deficiency = 0  # Full rank
-   )
- }
 }

@@ -540,6 +540,10 @@ Rcpp::List cpp_nested_laplace_multi(
         if (y.size())  fp.fold(y.begin(), (std::size_t)y.size() * sizeof(double));
         if (n.size())  fp.fold(n.begin(), (std::size_t)n.size() * sizeof(int));
         if (X.size())  fp.fold(X.begin(), (std::size_t)X.size() * sizeof(double));
+        // The per-observation RE group assignment changes every cell's mode and
+        // log_marginal, so it must fingerprint alongside n_re_groups (the count).
+        if (re_idx.size()) fp.fold(re_idx.begin(),
+                                   (std::size_t)re_idx.size() * sizeof(int));
         tulpa::fold_sexp(fp, blocks_spec);
         tulpa::CellKeyBuilder kb(n_grid);
         for (int j = 0; j < total_axes; j++) kb.add_axis(&theta_grid(0, j));

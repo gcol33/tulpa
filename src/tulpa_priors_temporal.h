@@ -164,8 +164,7 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                         phi_temporal.data() + g * T_times, T_times,
                         data.temporal_cyclic);
                 }
-                // Rank: T for cyclic, T-1 for non-cyclic
-                int rank_rw1 = data.temporal_cyclic ? T_times : T_times - 1;
+                int rank_rw1 = tulpa_temporal::rw1_rank(T_times, data.temporal_cyclic);
                 log_post = log_post + T(0.5 * rank_rw1 * data.n_temporal_groups) * log_tau;
                 log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
 
@@ -177,8 +176,7 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                         phi_temporal.data() + g * T_times, T_times,
                         data.temporal_cyclic);
                 }
-                // Rank: T for cyclic, T-2 for non-cyclic
-                int rank_rw2 = data.temporal_cyclic ? T_times : T_times - 2;
+                int rank_rw2 = tulpa_temporal::rw2_rank(T_times, data.temporal_cyclic);
                 log_post = log_post + T(0.5 * rank_rw2 * data.n_temporal_groups) * log_tau;
                 log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
 

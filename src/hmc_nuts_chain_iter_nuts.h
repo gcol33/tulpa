@@ -84,122 +84,136 @@
       std::memcpy(p_sharp_bck_beg.data(), p_sharp_init.data(), n_params * sizeof(double));
       std::memcpy(p_sharp_bck_end.data(), p_sharp_init.data(), n_params * sizeof(double));
 
-      // Build tree until U-turn or max depth
-      for (int j = 0; j < max_treedepth; j++) {
-        std::uniform_int_distribution<int> dir_dist(0, 1);
-        int direction = 2 * dir_dist(rng) - 1;
+      // Build the NUTS trajectory (grow the tree until a U-turn or max depth),
+      // single-sourced for both the primary trajectory and the SoftAbs
+      // divergence-retry below. The two differ only in the step size, the mass
+      // metric, the initial Hamiltonian, and delta_max; everything else -- the
+      // half-relabel, multinomial acceptance, endpoint bookkeeping and the
+      // 3-juncture generalized-U-turn check -- is identical. Captures the
+      // per-iteration workspace by reference; `mass_metric` is templated so the
+      // diagonal/dense and SoftAbs metrics both bind. Sets `out_divergent` on
+      // any divergent subtree and writes the reached depth to `out_treedepth`.
+      auto run_trajectory = [&](double eps_local, auto& mass_metric,
+                                double H0_local, double delta_max_local,
+                                bool& out_divergent, int& out_treedepth) {
+        for (int j = 0; j < max_treedepth; j++) {
+          std::uniform_int_distribution<int> dir_dist(0, 1);
+          int direction = 2 * dir_dist(rng) - 1;
 
-        nuts_ws.reset_tree();
+          nuts_ws.reset_tree();
 
-        int start_slot = nuts_ws.alloc_slot();
-        if (start_slot < 0) break;
-        if (direction == 1) {
-          nuts_ws.copy_node(start_slot, NUTSWorkspace::NODE_RIGHT_SLOT);
-        } else {
-          nuts_ws.copy_node(start_slot, NUTSWorkspace::NODE_LEFT_SLOT);
-        }
-
-        // Stan: relabel halves before building subtree
-        // Entire old trajectory becomes one half; new subtree is the other
-        if (direction == 1) {
-          // Extending forward: old trajectory ? backward half
-          std::memcpy(rho_bck.data(), rho.data(), n_params * sizeof(double));
-          std::memcpy(p_bck_beg.data(), p_fwd_end.data(), n_params * sizeof(double));
-          std::memcpy(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(), n_params * sizeof(double));
-        } else {
-          // Extending backward: old trajectory ? forward half
-          std::memcpy(rho_fwd.data(), rho.data(), n_params * sizeof(double));
-          std::memcpy(p_fwd_beg.data(), p_bck_end.data(), n_params * sizeof(double));
-          std::memcpy(p_sharp_fwd_beg.data(), p_sharp_bck_end.data(), n_params * sizeof(double));
-        }
-
-        TreeStats subtree = build_tree_fast(
-          nuts_ws, start_slot, direction, j,
-          eps_iter, mass, H0, delta_max,
-          data, layout, rng
-        );
-
-        total_leapfrog += subtree.n_leapfrog;
-        sum_accept_prob += subtree.sum_accept_prob;
-
-        if (subtree.divergent) {
-          divergent = true;
-        }
-
-        if (!subtree.stop) {
-          // Multinomial acceptance
-          double log_sum_weight_subtree = subtree.sum_log_weight;
-          double new_sum_log_weight = nuts_log_sum_exp(sum_log_weight, log_sum_weight_subtree);
-
-          double accept_prob_subtree;
-          if (log_sum_weight_subtree > new_sum_log_weight) {
-            accept_prob_subtree = 1.0;
+          int start_slot = nuts_ws.alloc_slot();
+          if (start_slot < 0) break;
+          if (direction == 1) {
+            nuts_ws.copy_node(start_slot, NUTSWorkspace::NODE_RIGHT_SLOT);
           } else {
-            accept_prob_subtree = std::exp(log_sum_weight_subtree - new_sum_log_weight);
-          }
-          if (!std::isfinite(accept_prob_subtree)) accept_prob_subtree = 0.0;
-
-          std::uniform_real_distribution<double> unif01(0.0, 1.0);
-          if (unif01(rng) < accept_prob_subtree) {
-            std::memcpy(q_proposal_data.data(), nuts_ws.q_at(subtree.proposal_slot),
-                        n_params * sizeof(double));
-            std::memcpy(grad_proposal_data.data(), nuts_ws.grad_at(subtree.proposal_slot),
-                        n_params * sizeof(double));
-            log_prob_proposal = subtree.log_prob_proposal;
+            nuts_ws.copy_node(start_slot, NUTSWorkspace::NODE_LEFT_SLOT);
           }
 
-          sum_log_weight = new_sum_log_weight;
+          // Stan: relabel halves before building subtree
+          // Entire old trajectory becomes one half; new subtree is the other
+          if (direction == 1) {
+            // Extending forward: old trajectory ? backward half
+            std::memcpy(rho_bck.data(), rho.data(), n_params * sizeof(double));
+            std::memcpy(p_bck_beg.data(), p_fwd_end.data(), n_params * sizeof(double));
+            std::memcpy(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(), n_params * sizeof(double));
+          } else {
+            // Extending backward: old trajectory ? forward half
+            std::memcpy(rho_fwd.data(), rho.data(), n_params * sizeof(double));
+            std::memcpy(p_fwd_beg.data(), p_bck_end.data(), n_params * sizeof(double));
+            std::memcpy(p_sharp_fwd_beg.data(), p_sharp_bck_end.data(), n_params * sizeof(double));
+          }
+
+          TreeStats subtree = build_tree_fast(
+            nuts_ws, start_slot, direction, j,
+            eps_local, mass_metric, H0_local, delta_max_local,
+            data, layout, rng
+          );
+
+          total_leapfrog += subtree.n_leapfrog;
+          sum_accept_prob += subtree.sum_accept_prob;
+
+          if (subtree.divergent) {
+            out_divergent = true;
+          }
+
+          if (!subtree.stop) {
+            // Multinomial acceptance
+            double log_sum_weight_subtree = subtree.sum_log_weight;
+            double new_sum_log_weight = nuts_log_sum_exp(sum_log_weight, log_sum_weight_subtree);
+
+            double accept_prob_subtree;
+            if (log_sum_weight_subtree > new_sum_log_weight) {
+              accept_prob_subtree = 1.0;
+            } else {
+              accept_prob_subtree = std::exp(log_sum_weight_subtree - new_sum_log_weight);
+            }
+            if (!std::isfinite(accept_prob_subtree)) accept_prob_subtree = 0.0;
+
+            std::uniform_real_distribution<double> unif01(0.0, 1.0);
+            if (unif01(rng) < accept_prob_subtree) {
+              std::memcpy(q_proposal_data.data(), nuts_ws.q_at(subtree.proposal_slot),
+                          n_params * sizeof(double));
+              std::memcpy(grad_proposal_data.data(), nuts_ws.grad_at(subtree.proposal_slot),
+                          n_params * sizeof(double));
+              log_prob_proposal = subtree.log_prob_proposal;
+            }
+
+            sum_log_weight = new_sum_log_weight;
+          }
+
+          // Update direction endpoints and rho half from subtree
+          // Use memcpy instead of std::move to preserve pre-allocated buffers
+          if (direction == 1) {
+            nuts_ws.copy_node(NUTSWorkspace::NODE_RIGHT_SLOT, subtree.right_slot);
+            std::memcpy(rho_fwd.data(), subtree.rho.data(), n_params * sizeof(double));
+            std::memcpy(p_fwd_beg.data(), subtree.p_beg.data(), n_params * sizeof(double));
+            std::memcpy(p_fwd_end.data(), subtree.p_end.data(), n_params * sizeof(double));
+            std::memcpy(p_sharp_fwd_beg.data(), subtree.p_sharp_beg.data(), n_params * sizeof(double));
+            std::memcpy(p_sharp_fwd_end.data(), subtree.p_sharp_end.data(), n_params * sizeof(double));
+          } else {
+            nuts_ws.copy_node(NUTSWorkspace::NODE_LEFT_SLOT, subtree.left_slot);
+            std::memcpy(rho_bck.data(), subtree.rho.data(), n_params * sizeof(double));
+            std::memcpy(p_bck_beg.data(), subtree.p_beg.data(), n_params * sizeof(double));
+            std::memcpy(p_bck_end.data(), subtree.p_end.data(), n_params * sizeof(double));
+            std::memcpy(p_sharp_bck_beg.data(), subtree.p_sharp_beg.data(), n_params * sizeof(double));
+            std::memcpy(p_sharp_bck_end.data(), subtree.p_sharp_end.data(), n_params * sizeof(double));
+          }
+
+          // Combine rho = rho_bck + rho_fwd
+          for (int i = 0; i < n_params; i++) {
+            rho[i] = rho_bck[i] + rho_fwd[i];
+          }
+
+          out_treedepth = j + 1;
+
+          // Generalized U-turn check at top level (3 junctures)
+          if (subtree.stop) break;
+
+          // Check 1: Full trajectory ? far endpoints vs total rho
+          bool persist = compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_end.data(),
+                                           rho.data(), n_params);
+
+          // Check 2: Backward half + seam from forward (rho = rho_bck + p_fwd_beg)
+          auto& rho_seam = nuts_ws.iter_rho_seam;
+          for (int i = 0; i < n_params; i++) {
+            rho_seam[i] = rho_bck[i] + p_fwd_beg[i];
+          }
+          persist &= compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_beg.data(),
+                                        rho_seam.data(), n_params);
+
+          // Check 3: Seam from backward + forward half (rho = rho_fwd + p_bck_beg)
+          for (int i = 0; i < n_params; i++) {
+            rho_seam[i] = rho_fwd[i] + p_bck_beg[i];
+          }
+          persist &= compute_criterion(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(),
+                                        rho_seam.data(), n_params);
+
+          if (!persist) break;
         }
+      };
 
-        // Update direction endpoints and rho half from subtree
-        // Use memcpy instead of std::move to preserve pre-allocated buffers
-        if (direction == 1) {
-          nuts_ws.copy_node(NUTSWorkspace::NODE_RIGHT_SLOT, subtree.right_slot);
-          std::memcpy(rho_fwd.data(), subtree.rho.data(), n_params * sizeof(double));
-          std::memcpy(p_fwd_beg.data(), subtree.p_beg.data(), n_params * sizeof(double));
-          std::memcpy(p_fwd_end.data(), subtree.p_end.data(), n_params * sizeof(double));
-          std::memcpy(p_sharp_fwd_beg.data(), subtree.p_sharp_beg.data(), n_params * sizeof(double));
-          std::memcpy(p_sharp_fwd_end.data(), subtree.p_sharp_end.data(), n_params * sizeof(double));
-        } else {
-          nuts_ws.copy_node(NUTSWorkspace::NODE_LEFT_SLOT, subtree.left_slot);
-          std::memcpy(rho_bck.data(), subtree.rho.data(), n_params * sizeof(double));
-          std::memcpy(p_bck_beg.data(), subtree.p_beg.data(), n_params * sizeof(double));
-          std::memcpy(p_bck_end.data(), subtree.p_end.data(), n_params * sizeof(double));
-          std::memcpy(p_sharp_bck_beg.data(), subtree.p_sharp_beg.data(), n_params * sizeof(double));
-          std::memcpy(p_sharp_bck_end.data(), subtree.p_sharp_end.data(), n_params * sizeof(double));
-        }
-
-        // Combine rho = rho_bck + rho_fwd
-        for (int i = 0; i < n_params; i++) {
-          rho[i] = rho_bck[i] + rho_fwd[i];
-        }
-
-        iter_treedepth = j + 1;
-
-        // Generalized U-turn check at top level (3 junctures)
-        if (subtree.stop) break;
-
-        // Check 1: Full trajectory ? far endpoints vs total rho
-        bool persist = compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_end.data(),
-                                         rho.data(), n_params);
-
-        // Check 2: Backward half + seam from forward (rho = rho_bck + p_fwd_beg)
-        auto& rho_seam = nuts_ws.iter_rho_seam;
-        for (int i = 0; i < n_params; i++) {
-          rho_seam[i] = rho_bck[i] + p_fwd_beg[i];
-        }
-        persist &= compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_beg.data(),
-                                      rho_seam.data(), n_params);
-
-        // Check 3: Seam from backward + forward half (rho = rho_fwd + p_bck_beg)
-        for (int i = 0; i < n_params; i++) {
-          rho_seam[i] = rho_fwd[i] + p_bck_beg[i];
-        }
-        persist &= compute_criterion(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(),
-                                      rho_seam.data(), n_params);
-
-        if (!persist) break;
-      }
+      run_trajectory(eps_iter, mass, H0, delta_max, divergent, iter_treedepth);
 
       // SoftAbs divergence retry (improvements #1, #2): if trajectory diverged,
       // compute local Hessian-based metric and retry up to SOFTABS_MAX_RETRIES
@@ -276,99 +290,8 @@
             std::copy(p_sharp_init.begin(), p_sharp_init.end(), p_sharp_bck_end.begin());
 
             int retry_treedepth = 0;
-            for (int j = 0; j < max_treedepth; j++) {
-              std::uniform_int_distribution<int> dir_dist(0, 1);
-              int direction = 2 * dir_dist(rng) - 1;
-
-              nuts_ws.reset_tree();
-              int start_slot = nuts_ws.alloc_slot();
-              if (start_slot < 0) break;
-              if (direction == 1) {
-                nuts_ws.copy_node(start_slot, NUTSWorkspace::NODE_RIGHT_SLOT);
-              } else {
-                nuts_ws.copy_node(start_slot, NUTSWorkspace::NODE_LEFT_SLOT);
-              }
-
-              if (direction == 1) {
-                std::memcpy(rho_bck.data(), rho.data(), n_params * sizeof(double));
-                std::memcpy(p_bck_beg.data(), p_fwd_end.data(), n_params * sizeof(double));
-                std::memcpy(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(), n_params * sizeof(double));
-              } else {
-                std::memcpy(rho_fwd.data(), rho.data(), n_params * sizeof(double));
-                std::memcpy(p_fwd_beg.data(), p_bck_end.data(), n_params * sizeof(double));
-                std::memcpy(p_sharp_fwd_beg.data(), p_sharp_bck_end.data(), n_params * sizeof(double));
-              }
-
-              TreeStats subtree = build_tree_fast(
-                nuts_ws, start_slot, direction, j,
-                eps_retry, softabs_persistent_mass, H0_retry, 1000.0,
-                data, layout, rng
-              );
-
-              total_leapfrog += subtree.n_leapfrog;
-              sum_accept_prob += subtree.sum_accept_prob;
-              if (subtree.divergent) retry_divergent = true;
-
-              if (!subtree.stop) {
-                double log_sum_weight_subtree = subtree.sum_log_weight;
-                double new_sum_log_weight = nuts_log_sum_exp(sum_log_weight, log_sum_weight_subtree);
-                double accept_prob_subtree;
-                if (log_sum_weight_subtree > new_sum_log_weight) {
-                  accept_prob_subtree = 1.0;
-                } else {
-                  accept_prob_subtree = std::exp(log_sum_weight_subtree - new_sum_log_weight);
-                }
-                if (!std::isfinite(accept_prob_subtree)) accept_prob_subtree = 0.0;
-
-                std::uniform_real_distribution<double> unif01(0.0, 1.0);
-                if (unif01(rng) < accept_prob_subtree) {
-                  std::memcpy(q_proposal_data.data(), nuts_ws.q_at(subtree.proposal_slot),
-                              n_params * sizeof(double));
-                  std::memcpy(grad_proposal_data.data(), nuts_ws.grad_at(subtree.proposal_slot),
-                              n_params * sizeof(double));
-                  log_prob_proposal = subtree.log_prob_proposal;
-                }
-                sum_log_weight = new_sum_log_weight;
-              }
-
-              if (direction == 1) {
-                nuts_ws.copy_node(NUTSWorkspace::NODE_RIGHT_SLOT, subtree.right_slot);
-                std::memcpy(rho_fwd.data(), subtree.rho.data(), n_params * sizeof(double));
-                std::memcpy(p_fwd_beg.data(), subtree.p_beg.data(), n_params * sizeof(double));
-                std::memcpy(p_fwd_end.data(), subtree.p_end.data(), n_params * sizeof(double));
-                std::memcpy(p_sharp_fwd_beg.data(), subtree.p_sharp_beg.data(), n_params * sizeof(double));
-                std::memcpy(p_sharp_fwd_end.data(), subtree.p_sharp_end.data(), n_params * sizeof(double));
-              } else {
-                nuts_ws.copy_node(NUTSWorkspace::NODE_LEFT_SLOT, subtree.left_slot);
-                std::memcpy(rho_bck.data(), subtree.rho.data(), n_params * sizeof(double));
-                std::memcpy(p_bck_beg.data(), subtree.p_beg.data(), n_params * sizeof(double));
-                std::memcpy(p_bck_end.data(), subtree.p_end.data(), n_params * sizeof(double));
-                std::memcpy(p_sharp_bck_beg.data(), subtree.p_sharp_beg.data(), n_params * sizeof(double));
-                std::memcpy(p_sharp_bck_end.data(), subtree.p_sharp_end.data(), n_params * sizeof(double));
-              }
-
-              for (int i = 0; i < n_params; i++) {
-                rho[i] = rho_bck[i] + rho_fwd[i];
-              }
-              retry_treedepth = j + 1;
-
-              if (subtree.stop) break;
-
-              bool persist = compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_end.data(),
-                                               rho.data(), n_params);
-              auto& rho_seam_retry = nuts_ws.iter_rho_seam;
-              for (int i = 0; i < n_params; i++) {
-                rho_seam_retry[i] = rho_bck[i] + p_fwd_beg[i];
-              }
-              persist &= compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_beg.data(),
-                                            rho_seam_retry.data(), n_params);
-              for (int i = 0; i < n_params; i++) {
-                rho_seam_retry[i] = rho_fwd[i] + p_bck_beg[i];
-              }
-              persist &= compute_criterion(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(),
-                                            rho_seam_retry.data(), n_params);
-              if (!persist) break;
-            }
+            run_trajectory(eps_retry, softabs_persistent_mass, H0_retry, 1000.0,
+                           retry_divergent, retry_treedepth);
 
             // If retry succeeded (no divergence), accept and stop retrying
             if (!retry_divergent) {

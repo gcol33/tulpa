@@ -830,4 +830,4 @@ inline void axpy_matvec(double alpha, const double* A, const double* x,
 
 }  // namespace tulpa_linalg
 
-#endif  // QUOTR_LINALG_FAST_H
+#endif  // TULPA_LINALG_FAST_H

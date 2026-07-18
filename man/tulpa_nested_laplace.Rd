@@ -40,7 +40,7 @@ spatially-varying coefficient whose eta contribution is
 \item car_proper: same adjacency; optional \code{tau_grid}, \code{rho_grid},
 \code{rho_bounds = c(lower, upper)} (defaults to (0, 1)).
 \item rw1/rw2: \code{temporal_idx} (1-based), \code{n_times}; optional \code{tau_grid},
-\code{cyclic} (rw1 only, default FALSE).
+\code{cyclic} (default FALSE).
 \item ar1:   \code{temporal_idx}, \code{n_times}; optional \code{tau_grid}, \code{rho_grid}.
 }}
 
