@@ -286,6 +286,13 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     extras_list   <- refined$extras
     refining_axis <- refined$refining_axis
     adaptive_info <- refined$info
+    # Refinement grows theta_grid, so the initial-grid log-prior vector is stale:
+    # recompute on the FINAL grid or ds$picks (into the full grid) indexes past
+    # its end -> NA into hyper_log_prior_draws / the returned $log_prior. (The
+    # refine pass already folds hp_fn into log_marginal for the new cells; this
+    # only refreshes the standalone per-cell vector.)
+    log_prior_cell <- if (is.null(hp_fn)) rep(0, nrow(theta_grid))
+                      else hp_fn(theta_grid)
   }
 
   # Initial weighted moments (also needed by the consistency pass).

@@ -256,7 +256,10 @@
     n_re_groups = n_re_groups,
     sigma_re    = sigma_re,
     family      = block$family,
-    control     = list(n_threads = as.integer(n_threads))
+    # Retain the per-grid fixed-effect Hessians so a grid-marginalized H_beta is
+    # available for the MI / Gibbs correction's SE pooling (see below).
+    control     = list(n_threads = as.integer(n_threads),
+                       keep_grid_hessians = TRUE)
   )
   if (!is.null(block$phi)) args$phi <- block$phi
   # Model-supplied likelihood (an external pointer to a tulpa::NestedLikelihood).
@@ -284,6 +287,16 @@
     # Fallback: no per-grid modes stored. Use theta-mean entries from
     # whatever the driver gave us, padded to length p with zeros.
     fit$mode <- numeric(p)
+  }
+
+  # Grid-marginalized fixed-effect covariance -> H_beta, so .attach_beta_se can
+  # report a real pooled SE for a nested-prior block under correction = "mi" /
+  # "gibbs" instead of NA/NaN. Same law-of-total-variance mixture summary()/
+  # vcov() use on a nested fit.
+  fm <- .nested_fixed_moments(fit)
+  if (!is.null(fm)) {
+    Hb <- tryCatch(solve(fm$cov), error = function(e) NULL)
+    if (!is.null(Hb)) fit$H_beta <- Hb
   }
 
   fit

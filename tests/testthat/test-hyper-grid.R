@@ -89,6 +89,36 @@ test_that("tulpa_hyper_grid wires axes / weights / posterior fields", {
   expect_equal(res$n_failed, 0L)
 })
 
+test_that("log_prior tracks the refined grid, not the initial one (#198)", {
+  set.seed(1)
+  n <- 40L; X <- cbind(1, rnorm(n)); y <- as.numeric(X %*% c(0.5, -1) + rnorm(n))
+  XtX <- crossprod(X); Xty <- crossprod(X, y)
+  inner_fit <- function(hypers) {
+    sigma <- as.numeric(hypers["sigma"])
+    if (!is.finite(sigma) || sigma <= 0) return(list(log_marginal = -Inf))
+    Lam <- XtX / sigma^2 + diag(1e-4, 2); V <- solve(Lam)
+    mu <- as.numeric(V %*% (Xty / sigma^2))
+    resid <- y - as.numeric(X %*% mu)
+    list(log_marginal = -n * log(sigma) - 0.5 * sum(resid^2) / sigma^2,
+         beta_mean = stats::setNames(mu, c("b0", "b1")), beta_cov = V)
+  }
+  specs <- list(hyper_axis_spec(
+    "sigma", grid = c(0.2, 0.5, 1, 2), log_scale = TRUE, bounds = c(0, Inf),
+    refinable = TRUE, log_prior = function(s) dexp(s, 1, log = TRUE)))
+
+  res <- tulpa_hyper_grid(
+    specs, inner_fit, combine = "law_of_total_cov", n_draws = 400L, seed = 7L,
+    control = list(adaptive_grid = TRUE, adaptive_grid_edge_thresh = 1e-6,
+                   adaptive_grid_max_passes = 3L))
+
+  expect_gt(nrow(res$theta_grid), 4L)                        # refinement fired
+  # The returned per-cell log-prior must span the FINAL grid...
+  expect_length(res$log_prior, nrow(res$theta_grid))
+  # ...and the per-draw hyper log-prior must not be NA (stale-index symptom).
+  expect_false(anyNA(res$hyper_log_prior_draws))
+  expect_length(res$hyper_log_prior_draws, 400L)
+})
+
 test_that("auto-wrapping accepts plain list specs", {
   specs <- list(
     list(name = "sigma", grid = c(0.5, 1, 2), log_scale = TRUE),
