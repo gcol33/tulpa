@@ -37,6 +37,18 @@
 }
 
 
+# A plain scalar random intercept `(1 | g)`: exactly one coefficient and that
+# coefficient IS the intercept. Every backend that carries a random effect only
+# through a group index (the nested-Laplace native RE, the Polya-Gamma Gibbs
+# samplers, AGQ, SPDE) can represent this and nothing else -- a no-intercept
+# single slope `(0 + x | g)` has n_coefs == 1 too but rides its slope column as
+# a design, which those group-index-only paths would silently drop. The single
+# predicate keeps that distinction in one place (design principle 5).
+.is_scalar_re_intercept <- function(rt) {
+  (rt$n_coefs %||% 1L) == 1L && isTRUE(rt$has_intercept)
+}
+
+
 # Find the joint MAP and the positive-definite precision (-Hessian at the mode)
 # of a GLMM log-posterior. This is the Laplace proposal imh_laplace consumes
 # (it forms N(mode, scale^2 * precision^{-1})). Hessian is numerical via
@@ -502,7 +514,7 @@
     n_re_groups <- 0L
     sigma_re_scalar <- 1.0
     if (length(re) > 0L) {
-      if (length(re) > 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
+      if (length(re) > 1L || !.is_scalar_re_intercept(re[[1]])) {
         stop(paste0(
           "The nested-Laplace path supports at most one random-intercept term\n",
           "`(1 | g)` alongside latent blocks. For richer random-effect structure,\n",
@@ -552,8 +564,7 @@
     re <- bundle$re_terms %||% list()
     spde_re_idx <- NULL; spde_re_n <- 0L; spde_sigma_re <- 1.0
     if (length(re) > 0L) {
-      if (length(re) > 1L || (re[[1]]$n_coefs %||% 1L) != 1L ||
-          !isTRUE(re[[1]]$has_intercept)) {
+      if (length(re) > 1L || !.is_scalar_re_intercept(re[[1]])) {
         stop("The SPDE path supports at most one random-intercept `(1 | g)` ",
              "term alongside the field; drop the extra / random-slope term(s), ",
              "or use mode = 'exact' for a sampler under the field.",
@@ -573,7 +584,6 @@
         "SPDE supports family %s; got '%s'.",
         paste0("'", spde_fams, "'", collapse = ", "), family), call. = FALSE)
     }
-    method <- match.arg(control$method %||% "ccd", c("ccd", "grid"))
     return(list(
       y              = bundle$y,
       X              = bundle$X,
@@ -588,13 +598,7 @@
       re_idx         = spde_re_idx,
       n_re_groups    = spde_re_n,
       sigma_re       = spde_sigma_re,
-      control        = list(
-        method    = method,
-        n_grid    = control$n_grid %||% 5L,
-        max_iter  = control$max_iter %||% 100L,
-        tol       = control$tol %||% 1e-6,
-        n_threads = control$n_threads %||% 1L
-      )
+      control        = .control_subset(control, .CONTROL_KEYS$spde)
     ))
   }
 
@@ -635,13 +639,7 @@
           prior_sigma = rp$prior_sigma %||% c(3, 0.05),
           eta         = rp$eta %||% 2,
           n_quad      = n_quad,
-          control     = list(
-            integration = control$integration %||% "ccd",
-            n_per_axis  = control$n_per_axis %||% 5L,
-            span        = control$span %||% 3,
-            n_draws     = control$n_draws %||% 2000L,
-            seed        = control$seed
-          )
+          control     = .control_subset(control, .CONTROL_KEYS$re_cov_nested)
         )))
       }
       # re_cov_gibbs: exact Metropolis-within-Gibbs debias.
@@ -649,11 +647,7 @@
         prior_df        = rp$prior_df,
         prior_scale     = rp$prior_scale,
         beta_prior      = beta_prior %||% list(mean = 0, sd = 100),
-        control         = list(
-          n_iter = control$n_iter %||% 2000L,
-          warmup = control$warmup %||% 1000L,
-          seed   = control$seed
-        )
+        control         = .control_subset(control, .CONTROL_KEYS$re_cov_gibbs)
       )))
     }
     if (backend == "laplace") {
@@ -666,7 +660,7 @@
         # field's linear predictor; beta_prior is not threaded through the
         # spatial solvers, so reject it loudly rather than drop.
         re <- bundle$re_terms %||% list()
-        if (length(re) > 1L || (length(re) == 1L && (re[[1]]$n_coefs %||% 1L) != 1L)) {
+        if (length(re) > 1L || (length(re) == 1L && !.is_scalar_re_intercept(re[[1]]))) {
           stop("Spatial Laplace supports at most one random-intercept (1 | g) ",
                "term alongside the spatial field; drop the extra RE term(s).",
                call. = FALSE)
@@ -699,11 +693,11 @@
       # Gibbs path requires exactly one. Either way the term must be a single
       # random intercept (no slopes).
       if (!is.null(spatial)) {
-        if (length(re) > 1L || (length(re) == 1L && (re[[1]]$n_coefs %||% 1L) != 1L)) {
+        if (length(re) > 1L || (length(re) == 1L && !.is_scalar_re_intercept(re[[1]]))) {
           stop("Spatial Gibbs supports at most one random-intercept (1 | g) ",
                "term alongside the spatial field.", call. = FALSE)
         }
-      } else if (length(re) != 1L || (re[[1]]$n_coefs %||% 1L) != 1L) {
+      } else if (length(re) != 1L || !.is_scalar_re_intercept(re[[1]])) {
         stop("Gibbs (tulpa_gibbs) supports exactly one random-intercept term ",
              "(a single `(1 | g)`). Use a logpost backend (mode = 'mala') for ",
              "richer RE structure, or call tulpa_gibbs() directly.",
@@ -745,13 +739,7 @@
         beta_prior = beta_prior %||% list(mean = 0, sd = 10),
         prior_sigma_scale = rp$prior_sigma_scale %||% 2.5,
         spatial = spatial,
-        control = list(
-          n_iter    = control$n_iter %||% 2000L,
-          warmup    = control$warmup %||% 1000L,
-          thin      = control$thin %||% 1L,
-          seed      = control$seed,
-          n_threads = control$n_threads %||% 1L
-        )
+        control = .control_subset(control, .CONTROL_KEYS$gibbs)
       ))
     }
     if (backend == "agq") {
@@ -761,8 +749,7 @@
       # small-cluster variance attenuation. agq_fit() optimizes the marginal
       # likelihood and estimates the RE sd, so no sigma_re is conditioned on.
       re <- bundle$re_terms %||% list()
-      if (length(re) != 1L || (re[[1]]$n_coefs %||% 1L) != 1L ||
-          !isTRUE(re[[1]]$has_intercept)) {
+      if (length(re) != 1L || !.is_scalar_re_intercept(re[[1]])) {
         stop("AGQ (mode = 'agq') supports exactly one random-intercept term ",
              "(a single `(1 | g)`). For random slopes or multiple terms use ",
              "mode = 'laplace' (RE-covariance integration), or call agq_fit() ",

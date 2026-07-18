@@ -63,6 +63,54 @@ test_that("statistical hyperpriors ride re_prior, not control (#156b)", {
   expect_identical(fit$backend, "re_cov_nested")
 })
 
+test_that("a no-intercept single slope (0 + x | g) is rejected on intercept-only paths (#195)", {
+  set.seed(1)
+  d <- data.frame(y = rbinom(120, 1, 0.5), x = rnorm(120),
+                  g = factor(rep(1:12, 10)))
+  # (0 + x | g) has n_coefs == 1 but has_intercept == FALSE: it rides its slope
+  # column as a design. The group-index-only paths (AGQ, Gibbs, SPDE, the
+  # nested-Laplace native RE) cannot represent that and must reject it clearly
+  # rather than silently fit it as a random intercept.
+  expect_error(
+    tulpa(y ~ x + (0 + x | g), data = d, family = "binomial", mode = "agq"),
+    "random-intercept"
+  )
+  expect_error(
+    tulpa(y ~ x + (0 + x | g), data = d, family = "binomial", mode = "gibbs"),
+    "random-intercept"
+  )
+})
+
+test_that("plain Laplace still fits a single random slope (0 + x | g) (#195)", {
+  skip_on_cran()
+  set.seed(1)
+  d <- data.frame(y = rbinom(120, 1, 0.5), x = rnorm(120),
+                  g = factor(rep(1:12, 10)))
+  # The scalar-sigma_re Laplace path carries the slope column as Z, so it is a
+  # valid 1-variance-component fit and must NOT be rejected or redirected to the
+  # RE-covariance integrator.
+  fit <- tulpa(y ~ x + (0 + x | g), data = d, family = "binomial",
+               mode = "laplace")
+  expect_identical(fit$backend, "laplace")
+})
+
+test_that("spatiotemporal summary aligns s/t labels with the array when S != T (#197)", {
+  S <- 3L; T <- 2L; nd <- 4L
+  # Draws are stored s-fastest: the column for (s, t) is (t - 1) * S + s. Give
+  # each column a distinct constant so a mispaired label is visible.
+  draws <- matrix(rep(seq_len(S * T), each = nd), nrow = nd)
+  obj <- structure(
+    list(spatiotemporal = list(n_spatial = S, n_times = T),
+         .internal = list(spatiotemporal_draws = draws)),
+    class = "tulpa_fit")
+  arr  <- spatiotemporal_effects(obj, format = "array")
+  summ <- spatiotemporal_effects(obj, format = "summary")
+  for (i in seq_len(S)) for (j in seq_len(T)) {
+    row <- summ[summ$s == i & summ$t == j, ]
+    expect_equal(row$mean, mean(arr[i, j, ]))
+  }
+})
+
 test_that("plot.tulpa_st_summary hard-errors on an unknown type (#156g)", {
   st <- structure(
     data.frame(s = rep(1:3, each = 2), t = rep(1:2, 3), mean = rnorm(6)),

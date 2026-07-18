@@ -360,7 +360,10 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 
     for (i in seq_len(S)) {
       for (j in seq_len(T)) {
-        idx <- (i - 1) * T + j
+        # Draws are stored s-fastest (column-major S x T), matching the array /
+        # long formats; index the (s = i, t = j) column accordingly so labels
+        # stay aligned when S != T.
+        idx <- (j - 1) * S + i
         st_mat[idx, "s"] <- i
         st_mat[idx, "t"] <- j
         st_mat[idx, "mean"] <- mean(st_draws[, idx])
@@ -752,7 +755,9 @@ compute_st_nngp_neighbors <- function(coords, time, k) {
   nn_dist_space <- matrix(Inf, nrow = N, ncol = k)
   nn_dist_time <- matrix(Inf, nrow = N, ncol = k)
 
-  for (i in 2:N) {
+  # seq_len(N)[-1] is empty for N <= 1 (unlike 2:N, which counts DOWN to give
+  # c(2, 1) at N == 1 and indexes a non-existent row).
+  for (i in seq_len(N)[-1]) {
     n_candidates <- min(i - 1, k)
 
     if (n_candidates > 0) {

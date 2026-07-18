@@ -496,7 +496,10 @@ inline ESSResult run_ess_sampler(
     result.success = true;
 
     int n_params = init_params.size();
-    int n_save = (config.n_iter - config.n_warmup) / config.n_thin;
+    // Number of stored draws: post-warmup iters store when
+    // (iter - n_warmup) % n_thin == 0, which fires ceil(post / n_thin) times.
+    int n_post = config.n_iter - config.n_warmup;
+    int n_save = n_post > 0 ? (n_post + config.n_thin - 1) / config.n_thin : 0;
 
     result.samples.resize(n_save, n_params);
     result.log_lik.resize(n_save);

@@ -320,7 +320,9 @@ compute_nngp_neighbors <- function(coords, k) {
   # Precompute pairwise distances among neighbors
   nn_neighbor_dist <- array(0, dim = c(N, k, k))
 
-  for (i in 2:N) {
+  # seq_len(N)[-1] is empty for N <= 1 (unlike 2:N, which counts DOWN to give
+  # c(2, 1) at N == 1 and indexes a non-existent row).
+  for (i in seq_len(N)[-1]) {
     # Only consider previous observations (in ordering) as potential neighbors
     n_candidates <- min(i - 1, k)
 

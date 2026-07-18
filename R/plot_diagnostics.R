@@ -449,7 +449,14 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
     # Select variance parameters and key fixed effects
     all_pars <- colnames(draws)
     var_pars <- grep("^(sigma|phi|tau|rho)", all_pars, value = TRUE)
-    beta_pars <- grep("^beta_(num|denom)\\[1\\]", all_pars, value = TRUE)
+    # Fixed effects: the fit's canonical fixed-effect names (every tulpa_fit sets
+    # $fixed_names), so this works for any model package. Fall back to a generic
+    # beta / intercept pattern -- covering ratio's beta_num / beta_denom -- when
+    # the names are unavailable or do not line up with the draws columns.
+    beta_pars <- intersect(fit$fixed_names %||% character(0), all_pars)
+    if (!length(beta_pars)) {
+      beta_pars <- grep("^(beta[_[]|\\(Intercept\\))", all_pars, value = TRUE)
+    }
     pars <- c(beta_pars, var_pars)
     pars <- head(pars, n_pars)
   } else {
@@ -1223,7 +1230,11 @@ plot_diagnostics <- function(fit, pars = NULL) {
   if (!is.null(diag)) {
     main_pars <- select_main_params(diag$parameter)
     diag <- diag[diag$parameter %in% main_pars, ]
-    worst_par <- diag$parameter[which.max(diag$rhat)]
+    # which.max() returns integer(0) when every rhat is NA (all-constant
+    # parameters), which would make worst_par length-0 and error at the `%in%`
+    # test below; fall back to the first draws column.
+    wi <- which.max(diag$rhat)
+    worst_par <- if (length(wi)) diag$parameter[wi] else colnames(fit$draws)[1]
   } else {
     worst_par <- colnames(fit$draws)[1]
   }
