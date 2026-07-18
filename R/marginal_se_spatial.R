@@ -24,6 +24,28 @@
 NULL
 
 
+# --- SPDE Matern (range, sigma) <-> (kappa, tau) on d = 2 -----------------
+# Marginal variance sigma^2 = 1 / (4*pi*nu * kappa^(2*nu) * tau^2)
+# (Lindgren, Rue, Lindstrom 2011, d = 2, alpha = nu + 1), so
+#   kappa = sqrt(8*nu) / range,
+#   tau   = 1 / (sqrt(4*pi*nu) * kappa^nu * sigma).
+# Single source for every site that maps hyperparameters to (kappa, tau);
+# at nu = 1 this reduces to 1 / (sqrt(4*pi) * kappa * sigma).
+
+#' @keywords internal
+.spde_kappa_tau <- function(range, sigma, nu) {
+  kappa <- sqrt(8 * nu) / range
+  list(kappa = kappa,
+       tau_spde = 1 / (sqrt(4 * pi * nu) * kappa^nu * sigma))
+}
+
+#' @keywords internal
+.spde_range_sigma <- function(kappa, tau_spde, nu) {
+  list(range = sqrt(8 * nu) / kappa,
+       sigma = 1 / (sqrt(4 * pi * nu) * kappa^nu * tau_spde))
+}
+
+
 # --- SPDE precision rebuild (mirrors src/spde_qbuilder.h) -----------------
 
 #' @keywords internal
@@ -352,8 +374,9 @@ NULL
   if (!is.null(weights)) W <- W * weights
 
   # Q_spde at the (range, sigma) used in the fit
-  kappa    <- sqrt(8 * spatial$nu) / range_val
-  tau_spde <- 1 / (sqrt(4 * pi) * kappa * sigma_val)
+  .kt      <- .spde_kappa_tau(range_val, sigma_val, spatial$nu)
+  kappa    <- .kt$kappa
+  tau_spde <- .kt$tau_spde
   Q_latent <- Matrix::bdiag(
     Matrix::Diagonal(n_re_groups, x = tau_re),
     .spde_precision_Q(spatial, kappa, tau_spde)

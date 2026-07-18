@@ -426,10 +426,10 @@
 }
 
 # Inverse (unconstrained -> constrained) transform plus the log-Jacobian that
-# maps the integrator's grid coordinate to the proposal's unconstrained `u`
-# (#221). exp(log_marginal) is the density in whatever coordinate the grid is
-# uniform in, weighted by plain softmax with NO volume element (nested_laplace.R;
-# #179 CAR_proper recovery). A `log` axis is geometric -- uniform in
+# maps the integrator's grid coordinate to the proposal's unconstrained `u`.
+# exp(log_marginal) is the density in whatever coordinate the grid is
+# uniform in, weighted by plain softmax with NO volume element. A `log` axis
+# is geometric -- uniform in
 # u = log(theta) -- so log_marginal is already the u-space density and the
 # Jacobian is 0, matching the single-block .nested_grid_pareto_k and the SPDE
 # path (confirmed empirically: with the log-axis Jacobian the outer k-hat

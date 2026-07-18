@@ -7,7 +7,7 @@
 spatial_gp(
   coords,
   approx = c("nngp", "hsgp"),
-  cov = c("exponential", "matern", "gaussian", "spherical"),
+  cov = c("exponential", "matern"),
   nu = 1.5,
   nn = 15,
   m = 6,
@@ -28,10 +28,11 @@ naming the two coordinate variables in the data.}
 the \code{cov} / \code{nu} / \code{nn} / \code{solver} arguments) or \code{"hsgp"} (a Hilbert-space
 basis GP with \code{m} functions per dimension and boundary factor \code{c}).}
 
-\item{cov}{Covariance function (NNGP only). One of \code{"exponential"},
-\code{"matern"}, \code{"gaussian"}, or \code{"spherical"}.}
+\item{cov}{Covariance function (NNGP only). One of \code{"exponential"} or
+\code{"matern"}.}
 
-\item{nu}{Matern smoothness parameter. Used only when \code{cov = "matern"}.}
+\item{nu}{Matern smoothness parameter, one of \code{1.5} or \code{2.5}. Used only when
+\code{cov = "matern"} (\code{nu = 0.5} is \code{cov = "exponential"}).}
 
 \item{nn}{Number of nearest neighbours used in the NNGP approximation.}
 

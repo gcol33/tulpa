@@ -13,6 +13,18 @@
 #' @name tulpa_diagnostics
 NULL
 
+# Resolve the observed response from an explicit argument or the fit object,
+# erroring clearly when it cannot be found (rather than letting a NULL fall
+# through to sum(NULL == 0) == 0 or an opaque var(NULL) error downstream).
+.resolve_obs <- function(object, observed = NULL) {
+  obs <- observed %||% object$y %||% object$.internal$fit_args$y
+  if (is.null(obs)) {
+    stop("Cannot extract the observed response from the fit. ",
+         "Provide the `observed` argument.", call. = FALSE)
+  }
+  obs
+}
+
 
 # ==============================================================================
 # PIT Residuals
@@ -132,7 +144,7 @@ test_dispersion <- function(object, observed = NULL, nsim = 250L, seed = 123L,
   alternative <- match.arg(alternative)
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- observed %||% object$y %||% object$.internal$fit_args$y
+  obs <- .resolve_obs(object, observed)
 
   var_obs <- var(obs)
   var_sim <- apply(sims, 2, var)
@@ -215,7 +227,7 @@ test_outliers <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
 test_zero_inflation <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- observed %||% object$y %||% object$.internal$fit_args$y
+  obs <- .resolve_obs(object, observed)
 
   n_zero_obs <- sum(obs == 0)
   n_zero_sim <- colSums(sims == 0)
@@ -476,7 +488,7 @@ plot.tulpa_variogram <- function(x, ...) {
 check_model <- function(object, coords = NULL, nsim = 250L, seed = 123L) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- object$y %||% object$.internal$fit_args$y
+  obs <- .resolve_obs(object)
   pit <- pit_residuals(sims, observed = obs, nsim = nsim, seed = seed)
 
   has_coords <- !is.null(coords)

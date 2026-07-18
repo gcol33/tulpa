@@ -1,5 +1,52 @@
 # tulpa NEWS
 
+## 0.0.92
+
+Audit fixes (0.0.91 review, issues #228-#239).
+
+Correctness:
+
+- The batched joint nested-Laplace driver (`compute_eta_species`) now adds the
+  per-observation `offset`, which it silently dropped -- multi-arm joint fits
+  with an exposure offset on a coupled arm no longer disagree with the
+  single-species path (#228).
+- Cyclic RW2 is now honored on the joint multi-block kernel: the `cyclic` flag
+  reached the block but the rw2 precision / pattern / log-prior calls were
+  hardcoded acyclic, so a cyclic seasonal RW2 in a joint prior fit as acyclic.
+  This mirrors the single-arm fix in #218 (#229).
+- The spatiotemporal temporal rank is now single-sourced through
+  `rw1_rank` / `rw2_rank`; the centered Type-IV path had drifted to a full-rank
+  cyclic normalizer inconsistent with the non-centered path (#230).
+- The SPDE Matern `(range, sigma) <-> (kappa, tau)` conversion is now
+  nu-general (`sigma = 1 / (sqrt(4*pi*nu) * kappa^nu * tau)`) and single-sourced
+  via `.spde_kappa_tau` / `.spde_range_sigma`; the six copies hardcoded the
+  `nu = 1` normalizer, mis-calibrating fractional-nu SPDE fits. The default
+  `nu = 1` path is byte-identical (#231).
+- `select_main_params()` now strips comma-separated multi-index latent names
+  (`factor[i,j]`), so latent-factor fields no longer flood the diagnostic
+  display (#232).
+- The simulation diagnostics (`test_dispersion`, `test_zero_inflation`,
+  `check_model`) error via a shared `.resolve_obs()` when the observed response
+  cannot be found, instead of fabricating a "0 observed zeros" result (#233).
+- `tulpa_hyper_grid(var_of_means_consistency = TRUE)` now recomputes the
+  per-cell log-prior after the consistency pass grows the grid, fixing a
+  length mismatch that returned `NA` reweighting (#234).
+
+Validation & docs:
+
+- `spatial_gp()` / `spatial_svc()` / `spatial_multiscale()` reject unsupported
+  covariances (`gaussian`, `spherical`) and Matern `nu` outside `{1.5, 2.5}` at
+  construction rather than deep in the fit (#238).
+- Corrected the `tulpa_em_laplace(damping=)` and `agq_fit(sigma_eps=)`
+  documentation to match the implementation (#239).
+
+Clean-up:
+
+- Removed process/status/refactor-history comments from committed source and a
+  stale issue reference (#235); deleted an orphaned duplicate SVC roxygen block
+  in `spatial_gp.R` (#236); single-sourced the natural-scale hyperparameter
+  transforms shared by `spatial_range()` / `temporal_corr()` (#237).
+
 ## 0.0.91
 
 Audit fixes (0.0.90 review, issues #218-#227).

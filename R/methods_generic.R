@@ -803,8 +803,9 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
   W <- glmm_weights(eta, object$family, object$n_trials,
                     .spde_phi_variance(object))
 
-  kappa    <- sqrt(8 * sp$nu) / range_val
-  tau_spde <- 1 / (sqrt(4 * pi) * kappa * sigma_val)
+  .kt      <- .spde_kappa_tau(range_val, sigma_val, sp$nu)
+  kappa    <- .kt$kappa
+  tau_spde <- .kt$tau_spde
   Q <- .spde_precision_Q(sp, kappa, tau_spde)
 
   XtWX <- crossprod(X, W * X) + diag(1e-4, p)   # kernel ridge sigma_beta = 100

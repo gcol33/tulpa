@@ -4,9 +4,8 @@
 # dcov_dphi existed in two copies that had drifted: the GP copy returned half
 # the true Gaussian derivative, and neither implemented SPHERICAL, so a
 # spherical fit took its covariance from one kernel and its gradient from
-# another. Both are user-reachable -- spatial_gp() advertises cov = "gaussian"
-# and "spherical". Checking each derivative against a numerical derivative of
-# the value it differentiates catches exactly this class of drift.
+# another. Checking each derivative against a numerical derivative of the value
+# it differentiates catches exactly this class of drift.
 
 COV <- c(exponential = 0L, matern32 = 1L, gaussian = 2L, spherical = 3L)
 

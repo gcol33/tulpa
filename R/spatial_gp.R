@@ -10,9 +10,10 @@
 #' @param approx GP approximation: `"nngp"` (default, a nearest-neighbour GP with
 #'   the `cov` / `nu` / `nn` / `solver` arguments) or `"hsgp"` (a Hilbert-space
 #'   basis GP with `m` functions per dimension and boundary factor `c`).
-#' @param cov Covariance function (NNGP only). One of `"exponential"`,
-#'   `"matern"`, `"gaussian"`, or `"spherical"`.
-#' @param nu Matern smoothness parameter. Used only when `cov = "matern"`.
+#' @param cov Covariance function (NNGP only). One of `"exponential"` or
+#'   `"matern"`.
+#' @param nu Matern smoothness parameter, one of `1.5` or `2.5`. Used only when
+#'   `cov = "matern"` (`nu = 0.5` is `cov = "exponential"`).
 #' @param nn Number of nearest neighbours used in the NNGP approximation.
 #' @param m Number of HSGP basis functions per dimension (`approx = "hsgp"`).
 #' @param c HSGP boundary factor, `>= 1` (`approx = "hsgp"`).
@@ -41,7 +42,7 @@
 #' @export
 spatial_gp <- function(coords,
                        approx = c("nngp", "hsgp"),
-                       cov = c("exponential", "matern", "gaussian", "spherical"),
+                       cov = c("exponential", "matern"),
                        nu = 1.5,
                        nn = 15,
                        m = 6,
@@ -111,10 +112,17 @@ if (solver == "gpu" && !cpp_gpu_available()) {
       class = c("tulpa_hsgp", "tulpa_spatial", "list")))
   }
 
-  # Validate nu for Matern
+  # Validate nu for Matern. The NNGP fit path is wired only for nu in
+  # {1.5, 2.5} (gp_cov_type_for_laplace), so reject the rest here rather than
+  # deep in the fit. nu = 0.5 is the exponential kernel -- use cov = "exponential".
   if (cov == "matern") {
     if (!is.numeric(nu) || length(nu) != 1 || nu <= 0) {
       stop("`nu` must be a positive number for Matern covariance", call. = FALSE)
+    }
+    if (!isTRUE(all.equal(nu, 1.5)) && !isTRUE(all.equal(nu, 2.5))) {
+      stop("Matern NNGP supports nu in {1.5, 2.5}; got nu = ", format(nu),
+           ". Use nu = 1.5 or 2.5, or cov = \"exponential\" for nu = 0.5.",
+           call. = FALSE)
     }
   }
 
@@ -273,9 +281,8 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #'   coordinate units. Default: `c(0.01, 1)` (after scaling).
 #' @param range_regional Prior range for regional scale as `c(lower, upper)`.
 #'   Default: `c(1, 10)` (after scaling).
-#' @param cov Covariance function: `"exponential"` (default), `"matern"`,
-#'   `"gaussian"`, or `"spherical"`.
-#' @param nu Smoothness parameter for Matern covariance.
+#' @param cov Covariance function: `"exponential"` (default) or `"matern"`.
+#' @param nu Smoothness parameter for Matern covariance, one of `1.5` or `2.5`.
 #' @param nn_local Number of nearest neighbors for local scale. Default 10.
 #' @param nn_regional Number of nearest neighbors for regional scale. Default 30.
 #' @param shared Logical; if TRUE (default), spatial effects enter both
@@ -358,7 +365,7 @@ spatial_multiscale <- function(coords,
                                c_boundary = 1.5,
                                range_local = c(0.01, 1),
                                range_regional = c(1, 10),
-                               cov = c("exponential", "matern", "gaussian", "spherical"),
+                               cov = c("exponential", "matern"),
                                nu = 1.5,
                                nn_local = 10,
                                nn_regional = 30,
@@ -573,109 +580,3 @@ validate_gp <- function(gp, data) {
 
   gp
 }
-
-
-#' Spatially-Varying Coefficients (SVC)
-#'
-#' @description
-#' Specify spatially-varying coefficients for tulpa models. SVCs allow
-#' regression coefficients to vary smoothly across space using a Gaussian
-#' process prior. This captures local effects that may differ from global
-#' relationships.
-#'
-#' Uses Nearest Neighbor Gaussian Process (NNGP) approximation for
-#' computational efficiency with large datasets.
-#'
-#' @param coords A one-sided formula specifying coordinate columns (e.g.,
-#'   `~ lon + lat`), or a character vector of length 2 with column names.
-#' @param terms Which coefficients should vary spatially. Options:
-#'   - Integer vector: Column indices of design matrix (1 = intercept)
-#'   - Character vector: Coefficient names (e.g., `"(Intercept)"`, `"depth"`)
-#'   - Formula: `~ 1 + depth` for intercept and depth
-#' @param cov Covariance function: `"exponential"` (default), `"matern"`,
-#'   `"gaussian"`, or `"spherical"`.
-#' @param nn Number of nearest neighbors for NNGP approximation. Default 15.
-#'   Larger values give better approximation but slower computation.
-#' @param shared Logical; if TRUE (default), SVC effects enter both
-#'   all processes. Set to FALSE for process-specific SVCs
-#'   (triggers warning about potential confounding).
-#' @param scale_coords Logical; if TRUE (default), coordinates are scaled to
-#'   unit variance before computing distances.
-#' @param approx Approximation method: `"nngp"` (default) for Nearest Neighbor
-#'   GP; `"hsgp"` for Hilbert Space GP (30-40x faster).
-#' @param m Number of HSGP basis functions per dimension (default 6). Only
-#'   used when `approx = "hsgp"`. Total basis functions will be m^2.
-#' @param c_boundary Boundary factor for HSGP domain extension (default 1.5).
-#'   Only used when `approx = "hsgp"`.
-#'
-#' @return A `tulpa_svc` object
-#'
-#' @details
-#' The SVC model extends the linear predictor:
-#'
-#' \deqn{\eta(s) = X\beta + \tilde{X}(s)w(s)}
-#'
-#' where:
-#' - \eqn{\beta} are global (non-spatial) coefficients
-#' - \eqn{\tilde{X}(s)} is the subset of covariates with SVCs
-#' - \eqn{w(s)} are spatially-varying adjustments at location s
-#'
-#' Each SVC follows an independent Gaussian process:
-#' \deqn{w_j(s) \sim GP(0, \sigma^2_j \cdot C(\phi_j))}
-#'
-#' where \eqn{C(\phi)} is the correlation function with range parameter
-#' \eqn{\phi}.
-#'
-#' **NNGP approximation**: For computational tractability, we use the
-#' Nearest Neighbor Gaussian Process (Datta et al., 2016), which conditions
-#' each location on its k nearest neighbors. This reduces complexity from
-#' O(n^3) to O(n*k^2), enabling models with thousands of locations.
-#'
-#' **Interpretation**: A positive SVC for depth at location s means the
-#' depth effect is stronger at s than the global average. The spatial
-#' variance \eqn{\sigma^2_j} quantifies how much the effect varies across
-#' space.
-#'
-#' @examples
-#' # Create SVC specification
-#' svc_spec <- spatial_svc(~ lon + lat, terms = 1)
-#' print(svc_spec)
-#'
-#' \dontrun{
-#' # Generate synthetic spatial data (not run - SVC not fully supported)
-#' set.seed(202)
-#' n <- 40
-#' df <- data.frame(
-#'   lon = runif(n, 0, 10),
-#'   lat = runif(n, 0, 10),
-#'   depth = rnorm(n),
-#'   temp = rnorm(n),
-#'   count = rpois(n, 20),
-#'   effort = rgamma(n, shape = 4, rate = 1)
-#' )
-#'
-#' # Spatially-varying intercept (random spatial field)
-#' fit <- tulpa(
-#'   count | effort ~ depth,
-#'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
-#'   svc = spatial_svc(~ lon + lat, terms = 1),
-#'   iter = 200, warmup = 100, chains = 1
-#' )
-#' summary(fit)
-#'
-#' # Extract and plot the spatially-varying coefficients
-#' svc_effects <- svc(fit)
-#' plot(svc_effects, "depth")
-#' }
-#'
-#' @references
-#' Datta, A., Banerjee, S., Finley, A. O., & Gelfand, A. E. (
-#' 2016). Hierarchical nearest-neighbor Gaussian process models for large
-#' geostatistical datasets. Journal of the American Statistical Association,
-#' 111(514), 800-812.
-#'
-#' @seealso [spatial_car()], [spatial_bym2()] for areal spatial effects,
-#'   [svc()] for extracting SVC posteriors
-#'
-#' @export

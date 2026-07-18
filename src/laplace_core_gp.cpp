@@ -273,7 +273,7 @@ Rcpp::List cpp_laplace_fit_gp(
     // only OpenMP region here and its speedup is negligible (n_spatial is small
     // and the Vecchia prior scatter that dominates is serial), while running it
     // multi-threaded triggers a flaky heap corruption under the mingw OpenMP
-    // toolchain (gcol33/tulpa#217). Pin to one thread until that is root-caused.
+    // toolchain. Pin to one thread.
     n_threads = 1;
     tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
         y, n, X, re_idx, n_re_groups, sigma_re,

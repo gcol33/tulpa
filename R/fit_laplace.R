@@ -782,8 +782,9 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
       order = spatial$rational_order %||% 2L
     )
   } else {
-    kappa <- sqrt(8 * spatial$nu) / range
-    tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
+    .kt <- .spde_kappa_tau(range, sigma, spatial$nu)
+    kappa <- .kt$kappa
+    tau_spde <- .kt$tau_spde
     alpha <- as.integer(round(spatial$nu)) + 1L
     rat <- rational_spde_coefficients(spatial$nu)
 

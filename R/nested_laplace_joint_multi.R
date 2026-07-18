@@ -467,7 +467,7 @@
             eigenvalues    = as.numeric(p$eigenvalues)
         )
     } else if (type == "hsgp_mo") {
-        # Multi-output (co-regionalization) HSGP block (Stage 1.7). K = n_arms
+        # Multi-output (co-regionalization) HSGP block. K = n_arms
         # correlated latent fields share basis + eigenvalues; coefficients are
         # cross-output-correlated via Sigma. First ship restricts K == 2 with
         # axes (sigma_1, sigma_2, rho, ell), all raw.
@@ -537,7 +537,7 @@
             out$rational_weights <- as.numeric(p$rational_weights)
         out
     } else if (type == "lf") {
-        # Latent factor block (Stage 1.6a). Per-arm `obs_idx` maps each
+        # Latent factor block. Per-arm `obs_idx` maps each
         # obs to a slot in the factor field `u` (length n_latent); the
         # per-arm loadings `lambda` (length n_arms) are part of the joint
         # latent vector and co-optimized by the inner Newton. No outer-

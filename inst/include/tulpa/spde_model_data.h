@@ -10,9 +10,8 @@
 // Lifecycle:
 //   1. Caller builds the FEM matrices (C0_diag, G1 CSC) + projection A (CSC)
 //      from a fmesher/tulpaMesh mesh, plus the Matern smoothness nu.
-//   2. Caller supplies the (kappa, tau_spde) at which Q is built. For Phase 1
-//      these are fixed across the chain — joint NUTS over (log_kappa,
-//      log_tau_spde) is a follow-on arc (see TODO.md).
+//   2. Caller supplies the (kappa, tau_spde) at which Q is built; these are
+//      fixed across the chain.
 //   3. tulpa builds Q once at ModelData setup, caches Q_x + log|Q|, and
 //      reuses them across every gradient evaluation.
 

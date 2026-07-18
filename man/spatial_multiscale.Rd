@@ -12,7 +12,7 @@ spatial_multiscale(
   c_boundary = 1.5,
   range_local = c(0.01, 1),
   range_regional = c(1, 10),
-  cov = c("exponential", "matern", "gaussian", "spherical"),
+  cov = c("exponential", "matern"),
   nu = 1.5,
   nn_local = 10,
   nn_regional = 30,
@@ -42,10 +42,9 @@ coordinate units. Default: \code{c(0.01, 1)} (after scaling).}
 \item{range_regional}{Prior range for regional scale as \code{c(lower, upper)}.
 Default: \code{c(1, 10)} (after scaling).}
 
-\item{cov}{Covariance function: \code{"exponential"} (default), \code{"matern"},
-\code{"gaussian"}, or \code{"spherical"}.}
+\item{cov}{Covariance function: \code{"exponential"} (default) or \code{"matern"}.}
 
-\item{nu}{Smoothness parameter for Matern covariance.}
+\item{nu}{Smoothness parameter for Matern covariance, one of \code{1.5} or \code{2.5}.}
 
 \item{nn_local}{Number of nearest neighbors for local scale. Default 10.}
 

@@ -10,8 +10,7 @@
 #' @param terms Which coefficients vary over space. A formula, an integer vector
 #'   of design-matrix column indices, or a character vector of term names.
 #'   Default `1` (the intercept).
-#' @param cov Covariance function. One of `"exponential"`, `"matern"`,
-#'   `"gaussian"`, or `"spherical"`.
+#' @param cov Covariance function. One of `"exponential"` or `"matern"`.
 #' @param nn Number of nearest neighbours used in the NNGP approximation
 #'   (`approx = "nngp"`).
 #' @param shared Whether the effect is shared across processes in a
@@ -38,7 +37,7 @@
 #' @export
 spatial_svc <- function(coords,
                         terms = 1,
-                        cov = c("exponential", "matern", "gaussian", "spherical"),
+                        cov = c("exponential", "matern"),
                         nn = 15,
                         shared = NULL,
                         scale_coords = TRUE,

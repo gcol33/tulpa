@@ -627,7 +627,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   ),
 
   hsgp_mo = list(
-    # Multi-output (co-regionalization) HSGP block (Stage 1.7). K = n_arms
+    # Multi-output (co-regionalization) HSGP block. K = n_arms
     # correlated latent fields share basis + eigenvalues, cross-output
     # coefficients live in Sigma. First ship: K = 2 with raw axes
     # (sigma_1, sigma_2, rho, ell) and the natural Cartesian product over
@@ -732,7 +732,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   ),
 
   lf = list(
-    # Latent factor block (Stage 1.6a). F = 1 only. No outer-grid axes:
+    # Latent factor block. F = 1 only. No outer-grid axes:
     # identifiability is handled by tight Gaussian anchors on (u_1,
     # lambda_1) inside the C++ factory; everything else is jointly
     # optimized by the inner Newton. Returns a 1 x 0 grid so the joint

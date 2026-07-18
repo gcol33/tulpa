@@ -33,7 +33,9 @@ agq_fit(
 
 \item{n_trials}{Trial sizes (binomial only; default \code{rep(1, n_obs)}).}
 
-\item{sigma_eps}{Residual SD (gaussian only; default \code{1}).}
+\item{sigma_eps}{Residual SD (gaussian only; default \code{1}). Held \strong{fixed} at
+this value -- it is not profiled or estimated, so for a gaussian response
+set it to a known / pre-estimated residual SD rather than the default.}
 
 \item{n_quad}{Number of Gauss-Hermite quadrature nodes per cluster.
 \code{1} recovers Laplace; common choices are \code{5} or \code{7}. Default \code{7}.}

@@ -30,7 +30,9 @@
 #' @param n_groups Number of clusters (default `max(group)`).
 #' @param family One of `"binomial"`, `"poisson"`, `"gaussian"`.
 #' @param n_trials Trial sizes (binomial only; default `rep(1, n_obs)`).
-#' @param sigma_eps Residual SD (gaussian only; default `1`).
+#' @param sigma_eps Residual SD (gaussian only; default `1`). Held **fixed** at
+#'   this value -- it is not profiled or estimated, so for a gaussian response
+#'   set it to a known / pre-estimated residual SD rather than the default.
 #' @param n_quad Number of Gauss-Hermite quadrature nodes per cluster.
 #'   `1` recovers Laplace; common choices are `5` or `7`. Default `7`.
 #' @param beta_init Initial fixed-effects (default zeros).

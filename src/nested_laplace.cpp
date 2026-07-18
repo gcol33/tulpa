@@ -80,8 +80,7 @@ namespace { using tulpa::run_multi_block_nested_laplace; }
 // block alongside) build their spatial side here, so the per-family block
 // wiring -- dense add_prior / log_prior / center AND the sparse
 // add_prior_pattern / add_prior_sparse the joint-sparse driver needs -- lives
-// once. (Before this, the pure-spatial entries hand-built dense-only blocks
-// inline while make_<x>_spatial_ops carried a second, sparse-capable copy.)
+// once.
 //
 // Lifetime: the returned blocks' callbacks capture the Rcpp argument vectors by
 // reference (mirroring make_<x>_spatial_ops). The CALLER must keep those vectors
@@ -207,8 +206,8 @@ inline std::vector<tulpa::LatentBlock> make_car_proper_latent_blocks(
 // structured reparameterisation lives in the per-block d_fac:
 //   eta_s = sigma_k * (sqrt(rho_k) * scale_factor * phi_s + sqrt(1 - rho_k) * theta_s)
 // so phi has a bare ICAR prior (tau = 1) and theta is N(0, I); the multi-block
-// driver mixes d_fac_b(k) * x[idx_b] into eta. Bit-identical to the former inline
-// build, plus the sparse callbacks for the joint-sparse path.
+// driver mixes d_fac_b(k) * x[idx_b] into eta. The block exposes both the dense
+// and the sparse callbacks the joint-sparse path needs.
 inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     int start, int n_s,
     const Rcpp::IntegerVector& spatial_idx,

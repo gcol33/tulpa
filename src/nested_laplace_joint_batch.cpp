@@ -101,7 +101,7 @@ inline void compute_eta_species(
             d_eff[b] = s * d_fac_cache[b];
         }
         for (int i = 0; i < N_k; i++) {
-            double e = 0.0;
+            double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
             for (int j = 0; j < p_k; j++) e += pa.X(i, j) * x[bstart + j];
             if (n_re_k > 0) {
                 int g = (int) pa.re_idx[i] - 1;

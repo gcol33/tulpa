@@ -28,8 +28,6 @@
 // The recursion u_j = u_{j-1} - z[j] v_j (with u_{-1} = L^{-T} z) folds the
 // n outer products into one dense-vector update per column. Peak memory is
 // O(n_mesh); runtime stays dominated by the per-column back-solve.
-// A further reduction (sparse RHS walking the elim tree, O(n*reach)
-// instead of O(n*nnz(L))) is left for a follow-up.
 //
 // dQ/dtheta closed forms:
 //   Integer alpha = 2:

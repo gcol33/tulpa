@@ -203,8 +203,9 @@ tulpa_nuts_spde <- function(y, X, spatial,
       lambda_s <- -log(prior_sigma_alpha) / prior_sigma_0
       range_med <- (lambda_r / log(2))^2
       sigma_med <- log(2) / lambda_s
-      kappa_med <- sqrt(8 * nu_used) / range_med
-      tau_med   <- 1.0 / (sqrt(4 * pi) * kappa_med * sigma_med)
+      .kt_med   <- .spde_kappa_tau(range_med, sigma_med, nu_used)
+      kappa_med <- .kt_med$kappa
+      tau_med   <- .kt_med$tau_spde
       if (is.null(log_kappa_init)) log_kappa_init <- log(kappa_med)
       if (is.null(log_tau_init))   log_tau_init   <- log(tau_med)
     }
@@ -217,8 +218,9 @@ tulpa_nuts_spde <- function(y, X, spatial,
     sigma <- if (is.null(sigma)) prior_sigma_0 else sigma
   }
 
-  kappa    <- sqrt(8 * spatial$nu) / range
-  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma)
+  .kt      <- .spde_kappa_tau(range, sigma, spatial$nu)
+  kappa    <- .kt$kappa
+  tau_spde <- .kt$tau_spde
   # Operator order alpha = nu + d/2 (d = 2). For integer nu this is an
   # int; for fractional nu the rational expansion handles non-integer alpha
   # downstream, and the int passed here only labels the closest integer

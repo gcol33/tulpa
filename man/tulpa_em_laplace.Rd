@@ -54,9 +54,11 @@ silent no-op).}
 
 \item{tol}{Convergence tolerance on max relative parameter change.}
 
-\item{damping}{EM damping factor in \verb{[0, 1)}. With \code{damping = d}, the
-parameter update is \code{(1 - d) * new + d * prev}, so \code{d = 0} is no
-damping. The same factor is applied to weights between iterations.}
+\item{damping}{EM damping factor in \verb{[0, 1)}. With \code{damping = d}, the E-step
+weights are smoothed between iterations as \code{(1 - d) * new + d * prev}
+(\code{d = 0} is no damping); the M-step then refits on the smoothed weights, so
+the parameter update is damped indirectly through the weights rather than by
+mixing successive parameter vectors.}
 
 \item{correction}{Post-EM correction. \code{"none"} returns the EM point
 estimate only. \code{"mi"} draws \code{n_imputations} independent hard \code{z} from

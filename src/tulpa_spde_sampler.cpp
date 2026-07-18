@@ -74,7 +74,7 @@ struct SpdeGlmData {
 // =====================================================================
 // Per-observation log-likelihood (templated for AD).
 //
-// Phase 1: eta[0] already carries beta + spatial (A*w) + offset from
+// eta[0] already carries beta + spatial (A*w) + offset from
 // compute_log_post_generic — we just dispatch on family. log_phi is the
 // only extra param this likelihood owns; it sits at layout.extra_offset.
 // =====================================================================
@@ -449,9 +449,8 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     // them inside SpdeNcTransform on every gradient call.
     sm.rational_poles   = std::move(rat_poles);
     sm.rational_weights = std::move(rat_weights);
-    // log|Q| is constant under fixed hypers and cancels in NUTS, so we
-    // leave it at 0.0 — Phase 2 will compute it for prior-comparable
-    // log-posteriors when joint hypers move.
+    // log|Q| is constant under fixed hypers and cancels in NUTS, so it is
+    // left at 0.0 here.
     sm.log_det_Q = 0.0;
 
     // Joint-NUTS state. Activates the non-centered z-parameterisation
@@ -594,8 +593,8 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
             // cases); fall back to alpha - 1 only when nu was left unset.
             const double nu_used  = (nu > 0.0) ? nu
                                                : static_cast<double>(alpha) - 1.0;
-            const double sqrt_8nu = std::sqrt(8.0 * nu_used);
-            const double sqrt_4pi = std::sqrt(4.0 * k_pi);
+            const double sqrt_8nu    = std::sqrt(8.0 * nu_used);
+            const double sqrt_4pi_nu = std::sqrt(4.0 * k_pi * nu_used);
 
             Rcpp::NumericVector range_draws(n_sample);
             Rcpp::NumericVector sigma_draws(n_sample);
@@ -614,7 +613,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
                 kappa_draws[s] = k_s;
                 tau_draws[s]   = t_s;
                 range_draws[s] = sqrt_8nu / k_s;
-                sigma_draws[s] = 1.0 / (sqrt_4pi * k_s * t_s);
+                sigma_draws[s] = 1.0 / (sqrt_4pi_nu * std::pow(k_s, nu_used) * t_s);
             }
 
             out["range_draws"] = range_draws;

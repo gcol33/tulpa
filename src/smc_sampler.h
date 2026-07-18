@@ -217,10 +217,8 @@ inline SMCResult smc_sample(
         // search (find_next_temperature), the log-mean-weight Z increment above,
         // and the uniform final weights below all rely on. Adaptive resampling
         // (only when ess < target) would instead require carrying normalized
-        // weights across rounds and feeding them back into all three; the
-        // previous code skipped the resample but dropped the weights, returning
-        // a uniform-weight population that no longer targeted the tempered
-        // posterior. Resampling unconditionally is the consistent fix (Del Moral
+        // weights across rounds and feeding them back into all three.
+        // Resampling unconditionally keeps these consistent (Del Moral
         // et al. 2006); the modest extra Monte Carlo variance is offset by the
         // per-particle MCMC mutations that follow.
         {

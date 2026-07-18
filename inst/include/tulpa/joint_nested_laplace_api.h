@@ -19,13 +19,11 @@
 // flagged as the "copy" arm — it sees sigma_pos_k from a dedicated outer-
 // grid axis; all other arms see sigma_occ_k from the donor sigma axis.
 //
-//: replaces the (sigma, alpha) parameterization where alpha
-// scaled the copy arm's contribution to a shared sigma * z field. The old
-// parameterization produced a posterior ridge along constant alpha * sigma
-// at small n_pos because both arms' likelihoods anchored only the *product*
-// alpha * sigma. The new (sigma_occ, sigma_pos) axes are anchored
-// independently by their own arm's likelihood. alpha = sigma_pos / sigma_occ
-// is recovered post-hoc on the R side.
+// Each arm's field amplitude carries its own outer-grid axis (sigma_occ for
+// the donor arms, sigma_pos for the copy arm) so each is anchored independently
+// by its own arm's likelihood, avoiding a posterior ridge along constant
+// alpha * sigma at small n_pos where both arms would otherwise anchor only the
+// product. alpha = sigma_pos / sigma_occ is recovered post-hoc on the R side.
 
 #ifndef TULPA_JOINT_NESTED_LAPLACE_API_H
 #define TULPA_JOINT_NESTED_LAPLACE_API_H

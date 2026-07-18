@@ -29,7 +29,7 @@
 //     n_spatial_units / n_times / n_units    : structural size
 //     adj_row_ptr, adj_col_idx, n_neighbors  : (icar/bym2/car_proper only)
 //     scale_factor (bym2 only)
-//     cyclic (rw1 only)
+//     cyclic (rw1 / rw2)
 //   )
 //
 // theta_grid columns per block depend on whether the block is the copy block:
@@ -63,7 +63,7 @@
 #include "nested_laplace_checkpoint.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
-#include "nested_laplace_joint_batch.h"   // fused batched scatter (WIP)
+#include "nested_laplace_joint_batch.h"   // fused batched scatter
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
 #include "hsgp_mo_block_factory.h"
@@ -681,7 +681,7 @@ int build_joint_blocks_from_spec(
     if (type == "rw1" || type == "rw2") {
         int size = Rcpp::as<int>(bs["n_times"]);
         Rcpp::List temporal_idx_list = bs["temporal_idx"];
-        bool cyclic = (type == "rw1") &&
+        bool cyclic = (type == "rw1" || type == "rw2") &&
                       bs.containsElementNamed("cyclic") &&
                       Rcpp::as<bool>(bs["cyclic"]);
         int start = latent_offset;
@@ -739,27 +739,29 @@ int build_joint_blocks_from_spec(
                 return tulpa::log_prior_rw1(x, start, size, tau, cyclic);
             };
         } else {
-            block.add_prior = [start, size, axis0, theta_grid, is_copy_block](
+            block.add_prior = [start, size, axis0, theta_grid, cyclic,
+                               is_copy_block](
                 tulpa::DenseVec& grad, tulpa::DenseMat& H,
                 const Rcpp::NumericVector& x, int k) {
                 double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
-                tulpa::add_rw2_precision(grad, H, x, start, size, tau, false);
+                tulpa::add_rw2_precision(grad, H, x, start, size, tau, cyclic);
             };
-            block.add_prior_sparse = [start, size, axis0, theta_grid,
+            block.add_prior_sparse = [start, size, axis0, theta_grid, cyclic,
                                        is_copy_block](
                 tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                 const Rcpp::NumericVector& x, int k) {
                 double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
-                tulpa::add_rw2_precision_sparse(grad, H, x, start, size, tau, false);
+                tulpa::add_rw2_precision_sparse(grad, H, x, start, size, tau, cyclic);
             };
-            block.add_prior_pattern = [start, size](
+            block.add_prior_pattern = [start, size, cyclic](
                 std::vector<std::pair<int,int>>& out) {
-                tulpa::add_rw2_pattern(out, start, size, /*cyclic=*/false);
+                tulpa::add_rw2_pattern(out, start, size, cyclic);
             };
-            block.log_prior = [start, size, axis0, theta_grid, is_copy_block](
+            block.log_prior = [start, size, axis0, theta_grid, cyclic,
+                               is_copy_block](
                 const Rcpp::NumericVector& x, int k) -> double {
                 double tau = is_copy_block ? 1.0 : theta_grid(k, axis0);
-                return tulpa::log_prior_rw2(x, start, size, tau, false);
+                return tulpa::log_prior_rw2(x, start, size, tau, cyclic);
             };
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
@@ -1005,7 +1007,7 @@ int build_joint_blocks_from_spec(
     }
 
     if (type == "hsgp_mo") {
-        // Multi-output (co-regionalization) HSGP block (Stage 1.7).
+        // Multi-output (co-regionalization) HSGP block.
         // First ship: K == n_arms == 2, with axes
         //   (sigma_1, sigma_2, rho, ell)
         // all raw (no log transform). See src/hsgp_mo_block_factory.h
@@ -1086,7 +1088,7 @@ int build_joint_blocks_from_spec(
     }
 
     if (type == "lf") {
-        // Latent factor block (Stage 1.6a): u in R^n_latent shared across
+        // Latent factor block: u in R^n_latent shared across
         // arms, lambda in R^n_arms per-arm loadings, eta_i += u[obs_idx(i)] *
         // lambda[k_arm]. F = 1 is the only supported case.
         if (is_copy_block) {
@@ -1530,7 +1532,7 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
 }
 
 // ==========================================================================
-// Pattern correctness debug entry (1.5a).
+// Pattern correctness debug entry.
 // ==========================================================================
 // Parses arms_list + blocks_spec the same way cpp_nested_laplace_joint_multi
 // does, then stops after build_joint_hessian_pattern and returns the joint

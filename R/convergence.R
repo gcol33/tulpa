@@ -511,7 +511,7 @@ mcmc_diagnostics <- function(fit, pars = NULL,
 #'   (or the full vector if that would be empty).
 #' @export
 select_main_params <- function(param_names) {
-  keep <- !grepl("\\[[0-9]+\\]$", param_names)
+  keep <- !grepl("\\[[0-9]+(,[0-9]+)*\\]$", param_names)
   if (!any(keep)) return(param_names)
   param_names[keep]
 }

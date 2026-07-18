@@ -335,6 +335,11 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       log_marginal  <- consistency$log_marginal
       extras_list   <- consistency$extras
       refining_axis <- consistency$refining_axis
+      # The consistency pass appends slice cells, so the per-cell log-prior
+      # vector is stale; recompute on the merged grid or ds$picks indexes past
+      # its end -> NA into the returned $log_prior (as the refine pass does).
+      log_prior_cell <- if (is.null(hp_fn)) rep(0, nrow(theta_grid))
+                        else hp_fn(theta_grid)
       # Re-derive weights / moments / Laplace-SD on the merged grid.
       weights <- .nl_normalise_weights_safe(log_marginal,
                                              what = "hyper-grid cells")

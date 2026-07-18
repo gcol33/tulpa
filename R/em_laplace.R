@@ -381,9 +381,11 @@
 #'   silent no-op).
 #' @param max_iter Maximum EM iterations.
 #' @param tol Convergence tolerance on max relative parameter change.
-#' @param damping EM damping factor in `[0, 1)`. With `damping = d`, the
-#'   parameter update is `(1 - d) * new + d * prev`, so `d = 0` is no
-#'   damping. The same factor is applied to weights between iterations.
+#' @param damping EM damping factor in `[0, 1)`. With `damping = d`, the E-step
+#'   weights are smoothed between iterations as `(1 - d) * new + d * prev`
+#'   (`d = 0` is no damping); the M-step then refits on the smoothed weights, so
+#'   the parameter update is damped indirectly through the weights rather than by
+#'   mixing successive parameter vectors.
 #' @param correction Post-EM correction. `"none"` returns the EM point
 #'   estimate only. `"mi"` draws `n_imputations` independent hard `z` from
 #'   the converged posterior weights P(z|y, theta_hat), refits each block

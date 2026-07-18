@@ -7,7 +7,7 @@
 spatial_svc(
   coords,
   terms = 1,
-  cov = c("exponential", "matern", "gaussian", "spherical"),
+  cov = c("exponential", "matern"),
   nn = 15,
   shared = NULL,
   scale_coords = TRUE,
@@ -24,8 +24,7 @@ naming the two coordinate variables in the data.}
 of design-matrix column indices, or a character vector of term names.
 Default \code{1} (the intercept).}
 
-\item{cov}{Covariance function. One of \code{"exponential"}, \code{"matern"},
-\code{"gaussian"}, or \code{"spherical"}.}
+\item{cov}{Covariance function. One of \code{"exponential"} or \code{"matern"}.}
 
 \item{nn}{Number of nearest neighbours used in the NNGP approximation
 (\code{approx = "nngp"}).}

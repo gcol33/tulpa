@@ -185,20 +185,31 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 # sqrt(sigma2); phi_gp / lengthscale (GP lengthscale) -> range = 3 * ell (the
 # distance at which exp(-d/ell) ~ 0.05). Temporal mirrors the temporal sampler
 # (tau reported as precision, ar1 rho, GP sigma / lengthscale).
+# Natural-scale maps from a hyperparameter to its interpretable quantity.
+# Single-sourced so the nested-grid path (the registries below) and the
+# sampler-draw path (the transform_fn closures in spatial_range/temporal_corr)
+# cannot drift -- both consume these, differing only in whether they first
+# strip a log/logit link.
+.hyper_nat <- list(
+  range_from_lengthscale = function(v) 3 * v,   # exp(-d/ell) ~ 0.05 at d ~= 3*ell
+  sigma_from_var         = function(v) sqrt(v),
+  sigma_from_precision   = function(v) 1 / sqrt(v),
+  identity               = function(v) v
+)
 .SPATIAL_HYPER_TRANSFORM <- list(
-  tau         = list(name = "sigma", fn = function(v) 1 / sqrt(v)),
-  sigma2      = list(name = "sigma", fn = function(v) sqrt(v)),
-  phi_gp      = list(name = "range", fn = function(v) 3 * v),
-  lengthscale = list(name = "range", fn = function(v) 3 * v),
-  sigma       = list(name = "sigma", fn = function(v) v),
-  range       = list(name = "range", fn = function(v) v),
-  rho         = list(name = "rho",   fn = function(v) v)
+  tau         = list(name = "sigma", fn = .hyper_nat$sigma_from_precision),
+  sigma2      = list(name = "sigma", fn = .hyper_nat$sigma_from_var),
+  phi_gp      = list(name = "range", fn = .hyper_nat$range_from_lengthscale),
+  lengthscale = list(name = "range", fn = .hyper_nat$range_from_lengthscale),
+  sigma       = list(name = "sigma", fn = .hyper_nat$identity),
+  range       = list(name = "range", fn = .hyper_nat$identity),
+  rho         = list(name = "rho",   fn = .hyper_nat$identity)
 )
 .TEMPORAL_HYPER_TRANSFORM <- list(
-  tau         = list(name = "precision",      fn = function(v) v),
-  rho         = list(name = "rho_ar1",        fn = function(v) v),
-  sigma       = list(name = "sigma_temporal", fn = function(v) v),
-  lengthscale = list(name = "lengthscale",    fn = function(v) v)
+  tau         = list(name = "precision",      fn = .hyper_nat$identity),
+  rho         = list(name = "rho_ar1",        fn = .hyper_nat$identity),
+  sigma       = list(name = "sigma_temporal", fn = .hyper_nat$identity),
+  lengthscale = list(name = "lengthscale",    fn = .hyper_nat$identity)
 )
 
 # Weighted per-axis mean / sd / `probs`-quantile summary of a nested-Laplace
@@ -288,11 +299,12 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     if (grepl("^log_phi_gp", label)) {
       # phi is the range: every kernel is exp(-d / phi), so correlation decays
       # to ~0.05 at d = -phi * log(0.05) ~= 3 * phi.
-      list(vals = 3 * exp(raw), row = sub("phi", "range", nm))
+      list(vals = .hyper_nat$range_from_lengthscale(exp(raw)),
+           row = sub("phi", "range", nm))
     } else if (grepl("^log_sigma2", label)) {
-      list(vals = sqrt(exp(raw)), row = nm)            # log_sigma2 -> sigma
+      list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
     } else if (grepl("^log_tau", label)) {
-      list(vals = 1 / sqrt(exp(raw)), row = "sigma")   # log_tau -> sigma = 1/sqrt(tau)
+      list(vals = .hyper_nat$sigma_from_precision(exp(raw)), row = "sigma")
     } else if (grepl("^log_sigma", label)) {
       list(vals = exp(raw), row = nm)                  # log_sigma -> sigma
     } else if (grepl("^logit_rho", label)) {
@@ -371,7 +383,7 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
     } else if (nm == "rho") {
       list(vals = 1 / (1 + exp(-raw)), row = "rho_ar1") # logit -> rho in (0,1)
     } else if (nm == "sigma") {
-      list(vals = sqrt(exp(raw)), row = "sigma_temporal")  # log_sigma2 -> sigma
+      list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = "sigma_temporal")
     } else if (nm == "lengthscale") {
       list(vals = 1 / (1 + exp(-raw)), row = "lengthscale")
     } else {
