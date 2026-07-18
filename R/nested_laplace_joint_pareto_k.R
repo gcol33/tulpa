@@ -425,10 +425,21 @@
         identity = theta)
 }
 
-# Inverse (unconstrained -> constrained) transform plus log|d theta / d u|.
+# Inverse (unconstrained -> constrained) transform plus the log-Jacobian that
+# maps the integrator's grid coordinate to the proposal's unconstrained `u`
+# (#221). exp(log_marginal) is the density in whatever coordinate the grid is
+# uniform in, weighted by plain softmax with NO volume element (nested_laplace.R;
+# #179 CAR_proper recovery). A `log` axis is geometric -- uniform in
+# u = log(theta) -- so log_marginal is already the u-space density and the
+# Jacobian is 0, matching the single-block .nested_grid_pareto_k and the SPDE
+# path (confirmed empirically: with the log-axis Jacobian the outer k-hat
+# overstates the grid-node ground truth by ~0.25-0.55, enough to flip a verdict
+# near 0.7). A `logit01` (correlation) axis has a grid uniform in the natural
+# rho, so mapping rho -> logit(rho) DOES carry the logit Jacobian
+# log(rho (1 - rho)). `identity` (a copy alpha) is uniform in u already.
 .joint_pareto_inv <- function(tag, u) {
     switch(tag,
-        log = list(theta = exp(u), log_jac = u),
+        log = list(theta = exp(u), log_jac = rep(0, length(u))),
         logit01 = {
             p <- stats::plogis(u)
             # log p + log(1 - p), stable form via plogis(., log.p = TRUE).

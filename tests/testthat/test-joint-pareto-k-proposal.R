@@ -41,7 +41,9 @@ test_that("a collapsed tensor grid recovers a finite k-hat from the FD Hessian",
     kd <- tulpa:::.joint_pareto_k(res, .pk_refit(u_hat), n_samples = 200L,
                                   proposal = NULL)
     expect_false(is.na(kd$pareto_k))
-    expect_identical(kd$proposal_source, "mode_hessian")
+    # FD mode-Hessian proposal, raw or moment-match-refined (post-#221 the
+    # corrected target lets the refinement engage); both source from the Hessian.
+    expect_true(kd$proposal_source %in% c("mode_hessian", "moment_matched"))
     expect_true(is.finite(kd$is_ess) && kd$is_ess > 0)
     expect_lt(kd$pareto_k, 0.7)             # Gaussian target under Gaussian proposal
 })
@@ -274,8 +276,14 @@ test_that("the grid-mixture proposal beats the single Gaussian on a skewed grid"
     expect_lt(mx$pareto_k, 0.7)              # ... into the usable band
     expect_gt(mx$is_ess, g$is_ess)           # ... with a better effective sample
 
+    # The mixture beats the single Gaussian above, but the dispatcher ADOPTS it
+    # only when the single Gaussian is unreliable (the grid-width-deficiency test
+    # below covers that adoption). Post-#221 the outer target carries no spurious
+    # log-axis volume element, so this within-grid skew leaves the grid-moment k
+    # in the good band and the #121 skip keeps it -- the reported k stays usable.
     set.seed(1); kd <- tulpa:::.joint_pareto_k(res, refit, 600L, NULL)
-    expect_identical(kd$proposal_source, "grid_mixture")
+    expect_identical(kd$proposal_source, "grid_moment")
+    expect_lt(kd$pareto_k, 0.7)
 })
 
 test_that("a grid-width deficiency stays unreliable: the reported k is never the moment-matched Gaussian (gcol33/tulpa#130)", {
@@ -296,7 +304,10 @@ test_that("a grid-width deficiency stays unreliable: the reported k is never the
     w   <- { e <- exp(stats::dnorm(log(sg), 0, 0.5, log = TRUE)); e / sum(e) }
     res <- list(theta_grid = matrix(sg, ncol = 1, dimnames = list(NULL, "sigma")),
                 weights = w, prior = list(type = "icar"))
-    refit_wide <- function(tm) { u <- log(tm[, "sigma"]); -0.5 * (u / 3)^2 - u }
+    # log_marginal is the u-space density directly (the log axis is geometric, so
+    # the outer target carries no volume element post-#221): a wide N(0, 3) in
+    # u = log sigma that the narrow grid cannot represent.
+    refit_wide <- function(tm) { u <- log(tm[, "sigma"]); -0.5 * (u / 3)^2 }
 
     prep <- tulpa:::.joint_pareto_prepare(res, refit_wide, 4000L, NULL)
     expect_identical(prep$proposal_source, "grid_moment")     # a spread grid
@@ -443,7 +454,13 @@ test_that("a multi-block CCD fit sources the k-hat from the mode Hessian", {
         control = list(integration = "ccd", diagnose_k = TRUE, k_samples = 200L,
                        var_of_means_consistency = FALSE))
     expect_identical(fit$integration, "ccd")
-    expect_identical(fit$pareto_k_proposal_source, "mode_hessian")
+    # A CCD fit's Pareto-k proposal is the mode-Hessian Gaussian; the dispatcher
+    # returns it raw ("mode_hessian") or moment-match-refined ("moment_matched"),
+    # never a grid proposal (prep$proposal_source is mode_hessian, so the
+    # grid_moment / grid_mixture branch is not reached). Post-#221 the corrected
+    # outer target (no spurious log-axis Jacobian on the sigma axes) is
+    # well-covered enough that the moment-matching refinement engages.
+    expect_true(fit$pareto_k_proposal_source %in% c("mode_hessian", "moment_matched"))
     expect_true(is.finite(fit$pareto_k))
     expect_gt(fit$pareto_k_is_ess, 0)
 })

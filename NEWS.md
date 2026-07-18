@@ -32,13 +32,17 @@ Audit fixes (0.0.90 review, issues #218-#227).
   path (#221).** The default positive-scale grid is geometric (uniform in
   `u = log theta`) and the integrator weights it with plain
   `softmax(log_marginal)` and no volume element, so `exp(log_marginal)` is
-  already the `u`-space posterior density. `.nested_grid_pareto_k` added a
-  `+ sum(u)` change-of-variables term to its importance target, tilting the
+  already the `u`-space posterior density. Both the single-block
+  (`.nested_grid_pareto_k`) and joint / multi-axis (`.joint_pareto_inv`) paths
+  added a `+ sum(u)` change-of-variables term on the `log` axes, tilting the
   certified target away from the posterior the fit reports (a false reliable /
-  unreliable verdict; draws and moments were unaffected). The target now matches
-  the integrator and the SPDE Pareto-k path. The joint / multi-axis path is left
-  unchanged pending a per-axis treatment (its correlation axis uses a grid
-  uniform in the natural scale, which legitimately keeps its logit Jacobian).
+  unreliable verdict; draws and moments were unaffected). Both now drop it on the
+  `log` axes, matching the integrator and the SPDE Pareto-k path. A
+  target-agnostic ground truth (PSIS of the grid-node `log(w_k) - log q(u_k)`)
+  confirms the correction: with the Jacobian the outer k-hat overstated the truth
+  by ~0.25-0.55, enough to flip a verdict near 0.7. The correlation axis
+  (`logit01`) keeps its logit Jacobian, correct for the grid uniform in the
+  natural `rho`.
 
 * **`auto` mode errored on SVC / TVC (#222).** With the default
   `mode = "auto"`, a spatially- or temporally-varying-coefficient model fell to
