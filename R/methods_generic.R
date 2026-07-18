@@ -487,8 +487,15 @@ ranef.tulpa_fit <- function(object, ...) {
     # and drop the field / `log_sigma_re` / `L_re` columns that are not REs.
     cn <- colnames(re)
     re_cols <- if (!is.null(cn)) grep("^re\\[", cn) else integer(0)
-    if (length(re_cols) && length(re_cols) < ncol(re)) {
+    if (length(re_cols)) {
       re <- re[, re_cols, drop = FALSE]
+    } else if (ncol(re) != length(re_names)) {
+      # No `re[`-named columns and the tail width does not match the RE layout:
+      # this is the field / hyperparameter latent tail, not identifiable random
+      # effects. Do not emit it mislabeled as ranef. (An unnamed matrix whose
+      # width DOES match the layout -- e.g. a Gibbs fit's `$re` -- falls through
+      # and is used as-is.)
+      return(data.frame())
     }
     nm <- if (length(re_names) == ncol(re)) re_names else colnames(re) %||%
       seq_len(ncol(re))

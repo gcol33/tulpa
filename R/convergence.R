@@ -321,6 +321,26 @@ mcmc_draws <- function(fit) {
   fit$draws %||% fit$samples
 }
 
+# Pooled [total_draws x n_par] draws matrix with parameter colnames, from either
+# a 2-D pooled matrix or a 3-D [iter, chain, param] array. The per-parameter
+# diagnostic plots (ACF, Geweke) index draws[, param] and read colnames(), which
+# a bare 3-D array breaks (NULL colnames, wrong slice); this normalizes both.
+#' @keywords internal
+.tulpa_pooled_draws <- function(fit) {
+  draws <- fit$draws %||% fit$samples
+  if (is.null(draws)) return(NULL)
+  if (length(dim(draws)) == 3L) {
+    d  <- dim(draws)
+    pn <- dimnames(draws)[[3L]] %||% paste0("param", seq_len(d[3L]))
+    # [iter, chain, param] is column-major with iter fastest, so reshaping to
+    # nrow = iter * chain stacks each parameter's pooled draws into one column.
+    m <- matrix(as.numeric(draws), nrow = d[1L] * d[2L], ncol = d[3L])
+    colnames(m) <- pn
+    return(m)
+  }
+  draws
+}
+
 # --- Draws extraction -------------------------------------------------------
 
 # Split a fit's posterior draws into a list of per-chain [n_draws x n_par]

@@ -314,8 +314,8 @@ plot_acf <- function(fit, pars = NULL, lags = 25, n_pars = 6) {
     return(invisible(NULL))
   }
 
-  # Get draws
-  draws <- fit$draws
+  # Get draws (pooled 2-D with colnames; handles a 3-D [iter, chain, param] fit)
+  draws <- .tulpa_pooled_draws(fit)
   if (is.null(draws)) {
     stop("No draws available in fit object", call. = FALSE)
   }
@@ -1314,7 +1314,7 @@ geweke_test <- function(fit, frac1 = 0.1, frac2 = 0.5, pars = NULL) {
     return(invisible(NULL))
   }
 
-  draws <- fit$draws
+  draws <- .tulpa_pooled_draws(fit)
   if (is.null(draws)) {
     stop("No draws available in fit object", call. = FALSE)
   }

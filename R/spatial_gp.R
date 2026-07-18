@@ -365,7 +365,7 @@ spatial_multiscale <- function(coords,
                                shared = NULL,
                                scale_coords = TRUE,
                                sampler = c("auto", "noncentered", "centered",
-                                          "interweaved", "adaptive", "riemannian", "lbfgs")) {
+                                          "interweaved")) {
 
   approx <- match.arg(approx)
   cov <- match.arg(cov)

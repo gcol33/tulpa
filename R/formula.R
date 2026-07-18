@@ -442,8 +442,9 @@ decompose_bar_lhs <- function(lhs) {
 
   for (term in terms) {
     if (is.numeric(term)) {
-      if (term == 0) has_intercept <- FALSE
-      # 1 = intercept, skip from slopes
+      # 0 drops the intercept; -1 does too (the binary `x - 1` form, flattened
+      # to a numeric -1 by collect_additive_terms); 1 is the intercept, skipped.
+      if (term == 0 || term == -1) has_intercept <- FALSE
     } else if (is.call(term) && identical(term[[1]], as.name("-")) &&
                length(term) == 2 && is.numeric(term[[2]]) && term[[2]] == 1) {
       has_intercept <- FALSE
@@ -465,9 +466,23 @@ decompose_bar_lhs <- function(lhs) {
 collect_additive_terms <- function(expr) {
   if (is.call(expr) && identical(expr[[1]], as.name("+"))) {
     c(collect_additive_terms(expr[[2]]), collect_additive_terms(expr[[3]]))
+  } else if (is.call(expr) && identical(expr[[1]], as.name("-")) &&
+             length(expr) == 3L) {
+    # `a - b` == `a + (-b)`: flatten the left, negate the right so the intercept
+    # drop in `x - 1` is seen (a numeric -1) instead of a single binary-minus
+    # call filed as a nonsensical slope.
+    c(collect_additive_terms(expr[[2]]), collect_additive_terms(.negate_term(expr[[3]])))
   } else {
     list(expr)
   }
+}
+
+#' Negate an additive term (numeric literal -> its negative; anything else ->
+#' a unary-minus call), for flattening binary `-` in a bar LHS.
+#' @keywords internal
+.negate_term <- function(t) {
+  if (is.numeric(t)) return(-t)
+  call("-", t)
 }
 
 #' Render a slope spec as a display string
