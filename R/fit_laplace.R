@@ -60,6 +60,15 @@
 #'   full inverse Hessian, not the inverse of a diagonal block). Used by the EM
 #'   M-step for a full random-effect covariance. Non-spatial multi-RE path only.
 #'
+#' @param X_zi Optional zero-inflation design matrix (`length(y)` rows). When
+#'   supplied the latent fixed-effect block becomes `[beta_count | beta_zi]` and
+#'   the family's compiled zero-inflated kernel is used. Non-spatial path only.
+#' @param zi_prior_sd Prior SD on the zero-inflation coefficients,
+#'   `beta_zi ~ N(0, zi_prior_sd^2)` (default 2.5, matching the samplers'
+#'   `ModelData::zi_prior_sd`). It is what keeps the logit identified when a
+#'   level contributes no zeros, where the likelihood alone drives `beta_zi` to
+#'   `-Inf`. `+Inf` removes the penalty. Ignored when `X_zi` is `NULL`.
+#'
 #' @return A list with:
 #'   - `mode`: full mode vector (beta, then RE values per term)
 #'   - `log_marginal`: Laplace-approximated log-marginal likelihood
@@ -92,7 +101,8 @@ tulpa_laplace <- function(y, n_trials, X,
                           return_hessian = TRUE,
                           beta_prior = NULL,
                           return_re_cov = FALSE,
-                          X_zi = NULL) {
+                          X_zi = NULL,
+                          zi_prior_sd = 2.5) {
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
@@ -236,7 +246,8 @@ tulpa_laplace <- function(y, n_trials, X,
       beta_prior_sd   = if (is.null(bp)) NULL else bp$sd,
       return_re_cov   = isTRUE(return_re_cov),
       phi2 = phi2 %||% NA_real_,
-      X_zi = X_zi
+      X_zi = X_zi,
+      zi_prior_sd = zi_prior_sd
     )
   }
 
@@ -505,6 +516,49 @@ tulpa_laplace <- function(y, n_trials, X,
   }
 
   list(mean = mean, sd = sd)
+}
+
+#' Normalize a zero-inflation prior to a scalar SD
+#'
+#' The compiled zero-inflated kernels carry one mean-zero Gaussian prior over
+#' the whole `beta_zi` block (`ModelData::zi_prior_sd` on the sampler paths,
+#' the appended `BetaPrior` tail on the Laplace path), so the prior is a single
+#' SD rather than the per-coefficient `list(mean, sd)` that `beta_prior` takes.
+#' The list form is kept so the two priors read alike at the front door and so a
+#' per-coefficient or non-zero-mean ZI prior can be added without a signature
+#' change.
+#'
+#' @param zi_prior `NULL`, or a list with a scalar `sd`.
+#' @return A scalar prior SD; the engine default when `zi_prior` is `NULL`.
+#' @keywords internal
+.normalize_zi_prior <- function(zi_prior) {
+  if (is.null(zi_prior)) return(.ZI_PRIOR_SD_DEFAULT)
+  if (!is.list(zi_prior)) {
+    stop("`zi_prior` must be NULL or a list with `sd`; got ",
+         class(zi_prior)[1], ".", call. = FALSE)
+  }
+  if (!is.null(zi_prior$mean)) {
+    stop("`zi_prior$mean` is not supported: the compiled zero-inflation ",
+         "kernels carry a mean-zero prior on `beta_zi` (a logit-scale mean of ",
+         "0 puts the prior median structural-zero probability at 0.5). Supply ",
+         "`sd` only.", call. = FALSE)
+  }
+  if (is.null(zi_prior$sd)) {
+    stop("`zi_prior` must supply `sd` (prior standard deviation on the ",
+         "zero-inflation coefficients).", call. = FALSE)
+  }
+  sd <- as.numeric(zi_prior$sd)
+  if (length(sd) != 1L) {
+    stop(sprintf(paste0(
+      "`zi_prior$sd` must be a scalar: the kernels apply one prior SD to the ",
+      "whole zero-inflation block; got length %d."), length(sd)), call. = FALSE)
+  }
+  # `sd = +Inf` means no penalty, matching `beta_prior$sd`.
+  if (is.na(sd) || sd <= 0) {
+    stop("`zi_prior$sd` must be positive (Inf allowed = no penalty).",
+         call. = FALSE)
+  }
+  sd
 }
 
 

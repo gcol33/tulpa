@@ -17,6 +17,7 @@ tulpa(
   beta_prior = NULL,
   re_prior = NULL,
   ziformula = NULL,
+  zi_prior = NULL,
   spatial = NULL,
   temporal = NULL,
   control = list(),
@@ -80,6 +81,25 @@ correlated RE covariance), \code{prior_df} / \code{prior_scale} (inverse-Wishart
 the RE covariance, \code{control$re_cov = "gibbs"}), \code{prior_sigma_scale}
 (half-Cauchy scale on the RE SD for \code{mode = "gibbs"}), and \code{sigma_re_scale}
 (half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).}
+
+\item{ziformula}{Optional one-sided formula for the zero-inflation
+probability, e.g. \code{~ 1} for a constant structural-zero rate or \code{~ x} to
+model it. The response becomes a mixture: with probability
+\verb{plogis(X_zi beta_zi)} the observation is a structural zero, otherwise it
+is drawn from \code{family}. Available for the count families with a compiled
+zero-inflated kernel; paired with \code{truncated_poisson} or
+\code{truncated_neg_binomial_2} it is the hurdle model, since the base
+\code{P(Y = 0)} is then 0 and the mixture degenerates to the two-part
+likelihood. Backends that do not carry the mixture refuse it rather than
+fit the model without it.}
+
+\item{zi_prior}{Optional \code{list(sd)} Gaussian prior on the zero-inflation
+coefficients, \code{beta_zi ~ N(0, sd^2)}; \code{NULL} (default) uses 2.5. One scalar
+SD applies to the whole block, and the mean is fixed at 0, because that is
+what the compiled kernels carry. The prior is what identifies the logit
+where a level contributes no zeros -- there the likelihood is monotone in
+that coefficient and alone would send it to \code{-Inf}. \code{sd = Inf} removes the
+penalty. Ignored without \code{ziformula}.}
 
 \item{spatial}{Optional spatial-field spec. How it is addressed depends on the
 field family:

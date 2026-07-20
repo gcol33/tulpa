@@ -21,7 +21,8 @@ tulpa_laplace(
   return_hessian = TRUE,
   beta_prior = NULL,
   return_re_cov = FALSE,
-  X_zi = NULL
+  X_zi = NULL,
+  zi_prior_sd = 2.5
 )
 }
 \arguments{
@@ -89,6 +90,16 @@ posterior covariance blocks \code{Cov(u_g | y, Sigma)} -- one
 and other groups marginalized out (each block is a diagonal block of the
 full inverse Hessian, not the inverse of a diagonal block). Used by the EM
 M-step for a full random-effect covariance. Non-spatial multi-RE path only.}
+
+\item{X_zi}{Optional zero-inflation design matrix (\code{length(y)} rows). When
+supplied the latent fixed-effect block becomes \verb{[beta_count | beta_zi]} and
+the family's compiled zero-inflated kernel is used. Non-spatial path only.}
+
+\item{zi_prior_sd}{Prior SD on the zero-inflation coefficients,
+\code{beta_zi ~ N(0, zi_prior_sd^2)} (default 2.5, matching the samplers'
+\code{ModelData::zi_prior_sd}). It is what keeps the logit identified when a
+level contributes no zeros, where the likelihood alone drives \code{beta_zi} to
+\code{-Inf}. \code{+Inf} removes the penalty. Ignored when \code{X_zi} is \code{NULL}.}
 }
 \value{
 A list with:

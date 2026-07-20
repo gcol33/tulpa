@@ -1,5 +1,49 @@
 # tulpa NEWS
 
+## 0.0.96
+
+A settable prior on the zero-inflation coefficients, and the correctness fix
+that finding it turned up.
+
+New:
+
+- `tulpa(zi_prior = list(sd =))` sets the prior SD on the zero-inflation
+  coefficients, `beta_zi ~ N(0, sd^2)`; the default is 2.5. One scalar applies
+  to the whole block and the mean is fixed at 0, matching what the compiled
+  kernels carry -- a `mean` entry is refused rather than silently dropped, and
+  the list form leaves room for a per-coefficient prior later. `sd = Inf`
+  removes the penalty. `tulpa_laplace()` takes the same value as the scalar
+  `zi_prior_sd`.
+
+- The prior is worth setting rather than accepting: where a ZI design level
+  contributes no zeros the likelihood is monotone in that level's coefficient
+  and alone would send it to `-Inf`, so the prior is what makes the mode exist.
+  `zi_prior` is how that scale is now chosen.
+
+Fixed:
+
+- The Laplace path applied the zero-inflation prior only when the caller also
+  supplied `beta_prior`. Those govern different blocks -- `beta_prior` is the
+  count block -- so the ZI coefficients silently carried a prior SD of 2.5 with
+  a fixed-effect prior present and the weak built-in 100 without one, while
+  every sampler path applied 2.5 unconditionally. The same `ziformula`
+  therefore fit a different model depending on `mode`, and on an unrelated
+  argument. The prior is now applied whenever the ZI block exists. A second
+  edge in the same branch: supplying only `beta_prior$mean` left the precision
+  vector empty, so the guard that resized it skipped the ZI tail.
+
+- `ziformula` on `tulpa()` and `X_zi` on `tulpa_laplace()` appeared in the usage
+  blocks with no `\item`, an undocumented-argument check warning carried since
+  the zero-inflation port. Both are now documented.
+
+- The hurdle-factorization test compared a joint fit's zi block against a
+  standalone binomial without matching their priors, and absorbed the resulting
+  gap in a 1e-4 tolerance -- the same prior discrepancy described above, hidden
+  rather than caught. Matched, the factorization is exact to solver precision,
+  so the two zi assertions are now pinned at 1e-9, and a companion test repeats
+  the identity at a prior far from the default to show it is a property of the
+  likelihood and not of the default scale.
+
 ## 0.0.95
 
 One diagnostic front door, selected by draws provenance.

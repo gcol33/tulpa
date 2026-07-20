@@ -191,16 +191,56 @@ test_that("a hurdle model factorizes into its two independent fits", {
                       mode = "laplace"))
   # The zero component models P(structural zero), so the response is the
   # zero indicator on the same orientation as the mixture's pi.
+  #
+  # The identity is on the likelihood, so it transfers to the MAP only when the
+  # two sides carry the same prior. The joint fit gives its zi block the ZI
+  # prior (`.ZI_PRIOR_SD_DEFAULT`), while a standalone binomial gives its
+  # coefficients the weak built-in fixed-effect prior, so the standalone side
+  # is matched to the joint one here. Unmatched, the two agree only to ~2e-4 --
+  # a residual that is entirely the prior gap, and that a loose tolerance would
+  # hide.
   d$is0 <- as.numeric(d$y == 0)
   zero  <- coef(tulpa(is0 ~ z, data = d, family = "binomial",
-                      mode = "laplace"))
+                      mode = "laplace",
+                      beta_prior = list(mean = 0, sd = .ZI_PRIOR_SD_DEFAULT)))
 
+  # Prior-matched, the factorization is exact to solver precision, so this is
+  # pinned nine orders tighter than the mixture's recovery tolerance. A leaked
+  # cross term would have to be smaller than the Newton tolerance to survive.
   expect_equal(unname(joint[["(Intercept)"]]), unname(count[["(Intercept)"]]),
                tolerance = 1e-4)
   expect_equal(unname(joint[["x"]]), unname(count[["x"]]), tolerance = 1e-4)
   expect_equal(unname(joint[["zi_(Intercept)"]]),
-               unname(zero[["(Intercept)"]]), tolerance = 1e-4)
-  expect_equal(unname(joint[["zi_z"]]), unname(zero[["z"]]), tolerance = 1e-4)
+               unname(zero[["(Intercept)"]]), tolerance = 1e-9)
+  expect_equal(unname(joint[["zi_z"]]), unname(zero[["z"]]), tolerance = 1e-9)
+})
+
+
+test_that("the hurdle factorization is exact under any matched ZI prior", {
+  # The companion to the test above: the identity is a property of the
+  # likelihood, not of the particular prior scale, so it must hold equally at a
+  # prior far from the default. This is what separates "the priors happen to
+  # agree" from "the two blocks are genuinely independent".
+  set.seed(11)
+  n  <- 3000
+  x  <- stats::rnorm(n)
+  z  <- stats::rnorm(n)
+  mu <- exp(0.9 + 0.4 * x)
+  yc <- stats::qpois(stats::runif(n, exp(-mu), 1), mu)
+  y  <- ifelse(stats::runif(n) < stats::plogis(-0.6 + 0.5 * z), 0, yc)
+  d  <- data.frame(y = y, x = x, z = z, is0 = as.numeric(y == 0))
+
+  wide <- 100
+  joint <- coef(tulpa(y ~ x, data = d, family = "truncated_poisson",
+                      ziformula = ~ z, mode = "laplace",
+                      zi_prior = list(sd = wide)))
+  zero  <- coef(tulpa(is0 ~ z, data = d, family = "binomial",
+                      mode = "laplace",
+                      beta_prior = list(mean = 0, sd = wide)))
+
+  expect_equal(unname(joint[["zi_(Intercept)"]]),
+               unname(zero[["(Intercept)"]]), tolerance = 1e-9)
+  expect_equal(unname(joint[["zi_z"]]), unname(zero[["z"]]), tolerance = 1e-9)
 })
 
 

@@ -436,7 +436,10 @@
                                latent_blocks = list(), spatial = NULL,
                                temporal = NULL, weights = NULL,
                                phi2 = NULL, smoothers = list(),
-                               re_prior = NULL) {
+                               re_prior = NULL, zi_prior = NULL) {
+  # Scalar prior SD on the beta_zi block; the engine default when unset. Read
+  # once here so every ZI-carrying backend receives the same number.
+  zi_prior_sd <- .normalize_zi_prior(zi_prior)
   # Statistical random-effect / variance-component hyperpriors ride in a single
   # `re_prior` list (a statistical argument), never in `control` (tuning only).
   rp <- re_prior %||% list()
@@ -712,7 +715,8 @@
         re_list = .bundle_to_re_list(bundle, sigma_re),
         family = family, phi = phi, phi2 = phi2,
         offset = bundle$offset, beta_prior = beta_prior,
-        weights = weights, X_zi = bundle$X_zi
+        weights = weights, X_zi = bundle$X_zi,
+        zi_prior_sd = zi_prior_sd
       ))
     }
     if (backend == "gibbs") {
@@ -1015,7 +1019,7 @@
       svc_spec      = svc_spec_arg,
       tvc_spec      = tvc_spec_arg,
       zi_spec       = if (is.null(bundle$X_zi)) NULL
-                      else list(X = bundle$X_zi),
+                      else list(X = bundle$X_zi, prior_sd = zi_prior_sd),
       sigma_re_scale = rp$sigma_re_scale %||% 2.5,
       # The fixed-effect prior SD is the statistical `beta_prior` (mean-zero on
       # this sampler path), not a control knob; inject it into the sampler's
@@ -1131,6 +1135,23 @@
 #'   the RE covariance, `control$re_cov = "gibbs"`), `prior_sigma_scale`
 #'   (half-Cauchy scale on the RE SD for `mode = "gibbs"`), and `sigma_re_scale`
 #'   (half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).
+#' @param ziformula Optional one-sided formula for the zero-inflation
+#'   probability, e.g. `~ 1` for a constant structural-zero rate or `~ x` to
+#'   model it. The response becomes a mixture: with probability
+#'   `plogis(X_zi beta_zi)` the observation is a structural zero, otherwise it
+#'   is drawn from `family`. Available for the count families with a compiled
+#'   zero-inflated kernel; paired with `truncated_poisson` or
+#'   `truncated_neg_binomial_2` it is the hurdle model, since the base
+#'   `P(Y = 0)` is then 0 and the mixture degenerates to the two-part
+#'   likelihood. Backends that do not carry the mixture refuse it rather than
+#'   fit the model without it.
+#' @param zi_prior Optional `list(sd)` Gaussian prior on the zero-inflation
+#'   coefficients, `beta_zi ~ N(0, sd^2)`; `NULL` (default) uses 2.5. One scalar
+#'   SD applies to the whole block, and the mean is fixed at 0, because that is
+#'   what the compiled kernels carry. The prior is what identifies the logit
+#'   where a level contributes no zeros -- there the likelihood is monotone in
+#'   that coefficient and alone would send it to `-Inf`. `sd = Inf` removes the
+#'   penalty. Ignored without `ziformula`.
 #' @param spatial Optional spatial-field spec. How it is addressed depends on the
 #'   field family:
 #'   * **Areal** (`"icar"`, `"car"`, `"bym2"`, `"car_proper"`): a list with `type`
@@ -1209,6 +1230,7 @@ tulpa <- function(formula, data,
                   beta_prior = NULL,
                   re_prior = NULL,
                   ziformula = NULL,
+                  zi_prior = NULL,
                   spatial = NULL,
                   temporal = NULL,
                   control = list(),
@@ -1770,7 +1792,7 @@ tulpa <- function(formula, data,
                              spatial = spatial_spec, temporal = temporal_spec,
                              weights = weights, phi2 = phi2,
                              smoothers = lapply(smooth_specs, `[[`, "block"),
-                             re_prior = re_prior)
+                             re_prior = re_prior, zi_prior = zi_prior)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(

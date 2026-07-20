@@ -167,7 +167,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd = R_NilValue,
     bool return_re_cov = false,
     double phi2 = NA_REAL,
-    Rcpp::Nullable<Rcpp::NumericMatrix> X_zi = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericMatrix> X_zi = R_NilValue,
+    double zi_prior_sd = 2.5
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
     // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
@@ -236,10 +237,21 @@ Rcpp::List cpp_laplace_fit_multi_re(
     // The beta prior is supplied for the count block only; the ZI block is
     // appended with a weakly-informative N(0, zi_prior_sd^2) matching
     // ModelData::zi_prior_sd, which keeps the logit identified when a level has
-    // no zeros (where the likelihood alone would send beta_zi to -Inf).
-    if (has_zi && has_bp) {
-        const double kZiPriorSd = 2.5;
-        if (!bp.tau.empty()) bp.tau.resize(p_total, 1.0 / (kZiPriorSd * kZiPriorSd));
+    // no zeros (where the likelihood alone would send beta_zi to -Inf). It is
+    // applied whenever the ZI block exists: it is the ZI block's own prior, not
+    // an extension of the caller's count-block prior, and the sampler paths
+    // carry it unconditionally through ModelData::zi_prior_sd. Materializing
+    // `tau` here means the count block keeps DEFAULT_TAU_BETA explicitly rather
+    // than through the empty-vector fallback, which cannot represent two
+    // different precisions.
+    if (has_zi) {
+        if (!(zi_prior_sd > 0.0) || ISNAN(zi_prior_sd)) {
+            Rcpp::stop("zi_prior_sd must be positive (Inf allowed = no penalty).");
+        }
+        const double tau_zi = R_finite(zi_prior_sd)
+            ? 1.0 / (zi_prior_sd * zi_prior_sd) : 0.0;
+        if (bp.tau.empty()) bp.tau.assign(p, tulpa::DEFAULT_TAU_BETA);
+        bp.tau.resize(p_total, tau_zi);
         if (!bp.mean.empty()) bp.mean.resize(p_total, 0.0);
     }
 
@@ -401,7 +413,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         data, layout, params, re_group_empty, max_iter, tol, n_threads,
         /*blocks=*/nullptr, /*k_grid=*/0,
-        has_bp ? &bp : nullptr, return_re_cov);
+        (has_bp || has_zi) ? &bp : nullptr, return_re_cov);
     return tulpa::laplace_result_to_list(res);
 }
 

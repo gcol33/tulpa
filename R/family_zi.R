@@ -28,6 +28,17 @@
 .ZI_FAMILIES <- .COUNT_FAMILIES
 
 
+# Default prior SD on the zero-inflation coefficients, beta_zi ~ N(0, sd^2).
+# Weakly informative on the logit scale, and load-bearing rather than
+# decorative: where a level contributes no zeros the likelihood is monotone in
+# its beta_zi and drives it to -Inf, so the prior is what identifies the logit.
+# Mirrored by `ModelData::zi_prior_sd` (inst/include/tulpa/model_data.h) and by
+# `cpp_laplace_fit_multi_re`'s `zi_prior_sd` default; the three must agree, or
+# the same `ziformula` fits a different model per backend.
+#' @keywords internal
+.ZI_PRIOR_SD_DEFAULT <- 2.5
+
+
 # Backends carrying the mixture. "laplace" reaches it as process 1 of the
 # two-process spec; every `tulpa_sample_glmm` backend reaches it through the
 # `logit_zi` callback argument, which the generic log-posterior builds from

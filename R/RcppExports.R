@@ -121,8 +121,8 @@ cpp_laplace_fit <- function(y, n, X, re_idx, n_re_groups, sigma_re, family, phi 
     .Call(`_tulpa_cpp_laplace_fit`, y, n, X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, n_threads)
 }
 
-cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi)
+cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5) {
+    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd)
 }
 
 cpp_laplace_sample <- function(mode, H, n_samples) {
