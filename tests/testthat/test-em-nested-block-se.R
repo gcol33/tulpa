@@ -32,3 +32,25 @@ test_that("a nested-prior EM block attaches a finite grid-marginalized H_beta (#
   expect_true(all(is.finite(withse$se)))
   expect_true(all(withse$se > 0))
 })
+
+# A block carrying a prior but no RE term must still reach the engine: re_idx
+# carries one 0 ("no random effect") per observation, not a length-1 sentinel.
+test_that("a nested-prior EM block with no RE term fits (gcol33/tulpaObs#148)", {
+  skip_on_cran()
+  set.seed(3)
+  S <- 10L; reps <- 8L
+  unit <- rep(seq_len(S), each = reps); N <- length(unit)
+  W <- matrix(0, S, S)
+  for (i in seq_len(S)) { j <- i %% S + 1L; W[i, j] <- 1; W[j, i] <- 1 }
+  x <- rnorm(N)
+  y <- rbinom(N, 1, plogis(-0.2 + 0.7 * x))
+  prior <- tulpa:::.spatial_spec_to_nl_prior(
+    list(type = "icar", adjacency = W, spatial_idx = unit))
+  block <- list(
+    y = y, n_trials = rep(1L, N), X = cbind(1, x), family = "binomial",
+    prior = prior)
+
+  fit <- tulpa:::.fit_block_via_nested_laplace(block, n_threads = 1L)
+  expect_true(all(is.finite(fit$mode)))
+  expect_equal(dim(fit$H_beta), c(2L, 2L))
+})
