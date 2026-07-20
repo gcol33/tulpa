@@ -245,8 +245,13 @@
 #'   * `var_of_means_consistency` (`TRUE`) -- run a post-integration
 #'     consistency pass on the variance of the per-arm posterior means and
 #'     attach `var_of_means_consistency_info`.
-#'   * `force_sparse` (`FALSE`) -- force the sparse linear-algebra backend for
-#'     the inner joint solve regardless of the dense/sparse heuristic.
+#'   * `force_sparse` (`FALSE`) -- linear-algebra backend for the inner joint
+#'     solve. `TRUE` / `FALSE` select the sparse or dense path outright,
+#'     regardless of the dense/sparse heuristic. `"auto"` selects by the latent
+#'     dimension the fit will actually build, taking the sparse path above
+#'     `n_x > 1000` and the dense one at or below it, where the sparse
+#'     symbolic-analysis and indirection overhead outweighs the fill-in saving.
+#'     A model whose latent dimension cannot be determined resolves to dense.
 #'   * `integration` (`"auto"`) -- outer-grid node layout for a multi-block
 #'     prior. A central composite design (CCD) integrates the hyperparameter
 #'     posterior on `1 + 2d + 2^d` nodes oriented by the Cholesky of the
@@ -983,6 +988,10 @@ tulpa_nested_laplace_joint <- function(responses,
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     grids <- backend$build_grids(prior, cp$has_copy, cp$alpha_grid, phi_axes)
+    force_sparse <- .resolve_force_sparse(force_sparse, function() {
+        lay <- if (is.function(backend$layout)) backend$layout(arms, prior)
+        if (is.list(lay)) lay$n_x else NULL
+    })
     tm$mark("setup")
 
     call_kernel_with_tol <- function(tol_prune) {

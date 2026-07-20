@@ -66,11 +66,30 @@
 #'   joint-field Laplace inner solve. `> 1` refines it with `n_quad`-point
 #'   adaptive Gauss-Hermite quadrature, which requires a single shared grouping
 #'   factor; see [tulpa_re_cov_nested()].
+#' @param marginal Report fixed-effect intervals that carry the hyperparameter
+#'   uncertainty, instead of the intervals conditional on `theta_hat`. The
+#'   posterior for `theta` is taken as Gaussian around the maximizer with
+#'   covariance `solve(H_theta)`, the inner mode is linearized in `theta`, and
+#'   the law of total variance adds `J solve(H_theta) J'` to the conditional
+#'   covariance, where `J = d mode / d theta`. Both `H_theta` and `J` come from
+#'   one central-difference stencil over the outer objective, costing
+#'   `1 + 2k^2` further inner solves for `k` hyperparameter coordinates (`k` is
+#'   `1` for a scalar `(1 | g)` block and `3` for a correlated `(1 + x | g)`
+#'   one). Default `FALSE`. Widens intervals; never narrows them. When the
+#'   variance components themselves are the target, or the correction's two
+#'   approximations look strained (a strongly skewed variance-component
+#'   marginal), integrate with [tulpa_re_cov_nested()] instead.
 #' @param control A named list of numerical knobs: `max_iter`, `tol`,
 #'   `n_threads` (inner-solve controls, see [tulpa_laplace()]), and
 #'   `outer_maxit` (iteration budget for the maximization over `Sigma`, default
 #'   500; applies to the Nelder-Mead simplex used from two parameters up, since
 #'   the one-parameter case is bracketed by Brent). Exhausting the budget warns.
+#'   Two further knobs tune `marginal = TRUE` and are inert without it:
+#'   `marginal_step` (the stencil step in `theta` space, default `1e-3`) and
+#'   `marginal_richardson` (default `FALSE`; evaluate the stencil at `step` and
+#'   `step / 2` and extrapolate, turning the `O(step^2)` truncation error into
+#'   `O(step^4)` at twice the solves -- worth it only when the inner solver's
+#'   own noise sits well below the truncation error, i.e. a tight `tol`).
 #'
 #' @return A `tulpa_fit` with:
 #'   - `mode`, `H_beta`: the fixed-effect (and, on the `n_quad = 1` path, random-
@@ -84,6 +103,16 @@
 #'   - `converged`: whether the inner Newton solve at `theta_hat` converged.
 #'   - `outer_convergence`: `optim`'s code for the maximization over `Sigma`
 #'     (`0` on success). A non-zero value also warns.
+#'   - With `marginal = TRUE` and a correction that formed: `cov_marginal` (the
+#'     widened fixed-effect covariance, which `vcov` / `summary` / `confint`
+#'     then report), `cov_conditional` (the `solve(H_beta)` they would otherwise
+#'     have reported, kept so the two are comparable on one fit), `H_theta` and
+#'     `theta_cov` (the outer Hessian at `theta_hat` and its inverse, named by
+#'     `theta_names`), and the `marginal_step` / `marginal_richardson` actually
+#'     used. All absent when the correction was not requested or could not be
+#'     formed, so `is.null(fit$cov_marginal)` tests whether the reported
+#'     intervals are marginal. A requested correction that fails warns and
+#'     leaves the conditional covariance in place.
 #'
 #' @seealso [tulpa_re_cov_nested()] to integrate over `Sigma` rather than fix it;
 #'   [tulpa_laplace()] for the inner solve.
@@ -111,12 +140,23 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      prior_sigma = c(3, 0.05), eta = 2,
                      log_prior_theta = NULL,
                      beta_prior = NULL, offset = NULL, n_quad = 1L,
+                     marginal = FALSE,
                      control = list()) {
   .check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
   max_iter    <- as.integer(control$max_iter %||% 100L)
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)
   outer_maxit <- as.integer(control$outer_maxit %||% 500L)
+  marginal_step       <- control$marginal_step %||% 1e-3
+  marginal_richardson <- isTRUE(control$marginal_richardson)
+  if (!is.logical(marginal) || length(marginal) != 1L || is.na(marginal)) {
+    stop("`marginal` must be TRUE or FALSE.", call. = FALSE)
+  }
+  if (!is.numeric(marginal_step) || length(marginal_step) != 1L ||
+      !is.finite(marginal_step) || marginal_step <= 0) {
+    stop("`control$marginal_step` must be a single positive number.",
+         call. = FALSE)
+  }
   n_quad <- as.integer(n_quad)
   if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
 
@@ -156,6 +196,41 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   # Read before clearing.
   log_marg <- fit_hat$log_marginal
 
+  # Hyperparameter-uncertainty correction. Off by default: it costs 1 + 2k^2
+  # further inner solves and replaces an exact conditional covariance with an
+  # approximate marginal one, so it is a deliberate choice rather than a
+  # silent upgrade. A failed correction leaves the conditional covariance in
+  # place and says so -- reporting the conditional as if it were marginal is
+  # the one outcome worth a warning.
+  corr <- NULL
+  if (isTRUE(marginal)) {
+    corr <- .eb_marginal_correction(
+      core = core, theta_hat = theta_hat, p_fix = p_fix,
+      H_beta = fit_hat$H_beta,
+      step = marginal_step, richardson = marginal_richardson)
+    if (is.null(corr)) {
+      warning("tulpa_eb(): the marginal correction could not be formed (a ",
+              "stencil solve failed, or the outer Hessian was not positive ",
+              "definite -- a variance component on the boundary is the usual ",
+              "cause). Reporting the conditional covariance at theta_hat, so ",
+              "intervals exclude hyperparameter uncertainty.", call. = FALSE)
+    }
+  }
+  # Carried only when the correction succeeded, so `names(fit)` on a plain EB
+  # fit is unchanged and `is.null(fit$cov_marginal)` is an honest test of
+  # whether the reported intervals are marginal. `vcov()` and the summary table
+  # prefer `cov_marginal` over `H_beta`, so attaching it is what switches them;
+  # `cov_conditional` rides along so the two are comparable on one fit.
+  corr_fields <- if (is.null(corr)) list() else list(
+    cov_marginal    = corr$cov_marginal,
+    cov_conditional = corr$cov_conditional,
+    theta_cov       = corr$theta_cov,
+    theta_names     = corr$theta_names,
+    H_theta         = corr$H_theta,
+    marginal_step   = corr$step,
+    marginal_richardson = corr$richardson
+  )
+
   # `c()` concatenates rather than overwrites, so a name appearing in both
   # fit_hat and the list below lands TWICE: `names(fit)` shows it duplicated and
   # `fit$name` silently answers with whichever came first. So clear every name
@@ -184,5 +259,5 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     layout       = layout,
     n_blocks     = length(layout),
     n_coefs      = vapply(layout, `[[`, integer(1), "nc")
-  )), backend = "eb", n_fixed = p_fix, fixed_names = beta_names)
+  ), corr_fields), backend = "eb", n_fixed = p_fix, fixed_names = beta_names)
 }

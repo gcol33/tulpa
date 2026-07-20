@@ -17,6 +17,7 @@ tulpa_eb(
   beta_prior = NULL,
   offset = NULL,
   n_quad = 1L,
+  marginal = FALSE,
   control = list()
 )
 }
@@ -49,11 +50,31 @@ joint-field Laplace inner solve. \verb{> 1} refines it with \code{n_quad}-point
 adaptive Gauss-Hermite quadrature, which requires a single shared grouping
 factor; see \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}.}
 
+\item{marginal}{Report fixed-effect intervals that carry the hyperparameter
+uncertainty, instead of the intervals conditional on \code{theta_hat}. The
+posterior for \code{theta} is taken as Gaussian around the maximizer with
+covariance \code{solve(H_theta)}, the inner mode is linearized in \code{theta}, and
+the law of total variance adds \verb{J solve(H_theta) J'} to the conditional
+covariance, where \verb{J = d mode / d theta}. Both \code{H_theta} and \code{J} come from
+one central-difference stencil over the outer objective, costing
+\verb{1 + 2k^2} further inner solves for \code{k} hyperparameter coordinates (\code{k} is
+\code{1} for a scalar \code{(1 | g)} block and \code{3} for a correlated \code{(1 + x | g)}
+one). Default \code{FALSE}. Widens intervals; never narrows them. When the
+variance components themselves are the target, or the correction's two
+approximations look strained (a strongly skewed variance-component
+marginal), integrate with \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} instead.}
+
 \item{control}{A named list of numerical knobs: \code{max_iter}, \code{tol},
 \code{n_threads} (inner-solve controls, see \code{\link[=tulpa_laplace]{tulpa_laplace()}}), and
 \code{outer_maxit} (iteration budget for the maximization over \code{Sigma}, default
 500; applies to the Nelder-Mead simplex used from two parameters up, since
-the one-parameter case is bracketed by Brent). Exhausting the budget warns.}
+the one-parameter case is bracketed by Brent). Exhausting the budget warns.
+Two further knobs tune \code{marginal = TRUE} and are inert without it:
+\code{marginal_step} (the stencil step in \code{theta} space, default \code{1e-3}) and
+\code{marginal_richardson} (default \code{FALSE}; evaluate the stencil at \code{step} and
+\code{step / 2} and extrapolate, turning the \code{O(step^2)} truncation error into
+\code{O(step^4)} at twice the solves -- worth it only when the inner solver's
+own noise sits well below the truncation error, i.e. a tight \code{tol}).}
 }
 \value{
 A \code{tulpa_fit} with:
@@ -69,6 +90,16 @@ of matrices for several).
 \item \code{converged}: whether the inner Newton solve at \code{theta_hat} converged.
 \item \code{outer_convergence}: \code{optim}'s code for the maximization over \code{Sigma}
 (\code{0} on success). A non-zero value also warns.
+\item With \code{marginal = TRUE} and a correction that formed: \code{cov_marginal} (the
+widened fixed-effect covariance, which \code{vcov} / \code{summary} / \code{confint}
+then report), \code{cov_conditional} (the \code{solve(H_beta)} they would otherwise
+have reported, kept so the two are comparable on one fit), \code{H_theta} and
+\code{theta_cov} (the outer Hessian at \code{theta_hat} and its inverse, named by
+\code{theta_names}), and the \code{marginal_step} / \code{marginal_richardson} actually
+used. All absent when the correction was not requested or could not be
+formed, so \code{is.null(fit$cov_marginal)} tests whether the reported
+intervals are marginal. A requested correction that fails warns and
+leaves the conditional covariance in place.
 }
 }
 \description{

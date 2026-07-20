@@ -105,6 +105,16 @@
   NULL
 }
 
+# TRUE when `V` is a covariance this fit can report for `p` fixed effects: a
+# square numeric matrix, free of NA, and at least `p` on a side. Guards the
+# `cov_marginal` branches, which must not shadow the H_beta fallback with a
+# matrix that would only fail later inside `diag()` or `solve()`.
+#' @keywords internal
+.is_usable_cov <- function(V, p) {
+  is.matrix(V) && is.numeric(V) && nrow(V) == ncol(V) &&
+    !anyNA(V) && length(p) == 1L && !is.na(p) && nrow(V) >= p && p >= 1L
+}
+
 # Random-effect posterior draws (n_samples x n_re): the `$draws` tail past the
 # fixed block, or the Gibbs `$re` matrix. NULL when none.
 #' @keywords internal
@@ -205,7 +215,13 @@
     p   <- object$n_fixed %||% nrow(object$H_beta)
     idx <- seq_len(p)
     est <- object$mode[idx]
-    V   <- tryCatch(solve(object$H_beta), error = function(e) {
+    # A fit carrying `cov_marginal` has already marginalized the hyperparameter
+    # uncertainty into its fixed-effect covariance (tulpa_eb(marginal = TRUE)),
+    # so inverting H_beta here would report the narrower conditional intervals
+    # the correction exists to replace.
+    V   <- if (.is_usable_cov(object$cov_marginal, p)) {
+      object$cov_marginal
+    } else tryCatch(solve(object$H_beta), error = function(e) {
       warning("H_beta is singular; standard errors set to NA.", call. = FALSE)
       matrix(NA_real_, p, p)
     })
@@ -354,6 +370,10 @@ vcov.tulpa_fit <- function(object, ...) {
   } else if (!is.null(mom)) {
     p <- object$n_fixed %||% nrow(mom$cov)
     V <- mom$cov[seq_len(p), seq_len(p), drop = FALSE]
+  } else if (.is_usable_cov(object$cov_marginal,
+                            object$n_fixed %||% nrow(object$cov_marginal))) {
+    p <- object$n_fixed %||% nrow(object$cov_marginal)
+    V <- object$cov_marginal[seq_len(p), seq_len(p), drop = FALSE]
   } else if (!is.null(object$H_beta)) {
     p <- object$n_fixed %||% nrow(object$H_beta)
     V <- solve(object$H_beta)[seq_len(p), seq_len(p), drop = FALSE]

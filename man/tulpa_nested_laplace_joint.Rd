@@ -238,8 +238,13 @@ posterior CI under-coverage when truth sits near a grid edge.
 \item \code{var_of_means_consistency} (\code{TRUE}) -- run a post-integration
 consistency pass on the variance of the per-arm posterior means and
 attach \code{var_of_means_consistency_info}.
-\item \code{force_sparse} (\code{FALSE}) -- force the sparse linear-algebra backend for
-the inner joint solve regardless of the dense/sparse heuristic.
+\item \code{force_sparse} (\code{FALSE}) -- linear-algebra backend for the inner joint
+solve. \code{TRUE} / \code{FALSE} select the sparse or dense path outright,
+regardless of the dense/sparse heuristic. \code{"auto"} selects by the latent
+dimension the fit will actually build, taking the sparse path above
+\code{n_x > 1000} and the dense one at or below it, where the sparse
+symbolic-analysis and indirection overhead outweighs the fill-in saving.
+A model whose latent dimension cannot be determined resolves to dense.
 \item \code{integration} (\code{"auto"}) -- outer-grid node layout for a multi-block
 prior. A central composite design (CCD) integrates the hyperparameter
 posterior on \verb{1 + 2d + 2^d} nodes oriented by the Cholesky of the

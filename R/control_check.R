@@ -68,8 +68,10 @@
                      "n_threads"),
     # EB stops at the maximizer, so beyond the inner-solve knobs and the outer
     # iteration budget it takes nothing: no integration design, no node count,
-    # no draw synthesis.
-    eb = c("max_iter", "tol", "n_threads", "outer_maxit"),
+    # no draw synthesis. The two marginal_* knobs tune the finite-difference
+    # stencil behind `marginal = TRUE` and are inert without it.
+    eb = c("max_iter", "tol", "n_threads", "outer_maxit",
+           "marginal_step", "marginal_richardson"),
     ep = c("max_sweeps", "tol", "damping", "n_quad", "n_draws", "seed"),
     gaussian = c("iter", "warmup", "step_size", "n_leapfrog", "seed"),
     gibbs = c("n_iter", "warmup", "thin", "seed", "verbose", "n_threads"),

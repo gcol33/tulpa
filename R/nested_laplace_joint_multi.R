@@ -912,6 +912,10 @@
     # Every `.cpp_joint_multi` call on this path goes through this closure, so
     # the fit-scoped settings are supplied once instead of at each of the seven
     # solve sites.
+    force_sparse <- .resolve_force_sparse(force_sparse, function() {
+        .joint_multi_layout(arms, prepared)$n_x
+    })
+
     call_kernel <- .joint_multi_call_factory(
         arms = arms, cp = cp, blocks_spec = blocks_spec,
         axis_offsets = axis_offsets, B = B, n_threads = n_threads,

@@ -663,6 +663,33 @@
     res
 }
 
+# Latent dimension above which `force_sparse = "auto"` selects the sparse
+# backend. Below it the dense factorization is the cheaper of the two: the
+# sparse path pays a symbolic-analysis and indirection overhead that only earns
+# its keep once the field is large enough for the fill-in saving to dominate.
+.FORCE_SPARSE_AUTO_NX <- 1000L
+
+# Resolve `control$force_sparse` to the boolean the kernels take. TRUE / FALSE
+# pass through; "auto" compares the threshold against the latent dimension the
+# kernel will actually build, supplied by the caller as a thunk because the
+# single-block and multi-block paths reach it through different layouts
+# (`.joint_layout` vs `.joint_multi_layout`) at different points. A thunk that
+# fails or yields no finite n_x falls back to dense: the sparse path is the
+# specialized one, so an unknown size should not silently opt into it.
+.resolve_force_sparse <- function(force_sparse, n_x_fn) {
+  if (is.logical(force_sparse) && length(force_sparse) == 1L &&
+      !is.na(force_sparse)) {
+    return(force_sparse)
+  }
+  if (!identical(force_sparse, "auto")) {
+    stop("`control$force_sparse` must be TRUE, FALSE, or \"auto\".",
+         call. = FALSE)
+  }
+  n_x <- tryCatch(n_x_fn(), error = function(e) NULL)
+  if (is.null(n_x) || length(n_x) != 1L || !is.finite(n_x)) return(FALSE)
+  n_x > .FORCE_SPARSE_AUTO_NX
+}
+
 # Compute per-arm latent offsets so callers can decode `modes` back into
 # per-arm (beta, re) blocks plus the shared spatial block(s). For BYM2 the
 # spatial block is two sub-blocks (phi, theta); for ICAR/CAR_proper it's
