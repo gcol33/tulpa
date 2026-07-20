@@ -213,7 +213,7 @@
   # the built-in-only path (byte-identical to before). Random *slopes* on a
   # nested block stay unsupported here; only intercept terms
   # (n_coefs == 1) route this way.
-  re_idx <- 0L
+  re_idx <- rep(0L, length(block$y))
   n_re_groups <- 0L
   sigma_re <- 1.0
   extra_re_blocks <- list()
