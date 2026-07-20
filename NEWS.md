@@ -115,6 +115,93 @@ Correctness:
   now warns rather than being reported as a fitted value -- the low end is the
   classic empirical-Bayes collapse to `sigma = 0`.
 
+## 0.0.93
+
+Zero inflation as a composition over the count families, and compiled kernels
+for the last three families that had none.
+
+New:
+
+- `ziformula` builds a second linear predictor and forms the mixture at the
+  likelihood level, so zero inflation is a composition over the base families
+  rather than a set of families of its own. The math lives once, in
+  `R/family_zi.R` and `src/builtin_family_zi.h`, mirrored term for term.
+
+- The two backend classes reach it through different hooks because they differ
+  structurally. The sampler paths take the `logit_zi` callback argument the
+  engine already plumbed; the Laplace spec shim hardcodes that argument to zero
+  and instead rides the zi predictor as process 1, so the mixture's cross term
+  reuses the existing row-major `n_processes x n_processes` curvature block
+  rather than introducing a second curvature contract. Coverage is derived from
+  `BACKEND_REGISTRY`, so a new sampler backend inherits ZI with its fitter, and
+  backends that would silently drop the mixture refuse instead.
+
+- Hurdle models fall out of this as ZI over a zero-truncated base: with no atom
+  at zero the mixture degenerates exactly, so they need no families of their
+  own. The degenerate case is reached by taking the `p0 = 0` limit rather than
+  by evaluating a density at a point the family does not define -- the general
+  branch is correct in double arithmetic but yields NaN under AD. Both
+  directions are pinned, including the converse that an untruncated base keeps
+  a non-zero cross term.
+
+- Compiled kernels for `neg_binomial_1`, `truncated_poisson` and
+  `truncated_neg_binomial_2` on both the Laplace and the AD / sampler paths.
+  These three were registered in R but absent from C++; `.R_ONLY_FAMILIES` is
+  now empty, so every registered family is fittable. Density, score, working
+  weight and observed curvature agree with the R registry to machine precision,
+  and each family recovers its generating parameters through the Laplace path.
+
+- The two zero-truncated families share their retained-mass term
+  `log P(Y > 0)` and its first two eta-derivatives, differing only in `a` and
+  its derivatives, so `truncation_term()` computes the pieces once and the
+  density, the weight and the observed curvature all read from it.
+
+- Two curvatures are now distinguished rather than conflated.
+  `grad_hess_for_family()` returns the Newton working weight, chosen for
+  positive-definiteness; `obs_grad_hess_for_family()` returns the observed
+  curvature at the realized `y`, mirroring `.family_obs_weight()` in R. The
+  zero-inflation mixture needs the latter, because its `y = 0` branch
+  differentiates the density rather than taking an expectation. The distinction
+  is not cosmetic: `neg_binomial_1`'s observed curvature turns negative once
+  `y` sits well above the mean, which would break Newton, while its working
+  weight `mu / (1 + phi)` never does. The mixture only ever evaluates the
+  observed form at `y = 0`, where it is positive.
+
+- Compiled ZI coverage follows from that: a family becomes ZI-fittable exactly
+  when its observed curvature is registered, which is now `poisson`,
+  `binomial`, `neg_binomial_2`, `neg_binomial_1`, `truncated_poisson` and
+  `truncated_neg_binomial_2`. The remaining count families keep the R-level
+  composition (`zi_loglik()` and friends) for density work and are refused at
+  the front door for fitting.
+
+- `arena::Var` and `ad::Var` gain `expm1` (`fwd::Dual` already had it), and
+  `autodiff_utils.h` gains `expm1_fn` plus a `log1m_exp_fn` that splits at
+  `log 2`. Both branches differentiate, so the truncated AD densities are exact
+  rather than falling back.
+
+- `cpp_family_obs_terms()` and `cpp_family_ad_terms()` give the two new
+  surfaces test probes. The latter evaluates the AD density at `fwd::Dual`, so
+  its value checks against the independent double implementation and its
+  derivative against the analytic score.
+
+Correctness:
+
+- The silent Poisson fall-through is gone. `variance_fn`, `grad_mu` and
+  `log_lik_mu` each ended in the Poisson branch, so a family known to R but not
+  to C++ fitted, and fitted the wrong likelihood -- which is what
+  `.R_ONLY_FAMILIES` existed to guard against. They now raise, and that is what
+  makes emptying the list safe.
+
+- `.family_base()` stripped link suffixes in registration order and so resolved
+  `beta_binomial` to `beta`. Every validator built on it was applying beta's
+  rules to beta-binomials, including `.validate_family_counts`, which silently
+  skipped integer-count validation for that family. It now matches exactly
+  first, then by longest prefix.
+
+- `src/autodiff_fwd.h` was a byte-equivalent copy of
+  `inst/include/tulpa/autodiff_fwd.h` serving a single include, and is deleted
+  rather than left to diverge once `expm1` landed.
+
 ## 0.0.92
 
 Audit fixes (0.0.91 review, issues #228-#239).
