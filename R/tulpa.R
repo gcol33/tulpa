@@ -1247,18 +1247,23 @@ tulpa <- function(formula, data,
 
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
-  .validate_family_counts(family, bundle$y)
 
   # Zero inflation: a second linear predictor for the structural-zero logit.
   # The compiled Laplace kernel carries it as process 1 (eta[1]); see
   # src/builtin_family_zi.h. Validated here so an unsupported family fails at
   # the front door rather than reaching a kernel that would ignore it.
+  #
+  # Over a zero-truncated family this is the hurdle model: the mixture
+  # degenerates to log(pi) at y = 0, so the zeros are carried by the zero
+  # component and the family's own `y >= 1` requirement no longer applies to
+  # them -- which is why the count check runs after the design is known.
   X_zi <- .zi_design(ziformula, data, bundle$n_obs)
   if (!is.null(X_zi)) {
     .validate_family_zi(family)
     .validate_family_zi_compiled(family)
     bundle$X_zi <- X_zi
   }
+  .validate_family_counts(family, bundle$y, zi = !is.null(X_zi))
   # The model is built with na.action = na.pass (prior_predict() allows an NA
   # response), so tulpa() must reject non-finite fitting inputs itself: unlike
   # glm()/lm() it does not drop incomplete cases, and an NA/NaN/Inf would flow

@@ -264,8 +264,10 @@
       phi * (y - mu / p) / (phi + mu)
     },
     # Expected (Fisher) form w0 (1 - s), matching the registry's y-free
-    # contract. The compiled Laplace path uses the observed curvature, which
-    # carries a y term and so cannot be expressed here.
+    # contract. This is what Newton uses on both paths: it is positive for
+    # every mu, so the Hessian stays PD without a fallback. The observed
+    # curvature carries a y term and so cannot be expressed here; it lives in
+    # `obs_weight` below, and the zero-inflation mixture uses that one.
     weight = function(eta, n_trials, phi) {
       mu <- .mean_log(eta)
       a  <- phi * log1p(mu / phi)
@@ -633,14 +635,13 @@ family_names <- function() names(.FAMILY_OPS)
 # response is outside the support rather than merely unlikely.
 .TRUNCATED_FAMILIES <- c("truncated_poisson", "truncated_neg_binomial_2")
 
-# Families carried by the R registry but not yet by the compiled kernels. The
-# C++ family dispatch in src/laplace_family_link.h is an if-chain over family
-# names whose fall-through branches are the Poisson ones (`score_fn` returns
-# y/mu - 1, `variance_fn` returns mu), so an unrecognized name there does not
-# raise -- it silently fits a Poisson. Until the kernels carry these families,
-# the front door refuses them rather than letting that substitution happen.
-.R_ONLY_FAMILIES <- c("neg_binomial_1", "truncated_poisson",
-                      "truncated_neg_binomial_2")
+# Families carried by the R registry but not by the compiled kernels. Every
+# shipped family is now wired into src/laplace_family_link.h, so this is empty;
+# it stays as the gate a newly registered family passes through until its
+# kernels exist. The compiled dispatch no longer falls through to Poisson --
+# an unrecognized name raises there (unknown_family_stop) -- so a family added
+# to the registry alone fails loudly rather than fitting the wrong likelihood.
+.R_ONLY_FAMILIES <- character(0)
 
 #' Reject families the compiled kernels do not implement.
 #'
@@ -697,8 +698,13 @@ family_names <- function() names(.FAMILY_OPS)
 #' Errors when `family` is a count family and `y` carries negative or
 #' non-integer values, which the integer-casting kernels would silently floor
 #' into a biased likelihood. A no-op for continuous families.
+#'
+#' @param zi Whether a zero-inflation component is being fitted alongside the
+#'   family. With a zero-truncated family this is the hurdle model, where the
+#'   zeros belong to the zero component rather than to the truncated count
+#'   density, so the `y >= 1` requirement does not apply to them.
 #' @keywords internal
-.validate_family_counts <- function(family, y) {
+.validate_family_counts <- function(family, y, zi = FALSE) {
   base <- .family_base(family)
   if (!(base %in% .COUNT_FAMILIES)) return(invisible(TRUE))
   yf <- y[is.finite(y)]
@@ -709,7 +715,7 @@ family_names <- function() names(.FAMILY_OPS)
       "would silently floor a continuous response into a biased log-likelihood."),
       family), call. = FALSE)
   }
-  if (base %in% .TRUNCATED_FAMILIES && length(yf) && any(yf < 1)) {
+  if (!zi && base %in% .TRUNCATED_FAMILIES && length(yf) && any(yf < 1)) {
     stop(sprintf(paste0(
       "family = '%s' is zero-truncated and requires `y >= 1`; got %d zero(s). ",
       "The density conditions on y > 0, so a zero carries no likelihood. Use ",

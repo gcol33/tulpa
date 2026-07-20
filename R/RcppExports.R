@@ -53,6 +53,14 @@ cpp_family_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_terms`, y, n_trials, eta, family, phi, phi2)
 }
 
+cpp_family_obs_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_obs_terms`, y, n_trials, eta, family, phi, phi2)
+}
+
+cpp_family_ad_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_ad_terms`, y, n_trials, eta, family, phi, phi2)
+}
+
 cpp_glmm_elt_terms <- function(family, eta, y, n_trials, phi) {
     .Call(`_tulpa_cpp_glmm_elt_terms`, family, eta, y, n_trials, phi)
 }

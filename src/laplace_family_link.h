@@ -6,6 +6,7 @@
 
 #include "laplace_likelihoods.h"
 #include "linalg_fast.h"
+#include "tulpa/portable_math.h"   // thread-safe digamma / trigamma
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
@@ -15,6 +16,10 @@
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
+#endif
+
+#ifndef M_LN2
+#define M_LN2 0.693147180559945309417
 #endif
 
 namespace tulpa {
@@ -118,6 +123,21 @@ inline double mu_eta(double eta, const std::string& link) {
     return tulpa_linalg::safe_exp(eta);
 }
 
+// A family name that reaches the mu-space dispatch below without matching a
+// branch is a programming error, not a data condition: every fitting path is
+// gated by the R registry, so an unmatched name means a family was registered
+// in R without a compiled counterpart. These three functions used to end in
+// the Poisson branch, which made that mistake silent -- the model fitted, and
+// fitted the wrong likelihood. Failing here turns it into a build-time-visible
+// error the first time the family is exercised.
+[[noreturn]] inline void unknown_family_stop(const char* fn,
+                                             const std::string& family) {
+    Rcpp::stop("%s: no compiled implementation for family '%s'. Families "
+               "defined in the R registry must be added to "
+               "laplace_family_link.h before they can be fitted.",
+               fn, family.c_str());
+}
+
 inline double variance_fn(double mu, double phi, const std::string& family, int n_trials) {
     if (family == "gaussian") return phi * phi;
     if (family == "lognormal") return phi * phi;
@@ -133,7 +153,7 @@ inline double variance_fn(double mu, double phi, const std::string& family, int 
         double tg = R::trigamma(mu * phi) + R::trigamma((1.0 - mu) * phi);
         return 1.0 / (phi * phi * tg);
     }
-    return mu;
+    unknown_family_stop("variance_fn", family);
 }
 
 inline double grad_mu(double y, double mu, double phi, const std::string& family, int n_trials) {
@@ -158,7 +178,7 @@ inline double grad_mu(double y, double mu, double phi, const std::string& family
         double mu_star = R::digamma(mu * phi) - R::digamma((1.0 - mu) * phi);
         return phi * (y_star - mu_star);
     }
-    return (int)y / mu - 1.0;
+    unknown_family_stop("grad_mu", family);
 }
 
 inline double log_lik_mu(double y, double mu, double phi, const std::string& family, int n_trials) {
@@ -204,8 +224,7 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
         return R::lgammafn(phi) - R::lgammafn(a) - R::lgammafn(b)
                + (a - 1.0) * std::log(y) + (b - 1.0) * std::log(1.0 - y);
     }
-    double safe_mu = std::max(mu, 1e-15);
-    return (int)y * std::log(safe_mu) - safe_mu - R::lgammafn((int)y + 1.0);
+    unknown_family_stop("log_lik_mu", family);
 }
 
 // Tweedie compound Poisson-gamma log-density (1 < p < 2), log link upstream:
@@ -247,6 +266,67 @@ inline double log_lik_tweedie(double y, double mu, double phi, double p) {
     return lmax + std::log(s) - lam - b * y;
 }
 
+// ---------------------------------------------------------------------------
+// Zero-truncated count families.
+//
+// Both shipped truncated families condition an untruncated count law on y >= 1,
+// so both subtract the same retained-mass term log P(Y > 0) from the density
+// and the same derivatives of it from the score and curvature. Writing
+// P(Y > 0) = 1 - exp(-a) makes the two differ only in a and its eta-derivatives:
+//
+//   truncated_poisson         a = mu,                 da = mu,   d2a = mu
+//   truncated_neg_binomial_2  a = phi log1p(mu/phi),  da = phi mu / (phi + mu),
+//                                                     d2a = phi^2 mu / (phi + mu)^2
+//
+// so the pieces below are computed once from (a, da, d2a) and reused by the
+// density, the working weight and the observed curvature. That keeps the three
+// from drifting apart, which is the failure mode a per-family copy invites.
+// Mirrors truncated_poisson / truncated_neg_binomial_2 in R/family_loglik.R.
+struct TruncationTerm {
+    double p;         // P(Y > 0) = 1 - exp(-a)
+    double log_p;     // log P(Y > 0)
+    double dlog_p;    // d log P(Y > 0) / d eta
+    double d2log_p;   // d2 log P(Y > 0) / d eta2
+    double e_weight;  // expected curvature contribution of the truncation
+};
+
+inline bool is_zero_truncated(const std::string& family) {
+    return family == "truncated_poisson" ||
+           family == "truncated_neg_binomial_2";
+}
+
+inline TruncationTerm truncation_term(double a, double da, double d2a) {
+    TruncationTerm t;
+    const double q = std::exp(-a);              // P(Y = 0)
+    t.p = -std::expm1(-a);
+    const double psafe = t.p > 1e-300 ? t.p : 1e-300;
+    // log(1 - exp(-a)): expm1 near 0, log1p in the tail (Machler 2012).
+    t.log_p = (a <= M_LN2) ? std::log(-std::expm1(-a)) : std::log1p(-q);
+    const double dp  = q * da;
+    const double d2p = q * (d2a - da * da);
+    t.dlog_p  = dp / psafe;
+    t.d2log_p = (d2p * psafe - dp * dp) / (psafe * psafe);
+    // Var(y | y > 0) through the link: positive for every a > 0, so the Newton
+    // Hessian stays PD without a Fisher fallback (unlike the observed form,
+    // which carries y).
+    t.e_weight = da / psafe - q * da * da / (psafe * psafe);
+    return t;
+}
+
+// (a, da, d2a) for a truncated family at the current eta. `mu` is the
+// untruncated mean; phi is the NB size and is ignored by the Poisson arm.
+inline void truncation_shape(const std::string& family, double mu, double phi,
+                             double* a, double* da, double* d2a) {
+    if (family == "truncated_poisson") {
+        *a = mu; *da = mu; *d2a = mu;
+        return;
+    }
+    const double s = phi + mu;
+    *a   = phi * std::log1p(mu / phi);
+    *da  = phi * mu / s;
+    *d2a = phi * phi * mu / (s * s);
+}
+
 struct GradHess {
     double grad;
     double neg_hess;
@@ -268,6 +348,31 @@ inline GradHess grad_hess_for_family(
     if (family == "neg_binomial_2") {
         return {grad_log_lik_negbin((int)y, eta, phi),
                 neg_hess_log_lik_negbin((int)y, eta, phi)};
+    }
+    if (family == "neg_binomial_1") {
+        // Score is exact. The working weight is the quasi-likelihood IRLS
+        // weight (dmu/deta)^2 / V(mu) = mu / (1 + phi), the form glmmTMB uses;
+        // it is positive everywhere, so Newton needs no Fisher fallback. It is
+        // NOT the Fisher information -- because the shape r = mu/phi moves with
+        // the mean, the exact expected curvature is r^2 sum_{k>=0} P(y>k)/(r+k)^2,
+        // a series with no elementary closed form. The observed curvature is
+        // available exactly, through obs_grad_hess_for_family below.
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        const double r  = mu / phi;
+        const double grad = r * (tulpa::math::portable_digamma(y + r)
+                                 - tulpa::math::portable_digamma(r)
+                                 - std::log1p(phi));
+        return {grad, mu / (1.0 + phi)};
+    }
+    if (family == "truncated_poisson" || family == "truncated_neg_binomial_2") {
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        double a, da, d2a;
+        truncation_shape(family, mu, phi, &a, &da, &d2a);
+        const TruncationTerm t = truncation_term(a, da, d2a);
+        const double base_grad = (family == "truncated_poisson")
+            ? grad_log_lik_poisson((int)y, eta)
+            : grad_log_lik_negbin((int)y, eta, phi);
+        return {base_grad - t.dlog_p, t.e_weight};
     }
     if (family == "beta_binomial") {
         // Beta-binomial (logit link, mu = P(success), phi = precision a + b).
@@ -330,6 +435,26 @@ inline double log_lik_for_family(
     if (family == "binomial") return log_lik_binomial((int)y, n_trials, eta);
     if (family == "poisson") return log_lik_poisson((int)y, eta);
     if (family == "neg_binomial_2") return log_lik_negbin((int)y, eta, phi);
+    if (family == "neg_binomial_1") {
+        // Log link, variance mu (1 + phi): in NB(r, p) form the shape moves
+        // with the mean, r = mu / phi, and p = 1 / (1 + phi) is constant.
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        const double r  = mu / phi;
+        const double yi = (double)(int)y;
+        return R::lgammafn(yi + r) - R::lgammafn(r) - R::lgammafn(yi + 1.0)
+             - (yi + r) * std::log1p(phi) + yi * std::log(phi);
+    }
+    if (family == "truncated_poisson" || family == "truncated_neg_binomial_2") {
+        const double yi = (double)(int)y;
+        if (yi < 1.0) return R_NegInf;   // support is y >= 1
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        const double base = (family == "truncated_poisson")
+            ? log_lik_poisson((int)y, eta)
+            : log_lik_negbin((int)y, eta, phi);
+        double a, da, d2a;
+        truncation_shape(family, mu, phi, &a, &da, &d2a);
+        return base - truncation_term(a, da, d2a).log_p;
+    }
     if (family == "beta_binomial") {
         double mu = linkinv(eta, "logit");
         mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
@@ -361,6 +486,63 @@ inline double log_lik_for_family(
         mu = std::max(mu, 1e-15);
     }
     return log_lik_mu(y, mu, phi, fl.family, n_trials);
+}
+
+// Score plus OBSERVED curvature -d2 log f / d eta2 at the realized y.
+//
+// grad_hess_for_family returns the Newton WORKING weight, which is chosen for
+// positive-definiteness and so is the expected/moment form wherever the two
+// differ. The zero-inflation mixture cannot use that: its y = 0 branch
+// differentiates through P(Y = 0), so it needs the curvature of the actual
+// log-density, not a Fisher stand-in. This is the C++ counterpart of
+// .family_obs_weight() in R/family_loglik.R and is validated against it.
+//
+// For a family whose curvature carries no y -- poisson, binomial, the
+// truncated pair -- observed and expected coincide identically and the
+// delegation below is exact, not an approximation. neg_binomial_2 also
+// coincides: neg_hess_log_lik_negbin already returns (y + phi) phi mu /
+// (mu + phi)^2, the observed form.
+inline GradHess obs_grad_hess_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    if (family == "neg_binomial_1") {
+        // Differentiating the score s = r (psi(y+r) - psi(r) - log1p(phi))
+        // with dr/deta = r gives -ds/deta = -s + r^2 (psi'(r) - psi'(y+r)).
+        // Unlike neg_binomial_2 this does not agree with the working weight
+        // even in expectation -- see the note under its grad_hess branch.
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        const double r  = mu / phi;
+        const double s  = r * (tulpa::math::portable_digamma(y + r)
+                               - tulpa::math::portable_digamma(r)
+                               - std::log1p(phi));
+        return {s, -s + r * r * (tulpa::math::portable_trigamma(r)
+                                 - tulpa::math::portable_trigamma(y + r))};
+    }
+    if (family == "truncated_neg_binomial_2") {
+        // The truncated density is the NB2 density minus log P(Y > 0), so the
+        // curvature is the untruncated OBSERVED curvature plus d2 log P / d eta2.
+        // (truncated_poisson's untruncated curvature carries no y, so its
+        // observed form already equals the working weight and falls through.)
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        double a, da, d2a;
+        truncation_shape(family, mu, phi, &a, &da, &d2a);
+        const TruncationTerm t = truncation_term(a, da, d2a);
+        return {grad_log_lik_negbin((int)y, eta, phi) - t.dlog_p,
+                neg_hess_log_lik_negbin((int)y, eta, phi) + t.d2log_p};
+    }
+    return grad_hess_for_family(y, n_trials, eta, family, phi, phi2);
+}
+
+// Whether obs_grad_hess_for_family returns the exact observed curvature for
+// this family, rather than delegating to a working weight that only
+// approximates it. The zero-inflation front door gates on this.
+inline bool has_observed_curvature(const std::string& family) {
+    return family == "poisson" || family == "binomial" ||
+           family == "neg_binomial_2" || family == "neg_binomial_1" ||
+           family == "truncated_poisson" ||
+           family == "truncated_neg_binomial_2";
 }
 
 // Grouped beta sufficient statistics. A set of n exchangeable Beta(mu*phi,

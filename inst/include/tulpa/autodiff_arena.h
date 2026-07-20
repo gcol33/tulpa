@@ -724,6 +724,16 @@ inline Var log1p(const Var& a) {
     return r;
 }
 
+inline Var expm1(const Var& a) {
+    Arena* ar = a.arena_;
+    double av = a.val();
+    // d(exp(x) - 1)/dx = exp(x)
+    Var r;
+    r.arena_ = ar;
+    r.idx_ = ar->add_unary(std::expm1(av), a.idx_, std::exp(av));
+    return r;
+}
+
 inline Var digamma(const Var& a) {
     Arena* ar = a.arena_;
     double av = a.val();

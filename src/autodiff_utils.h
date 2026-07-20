@@ -10,7 +10,7 @@
 #include <vector>
 #include <Rcpp.h>
 #include "autodiff.h"
-#include "autodiff_fwd.h"
+#include "tulpa/autodiff_fwd.h"
 #include "tulpa/autodiff_arena.h"
 
 namespace tulpa {
@@ -339,6 +339,45 @@ template<typename T>
 inline typename std::enable_if<is_arena_var<T>::value, T>::type
 log1p_fn(const T& x) {
     return arena::log1p(x);
+}
+
+// expm1 - double version
+template<typename T>
+inline typename std::enable_if<!is_autodiff<T>::value, T>::type
+expm1_fn(T x) {
+    return std::expm1(x);
+}
+
+// expm1 - ad::Var (tape) version
+template<typename T>
+inline typename std::enable_if<is_ad_var<T>::value, T>::type
+expm1_fn(const T& x) {
+    return ad::expm1(x);
+}
+
+// expm1 - fwd::Dual version
+template<typename T>
+inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
+expm1_fn(const T& x) {
+    return fwd::expm1(x);
+}
+
+// expm1 - arena::Var version
+template<typename T>
+inline typename std::enable_if<is_arena_var<T>::value, T>::type
+expm1_fn(const T& x) {
+    return arena::expm1(x);
+}
+
+// log(1 - exp(-a)) for a > 0, the retained-mass term of the zero-truncated
+// count families. Both naive forms lose precision at one end: log1p(-exp(-a))
+// cancels as a -> 0, log(-expm1(-a)) underflows as a -> Inf. Splitting at
+// log 2 keeps the accurate form on each side (Machler 2012), and both branches
+// differentiate, so this is exact under AD rather than a fallback.
+template<typename T>
+inline T log1m_exp_fn(const T& a) {
+    if (a <= T(0.693147180559945)) return safe_log(T(0.0) - expm1_fn(T(0.0) - a));
+    return log1p_fn(T(0.0) - safe_exp(T(0.0) - a));
 }
 
 // ============================================================================

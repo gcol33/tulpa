@@ -4,7 +4,13 @@
 \alias{.validate_family_counts}
 \title{Validate the response \code{y} for a count family.}
 \usage{
-.validate_family_counts(family, y)
+.validate_family_counts(family, y, zi = FALSE)
+}
+\arguments{
+\item{zi}{Whether a zero-inflation component is being fitted alongside the
+family. With a zero-truncated family this is the hurdle model, where the
+zeros belong to the zero component rather than to the truncated count
+density, so the \code{y >= 1} requirement does not apply to them.}
 }
 \description{
 Errors when \code{family} is a count family and \code{y} carries negative or

@@ -27,6 +27,7 @@
 #include "laplace_family_link.h"
 #include "glmm_oracle.h"
 #include "laplace_likelihoods.h"
+#include "builtin_family_ll_ad.h"
 
 // Terms from the Laplace/Newton family dispatch (laplace_family_link.h).
 // `phi` follows that kernel's convention: residual SD for gaussian/lognormal.
@@ -41,6 +42,47 @@ Rcpp::NumericVector cpp_family_terms(double y, int n_trials, double eta,
                                                        phi, phi2),
       Rcpp::_["grad"]      = gh.grad,
       Rcpp::_["neg_hess"]  = gh.neg_hess);
+}
+
+// Score plus OBSERVED curvature from the same dispatch. This is what the
+// zero-inflation mixture differentiates through at y = 0, and it differs from
+// cpp_family_terms wherever the Newton working weight is an expected form, so
+// it needs its own probe to pin against .family_obs_weight() in R.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_obs_terms(double y, int n_trials, double eta,
+                                         std::string family, double phi,
+                                         double phi2 = NA_REAL) {
+  const tulpa::GradHess gh =
+      tulpa::obs_grad_hess_for_family(y, n_trials, eta, family, phi, phi2);
+  return Rcpp::NumericVector::create(
+      Rcpp::_["grad"]     = gh.grad,
+      Rcpp::_["neg_hess"] = gh.neg_hess);
+}
+
+// The AD-templated density (builtin_family_ll_ad.h), which is what the sampler
+// backends differentiate, evaluated at fwd::Dual so both its value and its
+// derivative come back. The double path's value comes from a separate
+// implementation (log_lik_for_family), so agreement here is a genuine
+// cross-check of two independent expressions of the same density rather than a
+// tautology -- and the derivative pins the AD plumbing each branch relies on.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_ad_terms(double y, int n_trials, double eta,
+                                        std::string family, double phi,
+                                        double phi2 = NA_REAL) {
+  tulpa::BuiltinFamilyResponse r;
+  r.y        = &y;
+  r.n_trials = &n_trials;
+  r.N        = 1;
+  r.family   = family;
+  r.phi      = phi;
+  r.phi2     = phi2;
+
+  const fwd::Dual e(eta, 1.0);
+  const fwd::Dual ll = tulpa::builtin_family_base_ll_ad<fwd::Dual>(
+      y, n_trials, &r, e);
+  return Rcpp::NumericVector::create(
+      Rcpp::_["log_lik"] = ll.val,
+      Rcpp::_["grad"]    = ll.grad);
 }
 
 // Terms from the compiled GLMM oracle (glmm_oracle.h). `phi` follows THAT

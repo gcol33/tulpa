@@ -4,10 +4,9 @@
 # constant or a dropped truncation term shows up there and nowhere else, since
 # score and weight are both invariant to a constant offset in the log-density.
 #
-# These validate the family math. Parameter recovery against simulated truth
-# belongs with the compiled kernels; until those carry the families, tulpa()
-# refuses them (see the .R_ONLY_FAMILIES gate below) so there is nothing to
-# recover through yet.
+# These validate the family math against the R registry. Agreement with the
+# compiled kernels and parameter recovery through them live in
+# test-family-count-compiled.R.
 
 support_sum <- function(family, eta, phi, ymin) {
   yy <- ymin:20000
@@ -149,19 +148,11 @@ test_that("zero-truncated families reject a zero response", {
   for (fam in c("truncated_poisson", "truncated_neg_binomial_2")) {
     expect_error(.validate_family_counts(fam, c(0, 1, 2)), "zero-truncated")
     expect_silent(.validate_family_counts(fam, c(1, 2, 3)))
+    # ...unless a zero component is being fitted alongside, which is the
+    # hurdle model: there the zeros belong to that component, not to the
+    # truncated density.
+    expect_silent(.validate_family_counts(fam, c(0, 1, 2), zi = TRUE))
   }
   # The untruncated sibling still admits zeros.
   expect_silent(.validate_family_counts("neg_binomial_1", c(0, 1, 2)))
-})
-
-
-test_that("tulpa() refuses families the compiled kernels do not carry", {
-  # The C++ family dispatch falls through to Poisson for an unrecognized name,
-  # so an ungated family would be silently fit as a Poisson rather than error.
-  d <- data.frame(y = c(1, 2, 3, 4), x = c(1, 2, 3, 4))
-  for (fam in c("neg_binomial_1", "truncated_poisson",
-                "truncated_neg_binomial_2")) {
-    expect_error(tulpa(y ~ x, data = d, family = fam),
-                 "not yet wired into the compiled kernels")
-  }
 })

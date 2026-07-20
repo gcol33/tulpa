@@ -38,14 +38,14 @@ namespace tulpa {
 namespace zi {
 
 // Families whose compiled kernels supply an observed (not moment-approximated)
-// curvature and an exact AD density, so the mixture's derivatives are exact on
-// both compiled paths. Kept deliberately narrow: beta_binomial's compiled
-// weight is the moment weight rather than the observed curvature, so the y = 0
-// branch -- which differentiates through P(Y = 0) -- would not match the R
-// reference. The R front door gates on this list.
+// curvature, so the mixture's y = 0 branch -- which differentiates through
+// P(Y = 0) -- matches the R reference exactly. Delegating to
+// has_observed_curvature() keeps this following the math rather than a second
+// hand-maintained list: a family becomes ZI-fittable the moment its observed
+// curvature is registered. beta_binomial is excluded by that predicate because
+// its compiled weight is the moment weight. The R front door gates on this.
 inline bool compiled_zi_supported(const std::string& family) {
-    return family == "poisson" || family == "binomial" ||
-           family == "neg_binomial_2";
+    return has_observed_curvature(family);
 }
 
 // ---------------------------------------------------------------------------
@@ -80,10 +80,19 @@ inline T logspace_add(const T& a, const T& b) {
 }
 
 // The mixture, given the base log-density evaluated at the realized y and at 0.
+//
+// `base_truncated` marks a base family with no atom at zero (p0 == 0), i.e. the
+// hurdle case. Mathematically the general branch already degenerates there, but
+// it degenerates through base_ll_0 = -Inf, and -Inf times a derivative is NaN
+// under AD rather than the zero the algebra gives. Taking the limit here keeps
+// the hurdle gradient exact instead of merely finite -- and base_ll_0 is then
+// never evaluated, so callers may leave it unset.
 template<typename T>
 inline T mixture_ll(double y, const T& logit_zi,
-                    const T& base_ll_y, const T& base_ll_0) {
+                    const T& base_ll_y, const T& base_ll_0,
+                    bool base_truncated = false) {
     if (y == 0.0) {
+        if (base_truncated) return log_pi(logit_zi);
         return logspace_add(log_pi(logit_zi), log1m_pi(logit_zi) + base_ll_0);
     }
     return log1m_pi(logit_zi) + base_ll_y;
@@ -97,9 +106,11 @@ inline double mixture_ll_double(
     double y, int n_trials, double eta_count, double logit_zi,
     const std::string& family, double phi, double phi2
 ) {
-    const double ll_y = log_lik_for_family(y, n_trials, eta_count, family,
-                                           phi, phi2);
-    if (y != 0.0) return log1m_pi(logit_zi) + ll_y;
+    if (y != 0.0) {
+        return log1m_pi(logit_zi) + log_lik_for_family(y, n_trials, eta_count,
+                                                       family, phi, phi2);
+    }
+    if (is_zero_truncated(family)) return log_pi(logit_zi);   // hurdle
     const double ll_0 = log_lik_for_family(0.0, n_trials, eta_count, family,
                                            phi, phi2);
     return logspace_add(log_pi(logit_zi), log1m_pi(logit_zi) + ll_0);
@@ -133,12 +144,29 @@ inline void mixture_eta_weights_double(
         return;
     }
 
+    if (is_zero_truncated(family)) {
+        // Hurdle: p0 = 0 collapses the y = 0 branch to log(pi), so the count
+        // predictor carries no gradient or curvature here and the cross term
+        // vanishes. Taken as a limit rather than through the -Inf density.
+        grad[0]     = 0.0;
+        grad[1]     = 1.0 - pi;
+        neg_hess[0] = 0.0;
+        neg_hess[1] = 0.0;
+        neg_hess[2] = 0.0;
+        neg_hess[3] = pi * (1.0 - pi);
+        return;
+    }
+
     // y == 0: differentiate log D, D = pi + (1 - pi) p0, through both
-    // predictors. s0 / w0 are the base score and observed curvature at y = 0.
+    // predictors. s0 / w0 are the base score and observed curvature at y = 0 --
+    // observed, not the Newton working weight, because this branch
+    // differentiates the density itself rather than taking an expectation.
+    // A zero-truncated base gives p0 = 0 here, which zeroes D_eta, D_ee and
+    // D_ez and leaves the hurdle model, so s0 and w0 need only be finite.
     const double p0 = std::exp(log_lik_for_family(0.0, n_trials, eta_count,
                                                   family, phi, phi2));
-    const GradHess gh0 = grad_hess_for_family(0.0, n_trials, eta_count,
-                                              family, phi, phi2);
+    const GradHess gh0 = obs_grad_hess_for_family(0.0, n_trials, eta_count,
+                                                  family, phi, phi2);
     const double s0 = gh0.grad;
     const double w0 = gh0.neg_hess;
 

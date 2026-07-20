@@ -46,13 +46,19 @@
 
 # Families whose compiled kernels carry the zero-inflated mixture. Narrower
 # than .ZI_FAMILIES: the mixture's y = 0 branch differentiates through
-# P(Y = 0), which needs the base family's OBSERVED curvature, and only these
-# kernels return it (beta_binomial's compiled weight is the moment weight; the
-# truncated pair and neg_binomial_1 have no compiled kernel at all -- see
-# .R_ONLY_FAMILIES). The R composition in this file covers every family in
-# .ZI_FAMILIES for density work regardless.
+# P(Y = 0), which needs the base family's OBSERVED curvature rather than the
+# Newton working weight, and only these kernels register one
+# (obs_grad_hess_for_family / has_observed_curvature in
+# src/laplace_family_link.h). beta_binomial is excluded because its compiled
+# weight is the moment weight. The R composition in this file covers every
+# family in .ZI_FAMILIES for density work regardless.
+#
+# Paired with a zero-truncated base this is the hurdle model: the mixture
+# degenerates exactly, so hurdle needs no family of its own.
 #' @keywords internal
-.ZI_COMPILED_FAMILIES <- c("poisson", "binomial", "neg_binomial_2")
+.ZI_COMPILED_FAMILIES <- c("poisson", "binomial", "neg_binomial_2",
+                           "neg_binomial_1", "truncated_poisson",
+                           "truncated_neg_binomial_2")
 
 
 #' Reject a ZI request the compiled kernels cannot fit.

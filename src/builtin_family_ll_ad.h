@@ -47,7 +47,10 @@ inline bool builtin_family_has_ad(const std::string& family) {
            family == "binomial" || family == "neg_binomial_2" ||
            family == "gamma" || family == "inverse_gaussian" ||
            family == "lognormal" || family == "beta" ||
-           family == "beta_binomial" || family == "t";
+           family == "beta_binomial" || family == "t" ||
+           family == "neg_binomial_1" ||
+           family == "truncated_poisson" ||
+           family == "truncated_neg_binomial_2";
 }
 
 // Unweighted base log-density at an arbitrary response value, templated over
@@ -71,6 +74,27 @@ inline T builtin_family_base_ll_ad(
     }
     if (fam == "neg_binomial_2") {
         return log_lik_negbin((int)yv, safe_exp(eta[0]), T(phi));
+    }
+    if (fam == "neg_binomial_1") {
+        // Log link, variance mu (1 + phi). Shape r = mu / phi moves with the
+        // mean, so r carries the eta dependence and the lgammas differentiate
+        // through it; the log1p(phi) and log(phi) terms are eta-independent.
+        T r = safe_exp(eta[0]) * T(1.0 / phi);
+        return (lgamma_fn(T(yv) + r) - lgamma_fn(r)
+             - T(std::lgamma(yv + 1.0))
+             - (T(yv) + r) * T(std::log1p(phi))
+             + T(yv * std::log(phi)));
+    }
+    if (fam == "truncated_poisson") {
+        // Untruncated density minus the retained mass log(1 - exp(-mu)).
+        T mu = safe_exp(eta[0]);
+        return log_lik_poisson((int)yv, mu) - log1m_exp_fn(mu);
+    }
+    if (fam == "truncated_neg_binomial_2") {
+        // Untruncated density minus log(1 - exp(-a)), a = phi log1p(mu/phi).
+        T mu = safe_exp(eta[0]);
+        T a  = log1p_fn(mu * T(1.0 / phi)) * T(phi);
+        return log_lik_negbin((int)yv, mu, T(phi)) - log1m_exp_fn(a);
     }
     if (fam == "beta_binomial") {
         // Logit link, mu = P(success), phi = precision a + b. Exact AD log-lik.
@@ -126,9 +150,9 @@ inline T builtin_family_base_ll_ad(
         return (T(std::lgamma(phi)) - lgamma_fn(a) - lgamma_fn(b)
              + (a - T(1.0)) * T(ly) + (b - T(1.0)) * T(l1y));
     }
-    Rcpp::stop("builtin_family_ll_ad: AD likelihood covers gaussian / poisson / "
-               "binomial(logit) / neg_binomial_2 / gamma / inverse_gaussian / "
-               "lognormal / beta; got '%s'.", fam.c_str());
+    Rcpp::stop("builtin_family_ll_ad: no AD likelihood for family '%s'. "
+               "builtin_family_has_ad() gates which families reach here, so "
+               "the two have fallen out of step.", fam.c_str());
 }
 
 // LikelihoodFn<T>: per-obs log-likelihood for a built-in family, templated over
@@ -156,10 +180,18 @@ inline T builtin_family_ll_ad(
     if (data.zi_type == ZIType::NONE) {
         return T(w) * builtin_family_base_ll_ad<T>(yv, nt, r, eta[0]);
     }
+    // A zero-truncated base is the hurdle case, where the y = 0 branch is
+    // log(pi) alone; mixture_ll takes that limit from the flag rather than
+    // through a density at 0 the truncated family does not define.
+    const bool trunc = is_zero_truncated(r->family);
+    if (trunc && yv == 0.0) {
+        return T(w) * zi::mixture_ll(yv, logit_zi, T(0.0), T(0.0), true);
+    }
     return T(w) * zi::mixture_ll(
         yv, logit_zi,
         builtin_family_base_ll_ad<T>(yv, nt, r, eta[0]),
-        builtin_family_base_ll_ad<T>(0.0, nt, r, eta[0]));
+        trunc ? T(0.0) : builtin_family_base_ll_ad<T>(0.0, nt, r, eta[0]),
+        trunc);
 }
 
 } // namespace tulpa

@@ -528,6 +528,21 @@ inline Var log1p(const Var& a) {
   return result;
 }
 
+inline Var expm1(const Var& a) {
+  Tape* tape = a.tape;
+  double e = std::exp(a.val());
+  Var result(tape, std::expm1(a.val()));
+
+  size_t a_idx = a.idx;
+  size_t r_idx = result.idx;
+
+  tape->nodes[r_idx].backward = [a_idx, r_idx, e](Tape* t) {
+    t->nodes[a_idx].adjoint += t->nodes[r_idx].adjoint * e;
+  };
+
+  return result;
+}
+
 // ---------------------------------------------------------------------
 // Utility: Vector of Var
 // ---------------------------------------------------------------------
