@@ -63,7 +63,8 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               offset = NULL, fixed_names = NULL,
                               re_spec = NULL, spatial_spec = NULL,
                               temporal_spec = NULL, svc_spec = NULL,
-                              tvc_spec = NULL, sigma_re_scale = 2.5,
+                              tvc_spec = NULL, zi_spec = NULL,
+                              sigma_re_scale = 2.5,
                               sigma_beta = 10.0,
                               control = list()) {
   .check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
@@ -116,7 +117,8 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     fixed_names   = fixed_names %||% colnames(X),
     phi2          = phi2 %||% NA_real_,
     svc_spec      = svc_spec,
-    tvc_spec      = tvc_spec
+    tvc_spec      = tvc_spec,
+    zi_spec       = zi_spec
   )
 
   # The C++ kernel names every column of the full parameter vector (fixed effects

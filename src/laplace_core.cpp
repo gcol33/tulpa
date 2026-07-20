@@ -166,7 +166,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::Nullable<Rcpp::NumericVector> beta_prior_mean = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> beta_prior_sd = R_NilValue,
     bool return_re_cov = false,
-    double phi2 = NA_REAL
+    double phi2 = NA_REAL,
+    Rcpp::Nullable<Rcpp::NumericMatrix> X_zi = R_NilValue
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
     // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
@@ -178,6 +179,30 @@ Rcpp::List cpp_laplace_fit_multi_re(
     const int N = y.size();
     const int p = X.ncol();
     const int K = re_ngroups.size();
+
+    // --- Zero inflation: the spec-Laplace shim passes 0.0 for the `logit_zi`
+    //     callback argument, so the ZI linear predictor is carried as a second
+    //     PROCESS (eta[1] = X_zi beta_zi) rather than through data.zi_type's
+    //     side channel. data.zi_type therefore stays NONE here -- it means "the
+    //     side channel is live", which is the sampler paths' mechanism, not
+    //     this one. The beta block becomes [beta_count | beta_zi]. ---
+    Rcpp::NumericMatrix X_zi_mat;
+    int p_zi = 0;
+    if (X_zi.isNotNull()) {
+        X_zi_mat = Rcpp::as<Rcpp::NumericMatrix>(X_zi);
+        if (X_zi_mat.nrow() != N) {
+            Rcpp::stop("X_zi has %d rows but y has length %d.",
+                       (int)X_zi_mat.nrow(), N);
+        }
+        p_zi = X_zi_mat.ncol();
+    }
+    const bool has_zi = (p_zi > 0);
+    if (has_zi && !tulpa::zi::compiled_zi_supported(family)) {
+        Rcpp::stop("family '%s' has no compiled zero-inflated kernel "
+                   "(supported: poisson, binomial, neg_binomial_2).",
+                   family.c_str());
+    }
+    const int p_total = p + p_zi;
 
     // --- Optional per-coef Gaussian fixed-effect prior (mean / sd -> tau). ---
     tulpa::BetaPrior bp;
@@ -207,6 +232,15 @@ Rcpp::List cpp_laplace_fit_multi_re(
         }
         bp.mean.assign(mn.begin(), mn.end());
         has_bp = true;
+    }
+    // The beta prior is supplied for the count block only; the ZI block is
+    // appended with a weakly-informative N(0, zi_prior_sd^2) matching
+    // ModelData::zi_prior_sd, which keeps the logit identified when a level has
+    // no zeros (where the likelihood alone would send beta_zi to -Inf).
+    if (has_zi && has_bp) {
+        const double kZiPriorSd = 2.5;
+        if (!bp.tau.empty()) bp.tau.resize(p_total, 1.0 / (kZiPriorSd * kZiPriorSd));
+        if (!bp.mean.empty()) bp.mean.resize(p_total, 0.0);
     }
 
     // --- Per-obs likelihood weights (borrowed; the family adapter scales the
@@ -238,7 +272,16 @@ Rcpp::List cpp_laplace_fit_multi_re(
         proc.offset.assign(ov.begin(), ov.end());
     }
 
-    tulpa::LikelihoodSpec spec = tulpa::builtin_family_spec(family);
+    tulpa::ProcessData proc_zi;
+    if (has_zi) {
+        proc_zi.p = p_zi;
+        proc_zi.X_flat.resize((size_t)N * p_zi);
+        for (int i = 0; i < N; i++)
+            for (int j = 0; j < p_zi; j++)
+                proc_zi.X_flat[(size_t)i * p_zi + j] = X_zi_mat(i, j);
+    }
+
+    tulpa::LikelihoodSpec spec = tulpa::builtin_family_spec(family, has_zi);
     std::vector<int> n_trials(n.begin(), n.end());
     tulpa::BuiltinFamilyResponse resp;
     resp.y        = y.begin();
@@ -250,13 +293,18 @@ Rcpp::List cpp_laplace_fit_multi_re(
     resp.weights  = w_ptr;
 
     tulpa::ModelData data;
-    data.n_processes         = 1;
+    data.n_processes         = has_zi ? 2 : 1;
     data.processes.push_back(proc);
+    if (has_zi) data.processes.push_back(proc_zi);
     data.N                   = N;
     data.sigma_beta          = 100.0;   // default ridge (tau = 1e-4); overridden by bp
     data.likelihood_spec     = &spec;
     data.model_response_data = &resp;
-    data.sharing.init(1);
+    data.sharing.init(data.n_processes);
+    // Random effects enter the count predictor only. A ZI predictor with its
+    // own random effects is a separate feature; sharing the count RE into it
+    // would silently impose equal effects on both, which is not the model.
+    if (has_zi) data.sharing.re[1] = false;
 
     // --- Multi-term RE structure (shared marshalling, re_structure.h). ---
     data.re_parameterization = 1;       // unused on the centered Laplace path
@@ -287,7 +335,11 @@ Rcpp::List cpp_laplace_fit_multi_re(
     tulpa::ParamLayout layout;
     layout.process_beta_start.push_back(0);
     layout.process_beta_count.push_back(p);
-    int next = p;
+    if (has_zi) {
+        layout.process_beta_start.push_back(p);
+        layout.process_beta_count.push_back(p_zi);
+    }
+    int next = p_total;
     layout.has_re                   = (K > 0);   // fixed-effects-only when no RE terms
     layout.has_re_slopes            = data.has_re_slopes;
     layout.has_re_correlated_slopes = data.has_re_correlated_slopes;
@@ -338,7 +390,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
     if (x_init.isNotNull()) {
         Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init);
         int off = 0;
-        for (int j = 0; j < p; j++) params[j] = xi[off++];
+        for (int j = 0; j < p_total; j++) params[j] = xi[off++];
         for (int t = 0; t < K; t++) {
             const int sz = data.re_n_groups_multi[t] * data.re_n_coefs[t];
             for (int j = 0; j < sz; j++) params[layout.re_start_multi[t] + j] = xi[off++];

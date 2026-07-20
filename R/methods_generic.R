@@ -25,6 +25,17 @@
   fixed_names <- bundle$fixed_names %||% colnames(bundle$X) %||%
     paste0("beta", seq_len(n_fixed))
 
+  # Zero inflation appends a second fixed-effect block: the compiled mode is
+  # [beta_count | beta_zi | RE], so the ZI coefficients extend the fixed prefix
+  # that coef() / vcov() / confint() slice. Their `zi_` name prefix (set in
+  # .zi_design) is what distinguishes them, and n_zi records the split point.
+  n_zi     <- if (is.null(bundle$X_zi)) 0L else ncol(bundle$X_zi)
+  zi_names <- if (n_zi > 0L) colnames(bundle$X_zi) else character(0)
+  if (n_zi > 0L) {
+    fixed_names <- c(fixed_names, zi_names)
+    n_fixed     <- n_fixed + n_zi
+  }
+
   re_terms  <- bundle$re_terms %||% list()
   re_layout <- vector("list", length(re_terms))
 
@@ -47,6 +58,8 @@
 
   list(n_fixed     = n_fixed,
        fixed_names = fixed_names,
+       n_zi        = n_zi,
+       zi_names    = zi_names,
        param_names = c(fixed_names, re_names),
        re_layout   = re_layout)
 }

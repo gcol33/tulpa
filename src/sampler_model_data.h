@@ -65,7 +65,8 @@ inline void build_sampler_model_inputs(
     const Rcpp::Nullable<Rcpp::List>& spatial_spec,
     const Rcpp::Nullable<Rcpp::List>& temporal_spec,
     const Rcpp::Nullable<Rcpp::List>& svc_spec = R_NilValue,
-    const Rcpp::Nullable<Rcpp::List>& tvc_spec = R_NilValue
+    const Rcpp::Nullable<Rcpp::List>& tvc_spec = R_NilValue,
+    const Rcpp::Nullable<Rcpp::List>& zi_spec = R_NilValue
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -105,7 +106,38 @@ inline void build_sampler_model_inputs(
     in.data.likelihood_spec     = &in.spec;
     in.data.model_response_data = &in.resp;
     in.data.sharing.init(1);
+
+    // --- Zero inflation. Unlike the spec-driven Laplace path -- which has no
+    //     `logit_zi` channel and so carries the ZI predictor as a second
+    //     process -- the sampler paths pass it to the likelihood callback
+    //     directly, from X_zi_flat and the beta_zi parameter block that
+    //     hmc_param_layout sizes off zi_type. builtin_family_ll_ad wraps the
+    //     base density in the mixture whenever zi_type != NONE. ---
     in.data.zi_type = ZIType::NONE;
+    if (zi_spec.isNotNull()) {
+        Rcpp::List zs = Rcpp::as<Rcpp::List>(zi_spec);
+        Rcpp::NumericMatrix X_zi = Rcpp::as<Rcpp::NumericMatrix>(zs["X"]);
+        if (X_zi.nrow() != N) {
+            Rcpp::stop("zi_spec$X has %d rows but y has length %d.",
+                       (int)X_zi.nrow(), N);
+        }
+        const int p_zi = X_zi.ncol();
+        if (p_zi > 0) {
+            in.data.p_zi = p_zi;
+            in.data.X_zi_flat.resize((size_t)N * p_zi);
+            for (int i = 0; i < N; i++)
+                for (int j = 0; j < p_zi; j++)
+                    in.data.X_zi_flat[(size_t)i * p_zi + j] = X_zi(i, j);
+            if (zs.containsElementNamed("prior_sd")) {
+                in.data.zi_prior_sd = Rcpp::as<double>(zs["prior_sd"]);
+            }
+            // The engine's ZI_* enum values select which mechanism a model
+            // package computes; the built-in mixture is the same for every
+            // count family, so the family-specific tag only has to be non-NONE
+            // for the layout to size beta_zi and the callback to see the logit.
+            in.data.zi_type = ZIType::ZI_POISSON;
+        }
+    }
 
     // --- Random effects (multi-term, intercept / slopes / correlated). ---
     if (re_spec.isNotNull()) {
@@ -399,6 +431,19 @@ inline Rcpp::CharacterVector sampler_param_names(
                 set(start + j, Rcpp::as<std::string>(fx[start + j]));
             else
                 set(start + j, "beta[" + std::to_string(start + j + 1) + "]");
+        }
+    }
+
+    // Zero-inflation coefficients. Named to match the R front door, which
+    // prefixes the ziformula design columns with "zi_"; when those names are
+    // supplied they are appended to fixed_names and picked up above, so this
+    // only supplies the positional fallback.
+    if (layout.has_zi && layout.beta_zi_start >= 0) {
+        for (int k = layout.beta_zi_start; k < layout.beta_zi_end; k++) {
+            if (nm[k] == "param[" + std::to_string(k + 1) + "]") {
+                set(k, "beta_zi[" +
+                       std::to_string(k - layout.beta_zi_start + 1) + "]");
+            }
         }
     }
 

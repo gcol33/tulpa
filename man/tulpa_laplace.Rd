@@ -20,7 +20,8 @@ tulpa_laplace(
   n_threads = 1L,
   return_hessian = TRUE,
   beta_prior = NULL,
-  return_re_cov = FALSE
+  return_re_cov = FALSE,
+  X_zi = NULL
 )
 }
 \arguments{

@@ -91,7 +91,8 @@ tulpa_laplace <- function(y, n_trials, X,
                           n_threads = 1L,
                           return_hessian = TRUE,
                           beta_prior = NULL,
-                          return_re_cov = FALSE) {
+                          return_re_cov = FALSE,
+                          X_zi = NULL) {
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
@@ -114,6 +115,10 @@ tulpa_laplace <- function(y, n_trials, X,
   stopifnot(is.numeric(y) || is.integer(y))
   stopifnot(is.matrix(X))
   stopifnot(nrow(X) == n_obs)
+  if (!is.null(X_zi) && !is.null(spatial)) {
+    stop("`ziformula` is not threaded through the spatial Laplace kernels; ",
+         "drop one of `ziformula` or `spatial`.", call. = FALSE)
+  }
 
   # Normalize the optional fixed-effect prior to length-p mean / sd vectors.
   bp <- .normalize_beta_prior(beta_prior, n_fixed)
@@ -230,7 +235,8 @@ tulpa_laplace <- function(y, n_trials, X,
       beta_prior_mean = if (is.null(bp)) NULL else bp$mean,
       beta_prior_sd   = if (is.null(bp)) NULL else bp$sd,
       return_re_cov   = isTRUE(return_re_cov),
-      phi2 = phi2 %||% NA_real_
+      phi2 = phi2 %||% NA_real_,
+      X_zi = X_zi
     )
   }
 

@@ -688,7 +688,7 @@
         re_list = .bundle_to_re_list(bundle, sigma_re),
         family = family, phi = phi, phi2 = phi2,
         offset = bundle$offset, beta_prior = beta_prior,
-        weights = weights
+        weights = weights, X_zi = bundle$X_zi
       ))
     }
     if (backend == "gibbs") {
@@ -990,6 +990,8 @@
       temporal_spec = temporal_spec_arg,
       svc_spec      = svc_spec_arg,
       tvc_spec      = tvc_spec_arg,
+      zi_spec       = if (is.null(bundle$X_zi)) NULL
+                      else list(X = bundle$X_zi),
       sigma_re_scale = rp$sigma_re_scale %||% 2.5,
       # The fixed-effect prior SD is the statistical `beta_prior` (mean-zero on
       # this sampler path), not a control knob; inject it into the sampler's
@@ -1176,6 +1178,7 @@ tulpa <- function(formula, data,
                   phi2 = NULL,
                   beta_prior = NULL,
                   re_prior = NULL,
+                  ziformula = NULL,
                   spatial = NULL,
                   temporal = NULL,
                   control = list(),
@@ -1236,6 +1239,7 @@ tulpa <- function(formula, data,
   }
 
   .family_or_stop(family)
+  .validate_family_compiled(family)
   .validate_family_phi(family, phi)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   # Tweedie requires the power up front (and in (1, 2)); fail before fitting.
@@ -1244,6 +1248,17 @@ tulpa <- function(formula, data,
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
   .validate_family_counts(family, bundle$y)
+
+  # Zero inflation: a second linear predictor for the structural-zero logit.
+  # The compiled Laplace kernel carries it as process 1 (eta[1]); see
+  # src/builtin_family_zi.h. Validated here so an unsupported family fails at
+  # the front door rather than reaching a kernel that would ignore it.
+  X_zi <- .zi_design(ziformula, data, bundle$n_obs)
+  if (!is.null(X_zi)) {
+    .validate_family_zi(family)
+    .validate_family_zi_compiled(family)
+    bundle$X_zi <- X_zi
+  }
   # The model is built with na.action = na.pass (prior_predict() allows an NA
   # response), so tulpa() must reject non-finite fitting inputs itself: unlike
   # glm()/lm() it does not drop incomplete cases, and an NA/NaN/Inf would flow
@@ -1573,6 +1588,20 @@ tulpa <- function(formula, data,
   # correlation) is redirected to a covariance-integrating fitter. The
   # deterministic Laplace mode integrates via nested Laplace; the sampler
   # modes integrate via the exact Metropolis-within-Gibbs debias.
+  # Zero inflation reaches the kernels through two different channels: the
+  # spec-driven Laplace path carries it as a second process, the sampler paths
+  # as the `logit_zi` callback argument. Any other backend would fit the model
+  # WITHOUT the mixture and return a plausible non-zero-inflated answer, so
+  # refuse rather than redirect silently -- a redirect would change the
+  # requested inference method, and ignoring `ziformula` would change the model.
+  if (!is.null(bundle$X_zi) && !sel$backend %in% .zi_backends()) {
+    stop(sprintf(paste0(
+      "`ziformula` is not carried by backend '%s', which would fit the model ",
+      "without the zero-inflation component. Zero inflation is available for: ",
+      "%s."), sel$backend, paste(.zi_backends(), collapse = ", ")),
+      call. = FALSE)
+  }
+
   slope_scalar_backends <- c("laplace", "mala", "pathfinder", "imh_laplace")
   if (has_slope && sel$backend %in% slope_scalar_backends) {
     default_re_cov <- if (sel$backend == "laplace") "nested" else "gibbs"

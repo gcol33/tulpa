@@ -17,6 +17,7 @@
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
 #include "laplace_family_link.h"
+#include "builtin_family_zi.h"
 #include <limits>
 #include <string>
 #include <vector>
@@ -58,15 +59,28 @@ struct BuiltinFamilyResponse {
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
+//
+// `data.zi_type` selects the zero-inflation channel used by the SAMPLER paths,
+// where the ZI predictor arrives as the `logit_zi` argument. It stays NONE on
+// the spec-driven Laplace path, which instead carries the ZI predictor as
+// process 1 and uses builtin_family_zi_ll_double below -- so the branch here
+// fires only when logit_zi is genuinely populated. Keeping it in step with
+// builtin_family_ll_ad matters: the sampler evaluates the log-posterior VALUE
+// through this callback and its GRADIENT through the AD one, and a mixture
+// applied to only one of them would make the two describe different models.
 inline double builtin_family_ll_double(
-    int i, const double* eta, const double& /*logit_zi*/,
+    int i, const double* eta, const double& logit_zi,
     const double& /*logit_oi*/, const std::vector<double>& /*params*/,
-    const ModelData& /*data*/, const ParamLayout& /*layout*/,
+    const ModelData& data, const ParamLayout& /*layout*/,
     const void* model_data
 ) {
     const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
     const int nt = r->n_trials ? r->n_trials[i] : 1;
     const double w = r->weights ? r->weights[i] : 1.0;
+    if (data.zi_type != ZIType::NONE) {
+        return w * zi::mixture_ll_double(r->y[i], nt, eta[0], logit_zi,
+                                         r->family, r->phi, r->phi2);
+    }
     const double ll =
         (r->trunc_upper && r->family == "truncated_gaussian")
         ? log_lik_truncated_gaussian(r->y[i], r->trunc_upper[i], eta[0], r->phi)
@@ -110,15 +124,62 @@ inline void builtin_family_eta_weights(
     neg_hess_eta[0] = w * gh.neg_hess;
 }
 
-// Build a single-process LikelihoodSpec backed by the family-enum closed forms.
+// ---------------------------------------------------------------------------
+// Zero-inflated variants. The spec-driven Laplace shim passes 0.0 for the
+// `logit_zi` callback argument, so the ZI linear predictor is carried as
+// process 1 and read from eta[1]. Process 0 remains the count predictor, and
+// the RE block is shared into process 0 only (SharingSpec::re). The 2 x 2
+// negative-Hessian block the EtaWeightsFn contract already specifies is exactly
+// what the mixture's cross term needs -- no new curvature contract.
+//
+// The mixture math itself lives in builtin_family_zi.h, shared with the AD
+// sampler path, and is validated against R/family_zi.R.
+// ---------------------------------------------------------------------------
+
+inline double builtin_family_zi_ll_double(
+    int i, const double* eta, const double& /*logit_zi*/,
+    const double& /*logit_oi*/, const std::vector<double>& /*params*/,
+    const ModelData& /*data*/, const ParamLayout& /*layout*/,
+    const void* model_data
+) {
+    const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    const int nt = r->n_trials ? r->n_trials[i] : 1;
+    const double w = r->weights ? r->weights[i] : 1.0;
+    return w * zi::mixture_ll_double(r->y[i], nt, eta[0], eta[1],
+                                     r->family, r->phi, r->phi2);
+}
+
+inline void builtin_family_zi_eta_weights(
+    int i, const double* eta, double /*logit_zi*/, double /*logit_oi*/,
+    const std::vector<double>& /*params*/, const ModelData& /*data*/,
+    const ParamLayout& /*layout*/, const void* model_data,
+    double* grad_eta, double* neg_hess_eta
+) {
+    const auto* r = static_cast<const BuiltinFamilyResponse*>(model_data);
+    const int nt = r->n_trials ? r->n_trials[i] : 1;
+    zi::mixture_eta_weights_double(r->y[i], nt, eta[0], eta[1],
+                                   r->family, r->phi, r->phi2,
+                                   grad_eta, neg_hess_eta);
+    const double w = r->weights ? r->weights[i] : 1.0;
+    if (w != 1.0) {
+        grad_eta[0] *= w; grad_eta[1] *= w;
+        for (int k = 0; k < 4; k++) neg_hess_eta[k] *= w;
+    }
+}
+
+// Build a LikelihoodSpec backed by the family-enum closed forms. `zi` selects
+// the two-process zero-inflated mixture; without it the spec is single-process.
 // Pair the returned spec with a BuiltinFamilyResponse (via
 // ModelData.model_response_data) whose arrays outlive the fit.
-inline LikelihoodSpec builtin_family_spec(const std::string& family) {
+inline LikelihoodSpec builtin_family_spec(const std::string& family,
+                                          bool zi = false) {
     LikelihoodSpec spec;
-    spec.n_processes    = 1;
-    spec.name           = "builtin:" + family;
-    spec.ll_double      = &builtin_family_ll_double;
-    spec.eta_weights_fn = &builtin_family_eta_weights;
+    spec.n_processes    = zi ? 2 : 1;
+    spec.name           = (zi ? "builtin_zi:" : "builtin:") + family;
+    spec.ll_double      = zi ? &builtin_family_zi_ll_double
+                             : &builtin_family_ll_double;
+    spec.eta_weights_fn = zi ? &builtin_family_zi_eta_weights
+                             : &builtin_family_eta_weights;
     spec.n_extra_params = 0;
     return spec;
 }

@@ -16,6 +16,7 @@ tulpa(
   phi2 = NULL,
   beta_prior = NULL,
   re_prior = NULL,
+  ziformula = NULL,
   spatial = NULL,
   temporal = NULL,
   control = list(),

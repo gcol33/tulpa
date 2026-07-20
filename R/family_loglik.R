@@ -29,6 +29,33 @@
   pmin(pmax(mu, 1e-7), 1 - 1e-7)
 }
 
+# log(1 - exp(x)) for x <= 0, split at -log(2) so neither branch cancels
+# (Maechler 2012): log(-expm1(x)) loses precision as x -> -inf, log1p(-exp(x))
+# loses it as x -> 0. Used by the zero-truncated families to subtract
+# log P(Y > 0). Returns -Inf at x = 0, the correct log of zero mass.
+.log1mexp <- function(x) {
+  ifelse(x > -log(2), log(-expm1(x)), log1p(-exp(x)))
+}
+
+# Send the log-density to -Inf outside a zero-truncated family's support. The
+# truncated formulas evaluate to a finite number at y = 0 rather than vanishing,
+# so without this a caller reaching the density directly -- bypassing the front
+# door's support check -- would read a plausible value where the family has no
+# mass. `y` is recycled against the result so a scalar response broadcasts.
+.zero_truncate <- function(ll, y) {
+  ll[rep_len(y, length(ll)) < 1] <- -Inf
+  ll
+}
+
+# One draw per element from a count distribution conditioned on y > 0, by
+# inverse CDF on the truncated support: with p0 = P(Y = 0), a uniform draw on
+# (p0, 1) pushed through the untruncated quantile function lands on y >= 1.
+# `qfun` is stats::qpois / stats::qnbinom; `...` carries its parameters.
+.rtrunc_count <- function(qfun, p0, ...) {
+  n <- length(p0)
+  qfun(p0 + stats::runif(n) * (1 - p0), ...)
+}
+
 # Inverse-Gaussian sampler (Michael, Schucany & Haas 1976), parameterized to
 # match the `inverse_gaussian` loglik below: mean mu, shape lambda = 1 / phi.
 .rinvgauss <- function(n, mu, lambda) {
@@ -49,8 +76,10 @@
 #   weight(eta, n_trials, phi)    Laplace/IRLS working weight (no y dependence)
 #   sample(eta, n_trials, phi)    one y draw per element (posterior predictive)
 #   variance(eta, n_trials, phi)  response variance Var(y | eta), elementwise
-#   response_mean(eta, n_trials)  E[y | eta] on the response scale; only where
-#                                 it differs from mean() (trial-scaled families)
+#   response_mean(eta, n_trials, phi)
+#                                 E[y | eta] on the response scale; only where
+#                                 it differs from mean() (trial-scaled and
+#                                 zero-truncated families)
 # Families in .PHI2_FAMILIES additionally take a trailing `phi2` (the second
 # dispersion channel: Student-t df); the wrappers pass it only when supplied.
 
@@ -80,7 +109,7 @@
       mu <- .mean_binomial(eta)
       n * mu * (1 - mu)
     },
-    response_mean = function(eta, n_trials) {
+    response_mean = function(eta, n_trials, phi) {
       n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       n * .mean_binomial(eta)
     }
@@ -116,12 +145,161 @@
       mu <- .mean_log(eta)
       mu * phi / (mu + phi)
     },
+    # Observed curvature -d^2 loglik / d eta^2 at the realized y. Averaging it
+    # over y (E[y] = mu) returns the registered `weight`, so the two agree in
+    # expectation and differ per observation.
+    obs_weight = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      (y + phi) * phi * mu / (mu + phi)^2
+    },
     sample = function(eta, n_trials, phi) {
       stats::rnbinom(length(eta), size = phi, mu = .mean_log(eta))
     },
     variance = function(eta, n_trials, phi) {
       mu <- .mean_log(eta)
       mu + mu^2 / phi
+    }
+  ),
+
+  # Negative binomial type 1 (log link), phi = dispersion. Mean mu = exp(eta),
+  # variance mu (1 + phi) -- linear in the mean, unlike neg_binomial_2's
+  # quadratic mu + mu^2/phi. In NB(r, p) form the shape is r = mu / phi and
+  # p = 1 / (1 + phi), so the shape grows with the mean and the
+  # variance-to-mean ratio stays constant at 1 + phi.
+  neg_binomial_1 = list(
+    mean = .mean_log,
+    loglik = function(eta, y, n_trials, phi) {
+      r <- .mean_log(eta) / phi
+      lgamma(y + r) - lgamma(r) - lgamma(y + 1) -
+        (y + r) * log1p(phi) + y * log(phi)
+    },
+    score = function(eta, y, n_trials, phi) {
+      r <- .mean_log(eta) / phi
+      r * (digamma(y + r) - digamma(r) - log1p(phi))
+    },
+    # Quasi-likelihood IRLS weight (dmu/deta)^2 / V(mu) = mu / (1 + phi), the
+    # form glmmTMB uses. Unlike neg_binomial_2 -- where the moment weight
+    # phi mu / (mu + phi) coincides with the expected curvature -- this is NOT
+    # the Fisher information. Because the shape r = mu / phi moves with the
+    # mean, the score carries digammas and the exact expected curvature is
+    #   I(eta) = r^2 (trigamma(r) - E[trigamma(y + r)])
+    #          = r^2 sum_{k >= 0} P(y > k) / (r + k)^2,
+    # a convergent series with no elementary closed form. The moment weight
+    # understates it by 0.4% (phi = 0.5, mu = 20) to 58% (phi = 8, mu = 0.37),
+    # so the Laplace curvature is correspondingly soft and marginal SEs run
+    # wide in that corner of the parameter space.
+    weight = function(eta, n_trials, phi) .mean_log(eta) / (1 + phi),
+    # Observed curvature at the realized y. Differentiating the score
+    # s = r (psi(y + r) - psi(r) - log1p(phi)) with dr/deta = r gives
+    #   -ds/deta = -s + r^2 (trigamma(r) - trigamma(y + r)).
+    # Its expectation is the exact information r^2 (trigamma(r) -
+    # E[trigamma(y + r)]) discussed under `weight`, not the registered
+    # moment weight -- so unlike neg_binomial_2 the two do not agree even
+    # on average.
+    obs_weight = function(eta, y, n_trials, phi) {
+      r <- .mean_log(eta) / phi
+      s <- r * (digamma(y + r) - digamma(r) - log1p(phi))
+      -s + r^2 * (trigamma(r) - trigamma(y + r))
+    },
+    sample = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      stats::rnbinom(length(eta), size = mu / phi, mu = mu)
+    },
+    variance = function(eta, n_trials, phi) .mean_log(eta) * (1 + phi)
+  ),
+
+  # Zero-truncated Poisson (log link), support y >= 1. The untruncated
+  # log-density minus log P(Y > 0) = log(1 - exp(-mu)). The conditional mean
+  # E[y | y > 0] = mu / p exceeds mu, so `mean` stays the inverse link and
+  # `response_mean` carries the truncated mean.
+  truncated_poisson = list(
+    mean = .mean_log,
+    loglik = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      .zero_truncate(y * log(mu) - mu - lgamma(y + 1) - .log1mexp(-mu), y)
+    },
+    score = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      y - mu / -expm1(-mu)
+    },
+    weight = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      mu_c <- mu / -expm1(-mu)
+      mu_c - mu_c * mu_c * exp(-mu)
+    },
+    sample = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      .rtrunc_count(stats::qpois, exp(-mu), lambda = mu)
+    },
+    # Var(y | y > 0) equals the working weight here: the curvature carries no
+    # y dependence, so observed and expected information coincide.
+    variance = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      mu_c <- mu / -expm1(-mu)
+      mu_c - mu_c * mu_c * exp(-mu)
+    },
+    response_mean = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      mu / -expm1(-mu)
+    }
+  ),
+
+  # Zero-truncated negative binomial type 2 (log link), phi = size, support
+  # y >= 1. The NB2 log-density minus log P(Y > 0), with
+  # P(Y > 0) = 1 - (phi / (phi + mu))^phi = 1 - exp(-phi log1p(mu/phi)).
+  truncated_neg_binomial_2 = list(
+    mean = .mean_log,
+    loglik = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      .zero_truncate(
+        lgamma(y + phi) - lgamma(phi) - lgamma(y + 1) +
+          phi * (log(phi) - log(phi + mu)) +
+          y * (log(mu) - log(mu + phi)) -
+          .log1mexp(-phi * log1p(mu / phi)),
+        y)
+    },
+    score = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      p  <- -expm1(-phi * log1p(mu / phi))
+      phi * (y - mu / p) / (phi + mu)
+    },
+    # Expected (Fisher) form w0 (1 - s), matching the registry's y-free
+    # contract. The compiled Laplace path uses the observed curvature, which
+    # carries a y term and so cannot be expressed here.
+    weight = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      a  <- phi * log1p(mu / phi)
+      p  <- -expm1(-a)
+      w0 <- phi * mu / (p * (phi + mu))
+      w0 * (1 - exp(-a) * w0)
+    },
+    # Observed curvature at the realized y. The truncated density is
+    # loglik_nb2 - log P(Y > 0), so the curvature splits as the untruncated
+    # observed curvature plus the second derivative of log p, where
+    # p = 1 - exp(-a) and a = phi log1p(mu / phi).
+    obs_weight = function(eta, y, n_trials, phi) {
+      mu  <- .mean_log(eta)
+      a   <- phi * log1p(mu / phi)
+      p   <- -expm1(-a)
+      da  <- phi * mu / (phi + mu)
+      d2a <- phi^2 * mu / (phi + mu)^2
+      dp  <- exp(-a) * da
+      d2p <- exp(-a) * (d2a - da^2)
+      (y + phi) * phi * mu / (mu + phi)^2 + (d2p * p - dp^2) / p^2
+    },
+    sample = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      p0 <- exp(phi * (log(phi) - log(phi + mu)))
+      .rtrunc_count(stats::qnbinom, p0, size = phi, mu = mu)
+    },
+    variance = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      p  <- -expm1(-phi * log1p(mu / phi))
+      (mu + mu^2 / phi + mu^2) / p - (mu / p)^2
+    },
+    response_mean = function(eta, n_trials, phi) {
+      mu <- .mean_log(eta)
+      mu / -expm1(-phi * log1p(mu / phi))
     }
   ),
 
@@ -274,7 +452,7 @@
       mu <- .mean_beta(eta)
       n * mu * (1 - mu) * (1 + (n - 1) / (phi + 1))
     },
-    response_mean = function(eta, n_trials) {
+    response_mean = function(eta, n_trials, phi) {
       n <- if (!is.null(n_trials)) n_trials else rep(1, length(eta))
       n * .mean_beta(eta)
     }
@@ -438,24 +616,61 @@ family_names <- function() names(.FAMILY_OPS)
 #. The `*_<link>` suffix forms (e.g. "gamma_inverse") share
 # the base family's dispersion, so membership is tested on the prefix.
 .PHI_FAMILIES <- c("gaussian", "lognormal", "gamma", "neg_binomial_2",
-                   "negative_binomial", "inverse_gaussian", "beta",
-                   "beta_binomial", "t", "tweedie",
+                   "neg_binomial_1", "negative_binomial", "inverse_gaussian",
+                   "beta", "beta_binomial", "t", "tweedie",
+                   "truncated_neg_binomial_2",
                    "interval_gaussian", "truncated_gaussian")
 
 # Count families whose likelihood is defined only at non-negative integer `y`.
 # The C++ kernels cast the response to `int` (laplace_family_link.h /
 # laplace_likelihoods.h), silently flooring a continuous response into a biased
 # log-likelihood, so a non-integer `y` is rejected at the front door.
-.COUNT_FAMILIES <- c("poisson", "binomial", "neg_binomial_2", "negative_binomial",
-                     "beta_binomial")
+.COUNT_FAMILIES <- c("poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
+                     "negative_binomial", "beta_binomial",
+                     "truncated_poisson", "truncated_neg_binomial_2")
+
+# Zero-truncated count families: the density conditions on y > 0, so a zero
+# response is outside the support rather than merely unlikely.
+.TRUNCATED_FAMILIES <- c("truncated_poisson", "truncated_neg_binomial_2")
+
+# Families carried by the R registry but not yet by the compiled kernels. The
+# C++ family dispatch in src/laplace_family_link.h is an if-chain over family
+# names whose fall-through branches are the Poisson ones (`score_fn` returns
+# y/mu - 1, `variance_fn` returns mu), so an unrecognized name there does not
+# raise -- it silently fits a Poisson. Until the kernels carry these families,
+# the front door refuses them rather than letting that substitution happen.
+.R_ONLY_FAMILIES <- c("neg_binomial_1", "truncated_poisson",
+                      "truncated_neg_binomial_2")
+
+#' Reject families the compiled kernels do not implement.
+#'
+#' @keywords internal
+.validate_family_compiled <- function(family) {
+  if (!(.family_base(family) %in% .R_ONLY_FAMILIES)) return(invisible(TRUE))
+  stop(sprintf(paste0(
+    "family = '%s' is defined in the R family registry but is not yet wired ",
+    "into the compiled kernels, so tulpa() cannot fit it. The C++ family ",
+    "dispatch would silently substitute a Poisson likelihood. Use the ",
+    "family_*() R interface for density, score, weight, and variance ",
+    "evaluation in the meantime."), family), call. = FALSE)
+}
 
 # Base family of a `family` / `family_<link>` code (the part before the link
 # suffix), so a custom link form validates against the same rules.
+#
+# Candidates are matched longest-first because family names are prefixes of one
+# another: "beta_binomial" starts with "beta_", so a registration-order scan
+# returns "beta" and every `.family_base`-driven validator then applies beta's
+# rules to a beta-binomial. Ordering by decreasing name length makes the
+# longest -- i.e. the most specific -- family win, and an exact hit always beats
+# a prefix hit.
 .family_base <- function(family) {
   if (!is.character(family) || length(family) != 1L) return(NA_character_)
-  for (fam in unique(c(.PHI_FAMILIES, .COUNT_FAMILIES, family_names()))) {
-    if (identical(family, fam) ||
-        startsWith(family, paste0(fam, "_"))) return(fam)
+  cand <- unique(c(.PHI_FAMILIES, .COUNT_FAMILIES, family_names()))
+  if (family %in% cand) return(family)
+  cand <- cand[order(nchar(cand), decreasing = TRUE)]
+  for (fam in cand) {
+    if (startsWith(family, paste0(fam, "_"))) return(fam)
   }
   family
 }
@@ -484,7 +699,8 @@ family_names <- function() names(.FAMILY_OPS)
 #' into a biased likelihood. A no-op for continuous families.
 #' @keywords internal
 .validate_family_counts <- function(family, y) {
-  if (!(.family_base(family) %in% .COUNT_FAMILIES)) return(invisible(TRUE))
+  base <- .family_base(family)
+  if (!(base %in% .COUNT_FAMILIES)) return(invisible(TRUE))
   yf <- y[is.finite(y)]
   if (length(yf) && (any(yf < 0) || any(yf != round(yf)))) {
     stop(sprintf(paste0(
@@ -492,6 +708,13 @@ family_names <- function() names(.FAMILY_OPS)
       "or non-integer values. The likelihood casts `y` to an integer, which ",
       "would silently floor a continuous response into a biased log-likelihood."),
       family), call. = FALSE)
+  }
+  if (base %in% .TRUNCATED_FAMILIES && length(yf) && any(yf < 1)) {
+    stop(sprintf(paste0(
+      "family = '%s' is zero-truncated and requires `y >= 1`; got %d zero(s). ",
+      "The density conditions on y > 0, so a zero carries no likelihood. Use ",
+      "the untruncated family, or a hurdle model if the zeros are structural."),
+      family, sum(yf < 1)), call. = FALSE)
   }
   invisible(TRUE)
 }
@@ -654,10 +877,31 @@ family_variance <- function(eta, family, n_trials = NULL, phi = 1.0,
 }
 
 
+#' Observed curvature (-d^2 log-lik / d eta^2 at the realized `y`), elementwise.
+#'
+#' Falls back to the y-free `weight` for families whose curvature carries no
+#' `y` -- those where the response enters the log-likelihood linearly in `eta`
+#' (Poisson, binomial, and the zero-truncated Poisson), for which the observed
+#' and expected curvature coincide identically rather than only in expectation.
+#' @keywords internal
+.family_obs_weight <- function(eta, y, family, n_trials = NULL, phi = 1.0,
+                               phi2 = NULL) {
+  ops <- .family_ops(family)
+  if (is.null(ops$obs_weight)) {
+    return(rep_len(family_weight(eta, family, n_trials, phi, phi2),
+                   max(length(eta), length(y))))
+  }
+  if (is.null(.phi2_or_stop(family, phi2))) {
+    return(ops$obs_weight(eta, y, n_trials, phi))
+  }
+  ops$obs_weight(eta, y, n_trials, phi, phi2)
+}
+
+
 #' Response-scale mean of y given eta for a family (trial-scaled where relevant).
 #' @keywords internal
 family_response_mean <- function(eta, family, n_trials = NULL, phi = 1.0) {
   ops <- .family_ops(family)
-  if (!is.null(ops$response_mean)) return(ops$response_mean(eta, n_trials))
+  if (!is.null(ops$response_mean)) return(ops$response_mean(eta, n_trials, phi))
   ops$mean(eta, phi)
 }

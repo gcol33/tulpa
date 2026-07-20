@@ -19,6 +19,7 @@ tulpa_sample_glmm(
   temporal_spec = NULL,
   svc_spec = NULL,
   tvc_spec = NULL,
+  zi_spec = NULL,
   sigma_re_scale = 2.5,
   sigma_beta = 10,
   control = list()

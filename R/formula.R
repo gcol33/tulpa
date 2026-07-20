@@ -688,6 +688,46 @@ tulpa_parse_formula <- function(formula) {
   )
 }
 
+#' Build the zero-inflation design matrix from `ziformula`.
+#'
+#' A one-sided formula giving the fixed effects of the structural-zero logit.
+#' `~ 1` is the constant-probability model. Random effects in the ZI predictor
+#' are not supported: the compiled kernels share the random-effect block into
+#' the count process only, so a bar here would be silently dropped.
+#'
+#' @keywords internal
+.zi_design <- function(ziformula, data, n_obs) {
+  if (is.null(ziformula)) return(NULL)
+  if (!inherits(ziformula, "formula") || length(ziformula) != 2L) {
+    stop("`ziformula` must be a one-sided formula, e.g. ~ 1 or ~ x.",
+         call. = FALSE)
+  }
+  if (any(grepl("\\|", deparse(ziformula[[2L]])))) {
+    stop("`ziformula` takes fixed effects only; random effects in the ",
+         "zero-inflation predictor are not supported.", call. = FALSE)
+  }
+  # ~ 0 / ~ -1 leaves no columns, which is "no zero inflation" written the long
+  # way round; treat it as such rather than building a zero-column process.
+  mf <- stats::model.frame(ziformula, data, na.action = stats::na.pass)
+  X_zi <- stats::model.matrix(ziformula, mf)
+  if (ncol(X_zi) == 0L) return(NULL)
+  if (nrow(X_zi) != n_obs) {
+    stop(sprintf(paste0(
+      "`ziformula` produced %d rows but the model has %d observations; the ",
+      "zero-inflation terms must come from the same `data`."),
+      nrow(X_zi), n_obs), call. = FALSE)
+  }
+  bad <- which(!stats::complete.cases(X_zi))
+  if (length(bad)) {
+    stop(sprintf(
+      "`ziformula` has missing values at row(s) %s.",
+      paste(utils::head(bad, 5L), collapse = ", ")), call. = FALSE)
+  }
+  colnames(X_zi) <- paste0("zi_", colnames(X_zi))
+  X_zi
+}
+
+
 #' Build model matrices from a parsed formula
 #'
 #' Takes a parsed formula and data frame, and constructs:

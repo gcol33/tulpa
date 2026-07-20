@@ -135,12 +135,33 @@ test_that("family helpers validate names; glmm_weights errors on unknown family"
   expect_error(family_loglik(0, 0, "weibull"), "Unknown family")
   expect_error(family_mean(0, "nope"), "Unknown family")
   expect_setequal(family_names(),
-                  c("binomial", "poisson", "neg_binomial_2", "lognormal",
-                    "gaussian", "beta", "gamma", "inverse_gaussian",
-                    "beta_binomial", "tweedie", "t"))
+                  c("binomial", "poisson", "neg_binomial_2", "neg_binomial_1",
+                    "truncated_poisson", "truncated_neg_binomial_2",
+                    "lognormal", "gaussian", "beta", "gamma",
+                    "inverse_gaussian", "beta_binomial", "tweedie", "t"))
   # An unknown family must error rather than silently returning unit weights,
   # which would give wrong SEs for a misspelled family (gcol33/tulpa#152).
   expect_error(glmm_weights(c(0, 1, 2), "weibull"), "unknown family")
+})
+
+test_that(".family_base resolves the longest family name, not the first prefix", {
+  # Family names are prefixes of one another, so a registration-order scan
+  # resolved "beta_binomial" to "beta" and "neg_binomial_2_log" to whichever
+  # negative-binomial name came first. Every .family_base-driven validator
+  # (phi, counts, compiled, phi2, zi) then applied the wrong family's rules.
+  expect_equal(.family_base("beta_binomial"), "beta_binomial")
+  expect_equal(.family_base("neg_binomial_2"), "neg_binomial_2")
+  expect_equal(.family_base("neg_binomial_1"), "neg_binomial_1")
+  expect_equal(.family_base("truncated_neg_binomial_2"),
+               "truncated_neg_binomial_2")
+  expect_equal(.family_base("truncated_poisson"), "truncated_poisson")
+  # Link suffixes still resolve to the base family.
+  expect_equal(.family_base("binomial_probit"), "binomial")
+  expect_equal(.family_base("beta_binomial_probit"), "beta_binomial")
+  # The concrete consequence: a beta-binomial response is count-validated
+  # rather than being waved through under beta's rules.
+  expect_error(.validate_family_counts("beta_binomial", c(0.5, 1.2)),
+               "integer")
 })
 
 test_that("family_mean applies the documented clamps", {

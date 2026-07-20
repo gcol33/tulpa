@@ -28,6 +28,8 @@
 #include "tulpa/param_layout.h"
 #include "laplace_builtin_family_spec.h"  // BuiltinFamilyResponse
 #include "autodiff_utils.h"               // tulpa::math templated densities
+#include "builtin_family_zi.h"            // tulpa::zi mixture (shared with Laplace)
+#include "tulpa/types.h"                  // ZIType
 #include <Rcpp.h>
 #include <cmath>
 #include <string>
@@ -48,51 +50,45 @@ inline bool builtin_family_has_ad(const std::string& family) {
            family == "beta_binomial" || family == "t";
 }
 
-// LikelihoodFn<T>: per-obs log-likelihood for a built-in family, templated over
-// the AD type so the generic log-posterior differentiates straight through it.
+// Unweighted base log-density at an arbitrary response value, templated over
+// the AD type. Split out from builtin_family_ll_ad so the zero-inflation
+// mixture can evaluate the same density at both the realized y and at 0
+// without a second copy of the family dispatch.
 template<typename T>
-inline T builtin_family_ll_ad(
-    int i, const T* eta, const T& /*logit_zi*/, const T& /*logit_oi*/,
-    const std::vector<T>& /*params*/, const ModelData& /*data*/,
-    const ParamLayout& /*layout*/, const void* model_data
+inline T builtin_family_base_ll_ad(
+    double yv, int nt, const BuiltinFamilyResponse* r, const T& eta0
 ) {
     using namespace tulpa::math;
-    const auto* r   = static_cast<const BuiltinFamilyResponse*>(model_data);
-    const double yv = r->y[i];
-    const int    nt = r->n_trials ? r->n_trials[i] : 1;
     const double phi = r->phi;
     const std::string& fam = r->family;
-    // Per-obs likelihood weight, matching builtin_family_ll_double / the score /
-    // Fisher Hessian so the potential and its gradient stay consistent under a
-    // weighted likelihood. A no-op when weights are absent.
-    const double w = r->weights ? r->weights[i] : 1.0;
+    const T* eta = &eta0;
 
     if (fam == "poisson") {
-        return T(w) * log_lik_poisson((int)yv, safe_exp(eta[0]));
+        return log_lik_poisson((int)yv, safe_exp(eta[0]));
     }
     if (fam == "binomial") {
-        return T(w) * log_lik_binomial((int)yv, nt, inv_logit(eta[0]));
+        return log_lik_binomial((int)yv, nt, inv_logit(eta[0]));
     }
     if (fam == "neg_binomial_2") {
-        return T(w) * log_lik_negbin((int)yv, safe_exp(eta[0]), T(phi));
+        return log_lik_negbin((int)yv, safe_exp(eta[0]), T(phi));
     }
     if (fam == "beta_binomial") {
         // Logit link, mu = P(success), phi = precision a + b. Exact AD log-lik.
-        return T(w) * log_lik_beta_binomial((int)yv, nt, inv_logit(eta[0]), T(phi));
+        return log_lik_beta_binomial((int)yv, nt, inv_logit(eta[0]), T(phi));
     }
     if (fam == "t") {
         // Student-t location-scale (identity link): y ~ eta + phi * t_nu,
         // nu = phi2 (NaN => the robust default kStudentTDf), phi the scale.
         const double nu = std::isnan(r->phi2) ? kStudentTDf : r->phi2;
         T r = (T(yv) - eta[0]) * T(1.0 / phi);
-        return T(w) * (T(std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0)
+        return (T(std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0)
                          - 0.5 * std::log(nu * M_PI * phi * phi))
              - T(0.5 * (nu + 1.0)) * log1p_fn(r * r * T(1.0 / nu)));
     }
     if (fam == "gaussian") {
         // Identity link: y ~ N(eta, phi^2). phi is the residual SD (held fixed).
         T resid = T(yv) - eta[0];
-        return T(w) * (T(-0.5 * std::log(2.0 * M_PI * phi * phi))
+        return (T(-0.5 * std::log(2.0 * M_PI * phi * phi))
              - resid * resid * T(1.0 / (2.0 * phi * phi)));
     }
     if (fam == "lognormal") {
@@ -100,7 +96,7 @@ inline T builtin_family_ll_ad(
         // log-scale SD. The -log(y) Jacobian is eta-independent (data constant).
         const double ly = std::log(std::max(yv, 1e-300));
         T resid = T(ly) - eta[0];
-        return T(w) * (T(-ly - 0.5 * std::log(2.0 * M_PI * phi * phi))
+        return (T(-ly - 0.5 * std::log(2.0 * M_PI * phi * phi))
              - resid * resid * T(1.0 / (2.0 * phi * phi)));
     }
     if (fam == "gamma") {
@@ -108,7 +104,7 @@ inline T builtin_family_ll_ad(
         // ll = phi log phi - lgamma(phi) + (phi-1) log y - phi*eta - phi*y*exp(-eta).
         const double c = phi * std::log(phi) - std::lgamma(phi)
                        + (phi - 1.0) * std::log(std::max(yv, 1e-300));
-        return T(w) * (T(c) - T(phi) * eta[0] - T(phi * yv) * safe_exp(-eta[0]));
+        return (T(c) - T(phi) * eta[0] - T(phi * yv) * safe_exp(-eta[0]));
     }
     if (fam == "inverse_gaussian") {
         // Log link: y ~ IG with mean mu = exp(eta) and variance phi*mu^3.
@@ -116,7 +112,7 @@ inline T builtin_family_ll_ad(
         T mu = safe_exp(eta[0]);
         T resid = T(yv) - mu;
         const double c = -0.5 * std::log(2.0 * M_PI * phi * yv * yv * yv);
-        return T(w) * (T(c)
+        return (T(c)
              - resid * resid * T(1.0 / (2.0 * phi * yv)) / (mu * mu));
     }
     if (fam == "beta") {
@@ -127,12 +123,43 @@ inline T builtin_family_ll_ad(
         T b = (T(1.0) - mu) * T(phi);
         const double ly  = std::log(yv);
         const double l1y = std::log(1.0 - yv);
-        return T(w) * (T(std::lgamma(phi)) - lgamma_fn(a) - lgamma_fn(b)
+        return (T(std::lgamma(phi)) - lgamma_fn(a) - lgamma_fn(b)
              + (a - T(1.0)) * T(ly) + (b - T(1.0)) * T(l1y));
     }
     Rcpp::stop("builtin_family_ll_ad: AD likelihood covers gaussian / poisson / "
                "binomial(logit) / neg_binomial_2 / gamma / inverse_gaussian / "
                "lognormal / beta; got '%s'.", fam.c_str());
+}
+
+// LikelihoodFn<T>: per-obs log-likelihood for a built-in family, templated over
+// the AD type so the generic log-posterior differentiates straight through it.
+//
+// When the model carries zero inflation the sampler paths supply the ZI linear
+// predictor through the `logit_zi` argument (built from data.X_zi_flat and the
+// beta_zi block), and the base density is wrapped in the structural-zero
+// mixture. The gradient flows through both predictors because the mixture is
+// built from the same templated primitives as the density.
+template<typename T>
+inline T builtin_family_ll_ad(
+    int i, const T* eta, const T& logit_zi, const T& /*logit_oi*/,
+    const std::vector<T>& /*params*/, const ModelData& data,
+    const ParamLayout& /*layout*/, const void* model_data
+) {
+    const auto* r   = static_cast<const BuiltinFamilyResponse*>(model_data);
+    const double yv = r->y[i];
+    const int    nt = r->n_trials ? r->n_trials[i] : 1;
+    // Per-obs likelihood weight, matching builtin_family_ll_double / the score /
+    // Fisher Hessian so the potential and its gradient stay consistent under a
+    // weighted likelihood. A no-op when weights are absent.
+    const double w = r->weights ? r->weights[i] : 1.0;
+
+    if (data.zi_type == ZIType::NONE) {
+        return T(w) * builtin_family_base_ll_ad<T>(yv, nt, r, eta[0]);
+    }
+    return T(w) * zi::mixture_ll(
+        yv, logit_zi,
+        builtin_family_base_ll_ad<T>(yv, nt, r, eta[0]),
+        builtin_family_base_ll_ad<T>(0.0, nt, r, eta[0]));
 }
 
 } // namespace tulpa
