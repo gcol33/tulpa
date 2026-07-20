@@ -38,5 +38,5 @@ ESS/iter ratio interpretation:
 
 }
 \seealso{
-\code{\link[=plot_rhat]{plot_rhat()}}, \code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+\code{\link[=plot_rhat]{plot_rhat()}}, \code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

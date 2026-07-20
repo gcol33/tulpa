@@ -35,7 +35,7 @@ test_that("mcmc_diagnostics reproduces posterior rhat / ess / mcse", {
   fit <- structure(list(draws = arr), class = "tulpa_fit")
 
   probs <- c(0.05, 0.5, 0.95)
-  diag <- mcmc_diagnostics(
+  diag <- diagnostics(
     fit,
     measures = c("rhat", "ess_bulk", "ess_tail", "ess_mean", "ess_sd",
                  "mcse_mean", "mcse_sd", "ess_quantile", "mcse_quantile"),
@@ -72,7 +72,7 @@ test_that("rhat takes the max of bulk and folded split-Rhat", {
   skip_if_not_installed("posterior")
   arr <- make_draws_array()
   fit <- structure(list(draws = arr), class = "tulpa_fit")
-  diag <- mcmc_diagnostics(fit, measures = c("rhat", "rhat_bulk", "rhat_fold"))
+  diag <- diagnostics(fit, measures = c("rhat", "rhat_bulk", "rhat_fold"))
 
   # headline rhat is never below either component, and equals their max
   expect_true(all(diag$rhat >= diag$rhat_bulk - 1e-8))
@@ -90,7 +90,7 @@ test_that("rhat takes the max of bulk and folded split-Rhat", {
 test_that("default mcmc_diagnostics columns are stable", {
   arr <- make_draws_array(niter = 200L, nchain = 2L, npar = 2L)
   fit <- structure(list(draws = arr), class = "tulpa_fit")
-  diag <- mcmc_diagnostics(fit)
+  diag <- diagnostics(fit)
   expect_identical(names(diag), c("parameter", "rhat", "ess_bulk", "ess_tail"))
 })
 
@@ -99,7 +99,7 @@ test_that("constant parameters yield NA diagnostics, not errors", {
   arr <- make_draws_array(niter = 200L, nchain = 2L, npar = 2L)
   arr[, , 2L] <- 3.5                                   # constant parameter
   fit <- structure(list(draws = arr), class = "tulpa_fit")
-  diag <- mcmc_diagnostics(fit)
+  diag <- diagnostics(fit)
   const_row <- diag[diag$parameter == "theta2", ]
   expect_true(is.na(const_row$rhat))
   expect_true(is.na(const_row$ess_bulk))
@@ -143,9 +143,9 @@ test_that("multi-chain rhat sees between-chain offset that one chain misses", {
   for (m in seq_len(4L)) arr[, m, 1L] <- arr[, m, 1L] + (m - 1) * 2.0
   pooled <- pool_chain_major(arr)
 
-  diag_mc <- mcmc_diagnostics(
+  diag_mc <- diagnostics(
     structure(list(draws = pooled, n_chains = 4L), class = "tulpa_fit"))
-  diag_1c <- mcmc_diagnostics(
+  diag_1c <- diagnostics(
     structure(list(draws = arr[, 1L, , drop = FALSE]), class = "tulpa_fit"))
 
   expect_gt(diag_mc$rhat, 1.5)            # offset chains: clearly unconverged
@@ -251,11 +251,11 @@ test_that("chain diagnostics are withheld on a non-chain (approximation) fit", {
   # table (a `laplace_diagnostics`), NOT a chain table -- so a reader cannot
   # mistake the vacuous Rhat ~ 1 / ESS ~ n of i.i.d. draws for a convergence
   # pass; the headline there is the approximation k-hat, not chain mixing.
-  d_chain <- mcmc_diagnostics(chain)
+  d_chain <- diagnostics(chain)
   expect_s3_class(d_chain, "data.frame")
   expect_false(inherits(d_chain, "laplace_diagnostics"))
   expect_true(all(c("rhat", "ess_bulk") %in% names(d_chain)))
-  d_iid <- mcmc_diagnostics(iid)
+  d_iid <- diagnostics(iid)
   expect_s3_class(d_iid, "laplace_diagnostics")
   expect_equal(nrow(d_iid), 2L)
   expect_true("pareto_k" %in% names(attributes(d_iid)))

@@ -54,12 +54,19 @@ test_that("directly-called tulpa_laplace() is classed and provenance-tagged", {
   expect_equal(fit$n_fixed, 2L)
   expect_equal(fit$fixed_names, c("(Intercept)", "x"))
 
-  # Provenance gate: Laplace emits iid draws, so mcmc_diagnostics() returns the
-  # approximation-reliability table (a `laplace_diagnostics`), not a chain Rhat
-  # table that would read as a vacuous single-chain convergence pass.
+  # Provenance gate: `draws_kind = "iid"` says that IF this backend emits draws
+  # they are i.i.d., not that this fit has any. A directly-called tulpa_laplace()
+  # returns a mode and a precision and no sample at all, so the diagnostics front
+  # door has nothing to score and says so.
   expect_equal(fit$draws_kind, "iid")
-  d <- suppressMessages(mcmc_diagnostics(fit))
-  expect_s3_class(d, "laplace_diagnostics")
+  expect_null(fit[["draws"]])
+  expect_message(d <- diagnostics(fit), "no posterior draws")
+  expect_null(d)
+
+  # This previously asserted a `laplace_diagnostics` table here, and got one:
+  # `fit$draws` partial-matched `draws_kind`, so the reliability path was handed
+  # the string "iid" and built a one-row all-NA table from it. The assertion was
+  # satisfied by an object manufactured from a tag.
 })
 
 test_that("directly-called VI fit does not fake a convergence pass", {

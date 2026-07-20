@@ -29,5 +29,5 @@ dim(posterior_sample(fit))
 }
 }
 \seealso{
-\code{\link[=mcmc_draws]{mcmc_draws()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+\code{\link[=mcmc_draws]{mcmc_draws()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

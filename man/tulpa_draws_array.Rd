@@ -21,5 +21,5 @@ draws array, a \verb{$chain_id} row map, or an \verb{$n_chains} count over chain
 rows; a single pooled chain yields a one-chain array.
 }
 \seealso{
-\code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+\code{\link[=diagnostics]{diagnostics()}}
 }

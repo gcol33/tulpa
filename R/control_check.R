@@ -63,9 +63,13 @@
              "diagnose_k", "k_samples", "checkpoint"),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
-                      "k_samples", "checkpoint"),
+                      "k_samples", "checkpoint", "outer_maxit"),
     re_cov_gibbs = c("n_iter", "warmup", "thin", "seed", "max_iter", "tol",
                      "n_threads"),
+    # EB stops at the maximizer, so beyond the inner-solve knobs and the outer
+    # iteration budget it takes nothing: no integration design, no node count,
+    # no draw synthesis.
+    eb = c("max_iter", "tol", "n_threads", "outer_maxit"),
     ep = c("max_sweeps", "tol", "damping", "n_quad", "n_draws", "seed"),
     gaussian = c("iter", "warmup", "step_size", "n_leapfrog", "seed"),
     gibbs = c("n_iter", "warmup", "thin", "seed", "verbose", "n_threads"),

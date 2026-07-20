@@ -33,5 +33,5 @@ converged.
 
 }
 \seealso{
-\code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}, \code{\link[=check_diagnostics]{check_diagnostics()}}
+\code{\link[=diagnostics]{diagnostics()}}, \code{\link[=check_diagnostics]{check_diagnostics()}}
 }

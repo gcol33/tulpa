@@ -46,5 +46,5 @@ plot_rhat(fit)
 
 }
 \seealso{
-\code{\link[=plot_ess]{plot_ess()}}, \code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+\code{\link[=plot_ess]{plot_ess()}}, \code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

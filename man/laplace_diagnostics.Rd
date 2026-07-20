@@ -27,10 +27,16 @@ and a trailing \code{summary} attribute (a one-row data frame of the headline
 numbers) for printing.
 }
 \description{
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
+
+Use \code{\link[=diagnostics]{diagnostics()}}, which returns this table for any fit whose draws are an
+i.i.d. approximation sample. The sections below document that table; they
+remain the reference for its columns and attributes.
+
 Per-parameter reliability diagnostics for a fit whose posterior draws are
 i.i.d. samples from a deterministic approximation (the nested-Laplace
 grid-mixture posterior \verb{sum_k w_k N(mode_k, V_k)}), where the between-chain
-Gelman-Rubin Rhat that \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}} reports does not apply. This is
+Gelman-Rubin Rhat that \code{\link[=diagnostics]{diagnostics()}} reports for a chain fit does not apply. This is
 the accessor that plays Rhat's role for the deterministic engine: it answers
 "did the approximation work", not "did the chains mix".
 
@@ -75,9 +81,11 @@ it. The grid quadrature reliability is the complementary stored-fit number.
 set.seed(1)
 n <- 200L; x <- rnorm(n)
 y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
+# `mode = "laplace"` returns a mode + covariance and carries no draws; a
+# sampled deterministic backend is what this table describes.
 fit <- tulpa(y ~ x, data.frame(y = y, x = x), family = "binomial",
-             mode = "laplace")
-laplace_diagnostics(fit)
+             mode = "smc")
+diagnostics(fit)
 }
 \references{
 Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed importance
@@ -91,6 +99,6 @@ folding, and localization: an improved Rhat for assessing convergence of
 MCMC. \emph{Bayesian Analysis} 16(2):667-718.
 }
 \seealso{
-\code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}} (the chain counterpart, which dispatches here
-for i.i.d. fits), \code{\link[=tulpa_psis]{tulpa_psis()}}.
+\code{\link[=diagnostics]{diagnostics()}} (the front door, which returns this table for
+i.i.d. fits), \code{\link[=tulpa_psis]{tulpa_psis()}}.
 }

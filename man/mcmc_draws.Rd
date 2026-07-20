@@ -16,10 +16,10 @@ The chain draws matrix/array, or \code{NULL} for a non-chain fit.
 Returns a fit's posterior draws only when they form a genuine MCMC chain
 (\verb{$draws_kind == "chain"}, or an untagged legacy fit); for an i.i.d. /
 approximation fit (nested Laplace, VI, SMC, ...) it returns \code{NULL}, because
-chain diagnostics do not apply. This is the accessor \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+chain diagnostics do not apply. This is the accessor \code{\link[=diagnostics]{diagnostics()}}
 gates on. For the provenance-agnostic posterior sample used by summaries,
 see \code{\link[=posterior_sample]{posterior_sample()}}.
 }
 \seealso{
-\code{\link[=posterior_sample]{posterior_sample()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+\code{\link[=posterior_sample]{posterior_sample()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

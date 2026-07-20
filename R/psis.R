@@ -230,7 +230,7 @@
 #'   (the normalized smoothed log weights), and `tail_len` (the tail size used).
 #' @references Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
 #'   importance sampling. \emph{JMLR} 25(72):1-58.
-#' @seealso [mcmc_diagnostics()] for the MCMC-chain counterpart.
+#' @seealso [diagnostics()] for the fit-level diagnostic front door.
 #' @examples
 #' set.seed(1)
 #' # Well-behaved importance ratios: k-hat is small.

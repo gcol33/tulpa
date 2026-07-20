@@ -48,5 +48,5 @@ Pairs plots help identify:
 
 }
 \seealso{
-\code{\link[=plot_divergences]{plot_divergences()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+\code{\link[=plot_divergences]{plot_divergences()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

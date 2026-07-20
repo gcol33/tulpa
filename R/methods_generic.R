@@ -13,7 +13,32 @@
 # (see .tulpa_param_layout) so both shapes report meaningful names and a
 # fixed/random split. The accessors below read that layout; model packages that
 # define their own *.<class> methods are unaffected.
+#
+# Which shape a fit is in, is decided by testing whether a field is present --
+# `$draws` vs `$mode` vs `$modes` vs `$cov`. That makes `$`'s default PARTIAL
+# matching on lists an active hazard rather than a stylistic one: a fit is a
+# list, so an absent field silently resolves to any longer field it prefixes,
+# and the shape test then reads the wrong object. Real collisions on live fits:
+#
+#   $draws -> draws_kind    (every Laplace/EB fit: the string "iid")
+#   $mode  -> model_matrix  (every sampler fit: the design matrix)
+#   $sigma -> sigma_re      (AGQ fits: the RE sd printed as the dispersion)
+#   $theta -> theta_hat     (EB fits)
+#
+# `$.tulpa_fit` below makes `$` exact for every fit and subclass, so the whole
+# class of bug is unreachable rather than fixed one call site at a time -- and
+# it covers model packages that set class = c("<model>_fit", "tulpa_fit") too.
 # ============================================================================
+
+# Exact-matching `$` for fit objects. `.subset2()` is the internal extractor and
+# does no dispatch, so this cannot recurse; `match()` reproduces `$`'s contract
+# of returning NULL for an absent field (where `[[` on a name would be free to
+# error). Assignment is unaffected: `$<-` already matches exactly.
+#' @export
+`$.tulpa_fit` <- function(x, name) {
+  i <- match(name, names(x))
+  if (is.na(i)) NULL else .subset2(x, i)
+}
 
 # Canonical parameter layout from a model-data bundle. Returns the fixed-effect
 # count and names, the full [fixed, random] name vector (random part in the

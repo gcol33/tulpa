@@ -9,39 +9,57 @@
 
 **A Bayesian hierarchical modelling engine that splits the posterior: a deterministic approximation (Laplace, EP, VI, Pathfinder) handles the well-behaved Gaussian-latent blocks, and exact MCMC corrects only the directions where that approximation is biased.** Autodiff, the samplers, and the spatial / temporal / covariance machinery are templated C++.
 
-Two established tools sit at opposite ends. INLA fits these models with fast deterministic approximations and applies no exact correction. Stan runs exact MCMC and pays the full sampling price on every block, including the many a deterministic approximation handles exactly. `tulpa` nests the approximation over the Gaussian-latent structure, then debiases only the directions where it is wrong — so it keeps nested-approximation speed while recovering exact-MCMC calibration where it counts.
+Two established tools sit at opposite ends. INLA fits these models with fast deterministic approximations and applies no exact correction. Stan runs exact MCMC and pays the full sampling price on every block, including the many a deterministic approximation handles exactly. `tulpa` nests the approximation over the Gaussian-latent structure, then debiases only the directions where it is wrong. The deterministic body carries most of the posterior; the MCMC correction runs over the residual directions alone, a low-dimensional remainder — so the cost stays near a deterministic approximation instead of scaling like full MCMC over the whole model, while the calibration matches exact MCMC where it counts.
 
 ```r
 library(tulpa)
 
-# A Poisson GLMM: counts with a site-level random intercept
+# Poisson counts with a correlated site-level intercept and slope
 set.seed(1)
-site <- rep(seq_len(40), each = 5)
-x    <- rnorm(200)
-y    <- rpois(200, exp(0.2 + 0.5 * x + rnorm(40, 0, 0.7)[site]))
+site <- rep(seq_len(40), each = 8)
+x    <- rnorm(320)
+b0   <- rnorm(40, 0, 0.7)                          # site intercepts (truth SD 0.7)
+b1   <- rnorm(40, 0, 0.4)                          # site slopes     (truth SD 0.4)
+y    <- rpois(320, exp(0.2 + (0.5 + b1[site]) * x + b0[site]))
 d    <- data.frame(y, x, site = factor(site))
 
-fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson")
-fit$selection_reason   # which method ran, and why it is trusted here
+fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson")
+
+fit$selection_reason
+#> "random-slope term(s) present; RE covariance(s) integrated via re_cov_gibbs (1 block(s))"
+
 summary(fit)
+#>             estimate  std.error    2.5%   97.5%
+#> (Intercept)    0.214      0.103  -0.003   0.401
+#> x              0.488      0.087   0.322   0.658
+
+fit$posterior          # the random-effect covariance, marginalized to sigma / rho
+#>   parameter    mean     sd   median   ci_lo   ci_hi
+#>     sigma_1   0.688  0.102    0.678   0.516   0.918   # intercept SD (truth 0.7)
+#>     sigma_2   0.469  0.074    0.461   0.345   0.636   # slope SD     (truth 0.4)
+#>      rho_12  -0.145  0.206   -0.156  -0.523   0.254   # correlation  (truth 0)
 ```
 
-`mode = "auto"` chooses a reliable method and records its reasoning on the fit — the dial neither INLA nor Stan hands you on a single object. The result is a `tulpa_fit` with the usual accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`mcmc_diagnostics`, `check_model`, `pp_check`).
+`mode = "auto"` picks a backend and records the reason on the fit — the dial neither INLA nor Stan hands you on a single object. The random-effect covariance is not a plug-in point estimate: `sigma_1`, `sigma_2`, and `rho_12` are read off the joint posterior with full credible intervals. The result is a `tulpa_fit` with the usual accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`mcmc_diagnostics`, `check_model`, `pp_check`).
 
 ## One front door, every backend
 
-`tulpa()` is the only verb you need. The same call fits a plain GLMM, a spatial field, a temporal effect, or a free random-effect covariance; `mode` forces a specific backend when you want the exact check.
+`tulpa()` is the only verb you need. The same call fits a plain GLMM, a spatial field, a temporal effect, or a free random-effect covariance; `mode` and `control` pick how hard the correctness check runs, without changing the front door.
 
 ```r
-# Let auto pick, and read its reasoning
-fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson")
+# Default: auto routes and records why on the fit
+fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson")
 fit$selection_reason
+#> "random-slope term(s) present; RE covariance(s) integrated via re_cov_gibbs (1 block(s))"
 
-# Force exact MCMC where you want to verify the approximation
-fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson", mode = "mala")
+# Same model, cheaper deterministic covariance integration (nested Laplace + CCD)
+fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson",
+             control = list(re_cov = "nested"))
+fit$selection_reason
+#> "random-slope term(s) present; RE covariance(s) integrated via re_cov_nested (1 block(s))"
 
-# Cheap deterministic fit, conditioning on a fixed hyperparameter
-fit <- tulpa(y ~ x + (1 | site), data = d, family = "poisson", mode = "laplace")
+# Drop the correlation: an uncorrelated (diagonal) covariance block
+fit <- tulpa(y ~ x + (1 + x || site), data = d, family = "poisson")
 ```
 
 ## Tiers encode correctness
@@ -92,11 +110,13 @@ This makes the engine useful for spatial and spatio-temporal regression (disease
 
 ## Random-effect covariances as inferred quantities
 
-For random-slope terms the engine infers the full posterior of the covariance `Sigma` itself — the approximation + debias philosophy applied to a free `Sigma`. Three routes, all summarising derived quantities (`sigma_i`, `rho_ij`) by marginalising the joint posterior rather than plugging in point estimates:
+For random-slope terms the engine infers the full posterior of the covariance `Sigma` itself — the approximation + debias philosophy applied to a free `Sigma`. The `sigma_i` / `rho_ij` table in the flagship above is not a point estimate: each derived quantity is summarised by marginalising the joint posterior rather than plugging in the mode of its components. Three routes share that summary, selectable from the front door or callable directly:
 
-- `tulpa_re_cov_nested()` — nested-Laplace integration over `Sigma` in log-Cholesky coordinates.
-- `tulpa_re_cov_gibbs()` — exact debias via Metropolis-within-Gibbs with conjugate inverse-Wishart draws.
+- `tulpa_re_cov_gibbs()` — exact debias via Metropolis-within-Gibbs with conjugate inverse-Wishart draws (the auto default for slopes).
+- `tulpa_re_cov_nested()` — nested-Laplace integration over `Sigma` in log-Cholesky coordinates (`control = list(re_cov = "nested")`).
 - `tulpa_re_aghq()` — deterministic debias via adaptive Gauss–Hermite quadrature.
+
+Correlated `(1 + x | g)`, uncorrelated `(1 + x || g)`, multiple terms, and any accompanying `(1 | g)` are each handled as covariance blocks; nothing is silently conditioned at a fixed variance.
 
 ## Diagnostics
 
@@ -139,15 +159,38 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.0.89")
+pak::pak("gcol33/tulpa@v0.0.92")
 ```
 
-`pak` resolves the dependency tree, including `tulpaMesh` (declared in `Remotes:`). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
+`pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used for SPDE mesh construction). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
 
 ## Documentation
 
-- `vignette("tgmrf", package = "tulpa")` — user-defined GMRF latent blocks.
-- Function reference via `?tulpa`, `?tulpa_nested_laplace`, `?tulpa_re_cov_nested`, `?mcmc_diagnostics`.
+Getting started:
+
+- [Quickstart](https://gcol33.github.io/tulpa/articles/quickstart.html)
+- [Data formatting](https://gcol33.github.io/tulpa/articles/data-formatting.html)
+
+Inference:
+
+- [Inference modes](https://gcol33.github.io/tulpa/articles/inference-modes.html)
+- [Priors](https://gcol33.github.io/tulpa/articles/priors.html)
+- [Random slopes and free covariances](https://gcol33.github.io/tulpa/articles/random-slopes.html)
+- [EM + Laplace](https://gcol33.github.io/tulpa/articles/em-laplace.html)
+- [Model comparison](https://gcol33.github.io/tulpa/articles/model-comparison.html)
+- [Reliability and Pareto-k](https://gcol33.github.io/tulpa/articles/reliability-pareto-k.html)
+
+Latent structure:
+
+- [Spatial models](https://gcol33.github.io/tulpa/articles/spatial-models.html)
+- [Temporal models](https://gcol33.github.io/tulpa/articles/temporal-models.html)
+
+Extending the engine:
+
+- [Custom GMRF latent blocks](https://gcol33.github.io/tulpa/articles/tgmrf.html)
+- [Checkpoint and resume](https://gcol33.github.io/tulpa/articles/checkpoint.html)
+
+The [function reference](https://gcol33.github.io/tulpa/reference/) lists every fitter, accessor, and diagnostic; `?tulpa` is the front door.
 
 ## Status
 
@@ -174,7 +217,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.0.89},
+  note   = {R package version 0.0.92},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```

@@ -35,5 +35,5 @@ bulk-ESS, and divergence thresholds are all met. A terse companion to
 
 }
 \seealso{
-\code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}, \code{\link[=n_divergent]{n_divergent()}}
+\code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=diagnostics]{diagnostics()}}, \code{\link[=n_divergent]{n_divergent()}}
 }

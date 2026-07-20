@@ -373,7 +373,7 @@ latent_factors <- function(fit, summary = TRUE, probs = c(0.025, 0.5, 0.975)) {
   n_obs <- latent_info$n_obs
 
   # Extract factor draws from samples
-  draws <- fit$draws
+  draws <- .fit_draws(fit)
 
   # Find factor columns
   factor_cols <- grep("^factor\\[", colnames(draws))

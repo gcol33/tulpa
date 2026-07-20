@@ -38,10 +38,16 @@ random effects, and \code{offset(...)} terms are recognised.}
 
 \item{mode}{Inference mode or backend. \code{"auto"} (default) picks the most
 reliable Tier 1/Tier 2 method expected to finish; a tier (\code{"exact"},
-\code{"structured"}) or a backend name (\code{"laplace"}, \code{"mala"}, ...) forces it.}
+\code{"structured"}) or a backend name (\code{"laplace"}, \code{"mala"}, ...) forces it.
+\code{"eb"} estimates the random-effect covariance(s) by empirical Bayes instead
+of conditioning on \code{sigma_re} (see \code{\link[=tulpa_eb]{tulpa_eb()}}); it is opt-in by name,
+because its intervals are conditional on that estimate rather than marginal
+over it.}
 
 \item{sigma_re}{Random-effect SDs to condition on: length 1 (recycled) or one
-per RE term. Defaults to 1 per term with a message.}
+per RE term. Defaults to 1 per term with a message. Ignored by the backends
+that determine the covariance themselves (\code{"eb"}, \code{re_cov_nested},
+\code{re_cov_gibbs}, \code{gibbs}, \code{agq}), which warn if it is supplied anyway.}
 
 \item{n_trials}{Binomial denominators (length \code{nrow(data)}), or \code{NULL}.}
 

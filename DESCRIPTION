@@ -1,6 +1,6 @@
 Package: tulpa
 Title: Template Unified Latent Process Architecture for Bayesian Hierarchical Models
-Version: 0.0.93
+Version: 0.0.95
 Authors@R:
     person("Gilles", "Colling", , "gilles.colling051@gmail.com", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0003-3070-6066"))
@@ -33,6 +33,7 @@ Imports:
     Matrix,
     tulpaMesh (>= 0.1.3),
     generics,
+    lifecycle,
     stats,
     tools,
     utils,
@@ -49,6 +50,8 @@ Suggests:
     rmarkdown,
     posterior (>= 1.5.0),
     loo (>= 2.7.0),
+    lme4,
+    nlme,
     MASS,
     betareg,
     tweedie,

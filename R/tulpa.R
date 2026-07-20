@@ -608,7 +608,7 @@
   }
 
   if (input == "design") {
-    if (backend %in% c("re_cov_nested", "re_cov_gibbs")) {
+    if (backend %in% c("re_cov_nested", "re_cov_gibbs", "eb")) {
       # RE-covariance integrator / sampler: every RE term becomes a covariance
       # block. For each, the RE design Z is the intercept column (if present)
       # plus the slope columns, in coefficient order (sigma_1 = intercept SD,
@@ -631,6 +631,30 @@
         y = bundle$y, n_trials = n_trials %||% rep(1L, bundle$n_obs),
         X = bundle$X, re_terms = re_terms, family = family, phi = phi
       )
+      # An offset changes the model, so it is threaded where the inner solve
+      # carries it and refused where it does not -- never dropped. The
+      # Metropolis-within-Gibbs sampler has no offset term at all.
+      has_offset <- !is.null(bundle$offset) && any(bundle$offset != 0)
+      if (backend == "re_cov_gibbs") {
+        if (has_offset) {
+          stop("`offset()` is not supported by the re_cov_gibbs backend. Use ",
+               "mode = 're_cov_nested' or mode = 'eb', which thread the offset ",
+               "through their Laplace inner solve.", call. = FALSE)
+        }
+      } else {
+        common$offset <- bundle$offset
+      }
+      if (backend == "eb") {
+        # Same blocks, same hyperprior, same inner solve as re_cov_nested --
+        # tulpa_eb() stops at the maximizer instead of integrating around it.
+        return(c(common, list(
+          beta_prior  = beta_prior,
+          prior_sigma = rp$prior_sigma %||% c(3, 0.05),
+          eta         = rp$eta %||% 2,
+          n_quad      = as.integer(control$n_quad %||% 1L),
+          control     = .control_subset(control, .CONTROL_KEYS$eb)
+        )))
+      }
       if (backend == "re_cov_nested") {
         # `control$re_cov = "aghq"` is the nested integrator with an AGHQ inner
         # marginal: n_quad defaults to 9 there, to the plain joint Laplace (1)
@@ -1073,8 +1097,14 @@
 #' @param mode Inference mode or backend. `"auto"` (default) picks the most
 #'   reliable Tier 1/Tier 2 method expected to finish; a tier (`"exact"`,
 #'   `"structured"`) or a backend name (`"laplace"`, `"mala"`, ...) forces it.
+#'   `"eb"` estimates the random-effect covariance(s) by empirical Bayes instead
+#'   of conditioning on `sigma_re` (see [tulpa_eb()]); it is opt-in by name,
+#'   because its intervals are conditional on that estimate rather than marginal
+#'   over it.
 #' @param sigma_re Random-effect SDs to condition on: length 1 (recycled) or one
-#'   per RE term. Defaults to 1 per term with a message.
+#'   per RE term. Defaults to 1 per term with a message. Ignored by the backends
+#'   that determine the covariance themselves (`"eb"`, `re_cov_nested`,
+#'   `re_cov_gibbs`, `gibbs`, `agq`), which warn if it is supplied anyway.
 #' @param n_trials Binomial denominators (length `nrow(data)`), or `NULL`.
 #' @param weights Optional observation weights (non-negative numeric vector,
 #'   length `nrow(data)`): each observation's log-likelihood contribution is
@@ -1617,15 +1647,19 @@ tulpa <- function(formula, data,
       "random-slope term(s) present; RE covariance(s) integrated via %s (%d block(s))",
       backend, length(re_terms)))
   }
-  # Warn once whenever the fit integrates the RE covariance (whether reached via
-  # the redirect above or selected directly by name, e.g. mode = "re_cov_gibbs")
-  # and a scalar `sigma_re` was also supplied -- it is silently unused there.
-  if (has_slope && !is.null(sigma_re) &&
-      sel$backend %in% c("re_cov_nested", "re_cov_gibbs")) {
-    warning("`sigma_re` is ignored for random-slope model(s): the RE ",
-            "covariance is integrated, not conditioned on a scalar SD. Drop ",
-            "`sigma_re`, or use a random-intercept-only model to condition on ",
-            "it.", call. = FALSE)
+  # Warn once whenever the fit determines the RE covariance itself -- by
+  # integrating it (re_cov_nested / re_cov_gibbs, reached via the redirect above
+  # or by name) or by maximizing over it (eb) -- and a scalar `sigma_re` was
+  # also supplied, since it is silently unused there. EB warns on every model,
+  # not just random-slope ones: it estimates a scalar (1 | g) SD too.
+  if (!is.null(sigma_re) &&
+      (sel$backend == "eb" ||
+       (has_slope && sel$backend %in% c("re_cov_nested", "re_cov_gibbs")))) {
+    verb <- if (sel$backend == "eb") "estimated" else "integrated"
+    warning(sprintf(paste0(
+      "`sigma_re` is ignored for mode = '%s': the RE covariance is %s, not ",
+      "conditioned on a scalar SD. Drop `sigma_re`, or use mode = 'laplace' to ",
+      "condition on it."), sel$backend, verb), call. = FALSE)
   }
 
   # SPDE carries its own nested-Laplace integration engine: fit_spde() rebuilds
@@ -1710,11 +1744,13 @@ tulpa <- function(formula, data,
   assert_backend_reachable(sel$backend)
 
   # Conditional backends (everything except the sigma-sampling Gibbs, the
-  # Sigma-integrating re_cov backends, the marginal-likelihood AGQ fit that
-  # estimates the RE sd, and the ModelData samplers that draw the RE sd jointly)
-  # need one RE sd per term to condition on; resolve/recycle it after the backend
-  # is known so the others do not emit a misleading "conditioning" message.
-  if (K > 0L && !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "agq") &&
+  # Sigma-integrating re_cov backends, the Sigma-maximizing EB fit, the
+  # marginal-likelihood AGQ fit that estimates the RE sd, and the ModelData
+  # samplers that draw the RE sd jointly) need one RE sd per term to condition
+  # on; resolve/recycle it after the backend is known so the others do not emit
+  # a misleading "conditioning" message.
+  if (K > 0L &&
+      !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "eb", "agq") &&
       BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)

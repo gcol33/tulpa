@@ -34,5 +34,5 @@ convergence metrics, divergence information, and actionable recommendations.
 
 }
 \seealso{
-\code{\link[=check_diagnostics]{check_diagnostics()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}, \code{\link[=plot_diagnostics]{plot_diagnostics()}}
+\code{\link[=check_diagnostics]{check_diagnostics()}}, \code{\link[=diagnostics]{diagnostics()}}, \code{\link[=plot_diagnostics]{plot_diagnostics()}}
 }

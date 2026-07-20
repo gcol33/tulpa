@@ -20,7 +20,7 @@ hold, which fixes whether MCMC chain diagnostics apply (independent of
 also emits \code{"iid"}, while a nested-Laplace Tier-2 fit emits \code{"iid"} too):
 \itemize{
 \item \code{"chain"} : autocorrelated MCMC output -- Rhat and autocorrelation-ESS
-are meaningful (\code{mcmc_diagnostics()} computes them).
+are meaningful (\code{diagnostics()} computes them).
 \item \code{"iid"}   : exchangeable draws from a deterministic approximation, or
 resampled particles -- split-Rhat is vacuous and ESS = n by
 construction, so they say nothing about approximation bias.

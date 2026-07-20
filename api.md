@@ -44,6 +44,7 @@ The typical hot path for Gaussian-latent workloads.
 | `tulpa_nested_laplace()` | Outer grid over the hyperparameters of one latent prior block (spatial/temporal/GMRF), inner Laplace per cell, integrated marginals. `likelihood=` accepts a model-supplied `NestedLikelihood`. |
 | `tulpa_nested_laplace_joint()` | Multi-arm joint nested-Laplace (shared field with `copy=` scaling, `(sigma, alpha)` + `phi` grids). |
 | `tulpa_re_cov_nested()` | **Nested-Laplace integration over a free random-effect covariance `Sigma`** (e.g. `(1 + x \| g)`). Log-Cholesky parameterization (general rank), grid centred+rotated at the marginal-likelihood mode, marginalized weighted quantiles of `sigma_i` / `rho_ij` / `Sigma_ij`. Corrects the plug-in-MAP summary bias. |
+| `tulpa_eb()` | **Empirical Bayes over a free random-effect covariance `Sigma`**: the mode of the same objective `tulpa_re_cov_nested()` integrates, with the fixed effects reported conditional on it. Cheaper, and the intervals are conditional on `Sigma_hat` rather than marginal over `Sigma`. |
 | `tulpa_em_laplace()`, `tulpa_em_mc()` | Generic EM drivers (deterministic / Monte-Carlo E-step) with `correction = "mi"/"gibbs"` post-EM refits. |
 | `imh_laplace()` | IMH-Laplace: Laplace body + independence-MH bias correction. |
 | `agq_fit()` | Adaptive Gauss-Hermite quadrature fit. |
@@ -94,6 +95,15 @@ GMRF: `tgmrf()`, `tgmrf_cpp()`.
 Model packages inherit by setting `class = c("model_fit", "tulpa_fit")`.
 S3 methods: `coef`, `confint`, `vcov`, `logLik`, `summary`, `plot`, `print`,
 `tidy`, `glance`, `ranef`, `predict`, `fitted`, `residuals`, `simulate`, `nobs`.
+lme4 / posterior interop: `fixef()` (synonym for `coef()`) and `as_draws()` /
+`as_draws_array()` / `as_draws_matrix()` / `as_draws_df()` / `as_draws_rvars()`.
+These are tulpa's own generics, and `.onLoad()` also registers the `tulpa_fit`
+methods on `lme4::fixef`, `nlme::fixef`, `lme4::ranef`, `nlme::ranef` and the
+`posterior::as_draws*` family when those packages are present -- so a `tulpa_fit`
+drops into an lme4- or posterior-shaped workflow without any of them becoming a
+dependency. A Gaussian-approximation fit (`mode = "laplace"`, `mode = "eb"`)
+carries no draws; `as_draws(fit, n_draws = )` opts in to sampling the
+approximation instead.
 Information criteria / cross-validation: `tulpa_criteria()` (WAIC / DIC / CPO /
 LPML / PSIS-LOO), `tulpa_kfold()`, `tulpa_reloo()`, `tulpa_psis()`, `bayes_R2()`,
 `tulpa_powerscale_sensitivity()`, `bridge_sampling()`.

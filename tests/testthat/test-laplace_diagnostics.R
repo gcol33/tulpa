@@ -195,17 +195,17 @@ test_that("laplace_diagnostics returns one finite row per parameter on a small j
 })
 
 # --------------------------------------------------------------------------- #
-# (4) mcmc_diagnostics() dispatch: chain behaviour preserved, i.i.d. routed.   #
+# (4) diagnostics() routing: chain behaviour preserved, i.i.d. routed here.    #
 # --------------------------------------------------------------------------- #
 
-test_that("mcmc_diagnostics dispatches an i.i.d. fit to the reliability table", {
+test_that("diagnostics routes an i.i.d. fit to the reliability table", {
   set.seed(5)
   draws <- matrix(rnorm(1000 * 3), 1000, 3,
                   dimnames = list(NULL, c("a", "b", "c")))
   w   <- c(0.5, 0.3, 0.2)
   fit <- .rel_iid_shell(draws, weights = w, pareto_k = 0.42, is_ess = 850)
 
-  md <- mcmc_diagnostics(fit)
+  md <- diagnostics(fit)
   expect_s3_class(md, "laplace_diagnostics")
   expect_equal(nrow(md), 3L)
   expect_equal(attr(md, "pareto_k"), 0.42)
@@ -214,25 +214,25 @@ test_that("mcmc_diagnostics dispatches an i.i.d. fit to the reliability table", 
   expect_true(all(is.finite(md$rhat)))
 })
 
-test_that("mcmc_diagnostics keeps chain behaviour for an MCMC fit", {
+test_that("diagnostics keeps chain behaviour for an MCMC fit", {
   set.seed(6)
   draws <- matrix(rnorm(400 * 2), 400, 2, dimnames = list(NULL, c("a", "b")))
   fit <- structure(list(draws = draws, draws_kind = "chain"),
                    class = "tulpa_fit")
-  md <- mcmc_diagnostics(fit)
+  md <- diagnostics(fit)
   expect_false(inherits(md, "laplace_diagnostics"))
   expect_true("rhat" %in% names(md))
   expect_equal(nrow(md), 2L)
 })
 
-test_that("laplace_diagnostics honours pars and reads a cached k-hat", {
+test_that("diagnostics honours pars and reads a cached k-hat on an i.i.d. fit", {
   set.seed(8)
   draws <- matrix(rnorm(600 * 4), 600, 4,
                   dimnames = list(NULL, c("a", "b", "c", "d")))
   fit <- .rel_iid_shell(draws, weights = rep(0.25, 4),
                         pareto_k = 0.8, is_ess = 120)
 
-  rel <- laplace_diagnostics(fit, pars = c("a", "c"))
+  rel <- diagnostics(fit, pars = c("a", "c"))
   expect_equal(rel$parameter, c("a", "c"))
   expect_equal(attr(rel, "pareto_k"), 0.8)
   expect_equal(attr(rel, "pareto_k_band"), "unreliable")

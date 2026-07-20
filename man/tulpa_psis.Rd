@@ -46,5 +46,5 @@ Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
 importance sampling. \emph{JMLR} 25(72):1-58.
 }
 \seealso{
-\code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}} for the MCMC-chain counterpart.
+\code{\link[=diagnostics]{diagnostics()}} for the fit-level diagnostic front door.
 }

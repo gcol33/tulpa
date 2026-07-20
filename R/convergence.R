@@ -11,10 +11,10 @@
 # The scalar estimators here reproduce posterior::rhat / ess_* / mcse_* to
 # machine precision on a fixed draws array (see tests/testthat/test-convergence.R).
 #
-# `mcmc_diagnostics()` is the single source of truth for Rhat / ESS / MCSE in
-# the tulpa ecosystem: the plotting layer (plot_rhat, plot_ess,
-# diagnostic_summary, check_diagnostics) and downstream model packages
-# (tulpaObs, tulpaRatio) all call it. These statistics are location/scale-
+# These estimators are the single source of truth for Rhat / ESS / MCSE in the
+# tulpa ecosystem: the plotting layer (plot_rhat, plot_ess, diagnostic_summary,
+# check_diagnostics) and downstream model packages (tulpaObs, tulpaRatio) all
+# reach them through `diagnostics()` (diagnostics.R). They are location/scale-
 # invariant per parameter, so they may be computed on engine-scale draws.
 # =============================================================================
 
@@ -289,7 +289,7 @@
 #'
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
 #' @return The posterior draws matrix/array, or `NULL` if the fit carries none.
-#' @seealso [mcmc_draws()], [mcmc_diagnostics()]
+#' @seealso [mcmc_draws()], [diagnostics()]
 #' @examples
 #' \donttest{
 #' set.seed(1)
@@ -299,8 +299,19 @@
 #' dim(posterior_sample(fit))
 #' }
 #' @export
-posterior_sample <- function(fit) {
-  fit$draws %||% fit$samples
+posterior_sample <- function(fit) .fit_draws(fit)
+
+# The one place a fit's posterior draws are read off the object.
+#
+# `[[` is deliberate, and load-bearing: `$` partial-matches on lists, so on a
+# fit with no draws `fit$draws` silently resolves to `draws_kind` -- the string
+# "iid" -- and every caller then treats a tag as a draws matrix. Gaussian-
+# approximation fits (laplace, eb) carry `draws_kind` and no `draws`, which is
+# exactly the case the draws accessors exist to answer NULL for.
+#' @keywords internal
+.fit_draws <- function(fit) {
+  if (!is.list(fit)) return(NULL)
+  fit[["draws"]] %||% fit[["samples"]]
 }
 
 #' MCMC chain draws from a fit
@@ -308,17 +319,17 @@ posterior_sample <- function(fit) {
 #' Returns a fit's posterior draws only when they form a genuine MCMC chain
 #' (`$draws_kind == "chain"`, or an untagged legacy fit); for an i.i.d. /
 #' approximation fit (nested Laplace, VI, SMC, ...) it returns `NULL`, because
-#' chain diagnostics do not apply. This is the accessor [mcmc_diagnostics()]
+#' chain diagnostics do not apply. This is the accessor [diagnostics()]
 #' gates on. For the provenance-agnostic posterior sample used by summaries,
 #' see [posterior_sample()].
 #'
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
 #' @return The chain draws matrix/array, or `NULL` for a non-chain fit.
-#' @seealso [posterior_sample()], [mcmc_diagnostics()]
+#' @seealso [posterior_sample()], [diagnostics()]
 #' @export
 mcmc_draws <- function(fit) {
   if (!.tulpa_is_chain(fit)) return(NULL)
-  fit$draws %||% fit$samples
+  .fit_draws(fit)
 }
 
 # Pooled [total_draws x n_par] draws matrix with parameter colnames, from either
@@ -327,7 +338,7 @@ mcmc_draws <- function(fit) {
 # a bare 3-D array breaks (NULL colnames, wrong slice); this normalizes both.
 #' @keywords internal
 .tulpa_pooled_draws <- function(fit) {
-  draws <- fit$draws %||% fit$samples
+  draws <- .fit_draws(fit)
   if (is.null(draws)) return(NULL)
   if (length(dim(draws)) == 3L) {
     d  <- dim(draws)
@@ -348,8 +359,7 @@ mcmc_draws <- function(fit) {
 # `chain_id` row map or an `n_chains` count (contiguous chain-major blocks),
 # and the single-chain fallback.
 .tulpa_chain_list <- function(fit) {
-  draws <- fit$draws
-  if (is.null(draws)) draws <- fit$samples
+  draws <- .fit_draws(fit)
   if (is.null(draws)) return(NULL)
 
   if (length(dim(draws)) == 3L) {
@@ -389,7 +399,7 @@ mcmc_draws <- function(fit) {
 #' @return A numeric array with dimensions `[n_iter, n_chain, n_param]` and the
 #'   parameter names on the third dimension, or `NULL` if the fit carries no
 #'   draws. Chains of unequal length are truncated to the shortest.
-#' @seealso [mcmc_diagnostics()]
+#' @seealso [diagnostics()]
 #' @export
 tulpa_draws_array <- function(fit) {
   chain_list <- .tulpa_chain_list(fit)
@@ -411,69 +421,12 @@ tulpa_draws_array <- function(fit) {
 # bayesplot-shaped accessor: list(draws = <3D array>).
 get_draws_array <- function(fit) list(draws = tulpa_draws_array(fit))
 
-#' MCMC convergence diagnostics
-#'
-#' Per-parameter convergence and accuracy diagnostics computed natively from a
-#' fitted model's posterior draws: improved Rhat (the maximum of rank-normalized
-#' split-Rhat and folded split-Rhat), bulk / tail / mean / sd / quantile
-#' effective sample size, and Monte Carlo standard errors. Split-Rhat is defined
-#' for a single chain (the chain is split in two), so a result is produced for
-#' any number of chains. The estimators follow Vehtari et al. (2021) and
-#' reproduce the corresponding `posterior` functions.
-#'
-#' For a fit whose draws are not an MCMC chain -- an i.i.d. / approximation fit
-#' such as nested Laplace, VI, or SMC, where the between-chain Rhat is vacuous
-#' and ESS equals the draw count by construction -- this dispatches to
-#' [laplace_diagnostics()], returning the PSIS approximation-reliability table
-#' (the "did the approximation work" diagnostic) rather than chain mixing.
-#' Provenance is read from `$draws_kind` (or the backend's registry `emits`
-#' property). Pass a `point` fit (a mode + covariance, no sample) and the
-#' function returns `NULL` with a message.
-#'
-#' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`. Multiple
-#'   chains are recognised from a 3D `[iter, chain, param]` draws array, a
-#'   `$chain_id` row map, or an `$n_chains` count over chain-major rows.
-#' @param pars Optional character vector of parameter names to restrict to.
-#' @param measures Character vector selecting which diagnostics to compute, in
-#'   output-column order. Available: `"rhat"`, `"rhat_bulk"`, `"rhat_fold"`,
-#'   `"ess_bulk"`, `"ess_tail"`, `"ess_mean"`, `"ess_sd"`, `"mcse_mean"`,
-#'   `"mcse_sd"`, `"ess_quantile"`, `"mcse_quantile"`. Defaults to the core set
-#'   `c("rhat", "ess_bulk", "ess_tail")`.
-#' @param probs Numeric probabilities for the quantile-based measures
-#'   (`"ess_quantile"`, `"mcse_quantile"`); each expands to one column named
-#'   e.g. `ess_q5`, `ess_q95`. Default `c(0.05, 0.95)`.
-#' @return A data frame with a `parameter` column followed by one column per
-#'   requested measure. Entries are `NA` for parameters that are constant or
-#'   have too few draws.
-#' @references Vehtari, Gelman, Simpson, Carpenter & Burkner (2021).
-#'   Rank-normalization, folding, and localization: an improved Rhat for
-#'   assessing convergence of MCMC. \emph{Bayesian Analysis} 16(2):667-718.
-#' @seealso [tulpa_draws_array()], [plot_rhat()], [plot_ess()],
-#'   [diagnostic_summary()], [check_diagnostics()]
-#' @examples
-#' \donttest{
-#' set.seed(1)
-#' df <- data.frame(x = rnorm(60))
-#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
-#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
-#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
-#'                             seed = 1L))
-#' mcmc_diagnostics(fit)
-#' }
-#' @export
-mcmc_diagnostics <- function(fit, pars = NULL,
-                             measures = c("rhat", "ess_bulk", "ess_tail"),
-                             probs = c(0.05, 0.95)) {
-  measures <- match.arg(measures, names(.tulpa_diag_measures), several.ok = TRUE)
-  if (!.tulpa_is_chain(fit)) {
-    # A point fit (mode + covariance) carries no sample to diagnose; an i.i.d.
-    # approximation fit dispatches to the PSIS reliability table.
-    if (identical(.tulpa_draws_kind(fit), "point")) {
-      message(.tulpa_non_chain_msg(fit))
-      return(NULL)
-    }
-    return(laplace_diagnostics(fit, pars = pars))
-  }
+# Per-parameter chain diagnostics on a fit whose draws are a genuine MCMC
+# chain. The provenance gate lives in `diagnostics()`; this builds the table.
+#' @keywords internal
+.tulpa_chain_diag_table <- function(fit, pars = NULL,
+                                    measures = c("rhat", "ess_bulk", "ess_tail"),
+                                    probs = c(0.05, 0.95)) {
   chain_list <- .tulpa_chain_list(fit)
   if (is.null(chain_list) || nrow(chain_list[[1L]]) < 4L) return(NULL)
 
@@ -498,6 +451,27 @@ mcmc_diagnostics <- function(fit, pars = NULL,
   }
   data.frame(parameter = nm[keep], out, check.names = FALSE,
              stringsAsFactors = FALSE, row.names = NULL)
+}
+
+#' MCMC convergence diagnostics
+#'
+#' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' Use [diagnostics()], which reads a fit's draws provenance and returns the
+#' diagnostic that applies -- chain mixing for MCMC draws, approximation
+#' reliability for deterministic fits. The name `mcmc_diagnostics()` described
+#' only one of the two branches it already routed between.
+#'
+#' @inheritParams diagnostics
+#' @return The value of [diagnostics()] for `fit`.
+#' @keywords internal
+#' @export
+mcmc_diagnostics <- function(fit, pars = NULL,
+                             measures = c("rhat", "ess_bulk", "ess_tail"),
+                             probs = c(0.05, 0.95)) {
+  lifecycle::deprecate_warn("0.0.95", "mcmc_diagnostics()", "diagnostics()")
+  diagnostics(fit, pars = pars, measures = measures, probs = probs)
 }
 
 #' Select the "main" model parameters for diagnostic display

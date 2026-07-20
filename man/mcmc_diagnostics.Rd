@@ -22,53 +22,22 @@ chains are recognised from a 3D \verb{[iter, chain, param]} draws array, a
 output-column order. Available: \code{"rhat"}, \code{"rhat_bulk"}, \code{"rhat_fold"},
 \code{"ess_bulk"}, \code{"ess_tail"}, \code{"ess_mean"}, \code{"ess_sd"}, \code{"mcse_mean"},
 \code{"mcse_sd"}, \code{"ess_quantile"}, \code{"mcse_quantile"}. Defaults to the core set
-\code{c("rhat", "ess_bulk", "ess_tail")}.}
+\code{c("rhat", "ess_bulk", "ess_tail")}. Applies to chain fits; the
+approximation-reliability table has a fixed set of columns.}
 
 \item{probs}{Numeric probabilities for the quantile-based measures
 (\code{"ess_quantile"}, \code{"mcse_quantile"}); each expands to one column named
-e.g. \code{ess_q5}, \code{ess_q95}. Default \code{c(0.05, 0.95)}.}
+e.g. \code{ess_q5}, \code{ess_q95}. Default \code{c(0.05, 0.95)}. Chain fits only.}
 }
 \value{
-A data frame with a \code{parameter} column followed by one column per
-requested measure. Entries are \code{NA} for parameters that are constant or
-have too few draws.
+The value of \code{\link[=diagnostics]{diagnostics()}} for \code{fit}.
 }
 \description{
-Per-parameter convergence and accuracy diagnostics computed natively from a
-fitted model's posterior draws: improved Rhat (the maximum of rank-normalized
-split-Rhat and folded split-Rhat), bulk / tail / mean / sd / quantile
-effective sample size, and Monte Carlo standard errors. Split-Rhat is defined
-for a single chain (the chain is split in two), so a result is produced for
-any number of chains. The estimators follow Vehtari et al. (2021) and
-reproduce the corresponding \code{posterior} functions.
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
+
+Use \code{\link[=diagnostics]{diagnostics()}}, which reads a fit's draws provenance and returns the
+diagnostic that applies -- chain mixing for MCMC draws, approximation
+reliability for deterministic fits. The name \code{mcmc_diagnostics()} described
+only one of the two branches it already routed between.
 }
-\details{
-For a fit whose draws are not an MCMC chain -- an i.i.d. / approximation fit
-such as nested Laplace, VI, or SMC, where the between-chain Rhat is vacuous
-and ESS equals the draw count by construction -- this dispatches to
-\code{\link[=laplace_diagnostics]{laplace_diagnostics()}}, returning the PSIS approximation-reliability table
-(the "did the approximation work" diagnostic) rather than chain mixing.
-Provenance is read from \verb{$draws_kind} (or the backend's registry \code{emits}
-property). Pass a \code{point} fit (a mode + covariance, no sample) and the
-function returns \code{NULL} with a message.
-}
-\examples{
-\donttest{
-set.seed(1)
-df <- data.frame(x = rnorm(60))
-df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
-fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
-             control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
-                            seed = 1L))
-mcmc_diagnostics(fit)
-}
-}
-\references{
-Vehtari, Gelman, Simpson, Carpenter & Burkner (2021).
-Rank-normalization, folding, and localization: an improved Rhat for
-assessing convergence of MCMC. \emph{Bayesian Analysis} 16(2):667-718.
-}
-\seealso{
-\code{\link[=tulpa_draws_array]{tulpa_draws_array()}}, \code{\link[=plot_rhat]{plot_rhat()}}, \code{\link[=plot_ess]{plot_ess()}},
-\code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=check_diagnostics]{check_diagnostics()}}
-}
+\keyword{internal}

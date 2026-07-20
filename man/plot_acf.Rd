@@ -35,5 +35,5 @@ poor mixing.
 
 }
 \seealso{
-\code{\link[=plot_ess]{plot_ess()}}, \code{\link[=mcmc_diagnostics]{mcmc_diagnostics()}}
+\code{\link[=plot_ess]{plot_ess()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

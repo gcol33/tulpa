@@ -1,5 +1,120 @@
 # tulpa NEWS
 
+## 0.0.95
+
+One diagnostic front door, selected by draws provenance.
+
+New:
+
+- `diagnostics()` is the entry point for posterior diagnostics on any fit. It
+  reads how the draws were produced and returns the reliability question that
+  applies: chain mixing (improved Rhat, bulk / tail / mean / sd / quantile ESS,
+  MCSE) for MCMC draws; the PSIS approximation-reliability table (`pareto_k`,
+  grid quadrature ESS) for i.i.d. draws from a deterministic backend; `NULL`
+  with a message for a point summary that carries no sample.
+
+- The routing is a registry keyed by provenance kind, so a new engine class is
+  one entry plus its table builder rather than another branch. This replaces the
+  hand-rolled `if (!is_chain)` dispatch that previously sat inside
+  `mcmc_diagnostics()`.
+
+Deprecated:
+
+- `mcmc_diagnostics()` and `laplace_diagnostics()` are deprecated in favour of
+  `diagnostics()`. Both still work and return exactly what they always did;
+  `mcmc_diagnostics()` in particular still routes an i.i.d. fit to the
+  reliability table, which is the behaviour that made its name wrong. The
+  `laplace_diagnostics` class and its `print()` method are unchanged, so code
+  that inspects the returned object keeps working.
+
+Fixed:
+
+- The `laplace_diagnostics()` example fitted with `mode = "laplace"`, which
+  returns a mode plus covariance and carries no draws, so the example printed a
+  "no posterior draws" message instead of the table it documents. Both it and
+  the new `diagnostics()` example now use `mode = "smc"`, a deterministic
+  backend that does emit draws.
+
+## 0.0.94
+
+Empirical Bayes over random-effect covariances, and the lme4 / posterior
+accessor surface.
+
+New:
+
+- `mode = "eb"` and `tulpa_eb()`: estimate one or more random-effect covariances
+  by maximizing the Laplace marginal likelihood over them, then report the fixed
+  effects conditional on the maximizer. This is the plug-in counterpart of
+  `tulpa_re_cov_nested()`, and deliberately not a second implementation of it:
+  both call the extracted `.re_cov_theta_fit()`, so they share the objective, the
+  inner solve and the optimizer, and their `theta_hat` values are identical on
+  the same data (asserted with `expect_identical`, not a tolerance). EB stops at
+  the mode; the nested integrator carries on and marginalizes around it.
+  Registered as a Tier-2 backend and opt-in by name -- conditioning on
+  `Sigma_hat` drops the hyperparameter uncertainty, so `auto` never selects it.
+- `fixef()` and the `as_draws()` / `as_draws_array()` / `as_draws_matrix()` /
+  `as_draws_df()` / `as_draws_rvars()` family on `tulpa_fit`. `.onLoad()` also
+  registers these methods (and the existing `ranef()`) on `lme4::fixef`,
+  `nlme::fixef`, `lme4::ranef`, `nlme::ranef` and `posterior::as_draws*` when
+  those packages are installed, so `lme4::fixef(fit)` dispatches without any of
+  them entering Imports -- and without tulpa masking their generics on attach.
+- A Gaussian-approximation fit carries no draws, so `as_draws()` on one errors by
+  default and names the alternative. `as_draws(fit, n_draws = )` opts in to
+  sampling `N(coef, vcov)`; that is a modelling decision (every downstream
+  `posterior` summary would treat the approximation as a posterior sample), so it
+  is never taken silently.
+
+Correctness:
+
+- **`$` is now exact on a `tulpa_fit`** (new `$.tulpa_fit`). A fit is a list, so
+  `$`'s default partial matching let an ABSENT field resolve to any longer field
+  it prefixes -- and since the accessors decide which posterior shape a fit
+  carries by testing whether `$draws` / `$mode` / `$modes` / `$cov` is NULL, a
+  partial match there reads the wrong object outright. Live collisions:
+  `$draws -> draws_kind` (the string `"iid"`, on every Laplace/EB fit),
+  `$mode -> model_matrix` (the design matrix, on every sampler fit),
+  `$sigma -> sigma_re` (AGQ fits), `$theta -> theta_hat` (EB fits).
+
+  Three symptoms were live: `posterior_sample()` returned `"iid"` and
+  `tulpa_draws_array()` built a 1x1x1 array from it for every Laplace-shaped fit;
+  `laplace_diagnostics()`, which exists for exactly those fits, could never reach
+  its "no posterior draws" branch; and `print()` on an AGQ fit reported the
+  random-effect standard deviation under the `sigma:` label, where it reads as
+  the dispersion. The remaining collisions were latent -- masked by a branch
+  ordered ahead of them or by a companion `&& !is.null(...)` guard -- so **no
+  coefficient, standard error or interval changes**: `coef()`, `vcov()`,
+  `confint()` and `summary()` return exactly what they did before on every
+  backend. The draws accessors additionally route through one `.fit_draws()`
+  helper.
+
+  This reaches model packages that set `class = c("<model>_fit", "tulpa_fit")`:
+  they inherit exact `$` too, so any of their code that was relying on a partial
+  match now gets NULL. That reliance was always a bug, but it will surface here.
+  Cost is ~2 us per `$` read (an S3 dispatch); `coef()` and `summary()` are ~0.5
+  ms, so it is not measurable at the accessor level.
+- **`offset()` was silently dropped by the RE-covariance backends.** `tulpa()`
+  never threaded the offset into `tulpa_re_cov_nested()` (which had no `offset`
+  argument at all), so a rate model reached under `mode = "re_cov_nested"` -- or
+  via the automatic random-slope redirect off `mode = "laplace"` -- fitted counts
+  instead. On a simulated rate model with exposure spanning 50x and a true
+  intercept of -1.5, it returned +1.66. `tulpa_re_cov_nested()` and `tulpa_eb()`
+  now take `offset` and thread it through the inner `tulpa_laplace()` solve,
+  which always supported it. Where an offset genuinely cannot be carried it now
+  errors instead of dropping: `n_quad > 1` (the compiled per-group AGHQ oracle
+  has no offset term) and the `re_cov_gibbs` backend.
+- The outer optimization over the random-effect covariance(s) now warns when it
+  does not converge, in both `tulpa_eb()` and `tulpa_re_cov_nested()`. It
+  previously returned wherever the optimizer stopped without a word -- for EB
+  that is the estimate, and for the nested path it is the centre the integration
+  grid is placed around. `control$outer_maxit` (default 500) sets the budget, and
+  `tulpa_eb()` reports the code as `$outer_convergence`.
+- One-dimensional outer optimization uses Brent rather than Nelder-Mead, which R
+  warns is unreliable there. `k == 1` is the common case (a scalar `(1 | g)`
+  block), so this affects `tulpa_re_cov_nested()` as well as EB. Brent reports
+  success at a bracket endpoint, so a variance component pinned at the bracket
+  now warns rather than being reported as a fitted value -- the low end is the
+  classic empirical-Bayes collapse to `sigma = 0`.
+
 ## 0.0.92
 
 Audit fixes (0.0.91 review, issues #228-#239).

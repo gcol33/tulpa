@@ -445,185 +445,39 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
       .re_cov_block_label(layout[[m]], m), character(1)))
 }
 
-#' Nested-Laplace integration over random-effect covariances
-#'
-#' @description
-#' For one or more random-effects terms (e.g. `(1 + x | g)`, `(1 + x || g)`, or
-#' several terms together), integrate the Laplace marginal likelihood over the
-#' random-effect covariances `Sigma` instead of fixing them at point estimates.
-#' Reports weighted posterior summaries (mean, SD, median, 2.5\%/97.5\%) of every
-#' `Sigma` and its derived scale (`sigma_i`) and correlation (`rho_ij`)
-#' parameters, marginalizing the joint posterior over a `Sigma`-grid.
-#'
-#' This corrects the plug-in-MAP ("summary") bias: the mode of a skewed
-#' variance-component marginal is biased low relative to its median, so the
-#' headline summary should be the marginalized median, not the mode.
-#'
-#' @details
-#' Each term is one covariance **block**. A correlated block (`(1 + x | g)`) is
-#' a full `Sigma = L L'` parameterized by its lower Cholesky factor in
-#' log-Cholesky coordinates (the log-diagonal and the strictly-lower entries of
-#' `L`, `c(c+1)/2` values for a `c`-coefficient block), which keeps `Sigma`
-#' positive definite for every coordinate. An uncorrelated block
-#' (`(1 + x || g)`) is a diagonal `Sigma` parameterized by its `c` log standard
-#' deviations. A scalar `(1 | g)` term is the degenerate `c = 1` block. Several
-#' blocks stack their parameters into one integration vector; a single-term
-#' model is the length-1 case.
-#'
-#' Integration nodes live in the whitened stacked-parameter space, centred at
-#' the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
-#' mode's posterior covariance (`solve(Hessian)`), so points track the posterior
-#' ridge. Two node layouts are available via `integration`:
-#' \itemize{
-#'   \item `"ccd"` (default): a central-composite design ([ccd_grid()]) of
-#'     `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks` parameters, with
-#'     the corrected R-INLA design weights ([ccd_weights()]). Scales polynomially
-#'     in `k`, where the tensor grid is exponential.
-#'   \item `"grid"`: the full `n_per_axis^k` tensor product with uniform cell
-#'     weights -- denser and more robust to a non-Gaussian whitened posterior,
-#'     but only tractable for small `k`.
-#' }
-#' Each node `k` contributes integration weight proportional to
-#' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
-#' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
-#'
-#' By default `log_prior_theta` is the weakly-informative PC + LKJ hyperprior
-#' built per block by [re_cov_pc_lkj_prior()] and summed over blocks (PC prior on
-#' each marginal SD via `prior_sigma`, LKJ prior on each correlated block's
-#' correlation matrix via `eta`), expressed in the same parameterization with the
-#' exact change-of-variables Jacobian. Supply a custom `log_prior_theta` function
-#' to override it (then `prior_sigma` / `eta` are ignored); it must act on the
-#' full stacked parameter vector.
-#'
-#' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
-#'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
-#' @param re_terms Either a single random-effect term or a list of them. Each
-#'   term is a list with `idx` (1-based group index per observation),
-#'   `n_groups`, `n_coefs` (`c`), `Z` (the `n_obs x c` RE design, e.g.
-#'   `cbind(1, x)` for `(1 + x | g)`; only required when `c > 1`), and
-#'   `correlated` (`TRUE` for a full `Sigma`, `FALSE` for a diagonal one;
-#'   defaults to `TRUE`). An optional `label` / `group_var` names the block in
-#'   the output. Any `L` / `cov` / `sigma` field is ignored -- `Sigma` is what
-#'   this function integrates over.
-#' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
-#'   [re_cov_pc_lkj_prior()]): `prior_sigma = c(U, alpha)` with
-#'   `P(sigma_i > U) = alpha` (default `c(3, 0.05)`) and LKJ shape `eta`
-#'   (default 2). Ignored when `log_prior_theta` is supplied.
-#' @param log_prior_theta Optional `function(theta)` returning a scalar log
-#'   prior density on the full stacked parameter vector. Default `NULL`, which
-#'   builds the PC + LKJ prior from `prior_sigma` / `eta`.
-#' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
-#'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
-#'   `NULL` (default) keeps the weak built-in prior.
-#' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
-#'   joint-field Laplace inner solve ([tulpa_laplace()]). `> 1` refines the inner
-#'   marginal with `n_quad`-point adaptive Gauss-Hermite quadrature (the
-#'   [tulpa_re_aghq()] debias applied inside the `Sigma` integration), reducing
-#'   the small-cluster variance attenuation for binary / low-count data. AGHQ
-#'   requires a single shared grouping factor (the per-group integral must
-#'   factorize); with crossed RE terms `n_quad > 1` errors. When AGHQ is used the
-#'   fixed effects are integrated, so the reported fixed-effect posterior is the
-#'   marginal (ML-II) one rather than the joint-mode (PQL) estimate.
-#' @param control A named list of numerical / tuning knobs (statistical
-#'   arguments stay in the signature above). Recognized entries:
-#'   \itemize{
-#'     \item `integration`: node layout, `"ccd"` (default, central-composite
-#'       design, scales to larger total parameter count) or `"grid"` (full
-#'       tensor product).
-#'     \item `n_per_axis`: points per parameter axis in the tensor grid
-#'       (default 5); used only when `integration = "grid"`.
-#'     \item `span`: half-width of the tensor grid in posterior standard
-#'       deviations per whitened axis (default 3); grid only.
-#'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
-#'       node mixture (default 2000), exposed as `draws` for the generic
-#'       `tulpa_fit` methods. The `Sigma` posterior is summarized exactly
-#'       (weighted node quantiles) in `posterior`, independent of `n_draws`.
-#'     \item `seed`: optional integer seed for the fixed-effect draw synthesis.
-#'     \item `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
-#'       accuracy diagnostic for the Gaussian proposal over the hyperparameters,
-#'       returned as `pareto_k`.
-#'     \item `k_samples`: importance draws for the `diagnose_k` estimate
-#'       (default 200).
-#'     \item `max_iter`, `tol`, `n_threads`: inner-solve controls (see
-#'       [tulpa_laplace()]).
-#'     \item `checkpoint`: node checkpoint/resume spec `list(path = , resume = )`.
-#'       Each completed CCD / grid node (one inner Laplace solve) is cached to
-#'       `path`; a `resume = TRUE` run loads the finished nodes and re-solves
-#'       only the rest. `resume = FALSE` starts fresh. A file written for
-#'       different data, layout, or grid is rejected (fingerprint mismatch).
-#'       Default `NULL` (off).
-#'   }
-#'
-#' @return A list with:
-#'   - `posterior`: data frame with one row per parameter and columns `mean`,
-#'     `sd`, `median`, `ci_lo`, `ci_hi`. Parameter names are `sigma_i`, `rho_ij`,
-#'     `Sigma_ij` for a single block, prefixed by the block label
-#'     (`g.sigma_1`, ...) when there are several blocks. Diagonal blocks report
-#'     no `rho`.
-#'   - `map`: the plug-in-mode summary at `theta_hat` (a single `list(Sigma,
-#'     sigma, rho)` for one block, or a named list of them).
-#'   - `Sigma_mean`: the weighted posterior mean of `Sigma` (a matrix for one
-#'     block, or a named list of matrices).
-#'   - `beta`, `draws`, `means`, `param_names`, `process_info`: the fixed-effect
-#'     posterior from the node mixture (drives `coef`/`confint`/`vcov`/`summary`).
-#'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
-#'     `n_blocks`, `n_coefs` (vector of per-block `c`).
-#'
-#' @seealso [tulpa_laplace()] for the inner solve; [tulpa_nested_laplace()] for
-#'   the analogous outer integration over spatial / temporal prior
-#'   hyperparameters.
-#'
-#' @references
-#' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
-#' Gaussian models by using integrated nested Laplace approximations.
-#' \emph{JRSS-B} 71(2):319-392.
-#' Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
-#' based on vines and extended onion method. \emph{Journal of Multivariate
-#' Analysis} 100(9):1989-2001.
-#' @examples
-#' \donttest{
-#' set.seed(1)
-#' G <- 20L; per <- 12L; n <- G * per
-#' grp <- rep(seq_len(G), each = per); x <- rnorm(n)
-#' b <- cbind(rnorm(G, 0, 0.7), rnorm(G, 0, 0.5))     # random intercept + slope
-#' eta <- -0.2 + 0.5 * x + b[grp, 1] + b[grp, 2] * x
-#' y <- rbinom(n, 1L, plogis(eta))
-#' re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
-#'                 correlated = TRUE)
-#' fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
-#'                            family = "binomial")
-#' fit$Sigma_mean        # marginalized RE covariance
-#' }
-#' @export
-tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
-                                family = "binomial", phi = 1.0,
-                                prior_sigma = c(3, 0.05), eta = 2,
-                                log_prior_theta = NULL,
-                                beta_prior = NULL, n_quad = 1L,
-                                control = list()) {
-  # Perf/numerical knobs live in `control = list()` (matching tulpa() /
-  # tulpa_nested_laplace()); the signature carries only statistical arguments.
-  .check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
-  integration <- match.arg(control$integration %||% "ccd", c("ccd", "grid"))
-  n_per_axis  <- as.integer(control$n_per_axis %||% 5L)
-  span        <- control$span %||% 3
-  n_draws     <- as.integer(control$n_draws %||% 2000L)
-  seed        <- control$seed
-  diagnose_k  <- isTRUE(control$diagnose_k %||% TRUE)
-  k_samples   <- as.integer(control$k_samples %||% 200L)
-  max_iter    <- as.integer(control$max_iter %||% 100L)
-  tol         <- control$tol %||% 1e-8
-  n_threads   <- as.integer(control$n_threads %||% 1L)
-  checkpoint  <- control$checkpoint
-  n_quad <- as.integer(n_quad)
-  if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
-  .seed_scoped(seed)
-
+# Shared outer-hyperparameter core: everything up to and including the mode of
+# g(theta) = log_marginal(Sigma(theta)) + log_prior_theta(theta).
+#
+# Both outer drivers need exactly this. `tulpa_re_cov_nested()` goes on to place
+# integration nodes around the mode and marginalize; `tulpa_eb()` stops here and
+# reports the plug-in. Keeping the objective, its inner solve and its optimizer
+# in one place is what makes "EB is the nested integrator's mode" a fact about
+# the code rather than a claim about two implementations that happen to agree --
+# and it is the reason .re_cov_theta_fit() returns the live `inner_fit` closure
+# instead of a value: the EB path re-solves at theta_hat through the SAME closure
+# the optimizer drove, so no second inner-solve configuration can drift from it.
+#
+# Returns the closures and the geometry (post_cov / L_scale) the nested path
+# needs for node placement, so nothing downstream has to rebuild them.
+.re_cov_theta_fit <- function(y, n_trials, X, re_terms,
+                              family, phi,
+                              prior_sigma, eta, log_prior_theta,
+                              beta_prior, n_quad,
+                              max_iter, tol, n_threads,
+                              caller,
+                              need_scale = TRUE,
+                              outer_maxit = 500L,
+                              offset = NULL) {
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
-  vd <- .validate_glm_design(y, X, n_trials, "tulpa_re_cov_nested")
+  vd <- .validate_glm_design(y, X, n_trials, caller)
   n_trials <- vd$n_trials
   layout <- .re_cov_block_layout(re_terms, length(y))
+  if (length(layout) == 0L) {
+    stop(caller, "(): no random-effect terms. The outer objective is over the ",
+         "random-effect covariances, so there is nothing to fit; use ",
+         "tulpa_laplace() for a fixed-effect-only model.", call. = FALSE)
+  }
   k <- sum(vapply(layout, `[[`, integer(1), "k"))
   if (is.null(log_prior_theta)) {
     log_prior_theta <- .re_cov_joint_prior(layout, prior_sigma, eta)
@@ -648,6 +502,15 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   }
   use_core <- single_factor && n_quad > 1L
 
+  # cpp_glmm_oracle_make() takes no offset, so the AGHQ inner marginal cannot
+  # carry one. Silently dropping it would fit a different model; say so instead.
+  if (use_core && !is.null(offset) && any(offset != 0)) {
+    stop(caller, "(): `n_quad > 1` (the adaptive Gauss-Hermite inner marginal) ",
+         "does not support an offset -- the compiled per-group oracle carries ",
+         "no offset term. Use `n_quad = 1` (the joint-field Laplace inner ",
+         "solve), which does.", call. = FALSE)
+  }
+
   # Inner solve: Laplace log-marginal at the supplied per-block covariances.
   # Failures at extreme grid edges (non-finite / non-convergent) return -Inf so
   # the cell gets zero weight rather than aborting the integration.
@@ -657,7 +520,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi, return_hessian = FALSE,
-        beta_prior = beta_prior,
+        beta_prior = beta_prior, offset = offset,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       )$log_marginal,
       error = function(e) -Inf
@@ -674,7 +537,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi, return_hessian = TRUE,
-        beta_prior = beta_prior,
+        beta_prior = beta_prior, offset = offset,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       ),
       error = function(e) NULL
@@ -689,7 +552,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       y = y, n_trials = n_trials, X = X,
       re_list = .re_cov_build_re_list(L0_list, layout),
       family = family, phi = phi, return_hessian = FALSE,
-      beta_prior = beta_prior,
+      beta_prior = beta_prior, offset = offset,
       max_iter = max_iter, tol = tol, n_threads = n_threads
     ),
     error = function(e) NULL
@@ -789,26 +652,300 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     L_list <- .re_cov_theta_to_L_list(theta, layout)
     -(inner_logmarg(L_list) + log_prior_theta(theta))
   }
-  opt <- stats::optim(theta0, negg, method = "Nelder-Mead", hessian = TRUE,
-                      control = list(maxit = 500L, reltol = 1e-8))
+  # Nelder-Mead degenerates in one dimension (R warns as much), and k == 1 is the
+  # common case: a single scalar `(1 | g)` block, whose only coordinate is
+  # log(sigma). Brent bracketing over a wide log-SD interval is both the reliable
+  # and the cheaper option there; the simplex takes over from k >= 2. Brent is
+  # bracketed rather than iteration-limited, so `outer_maxit` applies to the
+  # simplex only.
+  brent_lo <- log(1e-4)
+  brent_hi <- log(1e3)
+  opt <- if (k == 1L) {
+    stats::optim(theta0, negg, method = "Brent",
+                 lower = brent_lo, upper = brent_hi, hessian = need_scale,
+                 control = list(reltol = 1e-10))
+  } else {
+    stats::optim(theta0, negg, method = "Nelder-Mead",
+                 hessian = need_scale,
+                 control = list(maxit = as.integer(outer_maxit), reltol = 1e-8))
+  }
   theta_hat <- opt$par
 
+  # A non-zero optim code means the reported theta_hat is wherever the optimizer
+  # stopped, not a maximizer -- for EB that IS the estimate, and for the nested
+  # path it is the centre the integration nodes are placed around. Either way it
+  # was previously returned without a word.
+  if (!identical(as.integer(opt$convergence), 0L)) {
+    warning(caller, "(): the outer optimization over the random-effect ",
+            "covariance(s) did not converge (optim code ", opt$convergence,
+            "). The reported estimate is where it stopped. Consider a longer ",
+            "run, a different `re_prior` / `prior_sigma`, or more data per ",
+            "group.", call. = FALSE)
+  }
+
+  # Brent reports success at a bracket endpoint, so a variance component that
+  # wanted to run past the bracket is indistinguishable from a converged one by
+  # the code alone. The low end is the one that happens in practice -- the
+  # classic empirical-Bayes collapse to sigma = 0 -- and reporting it as an
+  # estimate rather than a boundary hit would misrepresent it as a fitted value.
+  if (k == 1L && is.finite(theta_hat[1L])) {
+    at_lo <- theta_hat[1L] <= brent_lo + 1e-6
+    at_hi <- theta_hat[1L] >= brent_hi - 1e-6
+    if (at_lo || at_hi) {
+      detail <- if (at_lo) {
+        paste("The variance component has collapsed: the data carry no",
+              "detectable between-group variation, or the hyperprior is not",
+              "holding it off the boundary.")
+      } else {
+        paste("The between-group variation exceeds the bracket, so the value",
+              "is capped rather than fitted.")
+      }
+      warning(sprintf(paste0(
+        "%s(): the random-effect standard deviation hit the %s end of the ",
+        "search bracket (sigma = %.3g). %s Treat it as a boundary hit, not a ",
+        "fitted value."),
+        caller, if (at_lo) "lower" else "upper", exp(theta_hat[1L]), detail),
+        call. = FALSE)
+    }
+  }
+
   # Posterior covariance of theta ~ solve(Hessian of negg). Regularize to PD;
-  # fall back to a diagonal scale if the numerical Hessian is unusable.
-  Hn <- opt$hessian
-  post_cov <- tryCatch({
-    Hs <- (Hn + t(Hn)) / 2
-    ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
-    if (min(ev) <= 1e-8) stop("non-PD Hessian")
-    solve(Hs)
-  }, error = function(e) {
-    warning("tulpa_re_cov_nested(): outer theta-Hessian not usable (",
-            conditionMessage(e), "); falling back to a diagonal proposal ",
-            "scale. Integration nodes may be mis-placed -- check the outer ",
-            "Pareto-k (fit$pareto_k).", call. = FALSE)
-    diag(0.5^2, k)
-  })
-  L_scale <- t(chol(post_cov))
+  # fall back to a diagonal scale if the numerical Hessian is unusable. Only the
+  # nested path needs this (it places nodes with it); EB reports the plug-in and
+  # skips the numerical Hessian entirely.
+  post_cov <- NULL; L_scale <- NULL
+  if (need_scale) {
+    Hn <- opt$hessian
+    post_cov <- tryCatch({
+      Hs <- (Hn + t(Hn)) / 2
+      ev <- eigen(Hs, symmetric = TRUE, only.values = TRUE)$values
+      if (min(ev) <= 1e-8) stop("non-PD Hessian")
+      solve(Hs)
+    }, error = function(e) {
+      warning(caller, "(): outer theta-Hessian not usable (",
+              conditionMessage(e), "); falling back to a diagonal proposal ",
+              "scale. Integration nodes may be mis-placed -- check the outer ",
+              "Pareto-k (fit$pareto_k).", call. = FALSE)
+      diag(0.5^2, k)
+    })
+    L_scale <- t(chol(post_cov))
+  }
+
+  # No `log_marginal` here on purpose: backing it out of opt$value would be a
+  # second, differently-derived copy of a number both callers already read off an
+  # actual fit -- and one that goes NaN whenever the optimizer's last step hit
+  # the failure sentinel.
+  list(layout = layout, k = k, n_trials = n_trials, X = X, p_fix = p_fix,
+       log_prior_theta = log_prior_theta,
+       inner_logmarg = inner_logmarg, inner_fit = inner_fit,
+       theta0 = theta0, theta_hat = theta_hat, opt = opt,
+       post_cov = post_cov, L_scale = L_scale)
+}
+
+
+#' Nested-Laplace integration over random-effect covariances
+#'
+#' @description
+#' For one or more random-effects terms (e.g. `(1 + x | g)`, `(1 + x || g)`, or
+#' several terms together), integrate the Laplace marginal likelihood over the
+#' random-effect covariances `Sigma` instead of fixing them at point estimates.
+#' Reports weighted posterior summaries (mean, SD, median, 2.5\%/97.5\%) of every
+#' `Sigma` and its derived scale (`sigma_i`) and correlation (`rho_ij`)
+#' parameters, marginalizing the joint posterior over a `Sigma`-grid.
+#'
+#' This corrects the plug-in-MAP ("summary") bias: the mode of a skewed
+#' variance-component marginal is biased low relative to its median, so the
+#' headline summary should be the marginalized median, not the mode.
+#'
+#' @details
+#' Each term is one covariance **block**. A correlated block (`(1 + x | g)`) is
+#' a full `Sigma = L L'` parameterized by its lower Cholesky factor in
+#' log-Cholesky coordinates (the log-diagonal and the strictly-lower entries of
+#' `L`, `c(c+1)/2` values for a `c`-coefficient block), which keeps `Sigma`
+#' positive definite for every coordinate. An uncorrelated block
+#' (`(1 + x || g)`) is a diagonal `Sigma` parameterized by its `c` log standard
+#' deviations. A scalar `(1 | g)` term is the degenerate `c = 1` block. Several
+#' blocks stack their parameters into one integration vector; a single-term
+#' model is the length-1 case.
+#'
+#' Integration nodes live in the whitened stacked-parameter space, centred at
+#' the joint marginal-likelihood mode and rotated/scaled by the Cholesky of the
+#' mode's posterior covariance (`solve(Hessian)`), so points track the posterior
+#' ridge. Two node layouts are available via `integration`:
+#' \itemize{
+#'   \item `"ccd"` (default): a central-composite design ([ccd_grid()]) of
+#'     `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks` parameters, with
+#'     the corrected R-INLA design weights ([ccd_weights()]). Scales polynomially
+#'     in `k`, where the tensor grid is exponential.
+#'   \item `"grid"`: the full `n_per_axis^k` tensor product with uniform cell
+#'     weights -- denser and more robust to a non-Gaussian whitened posterior,
+#'     but only tractable for small `k`.
+#' }
+#' Each node `k` contributes integration weight proportional to
+#' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
+#' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
+#'
+#' By default `log_prior_theta` is the weakly-informative PC + LKJ hyperprior
+#' built per block by [re_cov_pc_lkj_prior()] and summed over blocks (PC prior on
+#' each marginal SD via `prior_sigma`, LKJ prior on each correlated block's
+#' correlation matrix via `eta`), expressed in the same parameterization with the
+#' exact change-of-variables Jacobian. Supply a custom `log_prior_theta` function
+#' to override it (then `prior_sigma` / `eta` are ignored); it must act on the
+#' full stacked parameter vector.
+#'
+#' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
+#'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
+#' @param re_terms Either a single random-effect term or a list of them. Each
+#'   term is a list with `idx` (1-based group index per observation),
+#'   `n_groups`, `n_coefs` (`c`), `Z` (the `n_obs x c` RE design, e.g.
+#'   `cbind(1, x)` for `(1 + x | g)`; only required when `c > 1`), and
+#'   `correlated` (`TRUE` for a full `Sigma`, `FALSE` for a diagonal one;
+#'   defaults to `TRUE`). An optional `label` / `group_var` names the block in
+#'   the output. Any `L` / `cov` / `sigma` field is ignored -- `Sigma` is what
+#'   this function integrates over.
+#' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
+#'   [re_cov_pc_lkj_prior()]): `prior_sigma = c(U, alpha)` with
+#'   `P(sigma_i > U) = alpha` (default `c(3, 0.05)`) and LKJ shape `eta`
+#'   (default 2). Ignored when `log_prior_theta` is supplied.
+#' @param log_prior_theta Optional `function(theta)` returning a scalar log
+#'   prior density on the full stacked parameter vector. Default `NULL`, which
+#'   builds the PC + LKJ prior from `prior_sigma` / `eta`.
+#' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
+#'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
+#'   `NULL` (default) keeps the weak built-in prior.
+#' @param offset Optional observation-level offset on the linear predictor
+#'   (length `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
+#'   with `n_quad > 1`, which errors rather than dropping it.
+#' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
+#'   joint-field Laplace inner solve ([tulpa_laplace()]). `> 1` refines the inner
+#'   marginal with `n_quad`-point adaptive Gauss-Hermite quadrature (the
+#'   [tulpa_re_aghq()] debias applied inside the `Sigma` integration), reducing
+#'   the small-cluster variance attenuation for binary / low-count data. AGHQ
+#'   requires a single shared grouping factor (the per-group integral must
+#'   factorize); with crossed RE terms `n_quad > 1` errors. When AGHQ is used the
+#'   fixed effects are integrated, so the reported fixed-effect posterior is the
+#'   marginal (ML-II) one rather than the joint-mode (PQL) estimate.
+#' @param control A named list of numerical / tuning knobs (statistical
+#'   arguments stay in the signature above). Recognized entries:
+#'   \itemize{
+#'     \item `integration`: node layout, `"ccd"` (default, central-composite
+#'       design, scales to larger total parameter count) or `"grid"` (full
+#'       tensor product).
+#'     \item `n_per_axis`: points per parameter axis in the tensor grid
+#'       (default 5); used only when `integration = "grid"`.
+#'     \item `span`: half-width of the tensor grid in posterior standard
+#'       deviations per whitened axis (default 3); grid only.
+#'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
+#'       node mixture (default 2000), exposed as `draws` for the generic
+#'       `tulpa_fit` methods. The `Sigma` posterior is summarized exactly
+#'       (weighted node quantiles) in `posterior`, independent of `n_draws`.
+#'     \item `seed`: optional integer seed for the fixed-effect draw synthesis.
+#'     \item `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
+#'       accuracy diagnostic for the Gaussian proposal over the hyperparameters,
+#'       returned as `pareto_k`.
+#'     \item `k_samples`: importance draws for the `diagnose_k` estimate
+#'       (default 200).
+#'     \item `max_iter`, `tol`, `n_threads`: inner-solve controls (see
+#'       [tulpa_laplace()]).
+#'     \item `outer_maxit`: iteration budget for the mode-finding step that
+#'       centres the integration grid (default 500). Applies to the Nelder-Mead
+#'       simplex used from two parameters up; the one-parameter case is bracketed
+#'       by Brent. Exhausting the budget warns, since the nodes are then centred
+#'       on wherever the optimizer stopped.
+#'     \item `checkpoint`: node checkpoint/resume spec `list(path = , resume = )`.
+#'       Each completed CCD / grid node (one inner Laplace solve) is cached to
+#'       `path`; a `resume = TRUE` run loads the finished nodes and re-solves
+#'       only the rest. `resume = FALSE` starts fresh. A file written for
+#'       different data, layout, or grid is rejected (fingerprint mismatch).
+#'       Default `NULL` (off).
+#'   }
+#'
+#' @return A list with:
+#'   - `posterior`: data frame with one row per parameter and columns `mean`,
+#'     `sd`, `median`, `ci_lo`, `ci_hi`. Parameter names are `sigma_i`, `rho_ij`,
+#'     `Sigma_ij` for a single block, prefixed by the block label
+#'     (`g.sigma_1`, ...) when there are several blocks. Diagonal blocks report
+#'     no `rho`.
+#'   - `map`: the plug-in-mode summary at `theta_hat` (a single `list(Sigma,
+#'     sigma, rho)` for one block, or a named list of them).
+#'   - `Sigma_mean`: the weighted posterior mean of `Sigma` (a matrix for one
+#'     block, or a named list of matrices).
+#'   - `beta`, `draws`, `means`, `param_names`, `process_info`: the fixed-effect
+#'     posterior from the node mixture (drives `coef`/`confint`/`vcov`/`summary`).
+#'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
+#'     `n_blocks`, `n_coefs` (vector of per-block `c`).
+#'
+#' @seealso [tulpa_laplace()] for the inner solve; [tulpa_nested_laplace()] for
+#'   the analogous outer integration over spatial / temporal prior
+#'   hyperparameters.
+#'
+#' @references
+#' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+#' Gaussian models by using integrated nested Laplace approximations.
+#' \emph{JRSS-B} 71(2):319-392.
+#' Lewandowski, Kurowicka & Joe (2009). Generating random correlation matrices
+#' based on vines and extended onion method. \emph{Journal of Multivariate
+#' Analysis} 100(9):1989-2001.
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' G <- 20L; per <- 12L; n <- G * per
+#' grp <- rep(seq_len(G), each = per); x <- rnorm(n)
+#' b <- cbind(rnorm(G, 0, 0.7), rnorm(G, 0, 0.5))     # random intercept + slope
+#' eta <- -0.2 + 0.5 * x + b[grp, 1] + b[grp, 2] * x
+#' y <- rbinom(n, 1L, plogis(eta))
+#' re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
+#'                 correlated = TRUE)
+#' fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
+#'                            family = "binomial")
+#' fit$Sigma_mean        # marginalized RE covariance
+#' }
+#' @export
+tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
+                                family = "binomial", phi = 1.0,
+                                prior_sigma = c(3, 0.05), eta = 2,
+                                log_prior_theta = NULL,
+                                beta_prior = NULL, offset = NULL, n_quad = 1L,
+                                control = list()) {
+  # Perf/numerical knobs live in `control = list()` (matching tulpa() /
+  # tulpa_nested_laplace()); the signature carries only statistical arguments.
+  .check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
+  integration <- match.arg(control$integration %||% "ccd", c("ccd", "grid"))
+  n_per_axis  <- as.integer(control$n_per_axis %||% 5L)
+  span        <- control$span %||% 3
+  n_draws     <- as.integer(control$n_draws %||% 2000L)
+  seed        <- control$seed
+  diagnose_k  <- isTRUE(control$diagnose_k %||% TRUE)
+  k_samples   <- as.integer(control$k_samples %||% 200L)
+  max_iter    <- as.integer(control$max_iter %||% 100L)
+  tol         <- control$tol %||% 1e-8
+  n_threads   <- as.integer(control$n_threads %||% 1L)
+  checkpoint  <- control$checkpoint
+  n_quad <- as.integer(n_quad)
+  if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
+  .seed_scoped(seed)
+
+  core <- .re_cov_theta_fit(
+    y = y, n_trials = n_trials, X = X, re_terms = re_terms,
+    family = family, phi = phi,
+    prior_sigma = prior_sigma, eta = eta, log_prior_theta = log_prior_theta,
+    beta_prior = beta_prior, n_quad = n_quad,
+    max_iter = max_iter, tol = tol, n_threads = n_threads,
+    caller = "tulpa_re_cov_nested", need_scale = TRUE,
+    outer_maxit = as.integer(control$outer_maxit %||% 500L),
+    offset = offset)
+
+  layout          <- core$layout
+  k               <- core$k
+  n_trials        <- core$n_trials
+  X               <- core$X
+  p_fix           <- core$p_fix
+  log_prior_theta <- core$log_prior_theta
+  inner_logmarg   <- core$inner_logmarg
+  inner_fit       <- core$inner_fit
+  theta_hat       <- core$theta_hat
+  L_scale         <- core$L_scale
+
 
   # --- integration nodes in whitened theta-space ----------------------------
   if (integration == "ccd") {

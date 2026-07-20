@@ -104,7 +104,7 @@ TIER_META <- list(
 #'     `tier`: an exact SMC sampler emits `"iid"` particles, a Tier-3 VI fit
 #'     also emits `"iid"`, while a nested-Laplace Tier-2 fit emits `"iid"` too):
 #'     - `"chain"` : autocorrelated MCMC output -- Rhat and autocorrelation-ESS
-#'                   are meaningful (`mcmc_diagnostics()` computes them).
+#'                   are meaningful (`diagnostics()` computes them).
 #'     - `"iid"`   : exchangeable draws from a deterministic approximation, or
 #'                   resampled particles -- split-Rhat is vacuous and ESS = n by
 #'                   construction, so they say nothing about approximation bias.
@@ -248,6 +248,17 @@ BACKEND_REGISTRY <- list(
     note = paste("Expectation Propagation over a fixed-effect GLM with a",
                  "mean-zero Gaussian coefficient prior; matches marginal moments",
                  "(exact for a Gaussian likelihood), no random effects / fields")
+  ),
+  eb = list(
+    emits = "iid",
+    tier = "structured", input = "design", fitter = "tulpa_eb",
+    families = NULL, cabi = NULL,
+    note = paste("Empirical Bayes over the random-effect covariances: the mode",
+                 "of the same outer objective re_cov_nested integrates, with",
+                 "the fixed effects reported conditional on it. Tier 2 because",
+                 "the plug-in drops the hyperparameter uncertainty -- the",
+                 "intervals are conditional on Sigma_hat, not marginal over",
+                 "Sigma -- so it is opt-in by name and auto never selects it.")
   ),
   nested_laplace = list(
     emits = "iid",

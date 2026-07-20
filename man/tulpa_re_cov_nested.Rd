@@ -15,6 +15,7 @@ tulpa_re_cov_nested(
   eta = 2,
   log_prior_theta = NULL,
   beta_prior = NULL,
+  offset = NULL,
   n_quad = 1L,
   control = list()
 )
@@ -44,6 +45,10 @@ builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}.}
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
 every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}).
 \code{NULL} (default) keeps the weak built-in prior.}
+
+\item{offset}{Optional observation-level offset on the linear predictor
+(length \code{length(y)}), e.g. \code{log(exposure)} for a rate model. Not supported
+with \code{n_quad > 1}, which errors rather than dropping it.}
 
 \item{n_quad}{Quadrature order for the inner marginal. \code{1} (default) uses the
 joint-field Laplace inner solve (\code{\link[=tulpa_laplace]{tulpa_laplace()}}). \verb{> 1} refines the inner
@@ -77,6 +82,11 @@ returned as \code{pareto_k}.
 (default 200).
 \item \code{max_iter}, \code{tol}, \code{n_threads}: inner-solve controls (see
 \code{\link[=tulpa_laplace]{tulpa_laplace()}}).
+\item \code{outer_maxit}: iteration budget for the mode-finding step that
+centres the integration grid (default 500). Applies to the Nelder-Mead
+simplex used from two parameters up; the one-parameter case is bracketed
+by Brent. Exhausting the budget warns, since the nodes are then centred
+on wherever the optimizer stopped.
 \item \code{checkpoint}: node checkpoint/resume spec \code{list(path = , resume = )}.
 Each completed CCD / grid node (one inner Laplace solve) is cached to
 \code{path}; a \code{resume = TRUE} run loads the finished nodes and re-solves

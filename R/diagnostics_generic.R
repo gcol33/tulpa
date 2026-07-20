@@ -313,7 +313,7 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
       list(vals = raw, row = nm)
     }
   }
-  .hyperparam_summary(object$draws, patterns, transform_fn, probs,
+  .hyperparam_summary(.fit_draws(object), patterns, transform_fn, probs,
                       "No spatial hyperparameters found. Is this a spatial model?")
 }
 
@@ -390,7 +390,7 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
       list(vals = raw, row = nm)
     }
   }
-  .hyperparam_summary(object$draws, patterns, transform_fn, probs,
+  .hyperparam_summary(.fit_draws(object), patterns, transform_fn, probs,
                       "No temporal hyperparameters found. Is this a temporal model?")
 }
 

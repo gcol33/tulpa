@@ -4,7 +4,7 @@
 #
 # Gelman-Rubin Rhat is a between-chain statistic and does not apply to the
 # i.i.d. draws a nested-Laplace fit produces from its grid-mixture posterior
-# (mcmc_diagnostics() refuses such fits). The reliability question for this
+# (`diagnostics()` routes such fits here instead). The reliability question for this
 # engine class is not chain mixing but whether the deterministic approximation
 # q -- the grid mixture sum_k w_k N(mode_k, V_k) the draws are sampled from --
 # is a faithful stand-in for the exact posterior pi. That is an
@@ -13,8 +13,8 @@
 # Gabry (2024) and the variational-reliability framing of Yao, Vehtari, Simpson
 # & Gelman (2018): k-hat < 0.5 good, 0.5-0.7 usable, >= 0.7 unreliable.
 #
-# `laplace_diagnostics()` (and `mcmc_diagnostics()` dispatched onto an i.i.d.
-# fit) returns a per-parameter table -- posterior mean / sd plus the
+# `diagnostics()` on an i.i.d. fit returns a per-parameter table -- posterior
+# mean / sd plus the
 # rank-normalized split-Rhat and bulk / tail effective sample size of the draws
 # (Vehtari et al. 2021), labelled as i.i.d.-draw Monte-Carlo diagnostics, NOT
 # chain mixing: they sit at ~1.00 / ~S by construction and document only that
@@ -100,13 +100,61 @@
   out
 }
 
+# Approximation-reliability table for an i.i.d. deterministic fit. The
+# provenance gate lives in `diagnostics()`; this builds the table and attaches
+# the PSIS / grid-quadrature headline as attributes. Documented user-side under
+# `?laplace_diagnostics`.
+.tulpa_approx_diag_table <- function(fit, pars = NULL) {
+  draws <- .fit_draws(fit)
+  if (is.null(draws)) {
+    message("diagnostics(): the fit carries no posterior draws.")
+    return(NULL)
+  }
+  tab <- .tulpa_iid_param_table(draws, pars = pars)
+  if (is.null(tab)) return(NULL)
+
+  grid <- .tulpa_grid_reliability(fit)
+  psis <- .tulpa_psis_reliability(fit)
+  k    <- psis$pareto_k
+
+  attr(tab, "pareto_k")        <- k
+  attr(tab, "pareto_k_band")   <- .tulpa_khat_band(k)
+  attr(tab, "pareto_k_is_ess") <- psis$pareto_k_is_ess
+  attr(tab, "scope")           <- psis$pareto_k_scope
+  if (!is.null(grid)) {
+    attr(tab, "ess_grid")     <- grid$ess_grid
+    attr(tab, "n_grid")       <- grid$n_grid
+    attr(tab, "rel_ess_grid") <- grid$rel_ess_grid
+    attr(tab, "max_weight")   <- grid$max_weight
+  }
+
+  summary_row <- data.frame(
+    pareto_k      = k,
+    pareto_k_band = .tulpa_khat_band(k),
+    ess_grid      = if (is.null(grid)) NA_real_ else grid$ess_grid,
+    n_grid        = if (is.null(grid)) NA_integer_ else grid$n_grid,
+    max_weight    = if (is.null(grid)) NA_real_ else grid$max_weight,
+    n_draws       = nrow(as.matrix(draws)),
+    stringsAsFactors = FALSE, row.names = NULL
+  )
+  attr(tab, "summary") <- summary_row
+  class(tab) <- c("laplace_diagnostics", class(tab))
+  tab
+}
+
 #' Approximation-reliability diagnostics for a deterministic nested-Laplace fit
 #'
 #' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' Use [diagnostics()], which returns this table for any fit whose draws are an
+#' i.i.d. approximation sample. The sections below document that table; they
+#' remain the reference for its columns and attributes.
+#'
 #' Per-parameter reliability diagnostics for a fit whose posterior draws are
 #' i.i.d. samples from a deterministic approximation (the nested-Laplace
 #' grid-mixture posterior `sum_k w_k N(mode_k, V_k)`), where the between-chain
-#' Gelman-Rubin Rhat that [mcmc_diagnostics()] reports does not apply. This is
+#' Gelman-Rubin Rhat that [diagnostics()] reports for a chain fit does not apply. This is
 #' the accessor that plays Rhat's role for the deterministic engine: it answers
 #' "did the approximation work", not "did the chains mix".
 #'
@@ -170,52 +218,21 @@
 #' Vehtari, Gelman, Simpson, Carpenter & Burkner (2021). Rank-normalization,
 #'   folding, and localization: an improved Rhat for assessing convergence of
 #'   MCMC. \emph{Bayesian Analysis} 16(2):667-718.
-#' @seealso [mcmc_diagnostics()] (the chain counterpart, which dispatches here
-#'   for i.i.d. fits), [tulpa_psis()].
+#' @seealso [diagnostics()] (the front door, which returns this table for
+#'   i.i.d. fits), [tulpa_psis()].
 #' @examples
 #' set.seed(1)
 #' n <- 200L; x <- rnorm(n)
 #' y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
+#' # `mode = "laplace"` returns a mode + covariance and carries no draws; a
+#' # sampled deterministic backend is what this table describes.
 #' fit <- tulpa(y ~ x, data.frame(y = y, x = x), family = "binomial",
-#'              mode = "laplace")
-#' laplace_diagnostics(fit)
+#'              mode = "smc")
+#' diagnostics(fit)
 #' @export
 laplace_diagnostics <- function(fit, pars = NULL) {
-  draws <- fit$draws %||% fit$samples
-  if (is.null(draws)) {
-    message("laplace_diagnostics(): the fit carries no posterior draws.")
-    return(NULL)
-  }
-  tab <- .tulpa_iid_param_table(draws, pars = pars)
-  if (is.null(tab)) return(NULL)
-
-  grid <- .tulpa_grid_reliability(fit)
-  psis <- .tulpa_psis_reliability(fit)
-  k    <- psis$pareto_k
-
-  attr(tab, "pareto_k")        <- k
-  attr(tab, "pareto_k_band")   <- .tulpa_khat_band(k)
-  attr(tab, "pareto_k_is_ess") <- psis$pareto_k_is_ess
-  attr(tab, "scope")           <- psis$pareto_k_scope
-  if (!is.null(grid)) {
-    attr(tab, "ess_grid")     <- grid$ess_grid
-    attr(tab, "n_grid")       <- grid$n_grid
-    attr(tab, "rel_ess_grid") <- grid$rel_ess_grid
-    attr(tab, "max_weight")   <- grid$max_weight
-  }
-
-  summary_row <- data.frame(
-    pareto_k      = k,
-    pareto_k_band = .tulpa_khat_band(k),
-    ess_grid      = if (is.null(grid)) NA_real_ else grid$ess_grid,
-    n_grid        = if (is.null(grid)) NA_integer_ else grid$n_grid,
-    max_weight    = if (is.null(grid)) NA_real_ else grid$max_weight,
-    n_draws       = nrow(as.matrix(draws)),
-    stringsAsFactors = FALSE, row.names = NULL
-  )
-  attr(tab, "summary") <- summary_row
-  class(tab) <- c("laplace_diagnostics", class(tab))
-  tab
+  lifecycle::deprecate_warn("0.0.95", "laplace_diagnostics()", "diagnostics()")
+  .tulpa_approx_diag_table(fit, pars = pars)
 }
 
 #' @export

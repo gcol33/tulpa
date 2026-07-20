@@ -1,0 +1,188 @@
+# ============================================================================
+# Empirical Bayes over random-effect covariances.
+#
+# The estimator is the mode of the same outer objective the nested-Laplace
+# Sigma integrator maximizes before it places its integration nodes:
+#
+#     theta_hat = argmax_theta [ log p_Laplace(y | Sigma(theta)) + log pi(theta) ]
+#
+# so EB and tulpa_re_cov_nested() are not two estimators that agree by
+# construction -- they are one objective, .re_cov_theta_fit(), read at two
+# different points. EB reports the plug-in at theta_hat; the nested integrator
+# carries on and marginalizes around it.
+#
+# What that costs is the whole reason both exist: conditioning on theta_hat
+# drops the hyperparameter uncertainty, so fixed-effect intervals from an EB fit
+# are narrower than the marginalized ones -- most visibly with few groups, where
+# the variance-component marginal is skewed and its mode sits below its median.
+# EB is therefore registered as a Tier-2 ("structured") backend and is opt-in by
+# name: auto never selects it.
+# ============================================================================
+
+
+#' Empirical-Bayes random-effect covariances
+#'
+#' @description
+#' Estimate one or more random-effect covariances `Sigma` by maximizing the
+#' Laplace marginal likelihood over them (plus the hyperprior), then report the
+#' fixed effects conditional on the maximizer. This is the plug-in ("ML-II" /
+#' empirical-Bayes) counterpart of [tulpa_re_cov_nested()], which integrates over
+#' `Sigma` instead of fixing it at the maximizer.
+#'
+#' @details
+#' Blocks, coordinates and the default hyperprior are exactly those of
+#' [tulpa_re_cov_nested()] -- a correlated `(1 + x | g)` term is a full
+#' `Sigma = L L'` in log-Cholesky coordinates, an uncorrelated `(1 + x || g)`
+#' term is diagonal in log-SD coordinates, and a scalar `(1 | g)` term is the
+#' degenerate one-coefficient block. Both functions call the same outer
+#' objective and the same optimizer, so `tulpa_eb()$theta_hat` and
+#' `tulpa_re_cov_nested()$theta_hat` are the same estimate on the same data.
+#'
+#' The reported fixed-effect covariance is the conditional one at `theta_hat`
+#' (`solve(H_beta)`). It does not include the hyperparameter uncertainty that
+#' [tulpa_re_cov_nested()] integrates over, so EB intervals are narrower --
+#' increasingly so as the number of groups falls. Use the nested integrator when
+#' the variance components themselves, or calibrated fixed-effect intervals, are
+#' the target; use EB when the point estimate is, or as a fast starting fit.
+#'
+#' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
+#'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
+#' @param re_terms Either a single random-effect term or a list of them; see
+#'   [tulpa_re_cov_nested()] for the per-term fields.
+#' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
+#'   [re_cov_pc_lkj_prior()]). Ignored when `log_prior_theta` is supplied. The
+#'   prior is part of the maximized objective, so it regularizes the estimate:
+#'   with few groups it is what keeps a block off the `sigma = 0` boundary.
+#' @param log_prior_theta Optional `function(theta)` returning a scalar log
+#'   prior density on the full stacked parameter vector, replacing the default.
+#'   Supply `function(theta) 0` for an unpenalized maximum-marginal-likelihood
+#'   estimate (which can collapse to `sigma = 0` on small designs).
+#' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
+#'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
+#' @param offset Optional observation-level offset on the linear predictor
+#'   (length `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
+#'   with `n_quad > 1`, which errors rather than dropping it.
+#' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
+#'   joint-field Laplace inner solve. `> 1` refines it with `n_quad`-point
+#'   adaptive Gauss-Hermite quadrature, which requires a single shared grouping
+#'   factor; see [tulpa_re_cov_nested()].
+#' @param control A named list of numerical knobs: `max_iter`, `tol`,
+#'   `n_threads` (inner-solve controls, see [tulpa_laplace()]), and
+#'   `outer_maxit` (iteration budget for the maximization over `Sigma`, default
+#'   500; applies to the Nelder-Mead simplex used from two parameters up, since
+#'   the one-parameter case is bracketed by Brent). Exhausting the budget warns.
+#'
+#' @return A `tulpa_fit` with:
+#'   - `mode`, `H_beta`: the fixed-effect (and, on the `n_quad = 1` path, random-
+#'     effect) mode and the fixed-effect precision at `theta_hat`, driving
+#'     `coef`/`confint`/`vcov`/`summary`.
+#'   - `map`: the `Sigma` / `sigma` / `rho` summary at `theta_hat` (a single list
+#'     for one block, a named list of them for several).
+#'   - `Sigma`: the estimated covariance (a matrix for one block, a named list
+#'     of matrices for several).
+#'   - `theta_hat`, `log_marginal`, `layout`, `n_blocks`, `n_coefs`.
+#'   - `converged`: whether the inner Newton solve at `theta_hat` converged.
+#'   - `outer_convergence`: `optim`'s code for the maximization over `Sigma`
+#'     (`0` on success). A non-zero value also warns.
+#'
+#' @seealso [tulpa_re_cov_nested()] to integrate over `Sigma` rather than fix it;
+#'   [tulpa_laplace()] for the inner solve.
+#'
+#' @references
+#' Casella (1985). An introduction to empirical Bayes data analysis.
+#' \emph{The American Statistician} 39(2):83-87.
+#' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+#' Gaussian models by using integrated nested Laplace approximations.
+#' \emph{JRSS-B} 71(2):319-392.
+#' @examples
+#' \donttest{
+#' set.seed(1)
+#' G <- 30L; per <- 10L; n <- G * per
+#' grp <- rep(seq_len(G), each = per); x <- rnorm(n)
+#' b <- rnorm(G, 0, 0.8)
+#' y <- rpois(n, exp(0.3 + 0.5 * x + b[grp]))
+#' re_term <- list(idx = grp, n_groups = G, n_coefs = 1L)
+#' fit <- tulpa_eb(y, NULL, cbind(1, x), re_term, family = "poisson")
+#' fit$map$sigma          # empirical-Bayes RE standard deviation
+#' }
+#' @export
+tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
+                     family = "binomial", phi = 1.0,
+                     prior_sigma = c(3, 0.05), eta = 2,
+                     log_prior_theta = NULL,
+                     beta_prior = NULL, offset = NULL, n_quad = 1L,
+                     control = list()) {
+  .check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
+  max_iter    <- as.integer(control$max_iter %||% 100L)
+  tol         <- control$tol %||% 1e-8
+  n_threads   <- as.integer(control$n_threads %||% 1L)
+  outer_maxit <- as.integer(control$outer_maxit %||% 500L)
+  n_quad <- as.integer(n_quad)
+  if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
+
+  # need_scale = FALSE: the numerical outer Hessian exists to place integration
+  # nodes. EB places none, and asking Nelder-Mead for it costs O(k^2) extra
+  # objective evaluations -- each one a full inner Laplace solve.
+  core <- .re_cov_theta_fit(
+    y = y, n_trials = n_trials, X = X, re_terms = re_terms,
+    family = family, phi = phi,
+    prior_sigma = prior_sigma, eta = eta, log_prior_theta = log_prior_theta,
+    beta_prior = beta_prior, n_quad = n_quad,
+    max_iter = max_iter, tol = tol, n_threads = n_threads,
+    caller = "tulpa_eb", need_scale = FALSE, outer_maxit = outer_maxit,
+    offset = offset)
+
+  layout    <- core$layout
+  theta_hat <- core$theta_hat
+  p_fix     <- core$p_fix
+
+  # Re-solve at theta_hat through the SAME closure the optimizer drove, so the
+  # reported fit cannot come from a differently-configured inner solve.
+  L_hat <- .re_cov_theta_to_L_list(theta_hat, layout)
+  fit_hat <- core$inner_fit(L_hat)
+  if (is.null(fit_hat) || is.null(fit_hat$mode) ||
+      length(fit_hat$log_marginal) != 1L || !is.finite(fit_hat$log_marginal)) {
+    stop("tulpa_eb(): the inner Laplace solve failed at the maximizing Sigma. ",
+         "Check the data, the hyperprior, and the family.", call. = FALSE)
+  }
+
+  beta_names <- colnames(core$X) %||% paste0("beta", seq_len(p_fix))
+  beta_mean  <- stats::setNames(fit_hat$mode[seq_len(p_fix)], beta_names)
+
+  map <- .re_cov_map_summary(theta_hat, layout)
+  Sigma <- if (length(layout) == 1L) map$Sigma else
+    lapply(map, `[[`, "Sigma")
+
+  # Read before clearing.
+  log_marg <- fit_hat$log_marginal
+
+  # `c()` concatenates rather than overwrites, so a name appearing in both
+  # fit_hat and the list below lands TWICE: `names(fit)` shows it duplicated and
+  # `fit$name` silently answers with whichever came first. So clear every name
+  # this function is about to set. That includes the inner solve's provenance
+  # stamps -- fit_hat is itself a finalized tulpa_laplace fit, and since
+  # .finalize_fit() only fills absent fields, a surviving `backend = "laplace"`
+  # would label this fit a Laplace one.
+  fit_hat[c("backend", "draws_kind", "inference_mode", "inference_tier",
+            "selection_reason", "log_marginal")] <- NULL
+
+  .finalize_fit(c(fit_hat, list(
+    map          = map,
+    Sigma        = Sigma,
+    beta         = beta_mean,
+    means        = beta_mean,
+    param_names  = beta_names,
+    process_info = list(list(name = "fixed_effects", p = p_fix,
+                             coef_names = beta_names)),
+    n_params     = p_fix,
+    N            = length(y),
+    theta_hat    = theta_hat,
+    log_marginal = log_marg,
+    # optim's code for the outer maximization, for a programmatic check; a
+    # non-zero value has already warned.
+    outer_convergence = as.integer(core$opt$convergence),
+    layout       = layout,
+    n_blocks     = length(layout),
+    n_coefs      = vapply(layout, `[[`, integer(1), "nc")
+  )), backend = "eb", n_fixed = p_fix, fixed_names = beta_names)
+}
