@@ -528,6 +528,23 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     if (length(val) != 1L || !is.finite(val)) -Inf else val
   }
 
+  # Inner solve that also keeps the joint posterior precision, which the exact
+  # gradient differentiates through. Separate from inner_logmarg because the
+  # extra factor costs memory the objective-only path has no use for.
+  inner_fit_grad <- function(L_list) {
+    tryCatch(
+      tulpa_laplace(
+        y = y, n_trials = n_trials, X = X,
+        re_list = .re_cov_build_re_list(L_list, layout),
+        family = family, phi = phi, return_hessian = TRUE,
+        return_joint_hessian = TRUE,
+        beta_prior = beta_prior, offset = offset,
+        max_iter = max_iter, tol = tol, n_threads = n_threads
+      ),
+      error = function(e) NULL
+    )
+  }
+
   # Full inner solve at the integration nodes: the Laplace log-marginal plus the
   # fixed-effect mode and its MARGINAL covariance (solve(H_beta)). Paid O(n_grid)
   # times, not per optim step.
@@ -652,15 +669,107 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     L_list <- .re_cov_theta_to_L_list(theta, layout)
     -(inner_logmarg(L_list) + log_prior_theta(theta))
   }
+
+  # Analytic outer gradient. Available when the inner solve is the joint-field
+  # Laplace (the AGHQ inner marginal at n_quad > 1 is a different objective, and
+  # its Fisher-identity gradient is not this one) and the family has an exact
+  # curvature derivative. `use_exact_grad` is resolved once here rather than per
+  # optim step so a family without one falls back cleanly instead of alternating
+  # between two objectives.
+  use_exact_grad <- !use_core &&
+    isTRUE(tryCatch(cpp_family_has_curvature_derivative(family),
+                    error = function(e) FALSE))
+
+  # The hyperprior is a closed form in theta with no inner solve behind it, so
+  # its gradient is a central difference costing 2k prior evaluations -- no
+  # Laplace solves. Only the expensive half of the gradient needs to be exact.
+  d_log_prior_theta <- function(theta, h = 1e-6) {
+    vapply(seq_along(theta), function(j) {
+      tp <- theta; tp[j] <- tp[j] + h
+      tm <- theta; tm[j] <- tm[j] - h
+      (log_prior_theta(tp) - log_prior_theta(tm)) / (2 * h)
+    }, numeric(1))
+  }
+
+  # Value and gradient of the FULL outer objective, log_marginal + log_prior, at
+  # one theta. Everything downstream -- the optimizer, the marginal correction's
+  # curvature -- reads this, so there is one definition of what is being
+  # differentiated and the prior term cannot be attached twice or dropped once.
+  # Cached because BFGS asks for value and gradient at the same theta and the
+  # inner solve is the entire cost.
+  grad_cache <- new.env(parent = emptyenv())
+  eval_grad_at <- function(theta, want_jacobian = FALSE) {
+    key <- paste(c(signif(theta, 12), if (want_jacobian) "J"), collapse = ",")
+    if (!is.null(grad_cache[[key]])) return(grad_cache[[key]])
+    L_list <- .re_cov_theta_to_L_list(theta, layout)
+    fit <- inner_fit_grad(L_list)
+    val <- if (is.null(fit) || !is.finite(fit$log_marginal %||% NA_real_)) NULL else {
+      r <- .laplace_exact_re_grad(
+        fit = fit, y = y, X = X, n_trials = n_trials, offset = offset,
+        weights = NULL,
+        re_list = .re_cov_build_re_list(L_list, layout),
+        layout = layout, L_list = L_list, family = family,
+        # NA_real_ mirrors inner_logmarg / inner_fit, which do not thread phi2
+        # either: the gradient must describe the model the inner solve fitted,
+        # not a differently-parameterized one.
+        phi = phi, phi2 = NA_real_, want_jacobian = want_jacobian
+      )
+      if (is.null(r)) NULL else {
+        # The prior shifts the objective but not the mode, so it enters the
+        # gradient and leaves J alone.
+        g <- (if (want_jacobian) r$grad else r) + d_log_prior_theta(theta)
+        list(f = fit$log_marginal + log_prior_theta(theta), g = g,
+             J = if (want_jacobian) r$J else NULL)
+      }
+    }
+    grad_cache[[key]] <- val
+    val
+  }
+
+  negg_exact <- function(theta) {
+    r <- eval_grad_at(theta)
+    if (is.null(r) || !is.finite(r$f)) return(.Machine$double.xmax)
+    -r$f
+  }
+  negg_gr <- function(theta) {
+    r <- eval_grad_at(theta)
+    if (is.null(r)) return(rep(0, length(theta)))
+    -r$g
+  }
+
   # Nelder-Mead degenerates in one dimension (R warns as much), and k == 1 is the
   # common case: a single scalar `(1 | g)` block, whose only coordinate is
   # log(sigma). Brent bracketing over a wide log-SD interval is both the reliable
   # and the cheaper option there; the simplex takes over from k >= 2. Brent is
   # bracketed rather than iteration-limited, so `outer_maxit` applies to the
-  # simplex only.
+  # simplex only. With the analytic gradient available, BFGS replaces both: it
+  # converges in far fewer inner solves and does not degrade with k.
   brent_lo <- log(1e-4)
   brent_hi <- log(1e3)
-  opt <- if (k == 1L) {
+  opt <- if (use_exact_grad) {
+    o <- tryCatch(
+      stats::optim(theta0, negg_exact, negg_gr, method = "BFGS",
+                   hessian = need_scale,
+                   control = list(maxit = as.integer(outer_maxit),
+                                  reltol = 1e-10)),
+      error = function(e) NULL
+    )
+    # A gradient-driven run that fails outright (a singular H at some trial
+    # theta, say) must not take the fit down with it; fall back to the
+    # derivative-free path rather than reporting a stop point as an estimate.
+    if (is.null(o) || !all(is.finite(o$par))) {
+      if (k == 1L) {
+        stats::optim(theta0, negg, method = "Brent",
+                     lower = brent_lo, upper = brent_hi, hessian = need_scale,
+                     control = list(reltol = 1e-10))
+      } else {
+        stats::optim(theta0, negg, method = "Nelder-Mead",
+                     hessian = need_scale,
+                     control = list(maxit = as.integer(outer_maxit),
+                                    reltol = 1e-8))
+      }
+    } else o
+  } else if (k == 1L) {
     stats::optim(theta0, negg, method = "Brent",
                  lower = brent_lo, upper = brent_hi, hessian = need_scale,
                  control = list(reltol = 1e-10))
@@ -735,9 +844,21 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # second, differently-derived copy of a number both callers already read off an
   # actual fit -- and one that goes NaN whenever the optimizer's last step hit
   # the failure sentinel.
+  # `exact_grad_at` is the analytic outer gradient and, on request, the exact
+  # mode Jacobian at a given theta -- NULL when this path has no exact gradient
+  # (the AGHQ inner marginal, or a family whose working weight has no closed-form
+  # eta-derivative). tulpa_eb(marginal = TRUE) uses it to replace the
+  # finite-difference stencil; a NULL sends it back to the stencil.
+  exact_grad_at <- if (!use_exact_grad) NULL else function(theta, want_jacobian = FALSE) {
+    r <- eval_grad_at(theta, want_jacobian = want_jacobian)
+    if (is.null(r)) return(NULL)
+    if (isTRUE(want_jacobian)) list(grad = r$g, J = r$J) else r$g
+  }
+
   list(layout = layout, k = k, n_trials = n_trials, X = X, p_fix = p_fix,
        log_prior_theta = log_prior_theta,
        inner_logmarg = inner_logmarg, inner_fit = inner_fit,
+       exact_grad_at = exact_grad_at,
        theta0 = theta0, theta_hat = theta_hat, opt = opt,
        post_cov = post_cov, L_scale = L_scale)
 }

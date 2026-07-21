@@ -1215,7 +1215,8 @@ LaplaceResult laplace_mode_spec_dense_solve(
     int k_grid,
     const BetaPrior* beta_prior,
     bool return_re_cov,
-    int sparse_override
+    int sparse_override,
+    bool store_Q
 ) {
     if (data.n_processes < 1) {
         Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
@@ -1358,7 +1359,7 @@ LaplaceResult laplace_mode_spec_dense_solve(
         data_use, layout, blocks, k_grid, *spec, data_use.model_response_data,
         re_group_1based, max_iter, tol, n_threads,
         params_inout, scratch, &newton_solver,
-        /*store_Q=*/false,
+        store_Q,
         return_re_cov ? &inv_block_layout : nullptr,
         beta_prior, sparse_override
     );

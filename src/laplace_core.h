@@ -82,6 +82,17 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     out["cov_blocks"] = cov_blocks;
   }
 
+  // The posterior precision at the mode, when the solver was asked to keep it.
+  // Lower triangle in CSC (stype = -1), so the R side symmetrizes. Emitted as
+  // the raw triplet of vectors rather than a dgCMatrix because this header has
+  // no Matrix dependency; .laplace_joint_hessian() assembles it.
+  if (result.Q_csc_n > 0) {
+    out["H_joint_p"] = result.Q_csc_p;
+    out["H_joint_i"] = result.Q_csc_i;
+    out["H_joint_x"] = result.Q_csc_x;
+    out["H_joint_n"] = result.Q_csc_n;
+  }
+
   return out;
 }
 

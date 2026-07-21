@@ -60,6 +60,14 @@
 #'   full inverse Hessian, not the inverse of a diagonal block). Used by the EM
 #'   M-step for a full random-effect covariance. Non-spatial multi-RE path only.
 #'
+#' @param return_joint_hessian If `TRUE`, additionally return `H_joint`: the
+#'   full joint posterior precision of the latent field `[beta | random
+#'   effects]` at the mode, as a symmetric sparse matrix. This is the matrix the
+#'   Laplace approximation takes the determinant of, so it is what an exact
+#'   derivative of the log-marginal has to differentiate through; `H_beta` is
+#'   only its fixed-effect Schur complement. Costs one extra copy of the
+#'   Hessian, so it is off by default. Non-spatial multi-RE path only.
+#'
 #' @param X_zi Optional zero-inflation design matrix (`length(y)` rows). When
 #'   supplied the latent fixed-effect block becomes `[beta_count | beta_zi]` and
 #'   the family's compiled zero-inflated kernel is used. Non-spatial path only.
@@ -102,7 +110,8 @@ tulpa_laplace <- function(y, n_trials, X,
                           beta_prior = NULL,
                           return_re_cov = FALSE,
                           X_zi = NULL,
-                          zi_prior_sd = 2.5) {
+                          zi_prior_sd = 2.5,
+                          return_joint_hessian = FALSE) {
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
@@ -247,8 +256,12 @@ tulpa_laplace <- function(y, n_trials, X,
       return_re_cov   = isTRUE(return_re_cov),
       phi2 = phi2 %||% NA_real_,
       X_zi = X_zi,
-      zi_prior_sd = zi_prior_sd
+      zi_prior_sd = zi_prior_sd,
+      return_joint_hessian = isTRUE(return_joint_hessian)
     )
+    if (isTRUE(return_joint_hessian)) {
+      result$H_joint <- .laplace_joint_hessian(result)
+    }
   }
 
   # SPDE / NNGP Laplace return mode = c(beta, spatial_effects). The
@@ -308,40 +321,17 @@ tulpa_laplace <- function(y, n_trials, X,
       # one n_coefs x n_coefs precision block per group -- full (off-diagonal
       # included) for a correlated term, diagonal otherwise. Each term k
       # contributes n_groups[k] * n_coefs[k] latent variables.
-      Z_parts <- list()
-      Dinv_blocks <- list()
-      for (k in seq_along(re_list)) {
-        r <- re_list[[k]]
-        nc <- r$n_coefs %||% 1L
+      # Z in the latent column order [g1_c1, g1_c2, g2_c1, ...] per term. The
+      # exact-gradient path needs the same matrix, so the construction lives in
+      # .re_design_matrix() (R/laplace_gradient.R) and both read it from there.
+      Z <- .re_design_matrix(re_list, n_obs)
+      # One precision block per group, same column order as Z. The block is the
+      # full Q_k for a correlated term, so the off-diagonal propagates into the
+      # marginal fixed-effect SE rather than being dropped.
+      Dinv_blocks <- lapply(re_list, function(r) {
         Qk <- .re_cov_spec(r)$Q  # nc x nc RE precision (Sigma^{-1})
-
-        if (nc == 1L && is.null(r$Z)) {
-          # Intercept-only: Z is n_obs x n_groups indicator matrix
-          Z_parts[[k]] <- Matrix::sparseMatrix(
-            i = seq_len(n_obs), j = r$idx,
-            x = rep(1.0, n_obs), dims = c(n_obs, r$n_groups)
-          )
-        } else {
-          # Slopes (incl. a single random slope `(0 + x | g)`, n_coefs == 1 with
-          # a supplied Z): Z is n_obs x (n_groups * n_coefs), column layout
-          # [g1_c1, g1_c2, ..., g2_c1, g2_c2, ...].
-          Z_full <- r$Z %||% matrix(1, nrow = n_obs, ncol = 1)
-          n_latent <- r$n_groups * nc
-          ii <- rep(seq_len(n_obs), each = nc)
-          jj <- rep((r$idx - 1L) * nc, each = nc) + rep(seq_len(nc), n_obs)
-          xx <- as.numeric(t(Z_full))
-          Z_parts[[k]] <- Matrix::sparseMatrix(
-            i = ii, j = jj, x = xx, dims = c(n_obs, n_latent)
-          )
-        }
-        # One precision block per group, same column order as Z. The block is
-        # the full Q_k for a correlated term, so the off-diagonal propagates
-        # into the marginal fixed-effect SE rather than being dropped.
-        Dinv_blocks[[k]] <- Matrix::bdiag(
-          rep(list(Matrix::Matrix(Qk, sparse = TRUE)), r$n_groups)
-        )
-      }
-      Z <- do.call(cbind, Z_parts)
+        Matrix::bdiag(rep(list(Matrix::Matrix(Qk, sparse = TRUE)), r$n_groups))
+      })
       ZtWZ <- Matrix::crossprod(Z, W * Z)
       D_inv <- Matrix::bdiag(Dinv_blocks)
       ZtWZ_Dinv <- ZtWZ + D_inv

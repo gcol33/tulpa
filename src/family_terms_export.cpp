@@ -25,6 +25,7 @@
 #include <string>
 
 #include "laplace_family_link.h"
+#include "laplace_family_curvature.h"
 #include "glmm_oracle.h"
 #include "laplace_likelihoods.h"
 #include "builtin_family_ll_ad.h"
@@ -57,6 +58,55 @@ Rcpp::NumericVector cpp_family_obs_terms(double y, int n_trials, double eta,
   return Rcpp::NumericVector::create(
       Rcpp::_["grad"]     = gh.grad,
       Rcpp::_["neg_hess"] = gh.neg_hess);
+}
+
+// d(neg_hess)/d eta from laplace_family_curvature.h, with the gate that says
+// whether it is exact for this family. The exact Laplace gradient differentiates
+// log|H|, and H carries the weight cpp_family_terms reports as `neg_hess`, so
+// this is the derivative of THAT weight -- for the expected-form families it is
+// deliberately not the third derivative of the log density.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_curvature_deta(double y, int n_trials, double eta,
+                                              std::string family, double phi,
+                                              double phi2 = NA_REAL) {
+  return Rcpp::NumericVector::create(
+      Rcpp::_["dw_deta"] = tulpa::curvature_deta_for_family(y, n_trials, eta,
+                                                            family, phi, phi2),
+      Rcpp::_["exact"]   = tulpa::has_curvature_derivative(family) ? 1.0 : 0.0);
+}
+
+// Whether curvature_deta_for_family() is exact for this family, so the exact
+// Laplace gradient can refuse rather than optimize a fiction.
+// [[Rcpp::export]]
+bool cpp_family_has_curvature_derivative(std::string family) {
+  return tulpa::has_curvature_derivative(family);
+}
+
+// Vectorized over observations. The exact Laplace gradient needs dw/deta at
+// every observation of a fit, so the per-element probe above would cost one
+// .Call per row; this keeps it to one. `n_trials` is recycled when length 1.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_curvature_deta_vec(Rcpp::NumericVector y,
+                                                  Rcpp::IntegerVector n_trials,
+                                                  Rcpp::NumericVector eta,
+                                                  std::string family, double phi,
+                                                  double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n) {
+    Rcpp::stop("cpp_family_curvature_deta_vec: y (%d) and eta (%d) differ in length.",
+               (int)y.size(), (int)n);
+  }
+  const bool recycle_nt = (n_trials.size() == 1);
+  if (!recycle_nt && n_trials.size() != n) {
+    Rcpp::stop("cpp_family_curvature_deta_vec: n_trials must be length 1 or %d (got %d).",
+               (int)n, (int)n_trials.size());
+  }
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; i++) {
+    out[i] = tulpa::curvature_deta_for_family(
+        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], family, phi, phi2);
+  }
+  return out;
 }
 
 // The AD-templated density (builtin_family_ll_ad.h), which is what the sampler

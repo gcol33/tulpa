@@ -168,7 +168,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     bool return_re_cov = false,
     double phi2 = NA_REAL,
     Rcpp::Nullable<Rcpp::NumericMatrix> X_zi = R_NilValue,
-    double zi_prior_sd = 2.5
+    double zi_prior_sd = 2.5,
+    bool return_joint_hessian = false
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
     // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
@@ -413,7 +414,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         data, layout, params, re_group_empty, max_iter, tol, n_threads,
         /*blocks=*/nullptr, /*k_grid=*/0,
-        (has_bp || has_zi) ? &bp : nullptr, return_re_cov);
+        (has_bp || has_zi) ? &bp : nullptr, return_re_cov,
+        /*sparse_override=*/0, return_joint_hessian);
     return tulpa::laplace_result_to_list(res);
 }
 

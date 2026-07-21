@@ -1,5 +1,52 @@
 # tulpa NEWS
 
+## 0.0.98
+
+An exact analytic gradient of the joint-field Laplace log-marginal with respect
+to the random-effect covariances, and the outer optimizer and marginal
+correction rebuilt on top of it.
+
+New:
+
+- `tulpa_laplace(return_joint_hessian = TRUE)` returns `H_joint`, the full
+  joint posterior precision of `[beta | random effects]` at the mode, as a
+  symmetric sparse matrix. Previously only its fixed-effect Schur complement
+  (`H_beta`) was reachable, so nothing outside the kernel could differentiate
+  the quantity the Laplace approximation takes the determinant of.
+- `dw/deta` for every compiled family (`laplace_family_curvature.h`): the
+  eta-derivative of the curvature the Newton system uses. For poisson,
+  binomial, neg_binomial_2 and the truncated families that is the true third
+  derivative of the log density; for the families whose Hessian carries an
+  expected or working weight it is deliberately the derivative of THAT weight,
+  since it is the weight the objective is built from.
+  `cpp_family_has_curvature_derivative()` gates it, mirroring
+  `has_observed_curvature()`.
+
+Changed:
+
+- The outer optimization over the random-effect covariances now runs BFGS
+  against the analytic gradient where one is available, instead of Brent
+  (`k == 1`) or Nelder-Mead (`k >= 2`). Measured 1.6x fewer inner Laplace
+  solves for a scalar block and 2.8x for a correlated one; the gain grows with
+  the number of hyperparameter coordinates, since the simplex is what scales
+  badly. Falls back to the derivative-free path for a family with no exact
+  curvature derivative, for the AGHQ inner marginal (`n_quad > 1`, a different
+  objective), and if a gradient-driven run fails outright.
+- `tulpa_eb(marginal = TRUE)` builds its correction from the analytic gradient:
+  the mode Jacobian `J` is now closed-form rather than finite-differenced, and
+  `H_theta` comes from differencing an exact gradient (`2k` solves) rather than
+  second-differencing the objective (`1 + 2k^2` solves). Same correction, 2 to
+  2.8x fewer solves.
+
+Notes:
+
+- The Fisher-identity gradient the AGHQ path supplies is not a substitute at
+  the Laplace case: it omits the term that flows through the mode into
+  `log|H|`, which is wrong by 9 to 58 percent on the checked cases. It vanishes
+  only for a Gaussian response, where the curvature does not move with the
+  linear predictor. Derivation and numerical confirmation in
+  `dev_notes/laplace_exact_gradient.md`.
+
 ## 0.0.97
 
 The soft sum-to-zero constant that identifies intrinsic latent fields, moved

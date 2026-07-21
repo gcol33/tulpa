@@ -22,7 +22,8 @@ tulpa_laplace(
   beta_prior = NULL,
   return_re_cov = FALSE,
   X_zi = NULL,
-  zi_prior_sd = 2.5
+  zi_prior_sd = 2.5,
+  return_joint_hessian = FALSE
 )
 }
 \arguments{
@@ -100,6 +101,13 @@ the family's compiled zero-inflated kernel is used. Non-spatial path only.}
 \code{ModelData::zi_prior_sd}). It is what keeps the logit identified when a
 level contributes no zeros, where the likelihood alone drives \code{beta_zi} to
 \code{-Inf}. \code{+Inf} removes the penalty. Ignored when \code{X_zi} is \code{NULL}.}
+
+\item{return_joint_hessian}{If \code{TRUE}, additionally return \code{H_joint}: the
+full joint posterior precision of the latent field \verb{[beta | random effects]} at the mode, as a symmetric sparse matrix. This is the matrix the
+Laplace approximation takes the determinant of, so it is what an exact
+derivative of the log-marginal has to differentiate through; \code{H_beta} is
+only its fixed-effect Schur complement. Costs one extra copy of the
+Hessian, so it is off by default. Non-spatial multi-RE path only.}
 }
 \value{
 A list with:

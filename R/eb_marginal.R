@@ -118,6 +118,43 @@
 }
 
 
+# Same (H, J, n_x) contract as .eb_fd_stencil, built from the analytic outer
+# gradient instead of from differences of the objective:
+#
+#   J       closed form, one matrix-vector product per coordinate against the
+#           H^-1 the gradient already formed -- no extra solve, no truncation
+#   H[, j]  -(g(theta + h e_j) - g(theta - h e_j)) / 2h, one exact gradient per
+#           stencil point, so 2k solves rather than 1 + 2k^2
+#
+# Differencing a gradient also keeps the symmetry honest: the off-diagonals come
+# from two independent columns and are averaged, where the objective route needs
+# a separate four-point evaluation per pair.
+.eb_exact_stencil <- function(core, theta_hat, step) {
+  k <- length(theta_hat)
+  at <- core$exact_grad_at
+  if (is.null(at)) return(NULL)
+
+  centre <- tryCatch(at(theta_hat, want_jacobian = TRUE), error = function(e) NULL)
+  if (is.null(centre) || is.null(centre$J)) return(NULL)
+  J <- centre$J
+  n_x <- nrow(J)
+  if (n_x < 1L || ncol(J) != k) return(NULL)
+
+  H <- matrix(0, k, k)
+  for (j in seq_len(k)) {
+    tp <- theta_hat; tp[j] <- tp[j] + step
+    tm <- theta_hat; tm[j] <- tm[j] - step
+    gp <- tryCatch(at(tp), error = function(e) NULL)
+    gm <- tryCatch(at(tm), error = function(e) NULL)
+    if (is.null(gp) || is.null(gm)) return(NULL)
+    if (length(gp) != k || length(gm) != k) return(NULL)
+    H[, j] <- -(gp - gm) / (2 * step)
+  }
+  if (any(!is.finite(H))) return(NULL)
+  list(H = (H + t(H)) / 2, J = J, n_x = n_x)
+}
+
+
 # Names for the stacked theta coordinates, in the packing order of
 # .re_cov_theta_to_L_list: per block, either the log standard deviations of a
 # diagonal Sigma or the column-major lower-triangular log-Cholesky coordinates
@@ -153,22 +190,43 @@
   if (k < 1L) return(NULL)
   if (is.null(H_beta)) return(NULL)
 
-  ev   <- .eb_fd_evaluator(core)
-  base <- .eb_fd_stencil(ev, theta_hat, step)
+  # One stencil interface, two implementations. The exact route differences an
+  # analytic gradient for H_theta (2k solves) and takes J in closed form; the
+  # fallback second-differences the objective itself (1 + 2k^2 solves). Which
+  # one is live is decided once, so a Richardson pair never mixes them.
+  use_exact <- !is.null(core$exact_grad_at)
+  ev <- if (use_exact) NULL else .eb_fd_evaluator(core)
+  stencil_at <- if (use_exact) {
+    function(h) .eb_exact_stencil(core, theta_hat, h)
+  } else {
+    function(h) .eb_fd_stencil(ev, theta_hat, h)
+  }
+
+  base <- stencil_at(step)
+  # An exact route that fails at the mode (a singular H, a family gate that
+  # closed) is worth retrying through the stencil rather than abandoning the
+  # correction.
+  if (is.null(base) && use_exact) {
+    use_exact <- FALSE
+    ev <- .eb_fd_evaluator(core)
+    stencil_at <- function(h) .eb_fd_stencil(ev, theta_hat, h)
+    base <- stencil_at(step)
+  }
   if (is.null(base)) return(NULL)
 
   # Central differences carry O(step^2) truncation error, so evaluating the same
   # stencil at step/2 and combining as (4 A(step/2) - A(step)) / 3 cancels the
-  # leading term and leaves O(step^4). It applies to J and H alike because both
-  # are central differences. It doubles the solve count and amplifies the inner
-  # solver's own noise, so it pays only when that noise is well below the
-  # truncation error -- a tight inner tolerance.
+  # leading term and leaves O(step^4). It doubles the solve count and amplifies
+  # the inner solver's own noise, so it pays only when that noise is well below
+  # the truncation error -- a tight inner tolerance. On the exact route only
+  # H carries truncation error, since J is closed-form; extrapolating an already
+  # exact J would inject noise for nothing.
   if (isTRUE(richardson)) {
-    half <- .eb_fd_stencil(ev, theta_hat, step / 2)
+    half <- stencil_at(step / 2)
     if (!is.null(half) && identical(half$n_x, base$n_x)) {
       base$H <- (4 * half$H - base$H) / 3
-      base$J <- (4 * half$J - base$J) / 3
       base$H <- (base$H + t(base$H)) / 2
+      if (!use_exact) base$J <- (4 * half$J - base$J) / 3
     }
   }
 

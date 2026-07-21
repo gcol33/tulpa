@@ -76,7 +76,8 @@ LaplaceResult laplace_mode_spec_dense_solve(
     int k_grid = 0,
     const BetaPrior* beta_prior = nullptr,
     bool return_re_cov = false,
-    int sparse_override = 0
+    int sparse_override = 0,
+    bool store_Q = false
 );
 
 } // namespace tulpa
