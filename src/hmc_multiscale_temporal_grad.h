@@ -185,62 +185,6 @@ inline double iid_grad_log_sigma2(const double* phi, int n, double sigma2) {
     return -0.5 * n + 0.5 * quad / (sigma2 + 1e-10);
 }
 
-// =============================================================================
-// PC prior gradient for sigma2 (on log_sigma2 scale)
-// =============================================================================
-
-// =============================================================================
-// Full multiscale temporal prior gradients
-// =============================================================================
-
-inline void multiscale_temporal_prior_gradients(
-    const double* trend, int n_trend,
-    const double* seasonal, int n_seasonal,
-    const double* short_term, int n_short,
-    double sigma2_trend, double sigma2_seasonal, double sigma2_short,
-    double rho_short,
-    const MultiscaleTemporalData& temp_data,
-    MultiscaleTemporalGradients& grads
-) {
-    // Initialize gradients (reuse allocated memory)
-    grads.init(n_trend, n_seasonal, n_short);
-    if (n_trend > 0) std::memset(grads.grad_trend.data(), 0, n_trend * sizeof(double));
-    if (n_seasonal > 0) std::memset(grads.grad_seasonal.data(), 0, n_seasonal * sizeof(double));
-    if (n_short > 0) std::memset(grads.grad_short_term.data(), 0, n_short * sizeof(double));
-    grads.grad_log_sigma2_trend = 0.0;
-    grads.grad_log_sigma2_seasonal = 0.0;
-    grads.grad_log_sigma2_short = 0.0;
-    grads.grad_logit_rho_short = 0.0;
-
-    // Trend component
-    if (n_trend > 0) {
-        if (temp_data.trend_type == TemporalType::RW1) {
-            rw1_grad_phi(trend, n_trend, sigma2_trend, grads.grad_trend.data());
-            grads.grad_log_sigma2_trend = rw1_grad_log_sigma2(trend, n_trend, sigma2_trend);
-        } else if (temp_data.trend_type == TemporalType::RW2) {
-            rw2_grad_phi(trend, n_trend, sigma2_trend, grads.grad_trend.data());
-            grads.grad_log_sigma2_trend = rw2_grad_log_sigma2(trend, n_trend, sigma2_trend);
-        }
-    }
-
-    // Seasonal component (cyclic RW1)
-    if (n_seasonal > 0 && temp_data.seasonal_period > 0) {
-        rw1_cyclic_grad_phi(seasonal, n_seasonal, sigma2_seasonal, grads.grad_seasonal.data());
-        grads.grad_log_sigma2_seasonal = rw1_cyclic_grad_log_sigma2(seasonal, n_seasonal, sigma2_seasonal);
-    }
-
-    // Short-term component
-    if (n_short > 0) {
-        if (temp_data.short_term_type == TemporalType::AR1) {
-            ar1_grad_phi(short_term, n_short, sigma2_short, rho_short, grads.grad_short_term.data());
-            grads.grad_log_sigma2_short = ar1_grad_log_sigma2(short_term, n_short, sigma2_short, rho_short);
-            grads.grad_logit_rho_short = ar1_grad_logit_rho(short_term, n_short, sigma2_short, rho_short);
-        } else if (temp_data.short_term_type == TemporalType::IID) {
-            iid_grad_phi(short_term, n_short, sigma2_short, grads.grad_short_term.data());
-            grads.grad_log_sigma2_short = iid_grad_log_sigma2(short_term, n_short, sigma2_short);
-        }
-    }
-}
 
 } // namespace tulpa_temporal_grad
 
