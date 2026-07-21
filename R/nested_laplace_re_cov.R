@@ -468,7 +468,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
                               need_scale = TRUE,
                               outer_maxit = 500L,
                               offset = NULL,
-                              estimate_phi = FALSE) {
+                              estimate_phi = FALSE,
+                              outer_reltol = NULL,
+                              sigma_init = NULL) {
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
   vd <- .validate_glm_design(y, X, n_trials, caller)
@@ -639,6 +641,37 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
       pos <- pos + len
     }
   }
+  # A caller-supplied starting SD replaces the pilot's method-of-moments guess.
+  # Worth having because the pilot fits at Sigma = I, which on a design whose
+  # true scale is far from 1 starts the search in a flat region -- and because
+  # it makes a run reproducible from its inputs rather than from a pilot fit.
+  # Diagonal only: it sets each coefficient's scale and leaves any correlation
+  # to be fitted, since a starting correlation is far harder to guess than a
+  # starting scale.
+  if (!is.null(sigma_init)) {
+    s0 <- as.numeric(sigma_init)
+    if (any(!is.finite(s0)) || any(s0 <= 0)) {
+      stop(caller, "(): `control$sigma_init` must be finite and positive.",
+           call. = FALSE)
+    }
+    nc_all <- vapply(layout, `[[`, integer(1), "nc")
+    if (length(s0) == 1L) s0 <- rep(s0, sum(nc_all))
+    if (length(s0) != sum(nc_all)) {
+      stop(sprintf(paste0(
+        "%s(): `control$sigma_init` must have length 1 or %d (one per ",
+        "random-effect coefficient across all blocks); got %d."),
+        caller, sum(nc_all), length(s0)), call. = FALSE)
+    }
+    pos <- 0L
+    for (m in seq_along(layout)) {
+      nc <- layout[[m]]$nc
+      Lm <- matrix(0, nc, nc)
+      diag(Lm) <- s0[pos + seq_len(nc)]
+      L_init_list[[m]] <- Lm
+      pos <- pos + nc
+    }
+  }
+
   theta0 <- .re_cov_L_list_to_theta(L_init_list, layout)
   # The supplied `phi` becomes the starting value rather than the fixed value.
   if (isTRUE(estimate_phi)) theta0 <- c(theta0, log(phi))
@@ -828,20 +861,30 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # coordinates keep the full line.
   phi_lo <- log(1e-6)
   phi_hi <- log(1e6)
+
+  # Convergence tolerance on the outer objective. One value resolved here and
+  # handed to whichever method runs, rather than a literal repeated per branch
+  # where the four could drift apart. L-BFGS-B measures convergence as
+  # `factr * .Machine$double.eps` rather than as a relative tolerance, so the
+  # same request is converted for it instead of being passed through as a
+  # different number under the same name.
+  reltol_gr <- outer_reltol %||% 1e-10
+  reltol_nm <- outer_reltol %||% 1e-8
+  factr_lbfgs <- max(1, reltol_gr / .Machine$double.eps)
   opt <- if (use_exact_grad) {
     o <- tryCatch(
       if (is.na(phi_idx)) {
         stats::optim(theta0, negg_exact, negg_gr, method = "BFGS",
                      hessian = need_scale,
                      control = list(maxit = as.integer(outer_maxit),
-                                    reltol = 1e-10))
+                                    reltol = reltol_gr))
       } else {
         stats::optim(theta0, negg_exact, negg_gr, method = "L-BFGS-B",
                      lower = c(rep(-Inf, k), phi_lo),
                      upper = c(rep(Inf, k), phi_hi),
                      hessian = need_scale,
                      control = list(maxit = as.integer(outer_maxit),
-                                    factr = 1e7))
+                                    factr = factr_lbfgs))
       },
       error = function(e) NULL
     )
@@ -852,22 +895,22 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
       if (n_theta == 1L) {
         stats::optim(theta0, negg, method = "Brent",
                      lower = brent_lo, upper = brent_hi, hessian = need_scale,
-                     control = list(reltol = 1e-10))
+                     control = list(reltol = reltol_gr))
       } else {
         stats::optim(theta0, negg, method = "Nelder-Mead",
                      hessian = need_scale,
                      control = list(maxit = as.integer(outer_maxit),
-                                    reltol = 1e-8))
+                                    reltol = reltol_nm))
       }
     } else o
   } else if (n_theta == 1L) {
     stats::optim(theta0, negg, method = "Brent",
                  lower = brent_lo, upper = brent_hi, hessian = need_scale,
-                 control = list(reltol = 1e-10))
+                 control = list(reltol = reltol_gr))
   } else {
     stats::optim(theta0, negg, method = "Nelder-Mead",
                  hessian = need_scale,
-                 control = list(maxit = as.integer(outer_maxit), reltol = 1e-8))
+                 control = list(maxit = as.integer(outer_maxit), reltol = reltol_nm))
   }
   theta_hat <- opt$par
 

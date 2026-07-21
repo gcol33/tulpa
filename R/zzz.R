@@ -56,6 +56,7 @@
   for (pkg in c("lme4", "nlme")) {
     .s3_register(paste0(pkg, "::fixef"), "tulpa_fit")
     .s3_register(paste0(pkg, "::ranef"), "tulpa_fit")
+    .s3_register(paste0(pkg, "::VarCorr"), "tulpa_fit")
   }
 
   for (gen in c("as_draws", "as_draws_array", "as_draws_matrix",

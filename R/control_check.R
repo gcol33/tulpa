@@ -98,8 +98,8 @@
     # iteration budget it takes nothing: no integration design, no node count,
     # no draw synthesis. The two marginal_* knobs tune the finite-difference
     # stencil behind `marginal = TRUE` and are inert without it.
-    eb = c("max_iter", "tol", "n_threads", "outer_maxit",
-           "marginal_step", "marginal_richardson"),
+    eb = c("max_iter", "tol", "n_threads", "outer_maxit", "outer_reltol",
+           "sigma_init", "marginal_step", "marginal_richardson"),
     ep = c("max_sweeps", "tol", "damping", "n_quad", "n_draws", "seed"),
     gaussian = c("iter", "warmup", "step_size", "n_leapfrog", "seed"),
     gibbs = c("n_iter", "warmup", "thin", "seed", "verbose", "n_threads"),
@@ -113,7 +113,14 @@
                     "epsilon", "L", "adapt_delta", "max_treedepth",
                     "n_draws", "alpha", "batch_size", "ess_threshold",
                     "n_particles", "n_mcmc_steps", "mclmc_adjusted",
-                    "vi_variant", "vi_mc_samples", "vi_max_iter")
+                    "vi_variant", "vi_mc_samples", "vi_max_iter",
+                    # Elliptical-slice kernel. Note `ess_threshold` above is
+                    # SMC's resampling threshold, not one of these -- the two
+                    # unrelated meanings of "ess" are why these carry the
+                    # prefix.
+                    "ess_use_cholesky", "ess_adapt_during_warmup",
+                    "ess_adapt_interval", "ess_joint_sigma_re",
+                    "ess_joint_proposal_sd")
   )
   # tulpa() dispatches across the nested / spde / re_cov / gibbs / agq /
   # sampler backends and forwards `control` wholesale on the nested and

@@ -88,6 +88,17 @@ held back). Needs \code{n_quad = 1}.}
 \code{outer_maxit} (iteration budget for the maximization over \code{Sigma}, default
 500; applies to the Nelder-Mead simplex used from two parameters up, since
 the one-parameter case is bracketed by Brent). Exhausting the budget warns.
+\code{outer_reltol} sets that maximization's convergence tolerance (default
+\code{1e-10} for the gradient-driven methods, \code{1e-8} for the simplex, which
+cannot resolve as finely); it is converted to L-BFGS-B's \code{factr} on the
+bounded path, so one request means the same thing whichever method runs.
+\code{sigma_init} supplies the starting random-effect SD -- a scalar, or one
+per coefficient across all blocks -- replacing the method-of-moments guess
+taken from a pilot fit at \code{Sigma = I}. Worth setting when the true scale is
+far from 1, where that pilot starts the search on a flat stretch, and when
+a run should be reproducible from its inputs rather than from a pilot fit.
+It is diagonal: it sets each coefficient's scale and leaves any correlation
+to be fitted.
 Two further knobs tune \code{marginal = TRUE} and are inert without it:
 \code{marginal_step} (the stencil step in \code{theta} space, default \code{1e-3}) and
 \code{marginal_richardson} (default \code{FALSE}; evaluate the stencil at \code{step} and

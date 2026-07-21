@@ -101,6 +101,17 @@
 #'   `outer_maxit` (iteration budget for the maximization over `Sigma`, default
 #'   500; applies to the Nelder-Mead simplex used from two parameters up, since
 #'   the one-parameter case is bracketed by Brent). Exhausting the budget warns.
+#'   `outer_reltol` sets that maximization's convergence tolerance (default
+#'   `1e-10` for the gradient-driven methods, `1e-8` for the simplex, which
+#'   cannot resolve as finely); it is converted to L-BFGS-B's `factr` on the
+#'   bounded path, so one request means the same thing whichever method runs.
+#'   `sigma_init` supplies the starting random-effect SD -- a scalar, or one
+#'   per coefficient across all blocks -- replacing the method-of-moments guess
+#'   taken from a pilot fit at `Sigma = I`. Worth setting when the true scale is
+#'   far from 1, where that pilot starts the search on a flat stretch, and when
+#'   a run should be reproducible from its inputs rather than from a pilot fit.
+#'   It is diagonal: it sets each coefficient's scale and leaves any correlation
+#'   to be fitted.
 #'   Two further knobs tune `marginal = TRUE` and are inert without it:
 #'   `marginal_step` (the stencil step in `theta` space, default `1e-3`) and
 #'   `marginal_richardson` (default `FALSE`; evaluate the stencil at `step` and
@@ -165,6 +176,13 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)
   outer_maxit <- as.integer(control$outer_maxit %||% 500L)
+  outer_reltol <- control$outer_reltol
+  if (!is.null(outer_reltol) &&
+      (!is.numeric(outer_reltol) || length(outer_reltol) != 1L ||
+       !is.finite(outer_reltol) || outer_reltol <= 0)) {
+    stop("`control$outer_reltol` must be a single positive number.",
+         call. = FALSE)
+  }
   marginal_step       <- control$marginal_step %||% 1e-3
   marginal_richardson <- isTRUE(control$marginal_richardson)
   if (!is.logical(marginal) || length(marginal) != 1L || is.na(marginal)) {
@@ -188,7 +206,8 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     beta_prior = beta_prior, n_quad = n_quad,
     max_iter = max_iter, tol = tol, n_threads = n_threads,
     caller = "tulpa_eb", need_scale = FALSE, outer_maxit = outer_maxit,
-    offset = offset, estimate_phi = estimate_phi)
+    offset = offset, estimate_phi = estimate_phi,
+    outer_reltol = outer_reltol, sigma_init = control$sigma_init)
 
   layout    <- core$layout
   theta_hat <- core$theta_hat

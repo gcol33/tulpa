@@ -62,6 +62,20 @@
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
 #'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `n_draws`, `verbose`).
 #'
+#'   The elliptical-slice kernel takes five more, all prefixed `ess_` and all
+#'   inert on other backends. Note that `ess_threshold` above is SMC's
+#'   resampling threshold and not one of them -- the two unrelated senses of
+#'   "ESS" are why these carry the prefix.
+#'   `ess_adapt_during_warmup` (default `FALSE`) adapts the proposal covariance
+#'   during warmup; `ess_adapt_interval` (default 50) is how often it is
+#'   refreshed and `ess_use_cholesky` (default `TRUE`) how it is factorized, so
+#'   **both act only while adapting** and setting either alone changes nothing.
+#'   `ess_joint_sigma_re` toggles the joint `(log_sigma_re, re)` rescaling move,
+#'   which defaults to on whenever a random-effect term is present because the
+#'   two are strongly anti-correlated under the centered parameterization and
+#'   mix poorly when moved separately; forcing it off is how one demonstrates
+#'   that. `ess_joint_proposal_sd` (default 0.1) is that move's step.
+#'
 #' @return A `tulpa_fit` with `draws`, `means`, `param_names`, the kernel's
 #'   diagnostics, and (for `"hmc"`) `chain_id` / `n_chains` so chain diagnostics
 #'   apply.
@@ -129,7 +143,16 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     tvc_spec      = tvc_spec,
     zi_spec       = zi_spec,
     init_nullable = warm_start$init,
-    inv_metric_diag_nullable = warm_start$inv_metric_diag
+    inv_metric_diag_nullable = warm_start$inv_metric_diag,
+    # ESS kernel knobs; inert on every other backend. The defaults reproduce
+    # what was previously hardcoded, so an unset control changes nothing.
+    ess_use_cholesky = isTRUE(control$ess_use_cholesky %||% TRUE),
+    ess_adapt_during_warmup = isTRUE(control$ess_adapt_during_warmup %||% FALSE),
+    ess_adapt_interval = as.integer(control$ess_adapt_interval %||% 50L),
+    # -1 keeps the layout-driven rule (on whenever an RE term is present).
+    ess_joint_sigma_re = if (is.null(control$ess_joint_sigma_re)) -1L
+                         else as.integer(isTRUE(control$ess_joint_sigma_re)),
+    ess_joint_proposal_sd = as.numeric(control$ess_joint_proposal_sd %||% 0.1)
   )
 
   # The C++ kernel names every column of the full parameter vector (fixed effects

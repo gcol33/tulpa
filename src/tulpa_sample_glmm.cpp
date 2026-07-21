@@ -107,7 +107,12 @@ Rcpp::List cpp_tulpa_sample_glmm(
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable = R_NilValue,
+    bool ess_use_cholesky = true,
+    bool ess_adapt_during_warmup = false,
+    int ess_adapt_interval = 50,
+    int ess_joint_sigma_re = -1,
+    double ess_joint_proposal_sd = 0.1
 ) {
     // Argument groups (kept out of the signature so Rcpp::compileAttributes does
     // not fold the comments into the generated wrapper):
@@ -243,13 +248,24 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa_ess::ESSConfig cfg;
         cfg.n_iter = n_iter; cfg.n_warmup = n_warmup; cfg.n_thin = 1;
         cfg.verbose = verbose; cfg.print_every = 500; cfg.seed = (unsigned int)seed;
-        cfg.use_cholesky = true; cfg.adapt_during_warmup = false;
-        cfg.adapt_interval = 50;
+        cfg.use_cholesky = ess_use_cholesky;
+        cfg.adapt_during_warmup = ess_adapt_during_warmup;
+        if (ess_adapt_interval <= 0) {
+            Rcpp::stop("ess_adapt_interval must be positive (it is how often "
+                       "the covariance estimate is refreshed).");
+        }
+        cfg.adapt_interval = ess_adapt_interval;
         // Joint (log_sigma_re, re) rescaling move: needed when an RE term is
         // present so log_sigma_re and the RE block mix (they are strongly
-        // anti-correlated under the prior).
-        cfg.joint_sigma_re = in.layout.has_re;
-        cfg.joint_sigma_proposal_sd = 0.1;
+        // anti-correlated under the prior). -1 keeps that rule; 0 / 1 override
+        // it, which is worth allowing because forcing it OFF under an RE term
+        // is how one demonstrates that the move is what makes the chain mix.
+        cfg.joint_sigma_re = (ess_joint_sigma_re < 0)
+            ? in.layout.has_re : (ess_joint_sigma_re != 0);
+        if (!(ess_joint_proposal_sd > 0.0)) {
+            Rcpp::stop("ess_joint_proposal_sd must be positive.");
+        }
+        cfg.joint_sigma_proposal_sd = ess_joint_proposal_sd;
         tulpa_ess::ESSResult res = tulpa_ess::run_ess_sampler(init, in.data, in.layout, cfg);
         if (!res.success) Rcpp::stop("ess sampler failed: %s", res.error_msg);
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
