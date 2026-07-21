@@ -74,7 +74,7 @@ test_that("the score is the eta-derivative of the log-likelihood under any link"
     for (e in cs$eta) {
       ll <- function(z) family_loglik(z, cs$y, cs$family, cs$n, cs$phi)
       num <- (ll(e + h) - ll(e - h)) / (2 * h)
-      got <- family_score(e, cs$y, cs$family, cs$n, cs$phi)
+      got <- family_score_eta(e, cs$y, cs$family, cs$n, cs$phi)
       expect_equal(got, num, tolerance = 1e-5,
                    info = paste(cs$family, "at eta =", e))
     }
@@ -99,7 +99,7 @@ test_that("the R link layer agrees with the compiled kernels", {
       expect_equal(family_loglik(e, cs$y, cs$family, cs$n, cs$phi),
                    unname(cpp[["log_lik"]]), tolerance = 1e-10,
                    info = paste(cs$family, "loglik at", e))
-      expect_equal(family_score(e, cs$y, cs$family, cs$n, cs$phi),
+      expect_equal(family_score_eta(e, cs$y, cs$family, cs$n, cs$phi),
                    unname(cpp[["grad"]]), tolerance = 1e-10,
                    info = paste(cs$family, "score at", e))
     }

@@ -145,7 +145,9 @@ link_names <- function() names(.LINKS)
 # to the plain registry error rather than inventing a family.
 .parse_family_link <- function(code) {
   if (!is.character(code) || length(code) != 1L || is.na(code)) return(NULL)
-  if (!is.null(.LINK_DEFAULTS[[code]])) {
+  # `[[` on a named character vector ERRORS for an absent name (unlike a list,
+  # which returns NULL), so membership is tested before indexing.
+  if (code %in% names(.LINK_DEFAULTS)) {
     return(list(base = code, link = unname(.LINK_DEFAULTS[[code]])))
   }
   # Longest base first: "beta_binomial" begins with "beta_", so a registration
