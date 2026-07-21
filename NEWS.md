@@ -1,5 +1,47 @@
 # tulpa NEWS
 
+## 0.0.97
+
+The soft sum-to-zero constant that identifies intrinsic latent fields, moved
+onto the reference idiom and single-sourced (#241).
+
+Fixed:
+
+- The soft sum-to-zero penalty on intrinsic fields is now derived from
+  `sd(sum phi) = kappa * n` with `kappa = 0.001` (Morris et al. 2019; the
+  constant brms and the Stan ICAR case study use), via the new exported
+  `tulpa/soft_sum_to_zero.h`. The sampler's ICAR and BYM2 branches previously
+  applied a flat precision of `0.01`, i.e. `sd(sum phi) = 10`, which leaves the
+  field's constant direction free and aliased with the intercept. On a 36-unit
+  ICAR binomial fit against a known intercept of 0.5, over 5 seeds:
+  `cor(sum(phi), intercept)` moves from -0.996 to -0.037, `sd(sum(phi))` from
+  11.1 to 0.036 (= `kappa * n`, the target), and the intercept posterior SD from
+  0.310 to 0.027. Correlation between the posterior-mean field and truth is
+  0.989 either way: the penalty pins the level without shrinking the pattern.
+- The sampler's ICAR branch pinned one direction for the whole field while its
+  rank normalizer already used `J - n_components`. It now pins one direction per
+  connected component, matching the rank term and the Laplace path, so a
+  disconnected graph (`spatial(by =)` replicated CAR) is fully identified.
+- The multiscale temporal trend (RW1/RW2) and seasonal (cyclic RW1) arms carried
+  no sum-to-zero term at all. Both are intrinsic and both enter the same linear
+  predictor, so each had a null direction aliased with the intercept and with
+  the other. Both are now pinned; the proper short-term arm (AR1/IID) is not.
+- The spatiotemporal, TVC and SVC penalties took the constant as a defaulted
+  argument that call sites filled with a bare literal. The precision is now
+  derived inside each penalty from the length of the sum it pins, so no call
+  site can pass a kappa where a precision is meant. The interaction margins take
+  their own constants rather than sharing one (a space margin sums `S` terms, a
+  time margin `T`). The SVC penalty is written on the sum rather than the mean;
+  the two forms are the same penalty, related by a factor of `n_obs`.
+
+Internal:
+
+- `for_each_icar_component()` moved from `laplace_spatial_priors.cpp` into the
+  shared `icar_kernel.h`, so both engines walk the null space identically.
+- The MCAR block factory's own copy of the constant is gone; it takes the shared
+  per-component precision. `test-mcar-prior.R`'s reference now reads the same
+  helper the C++ does rather than hard-coding the value.
+
 ## 0.0.96
 
 A settable prior on the zero-inflation coefficients, and the correctness fix

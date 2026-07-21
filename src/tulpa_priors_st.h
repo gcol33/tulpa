@@ -12,6 +12,7 @@
 #include "autodiff_utils.h"
 #include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
 #include "icar_kernel.h"   // count_graph_components (spatial rank)
+#include "tulpa/soft_sum_to_zero.h"   // s2z_precision
 #include "pc_prior.h"      // single-source PC prior on every sampled scale
 
 namespace tulpa {
@@ -66,6 +67,9 @@ T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
 }
 
 // Soft sum-to-zero on the S x T_st interaction: squared row and column sums.
+// The two margins need their own precisions -- a row sums T_st terms and a
+// column sums S terms, and s2z_precision pins each sum at sd = kappa * (its own
+// length). One shared constant would leave the longer margin under-pinned.
 template<typename T>
 T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st)
 {
@@ -84,7 +88,8 @@ T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st)
         }
         sum_t = sum_t + col_sum * col_sum;
     }
-    return T(-0.5) * T(0.001) * (sum_s + sum_t);
+    return T(-0.5) * (T(tulpa::s2z_precision(T_st)) * sum_s
+                    + T(tulpa::s2z_precision(S)) * sum_t);
 }
 
 template<typename T>
@@ -222,10 +227,11 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 log_post = log_post + T(0.5 * rank_t) * safe_log(prec_j)
                          - T(0.5) * prec_j * qf;
 
-                // Soft sum-to-zero per basis function
+                // Soft sum-to-zero per basis function (a sum over T_st terms)
                 T sum_j = T(0.0);
                 for (int t = 0; t < T_st; t++) sum_j = sum_j + st_delta[j * T_st + t];
-                log_post = log_post - T(0.5) * T(0.001) * sum_j * sum_j;
+                log_post = log_post
+                    - T(0.5) * T(tulpa::s2z_precision(T_st)) * sum_j * sum_j;
             }
 
         } else {

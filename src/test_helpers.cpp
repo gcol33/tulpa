@@ -771,6 +771,7 @@ List cpp_test_compute_linear_predictors(
 // ---------------------------------------------------------------------------
 
 #include "hmc_temporal.h"
+#include "hmc_temporal_multiscale.h"
 
 // [[Rcpp::export]]
 double cpp_test_rw1_quadratic_form(NumericVector phi, bool cyclic) {
@@ -823,8 +824,46 @@ int cpp_test_temporal_rank(std::string type_str, int T_len, bool cyclic) {
 }
 
 // [[Rcpp::export]]
-double cpp_test_sum_to_zero_penalty(NumericVector phi, double lambda) {
-  return tulpa_temporal::sum_to_zero_penalty(phi.begin(), phi.size(), lambda);
+double cpp_test_sum_to_zero_penalty(NumericVector phi) {
+  return tulpa_temporal::sum_to_zero_penalty(phi.begin(), phi.size());
+}
+
+// [[Rcpp::export]]
+double cpp_test_s2z_precision(int n, double kappa) {
+  return tulpa::s2z_precision(n, kappa);
+}
+
+// Multiscale temporal log-prior probe. The multiscale block is populated only
+// by consumer packages (has_multiscale_temporal is never set on tulpa's own
+// front door), so this is the only place tulpa can assert that its intrinsic
+// trend and seasonal arms are pinned to sum-to-zero (gcol33/tulpa#241).
+// [[Rcpp::export]]
+double cpp_test_multiscale_temporal_log_lik(
+    NumericVector trend, NumericVector seasonal, NumericVector short_term,
+    double sigma2_trend, double sigma2_seasonal, double sigma2_short,
+    double rho_short, std::string trend_type, int seasonal_period,
+    std::string short_term_type
+) {
+  auto as_type = [](const std::string& s) {
+    if (s == "rw1") return tulpa::TemporalType::RW1;
+    if (s == "rw2") return tulpa::TemporalType::RW2;
+    if (s == "ar1") return tulpa::TemporalType::AR1;
+    if (s == "iid") return tulpa::TemporalType::IID;
+    return tulpa::TemporalType::NONE;
+  };
+
+  tulpa::MultiscaleTemporalData md;
+  md.n_times = trend.size();
+  md.trend_type = as_type(trend_type);
+  md.seasonal_period = seasonal_period;
+  md.short_term_type = as_type(short_term_type);
+
+  std::vector<double> tr(trend.begin(), trend.end());
+  std::vector<double> se(seasonal.begin(), seasonal.end());
+  std::vector<double> st(short_term.begin(), short_term.end());
+
+  return tulpa_temporal::multiscale_temporal_log_lik(
+      tr, se, st, sigma2_trend, sigma2_seasonal, sigma2_short, rho_short, md);
 }
 
 // ---------------------------------------------------------------------------

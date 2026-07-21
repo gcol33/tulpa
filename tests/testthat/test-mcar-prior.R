@@ -23,20 +23,24 @@
   # (1) Hessian == kronecker(Sigma^-1, Q).
   expect_lt(max(abs(r$H - ref_H)), 1e-8)
 
-  # (2) gradient == -ref_H x - per-field sum-to-zero pin.
+  # (2) gradient == -ref_H x - per-field sum-to-zero pin. The pin precision is
+  # the shared reference-idiom constant (gcol33/tulpa#241), read from the same
+  # helper the C++ uses so this reference cannot drift from it. The graph is a
+  # single connected chain, so each field is one component of size n.
+  lam <- tulpa:::cpp_test_s2z_precision(n, 0.001)
   pin <- numeric(p * n)
   for (a in seq_len(p)) {
     blk <- ((a - 1L) * n + 1L):(a * n)
-    pin[blk] <- sum(x[blk])                   # MCAR_SUM2ZERO_TAU = 1
+    pin[blk] <- lam * sum(x[blk])
   }
   ref_grad <- -as.numeric(ref_H %*% x) - pin
   expect_lt(max(abs(r$grad - ref_grad)), 1e-8)
 
   # (3) log_prior closed form incl. the Sigma-dependent normalizer.
   quad <- as.numeric(t(x) %*% ref_H %*% x)
-  pin_q <- sum(vapply(seq_len(p),
-                      function(a) sum(x[((a - 1L) * n + 1L):(a * n)])^2,
-                      numeric(1)))
+  pin_q <- lam * sum(vapply(seq_len(p),
+                            function(a) sum(x[((a - 1L) * n + 1L):(a * n)])^2,
+                            numeric(1)))
   ld_sinv <- -r$log_det_Sigma
   ref_lp <- -0.5 * quad - 0.5 * pin_q +
             0.5 * (n - 1) * ld_sinv - 0.5 * p * (n - 1) * log(2 * pi)

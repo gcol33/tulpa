@@ -74,7 +74,7 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
 
         // Soft sum-to-zero constraint for identifiability
         log_post = log_post + tulpa_tvc::tvc_sum_to_zero_penalty(
-            tvc_w_flat, data.tvc_data, 0.001
+            tvc_w_flat, data.tvc_data
         );
 
         // Precompute TVC contribution to linear predictor

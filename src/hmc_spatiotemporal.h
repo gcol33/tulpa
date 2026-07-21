@@ -521,12 +521,13 @@ inline void spatiotemporal_gradient_delta(
 // Sum-to-zero constraint for interactions
 // =====================================================================
 
-// Apply soft sum-to-zero constraint marginally
+// Apply soft sum-to-zero constraint marginally. Each margin gets the precision
+// for its own length -- a space margin sums S terms, a time margin sums T --
+// so the two cannot share one constant (see tulpa/soft_sum_to_zero.h).
 inline double st_sum_to_zero_penalty(
     const double* delta,
     int S,
     int T,
-    double lambda = 0.001,
     bool marginal_space = true,
     bool marginal_time = true
 ) {
@@ -534,23 +535,25 @@ inline double st_sum_to_zero_penalty(
 
   if (marginal_space) {
     // For each time point, spatial effects sum to zero
+    const double lambda_s = tulpa::s2z_precision(S);
     for (int t = 0; t < T; t++) {
       double sum = 0.0;
       for (int s = 0; s < S; s++) {
         sum += delta[s * T + t];
       }
-      penalty -= 0.5 * lambda * sum * sum;
+      penalty -= 0.5 * lambda_s * sum * sum;
     }
   }
 
   if (marginal_time) {
     // For each spatial unit, temporal effects sum to zero
+    const double lambda_t = tulpa::s2z_precision(T);
     for (int s = 0; s < S; s++) {
       double sum = 0.0;
       for (int t = 0; t < T; t++) {
         sum += delta[s * T + t];
       }
-      penalty -= 0.5 * lambda * sum * sum;
+      penalty -= 0.5 * lambda_t * sum * sum;
     }
   }
 

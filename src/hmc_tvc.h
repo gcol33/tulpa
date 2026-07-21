@@ -11,6 +11,7 @@
 #include "pc_prior.h"      // single-source PC prior on every sampled scale
 
 // Use canonical type definitions from exported headers
+#include "tulpa/soft_sum_to_zero.h"  // s2z_precision
 #include "tulpa/tvc_data.h"
 #include "tulpa/types.h"
 
@@ -137,17 +138,20 @@ inline void compute_tvc_eta(
 // Sum-to-zero constraint for identifiability
 // -----------------------------------------------------------------------------
 
-// Apply soft sum-to-zero constraint to TVC (for each term and group)
+// Apply soft sum-to-zero constraint to TVC (for each term and group). Each
+// pinned sum runs over the n_times coefficients of one (group, term), so the
+// precision is s2z_precision(n_times); it is derived here rather than taken
+// from the caller so no call site can pass a kappa where a precision is meant.
 template <typename T>
 inline T tvc_sum_to_zero_penalty(
     const std::vector<T>& w_flat,
-    const TVCData& tvc_data,
-    double lambda = 0.001
+    const TVCData& tvc_data
 ) {
   int n_times = tvc_data.n_times;
   int n_tvc = tvc_data.n_tvc;
   int n_groups = tvc_data.n_groups;
 
+  const double lambda = tulpa::s2z_precision(n_times);
   T penalty = T(0.0);
 
   for (int g = 0; g < n_groups; g++) {

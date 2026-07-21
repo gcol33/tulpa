@@ -25,14 +25,16 @@
 
 #include "latent_block.h"
 #include "sparse_hessian.h"
+#include "tulpa/soft_sum_to_zero.h"       // s2z_precision
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>
 
 namespace tulpa {
 
-// Sum-to-zero penalty precision; matches the ICAR path (laplace_spatial_priors).
-constexpr double MCAR_SUM2ZERO_TAU = 1.0;
+// Sum-to-zero penalty precision comes from the shared reference idiom
+// (tulpa/soft_sum_to_zero.h), taken per (field, component) at that component's
+// size, matching the ICAR path (laplace_spatial_priors).
 
 // Build Sigma^-1 (p x p, row-major) and log|Sigma| from the log-Cholesky
 // coordinates of Sigma = L L'. Column-major lower-triangle order (matching
@@ -260,8 +262,9 @@ inline LatentBlock make_mcar_block(
                 const int cstart = fstart + c * csize;
                 double s = 0.0;
                 for (int i = 0; i < csize; ++i) s += x[cstart + i];
-                for (int i = 0; i < csize; ++i) grad[cstart + i] -= MCAR_SUM2ZERO_TAU * s;
-                H.add_s2z_rank1(cstart, csize, MCAR_SUM2ZERO_TAU);
+                const double lambda = s2z_precision(csize);
+                for (int i = 0; i < csize; ++i) grad[cstart + i] -= lambda * s;
+                H.add_s2z_rank1(cstart, csize, lambda);
             }
         }
     };
@@ -286,7 +289,7 @@ inline LatentBlock make_mcar_block(
         }
     };
 
-    // log p(u | Sigma): -0.5 u'Pu - 0.5 SUM2ZERO sum_a sum_c (sum_{i in c} u_a)^2
+    // log p(u | Sigma): -0.5 u'Pu - 0.5 sum_a sum_c lambda_c (sum_{i in c} u_a)^2
     //   + 0.5 (n-L) log|Sigma^-1|  - 0.5 p (n-L) log(2 pi).
     // The constant p logpdet(Q) term (Sigma-independent) is dropped, mirroring
     // log_prior_icar; the Sigma-dependent (n-L) log|Sigma^-1| is exact (P =
@@ -318,11 +321,11 @@ inline LatentBlock make_mcar_block(
             for (int c = 0; c < L; ++c) {
                 double s = 0.0;
                 for (int i = 0; i < csize; ++i) s += x[fstart + c * csize + i];
-                pin += s * s;
+                pin += s2z_precision(csize) * s * s;
             }
         }
         const double log_det_Sinv = -log_det_Sigma;
-        return -0.5 * quad - 0.5 * MCAR_SUM2ZERO_TAU * pin
+        return -0.5 * quad - 0.5 * pin
                + 0.5 * (n - L) * log_det_Sinv
                - 0.5 * p * (n - L) * std::log(2.0 * M_PI);
     };

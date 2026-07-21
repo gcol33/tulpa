@@ -16,6 +16,7 @@
 #endif
 
 // Use canonical type definitions from exported headers
+#include "tulpa/soft_sum_to_zero.h"  // s2z_precision
 #include "tulpa/temporal_data.h"
 #include "tulpa/types.h"
 #include "autodiff_utils.h"  // safe_log for the templated kernels
@@ -201,13 +202,15 @@ inline double temporal_log_prior(
 // Sum-to-zero constraint (soft)
 // =====================================================================
 
-// Apply soft sum-to-zero constraint penalty for RW models
-inline double sum_to_zero_penalty(const double* phi, int T, double lambda = 0.001) {
+// Apply soft sum-to-zero constraint penalty for RW models. The precision is
+// derived from the field length (tulpa/soft_sum_to_zero.h) rather than taken
+// from the caller, so no call site can pass a kappa where a precision is meant.
+inline double sum_to_zero_penalty(const double* phi, int T) {
   double sum = 0.0;
   for (int t = 0; t < T; t++) {
     sum += phi[t];
   }
-  return -0.5 * lambda * sum * sum;
+  return -0.5 * tulpa::s2z_precision(T) * sum * sum;
 }
 
 } // namespace tulpa_temporal

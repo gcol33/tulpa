@@ -10,6 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include <Rcpp.h>  // For Rcpp::Rcout in debug
+#include "tulpa/soft_sum_to_zero.h"  // s2z_precision
 #include "tulpa/svc_data.h"
 #include "tulpa/types.h"
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
@@ -212,18 +213,18 @@ inline void compute_svc_eta(
 // Sum-to-zero constraint for identifiability
 // -----------------------------------------------------------------------------
 
-// Apply soft sum-to-zero constraint on SVC weights (for each SVC term)
-// Without this, beta and mean(w) are not separately identifiable.
-// Uses mean(w) with lambda_mean penalty: -0.5 * lambda_mean * N * mean(w)^2
-// This is equivalent to: mean(w) ~ N(0, 1/lambda_mean)
+// Apply soft sum-to-zero constraint on SVC weights (for each SVC term).
+// Without this, beta and mean(w) are not separately identifiable. Written on
+// the sum at the shared precision, so mean(w) is pinned at sd = kappa; see the
+// autodiff twin in hmc_svc_autodiff.h.
 inline double svc_sum_to_zero_penalty(
     const std::vector<double>& w_flat,
-    const SVCData& svc_data,
-    double lambda_mean = 1.0
+    const SVCData& svc_data
 ) {
   int n_obs = svc_data.n_obs;
   int n_svc = svc_data.n_svc;
 
+  const double lambda = tulpa::s2z_precision(n_obs);
   double penalty = 0.0;
 
   for (int j = 0; j < n_svc; j++) {
@@ -231,8 +232,7 @@ inline double svc_sum_to_zero_penalty(
     for (int i = 0; i < n_obs; i++) {
       sum += w_flat[j * n_obs + i];
     }
-    double mean_w = sum / n_obs;
-    penalty -= 0.5 * lambda_mean * n_obs * mean_w * mean_w;
+    penalty -= 0.5 * lambda * sum * sum;
   }
 
   return penalty;

@@ -55,6 +55,23 @@ inline int count_graph_components(
     return k;
 }
 
+// Visit each of an intrinsic field's `n_components` disjoint, equal-size,
+// contiguous connected components, calling comp(comp_start_absolute,
+// comp_size). A connected graph has one component spanning [start, start + n)
+// (n_components <= 1, byte-identical to a single whole-field pass); a
+// replicated field over the block-diagonal I_L (x) Q has L equal-size
+// components (the `by =` replicated CAR). The single source of the
+// per-component loop so every engine's gradient, Hessian, pattern and
+// log-prior treat the null space identically -- the ICAR rank normalizer is
+// J - n_components, so the sum-to-zero penalty must pin exactly that many
+// directions.
+template <typename F>
+inline void for_each_icar_component(int start, int n, int n_components, F&& comp) {
+    const int L = (n_components > 1) ? n_components : 1;
+    const int csize = n / L;
+    for (int c = 0; c < L; c++) comp(start + c * csize, csize);
+}
+
 // (Q(rho) phi)[i] = n_neighbors[i] * phi[i] - rho * sum_{j ~ i} phi[j].
 inline double car_apply_row(
     int i,

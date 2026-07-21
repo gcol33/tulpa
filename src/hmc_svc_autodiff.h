@@ -228,18 +228,22 @@ void compute_svc_eta(
 // Sum-to-zero constraint for identifiability
 // =============================================================================
 
-// Apply soft sum-to-zero constraint on SVC weights (for each SVC term)
-// Without this, beta and mean(w) are not separately identifiable.
-// Uses mean(w) with lambda_mean penalty: -0.5 * lambda_mean * N * mean(w)^2
+// Apply soft sum-to-zero constraint on SVC weights (for each SVC term).
+// Without this, beta and mean(w) are not separately identifiable. Written on
+// the sum, at the same precision every other intrinsic field uses, so the
+// pinned mean(w) carries sd = kappa: the earlier mean form
+// -0.5 * lambda_mean * n_obs * mean(w)^2 is the identity
+// -0.5 * (lambda_mean / n_obs) * sum^2, i.e. the same penalty with the
+// precision divided by n_obs, and is not a separate kind of constraint.
 template<typename T>
 T svc_sum_to_zero_penalty(
     const std::vector<T>& w_flat,
-    const SVCData& svc_data,
-    double lambda_mean = 1.0
+    const SVCData& svc_data
 ) {
     int n_obs = svc_data.n_obs;
     int n_svc = svc_data.n_svc;
 
+    const double lambda = tulpa::s2z_precision(n_obs);
     T penalty = T(0.0);
 
     for (int j = 0; j < n_svc; j++) {
@@ -247,8 +251,7 @@ T svc_sum_to_zero_penalty(
         for (int i = 0; i < n_obs; i++) {
             sum = sum + w_flat[j * n_obs + i];
         }
-        T mean_w = sum / T(n_obs);
-        penalty = penalty - T(0.5 * lambda_mean * n_obs) * mean_w * mean_w;
+        penalty = penalty - T(0.5 * lambda) * sum * sum;
     }
 
     return penalty;

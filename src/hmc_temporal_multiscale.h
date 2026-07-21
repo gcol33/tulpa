@@ -138,16 +138,28 @@ inline T multiscale_temporal_log_lik(
 ) {
   T log_lik = T(0.0);
 
+  // Trend and seasonal are both intrinsic and both enter the SAME linear
+  // predictor, so each carries a constant null direction that is unidentified
+  // against the intercept and against the other component. Both are pinned
+  // (gcol33/tulpa#241); the short-term arm is proper (AR1/IID) and identifies
+  // its own level, so it is left alone.
+  const auto pin = [](const std::vector<T>& v) {
+    T s = T(0.0);
+    for (std::size_t i = 0; i < v.size(); i++) s = s + v[i];
+    return -T(0.5) * T(tulpa::s2z_precision(static_cast<int>(v.size()))) * s * s;
+  };
+
   // Trend component
   if (temp_data.trend_type == TemporalType::RW1 && !trend.empty()) {
-    log_lik = log_lik + rw1_log_lik(trend, sigma2_trend, false);
+    log_lik = log_lik + rw1_log_lik(trend, sigma2_trend, false) + pin(trend);
   } else if (temp_data.trend_type == TemporalType::RW2 && !trend.empty()) {
-    log_lik = log_lik + rw2_log_lik(trend, sigma2_trend, false);
+    log_lik = log_lik + rw2_log_lik(trend, sigma2_trend, false) + pin(trend);
   }
 
   // Seasonal component (always cyclic RW1)
   if (temp_data.seasonal_period > 0 && !seasonal.empty()) {
-    log_lik = log_lik + rw1_log_lik(seasonal, sigma2_seasonal, true);  // Cyclic
+    log_lik = log_lik + rw1_log_lik(seasonal, sigma2_seasonal, true)  // Cyclic
+                      + pin(seasonal);
   }
 
   // Short-term component

@@ -57,6 +57,18 @@ cpp_family_obs_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_)
     .Call(`_tulpa_cpp_family_obs_terms`, y, n_trials, eta, family, phi, phi2)
 }
 
+cpp_family_curvature_deta <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_curvature_deta`, y, n_trials, eta, family, phi, phi2)
+}
+
+cpp_family_has_curvature_derivative <- function(family) {
+    .Call(`_tulpa_cpp_family_has_curvature_derivative`, family)
+}
+
+cpp_family_curvature_deta_vec <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_curvature_deta_vec`, y, n_trials, eta, family, phi, phi2)
+}
+
 cpp_family_ad_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_ad_terms`, y, n_trials, eta, family, phi, phi2)
 }
@@ -121,8 +133,8 @@ cpp_laplace_fit <- function(y, n, X, re_idx, n_re_groups, sigma_re, family, phi 
     .Call(`_tulpa_cpp_laplace_fit`, y, n, X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, n_threads)
 }
 
-cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5) {
-    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd)
+cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5, return_joint_hessian = FALSE) {
+    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd, return_joint_hessian)
 }
 
 cpp_laplace_sample <- function(mode, H, n_samples) {
@@ -351,6 +363,10 @@ cpp_glmm_oracle_make <- function(family, phi, y, n_trials, X, Z, idx, n_groups) 
 
 cpp_re_cov_gibbs_sweep <- function(family, phi, y, n_trials, X, blocks, beta0, L_beta, n_iter, n_burnin, thin, beta_prior_mean, beta_prior_sd) {
     .Call(`_tulpa_cpp_re_cov_gibbs_sweep`, family, phi, y, n_trials, X, blocks, beta0, L_beta, n_iter, n_burnin, thin, beta_prior_mean, beta_prior_sd)
+}
+
+cpp_recov_block_grad <- function(Smat, L, full, lkj_eta = 1.0) {
+    .Call(`_tulpa_cpp_recov_block_grad`, Smat, L, full, lkj_eta)
 }
 
 tulpa_set_integrator_cpp <- function(name, mts_substeps = 4L) {
@@ -605,8 +621,16 @@ cpp_test_temporal_rank <- function(type_str, T_len, cyclic) {
     .Call(`_tulpa_cpp_test_temporal_rank`, type_str, T_len, cyclic)
 }
 
-cpp_test_sum_to_zero_penalty <- function(phi, lambda) {
-    .Call(`_tulpa_cpp_test_sum_to_zero_penalty`, phi, lambda)
+cpp_test_sum_to_zero_penalty <- function(phi) {
+    .Call(`_tulpa_cpp_test_sum_to_zero_penalty`, phi)
+}
+
+cpp_test_s2z_precision <- function(n, kappa) {
+    .Call(`_tulpa_cpp_test_s2z_precision`, n, kappa)
+}
+
+cpp_test_multiscale_temporal_log_lik <- function(trend, seasonal, short_term, sigma2_trend, sigma2_seasonal, sigma2_short, rho_short, trend_type, seasonal_period, short_term_type) {
+    .Call(`_tulpa_cpp_test_multiscale_temporal_log_lik`, trend, seasonal, short_term, sigma2_trend, sigma2_seasonal, sigma2_short, rho_short, trend_type, seasonal_period, short_term_type)
 }
 
 cpp_test_parallel_dot_products <- function(X, y, n_threads) {
@@ -741,8 +765,12 @@ cpp_test_c_abi_chains_roundtrip <- function(y_r, X_r, n_chains = 3L, n_iter = 60
     .Call(`_tulpa_cpp_test_c_abi_chains_roundtrip`, y_r, X_r, n_chains, n_iter, n_warmup, max_treedepth, adapt_delta, seed, init, inv_metric_init)
 }
 
-cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
-    .Call(`_tulpa_cpp_tulpa_sample_glmm`, y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2, svc_spec, tvc_spec, zi_spec)
+cpp_tulpa_glmm_layout <- function(y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
+    .Call(`_tulpa_cpp_tulpa_glmm_layout`, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, svc_spec, tvc_spec, zi_spec)
+}
+
+cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, init_nullable = NULL, inv_metric_diag_nullable = NULL) {
+    .Call(`_tulpa_cpp_tulpa_sample_glmm`, y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2, svc_spec, tvc_spec, zi_spec, init_nullable, inv_metric_diag_nullable)
 }
 
 cpp_spde_layout_probe <- function(n_mesh, p, joint_hypers, n_extra_params = 0L) {

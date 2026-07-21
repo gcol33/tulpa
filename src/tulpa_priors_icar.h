@@ -10,6 +10,8 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "icar_kernel.h"                  // for_each_icar_component
+#include "tulpa/soft_sum_to_zero.h"       // s2z_precision
 
 namespace tulpa {
 namespace priors {
@@ -19,6 +21,23 @@ using namespace math;
 // ============================================================================
 // 2. Spatial ICAR/BYM2 prior
 // ============================================================================
+
+// Soft sum-to-zero on an intrinsic spatial field: one penalty per connected
+// component, each at the precision that pins that component's sum at
+// sd = kappa * csize (see tulpa/soft_sum_to_zero.h). Shared by the BYM2 and
+// ICAR branches so the two cannot drift apart.
+template<typename T>
+T icar_sum_to_zero_penalty(const T* phi, int n_spatial_units, int n_components)
+{
+    T penalty = T(0.0);
+    tulpa::for_each_icar_component(0, n_spatial_units, n_components,
+        [&](int cstart, int csize) {
+            T s = T(0.0);
+            for (int i = 0; i < csize; i++) s = s + phi[cstart + i];
+            penalty = penalty - T(0.5) * T(tulpa::s2z_precision(csize)) * s * s;
+        });
+    return penalty;
+}
 
 template<typename T>
 T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData& data,
@@ -68,11 +87,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             log_post = log_post - T(0.5) * quad_form;
 
             // Soft sum-to-zero constraint on ICAR phi
-            {
-                T phi_sum = T(0.0);
-                for (int s = 0; s < data.n_spatial_units; s++) phi_sum = phi_sum + phi_spatial_out[s];
-                log_post = log_post - T(0.5) * T(0.01) * phi_sum * phi_sum;
-            }
+            log_post = log_post + icar_sum_to_zero_penalty(
+                phi_spatial_out, data.n_spatial_units, data.n_spatial_components);
 
             // N(0, I) prior on theta
             for (int s = 0; s < data.n_spatial_units; s++) {
@@ -145,12 +161,10 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             // Soft sum-to-zero constraint on ICAR phi. The precision has a
             // constant null direction (per component) that is otherwise jointly
             // unidentified with the intercept; pin it as the BYM2 branch and the
-            // Laplace path do, so exact-NUTS ICAR fits mix.
-            {
-                T phi_sum = T(0.0);
-                for (int s = 0; s < data.n_spatial_units; s++) phi_sum = phi_sum + phi_spatial_out[s];
-                log_post = log_post - T(0.5) * T(0.01) * phi_sum * phi_sum;
-            }
+            // Laplace path do, so exact-NUTS ICAR fits mix. One penalty per
+            // component, matching the J - n_components rank normalizer below.
+            log_post = log_post + icar_sum_to_zero_penalty(
+                phi_spatial_out, data.n_spatial_units, data.n_spatial_components);
             // Rank of the ICAR precision is J - k for k connected components
             // (one constant null direction per component). Using J - 1 on a
             // disconnected graph (spatial(by=) replication) biases tau upward.

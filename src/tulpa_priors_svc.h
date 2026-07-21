@@ -120,7 +120,7 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
             }
 
             // Soft sum-to-zero constraint
-            log_post = log_post + tulpa_svc_ad::svc_sum_to_zero_penalty(svc_w_flat, data.svc_data, 1.0);
+            log_post = log_post + tulpa_svc_ad::svc_sum_to_zero_penalty(svc_w_flat, data.svc_data);
 
             // Precompute SVC contribution to linear predictor
             svc_eta.resize(n_obs, T(0.0));

@@ -3,6 +3,8 @@
 
 #include "laplace_spatial_priors.h"
 #include "sparse_hessian.h"
+#include "icar_kernel.h"                  // for_each_icar_component
+#include "tulpa/soft_sum_to_zero.h"       // s2z_precision
 #include <cmath>
 
 using namespace Rcpp;
@@ -102,37 +104,21 @@ inline double car_quadratic_form(
 // the (sum field)^2 penalty the N-mixture spatial path uses. CAR_proper is full
 // rank (Q(rho) identifies the intercept) and is left untouched.
 //
-// The penalty is 0.5 * SUM2ZERO_TAU * (sum_s phi_s)^2. Its Hessian is the rank-1
-// SUM2ZERO_TAU * 11', which lives entirely in the constant eigenspace and is
-// orthogonal to every spatial deviation, so it pins the mean without shrinking
-// the field pattern. The dense path adds it exactly. The sparse path adds the
-// exact gradient plus the diagonal of 11' (= SUM2ZERO_TAU per node, the only
+// The penalty is 0.5 * s2z_precision(csize) * (sum_s phi_s)^2 per component.
+// Its Hessian is the rank-1 precision * 11', which lives entirely in the
+// constant eigenspace and is orthogonal to every spatial deviation, so it pins
+// the mean without shrinking the field pattern. The dense path adds it exactly.
+// The sparse path adds the exact gradient plus the diagonal of 11' (the only
 // part that fits the fixed adjacency pattern) for a stable quasi-Newton step;
 // the off-diagonals are dropped, but the line search on the exact penalty
-// converges to the same constrained mode. A modest precision suffices: the
-// pinned field mean is s / n with s ~ data / (SUM2ZERO_TAU * n), so the level
-// in the field shrinks like 1 / (SUM2ZERO_TAU * n^2) -- already ~0 at n^2 scale.
-constexpr double SUM2ZERO_TAU = 1.0;
+// converges to the same constrained mode. The precision comes from the shared
+// reference idiom (tulpa/soft_sum_to_zero.h) so this engine and the sampler
+// pin the same direction to the same width.
 
 inline double field_sum(const NumericVector& x, int start, int n) {
     double s = 0.0;
     for (int j = 0; j < n; j++) s += x[start + j];
     return s;
-}
-
-// Visit each of an intrinsic field's `n_components` disjoint, equal-size,
-// contiguous connected components, calling comp(comp_start_absolute,
-// comp_size). A connected graph has one component spanning [start, start + n)
-// (n_components <= 1, byte-identical to the historical single-component path);
-// a replicated field over the block-diagonal I_L (x) Q has L equal-size
-// components (the `by =` replicated CAR). The single source of the per-component
-// loop so the gradient, Hessian, pattern and log-prior treat the null space
-// identically.
-template <typename F>
-inline void for_each_icar_component(int start, int n, int n_components, F&& comp) {
-    const int L = (n_components > 1) ? n_components : 1;
-    const int csize = n / L;
-    for (int c = 0; c < L; c++) comp(start + c * csize, csize);
 }
 
 } // anonymous namespace
@@ -153,11 +139,12 @@ void add_icar_prior(
     // dense Hessian, within the component's diagonal block).
     for_each_icar_component(spatial_start, n_spatial_units, n_components,
         [&](int cstart, int csize) {
+            const double lambda = s2z_precision(csize);
             double s = field_sum(x, cstart, csize);
             for (int i = 0; i < csize; i++) {
-                grad[cstart + i] -= SUM2ZERO_TAU * s;
+                grad[cstart + i] -= lambda * s;
                 for (int j = 0; j < csize; j++)
-                    H[cstart + i][cstart + j] += SUM2ZERO_TAU;
+                    H[cstart + i][cstart + j] += lambda;
             }
         });
 }
@@ -181,15 +168,16 @@ void add_icar_prior_sparse(
     // at solve time (Sherman-Morrison step + matrix-determinant-lemma log-det).
     for_each_icar_component(spatial_start, n_spatial_units, n_components,
         [&](int cstart, int csize) {
+            const double lambda = s2z_precision(csize);
             const double s = field_sum(x, cstart, csize);
             for (int i = 0; i < csize; i++)
-                grad[cstart + i] -= SUM2ZERO_TAU * s;
+                grad[cstart + i] -= lambda * s;
             if (icar_s2z_densify(csize)) {
                 for (int i = 0; i < csize; i++)
                     for (int j = 0; j <= i; j++)
-                        H.add(cstart + i, cstart + j, SUM2ZERO_TAU);
+                        H.add(cstart + i, cstart + j, lambda);
             } else {
-                H.add_s2z_rank1(cstart, csize, SUM2ZERO_TAU);
+                H.add_s2z_rank1(cstart, csize, lambda);
             }
         });
 }
@@ -235,11 +223,11 @@ double log_prior_icar_structured(
     for_each_icar_component(spatial_start, n_spatial_units, n_components,
         [&](int cstart, int csize) {
             double s = field_sum(x, cstart, csize);
-            s2z += s * s;
+            s2z += s2z_precision(csize) * s * s;
         });
     // -0.5 tau phi'Q phi (the intrinsic quadratic) and the per-component
     // sum-to-zero penalty that pins the constant null-space.
-    return -0.5 * tau_spatial * quad_form - 0.5 * SUM2ZERO_TAU * s2z;
+    return -0.5 * tau_spatial * quad_form - 0.5 * s2z;
 }
 
 double log_prior_icar(
