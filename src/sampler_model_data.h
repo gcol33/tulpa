@@ -500,6 +500,24 @@ inline Rcpp::CharacterVector sampler_param_names(
         }
     }
 
+    // Multi-scale temporal: trend / seasonal / short-term arms plus their
+    // scales, so a fitted multiscale block is addressable by name rather than
+    // by position in the latent vector.
+    if (layout.has_multiscale_temporal) {
+        set(layout.log_sigma2_trend_idx,    "log_sigma2_trend");
+        set(layout.log_sigma2_seasonal_idx, "log_sigma2_seasonal");
+        set(layout.log_sigma2_short_idx,    "log_sigma2_short");
+        set(layout.logit_rho_short_idx,     "logit_rho_short");
+        for (int k = layout.trend_start; k >= 0 && k < layout.trend_end; k++)
+            set(k, "trend[" + std::to_string(k - layout.trend_start + 1) + "]");
+        for (int k = layout.seasonal_start; k >= 0 && k < layout.seasonal_end; k++)
+            set(k, "seasonal[" +
+                   std::to_string(k - layout.seasonal_start + 1) + "]");
+        for (int k = layout.short_term_start; k >= 0 && k < layout.short_term_end; k++)
+            set(k, "short_term[" +
+                   std::to_string(k - layout.short_term_start + 1) + "]");
+    }
+
     // Random effects.
     if (layout.has_re) {
         const int n_terms = (int)layout.re_start_multi.size();

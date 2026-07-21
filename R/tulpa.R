@@ -396,6 +396,11 @@
          "validates it via validate_temporal().", call. = FALSE)
   }
   type <- tolower(temporal$type %||% "")
+  if (identical(type, "multiscale")) {
+    stop("The multiscale temporal block (trend + seasonal + short-term) is fit ",
+         "by the sampler; there is no multiscale nested-Laplace kernel. Use ",
+         "mode = 'hmc'.", call. = FALSE)
+  }
   if (!type %in% c("rw1", "rw2", "ar1")) {
     stop("tulpa() routes temporal types rw1, rw2, ar1 through nested Laplace; ",
          "got '", type, "'.", call. = FALSE)
@@ -968,6 +973,25 @@
       # Temporally-varying coefficients ride the temporal= slot as their own
       # sampler input (tvc_spec), not the shared-field temporal_spec.
       tvc_spec_arg <- .tvc_sampler_spec(temporal, bundle$X)
+    } else if (!is.null(temporal) &&
+               tolower(temporal$type %||% "") == "multiscale") {
+      # Multi-scale temporal (trend + seasonal + short-term) is one block with
+      # its own layout, so it rides temporal_spec under its own type rather than
+      # being flattened into a single field. build_sampler_model_inputs() reads
+      # these names directly onto MultiscaleTemporalData.
+      n_groups <- as.integer(temporal$n_groups %||% 1L)
+      temporal_spec_arg <- list(
+        type        = "multiscale",
+        time_index  = as.integer(temporal$time_index),
+        n_times     = as.integer(temporal$n_times),
+        n_groups    = n_groups,
+        group_index = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
+        trend       = tolower(temporal$trend %||% "none"),
+        seasonal    = if (!is.null(temporal$seasonal))
+                        as.integer(temporal$seasonal) else NULL,
+        short_term  = tolower(temporal$short_term %||% "none"),
+        shared      = isTRUE(temporal$shared %||% TRUE)
+      )
     } else if (!is.null(temporal)) {
       ttype <- tolower(temporal$type %||% "")
       if (!ttype %in% c("rw1", "rw2", "ar1")) {
@@ -1566,9 +1590,14 @@ tulpa <- function(formula, data,
       }
       temporal_spec <- validate_tvc(temporal_spec, data, bundle$X)
     } else {
-    if (!tolower(temporal_spec$type %||% "") %in% c("rw1", "rw2", "ar1")) {
-      stop("tulpa() routes temporal_rw1() / temporal_rw2() / temporal_ar1(); for '",
-           temporal_spec$type, "' call the temporal fitter directly.", call. = FALSE)
+    # multiscale rides the sampler path only; the nested-Laplace entry
+    # (.temporal_spec_to_nl_prior) rejects it with its own message, since there
+    # is no multiscale nested-Laplace kernel.
+    if (!tolower(temporal_spec$type %||% "") %in%
+        c("rw1", "rw2", "ar1", "multiscale")) {
+      stop("tulpa() routes temporal_rw1() / temporal_rw2() / temporal_ar1() / ",
+           "temporal_multiscale(); for '", temporal_spec$type,
+           "' call the temporal fitter directly.", call. = FALSE)
     }
     # Panel (grouped) temporal: a separate walk per group sharing one tau, routed
     # as a single grouped temporal block through cpp_nested_laplace_temporal. The
@@ -1590,7 +1619,10 @@ tulpa <- function(formula, data,
            "through tulpa() yet. Fit one field at a time, or use an areal field ",
            "for space-time.", call. = FALSE)
     }
-    temporal_spec <- validate_temporal(temporal_spec, data)
+    # The multiscale validator is the superset: it resolves a
+    # temporal_multiscale() spec and delegates every other spec to
+    # validate_temporal(), so single-component fields are unaffected.
+    temporal_spec <- validate_temporal_multiscale(temporal_spec, data)
     }
   }
 
