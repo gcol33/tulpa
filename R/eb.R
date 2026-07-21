@@ -62,6 +62,23 @@
 #' @param offset Optional observation-level offset on the linear predictor
 #'   (length `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
 #'   with `n_quad > 1`, which errors rather than dropping it.
+#' @param estimate_phi Estimate the family's dispersion alongside the
+#'   random-effect covariances, instead of conditioning on `phi`. When `TRUE`
+#'   the supplied `phi` is the starting value and `fit$phi` is the estimate,
+#'   with `fit$phi_estimated` distinguishing the two cases. `log(phi)` joins the
+#'   maximization as one further coordinate, carrying the exact derivative of
+#'   the Laplace log-marginal with respect to it, so the cost is one more
+#'   coordinate for BFGS and not a second optimization.
+#'
+#'   The dispersion enters unpenalized -- the hyperprior covers the covariance
+#'   coordinates only -- so this is the ML-II estimate of `phi`, not a MAP under
+#'   an undeclared prior.
+#'
+#'   Available for `neg_binomial_2`, `gaussian` and `gamma`, and refused
+#'   elsewhere rather than approximated: `poisson` and `binomial` have no free
+#'   dispersion at all, and for the remaining families the derivative is not
+#'   registered (see `R/family_dispersion.R` for why `beta` in particular is
+#'   held back). Needs `n_quad = 1`.
 #' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
 #'   joint-field Laplace inner solve. `> 1` refines it with `n_quad`-point
 #'   adaptive Gauss-Hermite quadrature, which requires a single shared grouping
@@ -141,6 +158,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      log_prior_theta = NULL,
                      beta_prior = NULL, offset = NULL, n_quad = 1L,
                      marginal = FALSE,
+                     estimate_phi = FALSE,
                      control = list()) {
   .check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
   max_iter    <- as.integer(control$max_iter %||% 100L)
@@ -170,16 +188,20 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     beta_prior = beta_prior, n_quad = n_quad,
     max_iter = max_iter, tol = tol, n_threads = n_threads,
     caller = "tulpa_eb", need_scale = FALSE, outer_maxit = outer_maxit,
-    offset = offset)
+    offset = offset, estimate_phi = estimate_phi)
 
   layout    <- core$layout
   theta_hat <- core$theta_hat
   p_fix     <- core$p_fix
+  # The dispersion actually fitted: the estimate when it was free, otherwise
+  # the value conditioned on. Everything downstream reads this one name, so a
+  # fit cannot report one dispersion and have been computed at another.
+  phi_fit   <- core$phi_hat %||% phi
 
   # Re-solve at theta_hat through the SAME closure the optimizer drove, so the
   # reported fit cannot come from a differently-configured inner solve.
   L_hat <- .re_cov_theta_to_L_list(theta_hat, layout)
-  fit_hat <- core$inner_fit(L_hat)
+  fit_hat <- core$inner_fit(L_hat, phi_fit)
   if (is.null(fit_hat) || is.null(fit_hat$mode) ||
       length(fit_hat$log_marginal) != 1L || !is.finite(fit_hat$log_marginal)) {
     stop("tulpa_eb(): the inner Laplace solve failed at the maximizing Sigma. ",
@@ -238,8 +260,11 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   # stamps -- fit_hat is itself a finalized tulpa_laplace fit, and since
   # .finalize_fit() only fills absent fields, a surviving `backend = "laplace"`
   # would label this fit a Laplace one.
+  # `phi` is cleared alongside the provenance stamps: fit_hat carries the value
+  # its inner solve ran at, and the list below sets the reported one. Leaving
+  # both would duplicate the name and answer with whichever came first.
   fit_hat[c("backend", "draws_kind", "inference_mode", "inference_tier",
-            "selection_reason", "log_marginal")] <- NULL
+            "selection_reason", "log_marginal", "phi")] <- NULL
 
   .finalize_fit(c(fit_hat, list(
     map          = map,
@@ -253,6 +278,12 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     N            = length(y),
     theta_hat    = theta_hat,
     log_marginal = log_marg,
+    # The dispersion the fit was computed at, always present so downstream code
+    # need not know whether it was estimated. `phi_estimated` is what
+    # distinguishes an estimate from the value the caller conditioned on --
+    # reporting `phi` alone would make the two indistinguishable.
+    phi          = phi_fit,
+    phi_estimated = isTRUE(core$estimate_phi),
     # optim's code for the outer maximization, for a programmatic check; a
     # non-zero value has already warned.
     outer_convergence = as.integer(core$opt$convergence),

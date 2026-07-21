@@ -18,6 +18,7 @@ tulpa_eb(
   offset = NULL,
   n_quad = 1L,
   marginal = FALSE,
+  estimate_phi = FALSE,
   control = list()
 )
 }
@@ -63,6 +64,24 @@ one). Default \code{FALSE}. Widens intervals; never narrows them. When the
 variance components themselves are the target, or the correction's two
 approximations look strained (a strongly skewed variance-component
 marginal), integrate with \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} instead.}
+
+\item{estimate_phi}{Estimate the family's dispersion alongside the
+random-effect covariances, instead of conditioning on \code{phi}. When \code{TRUE}
+the supplied \code{phi} is the starting value and \code{fit$phi} is the estimate,
+with \code{fit$phi_estimated} distinguishing the two cases. \code{log(phi)} joins the
+maximization as one further coordinate, carrying the exact derivative of
+the Laplace log-marginal with respect to it, so the cost is one more
+coordinate for BFGS and not a second optimization.
+
+The dispersion enters unpenalized -- the hyperprior covers the covariance
+coordinates only -- so this is the ML-II estimate of \code{phi}, not a MAP under
+an undeclared prior.
+
+Available for \code{neg_binomial_2}, \code{gaussian} and \code{gamma}, and refused
+elsewhere rather than approximated: \code{poisson} and \code{binomial} have no free
+dispersion at all, and for the remaining families the derivative is not
+registered (see \code{R/family_dispersion.R} for why \code{beta} in particular is
+held back). Needs \code{n_quad = 1}.}
 
 \item{control}{A named list of numerical knobs: \code{max_iter}, \code{tol},
 \code{n_threads} (inner-solve controls, see \code{\link[=tulpa_laplace]{tulpa_laplace()}}), and

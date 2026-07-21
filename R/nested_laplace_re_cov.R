@@ -467,7 +467,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
                               caller,
                               need_scale = TRUE,
                               outer_maxit = 500L,
-                              offset = NULL) {
+                              offset = NULL,
+                              estimate_phi = FALSE) {
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
   vd <- .validate_glm_design(y, X, n_trials, caller)
@@ -481,6 +482,43 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   k <- sum(vapply(layout, `[[`, integer(1), "k"))
   if (is.null(log_prior_theta)) {
     log_prior_theta <- .re_cov_joint_prior(layout, prior_sigma, eta)
+  }
+
+  # The dispersion rides as one extra coordinate, log phi, appended after the
+  # covariance coordinates. Refused rather than approximated wherever the exact
+  # gradient for it is unavailable: the whole point of estimating phi here is
+  # that the outer objective is differentiated exactly, and a derivative-free
+  # search over a k+1 dimensional simplex is a different (and much worse)
+  # method wearing the same argument.
+  if (isTRUE(estimate_phi)) {
+    if (is.null(.family_dphi(family))) {
+      stop(caller, "(): `estimate_phi = TRUE` is not available for family '",
+           family, "'. The dispersion derivative of the Laplace log-marginal ",
+           "is registered for: ",
+           paste(.dispersion_families(), collapse = ", "),
+           ". Families without a free dispersion (poisson, binomial) have ",
+           "nothing to estimate.", call. = FALSE)
+    }
+    if (n_quad > 1L) {
+      stop(caller, "(): `estimate_phi = TRUE` needs the joint-field Laplace ",
+           "inner solve (`n_quad = 1`). The adaptive Gauss-Hermite path runs ",
+           "through a compiled per-group oracle that the dispersion gradient ",
+           "does not reach.", call. = FALSE)
+    }
+    if (!is.finite(phi) || phi <= 0) {
+      stop(caller, "(): `phi` is the starting value for the dispersion when ",
+           "`estimate_phi = TRUE`, so it must be finite and positive.",
+           call. = FALSE)
+    }
+  }
+  # Index of the dispersion coordinate within the stacked theta, or NA.
+  phi_idx <- if (isTRUE(estimate_phi)) k + 1L else NA_integer_
+  # Split a stacked theta into its covariance half and the dispersion it
+  # implies. One definition, so the objective, the gradient and the reported
+  # estimate cannot disagree about which coordinate is which.
+  theta_split <- function(theta) {
+    if (is.na(phi_idx)) return(list(re = theta, phi = phi))
+    list(re = theta[seq_len(k)], phi = exp(theta[[phi_idx]]))
   }
 
   # AGHQ refinement (n_quad > 1) replaces the joint-field Laplace inner marginal
@@ -514,12 +552,15 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # Inner solve: Laplace log-marginal at the supplied per-block covariances.
   # Failures at extreme grid edges (non-finite / non-convergent) return -Inf so
   # the cell gets zero weight rather than aborting the integration.
-  inner_logmarg <- function(L_list) {
+  # `phi_` defaults to the fixed dispersion, so every caller that conditions on
+  # it is unchanged; the dispersion-estimating path passes exp(log phi) from the
+  # theta vector instead.
+  inner_logmarg <- function(L_list, phi_ = phi) {
     val <- tryCatch(
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi, return_hessian = FALSE,
+        family = family, phi = phi_, return_hessian = FALSE,
         beta_prior = beta_prior, offset = offset,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       )$log_marginal,
@@ -531,12 +572,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # Inner solve that also keeps the joint posterior precision, which the exact
   # gradient differentiates through. Separate from inner_logmarg because the
   # extra factor costs memory the objective-only path has no use for.
-  inner_fit_grad <- function(L_list) {
+  inner_fit_grad <- function(L_list, phi_ = phi) {
     tryCatch(
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi, return_hessian = TRUE,
+        family = family, phi = phi_, return_hessian = TRUE,
         return_joint_hessian = TRUE,
         beta_prior = beta_prior, offset = offset,
         max_iter = max_iter, tol = tol, n_threads = n_threads
@@ -548,12 +589,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # Full inner solve at the integration nodes: the Laplace log-marginal plus the
   # fixed-effect mode and its MARGINAL covariance (solve(H_beta)). Paid O(n_grid)
   # times, not per optim step.
-  inner_fit <- function(L_list) {
+  inner_fit <- function(L_list, phi_ = phi) {
     tryCatch(
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi, return_hessian = TRUE,
+        family = family, phi = phi_, return_hessian = TRUE,
         beta_prior = beta_prior, offset = offset,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       ),
@@ -599,6 +640,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     }
   }
   theta0 <- .re_cov_L_list_to_theta(L_init_list, layout)
+  # The supplied `phi` becomes the starting value rather than the fixed value.
+  if (isTRUE(estimate_phi)) theta0 <- c(theta0, log(phi))
 
   # --- AGHQ inner solve (single shared grouping factor, n_quad > 1) ----------
   # Replace the joint-field Laplace inner_logmarg / inner_fit with the per-group
@@ -665,9 +708,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   }
 
   # --- mode of g(theta) = log_marginal(Sigma(theta)) + log_prior ------------
+  # The hyperprior is over the COVARIANCE coordinates; the dispersion enters
+  # unpenalized, which is what makes this the ML-II estimate of phi rather than
+  # a MAP under an undeclared prior. So the prior only ever sees theta's
+  # covariance half.
   negg <- function(theta) {
-    L_list <- .re_cov_theta_to_L_list(theta, layout)
-    -(inner_logmarg(L_list) + log_prior_theta(theta))
+    sp <- theta_split(theta)
+    L_list <- .re_cov_theta_to_L_list(sp$re, layout)
+    -(inner_logmarg(L_list, sp$phi) + log_prior_theta(sp$re))
   }
 
   # Analytic outer gradient. Available when the inner solve is the joint-field
@@ -680,15 +728,30 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     isTRUE(tryCatch(cpp_family_has_curvature_derivative(family),
                     error = function(e) FALSE))
 
+  # Estimating the dispersion is defined by the exact gradient carrying a
+  # log-phi coordinate. Without that gradient the fallbacks would search the
+  # extra dimension derivative-free -- a different and much weaker method under
+  # the same argument -- so refuse instead of silently substituting it.
+  if (isTRUE(estimate_phi) && !use_exact_grad) {
+    stop(caller, "(): `estimate_phi = TRUE` needs the exact outer gradient, ",
+         "which is unavailable for family '", family, "' on this path. ",
+         "The dispersion would otherwise be searched derivative-free, which ",
+         "is a different method than the one this argument selects.",
+         call. = FALSE)
+  }
+
   # The hyperprior is a closed form in theta with no inner solve behind it, so
   # its gradient is a central difference costing 2k prior evaluations -- no
   # Laplace solves. Only the expensive half of the gradient needs to be exact.
-  d_log_prior_theta <- function(theta, h = 1e-6) {
-    vapply(seq_along(theta), function(j) {
-      tp <- theta; tp[j] <- tp[j] + h
-      tm <- theta; tm[j] <- tm[j] - h
+  # Differentiated over the covariance coordinates only, then padded with a zero
+  # for the unpenalized dispersion so it lines up with the stacked gradient.
+  d_log_prior_theta <- function(theta_re, h = 1e-6) {
+    g <- vapply(seq_along(theta_re), function(j) {
+      tp <- theta_re; tp[j] <- tp[j] + h
+      tm <- theta_re; tm[j] <- tm[j] - h
       (log_prior_theta(tp) - log_prior_theta(tm)) / (2 * h)
     }, numeric(1))
+    if (is.na(phi_idx)) g else c(g, 0)
   }
 
   # Value and gradient of the FULL outer objective, log_marginal + log_prior, at
@@ -701,8 +764,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   eval_grad_at <- function(theta, want_jacobian = FALSE) {
     key <- paste(c(signif(theta, 12), if (want_jacobian) "J"), collapse = ",")
     if (!is.null(grad_cache[[key]])) return(grad_cache[[key]])
-    L_list <- .re_cov_theta_to_L_list(theta, layout)
-    fit <- inner_fit_grad(L_list)
+    sp <- theta_split(theta)
+    L_list <- .re_cov_theta_to_L_list(sp$re, layout)
+    fit <- inner_fit_grad(L_list, sp$phi)
     val <- if (is.null(fit) || !is.finite(fit$log_marginal %||% NA_real_)) NULL else {
       r <- .laplace_exact_re_grad(
         fit = fit, y = y, X = X, n_trials = n_trials, offset = offset,
@@ -712,13 +776,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         # NA_real_ mirrors inner_logmarg / inner_fit, which do not thread phi2
         # either: the gradient must describe the model the inner solve fitted,
         # not a differently-parameterized one.
-        phi = phi, phi2 = NA_real_, want_jacobian = want_jacobian
+        phi = sp$phi, phi2 = NA_real_, want_jacobian = want_jacobian,
+        # Appends the log-phi coordinate, so the returned gradient is stacked in
+        # the same order as theta.
+        want_phi = !is.na(phi_idx)
       )
       if (is.null(r)) NULL else {
         # The prior shifts the objective but not the mode, so it enters the
         # gradient and leaves J alone.
-        g <- (if (want_jacobian) r$grad else r) + d_log_prior_theta(theta)
-        list(f = fit$log_marginal + log_prior_theta(theta), g = g,
+        g <- (if (want_jacobian) r$grad else r) + d_log_prior_theta(sp$re)
+        list(f = fit$log_marginal + log_prior_theta(sp$re), g = g,
              J = if (want_jacobian) r$J else NULL)
       }
     }
@@ -746,19 +813,43 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # converges in far fewer inner solves and does not degrade with k.
   brent_lo <- log(1e-4)
   brent_hi <- log(1e3)
+  # Brent is a ONE-dimensional method, so it applies only when the whole stacked
+  # theta is scalar -- which the appended dispersion coordinate makes false even
+  # for a single scalar covariance block.
+  n_theta <- length(theta0)
+
+  # The dispersion coordinate is bracketed, for the same reason sigma is. As phi
+  # grows the objective FLATTENS rather than turning over -- a negative binomial
+  # becomes a Poisson, a gamma becomes tight around its mean -- so an oversized
+  # early step lands in a region where the gradient is ~0 and unbounded BFGS
+  # reports convergence at a value with no support in the data. Measured on a
+  # 480-row negative binomial whose profile peaks cleanly at phi = 3, unbounded
+  # BFGS stopped at 3.5e15. Only this coordinate is bounded; the covariance
+  # coordinates keep the full line.
+  phi_lo <- log(1e-6)
+  phi_hi <- log(1e6)
   opt <- if (use_exact_grad) {
     o <- tryCatch(
-      stats::optim(theta0, negg_exact, negg_gr, method = "BFGS",
-                   hessian = need_scale,
-                   control = list(maxit = as.integer(outer_maxit),
-                                  reltol = 1e-10)),
+      if (is.na(phi_idx)) {
+        stats::optim(theta0, negg_exact, negg_gr, method = "BFGS",
+                     hessian = need_scale,
+                     control = list(maxit = as.integer(outer_maxit),
+                                    reltol = 1e-10))
+      } else {
+        stats::optim(theta0, negg_exact, negg_gr, method = "L-BFGS-B",
+                     lower = c(rep(-Inf, k), phi_lo),
+                     upper = c(rep(Inf, k), phi_hi),
+                     hessian = need_scale,
+                     control = list(maxit = as.integer(outer_maxit),
+                                    factr = 1e7))
+      },
       error = function(e) NULL
     )
     # A gradient-driven run that fails outright (a singular H at some trial
     # theta, say) must not take the fit down with it; fall back to the
     # derivative-free path rather than reporting a stop point as an estimate.
     if (is.null(o) || !all(is.finite(o$par))) {
-      if (k == 1L) {
+      if (n_theta == 1L) {
         stats::optim(theta0, negg, method = "Brent",
                      lower = brent_lo, upper = brent_hi, hessian = need_scale,
                      control = list(reltol = 1e-10))
@@ -769,7 +860,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
                                     reltol = 1e-8))
       }
     } else o
-  } else if (k == 1L) {
+  } else if (n_theta == 1L) {
     stats::optim(theta0, negg, method = "Brent",
                  lower = brent_lo, upper = brent_hi, hessian = need_scale,
                  control = list(reltol = 1e-10))
@@ -797,7 +888,31 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # the code alone. The low end is the one that happens in practice -- the
   # classic empirical-Bayes collapse to sigma = 0 -- and reporting it as an
   # estimate rather than a boundary hit would misrepresent it as a fitted value.
-  if (k == 1L && is.finite(theta_hat[1L])) {
+  # A dispersion pinned at its bracket is a finding, not an estimate: the data
+  # want it outside the box, which for the upper end means the extra-Poisson
+  # variation the parameter exists to carry is not there. Reported rather than
+  # returned silently, since the number itself looks like any other fit.
+  if (!is.na(phi_idx) && is.finite(theta_hat[[phi_idx]])) {
+    lp <- theta_hat[[phi_idx]]
+    if (lp <= phi_lo + 1e-6 || lp >= phi_hi - 1e-6) {
+      warning(sprintf(paste0(
+        "%s(): the estimated dispersion hit the %s end of its search bracket ",
+        "(phi = %.3g). %s Treat it as a boundary hit, not a fitted value."),
+        caller, if (lp <= phi_lo + 1e-6) "lower" else "upper", exp(lp),
+        if (lp >= phi_hi - 1e-6) {
+          paste("The data show no dispersion beyond what the mean-variance",
+                "relation and the random effects already explain; a family",
+                "without a free dispersion may be the better model.")
+        } else {
+          paste("The dispersion is collapsing, which usually means the",
+                "response is far more variable than the family allows.")
+        }), call. = FALSE)
+    }
+  }
+
+  # Keyed on the stacked length, not on k: the bracket only exists when Brent
+  # ran, and an appended dispersion coordinate takes that path away.
+  if (n_theta == 1L && is.finite(theta_hat[1L])) {
     at_lo <- theta_hat[1L] <= brent_lo + 1e-6
     at_hi <- theta_hat[1L] >= brent_hi - 1e-6
     if (at_lo || at_hi) {
@@ -855,11 +970,20 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     if (isTRUE(want_jacobian)) list(grad = r$g, J = r$J) else r$g
   }
 
+  # The dispersion is reported separately from theta_hat's covariance half, and
+  # `theta_hat` is trimmed to the covariance coordinates so every downstream
+  # consumer (.re_cov_theta_to_L_list, the map summary, the marginal correction)
+  # keeps receiving the vector length it was written for. `phi_hat` is the
+  # estimate; `phi` stays the value the caller supplied, which is the start.
+  sp_hat <- theta_split(theta_hat)
   list(layout = layout, k = k, n_trials = n_trials, X = X, p_fix = p_fix,
        log_prior_theta = log_prior_theta,
        inner_logmarg = inner_logmarg, inner_fit = inner_fit,
        exact_grad_at = exact_grad_at,
-       theta0 = theta0, theta_hat = theta_hat, opt = opt,
+       theta0 = theta0, theta_hat = sp_hat$re, opt = opt,
+       theta_hat_full = theta_hat,
+       phi_hat = if (is.na(phi_idx)) NULL else sp_hat$phi,
+       estimate_phi = isTRUE(estimate_phi),
        post_cov = post_cov, L_scale = L_scale)
 }
 
