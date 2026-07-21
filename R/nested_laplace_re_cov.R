@@ -734,10 +734,17 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         0.5 * p_fix * log(2 * pi) - 0.5 * ld
       list(log_marginal = lm, mode = opt$par, H_beta = opt$hessian)
     }
-    inner_logmarg <- function(L_list) {
+    # Same signature as the joint-field pair above: the outer objective always
+    # passes the dispersion, so both inner solves have to take it. `phi_` is
+    # deliberately unused here -- `estimate_phi = TRUE` is refused for
+    # `n_quad > 1` further up, so on this path phi never leaves its starting
+    # value and is already baked into the compiled oracle by
+    # cpp_glmm_oracle_make(). It is NOT a value that needs threading through:
+    # rebuilding the oracle per solve would copy X, Z and y for nothing.
+    inner_logmarg <- function(L_list, phi_ = phi) {
       r <- core_solve(L_list); if (is.null(r)) -Inf else r$log_marginal
     }
-    inner_fit <- function(L_list) core_solve(L_list)
+    inner_fit <- function(L_list, phi_ = phi) core_solve(L_list)
   }
 
   # --- mode of g(theta) = log_marginal(Sigma(theta)) + log_prior ------------
