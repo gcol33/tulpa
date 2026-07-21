@@ -2884,8 +2884,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_test_s2z_block_schur
-List cpp_test_s2z_block_schur(NumericMatrix A, IntegerVector pin_start, IntegerVector pin_n, NumericVector pin_coef, NumericVector grad);
-RcppExport SEXP _tulpa_cpp_test_s2z_block_schur(SEXP ASEXP, SEXP pin_startSEXP, SEXP pin_nSEXP, SEXP pin_coefSEXP, SEXP gradSEXP) {
+List cpp_test_s2z_block_schur(NumericMatrix A, IntegerVector pin_start, IntegerVector pin_n, NumericVector pin_coef, NumericVector grad, Rcpp::Nullable<NumericMatrix> pin_coupling);
+RcppExport SEXP _tulpa_cpp_test_s2z_block_schur(SEXP ASEXP, SEXP pin_startSEXP, SEXP pin_nSEXP, SEXP pin_coefSEXP, SEXP gradSEXP, SEXP pin_couplingSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -2894,7 +2894,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< IntegerVector >::type pin_n(pin_nSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type pin_coef(pin_coefSEXP);
     Rcpp::traits::input_parameter< NumericVector >::type grad(gradSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_s2z_block_schur(A, pin_start, pin_n, pin_coef, grad));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<NumericMatrix> >::type pin_coupling(pin_couplingSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_s2z_block_schur(A, pin_start, pin_n, pin_coef, grad, pin_coupling));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3667,7 +3668,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_arena_custom_backward", (DL_FUNC) &_tulpa_cpp_test_arena_custom_backward, 2},
     {"_tulpa_cpp_test_spde_nc_transform_grad", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_grad, 10},
     {"_tulpa_cpp_test_spde_nc_transform_fwd", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_fwd, 10},
-    {"_tulpa_cpp_test_s2z_block_schur", (DL_FUNC) &_tulpa_cpp_test_s2z_block_schur, 5},
+    {"_tulpa_cpp_test_s2z_block_schur", (DL_FUNC) &_tulpa_cpp_test_s2z_block_schur, 6},
     {"_tulpa_cpp_test_log_prior_icar", (DL_FUNC) &_tulpa_cpp_test_log_prior_icar, 7},
     {"_tulpa_cpp_test_mcar_prior", (DL_FUNC) &_tulpa_cpp_test_mcar_prior, 8},
     {"_tulpa_cpp_test_outer_thread_mem_budget", (DL_FUNC) &_tulpa_cpp_test_outer_thread_mem_budget, 2},

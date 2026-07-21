@@ -1365,7 +1365,8 @@ List cpp_test_s2z_block_schur(
     IntegerVector pin_start,   // 0-based start of each rank-1 pin
     IntegerVector pin_n,       // length of each pin
     NumericVector pin_coef,    // coef of each pin
-    NumericVector grad
+    NumericVector grad,
+    Rcpp::Nullable<NumericMatrix> pin_coupling = R_NilValue  // dense K x K D
 ) {
   const int n = A.nrow();
   const int K = pin_start.size();
@@ -1385,6 +1386,18 @@ List cpp_test_s2z_block_schur(
   for (int k = 0; k < K; ++k)
     H.add_s2z_rank1(pin_start[k], pin_n[k], pin_coef[k]);
 
+  // Dense coupling D over the K pins (row-major), or diag(coef) when absent.
+  std::vector<double> Dfull;
+  if (pin_coupling.isNotNull()) {
+    NumericMatrix Dm(pin_coupling);
+    if (Dm.nrow() != K || Dm.ncol() != K)
+      Rcpp::stop("pin_coupling must be K x K");
+    Dfull.resize((std::size_t) K * K);
+    for (int a = 0; a < K; ++a)
+      for (int b = 0; b < K; ++b) Dfull[(std::size_t) a * K + b] = Dm(a, b);
+    H.set_s2z_coupling(Dfull);
+  }
+
   // Path under test: log-det (determinant-only wrapper) and the step.
   const double ld_block_schur =
       tulpa::s2z_log_det_block_schur(H, H.s2z_rank1, NA_REAL);
@@ -1401,12 +1414,17 @@ List cpp_test_s2z_block_schur(
   Eigen::MatrixXd B(n, n);
   for (int i = 0; i < n; ++i)
     for (int j = 0; j < n; ++j) B(i, j) = A(i, j);
-  for (int k = 0; k < K; ++k) {
-    const int s = pin_start[k], m = pin_n[k];
-    const double cf = pin_coef[k];
-    for (int i = s; i < s + m; ++i)
-      for (int j = s; j < s + m; ++j) B(i, j) += cf;
-  }
+  // (U D U')_{pq} = D[a,b] for p in block a, q in block b.
+  for (int a = 0; a < K; ++a)
+    for (int b = 0; b < K; ++b) {
+      const double d = Dfull.empty()
+          ? (a == b ? pin_coef[a] : 0.0)
+          : Dfull[(std::size_t) a * K + b];
+      if (d == 0.0) continue;
+      for (int i = pin_start[a]; i < pin_start[a] + pin_n[a]; ++i)
+        for (int j = pin_start[b]; j < pin_start[b] + pin_n[b]; ++j)
+          B(i, j) += d;
+    }
   Eigen::LLT<Eigen::MatrixXd> llt(B);
   double ld_dense = NA_REAL;
   double max_dstep = NA_REAL;

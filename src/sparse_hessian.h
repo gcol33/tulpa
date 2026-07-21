@@ -65,6 +65,18 @@ public:
         s2z_rank1.push_back({start, n, coef});
     }
 
+    // Optional dense coupling D over the K registered vectors, so the fold is
+    // the rank-K `U D U'` with U = [1_1 ... 1_K] rather than K independent
+    // rank-1 terms. Row-major K*K, SPD; empty means D = diag(coef_k) and every
+    // path behaves exactly as before.
+    //
+    // A Kronecker-structured field needs this: a multivariate CAR block carries
+    // precision `Sigma^-1 (x) Q`, whose sum-to-zero augmentation is
+    // `Sigma^-1 (x) 11'/J`. That couples FIELDS -- D[(a,c),(b,c)] =
+    // Sinv[a,b]/J_c -- which K independent rank-1 terms cannot express.
+    std::vector<double> s2z_coupling;
+    void set_s2z_coupling(std::vector<double> D) { s2z_coupling = std::move(D); }
+
     // Initialize from a list of (row, col) pairs that define the sparsity pattern.
     // Only lower triangle entries needed (row >= col).
     void init(int dim, const std::vector<std::pair<int,int>>& pattern) {
@@ -121,6 +133,7 @@ public:
     void zero() {
         std::fill(values.begin(), values.end(), 0.0);
         s2z_rank1.clear();
+        s2z_coupling.clear();
     }
 
     // Add `ridge` to every diagonal entry. The CSC lower-triangle stores
@@ -202,10 +215,71 @@ public:
 // not a determinant), so it stays exact; the determinant is obtained separately
 // from a direct factorization of the well-conditioned A + UDU' (see
 // s2z_log_det_direct).
+// D^{-1} (dense K x K, row-major) and log|D| for the registered pins. An empty
+// coupling is the diagonal D = diag(coef_k) every path used before Kronecker-
+// coupled fields needed a dense D, so the two agree entry for entry there.
+// Returns false if D is not SPD, which callers treat as "keep the uncorrected
+// step / fall back" rather than as an error.
+inline bool s2z_build_Dinv(
+    const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+    const std::vector<double>& coupling,
+    std::vector<double>& Dinv,
+    double& log_det_D
+) {
+    const int K = static_cast<int>(r1.size());
+    Dinv.assign((std::size_t) K * K, 0.0);
+    log_det_D = 0.0;
+    if (K == 0) return true;
+
+    if (coupling.empty()) {
+        for (int k = 0; k < K; ++k) {
+            const double c = r1[k].coef;
+            if (!(c > 0.0) || !std::isfinite(c)) return false;
+            Dinv[(std::size_t) k * K + k] = 1.0 / c;
+            log_det_D += std::log(c);
+        }
+        return true;
+    }
+    if ((int) coupling.size() != K * K) return false;
+
+    // D = L L': log|D| = 2 sum_j log L_jj, then D^{-1} column by column.
+    std::vector<double> L((std::size_t) K * K, 0.0);
+    for (int j = 0; j < K; ++j) {
+        for (int k = 0; k <= j; ++k) {
+            double sum = coupling[(std::size_t) j * K + k];
+            for (int p = 0; p < k; ++p)
+                sum -= L[(std::size_t) j * K + p] * L[(std::size_t) k * K + p];
+            if (j == k) {
+                if (!(sum > 0.0) || !std::isfinite(sum)) return false;
+                L[(std::size_t) j * K + j] = std::sqrt(sum);
+                log_det_D += 2.0 * std::log(L[(std::size_t) j * K + j]);
+            } else {
+                L[(std::size_t) j * K + k] = sum / L[(std::size_t) k * K + k];
+            }
+        }
+    }
+    std::vector<double> y(K, 0.0);
+    for (int col = 0; col < K; ++col) {
+        for (int j = 0; j < K; ++j) {
+            double s = (j == col) ? 1.0 : 0.0;
+            for (int p = 0; p < j; ++p) s -= L[(std::size_t) j * K + p] * y[p];
+            y[j] = s / L[(std::size_t) j * K + j];
+        }
+        for (int j = K - 1; j >= 0; --j) {
+            double s = y[j];
+            for (int p = j + 1; p < K; ++p)
+                s -= L[(std::size_t) p * K + j] * Dinv[(std::size_t) p * K + col];
+            Dinv[(std::size_t) j * K + col] = s / L[(std::size_t) j * K + j];
+        }
+    }
+    return true;
+}
+
 inline bool apply_s2z_rank1_correction(
     SparseCholeskySolver& solver, int n_x,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
-    double* delta
+    double* delta,
+    const std::vector<double>& coupling
 ) {
     const int K = static_cast<int>(r1.size());
     if (K == 0) return true;
@@ -235,10 +309,12 @@ inline bool apply_s2z_rank1_correction(
     }
 
     // Cap = D^{-1} + M (SPD). Dense Cholesky Cap = L L'.
+    std::vector<double> Dinv; double log_det_D = 0.0;
+    if (!s2z_build_Dinv(r1, coupling, Dinv, log_det_D)) return false;
     std::vector<double> Cap(K * K, 0.0);
     for (int j = 0; j < K; ++j)
         for (int k = 0; k < K; ++k)
-            Cap[j * K + k] = M[j * K + k] + (j == k ? 1.0 / r1[j].coef : 0.0);
+            Cap[j * K + k] = M[j * K + k] + Dinv[(std::size_t) j * K + k];
     std::vector<double> L(K * K, 0.0);
     for (int j = 0; j < K; ++j) {
         for (int k = 0; k <= j; ++k) {
@@ -301,11 +377,19 @@ struct S2ZLogDetCache {
     SparseHessianBuilder B_builder;     // pattern + entry_map (once)
     std::vector<int>     a_slots;       // flat slot per A nonzero
     std::vector<int>     block_slots;   // flat slot per dense block LT entry
+    std::vector<int>     cross_slots;   // flat slot per (a>b) cross-block entry
     SparseCholeskySolver B_solver;      // symbolic once, numeric per call
 
+    // A dense coupling adds the cross-block rectangles to B's pattern, so a
+    // cache built for one and reused for the other would scatter into the wrong
+    // slots. Keyed on presence, not on D's values, which are numeric per call.
+    bool coupled = false;
+
     bool matches(const SparseHessianBuilder& A_builder,
-                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1) const {
+                 const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+                 bool want_coupled) const {
         if (!built || n_x != A_builder.n || a_nnz != A_builder.nnz) return false;
+        if (coupled != want_coupled) return false;
         if (block_layout.size() != r1.size()) return false;
         for (std::size_t k = 0; k < r1.size(); ++k)
             if (block_layout[k].first != r1[k].start ||
@@ -315,12 +399,19 @@ struct S2ZLogDetCache {
     }
 };
 
+// Cross-block fill is quadratic in the total pinned length, so a dense coupling
+// on a large field is refused here rather than allocated. s2z_block_schur folds
+// the same D with no fill and is the path that carries those fits; this one is
+// the small-n reference and the non-PD fallback.
+constexpr long long S2Z_COUPLED_DIRECT_MAX_ENTRIES = 4000000LL;
+
 // (Re)build the pattern-invariant cache for B = A + sum_k coef_k 1_k 1_k': B's
 // CSC pattern + entry_map, the flat values[] slots for A's nonzeros and for each
 // dense block lower-triangle entry, and the persistent solver's symbolic factor.
 inline void build_s2z_log_det_cache(
     const SparseHessianBuilder& A_builder,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,
+    bool coupled,
     S2ZLogDetCache& cache
 ) {
     const int n_x = A_builder.n;
@@ -340,6 +431,14 @@ inline void build_s2z_log_det_cache(
             for (int j = 0; j <= i; ++j)
                 pattern.emplace_back(s + i, s + j);
     }
+    // D[a,b] fills the whole (a,b) rectangle: (U D U')_{pq} = D[a,b] for p in
+    // block a, q in block b. init() folds each pair into the lower triangle.
+    if (coupled)
+        for (int a = 0; a < K; ++a)
+            for (int b = 0; b < a; ++b)
+                for (int i = 0; i < r1[a].n; ++i)
+                    for (int j = 0; j < r1[b].n; ++j)
+                        pattern.emplace_back(r1[a].start + i, r1[b].start + j);
 
     cache.B_builder.init(n_x, pattern);
 
@@ -358,6 +457,14 @@ inline void build_s2z_log_det_cache(
             for (int j = 0; j <= i; ++j)
                 cache.block_slots.push_back(cache.B_builder.lookup(s + i, s + j));
     }
+    cache.cross_slots.clear();
+    if (coupled)
+        for (int a = 0; a < K; ++a)
+            for (int b = 0; b < a; ++b)
+                for (int i = 0; i < r1[a].n; ++i)
+                    for (int j = 0; j < r1[b].n; ++j)
+                        cache.cross_slots.push_back(
+                            cache.B_builder.lookup(r1[a].start + i, r1[b].start + j));
 
     // Symbolic factor once; the numeric factorize re-runs per call against the
     // same B pattern. The cholmod_sparse view aliases B_builder's arrays, so it
@@ -372,6 +479,7 @@ inline void build_s2z_log_det_cache(
     cache.block_layout.reserve(K);
     for (int k = 0; k < K; ++k)
         cache.block_layout.emplace_back(r1[k].start, r1[k].n);
+    cache.coupled = coupled;
     cache.built = true;
 }
 
@@ -592,17 +700,20 @@ inline bool s2z_block_schur(
             sf.solve(uk.data(), W[k].data(), nf);
         }
     }
+    // D enters only as D^{-1} in the cap and log|D| in the determinant, so a
+    // Kronecker-coupled field costs nothing here beyond a dense K x K inverse:
+    // no cross-block fill, no extra factorization.
+    std::vector<double> Dinv; double logC = 0.0;
+    if (!s2z_build_Dinv(r1, A.s2z_coupling, Dinv, logC)) return false;
     std::vector<double> cap((std::size_t) K * K, 0.0);
     for (int a = 0; a < K; ++a)
         for (int b = 0; b < K; ++b) {
             double m = 0.0;   // 1_a' W_b
             for (int i = 0; i < r1[a].n; ++i) m += W[b][floc[r1[a].start + i]];
-            cap[(std::size_t) a*K + b] = m + (a == b ? 1.0 / r1[a].coef : 0.0);
+            cap[(std::size_t) a*K + b] = m + Dinv[(std::size_t) a * K + b];
         }
     SmallChol capL; capL.factor(cap, K);
     if (!capL.ok) return false;
-    double logC = 0.0;
-    for (int k = 0; k < K; ++k) logC += std::log(r1[k].coef);
     const double logBFF = logAFF + logC + capL.logdet();
 
     // Schur S = A_ss - A_sf B_FF^-1 A_fs, with B_FF^-1 y = A_FF^-1 y - W cap^-1 (W'y).
@@ -713,9 +824,21 @@ inline double s2z_log_det_direct(
     if (K == 0) return fallback;
     const int n_x = A_builder.n;
 
+    const std::vector<double>& coupling = A_builder.s2z_coupling;
+    const bool coupled = !coupling.empty();
+    if (coupled) {
+        if ((int) coupling.size() != K * K) return fallback;
+        long long entries = 0;
+        for (int a = 0; a < K; ++a)
+            for (int b = 0; b < a; ++b)
+                entries += (long long) r1[a].n * r1[b].n;
+        if (entries > S2Z_COUPLED_DIRECT_MAX_ENTRIES) return fallback;
+    }
+
     S2ZLogDetCache local_cache;
     S2ZLogDetCache& cc = cache ? *cache : local_cache;
-    if (!cc.matches(A_builder, r1)) build_s2z_log_det_cache(A_builder, r1, cc);
+    if (!cc.matches(A_builder, r1, coupled))
+        build_s2z_log_det_cache(A_builder, r1, coupled, cc);
 
     SparseHessianBuilder& B_builder = cc.B_builder;
 
@@ -736,7 +859,7 @@ inline double s2z_log_det_direct(
     {
         int t = 0;
         for (int k = 0; k < K; ++k) {
-            const double c = r1[k].coef;
+            const double c = coupled ? coupling[(std::size_t) k * K + k] : r1[k].coef;
             const int nk = r1[k].n;
             for (int i = 0; i < nk; ++i)
                 for (int j = 0; j <= i; ++j) {
@@ -744,6 +867,18 @@ inline double s2z_log_det_direct(
                     if (slot >= 0) Bv[slot] += c;
                 }
         }
+    }
+    if (coupled) {
+        int t = 0;
+        for (int a = 0; a < K; ++a)
+            for (int b = 0; b < a; ++b) {
+                const double d = coupling[(std::size_t) a * K + b];
+                for (int i = 0; i < r1[a].n; ++i)
+                    for (int j = 0; j < r1[b].n; ++j) {
+                        const int slot = cc.cross_slots[t++];
+                        if (slot >= 0) Bv[slot] += d;
+                    }
+            }
     }
 
     cholmod_sparse B_cholmod = B_builder.as_cholmod(&cc.B_solver.common());
@@ -836,7 +971,7 @@ LaplaceResult laplace_newton_solve_sparse(
             { TULPA_PROFILE_PHASE(PHASE_SOLVE);
               solver.solve(grad.data(), delta.data(), n_x);
               apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
-                                         delta.data()); }
+                                         delta.data(), H_builder.s2z_coupling); }
             solve_ok = true;
             for (int j = 0; j < n_x; j++) {
                 if (!std::isfinite(delta[j])) { solve_ok = false; break; }

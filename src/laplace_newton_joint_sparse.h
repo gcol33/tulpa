@@ -197,7 +197,8 @@ inline bool s2z_newton_step(
         return true;
     }
     bool ok = joint_pd_step_solve(H, solver, n_x, pd_mode, grad, delta, nullptr);
-    if (ok) apply_s2z_rank1_correction(solver, n_x, H.s2z_rank1, delta);
+    if (ok) apply_s2z_rank1_correction(solver, n_x, H.s2z_rank1, delta,
+                                       H.s2z_coupling);
     return ok;
 }
 
@@ -331,7 +332,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
               if (!solve_ok) have_factor = false;
               else if (pd_mode == JointPDMode::LM)
                   apply_s2z_rank1_correction(solver, n_x, H_builder.s2z_rank1,
-                                             scratch.delta.data());
+                                             scratch.delta.data(),
+                                             H_builder.s2z_coupling);
           }
         }
 
