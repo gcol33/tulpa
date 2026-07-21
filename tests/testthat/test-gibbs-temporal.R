@@ -10,8 +10,8 @@ test_that("tulpa_gibbs(temporal = rw1 trend) recovers the slope on simulated dat
   time <- rep(seq_len(Tt), each = reps)          # 1-based per-obs time index
   N    <- length(time)
 
-  # RW1 trend (confounded with the intercept -- the kernel does not centre it,
-  # so only the time-varying slope is cleanly identified).
+  # RW1 trend. The kernel centres it each sweep and absorbs the removed level
+  # into the intercept, so eta is unchanged and both are identified.
   trend_true <- cumsum(rnorm(Tt, 0, 0.30))
   trend_true <- trend_true - mean(trend_true)
 
@@ -36,10 +36,16 @@ test_that("tulpa_gibbs(temporal = rw1 trend) recovers the slope on simulated dat
   expect_equal(ncol(fit$trend), Tt)
   expect_true(all(is.finite(fit$sigma_trend)))
 
-  # Slope recovers (identified separately from the trend); the intercept is
-  # confounded with the un-centred RW1 level, so it is not asserted.
+  # Every stored draw is centred exactly, not on average: the level is removed
+  # inside the sweep rather than being left for the summary to subtract.
+  expect_lt(max(abs(rowMeans(fit$trend))), 1e-8)
+
+  # Both fixed effects recover. The intercept is the one the un-centred kernel
+  # could not identify: discarding the removed mean each sweep let the field
+  # level wander against it, so only the slope was assertable.
   beta_hat <- colMeans(fit$beta)
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.25)
+  expect_lt(abs(beta_hat[1] - beta_true[1]), 0.2)
 })
 
 test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+temporal", {

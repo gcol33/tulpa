@@ -182,11 +182,6 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
         seasonal[s] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
       }
 
-      double mean_s = 0.0;
-      for (int s = 0; s < n_seasonal; s++) mean_s += seasonal[s];
-      mean_s /= n_seasonal;
-      for (int s = 0; s < n_seasonal; s++) seasonal[s] -= mean_s;
-
       double ss = 0.0;
       for (int s = 0; s < n_seasonal; s++) {
         int s_next = (s == n_seasonal - 1) ? 0 : s + 1;
@@ -285,6 +280,39 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       double shape = prior_sigma_short_scale + 0.5 * n_short;
       double rate = prior_sigma_short_scale + 0.5 * ss;
       sigma_short = 1.0 / std::sqrt(R::rgamma(shape, 1.0 / rate));
+    }
+
+    // Centre the intrinsic arms and ABSORB the removed levels into the
+    // intercept, so eta is unchanged and the move is posterior-invariant --
+    // what every spatial Polya-Gamma kernel here already does. Discarding a
+    // removed mean instead lags the intercept behind the field by that amount
+    // each sweep and drives the variance up, which is the failure
+    // update_spatial_icar() documents; the seasonal arm used to discard its
+    // mean and the trend was never centred at all, so its level was free to
+    // wander against the intercept.
+    //
+    // Both sigma updates above read only DIFFERENCES of their arm, which a
+    // constant shift leaves untouched, so centring here rather than before them
+    // gives the same draws. Placed after every arm's update so none of them
+    // reads a C.offset that this has already invalidated; the next sweep
+    // rebuilds X_beta from beta in the core step.
+    if (p > 0) {
+      double level = 0.0;
+      if (trend_type == 1 && n_trend > 0) {
+        double m = 0.0;
+        for (int t = 0; t < n_trend; t++) m += trend[t];
+        m /= n_trend;
+        for (int t = 0; t < n_trend; t++) trend[t] -= m;
+        level += m;
+      }
+      if (n_seasonal > 0) {
+        double m = 0.0;
+        for (int s = 0; s < n_seasonal; s++) m += seasonal[s];
+        m /= n_seasonal;
+        for (int s = 0; s < n_seasonal; s++) seasonal[s] -= m;
+        level += m;
+      }
+      C.beta[0] += level;
     }
 
     // Save draws
