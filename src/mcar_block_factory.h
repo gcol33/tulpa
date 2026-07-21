@@ -344,6 +344,11 @@ inline LatentBlock make_mcar_block(
     // component, which no single existing coefficient absorbs at all. Until
     // that is resolved the pins keep each removed mean at ~0, so eta is
     // preserved to that order and there is nothing to fold.
+    //
+    // This is why the field is still on the soft sum-to-zero pin while the
+    // uniformly-seen fields moved to the augmented precision: augmenting
+    // without the matching centring would leave the level ~400x freer than the
+    // pin does. Blocked on gcol33/tulpa#242.
     block.center = [start, n, p, L, csize](Rcpp::NumericVector& x)
         -> std::vector<CenterFold> {
         for (int a = 0; a < p; ++a) {
