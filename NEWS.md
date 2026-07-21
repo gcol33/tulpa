@@ -92,6 +92,56 @@ Notes:
   linear predictor. Derivation and numerical confirmation in
   `dev_notes/laplace_exact_gradient.md`.
 
+Identification of intrinsic fields:
+
+- Intrinsic fields are now identified by AUGMENTING the precision rather than
+  penalising the field's sum: `Q_aug = Q + sum_c 1_c 1_c' / J_c`, with the field
+  centred on its way into the linear predictor. The constant direction then
+  carries the field's own precision and never reaches the likelihood -- a free
+  draw that integrates out -- instead of being held by a stiff penalty the
+  sampler still has to traverse (gcol33/tulpa#241). This is what INLA's
+  `constr=TRUE` and Stan's `sum_to_zero_vector` do. Applied to ICAR and BYM2 on
+  both the exact-NUTS and Laplace paths, and to the multiscale temporal trend
+  and seasonal arms. On the reference ICAR fit the correlation between the field
+  sum and the intercept goes from -0.996 to 0.035, the intercept SD from 0.31 to
+  0.026, and the field sum sits at the `sqrt(J/tau)` the augmented prior
+  predicts.
+- The rank moves with it. `Q_aug` fills one direction per pinned component, so
+  ICAR -- whose null space is exactly its component constants -- becomes full
+  rank and the normalizer takes `J log tau`. Carrying the augmentation while
+  keeping the deficient rank would bias the variance component low. The rank
+  helper takes `rank(Q)` and the number of directions filled rather than the
+  field length, because that identity is not universal: a non-cyclic RW2 also
+  has a linear null direction a sum-to-zero augmentation does not touch, so it
+  stays deficient by one.
+- `temporal_multiscale()` is reachable from `tulpa(mode = "hmc")`. The block's
+  layout, prior and gradient all existed but nothing in the package set the flag
+  they key on, so it could only be driven from a consumer package. Its
+  parameters are named (`trend[i]`, `seasonal[i]`, `short_term[i]`, and the
+  matching scales) instead of positional. Recovery through the front door:
+  `cor(trend, truth) = 0.97` on a 36-point RW1 trend.
+
+Fixed:
+
+- The multiscale temporal Gibbs sampler discarded the level it removed when
+  centring the seasonal arm, and never centred the trend at all -- unlike every
+  spatial Polya-Gamma kernel, which folds the removed mean into the intercept so
+  eta is unchanged. Discarding it shifted eta every sweep, lagging the intercept
+  behind the field and inflating the variance. The intercept is now identified,
+  which the recovery test previously could not assert.
+- Every ICAR block factory on the Laplace paths left the connected-component
+  count at its default of 1, so a disconnected field (what `spatial(by=)`
+  produces) was pinned once over the whole vector and normalized at rank
+  `J - 1`, while the sampler and the Polya-Gamma kernels derived the true count
+  from the same adjacency. The count is now derived there too.
+- The sum-to-zero fold carries an optional dense coupling over its rank-1
+  vectors, so a Kronecker-structured field can express the augmentation its
+  precision implies (a multivariate CAR block's `Sigma^-1 (x) 11'/J` couples
+  fields, which independent rank-1 terms cannot represent). `LatentBlock::center`
+  reports where each removed constant belongs rather than assuming the arm
+  intercept, since a block reached through a per-observation weight aliases with
+  that covariate's coefficient instead.
+
 ## 0.0.97
 
 The soft sum-to-zero constant that identifies intrinsic latent fields, moved
