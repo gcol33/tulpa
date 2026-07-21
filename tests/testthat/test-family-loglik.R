@@ -141,7 +141,7 @@ test_that("family helpers validate names; glmm_weights errors on unknown family"
                     "inverse_gaussian", "beta_binomial", "tweedie", "t"))
   # An unknown family must error rather than silently returning unit weights,
   # which would give wrong SEs for a misspelled family (gcol33/tulpa#152).
-  expect_error(glmm_weights(c(0, 1, 2), "weibull"), "unknown family")
+  expect_error(glmm_weights(c(0, 1, 2), "weibull"), "[Uu]nknown family")
 })
 
 test_that(".family_base resolves the longest family name, not the first prefix", {
