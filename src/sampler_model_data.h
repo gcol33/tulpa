@@ -295,8 +295,61 @@ inline void build_sampler_model_inputs(
         }
     }
 
+    // --- Multiscale temporal (trend + seasonal + short-term). ---
+    // A validated temporal_multiscale() spec carries its own field names
+    // (time_index / group_index, and the three component strings), so it is
+    // parsed before the single-component branch reads `time_idx`. The layout
+    // (compute_param_layout) and prior (compute_multiscale_temporal_prior) key
+    // off data.has_multiscale_temporal, which nothing else in tulpa sets.
+    if (temporal_spec.isNotNull() &&
+        Rcpp::as<std::string>(Rcpp::as<Rcpp::List>(temporal_spec)["type"]) ==
+            "multiscale") {
+        Rcpp::List tp = Rcpp::as<Rcpp::List>(temporal_spec);
+        auto& ms = in.data.multiscale_temporal_data;
+
+        Rcpp::IntegerVector tidx = Rcpp::as<Rcpp::IntegerVector>(tp["time_index"]);
+        ms.time_index.assign(tidx.begin(), tidx.end());
+        ms.n_obs   = static_cast<int>(tidx.size());
+        ms.n_times = Rcpp::as<int>(tp["n_times"]);
+        ms.n_groups = tp.containsElementNamed("n_groups") &&
+                      !Rf_isNull(tp["n_groups"])
+                          ? Rcpp::as<int>(tp["n_groups"]) : 1;
+        if (tp.containsElementNamed("group_index") && !Rf_isNull(tp["group_index"])) {
+            Rcpp::IntegerVector gidx = Rcpp::as<Rcpp::IntegerVector>(tp["group_index"]);
+            ms.group_index.assign(gidx.begin(), gidx.end());
+        } else {
+            ms.group_index.assign(ms.n_obs, 1);
+        }
+
+        const std::string trend = Rcpp::as<std::string>(tp["trend"]);
+        if      (trend == "rw1")  ms.trend_type = TemporalType::RW1;
+        else if (trend == "rw2")  ms.trend_type = TemporalType::RW2;
+        else if (trend == "none") ms.trend_type = TemporalType::NONE;
+        else Rcpp::stop("build_sampler_model_inputs: multiscale trend '%s' is "
+                        "not supported (use 'rw1'/'rw2'/'none').", trend.c_str());
+
+        ms.seasonal_period =
+            (tp.containsElementNamed("seasonal") && !Rf_isNull(tp["seasonal"]))
+                ? Rcpp::as<int>(tp["seasonal"]) : 0;
+
+        const std::string st = Rcpp::as<std::string>(tp["short_term"]);
+        if      (st == "ar1")  ms.short_term_type = TemporalType::AR1;
+        else if (st == "iid")  ms.short_term_type = TemporalType::IID;
+        else if (st == "none") ms.short_term_type = TemporalType::NONE;
+        else Rcpp::stop("build_sampler_model_inputs: multiscale short_term '%s' "
+                        "is not supported (use 'ar1'/'iid'/'none').", st.c_str());
+
+        if (ms.trend_type == TemporalType::NONE && ms.seasonal_period == 0 &&
+            ms.short_term_type == TemporalType::NONE)
+            Rcpp::stop("build_sampler_model_inputs: the multiscale temporal "
+                       "spec has no active component.");
+
+        ms.shared = !tp.containsElementNamed("shared") ||
+                    Rf_isNull(tp["shared"]) || Rcpp::as<bool>(tp["shared"]);
+        in.data.has_multiscale_temporal = true;
+    }
     // --- Temporal field (RW1 / RW2 / AR1). ---
-    if (temporal_spec.isNotNull()) {
+    else if (temporal_spec.isNotNull()) {
         Rcpp::List tp = Rcpp::as<Rcpp::List>(temporal_spec);
         std::string ttype = Rcpp::as<std::string>(tp["type"]);
         Rcpp::IntegerVector tidx = Rcpp::as<Rcpp::IntegerVector>(tp["time_idx"]);
