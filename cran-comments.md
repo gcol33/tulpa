@@ -33,6 +33,5 @@
 
 ## Downstream dependencies
 
-No reverse dependencies on CRAN. The in-development packages tulpaObs,
-tulpaRatio, and tulpaGlmm (GitHub) track the engine and are checked against
-each release.
+No reverse dependencies on CRAN. The in-development packages tulpaObs and
+tulpaRatio (GitHub) track the engine and are checked against each release.

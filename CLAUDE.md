@@ -12,7 +12,13 @@ likelihood in via `LikelihoodSpec` and inherit the rest.
 - **tulpa** (engine, 0.0.82) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
 - **tulpaRatio** (1.3.0) — ratio, rate, and proportion models (renamed from numdenom).
 - **tulpaObs** (0.0.22) — occupancy, N-mixture, and detection models.
-- **tulpaGlmm** (0.0.0.9000) — generalized linear mixed models.
+- **tulpaGlmm** — RETIRED. Generalized linear mixed models are fitted by the
+  engine directly: `tulpa(y ~ x + (1 | g), family =, mode =)` covers the
+  families, inference modes and random-effect structure it carried, and the
+  machinery that was only ever in tulpaGlmm has been absorbed (warm-starting a
+  sampler from a Laplace/EB fit, the marginal-Laplace covariance correction,
+  hyperparameter standard errors, empirical-Bayes dispersion estimation, and
+  `VarCorr()`). Do not add a GLMM feature there.
 - **tulpaMesh** (>= 0.1.3) — constrained Delaunay meshes for SPDE fields (an engine dependency, not a consumer).
 
 Consumers depend on the engine via `Imports: tulpa (>= 0.0.13)` +
