@@ -769,6 +769,11 @@ family_names <- function() names(.FAMILY_OPS)
 #' @keywords internal
 .family_ops <- function(family) {
   ops <- .FAMILY_OPS[[family]]
+  # A `<base>_<link>` code resolves through the link layer (family_link.R),
+  # which composes the base family's mu-space form with the link. A code naming
+  # a family's own canonical link comes back as the hand-written entry above, so
+  # the canonical path is untouched.
+  if (is.null(ops)) ops <- .linked_family_ops(family)
   if (is.null(ops)) {
     .family_or_stop(family)
   }
@@ -779,11 +784,16 @@ family_names <- function() names(.FAMILY_OPS)
 # error, shared by every front door); returns the identifier invisibly.
 #' @keywords internal
 .family_or_stop <- function(family) {
-  if (!is.character(family) || length(family) != 1L ||
-      is.null(.FAMILY_OPS[[family]])) {
-    stop(sprintf(
-      "Unknown family '%s'. Supported: %s.",
-      as.character(family)[1L], paste(family_names(), collapse = ", ")
+  ok <- is.character(family) && length(family) == 1L &&
+    (!is.null(.FAMILY_OPS[[family]]) || !is.null(.linked_family_ops(family)))
+  if (!ok) {
+    stop(sprintf(paste0(
+      "Unknown family '%s'. Supported: %s. A non-canonical link is written as ",
+      "'<family>_<link>' (links: %s); %s take one."),
+      as.character(family)[1L],
+      paste(family_names(), collapse = ", "),
+      paste(link_names(), collapse = ", "),
+      paste(names(.LINK_DEFAULTS), collapse = ", ")
     ), call. = FALSE)
   }
   invisible(family)
