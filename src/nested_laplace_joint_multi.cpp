@@ -352,8 +352,8 @@ int build_joint_blocks_from_spec(
             // without breaking eta (see center_joint), so rely on the penalties
             // (the large-field path already does); no centerer here.
         } else {
-            block.center = [start, size](Rcpp::NumericVector& x) -> double {
-                return tulpa::center_effects(x, start, size);
+            block.center = [start, size](Rcpp::NumericVector& x) {
+                return tulpa::center_intercept(x, start, size);
             };
         }
         blocks.push_back(block);
@@ -496,8 +496,8 @@ int build_joint_blocks_from_spec(
             return tulpa::log_prior_icar_structured(x, phi_start, size, /*tau=*/1.0,
                                                     adj_rp, adj_ci, n_nbr);
         };
-        phi_block.center = [phi_start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, phi_start, size);
+        phi_block.center = [phi_start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, phi_start, size);
         };
         blocks.push_back(phi_block);
 
@@ -661,8 +661,8 @@ int build_joint_blocks_from_spec(
                     log_det_Q_rho->find(k_grid),
                     adj_rp, adj_ci, n_nbr);
             };
-            block.center = [start, size](Rcpp::NumericVector& x) -> double {
-                return tulpa::center_effects(x, start, size);
+            block.center = [start, size](Rcpp::NumericVector& x) {
+                return tulpa::center_intercept(x, start, size);
             };
             if (any_nontrivial_field_coef) {
                 block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
@@ -766,8 +766,8 @@ int build_joint_blocks_from_spec(
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
-        block.center = [start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, start, size);
+        block.center = [start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, start, size);
         };
         blocks.push_back(block);
         return start + size;
@@ -836,8 +836,8 @@ int build_joint_blocks_from_spec(
             double rho = theta_grid(k, axis_rho);
             return tulpa::log_prior_ar1(x, start, size, tau, rho);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, start, size);
+        block.center = [start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, start, size);
         };
         blocks.push_back(block);
         return start + size;
@@ -2063,21 +2063,28 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         auto center_joint = [&](Rcpp::NumericVector& x) {
             for (int b = 0; b < B; b++) {
                 if (!blocks[b].center) continue;
-                double c_b = blocks[b].center(x);
-                if (std::abs(c_b) < 1e-15) continue;
-                // Per-arm intercept compensation so eta is preserved when a
+                // Per-arm compensation so eta is preserved when a
                 // rank-deficient block is re-centered after a Newton step.
-                // arm k's first beta column absorbs the constant
-                // arm_scale_b(k_arm, k_grid) * d_fac_b(k_grid) * c_b that
-                // the centerer removed from x[block]. See the BYM2 / ICAR
-                // joint kernel centerers in nested_laplace_joint.cpp for
-                // the load-bearing rationale.
-                for (int k_arm = 0; k_arm < n_arms; k_arm++) {
-                    if (parsed[k_arm].p == 0) continue;
-                    double s = blocks[b].arm_scale
-                                ? blocks[b].arm_scale(k_arm, k_grid)
-                                : 1.0;
-                    x[parsed[k_arm].beta_start] += s * d_fac_cache[b] * c_b;
+                // Arm k's aliased beta column absorbs
+                // arm_scale_b(k_arm, k_grid) * d_fac_b(k_grid) * amount for
+                // each constant the centerer removed from x[block]. Offset 0
+                // is the intercept, which is what a uniformly-seen block
+                // aliases with; a weighted block reports the column of the
+                // covariate it rides on instead. See the BYM2 / ICAR joint
+                // kernel centerers in nested_laplace_joint.cpp for the
+                // load-bearing rationale.
+                for (const auto& fold : blocks[b].center(x)) {
+                    if (std::abs(fold.amount) < 1e-15) continue;
+                    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                        if (parsed[k_arm].p == 0) continue;
+                        if (fold.beta_offset < 0 ||
+                            fold.beta_offset >= parsed[k_arm].p) continue;
+                        double s = blocks[b].arm_scale
+                                    ? blocks[b].arm_scale(k_arm, k_grid)
+                                    : 1.0;
+                        x[parsed[k_arm].beta_start + fold.beta_offset] +=
+                            s * d_fac_cache[b] * fold.amount;
+                    }
                 }
             }
         };
@@ -2550,15 +2557,19 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         auto center_joint = [&](Rcpp::NumericVector& x) {
             for (int b = 0; b < B; b++) {
                 if (!blocks[b].center) continue;
-                double c_b = blocks[b].center(x);
-                if (std::abs(c_b) < 1e-15) continue;
-                double dfac = blocks[b].d_fac ? blocks[b].d_fac(k_grid) : 1.0;
-                for (int k_arm = 0; k_arm < n_arms; k_arm++) {
-                    if (parsed[k_arm].p == 0) continue;
-                    double s = blocks[b].arm_scale
-                                ? blocks[b].arm_scale(k_arm, k_grid)
-                                : 1.0;
-                    x[parsed[k_arm].beta_start] += s * dfac * c_b;
+                const double dfac = blocks[b].d_fac ? blocks[b].d_fac(k_grid) : 1.0;
+                for (const auto& fold : blocks[b].center(x)) {
+                    if (std::abs(fold.amount) < 1e-15) continue;
+                    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                        if (parsed[k_arm].p == 0) continue;
+                        if (fold.beta_offset < 0 ||
+                            fold.beta_offset >= parsed[k_arm].p) continue;
+                        double s = blocks[b].arm_scale
+                                    ? blocks[b].arm_scale(k_arm, k_grid)
+                                    : 1.0;
+                        x[parsed[k_arm].beta_start + fold.beta_offset] +=
+                            s * dfac * fold.amount;
+                    }
                 }
             }
         };

@@ -116,8 +116,8 @@ int build_blocks_from_spec(
             return tulpa::log_prior_icar(x, start, size, tau,
                                           adj_rp, adj_ci, n_nbr);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, start, size);
+        block.center = [start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, start, size);
         };
         blocks.push_back(block);
         return start + size;
@@ -158,8 +158,8 @@ int build_blocks_from_spec(
             return tulpa::log_prior_icar_structured(x, phi_start, size, /*tau=*/1.0,
                                                     adj_rp, adj_ci, n_nbr);
         };
-        phi_block.center = [phi_start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, phi_start, size);
+        phi_block.center = [phi_start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, phi_start, size);
         };
         blocks.push_back(phi_block);
 
@@ -243,8 +243,8 @@ int build_blocks_from_spec(
                                                  log_det_Q_rho->find(k),
                                                  adj_rp, adj_ci, n_nbr);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, start, size);
+        block.center = [start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, start, size);
         };
         blocks.push_back(block);
         return start + size;
@@ -337,8 +337,8 @@ int build_blocks_from_spec(
                 return tulpa::log_prior_rw2(x, start, size, tau, cyclic);
             };
         }
-        block.center = [start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, start, size);
+        block.center = [start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, start, size);
         };
         blocks.push_back(block);
         return start + size;
@@ -368,8 +368,8 @@ int build_blocks_from_spec(
             double rho = theta_grid(k, axis0 + 1);
             return tulpa::log_prior_ar1(x, start, size, tau, rho);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) -> double {
-            return tulpa::center_effects(x, start, size);
+        block.center = [start, size](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, start, size);
         };
         blocks.push_back(block);
         return start + size;

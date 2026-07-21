@@ -114,8 +114,8 @@ inline std::vector<tulpa::LatentBlock> make_icar_latent_blocks(
         return tulpa::log_prior_icar(x, start, n_units, tau_grid[k],
                                        adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    block.center = [start, n_units](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, start, n_units);
+    block.center = [start, n_units](Rcpp::NumericVector& x) {
+        return tulpa::center_intercept(x, start, n_units);
     };
     block.add_prior_pattern = [start, n_units, &adj_row_ptr, &adj_col_idx]
                               (std::vector<std::pair<int,int>>& out) {
@@ -184,8 +184,8 @@ inline std::vector<tulpa::LatentBlock> make_car_proper_latent_blocks(
                                              log_det_Q_rho->find(k),
                                              adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    block.center = [start, n_units](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, start, n_units);
+    block.center = [start, n_units](Rcpp::NumericVector& x) {
+        return tulpa::center_intercept(x, start, n_units);
     };
     block.add_prior_pattern = [start, n_units, &adj_row_ptr, &adj_col_idx]
                               (std::vector<std::pair<int,int>>& out) {
@@ -242,8 +242,8 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
         return tulpa::log_prior_icar_structured(x, phi_start, n_s, /*tau=*/1.0,
                                                 adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    phi_block.center = [phi_start, n_s](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, phi_start, n_s);
+    phi_block.center = [phi_start, n_s](Rcpp::NumericVector& x) {
+        return tulpa::center_intercept(x, phi_start, n_s);
     };
     phi_block.add_prior_pattern = [phi_start, n_s, &adj_row_ptr, &adj_col_idx]
                                   (std::vector<std::pair<int,int>>& out) {
@@ -1098,8 +1098,8 @@ inline tulpa::LatentBlock make_temporal_latent_block(
     block.log_prior         = ops_t.log_prior;
     block.add_prior_pattern = ops_t.add_prior_pattern;
     block.add_prior_sparse  = ops_t.add_prior_sparse;
-    block.center = [start, n_units](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, start, n_units);
+    block.center = [start, n_units](Rcpp::NumericVector& x) {
+        return tulpa::center_intercept(x, start, n_units);
     };
     return block;
 }

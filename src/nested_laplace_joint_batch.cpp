@@ -529,12 +529,17 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             // Center (sum-to-zero) with per-arm intercept compensation, then store.
             for (int b = 0; b < (int) blocks.size(); b++) {
                 if (!blocks[b].center) continue;
-                double c_b = blocks[b].center(st[s].x);
-                if (std::abs(c_b) < 1e-15) continue;
-                for (int k_arm = 0; k_arm < n_arms; k_arm++) {
-                    if (parsed[k_arm].p == 0) continue;
-                    double sc = blocks[b].arm_scale ? blocks[b].arm_scale(k_arm, kg) : 1.0;
-                    st[s].x[parsed[k_arm].beta_start] += sc * d_fac_cache[b] * c_b;
+                for (const auto& fold : blocks[b].center(st[s].x)) {
+                    if (std::abs(fold.amount) < 1e-15) continue;
+                    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                        if (parsed[k_arm].p == 0) continue;
+                        if (fold.beta_offset < 0 ||
+                            fold.beta_offset >= parsed[k_arm].p) continue;
+                        double sc = blocks[b].arm_scale
+                                      ? blocks[b].arm_scale(k_arm, kg) : 1.0;
+                        st[s].x[parsed[k_arm].beta_start + fold.beta_offset] +=
+                            sc * d_fac_cache[b] * fold.amount;
+                    }
                 }
             }
             double* mr = modes_flat[s].data() + (std::size_t) kg * n_x;

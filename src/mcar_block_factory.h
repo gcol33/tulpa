@@ -332,9 +332,20 @@ inline LatentBlock make_mcar_block(
 
     // Center each (field, component) to sum-to-zero after each Newton step
     // (belt-and-braces with the pins; the per-field-per-component constant is
-    // unidentified by the prior). Returns 0 (no arm-intercept compensation): the
-    // pins drive each removed mean to ~0, so eta is preserved to that order.
-    block.center = [start, n, p, L, csize](Rcpp::NumericVector& x) -> double {
+    // unidentified by the prior).
+    //
+    // No fold is reported. This block is INDEXED_MULTI: obs i sees it as
+    // eta_i += sum_a X_{ia} u_a[cell_i], so a constant removed from field a
+    // shifts eta along X_{.a} rather than uniformly, and aliases with the
+    // COEFFICIENT on that covariate -- not with the intercept, which is why it
+    // cannot report beta_offset 0. Reporting the right offset needs the field
+    // -> design-column mapping threaded in from the caller, and with L > 1 a
+    // per-component constant shifts eta only for the observations in that
+    // component, which no single existing coefficient absorbs at all. Until
+    // that is resolved the pins keep each removed mean at ~0, so eta is
+    // preserved to that order and there is nothing to fold.
+    block.center = [start, n, p, L, csize](Rcpp::NumericVector& x)
+        -> std::vector<CenterFold> {
         for (int a = 0; a < p; ++a) {
             const int fstart = start + a * n;
             for (int c = 0; c < L; ++c) {
@@ -345,7 +356,7 @@ inline LatentBlock make_mcar_block(
                 for (int i = 0; i < csize; ++i) x[cstart + i] -= mean;
             }
         }
-        return 0.0;
+        return {};
     };
 
     return block;

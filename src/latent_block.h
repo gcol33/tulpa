@@ -41,6 +41,28 @@ namespace tulpa {
 // in sparse_hessian.h, only needed at call sites.
 class SparseHessianBuilder;
 
+// One constant removed by a block's centering, and the coefficient it aliases
+// with. `beta_offset` is relative to the arm's beta_start (0 = the intercept);
+// `amount` is the removed value, which the driver adds to that coefficient
+// after the block's own arm_scale / d_fac, so eta is preserved.
+struct CenterFold {
+    int    beta_offset = 0;
+    double amount      = 0.0;
+};
+
+// The common case: a block seen uniformly by its observations removes one
+// constant, which aliases with the arm intercept. Centres [start, start+length)
+// in place and reports the fold.
+inline std::vector<CenterFold> center_intercept(Rcpp::NumericVector& x,
+                                                int start, int length) {
+    if (length <= 0) return {};
+    double mean = 0.0;
+    for (int i = 0; i < length; i++) mean += x[start + i];
+    mean /= length;
+    for (int i = 0; i < length; i++) x[start + i] -= mean;
+    return { CenterFold{0, mean} };
+}
+
 // How obs contribute to this block's latent indices.
 //
 // - INDEXED_SINGLE: one block-local DOF per obs (BYM2, ICAR, BYM2-phi,
@@ -151,12 +173,24 @@ struct LatentBlock {
     // log_marginal = -inf. May be empty (treated as always true).
     std::function<bool(int)> prep;
 
-    // Optional sum-to-zero / soft centering, applied after each Newton step
-    // on the block's sub-vector. Returns the mean offset that was applied
-    // (single-arm callers ignore the return value; joint drivers use it to
-    // shift per-arm intercepts so eta is preserved). Return 0 means no
-    // centering happened. May be empty (no centering at all, e.g. AR1).
-    std::function<double(Rcpp::NumericVector&)> center;
+    // Optional sum-to-zero / soft centering, applied after each Newton step on
+    // the block's sub-vector. Returns every constant that was removed together
+    // with WHERE it belongs, so the drivers can shift the aliased coefficient
+    // and leave eta unchanged. An empty vector means no centering happened; the
+    // field itself may be empty (no centering at all, e.g. AR1).
+    //
+    // `beta_offset` is relative to the arm's beta_start, so 0 is the arm
+    // intercept -- what a block contributing eta_i += x[...] uniformly aliases
+    // with, and what every scalar block returns via center_intercept().
+    //
+    // A non-zero offset exists because that aliasing is not universal. A block
+    // whose observations see it through a per-observation weight
+    // (eta_i += X_{ia} * u_a[cell_i], as multivariate CAR and the varying-
+    // coefficient blocks do) shifts eta along that covariate's column, not
+    // uniformly, so its constant aliases with the COEFFICIENT on X_{.a} rather
+    // than with the intercept. Folding such a constant into the intercept would
+    // change eta instead of preserving it.
+    std::function<std::vector<CenterFold>(Rcpp::NumericVector&)> center;
 
     // ----- Sparse-builder fields -----
     //

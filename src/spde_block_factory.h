@@ -243,8 +243,8 @@ inline LatentBlock make_spde_block(
         return st.half_ldQ - 0.5 * qf;
     };
 
-    block.center = [start, n_mesh](Rcpp::NumericVector& x) -> double {
-        return center_effects(x, start, n_mesh);
+    block.center = [start, n_mesh](Rcpp::NumericVector& x) {
+        return tulpa::center_intercept(x, start, n_mesh);
     };
 
     return block;

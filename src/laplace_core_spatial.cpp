@@ -82,8 +82,8 @@ Rcpp::List cpp_laplace_fit_spatial(
         return tulpa::log_prior_icar(x, block_start, n_spatial_units, tau_spatial,
                                        adj_row_ptr, adj_col_idx, n_neighbors);
     };
-    block.center = [&](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, block_start, n_spatial_units);
+    block.center = [&](Rcpp::NumericVector& x) {
+        return tulpa::center_intercept(x, block_start, n_spatial_units);
     };
     std::vector<tulpa::LatentBlock> blocks{ block };
 
@@ -162,8 +162,8 @@ Rcpp::List cpp_laplace_fit_bym2(
                                                 /*tau=*/1.0, adj_row_ptr,
                                                 adj_col_idx, n_neighbors);
     };
-    phi_block.center = [&](Rcpp::NumericVector& x) -> double {
-        return tulpa::center_effects(x, phi_start, n_spatial_units);
+    phi_block.center = [&](Rcpp::NumericVector& x) {
+        return tulpa::center_intercept(x, phi_start, n_spatial_units);
     };
 
     // theta block: IID, d = sigma * sqrt(1 - rho), no centering.
