@@ -26,6 +26,7 @@
 #include "laplace_re_priors.h"
 #include "laplace_scatter.h"
 #include "laplace_spatial_priors.h"
+#include "icar_kernel.h"           // count_graph_components
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
 #include "nl_cell_cache.h"
@@ -96,37 +97,49 @@ inline std::vector<tulpa::LatentBlock> make_icar_latent_blocks(
     const Rcpp::IntegerVector& adj_col_idx,
     const Rcpp::IntegerVector& n_neighbors
 ) {
+    // The ICAR null space is one constant per connected component, so the
+    // augmentation has to pin that many directions and the normalizer count
+    // that many. Left at the default 1 this path pinned a disconnected field
+    // (spatial(by=) replication) once over the whole vector and claimed a J - 1
+    // rank, while the sampler and the Polya-Gamma kernels both derive the true
+    // count from the same adjacency.
+    const int n_comp = tulpa::count_graph_components(
+        n_units, adj_row_ptr.begin(), adj_col_idx.begin());
+
     tulpa::LatentBlock block;
     block.start = start;
     block.size  = n_units;
     block.idx   = [&spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
     block.d_fac = [](int) { return 1.0; };
-    block.add_prior = [start, n_units, &tau_grid,
+    block.add_prior = [start, n_units, n_comp, &tau_grid,
                        &adj_row_ptr, &adj_col_idx, &n_neighbors]
                       (tulpa::DenseVec& grad, tulpa::DenseMat& H,
                        const Rcpp::NumericVector& x, int k) {
         tulpa::add_icar_prior(grad, H, x, start, n_units, tau_grid[k],
-                               adj_row_ptr, adj_col_idx, n_neighbors);
+                               adj_row_ptr, adj_col_idx, n_neighbors, n_comp);
     };
-    block.log_prior = [start, n_units, &tau_grid,
+    block.log_prior = [start, n_units, n_comp, &tau_grid,
                        &adj_row_ptr, &adj_col_idx, &n_neighbors]
                       (const Rcpp::NumericVector& x, int k) {
         return tulpa::log_prior_icar(x, start, n_units, tau_grid[k],
-                                       adj_row_ptr, adj_col_idx, n_neighbors);
+                                       adj_row_ptr, adj_col_idx, n_neighbors,
+                                       n_comp);
     };
     block.center = [start, n_units](Rcpp::NumericVector& x) {
         return tulpa::center_intercept(x, start, n_units);
     };
-    block.add_prior_pattern = [start, n_units, &adj_row_ptr, &adj_col_idx]
+    block.add_prior_pattern = [start, n_units, n_comp, &adj_row_ptr, &adj_col_idx]
                               (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_icar_pattern(out, start, n_units, adj_row_ptr, adj_col_idx);
+        tulpa::add_icar_pattern(out, start, n_units, adj_row_ptr, adj_col_idx,
+                                n_comp);
     };
-    block.add_prior_sparse = [start, n_units, &tau_grid,
+    block.add_prior_sparse = [start, n_units, n_comp, &tau_grid,
                               &adj_row_ptr, &adj_col_idx, &n_neighbors]
                              (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                               const Rcpp::NumericVector& x, int k) {
         tulpa::add_icar_prior_sparse(grad, H, x, start, n_units, tau_grid[k],
-                                       adj_row_ptr, adj_col_idx, n_neighbors);
+                                       adj_row_ptr, adj_col_idx, n_neighbors,
+                                       n_comp);
     };
     return { block };
 }
@@ -221,6 +234,10 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     int phi_start   = start;
     int theta_start = start + n_s;
 
+    // One constant null direction per connected component, as for plain ICAR.
+    const int n_comp = tulpa::count_graph_components(
+        n_s, adj_row_ptr.begin(), adj_col_idx.begin());
+
     tulpa::LatentBlock phi_block;
     phi_block.start = phi_start;
     phi_block.size  = n_s;
@@ -228,32 +245,38 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     phi_block.d_fac = [&sigma_spatial_grid, &rho_grid, scale_factor](int k) {
         return sigma_spatial_grid[k] * std::sqrt(rho_grid[k] + 1e-10) * scale_factor;
     };
-    phi_block.add_prior = [phi_start, n_s, &adj_row_ptr, &adj_col_idx, &n_neighbors]
+    phi_block.add_prior = [phi_start, n_s, n_comp,
+                           &adj_row_ptr, &adj_col_idx, &n_neighbors]
                           (tulpa::DenseVec& grad, tulpa::DenseMat& H,
                            const Rcpp::NumericVector& x, int /*k*/) {
         tulpa::add_icar_prior(grad, H, x, phi_start, n_s, 1.0,
-                               adj_row_ptr, adj_col_idx, n_neighbors);
+                               adj_row_ptr, adj_col_idx, n_neighbors, n_comp);
     };
-    phi_block.log_prior = [phi_start, n_s, &adj_row_ptr, &adj_col_idx, &n_neighbors]
+    phi_block.log_prior = [phi_start, n_s, n_comp,
+                           &adj_row_ptr, &adj_col_idx, &n_neighbors]
                           (const Rcpp::NumericVector& x, int /*k*/) {
         // Structured ICAR component (tau = 1); shares the quadratic form and the
-        // sum-to-zero penalty with add_icar_prior so the objective stays
-        // consistent with the gradient, instead of re-deriving them inline.
+        // augmentation with add_icar_prior so the objective stays consistent
+        // with the gradient, instead of re-deriving them inline.
         return tulpa::log_prior_icar_structured(x, phi_start, n_s, /*tau=*/1.0,
-                                                adj_row_ptr, adj_col_idx, n_neighbors);
+                                                adj_row_ptr, adj_col_idx,
+                                                n_neighbors, n_comp);
     };
     phi_block.center = [phi_start, n_s](Rcpp::NumericVector& x) {
         return tulpa::center_intercept(x, phi_start, n_s);
     };
-    phi_block.add_prior_pattern = [phi_start, n_s, &adj_row_ptr, &adj_col_idx]
+    phi_block.add_prior_pattern = [phi_start, n_s, n_comp, &adj_row_ptr, &adj_col_idx]
                                   (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_icar_pattern(out, phi_start, n_s, adj_row_ptr, adj_col_idx);
+        tulpa::add_icar_pattern(out, phi_start, n_s, adj_row_ptr, adj_col_idx,
+                                n_comp);
     };
-    phi_block.add_prior_sparse = [phi_start, n_s, &adj_row_ptr, &adj_col_idx, &n_neighbors]
+    phi_block.add_prior_sparse = [phi_start, n_s, n_comp,
+                                  &adj_row_ptr, &adj_col_idx, &n_neighbors]
                                  (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
                                   const Rcpp::NumericVector& x, int /*k*/) {
         tulpa::add_icar_prior_sparse(grad, H, x, phi_start, n_s, 1.0,
-                                       adj_row_ptr, adj_col_idx, n_neighbors);
+                                       adj_row_ptr, adj_col_idx, n_neighbors,
+                                       n_comp);
     };
 
     tulpa::LatentBlock theta_block;

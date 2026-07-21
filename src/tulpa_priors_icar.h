@@ -40,21 +40,28 @@ T icar_sum_to_zero_augment(const T* phi, int n_spatial_units, int n_components)
     return aug;
 }
 
-// Per-component centring of the field, into `out`. This is what makes the
+// Centring of the field on its way into eta, into `out`. This is what makes the
 // augmentation an identification rather than a weak penalty: the constant
 // direction carries precision tau (order 1) instead of the 1/(kappa*J)^2 the
 // old soft pin carried, so leaving it in eta would free the level rather than
 // fix it.
+//
+// The WHOLE field is centred, not each component, even though the augmentation
+// pins one direction per component. The two counts differ on purpose. Adding a
+// constant to every node shifts every eta_i equally and is absorbed by the
+// intercept, so it is unidentified and has to go. Adding a constant to ONE
+// component shifts eta only for that component's observations, which a single
+// intercept cannot absorb -- the data identifies it, and centring it away would
+// delete a real level difference between components. The augmentation still
+// covers all L directions so the prior is proper; the data covers the L - 1 the
+// centring leaves alone. The Laplace path centres the same single direction.
 template<typename T>
-void icar_center_field(const T* phi, int n_spatial_units, int n_components,
-                       std::vector<T>& out)
+void icar_center_field(const T* phi, int n_spatial_units,
+                       int /*n_components*/, std::vector<T>& out)
 {
     out.assign(n_spatial_units, T(0.0));
-    tulpa::for_each_icar_component(0, n_spatial_units, n_components,
-        [&](int cstart, int csize) {
-            const T m = tulpa::s2z_component_mean(phi, cstart, csize);
-            for (int i = 0; i < csize; i++) out[cstart + i] = phi[cstart + i] - m;
-        });
+    const T m = tulpa::s2z_component_mean(phi, 0, n_spatial_units);
+    for (int i = 0; i < n_spatial_units; i++) out[i] = phi[i] - m;
 }
 
 template<typename T>
