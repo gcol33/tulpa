@@ -219,15 +219,12 @@ test_that(".build_warm_start masses log_sigma_re from theta_cov", {
   f_marg  <- tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = TRUE)
   skip_if(is.null(f_marg$theta_cov), "correction did not form on this seed")
 
-  ws0 <- .build_warm_start(f_plain, lay, list(d$re), n_chains = 1L, jitter = 0)
-  ws1 <- .build_warm_start(f_marg,  lay, list(d$re), n_chains = 1L, jitter = 0)
-  # .build_warm_start is under active development in R/warm_start.R and its
-  # return shape is not settled; this file owns the theta_cov -> mass mapping,
-  # not the warm-start container. Skip rather than pin a field name that is
-  # still moving, so a rename there shows up as a warm-start test failure
-  # rather than as a spurious failure here.
-  skip_if(is.null(ws0$inv_metric_diag) || is.null(ws1$inv_metric_diag),
-          "warm start does not expose inv_metric_diag")
+  # `metric = TRUE` is what hands the assembled inverse-mass diagonal back; the
+  # default withholds it, so the mapping under test is only observable here.
+  ws0 <- .build_warm_start(f_plain, lay, list(d$re), n_chains = 1L, jitter = 0,
+                           metric = TRUE)
+  ws1 <- .build_warm_start(f_marg,  lay, list(d$re), n_chains = 1L, jitter = 0,
+                           metric = TRUE)
 
   ls <- as.integer(lay$re_terms[[1]]$log_sigma_re)
   ls <- ls[!is.na(ls)]
