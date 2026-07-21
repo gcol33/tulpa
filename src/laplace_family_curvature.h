@@ -63,7 +63,10 @@ inline double dvariance_dmu(double mu, double phi, const std::string& family,
                             int n_trials) {
     if (family == "gaussian") return 0.0;
     if (family == "lognormal") return 0.0;
-    if (family == "binomial") return n_trials * (1.0 - 2.0 * mu);
+    // d/dmu of variance_fn's mu (1-mu) / n. Must track that arm exactly: the two
+    // are the numerator and denominator of the same quotient rule in
+    // curvature_deta_for_family, so a mismatch is a silently wrong gradient.
+    if (family == "binomial") return (1.0 - 2.0 * mu) / n_trials;
     if (family == "poisson") return 1.0;
     if (family == "neg_binomial_2") return 1.0 + 2.0 * mu / phi;
     if (family == "gamma") return 2.0 * mu / phi;

@@ -177,10 +177,25 @@ inline double mu_eta(double eta, const std::string& link) {
                fn, family.c_str());
 }
 
+// The WORKING variance: the V for which dmu^2 / V is the Fisher information per
+// observation on eta. This is not Var(y) wherever the two differ -- see the
+// binomial and beta arms below -- and nothing consumes it as a response
+// variance; its only callers are the dmu^2 / V compositions in
+// grad_hess_for_family, log_lik_beta_grouped's weight, and the quotient rule in
+// curvature_deta_for_family.
 inline double variance_fn(double mu, double phi, const std::string& family, int n_trials) {
     if (family == "gaussian") return phi * phi;
     if (family == "lognormal") return phi * phi;
-    if (family == "binomial") return n_trials * mu * (1.0 - mu);
+    // y ~ Bin(n, mu) has Var(y) = n mu (1-mu), but the Fisher information on eta
+    // is n (dmu/deta)^2 / (mu (1-mu)), so the V that dmu^2 / V must divide by is
+    // mu (1-mu) / n -- the proportion-scale variance function, as in glm's
+    // binomial()$variance on a proportion response. Returning the RESPONSE
+    // variance here made the working weight a factor of n^2 too small for every
+    // non-canonical binomial link (probit, cloglog, cauchit, log) at n > 1. The
+    // canonical logit link never reached this: grad_hess_for_family answers
+    // binomial from neg_hess_log_lik_binomial before the generic route, which is
+    // why only the suffixed forms were affected, and n = 1 hid it there.
+    if (family == "binomial") return mu * (1.0 - mu) / n_trials;
     if (family == "poisson") return mu;
     if (family == "neg_binomial_2") return mu + mu * mu / phi;
     if (family == "gamma") return mu * mu / phi;
