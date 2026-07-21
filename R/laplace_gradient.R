@@ -117,7 +117,8 @@
 # falls back to the derivative-free path instead of optimizing a fiction.
 .laplace_exact_re_grad <- function(fit, y, X, n_trials, offset, weights,
                                    re_list, layout, L_list, family, phi,
-                                   phi2 = NA_real_, want_jacobian = FALSE) {
+                                   phi2 = NA_real_, want_jacobian = FALSE,
+                                   want_phi = FALSE) {
   H <- fit$H_joint
   x <- fit$mode
   if (is.null(H) || is.null(x)) return(NULL)
@@ -217,7 +218,46 @@
   }
 
   if (any(!is.finite(grad))) return(NULL)
+
+  # ---- Dispersion coordinate ------------------------------------------------
+  # Appended last, so the stacked theta the optimizer walks is
+  # [block coordinates ..., log phi] and the random-effect half is untouched
+  # when the dispersion is held fixed.
+  #
+  #   dm/dphi = sum_i w_i dloglik_i/dphi
+  #             - 0.5 sum_i s_i [ w_i dW_i/dphi + (dW_i/deta_i)(A dx_hat/dphi)_i ]
+  #
+  # The second bracket is the whole reason this cannot be read off the
+  # likelihood alone: log|H| moves with phi both explicitly, through W(eta, phi),
+  # and through the mode. `dw` already carries the observation weights (applied
+  # above), so only the explicit dW/dphi is scaled here.
+  grad_phi <- NULL
+  if (isTRUE(want_phi)) {
+    dphi <- .family_dphi(family)
+    if (is.null(dphi)) return(NULL)
+    if (!is.finite(phi) || phi <= 0) return(NULL)
+    wt <- if (is.null(weights)) rep(1, n_obs) else as.numeric(weights)
+
+    dl_dphi <- dphi$dloglik(eta, y, n_trials, phi)
+    ds_dphi <- dphi$dscore(eta, y, n_trials, phi)
+    dW_dphi <- dphi$dweight(eta, y, n_trials, phi)
+    if (any(!is.finite(dl_dphi)) || any(!is.finite(ds_dphi)) ||
+        any(!is.finite(dW_dphi))) return(NULL)
+
+    # dx_hat/dphi from implicit differentiation of the inner stationarity
+    # condition: H dx_hat/dphi = A' (w * dscore/dphi).
+    v <- as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, wt * ds_dphi)))
+    deta_dphi <- as.numeric(A %*% v)
+
+    g_phi <- sum(wt * dl_dphi) -
+      0.5 * sum(s * (wt * dW_dphi + dw * deta_dphi))
+    # The optimizer works in log phi, where the positivity constraint is free.
+    grad_phi <- phi * g_phi
+    if (!is.finite(grad_phi)) return(NULL)
+    grad <- c(grad, grad_phi)
+  }
+
   if (is.null(J)) return(grad)
   if (any(!is.finite(J))) return(NULL)
-  list(grad = grad, J = J)
+  list(grad = grad, J = J, grad_phi = grad_phi)
 }
