@@ -48,26 +48,36 @@ test_that("multiscale temporal pins its intrinsic trend and seasonal arms", {
       trend_type = "rw1", seasonal_period = per, short_term_type = "ar1")
   }
 
-  # Shifting an intrinsic arm by a constant leaves its quadratic form untouched,
-  # so any change in the log-prior is the pin doing its job. Unpinned (the bug),
+  # Shifting an intrinsic arm by a constant leaves its RW quadratic untouched,
+  # so any change in the log-prior is the augmentation doing its job. Without it
   # these differences are exactly 0 and the level is free.
   expect_gt(abs(lp(trend + 1, seasonal) - lp(trend, seasonal)), 1)
   expect_gt(abs(lp(trend, seasonal + 1) - lp(trend, seasonal)), 1)
 
-  # The penalty is exactly the shared one, on each arm's own length.
+  # The augmentation is Q -> Q + 11'/n, entering the quadratic at tau/n = 1/n
+  # here (both arms are at sigma2 = 1), on each arm's own length.
   d_trend <- lp(trend + 1, seasonal) - lp(trend, seasonal)
   expect_equal(
     d_trend,
-    -0.5 * tulpa:::cpp_test_s2z_precision(n, 0.001) *
-      ((sum(trend) + n)^2 - sum(trend)^2),
+    -0.5 * ((sum(trend) + n)^2 - sum(trend)^2) / n,
     tolerance = 1e-6)
 
   d_seas <- lp(trend, seasonal + 1) - lp(trend, seasonal)
   expect_equal(
     d_seas,
-    -0.5 * tulpa:::cpp_test_s2z_precision(per, 0.001) *
-      ((sum(seasonal) + per)^2 - sum(seasonal)^2),
+    -0.5 * ((sum(seasonal) + per)^2 - sum(seasonal)^2) / per,
     tolerance = 1e-6)
+
+  # It scales with the arm's own variance, which the soft pin it replaced did
+  # not: at sigma2 = 4 the same shift moves the log-prior a quarter as far.
+  lp4 <- function(tr, se) {
+    tulpa:::cpp_test_multiscale_temporal_log_lik(
+      tr, se, short,
+      sigma2_trend = 4, sigma2_seasonal = 1, sigma2_short = 1, rho_short = 0.5,
+      trend_type = "rw1", seasonal_period = per, short_term_type = "ar1")
+  }
+  expect_equal((lp4(trend + 1, seasonal) - lp4(trend, seasonal)) / d_trend,
+               0.25, tolerance = 1e-6)
 
   # The proper short-term arm identifies its own level and is not pinned.
   base <- lp(trend, seasonal)

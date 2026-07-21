@@ -13,6 +13,7 @@
 #include <string>
 #include "hmc_temporal.h"  // For temporal kernels (RW1, RW2, AR1)
 #include "pc_prior.h"
+#include "tulpa/sum_to_zero.h"  // s2z_aug_coef / s2z_aug_rank / component sums
 
 namespace tulpa_temporal {
 
@@ -30,15 +31,25 @@ template <typename T>
 inline T rw1_log_lik(
     const std::vector<T>& phi,  // Length T
     const T& sigma2,
-    bool cyclic = false
+    bool cyclic = false,
+    bool augment = false        // Q -> Q + 11'/n, the sum-to-zero augmentation
 ) {
   int n = static_cast<int>(phi.size());
   if (n < 2) return T(0.0);
 
   T quad = rw1_quadratic_form(phi.data(), n, cyclic);
+  int rank = tulpa_temporal::rw1_rank(n, cyclic);
+
+  // RW1's null space is the constant alone, so the augmentation fills it and
+  // the field becomes full rank. Quadratic and rank move together here rather
+  // than the caller adding one and this adding the other.
+  if (augment) {
+    const T s = tulpa::s2z_component_sum(phi.data(), 0, n);
+    quad = quad + tulpa::s2z_aug_coef(T(1.0), n) * s * s;
+    rank = tulpa::s2z_aug_rank(rank, 1);
+  }
 
   // Normalizing constant (improper prior, omit for sampling)
-  int rank = tulpa_temporal::rw1_rank(n, cyclic);
   return T(-0.5) * quad / sigma2
        - T(0.5 * rank) * safe_log(T(2.0 * M_PI) * sigma2);
 }
@@ -52,15 +63,26 @@ template <typename T>
 inline T rw2_log_lik(
     const std::vector<T>& phi,  // Length T
     const T& sigma2,
-    bool cyclic = false
+    bool cyclic = false,
+    bool augment = false        // Q -> Q + 11'/n, the sum-to-zero augmentation
 ) {
   int n = static_cast<int>(phi.size());
   if (n < 3) return T(0.0);
 
   T quad = rw2_quadratic_form(phi.data(), n, cyclic);
+  int rank = tulpa_temporal::rw2_rank(n, cyclic);
+
+  // A non-cyclic RW2 also carries a LINEAR null direction, which a sum-to-zero
+  // augmentation does not touch, so it stays deficient by one: s2z_aug_rank
+  // takes rank(Q) and the number of directions actually filled rather than
+  // assuming the field length.
+  if (augment) {
+    const T s = tulpa::s2z_component_sum(phi.data(), 0, n);
+    quad = quad + tulpa::s2z_aug_coef(T(1.0), n) * s * s;
+    rank = tulpa::s2z_aug_rank(rank, 1);
+  }
 
   // Normalizing constant
-  int rank = tulpa_temporal::rw2_rank(n, cyclic);
   return T(-0.5) * quad / sigma2
        - T(0.5 * rank) * safe_log(T(2.0 * M_PI) * sigma2);
 }
@@ -140,26 +162,22 @@ inline T multiscale_temporal_log_lik(
 
   // Trend and seasonal are both intrinsic and both enter the SAME linear
   // predictor, so each carries a constant null direction that is unidentified
-  // against the intercept and against the other component. Both are pinned
-  // (gcol33/tulpa#241); the short-term arm is proper (AR1/IID) and identifies
-  // its own level, so it is left alone.
-  const auto pin = [](const std::vector<T>& v) {
-    T s = T(0.0);
-    for (std::size_t i = 0; i < v.size(); i++) s = s + v[i];
-    return -T(0.5) * T(tulpa::s2z_precision(static_cast<int>(v.size()))) * s * s;
-  };
+  // against the intercept and against the other component. Both are augmented
+  // (gcol33/tulpa#241) -- Q -> Q + 11'/n, with compute_temporal_eta centring
+  // each arm before it reaches eta -- so the direction is removed rather than
+  // penalised. The short-term arm is proper (AR1/IID), identifies its own
+  // level, and is left alone.
 
   // Trend component
   if (temp_data.trend_type == TemporalType::RW1 && !trend.empty()) {
-    log_lik = log_lik + rw1_log_lik(trend, sigma2_trend, false) + pin(trend);
+    log_lik = log_lik + rw1_log_lik(trend, sigma2_trend, false, true);
   } else if (temp_data.trend_type == TemporalType::RW2 && !trend.empty()) {
-    log_lik = log_lik + rw2_log_lik(trend, sigma2_trend, false) + pin(trend);
+    log_lik = log_lik + rw2_log_lik(trend, sigma2_trend, false, true);
   }
 
   // Seasonal component (always cyclic RW1)
   if (temp_data.seasonal_period > 0 && !seasonal.empty()) {
-    log_lik = log_lik + rw1_log_lik(seasonal, sigma2_seasonal, true)  // Cyclic
-                      + pin(seasonal);
+    log_lik = log_lik + rw1_log_lik(seasonal, sigma2_seasonal, true, true);
   }
 
   // Short-term component
@@ -188,6 +206,23 @@ inline void compute_temporal_eta(
   int N = temp_data.n_obs;
   eta_temporal.resize(N);
 
+  // The intrinsic arms are centred on their way in. Their augmented prior gives
+  // each constant direction the arm's own precision (order 1) rather than the
+  // stiff pin that preceded it, so leaving the constant in eta would free the
+  // level instead of fixing it -- and trend and seasonal land on the same
+  // linear predictor, so their constants are unidentified against each other as
+  // well as against the intercept. The short-term arm is proper and keeps its
+  // own level.
+  const T trend_mean =
+      trend.empty() ? T(0.0)
+                    : tulpa::s2z_component_mean(trend.data(), 0,
+                                                static_cast<int>(trend.size()));
+  const T seasonal_mean =
+      seasonal.empty() ? T(0.0)
+                       : tulpa::s2z_component_mean(
+                             seasonal.data(), 0,
+                             static_cast<int>(seasonal.size()));
+
   for (int i = 0; i < N; i++) {
     T effect = T(0.0);
     int t_idx = temp_data.time_index[i] - 1;  // Convert to 0-based
@@ -195,14 +230,14 @@ inline void compute_temporal_eta(
     // Trend contribution
     if (!trend.empty() && t_idx >= 0 &&
         t_idx < static_cast<int>(trend.size())) {
-      effect = effect + trend[t_idx];
+      effect = effect + (trend[t_idx] - trend_mean);
     }
 
     // Seasonal contribution (wrap around using modulo)
     if (temp_data.seasonal_period > 0 && !seasonal.empty()) {
       int s_idx = t_idx % temp_data.seasonal_period;
       if (s_idx >= 0 && s_idx < static_cast<int>(seasonal.size())) {
-        effect = effect + seasonal[s_idx];
+        effect = effect + (seasonal[s_idx] - seasonal_mean);
       }
     }
 
