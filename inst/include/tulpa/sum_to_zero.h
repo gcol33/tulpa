@@ -52,10 +52,24 @@ inline T s2z_aug_coef(const T& tau, int n) {
     return tau / T(static_cast<double>(n > 0 ? n : 1));
 }
 
-// Rank of Q_aug. Q has rank (n_units - n_components); the augmentation fills
-// every component's constant direction, so Q_aug is full rank. Call this
-// wherever a `n_units - n_components` rank fed a log-tau normalizer.
-inline int s2z_aug_rank(int n_units) { return n_units > 0 ? n_units : 0; }
+// Rank of Q_aug = Q + sum_c 1_c 1_c'/J_c.
+//
+// The augmentation fills exactly ONE direction per pinned component -- that
+// component's constant -- so the rank is rank(Q) plus the number of pins. It is
+// NOT the field length in general, and the difference is not cosmetic:
+//
+//   ICAR, L components   null space = the L constants      (J - L) + L = J
+//   RW1                  null space = the constant         (n - 1) + 1 = n
+//   cyclic RW1/RW2       null space = the constant         (n - 1) + 1 = n
+//   RW2, non-cyclic      null space = constant AND LINEAR  (n - 2) + 1 = n - 1
+//
+// An RW2 field stays rank-deficient by one after a sum-to-zero augmentation,
+// because nothing here touches its linear null direction. Passing the field
+// length there would overstate the rank and bias the variance component.
+inline int s2z_aug_rank(int rank_Q, int n_pins) {
+    const int r = rank_Q + n_pins;
+    return r > 0 ? r : 0;
+}
 
 // Sum of one component, [start, start + size).
 template <typename T>

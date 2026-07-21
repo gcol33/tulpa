@@ -38,6 +38,10 @@ struct GenericLogPostState {
     std::vector<T> re_vals;
     std::vector<int> re_term_offsets;
     const T* phi_spatial = nullptr;
+    // phi centred per connected component. The augmented ICAR prior gives each
+    // component's constant direction the field's own precision, so it has to be
+    // removed here rather than left for the prior to pin.
+    std::vector<T> phi_spatial_centered;
     T tau_spatial = T(1.0);
     T sigma_s_bym2 = T(1.0);
     T sigma_u_bym2 = T(1.0);
@@ -102,6 +106,13 @@ static T initialize_generic_state(
         log_post = log_post + priors::compute_spatial_icar_bym2_prior(
             params, data, layout, state.phi_spatial, state.tau_spatial,
             state.sigma_s_bym2, state.sigma_u_bym2, state.theta_bym2);
+        // CAR_proper is full rank, so its level is identified by the prior and
+        // must not be centred away; only the intrinsic branches are.
+        if (state.phi_spatial != nullptr && !layout.is_car_proper) {
+            priors::icar_center_field(
+                state.phi_spatial, data.n_spatial_units,
+                data.n_spatial_components, state.phi_spatial_centered);
+        }
     }
 
     if (layout.is_gp && data.has_gp) {
@@ -311,10 +322,14 @@ static void add_generic_spatial_effect(
 ) {
     if (layout.has_spatial && !data.spatial_group.empty() && data.spatial_group[i] > 0) {
         const int s = data.spatial_group[i] - 1;
+        // Intrinsic branches read the centred field; CAR_proper is full rank and
+        // keeps its own identified level.
+        const T* phi = state.phi_spatial_centered.empty()
+            ? state.phi_spatial : state.phi_spatial_centered.data();
         const T effect = layout.is_bym2
-            ? state.sigma_s_bym2 * state.phi_spatial[s] * T(data.bym2_scale_factor)
+            ? state.sigma_s_bym2 * phi[s] * T(data.bym2_scale_factor)
                 + state.sigma_u_bym2 * state.theta_bym2[s]
-            : state.phi_spatial[s];
+            : phi[s];
         add_to_shared_processes(eta, data.sharing.spatial, data.n_processes, effect);
     }
 

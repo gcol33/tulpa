@@ -106,9 +106,18 @@ test_that("ICAR pins the field level instead of aliasing it into the intercept",
   phi_cols <- grep("^phi", colnames(dr))
   phi_sum <- rowSums(dr[, phi_cols, drop = FALSE])
 
-  # The pinned sum sits at the reference width, not at 1/sqrt(kappa) ~ 31.6
-  # (the kappa-as-precision bug) nor 10 (the flat-0.01 bug this replaced).
-  expect_lt(sd(phi_sum), 5 * 0.001 * S)
+  # The constant direction is not penalised to a fixed width any more: under the
+  # augmented Q_aug = Q + sum_c 1_c 1_c'/J_c it carries the field's OWN
+  # precision, so the per-component mean has precision tau*J and the field sum
+  # sits at sd = sqrt(J / tau). Its width no longer has to be small, because the
+  # field is centred on its way into eta and the direction never reaches the
+  # likelihood -- what the assertions below check.
+  #
+  # This discriminates every regime: the soft pin this replaced held the sum at
+  # kappa*J = 0.036, dropping the augmentation entirely leaves it far wider than
+  # sqrt(J/tau), and only the augmented prior lands on it.
+  tau_draws <- exp(dr[, grep("log_tau_spatial", colnames(dr))[1]])
+  expect_lt(abs(sd(phi_sum) / sqrt(S / mean(tau_draws)) - 1), 0.5)
 
   # With the level pinned, the intercept is identified: it no longer trades
   # one-for-one against the field mean, and its posterior is tight on truth.

@@ -11,7 +11,7 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "icar_kernel.h"                  // for_each_icar_component
-#include "tulpa/soft_sum_to_zero.h"       // s2z_precision
+#include "tulpa/sum_to_zero.h"            // s2z_aug_coef / s2z_aug_rank
 
 namespace tulpa {
 namespace priors {
@@ -22,21 +22,39 @@ using namespace math;
 // 2. Spatial ICAR/BYM2 prior
 // ============================================================================
 
-// Soft sum-to-zero on an intrinsic spatial field: one penalty per connected
-// component, each at the precision that pins that component's sum at
-// sd = kappa * csize (see tulpa/soft_sum_to_zero.h). Shared by the BYM2 and
-// ICAR branches so the two cannot drift apart.
+// Augmented intrinsic precision on a spatial field: Q_aug = Q + sum_c 1_c 1_c'
+// / J_c (see tulpa/sum_to_zero.h). Returns the addition to the quadratic form,
+// sum_c (sum_{i in c} phi_i)^2 / J_c, so the caller scales it by the same tau
+// it scales phi'Q phi by. The constant direction of each component then carries
+// the field's own precision, and `icar_center_field` removes it on the way into
+// eta. Shared by the BYM2 and ICAR branches so the two cannot drift apart.
 template<typename T>
-T icar_sum_to_zero_penalty(const T* phi, int n_spatial_units, int n_components)
+T icar_sum_to_zero_augment(const T* phi, int n_spatial_units, int n_components)
 {
-    T penalty = T(0.0);
+    T aug = T(0.0);
     tulpa::for_each_icar_component(0, n_spatial_units, n_components,
         [&](int cstart, int csize) {
-            T s = T(0.0);
-            for (int i = 0; i < csize; i++) s = s + phi[cstart + i];
-            penalty = penalty - T(0.5) * T(tulpa::s2z_precision(csize)) * s * s;
+            const T s = tulpa::s2z_component_sum(phi, cstart, csize);
+            aug = aug + tulpa::s2z_aug_coef(T(1.0), csize) * s * s;
         });
-    return penalty;
+    return aug;
+}
+
+// Per-component centring of the field, into `out`. This is what makes the
+// augmentation an identification rather than a weak penalty: the constant
+// direction carries precision tau (order 1) instead of the 1/(kappa*J)^2 the
+// old soft pin carried, so leaving it in eta would free the level rather than
+// fix it.
+template<typename T>
+void icar_center_field(const T* phi, int n_spatial_units, int n_components,
+                       std::vector<T>& out)
+{
+    out.assign(n_spatial_units, T(0.0));
+    tulpa::for_each_icar_component(0, n_spatial_units, n_components,
+        [&](int cstart, int csize) {
+            const T m = tulpa::s2z_component_mean(phi, cstart, csize);
+            for (int i = 0; i < csize; i++) out[cstart + i] = phi[cstart + i] - m;
+        });
 }
 
 template<typename T>
@@ -84,11 +102,12 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
                     }
                 }
             }
-            log_post = log_post - T(0.5) * quad_form;
-
-            // Soft sum-to-zero constraint on ICAR phi
-            log_post = log_post + icar_sum_to_zero_penalty(
-                phi_spatial_out, data.n_spatial_units, data.n_spatial_components);
+            // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c. BYM2's phi is unit-scale
+            // (tau = 1; the scale lives in sigma_s_bym2), so the augmentation
+            // enters at coefficient 1 and there is no log-tau normalizer to
+            // move -- 0.5 * J * log(1) and 0.5 * (J - L) * log(1) are both 0.
+            log_post = log_post - T(0.5) * (quad_form + icar_sum_to_zero_augment(
+                phi_spatial_out, data.n_spatial_units, data.n_spatial_components));
 
             // N(0, I) prior on theta
             for (int s = 0; s < data.n_spatial_units; s++) {
@@ -158,20 +177,26 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
                     }
                 }
             }
-            // Soft sum-to-zero constraint on ICAR phi. The precision has a
-            // constant null direction (per component) that is otherwise jointly
-            // unidentified with the intercept; pin it as the BYM2 branch and the
-            // Laplace path do, so exact-NUTS ICAR fits mix. One penalty per
-            // component, matching the J - n_components rank normalizer below.
-            log_post = log_post + icar_sum_to_zero_penalty(
-                phi_spatial_out, data.n_spatial_units, data.n_spatial_components);
-            // Rank of the ICAR precision is J - k for k connected components
-            // (one constant null direction per component). Using J - 1 on a
-            // disconnected graph (spatial(by=) replication) biases tau upward.
+            // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c: each component's constant
+            // direction carries tau rather than a separate pin precision, and
+            // the field is centred per component on its way into eta, so the
+            // direction leaves the likelihood entirely.
+            //
+            // ICAR's null space is exactly the L component constants, and every
+            // one of them is pinned, so Q_aug is FULL RANK: (J - L) + L = J. The
+            // normalizer takes J log tau, not (J - L) log tau -- keeping the
+            // deficient rank alongside the augmentation would bias tau. The
+            // freed constants integrate to -0.5 L log tau, cancelling the
+            // +0.5 L log tau the full rank adds, so this agrees with the
+            // hard-constrained density on the sum-to-zero subspace.
             int J = data.n_spatial_units;
-            int rank_icar = J - data.n_spatial_components;
+            int L = data.n_spatial_components > 1 ? data.n_spatial_components : 1;
             T log_tau_sp = params[layout.log_tau_spatial_idx];
-            log_post = log_post + T(0.5 * rank_icar) * log_tau_sp - T(0.5) * tau_spatial_out * quad_form;
+            T quad_aug = quad_form + icar_sum_to_zero_augment(
+                phi_spatial_out, J, data.n_spatial_components);
+            log_post = log_post
+                     + T(0.5 * tulpa::s2z_aug_rank(J - L, L)) * log_tau_sp
+                     - T(0.5) * tau_spatial_out * quad_aug;
         }
     }
 

@@ -62,20 +62,29 @@ test_that("ICAR log-prior is additive across connected components", {
   }
 
   # And the component-aware value MUST differ from the single-component
-  # treatment of the same 2n graph (the bug). With each component summing to
-  # zero the sum-to-zero penalty is identical both ways, so the gap is purely
-  # the rank-deficiency normalizer: (n - 2) vs (n - 1) => -0.5 log(tau / 2pi),
-  # which is non-zero for any tau != 2*pi.
+  # treatment of the same 2n graph (the bug). Under the augmented precision
+  # Q_aug = Q + sum_c 1_c 1_c'/J_c the two now differ in the AUGMENTATION, not
+  # in the rank: Q_aug is full rank however many components are declared, so the
+  # normalizer is 2n log tau either way, while the augmentation is
+  # tau (s1^2 + s2^2)/n against tau (s1 + s2)^2/(2n).
+  #
+  # Those coincide when s1 == s2, and the per-component-centred input this test
+  # used to feed made both zero -- which no longer separates the two treatments.
+  # Feed the uncentred field, whose component sums differ, so the declared
+  # component count stays observable.
   tau <- 1.7
-  xc_full <- c(x1 - mean(x1), x2 - mean(x2))
+  s1 <- sum(x1); s2 <- sum(x2)
+  expect_gt(abs(s1 - s2), 1e-6)          # else the check below is vacuous
   comp_aware <- tulpa:::cpp_test_log_prior_icar(
-    xc_full, 2L * n_base, tau,
+    x_full, 2L * n_base, tau,
     csr_rep$row_ptr, csr_rep$col_idx, csr_rep$n_neighbors, n_components = 2L)
   one_comp <- tulpa:::cpp_test_log_prior_icar(
-    xc_full, 2L * n_base, tau,
+    x_full, 2L * n_base, tau,
     csr_rep$row_ptr, csr_rep$col_idx, csr_rep$n_neighbors, n_components = 1L)
-  expect_equal(comp_aware - one_comp, -0.5 * log(tau / (2 * pi)),
-               tolerance = 1e-9)
+  expect_equal(
+    comp_aware - one_comp,
+    -0.5 * tau * ((s1^2 + s2^2) / n_base - (s1 + s2)^2 / (2 * n_base)),
+    tolerance = 1e-9)
 })
 
 test_that("ICAR n_components = 1 is byte-identical to the historical path", {

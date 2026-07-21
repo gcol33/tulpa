@@ -4,7 +4,7 @@
 #include "laplace_spatial_priors.h"
 #include "sparse_hessian.h"
 #include "icar_kernel.h"                  // for_each_icar_component
-#include "tulpa/soft_sum_to_zero.h"       // s2z_precision
+#include "tulpa/sum_to_zero.h"            // s2z_aug_coef / s2z_aug_rank
 #include <cmath>
 
 using namespace Rcpp;
@@ -135,11 +135,12 @@ void add_icar_prior(
     add_car_grad_hess(grad, H, x, spatial_start, n_spatial_units,
                       tau_spatial, /*rho=*/1.0,
                       adj_row_ptr, adj_col_idx, n_neighbors);
-    // One sum-to-zero penalty per connected component (exact rank-1 11' on the
+    // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c: the component's constant
+    // direction carries the field's own tau (exact rank-1 tau/J_c * 11' on the
     // dense Hessian, within the component's diagonal block).
     for_each_icar_component(spatial_start, n_spatial_units, n_components,
         [&](int cstart, int csize) {
-            const double lambda = s2z_precision(csize);
+            const double lambda = s2z_aug_coef(tau_spatial, csize);
             double s = field_sum(x, cstart, csize);
             for (int i = 0; i < csize; i++) {
                 grad[cstart + i] -= lambda * s;
@@ -158,9 +159,9 @@ void add_icar_prior_sparse(
     add_car_grad_hess_sparse(grad, H, x, spatial_start, n_spatial_units,
                               tau_spatial, /*rho=*/1.0,
                               adj_row_ptr, adj_col_idx, n_neighbors);
-    // One sum-to-zero penalty per connected component:
-    // -0.5 SUM2ZERO_TAU sum_c (sum_{i in c} phi_i)^2, Hessian SUM2ZERO_TAU 11'
-    // per component block. The exact gradient is always added. The rank-1 11'
+    // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c:
+    // -0.5 tau sum_c (sum_{i in c} phi_i)^2 / J_c, Hessian (tau/J_c) 11' per
+    // component block. The exact gradient is always added. The rank-1 11'
     // Hessian is handled by per-component field size (see icar_s2z_densify): a
     // densified component block (laid out by add_icar_pattern) stores the full
     // 11' exactly; a large component leaves the off-diagonals off the stored
@@ -168,7 +169,7 @@ void add_icar_prior_sparse(
     // at solve time (Sherman-Morrison step + matrix-determinant-lemma log-det).
     for_each_icar_component(spatial_start, n_spatial_units, n_components,
         [&](int cstart, int csize) {
-            const double lambda = s2z_precision(csize);
+            const double lambda = s2z_aug_coef(tau_spatial, csize);
             const double s = field_sum(x, cstart, csize);
             for (int i = 0; i < csize; i++)
                 grad[cstart + i] -= lambda * s;
@@ -217,16 +218,15 @@ double log_prior_icar_structured(
     double quad_form = car_quadratic_form(
         x, spatial_start, n_spatial_units, /*rho=*/1.0,
         adj_row_ptr, adj_col_idx, n_neighbors);
-    // One sum-to-zero penalty per connected component (matches the gradient in
-    // add_icar_prior[_sparse]): sum_c (sum_{i in c} phi_i)^2.
+    // Augmentation to the quadratic form (matches the gradient in
+    // add_icar_prior[_sparse]): tau sum_c (sum_{i in c} phi_i)^2 / J_c.
     double s2z = 0.0;
     for_each_icar_component(spatial_start, n_spatial_units, n_components,
         [&](int cstart, int csize) {
             double s = field_sum(x, cstart, csize);
-            s2z += s2z_precision(csize) * s * s;
+            s2z += s2z_aug_coef(tau_spatial, csize) * s * s;
         });
-    // -0.5 tau phi'Q phi (the intrinsic quadratic) and the per-component
-    // sum-to-zero penalty that pins the constant null-space.
+    // -0.5 tau phi'Q_aug phi, Q_aug = Q + sum_c 1_c 1_c'/J_c.
     return -0.5 * tau_spatial * quad_form - 0.5 * s2z;
 }
 
@@ -236,13 +236,17 @@ double log_prior_icar(
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
     const IntegerVector& n_neighbors, int n_components
 ) {
-    // ICAR is rank-deficient: Q over a graph with `n_components` connected
-    // components has rank (n - n_components), so only that many eigenvalues
-    // contribute to log|tau Q| (one constant null direction per component).
+    // Q is rank (n - n_components), and ICAR's null space is exactly those
+    // n_components constants, every one of which the augmentation Q_aug = Q +
+    // sum_c 1_c 1_c'/J_c fills. So Q_aug is FULL RANK and all n eigenvalues
+    // contribute to log|tau Q_aug|. Keeping the deficient rank here while the
+    // quadratic carries the augmentation would make the tau-marginal wrong and
+    // bias the variance component low.
+    const int L = n_components > 1 ? n_components : 1;
     return log_prior_icar_structured(x, spatial_start, n_spatial_units,
                                      tau_spatial, adj_row_ptr, adj_col_idx,
                                      n_neighbors, n_components)
-         + 0.5 * (n_spatial_units - n_components)
+         + 0.5 * s2z_aug_rank(n_spatial_units - L, L)
                * std::log(tau_spatial / (2.0 * M_PI));
 }
 
