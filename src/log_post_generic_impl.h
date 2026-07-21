@@ -51,6 +51,12 @@ struct GenericLogPostState {
     std::vector<T> hsgp_f;
     std::vector<T> spde_w;
     std::vector<T> phi_temporal;
+    // Mean removed from the temporal field on its way into eta, and whether to
+    // remove it. Only the GLOBAL constant is aliased with the intercept: a
+    // per-group walk level shifts eta only for that group's observations, which
+    // the data identifies, so it is augmented in the prior but left in eta.
+    T phi_temporal_mean = T(0.0);
+    bool phi_temporal_center_all = false;
     T tau_temporal = T(1.0);
     T rho_ar1 = T(0.5);
     T sigma2_temporal_gp = T(1.0);
@@ -178,6 +184,17 @@ static T initialize_generic_state(
         log_post = log_post + priors::compute_temporal_prior(
             params, data, layout, state.phi_temporal, state.tau_temporal,
             state.rho_ar1, state.sigma2_temporal_gp, state.phi_temporal_gp);
+        // Only the intrinsic walks are centred; AR1 and the temporal GP are
+        // proper and identify their own level.
+        state.phi_temporal_center_all =
+            (data.temporal_type == tulpa_temporal::TemporalType::RW1 ||
+             data.temporal_type == tulpa_temporal::TemporalType::RW2) &&
+            !state.phi_temporal.empty();
+        if (state.phi_temporal_center_all) {
+            state.phi_temporal_mean = tulpa::s2z_component_mean(
+                state.phi_temporal.data(), 0,
+                (int)state.phi_temporal.size());
+        }
     }
 
     if (layout.has_multiscale_temporal && data.has_multiscale_temporal) {
@@ -383,9 +400,14 @@ static void add_generic_temporal_effect(
             ? (data.temporal_group_idx[i] - 1) : 0;
         const int idx_t = g * data.n_times + t;
         if (idx_t >= 0 && idx_t < (int)state.phi_temporal.size()) {
+            // Intrinsic walks (RW1/RW2) are centred on the way in; their
+            // augmented constant carries tau, so leaving it in eta would free
+            // the level. AR1 is proper and keeps its own.
+            const T eff = state.phi_temporal_center_all
+                ? state.phi_temporal[idx_t] - state.phi_temporal_mean
+                : state.phi_temporal[idx_t];
             add_to_shared_processes(
-                eta, data.sharing.temporal, data.n_processes,
-                state.phi_temporal[idx_t]);
+                eta, data.sharing.temporal, data.n_processes, eff);
         }
     }
 

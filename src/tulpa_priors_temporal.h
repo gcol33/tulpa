@@ -11,6 +11,7 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "hmc_temporal.h"  // single-source RW1/RW2/AR1 kernels
+#include "tulpa/sum_to_zero.h"  // s2z_aug_coef / s2z_aug_rank
 
 namespace tulpa {
 namespace priors {
@@ -156,6 +157,28 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
             T log_tau = params[layout.log_tau_temporal_idx];
             log_post = log_post + log_prior_gamma(log_tau, data.tau_temporal_shape, data.tau_temporal_rate);
 
+            // RW1 and RW2 are intrinsic, and this path carried no sum-to-zero
+            // term at all, so the field level was free to wander against the
+            // intercept -- the defect gcol33/tulpa#241 records, which the
+            // spatial and multiscale fields already fixed.
+            //
+            // Exactly ONE direction is augmented: the single GLOBAL constant,
+            // the only one confounded with the intercept. With several groups
+            // the walks are disconnected, so the prior's null space is G
+            // constants, but a per-group level shifts eta only for that group's
+            // observations and the likelihood pins it. Augmenting per group
+            // would put a proper N(0, 1/tau) prior on those differences and
+            // shrink them, which is a different model -- and one the
+            // nested-Laplace temporal block deliberately does not fit (see
+            // make_temporal_latent_block). The G - 1 group contrasts therefore
+            // stay improper on both paths, and the global constant is
+            // centred out of eta.
+            const int n_total = T_times * data.n_temporal_groups;
+            const auto global_aug = [&](void) {
+                const T s = tulpa::s2z_component_sum(phi_temporal.data(), 0, n_total);
+                return tulpa::s2z_aug_coef(T(1.0), n_total) * s * s;
+            };
+
             if (data.temporal_type == TemporalType::RW1) {
                 // RW1: sum of (phi[t] - phi[t-1])^2 per group
                 T quad_form = T(0.0);
@@ -164,8 +187,11 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                         phi_temporal.data() + g * T_times, T_times,
                         data.temporal_cyclic);
                 }
-                int rank_rw1 = tulpa_temporal::rw1_rank(T_times, data.temporal_cyclic);
-                log_post = log_post + T(0.5 * rank_rw1 * data.n_temporal_groups) * log_tau;
+                quad_form = quad_form + global_aug();
+                int rank_rw1 = tulpa::s2z_aug_rank(
+                    tulpa_temporal::rw1_rank(T_times, data.temporal_cyclic)
+                        * data.n_temporal_groups, 1);
+                log_post = log_post + T(0.5 * rank_rw1) * log_tau;
                 log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
 
             } else if (data.temporal_type == TemporalType::RW2) {
@@ -176,8 +202,13 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                         phi_temporal.data() + g * T_times, T_times,
                         data.temporal_cyclic);
                 }
-                int rank_rw2 = tulpa_temporal::rw2_rank(T_times, data.temporal_cyclic);
-                log_post = log_post + T(0.5 * rank_rw2 * data.n_temporal_groups) * log_tau;
+                quad_form = quad_form + global_aug();
+                // A non-cyclic RW2 also keeps its per-group LINEAR null
+                // direction, which this does not touch.
+                int rank_rw2 = tulpa::s2z_aug_rank(
+                    tulpa_temporal::rw2_rank(T_times, data.temporal_cyclic)
+                        * data.n_temporal_groups, 1);
+                log_post = log_post + T(0.5 * rank_rw2) * log_tau;
                 log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
 
             } else if (data.temporal_type == TemporalType::AR1) {
