@@ -18,6 +18,7 @@ tulpa(
   re_prior = NULL,
   ziformula = NULL,
   zi_prior = NULL,
+  warm_start = NULL,
   spatial = NULL,
   temporal = NULL,
   control = list(),
@@ -100,6 +101,25 @@ what the compiled kernels carry. The prior is what identifies the logit
 where a level contributes no zeros -- there the likelihood is monotone in
 that coefficient and alone would send it to \code{-Inf}. \code{sd = Inf} removes the
 penalty. Ignored without \code{ziformula}.}
+
+\item{warm_start}{Optional starting point for the NUTS sampler, from a
+cheaper fit of the same model: \code{"eb"} or \code{"laplace"} fits one first, or
+pass an existing fit from either mode. The sampler then starts at that
+mode with an inverse mass read off its curvature, instead of at the origin
+with a structural one. Chains after the first are dispersed around the
+mode at the fit's own scale, so between-chain spread -- which \code{rhat()}
+compares against -- is not collapsed by the shared starting point. Only
+the NUTS/HMC backends take one; the rest error rather than ignore it. Not
+available under a spatial, temporal or GP field, whose hyperparameters
+neither source fit estimates.
+
+The variance-component slots take an adapting mass by default, because a
+plug-in fit estimates no curvature for them. Passing a fit from
+\code{\link[=tulpa_eb]{tulpa_eb()}} with \code{marginal = TRUE} supplies one: its \code{theta_cov} gives
+each \code{log_sigma_re} slot a posterior variance to start from. This applies
+to uncorrelated terms, whose hyperparameter coordinates are the log
+standard deviations the sampler holds; a correlated term stays adapting,
+since its log-Cholesky coordinates are not the sampler's.}
 
 \item{spatial}{Optional spatial-field spec. How it is addressed depends on the
 field family:

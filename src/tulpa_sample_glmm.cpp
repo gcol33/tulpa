@@ -105,7 +105,9 @@ Rcpp::List cpp_tulpa_sample_glmm(
     double phi2 = NA_REAL,
     Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue
+    Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable = R_NilValue
 ) {
     // Argument groups (kept out of the signature so Rcpp::compileAttributes does
     // not fold the comments into the generated wrapper):
@@ -132,12 +134,68 @@ Rcpp::List cpp_tulpa_sample_glmm(
     std::vector<double> init(D, 0.0);
     Rcpp::CharacterVector cn = tulpa::sampler_param_names(in.data, in.layout, fixed_names);
 
+    // A warm start is only wired into the NUTS/HMC kernel, which is the one that
+    // takes both an initial position and an inverse-mass diagonal. Refuse it on
+    // any other backend rather than drop it: silently sampling from the default
+    // start would answer a different question than the caller asked.
+    const bool is_nuts = (backend == "nuts" || backend == "hmc");
+    if (!is_nuts && (init_nullable.isNotNull() ||
+                     inv_metric_diag_nullable.isNotNull())) {
+        Rcpp::stop("a warm start is only carried by the NUTS/HMC kernel; "
+                   "backend '%s' takes neither an initial position nor an "
+                   "inverse-mass diagonal.", backend.c_str());
+    }
+
     Rcpp::List out;
 
-    if (backend == "nuts" || backend == "hmc") {
+    if (is_nuts) {
         if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
         std::vector<std::vector<double>> q_init(n_chains, std::vector<double>(D, 0.0));
         std::vector<std::vector<double>> inv_metric;   // empty -> structural default
+
+        // Caller-supplied initial positions, one row per chain. A matrix rather
+        // than a vector so the chains can be dispersed around the warm-start
+        // mode: seeding every chain at the same point would leave the
+        // between-chain variance that Rhat compares against reflecting only the
+        // sampler's own drift.
+        if (init_nullable.isNotNull()) {
+            Rcpp::NumericMatrix im(init_nullable);
+            if (im.ncol() != D) {
+                Rcpp::stop("init has %d columns but the model lays out %d "
+                           "parameters.", (int)im.ncol(), D);
+            }
+            if (im.nrow() != n_chains) {
+                Rcpp::stop("init has %d rows but n_chains is %d (one initial "
+                           "position per chain).", (int)im.nrow(), n_chains);
+            }
+            for (int c = 0; c < n_chains; c++) {
+                for (int j = 0; j < D; j++) {
+                    const double v = im(c, j);
+                    if (!R_finite(v)) {
+                        Rcpp::stop("init[%d, %d] is not finite.", c + 1, j + 1);
+                    }
+                    q_init[c][j] = v;
+                }
+            }
+        }
+
+        // Caller-supplied inverse-mass diagonal, shared across chains: it is a
+        // property of the posterior's scaling, not of a chain. Warmup adaptation
+        // still runs and refines it from here.
+        if (inv_metric_diag_nullable.isNotNull()) {
+            Rcpp::NumericVector iv(inv_metric_diag_nullable);
+            if (iv.size() != D) {
+                Rcpp::stop("inv_metric_diag has length %d but the model lays "
+                           "out %d parameters.", (int)iv.size(), D);
+            }
+            for (int j = 0; j < D; j++) {
+                if (!R_finite(iv[j]) || iv[j] <= 0.0) {
+                    Rcpp::stop("inv_metric_diag[%d] must be finite and positive "
+                               "(it is a variance).", j + 1);
+                }
+            }
+            inv_metric.assign(n_chains, std::vector<double>(iv.begin(), iv.end()));
+        }
         std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
             q_init, inv_metric, in.data, n_iter, n_warmup, /*L=*/0, n_chains,
             (unsigned int)seed, verbose, max_treedepth,

@@ -1,6 +1,51 @@
 # tulpa NEWS
 
-## 0.0.98
+## 0.0.99
+
+Warm-starting the sampler from a cheaper fit of the same model.
+
+New:
+
+- `tulpa(warm_start = )` seeds the NUTS sampler from a Laplace or empirical-Bayes
+  fit: `"eb"` or `"laplace"` fits one first, or pass an existing fit from either
+  mode. Chains start at that mode instead of the origin. Chains after the first
+  are dispersed around it, so the between-chain spread `rhat()` compares against
+  is not collapsed by a shared starting point. Only the NUTS/HMC backends take
+  one -- the rest error rather than sample from the default start and report a
+  fit that answers a different question.
+
+- It is offered as a capability, not as a speedup: over 10 seeds, redrawing both
+  the data and the sampler seed on a crossed random-intercept Poisson model,
+  warm and cold were indistinguishable in effective sample size per second
+  (paired Wilcoxon p = 0.32 and p = 0.49, with the source fit's own cost charged
+  to the warm runs). Single runs of that comparison disagree with each other by
+  2-3x, because `min(ESS)` is an order statistic over parameters. Whether it
+  pays on harder geometries than this one is untested.
+
+- `cpp_tulpa_glmm_layout()` reports the parameter layout the sampler will use --
+  block spans, per-term random-effect shape, and the column names -- without
+  sampling. The warm start places values by index against it rather than
+  reconstructing the sampler's naming convention, so the layout stays the single
+  source of truth for where a parameter lives.
+
+- `tulpa_sample_glmm(warm_start = )` and `cpp_tulpa_sample_glmm()`'s `init` /
+  `inv_metric_diag` are the engine-level entry points. `init` is one row per
+  chain. The inverse-mass diagonal is assembled but not supplied by default: the
+  kernel reads every entry as a posterior variance, and today the random-effect
+  entries would be prior variances and the variance components would have no
+  estimate at all. `return_joint_hessian` and `tulpa_eb(marginal = TRUE)` now
+  supply both, so composing it properly is the follow-up.
+
+Fixed:
+
+- `control = list(n_warmup = )` was silently dropped on the sampler backends.
+  `tulpa()`'s control surface is the union over the backends it dispatches, so
+  `n_warmup` (which the NUTS-SPDE driver reads) passed the front-door check, and
+  the subset that narrows `control` for the chosen fitter then discarded it
+  because `tulpa_sample_glmm()` spells the same knob `warmup`. Warmup silently
+  stayed at `n_iter / 2` while appearing to honour the request. Control knobs
+  are now canonicalized through one alias table, so a fitter that reads the
+  other spelling still receives it and an explicit value always wins.
 
 An exact analytic gradient of the joint-field Laplace log-marginal with respect
 to the random-effect covariances, and the outer optimizer and marginal

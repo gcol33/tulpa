@@ -22,6 +22,7 @@ tulpa_sample_glmm(
   zi_spec = NULL,
   sigma_re_scale = 2.5,
   sigma_beta = 10,
+  warm_start = NULL,
   control = list()
 )
 }
@@ -64,6 +65,15 @@ and \code{cyclic}. \code{NULL} -> none.}
 
 \item{sigma_re_scale}{Half-Cauchy scale for the RE / BYM2 standard-deviation
 hyperprior (sampled jointly with the latent effects).}
+
+\item{warm_start}{Optional \code{list(init, inv_metric_diag)} seeding the NUTS
+kernel: \code{init} an \verb{n_chains x total_params} matrix of initial positions,
+one row per chain, and \code{inv_metric_diag} a positive vector of length
+\code{total_params} used as the starting inverse mass (warmup adaptation still
+runs from it). Build it with \code{.build_warm_start()} against
+\code{cpp_tulpa_glmm_layout()} rather than by hand -- the entries are positional
+and the layout owns the positions. Only the NUTS/HMC kernel takes one;
+any other backend errors rather than sampling from the default start.}
 
 \item{control}{List of kernel tuning knobs (\code{n_iter}, \code{warmup}, \code{seed},
 \code{sigma_beta}, \code{n_chains}, \code{max_treedepth}, \code{adapt_delta}, \code{epsilon}, \code{L},

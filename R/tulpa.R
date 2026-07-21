@@ -436,7 +436,8 @@
                                latent_blocks = list(), spatial = NULL,
                                temporal = NULL, weights = NULL,
                                phi2 = NULL, smoothers = list(),
-                               re_prior = NULL, zi_prior = NULL) {
+                               re_prior = NULL, zi_prior = NULL,
+                               warm_start = NULL) {
   # Scalar prior SD on the beta_zi block; the engine default when unset. Read
   # once here so every ZI-carrying backend receives the same number.
   zi_prior_sd <- .normalize_zi_prior(zi_prior)
@@ -1003,7 +1004,7 @@
         "nested-Laplace mode for an integrated field."), call. = FALSE)
     }
 
-    return(list(
+    sampler_args <- list(
       y             = bundle$y,
       n_trials      = n_trials %||% rep(1L, n_obs),
       X             = bundle$X,
@@ -1027,7 +1028,22 @@
       sigma_beta    = if (!is.null(beta_prior))
                         .beta_prior_ridge_sd(beta_prior, 10) else 10.0,
       control       = .control_subset(control, .CONTROL_KEYS$sample_glmm)
-    ))
+    )
+
+    # Resolved here rather than at the front door because the source fit and the
+    # layout probe both need the assembled sampler arguments -- the same design
+    # matrices, specs and priors the kernel is about to receive.
+    if (!is.null(warm_start)) {
+      sampler_args$warm_start <- .resolve_warm_start(
+        warm_start  = warm_start,
+        args        = sampler_args,
+        re_terms    = .bundle_to_re_list(bundle, sigma_re),
+        sigma_re    = sigma_re,
+        beta_prior  = beta_prior,
+        n_chains    = as.integer(sampler_args$control$n_chains %||% 4L))
+    }
+
+    return(sampler_args)
   }
 
   stop(sprintf("Backend '%s' (input '%s') is not supported by tulpa() yet.",
@@ -1152,6 +1168,24 @@
 #'   where a level contributes no zeros -- there the likelihood is monotone in
 #'   that coefficient and alone would send it to `-Inf`. `sd = Inf` removes the
 #'   penalty. Ignored without `ziformula`.
+#' @param warm_start Optional starting point for the NUTS sampler, from a
+#'   cheaper fit of the same model: `"eb"` or `"laplace"` fits one first, or
+#'   pass an existing fit from either mode. The sampler then starts at that
+#'   mode with an inverse mass read off its curvature, instead of at the origin
+#'   with a structural one. Chains after the first are dispersed around the
+#'   mode at the fit's own scale, so between-chain spread -- which `rhat()`
+#'   compares against -- is not collapsed by the shared starting point. Only
+#'   the NUTS/HMC backends take one; the rest error rather than ignore it. Not
+#'   available under a spatial, temporal or GP field, whose hyperparameters
+#'   neither source fit estimates.
+#'
+#'   The variance-component slots take an adapting mass by default, because a
+#'   plug-in fit estimates no curvature for them. Passing a fit from
+#'   [tulpa_eb()] with `marginal = TRUE` supplies one: its `theta_cov` gives
+#'   each `log_sigma_re` slot a posterior variance to start from. This applies
+#'   to uncorrelated terms, whose hyperparameter coordinates are the log
+#'   standard deviations the sampler holds; a correlated term stays adapting,
+#'   since its log-Cholesky coordinates are not the sampler's.
 #' @param spatial Optional spatial-field spec. How it is addressed depends on the
 #'   field family:
 #'   * **Areal** (`"icar"`, `"car"`, `"bym2"`, `"car_proper"`): a list with `type`
@@ -1231,6 +1265,7 @@ tulpa <- function(formula, data,
                   re_prior = NULL,
                   ziformula = NULL,
                   zi_prior = NULL,
+                  warm_start = NULL,
                   spatial = NULL,
                   temporal = NULL,
                   control = list(),
@@ -1792,7 +1827,8 @@ tulpa <- function(formula, data,
                              spatial = spatial_spec, temporal = temporal_spec,
                              weights = weights, phi2 = phi2,
                              smoothers = lapply(smooth_specs, `[[`, "block"),
-                             re_prior = re_prior, zi_prior = zi_prior)
+                             re_prior = re_prior, zi_prior = zi_prior,
+                             warm_start = warm_start)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(

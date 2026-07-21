@@ -49,6 +49,14 @@
 #'   and `cyclic`. `NULL` -> none.
 #' @param sigma_re_scale Half-Cauchy scale for the RE / BYM2 standard-deviation
 #'   hyperprior (sampled jointly with the latent effects).
+#' @param warm_start Optional `list(init, inv_metric_diag)` seeding the NUTS
+#'   kernel: `init` an `n_chains x total_params` matrix of initial positions,
+#'   one row per chain, and `inv_metric_diag` a positive vector of length
+#'   `total_params` used as the starting inverse mass (warmup adaptation still
+#'   runs from it). Build it with `.build_warm_start()` against
+#'   `cpp_tulpa_glmm_layout()` rather than by hand -- the entries are positional
+#'   and the layout owns the positions. Only the NUTS/HMC kernel takes one;
+#'   any other backend errors rather than sampling from the default start.
 #' @param control List of kernel tuning knobs (`n_iter`, `warmup`, `seed`,
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
@@ -66,6 +74,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               tvc_spec = NULL, zi_spec = NULL,
                               sigma_re_scale = 2.5,
                               sigma_beta = 10.0,
+                              warm_start = NULL,
                               control = list()) {
   .check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
   .family_or_stop(family)
@@ -118,7 +127,9 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     phi2          = phi2 %||% NA_real_,
     svc_spec      = svc_spec,
     tvc_spec      = tvc_spec,
-    zi_spec       = zi_spec
+    zi_spec       = zi_spec,
+    init_nullable = warm_start$init,
+    inv_metric_diag_nullable = warm_start$inv_metric_diag
   )
 
   # The C++ kernel names every column of the full parameter vector (fixed effects

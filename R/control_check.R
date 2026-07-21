@@ -7,12 +7,40 @@
 # what it (and every helper it forwards `control` to) actually reads;
 # `tulpa()`'s set is the union over the backends it can dispatch.
 
+# Knobs that mean the same thing under two spellings across fitters: the NUTS
+# drivers (`nuts_beta`, `nuts_spde`) took `n_warmup` while the sampler / Gibbs
+# fitters took `warmup`. `tulpa()`'s control surface is the union of the
+# backends it dispatches, so BOTH spellings pass its check -- and the subset
+# below then silently dropped whichever the chosen backend did not list. A knob
+# accepted at the front door and discarded on the way in is the exact silent
+# no-op this file exists to prevent, so the spellings are canonicalized here,
+# once, rather than aliased per fitter.
+#
+# Names the target fitter already accepts are never rewritten, so a fitter that
+# genuinely reads `n_warmup` keeps receiving it.
+#' @keywords internal
+.CONTROL_ALIASES <- c(n_warmup = "warmup")
+
 # Subset a validated front-door control list to the keys an inner fitter
 # accepts, so wholesale forwarding does not carry front-door-only knobs
 # (grid shape, backend selection) into the inner fitter's narrower check.
 #' @keywords internal
 .control_subset <- function(control, allowed) {
   if (is.null(control) || length(control) == 0L) return(list())
+
+  nm <- names(control)
+  for (from in names(.CONTROL_ALIASES)) {
+    to <- .CONTROL_ALIASES[[from]]
+    # Rewrite only when the target fitter wants the other spelling, and only
+    # when it has not been given explicitly -- an explicit value wins over one
+    # arriving under an alias.
+    if (from %in% nm && !(from %in% allowed) &&
+        to %in% allowed && !(to %in% nm)) {
+      nm[nm == from] <- to
+    }
+  }
+  names(control) <- nm
+
   control[intersect(names(control), allowed)]
 }
 
