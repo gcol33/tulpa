@@ -80,6 +80,21 @@ inline double eval_penalized_log_lik(
 // mode and the MAX_HALVING trial cap are identical to the pure-halving path;
 // only the trial sequence inside a backtrack differs.
 //
+// A NON-FINITE trial objective is never accepted, at any trial including the
+// last. -Inf is the domain barrier of a constrained link (link_eta_in_domain in
+// laplace_family_link.h) and NaN is a failed evaluation; moving the iterate onto
+// either leaves the model undefined at x and every subsequent gradient, Hessian
+// and log-determinant reading garbage. This is what makes the barrier hold: the
+// search backtracks off an infeasible trial instead of walking through it.
+// Accepting a FINITE non-improving value at the last trial is unchanged, so any
+// solve whose objective stays finite -- every fit on an unconstrained link --
+// takes exactly the trial sequence it always did.
+//
+// When no trial is acceptable the search returns 0, leaving `x` and `obj_out`
+// untouched: the caller's iterate is still the best point known. newton_converged
+// treats a zero step as a stall rather than convergence, so an exhausted search
+// cannot be mistaken for a mode.
+//
 // `x_try_scratch` is a caller-owned NumericVector of length n_x used as the
 // step-trial buffer. Reused across trials AND across Newton iterations.
 // `n_evals_out`, if non-null, accumulates the number of objective evaluations
@@ -99,7 +114,8 @@ inline double line_search_backtrack(
         for (int j = 0; j < n_x; j++) x_try_scratch[j] = x[j] + step_scale * delta[j];
         double obj_try = eval_obj(x_try_scratch);
         if (n_evals_out) ++(*n_evals_out);
-        if (obj_try >= obj_old - 1e-8 || half == MAX_HALVING) {
+        if (std::isfinite(obj_try) &&
+            (obj_try >= obj_old - 1e-8 || half == MAX_HALVING)) {
             for (int j = 0; j < n_x; j++) x[j] = x_try_scratch[j];
             obj_out = obj_try;
             return step_scale;
@@ -115,8 +131,82 @@ inline double line_search_backtrack(
         }
         step_scale = next;
     }
-    obj_out = obj_old;  // unreachable: MAX_HALVING branch above always accepts.
-    return 1.0;
+    // Every trial was non-finite. Leave x and the objective as they were and
+    // report a zero step; see the note above.
+    obj_out = obj_old;
+    return 0.0;
+}
+
+// Phase-I feasibility search for the Newton start.
+//
+// The line search and the constrained-link barrier both reduce to one predicate:
+// is the penalized objective finite at this x? A start where it is NOT carries no
+// usable information -- every trial along every direction is -Inf, nothing is
+// accepted, and the solve stalls where it began. The default latent start x = 0
+// is exactly that case for a link carried on eta > 0 (laplace_family_link.h):
+// eta is 0, which is the boundary, not the interior.
+//
+// `coords` are latent slots that shift eta when moved -- the per-process
+// intercept, the same slot center_effects_fn folds a removed field level into.
+// The routine sweeps a common shift of those slots over a decade ladder in both
+// signs and keeps the shift with the LARGEST finite objective, which is a coarse
+// intercept-only fit: the analogue of starting a GLM from linkfun(mustart) with
+// the slopes at zero, obtained without this layer needing to know the family, the
+// link, or the response. It only has to land in the interior -- the Newton loop
+// does the rest.
+//
+// The sweep runs ONLY when the supplied start is already infeasible, so a fit
+// whose start has a finite objective -- every fit on an unconstrained link, and
+// any warm start inherited from a previous grid point -- takes the single
+// evaluation that establishes feasibility and is otherwise unchanged.
+//
+// Returns whether x is feasible on exit. On false, x is restored to what it was
+// and the caller reports the failure rather than iterating on a stalled solve.
+inline constexpr int FEASIBLE_START_EXP_LO = -3;
+inline constexpr int FEASIBLE_START_EXP_HI = 6;
+
+template<typename EvalObj>
+inline bool make_start_feasible(
+    Rcpp::NumericVector& x,
+    const std::vector<int>& coords,
+    int n_x,
+    EvalObj eval_obj,
+    double& obj_out
+) {
+    obj_out = eval_obj(x);
+    if (std::isfinite(obj_out)) return true;
+    if (coords.empty()) return false;
+
+    std::vector<double> x0;
+    x0.reserve(coords.size());
+    for (int c : coords) x0.push_back((c >= 0 && c < n_x) ? x[c] : 0.0);
+
+    auto apply_shift = [&](double shift) {
+        for (std::size_t j = 0; j < coords.size(); j++) {
+            const int c = coords[j];
+            if (c >= 0 && c < n_x) x[c] = x0[j] + shift;
+        }
+    };
+
+    double best_obj = 0.0, best_shift = 0.0;
+    bool found = false;
+    for (int e = FEASIBLE_START_EXP_LO; e <= FEASIBLE_START_EXP_HI; e++) {
+        const double mag = std::pow(10.0, (double)e);
+        for (int sgn = 0; sgn < 2; sgn++) {
+            const double shift = (sgn == 0) ? mag : -mag;
+            apply_shift(shift);
+            const double obj = eval_obj(x);
+            if (std::isfinite(obj) && (!found || obj > best_obj)) {
+                best_obj = obj;
+                best_shift = shift;
+                found = true;
+            }
+        }
+    }
+
+    apply_shift(found ? best_shift : 0.0);
+    if (found) obj_out = best_obj;
+    return found;
 }
 
 // Maximum |step_scale * delta_j|. The historic Newton convergence criterion:
@@ -176,6 +266,15 @@ inline bool newton_converged(const std::vector<double>& delta,
                              const std::vector<double>& grad,
                              double step_scale, int n_x, double tol,
                              NewtonConvState& st) {
+    // step_scale == 0 is line_search_backtrack reporting that no trial along the
+    // direction had a finite objective, so x was left unchanged. Path 1 below
+    // would read that stall as convergence -- max|0 * delta| is 0, under any tol
+    // -- and stamp converged=true on an iterate the solver could not move. A
+    // stalled search is not a mode: return false and let the solve either
+    // recover on the next direction or exit at max_iter with converged=false.
+    // The line search never returns 0 while the objective stays finite, so no
+    // currently-working solve reaches this.
+    if (step_scale <= 0.0) return false;
     if (max_abs_step(delta, step_scale, n_x) < tol) return true;
     double dec = newton_decrement(grad, delta, n_x);
     bool improved = dec < st.prev_decrement * 0.5;

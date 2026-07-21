@@ -1190,11 +1190,28 @@ LaplaceResult spec_inner_solve(
     std::vector<double> x_init(n_x, 0.0);
     gather_compacted_latent(L, base_params, x_init.data());   // latent warm start
 
+    // Slots the feasibility sweep may shift when x_init lies outside the
+    // likelihood's domain: the first beta coefficient of each process. That is
+    // the intercept whenever the caller's design carries one -- the same
+    // assumption center_effects_fn above makes when it folds a removed field
+    // level into L.latent_offset[0]. Under a design without an intercept column
+    // the slot is a covariate instead, so the shift moves eta non-uniformly; the
+    // sweep then either still finds an interior point or reports infeasibility,
+    // and in neither case does the solve proceed on an undefined objective.
+    //
+    // Passing these costs nothing on a feasible start: the sweep's single
+    // establishing evaluation replaces the lazy one the loop used to make at
+    // iteration 0, at the same x, for the same value.
+    std::vector<int> feasible_start_coords;
+    for (int k = 0; k < np; k++) {
+        if (L.beta_count[k] > 0) feasible_start_coords.push_back(L.latent_offset[k]);
+    }
+
     return laplace_newton_solve_ll(
         n_eta, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
-        sparse_override
+        sparse_override, &feasible_start_coords
     );
 }
 

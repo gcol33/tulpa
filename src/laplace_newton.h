@@ -94,7 +94,12 @@ LaplaceResult laplace_newton_solve_ll(
     SparseCholeskySolver* shared_solver,
     bool store_Q,
     const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
-    int sparse_override = 0
+    int sparse_override = 0,
+    // Latent slots the feasibility sweep may shift when the start is outside the
+    // likelihood's domain -- the per-process intercepts. nullptr (the default)
+    // skips the sweep entirely, which is the behaviour every caller had before
+    // it existed; see make_start_feasible in laplace_newton_loop.h.
+    const std::vector<int>* feasible_start_coords = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -140,6 +145,21 @@ LaplaceResult laplace_newton_solve_ll(
     double obj_current = -1e300;
     bool obj_valid = false;
     NewtonConvState conv_state;
+
+    // Move the start into the likelihood's domain before iterating. Without a
+    // finite objective at x the line search accepts nothing and the loop would
+    // spin max_iter times over a point it cannot leave.
+    if (feasible_start_coords) {
+        double obj_start = 0.0;
+        if (!make_start_feasible(x, *feasible_start_coords, n_x, eval_objective,
+                                 obj_start)) {
+            result.start_infeasible = true;
+            for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
+            return result;
+        }
+        obj_current = obj_start;
+        obj_valid = true;
+    }
 
     for (int iter = 0; iter < max_iter; iter++) {
         compute_eta(x, scratch.eta);

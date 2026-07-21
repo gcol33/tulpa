@@ -72,12 +72,51 @@ inline FamilyLink parse_family_link(const std::string& code) {
     return fl;
 }
 
-// Floor for links whose inverse is singular at eta <= 0 (inverse: 1/eta;
-// 1mu2: 1/sqrt(eta)). The mean of the families using these links is positive,
-// so eta is clamped to a small positive value rather than producing Inf/NaN
-// from 1/eta or sqrt of a negative argument when Newton's unconstrained eta
-// crosses zero -- the analogue of the safe_exp guard the log link already uses
+// Links carried on the open half-line eta > 0:
+//
+//   inverse   mu = 1/eta          singular at eta = 0
+//   1mu2      mu = 1/sqrt(eta)    singular at eta = 0
+//   sqrt      mu = eta^2          finite at eta = 0, but folds the two branches
+//                                 of the parabola onto the same mean: eta and
+//                                 -eta are observationally identical, so the
+//                                 mode comes in mirror pairs and mu_eta(0) = 0
+//                                 makes the Hessian singular between them.
+//
+// All three are fitted on eta > 0 -- for the first two because mu is undefined
+// otherwise, for sqrt because that is the branch that is identified. This is the
+// branch glm()'s starting values put you on for each of them.
+inline bool link_has_positive_eta_domain(const std::string& link) {
+    return link == "inverse" || link == "1mu2" || link == "sqrt";
+}
 
+// Whether eta lies in the link's domain.
+//
+// The data log-likelihood is -Inf outside it (log_lik_for_family below), which
+// turns the domain into a barrier the Newton loop cannot step across: the
+// penalized objective is -Inf there, the line-search acceptance test rejects it,
+// and line_search_backtrack refuses a non-finite objective even at its final
+// trial. Every iterate the solver holds is therefore interior, so linkinv /
+// mu_eta / mu_eta2 are only ever evaluated at eta > 0.
+//
+// Feasibility of the FIRST iterate is not automatic -- the default latent start
+// is x = 0, hence eta = 0, which is on the boundary for all three of these
+// links. make_start_feasible() in laplace_newton_loop.h shifts the process
+// intercepts so the solve begins interior.
+inline bool link_eta_in_domain(double eta, const std::string& link) {
+    return eta > 0.0 || !link_has_positive_eta_domain(link);
+}
+
+// Defensive floor for the singular links, NOT a modelling choice. The barrier
+// keeps every accepted iterate interior, so this is reached only where the
+// engine steps without consulting the objective -- the failed-factorization
+// fallback in laplace_newton.h. It is here so that path yields a large finite
+// number rather than propagating Inf/NaN into a Cholesky.
+//
+// The value returned is not meaningful: below the floor mu is CONSTANT in eta
+// while mu_eta and mu_eta2 report -1e20 and 2e30, so the value and its reported
+// derivatives describe different functions. Optimizing against this region reads
+// garbage, which is precisely what the barrier exists to prevent -- do not treat
+// the floor as an extension of the link.
 inline double safe_pos_eta(double eta) {
     constexpr double kEtaFloor = 1e-10;
     return eta < kEtaFloor ? kEtaFloor : eta;
@@ -479,6 +518,9 @@ inline double log_lik_for_family(
     }
 
     FamilyLink fl = parse_family_link(family);
+    // Domain barrier for the eta > 0 links. -Inf here is what stops the Newton
+    // line search from stepping out of the domain; see link_eta_in_domain.
+    if (!link_eta_in_domain(eta, fl.link)) return R_NegInf;
     double mu = linkinv(eta, fl.link);
     if (fl.family == "binomial" || fl.family == "beta") {
         mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);

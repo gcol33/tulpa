@@ -27,6 +27,16 @@ struct LaplaceResult {
   int n_iter;                   // Newton iterations used
   bool converged;               // Convergence flag
 
+  // The solve never started: the penalized objective was non-finite at the
+  // supplied latent start and the feasibility sweep (make_start_feasible) found
+  // no interior point. This is distinct from converged = false, which means the
+  // solve ran and did not reach the tolerance. It is reported as a flag rather
+  // than thrown because the solver runs inside OpenMP parallel regions, where an
+  // Rcpp::stop escaping the structured block is std::terminate; the R side turns
+  // it into an error. Reachable only for a likelihood whose domain excludes the
+  // start, i.e. the eta > 0 links.
+  bool start_infeasible = false;
+
   // Q at the mode in CSC lower-triangle. Populated only when the Newton
   // solver is called with store_Q = true (default false). Q_csc_n == 0
   // means "not stored". When stored, Q_csc_p has length Q_csc_n + 1 and
@@ -60,7 +70,8 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     Rcpp::Named("log_det_Q") = result.log_det_Q,
     Rcpp::Named("log_marginal") = result.log_marginal,
     Rcpp::Named("n_iter") = result.n_iter,
-    Rcpp::Named("converged") = result.converged
+    Rcpp::Named("converged") = result.converged,
+    Rcpp::Named("start_infeasible") = result.start_infeasible
   );
 
   // Marginal posterior-covariance blocks, when the solver was asked to extract
