@@ -38,6 +38,75 @@ New:
 
 Fixed:
 
+- Fixed-effect standard errors on a nested-Laplace fit carrying an RW1 / RW2
+  temporal field -- or any `s(...)` smoother, which is an RW2 over the binned
+  covariate -- were wrong for the intercept, which was reported at the
+  fixed-effect prior SD (100) regardless of the data. On a 400-observation RW1
+  fit the intercept SE was 99.998 against an exact-MCMC value of 0.047.
+
+  An intrinsic field's constant null direction is jointly unidentified with the
+  intercept. The spatial (ICAR / BYM2) and sampler paths identify it by
+  augmenting the field precision during the solve, so the level sits under the
+  field's own tau; the temporal Laplace kernels never did. They identified the
+  level only by centring the mode afterwards and folding the removed mean into
+  the intercept -- which fixes the point estimate and leaves that direction flat
+  in the Hessian the marginal covariance is read from. Point estimates, field
+  shape, log-marginals and every other coefficient were unaffected, which is why
+  nothing else moved: on the same fit the slope SE was already correct to 2%.
+
+  The RW1 / RW2 kernels now carry the same augmentation, over the field's global
+  constant (the between-group level contrasts of a panel field stay improper by
+  design, matching the sampler). The pin is registered for the solver to fold in
+  rather than stored, so an RW chain's Hessian stays tridiagonal / pentadiagonal;
+  both storages are exact and agree to five significant figures. The augmentation
+  itself is now one helper shared with the ICAR kernels, whose numbers are
+  unchanged.
+
+- Fixed-effect standard errors on a conditional-Laplace fit
+  (`tulpa_laplace()`) carrying an intrinsic areal field were understated for the
+  intercept: 2.3x at 10 areal units, 2.7x at 40, 3.0x at 120 for ICAR, and about
+  1.3x for BYM2 (whose structured half carries the field). Reported intervals
+  were correspondingly too narrow.
+
+  `summary()` / `vcov()` / `confint()` marginalize the field out of the joint
+  Hessian by reconstructing the field precision in R. That reconstruction
+  augmented the ICAR structure with a unit `11'`, where the kernel it is meant to
+  mirror augments with `1_c 1_c'/J_c` per component -- a factor `J` too much
+  weight on the constant direction, which is exactly the direction the intercept
+  is aliased with, and no per-component handling on a replicated field. The
+  reconstruction now matches the kernel and follows the component split
+  `for_each_icar_component` walks. Slope standard errors are unchanged to five
+  decimals, the pin being orthogonal to covariate contrasts.
+
+  The reconstruction is now pinned against the kernel's own exported
+  `log_prior_icar` rather than against a second R statement of the convention:
+  the previous reference encoded the same unit `11'`, so it agreed with the
+  helper by construction and could not have caught this.
+
+- The sum-to-zero augmentation of an intrinsic areal field (ICAR / BYM2 / MCAR)
+  pinned each connected component's constant over an equal-size contiguous split
+  of the field, `n / n_components` nodes per component. This is correct for a
+  single connected map and for a `spatial(by = )` replicate over the
+  block-diagonal `I_L (x) Q` (equal-size, contiguous copies), but wrong for a
+  genuine disconnected map whose components are unequal in size or not
+  contiguous in the node ordering (a mainland plus islands, the islands sorted
+  among the mainland cells -- the standard US-counties layout). The wrong node
+  sets shifted both the fitted field and its variance component, on the Laplace
+  and the exact-NUTS paths alike, and the marginal intercept SE with them.
+
+  Components are now taken from the adjacency graph itself: the connected-
+  component partition (`inst/include/tulpa/graph_components.h`, one DFS computed
+  once per fit and carried on `ModelData`) drives every consumer -- the Laplace
+  gradient / Hessian / pattern / log-prior, the autodiff NUTS prior, the MCAR
+  block, and the R marginal-SE reconstruction -- so each component's constant is
+  pinned over its actual nodes. The rank-1 sum-to-zero fold the sparse solver
+  uses (Woodbury step and block-Schur log-determinant) now carries a node-index
+  list, so a component that is too large to densify folds exactly whether its
+  nodes are contiguous or not. A connected graph and an equal-size replicate are
+  the trivial partition and stay byte-identical. `ModelData` grew
+  `spatial_partition` and the ABI version is 37; consumer packages that
+  `LinkingTo: tulpa` must be rebuilt.
+
 - `control = list(n_warmup = )` was silently dropped on the sampler backends.
   `tulpa()`'s control surface is the union over the backends it dispatches, so
   `n_warmup` (which the NUTS-SPDE driver reads) passed the front-door check, and
