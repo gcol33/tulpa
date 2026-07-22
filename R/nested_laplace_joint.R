@@ -565,7 +565,7 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`control$diagnose_draws` was renamed: use `control$k_samples` ",
              "(the same knob on every nested-Laplace fitter).", call. = FALSE)
     }
-    .check_control(control, .CONTROL_KEYS$nested_laplace_joint,
+    tulpa_check_control(control, .CONTROL_KEYS$nested_laplace_joint,
                    "tulpa_nested_laplace_joint")
     # k_quality reliability front door + escalation. The
     # single fit lives in .tulpa_nl_joint_once(); this wrapper resolves the

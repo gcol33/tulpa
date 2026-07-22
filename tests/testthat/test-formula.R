@@ -245,7 +245,7 @@ test_that("parsed$response_expr is a language object, not deparsed text", {
   expect_equal(pf$response, "y")
 })
 
-test_that("cbind(succ, fail) responses survive round-tripping", {
+test_that("cbind(succ, fail) resolves to successes plus denominators", {
   set.seed(11)
   df <- data.frame(
     succ  = sample.int(10, 30, replace = TRUE),
@@ -256,9 +256,35 @@ test_that("cbind(succ, fail) responses survive round-tripping", {
   pf <- tulpa_parse_formula(cbind(succ, fail) ~ x + (1 | group))
   expect_true(is.call(pf$response_expr))
   md <- tulpa_build_model_data(pf, df)
-  expect_true(is.matrix(md$y))
-  expect_equal(ncol(md$y), 2L)
-  expect_equal(nrow(md$y), 30L)
+
+  # The pair is resolved in the builder rather than carried as a matrix: the
+  # kernels take successes plus a denominator, and a 30x2 response against the
+  # 30 rows of X recycles instead of erroring once it reaches the algebra.
+  expect_false(is.matrix(md$y))
+  expect_equal(md$y, as.numeric(df$succ))
+  expect_equal(md$n_trials, as.numeric(df$succ + df$fail))
+  expect_equal(length(md$y), md$n_obs)
+})
+
+test_that("a single-column matrix response drops to a vector", {
+  df <- data.frame(y = rnorm(20), x = rnorm(20), g = rep(1:2, each = 10))
+  pf <- tulpa_parse_formula(cbind(y) ~ x + (1 | g))
+  md <- tulpa_build_model_data(pf, df)
+  expect_false(is.matrix(md$y))
+  expect_equal(length(md$y), 20L)
+  expect_null(md$n_trials)
+})
+
+test_that("a wider matrix response is rejected", {
+  df <- data.frame(a = 1:20, b = 1:20, c = 1:20, x = rnorm(20))
+  pf <- tulpa_parse_formula(cbind(a, b, c) ~ x)
+  expect_error(tulpa_build_model_data(pf, df), "must have 2 columns")
+})
+
+test_that("a negative entry in a cbind response is rejected", {
+  df <- data.frame(succ = c(3, -1, 5), fail = c(1, 2, 0), x = rnorm(3))
+  pf <- tulpa_parse_formula(cbind(succ, fail) ~ x)
+  expect_error(tulpa_build_model_data(pf, df), "non-negative")
 })
 
 test_that("backtick-quoted response is evaluated correctly", {

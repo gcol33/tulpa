@@ -442,7 +442,7 @@
                                temporal = NULL, weights = NULL,
                                phi2 = NULL, smoothers = list(),
                                re_prior = NULL, zi_prior = NULL,
-                               warm_start = NULL) {
+                               warm_start = NULL, estimate_phi = FALSE) {
   # Scalar prior SD on the beta_zi block; the engine default when unset. Read
   # once here so every ZI-carrying backend receives the same number.
   zi_prior_sd <- .normalize_zi_prior(zi_prior)
@@ -657,11 +657,12 @@
         # Same blocks, same hyperprior, same inner solve as re_cov_nested --
         # tulpa_eb() stops at the maximizer instead of integrating around it.
         return(c(common, list(
-          beta_prior  = beta_prior,
-          prior_sigma = rp$prior_sigma %||% c(3, 0.05),
-          eta         = rp$eta %||% 2,
-          n_quad      = as.integer(control$n_quad %||% 1L),
-          control     = .control_subset(control, .CONTROL_KEYS$eb)
+          beta_prior   = beta_prior,
+          prior_sigma  = rp$prior_sigma %||% c(3, 0.05),
+          eta          = rp$eta %||% 2,
+          n_quad       = as.integer(control$n_quad %||% 1L),
+          estimate_phi = estimate_phi,
+          control      = .control_subset(control, .CONTROL_KEYS$eb)
         )))
       }
       if (backend == "re_cov_nested") {
@@ -1161,6 +1162,17 @@
 #'   gaussian and lognormal, size for neg_binomial_2, precision for beta,
 #'   scale for t). The variance convention holds across every backend; the
 #'   SD-parameterized compiled kernels receive `sqrt(phi)` at the boundary.
+#' @param estimate_phi Estimate the dispersion from the data instead of
+#'   conditioning on `phi`, which then supplies the starting value. `log(phi)`
+#'   joins the empirical-Bayes maximization as one further coordinate carrying
+#'   the exact derivative of the Laplace log-marginal, so the estimate is
+#'   ML-II: the hyperprior covers the random-effect covariances only and the
+#'   dispersion enters unpenalized. `fit$phi` is the estimate and
+#'   `fit$phi_estimated` distinguishes it from a conditioned value.
+#'
+#'   Available under `mode = "eb"`, and for the families whose dispersion
+#'   derivative is registered (see [tulpa_eb()]). Any other mode errors rather
+#'   than fitting at the starting value under a name that says otherwise.
 #' @param phi2 Optional second dispersion: the Student-t degrees of freedom
 #'   (`family = "t"`; default 4 when `NULL`). Supported on the non-spatial
 #'   Laplace path, the log-posterior samplers, and the ModelData samplers.
@@ -1284,6 +1296,7 @@ tulpa <- function(formula, data,
                   n_trials = NULL,
                   weights = NULL,
                   phi = 1.0,
+                  estimate_phi = FALSE,
                   phi2 = NULL,
                   beta_prior = NULL,
                   re_prior = NULL,
@@ -1306,8 +1319,12 @@ tulpa <- function(formula, data,
       "unknown argument(s) to tulpa(): %s. Tuning knobs go in `control = list()`.",
       paste(nm, collapse = ", ")), call. = FALSE)
   }
-  .check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
-  .check_control(re_prior, .RE_PRIOR_KEYS, "tulpa (re_prior)")
+  tulpa_check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
+  tulpa_check_control(re_prior, .RE_PRIOR_KEYS, "tulpa (re_prior)")
+  if (!is.logical(estimate_phi) || length(estimate_phi) != 1L ||
+      is.na(estimate_phi)) {
+    stop("`estimate_phi` must be TRUE or FALSE.", call. = FALSE)
+  }
 
   # Categorical responses are families, not separate verbs: the front door
   # routes them to the multinomial / cumulative-link Laplace drivers. The link
@@ -1349,6 +1366,7 @@ tulpa <- function(formula, data,
     return(fit)
   }
 
+  family <- .canonical_family(family)
   .family_or_stop(family)
   .validate_family_compiled(family)
   .validate_family_phi(family, phi)
@@ -1358,6 +1376,25 @@ tulpa <- function(formula, data,
 
   parsed <- tulpa_parse_formula(formula)
   bundle <- tulpa_build_model_data(parsed, data)
+
+  # A cbind(successes, failures) response carries its own denominators. Only
+  # the binomial families have one, and a user-supplied `n_trials` alongside it
+  # would be two answers to the same question, so both are refused rather than
+  # silently resolved in favour of one.
+  if (!is.null(bundle$n_trials)) {
+    if (!.family_base(family) %in% c("binomial", "beta_binomial")) {
+      stop(sprintf(paste0(
+        "A cbind(successes, failures) response is the binomial idiom; ",
+        "family = '%s' takes a single-column response."), family),
+        call. = FALSE)
+    }
+    if (!is.null(n_trials)) {
+      stop("`n_trials` was supplied alongside a cbind(successes, failures) ",
+           "response, which already carries the denominators. Drop one.",
+           call. = FALSE)
+    }
+    n_trials <- bundle$n_trials
+  }
 
   # Zero inflation: a second linear predictor for the structural-zero logit.
   # The compiled Laplace kernel carries it as process 1 (eta[1]); see
@@ -1374,7 +1411,8 @@ tulpa <- function(formula, data,
     .validate_family_zi_compiled(family)
     bundle$X_zi <- X_zi
   }
-  .validate_family_counts(family, bundle$y, zi = !is.null(X_zi))
+  .validate_family_support(family, bundle$y, n_trials = n_trials,
+                           zi = !is.null(X_zi))
   # The model is built with na.action = na.pass (prior_predict() allows an NA
   # response), so tulpa() must reject non-finite fitting inputs itself: unlike
   # glm()/lm() it does not drop incomplete cases, and an NA/NaN/Inf would flow
@@ -1832,6 +1870,17 @@ tulpa <- function(formula, data,
 
   assert_backend_reachable(sel$backend)
 
+  # The dispersion is estimated by the empirical-Bayes outer maximization, the
+  # one path that carries log(phi) as a coordinate of the outer objective.
+  # Every other backend takes `phi` as a value to condition on, so honouring
+  # the argument there would mean fitting at the starting value while the fit
+  # reported an estimate.
+  if (isTRUE(estimate_phi) && !identical(sel$backend, "eb")) {
+    stop("`estimate_phi = TRUE` is available under mode = 'eb'; ",
+         "mode resolved to '", sel$backend, "', which conditions on `phi`.",
+         call. = FALSE)
+  }
+
   # Conditional backends (everything except the sigma-sampling Gibbs, the
   # Sigma-integrating re_cov backends, the Sigma-maximizing EB fit, the
   # marginal-likelihood AGQ fit that estimates the RE sd, and the ModelData
@@ -1860,7 +1909,8 @@ tulpa <- function(formula, data,
                              weights = weights, phi2 = phi2,
                              smoothers = lapply(smooth_specs, `[[`, "block"),
                              re_prior = re_prior, zi_prior = zi_prior,
-                             warm_start = warm_start)
+                             warm_start = warm_start,
+                             estimate_phi = estimate_phi)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(

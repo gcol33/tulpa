@@ -71,7 +71,7 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
                           cut_prior_sd = 10,
                           control = list()) {
   link <- match.arg(link)
-  .check_control(control, .CONTROL_KEYS$ordinal, "tulpa_ordinal")
+  tulpa_check_control(control, .CONTROL_KEYS$ordinal, "tulpa_ordinal")
   beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   pfun <- if (link == "probit") stats::pnorm else stats::plogis
   qfun <- if (link == "probit") stats::qnorm else stats::qlogis

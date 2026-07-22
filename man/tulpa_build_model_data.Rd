@@ -14,7 +14,10 @@ tulpa_build_model_data(parsed, data)
 \value{
 A list with:
 \itemize{
-\item \code{y}: response vector (or NULL)
+\item \code{y}: response vector (or NULL). A \code{cbind(successes, failures)} response
+is resolved to the successes column.
+\item \code{n_trials}: binomial denominators when the response was written as
+\code{cbind(successes, failures)}, otherwise NULL
 \item \code{X}: fixed-effects design matrix
 \item \code{offset}: numeric vector or NULL
 \item \code{re_terms}: list of RE data structures (group indices, slope matrices)

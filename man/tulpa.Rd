@@ -13,6 +13,7 @@ tulpa(
   n_trials = NULL,
   weights = NULL,
   phi = 1,
+  estimate_phi = FALSE,
   phi2 = NULL,
   beta_prior = NULL,
   re_prior = NULL,
@@ -65,6 +66,18 @@ backends reject weights loudly.}
 gaussian and lognormal, size for neg_binomial_2, precision for beta,
 scale for t). The variance convention holds across every backend; the
 SD-parameterized compiled kernels receive \code{sqrt(phi)} at the boundary.}
+
+\item{estimate_phi}{Estimate the dispersion from the data instead of
+conditioning on \code{phi}, which then supplies the starting value. \code{log(phi)}
+joins the empirical-Bayes maximization as one further coordinate carrying
+the exact derivative of the Laplace log-marginal, so the estimate is
+ML-II: the hyperprior covers the random-effect covariances only and the
+dispersion enters unpenalized. \code{fit$phi} is the estimate and
+\code{fit$phi_estimated} distinguishes it from a conditioned value.
+
+Available under \code{mode = "eb"}, and for the families whose dispersion
+derivative is registered (see \code{\link[=tulpa_eb]{tulpa_eb()}}). Any other mode errors rather
+than fitting at the starting value under a name that says otherwise.}
 
 \item{phi2}{Optional second dispersion: the Student-t degrees of freedom
 (\code{family = "t"}; default 4 when \code{NULL}). Supported on the non-spatial

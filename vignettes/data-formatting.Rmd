@@ -224,6 +224,10 @@ db$tot <- 15L
 fit_b <- tulpa(succ ~ x, data = db, family = "binomial",
                n_trials = db$tot, mode = "laplace")
 coef(fit_b)
+
+fit_cbind <- tulpa(cbind(succ, fail) ~ x, data = db, family = "binomial",
+                   mode = "laplace")
+max(abs(coef(fit_cbind) - coef(fit_b)))
 ```
 
 An offset is a known additive term on the linear-predictor scale, fixed at

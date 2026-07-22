@@ -51,7 +51,7 @@
 tulpa_multinomial <- function(formula, data,
                               beta_prior = list(mean = 0, sd = 10),
                               control = list()) {
-  .check_control(control, .CONTROL_KEYS$multinomial, "tulpa_multinomial")
+  tulpa_check_control(control, .CONTROL_KEYS$multinomial, "tulpa_multinomial")
   beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   max_iter <- as.integer(control$max_iter %||% 100L)
   tol      <- control$tol %||% 1e-8

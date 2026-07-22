@@ -120,7 +120,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             likelihood = NULL,
                             control = list()) {
 
-  .check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
+  tulpa_check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
   tm <- .tulpa_timer()
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa()); the

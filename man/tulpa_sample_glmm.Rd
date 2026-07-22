@@ -78,7 +78,21 @@ any other backend errors rather than sampling from the default start.}
 \item{control}{List of kernel tuning knobs (\code{n_iter}, \code{warmup}, \code{seed},
 \code{sigma_beta}, \code{n_chains}, \code{max_treedepth}, \code{adapt_delta}, \code{epsilon}, \code{L},
 \code{batch_size}, \code{alpha}, \code{n_particles}, \code{n_mcmc_steps}, \code{ess_threshold},
-\code{vi_variant}, \code{vi_mc_samples}, \code{vi_max_iter}, \code{n_draws}, \code{verbose}).}
+\code{vi_variant}, \code{vi_mc_samples}, \code{vi_max_iter}, \code{n_draws}, \code{verbose}).
+
+The elliptical-slice kernel takes five more, all prefixed \code{ess_} and all
+inert on other backends. Note that \code{ess_threshold} above is SMC's
+resampling threshold and not one of them -- the two unrelated senses of
+"ESS" are why these carry the prefix.
+\code{ess_adapt_during_warmup} (default \code{FALSE}) adapts the proposal covariance
+during warmup; \code{ess_adapt_interval} (default 50) is how often it is
+refreshed and \code{ess_use_cholesky} (default \code{TRUE}) how it is factorized, so
+\strong{both act only while adapting} and setting either alone changes nothing.
+\code{ess_joint_sigma_re} toggles the joint \verb{(log_sigma_re, re)} rescaling move,
+which defaults to on whenever a random-effect term is present because the
+two are strongly anti-correlated under the centered parameterization and
+mix poorly when moved separately; forcing it off is how one demonstrates
+that. \code{ess_joint_proposal_sd} (default 0.1) is that move's step.}
 }
 \value{
 A \code{tulpa_fit} with \code{draws}, \code{means}, \code{param_names}, the kernel's

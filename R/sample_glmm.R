@@ -90,7 +90,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               sigma_beta = 10.0,
                               warm_start = NULL,
                               control = list()) {
-  .check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
+  tulpa_check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
   .family_or_stop(family)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   X <- as.matrix(X)

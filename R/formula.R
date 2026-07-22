@@ -739,7 +739,10 @@ tulpa_parse_formula <- function(formula) {
 #' @param parsed A `tulpa_parsed_formula` object
 #' @param data A data frame
 #' @return A list with:
-#'   - `y`: response vector (or NULL)
+#'   - `y`: response vector (or NULL). A `cbind(successes, failures)` response
+#'     is resolved to the successes column.
+#'   - `n_trials`: binomial denominators when the response was written as
+#'     `cbind(successes, failures)`, otherwise NULL
 #'   - `X`: fixed-effects design matrix
 #'   - `offset`: numeric vector or NULL
 #'   - `re_terms`: list of RE data structures (group indices, slope matrices)
@@ -761,6 +764,36 @@ tulpa_build_model_data <- function(parsed, data) {
     )
     if (is.null(y)) {
       stop("Response '", parsed$response, "' not found in data", call. = FALSE)
+    }
+  }
+
+  # A two-column response is the lme4/glm binomial idiom, cbind(successes,
+  # failures). The kernels take successes plus a denominator, so the pair is
+  # resolved here into a length-n `y` and an `n_trials` vector, and everything
+  # downstream sees the single representation. Leaving the matrix in place
+  # would put 2n response values against the n rows of `X`, which recycles
+  # rather than errors once it reaches the linear algebra.
+  n_trials <- NULL
+  if (!is.null(y) && (is.matrix(y) || is.data.frame(y))) {
+    ym <- as.matrix(y)
+    if (ncol(ym) == 1L) {
+      y <- as.numeric(ym[, 1L])
+    } else if (ncol(ym) == 2L) {
+      successes <- as.numeric(ym[, 1L])
+      failures  <- as.numeric(ym[, 2L])
+      fin <- is.finite(successes) & is.finite(failures)
+      if (any(successes[fin] < 0) || any(failures[fin] < 0)) {
+        stop("A cbind(successes, failures) response must have non-negative ",
+             "entries in both columns.", call. = FALSE)
+      }
+      y <- successes
+      n_trials <- successes + failures
+    } else {
+      stop(sprintf(paste0(
+        "A matrix response must have 2 columns, cbind(successes, failures); ",
+        "got %d. Categorical responses are fit through family = ",
+        "'multinomial' / 'ordinal' with a factor response."), ncol(ym)),
+        call. = FALSE)
     }
   }
 
@@ -820,6 +853,7 @@ tulpa_build_model_data <- function(parsed, data) {
 
   list(
     y           = y,
+    n_trials    = n_trials,
     X           = X,
     offset      = off,
     re_terms    = re_terms,

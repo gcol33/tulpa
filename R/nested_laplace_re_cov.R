@@ -1204,7 +1204,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 control = list()) {
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
-  .check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
+  tulpa_check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
   integration <- match.arg(control$integration %||% "ccd", c("ccd", "grid"))
   n_per_axis  <- as.integer(control$n_per_axis %||% 5L)
   span        <- control$span %||% 3

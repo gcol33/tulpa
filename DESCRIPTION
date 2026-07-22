@@ -54,6 +54,8 @@ Suggests:
     nlme,
     MASS,
     betareg,
+    glmmTMB,
+    pscl,
     tweedie,
     fmesher,
     patchwork,

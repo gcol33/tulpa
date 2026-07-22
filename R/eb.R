@@ -171,7 +171,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      marginal = FALSE,
                      estimate_phi = FALSE,
                      control = list()) {
-  .check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
+  tulpa_check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
   max_iter    <- as.integer(control$max_iter %||% 100L)
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)

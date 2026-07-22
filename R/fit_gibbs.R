@@ -391,7 +391,8 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         spatial = NULL, temporal = NULL,
                         control = list()) {
 
-  .check_control(control, .CONTROL_KEYS$gibbs, "tulpa_gibbs")
+  tulpa_check_control(control, .CONTROL_KEYS$gibbs, "tulpa_gibbs")
+  family        <- .canonical_family(family)
   n_iter        <- as.integer(control$n_iter %||% 2000L)
   warmup        <- as.integer(control$warmup %||% 1000L)
   thin          <- as.integer(control$thin %||% 1L)
@@ -458,7 +459,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       store_eta = FALSE, verbose = verbose,
       n_threads = as.integer(n_threads)
     )
-  } else if (family %in% c("neg_binomial_2", "negbin")) {
+  } else if (identical(family, "neg_binomial_2")) {
     cpp_pg_negbin_gibbs(
       y = as.numeric(y), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),

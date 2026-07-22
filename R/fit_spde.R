@@ -131,7 +131,7 @@ fit_spde <- function(y, X, spatial,
       range = range, sigma = sigma,
       control = control))
   }
-  .check_control(control, .CONTROL_KEYS$spde, "fit_spde")
+  tulpa_check_control(control, .CONTROL_KEYS$spde, "fit_spde")
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.

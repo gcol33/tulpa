@@ -102,7 +102,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
                             log_phi_init     = 0,
                             control          = list()) {
 
-  .check_control(control, .CONTROL_KEYS$nuts_spde, "tulpa_nuts_spde")
+  tulpa_check_control(control, .CONTROL_KEYS$nuts_spde, "tulpa_nuts_spde")
   family      <- match.arg(family)
   sigma_beta  <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   # Perf / sampler knobs live in control (statistical args stay in the

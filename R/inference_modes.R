@@ -156,7 +156,7 @@ BACKEND_REGISTRY <- list(
     emits = "chain",
     tier = "exact", input = "design", fitter = NULL,
     families = c("binomial", "beta_binomial", "beta_binomial_fixed",
-                 "negbin_negbin", "neg_binomial_2", "negative_binomial"),
+                 "neg_binomial_2"),
     cabi = "tulpa_pg_binomial_gibbs"
   ),
   gibbs = list(

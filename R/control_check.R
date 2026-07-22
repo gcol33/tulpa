@@ -44,8 +44,31 @@
   control[intersect(names(control), allowed)]
 }
 
-#' @keywords internal
-.check_control <- function(control, allowed, where) {
+#' Validate a `control = list()` surface against its canonical key set
+#'
+#' Front-door fitters across the `tulpa*` ecosystem carry their perf /
+#' numerical / tuning knobs in a single `control` list (design principle 6).
+#' Without a name check a misspelled knob is a silent no-op --
+#' `control$adaptve_grid` fits the default and reports nothing. This validates
+#' the names a caller supplied against the whitelist of what the target fitter
+#' actually reads, and errors listing the allowed set.
+#'
+#' Consumer packages (`tulpaRatio`, `tulpaObs`) call this with their own key
+#' registry rather than reimplementing the check.
+#'
+#' @param control The `control` list to validate. `NULL` and empty lists pass.
+#' @param allowed Character vector of accepted knob names.
+#' @param where Name of the calling fitter, used in the error message.
+#'
+#' @return `invisible(NULL)`, called for the side effect of erroring on an
+#'   unknown or unnamed knob.
+#'
+#' @examples
+#' tulpa_check_control(list(max_iter = 50), c("max_iter", "tol"), "my_fit")
+#' try(tulpa_check_control(list(max_itr = 50), c("max_iter", "tol"), "my_fit"))
+#'
+#' @export
+tulpa_check_control <- function(control, allowed, where) {
   if (is.null(control)) return(invisible(NULL))
   if (!is.list(control)) {
     stop(sprintf("`control` must be a list in %s().", where), call. = FALSE)

@@ -618,7 +618,7 @@ family_names <- function() names(.FAMILY_OPS)
 #. The `*_<link>` suffix forms (e.g. "gamma_inverse") share
 # the base family's dispersion, so membership is tested on the prefix.
 .PHI_FAMILIES <- c("gaussian", "lognormal", "gamma", "neg_binomial_2",
-                   "neg_binomial_1", "negative_binomial", "inverse_gaussian",
+                   "neg_binomial_1", "inverse_gaussian",
                    "beta", "beta_binomial", "t", "tweedie",
                    "truncated_neg_binomial_2",
                    "interval_gaussian", "truncated_gaussian")
@@ -628,12 +628,19 @@ family_names <- function() names(.FAMILY_OPS)
 # laplace_likelihoods.h), silently flooring a continuous response into a biased
 # log-likelihood, so a non-integer `y` is rejected at the front door.
 .COUNT_FAMILIES <- c("poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
-                     "negative_binomial", "beta_binomial",
+                     "beta_binomial",
                      "truncated_poisson", "truncated_neg_binomial_2")
 
 # Zero-truncated count families: the density conditions on y > 0, so a zero
 # response is outside the support rather than merely unlikely.
 .TRUNCATED_FAMILIES <- c("truncated_poisson", "truncated_neg_binomial_2")
+
+# Families supported on the strictly positive reals. The log-density is
+# undefined at zero -- log(y) for lognormal, the y^(shape - 1) and 1/y factors
+# for gamma and inverse gaussian -- so a zero is outside the support rather
+# than merely unlikely. tweedie is deliberately absent: for 1 < p < 2 it is
+# compound Poisson-gamma and carries a point mass at zero.
+.POSITIVE_FAMILIES <- c("gamma", "lognormal", "inverse_gaussian")
 
 # Families carried by the R registry but not by the compiled kernels. Every
 # shipped family is now wired into src/laplace_family_link.h, so this is empty;
@@ -667,6 +674,10 @@ family_names <- function() names(.FAMILY_OPS)
 # a prefix hit.
 .family_base <- function(family) {
   if (!is.character(family) || length(family) != 1L) return(NA_character_)
+  # Resolve a short spelling first, so a caller that skipped canonicalization
+  # still gets the family's own rules rather than silently falling through
+  # every membership test below.
+  family <- .canonical_family(family)
   cand <- unique(c(.PHI_FAMILIES, .COUNT_FAMILIES, family_names()))
   if (family %in% cand) return(family)
   cand <- cand[order(nchar(cand), decreasing = TRUE)]
@@ -726,6 +737,86 @@ family_names <- function() names(.FAMILY_OPS)
 }
 
 
+#' Validate the response against a family's support.
+#'
+#' The one support rule set, shared by the [tulpa()] front door and by the
+#' engine fitters ([tulpa_laplace()], [tulpa_laplace_beta()],
+#' [tulpa_nuts_beta()]). Holding it in a single function is what keeps a
+#' boundary response rejected with the same message wherever it enters: a
+#' per-fitter copy is only as good as the set of fitters that carry it, and
+#' `tulpa()` reaches beta-with-RE through a sampler that carried none.
+#'
+#' Counts delegate to [.validate_family_counts()]; the continuous families and
+#' the binomial denominator add their rules here.
+#'
+#' @param family Family identifier, canonical or aliased.
+#' @param y Response vector, or `NULL` (a model with no response passes).
+#' @param n_trials Binomial denominators, when known. Supplied, the binomial
+#'   rule is `0 <= y <= n_trials`; absent, the response is the 0/1 form.
+#' @param zi Whether a zero-inflation component is fitted alongside the family,
+#'   passed through to the count rule for the hurdle case.
+#' @keywords internal
+.validate_family_support <- function(family, y, n_trials = NULL, zi = FALSE) {
+  if (is.null(y)) return(invisible(TRUE))
+  base <- .family_base(family)
+  yv <- suppressWarnings(as.numeric(y))
+  yf <- yv[is.finite(yv)]
+
+  .validate_family_counts(family, yv, zi = zi)
+
+  if (identical(base, "beta") && length(yf) &&
+      (min(yf) <= 0 || max(yf) >= 1)) {
+    stop(sprintf(paste0(
+      "family = 'beta' requires `y` strictly in (0, 1); got range [%s, %s]. ",
+      "Use cover(positive = 'beta') for hurdle handling of 0/1, or transform ",
+      "the boundary observations inward, e.g. (y * (n - 1) + 0.5) / n ",
+      "(Smithson & Verkuilen 2006)."),
+      format(min(yf)), format(max(yf))), call. = FALSE)
+  }
+
+  if (base %in% .POSITIVE_FAMILIES && length(yf) && min(yf) <= 0) {
+    stop(sprintf(paste0(
+      "family = '%s' requires `y` strictly positive; got %d value(s) <= 0 ",
+      "(minimum %s). The log-density is undefined at zero, so these ",
+      "observations are outside the support."),
+      family, sum(yf <= 0), format(min(yf))), call. = FALSE)
+  }
+
+  if (identical(base, "binomial") && length(yf)) {
+    if (is.null(n_trials)) {
+      if (any(yf != 0 & yf != 1)) {
+        stop(paste0(
+          "family = 'binomial' with no `n_trials` requires a 0/1 response. ",
+          "Supply `n_trials` for aggregated counts, or write the response as ",
+          "cbind(successes, failures)."), call. = FALSE)
+      }
+    } else {
+      nt <- suppressWarnings(as.numeric(n_trials))
+      if (length(nt) == 1L) nt <- rep(nt, length(yv))
+      if (length(nt) != length(yv)) {
+        stop(sprintf(paste0(
+          "`n_trials` has length %d but the response has %d observation(s)."),
+          length(nt), length(yv)), call. = FALSE)
+      }
+      ok <- is.finite(yv) & is.finite(nt)
+      if (any(nt[ok] < 0) || any(nt[ok] != round(nt[ok]))) {
+        stop("`n_trials` must be non-negative integers.", call. = FALSE)
+      }
+      if (any(yv[ok] > nt[ok])) {
+        bad <- which(ok & yv > nt)
+        stop(sprintf(paste0(
+          "family = 'binomial' requires `y <= n_trials`; %d observation(s) ",
+          "exceed their denominator (first at row %d: y = %s, n_trials = %s)."),
+          length(bad), bad[1L], format(yv[bad[1L]]), format(nt[bad[1L]])),
+          call. = FALSE)
+      }
+    }
+  }
+
+  invisible(TRUE)
+}
+
+
 #' Reject non-finite fitting inputs.
 #'
 #' The design is built with `na.action = na.pass`, so a missing predictor or
@@ -778,6 +869,41 @@ family_names <- function() names(.FAMILY_OPS)
     .family_or_stop(family)
   }
   ops
+}
+
+# Short and historical family spellings, mapped onto the registry's canonical
+# names. These entered from the lme4/glmmTMB idiom and from earlier front
+# doors, and several inner fitters grew their own `c("neg_binomial_2",
+# "negbin")` branch to accept one of them, which left the same string accepted
+# by a fitter and rejected by tulpa(). Resolution happens once, where a family
+# string enters, so every branch downstream tests one spelling.
+.FAMILY_ALIASES <- c(
+  negbin            = "neg_binomial_2",
+  negative_binomial = "neg_binomial_2",
+  nbinom2           = "neg_binomial_2",
+  nb2               = "neg_binomial_2",
+  nb1               = "neg_binomial_1",
+  nbinom1           = "neg_binomial_1",
+  student_t         = "t",
+  tpoisson          = "truncated_poisson",
+  tnbinom2          = "truncated_neg_binomial_2"
+)
+
+#' Resolve a family spelling to its canonical registry name.
+#'
+#' A no-op for a canonical name, for a `<family>_<link>` code, and for anything
+#' unrecognized, which reaches [.family_or_stop()] and errors there against the
+#' canonical list.
+#'
+#' @param family Family identifier as supplied by the caller.
+#' @keywords internal
+.canonical_family <- function(family) {
+  if (!is.character(family) || length(family) != 1L || is.na(family)) {
+    return(family)
+  }
+  hit <- unname(.FAMILY_ALIASES[family])
+  if (!is.na(hit)) return(hit)
+  family
 }
 
 # Validate a family identifier against the registry (the one unknown-family

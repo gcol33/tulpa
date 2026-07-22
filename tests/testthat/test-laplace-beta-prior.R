@@ -146,3 +146,41 @@ test_that("beta_prior errors on the spatial Laplace path", {
     "not supported on the spatial Laplace path"
   )
 })
+
+
+test_that("the prior penalty reaches H_beta when random effects are present", {
+  skip_on_cran()
+  set.seed(21)
+  G <- 12L; n_per <- 18L; N <- G * n_per
+  g <- factor(rep(LETTERS[seq_len(G)], each = n_per))
+  x <- rnorm(N)
+  u <- rnorm(G, 0, 0.5)
+  d <- data.frame(y = rpois(N, exp(0.5 + 0.4 * x + u[as.integer(g)])),
+                  x = x, g = g)
+
+  # With a random-effect term the fixed-effect precision is a Schur complement
+  # built from the sparse RE design, so the penalty has to reach a dense
+  # diagonal of an n_fixed x n_fixed block.
+  fit_none <- suppressMessages(
+    tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "laplace",
+          sigma_re = 0.5))
+  fit_weak <- suppressMessages(
+    tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "laplace",
+          sigma_re = 0.5, beta_prior = list(mean = 0, sd = 100)))
+  fit_tight <- suppressMessages(
+    tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "laplace",
+          sigma_re = 0.5, beta_prior = list(mean = 0, sd = 0.05)))
+
+  expect_true(is.matrix(fit_weak$H_beta))
+  expect_identical(dim(fit_weak$H_beta), c(2L, 2L))
+
+  # Spelling out the built-in ridge gives the same fit and the same curvature,
+  # so the default fit's SE carries the penalty its mode was found under.
+  expect_equal(coef(fit_weak), coef(fit_none), tolerance = 1e-8)
+  expect_lt(max(abs(fit_weak$H_beta - fit_none$H_beta)), 1e-8)
+
+  # A tight prior adds its precision, so the reported SE shrinks.
+  expect_lt(sqrt(diag(vcov(fit_tight)))[["x"]],
+            sqrt(diag(vcov(fit_weak)))[["x"]])
+  expect_gt(fit_tight$H_beta[2, 2] - fit_weak$H_beta[2, 2], 0)
+})

@@ -18,7 +18,7 @@
 tulpa_gaussian <- function(formula, data,
                            beta_prior = list(mean = 0, sd = 10),
                            control = list()) {
-  .check_control(control, .CONTROL_KEYS$gaussian, "tulpa_gaussian")
+  tulpa_check_control(control, .CONTROL_KEYS$gaussian, "tulpa_gaussian")
   sigma_beta <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   iter       <- as.integer(control$iter %||% 2000L)
   warmup     <- as.integer(control$warmup %||% 1000L)

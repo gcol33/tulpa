@@ -1,3 +1,11 @@
+# The fixed-effect ridge the compiled Laplace kernels apply when no
+# `beta_prior` is supplied: beta ~ N(0, 100^2), i.e. precision 1e-4. Mirrors
+# DEFAULT_TAU_BETA in src/laplace_re_priors.h, which is where the penalty is
+# actually added to the objective; the two must agree or the reported curvature
+# describes a different posterior than the one the mode came from.
+.LAPLACE_DEFAULT_TAU_BETA <- 1e-4
+
+
 #' Fit a model via Laplace approximation
 #'
 #' @description
@@ -115,6 +123,7 @@ tulpa_laplace <- function(y, n_trials, X,
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
+  family <- .canonical_family(family)
 
   # tulpa_laplace's `phi` is the residual VARIANCE for gaussian / lognormal
   # (the convention of the R-side registry, which builds H_beta below); the
@@ -143,15 +152,8 @@ tulpa_laplace <- function(y, n_trials, X,
   bp <- .normalize_beta_prior(beta_prior, n_fixed)
 
   .validate_family_phi(family, phi)
-  if (identical(family, "beta")) {
-    yfin <- y[is.finite(y)]
-    if (length(yfin) && (min(yfin) <= 0 || max(yfin) >= 1)) {
-      stop("family = 'beta' requires y strictly in (0, 1); got range [",
-           min(yfin), ", ", max(yfin),
-           "]. Use cover(positive = 'beta') for hurdle handling of 0/1.",
-           call. = FALSE)
-    }
-  }
+  .validate_family_support(family, y, n_trials = n_trials,
+                           zi = !is.null(X_zi))
 
   if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
 
@@ -338,7 +340,10 @@ tulpa_laplace <- function(y, n_trials, X,
       XtWZ <- crossprod(X, W * Z)
       R <- chol(as.matrix(ZtWZ_Dinv))
       mid <- backsolve(R, forwardsolve(t(R), as.matrix(Matrix::t(XtWZ))))
-      P_beta <- XtWX - XtWZ %*% mid
+      # The Schur complement inherits the sparse class from Z, so it is made
+      # dense here: it is n_fixed x n_fixed, and every consumer downstream --
+      # the prior penalty below, and H_beta itself -- is a base matrix.
+      P_beta <- as.matrix(XtWX - XtWZ %*% mid)
     } else {
       P_beta <- XtWX
     }
@@ -347,12 +352,15 @@ tulpa_laplace <- function(y, n_trials, X,
     # POSTERIOR curvature (matching the penalty the mode-finding kernel added),
     # not just the likelihood information. Without this the Laplace SE would
     # ignore the prior. `sd = Inf` contributes 0 (no penalty on that coef).
-    if (!is.null(bp)) {
-      pen_prec <- ifelse(is.finite(bp$sd), 1 / (bp$sd^2), 0)
-      diag(P_beta) <- diag(P_beta) + pen_prec[seq_len(n_fixed)]
-    }
+    # A NULL `beta_prior` is not an absent prior: the kernel applies its
+    # built-in ridge (DEFAULT_TAU_BETA in src/laplace_re_priors.h), so the same
+    # precision is added here rather than leaving the curvature computed under
+    # a prior the mode was not found under.
+    pen_prec <- if (is.null(bp)) rep(.LAPLACE_DEFAULT_TAU_BETA, n_fixed)
+                else ifelse(is.finite(bp$sd), 1 / (bp$sd^2), 0)[seq_len(n_fixed)]
+    diag(P_beta) <- diag(P_beta) + pen_prec
 
-    result$H_beta <- as.matrix(P_beta)
+    result$H_beta <- P_beta
   }
 
   # Marginal H_beta for spatial-field Laplace via Schur on the joint Hessian.

@@ -107,7 +107,7 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
                      phi2 = NULL, n_trials = NULL,
                      beta_prior = list(mean = 0, sd = 10),
                      control = list()) {
-  .check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
+  tulpa_check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
   mf <- stats::model.frame(formula, data)
   y  <- as.numeric(stats::model.response(mf))
   X  <- stats::model.matrix(stats::terms(mf), mf)
@@ -123,7 +123,7 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
 ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
                    n_trials = NULL, beta_prior = list(mean = 0, sd = 10),
                    control = list()) {
-  .check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
+  tulpa_check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
   .family_or_stop(family)
   if (!is.null(phi2)) .phi2_or_stop(family, phi2)
   max_sweeps <- as.integer(control$max_sweeps %||% 50L)

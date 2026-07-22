@@ -227,9 +227,12 @@ test_that("an offset the inner solve cannot carry errors rather than dropping", 
     tulpa_eb(d$y, NULL, d$X, term, family = "poisson", offset = d$off,
              n_quad = 5L),
     "does not support an offset")
-  # And the Metropolis-within-Gibbs sampler has no offset term at all.
+  # And the Metropolis-within-Gibbs sampler has no offset term at all. The
+  # counts are thresholded to 0/1 so the binomial response support holds and
+  # the fit reaches the backend's offset check rather than stopping short of it.
+  d$data$y01 <- as.integer(d$data$y > 0)
   expect_error(
-    suppressWarnings(tulpa(y ~ x + offset(log(E)) + (1 | g), data = d$data,
+    suppressWarnings(tulpa(y01 ~ x + offset(log(E)) + (1 | g), data = d$data,
                            family = "binomial", mode = "re_cov_gibbs")),
     "not supported by the re_cov_gibbs backend")
 })
@@ -393,4 +396,65 @@ test_that("EB rejects control keys belonging to the nested integrator", {
     tulpa_eb(d$y, NULL, d$X, scalar_term(d), family = "poisson",
              control = list(integration = "ccd")),
     "integration")
+})
+
+
+# --- estimate_phi on the front door ------------------------------------------
+
+sim_re_gauss <- function(seed, G = 15L, per = 12L, sigma_re = 0.7,
+                         sigma_y = 0.5) {
+  set.seed(seed)
+  n <- G * per
+  g <- rep(seq_len(G), each = per)
+  x <- rnorm(n)
+  u <- rnorm(G, 0, sigma_re)
+  data.frame(y = 1 + 0.5 * x + u[g] + rnorm(n, 0, sigma_y),
+             x = x, g = factor(g))
+}
+
+test_that("estimate_phi frees the dispersion and reports it as estimated", {
+  skip_on_cran()
+  d <- sim_re_gauss(51L)
+
+  held <- suppressMessages(
+    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb"))
+  free <- suppressMessages(
+    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb",
+          estimate_phi = TRUE))
+
+  expect_false(held$phi_estimated)
+  expect_identical(held$phi, 1.0)
+  expect_true(free$phi_estimated)
+
+  # The residual SD is 0.5 by construction, so a freed dispersion has to move
+  # well away from the default it started at.
+  expect_lt(abs(sqrt(free$phi) - 0.5), 0.1)
+})
+
+test_that("estimate_phi is refused where the dispersion is conditioned on", {
+  d <- sim_re_gauss(52L)
+
+  expect_error(
+    suppressMessages(
+      tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "laplace",
+            sigma_re = 0.7, estimate_phi = TRUE)),
+    "available under mode = 'eb'")
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb",
+          estimate_phi = NA),
+    "must be TRUE or FALSE")
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = d, family = "gaussian", mode = "eb",
+          estimate_phi = "yes"),
+    "must be TRUE or FALSE")
+})
+
+test_that("estimate_phi is refused for a family with no free dispersion", {
+  skip_on_cran()
+  d <- sim_re_pois(53L, G = 20L, per = 8L)
+  expect_error(
+    suppressMessages(
+      tulpa(y ~ x + (1 | g), data = d$data, family = "poisson", mode = "eb",
+            estimate_phi = TRUE)),
+    "not available for family")
 })

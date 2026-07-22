@@ -124,10 +124,10 @@ test_that("vcov and summary report the marginal covariance when present", {
 })
 
 test_that("the new EB control knobs validate", {
-  expect_silent(.check_control(
+  expect_silent(tulpa_check_control(
     list(marginal_step = 1e-4, marginal_richardson = TRUE),
     tulpa:::.CONTROL_KEYS$eb, "tulpa_eb"))
-  expect_error(.check_control(list(marginal_stp = 1e-4),
+  expect_error(tulpa_check_control(list(marginal_stp = 1e-4),
                              tulpa:::.CONTROL_KEYS$eb, "tulpa_eb"),
                "Unknown control knob")
   d <- .em_sim(1L)

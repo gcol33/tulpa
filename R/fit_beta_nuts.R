@@ -58,13 +58,10 @@ tulpa_nuts_beta <- function(y, X,
                             log_phi_init     = 0,
                             control          = list()) {
 
-  .check_control(control, .CONTROL_KEYS$nuts_beta, "tulpa_nuts_beta")
+  tulpa_check_control(control, .CONTROL_KEYS$nuts_beta, "tulpa_nuts_beta")
   stopifnot(is.numeric(y), is.matrix(X), nrow(X) == length(y))
-  if (any(!is.finite(y)) || min(y) <= 0 || max(y) >= 1) {
-    stop("`y` must be strictly in (0, 1) for tulpa_nuts_beta(). ",
-         "Use cover(positive = 'beta') for hurdle handling of 0/1.",
-         call. = FALSE)
-  }
+  .assert_finite_model_inputs(NULL, y)
+  .validate_family_support("beta", y)
   sigma_beta <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
   if (!is.numeric(log_phi_prior_sd) || length(log_phi_prior_sd) != 1L ||
       !is.finite(log_phi_prior_sd) || log_phi_prior_sd <= 0) {

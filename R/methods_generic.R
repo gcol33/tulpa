@@ -291,7 +291,11 @@ coef.tulpa_fit <- function(object, ...) {
 # print without NA/NULL noise.
 #' @export
 print.tulpa_fit <- function(x, ...) {
-  header <- "tulpa fit"
+  # A fit from a named door (tglmm / tgam) says which model class it is; one
+  # from tulpa() itself has no narrower name to give. The label comes from the
+  # door registry, so the header needs no per-door branch here.
+  lab <- .door_label_for(x)
+  header <- if (is.null(lab)) "tulpa fit" else paste("tulpa", lab, "fit")
   if (!is.null(x$backend)) header <- paste0(header, "  (", x$backend, ")")
   cat(header, "\n")
   n_obs <- x$N %||% x$n_obs

@@ -13,7 +13,7 @@
 # Allowed per-submodel families. Extend this list when tulpa_laplace() gains
 # new family support; the validator routes off the same set.
 .tulpa_em_allowed_families <- c(
-  "binomial", "poisson", "gaussian", "negbin", "neg_binomial_2",
+  "binomial", "poisson", "gaussian", "neg_binomial_2",
   "gamma", "beta"
 )
 
@@ -72,7 +72,10 @@
     stop(sprintf("%s: `family` must be a character scalar", prefix),
          call. = FALSE)
   }
-  if (!block$family %in% .tulpa_em_allowed_families) {
+  # Tested against the canonical name so a short spelling is accepted here on
+  # the same terms tulpa_laplace() accepts it downstream; the block keeps the
+  # caller's spelling, which the fitter resolves again.
+  if (!.canonical_family(block$family) %in% .tulpa_em_allowed_families) {
     stop(sprintf("%s: `family` must be one of %s, got '%s'",
                  prefix,
                  paste(shQuote(.tulpa_em_allowed_families), collapse = ", "),

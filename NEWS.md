@@ -6,6 +6,35 @@ Warm-starting the sampler from a cheaper fit of the same model.
 
 New:
 
+- `tglmm()` and `tgam()` are named front doors onto `tulpa()`: contract-narrowing
+  views, not new engines. Each carries `tulpa()`'s signature minus the arguments
+  its model class cannot use (`spatial`, `temporal`), requires the structure that
+  defines the class in the formula (`tglmm()` a random-effect term, `tgam()` an
+  `s(...)` smoother), and refuses the structures outside it with a pointer to
+  `tulpa()` rather than fitting them. Dispatch, tier selection, backends and every
+  `tulpa_fit` accessor are unchanged; the fit is byte-identical to the same call
+  through `tulpa()`.
+
+  The returned fit carries `"tulpa_glmm"` / `"tulpa_gam"` ahead of `"tulpa_fit"`,
+  so `print()` adds the section that model class is read for -- the random-effect
+  covariance (with `VarCorr()`'s estimated / sampled / conditioned label) or the
+  smoother table -- and `plot()` on a GAM draws the fitted smooths. A door's
+  `print()` composes the backend's own report rather than displacing it, so a
+  nested-Laplace GAM still shows its integrated hyperparameters, grid size and
+  outer Pareto-k.
+
+  Doors are registry-driven (`.TULPA_DOORS`): a new one is an entry plus a stub,
+  and `test-doors.R` asserts each signature stays exactly `tulpa()`'s minus its
+  withheld arguments, so a new statistical argument on `tulpa()` cannot leave a
+  door silently stale.
+
+- `tulpa_check_control(control, allowed, where)` is exported. It is the
+  control-list name check every front-door fitter already ran internally,
+  promoted so consumer packages validate their own `control = list()` surface
+  against the same rules instead of reimplementing them. tulpaRatio's
+  `tratio()` is the first caller.
+
+
 - `tulpa(warm_start = )` seeds the NUTS sampler from a Laplace or empirical-Bayes
   fit: `"eb"` or `"laplace"` fits one first, or pass an existing fit from either
   mode. Chains start at that mode instead of the origin. Chains after the first
@@ -36,7 +65,50 @@ New:
   estimate at all. `return_joint_hessian` and `tulpa_eb(marginal = TRUE)` now
   supply both, so composing it properly is the follow-up.
 
+- `tulpa(estimate_phi = TRUE)` estimates the family's dispersion instead of
+  conditioning on `phi`, which then supplies the starting value. `log(phi)`
+  joins the empirical-Bayes maximization as one further coordinate carrying the
+  exact derivative of the Laplace log-marginal, so it is the ML-II estimate: the
+  hyperprior covers the random-effect covariances and the dispersion enters
+  unpenalized. `fit$phi` is the estimate and `fit$phi_estimated` distinguishes
+  it from a conditioned value. Available under `mode = "eb"` and for the
+  families whose dispersion derivative is registered; any other mode errors
+  rather than fitting at the starting value under a name that says otherwise.
+
+  This is what makes a Gaussian GLMM comparable to `lme4::lmer(REML = FALSE)`.
+  With the residual variance held at its default the outer maximization absorbs
+  the mismatch into the random-effect scales: on a nested `(1 | g1/g2)` fit the
+  inner term came out at 0.10 against lmer's 0.31. With the dispersion free the
+  same fit reports 0.32, a residual SD of 0.5266 against lmer's 0.5260, and
+  fixed effects within 0.006 of an lmer standard error.
+
+- Reference tests against external maximum-likelihood implementations of the
+  same likelihoods: `lme4`, `glmmTMB`, `betareg`, `pscl` and `MASS::glm.nb`
+  (`glmmTMB` and `pscl` are new in `Suggests`). Every count family, the
+  zero-inflation and hurdle mixtures, beta regression, and the random-intercept
+  / nested / correlated-slope structures are checked against a second
+  implementation on identical data.
+
+  Conditioned on the reference's own dispersion and given a diffuse
+  fixed-effect prior, the Laplace mode is the MLE of the same likelihood, so the
+  tests assert agreement to a thousandth of a reference standard error rather
+  than to a fraction of one. The dispersion half of each likelihood is checked
+  separately by where the profile log-marginal peaks. A parameter-recovery test
+  against a simulated truth cannot separate a likelihood bug from sampling noise
+  at finite N; these can.
+
 Fixed:
+
+- `beta_prior` combined with a random-effect term errored on the Laplace path
+  ("long vectors not supported yet"). The fixed-effect precision is a Schur
+  complement built from the sparse random-effect design, so it carried a sparse
+  class into a `diag<-` that needed a dense matrix.
+
+- A Laplace fit made with no `beta_prior` reported standard errors that omitted
+  the prior its mode was found under. The compiled kernels apply a built-in
+  `N(0, 100^2)` ridge whether or not one is supplied, but the reported
+  curvature added a penalty only when the argument was present, so the default
+  fit's `vcov()` described a different posterior than its point estimate.
 
 - Fixed-effect standard errors on a nested-Laplace fit carrying an RW1 / RW2
   temporal field -- or any `s(...)` smoother, which is an RW2 over the binned

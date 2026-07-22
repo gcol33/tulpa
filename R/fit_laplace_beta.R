@@ -65,10 +65,8 @@ tulpa_laplace_beta <- function(y, X,
 
   mode <- match.arg(mode)
   stopifnot(is.numeric(y), is.matrix(X), nrow(X) == length(y))
-  if (any(!is.finite(y)) || min(y) <= 0 || max(y) >= 1) {
-    stop("`y` must be strictly in (0, 1) for tulpa_laplace_beta().",
-         call. = FALSE)
-  }
+  .assert_finite_model_inputs(NULL, y)
+  .validate_family_support("beta", y)
   if (mode == "nuts") {
     # The inference method is an argument, not a parallel verb: delegate to the
     # NUTS engine. The Laplace-only structure (RE / spatial / weights / offset /
