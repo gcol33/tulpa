@@ -25,6 +25,8 @@
 
 #include "latent_block.h"
 #include "sparse_hessian.h"
+#include "icar_kernel.h"                  // for_each_icar_component, GraphPartition
+#include "tulpa/sum_to_zero.h"            // s2z_node
 #include "tulpa/soft_sum_to_zero.h"       // s2z_precision
 #include <Rcpp.h>
 #include <vector>
@@ -158,14 +160,15 @@ mv_field_copy_arm_scale(int copy_arm, int axis_alpha,
 //                  Sigma is the within-ARM covariance among the fields).
 //   axis_alpha   : theta_grid column holding the per-cell copy coefficient alpha
 //                  (used only when copy_arm >= 0).
-//   n_components : number of disjoint, equal-size, contiguous connected
-//                  components in the (per-field) graph: 1 for an ordinary
-//                  connected graph (the default, byte-identical to the
-//                  single-component path); L for a replicated MCAR over the
-//                  block-diagonal I_L (x) Q (the `by =` replicated CAR). Q then
+//   partition    : connected-component partition of the (per-field) graph
+//                  (graph_components.h): the trivial single component for an
+//                  ordinary connected graph (byte-identical to the
+//                  single-component path); the true per-component node sets for
+//                  a replicated MCAR over the block-diagonal I_L (x) Q (the
+//                  `by =` replicated CAR) or a genuine disconnected map. Q then
 //                  has rank (n - L) per field, so its constant null space is
 //                  L-dimensional per field: each field is pinned by L
-//                  sum-to-zero penalties (one per component) and the
+//                  sum-to-zero penalties (one per component's nodes) and the
 //                  Sigma-normalizer uses (n - L) instead of (n - 1).
 inline LatentBlock make_mcar_block(
     int start, int n, int p, int axis0,
@@ -174,12 +177,10 @@ inline LatentBlock make_mcar_block(
     std::vector<std::vector<Rcpp::NumericVector>> field_weight,
     Rcpp::IntegerVector adj_rp, Rcpp::IntegerVector adj_ci,
     Rcpp::IntegerVector nnbr,
-    int copy_arm = -1, int axis_alpha = -1, int n_components = 1
+    int copy_arm, int axis_alpha, const GraphPartition& partition
 ) {
     const int m = p * (p + 1) / 2;
     (void) m;
-    const int L = (n_components > 1) ? n_components : 1;
-    const int csize = n / L;
 
     LatentBlock block;
     block.start = start;
@@ -208,7 +209,7 @@ inline LatentBlock make_mcar_block(
     // from theta_grid(k, .) here (cheap, p x p) so the closure holds no mutable
     // state and is safe across the parallel outer grid.
     block.add_prior_sparse = [start, n, p, axis0, theta_grid,
-                               adj_rp, adj_ci, nnbr, L, csize](
+                               adj_rp, adj_ci, nnbr, partition](
         SparseHessianBuilder& H, DenseVec& grad,
         const Rcpp::NumericVector& x, int k_grid
     ) {
@@ -254,18 +255,19 @@ inline LatentBlock make_mcar_block(
         }
         // Per-field, per-component sum-to-zero pins (constant null space of Q is
         // L-dimensional per field when the graph has L components): exact
-        // gradient + one rank-1 11' per (field, component), registered for the
-        // block-Schur fold.
+        // gradient + one rank-1 11' per (field, component's nodes), registered
+        // for the block-Schur fold.
         for (int a = 0; a < p; ++a) {
-            const int fstart = start + a * n;
-            for (int c = 0; c < L; ++c) {
-                const int cstart = fstart + c * csize;
-                double s = 0.0;
-                for (int i = 0; i < csize; ++i) s += x[cstart + i];
-                const double lambda = s2z_precision(csize);
-                for (int i = 0; i < csize; ++i) grad[cstart + i] -= lambda * s;
-                H.add_s2z_rank1(cstart, csize, lambda);
-            }
+            tulpa::for_each_icar_component(start + a * n, partition,
+                [&](int cstart, const int* idx, int csize) {
+                    double s = 0.0;
+                    for (int i = 0; i < csize; ++i)
+                        s += x[tulpa::s2z_node(cstart, idx, i)];
+                    const double lambda = s2z_precision(csize);
+                    for (int i = 0; i < csize; ++i)
+                        grad[tulpa::s2z_node(cstart, idx, i)] -= lambda * s;
+                    H.add_s2z_rank1(cstart, csize, idx, lambda);
+                });
         }
     };
 
@@ -296,7 +298,7 @@ inline LatentBlock make_mcar_block(
     // Sigma^-1 (x) Q has rank p(n-L) when Q has L components: logpdet(P) =
     // (n-L) log|Sigma^-1| + p logpdet(Q)).
     block.log_prior = [start, n, p, axis0, theta_grid,
-                       adj_rp, adj_ci, nnbr, L, csize](
+                       adj_rp, adj_ci, nnbr, partition](
         const Rcpp::NumericVector& x, int k_grid
     ) -> double {
         std::vector<double> Sinv; double log_det_Sigma;
@@ -317,13 +319,15 @@ inline LatentBlock make_mcar_block(
             }
         double pin = 0.0;
         for (int a = 0; a < p; ++a) {
-            const int fstart = start + a * n;
-            for (int c = 0; c < L; ++c) {
-                double s = 0.0;
-                for (int i = 0; i < csize; ++i) s += x[fstart + c * csize + i];
-                pin += s2z_precision(csize) * s * s;
-            }
+            tulpa::for_each_icar_component(start + a * n, partition,
+                [&](int cstart, const int* idx, int csize) {
+                    double s = 0.0;
+                    for (int i = 0; i < csize; ++i)
+                        s += x[tulpa::s2z_node(cstart, idx, i)];
+                    pin += s2z_precision(csize) * s * s;
+                });
         }
+        const int L = partition.n_components();
         const double log_det_Sinv = -log_det_Sigma;
         return -0.5 * quad - 0.5 * pin
                + 0.5 * (n - L) * log_det_Sinv
@@ -349,17 +353,18 @@ inline LatentBlock make_mcar_block(
     // uniformly-seen fields moved to the augmented precision: augmenting
     // without the matching centring would leave the level ~400x freer than the
     // pin does. Blocked on gcol33/tulpa#242.
-    block.center = [start, n, p, L, csize](Rcpp::NumericVector& x)
+    block.center = [start, n, p, partition](Rcpp::NumericVector& x)
         -> std::vector<CenterFold> {
         for (int a = 0; a < p; ++a) {
-            const int fstart = start + a * n;
-            for (int c = 0; c < L; ++c) {
-                const int cstart = fstart + c * csize;
-                double s = 0.0;
-                for (int i = 0; i < csize; ++i) s += x[cstart + i];
-                const double mean = s / csize;
-                for (int i = 0; i < csize; ++i) x[cstart + i] -= mean;
-            }
+            tulpa::for_each_icar_component(start + a * n, partition,
+                [&](int cstart, const int* idx, int csize) {
+                    double s = 0.0;
+                    for (int i = 0; i < csize; ++i)
+                        s += x[tulpa::s2z_node(cstart, idx, i)];
+                    const double mean = s / csize;
+                    for (int i = 0; i < csize; ++i)
+                        x[tulpa::s2z_node(cstart, idx, i)] -= mean;
+                });
         }
         return {};
     };

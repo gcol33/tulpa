@@ -25,113 +25,85 @@
   adj
 }
 
-# Block-diagonal I_L (x) Q as a plain matrix.
-.blockdiag_by <- function(adj, L) {
-  as.matrix(Matrix::bdiag(rep(list(Matrix::Matrix(adj, sparse = TRUE)), L)))
+# Block-diagonal from a list of per-component adjacency blocks; the blocks may
+# be UNEQUAL in size (a genuine disconnected map is not the equal-size I_L (x) Q
+# of a replicate). Components come from the graph, so no count is passed.
+.blockdiag_list <- function(adjs) {
+  as.matrix(Matrix::bdiag(lapply(adjs, function(a) Matrix::Matrix(a, sparse = TRUE))))
+}
+
+.icar_lp1 <- function(x, adj, tau) {
+  csr <- tulpa:::adjacency_to_csr_tulpa(adj)
+  tulpa:::cpp_test_log_prior_icar(x, nrow(adj), tau,
+    csr$row_ptr, csr$col_idx, csr$n_neighbors)
 }
 
 # --------------------------------------------------------------------------- #
 # (0) Kernel invariant: per-component rank deficiency (the regression guard)   #
 # --------------------------------------------------------------------------- #
 
-test_that("ICAR log-prior is additive across connected components", {
+test_that("ICAR log-prior is additive across connected components (equal and unequal)", {
   set.seed(11)
-  n_base <- 7L
-  adj_base <- .chain_adj_by(n_base)
-  csr_base <- tulpa:::adjacency_to_csr_tulpa(adj_base)
-
-  adj_rep <- .blockdiag_by(adj_base, 2L)
-  csr_rep <- tulpa:::adjacency_to_csr_tulpa(adj_rep)
-
-  x1 <- rnorm(n_base); x2 <- rnorm(n_base)
-  x_full <- c(x1, x2)
-
-  # tau != 2*pi so the normalizer term is non-trivial: the old (n-1) kernel
-  # would be off by exactly 0.5*log(tau / (2*pi)) here.
-  for (tau in c(0.5, 1.7, 3.3)) {
-    full <- tulpa:::cpp_test_log_prior_icar(
-      x_full, 2L * n_base, tau,
-      csr_rep$row_ptr, csr_rep$col_idx, csr_rep$n_neighbors, n_components = 2L)
-    parts <-
-      tulpa:::cpp_test_log_prior_icar(x1, n_base, tau,
-        csr_base$row_ptr, csr_base$col_idx, csr_base$n_neighbors, 1L) +
-      tulpa:::cpp_test_log_prior_icar(x2, n_base, tau,
-        csr_base$row_ptr, csr_base$col_idx, csr_base$n_neighbors, 1L)
-    expect_equal(full, parts, tolerance = 1e-9,
-                 info = paste("tau =", tau))
+  # UNEQUAL sizes are the discriminating case: the pre-fix kernel split the field
+  # into n_components EQUAL contiguous blocks, so a 5+3 graph pinned {1..4},{5..8}
+  # instead of {1..5},{6..8} and broke additivity. Equal sizes are covered too so
+  # the replicate path stays byte-identical.
+  for (sizes in list(c(7L, 7L), c(5L, 3L), c(6L, 4L, 3L))) {
+    adjs    <- lapply(sizes, .chain_adj_by)
+    adj_rep <- .blockdiag_list(adjs)
+    xs      <- lapply(sizes, rnorm)
+    x_full  <- unlist(xs)
+    for (tau in c(0.5, 1.7, 3.3)) {
+      full  <- .icar_lp1(x_full, adj_rep, tau)
+      parts <- sum(mapply(function(a, x) .icar_lp1(x, a, tau), adjs, xs))
+      expect_equal(full, parts, tolerance = 1e-9,
+                   info = paste("sizes", paste(sizes, collapse = "+"), "tau", tau))
+    }
   }
-
-  # And the component-aware value MUST differ from the single-component
-  # treatment of the same 2n graph (the bug). Under the augmented precision
-  # Q_aug = Q + sum_c 1_c 1_c'/J_c the two now differ in the AUGMENTATION, not
-  # in the rank: Q_aug is full rank however many components are declared, so the
-  # normalizer is 2n log tau either way, while the augmentation is
-  # tau (s1^2 + s2^2)/n against tau (s1 + s2)^2/(2n).
-  #
-  # Those coincide when s1 == s2, and the per-component-centred input this test
-  # used to feed made both zero -- which no longer separates the two treatments.
-  # Feed the uncentred field, whose component sums differ, so the declared
-  # component count stays observable.
-  tau <- 1.7
-  s1 <- sum(x1); s2 <- sum(x2)
-  expect_gt(abs(s1 - s2), 1e-6)          # else the check below is vacuous
-  comp_aware <- tulpa:::cpp_test_log_prior_icar(
-    x_full, 2L * n_base, tau,
-    csr_rep$row_ptr, csr_rep$col_idx, csr_rep$n_neighbors, n_components = 2L)
-  one_comp <- tulpa:::cpp_test_log_prior_icar(
-    x_full, 2L * n_base, tau,
-    csr_rep$row_ptr, csr_rep$col_idx, csr_rep$n_neighbors, n_components = 1L)
-  expect_equal(
-    comp_aware - one_comp,
-    -0.5 * tau * ((s1^2 + s2^2) / n_base - (s1 + s2)^2 / (2 * n_base)),
-    tolerance = 1e-9)
 })
 
-test_that("ICAR n_components = 1 is byte-identical to the historical path", {
+test_that("ICAR log-prior is invariant to node relabeling (non-contiguous components)", {
   set.seed(12)
-  n <- 9L
-  adj <- .chain_adj_by(n)
-  csr <- tulpa:::adjacency_to_csr_tulpa(adj)
-  x <- rnorm(n)
-  a <- tulpa:::cpp_test_log_prior_icar(x, n, 1.3,
-         csr$row_ptr, csr$col_idx, csr$n_neighbors)            # default 1
-  b <- tulpa:::cpp_test_log_prior_icar(x, n, 1.3,
-         csr$row_ptr, csr$col_idx, csr$n_neighbors, 1L)
-  expect_identical(a, b)
+  # A 5+3 disconnected graph, then a permutation that INTERLEAVES the two
+  # components so neither is contiguous in the node ordering. The log-prior is a
+  # relabeling invariant (edge sums + per-component constant pins), so the
+  # permuted value must match -- this is what exercises the arbitrary node-index
+  # path rather than the contiguous fast path.
+  adj_rep <- .blockdiag_list(list(.chain_adj_by(5L), .chain_adj_by(3L)))
+  n <- nrow(adj_rep); x <- rnorm(n)
+  perm <- c(1L, 6L, 2L, 7L, 3L, 8L, 4L, 5L)   # comp1 -> {1,3,5,7,8}, comp2 -> {2,4,6}
+  adj_perm <- adj_rep[perm, perm]
+  x_perm   <- x[perm]
+  for (tau in c(0.7, 2.1)) {
+    expect_equal(.icar_lp1(x, adj_rep, tau), .icar_lp1(x_perm, adj_perm, tau),
+                 tolerance = 1e-10, info = paste("tau", tau))
+  }
 })
 
-test_that("MCAR log-prior is additive across connected components", {
+test_that("MCAR log-prior is additive across connected components (unequal)", {
   set.seed(13)
-  n_base <- 6L
-  p <- 2L
-  adj_base <- .chain_adj_by(n_base)
-  csr_base <- tulpa:::adjacency_to_csr_tulpa(adj_base)
-  adj_rep <- .blockdiag_by(adj_base, 2L)
-  csr_rep <- tulpa:::adjacency_to_csr_tulpa(adj_rep)
-
-  # log-Cholesky coords of a 2x2 Sigma (log-diag + strict lower).
-  theta <- c(log(1.1), 0.4, log(0.8))
-
-  # Per-component latent: field-major within each single-component problem
-  # (field0 over n_base, field1 over n_base).
-  x_c1 <- rnorm(p * n_base)
-  x_c2 <- rnorm(p * n_base)
-  # Full (replicated) latent is field-major over 2*n_base cells:
-  #   field0 = [c1 field0, c2 field0]; field1 = [c1 field1, c2 field1].
-  f0 <- c(x_c1[1:n_base],               x_c2[1:n_base])
-  f1 <- c(x_c1[(n_base + 1):(2 * n_base)], x_c2[(n_base + 1):(2 * n_base)])
-  x_full <- c(f0, f1)
-
-  lp_full <- tulpa:::cpp_test_mcar_prior(
-    theta, p, 2L * n_base,
-    csr_rep$row_ptr, csr_rep$col_idx, csr_rep$n_neighbors,
-    x_full, n_components = 2L)$log_prior
-  lp_parts <-
-    tulpa:::cpp_test_mcar_prior(theta, p, n_base,
-      csr_base$row_ptr, csr_base$col_idx, csr_base$n_neighbors, x_c1, 1L)$log_prior +
-    tulpa:::cpp_test_mcar_prior(theta, p, n_base,
-      csr_base$row_ptr, csr_base$col_idx, csr_base$n_neighbors, x_c2, 1L)$log_prior
-  expect_equal(lp_full, lp_parts, tolerance = 1e-9)
+  p     <- 2L
+  theta <- c(log(1.1), 0.4, log(0.8))       # log-Cholesky of a 2x2 Sigma
+  mcar1 <- function(x, adj) {
+    csr <- tulpa:::adjacency_to_csr_tulpa(adj)
+    tulpa:::cpp_test_mcar_prior(theta, p, nrow(adj),
+      csr$row_ptr, csr$col_idx, csr$n_neighbors, x)$log_prior
+  }
+  sizes   <- c(5L, 3L)                        # unequal -> discriminates equal-split
+  adjs    <- lapply(sizes, .chain_adj_by)
+  adj_rep <- .blockdiag_list(adjs)
+  # Per-component latents are field-major within their own single-component
+  # problem (field a over s cells); the full latent is field-major over all
+  # cells (field a = concat of each component's field-a slice).
+  xs <- lapply(sizes, function(s) rnorm(p * s))
+  fields <- lapply(seq_len(p), function(a)
+    unlist(lapply(seq_along(sizes), function(ci) {
+      s <- sizes[ci]; xs[[ci]][((a - 1L) * s + 1L):(a * s)]
+    })))
+  x_full <- unlist(fields)
+  full   <- mcar1(x_full, adj_rep)
+  parts  <- sum(mapply(function(a, x) mcar1(x, a), adjs, xs))
+  expect_equal(full, parts, tolerance = 1e-9)
 })
 
 # --------------------------------------------------------------------------- #

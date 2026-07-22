@@ -436,14 +436,68 @@ NULL
 
 # --- Intrinsic areal (ICAR / CAR / BYM2) precision + marginal H_beta -------
 
-#' Intrinsic ICAR structure matrix, regularized to full rank.
+#' Connected components of an adjacency graph, as a list of node-index vectors.
 #'
-#' `L = D - W` (degree minus adjacency, tau_spatial = 1), plus the rank-1
-#' sum-to-zero penalty `SUM2ZERO_TAU * 11'` (both = 1 over the single connected
-#' component) the ICAR kernel folds into the joint Hessian. This is exactly the
-#' field precision in the joint Hessian of the conditional Laplace fit, where
-#' the field enters the linear predictor with `d_fac = 1`. Matches
-#' `tulpa::log_prior_icar` / `add_icar_prior`.
+#' Iterative depth-first search, so it carries no recursion-depth risk on a
+#' large map. Returns what `graph_partition` (`inst/include/tulpa/graph_components.h`)
+#' returns -- the actual component MEMBERSHIP, not just a count -- so a genuine
+#' disconnected map (a mainland plus islands) pins each component's constant
+#' over that component's real nodes rather than an equal-size contiguous split.
+#' Takes the dense adjacency rather than a sparse one because symmetric sparse
+#' storage (`dsCMatrix`) keeps a single triangle, which would put an edge's two
+#' endpoints in different components.
+#'
+#' @keywords internal
+.graph_components <- function(adjacency) {
+  A <- as.matrix(adjacency)
+  n <- nrow(A)
+  if (n == 0L) return(list())
+  nb   <- lapply(seq_len(n), function(i) which(A[i, ] != 0))
+  seen <- logical(n)
+  comps <- list()
+  for (s0 in seq_len(n)) {
+    if (seen[s0]) next
+    seen[s0] <- TRUE
+    stack <- s0
+    members <- integer(0)
+    while (length(stack) > 0L) {
+      s <- stack[[length(stack)]]
+      stack <- stack[-length(stack)]
+      members <- c(members, s)
+      new <- nb[[s]][!seen[nb[[s]]]]
+      if (length(new) > 0L) {
+        seen[new] <- TRUE
+        stack <- c(stack, new)
+      }
+    }
+    comps[[length(comps) + 1L]] <- sort.int(members)
+  }
+  comps
+}
+
+#' Number of connected components of an adjacency graph.
+#'
+#' The count of `.graph_components`, single-sourcing the DFS.
+#'
+#' @keywords internal
+.graph_n_components <- function(adjacency) length(.graph_components(adjacency))
+
+#' Intrinsic ICAR field precision, augmented to full rank.
+#'
+#' `L = D - W` (degree minus adjacency) plus the sum-to-zero augmentation
+#' `sum_c 1_c 1_c' / J_c` that identifies each component's constant null
+#' direction (`inst/include/tulpa/sum_to_zero.h`). The components are the actual
+#' connected components of the graph (`.graph_components`), each pinned over its
+#' own node set of size `J_c` -- matching `for_each_icar_component`
+#' (`src/icar_kernel.h`), so an unequal / non-contiguous disconnected map
+#' reconstructs the same precision the kernel penalizes with.
+#'
+#' The conditional Laplace kernel passes `tau_spatial = 1` on both the ICAR/CAR
+#' path (`R/fit_laplace.R`) and the BYM2 structured block (which carries sigma
+#' and rho in its `d_fac` instead), and the field enters the linear predictor
+#' with `d_fac = 1`, so this is exactly the field block of that fit's joint
+#' Hessian. `test-marginal-se-areal.R` pins it against the kernel's own
+#' `log_prior_icar`.
 #'
 #' @keywords internal
 .icar_precision_Q <- function(spatial) {
@@ -451,8 +505,21 @@ NULL
             "CsparseMatrix")
   n   <- nrow(W)
   deg <- Matrix::rowSums(W)
-  L   <- Matrix::Diagonal(n, deg) - W
-  Matrix::forceSymmetric(L + Matrix::Matrix(1, n, n))
+  Q   <- Matrix::Diagonal(n, deg) - W
+
+  # Augmentation sum_c 1_{C_c} 1_{C_c}' / |C_c| over the TRUE components.
+  ii <- jj <- integer(0); xx <- numeric(0)
+  for (cc in .graph_components(spatial$adjacency)) {
+    jc <- length(cc)
+    if (jc == 0L) next
+    ii <- c(ii, rep(cc, times = jc))
+    jj <- c(jj, rep(cc, each  = jc))
+    xx <- c(xx, rep(1 / jc, jc * jc))
+  }
+  if (length(ii)) {
+    Q <- Q + Matrix::sparseMatrix(i = ii, j = jj, x = xx, dims = c(n, n))
+  }
+  Matrix::forceSymmetric(Q)
 }
 
 
@@ -490,7 +557,8 @@ NULL
 #' `[phi (structured), theta (unstructured)]` convolution; each enters the
 #' linear predictor through the field indicator scaled by its `d_fac`
 #' (`sigma * sqrt(rho) * scale_factor` for phi, `sigma * sqrt(1 - rho)` for
-#' theta), with `phi ~ ICAR(L + 11')` and `theta ~ N(0, I)`. The conditional
+#' theta), with `phi` carrying the augmented ICAR precision `.icar_precision_Q`
+#' and `theta ~ N(0, I)`. The conditional
 #' Laplace kernel hardcodes `sigma = 1`, `rho = 0.5`.
 #'
 #' @keywords internal
@@ -523,7 +591,7 @@ NULL
   tau_re   <- 1 / (sigma_re^2 + 1e-10)
   Q_latent <- Matrix::bdiag(
     Matrix::Diagonal(n_re_groups, x = tau_re),
-    .icar_precision_Q(spatial),            # phi: structured L + 11'
+    .icar_precision_Q(spatial),            # phi: augmented ICAR structure
     Matrix::Diagonal(n_units, x = 1.0)     # theta: iid
   )
 

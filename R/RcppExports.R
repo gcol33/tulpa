@@ -661,16 +661,16 @@ cpp_test_spde_nc_transform_fwd <- function(C0_diag, G1_x, G1_i, G1_p, z_init, lo
     .Call(`_tulpa_cpp_test_spde_nc_transform_fwd`, C0_diag, G1_x, G1_i, G1_p, z_init, log_kappa_val, log_tau_val, fd_eps, poles_nullable, weights_nullable)
 }
 
-cpp_test_s2z_block_schur <- function(A, pin_start, pin_n, pin_coef, grad, pin_coupling = NULL) {
-    .Call(`_tulpa_cpp_test_s2z_block_schur`, A, pin_start, pin_n, pin_coef, grad, pin_coupling)
+cpp_test_s2z_block_schur <- function(A, pin_start, pin_n, pin_coef, grad, pin_coupling = NULL, pin_idx = NULL) {
+    .Call(`_tulpa_cpp_test_s2z_block_schur`, A, pin_start, pin_n, pin_coef, grad, pin_coupling, pin_idx)
 }
 
-cpp_test_log_prior_icar <- function(x, n, tau, adj_rp, adj_ci, nnbr, n_components = 1L) {
-    .Call(`_tulpa_cpp_test_log_prior_icar`, x, n, tau, adj_rp, adj_ci, nnbr, n_components)
+cpp_test_log_prior_icar <- function(x, n, tau, adj_rp, adj_ci, nnbr) {
+    .Call(`_tulpa_cpp_test_log_prior_icar`, x, n, tau, adj_rp, adj_ci, nnbr)
 }
 
-cpp_test_mcar_prior <- function(theta_logchol, p, n, adj_rp, adj_ci, nnbr, x, n_components = 1L) {
-    .Call(`_tulpa_cpp_test_mcar_prior`, theta_logchol, p, n, adj_rp, adj_ci, nnbr, x, n_components)
+cpp_test_mcar_prior <- function(theta_logchol, p, n, adj_rp, adj_ci, nnbr, x) {
+    .Call(`_tulpa_cpp_test_mcar_prior`, theta_logchol, p, n, adj_rp, adj_ci, nnbr, x)
 }
 
 cpp_test_outer_thread_mem_budget <- function(avail_bytes, total_bytes) {

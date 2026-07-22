@@ -181,9 +181,11 @@ inline void build_sampler_model_inputs(
             in.data.adj_row_ptr.assign(rp.begin(), rp.end());
             in.data.adj_col_idx.assign(ci.begin(), ci.end());
             in.data.n_neighbors.assign(nn.begin(), nn.end());
-            in.data.n_spatial_components = tulpa::count_graph_components(
+            in.data.spatial_partition = tulpa::graph_partition(
                 in.data.n_spatial_units, in.data.adj_row_ptr.data(),
                 in.data.adj_col_idx.data());
+            in.data.n_spatial_components =
+                in.data.spatial_partition.n_components();
             if (stype == "icar") {
                 in.data.spatial_type = SpatialType::ICAR;
             } else {
@@ -259,9 +261,11 @@ inline void build_sampler_model_inputs(
             in.data.adj_row_ptr.assign(rp.begin(), rp.end());
             in.data.adj_col_idx.assign(ci.begin(), ci.end());
             in.data.n_neighbors.assign(nn.begin(), nn.end());
-            in.data.n_spatial_components = tulpa::count_graph_components(
+            in.data.spatial_partition = tulpa::graph_partition(
                 in.data.n_spatial_units, in.data.adj_row_ptr.data(),
                 in.data.adj_col_idx.data());
+            in.data.n_spatial_components =
+                in.data.spatial_partition.n_components();
             in.data.spatial_type = SpatialType::CAR_PROPER;
             Rcpp::NumericVector eig = Rcpp::as<Rcpp::NumericVector>(sp["adj_eigenvalues"]);
             in.data.car_adj_eigenvalues.assign(eig.begin(), eig.end());

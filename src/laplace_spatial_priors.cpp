@@ -4,7 +4,8 @@
 #include "laplace_spatial_priors.h"
 #include "sparse_hessian.h"
 #include "icar_kernel.h"                  // for_each_icar_component
-#include "tulpa/sum_to_zero.h"            // s2z_aug_coef / s2z_aug_rank
+#include "laplace_s2z.h"                  // add_s2z_pin* / s2z_pin_quad
+#include "tulpa/sum_to_zero.h"            // s2z_aug_rank
 #include <cmath>
 
 using namespace Rcpp;
@@ -93,33 +94,17 @@ inline double car_quadratic_form(
     return quad_form;
 }
 
-// Penalty-method sum-to-zero constraint for the intrinsic (rank-deficient)
-// ICAR field. Q(rho=1) has a constant null-space, so (intercept, field-mean)
+// Sum-to-zero identification of the intrinsic (rank-deficient) ICAR field.
+// Q(rho=1) has a constant null-space per component, so (intercept, field-mean)
 // is a flat direction of the joint posterior: an informative prior on the
-// intercept is evaded by letting the level live in the unpenalised field
-// constant, and a post-hoc centering then folds that constant back into the
-// intercept -- so the intercept prior never regularises the level. Pinning the
-// field constant to ~0 *during* the solve (this penalty) forces the level into
-// the intercept, where the prior acts. Besag-standard ICAR treatment; mirrors
-// the (sum field)^2 penalty the N-mixture spatial path uses. CAR_proper is full
-// rank (Q(rho) identifies the intercept) and is left untouched.
+// intercept is evaded by letting the level live in the unaugmented field
+// constant. Pinning that constant to ~0 *during* the solve forces the level
+// into the intercept, where the prior acts. CAR_proper is full rank (Q(rho)
+// identifies the intercept) and is left untouched.
 //
-// The penalty is 0.5 * s2z_precision(csize) * (sum_s phi_s)^2 per component.
-// Its Hessian is the rank-1 precision * 11', which lives entirely in the
-// constant eigenspace and is orthogonal to every spatial deviation, so it pins
-// the mean without shrinking the field pattern. The dense path adds it exactly.
-// The sparse path adds the exact gradient plus the diagonal of 11' (the only
-// part that fits the fixed adjacency pattern) for a stable quasi-Newton step;
-// the off-diagonals are dropped, but the line search on the exact penalty
-// converges to the same constrained mode. The precision comes from the shared
-// reference idiom (tulpa/soft_sum_to_zero.h) so this engine and the sampler
-// pin the same direction to the same width.
-
-inline double field_sum(const NumericVector& x, int start, int n) {
-    double s = 0.0;
-    for (int j = 0; j < n; j++) s += x[start + j];
-    return s;
-}
+// The pin itself -- augmented coefficient, dense/sparse scatter, densify-vs-fold
+// storage and the pattern it needs -- is laplace_s2z.h, shared with the temporal
+// kernels so both intrinsic families pin the same direction to the same width.
 
 } // anonymous namespace
 
@@ -127,7 +112,7 @@ void add_icar_prior(
     DenseVec& grad, DenseMat& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, int n_components
+    const IntegerVector& n_neighbors, const GraphPartition& partition
 ) {
     // ICAR = CAR(rho = 1). The quadratic form is over the whole (block-diagonal
     // for a replicated field) graph; the CSR already carries the per-component
@@ -137,16 +122,10 @@ void add_icar_prior(
                       adj_row_ptr, adj_col_idx, n_neighbors);
     // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c: the component's constant
     // direction carries the field's own tau (exact rank-1 tau/J_c * 11' on the
-    // dense Hessian, within the component's diagonal block).
-    for_each_icar_component(spatial_start, n_spatial_units, n_components,
-        [&](int cstart, int csize) {
-            const double lambda = s2z_aug_coef(tau_spatial, csize);
-            double s = field_sum(x, cstart, csize);
-            for (int i = 0; i < csize; i++) {
-                grad[cstart + i] -= lambda * s;
-                for (int j = 0; j < csize; j++)
-                    H[cstart + i][cstart + j] += lambda;
-            }
+    // dense Hessian, over the component's nodes).
+    for_each_icar_component(spatial_start, partition,
+        [&](int start, const int* idx, int csize) {
+            add_s2z_pin(grad, H, x, start, idx, csize, tau_spatial);
         });
 }
 
@@ -154,32 +133,21 @@ void add_icar_prior_sparse(
     DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
     int spatial_start, int n_spatial_units, double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, int n_components
+    const IntegerVector& n_neighbors, const GraphPartition& partition
 ) {
     add_car_grad_hess_sparse(grad, H, x, spatial_start, n_spatial_units,
                               tau_spatial, /*rho=*/1.0,
                               adj_row_ptr, adj_col_idx, n_neighbors);
     // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c:
     // -0.5 tau sum_c (sum_{i in c} phi_i)^2 / J_c, Hessian (tau/J_c) 11' per
-    // component block. The exact gradient is always added. The rank-1 11'
-    // Hessian is handled by per-component field size (see icar_s2z_densify): a
-    // densified component block (laid out by add_icar_pattern) stores the full
+    // component block. Storage is switched per component by size (s2z_densify):
+    // a densified component block (laid out by add_icar_pattern) stores the full
     // 11' exactly; a large component leaves the off-diagonals off the stored
     // Hessian and registers a per-component rank-1 11' for the solver to fold in
     // at solve time (Sherman-Morrison step + matrix-determinant-lemma log-det).
-    for_each_icar_component(spatial_start, n_spatial_units, n_components,
-        [&](int cstart, int csize) {
-            const double lambda = s2z_aug_coef(tau_spatial, csize);
-            const double s = field_sum(x, cstart, csize);
-            for (int i = 0; i < csize; i++)
-                grad[cstart + i] -= lambda * s;
-            if (icar_s2z_densify(csize)) {
-                for (int i = 0; i < csize; i++)
-                    for (int j = 0; j <= i; j++)
-                        H.add(cstart + i, cstart + j, lambda);
-            } else {
-                H.add_s2z_rank1(cstart, csize, lambda);
-            }
+    for_each_icar_component(spatial_start, partition,
+        [&](int start, const int* idx, int csize) {
+            add_s2z_pin_sparse(grad, H, x, start, idx, csize, tau_spatial);
         });
 }
 
@@ -187,33 +155,26 @@ void add_icar_pattern(
     std::vector<std::pair<int,int>>& out,
     int spatial_start, int n_spatial_units,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    int n_components
+    const GraphPartition& partition
 ) {
-    const int L = (n_components > 1) ? n_components : 1;
-    if (icar_s2z_densify(n_spatial_units / L)) {
-        // Dense lower-triangle block per component so each component's
-        // sum-to-zero 11' fits exactly.
-        for_each_icar_component(spatial_start, n_spatial_units, n_components,
-            [&](int cstart, int csize) {
-                for (int i = 0; i < csize; i++)
-                    for (int j = 0; j <= i; j++)
-                        out.emplace_back(cstart + i, cstart + j);
-            });
-    } else {
-        // The adjacency edges over the whole (block-diagonal) graph already
-        // contain only within-component edges, so the plain adjacency pattern
-        // covers every component; the per-component rank-1 11' is folded at
-        // solve time (off the stored pattern).
-        add_car_pattern(out, spatial_start, n_spatial_units,
-                        adj_row_ptr, adj_col_idx);
-    }
+    // The adjacency edges over the whole (block-diagonal) graph contain only
+    // within-component edges, so the plain adjacency pattern covers every
+    // component. Where a component densifies, its sum-to-zero block subsumes
+    // those edges and the builder's entry map collapses the overlap; where it
+    // does not, the rank-1 11' is folded at solve time and adds no entries.
+    add_car_pattern(out, spatial_start, n_spatial_units,
+                    adj_row_ptr, adj_col_idx);
+    for_each_icar_component(spatial_start, partition,
+        [&](int start, const int* idx, int csize) {
+            add_s2z_pin_pattern(out, start, idx, csize);
+        });
 }
 
 double log_prior_icar_structured(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, int n_components
+    const IntegerVector& n_neighbors, const GraphPartition& partition
 ) {
     double quad_form = car_quadratic_form(
         x, spatial_start, n_spatial_units, /*rho=*/1.0,
@@ -221,10 +182,9 @@ double log_prior_icar_structured(
     // Augmentation to the quadratic form (matches the gradient in
     // add_icar_prior[_sparse]): tau sum_c (sum_{i in c} phi_i)^2 / J_c.
     double s2z = 0.0;
-    for_each_icar_component(spatial_start, n_spatial_units, n_components,
-        [&](int cstart, int csize) {
-            double s = field_sum(x, cstart, csize);
-            s2z += s2z_aug_coef(tau_spatial, csize) * s * s;
+    for_each_icar_component(spatial_start, partition,
+        [&](int start, const int* idx, int csize) {
+            s2z += s2z_pin_quad(x, start, idx, csize, tau_spatial);
         });
     // -0.5 tau phi'Q_aug phi, Q_aug = Q + sum_c 1_c 1_c'/J_c.
     return -0.5 * tau_spatial * quad_form - 0.5 * s2z;
@@ -234,7 +194,7 @@ double log_prior_icar(
     const NumericVector& x, int spatial_start, int n_spatial_units,
     double tau_spatial,
     const IntegerVector& adj_row_ptr, const IntegerVector& adj_col_idx,
-    const IntegerVector& n_neighbors, int n_components
+    const IntegerVector& n_neighbors, const GraphPartition& partition
 ) {
     // Q is rank (n - n_components), and ICAR's null space is exactly those
     // n_components constants, every one of which the augmentation Q_aug = Q +
@@ -242,10 +202,10 @@ double log_prior_icar(
     // contribute to log|tau Q_aug|. Keeping the deficient rank here while the
     // quadratic carries the augmentation would make the tau-marginal wrong and
     // bias the variance component low.
-    const int L = n_components > 1 ? n_components : 1;
+    const int L = partition.n_components();
     return log_prior_icar_structured(x, spatial_start, n_spatial_units,
                                      tau_spatial, adj_row_ptr, adj_col_idx,
-                                     n_neighbors, n_components)
+                                     n_neighbors, partition)
          + 0.5 * s2z_aug_rank(n_spatial_units - L, L)
                * std::log(tau_spatial / (2.0 * M_PI));
 }

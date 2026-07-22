@@ -71,27 +71,50 @@ inline int s2z_aug_rank(int rank_Q, int n_pins) {
     return r > 0 ? r : 0;
 }
 
-// Sum of one component, [start, start + size).
+// Absolute index of the k-th member of a component whose base offset is `start`
+// and whose field-local member list is `idx` (nullptr means the contiguous run
+// start..start+size-1). One accessor so the contiguous and the general
+// (disconnected / non-contiguous) node layouts share every primitive below.
+inline int s2z_node(int start, const int* idx, int k) {
+    return start + (idx ? idx[k] : k);
+}
+
+// Sum of one component. `idx` is the field-local node list (nullptr for the
+// contiguous run [start, start + size)).
+template <typename T>
+inline T s2z_component_sum(const T* phi, int start, const int* idx, int size) {
+    T s = T(0.0);
+    for (int i = 0; i < size; ++i) s = s + phi[s2z_node(start, idx, i)];
+    return s;
+}
 template <typename T>
 inline T s2z_component_sum(const T* phi, int start, int size) {
-    T s = T(0.0);
-    for (int i = 0; i < size; ++i) s = s + phi[start + i];
-    return s;
+    return s2z_component_sum(phi, start, static_cast<const int*>(nullptr), size);
 }
 
 // Mean of one component. The quantity subtracted on the way into eta.
 template <typename T>
-inline T s2z_component_mean(const T* phi, int start, int size) {
+inline T s2z_component_mean(const T* phi, int start, const int* idx, int size) {
     if (size <= 0) return T(0.0);
-    return s2z_component_sum(phi, start, size) / T(static_cast<double>(size));
+    return s2z_component_sum(phi, start, idx, size)
+         / T(static_cast<double>(size));
+}
+template <typename T>
+inline T s2z_component_mean(const T* phi, int start, int size) {
+    return s2z_component_mean(phi, start, static_cast<const int*>(nullptr), size);
 }
 
 // Augmented quadratic contribution of one component: tau * (sum)^2 / size.
 // Enters the log-prior as -0.5 * this.
 template <typename T>
-inline T s2z_aug_quad(const T* phi, int start, int size, const T& tau) {
-    const T s = s2z_component_sum(phi, start, size);
+inline T s2z_aug_quad(const T* phi, int start, const int* idx, int size,
+                      const T& tau) {
+    const T s = s2z_component_sum(phi, start, idx, size);
     return s2z_aug_coef(tau, size) * s * s;
+}
+template <typename T>
+inline T s2z_aug_quad(const T* phi, int start, int size, const T& tau) {
+    return s2z_aug_quad(phi, start, static_cast<const int*>(nullptr), size, tau);
 }
 
 // Centre one component in place, returning the removed mean so the caller can

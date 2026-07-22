@@ -132,6 +132,64 @@ void add_ar1_pattern(
     int start_idx, int n_times
 );
 
+// A whole temporal field: n_groups contiguous walks of n_times at
+// [start + g*n_times, ...), sharing one tau, never connected across a group
+// boundary.
+//
+// RW1 and RW2 are intrinsic, so the field carries a constant null direction
+// that is jointly unidentified with the intercept. These entry points add the
+// per-group precision AND the sum-to-zero pin that identifies it (laplace_s2z.h),
+// which the per-group `add_rw*_precision` helpers below deliberately do not: the
+// pin is over the field's GLOBAL constant, not per walk. The G - 1 between-group
+// level contrasts stay improper by design -- the front door does not fit them --
+// so this pins exactly the one direction the sampler path augments
+// (tulpa_priors_temporal.h), and the two paths identify the same model.
+//
+// The pin is stored as S2ZStorage::Fold, so an RW chain's pattern stays
+// tridiagonal (RW1) / pentadiagonal (RW2) and the block keeps the ADJACENCY
+// fill kind it declares; the solver folds the rank-1 in exactly.
+//
+// AR1 is proper (full rank), needs no pin, and keeps the per-group helpers.
+void add_rw1_field(
+    DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+);
+
+void add_rw1_field_sparse(
+    DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+);
+
+void add_rw1_field_pattern(
+    std::vector<std::pair<int,int>>& out,
+    int start, int n_groups, int n_times, bool cyclic
+);
+
+double log_prior_rw1_field(
+    const Rcpp::NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+);
+
+void add_rw2_field(
+    DenseVec& grad, DenseMat& H, const Rcpp::NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+);
+
+void add_rw2_field_sparse(
+    DenseVec& grad, SparseHessianBuilder& H, const Rcpp::NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+);
+
+void add_rw2_field_pattern(
+    std::vector<std::pair<int,int>>& out,
+    int start, int n_groups, int n_times, bool cyclic
+);
+
+double log_prior_rw2_field(
+    const Rcpp::NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+);
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_TEMPORAL_PRIORS_H

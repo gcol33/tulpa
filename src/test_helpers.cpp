@@ -1359,17 +1359,42 @@ List cpp_test_spde_nc_transform_fwd(
 // `A` is read as a full symmetric matrix; its lower-triangle nonzeros seed the
 // SparseHessianBuilder pattern. Field membership is the union of the pin ranges.
 //
+// When `pin_idx` is supplied it is a length-K list of 0-based ABSOLUTE node
+// vectors, one per pin (pin_start / pin_n are then ignored). This drives the
+// arbitrary node-index rank-1 path -- a genuine disconnected map's
+// non-contiguous component -- through the SAME Woodbury / block-Schur code as a
+// contiguous pin, so the dense Eigen reference over the same node sets is the
+// oracle for it.
+//
 // [[Rcpp::export]]
 List cpp_test_s2z_block_schur(
     NumericMatrix A,
-    IntegerVector pin_start,   // 0-based start of each rank-1 pin
-    IntegerVector pin_n,       // length of each pin
+    IntegerVector pin_start,   // 0-based start of each rank-1 pin (contiguous path)
+    IntegerVector pin_n,       // length of each pin (contiguous path)
     NumericVector pin_coef,    // coef of each pin
     NumericVector grad,
-    Rcpp::Nullable<NumericMatrix> pin_coupling = R_NilValue  // dense K x K D
+    Rcpp::Nullable<NumericMatrix> pin_coupling = R_NilValue,  // dense K x K D
+    Rcpp::Nullable<Rcpp::List> pin_idx = R_NilValue           // per-pin node list
 ) {
   const int n = A.nrow();
-  const int K = pin_start.size();
+  const int K = pin_coef.size();
+  const bool use_idx = pin_idx.isNotNull();
+
+  // Stable storage for the per-pin absolute node lists (S2ZRank1 holds a
+  // pointer into these; they outlive the solve below).
+  std::vector<std::vector<int>> node_store(K);
+  if (use_idx) {
+    Rcpp::List li(pin_idx);
+    for (int k = 0; k < K; ++k) {
+      Rcpp::IntegerVector v = li[k];
+      node_store[k].assign(v.begin(), v.end());
+    }
+  } else {
+    for (int k = 0; k < K; ++k) {
+      node_store[k].resize(pin_n[k]);
+      for (int i = 0; i < pin_n[k]; ++i) node_store[k][i] = pin_start[k] + i;
+    }
+  }
 
   // Pattern + scatter from the lower-triangle nonzeros of A.
   std::vector<std::pair<int,int>> pattern;
@@ -1383,8 +1408,13 @@ List cpp_test_s2z_block_schur(
   for (int c = 0; c < n; ++c)
     for (int r = c; r < n; ++r)
       if (A(r, c) != 0.0) H.add(r, c, A(r, c));
-  for (int k = 0; k < K; ++k)
-    H.add_s2z_rank1(pin_start[k], pin_n[k], pin_coef[k]);
+  for (int k = 0; k < K; ++k) {
+    if (use_idx)
+      H.add_s2z_rank1(0, (int) node_store[k].size(), node_store[k].data(),
+                      pin_coef[k]);
+    else
+      H.add_s2z_rank1(pin_start[k], pin_n[k], pin_coef[k]);
+  }
 
   // Dense coupling D over the K pins (row-major), or diag(coef) when absent.
   std::vector<double> Dfull;
@@ -1414,15 +1444,16 @@ List cpp_test_s2z_block_schur(
   Eigen::MatrixXd B(n, n);
   for (int i = 0; i < n; ++i)
     for (int j = 0; j < n; ++j) B(i, j) = A(i, j);
-  // (U D U')_{pq} = D[a,b] for p in block a, q in block b.
+  // (U D U')_{pq} = D[a,b] for p in block a, q in block b, over the same node
+  // sets the pins carry (contiguous or arbitrary).
   for (int a = 0; a < K; ++a)
     for (int b = 0; b < K; ++b) {
       const double d = Dfull.empty()
           ? (a == b ? pin_coef[a] : 0.0)
           : Dfull[(std::size_t) a * K + b];
       if (d == 0.0) continue;
-      for (int i = pin_start[a]; i < pin_start[a] + pin_n[a]; ++i)
-        for (int j = pin_start[b]; j < pin_start[b] + pin_n[b]; ++j)
+      for (int i : node_store[a])
+        for (int j : node_store[b])
           B(i, j) += d;
     }
   Eigen::LLT<Eigen::MatrixXd> llt(B);
@@ -1465,26 +1496,30 @@ List cpp_test_s2z_block_schur(
 //     normalizer 0.5 (n-1) log|Sigma^-1|.
 // `theta_logchol` is the p(p+1)/2 log-Cholesky vector; the adjacency is CSR.
 //
-// Direct driver of the intrinsic-ICAR log-prior (laplace_spatial_priors.cpp),
-// exposing the `n_components` parameter so a test can assert the per-component
-// rank-deficiency invariant: for a block-diagonal I_L (x) Q graph the log-prior
+// Direct driver of the intrinsic-ICAR log-prior (laplace_spatial_priors.cpp).
+// The connected-component partition is derived from the passed adjacency (the
+// single source), so a test can assert the per-component rank-deficiency
+// invariant on ANY graph: for a block-diagonal I_L (x) Q graph the log-prior
 // equals the sum of the L independent single-component log-priors (the (n - L)
-// normalizer and the per-component sum-to-zero penalty). Spatial start is 0.
+// normalizer and the per-component sum-to-zero penalty), and for a genuine
+// disconnected map the pins land on the real (unequal, possibly
+// non-contiguous) component node sets. Spatial start is 0.
 // [[Rcpp::export]]
 double cpp_test_log_prior_icar(
     NumericVector x, int n, double tau,
-    IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr,
-    int n_components = 1
+    IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr
 ) {
+  const tulpa::GraphPartition sp =
+      tulpa::graph_partition(n, adj_rp.begin(), adj_ci.begin());
   return tulpa::log_prior_icar(x, /*spatial_start=*/0, n, tau,
-                                adj_rp, adj_ci, nnbr, n_components);
+                                adj_rp, adj_ci, nnbr, sp);
 }
 
 // [[Rcpp::export]]
 List cpp_test_mcar_prior(
     NumericVector theta_logchol, int p, int n,
     IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr,
-    NumericVector x, int n_components = 1
+    NumericVector x
 ) {
   const int m = p * (p + 1) / 2;
   NumericMatrix tg(1, m);
@@ -1492,9 +1527,11 @@ List cpp_test_mcar_prior(
 
   std::vector<Rcpp::IntegerVector> cell_idx;                 // unused by the prior
   std::vector<std::vector<Rcpp::NumericVector>> field_weight;
+  const tulpa::GraphPartition sp =
+      tulpa::graph_partition(n, adj_rp.begin(), adj_ci.begin());
   tulpa::LatentBlock blk = tulpa::make_mcar_block(
       /*start=*/0, n, p, /*axis0=*/0, tg, cell_idx, field_weight,
-      adj_rp, adj_ci, nnbr, /*copy_arm=*/-1, /*axis_alpha=*/-1, n_components);
+      adj_rp, adj_ci, nnbr, /*copy_arm=*/-1, /*axis_alpha=*/-1, sp);
 
   const int n_x = p * n;
   std::vector<std::pair<int,int>> pat;

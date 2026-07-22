@@ -137,3 +137,50 @@ test_that("block-Schur is exact at the large-field / large-coef sum-to-zero regi
     expect_lt(r$max_dstep, 1e-7)
   }
 })
+
+# --- Non-contiguous pins: a disconnected map's component node sets -----------
+# A genuine disconnected map's connected components need not be contiguous in
+# the node ordering (islands sorted among the mainland). The rank-1 fold then
+# carries an arbitrary node list rather than a [start, start+n) range; it must
+# fold through the SAME Woodbury / block-Schur code, exact against the dense
+# Eigen reference over the same node sets.
+
+test_that("block-Schur is exact for non-contiguous (interleaved) pins", {
+  for (seed in 41:44) {
+    n <- 130L; nf <- 80L
+    A <- .s2z_make_A(n, nf, seed)
+    g <- stats::rnorm(n, sd = 0.7)
+    fld  <- 0:(nf - 1L)
+    idx1 <- fld[fld %% 2L == 0L]         # even field indices (non-contiguous)
+    idx2 <- fld[fld %% 2L == 1L]         # odd  field indices (non-contiguous)
+    r <- tulpa:::cpp_test_s2z_block_schur(
+      A = A, pin_start = c(0L, 0L), pin_n = c(0L, 0L),
+      pin_coef = c(0.5, 2.0), grad = g,
+      pin_idx = list(as.integer(idx1), as.integer(idx2)))
+    expect_true(r$ok)
+    expect_lt(.rel(r$ld_block_schur, r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_direct,      r$ld_dense),  1e-8)
+    expect_lt(.rel(r$ld_block_schur, r$ld_direct), 1e-9)
+    expect_lt(.rel(r$ld_block_schur_step, r$ld_dense), 1e-8)
+    expect_lt(r$max_dstep, 1e-8)
+  }
+})
+
+test_that("a non-contiguous pin is not the contiguous pin of the same count", {
+  # Guards the test above against the idx path silently collapsing to a
+  # contiguous [0, n) fold: the same coef and count over interleaved vs
+  # contiguous nodes must give a different B (hence a different log|B|).
+  n <- 130L; nf <- 80L
+  A <- .s2z_make_A(n, nf, 41L)
+  g <- stats::rnorm(n, sd = 0.7)
+  fld  <- 0:(nf - 1L)
+  idx1 <- fld[fld %% 2L == 0L]; idx2 <- fld[fld %% 2L == 1L]
+  nc <- tulpa:::cpp_test_s2z_block_schur(
+    A = A, pin_start = c(0L, 0L), pin_n = c(0L, 0L), pin_coef = c(0.5, 2.0),
+    grad = g, pin_idx = list(as.integer(idx1), as.integer(idx2)))
+  cg <- tulpa:::cpp_test_s2z_block_schur(
+    A = A, pin_start = c(0L, 40L), pin_n = c(40L, 40L), pin_coef = c(0.5, 2.0),
+    grad = g)
+  expect_gt(abs(nc$ld_dense - cg$ld_dense), 1e-6)
+  expect_gt(abs(nc$ld_block_schur - cg$ld_block_schur), 1e-6)
+})

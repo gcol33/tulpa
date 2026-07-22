@@ -6,7 +6,8 @@
 \verb{[phi (structured), theta (unstructured)]} convolution; each enters the
 linear predictor through the field indicator scaled by its \code{d_fac}
 (\code{sigma * sqrt(rho) * scale_factor} for phi, \code{sigma * sqrt(1 - rho)} for
-theta), with \verb{phi ~ ICAR(L + 11')} and \code{theta ~ N(0, I)}. The conditional
+theta), with \code{phi} carrying the augmented ICAR precision \code{.icar_precision_Q}
+and \code{theta ~ N(0, I)}. The conditional
 Laplace kernel hardcodes \code{sigma = 1}, \code{rho = 0.5}.}
 \usage{
 .marginal_H_beta_bym2(
@@ -30,7 +31,8 @@ Marginal H_beta for a BYM2 field. The latent is the two-block
 \verb{[phi (structured), theta (unstructured)]} convolution; each enters the
 linear predictor through the field indicator scaled by its \code{d_fac}
 (\code{sigma * sqrt(rho) * scale_factor} for phi, \code{sigma * sqrt(1 - rho)} for
-theta), with \verb{phi ~ ICAR(L + 11')} and \code{theta ~ N(0, I)}. The conditional
+theta), with \code{phi} carrying the augmented ICAR precision \code{.icar_precision_Q}
+and \code{theta ~ N(0, I)}. The conditional
 Laplace kernel hardcodes \code{sigma = 1}, \code{rho = 0.5}.
 }
 \keyword{internal}

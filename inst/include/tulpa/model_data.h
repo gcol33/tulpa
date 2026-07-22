@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include "tulpa/types.h"
+#include "tulpa/graph_components.h"
 #include "tulpa/gp_data.h"
 #include "tulpa/hsgp_data.h"
 #include "tulpa/temporal_data.h"
@@ -100,8 +101,14 @@ namespace tulpa {
 // 35 -> 36: added ar1_rho_prior_a / ar1_rho_prior_b -- the Beta(a, b) prior on
 // u = (rho + 1)/2 for the AR1 autocorrelation, wiring temporal_ar1(rho_prior=).
 // Default (1, 1) reproduces the previous Uniform(-1, 1) prior.
+// 36 -> 37: added spatial_partition (GraphPartition, <tulpa/graph_components.h>)
+// so the sampler ICAR / BYM2 sum-to-zero augmentation pins each connected
+// component's constant over that component's actual nodes rather than an
+// equal-size contiguous split -- correct for a genuine disconnected map (a
+// mainland plus islands, whose nodes need not be contiguous). ModelData grew
+// one trailing container field in the spatial section.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 36;
+constexpr int TULPA_ABI_VERSION = 37;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -239,6 +246,11 @@ struct ModelData {
     // it so a disconnected graph does not bias tau. Computed at data-load;
     // defaults to 1 (single component) when unset.
     int n_spatial_components = 1;
+    // The component partition itself (graph_components.h): the sampler ICAR /
+    // BYM2 augmentation pins each component's constant over that component's
+    // actual nodes, not an equal-size contiguous split. Trivial (empty) for a
+    // connected graph. n_spatial_components == spatial_partition.n_components().
+    GraphPartition spatial_partition;
 
     // Proper CAR rho bounds (eigenvalue-derived, default to (0, 1))
     // Only used when spatial_type == CAR_PROPER.

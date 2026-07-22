@@ -70,8 +70,8 @@ Rcpp::List cpp_laplace_fit_spatial(
         /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
 
     // One constant null direction per connected component; the sampler and the
-    // Polya-Gamma kernels derive the same count from the same adjacency.
-    const int n_comp = tulpa::count_graph_components(
+    // Polya-Gamma kernels derive the same partition from the same adjacency.
+    const tulpa::GraphPartition sp_part = tulpa::graph_partition(
         n_spatial_units, adj_row_ptr.begin(), adj_col_idx.begin());
 
     tulpa::LatentBlock block;
@@ -83,12 +83,12 @@ Rcpp::List cpp_laplace_fit_spatial(
                           const Rcpp::NumericVector& x, int /*k*/) {
         tulpa::add_icar_prior(grad, H, x, block_start, n_spatial_units,
                                tau_spatial, adj_row_ptr, adj_col_idx,
-                               n_neighbors, n_comp);
+                               n_neighbors, sp_part);
     };
     block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
         return tulpa::log_prior_icar(x, block_start, n_spatial_units, tau_spatial,
                                        adj_row_ptr, adj_col_idx, n_neighbors,
-                                       n_comp);
+                                       sp_part);
     };
     block.center = [&](Rcpp::NumericVector& x) {
         return tulpa::center_intercept(x, block_start, n_spatial_units);
@@ -142,7 +142,7 @@ Rcpp::List cpp_laplace_fit_bym2(
     const int theta_start = phi_start + n_spatial_units;
 
     // One constant null direction per connected component, as for plain ICAR.
-    const int n_comp = tulpa::count_graph_components(
+    const tulpa::GraphPartition sp_part = tulpa::graph_partition(
         n_spatial_units, adj_row_ptr.begin(), adj_col_idx.begin());
 
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
@@ -164,7 +164,7 @@ Rcpp::List cpp_laplace_fit_bym2(
     phi_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                               const Rcpp::NumericVector& x, int /*k*/) {
         tulpa::add_icar_prior(grad, H, x, phi_start, n_spatial_units, 1.0,
-                               adj_row_ptr, adj_col_idx, n_neighbors, n_comp);
+                               adj_row_ptr, adj_col_idx, n_neighbors, sp_part);
     };
     phi_block.log_prior = [&](const Rcpp::NumericVector& x, int /*k*/) {
         // Structured ICAR component (tau = 1); shares the quadratic form and the
@@ -173,7 +173,7 @@ Rcpp::List cpp_laplace_fit_bym2(
         return tulpa::log_prior_icar_structured(x, phi_start, n_spatial_units,
                                                 /*tau=*/1.0, adj_row_ptr,
                                                 adj_col_idx, n_neighbors,
-                                                n_comp);
+                                                sp_part);
     };
     phi_block.center = [&](Rcpp::NumericVector& x) {
         return tulpa::center_intercept(x, phi_start, n_spatial_units);

@@ -15,61 +15,27 @@
 #define TULPA_ICAR_KERNEL_H
 
 #include <vector>
+#include "tulpa/graph_components.h"   // GraphPartition, count_graph_components
 
 namespace tulpa {
 
-// Number of connected components of the adjacency graph (CSR, 0-based
-// adj_col_idx). The ICAR precision D - W has rank S - k for k components (one
-// constant null direction per component), so the log|tau Q| normalizer uses
-// (S - k)/2, not (S - 1)/2; a disconnected graph (e.g. spatial(by=)
-// replication) otherwise biases tau upward. Matches the Laplace path's
-// n_components. Iterative DFS (an explicit stack, no recursion depth risk).
-// col_base is 0 for a 0-based adj_col_idx (the sampler ModelData adjacency) and
-// 1 for a 1-based one (the spatiotemporal adjacency).
-inline int count_graph_components(
-    int S, const int* adj_row_ptr, const int* adj_col_idx, int col_base = 0
-) {
-    if (S <= 0) return 0;
-    std::vector<int> seen(S, 0);
-    std::vector<int> stack;
-    int k = 0;
-    for (int s0 = 0; s0 < S; s0++) {
-        if (seen[s0]) continue;
-        seen[s0] = 1;
-        stack.clear();
-        stack.push_back(s0);
-        while (!stack.empty()) {
-            int s = stack.back();
-            stack.pop_back();
-            const int row_end = adj_row_ptr[s + 1];
-            for (int e = adj_row_ptr[s]; e < row_end; e++) {
-                int t = adj_col_idx[e] - col_base;
-                if (t >= 0 && t < S && !seen[t]) {
-                    seen[t] = 1;
-                    stack.push_back(t);
-                }
-            }
-        }
-        k++;
-    }
-    return k;
-}
-
-// Visit each of an intrinsic field's `n_components` disjoint, equal-size,
-// contiguous connected components, calling comp(comp_start_absolute,
-// comp_size). A connected graph has one component spanning [start, start + n)
-// (n_components <= 1, byte-identical to a single whole-field pass); a
-// replicated field over the block-diagonal I_L (x) Q has L equal-size
-// components (the `by =` replicated CAR). The single source of the
-// per-component loop so every engine's gradient, Hessian, pattern and
-// log-prior treat the null space identically -- the ICAR rank normalizer is
-// J - n_components, so the sum-to-zero penalty must pin exactly that many
-// directions.
+// Visit each connected component of an intrinsic field's graph, calling
+// comp(start, idx, size). `idx` is the field-local node list of the component
+// (length `size`), or nullptr for the trivial single-component case, in which
+// case the component is the contiguous run [start, start + size). The absolute
+// index of the k-th member is start + (idx ? idx[k] : k). A connected graph is
+// the single-component fast path (no node buffer, byte-identical to the old
+// whole-field pass); a spatial(by=) replicate over the block-diagonal
+// I_L (x) Q and a genuine disconnected map are the same partition, computed
+// once (graph_components.h) rather than reconstructed from an equal-split
+// contiguity assumption. The single source of the per-component loop so every
+// engine's gradient, Hessian, pattern and log-prior treat the null space
+// identically -- the ICAR rank normalizer is J - n_components, so the
+// sum-to-zero penalty must pin exactly that many directions.
 template <typename F>
-inline void for_each_icar_component(int start, int n, int n_components, F&& comp) {
-    const int L = (n_components > 1) ? n_components : 1;
-    const int csize = n / L;
-    for (int c = 0; c < L; c++) comp(start + c * csize, csize);
+inline void for_each_icar_component(int start, const GraphPartition& P, F&& comp) {
+    const int L = P.n_components();
+    for (int c = 0; c < L; c++) comp(start, P.nodes(c), P.size(c));
 }
 
 // (Q(rho) phi)[i] = n_neighbors[i] * phi[i] - rho * sum_{j ~ i} phi[j].

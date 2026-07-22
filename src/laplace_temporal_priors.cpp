@@ -3,10 +3,34 @@
 
 #include "laplace_temporal_priors.h"
 #include "sparse_hessian.h"
+#include "laplace_s2z.h"        // add_s2z_pin* / s2z_pin_quad
+#include <cmath>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 using namespace Rcpp;
 
 namespace tulpa {
+
+namespace {
+
+// The G walks of one field, at [start + g*n_times, ...).
+template <typename PerGroup>
+inline void for_each_temporal_group(int start, int n_groups, int n_times,
+                                    PerGroup&& f) {
+    for (int g = 0; g < n_groups; g++) f(start + g * n_times);
+}
+
+// Normalizer the pin contributes. It fills exactly one direction -- the field's
+// global constant -- so rank(Q_aug) = sum_g rank(Q_g) + 1, and the per-group
+// log_prior_rw* calls supply the sum_g rank(Q_g) part.
+inline double s2z_pin_log_norm(double tau) {
+    return 0.5 * std::log(tau / (2.0 * M_PI));
+}
+
+} // anonymous namespace
 
 void add_rw1_precision(
     DenseVec& grad, DenseMat& H, const NumericVector& x,
@@ -208,6 +232,100 @@ void add_ar1_pattern(
     for (int t = 1; t < n_times; t++) {
         out.emplace_back(start_idx + t, start_idx + t - 1);
     }
+}
+
+// ============================================================
+// Field-level entry points: per-group precision + the one global
+// sum-to-zero pin. See the header for why the pin is global.
+// ============================================================
+
+void add_rw1_field(
+    DenseVec& grad, DenseMat& H, const NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+) {
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        add_rw1_precision(grad, H, x, s, n_times, tau, cyclic);
+    });
+    add_s2z_pin(grad, H, x, start, n_groups * n_times, tau);
+}
+
+void add_rw1_field_sparse(
+    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+) {
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        add_rw1_precision_sparse(grad, H, x, s, n_times, tau, cyclic);
+    });
+    add_s2z_pin_sparse(grad, H, x, start, n_groups * n_times, tau,
+                       S2ZStorage::Fold);
+}
+
+void add_rw1_field_pattern(
+    std::vector<std::pair<int,int>>& out,
+    int start, int n_groups, int n_times, bool cyclic
+) {
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        add_rw1_pattern(out, s, n_times, cyclic);
+    });
+    add_s2z_pin_pattern(out, start, n_groups * n_times, S2ZStorage::Fold);
+}
+
+double log_prior_rw1_field(
+    const NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+) {
+    double lp = 0.0;
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        lp += log_prior_rw1(x, s, n_times, tau, cyclic);
+    });
+    return lp + s2z_pin_log_norm(tau)
+         - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau);
+}
+
+void add_rw2_field(
+    DenseVec& grad, DenseMat& H, const NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+) {
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        add_rw2_precision(grad, H, x, s, n_times, tau, cyclic);
+    });
+    add_s2z_pin(grad, H, x, start, n_groups * n_times, tau);
+}
+
+void add_rw2_field_sparse(
+    DenseVec& grad, SparseHessianBuilder& H, const NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+) {
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        add_rw2_precision_sparse(grad, H, x, s, n_times, tau, cyclic);
+    });
+    add_s2z_pin_sparse(grad, H, x, start, n_groups * n_times, tau,
+                       S2ZStorage::Fold);
+}
+
+void add_rw2_field_pattern(
+    std::vector<std::pair<int,int>>& out,
+    int start, int n_groups, int n_times, bool cyclic
+) {
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        add_rw2_pattern(out, s, n_times, cyclic);
+    });
+    add_s2z_pin_pattern(out, start, n_groups * n_times, S2ZStorage::Fold);
+}
+
+// A non-cyclic RW2 keeps its per-group LINEAR null direction, which the pin
+// does not touch: rank(Q_aug) = sum_g rank(Q_g) + 1 either way, and
+// log_prior_rw2 already carries the per-group rank that reflects it.
+double log_prior_rw2_field(
+    const NumericVector& x,
+    int start, int n_groups, int n_times, double tau, bool cyclic
+) {
+    double lp = 0.0;
+    for_each_temporal_group(start, n_groups, n_times, [&](int s) {
+        lp += log_prior_rw2(x, s, n_times, tau, cyclic);
+    });
+    return lp + s2z_pin_log_norm(tau)
+         - 0.5 * s2z_pin_quad(x, start, n_groups * n_times, tau);
 }
 
 } // namespace tulpa

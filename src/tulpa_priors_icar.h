@@ -29,12 +29,12 @@ using namespace math;
 // the field's own precision, and `icar_center_field` removes it on the way into
 // eta. Shared by the BYM2 and ICAR branches so the two cannot drift apart.
 template<typename T>
-T icar_sum_to_zero_augment(const T* phi, int n_spatial_units, int n_components)
+T icar_sum_to_zero_augment(const T* phi, const GraphPartition& partition)
 {
     T aug = T(0.0);
-    tulpa::for_each_icar_component(0, n_spatial_units, n_components,
-        [&](int cstart, int csize) {
-            const T s = tulpa::s2z_component_sum(phi, cstart, csize);
+    tulpa::for_each_icar_component(0, partition,
+        [&](int start, const int* idx, int csize) {
+            const T s = tulpa::s2z_component_sum(phi, start, idx, csize);
             aug = aug + tulpa::s2z_aug_coef(T(1.0), csize) * s * s;
         });
     return aug;
@@ -114,7 +114,7 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             // enters at coefficient 1 and there is no log-tau normalizer to
             // move -- 0.5 * J * log(1) and 0.5 * (J - L) * log(1) are both 0.
             log_post = log_post - T(0.5) * (quad_form + icar_sum_to_zero_augment(
-                phi_spatial_out, data.n_spatial_units, data.n_spatial_components));
+                phi_spatial_out, data.spatial_partition));
 
             // N(0, I) prior on theta
             for (int s = 0; s < data.n_spatial_units; s++) {
@@ -197,10 +197,11 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             // +0.5 L log tau the full rank adds, so this agrees with the
             // hard-constrained density on the sum-to-zero subspace.
             int J = data.n_spatial_units;
-            int L = data.n_spatial_components > 1 ? data.n_spatial_components : 1;
+            int L = data.spatial_partition.n_components();
+            if (L < 1) L = 1;
             T log_tau_sp = params[layout.log_tau_spatial_idx];
             T quad_aug = quad_form + icar_sum_to_zero_augment(
-                phi_spatial_out, J, data.n_spatial_components);
+                phi_spatial_out, data.spatial_partition);
             log_post = log_post
                      + T(0.5 * tulpa::s2z_aug_rank(J - L, L)) * log_tau_sp
                      - T(0.5) * tau_spatial_out * quad_aug;

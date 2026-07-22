@@ -2,16 +2,25 @@
 % Please edit documentation in R/marginal_se_spatial.R
 \name{.icar_precision_Q}
 \alias{.icar_precision_Q}
-\title{Intrinsic ICAR structure matrix, regularized to full rank.}
+\title{Intrinsic ICAR field precision, augmented to full rank.}
 \usage{
 .icar_precision_Q(spatial)
 }
 \description{
-\code{L = D - W} (degree minus adjacency, tau_spatial = 1), plus the rank-1
-sum-to-zero penalty \verb{SUM2ZERO_TAU * 11'} (both = 1 over the single connected
-component) the ICAR kernel folds into the joint Hessian. This is exactly the
-field precision in the joint Hessian of the conditional Laplace fit, where
-the field enters the linear predictor with \code{d_fac = 1}. Matches
-\code{tulpa::log_prior_icar} / \code{add_icar_prior}.
+\code{L = D - W} (degree minus adjacency) plus the sum-to-zero augmentation
+\verb{sum_c 1_c 1_c' / J_c} that identifies each component's constant null
+direction (\code{inst/include/tulpa/sum_to_zero.h}). The components are the actual
+connected components of the graph (\code{.graph_components}), each pinned over its
+own node set of size \code{J_c} -- matching \code{for_each_icar_component}
+(\code{src/icar_kernel.h}), so an unequal / non-contiguous disconnected map
+reconstructs the same precision the kernel penalizes with.
+}
+\details{
+The conditional Laplace kernel passes \code{tau_spatial = 1} on both the ICAR/CAR
+path (\code{R/fit_laplace.R}) and the BYM2 structured block (which carries sigma
+and rho in its \code{d_fac} instead), and the field enters the linear predictor
+with \code{d_fac = 1}, so this is exactly the field block of that fit's joint
+Hessian. \code{test-marginal-se-areal.R} pins it against the kernel's own
+\code{log_prior_icar}.
 }
 \keyword{internal}
