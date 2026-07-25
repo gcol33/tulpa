@@ -428,16 +428,15 @@
     cov_type        = gp_cov_type_for_laplace(spatial),
     phi_prior_U     = as.numeric(U),
     phi_prior_alpha = 0.05,
-    # Centered is the default here, unlike .gp_sampler_spec()'s
-    # gp_parameterization. The funnel that motivated the GP flip was measured
-    # on a weakly identified field; on a well-identified response the centered
-    # SVC path is already funnel-free (0/700 divergent, sd ratio 0.66 on the
-    # test-svc-nuts-frontdoor.R recovery fit) and non-centered costs roughly an
-    # order of magnitude more for the same answer. Opt in with
-    # spatial_svc(parameterization = "noncentered") when the field is weakly
-    # identified (gcol33/tulpa#243).
+    # Non-centered by default, matching .gp_sampler_spec()'s
+    # gp_parameterization: each term's field is reconstructed as
+    # w_j = f(z_j, sigma2_j, phi_j), which removes the funnel that attenuates a
+    # weakly identified field's amplitude (sd ratio 0.98 against 0.33 centered,
+    # on the one-trial binomial fixture, at a tenth of the cost). Only usable
+    # once gcol33/tulpa#245 stopped the soft sum-to-zero pin from fighting the
+    # reparameterization (gcol33/tulpa#243).
     svc_parameterization =
-      if (identical(spatial$parameterization, "noncentered")) 1L else 0L
+      if (identical(spatial$parameterization, "centered")) 0L else 1L
   )
 }
 

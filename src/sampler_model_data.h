@@ -524,15 +524,15 @@ inline void build_sampler_model_inputs(
         in.data.svc_phi_prior_alpha = Rcpp::as<double>(sv["phi_prior_alpha"]);
         if (sv.containsElementNamed("sigma2_prior_scale"))
             in.data.svc_sigma2_prior_scale = Rcpp::as<double>(sv["sigma2_prior_scale"]);
-        // svc_parameterization defaults to 0 (centered), matching the
-        // spatial_svc() front door. Non-centered removes the
-        // field/hyperparameter funnel but costs roughly an order of magnitude,
-        // and on a well-identified response the centered path is already
-        // funnel-free -- so a caller that does not ask for it explicitly gets
-        // the cheap path rather than a silent trade (gcol33/tulpa#243).
+        // svc_parameterization defaults to 1 (non-centered), matching the
+        // spatial_svc() front door: each term's field is reconstructed as
+        // w_j = f(z_j, sigma2_j, phi_j) and the stored draws are transformed
+        // back on the way out. This removes the funnel that attenuates a weakly
+        // identified field's amplitude, which is the regime consumer packages
+        // (occupancy, ...) fit in (gcol33/tulpa#243, #245).
         in.data.svc_parameterization =
             sv.containsElementNamed("svc_parameterization")
-                ? Rcpp::as<int>(sv["svc_parameterization"]) : 0;
+                ? Rcpp::as<int>(sv["svc_parameterization"]) : 1;
     }
 
     // --- Temporally-varying coefficients (RW1 / RW2 / AR1). compute_param_layout

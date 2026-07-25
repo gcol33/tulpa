@@ -26,15 +26,13 @@
 #'   (`approx = "hsgp"`).
 #' @param parameterization Latent parameterization for the exact-NUTS field
 #'   (`approx = "nngp"` only; HSGP is already non-centered by construction).
-#'   `"centered"` (default) places the NNGP density on each term's field
-#'   directly. `"noncentered"` samples `z_j ~ N(0, I)` per term and
-#'   reconstructs each field as `w_j = f(z_j, sigma2_j, phi_j)`, which trades
-#'   cost for geometry: it removes the field/hyperparameter funnel that bites
-#'   when the field is weakly identified (a latent-state occupancy response,
-#'   say), but on a well-identified response the centered path is already
-#'   funnel-free and is the cheaper of the two by roughly an order of
-#'   magnitude. Prefer `"noncentered"` when the field is weakly identified or
-#'   the centered fit reports divergences.
+#'   `"noncentered"` (default) samples `z_j ~ N(0, I)` per term and
+#'   reconstructs each field as `w_j = f(z_j, sigma2_j, phi_j)`, removing the
+#'   field/hyperparameter funnel that otherwise attenuates the field's
+#'   amplitude when it is weakly identified. `"centered"` places the NNGP
+#'   density on each term's field directly; it is marginally cheaper on a
+#'   well-identified response, but on a weakly identified one it recovers only
+#'   about a third of the field's spread.
 #'
 #' @return A `tulpa_svc` object (also of class `tulpa_spatial`).
 #'
@@ -55,7 +53,7 @@ spatial_svc <- function(coords,
                         approx = c("nngp", "hsgp"),
                         m = 6,
                         c_boundary = 1.5,
-                        parameterization = c("centered", "noncentered")) {
+                        parameterization = c("noncentered", "centered")) {
 
   cov <- match.arg(cov)
   approx <- match.arg(approx)
