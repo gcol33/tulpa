@@ -82,6 +82,76 @@ Rcpp::NumericVector cpp_test_gp_nngp_twins(Rcpp::NumericVector w, double sigma2,
                                      Rcpp::_["ad"]  = ll_ad);
 }
 
+// Non-centered NNGP transform: hand-derived backward vs central differences
+// (gcol33/tulpa#243). The transform is w = f(z, sigma2, phi); with a scalar
+// loss L(z, log_sigma2, log_phi) = sum(a_i w_i) the analytic reverse pass
+// nngp_nc_backward (called with dL/dw = a) returns dL/dz, dL/d(log_sigma2) and
+// dL/d(log_phi) -- the exact quantities the arena custom_backward injects on
+// the sampling path. grad_z here is the likelihood/transform gradient only
+// (the -z prior is the caller's, so it is absent). We compare each against a
+// central difference of the forward. The z->w log-Jacobian derivative
+// (grad_log_phi_jac) is not part of this loss and is not checked.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_nngp_nc_grad(Rcpp::NumericVector z,
+                                 double log_sigma2, double log_phi,
+                                 Rcpp::NumericVector a,
+                                 Rcpp::NumericMatrix coords,
+                                 Rcpp::IntegerMatrix nn_idx,
+                                 Rcpp::NumericMatrix nn_dist,
+                                 Rcpp::NumericVector nn_neighbor_dist,
+                                 Rcpp::IntegerVector nn_order,
+                                 Rcpp::IntegerVector nn_order_inv,
+                                 int cov_type, double fd_eps = 1e-6) {
+  tulpa::GPData gp = make_gp(coords, nn_idx, nn_dist, nn_neighbor_dist,
+                             nn_order, nn_order_inv, cov_type);
+  const int N = gp.n_obs;
+  std::vector<double> z_vec(z.begin(), z.end());
+  std::vector<double> a_vec(a.begin(), a.end());
+
+  auto forward_loss = [&](const std::vector<double>& zz,
+                          double lsig2, double lphi) -> double {
+    tulpa_gp::NNGPNCWorkspace ws;
+    tulpa_gp::nngp_nc_forward(zz.data(), std::exp(lsig2), std::exp(lphi), gp, ws);
+    double L = 0.0;
+    for (int i = 0; i < N; i++) L += a_vec[i] * ws.w[i];
+    return L;
+  };
+
+  // Analytic reverse pass at (z, log_sigma2, log_phi).
+  tulpa_gp::NNGPNCWorkspace ws;
+  tulpa_gp::nngp_nc_forward(z_vec.data(), std::exp(log_sigma2), std::exp(log_phi),
+                            gp, ws);
+  std::vector<double> grad_z(N, 0.0);
+  double g_log_sigma2 = 0.0, g_log_phi = 0.0, g_log_phi_jac = 0.0;
+  tulpa_gp::nngp_nc_backward(z_vec.data(), std::exp(log_sigma2), std::exp(log_phi),
+                             gp, ws, a_vec.data(), grad_z.data(),
+                             g_log_sigma2, g_log_phi, g_log_phi_jac);
+
+  // Central differences.
+  std::vector<double> grad_z_fd(N, 0.0);
+  std::vector<double> z_pt = z_vec;
+  for (int i = 0; i < N; i++) {
+    z_pt[i] += fd_eps; double fp = forward_loss(z_pt, log_sigma2, log_phi);
+    z_pt[i] -= 2 * fd_eps; double fm = forward_loss(z_pt, log_sigma2, log_phi);
+    z_pt[i] += fd_eps;
+    grad_z_fd[i] = (fp - fm) / (2.0 * fd_eps);
+  }
+  double sp = forward_loss(z_vec, log_sigma2 + fd_eps, log_phi);
+  double sm = forward_loss(z_vec, log_sigma2 - fd_eps, log_phi);
+  double g_log_sigma2_fd = (sp - sm) / (2.0 * fd_eps);
+  double pp = forward_loss(z_vec, log_sigma2, log_phi + fd_eps);
+  double pm = forward_loss(z_vec, log_sigma2, log_phi - fd_eps);
+  double g_log_phi_fd = (pp - pm) / (2.0 * fd_eps);
+
+  return Rcpp::List::create(
+    Rcpp::_["grad_z"]            = Rcpp::NumericVector(grad_z.begin(), grad_z.end()),
+    Rcpp::_["grad_z_fd"]         = Rcpp::NumericVector(grad_z_fd.begin(), grad_z_fd.end()),
+    Rcpp::_["grad_log_sigma2"]   = g_log_sigma2,
+    Rcpp::_["grad_log_sigma2_fd"] = g_log_sigma2_fd,
+    Rcpp::_["grad_log_phi"]      = g_log_phi,
+    Rcpp::_["grad_log_phi_fd"]   = g_log_phi_fd);
+}
+
 // SVC NNGP log-likelihood from both twins at the same inputs.
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_test_svc_nngp_twins(Rcpp::NumericVector w, double sigma2,

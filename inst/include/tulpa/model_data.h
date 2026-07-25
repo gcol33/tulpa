@@ -279,11 +279,15 @@ struct ModelData {
     // field's prior_range contract.
     double gp_phi_prior_U = -1.0;
     double gp_phi_prior_alpha = -1.0;
-    // 0 = centered (the spatial GP prior evaluates params directly as the field
-    // w; the stored draws must match). 1 = non-centered would forward-transform
-    // the stored draws as if params were z, but compute_gp_spatial_prior has no
-    // z -> w branch, so 1 corrupts every stored GP field draw. Default centered
-    // until a differentiable NC evaluator branch is restored.
+    // 0 = centered: the GP prior places the NNGP density on params directly as
+    // the field w. 1 = non-centered: params are z ~ N(0, I), the field is
+    // reconstructed w = f(z, sigma2, phi) by compute_gp_spatial_prior +
+    // apply_gp_nc_transform_* on the sampling path, and the stored draws are
+    // forward-transformed z -> w in hmc_nuts_chain_iter_store.h so they carry w.
+    // Non-centered avoids the field/hyperparameter funnel that collapses the
+    // amplitude under a diagonal mass matrix; the sampler builder defaults to 1.
+    // The struct default stays 0 so non-sampling constructors (nested Laplace,
+    // tests) are unaffected -- the flag only gates the NUTS field path.
     int gp_parameterization = 0;        // 0=centered, 1=non-centered
 
     // Collapsed parameterization flags

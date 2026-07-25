@@ -200,8 +200,11 @@ inline void build_sampler_model_inputs(
             // log_sigma2_gp / log_phi_gp / the n_obs field. GPData conventions
             // match the hmc_gp kernels: coords row-major; nn_idx / nn_dist
             // row-major [n_loc x nn]; nn_neighbor_dist row-major [i, j1, j2] (the
-            // R layer aperms the [n_loc,nn,nn] array); nn_order 0-based; centred
-            // (gp_parameterization = 0) so the stored field draws stay valid.
+            // R layer aperms the [n_loc,nn,nn] array); nn_order 0-based.
+            // gp_parameterization defaults to 1 (non-centered): the field is
+            // reconstructed as w = f(z, sigma2, phi) in the log-post and the
+            // stored draws are transformed z -> w on the way out, which avoids
+            // the field/hyperparameter funnel of the centered parameterization.
             in.data.spatial_type = SpatialType::GP;
             auto& g = in.data.gp_data;
             Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
@@ -235,7 +238,9 @@ inline void build_sampler_model_inputs(
             g.cov_type = static_cast<CovType>(Rcpp::as<int>(sp["cov_type"]));
             g.nu = Rcpp::as<double>(sp["nu"]);
             in.data.has_gp = true;
-            in.data.gp_parameterization = 0;
+            in.data.gp_parameterization =
+                sp.containsElementNamed("gp_parameterization")
+                    ? Rcpp::as<int>(sp["gp_parameterization"]) : 1;
             in.data.gp_phi_prior_U     = Rcpp::as<double>(sp["phi_prior_U"]);
             in.data.gp_phi_prior_alpha = Rcpp::as<double>(sp["phi_prior_alpha"]);
             if (sp.containsElementNamed("sigma2_prior_U"))

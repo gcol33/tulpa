@@ -99,10 +99,19 @@ New:
 
 Fixed:
 
-- `beta_prior` combined with a random-effect term errored on the Laplace path
-  ("long vectors not supported yet"). The fixed-effect precision is a Schur
-  complement built from the sparse random-effect design, so it carried a sparse
-  class into a `diag<-` that needed a dense matrix.
+- Continuous GP / NNGP spatial fields (`spatial_gp()`) fitted with exact NUTS
+  under-recovered the field: the centered parameterization sampled the field
+  jointly with its `(sigma2, phi)` hyperparameters -- Neal's funnel -- and a
+  diagonal mass matrix stalled in the neck, so the posterior-mean amplitude
+  collapsed toward zero and `sigma2` was under-estimated regardless of warmup
+  (gcol33/tulpa#243). The sampling path now uses the non-centered
+  parameterization by default (sample `z ~ N(0, I)`, reconstruct
+  `w = f(z, sigma2, phi)`), wiring the field's likelihood gradient back to
+  `(z, log_sigma2, log_phi)` through the hand-derived NNGP forward/backward in
+  an arena `custom_backward`; the stored draws are transformed `z -> w` on the
+  way out. `spatial_gp(parameterization = "centered")` restores the old path.
+  The SVC and multiscale NNGP fields share the same centered architecture and
+  still funnel; their HSGP variants are already spectrally non-centered.
 
 - A Laplace fit made with no `beta_prior` reported standard errors that omitted
   the prior its mode was found under. The compiled kernels apply a built-in

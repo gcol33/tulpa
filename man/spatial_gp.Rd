@@ -17,7 +17,7 @@ spatial_gp(
   cg_maxiter = 100,
   shared = NULL,
   scale_coords = TRUE,
-  parameterization = c("centered", "noncentered", "collapsed")
+  parameterization = c("noncentered", "centered", "collapsed")
 )
 }
 \arguments{
@@ -55,8 +55,11 @@ process-specific effects and emits a warning.}
 \item{scale_coords}{Logical. Standardize coordinates before fitting
 (default \code{TRUE}).}
 
-\item{parameterization}{Latent parameterization. One of \code{"centered"},
-\code{"noncentered"}, or \code{"collapsed"} (the last is deprecated).}
+\item{parameterization}{Latent parameterization for the exact-NUTS field.
+One of \code{"noncentered"} (default; samples \code{z ~ N(0, I)} and reconstructs the
+field as \code{w = f(z, sigma2, phi)}, avoiding the field/hyperparameter funnel),
+\code{"centered"} (places the NNGP density on the field directly), or
+\code{"collapsed"} (deprecated).}
 }
 \value{
 A \code{tulpa_gp} object (also of class \code{tulpa_spatial}).

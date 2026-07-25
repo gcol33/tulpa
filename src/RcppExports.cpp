@@ -1339,6 +1339,28 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_nngp_nc_grad
+Rcpp::List cpp_test_nngp_nc_grad(Rcpp::NumericVector z, double log_sigma2, double log_phi, Rcpp::NumericVector a, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::NumericVector nn_neighbor_dist, Rcpp::IntegerVector nn_order, Rcpp::IntegerVector nn_order_inv, int cov_type, double fd_eps);
+RcppExport SEXP _tulpa_cpp_test_nngp_nc_grad(SEXP zSEXP, SEXP log_sigma2SEXP, SEXP log_phiSEXP, SEXP aSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_neighbor_distSEXP, SEXP nn_orderSEXP, SEXP nn_order_invSEXP, SEXP cov_typeSEXP, SEXP fd_epsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type z(zSEXP);
+    Rcpp::traits::input_parameter< double >::type log_sigma2(log_sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type log_phi(log_phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type a(aSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type nn_neighbor_dist(nn_neighbor_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order_inv(nn_order_invSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    Rcpp::traits::input_parameter< double >::type fd_eps(fd_epsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_nngp_nc_grad(z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, fd_eps));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_svc_nngp_twins
 Rcpp::NumericVector cpp_test_svc_nngp_twins(Rcpp::NumericVector w, double sigma2, double phi, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int cov_type);
 RcppExport SEXP _tulpa_cpp_test_svc_nngp_twins(SEXP wSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP cov_typeSEXP) {
@@ -3568,6 +3590,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 23},
     {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
     {"_tulpa_cpp_test_gp_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_gp_nngp_twins, 10},
+    {"_tulpa_cpp_test_nngp_nc_grad", (DL_FUNC) &_tulpa_cpp_test_nngp_nc_grad, 12},
     {"_tulpa_cpp_test_svc_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_svc_nngp_twins, 8},
     {"_tulpa_cpp_test_log_prior_log_sigma2_half_cauchy", (DL_FUNC) &_tulpa_cpp_test_log_prior_log_sigma2_half_cauchy, 2},
     {"_tulpa_cpp_test_log_prior_range_pc", (DL_FUNC) &_tulpa_cpp_test_log_prior_range_pc, 3},

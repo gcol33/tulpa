@@ -47,28 +47,53 @@ T compute_gp_spatial_prior(const std::vector<T>& params, const ModelData& data,
             log_phi_gp, data.gp_phi_prior_U, data.gp_phi_prior_alpha);
         log_post = log_post + log_phi_gp;  // Jacobian
 
-        // Extract GP spatial effects w[0..n_gp-1]
         int n_gp = layout.gp_w_end - layout.gp_w_start;
-        gp_w.resize(n_gp);
-        for (int k = 0; k < n_gp; k++) {
-            gp_w[k] = params[layout.gp_w_start + k];
-        }
 
-        // Apply RSR projection if enabled
-        if (data.has_rsr && !data.rsr_projection.empty()) {
-            std::vector<T> w_projected(data.rsr_n, T(0.0));
-            for (int ii = 0; ii < data.rsr_n; ii++) {
-                for (int jj = 0; jj < data.rsr_n; jj++) {
-                    w_projected[ii] = w_projected[ii]
-                        + T(data.rsr_projection[ii * data.rsr_n + jj]) * gp_w[jj];
-                }
+        if (data.gp_parameterization == 1) {
+            // Non-centered: params[gp_w_start ..] are z ~ N(0, I). The field
+            // w = f(z, sigma2, phi) and the likelihood at w are reconstructed by
+            // apply_gp_nc_transform_* in initialize_generic_state; here we add
+            // only the z prior. This avoids Neal's funnel between the field and
+            // (sigma2, phi) that collapses the field amplitude under a diagonal
+            // mass matrix in the centered parameterization.
+            //
+            // No z -> w Jacobian: z is a genuine auxiliary with its own N(0, I)
+            // prior, and w is a deterministic function of (z, theta), so the
+            // (w, theta) posterior is unchanged and the target is
+            // -0.5 z'z + loglik(f(z, theta)). Adding log|dw/dz| would inflate
+            // the amplitude by sigma^N -- the exact defect this fix removes.
+            // The temporal GP path documents the same reasoning.
+            for (int k = 0; k < n_gp; k++) {
+                T zk = params[layout.gp_w_start + k];
+                log_post = log_post - T(0.5) * zk * zk;
             }
-            gp_w = w_projected;
-        }
+            gp_w.clear();  // filled by apply_gp_nc_transform_* on w
+        } else {
+            // Centered: params[gp_w_start ..] ARE the field w ~ NNGP(0, sigma2,
+            // phi), and the NNGP density is placed on them directly.
 
-        // NNGP log-likelihood on spatial effects
-        log_post = log_post + tulpa_gp::gp_nngp_log_lik_t(
-            gp_w, sigma2_gp, phi_gp, data.gp_data);
+            // Extract GP spatial effects w[0..n_gp-1]
+            gp_w.resize(n_gp);
+            for (int k = 0; k < n_gp; k++) {
+                gp_w[k] = params[layout.gp_w_start + k];
+            }
+
+            // Apply RSR projection if enabled
+            if (data.has_rsr && !data.rsr_projection.empty()) {
+                std::vector<T> w_projected(data.rsr_n, T(0.0));
+                for (int ii = 0; ii < data.rsr_n; ii++) {
+                    for (int jj = 0; jj < data.rsr_n; jj++) {
+                        w_projected[ii] = w_projected[ii]
+                            + T(data.rsr_projection[ii * data.rsr_n + jj]) * gp_w[jj];
+                    }
+                }
+                gp_w = w_projected;
+            }
+
+            // NNGP log-likelihood on spatial effects
+            log_post = log_post + tulpa_gp::gp_nngp_log_lik_t(
+                gp_w, sigma2_gp, phi_gp, data.gp_data);
+        }
     }
 
     return log_post;

@@ -27,8 +27,11 @@
 #'   process-specific effects and emits a warning.
 #' @param scale_coords Logical. Standardize coordinates before fitting
 #'   (default `TRUE`).
-#' @param parameterization Latent parameterization. One of `"centered"`,
-#'   `"noncentered"`, or `"collapsed"` (the last is deprecated).
+#' @param parameterization Latent parameterization for the exact-NUTS field.
+#'   One of `"noncentered"` (default; samples `z ~ N(0, I)` and reconstructs the
+#'   field as `w = f(z, sigma2, phi)`, avoiding the field/hyperparameter funnel),
+#'   `"centered"` (places the NNGP density on the field directly), or
+#'   `"collapsed"` (deprecated).
 #'
 #' @return A `tulpa_gp` object (also of class `tulpa_spatial`).
 #'
@@ -52,7 +55,7 @@ spatial_gp <- function(coords,
                        cg_maxiter = 100,
                        shared = NULL,
                        scale_coords = TRUE,
-                       parameterization = c("centered", "noncentered", "collapsed")) {
+                       parameterization = c("noncentered", "centered", "collapsed")) {
 
   approx <- match.arg(approx)
   cov <- match.arg(cov)

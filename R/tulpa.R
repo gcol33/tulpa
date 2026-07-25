@@ -244,7 +244,13 @@
     phi_prior_U      = as.numeric(U),
     phi_prior_alpha  = 0.05,
     sigma2_prior_U   = 2.0,
-    sigma2_prior_alpha = 0.05
+    sigma2_prior_alpha = 0.05,
+    # Non-centered (z ~ N(0, I), field reconstructed as w = f(z, sigma2, phi))
+    # is the default: the centered parameterization funnels the field amplitude
+    # against (sigma2, phi) under NUTS. "collapsed" is deprecated and falls back
+    # to centered here.
+    gp_parameterization =
+      if (identical(spatial$parameterization, "noncentered")) 1L else 0L
   )
 }
 

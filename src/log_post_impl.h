@@ -20,6 +20,9 @@
                                 // included here (outside namespace tulpa)
                                 // so log_post_generic_impl.h's nested
                                 // include is a guard-hit no-op.
+#include "gp_nc_apply.h"        // apply_gp_nc_transform_{double,arena};
+                                // same rationale -- keeps the GP kernel / Eigen
+                                // chain out of log_post_generic_impl.h's TUs.
 
 // Expects hmc_sampler.h to have been included first by the umbrella TU,
 // defining tulpa_hmc::ModelData / tulpa_hmc::ParamLayout.

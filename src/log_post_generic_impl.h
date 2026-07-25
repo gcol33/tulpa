@@ -124,6 +124,27 @@ static T initialize_generic_state(
     if (layout.is_gp && data.has_gp) {
         log_post = log_post + priors::compute_gp_spatial_prior(
             params, data, layout, state.gp_w);
+
+        // Non-centered NNGP: compute_gp_spatial_prior added the N(0, I) z prior
+        // and left state.gp_w empty; reconstruct the field w = f(z, sigma2,
+        // phi) here so the eta accumulator multiplies w (not z) through the
+        // spatial map. Dispatch is statically resolved on the AD type:
+        //   double     : forward-only.
+        //   arena::Var : reverse-mode AD via custom_backward.
+        // The generic path samples via arena and verifies via numerical double
+        // (AUTODIFF_FWD aliases to arena -- no forward-mode kernel), so no
+        // fwd::Dual branch is needed.
+        if (data.gp_parameterization == 1) {
+            if constexpr (std::is_same_v<T, double>) {
+                apply_gp_nc_transform_double(params, data, layout, state.gp_w);
+            } else if constexpr (std::is_same_v<T, arena::Var>) {
+                apply_gp_nc_transform_arena(params, data, layout, state.gp_w);
+            } else {
+                Rcpp::stop("GP non-centered: AD type not supported (the generic "
+                           "path samples via arena and verifies via numerical "
+                           "double).");
+            }
+        }
     }
 
     if (layout.is_multiscale_gp && data.has_multiscale_gp) {

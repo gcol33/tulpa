@@ -265,6 +265,10 @@ cpp_test_gp_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_n
     .Call(`_tulpa_cpp_test_gp_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type)
 }
 
+cpp_test_nngp_nc_grad <- function(z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, fd_eps = 1e-6) {
+    .Call(`_tulpa_cpp_test_nngp_nc_grad`, z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, fd_eps)
+}
+
 cpp_test_svc_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type) {
     .Call(`_tulpa_cpp_test_svc_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type)
 }

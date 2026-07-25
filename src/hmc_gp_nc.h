@@ -167,6 +167,19 @@ inline void nngp_nc_forward(
 // z and grad_z are indexed by LOCATION (matching parameter layout).
 // adj is indexed by NNGP order (internal).
 //
+// grad_z carries the LIKELIHOOD/transform gradient only (d(loglik)/dz through
+// w). The N(0, I) prior on z is the caller's responsibility -- it is added as
+// a templated -0.5 z'z term whose gradient the autodiff tape supplies
+// separately -- so this routine does not fold in the -z prior term. This
+// matches the SpdeNcTransform::backward contract (adjoint of the transform
+// only; the z prior is held by the caller).
+//
+// grad_log_phi_jac is the derivative of the z->w log-Jacobian and is returned
+// for callers that place the transform's density on w. The pure non-centered
+// parameterization (the sampler path) samples z ~ N(0, I) and evaluates the
+// likelihood at w = f(z, theta) with NO change-of-variables Jacobian, so that
+// caller drops grad_log_phi_jac.
+//
 // Adjoint propagation (reverse NNGP order) is sequential.
 // Phi gradient loop is independent per observation — OpenMP parallelized.
 // Uses Eigen for triangular solves (from cached L).
@@ -176,10 +189,10 @@ inline void nngp_nc_backward(
     const GPData& gp_data,
     const NNGPNCWorkspace& ws,
     const double* dL_dw,        // Likelihood gradient w.r.t. w[loc] (location-indexed)
-    double* grad_z,             // Output: full gradient for z[loc] (prior + likelihood)
+    double* grad_z,             // Output: likelihood/transform gradient for z[loc]
     double& grad_log_sigma2_lik,// Output: likelihood contribution to sigma2 gradient
     double& grad_log_phi_lik,   // Output: likelihood contribution to phi gradient
-    double& grad_log_phi_jac    // Output: Jacobian contribution to phi gradient
+    double& grad_log_phi_jac    // Output: z->w log-Jacobian contribution to phi gradient
 ) {
     int N = gp_data.n_obs;
     int nn = gp_data.nn;
@@ -206,10 +219,13 @@ inline void nngp_nc_backward(
         }
     }
 
-    // z gradients: prior (-z) + likelihood (sqrt_d * adj)
+    // z gradients: likelihood/transform only (sqrt_d * adj). The N(0, I) prior
+    // on z is added by the caller (templated -0.5 z'z) and differentiated by
+    // the tape, so it is not folded in here -- matching the SpdeNcTransform
+    // backward contract.
     for (int i = 0; i < N; i++) {
         int loc = gp_data.nn_order[i];
-        grad_z[loc] = -z[loc] + ws.sqrt_d[i] * adj[i];
+        grad_z[loc] = ws.sqrt_d[i] * adj[i];
     }
 
     // --- Hyperparameter gradients ---
