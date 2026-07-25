@@ -15,10 +15,14 @@
 // so P is rank p(n-1) with a p-dim null space spanned by the per-field
 // constants. Its pseudo-determinant factorizes,
 //   logpdet(Sigma^-1 (x) Q) = (n-1) log|Sigma^-1| + p logpdet(Q),
-// so the only Sigma-dependent normalizer is (n-1) log|Sigma^-1| = 2(n-1) sum_i
+// so the only Sigma-dependent normalizer is n log|Sigma^-1| = 2 n sum_i
 // (log-Cholesky diagonal), a p x p quantity -- no large generalized determinant.
-// The p constant directions are pinned by p sum-to-zero rank-1 penalties (one
-// per field), folded by the sparse solver's block-Schur path.
+// The p L constant directions (L per field over L graph components) are
+// identified by AUGMENTING the precision, Q_aug = Q + sum_c 1_c 1_c'/J_c per
+// field, coupled across fields by Sigma^-1 -- the augmented Sigma^-1 (x) 11'/J_c
+// folded by the sparse solver's block-Schur path (set_s2z_coupling), with the
+// level folded out by `center` into each field's aliased coefficient. This is
+// #241's augment-and-centre carried onto the coupled MCAR field.
 
 #ifndef TULPA_MCAR_BLOCK_FACTORY_H
 #define TULPA_MCAR_BLOCK_FACTORY_H
@@ -27,16 +31,11 @@
 #include "sparse_hessian.h"
 #include "icar_kernel.h"                  // for_each_icar_component, GraphPartition
 #include "tulpa/sum_to_zero.h"            // s2z_node
-#include "tulpa/soft_sum_to_zero.h"       // s2z_precision
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>
 
 namespace tulpa {
-
-// Sum-to-zero penalty precision comes from the shared reference idiom
-// (tulpa/soft_sum_to_zero.h), taken per (field, component) at that component's
-// size, matching the ICAR path (laplace_spatial_priors).
 
 // Build Sigma^-1 (p x p, row-major) and log|Sigma| from the log-Cholesky
 // coordinates of Sigma = L L'. Column-major lower-triangle order (matching
@@ -167,9 +166,16 @@ mv_field_copy_arm_scale(int copy_arm, int axis_alpha,
 //                  a replicated MCAR over the block-diagonal I_L (x) Q (the
 //                  `by =` replicated CAR) or a genuine disconnected map. Q then
 //                  has rank (n - L) per field, so its constant null space is
-//                  L-dimensional per field: each field is pinned by L
-//                  sum-to-zero penalties (one per component's nodes) and the
-//                  Sigma-normalizer uses (n - L) instead of (n - 1).
+//                  L-dimensional per field: the augmentation fills all L
+//                  directions per field (Q_aug full rank n) and the
+//                  Sigma-normalizer uses the full n.
+//   field_beta_offset : per-field (length p) 0-based index into the arm's beta
+//                  block that field a's global constant aliases with -- the
+//                  intercept (0) for the all-ones field, the covariate's column
+//                  for a covariate field, or -1 when the field has no
+//                  fixed-effect counterpart (then its level is left in the field
+//                  for the augmentation to identify, not folded). Empty (the
+//                  default) is all -1.
 inline LatentBlock make_mcar_block(
     int start, int n, int p, int axis0,
     const Rcpp::NumericMatrix& theta_grid,
@@ -177,7 +183,8 @@ inline LatentBlock make_mcar_block(
     std::vector<std::vector<Rcpp::NumericVector>> field_weight,
     Rcpp::IntegerVector adj_rp, Rcpp::IntegerVector adj_ci,
     Rcpp::IntegerVector nnbr,
-    int copy_arm, int axis_alpha, const GraphPartition& partition
+    int copy_arm, int axis_alpha, const GraphPartition& partition,
+    std::vector<int> field_beta_offset = {}
 ) {
     const int m = p * (p + 1) / 2;
     (void) m;
@@ -253,22 +260,49 @@ inline LatentBlock make_mcar_block(
                 }
             }
         }
-        // Per-field, per-component sum-to-zero pins (constant null space of Q is
-        // L-dimensional per field when the graph has L components): exact
-        // gradient + one rank-1 11' per (field, component's nodes), registered
-        // for the block-Schur fold.
-        for (int a = 0; a < p; ++a) {
-            tulpa::for_each_icar_component(start + a * n, partition,
+        // Sum-to-zero augmentation of the separable precision: Q_aug = Q +
+        // sum_c 1_c 1_c'/J_c per field, coupled across fields by Sigma^-1, so
+        //   P_aug = Sigma^-1 (x) Q_aug = P + Sigma^-1 (x) sum_c 1_c 1_c'/J_c.
+        // Each per-field per-component constant then carries the field's own
+        // (Sinv-scaled) precision instead of the old stiff soft pin -- #241's
+        // augment-and-centre on the coupled MCAR field. It is a rank-(p L) update
+        // U D U': one indicator vector 1_{(a,c)} per (field a, component c) with
+        // the dense field coupling D[(a,c),(b,c)] = Sinv[a,b]/J_c, folded by the
+        // sparse solver (set_s2z_coupling). The coupled gradient is added here;
+        // the level is folded out by `center` into each field's aliased
+        // coefficient. Vector order matches the coupling: k = ci*p + a.
+        const int L = partition.n_components();
+        const int K = p * L;
+        std::vector<double> Daug((std::size_t) K * K, 0.0);
+        {
+            int ci = 0;
+            tulpa::for_each_icar_component(start, partition,
                 [&](int cstart, const int* idx, int csize) {
-                    double s = 0.0;
-                    for (int i = 0; i < csize; ++i)
-                        s += x[tulpa::s2z_node(cstart, idx, i)];
-                    const double lambda = s2z_precision(csize);
-                    for (int i = 0; i < csize; ++i)
-                        grad[tulpa::s2z_node(cstart, idx, i)] -= lambda * s;
-                    H.add_s2z_rank1(cstart, csize, idx, lambda);
+                    const double invJ = 1.0 / static_cast<double>(csize);
+                    std::vector<double> S(p, 0.0);   // S[a] = sum_{i in c} u_{a,i}
+                    for (int a = 0; a < p; ++a)
+                        for (int i = 0; i < csize; ++i)
+                            S[a] += x[tulpa::s2z_node(cstart + a * n, idx, i)];
+                    // grad[a, i in c] -= (sum_b Sinv[a,b] S[b]) / J_c.
+                    for (int a = 0; a < p; ++a) {
+                        double g = 0.0;
+                        for (int b = 0; b < p; ++b)
+                            g += Sinv[(std::size_t) a * p + b] * S[b];
+                        g *= invJ;
+                        for (int i = 0; i < csize; ++i)
+                            grad[tulpa::s2z_node(cstart + a * n, idx, i)] -= g;
+                    }
+                    for (int a = 0; a < p; ++a) {
+                        H.add_s2z_rank1(cstart + a * n, csize, idx, 1.0);
+                        const int k1 = ci * p + a;
+                        for (int b = 0; b < p; ++b)
+                            Daug[(std::size_t) k1 * K + (ci * p + b)] =
+                                Sinv[(std::size_t) a * p + b] * invJ;
+                    }
+                    ++ci;
                 });
         }
+        H.set_s2z_coupling(std::move(Daug));
     };
 
     // Sparsity pattern: P's lower-triangle nonzeros (diagonal always present).
@@ -317,56 +351,56 @@ inline LatentBlock make_mcar_block(
                 for (int i = 0; i < n; ++i) xa_Qb += x[start + a * n + i] * Qx[b][i];
                 quad += Sinv[(std::size_t) a * p + b] * xa_Qb;
             }
-        double pin = 0.0;
-        for (int a = 0; a < p; ++a) {
-            tulpa::for_each_icar_component(start + a * n, partition,
-                [&](int cstart, const int* idx, int csize) {
-                    double s = 0.0;
+        // Augmentation quadratic (matches the coupled gradient/Hessian in
+        // add_prior_sparse): sum_{a,b} Sinv[a,b] sum_c S_{a,c} S_{b,c} / J_c,
+        // with S_{a,c} = sum_{i in c} u_{a,i}.
+        double aug = 0.0;
+        tulpa::for_each_icar_component(start, partition,
+            [&](int cstart, const int* idx, int csize) {
+                const double invJ = 1.0 / static_cast<double>(csize);
+                std::vector<double> S(p, 0.0);
+                for (int a = 0; a < p; ++a)
                     for (int i = 0; i < csize; ++i)
-                        s += x[tulpa::s2z_node(cstart, idx, i)];
-                    pin += s2z_precision(csize) * s * s;
-                });
-        }
-        const int L = partition.n_components();
+                        S[a] += x[tulpa::s2z_node(cstart + a * n, idx, i)];
+                for (int a = 0; a < p; ++a)
+                    for (int b = 0; b < p; ++b)
+                        aug += Sinv[(std::size_t) a * p + b] * S[a] * S[b] * invJ;
+            });
         const double log_det_Sinv = -log_det_Sigma;
-        return -0.5 * quad - 0.5 * pin
-               + 0.5 * (n - L) * log_det_Sinv
-               - 0.5 * p * (n - L) * std::log(2.0 * M_PI);
+        // P_aug = Sigma^-1 (x) Q_aug is full rank p*n (Q_aug fills all L per-field
+        // constant directions), so the Sigma-dependent normalizer takes the full
+        // n log|Sigma^-1| per field (not (n - L)); the constant p log|Q_aug| is
+        // dropped as before.
+        return -0.5 * quad - 0.5 * aug
+               + 0.5 * n * log_det_Sinv
+               - 0.5 * p * n * std::log(2.0 * M_PI);
     };
 
-    // Center each (field, component) to sum-to-zero after each Newton step
-    // (belt-and-braces with the pins; the per-field-per-component constant is
-    // unidentified by the prior).
-    //
-    // No fold is reported. This block is INDEXED_MULTI: obs i sees it as
+    // Fold each field's GLOBAL constant into its aliased coefficient so eta is
+    // preserved: the driver adds arm_scale * d_fac * amount to
+    // beta_start + field_beta_offset[a]. Obs i sees this block as
     // eta_i += sum_a X_{ia} u_a[cell_i], so a constant removed from field a
-    // shifts eta along X_{.a} rather than uniformly, and aliases with the
-    // COEFFICIENT on that covariate -- not with the intercept, which is why it
-    // cannot report beta_offset 0. Reporting the right offset needs the field
-    // -> design-column mapping threaded in from the caller, and with L > 1 a
-    // per-component constant shifts eta only for the observations in that
-    // component, which no single existing coefficient absorbs at all. Until
-    // that is resolved the pins keep each removed mean at ~0, so eta is
-    // preserved to that order and there is nothing to fold.
-    //
-    // This is why the field is still on the soft sum-to-zero pin while the
-    // uniformly-seen fields moved to the augmented precision: augmenting
-    // without the matching centring would leave the level ~400x freer than the
-    // pin does. Blocked on gcol33/tulpa#242.
-    block.center = [start, n, p, partition](Rcpp::NumericVector& x)
+    // shifts eta along that field's design column X_{.a} and aliases with the
+    // COEFFICIENT on it -- field_beta_offset[a]: the intercept (0) for the
+    // all-ones field, the covariate's column otherwise, or -1 when the field has
+    // no fixed-effect counterpart, in which case the level is left in the field
+    // for the augmentation to identify. Only the global constant is folded; with
+    // L > 1 the per-component contrasts stay in the field, identified by the data
+    // (the augmentation keeps the prior proper over all L directions).
+    block.center = [start, n, p, field_beta_offset](Rcpp::NumericVector& x)
         -> std::vector<CenterFold> {
+        std::vector<CenterFold> folds;
         for (int a = 0; a < p; ++a) {
-            tulpa::for_each_icar_component(start + a * n, partition,
-                [&](int cstart, const int* idx, int csize) {
-                    double s = 0.0;
-                    for (int i = 0; i < csize; ++i)
-                        s += x[tulpa::s2z_node(cstart, idx, i)];
-                    const double mean = s / csize;
-                    for (int i = 0; i < csize; ++i)
-                        x[tulpa::s2z_node(cstart, idx, i)] -= mean;
-                });
+            const int off = (a < (int) field_beta_offset.size())
+                                ? field_beta_offset[a] : -1;
+            if (off < 0) continue;
+            double m = 0.0;
+            for (int i = 0; i < n; ++i) m += x[start + a * n + i];
+            m /= static_cast<double>(n);
+            for (int i = 0; i < n; ++i) x[start + a * n + i] -= m;
+            folds.push_back(CenterFold{off, m});
         }
-        return {};
+        return folds;
     };
 
     return block;

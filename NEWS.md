@@ -6,6 +6,21 @@ Warm-starting the sampler from a cheaper fit of the same model.
 
 New:
 
+- Weighted-entry intrinsic fields -- separable multivariate CAR (`mcar`) and the
+  areal / temporal varying-coefficient blocks -- are now hard-constrained by the
+  same augment-and-centre identification the uniformly-seen fields moved to in
+  0.0.99, instead of the old soft sum-to-zero pin (gcol33/tulpa#242). MCAR carries
+  the augmented precision `Sigma^-1 (x) Q_aug`
+  (`Q_aug = Q + sum_c 1_c 1_c'/J_c` per field, coupled across fields by
+  `Sigma^-1` and folded by the sparse solver), so its Sigma-dependent normalizer
+  takes the full `n log|Sigma^-1|` per field. A weighted field's constant aliases
+  with the coefficient on the covariate it rides on, not the intercept, so the
+  centerer folds the field's global level into that column -- `svc_beta_offset`
+  for a single field, per-field `field_beta_offset` for MCAR, or `-1` for a
+  covariate with no fixed-effect counterpart (the level is then left in the field
+  for the augmentation to identify). A declared column is verified against the
+  design so a wrong alias cannot silently shift eta.
+
 - `tglmm()` and `tgam()` are named front doors onto `tulpa()`: contract-narrowing
   views, not new engines. Each carries `tulpa()`'s signature minus the arguments
   its model class cannot use (`spatial`, `temporal`), requires the structure that

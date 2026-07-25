@@ -260,6 +260,13 @@
         if (!is.null(p$svc_weight)) {
             out$svc_weight <- .multi_block_svc_weight(
                 p$svc_weight, spatial_idx, n_arms, block_index)
+            # Aliased fixed-effect column of a weighted (areal SVC) field: its
+            # constant folds into this coefficient (0 = intercept, or the
+            # covariate's column) rather than the intercept; -1 = no counterpart
+            # (the level is left in the field). Absent => no fold.
+            if (!is.null(p$svc_beta_offset)) {
+                out$svc_beta_offset <- as.integer(p$svc_beta_offset)
+            }
         }
         # Replicated CAR (`by =`): number of disjoint equal-size components in the
         # block-diagonal graph (the intrinsic ICAR kernel pins each per component
@@ -299,6 +306,17 @@
             n_neighbors     = as.integer(p$n_neighbors),
             field_weight    = field_weight
         )
+        # Per-field aliased fixed-effect column (length n_fields): field a's
+        # global constant folds into field_beta_offset[a] (0 = intercept for the
+        # all-ones field, the covariate's column otherwise, -1 = no counterpart).
+        # Absent => no folds (the augmentation identifies every level in place).
+        if (!is.null(p$field_beta_offset)) {
+            if (length(p$field_beta_offset) != n_fields) {
+                stop("Block ", block_index, " (type 'mcar'): `field_beta_offset` ",
+                     "must have length n_fields (", n_fields, ").", call. = FALSE)
+            }
+            out$field_beta_offset <- as.integer(p$field_beta_offset)
+        }
         # Replicated MCAR (`by =`): L equal-size components per field.
         if (!is.null(p$n_components)) {
             out$n_components <- as.integer(p$n_components)
@@ -325,6 +343,11 @@
         if (!is.null(p$svc_weight)) {
             out$svc_weight <- .multi_block_svc_weight(
                 p$svc_weight, temporal_idx, n_arms, block_index)
+            # Aliased fixed-effect column of a weighted (temporal SVC / TVC)
+            # field, as in the areal branch above; absent => no fold.
+            if (!is.null(p$svc_beta_offset)) {
+                out$svc_beta_offset <- as.integer(p$svc_beta_offset)
+            }
         }
         out
     } else if (type == "iid") {

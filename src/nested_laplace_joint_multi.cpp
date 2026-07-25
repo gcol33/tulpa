@@ -181,6 +181,110 @@ inline std::function<double(int, int)> make_per_arm_row_weight_fn(
     };
 }
 
+// Optional aliased fixed-effect column of a weighted (SVC / TVC) intrinsic
+// block. A field seen through a per-observation weight (svc_weight) has its
+// constant null direction aliased with the COEFFICIENT on the covariate it
+// rides on, not the arm intercept: a constant added to the field shifts eta
+// along that covariate's column, not uniformly. `svc_beta_offset` is the
+// 0-based index of that coefficient within the arm's beta block, or -1 (== no
+// fixed-effect counterpart) when the covariate has no main effect. Absent field
+// => -1. Uniform blocks (no svc_weight) ignore it and keep the intercept fold.
+inline int read_svc_beta_offset(const Rcpp::List& bs) {
+    if (!bs.containsElementNamed("svc_beta_offset") ||
+        Rf_isNull(bs["svc_beta_offset"])) {
+        return -1;
+    }
+    return Rcpp::as<int>(bs["svc_beta_offset"]);
+}
+
+// Centerer that removes a single-field intrinsic block's GLOBAL constant
+// (whole-field mean, over every connected component) and folds it into
+// coefficient `beta_offset`, so the driver's per-arm compensation
+// (arm_scale * d_fac * amount into beta_start + beta_offset) keeps eta
+// invariant. Only the global constant is removed; with L > 1 the L - 1 component
+// contrasts stay in the field, identified by the data, while the precision
+// augmentation keeps the prior proper over all L (mirrors icar_center_field on
+// the sampler path). beta_offset 0 is the arm intercept (a uniformly-seen
+// field); a weighted field passes the column of the covariate it rides on.
+inline std::function<std::vector<tulpa::CenterFold>(Rcpp::NumericVector&)>
+make_field_center_fn(int start, int size, int beta_offset) {
+    return [start, size, beta_offset](Rcpp::NumericVector& x)
+        -> std::vector<tulpa::CenterFold> {
+        if (size <= 0) return {};
+        double m = 0.0;
+        for (int i = 0; i < size; i++) m += x[start + i];
+        m /= size;
+        for (int i = 0; i < size; i++) x[start + i] -= m;
+        return { tulpa::CenterFold{beta_offset, m} };
+    };
+}
+
+// Defensive check that a weighted block's declared alias column actually equals
+// its weight, so a wrong beta_offset cannot silently shift eta. The fold's
+// per-arm compensation (arm_scale * d_fac * amount into beta_start + beta_offset)
+// cancels the removed level only when the design column X_k(., beta_offset)
+// equals the field weight on every arm the field touches. For each arm whose
+// weight is not identically zero (the field does contribute there), the assembled
+// design column must match to a tight tolerance. beta_offset < 0 (no fold) is not
+// checked. Errors on the first mismatch.
+inline void check_svc_alias_column(
+    const Rcpp::List& weight_list, int beta_offset,
+    const std::vector<tulpa::ParsedArm>& parsed, int block_index,
+    const char* what
+) {
+    if (beta_offset < 0) return;
+    const int n_arms = static_cast<int>(parsed.size());
+    for (int k = 0; k < n_arms; ++k) {
+        const tulpa::ParsedArm& pa = parsed[k];
+        if (beta_offset >= pa.p) continue;            // arm lacks that column
+        Rcpp::NumericVector w = Rcpp::as<Rcpp::NumericVector>(weight_list[k]);
+        const int m = std::min(static_cast<int>(w.size()), pa.X.nrow());
+        bool any_nz = false;
+        for (int i = 0; i < m; ++i) if (w[i] != 0.0) { any_nz = true; break; }
+        if (!any_nz) continue;                        // field does not touch arm k
+        for (int i = 0; i < m; ++i) {
+            const double xij = pa.X(i, beta_offset);
+            if (std::abs(xij - w[i]) > 1e-9 * (1.0 + std::abs(w[i]))) {
+                Rcpp::stop("Block %d (%s): declared beta_offset %d does not match "
+                           "the field weight on arm %d obs %d (design column = %g, "
+                           "weight = %g). A wrong alias column silently shifts eta; "
+                           "pass the covariate's own column or -1 for no fold.",
+                           block_index + 1, what, beta_offset, k + 1, i + 1,
+                           xij, w[i]);
+            }
+        }
+    }
+}
+
+// Install the identification centerer for a single-field intrinsic block,
+// honoring an optional areal (SVC) / temporal (TVC) design weight.
+// `uniform_center` is the block's no-weight behavior (an empty function means
+// "no centerer", as replicated ICAR uses for L > 1). When the block carries a
+// weight its constant aliases with the covariate coefficient rather than the
+// intercept: fold there when the caller declared the column (svc_beta_offset >=
+// 0, verified against the design), otherwise install no centerer and let the
+// precision augmentation identify the level in the field. Never fold a weighted
+// field into the intercept, which would shift eta along the covariate column
+// rather than uniformly.
+inline void install_field_center(
+    tulpa::LatentBlock& block, const Rcpp::List& bs, int start, int size,
+    const std::vector<tulpa::ParsedArm>& parsed, int block_index,
+    std::function<std::vector<tulpa::CenterFold>(Rcpp::NumericVector&)>
+        uniform_center
+) {
+    const bool has_weight = bs.containsElementNamed("svc_weight") &&
+                            !Rf_isNull(bs["svc_weight"]);
+    if (!has_weight) {
+        block.center = std::move(uniform_center);
+        return;
+    }
+    const int off = read_svc_beta_offset(bs);
+    if (off < 0) return;   // weighted, no counterpart: augmentation identifies it
+    check_svc_alias_column(bs["svc_weight"], off, parsed, block_index,
+                           "areal/temporal SVC");
+    block.center = make_field_center_fn(start, size, off);
+}
+
 // Per-arm amplitude dispatch for a copy block. axis_donor and axis_copy are
 // column indices into theta_grid for this block's donor-arm and copy-arm
 // amplitude axes respectively (set up by the R-side parser). Under the
@@ -249,7 +353,8 @@ int build_joint_blocks_from_spec(
     int copy_arm,
     std::vector<tulpa::LatentBlock>& blocks,
     const std::vector<tulpa::JointArm>* arms_ptr,
-    bool any_nontrivial_field_coef
+    bool any_nontrivial_field_coef,
+    const std::vector<tulpa::ParsedArm>& parsed
 ) {
     std::string type = Rcpp::as<std::string>(bs["type"]);
 
@@ -347,18 +452,19 @@ int build_joint_blocks_from_spec(
             std::vector<std::pair<int,int>>& out) {
             tulpa::add_icar_pattern(out, start, size, adj_rp, adj_ci, sp_part);
         };
-        if (sp_part.n_components() > 1) {
-            // Replicated field: each of the L components is pinned to sum-to-zero
-            // by its own penalty during the Newton solve (the gradient in
-            // add_icar_prior[_sparse]). A single post-step centerer cannot fold
-            // L distinct per-component means through the one shared arm intercept
-            // without breaking eta (see center_joint), so rely on the penalties
-            // (the large-field path already does); no centerer here.
-        } else {
-            block.center = [start, size](Rcpp::NumericVector& x) {
-                return tulpa::center_intercept(x, start, size);
-            };
-        }
+        // Uniform ICAR: the global constant aliases with the arm intercept -- a
+        // single connected component folds it into offset 0; a replicated L > 1
+        // field leaves the L per-component means to the precision augmentation (a
+        // single intercept fold cannot preserve eta across L components). A
+        // weighted (areal SVC) ICAR aliases with its covariate coefficient
+        // instead; install_field_center routes both, folding the global constant
+        // into the declared column for any L.
+        install_field_center(
+            block, bs, start, size, parsed, block_index,
+            sp_part.n_components() > 1
+                ? std::function<std::vector<tulpa::CenterFold>(
+                      Rcpp::NumericVector&)>()
+                : make_field_center_fn(start, size, /*intercept=*/0));
         blocks.push_back(block);
         return start + size;
     }
@@ -396,6 +502,26 @@ int build_joint_blocks_from_spec(
         }
         const int start = latent_offset;
         const int axis_alpha = is_copy_block ? axis0 + m : -1;
+        // Per-field aliased fixed-effect column: field a's global constant is
+        // folded into beta_offset[a] (intercept 0 for the all-ones field, the
+        // covariate's column otherwise, -1 for no counterpart). Absent => empty
+        // (all -1: the augmentation identifies every level in the field).
+        std::vector<int> field_beta_offset;
+        if (bs.containsElementNamed("field_beta_offset") &&
+            !Rf_isNull(bs["field_beta_offset"])) {
+            Rcpp::IntegerVector fbo = bs["field_beta_offset"];
+            if ((int) fbo.size() != p)
+                Rcpp::stop("Block %d (type 'mcar'): field_beta_offset must have "
+                           "length n_fields (%d), got %d.",
+                           block_index + 1, p, (int) fbo.size());
+            field_beta_offset.assign(fbo.begin(), fbo.end());
+            // Verify each declared column matches that field's weight, so a
+            // wrong offset cannot silently shift eta.
+            for (int a = 0; a < p; ++a)
+                check_svc_alias_column(Rcpp::as<Rcpp::List>(fw_list[a]),
+                                       field_beta_offset[a], parsed, block_index,
+                                       "mcar field");
+        }
         // Component partition of the per-field graph (a replicated MCAR is L
         // equal-size components, a disconnected map unequal ones), from the
         // shared adjacency rather than an R-passed count.
@@ -404,7 +530,8 @@ int build_joint_blocks_from_spec(
         blocks.push_back(tulpa::make_mcar_block(
             start, n, p, axis0, theta_grid, std::move(cell_idx),
             std::move(field_weight), adj_rp, adj_ci, nnbr,
-            is_copy_block ? copy_arm : -1, axis_alpha, sp_part));
+            is_copy_block ? copy_arm : -1, axis_alpha, sp_part,
+            std::move(field_beta_offset)));
         return start + p * n;
     }
 
@@ -503,9 +630,11 @@ int build_joint_blocks_from_spec(
             return tulpa::log_prior_icar_structured(x, phi_start, size, /*tau=*/1.0,
                                                     adj_rp, adj_ci, n_nbr, sp_part);
         };
-        phi_block.center = [phi_start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, phi_start, size);
-        };
+        // BYM2's structured component aliases like a plain ICAR (uniform: arm
+        // intercept; weighted areal SVC: the covariate coefficient). The
+        // unstructured theta component below stays uncentred (proper N(0, I)).
+        install_field_center(phi_block, bs, phi_start, size, parsed, block_index,
+                             make_field_center_fn(phi_start, size, /*intercept=*/0));
         blocks.push_back(phi_block);
 
         tulpa::LatentBlock theta_block;
@@ -668,9 +797,11 @@ int build_joint_blocks_from_spec(
                     log_det_Q_rho->find(k_grid),
                     adj_rp, adj_ci, n_nbr);
             };
-            block.center = [start, size](Rcpp::NumericVector& x) {
-                return tulpa::center_intercept(x, start, size);
-            };
+            // Proper CAR is full rank, so this is a reparameterization rather
+            // than an identification: uniform folds the field mean into the
+            // intercept, a weighted (SVC) proper-CAR into the covariate column.
+            install_field_center(block, bs, start, size, parsed, block_index,
+                                 make_field_center_fn(start, size, /*intercept=*/0));
             if (any_nontrivial_field_coef) {
                 block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
             }
@@ -777,9 +908,10 @@ int build_joint_blocks_from_spec(
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
-        block.center = [start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, size);
-        };
+        // Uniform RW folds its constant into the intercept; a temporal SVC (TVC)
+        // aliases with the covariate coefficient instead.
+        install_field_center(block, bs, start, size, parsed, block_index,
+                             make_field_center_fn(start, size, /*intercept=*/0));
         blocks.push_back(block);
         return start + size;
     }
@@ -847,9 +979,10 @@ int build_joint_blocks_from_spec(
             double rho = theta_grid(k, axis_rho);
             return tulpa::log_prior_ar1(x, start, size, tau, rho);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, size);
-        };
+        // Uniform AR1 folds its constant into the intercept; a temporal SVC
+        // (TVC) aliases with the covariate coefficient instead.
+        install_field_center(block, bs, start, size, parsed, block_index,
+                             make_field_center_fn(start, size, /*intercept=*/0));
         blocks.push_back(block);
         return start + size;
     }
@@ -1279,7 +1412,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
             is_copy_b, copy_arm_of_block[b], blocks,
-            &arms, any_nontrivial_field_coef
+            &arms, any_nontrivial_field_coef, parsed
         );
     }
 
@@ -1504,7 +1637,7 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
         bool is_copy_b = (copy_arm_of_block[b] >= 0);
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
-            is_copy_b, copy_arm_of_block[b], blocks, &arms, any_fc);
+            is_copy_b, copy_arm_of_block[b], blocks, &arms, any_fc, parsed);
     }
 
     tulpa::BatchArmBuffers buf;
@@ -1610,7 +1743,7 @@ Rcpp::List cpp_test_joint_pattern(
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
             is_copy_b, copy_arm_of_block[b], blocks,
-            &arms, any_nontrivial_field_coef
+            &arms, any_nontrivial_field_coef, parsed
         );
     }
     int n_x = latent_offset;
@@ -1707,7 +1840,7 @@ Rcpp::List cpp_test_joint_logpost_grad(
         latent_offset = build_joint_blocks_from_spec(
             bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
             is_copy_b, copy_arm_of_block[b], blocks,
-            &arms, any_nontrivial_field_coef);
+            &arms, any_nontrivial_field_coef, parsed);
     }
     int n_x = latent_offset;
     if (x.size() != n_x) {
