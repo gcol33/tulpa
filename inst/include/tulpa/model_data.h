@@ -107,8 +107,13 @@ namespace tulpa {
 // equal-size contiguous split -- correct for a genuine disconnected map (a
 // mainland plus islands, whose nodes need not be contiguous). ModelData grew
 // one trailing container field in the spatial section.
+// 37 -> 38: added svc_parameterization / msgp_parameterization (int,
+// 0=centered/1=non-centered) alongside the existing gp_parameterization --
+// the same field/hyperparameter funnel fix (gcol33/tulpa#243), extended to
+// the SVC and multiscale-GP NNGP latent blocks. ModelData grew two trailing
+// int fields (svc / multiscale-gp sections).
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 37;
+constexpr int TULPA_ABI_VERSION = 38;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -308,6 +313,14 @@ struct ModelData {
     double ms_log_ls_local_sd = 0.5;
     double ms_log_ls_regional_mean = 1.0;
     double ms_log_ls_regional_sd = 0.5;
+    // 0 = centered: the NNGP-MSGP prior places the density on params directly
+    // as the local/regional fields. 1 = non-centered: params are z ~ N(0, I)
+    // per scale, each field reconstructed w = f(z, sigma2, phi) by
+    // compute_multiscale_gp_prior + apply_msgp_nc_transform_* on the sampling
+    // path, storage transformed the same way gp_parameterization is. Same
+    // funnel fix, applied independently per scale (gcol33/tulpa#243). Default
+    // 0 (struct); the sampler builder defaults it to 1 (NNGP path only).
+    int msgp_parameterization = 0;      // 0=centered, 1=non-centered
 
     // HSGP (Hilbert Space GP)
     HSGPData hsgp_data;
@@ -343,6 +356,17 @@ struct ModelData {
     // LogNormal(0, 1) prior and does not read these.
     double svc_phi_prior_U = -1.0;
     double svc_phi_prior_alpha = -1.0;
+    // 0 = centered: the SVC NNGP prior places the density on params directly
+    // as each term's field w_j. 1 = non-centered: params are z_j ~ N(0, I)
+    // per term, each field reconstructed w_j = f(z_j, sigma2_j, phi_j) by
+    // compute_svc_prior + apply_svc_nc_transform_* on the sampling path, and
+    // the stored draws are forward-transformed z_j -> w_j in
+    // hmc_nuts_chain_iter_store.h. Non-centered avoids the same
+    // field/hyperparameter funnel gp_parameterization documents. The struct
+    // default stays 0 so non-sampling constructors are unaffected; the
+    // sampler builder defaults it to 1 (NNGP path only -- HSGP SVC is already
+    // non-centered by construction). See gcol33/tulpa#243.
+    int svc_parameterization = 0;       // 0=centered, 1=non-centered
 
     // ================================================================
     // TEMPORAL

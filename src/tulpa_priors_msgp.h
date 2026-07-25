@@ -140,47 +140,73 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
             }
             log_post = log_post + log_phi_regional;  // Jacobian
 
-            // Extract local GP effects
             int n_gp_local = layout.gp_local_end - layout.gp_local_start;
-            std::vector<T> ms_gp_w_local(n_gp_local);
-            for (int k = 0; k < n_gp_local; k++) {
-                ms_gp_w_local[k] = params[layout.gp_local_start + k];
-            }
-
-            // Extract regional GP effects
             int n_gp_regional = layout.gp_regional_end - layout.gp_regional_start;
-            std::vector<T> ms_gp_w_regional(n_gp_regional);
-            for (int k = 0; k < n_gp_regional; k++) {
-                ms_gp_w_regional[k] = params[layout.gp_regional_start + k];
-            }
 
-            // Apply RSR projection if enabled
-            if (data.has_rsr && !data.rsr_projection.empty()) {
-                std::vector<T> local_proj(data.rsr_n, T(0.0));
-                std::vector<T> regional_proj(data.rsr_n, T(0.0));
-                for (int ii = 0; ii < data.rsr_n; ii++) {
-                    for (int jj = 0; jj < data.rsr_n; jj++) {
-                        local_proj[ii] = local_proj[ii]
-                            + T(data.rsr_projection[ii * data.rsr_n + jj]) * ms_gp_w_local[jj];
-                        regional_proj[ii] = regional_proj[ii]
-                            + T(data.rsr_projection[ii * data.rsr_n + jj]) * ms_gp_w_regional[jj];
-                    }
+            if (data.msgp_parameterization == 1) {
+                // Non-centered: params[gp_local_start..]/[gp_regional_start..]
+                // are z ~ N(0, I) per scale. Each scale's field
+                // w = f(z, sigma2, phi) is reconstructed by
+                // apply_msgp_nc_transform_* in initialize_generic_state, which
+                // also combines both scales to the per-observation
+                // ms_gp_effect this branch would otherwise compute inline;
+                // here we add only the two z priors. Avoids the same
+                // field/hyperparameter funnel gp_parameterization documents,
+                // applied independently per scale (gcol33/tulpa#243).
+                //
+                // RSR is not supported on this path, matching
+                // compute_gp_spatial_prior's non-centered branch (RSR only
+                // applies in the centered branch below).
+                for (int k = 0; k < n_gp_local; k++) {
+                    T zk = params[layout.gp_local_start + k];
+                    log_post = log_post - T(0.5) * zk * zk;
                 }
-                ms_gp_w_local = local_proj;
-                ms_gp_w_regional = regional_proj;
-            }
+                for (int k = 0; k < n_gp_regional; k++) {
+                    T zk = params[layout.gp_regional_start + k];
+                    log_post = log_post - T(0.5) * zk * zk;
+                }
+                ms_gp_effect.clear();  // filled by apply_msgp_nc_transform_* on w
+            } else {
+                // Extract local GP effects
+                std::vector<T> ms_gp_w_local(n_gp_local);
+                for (int k = 0; k < n_gp_local; k++) {
+                    ms_gp_w_local[k] = params[layout.gp_local_start + k];
+                }
 
-            // Multiscale NNGP log-likelihood for both scales
-            log_post = log_post + tulpa_gp::multiscale_gp_log_lik_t(
-                ms_gp_w_local, ms_gp_w_regional,
-                sigma2_local_n, phi_local, sigma2_regional_n, phi_regional,
-                data.multiscale_gp_data);
+                // Extract regional GP effects
+                std::vector<T> ms_gp_w_regional(n_gp_regional);
+                for (int k = 0; k < n_gp_regional; k++) {
+                    ms_gp_w_regional[k] = params[layout.gp_regional_start + k];
+                }
 
-            // Precompute combined effect at observation level
-            ms_gp_effect.resize(data.N, T(0.0));
-            for (int ii = 0; ii < data.N; ii++) {
-                int loc = data.multiscale_gp_data.obs_to_loc[ii];
-                ms_gp_effect[ii] = ms_gp_w_local[loc] + ms_gp_w_regional[loc];
+                // Apply RSR projection if enabled
+                if (data.has_rsr && !data.rsr_projection.empty()) {
+                    std::vector<T> local_proj(data.rsr_n, T(0.0));
+                    std::vector<T> regional_proj(data.rsr_n, T(0.0));
+                    for (int ii = 0; ii < data.rsr_n; ii++) {
+                        for (int jj = 0; jj < data.rsr_n; jj++) {
+                            local_proj[ii] = local_proj[ii]
+                                + T(data.rsr_projection[ii * data.rsr_n + jj]) * ms_gp_w_local[jj];
+                            regional_proj[ii] = regional_proj[ii]
+                                + T(data.rsr_projection[ii * data.rsr_n + jj]) * ms_gp_w_regional[jj];
+                        }
+                    }
+                    ms_gp_w_local = local_proj;
+                    ms_gp_w_regional = regional_proj;
+                }
+
+                // Multiscale NNGP log-likelihood for both scales
+                log_post = log_post + tulpa_gp::multiscale_gp_log_lik_t(
+                    ms_gp_w_local, ms_gp_w_regional,
+                    sigma2_local_n, phi_local, sigma2_regional_n, phi_regional,
+                    data.multiscale_gp_data);
+
+                // Precompute combined effect at observation level
+                ms_gp_effect.resize(data.N, T(0.0));
+                for (int ii = 0; ii < data.N; ii++) {
+                    int loc = data.multiscale_gp_data.obs_to_loc[ii];
+                    ms_gp_effect[ii] = ms_gp_w_local[loc] + ms_gp_w_regional[loc];
+                }
             }
         }
     }

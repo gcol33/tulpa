@@ -150,6 +150,24 @@ static T initialize_generic_state(
     if (layout.is_multiscale_gp && data.has_multiscale_gp) {
         log_post = log_post + priors::compute_multiscale_gp_prior(
             params, data, layout, state.ms_gp_effect);
+
+        // Non-centered NNGP-MSGP: compute_multiscale_gp_prior added both
+        // scales' N(0, I) z priors and left state.ms_gp_effect empty;
+        // reconstruct each scale's field w = f(z, sigma2, phi) and combine
+        // them to the per-observation effect here, mirroring the GP block's
+        // dispatch above. Dispatch is statically resolved on the AD type,
+        // same as GP/SVC (gcol33/tulpa#243).
+        if (data.msgp_parameterization == 1 && !data.msgp_is_hsgp) {
+            if constexpr (std::is_same_v<T, double>) {
+                apply_msgp_nc_transform_double(params, data, layout, state.ms_gp_effect);
+            } else if constexpr (std::is_same_v<T, arena::Var>) {
+                apply_msgp_nc_transform_arena(params, data, layout, state.ms_gp_effect);
+            } else {
+                Rcpp::stop("Multiscale GP non-centered: AD type not supported "
+                           "(the generic path samples via arena and verifies "
+                           "via numerical double).");
+            }
+        }
     }
 
     if (layout.is_hsgp && data.has_hsgp) {
@@ -226,6 +244,35 @@ static T initialize_generic_state(
     if (layout.has_svc && data.has_svc) {
         log_post = log_post + priors::compute_svc_prior(
             params, data, layout, state.svc_eta);
+
+        // Non-centered NNGP: compute_svc_prior added each term's N(0, I) z
+        // prior and left state.svc_eta empty; reconstruct every term's field
+        // w_j = f(z_j, sigma2_j, phi_j), apply the sum-to-zero penalty on the
+        // reconstructed w (not z -- the penalty pins the field's own level,
+        // same as the centered path), and compute svc_eta from it. SVC has no
+        // per-field equivalent of the GP block's plain "leave gp_w for a
+        // downstream lookup" because compute_svc_eta / the sum-to-zero
+        // penalty are deterministic post-processing SVC needs done once, up
+        // front, in T -- not per-observation -- so they run here rather than
+        // inside compute_svc_prior. Dispatch is statically resolved on T, same
+        // as the GP block above (gcol33/tulpa#243).
+        if (data.svc_parameterization == 1 && !data.svc_is_hsgp &&
+            data.svc_data.n_svc > 0) {
+            std::vector<T> svc_w_flat;
+            if constexpr (std::is_same_v<T, double>) {
+                apply_svc_nc_transform_double(params, data, layout, svc_w_flat);
+            } else if constexpr (std::is_same_v<T, arena::Var>) {
+                apply_svc_nc_transform_arena(params, data, layout, svc_w_flat);
+            } else {
+                Rcpp::stop("SVC non-centered: AD type not supported (the generic "
+                           "path samples via arena and verifies via numerical "
+                           "double).");
+            }
+            log_post = log_post + tulpa_svc_ad::svc_sum_to_zero_penalty(
+                svc_w_flat, data.svc_data);
+            state.svc_eta.resize(data.svc_data.n_obs, T(0.0));
+            tulpa_svc_ad::compute_svc_eta(svc_w_flat, data.svc_data, state.svc_eta);
+        }
     }
 
     if (layout.has_tvc && data.has_tvc) {

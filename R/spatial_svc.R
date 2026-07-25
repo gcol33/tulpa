@@ -24,6 +24,17 @@
 #'   (`approx = "hsgp"`).
 #' @param c_boundary Boundary-extension factor for the HSGP domain
 #'   (`approx = "hsgp"`).
+#' @param parameterization Latent parameterization for the exact-NUTS field
+#'   (`approx = "nngp"` only; HSGP is already non-centered by construction).
+#'   `"centered"` (default) places the NNGP density on each term's field
+#'   directly. `"noncentered"` samples `z_j ~ N(0, I)` per term and
+#'   reconstructs each field as `w_j = f(z_j, sigma2_j, phi_j)`, which trades
+#'   cost for geometry: it removes the field/hyperparameter funnel that bites
+#'   when the field is weakly identified (a latent-state occupancy response,
+#'   say), but on a well-identified response the centered path is already
+#'   funnel-free and is the cheaper of the two by roughly an order of
+#'   magnitude. Prefer `"noncentered"` when the field is weakly identified or
+#'   the centered fit reports divergences.
 #'
 #' @return A `tulpa_svc` object (also of class `tulpa_spatial`).
 #'
@@ -43,10 +54,12 @@ spatial_svc <- function(coords,
                         scale_coords = TRUE,
                         approx = c("nngp", "hsgp"),
                         m = 6,
-                        c_boundary = 1.5) {
+                        c_boundary = 1.5,
+                        parameterization = c("centered", "noncentered")) {
 
   cov <- match.arg(cov)
   approx <- match.arg(approx)
+  parameterization <- match.arg(parameterization)
 
   # Parse coordinate specification
   if (inherits(coords, "formula")) {
@@ -108,6 +121,7 @@ spatial_svc <- function(coords,
       approx = approx,
       m = m,
       c_boundary = c_boundary,
+      parameterization = parameterization,
       # Filled in during validation
       n_obs = NULL,
       n_svc = NULL,

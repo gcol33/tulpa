@@ -13,6 +13,110 @@
 // This improves posterior geometry for large N, reducing NUTS treedepth.
 // The prior on z is N(0,I), and no Jacobian is needed since we sample in z-space.
 
+// A lightweight, non-owning view over the neighbour-structure fields the
+// transform needs. Lets nngp_nc_forward / nngp_nc_backward serve GPData and
+// each independent scale of MultiscaleGPData (both cache pairwise neighbour
+// distances in nn_neighbor_dist, the fast path) as well as SVCData (which
+// does not cache them -- its density kernel, tulpa_svc::nngp_log_lik,
+// recomputes neighbour-pair distances from coords instead) without
+// duplicating the Cholesky / adjoint-propagation logic per caller. One
+// `make_*_view` factory per source struct lives below, next to the view it
+// builds, so the two consumers of each -- the log-post transform
+// (gp/svc/msgp_nc_apply.cpp) and the draw-storage transform
+// (hmc_nuts_chain_iter_store.h) -- read the same field mapping
+// (gcol33/tulpa#243).
+struct NNGPNCView {
+    int n_obs = 0, nn = 0;
+    const int* nn_idx = nullptr;              // [n_obs x nn], 1-based, 0 = no neighbor
+    const double* nn_dist = nullptr;          // [n_obs x nn]
+    const double* nn_neighbor_dist = nullptr; // [n_obs x nn x nn] row-major [i,j1,j2];
+                                               // null -> pair_dist() falls back to coords
+    const int* nn_order = nullptr;            // [n_obs], 0-based location order
+    const int* nn_order_inv = nullptr;        // [n_obs], inverse permutation
+    const double* coords = nullptr;           // [n_obs x 2]; only read when
+                                               // nn_neighbor_dist is null
+    CovType cov_type = CovType::EXPONENTIAL;
+
+    // Distance between two already-resolved neighbour locations loc1/loc2 for
+    // observation i's j1-th/j2-th neighbour slot. Prefers the cached table;
+    // falls back to a direct coordinate lookup (the SVCData path).
+    inline double pair_dist(int i, int j1, int j2, int loc1, int loc2) const {
+        if (nn_neighbor_dist) {
+            return nn_neighbor_dist[(std::size_t)i * nn * nn +
+                                     (std::size_t)j1 * nn + j2];
+        }
+        double dx = coords[(std::size_t)loc1 * 2]     - coords[(std::size_t)loc2 * 2];
+        double dy = coords[(std::size_t)loc1 * 2 + 1] - coords[(std::size_t)loc2 * 2 + 1];
+        return std::sqrt(dx * dx + dy * dy);
+    }
+};
+
+// Fast-path view over GPData (cached nn_neighbor_dist).
+inline NNGPNCView make_gp_nc_view(const GPData& g) {
+    NNGPNCView v;
+    v.n_obs = g.n_obs;
+    v.nn = g.nn;
+    v.nn_idx = g.nn_idx.data();
+    v.nn_dist = g.nn_dist.data();
+    v.nn_neighbor_dist = g.nn_neighbor_dist.data();
+    v.nn_order = g.nn_order.data();
+    v.nn_order_inv = g.nn_order_inv.data();
+    v.coords = g.coords.data();
+    v.cov_type = g.cov_type;
+    return v;
+}
+
+// MultiscaleGPData holds two independent NNGP scales (local / regional),
+// each with its own cached nn_neighbor_dist -- the fast path, same as
+// GPData. These build the view for one scale at a time; the caller runs the
+// transform once per scale.
+inline NNGPNCView make_msgp_nc_view_local(const MultiscaleGPData& g) {
+    NNGPNCView v;
+    v.n_obs = g.n_obs;
+    v.nn = g.nn_local;
+    v.nn_idx = g.nn_idx_local.data();
+    v.nn_dist = g.nn_dist_local.data();
+    v.nn_neighbor_dist = g.nn_neighbor_dist_local.data();
+    v.nn_order = g.nn_order_local.data();
+    v.nn_order_inv = g.nn_order_inv_local.data();
+    v.coords = g.coords.data();
+    v.cov_type = g.cov_type;
+    return v;
+}
+
+inline NNGPNCView make_msgp_nc_view_regional(const MultiscaleGPData& g) {
+    NNGPNCView v;
+    v.n_obs = g.n_obs;
+    v.nn = g.nn_regional;
+    v.nn_idx = g.nn_idx_regional.data();
+    v.nn_dist = g.nn_dist_regional.data();
+    v.nn_neighbor_dist = g.nn_neighbor_dist_regional.data();
+    v.nn_order = g.nn_order_regional.data();
+    v.nn_order_inv = g.nn_order_inv_regional.data();
+    v.coords = g.coords.data();
+    v.cov_type = g.cov_type;
+    return v;
+}
+
+// SVCData does not cache pairwise neighbour distances (its density kernel,
+// tulpa_svc::nngp_log_lik, recomputes them from coords), so this view takes
+// the coords-fallback branch of pair_dist(). The neighbour topology is shared
+// by every SVC term -- only (sigma2_j, phi_j) differ -- so one view serves
+// them all.
+inline NNGPNCView make_svc_nc_view(const tulpa::SVCData& s) {
+    NNGPNCView v;
+    v.n_obs = s.n_obs;
+    v.nn = s.nn;
+    v.nn_idx = s.nn_idx.data();
+    v.nn_dist = s.nn_dist.data();
+    v.nn_neighbor_dist = nullptr;
+    v.nn_order = s.nn_order.data();
+    v.nn_order_inv = s.nn_order_inv.data();
+    v.coords = s.coords.data();
+    v.cov_type = s.cov_type;
+    return v;
+}
+
 struct NNGPNCWorkspace {
     int N = 0, nn = 0;
     std::vector<double> w;          // Transformed spatial effects (N)
@@ -48,11 +152,11 @@ struct NNGPNCWorkspace {
 inline void nngp_nc_forward(
     const double* z,          // z[loc_idx], indexed by location, length N
     double sigma2, double phi,
-    const GPData& gp_data,
+    const NNGPNCView& view,
     NNGPNCWorkspace& ws
 ) {
-    int N = gp_data.n_obs;
-    int nn = gp_data.nn;
+    int N = view.n_obs;
+    int nn = view.nn;
     ws.init(N, nn);
 
     // Pre-allocated Eigen workspace (reused across iterations)
@@ -63,7 +167,7 @@ inline void nngp_nc_forward(
     // First observation: marginal N(0, sigma2). Guard the location index: a
     // malformed nn_order (e.g. a 1-based ordering leaking through) would make
     // ws.w[first_loc] / z[first_loc] an out-of-bounds access.
-    int first_loc = gp_data.nn_order[0];
+    int first_loc = view.nn_order[0];
     ws.sqrt_d[0] = std::sqrt(sigma2);
     ws.B_n_nb[0] = 0;
     if (first_loc >= 0 && first_loc < N) {
@@ -71,7 +175,7 @@ inline void nngp_nc_forward(
     }
 
     for (int i = 1; i < N; i++) {
-        int obs_loc = gp_data.nn_order[i];
+        int obs_loc = view.nn_order[i];
         if (obs_loc < 0 || obs_loc >= N) {
             // obs_loc is out of range; set only the i-indexed fields and skip
             // the ws.w[obs_loc] / z[obs_loc] write (matches the gradient path).
@@ -82,7 +186,7 @@ inline void nngp_nc_forward(
 
         // Count neighbors
         int n_nb = 0;
-        for (int j = 0; j < nn && gp_data.nn_idx[i * nn + j] > 0; j++) n_nb++;
+        for (int j = 0; j < nn && view.nn_idx[i * nn + j] > 0; j++) n_nb++;
 
         if (n_nb == 0) {
             ws.sqrt_d[i] = std::sqrt(sigma2);
@@ -93,16 +197,16 @@ inline void nngp_nc_forward(
 
         // Build c_vec (covariance between obs and its neighbors)
         for (int j = 0; j < n_nb; j++) {
-            double d = gp_data.nn_dist[i * nn + j];
-            c_eigen(j) = compute_cov(d, sigma2, phi, gp_data.cov_type);
+            double d = view.nn_dist[i * nn + j];
+            c_eigen(j) = compute_cov(d, sigma2, phi, view.cov_type);
         }
 
         // Validate neighbor indices and build C_mat (symmetric fill)
         bool ok = true;
         for (int j = 0; j < n_nb && ok; j++) {
-            int raw = gp_data.nn_idx[i * nn + j];
-            if (raw - 1 < 0 || raw - 1 >= (int)gp_data.nn_order.size()) { ok = false; break; }
-            int loc = gp_data.nn_order[raw - 1];
+            int raw = view.nn_idx[i * nn + j];
+            if (raw - 1 < 0 || raw - 1 >= view.n_obs) { ok = false; break; }
+            int loc = view.nn_order[raw - 1];
             if (loc < 0 || loc >= N) { ok = false; break; }
             ws.nb_idx_flat[i * nn + j] = loc;
         }
@@ -117,8 +221,9 @@ inline void nngp_nc_forward(
         for (int j1 = 0; j1 < n_nb; j1++) {
             C_eigen(j1, j1) = sigma2 + 1e-8;  // Jitter for stability
             for (int j2 = j1 + 1; j2 < n_nb; j2++) {
-                double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
-                double cov_val = compute_cov(d12, sigma2, phi, gp_data.cov_type);
+                double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
+                                             ws.nb_idx_flat[i * nn + j2]);
+                double cov_val = compute_cov(d12, sigma2, phi, view.cov_type);
                 C_eigen(j1, j2) = cov_val;
                 C_eigen(j2, j1) = cov_val;
             }
@@ -186,7 +291,7 @@ inline void nngp_nc_forward(
 inline void nngp_nc_backward(
     const double* z,            // z[loc_idx], location-indexed
     double sigma2, double phi,
-    const GPData& gp_data,
+    const NNGPNCView& view,
     const NNGPNCWorkspace& ws,
     const double* dL_dw,        // Likelihood gradient w.r.t. w[loc] (location-indexed)
     double* grad_z,             // Output: likelihood/transform gradient for z[loc]
@@ -194,14 +299,14 @@ inline void nngp_nc_backward(
     double& grad_log_phi_lik,   // Output: likelihood contribution to phi gradient
     double& grad_log_phi_jac    // Output: z->w log-Jacobian contribution to phi gradient
 ) {
-    int N = gp_data.n_obs;
-    int nn = gp_data.nn;
-    const std::vector<int>& nn_order_inv = gp_data.nn_order_inv;
+    int N = view.n_obs;
+    int nn = view.nn;
+    const int* nn_order_inv = view.nn_order_inv;
 
     // Initialize adjoint from direct likelihood contribution (NNGP-order indexed)
     std::vector<double>& adj = const_cast<NNGPNCWorkspace&>(ws).adj;
     for (int i = 0; i < N; i++) {
-        int loc = gp_data.nn_order[i];
+        int loc = view.nn_order[i];
         adj[i] = dL_dw[loc];
     }
 
@@ -224,7 +329,7 @@ inline void nngp_nc_backward(
     // the tape, so it is not folded in here -- matching the SpdeNcTransform
     // backward contract.
     for (int i = 0; i < N; i++) {
-        int loc = gp_data.nn_order[i];
+        int loc = view.nn_order[i];
         grad_z[loc] = ws.sqrt_d[i] * adj[i];
     }
 
@@ -233,7 +338,7 @@ inline void nngp_nc_backward(
     // sigma2 likelihood gradient
     grad_log_sigma2_lik = 0.0;
     for (int i = 0; i < N; i++) {
-        int loc = gp_data.nn_order[i];
+        int loc = view.nn_order[i];
         grad_log_sigma2_lik += adj[i] * 0.5 * ws.sqrt_d[i] * z[loc];
     }
 
@@ -280,15 +385,15 @@ inline void nngp_nc_backward(
         #pragma omp for schedule(dynamic)
         #endif
         for (int i = 1; i < N; i++) {
-            int obs_loc = gp_data.nn_order[i];
+            int obs_loc = view.nn_order[i];
             int n_nb = ws.B_n_nb[i];
             if (n_nb == 0 || obs_loc < 0 || obs_loc >= N) continue;
 
             // Rebuild c_vec, dc_vec, and C_mat for phi derivatives
             for (int j = 0; j < n_nb; j++) {
-                double d = gp_data.nn_dist[i * nn + j];
-                c_eigen(j) = compute_cov(d, sigma2, phi, gp_data.cov_type);
-                dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, gp_data.cov_type);
+                double d = view.nn_dist[i * nn + j];
+                c_eigen(j) = compute_cov(d, sigma2, phi, view.cov_type);
+                dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, view.cov_type);
                 alpha_eigen(j) = ws.B_flat[i * nn + j];
             }
 
@@ -296,8 +401,9 @@ inline void nngp_nc_backward(
             for (int j1 = 0; j1 < n_nb; j1++) {
                 C_eigen(j1, j1) = sigma2;
                 for (int j2 = j1 + 1; j2 < n_nb; j2++) {
-                    double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
-                    double cov_val = compute_cov(d12, sigma2, phi, gp_data.cov_type);
+                    double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
+                                                 ws.nb_idx_flat[i * nn + j2]);
+                    double cov_val = compute_cov(d12, sigma2, phi, view.cov_type);
                     C_eigen(j1, j2) = cov_val;
                     C_eigen(j2, j1) = cov_val;
                 }
@@ -316,9 +422,10 @@ inline void nngp_nc_backward(
             for (int j1 = 0; j1 < n_nb; j1++) {
                 for (int j2 = 0; j2 < n_nb; j2++) {
                     if (j1 != j2) {
-                        double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
+                        double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
+                                                     ws.nb_idx_flat[i * nn + j2]);
                         double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
-                                                  gp_data.cov_type);
+                                                  view.cov_type);
                         dC_alpha[j1] += dC_jk * alpha_eigen(j2);
                     }
                 }

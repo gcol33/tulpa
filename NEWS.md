@@ -125,8 +125,55 @@ Fixed:
   `(z, log_sigma2, log_phi)` through the hand-derived NNGP forward/backward in
   an arena `custom_backward`; the stored draws are transformed `z -> w` on the
   way out. `spatial_gp(parameterization = "centered")` restores the old path.
-  The SVC and multiscale NNGP fields share the same centered architecture and
-  still funnel; their HSGP variants are already spectrally non-centered.
+
+  The same transform is now available on the NNGP spatially-varying-coefficient
+  (`spatial_svc(parameterization = "noncentered")`, per term) and multi-scale
+  (`spatial_multiscale(sampler = "noncentered")`, per scale) fields, which the
+  three blocks reach through one shared per-term applier rather than a copy
+  each. The HSGP variants of all three are already spectrally non-centered and
+  are unchanged.
+
+  SVC keeps the CENTERED default, unlike GP. The issue that prompted this work
+  expected SVC to share the funnel but recorded that as untested; measured on
+  the `test-svc-nuts-frontdoor.R` recovery fit (Poisson, n = 120, same data /
+  seed / budget for both arms), the centered path is already funnel-free --
+  0/700 divergent, field correlation 0.939, sd ratio 0.662, mean treedepth 6.3
+  -- and it fits in 163s where non-centered needs well over ten times that for
+  the same answer. The funnel that motivated the GP flip was measured on a
+  weakly identified field, which is where non-centered earns its cost; a
+  well-identified response does not pay it. Reach for `"noncentered"` when the
+  field is weakly identified or the centered fit reports divergences.
+
+  Correspondingly there is no new SVC amplitude test: `test-svc-nuts-frontdoor.R`
+  already asserts the same sd-ratio band plus a divergence guard on
+  well-identified data, which is the correct design for that quantity -- on
+  weakly identified data a posterior mean shrunk toward zero is the right
+  answer, not evidence of a funnel, so a sd-ratio contrast there measures
+  shrinkage rather than geometry.
+
+  The multiscale transform is verified by finite differences against the
+  analytic backward on both scales, but its end-to-end amplitude test is
+  skipped against gcol33/tulpa#244: that block's range prior is still a Uniform
+  behind a hard `-INFINITY` wall (the defect #144 fixed for GP and SVC, which
+  multiscale escaped only by being unreachable), and it leaves 82-88% of
+  post-warmup draws divergent whichever parameterization is used.
+
+  `spatial_multiscale()` reaches exact NUTS through the `tulpa()` front door
+  for the first time: the prior and its parameter layout existed, but no
+  spatial-type branch ever built the sampler inputs for it, so the path was
+  unreachable. Both scales' fields are reported as `gp_local[i]` /
+  `gp_regional[i]` draws alongside their own `(sigma2, phi)`. It has no
+  nested-Laplace kernel, so `mode = "structured"` still routes it to the
+  conditional Laplace path (which rejects it); `auto` routes it to exact NUTS,
+  the integrator that fits it.
+
+- The samplers started every coordinate at the origin, which puts a spatial
+  range at `phi = 1`. That is inside the support of every PC-range block, but
+  the multi-scale block declares hard range bounds, so bounds excluding 1 left
+  the chain starting at `-Inf` -- it never moved and returned an all-zero field
+  at a 100% divergence rate. Each bounded range now starts at the geometric
+  mean of its own bounds; a caller-supplied `init` is left untouched, and
+  unbounded blocks are unaffected.
 
 - A Laplace fit made with no `beta_prior` reported standard errors that omitted
   the prior its mode was found under. The compiled kernels apply a built-in

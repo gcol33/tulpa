@@ -255,6 +255,75 @@
 }
 
 
+# Pack a validated tulpa_multiscale (multi-scale NNGP) spec into the
+# ModelData sampler's multiscale spatial_spec (mode = "exact" continuous-field
+# NUTS). Two independent NNGP scales (local / regional), each with its own
+# neighbour structure computed by validate_gp() (same compute_nngp_neighbors()
+# helper spatial_gp() uses, so the field/index conventions match
+# .gp_sampler_spec() exactly: field at unique-location order, nn_order
+# 0-based, nn_neighbor_dist row-major [i, j1, j2]). The sigma2 PC-prior
+# anchors are not yet exposed by spatial_multiscale(), so this uses the same
+# fixed weakly-informative default .gp_sampler_spec() does rather than
+# inventing a data-driven one; the range bounds are the ones the user already
+# set via range_local / range_regional.
+#' @keywords internal
+.msgp_sampler_spec <- function(spatial) {
+  nil <- spatial$neighbor_info_local
+  nir <- spatial$neighbor_info_regional
+  if (is.null(nil) || is.null(nir) || is.null(spatial$unique_coords)) {
+    stop("multiscale spatial spec is unvalidated (neighbor_info_local / ",
+         "neighbor_info_regional / unique_coords NULL). tulpa() validates ",
+         "it via validate_gp().", call. = FALSE)
+  }
+  uc <- as.matrix(spatial$unique_coords)
+  n_loc <- nrow(uc)
+  nn_local <- as.integer(spatial$nn_local %||% ncol(nil$nn_idx))
+  nn_regional <- as.integer(spatial$nn_regional %||% ncol(nir$nn_idx))
+  # "auto" resolves to non-centered, matching spatial_gp()'s default. The
+  # remaining spatial_multiscale(sampler=) modes name strategies the exact-NUTS
+  # path does not implement; surface that rather than silently sampling a
+  # different parameterization than the one asked for.
+  sampler <- spatial$sampler %||% "auto"
+  if (!sampler %in% c("auto", "noncentered", "centered")) {
+    stop("spatial_multiscale(sampler = \"", sampler, "\") is not implemented on ",
+         "the exact-NUTS path; it samples the two scales as \"noncentered\" ",
+         "(the default) or \"centered\".", call. = FALSE)
+  }
+  noncentered <- !identical(sampler, "centered")
+  list(
+    type                      = "multiscale",
+    coords                    = matrix(as.numeric(uc), n_loc, 2),
+    nn_local                  = nn_local,
+    nn_idx_local              = matrix(as.integer(nil$nn_idx), n_loc, nn_local),
+    nn_dist_local             = matrix(as.numeric(nil$nn_dist), n_loc, nn_local),
+    nn_neighbor_dist_local    = as.numeric(aperm(nil$nn_neighbor_dist, c(3, 2, 1))),
+    nn_order_local            = as.integer(nil$nn_order) - 1L,
+    nn_order_inv_local        = as.integer(nil$nn_order_inv %||% seq_len(n_loc)) - 1L,
+    nn_regional                = nn_regional,
+    nn_idx_regional            = matrix(as.integer(nir$nn_idx), n_loc, nn_regional),
+    nn_dist_regional           = matrix(as.numeric(nir$nn_dist), n_loc, nn_regional),
+    nn_neighbor_dist_regional  = as.numeric(aperm(nir$nn_neighbor_dist, c(3, 2, 1))),
+    nn_order_regional          = as.integer(nir$nn_order) - 1L,
+    nn_order_inv_regional      = as.integer(nir$nn_order_inv %||% seq_len(n_loc)) - 1L,
+    obs_to_loc                = as.integer(spatial$obs_to_loc) - 1L,
+    cov_type                  = gp_cov_type_for_laplace(spatial),
+    range_local_lower         = as.numeric(spatial$range_local[1]),
+    range_local_upper         = as.numeric(spatial$range_local[2]),
+    range_regional_lower      = as.numeric(spatial$range_regional[1]),
+    range_regional_upper      = as.numeric(spatial$range_regional[2]),
+    sigma2_local_prior_U        = 2.0,
+    sigma2_local_prior_alpha    = 0.05,
+    sigma2_regional_prior_U     = 2.0,
+    sigma2_regional_prior_alpha = 0.05,
+    # Non-centered (z ~ N(0, I) per scale, each field reconstructed as
+    # w = f(z, sigma2, phi)) avoids the field/hyperparameter funnel
+    # gp_parameterization / svc_parameterization document, independently per
+    # scale (gcol33/tulpa#243).
+    msgp_parameterization = if (noncentered) 1L else 0L
+  )
+}
+
+
 # Pack a validated tulpa_hsgp spec into the ModelData sampler's HSGP
 # spatial_spec (mode = "exact" continuous-field NUTS). The Laplacian basis is
 # built in C++ by setup_hsgp_2d (the single source of truth) from the validated
@@ -351,7 +420,17 @@
     X_svc           = as.numeric(t(Xs)),            # row-major [n_obs x n_svc]
     cov_type        = gp_cov_type_for_laplace(spatial),
     phi_prior_U     = as.numeric(U),
-    phi_prior_alpha = 0.05
+    phi_prior_alpha = 0.05,
+    # Centered is the default here, unlike .gp_sampler_spec()'s
+    # gp_parameterization. The funnel that motivated the GP flip was measured
+    # on a weakly identified field; on a well-identified response the centered
+    # SVC path is already funnel-free (0/700 divergent, sd ratio 0.66 on the
+    # test-svc-nuts-frontdoor.R recovery fit) and non-centered costs roughly an
+    # order of magnitude more for the same answer. Opt in with
+    # spatial_svc(parameterization = "noncentered") when the field is weakly
+    # identified (gcol33/tulpa#243).
+    svc_parameterization =
+      if (identical(spatial$parameterization, "noncentered")) 1L else 0L
   )
 }
 
@@ -946,6 +1025,15 @@
       svc_spec_arg <- .svc_sampler_spec(spatial, bundle$X)
     } else if (!is.null(spatial) && tolower(spatial$type %||% "") %in% c("gp", "nngp")) {
       spatial_spec_arg <- .gp_sampler_spec(spatial)
+    } else if (!is.null(spatial) && tolower(spatial$type %||% "") == "multiscale") {
+      if (isTRUE((spatial$approx %||% "nngp") == "hsgp")) {
+        stop(sprintf(paste0(
+          "Backend '%s' samples the multi-scale field via NNGP; ",
+          "spatial_multiscale(approx = \"hsgp\") is not threaded through this ",
+          "path. Use approx = \"nngp\", or a nested-Laplace mode."), backend),
+          call. = FALSE)
+      }
+      spatial_spec_arg <- .msgp_sampler_spec(spatial)
     } else if (!is.null(spatial) && tolower(spatial$type %||% "") == "hsgp") {
       spatial_spec_arg <- .hsgp_sampler_spec(spatial)
     } else if (!is.null(spatial) && tolower(spatial$type %||% "") == "car_proper") {
@@ -1521,13 +1609,16 @@ tulpa <- function(formula, data,
              "spatial_svc(~ lon + lat, approx = 'nngp').", call. = FALSE)
       }
       spatial_spec <- validate_svc(spatial_spec, data, bundle$X)
-    } else if (sp_lc %in% c(.NL_FRONTDOOR_CONTINUOUS, .NL_FRONTDOOR_SPDE)) {
+    } else if (sp_lc %in% c(.NL_FRONTDOOR_CONTINUOUS, .NL_FRONTDOOR_SPDE,
+                            .FRONTDOOR_MULTISCALE)) {
       # Coordinate-addressed field: coords come from the spec; no spatial(col)
       # term. gp/nngp/hsgp resolve their coordinate structure via validate_*()
       # (gp/nngp: unique_coords / obs_to_loc / neighbor_info; hsgp:
-      # coords_matrix at every observation for the basis builder). SPDE is
-      # self-contained -- spatial_spde() built the mesh + FEM matrices (A, C, G)
-      # at construction -- so it only needs a dimension check.
+      # coords_matrix at every observation for the basis builder). Multiscale
+      # shares validate_gp() -- the same unique-location resolution, run once
+      # per scale to derive neighbor_info_local / neighbor_info_regional. SPDE
+      # is self-contained -- spatial_spde() built the mesh + FEM matrices
+      # (A, C, G) at construction -- so it only needs a dimension check.
       if (!is.null(parsed$spatial_var)) {
         stop("A continuous spatial field (", spatial_type, ") is addressed by ",
              "its coordinate columns in the spec; drop the spatial(",
@@ -1552,10 +1643,10 @@ tulpa <- function(formula, data,
         }
         spatial_spec <- validate_hsgp(spatial_spec, data)
       } else {
-        if (!inherits(spatial_spec, "tulpa_gp")) {
-          stop("A continuous spatial field must be a spatial_gp(~ lon + lat) spec ",
-               "object (it carries the coordinate columns); got a bare list.",
-               call. = FALSE)
+        if (!inherits(spatial_spec, c("tulpa_gp", "tulpa_multiscale"))) {
+          stop("A continuous spatial field must be a spatial_gp(~ lon + lat) or ",
+               "spatial_multiscale(~ lon + lat) spec object (it carries the ",
+               "coordinate columns); got a bare list.", call. = FALSE)
         }
         spatial_spec <- validate_gp(spatial_spec, data)
       }
@@ -1595,8 +1686,8 @@ tulpa <- function(formula, data,
       }
     } else {
       stop("Unknown spatial type '", spatial_type, "'. `spatial$type` must be one ",
-           "of: areal icar/car/bym2/car_proper, continuous gp/nngp/hsgp/spde, or ",
-           "rsr.", call. = FALSE)
+           "of: areal icar/car/bym2/car_proper, continuous ",
+           "gp/nngp/hsgp/spde/multiscale, or rsr.", call. = FALSE)
     }
   }
 

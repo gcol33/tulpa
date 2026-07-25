@@ -137,6 +137,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     in.resp.phi2 = phi2;   // NA_REAL is a NaN => family default (e.g. t df = 4)
     const int D = in.layout.total_params;
     std::vector<double> init(D, 0.0);
+    tulpa::init_bounded_support_params(init, in.data, in.layout);
     Rcpp::CharacterVector cn = tulpa::sampler_param_names(in.data, in.layout, fixed_names);
 
     // A warm start is only wired into the NUTS/HMC kernel, which is the one that
@@ -155,7 +156,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
 
     if (is_nuts) {
         if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
-        std::vector<std::vector<double>> q_init(n_chains, std::vector<double>(D, 0.0));
+        std::vector<std::vector<double>> q_init(n_chains, init);
         std::vector<std::vector<double>> inv_metric;   // empty -> structural default
 
         // Caller-supplied initial positions, one row per chain. A matrix rather

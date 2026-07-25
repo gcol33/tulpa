@@ -156,15 +156,28 @@ test_that("a continuous field rejects a spatial(col) term", {
 })
 
 # SPDE is now routed through tulpa() (its own `spde` backend; see
-# test-tulpa-spatial-spde-frontdoor.R). A field type with no front-door wiring
-# yet (e.g. multiscale) must still error with guidance rather than fall through.
+# test-tulpa-spatial-spde-frontdoor.R), and so is multiscale (exact NUTS; see
+# test-multiscale-gp-noncentered-amplitude.R). A type the grammar does not know
+# at all must still error with guidance rather than fall through.
 test_that("an unrouted spatial type errors with guidance", {
   s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
   expect_error(
     suppressMessages(tulpa(
       y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
-      spatial = list(type = "multiscale"), mode = "nested_laplace")),
+      spatial = list(type = "not_a_field_type"), mode = "nested_laplace")),
     "Unknown spatial type"
+  )
+})
+
+test_that("a bare list multiscale spec is rejected with guidance", {
+  # "multiscale" now routes to validate_gp(), so a bare list must be caught by
+  # the spec-class check rather than the unknown-type arm above.
+  s <- sim_gp_binomial(n_loc = 20L, reps = 1L)
+  expect_error(
+    suppressMessages(tulpa(
+      y ~ x, data = s$data, family = "binomial", n_trials = s$data$ntrials,
+      spatial = list(type = "multiscale"), mode = "exact")),
+    "spatial_multiscale"
   )
 })
 

@@ -13,7 +13,8 @@ spatial_svc(
   scale_coords = TRUE,
   approx = c("nngp", "hsgp"),
   m = 6,
-  c_boundary = 1.5
+  c_boundary = 1.5,
+  parameterization = c("centered", "noncentered")
 )
 }
 \arguments{
@@ -44,6 +45,18 @@ process-specific effects and emits a warning.}
 
 \item{c_boundary}{Boundary-extension factor for the HSGP domain
 (\code{approx = "hsgp"}).}
+
+\item{parameterization}{Latent parameterization for the exact-NUTS field
+(\code{approx = "nngp"} only; HSGP is already non-centered by construction).
+\code{"centered"} (default) places the NNGP density on each term's field
+directly. \code{"noncentered"} samples \code{z_j ~ N(0, I)} per term and
+reconstructs each field as \code{w_j = f(z_j, sigma2_j, phi_j)}, which trades
+cost for geometry: it removes the field/hyperparameter funnel that bites
+when the field is weakly identified (a latent-state occupancy response,
+say), but on a well-identified response the centered path is already
+funnel-free and is the cheaper of the two by roughly an order of
+magnitude. Prefer \code{"noncentered"} when the field is weakly identified or
+the centered fit reports divergences.}
 }
 \value{
 A \code{tulpa_svc} object (also of class \code{tulpa_spatial}).

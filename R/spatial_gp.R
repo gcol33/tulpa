@@ -298,9 +298,12 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #'   used when `approx = "hsgp"`. Total basis functions will be m^2.
 #' @param c_boundary Boundary factor for HSGP domain extension (default 1.5).
 #'   Only used when `approx = "hsgp"`.
-#' @param sampler Sampling strategy: `"auto"` (default) selects based on model;
-#'   `"noncentered"` uses z ~ N(0,1); `"centered"` samples effects directly;
-#'   `"interweaved"` alternates between parameterizations.
+#' @param sampler Latent parameterization for the exact-NUTS field. `"auto"`
+#'   (default) and `"noncentered"` sample `z ~ N(0, I)` per scale and
+#'   reconstruct each field as `w = f(z, sigma2, phi)`, avoiding the
+#'   field/hyperparameter funnel; `"centered"` places the NNGP density on each
+#'   field directly. `"interweaved"` alternates between parameterizations and
+#'   is not implemented on the exact-NUTS path.
 #'
 #' @return A `tulpa_multiscale` object
 #'
@@ -330,29 +333,29 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #' print(ms)
 #'
 #' \dontrun{
-#' # Generate synthetic spatial data (not run - multiscale not fully supported)
 #' set.seed(101)
 #' n <- 60
 #' df <- data.frame(
 #'   lon = runif(n, 0, 10),
 #'   lat = runif(n, 0, 10),
 #'   depth = rnorm(n),
-#'   temp = rnorm(n),
-#'   count = rpois(n, 30),
-#'   effort = rgamma(n, shape = 5, rate = 1)
+#'   temp = rnorm(n)
 #' )
+#' df$count <- rpois(n, exp(1 + 0.2 * df$depth))
 #'
-#' # Multi-scale spatial with local and regional components
+#' # Both scales are sampled by exact NUTS (mode = "exact"); the field is
+#' # returned as gp_local[i] / gp_regional[i] draws.
 #' fit <- tulpa(
-#'   count | effort ~ depth + temp,
+#'   count ~ depth + temp,
 #'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
+#'   family = "poisson",
 #'   spatial = spatial_multiscale(
 #'     ~ lon + lat,
 #'     range_local = c(0.1, 0.5),
 #'     range_regional = c(1, 5)
 #'   ),
-#'   iter = 200, warmup = 100, chains = 1
+#'   mode = "exact",
+#'   control = list(n_iter = 200L, n_warmup = 100L)
 #' )
 #' summary(fit)
 #' }

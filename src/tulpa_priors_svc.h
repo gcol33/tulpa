@@ -103,28 +103,54 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 log_post = log_post + log_phi;  // Jacobian
             }
 
-            // Extract SVC values
             int n_svc_params = n_svc * n_obs;
-            std::vector<T> svc_w_flat(n_svc_params);
-            for (int k = 0; k < n_svc_params; k++) {
-                svc_w_flat[k] = params[layout.svc_w_start + k];
-            }
 
-            // NNGP prior on each SVC term
-            for (int j = 0; j < n_svc; j++) {
-                std::vector<T> w_j(n_obs);
-                for (int k = 0; k < n_obs; k++) {
-                    w_j[k] = svc_w_flat[j * n_obs + k];
+            if (data.svc_parameterization == 1) {
+                // Non-centered: params[svc_w_start ..] are z_j ~ N(0, I) per
+                // term. Each term's field w_j = f(z_j, sigma2_j, phi_j) and
+                // its likelihood are reconstructed by apply_svc_nc_transform_*
+                // in initialize_generic_state, which also applies the
+                // sum-to-zero penalty and computes svc_eta on the
+                // reconstructed w (both need the field, not z). This avoids
+                // the field/hyperparameter funnel the centered
+                // parameterization collapses under a diagonal mass matrix --
+                // the same fix as compute_gp_spatial_prior's gp_parameterization
+                // branch (gcol33/tulpa#243).
+                //
+                // No z -> w Jacobian: z_j is a genuine auxiliary with its own
+                // N(0, I) prior and w_j is a deterministic function of
+                // (z_j, theta_j), so adding log|dw_j/dz_j| would inflate the
+                // term's amplitude instead of leaving the (w, theta) posterior
+                // unchanged -- see compute_gp_spatial_prior's identical note.
+                for (int k = 0; k < n_svc_params; k++) {
+                    T zk = params[layout.svc_w_start + k];
+                    log_post = log_post - T(0.5) * zk * zk;
                 }
-                log_post = log_post + tulpa_svc_ad::nngp_log_lik(w_j, svc_sigma2[j], svc_phi[j], data.svc_data);
+                svc_eta.clear();  // filled by apply_svc_nc_transform_* on w
+            } else {
+                // Centered: params[svc_w_start ..] ARE the fields w_j, and the
+                // NNGP density is placed on them directly.
+                std::vector<T> svc_w_flat(n_svc_params);
+                for (int k = 0; k < n_svc_params; k++) {
+                    svc_w_flat[k] = params[layout.svc_w_start + k];
+                }
+
+                // NNGP prior on each SVC term
+                for (int j = 0; j < n_svc; j++) {
+                    std::vector<T> w_j(n_obs);
+                    for (int k = 0; k < n_obs; k++) {
+                        w_j[k] = svc_w_flat[j * n_obs + k];
+                    }
+                    log_post = log_post + tulpa_svc_ad::nngp_log_lik(w_j, svc_sigma2[j], svc_phi[j], data.svc_data);
+                }
+
+                // Soft sum-to-zero constraint
+                log_post = log_post + tulpa_svc_ad::svc_sum_to_zero_penalty(svc_w_flat, data.svc_data);
+
+                // Precompute SVC contribution to linear predictor
+                svc_eta.resize(n_obs, T(0.0));
+                tulpa_svc_ad::compute_svc_eta(svc_w_flat, data.svc_data, svc_eta);
             }
-
-            // Soft sum-to-zero constraint
-            log_post = log_post + tulpa_svc_ad::svc_sum_to_zero_penalty(svc_w_flat, data.svc_data);
-
-            // Precompute SVC contribution to linear predictor
-            svc_eta.resize(n_obs, T(0.0));
-            tulpa_svc_ad::compute_svc_eta(svc_w_flat, data.svc_data, svc_eta);
         }
     }
 

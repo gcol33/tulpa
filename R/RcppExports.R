@@ -69,6 +69,18 @@ cpp_family_curvature_deta_vec <- function(y, n_trials, eta, family, phi, phi2 = 
     .Call(`_tulpa_cpp_family_curvature_deta_vec`, y, n_trials, eta, family, phi, phi2)
 }
 
+cpp_family_curvature_deta2 <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_curvature_deta2`, y, n_trials, eta, family, phi, phi2)
+}
+
+cpp_family_has_curvature_2nd_derivative <- function(family) {
+    .Call(`_tulpa_cpp_family_has_curvature_2nd_derivative`, family)
+}
+
+cpp_family_curvature_deta2_vec <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_curvature_deta2_vec`, y, n_trials, eta, family, phi, phi2)
+}
+
 cpp_family_ad_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_ad_terms`, y, n_trials, eta, family, phi, phi2)
 }
@@ -271,6 +283,14 @@ cpp_test_nngp_nc_grad <- function(z, log_sigma2, log_phi, a, coords, nn_idx, nn_
 
 cpp_test_svc_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type) {
     .Call(`_tulpa_cpp_test_svc_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_order, cov_type)
+}
+
+cpp_test_svc_nngp_nc_grad <- function(z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_order, nn_order_inv, cov_type, fd_eps = 1e-6) {
+    .Call(`_tulpa_cpp_test_svc_nngp_nc_grad`, z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_order, nn_order_inv, cov_type, fd_eps)
+}
+
+cpp_test_msgp_nngp_nc_grad <- function(z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, scale, fd_eps = 1e-6) {
+    .Call(`_tulpa_cpp_test_msgp_nngp_nc_grad`, z, log_sigma2, log_phi, a, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type, scale, fd_eps)
 }
 
 cpp_test_log_prior_log_sigma2_half_cauchy <- function(log_sigma2, scale) {

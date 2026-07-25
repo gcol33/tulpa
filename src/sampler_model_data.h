@@ -248,6 +248,90 @@ inline void build_sampler_model_inputs(
             if (sp.containsElementNamed("sigma2_prior_alpha"))
                 in.data.gp_sigma2_prior_alpha =
                     Rcpp::as<double>(sp["sigma2_prior_alpha"]);
+        } else if (stype == "multiscale") {
+            // Multi-scale (local + regional) NNGP field. Two independent
+            // GPData-shaped neighbour structures packed side by side in
+            // MultiscaleGPData; compute_param_layout keys the block on
+            // spatial_type == MULTISCALE_GP. Index conventions match the
+            // single-scale "gp"/"nngp" branch above (same R-side
+            // compute_nngp_neighbors() helper, same aperm for
+            // nn_neighbor_dist_*). msgp_parameterization mirrors
+            // gp_parameterization -- non-centered by default, applied
+            // independently per scale (gcol33/tulpa#243).
+            in.data.spatial_type = SpatialType::MULTISCALE_GP;
+            auto& ms = in.data.multiscale_gp_data;
+            Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
+            const int n_loc = coords.nrow();
+            ms.n_obs = n_loc;
+            ms.coords.resize(2 * (std::size_t)n_loc);
+            for (int i = 0; i < n_loc; ++i) {
+                ms.coords[2 * (std::size_t)i]     = coords(i, 0);
+                ms.coords[2 * (std::size_t)i + 1] = coords(i, 1);
+            }
+            Rcpp::IntegerVector otl = Rcpp::as<Rcpp::IntegerVector>(sp["obs_to_loc"]);
+            ms.obs_to_loc.assign(otl.begin(), otl.end());
+            ms.cov_type = static_cast<CovType>(Rcpp::as<int>(sp["cov_type"]));
+
+            ms.nn_local = Rcpp::as<int>(sp["nn_local"]);
+            {
+                Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sp["nn_idx_local"]);
+                Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sp["nn_dist_local"]);
+                ms.nn_idx_local.resize((std::size_t)n_loc * ms.nn_local);
+                ms.nn_dist_local.resize((std::size_t)n_loc * ms.nn_local);
+                for (int i = 0; i < n_loc; ++i)
+                    for (int j = 0; j < ms.nn_local; ++j) {
+                        ms.nn_idx_local[(std::size_t)i * ms.nn_local + j]  = nnix(i, j);
+                        ms.nn_dist_local[(std::size_t)i * ms.nn_local + j] = nnd(i, j);
+                    }
+                Rcpp::NumericVector nnnd =
+                    Rcpp::as<Rcpp::NumericVector>(sp["nn_neighbor_dist_local"]);
+                ms.nn_neighbor_dist_local.assign(nnnd.begin(), nnnd.end());
+                Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_local"]);
+                ms.nn_order_local.assign(nord.begin(), nord.end());
+                Rcpp::IntegerVector nordi =
+                    Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_inv_local"]);
+                ms.nn_order_inv_local.assign(nordi.begin(), nordi.end());
+            }
+
+            ms.nn_regional = Rcpp::as<int>(sp["nn_regional"]);
+            {
+                Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sp["nn_idx_regional"]);
+                Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sp["nn_dist_regional"]);
+                ms.nn_idx_regional.resize((std::size_t)n_loc * ms.nn_regional);
+                ms.nn_dist_regional.resize((std::size_t)n_loc * ms.nn_regional);
+                for (int i = 0; i < n_loc; ++i)
+                    for (int j = 0; j < ms.nn_regional; ++j) {
+                        ms.nn_idx_regional[(std::size_t)i * ms.nn_regional + j]  = nnix(i, j);
+                        ms.nn_dist_regional[(std::size_t)i * ms.nn_regional + j] = nnd(i, j);
+                    }
+                Rcpp::NumericVector nnnd =
+                    Rcpp::as<Rcpp::NumericVector>(sp["nn_neighbor_dist_regional"]);
+                ms.nn_neighbor_dist_regional.assign(nnnd.begin(), nnnd.end());
+                Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_regional"]);
+                ms.nn_order_regional.assign(nord.begin(), nord.end());
+                Rcpp::IntegerVector nordi =
+                    Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_inv_regional"]);
+                ms.nn_order_inv_regional.assign(nordi.begin(), nordi.end());
+            }
+
+            ms.range_local_lower    = Rcpp::as<double>(sp["range_local_lower"]);
+            ms.range_local_upper    = Rcpp::as<double>(sp["range_local_upper"]);
+            ms.range_regional_lower = Rcpp::as<double>(sp["range_regional_lower"]);
+            ms.range_regional_upper = Rcpp::as<double>(sp["range_regional_upper"]);
+
+            in.data.has_multiscale_gp = true;
+            in.data.msgp_is_hsgp = false;
+            in.data.ms_sigma2_local_prior_U =
+                Rcpp::as<double>(sp["sigma2_local_prior_U"]);
+            in.data.ms_sigma2_local_prior_alpha =
+                Rcpp::as<double>(sp["sigma2_local_prior_alpha"]);
+            in.data.ms_sigma2_regional_prior_U =
+                Rcpp::as<double>(sp["sigma2_regional_prior_U"]);
+            in.data.ms_sigma2_regional_prior_alpha =
+                Rcpp::as<double>(sp["sigma2_regional_prior_alpha"]);
+            in.data.msgp_parameterization =
+                sp.containsElementNamed("msgp_parameterization")
+                    ? Rcpp::as<int>(sp["msgp_parameterization"]) : 1;
         } else if (stype == "car_proper") {
             // Proper CAR: Q(rho) = D - rho W, full-rank (PD) so the field mean
             // is identified (no ICAR sum-to-zero). compute_param_layout keys
@@ -300,7 +384,8 @@ inline void build_sampler_model_inputs(
         } else {
             Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
                        "supported on the sampler path (use 'icar'/'bym2'/"
-                       "'car_proper'/'gp'/'nngp'/'hsgp').", stype.c_str());
+                       "'car_proper'/'gp'/'nngp'/'hsgp'/'multiscale').",
+                       stype.c_str());
         }
     }
 
@@ -430,6 +515,15 @@ inline void build_sampler_model_inputs(
         in.data.svc_phi_prior_alpha = Rcpp::as<double>(sv["phi_prior_alpha"]);
         if (sv.containsElementNamed("sigma2_prior_scale"))
             in.data.svc_sigma2_prior_scale = Rcpp::as<double>(sv["sigma2_prior_scale"]);
+        // svc_parameterization defaults to 0 (centered), matching the
+        // spatial_svc() front door. Non-centered removes the
+        // field/hyperparameter funnel but costs roughly an order of magnitude,
+        // and on a well-identified response the centered path is already
+        // funnel-free -- so a caller that does not ask for it explicitly gets
+        // the cheap path rather than a silent trade (gcol33/tulpa#243).
+        in.data.svc_parameterization =
+            sv.containsElementNamed("svc_parameterization")
+                ? Rcpp::as<int>(sv["svc_parameterization"]) : 0;
     }
 
     // --- Temporally-varying coefficients (RW1 / RW2 / AR1). compute_param_layout
@@ -462,6 +556,42 @@ inline void build_sampler_model_inputs(
     }
 
     in.layout = tulpa_hmc::compute_param_layout(in.data);
+}
+
+// Move any coordinate whose block declares a BOUNDED support onto a point
+// strictly inside it. The samplers start every coordinate at the origin, which
+// is the right default for a block whose prior is proper on all of (0, inf) --
+// every PC-range block (gp / nngp / svc / spde) puts log_phi = 0 inside its
+// support. The multi-scale block instead rejects a range outside
+// (range_*_lower, range_*_upper) with a hard -INFINITY (gcol33/tulpa#244), so
+// log_phi = 0 (phi = 1) is outside its support for any bounds that exclude 1 --
+// the chain then starts at -Inf, every proposal is rejected, and it returns an
+// all-zero field with a 100% divergence rate. Start each bounded range at the
+// geometric mean of its own bounds, which is strictly inside by construction.
+// A caller-supplied init is left alone: an explicit starting position is the
+// caller's choice, including for a resumed chain.
+inline void init_bounded_support_params(std::vector<double>& q,
+                                        const ModelData& data,
+                                        const ParamLayout& layout) {
+    if (!layout.is_multiscale_gp || !data.has_multiscale_gp || data.msgp_is_hsgp) {
+        return;
+    }
+    const MultiscaleGPData& ms = data.multiscale_gp_data;
+    auto log_geometric_mean = [](double lo, double hi) {
+        return 0.5 * (std::log(lo) + std::log(hi));
+    };
+    if (layout.log_phi_gp_local_idx >= 0 &&
+        ms.range_local_lower > 0.0 &&
+        ms.range_local_upper > ms.range_local_lower) {
+        q[layout.log_phi_gp_local_idx] =
+            log_geometric_mean(ms.range_local_lower, ms.range_local_upper);
+    }
+    if (layout.log_phi_gp_regional_idx >= 0 &&
+        ms.range_regional_lower > 0.0 &&
+        ms.range_regional_upper > ms.range_regional_lower) {
+        q[layout.log_phi_gp_regional_idx] =
+            log_geometric_mean(ms.range_regional_lower, ms.range_regional_upper);
+    }
 }
 
 // Column names for the full sampler parameter vector, walking the ParamLayout's
@@ -600,6 +730,23 @@ inline Rcpp::CharacterVector sampler_param_names(
         int u = 0;
         for (int j = layout.gp_w_start; j < layout.gp_w_end; j++)
             set(j, "gp_w[" + std::to_string(++u) + "]");
+    }
+
+    // Multi-scale (local + regional) NNGP field: each scale's own
+    // (sigma2, phi) hypers, then that scale's field (one column per unique
+    // location), mirroring the single-scale gp_w naming above.
+    if (layout.is_multiscale_gp) {
+        set(layout.log_sigma2_gp_local_idx, "log_sigma2_gp_local");
+        set(layout.log_phi_gp_local_idx, "log_phi_gp_local");
+        int u = 0;
+        for (int j = layout.gp_local_start; j < layout.gp_local_end; j++)
+            set(j, "gp_local[" + std::to_string(++u) + "]");
+
+        set(layout.log_sigma2_gp_regional_idx, "log_sigma2_gp_regional");
+        set(layout.log_phi_gp_regional_idx, "log_phi_gp_regional");
+        u = 0;
+        for (int j = layout.gp_regional_start; j < layout.gp_regional_end; j++)
+            set(j, "gp_regional[" + std::to_string(++u) + "]");
     }
 
     // Hilbert-space GP field (m_total basis coefficients).

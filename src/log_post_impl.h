@@ -23,6 +23,10 @@
 #include "gp_nc_apply.h"        // apply_gp_nc_transform_{double,arena};
                                 // same rationale -- keeps the GP kernel / Eigen
                                 // chain out of log_post_generic_impl.h's TUs.
+#include "svc_nc_apply.h"       // apply_svc_nc_transform_{double,arena};
+                                // same rationale, one custom_backward per term.
+#include "msgp_nc_apply.h"      // apply_msgp_nc_transform_{double,arena};
+                                // same rationale, one custom_backward per scale.
 
 // Expects hmc_sampler.h to have been included first by the umbrella TU,
 // defining tulpa_hmc::ModelData / tulpa_hmc::ParamLayout.
