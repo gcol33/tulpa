@@ -311,6 +311,13 @@
     range_local_upper         = as.numeric(spatial$range_local[2]),
     range_regional_lower      = as.numeric(spatial$range_regional[1]),
     range_regional_upper      = as.numeric(spatial$range_regional[2]),
+    # Each scale's range carries the PC prior the GP path uses, anchored at
+    # that scale's own declared lower bound: P(range < lower) = alpha. The
+    # bounds are no longer a hard box (gcol33/tulpa#244); they state the
+    # plausible interval, the lower end anchors the prior, and the pair places
+    # the sampler's starting range.
+    range_local_prior_alpha    = 0.05,
+    range_regional_prior_alpha = 0.05,
     sigma2_local_prior_U        = 2.0,
     sigma2_local_prior_alpha    = 0.05,
     sigma2_regional_prior_U     = 2.0,

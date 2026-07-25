@@ -280,10 +280,15 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #' @param coords A one-sided formula specifying coordinate columns (e.g.,
 #'   `~ lon + lat`), or a character vector of length 2 with column names.
 #' @param scales Character vector specifying scale names. Default: `c("local", "regional")`.
-#' @param range_local Prior range for local scale as `c(lower, upper)` in
-#'   coordinate units. Default: `c(0.01, 1)` (after scaling).
-#' @param range_regional Prior range for regional scale as `c(lower, upper)`.
-#'   Default: `c(1, 10)` (after scaling).
+#' @param range_local Plausible range interval for the local scale as
+#'   `c(lower, upper)` in coordinate units. Default: `c(0.01, 1)` (after
+#'   scaling). Under exact NUTS this is not a hard box: `lower` anchors a PC
+#'   prior on that scale's range (`P(range < lower) = 0.05`, the same prior
+#'   [spatial_gp()] uses), and the pair places the sampler's starting range at
+#'   their geometric mean. The range itself is free on `(0, Inf)`.
+#' @param range_regional Plausible range interval for the regional scale, read
+#'   the same way. Default: `c(1, 10)` (after scaling). Keeping the two
+#'   intervals separated is what identifies the scales against each other.
 #' @param cov Covariance function: `"exponential"` (default) or `"matern"`.
 #' @param nu Smoothness parameter for Matern covariance, one of `1.5` or `2.5`.
 #' @param nn_local Number of nearest neighbors for local scale. Default 10.

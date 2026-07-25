@@ -318,6 +318,15 @@ inline void build_sampler_model_inputs(
             ms.range_local_upper    = Rcpp::as<double>(sp["range_local_upper"]);
             ms.range_regional_lower = Rcpp::as<double>(sp["range_regional_lower"]);
             ms.range_regional_upper = Rcpp::as<double>(sp["range_regional_upper"]);
+            // PC range-prior tail mass per scale, anchored at that scale's own
+            // lower bound (gcol33/tulpa#244). Defaulted rather than required so
+            // a consumer-built spec predating the change still parses.
+            ms.range_local_prior_alpha =
+                sp.containsElementNamed("range_local_prior_alpha")
+                    ? Rcpp::as<double>(sp["range_local_prior_alpha"]) : 0.05;
+            ms.range_regional_prior_alpha =
+                sp.containsElementNamed("range_regional_prior_alpha")
+                    ? Rcpp::as<double>(sp["range_regional_prior_alpha"]) : 0.05;
 
             in.data.has_multiscale_gp = true;
             in.data.msgp_is_hsgp = false;
@@ -558,18 +567,20 @@ inline void build_sampler_model_inputs(
     in.layout = tulpa_hmc::compute_param_layout(in.data);
 }
 
-// Move any coordinate whose block declares a BOUNDED support onto a point
-// strictly inside it. The samplers start every coordinate at the origin, which
-// is the right default for a block whose prior is proper on all of (0, inf) --
-// every PC-range block (gp / nngp / svc / spde) puts log_phi = 0 inside its
-// support. The multi-scale block instead rejects a range outside
-// (range_*_lower, range_*_upper) with a hard -INFINITY (gcol33/tulpa#244), so
-// log_phi = 0 (phi = 1) is outside its support for any bounds that exclude 1 --
-// the chain then starts at -Inf, every proposal is rejected, and it returns an
-// all-zero field with a 100% divergence rate. Start each bounded range at the
-// geometric mean of its own bounds, which is strictly inside by construction.
-// A caller-supplied init is left alone: an explicit starting position is the
-// caller's choice, including for a resumed chain.
+// Start a multi-scale range at the geometric mean of its declared bounds
+// rather than at the origin's phi = 1.
+//
+// This began as a correctness fix: the block used to reject a range outside
+// (range_*_lower, range_*_upper) with a hard -INFINITY, so for bounds
+// excluding 1 the chain started outside its own support, never moved, and
+// returned an all-zero field at a 100% divergence rate. That wall is gone --
+// each scale now carries a PC range prior proper on (0, inf)
+// (gcol33/tulpa#244) -- so phi = 1 is always a valid start and this is no
+// longer load-bearing. It stays because the bounds are the user's own
+// statement of where that scale lives, and starting a regional range of a few
+// units at 1 wastes warmup walking there. A caller-supplied init is left
+// alone: an explicit starting position is the caller's choice, including for
+// a resumed chain.
 inline void init_bounded_support_params(std::vector<double>& q,
                                         const ModelData& data,
                                         const ParamLayout& layout) {

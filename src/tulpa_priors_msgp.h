@@ -125,19 +125,34 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
                 sigma2_regional_n, data.ms_sigma2_regional_prior_U, data.ms_sigma2_regional_prior_alpha);
             log_post = log_post + log_sigma2_regional;  // Jacobian
 
-            // Uniform priors on phi (range) within bounds + Jacobians
-            double phi_local_val = get_value(phi_local);
-            if (phi_local_val < data.multiscale_gp_data.range_local_lower ||
-                phi_local_val > data.multiscale_gp_data.range_local_upper) {
-                return T(-INFINITY);
-            }
+            // PC priors on each scale's range + Jacobians. phi is sampled
+            // unconstrained on the log scale: the PC density is proper on
+            // (0, inf) and penalizes short ranges, so it needs no bounding box.
+            // Each scale anchors at its OWN declared lower bound --
+            // P(range < range_*_lower) = range_*_prior_alpha -- which is what a
+            // user setting range_local / range_regional is expressing (ranges
+            // below this are implausible for this scale) and what keeps the two
+            // scales apart, now through the prior's mass rather than a wall.
+            //
+            // This replaces a Uniform behind a hard `return -INFINITY` outside
+            // (lower, upper). That form had the two defects gcol33/tulpa#144
+            // fixed on the GP and SVC paths, which this block escaped only by
+            // being unreachable until its front door was wired: the rejection
+            // sits inside an autodiff log-posterior, so a step outside the box
+            // yields no usable gradient and NUTS books it as a divergence; and
+            // the `+ log_phi` Jacobian turned the flat density in log_phi into a
+            // Uniform on phi itself, whose mean is the box centre -- with the
+            // library defaults that put the regional prior mean at 5.5, several
+            // times a unit-square domain's diameter. Measured at 82-88% of
+            // post-warmup draws divergent (gcol33/tulpa#244).
+            log_post = log_post + log_prior_range_pc_at_log(
+                log_phi_local, data.multiscale_gp_data.range_local_lower,
+                data.multiscale_gp_data.range_local_prior_alpha);
             log_post = log_post + log_phi_local;  // Jacobian
 
-            double phi_regional_val = get_value(phi_regional);
-            if (phi_regional_val < data.multiscale_gp_data.range_regional_lower ||
-                phi_regional_val > data.multiscale_gp_data.range_regional_upper) {
-                return T(-INFINITY);
-            }
+            log_post = log_post + log_prior_range_pc_at_log(
+                log_phi_regional, data.multiscale_gp_data.range_regional_lower,
+                data.multiscale_gp_data.range_regional_prior_alpha);
             log_post = log_post + log_phi_regional;  // Jacobian
 
             int n_gp_local = layout.gp_local_end - layout.gp_local_start;

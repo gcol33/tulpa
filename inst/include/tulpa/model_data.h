@@ -112,8 +112,13 @@ namespace tulpa {
 // the same field/hyperparameter funnel fix (gcol33/tulpa#243), extended to
 // the SVC and multiscale-GP NNGP latent blocks. ModelData grew two trailing
 // int fields (svc / multiscale-gp sections).
+// 38 -> 39: MultiscaleGPData gained range_local_prior_alpha /
+// range_regional_prior_alpha (double). The multi-scale range prior moved off a
+// Uniform behind a hard -INFINITY box onto the per-scale PC prior the GP and
+// SVC paths already use, anchored at each scale's declared lower bound
+// (gcol33/tulpa#244).
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 38;
+constexpr int TULPA_ABI_VERSION = 39;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

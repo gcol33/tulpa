@@ -268,8 +268,41 @@ static T initialize_generic_state(
                            "path samples via arena and verifies via numerical "
                            "double).");
             }
-            log_post = log_post + tulpa_svc_ad::svc_sum_to_zero_penalty(
-                svc_w_flat, data.svc_data);
+            // Identify each term's global level by CENTERING the reconstructed
+            // field rather than by adding the soft sum-to-zero penalty the
+            // centered path uses (gcol33/tulpa#245).
+            //
+            // The penalty is -0.5 * lambda * (sum_i w_i)^2 with lambda set so
+            // sd(sum w) = kappa * n, i.e. the field mean pinned at sd kappa =
+            // 1e-3 -- numerically a hard constraint already. Evaluated on a
+            // reconstructed w = L z it becomes -0.5 * lambda * (v'z)^2 with
+            // v = L'1, a rank-1 term whose stiffness rides the Vecchia cascade:
+            // d(sum w)/dz_i is large for early-ordered z and small for late
+            // ones, so the direction is both stiff and wildly anisotropic
+            // against the unit-variance prior on z. A diagonal mass matrix
+            // cannot precondition it, which is what collapsed the field
+            // amplitude and produced the divergence storm.
+            //
+            // Subtracting the mean imposes the same identification exactly and
+            // costs nothing geometrically: the prior on z stays N(0, I), and
+            // the one direction of z that moves only the field mean becomes
+            // likelihood-flat but is still pinned by its own unit-variance
+            // prior, so NUTS samples it perfectly conditioned instead of
+            // fighting it. This is the continuous-NNGP analogue of the
+            // hard-constrained identification gcol33/tulpa#242 moved the areal
+            // / weighted-entry blocks onto.
+            const int svc_n = data.svc_data.n_obs;
+            for (int j = 0; j < data.svc_data.n_svc; j++) {
+                T mean_j = T(0.0);
+                for (int i = 0; i < svc_n; i++) {
+                    mean_j = mean_j + svc_w_flat[(std::size_t)j * svc_n + i];
+                }
+                mean_j = mean_j / T((double)svc_n);
+                for (int i = 0; i < svc_n; i++) {
+                    svc_w_flat[(std::size_t)j * svc_n + i] =
+                        svc_w_flat[(std::size_t)j * svc_n + i] - mean_j;
+                }
+            }
             state.svc_eta.resize(data.svc_data.n_obs, T(0.0));
             tulpa_svc_ad::compute_svc_eta(svc_w_flat, data.svc_data, state.svc_eta);
         }

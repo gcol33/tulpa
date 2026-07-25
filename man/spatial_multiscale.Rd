@@ -36,11 +36,16 @@ used when \code{approx = "hsgp"}. Total basis functions will be m^2.}
 \item{c_boundary}{Boundary factor for HSGP domain extension (default 1.5).
 Only used when \code{approx = "hsgp"}.}
 
-\item{range_local}{Prior range for local scale as \code{c(lower, upper)} in
-coordinate units. Default: \code{c(0.01, 1)} (after scaling).}
+\item{range_local}{Plausible range interval for the local scale as
+\code{c(lower, upper)} in coordinate units. Default: \code{c(0.01, 1)} (after
+scaling). Under exact NUTS this is not a hard box: \code{lower} anchors a PC
+prior on that scale's range (\code{P(range < lower) = 0.05}, the same prior
+\code{\link[=spatial_gp]{spatial_gp()}} uses), and the pair places the sampler's starting range at
+their geometric mean. The range itself is free on \verb{(0, Inf)}.}
 
-\item{range_regional}{Prior range for regional scale as \code{c(lower, upper)}.
-Default: \code{c(1, 10)} (after scaling).}
+\item{range_regional}{Plausible range interval for the regional scale, read
+the same way. Default: \code{c(1, 10)} (after scaling). Keeping the two
+intervals separated is what identifies the scales against each other.}
 
 \item{cov}{Covariance function: \code{"exponential"} (default) or \code{"matern"}.}
 

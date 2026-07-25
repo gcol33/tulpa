@@ -49,11 +49,17 @@ struct MultiscaleGPData {
     std::vector<int> nn_order_regional;
     std::vector<int> nn_order_inv_regional;
 
-    // Range bounds
+    // Range bounds. Under exact NUTS these are no longer a hard box: each
+    // scale's lower bound is the anchor of a PC prior on that scale's range
+    // (P(range < lower) = the alpha below), and the pair is also what places
+    // the sampler's starting range -- see init_bounded_support_params().
+    // gcol33/tulpa#244.
     double range_local_lower = 0.01;
     double range_local_upper = 10.0;
     double range_regional_lower = 0.01;
     double range_regional_upper = 100.0;
+    double range_local_prior_alpha = 0.05;
+    double range_regional_prior_alpha = 0.05;
 
     CovType cov_type = CovType::EXPONENTIAL;
     double nu = 1.5;                            // Matern smoothness

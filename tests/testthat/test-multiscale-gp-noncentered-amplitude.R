@@ -111,15 +111,15 @@ test_that("non-centered multiscale GP NUTS recovers both scales' amplitude", {
   expect_lt(ratio_regional, 2.0)
 })
 
-test_that("a bounded-support range starts inside its own bounds", {
-  # The samplers start every coordinate at the origin, which puts phi = 1.
-  # Every PC-range block is proper on (0, inf) so that is a valid start, but
-  # the multi-scale block rejects a range outside its bounds with a hard
-  # -INFINITY (#244): with bounds excluding 1 the chain started at -Inf, never
-  # moved, and returned an all-zero field at a 100% divergence rate.
-  # init_bounded_support_params() starts each bounded range at the geometric
-  # mean of its own bounds. Asserted on the drawn range rather than on the
-  # init vector directly, since that is what a stuck chain would expose.
+test_that("a multiscale range starts from its bounds and the chain moves", {
+  # Regression for the start-outside-the-support bug (#243) and for the range
+  # prior that made it fatal (#244). With bounds excluding phi = 1 -- the
+  # origin every coordinate starts at -- the old hard -INFINITY box left the
+  # chain starting at -Inf: it never moved, every draw was divergent, and the
+  # field came back all zeros with phi pinned at exactly 1. The prior is now
+  # proper on (0, inf) and init_bounded_support_params() starts each scale from
+  # its own bounds, so the guard is that the chain SAMPLES rather than that it
+  # stays boxed (a proper prior may legitimately wander outside the bounds).
   skip_if_not_slow()
   set.seed(3)
   n <- 40L
@@ -133,12 +133,20 @@ test_that("a bounded-support range starts inside its own bounds", {
                                  # start, on BOTH scales.
                                  range_local = c(2, 6), range_regional = c(8, 20)),
     mode = "exact",
-    control = list(n_iter = 40L, n_warmup = 20L, seed = 1L))
+    control = list(n_iter = 200L, n_warmup = 100L, seed = 1L))
 
   phi_local <- exp(fit$draws[, "log_phi_gp_local"])
   phi_regional <- exp(fit$draws[, "log_phi_gp_regional"])
+  fld <- fit$draws[, grep("^gp_local\\[", colnames(fit$draws)), drop = FALSE]
 
-  # Inside the declared support, and not frozen at the origin's phi = 1.
-  expect_true(all(phi_local >= 2 & phi_local <= 6))
-  expect_true(all(phi_regional >= 8 & phi_regional <= 20))
+  # Not frozen at the origin's phi = 1 (the stuck-chain signature), and not
+  # frozen at the start either.
+  expect_false(all(abs(phi_local - 1) < 1e-8))
+  expect_false(all(abs(phi_regional - 1) < 1e-8))
+  expect_gt(sd(phi_local), 0)
+  expect_gt(sd(phi_regional), 0)
+  # The field is sampled, not returned as all-zeros.
+  expect_gt(sd(as.numeric(fld)), 0)
+  # And the fit is not the 100%-divergent wall behaviour.
+  expect_lt(mean(fit$divergent), 0.5)
 })
