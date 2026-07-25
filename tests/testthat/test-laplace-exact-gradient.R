@@ -158,6 +158,67 @@ test_that("the vectorized curvature derivative matches the scalar probe", {
                "differ in length")
 })
 
+test_that("d2w/deta2 differentiates dw/deta (curvature the theta-Hessian needs)", {
+  # Same load-bearing idea as the dw/deta test: a central difference of the
+  # verified first curvature derivative is the ground truth the closed-form
+  # second derivative must reproduce, family by family.
+  cases <- list(
+    list(family = "poisson",          y = 4,   n = 1L,  phi = 1.0),
+    list(family = "binomial",         y = 3,   n = 10L, phi = 1.0),
+    list(family = "neg_binomial_2",   y = 6,   n = 1L,  phi = 2.5),
+    list(family = "neg_binomial_1",   y = 6,   n = 1L,  phi = 1.7),
+    list(family = "beta_binomial",    y = 3,   n = 10L, phi = 4.0),
+    list(family = "tweedie",          y = 2.0, n = 1L,  phi = 1.3, phi2 = 1.6),
+    list(family = "gamma",            y = 2.0, n = 1L,  phi = 3.0),
+    list(family = "inverse_gaussian", y = 1.4, n = 1L,  phi = 1.1),
+    list(family = "beta",             y = 0.6, n = 1L,  phi = 6.0),
+    list(family = "binomial_probit",  y = 3,   n = 10L, phi = 1.0),
+    list(family = "binomial_cloglog", y = 3,   n = 10L, phi = 1.0),
+    list(family = "gaussian_log",     y = 1.2, n = 1L,  phi = 1.5)
+  )
+  h <- 1e-5
+  for (cs in cases) {
+    p2 <- if (is.null(cs$phi2)) NA_real_ else cs$phi2
+    for (eta in c(-0.6, 0.0, 0.9)) {
+      dw <- function(e) unname(cpp_family_curvature_deta(
+        cs$y, cs$n, e, cs$family, cs$phi, p2)[["dw_deta"]])
+      got <- unname(cpp_family_curvature_deta2(
+        cs$y, cs$n, eta, cs$family, cs$phi, p2)[["d2w_deta2"]])
+      num <- (dw(eta + h) - dw(eta - h)) / (2 * h)
+      # Floor as before: gamma+log has dw==0 identically, so this is the
+      # 0-vs-FD-noise case where a ratio would be meaningless.
+      scale <- max(abs(num), abs(got), 1e-6)
+      expect_lt(abs(got - num) / scale, 1e-4)
+    }
+  }
+})
+
+test_that("the second curvature derivative is gated, truncated families excluded", {
+  for (f in c("poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
+              "beta_binomial", "t", "tweedie", "gamma", "beta",
+              "binomial_probit", "gaussian_log"))
+    expect_true(cpp_family_has_curvature_2nd_derivative(f), info = f)
+  # No third truncation-shape derivative exists, so the gate must say so.
+  for (f in c("truncated_poisson", "truncated_neg_binomial_2"))
+    expect_false(cpp_family_has_curvature_2nd_derivative(f), info = f)
+  expect_false(cpp_family_has_curvature_2nd_derivative("not_a_family"))
+  # Gated out, not silently approximated: a mis-gated call stops.
+  expect_error(cpp_family_curvature_deta2(3, 1L, 0.2, "truncated_poisson", 1.0),
+               "no closed-form second")
+})
+
+test_that("the vectorized second curvature derivative matches the scalar probe", {
+  set.seed(3)
+  eta <- rnorm(20)
+  y   <- rpois(20, 2)
+  vec <- cpp_family_curvature_deta2_vec(y, 1L, eta, "poisson", 1.0)
+  sc  <- vapply(seq_along(eta), function(i) unname(cpp_family_curvature_deta2(
+    y[i], 1L, eta[i], "poisson", 1.0)[["d2w_deta2"]]), numeric(1))
+  expect_equal(vec, sc)
+  expect_error(cpp_family_curvature_deta2_vec(y[1:3], 1L, eta, "poisson", 1.0),
+               "differ in length")
+})
+
 test_that("the chain rule export agrees with a direct dSigma trace", {
   # cpp_recov_block_grad must equal 0.5 tr(dSigma_j . core) with Smat = 0.5 core.
   set.seed(4)

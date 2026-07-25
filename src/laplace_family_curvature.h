@@ -58,6 +58,32 @@ inline double mu_eta2(double eta, const std::string& link) {
     return tulpa_linalg::safe_exp(eta);
 }
 
+// d3 mu / d eta3, the companion to mu_eta2() above. Needed by the generic
+// mu-space route of curvature_deta2_for_family().
+inline double mu_eta3(double eta, const std::string& link) {
+    if (link == "identity") return 0.0;
+    if (link == "log") return tulpa_linalg::safe_exp(eta);
+    if (link == "inverse") { double e = safe_pos_eta(eta); return -6.0 / (e * e * e * e); }
+    if (link == "logit") {
+        double p;
+        if (eta > 0) { double e = std::exp(-eta); p = 1.0 / (1.0 + e); }
+        else         { double e = std::exp(eta);  p = e / (1.0 + e); }
+        return (1.0 - 6.0 * p + 6.0 * p * p) * p * (1.0 - p);
+    }
+    if (link == "probit") return (eta * eta - 1.0) * R::dnorm(eta, 0.0, 1.0, 0);
+    if (link == "cauchit") {
+        const double d = 1.0 + eta * eta;
+        return 2.0 * (3.0 * eta * eta - 1.0) / (M_PI * d * d * d);
+    }
+    if (link == "cloglog") {
+        const double ee = std::exp(eta);
+        return std::exp(eta - ee) * (1.0 - 3.0 * ee + ee * ee);
+    }
+    if (link == "sqrt") return 0.0;
+    if (link == "1mu2") { double e = safe_pos_eta(eta); return -1.875 / (e * e * e * std::sqrt(e)); }
+    return tulpa_linalg::safe_exp(eta);
+}
+
 // d V / d mu, the companion to variance_fn() at laplace_family_link.h:141.
 inline double dvariance_dmu(double mu, double phi, const std::string& family,
                             int n_trials) {
@@ -83,6 +109,30 @@ inline double dvariance_dmu(double mu, double phi, const std::string& family,
     unknown_family_stop("dvariance_dmu", family);
 }
 
+// d2 V / d mu2, the companion to dvariance_dmu() above. Same family arms.
+inline double d2variance_dmu2(double mu, double phi, const std::string& family,
+                              int n_trials) {
+    if (family == "gaussian") return 0.0;
+    if (family == "lognormal") return 0.0;
+    if (family == "binomial") return -2.0 / n_trials;
+    if (family == "poisson") return 0.0;
+    if (family == "neg_binomial_2") return 2.0 / phi;
+    if (family == "gamma") return 2.0 / phi;
+    if (family == "inverse_gaussian") return 6.0 * phi * mu;
+    if (family == "beta") {
+        // V = 1 / (phi^2 tg); reuse dvariance_dmu's tg, tg1 and add the next
+        // pentagamma rung tg2 = d2 tg / d mu2.
+        const double tg  = R::trigamma(mu * phi) + R::trigamma((1.0 - mu) * phi);
+        const double tg1 = phi * (R::psigamma(mu * phi, 2)
+                                  - R::psigamma((1.0 - mu) * phi, 2));
+        const double tg2 = phi * phi * (R::psigamma(mu * phi, 3)
+                                        + R::psigamma((1.0 - mu) * phi, 3));
+        const double cc = 1.0 / (phi * phi);
+        return -cc * tg2 / (tg * tg) + 2.0 * cc * tg1 * tg1 / (tg * tg * tg);
+    }
+    unknown_family_stop("d2variance_dmu2", family);
+}
+
 // Whether curvature_deta_for_family() is exact for this family. Everything
 // listed here has a closed-form eta-derivative of the weight the Newton system
 // uses; anything else must not silently receive a plausible-looking number.
@@ -106,6 +156,20 @@ inline bool has_curvature_derivative(const std::string& family) {
         fl.link == "logit" || fl.link == "probit" || fl.link == "cauchit" ||
         fl.link == "cloglog" || fl.link == "sqrt" || fl.link == "1mu2";
     return fam_ok && link_ok;
+}
+
+// Whether curvature_deta2_for_family() is exact for this family: the mirror of
+// has_curvature_derivative() minus the truncated pair. Their second eta
+// derivative would need a third truncation-shape derivative that
+// truncation_shape() (laplace_family_link.h:372) does not supply -- it returns
+// only a, da, d2a. Those families fall back to differencing the analytic
+// gradient until truncation_shape grows a d3a.
+inline bool has_curvature_2nd_derivative(const std::string& family) {
+    if (family == "truncated_poisson" ||
+        family == "truncated_neg_binomial_2") {
+        return false;
+    }
+    return has_curvature_derivative(family);
 }
 
 // d(neg_hess)/d eta. Branch order mirrors grad_hess_for_family exactly, so the
@@ -189,6 +253,90 @@ inline double curvature_deta_for_family(
     const double V  = variance_fn(mu, phi, fl.family, n_trials);
     const double dV = dvariance_dmu(mu, phi, fl.family, n_trials);
     return (2.0 * dmu * d2mu * V - dmu * dmu * dmu * dV) / (V * V);
+}
+
+// d2(neg_hess)/d eta2, the sibling of curvature_deta_for_family. Branch order
+// mirrors it exactly. The truncated families are absent: their second eta
+// derivative needs a third truncation-shape derivative (see
+// has_curvature_2nd_derivative); reached here only through a mis-gated caller,
+// so it stops rather than returning a plausible wrong number.
+inline double curvature_deta2_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    if (family == "binomial") {
+        // dw/deta = n p(1-p)(1-2p);  d/deta of that = n (1-6p+6p^2) p(1-p)
+        double p;
+        if (eta > 0) { double e = std::exp(-eta); p = 1.0 / (1.0 + e); }
+        else         { double e = std::exp(eta);  p = e / (1.0 + e); }
+        return n_trials * (1.0 - 6.0 * p + 6.0 * p * p) * p * (1.0 - p);
+    }
+    if (family == "poisson") {
+        // dw/deta = mu, so d2w/deta2 = mu
+        return tulpa_linalg::safe_exp(eta);
+    }
+    if (family == "neg_binomial_2") {
+        // dw/deta = mu phi (y+phi)(phi-mu)/s^3, s = mu+phi
+        const double mu = tulpa_linalg::safe_exp(eta);
+        const double s  = mu + phi;
+        return phi * (y + phi) * mu * (mu * mu - 4.0 * mu * phi + phi * phi)
+               / (s * s * s * s);
+    }
+    if (family == "neg_binomial_1") {
+        // dw/deta = mu / (1+phi), so d2w/deta2 = mu / (1+phi)
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        return mu / (1.0 + phi);
+    }
+    if (family == "truncated_poisson" || family == "truncated_neg_binomial_2") {
+        Rcpp::stop("curvature_deta2_for_family: no closed-form second "
+                   "eta-derivative for '%s' (truncation_shape supplies only "
+                   "a, da, d2a); gated by has_curvature_2nd_derivative.",
+                   family.c_str());
+    }
+    if (family == "beta_binomial") {
+        // same logit shape as binomial, with n -> n/D
+        double mu = linkinv(eta, "logit");
+        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+        const double n = (double)n_trials;
+        const double D = 1.0 + (n - 1.0) / (phi + 1.0);
+        return n * (1.0 - 6.0 * mu + 6.0 * mu * mu) * mu * (1.0 - mu) / D;
+    }
+    if (family == "t") {
+        // w constant in eta
+        return 0.0;
+    }
+    if (family == "tweedie") {
+        if (std::isnan(phi2)) {
+            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
+        }
+        // dw/deta = (2-p) mu^(2-p)/phi, so d2w/deta2 = (2-p)^2 mu^(2-p)/phi
+        const double a = 2.0 - phi2;
+        const double mu = std::max(std::exp(eta), 1e-10);
+        return a * a * std::pow(mu, a) / phi;
+    }
+
+    // Generic mu-space route: w = dmu^2 / V(mu). With u = mu_eta, u1 = mu_eta2,
+    // u2 = mu_eta3, Vm = dvariance_dmu, Vmm = d2variance_dmu2,
+    //   d2w/deta2 = 2(u1^2 + u u2)/V - (5 u^2 u1 Vm + u^4 Vmm)/V^2
+    //               + 2 u^4 Vm^2 / V^3.
+    FamilyLink fl = parse_family_link(family);
+    double mu = linkinv(eta, fl.link);
+    const double u  = mu_eta(eta, fl.link);
+    const double u1 = mu_eta2(eta, fl.link);
+    const double u2 = mu_eta3(eta, fl.link);
+    if (fl.family == "binomial" || fl.family == "beta") {
+        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+    } else if (fl.family != "gaussian" && fl.family != "lognormal") {
+        mu = std::max(mu, 1e-10);
+    }
+    const double V   = variance_fn(mu, phi, fl.family, n_trials);
+    const double Vm  = dvariance_dmu(mu, phi, fl.family, n_trials);
+    const double Vmm = d2variance_dmu2(mu, phi, fl.family, n_trials);
+    const double u2p = u * u, u4 = u2p * u2p;
+    return 2.0 * (u1 * u1 + u * u2) / V
+           - (5.0 * u2p * u1 * Vm + u4 * Vmm) / (V * V)
+           + 2.0 * u4 * Vm * Vm / (V * V * V);
 }
 
 } // namespace tulpa

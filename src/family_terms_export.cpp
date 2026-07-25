@@ -109,6 +109,53 @@ Rcpp::NumericVector cpp_family_curvature_deta_vec(Rcpp::NumericVector y,
   return out;
 }
 
+// d2(neg_hess)/d eta2 from laplace_family_curvature.h, with the gate that says
+// whether it is exact for this family. The closed-form Laplace theta-Hessian
+// differentiates the exact gradient once more; that second pass needs the eta
+// second derivative of the same weight cpp_family_curvature_deta reports.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_curvature_deta2(double y, int n_trials, double eta,
+                                               std::string family, double phi,
+                                               double phi2 = NA_REAL) {
+  return Rcpp::NumericVector::create(
+      Rcpp::_["d2w_deta2"] = tulpa::curvature_deta2_for_family(y, n_trials, eta,
+                                                               family, phi, phi2),
+      Rcpp::_["exact"]     = tulpa::has_curvature_2nd_derivative(family) ? 1.0 : 0.0);
+}
+
+// Whether curvature_deta2_for_family() is exact for this family, so the exact
+// Laplace theta-Hessian can refuse rather than optimize a fiction.
+// [[Rcpp::export]]
+bool cpp_family_has_curvature_2nd_derivative(std::string family) {
+  return tulpa::has_curvature_2nd_derivative(family);
+}
+
+// Vectorized over observations, matching cpp_family_curvature_deta_vec: the
+// closed-form theta-Hessian needs d2w/deta2 at every observation of a fit.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_curvature_deta2_vec(Rcpp::NumericVector y,
+                                                   Rcpp::IntegerVector n_trials,
+                                                   Rcpp::NumericVector eta,
+                                                   std::string family, double phi,
+                                                   double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n) {
+    Rcpp::stop("cpp_family_curvature_deta2_vec: y (%d) and eta (%d) differ in length.",
+               (int)y.size(), (int)n);
+  }
+  const bool recycle_nt = (n_trials.size() == 1);
+  if (!recycle_nt && n_trials.size() != n) {
+    Rcpp::stop("cpp_family_curvature_deta2_vec: n_trials must be length 1 or %d (got %d).",
+               (int)n, (int)n_trials.size());
+  }
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; i++) {
+    out[i] = tulpa::curvature_deta2_for_family(
+        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], family, phi, phi2);
+  }
+  return out;
+}
+
 // The AD-templated density (builtin_family_ll_ad.h), which is what the sampler
 // backends differentiate, evaluated at fwd::Dual so both its value and its
 // derivative come back. The double path's value comes from a separate
