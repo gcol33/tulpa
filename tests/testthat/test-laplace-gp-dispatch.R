@@ -44,18 +44,22 @@ test_that("dispatch_laplace_spatial routes GP specs (no longer errors)", {
   X  <- matrix(1.0, ss$n_obs, 1)
   y  <- rbinom(ss$n_obs, 1, 0.5)
 
-  msg <- tryCatch({
+  res <- tryCatch(
     dispatch_laplace_spatial(
       y = y, n_trials = rep(1L, ss$n_obs), X = X,
       re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
       spatial = ss$spec, family = "binomial", phi = 1.0,
       max_iter = 5L, tol = 1e-3, n_threads = 1L
-    )
-    NA_character_
-  }, error = function(e) conditionMessage(e))
-  if (!is.na(msg)) {
-    expect_false(grepl("not yet supported", msg, fixed = TRUE))
-  }
+    ),
+    error = function(e) e
+  )
+  msg <- if (inherits(res, "error")) conditionMessage(res) else NA_character_
+
+  # Asserted on both branches: the dispatcher may reach the kernel and return,
+  # or the kernel may raise its own error, but the legacy dispatch gap
+  # ("not yet supported") must never come back either way.
+  expect_false(isTRUE(grepl("not yet supported", msg, fixed = TRUE)))
+  if (is.na(msg)) expect_true(is.list(res))
 })
 
 test_that("NNGP Laplace threads an additional iid RE block (issue #74)", {

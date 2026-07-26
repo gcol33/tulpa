@@ -445,22 +445,21 @@ test_that("dispatch_laplace_spatial routes SPDE specs (no longer errors)", {
 
   # Dispatcher previously threw "Spatial type 'spde' not yet supported in
   # Laplace". The new branch should reach the C++ kernel and either return
-  # a result or surface a kernel error — but never the legacy dispatch gap.
-  msg <- tryCatch(
-    {
-      dispatch_laplace_spatial(
-        y = y, n_trials = rep(1L, ss$n_obs), X = X,
-        re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
-        spatial = ss$spec, family = "binomial", phi = 1.0,
-        max_iter = 5L, tol = 1e-3, n_threads = 1L
-      )
-      NA_character_
-    },
-    error = function(e) conditionMessage(e)
+  # a result or surface a kernel error, but never the legacy dispatch gap.
+  res <- tryCatch(
+    dispatch_laplace_spatial(
+      y = y, n_trials = rep(1L, ss$n_obs), X = X,
+      re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
+      spatial = ss$spec, family = "binomial", phi = 1.0,
+      max_iter = 5L, tol = 1e-3, n_threads = 1L
+    ),
+    error = function(e) e
   )
-  if (!is.na(msg)) {
-    expect_false(grepl("not yet supported", msg, fixed = TRUE))
-  }
+  msg <- if (inherits(res, "error")) conditionMessage(res) else NA_character_
+
+  # Asserted on both branches, so the success case is checked too.
+  expect_false(isTRUE(grepl("not yet supported", msg, fixed = TRUE)))
+  if (is.na(msg)) expect_true(is.list(res))
 })
 
 test_that("SPDE Laplace threads an additional iid RE block (issue #74)", {

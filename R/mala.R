@@ -32,10 +32,14 @@
 #' @param target_accept Target acceptance during warmup adaptation
 #'   (default 0.574, the Roberts & Rosenthal 1998 optimum).
 #' @param mass_diag Optional preconditioner: a length-`d` vector of
-#'   per-dimension scales, equivalent to using `diag(mass_diag)` as
-#'   a metric. Default `rep(1, d)`. For posteriors with very different
-#'   scales across dimensions, set this to (an estimate of) the
-#'   posterior SDs.
+#'   per-dimension **variances**, used as the diagonal inverse-mass
+#'   `M^-1`. The proposal is
+#'   `N(theta + (eps^2/2) * M^-1 * grad, eps^2 * M^-1)`, so entry `j`
+#'   scales the proposal variance along dimension `j` and the noise
+#'   standard deviation is `eps * sqrt(mass_diag[j])`. Default
+#'   `rep(1, d)`. For posteriors with very different scales across
+#'   dimensions, set this to (an estimate of) the posterior variances,
+#'   i.e. the squared posterior SDs.
 #' @param thin Keep every `thin`-th post-warmup sample (default 1).
 #' @param verbose Print acceptance + step-size summary at end (default
 #'   FALSE).
@@ -93,7 +97,9 @@ mala <- function(log_posterior,
     stop("`mass_diag` must be a positive vector of length d.",
          call. = FALSE)
   }
-  M_inv <- mass_diag        # we use sqrt(M_inv) for the noise scale
+  # Diagonal inverse mass: a variance per dimension, so the proposal noise
+  # scale is eps * sqrt(M_inv).
+  M_inv <- mass_diag
 
   theta <- as.numeric(init)
   log_p_curr <- log_posterior(theta)
@@ -135,8 +141,10 @@ mala <- function(log_posterior,
 
     log_p_prop <- log_posterior(prop)
     if (!is.finite(log_p_prop)) {
+      # Rejected outright, so the reverse proposal density is never needed and
+      # the gradient at `prop` is not evaluated.
       log_alpha <- -Inf
-      grad_prop <- grad_curr   # placeholder
+      grad_prop <- grad_curr
     } else {
       grad_prop <- grad_log_posterior(prop)
       log_alpha <- (log_p_prop + log_q(theta, prop, grad_prop, eps)) -
