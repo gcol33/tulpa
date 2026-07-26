@@ -306,7 +306,7 @@ test_that("non-centered fixed-hyper NUTS calibrates beta SD to the Laplace SE (#
   fit <- tulpa_nuts_spde(
     y = y, X = X, spatial = spec, family = "gaussian",
     range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
-    control = list(noncenter = TRUE, control = list(n_iter = 1500L, n_warmup = 800L, seed = 7L)))
+    control = list(noncenter = TRUE, n_iter = 1500L, n_warmup = 800L, seed = 7L))
   sd_n <- apply(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE], 2L, sd)
   expect_lt(sum(fit$divergent), 0.05 * length(fit$divergent))
 
@@ -410,7 +410,7 @@ test_that("fractional-nu fixed-hyper NUTS calibrates beta SD to the Laplace SE (
   fit <- tulpa_nuts_spde(
     y = y, X = X, spatial = spec, family = "gaussian",
     range = range_true, sigma = sigma_w, log_phi_init = log(sigma_obs),
-    control = list(noncenter = TRUE, control = list(n_iter = 1500L, n_warmup = 800L, seed = 11L)))
+    control = list(noncenter = TRUE, n_iter = 1500L, n_warmup = 800L, seed = 11L))
   sd_n <- apply(fit$draws[, c("beta[1]", "beta[2]"), drop = FALSE], 2L, sd)
   expect_lt(sum(fit$divergent), 0.05 * length(fit$divergent))
 
