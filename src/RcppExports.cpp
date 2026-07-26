@@ -272,6 +272,33 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_family_obs_curvature_delta_vec
+Rcpp::NumericVector cpp_family_obs_curvature_delta_vec(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, std::string family, double phi, double phi2);
+RcppExport SEXP _tulpa_cpp_family_obs_curvature_delta_vec(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_obs_curvature_delta_vec(y, n_trials, eta, family, phi, phi2));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_family_has_exact_mode_jacobian
+bool cpp_family_has_exact_mode_jacobian(std::string family);
+RcppExport SEXP _tulpa_cpp_family_has_exact_mode_jacobian(SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_has_exact_mode_jacobian(family));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_curvature_deta2_vec
 Rcpp::NumericVector cpp_family_curvature_deta2_vec(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, std::string family, double phi, double phi2);
 RcppExport SEXP _tulpa_cpp_family_curvature_deta2_vec(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
@@ -3630,6 +3657,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_curvature_deta_vec", (DL_FUNC) &_tulpa_cpp_family_curvature_deta_vec, 6},
     {"_tulpa_cpp_family_curvature_deta2", (DL_FUNC) &_tulpa_cpp_family_curvature_deta2, 6},
     {"_tulpa_cpp_family_has_curvature_2nd_derivative", (DL_FUNC) &_tulpa_cpp_family_has_curvature_2nd_derivative, 1},
+    {"_tulpa_cpp_family_obs_curvature_delta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_vec, 6},
+    {"_tulpa_cpp_family_has_exact_mode_jacobian", (DL_FUNC) &_tulpa_cpp_family_has_exact_mode_jacobian, 1},
     {"_tulpa_cpp_family_curvature_deta2_vec", (DL_FUNC) &_tulpa_cpp_family_curvature_deta2_vec, 6},
     {"_tulpa_cpp_family_ad_terms", (DL_FUNC) &_tulpa_cpp_family_ad_terms, 6},
     {"_tulpa_cpp_glmm_elt_terms", (DL_FUNC) &_tulpa_cpp_glmm_elt_terms, 5},

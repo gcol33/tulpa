@@ -130,6 +130,50 @@ bool cpp_family_has_curvature_2nd_derivative(std::string family) {
   return tulpa::has_curvature_2nd_derivative(family);
 }
 
+// Vectorized observed-minus-working curvature W_obs - w at every observation.
+// The exact mode Jacobian dx_hat/dtheta needs the TRUE posterior Hessian
+// A' diag(W_obs) A + P, which is the working-weight H_joint plus
+// A' diag(W_obs - w) A. Returning the difference lets the caller correct
+// H_joint in place rather than rebuild the precision. It is identically zero for
+// every family whose working weight already is the observed curvature, and for
+// the families that lack an exact observed form obs_grad_hess_for_family
+// delegates to the working weight, so this returns zero there too -- the caller
+// must gate on has_exact_mode_jacobian, not on the difference being nonzero.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_obs_curvature_delta_vec(Rcpp::NumericVector y,
+                                                       Rcpp::IntegerVector n_trials,
+                                                       Rcpp::NumericVector eta,
+                                                       std::string family, double phi,
+                                                       double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n) {
+    Rcpp::stop("cpp_family_obs_curvature_delta_vec: y (%d) and eta (%d) differ in length.",
+               (int)y.size(), (int)n);
+  }
+  const bool recycle_nt = (n_trials.size() == 1);
+  if (!recycle_nt && n_trials.size() != n) {
+    Rcpp::stop("cpp_family_obs_curvature_delta_vec: n_trials must be length 1 or %d (got %d).",
+               (int)n, (int)n_trials.size());
+  }
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; i++) {
+    const int nt = recycle_nt ? n_trials[0] : n_trials[i];
+    const double w_obs =
+        tulpa::obs_grad_hess_for_family(y[i], nt, eta[i], family, phi, phi2).neg_hess;
+    const double w =
+        tulpa::grad_hess_for_family(y[i], nt, eta[i], family, phi, phi2).neg_hess;
+    out[i] = w_obs - w;
+  }
+  return out;
+}
+
+// Whether the exact analytic mode Jacobian can be formed for this family, so the
+// marginal correction can trust the closed J or fall back to differencing.
+// [[Rcpp::export]]
+bool cpp_family_has_exact_mode_jacobian(std::string family) {
+  return tulpa::has_exact_mode_jacobian(family);
+}
+
 // Vectorized over observations, matching cpp_family_curvature_deta_vec: the
 // closed-form theta-Hessian needs d2w/deta2 at every observation of a fit.
 // [[Rcpp::export]]

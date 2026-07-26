@@ -201,6 +201,28 @@ carry. A 15-seed subset re-run on the stencil route reproduces the coverage
 indicators exactly, so the intervals are route-invariant end to end, not only
 `H_theta`-invariant.
 
+BLUP-block coverage (`dev_notes/blup_coverage.R`, poisson/binomial, 40 seeds)
+carries the correction to the latent block the fixed-effect study points at,
+using the same law-of-total-variance term on the RE rows of the (Road-A-exact)
+mode Jacobian:
+
+    Var(b_g | y) ~ [H_joint^-1]_gg  +  J_g H_theta^-1 J_g'
+
+against the conditional `[H_joint^-1]_gg`. The correction inflates the BLUP SD
+more than the fixed-effect SD -- `sqrt(marg/cond)` is 1.014-1.044 across the
+few-group regimes, against 1.002-1.034 for the fixed effects -- so the effect is
+where the fixed-effect study said it would be. Where the Gaussian / plug-in
+framework holds (moderate few groups, G = 12-20) the extra width lifts BLUP
+coverage of the true `b_g` toward nominal, 0.948 -> 0.952 (poisson) and
+0.948 -> 0.952 (binomial). At many groups it is near-inert (1.003), theta being
+well determined. At very few groups (G = 7) it still inflates (1.018) but cannot
+recover the undercoverage (0.918 either way): the variance-component marginal is
+too skewed for a Gaussian-around-the-mode correction, the regime the fixed-effect
+note flags for the nested integrator. The BLUP effect is thus real and larger
+than the fixed-effect one, and modest in absolute coverage for balanced designs,
+bounded by the Laplace BLUP posterior's own approximation rather than by
+`H_theta`.
+
 The release-gate recovery file (`test-re-cov-recovery.R`, `TULPA_SLOW_TESTS`)
 stays 31/0/0 through the refactored `.laplace_exact_core`.
 
@@ -273,6 +295,49 @@ Everything the gradient already needs (`H^{-1}`, `s`, `dw/deta`, `J`, per-block
   * `d2Sigma/dtheta_p dtheta_q` per block (new; `.re_block_d2Sigma`, a pure
     parameterization derivative, no inner-solve state).
   * `dH_k`, `dH^{-1}_k` for `k` right-hand sides, reusing the factorization.
+
+## The mode Jacobian carries the observed curvature, not the working weight
+
+`J[,k] = dx_hat/dtheta_k` -- both the gradient's `want_jacobian` output and the
+mode motion the Hessian transports -- comes from the inner solve's stationarity.
+The Newton system converges to the TRUE score root `A' score(x_hat) = P x_hat`, so
+differentiating in theta gives
+
+    dx_hat/dtheta_k = -(A' diag(W_obs) A + P)^-1 (dP_k) x_hat = -H_true^-1 dP_k x_hat
+
+with the OBSERVED curvature `W_obs = -l''(eta)`. That is NOT in general the weight
+`w` the inner solve builds `H = A' diag(w) A + P` from: `H` carries the
+Fisher/working weight chosen for positive-definiteness, and it equals `W_obs` only
+for canonical or constant-curvature families (poisson, binomial, gaussian,
+neg_binomial_2, truncated_poisson). Where the two differ -- neg_binomial_1,
+truncated_neg_binomial_2 -- the working-weight `H_joint` is the wrong inverse for
+the mode Jacobian by 9 to 27 percent, which the closed Hessian then inherits. The
+fix uses the true Hessian, the working one plus a rank correction from the
+observed-minus-working curvature `cpp_family_obs_curvature_delta_vec` reports:
+
+    H_true = H_joint + A' diag(W_obs - w) A
+
+Only the mode Jacobian uses `H_true^-1`; everything else reads `H_joint`, because
+the objective's `log|H|` is the working-weight one, so its `V`, `C`, `s`, `dHinv`
+are the derivatives of the working `H`. The delta is identically zero where the
+two coincide, so those families take no second solve.
+
+For beta_binomial, t, tweedie and the non-canonical generic route the two curvatures
+differ AND no exact observed form exists, so `H_true` cannot be built.
+`has_exact_mode_jacobian` is false there, `want_jacobian` returns NULL, and the
+marginal correction differences the inner mode instead (the fd stencil, which reads
+the true mode directly). The closed and analytic-stencil routes are thus offered
+exactly on the family set where the mode Jacobian is exact -- a working-weight
+Jacobian is never reported as exact.
+
+The truncated pair also gained the second curvature derivative. `truncation_shape`
+now supplies `d3a` (truncated_poisson: `mu`; truncated_neg_binomial_2:
+`phi^2 mu (phi - mu) / (phi + mu)^3`), and the working weight `w = da/p - q da^2/p^2`
+is a function of `(a, da)` alone, so its second eta-derivative is the composite
+`f_aa da^2 + 2 f_ada da d2a + f_dada d2a^2 + f_a d2a + f_da d3a`. Both derivatives
+are FD-checked in `dev_notes/proto_truncated_curvature.R` and against the wired
+first derivative, so `has_curvature_2nd_derivative` now holds for every family that
+has the first.
 
 ## Dispersion coordinate
 

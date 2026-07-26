@@ -77,6 +77,14 @@ cpp_family_has_curvature_2nd_derivative <- function(family) {
     .Call(`_tulpa_cpp_family_has_curvature_2nd_derivative`, family)
 }
 
+cpp_family_obs_curvature_delta_vec <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_obs_curvature_delta_vec`, y, n_trials, eta, family, phi, phi2)
+}
+
+cpp_family_has_exact_mode_jacobian <- function(family) {
+    .Call(`_tulpa_cpp_family_has_exact_mode_jacobian`, family)
+}
+
 cpp_family_curvature_deta2_vec <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_curvature_deta2_vec`, y, n_trials, eta, family, phi, phi2)
 }

@@ -158,18 +158,34 @@ inline bool has_curvature_derivative(const std::string& family) {
     return fam_ok && link_ok;
 }
 
-// Whether curvature_deta2_for_family() is exact for this family: the mirror of
-// has_curvature_derivative() minus the truncated pair. Their second eta
-// derivative would need a third truncation-shape derivative that
-// truncation_shape() (laplace_family_link.h:372) does not supply -- it returns
-// only a, da, d2a. Those families fall back to differencing the analytic
-// gradient until truncation_shape grows a d3a.
+// Whether curvature_deta2_for_family() is exact for this family. The mirror of
+// has_curvature_derivative(): the truncated pair carry the third truncation-shape
+// derivative d3a from truncation_shape(), so their second eta derivative is
+// closed-form alongside every other family that has the first.
 inline bool has_curvature_2nd_derivative(const std::string& family) {
-    if (family == "truncated_poisson" ||
-        family == "truncated_neg_binomial_2") {
-        return false;
-    }
     return has_curvature_derivative(family);
+}
+
+// Whether the exact analytic mode Jacobian dx_hat/dtheta can be formed for this
+// family. From the true score stationarity of the inner solve the Jacobian is
+// -(A' diag(W_obs) A + P)^-1 (dP/dtheta) x_hat, governed by the OBSERVED
+// curvature W_obs = -l''(eta) -- NOT the Newton working weight H is built from,
+// which only equals it for canonical or constant-curvature families. It is exact
+// when W_obs is available: either explicitly (has_observed_curvature) or because
+// the working weight already is it (gaussian/lognormal constant curvature, or a
+// canonical link). Families where the two differ and no exact observed form
+// exists -- beta_binomial, t, tweedie, non-canonical generic -- return false, so
+// the marginal correction differences the mode instead of trusting a working-
+// weight Jacobian.
+inline bool has_exact_mode_jacobian(const std::string& family) {
+    if (has_observed_curvature(family)) return true;
+    FamilyLink fl = parse_family_link(family);
+    if (fl.family == "gaussian" || fl.family == "lognormal") return true;
+    // Canonical links, where the Fisher working weight (dmu/deta)^2 / V is -l''.
+    return (fl.family == "poisson" && fl.link == "log") ||
+           (fl.family == "binomial" && fl.link == "logit") ||
+           (fl.family == "gamma" && fl.link == "inverse") ||
+           (fl.family == "inverse_gaussian" && fl.link == "1mu2");
 }
 
 // d(neg_hess)/d eta. Branch order mirrors grad_hess_for_family exactly, so the
@@ -256,10 +272,8 @@ inline double curvature_deta_for_family(
 }
 
 // d2(neg_hess)/d eta2, the sibling of curvature_deta_for_family. Branch order
-// mirrors it exactly. The truncated families are absent: their second eta
-// derivative needs a third truncation-shape derivative (see
-// has_curvature_2nd_derivative); reached here only through a mis-gated caller,
-// so it stops rather than returning a plausible wrong number.
+// mirrors it exactly, including the truncated pair, whose second eta derivative
+// is assembled from the shape derivatives (a, da, d2a, d3a).
 inline double curvature_deta2_for_family(
     double y, int n_trials, double eta,
     const std::string& family, double phi,
@@ -289,10 +303,26 @@ inline double curvature_deta2_for_family(
         return mu / (1.0 + phi);
     }
     if (family == "truncated_poisson" || family == "truncated_neg_binomial_2") {
-        Rcpp::stop("curvature_deta2_for_family: no closed-form second "
-                   "eta-derivative for '%s' (truncation_shape supplies only "
-                   "a, da, d2a); gated by has_curvature_2nd_derivative.",
-                   family.c_str());
+        // w = f(a, da) = da/p - q da^2/p^2, q = e^{-a}, p = 1 - q, so w depends
+        // on eta only through the shape a and its derivatives. The composite
+        // second derivative (dev_notes/proto_truncated_curvature.R):
+        //   d2w = f_aa da^2 + 2 f_ada da d2a + f_dada d2a^2 + f_a d2a + f_da d3a
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        double a, da, d2a, d3a;
+        truncation_shape(family, mu, phi, &a, &da, &d2a, &d3a);
+        const double q = std::exp(-a);
+        const double p = -std::expm1(-a);
+        const double ps = p > 1e-300 ? p : 1e-300;
+        const double p2 = ps * ps, p3 = p2 * ps, p4 = p3 * ps;
+        const double f_a    = -da * q / p2 + da * da * q * (p + 2.0 * q) / p3;
+        const double f_da   = 1.0 / ps - 2.0 * q * da / p2;
+        const double f_dada = -2.0 * q / p2;
+        const double f_ada  = -q / p2 + 2.0 * da * q * (p + 2.0 * q) / p3;
+        const double R_a    = -q * (p + 2.0 * q) / p3
+                              - 2.0 * q * q * (2.0 * p + 3.0 * q) / p4;
+        const double f_aa   = da * q * (p + 2.0 * q) / p3 + da * da * R_a;
+        return f_aa * da * da + 2.0 * f_ada * da * d2a + f_dada * d2a * d2a
+               + f_a * d2a + f_da * d3a;
     }
     if (family == "beta_binomial") {
         // same logit shape as binomial, with n -> n/D

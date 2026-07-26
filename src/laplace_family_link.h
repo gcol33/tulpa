@@ -328,9 +328,11 @@ inline double log_lik_tweedie(double y, double mu, double phi, double p) {
 // and the same derivatives of it from the score and curvature. Writing
 // P(Y > 0) = 1 - exp(-a) makes the two differ only in a and its eta-derivatives:
 //
-//   truncated_poisson         a = mu,                 da = mu,   d2a = mu
+//   truncated_poisson         a = mu,                 da = mu,   d2a = mu,
+//                                                     d3a = mu
 //   truncated_neg_binomial_2  a = phi log1p(mu/phi),  da = phi mu / (phi + mu),
-//                                                     d2a = phi^2 mu / (phi + mu)^2
+//                                                     d2a = phi^2 mu / (phi + mu)^2,
+//                                                     d3a = phi^2 mu (phi - mu) / (phi + mu)^3
 //
 // so the pieces below are computed once from (a, da, d2a) and reused by the
 // density, the working weight and the observed curvature. That keeps the three
@@ -367,18 +369,22 @@ inline TruncationTerm truncation_term(double a, double da, double d2a) {
     return t;
 }
 
-// (a, da, d2a) for a truncated family at the current eta. `mu` is the
-// untruncated mean; phi is the NB size and is ignored by the Poisson arm.
+// (a, da, d2a) for a truncated family at the current eta, and the third
+// eta-derivative d3a when a non-null pointer is passed. `mu` is the untruncated
+// mean; phi is the NB size and is ignored by the Poisson arm.
 inline void truncation_shape(const std::string& family, double mu, double phi,
-                             double* a, double* da, double* d2a) {
+                             double* a, double* da, double* d2a,
+                             double* d3a = nullptr) {
     if (family == "truncated_poisson") {
         *a = mu; *da = mu; *d2a = mu;
+        if (d3a) *d3a = mu;
         return;
     }
     const double s = phi + mu;
     *a   = phi * std::log1p(mu / phi);
     *da  = phi * mu / s;
     *d2a = phi * phi * mu / (s * s);
+    if (d3a) *d3a = phi * phi * mu * (phi - mu) / (s * s * s);
 }
 
 struct GradHess {

@@ -5,7 +5,8 @@
 # Laplace log-marginal: the derivation can be right on paper and still be wired
 # to the wrong latent ordering, the wrong weight convention, or the wrong sign.
 
-.exg_sim <- function(seed = 5L, G = 10L, per = 7L, nc = 1L, fam = "poisson") {
+.exg_sim <- function(seed = 5L, G = 10L, per = 7L, nc = 1L, fam = "poisson",
+                     phi = 2.5) {
   set.seed(seed)
   n <- G * per
   grp <- rep(seq_len(G), each = per)
@@ -17,10 +18,18 @@
   zrow <- if (nc == 1L) matrix(1, n, 1) else Zc
   eta <- as.numeric(X %*% c(0.3, 0.5)) +
     rowSums(zrow * t(b)[grp, , drop = FALSE])
+  mu <- exp(eta)
+  # zero-truncated draw: reject the empty class the family conditions away.
+  pos <- function(rng) vapply(seq_len(n),
+    function(i) { repeat { v <- rng(i); if (v >= 1L) return(v) } }, numeric(1))
   y <- switch(fam,
-              poisson  = rpois(n, exp(eta)),
+              poisson  = rpois(n, mu),
               binomial = rbinom(n, 1L, plogis(eta)),
-              gaussian = rnorm(n, eta, 0.7))
+              gaussian = rnorm(n, eta, 0.7),
+              neg_binomial_2 = rnbinom(n, size = phi, mu = mu),
+              neg_binomial_1 = rnbinom(n, size = mu / phi, mu = mu),
+              truncated_poisson        = pos(function(i) rpois(1, mu[i])),
+              truncated_neg_binomial_2 = pos(function(i) rnbinom(1, size = phi, mu = mu[i])))
   list(y = y, X = X, grp = grp, G = G, n = n, nc = nc, Zc = Zc, fam = fam,
        n_trials = rep(1L, n))
 }
@@ -155,6 +164,51 @@ test_that("the closed-form Hessian matches for a correlated block", {
   expect_equal(r$analytic, r$fd, tolerance = 1e-5)
 })
 
+test_that("the closed Hessian is exact where the working weight differs from observed", {
+  # neg_binomial_1 and truncated_neg_binomial_2 build H from a working weight
+  # that is NOT the observed curvature, so the mode Jacobian -- and the closed
+  # Hessian that reads it -- is exact only through the true-Hessian correction
+  # A' diag(W_obs - w) A (dev_notes/laplace_exact_hessian.md). A working-weight
+  # Jacobian would miss the analytic-gradient stencil here by percent, not 1e-4.
+  for (cs in list(list(fam = "neg_binomial_1",          phi = 2.5),
+                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
+    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
+    r <- .exg_hess_compare(d, log(0.7), phi = cs$phi)
+    skip_if(is.null(r), "hessian unavailable")
+    expect_equal(r$analytic, r$fd, tolerance = 1e-4, info = cs$fam)
+  }
+})
+
+test_that("the analytic mode Jacobian equals the differenced true inner mode", {
+  # J = dx_hat/dtheta from true score stationarity carries the observed
+  # curvature; the check differences tulpa's own inner mode, catching a
+  # working-weight Jacobian directly rather than only through the Hessian.
+  for (cs in list(list(fam = "neg_binomial_2",          phi = 2.5),
+                  list(fam = "neg_binomial_1",          phi = 2.5),
+                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
+    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
+    layout <- .exg_layout(d, FALSE)
+    fit_at <- function(th) {
+      L <- .exg_theta_to_L(th, 1L, FALSE)
+      tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                    re_list = .re_cov_build_re_list(list(L), layout),
+                    family = d$fam, phi = cs$phi, return_hessian = TRUE,
+                    return_joint_hessian = TRUE, max_iter = 300L, tol = 1e-12)
+    }
+    L0 <- .exg_theta_to_L(log(0.7), 1L, FALSE)
+    r <- .laplace_exact_re_grad(
+      fit = fit_at(log(0.7)), y = d$y, X = d$X, n_trials = d$n_trials,
+      offset = NULL, weights = NULL,
+      re_list = .re_cov_build_re_list(list(L0), layout),
+      layout = layout, L_list = list(L0), family = d$fam, phi = cs$phi,
+      want_jacobian = TRUE)
+    skip_if(is.null(r) || is.null(r$J), "jacobian unavailable")
+    h <- 1e-5
+    Jtrue <- (fit_at(log(0.7) + h)$mode - fit_at(log(0.7) - h)$mode) / (2 * h)
+    expect_equal(as.numeric(r$J), Jtrue, tolerance = 1e-5, info = cs$fam)
+  }
+})
+
 test_that("a gaussian response has a closed Hessian with the curvature at zero", {
   # The control: dw/deta and d2w/deta2 are identically zero, so the Hessian is
   # exercised through J, dR and dV alone -- the analogue of the gradient control.
@@ -277,18 +331,51 @@ test_that("d2w/deta2 differentiates dw/deta (curvature the theta-Hessian needs)"
   }
 })
 
-test_that("the second curvature derivative is gated, truncated families excluded", {
+test_that("the second curvature derivative gate covers every family with a first", {
+  # The truncated pair carry the third truncation-shape derivative d3a, so their
+  # second eta-derivative is closed-form alongside every other family.
   for (f in c("poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
               "beta_binomial", "t", "tweedie", "gamma", "beta",
-              "binomial_probit", "gaussian_log"))
+              "binomial_probit", "gaussian_log",
+              "truncated_poisson", "truncated_neg_binomial_2"))
     expect_true(cpp_family_has_curvature_2nd_derivative(f), info = f)
-  # No third truncation-shape derivative exists, so the gate must say so.
-  for (f in c("truncated_poisson", "truncated_neg_binomial_2"))
-    expect_false(cpp_family_has_curvature_2nd_derivative(f), info = f)
   expect_false(cpp_family_has_curvature_2nd_derivative("not_a_family"))
-  # Gated out, not silently approximated: a mis-gated call stops.
-  expect_error(cpp_family_curvature_deta2(3, 1L, 0.2, "truncated_poisson", 1.0),
-               "no closed-form second")
+  # The truncated second eta-derivative FD-checks against the first, the same
+  # gate proto_truncated_curvature.R pins in base R.
+  h <- 1e-6
+  for (cs in list(list(f = "truncated_poisson", phi = 1.0),
+                  list(f = "truncated_neg_binomial_2", phi = 2.5))) {
+    for (eta in c(-0.6, 0.2, 0.9)) {
+      dw <- function(e) unname(cpp_family_curvature_deta(
+        3, 1L, e, cs$f, cs$phi, NA_real_)[["dw_deta"]])
+      got <- unname(cpp_family_curvature_deta2(
+        3, 1L, eta, cs$f, cs$phi, NA_real_)[["d2w_deta2"]])
+      num <- (dw(eta + h) - dw(eta - h)) / (2 * h)
+      expect_lt(abs(got - num) / max(abs(num), abs(got), 1e-6), 1e-4, label = cs$f)
+    }
+  }
+})
+
+test_that("the exact mode-Jacobian gate tracks whether the observed curvature is available", {
+  # Working weight equals observed curvature (canonical / constant), or an exact
+  # observed form exists (has_observed_curvature): the analytic mode Jacobian is
+  # exact and the closed route may run.
+  for (f in c("poisson", "binomial", "neg_binomial_2", "gaussian",
+              "truncated_poisson", "neg_binomial_1", "truncated_neg_binomial_2"))
+    expect_true(cpp_family_has_exact_mode_jacobian(f), info = f)
+  # Working weight differs from the observed curvature and no exact observed form
+  # exists: the Jacobian cannot be formed, so the correction differences the mode.
+  for (f in c("beta_binomial", "t", "tweedie"))
+    expect_false(cpp_family_has_exact_mode_jacobian(f), info = f)
+  # The observed-minus-working delta is identically zero where they coincide and
+  # nonzero exactly for the two families whose observed curvature carries y.
+  eta <- c(-0.5, 0.3, 1.1); y <- c(2, 3, 1)
+  expect_true(all(cpp_family_obs_curvature_delta_vec(y, 1L, eta, "poisson", 1) == 0))
+  expect_true(all(cpp_family_obs_curvature_delta_vec(y, 1L, eta, "neg_binomial_2", 2.5) == 0))
+  expect_true(any(abs(cpp_family_obs_curvature_delta_vec(
+    y, 1L, eta, "truncated_neg_binomial_2", 2.5)) > 1e-8))
+  expect_true(any(abs(cpp_family_obs_curvature_delta_vec(
+    y, 1L, eta, "neg_binomial_1", 2.5)) > 1e-8))
 })
 
 test_that("the vectorized second curvature derivative matches the scalar probe", {

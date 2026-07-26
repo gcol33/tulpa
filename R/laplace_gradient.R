@@ -178,6 +178,30 @@
   Hinv <- tryCatch(as.matrix(Matrix::solve(H)), error = function(e) NULL)
   if (is.null(Hinv) || any(!is.finite(Hinv))) return(NULL)
 
+  # Mode-Jacobian inverse. dx_hat/dtheta = -(A' diag(W_obs) A + P)^-1 (dP) x_hat
+  # is governed by the OBSERVED curvature W_obs, which the working-weight H_joint
+  # equals only for canonical / constant-curvature families. Where they differ
+  # (neg_binomial_1, truncated_neg_binomial_2) the true Hessian is H_joint plus
+  # A' diag(W_obs - w) A; where no exact observed form exists the Jacobian cannot
+  # be formed exactly and the caller differences the mode instead. Everything
+  # else in the gradient/Hessian reads H_joint, since the objective's log|H| is
+  # the working-weight one -- only the mode motion uses this inverse.
+  exact_jac <- isTRUE(cpp_family_has_exact_mode_jacobian(family))
+  Hinv_mode <- Hinv
+  if (exact_jac) {
+    delta <- cpp_family_obs_curvature_delta_vec(as.numeric(y), as.integer(n_trials),
+                                                eta, family, phi, phi2)
+    if (!is.null(weights)) delta <- delta * as.numeric(weights)
+    if (any(!is.finite(delta))) return(NULL)
+    if (max(abs(delta)) > 1e-12) {
+      H_true <- H + Matrix::crossprod(A, Matrix::Diagonal(x = delta) %*% A)
+      Hinv_mode <- tryCatch(as.matrix(Matrix::solve(H_true)), error = function(e) NULL)
+      if (is.null(Hinv_mode) || any(!is.finite(Hinv_mode))) {
+        exact_jac <- FALSE; Hinv_mode <- Hinv
+      }
+    }
+  }
+
   dw <- cpp_family_curvature_deta_vec(as.numeric(y), as.integer(n_trials),
                                       eta, family, phi, phi2)
   if (!is.null(weights)) dw <- dw * as.numeric(weights)
@@ -236,7 +260,8 @@
   }
 
   list(A = A, n_x = n_x, p_fix = p_fix, n_obs = n_obs, Hinv = Hinv, x = x,
-       eta = eta, dw = dw, s = s, u = u, v_r = v_r, blocks = blocks)
+       eta = eta, dw = dw, s = s, u = u, v_r = v_r, blocks = blocks,
+       Hinv_mode = Hinv_mode, exact_jac = exact_jac)
 }
 
 
@@ -255,6 +280,7 @@
 .laplace_exact_re_hess <- function(cq, y, n_trials, family, phi, phi2, weights,
                                    dS_by_block) {
   A <- cq$A; Hinv <- cq$Hinv; x <- cq$x; n_x <- cq$n_x
+  Hinv_mode <- cq$Hinv_mode
   s <- cq$s; dwdeta <- cq$dw; u <- cq$u; v_r <- cq$v_r
   blocks <- cq$blocks; nb <- length(blocks)
 
@@ -288,7 +314,7 @@
       dP_k[sl, sl] <- dOm_k
     }
 
-    J_k     <- -as.numeric(Hinv %*% (dP_k %*% x))       # mode Jacobian column
+    J_k     <- -as.numeric(Hinv_mode %*% (dP_k %*% x))  # mode Jacobian column
     eta_dot <- as.numeric(A %*% J_k)
     dW_k    <- dwdeta * eta_dot
     dH_k    <- as.matrix(Matrix::crossprod(A, Matrix::Diagonal(x = dW_k) %*% A)) + dP_k
@@ -358,9 +384,15 @@
                             re_list, layout, L_list, family, phi, phi2)
   if (is.null(cq)) return(NULL)
   A <- cq$A; Hinv <- cq$Hinv; x <- cq$x; n_x <- cq$n_x
+  Hinv_mode <- cq$Hinv_mode
   s <- cq$s; dw <- cq$dw; eta <- cq$eta; n_obs <- cq$n_obs
 
   want_J <- isTRUE(want_jacobian) || isTRUE(want_hessian)
+  # The mode Jacobian, and the closed Hessian that reads it, are exact only when
+  # the true observed curvature is available (has_exact_mode_jacobian). Decline
+  # both rather than return a working-weight Jacobian; the caller then differences
+  # the mode. The gradient value itself is unaffected and still returned below.
+  if (want_J && !isTRUE(cq$exact_jac)) return(NULL)
 
   grad <- numeric(0)
   # Exact mode Jacobian dx_hat/dtheta = -H^-1 (dP/dtheta) x_hat, assembled
@@ -390,7 +422,7 @@
         # dOmega applied to each group's coefficients.
         rhs <- numeric(n_x)
         rhs[bq$idx] <- as.numeric(dOm %*% bq$b_mat)
-        -as.numeric(Hinv %*% rhs)
+        -as.numeric(Hinv_mode %*% rhs)
       }, numeric(n_x))
       J <- cbind(J, Jm)
     }
