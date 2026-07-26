@@ -133,7 +133,8 @@ skip_if_not_slow()
                                  sigma_grid, alpha_grid, rho_grid,
                                  tau_grid, rho_ar1_grid, sigma_iid_grid,
                                  adj, n_years, n_obs,
-                                 scale_factor = 1.0) {
+                                 scale_factor = 1.0,
+                                 prior_sigma = NULL) {
     sim <- .sim_joint_multi_rec(seed,
                                  n_sites = adj$n_spatial_units,
                                  n_years = n_years, n_obs = n_obs,
@@ -157,6 +158,7 @@ skip_if_not_slow()
             responses = list(occ = sim$arm_occ, pos = sim$arm_pos),
             prior = prior,
             copy = list(block = 1L, arm = "pos", alpha_grid = alpha_grid),
+            prior_sigma = prior_sigma,
             control = list(adaptive_grid = FALSE, max_iter = 60L, tol = 1e-5)
         )
     )
@@ -328,7 +330,15 @@ test_that("INLA joint fit agrees with tulpa at alpha = 1 (5-seed cross-check)", 
             rho_grid = rho_grid, tau_grid = tau_grid,
             rho_ar1_grid = rho_ar1_grid, sigma_iid_grid = sigma_iid_grid,
             adj = adj_sparse, n_years = n_years, n_obs = n_obs,
-            scale_factor = sf
+            scale_factor = sf,
+            # Joint nested-Laplace defaults to a flat hyperprior over the outer
+            # grid, while INLA's bym2 precision carries pc.prec(U = 1, alpha =
+            # 0.01) by default -- prior mean on sigma of 0.22 against 0.65 for
+            # a flat prior on [0.3, 1.0]. Comparing posterior moments across
+            # the two engines requires the same prior on both sides, so pass
+            # INLA's own default here. The 30-seed recovery sweep above keeps
+            # the flat prior: it scores against a known truth, not against INLA.
+            prior_sigma = list("pc.prec", c(1, 0.01))
         )
         tul_mean[i, "sigma"]     <- f$sigma_hat
         tul_mean[i, "alpha"]     <- f$alpha_mean
