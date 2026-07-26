@@ -69,6 +69,48 @@
   list(analytic = ga, fd = gf)
 }
 
+# Closed-form outer Hessian vs a central difference of the analytic gradient --
+# the Hessian analogue of .exg_compare. The gradient it differences is itself
+# checked against tulpa's own marginal above, so this pins the second-derivative
+# assembly (R/laplace_gradient.R) onto a verified first derivative.
+.exg_hess_compare <- function(d, theta, full = FALSE, phi = 1.0) {
+  layout <- .exg_layout(d, full)
+  fit_at <- function(th) {
+    L <- .exg_theta_to_L(th, d$nc, full)
+    tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                  re_list = .re_cov_build_re_list(list(L), layout),
+                  family = d$fam, phi = phi, return_hessian = TRUE,
+                  return_joint_hessian = TRUE, max_iter = 300L, tol = 1e-12)
+  }
+  grad_at <- function(th) {
+    L <- .exg_theta_to_L(th, d$nc, full)
+    .laplace_exact_re_grad(
+      fit = fit_at(th), y = d$y, X = d$X, n_trials = d$n_trials,
+      offset = NULL, weights = NULL,
+      re_list = .re_cov_build_re_list(list(L), layout),
+      layout = layout, L_list = list(L), family = d$fam, phi = phi)
+  }
+  L0 <- .exg_theta_to_L(theta, d$nc, full)
+  r <- .laplace_exact_re_grad(
+    fit = fit_at(theta), y = d$y, X = d$X, n_trials = d$n_trials,
+    offset = NULL, weights = NULL,
+    re_list = .re_cov_build_re_list(list(L0), layout),
+    layout = layout, L_list = list(L0), family = d$fam, phi = phi,
+    want_hessian = TRUE)
+  if (is.null(r) || is.null(r$H)) return(NULL)
+  h <- 1e-5
+  k <- length(theta)
+  Hf <- matrix(0, k, k)
+  for (j in seq_len(k)) {
+    tp <- theta; tp[j] <- tp[j] + h
+    tm <- theta; tm[j] <- tm[j] - h
+    gp <- grad_at(tp); gm <- grad_at(tm)
+    if (is.null(gp) || is.null(gm)) return(NULL)
+    Hf[, j] <- (gp - gm) / (2 * h)
+  }
+  list(analytic = r$H, fd = (Hf + t(Hf)) / 2)
+}
+
 
 test_that("the exact gradient matches a difference of tulpa's own marginal", {
   for (cs in list(list(fam = "poisson",  th = log(0.7)),
@@ -89,6 +131,48 @@ test_that("the exact gradient matches for a correlated block", {
   skip_if(is.null(r), "gradient unavailable")
   expect_equal(r$analytic, r$fd, tolerance = 1e-6)
   expect_length(r$analytic, 3L)
+})
+
+test_that("the closed-form Hessian matches a difference of the analytic gradient", {
+  for (cs in list(list(fam = "poisson",  th = log(0.7)),
+                  list(fam = "binomial", th = log(0.7)),
+                  list(fam = "poisson",  th = log(1.6)))) {
+    d <- .exg_sim(fam = cs$fam, G = if (cs$fam == "binomial") 14L else 10L,
+                  per = if (cs$fam == "binomial") 10L else 7L)
+    r <- .exg_hess_compare(d, cs$th)
+    skip_if(is.null(r), "hessian unavailable")
+    expect_equal(dim(r$analytic), c(1L, 1L))
+    expect_equal(r$analytic, r$fd, tolerance = 1e-5,
+                 info = paste(cs$fam, "at theta =", signif(cs$th, 4)))
+  }
+})
+
+test_that("the closed-form Hessian matches for a correlated block", {
+  d <- .exg_sim(seed = 5L, G = 12L, per = 8L, nc = 2L)
+  r <- .exg_hess_compare(d, c(log(0.7), 0.2, log(0.6)), full = TRUE)
+  skip_if(is.null(r), "hessian unavailable")
+  expect_equal(dim(r$analytic), c(3L, 3L))
+  expect_equal(r$analytic, r$fd, tolerance = 1e-5)
+})
+
+test_that("a gaussian response has a closed Hessian with the curvature at zero", {
+  # The control: dw/deta and d2w/deta2 are identically zero, so the Hessian is
+  # exercised through J, dR and dV alone -- the analogue of the gradient control.
+  d <- .exg_sim(fam = "gaussian")
+  layout <- .exg_layout(d, FALSE)
+  L <- .exg_theta_to_L(log(0.7), 1L, FALSE)
+  fit <- tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                       re_list = .re_cov_build_re_list(list(L), layout),
+                       family = "gaussian", phi = 0.49,
+                       return_hessian = TRUE, return_joint_hessian = TRUE)
+  r <- .laplace_exact_re_grad(
+    fit = fit, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
+    weights = NULL, re_list = .re_cov_build_re_list(list(L), layout),
+    layout = layout, L_list = list(L), family = "gaussian", phi = 0.49,
+    want_hessian = TRUE)
+  skip_if(is.null(r) || is.null(r$H), "hessian unavailable")
+  expect_equal(dim(r$H), c(1L, 1L))
+  expect_true(all(is.finite(r$H)))
 })
 
 test_that("a gaussian response is the control: dw/deta is zero throughout", {
@@ -272,21 +356,38 @@ test_that("the gradient-driven outer fit lands where the derivative-free one doe
                tolerance = 1e-4)
 })
 
-test_that("the exact and finite-difference stencils give the same correction", {
+test_that("the closed, exact-stencil and finite-difference corrections agree", {
   d <- .exg_sim(seed = 3L, G = 20L, per = 8L)
   re <- list(idx = d$grp, n_groups = d$G, n_coefs = 1L)
+  # Default route: the closed-form outer Hessian, no differencing of any solve.
   a <- tulpa_eb(d$y, NULL, d$X, re, family = "poisson", marginal = TRUE)
-  skip_if(is.null(a$cov_marginal), "correction did not form")
+  skip_if(is.null(a$cov_marginal), "closed correction did not form")
 
-  orig <- cpp_family_has_curvature_derivative
-  on.exit(assignInNamespace("cpp_family_has_curvature_derivative", orig,
-                            ns = "tulpa"), add = TRUE)
-  assignInNamespace("cpp_family_has_curvature_derivative",
+  orig2 <- cpp_family_has_curvature_2nd_derivative
+  orig1 <- cpp_family_has_curvature_derivative
+  on.exit({
+    assignInNamespace("cpp_family_has_curvature_2nd_derivative", orig2, ns = "tulpa")
+    assignInNamespace("cpp_family_has_curvature_derivative", orig1, ns = "tulpa")
+  }, add = TRUE)
+
+  # Hide only the second curvature derivative -> the closed route declines and
+  # the exact stencil (difference the analytic gradient) runs.
+  assignInNamespace("cpp_family_has_curvature_2nd_derivative",
                     function(family) FALSE, ns = "tulpa")
   b <- tulpa_eb(d$y, NULL, d$X, re, family = "poisson", marginal = TRUE)
-  skip_if(is.null(b$cov_marginal), "fallback correction did not form")
+  skip_if(is.null(b$cov_marginal), "exact-stencil correction did not form")
 
+  # Hide the first as well -> the finite-difference stencil.
+  assignInNamespace("cpp_family_has_curvature_derivative",
+                    function(family) FALSE, ns = "tulpa")
+  cc <- tulpa_eb(d$y, NULL, d$X, re, family = "poisson", marginal = TRUE)
+  skip_if(is.null(cc$cov_marginal), "fallback correction did not form")
+
+  # Closed vs exact stencil: both differentiate the same analytic gradient, so
+  # they agree to the stencil's O(step^2) truncation. Against the objective-
+  # differencing fallback the tolerance is looser.
   expect_equal(as.numeric(a$H_theta), as.numeric(b$H_theta), tolerance = 1e-4)
-  expect_equal(sqrt(diag(a$cov_marginal)), sqrt(diag(b$cov_marginal)),
+  expect_equal(as.numeric(a$H_theta), as.numeric(cc$H_theta), tolerance = 1e-4)
+  expect_equal(sqrt(diag(a$cov_marginal)), sqrt(diag(cc$cov_marginal)),
                tolerance = 1e-4)
 })

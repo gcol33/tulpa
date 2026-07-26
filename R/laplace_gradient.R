@@ -86,39 +86,76 @@
 }
 
 
-# dSigma/dtheta_j for one block, in the same coordinate order as
-# .re_cov_theta_to_L_list: column-major lower triangle, log L_ii on the
-# diagonal and raw L_ij below, or log sigma_i for a diagonal block.
-.re_block_dSigma <- function(L, nc, full) {
-  emit <- function(dL) dL %*% t(L) + L %*% t(dL)
+# First derivatives dL/dtheta_p for one block, in the coordinate order of
+# .re_cov_theta_to_L_list: for a diagonal block, log sigma_i (i = 1..nc); for a
+# full block, the column-major lower triangle with log L_ii on the diagonal and
+# raw L_ij below. Because the diagonal coordinates are log-parameterized,
+# dL_ii/dtheta = L_ii and d2L_ii/dtheta^2 = L_ii, both flagged here so dSigma and
+# d2Sigma share one definition of which coordinate is a log.
+.re_block_L_derivs <- function(L, nc, full) {
+  Lp <- list(); is_diag <- logical(0); di <- integer(0)
   if (!isTRUE(full)) {
-    return(lapply(seq_len(nc), function(i) {
-      dL <- matrix(0, nc, nc); dL[i, i] <- L[i, i]; emit(dL)
-    }))
-  }
-  out <- list()
-  for (j in seq_len(nc)) {
-    for (i in j:nc) {
-      dL <- matrix(0, nc, nc)
-      dL[i, j] <- if (i == j) L[i, i] else 1
-      out[[length(out) + 1L]] <- emit(dL)
+    for (i in seq_len(nc)) {
+      dL <- matrix(0, nc, nc); dL[i, i] <- L[i, i]
+      Lp[[length(Lp) + 1L]] <- dL
+      is_diag <- c(is_diag, TRUE); di <- c(di, i)
     }
+  } else {
+    for (j in seq_len(nc)) for (i in j:nc) {
+      dL <- matrix(0, nc, nc)
+      if (i == j) { dL[i, i] <- L[i, i]; is_diag <- c(is_diag, TRUE);  di <- c(di, i) }
+      else        { dL[i, j] <- 1;       is_diag <- c(is_diag, FALSE); di <- c(di, NA_integer_) }
+      Lp[[length(Lp) + 1L]] <- dL
+    }
+  }
+  list(Lp = Lp, is_diag = is_diag, di = di)
+}
+
+
+# dSigma/dtheta_j for one block: Sigma = L L', so dSigma = dL L' + L dL'.
+.re_block_dSigma <- function(L, nc, full) {
+  Lp <- .re_block_L_derivs(L, nc, full)$Lp
+  lapply(Lp, function(dL) dL %*% t(L) + L %*% t(dL))
+}
+
+
+# d2Sigma/dtheta_p dtheta_q for one block, returned as a list-of-lists indexed
+# out[[p]][[q]]. From Sigma = L L',
+#
+#   d2Sigma = L_pq L' + L_p L_q' + L_q L_p' + L L_pq'
+#
+# and L_pq is zero except when p == q is a diagonal (log) coordinate, where
+# d2L_ii/dtheta^2 = L_ii. Term A of the exact Hessian
+# (dev_notes/laplace_exact_hessian.md) contracts this against the Sigma-gradient
+# the gradient already forms.
+.re_block_d2Sigma <- function(L, nc, full) {
+  d  <- .re_block_L_derivs(L, nc, full)
+  Lp <- d$Lp; k <- length(Lp)
+  out <- lapply(seq_len(k), function(.) vector("list", k))
+  for (p in seq_len(k)) for (q in seq_len(k)) {
+    d2 <- Lp[[p]] %*% t(Lp[[q]]) + Lp[[q]] %*% t(Lp[[p]])
+    if (p == q && isTRUE(d$is_diag[p])) {
+      i <- d$di[p]
+      Lpp <- matrix(0, nc, nc); Lpp[i, i] <- L[i, i]
+      d2 <- d2 + Lpp %*% t(L) + L %*% t(Lpp)
+    }
+    out[[p]][[q]] <- d2
   }
   out
 }
 
 
-# Exact gradient of the Laplace log-marginal w.r.t. the stacked log-Cholesky
-# theta, given a fit produced with `return_joint_hessian = TRUE`.
+# Shared intermediates for the exact gradient AND the exact Hessian: the mode,
+# H^-1, the linear-predictor variance s, the dW/dtheta solve u, and per RE block
+# the moments (R, V, C), the covariance/precision (Sigma via L, Omega) and the
+# Sigma-gradient S. Both derivatives are contractions against these, so forming
+# them once is the single source of truth the two assemblies read.
 #
 # Returns NULL rather than a wrong number whenever an ingredient is missing or
-# unusable: no joint Hessian, a singular H, a family without an exact curvature
-# derivative, or a layout that does not line up with the mode. The caller then
-# falls back to the derivative-free path instead of optimizing a fiction.
-.laplace_exact_re_grad <- function(fit, y, X, n_trials, offset, weights,
-                                   re_list, layout, L_list, family, phi,
-                                   phi2 = NA_real_, want_jacobian = FALSE,
-                                   want_phi = FALSE) {
+# unusable: no joint Hessian, a singular H or Sigma, a family without an exact
+# curvature derivative, or a layout that does not line up with the mode.
+.laplace_exact_core <- function(fit, y, X, n_trials, offset, weights,
+                                re_list, layout, L_list, family, phi, phi2) {
   H <- fit$H_joint
   x <- fit$mode
   if (is.null(H) || is.null(x)) return(NULL)
@@ -151,17 +188,13 @@
   s  <- rowSums(AH * as.matrix(A))
 
   # One solve carries the whole dW/dtheta channel, independently of how many
-  # hyperparameter coordinates there are.
-  u <- as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, dw * s)))
+  # hyperparameter coordinates there are. v_r = A' (dw * s) is kept for the
+  # Hessian's du/dtheta, where it is the vector u differentiates.
+  v_r <- as.numeric(Matrix::crossprod(A, dw * s))
+  u   <- as.numeric(Hinv %*% v_r)
 
-  grad <- numeric(0)
-  # Exact mode Jacobian dx_hat/dtheta = -H^-1 (dP/dtheta) x_hat, assembled
-  # column by column as the blocks are walked. Each column is a matrix-vector
-  # product against the H^-1 already formed, so the whole Jacobian costs no
-  # further factorization -- against 2k full inner Laplace re-solves to
-  # finite-difference the mode.
-  J <- if (isTRUE(want_jacobian)) matrix(0, n_x, 0) else NULL
-  pos  <- p_fix
+  blocks <- vector("list", length(layout))
+  pos <- p_fix
   for (m in seq_along(layout)) {
     bl <- layout[[m]]
     nc <- bl$nc
@@ -193,24 +226,170 @@
     # derivative of the log density. See the sign note in
     # dev_notes/laplace_exact_gradient.md -- a gaussian check cannot catch this,
     # because dw/deta is identically zero there.
-    Smat <- 0.5 * (Om %*% (Rm + Vm - Cm) %*% Om - G * Om)
+    M0   <- Rm + Vm - Cm
+    Smat <- 0.5 * (Om %*% M0 %*% Om - G * Om)
     Smat <- (Smat + t(Smat)) / 2
+
+    blocks[[m]] <- list(idx = idx, nc = nc, G = G, full = isTRUE(bl$full),
+                        b_mat = b_mat, u_mat = u_mat, Rm = Rm, Vm = Vm, Cm = Cm,
+                        Lm = Lm, Om = Om, M0 = M0, Smat = Smat)
+  }
+
+  list(A = A, n_x = n_x, p_fix = p_fix, n_obs = n_obs, Hinv = Hinv, x = x,
+       eta = eta, dw = dw, s = s, u = u, v_r = v_r, blocks = blocks)
+}
+
+
+# Exact Hessian of the Laplace log-marginal w.r.t. the stacked log-Cholesky
+# theta (the RE coordinates only; the dispersion cross-terms are deferred, see
+# dev_notes/laplace_exact_hessian.md). Assembled column by column from the shared
+# core: for each coordinate k the mode Jacobian J_k, the weight/precision moves
+# dW_k and dP_k, and dH^-1_k feed a per-block transport of the Sigma-gradient
+# (term B) plus the parameterization curvature (term A). Every off-diagonal is
+# built twice -- as column j and as column k -- and the two agree to the inner
+# solver's noise, so the raw matrix is symmetric before it is symmetrized.
+#
+# `dS_by_block` is the same per-block dSigma list the gradient's Jacobian uses,
+# passed in so the chain rule is formed once. Returns NULL on a non-finite
+# second curvature derivative.
+.laplace_exact_re_hess <- function(cq, y, n_trials, family, phi, phi2, weights,
+                                   dS_by_block) {
+  A <- cq$A; Hinv <- cq$Hinv; x <- cq$x; n_x <- cq$n_x
+  s <- cq$s; dwdeta <- cq$dw; u <- cq$u; v_r <- cq$v_r
+  blocks <- cq$blocks; nb <- length(blocks)
+
+  d2w <- cpp_family_curvature_deta2_vec(as.numeric(y), as.integer(n_trials),
+                                        cq$eta, family, phi, phi2)
+  if (!is.null(weights)) d2w <- d2w * as.numeric(weights)
+  if (any(!is.finite(d2w))) return(NULL)
+
+  klens  <- vapply(dS_by_block, length, integer(1))
+  ktot   <- sum(klens)
+  gstart <- c(0L, cumsum(klens))
+  blk_of <- integer(ktot); loc_of <- integer(ktot)
+  for (m in seq_len(nb)) {
+    rng <- gstart[m] + seq_len(klens[m])
+    blk_of[rng] <- m; loc_of[rng] <- seq_len(klens[m])
+  }
+  d2S_by_block <- lapply(seq_len(nb), function(m)
+    .re_block_d2Sigma(blocks[[m]]$Lm, blocks[[m]]$nc, blocks[[m]]$full))
+
+  Hm <- matrix(0, ktot, ktot)
+  for (k in seq_len(ktot)) {
+    mk <- blk_of[k]; lk <- loc_of[k]
+    bk <- blocks[[mk]]
+    Om_k   <- bk$Om
+    dOm_k  <- -Om_k %*% dS_by_block[[mk]][[lk]] %*% Om_k
+
+    # dP_k: dOmega_k on each group of block mk, zero elsewhere.
+    dP_k <- matrix(0, n_x, n_x)
+    for (g in seq_len(bk$G)) {
+      sl <- bk$idx[(g - 1L) * bk$nc + seq_len(bk$nc)]
+      dP_k[sl, sl] <- dOm_k
+    }
+
+    J_k     <- -as.numeric(Hinv %*% (dP_k %*% x))       # mode Jacobian column
+    eta_dot <- as.numeric(A %*% J_k)
+    dW_k    <- dwdeta * eta_dot
+    dH_k    <- as.matrix(Matrix::crossprod(A, Matrix::Diagonal(x = dW_k) %*% A)) + dP_k
+    dHinv_k <- -Hinv %*% dH_k %*% Hinv
+    ds_k    <- rowSums(as.matrix(A %*% dHinv_k) * as.matrix(A))
+    dr_k    <- (d2w * eta_dot) * s + dwdeta * ds_k
+    du_k    <- as.numeric(dHinv_k %*% v_r) +
+               as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, dr_k)))
+
+    for (m in seq_len(nb)) {
+      bq <- blocks[[m]]; nc <- bq$nc; G <- bq$G; idx <- bq$idx
+      b_m  <- bq$b_mat
+      u_m  <- bq$u_mat
+      Jb_m <- matrix(J_k[idx],  nrow = nc)
+      du_m <- matrix(du_k[idx], nrow = nc)
+
+      dR_m <- Jb_m %*% t(b_m) + b_m %*% t(Jb_m)
+      dV_m <- matrix(0, nc, nc)
+      for (g in seq_len(G)) {
+        sl <- idx[(g - 1L) * nc + seq_len(nc)]
+        dV_m <- dV_m + dHinv_k[sl, sl, drop = FALSE]
+      }
+      Cp   <- Jb_m %*% t(u_m) + b_m %*% t(du_m); dC_m <- 0.5 * (Cp + t(Cp))
+      dM0_m <- dR_m + dV_m - dC_m
+
+      Om_m <- bq$Om; M0_m <- bq$M0
+      dS_m <- 0.5 * (Om_m %*% dM0_m %*% Om_m)
+      if (m == mk)
+        dS_m <- dS_m +
+          0.5 * (dOm_k %*% M0_m %*% Om_m + Om_m %*% M0_m %*% dOm_k - G * dOm_k)
+
+      # term B: <dSigma_j, dS_m> for every coordinate j in block m.
+      dS_list <- dS_by_block[[m]]
+      for (lj in seq_along(dS_list)) {
+        gj <- gstart[m] + lj
+        Hm[gj, k] <- Hm[gj, k] + sum(dS_list[[lj]] * dS_m)
+      }
+    }
+
+    # term A: <d2Sigma_{j,k}, S_mk> for coordinate j in block mk (block-local).
+    S_mk    <- bk$Smat
+    d2S_mk  <- d2S_by_block[[mk]]
+    for (lj in seq_len(klens[mk])) {
+      gj <- gstart[mk] + lj
+      Hm[gj, k] <- Hm[gj, k] + sum(d2S_mk[[lj]][[lk]] * S_mk)
+    }
+  }
+  if (any(!is.finite(Hm))) return(NULL)
+  (Hm + t(Hm)) / 2
+}
+
+
+# Exact gradient of the Laplace log-marginal w.r.t. the stacked log-Cholesky
+# theta, given a fit produced with `return_joint_hessian = TRUE`. On request
+# also the exact mode Jacobian J (closed form) and the exact theta-Hessian H.
+#
+# Returns NULL rather than a wrong number whenever an ingredient is missing or
+# unusable; the caller then falls back to the derivative-free path instead of
+# optimizing a fiction. With `want_hessian` the returned H is NULL (grad and J
+# still valid) for a family that has no closed-form second curvature derivative,
+# which sends only the Hessian back to the differencing stencil.
+.laplace_exact_re_grad <- function(fit, y, X, n_trials, offset, weights,
+                                   re_list, layout, L_list, family, phi,
+                                   phi2 = NA_real_, want_jacobian = FALSE,
+                                   want_hessian = FALSE, want_phi = FALSE) {
+  cq <- .laplace_exact_core(fit, y, X, n_trials, offset, weights,
+                            re_list, layout, L_list, family, phi, phi2)
+  if (is.null(cq)) return(NULL)
+  A <- cq$A; Hinv <- cq$Hinv; x <- cq$x; n_x <- cq$n_x
+  s <- cq$s; dw <- cq$dw; eta <- cq$eta; n_obs <- cq$n_obs
+
+  want_J <- isTRUE(want_jacobian) || isTRUE(want_hessian)
+
+  grad <- numeric(0)
+  # Exact mode Jacobian dx_hat/dtheta = -H^-1 (dP/dtheta) x_hat, assembled
+  # column by column as the blocks are walked. Each column is a matrix-vector
+  # product against the H^-1 already formed, so the whole Jacobian costs no
+  # further factorization -- against 2k full inner Laplace re-solves to
+  # finite-difference the mode. `dS_by_block` is kept for the Hessian, which
+  # reuses the same chain rule rather than re-forming it.
+  J <- if (want_J) matrix(0, n_x, 0) else NULL
+  dS_by_block <- vector("list", length(cq$blocks))
+  for (m in seq_along(cq$blocks)) {
+    bq <- cq$blocks[[m]]
     gm <- tryCatch(
-      cpp_recov_block_grad(Smat, Lm, isTRUE(bl$full), 1.0),
+      cpp_recov_block_grad(bq$Smat, bq$Lm, bq$full, 1.0),
       error = function(e) NULL
     )
     if (is.null(gm)) return(NULL)
     grad <- c(grad, gm)
 
-    if (!is.null(J)) {
-      dS_list <- .re_block_dSigma(Lm, nc, isTRUE(bl$full))
+    if (want_J) {
+      dS_list <- .re_block_dSigma(bq$Lm, bq$nc, bq$full)
       if (length(dS_list) != length(gm)) return(NULL)
+      dS_by_block[[m]] <- dS_list
       Jm <- vapply(dS_list, function(dSig) {
-        dOm <- -Om %*% dSig %*% Om
+        dOm <- -bq$Om %*% dSig %*% bq$Om
         # (dP/dtheta_j) x_hat is zero outside this block, and inside it is
         # dOmega applied to each group's coefficients.
         rhs <- numeric(n_x)
-        rhs[idx] <- as.numeric(dOm %*% b_mat)
+        rhs[bq$idx] <- as.numeric(dOm %*% bq$b_mat)
         -as.numeric(Hinv %*% rhs)
       }, numeric(n_x))
       J <- cbind(J, Jm)
@@ -218,6 +397,16 @@
   }
 
   if (any(!is.finite(grad))) return(NULL)
+
+  # Closed-form theta-Hessian, gated on the second curvature derivative. A family
+  # that has only the first derivative leaves H NULL, so the gradient and J are
+  # still exact and only the Hessian returns to the stencil.
+  Hmat <- NULL
+  if (isTRUE(want_hessian) &&
+      isTRUE(cpp_family_has_curvature_2nd_derivative(family))) {
+    Hmat <- .laplace_exact_re_hess(cq, y, n_trials, family, phi, phi2, weights,
+                                   dS_by_block)
+  }
 
   # ---- Dispersion coordinate ------------------------------------------------
   # Appended last, so the stacked theta the optimizer walks is
@@ -257,7 +446,7 @@
     grad <- c(grad, grad_phi)
   }
 
-  if (is.null(J)) return(grad)
+  if (!want_J) return(grad)
   if (any(!is.finite(J))) return(NULL)
-  list(grad = grad, J = J, grad_phi = grad_phi)
+  list(grad = grad, J = J, H = Hmat, grad_phi = grad_phi)
 }

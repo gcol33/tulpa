@@ -166,6 +166,94 @@ coupling `Omega_m dM0_m Omega_m` that the gradient has no analogue for. The
 parameterization second derivative `d2Sigma` is separately checked against a
 difference of `dSigma` at 9.2e-11.
 
+## In-package validation
+
+The proto above pins the math in base R; this pins the WIRED path -- the closed
+`H_theta` as `tulpa_eb(marginal = TRUE)` actually assembles it, routed through
+`.eb_closed_hessian`. Run detached (`dev_notes/phase4_coverage.R`, scheduled task
+`tulpa_phase4`, outputs in `dev_notes/phase4_out/`).
+
+Route equivalence, 16 regimes ({poisson, binomial} x {diagonal, correlated} x 4
+seeds). The default closed route against the two differencing fallbacks, on
+`H_theta` and on the marginal-corrected fixed-effect SDs `sqrt(diag(cov_marginal))`:
+
+    comparison            what differs                 max rel diff   tol
+    closed vs stencil     both difference the same      3.25e-06      1e-4
+                          analytic gradient (O(h^2))
+    closed vs fd          fd differences the objective  7.08e-04      5e-3
+                          (1 + 2k^2 solves, noisier)
+
+Closed matches the analytic-gradient stencil to ~1e-6 everywhere; the coarser
+gap to the objective-differencing route is the fallback's own truncation, not a
+disagreement. This is the single-fixture phase-3 gate generalized across the
+family/block grid.
+
+Fixed-effect CI coverage, marginal vs conditional, 40 seeds x 4 regimes (many /
+few groups per family). Coverage lands in 0.875-0.95 (nominal 0.95) and is equal
+to displayed precision between the marginal and conditional intervals in every
+regime, because the SD inflation `sqrt(cov_marginal / cov_conditional)` is
+1.002-1.034. For these balanced GLMM designs the fixed-effect mode is nearly
+insensitive to theta (`J = d beta_mode / d theta ~ 0`), so `J H_theta^{-1} J'`
+adds little to the fixed-effect block -- a small, correct adjustment, not an
+inert one. The correction's substantive effect lives in the latent / BLUP and
+derived-quantity uncertainty, which `cov_marginal` (fixed-effect only) does not
+carry. A 15-seed subset re-run on the stencil route reproduces the coverage
+indicators exactly, so the intervals are route-invariant end to end, not only
+`H_theta`-invariant.
+
+The release-gate recovery file (`test-re-cov-recovery.R`, `TULPA_SLOW_TESTS`)
+stays 31/0/0 through the refactored `.laplace_exact_core`.
+
+## Route benchmark
+
+Wall-clock of the three routes, to fix which one the dispatch tries first on
+evidence rather than solve-count arithmetic. Run detached
+(`dev_notes/phase5_bench.R`, scheduled task `tulpa_phase5`, outputs in
+`dev_notes/phase5_out/`). One EB fit per regime feeds all three routes -- they
+read the same `core` (`theta_hat`, `inner_fit`, `exact_grad_at`), so only the
+`H_theta` / `J` assembly is timed, not the shared outer maximization. Timing is
+the median over an adaptively sized batch from the OS high-resolution counter
+(`microbenchmark`); `proc.time()`'s ~15 ms Windows granularity rounds the two
+exact routes to zero.
+
+k-sweep, correlated block nc = 1,2,3,4 (k = 1,3,6,10), G = 40, per = 12,
+poisson. `fit` is the `marginal = FALSE` fit the correction rides on:
+
+    k   n_x   closed   stencil        fd     fit    corr as % of fit
+              (ms)      (ms)        (ms)    (ms)    closed      fd
+    1    42    0.03      0.03       18.3     102    0.03%     17.8%
+    3    82    0.14      0.07      141.8     222    0.06%     63.7%
+    6   122    0.49      0.15     1700.9     496    0.10%    343.1%
+   10   162    5.11      0.80     9104.6    3091    0.17%    294.5%
+
+The objective-differencing `fd` route is the one result with a large number in
+it: its cost tracks the `1 + 2k^2` inner solves (3, 19, 73, 201) and reaches
+9.1 s at k = 10 -- three times the fit it corrects. This is the measured case for
+cheapest-exact-first dispatch: `fd` is reached only when a family offers no
+analytic gradient at all, and when it is reached it dominates the fit.
+
+Both exact routes stay a rounding error on the fit (<= 0.17%). Between them the
+`2k`-solve `stencil` is the faster one at every k past 1 -- the closed route's
+single assembly forms the full second-derivative tensor, whose own cost climbs
+with k (0.03 -> 5.11 ms) faster than the stencil's gradient solves (0.03 -> 0.80
+ms). So the closed route leads the dispatch for being finite-difference-free (no
+`O(h^2)` truncation, no step to choose), not for wall-clock: it buys exactness at
+a cost that never exceeds 0.17% of the fit, while the stencil it precedes would
+save only tenths of a millisecond and reintroduce the truncation term.
+
+Two controls confirm the cost is set by the solve count and not by the problem:
+
+  * n_x-sweep (k = 3, G = 20/60/150, n_x = 42/302): the correction does not grow
+    with the inner dimension -- closed 0.35 -> 0.15 ms, stencil 0.18 -> 0.07 ms
+    across a 7x range of n_x -- while the fit grows 313 -> 943 ms. Cost is bounded
+    by k, not by the latent size the correction propagates through.
+  * binomial at k = 3 (0.14 / 0.07 / 115 ms) matches poisson at k = 3
+    (0.14 / 0.07 / 142 ms): the route cost is set by how many solves each does,
+    not by the family.
+
+Re-derived here as a same-H check, all three routes agree: closed vs stencil
+`7.29e-07`, closed vs fd `4.49e-07`, consistent with the phase-4 grid.
+
 ## What this buys
 
 Closed-form `H_theta`: one assembly reusing the gradient's factorization of `H`,

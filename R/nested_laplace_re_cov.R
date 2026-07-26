@@ -794,6 +794,32 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     if (is.na(phi_idx)) g else c(g, 0)
   }
 
+  # Curvature of the same hyperprior, over the covariance coordinates only. The
+  # closed-form outer Hessian is exact for the Laplace marginal but the prior is
+  # user-supplied with no closed form, so its d2/dtheta2 is a second central
+  # difference -- costing only prior evaluations, no inner Laplace solves. h is
+  # larger than the gradient's because a second difference divides by h^2.
+  d2_log_prior_theta <- function(theta_re, h = 1e-4) {
+    kk <- length(theta_re)
+    Hp <- matrix(0, kk, kk)
+    lp0 <- log_prior_theta(theta_re)
+    for (j in seq_len(kk)) {
+      tp <- theta_re; tp[j] <- tp[j] + h
+      tm <- theta_re; tm[j] <- tm[j] - h
+      Hp[j, j] <- (log_prior_theta(tp) - 2 * lp0 + log_prior_theta(tm)) / h^2
+    }
+    if (kk > 1L) for (j in seq_len(kk - 1L)) for (l in (j + 1L):kk) {
+      tpp <- theta_re; tpp[j] <- tpp[j] + h; tpp[l] <- tpp[l] + h
+      tpm <- theta_re; tpm[j] <- tpm[j] + h; tpm[l] <- tpm[l] - h
+      tmp <- theta_re; tmp[j] <- tmp[j] - h; tmp[l] <- tmp[l] + h
+      tmm <- theta_re; tmm[j] <- tmm[j] - h; tmm[l] <- tmm[l] - h
+      Hp[j, l] <- Hp[l, j] <-
+        (log_prior_theta(tpp) - log_prior_theta(tpm) -
+         log_prior_theta(tmp) + log_prior_theta(tmm)) / (4 * h^2)
+    }
+    Hp
+  }
+
   # Value and gradient of the FULL outer objective, log_marginal + log_prior, at
   # one theta. Everything downstream -- the optimizer, the marginal correction's
   # curvature -- reads this, so there is one definition of what is being
@@ -801,8 +827,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # Cached because BFGS asks for value and gradient at the same theta and the
   # inner solve is the entire cost.
   grad_cache <- new.env(parent = emptyenv())
-  eval_grad_at <- function(theta, want_jacobian = FALSE) {
-    key <- paste(c(signif(theta, 12), if (want_jacobian) "J"), collapse = ",")
+  eval_grad_at <- function(theta, want_jacobian = FALSE, want_hessian = FALSE) {
+    want_list <- want_jacobian || want_hessian
+    key <- paste(c(signif(theta, 12), if (want_jacobian) "J", if (want_hessian) "H"),
+                 collapse = ",")
     if (!is.null(grad_cache[[key]])) return(grad_cache[[key]])
     sp <- theta_split(theta)
     L_list <- .re_cov_theta_to_L_list(sp$re, layout)
@@ -817,16 +845,20 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         # either: the gradient must describe the model the inner solve fitted,
         # not a differently-parameterized one.
         phi = sp$phi, phi2 = NA_real_, want_jacobian = want_jacobian,
+        want_hessian = want_hessian,
         # Appends the log-phi coordinate, so the returned gradient is stacked in
         # the same order as theta.
         want_phi = !is.na(phi_idx)
       )
       if (is.null(r)) NULL else {
         # The prior shifts the objective but not the mode, so it enters the
-        # gradient and leaves J alone.
-        g <- (if (want_jacobian) r$grad else r) + d_log_prior_theta(sp$re)
+        # gradient and leaves J alone. H below is the Laplace marginal's exact
+        # curvature over the covariance coordinates; the prior's own curvature is
+        # added where the negative outer Hessian is formed (exact_grad_at).
+        g <- (if (want_list) r$grad else r) + d_log_prior_theta(sp$re)
         list(f = fit$log_marginal + log_prior_theta(sp$re), g = g,
-             J = if (want_jacobian) r$J else NULL)
+             J = if (want_list) r$J else NULL,
+             H = if (want_hessian) r$H else NULL)
       }
     }
     grad_cache[[key]] <- val
@@ -1014,11 +1046,26 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # (the AGHQ inner marginal, or a family whose working weight has no closed-form
   # eta-derivative). tulpa_eb(marginal = TRUE) uses it to replace the
   # finite-difference stencil; a NULL sends it back to the stencil.
-  exact_grad_at <- if (!use_exact_grad) NULL else function(theta, want_jacobian = FALSE) {
-    r <- eval_grad_at(theta, want_jacobian = want_jacobian)
-    if (is.null(r)) return(NULL)
-    if (isTRUE(want_jacobian)) list(grad = r$g, J = r$J) else r$g
-  }
+  exact_grad_at <- if (!use_exact_grad) NULL else
+    function(theta, want_jacobian = FALSE, want_hessian = FALSE) {
+      r <- eval_grad_at(theta, want_jacobian = want_jacobian,
+                        want_hessian = want_hessian)
+      if (is.null(r)) return(NULL)
+      if (isTRUE(want_hessian)) {
+        # The negative outer Hessian the marginal correction consumes:
+        # -(d2 log_marginal + d2 log_prior). The marginal half is closed-form
+        # (r$H); the prior half is the cheap second difference above. NULL r$H
+        # (a family without a second curvature derivative) hands the Hessian back
+        # to the differencing stencil.
+        if (is.null(r$H)) return(NULL)
+        sp <- theta_split(theta)
+        Hp <- tryCatch(d2_log_prior_theta(sp$re), error = function(e) NULL)
+        if (is.null(Hp) || !all(dim(Hp) == dim(r$H))) return(NULL)
+        Ht <- -(r$H + Hp)
+        return(list(grad = r$g, J = r$J, H = (Ht + t(Ht)) / 2))
+      }
+      if (isTRUE(want_jacobian)) list(grad = r$g, J = r$J) else r$g
+    }
 
   # The dispersion is reported separately from theta_hat's covariance half, and
   # `theta_hat` is trimmed to the covariance coordinates so every downstream

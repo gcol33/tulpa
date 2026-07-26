@@ -155,6 +155,33 @@
 }
 
 
+# Same (H, J, n_x) contract as the stencils, but with NO differencing of any
+# inner solve: the outer Hessian comes back closed-form
+# (dev_notes/laplace_exact_hessian.md), and J is closed as before. The only
+# finite difference left is the user hyperprior's own curvature, which has no
+# inner solve behind it and is second-differenced inside `exact_grad_at`.
+#
+# Returns NULL -- dropping the caller to the differencing stencils -- when the
+# exact gradient is unavailable, the family has no second curvature derivative,
+# or the closed assembly declines at the mode (a singular H). A dispersion
+# coordinate is not carried here: `theta_hat` is the covariance half, so
+# `exact_grad_at` errors on the missing phi slot and this returns NULL, which is
+# the intended hand-off to the stencil until the phi Hessian lands.
+.eb_closed_hessian <- function(core, theta_hat) {
+  at <- core$exact_grad_at
+  if (is.null(at)) return(NULL)
+  r <- tryCatch(at(theta_hat, want_hessian = TRUE), error = function(e) NULL)
+  if (is.null(r) || is.null(r$J) || is.null(r$H)) return(NULL)
+  J <- r$J; H <- r$H
+  k <- length(theta_hat)
+  n_x <- nrow(J)
+  if (is.null(n_x) || n_x < 1L || ncol(J) != k ||
+      nrow(H) != k || ncol(H) != k) return(NULL)
+  if (any(!is.finite(H)) || any(!is.finite(J))) return(NULL)
+  list(H = (H + t(H)) / 2, J = J, n_x = n_x)
+}
+
+
 # Names for the stacked theta coordinates, in the packing order of
 # .re_cov_theta_to_L_list: per block, either the log standard deviations of a
 # diagonal Sigma or the column-major lower-triangular log-Cholesky coordinates
@@ -190,45 +217,57 @@
   if (k < 1L) return(NULL)
   if (is.null(H_beta)) return(NULL)
 
-  # One stencil interface, two implementations. The exact route differences an
-  # analytic gradient for H_theta (2k solves) and takes J in closed form; the
-  # fallback second-differences the objective itself (1 + 2k^2 solves). Which
-  # one is live is decided once, so a Richardson pair never mixes them.
-  use_exact <- !is.null(core$exact_grad_at)
-  ev <- if (use_exact) NULL else .eb_fd_evaluator(core)
-  stencil_at <- if (use_exact) {
-    function(h) .eb_exact_stencil(core, theta_hat, h)
-  } else {
-    function(h) .eb_fd_stencil(ev, theta_hat, h)
-  }
+  # Three routes, cheapest-exact first. A fully closed-form outer Hessian (no
+  # differencing of any inner solve); else difference the analytic gradient for
+  # H_theta (2k solves) with J closed; else second-difference the objective
+  # itself (1 + 2k^2 solves). The closed route drops through on a NULL -- an
+  # older family gate, an estimated dispersion, or a singular H at the mode -- so
+  # it is a prepended try, not a replacement of the stencil logic below.
+  base <- if (is.null(core$exact_grad_at)) NULL else
+    .eb_closed_hessian(core, theta_hat)
 
-  base <- stencil_at(step)
-  # An exact route that fails at the mode (a singular H, a family gate that
-  # closed) is worth retrying through the stencil rather than abandoning the
-  # correction.
-  if (is.null(base) && use_exact) {
-    use_exact <- FALSE
-    ev <- .eb_fd_evaluator(core)
-    stencil_at <- function(h) .eb_fd_stencil(ev, theta_hat, h)
+  if (is.null(base)) {
+    # One stencil interface, two implementations. Which one is live is decided
+    # once, so a Richardson pair never mixes them.
+    use_exact <- !is.null(core$exact_grad_at)
+    ev <- if (use_exact) NULL else .eb_fd_evaluator(core)
+    stencil_at <- if (use_exact) {
+      function(h) .eb_exact_stencil(core, theta_hat, h)
+    } else {
+      function(h) .eb_fd_stencil(ev, theta_hat, h)
+    }
+
     base <- stencil_at(step)
-  }
-  if (is.null(base)) return(NULL)
+    # An exact route that fails at the mode (a singular H, a family gate that
+    # closed) is worth retrying through the stencil rather than abandoning the
+    # correction.
+    if (is.null(base) && use_exact) {
+      use_exact <- FALSE
+      ev <- .eb_fd_evaluator(core)
+      stencil_at <- function(h) .eb_fd_stencil(ev, theta_hat, h)
+      base <- stencil_at(step)
+    }
+    if (is.null(base)) return(NULL)
 
-  # Central differences carry O(step^2) truncation error, so evaluating the same
-  # stencil at step/2 and combining as (4 A(step/2) - A(step)) / 3 cancels the
-  # leading term and leaves O(step^4). It doubles the solve count and amplifies
-  # the inner solver's own noise, so it pays only when that noise is well below
-  # the truncation error -- a tight inner tolerance. On the exact route only
-  # H carries truncation error, since J is closed-form; extrapolating an already
-  # exact J would inject noise for nothing.
-  if (isTRUE(richardson)) {
-    half <- stencil_at(step / 2)
-    if (!is.null(half) && identical(half$n_x, base$n_x)) {
-      base$H <- (4 * half$H - base$H) / 3
-      base$H <- (base$H + t(base$H)) / 2
-      if (!use_exact) base$J <- (4 * half$J - base$J) / 3
+    # Central differences carry O(step^2) truncation error, so evaluating the
+    # same stencil at step/2 and combining as (4 A(step/2) - A(step)) / 3 cancels
+    # the leading term and leaves O(step^4). It doubles the solve count and
+    # amplifies the inner solver's own noise, so it pays only when that noise is
+    # well below the truncation error -- a tight inner tolerance. On the exact
+    # route only H carries truncation error, since J is closed-form;
+    # extrapolating an already exact J would inject noise for nothing. The closed
+    # route needs no extrapolation at all, which is why it sits outside this
+    # branch.
+    if (isTRUE(richardson)) {
+      half <- stencil_at(step / 2)
+      if (!is.null(half) && identical(half$n_x, base$n_x)) {
+        base$H <- (4 * half$H - base$H) / 3
+        base$H <- (base$H + t(base$H)) / 2
+        if (!use_exact) base$J <- (4 * half$J - base$J) / 3
+      }
     }
   }
+  if (is.null(base)) return(NULL)
 
   # H_theta must be positive definite for theta_hat to be a maximizer and for
   # H_theta^-1 to be a covariance. It fails when theta_hat is not actually
