@@ -147,3 +147,62 @@ test_that("every dispersion family has a registered weight to differentiate", {
     expect_true(is.function(ops$loglik), info = fam)
   }
 })
+
+
+# --- second-order dispersion derivatives (the phi Hessian's family half) -----
+
+# Central difference in eta, for the mixed eta-phi weight curvature.
+fd_deta <- function(f, eta, h = 1e-6) {
+  (f(eta + h) - f(eta - h)) / (2 * h)
+}
+
+FAMILY_PHI2 <- list(
+  neg_binomial_2 = c(0.8, 2.5, 9.0),
+  gaussian       = c(0.3, 1.0, 4.0)
+)
+
+
+test_that("the second-order dispersion derivatives match differences of the first", {
+  # Each of L2 / Sc2 / DW2 / DWde is one further derivative of a first-order
+  # .family_dphi form (DW2 = d(dweight)/dphi, DWde = d(dweight)/deta, and so on),
+  # so differencing the analytic first-order chains the check back to the
+  # registry those were themselves finite-differenced against. A wrong second
+  # derivative tilts only the phi Hessian, which shifts interval widths without
+  # moving any point estimate, so nothing else would surface it.
+  for (fam in names(FAMILY_PHI2)) {
+    d  <- tulpa:::.family_dphi(fam)
+    d2 <- tulpa:::.family_dphi2(fam)
+    for (phi in FAMILY_PHI2[[fam]]) {
+      cs <- dispersion_case(fam, phi); eta <- cs$eta; y <- cs$y
+      expect_equal(d2$dloglik2(eta, y, NULL, phi),
+                   fd_dphi(function(p) d$dloglik(eta, y, NULL, p), phi),
+                   tolerance = 1e-5, info = sprintf("L2 %s phi=%g", fam, phi))
+      expect_equal(d2$dscore2(eta, y, NULL, phi),
+                   fd_dphi(function(p) d$dscore(eta, y, NULL, p), phi),
+                   tolerance = 1e-5, info = sprintf("Sc2 %s phi=%g", fam, phi))
+      expect_equal(d2$dweight2(eta, y, NULL, phi),
+                   fd_dphi(function(p) d$dweight(eta, y, NULL, p), phi),
+                   tolerance = 1e-5, info = sprintf("DW2 %s phi=%g", fam, phi))
+      expect_equal(d2$dweight_deta(eta, y, NULL, phi),
+                   fd_deta(function(e) d$dweight(e, y, NULL, phi), eta),
+                   tolerance = 1e-5, info = sprintf("DWde %s phi=%g", fam, phi))
+    }
+  }
+})
+
+
+test_that("the phi Hessian derivatives are registered only for the proved families", {
+  # gamma keeps its first-order dispersion gradient but not the second-order
+  # block: its Fisher working weight differs from the observed curvature the phi
+  # mode-motion needs, the same split H_true corrects for the RE block. beta and
+  # the dispersion-free families are refused as for the first-order list.
+  expect_null(tulpa:::.family_dphi2("gamma"))
+  expect_null(tulpa:::.family_dphi2("beta"))
+  expect_null(tulpa:::.family_dphi2("poisson"))
+  for (fam in names(FAMILY_PHI2)) {
+    d2 <- tulpa:::.family_dphi2(fam)
+    expect_true(is.list(d2), info = fam)
+    expect_setequal(names(d2),
+                    c("dloglik2", "dscore2", "dweight2", "dweight_deta"))
+  }
+})

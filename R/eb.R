@@ -245,8 +245,13 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   # the one outcome worth a warning.
   corr <- NULL
   if (isTRUE(marginal)) {
+    # The correction propagates the curvature of the FULL outer objective, so an
+    # estimated dispersion rides along as the log-phi coordinate: `theta_hat_full`
+    # is [covariance coordinates..., log phi_hat] when phi was estimated and the
+    # covariance half alone otherwise. Passing it lets the phi column of the mode
+    # Jacobian carry dispersion uncertainty into the fixed-effect intervals.
     corr <- .eb_marginal_correction(
-      core = core, theta_hat = theta_hat, p_fix = p_fix,
+      core = core, theta_hat = core$theta_hat_full, p_fix = p_fix,
       H_beta = fit_hat$H_beta,
       step = marginal_step, richardson = marginal_richardson)
     if (is.null(corr)) {

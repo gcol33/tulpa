@@ -49,15 +49,24 @@
 # working with a hole in the stencil.
 .eb_fd_evaluator <- function(core) {
   cache <- new.env(parent = emptyenv())
+  k <- core$k
   function(theta, key) {
     if (exists(key, envir = cache, inherits = FALSE)) {
       return(get(key, envir = cache, inherits = FALSE))
     }
-    fit <- core$inner_fit(.re_cov_theta_to_L_list(theta, core$layout))
+    # When the dispersion is estimated the stencil walks [theta..., log phi]: the
+    # inner solve takes the covariance half and the phi it implies, and the
+    # hyperprior sees the covariance half alone (phi is unpenalized, which is
+    # what makes it the ML-II estimate).
+    has_phi  <- length(theta) > k
+    theta_re <- if (has_phi) theta[seq_len(k)] else theta
+    L_list   <- .re_cov_theta_to_L_list(theta_re, core$layout)
+    fit <- if (has_phi) core$inner_fit(L_list, exp(theta[[k + 1L]]))
+           else core$inner_fit(L_list)
     ok <- !is.null(fit) && !is.null(fit$mode) &&
       length(fit$log_marginal) == 1L && is.finite(fit$log_marginal)
     val <- if (!ok) NULL else {
-      lp <- core$log_prior_theta(theta)
+      lp <- core$log_prior_theta(theta_re)
       if (!is.finite(lp)) NULL else
         list(m = fit$log_marginal + lp, x = as.numeric(fit$mode))
     }
@@ -163,10 +172,12 @@
 #
 # Returns NULL -- dropping the caller to the differencing stencils -- when the
 # exact gradient is unavailable, the family has no second curvature derivative,
-# or the closed assembly declines at the mode (a singular H). A dispersion
-# coordinate is not carried here: `theta_hat` is the covariance half, so
-# `exact_grad_at` errors on the missing phi slot and this returns NULL, which is
-# the intended hand-off to the stencil until the phi Hessian lands.
+# or the closed assembly declines at the mode (a singular H). When the
+# dispersion is estimated `theta_hat` is [covariance..., log phi] and the closed
+# Hessian borders the RE block with the phi row/column
+# (dev_notes/laplace_phi_hessian.md); a family whose phi Hessian has no closed
+# form leaves that block NULL, which drops to the stencil (whose gradient still
+# carries the phi row) rather than losing the coordinate.
 .eb_closed_hessian <- function(core, theta_hat) {
   at <- core$exact_grad_at
   if (is.null(at)) return(NULL)
@@ -294,6 +305,10 @@
   cov_marg  <- (cov_marg + t(cov_marg)) / 2
 
   th_names <- tryCatch(.eb_theta_names(core$layout), error = function(e) NULL)
+  # The estimated dispersion is the last stacked coordinate; name it so the
+  # bordered H / J carry a label for it too.
+  if (!is.null(th_names) && isTRUE(core$estimate_phi))
+    th_names <- c(th_names, "log_phi")
   if (!is.null(th_names) && length(th_names) == k) {
     dimnames(base$H) <- list(th_names, th_names)
     dimnames(H_inv)  <- list(th_names, th_names)

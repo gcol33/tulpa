@@ -162,6 +162,86 @@
 }
 
 
+# ============================================================================
+# Second-order dispersion derivatives: the phi Hessian's family half.
+#
+# The dispersion column and diagonal of the exact outer Hessian
+# (dev_notes/laplace_phi_hessian.md) differentiate the phi GRADIENT once more,
+# which needs four scalars per observation beyond the three in .FAMILY_DPHI,
+# each differentiating the SAME registered loglik / score / weight:
+#
+#     dloglik2     = d2 loglik / dphi2            (L2)
+#     dscore2      = d2 score  / dphi2            (Sc2)
+#     dweight2     = d2 W      / dphi2            (DW2)
+#     dweight_deta = d2 W      / (deta dphi)      (DWde, the mixed term)
+#
+# The fifth quantity the assembly needs, d(dscore/dphi)/deta, is the identity
+# -dweight (score's eta-derivative is -W_obs, so its phi-derivative is -dW/dphi),
+# not a new function.
+#
+# Registered only where the working weight the Newton solve uses equals the
+# observed curvature -d2l/deta2, so the mode-motion solves the phi blocks build
+# read the same H the objective does (neg_binomial_2, gaussian). gamma-log uses
+# a Fisher (expected) working weight that differs from its observed curvature,
+# exactly the split .laplace_exact_core corrects for the RE block via H_true; its
+# phi Hessian needs that correction carried into the phi mode-motion too and is
+# deferred until then, mirroring how beta is parked from the first-order list.
+# A family absent here keeps the phi gradient but hands its phi Hessian to the
+# differencing stencil rather than reporting an inexact closed form.
+# ============================================================================
+
+#' @keywords internal
+.FAMILY_DPHI2 <- list(
+
+  # phi = size. Differentiates .FAMILY_DPHI$neg_binomial_2 once more in phi;
+  # mu = exp(eta), s = mu + phi throughout.
+  neg_binomial_2 = list(
+    dloglik2 = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      trigamma(y + phi) - trigamma(phi) + 1 / phi - 1 / (phi + mu) +
+        (y - mu) / (phi + mu)^2
+    },
+    dscore2 = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      -2 * (y - mu) * mu / (mu + phi)^3
+    },
+    dweight2 = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      2 * mu * (mu * (mu - 2 * phi) + y * (phi - 2 * mu)) / (mu + phi)^4
+    },
+    dweight_deta = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      mu * (phi^2 * (4 * mu - y) + 2 * phi * mu * (2 * y - mu) - y * mu^2) /
+        (mu + phi)^4
+    }
+  ),
+
+  # phi = residual VARIANCE. W = 1/phi is constant in eta, so both mixed and
+  # eta-free-second weight derivatives vanish.
+  gaussian = list(
+    dloglik2 = function(eta, y, n_trials, phi) 0.5 / phi^2 - (y - eta)^2 / phi^3,
+    dscore2  = function(eta, y, n_trials, phi) 2 * (y - eta) / phi^3,
+    dweight2 = function(eta, y, n_trials, phi) rep(2 / phi^3, length(eta)),
+    dweight_deta = function(eta, y, n_trials, phi) rep(0, length(eta))
+  )
+)
+
+
+#' Second-order dispersion derivatives for a family, or `NULL`
+#'
+#' @param family Family name, as registered in `.FAMILY_OPS`.
+#' @return A list with `dloglik2`, `dscore2`, `dweight2` and `dweight_deta`, or
+#'   `NULL` when the family's phi Hessian has not been derived. `NULL` is a
+#'   refusal, not a fixed-value fallback: it hands the phi Hessian to the
+#'   differencing stencil rather than reporting an inexact closed form.
+#' @keywords internal
+.family_dphi2 <- function(family) {
+  nm <- .family_base(family)
+  if (startsWith(nm, ".")) return(NULL)
+  .FAMILY_DPHI2[[nm]]
+}
+
+
 #' Families whose dispersion can be estimated
 #' @keywords internal
 .dispersion_families <- function() {

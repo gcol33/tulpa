@@ -251,3 +251,80 @@ test_that("Richardson extrapolation runs and stays close to the plain stencil", 
   # Both estimate the same Hessian; they differ only by truncation error.
   expect_equal(as.numeric(f1$H_theta), as.numeric(f2$H_theta), tolerance = 1e-3)
 })
+
+
+# Negative-binomial random-intercept design with a genuinely uncertain size,
+# for the estimated-dispersion path (chi = [log sigma, log phi]).
+.em_sim_nb <- function(seed, G = 12L, per = 9L, beta = c(0.3, 0.5),
+                       sigma = 0.7, phi = 2.5) {
+  set.seed(seed)
+  n   <- G * per
+  grp <- rep(seq_len(G), each = per)
+  x   <- rnorm(n)
+  b   <- rnorm(G, 0, sigma)
+  eta <- beta[1] + beta[2] * x + b[grp]
+  list(y  = rnbinom(n, size = phi, mu = exp(eta)),
+       X  = cbind(1, x),
+       re = list(idx = grp, n_groups = G, n_coefs = 1L),
+       beta = beta, phi = phi)
+}
+
+test_that("an estimated dispersion rides through the correction as log phi", {
+  d  <- .em_sim_nb(7L)
+  f1 <- tulpa_eb(d$y, NULL, d$X, d$re, family = "neg_binomial_2", phi = 1.5,
+                 estimate_phi = TRUE, marginal = TRUE)
+  skip_if(is.null(f1$cov_marginal), "correction did not form on this seed")
+
+  # The outer objective now has one more coordinate than the covariance half, so
+  # H_theta / theta_cov are (k + 1) x (k + 1) and the extra coordinate is named.
+  k_re <- sum(vapply(f1$layout, `[[`, integer(1), "k"))
+  expect_equal(nrow(f1$H_theta), k_re + 1L)
+  expect_equal(nrow(f1$theta_cov), k_re + 1L)
+  expect_identical(f1$theta_names[[k_re + 1L]], "log_phi")
+  expect_true(isTRUE(f1$phi_estimated))
+
+  # The fixed-effect block still only gains, and now the gain includes the
+  # dispersion's own uncertainty through the phi column of the mode Jacobian.
+  infl <- f1$cov_marginal - f1$cov_conditional
+  ev   <- eigen((infl + t(infl)) / 2, symmetric = TRUE, only.values = TRUE)$values
+  expect_true(all(ev >= -1e-10))
+  expect_true(all(sqrt(diag(f1$cov_marginal)) >=
+                    sqrt(diag(f1$cov_conditional)) - 1e-12))
+})
+
+test_that("the three routes agree on H_theta with an estimated dispersion", {
+  # Closed (no differencing), analytic-gradient stencil, and objective stencil
+  # must land on the same bordered outer Hessian and the same phi column of J.
+  # This is the estimated-dispersion analogue of the RE-only route-equivalence
+  # the closed Hessian was validated against.
+  d <- .em_sim_nb(7L)
+  core <- .re_cov_theta_fit(
+    y = d$y, n_trials = NULL, X = d$X, re_terms = list(d$re),
+    family = "neg_binomial_2", phi = 1.5, prior_sigma = c(3, 0.05), eta = 2,
+    log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
+    max_iter = 100L, tol = 1e-10, n_threads = 1L, caller = "test",
+    need_scale = FALSE, outer_maxit = 500L, offset = NULL, estimate_phi = TRUE)
+
+  chi <- core$theta_hat_full
+  k1  <- length(chi)
+  rc <- .eb_closed_hessian(core, chi)
+  re <- .eb_exact_stencil(core, chi, 1e-3)
+  rf <- .eb_fd_stencil(.eb_fd_evaluator(core), chi, 1e-3)
+  skip_if(is.null(rc) || is.null(re) || is.null(rf), "a route did not form")
+
+  expect_equal(dim(rc$H), c(k1, k1))
+  expect_equal(ncol(rc$J), k1)
+
+  # The closed Hessian is the reference; the two stencils carry O(step^2)
+  # truncation, so agreement is at the stencil's accuracy, not machine.
+  expect_equal(rc$H, re$H, tolerance = 1e-4)
+  expect_equal(rc$H, rf$H, tolerance = 1e-4)
+  # J is closed on both the closed and the analytic-gradient routes, so those two
+  # phi columns agree to machine precision; the objective route differences it.
+  expect_equal(rc$J[, k1], re$J[, k1], tolerance = 1e-10)
+  expect_equal(rc$J[, k1], rf$J[, k1], tolerance = 1e-4)
+
+  # The phi column is not spuriously zero -- the dispersion genuinely moves the
+  # mode, which is the whole reason it belongs in the correction.
+  expect_gt(max(abs(rc$J[, k1])), 1e-6)
+})

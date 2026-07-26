@@ -1060,7 +1060,14 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         if (is.null(r$H)) return(NULL)
         sp <- theta_split(theta)
         Hp <- tryCatch(d2_log_prior_theta(sp$re), error = function(e) NULL)
-        if (is.null(Hp) || !all(dim(Hp) == dim(r$H))) return(NULL)
+        if (is.null(Hp)) return(NULL)
+        # The dispersion enters the objective unpenalized, so the prior adds a
+        # zero row/column for log phi -- pad it to match the Laplace Hessian's
+        # phi border (r$H is (k+1)x(k+1) when phi is estimated).
+        if (!is.na(phi_idx) && nrow(r$H) == nrow(Hp) + 1L) {
+          Hp <- rbind(cbind(Hp, rep(0, nrow(Hp))), rep(0, ncol(Hp) + 1L))
+        }
+        if (!all(dim(Hp) == dim(r$H))) return(NULL)
         Ht <- -(r$H + Hp)
         return(list(grad = r$g, J = r$J, H = (Ht + t(Ht)) / 2))
       }

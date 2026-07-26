@@ -341,10 +341,34 @@ has the first.
 
 ## Dispersion coordinate
 
-When `estimate_phi = TRUE`, `log phi` joins the stacked theta. The `phi x phi`
-and `phi x theta` Hessian entries need second phi-derivatives of loglik / score /
-weight -- an extension of `.family_dphi` (`family_dispersion.R:156`) with
-`dloglik2 / dscore2 / dweight2` -- and are deferred to a second pass. Until then
-the closed-form route fills the `theta x theta` block and the `phi` row/column
-falls back to differencing the analytic gradient, which already carries the exact
-`dm/dphi`.
+When `estimate_phi = TRUE`, `log phi` joins the stacked theta and the closed
+Hessian borders the `theta x theta` block with the `phi` row/column. The full
+derivation is `dev_notes/laplace_phi_hessian.md`; in short, the `phi x theta`
+column reuses term B with the phi mode-motion (no `dP`, since the RE prior is
+phi-free) and the `phi x phi` diagonal differentiates `dm/dphi` once more,
+needing four second-order family derivatives beyond `.family_dphi` -- `dloglik2 /
+dscore2 / dweight2 / dweight_deta` in `.FAMILY_DPHI2` (`family_dispersion.R`),
+registered for `neg_binomial_2` and `gaussian`. gamma keeps its phi gradient but
+not the closed phi Hessian (its Fisher working weight differs from the observed
+curvature the phi mode-motion needs, the same split `H_true` corrects for the RE
+block); a family without a second-order block leaves the border NULL and the
+`phi` row/column falls back to differencing the analytic gradient, which already
+carries the exact `dm/dphi`.
+
+The math was validated first in base R (`dev_notes/proto_phi_hessian.R`, gaussian
+and neg_binomial_2 to ~1e-9 against a difference of the analytic gradient), then
+in-package (`dev_notes/proto_phi_hessian_inpkg.R`, same tolerance through the
+actual assembly), and the three marginal-correction routes -- closed,
+analytic-gradient stencil, objective stencil -- agree on the bordered `H_theta`
+and the phi column of `J` (`test-eb-marginal.R`).
+
+Substantively (`dev_notes/phi_coverage.R`, negative binomial, phi_true = 2.5,
+60 seeds per regime): the `phi` diagonal gives the estimated dispersion a
+roughly-calibrated log-phi Wald interval (coverage 0.95 at 14 groups, 0.92 at 8
+groups where the log-phi marginal is skewed and a symmetric interval reads a
+little narrow, 0.98 at 40 groups). Carrying that uncertainty into the
+fixed-effect block is near-inert on these balanced designs (mean SD ratio within
+0.002 of 1, coverage unchanged to three digits) -- the same `d beta_mode /
+d theta ~ 0` that made the RE hyperparameter correction near-inert on the fixed
+block. The phi block's payoff is phi's own interval and, as for the RE
+coordinates, the latent/BLUP block, not the fixed effects.

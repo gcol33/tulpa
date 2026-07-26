@@ -266,19 +266,25 @@
 
 
 # Exact Hessian of the Laplace log-marginal w.r.t. the stacked log-Cholesky
-# theta (the RE coordinates only; the dispersion cross-terms are deferred, see
-# dev_notes/laplace_exact_hessian.md). Assembled column by column from the shared
+# theta. The random-effect block is assembled column by column from the shared
 # core: for each coordinate k the mode Jacobian J_k, the weight/precision moves
 # dW_k and dP_k, and dH^-1_k feed a per-block transport of the Sigma-gradient
 # (term B) plus the parameterization curvature (term A). Every off-diagonal is
 # built twice -- as column j and as column k -- and the two agree to the inner
 # solver's noise, so the raw matrix is symmetric before it is symmetrized.
 #
+# With `phi_block` supplied the returned matrix is bordered by the dispersion
+# coordinate (dev_notes/laplace_phi_hessian.md): a log-phi column
+# H_{theta_j, psi} reusing term B with the phi mode-motion (no dP, since the RE
+# prior is phi-free), and the diagonal H_{psi, psi} differentiating the phi
+# gradient once more. Without it the matrix is the RE block alone, the shape the
+# fixed-dispersion path expects.
+#
 # `dS_by_block` is the same per-block dSigma list the gradient's Jacobian uses,
 # passed in so the chain rule is formed once. Returns NULL on a non-finite
 # second curvature derivative.
 .laplace_exact_re_hess <- function(cq, y, n_trials, family, phi, phi2, weights,
-                                   dS_by_block) {
+                                   dS_by_block, phi_block = NULL) {
   A <- cq$A; Hinv <- cq$Hinv; x <- cq$x; n_x <- cq$n_x
   Hinv_mode <- cq$Hinv_mode
   s <- cq$s; dwdeta <- cq$dw; u <- cq$u; v_r <- cq$v_r
@@ -362,6 +368,83 @@
       Hm[gj, k] <- Hm[gj, k] + sum(d2S_mk[[lj]][[lk]] * S_mk)
     }
   }
+
+  # ---- dispersion column and diagonal (chi = [theta..., log phi]) -----------
+  # Borders the RE block with the log-phi coordinate. dxdphi (the phi mode
+  # motion) and the phi gradient value come pre-formed from the caller so the
+  # two are one computation; .family_dphi2 is registered only where the working
+  # and observed weights coincide, so Hinv_mode is Hinv and dH_true/dpsi is
+  # dH_joint/dpsi here -- the coincidence that makes the closed form exact.
+  if (!is.null(phi_block) && !is.null(phi_block$dphi2)) {
+    eta <- cq$eta
+    dphi <- phi_block$dphi; dphi2 <- phi_block$dphi2; wt <- phi_block$wt
+    dxdphi <- phi_block$dxdphi; deta_dphi <- phi_block$deta_dphi
+    Sc1  <- dphi$dscore(eta, y, n_trials, phi)
+    DW   <- dphi$dweight(eta, y, n_trials, phi)
+    L2   <- dphi2$dloglik2(eta, y, n_trials, phi)
+    Sc2  <- dphi2$dscore2(eta, y, n_trials, phi)
+    DW2  <- dphi2$dweight2(eta, y, n_trials, phi)
+    DWde <- dphi2$dweight_deta(eta, y, n_trials, phi)
+    if (any(!is.finite(c(Sc1, DW, L2, Sc2, DW2, DWde)))) return(NULL)
+
+    # J_psi = phi dx/dphi is the log-phi mode-Jacobian column; eta_dot its
+    # linear-predictor image. d(H_joint)/dpsi moves through the mode
+    # (dwdeta * eta_dot) and explicitly (phi wt DW), with no dP term.
+    J_psi   <- phi * dxdphi
+    eta_dot <- phi * deta_dphi
+    dW_psi  <- dwdeta * eta_dot + phi * (wt * DW)
+    dH_psi  <- as.matrix(Matrix::crossprod(A, Matrix::Diagonal(x = dW_psi) %*% A))
+    dHinv_psi <- -Hinv %*% dH_psi %*% Hinv
+    ds_psi  <- rowSums(as.matrix(A %*% dHinv_psi) * as.matrix(A))
+    dr_psi  <- (d2w * eta_dot + phi * (wt * DWde)) * s + dwdeta * ds_psi
+    du_psi  <- as.numeric(dHinv_psi %*% v_r) +
+               as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, dr_psi)))
+
+    # phi column: term B alone (psi does not touch Sigma, so term A and dOm drop).
+    phi_col <- numeric(ktot)
+    for (m in seq_len(nb)) {
+      bq <- blocks[[m]]; nc <- bq$nc; G <- bq$G; idx <- bq$idx
+      b_m <- bq$b_mat; u_m <- bq$u_mat
+      Jb_m <- matrix(J_psi[idx],  nrow = nc)
+      du_m <- matrix(du_psi[idx], nrow = nc)
+      dR_m <- Jb_m %*% t(b_m) + b_m %*% t(Jb_m)
+      dV_m <- matrix(0, nc, nc)
+      for (g in seq_len(G)) {
+        sl <- idx[(g - 1L) * nc + seq_len(nc)]
+        dV_m <- dV_m + dHinv_psi[sl, sl, drop = FALSE]
+      }
+      Cp <- Jb_m %*% t(u_m) + b_m %*% t(du_m); dC_m <- 0.5 * (Cp + t(Cp))
+      dM0_m <- dR_m + dV_m - dC_m
+      dS_m  <- 0.5 * (bq$Om %*% dM0_m %*% bq$Om)
+      dS_list <- dS_by_block[[m]]
+      for (lj in seq_along(dS_list)) {
+        gj <- gstart[m] + lj
+        phi_col[gj] <- phi_col[gj] + sum(dS_list[[lj]] * dS_m)
+      }
+    }
+
+    # phi diagonal: differentiate the phi gradient once more in psi. The second
+    # mode derivative d(dx/dphi)/dpsi is the one genuinely new solve; the
+    # identity Sc1_de = -DW (score's eta-derivative is -W_obs) supplies dSc1/dpsi.
+    ATwSc1 <- as.numeric(Matrix::crossprod(A, wt * Sc1))
+    dA <- sum(wt * (Sc1 * eta_dot + phi * L2))
+    d_ddw_dpsi <- d2w * eta_dot + phi * (wt * DWde)         # d(dwdeta)/dpsi
+    rhs_Sc1    <- (-DW) * eta_dot + phi * Sc2               # dSc1/dpsi
+    d2x_dpsi   <- as.numeric(dHinv_psi %*% ATwSc1) +
+                  as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A, wt * rhs_Sc1)))
+    d_deta_dphi_dpsi <- as.numeric(A %*% d2x_dpsi)
+    dB <- sum(ds_psi * (wt * DW + dwdeta * deta_dphi) +
+              s * (wt * (DWde * eta_dot + phi * DW2) +
+                   d_ddw_dpsi * deta_dphi + dwdeta * d_deta_dphi_dpsi))
+    phi_diag <- phi_block$grad_phi + phi * (dA - 0.5 * dB)
+    if (!is.finite(phi_diag) || any(!is.finite(phi_col))) return(NULL)
+
+    # unname: cbind/rbind would otherwise label the border after the local
+    # variable (`phi_col`); the marginal correction sets the real coordinate
+    # names, and a stray one here diverges from the stencils' plain matrices.
+    Hm <- unname(rbind(cbind(Hm, phi_col), c(phi_col, phi_diag)))
+  }
+
   if (any(!is.finite(Hm))) return(NULL)
   (Hm + t(Hm)) / 2
 }
@@ -430,20 +513,11 @@
 
   if (any(!is.finite(grad))) return(NULL)
 
-  # Closed-form theta-Hessian, gated on the second curvature derivative. A family
-  # that has only the first derivative leaves H NULL, so the gradient and J are
-  # still exact and only the Hessian returns to the stencil.
-  Hmat <- NULL
-  if (isTRUE(want_hessian) &&
-      isTRUE(cpp_family_has_curvature_2nd_derivative(family))) {
-    Hmat <- .laplace_exact_re_hess(cq, y, n_trials, family, phi, phi2, weights,
-                                   dS_by_block)
-  }
-
   # ---- Dispersion coordinate ------------------------------------------------
-  # Appended last, so the stacked theta the optimizer walks is
-  # [block coordinates ..., log phi] and the random-effect half is untouched
-  # when the dispersion is held fixed.
+  # Formed before the Hessian so its mode motion (dx_hat/dphi) and gradient value
+  # are one computation the phi Hessian block reads back, rather than two. The
+  # stacked theta the optimizer walks is [block coordinates ..., log phi]; the
+  # random-effect half is untouched when the dispersion is held fixed.
   #
   #   dm/dphi = sum_i w_i dloglik_i/dphi
   #             - 0.5 sum_i s_i [ w_i dW_i/dphi + (dW_i/deta_i)(A dx_hat/dphi)_i ]
@@ -453,6 +527,7 @@
   # and through the mode. `dw` already carries the observation weights (applied
   # above), so only the explicit dW/dphi is scaled here.
   grad_phi <- NULL
+  phi_block <- NULL
   if (isTRUE(want_phi)) {
     dphi <- .family_dphi(family)
     if (is.null(dphi)) return(NULL)
@@ -466,9 +541,12 @@
         any(!is.finite(dW_dphi))) return(NULL)
 
     # dx_hat/dphi from implicit differentiation of the inner stationarity
-    # condition: H dx_hat/dphi = A' (w * dscore/dphi).
-    v <- as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, wt * ds_dphi)))
-    deta_dphi <- as.numeric(A %*% v)
+    # condition, on the OBSERVED-curvature H: H_true dx_hat/dphi = A'(w dscore/dphi).
+    # `.family_dphi` is registered only where working and observed weights
+    # coincide, so Hinv_mode is Hinv here -- but reading Hinv_mode keeps the mode
+    # motion correct by construction rather than by that coincidence.
+    dxdphi <- as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A, wt * ds_dphi)))
+    deta_dphi <- as.numeric(A %*% dxdphi)
 
     g_phi <- sum(wt * dl_dphi) -
       0.5 * sum(s * (wt * dW_dphi + dw * deta_dphi))
@@ -476,6 +554,25 @@
     grad_phi <- phi * g_phi
     if (!is.finite(grad_phi)) return(NULL)
     grad <- c(grad, grad_phi)
+
+    # log-phi column of the mode Jacobian, dx_hat/dlog_phi = phi dx_hat/dphi.
+    if (want_J) J <- cbind(J, phi * dxdphi)
+    phi_block <- list(dphi = dphi, dphi2 = .family_dphi2(family), wt = wt,
+                      grad_phi = grad_phi, dxdphi = dxdphi, deta_dphi = deta_dphi)
+  }
+
+  # Closed-form theta-Hessian, gated on the second curvature derivative. A family
+  # that has only the first derivative leaves H NULL, so the gradient and J are
+  # still exact and only the Hessian returns to the stencil. When the dispersion
+  # is estimated but has no second-order block, the phi row/column cannot be
+  # formed closed either, so H is left NULL and the caller differences the
+  # gradient (which carries the phi row) instead.
+  Hmat <- NULL
+  if (isTRUE(want_hessian) &&
+      isTRUE(cpp_family_has_curvature_2nd_derivative(family)) &&
+      !(isTRUE(want_phi) && is.null(phi_block$dphi2))) {
+    Hmat <- .laplace_exact_re_hess(cq, y, n_trials, family, phi, phi2, weights,
+                                   dS_by_block, phi_block = phi_block)
   }
 
   if (!want_J) return(grad)
