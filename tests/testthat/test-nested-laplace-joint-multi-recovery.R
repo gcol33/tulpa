@@ -264,6 +264,15 @@ test_that("(sigma, alpha) reparam recovers across alpha in {0, 1, 2} on BYM2+AR1
     }
 })
 
+# Posterior mean / SD of sigma = 1/sqrt(precision) from INLA, by transforming
+# the precision marginal and integrating the result.
+.sigma_from_prec_marginal <- function(fit, nm) {
+    mg <- fit$marginals.hyperpar[[nm]]
+    sm <- INLA::inla.tmarginal(function(t) 1 / sqrt(t), mg)
+    z  <- INLA::inla.zmarginal(sm, silent = TRUE)
+    c(mean = z$mean, sd = z$sd)
+}
+
 # --------------------------------------------------------------------------- #
 # Phase 3: INLA cross-check on the well-identified middle of the alpha range. #
 #                                                                             #
@@ -370,11 +379,16 @@ test_that("INLA joint fit agrees with tulpa at alpha = 1 (5-seed cross-check)", 
         beta_area <- hp["Beta for area2",      c("mean", "sd")]
         prec_obs  <- hp["Precision for obs",   c("mean", "sd")]
 
-        m_sig <- 1 / sqrt(prec_area[["mean"]])
-        s_sig <- prec_area[["sd"]] / (2 * prec_area[["mean"]]^1.5)
+        # sigma = 1/sqrt(precision) is a nonlinear transform, so the posterior
+        # mean of sigma is E[1/sqrt(tau)], not 1/sqrt(E[tau]). Transform the
+        # precision marginal and integrate it; the plug-in and its delta-method
+        # SD are biased low on the weakly identified spatial precision (the
+        # tau posterior is right-skewed at this data size).
+        sig_area <- .sigma_from_prec_marginal(fit_i, "Precision for area1")
+        sig_obs  <- .sigma_from_prec_marginal(fit_i, "Precision for obs")
+        m_sig <- sig_area[["mean"]]; s_sig <- sig_area[["sd"]]
         m_alp <- beta_area[["mean"]]; s_alp <- beta_area[["sd"]]
-        m_iid <- 1 / sqrt(prec_obs[["mean"]])
-        s_iid <- prec_obs[["sd"]] / (2 * prec_obs[["mean"]]^1.5)
+        m_iid <- sig_obs[["mean"]];   s_iid <- sig_obs[["sd"]]
 
         inla_mean[i, ] <- c(m_sig, m_alp, m_iid)
         inla_sd[i, ]   <- c(s_sig, s_alp, s_iid)
