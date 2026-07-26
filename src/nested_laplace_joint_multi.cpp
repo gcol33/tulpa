@@ -1689,6 +1689,64 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
 // theta_grid (axis_offsets must still cover the schema for each block
 // type's prep callback to validate at parse time).
 
+// Everything between the validated inputs and the assembled latent layout:
+// map each copy block to the arm it copies, parse the per-arm designs, detect
+// whether any arm carries a non-unit field coefficient, and build the
+// LatentBlock vector one spec at a time. The debug entry points below each
+// need exactly this prefix before diverging, so it is assembled once.
+//
+// Fills `parsed`, `arms` and `blocks` in place; returns the joint latent
+// dimension n_x, with the post-RE offset handed back through `n_x_after_re`.
+static int build_joint_layout(
+    const Rcpp::List&          arms_list,
+    const Rcpp::List&          blocks_spec,
+    const Rcpp::NumericMatrix& theta_grid,
+    const Rcpp::IntegerVector& copy_arms,
+    const Rcpp::IntegerVector& copy_blocks,
+    const Rcpp::IntegerVector& axis_offsets,
+    int B, int n_arms,
+    std::vector<tulpa::ParsedArm>&   parsed,
+    std::vector<tulpa::JointArm>&    arms,
+    std::vector<tulpa::LatentBlock>& blocks,
+    int& n_x_after_re
+) {
+    std::vector<int> copy_arm_of_block(B, -1);
+    for (int c = 0; c < copy_blocks.size(); c++) {
+        int cb = copy_blocks[c];
+        int ca = copy_arms[c];
+        if (cb < 0) continue;  // no-copy sentinel
+        if (cb >= B) {
+            Rcpp::stop("copy_block index (%d) out of range for B (%d).", cb, B);
+        }
+        copy_arm_of_block[cb] = ca;
+    }
+
+    n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
+
+    bool any_nontrivial_field_coef = false;
+    for (const auto& a : arms) {
+        if (std::abs(a.field_coef - 1.0) > 0.0) {
+            any_nontrivial_field_coef = true;
+            break;
+        }
+    }
+
+    blocks.reserve(B);
+    int latent_offset = n_x_after_re;
+    for (int b = 0; b < B; b++) {
+        Rcpp::List bs = blocks_spec[b];
+        int axis0 = axis_offsets[b];
+        int axis_count = axis_offsets[b + 1] - axis0;
+        bool is_copy_b = (copy_arm_of_block[b] >= 0);
+        latent_offset = build_joint_blocks_from_spec(
+            bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
+            is_copy_b, copy_arm_of_block[b], blocks,
+            &arms, any_nontrivial_field_coef, parsed
+        );
+    }
+    return latent_offset;
+}
+
 // [[Rcpp::export]]
 Rcpp::List cpp_test_joint_pattern(
     Rcpp::List          arms_list,
@@ -1709,44 +1767,14 @@ Rcpp::List cpp_test_joint_pattern(
                    static_cast<int>(copy_arms.size()),
                    static_cast<int>(copy_blocks.size()));
     }
-    std::vector<int> copy_arm_of_block(B, -1);
-    for (int c = 0; c < copy_blocks.size(); c++) {
-        int cb = copy_blocks[c];
-        int ca = copy_arms[c];
-        if (cb < 0) continue;  // no-copy sentinel
-        if (cb >= B) {
-            Rcpp::stop("copy_block index (%d) out of range for B (%d).", cb, B);
-        }
-        copy_arm_of_block[cb] = ca;
-    }
-
-    std::vector<tulpa::ParsedArm> parsed;
-    std::vector<tulpa::JointArm>  arms;
-    int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
-
-    bool any_nontrivial_field_coef = false;
-    for (const auto& a : arms) {
-        if (std::abs(a.field_coef - 1.0) > 0.0) {
-            any_nontrivial_field_coef = true;
-            break;
-        }
-    }
-
+    std::vector<tulpa::ParsedArm>   parsed;
+    std::vector<tulpa::JointArm>    arms;
     std::vector<tulpa::LatentBlock> blocks;
-    blocks.reserve(B);
-    int latent_offset = n_x_after_re;
-    for (int b = 0; b < B; b++) {
-        Rcpp::List bs = blocks_spec[b];
-        int axis0 = axis_offsets[b];
-        int axis_count = axis_offsets[b + 1] - axis0;
-        bool is_copy_b = (copy_arm_of_block[b] >= 0);
-        latent_offset = build_joint_blocks_from_spec(
-            bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
-            is_copy_b, copy_arm_of_block[b], blocks,
-            &arms, any_nontrivial_field_coef, parsed
-        );
-    }
-    int n_x = latent_offset;
+    int n_x_after_re = 0;
+    int n_x = build_joint_layout(arms_list, blocks_spec, theta_grid,
+                                 copy_arms, copy_blocks, axis_offsets,
+                                 B, n_arms, parsed, arms, blocks,
+                                 n_x_after_re);
 
     tulpa::SparseHessianBuilder H_builder;
     tulpa::build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builder);
@@ -1808,41 +1836,14 @@ Rcpp::List cpp_test_joint_logpost_grad(
                    k_grid, static_cast<int>(theta_grid.nrow()));
     }
 
-    std::vector<int> copy_arm_of_block(B, -1);
-    for (int c = 0; c < copy_blocks.size(); c++) {
-        int cb = copy_blocks[c];
-        int ca = copy_arms[c];
-        if (cb < 0) continue;
-        if (cb >= B) Rcpp::stop("copy_block index (%d) out of range.", cb);
-        copy_arm_of_block[cb] = ca;
-    }
-
-    std::vector<tulpa::ParsedArm> parsed;
-    std::vector<tulpa::JointArm>  arms;
-    int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
-
-    bool any_nontrivial_field_coef = false;
-    for (const auto& a : arms) {
-        if (std::abs(a.field_coef - 1.0) > 0.0) {
-            any_nontrivial_field_coef = true;
-            break;
-        }
-    }
-
+    std::vector<tulpa::ParsedArm>   parsed;
+    std::vector<tulpa::JointArm>    arms;
     std::vector<tulpa::LatentBlock> blocks;
-    blocks.reserve(B);
-    int latent_offset = n_x_after_re;
-    for (int b = 0; b < B; b++) {
-        Rcpp::List bs = blocks_spec[b];
-        int axis0 = axis_offsets[b];
-        int axis_count = axis_offsets[b + 1] - axis0;
-        bool is_copy_b = (copy_arm_of_block[b] >= 0);
-        latent_offset = build_joint_blocks_from_spec(
-            bs, theta_grid, axis0, axis_count, latent_offset, n_arms, b,
-            is_copy_b, copy_arm_of_block[b], blocks,
-            &arms, any_nontrivial_field_coef, parsed);
-    }
-    int n_x = latent_offset;
+    int n_x_after_re = 0;
+    int n_x = build_joint_layout(arms_list, blocks_spec, theta_grid,
+                                 copy_arms, copy_blocks, axis_offsets,
+                                 B, n_arms, parsed, arms, blocks,
+                                 n_x_after_re);
     if (x.size() != n_x) {
         Rcpp::stop("x has length %d but the joint latent dimension is %d.",
                    static_cast<int>(x.size()), n_x);

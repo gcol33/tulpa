@@ -223,28 +223,19 @@ Rcpp::NumericVector cpp_test_svc_nngp_twins(Rcpp::NumericVector w, double sigma2
                                      Rcpp::_["ad"]  = ll_ad);
 }
 
-// Non-centered NNGP transform on the SVC neighbour topology (coords-fallback
-// pair_dist branch, no cached nn_neighbor_dist): hand-derived backward vs
-// central differences, same scalar-loss construction as cpp_test_nngp_nc_grad
-// (gcol33/tulpa#243). Exercises the OTHER branch of NNGPNCView::pair_dist --
-// cpp_test_nngp_nc_grad only exercises the cached-table branch.
-// [[Rcpp::export]]
-Rcpp::List cpp_test_svc_nngp_nc_grad(Rcpp::NumericVector z,
+// The analytic-vs-finite-difference probe the non-centered NNGP exports below
+// share. Once a caller has built its NNGPNCView -- from SVCData on one side, a
+// MultiscaleGPData scale on the other -- the comparison is identical: run the
+// forward transform, take the hand-derived backward against the loss weights
+// `a`, then central-difference the same forward loss in z, log sigma2 and
+// log phi. `view` borrows from the caller's data, which must outlive this call.
+static Rcpp::List nngp_nc_grad_probe(const tulpa_gp::NNGPNCView& view, int N,
+                                     const Rcpp::NumericVector& z,
+                                     const Rcpp::NumericVector& a,
                                      double log_sigma2, double log_phi,
-                                     Rcpp::NumericVector a,
-                                     Rcpp::NumericMatrix coords,
-                                     Rcpp::IntegerMatrix nn_idx,
-                                     Rcpp::NumericMatrix nn_dist,
-                                     Rcpp::IntegerVector nn_order,
-                                     Rcpp::IntegerVector nn_order_inv,
-                                     int cov_type, double fd_eps = 1e-6) {
-  tulpa::SVCData sd = make_svc(coords, nn_idx, nn_dist, nn_order, nn_order_inv,
-                               cov_type);
-  const int N = sd.n_obs;
+                                     double fd_eps) {
   std::vector<double> z_vec(z.begin(), z.end());
   std::vector<double> a_vec(a.begin(), a.end());
-
-  const tulpa_gp::NNGPNCView view = tulpa_gp::make_svc_nc_view(sd);
 
   auto forward_loss = [&](const std::vector<double>& zz,
                           double lsig2, double lphi) -> double {
@@ -286,6 +277,27 @@ Rcpp::List cpp_test_svc_nngp_nc_grad(Rcpp::NumericVector z,
     Rcpp::_["grad_log_sigma2_fd"] = g_log_sigma2_fd,
     Rcpp::_["grad_log_phi"]      = g_log_phi,
     Rcpp::_["grad_log_phi_fd"]   = g_log_phi_fd);
+}
+
+// Non-centered NNGP transform on the SVC neighbour topology (coords-fallback
+// pair_dist branch, no cached nn_neighbor_dist): hand-derived backward vs
+// central differences, same scalar-loss construction as cpp_test_nngp_nc_grad
+// (gcol33/tulpa#243). Exercises the OTHER branch of NNGPNCView::pair_dist --
+// cpp_test_nngp_nc_grad only exercises the cached-table branch.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_svc_nngp_nc_grad(Rcpp::NumericVector z,
+                                     double log_sigma2, double log_phi,
+                                     Rcpp::NumericVector a,
+                                     Rcpp::NumericMatrix coords,
+                                     Rcpp::IntegerMatrix nn_idx,
+                                     Rcpp::NumericMatrix nn_dist,
+                                     Rcpp::IntegerVector nn_order,
+                                     Rcpp::IntegerVector nn_order_inv,
+                                     int cov_type, double fd_eps = 1e-6) {
+  tulpa::SVCData sd = make_svc(coords, nn_idx, nn_dist, nn_order, nn_order_inv,
+                               cov_type);
+  const tulpa_gp::NNGPNCView view = tulpa_gp::make_svc_nc_view(sd);
+  return nngp_nc_grad_probe(view, sd.n_obs, z, a, log_sigma2, log_phi, fd_eps);
 }
 
 // Non-centered NNGP transform on one scale of a MultiscaleGPData (cached
@@ -348,47 +360,5 @@ Rcpp::List cpp_test_msgp_nngp_nc_grad(Rcpp::NumericVector z,
     Rcpp::stop("cpp_test_msgp_nngp_nc_grad: scale must be \"local\" or \"regional\".");
   }
 
-  std::vector<double> z_vec(z.begin(), z.end());
-  std::vector<double> a_vec(a.begin(), a.end());
-
-  auto forward_loss = [&](const std::vector<double>& zz,
-                          double lsig2, double lphi) -> double {
-    tulpa_gp::NNGPNCWorkspace ws;
-    tulpa_gp::nngp_nc_forward(zz.data(), std::exp(lsig2), std::exp(lphi), view, ws);
-    double L = 0.0;
-    for (int i = 0; i < N; i++) L += a_vec[i] * ws.w[i];
-    return L;
-  };
-
-  tulpa_gp::NNGPNCWorkspace ws;
-  tulpa_gp::nngp_nc_forward(z_vec.data(), std::exp(log_sigma2), std::exp(log_phi),
-                            view, ws);
-  std::vector<double> grad_z(N, 0.0);
-  double g_log_sigma2 = 0.0, g_log_phi = 0.0, g_log_phi_jac = 0.0;
-  tulpa_gp::nngp_nc_backward(z_vec.data(), std::exp(log_sigma2), std::exp(log_phi),
-                             view, ws, a_vec.data(), grad_z.data(),
-                             g_log_sigma2, g_log_phi, g_log_phi_jac);
-
-  std::vector<double> grad_z_fd(N, 0.0);
-  std::vector<double> z_pt = z_vec;
-  for (int i = 0; i < N; i++) {
-    z_pt[i] += fd_eps; double fp = forward_loss(z_pt, log_sigma2, log_phi);
-    z_pt[i] -= 2 * fd_eps; double fm = forward_loss(z_pt, log_sigma2, log_phi);
-    z_pt[i] += fd_eps;
-    grad_z_fd[i] = (fp - fm) / (2.0 * fd_eps);
-  }
-  double sp = forward_loss(z_vec, log_sigma2 + fd_eps, log_phi);
-  double sm = forward_loss(z_vec, log_sigma2 - fd_eps, log_phi);
-  double g_log_sigma2_fd = (sp - sm) / (2.0 * fd_eps);
-  double pp = forward_loss(z_vec, log_sigma2, log_phi + fd_eps);
-  double pm = forward_loss(z_vec, log_sigma2, log_phi - fd_eps);
-  double g_log_phi_fd = (pp - pm) / (2.0 * fd_eps);
-
-  return Rcpp::List::create(
-    Rcpp::_["grad_z"]            = Rcpp::NumericVector(grad_z.begin(), grad_z.end()),
-    Rcpp::_["grad_z_fd"]         = Rcpp::NumericVector(grad_z_fd.begin(), grad_z_fd.end()),
-    Rcpp::_["grad_log_sigma2"]   = g_log_sigma2,
-    Rcpp::_["grad_log_sigma2_fd"] = g_log_sigma2_fd,
-    Rcpp::_["grad_log_phi"]      = g_log_phi,
-    Rcpp::_["grad_log_phi_fd"]   = g_log_phi_fd);
+  return nngp_nc_grad_probe(view, N, z, a, log_sigma2, log_phi, fd_eps);
 }

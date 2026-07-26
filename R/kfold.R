@@ -54,35 +54,9 @@
 #' @export
 tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
                         n_trials = NULL, seed = NULL) {
-  if (!inherits(object, "tulpa_fit")) {
-    stop("`object` must be a tulpa_fit.", call. = FALSE)
-  }
-  if (!is.null(object$spatial) || !is.null(object$temporal) ||
-      !is.null(object$temporal_field)) {
-    stop("Refit-based K-fold is not supported for spatial / temporal-field ",
-         "fits: subsetting the observations breaks the field structure. Use ",
-         "tulpa_criteria() (PSIS-LOO) for those.", call. = FALSE)
-  }
-  cl <- object$call
-  if (is.null(cl)) {
-    stop("`object` carries no `$call` to refit from; fit through tulpa().",
-         call. = FALSE)
-  }
-  if (is.null(object$formula)) {
-    stop("`object` carries no `$formula`; cannot recover the response.",
-         call. = FALSE)
-  }
-
-  data <- as.data.frame(data)
-  n    <- nrow(data)
-  fam  <- object$family
-  phi  <- object$phi %||% 1.0
-  y    <- eval(object$formula[[2L]], envir = data)
-  if (length(y) != n) {
-    stop("The response evaluated on `data` has length ", length(y),
-         " but `data` has ", n, " rows.", call. = FALSE)
-  }
-  nt <- .cv_trials(object, n_trials, n)
+  su <- .cv_refit_setup(object, data, n_trials, "Refit-based K-fold")
+  cl <- su$cl; data <- su$data; n <- su$n
+  fam <- su$fam; phi <- su$phi; y <- su$y; nt <- su$nt
 
   .seed_scoped(seed)
   if (is.null(folds)) {
@@ -115,6 +89,47 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
   se   <- sqrt(n * stats::var(pointwise))
   list(elpd_kfold = elpd, se_elpd_kfold = se,
        pointwise = pointwise, folds = folds, K = K)
+}
+
+# The refit contract both resampling verbs share. A refit-based estimator needs
+# a fit it can rebuild (a recorded call and formula) whose observations are
+# exchangeable, so a spatial or temporal field -- whose structure a row subset
+# would break -- is refused up front. `what` names the calling verb in that
+# message; everything else is identical between them.
+#
+# Returns the pieces the caller works from: the stored call, the coerced data
+# and its row count, the family and dispersion, the response evaluated on
+# `data`, and the resolved trial counts.
+.cv_refit_setup <- function(object, data, n_trials, what) {
+  if (!inherits(object, "tulpa_fit")) {
+    stop("`object` must be a tulpa_fit.", call. = FALSE)
+  }
+  if (!is.null(object$spatial) || !is.null(object$temporal) ||
+      !is.null(object$temporal_field)) {
+    stop(what, " is not supported for spatial / temporal-field fits: ",
+         "subsetting the observations breaks the field structure. Use ",
+         "tulpa_criteria() (PSIS-LOO) for those.", call. = FALSE)
+  }
+  if (is.null(object$call)) {
+    stop("`object` carries no `$call` to refit from; fit through tulpa().",
+         call. = FALSE)
+  }
+  if (is.null(object$formula)) {
+    stop("`object` carries no `$formula`; cannot recover the response.",
+         call. = FALSE)
+  }
+
+  data <- as.data.frame(data)
+  n    <- nrow(data)
+  y    <- eval(object$formula[[2L]], envir = data)
+  if (length(y) != n) {
+    stop("The response evaluated on `data` has length ", length(y),
+         " but `data` has ", n, " rows.", call. = FALSE)
+  }
+
+  list(cl = object$call, data = data, n = n,
+       fam = object$family, phi = object$phi %||% 1.0, y = y,
+       nt = .cv_trials(object, n_trials, n))
 }
 
 # Resolve the full-data trial counts for a refit-CV verb: the caller's
@@ -251,35 +266,9 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 #' @export
 tulpa_reloo <- function(object, data, k_threshold = 0.7,
                         n_trials = NULL, ndraws = NULL) {
-  if (!inherits(object, "tulpa_fit")) {
-    stop("`object` must be a tulpa_fit.", call. = FALSE)
-  }
-  if (!is.null(object$spatial) || !is.null(object$temporal) ||
-      !is.null(object$temporal_field)) {
-    stop("reloo is not supported for spatial / temporal-field fits: ",
-         "subsetting the observations breaks the field structure.",
-         call. = FALSE)
-  }
-  cl <- object$call
-  if (is.null(cl)) {
-    stop("`object` carries no `$call` to refit from; fit through tulpa().",
-         call. = FALSE)
-  }
-  if (is.null(object$formula)) {
-    stop("`object` carries no `$formula`; cannot recover the response.",
-         call. = FALSE)
-  }
-
-  data <- as.data.frame(data)
-  n    <- nrow(data)
-  fam  <- object$family
-  phi  <- object$phi %||% 1.0
-  y    <- eval(object$formula[[2L]], envir = data)
-  if (length(y) != n) {
-    stop("The response evaluated on `data` has length ", length(y),
-         " but `data` has ", n, " rows.", call. = FALSE)
-  }
-  nt <- .cv_trials(object, n_trials, n)
+  su <- .cv_refit_setup(object, data, n_trials, "reloo")
+  cl <- su$cl; data <- su$data; n <- su$n
+  fam <- su$fam; phi <- su$phi; y <- su$y; nt <- su$nt
 
   # PSIS-LOO baseline from the fit's own pointwise log-likelihood.
   ll  <- .tulpa_pointwise_loglik(object, ndraws = ndraws)

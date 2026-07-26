@@ -65,6 +65,49 @@ inline Rcpp::NumericVector unwrap_x_init(
     return Rcpp::NumericVector();
 }
 
+// The single-arm (ParsedArm, JointArm) pair every single-block kernel in this
+// file builds before handing off to the shared multi-block driver. Only the
+// response, its trial counts and the obs -> unit map vary between kernels; the
+// joint layout (beta at offset 0, the RE block right after it) and the RE
+// precision tau_re = 1 / sigma_re^2 are the same in all of them.
+//
+// A backend with no per-observation unit map (the HSGP dense basis) passes a
+// length-N vector of zeros for `spatial_idx`, which the parsed arm carries but
+// never indexes.
+inline void make_single_arm(
+    std::vector<tulpa::ParsedArm>& parsed,
+    std::vector<tulpa::JointArm>& arms,
+    const Rcpp::NumericMatrix& X,
+    const Rcpp::NumericVector& re_idx,
+    const Rcpp::IntegerVector& spatial_idx,
+    int p, int n_re_groups, double sigma_re,
+    const Rcpp::NumericVector& y,
+    const Rcpp::IntegerVector& n_trials,
+    const std::string& family, double phi, int N
+) {
+    parsed.resize(1);
+    tulpa::ParsedArm& pa = parsed[0];
+    pa.X           = X;
+    pa.re_idx      = re_idx;
+    pa.spatial_idx = spatial_idx;
+    pa.p           = p;
+    pa.n_re_groups = n_re_groups;
+    pa.sigma_re    = sigma_re;
+    pa.beta_start  = 0;
+    pa.re_start    = p;
+    pa.tau_re      = (n_re_groups > 0)
+                     ? 1.0 / (sigma_re * sigma_re + 1e-10)
+                     : 0.0;
+
+    arms.resize(1);
+    tulpa::JointArm& a = arms[0];
+    a.y        = y;
+    a.n_trials = n_trials;
+    a.family   = family;
+    a.phi      = phi;
+    a.N        = N;
+}
+
 } // namespace
 
 // Bring the multi-block driver into the anonymous-namespace caller scope so
@@ -614,31 +657,10 @@ Rcpp::List cpp_nested_laplace_nngp(
     const int n_x = p + n_re_groups + n_spatial;
     const int gp_start = p + n_re_groups;
 
-    std::vector<tulpa::ParsedArm> parsed(1);
-    {
-        tulpa::ParsedArm& pa = parsed[0];
-        pa.X           = X;
-        pa.re_idx      = re_idx;
-        pa.spatial_idx = spatial_idx;
-        pa.p           = p;
-        pa.n_re_groups = n_re_groups;
-        pa.sigma_re    = sigma_re;
-        pa.beta_start  = 0;
-        pa.re_start    = p;
-        pa.tau_re      = (n_re_groups > 0)
-                         ? 1.0 / (sigma_re * sigma_re + 1e-10)
-                         : 0.0;
-    }
-
-    std::vector<tulpa::JointArm> arms(1);
-    {
-        tulpa::JointArm& a = arms[0];
-        a.y        = y;
-        a.n_trials = n;
-        a.family   = family;
-        a.phi      = phi;
-        a.N        = N;
-    }
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm> arms;
+    make_single_arm(parsed, arms, X, re_idx, spatial_idx,
+                    p, n_re_groups, sigma_re, y, n, family, phi, N);
 
     // ---- theta_grid: (sigma2, phi_gp). ----
     Rcpp::NumericMatrix theta_grid(n_grid, 2);
@@ -744,31 +766,11 @@ Rcpp::List cpp_nested_laplace_hsgp(
     const int n_x = p + n_re_groups + M;
     const int beta_gp_start = p + n_re_groups;
 
-    std::vector<tulpa::ParsedArm> parsed(1);
-    {
-        tulpa::ParsedArm& pa = parsed[0];
-        pa.X           = X;
-        pa.re_idx      = re_idx;
-        pa.spatial_idx = Rcpp::IntegerVector(N, 0);  // unused for DENSE_BASIS
-        pa.p           = p;
-        pa.n_re_groups = n_re_groups;
-        pa.sigma_re    = sigma_re;
-        pa.beta_start  = 0;
-        pa.re_start    = p;
-        pa.tau_re      = (n_re_groups > 0)
-                         ? 1.0 / (sigma_re * sigma_re + 1e-10)
-                         : 0.0;
-    }
-
-    std::vector<tulpa::JointArm> arms(1);
-    {
-        tulpa::JointArm& a = arms[0];
-        a.y        = y;
-        a.n_trials = n;
-        a.family   = family;
-        a.phi      = phi;
-        a.N        = N;
-    }
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm> arms;
+    make_single_arm(parsed, arms, X, re_idx,
+                    Rcpp::IntegerVector(N, 0),  // unused for DENSE_BASIS
+                    p, n_re_groups, sigma_re, y, n, family, phi, N);
 
     // ---- theta_grid: (log_sigma2, log_lengthscale). The factory works in log
     // space because PC priors on (sigma2, ell) are typically applied in log
@@ -1144,29 +1146,10 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
 ) {
     const int n_x_after_re = p + n_re_groups;
 
-    std::vector<tulpa::ParsedArm> parsed(1);
-    {
-        tulpa::ParsedArm& pa = parsed[0];
-        pa.X           = X;
-        pa.re_idx      = re_idx;
-        pa.spatial_idx = spatial_idx;
-        pa.p           = p;
-        pa.n_re_groups = n_re_groups;
-        pa.sigma_re    = sigma_re;
-        pa.beta_start  = 0;
-        pa.re_start    = p;
-        pa.tau_re      = (n_re_groups > 0)
-                         ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
-    }
-    std::vector<tulpa::JointArm> arms(1);
-    {
-        tulpa::JointArm& a = arms[0];
-        a.y        = y;
-        a.n_trials = n_trials;
-        a.family   = family;
-        a.phi      = phi;
-        a.N        = N;
-    }
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm> arms;
+    make_single_arm(parsed, arms, X, re_idx, spatial_idx,
+                    p, n_re_groups, sigma_re, y, n_trials, family, phi, N);
 
     return tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,

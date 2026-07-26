@@ -296,22 +296,31 @@ NULL
 # columns out of the joint Hessian alongside the field. With
 # n_re_groups = 0 the RE design is empty and the result is the field-only Schur.
 
-#' @keywords internal
-.marginal_H_beta_gp <- function(mode, X, spatial, family, phi,
-                                n_trials, weights = NULL, offset = NULL,
-                                sigma2_gp, phi_gp,
-                                re_idx = NULL, n_re_groups = 0L,
-                                sigma_re = 1.0) {
-  p         <- ncol(X)
-  n_obs     <- nrow(X)
-  n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
+# The marginal-beta Schur every spatial field shares. A field type supplies only
+# three things:
+#
+#   n_field  total latent dimension of the field block(s)
+#   Z_field  its observation -> field design, d_fac already folded in
+#   Q_field  its precision at the hyperparameters used in the fit
+#
+# Everything around them is identical across gp / spde / car_proper / icar /
+# bym2 / hsgp: split the mode into (beta, u), stack the iid RE design beside the
+# field, evaluate eta and the GLM weights at the mode, and block the RE
+# precision in front of the field's. A field with several blocks (BYM2's phi +
+# theta) passes the combined design and the combined precision, which is the
+# same matrix `bdiag` would build block by block.
+.marginal_H_beta_field <- function(mode, X, family, phi, n_trials,
+                                   weights, offset,
+                                   n_field, Z_field, Q_field,
+                                   re_idx, n_re_groups, sigma_re) {
+  p     <- ncol(X)
+  n_obs <- nrow(X)
 
   beta <- mode[seq_len(p)]
-  u    <- mode[p + seq_len(n_re_groups + n_spatial)]
+  u    <- mode[p + seq_len(n_re_groups + n_field)]
 
-  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
-  Z_field <- .field_design_Z(spatial$obs_to_loc, n_spatial, n_obs)
-  D       <- cbind(D_re, Z_field)
+  D_re <- .re_design(re_idx, n_re_groups, n_obs)
+  D    <- cbind(D_re, Z_field)
 
   eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
   W   <- glmm_weights(eta, family, n_trials, phi)
@@ -320,10 +329,28 @@ NULL
   tau_re   <- 1 / (sigma_re^2 + 1e-10)
   Q_latent <- Matrix::bdiag(
     Matrix::Diagonal(n_re_groups, x = tau_re),
-    .nngp_precision_Q(spatial, sigma2_gp, phi_gp)
+    Q_field
   )
 
   .schur_H_beta(X, D, Q_latent, W)
+}
+
+
+#' @keywords internal
+.marginal_H_beta_gp <- function(mode, X, spatial, family, phi,
+                                n_trials, weights = NULL, offset = NULL,
+                                sigma2_gp, phi_gp,
+                                re_idx = NULL, n_re_groups = 0L,
+                                sigma_re = 1.0) {
+  n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
+
+  .marginal_H_beta_field(
+    mode, X, family, phi, n_trials, weights, offset,
+    n_field = n_spatial,
+    Z_field = .field_design_Z(spatial$obs_to_loc, n_spatial, nrow(X)),
+    Q_field = .nngp_precision_Q(spatial, sigma2_gp, phi_gp),
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+  )
 }
 
 
@@ -362,27 +389,16 @@ NULL
     return(.schur_H_beta(X, D, Q_latent, W))
   }
 
-  u      <- mode[p + seq_len(n_re_groups + n_mesh)]
-
-  A       <- as(spatial$A, "CsparseMatrix")
-  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
-  D       <- cbind(D_re, A)
-
-  # eta at the mode: X beta + offset + D_re u_re + A w
-  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
-  W   <- glmm_weights(eta, family, n_trials, phi)
-  if (!is.null(weights)) W <- W * weights
-
   # Q_spde at the (range, sigma) used in the fit
   .kt      <- .spde_kappa_tau(range_val, sigma_val, spatial$nu)
-  kappa    <- .kt$kappa
-  tau_spde <- .kt$tau_spde
-  Q_latent <- Matrix::bdiag(
-    Matrix::Diagonal(n_re_groups, x = tau_re),
-    .spde_precision_Q(spatial, kappa, tau_spde)
-  )
 
-  .schur_H_beta(X, D, Q_latent, W)
+  .marginal_H_beta_field(
+    mode, X, family, phi, n_trials, weights, offset,
+    n_field = n_mesh,
+    Z_field = as(spatial$A, "CsparseMatrix"),
+    Q_field = .spde_precision_Q(spatial, .kt$kappa, .kt$tau_spde),
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+  )
 }
 
 
@@ -409,28 +425,15 @@ NULL
                                         tau, rho,
                                         re_idx = NULL, n_re_groups = 0L,
                                         sigma_re = 1.0) {
-  p       <- ncol(X)
-  n_obs   <- nrow(X)
   n_units <- nrow(as.matrix(spatial$adjacency))
 
-  beta <- mode[seq_len(p)]
-  u    <- mode[p + seq_len(n_re_groups + n_units)]
-
-  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
-  Z_field <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)
-  D       <- cbind(D_re, Z_field)
-
-  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
-  W   <- glmm_weights(eta, family, n_trials, phi)
-  if (!is.null(weights)) W <- W * weights
-
-  tau_re   <- 1 / (sigma_re^2 + 1e-10)
-  Q_latent <- Matrix::bdiag(
-    Matrix::Diagonal(n_re_groups, x = tau_re),
-    .car_proper_precision_Q(spatial, tau, rho)
+  .marginal_H_beta_field(
+    mode, X, family, phi, n_trials, weights, offset,
+    n_field = n_units,
+    Z_field = .field_design_Z(spatial$spatial_idx, n_units, nrow(X)),
+    Q_field = .car_proper_precision_Q(spatial, tau, rho),
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
   )
-
-  .schur_H_beta(X, D, Q_latent, W)
 }
 
 
@@ -528,28 +531,15 @@ NULL
                                   n_trials, weights = NULL, offset = NULL,
                                   re_idx = NULL, n_re_groups = 0L,
                                   sigma_re = 1.0) {
-  p       <- ncol(X)
-  n_obs   <- nrow(X)
   n_units <- nrow(as.matrix(spatial$adjacency))
 
-  beta <- mode[seq_len(p)]
-  u    <- mode[p + seq_len(n_re_groups + n_units)]
-
-  D_re    <- .re_design(re_idx, n_re_groups, n_obs)
-  Z_field <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)   # d_fac = 1
-  D       <- cbind(D_re, Z_field)
-
-  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
-  W   <- glmm_weights(eta, family, n_trials, phi)
-  if (!is.null(weights)) W <- W * weights
-
-  tau_re   <- 1 / (sigma_re^2 + 1e-10)
-  Q_latent <- Matrix::bdiag(
-    Matrix::Diagonal(n_re_groups, x = tau_re),
-    .icar_precision_Q(spatial)
+  .marginal_H_beta_field(
+    mode, X, family, phi, n_trials, weights, offset,
+    n_field = n_units,
+    Z_field = .field_design_Z(spatial$spatial_idx, n_units, nrow(X)),  # d_fac = 1
+    Q_field = .icar_precision_Q(spatial),
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
   )
-
-  .schur_H_beta(X, D, Q_latent, W)
 }
 
 
@@ -567,35 +557,25 @@ NULL
                                   sigma_spatial = 1.0, rho = 0.5,
                                   re_idx = NULL, n_re_groups = 0L,
                                   sigma_re = 1.0) {
-  p            <- ncol(X)
-  n_obs        <- nrow(X)
   n_units      <- nrow(as.matrix(spatial$adjacency))
   scale_factor <- spatial$scale_factor %||% 1.0
 
-  beta <- mode[seq_len(p)]
-  # Layout: [beta, re, phi (structured), theta (unstructured)].
-  u    <- mode[p + seq_len(n_re_groups + 2L * n_units)]
-
   d_phi   <- sigma_spatial * sqrt(rho + 1e-10) * scale_factor
   d_theta <- sigma_spatial * sqrt(1 - rho + 1e-10)
+  Z_ind   <- .field_design_Z(spatial$spatial_idx, n_units, nrow(X))
 
-  Z_ind <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)
-  D_re  <- .re_design(re_idx, n_re_groups, n_obs)
-  # d_fac folded into the design; the prior stays on the raw phi / theta.
-  D     <- cbind(D_re, d_phi * Z_ind, d_theta * Z_ind)
-
-  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
-  W   <- glmm_weights(eta, family, n_trials, phi)
-  if (!is.null(weights)) W <- W * weights
-
-  tau_re   <- 1 / (sigma_re^2 + 1e-10)
-  Q_latent <- Matrix::bdiag(
-    Matrix::Diagonal(n_re_groups, x = tau_re),
-    .icar_precision_Q(spatial),            # phi: augmented ICAR structure
-    Matrix::Diagonal(n_units, x = 1.0)     # theta: iid
+  # Layout: [beta, re, phi (structured), theta (unstructured)]. d_fac folded
+  # into the design; the prior stays on the raw phi / theta.
+  .marginal_H_beta_field(
+    mode, X, family, phi, n_trials, weights, offset,
+    n_field = 2L * n_units,
+    Z_field = cbind(d_phi * Z_ind, d_theta * Z_ind),
+    Q_field = Matrix::bdiag(
+      .icar_precision_Q(spatial),          # phi: augmented ICAR structure
+      Matrix::Diagonal(n_units, x = 1.0)   # theta: iid
+    ),
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
   )
-
-  .schur_H_beta(X, D, Q_latent, W)
 }
 
 
@@ -607,12 +587,7 @@ NULL
                                   phi_basis, lambda_eig, sigma2, lengthscale,
                                   re_idx = NULL, n_re_groups = 0L,
                                   sigma_re = 1.0) {
-  p     <- ncol(X)
-  n_obs <- nrow(X)
-  M     <- ncol(phi_basis)
-
-  beta <- mode[seq_len(p)]
-  u    <- mode[p + seq_len(n_re_groups + M)]
+  M <- ncol(phi_basis)
 
   # The latent coefficients carry an N(0, I) prior; the spectral density
   # sqrt(S_j) is folded into the design (matching make_hsgp_block.basis_eval /
@@ -622,18 +597,11 @@ NULL
           exp(-0.5 * lengthscale^2 * lambda_eig)
   PhiS <- sweep(phi_basis, 2, sqrt(pmax(S, 0)), `*`)
 
-  D_re <- .re_design(re_idx, n_re_groups, n_obs)
-  D    <- cbind(D_re, Matrix::Matrix(PhiS, sparse = TRUE))
-
-  eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
-  W   <- glmm_weights(eta, family, n_trials, phi)
-  if (!is.null(weights)) W <- W * weights
-
-  tau_re   <- 1 / (sigma_re^2 + 1e-10)
-  Q_latent <- Matrix::bdiag(
-    Matrix::Diagonal(n_re_groups, x = tau_re),
-    Matrix::Diagonal(M, x = 1.0)
+  .marginal_H_beta_field(
+    mode, X, family, phi, n_trials, weights, offset,
+    n_field = M,
+    Z_field = Matrix::Matrix(PhiS, sparse = TRUE),
+    Q_field = Matrix::Diagonal(M, x = 1.0),
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
   )
-
-  .schur_H_beta(X, D, Q_latent, W)
 }

@@ -9,15 +9,48 @@
 # bundles the four backend-specific concerns: grid construction, kernel call,
 # theta-grid materialisation for the result, and latent-layout metadata.
 
-# Each entry now owns three concerns: grid construction, theta-grid
-# materialisation, and latent-layout metadata. The kernel call is shared
-# across all single-block backends -- they all route through
+# Each entry owns three backend-specific concerns: grid construction,
+# theta-grid materialisation, and latent-layout metadata. The kernel call is
+# shared across all single-block backends -- they all route through
 # `.joint_call_kernel_via_multi()` which packs the single-block prior into
 # a length-1 multi-block spec and dispatches via
 # `cpp_nested_laplace_joint_multi`. This is the J-E unification: one
 # inner C++ entry, one R-side post-processing path. The legacy
 # per-backend `cpp_nested_laplace_joint_{bym2,icar,car_proper}` shims and
 # their bespoke LatentBlock construction are gone.
+
+# The one `call_kernel` every single-block backend gets. The backend name is
+# the only thing that varies across them, so the forwarding signature is
+# written once here rather than per entry; `.joint_backends` reads
+# `call_kernel` polymorphically (see `nested_laplace_joint_helpers.R`, which
+# holds the entry but not its name), so the closure stays on the entry.
+.make_joint_kernel_caller <- function(backend_name) {
+    force(backend_name)
+    function(arms, prior, cp, grids, max_iter, tol,
+             n_threads, x_init, store_Q = FALSE,
+             arm_names = NULL, n_threads_outer = 1L,
+             tile_warm = TRUE, prune_tol = 0.0,
+             force_sparse = FALSE,
+             cell_coupling = "separable",
+             hessian_pd_mode = 0L,
+             step_curvature_mode = 0L,
+             inner_refresh = 1L,
+             x_init_per_cell = NULL) {
+        .joint_call_kernel_via_multi(backend_name, arms, prior, cp, grids,
+                                      max_iter, tol, n_threads,
+                                      x_init, store_Q, arm_names,
+                                      n_threads_outer = n_threads_outer,
+                                      tile_warm = tile_warm,
+                                      prune_tol = prune_tol,
+                                      force_sparse = force_sparse,
+                                      cell_coupling = cell_coupling,
+                                      hessian_pd_mode = hessian_pd_mode,
+                                      step_curvature_mode = step_curvature_mode,
+                                      inner_refresh = inner_refresh,
+                                      x_init_per_cell = x_init_per_cell)
+    }
+}
+
 .joint_backends <- list(
     bym2 = list(
         build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
@@ -27,29 +60,7 @@
             .joint_cartesian(list(sigma = sigma_axis, rho = rho_axis),
                               has_copy, alpha_axis, phi_axes)
         },
-        call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, store_Q = FALSE,
-                                arm_names = NULL, n_threads_outer = 1L,
-                                tile_warm = TRUE, prune_tol = 0.0,
-                                force_sparse = FALSE,
-                                cell_coupling = "separable",
-                                hessian_pd_mode = 0L,
-                                step_curvature_mode = 0L,
-                                inner_refresh = 1L,
-                                x_init_per_cell = NULL) {
-            .joint_call_kernel_via_multi("bym2", arms, prior, cp, grids,
-                                          max_iter, tol, n_threads,
-                                          x_init, store_Q, arm_names,
-                                          n_threads_outer = n_threads_outer,
-                                          tile_warm = tile_warm,
-                                          prune_tol = prune_tol,
-                                          force_sparse = force_sparse,
-                                          cell_coupling = cell_coupling,
-                                          hessian_pd_mode = hessian_pd_mode,
-                                          step_curvature_mode = step_curvature_mode,
-                                          inner_refresh = inner_refresh,
-                                          x_init_per_cell = x_init_per_cell)
-        },
+        call_kernel = .make_joint_kernel_caller("bym2"),
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
                 cbind(sigma = grids$sigma, rho = grids$rho,
@@ -72,29 +83,7 @@
             .joint_cartesian(list(sigma = sigma_axis), has_copy,
                               alpha_axis, phi_axes)
         },
-        call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, store_Q = FALSE,
-                                arm_names = NULL, n_threads_outer = 1L,
-                                tile_warm = TRUE, prune_tol = 0.0,
-                                force_sparse = FALSE,
-                                cell_coupling = "separable",
-                                hessian_pd_mode = 0L,
-                                step_curvature_mode = 0L,
-                                inner_refresh = 1L,
-                                x_init_per_cell = NULL) {
-            .joint_call_kernel_via_multi("icar", arms, prior, cp, grids,
-                                          max_iter, tol, n_threads,
-                                          x_init, store_Q, arm_names,
-                                          n_threads_outer = n_threads_outer,
-                                          tile_warm = tile_warm,
-                                          prune_tol = prune_tol,
-                                          force_sparse = force_sparse,
-                                          cell_coupling = cell_coupling,
-                                          hessian_pd_mode = hessian_pd_mode,
-                                          step_curvature_mode = step_curvature_mode,
-                                          inner_refresh = inner_refresh,
-                                          x_init_per_cell = x_init_per_cell)
-        },
+        call_kernel = .make_joint_kernel_caller("icar"),
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
                 cbind(sigma = grids$sigma, alpha = grids$alpha)
@@ -117,29 +106,7 @@
             .joint_cartesian(list(sigma = sigma_axis, rho_car = rho_car_axis),
                               has_copy, alpha_axis, phi_axes)
         },
-        call_kernel = function(arms, prior, cp, grids, max_iter, tol,
-                                n_threads, x_init, store_Q = FALSE,
-                                arm_names = NULL, n_threads_outer = 1L,
-                                tile_warm = TRUE, prune_tol = 0.0,
-                                force_sparse = FALSE,
-                                cell_coupling = "separable",
-                                hessian_pd_mode = 0L,
-                                step_curvature_mode = 0L,
-                                inner_refresh = 1L,
-                                x_init_per_cell = NULL) {
-            .joint_call_kernel_via_multi("car_proper", arms, prior, cp, grids,
-                                          max_iter, tol, n_threads,
-                                          x_init, store_Q, arm_names,
-                                          n_threads_outer = n_threads_outer,
-                                          tile_warm = tile_warm,
-                                          prune_tol = prune_tol,
-                                          force_sparse = force_sparse,
-                                          cell_coupling = cell_coupling,
-                                          hessian_pd_mode = hessian_pd_mode,
-                                          step_curvature_mode = step_curvature_mode,
-                                          inner_refresh = inner_refresh,
-                                          x_init_per_cell = x_init_per_cell)
-        },
+        call_kernel = .make_joint_kernel_caller("car_proper"),
         theta_grid = function(grids, has_copy) {
             base <- if (has_copy) {
                 cbind(sigma = grids$sigma, rho_car = grids$rho_car,

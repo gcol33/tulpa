@@ -166,45 +166,20 @@ inline VIResult fit_fullrank(
       }
     }
 
-    // Gradient norm for convergence check
-    double grad_norm = grad_flat.norm();
-
-    // Check convergence
-    std::string converged = checker.check(grads.elbo, grad_norm);
-    if (!converged.empty()) {
-      result.converged = true;
-      result.iterations = iter + 1;
-      if (config.verbose) {
-        Rcpp::Rcout << "Converged at iteration " << iter + 1
-                    << " (" << converged << ")\n";
-      }
+    // Convergence test, Adam update and bookkeeping (see vi_adam_step). The
+    // post-update hook keeps the diagonal of L positive so the Cholesky stays
+    // valid.
+    if (vi_adam_step(params, grad_flat, grads.elbo, iter, config, checker,
+                     optimizer, state, result,
+                     [&]() {
+                       for (int i = 0; i < D; ++i) {
+                         if (params.L(i, i) < 0.01) {
+                           params.L(i, i) = 0.01;
+                         }
+                       }
+                     })) {
       break;
     }
-
-    // Adam update
-    Eigen::VectorXd params_flat = params.flatten();
-    params_flat = optimizer.step_clipped(params_flat, grad_flat, state);
-    params.unflatten(params_flat);
-
-    // Ensure positive diagonal in L (for valid Cholesky)
-    for (int i = 0; i < D; ++i) {
-      if (params.L(i, i) < 0.01) {
-        params.L(i, i) = 0.01;
-      }
-    }
-
-    // Progress reporting
-    if (config.verbose && (iter + 1) % config.print_every == 0) {
-      Rcpp::Rcout << "Iter " << iter + 1 << ": ELBO = " << grads.elbo
-                  << ", |grad| = " << grad_norm << "\n";
-    }
-
-    // Check for user interrupt
-    if ((iter + 1) % 100 == 0) {
-      Rcpp::checkUserInterrupt();
-    }
-
-    result.iterations = iter + 1;
   }
 
   // Store final parameters

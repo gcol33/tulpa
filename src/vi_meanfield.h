@@ -135,38 +135,11 @@ inline VIResult fit_meanfield(
     grad_flat.head(D) = grads.grad_mu;
     grad_flat.tail(D) = grads.grad_log_sigma;
 
-    // Gradient norm for convergence check
-    double grad_norm = grad_flat.norm();
-
-    // Check convergence
-    std::string converged = checker.check(grads.elbo, grad_norm);
-    if (!converged.empty()) {
-      result.converged = true;
-      result.iterations = iter + 1;
-      if (config.verbose) {
-        Rcpp::Rcout << "Converged at iteration " << iter + 1
-                    << " (" << converged << ")\n";
-      }
+    // Convergence test, Adam update and bookkeeping (see vi_adam_step).
+    if (vi_adam_step(params, grad_flat, grads.elbo, iter, config, checker,
+                     optimizer, state, result)) {
       break;
     }
-
-    // Adam update
-    Eigen::VectorXd params_flat = params.flatten();
-    params_flat = optimizer.step_clipped(params_flat, grad_flat, state);
-    params.unflatten(params_flat);
-
-    // Progress reporting
-    if (config.verbose && (iter + 1) % config.print_every == 0) {
-      Rcpp::Rcout << "Iter " << iter + 1 << ": ELBO = " << grads.elbo
-                  << ", |grad| = " << grad_norm << "\n";
-    }
-
-    // Check for user interrupt
-    if ((iter + 1) % 100 == 0) {
-      Rcpp::checkUserInterrupt();
-    }
-
-    result.iterations = iter + 1;
   }
 
   // Store final parameters

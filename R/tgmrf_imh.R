@@ -150,44 +150,18 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
 
   d <- block$theta_dim
   N <- length(y)
-  obs_idx <- block$obs_idx %||% seq_len(N)
-  if (length(obs_idx) != N) {
-    stop("obs_idx length (", length(obs_idx),
-         ") does not match N = ", N, ".", call. = FALSE)
-  }
+  obs_idx <- .tgmrf_obs_idx(block, N)
 
   # --- 1. Pilot grid fit ----------------------------------------------------
-  pilot_block <- block
-  pilot_block$obs_idx <- obs_idx
-  # Override the default axis-points count if requested.
-  if (!is.null(pilot_axis_points) && pilot_axis_points != 5L) {
-    axes <- vector("list", d)
-    for (j in seq_len(d)) {
-      lo <- if (!is.null(block$bounds)) block$bounds$lower[j] else block$init[j] - 2
-      hi <- if (!is.null(block$bounds)) block$bounds$upper[j] else block$init[j] + 2
-      axes[[j]] <- seq(lo, hi, length.out = pilot_axis_points)
-    }
-    names(axes) <- block$theta_names
-    pilot_block$theta_grid_built <- as.matrix(do.call(expand.grid, axes))
-  }
-
-  pilot <- tulpa_nested_laplace(
-    y = y, n_trials = n_trials, X = X,
-    prior = pilot_block,
+  pl <- .tgmrf_pilot(
+    y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
+    pilot_axis_points = pilot_axis_points,
     re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
     family = family, phi = phi,
-    control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
+    max_iter = max_iter, tol = tol, n_threads = n_threads
   )
-
-  # Strip block-prefix from joint axis names for the d-dim theta vector.
-  grid <- pilot$theta_grid
-  if (ncol(grid) != d) {
-    stop("Pilot grid has ", ncol(grid), " columns but block has ",
-         d, " hyperparameters.", call. = FALSE)
-  }
-  k_star <- which.max(pilot$log_marginal)
-  theta_mode <- as.numeric(grid[k_star, ])
-  names(theta_mode) <- block$theta_names
+  pilot      <- pl$fit
+  theta_mode <- pl$theta_init
 
   # --- 2. FD Hessian on log_marginal(theta) ---------------------------------
   # Evaluate log_marginal at theta_mode +/- fd_step * e_j and cross-terms.

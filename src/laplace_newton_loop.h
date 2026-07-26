@@ -283,6 +283,61 @@ inline bool newton_converged(const std::vector<double>& delta,
     return ++st.stalled >= NEWTON_STALL_PATIENCE;
 }
 
+// One Newton iteration, shared by the single-arm and joint drivers.
+//
+// `refresh_grad_hess()` is the only step that differs between them -- it
+// recomputes the linear predictor(s) and scatters the gradient and Hessian into
+// the scratch (compute_eta + scatter_grad_hess for one arm, compute_eta_joint +
+// scatter_joint for several). Everything after it is identical: the damped
+// fallback when the factorization fails, the lazy objective refresh, the
+// backtracking line search, and the convergence test.
+//
+// `obj_current` / `obj_valid` / `conv_state` carry across iterations, and
+// `n_iter_out` records the iteration count the caller reports. Returns true when
+// the solve has converged, which is the caller's signal to break.
+template <typename Scratch, typename RefreshFn, typename SolveFn,
+          typename EvalObj>
+inline bool newton_step(
+    Rcpp::NumericVector& x,
+    Scratch& scratch,
+    int n_x, int iter, double tol,
+    RefreshFn refresh_grad_hess,
+    SolveFn cholesky_solve,
+    EvalObj eval_objective,
+    double& obj_current,
+    bool& obj_valid,
+    NewtonConvState& conv_state,
+    int& n_iter_out
+) {
+    refresh_grad_hess();
+
+    if (!cholesky_solve(scratch.H, scratch.grad, scratch.delta)) {
+        // Factorization failed: take a short damped step along whatever finite
+        // direction came back and refresh the objective next iteration.
+        for (int j = 0; j < n_x; j++) {
+            if (std::isfinite(scratch.delta[j])) x[j] += 0.1 * scratch.delta[j];
+        }
+        obj_valid = false;
+        n_iter_out = iter + 1;
+        return false;
+    }
+
+    if (!obj_valid) {
+        obj_current = eval_objective(x);
+        obj_valid = true;
+    }
+
+    double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
+    double step_scale = line_search_backtrack(
+        x, scratch.delta, n_x, obj_current, slope, eval_objective,
+        obj_current, scratch.x_try
+    );
+
+    n_iter_out = iter + 1;
+    return newton_converged(scratch.delta, scratch.grad, step_scale, n_x, tol,
+                            conv_state);
+}
+
 // Laplace log-marginal: log_lik + log_prior - 0.5 log|H| + 0.5 n log(2 pi).
 inline double finalize_log_marginal(
     double log_lik, double log_prior, double log_det_H, int n_x

@@ -124,38 +124,20 @@
   p <- ncol(X)
   n_lat <- block$n_latent
   d <- block$theta_dim
-  obs_idx <- block$obs_idx %||% seq_len(N)
-  if (length(obs_idx) != N) {
-    stop("obs_idx length (", length(obs_idx),
-         ") does not match N = ", N, ".", call. = FALSE)
-  }
+  obs_idx <- .tgmrf_obs_idx(block, N)
 
   if (is.null(seed)) seed <- sample.int(.Machine$integer.max, 1L)
 
   # -- Pilot Laplace ----------------------------------------------------------
-  pilot_block <- block
-  pilot_block$obs_idx <- obs_idx
-  if (!is.null(pilot_axis_points) && pilot_axis_points != 5L) {
-    axes <- vector("list", d)
-    for (j in seq_len(d)) {
-      lo <- if (!is.null(block$bounds)) block$bounds$lower[j] else block$init[j] - 2
-      hi <- if (!is.null(block$bounds)) block$bounds$upper[j] else block$init[j] + 2
-      axes[[j]] <- seq(lo, hi, length.out = pilot_axis_points)
-    }
-    names(axes) <- block$theta_names
-    pilot_block$theta_grid_built <- as.matrix(do.call(expand.grid, axes))
-  }
-
-  pilot <- tulpa_nested_laplace(
-    y = y, n_trials = n_trials, X = X,
-    prior = pilot_block,
+  pl <- .tgmrf_pilot(
+    y = y, n_trials = n_trials, X = X, block = block, obs_idx = obs_idx,
+    pilot_axis_points = pilot_axis_points,
     family = family, phi = phi,
-    control = list(max_iter = max_iter, tol = tol, n_threads = n_threads)
+    max_iter = max_iter, tol = tol, n_threads = n_threads
   )
-
-  k_star <- which.max(pilot$log_marginal)
-  theta_init <- as.numeric(pilot$theta_grid[k_star, ])
-  names(theta_init) <- block$theta_names
+  pilot      <- pl$fit
+  k_star     <- pl$k_star
+  theta_init <- pl$theta_init
 
   # Mode at the grid argmax: pilot$modes is n_grid x n_x where n_x = p + n_lat.
   if (is.null(pilot$modes)) {

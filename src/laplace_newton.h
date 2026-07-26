@@ -161,36 +161,16 @@ LaplaceResult laplace_newton_solve_ll(
         obj_valid = true;
     }
 
-    for (int iter = 0; iter < max_iter; iter++) {
+    auto refresh_grad_hess = [&]() {
         compute_eta(x, scratch.eta);
         scratch.zero_for_iter();
         scatter_grad_hess(x, scratch.eta, scratch.grad, scratch.H);
+    };
 
-        bool solve_ok = cholesky_solve(scratch.H, scratch.grad, scratch.delta);
-
-        if (!solve_ok) {
-            for (int j = 0; j < n_x; j++) {
-                if (std::isfinite(scratch.delta[j])) x[j] += 0.1 * scratch.delta[j];
-            }
-            obj_valid = false;
-            result.n_iter = iter + 1;
-            continue;
-        }
-
-        if (!obj_valid) {
-            obj_current = eval_objective(x);
-            obj_valid = true;
-        }
-
-        double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
-        double step_scale = line_search_backtrack(
-            x, scratch.delta, n_x, obj_current, slope, eval_objective,
-            obj_current, scratch.x_try
-        );
-
-        result.n_iter = iter + 1;
-        if (newton_converged(scratch.delta, scratch.grad, step_scale, n_x, tol,
-                             conv_state)) {
+    for (int iter = 0; iter < max_iter; iter++) {
+        if (newton_step(x, scratch, n_x, iter, tol, refresh_grad_hess,
+                        cholesky_solve, eval_objective, obj_current, obj_valid,
+                        conv_state, result.n_iter)) {
             result.converged = true;
             break;
         }
