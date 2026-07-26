@@ -38,10 +38,14 @@ default \code{n_iter / 2}).}
 (default 0.574, the Roberts & Rosenthal 1998 optimum).}
 
 \item{mass_diag}{Optional preconditioner: a length-\code{d} vector of
-per-dimension scales, equivalent to using \code{diag(mass_diag)} as
-a metric. Default \code{rep(1, d)}. For posteriors with very different
-scales across dimensions, set this to (an estimate of) the
-posterior SDs.}
+per-dimension \strong{variances}, used as the diagonal inverse-mass
+\code{M^-1}. The proposal is
+\code{N(theta + (eps^2/2) * M^-1 * grad, eps^2 * M^-1)}, so entry \code{j}
+scales the proposal variance along dimension \code{j} and the noise
+standard deviation is \code{eps * sqrt(mass_diag[j])}. Default
+\code{rep(1, d)}. For posteriors with very different scales across
+dimensions, set this to (an estimate of) the posterior variances,
+i.e. the squared posterior SDs.}
 
 \item{thin}{Keep every \code{thin}-th post-warmup sample (default 1).}
 

@@ -40,14 +40,17 @@
 
 
 # Backends carrying the mixture. "laplace" reaches it as process 1 of the
-# two-process spec; every `tulpa_sample_glmm` backend reaches it through the
-# `logit_zi` callback argument, which the generic log-posterior builds from
-# X_zi_flat and the beta_zi block. Derived from the registry rather than
-# hardcoded so a new sampler backend inherits ZI with its fitter. A function,
-# not a constant: this file sources before inference_modes.R.
+# two-process spec; "eb" and "re_cov_nested" reach it through the same spec,
+# since their inner solve IS tulpa_laplace() and the mixture changes that solve
+# rather than the covariance coordinates they search over; every
+# `tulpa_sample_glmm` backend reaches it through the `logit_zi` callback
+# argument, which the generic log-posterior builds from X_zi_flat and the
+# beta_zi block. Derived from the registry rather than hardcoded so a new
+# sampler backend inherits ZI with its fitter. A function, not a constant: this
+# file sources before inference_modes.R.
 #' @keywords internal
 .zi_backends <- function() {
-  c("laplace",
+  c("laplace", "eb", "re_cov_nested",
     names(BACKEND_REGISTRY)[vapply(
       BACKEND_REGISTRY,
       function(b) identical(b$fitter, "tulpa_sample_glmm"),

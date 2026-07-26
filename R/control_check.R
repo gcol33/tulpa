@@ -119,10 +119,12 @@ tulpa_check_control <- function(control, allowed, where) {
                      "n_threads"),
     # EB stops at the maximizer, so beyond the inner-solve knobs and the outer
     # iteration budget it takes nothing: no integration design, no node count,
-    # no draw synthesis. The two marginal_* knobs tune the finite-difference
-    # stencil behind `marginal = TRUE` and are inert without it.
+    # no draw synthesis. `marginal` requests the hyperparameter-uncertainty
+    # correction -- a formal argument of tulpa_eb(), and a control knob here so
+    # the tulpa() / tglmm() front door can reach it. The two marginal_* knobs
+    # tune the stencil behind it and are inert without it.
     eb = c("max_iter", "tol", "n_threads", "outer_maxit", "outer_reltol",
-           "sigma_init", "marginal_step", "marginal_richardson"),
+           "sigma_init", "marginal", "marginal_step", "marginal_richardson"),
     ep = c("max_sweeps", "tol", "damping", "n_quad", "n_draws", "seed"),
     gaussian = c("iter", "warmup", "step_size", "n_leapfrog", "seed"),
     gibbs = c("n_iter", "warmup", "thin", "seed", "verbose", "n_threads"),
@@ -160,7 +162,7 @@ tulpa_check_control <- function(control, allowed, where) {
                               "sigma_re_scale", "prior_sigma_scale")
   keys$tulpa <- sort(unique(setdiff(c(
     keys$nested_laplace, keys$nested_laplace_joint, keys$spde,
-    keys$re_cov_nested, keys$re_cov_gibbs,
+    keys$re_cov_nested, keys$re_cov_gibbs, keys$eb,
     keys$sample_glmm, keys$ep, keys$nuts_spde,
     c("re_cov", "n_quad", "sigma_init", "beta_init",
       "sigma_eps", "scale", "method")

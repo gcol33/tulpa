@@ -237,6 +237,11 @@ tulpa_laplace <- function(y, n_trials, X,
     has_design <- any(re_ncoefs > 1L) ||
       any(vapply(re_Z_list, Negate(is.null), logical(1)))
 
+    # The joint curvature is what the marginal fixed-effect precision is built
+    # from below, so it is requested whenever a Hessian is wanted -- not only
+    # when the caller asked to see it. Attached to the result only if they did.
+    want_joint <- isTRUE(return_joint_hessian) || isTRUE(return_hessian)
+
     result <- cpp_laplace_fit_multi_re(
       y = as.numeric(y),
       n = as.integer(n_trials),
@@ -259,9 +264,9 @@ tulpa_laplace <- function(y, n_trials, X,
       phi2 = phi2 %||% NA_real_,
       X_zi = X_zi,
       zi_prior_sd = zi_prior_sd,
-      return_joint_hessian = isTRUE(return_joint_hessian)
+      return_joint_hessian = want_joint
     )
-    if (isTRUE(return_joint_hessian)) {
+    if (want_joint) {
       result$H_joint <- .laplace_joint_hessian(result)
     }
   }
@@ -279,89 +284,38 @@ tulpa_laplace <- function(y, n_trials, X,
     spatial$type %in% c("spde", "gp", "car_proper", "hsgp",
                         "icar", "car", "bym2")
 
-  # Compute Hessian for fixed-effect block if requested
+  # Marginal fixed-effect precision: the Schur complement of the joint
+  # curvature over the random-effect block, corrected to the observed weight
+  # where the kernel's Newton weight is not it (.laplace_marginal_H_fixed).
+  # The joint Hessian already carries the fixed-effect prior and the
+  # random-effect penalty the mode was found under, so nothing is added back.
+  #
+  # This replaced a hand-assembled X'WX - X'WZ (Z'WZ + D^-1)^-1 Z'WX built from
+  # glmm_weights(). That form reaches ONE linear predictor, so a zero-inflation
+  # process fell outside it: it sliced the random effects out of the mode at
+  # ncol(X), which starts inside the ZI block. It also carried the R-side Fisher
+  # weight rather than the curvature the kernel found the mode under -- measured
+  # 1.8% apart on neg_binomial_2, where the joint Hessian matches a direct
+  # finite difference of the negative joint log posterior to 2.8e-7 and the
+  # hand-assembled version does not.
   if (return_hessian && !is.null(result$mode) && !is_spatial_field) {
-    mode_vec <- result$mode
-    beta <- mode_vec[seq_len(n_fixed)]
-    re_vals <- mode_vec[-seq_len(n_fixed)]
-
-    # Linear predictor at mode: eta = X*beta + offset + sum_k Z_k %*% u_k.
-    # The observation offset must enter here: for non-gaussian families the
-    # GLM weight W depends on eta, so omitting it curves H_beta at the wrong
-    # linear predictor. The mode stores term k as
-    # [g1_c1, g1_c2, ..., g2_c1, ...] (n_groups * n_coefs), so a slope term
-    # contributes Z_k[i, ] %*% u_{g(i)}, not just an intercept.
-    eta <- as.numeric(X %*% beta) + (offset %||% 0)
-
-    if (length(re_list) > 0) {
-      lat_off <- 0L
-      for (k in seq_along(re_list)) {
-        r  <- re_list[[k]]
-        nc <- r$n_coefs %||% 1L
-        # Z is the term's design: a supplied Z (slopes, incl. a single
-        # `(0 + x | g)`) or the intercept indicator (column of 1s) when absent.
-        Zk <- r$Z %||% matrix(1, n_obs, 1L)
-        u_k <- re_vals[lat_off + seq_len(r$n_groups * nc)]
-        u_mat <- matrix(u_k, ncol = nc, byrow = TRUE)   # row g = (c1, ..., cnc)
-        eta <- eta + rowSums(Zk * u_mat[r$idx, , drop = FALSE])
-        lat_off <- lat_off + r$n_groups * nc
-      }
+    H_fixed <- .laplace_marginal_H_fixed(
+      H_joint = result$H_joint, mode = result$mode, y = y,
+      n_trials = n_trials, X = X, X_zi = X_zi, re_list = re_list,
+      family = family, phi = phi, phi2 = phi2,
+      weights = weights, offset = offset)
+    if (is.null(H_fixed)) {
+      warning("The marginal fixed-effect precision could not be formed from ",
+              "the joint curvature (a singular random-effect block is the ",
+              "usual cause). Returning H_beta = NULL.", call. = FALSE)
     }
-
-    # GLM weights
-    W <- glmm_weights(eta, family, n_trials, phi, phi2)
-
-    # Apply observation weights
-    if (!is.null(weights)) W <- W * weights
-
-    # Fixed-effect precision block
-    XtWX <- crossprod(X, W * X)
-
-    if (length(re_list) > 0) {
-      # Build combined Z and the RE precision D^{-1} for the Schur complement.
-      # D^{-1} is block-diagonal in the latent layout [g1_c1, g1_c2, g2_c1, ...]:
-      # one n_coefs x n_coefs precision block per group -- full (off-diagonal
-      # included) for a correlated term, diagonal otherwise. Each term k
-      # contributes n_groups[k] * n_coefs[k] latent variables.
-      # Z in the latent column order [g1_c1, g1_c2, g2_c1, ...] per term. The
-      # exact-gradient path needs the same matrix, so the construction lives in
-      # .re_design_matrix() (R/laplace_gradient.R) and both read it from there.
-      Z <- .re_design_matrix(re_list, n_obs)
-      # One precision block per group, same column order as Z. The block is the
-      # full Q_k for a correlated term, so the off-diagonal propagates into the
-      # marginal fixed-effect SE rather than being dropped.
-      Dinv_blocks <- lapply(re_list, function(r) {
-        Qk <- .re_cov_spec(r)$Q  # nc x nc RE precision (Sigma^{-1})
-        Matrix::bdiag(rep(list(Matrix::Matrix(Qk, sparse = TRUE)), r$n_groups))
-      })
-      ZtWZ <- Matrix::crossprod(Z, W * Z)
-      D_inv <- Matrix::bdiag(Dinv_blocks)
-      ZtWZ_Dinv <- ZtWZ + D_inv
-      XtWZ <- crossprod(X, W * Z)
-      R <- chol(as.matrix(ZtWZ_Dinv))
-      mid <- backsolve(R, forwardsolve(t(R), as.matrix(Matrix::t(XtWZ))))
-      # The Schur complement inherits the sparse class from Z, so it is made
-      # dense here: it is n_fixed x n_fixed, and every consumer downstream --
-      # the prior penalty below, and H_beta itself -- is a base matrix.
-      P_beta <- as.matrix(XtWX - XtWZ %*% mid)
-    } else {
-      P_beta <- XtWX
-    }
-
-    # Add the fixed-effect prior precision so H_beta is the negative-log-
-    # POSTERIOR curvature (matching the penalty the mode-finding kernel added),
-    # not just the likelihood information. Without this the Laplace SE would
-    # ignore the prior. `sd = Inf` contributes 0 (no penalty on that coef).
-    # A NULL `beta_prior` is not an absent prior: the kernel applies its
-    # built-in ridge (DEFAULT_TAU_BETA in src/laplace_re_priors.h), so the same
-    # precision is added here rather than leaving the curvature computed under
-    # a prior the mode was not found under.
-    pen_prec <- if (is.null(bp)) rep(.LAPLACE_DEFAULT_TAU_BETA, n_fixed)
-                else ifelse(is.finite(bp$sd), 1 / (bp$sd^2), 0)[seq_len(n_fixed)]
-    diag(P_beta) <- diag(P_beta) + pen_prec
-
-    result$H_beta <- P_beta
+    result$H_beta <- H_fixed
   }
+
+  # The raw triplet is marshalling for .laplace_joint_hessian(); the assembled
+  # H_joint is what callers read, and only when they asked for it.
+  result[c("H_joint_p", "H_joint_i", "H_joint_x", "H_joint_n")] <- NULL
+  if (!isTRUE(return_joint_hessian)) result$H_joint <- NULL
 
   # Marginal H_beta for spatial-field Laplace via Schur on the joint Hessian.
   # See .marginal_H_beta_spde() / .marginal_H_beta_gp().
@@ -466,8 +420,17 @@ tulpa_laplace <- function(y, n_trials, X,
     }
   }
 
+  # Zero inflation extends the fixed block rather than adding a separate one:
+  # the mode is [beta | beta_zi | RE] and H_beta is now (p + p_zi) square, so
+  # the prefix coef() / vcov() / confint() slice has to count both. The `zi_`
+  # name prefix comes from .zi_design(); a caller supplying X_zi directly gets
+  # positional names rather than a silently short vector.
+  p_zi <- if (is.null(X_zi)) 0L else ncol(X_zi)
+  zi_names <- if (p_zi == 0L) character(0) else
+    colnames(X_zi) %||% paste0("zi_", seq_len(p_zi))
   .finalize_fit(result, backend = "laplace",
-                n_fixed = n_fixed, fixed_names = colnames(X))
+                n_fixed = n_fixed + p_zi,
+                fixed_names = c(colnames(X), zi_names))
 }
 
 

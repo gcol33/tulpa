@@ -315,6 +315,51 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_zi_mixture_curvature_deriv
+Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, Rcpp::NumericVector logit_zi, std::string family, double phi, double phi2);
+RcppExport SEXP _tulpa_cpp_zi_mixture_curvature_deriv(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP logit_ziSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type logit_zi(logit_ziSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_zi_mixture_curvature_deriv(y, n_trials, eta, logit_zi, family, phi, phi2));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_zi_mixture_curvature
+Rcpp::NumericMatrix cpp_zi_mixture_curvature(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, Rcpp::NumericVector logit_zi, std::string family, double phi, double phi2);
+RcppExport SEXP _tulpa_cpp_zi_mixture_curvature(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP logit_ziSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type logit_zi(logit_ziSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_zi_mixture_curvature(y, n_trials, eta, logit_zi, family, phi, phi2));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_family_has_zi_curvature_derivative
+bool cpp_family_has_zi_curvature_derivative(std::string family);
+RcppExport SEXP _tulpa_cpp_family_has_zi_curvature_derivative(SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_has_zi_curvature_derivative(family));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_ad_terms
 Rcpp::NumericVector cpp_family_ad_terms(double y, int n_trials, double eta, std::string family, double phi, double phi2);
 RcppExport SEXP _tulpa_cpp_family_ad_terms(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
@@ -3660,6 +3705,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_obs_curvature_delta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_vec, 6},
     {"_tulpa_cpp_family_has_exact_mode_jacobian", (DL_FUNC) &_tulpa_cpp_family_has_exact_mode_jacobian, 1},
     {"_tulpa_cpp_family_curvature_deta2_vec", (DL_FUNC) &_tulpa_cpp_family_curvature_deta2_vec, 6},
+    {"_tulpa_cpp_zi_mixture_curvature_deriv", (DL_FUNC) &_tulpa_cpp_zi_mixture_curvature_deriv, 7},
+    {"_tulpa_cpp_zi_mixture_curvature", (DL_FUNC) &_tulpa_cpp_zi_mixture_curvature, 7},
+    {"_tulpa_cpp_family_has_zi_curvature_derivative", (DL_FUNC) &_tulpa_cpp_family_has_zi_curvature_derivative, 1},
     {"_tulpa_cpp_family_ad_terms", (DL_FUNC) &_tulpa_cpp_family_ad_terms, 6},
     {"_tulpa_cpp_glmm_elt_terms", (DL_FUNC) &_tulpa_cpp_glmm_elt_terms, 5},
     {"_tulpa_cpp_test_laplace_gaussian", (DL_FUNC) &_tulpa_cpp_test_laplace_gaussian, 3},

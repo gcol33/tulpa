@@ -89,6 +89,18 @@ cpp_family_curvature_deta2_vec <- function(y, n_trials, eta, family, phi, phi2 =
     .Call(`_tulpa_cpp_family_curvature_deta2_vec`, y, n_trials, eta, family, phi, phi2)
 }
 
+cpp_zi_mixture_curvature_deriv <- function(y, n_trials, eta, logit_zi, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_zi_mixture_curvature_deriv`, y, n_trials, eta, logit_zi, family, phi, phi2)
+}
+
+cpp_zi_mixture_curvature <- function(y, n_trials, eta, logit_zi, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_zi_mixture_curvature`, y, n_trials, eta, logit_zi, family, phi, phi2)
+}
+
+cpp_family_has_zi_curvature_derivative <- function(family) {
+    .Call(`_tulpa_cpp_family_has_zi_curvature_derivative`, family)
+}
+
 cpp_family_ad_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_ad_terms`, y, n_trials, eta, family, phi, phi2)
 }

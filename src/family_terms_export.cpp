@@ -26,6 +26,7 @@
 
 #include "laplace_family_link.h"
 #include "laplace_family_curvature.h"
+#include "laplace_family_zi_curvature.h"
 #include "glmm_oracle.h"
 #include "laplace_likelihoods.h"
 #include "builtin_family_ll_ad.h"
@@ -198,6 +199,73 @@ Rcpp::NumericVector cpp_family_curvature_deta2_vec(Rcpp::NumericVector y,
         y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], family, phi, phi2);
   }
   return out;
+}
+
+// The six partials of the zero-inflation mixture's 2 x 2 curvature block, one
+// row per observation, columns [dWee_deta, dWee_dz, dWez_deta, dWez_dz,
+// dWzz_deta, dWzz_dz]. The exact outer gradient contracts them against the
+// three linear-predictor (co)variances to form its dW/dtheta channel.
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv(Rcpp::NumericVector y,
+                                                   Rcpp::IntegerVector n_trials,
+                                                   Rcpp::NumericVector eta,
+                                                   Rcpp::NumericVector logit_zi,
+                                                   std::string family, double phi,
+                                                   double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n || logit_zi.size() != n) {
+    Rcpp::stop("cpp_zi_mixture_curvature_deriv: y (%d), eta (%d) and logit_zi "
+               "(%d) must have the same length.",
+               (int)y.size(), (int)n, (int)logit_zi.size());
+  }
+  const bool recycle_nt = (n_trials.size() == 1);
+  if (!recycle_nt && n_trials.size() != n) {
+    Rcpp::stop("cpp_zi_mixture_curvature_deriv: n_trials must be length 1 or %d "
+               "(got %d).", (int)n, (int)n_trials.size());
+  }
+  Rcpp::NumericMatrix out(n, 6);
+  Rcpp::colnames(out) = Rcpp::CharacterVector::create(
+      "dWee_deta", "dWee_dz", "dWez_deta", "dWez_dz", "dWzz_deta", "dWzz_dz");
+  for (R_xlen_t i = 0; i < n; i++) {
+    const tulpa::zi::MixtureCurvatureDeriv d = tulpa::zi::mixture_curvature_deriv(
+        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], logit_zi[i],
+        family, phi, phi2);
+    out(i, 0) = d.dWee_deta; out(i, 1) = d.dWee_dz;
+    out(i, 2) = d.dWez_deta; out(i, 3) = d.dWez_dz;
+    out(i, 4) = d.dWzz_deta; out(i, 5) = d.dWzz_dz;
+  }
+  return out;
+}
+
+// The mixture's 2 x 2 curvature block itself, one row per observation, columns
+// [W_ee, W_ez, W_zz]. Exported so the derivative above can be checked against a
+// finite difference of the very weight the kernel builds H from.
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_zi_mixture_curvature(Rcpp::NumericVector y,
+                                             Rcpp::IntegerVector n_trials,
+                                             Rcpp::NumericVector eta,
+                                             Rcpp::NumericVector logit_zi,
+                                             std::string family, double phi,
+                                             double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  const bool recycle_nt = (n_trials.size() == 1);
+  Rcpp::NumericMatrix out(n, 3);
+  Rcpp::colnames(out) = Rcpp::CharacterVector::create("W_ee", "W_ez", "W_zz");
+  double grad[2], nh[4];
+  for (R_xlen_t i = 0; i < n; i++) {
+    tulpa::zi::mixture_eta_weights_double(
+        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], logit_zi[i],
+        family, phi, phi2, grad, nh);
+    out(i, 0) = nh[0]; out(i, 1) = nh[1]; out(i, 2) = nh[3];
+  }
+  return out;
+}
+
+// Whether the six partials above are exact for this family, so the outer
+// optimization can take the analytic gradient or fall back cleanly.
+// [[Rcpp::export]]
+bool cpp_family_has_zi_curvature_derivative(std::string family) {
+  return tulpa::zi::has_zi_curvature_derivative(family);
 }
 
 // The AD-templated density (builtin_family_ll_ad.h), which is what the sampler

@@ -164,18 +164,72 @@ test_that("the closed-form Hessian matches for a correlated block", {
   expect_equal(r$analytic, r$fd, tolerance = 1e-5)
 })
 
-test_that("the closed Hessian is exact where the working weight differs from observed", {
+test_that("the closed Hessian declines where the working weight differs from observed", {
   # neg_binomial_1 and truncated_neg_binomial_2 build H from a working weight
-  # that is NOT the observed curvature, so the mode Jacobian -- and the closed
-  # Hessian that reads it -- is exact only through the true-Hessian correction
-  # A' diag(W_obs - w) A (dev_notes/laplace_exact_hessian.md). A working-weight
-  # Jacobian would miss the analytic-gradient stencil here by percent, not 1e-4.
+  # that is NOT the observed curvature. The gradient's dW channel is
+  # v_r' (dx_hat/dtheta), and the mode motion follows the TRUE stationarity
+  # condition, so u is formed on the observed-curvature inverse Hinv_mode. The
+  # closed Hessian's du/dtheta differentiates u through Hinv instead, which only
+  # matches where the two inverses coincide. Forced on for these two families it
+  # misses the exact H_theta by 2.6e-2 (nb1) and 2.7e-4 (tnb2), so it declines
+  # and the caller central-differences the exact gradient.
+  #
+  # Asserted as a refusal rather than skipped: a silent skip would let the route
+  # be re-enabled without anyone noticing it had gone back to being inexact.
   for (cs in list(list(fam = "neg_binomial_1",          phi = 2.5),
                   list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
     d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
-    r <- .exg_hess_compare(d, log(0.7), phi = cs$phi)
-    skip_if(is.null(r), "hessian unavailable")
-    expect_equal(r$analytic, r$fd, tolerance = 1e-4, info = cs$fam)
+    layout <- .exg_layout(d, FALSE)
+    L0 <- .exg_theta_to_L(log(0.7), d$nc, FALSE)
+    fit <- tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                         re_list = .re_cov_build_re_list(list(L0), layout),
+                         family = d$fam, phi = cs$phi, return_hessian = FALSE,
+                         return_joint_hessian = TRUE, max_iter = 300L,
+                         tol = 1e-12)
+    r <- .laplace_exact_re_grad(
+      fit = fit, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
+      weights = NULL, re_list = .re_cov_build_re_list(list(L0), layout),
+      layout = layout, L_list = list(L0), family = d$fam, phi = cs$phi,
+      want_jacobian = TRUE, want_hessian = TRUE)
+    expect_false(is.null(r), info = cs$fam)
+    # Gradient and mode Jacobian stay exact; only the Hessian returns NULL.
+    expect_true(all(is.finite(r$grad)), info = cs$fam)
+    expect_true(all(is.finite(r$J)), info = cs$fam)
+    expect_null(r$H, info = cs$fam)
+  }
+})
+
+test_that("H_theta from the gradient stencil is exact where the closed route declines", {
+  # What the declining families fall back to has to be right, or the refusal
+  # above just moves the error. The stencil differences the exact gradient, so
+  # it is checked against a second difference of the objective itself.
+  for (cs in list(list(fam = "neg_binomial_1",          phi = 2.5),
+                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
+    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
+    layout <- .exg_layout(d, FALSE)
+    obj <- function(th) {
+      L <- .exg_theta_to_L(th, d$nc, FALSE)
+      tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                    re_list = .re_cov_build_re_list(list(L), layout),
+                    family = d$fam, phi = cs$phi, return_hessian = FALSE,
+                    max_iter = 300L, tol = 1e-12)$log_marginal
+    }
+    grad <- function(th) {
+      L <- .exg_theta_to_L(th, d$nc, FALSE)
+      fit <- tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
+                           re_list = .re_cov_build_re_list(list(L), layout),
+                           family = d$fam, phi = cs$phi, return_hessian = FALSE,
+                           return_joint_hessian = TRUE, max_iter = 300L,
+                           tol = 1e-12)
+      .laplace_exact_re_grad(
+        fit = fit, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
+        weights = NULL, re_list = .re_cov_build_re_list(list(L), layout),
+        layout = layout, L_list = list(L), family = d$fam, phi = cs$phi)
+    }
+    th <- log(0.7); h <- 1e-4
+    stencil <- (grad(th + h) - grad(th - h)) / (2 * h)
+    second  <- (obj(th + h) - 2 * obj(th) + obj(th - h)) / (h * h)
+    expect_equal(stencil, second, tolerance = 2e-3, info = cs$fam)
   }
 })
 

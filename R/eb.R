@@ -79,6 +79,19 @@
 #'   dispersion at all, and for the remaining families the derivative is not
 #'   registered (see `R/family_dispersion.R` for why `beta` in particular is
 #'   held back). Needs `n_quad = 1`.
+#' @param X_zi Optional zero-inflation design matrix (`length(y)` rows), making
+#'   the model a two-process mixture: each observation is a structural zero with
+#'   probability `plogis(X_zi beta_zi)` and otherwise follows `family`. Paired
+#'   with a zero-truncated family it is the hurdle model. The random effects
+#'   enter the count predictor only, and the maximization is over the same
+#'   covariance coordinates -- the mixture changes the inner solve, not the
+#'   outer objective's parameters. The ZI coefficients are reported alongside
+#'   the count ones in `coef()` / `vcov()`, so the fixed block is
+#'   `ncol(X) + ncol(X_zi)` wide. Needs `n_quad = 1`: the adaptive
+#'   Gauss-Hermite inner marginal runs through a single-predictor oracle.
+#' @param zi_prior_sd Prior SD on `beta_zi`, keeping the logit identified where
+#'   a level carries no zeros (the likelihood alone would send it to `-Inf`).
+#'   Ignored when `X_zi` is `NULL`.
 #' @param n_quad Quadrature order for the inner marginal. `1` (default) uses the
 #'   joint-field Laplace inner solve. `> 1` refines it with `n_quad`-point
 #'   adaptive Gauss-Hermite quadrature, which requires a single shared grouping
@@ -170,6 +183,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      beta_prior = NULL, offset = NULL, n_quad = 1L,
                      marginal = FALSE,
                      estimate_phi = FALSE,
+                     X_zi = NULL, zi_prior_sd = 2.5,
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
   max_iter    <- as.integer(control$max_iter %||% 100L)
@@ -185,6 +199,15 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   }
   marginal_step       <- control$marginal_step %||% 1e-3
   marginal_richardson <- isTRUE(control$marginal_richardson)
+  # `marginal` is in .CONTROL_KEYS$eb so tulpa() can forward it to the argument
+  # below, which is where it lives here. Accepting it in `control` too would
+  # take it and do nothing with it. Tested by name rather than with `$`, which
+  # partial-matches on lists and would read `marginal_step` as `marginal`.
+  if ("marginal" %in% names(control)) {
+    stop("`marginal` is an argument of tulpa_eb(), not a control knob: call ",
+         "tulpa_eb(..., marginal = TRUE). It is accepted in `control` by ",
+         "tulpa() / tglmm() only, which forward it here.", call. = FALSE)
+  }
   if (!is.logical(marginal) || length(marginal) != 1L || is.na(marginal)) {
     stop("`marginal` must be TRUE or FALSE.", call. = FALSE)
   }
@@ -207,11 +230,15 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
     max_iter = max_iter, tol = tol, n_threads = n_threads,
     caller = "tulpa_eb", need_scale = FALSE, outer_maxit = outer_maxit,
     offset = offset, estimate_phi = estimate_phi,
-    outer_reltol = outer_reltol, sigma_init = control$sigma_init)
+    outer_reltol = outer_reltol, sigma_init = control$sigma_init,
+    X_zi = X_zi, zi_prior_sd = zi_prior_sd)
 
   layout    <- core$layout
   theta_hat <- core$theta_hat
-  p_fix     <- core$p_fix
+  # The whole fixed prefix of the mode. Under zero inflation that is
+  # [beta | beta_zi], and both blocks are reported: the mixture's logit
+  # coefficients are fixed effects of the model, not nuisance scaling.
+  p_fix     <- core$p_fixed
   # The dispersion actually fitted: the estimate when it was free, otherwise
   # the value conditioned on. Everything downstream reads this one name, so a
   # fit cannot report one dispersion and have been computed at another.
@@ -227,7 +254,9 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
          "Check the data, the hyperprior, and the family.", call. = FALSE)
   }
 
-  beta_names <- colnames(core$X) %||% paste0("beta", seq_len(p_fix))
+  beta_names <- c(colnames(core$X) %||% paste0("beta", seq_len(core$p_fix)),
+                  if (core$p_zi > 0L)
+                    colnames(core$X_zi) %||% paste0("zi_", seq_len(core$p_zi)))
   beta_mean  <- stats::setNames(fit_hat$mode[seq_len(p_fix)], beta_names)
 
   map <- .re_cov_map_summary(theta_hat, layout)

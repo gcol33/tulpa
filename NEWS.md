@@ -112,6 +112,37 @@ New:
   against a simulated truth cannot separate a likelihood bug from sampling noise
   at finite N; these can.
 
+- Zero inflation and hurdle mixtures reach the random-effect backends.
+  `ziformula` is now carried by `mode = "eb"` and `mode = "re_cov_nested"`, and
+  `tulpa_eb()` / `tulpa_re_cov_nested()` take `X_zi` and `zi_prior_sd` directly,
+  so the random-effect covariance is estimated or integrated under the mixture
+  rather than under a model missing it. Their inner solve is `tulpa_laplace()`,
+  which already carried the second process, so the mixture changes that solve and
+  not the covariance coordinates the outer objective searches over. The mode is
+  `[beta | beta_zi | random effects]` and both fixed blocks are reported:
+  `coef()`, `vcov()` and `confint()` return `ncol(X) + ncol(X_zi)` entries, the
+  zero-side ones named `zi_*`.
+
+  The exact outer gradient follows the mixture. With two linear predictors the
+  per-observation curvature is a 2 x 2 block over the count predictor and the
+  zero predictor, and both move with the mode, so `d log|H| / d theta` picks up
+  all six of its partials rather than the single `dw/deta` the one-process path
+  uses. `laplace_family_zi_curvature.h` supplies them in closed form, contracted
+  against the three linear-predictor (co)variances.
+  `cpp_family_has_zi_curvature_derivative()` gates it, and the gate is narrower
+  than zero inflation itself: an untruncated `y = 0` branch differentiates
+  `P(Y = 0)` a third time, which needs the eta-derivative of the OBSERVED
+  curvature, and only the families whose working weight already is that have it
+  registered. A hurdle base is zero-truncated, so its `y = 0` branch is flat in
+  the count predictor and needs no third derivative.
+
+  Refused rather than fitted as a different model: `n_quad > 1` (the adaptive
+  Gauss-Hermite inner marginal runs through a single-predictor compiled oracle),
+  `estimate_phi = TRUE` (the registered dispersion derivative is the base
+  family's, while the mixture's zero branch depends on phi through `P(Y = 0)` as
+  well, so the two describe different objectives), and `mode = "re_cov_gibbs"`
+  (its conditional carries no second process).
+
 Fixed:
 
 - Continuous GP / NNGP spatial fields (`spatial_gp()`) fitted with exact NUTS
@@ -353,6 +384,37 @@ Fixed:
   reports where each removed constant belongs rather than assuming the arm
   intercept, since a block reached through a per-observation weight aliases with
   that covariate's coefficient instead.
+- `tulpa_laplace(return_hessian = TRUE)` assembled the marginal fixed-effect
+  precision by hand as `X'WX - X'WZ (Z'WZ + D^-1)^-1 Z'WX` from
+  `glmm_weights()`. That form reaches ONE linear predictor, so it sliced the
+  random effects out of the mode at `ncol(X)` -- inside the `beta_zi` block when
+  a zero-inflation process is present -- and it carried the R-side Fisher weight
+  rather than the curvature the kernel found the mode under, measured 1.8% apart
+  on `neg_binomial_2`. It is now the Schur complement of the joint curvature over
+  the random-effect block, corrected to the observed weight for the two families
+  whose Newton weight is not it. The joint Hessian already carries the
+  fixed-effect prior and the random-effect penalty the mode was found under, so
+  nothing is added back.
+- The exact outer gradient's `dW/dtheta` channel formed its mode-motion solve on
+  the working-weight inverse. That channel is `v_r' (dx_hat/dtheta)`, and the
+  mode follows the true stationarity condition, so it is governed by the observed
+  curvature -- the same inverse the mode Jacobian already used. The two coincide
+  wherever the working weight is the observed one, which is why a poisson or
+  gaussian check could not see the difference; on `truncated_neg_binomial_2` the
+  inverses differ by ~9% and the gradient was off ~0.8%.
+- The closed-form outer theta-Hessian declines for `neg_binomial_1` and
+  `truncated_neg_binomial_2` instead of returning an inexact value. Its
+  `du/dtheta` differentiates `u` through the working-weight inverse while `u`
+  itself is now formed on the observed-curvature one, and forced on it misses the
+  exact Hessian by 2.6e-2 and 2.7e-4 respectively. Those two families take the
+  gradient stencil instead -- a central difference of the exact gradient, 2k
+  gradient evaluations rather than the `1 + 2k^2` objective re-solves of the full
+  fallback -- which is checked against a second difference of the objective.
+- `marginal` is a formal argument of `tulpa_eb()` rather than one of its control
+  knobs, so the front door had no route to the hyperparameter-uncertainty
+  correction. `control$marginal` on `tulpa()` / `tglmm()` now forwards to it, and
+  passing it in `control` to `tulpa_eb()` directly errors rather than being
+  accepted and ignored.
 
 ## 0.0.97
 

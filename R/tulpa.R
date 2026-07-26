@@ -731,6 +731,15 @@
         y = bundle$y, n_trials = n_trials %||% rep(1L, bundle$n_obs),
         X = bundle$X, re_terms = re_terms, family = family, phi = phi
       )
+      # Zero inflation rides into the Laplace inner solve `eb` and
+      # `re_cov_nested` share, so the covariance is estimated / integrated under
+      # the mixture rather than under a model missing it. re_cov_gibbs builds
+      # its own conditional and carries no second process; it is absent from
+      # .zi_backends(), so the refusal upstream has already fired by here.
+      if (!is.null(bundle$X_zi)) {
+        common$X_zi <- bundle$X_zi
+        common$zi_prior_sd <- zi_prior_sd
+      }
       # An offset changes the model, so it is threaded where the inner solve
       # carries it and refused where it does not -- never dropped. The
       # Metropolis-within-Gibbs sampler has no offset term at all.
@@ -747,13 +756,21 @@
       if (backend == "eb") {
         # Same blocks, same hyperprior, same inner solve as re_cov_nested --
         # tulpa_eb() stops at the maximizer instead of integrating around it.
+        # `marginal` is a formal argument of tulpa_eb() rather than one of its
+        # control knobs, so it is lifted out of `control` here; the front door
+        # has no other way to request intervals that carry the hyperparameter
+        # uncertainty rather than condition on theta_hat.
         return(c(common, list(
           beta_prior   = beta_prior,
           prior_sigma  = rp$prior_sigma %||% c(3, 0.05),
           eta          = rp$eta %||% 2,
           n_quad       = as.integer(control$n_quad %||% 1L),
           estimate_phi = estimate_phi,
-          control      = .control_subset(control, .CONTROL_KEYS$eb)
+          # `[[` not `$`: the latter partial-matches, so `marginal_step` alone
+          # would switch the correction on.
+          marginal     = isTRUE(control[["marginal"]]),
+          control      = .control_subset(control,
+                                         setdiff(.CONTROL_KEYS$eb, "marginal"))
         )))
       }
       if (backend == "re_cov_nested") {

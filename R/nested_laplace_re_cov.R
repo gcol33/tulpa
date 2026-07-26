@@ -470,11 +470,25 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
                               offset = NULL,
                               estimate_phi = FALSE,
                               outer_reltol = NULL,
-                              sigma_init = NULL) {
+                              sigma_init = NULL,
+                              X_zi = NULL, zi_prior_sd = 2.5) {
   re_terms <- .as_re_terms_list(re_terms)
   if (!is.matrix(X)) X <- as.matrix(X)
   vd <- .validate_glm_design(y, X, n_trials, caller)
   n_trials <- vd$n_trials
+  # Zero inflation adds a SECOND linear predictor, so the inner solve's mode is
+  # [beta | beta_zi | RE] rather than [beta | RE]. `p_fix` stays the count
+  # block -- the AGHQ profile below optimizes over it alone -- and `p_fixed` is
+  # the whole fixed prefix anything reading the mode has to skip.
+  if (!is.null(X_zi)) {
+    X_zi <- as.matrix(X_zi)
+    if (nrow(X_zi) != length(y)) {
+      stop(caller, "(): `X_zi` has ", nrow(X_zi), " rows but y has length ",
+           length(y), ".", call. = FALSE)
+    }
+  }
+  p_zi <- if (is.null(X_zi)) 0L else ncol(X_zi)
+  has_zi <- p_zi > 0L
   layout <- .re_cov_block_layout(re_terms, length(y))
   if (length(layout) == 0L) {
     stop(caller, "(): no random-effect terms. The outer objective is over the ",
@@ -542,6 +556,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   }
   use_core <- single_factor && n_quad > 1L
 
+  # The compiled per-group oracle behind the AGHQ inner marginal carries one
+  # linear predictor, so it cannot express the zero-inflation mixture. Refused
+  # rather than run without the mixture, which would fit a different model.
+  if (use_core && has_zi) {
+    stop(caller, "(): `n_quad > 1` (the adaptive Gauss-Hermite inner marginal) ",
+         "does not carry a zero-inflation process -- its compiled per-group ",
+         "oracle has a single linear predictor. Use `n_quad = 1` (the ",
+         "joint-field Laplace inner solve), which does.", call. = FALSE)
+  }
+
   # cpp_glmm_oracle_make() takes no offset, so the AGHQ inner marginal cannot
   # carry one. Silently dropping it would fit a different model; say so instead.
   if (use_core && !is.null(offset) && any(offset != 0)) {
@@ -564,6 +588,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi_, return_hessian = FALSE,
         beta_prior = beta_prior, offset = offset,
+        X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       )$log_marginal,
       error = function(e) -Inf
@@ -574,14 +599,19 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # Inner solve that also keeps the joint posterior precision, which the exact
   # gradient differentiates through. Separate from inner_logmarg because the
   # extra factor costs memory the objective-only path has no use for.
+  # `return_hessian = FALSE`: the exact gradient reads H_joint and the mode, not
+  # the marginal fixed-effect block, and this runs at every trial theta the
+  # optimizer visits -- including extremes where the Schur legitimately declines
+  # and would warn about a fit nobody reports.
   inner_fit_grad <- function(L_list, phi_ = phi) {
     tryCatch(
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi_, return_hessian = TRUE,
+        family = family, phi = phi_, return_hessian = FALSE,
         return_joint_hessian = TRUE,
         beta_prior = beta_prior, offset = offset,
+        X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       ),
       error = function(e) NULL
@@ -598,6 +628,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi_, return_hessian = TRUE,
         beta_prior = beta_prior, offset = offset,
+        X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
       ),
       error = function(e) NULL
@@ -605,7 +636,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   }
 
   # --- pilot init: method-of-moments per block from a Sigma = I fit ----------
-  p_fix  <- ncol(X)
+  p_fix   <- ncol(X)
+  p_fixed <- p_fix + p_zi
   L0_list <- lapply(layout, function(bl) diag(bl$nc))
   pilot <- tryCatch(
     tulpa_laplace(
@@ -613,13 +645,17 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
       re_list = .re_cov_build_re_list(L0_list, layout),
       family = family, phi = phi, return_hessian = FALSE,
       beta_prior = beta_prior, offset = offset,
+      X_zi = X_zi, zi_prior_sd = zi_prior_sd,
       max_iter = max_iter, tol = tol, n_threads = n_threads
     ),
     error = function(e) NULL
   )
   L_init_list <- L0_list
   if (!is.null(pilot) && !is.null(pilot$mode)) {
-    re_vals <- pilot$mode[-seq_len(p_fix)]
+    # Skip the WHOLE fixed prefix: with zero inflation the mode carries
+    # beta_zi between the count coefficients and the random effects, and
+    # reading it as random-effect values would seed the search from garbage.
+    re_vals <- pilot$mode[-seq_len(p_fixed)]
     pos <- 0L
     for (m in seq_along(layout)) {
       bl  <- layout[[m]]
@@ -766,7 +802,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # between two objectives.
   use_exact_grad <- !use_core &&
     isTRUE(tryCatch(cpp_family_has_curvature_derivative(family),
-                    error = function(e) FALSE))
+                    error = function(e) FALSE)) &&
+    (!has_zi || .laplace_exact_supports_zi(family))
 
   # Estimating the dispersion is defined by the exact gradient carrying a
   # log-phi coordinate. Without that gradient the fallbacks would search the
@@ -778,6 +815,18 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
          "The dispersion would otherwise be searched derivative-free, which ",
          "is a different method than the one this argument selects.",
          call. = FALSE)
+  }
+  # The gradient's dispersion coordinate reads .family_dphi(), the BASE
+  # family's phi derivatives. A mixture's y = 0 branch carries its own phi
+  # dependence through P(Y = 0), so estimating the dispersion under zero
+  # inflation would maximize a different objective than the one being reported.
+  if (isTRUE(estimate_phi) && has_zi) {
+    stop(caller, "(): `estimate_phi = TRUE` is not available alongside a ",
+         "zero-inflation process. The dispersion derivative registered for '",
+         family, "' is the base family's; the mixture's zero branch depends ",
+         "on phi through P(Y = 0) as well, so the two describe different ",
+         "objectives. Condition on `phi`, or profile it by refitting over a ",
+         "grid.", call. = FALSE)
   }
 
   # The hyperprior is a closed form in theta with no inner solve behind it, so
@@ -845,7 +894,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         # either: the gradient must describe the model the inner solve fitted,
         # not a differently-parameterized one.
         phi = sp$phi, phi2 = NA_real_, want_jacobian = want_jacobian,
-        want_hessian = want_hessian,
+        want_hessian = want_hessian, X_zi = X_zi,
         # Appends the log-phi coordinate, so the returned gradient is stacked in
         # the same order as theta.
         want_phi = !is.na(phi_idx)
@@ -1081,6 +1130,11 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # estimate; `phi` stays the value the caller supplied, which is the start.
   sp_hat <- theta_split(theta_hat)
   list(layout = layout, k = k, n_trials = n_trials, X = X, p_fix = p_fix,
+       # The count block and the whole fixed prefix. They differ only under
+       # zero inflation, where the mode is [beta | beta_zi | RE]; callers that
+       # slice the mode or name the fixed effects want `p_fixed`, while the
+       # AGHQ profile optimizes over the count block alone.
+       X_zi = X_zi, p_zi = p_zi, p_fixed = p_fixed,
        log_prior_theta = log_prior_theta,
        inner_logmarg = inner_logmarg, inner_fit = inner_fit,
        exact_grad_at = exact_grad_at,
@@ -1255,6 +1309,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 prior_sigma = c(3, 0.05), eta = 2,
                                 log_prior_theta = NULL,
                                 beta_prior = NULL, offset = NULL, n_quad = 1L,
+                                X_zi = NULL, zi_prior_sd = 2.5,
                                 control = list()) {
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
@@ -1282,13 +1337,16 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     max_iter = max_iter, tol = tol, n_threads = n_threads,
     caller = "tulpa_re_cov_nested", need_scale = TRUE,
     outer_maxit = as.integer(control$outer_maxit %||% 500L),
-    offset = offset)
+    offset = offset, X_zi = X_zi, zi_prior_sd = zi_prior_sd)
 
   layout          <- core$layout
   k               <- core$k
   n_trials        <- core$n_trials
   X               <- core$X
-  p_fix           <- core$p_fix
+  # The whole fixed prefix of each node's mode: [beta | beta_zi] under zero
+  # inflation, [beta] otherwise. Every node's H_beta is that size too, so the
+  # per-node covariance and the draw synthesis follow from this one number.
+  p_fix           <- core$p_fixed
   log_prior_theta <- core$log_prior_theta
   inner_logmarg   <- core$inner_logmarg
   inner_fit       <- core$inner_fit
@@ -1379,7 +1437,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   map <- .re_cov_map_summary(theta_hat, layout)
 
   # --- fixed-effect posterior from the node mixture -------------------------
-  beta_names <- colnames(X) %||% paste0("beta", seq_len(p_fix))
+  beta_names <- c(colnames(X) %||% paste0("beta", seq_len(core$p_fix)),
+                  if (core$p_zi > 0L)
+                    colnames(core$X_zi) %||% paste0("zi_", seq_len(core$p_zi)))
   ds <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
                                   as.integer(n_draws), beta_names)
   draws <- ds$draws

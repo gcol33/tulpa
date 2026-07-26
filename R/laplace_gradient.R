@@ -86,6 +86,110 @@
 }
 
 
+# The count predictor's design in the latent column order the kernel builds,
+# [X | 0 | Z]. A zero-inflation process appends its coefficients to the fixed
+# block -- laplace_core.cpp lays the mode out as [beta | beta_zi | RE] -- but
+# they move a SECOND linear predictor, so their columns are zero in the count
+# predictor's image. The random effects enter the count predictor only, which is
+# what `data.sharing.re[1] = false` sets on the kernel side.
+.laplace_count_design <- function(X, X_zi, re_list, n_obs) {
+  parts <- list(Matrix::Matrix(X, sparse = TRUE))
+  if (!is.null(X_zi)) {
+    parts[[length(parts) + 1L]] <-
+      Matrix::Matrix(0, nrow = n_obs, ncol = ncol(X_zi), sparse = TRUE)
+  }
+  Z <- .re_design_matrix(re_list, n_obs)
+  if (!is.null(Z)) parts[[length(parts) + 1L]] <- Z
+  do.call(cbind, parts)
+}
+
+
+# W_obs - w per observation: what the kernel's working-weight curvature is
+# missing to be the observed one. Identically zero for every family whose Newton
+# weight already IS the observed curvature, and non-zero only for
+# neg_binomial_1 and truncated_neg_binomial_2.
+#
+# With a zero-inflation process it applies at y != 0 only. The mixture is
+# additively separable there, so its count block is the base family's working
+# weight (builtin_family_zi.h:136); the y = 0 branch already differentiates the
+# density itself through obs_grad_hess_for_family (:168), so correcting it again
+# would double-count. Returns NULL rather than a non-finite vector.
+.laplace_obs_delta <- function(y, n_trials, eta, family, phi, phi2 = NULL,
+                               weights = NULL, has_zi = FALSE) {
+  delta <- tryCatch(
+    cpp_family_obs_curvature_delta_vec(
+      as.numeric(y), as.integer(n_trials), as.numeric(eta),
+      family, phi, phi2 %||% NA_real_),
+    error = function(e) NULL)
+  if (is.null(delta)) return(NULL)
+  if (isTRUE(has_zi)) delta[y == 0] <- 0
+  if (!is.null(weights)) delta <- delta * as.numeric(weights)
+  if (any(!is.finite(delta))) return(NULL)
+  delta
+}
+
+
+# Marginal fixed-effect precision from the kernel's joint curvature.
+#
+# The joint Hessian is the negative-log-POSTERIOR curvature over the whole
+# latent vector -- priors and the random-effect penalty included -- so the
+# marginal precision on the fixed block is its Schur complement over the random
+# effects, with no separate penalty to add back. Two things make this the only
+# route rather than one of two: it is exact where a hand-assembled X'WX built
+# from the Fisher weight is not (1.8% on neg_binomial_2), and it carries the
+# zero-inflation process, which a single-predictor assembly cannot express.
+#
+# `p_fixed` counts BOTH fixed blocks, so the returned precision is
+# (p + p_zi) square and lines up with the [beta | beta_zi] prefix that coef(),
+# vcov() and confint() slice.
+.laplace_marginal_H_fixed <- function(H_joint, mode, y, n_trials, X, X_zi,
+                                      re_list, family, phi, phi2 = NULL,
+                                      weights = NULL, offset = NULL) {
+  if (is.null(H_joint) || is.null(mode)) return(NULL)
+  n_obs   <- length(y)
+  p_fixed <- ncol(X) + (if (is.null(X_zi)) 0L else ncol(X_zi))
+  n_x     <- nrow(H_joint)
+  if (length(mode) != n_x || p_fixed > n_x) return(NULL)
+
+  # The count design has to span the whole latent vector, or the observed-weight
+  # correction below cannot be formed. Refused rather than skipped: for the two
+  # families whose working weight is not the observed curvature, skipping it
+  # silently returns a precision that is wrong by a percent.
+  H <- H_joint
+  A <- .laplace_count_design(X, X_zi, re_list, n_obs)
+  if (ncol(A) != n_x) return(NULL)
+  eta <- as.numeric(A %*% mode) + (offset %||% 0)
+  delta <- .laplace_obs_delta(y, n_trials, eta, family, phi, phi2,
+                              weights, has_zi = !is.null(X_zi))
+  if (is.null(delta)) return(NULL)
+  if (max(abs(delta)) > 1e-12) {
+    H <- H + Matrix::crossprod(A, Matrix::Diagonal(x = delta) %*% A)
+  }
+
+  idx <- seq_len(p_fixed)
+  if (p_fixed == n_x) return(as.matrix(H))
+  B <- H[idx, -idx, drop = FALSE]
+  D <- H[-idx, -idx, drop = FALSE]
+  mid <- tryCatch(Matrix::solve(D, Matrix::t(B)), error = function(e) NULL)
+  if (is.null(mid)) return(NULL)
+  out <- as.matrix(H[idx, idx, drop = FALSE] - B %*% mid)
+  if (any(!is.finite(out))) return(NULL)
+  (out + t(out)) / 2
+}
+
+
+# Whether the exact outer gradient covers a zero-inflation process for this
+# family. The gradient differentiates log|H| through dW/dtheta, so with two
+# linear predictors it needs the eta-derivative of the MIXTURE's count-block
+# curvature, not the base family's. The gate is separate from
+# has_curvature_derivative() because a family can have the single-process
+# derivative and not the mixture one.
+.laplace_exact_supports_zi <- function(family) {
+  isTRUE(tryCatch(cpp_family_has_zi_curvature_derivative(family),
+                  error = function(e) FALSE))
+}
+
+
 # First derivatives dL/dtheta_p for one block, in the coordinate order of
 # .re_cov_theta_to_L_list: for a diagonal block, log sigma_i (i = 1..nc); for a
 # full block, the column-major lower triangle with log L_ii on the diagonal and
@@ -155,22 +259,35 @@
 # unusable: no joint Hessian, a singular H or Sigma, a family without an exact
 # curvature derivative, or a layout that does not line up with the mode.
 .laplace_exact_core <- function(fit, y, X, n_trials, offset, weights,
-                                re_list, layout, L_list, family, phi, phi2) {
+                                re_list, layout, L_list, family, phi, phi2,
+                                X_zi = NULL) {
   H <- fit$H_joint
   x <- fit$mode
   if (is.null(H) || is.null(x)) return(NULL)
   if (!isTRUE(cpp_family_has_curvature_derivative(family))) return(NULL)
+  has_zi <- !is.null(X_zi)
+  if (has_zi && !.laplace_exact_supports_zi(family)) return(NULL)
 
-  n_obs <- length(y)
-  p_fix <- ncol(X)
-  n_x   <- length(x)
+  n_obs   <- length(y)
+  p_fix   <- ncol(X)
+  p_zi    <- if (has_zi) ncol(X_zi) else 0L
+  p_fixed <- p_fix + p_zi
+  n_x     <- length(x)
   Z <- .re_design_matrix(re_list, n_obs)
   if (is.null(Z)) return(NULL)
-  A <- cbind(Matrix::Matrix(X, sparse = TRUE), Z)
+  # A is the COUNT predictor's design. With zero inflation the latent vector
+  # also carries beta_zi, whose columns are zero here and carry the second
+  # predictor in A_zi instead.
+  A <- .laplace_count_design(X, X_zi, re_list, n_obs)
   if (ncol(A) != n_x) return(NULL)
+  A_zi <- if (!has_zi) NULL else cbind(
+    Matrix::Matrix(0, nrow = n_obs, ncol = p_fix, sparse = TRUE),
+    Matrix::Matrix(X_zi, sparse = TRUE),
+    Matrix::Matrix(0, nrow = n_obs, ncol = n_x - p_fixed, sparse = TRUE))
 
   eta <- as.numeric(A %*% x)
   if (!is.null(offset)) eta <- eta + as.numeric(offset)
+  z_lin <- if (has_zi) as.numeric(A_zi %*% x) else NULL
 
   # H^-1 in full. The alternative is one back-solve per observation for s and
   # per group for V; at n_x below a few thousand the explicit inverse is the
@@ -186,14 +303,21 @@
   # be formed exactly and the caller differences the mode instead. Everything
   # else in the gradient/Hessian reads H_joint, since the objective's log|H| is
   # the working-weight one -- only the mode motion uses this inverse.
+  # The correction rides the COUNT predictor: it is the base family's weight
+  # that the mixture's y != 0 branch carries, and the y = 0 branch already uses
+  # the observed form (.laplace_obs_delta zeroes it there).
   exact_jac <- isTRUE(cpp_family_has_exact_mode_jacobian(family))
   Hinv_mode <- Hinv
+  # Whether the Newton working weight already IS the observed curvature. False
+  # only for neg_binomial_1 and truncated_neg_binomial_2, and read off the
+  # delta rather than a second hand-kept family list.
+  working_is_observed <- TRUE
   if (exact_jac) {
-    delta <- cpp_family_obs_curvature_delta_vec(as.numeric(y), as.integer(n_trials),
-                                                eta, family, phi, phi2)
-    if (!is.null(weights)) delta <- delta * as.numeric(weights)
-    if (any(!is.finite(delta))) return(NULL)
+    delta <- .laplace_obs_delta(y, n_trials, eta, family, phi, phi2, weights,
+                                has_zi = has_zi)
+    if (is.null(delta)) return(NULL)
     if (max(abs(delta)) > 1e-12) {
+      working_is_observed <- FALSE
       H_true <- H + Matrix::crossprod(A, Matrix::Diagonal(x = delta) %*% A)
       Hinv_mode <- tryCatch(as.matrix(Matrix::solve(H_true)), error = function(e) NULL)
       if (is.null(Hinv_mode) || any(!is.finite(Hinv_mode))) {
@@ -202,23 +326,64 @@
     }
   }
 
-  dw <- cpp_family_curvature_deta_vec(as.numeric(y), as.integer(n_trials),
-                                      eta, family, phi, phi2)
-  if (!is.null(weights)) dw <- dw * as.numeric(weights)
-  if (any(!is.finite(dw))) return(NULL)
-
-  # s_i = (A H^-1 A')_ii, the posterior variance of the linear predictor.
+  # s_i = (A H^-1 A')_ii, the posterior variance of the linear predictor. With
+  # two predictors the dW channel needs the full 2 x 2 predictor covariance --
+  # the variance of z and their covariance as well.
   AH <- as.matrix(A %*% Hinv)
   s  <- rowSums(AH * as.matrix(A))
+  s_zz <- if (!has_zi) NULL else
+    rowSums(as.matrix(A_zi %*% Hinv) * as.matrix(A_zi))
+  s_ez <- if (!has_zi) NULL else rowSums(AH * as.matrix(A_zi))
+
+  # The dW/dtheta channel. tr(H^-1 dH_W) contracts each curvature partial
+  # against the matching predictor (co)variance, and what multiplies the mode
+  # motion is
+  #
+  #   q_eta = dW_ee/deta s_ee + 2 dW_ez/deta s_ez + dW_zz/deta s_zz
+  #   q_z   = dW_ee/dz   s_ee + 2 dW_ez/dz   s_ez + dW_zz/dz   s_zz
+  #
+  # so v_r = A' q_eta + A_zi' q_z. Without zero inflation W is the scalar
+  # count-block weight, q_eta collapses to dw * s and the second term is absent
+  # -- the one-process formula is this one with an empty A_zi.
+  wt_vec <- if (is.null(weights)) NULL else as.numeric(weights)
+  if (!has_zi) {
+    dw <- cpp_family_curvature_deta_vec(as.numeric(y), as.integer(n_trials),
+                                        eta, family, phi, phi2)
+    if (!is.null(wt_vec)) dw <- dw * wt_vec
+    if (any(!is.finite(dw))) return(NULL)
+    q_eta <- dw * s
+    q_z   <- NULL
+  } else {
+    dW <- tryCatch(
+      cpp_zi_mixture_curvature_deriv(as.numeric(y), as.integer(n_trials),
+                                     eta, z_lin, family, phi, phi2),
+      error = function(e) NULL)
+    if (is.null(dW) || any(!is.finite(dW))) return(NULL)
+    if (!is.null(wt_vec)) dW <- dW * wt_vec
+    # Kept under the one-process name so the Hessian's du/dtheta and the phi
+    # block read the count-block derivative by the same handle either way.
+    dw    <- dW[, "dWee_deta"]
+    q_eta <- dw * s + 2 * dW[, "dWez_deta"] * s_ez + dW[, "dWzz_deta"] * s_zz
+    q_z   <- dW[, "dWee_dz"] * s + 2 * dW[, "dWez_dz"] * s_ez +
+             dW[, "dWzz_dz"] * s_zz
+  }
 
   # One solve carries the whole dW/dtheta channel, independently of how many
-  # hyperparameter coordinates there are. v_r = A' (dw * s) is kept for the
-  # Hessian's du/dtheta, where it is the vector u differentiates.
-  v_r <- as.numeric(Matrix::crossprod(A, dw * s))
-  u   <- as.numeric(Hinv %*% v_r)
+  # hyperparameter coordinates there are. v_r is kept for the Hessian's
+  # du/dtheta, where it is the vector u differentiates.
+  #
+  # Hinv_mode, not Hinv. This channel is v_r' (dx_hat/dtheta), and the mode
+  # motion follows the TRUE stationarity condition, so it is governed by the
+  # observed curvature -- the same inverse the mode Jacobian uses. The two
+  # coincide wherever the working weight is the observed one, which is why a
+  # poisson or gaussian check cannot see the difference; on
+  # truncated_neg_binomial_2 they differ by ~9% and the gradient was off ~0.8%.
+  v_r <- as.numeric(Matrix::crossprod(A, q_eta))
+  if (has_zi) v_r <- v_r + as.numeric(Matrix::crossprod(A_zi, q_z))
+  u   <- as.numeric(Hinv_mode %*% v_r)
 
   blocks <- vector("list", length(layout))
-  pos <- p_fix
+  pos <- p_fixed
   for (m in seq_along(layout)) {
     bl <- layout[[m]]
     nc <- bl$nc
@@ -259,9 +424,11 @@
                         Lm = Lm, Om = Om, M0 = M0, Smat = Smat)
   }
 
-  list(A = A, n_x = n_x, p_fix = p_fix, n_obs = n_obs, Hinv = Hinv, x = x,
-       eta = eta, dw = dw, s = s, u = u, v_r = v_r, blocks = blocks,
-       Hinv_mode = Hinv_mode, exact_jac = exact_jac)
+  list(A = A, n_x = n_x, p_fix = p_fix, p_fixed = p_fixed, n_obs = n_obs,
+       Hinv = Hinv, x = x, eta = eta, dw = dw, s = s, u = u, v_r = v_r,
+       blocks = blocks, Hinv_mode = Hinv_mode, exact_jac = exact_jac,
+       working_is_observed = working_is_observed,
+       has_zi = has_zi, A_zi = A_zi, z_lin = z_lin, s_zz = s_zz, s_ez = s_ez)
 }
 
 
@@ -462,10 +629,18 @@
 .laplace_exact_re_grad <- function(fit, y, X, n_trials, offset, weights,
                                    re_list, layout, L_list, family, phi,
                                    phi2 = NA_real_, want_jacobian = FALSE,
-                                   want_hessian = FALSE, want_phi = FALSE) {
+                                   want_hessian = FALSE, want_phi = FALSE,
+                                   X_zi = NULL) {
   cq <- .laplace_exact_core(fit, y, X, n_trials, offset, weights,
-                            re_list, layout, L_list, family, phi, phi2)
+                            re_list, layout, L_list, family, phi, phi2,
+                            X_zi = X_zi)
   if (is.null(cq)) return(NULL)
+  # The dispersion block reads .family_dphi(), which registers the BASE family's
+  # phi derivatives. Under a mixture the y = 0 branch carries its own phi
+  # dependence through P(Y = 0), so those derivatives describe a different
+  # objective. Decline rather than return a plausible wrong number; the caller
+  # refuses `estimate_phi` on this path.
+  if (isTRUE(cq$has_zi) && isTRUE(want_phi)) return(NULL)
   A <- cq$A; Hinv <- cq$Hinv; x <- cq$x; n_x <- cq$n_x
   Hinv_mode <- cq$Hinv_mode
   s <- cq$s; dw <- cq$dw; eta <- cq$eta; n_obs <- cq$n_obs
@@ -567,8 +742,20 @@
   # is estimated but has no second-order block, the phi row/column cannot be
   # formed closed either, so H is left NULL and the caller differences the
   # gradient (which carries the phi row) instead.
+  # The closed Hessian differentiates the curvature once more, which under a
+  # mixture means the SECOND derivatives of the 2 x 2 block -- eighteen fields
+  # rather than six, and not registered. The gradient and J stay exact, so the
+  # caller central-differences this exact gradient (2k gradient evaluations)
+  # instead of falling all the way back to re-solving the objective (1 + 2k^2).
+  #
+  # It also needs the working weight to BE the observed curvature. Its
+  # du/dtheta differentiates u through Hinv, while u itself is formed on
+  # Hinv_mode; where the two inverses differ (neg_binomial_1,
+  # truncated_neg_binomial_2) that pairing is inconsistent, so those families
+  # take the same gradient stencil.
   Hmat <- NULL
-  if (isTRUE(want_hessian) &&
+  if (isTRUE(want_hessian) && !isTRUE(cq$has_zi) &&
+      isTRUE(cq$working_is_observed) &&
       isTRUE(cpp_family_has_curvature_2nd_derivative(family)) &&
       !(isTRUE(want_phi) && is.null(phi_block$dphi2))) {
     Hmat <- .laplace_exact_re_hess(cq, y, n_trials, family, phi, phi2, weights,

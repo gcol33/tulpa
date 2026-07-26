@@ -17,6 +17,8 @@ tulpa_re_cov_nested(
   beta_prior = NULL,
   offset = NULL,
   n_quad = 1L,
+  X_zi = NULL,
+  zi_prior_sd = 2.5,
   control = list()
 )
 }

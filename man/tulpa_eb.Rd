@@ -19,6 +19,8 @@ tulpa_eb(
   n_quad = 1L,
   marginal = FALSE,
   estimate_phi = FALSE,
+  X_zi = NULL,
+  zi_prior_sd = 2.5,
   control = list()
 )
 }
@@ -82,6 +84,21 @@ elsewhere rather than approximated: \code{poisson} and \code{binomial} have no f
 dispersion at all, and for the remaining families the derivative is not
 registered (see \code{R/family_dispersion.R} for why \code{beta} in particular is
 held back). Needs \code{n_quad = 1}.}
+
+\item{X_zi}{Optional zero-inflation design matrix (\code{length(y)} rows), making
+the model a two-process mixture: each observation is a structural zero with
+probability \verb{plogis(X_zi beta_zi)} and otherwise follows \code{family}. Paired
+with a zero-truncated family it is the hurdle model. The random effects
+enter the count predictor only, and the maximization is over the same
+covariance coordinates -- the mixture changes the inner solve, not the
+outer objective's parameters. The ZI coefficients are reported alongside
+the count ones in \code{coef()} / \code{vcov()}, so the fixed block is
+\code{ncol(X) + ncol(X_zi)} wide. Needs \code{n_quad = 1}: the adaptive
+Gauss-Hermite inner marginal runs through a single-predictor oracle.}
+
+\item{zi_prior_sd}{Prior SD on \code{beta_zi}, keeping the logit identified where
+a level carries no zeros (the likelihood alone would send it to \code{-Inf}).
+Ignored when \code{X_zi} is \code{NULL}.}
 
 \item{control}{A named list of numerical knobs: \code{max_iter}, \code{tol},
 \code{n_threads} (inner-solve controls, see \code{\link[=tulpa_laplace]{tulpa_laplace()}}), and
