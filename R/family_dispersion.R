@@ -73,6 +73,59 @@
     }
   ),
 
+  # phi = size, conditioned on y >= 1. The density is the neg_binomial_2 one
+  # minus log P(Y > 0), so each derivative is the untruncated entry above plus
+  # the phi-derivative of that retained-mass term. Writing
+  #
+  #   S = phi + mu,  a = phi log1p(mu/phi),  q = e^-a = P(Y = 0),  p = 1 - q
+  #   a_phi = da/dphi = log1p(mu/phi) - mu/S,   so   dp/dphi = q a_phi
+  #
+  # gives -d log p / dphi = -q a_phi / p for the density, and the score and
+  # weight follow from the registry's own closed forms rather than from the
+  # untruncated ones plus a correction -- `score` is phi (y - mu/p) / S and
+  # `weight` is w0 (1 - q w0) with w0 = phi mu / (p S), and differentiating
+  # those directly is shorter than assembling the two pieces.
+  #
+  # The weight differentiated here is the EXPECTED one, Var(y | y > 0). That is
+  # deliberate and is the same rule the neg_binomial_2 note above states from
+  # the other side: differentiate whatever weight the Newton solve builds H
+  # from, because log|H| is what the outer objective carries. For this family
+  # that is the expected form (laplace_family_link.h:368), chosen there because
+  # it is positive for every mu; the observed curvature lives in `obs_weight`
+  # and drives the mode motion instead, through Hinv_mode.
+  truncated_neg_binomial_2 = list(
+    dloglik = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      S  <- phi + mu
+      a  <- phi * log1p(mu / phi)
+      q  <- exp(-a)
+      p  <- -expm1(-a)
+      a_phi <- log1p(mu / phi) - mu / S
+      digamma(y + phi) - digamma(phi) + log(phi) - log(S) + 1 - (phi + y) / S -
+        q * a_phi / p
+    },
+    dscore = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      S  <- phi + mu
+      a  <- phi * log1p(mu / phi)
+      q  <- exp(-a)
+      p  <- -expm1(-a)
+      a_phi <- log1p(mu / phi) - mu / S
+      mu * (y - mu / p) / S^2 + phi * mu * q * a_phi / (S * p^2)
+    },
+    dweight = function(eta, y, n_trials, phi) {
+      mu <- .mean_log(eta)
+      S  <- phi + mu
+      a  <- phi * log1p(mu / phi)
+      q  <- exp(-a)
+      p  <- -expm1(-a)
+      a_phi <- log1p(mu / phi) - mu / S
+      w0  <- phi * mu / (p * S)
+      dw0 <- mu * (p * S - phi * (q * a_phi * S + p)) / (p * S)^2
+      dw0 * (1 - 2 * q * w0) + q * a_phi * w0^2
+    }
+  ),
+
   # phi = residual VARIANCE (the R-side convention; the compiled kernels take
   # the SD and are handed sqrt(phi) at the boundary).
   gaussian = list(

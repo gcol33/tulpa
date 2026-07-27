@@ -69,10 +69,14 @@ test_that("tulpa(mode = 'ess'/'hmc') fits a fixed-effect GLM end to end", {
 test_that("correlated random slopes: logpost path works, Laplace path integrates Sigma", {
   skip_if_not_slow()
   d <- make_pois_re(seed = 2)
-  # logpost path handles slopes (builder is general)
-  fit <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "mala",
-               sigma_re = 0.5, control = list(n_iter = 300L, warmup = 150L))
-  expect_equal(fit$backend, "mala")
+  # A correlated term has no scalar sigma_re to condition on, so the sampler
+  # modes redirect to the Metropolis-within-Gibbs debias exactly as the
+  # deterministic mode redirects to the nested integrator; `sigma_re` is then
+  # unused and warns.
+  fit <- suppressWarnings(
+    tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "mala",
+          sigma_re = 0.5, control = list(n_iter = 300L, warmup = 150L)))
+  expect_equal(fit$backend, "re_cov_gibbs")
   # Laplace path now routes a single correlated `(1 + x | g)` term to the
   # nested-Laplace Sigma integrator (no scalar sigma_re to condition on).
   fit2 <- tulpa(y ~ x + (1 + x | g), d, family = "poisson", mode = "laplace",

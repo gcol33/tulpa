@@ -157,3 +157,19 @@ test_that("an unparseable family still errors, and the message names the links",
   expect_error(.family_or_stop("tweedie_inverse"), "Unknown family")
   expect_error(.family_or_stop("not_a_family"), "1mu2")
 })
+
+test_that("a hurdle spelling is answered with the composition, not the registry", {
+  # There is no hurdle family to alias to -- the mixture over a zero-truncated
+  # base IS the hurdle likelihood -- so the useful answer is which two pieces to
+  # combine, not the list of everything else on offer.
+  base_of <- c(hurdle_poisson = "truncated_poisson",
+               hurdle_nbinom2 = "truncated_neg_binomial_2")
+  for (nm in names(base_of)) {
+    msg <- tryCatch(.family_or_stop(nm), error = conditionMessage)
+    expect_match(msg, "ziformula", info = nm)
+    expect_match(msg, base_of[[nm]], fixed = TRUE, info = nm)
+    # The generic branch must not be the one that fires: dumping the registry
+    # here would answer a question the caller did not ask.
+    expect_false(grepl("Unknown family", msg), info = nm)
+  }
+})

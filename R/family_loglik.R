@@ -906,6 +906,18 @@ family_names <- function() names(.FAMILY_OPS)
   family
 }
 
+# A hurdle is a composition here, not a family: the zero-inflation mixture over
+# a zero-truncated base degenerates exactly to the two-part likelihood
+# (family_zi.R:13-16), so there is no `hurdle_*` entry to alias to. Naming one is
+# still the natural thing to reach for, so it gets the composition rather than
+# the generic list of everything the registry does have.
+.HURDLE_SPELLINGS <- c(
+  hurdle_poisson  = "truncated_poisson",
+  hurdle_nbinom2  = "truncated_neg_binomial_2",
+  hurdle_negbin   = "truncated_neg_binomial_2",
+  hurdle_nb2      = "truncated_neg_binomial_2"
+)
+
 # Validate a family identifier against the registry (the one unknown-family
 # error, shared by every front door); returns the identifier invisibly.
 #' @keywords internal
@@ -913,10 +925,19 @@ family_names <- function() names(.FAMILY_OPS)
   ok <- is.character(family) && length(family) == 1L &&
     (!is.null(.FAMILY_OPS[[family]]) || !is.null(.linked_family_ops(family)))
   if (!ok) {
+    nm <- as.character(family)[1L]
+    base <- unname(.HURDLE_SPELLINGS[nm])
+    if (length(base) == 1L && !is.na(base)) {
+      stop(sprintf(paste0(
+        "Family '%s' is written as a composition here: family = '%s' with a ",
+        "`ziformula`. The zero-inflation mixture over a zero-truncated base ",
+        "degenerates exactly to the hurdle likelihood, so there is no separate ",
+        "hurdle family to select."), nm, base), call. = FALSE)
+    }
     stop(sprintf(paste0(
       "Unknown family '%s'. Supported: %s. A non-canonical link is written as ",
       "'<family>_<link>' (links: %s); %s take one."),
-      as.character(family)[1L],
+      nm,
       paste(family_names(), collapse = ", "),
       paste(link_names(), collapse = ", "),
       paste(names(.LINK_DEFAULTS), collapse = ", ")

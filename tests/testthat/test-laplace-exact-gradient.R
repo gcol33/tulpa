@@ -164,45 +164,85 @@ test_that("the closed-form Hessian matches for a correlated block", {
   expect_equal(r$analytic, r$fd, tolerance = 1e-5)
 })
 
-test_that("the closed Hessian declines where the working weight differs from observed", {
-  # neg_binomial_1 and truncated_neg_binomial_2 build H from a working weight
-  # that is NOT the observed curvature. The gradient's dW channel is
-  # v_r' (dx_hat/dtheta), and the mode motion follows the TRUE stationarity
-  # condition, so u is formed on the observed-curvature inverse Hinv_mode. The
-  # closed Hessian's du/dtheta differentiates u through Hinv instead, which only
-  # matches where the two inverses coincide. Forced on for these two families it
-  # misses the exact H_theta by 2.6e-2 (nb1) and 2.7e-4 (tnb2), so it declines
-  # and the caller central-differences the exact gradient.
-  #
-  # Asserted as a refusal rather than skipped: a silent skip would let the route
-  # be re-enabled without anyone noticing it had gone back to being inexact.
-  for (cs in list(list(fam = "neg_binomial_1",          phi = 2.5),
-                  list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
-    d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)
-    layout <- .exg_layout(d, FALSE)
-    L0 <- .exg_theta_to_L(log(0.7), d$nc, FALSE)
-    fit <- tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X,
-                         re_list = .re_cov_build_re_list(list(L0), layout),
-                         family = d$fam, phi = cs$phi, return_hessian = FALSE,
+.exg_closed_H <- function(fam, phi, theta = log(0.7), G = 24L, per = 10L) {
+  d <- .exg_sim(fam = fam, G = G, per = per, phi = phi)
+  layout <- .exg_layout(d, FALSE)
+  at <- function(th, want_h) {
+    L0 <- .exg_theta_to_L(th, d$nc, FALSE)
+    rl <- .re_cov_build_re_list(list(L0), layout)
+    fit <- tulpa_laplace(y = d$y, n_trials = d$n_trials, X = d$X, re_list = rl,
+                         family = fam, phi = phi, return_hessian = FALSE,
                          return_joint_hessian = TRUE, max_iter = 300L,
                          tol = 1e-12)
-    r <- .laplace_exact_re_grad(
+    .laplace_exact_re_grad(
       fit = fit, y = d$y, X = d$X, n_trials = d$n_trials, offset = NULL,
-      weights = NULL, re_list = .re_cov_build_re_list(list(L0), layout),
-      layout = layout, L_list = list(L0), family = d$fam, phi = cs$phi,
-      want_jacobian = TRUE, want_hessian = TRUE)
-    expect_false(is.null(r), info = cs$fam)
-    # Gradient and mode Jacobian stay exact; only the Hessian returns NULL.
-    expect_true(all(is.finite(r$grad)), info = cs$fam)
-    expect_true(all(is.finite(r$J)), info = cs$fam)
-    expect_null(r$H, info = cs$fam)
+      weights = NULL, re_list = rl, layout = layout, L_list = list(L0),
+      family = fam, phi = phi, want_jacobian = want_h, want_hessian = want_h)
+  }
+  list(r = at(theta, TRUE), at = at, theta = theta)
+}
+
+test_that("the closed Hessian handles a working weight that is not the observed one", {
+  # truncated_neg_binomial_2 builds H from Var(y | y > 0), not from its observed
+  # curvature. The gradient's dW channel is v_r' (dx_hat/dtheta) and the mode
+  # motion follows the TRUE stationarity condition, so u is formed on the
+  # observed-curvature inverse Hinv_mode -- and differentiating it has to use
+  # that inverse too, through dH_true/dtheta. Differentiating through Hinv
+  # instead used to miss the exact H_theta by 2.7e-4 here, which is why the
+  # route declined; with d(W_obs - w)/deta registered it is exact and runs.
+  h <- .exg_closed_H("truncated_neg_binomial_2", 2.5)
+  expect_false(is.null(h$r$H))
+  step <- 1e-4
+  fd <- (h$at(h$theta + step, FALSE) - h$at(h$theta - step, FALSE)) / (2 * step)
+  expect_equal(as.numeric(h$r$H), as.numeric(fd), tolerance = 1e-5)
+})
+
+test_that("the closed Hessian handles neg_binomial_1", {
+  # The same split again. Its observed curvature is -s + r^2 (psi'(r) -
+  # psi'(y+r)), so d(W_obs - w)/deta carries psi'' -- which is why this route
+  # used to decline, missing H_theta by 2.6e-2 when forced on. With
+  # portable_tetragamma the correction is closed-form and the route is exact.
+  expect_true(
+    cpp_family_has_obs_curvature_delta_derivative("neg_binomial_1"))
+  h <- .exg_closed_H("neg_binomial_1", 2.5)
+  expect_false(is.null(h$r$H))
+  step <- 1e-4
+  fd <- (h$at(h$theta + step, FALSE) - h$at(h$theta - step, FALSE)) / (2 * step)
+  expect_equal(as.numeric(h$r$H), as.numeric(fd), tolerance = 1e-5)
+})
+
+test_that("the observed-curvature correction is exact at both derivative rungs", {
+  # What the two branches above rest on, checked directly rather than only
+  # through the assembled Hessian: d(W_obs - w)/deta against a difference of the
+  # correction itself, and -- for neg_binomial_1, the only family carrying a
+  # non-zero one at the next rung -- the same formula written over R's psigamma,
+  # which is what tests the portable polygamma series rather than the algebra
+  # wrapped around it.
+  eta <- seq(-1.2, 1.6, length.out = 12)
+  y   <- c(0, 1, 2, 3, 5, 8, 0, 2, 4, 1, 6, 3)
+  nt  <- rep(1L, length(eta))
+  h   <- 1e-5
+  for (phi in c(0.4, 1.3, 4.0)) {
+    got <- cpp_family_obs_curvature_delta_deta_vec(y, nt, eta,
+                                                   "neg_binomial_1", phi, NA_real_)
+    dl <- function(e) cpp_family_obs_curvature_delta_vec(y, nt, e,
+                                                         "neg_binomial_1", phi, NA_real_)
+    expect_equal(got, (dl(eta + h) - dl(eta - h)) / (2 * h), tolerance = 1e-6)
+
+    mu <- exp(eta); r <- mu / phi
+    s  <- r * (digamma(y + r) - digamma(r) - log1p(phi))
+    ref <- -s + 3 * r^2 * (trigamma(r) - trigamma(y + r)) +
+      r^3 * (psigamma(r, 2L) - psigamma(y + r, 2L)) - mu / (1 + phi)
+    expect_equal(got, ref, tolerance = 1e-7)
   }
 })
 
-test_that("H_theta from the gradient stencil is exact where the closed route declines", {
-  # What the declining families fall back to has to be right, or the refusal
-  # above just moves the error. The stencil differences the exact gradient, so
-  # it is checked against a second difference of the objective itself.
+test_that("H_theta from the gradient stencil agrees with the objective's curvature", {
+  # The stencil is what any family without a closed second-derivative route
+  # falls back to, so it has to be right on its own terms. Checked on the two
+  # families whose working weight is NOT the observed curvature -- the case that
+  # separates the two inverses, and the one where an error would hide -- against
+  # a second difference of the objective itself.
   for (cs in list(list(fam = "neg_binomial_1",          phi = 2.5),
                   list(fam = "truncated_neg_binomial_2", phi = 2.5))) {
     d <- .exg_sim(fam = cs$fam, G = 24L, per = 10L, phi = cs$phi)

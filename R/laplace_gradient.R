@@ -129,6 +129,83 @@
 }
 
 
+# d(W_obs - w)/deta, the eta-derivative of the correction above.
+#
+# The closed Hessian differentiates u, which is formed on the TRUE-curvature
+# inverse; that needs dH_true/dtheta = dH/dtheta + A' diag(this * eta_dot) A.
+# Masked and weighted exactly like the delta it differentiates, so the pair
+# cannot drift. Returns NULL where the derivative is not registered, which sends
+# the Hessian back to the stencil rather than pairing two different inverses.
+.laplace_obs_delta_deta <- function(y, n_trials, eta, family, phi, phi2 = NULL,
+                                    weights = NULL, has_zi = FALSE) {
+  if (!isTRUE(tryCatch(cpp_family_has_obs_curvature_delta_derivative(family),
+                       error = function(e) FALSE))) return(NULL)
+  dd <- tryCatch(
+    cpp_family_obs_curvature_delta_deta_vec(
+      as.numeric(y), as.integer(n_trials), as.numeric(eta),
+      family, phi, phi2 %||% NA_real_),
+    error = function(e) NULL)
+  if (is.null(dd)) return(NULL)
+  if (isTRUE(has_zi)) dd[y == 0] <- 0
+  if (!is.null(weights)) dd <- dd * as.numeric(weights)
+  if (any(!is.finite(dd))) return(NULL)
+  dd
+}
+
+
+# Per-observation dispersion derivatives of the likelihood the objective uses,
+# in ONE table whether or not a zero-inflation process is present.
+#
+# Two disjoint sources, summed over disjoint rows:
+#
+#  * the base family's registry (.FAMILY_DPHI / .FAMILY_DPHI2) covers every row
+#    the model leaves additively separable in the two predictors -- all rows
+#    without zero inflation, and the y != 0 rows with it;
+#  * the coupled y = 0 branch of a GENUINE mixture comes from the C++ engine
+#    (laplace_family_zi_phi.h), which returns zero everywhere the registry
+#    already applies, including a hurdle's y = 0 rows (phi-free there).
+#
+# `zmask` is what keeps the two from overlapping, and it is the only place the
+# hurdle / genuine-ZI distinction is expressed: a hurdle's y = 0 rows are zero on
+# BOTH sides, which is the statement that its zero branch carries no dispersion.
+#
+# The column set is the engine's, so a one-process fit simply leaves the six
+# z-direction columns at zero and every assembly downstream reads one shape.
+# Values are unweighted, as the registry returns them; `weights` are applied at
+# the point of use, matching how the curvature channel is handled.
+.laplace_phi_fields <- function(cq, y, n_trials, family, phi, phi2,
+                                dphi, dphi2 = NULL) {
+  eta  <- cq$eta
+  cols <- c("dl_dp", "dsc_e_dp", "dsc_z_dp", "dWee_dp", "dWez_dp", "dWzz_dp",
+            "dWee_dp_de", "dWee_dp_dz", "dWez_dp_dz", "dWzz_dp_dz",
+            "dl_dp2", "dsc_e_dp2", "dsc_z_dp2", "dWee_dp2", "dWez_dp2",
+            "dWzz_dp2")
+  PD <- matrix(0, length(y), length(cols), dimnames = list(NULL, cols))
+  zmask <- if (isTRUE(cq$has_zi)) as.numeric(y != 0) else rep(1, length(y))
+
+  PD[, "dl_dp"]    <- dphi$dloglik(eta, y, n_trials, phi) * zmask
+  PD[, "dsc_e_dp"] <- dphi$dscore(eta, y, n_trials, phi) * zmask
+  PD[, "dWee_dp"]  <- dphi$dweight(eta, y, n_trials, phi) * zmask
+  if (!is.null(dphi2)) {
+    PD[, "dl_dp2"]     <- dphi2$dloglik2(eta, y, n_trials, phi) * zmask
+    PD[, "dsc_e_dp2"]  <- dphi2$dscore2(eta, y, n_trials, phi) * zmask
+    PD[, "dWee_dp2"]   <- dphi2$dweight2(eta, y, n_trials, phi) * zmask
+    PD[, "dWee_dp_de"] <- dphi2$dweight_deta(eta, y, n_trials, phi) * zmask
+  }
+
+  if (isTRUE(cq$has_zi)) {
+    ZP <- tryCatch(
+      cpp_zi_mixture_phi_deriv(as.numeric(y), as.integer(n_trials), eta,
+                               cq$z_lin, family, phi, phi2 %||% NA_real_),
+      error = function(e) NULL)
+    if (is.null(ZP)) return(NULL)
+    PD <- PD + ZP[, cols, drop = FALSE]
+  }
+  if (any(!is.finite(PD))) return(NULL)
+  PD
+}
+
+
 # Marginal fixed-effect precision from the kernel's joint curvature.
 #
 # The joint Hessian is the negative-log-POSTERIOR curvature over the whole
@@ -346,6 +423,7 @@
   # count-block weight, q_eta collapses to dw * s and the second term is absent
   # -- the one-process formula is this one with an empty A_zi.
   wt_vec <- if (is.null(weights)) NULL else as.numeric(weights)
+  dW <- NULL
   if (!has_zi) {
     dw <- cpp_family_curvature_deta_vec(as.numeric(y), as.integer(n_trials),
                                         eta, family, phi, phi2)
@@ -428,6 +506,12 @@
        Hinv = Hinv, x = x, eta = eta, dw = dw, s = s, u = u, v_r = v_r,
        blocks = blocks, Hinv_mode = Hinv_mode, exact_jac = exact_jac,
        working_is_observed = working_is_observed,
+       # q_eta / q_z are what any mode motion contracts against, whatever moved
+       # the mode. The RE coordinates reach them through v_r; the dispersion
+       # coordinate reads them directly, so the two-process channel is written
+       # once rather than once per coordinate kind. `dW` is the raw six-column
+       # block the Hessian differentiates a second time.
+       q_eta = q_eta, q_z = q_z, dW = dW,
        has_zi = has_zi, A_zi = A_zi, z_lin = z_lin, s_zz = s_zz, s_ez = s_ez)
 }
 
@@ -447,6 +531,14 @@
 # gradient once more. Without it the matrix is the RE block alone, the shape the
 # fixed-dispersion path expects.
 #
+# With a zero-inflation process the same assembly runs over the full 2 x 2
+# curvature block rather than one scalar weight: each coordinate's mode motion
+# moves the zero predictor as well as the count predictor, so every entry of the
+# block moves through both, dH_k picks up the cross and zero blocks, and du_k a
+# matching A_zi' dq_z contribution. A hurdle is the case where the mixed
+# fourth-order fields vanish, and the same code covers it -- the terms multiply
+# by zero rather than being skipped.
+#
 # `dS_by_block` is the same per-block dSigma list the gradient's Jacobian uses,
 # passed in so the chain rule is formed once. Returns NULL on a non-finite
 # second curvature derivative.
@@ -457,10 +549,43 @@
   s <- cq$s; dwdeta <- cq$dw; u <- cq$u; v_r <- cq$v_r
   blocks <- cq$blocks; nb <- length(blocks)
 
-  d2w <- cpp_family_curvature_deta2_vec(as.numeric(y), as.integer(n_trials),
-                                        cq$eta, family, phi, phi2)
-  if (!is.null(weights)) d2w <- d2w * as.numeric(weights)
+  # The mixture's curvature block is -Hess(log density), so its second
+  # derivatives are the fourth derivatives of one scalar: five distinct values
+  # covering all nine second partials, indexed by how many derivatives are in
+  # eta. A hurdle zeroes the three mixed ones, which is what made the decoupled
+  # assembly enough for it; the coupled branch below is the general form and
+  # reduces to that one term by term.
+  has_zi  <- isTRUE(cq$has_zi)
+  A_zi    <- cq$A_zi
+  s_zz    <- cq$s_zz
+  s_ez    <- cq$s_ez
+  dW      <- cq$dW
+  if (!has_zi) {
+    d2w <- cpp_family_curvature_deta2_vec(as.numeric(y), as.integer(n_trials),
+                                          cq$eta, family, phi, phi2)
+    d4 <- NULL
+  } else {
+    d4 <- tryCatch(
+      cpp_zi_mixture_curvature_deriv2(as.numeric(y), as.integer(n_trials),
+                                      cq$eta, cq$z_lin, family, phi, phi2),
+      error = function(e) NULL)
+    if (is.null(d4) || any(!is.finite(d4))) return(NULL)
+    if (!is.null(weights)) d4 <- d4 * as.numeric(weights)
+    d2w <- d4[, "d4_e4"]
+  }
+  if (!has_zi && !is.null(weights)) d2w <- d2w * as.numeric(weights)
   if (any(!is.finite(d2w))) return(NULL)
+
+  # u is formed on the observed-curvature inverse, so differentiating it needs
+  # dH_true/dtheta rather than dH/dtheta. Where the working weight already IS
+  # the observed curvature the two coincide and this stays NULL, which is the
+  # cheaper path as well as the equivalent one.
+  ddelta <- NULL
+  if (!isTRUE(cq$working_is_observed)) {
+    ddelta <- .laplace_obs_delta_deta(y, n_trials, cq$eta, family, phi, phi2,
+                                      weights, has_zi = has_zi)
+    if (is.null(ddelta)) return(NULL)
+  }
 
   klens  <- vapply(dS_by_block, length, integer(1))
   ktot   <- sum(klens)
@@ -489,13 +614,68 @@
 
     J_k     <- -as.numeric(Hinv_mode %*% (dP_k %*% x))  # mode Jacobian column
     eta_dot <- as.numeric(A %*% J_k)
-    dW_k    <- dwdeta * eta_dot
-    dH_k    <- as.matrix(Matrix::crossprod(A, Matrix::Diagonal(x = dW_k) %*% A)) + dP_k
+    # The mode motion moves BOTH predictors, so every entry of the curvature
+    # block moves through both. Without zero inflation only the first line
+    # survives and z_dot does not exist.
+    z_dot <- if (!has_zi) NULL else as.numeric(A_zi %*% J_k)
+    dW_k  <- if (!has_zi) dwdeta * eta_dot else
+      dW[, "dWee_deta"] * eta_dot + dW[, "dWee_dz"] * z_dot
+    dH_k  <- as.matrix(Matrix::crossprod(A, Matrix::Diagonal(x = dW_k) %*% A)) + dP_k
+    if (has_zi) {
+      dWez_k <- dW[, "dWez_deta"] * eta_dot + dW[, "dWez_dz"] * z_dot
+      dWzz_k <- dW[, "dWzz_deta"] * eta_dot + dW[, "dWzz_dz"] * z_dot
+      cross  <- as.matrix(Matrix::crossprod(
+        A, Matrix::Diagonal(x = dWez_k) %*% A_zi))
+      dH_k <- dH_k + cross + t(cross) +
+        as.matrix(Matrix::crossprod(A_zi, Matrix::Diagonal(x = dWzz_k) %*% A_zi))
+    }
     dHinv_k <- -Hinv %*% dH_k %*% Hinv
-    ds_k    <- rowSums(as.matrix(A %*% dHinv_k) * as.matrix(A))
-    dr_k    <- (d2w * eta_dot) * s + dwdeta * ds_k
-    du_k    <- as.numeric(dHinv_k %*% v_r) +
-               as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, dr_k)))
+    AdH     <- as.matrix(A %*% dHinv_k)
+    ds_k    <- rowSums(AdH * as.matrix(A))
+
+    # d q_eta / d theta_k and d q_z / d theta_k: the gradient's channel
+    # differentiated once more. Each of the three curvature partials in q moves
+    # through both predictors, and each of the three predictor (co)variances
+    # moves with the mode, so every term is a product rule over one of the five
+    # fourth-order fields and one variance derivative.
+    if (!has_zi) {
+      dq_eta_k <- (d2w * eta_dot) * s + dwdeta * ds_k
+      dq_z_k   <- NULL
+    } else {
+      ds_zz_k <- rowSums(as.matrix(A_zi %*% dHinv_k) * as.matrix(A_zi))
+      ds_ez_k <- rowSums(AdH * as.matrix(A_zi))
+      dq_eta_k <-
+        (d4[, "d4_e4"]   * eta_dot + d4[, "d4_e3z"]  * z_dot) * s +
+        dW[, "dWee_deta"] * ds_k +
+        2 * ((d4[, "d4_e3z"]  * eta_dot + d4[, "d4_e2z2"] * z_dot) * s_ez +
+             dW[, "dWez_deta"] * ds_ez_k) +
+        (d4[, "d4_e2z2"] * eta_dot + d4[, "d4_ez3"]  * z_dot) * s_zz +
+        dW[, "dWzz_deta"] * ds_zz_k
+      dq_z_k <-
+        (d4[, "d4_e3z"]  * eta_dot + d4[, "d4_e2z2"] * z_dot) * s +
+        dW[, "dWee_dz"] * ds_k +
+        2 * ((d4[, "d4_e2z2"] * eta_dot + d4[, "d4_ez3"] * z_dot) * s_ez +
+             dW[, "dWez_dz"] * ds_ez_k) +
+        (d4[, "d4_ez3"]  * eta_dot + d4[, "d4_z4"]  * z_dot) * s_zz +
+        dW[, "dWzz_dz"] * ds_zz_k
+    }
+
+    # d(H_true)^-1/dtheta_k. H_true is H plus the observed-minus-working
+    # correction, and only the correction's own eta-motion distinguishes its
+    # derivative from dHinv_k -- the prior term dP_k is already inside dH_k and
+    # carries no weight. Identical to dHinv_k wherever the two weights agree.
+    dHinv_mode_k <- if (is.null(ddelta)) dHinv_k else
+      -Hinv_mode %*%
+        (dH_k + as.matrix(Matrix::crossprod(
+           A, Matrix::Diagonal(x = ddelta * eta_dot) %*% A))) %*% Hinv_mode
+    # Hinv_mode, matching how u itself is formed. s, V and log|H| above stay on
+    # the working-weight inverse, which is the objective's own.
+    du_k <- as.numeric(dHinv_mode_k %*% v_r) +
+            as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A, dq_eta_k)))
+    if (has_zi) {
+      du_k <- du_k +
+        as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A_zi, dq_z_k)))
+    }
 
     for (m in seq_len(nb)) {
       bq <- blocks[[m]]; nc <- bq$nc; G <- bq$G; idx <- bq$idx
@@ -543,29 +723,69 @@
   # and observed weights coincide, so Hinv_mode is Hinv and dH_true/dpsi is
   # dH_joint/dpsi here -- the coincidence that makes the closed form exact.
   if (!is.null(phi_block) && !is.null(phi_block$dphi2)) {
-    eta <- cq$eta
-    dphi <- phi_block$dphi; dphi2 <- phi_block$dphi2; wt <- phi_block$wt
+    wt <- phi_block$wt; PD <- phi_block$PD
     dxdphi <- phi_block$dxdphi; deta_dphi <- phi_block$deta_dphi
-    Sc1  <- dphi$dscore(eta, y, n_trials, phi)
-    DW   <- dphi$dweight(eta, y, n_trials, phi)
-    L2   <- dphi2$dloglik2(eta, y, n_trials, phi)
-    Sc2  <- dphi2$dscore2(eta, y, n_trials, phi)
-    DW2  <- dphi2$dweight2(eta, y, n_trials, phi)
-    DWde <- dphi2$dweight_deta(eta, y, n_trials, phi)
-    if (any(!is.finite(c(Sc1, DW, L2, Sc2, DW2, DWde)))) return(NULL)
+    dz_dphi <- phi_block$dz_dphi
 
-    # J_psi = phi dx/dphi is the log-phi mode-Jacobian column; eta_dot its
-    # linear-predictor image. d(H_joint)/dpsi moves through the mode
-    # (dwdeta * eta_dot) and explicitly (phi wt DW), with no dP term.
+    # J_psi = phi dx/dphi is the log-phi mode-Jacobian column; eta_dot and z_dot
+    # its two linear-predictor images. d(H_joint)/dpsi moves through the mode in
+    # BOTH predictors and explicitly through phi, with no dP term (the RE prior
+    # is phi-free). Without a mixture only the first line survives.
     J_psi   <- phi * dxdphi
     eta_dot <- phi * deta_dphi
-    dW_psi  <- dwdeta * eta_dot + phi * (wt * DW)
-    dH_psi  <- as.matrix(Matrix::crossprod(A, Matrix::Diagonal(x = dW_psi) %*% A))
+    z_dot   <- if (!has_zi) NULL else phi * dz_dphi
+
+    dWee_psi <- dwdeta * eta_dot + phi * (wt * PD[, "dWee_dp"])
+    if (has_zi) dWee_psi <- dWee_psi + dW[, "dWee_dz"] * z_dot
+    dH_psi <- as.matrix(Matrix::crossprod(
+      A, Matrix::Diagonal(x = dWee_psi) %*% A))
+    if (has_zi) {
+      dWez_psi <- dW[, "dWez_deta"] * eta_dot + dW[, "dWez_dz"] * z_dot +
+        phi * (wt * PD[, "dWez_dp"])
+      dWzz_psi <- dW[, "dWzz_deta"] * eta_dot + dW[, "dWzz_dz"] * z_dot +
+        phi * (wt * PD[, "dWzz_dp"])
+      cross_psi <- as.matrix(Matrix::crossprod(
+        A, Matrix::Diagonal(x = dWez_psi) %*% A_zi))
+      dH_psi <- dH_psi + cross_psi + t(cross_psi) +
+        as.matrix(Matrix::crossprod(
+          A_zi, Matrix::Diagonal(x = dWzz_psi) %*% A_zi))
+    }
     dHinv_psi <- -Hinv %*% dH_psi %*% Hinv
-    ds_psi  <- rowSums(as.matrix(A %*% dHinv_psi) * as.matrix(A))
-    dr_psi  <- (d2w * eta_dot + phi * (wt * DWde)) * s + dwdeta * ds_psi
-    du_psi  <- as.numeric(dHinv_psi %*% v_r) +
-               as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, dr_psi)))
+    AdH_psi <- as.matrix(A %*% dHinv_psi)
+    ds_psi  <- rowSums(AdH_psi * as.matrix(A))
+    ds_zz_psi <- if (!has_zi) NULL else
+      rowSums(as.matrix(A_zi %*% dHinv_psi) * as.matrix(A_zi))
+    ds_ez_psi <- if (!has_zi) NULL else rowSums(AdH_psi * as.matrix(A_zi))
+
+    # Each of the curvature block's own derivatives moves with both predictors
+    # and explicitly with phi: the fourth-order fields supply the first two
+    # directions, PD the third. The mixed fields are the same fourth derivative
+    # reached two ways -- dW_ez/deta is dW_ee/dz, and dW_zz/deta is dW_ez/dz --
+    # so four of the six are shared rather than computed twice.
+    if (!has_zi) {
+      dWee_de_psi <- d2w * eta_dot + phi * (wt * PD[, "dWee_dp_de"])
+      dq_eta_psi  <- dWee_de_psi * s + dwdeta * ds_psi
+      dq_z_psi    <- NULL
+    } else {
+      mv <- function(f_e, f_z, pcol)
+        d4[, f_e] * eta_dot + d4[, f_z] * z_dot + phi * (wt * PD[, pcol])
+      dWee_de_psi <- mv("d4_e4",   "d4_e3z",  "dWee_dp_de")
+      dWee_dz_psi <- mv("d4_e3z",  "d4_e2z2", "dWee_dp_dz")
+      dWez_dz_psi <- mv("d4_e2z2", "d4_ez3",  "dWez_dp_dz")
+      dWzz_dz_psi <- mv("d4_ez3",  "d4_z4",   "dWzz_dp_dz")
+      dq_eta_psi <- dWee_de_psi * s + dwdeta * ds_psi +
+        2 * (dWee_dz_psi * s_ez + dW[, "dWez_deta"] * ds_ez_psi) +
+        dWez_dz_psi * s_zz + dW[, "dWzz_deta"] * ds_zz_psi
+      dq_z_psi <- dWee_dz_psi * s + dW[, "dWee_dz"] * ds_psi +
+        2 * (dWez_dz_psi * s_ez + dW[, "dWez_dz"] * ds_ez_psi) +
+        dWzz_dz_psi * s_zz + dW[, "dWzz_dz"] * ds_zz_psi
+    }
+    du_psi <- as.numeric(dHinv_psi %*% v_r) +
+              as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, dq_eta_psi)))
+    if (has_zi) {
+      du_psi <- du_psi +
+        as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A_zi, dq_z_psi)))
+    }
 
     # phi column: term B alone (psi does not touch Sigma, so term A and dOm drop).
     phi_col <- numeric(ktot)
@@ -591,18 +811,44 @@
     }
 
     # phi diagonal: differentiate the phi gradient once more in psi. The second
-    # mode derivative d(dx/dphi)/dpsi is the one genuinely new solve; the
-    # identity Sc1_de = -DW (score's eta-derivative is -W_obs) supplies dSc1/dpsi.
-    ATwSc1 <- as.numeric(Matrix::crossprod(A, wt * Sc1))
-    dA <- sum(wt * (Sc1 * eta_dot + phi * L2))
-    d_ddw_dpsi <- d2w * eta_dot + phi * (wt * DWde)         # d(dwdeta)/dpsi
-    rhs_Sc1    <- (-DW) * eta_dot + phi * Sc2               # dSc1/dpsi
-    d2x_dpsi   <- as.numeric(dHinv_psi %*% ATwSc1) +
-                  as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A, wt * rhs_Sc1)))
+    # mode derivative d(dx/dphi)/dpsi is the one genuinely new solve. Its right
+    # hand side needs d(score)/dpsi in each predictor, and those come from the
+    # identity that the score's eta- and z-derivatives are -W: no new function,
+    # just the dW/dphi fields already in PD.
+    dA <- sum(wt * (PD[, "dsc_e_dp"] * eta_dot + phi * PD[, "dl_dp2"]))
+    rhs_e <- (-PD[, "dWee_dp"]) * eta_dot + phi * PD[, "dsc_e_dp2"]
+    if (has_zi) rhs_e <- rhs_e - PD[, "dWez_dp"] * z_dot
+    d2x_rhs <- as.numeric(Matrix::crossprod(A, wt * rhs_e))
+    if (has_zi) {
+      dA <- dA + sum(wt * PD[, "dsc_z_dp"] * z_dot)
+      rhs_z <- (-PD[, "dWez_dp"]) * eta_dot - PD[, "dWzz_dp"] * z_dot +
+        phi * PD[, "dsc_z_dp2"]
+      d2x_rhs <- d2x_rhs +
+        as.numeric(Matrix::crossprod(A_zi, wt * rhs_z))
+    }
+    d2x_dpsi <- as.numeric(dHinv_psi %*% phi_block$rhs_mode) +
+                as.numeric(Hinv_mode %*% d2x_rhs)
     d_deta_dphi_dpsi <- as.numeric(A %*% d2x_dpsi)
-    dB <- sum(ds_psi * (wt * DW + dwdeta * deta_dphi) +
-              s * (wt * (DWde * eta_dot + phi * DW2) +
-                   d_ddw_dpsi * deta_dphi + dwdeta * d_deta_dphi_dpsi))
+
+    # dB is the log|H| half of the gradient differentiated once more. Written as
+    # the product rule over (predictor covariance) x (explicit dW/dphi) plus the
+    # mode-motion channel q . d(eta,z)/dphi, which is the same decomposition the
+    # gradient itself uses -- so the one-process case reduces to it term by term.
+    dWee_dp_psi <- PD[, "dWee_dp_de"] * eta_dot + phi * PD[, "dWee_dp2"]
+    if (has_zi) dWee_dp_psi <- dWee_dp_psi + PD[, "dWee_dp_dz"] * z_dot
+    dB <- sum(ds_psi * wt * PD[, "dWee_dp"] + s * wt * dWee_dp_psi +
+              dq_eta_psi * deta_dphi + cq$q_eta * d_deta_dphi_dpsi)
+    if (has_zi) {
+      d_dz_dphi_dpsi <- as.numeric(A_zi %*% d2x_dpsi)
+      dWez_dp_psi <- PD[, "dWee_dp_dz"] * eta_dot +
+        PD[, "dWez_dp_dz"] * z_dot + phi * PD[, "dWez_dp2"]
+      dWzz_dp_psi <- PD[, "dWez_dp_dz"] * eta_dot +
+        PD[, "dWzz_dp_dz"] * z_dot + phi * PD[, "dWzz_dp2"]
+      dB <- dB +
+        sum(2 * (ds_ez_psi * wt * PD[, "dWez_dp"] + s_ez * wt * dWez_dp_psi) +
+            ds_zz_psi * wt * PD[, "dWzz_dp"] + s_zz * wt * dWzz_dp_psi +
+            dq_z_psi * dz_dphi + cq$q_z * d_dz_dphi_dpsi)
+    }
     phi_diag <- phi_block$grad_phi + phi * (dA - 0.5 * dB)
     if (!is.finite(phi_diag) || any(!is.finite(phi_col))) return(NULL)
 
@@ -635,12 +881,21 @@
                             re_list, layout, L_list, family, phi, phi2,
                             X_zi = X_zi)
   if (is.null(cq)) return(NULL)
-  # The dispersion block reads .family_dphi(), which registers the BASE family's
-  # phi derivatives. Under a mixture the y = 0 branch carries its own phi
-  # dependence through P(Y = 0), so those derivatives describe a different
-  # objective. Decline rather than return a plausible wrong number; the caller
-  # refuses `estimate_phi` on this path.
-  if (isTRUE(cq$has_zi) && isTRUE(want_phi)) return(NULL)
+  # The dispersion block reads the BASE family's phi derivatives for every row
+  # the mixture leaves additively separable, and the coupled y = 0 branch from
+  # the mixture engine for the rest (.laplace_phi_fields). Under a hurdle the
+  # second source is identically zero -- a zero-truncated base has P(Y = 0) = 0,
+  # so its zero branch is log(pi), phi-free -- which is why the base registry
+  # alone was already exact there. Under genuine zero inflation the y = 0 branch
+  # is log(pi + (1 - pi) P(Y = 0, phi)) and carries phi through P(Y = 0) as well,
+  # coupled to both predictors; that is what the engine supplies.
+  #
+  # Gated on the engine rather than on the base being truncated, so a family
+  # without a registered phi column is declined instead of receiving the base
+  # derivatives under a model they do not describe.
+  if (isTRUE(cq$has_zi) && isTRUE(want_phi) &&
+      !isTRUE(tryCatch(cpp_family_has_zi_phi_deriv(family),
+                       error = function(e) FALSE))) return(NULL)
   A <- cq$A; Hinv <- cq$Hinv; x <- cq$x; n_x <- cq$n_x
   Hinv_mode <- cq$Hinv_mode
   s <- cq$s; dw <- cq$dw; eta <- cq$eta; n_obs <- cq$n_obs
@@ -695,12 +950,28 @@
   # random-effect half is untouched when the dispersion is held fixed.
   #
   #   dm/dphi = sum_i w_i dloglik_i/dphi
-  #             - 0.5 sum_i s_i [ w_i dW_i/dphi + (dW_i/deta_i)(A dx_hat/dphi)_i ]
+  #             - 0.5 sum_i [ w_i s_i dW_i/dphi
+  #                           + q_eta_i (A dx_hat/dphi)_i
+  #                           + q_z_i (A_zi dx_hat/dphi)_i ]
   #
-  # The second bracket is the whole reason this cannot be read off the
-  # likelihood alone: log|H| moves with phi both explicitly, through W(eta, phi),
-  # and through the mode. `dw` already carries the observation weights (applied
-  # above), so only the explicit dW/dphi is scaled here.
+  # The mode terms are the reason this cannot be read off the likelihood alone:
+  # log|H| moves with phi both explicitly, through W(eta, phi), and through the
+  # mode. They contract against the same q_eta / q_z channel the covariance
+  # coordinates travel, so one derivation covers both kinds of coordinate.
+  #
+  # Both reduce under the mixtures this path admits, and measurably so rather
+  # than by assumption (dev_notes/probe_hurdle_phi_gradient.R): a hurdle's two
+  # processes are variation-independent, which zeroes dWez and dWzz's
+  # eta-derivative, leaving q_eta = dw * s; and it makes H block-diagonal
+  # between the zero block and the count-plus-random-effect block, so the phi
+  # mode motion has no zero-block component and q_z's term is identically zero.
+  # The general form is kept because q_eta / q_z are already formed in the core,
+  # so writing the hurdle's special case would cost nothing and would be
+  # silently wrong if the gate above ever admits an untruncated mixture. What
+  # actually distinguishes the mixture here is the mask, not these terms.
+  #
+  # `dw` already carries the observation weights (applied in the core), so only
+  # the explicit dW/dphi is scaled here.
   grad_phi <- NULL
   phi_block <- NULL
   if (isTRUE(want_phi)) {
@@ -709,22 +980,47 @@
     if (!is.finite(phi) || phi <= 0) return(NULL)
     wt <- if (is.null(weights)) rep(1, n_obs) else as.numeric(weights)
 
-    dl_dphi <- dphi$dloglik(eta, y, n_trials, phi)
-    ds_dphi <- dphi$dscore(eta, y, n_trials, phi)
-    dW_dphi <- dphi$dweight(eta, y, n_trials, phi)
-    if (any(!is.finite(dl_dphi)) || any(!is.finite(ds_dphi)) ||
-        any(!is.finite(dW_dphi))) return(NULL)
+    # Under a hurdle the y = 0 branch is log(pi): it carries no phi, and the
+    # base family's derivatives are not even finite there (a zero-truncated
+    # density is -Inf at y = 0). Zeroing them is what makes the base registry
+    # the mixture's derivative rather than an approximation to it.
+    dphi2 <- .family_dphi2(family)
+    PD <- .laplace_phi_fields(cq, y, n_trials, family, phi, phi2, dphi, dphi2)
+    if (is.null(PD)) return(NULL)
 
     # dx_hat/dphi from implicit differentiation of the inner stationarity
-    # condition, on the OBSERVED-curvature H: H_true dx_hat/dphi = A'(w dscore/dphi).
-    # `.family_dphi` is registered only where working and observed weights
-    # coincide, so Hinv_mode is Hinv here -- but reading Hinv_mode keeps the mode
-    # motion correct by construction rather than by that coincidence.
-    dxdphi <- as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A, wt * ds_dphi)))
+    # condition, on the OBSERVED-curvature H:
+    #
+    #   H_true dx_hat/dphi = A'(w d(score_eta)/dphi) + A_zi'(w d(score_z)/dphi)
+    #
+    # The second term is what genuine zero inflation adds. Its zero predictor is
+    # logistic and carries no phi of its own, but at y = 0 the mixture weight
+    # log(pi + (1 - pi) P(Y = 0, phi)) does, so the zero-predictor score moves
+    # with phi through P(Y = 0). Under a hurdle that probability is zero and the
+    # term vanishes identically, which is why the count-predictor solve alone was
+    # right there.
+    rhs_mode <- as.numeric(Matrix::crossprod(A, wt * PD[, "dsc_e_dp"]))
+    if (isTRUE(cq$has_zi)) {
+      rhs_mode <- rhs_mode +
+        as.numeric(Matrix::crossprod(cq$A_zi, wt * PD[, "dsc_z_dp"]))
+    }
+    dxdphi <- as.numeric(Hinv_mode %*% rhs_mode)
     deta_dphi <- as.numeric(A %*% dxdphi)
+    dz_dphi <- if (!isTRUE(cq$has_zi)) NULL else
+      as.numeric(cq$A_zi %*% dxdphi)
 
-    g_phi <- sum(wt * dl_dphi) -
-      0.5 * sum(s * (wt * dW_dphi + dw * deta_dphi))
+    # The explicit dW/dphi term runs over the whole 2 x 2 block, each partial
+    # contracted against the matching predictor (co)variance -- the same
+    # contraction q_eta / q_z make in the eta and z directions.
+    dW_term <- wt * s * PD[, "dWee_dp"]
+    if (isTRUE(cq$has_zi)) {
+      dW_term <- dW_term +
+        wt * (2 * cq$s_ez * PD[, "dWez_dp"] + cq$s_zz * PD[, "dWzz_dp"])
+    }
+
+    g_phi <- sum(wt * PD[, "dl_dp"]) -
+      0.5 * sum(dW_term + cq$q_eta * deta_dphi +
+                (if (is.null(dz_dphi)) 0 else cq$q_z * dz_dphi))
     # The optimizer works in log phi, where the positivity constraint is free.
     grad_phi <- phi * g_phi
     if (!is.finite(grad_phi)) return(NULL)
@@ -732,8 +1028,10 @@
 
     # log-phi column of the mode Jacobian, dx_hat/dlog_phi = phi dx_hat/dphi.
     if (want_J) J <- cbind(J, phi * dxdphi)
-    phi_block <- list(dphi = dphi, dphi2 = .family_dphi2(family), wt = wt,
-                      grad_phi = grad_phi, dxdphi = dxdphi, deta_dphi = deta_dphi)
+    phi_block <- list(dphi = dphi, dphi2 = dphi2, wt = wt, PD = PD,
+                      grad_phi = grad_phi, dxdphi = dxdphi,
+                      deta_dphi = deta_dphi, dz_dphi = dz_dphi,
+                      rhs_mode = rhs_mode)
   }
 
   # Closed-form theta-Hessian, gated on the second curvature derivative. A family
@@ -743,20 +1041,32 @@
   # formed closed either, so H is left NULL and the caller differences the
   # gradient (which carries the phi row) instead.
   # The closed Hessian differentiates the curvature once more, which under a
-  # mixture means the SECOND derivatives of the 2 x 2 block -- eighteen fields
-  # rather than six, and not registered. The gradient and J stay exact, so the
-  # caller central-differences this exact gradient (2k gradient evaluations)
-  # instead of falling all the way back to re-solving the objective (1 + 2k^2).
+  # mixture means the SECOND derivatives of the 2 x 2 block. Because that block
+  # is -Hess(log density), those are the fourth derivatives of one scalar: five
+  # distinct fields covering all nine second partials, of which a hurdle needs
+  # only two. Registered per family by has_zi_curvature_2nd_derivative(), which
+  # additionally needs the second eta-derivative of the observed curvature for
+  # the coupled y = 0 branch.
   #
-  # It also needs the working weight to BE the observed curvature. Its
-  # du/dtheta differentiates u through Hinv, while u itself is formed on
-  # Hinv_mode; where the two inverses differ (neg_binomial_1,
-  # truncated_neg_binomial_2) that pairing is inconsistent, so those families
-  # take the same gradient stencil.
+  # Where the working weight is not the observed curvature (neg_binomial_1,
+  # truncated_neg_binomial_2, and so hurdle_nbinom2), u is formed on the
+  # observed-curvature inverse and must be differentiated on it too, which needs
+  # d(W_obs - w)/deta. .laplace_exact_re_hess declines on its own when that is
+  # unregistered, so the condition lives there rather than being duplicated
+  # here.
+  #
+  # The dispersion border runs over both predictors as well: its dW/dpsi is the
+  # full 2 x 2 block and its second mode derivative solves against both scores.
+  # It still needs the family's second-order phi registry, which is what leaves
+  # a hurdle over truncated_neg_binomial_2 on the stencil -- .FAMILY_DPHI2 has no
+  # entry for the truncated pair, independently of the mixture.
+  hess_curv_ok <- isTRUE(tryCatch(
+    if (isTRUE(cq$has_zi)) cpp_family_has_zi_curvature_2nd_derivative(family)
+    else cpp_family_has_curvature_2nd_derivative(family),
+    error = function(e) FALSE))
+
   Hmat <- NULL
-  if (isTRUE(want_hessian) && !isTRUE(cq$has_zi) &&
-      isTRUE(cq$working_is_observed) &&
-      isTRUE(cpp_family_has_curvature_2nd_derivative(family)) &&
+  if (isTRUE(want_hessian) && hess_curv_ok &&
       !(isTRUE(want_phi) && is.null(phi_block$dphi2))) {
     Hmat <- .laplace_exact_re_hess(cq, y, n_trials, family, phi, phi2, weights,
                                    dS_by_block, phi_block = phi_block)

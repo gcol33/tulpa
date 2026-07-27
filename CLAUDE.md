@@ -1,6 +1,6 @@
 # TULPA — Template Unified Latent Process Architecture
 
-General-purpose Bayesian hierarchical modelling engine (v0.0.82). Engine
+General-purpose Bayesian hierarchical modelling engine (v0.0.99). Engine
 extracted from numdenom, which has since been renamed tulpaRatio.
 
 ## Architecture
@@ -9,7 +9,7 @@ The hub of a `tulpa*` package ecosystem. The engine owns inference, latent
 structure, and the C++ interface; model packages plug an observation
 likelihood in via `LikelihoodSpec` and inherit the rest.
 
-- **tulpa** (engine, 0.0.82) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
+- **tulpa** (engine, 0.0.99) — samplers, autodiff, spatial, temporal, priors, formula infrastructure. Imports tulpaMesh for SPDE mesh construction.
 - **tulpaRatio** (1.3.0) — ratio, rate, and proportion models (renamed from numdenom).
 - **tulpaObs** (0.0.22) — occupancy, N-mixture, and detection models.
 - **tulpaGlmm** — RETIRED. Generalized linear mixed models are fitted by the
@@ -66,6 +66,12 @@ debias, or outer integration), not as standalone alternatives.
 - **Layout rule**: `ModelData` requires `n_processes > 0` and a `LikelihoodSpec`
   (ratio models live in tulpaRatio via that interface). New fields go in the
   stable sections — never insert before existing fields.
+
+## Versioning
+
+The patch number keeps counting past 9: `0.0.99` -> `0.0.100` -> `0.0.101`.
+`0.1.0` is reserved for the first stable CRAN release, so it is never a routine
+bump.
 
 ## Building
 

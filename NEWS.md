@@ -1,10 +1,118 @@
 # tulpa NEWS
 
-## 0.0.99
+## 0.0.100
 
 Warm-starting the sampler from a cheaper fit of the same model.
 
 New:
+
+- `estimate_phi = TRUE` now covers `truncated_neg_binomial_2`, and covers it
+  alongside a zero-inflation process when the base is zero-truncated (a hurdle).
+  The family was listed in `.PHI_FAMILIES` but had no entry in `.FAMILY_DPHI`,
+  so the dispersion was refused for it outright. Its three derivatives are the
+  untruncated ones plus the phi-derivative of the retained mass
+  `P(Y > 0)`; the weight differentiated is the EXPECTED form `Var(y | y > 0)`,
+  which is what the Newton solve builds `H` from for this family -- the opposite
+  choice from `neg_binomial_2`, where `H` carries the observed curvature. Each
+  finite-differences against the registry to ~1e-9 over `phi` in [0.5, 25], and
+  the assembled `dm/dlog_phi` matches a central difference of the Laplace
+  log-marginal to ~1e-9.
+
+  Under a mixture the refusal now tests the BASE for zero-truncation rather than
+  testing for a mixture at all. A hurdle's zero branch is `log(pi)` and carries
+  no dispersion, so the base family's derivatives are the mixture's once masked
+  at `y = 0`; genuine zero inflation on an untruncated base keeps the refusal,
+  since its zero branch depends on `phi` through `P(Y = 0)` as well. Verified to
+  ~1e-8 against the two-process log-marginal on a fixture with 35% zeros, and
+  `phi_hat` is consistent -- 2.921, 2.871, 2.998 as the count arm grows 750,
+  2269, 5057 (12 seeds each, standard error 0.144, 0.091, 0.065).
+
+- The closed-form outer Hessian now carries every mixture the exact gradient
+  does -- hurdles and genuine zero inflation alike -- where all of them
+  previously fell to the gradient stencil. The curvature block is
+  `-Hess(log density)`, so its nine second partials are the FIVE distinct fourth
+  derivatives of one scalar, indexed by how many of the four derivatives are in
+  `eta`. New `mixture_curvature_deriv2()` returns those five; a hurdle is the
+  case where the three mixed ones vanish, so one assembly covers both and the
+  hurdle's terms multiply by zero rather than being special-cased.
+
+  The coupled `y = 0` branch differentiates `D = pi + (1 - pi) P(Y = 0)` a
+  fourth time, which is the only genuinely new input: it needs `P(Y = 0)`'s
+  fourth log-derivative and so the second eta-derivative of the observed
+  curvature, which `has_zi_curvature_2nd_derivative()` gates on. That gate is no
+  longer narrower than the gradient's.
+
+  The five fields are checked along every route to them: most are reachable by
+  differentiating two or three DIFFERENT third-order fields, in different
+  directions, and all routes agree to ~1e-11 -- which is what tests the
+  `-Hess(log D)` identification rather than the arithmetic. Against a central
+  difference of the exact gradient the assembled Hessian reaches 1.5e-9
+  (poisson, 53% zeros), 4.1e-9 (`neg_binomial_2`, 57%), 5.2e-9 (binomial, 60%),
+  and 3.3e-11 under a hurdle -- the last unchanged to every printed digit by the
+  generalization.
+
+- The closed outer Hessian also covers the families whose Newton weight is not
+  their observed curvature, which unblocks `truncated_neg_binomial_2` on the
+  one-process path and `hurdle_nbinom2` on the two-process one. The assembly
+  forms `u` on the observed-curvature inverse but was differentiating it through
+  the working-weight inverse -- the same thing only where the two weights
+  coincide. Pairing them needs `dH_true/dtheta`, and so the new
+  `obs_curvature_delta_deta_for_family()`: for a zero-truncated NB2 the
+  difference `W_obs - w` differentiates to the NB2 curvature derivative plus
+  `d3 log P(Y > 0)` minus the truncated working one, all three of which the
+  registry (and `truncation_shape()`'s `d3a`) already supplied. It
+  finite-differences against `W_obs - w` to ~4e-10, and the assembled Hessian
+  reaches 2.3e-09 one-process and 3.4e-09 under the hurdle.
+
+- `estimate_phi = TRUE` now runs alongside GENUINE zero inflation as well, and
+  the closed Hessian's dispersion border runs under any mixture. A hurdle's zero
+  branch is `log(pi)` and carries no dispersion, which is what let the base
+  family's registry stand in for the mixture's; genuine zero inflation has zero
+  branch `log(pi + (1 - pi) P(Y = 0, phi))`, which carries `phi` through
+  `P(Y = 0)` and couples it to BOTH linear predictors -- so the mode motion
+  solves against both scores, and the explicit `dW/dphi` runs over the whole
+  2 x 2 block.
+
+  The sixteen fields that needs are sixteen CALLS on one engine, not sixteen
+  formulas: the mixture density is `q(z) B(eta, phi) + C(z)` in every branch, so
+  every mixed partial of `log D` follows from the multivariate
+  cumulant-from-moment recursion over the alphabet (eta, z, phi), exact at any
+  order and any mix of directions. The base registry covers the rows the mixture
+  leaves additively separable and the engine covers the coupled `y = 0` rows;
+  the two are summed over disjoint rows, and the engine returns exact zeros
+  wherever the registry applies (every `y != 0` row, a hurdle's `y = 0` rows, a
+  family with no free dispersion).
+
+  Anchored on `zi_loglik` / `zi_score_eta` / `zi_neg_hessian` and the curvature
+  engines, all written independently of this one: 40 field checks agree to
+  1.9e-10, with the two shared fourth-order names each reached from BOTH members
+  of their pair. The assembled `dm/dlog_phi` matches the two-process
+  log-marginal to 5.6e-09 and the bordered Hessian a difference of the exact
+  gradient to 2.1e-10, on a fixture with 57% zeros. The one-process path is not
+  a second assembly: it is this one with the six z-direction fields at zero, and
+  it expands term for term to the expression it replaces.
+
+- `neg_binomial_1` is covered throughout, on the one-process closed Hessian and
+  under zero inflation. Its observed curvature is
+  `-s + r^2 (psi'(r) - psi'(y+r))`, so `d(W_obs - w)/deta` carries a tetragamma
+  and the next rung a pentagamma; both are now in `portable_math.h` alongside the
+  existing digamma / trigamma pair, in the same recurrence-plus-asymptotic form.
+  The first rung finite-differences to 2.8e-10 and agrees with the same formula
+  over R's own `psigamma` to 6.5e-10; the one-process closed Hessian reaches
+  3.5e-11.
+
+  The same missing derivative was also what kept the family off the mixture
+  curvature gate, so that gate now asks for the property it needs -- the
+  observed curvature's eta-derivative, being the registered working-weight one
+  plus the correction -- rather than naming families. `beta_binomial`, `t` and
+  `tweedie` stay out, having no observed form at all. Under zero inflation
+  `neg_binomial_1`'s third- and fourth-order mixture fields reach 2.2e-11 and
+  6.3e-11, and its closed Hessian 2.5e-11.
+
+  Still on the stencil, for a stated reason rather than by omission:
+  `estimate_phi` for `neg_binomial_1` in any model, zero-inflated or not, since
+  the family has no `.FAMILY_DPHI` entry at all -- a separate gap from the one
+  closed here.
 
 - Weighted-entry intrinsic fields -- separable multivariate CAR (`mcar`) and the
   areal / temporal varying-coefficient blocks -- are now hard-constrained by the

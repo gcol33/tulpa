@@ -369,6 +369,143 @@ inline double curvature_deta2_for_family(
            + 2.0 * u4 * Vm * Vm / (V * V * V);
 }
 
+// ---------------------------------------------------------------------------
+// d(W_obs - w)/deta: the eta-derivative of the observed-minus-working curvature.
+//
+// The closed outer Hessian needs it because the mode motion is governed by the
+// TRUE curvature H_true = H + A' diag(W_obs - w) A while log|H| is the working
+// one. Differentiating a quantity formed on H_true^-1 therefore needs
+// dH_true/dtheta, which is dH/dtheta plus A' diag(d(W_obs - w)/deta * eta_dot) A.
+//
+// The difference is identically zero for every family whose Newton weight
+// already IS the observed curvature, so a zero derivative is exact there and
+// the branch below is only about the two families where it is not.
+inline bool has_obs_curvature_delta_derivative(const std::string& family) {
+    return has_curvature_derivative(family);
+}
+
+// The same for the SECOND eta-derivative of the difference, which the coupled
+// y = 0 branch of an untruncated mixture needs (it differentiates log P(Y = 0)
+// a fourth time). Everything whose difference is identically zero has it
+// trivially; neg_binomial_1 carries it through the pentagamma rung. The
+// truncated pair is the one gap: d2 log p / deta2 differentiated twice more
+// would need a fourth truncation-shape derivative, and truncation_shape() stops
+// at d3a. That gap is unreachable in practice -- a zero-truncated base makes the
+// mixture a hurdle, whose y = 0 branch never forms this.
+inline bool has_obs_curvature_delta_2nd_derivative(const std::string& family) {
+    if (family == "truncated_neg_binomial_2") return false;
+    return has_curvature_2nd_derivative(family);
+}
+
+inline double obs_curvature_delta_deta_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    if (family == "neg_binomial_1") {
+        // W_obs = -s + r^2 T1 with r = mu/phi, dr/deta = r,
+        //   s  = r (psi(y+r) - psi(r) - log1p(phi)),  ds/deta = s - r^2 T1,
+        //   T1 = psi'(r) - psi'(y+r),  T2 = psi''(r) - psi''(y+r),
+        // so d(r^2 T1)/deta = 2 r^2 T1 + r^3 T2 and
+        //   dW_obs/deta = -s + 3 r^2 T1 + r^3 T2.
+        // The working weight mu/(1+phi) is subtracted through its own registered
+        // derivative, so the two halves of the difference cannot drift apart.
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        const double r  = mu / phi;
+        const double s  = r * (tulpa::math::portable_digamma(y + r)
+                               - tulpa::math::portable_digamma(r)
+                               - std::log1p(phi));
+        const double T1 = tulpa::math::portable_trigamma(r)
+                          - tulpa::math::portable_trigamma(y + r);
+        const double T2 = tulpa::math::portable_tetragamma(r)
+                          - tulpa::math::portable_tetragamma(y + r);
+        return -s + 3.0 * r * r * T1 + r * r * r * T2
+             - curvature_deta_for_family(y, n_trials, eta, family, phi, phi2);
+    }
+    if (family == "truncated_neg_binomial_2") {
+        // W_obs = (untruncated NB2 observed curvature) + d2 log p, and
+        // w = e_weight, so the difference differentiates to the NB2 curvature
+        // derivative plus d3 log p minus the truncated working one. Both
+        // curvature derivatives are already registered above; only d3 log p is
+        // new, and truncation_shape() already supplies the d3a it needs.
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        double a, da, d2a, d3a;
+        truncation_shape(family, mu, phi, &a, &da, &d2a, &d3a);
+        const double q  = std::exp(-a);
+        const double p  = -std::expm1(-a);
+        const double ps = p > 1e-300 ? p : 1e-300;
+        // p = 1 - e^-a, so its eta-derivatives follow from (a, da, d2a, d3a).
+        const double dp  = q * da;
+        const double d2p = q * (d2a - da * da);
+        const double d3p = q * (d3a - 3.0 * da * d2a + da * da * da);
+        // d3 log p = p'''/p - 3 p' p''/p^2 + 2 p'^3/p^3.
+        const double d3log_p = d3p / ps
+            - 3.0 * dp * d2p / (ps * ps)
+            + 2.0 * dp * dp * dp / (ps * ps * ps);
+        return curvature_deta_for_family(y, n_trials, eta, "neg_binomial_2",
+                                         phi, phi2)
+             + d3log_p
+             - curvature_deta_for_family(y, n_trials, eta, family, phi, phi2);
+    }
+    // W_obs == w identically: the difference is the zero function.
+    return 0.0;
+}
+
+// d2(W_obs - w)/deta2, the next rung. Same contract as above: zero wherever the
+// two weights coincide, and gated by has_obs_curvature_delta_2nd_derivative().
+inline double obs_curvature_delta_deta2_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    if (family == "neg_binomial_1") {
+        // Differentiating dW_obs/deta = -s + 3 r^2 T1 + r^3 T2 once more, with
+        // dr/deta = r, ds/deta = s - r^2 T1 and T3 = psi'''(r) - psi'''(y+r):
+        //   d2W_obs/deta2 = -s + 7 r^2 T1 + 6 r^3 T2 + r^4 T3.
+        const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
+        const double r  = mu / phi;
+        const double s  = r * (tulpa::math::portable_digamma(y + r)
+                               - tulpa::math::portable_digamma(r)
+                               - std::log1p(phi));
+        const double T1 = tulpa::math::portable_trigamma(r)
+                          - tulpa::math::portable_trigamma(y + r);
+        const double T2 = tulpa::math::portable_tetragamma(r)
+                          - tulpa::math::portable_tetragamma(y + r);
+        const double T3 = tulpa::math::portable_pentagamma(r)
+                          - tulpa::math::portable_pentagamma(y + r);
+        const double r2 = r * r;
+        return -s + 7.0 * r2 * T1 + 6.0 * r2 * r * T2 + r2 * r2 * T3
+             - curvature_deta2_for_family(y, n_trials, eta, family, phi, phi2);
+    }
+    return 0.0;
+}
+
+// The TRUE eta-derivatives of the observed curvature, as opposed to the working
+// weight's. H is built from the working weight, so the objective's log|H| moves
+// with curvature_deta_for_family; but a mixture's y = 0 branch differentiates
+// the DENSITY (through P(Y = 0)), and that needs these. The two coincide for
+// every family whose Newton weight already is the observed curvature, which is
+// why this distinction stayed invisible until neg_binomial_1.
+inline double obs_curvature_deta_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    return curvature_deta_for_family(y, n_trials, eta, family, phi, phi2)
+         + obs_curvature_delta_deta_for_family(y, n_trials, eta, family, phi,
+                                               phi2);
+}
+
+inline double obs_curvature_deta2_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    return curvature_deta2_for_family(y, n_trials, eta, family, phi, phi2)
+         + obs_curvature_delta_deta2_for_family(y, n_trials, eta, family, phi,
+                                                phi2);
+}
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_FAMILY_CURVATURE_H

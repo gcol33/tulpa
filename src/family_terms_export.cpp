@@ -27,6 +27,7 @@
 #include "laplace_family_link.h"
 #include "laplace_family_curvature.h"
 #include "laplace_family_zi_curvature.h"
+#include "laplace_family_zi_phi.h"
 #include "glmm_oracle.h"
 #include "laplace_likelihoods.h"
 #include "builtin_family_ll_ad.h"
@@ -168,6 +169,41 @@ Rcpp::NumericVector cpp_family_obs_curvature_delta_vec(Rcpp::NumericVector y,
   return out;
 }
 
+// Vectorized d(W_obs - w)/deta, the eta-derivative of the vector above. The
+// closed outer Hessian differentiates quantities formed on the TRUE-curvature
+// inverse, which needs dH_true/dtheta and so this derivative; without it the
+// assembly would differentiate through the working-weight inverse instead, an
+// inconsistency that only shows where the two weights differ.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_obs_curvature_delta_deta_vec(
+    Rcpp::NumericVector y, Rcpp::IntegerVector n_trials,
+    Rcpp::NumericVector eta, std::string family, double phi,
+    double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n) {
+    Rcpp::stop("cpp_family_obs_curvature_delta_deta_vec: y (%d) and eta (%d) "
+               "differ in length.", (int)y.size(), (int)n);
+  }
+  const bool recycle_nt = (n_trials.size() == 1);
+  if (!recycle_nt && n_trials.size() != n) {
+    Rcpp::stop("cpp_family_obs_curvature_delta_deta_vec: n_trials must be "
+               "length 1 or %d (got %d).", (int)n, (int)n_trials.size());
+  }
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; i++) {
+    out[i] = tulpa::obs_curvature_delta_deta_for_family(
+        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], family, phi, phi2);
+  }
+  return out;
+}
+
+// Whether the derivative above is exact for this family. False for
+// neg_binomial_1, whose observed curvature would need a tetragamma.
+// [[Rcpp::export]]
+bool cpp_family_has_obs_curvature_delta_derivative(std::string family) {
+  return tulpa::has_obs_curvature_delta_derivative(family);
+}
+
 // Whether the exact analytic mode Jacobian can be formed for this family, so the
 // marginal correction can trust the closed J or fall back to differencing.
 // [[Rcpp::export]]
@@ -266,6 +302,103 @@ Rcpp::NumericMatrix cpp_zi_mixture_curvature(Rcpp::NumericVector y,
 // [[Rcpp::export]]
 bool cpp_family_has_zi_curvature_derivative(std::string family) {
   return tulpa::zi::has_zi_curvature_derivative(family);
+}
+
+// The SECOND derivatives of the mixture's curvature block, one row per
+// observation. Because the block is -Hess(log density), each is a fourth
+// derivative of one scalar, so five columns cover all nine second partials --
+// named for how many of the four derivatives are in eta. The closed outer
+// Hessian contracts them against the same predictor (co)variances the gradient
+// uses. Under a hurdle the three mixed columns are identically zero.
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv2(Rcpp::NumericVector y,
+                                                    Rcpp::IntegerVector n_trials,
+                                                    Rcpp::NumericVector eta,
+                                                    Rcpp::NumericVector logit_zi,
+                                                    std::string family, double phi,
+                                                    double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n || logit_zi.size() != n) {
+    Rcpp::stop("cpp_zi_mixture_curvature_deriv2: y (%d), eta (%d) and logit_zi "
+               "(%d) must have the same length.",
+               (int)y.size(), (int)n, (int)logit_zi.size());
+  }
+  const bool recycle_nt = (n_trials.size() == 1);
+  if (!recycle_nt && n_trials.size() != n) {
+    Rcpp::stop("cpp_zi_mixture_curvature_deriv2: n_trials must be length 1 or %d "
+               "(got %d).", (int)n, (int)n_trials.size());
+  }
+  Rcpp::NumericMatrix out(n, 5);
+  Rcpp::colnames(out) = Rcpp::CharacterVector::create(
+      "d4_e4", "d4_e3z", "d4_e2z2", "d4_ez3", "d4_z4");
+  for (R_xlen_t i = 0; i < n; i++) {
+    const tulpa::zi::MixtureCurvatureDeriv2 d = tulpa::zi::mixture_curvature_deriv2(
+        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], logit_zi[i],
+        family, phi, phi2);
+    out(i, 0) = d.d4_e4;   out(i, 1) = d.d4_e3z; out(i, 2) = d.d4_e2z2;
+    out(i, 3) = d.d4_ez3;  out(i, 4) = d.d4_z4;
+  }
+  return out;
+}
+
+// Whether the closed-form outer Hessian's curvature input is exact under a
+// mixture. Narrower than cpp_family_has_zi_curvature_derivative(): the gradient
+// differentiates the 2 x 2 block once, the Hessian twice, and the second one
+// additionally needs the base family's second eta-derivative for the coupled
+// y = 0 branch.
+// [[Rcpp::export]]
+bool cpp_family_has_zi_curvature_2nd_derivative(std::string family) {
+  return tulpa::zi::has_zi_curvature_2nd_derivative(family);
+}
+
+// Dispersion derivatives of the mixture's y = 0 branch under GENUINE zero
+// inflation (see laplace_family_zi_phi.h). Zero at y != 0 and for a hurdle,
+// where the base family's own phi registry is already the mixture's derivative;
+// the R assembly adds the two over their disjoint rows.
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_zi_mixture_phi_deriv(Rcpp::NumericVector y,
+                                             Rcpp::IntegerVector n_trials,
+                                             Rcpp::NumericVector eta,
+                                             Rcpp::NumericVector logit_zi,
+                                             std::string family, double phi,
+                                             double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n || logit_zi.size() != n) {
+    Rcpp::stop("cpp_zi_mixture_phi_deriv: y (%d), eta (%d) and logit_zi "
+               "(%d) must have the same length.",
+               (int)y.size(), (int)n, (int)logit_zi.size());
+  }
+  const bool recycle_nt = (n_trials.size() == 1);
+  if (!recycle_nt && n_trials.size() != n) {
+    Rcpp::stop("cpp_zi_mixture_phi_deriv: n_trials must be length 1 or %d "
+               "(got %d).", (int)n, (int)n_trials.size());
+  }
+  Rcpp::NumericMatrix out(n, 16);
+  Rcpp::colnames(out) = Rcpp::CharacterVector::create(
+      "dl_dp", "dsc_e_dp", "dsc_z_dp", "dWee_dp", "dWez_dp", "dWzz_dp",
+      "dWee_dp_de", "dWee_dp_dz", "dWez_dp_dz", "dWzz_dp_dz",
+      "dl_dp2", "dsc_e_dp2", "dsc_z_dp2", "dWee_dp2", "dWez_dp2", "dWzz_dp2");
+  for (R_xlen_t i = 0; i < n; i++) {
+    const tulpa::zi::MixturePhiDeriv d = tulpa::zi::mixture_phi_deriv(
+        y[i], recycle_nt ? n_trials[0] : n_trials[i], eta[i], logit_zi[i],
+        family, phi, phi2);
+    out(i, 0)  = d.dl_dp;      out(i, 1)  = d.dsc_e_dp;
+    out(i, 2)  = d.dsc_z_dp;   out(i, 3)  = d.dWee_dp;
+    out(i, 4)  = d.dWez_dp;    out(i, 5)  = d.dWzz_dp;
+    out(i, 6)  = d.dWee_dp_de; out(i, 7)  = d.dWee_dp_dz;
+    out(i, 8)  = d.dWez_dp_dz; out(i, 9)  = d.dWzz_dp_dz;
+    out(i, 10) = d.dl_dp2;     out(i, 11) = d.dsc_e_dp2;
+    out(i, 12) = d.dsc_z_dp2;  out(i, 13) = d.dWee_dp2;
+    out(i, 14) = d.dWez_dp2;   out(i, 15) = d.dWzz_dp2;
+  }
+  return out;
+}
+
+// Whether the dispersion coordinate is exact alongside a zero-inflation
+// process for this family.
+// [[Rcpp::export]]
+bool cpp_family_has_zi_phi_deriv(std::string family) {
+  return tulpa::zi::has_zi_phi_deriv(family);
 }
 
 // The AD-templated density (builtin_family_ll_ad.h), which is what the sampler

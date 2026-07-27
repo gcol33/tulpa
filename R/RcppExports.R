@@ -81,6 +81,14 @@ cpp_family_obs_curvature_delta_vec <- function(y, n_trials, eta, family, phi, ph
     .Call(`_tulpa_cpp_family_obs_curvature_delta_vec`, y, n_trials, eta, family, phi, phi2)
 }
 
+cpp_family_obs_curvature_delta_deta_vec <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_obs_curvature_delta_deta_vec`, y, n_trials, eta, family, phi, phi2)
+}
+
+cpp_family_has_obs_curvature_delta_derivative <- function(family) {
+    .Call(`_tulpa_cpp_family_has_obs_curvature_delta_derivative`, family)
+}
+
 cpp_family_has_exact_mode_jacobian <- function(family) {
     .Call(`_tulpa_cpp_family_has_exact_mode_jacobian`, family)
 }
@@ -99,6 +107,22 @@ cpp_zi_mixture_curvature <- function(y, n_trials, eta, logit_zi, family, phi, ph
 
 cpp_family_has_zi_curvature_derivative <- function(family) {
     .Call(`_tulpa_cpp_family_has_zi_curvature_derivative`, family)
+}
+
+cpp_zi_mixture_curvature_deriv2 <- function(y, n_trials, eta, logit_zi, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_zi_mixture_curvature_deriv2`, y, n_trials, eta, logit_zi, family, phi, phi2)
+}
+
+cpp_family_has_zi_curvature_2nd_derivative <- function(family) {
+    .Call(`_tulpa_cpp_family_has_zi_curvature_2nd_derivative`, family)
+}
+
+cpp_zi_mixture_phi_deriv <- function(y, n_trials, eta, logit_zi, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_zi_mixture_phi_deriv`, y, n_trials, eta, logit_zi, family, phi, phi2)
+}
+
+cpp_family_has_zi_phi_deriv <- function(family) {
+    .Call(`_tulpa_cpp_family_has_zi_phi_deriv`, family)
 }
 
 cpp_family_ad_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {

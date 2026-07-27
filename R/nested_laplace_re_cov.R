@@ -816,17 +816,26 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
          "is a different method than the one this argument selects.",
          call. = FALSE)
   }
-  # The gradient's dispersion coordinate reads .family_dphi(), the BASE
-  # family's phi derivatives. A mixture's y = 0 branch carries its own phi
-  # dependence through P(Y = 0), so estimating the dispersion under zero
-  # inflation would maximize a different objective than the one being reported.
-  if (isTRUE(estimate_phi) && has_zi) {
+  # The gradient's dispersion coordinate covers a mixture through two sources:
+  # the base family's registered phi derivatives on the rows the model leaves
+  # additively separable, and the mixture engine on a genuine mixture's y = 0
+  # rows, where log(pi + (1 - pi) P(Y = 0, phi)) carries phi through P(Y = 0) and
+  # couples it to both predictors. A hurdle needs only the first -- its zero
+  # branch is log(pi), phi-free. Refused where the second is unregistered, so a
+  # family never maximizes along the base derivative under a model it does not
+  # describe.
+  if (isTRUE(estimate_phi) && has_zi &&
+      !isTRUE(tryCatch(cpp_family_has_zi_phi_deriv(family),
+                       error = function(e) FALSE))) {
     stop(caller, "(): `estimate_phi = TRUE` is not available alongside a ",
-         "zero-inflation process. The dispersion derivative registered for '",
-         family, "' is the base family's; the mixture's zero branch depends ",
-         "on phi through P(Y = 0) as well, so the two describe different ",
-         "objectives. Condition on `phi`, or profile it by refitting over a ",
-         "grid.", call. = FALSE)
+         "zero-inflation process on the family '", family,
+         "'. The mixture's zero branch depends on phi through P(Y = 0), and ",
+         "no dispersion derivative for that branch is registered here, so ",
+         "maximizing would optimize a different objective than the one ",
+         "reported. Condition on `phi`, profile it by refitting over a grid, ",
+         "or use a family whose mixture dispersion IS registered ",
+         "(neg_binomial_2, or any zero-truncated base as a hurdle).",
+         call. = FALSE)
   }
 
   # The hyperprior is a closed form in theta with no inner solve behind it, so

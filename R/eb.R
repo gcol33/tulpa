@@ -74,11 +74,20 @@
 #'   coordinates only -- so this is the ML-II estimate of `phi`, not a MAP under
 #'   an undeclared prior.
 #'
-#'   Available for `neg_binomial_2`, `gaussian` and `gamma`, and refused
-#'   elsewhere rather than approximated: `poisson` and `binomial` have no free
-#'   dispersion at all, and for the remaining families the derivative is not
-#'   registered (see `R/family_dispersion.R` for why `beta` in particular is
-#'   held back). Needs `n_quad = 1`.
+#'   Available for `neg_binomial_2`, `truncated_neg_binomial_2`, `gaussian` and
+#'   `gamma`, and refused elsewhere rather than approximated: `poisson` and
+#'   `binomial` have no free dispersion at all, and for the remaining families
+#'   the derivative is not registered (see `R/family_dispersion.R` for why
+#'   `beta` in particular is held back). Needs `n_quad = 1`.
+#'
+#'   Alongside `X_zi` both mixture kinds are covered. A hurdle (a zero-truncated
+#'   base) has zero branch `log(pi)`, which carries no dispersion, so the base
+#'   family's registered derivative is already the mixture's. Genuine zero
+#'   inflation has zero branch `log(pi + (1 - pi) P(Y = 0))`, which depends on
+#'   `phi` through `P(Y = 0)` and couples it to both linear predictors; that
+#'   branch is supplied for `neg_binomial_2`, the only untruncated mixture family
+#'   here with a free dispersion. Other untruncated bases are refused rather than
+#'   handed the base derivative under a model it does not describe.
 #' @param X_zi Optional zero-inflation design matrix (`length(y)` rows), making
 #'   the model a two-process mixture: each observation is a structural zero with
 #'   probability `plogis(X_zi beta_zi)` and otherwise follows `family`. Paired

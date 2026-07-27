@@ -22,6 +22,10 @@ dispersion_case <- function(family, phi, n = 40L, seed = 3L) {
   set.seed(seed)
   eta <- switch(family,
     neg_binomial_2 = rnorm(n, 0.6, 0.4),
+    # Same location as the untruncated family: the truncation correction is
+    # largest where mu is small, so a fixture centred well above zero would
+    # exercise the added terms only weakly.
+    truncated_neg_binomial_2 = rnorm(n, 0.6, 0.4),
     gaussian       = rnorm(n, 1.0, 0.7),
     gamma          = rnorm(n, 0.5, 0.3),
     beta           = rnorm(n, 0.2, 0.5))
@@ -35,6 +39,7 @@ dispersion_case <- function(family, phi, n = 40L, seed = 3L) {
 
 FAMILY_PHI <- list(
   neg_binomial_2 = c(0.8, 2.5, 9.0),
+  truncated_neg_binomial_2 = c(0.8, 2.5, 9.0),
   gaussian       = c(0.3, 1.0, 4.0),
   gamma          = c(0.7, 3.0, 12.0)
 )
@@ -82,6 +87,14 @@ test_that("dweight/dphi differentiates the weight H is actually built from", {
   # is the whole content of this test.
   h_weight <- list(
     neg_binomial_2 = function(ops, eta, y, phi) ops$obs_weight(eta, y, NULL, phi),
+    # The truncated pair go the OTHER way from neg_binomial_2: Newton builds H
+    # from the expected form Var(y | y > 0) (laplace_family_link.h:368), chosen
+    # there because it is positive for every mu while the observed curvature
+    # carries y and can go negative. So `weight`, not `obs_weight` -- the same
+    # rule (differentiate whatever H is built from) landing on the opposite
+    # member of the pair.
+    truncated_neg_binomial_2 =
+      function(ops, eta, y, phi) ops$weight(eta, NULL, phi),
     gaussian       = function(ops, eta, y, phi) ops$weight(eta, NULL, phi),
     gamma          = function(ops, eta, y, phi) ops$weight(eta, NULL, phi)
   )

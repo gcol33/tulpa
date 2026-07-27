@@ -288,6 +288,33 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_family_obs_curvature_delta_deta_vec
+Rcpp::NumericVector cpp_family_obs_curvature_delta_deta_vec(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, std::string family, double phi, double phi2);
+RcppExport SEXP _tulpa_cpp_family_obs_curvature_delta_deta_vec(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_obs_curvature_delta_deta_vec(y, n_trials, eta, family, phi, phi2));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_family_has_obs_curvature_delta_derivative
+bool cpp_family_has_obs_curvature_delta_derivative(std::string family);
+RcppExport SEXP _tulpa_cpp_family_has_obs_curvature_delta_derivative(SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_has_obs_curvature_delta_derivative(family));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_has_exact_mode_jacobian
 bool cpp_family_has_exact_mode_jacobian(std::string family);
 RcppExport SEXP _tulpa_cpp_family_has_exact_mode_jacobian(SEXP familySEXP) {
@@ -357,6 +384,62 @@ BEGIN_RCPP
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_family_has_zi_curvature_derivative(family));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_zi_mixture_curvature_deriv2
+Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv2(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, Rcpp::NumericVector logit_zi, std::string family, double phi, double phi2);
+RcppExport SEXP _tulpa_cpp_zi_mixture_curvature_deriv2(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP logit_ziSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type logit_zi(logit_ziSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_zi_mixture_curvature_deriv2(y, n_trials, eta, logit_zi, family, phi, phi2));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_family_has_zi_curvature_2nd_derivative
+bool cpp_family_has_zi_curvature_2nd_derivative(std::string family);
+RcppExport SEXP _tulpa_cpp_family_has_zi_curvature_2nd_derivative(SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_has_zi_curvature_2nd_derivative(family));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_zi_mixture_phi_deriv
+Rcpp::NumericMatrix cpp_zi_mixture_phi_deriv(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, Rcpp::NumericVector logit_zi, std::string family, double phi, double phi2);
+RcppExport SEXP _tulpa_cpp_zi_mixture_phi_deriv(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP logit_ziSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type logit_zi(logit_ziSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_zi_mixture_phi_deriv(y, n_trials, eta, logit_zi, family, phi, phi2));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_family_has_zi_phi_deriv
+bool cpp_family_has_zi_phi_deriv(std::string family);
+RcppExport SEXP _tulpa_cpp_family_has_zi_phi_deriv(SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_has_zi_phi_deriv(family));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3703,11 +3786,17 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_curvature_deta2", (DL_FUNC) &_tulpa_cpp_family_curvature_deta2, 6},
     {"_tulpa_cpp_family_has_curvature_2nd_derivative", (DL_FUNC) &_tulpa_cpp_family_has_curvature_2nd_derivative, 1},
     {"_tulpa_cpp_family_obs_curvature_delta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_vec, 6},
+    {"_tulpa_cpp_family_obs_curvature_delta_deta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_deta_vec, 6},
+    {"_tulpa_cpp_family_has_obs_curvature_delta_derivative", (DL_FUNC) &_tulpa_cpp_family_has_obs_curvature_delta_derivative, 1},
     {"_tulpa_cpp_family_has_exact_mode_jacobian", (DL_FUNC) &_tulpa_cpp_family_has_exact_mode_jacobian, 1},
     {"_tulpa_cpp_family_curvature_deta2_vec", (DL_FUNC) &_tulpa_cpp_family_curvature_deta2_vec, 6},
     {"_tulpa_cpp_zi_mixture_curvature_deriv", (DL_FUNC) &_tulpa_cpp_zi_mixture_curvature_deriv, 7},
     {"_tulpa_cpp_zi_mixture_curvature", (DL_FUNC) &_tulpa_cpp_zi_mixture_curvature, 7},
     {"_tulpa_cpp_family_has_zi_curvature_derivative", (DL_FUNC) &_tulpa_cpp_family_has_zi_curvature_derivative, 1},
+    {"_tulpa_cpp_zi_mixture_curvature_deriv2", (DL_FUNC) &_tulpa_cpp_zi_mixture_curvature_deriv2, 7},
+    {"_tulpa_cpp_family_has_zi_curvature_2nd_derivative", (DL_FUNC) &_tulpa_cpp_family_has_zi_curvature_2nd_derivative, 1},
+    {"_tulpa_cpp_zi_mixture_phi_deriv", (DL_FUNC) &_tulpa_cpp_zi_mixture_phi_deriv, 7},
+    {"_tulpa_cpp_family_has_zi_phi_deriv", (DL_FUNC) &_tulpa_cpp_family_has_zi_phi_deriv, 1},
     {"_tulpa_cpp_family_ad_terms", (DL_FUNC) &_tulpa_cpp_family_ad_terms, 6},
     {"_tulpa_cpp_glmm_elt_terms", (DL_FUNC) &_tulpa_cpp_glmm_elt_terms, 5},
     {"_tulpa_cpp_test_laplace_gaussian", (DL_FUNC) &_tulpa_cpp_test_laplace_gaussian, 3},
