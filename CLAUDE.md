@@ -319,7 +319,12 @@ k-hat via `.nl_attach_pareto_k()` + `.nested_grid_pareto_k()`: it re-evaluates
 `log_marginal` at a Gaussian-sampled grid by re-dispatching through the SAME
 driver (NO new C++ -- the existing kernels already evaluate the inner marginal
 at any grid handed to them), unconstrains the positive-scale axis with a `log`
-transform (Jacobian `sum(u)`), and PSIS-smooths. Scoped to a single-block,
+transform, and PSIS-smooths. That axis carries NO change-of-variables Jacobian:
+the default grid is geometric (uniform in `u = log theta`) and the integrator
+weights it with plain `softmax(log_marginal)` applying no volume element, so
+`log_marginal` already IS the u-space target (`R/psis.R:416-427`). Adding one
+biases the scale posterior -- the #179 CAR_proper recovery is what establishes
+that. Scoped to a single-block,
 single positive-scale-axis grid (`.NL_POS_GRID`: `sigma`, `tau`, `sigma2`,
 `phi_gp`, ...); multi-block, multi-axis, or bounded-parameter grids (a
 correlation `rho_grid`) DECLINE to `pareto_k = NA` rather than apply a guessed
@@ -334,8 +339,10 @@ the CCD weights use (no extra Jacobian -- the SPDE integrator works on the log
 scale). Both `method = "ccd"` (Hessian proposal) and `"grid"` (grid-moment
 proposal) are covered; same `diagnose_k` / `k_samples` knobs. `.nested_is_pareto_k()`
 is the shared batched IS-PSIS primitive: proposal `N(theta_hat, L L')` in the
-integrator's own space, caller-supplied batched target (the grid path adds the
-`sum(u)` log-Jacobian, the SPDE path does not).
+integrator's own space, caller-supplied batched target. Neither the grid path
+nor the SPDE path adds a log-Jacobian on a positive-scale axis; only an axis
+whose grid is uniform in the NATURAL parameter picks one up, which is the
+BYM2 mixing weight's `logit01` transform on the joint path (#221).
 
 `diagnostic_summary()` surfaces `pareto_k` for any non-chain fit, falling back
 to the grid's quadrature effective sample size (`sum(w)^2 / sum(w^2)`) when
