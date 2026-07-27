@@ -1,5 +1,17 @@
 # tulpa NEWS
 
+## 0.0.101
+
+* **`portable_math.h` compiles for downstream packages on macOS again
+  (bugfix).** The header returns `std::pair` from `portable_digamma_lgamma()`
+  but included only `<cmath>` and `<limits>`. libstdc++ reaches `<utility>`
+  transitively through those, so Linux and MinGW builds were fine and tulpa's
+  own sources were fine everywhere -- they include `<utility>` ahead of it. Apple
+  clang's libc++ does not, so any package that includes the header first failed
+  to compile: `no template named 'pair' in namespace 'std'`, which took
+  tulpaObs's macOS `R CMD check` down at `count_grouped_oracle.o`. The header
+  now includes `<utility>` itself. Header-only change, no behaviour anywhere.
+
 ## 0.0.100
 
 Warm-starting the sampler from a cheaper fit of the same model.

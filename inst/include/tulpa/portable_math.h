@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <limits>
+#include <utility>   // std::pair, returned by portable_digamma_lgamma
 
 namespace tulpa {
 namespace math {
