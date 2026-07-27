@@ -1691,3 +1691,55 @@ Rcpp::NumericVector cpp_pc_prior_scales(double sigma, double U, double alpha) {
     Rcpp::_["log_tau"]    = log_prior_log_tau_pc<double>(std::log(tau), U, alpha)
   );
 }
+
+// ---------------------------------------------------------------------------
+// Out-of-pattern Hessian writes. Scatters every lower-triangle nonzero of A
+// through SparseHessianBuilder::add() against a pattern that optionally omits
+// one of them, so the scatter reaches an entry the pattern cannot hold -- the
+// invariant that broke for unequal / non-contiguous areal components (#241) and
+// weighted-entry blocks (#242). `slot_val` exercises the cached-slot write path
+// (scatter_slot) through an unresolved index. With raise = TRUE the guard's
+// check() surfaces the error the solve drivers raise.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_hessian_pattern_guard(
+    Rcpp::NumericMatrix A,
+    int    omit_entry = -1,
+    bool   raise      = false,
+    double slot_val   = 0.0
+) {
+  const int n = A.nrow();
+
+  std::vector<std::pair<int,int>> nz;
+  for (int c = 0; c < n; ++c)
+    for (int r = c; r < n; ++r)
+      if (A(r, c) != 0.0) nz.push_back({r, c});
+
+  std::vector<std::pair<int,int>> pattern;
+  for (int e = 0; e < (int) nz.size(); ++e)
+    if (e != omit_entry) pattern.push_back(nz[e]);
+
+  tulpa::SparseHessianBuilder H;
+  H.init(n, pattern);
+  H.zero();
+
+  const tulpa::HessianPatternGuard guard;
+  for (const auto& rc : nz) H.add(rc.first, rc.second, A(rc.first, rc.second));
+
+  // Cached-slot path: an unresolved slot discards slot_val. A structural zero
+  // there is not a drop -- index caches resolve whole cross products and hold
+  // -1 for pairs no observation ever touches.
+  double sink = 0.0;
+  tulpa::scatter_slot(&sink, -1, slot_val);
+
+  const double dropped = (double) guard.dropped();
+  double stored = 0.0;
+  for (double v : H.values) stored += v;
+
+  if (raise) guard.check("cpp_test_hessian_pattern_guard");
+
+  return Rcpp::List::create(
+    Rcpp::_["dropped"]    = dropped,
+    Rcpp::_["nnz"]        = H.nnz,
+    Rcpp::_["stored_sum"] = stored
+  );
+}

@@ -275,6 +275,7 @@ Rcpp::List cpp_laplace_fit_gp(
     // multi-threaded triggers a flaky heap corruption under the mingw OpenMP
     // toolchain. Pin to one thread.
     n_threads = 1;
+    const tulpa::HessianPatternGuard pattern_guard;
     tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
         y, n, X, re_idx, n_re_groups, sigma_re,
         coords, nn_idx, nn_dist, nn_order, n_spatial, nn,
@@ -283,5 +284,6 @@ Rcpp::List cpp_laplace_fit_gp(
         offset.empty() ? nullptr : offset.data(),
         obs_to_loc.empty() ? nullptr : obs_to_loc.data()
     );
+    pattern_guard.check("the GP / NNGP Laplace solve");
     return tulpa::laplace_result_to_list(result);
 }

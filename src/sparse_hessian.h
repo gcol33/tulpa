@@ -11,6 +11,7 @@
 #ifndef TULPA_SPARSE_HESSIAN_H
 #define TULPA_SPARSE_HESSIAN_H
 
+#include "hessian_pattern_guard.h" // scatter_slot, out-of-pattern drop counter
 #include "laplace_newton.h"        // NewtonScratch (shared with dense solver)
 #include "laplace_newton_loop.h"   // shared eval_*, line_search_backtrack, finalize_log_marginal
 #include "laplace_profile.h"
@@ -163,13 +164,17 @@ public:
     }
 
     // Add value to entry (row, col). Handles symmetric storage (lower triangle).
-    // If the entry doesn't exist in the pattern, it's silently dropped.
+    // An entry outside the pattern cannot be stored; a nonzero contribution to
+    // one is recorded so the enclosing driver's HessianPatternGuard can raise
+    // (see hessian_pattern_guard.h).
     void add(int row, int col, double val) {
         int lo = std::min(row, col);
         int hi = std::max(row, col);
         auto it = entry_map->find({hi, lo});
         if (it != entry_map->end()) {
             values[it->second] += val;
+        } else if (val != 0.0) {
+            record_hessian_pattern_drop();
         }
     }
 
@@ -704,7 +709,7 @@ inline bool s2z_block_schur(
                 const double v = A.values[p];
                 const int a = cc.dest_a[t];
                 switch (cc.dest_kind[t]) {
-                    case 0:  if (a >= 0) affv[a] += v; break;
+                    case 0:  scatter_slot(affv, a, v); break;
                     case 1:  Ass[a] += v; if (cc.dest_b[t] >= 0) Ass[cc.dest_b[t]] += v; break;
                     default: Afs[a] += v; break;
                 }
@@ -880,7 +885,7 @@ inline double s2z_log_det_direct(
         for (int j = 0; j < n_x; ++j)
             for (int p = A_builder.col_ptr[j]; p < A_builder.col_ptr[j + 1]; ++p) {
                 const int slot = cc.a_slots[t++];
-                if (slot >= 0) Bv[slot] += A_builder.values[p];
+                scatter_slot(Bv, slot, A_builder.values[p]);
             }
     }
     {
@@ -891,7 +896,7 @@ inline double s2z_log_det_direct(
             for (int i = 0; i < nk; ++i)
                 for (int j = 0; j <= i; ++j) {
                     const int slot = cc.block_slots[t++];
-                    if (slot >= 0) Bv[slot] += c;
+                    scatter_slot(Bv, slot, c);
                 }
         }
     }
@@ -903,7 +908,7 @@ inline double s2z_log_det_direct(
                 for (int i = 0; i < r1[a].n; ++i)
                     for (int j = 0; j < r1[b].n; ++j) {
                         const int slot = cc.cross_slots[t++];
-                        if (slot >= 0) Bv[slot] += d;
+                        scatter_slot(Bv, slot, d);
                     }
             }
     }

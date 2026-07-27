@@ -251,7 +251,7 @@ inline bool scatter_dense_basis_block(
         for (int j2 = 0; j2 < M; j2++) {
             for (int j1 = j2; j1 < M; j1++) {
                 const int k = idx_bb[t++];
-                if (k >= 0) Hv[k] += dd * scratch.H_block(j1, j2);
+                scatter_slot(Hv, k, dd * scratch.H_block(j1, j2));
             }
         }
     }
@@ -280,7 +280,7 @@ inline bool scatter_dense_basis_block(
         for (int l = 0; l < p_k; l++) {
             for (int j = 0; j < M; j++) {
                 const int k = idx_bbeta[static_cast<size_t>(l) * M + j];
-                if (k >= 0) Hv[k] += d_eff * scratch.H_beta(j, l);
+                scatter_slot(Hv, k, d_eff * scratch.H_beta(j, l));
             }
         }
     }
@@ -310,7 +310,7 @@ inline bool scatter_dense_basis_block(
         for (int g = 0; g < n_re_k; g++) {
             for (int j = 0; j < M; j++) {
                 const int k = idx_bre[static_cast<size_t>(g) * M + j];
-                if (k >= 0) Hv[k] += d_eff * scratch.H_re(j, g);
+                scatter_slot(Hv, k, d_eff * scratch.H_re(j, g));
             }
         }
     }

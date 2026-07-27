@@ -265,7 +265,7 @@ struct SparseScatterPolicy {
         const int nw = (int) w.slot.size();
         for (int t = 0; t < nw; t++) {
             const int s = w.slot[t];
-            if (s >= 0) Hv[s] += (H_row * w.w_first[t]) * w.w_second[t];
+            scatter_slot(Hv, s, (H_row * w.w_first[t]) * w.w_second[t]);
         }
     }
 

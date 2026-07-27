@@ -448,7 +448,7 @@ inline void scatter_one_obs_indexed(
             const double Xil = pa.X(i, l);
             for (int j = l; j < p_k; j++) {
                 const int k = bb[t++];
-                if (k >= 0) Hv_out[k] += gh.neg_hess * pa.X(i, j) * Xil;
+                scatter_slot(Hv_out, k, gh.neg_hess * pa.X(i, j) * Xil);
             }
         }
     }
@@ -458,7 +458,7 @@ inline void scatter_one_obs_indexed(
         const int row_off = g_local * p_k;
         for (int j = 0; j < p_k; j++) {
             const int k = bre[row_off + j];
-            if (k >= 0) Hv_out[k] += gh.neg_hess * pa.X(i, j);
+            scatter_slot(Hv_out, k, gh.neg_hess * pa.X(i, j));
         }
     }
     // β × active: idx_beta_active[bxa_start + j*A_i + a].
@@ -468,7 +468,7 @@ inline void scatter_one_obs_indexed(
             const int row_off = plan.bxa_start + j * A_i;
             for (int a = 0; a < A_i; a++) {
                 const int k = bxa[row_off + a];
-                if (k >= 0) Hv_out[k] += gh.neg_hess * Xij * w_buf[a];
+                scatter_slot(Hv_out, k, gh.neg_hess * Xij * w_buf[a]);
             }
         }
     }
@@ -478,10 +478,10 @@ inline void scatter_one_obs_indexed(
         grad_out[g_re_glb] += gh.grad;
         const int g_local = g_re_glb - rstart;
         const int k_re = red[g_local];
-        if (k_re >= 0) Hv_out[k_re] += gh.neg_hess;
+        scatter_slot(Hv_out, k_re, gh.neg_hess);
         for (int a = 0; a < A_i; a++) {
             const int k = rxa[plan.rxa_start + a];
-            if (k >= 0) Hv_out[k] += gh.neg_hess * w_buf[a];
+            scatter_slot(Hv_out, k, gh.neg_hess * w_buf[a]);
         }
     }
 
@@ -494,7 +494,7 @@ inline void scatter_one_obs_indexed(
             grad_out[adg[plan.act_start + a2]] += gh.grad * w_a2;
             for (int a1 = a2; a1 < A_i; a1++) {
                 const int k = axa[plan.axa_start + t++];
-                if (k >= 0) Hv_out[k] += gh.neg_hess * w_buf[a1] * w_a2;
+                scatter_slot(Hv_out, k, gh.neg_hess * w_buf[a1] * w_a2);
             }
         }
     }

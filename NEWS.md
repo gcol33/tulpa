@@ -1,5 +1,43 @@
 # tulpa NEWS
 
+## 0.0.102
+
+* **Out-of-pattern Hessian writes are detected instead of silently discarded
+  (gcol33/tulpa#249).** `SparseHessianBuilder::add()` dropped any contribution
+  whose `(row, col)` was absent from the registered sparsity pattern, and the
+  cached-slot fast paths did the same behind `if (slot >= 0)`. Nothing counted
+  it. What survives a drop is a Hessian too small in one entry -- finite,
+  positive definite, correctly shaped -- which the Newton step, the Laplace
+  log-determinant, the marginal standard errors and the exact outer gradient all
+  inherit, so the only symptom is a recovery test drifting, the hardest signal
+  here to attribute. The invariant had already broken twice: unequal /
+  non-contiguous areal components (#241) and weighted-entry blocks (#242).
+
+  `src/hessian_pattern_guard.h` adds the drop counter, the `scatter_slot()`
+  helper that single-sources every guarded slot write (14 sites across the
+  dense-basis, indexed-cache, joint-batch and sum-to-zero scatters), and
+  `HessianPatternGuard`, which snapshots the counter and raises. Detection is a
+  counter rather than a throw at the write because the scatter runs inside
+  OpenMP parallel regions, where an `Rcpp::stop` escaping the structured block
+  is `std::terminate` -- the constraint that also makes
+  `LaplaceResult::start_infeasible` a flag. The guard is a pure snapshot, so a
+  driver nested inside another measures its own window without disturbing it.
+  Placed in `run_nested_laplace_grid` (covering the single-block and both joint
+  paths), the batched joint driver, `spde_run_single_fit` and
+  `cpp_laplace_fit_gp`.
+
+  Only a NONZERO discarded contribution counts. The scatter index caches resolve
+  whole cross products up front -- every (beta_j, RE_g) pair of an arm -- and
+  legitimately hold -1 for pairs no observation ever touches; those slots are
+  written with a structural zero, which changes nothing whether it lands or not.
+  Counting at index-resolution time instead would fire on every real fit.
+
+  The shipping kernels scatter entirely inside their registered patterns: the
+  suite runs with the check armed and zero drops, so this lands as a regression
+  barrier rather than a bug fix. New `test-hessian-pattern-guard.R` covers the
+  counter on both write paths, the raise, the zero-versus-nonzero distinction,
+  and a real fit.
+
 ## 0.0.101
 
 * **`portable_math.h` compiles for downstream packages on macOS again

@@ -3259,6 +3259,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_hessian_pattern_guard
+Rcpp::List cpp_test_hessian_pattern_guard(Rcpp::NumericMatrix A, int omit_entry, bool raise, double slot_val);
+RcppExport SEXP _tulpa_cpp_test_hessian_pattern_guard(SEXP ASEXP, SEXP omit_entrySEXP, SEXP raiseSEXP, SEXP slot_valSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type A(ASEXP);
+    Rcpp::traits::input_parameter< int >::type omit_entry(omit_entrySEXP);
+    Rcpp::traits::input_parameter< bool >::type raise(raiseSEXP);
+    Rcpp::traits::input_parameter< double >::type slot_val(slot_valSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_hessian_pattern_guard(A, omit_entry, raise, slot_val));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -3956,6 +3970,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_grid_factor_bytes", (DL_FUNC) &_tulpa_cpp_test_grid_factor_bytes, 1},
     {"_tulpa_cpp_test_miid_prior", (DL_FUNC) &_tulpa_cpp_test_miid_prior, 4},
     {"_tulpa_cpp_pc_prior_scales", (DL_FUNC) &_tulpa_cpp_pc_prior_scales, 3},
+    {"_tulpa_cpp_test_hessian_pattern_guard", (DL_FUNC) &_tulpa_cpp_test_hessian_pattern_guard, 4},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

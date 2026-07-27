@@ -274,6 +274,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
 ) {
     const int n_arms = (int) arms.size();
     const int B = n_batch;
+    const HessianPatternGuard pattern_guard;
 
     std::vector<int> coupled_arms;
     if (spec) coupled_arms = spec->arm_ids();
@@ -580,6 +581,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         }
         out[s] = sp;
     }
+    pattern_guard.check("the batched joint nested-Laplace grid");
     return out;
 }
 

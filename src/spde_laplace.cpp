@@ -47,6 +47,7 @@ static Rcpp::List spde_run_single_fit(
     const double tau_re = (n_re_groups > 0)
                           ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
     Rcpp::List out;
+    const tulpa::HessianPatternGuard pattern_guard;
 
     // Prior normalizer 0.5 log|Q(theta)|. A constant in the latent solve (it
     // does not move the mode or the SEs), but required for this fit's
@@ -167,6 +168,7 @@ static Rcpp::List spde_run_single_fit(
         tulpa::LaplaceResult res = tulpa::laplace_newton_solve_sparse(
             y, n_trials, family, phi, N, n_x, max_iter, tol, n_threads,
             compute_eta, scatter_sparse, center, log_prior, H_builder, x_init);
+        pattern_guard.check("the sparse SPDE Laplace solve");
         return Rcpp::List::create(
             Rcpp::Named("mode") = res.mode,
             Rcpp::Named("log_det_Q") = res.log_det_Q,
@@ -190,6 +192,7 @@ static Rcpp::List spde_run_single_fit(
                 Rcpp::Named("Q_nnz") = qb.nnz());
         },
         re_idx, n_re_groups, sigma_re, center_mesh, half_ldQ);
+    pattern_guard.check("the SPDE Laplace solve");
     return out;
 }
 

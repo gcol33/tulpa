@@ -761,6 +761,10 @@ cpp_pc_prior_scales <- function(sigma, U, alpha) {
     .Call(`_tulpa_cpp_pc_prior_scales`, sigma, U, alpha)
 }
 
+cpp_test_hessian_pattern_guard <- function(A, omit_entry = -1L, raise = FALSE, slot_val = 0.0) {
+    .Call(`_tulpa_cpp_test_hessian_pattern_guard`, A, omit_entry, raise, slot_val)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }
