@@ -1256,6 +1256,19 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'   factorize); with crossed RE terms `n_quad > 1` errors. When AGHQ is used the
 #'   fixed effects are integrated, so the reported fixed-effect posterior is the
 #'   marginal (ML-II) one rather than the joint-mode (PQL) estimate.
+#' @param X_zi Optional zero-inflation design matrix (`length(y)` rows), making
+#'   the model a two-process mixture: each observation is a structural zero with
+#'   probability `plogis(X_zi beta_zi)` and otherwise follows `family`. Paired
+#'   with a zero-truncated family it is the hurdle model. The random effects
+#'   enter the count predictor only, and the integration runs over the same
+#'   covariance coordinates -- the mixture changes the inner solve, not the
+#'   parameters being integrated over. The ZI coefficients are reported
+#'   alongside the count ones in `coef()` / `vcov()`, so the fixed block is
+#'   `ncol(X) + ncol(X_zi)` wide. Needs `n_quad = 1`: the adaptive
+#'   Gauss-Hermite inner marginal runs through a single-predictor oracle.
+#' @param zi_prior_sd Prior SD on `beta_zi`, keeping the logit identified where
+#'   a level carries no zeros (the likelihood alone would send it to `-Inf`).
+#'   Ignored when `X_zi` is `NULL`.
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{

@@ -71,6 +71,21 @@ factorize); with crossed RE terms \code{n_quad > 1} errors. When AGHQ is used th
 fixed effects are integrated, so the reported fixed-effect posterior is the
 marginal (ML-II) one rather than the joint-mode (PQL) estimate.}
 
+\item{X_zi}{Optional zero-inflation design matrix (\code{length(y)} rows), making
+the model a two-process mixture: each observation is a structural zero with
+probability \verb{plogis(X_zi beta_zi)} and otherwise follows \code{family}. Paired
+with a zero-truncated family it is the hurdle model. The random effects
+enter the count predictor only, and the integration runs over the same
+covariance coordinates -- the mixture changes the inner solve, not the
+parameters being integrated over. The ZI coefficients are reported
+alongside the count ones in \code{coef()} / \code{vcov()}, so the fixed block is
+\code{ncol(X) + ncol(X_zi)} wide. Needs \code{n_quad = 1}: the adaptive
+Gauss-Hermite inner marginal runs through a single-predictor oracle.}
+
+\item{zi_prior_sd}{Prior SD on \code{beta_zi}, keeping the logit identified where
+a level carries no zeros (the likelihood alone would send it to \code{-Inf}).
+Ignored when \code{X_zi} is \code{NULL}.}
+
 \item{control}{A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above). Recognized entries:
 \itemize{
