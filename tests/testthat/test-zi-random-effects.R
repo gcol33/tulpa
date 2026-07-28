@@ -153,9 +153,14 @@ test_that("the mixture curvature derivative is gated on the family", {
   # that separates those two, and qualifies because both halves exist.
   expect_true(cpp_family_has_zi_curvature_derivative("neg_binomial_1"))
   expect_true(tulpa:::.laplace_exact_supports_zi("neg_binomial_1"))
-  # Refused where there is no observed form at all, so the gate stays a property
-  # of the family rather than a list.
-  for (fam in c("beta_binomial", "t", "tweedie")) {
+  # beta_binomial qualifies on the same terms now that its observed curvature is
+  # registered: an atom at zero for the mixture to mean anything, and both
+  # halves of the observed curvature's eta-derivative.
+  expect_true(cpp_family_has_zi_curvature_derivative("beta_binomial"))
+  expect_true(tulpa:::.laplace_exact_supports_zi("beta_binomial"))
+  # Refused for want of the OTHER condition -- no atom at zero, so P(Y = 0) read
+  # off a continuous density would be a log-density, not a probability.
+  for (fam in c("t", "tweedie", "gamma", "beta")) {
     expect_false(cpp_family_has_zi_curvature_derivative(fam), info = fam)
     expect_false(tulpa:::.laplace_exact_supports_zi(fam), info = fam)
   }
@@ -588,11 +593,16 @@ test_that("the mixture curvature gate tracks the observed derivative, not a fami
               "truncated_poisson", "truncated_neg_binomial_2")) {
     expect_true(tulpa:::cpp_family_has_zi_curvature_2nd_derivative(f), info = f)
   }
-  # Still refused where there is no observed form at all, so the gate is a
-  # property of the family rather than a list that grew.
-  for (f in c("beta_binomial", "t", "tweedie")) {
+  # Still refused where the base has no atom at zero, so the gate is a property
+  # of the family rather than a list that grew.
+  for (f in c("t", "tweedie", "gamma", "beta")) {
     expect_false(tulpa:::cpp_family_has_zi_curvature_derivative(f), info = f)
   }
+  # beta_binomial is admitted at first order and refused at second: its
+  # observed-minus-working difference is registered, its next eta-derivative is
+  # not, so the mixture's fourth-derivative branch declines to the stencil.
+  expect_true(tulpa:::cpp_family_has_zi_curvature_derivative("beta_binomial"))
+  expect_false(tulpa:::cpp_family_has_zi_curvature_2nd_derivative("beta_binomial"))
 })
 
 

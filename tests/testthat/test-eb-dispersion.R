@@ -7,21 +7,29 @@
 # the estimator still biased, if the objective is not the one the model implies.
 
 eb_disp_data <- function(family, phi_true, sigma_true = 0.7,
-                         G = 40L, per = 12L, seed = 1L) {
+                         G = 40L, per = 12L, seed = 1L, n_trials = NULL,
+                         loc = 0.4) {
   set.seed(seed)
   n <- G * per
   g <- rep(seq_len(G), each = per)
   x <- rnorm(n)
   b <- rnorm(G, 0, sigma_true)
-  eta <- 0.4 + 0.5 * x + b[g]
-  y <- tulpa:::.FAMILY_OPS[[family]]$sample(eta, NULL, phi_true)
-  if (family == "gamma") y <- pmax(y, 1e-8)
-  list(y = y, X = cbind(`(Intercept)` = 1, x = x),
+  eta <- loc + 0.5 * x + b[g]
+  nt <- if (is.null(n_trials)) NULL else rep(n_trials, n)
+  y <- tulpa:::.FAMILY_OPS[[family]]$sample(eta, nt, phi_true)
+  if (family %in% c("gamma", "lognormal", "inverse_gaussian"))
+    y <- pmax(y, 1e-8)
+  if (family == "beta") y <- pmin(pmax(y, 1e-6), 1 - 1e-6)
+  list(y = y, X = cbind(`(Intercept)` = 1, x = x), n_trials = nt,
        re_terms = list(list(idx = g, n_groups = G, n_coefs = 1L)))
 }
 
+# No `phi2`: tulpa_eb() has no such argument and the nested path hard-codes
+# NA_real_ (gcol33/tulpa#257), so a `t` fit runs at the default df. The fixture
+# above draws with the same default, which keeps the two sides describing one
+# model -- and is why `t` is exercised on its scale only.
 eb_disp_fit <- function(d, family, phi_start) {
-  tulpa_eb(y = d$y, n_trials = NULL, X = d$X, re_terms = d$re_terms,
+  tulpa_eb(y = d$y, n_trials = d$n_trials, X = d$X, re_terms = d$re_terms,
            family = family, phi = phi_start, estimate_phi = TRUE)
 }
 
@@ -90,6 +98,43 @@ test_that("gamma recovers its shape across seeds", {
 })
 
 
+test_that("every newly registered family recovers its dispersion", {
+  skip_on_cran()
+  # An exact gradient says the optimizer walks the right surface; it does not
+  # say the maximizer of that surface is the generating phi. These seven
+  # families reached the registry on gradient evidence alone, so each gets the
+  # question the gradient cannot answer.
+  #
+  # Tolerances are the measured bias over the seeds below, roughly doubled: the
+  # tightest is `t` (1%) and the loosest beta_binomial (14% spread across
+  # seeds), which is the precision of the estimator on this design rather than
+  # anything about the derivative.
+  cases <- list(
+    list(f = "lognormal",        phi = 1.5, start = 0.5, loc = 0.4, tol = 0.10),
+    list(f = "neg_binomial_1",   phi = 2.0, start = 0.8, loc = 1.2, tol = 0.15),
+    list(f = "beta",             phi = 8.0, start = 3.0, loc = 0.0, tol = 0.10),
+    list(f = "inverse_gaussian", phi = 0.5, start = 1.5, loc = 0.4, tol = 0.10),
+    list(f = "beta_binomial",    phi = 8.0, start = 3.0, loc = 0.0, tol = 0.15,
+         nt = 10L),
+    list(f = "t",               phi = 1.2, start = 0.5, loc = 0.4, tol = 0.08),
+    list(f = "truncated_neg_binomial_2",
+         phi = 3.0, start = 1.0, loc = 1.2, tol = 0.10)
+  )
+  for (cs in cases) {
+    est <- vapply(1:5, function(s) {
+      d <- eb_disp_data(cs$f, cs$phi, seed = 400L + s, loc = cs$loc,
+                        n_trials = cs$nt)
+      fit <- eb_disp_fit(d, cs$f, cs$start)
+      c(phi = fit$phi, sigma = fit$map$sigma)
+    }, numeric(2))
+    expect_lt(abs(mean(est["phi", ]) - cs$phi) / cs$phi, cs$tol,
+              label = paste0(cs$f, " dispersion"))
+    expect_lt(abs(mean(est["sigma", ]) - 0.7), 0.12,
+              label = paste0(cs$f, " sigma"))
+  }
+})
+
+
 test_that("a fixed-phi fit is unchanged by the new argument", {
   skip_on_cran()
   # estimate_phi = FALSE must be the previous behaviour exactly, not a
@@ -131,12 +176,19 @@ test_that("estimate_phi is refused where the derivative is not registered", {
              estimate_phi = TRUE),
     "not available for family")
 
-  # Registered derivatives exist but the assembled gradient is not exact.
   expect_error(
-    tulpa_eb(y = plogis(d$y), n_trials = NULL, X = d$X,
-             re_terms = d$re_terms, family = "beta", phi = 5.0,
+    tulpa_eb(y = round(pmax(d$y, 0)) > 0, n_trials = NULL, X = d$X,
+             re_terms = d$re_terms, family = "binomial", phi = 1.0,
              estimate_phi = TRUE),
     "not available for family")
+
+  # beta was refused while its assembled gradient was inexact -- the mode motion
+  # was solved on the working-weight inverse. With its observed curvature
+  # registered the gradient is exact and the estimate runs.
+  expect_no_error(
+    tulpa_eb(y = plogis(d$y), n_trials = NULL, X = d$X,
+             re_terms = d$re_terms, family = "beta", phi = 5.0,
+             estimate_phi = TRUE))
 
   # The AGHQ inner marginal is a different objective.
   expect_error(

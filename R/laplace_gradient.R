@@ -129,6 +129,32 @@
 }
 
 
+# d(W_obs - w)/dphi, the DISPERSION derivative of the same correction.
+#
+# The phi border differentiates quantities formed on the true-curvature inverse
+# in the log-phi direction, so it needs dH_true/dpsi, which carries this
+# alongside the eta-derivative below: the correction moves with phi both through
+# the mode (the eta path) and explicitly. Zero wherever the working weight is
+# already the observed curvature; otherwise the family owes `dobs_weight` and
+# the difference is formed against its own registered `dweight`, so the two
+# halves cannot describe different weights.
+#
+# Returned UNWEIGHTED, matching .laplace_phi_fields: the observation weights are
+# applied at each point of use, alongside the `phi * (wt * ...)` the log-phi
+# coordinate already carries there.
+.laplace_obs_delta_dphi <- function(y, n_trials, eta, family, phi, phi2 = NULL,
+                                    dphi, dphi2, has_zi = FALSE) {
+  if (!.family_dphi2_needs_obs(family)) return(rep(0, length(eta)))
+  if (is.null(dphi2) || !is.function(dphi2$dobs_weight)) return(NULL)
+  p2 <- if (is.null(phi2) || (length(phi2) == 1L && is.na(phi2))) NULL else phi2
+  dd <- rep_len(dphi2$dobs_weight(eta, y, n_trials, phi, p2), length(eta)) -
+    rep_len(dphi$dweight(eta, y, n_trials, phi, p2), length(eta))
+  if (isTRUE(has_zi)) dd[y == 0] <- 0
+  if (any(!is.finite(dd))) return(NULL)
+  dd
+}
+
+
 # d(W_obs - w)/deta, the eta-derivative of the correction above.
 #
 # The closed Hessian differentiates u, which is formed on the TRUE-curvature
@@ -183,14 +209,14 @@
   PD <- matrix(0, length(y), length(cols), dimnames = list(NULL, cols))
   zmask <- if (isTRUE(cq$has_zi)) as.numeric(y != 0) else rep(1, length(y))
 
-  PD[, "dl_dp"]    <- dphi$dloglik(eta, y, n_trials, phi) * zmask
-  PD[, "dsc_e_dp"] <- dphi$dscore(eta, y, n_trials, phi) * zmask
-  PD[, "dWee_dp"]  <- dphi$dweight(eta, y, n_trials, phi) * zmask
+  PD[, "dl_dp"]    <- dphi$dloglik(eta, y, n_trials, phi, phi2) * zmask
+  PD[, "dsc_e_dp"] <- dphi$dscore(eta, y, n_trials, phi, phi2) * zmask
+  PD[, "dWee_dp"]  <- dphi$dweight(eta, y, n_trials, phi, phi2) * zmask
   if (!is.null(dphi2)) {
-    PD[, "dl_dp2"]     <- dphi2$dloglik2(eta, y, n_trials, phi) * zmask
-    PD[, "dsc_e_dp2"]  <- dphi2$dscore2(eta, y, n_trials, phi) * zmask
-    PD[, "dWee_dp2"]   <- dphi2$dweight2(eta, y, n_trials, phi) * zmask
-    PD[, "dWee_dp_de"] <- dphi2$dweight_deta(eta, y, n_trials, phi) * zmask
+    PD[, "dl_dp2"]     <- dphi2$dloglik2(eta, y, n_trials, phi, phi2) * zmask
+    PD[, "dsc_e_dp2"]  <- dphi2$dscore2(eta, y, n_trials, phi, phi2) * zmask
+    PD[, "dWee_dp2"]   <- dphi2$dweight2(eta, y, n_trials, phi, phi2) * zmask
+    PD[, "dWee_dp_de"] <- dphi2$dweight_deta(eta, y, n_trials, phi, phi2) * zmask
   }
 
   if (isTRUE(cq$has_zi)) {
@@ -719,13 +745,26 @@
   # ---- dispersion column and diagonal (chi = [theta..., log phi]) -----------
   # Borders the RE block with the log-phi coordinate. dxdphi (the phi mode
   # motion) and the phi gradient value come pre-formed from the caller so the
-  # two are one computation; .family_dphi2 is registered only where the working
-  # and observed weights coincide, so Hinv_mode is Hinv and dH_true/dpsi is
-  # dH_joint/dpsi here -- the coincidence that makes the closed form exact.
+  # two are one computation.
+  #
+  # Everything the objective reads -- s, V, log|H| -- stays on the working-weight
+  # inverse. u and the mode motion are formed on H_true^-1, so differentiating
+  # THEM in psi needs dH_true/dpsi, which is dH_joint/dpsi plus the correction's
+  # own movement: through the mode (ddelta, the same eta-derivative the
+  # random-effect block uses) and explicitly in phi (ddelta_dphi). Where the two
+  # weights coincide the correction is the zero function and both reduce to the
+  # working-weight forms.
   if (!is.null(phi_block) && !is.null(phi_block$dphi2)) {
     wt <- phi_block$wt; PD <- phi_block$PD
     dxdphi <- phi_block$dxdphi; deta_dphi <- phi_block$deta_dphi
     dz_dphi <- phi_block$dz_dphi
+    ddelta_dphi <- NULL
+    if (!isTRUE(cq$working_is_observed)) {
+      ddelta_dphi <- .laplace_obs_delta_dphi(
+        y, n_trials, cq$eta, family, phi, phi2, phi_block$dphi,
+        phi_block$dphi2, has_zi = has_zi)
+      if (is.null(ddelta_dphi)) return(NULL)
+    }
 
     # J_psi = phi dx/dphi is the log-phi mode-Jacobian column; eta_dot and z_dot
     # its two linear-predictor images. d(H_joint)/dpsi moves through the mode in
@@ -751,6 +790,13 @@
           A_zi, Matrix::Diagonal(x = dWzz_psi) %*% A_zi))
     }
     dHinv_psi <- -Hinv %*% dH_psi %*% Hinv
+    # The true-curvature counterpart, for the two quantities formed on it.
+    dHinv_mode_psi <- if (is.null(ddelta)) dHinv_psi else
+      -Hinv_mode %*%
+        (dH_psi + as.matrix(Matrix::crossprod(
+           A, Matrix::Diagonal(
+                x = ddelta * eta_dot + phi * (wt * ddelta_dphi)) %*% A))) %*%
+        Hinv_mode
     AdH_psi <- as.matrix(A %*% dHinv_psi)
     ds_psi  <- rowSums(AdH_psi * as.matrix(A))
     ds_zz_psi <- if (!has_zi) NULL else
@@ -780,11 +826,13 @@
         2 * (dWez_dz_psi * s_ez + dW[, "dWez_dz"] * ds_ez_psi) +
         dWzz_dz_psi * s_zz + dW[, "dWzz_dz"] * ds_zz_psi
     }
-    du_psi <- as.numeric(dHinv_psi %*% v_r) +
-              as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A, dq_eta_psi)))
+    # u = Hinv_mode v_r, so its psi-derivative rides the true-curvature inverse
+    # in both terms -- the same pairing the random-effect block's du_k uses.
+    du_psi <- as.numeric(dHinv_mode_psi %*% v_r) +
+              as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A, dq_eta_psi)))
     if (has_zi) {
       du_psi <- du_psi +
-        as.numeric(Hinv %*% as.numeric(Matrix::crossprod(A_zi, dq_z_psi)))
+        as.numeric(Hinv_mode %*% as.numeric(Matrix::crossprod(A_zi, dq_z_psi)))
     }
 
     # phi column: term B alone (psi does not touch Sigma, so term A and dOm drop).
@@ -813,10 +861,14 @@
     # phi diagonal: differentiate the phi gradient once more in psi. The second
     # mode derivative d(dx/dphi)/dpsi is the one genuinely new solve. Its right
     # hand side needs d(score)/dpsi in each predictor, and those come from the
-    # identity that the score's eta- and z-derivatives are -W: no new function,
-    # just the dW/dphi fields already in PD.
+    # identity that the score's eta-derivative is -W_OBSERVED -- the curvature of
+    # the actual log density, not the Newton working weight. The two coincide
+    # exactly where working_weight_is_observed() holds, and elsewhere their
+    # phi-derivatives differ by ddelta_dphi.
     dA <- sum(wt * (PD[, "dsc_e_dp"] * eta_dot + phi * PD[, "dl_dp2"]))
-    rhs_e <- (-PD[, "dWee_dp"]) * eta_dot + phi * PD[, "dsc_e_dp2"]
+    dsc_e_deta_dp <- PD[, "dWee_dp"] +
+      (if (is.null(ddelta_dphi)) 0 else ddelta_dphi)
+    rhs_e <- (-dsc_e_deta_dp) * eta_dot + phi * PD[, "dsc_e_dp2"]
     if (has_zi) rhs_e <- rhs_e - PD[, "dWez_dp"] * z_dot
     d2x_rhs <- as.numeric(Matrix::crossprod(A, wt * rhs_e))
     if (has_zi) {
@@ -826,7 +878,7 @@
       d2x_rhs <- d2x_rhs +
         as.numeric(Matrix::crossprod(A_zi, wt * rhs_z))
     }
-    d2x_dpsi <- as.numeric(dHinv_psi %*% phi_block$rhs_mode) +
+    d2x_dpsi <- as.numeric(dHinv_mode_psi %*% phi_block$rhs_mode) +
                 as.numeric(Hinv_mode %*% d2x_rhs)
     d_deta_dphi_dpsi <- as.numeric(A %*% d2x_dpsi)
 

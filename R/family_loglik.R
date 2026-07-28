@@ -552,41 +552,45 @@
   p
 }
 
-# Tweedie log-density at mean mu (vectorized over observations). y = 0 has the
-# exact Poisson-zero mass; y > 0 is the compound Poisson-gamma series
-# log-sum-exp'd over the event count N, expanding from the dominating index
-# j_max = y^(2-p) / (phi (2-p)) (Dunn & Smyth 2005) until terms fall 37 nats
-# below the running maximum.
-.tweedie_loglik <- function(mu, y, phi, p) {
+# The compound Poisson-gamma series, enumerated once per observation and read
+# two ways: `logsum` is log sum_n W_n, the normalizer of the positive-y density,
+# and `nbar` is E_W[n], the weighted mean event count that the dispersion
+# derivative needs. Every term carries phi only through lambda and the gamma rate
+# b, each exactly 1/phi, so d log sum_n W_n / dphi = -(1 + a) E_W[n] / phi -- the
+# same enumeration, no second truncation of the sum.
+#
+# Terms expand from the dominating index j_max = y^(2-p) / (phi (2-p))
+# (Dunn & Smyth 2005), upward then downward, until they fall 37 nats below the
+# running maximum.
+.tweedie_series <- function(mu, y, phi, p) {
   mu  <- pmin(rep_len(mu, length(y)), 1e10)   # broadcast; clamp eta overflow
   lam <- mu^(2 - p) / (phi * (2 - p))
   a   <- (2 - p) / (p - 1)
   b   <- mu^(1 - p) / (phi * (p - 1))
-  out <- numeric(length(y))
-  out[y < 0] <- -Inf                       # outside the support
-  zero <- y == 0
-  out[zero] <- -lam[zero]
+  logsum <- numeric(length(y))
+  nbar   <- numeric(length(y))
   for (i in which(y > 0)) {
-    jmax <- y[i]^(2 - p) / (phi * (2 - p))
-    out[i] <- .tweedie_logf_pos(y[i], lam[i], a, b[i], jmax)
+    s <- .tweedie_series_at(y[i], lam[i], a, b[i],
+                            y[i]^(2 - p) / (phi * (2 - p)))
+    logsum[i] <- s$logsum
+    nbar[i]   <- s$nbar
   }
-  out
+  list(lam = lam, a = a, b = b, logsum = logsum, nbar = nbar)
 }
 
-.tweedie_logf_pos <- function(y, lam, a, b, jmax) {
+.tweedie_series_at <- function(y, lam, a, b, jmax) {
   logterm <- function(n) {
     n * log(lam) - lgamma(n + 1) + n * a * log(b) +
       (n * a - 1) * log(y) - lgamma(n * a)
   }
   n0 <- max(1L, as.integer(round(jmax)))
   lt <- logterm(n0)
-  lmax <- lt; terms <- lt
-  # Expand upward then downward until 37 nats below the peak.
+  lmax <- lt; terms <- lt; ns <- n0
   n <- n0
   repeat {
     n <- n + 1L
     lt <- logterm(n)
-    terms <- c(terms, lt)
+    terms <- c(terms, lt); ns <- c(ns, n)
     lmax <- max(lmax, lt)
     if (lt < lmax - 37) break
   }
@@ -594,11 +598,33 @@
   while (n > 1L) {
     n <- n - 1L
     lt <- logterm(n)
-    terms <- c(terms, lt)
+    terms <- c(terms, lt); ns <- c(ns, n)
     lmax <- max(lmax, lt)
     if (lt < lmax - 37) break
   }
-  lmax + log(sum(exp(terms - lmax))) - lam - b * y
+  w <- exp(terms - lmax)
+  list(logsum = lmax + log(sum(w)), nbar = sum(ns * w) / sum(w))
+}
+
+# Tweedie log-density at mean mu (vectorized over observations). y = 0 has the
+# exact Poisson-zero mass; y > 0 is the series above minus lambda and b y.
+.tweedie_loglik <- function(mu, y, phi, p) {
+  s   <- .tweedie_series(mu, y, phi, p)
+  out <- s$logsum - s$lam - s$b * y
+  out[y == 0] <- -s$lam[y == 0]
+  out[y < 0]  <- -Inf                      # outside the support
+  out
+}
+
+# d log f / d phi, elementwise. With 1 + a = 1 / (p - 1),
+#
+#   dl/dphi = [lambda + b y - E_W[n] / (p - 1)] / phi
+#
+# which at y = 0 reduces to lambda / phi: no series, no event, and the exact
+# derivative of the Poisson-zero mass -lambda.
+.tweedie_dloglik_dphi <- function(mu, y, phi, p) {
+  s <- .tweedie_series(mu, y, phi, p)
+  (s$lam + s$b * y - s$nbar / (p - 1)) / phi
 }
 
 # Default degrees of freedom for the Student-t family (matches the C++

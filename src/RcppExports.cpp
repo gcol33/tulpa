@@ -272,6 +272,28 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_family_working_weight_is_observed
+bool cpp_family_working_weight_is_observed(std::string family);
+RcppExport SEXP _tulpa_cpp_family_working_weight_is_observed(SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_working_weight_is_observed(family));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_family_compiled_zi_supported
+bool cpp_family_compiled_zi_supported(std::string family);
+RcppExport SEXP _tulpa_cpp_family_compiled_zi_supported(SEXP familySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_family_compiled_zi_supported(family));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_obs_curvature_delta_vec
 Rcpp::NumericVector cpp_family_obs_curvature_delta_vec(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, std::string family, double phi, double phi2);
 RcppExport SEXP _tulpa_cpp_family_obs_curvature_delta_vec(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
@@ -3799,6 +3821,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_curvature_deta_vec", (DL_FUNC) &_tulpa_cpp_family_curvature_deta_vec, 6},
     {"_tulpa_cpp_family_curvature_deta2", (DL_FUNC) &_tulpa_cpp_family_curvature_deta2, 6},
     {"_tulpa_cpp_family_has_curvature_2nd_derivative", (DL_FUNC) &_tulpa_cpp_family_has_curvature_2nd_derivative, 1},
+    {"_tulpa_cpp_family_working_weight_is_observed", (DL_FUNC) &_tulpa_cpp_family_working_weight_is_observed, 1},
+    {"_tulpa_cpp_family_compiled_zi_supported", (DL_FUNC) &_tulpa_cpp_family_compiled_zi_supported, 1},
     {"_tulpa_cpp_family_obs_curvature_delta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_vec, 6},
     {"_tulpa_cpp_family_obs_curvature_delta_deta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_deta_vec, 6},
     {"_tulpa_cpp_family_has_obs_curvature_delta_derivative", (DL_FUNC) &_tulpa_cpp_family_has_obs_curvature_delta_derivative, 1},

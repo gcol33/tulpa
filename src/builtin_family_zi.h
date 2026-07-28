@@ -37,15 +37,20 @@
 namespace tulpa {
 namespace zi {
 
-// Families whose compiled kernels supply an observed (not moment-approximated)
-// curvature, so the mixture's y = 0 branch -- which differentiates through
-// P(Y = 0) -- matches the R reference exactly. Delegating to
-// has_observed_curvature() keeps this following the math rather than a second
-// hand-maintained list: a family becomes ZI-fittable the moment its observed
-// curvature is registered. beta_binomial is excluded by that predicate because
-// its compiled weight is the moment weight. The R front door gates on this.
+// Families the compiled zero-inflation mixture can be built over. Two
+// independent conditions, both delegated so neither becomes a hand-maintained
+// list that drifts from the branches it describes:
+//
+//   * has_discrete_mass -- log_lik_for_family at y = 0 has to BE log P(Y = 0).
+//     For a continuous family it is a log-density instead: finite and plausible
+//     for gaussian, infinite for gamma or beta, and wrong either way.
+//   * has_observed_curvature -- the y = 0 branch differentiates through
+//     P(Y = 0), so it needs the curvature of the actual log density rather than
+//     the Newton working weight.
+//
+// The R front door gates on this.
 inline bool compiled_zi_supported(const std::string& family) {
-    return has_observed_curvature(family);
+    return has_discrete_mass(family) && has_observed_curvature(family);
 }
 
 // ---------------------------------------------------------------------------

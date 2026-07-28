@@ -58,33 +58,41 @@
 }
 
 
-# Families whose compiled kernels carry the zero-inflated mixture. Narrower
-# than .ZI_FAMILIES: the mixture's y = 0 branch differentiates through
-# P(Y = 0), which needs the base family's OBSERVED curvature rather than the
-# Newton working weight, and only these kernels register one
-# (obs_grad_hess_for_family / has_observed_curvature in
-# src/laplace_family_link.h). beta_binomial is excluded because its compiled
-# weight is the moment weight. The R composition in this file covers every
-# family in .ZI_FAMILIES for density work regardless.
+# Families whose compiled kernels carry the zero-inflated mixture. Narrower than
+# .ZI_FAMILIES on two independent counts, both of them read off the compiled
+# predicate (`compiled_zi_supported` in src/builtin_family_zi.h) rather than
+# restated here: the base has to be DISCRETE, since the mixture's y = 0 branch
+# reads the log density at zero as log P(Y = 0), and it has to register an
+# OBSERVED curvature, since that branch differentiates through P(Y = 0). The R
+# composition in this file covers every family in .ZI_FAMILIES for density work
+# regardless.
 #
 # Paired with a zero-truncated base this is the hurdle model: the mixture
 # degenerates exactly, so hurdle needs no family of its own.
 #' @keywords internal
-.ZI_COMPILED_FAMILIES <- c("poisson", "binomial", "neg_binomial_2",
-                           "neg_binomial_1", "truncated_poisson",
-                           "truncated_neg_binomial_2")
+.zi_compiled_families <- function() {
+  Filter(function(f) isTRUE(tryCatch(cpp_family_compiled_zi_supported(f),
+                                     error = function(e) FALSE)),
+         family_names())
+}
 
 
 #' Reject a ZI request the compiled kernels cannot fit.
 #'
 #' @keywords internal
 .validate_family_zi_compiled <- function(family) {
-  if (.family_base(family) %in% .ZI_COMPILED_FAMILIES) return(invisible(TRUE))
+  # The canonical spelling, not the base: a `<family>_<link>` code is supported
+  # or not on its own terms, since the observed curvature the mixture needs is
+  # only exact for links both derivative ladders cover.
+  if (isTRUE(tryCatch(cpp_family_compiled_zi_supported(
+        .canonical_family(family)), error = function(e) FALSE))) {
+    return(invisible(TRUE))
+  }
   stop(sprintf(paste0(
     "`ziformula` with family = '%s' has no compiled kernel, so tulpa() ",
     "cannot fit it. Zero inflation is compiled for: %s. The R-level mixture ",
     "(zi_loglik() and friends) covers this family for density evaluation."),
-    family, paste(.ZI_COMPILED_FAMILIES, collapse = ", ")), call. = FALSE)
+    family, paste(.zi_compiled_families(), collapse = ", ")), call. = FALSE)
 }
 
 

@@ -74,11 +74,10 @@
 #'   coordinates only -- so this is the ML-II estimate of `phi`, not a MAP under
 #'   an undeclared prior.
 #'
-#'   Available for `neg_binomial_2`, `truncated_neg_binomial_2`, `gaussian` and
-#'   `gamma`, and refused elsewhere rather than approximated: `poisson` and
-#'   `binomial` have no free dispersion at all, and for the remaining families
-#'   the derivative is not registered (see `R/family_dispersion.R` for why
-#'   `beta` in particular is held back). Needs `n_quad = 1`.
+#'   Available for every family carrying a dispersion, which is every front-door
+#'   family except `poisson`, `binomial` and `truncated_poisson` -- those have no
+#'   free dispersion at all, so estimating one is a category error rather than a
+#'   missing feature, and it is refused. Needs `n_quad = 1`.
 #'
 #'   Alongside `X_zi` both mixture kinds are covered. A hurdle (a zero-truncated
 #'   base) has zero branch `log(pi)`, which carries no dispersion, so the base

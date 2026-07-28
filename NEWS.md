@@ -1,5 +1,90 @@
 # tulpa NEWS
 
+## 0.0.103
+
+* **`estimate_phi` covers every front-door family that has a dispersion
+  (gcol33/tulpa#247).** It was offered for twelve and carried a derivative for
+  four; the other eight hit a hard refusal at fit time. `lognormal`, `t`,
+  `neg_binomial_1`, `beta`, `inverse_gaussian`, `beta_binomial` and `tweedie`
+  are now registered, so `.dispersion_families()` is exactly the set of
+  front-door families carrying a `phi`. Each new entry finite-differences
+  against the `.FAMILY_OPS` likelihood, score and weight it claims to
+  differentiate (~1e-9), and the assembled `dm/dlog_phi` matches a central
+  difference of the Laplace log-marginal to the same order.
+
+  `gaussian` and `lognormal` now share one set of derivatives read at their own
+  residual -- the lognormal is the same normal density on the log scale plus a
+  dispersion-free Jacobian. Tweedie's log-density derivative reads the mean
+  event count off the SAME compound Poisson-gamma enumeration that produces the
+  density, so the two cannot be taken over different truncations of the series.
+
+  An exact gradient says the optimizer walks the right surface, not that the
+  maximizer of that surface is the generating dispersion, so each new family
+  additionally recovers its `phi` from simulated truth over several seeds
+  (`test-eb-dispersion.R`). Measured mean estimates against truth: `lognormal`
+  1.44 / 1.5, `neg_binomial_1` 2.11 / 2.0, `beta` 8.32 / 8.0,
+  `inverse_gaussian` 0.48 / 0.5, `beta_binomial` 8.08 / 8.0, `t` 1.21 / 1.2,
+  `truncated_neg_binomial_2` 2.96 / 3.0, with the random-effect SD recovered at
+  0.68-0.74 against 0.7 throughout. `tweedie` is the exception, and not for a
+  reason of its own: the EB path never threads `phi2`, so it cannot be fitted
+  there at all (gcol33/tulpa#257).
+
+* **The observed curvature is registered across the family registry.** Whether
+  a family's dispersion derivatives assemble into the right gradient turns on
+  one quantity: the mode-motion channel `q_eta = (dW/deta) s`. It is right when
+  either the working weight carries no eta (gaussian, lognormal, gamma, t) or
+  the mode-motion solve is on the TRUE curvature -- which needs the family's
+  observed curvature `-l''(eta)`, and only six families had one. Adding the
+  mu-space ladder `dgrad_mu_dmu` / `d2grad_mu_dmu2` alongside the existing
+  `grad_mu` closes that generically: `-l'' = -(L'' u^2 + L' u1)` covers every
+  family on the generic route in one branch, with explicit branches for
+  `beta_binomial`, `tweedie` and `t`. Verified against a numerical second
+  derivative of the log density for seventeen family/link pairs.
+
+  This is what unparks `beta`, whose derivatives had been kept unregistered
+  since its assembled gradient landed ~1e-4 off the objective. It also makes
+  the exact mode Jacobian and the marginal fixed-effect precision available
+  across the registry, where before they were declined for `gamma`, `beta`,
+  `inverse_gaussian`, `beta_binomial`, `tweedie` and `t`.
+
+* **The closed phi Hessian covers both families that were on the stencil, plus
+  two more (gcol33/tulpa#248).** It was registered for two of the four families
+  that carried the phi gradient. `gamma` had been deferred on the grounds that
+  its Fisher working weight differs from its observed curvature; the operative
+  condition is narrower than that -- the weight is free of eta, which zeroes
+  every channel the two inverses could differ on -- and it holds. `lognormal`
+  and `t` join on the same terms.
+
+  `truncated_neg_binomial_2` needed the border itself fixed. It differentiates
+  `u` and the phi mode motion, both formed on the true-curvature inverse, while
+  reading `Hinv` -- correct only where the two weights coincide, which is what
+  the old registration gate quietly relied on. The border now carries
+  `dH_true/dpsi`, which needs the phi-derivative of the observed-minus-working
+  correction as well as the eta-derivative the random-effect block already had;
+  a family in that position supplies `dobs_weight` and `.family_dphi2()`
+  withholds the whole entry without it, rather than pairing two different
+  inverses. The second mode derivative's right-hand side reads the same
+  correction: the score's eta-derivative is the OBSERVED curvature, and the two
+  differ for exactly these families.
+
+  The truncated family's three weight derivatives are one chain rule over
+  `f(a, a_e)` and the shape's own derivatives, the same partials
+  `curvature_deta2_for_family` carries, so `dweight`, `dweight2` and the mixed
+  `dweight_deta` come from a single derivation instead of three. The bordered
+  Hessian matches a central difference of the exact gradient to ~1e-9 for all
+  six registered families. `neg_binomial_1` keeps the differencing stencil.
+
+* **The compiled zero-inflation gate no longer rides on the observed
+  curvature alone.** `compiled_zi_supported()` was defined as
+  `has_observed_curvature()`, which was the right answer only while the count
+  families were the only ones carrying one: the mixture's `y = 0` branch reads
+  the log density at zero as `log P(Y = 0)`, which for a continuous family is a
+  log-DENSITY -- finite and plausible for gaussian, infinite for gamma or beta.
+  It now also requires a discrete base. The R front door reads the compiled
+  predicate instead of keeping its own list of families, so the two cannot
+  drift; zero-inflated `beta_binomial` is admitted by that (it has both an atom
+  at zero and, now, an observed curvature).
+
 ## 0.0.102
 
 * **Out-of-pattern Hessian writes are detected instead of silently discarded

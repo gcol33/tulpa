@@ -512,8 +512,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
            family, "'. The dispersion derivative of the Laplace log-marginal ",
            "is registered for: ",
            paste(.dispersion_families(), collapse = ", "),
-           ". Families without a free dispersion (poisson, binomial) have ",
-           "nothing to estimate.", call. = FALSE)
+           ". Families without a free dispersion (poisson, binomial, ",
+           "truncated_poisson) have nothing to estimate.", call. = FALSE)
     }
     if (n_quad > 1L) {
       stop(caller, "(): `estimate_phi = TRUE` needs the joint-field Laplace ",

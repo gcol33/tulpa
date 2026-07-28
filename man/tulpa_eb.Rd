@@ -79,11 +79,19 @@ The dispersion enters unpenalized -- the hyperprior covers the covariance
 coordinates only -- so this is the ML-II estimate of \code{phi}, not a MAP under
 an undeclared prior.
 
-Available for \code{neg_binomial_2}, \code{gaussian} and \code{gamma}, and refused
-elsewhere rather than approximated: \code{poisson} and \code{binomial} have no free
-dispersion at all, and for the remaining families the derivative is not
-registered (see \code{R/family_dispersion.R} for why \code{beta} in particular is
-held back). Needs \code{n_quad = 1}.}
+Available for every family carrying a dispersion, which is every front-door
+family except \code{poisson}, \code{binomial} and \code{truncated_poisson} -- those have no
+free dispersion at all, so estimating one is a category error rather than a
+missing feature, and it is refused. Needs \code{n_quad = 1}.
+
+Alongside \code{X_zi} both mixture kinds are covered. A hurdle (a zero-truncated
+base) has zero branch \code{log(pi)}, which carries no dispersion, so the base
+family's registered derivative is already the mixture's. Genuine zero
+inflation has zero branch \verb{log(pi + (1 - pi) P(Y = 0))}, which depends on
+\code{phi} through \code{P(Y = 0)} and couples it to both linear predictors; that
+branch is supplied for \code{neg_binomial_2}, the only untruncated mixture family
+here with a free dispersion. Other untruncated bases are refused rather than
+handed the base derivative under a model it does not describe.}
 
 \item{X_zi}{Optional zero-inflation design matrix (\code{length(y)} rows), making
 the model a two-process mixture: each observation is a structural zero with

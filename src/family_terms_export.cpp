@@ -132,6 +132,23 @@ bool cpp_family_has_curvature_2nd_derivative(std::string family) {
   return tulpa::has_curvature_2nd_derivative(family);
 }
 
+// Whether the Newton working weight already IS the observed curvature, so the
+// observed-minus-working difference is the zero function. What separates a
+// family whose delta is exactly zero from one whose delta merely happens to be
+// small on a given fixture.
+// [[Rcpp::export]]
+bool cpp_family_working_weight_is_observed(std::string family) {
+  return tulpa::working_weight_is_observed(family);
+}
+
+// Whether the compiled zero-inflation mixture can be built over this base. The
+// R front door reads this rather than keeping its own list, so the two cannot
+// drift.
+// [[Rcpp::export]]
+bool cpp_family_compiled_zi_supported(std::string family) {
+  return tulpa::zi::compiled_zi_supported(family);
+}
+
 // Vectorized observed-minus-working curvature W_obs - w at every observation.
 // The exact mode Jacobian dx_hat/dtheta needs the TRUE posterior Hessian
 // A' diag(W_obs) A + P, which is the working-weight H_joint plus

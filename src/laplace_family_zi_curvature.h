@@ -61,10 +61,8 @@ inline bool has_zi_curvature_derivative(const std::string& family) {
     // so it needs the true d(W_obs)/deta rather than the working weight's. That
     // is the registered derivative plus the observed-minus-working correction's,
     // so the gate is exactly "both halves are available" -- which admits
-    // neg_binomial_1 now that its correction carries a tetragamma, and still
-    // excludes beta_binomial / t / tweedie, which have no observed form at all.
-    return has_observed_curvature(family) &&
-           has_curvature_derivative(family) &&
+    // neg_binomial_1 now that its correction carries a tetragamma.
+    return has_curvature_derivative(family) &&
            has_obs_curvature_delta_derivative(family);
 }
 

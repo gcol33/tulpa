@@ -77,6 +77,14 @@ cpp_family_has_curvature_2nd_derivative <- function(family) {
     .Call(`_tulpa_cpp_family_has_curvature_2nd_derivative`, family)
 }
 
+cpp_family_working_weight_is_observed <- function(family) {
+    .Call(`_tulpa_cpp_family_working_weight_is_observed`, family)
+}
+
+cpp_family_compiled_zi_supported <- function(family) {
+    .Call(`_tulpa_cpp_family_compiled_zi_supported`, family)
+}
+
 cpp_family_obs_curvature_delta_vec <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_obs_curvature_delta_vec`, y, n_trials, eta, family, phi, phi2)
 }

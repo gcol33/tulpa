@@ -144,10 +144,17 @@ test_that("the front door refuses zero inflation it cannot fit", {
   # Continuous family: no atom at zero.
   expect_error(tulpa(y ~ x, data = d, family = "gaussian", ziformula = ~ 1),
                "no probability atom at zero")
-  # Count family with an R-only kernel.
-  expect_error(tulpa(y ~ x, data = d, family = "beta_binomial",
-                     n_trials = rep(5, 4), ziformula = ~ 1),
+  # Continuous family carrying a dispersion, so the refusal is about the atom
+  # and not about a missing curvature.
+  expect_error(tulpa(y ~ x, data = d, family = "gamma", ziformula = ~ 1),
+               "no probability atom at zero")
+  # The compiled-kernel guard sits behind that one and is reached only by a
+  # family the atom check admits. Every count family now carries an observed
+  # curvature, so it is exercised directly rather than through the front door.
+  expect_error(tulpa:::.validate_family_zi_compiled("beta"),
                "no compiled kernel")
+  for (f in tulpa:::.ZI_FAMILIES)
+    expect_true(tulpa:::.validate_family_zi_compiled(f), info = f)
   # Random effects in the zi predictor are not carried.
   expect_error(tulpa(y ~ x, data = d, family = "poisson",
                      ziformula = ~ (1 | z)),

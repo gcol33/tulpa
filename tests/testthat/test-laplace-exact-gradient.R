@@ -451,25 +451,50 @@ test_that("the second curvature derivative gate covers every family with a first
 })
 
 test_that("the exact mode-Jacobian gate tracks whether the observed curvature is available", {
-  # Working weight equals observed curvature (canonical / constant), or an exact
-  # observed form exists (has_observed_curvature): the analytic mode Jacobian is
-  # exact and the closed route may run.
-  for (f in c("poisson", "binomial", "neg_binomial_2", "gaussian",
-              "truncated_poisson", "neg_binomial_1", "truncated_neg_binomial_2"))
+  # Every front-door family now carries an exact observed curvature: the
+  # explicitly branched ones directly, everything on the generic mu-space route
+  # through the grad_mu ladder. So the gate is open across the registry, and
+  # what varies is whether the observed form DIFFERS from the working weight.
+  for (f in c(family_names(), "gaussian_log", "binomial_probit"))
     expect_true(cpp_family_has_exact_mode_jacobian(f), info = f)
-  # Working weight differs from the observed curvature and no exact observed form
-  # exists: the Jacobian cannot be formed, so the correction differences the mode.
-  for (f in c("beta_binomial", "t", "tweedie"))
-    expect_false(cpp_family_has_exact_mode_jacobian(f), info = f)
-  # The observed-minus-working delta is identically zero where they coincide and
-  # nonzero exactly for the two families whose observed curvature carries y.
+
+  # The observed-minus-working delta is identically zero exactly where the
+  # Newton weight already is the observed curvature -- a canonical link or a
+  # curvature carrying no y -- and nonzero everywhere else. A non-canonical link
+  # breaks the coincidence even for a family that has it canonically.
   eta <- c(-0.5, 0.3, 1.1); y <- c(2, 3, 1)
-  expect_true(all(cpp_family_obs_curvature_delta_vec(y, 1L, eta, "poisson", 1) == 0))
-  expect_true(all(cpp_family_obs_curvature_delta_vec(y, 1L, eta, "neg_binomial_2", 2.5) == 0))
-  expect_true(any(abs(cpp_family_obs_curvature_delta_vec(
-    y, 1L, eta, "truncated_neg_binomial_2", 2.5)) > 1e-8))
-  expect_true(any(abs(cpp_family_obs_curvature_delta_vec(
-    y, 1L, eta, "neg_binomial_1", 2.5)) > 1e-8))
+  zero_delta <- list(
+    list("poisson", 1), list("binomial", 1), list("neg_binomial_2", 2.5),
+    list("truncated_poisson", 1), list("gaussian", 1.4))
+  for (cs in zero_delta) {
+    expect_true(all(abs(cpp_family_obs_curvature_delta_vec(
+      y, 6L, eta, cs[[1]], cs[[2]])) < 1e-12), info = cs[[1]])
+    expect_true(cpp_family_working_weight_is_observed(cs[[1]]), info = cs[[1]])
+  }
+  nonzero_delta <- list(
+    list("truncated_neg_binomial_2", 2.5), list("neg_binomial_1", 2.5),
+    list("gamma", 3), list("beta", 6), list("inverse_gaussian", 0.6),
+    list("beta_binomial", 6), list("binomial_probit", 1), list("gaussian_log", 1.4))
+  for (cs in nonzero_delta) {
+    expect_true(any(abs(cpp_family_obs_curvature_delta_vec(
+      y, 6L, eta, cs[[1]], cs[[2]])) > 1e-8), info = cs[[1]])
+    expect_false(cpp_family_working_weight_is_observed(cs[[1]]), info = cs[[1]])
+  }
+})
+
+
+test_that("the compiled zero-inflation gate needs a discrete base, not just a curvature", {
+  # has_observed_curvature() alone used to decide this, and was right only while
+  # the count families were the only ones carrying one. The mixture's y = 0
+  # branch reads log_lik_for_family(0, ...) as log P(Y = 0); for a continuous
+  # family that is a log-DENSITY -- finite and plausible for gaussian, infinite
+  # for gamma or beta -- so the gate needs the discreteness condition of its own.
+  for (f in c("poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
+              "truncated_poisson", "truncated_neg_binomial_2"))
+    expect_true(cpp_family_compiled_zi_supported(f), info = f)
+  for (f in c("gaussian", "lognormal", "gamma", "beta", "inverse_gaussian",
+              "tweedie", "t"))
+    expect_false(cpp_family_compiled_zi_supported(f), info = f)
 })
 
 test_that("the vectorized second curvature derivative matches the scalar probe", {
