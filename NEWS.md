@@ -1,5 +1,42 @@
 # tulpa NEWS
 
+## 0.0.105
+
+* **The zero-inflation refusal names every family the gate admits
+  (gcol33/tulpa#250).** The kernel guard stops on
+  `compiled_zi_supported(family)` but restated the supported set beside it as
+  three families, where the gate admits seven -- it omitted `neg_binomial_1`
+  and both zero-truncated bases, which are exactly the hurdle models. A caller
+  who reached the error for some other family was told a hurdle on a truncated
+  base was unavailable. The message is now built from the gate:
+  `discrete_mass_families()` is the candidate list `has_discrete_mass()` tests
+  membership in, and `compiled_zi_supported_families()` runs the gate over it.
+
+* **A mistyped `TULPA_S2Z_DENSIFY_MAX` no longer forces the Woodbury path
+  (gcol33/tulpa#251).** The override was read with `atoi()`, which maps every
+  unparseable string to `0` -- and `0` is a meaningful setting here, forcing
+  the rank-1 storage on every intrinsic field. `=ture` or `=256a` therefore
+  changed which algorithm ran for the rest of the session, with nothing in the
+  output saying so. It is parsed with `strtol()` against the end pointer now:
+  anything that is not a whole non-negative int is treated as unset, so the
+  documented default applies. Both storages remain exact, so no fitted value
+  moves. The other three `getenv` knobs in `src/` are presence or single-char
+  tests whose unparseable case already lands on the default.
+
+* **A warm start whose source supplies the wrong number of SDs is refused
+  (gcol33/tulpa#252).** `.build_warm_start()` errors when a source fit's block
+  does not match the sampler's layout, but two branches took `s_t[1]` and
+  carried on -- seeding every coefficient of a term from the first
+  coefficient's SD, for both the mass scale and the `log_sigma_re` starting
+  value, and reporting that as a warm start. A single SD still broadcasts (the
+  scalar-term case); any length other than one or the term's coefficient count
+  now stops with the wording the coefficient placement already used.
+
+* **`get_mode_backends()` derives its mode list from `INFERENCE_TIERS`
+  (gcol33/tulpa#254).** Its error message restated the names its sibling
+  `select_inference_mode()` already builds from the registry. Correct today,
+  stale the moment a tier is added.
+
 ## 0.0.104
 
 * **The dispersion convention follows the base family, not the spelling

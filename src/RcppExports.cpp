@@ -294,6 +294,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_family_compiled_zi_supported_families
+std::string cpp_family_compiled_zi_supported_families();
+RcppExport SEXP _tulpa_cpp_family_compiled_zi_supported_families() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_family_compiled_zi_supported_families());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_family_obs_curvature_delta_vec
 Rcpp::NumericVector cpp_family_obs_curvature_delta_vec(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericVector eta, std::string family, double phi, double phi2);
 RcppExport SEXP _tulpa_cpp_family_obs_curvature_delta_vec(SEXP ySEXP, SEXP n_trialsSEXP, SEXP etaSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP) {
@@ -870,6 +880,16 @@ BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     rcpp_result_gen = Rcpp::wrap(cpp_profile_read());
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_s2z_densify_max
+int cpp_s2z_densify_max();
+RcppExport SEXP _tulpa_cpp_s2z_densify_max() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_s2z_densify_max());
     return rcpp_result_gen;
 END_RCPP
 }
@@ -3823,6 +3843,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_has_curvature_2nd_derivative", (DL_FUNC) &_tulpa_cpp_family_has_curvature_2nd_derivative, 1},
     {"_tulpa_cpp_family_working_weight_is_observed", (DL_FUNC) &_tulpa_cpp_family_working_weight_is_observed, 1},
     {"_tulpa_cpp_family_compiled_zi_supported", (DL_FUNC) &_tulpa_cpp_family_compiled_zi_supported, 1},
+    {"_tulpa_cpp_family_compiled_zi_supported_families", (DL_FUNC) &_tulpa_cpp_family_compiled_zi_supported_families, 0},
     {"_tulpa_cpp_family_obs_curvature_delta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_vec, 6},
     {"_tulpa_cpp_family_obs_curvature_delta_deta_vec", (DL_FUNC) &_tulpa_cpp_family_obs_curvature_delta_deta_vec, 6},
     {"_tulpa_cpp_family_has_obs_curvature_delta_derivative", (DL_FUNC) &_tulpa_cpp_family_has_obs_curvature_delta_derivative, 1},
@@ -3859,6 +3880,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_line_search_probe", (DL_FUNC) &_tulpa_cpp_line_search_probe, 2},
     {"_tulpa_cpp_profile_reset", (DL_FUNC) &_tulpa_cpp_profile_reset, 0},
     {"_tulpa_cpp_profile_read", (DL_FUNC) &_tulpa_cpp_profile_read, 0},
+    {"_tulpa_cpp_s2z_densify_max", (DL_FUNC) &_tulpa_cpp_s2z_densify_max, 0},
     {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
     {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 17},
     {"_tulpa_cpp_laplace_spec_test_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_multi_re, 8},

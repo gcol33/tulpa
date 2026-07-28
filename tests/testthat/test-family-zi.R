@@ -234,3 +234,23 @@ test_that("zero inflation is refused for families with no atom at zero", {
   }
   expect_silent(zi_loglik(0, 0, 1, "poisson"))
 })
+
+
+test_that("the compiled zero-inflation refusal reports the gate's own set", {
+  # The kernel's refusal message enumerates what compiled_zi_supported() admits
+  # rather than restating it, so the two cannot disagree. Held here against the
+  # R front door's independent enumeration, which filters every registered
+  # family through the same predicate.
+  reported <- strsplit(tulpa:::cpp_family_compiled_zi_supported_families(),
+                       ", ", fixed = TRUE)[[1]]
+  expect_setequal(reported, tulpa:::.zi_compiled_families())
+
+  # Every name it reports really is admitted.
+  expect_true(all(vapply(reported, tulpa:::cpp_family_compiled_zi_supported,
+                         logical(1))))
+
+  # The zero-truncated bases are the hurdle model, and were the families the
+  # hardcoded message omitted.
+  expect_true(all(c("neg_binomial_1", "truncated_poisson",
+                    "truncated_neg_binomial_2") %in% reported))
+})

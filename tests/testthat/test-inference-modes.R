@@ -23,3 +23,14 @@ test_that("auto mode never selects a Tier 3 (VI / approximate) backend", {
   expect_false("vi" %in% auto)                    # and auto never picks it
   expect_length(intersect(auto, optimized), 0L)   # nor any other approximate one
 })
+
+
+test_that("the unknown-mode message names every mode the registry defines", {
+  # The message and the sibling that validates the same names both have to come
+  # off INFERENCE_TIERS; a restated list goes stale the moment a tier is added.
+  msg <- tryCatch(tulpa:::get_mode_backends("no-such-mode"),
+                  error = conditionMessage)
+  for (m in c("auto", names(tulpa:::INFERENCE_TIERS))) {
+    expect_true(grepl(m, msg, fixed = TRUE), info = m)
+  }
+})

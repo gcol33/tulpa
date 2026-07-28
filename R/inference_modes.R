@@ -596,8 +596,9 @@ get_mode_backends <- function(mode) {
   }
 
   stop(sprintf(
-    "Unknown mode: '%s'. Use one of: auto, exact, structured, optimized",
-    mode
+    "Unknown mode: '%s'. Use one of: %s",
+    mode,
+    paste(c("auto", names(INFERENCE_TIERS)), collapse = ", ")
   ), call. = FALSE)
 }
 

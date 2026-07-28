@@ -201,8 +201,9 @@ Rcpp::List cpp_laplace_fit_multi_re(
     const bool has_zi = (p_zi > 0);
     if (has_zi && !tulpa::zi::compiled_zi_supported(family)) {
         Rcpp::stop("family '%s' has no compiled zero-inflated kernel "
-                   "(supported: poisson, binomial, neg_binomial_2).",
-                   family.c_str());
+                   "(supported: %s).",
+                   family.c_str(),
+                   tulpa::zi::compiled_zi_supported_families().c_str());
     }
     const int p_total = p + p_zi;
 

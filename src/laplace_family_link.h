@@ -748,13 +748,21 @@ inline bool working_weight_is_observed(const std::string& family) {
 // families carried an observed curvature, and reading P(Y = 0) off a continuous
 // density -- a finite log-DENSITY for gaussian, an infinite one for gamma or
 // beta -- is the failure that coincidence was hiding.
+// The discrete bases, as a list rather than a disjunction, so a caller that has
+// to REPORT the set can enumerate the same thing the predicate tests instead of
+// restating it. Everything zero inflation can be compiled over is in here by
+// construction, since compiled_zi_supported() requires has_discrete_mass().
+inline const std::vector<std::string>& discrete_mass_families() {
+    static const std::vector<std::string> bases = {
+        "poisson", "binomial", "neg_binomial_2", "neg_binomial_1",
+        "beta_binomial", "truncated_poisson", "truncated_neg_binomial_2"};
+    return bases;
+}
+
 inline bool has_discrete_mass(const std::string& family) {
     const std::string base = parse_family_link(family).family;
-    return base == "poisson" || base == "binomial" ||
-           base == "neg_binomial_2" || base == "neg_binomial_1" ||
-           base == "beta_binomial" ||
-           base == "truncated_poisson" ||
-           base == "truncated_neg_binomial_2";
+    const std::vector<std::string>& bases = discrete_mass_families();
+    return std::find(bases.begin(), bases.end(), base) != bases.end();
 }
 
 // Score plus OBSERVED curvature -d2 log f / d eta2 at the realized y.

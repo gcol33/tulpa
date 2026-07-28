@@ -53,6 +53,21 @@ inline bool compiled_zi_supported(const std::string& family) {
     return has_discrete_mass(family) && has_observed_curvature(family);
 }
 
+// The supported set as text, for the refusal message. Built by running the gate
+// over the discrete bases rather than restating its members, so a family that
+// gains or loses an observed curvature is reported correctly without anyone
+// remembering to edit a string. The candidate list is complete: a base outside
+// discrete_mass_families() fails the gate's first condition.
+inline std::string compiled_zi_supported_families() {
+    std::string out;
+    for (const std::string& base : discrete_mass_families()) {
+        if (!compiled_zi_supported(base)) continue;
+        if (!out.empty()) out += ", ";
+        out += base;
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Templated pieces (double / arena::Var / fwd::Dual), used by the AD path.
 // ---------------------------------------------------------------------------

@@ -30,7 +30,9 @@
 #include "sparse_hessian.h"
 #include "tulpa/sum_to_zero.h"   // s2z_aug_coef / s2z_aug_rank
 #include <Rcpp.h>
+#include <cerrno>
 #include <cstdlib>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -45,12 +47,28 @@ inline int s2z_densify_max() {
     // forces the rank-1 (Woodbury) path on every intrinsic field; a huge value
     // forces densify. The same env var is seen by the pattern and the scatter
     // so they never disagree within a fit.
+    //
+    // Parsed strictly, because 0 is a MEANINGFUL setting here rather than a
+    // neutral one: atoi() maps every unparseable string to 0, so a typo would
+    // select the Woodbury path for every intrinsic field in the session instead
+    // of the value the caller asked for. A value this cannot read as a whole
+    // non-negative int is treated as unset, so the documented default applies.
+    //
+    // Read on every call rather than cached, because the tests set it around a
+    // fit and clear it afterwards to run the same data down both storages
+    // (test-intrinsic-field-intercept-se.R).
     const char* e = std::getenv("TULPA_S2Z_DENSIFY_MAX");
-    if (e && *e) {
-        const int v = std::atoi(e);
-        if (v >= 0) return v;
+    if (e == nullptr || *e == '\0') return S2Z_DENSIFY_MAX;
+
+    char* end = nullptr;
+    errno = 0;
+    const long v = std::strtol(e, &end, 10);
+    const bool whole = (end != e && *end == '\0');
+    if (!whole || errno == ERANGE || v < 0 ||
+        v > static_cast<long>(std::numeric_limits<int>::max())) {
+        return S2Z_DENSIFY_MAX;
     }
-    return S2Z_DENSIFY_MAX;
+    return static_cast<int>(v);
 }
 
 inline bool s2z_densify(int n_units) {

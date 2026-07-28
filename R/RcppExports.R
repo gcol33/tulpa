@@ -85,6 +85,10 @@ cpp_family_compiled_zi_supported <- function(family) {
     .Call(`_tulpa_cpp_family_compiled_zi_supported`, family)
 }
 
+cpp_family_compiled_zi_supported_families <- function() {
+    .Call(`_tulpa_cpp_family_compiled_zi_supported_families`)
+}
+
 cpp_family_obs_curvature_delta_vec <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_obs_curvature_delta_vec`, y, n_trials, eta, family, phi, phi2)
 }
@@ -227,6 +231,10 @@ cpp_profile_reset <- function() {
 
 cpp_profile_read <- function() {
     .Call(`_tulpa_cpp_profile_read`)
+}
+
+cpp_s2z_densify_max <- function() {
+    .Call(`_tulpa_cpp_s2z_densify_max`)
 }
 
 cpp_laplace_spec_test_gaussian <- function(y, X, re_idx, n_re_groups, sigma_re, sigma_beta, phi, max_iter = 100L, tol = 1e-8, n_threads = 1L) {

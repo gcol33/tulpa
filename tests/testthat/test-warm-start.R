@@ -239,3 +239,29 @@ test_that("the warm start carries zero-inflation coefficients across", {
 
   expect_equal(unname(coef(cold)), unname(coef(warm)), tolerance = 0.1)
 })
+
+
+test_that("a source fit with the wrong number of SDs per term is refused", {
+  d <- ws_data()
+  lay <- ws_layout(d)
+  X <- stats::model.matrix(~ x, d)
+  re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
+                        n_coefs = 1L))
+  src <- tulpa_eb(y = d$y, n_trials = NULL, X = X, re_terms = re_terms,
+                  family = "poisson")
+
+  # Three SDs against a term the sampler lays out with one coefficient. The
+  # term COUNT agrees, so the check upstream passes and this is the first place
+  # the disagreement shows. Taking the first SD here would set every
+  # coefficient's mass and starting value from one coefficient's scale and
+  # report that as a warm start.
+  src$map$sigma <- c(0.5, 1.0, 1.5)
+  expect_error(
+    .build_warm_start(src, lay, re_terms = re_terms, n_chains = 1L),
+    "standard deviation")
+
+  # One SD is the scalar case and broadcasts, so it stays accepted.
+  src$map$sigma <- 0.7
+  expect_silent(
+    .build_warm_start(src, lay, re_terms = re_terms, n_chains = 1L))
+})

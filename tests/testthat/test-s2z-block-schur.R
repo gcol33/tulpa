@@ -184,3 +184,28 @@ test_that("a non-contiguous pin is not the contiguous pin of the same count", {
   expect_gt(abs(nc$ld_dense - cg$ld_dense), 1e-6)
   expect_gt(abs(nc$ld_block_schur - cg$ld_block_schur), 1e-6)
 })
+
+
+test_that("an unparseable densify cutoff leaves the default in place", {
+  # TULPA_S2Z_DENSIFY_MAX picks the storage, not the answer, so nothing else in
+  # the suite can see which one a setting selected. 0 is a MEANINGFUL setting
+  # here (always fold to the rank-1 path), which is what makes an atoi()-style
+  # read dangerous: every unparseable string maps to it.
+  old <- Sys.getenv("TULPA_S2Z_DENSIFY_MAX", unset = NA)
+  on.exit(if (is.na(old)) Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
+          else Sys.setenv(TULPA_S2Z_DENSIFY_MAX = old), add = TRUE)
+
+  Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
+  default <- tulpa:::cpp_s2z_densify_max()
+  expect_gt(default, 0L)
+
+  Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "0")
+  expect_identical(tulpa:::cpp_s2z_densify_max(), 0L)
+  Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "512")
+  expect_identical(tulpa:::cpp_s2z_densify_max(), 512L)
+
+  for (bad in c("ture", "256a", "1e3", " ", "-1", "99999999999999999999")) {
+    Sys.setenv(TULPA_S2Z_DENSIFY_MAX = bad)
+    expect_identical(tulpa:::cpp_s2z_densify_max(), default, info = bad)
+  }
+})

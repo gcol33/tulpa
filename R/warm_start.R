@@ -252,14 +252,26 @@
                   sprintf("random-effect term %d", t))
 
     s_t <- as.numeric(sig[[t]])
+    nc <- as.integer(spec$n_coefs)
+    # One SD broadcasts across the term's coefficients; one per coefficient is
+    # placed as given. Any other length is a source fit that does not describe
+    # this term, the same condition `place()` refuses for the deviations
+    # themselves. It is rejected rather than reduced to s_t[1], which would seed
+    # every coefficient's mass and starting value from the first coefficient's
+    # SD and report that as a warm start.
+    if (length(s_t) != 1L && length(s_t) != nc) {
+      stop(sprintf(paste0("warm start: the source fit supplies %d standard ",
+                          "deviation(s) for random-effect term %d, which the ",
+                          "sampler lays out with %d coefficient(s)."),
+                   length(s_t), t, nc), call. = FALSE)
+    }
+
     # The deviations are a priori N(0, sigma^2), and the posterior is tighter,
     # so the prior variance is a conservative mass scale for them.
-    if (!is.null(spec$re) && length(s_t) > 0L) {
+    if (!is.null(spec$re)) {
       re_idx <- seq.int(spec$re[1], spec$re[2])
-      nc <- as.integer(spec$n_coefs)
       # Coefficient-minor within group, matching the layout's own striding.
-      per_slot <- rep(if (length(s_t) == nc) s_t else rep(s_t[1], nc),
-                      length.out = length(re_idx))
+      per_slot <- rep(rep(s_t, length.out = nc), length.out = length(re_idx))
       inv_m[re_idx] <- per_slot^2
     }
 
@@ -270,8 +282,7 @@
     if (!is.null(ls)) {
       ls <- as.integer(ls)
       ls <- ls[!is.na(ls)]
-      vals <- log(if (length(s_t) == length(ls)) s_t else rep(s_t[1], length(ls)))
-      init[ls] <- vals
+      init[ls] <- log(rep(s_t, length.out = length(ls)))
       hv <- if (!is.null(hyper_var) && length(hyper_var) >= t) hyper_var[[t]]
             else NULL
       if (!is.null(hv) && length(hv) == length(ls) && length(ls) > 0L) {

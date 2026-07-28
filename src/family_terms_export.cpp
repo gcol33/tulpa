@@ -149,6 +149,13 @@ bool cpp_family_compiled_zi_supported(std::string family) {
   return tulpa::zi::compiled_zi_supported(family);
 }
 
+// The supported set exactly as the kernel's refusal message reports it, so a
+// test can hold the message to the gate rather than to a remembered list.
+// [[Rcpp::export]]
+std::string cpp_family_compiled_zi_supported_families() {
+  return tulpa::zi::compiled_zi_supported_families();
+}
+
 // Vectorized observed-minus-working curvature W_obs - w at every observation.
 // The exact mode Jacobian dx_hat/dtheta needs the TRUE posterior Hessian
 // A' diag(W_obs) A + P, which is the working-weight H_joint plus
