@@ -77,7 +77,6 @@
 #ifndef TULPA_NESTED_LAPLACE_GRID_H
 #define TULPA_NESTED_LAPLACE_GRID_H
 
-#include "hessian_pattern_guard.h"
 #include "laplace_core.h"
 #include "nested_laplace_checkpoint.h"
 #include "omp_threads.h"          // tulpa_omp_team_size_req (cache-safe clamp)
@@ -191,11 +190,6 @@ inline Rcpp::List run_nested_laplace_grid(
         if (store_modes) out["modes"] = all_modes;
         return out;
     }
-
-    // Every per-cell scatter below runs inside the outer parallel region, so an
-    // out-of-pattern write is counted there and raised here once the region has
-    // joined (hessian_pattern_guard.h).
-    const HessianPatternGuard pattern_guard;
 
     // Clamp the outer width to the environment (OMP_NUM_THREADS via
     // omp_get_max_threads(), OMP_THREAD_LIMIT) and the grid size before it is
@@ -829,7 +823,6 @@ inline Rcpp::List run_nested_laplace_grid(
         out["prune_argmax_disagree"] =
             (argmax_disagree || cheap_argmax_pruned);
     }
-    pattern_guard.check("the nested-Laplace outer grid");
     return out;
 }
 

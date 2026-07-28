@@ -13,7 +13,7 @@
 // (#241) and weighted-entry blocks (#242).
 //
 // Detection is a counter rather than a throw at the write because the scatter
-// runs inside OpenMP parallel regions, where an Rcpp::stop escaping the
+// runs inside OpenMP parallel regions, where an exception escaping the
 // structured block is std::terminate -- the constraint that also makes
 // LaplaceResult::start_infeasible a flag. Drivers bracket a fit with
 // HessianPatternGuard and raise once the parallel region has joined.
@@ -22,38 +22,67 @@
 // whole cross products up front -- every (beta_j, RE_g) pair of an arm, say --
 // and legitimately hold -1 for pairs no observation touches. Those slots are
 // written with a structural zero, which changes nothing whether it lands or not.
+//
+// PLACEMENT RULE: a HessianPatternGuard must NOT be declared in a function whose
+// own body contains an `#pragma omp parallel` region. Put it in that function's
+// CALLER instead. Holding one across the outer grid's parallel region in
+// `run_nested_laplace_grid` -- an object live on both sides of the region, ended
+// by a call that can throw -- costs enough additional stack on the OpenMP worker
+// threads (whose stacks are far smaller than the main thread's) to overflow them
+// once a process has run enough fits: the whole test suite died with
+// STATUS_STACK_OVERFLOW on the multi-threaded joint grid while every one of those
+// files passed standalone. Moving the same guard up into the three callers of
+// that grid (`run_multi_block_nested_laplace`,
+// `run_multi_block_nested_laplace_joint`, and the sparse impl) keeps identical
+// coverage and the suite completes. A pragma inside a LAMBDA in the function body
+// is fine -- that region belongs to the lambda's operator(), not to the frame
+// holding the guard.
+//
+// The write path is sized so detection costs the scatter nothing. scatter_slot()
+// stays trivially inlinable, the counter is a namespace-scope inline variable so
+// no thread-safe-initialization guard is emitted at any use site, and the miss
+// branch is an out-of-line cold call rather than an inlined atomic. This header
+// also deliberately avoids <Rcpp.h>: it is included from headers that Rcpp and
+// RcppEigen translation units pull in at different points, and it has no reason
+// to perturb that order. Rcpp's export wrappers convert std::exception into an R
+// error, so throwing one is equivalent to Rcpp::stop here.
 
 #ifndef TULPA_HESSIAN_PATTERN_GUARD_H
 #define TULPA_HESSIAN_PATTERN_GUARD_H
 
-#include <Rcpp.h>
 #include <atomic>
+#include <stdexcept>
+#include <string>
+
+#if defined(__GNUC__) || defined(__clang__)
+#  define TULPA_COLD __attribute__((noinline, cold))
+#else
+#  define TULPA_COLD
+#endif
 
 namespace tulpa {
 
 // Process-wide count of discarded nonzero contributions, monotone over the
 // process lifetime. Guards measure windows of it rather than resetting, so a
 // driver nested inside another composes without disturbing it.
-inline std::atomic<long long>& hessian_pattern_drop_counter() {
-    static std::atomic<long long> n{0};
-    return n;
-}
+inline std::atomic<long long> hessian_pattern_drops{0};
 
-inline void record_hessian_pattern_drop() {
-    hessian_pattern_drop_counter().fetch_add(1, std::memory_order_relaxed);
+// Out of line and cold: a miss never happens in a correct fit, and keeping the
+// atomic out of the caller lets scatter_slot() stay a bare predicate.
+TULPA_COLD inline void record_hessian_pattern_drop() {
+    hessian_pattern_drops.fetch_add(1, std::memory_order_relaxed);
 }
 
 inline long long hessian_pattern_drop_count() {
-    return hessian_pattern_drop_counter().load(std::memory_order_seq_cst);
+    return hessian_pattern_drops.load(std::memory_order_seq_cst);
 }
 
 // Write `val` through a slot index resolved earlier against the pattern. A
 // negative slot means the entry is absent; the contribution is discarded, and
-// counted when it would have changed the matrix. The hot path is the same single
-// predicate the hand-written `if (slot >= 0)` guards used.
+// counted when it would have changed the matrix.
 inline void scatter_slot(double* __restrict__ values, int slot, double val) {
-    if (slot >= 0)         values[slot] += val;
-    else if (val != 0.0)   record_hessian_pattern_drop();
+    if (slot >= 0)       values[slot] += val;
+    else if (val != 0.0) record_hessian_pattern_drop();
 }
 
 // Reports what a fit discarded between construction and check().
@@ -66,19 +95,20 @@ public:
     // Raise when anything was discarded. Call outside every parallel region.
     void check(const char* where) const {
         const long long n = dropped();
-        if (n > 0) {
-            Rcpp::stop(
-                "internal error: %lld nonzero Hessian contribution(s) fell "
-                "outside the registered sparsity pattern in %s. The pattern "
-                "builder and the scatter must enumerate the same (row, col) "
-                "set; a discarded contribution leaves the Hessian too small in "
-                "that entry, which the Newton step, the log-determinant and the "
-                "standard errors all inherit.",
-                n, where);
-        }
+        if (n > 0) throw_dropped(n, where);
     }
 
 private:
+    TULPA_COLD static void throw_dropped(long long n, const char* where) {
+        throw std::runtime_error(
+            "internal error: " + std::to_string(n) + " nonzero Hessian "
+            "contribution(s) fell outside the registered sparsity pattern in " +
+            std::string(where) + ". The pattern builder and the scatter must "
+            "enumerate the same (row, col) set; a discarded contribution leaves "
+            "the Hessian too small in that entry, which the Newton step, the "
+            "log-determinant and the standard errors all inherit.");
+    }
+
     long long start_;
 };
 

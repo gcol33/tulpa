@@ -2313,11 +2313,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // Permit one nested OpenMP level for the grid solve only when the inner
     // reduction will use surplus threads; restored on return.
     NestedOmpLevels nested_levels(n_outer > 1 && n_threads_inner_eff > 1);
-    return run_nested_laplace_grid(
+    const HessianPatternGuard pattern_guard;
+    Rcpp::List out = run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell
     );
+    pattern_guard.check("the joint nested-Laplace outer grid");
+    return out;
 }
 
 Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
@@ -2774,10 +2777,13 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // Permit one nested OpenMP level for the grid solve only when the inner
     // reduction will use surplus threads; restored on return.
     NestedOmpLevels nested_levels(n_outer > 1 && n_threads_inner_eff > 1);
-    return run_nested_laplace_grid(
+    const HessianPatternGuard pattern_guard;
+    Rcpp::List out = run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes,
         /*n_outer=*/n_outer,
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell
     );
+    pattern_guard.check("the sparse joint nested-Laplace outer grid");
+    return out;
 }

@@ -21,6 +21,7 @@
 #ifndef TULPA_NESTED_LAPLACE_MULTI_H
 #define TULPA_NESTED_LAPLACE_MULTI_H
 
+#include "hessian_pattern_guard.h"        // HessianPatternGuard (see its placement rule)
 #include "laplace_builtin_family_spec.h"  // builtin_family_spec, BuiltinFamilyResponse
 #include "laplace_core.h"
 #include "laplace_family_link.h"
@@ -322,12 +323,14 @@ inline Rcpp::List run_multi_block_nested_laplace(
             &cheap_scratches[worker]);
     };
 
+    const HessianPatternGuard pattern_guard;
     Rcpp::List out = run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(),
         cheap_eval, prune_tol, progress, ckpt
     );
+    pattern_guard.check("the single-block nested-Laplace outer grid");
 
     // Per-row fitted linear predictor at every grid cell, reconstructed from the
     // stored modes with the SAME accumulation as the inner solve's compute_eta
