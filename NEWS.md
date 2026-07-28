@@ -1,5 +1,40 @@
 # tulpa NEWS
 
+## 0.0.104
+
+* **The dispersion convention follows the base family, not the spelling
+  (gcol33/tulpa#256).** `phi` is the residual VARIANCE for the normal families
+  while the compiled kernels parameterize by the SD, and the conversion tested
+  the family name for exact equality. Every `<family>_<link>` spelling --
+  `gaussian_log`, `gaussian_inverse`, `lognormal_log` -- therefore reached the
+  kernel with the variance where the SD belongs, so a caller asking for a
+  residual variance of 0.8 was fitted at 0.64. The four R -> kernel boundaries
+  (`tulpa_laplace()`, the `tulpa()` front door, `fit_spde()`'s working weights,
+  and the SPDE predict path) now share one pair of converters resolving the base
+  family through `.family_base()`, the way every other consumer already did.
+
+  It went unnoticed because nothing downstream distinguishes the two under the
+  canonical link: `dW/deta` is identically zero for `gaussian_identity`, so a
+  wrong `phi` cancels out of the mode motion and the curvature channel. It stops
+  cancelling for `gaussian_log`, whose observed-minus-working delta became
+  nonzero in 0.0.103. Changes fitted values for existing suffixed-normal fits.
+
+* **The second dispersion reaches the random-effect covariance paths
+  (gcol33/tulpa#257).** `tulpa_eb()` and `tulpa_re_cov_nested()` take `phi2` and
+  thread it through the pilot fit, both inner solves and the exact outer
+  gradient, which hard-coded `NA_real_`. `family = "t"` had been fitting at the
+  compiled default of four degrees of freedom whatever the caller meant --
+  reporting an ML-II `phi` conditional on a df nobody chose -- and
+  `family = "tweedie"` could not be fitted on those paths at all, failing as a
+  generic inner-solve error because its variance power had no way to arrive.
+  The power is now required by name, a `phi2` supplied for a family that carries
+  none errors instead of being ignored, and `tulpa(phi2 = )` forwards to
+  `mode = "eb"` and the nested `Sigma` integrator. Supplying `phi2 = 4` for `t`
+  reproduces the previous default bit for bit, which is what pins the threading
+  as faithful rather than merely different. The backends carrying `phi2` are
+  derived from the registry (`.phi2_backends()`) rather than restated in the
+  refusal message.
+
 ## 0.0.103
 
 * **`estimate_phi` covers every front-door family that has a dispersion

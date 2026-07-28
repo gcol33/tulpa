@@ -11,6 +11,7 @@ tulpa_re_cov_nested(
   re_terms,
   family = "binomial",
   phi = 1,
+  phi2 = NULL,
   prior_sigma = c(3, 0.05),
   eta = 2,
   log_prior_theta = NULL,
@@ -34,6 +35,14 @@ term is a list with \code{idx} (1-based group index per observation),
 defaults to \code{TRUE}). An optional \code{label} / \code{group_var} names the block in
 the output. Any \code{L} / \code{cov} / \code{sigma} field is ignored -- \code{Sigma} is what
 this function integrates over.}
+
+\item{phi2}{Optional second dispersion, threaded into every inner
+\code{\link[=tulpa_laplace]{tulpa_laplace()}} solve: the Student-t degrees of freedom (\code{family = "t"},
+default 4 when \code{NULL}) or the Tweedie variance power (\code{family = "tweedie"},
+required -- a defaulted power would be a statistical decision the caller
+never made). A \code{phi2} supplied for any other family errors rather than being
+ignored. It is conditioned on: the integration is over the random-effect
+covariances, not over \code{phi2}.}
 
 \item{prior_sigma, eta}{Hyperparameters of the default PC + LKJ prior (see
 \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}): \code{prior_sigma = c(U, alpha)} with

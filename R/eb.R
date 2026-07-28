@@ -47,6 +47,13 @@
 #'
 #' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
 #'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
+#' @param phi2 Optional second dispersion, threaded into every inner
+#'   [tulpa_laplace()] solve: the Student-t degrees of freedom (`family = "t"`,
+#'   default 4 when `NULL`) or the Tweedie variance power (`family = "tweedie"`,
+#'   required -- a defaulted power would be a statistical decision the caller
+#'   never made). A `phi2` supplied for any other family errors rather than being
+#'   ignored. It is conditioned on, never estimated: `estimate_phi` covers `phi`
+#'   alone.
 #' @param re_terms Either a single random-effect term or a list of them; see
 #'   [tulpa_re_cov_nested()] for the per-term fields.
 #' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
@@ -185,7 +192,7 @@
 #' }
 #' @export
 tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
-                     family = "binomial", phi = 1.0,
+                     family = "binomial", phi = 1.0, phi2 = NULL,
                      prior_sigma = c(3, 0.05), eta = 2,
                      log_prior_theta = NULL,
                      beta_prior = NULL, offset = NULL, n_quad = 1L,
@@ -232,7 +239,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   # objective evaluations -- each one a full inner Laplace solve.
   core <- .re_cov_theta_fit(
     y = y, n_trials = n_trials, X = X, re_terms = re_terms,
-    family = family, phi = phi,
+    family = family, phi = phi, phi2 = phi2,
     prior_sigma = prior_sigma, eta = eta, log_prior_theta = log_prior_theta,
     beta_prior = beta_prior, n_quad = n_quad,
     max_iter = max_iter, tol = tol, n_threads = n_threads,

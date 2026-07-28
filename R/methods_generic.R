@@ -817,9 +817,7 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
 #' @keywords internal
 .spde_phi_variance <- function(object) {
   if (!is.null(object$phi)) return(object$phi)
-  pk <- object$phi_kernel %||% 1.0
-  if (identical(object$family, "gaussian") ||
-      identical(object$family, "lognormal")) pk^2 else pk
+  .phi_to_registry(object$family %||% "", object$phi_kernel %||% 1.0)
 }
 
 # Linear-predictor SE at query points for an SPDE fit with the field included:

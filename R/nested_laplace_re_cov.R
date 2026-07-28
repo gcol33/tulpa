@@ -460,7 +460,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # Returns the closures and the geometry (post_cov / L_scale) the nested path
 # needs for node placement, so nothing downstream has to rebuild them.
 .re_cov_theta_fit <- function(y, n_trials, X, re_terms,
-                              family, phi,
+                              family, phi, phi2 = NULL,
                               prior_sigma, eta, log_prior_theta,
                               beta_prior, n_quad,
                               max_iter, tol, n_threads,
@@ -499,6 +499,17 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   if (is.null(log_prior_theta)) {
     log_prior_theta <- .re_cov_joint_prior(layout, prior_sigma, eta)
   }
+
+  # The second dispersion reaches the inner solve rather than being defaulted
+  # there. Left unthreaded, `t` fits at the compiled kernel's built-in degrees of
+  # freedom whatever the caller asked for, and `tweedie` fails inside the inner
+  # solve's tryCatch as a generic convergence failure. Both are resolved here:
+  # a phi2 supplied for a family that takes none errors (matching
+  # tulpa_laplace()), and tweedie's variance power is required by name rather
+  # than defaulted, since a silently chosen power is a statistical decision the
+  # caller never made.
+  phi2 <- .phi2_or_stop(family, phi2)
+  if (identical(.family_base(family), "tweedie")) .tweedie_power(phi2)
 
   # The dispersion rides as one extra coordinate, log phi, appended after the
   # covariance coordinates. Refused rather than approximated wherever the exact
@@ -586,7 +597,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi_, return_hessian = FALSE,
+        family = family, phi = phi_, phi2 = phi2, return_hessian = FALSE,
         beta_prior = beta_prior, offset = offset,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
@@ -608,7 +619,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi_, return_hessian = FALSE,
+        family = family, phi = phi_, phi2 = phi2, return_hessian = FALSE,
         return_joint_hessian = TRUE,
         beta_prior = beta_prior, offset = offset,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
@@ -626,7 +637,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
-        family = family, phi = phi_, return_hessian = TRUE,
+        family = family, phi = phi_, phi2 = phi2, return_hessian = TRUE,
         beta_prior = beta_prior, offset = offset,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
@@ -643,7 +654,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     tulpa_laplace(
       y = y, n_trials = n_trials, X = X,
       re_list = .re_cov_build_re_list(L0_list, layout),
-      family = family, phi = phi, return_hessian = FALSE,
+      family = family, phi = phi, phi2 = phi2, return_hessian = FALSE,
       beta_prior = beta_prior, offset = offset,
       X_zi = X_zi, zi_prior_sd = zi_prior_sd,
       max_iter = max_iter, tol = tol, n_threads = n_threads
@@ -899,10 +910,11 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
         weights = NULL,
         re_list = .re_cov_build_re_list(L_list, layout),
         layout = layout, L_list = L_list, family = family,
-        # NA_real_ mirrors inner_logmarg / inner_fit, which do not thread phi2
-        # either: the gradient must describe the model the inner solve fitted,
-        # not a differently-parameterized one.
-        phi = sp$phi, phi2 = NA_real_, want_jacobian = want_jacobian,
+        # The same phi2 the inner solves ran at: the gradient has to describe
+        # the model the inner solve fitted, not a differently-parameterized one.
+        # NA_real_ is the "no second dispersion" spelling the family kernels
+        # take, so an absent phi2 reaches them as it always did.
+        phi = sp$phi, phi2 = phi2 %||% NA_real_, want_jacobian = want_jacobian,
         want_hessian = want_hessian, X_zi = X_zi,
         # Appends the log-phi coordinate, so the returned gradient is stacked in
         # the same order as theta.
@@ -1207,6 +1219,13 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'
 #' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
 #'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
+#' @param phi2 Optional second dispersion, threaded into every inner
+#'   [tulpa_laplace()] solve: the Student-t degrees of freedom (`family = "t"`,
+#'   default 4 when `NULL`) or the Tweedie variance power (`family = "tweedie"`,
+#'   required -- a defaulted power would be a statistical decision the caller
+#'   never made). A `phi2` supplied for any other family errors rather than being
+#'   ignored. It is conditioned on: the integration is over the random-effect
+#'   covariances, not over `phi2`.
 #' @param re_terms Either a single random-effect term or a list of them. Each
 #'   term is a list with `idx` (1-based group index per observation),
 #'   `n_groups`, `n_coefs` (`c`), `Z` (the `n_obs x c` RE design, e.g.
@@ -1314,7 +1333,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #' }
 #' @export
 tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
-                                family = "binomial", phi = 1.0,
+                                family = "binomial", phi = 1.0, phi2 = NULL,
                                 prior_sigma = c(3, 0.05), eta = 2,
                                 log_prior_theta = NULL,
                                 beta_prior = NULL, offset = NULL, n_quad = 1L,
@@ -1340,7 +1359,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
 
   core <- .re_cov_theta_fit(
     y = y, n_trials = n_trials, X = X, re_terms = re_terms,
-    family = family, phi = phi,
+    family = family, phi = phi, phi2 = phi2,
     prior_sigma = prior_sigma, eta = eta, log_prior_theta = log_prior_theta,
     beta_prior = beta_prior, n_quad = n_quad,
     max_iter = max_iter, tol = tol, n_threads = n_threads,

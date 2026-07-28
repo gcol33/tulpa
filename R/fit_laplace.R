@@ -130,7 +130,7 @@ tulpa_laplace <- function(y, n_trials, X,
   # compiled kernels parameterize by the residual SD. Convert once here so the
   # mode-finding and the Hessian describe the same model (the kernel expects the
   # SD, not the variance).
-  phi_kernel <- if (family %in% c("gaussian", "lognormal")) sqrt(phi) else phi
+  phi_kernel <- .phi_to_kernel(family, phi)
   if (!is.null(phi2)) {
     .phi2_or_stop(family, phi2)
     if (!is.null(spatial)) {

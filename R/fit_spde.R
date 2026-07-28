@@ -331,7 +331,7 @@ fit_spde <- function(y, X, spatial,
   if (!is.null(fit$mode)) {
     # glmm_weights follows the R-registry dispersion convention (variance
     # for gaussian / lognormal); this door's `phi` is the kernel SD.
-    phi_w <- if (family %in% c("gaussian", "lognormal")) phi^2 else phi
+    phi_w <- .phi_to_registry(family, phi)
     range_hy <- fit$range %||% fit$nested$range_mean %||% fit$nested$range_best
     sigma_hy <- fit$sigma %||% fit$nested$sigma_mean %||% fit$nested$sigma_best
     fit$H_beta <- fit$H_beta %||% tryCatch(

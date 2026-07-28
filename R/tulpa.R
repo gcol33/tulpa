@@ -555,15 +555,19 @@
       "('mala', 'imh_laplace', 'pathfinder')."), backend), call. = FALSE)
   }
 
-  # Second dispersion (Student-t df): threaded through the non-spatial Laplace
-  # kernel, the log-posterior builder, and the ModelData samplers.
-  if (!is.null(phi2) &&
-      !(input %in% c("logpost", "modeldata") ||
-        (backend == "laplace" && is.null(spatial)))) {
+  # Second dispersion (Student-t df, Tweedie power). The backend list is derived
+  # from the registry (.phi2_backends()) rather than restated here. The one
+  # qualification the list cannot express: `laplace` carries phi2 through the
+  # non-spatial compiled kernel only, the spatial solvers having no phi2 channel
+  # -- which is what tulpa_laplace() refuses for the same pair.
+  phi2_carried <- backend %in% .phi2_backends() &&
+    !(backend == "laplace" && !is.null(spatial))
+  if (!is.null(phi2) && !phi2_carried) {
     stop(sprintf(paste0(
-      "`phi2` is not supported by backend '%s'. Use mode = 'laplace' ",
-      "(non-spatial), a log-posterior sampler, or a ModelData sampler."),
-      backend), call. = FALSE)
+      "`phi2` is not supported by backend '%s', which would fit at the ",
+      "family's default second dispersion instead. Available for: %s ",
+      "(`laplace` non-spatially)."),
+      backend, paste(.phi2_backends(), collapse = ", ")), call. = FALSE)
   }
 
   # tulpa()'s `phi` for gaussian / lognormal is the residual VARIANCE (the
@@ -571,7 +575,7 @@
   # spde / modeldata backends parameterize by the residual SD. Convert once
   # at this boundary (tulpa_laplace converts internally; the re_cov / agq
   # paths already consume the variance).
-  phi_sd <- if (family %in% c("gaussian", "lognormal")) sqrt(phi) else phi
+  phi_sd <- .phi_to_kernel(family, phi)
 
   if (input == "nested") {
     if (backend != "nested_laplace") {
@@ -740,6 +744,12 @@
         common$X_zi <- bundle$X_zi
         common$zi_prior_sd <- zi_prior_sd
       }
+      # The second dispersion rides into the same Laplace inner solve `eb` and
+      # `re_cov_nested` share, so the covariance is estimated / integrated at the
+      # degrees of freedom (or variance power) asked for rather than at the
+      # kernel's default. re_cov_gibbs has no phi2 channel and is absent from
+      # .phi2_backends(), so the refusal upstream has already fired by here.
+      if (!is.null(phi2)) common$phi2 <- phi2
       # An offset changes the model, so it is threaded where the inner solve
       # carries it and refused where it does not -- never dropped. The
       # Metropolis-within-Gibbs sampler has no offset term at all.
@@ -1291,8 +1301,14 @@
 #'   derivative is registered (see [tulpa_eb()]). Any other mode errors rather
 #'   than fitting at the starting value under a name that says otherwise.
 #' @param phi2 Optional second dispersion: the Student-t degrees of freedom
-#'   (`family = "t"`; default 4 when `NULL`). Supported on the non-spatial
-#'   Laplace path, the log-posterior samplers, and the ModelData samplers.
+#'   (`family = "t"`; default 4 when `NULL`) or the Tweedie variance power
+#'   (`family = "tweedie"`, required -- a defaulted power would be a statistical
+#'   decision the caller never made). Supported on the non-spatial Laplace path,
+#'   the random-effect covariance paths (`mode = "eb"` and the nested `Sigma`
+#'   integrator, which thread it into their inner Laplace solve), the
+#'   log-posterior samplers, and the ModelData samplers. Backends without a
+#'   `phi2` channel refuse it rather than fit at the family's default.
+#'   `estimate_phi` covers `phi` alone; `phi2` is always conditioned on.
 #' @param beta_prior Optional `list(mean, sd)` Gaussian prior on the fixed
 #'   effects.
 #' @param re_prior Optional `list()` of random-effect / variance-component

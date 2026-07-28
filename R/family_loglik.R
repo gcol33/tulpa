@@ -649,6 +649,34 @@ family_names <- function() names(.FAMILY_OPS)
                    "truncated_neg_binomial_2",
                    "interval_gaussian", "truncated_gaussian")
 
+# Families whose `phi` is the residual VARIANCE on the R side while the compiled
+# kernels parameterize by the residual SD. Every R -> kernel boundary converts
+# through the two helpers below rather than testing the family name in place, so
+# a `<family>_<link>` spelling converts like its base family. Testing the name
+# directly fitted `gaussian_log` at variance `phi^2` when the caller asked for
+# `phi`, and the error was invisible under the canonical link, where the
+# observed-minus-working curvature is identically zero and a wrong dispersion
+# cancels out of the mode motion.
+.VARIANCE_PHI_FAMILIES <- c("gaussian", "lognormal")
+
+# Does this family's R-side `phi` denote a variance whose kernel takes the SD?
+#' @keywords internal
+.phi_is_variance <- function(family) {
+  .family_base(family) %in% .VARIANCE_PHI_FAMILIES
+}
+
+# R registry convention (variance) -> compiled-kernel convention (SD).
+#' @keywords internal
+.phi_to_kernel <- function(family, phi) {
+  if (.phi_is_variance(family)) sqrt(phi) else phi
+}
+
+# Compiled-kernel convention (SD) -> R registry convention (variance).
+#' @keywords internal
+.phi_to_registry <- function(family, phi) {
+  if (.phi_is_variance(family)) phi^2 else phi
+}
+
 # Count families whose likelihood is defined only at non-negative integer `y`.
 # The C++ kernels cast the response to `int` (laplace_family_link.h /
 # laplace_likelihoods.h), silently flooring a continuous response into a biased
@@ -987,6 +1015,23 @@ family_names <- function() names(.FAMILY_OPS)
     stop("`phi2` must be a positive finite scalar.", call. = FALSE)
   }
   phi2
+}
+
+
+# Backends that thread the second dispersion into their likelihood. The
+# log-posterior builder and the ModelData samplers carry it by construction;
+# "laplace" reaches it through the non-spatial compiled kernel, and "eb" /
+# "re_cov_nested" through that same kernel as their inner solve. Derived from the
+# registry rather than restated, so a new sampler backend inherits phi2 with its
+# input contract. A function, not a constant: this file sources before
+# inference_modes.R.
+#' @keywords internal
+.phi2_backends <- function() {
+  c("laplace", "eb", "re_cov_nested",
+    names(BACKEND_REGISTRY)[vapply(
+      BACKEND_REGISTRY,
+      function(b) isTRUE(b$input %in% c("logpost", "modeldata")),
+      logical(1))])
 }
 
 

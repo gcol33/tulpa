@@ -11,6 +11,7 @@ tulpa_eb(
   re_terms,
   family = "binomial",
   phi = 1,
+  phi2 = NULL,
   prior_sigma = c(3, 0.05),
   eta = 2,
   log_prior_theta = NULL,
@@ -30,6 +31,14 @@ solve. \code{n_trials = NULL} defaults to 1 (binary / single-trial).}
 
 \item{re_terms}{Either a single random-effect term or a list of them; see
 \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} for the per-term fields.}
+
+\item{phi2}{Optional second dispersion, threaded into every inner
+\code{\link[=tulpa_laplace]{tulpa_laplace()}} solve: the Student-t degrees of freedom (\code{family = "t"},
+default 4 when \code{NULL}) or the Tweedie variance power (\code{family = "tweedie"},
+required -- a defaulted power would be a statistical decision the caller
+never made). A \code{phi2} supplied for any other family errors rather than being
+ignored. It is conditioned on, never estimated: \code{estimate_phi} covers \code{phi}
+alone.}
 
 \item{prior_sigma, eta}{Hyperparameters of the default PC + LKJ prior (see
 \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}). Ignored when \code{log_prior_theta} is supplied. The

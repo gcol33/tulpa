@@ -4,7 +4,10 @@
 # convention unified across backends (tulpa()'s phi = residual VARIANCE
 # everywhere -- the SD-parameterized kernels receive sqrt(phi) at the
 # boundary, so mode = 'laplace' and the R-side H_beta now describe the same
-# model).
+# model). The conversion resolves the base family, so a `<family>_<link>`
+# spelling of a normal family converts like its base (gcol33/tulpa#256), and
+# phi2 is threaded into the random-effect covariance paths' inner solve rather
+# than defaulted there (gcol33/tulpa#257).
 
 test_that("t-family registry ops honor phi2 and match dt()", {
   eta <- c(-0.5, 0.2, 1.4)
@@ -133,6 +136,161 @@ test_that("lognormal fits through the front door", {
                 phi = 0.36, control = list(n_iter = 2000L, warmup = 1000L,
                                            n_chains = 2L, seed = 2L))
   expect_equal(unname(coef(fit2)), ref, tolerance = 0.05)
+})
+
+test_that("the variance/SD convention follows the base family, not the spelling", {
+  # gcol33/tulpa#256: the conversion tested the family name for exact equality,
+  # so every `<family>_<link>` spelling of a normal family reached the kernel
+  # with the variance where the SD belongs.
+  for (f in c("gaussian", "gaussian_identity", "gaussian_log",
+              "gaussian_inverse", "lognormal", "lognormal_log")) {
+    expect_true(tulpa:::.phi_is_variance(f), info = f)
+  }
+  for (f in c("gamma", "gamma_log", "poisson", "binomial", "t",
+              "neg_binomial_2", "beta_logit")) {
+    expect_false(tulpa:::.phi_is_variance(f), info = f)
+  }
+  # The two directions are inverses on a variance family and identities
+  # elsewhere.
+  expect_equal(tulpa:::.phi_to_kernel("gaussian_log", 0.64), 0.8)
+  expect_equal(tulpa:::.phi_to_registry("gaussian_log", 0.8), 0.64)
+  expect_equal(tulpa:::.phi_to_kernel("gamma_log", 0.64), 0.64)
+  expect_equal(tulpa:::.phi_to_registry("gamma_log", 0.64), 0.64)
+})
+
+test_that("a suffixed normal family is fitted at the dispersion asked for", {
+  skip_on_cran()
+  set.seed(256)
+  G <- 10L; per <- 8L; n <- G * per
+  grp <- rep(seq_len(G), each = per)
+  x   <- rnorm(n)
+  b   <- rnorm(G, 0, 0.6)
+  y   <- rlnorm(n, log(exp(0.4 + 0.3 * x + b[grp])), 0.5)   # strictly positive
+  X   <- cbind(1, x)
+  re  <- list(list(idx = grp, n_groups = G, n_coefs = 1L, sigma = 0.6))
+  v   <- 0.8                                  # the residual VARIANCE requested
+
+  # Two spellings of the same family/link pair are one model.
+  fit_bare <- tulpa_laplace(y, rep(1L, n), X, re, family = "gaussian",
+                            phi = v)
+  fit_suff <- tulpa_laplace(y, rep(1L, n), X, re, family = "gaussian_identity",
+                            phi = v)
+  expect_equal(fit_suff$mode, fit_bare$mode, tolerance = 1e-12)
+  expect_equal(fit_suff$log_marginal, fit_bare$log_marginal, tolerance = 1e-12)
+
+  # gaussian_log is where the two conventions stop coinciding: dW/deta is not
+  # identically zero there, so a wrong phi no longer cancels out of the mode.
+  # The reference goes straight to the kernel, which takes the SD.
+  fit_log <- tulpa_laplace(y, rep(1L, n), X, re, family = "gaussian_log",
+                           phi = v)
+  kern_at <- function(p) {
+    tulpa:::cpp_laplace_fit_multi_re(
+      y = as.numeric(y), n = rep(1L, n), X = X,
+      re_idx_list = list(as.integer(grp)), re_ngroups = G,
+      re_sigma_list = list(0.6), family = "gaussian_log", phi = p,
+      max_iter = 100L, tol = 1e-6, n_threads = 1L)
+  }
+  expect_equal(fit_log$mode, kern_at(sqrt(v))$mode, tolerance = 1e-10)
+  # And is genuinely distinguishable from the unconverted value, so the check
+  # above is not satisfied by both.
+  expect_false(isTRUE(all.equal(fit_log$mode, kern_at(v)$mode,
+                                tolerance = 1e-6)))
+})
+
+test_that("phi2 reaches the EB and nested random-effect covariance paths", {
+  skip_on_cran()
+  # gcol33/tulpa#257: the outer core hard-coded phi2 = NA_real_, so `t` fitted
+  # at the compiled default df whatever the caller asked for.
+  set.seed(257)
+  G <- 12L; per <- 10L; n <- G * per
+  grp <- rep(seq_len(G), each = per)
+  x   <- rnorm(n)
+  u   <- rnorm(G, 0, 0.7)
+  y   <- 0.5 + 0.8 * x + u[grp] + 0.9 * rt(n, df = 6)
+  X   <- cbind(1, x)
+  re  <- list(idx = grp, n_groups = G, n_coefs = 1L)
+
+  eb_def <- tulpa_eb(y, NULL, X, re, family = "t", phi = 1.0)
+  eb_8   <- tulpa_eb(y, NULL, X, re, family = "t", phi = 1.0, phi2 = 8)
+  # A different df is a different model: the objective and the estimate move.
+  expect_false(isTRUE(all.equal(eb_def$log_marginal, eb_8$log_marginal,
+                                tolerance = 1e-8)))
+  expect_false(isTRUE(all.equal(eb_def$map$sigma, eb_8$map$sigma,
+                                tolerance = 1e-8)))
+  # Supplying the compiled default reproduces it exactly, which is what pins
+  # the threading as faithful rather than merely different.
+  eb_4 <- tulpa_eb(y, NULL, X, re, family = "t", phi = 1.0, phi2 = 4)
+  expect_equal(eb_4$log_marginal, eb_def$log_marginal, tolerance = 1e-12)
+
+  nl_def <- tulpa_re_cov_nested(y, NULL, X, re, family = "t", phi = 1.0,
+                                control = list(diagnose_k = FALSE,
+                                               n_draws = 200L, seed = 1L))
+  nl_8   <- tulpa_re_cov_nested(y, NULL, X, re, family = "t", phi = 1.0,
+                                phi2 = 8,
+                                control = list(diagnose_k = FALSE,
+                                               n_draws = 200L, seed = 1L))
+  expect_false(isTRUE(all.equal(as.numeric(nl_def$Sigma_mean),
+                                as.numeric(nl_8$Sigma_mean),
+                                tolerance = 1e-8)))
+})
+
+test_that("the covariance paths require tweedie's power and refuse a spurious phi2", {
+  skip_on_cran()
+  set.seed(2571)
+  G <- 12L; per <- 10L; n <- G * per
+  grp <- rep(seq_len(G), each = per)
+  x   <- rnorm(n)
+  u   <- rnorm(G, 0, 0.5)
+  y   <- rpois(n, exp(0.2 + 0.4 * x + u[grp])) * rgamma(n, 2, 2)
+  X   <- cbind(1, x)
+  re  <- list(idx = grp, n_groups = G, n_coefs = 1L)
+
+  # Without a power the fit used to die as a generic inner-solve failure; it
+  # now names the argument that had no way to arrive.
+  expect_error(tulpa_eb(y, NULL, X, re, family = "tweedie", phi = 1.0),
+               "requires `phi2`")
+  expect_error(tulpa_re_cov_nested(y, NULL, X, re, family = "tweedie",
+                                   phi = 1.0),
+               "requires `phi2`")
+  expect_error(tulpa_eb(y, NULL, X, re, family = "tweedie", phi = 1.0,
+                        phi2 = 2.5),
+               "strictly in \\(1, 2\\)")
+  # With one it fits.
+  ft <- tulpa_eb(y, NULL, X, re, family = "tweedie", phi = 1.0, phi2 = 1.5)
+  expect_true(is.finite(ft$log_marginal))
+
+  # A family with no second dispersion errors rather than ignoring it.
+  expect_error(tulpa_eb(y, NULL, X, re, family = "poisson", phi2 = 3),
+               "no second dispersion")
+  expect_error(tulpa_re_cov_nested(y, NULL, X, re, family = "poisson",
+                                   phi2 = 3),
+               "no second dispersion")
+})
+
+test_that("tulpa() forwards phi2 to the covariance backends and refuses it elsewhere", {
+  skip_on_cran()
+  set.seed(2572)
+  G <- 12L; per <- 10L; n <- G * per
+  grp <- rep(seq_len(G), each = per)
+  d <- data.frame(x = rnorm(n), g = factor(rep(seq_len(G), each = per)))
+  u <- rnorm(G, 0, 0.7)
+  d$y <- 0.5 + 0.8 * d$x + u[grp] + 0.9 * rt(n, df = 6)
+
+  f_def <- tulpa(y ~ x + (1 | g), data = d, family = "t", phi = 1.0,
+                 mode = "eb")
+  f_8   <- tulpa(y ~ x + (1 | g), data = d, family = "t", phi = 1.0, phi2 = 8,
+                 mode = "eb")
+  expect_false(isTRUE(all.equal(f_def$log_marginal, f_8$log_marginal,
+                                tolerance = 1e-8)))
+
+  # The backend list in the refusal is derived, so it names eb / re_cov_nested
+  # as available rather than restating the pre-#257 set.
+  expect_true(all(c("laplace", "eb", "re_cov_nested") %in%
+                    tulpa:::.phi2_backends()))
+  expect_false("re_cov_gibbs" %in% tulpa:::.phi2_backends())
+  expect_error(tulpa(y ~ x + (1 | g), data = d, family = "t", phi = 1.0,
+                     phi2 = 8, mode = "gibbs"),
+               "not supported by backend")
 })
 
 test_that("posterior_predict honors the t df through phi2", {

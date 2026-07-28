@@ -80,8 +80,14 @@ derivative is registered (see \code{\link[=tulpa_eb]{tulpa_eb()}}). Any other mo
 than fitting at the starting value under a name that says otherwise.}
 
 \item{phi2}{Optional second dispersion: the Student-t degrees of freedom
-(\code{family = "t"}; default 4 when \code{NULL}). Supported on the non-spatial
-Laplace path, the log-posterior samplers, and the ModelData samplers.}
+(\code{family = "t"}; default 4 when \code{NULL}) or the Tweedie variance power
+(\code{family = "tweedie"}, required -- a defaulted power would be a statistical
+decision the caller never made). Supported on the non-spatial Laplace path,
+the random-effect covariance paths (\code{mode = "eb"} and the nested \code{Sigma}
+integrator, which thread it into their inner Laplace solve), the
+log-posterior samplers, and the ModelData samplers. Backends without a
+\code{phi2} channel refuse it rather than fit at the family's default.
+\code{estimate_phi} covers \code{phi} alone; \code{phi2} is always conditioned on.}
 
 \item{beta_prior}{Optional \code{list(mean, sd)} Gaussian prior on the fixed
 effects.}
