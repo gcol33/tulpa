@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <utility>
 #include "tulpa/types.h"
 #include "tulpa/graph_components.h"
 #include "tulpa/gp_data.h"
@@ -117,8 +118,15 @@ namespace tulpa {
 // Uniform behind a hard -INFINITY box onto the per-scale PC prior the GP and
 // SVC paths already use, anchored at each scale's declared lower bound
 // (gcol33/tulpa#244).
+// 39 -> 40: no layout or callable change. ModelData gained
+// set_spatial_adjacency() and compute_param_layout now enforces the invariant
+// it maintains -- a field whose partition does not describe its adjacency is
+// rejected instead of silently pinning nothing (gcol33/tulpaRatio#19). The bump
+// is what turns a consumer built against 39, which assigns the CSR arrays and
+// no partition, into a "rebuild required" at first NUTS use rather than an
+// error about a C++ method its user never called.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 39;
+constexpr int TULPA_ABI_VERSION = 40;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -253,14 +261,38 @@ struct ModelData {
     double bym2_scale_factor = 1.0;
     // Connected components of the adjacency graph. The intrinsic (ICAR) rank is
     // n_spatial_units - n_spatial_components; the sampler rank normalizer uses
-    // it so a disconnected graph does not bias tau. Computed at data-load;
-    // defaults to 1 (single component) when unset.
+    // it so a disconnected graph does not bias tau. Set from the adjacency by
+    // set_spatial_adjacency().
     int n_spatial_components = 1;
     // The component partition itself (graph_components.h): the sampler ICAR /
     // BYM2 augmentation pins each component's constant over that component's
-    // actual nodes, not an equal-size contiguous split. Trivial (empty) for a
-    // connected graph. n_spatial_components == spatial_partition.n_components().
+    // actual nodes, not an equal-size contiguous split. Trivial (empty
+    // comp_ptr) for a connected graph, but its `n` is the field length either
+    // way. n_spatial_components == spatial_partition.n_components().
     GraphPartition spatial_partition;
+
+    // Set an intrinsic areal field's adjacency together with the two quantities
+    // that must agree with it. They are not independent inputs. A caller that
+    // assigns the CSR arrays alone leaves spatial_partition default-constructed
+    // at n = 0, whose n_components() is 0, so for_each_icar_component visits
+    // nothing and the sum-to-zero augmentation pins no direction at all -- while
+    // n_spatial_components keeps its own default of 1 and the rank normalizer
+    // goes on crediting +0.5 log tau for that unapplied pin. The field's level
+    // is then free (it random-walks, absorbed by the intercept via
+    // icar_center_field, so the fit looks healthy) and tau is biased upward.
+    // Deriving both here is what keeps penalty and rank in step.
+    void set_spatial_adjacency(int n_units,
+                               std::vector<int> row_ptr,
+                               std::vector<int> col_idx,
+                               std::vector<int> neighbors) {
+        n_spatial_units = n_units;
+        adj_row_ptr = std::move(row_ptr);
+        adj_col_idx = std::move(col_idx);
+        n_neighbors = std::move(neighbors);
+        spatial_partition = graph_partition(
+            n_spatial_units, adj_row_ptr.data(), adj_col_idx.data());
+        n_spatial_components = spatial_partition.n_components();
+    }
 
     // Proper CAR rho bounds (eigenvalue-derived, default to (0, 1))
     // Only used when spatial_type == CAR_PROPER.

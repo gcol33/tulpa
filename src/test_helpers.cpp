@@ -18,6 +18,7 @@
 #include "mcar_block_factory.h"
 #include "laplace_spatial_priors.h"
 #include "mem_budget.h"
+#include "hmc_sampler.h"           // require_spatial_partition
 
 using namespace Rcpp;
 
@@ -1741,5 +1742,48 @@ Rcpp::List cpp_test_hessian_pattern_guard(
     Rcpp::_["dropped"]    = dropped,
     Rcpp::_["nnz"]        = H.nnz,
     Rcpp::_["stored_sum"] = stored
+  );
+}
+
+// Reports how an intrinsic areal field's component partition came out, and
+// whether compute_param_layout's guard accepts it. `use_setter = FALSE`
+// reproduces a consumer that assigns the CSR adjacency and nothing else: the
+// partition stays default-constructed, so it describes 0 nodes and reports 0
+// components even though n_spatial_components still reads its own default of 1.
+// The augmentation iterates over components, so 0 of them pins nothing.
+// [[Rcpp::export]]
+Rcpp::List cpp_spatial_partition_probe(int n_units,
+                                       Rcpp::IntegerVector row_ptr,
+                                       Rcpp::IntegerVector col_idx,
+                                       Rcpp::IntegerVector n_neighbors,
+                                       bool use_setter) {
+  tulpa::ModelData d;
+  if (use_setter) {
+    d.set_spatial_adjacency(n_units,
+                            std::vector<int>(row_ptr.begin(), row_ptr.end()),
+                            std::vector<int>(col_idx.begin(), col_idx.end()),
+                            std::vector<int>(n_neighbors.begin(), n_neighbors.end()));
+  } else {
+    d.n_spatial_units = n_units;
+    d.adj_row_ptr.assign(row_ptr.begin(), row_ptr.end());
+    d.adj_col_idx.assign(col_idx.begin(), col_idx.end());
+    d.n_neighbors.assign(n_neighbors.begin(), n_neighbors.end());
+  }
+
+  bool accepted = true;
+  std::string error;
+  try {
+    tulpa_hmc::require_spatial_partition(d);
+  } catch (std::exception& e) {
+    accepted = false;
+    error = e.what();
+  }
+
+  return Rcpp::List::create(
+    Rcpp::_["partition_n"]     = d.spatial_partition.n,
+    Rcpp::_["components_seen"] = d.spatial_partition.n_components(),
+    Rcpp::_["n_components"]    = d.n_spatial_components,
+    Rcpp::_["accepted"]        = accepted,
+    Rcpp::_["error"]           = error
   );
 }

@@ -199,6 +199,11 @@ int get_n_params(const ModelData& data);
 // compute_param_layout for every NNGP block that carries a sampled range.
 void require_range_prior_anchors(double U, double alpha, const char* term);
 
+// Errors unless the areal field's component partition describes its adjacency.
+// Called once per fit from compute_param_layout for every ICAR / BYM2 /
+// CAR_proper field.
+void require_spatial_partition(const ModelData& data);
+
 // =====================================================================
 // Log-posterior computation (with OpenMP parallelization)
 // =====================================================================

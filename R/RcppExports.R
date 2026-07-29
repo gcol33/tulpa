@@ -789,6 +789,10 @@ cpp_test_hessian_pattern_guard <- function(A, omit_entry = -1L, raise = FALSE, s
     .Call(`_tulpa_cpp_test_hessian_pattern_guard`, A, omit_entry, raise, slot_val)
 }
 
+cpp_spatial_partition_probe <- function(n_units, row_ptr, col_idx, n_neighbors, use_setter) {
+    .Call(`_tulpa_cpp_spatial_partition_probe`, n_units, row_ptr, col_idx, n_neighbors, use_setter)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

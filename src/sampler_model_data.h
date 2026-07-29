@@ -176,16 +176,12 @@ inline void build_sampler_model_inputs(
             Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);
             Rcpp::IntegerVector ci   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_col_idx"]);
             Rcpp::IntegerVector nn   = Rcpp::as<Rcpp::IntegerVector>(sp["n_neighbors"]);
-            in.data.n_spatial_units = Rcpp::as<int>(sp["n_spatial_units"]);
             in.data.spatial_group.assign(sidx.begin(), sidx.end());
-            in.data.adj_row_ptr.assign(rp.begin(), rp.end());
-            in.data.adj_col_idx.assign(ci.begin(), ci.end());
-            in.data.n_neighbors.assign(nn.begin(), nn.end());
-            in.data.spatial_partition = tulpa::graph_partition(
-                in.data.n_spatial_units, in.data.adj_row_ptr.data(),
-                in.data.adj_col_idx.data());
-            in.data.n_spatial_components =
-                in.data.spatial_partition.n_components();
+            in.data.set_spatial_adjacency(
+                Rcpp::as<int>(sp["n_spatial_units"]),
+                std::vector<int>(rp.begin(), rp.end()),
+                std::vector<int>(ci.begin(), ci.end()),
+                std::vector<int>(nn.begin(), nn.end()));
             if (stype == "icar") {
                 in.data.spatial_type = SpatialType::ICAR;
             } else {
@@ -354,16 +350,12 @@ inline void build_sampler_model_inputs(
             Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);
             Rcpp::IntegerVector ci   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_col_idx"]);
             Rcpp::IntegerVector nn   = Rcpp::as<Rcpp::IntegerVector>(sp["n_neighbors"]);
-            in.data.n_spatial_units = Rcpp::as<int>(sp["n_spatial_units"]);
             in.data.spatial_group.assign(sidx.begin(), sidx.end());
-            in.data.adj_row_ptr.assign(rp.begin(), rp.end());
-            in.data.adj_col_idx.assign(ci.begin(), ci.end());
-            in.data.n_neighbors.assign(nn.begin(), nn.end());
-            in.data.spatial_partition = tulpa::graph_partition(
-                in.data.n_spatial_units, in.data.adj_row_ptr.data(),
-                in.data.adj_col_idx.data());
-            in.data.n_spatial_components =
-                in.data.spatial_partition.n_components();
+            in.data.set_spatial_adjacency(
+                Rcpp::as<int>(sp["n_spatial_units"]),
+                std::vector<int>(rp.begin(), rp.end()),
+                std::vector<int>(ci.begin(), ci.end()),
+                std::vector<int>(nn.begin(), nn.end()));
             in.data.spatial_type = SpatialType::CAR_PROPER;
             Rcpp::NumericVector eig = Rcpp::as<Rcpp::NumericVector>(sp["adj_eigenvalues"]);
             in.data.car_adj_eigenvalues.assign(eig.begin(), eig.end());

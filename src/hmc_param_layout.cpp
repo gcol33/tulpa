@@ -23,6 +23,26 @@ void require_range_prior_anchors(double U, double alpha, const char* term) {
   }
 }
 
+// An areal field's partition is what the sum-to-zero augmentation iterates over,
+// and a default-constructed one reports zero components -- so a caller that
+// assigns the CSR adjacency without it gets a field whose constant direction
+// carries no precision, while n_spatial_components keeps its own default of 1
+// and the rank normalizer still credits the pin. The level then random-walks and
+// tau is biased upward, behind a fit that looks healthy because icar_center_field
+// keeps eta invariant. ModelData::set_spatial_adjacency() sets the three
+// together; this catches anything that assembled ModelData field by field.
+void require_spatial_partition(const ModelData& data) {
+  const int have = data.spatial_partition.n;
+  if (have == data.n_spatial_units) return;
+  Rcpp::stop("tulpa: the spatial field's component partition (%d nodes) does "
+             "not describe its adjacency (%d units). Set the adjacency with "
+             "ModelData::set_spatial_adjacency(n_units, row_ptr, col_idx, "
+             "n_neighbors), which derives `spatial_partition` and "
+             "`n_spatial_components` from it, rather than assigning the CSR "
+             "arrays on their own.",
+             have, data.n_spatial_units);
+}
+
 ParamLayout compute_param_layout(const ModelData& data) {
   ParamLayout layout;
   int idx = 0;
@@ -165,6 +185,7 @@ ParamLayout compute_param_layout(const ModelData& data) {
   layout.is_bym2_collapsed = (data.spatial_type == SpatialType::BYM2 && data.bym2_collapsed);
 
   if (layout.has_spatial) {
+    require_spatial_partition(data);
     if (layout.is_bym2) {
       // BYM2 Riebler: log_sigma_total, logit_rho, [phi_scaled, theta if not collapsed]
       layout.log_sigma_bym2_idx = idx++;

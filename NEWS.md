@@ -1,6 +1,38 @@
 # tulpa NEWS
 
-## 0.0.107
+## 0.0.108
+
+* **An areal field's component partition is now set with its adjacency, so a
+  consumer cannot leave the field unidentified (gcol33/tulpaRatio#19).** The
+  sum-to-zero augmentation that makes an intrinsic ICAR / BYM2 prior proper
+  iterates over the field's connected components, and a default-constructed
+  `GraphPartition` describes zero nodes and reports zero of them. A caller that
+  assigned the CSR adjacency alone therefore got an augmentation that pinned no
+  direction at all, while `n_spatial_components` kept its own default of 1 and
+  the rank normalizer went on crediting `+0.5 log tau` for the pin that was
+  never applied.
+
+  Nothing looked wrong from R. `icar_center_field` still centres the field on
+  its way into eta, so the linear predictor stayed invariant and the field's
+  shape and the fixed effects came out right; only the level was loose. On
+  tulpaRatio's 8-unit chain the reported `mean(phi_spatial)` was +200.9, -342.8
+  and +423.1 at three consecutive seeds against a legacy level held within 0.02
+  of zero, and `tau_spatial` sat at 16.89 against 11.90 with a seed-to-seed
+  spread of 0.42 -- the variance component had a different posterior, not just a
+  different origin. A chain also spends its adaptation and treedepth on a flat
+  direction, which is what makes the field's convergence diagnostics
+  meaningless while it does.
+
+  `ModelData::set_spatial_adjacency(n_units, row_ptr, col_idx, n_neighbors)`
+  now sets the CSR arrays, the partition and the component count together; the
+  engine's own loader uses it at both of its sites, and `compute_param_layout()`
+  rejects a field whose partition does not describe its adjacency, alongside the
+  existing PC-range-anchor guard. After the fix the same three seeds report a
+  level of -0.003 and a `tau_spatial` of 12.05, inside the legacy spread.
+
+* ABI 39 -> 40. No struct layout or callable changed; the bump makes a consumer
+  built against 39 report "rebuild required" at first NUTS use rather than
+  tripping the new guard.
 
 * **The inner Laplace solve now reaches stationarity at a large random-effect
   scale (gcol33/tulpa#259, gcol33/tulpa#260).** With #255 fixed, solves at a

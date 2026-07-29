@@ -140,3 +140,44 @@ test_that("ICAR pins the field level instead of aliasing it into the intercept",
   # Hessian is rank-1 on the constant eigenspace, orthogonal to deviations).
   expect_gt(cor(colMeans(dr[, phi_cols, drop = FALSE]), phi), 0.9)
 })
+
+# The partition an intrinsic field's augmentation iterates over must describe
+# the field's adjacency (gcol33/tulpaRatio#19). A consumer that assigns the CSR
+# arrays without it leaves the partition at zero nodes, so the augmentation
+# visits zero components and pins nothing, while n_spatial_components keeps its
+# own default of 1 and the rank normalizer still credits the pin.
+test_that("set_spatial_adjacency derives the partition the augmentation walks", {
+  n_units <- 8L
+  row_ptr <- c(0L, 1L, 3L, 5L, 7L, 9L, 11L, 13L, 14L)
+  col_idx <- c(1L, 0L, 2L, 1L, 3L, 2L, 4L, 3L, 5L, 4L, 6L, 5L, 7L, 6L)
+  nnb     <- c(1L, 2L, 2L, 2L, 2L, 2L, 2L, 1L)
+
+  set <- cpp_spatial_partition_probe(n_units, row_ptr, col_idx, nnb, TRUE)
+  expect_equal(set$partition_n, n_units)
+  expect_equal(set$components_seen, 1L)
+  expect_equal(set$n_components, 1L)
+  expect_true(set$accepted)
+
+  # A hand-assembled field: the count says one component, the partition the
+  # augmentation actually walks says none.
+  hand <- cpp_spatial_partition_probe(n_units, row_ptr, col_idx, nnb, FALSE)
+  expect_equal(hand$partition_n, 0L)
+  expect_equal(hand$components_seen, 0L)
+  expect_equal(hand$n_components, 1L)
+  expect_false(hand$accepted)
+  expect_match(hand$error, "set_spatial_adjacency")
+})
+
+test_that("a disconnected adjacency yields one pinned component per piece", {
+  # Two disjoint 3-chains: 0-1-2 and 3-4-5.
+  n_units <- 6L
+  row_ptr <- c(0L, 1L, 3L, 4L, 5L, 7L, 8L)
+  col_idx <- c(1L, 0L, 2L, 1L, 4L, 3L, 5L, 4L)
+  nnb     <- c(1L, 2L, 1L, 1L, 2L, 1L)
+
+  set <- cpp_spatial_partition_probe(n_units, row_ptr, col_idx, nnb, TRUE)
+  expect_equal(set$partition_n, n_units)
+  expect_equal(set$components_seen, 2L)
+  expect_equal(set$n_components, 2L)
+  expect_true(set$accepted)
+})

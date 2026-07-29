@@ -3340,6 +3340,21 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_spatial_partition_probe
+Rcpp::List cpp_spatial_partition_probe(int n_units, Rcpp::IntegerVector row_ptr, Rcpp::IntegerVector col_idx, Rcpp::IntegerVector n_neighbors, bool use_setter);
+RcppExport SEXP _tulpa_cpp_spatial_partition_probe(SEXP n_unitsSEXP, SEXP row_ptrSEXP, SEXP col_idxSEXP, SEXP n_neighborsSEXP, SEXP use_setterSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n_units(n_unitsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type row_ptr(row_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type col_idx(col_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_neighbors(n_neighborsSEXP);
+    Rcpp::traits::input_parameter< bool >::type use_setter(use_setterSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_spatial_partition_probe(n_units, row_ptr, col_idx, n_neighbors, use_setter));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -4044,6 +4059,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_miid_prior", (DL_FUNC) &_tulpa_cpp_test_miid_prior, 4},
     {"_tulpa_cpp_pc_prior_scales", (DL_FUNC) &_tulpa_cpp_pc_prior_scales, 3},
     {"_tulpa_cpp_test_hessian_pattern_guard", (DL_FUNC) &_tulpa_cpp_test_hessian_pattern_guard, 4},
+    {"_tulpa_cpp_spatial_partition_probe", (DL_FUNC) &_tulpa_cpp_spatial_partition_probe, 5},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},
