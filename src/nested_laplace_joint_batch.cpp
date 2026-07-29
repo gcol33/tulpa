@@ -10,7 +10,7 @@
 // First cut: dense path only (small/medium fields), cell-coupling families with
 // ALL arms coupled (occu_cover), plain outer-grid sweep with per-species
 // warm-start chaining. Returns per-species { log_marginal, modes, weights,
-// n_iter, Q_csc_*_per_grid } so R unpacks each through the existing
+// n_iter, score_max, Q_csc_*_per_grid } so R unpacks each through the existing
 // single-species post-processing (including .joint_inner_vcov_block for SDs;
 // store_Q stores the converged-mode observed Hessian per grid in CSC
 // lower-triangle, mirroring the single-species path exactly).
@@ -316,6 +316,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     std::vector<std::vector<double>> modes_flat(B,
         std::vector<double>((std::size_t) n_grid * n_x, 0.0));
     std::vector<std::vector<int>> n_iter(B, std::vector<int>(n_grid, 0));
+    // Achieved residual per (species, grid cell); see LaplaceResult::score_max.
+    std::vector<std::vector<double>> score_mx(B, std::vector<double>(n_grid, 0.0));
     std::vector<std::vector<double>> prev_mode(B, std::vector<double>(n_x, 0.0));
     std::vector<bool> have_prev(B, false);
 
@@ -495,6 +497,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                         s2z_log_det = s2z_log_det_direct(H, H.s2z_rank1, S2Z_NA,
                                                          &st[s].s2z_log_det_cache);
                 }
+                // Read before joint_pd_step_solve, which consumes grad.
+                score_mx[s][kg] = max_abs(grad);
                 joint_pd_step_solve(H, st[s].sparse, n_x, JointPDMode::LM,
                                     grad.data(), st[s].delta.data(), &log_det);
                 if (!H.s2z_rank1.empty() && std::isfinite(s2z_log_det))
@@ -511,6 +515,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 DenseMat& H = H_per_sp[s];
                 for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, st[s].x, kg);
                 add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
+                score_mx[s][kg] = max_abs(grad);
                 dispatch_factor_log_det(H, n_x, st[s].sparse, use_sparse, st[s].chol, log_det);
                 if (store_Q) {
                     std::vector<int> qp, qi; std::vector<double> qx;
@@ -555,8 +560,10 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     for (int s = 0; s < B; s++) {
         Rcpp::NumericVector lm(n_grid);
         Rcpp::IntegerVector ni(n_grid);
+        Rcpp::NumericVector sm(n_grid);
         double mx = -std::numeric_limits<double>::infinity();
         for (int k = 0; k < n_grid; k++) { lm[k] = log_marg[s][k]; ni[k] = n_iter[s][k];
+                                           sm[k] = score_mx[s][k];
                                            if (std::isfinite(lm[k]) && lm[k] > mx) mx = lm[k]; }
         Rcpp::NumericVector w(n_grid, 0.0);
         double wsum = 0.0;
@@ -571,7 +578,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             Rcpp::Named("log_marginal") = lm,
             Rcpp::Named("weights")      = w,
             Rcpp::Named("modes")        = md,
-            Rcpp::Named("n_iter")       = ni
+            Rcpp::Named("n_iter")       = ni,
+            Rcpp::Named("score_max")    = sm
         );
         if (store_Q) {
             sp["Q_csc_p_per_grid"] = Q_p_per_sp[s];

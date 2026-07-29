@@ -90,6 +90,11 @@ inline double eval_penalized_log_lik(
 // solve whose objective stays finite -- every fit on an unconstrained link --
 // takes exactly the trial sequence it always did.
 //
+// The acceptance slack is ABSOLUTE (1e-8), which makes it a real criterion far
+// from the mode and a weak one near it: once the whole available gain drops
+// below 1e-8, every finite trial passes and the search stops steering, so a
+// systematically overshooting direction is no longer damped (gcol33/tulpa#259).
+//
 // When no trial is acceptable the search returns 0, leaving `x` and `obj_out`
 // untouched: the caller's iterate is still the best point known. newton_converged
 // treats a zero step as a stall rather than convergence, so an exhausted search
@@ -220,6 +225,17 @@ inline double max_abs_step(const std::vector<double>& delta, double step_scale, 
     return m;
 }
 
+// Largest absolute component of a vector. Applied to the gradient of the
+// penalized log-posterior at the returned mode it is the solve's ACHIEVED
+// residual -- how far from stationary the reported mode actually is. Every
+// driver already re-scatters grad at that point for the log-determinant, so
+// this costs one pass over n_x. See LaplaceResult::score_max.
+inline double max_abs(const std::vector<double>& v) {
+    double m = 0.0;
+    for (double e : v) m = std::max(m, std::abs(e));
+    return m;
+}
+
 // Newton decrement lambda^2 = grad' H^{-1} grad = grad . delta, the predicted
 // increase of the (concave) log-posterior from the full Newton step. It is the
 // affine-invariant measure of distance to the mode (Boyd & Vandenberghe,
@@ -233,18 +249,19 @@ inline double newton_decrement(const std::vector<double>& grad,
     return d;
 }
 
-// Near-mode gate and patience for the stalled-decrement convergence path below.
+// Near-mode gate and patience for the stalled-step convergence path below.
 // The gate (predicted objective gain < 1e-6) marks "essentially at a mode"; the
-// patience is how many consecutive non-halving iterations past the gate count as
-// a conditioning-limited stall rather than ongoing progress.
+// patience is how many consecutive iterations without a new shortest step count
+// as a conditioning-limited stall rather than ongoing progress.
 inline constexpr double NEWTON_NEARMODE_GATE  = 1e-6;
 inline constexpr int    NEWTON_STALL_PATIENCE = 5;
 
-// Per-solve state for the Newton convergence test (decrement history). One
-// instance lives for the duration of a single Newton solve; the batch solver
-// keeps one per stream.
+// Per-solve state for the Newton convergence test (shortest step seen so far,
+// and how many iterations have passed without beating it). One instance lives
+// for the duration of a single Newton solve; the batch solver keeps one per
+// stream.
 struct NewtonConvState {
-    double prev_decrement = std::numeric_limits<double>::infinity();
+    double best_step = std::numeric_limits<double>::infinity();
     int    stalled = 0;
 };
 
@@ -252,16 +269,35 @@ struct NewtonConvState {
 // paths:
 //   1. max|delta| < tol -- the historic step criterion. On a well-conditioned
 //      solve this fires exactly when it always did, so those fits are unchanged.
-//   2. a stalled decrement -- the affine-invariant rescue for an ill-conditioned
-//      H (a high-order rational SPDE precision Q = Pl' Ci Pl, which squares
-//      cond(Pl); a near-singular GMRF). There the Cholesky solve loses too many
-//      digits for the step to ever fall below tol, and step halving thrashes,
-//      yet the mode is found. We declare convergence only once the decrement is
-//      near-mode (< gate) AND has failed to halve for `patience` straight
-//      iterations -- the signature of a solve that has extracted all the
-//      accuracy its conditioning allows. A well-conditioned fit trips path 1 the
-//      moment it crosses the gate, so its stall counter never reaches patience;
-//      path 2 cannot preempt it.
+//   2. a stalled step -- the rescue for an ill-conditioned H (a high-order
+//      rational SPDE precision Q = Pl' Ci Pl, which squares cond(Pl); a
+//      near-singular GMRF). There the Cholesky solve loses too many digits for
+//      the step to ever fall below tol: H^-1 amplifies the gradient's rounding
+//      residual into a spurious step, and the iteration thrashes around a floor
+//      instead of walking down to it, yet the mode is found.
+//
+// What separates the two is whether the step is still SHRINKING. A solve that is
+// converging -- at any rate, however slow -- shortens its step every iteration
+// and so keeps setting a new minimum. A solve at its conditioning floor bounces:
+// on the rational SPDE fixture of dev_notes/diag_spde_converge.R (cond(H) 1e13)
+// the step wanders over 3e-6 .. 4e-5 with per-iteration ratios from 0.25 to 7,
+// setting a new minimum only occasionally, so `patience` consecutive misses is
+// its signature and not a converging solve's.
+//
+// The predecessor of this test asked instead whether the DECREMENT had halved,
+// which conflates the two: a badly scaled Newton weight converges linearly at
+// rate r, the decrement then shrinks by r^2, and any r >= 0.707 reads as a
+// stall. That is not hypothetical -- neg_binomial_1's quasi-likelihood weight
+// mu / (1 + phi) sits far below the observed curvature at large phi, and on the
+// random-intercept fixture of gcol33/tulpa#255 the measured rate reaches the
+// 0.707 boundary between phi = 3 (0.57) and phi = 4 (0.70), then passes it
+// outright at phi = 6 (0.93). That is exactly where those fits began returning a
+// mode whose score was 7e-04 rather than 1e-11, silently costing the exact outer
+// gradient five digits. The step-based test leaves them running and they arrive:
+// 81 iterations at phi = 4, 323 at phi = 6, both at 2e-11
+// (dev_notes/probe_inner_stationarity.R). A solve that needs more than max_iter
+// now exits with converged = false and a score_max the caller can gate on,
+// rather than a convergence flag on a mode that never settled.
 inline bool newton_converged(const std::vector<double>& delta,
                              const std::vector<double>& grad,
                              double step_scale, int n_x, double tol,
@@ -275,11 +311,16 @@ inline bool newton_converged(const std::vector<double>& delta,
     // The line search never returns 0 while the objective stays finite, so no
     // currently-working solve reaches this.
     if (step_scale <= 0.0) return false;
-    if (max_abs_step(delta, step_scale, n_x) < tol) return true;
-    double dec = newton_decrement(grad, delta, n_x);
-    bool improved = dec < st.prev_decrement * 0.5;
-    st.prev_decrement = dec;
-    if (dec >= NEWTON_NEARMODE_GATE || improved) { st.stalled = 0; return false; }
+    const double step = max_abs_step(delta, step_scale, n_x);
+    if (step < tol) return true;
+    // Tracked unconditionally, so `best_step` is the true running minimum over
+    // the whole solve rather than over the near-mode tail only.
+    const bool progress = step < st.best_step;
+    if (progress) st.best_step = step;
+    if (newton_decrement(grad, delta, n_x) >= NEWTON_NEARMODE_GATE || progress) {
+        st.stalled = 0;
+        return false;
+    }
     return ++st.stalled >= NEWTON_STALL_PATIENCE;
 }
 

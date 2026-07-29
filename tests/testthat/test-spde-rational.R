@@ -120,10 +120,17 @@ test_that("the precomputed C++ SPDE fit recovers a fractional-Matern field", {
   # The rational precision Q = Pl' Ci Pl squares cond(Pl), so the combined
   # Hessian is extremely ill-conditioned (cond ~ 1e13) and the Cholesky solve
   # loses enough digits that the step-norm criterion thrashes under step
-  # halving. The affine-invariant stalled-decrement path in newton_converged()
-  # detects that the mode has been found to the conditioning limit, so the fit
-  # converges; the recovered field is the correctness proof.
+  # halving: the step wanders around a floor instead of shrinking toward it. The
+  # stalled-step path in newton_converged() reads that as the mode having been
+  # found to the conditioning limit, so the fit converges well inside max_iter;
+  # the recovered field is the correctness proof. This is the case that path
+  # exists for -- a solve whose step is still shrinking, however slowly, must
+  # NOT trip it (test-laplace-mode-stationarity.R holds the other side).
   expect_true(fit$converged)
+  expect_lt(fit$n_iter, 100L)
+  # The residual it stopped at is the conditioning limit, not zero, and is
+  # reported rather than hidden behind the flag.
+  expect_gt(fit$score_max, 0)
   x_hat <- fit$mode[-1]                           # drop the intercept
   u_hat <- as.numeric(asm$Pr %*% x_hat)
   expect_gt(cor(u_hat, u_true), 0.9)

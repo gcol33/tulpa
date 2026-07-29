@@ -39,6 +39,7 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put(buf, r.log_det_Q);
     ckpt_put<std::int32_t>(buf, r.n_iter);
     ckpt_put<std::uint8_t>(buf, r.converged ? 1u : 0u);
+    ckpt_put(buf, r.score_max);
     ckpt_put_span(buf, r.mode);
     ckpt_put<std::int32_t>(buf, r.Q_csc_n);
     ckpt_put_span(buf, r.Q_csc_p);
@@ -54,6 +55,7 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.log_det_Q          = rd.get<double>();
     r.n_iter             = rd.get<std::int32_t>();
     r.converged          = (rd.get<std::uint8_t>() != 0);
+    r.score_max          = rd.get<double>();
     r.mode               = rd.get_span<double>();
     r.Q_csc_n            = rd.get<std::int32_t>();
     r.Q_csc_p            = rd.get_span<int>();

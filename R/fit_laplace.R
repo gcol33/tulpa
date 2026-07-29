@@ -89,7 +89,11 @@
 #'   - `mode`: full mode vector (beta, then RE values per term)
 #'   - `log_marginal`: Laplace-approximated log-marginal likelihood
 #'   - `n_iter`: number of Newton iterations
-#'   - `converged`: logical
+#'   - `converged`: logical, whether the stopping rule was met
+#'   - `score_max`: largest absolute component of the joint penalized score at
+#'     the returned mode -- the residual the solve actually achieved, which is a
+#'     different question from `converged` and the one anything differentiating
+#'     through the mode depends on
 #'   - `log_det_Q`: log-determinant of the Hessian
 #'   - `H_beta`: fixed-effect block of the Hessian (if return_hessian = TRUE)
 #'   - `cov_blocks`: list of per-group posterior covariance matrices, one per

@@ -182,6 +182,7 @@ LaplaceResult laplace_newton_solve_ll(
     compute_eta(x, scratch.eta);
     scratch.zero_for_iter();
     scatter_grad_hess(x, scratch.eta, scratch.grad, scratch.H);
+    result.score_max = max_abs(scratch.grad);
 
     dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
                              scratch.chol, result.log_det_Q);

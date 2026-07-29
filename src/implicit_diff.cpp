@@ -69,12 +69,8 @@ Rcpp::List cpp_spde_laplace_gradient(
         family, phi, solver
     );
 
-    return Rcpp::List::create(
-        Rcpp::Named("log_marginal") = inner_result.log_marginal,
-        Rcpp::Named("grad_log_range") = grad.grad_log_range,
-        Rcpp::Named("grad_log_sigma") = grad.grad_log_sigma,
-        Rcpp::Named("mode") = inner_result.mode,
-        Rcpp::Named("converged") = inner_result.converged,
-        Rcpp::Named("n_iter") = inner_result.n_iter
-    );
+    Rcpp::List out = tulpa::laplace_result_to_list(inner_result);
+    out["grad_log_range"] = grad.grad_log_range;
+    out["grad_log_sigma"] = grad.grad_log_sigma;
+    return out;
 }

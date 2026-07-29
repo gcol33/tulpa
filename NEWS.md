@@ -1,5 +1,73 @@
 # tulpa NEWS
 
+## 0.0.106
+
+* **The Newton stall test no longer reads slow convergence as a converged mode
+  (gcol33/tulpa#255).** `newton_converged()` carried a rescue path for an
+  ill-conditioned Hessian, where `H^-1` amplifies the gradient's rounding
+  residual into a spurious step and `max|delta| < tol` can never fire. It
+  detected that as a Newton decrement that had stopped halving -- but the
+  decrement shrinks as the square of the convergence rate, so any solve
+  converging linearly at rate 0.707 or slower looked identical to one that had
+  hit its conditioning floor. `neg_binomial_1` is that solve: its
+  quasi-likelihood Newton weight `mu / (1 + phi)` sits far below the observed
+  curvature at large `phi`, and the measured rate reaches 0.707 between
+  `phi = 3` (0.57) and `phi = 4` (0.70). Those fits stopped 30 iterations in at
+  a joint score of 7e-04 instead of 1e-11, reported `converged = TRUE`, and cost
+  the exact outer gradient five digits (relative error 1.0e-04 against a central
+  difference of tulpa's own `log_marginal`, against 1e-10 at `phi <= 3`).
+
+  What separates the two cases is whether the step is still shrinking: a
+  converging solve sets a new shortest step every iteration however slowly,
+  while one at its conditioning floor bounces around it (on the rational-SPDE
+  fixture the step wanders over 3e-6 .. 4e-5 with per-iteration ratios from 0.25
+  to 7). The stall test now runs on that, so the affected solves are left to
+  finish -- 81 iterations at `phi = 4`, 323 at `phi = 6` -- and the gradient
+  agrees to 1e-10 across every family and `phi` in
+  `dev_notes/probe_phi_gradient_families.R`. The rational SPDE case the path
+  exists for is unchanged (converged, `n_iter` 9, field correlation 0.96), and
+  so is every solve that was already tripping the step criterion.
+
+* **Every Laplace solve reports the residual it achieved, not just whether its
+  stopping rule fired (gcol33/tulpa#255).** `LaplaceResult` carries `score_max`,
+  the largest absolute component of the joint penalized score at the returned
+  mode, surfaced on the R side as `fit$score_max`. `converged` answers a
+  different question, and the difference matters because the log-marginal feels
+  a mode error quadratically while its theta-gradient feels it linearly. Read
+  off the final scatter every driver already performs, so it costs one pass over
+  the latent vector. The three `LaplaceResult`-returning exports that hand-rolled
+  their own result list (the SPDE Laplace pair and the implicit-diff gradient)
+  now go through `laplace_result_to_list()`, which is what makes a new diagnostic
+  reach all of them.
+
+* **The exact outer gradient declines a mode that did not settle
+  (gcol33/tulpa#255).** `.laplace_exact_core()` keeps only the `log|H|` path
+  because the joint score at `x_hat` is zero; a solve that stopped short leaves
+  behind exactly the term the derivation discards. The reported residual is
+  mapped through the same inverse the mode motion travels
+  (`max|dx| <= ||H_true^-1||_inf max|score|`), compared against the latent scale,
+  and refused above 1e-6 -- which bounds the outer gradient at ~1e-5 relative,
+  four orders under the 1.0e-04 above. Both sides of that threshold are measured:
+  settled solves swept over five families and `n = 50 .. 18000` span 3.4e-16 to
+  2.1e-11, solves stopped short span 8.8e-05 to 1.2e-02. The refusal is signalled
+  as a `tulpa_unsettled_mode` condition carrying the residual, the implied mode
+  error and the iteration count, so a direct call says what to change while the
+  outer optimizers collapse it into one warning per fit rather than one per trial
+  `theta`.
+
+* **A declined gradient no longer lets the outer optimizer report its own
+  starting value as the estimate (gcol33/tulpa#255).** When the exact gradient is
+  unavailable at a trial `theta`, `optim()` receives a vector of zeros, which it
+  cannot distinguish from a stationary point -- so a refusal on the first step
+  ends the search there and `phi` is reported back unchanged from where it
+  started. The gradient-driven branch of `tulpa_re_cov_nested()` now discards
+  that run and restarts derivative-free, the same response it already had to an
+  outright optimizer failure, and says so in the warning.
+
+* Grid and chain checkpoint files carry a new payload field, so the format magic
+  is `TLPACKP2`. A file written by an earlier version errors with the existing
+  "point `checkpoint$path` at a fresh path" message instead of being misparsed.
+
 ## 0.0.105
 
 * **The zero-inflation refusal names every family the gate admits

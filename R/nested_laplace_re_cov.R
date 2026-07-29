@@ -980,7 +980,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   reltol_gr <- outer_reltol %||% 1e-10
   reltol_nm <- outer_reltol %||% 1e-8
   factr_lbfgs <- max(1, reltol_gr / .Machine$double.eps)
-  opt <- if (use_exact_grad) {
+  # One warning per fit rather than one per trial theta if the exact gradient is
+  # declined because an inner mode did not settle (.laplace_mode_settled).
+  # `unsettled$n` is live inside the block below, which is what lets the
+  # gradient-driven branch notice the refusal and hand over.
+  unsettled <- .new_unsettled_state()
+  opt <- .with_unsettled_report(if (use_exact_grad) {
     o <- tryCatch(
       if (is.na(phi_idx)) {
         stats::optim(theta0, negg_exact, negg_gr, method = "BFGS",
@@ -1000,7 +1005,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     # A gradient-driven run that fails outright (a singular H at some trial
     # theta, say) must not take the fit down with it; fall back to the
     # derivative-free path rather than reporting a stop point as an estimate.
-    if (is.null(o) || !all(is.finite(o$par))) {
+    # A refusal from the settled-mode gate lands here for the same reason and is
+    # the more dangerous case: optim() receives a declined gradient as a vector
+    # of zeros, reads that as a stationary point, and can stop at theta0 and
+    # report the STARTING value as the estimate. Whatever it returned after
+    # walking blind is discarded.
+    if (is.null(o) || !all(is.finite(o$par)) || unsettled$n > 0L) {
       if (n_theta == 1L) {
         stats::optim(theta0, negg, method = "Brent",
                      lower = brent_lo, upper = brent_hi, hessian = need_scale,
@@ -1020,7 +1030,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     stats::optim(theta0, negg, method = "Nelder-Mead",
                  hessian = need_scale,
                  control = list(maxit = as.integer(outer_maxit), reltol = reltol_nm))
-  }
+  }, caller, unsettled)
   theta_hat <- opt$par
 
   # A non-zero optim code means the reported theta_hat is wherever the optimizer

@@ -115,7 +115,11 @@ A list with:
 \item \code{mode}: full mode vector (beta, then RE values per term)
 \item \code{log_marginal}: Laplace-approximated log-marginal likelihood
 \item \code{n_iter}: number of Newton iterations
-\item \code{converged}: logical
+\item \code{converged}: logical, whether the stopping rule was met
+\item \code{score_max}: largest absolute component of the joint penalized score at
+the returned mode -- the residual the solve actually achieved, which is a
+different question from \code{converged} and the one anything differentiating
+through the mode depends on
 \item \code{log_det_Q}: log-determinant of the Hessian
 \item \code{H_beta}: fixed-effect block of the Hessian (if return_hessian = TRUE)
 \item \code{cov_blocks}: list of per-group posterior covariance matrices, one per

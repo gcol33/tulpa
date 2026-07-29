@@ -27,6 +27,19 @@ struct LaplaceResult {
   int n_iter;                   // Newton iterations used
   bool converged;               // Convergence flag
 
+  // Achieved residual: max_j |d(log p(y|x,theta) + log p(x|theta))/dx_j| at the
+  // reported mode. The solve's convergence flag says the STOPPING RULE was met;
+  // this says how stationary the point it stopped at actually is, which is a
+  // different question and the one every downstream quantity that differentiates
+  // through the mode depends on. The Laplace log-marginal only feels a mode
+  // error quadratically, but its theta-gradient feels it linearly (log|H| is not
+  // stationary in x), so a residual that is negligible for the fit itself can
+  // still cost the outer gradient several digits -- see .laplace_exact_core(),
+  // which declines rather than differentiate through a mode that did not settle.
+  // Every driver re-scatters grad at the returned mode for the log-determinant,
+  // so this is read off that pass at no extra cost.
+  double score_max = 0.0;
+
   // The solve never started: the penalized objective was non-finite at the
   // supplied latent start and the feasibility sweep (make_start_feasible) found
   // no interior point. This is distinct from converged = false, which means the
@@ -71,6 +84,7 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     Rcpp::Named("log_marginal") = result.log_marginal,
     Rcpp::Named("n_iter") = result.n_iter,
     Rcpp::Named("converged") = result.converged,
+    Rcpp::Named("score_max") = result.score_max,
     Rcpp::Named("start_infeasible") = result.start_infeasible
   );
 

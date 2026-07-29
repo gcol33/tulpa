@@ -380,6 +380,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     { TULPA_PROFILE_PHASE(PHASE_SCATTER);
       scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder,
                            /*finalize=*/true, /*grad_only=*/false); }
+    // Read before joint_pd_step_solve below, which consumes scratch.grad.
+    result.score_max = max_abs(scratch.grad);
     H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 
     // PD-enforced final factorize so log_det is defined even when the mode sits

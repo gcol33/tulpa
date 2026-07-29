@@ -281,6 +281,107 @@
 }
 
 
+# Largest relative mode error the reported inner solve can still be carrying,
+# and the tolerance the exact gradient needs it under.
+#
+# `fit$score_max` is max_j |d(joint penalized log posterior)/dx_j| at the mode
+# the kernel returned -- its ACHIEVED residual, as opposed to `converged`, which
+# only says the stopping rule was met. The exact gradient does not depend on
+# that residual directly but on the mode error it implies, dx = H_true^-1 score,
+# because the term the derivation discards is score . dx_hat/dtheta. The induced
+# inf-norm bounds the map: max|dx| <= ||H_true^-1||_inf max|score|, and dividing
+# by the latent scale makes it a relative displacement, so the gate does not move
+# with the units of x.
+#
+# The threshold is set where the neglected term starts to MATTER, not where the
+# mode stops being pristine. Measured on the fixtures of gcol33/tulpa#255
+# (dev_notes/probe_inner_stationarity.R), the assembled dm/dlog_phi loses
+# accuracy at roughly eight times the relative mode error, so 1e-6 here bounds
+# the outer gradient at ~1e-5 relative -- below anything an outer optimizer can
+# act on, and four orders under the 1.0e-04 the issue reports.
+#
+# Both sides are measured. Settled solves swept over five families and
+# n = 50 .. 18000 (scaling matters: the score's own round-off floor grows with
+# the data) span 3.4e-16 to 2.1e-11, so nothing healthy comes within four orders
+# of the gate. Solves stopped short span 8.8e-05 to 1.2e-02, so nothing broken
+# comes within eighty times of it from the other side. A hurdle inner solve that
+# settles only to 3.7e-08 -- genuinely short, but four orders better than the
+# broken case -- passes, which is the intended reading: its gradient is good to
+# ~3e-07 and refusing it would cost more than it buys.
+#
+# A fit with no `score_max` came from a path that does not report one; there is
+# nothing to test, so it passes rather than blocking a gradient that was being
+# returned before.
+.LAPLACE_MODE_SETTLED_TOL <- 1e-6
+
+.laplace_mode_settled <- function(fit, Hinv_mode, x) {
+  s <- fit$score_max
+  if (is.null(s) || length(s) != 1L || !is.finite(s)) return(TRUE)
+  if (s == 0) return(TRUE)
+  scale <- max(1, max(abs(x)))
+  rel <- s * max(rowSums(abs(Hinv_mode))) / scale
+  if (rel <= .LAPLACE_MODE_SETTLED_TOL) return(TRUE)
+  # Signalled classed so a driver that solves thousands of inner problems can
+  # collect these and report once (see .with_unsettled_report), while a single
+  # direct call still says what happened and what to change.
+  #
+  # The remedy is only named where there IS one: a solve that ran out of
+  # iterations gets more, but one that reported convergence stopped on its own
+  # stall detector at this residual (gcol33/tulpa#260) and a larger max_iter
+  # changes nothing.
+  warning(structure(
+    class = c("tulpa_unsettled_mode", "warning", "condition"),
+    list(call = NULL, message = sprintf(
+      paste0("The inner Laplace solve stopped short of stationarity (joint ",
+             "score %.2e, relative mode error %.1e, %d iterations, ",
+             "converged = %s). The exact outer gradient differentiates ",
+             "through the mode and is not valid there, so it was declined.%s"),
+      s, rel, as.integer(fit$n_iter %||% NA_integer_), isTRUE(fit$converged),
+      if (isTRUE(fit$converged)) ""
+      else " The solve reached its iteration cap; raise the inner `max_iter`.")))
+  )
+  FALSE
+}
+
+
+# Run `expr` collecting the stationarity refusals above into a single warning
+# rather than one per inner solve. The outer optimizers call the exact gradient
+# once per trial theta, so an unreachable corner of the hyperparameter space
+# would otherwise emit hundreds of identical warnings; the count is what the
+# user needs, and the first one carries the actionable numbers.
+#
+# `state` is an environment with `n` and `first`, created by the caller so it can
+# read the count DURING `expr`. That is what lets a gradient-driven optimizer
+# notice it was walking blind and restart derivative-free: a declined gradient
+# reaches optim() as zeros, which it cannot tell from a stationary point, so
+# without the check it can stop at its own starting value and report that as the
+# estimate.
+.new_unsettled_state <- function() {
+  st <- new.env(parent = emptyenv())
+  st$n <- 0L
+  st$first <- NULL
+  st
+}
+
+.with_unsettled_report <- function(expr, caller, state = .new_unsettled_state()) {
+  out <- withCallingHandlers(
+    expr,
+    tulpa_unsettled_mode = function(w) {
+      state$n <- state$n + 1L
+      if (is.null(state$first)) state$first <- conditionMessage(w)
+      invokeRestart("muffleWarning")
+    }
+  )
+  if (state$n > 0L) {
+    warning(caller, "(): the exact outer gradient was declined at ",
+            state$n, " inner solve", if (state$n > 1L) "s" else "",
+            " whose mode had not settled, so the outer fit fell back to the ",
+            "derivative-free optimizer. ", state$first, call. = FALSE)
+  }
+  out
+}
+
+
 # Whether the exact outer gradient covers a zero-inflation process for this
 # family. The gradient differentiates log|H| through dW/dtheta, so with two
 # linear predictors it needs the eta-derivative of the MIXTURE's count-block
@@ -428,6 +529,21 @@
       }
     }
   }
+
+  # The inner solve has to have SETTLED, or none of the above is the gradient of
+  # anything. Every term here survives because the joint score at x_hat is zero,
+  # which kills the mode's contribution outside log|H|; a solve that stopped
+  # short leaves that contribution behind, and it is the term the whole
+  # derivation is built on discarding.
+  #
+  # What the outer gradient feels is not the residual itself but the mode error
+  # it implies, since the neglected term is score . dx_hat/dtheta and
+  # dx = H_true^-1 score. So the residual the kernel reports is mapped through
+  # the same inverse the mode motion travels and compared against the latent
+  # scale. Refused rather than warned-and-returned, matching every other
+  # unusable ingredient above: the caller falls back instead of optimizing a
+  # fiction.
+  if (!.laplace_mode_settled(fit, Hinv_mode, x)) return(NULL)
 
   # s_i = (A H^-1 A')_ii, the posterior variance of the linear predictor. With
   # two predictors the dW channel needs the full 2 x 2 predictor covariance --

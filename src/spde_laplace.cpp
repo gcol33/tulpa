@@ -169,27 +169,18 @@ static Rcpp::List spde_run_single_fit(
             y, n_trials, family, phi, N, n_x, max_iter, tol, n_threads,
             compute_eta, scatter_sparse, center, log_prior, H_builder, x_init);
         pattern_guard.check("the sparse SPDE Laplace solve");
-        return Rcpp::List::create(
-            Rcpp::Named("mode") = res.mode,
-            Rcpp::Named("log_det_Q") = res.log_det_Q,
-            Rcpp::Named("log_marginal") = res.log_marginal,
-            Rcpp::Named("n_iter") = res.n_iter,
-            Rcpp::Named("converged") = res.converged,
-            Rcpp::Named("Q_nnz") = qb.nnz(),
-            Rcpp::Named("H_nnz") = H_builder.nnz);
+        Rcpp::List out_sparse = tulpa::laplace_result_to_list(res);
+        out_sparse["Q_nnz"] = qb.nnz();
+        out_sparse["H_nnz"] = H_builder.nnz;
+        return out_sparse;
     }
 
     tulpa::run_spde_laplace(
         y, n_trials, X, N, p, n_mesh, mesh_start, n_x,
         a_rows, qb, family, phi, max_iter, tol, n_threads, x_init, nullptr, off_ptr,
         [&](const tulpa::LaplaceResult& res) {
-            out = Rcpp::List::create(
-                Rcpp::Named("mode") = res.mode,
-                Rcpp::Named("log_det_Q") = res.log_det_Q,
-                Rcpp::Named("log_marginal") = res.log_marginal,
-                Rcpp::Named("n_iter") = res.n_iter,
-                Rcpp::Named("converged") = res.converged,
-                Rcpp::Named("Q_nnz") = qb.nnz());
+            out = tulpa::laplace_result_to_list(res);
+            out["Q_nnz"] = qb.nnz();
         },
         re_idx, n_re_groups, sigma_re, center_mesh, half_ldQ);
     pattern_guard.check("the SPDE Laplace solve");

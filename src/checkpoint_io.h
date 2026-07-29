@@ -18,7 +18,7 @@
 // acceptable for a resume-on-the-same-machine workflow):
 //
 //   Header (once):
-//     char[8]  magic = "TLPACKP1"
+//     char[8]  magic = "TLPACKP2"
 //     uint64   fingerprint
 //   Record (appended per completed unit):
 //     uint32   key_len
@@ -219,7 +219,12 @@ template <typename T> bool        ckpt_deserialize(CkptReader&, T&);
 template <typename Payload>
 class CheckpointLog {
 public:
-    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','1'};
+    // Bumped whenever a payload's serialized layout changes: the fingerprint
+    // covers the INPUTS a cell was solved from, not the field list a record
+    // carries, so a file written by an older layout would otherwise be replayed
+    // field-by-field into the new one and mis-parsed. A magic mismatch errors
+    // and points the user at a fresh path.
+    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','2'};
 
     CheckpointLog(const std::string& path,
                   std::uint64_t fingerprint,

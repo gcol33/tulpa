@@ -410,6 +410,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
     compute_eta_joint(x, scratch.etas);
     scratch.zero_for_iter();
     scatter_joint(x, scratch.etas, scratch.grad, scratch.H, /*finalize=*/true);
+    result.score_max = max_abs(scratch.grad);
 
     dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
                              scratch.chol, result.log_det_Q);

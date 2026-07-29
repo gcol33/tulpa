@@ -1054,6 +1054,7 @@ LaplaceResult laplace_newton_solve_sparse(
     H_builder.zero();
     { TULPA_PROFILE_PHASE(PHASE_SCATTER);
       scatter_sparse(x, scratch.eta, grad_final, H_builder); }
+    result.score_max = max_abs(grad_final);
     H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
 
     cholmod_sparse H_final = H_builder.as_cholmod(&solver.common());
