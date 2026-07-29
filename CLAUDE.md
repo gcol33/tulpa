@@ -102,15 +102,6 @@ coverage). CRAN runs tier 1 only.
 - Heavy multi-recovery files can SIGKILL (exit 137) under a background test
   harness; run decisive files individually rather than the full suite at once.
 
-## File Organization
-
-```
-R/          — Spatial, temporal, priors, backends, formula, validation
-src/        — Laplace, VI, ESS, HMC/NUTS, autodiff, spatial priors, temporal priors
-inst/include/tulpa/ — Exported C++ headers for model packages
-tests/testthat/     — Unit and integration tests
-```
-
 ## Boundary: What Belongs in tulpa vs Model Packages
 
 **tulpa owns** (generic, model-agnostic):
