@@ -17,6 +17,7 @@
 
 // Use canonical type definitions from exported headers
 #include "tulpa/soft_sum_to_zero.h"  // s2z_precision
+#include "tulpa/sum_to_zero.h"       // rw1_rank / rw2_rank
 #include "tulpa/temporal_data.h"
 #include "tulpa/types.h"
 #include "autodiff_utils.h"  // safe_log for the templated kernels
@@ -103,21 +104,11 @@ inline T rw2_quadratic_form(
   return quad;
 }
 
-// Rank of the intrinsic-GMRF precision (count of non-null eigenvalues), i.e.
-// the exponent in the tau^(rank/2) log-precision normalizer. Single source for
-// every RW1/RW2 log-prior so the cyclic and acyclic normalizers cannot drift.
-// RW1: the path- and cycle-graph Laplacians both have a single null direction
-//   (the constant), so rank T-1 whether or not the wrap edge is present.
-// RW2: the acyclic operator annihilates constants and linear ramps (rank T-2);
-//   on a cycle a linear ramp is not periodic, so only constants are annihilated
-//   (rank T-1).
-inline int rw1_rank(int T_len, bool /*cyclic*/) {
-  return T_len > 1 ? T_len - 1 : 0;
-}
-inline int rw2_rank(int T_len, bool cyclic) {
-  if (T_len < 3) return 0;
-  return cyclic ? T_len - 1 : T_len - 2;
-}
+// Rank of the intrinsic-GMRF precision, defined in tulpa/sum_to_zero.h next to
+// the augmented rank it feeds and visible to packages that link against the
+// engine. Named here so the temporal kernels below keep reading unqualified.
+using tulpa::rw1_rank;
+using tulpa::rw2_rank;
 
 // Compute log-density for AR1 process
 // phi[t] | phi[t-1] ~ N(rho * phi[t-1], sigma^2)

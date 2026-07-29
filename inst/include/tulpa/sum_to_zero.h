@@ -71,6 +71,27 @@ inline int s2z_aug_rank(int rank_Q, int n_pins) {
     return r > 0 ? r : 0;
 }
 
+// Rank of the un-augmented intrinsic RW precision (the count of non-null
+// eigenvalues), i.e. the exponent in the tau^(rank/2) normalizer. The `rank_Q`
+// argument s2z_aug_rank takes for a temporal field, and single source for every
+// RW1/RW2 log-prior in the engine and in packages that link against it, so the
+// cyclic and acyclic normalizers cannot drift apart.
+//
+// RW1: the path- and cycle-graph Laplacians both annihilate the constant and
+//   nothing else, so the rank is T-1 whether or not the wrap edge is present.
+//   The cycle has T edges to the path's T-1, but the extra edge adds a
+//   dependency among the differences rather than a dimension to the range.
+// RW2: the acyclic operator annihilates constants AND linear ramps (rank T-2);
+//   on a cycle a linear ramp is not periodic, so only constants survive in the
+//   null space (rank T-1).
+inline int rw1_rank(int T_len, bool /*cyclic*/) {
+    return T_len > 1 ? T_len - 1 : 0;
+}
+inline int rw2_rank(int T_len, bool cyclic) {
+    if (T_len < 3) return 0;
+    return cyclic ? T_len - 1 : T_len - 2;
+}
+
 // Absolute index of the k-th member of a component whose base offset is `start`
 // and whose field-local member list is `idx` (nullptr means the contiguous run
 // start..start+size-1). One accessor so the contiguous and the general

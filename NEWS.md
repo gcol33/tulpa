@@ -1,5 +1,17 @@
 # tulpa NEWS
 
+## 0.0.109
+
+* **The intrinsic RW rank is exported, so a linking package can consume it
+  instead of carrying its own copy (gcol33/tulpaRatio#12).** `rw1_rank()` and
+  `rw2_rank()` move from `src/hmc_temporal.h` into the exported
+  `tulpa/sum_to_zero.h`, alongside the augmented rank they feed. They already
+  encoded that a cycle-graph Laplacian still annihilates only the constant, so
+  a cyclic RW1 has rank `T-1` and a cyclic RW2 `T-1` as well; a consumer
+  computing `cyclic ? T : T-1` inline overstates both by one and biases the
+  `tau` posterior. `tulpa_temporal::rw1_rank` / `rw2_rank` keep resolving, so
+  the engine's own call sites are unchanged.
+
 ## 0.0.108
 
 * **An areal field's component partition is now set with its adjacency, so a
