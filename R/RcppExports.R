@@ -225,6 +225,14 @@ cpp_line_search_probe <- function(slope, c) {
     .Call(`_tulpa_cpp_line_search_probe`, slope, c)
 }
 
+cpp_newton_converged_probe <- function(delta, grad, step_scale, tol) {
+    .Call(`_tulpa_cpp_newton_converged_probe`, delta, grad, step_scale, tol)
+}
+
+cpp_newton_trust_probe <- function(decrements) {
+    .Call(`_tulpa_cpp_newton_trust_probe`, decrements)
+}
+
 cpp_profile_reset <- function() {
     invisible(.Call(`_tulpa_cpp_profile_reset`))
 }

@@ -33,3 +33,27 @@ test_that("non-ascent slope falls back to halving safely", {
   expect_true(is.finite(res$step))
   expect_gt(res$n_evals, 0L)
 })
+
+test_that("convergence reads the Newton proposal, not the damped step", {
+  # A proposal of 1e-6 is nowhere near a 1e-12 tolerance, whatever scale the line
+  # search settled on. Reading the TAKEN step would call the third case converged
+  # -- 1e-6 x 2^-20 is 9.5e-13 -- turning a search that damped hard into a mode.
+  delta <- 1e-6
+  grad  <- 1e-3          # decrement 1e-9, under the near-mode gate
+  for (ss in c(1, 0.5, 2^-20)) {
+    expect_false(
+      tulpa:::cpp_newton_converged_probe(delta, grad, ss, tol = 1e-12),
+      info = sprintf("step_scale = %g", ss))
+  }
+
+  # A proposal genuinely under the tolerance converges at any accepted scale.
+  for (ss in c(1, 0.5, 2^-20)) {
+    expect_true(
+      tulpa:::cpp_newton_converged_probe(1e-14, grad, ss, tol = 1e-12),
+      info = sprintf("step_scale = %g", ss))
+  }
+
+  # A search that accepted nothing is a stall, never a mode, however small the
+  # proposal it could not move along.
+  expect_false(tulpa:::cpp_newton_converged_probe(1e-14, grad, 0, tol = 1e-12))
+})

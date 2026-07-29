@@ -51,6 +51,36 @@ Rcpp::List cpp_line_search_probe(double slope, double c) {
     );
 }
 
+// Convergence-test probe: one newton_converged verdict on a supplied Newton step
+// and gradient, at a given accepted step scale, on a fresh solve state. Lets the
+// test suite pin that the verdict reads the Newton PROPOSAL and not the damped
+// step the line search settled on -- the property that keeps a proposal damped
+// toward zero from clearing the tolerance.
+// [[Rcpp::export]]
+bool cpp_newton_converged_probe(Rcpp::NumericVector delta,
+                                Rcpp::NumericVector grad,
+                                double step_scale, double tol) {
+    tulpa::NewtonConvState st;
+    std::vector<double> d(delta.begin(), delta.end());
+    std::vector<double> g(grad.begin(), grad.end());
+    return tulpa::newton_converged(d, g, step_scale, (int)d.size(), tol, st);
+}
+
+// Trust-factor probe: replay newton_trust_scale over a supplied sequence of
+// Newton decrements on one NewtonConvState and report the scale the line search
+// would have opened each iteration with. The schedule is otherwise invisible from
+// R -- a fit only shows where it landed, not the damping that took it there.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_newton_trust_probe(Rcpp::NumericVector decrements) {
+    tulpa::NewtonConvState st;
+    const int n = decrements.size();
+    Rcpp::NumericVector out(n);
+    for (int i = 0; i < n; i++) {
+        out[i] = tulpa::newton_trust_scale(st, decrements[i]);
+    }
+    return out;
+}
+
 // [[Rcpp::export]]
 void cpp_profile_reset() {
     std::lock_guard<std::mutex> guard(tulpa::phase_mutex());

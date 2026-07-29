@@ -91,14 +91,20 @@ inline double eval_penalized_log_lik(
 // takes exactly the trial sequence it always did.
 //
 // The acceptance slack is ABSOLUTE (1e-8), which makes it a real criterion far
-// from the mode and a weak one near it: once the whole available gain drops
-// below 1e-8, every finite trial passes and the search stops steering, so a
-// systematically overshooting direction is no longer damped (gcol33/tulpa#259).
+// from the mode and no criterion at all near it: once the whole available gain
+// drops below 1e-8 every finite trial passes. That is not a defect to tighten
+// away -- see newton_trust_scale below, which is what steers in the regime where
+// no rule reading the objective can.
 //
 // When no trial is acceptable the search returns 0, leaving `x` and `obj_out`
 // untouched: the caller's iterate is still the best point known. newton_converged
 // treats a zero step as a stall rather than convergence, so an exhausted search
 // cannot be mistaken for a mode.
+//
+// `start_scale` is the trial step the search opens with. It is 1 (the full
+// Newton step) for a solve whose direction is trustworthy, which is every solve
+// away from the mode and every solve whose Newton weight is the observed
+// curvature; newton_trust_scale supplies the damped value where it is not.
 //
 // `x_try_scratch` is a caller-owned NumericVector of length n_x used as the
 // step-trial buffer. Reused across trials AND across Newton iterations.
@@ -112,9 +118,10 @@ inline double line_search_backtrack(
     EvalObj eval_obj,
     double& obj_out,
     Rcpp::NumericVector& x_try_scratch,
-    int* n_evals_out = nullptr
+    int* n_evals_out = nullptr,
+    double start_scale = 1.0
 ) {
-    double step_scale = 1.0;
+    double step_scale = start_scale;
     for (int half = 0; half <= MAX_HALVING; half++) {
         for (int j = 0; j < n_x; j++) x_try_scratch[j] = x[j] + step_scale * delta[j];
         double obj_try = eval_obj(x_try_scratch);
@@ -214,17 +221,6 @@ inline bool make_start_feasible(
     return found;
 }
 
-// Maximum |step_scale * delta_j|. The historic Newton convergence criterion:
-// the largest absolute coordinate of the taken step. Scale-dependent, so it is
-// inflated when H is ill-conditioned (see newton_converged below).
-inline double max_abs_step(const std::vector<double>& delta, double step_scale, int n_x) {
-    double m = 0.0;
-    for (int j = 0; j < n_x; j++) {
-        m = std::max(m, std::abs(step_scale * delta[j]));
-    }
-    return m;
-}
-
 // Largest absolute component of a vector. Applied to the gradient of the
 // penalized log-posterior at the returned mode it is the solve's ACHIEVED
 // residual -- how far from stationary the reported mode actually is. Every
@@ -256,17 +252,89 @@ inline double newton_decrement(const std::vector<double>& grad,
 inline constexpr double NEWTON_NEARMODE_GATE  = 1e-6;
 inline constexpr int    NEWTON_STALL_PATIENCE = 5;
 
-// Per-solve state for the Newton convergence test (shortest step seen so far,
-// and how many iterations have passed without beating it). One instance lives
-// for the duration of a single Newton solve; the batch solver keeps one per
-// stream.
+// Trust-factor schedule for newton_trust_scale below: how hard a step that grew
+// the decrement is damped, how fast an undamped one is restored, and the floor.
+// The floor is far below anything the fixtures reach (they settle around 0.5);
+// it exists so a pathological curvature ratio still contracts rather than
+// bottoming out at a scale that cannot.
+inline constexpr double NEWTON_TRUST_SHRINK = 0.5;
+inline constexpr double NEWTON_TRUST_GROW   = 1.5;
+inline constexpr double NEWTON_TRUST_MIN    = 1.0 / 1048576.0;  // 2^-20
+
+// Per-solve state for the Newton convergence test (shortest Newton step seen so
+// far, how many iterations have passed without beating it) and for the near-mode
+// trust factor. One instance lives for the duration of a single Newton solve;
+// the batch solver keeps one per stream.
 struct NewtonConvState {
     double best_step = std::numeric_limits<double>::infinity();
     int    stalled = 0;
+    double trust = 1.0;
+    double prev_decrement = -1.0;   // < 0 until the solve is near the mode
 };
 
-// Newton convergence test, the single source of truth for every solver. Two
-// paths:
+// The step scale the line search should open with, given the Newton decrement at
+// the current iterate.
+//
+// Away from the mode this is 1: the full Newton step is tried first, so those
+// solves take exactly the trial sequence they always did.
+//
+// Near the mode the objective can no longer steer. The penalized log-posterior
+// is stationary there, so the gain from a step is second order -- about
+// decrement / 2 -- while the objective's own accumulation noise is 8 eps |obj|.
+// On the random-intercept fixtures of dev_notes/probe_inner_stationarity.R
+// (|obj| ~ 4e2) those cross at a decrement near 1e-12, i.e. at a joint score
+// near 1e-6, and below that crossing NO rule reading the objective discriminates:
+// the absolute acceptance slack waves every trial through, and a tighter
+// (Armijo) test is worse still, rejecting genuine progress as noise.
+//
+// That is only harmless while the Newton direction is trustworthy. It is when the
+// Newton weight IS the observed curvature (working_weight_is_observed in
+// laplace_family_link.h). Where it is not -- neg_binomial_1's quasi-likelihood
+// weight mu / (1 + phi), inverse_gaussian's Fisher weight 1 / (phi mu) -- the
+// Newton matrix can understate the true curvature by more than a factor of two,
+// and the undamped iteration is then locally DIVERGENT rather than merely slow:
+// at phi = 6, sigma_re = 5 the largest eigenvalue of Hw^-1 Ho at the mode is
+// 2.23, so I - Hw^-1 Ho has spectral radius 1.23. The iterate walks away from the
+// mode geometrically, losing a few parts in 1e9 of objective per step -- under
+// any absolute slack -- until the stall test reads the growing step as a
+// conditioning floor and stops. Damping to any scale below 2 / 2.23 restores
+// contraction; 0.6 gives a spectral radius of 0.40.
+//
+// The decrement steers where the objective cannot. It is g' H^-1 g, the
+// affine-invariant distance to the mode already computed every iteration, and it
+// keeps full relative precision exactly where objective differences are noise. So
+// below the gate the trust factor halves whenever the decrement GREW -- the step
+// just taken overshot -- and relaxes back toward 1 whenever it fell. A solve whose
+// decrement never grows below the gate holds trust at 1 throughout and is
+// bit-for-bit what it was.
+inline double newton_trust_scale(NewtonConvState& st, double decrement) {
+    if (!(decrement < NEWTON_NEARMODE_GATE)) {
+        st.trust = 1.0;
+        st.prev_decrement = -1.0;
+        return 1.0;
+    }
+    if (st.prev_decrement >= 0.0) {
+        st.trust = (decrement > st.prev_decrement)
+            ? std::max(st.trust * NEWTON_TRUST_SHRINK, NEWTON_TRUST_MIN)
+            : std::min(st.trust * NEWTON_TRUST_GROW, 1.0);
+    }
+    st.prev_decrement = decrement;
+    return st.trust;
+}
+
+// Newton convergence test, the single source of truth for every solver.
+//
+// Both paths read the FULL Newton step max|delta|, never the damped step
+// max|step_scale delta| that was actually taken. Convergence is a property of the
+// iterate -- the proposal H^-1 g at x is small exactly when x is stationary --
+// while step_scale is the line search's choice about how much of that proposal to
+// trust. Reading the taken step conflates the two, and in the direction that
+// matters: a search that had to damp a large proposal to nothing has failed to
+// move, which is the opposite of having arrived. With newton_trust_scale able to
+// open at 2^-20 that is not hypothetical -- a proposal of 1e-6 damped to the floor
+// would otherwise clear a 1e-12 tolerance.
+//
+// Two paths:
 //   1. max|delta| < tol -- the historic step criterion. On a well-conditioned
 //      solve this fires exactly when it always did, so those fits are unchanged.
 //   2. a stalled step -- the rescue for an ill-conditioned H (a high-order
@@ -311,7 +379,7 @@ inline bool newton_converged(const std::vector<double>& delta,
     // The line search never returns 0 while the objective stays finite, so no
     // currently-working solve reaches this.
     if (step_scale <= 0.0) return false;
-    const double step = max_abs_step(delta, step_scale, n_x);
+    const double step = max_abs(delta);
     if (step < tol) return true;
     // Tracked unconditionally, so `best_step` is the true running minimum over
     // the whole solve rather than over the near-mode tail only.
@@ -371,7 +439,8 @@ inline bool newton_step(
     double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
     double step_scale = line_search_backtrack(
         x, scratch.delta, n_x, obj_current, slope, eval_objective,
-        obj_current, scratch.x_try
+        obj_current, scratch.x_try, nullptr,
+        newton_trust_scale(conv_state, slope)
     );
 
     n_iter_out = iter + 1;

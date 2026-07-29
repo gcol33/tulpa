@@ -1032,7 +1032,8 @@ LaplaceResult laplace_newton_solve_sparse(
           double obj_unused = 0.0;
           double slope = newton_decrement(grad, delta, n_x);
           step_scale = line_search_backtrack(
-              x, delta, n_x, obj_old, slope, eval_obj, obj_unused, scratch.x_try
+              x, delta, n_x, obj_old, slope, eval_obj, obj_unused, scratch.x_try,
+              nullptr, newton_trust_scale(conv_state, slope)
           ); }
 
         result.n_iter = iter + 1;

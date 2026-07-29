@@ -864,6 +864,31 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_newton_converged_probe
+bool cpp_newton_converged_probe(Rcpp::NumericVector delta, Rcpp::NumericVector grad, double step_scale, double tol);
+RcppExport SEXP _tulpa_cpp_newton_converged_probe(SEXP deltaSEXP, SEXP gradSEXP, SEXP step_scaleSEXP, SEXP tolSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type grad(gradSEXP);
+    Rcpp::traits::input_parameter< double >::type step_scale(step_scaleSEXP);
+    Rcpp::traits::input_parameter< double >::type tol(tolSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_newton_converged_probe(delta, grad, step_scale, tol));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_newton_trust_probe
+Rcpp::NumericVector cpp_newton_trust_probe(Rcpp::NumericVector decrements);
+RcppExport SEXP _tulpa_cpp_newton_trust_probe(SEXP decrementsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type decrements(decrementsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_newton_trust_probe(decrements));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_profile_reset
 void cpp_profile_reset();
 RcppExport SEXP _tulpa_cpp_profile_reset() {
@@ -3878,6 +3903,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_fit_spatial", (DL_FUNC) &_tulpa_cpp_laplace_fit_spatial, 20},
     {"_tulpa_cpp_laplace_fit_bym2", (DL_FUNC) &_tulpa_cpp_laplace_fit_bym2, 21},
     {"_tulpa_cpp_line_search_probe", (DL_FUNC) &_tulpa_cpp_line_search_probe, 2},
+    {"_tulpa_cpp_newton_converged_probe", (DL_FUNC) &_tulpa_cpp_newton_converged_probe, 4},
+    {"_tulpa_cpp_newton_trust_probe", (DL_FUNC) &_tulpa_cpp_newton_trust_probe, 1},
     {"_tulpa_cpp_profile_reset", (DL_FUNC) &_tulpa_cpp_profile_reset, 0},
     {"_tulpa_cpp_profile_read", (DL_FUNC) &_tulpa_cpp_profile_read, 0},
     {"_tulpa_cpp_s2z_densify_max", (DL_FUNC) &_tulpa_cpp_s2z_densify_max, 0},

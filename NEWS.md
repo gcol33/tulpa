@@ -1,5 +1,67 @@
 # tulpa NEWS
 
+## 0.0.107
+
+* **The inner Laplace solve now reaches stationarity at a large random-effect
+  scale (gcol33/tulpa#259, gcol33/tulpa#260).** With #255 fixed, solves at a
+  moderate scale arrived; at a large one they still stopped short, returning a
+  joint score of 1e-04 with `converged = TRUE` while the stationary point sat
+  1e-05 away in relative terms. Nothing silently wrong shipped -- the settled-mode
+  gate in `.laplace_exact_core()` refuses the exact outer gradient there -- but
+  the fits did not arrive. They arrive now: the worst residual over the reported
+  configurations drops from 3.4e-04 to 4.7e-10, and each returned mode agrees with
+  the observed-curvature stationary point to 1e-12 relative or better.
+
+  The cause is neither a cycle nor a conditioning floor but plain local
+  divergence. The Newton weight is the working (expected / quasi-likelihood) one
+  wherever it differs from the observed curvature, so the error map near the mode
+  is `I - Hw^-1 Ho`, which contracts only while every eigenvalue of `Hw^-1 Ho`
+  is below 2. On the `neg_binomial_1` fixture at `phi = 6`, `sigma_re = 5` the
+  largest is 2.23: the iterate walks away from the mode geometrically, losing a
+  few parts in 1e9 of objective per step, and the stall test then reads the
+  growing step as a floor and stops. `inverse_gaussian` (Fisher weight
+  `1 / (phi mu)`) does the same, so this is not one family's quirk; families whose
+  Newton weight already is the observed curvature cannot reach it at all.
+
+  No acceptance rule reading the objective can fix that. The penalized
+  log-posterior is stationary at the mode, so a step gains about `decrement / 2`
+  while the objective's own accumulation noise is `8 eps |obj|`; on these fixtures
+  the two cross at a joint score near 1e-6, which is exactly where every affected
+  solve stopped. Tightening the test makes it worse -- an Armijo sufficient-
+  decrease condition rejects genuine progress as noise and left the worst
+  residual at 1.4e-05, three of the reported rows unimproved and one clean
+  `phi = 0.5` solve regressed from 4.9e-10 to 5.7e-07.
+
+  So the steering moves to the Newton decrement `g' H^-1 g`, which is already
+  computed every iteration, is the affine-invariant distance to the mode, and
+  keeps full relative precision exactly where objective differences are noise.
+  Below the near-mode gate the scale the line search opens with (`newton_trust_scale`)
+  halves whenever the decrement grew -- the previous step overshot -- and relaxes
+  back toward 1 by 1.5 whenever it fell. A solve whose decrement never grows below
+  the gate holds the scale at 1 and takes exactly the trial sequence it always
+  did, so every converging fit, the whole #255 fixture (81 iterations at
+  `phi = 4`, 323 at `phi = 6`) and the rational-SPDE case the stall path exists
+  for are unchanged.
+
+* **Newton convergence reads the proposal, not the damped step.** Both the
+  tolerance and the stall test now key on `max|delta|` rather than
+  `max|step_scale delta|`. Convergence is a property of the iterate -- `H^-1 g` is
+  small exactly when `x` is stationary -- while `step_scale` is the line search's
+  choice about how much of that proposal to trust, and conflating them fails in
+  the dangerous direction: a search that had to damp a large proposal to nothing
+  has not arrived, it has failed to move. With the trust factor able to open at
+  `2^-20` this is reachable rather than hypothetical, a proposal of 1e-6 damped to
+  the floor otherwise clearing a 1e-12 tolerance. Solves that take the full step
+  are unaffected, since the two quantities coincide there.
+
+* Two probes make the mechanism testable from R rather than inferable from where
+  a fit landed: `cpp_newton_trust_probe()` replays the damping schedule over a
+  supplied decrement sequence, and `cpp_newton_converged_probe()` returns one
+  convergence verdict at a given accepted step scale.
+  `dev_notes/probe_inner_stationarity.R` gains `curvature` (the eigenvalues of
+  `Hw^-1 Ho` at the mode, i.e. how far the working weight understates the true
+  curvature) and `bigscale` (the residual table above).
+
 ## 0.0.106
 
 * **The Newton stall test no longer reads slow convergence as a converged mode
