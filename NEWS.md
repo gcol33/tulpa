@@ -1,5 +1,49 @@
 # tulpa NEWS
 
+## 0.0.112
+
+* **An explicit `mode` is no longer silently overridden by a structural redirect
+  (#266).** `tulpa(y ~ s(x) + (1 | site), mode = "eb")` fitted `nested_laplace`
+  and reported `selection_reason` as though `mode` had been `"auto"`, so nothing
+  on the fit recorded that the requested inference method had been swapped. The
+  redirect machinery now carries that:
+
+  - `select_inference_mode()` marks a selection explicit (anything but
+    `mode = "auto"`) and keeps the literal request, so a later redirect can name
+    what it overrode.
+  - `.sel_redirect()` records the override in `sel$overridden` and appends a
+    clause to the reason. The clause is re-appended to *whatever* reason the
+    selection ends up carrying rather than only the one that recorded it: each
+    redirect replaces `sel$reason`, so in a chain (slopes then a smoother) the
+    later one used to drop the statement and leave the fit looking as though
+    nothing had been overridden. Only the first override is recorded, since the
+    request the user actually made is the one worth naming.
+  - `tulpa()` warns, and stamps the machine-readable `fit$mode_overridden`
+    (`requested` + the backend it would have used). A `warning()` rather than a
+    `message()`, so a script that promotes warnings, or a chunk that traps them,
+    sees it.
+
+  The warning is opt-in per redirect site (`notify =`), because two different
+  things were being conflated. A smoother sending an `eb` / `agq` request to the
+  nested kernels takes away the random-effect SD those two would have estimated,
+  and warns. A random slope under `mode = "laplace"` has no scalar `sigma_re` to
+  condition on, a temporal field has no conditional-Laplace kernel, and an SPDE
+  field redirected to the `spde` backend is the same mode and tier reaching its
+  own integrator -- those are documented routes for the structure, not
+  capabilities taken away, so they are recorded on the fit without warning on
+  every fit.
+
+* **Dead `src/hmc_spatiotemporal.h` removed (#261).** Unreachable: its only
+  include was `hmc_sampler.h`, no external call site referenced
+  `tulpa_spatiotemporal::`, everything in it lived inside that namespace, and it
+  was in `src/` rather than `inst/include/tulpa/` so no `LinkingTo` consumer
+  could reach it either. It had also diverged from the live path
+  (`src/tulpa_priors_st.h`) in two places that were fixed only on the live side:
+  it overstated the cyclic RW1/RW2 rank by one, and hardcoded `rank_space = S - 1`
+  against the #241 component fix. Its `st_sum_to_zero_penalty` duplicated the
+  live one. A reader grepping for the ST rank found the wrong copy first, which
+  is the shape that made gcol33/tulpaRatio#12 possible.
+
 ## 0.0.111
 
 * **`ranef()` reports the per-group posterior on both RE-covariance backends

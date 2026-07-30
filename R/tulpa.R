@@ -1906,9 +1906,13 @@ tulpa <- function(formula, data,
     re_cov_method <- match.arg(control$re_cov %||% default_re_cov,
                                c("nested", "gibbs", "aghq"))
     backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
+    # notify = FALSE: a slope term has no scalar `sigma_re` for the requested
+    # conditional mode to condition on, so this is the documented route for the
+    # structure rather than a capability taken away. Recorded on the fit, not
+    # warned about on every such fit.
     sel <- .sel_redirect(sel, backend, sprintf(
       "random-slope term(s) present; RE covariance(s) integrated via %s (%d block(s))",
-      backend, length(re_terms)))
+      backend, length(re_terms)), notify = FALSE)
   }
   # Warn once whenever the fit determines the RE covariance itself -- by
   # integrating it (re_cov_nested / re_cov_gibbs, reached via the redirect above
@@ -1935,9 +1939,12 @@ tulpa <- function(formula, data,
   # mode = "laplace" stays on the fixed-hyperparameter tulpa_laplace path.
   if (sel$backend == "nested_laplace" &&
       identical(tolower(spatial_type %||% ""), "spde")) {
+    # notify = FALSE: same mode and tier, reaching the engine that carries the FEM
+    # precision. Nothing the caller asked for is lost.
     sel <- .sel_redirect(
       sel, "spde",
-      "SPDE spatial field; nested-Laplace over (range, sigma) via fit_spde()")
+      "SPDE spatial field; nested-Laplace over (range, sigma) via fit_spde()",
+      notify = FALSE)
   }
 
   # A temporal field (rw1/rw2/ar1) integrates through the nested-Laplace temporal
@@ -1948,14 +1955,16 @@ tulpa <- function(formula, data,
   # when both fields are present. An explicitly chosen ModelData sampler backend
   # (hmc / ess / sghmc / sgld / mclmc / smc / vi) consumes the temporal field
   # directly, so it keeps its selection rather than being
-  # redirected.
+  # redirected. Recorded but not warned about (notify = FALSE): the conditional
+  # Laplace path carries no temporal kernel, so the nested one is the documented
+  # route for the structure rather than a capability taken away.
   if (has_temporal && BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     sel <- .sel_redirect(sel, "nested_laplace", if (has_spatial) {
       sprintf("%s spatial field + temporal %s field; joint nested-Laplace integration",
               spatial_type, temporal_spec$type)
     } else {
       sprintf("temporal %s field; nested-Laplace integration", temporal_spec$type)
-    })
+    }, notify = FALSE)
   }
 
   # Covariate smoothers are temporal-shaped blocks and integrate through the
@@ -2002,6 +2011,25 @@ tulpa <- function(formula, data,
     return(.finalize_fit(fit, backend = "spde", draws_kind = "chain",
                          n_fixed = ncol(bundle$X),
                          fixed_names = colnames(bundle$X)))
+  }
+
+  # An explicit `mode` that the redirects above moved off is reported, never
+  # silently downgraded: the caller asked for a named inference method and got a
+  # different one because the model structure requires it. A `warning()` rather
+  # than a `message()` so a script that promotes warnings, or a chunk that traps
+  # them, actually sees it; `sel$reason` (and so `fit$selection_reason`) carries
+  # the same statement for anyone reading the fit afterwards.
+  # The reason states WHY the structure forced the move (and differs per
+  # redirect: a smoother is only threaded through the nested kernels, while a
+  # random slope has no scalar SD to condition on), so the warning states the
+  # fact and defers the cause to it rather than asserting one of its own.
+  if (!is.null(sel$overridden) && isTRUE(sel$overridden$notify)) {
+    warning(sprintf(paste0(
+      "mode = '%s' was overridden: fitted with backend '%s' instead of '%s' -- ",
+      "%s. Pass mode = '%s' to request that directly, or mode = 'auto' to fit ",
+      "without asking for a mode."),
+      sel$overridden$requested, sel$backend, sel$overridden$backend,
+      sel$reason, sel$backend), call. = FALSE)
   }
 
   assert_backend_reachable(sel$backend)
@@ -2064,6 +2092,10 @@ tulpa <- function(formula, data,
     fit$inference_tier <- sel$tier
     fit$backend <- sel$backend
     fit$selection_reason <- sel$reason
+    # Machine-readable counterpart of the reason's override clause: the mode the
+    # caller asked for and the backend it would have used, or NULL when the fit
+    # ran the requested method (or was never asked for one).
+    fit$mode_overridden <- sel$overridden
     fit$formula <- formula
     fit$family <- family
     fit$call <- match.call()

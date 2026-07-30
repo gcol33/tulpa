@@ -393,8 +393,50 @@ backend_supports_family <- function(backend, family) {
 
 #' Redirect a backend selection: swap the backend and restamp mode / tier /
 #' tier name from the registry, recording the reason shown on the fit.
+#'
+#' A redirect off an EXPLICIT request (anything but `mode = "auto"`) is an
+#' override, not a resolution: the fit does what the model structure requires
+#' instead of what the caller asked for. That is recorded on the selection --
+#' `sel$overridden` for callers, and a clause appended to the reason the fit
+#' reports -- so an overridden fit is distinguishable from one that was never
+#' asked for a mode at all. Only the FIRST override is recorded: with several
+#' redirects in a chain, the request the user actually made is the one worth
+#' naming, not the intermediate backend a previous redirect chose.
+#'
+#' `notify` says whether tulpa() should additionally WARN. It is for the case
+#' where the requested backend could have fitted the model and the redirect takes
+#' a capability away -- a smoother sending an `eb` / `agq` request to the nested
+#' kernels loses the random-effect SD those two would have estimated. It is off
+#' where the requested mode is not expressible for the structure at all and the
+#' redirect is the documented resolution rather than a loss: a random slope has no
+#' scalar `sigma_re` for `mode = "laplace"` to condition on, and an SPDE field
+#' redirected from `nested_laplace` to `spde` is the same mode and tier reaching
+#' its own integrator. Those are recorded, not warned about, so a documented route
+#' does not warn on every fit.
 #' @keywords internal
-.sel_redirect <- function(sel, backend, reason) {
+.sel_redirect <- function(sel, backend, reason, notify = TRUE) {
+  if (isTRUE(sel$explicit) && is.null(sel$overridden) &&
+      !identical(sel$backend, backend)) {
+    sel$overridden <- list(requested = sel$requested %||% sel$mode,
+                           backend   = sel$backend,
+                           notify    = isTRUE(notify))
+  }
+  # Appended to whatever reason this selection ends up carrying, not only to the
+  # reason of the redirect that recorded the override: each redirect REPLACES
+  # `sel$reason`, so in a chain the later one would otherwise drop the statement
+  # and the fit would again look like it was never asked for a mode.
+  if (!is.null(sel$overridden)) {
+    # A tier mode ("structured") names a different thing than the backend it
+    # resolved to ("laplace"), and both are worth stating; a request that IS a
+    # backend name would otherwise print it twice.
+    req <- if (identical(sel$overridden$requested, sel$overridden$backend)) {
+      sprintf("mode = '%s'", sel$overridden$requested)
+    } else {
+      sprintf("mode = '%s' (backend '%s')", sel$overridden$requested,
+              sel$overridden$backend)
+    }
+    reason <- sprintf("%s -- overrides the requested %s", reason, req)
+  }
   sel$backend <- backend
   ti <- get_backend_tier(backend)
   sel$mode      <- ti$mode
@@ -653,7 +695,10 @@ select_inference_mode <- function(mode,
       backend = backend,
       tier = tier_info$tier,
       tier_name = tier_info$name,
-      reason = sprintf("User-specified backend: %s", backend)
+      reason = sprintf("User-specified backend: %s", backend),
+      # The literal request, kept so a later redirect can name what it overrode.
+      requested = backend,
+      explicit = TRUE
     ))
   }
 
@@ -668,10 +713,14 @@ select_inference_mode <- function(mode,
     ), call. = FALSE)
   }
 
-  # Auto-selection logic
+  # Auto-selection logic. Marked non-explicit: a redirect off an auto selection
+  # is the router doing its job, not an override of anything the caller asked for.
   if (mode == "auto") {
-    return(auto_select_mode(family, n_obs, has_spatial, has_temporal, has_latent, temporal,
-                             spatial_type))
+    sel <- auto_select_mode(family, n_obs, has_spatial, has_temporal, has_latent, temporal,
+                            spatial_type)
+    sel$requested <- "auto"
+    sel$explicit  <- FALSE
+    return(sel)
   }
 
   # Explicit tier mode: select best backend within that tier
@@ -684,7 +733,9 @@ select_inference_mode <- function(mode,
     backend = backend,
     tier = tier_info$tier,
     tier_name = tier_info$name,
-    reason = sprintf("User-specified mode: %s", mode)
+    reason = sprintf("User-specified mode: %s", mode),
+    requested = mode,
+    explicit = TRUE
   ))
 }
 

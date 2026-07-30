@@ -20,7 +20,6 @@
 #include "hmc_gp.h"
 #include "hmc_temporal_multiscale.h"
 #include "hmc_latent.h"
-#include "hmc_spatiotemporal.h"
 #include "hmc_hsgp.h"
 #include "hmc_tvc.h"
 
