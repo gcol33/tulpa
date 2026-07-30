@@ -121,7 +121,7 @@ tulpa_check_control <- function(control, allowed, where) {
     # iteration budget it takes nothing: no integration design, no node count,
     # no draw synthesis. `marginal` requests the hyperparameter-uncertainty
     # correction -- a formal argument of tulpa_eb(), and a control knob here so
-    # the tulpa() / tglmm() front door can reach it. The two marginal_* knobs
+    # the tulpa() front door can reach it. The two marginal_* knobs
     # tune the stencil behind it and are inert without it.
     eb = c("max_iter", "tol", "n_threads", "outer_maxit", "outer_reltol",
            "sigma_init", "marginal", "marginal_step", "marginal_richardson"),

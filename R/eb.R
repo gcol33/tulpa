@@ -221,7 +221,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   if ("marginal" %in% names(control)) {
     stop("`marginal` is an argument of tulpa_eb(), not a control knob: call ",
          "tulpa_eb(..., marginal = TRUE). It is accepted in `control` by ",
-         "tulpa() / tglmm() only, which forward it here.", call. = FALSE)
+         "tulpa() only, which forwards it here.", call. = FALSE)
   }
   if (!is.logical(marginal) || length(marginal) != 1L || is.na(marginal)) {
     stop("`marginal` must be TRUE or FALSE.", call. = FALSE)

@@ -1,5 +1,41 @@
 # tulpa NEWS
 
+## 0.0.110
+
+* **`tglmm()` and `tgam()` are removed; `tulpa()` fits both model classes.**
+  The two doors dispatched through `tulpa()` and returned a byte-identical fit,
+  so they carried no engine of their own: what they added was a signature
+  missing `spatial` / `temporal`, a refusal of the structures outside their
+  model class, and a subclass that unlocked a richer `print()`. The first two
+  are reach removal on a call that would otherwise fit the model correctly, and
+  the third is now driven by the fit instead (below). `R/doors.R`, the
+  `.TULPA_DOORS` registry, and the `tulpa_glmm` / `tulpa_gam` subclasses are
+  gone; the GLMM and GAM formulas are unchanged, so `tulpa(y ~ x + (1 + x | g))`
+  and `tulpa(y ~ s(x))` fit exactly what the doors did. The README now shows
+  both.
+
+* **A fit reports the structure it carries, not the function that produced
+  it (#262).** The random-effect covariance and the smoother table were printed
+  only for a fit that came through a door, though the metadata behind both is
+  attached by `tulpa()` itself (`fit$smooth_terms` at `R/tulpa.R`, `VarCorr()`
+  on any `tulpa_fit`). `print.tulpa_fit()` now ends in `.print_re_section()` +
+  `.print_smooth_section()`, each silent when the fit has no such structure, and
+  `plot(fit, type = "smooth")` draws the fitted curves for any fit carrying
+  `s(...)` terms. `print.tulpa_nested_laplace()` composes the generic fit body
+  after its own hyperparameter report, so a smoother fit reports its fixed
+  effects too -- that tier's print method had replaced the generic one rather
+  than extending it, so those were missing entirely.
+
+* **`VarCorr()` reported `sd = 1, conditioned` for a fit that integrated Sigma
+  (#263).** `.varcorr_from_sigma()` read only `$Sigma`, while
+  `tulpa_re_cov_gibbs()` / `tulpa_re_cov_nested()` report the posterior mean
+  under `$Sigma_mean`, so resolution fell through to the conditioning fallback
+  and invented a `sigma_re` the user never supplied -- on the very fits whose
+  free covariance is the point. Both fields are now read, with `[[` rather than
+  `$`: a gibbs fit carries `Sigma_draws` alongside, making `$Sigma` an ambiguous
+  partial match there while it would silently resolve on a nested fit. A
+  conditioning fit is still labelled `conditioned`.
+
 ## 0.0.109
 
 * **The intrinsic RW rank is exported, so a linking package can consume it

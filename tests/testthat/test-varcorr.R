@@ -106,6 +106,41 @@ test_that("the covariance matrices ride along with a correlation attribute", {
 })
 
 
+test_that("an integrated covariance is reported, not the conditioning fallback", {
+  skip_on_cran()
+  # The RE-covariance integrators report under `Sigma_mean`, and a fit that
+  # integrated Sigma has no sigma_re at all -- so reaching the conditioning
+  # fallback invents an input the user never supplied and labels the fit's own
+  # result as someone else's assumption (#263). Both backends, because the field
+  # is read the same way and only one of them carries `Sigma_draws` alongside.
+  set.seed(1)
+  site <- rep(seq_len(40), each = 8)
+  x    <- rnorm(320)
+  b0   <- rnorm(40, 0, 0.7)
+  b1   <- rnorm(40, 0, 0.4)
+  y    <- rpois(320, exp(0.2 + (0.5 + b1[site]) * x + b0[site]))
+  d    <- data.frame(y, x, site = factor(site))
+
+  for (rc in c("gibbs", "nested")) {
+    fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson",
+                 control = list(re_cov = rc))
+    vc  <- VarCorr(fit)
+
+    expect_null(fit$sigma_re, info = rc)
+    expect_equal(nrow(vc), 2L, info = rc)
+    expect_true(all(vc$source == "estimated"), info = rc)
+    # The reported SDs are the fit's own integrated covariance, read off
+    # Sigma_mean rather than re-derived.
+    expect_equal(vc$sd, unname(sqrt(diag(fit$Sigma_mean))),
+                 tolerance = 1e-10, info = rc)
+    # And near the simulated truth, so the wiring is not self-consistent about
+    # a wrong matrix.
+    expect_lt(abs(vc$sd[1] - 0.7), 0.25)
+    expect_lt(abs(vc$sd[2] - 0.4), 0.25)
+  }
+})
+
+
 test_that("a fit with no random effects returns an empty table", {
   set.seed(2)
   d <- data.frame(y = rpois(80, 2), x = rnorm(80))

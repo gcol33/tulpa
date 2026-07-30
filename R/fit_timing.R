@@ -102,13 +102,15 @@ print.tulpa_nested_laplace <- function(x, ...) {
   }
   cat(header, "\n")
   .print_nested_laplace_body(x)
+  .print_fit_body(x)
+  invisible(x)
 }
 
 
 # What a nested-Laplace fit reports beyond its header: the integrated
 # hyperparameters, the outer grid size, the outer Pareto-k when present, and
-# the timing line. Split from the header so a caller that has already printed
-# its own (a named door's print method) can add this without restating it.
+# the timing line. Split from the header so this tier's own report and the
+# generic fit body compose in either order without restating the header.
 #' @keywords internal
 .print_nested_laplace_body <- function(x) {
   nms <- x$theta_names %||% names(x$theta_mean)

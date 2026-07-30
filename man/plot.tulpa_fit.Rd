@@ -4,13 +4,18 @@
 \alias{plot.tulpa_fit}
 \title{Plot fixed-effect posteriors}
 \usage{
-\method{plot}{tulpa_fit}(x, type = c("density", "trace", "pairs"), ...)
+\method{plot}{tulpa_fit}(x, type = c("density", "trace", "pairs", "smooth"), term = NULL, ...)
 }
 \arguments{
 \item{x}{A \code{tulpa_fit} object.}
 
-\item{type}{One of \code{"trace"}, \code{"density"}, \code{"pairs"}. The Laplace tier has no
-draws, so it always shows the Gaussian densities of the fixed effects.}
+\item{type}{One of \code{"density"}, \code{"trace"}, \code{"pairs"}, \code{"smooth"}. The Laplace
+tier has no draws, so it always shows the Gaussian densities of the fixed
+effects. \code{"smooth"} draws the fitted curve of each \code{s(...)} term and
+requires a fit carrying one.}
+
+\item{term}{For \code{type = "smooth"}, which smoother to draw: index or covariate
+name. \code{NULL} (default) draws every one. Ignored by the other types.}
 
 \item{...}{Passed to plotting functions.}
 }

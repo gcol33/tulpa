@@ -44,7 +44,7 @@ fit$posterior          # the random-effect covariance, marginalized to sigma / r
 
 ## One front door, every backend
 
-`tulpa()` is the only verb you need. The same call fits a plain GLMM, a spatial field, a temporal effect, or a free random-effect covariance; `mode` and `control` pick how hard the correctness check runs, without changing the front door.
+`tulpa()` is the only verb you need. The same call fits a GLMM, a covariate smoother, a spatial field, a temporal effect, or a free random-effect covariance; `mode` and `control` pick how hard the correctness check runs, without changing the front door.
 
 ```r
 # Default: auto routes and records why on the fit
@@ -60,6 +60,55 @@ fit$selection_reason
 
 # Drop the correlation: an uncorrelated (diagonal) covariance block
 fit <- tulpa(y ~ x + (1 + x || site), data = d, family = "poisson")
+```
+
+## GLMMs and GAMs
+
+Random effects use `lme4`'s formula grammar and smoothers use `mgcv`'s, so a mixed model and an additive model are both `tulpa()` calls. Each fit reports the structure it carries.
+
+```r
+# GLMM: correlated random intercept and slope per site
+fit <- tulpa(y ~ x + (1 + x | site), data = d, family = "poisson",
+             control = list(seed = 1))
+
+VarCorr(fit)
+#>   term        coef        sd    source
+#> 1 site (Intercept) 0.7128243 estimated
+#> 2 site           x 0.4628957 estimated
+```
+
+`source` says where each number came from: `estimated` for a covariance the fit determined, `sampled` for a posterior mean over draws, `conditioned` for one supplied through `sigma_re`. These are the lme4-shaped summary of the mean covariance; the marginalized SDs with credible intervals are the `sigma_i` rows of `fit$posterior` above. Families cover the counts (Poisson, both negative-binomial parameterizations, their truncated forms, and zero-inflated or hurdle mixtures through `ziformula`), binomial and beta-binomial, gaussian, lognormal, gamma, inverse gaussian, beta, Student-t, and Tweedie. `mode = "eb"` estimates the covariance by empirical Bayes and `estimate_phi = TRUE` frees the family's dispersion.
+
+```r
+# GAM: an RW2 smoother over a binned covariate, 20 nodes
+set.seed(2)
+dg   <- data.frame(x = runif(300, -2, 2))
+dg$y <- rpois(300, exp(0.3 + sin(2 * dg$x)))
+
+fit <- tulpa(y ~ s(x, k = 20), data = dg, family = "poisson")
+fit
+#> tulpa nested-Laplace fit
+#>   hyperparameters: tau  (grid: 9 cells)
+#>   outer pareto-k: -0.02 (reliable)
+#>   n_obs: 300
+#>
+#> Fixed effects:
+#>             estimate std.error
+#> (Intercept)   0.2416    0.0803
+#>
+#> Smooth terms:
+#>   term basis nodes
+#> 1 s(x)   RW2    20
+
+head(smooth_effects(fit))   # node-by-node posterior of the smooth
+plot(fit, type = "smooth")  # the fitted curve
+```
+
+Each smoother's smoothness hyperparameter is integrated by nested Laplace, so the fitted curve carries the uncertainty of not knowing how smooth it is. `s(x, structure = "rw1")` selects a first-difference walk. Smoothers and random effects combine in one formula, the GAMM case, where the smoothness is integrated and the random-effect SD is conditioned on `sigma_re`:
+
+```r
+fit <- tulpa(y ~ s(x, k = 15) + (1 | site), data = d, family = "poisson",
+             sigma_re = 0.7)
 ```
 
 ## Tiers encode correctness
@@ -84,6 +133,7 @@ Correction layers — importance sampling and multiple-imputation / Gibbs debias
 |-----------|--------------------------------------------------|
 | Spatial   | HSGP, NNGP, ICAR, BYM2, CAR (proper), SPDE, RSR  |
 | Temporal  | RW1, RW2, AR1, GP, multiscale                    |
+| Smoothers | RW2, RW1 over a binned covariate, via `s(x)`     |
 | Other     | Random effects, SVC, TVC, latent factors         |
 
 Spatial fields are specified through helpers (`spatial_bym2()`, `spatial_gp()`, `spatial_spde()`, …; the Hilbert-space GP is `spatial_gp(approx = "hsgp")`) and temporal structure through `temporal_rw1()`, `temporal_ar1()`, `temporal_gp()`, and friends.

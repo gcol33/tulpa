@@ -142,3 +142,46 @@ smooth_effects <- function(object, term = 1L) {
   attr(out, "var") <- sm[[term]]$var
   out
 }
+
+
+# The smoother half of a fit's display, read from the metadata `tulpa()` attaches
+# for smooth_effects(). Silent on a fit with no s(...) terms, so
+# `print.tulpa_fit()` can call it unconditionally and any fit carrying smoothers
+# lists them.
+#' @keywords internal
+.print_smooth_section <- function(x) {
+  sm <- x$smooth_terms
+  if (!length(sm)) return(invisible(NULL))
+  cat("\nSmooth terms:\n")
+  print(data.frame(
+    term  = vapply(sm, function(s) paste0("s(", s$var, ")"), character(1)),
+    basis = vapply(sm, function(s) toupper(s$type), character(1)),
+    nodes = vapply(sm, function(s) as.integer(s$k), integer(1)),
+    row.names = NULL))
+  cat("\nFitted values: smooth_effects(fit), plot(fit, type = \"smooth\")\n")
+  invisible(NULL)
+}
+
+
+# One panel per s(...) term, from the node-by-node posterior smooth_effects()
+# returns. Behind `plot(fit, type = "smooth")`; errors on a fit with no smoothers
+# rather than drawing an empty frame.
+#' @keywords internal
+.plot_smooths <- function(x, term = NULL, ...) {
+  sm <- x$smooth_terms
+  if (!length(sm)) {
+    stop("This fit carries no s(...) smoother terms to plot.", call. = FALSE)
+  }
+  which_terms <- if (is.null(term)) seq_along(sm) else term
+  if (length(which_terms) > 1L) {
+    op <- graphics::par(mfrow = grDevices::n2mfrow(length(which_terms)))
+    on.exit(graphics::par(op), add = TRUE)
+  }
+  for (j in which_terms) {
+    e <- smooth_effects(x, j)
+    graphics::plot(e$x, e$estimate, type = "l",
+                   xlab = attr(e, "var"),
+                   ylab = paste0("s(", attr(e, "var"), ")"), ...)
+  }
+  invisible(x)
+}

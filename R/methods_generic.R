@@ -291,13 +291,21 @@ coef.tulpa_fit <- function(object, ...) {
 # print without NA/NULL noise.
 #' @export
 print.tulpa_fit <- function(x, ...) {
-  # A fit from a named door (tglmm / tgam) says which model class it is; one
-  # from tulpa() itself has no narrower name to give. The label comes from the
-  # door registry, so the header needs no per-door branch here.
-  lab <- .door_label_for(x)
-  header <- if (is.null(lab)) "tulpa fit" else paste("tulpa", lab, "fit")
+  header <- "tulpa fit"
   if (!is.null(x$backend)) header <- paste0(header, "  (", x$backend, ")")
   cat(header, "\n")
+  .print_fit_body(x)
+  invisible(x)
+}
+
+
+# What every fit reports below its header. Split from the header so a subclass
+# that prints its own (the nested-Laplace tier) composes this rather than
+# restating it, and so each section is reached by every fit that has the
+# structure it describes -- the random-effect covariance and the smoother terms
+# are read off the fit, not off which function was called to produce it.
+#' @keywords internal
+.print_fit_body <- function(x) {
   n_obs <- x$N %||% x$n_obs
   if (!is.null(n_obs)) cat("  n_obs:", n_obs, "\n")
   fd <- .fixed_draws_mat(x)
@@ -315,6 +323,8 @@ print.tulpa_fit <- function(x, ...) {
   if (is.numeric(x$sigma) && length(x$sigma) == 1L) {
     cat("\nsigma:", round(x$sigma, 4), "\n")
   }
+  .print_re_section(x)
+  .print_smooth_section(x)
   invisible(x)
 }
 
@@ -601,14 +611,20 @@ ranef.tulpa_fit <- function(object, ...) {
 #' Plot fixed-effect posteriors
 #'
 #' @param x A `tulpa_fit` object.
-#' @param type One of `"trace"`, `"density"`, `"pairs"`. The Laplace tier has no
-#'   draws, so it always shows the Gaussian densities of the fixed effects.
+#' @param type One of `"density"`, `"trace"`, `"pairs"`, `"smooth"`. The Laplace
+#'   tier has no draws, so it always shows the Gaussian densities of the fixed
+#'   effects. `"smooth"` draws the fitted curve of each `s(...)` term and
+#'   requires a fit carrying one.
+#' @param term For `type = "smooth"`, which smoother to draw: index or covariate
+#'   name. `NULL` (default) draws every one. Ignored by the other types.
 #' @param ... Passed to plotting functions.
 #' @return The input `x`, returned invisibly. Called for the side effect of
 #'   producing base-graphics plots of the fixed-effect posteriors.
 #' @export
-plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs"), ...) {
+plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
+                           term = NULL, ...) {
   type <- match.arg(type)
+  if (type == "smooth") return(.plot_smooths(x, term = term, ...))
 
   if (!.has_draws(x)) {
     tab <- .fit_fixed_table(x)

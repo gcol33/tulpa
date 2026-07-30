@@ -61,11 +61,18 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 
 
 # Per-term covariance matrices a fit carries directly, from the backends that
-# determine Sigma themselves. `$Sigma` is a bare matrix for a single block and a
-# named list for several.
+# determine Sigma themselves. Two field names, one shape convention: `$Sigma` for
+# a backend that reports a single covariance, `$Sigma_mean` for the RE-covariance
+# integrators (re_cov_gibbs / re_cov_nested), whose Sigma is a posterior mean.
+# Both are a bare matrix for one block and a named list for several.
+#
+# Read with `[[` rather than `$`: a gibbs fit carries both `Sigma_mean` and
+# `Sigma_draws`, so `$Sigma` is an ambiguous partial match there and NULL, while
+# on a nested fit it would silently resolve to `Sigma_mean` -- the same
+# expression meaning different things per backend.
 #' @keywords internal
 .varcorr_from_sigma <- function(object) {
-  S <- object$Sigma
+  S <- object[["Sigma"]] %||% object[["Sigma_mean"]]
   if (is.null(S)) return(NULL)
   if (is.matrix(S)) list(S) else if (is.list(S)) S else NULL
 }
@@ -176,4 +183,20 @@ VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
   out <- do.call(rbind, rows)
   attr(out, "cov") <- covs
   out
+}
+
+
+# The random-effect half of a fit's display, with VarCorr's own estimated /
+# sampled / conditioned label carried through: a conditioned `sigma_re` is an
+# input echoed back, not a result, and the display must not present it as one.
+# Silent on a fit with no random-effect terms, so `print.tulpa_fit()` can call it
+# unconditionally and any fit carrying a covariance reports it.
+#' @keywords internal
+.print_re_section <- function(x) {
+  vc <- tryCatch(VarCorr(x), error = function(e) NULL)
+  if (is.null(vc) || !nrow(vc)) return(invisible(NULL))
+  cat("\nRandom effects:\n")
+  print(data.frame(term = vc$term, coef = vc$coef, sd = round(vc$sd, 4),
+                   source = vc$source, row.names = NULL))
+  invisible(NULL)
 }
