@@ -224,10 +224,23 @@ nodes, the Gibbs path uses its `beta_draws`) plus `means` / `param_names` /
 `process_info`, while the `Sigma` posterior stays in `posterior`. With one block
 the parameter names are bare (`sigma_1`, `rho_12`, ...); with several they are
 prefixed by the block label (`g.sigma_1`, `h.sigma_1`, ...). `Sigma_mean` is a
-matrix for one block, a named list for several. Tests: `test-re-cov-nested.R`,
+matrix for one block, a named list for several. Both also report the **per-group**
+posterior through `ranef()` (#264): the Gibbs path records the `b` its sweep
+samples (`fit$re`, row-aligned with the `beta` draws, so `posterior_predict()`
+picks it up too) and summarizes it empirically; the nested path retains each
+node's Gaussian per-group posterior (`fit$re_nodes` / `fit$re_var_nodes`, from
+the inner solve's `return_re_cov` blocks) and reports the exact moments and
+CDF-inverted quantiles of the weighted mixture via
+`.nl_gauss_mixture_summary()` -- the continuous counterpart of
+`.nl_wtd_quantile()`, carrying both the within-node curvature and the `Sigma`
+uncertainty. The AGHQ inner marginal (`n_quad > 1`) integrates each group out
+instead, so that fit carries `ranef_unavailable` (a reason string `ranef()`
+errors on) rather than an empty table. Tests: `test-re-cov-nested.R`,
 `test-re-cov-gibbs.R`, `test-re-cov-recovery.R`, `test-re-cov-prior.R` (Jacobian
 vs finite differences, diagonal + joint priors), `test-ccd-grid.R`,
-`test-tulpa-re-cov-frontdoor.R` (single, diagonal, multi-term routing).
+`test-tulpa-re-cov-frontdoor.R` (single, diagonal, multi-term routing),
+`test-ranef-re-cov.R` (per-group reporting, mixture summary vs Monte Carlo,
+block ordering, cross-backend agreement).
 **Status:** fully wired through the `tulpa()` front door. When any RE term
 carries slopes (no scalar `sigma_re` to condition on), `mode = "laplace"`
 redirects to `re_cov_nested` (default) or `re_cov_gibbs`

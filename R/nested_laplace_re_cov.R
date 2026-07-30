@@ -427,6 +427,40 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   list(draws = out, picks = picks)
 }
 
+# Marginal variance of every random-effect coefficient from an inner solve's
+# per-(term, group) covariance blocks (`cov_blocks` from tulpa_laplace(
+# return_re_cov = TRUE), term-major then group order). Returns one value per
+# (term, group, coefficient) -- the order the latent tail of the mode uses -- or
+# NULL when the blocks are absent or do not describe this layout, so a caller
+# reports no within-node spread rather than a mislabelled one.
+.re_cov_block_variances <- function(cov_blocks, layout) {
+  if (!is.list(cov_blocks)) return(NULL)
+  n_blocks <- sum(vapply(layout, function(b) as.integer(b$n_groups), integer(1)))
+  if (length(cov_blocks) != n_blocks) return(NULL)
+  out <- numeric(.re_cov_n_re(layout))
+  pos <- 0L; at <- 0L
+  for (m in seq_along(layout)) {
+    bl <- layout[[m]]
+    for (g in seq_len(bl$n_groups)) {
+      B <- cov_blocks[[pos + g]]
+      if (!is.matrix(B) || nrow(B) != bl$nc) return(NULL)
+      out[at + seq_len(bl$nc)] <- diag(B)
+      at <- at + bl$nc
+    }
+    pos <- pos + bl$n_groups
+  }
+  if (!all(is.finite(out))) return(NULL)
+  out
+}
+
+# Total number of random-effect coefficients across the covariance blocks --
+# the width of the latent tail of an inner solve's mode, and of every per-node
+# random-effect matrix keyed by it.
+.re_cov_n_re <- function(layout) {
+  sum(vapply(layout, function(b) as.integer(b$n_groups) * as.integer(b$nc),
+             integer(1)))
+}
+
 # Per-block plug-in MAP summary (Sigma, sigma, rho) from the mode theta_hat.
 .re_cov_map_summary <- function(theta_hat, layout) {
   L_list <- .re_cov_theta_to_L_list(theta_hat, layout)
@@ -632,12 +666,21 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # Full inner solve at the integration nodes: the Laplace log-marginal plus the
   # fixed-effect mode and its MARGINAL covariance (solve(H_beta)). Paid O(n_grid)
   # times, not per optim step.
-  inner_fit <- function(L_list, phi_ = phi) {
+  #
+  # `re_cov = TRUE` additionally asks for the per-(term, group) marginal
+  # covariance blocks Cov(b_g | y, Sigma). The nested driver requests them at its
+  # integration nodes so the per-group posterior can be marginalized over the
+  # Sigma grid with its within-node curvature (ranef()); it costs one triangular
+  # solve per random-effect coefficient against the factor the log-determinant
+  # already built, so it is off wherever nobody reads the blocks (tulpa_eb()'s
+  # re-solve at theta_hat, which reports the mode).
+  inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE) {
     tryCatch(
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi_, phi2 = phi2, return_hessian = TRUE,
+        return_re_cov = isTRUE(re_cov),
         beta_prior = beta_prior, offset = offset,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
         max_iter = max_iter, tol = tol, n_threads = n_threads
@@ -791,7 +834,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     inner_logmarg <- function(L_list, phi_ = phi) {
       r <- core_solve(L_list); if (is.null(r)) -Inf else r$log_marginal
     }
-    inner_fit <- function(L_list, phi_ = phi) core_solve(L_list)
+    # `re_cov` is accepted and ignored: this inner solve integrates each group's
+    # random effects out by quadrature rather than conditioning at their mode, so
+    # it produces no per-group mean or covariance to hand back. The driver reads
+    # `re_conditional` (FALSE here) and says so rather than reporting an empty
+    # random-effect table.
+    inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE) core_solve(L_list)
   }
 
   # --- mode of g(theta) = log_marginal(Sigma(theta)) + log_prior ------------
@@ -1168,6 +1216,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
        X_zi = X_zi, p_zi = p_zi, p_fixed = p_fixed,
        log_prior_theta = log_prior_theta,
        inner_logmarg = inner_logmarg, inner_fit = inner_fit,
+       # Does `inner_fit` condition on the random effects (returning their mode
+       # in the latent tail of `$mode`, and their covariance blocks on request)?
+       # TRUE for the joint-field Laplace inner solve, FALSE for the AGHQ one,
+       # which integrates them out per group. The per-group posterior is
+       # reportable exactly when this is TRUE.
+       re_conditional = !use_core,
        exact_grad_at = exact_grad_at,
        theta0 = theta0, theta_hat = sp_hat$re, opt = opt,
        theta_hat_full = theta_hat,
@@ -1326,6 +1380,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'     block, or a named list of matrices).
 #'   - `beta`, `draws`, `means`, `param_names`, `process_info`: the fixed-effect
 #'     posterior from the node mixture (drives `coef`/`confint`/`vcov`/`summary`).
+#'   - `re_nodes`, `re_var_nodes`: the per-group random-effect posterior at each
+#'     integration node -- conditional mean and marginal variance of every
+#'     (block, group, coefficient), one row per node. [ranef()] reports the
+#'     `weights`-mixture of them. `NULL` at `n_quad > 1`, whose inner marginal
+#'     integrates each group out instead of conditioning on it; that fit carries
+#'     `ranef_unavailable` (the reason) in their place.
 #'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
 #'     `n_blocks`, `n_coefs` (vector of per-block `c`).
 #'
@@ -1426,22 +1486,36 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # theta_grid), so nodes are keyed by their integer index; the store is an
   # atomically-rewritten RDS, fingerprint-guarded against resuming onto a file
   # written for different data / layout / grid.
+  # The joint-field inner solve also carries the per-group random-effect
+  # posterior, which is what the per-group summary is marginalized from; it is a
+  # node payload, so the fingerprint records it alongside the rest.
+  re_cond <- isTRUE(core$re_conditional)
   ckpt <- .re_cov_node_checkpoint(checkpoint, fingerprint = list(
     y = as.numeric(y), n_trials = as.integer(n_trials), X = X,
     family = family, phi = phi,
     layout = lapply(layout, function(b) b[c("k", "nc", "full")]),
     theta_grid = theta_grid, max_iter = max_iter, tol = tol,
-    beta_prior = beta_prior, n_quad = n_quad))
+    beta_prior = beta_prior, n_quad = n_quad, re_cov = re_cond))
 
   # --- evaluate inner marginal + derived quantities per cell ----------------
   # One FULL Laplace solve per node: the log-marginal feeds the integration
   # weight; the fixed-effect mode + marginal covariance feed the posterior-draw
   # synthesis. A failed / non-finite node keeps logm = -Inf (weight 0).
+  #
+  # The latent tail of each node's mode is E(b | y, Sigma_i) and its covariance
+  # blocks are Var(b | y, Sigma_i), so the two together are the node's Gaussian
+  # random-effect posterior. Retained per node (not collapsed here) because the
+  # marginal per-group posterior is the WEIGHTED MIXTURE of them -- summarizing
+  # each node first and averaging the summaries is the plug-in error the nested
+  # path exists to avoid.
+  n_re <- .re_cov_n_re(layout)
   logm           <- rep(-Inf, ng)
   lp_theta_nodes <- rep(NA_real_, ng)   # hyperparameter log-prior per node
   Sig_node_list  <- vector("list", ng)
   beta_nodes     <- matrix(NA_real_, ng, p_fix)
   beta_cov_nodes <- vector("list", ng)
+  re_nodes     <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
+  re_var_nodes <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
   for (i in seq_len(ng)) {
     th     <- theta_grid[i, ]
     L_list <- .re_cov_theta_to_L_list(th, layout)
@@ -1450,7 +1524,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (!is.null(ckpt) && ckpt$has(key)) {
       fit_i <- ckpt$get(key)
     } else {
-      fit_i <- inner_fit(L_list)
+      fit_i <- inner_fit(L_list, re_cov = re_cond)
       if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
           length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
         ckpt$save(key, fit_i)
@@ -1464,6 +1538,14 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     beta_cov_nodes[[i]] <-
       if (is.null(fit_i$H_beta)) NULL
       else tryCatch(solve(fit_i$H_beta), error = function(e) NULL)
+    if (re_cond && length(fit_i$mode) == p_fix + n_re) {
+      re_nodes[i, ] <- fit_i$mode[p_fix + seq_len(n_re)]
+      # Diagonals of the per-(term, group) covariance blocks, concatenated in the
+      # block layout's own order -- the marginal variance of each random-effect
+      # coefficient at this node.
+      v <- .re_cov_block_variances(fit_i$cov_blocks, layout)
+      if (!is.null(v)) re_var_nodes[i, ] <- v
+    }
   }
   # Cell weight = design weight (CCD: corrected INLA; grid: uniform) times the
   # evaluated joint exp(logm); log-sum-exp shift for stability. Every failed /
@@ -1479,6 +1561,20 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   lw <- lw - max(finite_lw)
   w  <- exp(lw); w[!is.finite(w)] <- 0
   w  <- w / sum(w)
+
+  # A weighted node whose latent tail was the wrong width, or whose covariance
+  # blocks did not describe the layout, leaves NA in that row and the mixture
+  # drops it. If that took out every weighted node the per-group posterior is
+  # unreportable, and it says so under the same field the AGHQ path uses -- the
+  # Sigma posterior is unaffected, so the fit still stands.
+  ranef_note <- NULL
+  if (re_cond && !any(is.finite(rowSums(re_nodes)) & w > 0)) {
+    re_nodes <- NULL; re_var_nodes <- NULL
+    ranef_note <- paste0(
+      "no integration node returned a per-group random-effect block of the ",
+      "expected width (", n_re, "), so the per-group posterior could not be ",
+      "marginalized. The Sigma posterior is unaffected.")
+  }
 
   # --- derived quantities, marginalized over the grid -----------------------
   summ <- .re_cov_derived_summary(Sig_node_list, w, layout)
@@ -1533,6 +1629,20 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     pareto_k    = pareto_k,
     pareto_k_is_ess = k_is_ess,
     pareto_k_scope  = "outer (hyperparameter) Gaussian proposal",
+    # Per-node random-effect posterior: mode and marginal variance of every
+    # (term, group, coefficient), one row per integration node. ranef() mixes
+    # them under `weights`. `ranef_unavailable` is the AGHQ inner marginal's
+    # answer instead -- a stated reason, so the accessor reports why rather than
+    # an empty table indistinguishable from a model with no random effects.
+    re_nodes     = re_nodes,
+    re_var_nodes = re_var_nodes,
+    ranef_unavailable = if (!re_cond) paste0(
+      "the adaptive Gauss-Hermite inner marginal (n_quad > 1) integrates each ",
+      "group's random effects out by quadrature instead of conditioning at ",
+      "their mode, so this fit carries no per-group posterior. Refit with ",
+      "n_quad = 1 (the joint-field Laplace inner solve) or with ",
+      "control$re_cov = \"gibbs\", both of which report random effects.")
+      else ranef_note,
     means       = beta_mean,
     param_names = beta_names,
     process_info = list(list(name = "fixed_effects", p = p_fix,

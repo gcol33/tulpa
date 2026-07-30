@@ -134,6 +134,12 @@ no \code{rho}.
 block, or a named list of matrices).
 \item \code{beta}, \code{draws}, \code{means}, \code{param_names}, \code{process_info}: the fixed-effect
 posterior from the node mixture (drives \code{coef}/\code{confint}/\code{vcov}/\code{summary}).
+\item \code{re_nodes}, \code{re_var_nodes}: the per-group random-effect posterior at each
+integration node -- conditional mean and marginal variance of every
+(block, group, coefficient), one row per node. \code{\link[=ranef]{ranef()}} reports the
+\code{weights}-mixture of them. \code{NULL} at \code{n_quad > 1}, whose inner marginal
+integrates each group out instead of conditioning on it; that fit carries
+\code{ranef_unavailable} (the reason) in their place.
 \item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
 \code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
 }

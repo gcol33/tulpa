@@ -106,6 +106,7 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
 
     return List::create(
         _["beta_draws"]  = wrap(out.beta_draws),
+        _["re_draws"]    = wrap(out.re_draws),
         _["Sigma_draws"] = sig,
         _["accept_beta"] = out.accept_beta,
         _["accept_b"]    = out.accept_b,

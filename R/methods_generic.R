@@ -500,10 +500,32 @@ glance.tulpa_fit <- function(x, ...) {
 
 #' Random-effect summaries
 #'
+#' @details
+#' What each backend reports for a group effect follows what it computes:
+#' \itemize{
+#'   \item Sampler tier and the RE-covariance Gibbs debias
+#'     ([tulpa_re_cov_gibbs()], reached by `tulpa(..., control =
+#'     list(re_cov = "gibbs"))`) draw the random effects jointly with everything
+#'     else, so `estimate` / `sd` / bounds are the empirical posterior summaries.
+#'   \item The RE-covariance integrator ([tulpa_re_cov_nested()]) carries a
+#'     Gaussian per-group posterior at each `Sigma` node; the reported summaries
+#'     are the exact moments and quantiles of the weighted mixture of those, so
+#'     they carry both the within-node curvature and the `Sigma` uncertainty.
+#'   \item The Laplace tier reports the conditional mode with no spread (`sd` and
+#'     the bounds are `NA`), which is the only per-group quantity it forms.
+#' }
+#' A fit whose backend never forms a per-group posterior at all (the adaptive
+#' Gauss-Hermite inner marginal integrates each group out by quadrature) errors
+#' with that reason rather than returning an empty table, which would be
+#' indistinguishable from a model with no random effects. A model that genuinely
+#' has none returns a zero-row data frame.
+#'
 #' @param object A `tulpa_fit` object.
 #' @param ... Ignored.
-#' @return Data frame with one row per random-effect coefficient: term, group,
-#'   level, estimate, and (sampler tier only) sd and credible bounds.
+#' @return Data frame with one row per random-effect coefficient: `term` (the
+#'   group level, and the coefficient for a random slope), `estimate`, `sd`, and
+#'   the 2.5% / 97.5% bounds `conf.low` / `conf.high`. `sd` and the bounds are
+#'   `NA` on a backend that reports a point per group (see Details).
 #' @examples
 #' \donttest{
 #' set.seed(1)
@@ -543,6 +565,15 @@ ranef.tulpa_fit <- function(object, ...) {
   # also carries the latent field and variance-component hyperparameters).
   re_names <- .re_names_from_layout(layout)
 
+  # A backend that fits random-effect terms without ever forming their per-group
+  # posterior says so, with its reason. The model HAS random effects, so an empty
+  # table would be indistinguishable from one that does not -- the reason is the
+  # useful answer and it names the fits that do report them.
+  if (is.character(object$ranef_unavailable)) {
+    stop("ranef(): this fit carries no per-group random effects -- ",
+         object$ranef_unavailable, call. = FALSE)
+  }
+
   re <- .re_draws_mat(object)
   if (!is.null(re)) {
     # Sampler-tier draws are [fixed, latent (field + RE), hyperparameters]; the
@@ -570,6 +601,27 @@ ranef.tulpa_fit <- function(object, ...) {
       conf.high = apply(re, 2, stats::quantile, 0.975),
       row.names = NULL, stringsAsFactors = FALSE
     ))
+  }
+
+  # RE-covariance integrator (tulpa_re_cov_nested): each integration node carries
+  # a Gaussian per-group posterior -- the conditional mean in `re_nodes` and its
+  # marginal variance in `re_var_nodes` -- and the node weights summarize the
+  # Sigma posterior. The marginal per-group posterior is that weighted mixture, so
+  # mean / SD are its exact moments and the interval inverts its CDF (rather than
+  # a normal approximation around the mean, which a mixture over a skewed Sigma
+  # posterior is not). A node set without usable variances reports the mixture
+  # mean with NA spread, never the between-node spread alone.
+  if (is.matrix(object$re_nodes) && !is.null(object$weights) &&
+      ncol(object$re_nodes) == length(re_names)) {
+    mx <- .nl_gauss_mixture_summary(object$re_nodes, object$re_var_nodes,
+                                    object$weights, probs = c(0.025, 0.975))
+    if (!is.null(mx)) {
+      return(data.frame(
+        term = re_names, estimate = mx$mean, sd = mx$sd,
+        conf.low = mx$quantiles[, 1L], conf.high = mx$quantiles[, 2L],
+        row.names = NULL, stringsAsFactors = FALSE
+      ))
+    }
   }
 
   # Nested-Laplace fit: the BLUPs are the RE tail of each grid cell's latent mode,

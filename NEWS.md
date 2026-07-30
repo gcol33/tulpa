@@ -1,5 +1,40 @@
 # tulpa NEWS
 
+## 0.0.111
+
+* **`ranef()` reports the per-group posterior on both RE-covariance backends
+  (#264).** It returned a 0-row data frame for a fit from either integrator --
+  on exactly the fits whose free covariance over correlated slopes is the point,
+  and indistinguishable from a model carrying no random effects at all. Both
+  backends do hold the per-group information, and both now report it:
+
+  - `tulpa_re_cov_gibbs()` samples `b` in its Metropolis-within-Gibbs sweep and
+    threw the draws away at the end of each sweep. The compiled sweep now
+    records them (`fit$re`, one column per (block, group, coefficient),
+    row-aligned with the `beta` draws so a row is a joint state), and `ranef()`
+    summarizes them as the exact posterior: mean, SD and 2.5%/97.5% quantiles.
+    `posterior_predict()` picks the same draws up through `.re_draws_mat()`,
+    so its replicates carry the random-effect uncertainty instead of falling
+    back to a population-level linear predictor.
+  - `tulpa_re_cov_nested()` has a Gaussian per-group posterior at every
+    integration node. Each node's conditional mean and marginal variance are
+    retained (`fit$re_nodes` / `fit$re_var_nodes`, the inner solve now being
+    asked for its covariance blocks), and `ranef()` reports the exact moments
+    and quantiles of the weighted mixture of them -- so the interval carries
+    both the within-node curvature and the `Sigma` uncertainty. The interval
+    inverts the mixture CDF rather than assuming normality around the mean: a
+    mixture over a skewed `Sigma` posterior is itself skewed. New
+    `.nl_gauss_mixture_summary()` is that summary (verified against Monte Carlo,
+    and against the mixture CDF at its own returned quantiles); it is the
+    continuous counterpart of the discrete `.nl_wtd_quantile()`.
+
+  The adaptive Gauss-Hermite inner marginal (`control$re_cov = "aghq"`, or
+  `n_quad > 1`) integrates each group out by quadrature and so forms no
+  per-group posterior at all. It now says that, with the two modes that do
+  report one, rather than returning the empty frame: `ranef()` errors on the
+  stated `fit$ranef_unavailable` reason. `?ranef` documents what each backend
+  reports and why.
+
 ## 0.0.110
 
 * **`tglmm()` and `tgam()` are removed; `tulpa()` fits both model classes.**

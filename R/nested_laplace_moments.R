@@ -92,6 +92,76 @@
   }, numeric(1L))
 }
 
+# Summary of a weighted mixture of Gaussians, one mixture per parameter.
+#
+# The continuous counterpart of `.nl_wtd_quantile`: where that summarizes a
+# discrete (value, weight) set -- one number per grid cell -- this summarizes a
+# posterior whose cells each contribute a whole Gaussian,
+#   p(x_j) = sum_i w_i N(x_j; mu_ij, var_ij),
+# which is what a nested-Laplace grid actually produces for a latent coefficient
+# (per-node conditional mean and curvature, mixed by the node weights). Reporting
+# only the spread BETWEEN nodes omits the within-node curvature and understates
+# the posterior SD; reporting only one node's Gaussian omits the hyperparameter
+# uncertainty the grid exists to carry. Both terms enter here.
+#
+# `mu` and `var` are n_node x n_par (a column is one parameter, a row one node);
+# `w` is the node weight vector. Mean and SD are the exact mixture moments (law
+# of total variance), and the quantiles invert the exact mixture CDF by bisection
+# rather than assuming normality -- a mixture over a skewed hyperparameter
+# posterior is itself skewed, so `mean +/- 1.96 sd` is not its interval. The
+# bracket spans +/- 10 component SDs, which contains every quantile of the
+# mixture for any `probs` in practice.
+#
+# Returns list(mean, sd, quantiles = n_par x length(probs)), or NULL when no node
+# is usable. `var = NULL`, or variances that are missing / negative / non-finite,
+# give the mixture mean with NA for SD and the quantiles: the between-node spread
+# alone is not the posterior SD, so it is withheld rather than reported small.
+.nl_gauss_mixture_summary <- function(mu, var, w, probs = c(0.025, 0.5, 0.975),
+                                      n_bisect = 80L) {
+  mu <- as.matrix(mu)
+  w  <- as.numeric(w)
+  np <- ncol(mu)
+  ok <- is.finite(w) & w > 0 & is.finite(rowSums(mu))
+  if (!any(ok) || np == 0L) return(NULL)
+  mu <- mu[ok, , drop = FALSE]
+  w  <- w[ok]; w <- w / sum(w)
+  mean_p <- as.numeric(crossprod(w, mu))
+
+  sdm <- NULL
+  if (!is.null(var)) {
+    v <- as.matrix(var)[ok, , drop = FALSE]
+    if (all(is.finite(v)) && all(v >= 0)) sdm <- sqrt(v)
+  }
+  na_q <- matrix(NA_real_, np, length(probs))
+  if (is.null(sdm)) {
+    return(list(mean = mean_p, sd = rep(NA_real_, np), quantiles = na_q))
+  }
+
+  sd_p <- sqrt(pmax(as.numeric(crossprod(w, mu^2 + sdm^2)) - mean_p^2, 0))
+
+  # A degenerate component (zero curvature-implied SD) is a step function in the
+  # CDF; the floor keeps it one without branching the vectorized evaluation.
+  s <- pmax(sdm, 1e-300)
+  cdf <- function(q) {
+    as.numeric(crossprod(w, stats::pnorm(
+      matrix(q, nrow(mu), np, byrow = TRUE), mu, s)))
+  }
+  lo0 <- apply(mu - 10 * sdm, 2L, min)
+  hi0 <- apply(mu + 10 * sdm, 2L, max)
+  qs <- vapply(probs, function(p) {
+    lo <- lo0; hi <- hi0
+    for (it in seq_len(n_bisect)) {
+      mid <- (lo + hi) / 2
+      below <- cdf(mid) < p
+      lo <- ifelse(below, mid, lo)
+      hi <- ifelse(below, hi, mid)
+    }
+    (lo + hi) / 2
+  }, numeric(np))
+  list(mean = mean_p, sd = sd_p,
+       quantiles = matrix(qs, np, length(probs)))
+}
+
 # Weighted mean and SD of `values` under pre-normalized `weights` (which
 # sum to 1). SD uses the E[x^2] - E[x]^2 form, floored at 0 to absorb the
 # floating-point negatives that form can produce near a degenerate axis.

@@ -69,6 +69,11 @@ of \code{Sigma} matrices for that sweep.
 \item \code{beta_draws} / \code{draws}: matrix of recorded \code{beta} draws; \code{draws} (with
 \code{means}, \code{param_names}, \code{process_info}) drives the generic \code{tulpa_fit}
 methods.
+\item \code{re}: matrix of recorded random-effect draws, \code{n_kept} rows by one column
+per (block, group, coefficient) in that order -- the exact per-group
+posterior the sweep samples. Row-aligned with \code{beta_draws}, so a draw is
+a joint \verb{(beta, b)} state. This is what \code{\link[=ranef]{ranef()}} summarizes and what
+\code{\link[=posterior_predict]{posterior_predict()}} adds to the linear predictor.
 \item \code{accept}: list with \code{beta} and \code{b} acceptance rates over recorded sweeps.
 \item \code{n_kept}, \code{n_coefs} (vector of per-block \code{c}), \code{prior}: bookkeeping.
 }

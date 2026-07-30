@@ -130,6 +130,12 @@ struct GibbsOutput {
     int n_kept = 0;
     Eigen::MatrixXd beta_draws;                              // n_kept x p
     std::vector<std::vector<Eigen::MatrixXd>> Sigma_draws;   // [k][m]
+    // Random effects per recorded sweep, n_kept x sum_m (G_m * nc_m), flattened
+    // block-major then group then coefficient -- the order the compacted latent
+    // mode and the R-side RE labels both use, so one column is one (term, group,
+    // coefficient) throughout. Row-aligned with beta_draws: a row is one joint
+    // (beta, b) state of the sweep, which is the exact per-group posterior.
+    Eigen::MatrixXd re_draws;
     double accept_beta = 0.0;
     double accept_b    = 0.0;
 };
@@ -194,10 +200,14 @@ inline GibbsOutput run_glmm_gibbs(
     int n_kept = 0;
     for (int s = 0; s < n_sweep; ++s) if (keep[s]) ++n_kept;
 
+    int n_re = 0;
+    for (int m = 0; m < M; ++m) n_re += blocks[m].n_groups * blocks[m].nc;
+
     GibbsOutput out;
     out.n_kept = n_kept;
     out.beta_draws.resize(n_kept, p);
     out.Sigma_draws.assign(n_kept, std::vector<Eigen::MatrixXd>(M));
+    out.re_draws.resize(n_kept, n_re);
 
     long acc_beta_rec = 0, acc_b_rec = 0, n_b_rec = 0;
     int kept = 0;
@@ -289,6 +299,12 @@ inline GibbsOutput run_glmm_gibbs(
         if (!adapting && keep[sweep - 1]) {
             out.beta_draws.row(kept) = beta.transpose();
             for (int m = 0; m < M; ++m) out.Sigma_draws[kept][m] = Sigma_cur[m];
+            int col = 0;
+            for (int m = 0; m < M; ++m) {
+                for (int g = 0; g < blocks[m].n_groups; ++g)
+                    for (int c = 0; c < blocks[m].nc; ++c)
+                        out.re_draws(kept, col++) = B[m](g, c);
+            }
             acc_beta_rec += acc_beta ? 1 : 0;
             acc_b_rec    += n_acc_b;
             n_b_rec      += n_prop_b;

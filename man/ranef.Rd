@@ -15,11 +15,32 @@ ranef(object, ...)
 \item{...}{Ignored.}
 }
 \value{
-Data frame with one row per random-effect coefficient: term, group,
-level, estimate, and (sampler tier only) sd and credible bounds.
+Data frame with one row per random-effect coefficient: \code{term} (the
+group level, and the coefficient for a random slope), \code{estimate}, \code{sd}, and
+the 2.5\\%/97.5\\% bounds \code{conf.low} / \code{conf.high}. \code{sd} and the bounds are
+\code{NA} on a backend that reports a point per group (see Details).
 }
 \description{
 Random-effect summaries
+}
+\details{
+What each backend reports for a group effect follows what it computes:
+\itemize{
+\item Sampler tier and the RE-covariance Gibbs debias
+(\code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}}, reached by \code{tulpa(..., control = list(re_cov = "gibbs"))}) draw the random effects jointly with everything
+else, so \code{estimate} / \code{sd} / bounds are the empirical posterior summaries.
+\item The RE-covariance integrator (\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}) carries a
+Gaussian per-group posterior at each \code{Sigma} node; the reported summaries
+are the exact moments and quantiles of the weighted mixture of those, so
+they carry both the within-node curvature and the \code{Sigma} uncertainty.
+\item The Laplace tier reports the conditional mode with no spread (\code{sd} and
+the bounds are \code{NA}), which is the only per-group quantity it forms.
+}
+A fit whose backend never forms a per-group posterior at all (the adaptive
+Gauss-Hermite inner marginal integrates each group out by quadrature) errors
+with that reason rather than returning an empty table, which would be
+indistinguishable from a model with no random effects. A model that genuinely
+has none returns a zero-row data frame.
 }
 \examples{
 \donttest{

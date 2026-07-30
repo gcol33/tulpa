@@ -66,6 +66,21 @@
   t(chol((M + t(M)) / 2))
 }
 
+# Column labels for the recorded random-effect draws, in the sweep's storage
+# order (block, then group, then coefficient). `<label>[g]` for a scalar block,
+# `<label>[g,c]` for a block with several coefficients. These describe a direct
+# tulpa_re_cov_gibbs() call, where only the block label and the group index are
+# known; a fit made through tulpa() carries the data's factor levels and
+# coefficient names in `re_layout`, and ranef() labels from those instead.
+.re_gibbs_re_labels <- function(layout) {
+  unlist(lapply(seq_along(layout), function(m) {
+    bl <- layout[[m]]; lab <- .re_cov_block_label(bl, m)
+    unlist(lapply(seq_len(bl$n_groups), function(g)
+      if (bl$nc == 1L) sprintf("%s[%d]", lab, g)
+      else sprintf("%s[%d,%d]", lab, g, seq_len(bl$nc))))
+  }), use.names = FALSE)
+}
+
 # Build a per-block conjugate prior from the (possibly NULL) user overrides.
 # A correlated block uses an inverse-Wishart IW(nu0, Lambda0); an uncorrelated
 # block uses an independent scalar inverse-Wishart (== inverse-gamma) per
@@ -180,6 +195,11 @@
 #'   - `beta_draws` / `draws`: matrix of recorded `beta` draws; `draws` (with
 #'     `means`, `param_names`, `process_info`) drives the generic `tulpa_fit`
 #'     methods.
+#'   - `re`: matrix of recorded random-effect draws, `n_kept` rows by one column
+#'     per (block, group, coefficient) in that order -- the exact per-group
+#'     posterior the sweep samples. Row-aligned with `beta_draws`, so a draw is
+#'     a joint `(beta, b)` state. This is what [ranef()] summarizes and what
+#'     [posterior_predict()] adds to the linear predictor.
 #'   - `accept`: list with `beta` and `b` acceptance rates over recorded sweeps.
 #'   - `n_kept`, `n_coefs` (vector of per-block `c`), `prior`: bookkeeping.
 #'
@@ -345,6 +365,8 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   n_kept      <- out$n_kept
   Sigma_draws <- out$Sigma_draws        # list (n_kept) of per-block list of Sigma
   beta_draws  <- out$beta_draws
+  re_draws    <- out$re_draws           # n_kept x sum_m (G_m * nc_m)
+  colnames(re_draws) <- .re_gibbs_re_labels(layout)
 
   w <- rep(1 / n_kept, n_kept)
   summ <- .re_cov_derived_summary(Sigma_draws, w, layout)
@@ -366,6 +388,10 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     beta_draws  = beta_draws,
     beta        = beta_mean,
     draws       = beta_draws,
+    # `re` is the field the generic accessors read random-effect draws from
+    # (.re_draws_mat), so ranef() / posterior_predict() see the sampled b
+    # without either of them learning anything about this backend.
+    re          = re_draws,
     means       = beta_mean,
     param_names = beta_names,
     process_info = list(list(name = "fixed_effects", p = p,
