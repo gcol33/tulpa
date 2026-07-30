@@ -635,6 +635,22 @@ ranef.tulpa_fit <- function(object, ...) {
     p      <- object$n_fixed %||% 0L
     M      <- object$modes
     n_tail <- ncol(M) - p
+    # RE terms carried as `iid` latent blocks (#265) share the latent vector with
+    # the field / smoother blocks, so the tail after the fixed block is wider than
+    # the RE layout and the exact-width guard below cannot fire. The RE blocks are
+    # appended LAST, which is what makes them addressable without knowing any
+    # other block's width: their coefficients are the final `length(re_names)`
+    # columns. SE stays NA for the same reason as the branch below -- the
+    # between-grid spread omits the within-cell curvature.
+    if (!is.null(object$re_block_index) && n_tail > length(re_names)) {
+      w   <- object$weights / sum(object$weights)
+      seg <- M[, (ncol(M) - length(re_names) + 1L):ncol(M), drop = FALSE]
+      return(data.frame(
+        term = re_names, estimate = as.numeric(crossprod(w, seg)),
+        sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+        row.names = NULL, stringsAsFactors = FALSE
+      ))
+    }
     if (n_tail > 0L && n_tail == length(re_names)) {
       w   <- object$weights / sum(object$weights)
       est <- as.numeric(crossprod(w, M[, (p + 1L):ncol(M), drop = FALSE]))

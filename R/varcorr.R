@@ -78,6 +78,40 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 }
 
 
+# Integrated RE SDs from the nested path, where each term is an `iid` latent
+# block and its SD is one axis of the outer grid (#265). `re_block_index` says
+# which block each term became; the axis is named `b<block>.sigma` in
+# `theta_names`, matching the driver's own axis labelling.
+#
+# The MEDIAN is reported, not the mean: a variance component at few groups has a
+# right-skewed posterior, so its mean sits above its bulk by construction, and the
+# median is the summary the marginalize-derived-quantities rule calls for. The
+# grid integrates it under a prior flat in log(sigma) -- the convention every
+# nested scale axis uses -- so the interval is wide at small G and the point
+# summary runs above the truth there; that is the prior's behaviour, not a
+# defect, and it is why the recovery test asserts coverage rather than a point
+# tolerance.
+#
+# Returns NULL when the terms were CONDITIONED instead (a `sigma_re` supplied,
+# carried as a one-point grid): the number would be right but the label would
+# claim the data produced it, so it falls through to the conditioning branch.
+#' @keywords internal
+.varcorr_from_nested_re_blocks <- function(object, layout) {
+  bi <- object$re_block_index
+  if (is.null(bi) || isTRUE(object$re_block_conditioned)) return(NULL)
+  if (length(bi) != length(layout)) return(NULL)
+  nm  <- object$theta_names
+  med <- object$theta_median
+  if (is.null(nm) || is.null(med) || length(nm) != length(med)) return(NULL)
+  sds <- vapply(bi, function(b) {
+    j <- which(nm == sprintf("b%d.sigma", b))
+    if (length(j) != 1L) NA_real_ else as.numeric(med[j])
+  }, numeric(1))
+  if (anyNA(sds) || any(!is.finite(sds))) return(NULL)
+  lapply(sds, function(s) matrix(s^2, 1L, 1L))
+}
+
+
 # Posterior-mean covariance from a sampler fit. `log_sigma_re[...]` columns hold
 # the log SDs; averaging exp() of the draws is the posterior mean SD, which is
 # not exp(mean(log sigma)) -- the difference is the whole reason to average on
@@ -142,6 +176,11 @@ VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
   # available, and reporting the fallback would understate what it did.
   cov_list <- .varcorr_from_sigma(x)
   src <- "estimated"
+  if (is.null(cov_list)) {
+    # Also "estimated": the nested grid integrated the SD rather than maximizing
+    # it, which is the stronger of the two claims that share this label.
+    cov_list <- .varcorr_from_nested_re_blocks(x, layout)
+  }
   if (is.null(cov_list)) {
     cov_list <- .varcorr_from_draws(x, layout)
     src <- "sampled"

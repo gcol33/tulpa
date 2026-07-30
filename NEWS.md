@@ -1,5 +1,52 @@
 # tulpa NEWS
 
+## 0.0.113
+
+* **A random-effect term on the nested path has its SD integrated instead of
+  conditioned at 1 (#265).** `tulpa(y ~ s(x) + (1 | site))` reported
+  `sd = 1, source = "conditioned"` -- on a formula whose smoother hyperparameter
+  *was* integrated, the random effect was the one variance component the fit never
+  estimated, and 1 is the value nobody supplied. There was no argument
+  combination that estimated it: `mode = "eb"` was overridden by the smoother
+  redirect (#266) and the RE-covariance integrators are reached only when a term
+  carries slopes.
+
+  Each `(1 | g)` now becomes an `iid` latent block, so its SD is one more axis of
+  the outer grid beside the smoother's `tau`. The block type, its integration and
+  its recovery already existed (the #86 coupled field + RE capability); only the
+  front door was not using it, and `.tulpa_fitter_args()`'s own comment already
+  named this as the intended treatment. Consequences:
+
+  - Several RE terms now work. The path previously refused more than one
+    outright ("supports at most one random-intercept term"); each term is its own
+    block.
+  - `sigma_re` supplied explicitly still conditions, as the one-point `sigma_grid`
+    the `iid` registry entry documents -- conditioning is the degenerate case of
+    the same path, not a second one -- and `VarCorr()` still labels it
+    `conditioned` rather than claiming the data produced it.
+  - `VarCorr()` reports the integrated posterior's **median**, not its mean: a
+    variance component at few groups is right-skewed, so its mean sits above its
+    bulk by construction.
+  - `ranef()` reports every group. The RE blocks are appended LAST, which is what
+    makes their latent segment addressable as the trailing `sum(n_groups)` columns
+    without re-deriving any other block's width -- a second source of truth for
+    something the driver already knows. Its exact-tail-width guard cannot fire
+    once the RE shares the latent vector with a field block, so without this the
+    accessor would have returned the empty table #264 just removed.
+  - A random slope beside a smoother still refuses, now naming the reason (an
+    `iid` block has no `Z` design) and pointing at the backends that do fit a
+    slope covariance.
+
+  Recovery is asserted as **coverage**, not as a point tolerance. The grid
+  integrates the SD under a prior flat in `log(sigma)`, the convention every
+  nested scale axis uses; that does not shrink, so at G = 15 the posterior is wide
+  and its point summary runs above the truth (mean of medians 1.02 against 0.9
+  over 6 seeds) while the 95% interval covers the truth 6/6. Asserting
+  `|est - truth|` would encode the +0.12 as the target. Whether the engine should
+  carry one hyperprior convention across the nested and RE-covariance paths is
+  #268, deliberately not bundled here: a PC prior on the `iid` axis alone would
+  trade the cross-path inconsistency for one inside a single fit.
+
 ## 0.0.112
 
 * **An explicit `mode` is no longer silently overridden by a structural redirect

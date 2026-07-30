@@ -611,50 +611,95 @@
            "tulpa_nested_laplace() directly if you need a fixed-effect prior on ",
            "this path.", call. = FALSE)
     }
-    # A length-1 list routes the single-block path; length > 1 the multi-block
-    # joint path (both are handled by tulpa_nested_laplace()).
-    prior <- if (length(all_blocks) == 1L) all_blocks[[1L]] else all_blocks
-    # The nested driver carries a single iid random-intercept natively via
-    # re_idx / n_re_groups / sigma_re (conditioned on, like the other tulpa()
-    # backends). Richer RE structure should be modelled as an `iid` latent
-    # block; surface that rather than silently dropping terms.
+    # Each random-effect term becomes an `iid` latent block, so its SD is
+    # integrated on the outer grid alongside the other blocks' hyperparameters
+    # rather than conditioned at a scalar (#265). The driver's native
+    # re_idx / n_re_groups / sigma_re channel conditions, which on a formula whose
+    # other structure IS integrated made the RE the one variance component the fit
+    # never estimated -- and at the default sigma_re = 1, a number the data never
+    # produced. It is left unused here.
+    #
+    # `sigma_re` supplied explicitly still conditions, as a one-point sigma_grid:
+    # the iid registry entry documents that a length-1 grid fixes the field at
+    # that SD, so conditioning is the degenerate case of the same path rather
+    # than a second one.
+    #
+    # The RE blocks go LAST, which is what lets ranef() find them: their
+    # coefficients are then the tail of the latent vector, so the accessor slices
+    # the last sum(n_groups) columns without needing any other block's width. Any
+    # other position would mean re-deriving every preceding block's latent size
+    # here, a second source of truth for something the driver already knows.
     re <- bundle$re_terms %||% list()
-    re_idx      <- rep(0L, bundle$n_obs)
-    n_re_groups <- 0L
-    sigma_re_scalar <- 1.0
+    re_blocks <- list()
+    re_conditioned <- !is.null(sigma_re)
     if (length(re) > 0L) {
-      if (length(re) > 1L || !.is_scalar_re_intercept(re[[1]])) {
+      bad <- !vapply(re, .is_scalar_re_intercept, logical(1))
+      if (any(bad)) {
         stop(paste0(
-          "The nested-Laplace path supports at most one random-intercept term\n",
-          "`(1 | g)` alongside latent blocks. For richer random-effect structure,\n",
-          "model the extra grouping as an `iid` latent block, or call\n",
-          "tulpa_nested_laplace() directly with an explicit RE layout."),
-          call. = FALSE)
+          "The nested-Laplace path carries random-INTERCEPT terms `(1 | g)` as\n",
+          "iid latent blocks; a random-slope term has no iid form (it needs a `Z`\n",
+          "design). Drop the slope, or fit the covariance directly with\n",
+          "mode = 're_cov_nested' / 're_cov_gibbs' (which cannot carry the\n",
+          "smoother / field blocks in this formula)."), call. = FALSE)
       }
-      re_idx          <- as.integer(re[[1]]$group_idx)
-      n_re_groups     <- re[[1]]$n_groups
-      sigma_re_scalar <- sigma_re[1]
+      # One value per term is the front door's contract; recycle it here because
+      # the nested backend is exempt from tulpa()'s own recycling (it does not
+      # condition by default).
+      s_re <- if (re_conditioned) {
+        s <- as.numeric(sigma_re)
+        if (length(s) == 1L) rep(s, length(re)) else s
+      } else NULL
+      if (!is.null(s_re) && length(s_re) != length(re)) {
+        stop(sprintf("`sigma_re` must have length 1 or %d (one per RE term).",
+                     length(re)), call. = FALSE)
+      }
+      re_blocks <- lapply(seq_along(re), function(m) {
+        blk <- list(type = "iid",
+                    obs_idx = as.integer(re[[m]]$group_idx),
+                    n_units = as.integer(re[[m]]$n_groups))
+        if (!is.null(s_re)) blk$sigma_grid <- s_re[m]
+        blk
+      })
     }
+    all_blocks <- c(all_blocks, re_blocks)
+    # A length-1 list routes the single-block path; length > 1 the multi-block
+    # joint path (both are handled by tulpa_nested_laplace()). An `iid` block is
+    # multi-block-only, which holds here: the length-0 check above already
+    # required a field / smoother / latent block, so RE blocks are never alone.
+    prior <- if (length(all_blocks) == 1L) all_blocks[[1L]] else all_blocks
     # Retain the per-grid fixed-effect Hessians by default so summary()/vcov()
     # can report the grid-marginalized fixed-effect SE (the within-grid Laplace
     # covariance is needed for it). Cheap for the small fixed-effect block;
     # users can switch it off via control$keep_grid_hessians = FALSE.
     control$keep_grid_hessians <- control$keep_grid_hessians %||% TRUE
-    return(list(
+    out <- list(
       y           = bundle$y,
       n_trials    = n_trials %||% rep(1L, bundle$n_obs),
       X           = bundle$X,
       prior       = prior,
-      re_idx      = re_idx,
-      n_re_groups = n_re_groups,
-      sigma_re    = sigma_re_scalar,
+      # The native RE channel is unused: the terms are blocks now.
+      re_idx      = rep(0L, bundle$n_obs),
+      n_re_groups = 0L,
+      sigma_re    = 1.0,
       family      = family,
       phi         = phi_sd,
       # Forward only the keys the inner fitter reads: front-door-only knobs
       # (grid shape, backend selection) were consumed above and would trip
       # tulpa_nested_laplace()'s own whitelist.
       control     = .control_subset(control, .CONTROL_KEYS$nested_laplace)
-    ))
+    )
+    # Where the RE blocks landed in the prior list, and whether their SD was
+    # integrated or conditioned. Read by VarCorr() / ranef() so they report the
+    # integrated posterior instead of falling through to the conditioning
+    # fallback. Carried as ATTRIBUTES, not list elements: this list is the
+    # fitter's argument list, and an extra element would reach
+    # tulpa_nested_laplace() as an unknown argument.
+    if (length(re_blocks)) {
+      attr(out, "re_block_index") <-
+        length(all_blocks) - length(re_blocks) + seq_along(re_blocks)
+      attr(out, "re_block_conditioned") <- re_conditioned
+    }
+    return(out)
   }
 
   if (input == "spde") {
@@ -2051,8 +2096,14 @@ tulpa <- function(formula, data,
   # samplers that draw the RE sd jointly) need one RE sd per term to condition
   # on; resolve/recycle it after the backend is known so the others do not emit
   # a misleading "conditioning" message.
+  # `nested_laplace` is in the exempt list because it no longer conditions: each
+  # RE term becomes an `iid` latent block whose SD is integrated on the outer grid
+  # alongside the other blocks' hyperparameters (#265). A `sigma_re` supplied
+  # explicitly still conditions there, via the one-point grid the iid registry
+  # entry documents, so it is passed through rather than defaulted here.
   if (K > 0L &&
-      !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "eb", "agq") &&
+      !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "eb", "agq",
+                          "nested_laplace") &&
       BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)
@@ -2108,6 +2159,12 @@ tulpa <- function(formula, data,
     fit$fixed_names <- layout$fixed_names
     fit$param_names <- fit$param_names %||% layout$param_names
     fit$re_layout   <- layout$re_layout
+    # Nested path only: the RE terms were carried as `iid` latent blocks whose SD
+    # the outer grid integrated, so VarCorr() reads those blocks' posterior and
+    # ranef() slices their latent segment (the LAST sum(n_groups) columns, the RE
+    # blocks having been appended last). Absent on every other backend.
+    fit$re_block_index       <- attr(args, "re_block_index")
+    fit$re_block_conditioned <- attr(args, "re_block_conditioned")
     fit$N           <- fit$N %||% bundle$n_obs
     # Fixed-effect design for fitted()/predict(newdata = NULL), plus the pieces
     # posterior_predict() needs to rebuild the in-sample linear predictor and
